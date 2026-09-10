@@ -22,6 +22,10 @@ import { VfwExportControls } from "./vfw-export-controls.mjs";
 import { getExportCapabilities } from "./export-capabilities.mjs";
 import { PlaybackCache } from "./playback.mjs";
 import { PlaybackMetrics } from "./playback-metrics.mjs";
+import { DesktopTelemetryClient } from './telemetry-core.mjs';
+import { PrivacyUI } from './privacy-ui.mjs';
+import { UpdateUI } from './update-ui.mjs';
+import { ReleaseSplash } from './support-ui.mjs';
 import { EditableScenePreparation } from './editable-scene-preparation.mjs';
 import { TextDialog } from "./text-dialog.mjs";
 import { SegmentValuesDialog } from "./segment-values-dialog.mjs";
@@ -52,6 +56,8 @@ import { updateInspectorDOM } from "./inspector-dom.mjs";
 import {syncCameraControls, drawCameraMonitor} from './camera-monitor.mjs';
 import { AssetLibrary } from "./asset-library.mjs";
 import { UserLibrary } from './user-library.mjs';
+import { installLibraryDrag, installLibraryDrop } from './library-drag.mjs';
+import { SharedClipboard } from './shared-clipboard.mjs';
 import { PropertyControls } from "./property-controls.mjs";
 import {
   canEditNativeProperty,
@@ -76,6 +82,9 @@ import {
   drawCameraViewport,
 } from "./camera-overlay.mjs";
 import { EditorSettings, normalizeEditorSettings } from "./settings.mjs";
+import { HotkeyManager, isHotkeyInput } from "./hotkeys.mjs";
+import { refreshHotkeyHints } from "./hotkey-hints.mjs";
+import { runTimelineHotkey } from "./timeline-hotkeys.mjs";
 import { AppLocalization } from "./localization-bindings.mjs";
 import { layerIdForUid, layerVisible, layerLocked } from "./layers.mjs";
 import { DocumentExporter } from "./document-export.mjs";
@@ -124,6 +133,9 @@ async function runDocumentExport(format, consume, { recovery = false } = {}) {
   const controller = new AbortController(),
     job = { controller, recovery };
   exportJobs.add(job);
+  const metric = recovery ? 'recovery' : format === 'styk' ? 'save' : 'export';
+  const started = performance.now();
+  if (!recovery) telemetry.count(metric + '_started');
   try {
     const blob = await documentExporter.export(recovery ? editor.movieclipProjectReport() : editor.report, {
       format,
@@ -135,7 +147,18 @@ async function runDocumentExport(format, consume, { recovery = false } = {}) {
       signal: controller.signal,
       getRevision: () => `${editor.revision}:${editor.frameDraftRevision}`,
     });
-    return await consume(blob, controller.signal);
+    telemetry.timing(metric + '_ms', performance.now() - started);
+    const saved = await consume(blob, controller.signal);
+    if (recovery) { if (saved) telemetry.count('recovery_saved'); }
+    else {
+      telemetry.count(metric + (saved ? '_succeeded' : '_cancelled'));
+      if (saved) { telemetry.milestone(metric === 'save' ? 'first_save' : 'first_export'); if (metric === 'export') telemetry.count(['piv', 'stk'].includes(format) ? 'export_pivot' : 'export_native'); }
+    }
+    return saved;
+  } catch (error) {
+    if (!recovery || error.name !== 'AbortError') telemetry.count(metric + (error.name === 'AbortError' ? '_cancelled' : '_failed'));
+    if (error.name !== 'AbortError') telemetry.error(error, metric);
+    throw error;
   } finally {
     exportJobs.delete(job);
     state.lastExport = documentExporter.lastTimings;
@@ -214,6 +237,26 @@ let warmTimer = null,
   playStarted = false,
   uiScheduled = 0;
 const playbackMetrics = new PlaybackMetrics();
+const exportTelemetry = new WeakMap();
+const telemetry = new DesktopTelemetryClient(desktop, { getContext: () => ({
+  mode: state.settings.timelineMode, locale: state.settings.locale,
+  playing: state.playing,
+  backend: state.renderer?.stats?.backend === 'WebGPU' ? 'webgpu' : 'unavailable',
+  gauges: { gpu_memory_mb: state.renderer?.stats?.gpuBytes / 1048576, draw_calls: state.renderer?.stats?.drawCalls,
+    upload_kb: state.renderer?.stats?.uploadBytes / 1024, scene_figures: state.renderer?.stats?.objects,
+    scene_primitives: state.renderer?.stats?.primitives, scene_frames: editor.totalTicks },
+  gpuFamily: coarseGPUFamily(state.renderer?.stats?.adapter),
+}) });
+function coarseGPUFamily(value = '') {
+  return ['nvidia', 'amd', 'intel', 'apple', 'qualcomm', 'software'].find(name => String(value).toLowerCase().includes(name)) || 'unknown';
+}
+const privacyUI = new PrivacyUI(desktop, telemetry);
+const releaseSplash = new ReleaseSplash(desktop);
+let updateNotice;
+const telemetryInit = telemetry.init().catch(() => null);
+globalThis.addEventListener('error', event => telemetry.error(event.error));
+globalThis.addEventListener('unhandledrejection', event => telemetry.error(event.reason));
+globalThis.addEventListener('pagehide', () => { void telemetry.flush(); telemetry.dispose(); });
 const editablePreparation = new EditableScenePreparation(editor, {
   onPending(pending) {
     state.editablePreparing=pending;
@@ -699,6 +742,7 @@ function toast(text) {
   toastTimer = setTimeout(() => ($("toast").hidden = true), 4400);
 }
 function fail(error) {
+  telemetry.error(error);
   const message = error?.message || String(error);
   status(message, true);
   toast(message);
@@ -1261,6 +1305,10 @@ function loop(now) {
     }
     const elapsed = performance.now() - start;
     state.renderSamples.push(elapsed);
+    if (telemetry.consent.diagnostics && state.drawCalls % 30 === 0) {
+      telemetry.timing('frame_ms', elapsed);
+      if (elapsed > 33) telemetry.count('slow_frames');
+    }
     if (state.renderSamples.length > 300) state.renderSamples.shift();
     state.lastPresent = elapsed;
     state.drawCalls++;
@@ -1302,6 +1350,7 @@ function play() {
       ? range.start
       : editor.tick;
   playStart = performance.now();
+  telemetry.count('playback_started');
   playbackMetrics.reset(playStart, editor.report.frame_delay_ms
     ? 1000 / editor.report.frame_delay_ms : editor.report.fps);
   lastFpsUI = playStart;
@@ -1323,7 +1372,16 @@ function play() {
 }
 function pause() {
   const wasPlaying = state.playing || state.previewing;
-  if (state.playing) playbackMetrics.stop(performance.now());
+  if (state.playing) {
+    playbackMetrics.stop(performance.now());
+    const summary = playbackMetrics.snapshot(performance.now());
+    telemetry.count('playback_frames', summary.totalFrames);
+    telemetry.count('playback_seconds', Math.round(summary.elapsedMs / 1000));
+    telemetry.count('playback_buffering', summary.bufferingEvents);
+    telemetry.timing('playback_startup_ms', summary.startupMs);
+    telemetry.timing('playback_buffering_ms', summary.bufferingMs);
+    for (const interval of summary.intervalsMs) telemetry.timing('playback_interval_ms', interval);
+  }
   $("playback-fps").hidden = true;
   if (wasPlaying && state.playbackPacket)
     state.editingPacket = {
@@ -1394,6 +1452,7 @@ function updateTitle() {
   desktop?.setDocumentState?.({
     name: editor.name || "Untitled",
     dirty: editor.dirty,
+    revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}`,
   });
 }
 function updateUI() {
@@ -1469,6 +1528,7 @@ function renderInspector() {
     applyRange: state.applyRange,
     polygonPage: state.polygonPage || 0,
   }), {preserveDisclosure});
+  refreshHotkeyHints(hotkeys, $('inspector'));
   if (state.polygon) {
     for (const input of $("inspector").querySelectorAll(
       "input,select,textarea,button",
@@ -1497,6 +1557,7 @@ function renderInspector() {
 }
 
 function setTool(tool) {
+  if (tool !== state.tool && ['rig', 'line', 'circle', 'polygon', 'handle-edit'].includes(tool)) telemetry.count('builder');
   if (isMovieclip(editor.figure) && ['rig','line','circle','polygon','handle-edit'].includes(tool)) {
     editor.enterMovieclip();
   }
@@ -2421,6 +2482,19 @@ async function chooseSticknodesFile(file,isCurrent=()=>true) {
   return isCurrent()?result:null;
 }
 async function importFiles(files) {
+  const started = performance.now(); telemetry.count('import_started');
+  try {
+    const result = await importFilesTracked(files);
+    telemetry.count(result === false ? 'import_cancelled' : 'import_succeeded');
+    if (result !== false) telemetry.timing('import_ms', performance.now() - started);
+    return result;
+  } catch (error) { telemetry.count(error.name === 'AbortError' ? 'import_cancelled' : 'import_failed'); telemetry.error(error, 'import'); throw error; }
+}
+function recordImportKind(filename = '') {
+  const extension = filename.split('.').at(-1)?.toLowerCase();
+  telemetry.count(['piv', 'stk'].includes(extension) ? 'import_pivot' : ['nodes', 'nodemc', 'stknds', 'zip'].includes(extension) ? 'import_sticknodes' : ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'].includes(extension) ? 'import_media' : 'import_native');
+}
+async function importFilesTracked(files) {
   finishCurrentEdit();
   const seq = ++importSequence;
   importer.cancelPending();
@@ -2428,21 +2502,24 @@ async function importFiles(files) {
   status("Importing…", false, true);
   try {
     for (const file of files) {
+      recordImportKind(file.name);
       if (/\.(png|jpe?g|gif|bmp|webp)$/i.test(file.name)) {
         if (
           !(await importMediaFile(file, {
             isCurrent: () => seq === importSequence,
           }))
         )
-          return;
+          return false;
         continue;
       }
       const result = await chooseSticknodesFile(file,()=>seq===importSequence);
-      if (!result || seq !== importSequence) return;
+      if (!result || seq !== importSequence) return false;
       await acceptImport(result, file.name);
+      telemetry.timing('import_decode_ms', result.timings?.decode_ms);
     }
   } catch(error) {
     if(error.name!=="AbortError")throw error;
+    return false;
   } finally {
     if(seq===importSequence)state.importing = false;
   }
@@ -2460,6 +2537,16 @@ async function openFile() {
   }
 }
 async function acceptNativeFile(result) {
+  const started = performance.now(); telemetry.count('import_started'); recordImportKind(result.filename);
+  try {
+    const accepted = await acceptNativeFileTracked(result);
+    telemetry.count(accepted === false ? 'import_cancelled' : 'import_succeeded');
+    if (accepted !== false) telemetry.timing('import_ms', performance.now() - started);
+    telemetry.timing('import_decode_ms', state.lastImport?.decode_ms);
+    return accepted;
+  } catch (error) { telemetry.count(error.name === 'AbortError' ? 'import_cancelled' : 'import_failed'); telemetry.error(error, 'import'); throw error; }
+}
+async function acceptNativeFileTracked(result) {
   pause();
   const decoded = result.bytes
     ? await chooseSticknodesFile(new File([result.bytes], result.filename))
@@ -2476,6 +2563,8 @@ async function openSample(path) {
   await acceptImport(await importer.openSample(path));
 }
 async function saveBlob(blob, filename, signal) {
+  const exportStart = signal && exportTelemetry.get(signal);
+  if (exportStart !== undefined) { telemetry.timing('export_ms', performance.now() - exportStart); exportTelemetry.delete(signal); }
   if (desktop) {
     return writeNativeBlob(desktop, blob, {
       signal,
@@ -2628,6 +2717,7 @@ async function withExportRenderer(
     job = { controller, recovery: false },
     source = editor.report;
   exportJobs.add(job);
+  telemetry.count('export_started'); exportTelemetry.set(controller.signal, performance.now());
   let frameRenderer;
   showDialog(
     title,
@@ -2656,7 +2746,7 @@ async function withExportRenderer(
     });
     await frameRenderer.load(report);
     progress.value = 0;
-    return await render(
+    const saved = await render(
       frameRenderer,
       controller.signal,
       ({ completed, total }) => {
@@ -2665,7 +2755,12 @@ async function withExportRenderer(
         progress.value = completed;
       },
     );
+    telemetry.count(saved ? 'export_succeeded' : 'export_cancelled');
+    if (saved) telemetry.milestone('first_export');
+    return saved;
   } catch (error) {
+    telemetry.count(error.name === 'AbortError' ? 'export_cancelled' : 'export_failed');
+    if (error.name !== 'AbortError') telemetry.error(error, 'export');
     if (error.name === "AbortError") {
       status("Export cancelled");
       return false;
@@ -2679,6 +2774,7 @@ async function withExportRenderer(
   }
 }
 async function exportPNG() {
+  telemetry.count('export_png');
   finishCurrentEdit();
   const options = exportOptions({ animation: false }),
     frame = currentFrame(),
@@ -2702,6 +2798,7 @@ async function exportPNG() {
   );
 }
 async function exportSVGFrame() {
+  telemetry.count('export_svg');
   finishCurrentEdit();
   const options = {
       ...exportOptions({ animation: false }),
@@ -2722,6 +2819,7 @@ async function exportSVGFrame() {
   );
 }
 async function exportImages(format) {
+  telemetry.count(format.startsWith('svg') ? 'export_svg' : format.startsWith('gif') ? 'export_gif' : format.startsWith('jpeg') ? 'export_jpeg' : 'export_png');
   finishCurrentEdit();
   const options = exportOptions(),
     report =
@@ -2765,6 +2863,7 @@ async function exportImages(format) {
   );
 }
 async function exportVideo(format = "webm") {
+  telemetry.count('export_video');
   finishCurrentEdit();
   const vfw = format === "vfw" ? vfwExportControls.getOptions() : null;
   const codec = $(`export-${format}-codec`)?.value || undefined;
@@ -3113,41 +3212,7 @@ function showExport() {
   mountExportFlow($("dialog-content"));
 }
 
-function showHelp() {
-  showDialog(
-    "Keyboard shortcuts",
-    `<div class="shortcut-grid">${[
-      ["Timeline range", "Shift + click"],
-      ["Timeline actions", "Right-click"],
-      ["Copy / paste figure", "Ctrl + C / V"],
-      ["Select figures", "Shift + click / drag"],
-      ["Nudge selection", "Alt + arrow"],
-      ["Create text", "T"],
-      ["Play / pause", "Space"],
-      ["Selection / pose", "V / P"],
-      ["Handle edit", "Hold R / Ctrl R"],
-      ["Pan canvas", "Hold Space / middle drag"],
-      ["Zoom at pointer", "Ctrl + scroll"],
-      ["Bend joint", "Right drag"],
-      ["Stretch joint", "Ctrl + drag"],
-      ["Isolate joint", "Caps Lock"],
-      ["Add line / circle", "L / C"],
-      ["New keyframe", "F6"],
-      ["Duplicate frame after current", "Ctrl+Enter"],
-      ["Previous / next frame", "← / →"],
-      ["Onion skins / joints", "O / J"],
-      ["Stretch a joint", "Ctrl + drag"],
-      ["Duplicate figure", "Ctrl + D"],
-      ["Undo / redo", "Ctrl + Z / Shift + Z"],
-      ["Open / save", "Ctrl + O / S"],
-      ["Fit canvas", "Shift + 1"],
-      ["Fit selection", "Shift + 2"],
-      ["Cancel drag", "Esc"],
-    ]
-      .map(([a, b]) => `<span>${a}</span><kbd>${b}</kbd>`)
-      .join("")}</div>`,
-  );
-}
+function showHelp() { editorSettings?.open("shortcuts"); }
 function showPerformance() {
   const presentation = playbackMetrics.snapshot(performance.now());
   const sorted = [...state.renderSamples].sort((a, b) => a - b),
@@ -3248,6 +3313,7 @@ function showCommandMenu(items, anchor) {
     )
     .join("");
   appLocalization?.applyMenu($("menu"));
+  refreshHotkeyHints(hotkeys, $("menu"));
   const r = anchor.getBoundingClientRect?.() || anchor;
   $("menu").hidden = false;
   const bounds = $("menu").getBoundingClientRect();
@@ -3314,6 +3380,7 @@ overlay.addEventListener(
         ["copy", "duplicate", "Copy", "Ctrl C", disabled],
         ["paste", "clipboard", "Paste", "Ctrl V"],
         ["duplicate", "duplicate", "Duplicate", "Ctrl D", disabled],
+        ["add-to-library", "plus", "Add to library", "", disabled],
         null,
         ["mirror", "flip", "Flip horizontal", "Shift H", disabled],
         ["mirror-vertical", "flip", "Flip vertical", "Shift V", disabled],
@@ -3384,12 +3451,25 @@ const actions = {
   menu: (e) =>
     showMenu(e?.closest?.("button") || document.querySelector(".brand")),
   open: openFile,
+  'new-window': () => desktop?.newWindow(),
   import: () => {
     $("file-input").value = "";
     $("file-input").click();
   },
   save: () => saveNative(),
   "save-as": () => saveNative({ saveAs: true }),
+  'check-updates': () => updateNotice?.check(),
+  'release-notes': () => releaseSplash.open(),
+  donate: () => desktop?.openDonate(),
+  'restart-update': async () => {
+    finishCurrentEdit();
+    await workspaceLayout?.flushPreferences();
+    await editorSettings?.flush();
+    await nativeFrameClipboard?.flush();
+    await desktop?.setDocumentState({ name: editor.name, dirty: editor.dirty, revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}` });
+    await desktop?.restartForUpdate();
+  },
+  'save-and-update': async () => { if (await saveNative()) await actions['restart-update'](); },
   "save-and-close": async () => {
     if (await saveNative()) {
       await workspaceLayout?.flushPreferences();
@@ -3487,25 +3567,16 @@ const actions = {
     editor.seek(Math.max(0, editor.totalTicks - 1));
   },
   "add-frame": () => {
-    if(editor.report._styk?.layerSheet){pause();return state.settings.timelineMode === "simple"?editor.sheetAppendFrame():editor.sheetInsertKey();}
-    pause();
-    if (state.settings.timelineMode === "simple")
-      timelineUI.action(
-        editor.frameDraft?.mode === "update" ? "update" : "add",
-      );
-    else editor.addFrame();
-  },
-  "duplicate-frame-after": () => {
     pause();finishCurrentEdit();
     if(editor.report._styk?.layerSheet) {
+      if(state.settings.timelineMode !== 'simple' && timelineUI.frameAddAtCell)
+        return timelineUI.addTrackKey();
       const ids=state.settings.timelineMode==='simple'?['scene','camera',...editor.report._styk.layers.order]:timelineUI.ids;
-      return editor.sheetDuplicateFrameAfter(ids);
+      const result=editor.sheetDuplicateFrameAfter(ids);
+      timelineUI.revealPlayhead();
+      return result;
     }
-    return editor.duplicateFrame();
-  },
-  "blank-frame": () => {
-    pause();finishCurrentEdit();
-    if(editor.report._styk?.layerSheet)return editor.sheetInsertKey(timelineUI.ids,editor.tick,{blank:true});
+    return editor.addFrame();
   },
   "delete-frame": () => {
     pause();
@@ -3667,23 +3738,31 @@ const actions = {
   copy: () => {
     if (document.activeElement?.closest("#timeline"))
       return timelineUI.copySelection();
-    return editor.copySelection();
+    return sharedClipboard.copy('figures', () => { finishCurrentEdit(); return editor.copySelection(); });
   },
   cut: () => {
     if (document.activeElement?.closest("#timeline"))
       return timelineUI.cutSelection();
-    else if (editor.branchSelected) return editor.cutSelection();
-    else if (rangeFrames()) {
-      editor.copySelection();
-      editor.deleteFiguresInFrames(rangeFrames());
-    } else editor.cutSelection();
+    return sharedClipboard.copy('figures', () => {
+      finishCurrentEdit();
+      if (editor.branchSelected) return editor.cutSelection();
+      if (rangeFrames()) {
+        const count = editor.copySelection();
+        if (count) { editor._selectionClipboard.offset = 0; editor.deleteFiguresInFrames(rangeFrames()); }
+        return count;
+      }
+      return editor.cutSelection();
+    });
   },
   paste: () => {
     if (document.activeElement?.closest("#timeline"))
       return timelineUI.pasteSelection();
-    else if (editor._selectionClipboard?.freshTypes?.size) return editor.pasteSelection();
-    else if (rangeFrames()) editor.pasteFiguresInFrames(rangeFrames());
-    else editor.pasteSelection();
+    return sharedClipboard.paste('figures', () => {
+      finishCurrentEdit();
+      if (editor._selectionClipboard?.freshTypes?.size) return editor.pasteSelection();
+      if (rangeFrames()) return editor.pasteFiguresInFrames(rangeFrames());
+      return editor.pasteSelection();
+    });
   },
   "select-all": () => {
     if (document.activeElement?.closest("#timeline")) timelineUI.selectAll?.();
@@ -3747,6 +3826,8 @@ const actions = {
   ),
   "scene-settings": () => selectTrack({ id: "scene", kind: "scene" }),
   settings: () => editorSettings?.open(),
+  privacy: () => privacyUI.open(),
+  website: () => desktop?.openServicePage('home'),
   "builder-static-handles": () =>
     editorSettings.commit({
       builderShowStaticHandles: !state.settings.builderShowStaticHandles,
@@ -3806,6 +3887,11 @@ const actions = {
 const polygonSafeActions = new Set([
   "menu",
   "settings",
+  "privacy",
+  "check-updates",
+  "release-notes",
+  "donate",
+  "website",
   "help",
   "about",
   "performance",
@@ -3841,6 +3927,7 @@ for (const [name, action] of Object.entries(actions)) {
         return false;
       }
     }
+    telemetry.action(name);
     return action(...args);
   };
 }
@@ -3935,7 +4022,7 @@ $("inspector").addEventListener(
       return;
     }
     if (target.id === 'node-is-ik') { editor.setNodeIK({enabled: target.checked}); return; }
-    if (target.id === 'node-ik-pinned') { editor.setNodeIK({pinned: target.checked}); return; }
+    if (target.id === 'node-ik-pinned') { telemetry.count('ik'); editor.setNodeIK({pinned: target.checked}); return; }
     if (target.id === 'node-ik-chain') { editor.setNodeIK({chainLength: target.valueAsNumber}); return; }
     if (target.id === 'node-ik-rotation') { editor.rotateIKTarget(target.valueAsNumber * Math.PI / 180); return; }
     if (target.id === 'node-ik-stretch') { editor.setNodeIK({allowStretch: target.checked}); return; }
@@ -4342,284 +4429,103 @@ function locateHovered(direction) {
     editMode: state.tool === "handle-edit" || state.handleEditHeld,
   });
 }
-document.addEventListener(
-  "keydown",
-  guarded((e) => {
-    state.builderShiftHeld = e.shiftKey;
-    if (e.code === "CapsLock") state.isolateHeld = true;
-    const builderCheckboxShortcut =
-      isBuilderContext(state.tool) &&
-      ["F9", "F10", "F12"].includes(e.key) &&
-      e.target.matches('input[type="checkbox"],input[type="radio"]');
-    if (
-      (e.target.closest("input,textarea,select,[contenteditable=true]") &&
-        !builderCheckboxShortcut) ||
-      document.querySelector("dialog[open]")
-    )
-      return;
-    if (e.defaultPrevented) return;
-    editablePreparation.cancel();
-    const mod = e.ctrlKey || e.metaKey,
-      k = e.key.toLowerCase();
-    if (
-      isBuilderContext(state.tool) &&
-      ["f9", "f10", "f12"].includes(k) &&
-      !mod &&
-      !e.altKey
-    ) {
-      e.preventDefault();
-      if (!e.repeat)
-        actions[
-          {
-            f9: "builder-canvas-color",
-            f10: "builder-static-handles",
-            f12: "builder-highlight",
-          }[k]
-        ]();
-      return;
+function hotkeyScopes(event) {
+  const scopes = [];
+  if (state.polygon) scopes.push('polygon');
+  if (event.target.closest?.('#viewport')) {
+    if (state.hoverHandle || state.hoverCameraHandle) scopes.push('hover');
+    scopes.push('canvas');
+  }
+  if (isBuilderContext(state.tool)) scopes.push('builder');
+  if (event.target.closest?.('.layer-timeline')) scopes.push('timeline');
+  if (state.settings.timelineMode === 'simple') scopes.push('simple');
+  return scopes;
+}
+function cancelKeyboardCommand() {
+  if (keyboardHandleGesture) {
+    if (keyboardHandleGesture.ownsDrag) editor.cancelDrag();
+    keyboardHandleGesture = null; heldArrows.clear();
+  }
+  hotkeys.releaseAll();
+  timelineUI?._cancelGesture?.();
+  cancelDrag();
+  if (state.tool === 'attach') setTool('select');
+  $('menu').hidden = true;
+}
+function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
+  editablePreparation.cancel();
+  if (id === 'cancel') return cancelKeyboardCommand();
+  if (id === 'handle-edit-hold') { state.handleEditHeld = true; requestRender(); return; }
+  if (id === 'isolate-hold') { state.isolateHeld = true; return; }
+  if (id === 'play-pan') {
+    state.space = true; state.spacePanned = false; viewport.classList.add('panning'); return;
+  }
+  if (id.startsWith('handle-')) return keyboardHandle({shiftKey:modifiers.shift}, 'arrow' + id.slice(7));
+  if (id.startsWith('move-')) {
+    const direction = id.slice(5), step = modifiers.shift ? 10 : 1;
+    return moveSelected(direction === 'left' ? -step : direction === 'right' ? step : 0,
+      direction === 'up' ? -step : direction === 'down' ? step : 0);
+  }
+  if (id === 'previous-figure' || id === 'next-figure') {
+    finishKeyboardHandle(); return cycleFigure(id === 'previous-figure' ? -1 : 1);
+  }
+  if (id.startsWith('tool-')) {
+    const tool = id.slice(5);
+    return setTool(tool === 'handle-edit' && state.tool === tool ? 'select' : tool);
+  }
+  if (id === 'segment-values') return showSegmentValues({hover: true});
+  if (id === 'previous-exposure' || id === 'next-exposure')
+    return timelineUI.selectFrame(timelineUI.selectedIndex + (id === 'previous-exposure' ? -1 : 1), {extend: modifiers.shift});
+  if (event.target.closest?.('.layer-timeline,.sheet-filmstrip') && runTimelineHotkey(timelineUI, id, {shiftKey:modifiers.shift})) return;
+  if (id === 'delete' && state.tool === 'rig' && editor.selectedJoint >= 0) return actions['delete-single-segment']();
+  return actions[id]?.();
+}
+function releaseKeyboardCommand(id, event) {
+  if (id === 'handle-edit-hold') { state.handleEditHeld = false; requestRender(); }
+  else if (id === 'isolate-hold') state.isolateHeld = false;
+  else if (id.startsWith('handle-')) {
+    heldArrows.delete('arrow' + id.slice(7));
+    if (!heldArrows.size) finishKeyboardHandle();
+  } else if (id === 'play-pan') {
+    const active = state.space;
+    state.space = false; viewport.classList.toggle('panning', state.tool === 'hand');
+    if (active && !event.cancelled && !state.spacePanned && !state.polygon && !document.querySelector('dialog[open]') && !isHotkeyInput(event.target)) {
+      play();
     }
-    if (
-      state.polygon &&
-      ((mod && !["z", "y", "o", "n", "s", ","].includes(k)) ||
-        (!mod &&
-          [
-            "delete",
-            "backspace",
-            "arrowleft",
-            "arrowright",
-            "arrowup",
-            "arrowdown",
-            "home",
-            "end",
-            "pageup",
-            "pagedown",
-            "f6",
-            "f8",
-            "f10",
-            "t",
-            "r",
-          ].includes(k)))
-    ) {
-      e.preventDefault();
-      return;
-    }
-    if (
-      !$("renderer-error").hidden &&
-      !(mod && ["s", "o", "n"].includes(k)) &&
-      !["tab", "escape"].includes(k)
-    ) {
-      e.preventDefault();
-      return;
-    }
-    if (
-      state.tool === "rig" &&
-      editor.selectedJoint >= 0 &&
-      (k === "delete" || k === "backspace")
-    ) {
-      e.preventDefault();
-      if (!e.repeat)
-        actions[
-          mod
-            ? "unsplit-segment"
-            : e.shiftKey
-              ? "delete-segment"
-              : "delete-single-segment"
-        ]();
-      return;
-    }
-    if (k === "r" && !e.shiftKey && !e.altKey) {
-      e.preventDefault();
-      if (mod) {
-        if (!e.repeat)
-          setTool(state.tool === "handle-edit" ? "select" : "handle-edit");
-      } else {
-        state.handleEditHeld = true;
-        requestRender();
-      }
-      return;
-    }
-    if (mod && k === 'enter') {
-      e.preventDefault();if(!e.repeat)actions['duplicate-frame-after']();return;
-    }
-    if (!mod && k === "a" && state.settings.timelineMode === "simple") {
-      e.preventDefault();
-      if (!e.repeat) actions["add-frame"]();
-      return;
-    }
-    if (!mod && k === " ") {
-      e.preventDefault();
-      if (!e.repeat) {
-        state.space = true;
-        state.spacePanned = false;
-        viewport.classList.add("panning");
-      }
-      return;
-    }
-    const stageFocused = Boolean(e.target.closest("#viewport"));
-    if (stageFocused && k === "i" && !mod && !e.altKey) {
-      e.preventDefault();
-      if (!e.repeat) showSegmentValues({ hover: true });
-      return;
-    }
-    if (
-      state.settings.timelineMode === "simple" &&
-      ["<", ">", ",", "."].includes(k) &&
-      !e.altKey
-    ) {
-      e.preventDefault();
-      timelineUI.selectFrame(
-        timelineUI.selectedIndex + (["<", ","].includes(k) ? -1 : 1),
-        e,
-      );
-      return;
-    }
-    if (
-      stageFocused &&
-      ["arrowleft", "arrowright", "arrowup", "arrowdown"].includes(k) &&
-      !e.altKey
-    ) {
-      e.preventDefault();
-      if (mod) {
-        finishKeyboardHandle();
-        if (k === "arrowleft" || k === "arrowright")
-          cycleFigure(k === "arrowleft" ? -1 : 1);
-      } else keyboardHandle(e, k);
-      return;
-    }
-    if (
-      stageFocused &&
-      k === "l" &&
-      (state.hoverHandle || state.hoverCameraHandle) &&
-      !mod &&
-      !e.altKey
-    ) {
-      e.preventDefault();
-      if (!e.repeat) locateHovered(e.shiftKey ? 1 : -1);
-      return;
-    }
-    if (state.polygon && k === "enter") {
-      e.preventDefault();
-      return finishPolygon();
-    }
-    if (
-      e.altKey &&
-      ["arrowleft", "arrowright", "arrowup", "arrowdown"].includes(k)
-    ) {
-      e.preventDefault();
-      const step = e.shiftKey ? 10 : 1;
-      return moveSelected(
-        k === "arrowleft" ? -step : k === "arrowright" ? step : 0,
-        k === "arrowup" ? -step : k === "arrowdown" ? step : 0,
-      );
-    }
-    let action;
-    if (mod) {
-      action = {
-        o: "open",
-        s: e.shiftKey ? "save-as" : "save",
-        ",": "settings",
-        h: "toggle-unselected-handles",
-        k: e.altKey ? "camera-reset" : "toggle-camera",
-        n: "new",
-        d: "duplicate",
-        c: "copy",
-        x: "cut",
-        v: "paste",
-        a: "select-all",
-        z: e.shiftKey ? "redo" : "undo",
-        y: "redo",
-      }[k];
-    } else {
-      action = {
-        t: "add-text",
-        arrowleft: "previous-frame",
-        arrowright: "next-frame",
-        home: "first-frame",
-        end: "last-frame",
-        f6: "add-frame",
-        f8: "camera-center",
-        f10: "camera-align-view",
-        f11: "camera-copy",
-        f12: "camera-paste",
-        delete: "delete",
-        backspace: "delete",
-        o: "toggle-onion",
-        j: "toggle-handles",
-        "?": "help",
-        "+": "zoom-in",
-        "=": "zoom-in",
-        "-": "zoom-out",
-      }[k];
-      if (k === "1" && e.shiftKey) action = "zoom-reset";
-      if ((k === "!" || e.code === "Digit1") && e.shiftKey)
-        action = "zoom-reset";
-      if ((k === "@" || e.code === "Digit2") && e.shiftKey)
-        action = "zoom-selection";
-      if (k === "h" && e.shiftKey) action = "mirror";
-      if (k === "v" && e.shiftKey) action = "mirror-vertical";
-      if (k === "escape") {
-        if (keyboardHandleGesture) {
-          if (keyboardHandleGesture.ownsDrag) editor.cancelDrag();
-          keyboardHandleGesture = null;
-          heldArrows.clear();
-        }
-        cancelDrag();
-        if (state.tool === "attach") setTool("select");
-        $("menu").hidden = true;
-      }
-      if (["v", "p", "h", "l", "c"].includes(k) && !e.shiftKey)
-        setTool(
-          {
-            v: "select",
-            p: "pose",
-            h: "hand",
-            l: "line",
-            c: "circle",
-          }[k],
-        );
-    }
-    if (action) {
-      e.preventDefault();
-      if (!e.repeat || action.includes("frame")) return actions[action]?.();
-    }
-  }),
-);
-window.addEventListener("blur", () => {
-  finishKeyboardHandle();
+    state.spacePanned = false;
+  }
+}
+const hotkeys = new HotkeyManager({run: guarded(runKeyboardCommand), release: guarded(releaseKeyboardCommand)});
+const polygonCommands = new Set(['undo','redo','open','new','save','save-as','settings','help','cancel','finish-polygon','play-pan',
+  'tool-select','tool-pose','tool-hand','tool-line','tool-circle','tool-polygon','zoom-in','zoom-out','zoom-reset','zoom-selection','toggle-onion','toggle-handles','isolate-hold']);
+document.addEventListener('keydown', guarded(event => {
+  state.builderShiftHeld = event.shiftKey;
+  const scopes = hotkeyScopes(event), command = hotkeys.resolve(event, scopes);
+  const builderCheckbox = command?.scope === 'builder' && command.id.startsWith('builder-') && event.target.matches?.('input[type=checkbox],input[type=radio]');
+  if (document.querySelector('dialog[open]') || (isHotkeyInput(event.target) && !builderCheckbox)) return;
+  hotkeys.keydown(event, scopes, command => {
+    if (state.polygon && !polygonCommands.has(command.id)) return false;
+    if (!$('renderer-error').hidden && !['save','save-as','open','new','cancel','settings','help'].includes(command.id)) return false;
+    return true;
+  });
+}));
+// Release at capture phase: controls and dialogs can stop bubbling after a held
+// key starts. Matching uses the pressed physical key, even if modifiers change.
+document.addEventListener('keyup', guarded(event => {
+  state.builderShiftHeld = event.shiftKey;
+  hotkeys.keyup(event);
+}), true);
+window.addEventListener('blur', () => {
+  hotkeys.releaseAll(); finishKeyboardHandle();
   if (state.drag) cancelDrag();
-  state.space = false;
-  state.handleEditHeld = false;
-  state.isolateHeld = false;
   state.builderShiftHeld = false;
-  state.spacePanned = false;
-  viewport.classList.toggle("panning", state.tool === "hand");
 });
-document.addEventListener(
-  "keyup",
-  guarded((e) => {
-    state.builderShiftHeld = e.shiftKey;
-    if (e.code === "CapsLock") state.isolateHeld = false;
-    if (e.key.startsWith("Arrow")) {
-      heldArrows.delete(e.key.toLowerCase());
-      if (!heldArrows.size) finishKeyboardHandle();
-    }
-    if (e.key.toLowerCase() === "r") {
-      state.handleEditHeld = false;
-      requestRender();
-      return;
-    }
-    if (e.code !== "Space" || !state.space) return;
-    e.preventDefault();
-    state.space = false;
-    viewport.classList.toggle("panning", state.tool === "hand");
-    if (!state.spacePanned && !state.polygon) {
-      if (state.settings.timelineMode === "simple") actions["add-frame"]();
-      else play();
-    }
-  }),
-);
+document.addEventListener('visibilitychange', () => { if (document.hidden) hotkeys.releaseAll(); });
+new MutationObserver(() => { if (document.querySelector('dialog[open]')) hotkeys.releaseAll(); })
+  .observe(document.body, {subtree:true, attributes:true, attributeFilter:['open']});
 editor.addEventListener("change", (e) => {
   const kind = e.detail?.kind;
+  if (kind === 'edit' && !e.detail?.live) { telemetry.count('edits'); telemetry.milestone('first_edit'); }
   if(['edit','history','document','preview','frame-draft','seek'].includes(kind))editablePreparation.cancel();
   const selectedTrack = ["seek", "history", "frame-draft"].includes(kind)
     ? timelineUI?.trackById?.get(state.selectedTrackId)
@@ -4905,6 +4811,7 @@ function showRecovery(record) {
       editor.dirty = true;
       fit();
       updateUI();
+      telemetry.count('recovery_restored');
       banner.remove();
     }
   });
@@ -4963,7 +4870,7 @@ window.styk = {
   }),
   ready: false,
 };
-let thumbnailRenderer, nativeFrameClipboard;
+let thumbnailRenderer, nativeFrameClipboard, sharedClipboard;
 let inbetweenDialog;
 async function changeFigureLayer(label, operation) {
   pause();
@@ -5128,7 +5035,10 @@ function mountTimeline() {
   const TimelineClass =
     state.settings.timelineMode === "simple" ? SimpleTimeline : Timeline;
   timelineUI = new TimelineClass($("timeline"), editor, {
+    onAddFrame: () => actions["add-frame"](),
+    hotkeys,
     runClipboardOperation,
+    sharedClipboard,
     confirmDiscardFrame: () =>
       new Promise((resolve) => {
         showDialog(
@@ -5213,6 +5123,7 @@ function mountTimeline() {
     .closest(".timeline-panel")
     .classList.toggle("simple-mode", state.settings.timelineMode === "simple");
   window.styk.timeline = timelineUI;
+  refreshHotkeyHints(hotkeys);
 }
 async function init() {
   if (desktop?.activateDocument)
@@ -5230,6 +5141,7 @@ async function init() {
       state.settings = next;
       try { if (previousMode !== next.timelineMode) mountTimeline(); }
       catch (error) { state.settings = previousSettings; throw error; }
+      if (patch.hotkeys) { hotkeys.setBindings(next.hotkeys); refreshHotkeyHints(hotkeys); }
       onionControls?.sync();
       state.handles = next.showHandles;
       state.loop = next.loopPlayback;
@@ -5243,9 +5155,13 @@ async function init() {
       ? (value) => desktop.setEditorSettings(value)
       : undefined,
     onResetWorkspace: () => workspaceLayout?.reset(),
+    onPrivacy: desktop?.getTelemetryState ? () => privacyUI.open() : undefined,
   });
   state.settings = editorSettings.value;
+  hotkeys.setBindings(state.settings.hotkeys);
+  window.styk.hotkeys = hotkeys;
   appLocalization.bindChrome();
+  refreshHotkeyHints(hotkeys);
   appLocalization.updatePlayback($("play-button"), state);
   window.styk.localization = appLocalization;
   state.handles = state.settings.showHandles;
@@ -5389,10 +5305,18 @@ async function init() {
     resources,
   });
   window.styk.assets = assetLibrary;
-  window.styk.library = new UserLibrary({editor, desktop, exporter:documentExporter, importer, pause, finishEdit:finishCurrentEdit, setTool});
-  actions['add-to-library'] = () => window.styk.library.run(() => window.styk.library.save());
+  window.styk.library = new UserLibrary({editor, desktop, exporter:documentExporter, importer, pause, finishEdit:finishCurrentEdit, setTool, hotkeys});
+  installLibraryDrop(viewport, {position: worldPoint, insert: (asset, point) => window.styk.library.insert(asset, point), onError: fail});
+  installLibraryDrag(window.styk.library.grid, viewport, {
+    getAsset: card => !window.styk.library.busy && window.styk.library.entries.find(item => item.path === card.dataset.libraryPath),
+    onStart: asset => window.styk.library.select(asset.path),
+    position: worldPoint, insert: (asset, point) => window.styk.library.insert(asset, point), onError: fail,
+  });
+  $('library-tab')?.addEventListener('click', () => telemetry.count('library'));
+  actions['add-to-library'] = () => { telemetry.count('library'); return window.styk.library.run(() => window.styk.library.save()); };
   window.styk.movieclips = installMovieclipUI({editor,actions,pause,finishEdit:finishCurrentEdit,
     getTimeline:()=>timelineUI,setTool,onError:fail,queueUI,exportClip:()=>exportPivot('stykmov')});
+  for (const [name, action] of Object.entries(actions)) if (name.startsWith('movieclip-')) actions[name] = (...args) => { telemetry.count('movieclip'); return action(...args); };
   editor.addEventListener('change',event=>{
     if(event.detail?.kind==='movieclip-scope' || event.detail?.movieclipScope) {
       mountTimeline(); state.inspectorContext=editor.object?'figure':'scene';state.inspectorTab='design';queueUI();
@@ -5407,6 +5331,8 @@ async function init() {
       onRestored: queueUI,
     });
   thumbnailRenderer = new ThumbnailRenderer(editor, { onError: fail });
+  sharedClipboard = new SharedClipboard(editor, desktop);
+  window.styk.clipboard = sharedClipboard;
   window.styk.thumbnails = thumbnailRenderer;
   mountTimeline();
   state.renderer = await createRenderer(canvas, rendererOptions());
@@ -5416,6 +5342,17 @@ async function init() {
   updateUI();
   status("Ready");
   window.styk.ready = true;
+  window.styk.telemetry = telemetry;
+  window.styk.privacyUI = privacyUI;
+  updateNotice = new UpdateUI(desktop, { onRestart: () => actions['restart-update']() });
+  void releaseSplash.open({ startup: true }).catch(console.warn);
+  void telemetryInit.then(info => {
+    telemetry.timing('startup_ms', performance.now());
+    if (info && !info.decided) {
+      const offer = () => { if (document.querySelector('dialog[open]')) return; document.removeEventListener('close', offer, true); void privacyUI.open({ firstRun: true }).catch(() => {}); };
+      document.addEventListener('close', offer, true); setTimeout(offer, 300);
+    }
+  });
   warmPlayback();
   offerRecovery();
   try {
@@ -5444,6 +5381,7 @@ function rendererOptions() {
         typeof message === "string" ? message : message.message || "Ready",
       );
       if (message.backend === "WebGPU device lost") {
+        telemetry.count('gpu_errors'); telemetry.error({ name: 'GPUError' }, 'gpu');
         pause();
         propertyControls?.cancel();
         cancelDrag();
@@ -5503,3 +5441,7 @@ installColorPickers((input, event) => {
     const field=document.getElementById(opacityId);if(field){field.value=paint.stops[0].opacity*100;field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));}
   }};
 });
+
+for (const type of ['pointerdown', 'focusin']) viewport.addEventListener(type, () => {
+  if (timelineUI) timelineUI.frameAddAtCell = false;
+}, {capture: true});

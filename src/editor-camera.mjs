@@ -1,3 +1,4 @@
+import {inheritedKeyEasing} from './keyframe-easing.mjs';
 /** Native camera commands and neighboring-pose alignment.
  * Camera-only edits snapshot four values per frame, never the figure arrays.
  */
@@ -104,7 +105,7 @@ function previewCameraKeys(editor, drag, entries) {
         if (existing) { key = {...existing}; keys[keys.indexOf(existing)] = key; }
         else {
           let keyId; do { keyId = `camera-preview-${serial++}`; } while (ids.has(keyId));
-          ids.add(keyId); key = {id: keyId, tick, value, interpolation: 'linear'}; keys.push(key);
+          ids.add(keyId); key = {id: keyId, tick, value, ...inheritedKeyEasing(keys, tick)}; keys.push(key);
         }
         byTick.set(tick, key);
       }

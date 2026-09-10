@@ -40,7 +40,12 @@ function translateElement(element, localization) {
   for (const [attribute, binding] of Object.entries(ATTRIBUTES)) {
     const key = element.getAttribute(binding);
     if (key) {
-      const text = localization.t(key);
+      let text = localization.t(key);
+      if (attribute === 'title' && element.dataset.hotkeyHint !== undefined) {
+        const base = text.replace(/\s*·.*$/, '');
+        element.dataset.hotkeyTitle = base;
+        text = base + (element.dataset.hotkeyHint ? ` · ${element.dataset.hotkeyHint}` : '');
+      }
       if (element.getAttribute(attribute) !== text) element.setAttribute(attribute, text);
     }
   }

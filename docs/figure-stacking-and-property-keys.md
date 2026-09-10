@@ -5,6 +5,12 @@ front within the same user layer. Equal values preserve the pose's native draw
 order. Z-index is an integer from −1,000,000 to 1,000,000, defaults to zero, and
 uses Constant interpolation: the order changes exactly at the next key.
 
+Segment and polygon Order controls also belong to the current timeline pose.
+Numeric edits, ordering buttons and branch ordering retain a combined drawing
+sequence for that figure instance. Editing another frame does not rewrite the
+shared figure definition or the order saved in earlier frames. Playback and
+native export preserve these internal orders.
+
 Blue diamonds indicate independent property animation. Filled diamonds mark a
 key at the current frame; outlines indicate animation between keys. Values that
 are only stored in pose keys have no inspector diamond or key-navigation controls.

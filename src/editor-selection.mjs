@@ -188,7 +188,7 @@ export const editorSelectionMethods = {
   },
 
   /** Order the actual selection; figure-only commands stay explicit for the
-   * figure inspector. Internal ordering uses the shared rig's native command. */
+   * figure inspector. Internal ordering follows the selected timeline pose. */
   orderSelection(direction, {frameIndices} = {}) {
     if (![1, -1, 'front', 'back'].includes(direction)) throw new Error('Choose a valid draw-order direction.');
     if (!this.selectedObjects.length) return false;

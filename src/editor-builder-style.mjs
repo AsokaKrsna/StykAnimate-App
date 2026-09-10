@@ -1,6 +1,11 @@
 /** Figure-internal order and polygon opacity. History stores small native fields,
  * never embedded assets or animation poses. Valid native ordering is a combined
  * sequence; tied authored records retain the renderer's deterministic ordering. */
+import {resolveInstanceFigure, polygonIdentity} from './animation-style.mjs';
+import {beginBranchStyleAnimation, previewBranchStyleValues, commitBranchStyleAnimation, cancelBranchStyleAnimation} from './editor-branch-style.mjs';
+
+const animatedOrder = editor => Boolean(editor.propertyChannels || editor.report._styk?.layerSheet);
+const orderFigure = editor => animatedOrder(editor) ? resolveInstanceFigure(editor.figure,editor.object) : editor.figure;
 
 const clone = value => value === undefined ? undefined : structuredClone(value);
 const orderValue = value => {
@@ -81,12 +86,31 @@ export function builderStyleProperty(editor,key,{branch=false}={}) {
     target={kind:'polygon',index:Number(match[1])};property=match[2];
   }
   if(!editor.figure)return null;
-  let selected;try{selected=resolveTarget(editor.figure,target,editor.selectedJoint);}catch{return null;}
-  const entries=builderDrawables(editor.figure),targets=property==='z_order'?builderStyleTargets(editor.figure,target,{branch}):[selected];
+  const figure=property==='z_order'?orderFigure(editor):editor.figure;
+  let selected;try{selected=resolveTarget(figure,target,editor.selectedJoint);}catch{return null;}
+  const entries=builderDrawables(figure),targets=property==='z_order'?builderStyleTargets(figure,target,{branch}):[selected];
   const paths=property==='z_order'?orderPaths(entries):[[...itemPath(selected),'alpha_raw'],[...itemPath(selected),'color_alpha']];
-  return {target,property,targets,entries,paths,initial:capture(editor.figure,paths),
+  return {target,property,targets,entries,paths,initial:capture(figure,paths),animated:property==='z_order'&&animatedOrder(editor),
     value:property==='z_order'?entries.findIndex(entry=>sameEntry(entry,selected))+1:(selected.item.alpha_raw!==undefined?1-selected.item.alpha_raw/255:selected.item.color_alpha??1)*100,
     label:property==='z_order'?`${branch&&selected.kind==='segment'?'Branch':selected.kind==='segment'?'Segment':'Polygon'} draw order`:'Polygon opacity'};
+}
+export function beginBuilderOrderAnimation(editor,binding) {
+  const uid=editor.object.unique_id,figureTypeId=editor.figure.figure_type_id;
+  return beginBranchStyleAnimation(editor,{uid,property:'zIndex',entries:binding.entries.map(entry=>({
+    target:{kind:entry.kind,uid,figureTypeId,...(entry.kind==='segment'?{handleId:entry.item.segment_id}:{polygonId:polygonIdentity(entry.item,entry.index)})},
+    initialValue:entry.z,
+  }))});
+}
+export function previewBuilderOrderAnimation(editor,binding,value) {
+  orderValue(value);
+  if(!Number.isInteger(value)||value<1||value>binding.entries.length)throw new Error(`Draw order must be a whole position from 1 to ${binding.entries.length}.`);
+  const next=reorderBuilderDrawables(binding.entries,binding.targets,{delta:value-binding.value});
+  previewBuilderOrderSequence(editor,binding.entries,next);
+}
+function previewBuilderOrderSequence(editor,original,next) {
+  const unchanged=original.every((entry,index)=>sameEntry(entry,next[index]));
+  const positions=new Map(next.map((entry,index)=>[entryKey(entry),index+1]));
+  previewBranchStyleValues(editor,original.map(entry=>unchanged?entry.z:positions.get(entryKey(entry))));
 }
 export function previewBuilderStyleProperty(figure,binding,value) {
   orderValue(value);
@@ -119,8 +143,14 @@ function command(editor,label,paths,mutate){
 export const editorBuilderStyleMethods={
   moveBuilderOrder(target,direction,{branch=false}={}){
     if(!['front','back','up','down'].includes(direction))throw new Error('Choose a valid draw-order direction.');
-    const entries=builderDrawables(this.figure),selected=builderStyleTargets(this.figure,target,{branch,selectedJoint:this.selectedJoint});
+    const figure=orderFigure(this),entries=builderDrawables(figure),selected=builderStyleTargets(figure,target,{branch,selectedJoint:this.selectedJoint});
     const next=reorderBuilderDrawables(entries,selected,{direction});
+    if(animatedOrder(this)) {
+      if(entries.every((entry,index)=>sameEntry(entry,next[index])))return false;
+      beginBuilderOrderAnimation(this,{entries});
+      try{previewBuilderOrderSequence(this,entries,next);return commitBranchStyleAnimation(this);}
+      catch(error){cancelBranchStyleAnimation(this);throw error;}
+    }
     return command(this,`${direction==='front'||direction==='up'?'Raise':'Lower'} ${branch?'branch':target?.kind??'segment'}`,
       orderPaths(entries),()=>publishOrder(this.figure,entries,next));
   },
@@ -130,6 +160,11 @@ export const editorBuilderStyleMethods={
     // Resolve arbitrary segment targets without changing the editor's selection.
     const facade=Object.create(this);Object.defineProperty(facade,'selectedJoint',{value:selected.index});
     const binding=builderStyleProperty(facade,key,{branch});orderValue(value);
+    if(binding.animated){
+      beginBuilderOrderAnimation(this,binding);
+      try{previewBuilderOrderAnimation(this,binding,value);return commitBranchStyleAnimation(this);}
+      catch(error){cancelBranchStyleAnimation(this);throw error;}
+    }
     return command(this,binding.label,binding.paths,()=>previewBuilderStyleProperty(this.figure,binding,value));
   },
   setPolygonOpacity(index,opacity){

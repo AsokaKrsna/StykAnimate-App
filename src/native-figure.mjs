@@ -16,6 +16,7 @@ export function nativeFigureDocument(report, {figureTypeId, figureUid, figureUid
     const figures = report.figure_types.filter(f => sources.some(o => o.figure_type_id === f.figure_type_id));
     const objects = sources.map((source, i) => {
       const object = {...source, object_slot: i};
+      delete object._stykMovieclipPart;
       delete object.runtime_segments; delete object._movieclipSample;
       if (source.join && slots.has(source.join.target_object_slot)) object.join = {...source.join, target_object_slot: slots.get(source.join.target_object_slot)};
       else {
@@ -39,6 +40,7 @@ export function nativeFigureDocument(report, {figureTypeId, figureUid, figureUid
   const figure = report.figure_types.find(figure => figure.figure_type_id === source?.figure_type_id);
   if (!source || !figure) throw new Error('Select a figure or movieclip to export.');
   const object = {...source, object_slot: 0, join: null};
+  delete object._stykMovieclipPart;
   if (source._stykIK || source.join) {
     const geometry = buildGeometry(report, frame).objects.get(source.object_slot);
     object.root_x = geometry.root.x; object.root_y = geometry.root.y;

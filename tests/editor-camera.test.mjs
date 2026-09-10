@@ -204,7 +204,7 @@ test('authored camera multi-property preview commits once and cancel retains ori
 
 test('authored camera current-point editing retains an inbetween tick instead of changing the native key start', () => {
   const {editor} = fixture(); editor.report.keyframes[0].duration_raw = 10; editor._invalidate({timing: true});
-  editor.addAnimationKeys([{target: {kind: 'camera'}, property: 'x', tick: 0, value: 0}, {target: {kind: 'camera'}, property: 'x', tick: 10, value: 100}]);
+  editor.addAnimationKeys([{target: {kind: 'camera'}, property: 'x', tick: 0, value: 0, interpolation: 'linear'}, {target: {kind: 'camera'}, property: 'x', tick: 10, value: 100}]);
   editor.seek(5); editor.beginCameraDrag(); assert.equal(editor.tick, 5);
   editor.updateCameraDrag({x: 25}); assert.equal(editor.evaluatedFrame.camera.x, 75);
   editor.commitDrag(); assert.equal(editor.tick, 5);

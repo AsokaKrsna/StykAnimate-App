@@ -126,7 +126,7 @@ export const editorFrameMethods = {
     const retained = new Set();
     const visited = new Set(), keep = channel => references(channel, retained, this._generatedFrameSources, visited);
     for (const channel of this.animationChannels) keep(channel);
-    const keepSheet=sheet=>{for(const track of Object.values(sheet?.tracks??{}))keep({property:'pose',keys:track.keys});for(const channel of sheet?.legacyAnimation?.channels??[])keep(channel);};
+    const keepSheet=sheet=>{for(const track of Object.values(sheet?.tracks??{})){keep({property:'pose',keys:track.keys});for(const key of track.keys)for(const patch of key.movieclipPatches??[])retained.add(patch.frameId);}for(const channel of sheet?.legacyAnimation?.channels??[])keep(channel);};
     keepSheet(this.report._styk.layerSheet);
     for (const channel of this.report._styk.simpleFrameDraft?.animationBaseline?.channels ?? []) keep(channel);
     // The usual retime still references every captured source. History cannot

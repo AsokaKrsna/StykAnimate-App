@@ -4,6 +4,8 @@ import {layerIdForUid} from './layers.mjs';
 import {poseSourceFrame, samplePoseTrack} from './animation-pose.mjs';
 import {validateKeyEasing} from './keyframe-easing.mjs';
 import {snapshotPoseFrame} from './pose-snapshot.mjs';
+import {continuations,setContinuations} from './movieclip-presence.mjs';
+import {frameOrder,setOrder,normalizeFrame} from './pivot/structure.mjs';
 
 const cache=new WeakMap();
 export const MAX_SHEET_TICKS=10000000;
@@ -31,6 +33,13 @@ export function validateLayerSheet(report){
       if(++count>1000000||!key||typeof key.id!=='string'||!key.id||ids.has(key.id)||!Number.isInteger(key.tick)||key.tick<0||key.tick<=previous||key.tick>=track.end)
         throw new Error('Layer keys need unique identities and distinct ordered frame positions.');
       ids.add(key.id);previous=key.tick;validateKeyEasing(key);
+      if(key.patchOnly!==undefined&&key.patchOnly!==true)throw new Error('Invalid movieclip frame boundary.');
+      if(key.movieclipPatches!==undefined){
+        if(!Array.isArray(key.movieclipPatches)||key.movieclipPatches.length>65535)throw new Error('Invalid movieclip frame replacements.');
+        const replaced=new Set();
+        for(const patch of key.movieclipPatches){if(!patch||!Number.isInteger(patch.uid)||patch.uid<0||replaced.has(patch.uid)||!poseSourceFrame(report,patch.frameId)||
+          patch.replacementUid!==undefined&&!poseSourceFrame(report,patch.frameId).objects.some(object=>object.unique_id===patch.replacementUid))throw new Error('Invalid movieclip frame replacement.');replaced.add(patch.uid);}
+      }
       if(/^cell-\d+$/.test(key.id))largest=Math.max(largest,Number(key.id.slice(5)));
       if(key.sourceTick!==undefined){if(!Number.isFinite(key.sourceTick)||key.sourceTick<0||key.sourceTick>MAX_SHEET_TICKS)throw new Error('Invalid imported layer timing.');}
       else if(key.value?.frameId!==null&&!poseSourceFrame(report,key.value?.frameId))throw new Error('Layer key references a missing pose.');
@@ -46,15 +55,37 @@ export function legacySheetReport(report){
 }
 export function invalidateLayerSheet(report){cache.delete(report);}
 function ordered(frame){return (frame.object_draw_order??frame.objects.map((_,i)=>i)).map(i=>frame.objects[i]).filter(Boolean);}
-export function sampleLayerSheet(report,tick,{sampleLegacy,sampleNative}){
+/** A frame replacement changes membership without inserting a new control point
+ * into any figure's outer motion curve. All ordinary posing still uses poses. */
+function replaceMovieclipFrame(report,base,patch,resolveGeometry,replacement=poseSourceFrame(report,patch.frameId)){
+  const removed=patch.uid;
+  const frame={...base,objects:base.objects.filter(object=>object.unique_id!==removed).map(object=>({...object}))};
+  let geometry;
+  for(const object of frame.objects)if(object.join){
+    const parent=base.objects[object.join.target_object_slot]?.unique_id;
+    if(parent===removed&&patch.replacementUid!==undefined)object.join={...object.join,target_unique_id:patch.replacementUid};
+    else if(parent===removed){geometry??=resolveGeometry(report,base);const root=geometry.objects.get(object.object_slot)?.root;if(root){object.root_x=root.x;object.root_y=root.y;}object.join=null;}
+    else object.join={...object.join,target_unique_id:parent};
+  }
+  const added=new Set(replacement.objects.map(object=>object.unique_id));
+  frame.objects=frame.objects.filter(object=>!added.has(object.unique_id));
+  frame.objects.push(...replacement.objects.map(object=>({...object,...(object.join?{join:{...object.join,target_unique_id:replacement.objects[object.join.target_object_slot]?.unique_id}}:{})})));
+  const previous=frameOrder(base),anchor=previous.indexOf(removed),order=previous.filter(uid=>uid!==removed&&!added.has(uid));
+  order.splice(anchor<0?order.length:Math.min(anchor,order.length),0,...frameOrder(replacement));
+  const slots=new Map(frame.objects.map((object,slot)=>[object.unique_id,slot]));
+  for(const object of frame.objects)if(object.join)object.join.target_object_slot=slots.get(object.join.target_unique_id);
+  setOrder(frame,order);normalizeFrame(frame);
+  return setContinuations(frame,[...continuations(base).filter(step=>step.uid!==removed&&!continuations(replacement).some(value=>value.uid===step.uid)),...continuations(replacement)]);
+}
+export function sampleLayerSheet(report,tick,{sampleLegacy,sampleNative,resolveGeometry,skipMovieclipPatches=false}){
   const state=report._styk.layerSheet;
   let cached=cache.get(report);
-  if(!cached||cached.state!==state){cached={state,legacy:legacySheetReport(report),samples:new Map(),channels:new Map(),endpoints:new WeakMap(),imported:new WeakMap()};cache.set(report,cached);}
+  if(!cached||cached.state!==state){cached={state,legacy:legacySheetReport(report),samples:new Map(),channels:new Map(),endpoints:new WeakMap(),imported:new WeakMap(),baseTracks:new WeakMap(),patchChannels:new WeakMap()};cache.set(report,cached);}
   // All imported layers at the same time share one complete scene evaluation.
   cached.samples.clear();
   const sourceAt=time=>{let value=cached.samples.get(time);if(!value){value=sampleLegacy(cached.legacy,time);cached.samples.set(time,value);}return value;};
-  const sample=(id)=>{
-    const track=state.tracks[id],{key,next,index}=sheetKeyAt(track,tick);
+  const baseSample=(id,track)=>{
+    const {key,next,index}=sheetKeyAt(track,tick);
     if(track&&tick>=track.end&&!['scene','camera'].includes(id))return null;
     if(!key)return null;
     if(key.value?.frameId===null)return null;
@@ -80,6 +111,24 @@ export function sampleLayerSheet(report,tick,{sampleLegacy,sampleNative}){
     if(!channel){channel={target:['scene','camera'].includes(id)?{kind:id}:{kind:'layer',id},property:'pose',keys:track.keys};cached.channels.set(track,channel);}
     return samplePoseTrack(report,channel,tick,{sampleNative:(source,index,t)=>sampleNative({...source,version:5},index,t)});
   };
+  const sample=id=>{
+    const track=state.tracks[id];if(!track)return null;
+    let base=cached.baseTracks.get(track);
+    if(!base){base=track.keys.some(key=>key.patchOnly)?{...track,keys:track.keys.filter(key=>!key.patchOnly)}:track;cached.baseTracks.set(track,base);}
+    let frame=baseSample(id,base);
+    const {key,next}=sheetKeyAt(track,tick);
+    if(!skipMovieclipPatches&&tick<track.end)for(const patch of key?.movieclipPatches??[]){
+      let replacement;
+      if(next?.movieclipPatches?.some(value=>value.uid===patch.uid)&&!['constant','hold'].includes(key.interpolation)){
+        let channels=cached.patchChannels.get(track);if(!channels){channels=new Map();cached.patchChannels.set(track,channels);}
+        let channel=channels.get(patch.uid);
+        if(!channel){channel={target:{kind:'layer',id},property:'pose',keys:track.keys.map(entry=>({...entry,value:{frameId:entry.movieclipPatches?.find(value=>value.uid===patch.uid)?.frameId??null}}))};channels.set(patch.uid,channel);}
+        replacement=samplePoseTrack(report,channel,tick,{sampleNative:(source,index,t)=>sampleNative({...source,version:5},index,t)});
+      }
+      frame=replaceMovieclipFrame(report,frame??{...report.keyframes[0],objects:[],object_draw_order:[],object_draw_order_unique_ids:[]},patch,resolveGeometry,replacement);
+    }
+    return frame;
+  };
   const template=report.keyframes[0],scene=sample('scene')??{background_id:0,background_id_b:0,background_mix:0},camera=sample('camera'),records=[];
   const frames=new Map(report._styk.layers.order.map(id=>[id,sample(id)]));
   // Imported layers commonly share one native pose. Retain its objects and
@@ -97,6 +146,7 @@ export function sampleLayerSheet(report,tick,{sampleLegacy,sampleNative}){
     return {...object,object_slot:slot,join:joined?{...object.join,target_object_slot:parentSlot,target_unique_id:parent}:null};
   });
   const result={...template,objects,object_count:objects.length,object_draw_order:objects.map((_,i)=>i),object_draw_order_unique_ids:objects.map(o=>o.unique_id),camera:camera?.camera??{is_default:true,x:0,y:0,scale:1,angle_rad:0}};
+  setContinuations(result,[...frames].flatMap(([id,frame])=>continuations(frame).filter(step=>layerIdForUid(report,step.uid)===id)));
   for(const field of ['background_id','background_id_b','background_mix','background_color','_stykBackgroundColor']){
     if(field in scene)result[field]=scene[field];else delete result[field];
   }

@@ -15,9 +15,11 @@ import {solveJoinedIK} from '../ik-joined.mjs';
 import {isMovieclip, sampleMovieclipObjects,movieclipTypes,movieclipSourceDocument} from '../movieclips.mjs';
 import {buildMovieclipGeometry} from '../movieclip-geometry.mjs';
 import {sampleLayerSheet,invalidateLayerSheet} from '../layer-sheet.mjs';
+import {presenceIndex,presenceElapsed,invalidateMovieclipPresence,cachedPresenceIndex,usesPresence} from '../movieclip-presence.mjs';
 import {sticknodesShape,sticknodesCurve,sticknodesDrawables,sticknodesSpriteAsset} from '../sticknodes/geometry.mjs';
 const authoredTimelines = new WeakMap();
 export function invalidateEvaluationCaches(report) {
+  invalidateMovieclipPresence(report);
   invalidateLayerSheet(report);
   authoredTimelines.delete(report);
   invalidatePoseCache(report);
@@ -399,15 +401,35 @@ export function evaluatedNativeFrame(report, index, t = 0, tweenCache, requested
 }
 /** Every editor, worker and export samples the same authored scene. Native
  * documents take the original evaluator path without channel indexing work. */
-export function evaluatedFrame(report, index, t = 0, absoluteTick, {tweenCache,skipMovieclips=false} = {}) {
+export function movieclipPresenceIndex(report){
+  const cached=cachedPresenceIndex(report);if(cached)return cached;
+  const rows=timeline(report),sheet=report._styk?.layerSheet;
+  const boundaries=sheet?[0,sheet.duration,...Object.values(sheet.tracks).flatMap(track=>[track.end,...track.keys.map(key=>key.tick)])]
+    :[0,...rows.flatMap(row=>[row.start,row.start+row.count]),...(report._styk?.animation?.channels??[]).flatMap(channel=>channel.keys.map(key=>key.tick))];
+  return presenceIndex(report,boundaries,time=>{
+    let low=0,high=rows.length-1;while(low<high){const mid=(low+high+1)>>>1;if(rows[mid].start<=time)low=mid;else high=mid-1;}
+    const row=rows[low];return evaluatedFrame(report,low,row?.count?(time-row.start)/row.count:0,time,{skipMovieclips:true});
+  });
+}
+function sampleClips(report,frame,tick,retainedSamples=false){
+  let clock;
+  const elapsed=(uid,time)=>{
+    if(!clock){
+      clock=movieclipPresenceIndex(report);
+    }
+    return presenceElapsed(clock,uid,time);
+  };
+  return sampleMovieclipObjects(report,frame,tick,buildGeometry,elapsed,retainedSamples);
+}
+export function evaluatedFrame(report, index, t = 0, absoluteTick, {tweenCache,skipMovieclips=false,skipMovieclipPatches=false} = {}) {
   if(report._styk?.layerSheet){
     const row=timeline(report)[index],tick=absoluteTick??((row?.start??0)+t*(row?.count??0));
-    let frame=sampleLayerSheet(report,tick,{sampleNative:evaluatedNativeFrame,sampleLegacy:(source,time)=>{
+    let frame=sampleLayerSheet(report,tick,{resolveGeometry:buildGeometry,skipMovieclipPatches,sampleNative:evaluatedNativeFrame,sampleLegacy:(source,time)=>{
       let rows=authoredTimelines.get(source);if(!rows){rows=timeline(source);authoredTimelines.set(source,rows);}
       let low=0,high=rows.length-1;while(low<high){const mid=(low+high+1)>>>1;if(rows[mid].start<=time)low=mid;else high=mid-1;}
       const current=rows[low];return evaluatedFrame(source,low,current?.count?(time-current.start)/current.count:0,time,{skipMovieclips:true});
     }});
-    if(!skipMovieclips&&movieclipTypes(report).size)frame=sampleMovieclipObjects(report,frame,tick,buildGeometry);
+    if(!skipMovieclips&&movieclipTypes(report).size)frame=sampleClips(report,frame,tick);
     return applyLayerOrder(report,frame);
   }
   let frame = evaluatedNativeFrame(report, index, t, tweenCache);
@@ -419,7 +441,12 @@ export function evaluatedFrame(report, index, t = 0, absoluteTick, {tweenCache,s
       const finish=b?._styk?.movieclipSourceTick??start,sourceTick=start+(finish-start)*Math.max(0,Math.min(1,t));
       let rows=authoredTimelines.get(source);if(!rows){rows=timeline(source);authoredTimelines.set(source,rows);}
       let low=0,high=rows.length-1;while(low<high){const mid=Math.ceil((low+high)/2);if(rows[mid].start<=sourceTick)low=mid;else high=mid-1;}
-      const row=rows[low];frame={...evaluatedFrame(source,low,row.count?(sourceTick-row.start)/row.count:0,sourceTick),duration_raw:a.duration_raw,_styk:a._styk};
+      const row=rows[low];frame={...evaluatedFrame(source,low,row.count?(sourceTick-row.start)/row.count:0,sourceTick,{skipMovieclips}),duration_raw:a.duration_raw,_styk:a._styk};
+      // Captured local poses carry the phase at the crop's beginning. Retained
+      // source evaluation supplies exact curves; local authoring keeps its own
+      // clock origin when those source spans are later materialized or edited.
+      const settings=new Map(a.objects.filter(usesPresence).map(object=>[object.unique_id,object._stykMovieclip]));
+      if(settings.size)frame={...frame,objects:frame.objects.map(object=>settings.has(object.unique_id)?{...object,_stykMovieclip:settings.get(object.unique_id)}:object)};
     }
   }
   if (report._styk?.animation?.channels?.length) {
@@ -433,7 +460,7 @@ export function evaluatedFrame(report, index, t = 0, absoluteTick, {tweenCache,s
   if(!skipMovieclips&&movieclipTypes(report).size){
     let entries=authoredTimelines.get(report);if(absoluteTick===undefined&&!entries){entries=timeline(report);authoredTimelines.set(report,entries);}
     const row=entries?.[index];
-    frame = sampleMovieclipObjects(report, frame, absoluteTick ?? ((row?.start ?? 0) + t * (row?.count ?? 0)),buildGeometry);
+    frame = sampleClips(report, frame, absoluteTick ?? ((row?.start ?? 0) + t * (row?.count ?? 0)),Boolean(source));
   }
   return applyLayerOrder(report, frame);
 }

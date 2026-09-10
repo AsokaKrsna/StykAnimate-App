@@ -69,12 +69,12 @@ test('editing a sampled pose or tween endpoint rebuilds only changed objects and
   parity(editor, cache, settings);
 });
 
-test('shared-definition edits invalidate reused ghost artwork and history restores exact rendering', () => {
+test('internal order edits preserve unrelated ghost artwork and history restores exact rendering', () => {
   const {editor, cache, settings} = fixture();
   const before = cache.get(editor, settings);
   editor.moveBuilderOrder({kind: 'segment', index: 0}, 'front');
   const after = cache.get(editor, settings);
-  assert.notEqual(after[0].geometry.orderedObjects[2], before[0].geometry.orderedObjects[2]);
+  assert.equal(after[0].geometry.orderedObjects[2], before[0].geometry.orderedObjects[2]);
   parity(editor, cache, settings);
   editor.undo(); parity(editor, cache, settings);
   assert.deepEqual(cache.get(editor, settings).map(s => s.geometry.drawables), before.map(s => s.geometry.drawables));

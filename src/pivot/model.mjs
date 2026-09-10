@@ -1,6 +1,7 @@
 import {validateSticknodesShape,validateSticknodesObject} from '../sticknodes/validation.mjs';
 import {normalizePaint} from '../paint.mjs';
 import {validatePlayback} from '../movieclips.mjs';
+import {validateContinuations,continuations} from '../movieclip-presence.mjs';
 import {validateIK} from '../ik.mjs';
 import { timeline } from "./geometry.mjs";
 import { inverseCameraScale } from "./background.mjs";
@@ -207,7 +208,10 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
     typeHandles.set(fig.figure_type_id, new Set([0, ...parents.keys()]));
     if(fig._styk?.animationOrigin!==undefined)yield* validateOriginSupportSteps(fig,fig._styk.animationOrigin,{sliceMs});
   }
+  const continuationTypes=new Set([...types].filter(([,figure])=>figure._styk?.movieclip).map(([id])=>id));
   for (const frame of report.keyframes) {
+    validateContinuations(frame,continuationTypes);
+    for(const step of continuations(frame))validatePlayback(step.playback);
     if (
       !frame ||
       !Array.isArray(frame.objects) ||

@@ -21,6 +21,7 @@ export function createNativeStyleTable(report) {
     if (Number.isFinite(style.outlineOpacity)) {const alpha = byte(style.outlineOpacity); if (alpha !== Number(figure.segment_decode?.global_style?.u30 ?? 0)) signature.push(`o:${alpha}`);}
     for (const id of Object.keys(style.segments ?? {}).sort((a,b) => Number(a)-Number(b))) {
       const segment = indices.get(Number(id)), override = style.segments[id]; if (!segment || !override) continue;
+      if (Number.isFinite(override.zIndex)) signature.push(`z:${id}:${override.zIndex}`);
       if (override.paint) signature.push(`paint:${id}:${JSON.stringify(override)}`);
       if (Number.isFinite(override.color) && override.color !== styleColor(segment.color_rgb)) signature.push(`c:${id}:${override.color}`);
       if (Number.isFinite(override.thickness) && override.thickness !== segment.thickness) signature.push(`w:${id}:${override.thickness}`);

@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 
-const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const appRoot = process.env.STYK_PACKAGE_SOURCE_ROOT || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const manifestDirectory = process.env.STYK_PACKAGE_MANIFEST_DIR || path.join(appRoot, 'artifacts');
 const platformResources = process.platform === 'win32' ? ['win-unpacked', 'resources']
   : process.platform === 'darwin' ? [process.arch === 'arm64' ? 'mac-arm64' : 'mac', 'StykAnimate.app', 'Contents', 'Resources']
   : [process.arch === 'arm64' ? 'linux-arm64-unpacked' : 'linux-unpacked', 'resources'];
@@ -21,7 +22,7 @@ if (!snapshot) {
   const sourceMetadata = JSON.parse(await readFile(path.join(appRoot, 'package.json'), 'utf8'));
   if (sourceMetadata.version !== version) throw new Error(`Packaged version ${version} differs from source ${sourceMetadata.version}; run npm run pack before synchronizing.`);
 }
-const files = ['index.html', 'mark.svg'];
+const files = ['index.html', 'mark.svg', 'symbol.svg'];
 async function walk(relative) {
   let entries;
   try { entries = await readdir(path.join(snapshot ? webRoot : appRoot, relative), { withFileTypes: true }); }
@@ -67,7 +68,7 @@ if (!snapshot) {
   for (const [relative, sourcePath] of [
     ['backend/server.py', path.join(appRoot, 'backend', 'server.py')],
     ...['fast_decode.py','import_wire.py','native_scan.py','native_format.py'].map(filename=>[`backend/${filename}`,path.join(appRoot,'backend',filename)]),
-    ['codec_bridge.py', path.join(appRoot, '..', 'StykAnimate', 'tools', 'codec_bridge.py')],
+    ['codec_bridge.py', path.join(appRoot, 'codecs', 'codec_bridge.py')],
     ['sidecar/build-info.json', path.join(appRoot, 'build', 'sidecar', 'build-info.json')],
     [`sidecar/styk-codec/${sidecarBinary}`, path.join(appRoot, 'build', 'sidecar', 'styk-codec', sidecarBinary)],
   ]) {
@@ -92,7 +93,7 @@ if (!snapshot) {
     manifest.push({path:relative,sha256:hash(packaged),bytes:packaged.length});
   }
 }
-await mkdir(path.join(appRoot, 'artifacts'), { recursive: true });
+await mkdir(manifestDirectory, { recursive: true });
 manifest.push({ path: 'app.asar/package.json', sha256: hash(packagedMetadata), bytes: packagedMetadata.length });
-await writeFile(path.join(appRoot, 'artifacts', snapshot ? `package-baseline-${version}.json` : 'package-manifest.json'), JSON.stringify({ version, snapshot, verifiedAt: new Date().toISOString(), synchronized, files: manifest }, null, 2));
+await writeFile(path.join(manifestDirectory, snapshot ? `package-baseline-${version}.json` : 'package-manifest.json'), JSON.stringify({ version, snapshot, verifiedAt: new Date().toISOString(), synchronized, files: manifest }, null, 2));
 console.log(snapshot ? `${files.length} web assets and ${nativeFiles.length} native modules hashed for the ${version} baseline.` : `Version ${version}: ${files.length} web assets and ${nativeFiles.length} native modules match source; ${synchronized} web files synchronized.`);

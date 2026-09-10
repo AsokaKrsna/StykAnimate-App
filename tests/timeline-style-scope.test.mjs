@@ -47,8 +47,8 @@ test('expanded mixed-rig scopes are separate rows without duplicate base placeho
   assert.deepEqual(segments.map(row=>row.id),['segment:7:1@1','segment:7:1@2']);
   assert.deepEqual(segments[0].keys.map(key=>key.tick),[1]);
   assert.deepEqual(segments[1].keys.map(key=>key.tick),[6,7]);
-  assert.equal(projection.tracks.filter(row=>row.parentId==='segment:7:1@1').length,4);
-  assert.equal(projection.tracks.filter(row=>row.parentId==='segment:7:1@2').length,6);
+  assert.equal(projection.tracks.filter(row=>row.parentId==='segment:7:1@1').length,5);
+  assert.equal(projection.tracks.filter(row=>row.parentId==='segment:7:1@2').length,7);
   assert.equal(projection.tracks.filter(row=>row.kind==='segment'&&row.handleId===2).length,1,'Unkeyed base handles retain one row');
   assert.equal(new Set(projection.tracks.map(row=>row.id)).size,projection.tracks.length);
   const global=channel(targetGlobal,'opacity',3,'global');

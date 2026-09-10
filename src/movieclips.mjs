@@ -54,6 +54,7 @@ export function normalizeLegacyMovieclips(report,rows,total){
   for(const [uid,instances] of objects){
     const owner=poses.get(uid),keys=(owner?.keys??[]).flatMap(key=>{const object=byFrame.get(key.value?.frameId)?.objects.find(o=>o.unique_id===uid);return object?[{key,object}]:[];});
     const base=playbackSettings(keys[0]?.object??instances[0]);
+    if(base.clock==='presence')continue;
     let end=base.end;
     if(end===null){
       end=owner?.keys.find(k=>k.tick>base.start&&k.value?.frameId===null)?.tick;
@@ -76,6 +77,8 @@ export function playbackSettings(object, defaults = {}) {
 export function validatePlayback(settings) {
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('Invalid movieclip playback.');
   const value = playbackSettings({_stykMovieclip: settings});
+  if(value.clock!==undefined&&value.clock!=='presence')throw new Error('Invalid movieclip clock.');
+  if(value.clock==='presence'&&(value.restarts?.length||value.start!==0||value.end!==null))throw new Error('Presence movieclips use frame membership instead of placement bounds.');
   if (!['loop','once','hold','single'].includes(value.mode)) throw new Error('Invalid movieclip playback mode.');
   if (!Number.isInteger(value.start) || value.start < 0 || value.start > 10000000 ||
       value.end !== null && (!Number.isInteger(value.end) || value.end <= value.start || value.end > 10000001))
@@ -102,14 +105,17 @@ export function movieclipTime(asset, settings, tick, fps) {
   if (settings.mode === 'once' && raw >= duration) return null;
   return Math.max(0, Math.min(duration - 1, raw));
 }
-export function sampleMovieclipObjects(report, frame, tick, resolveGeometry) {
+export function sampleMovieclipObjects(report, frame, tick, resolveGeometry, elapsed, retainedSamples=false) {
   const types = movieclipTypes(report);
   if (!types.size) return frame;
   let changed = false;
   const objects = frame.objects.map(object => {
     const figure = types.get(object.figure_type_id); if (!figure) return object;
     changed = true;
-    const local = movieclipTime(movieclipAsset(figure), playbackSettings(object), tick, report.fps);
+    const asset=movieclipAsset(figure),settings=playbackSettings(object);
+    const local = retainedSamples&&settings.clock==='presence'&&Object.hasOwn(object,'_movieclipSample')?object._movieclipSample:settings.clock==='presence'
+      ? movieclipTime(asset,{...settings,start:0,end:null,speed:1},settings.mode==='single'?0:elapsed(object.unique_id,tick),report.fps)
+      : movieclipTime(asset, settings, tick, report.fps);
     return {...object, _movieclipSample: local};
   });
   if(!changed)return frame;

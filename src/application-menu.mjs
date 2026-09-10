@@ -1,3 +1,4 @@
+import {HOTKEY_BY_ID, shortcutLabel} from './hotkeys.mjs';
 /** Classic application menus use the same commands as keyboard and canvas actions. */
 export function applicationMenuItems(name, editor, desktop) {
   const noFigure = !editor.object;
@@ -6,6 +7,7 @@ export function applicationMenuItems(name, editor, desktop) {
   const menus = {
     file: [
       ['new', 'plus', 'New animation', 'Ctrl N'],
+      ['new-window', 'plus', 'New window', '', !desktop?.newWindow],
       ['open', 'folder', 'Open project…', 'Ctrl O'],
       ['open-recent', 'clock', 'Open recent…', '', !desktop?.listRecentFiles],
       null,
@@ -59,11 +61,9 @@ export function applicationMenuItems(name, editor, desktop) {
       ['play', 'play', 'Play / pause', 'Space'], ['toggle-loop', 'loop', 'Toggle loop'], null,
       ['first-frame', 'first', 'First frame', 'Home'], ['previous-frame', 'previous', 'Previous frame', '←'],
       ['next-frame', 'next', 'Next frame', '→'], ['last-frame', 'next', 'Last frame', 'End'], null,
-      ['add-frame', 'plus', 'Add keyframe', 'F6'], ['delete-frame', 'trash', 'Delete keyframe'],
-      ['duplicate-frame-after', 'duplicate', 'Duplicate frame after current', 'Ctrl Enter'],
-      ['blank-frame', 'circle', 'Insert blank keyframe', '', !editor.report._styk?.layerSheet],
+      ['add-frame', 'plus', 'Add Frame', 'A'], ['delete-frame', 'trash', 'Delete keyframe'],
     ],
-    help: [['help', 'help', 'Keyboard shortcuts', '?'], ['performance', 'activity', 'Performance']],
+    help: [['help', 'help', 'Keyboard shortcuts', '?'], ['performance', 'activity', 'Performance'], ...(desktop?.getUpdateState ? [null, ['check-updates', 'import', 'Check for updates…'], ['release-notes', 'file', 'What’s new'], ['donate', 'help', 'Support development']] : []), ...(desktop?.getTelemetryState ? [null, ['privacy', 'settings', 'Privacy & diagnostics'], ['website', 'help', 'StykAnimate website']] : [])],
   };
-  return menus[name] || menus.file;
+  return (menus[name] || menus.file).map(item => item && HOTKEY_BY_ID.has(item[0]) ? [item[0], item[1], item[2], shortcutLabel(undefined, item[0]), item[4]] : item);
 }

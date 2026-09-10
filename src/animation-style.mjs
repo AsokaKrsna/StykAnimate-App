@@ -1,5 +1,6 @@
 /** Small per-instance style overlays; native figure definitions remain shared. */
 import {normalizePaint, segmentPaint} from './paint.mjs';
+import {validateDrawableZIndex} from './animation-properties.mjs';
 const alphaByte = opacity => Math.round((1 - opacity) * 255);
 const opacityOf = alpha => 1 - Number(alpha ?? 0) / 255;
 export const styleColor = rgb => ((rgb?.[0] ?? 0) << 16 | (rgb?.[1] ?? 0) << 8 | (rgb?.[2] ?? 0)) >>> 0;
@@ -28,6 +29,7 @@ export function validateAnimationStyle(object) {
       if ('color' in values) color(values.color);
       if ('gradientColor' in values) color(values.gradientColor);
       if ('thickness' in values) width(values.thickness);
+      if ('zIndex' in values) validateDrawableZIndex(values.zIndex);
       if ('paint' in values) normalizePaint(values.paint);
     }
   }
@@ -37,6 +39,7 @@ export function validateAnimationStyle(object) {
       if (!Number.isInteger(Number(id)) || Number(id) < 1 || Number(id) > 65535 || !record(values)) throw new Error('Invalid polygon style identity.');
       if ('color' in values) color(values.color);
       if ('opacity' in values) opacity(values.opacity);
+      if ('zIndex' in values) validateDrawableZIndex(values.zIndex);
     }
   }
   return object;
@@ -54,6 +57,7 @@ export function animationStyleValue(figure, object, target, property) {
     if (target.figureTypeId !== object.figure_type_id) return undefined;
     const polygon = figure.polyfills?.find((item,index) => polygonIdentity(item,index) === target.polygonId);
     if (!polygon) return undefined;
+    if (property === 'zIndex') return object._stykStyle?.polygons?.[target.polygonId]?.zIndex ?? polygon.z_order ?? 0;
     return object._stykStyle?.polygons?.[target.polygonId]?.[property] ?? (property === 'color' ? styleColor(polygon.color_rgb) : polygon.alpha_raw === undefined ? polygon.color_alpha ?? 1 : opacityOf(polygon.alpha_raw));
   }
   if (target.kind === 'segment' && target.figureTypeId !== undefined && target.figureTypeId !== object.figure_type_id) return undefined;
@@ -64,6 +68,7 @@ export function animationStyleValue(figure, object, target, property) {
   const segment = figure.segments?.find(segment => Number(segment.segment_id) === target.handleId);
   if (!segment) return undefined;
   const override = object._stykStyle?.segments?.[target.handleId];
+  if (property === 'zIndex') return override?.zIndex ?? segment.z_order ?? figure.segments.indexOf(segment) + 1;
   if (property === 'paint') return override?.paint ?? segmentPaint(segment);
   if (property === 'opacity') return override?.opacity ?? override?.paint?.stops[0]?.opacity ?? nativeSegmentOpacity(segment);
   if (property === 'color') return override?.color ?? (override?.paint ? styleColor(override.paint.stops[0].color) : styleColor(segment.color_rgb));
@@ -116,6 +121,7 @@ export function resolveInstanceFigure(figure, object) {
     const segment = figure.segments[index], override = style.segments[segment.segment_id];
     if (!override) continue;
     let next = segment;
+    if (Number.isFinite(override.zIndex)) next = {...next, z_order: override.zIndex, z_order_runtime_raw: override.zIndex - 1};
     if (override.paint) {
       const paint=normalizePaint(override.paint),first=paint.stops[0],last=paint.stops.at(-1);
       next={...next,paint,color_rgb:first.color,transparency:alphaByte(first.opacity),color_alpha:first.opacity,
@@ -143,9 +149,14 @@ export function resolveInstanceFigure(figure, object) {
     const polyfills = figure.polyfills.map((polygon,index) => {
       const values=style.polygons[polygonIdentity(polygon,index)];if(!values)return polygon;
       return {...polygon,...(values.color === undefined ? {} : {color_rgb:rgbOf(values.color)}),
+        ...(values.zIndex === undefined ? {} : {z_order:values.zIndex,z_order_runtime_raw:values.zIndex-1}),
         ...(values.opacity === undefined ? {} : {alpha_raw:alphaByte(values.opacity),color_alpha:opacityOf(alphaByte(values.opacity))})};
     });
     copy();result.polyfills=polyfills;
+  }
+  if (result !== figure && (Object.values(style.segments ?? {}).some(value => value.zIndex !== undefined) ||
+    Object.values(style.polygons ?? {}).some(value => value.zIndex !== undefined))) {
+    delete result.segment_z_raw; delete result.poly_z_raw;
   }
   return result;
 }

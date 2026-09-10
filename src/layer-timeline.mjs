@@ -1,3 +1,5 @@
+import {attachTimelineHotkeys} from './timeline-hotkeys.mjs';
+import {pasteSheetClipboard} from './shared-clipboard.mjs';
 import {sheetKeyAt} from './layer-sheet.mjs';
 import {initializeLayerSheet} from './editor-layer-sheet.mjs';
 import {icon} from './icons.mjs';
@@ -14,6 +16,7 @@ export class Timeline{
     this.editor=editor;this.container=container;Object.assign(this,options);this.events=new AbortController();this.labels=[];this.pxPerTick=14;this.labelWidth=220;
     this.channelMode=false;this.mode='layers';this.selectedLayers=new Set([editor.activeLayerId]);this.start=this.end=Math.max(0,Math.floor(editor.tick));this.selectedTrackId=editor.activeLayerId;
     if(!editor.report._styk.layerSheet){initializeLayerSheet(editor.report);editor._invalidate({timing:true});}
+    attachTimelineHotkeys(this);
     this.root=element('div',container,'layer-timeline');this.dirty=true;
     this.main=element('div',this.root,'sheet-main');const head=element('div',this.main,'sheet-label-head');element('span',head,'sheet-label-title','Layers');
     this._button(head,'eye','Show all layers',()=>this._run(()=>{for(const layer of editor.layers)if(layer.kind==='layer')editor.setLayerVisible(layer.id,true);}));
@@ -21,15 +24,12 @@ export class Timeline{
     this.labelViewport=element('div',this.main,'sheet-labels');this.scroll=element('div',this.main,'sheet-scroll');this.scroll.tabIndex=0;this.scroll.setAttribute('role','grid');this.scroll.setAttribute('aria-label','Layer frames');this.scroll.setAttribute('aria-multiselectable','true');
     this.spacer=element('div',this.scroll,'sheet-spacer');this.canvas=element('canvas',this.main,'sheet-canvas');
     const overlay=element('div',this.main,'sheet-playhead-clip');this.playhead=element('div',overlay,'sheet-playhead');this.playheadLabel=element('span',this.playhead);
-    this.cellAdd=this._button(this.main,'plus','Insert keyframe here',()=>{const hit=this.hover;if(hit){this._selectCell(hit);this.addTrackKey();}});this.cellAdd.classList.add('sheet-cell-add');this.cellAdd.hidden=true;
-    this._on(this.cellAdd,'pointerdown',event=>event.stopPropagation());this.divider=element('div',this.main,'sheet-resize');this.divider.setAttribute('role','separator');this.divider.setAttribute('aria-label','Resize layer names');
+    this.divider=element('div',this.main,'sheet-resize');this.divider.setAttribute('role','separator');this.divider.setAttribute('aria-label','Resize layer names');
     const footer=element('div',this.root,'sheet-footer'),layerTools=element('div',footer,'sheet-layer-tools');
     this._button(layerTools,'plus','New layer',()=>this.newLayer());this.deleteLayerButton=this._button(layerTools,'trash','Delete layer',()=>this.deleteLayer());
     this._button(layerTools,'chevron-up','Move layer up',()=>this.reorderLayer(-1)).classList.add('sheet-layer-reorder');this._button(layerTools,'chevron-down','Move layer down',()=>this.reorderLayer(1)).classList.add('sheet-layer-reorder');
     const frameTools=element('div',footer,'sheet-frame-tools');
-    this.keyButton=this._button(frameTools,'circle','Insert keyframe (F6)',()=>this.addTrackKey());this.keyButton.classList.add('sheet-key-icon');
-    this.duplicateFrameButton=this._button(frameTools,'duplicate','Duplicate frame after current (Ctrl+Enter)',()=>this.duplicateFrameAfter());
-    this.extendButton=this._button(frameTools,'plus','Insert frame (F5)',()=>this.insertFrames());
+    this.keyButton=this._button(frameTools,'plus','Add Frame',()=>this.addFrame());this.keyButton.classList.add('sheet-add-button');element('span',this.keyButton,'','Add Frame');this.keyButton.dataset.hotkeyCommand='add-frame';
     element('span',frameTools,'divider');this.easing=element('select',frameTools,'inline-select');this.easing.setAttribute('aria-label','Frame interpolation');
     for(const [value,label] of [['constant','Hold'],['linear','Linear'],['ease-in','Ease in'],['ease-out','Ease out'],['bezier','Ease in / out'],['auto','Auto']]){const option=element('option',this.easing,'',label);option.value=value;}
     this._on(this.easing,'change',()=>this._run(()=>editor.sheetSetEasing(this.ids,this.start,this.end,{interpolation:this.easing.value,...(this.easing.value==='bezier'?{bezier:[.42,0,.58,1]}:{})})));
@@ -41,21 +41,21 @@ export class Timeline{
     this._button(footer,'more','Timeline options',event=>this._menu(event,{view:true}));
     this.live=element('div',this.root,'sheet-live');this.live.setAttribute('role','status');this.live.setAttribute('aria-live','polite');
     this._on(this.scroll,'scroll',()=>this.update());this._on(this.scroll,'pointerdown',event=>this._pointerDown(event));this._on(this.scroll,'pointermove',event=>this._pointerMove(event));this._on(this.scroll,'pointerup',event=>this._pointerUp(event));this._on(this.scroll,'pointercancel',()=>this._cancelGesture());this._on(this.scroll,'lostpointercapture',()=>this._cancelGesture());
-    this._on(this.scroll,'contextmenu',event=>{event.preventDefault();const hit=this._hit(event);if(hit.row<0||!this.tracks[hit.row])return this._menu(event,{view:true});if(!this._contains(hit))this._selectCell(hit);this._menu(event);});
+    this._on(this.scroll,'contextmenu',event=>{event.preventDefault();const hit=this._hit(event);if(hit.row<0||!this.tracks[hit.row])return this._menu(event,{view:true});this.frameAddAtCell=true;if(!this._contains(hit))this._selectCell(hit);this._menu(event);});
     this._on(this.scroll,'dblclick',event=>this._doubleClick(event));
     this._on(this.main,'pointerleave',()=>{if(!this.gesture){this.hover=null;this.update();}});
     this._on(this.scroll,'keydown',event=>this._keyDown(event));this._on(this.labelViewport,'wheel',event=>{event.preventDefault();this.scroll.scrollTop+=event.deltaY;},{passive:false});
     this._on(this.scroll,'wheel',event=>{if(event.ctrlKey||event.metaKey){event.preventDefault();this.setZoom(clamp(this.pxPerTick*(event.deltaY<0?1.15:.87),6,36));}else if(event.shiftKey){event.preventDefault();this.scroll.scrollLeft+=event.deltaY||event.deltaX;}},{passive:false});
     this._on(this.divider,'pointerdown',event=>{this._columnDrag={x:event.clientX,width:this.labelWidth};this.divider.setPointerCapture(event.pointerId);});
     this._on(this.divider,'pointermove',event=>{if(this._columnDrag){this.labelWidth=clamp(this._columnDrag.width+event.clientX-this._columnDrag.x,140,420);this.root.style.setProperty('--sheet-label',`${this.labelWidth}px`);this.resize();}});this._on(this.divider,'pointerup',()=>{this._columnDrag=null;});
-    this._on(editor,'change',event=>{const d=event.detail??{};if(d.kind==='document'||d.structural||d.layers||d.timing||d.layerSheet)this._reindex();
+    this._on(editor,'change',event=>{const d=event.detail??{};if(d.kind==='document')this.frameAddAtCell=false;if(d.kind==='document'||d.structural||d.layers||d.timing||d.layerSheet)this._reindex();
       if(d.kind==='selection'&&!d.sheetSelection&&editor.object){this.selectedTrackId=editor.layerForUid(editor.selectedUid);this.selectedLayers=new Set([this.selectedTrackId]);}
       if(d.kind==='seek'&&!this.gesture&&!this.selecting){this.start=this.end=Math.floor(editor.tick);}this.update(d.kind!=='seek'||!this.paused&&this.gesture?.kind!=='scrub');});
     this.observer=new ResizeObserver(()=>this.resize());this.observer.observe(this.root);this._reindex();this.resize();
   }
   _on(target,name,fn,options={}){target.addEventListener(name,fn,{...options,signal:this.events.signal});}
   _button(parent,name,title,action){const button=element('button',parent,'icon-button');button.type='button';button.innerHTML=icon(name);button.title=title;button.setAttribute('aria-label',title);this._on(button,'click',event=>{this._run(()=>action(event));if(!this.menu)this.scroll?.focus({preventScroll:true});});return button;}
-  _run(operation){try{this.onSeek?.();return operation();}catch(error){this.live.textContent=error.message;this.onError?.(error);return false;}}
+  _run(operation){const fail=error=>{this.live.textContent=error.message;this.onError?.(error);return false;};try{this.onSeek?.();const result=operation();return result?.then?result.catch(fail):result;}catch(error){return fail(error);}}
   get ids(){return [...this.selectedLayers].filter(id=>this.editor.getLayer(id));}
   get selectedTicks(){return [...new Set([this.start,...this.ids.flatMap(id=>this.editor.layerFrameKeys(id).filter(k=>k.tick>this.start&&k.tick<=this.end).map(k=>k.tick))])].sort((a,b)=>a-b);}
   get selectedTimeRange(){return {start:this.start,end:this.end+1};}
@@ -72,7 +72,9 @@ export class Timeline{
     this.scroll.setAttribute('aria-rowcount',String(this.tracks.length));this.scroll.setAttribute('aria-colcount',String(this.editor.report._styk.layerSheet.duration));this._extent();
   }
   _extent(){
-    if(!this.main)return;this.width=Math.max(1,this.main.clientWidth-this.labelViewport.clientWidth);this.height=Math.max(1,this.main.clientHeight);
+    if(!this.main)return;this.width=Math.max(1,this.scroll.clientWidth);this.height=Math.max(1,this.scroll.clientHeight);
+    this.root.style.setProperty('--sheet-scrollbar-x',`${this.scroll.offsetHeight-this.scroll.clientHeight}px`);
+    this.root.style.setProperty('--sheet-scrollbar-y',`${this.scroll.offsetWidth-this.scroll.clientWidth}px`);
     this.logicalWidth=Math.max(this.width,(Math.max(this.editor.totalTicks,this.end+1)+60)*this.pxPerTick);this.logicalHeight=Math.max(this.height,HEADER+this.tracks.length*ROW);
     const width=`${Math.min(MAX_SCROLL,this.logicalWidth)}px`,height=`${Math.min(MAX_SCROLL,this.logicalHeight)}px`;
     if(this.spacer.style.width!==width)this.spacer.style.width=width;if(this.spacer.style.height!==height)this.spacer.style.height=height;
@@ -111,7 +113,7 @@ export class Timeline{
       const rowTint=layer.kind==='camera'?'#e8f3ff':layer.kind==='scene'?'#f1eafb':null;
       if(track)for(let i=Math.max(0,sheetKeyAt(track,first).index);i<track.keys.length;i++){
         const key=track.keys[i],next=track.keys[i+1],end=next?.tick??track.end;if(key.tick>last)break;if(end<=first)continue;
-        const left=Math.max(-6,key.tick*step-sx+1),right=Math.min(w+6,end*step-sx-1),blank=key.empty||key.value?.frameId===null,tween=next&&!blank&&next.value?.frameId!==null&&!['hold','constant'].includes(key.interpolation);
+        const left=Math.max(-6,key.tick*step-sx+1),right=Math.min(w+6,end*step-sx-1),blank=key.empty??(key.value?.frameId===null),tween=next&&!blank&&!(next.empty??(next.value?.frameId===null))&&!['hold','constant'].includes(key.interpolation);
         ctx.fillStyle=blank?c.surface:rowTint??(tween?c.tween:c.span);ctx.beginPath();ctx.roundRect(left,y+5,Math.max(0,right-left),ROW-10,4);ctx.fill();
         if(tween&&right-left>32){ctx.strokeStyle=c.accent;ctx.globalAlpha=.55;ctx.beginPath();ctx.moveTo(left+13,y+ROW/2);ctx.lineTo(right-7,y+ROW/2);ctx.lineTo(right-11,y+ROW/2-3);ctx.moveTo(right-7,y+ROW/2);ctx.lineTo(right-11,y+ROW/2+3);ctx.stroke();ctx.globalAlpha=1;}
         if(!blank&&end-key.tick>1){ctx.fillStyle=c.muted;ctx.globalAlpha=.55;ctx.fillRect(end*step-sx-4,y+12,2,8);ctx.globalAlpha=1;}
@@ -121,7 +123,7 @@ export class Timeline{
       ctx.lineWidth=1;ctx.strokeStyle=c.line;ctx.beginPath();
       for(let tick=first;tick<=last;tick++){const x=Math.round(tick*step-sx)+.5;ctx.moveTo(x,y);ctx.lineTo(x,y+ROW);}ctx.moveTo(0,y+ROW-.5);ctx.lineTo(w,y+ROW-.5);ctx.stroke();
       if(track)for(let i=Math.max(0,sheetKeyAt(track,first).index);i<track.keys.length;i++){
-        const key=track.keys[i];if(key.tick>last)break;if(key.tick<first||key.empty||key.value?.frameId===null)continue;const x=(key.tick+.5)*step-sx;
+        const key=track.keys[i];if(key.tick>last)break;if(key.tick<first||(key.empty??(key.value?.frameId===null)))continue;const x=(key.tick+.5)*step-sx;
         ctx.beginPath();ctx.arc(x,y+ROW/2,Math.min(3.5,step/3),0,Math.PI*2);ctx.fillStyle=rowAccent??c.ink;ctx.fill();
       }
       if(selected){ctx.strokeStyle=rowAccent??c.accent;ctx.strokeRect(this.start*step-sx+.5,y+.5,(this.end-this.start+1)*step-1,ROW-1);}
@@ -137,17 +139,12 @@ export class Timeline{
     ctx.restore();ctx.fillStyle=c.surface;ctx.fillRect(0,0,w,HEADER);ctx.strokeStyle=c.line;ctx.beginPath();ctx.moveTo(0,HEADER-.5);ctx.lineTo(w,HEADER-.5);ctx.stroke();
     ctx.font=`10px ${this.font}`;ctx.textAlign='center';ctx.textBaseline='middle';
     const interval=step<9?10:5;for(let tick=first;tick<=last;tick++){const x=(tick+.5)*step-sx;if(tick===0||(tick+1)%interval===0){ctx.fillStyle=c.muted;ctx.fillText(String(tick+1),x,14);ctx.fillStyle=c.line;ctx.fillRect(Math.round(x),25,1,4);}}
-    this._paintLabels(firstRow,lastRow,sy);this._paintHover(sx,sy);
+    this._paintLabels(firstRow,lastRow,sy);
     const key=sheetKeyAt(state.tracks[this.selectedTrackId],this.start).key,value=key?.interpolation==='hold'?'constant':key?.interpolation??'constant';
     if(document.activeElement!==this.easing)this.easing.value=value;
-    const locked=this.ids.some(id=>this.editor.getLayer(id)?.locked);for(const button of [this.keyButton,this.extendButton,this.duplicateFrameButton])button.disabled=locked;
+    const locked=this.ids.some(id=>this.editor.getLayer(id)?.locked);for(const button of [this.keyButton])button.disabled=locked;
     this.deleteLayerButton.disabled=locked||this.editor.report._styk.layers.order.length<2||this.editor.getLayer(this.selectedTrackId)?.kind!=='layer';
     this.easing.disabled=locked||!key;
-  }
-  _paintHover(sx,sy){
-    const hit=this.hover,layer=this.tracks[hit?.row],track=this.editor.report._styk.layerSheet.tracks[layer?.id],key=sheetKeyAt(track,hit?.tick).key;
-    this.cellAdd.hidden=!hit||!layer||!this._contains(hit)||this.start!==this.end||layer.locked||Boolean(this.gesture)||key?.tick===hit.tick||this._resizeHit(hit)||this.pxPerTick<12;
-    if(!this.cellAdd.hidden){this.cellAdd.style.left=`${this.labelViewport.clientWidth+(hit.tick+.5)*this.pxPerTick-sx-7}px`;this.cellAdd.style.top=`${HEADER+hit.row*ROW-sy+17}px`;}
   }
   _paintLabels(first,last,sy){
     const signature=[first,last,sy,this.editor.layerRevision,this.editor.activeLayerId,...this.ids].join(':');if(signature===this.labelSignature)return;this.labelSignature=signature;
@@ -187,6 +184,7 @@ export class Timeline{
   _hit(event){const rect=this.scroll.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top;return {tick:clamp(Math.floor((x+this._offsetX())/this.pxPerTick),0,9999999),row:y<HEADER?-1:Math.floor((y-HEADER+this._offsetY())/ROW),x,y};}
   _contains(hit){return hit.row>=0&&this.selectedLayers.has(this.tracks[hit.row]?.id)&&hit.tick>=this.start&&hit.tick<=this.end;}
   _selectCell(hit,{extend=false,notify=true}={}){
+    this.frameAddAtCell=true;
     const layer=this.tracks[hit.row];if(!layer)return;const changed=this.selectedTrackId!==layer.id,anchor=this.anchor??{tick:this.start,row:this.tracks.findIndex(l=>l.id===this.selectedTrackId)};
     if(extend){this.start=Math.min(anchor.tick,hit.tick);this.end=Math.max(anchor.tick,hit.tick);this.selectedLayers=new Set(this.tracks.slice(Math.min(anchor.row,hit.row),Math.max(anchor.row,hit.row)+1).map(l=>l.id));}
     else{this.start=this.end=hit.tick;this.selectedLayers=new Set([layer.id]);this.anchor={tick:hit.tick,row:hit.row};}
@@ -213,16 +211,23 @@ export class Timeline{
     if(this.pendingCell){const hit=this.pendingCell;this.pendingCell=null;this._selectCell(hit,{extend:true,notify:false});}
   }
   _pointerDown(event){
+    const bounds=this.scroll.getBoundingClientRect();
+    if(event.clientX>=bounds.left+this.scroll.clientWidth||event.clientY>=bounds.top+this.scroll.clientHeight)return;
     if(event.button!==0)return;this.onSeek?.();const hit=this._hit(event);if(hit.row>=this.tracks.length)return;
-    this.scroll.setPointerCapture(event.pointerId);this.scroll.focus({preventScroll:true});this.cellAdd.hidden=true;
-    if(hit.row<0){this.gesture={kind:'scrub',pointer:event.pointerId};this.onScrubStart?.();this.pendingScrub=hit.tick;this.update(false);event.preventDefault();return;}
+    this.scroll.setPointerCapture(event.pointerId);this.scroll.focus({preventScroll:true});
+    if(hit.row<0){this.frameAddAtCell=false;this.gesture={kind:'scrub',pointer:event.pointerId};this.onScrubStart?.();this.pendingScrub=hit.tick;this.update(false);event.preventDefault();return;}
     const span=this._resizeHit(hit),layer=this.tracks[hit.row],key=sheetKeyAt(this.editor.report._styk.layerSheet.tracks[layer.id],hit.tick).key;
     if(span&&!event.shiftKey&&!event.altKey){this.gesture={kind:'resize',span,hit,pointer:event.pointerId,x:event.clientX,y:event.clientY,delta:0};event.preventDefault();return;}
     const selected=this._contains(hit),move=!event.shiftKey&&!layer.locked&&(selected||key?.tick===hit.tick);
     this.gesture={kind:move?'move':'select',pointer:event.pointerId,hit,x:event.clientX,y:event.clientY,delta:0,rowDelta:0,copy:event.altKey};
+    this.frameAddAtCell=true;
     if(!selected||event.shiftKey)this._selectCell(hit,{extend:event.shiftKey});event.preventDefault();
   }
   _pointerMove(event){
+    const bounds=this.scroll.getBoundingClientRect();
+    if(!this.gesture&&(event.clientX>=bounds.left+this.scroll.clientWidth||event.clientY>=bounds.top+this.scroll.clientHeight)){
+      if(this.hover){this.hover=null;this.update();}return;
+    }
     const hit=this._hit(event),g=this.gesture;
     if(!g){
       const resize=this._resizeHit(hit);this.scroll.style.cursor=hit.row<0?'ew-resize':resize?'ew-resize':'default';
@@ -254,28 +259,21 @@ export class Timeline{
   seek(tick){if(!Number.isInteger(tick)||tick<0)throw new Error('Choose a valid frame.');this.onSeek?.();this.start=this.end=tick;this.editor.seek(tick,{allowBeyondEnd:true});this.update();}
   revealPlayhead(){const x=this.editor.tick*this.pxPerTick,left=this._offsetX();if(x<left)this._scrollToX(x);else if(x>left+this.width-30)this._scrollToX(x-this.width+60);}
   jumpKey(direction){const keys=this.editor.layerFrameKeys(this.selectedTrackId),tick=direction<0?[...keys].reverse().find(k=>k.tick<this.editor.tick)?.tick:keys.find(k=>k.tick>this.editor.tick)?.tick;if(tick!==undefined){this.seek(tick);this.revealPlayhead();}}
+  addFrame(){return this.onAddFrame?this.onAddFrame():this.frameAddAtCell?this.addTrackKey():this.duplicateFrameAfter();}
   addTrackKey(){return this._run(()=>this.editor.sheetInsertKey(this.ids,this.start));}
   duplicateFrameAfter(){return this._run(()=>{const result=this.editor.sheetDuplicateFrameAfter(this.ids);this.start=this.end=this.editor.tick;this.revealPlayhead();return result;});}
   insertFrames(){return this._run(()=>this.editor.sheetInsertFrames(this.ids,this.start,this.end-this.start+1));}
   clearKeys(){return this.end>0?this._run(()=>this.editor.sheetClearKeys(this.ids,Math.max(1,this.start),this.end)):false;}
   removeFrames(){return this._run(()=>this.editor.sheetRemoveFrames(this.ids,this.start,this.end));}
-  copySelection(){return this._run(()=>this.editor.sheetCopyFrames(this.ids,this.start,this.end));}
-  cutSelection(){return this._run(()=>{this.editor.sheetCopyFrames(this.ids,this.start,this.end);return this.editor.sheetRemoveFrames(this.ids,this.start,this.end);});}
-  pasteSelection(){return this._run(()=>this.editor.sheetPasteFrames(this.ids,this.start));}
+  copySelection(){const ids=this.ids,start=this.start,end=this.end;return this._clipboard('copy',()=>this.editor.sheetCopyFrames(ids,start,end));}
+  cutSelection(){const ids=this.ids,start=this.start,end=this.end;return this._clipboard('copy',()=>{this.editor.sheetCopyFrames(ids,start,end);this.editor.sheetRemoveFrames(ids,start,end);return this.editor._sheetClipboard;});}
+  pasteSelection(){const ids=this.ids,start=this.start;return this._clipboard('paste',()=>pasteSheetClipboard(this.editor,ids,start));}
+  _clipboard(action,operation){return this._run(()=>this.sharedClipboard?this.sharedClipboard[action]('sheet',operation):operation());}
   selectAll(){this.selectedLayers=new Set(this.tracks.map(t=>t.id));this.start=0;this.end=this.editor.totalTicks-1;this.update();}
   newLayer(){return this._run(()=>{const layer=this.editor.createLayer();this._reindex();this._selectLayer(layer.id);return layer;});}
   deleteLayer(){return this._run(()=>this.editor.deleteLayer(this.selectedTrackId));}
   reorderLayer(direction){const order=this.editor.report._styk.layers.order,index=order.indexOf(this.selectedTrackId);if(index>=0)return this._run(()=>this.editor.moveLayerTo(this.selectedTrackId,clamp(index-direction,0,order.length-1)));}
-  _keyDown(event){const control=event.ctrlKey||event.metaKey;let action;
-    if(event.key==='Escape'){this._cancelGesture();this.menu?.remove();event.preventDefault();return;}
-    if(event.key==='F5')action=event.shiftKey?'removeFrames':'insertFrames';if(event.key==='F6')action=event.shiftKey?'clearKeys':'addTrackKey';
-    if(control&&event.key==='Enter')action='duplicateFrameAfter';
-    if(event.key==='Delete'||event.key==='Backspace')action='removeFrames';
-    if(control)action=({c:'copySelection',x:'cutSelection',v:'pasteSelection',a:'selectAll'})[event.key.toLowerCase()]??action;
-    if(control&&['z','y'].includes(event.key.toLowerCase())){this._run(()=>event.key.toLowerCase()==='y'||event.shiftKey?this.editor.redo():this.editor.undo());event.preventDefault();event.stopPropagation();return;}
-    if(action){event.preventDefault();event.stopPropagation();this[action]();return;}
-    if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){event.preventDefault();event.stopPropagation();const row=this.tracks.findIndex(t=>t.id===this.selectedTrackId),hit={row:clamp(row+(event.key==='ArrowUp'?-1:event.key==='ArrowDown'?1:0),0,this.tracks.length-1),tick:Math.max(0,this.editor.tick+(event.key==='ArrowLeft'?-1:event.key==='ArrowRight'?1:0))};this._selectCell(hit,{extend:event.shiftKey});this.revealPlayhead();}
-  }
+  _keyDown(event){if(this.ownsHotkeys&&this.hotkeys.keydown(event,['timeline']))event.stopPropagation();}
   _menu(event,{layer=false,view=false}={}){
     const editor=this.editor,selected=editor.getLayer(this.selectedTrackId),locked=this.ids.some(id=>editor.getLayer(id)?.locked);
     if(view)return showTimelineMenu(this,event,[[
@@ -290,21 +288,17 @@ export class Timeline{
        selected?.kind==='layer'&&!selected.locked&&editor.report._styk.layers.order.length>1&&{label:'Delete layer',symbol:'trash',danger:true,action:()=>this.deleteLayer()}],
     ]);
     const hasKey=this.ids.some(id=>editor.layerFrameKeys(id).some(k=>k.tick>0&&k.tick>=this.start&&k.tick<=this.end)),
-      needsKey=this.ids.some(id=>!editor.layerFrameKeys(id).some(k=>k.tick===this.start)),
       hasFrames=this.ids.some(id=>this.start<(editor.report._styk.layerSheet.tracks[id]?.end??0)),
       clipboard=editor._sheetClipboard,order=editor.getLayers().filter(l=>l.kind==='layer').map(l=>l.id).reverse(),
       destinations=clipboard&&(this.ids.length===clipboard.rows.length?this.ids:this.ids.length===1?order.slice(order.indexOf(this.ids[0]),order.indexOf(this.ids[0])+clipboard.rows.length):[]),
-      canPaste=destinations?.length===clipboard?.rows.length&&destinations?.every(id=>!editor.getLayer(id)?.locked);
+      canPaste=this.sharedClipboard || destinations?.length===clipboard?.rows.length&&destinations?.every(id=>!editor.getLayer(id)?.locked);
     showTimelineMenu(this,event,[
-      [!locked&&{label:'Duplicate frame after current',shortcut:'Ctrl+Enter',symbol:'duplicate',action:()=>this.duplicateFrameAfter()},
-       !locked&&{label:'Insert blank keyframe',symbol:'circle',action:()=>this._run(()=>this.editor.sheetInsertKey(this.ids,this.start,{blank:true}))},
-       !locked&&needsKey&&{label:'Insert keyframe',shortcut:'F6',symbol:'circle',action:()=>this.addTrackKey()},
-       !locked&&{label:'Insert frames',shortcut:'F5',symbol:'plus',action:()=>this.insertFrames()}],
-      [hasFrames&&!locked&&{label:'Copy frames',shortcut:'Ctrl+C',symbol:'duplicate',action:()=>this.copySelection()},
-       hasFrames&&!locked&&{label:'Cut frames',shortcut:'Ctrl+X',symbol:'cut',action:()=>this.cutSelection()},
-       canPaste&&!locked&&{label:'Paste frames',shortcut:'Ctrl+V',symbol:'clipboard',action:()=>this.pasteSelection()}],
-      [hasKey&&!locked&&{label:'Remove keyframe',shortcut:'Shift+F6',symbol:'minus',action:()=>this.clearKeys()},
-       hasFrames&&!locked&&{label:'Delete frames',shortcut:'Delete',symbol:'trash',danger:true,action:()=>this.removeFrames()},
+      [!locked&&{label:'Add Frame',shortcut:this.shortcut('add-frame'),symbol:'plus',action:()=>this.addFrame()}],
+      [hasFrames&&!locked&&{label:'Copy frames',shortcut:this.shortcut('copy'),symbol:'duplicate',action:()=>this.copySelection()},
+       hasFrames&&!locked&&{label:'Cut frames',shortcut:this.shortcut('cut'),symbol:'cut',action:()=>this.cutSelection()},
+       canPaste&&!locked&&{label:'Paste frames',shortcut:this.shortcut('paste'),symbol:'clipboard',action:()=>this.pasteSelection()}],
+      [hasKey&&!locked&&{label:'Remove keyframe',shortcut:this.shortcut('clear-keys'),symbol:'minus',action:()=>this.clearKeys()},
+       hasFrames&&!locked&&{label:'Delete frames',shortcut:this.shortcut('delete'),symbol:'trash',danger:true,action:()=>this.removeFrames()},
        locked&&{label:'Unlock layers',symbol:'unlock',action:()=>{for(const id of this.ids)editor.setLayerLocked(id,false);}}],
     ]);
   }

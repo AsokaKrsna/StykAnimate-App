@@ -5,7 +5,7 @@ import {rotateOriginSupport} from './animation-origin-support.mjs';
 import {normalizePaint} from './paint.mjs';
 import {sampleNativePropertyCurve, shortestPropertyAngle} from './native-property-curve.mjs';
 import {validateKeyEasing, easedProgress, easingMode, autoValue} from './keyframe-easing.mjs';
-import {ANIMATION_PROPERTIES, isDiscreteAnimationProperty, isColorAnimationProperty, validateFigureZIndex} from './animation-properties.mjs';
+import {ANIMATION_PROPERTIES, isDiscreteAnimationProperty, isColorAnimationProperty, validateFigureZIndex, validateDrawableZIndex} from './animation-properties.mjs';
 const properties = Object.fromEntries(Object.entries(ANIMATION_PROPERTIES).map(([kind, values]) => [kind, new Set(values)]));
 export function normalizeAnimationTarget(target) {
   if (!target || !properties[target.kind]) throw new Error('Choose a figure, segment, layer, camera, or scene animation target.');
@@ -47,7 +47,7 @@ export function validateAnimationValue(target, property, value) {
   }
   if (target.kind === 'scene' && property === 'color' && value === null) return null;
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('Animation values must be finite numbers.');
-  if (property === 'zIndex') return validateFigureZIndex(value);
+  if (property === 'zIndex') return target.kind === 'figure' ? validateFigureZIndex(value) : validateDrawableZIndex(value);
   if (property === 'scale' && (value < (target.kind === 'camera' ? 0.000001 : 0) || value > 1e6)) throw new Error('Animation scale is outside the supported range.');
   if (['opacity', 'outlineOpacity', 'gradientOpacity'].includes(property) && (value < 0 || value > 1)) throw new Error('Animation opacity must be between zero and one.');
   if (property === 'backgroundId' && (!Number.isInteger(value) || value < 0 || value > 0xffffffff)) throw new Error('Choose a valid background identity.');
@@ -225,7 +225,7 @@ export function animationPropertyValue(report, frame, target, property, {resolve
   const slot = objectIndex ? objectIndex.get(target.uid) ?? -1 : frame.objects.findIndex(object => object.unique_id === target.uid), object = frame.objects[slot];
   if (!object) return undefined;
   if (target.kind === 'figure' && property === 'color') return Number(object.color_override_raw ?? 0) >>> 0;
-  if (property === 'zIndex') return object._stykZIndex ?? 0;
+  if (target.kind === 'figure' && property === 'zIndex') return object._stykZIndex ?? 0;
   const definition=()=>figureIndex?figureIndex.get(object.figure_type_id):report.figure_types.find(figure => figure.figure_type_id === object.figure_type_id);
   if (isAnimationStyleProperty(target, property)) return animationStyleValue(definition(), object, target, property);
   if (property === 'opacity') return 1 - Number(object.field28 ?? 0) / 255;
@@ -271,7 +271,7 @@ export function composeAnimationChannels(report, frame, tick, {resolveGeometry} 
       slots ??= new Map(frame.objects.map((object, index) => [object.unique_id, index]));
       const slot = slots.get(channel.target.uid); if (slot === undefined) continue;
       if (channel.target.kind === 'figure' && channel.property === 'color') { editObject(slot, false).color_override_raw = value; continue; }
-      if (channel.property === 'zIndex') { editObject(slot, false)._stykZIndex = value; continue; }
+      if (channel.target.kind === 'figure' && channel.property === 'zIndex') { editObject(slot, false)._stykZIndex = value; continue; }
       if (isAnimationStyleProperty(channel.target, channel.property)) {
         styleTypes ??= new Map(report.figure_types.map(figure => [figure.figure_type_id, figure]));
         // Missing/replaced handles stay dormant instead of styling a new segment.

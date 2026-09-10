@@ -1,5 +1,5 @@
 import {movieclipFigure,movieclipAsset,isMovieclip,playbackSettings,validatePlayback,invalidateMovieclipTypes,movieclipSourceFrames,movieclipTime} from './movieclips.mjs';
-import {evaluatedFrame,timeline,buildGeometry} from './pivot/geometry.mjs';
+import {evaluatedFrame,timeline,buildGeometry,movieclipPresenceIndex} from './pivot/geometry.mjs';
 import {createFrame,createObject,emptyDocument} from './demo.mjs';
 import {frameOrder,setOrder,normalizeFrame} from './pivot/structure.mjs';
 import {layerIdForUid} from './layers.mjs';
@@ -7,6 +7,7 @@ import {storedFrameReport} from './pivot-frame-draft.mjs';
 import {createMovieclipMaterializer} from './movieclip-materialize.mjs';
 import {animationChannelId,validateAnimationDocument,sampleAnimationChannel} from './animation-channels.mjs';
 import {snapshotPoseFrame} from './pose-snapshot.mjs';
+import {presencePlayback,usesPresence,continuations,setContinuations,presenceElapsed} from './movieclip-presence.mjs';
 
 const clone=value=>structuredClone(value);
 const allocateType=editor=>editor.report.figure_types.reduce((id,f)=>Math.max(id,f.figure_type_id+1),1);
@@ -23,7 +24,7 @@ function filteredFrame(frame,selected){
   });
   const result={...frame,objects,camera:{is_default:true,x:0,y:0,angle_rad:0,scale:1},background_id:0,background_id_b:0,background_mix:0};
   delete result._stykBackgroundColor;delete result.background_color;
-  result._styk={...frame._styk};setOrder(result,frameOrder(frame).filter(uid=>selected.has(uid)));normalizeFrame(result);return result;
+  result._styk={...frame._styk};setContinuations(result,continuations(frame).filter(step=>selected.has(step.uid)));setOrder(result,frameOrder(frame).filter(uid=>selected.has(uid)));normalizeFrame(result);return result;
 }
 /** Sparse capture retains the original curves as an immutable baseline. Local
  * stored poses provide editing boundaries; no per-output-frame baking occurs. */
@@ -64,11 +65,16 @@ export function captureMovieclip(editor,{start=editor.tick,end=start+1,uids=[...
   if(metadata.layers){metadata.layers=clone(metadata.layers);metadata.layers.assignments=Object.fromEntries(Object.entries(metadata.layers.assignments??{}).filter(([uid])=>selected.has(Number(uid))));}
   const rows=timeline(report),ticks=new Set([start,end-1]);
   for(const row of rows)if(row.start>start&&row.start<end)ticks.add(row.start);
+  for(const track of Object.values(report._styk?.layerSheet?.tracks??{}))for(const key of track.keys)if(key.tick>start&&key.tick<end)ticks.add(key.tick);
   const ordered=[...ticks].sort((a,b)=>a-b);
   const localFrames=ordered.map((tick,i)=>{
     const frame=filteredFrame(at(report,tick),selected);
+    for(const object of frame.objects)if(usesPresence(object)){
+      const asset=report.figure_types.find(figure=>figure.figure_type_id===object.figure_type_id)._styk.movieclip;
+      object._stykMovieclip={...object._stykMovieclip,offset:(object._stykMovieclip.offset??0)+presenceElapsed(movieclipPresenceIndex(report),object.unique_id,start)*asset.document.fps/report.fps};
+    }
     frame.duration_raw=(ordered[i+1]??end)-tick;
-    frame._styk={easing:clone(frame._styk?.easing),movieclipSourceTick:tick};
+    frame._styk={easing:clone(frame._styk?.easing),movieclipSourceTick:tick,...(continuations(frame).length?{movieclipContinuations:continuations(frame)}:{})};
     return frame;
   });
   const first=at(report,start),rootObject=first.objects.find(o=>selected.has(o.unique_id)&&!o.join)??first.objects.find(o=>selected.has(o.unique_id));
@@ -100,8 +106,8 @@ function publishDefinition(editor,figure,index=editor.report.figure_types.length
   invalidateMovieclipTypes(editor.report);editor._invalidate({timing:true});editor._emit('edit',{structural:true,timing:true,definition:true,label});
   return figure;
 }
-function publishChannels(editor,channels,label){
-  if(editor.report._styk?.layerSheet)return editor.sheetApplyChannels(channels,label);
+function publishChannels(editor,channels,label,options){
+  if(editor.report._styk?.layerSheet)return editor.sheetApplyChannels(channels,label,options);
   const before=editor.report._styk.animation??null,selection=editor._selectionState(),ids=new Set(channels.map(c=>c.id));
   const after={version:1,nextKeyId:1,...before,channels:[...(before?.channels??[]).filter(c=>!ids.has(c.id)),...channels]};
   validateAnimationDocument({...editor.report,_styk:{...editor.report._styk,animation:after}});
@@ -143,6 +149,10 @@ function validateReplacementOrder(editor,selected,start,end){
 }
 export const editorMovieclipMethods={
   _insertMovieclip(operation){
+    if(this.report._styk?.layerSheet){
+      this._insertingMovieclip=true;
+      try{return operation();}finally{this._insertingMovieclip=false;}
+    }
     return this.movieclipBatch('Insert movieclip',()=>{
       if(this.report._styk?.layerSheet)this._prepareSheetMovieclips();
       this._insertingMovieclip=true;
@@ -187,7 +197,7 @@ export const editorMovieclipMethods={
   },
   movieclipTimelineEdit(label,operation){
     if(this._movieclipBatch)return operation();
-    return this.editFrameDraftTimeline(()=>this.movieclipBatch(label,()=>{if(this.report._styk?.layerSheet)this._prepareSheetMovieclips();return operation();}));
+    return this.editFrameDraftTimeline(()=>this.movieclipBatch(label,()=>{if(this.report._styk?.layerSheet&&!usesPresence(this.object))this._prepareSheetMovieclips();return operation();}));
   },
   createMovieclip(options={}){
     if(this._drag)this.commitDrag();
@@ -195,7 +205,6 @@ export const editorMovieclipMethods={
     if(options.replace!==false)validateReplacementOrder(this,capture.selected,capture.start,capture.end);
     const batch=options.end===undefined?this.movieclipBatch:this.movieclipTimelineEdit;
     return batch.call(this,'Create movieclip',()=>{
-      if(this.report._styk?.layerSheet&&options.replace!==false)this._prepareSheetMovieclips();
       publishDefinition(this,capture.figure);
       if(options.replace===false)return capture.figure;
       const {start,selected,figure}=capture;
@@ -204,11 +213,11 @@ export const editorMovieclipMethods={
         const source=at(this.report,start),order=frameOrder(source),positions=order.map((uid,i)=>selected.has(uid)?i:-1).filter(i=>i>=0);
         if(positions.length&&positions.at(-1)-positions[0]+1!==positions.length)throw new Error('Select adjacent figures in the stacking order.');
         const uid=this._identity(),pivot=movieclipAsset(figure).pivot,instance=createObject(figure,uid,pivot.x,pivot.y,
-          {_stykMovieclip:{start,end,offset:0,speed:1,mode:movieclipAsset(figure).duration===1?'single':'loop'}});
+          {_stykMovieclip:this.report._styk?.layerSheet?presencePlayback():{start,end,offset:0,speed:1,mode:movieclipAsset(figure).duration===1?'single':'loop'}});
         const frame=createFrame([instance]),anchor=order[positions[0]]??[...selected][0];
         const channels=[...selected].map(id=>maskedPose(this,id,start,end));
-        channels.push({...poseChannel(this,uid,[{tick:start,frame}],{start,orderAnchor:anchor}),clipEnd:end});
-        assignChildrenLayer(this,[uid],this.layerForUid(anchor));publishChannels(this,channels,'Create movieclip');
+        channels.push(this.report._styk?.layerSheet?poseChannel(this,uid,[{tick:start,frame}],{start,end,orderAnchor:anchor}):{...poseChannel(this,uid,[{tick:start,frame}],{start,orderAnchor:anchor}),clipEnd:end});
+        assignChildrenLayer(this,[uid],this.layerForUid(anchor));publishChannels(this,channels,'Create movieclip',{preserveDuration:true,replacePresence:{uids:selected,start,end}});
         this.seek(start);this.select(uid);return figure;
       }
       if (options.end!==undefined || start!==this.timeline[this.frameIndex]?.start || this.animationChannels.length) {
@@ -257,6 +266,7 @@ export const editorMovieclipMethods={
   setMovieclipPlayback(patch,{allFrames=false}={}){
     if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
     const settings=validatePlayback({...playbackSettings(this.object),...patch});
+    if(usesPresence(this.object)&&this.report._styk?.layerSheet&&allFrames)return this.sheetSetMovieclipPlayback(this.selectedUid,patch,{allFrames});
     if(allFrames){
       return this.movieclipTimelineEdit('Set movieclip playback',()=>{
         this._editMovieclipPoses('Set movieclip playback',object=>{object._stykMovieclip=settings;});return settings;
@@ -310,9 +320,10 @@ export const editorMovieclipMethods={
     if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
     const p=playbackSettings(this.object),figure=this.figure,oldUid=this.selectedUid;
     if(!Number.isInteger(tick)||tick<=p.start||p.end!==null&&tick>=p.end)throw new Error('Place the playhead inside the movieclip.');
-    const originalPose=this._movieclipPoseChannel(),originalChannels=this.animationChannels.filter(c=>c.target.uid===oldUid&&c.property!=='pose');
+    const originalChannels=this.animationChannels.filter(c=>c.target.uid===oldUid&&c.property!=='pose');
     const settings=validatePlayback({...p,start:tick,offset:movieclipTime(movieclipAsset(figure),p,tick,this.report.fps)??p.offset,restarts:(p.restarts??[]).filter(k=>k.tick>tick)});
     return this.movieclipTimelineEdit('Split movieclip',()=>{
+      const originalPose=this._movieclipPoseChannel();
       const uid=this._identity(),sources=new Map();
       const second={...originalPose,target:{kind:'figure',uid},id:animationChannelId({kind:'figure',uid},'pose'),clipEnd:p.end??0,orderAnchor:oldUid,
         keys:originalPose.keys.map(key=>{
@@ -336,6 +347,21 @@ export const editorMovieclipMethods={
     if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
     return this.movieclipBatch('Make movieclip unique',()=>{
       const figure={...this.figure,figure_type_id:allocateType(this),name:`${this.figure.name} copy`};
+      if(this.report._styk?.layerSheet){
+        const tick=Math.round(this.tick),previous=this.selectedUid,original=this.object,uid=this._identity();
+        const frame=snapshotPoseFrame(this.selectionFrame,[previous]),object=frame.objects.find(object=>object.unique_id===previous);
+        object.unique_id=uid;object.figure_type_id=figure.figure_type_id;
+        object._stykMovieclip=presencePlayback({mode:object._stykMovieclip?.mode??'loop',speed:object._stykMovieclip?.speed??1,
+          offset:original._movieclipSample??at(this.report,tick).objects.find(object=>object.unique_id===previous)?._movieclipSample??object._stykMovieclip?.offset??0});
+        for(const member of frame.objects)if(member.join?.target_unique_id===previous)member.join.target_unique_id=uid;
+        setOrder(frame,frameOrder(frame).map(id=>id===previous?uid:id));normalizeFrame(frame);
+        // This is a conversion of the displayed pose, like Break Apart. Keep
+        // the original's consumed step so its other appearances do not shift.
+        setContinuations(frame,usesPresence(original)?[{uid:previous,typeId:original.figure_type_id,playback:clone(original._stykMovieclip)}]:[]);
+        publishDefinition(this,figure);
+        this.sheetReplaceMovieclipFrames([{tick,frame}],previous,[uid],'Make movieclip unique',{replacementUid:uid});
+        this.seek(tick);this.select(uid);return figure;
+      }
       publishDefinition(this,figure);
       this._editMovieclipPoses('Make movieclip unique',object=>{object.figure_type_id=figure.figure_type_id;});return figure;
     });
@@ -344,14 +370,15 @@ export const editorMovieclipMethods={
     if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
     const tick=Math.round(this.tick),uid=this.selectedUid,source=this.evaluatedFrame;
     const materializer=createMovieclipMaterializer(this.report),expanded=this._expandMovieclipPose(source,uid,materializer);
-    return this.movieclipTimelineEdit('Break apart frame',()=>this._publishExpandedMovieclip([{tick,frame:expanded}],uid,materializer,{start:tick,end:tick+1,label:'Break apart frame',reuseParts:true}));
+    const object=this.object,step=usesPresence(object)?{uid,typeId:object.figure_type_id,playback:clone(object._stykMovieclip)}:null;
+    return this.movieclipTimelineEdit('Break apart frame',()=>this._publishExpandedMovieclip([{tick,frame:expanded}],uid,materializer,{start:tick,end:tick+1,label:'Break apart frame',reuseParts:true,step}));
   },
   _expandMovieclipPose(frame,uid,materializer){
     const object=frame.objects.find(o=>o.unique_id===uid);if(!object)return createFrame();
     const root=buildGeometry(this.report,frame).objects.get(object.object_slot)?.root??{x:object.root_x,y:object.root_y};
     return materializer.frame(createFrame([{...object,object_slot:0,join:null,root_x:root.x,root_y:root.y}]));
   },
-  _publishExpandedMovieclip(frames,uid,materializer,{start,end,label,reuseParts=false}){
+  _publishExpandedMovieclip(frames,uid,materializer,{start,end,label,reuseParts=false,step=null}){
     const existing=new Set(this.report.figure_types.map(f=>f.figure_type_id));
     for(const figure of materializer.figures)if(!existing.has(figure.figure_type_id))publishDefinition(this,figure);
     const parts=new Map(this.animationChannels.filter(c=>reuseParts&&c.property==='pose'&&c.movieclipPart?.instance===uid).map(c=>[c.movieclipPart.path,c]));
@@ -368,6 +395,17 @@ export const editorMovieclipMethods={
       for(const object of frame.objects){object.unique_id=ids.get(object.unique_id);if(reuseParts)object._stykMovieclipPart={instance:uid,path:partPaths.get(object.unique_id)};}
       setOrder(frame,order);normalizeFrame(frame);
     }
+    if(this.report._styk?.layerSheet){
+      const replacements=[];
+      for(const entry of frames){
+        const original=at(this.report,entry.tick).objects.find(object=>object.unique_id===uid);
+        if(!original)continue;
+        setContinuations(entry.frame,usesPresence(original)?[{uid,typeId:original.figure_type_id,playback:clone(original._stykMovieclip)}]:[]);
+        replacements.push(entry);
+      }
+      const children=[...ids.values()];this.sheetReplaceMovieclipFrames(replacements,uid,children,label);
+      this.seek(start);this._selectIds(children);this._emit('selection');return children;
+    }
     const children=[...ids.values()],channels=[maskedPose(this,uid,start,end)];
     // One immutable source sequence is shared by all children. A large assembly
     // costs poses × objects, never one full scene copy for every child track.
@@ -382,14 +420,14 @@ export const editorMovieclipMethods={
       }
       channels.push({...shared,target,id:animationChannelId(target,'pose'),keys,...(reuseParts?{movieclipPart:{instance:uid,path}}:{})});
     }
-    assignChildrenLayer(this,children,this.layerForUid(uid));publishChannels(this,channels,label);
+    assignChildrenLayer(this,children,this.layerForUid(uid));publishChannels(this,channels,label,{preserveDuration:true,continuation:step?{start,end,step}:null});
     this.seek(start);this._selectIds(children);this._emit('selection');return children;
   },
   async bakeMovieclip(){
     if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
     if(this._drag)this.commitDrag();if(this._animationEdit)this.commitAnimationEdit();
-    const report=this.report,revision=this.revision,uid=this.selectedUid,p=playbackSettings(this.object),start=p.start,end=Math.min(p.end??this.totalTicks,this.totalTicks);
-    if(end-start>5000)throw new Error('Bake up to 5,000 frames at a time. Trim the movieclip first.');
+    const report=this.report,revision=this.revision,uid=this.selectedUid,p=playbackSettings(this.object),start=p.clock==='presence'?0:p.start,end=Math.min(p.end??this.totalTicks,this.totalTicks);
+    if(end-start>5000)throw new Error('Bake supports scenes up to 5,000 frames. Use Break apart frame for individual frames.');
     const materializer=createMovieclipMaterializer(report),frames=[];let count=0,lastYield=performance.now();
     for(let tick=start;tick<end;tick++){
       const frame=this._expandMovieclipPose(at(report,tick),uid,materializer);

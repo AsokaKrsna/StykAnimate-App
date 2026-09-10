@@ -20,7 +20,7 @@ try{
   await page.locator('.movieclip-dialog input[name=name]').fill('Five frames');
   await page.locator('.movieclip-dialog input[name=end]').fill('5');await page.locator('.movieclip-dialog button[type=submit]').click();
   await page.waitForFunction(()=>styk.editor.figure?.name==='Five frames');await page.evaluate(()=>window.clipUid=styk.editor.selectedUid);
-  check('End is set before any timeline drag',await page.getByLabel('Movieclip end',{exact:true}).inputValue()==='5');
+  check('Playback has no Start, End, Restart or Split controls',await page.locator('[data-movieclip-field=start],[data-movieclip-field=end],[data-action=movieclip-restart],[data-action=movieclip-split]').count()===0);
   await select(0);await page.locator('[data-action=movieclip-break]').click();
   await page.waitForFunction(()=>!styk.editor.figure?._styk?.movieclip);
   const first=await page.evaluate(()=>styk.editor.selectedUid);
@@ -32,13 +32,24 @@ try{
   await select(2);
   check('Clip returns after the two broken frames',await page.evaluate(()=>styk.editor.evaluatedFrame.objects.some(o=>o.unique_id===clipUid)));
   await page.screenshot({path:path.join(out,'frame-gaps.png')});
-  await select(3);await page.locator('[data-action=movieclip-restart]').click();
-  check('Restart button keeps the placement and resets the current sample',await page.evaluate(()=>styk.editor.object._stykMovieclip.start===0&&styk.editor.object._stykMovieclip.end===5&&styk.editor.object._movieclipSample===0));
+  const binary=await page.evaluate(async()=>{
+    const {DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{Editor}=await import('/src/editor.mjs');
+    const e=styk.editor,exporter=new DocumentExporter(),importer=new ImportClient();
+    const phases=editor=>Array.from({length:8},(_,t)=>{editor.seek(t);return editor.evaluatedFrame.objects.filter(o=>o._stykMovieclip).map(o=>[o.unique_id,o._movieclipSample]);});
+    try{const expected=phases(e),blob=await exporter.export(e.report,{format:'styk',name:'presence-test'}),result=await importer.importFile(new File([blob],'presence-test.styk')),reopened=new Editor({demo:false,layerTimeline:true}).load(result.document);const styk=JSON.stringify(phases(reopened))===JSON.stringify(expected);
+      const coordinates=editor=>Array.from({length:30},(_,t)=>{editor.seek(t);return editor.geometry.drawables.flatMap(d=>d.points.flatMap(p=>[p.x,p.y]));});
+      const geometry=coordinates(e),piv=await exporter.export(e.report,{format:'piv',name:'presence-test'}),native=await importer.importFile(new File([piv],'presence-test.piv')),pivot=new Editor({demo:false,layerTimeline:true}).load(native.document),actual=coordinates(pivot);
+      return {styk,pivot:geometry.every((values,t)=>values.length===actual[t].length&&values.every((value,i)=>Math.abs(value-actual[t][i])<.001))};}
+    finally{exporter.dispose();importer.dispose();}
+  });
+  check('Binary STYK save and reload retain clocks and frame-only replacements',binary.styk);
+  check('Pivot worker export and binary reload preserve rendered geometry',binary.pivot);
+  await select(2);const duration=await page.evaluate(()=>styk.editor.totalTicks);
+  await page.getByLabel('Movieclip speed',{exact:true}).fill('2');await page.getByLabel('Movieclip speed',{exact:true}).press('Tab');
+  check('Playback edits leave scene length unchanged',await page.evaluate(()=>styk.editor.totalTicks)===duration);
+  await page.getByLabel('Movieclip speed',{exact:true}).fill('1');await page.getByLabel('Movieclip speed',{exact:true}).press('Tab');
   await page.evaluate(()=>window.restarted=Array.from({length:30},(_,t)=>snapshot(t)));
-  await select(4);await page.locator('[data-action=movieclip-split]').click();
-  check('Split button produces a different instance with the original end',await page.evaluate(()=>styk.editor.selectedUid!==clipUid&&styk.editor.object._stykMovieclip.start===4&&styk.editor.object._stykMovieclip.end===5));
-  check('Split changes no rendered frame',await page.evaluate(()=>restarted.every((frame,t)=>JSON.stringify(frame)===JSON.stringify(snapshot(t)))));
-  await page.keyboard.press('Control+z');await select(2);await page.locator('[data-action=movieclip-bake]').click();
+  await select(2);await page.locator('[data-action=movieclip-bake]').click();
   await page.waitForFunction(()=>styk.editor._undo.at(-1)?.label==='Bake animation');
   check('Bake button preserves previous breaks and every scene frame',await page.evaluate(()=>restarted.every((frame,t)=>JSON.stringify(frame)===JSON.stringify(snapshot(t)))));
   await page.evaluate(()=>styk.settingsUI.commit({timelineMode:'simple'}));
@@ -52,12 +63,54 @@ try{
   });
   await page.locator('.movieclip-dialog input[name=name]').fill('Simple clip');await page.locator('.movieclip-dialog button[type=submit]').click();
   await page.waitForFunction(()=>styk.editor.figure?.name==='Simple clip');
-  await page.getByRole('button',{name:'Add frame',exact:true}).click();
-  check('Simple Add button places the clip at its new frame',await page.evaluate(()=>{
-    const e=styk.editor,o=e.evaluatedFrame.objects.find(o=>o._stykMovieclip);return o&&o._stykMovieclip.start===e.tick&&e.totalTicks>=o._stykMovieclip.end;
-  }));
+  const beforeAdd=await page.evaluate(()=>({duration:styk.editor.totalTicks,tick:styk.editor.tick,uid:styk.editor.selectedUid}));
+  await page.getByRole('button',{name:/^Add frame$/i}).click();
+  check('Simple Add button carries the same clip into the added frame',await page.evaluate(before=>{
+    const e=styk.editor,o=e.evaluatedFrame.objects.find(o=>o.unique_id===before.uid);return o&&o._stykMovieclip.clock==='presence'&&o._stykMovieclip.end===undefined&&e.totalTicks===before.duration+1&&e.tick>before.tick;
+  },beforeAdd));
   await page.evaluate(()=>styk.settingsUI.commit({timelineMode:'advanced'}));
   check('The added Simple clip remains visible in Advanced',await page.evaluate(()=>styk.editor.evaluatedFrame.objects.some(o=>o._stykMovieclip)&&styk.editor.geometry.drawables.length===12));
+  for(const mode of ['simple','advanced']){
+    await page.evaluate(async mode=>{
+      const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs'),{movieclipFigure}=await import('/src/movieclips.mjs');
+      const source=emptyDocument();source.keyframes=Array.from({length:8},(_,t)=>createFrame([createObject(source.figure_types[0],1,200+t*12,250)]));
+      const report=emptyDocument();report.figure_types.push(movieclipFigure(2,'Clipboard walk',source,{duration:8,pivot:{x:200,y:250}}));
+      report.keyframes=Array.from({length:5},()=>createFrame());
+      styk.editor.load(report);styk.settingsUI.commit({timelineMode:mode});styk.editor.seek(0);styk.editor.addFigure(2);window.clipUid=styk.editor.selectedUid;
+      styk.state.applyRange=false;styk.fit();
+      window.clipPhases=()=>Array.from({length:5},(_,t)=>{const e=styk.editor,rows=e.timeline;let i=0;while(i+1<rows.length&&rows[i+1].start<=t)i++;return window.sampleClip(e,i,rows[i],t);});
+      const {evaluatedFrame}=await import('/src/pivot/geometry.mjs');window.sampleClip=(e,i,row,t)=>evaluatedFrame(e.report,i,(t-row.start)/(row.count||1),t).objects.find(o=>o.unique_id===clipUid)?._movieclipSample??null;
+    },mode);
+    // Keep canvas shortcuts out of the timeline's separate frame clipboard.
+    await page.locator('#viewport').focus();await page.keyboard.press('Control+c');
+    await page.waitForFunction(()=>styk.editor._selectionClipboard?.objects[0]?.unique_id===clipUid);
+    for(let tick=1;tick<5;tick++){
+      await page.evaluate(t=>styk.editor.seek(t),tick);await page.locator('#viewport').focus();await page.keyboard.press('Control+v');
+      await page.waitForFunction(t=>styk.editor.tick===t&&styk.editor.evaluatedFrame.objects.some(o=>o.unique_id===clipUid),tick);
+      check(`${mode}: canvas paste on frame ${tick+1} keeps the original ID`,await page.evaluate(()=>styk.editor.selectedUid===clipUid&&styk.editor.object.root_x===styk.editor.report.canvas_width/2));
+    }
+    check(`${mode}: five appearances advance one clock`,await page.evaluate(()=>JSON.stringify(clipPhases())==='[0,1,2,3,4]'&&styk.editor.totalTicks===5));
+    await select(2);await page.locator('#viewport').focus();await page.keyboard.press('Delete');
+    await page.waitForFunction(()=>clipPhases()[2]===null);
+    check(`${mode}: Delete removes only frame 3 and pauses one step`,await page.evaluate(()=>JSON.stringify(clipPhases())==='[0,1,null,2,3]'&&styk.editor.totalTicks===5));
+    await page.keyboard.press('Control+z');await page.waitForFunction(()=>clipPhases()[2]===2);
+    await page.keyboard.press('Control+y');await page.waitForFunction(()=>clipPhases()[2]===null);
+    await page.keyboard.press('Control+v');await page.waitForFunction(()=>clipPhases()[2]===2);
+    check(`${mode}: undo, redo and pasting back restore the same instance`,await page.evaluate(()=>JSON.stringify(clipPhases())==='[0,1,2,3,4]'&&styk.editor.selectedUid===clipUid));
+    await page.keyboard.press('Control+v');await page.waitForFunction(()=>styk.editor._selectionClipboard.pastes===6);
+    check(`${mode}: repeated paste cannot duplicate an existing ID`,await page.evaluate(()=>styk.editor.evaluatedFrame.objects.length===1));
+    await page.locator('[data-action=movieclip-unique]').click();
+    await page.waitForFunction(()=>styk.editor.selectedUid!==clipUid&&Boolean(styk.editor.figure?._styk?.movieclip));
+    check(`${mode}: Make unique gives this frame an independent ID without changing its pose`,await page.evaluate(()=>styk.editor.object._movieclipSample===2&&JSON.stringify(clipPhases())==='[0,1,null,3,4]'));
+    await page.screenshot({path:path.join(out,`clipboard-${mode}.png`)});
+    const roundtrip=await page.evaluate(async()=>{
+      const {DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs');
+      const e=styk.editor,exporter=new DocumentExporter(),importer=new ImportClient(),uid=e.selectedUid,expected=clipPhases();
+      try{const blob=await exporter.export(e.report,{format:'styk',name:'clipboard-fix'}),loaded=await importer.importFile(new File([blob],'clipboard-fix.styk'));e.load(loaded.document);e.seek(2);e.select(uid);return JSON.stringify(clipPhases())===JSON.stringify(expected)&&e.object._movieclipSample===2;}
+      finally{exporter.dispose();importer.dispose();}
+    });
+    check(`${mode}: binary STYK reload preserves copied and unique identities`,roundtrip);
+  }
   check('No browser errors',errors.length===0);
 }catch(error){await page.screenshot({path:path.join(out,'commands-failure.png')});throw error;}
 finally{await writeFile(path.join(out,'commands-results.json'),JSON.stringify({checks,errors},null,2));await browser.close();}

@@ -141,7 +141,7 @@ test('range duplication skips absent identities, preserves layer membership and 
 });
 
 test('authored duplicate ranges sample each composed tick without changing native frames or source scalar curves', () => {
-  const editor = fixture(); editor.addAnimationKey({kind: 'figure', uid: 1}, 'x', 0, 100); editor.addAnimationKey({kind: 'figure', uid: 1}, 'x', 10, 300);
+  const editor = fixture(); editor.addAnimationKeys([{target: {kind: 'figure', uid: 1}, property: 'x', tick: 0, value: 100, interpolation: 'linear'}, {target: {kind: 'figure', uid: 1}, property: 'x', tick: 10, value: 300}]);
   editor.select(1); const native = clone(editor.report.keyframes), curves = clone(editor.animationChannels);
   const result = editor.duplicateInFrames(undefined, {ticks: [2, 8], offset: 0}), uid = result.insertedUids[0];
   for (const tick of [2, 8]) { editor.seek(tick); const objects = new Map(editor.selectionFrame.objects.map(object => [object.unique_id, object])); near(objects.get(uid).root_x, objects.get(1).root_x); }
@@ -191,7 +191,7 @@ test('range alignment rejects a later invalid bound atomically and attached sele
 });
 
 test('authored range rotation and centering preserve each composed pose and matching scalar overrides', () => {
-  const editor = fixture(); editor.addAnimationKey({kind: 'figure', uid: 1}, 'x', 0, 100); editor.addAnimationKey({kind: 'figure', uid: 1}, 'x', 10, 300);
+  const editor = fixture(); editor.addAnimationKeys([{target: {kind: 'figure', uid: 1}, property: 'x', tick: 0, value: 100, interpolation: 'linear'}, {target: {kind: 'figure', uid: 1}, property: 'x', tick: 10, value: 300}]);
   editor.select(1); const native = clone(editor.report.keyframes), angle = editor.object.angles[0];
   editor.rotateFiguresInFrames(.25, undefined, {ticks: [2, 8]});
   for (const tick of [2, 8]) { editor.seek(tick); near(editor.object.angles[0], angle + .25); }

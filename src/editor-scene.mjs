@@ -1,3 +1,4 @@
+import {inheritedKeyEasing} from './keyframe-easing.mjs';
 /** Sparse Scene edits. Native frames keep their timing and object-array identity. */
 import {animationChannels, sampleAnimationChannel, validateAnimationDocument, validateAnimationValue} from './animation-channels.mjs';
 import {samplePoseTrack} from './animation-pose.mjs';
@@ -90,7 +91,7 @@ function draft(editor) {
         id = `key-${this.nextKey++}`;
       } while (state.ids.has(id));
       state.ids.add(id);
-      const key = {id, tick, value: checked, interpolation: property === 'pose' || property === 'backgroundId' ? 'hold' : 'linear'};
+      const key = {id, tick, value: checked, ...inheritedKeyEasing(state.channel.keys, tick, {property})};
       state.channel.keys.push(key); state.ticks.set(tick, key);
     },
     asset(asset) {

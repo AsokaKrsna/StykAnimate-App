@@ -1,8 +1,8 @@
 /** Shared channel vocabulary for validation, timeline rows and discrete sampling. */
 export const ANIMATION_PROPERTIES = Object.freeze({
   figure: Object.freeze(['x', 'y', 'scale', 'rotation', 'color', 'opacity', 'outlineColor', 'outlineWidth', 'outlineOpacity', 'zIndex', 'pose']),
-  segment: Object.freeze(['color', 'opacity', 'thickness', 'gradientColor', 'gradientOpacity', 'paint']),
-  polygon: Object.freeze(['color', 'opacity']),
+  segment: Object.freeze(['color', 'opacity', 'thickness', 'gradientColor', 'gradientOpacity', 'paint', 'zIndex']),
+  polygon: Object.freeze(['color', 'opacity', 'zIndex']),
   camera: Object.freeze(['pose', 'x', 'y', 'scale', 'rotation']),
   scene: Object.freeze(['pose', 'backgroundId', 'color']),
   layer: Object.freeze(['pose']),
@@ -18,5 +18,11 @@ export const isColorAnimationProperty = property => ['color', 'outlineColor', 'g
 export const isDiscreteAnimationProperty = property => property === 'backgroundId' || property === 'zIndex' || property === 'paint';
 export function validateFigureZIndex(value) {
   if (!Number.isSafeInteger(value) || Math.abs(value) > 1000000) throw new Error('Z-index must be a whole number from -1,000,000 to 1,000,000.');
+  return value;
+}
+// Imported internal orders may contain fractional positions or tied depths.
+export function validateDrawableZIndex(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isFinite(Math.fround(value)))
+    throw new Error('Draw order must be a finite native number.');
   return value;
 }

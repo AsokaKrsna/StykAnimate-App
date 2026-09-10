@@ -1,3 +1,5 @@
+import {attachTimelineHotkeys} from './timeline-hotkeys.mjs';
+import {pasteSheetClipboard} from './shared-clipboard.mjs';
 import {sheetKeyTimes, sheetKeyAt} from './layer-sheet.mjs';
 import {icon} from './icons.mjs';
 import {keyEasing, EASING_MODES} from './keyframe-easing.mjs';
@@ -19,6 +21,7 @@ export class SheetFilmstrip {
     this.editor = editor;
     this.container = container;
     Object.assign(this, options);
+    attachTimelineHotkeys(this);
     this.events = new AbortController();
     this.cards = new Map();
     this.previews = new Map();
@@ -41,14 +44,15 @@ export class SheetFilmstrip {
     this.easingLabel = el('span', this.easingButton);
     this.easingButton.insertAdjacentHTML('beforeend', icon('chevron-down'));
     this.easingButton.setAttribute('aria-haspopup', 'dialog');
-    this.mainButton = this.button(this.controls, 'Add frame', () => this.action('add'));
+    this.mainButton = this.button(this.controls, 'Add Frame', () => this.action('add'));
     this.mainButton.className = 'sheet-add-frame';
-    this.mainButton.innerHTML = `${icon('plus')}<span>Add frame</span>`;
+    this.mainButton.innerHTML = `${icon('plus')}<span>Add Frame</span>`;
     const actions = el('div', this.controls, 'sheet-filmstrip-actions');
     this.copyButton = this.button(actions, 'Copy frames', () => this.copySelection(), 'duplicate');
     this.pasteButton = this.button(actions, 'Paste frames', () => this.pasteSelection(), 'clipboard');
-    this.insertButton = this.button(actions, 'Insert frame', () => this.action('insert'), 'plus');
-    this.duplicateFrameButton = this.button(actions, 'Duplicate frame after current (Ctrl+Enter)', () => this.action('duplicate-after'), 'duplicate');
+    this.copyButton.dataset.hotkeyCommand = 'copy';
+    this.pasteButton.dataset.hotkeyCommand = 'paste';
+    this.mainButton.dataset.hotkeyCommand = 'add-frame';
     this.deleteButton = this.button(actions, 'Delete frames', () => this.action('delete'), 'trash');
     this.strip = el('div', this.root, 'sheet-filmstrip-scroll');
     this.strip.tabIndex = 0;
@@ -87,7 +91,9 @@ export class SheetFilmstrip {
   }
   _on(target, name, fn, options = {}) { target.addEventListener(name, fn, {...options, signal: this.events.signal}); }
   _run(operation) {
-    try { this.onSeek?.(); const result = operation(); this.update(); return result; }
+    try { this.onSeek?.(); const result = operation(); this.update();
+      if (result?.then) return result.catch(error => { this.onError?.(error); return false; }).finally(() => this.update());
+      return result; }
     catch (error) { this.onError?.(error); this.update(); return false; }
   }
   button(parent, title, action, symbol) {
@@ -182,8 +188,8 @@ export class SheetFilmstrip {
     const settings = this.easingSettings(), mode = settings[0]?.interpolation;
     this.easingLabel.textContent = settings.every(value => JSON.stringify(value) === JSON.stringify(settings[0])) ?
       mode === 'constant' ? 'None' : EASING_MODES.find(item => item.id === mode)?.label ?? 'None' : 'Mixed';
-    this.duration.disabled = this.easingButton.disabled = this.mainButton.disabled = this.insertButton.disabled = this.duplicateFrameButton.disabled = this.deleteButton.disabled = this.copyButton.disabled = locked;
-    this.pasteButton.disabled = locked || !this.editor._sheetClipboard || this.editor._sheetClipboard.rows.length !== this.ids.length;
+    this.duration.disabled = this.easingButton.disabled = this.mainButton.disabled = this.deleteButton.disabled = this.copyButton.disabled = locked;
+    this.pasteButton.disabled = locked || (!this.sharedClipboard && !this.editor._sheetClipboard);
     for (const [index, card] of this.cards) if (index < first || index >= last) { card.remove(); this.cards.delete(index); }
     for (let index = first; index < last; index++) {
       let card = this.cards.get(index);
@@ -243,16 +249,17 @@ export class SheetFilmstrip {
       }
     } finally { this.busy = false; }
   }
-  copySelection() { const {start, end} = this.selectedTimeRange; return this._run(() => this.editor.sheetCopyFrames(this.ids, start, end - 1)); }
-  cutSelection() { return this._run(() => { this.editor.sheetCopyFrames(this.ids, this.selectedTimeRange.start, this.selectedTimeRange.end - 1); return this.action('delete'); }); }
-  pasteSelection() { return this._run(() => this.editor.sheetPasteFrames(this.ids, this.times[this.selectedIndex], {insert: true})); }
+  copySelection() { const {start, end} = this.selectedTimeRange, ids = this.ids; return this._clipboard('copy', () => this.editor.sheetCopyFrames(ids, start, end - 1)); }
+  cutSelection() { return this._clipboard('copy', () => { this.editor.sheetCopyFrames(this.ids, this.selectedTimeRange.start, this.selectedTimeRange.end - 1); this.action('delete'); return this.editor._sheetClipboard; }); }
+  pasteSelection(atEnd = false) { const tick = atEnd ? this.editor.totalTicks : this.times[this.selectedIndex], ids = this.ids; return this._clipboard('paste', () => pasteSheetClipboard(this.editor, ids, tick, {insert: true, wholeScene: true})); }
+  _clipboard(action, operation) { return this._run(() => this.sharedClipboard ? this.sharedClipboard[action]('sheet', operation) : operation()); }
   selectAll() { this.selected = new Set(this.times.map((_, i) => i)); this.onRangeChange?.(this.selectedFrameIndices); this.update(); }
   action(command) {
     return this._run(() => {
-      if (['add', 'add-frame', 'duplicate'].includes(command)) return this.editor.sheetAppendFrame();
+      if (['add', 'add-frame', 'duplicate'].includes(command)) return this.onAddFrame ? this.onAddFrame() : this.editor.sheetDuplicateFrameAfter(this.ids);
       if (command === 'duplicate-after') return this.editor.sheetDuplicateFrameAfter(this.ids);
       if (command === 'copy') return this.copySelection();
-      if (command === 'paste' || command === 'paste-end') return this.editor.sheetPasteFrames(this.ids, command === 'paste-end' ? this.editor.totalTicks : this.times[this.selectedIndex], {insert: true});
+      if (command === 'paste' || command === 'paste-end') return this.pasteSelection(command === 'paste-end');
       if (command === 'delete') {
         const ranges = this.ranges().sort((a, b) => b.start - a.start);
         return this.editor.movieclipBatch('Remove scene frames', () => {
@@ -267,24 +274,18 @@ export class SheetFilmstrip {
     });
   }
   keydown(event) {
-    if (event.target.matches('input, select, textarea')) { event.stopPropagation(); return; }
-    const control = event.ctrlKey || event.metaKey;
-    const action = control ? {c: 'copySelection', x: 'cutSelection', v: 'pasteSelection', a: 'selectAll'}[event.key.toLowerCase()] : null;
-    if (action) { event.preventDefault(); event.stopPropagation(); this[action](); }
-    else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-      event.preventDefault(); event.stopPropagation(); this.selectFrame(this.selectedIndex + (event.key === 'ArrowRight' ? 1 : -1), {extend: event.shiftKey});
-    } else if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); event.stopPropagation(); this.action('delete'); }
+    if (event.target.matches('input,select,textarea')) { event.stopPropagation(); return; }
+    if (this.ownsHotkeys && this.hotkeys.keydown(event, ['simple'])) event.stopPropagation();
   }
   _menu(event) {
-    const locked = this.locked, canPaste = !locked && this.editor._sheetClipboard?.rows.length === this.ids.length;
+    const locked = this.locked, canPaste = !locked && (this.sharedClipboard || this.editor._sheetClipboard);
     showTimelineMenu(this, event, [
       [!locked && {label: 'Frame easing…', symbol: 'sliders', action: () => this.showEasingPopover()},
-       !locked && {label: 'Insert frame', symbol: 'plus', action: () => this.action('insert')},
-       !locked && {label: 'Duplicate frame after current', shortcut: 'Ctrl+Enter', symbol: 'duplicate', action: () => this.action('duplicate-after')}],
-      [!locked && {label: 'Copy frames', shortcut: 'Ctrl+C', symbol: 'duplicate', action: () => this.copySelection()},
-       !locked && {label: 'Cut frames', shortcut: 'Ctrl+X', symbol: 'cut', action: () => this.cutSelection()},
-       canPaste && {label: 'Paste frames', shortcut: 'Ctrl+V', symbol: 'clipboard', action: () => this.pasteSelection()}],
-      [!locked && {label: 'Delete frames', shortcut: 'Delete', symbol: 'trash', danger: true, action: () => this.action('delete')},
+       !locked && {label: 'Add Frame', shortcut: this.shortcut('add-frame'), symbol: 'plus', action: () => this.action('add')}],
+      [!locked && {label: 'Copy frames', shortcut: this.shortcut('copy'), symbol: 'duplicate', action: () => this.copySelection()},
+       !locked && {label: 'Cut frames', shortcut: this.shortcut('cut'), symbol: 'cut', action: () => this.cutSelection()},
+       canPaste && {label: 'Paste frames', shortcut: this.shortcut('paste'), symbol: 'clipboard', action: () => this.pasteSelection()}],
+      [!locked && {label: 'Delete frames', shortcut: this.shortcut('delete'), symbol: 'trash', danger: true, action: () => this.action('delete')},
        locked && {label: 'Unlock layers', symbol: 'unlock', action: () => { for (const id of this.ids) this.editor.setLayerLocked(id, false); }}],
     ]);
   }

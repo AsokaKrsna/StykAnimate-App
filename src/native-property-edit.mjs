@@ -3,7 +3,7 @@ import { objectBounds } from "./renderer-geometry.mjs";
 import { cameraValues } from "./editor-camera.mjs";
 import { commitNativePoseRange } from "./native-property-ranges.mjs";
 import { animationStyleValue, setAnimationStyle, polygonIdentity, resolveInstanceFigure } from "./animation-style.mjs";
-import { builderStyleProperty, previewBuilderStyleProperty } from './editor-builder-style.mjs';
+import { builderStyleProperty, previewBuilderStyleProperty, beginBuilderOrderAnimation, previewBuilderOrderAnimation } from './editor-builder-style.mjs';
 import { builderBranchStyleBinding } from './editor-builder-branch.mjs';
 import { branchOpacityPlan, branchGradientOpacityBinding, beginBranchStyleAnimation, previewBranchStyleAnimation, commitBranchStyleAnimation, cancelBranchStyleAnimation } from './editor-branch-style.mjs';
 
@@ -419,6 +419,10 @@ export function beginNativePropertyEdit(
   if (!Number.isFinite(token.value))
     throw new Error("The selected property has no finite value.");
   token.initialValue = token.value;
+  if(builder?.animated){
+    token.definition=false;token.orderAnimation=beginBuilderOrderAnimation(editor,builder);
+    active.set(editor,token);return token;
+  }
   const scalar = editor.propertyChannels && !branchPlan ? styleBinding(editor, key) : null;
   if (scalar) {
     token.scalar = scalar; token.factor = ['thickness','outlineWidth'].includes(scalar.property) ? 1 : 100;
@@ -489,7 +493,9 @@ export function previewNativePropertyEdit(token, value) {
   if(token.sheetDuration){token.value=value;return true;}
   if (token.value === value && ((!token.branchStyle && !token.branchAnimation) || token.branchStyleApplied)) return false;
   const { editor, key } = token;
-  if (token.scalar) {
+  if (token.orderAnimation) {
+    previewBuilderOrderAnimation(editor,token.builder,value);
+  } else if (token.scalar) {
     editor.previewAnimationEdit(value / token.factor);
   } else if (token.branchAnimation) {
     previewBranchStyleAnimation(editor, value / (key === 'thickness' ? 1 : 100));
@@ -630,6 +636,16 @@ export function commitNativePropertyEdit(token) {
   const rangeCount=token.sheetTicks?.length??token.indices?.length;
   const rangeTimes=()=>token.sheetTicks??token.indices.map(index=>editor.timeline[index].start);
   if(token.sheetDuration){token.closed=true;active.delete(editor);return editor.sheetSetDuration(token.value,token.layerId,token.tick);}
+  if(token.orderAnimation){
+    try{
+      let result;
+      if(rangeCount>1){
+        const entries=rangeTimes().flatMap(tick=>token.orderAnimation.entries.map(entry=>({...entry,tick})));
+        cancelBranchStyleAnimation(editor);result=editor.addAnimationKeys(entries);
+      }else result=commitBranchStyleAnimation(editor);
+      token.closed=true;active.delete(editor);return result;
+    }catch(error){cancelNativePropertyEdit(token);throw error;}
+  }
   if (token.scalar) {
     let result;
     if(rangeCount>1){editor.cancelAnimationEdit();result=editor.addAnimationKeys(rangeTimes().map(tick=>({...token.scalar,tick,value:token.value/token.factor})));}
@@ -744,6 +760,7 @@ export function cancelNativePropertyEdit(token) {
   active.delete(editor);
   if (editor.report !== token.report) return false;
   if(token.sheetDuration)return true;
+  if (token.orderAnimation) return cancelBranchStyleAnimation(editor);
   if (token.scalar) return editor.cancelAnimationEdit();
   if (token.branchAnimation) return cancelBranchStyleAnimation(editor);
   if (token.pose || token.camera) {

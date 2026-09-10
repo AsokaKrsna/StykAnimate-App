@@ -1,4 +1,5 @@
-import {keyEasing} from './keyframe-easing.mjs';
+import {keyEasing, inheritedKeyEasing} from './keyframe-easing.mjs';
+import {isDiscreteAnimationProperty} from './animation-properties.mjs';
 /** A uniform scalar edit across one selected branch. Native definitions remain
  * shared unless an authored/captured style already owns an affected value. */
 import {animationChannels,animationChannelId,validateAnimationValue,composeAnimationChannels} from './animation-channels.mjs';
@@ -69,7 +70,7 @@ export function beginBranchStyleAnimation(editor,plan) {
     if(!key){
       const ids=new Set(channel.keys.map(key=>key.id));let keyId;
       do{if(!Number.isSafeInteger(after.nextKeyId)||after.nextKeyId<1)throw new Error('Animation key identity capacity exceeded.');keyId=`key-${after.nextKeyId++}`;}while(ids.has(keyId));
-      key={id:keyId,tick:editor.tick,value:source.initialValue,interpolation:'linear'};channel.keys.push(key);channel.keys.sort((a,b)=>a.tick-b.tick);
+      key={id:keyId,tick:editor.tick,value:source.initialValue,...inheritedKeyEasing(channel.keys,editor.tick,{property})};channel.keys.push(key);channel.keys.sort((a,b)=>a.tick-b.tick);
     }
     delete key.passthrough;
     entries.push({target,property,tick:editor.tick,value:source.initialValue,exactTarget:true,...keyEasing(key)});keys.push(key);channelIds.push(id);
@@ -79,9 +80,16 @@ export function beginBranchStyleAnimation(editor,plan) {
 export function previewBranchStyleAnimation(editor,value) {
   const edit=current(editor);
   value=validateAnimationValue(edit.entries[0].target,edit.entries[0].property,value);
-  for(let i=0;i<edit.keys.length;i++){edit.keys[i].value=value;edit.entries[i].value=value;}
-  edit.changed=edit.initialValues.some(initial=>initial!==value);
-  publish(editor,edit,edit.changed?edit.after:edit.before,true,'Preview branch opacity');return value;
+  previewBranchStyleValues(editor,edit.entries.map(()=>value));return value;
+}
+/** Combined draw order changes assign a different held value to each drawable. */
+export function previewBranchStyleValues(editor,values) {
+  const edit=current(editor);
+  if(values.length!==edit.entries.length)throw new Error('Every edited drawable needs a value.');
+  values=values.map((value,i)=>validateAnimationValue(edit.entries[i].target,edit.entries[i].property,value));
+  for(let i=0;i<edit.keys.length;i++){edit.keys[i].value=values[i];edit.entries[i].value=values[i];}
+  edit.changed=edit.initialValues.some((initial,i)=>initial!==values[i]);
+  publish(editor,edit,edit.changed?edit.after:edit.before,true,'Preview drawable properties');
 }
 export function cancelBranchStyleAnimation(editor) {
   const edit=editor._animationEdit;if(!edit?.branchStyle)return false;

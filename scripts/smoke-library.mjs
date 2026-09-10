@@ -1,13 +1,16 @@
 import {_electron as electron} from 'playwright';
 import assert from 'node:assert/strict';
-import {mkdir, readFile, writeFile} from 'node:fs/promises';
+import {mkdir, readFile, writeFile, copyFile} from 'node:fs/promises';
 import path from 'node:path';
 
 const root=process.cwd(), packaged=process.argv.includes('--packaged'), run=path.join(root,'artifacts',`library-${packaged?'packaged-':''}${Date.now()}`);
 await mkdir(run,{recursive:true});
 const library=path.join(run,'Documents','StykAnimate','library'), errors=[], checks=[];
 async function launch() {
-  const app=await electron.launch({executablePath:packaged?path.join(root,'release','win-unpacked','StykAnimate.exe'):undefined,args:packaged?[]:[root],cwd:root,timeout:45000,env:{...process.env,STYK_LIBRARY_DIR:library,STYK_USER_DATA_DIR:path.join(run,`profile-${Date.now()}`),STYK_DEBUG:'1'}});
+  const profile=path.join(run,`profile-${Date.now()}`); await mkdir(profile,{recursive:true});
+  // Isolated automated profiles keep optional collection off and skip onboarding.
+  await writeFile(path.join(profile,'telemetry-state.json'),JSON.stringify({decided:true,consent:{analytics:false,diagnostics:false,policyVersion:'2026-09-10',updatedAt:Date.now()}}));
+  const app=await electron.launch({executablePath:packaged?process.env.STYK_PACKAGED_EXECUTABLE||path.join(root,'release','win-unpacked','StykAnimate.exe'):undefined,args:packaged?[]:[root],cwd:root,timeout:45000,env:{...process.env,STYK_LIBRARY_DIR:library,STYK_USER_DATA_DIR:profile,STYK_DEBUG:'1'}});
   const page=await app.firstWindow(); page.on('pageerror',e=>errors.push(e.message)); await page.waitForFunction(()=>window.styk?.ready,{timeout:30000});
   return {app,page};
 }
@@ -48,6 +51,25 @@ try {
   await page.getByRole('tab',{name:'Library',exact:true}).click(); await page.waitForSelector('[data-library-path="Blue hero.stkz"]'); await page.waitForSelector('.library-thumbnail img');
   await page.locator('[data-library-path="Blue hero.stkz"]').dblclick(); await settled(page); assert.equal(await page.evaluate(()=>window.styk.editor.selectionFrame.objects.length),4);
   checks.push('library and thumbnails persist through a full desktop restart'); assert.deepEqual(errors,[]);
+  await copyFile(path.join(library,'Blue hero.stkz'),path.join(library,'External asset.stkz'));
+  await page.getByRole('button',{name:'Refresh library',exact:true}).click(); await page.waitForSelector('[data-library-path="External asset.stkz"] img');
+  assert.ok((await readFile(path.join(library,'External asset.stkz.png'))).length>100);
+  checks.push('files copied into the library get persistent previews automatically');
+  await page.evaluate(async()=>{
+    const {imageFileToFigure}=await import('./src/media-authoring.mjs');
+    const canvas=document.createElement('canvas');canvas.width=64;canvas.height=40;const context=canvas.getContext('2d');context.fillStyle='#ed4455';context.fillRect(0,0,64,40);
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve));const report=await imageFileToFigure(new File([blob],'Red sprite.png',{type:'image/png'}),{preserveOpaqueBackground:true});window.styk.editor.importFigure(report);
+  });
+  await page.locator('#user-library [data-library-action="save"]').click(); await settled(page);
+  const sprite=await page.evaluate(()=>window.styk.library.selected); await page.locator(`[data-library-path="${sprite}"] img`).waitFor();
+  const red=await page.locator(`[data-library-path="${sprite}"] img`).evaluate(image=>{const c=document.createElement('canvas');c.width=c.height=320;const x=c.getContext('2d');x.drawImage(image,0,0,320,320);return [...x.getImageData(160,160,1,1).data];}); assert.ok(red[0]>200&&red[1]<100&&red[3]>200);
+  checks.push('embedded image asset renders with correct color in its saved thumbnail');
+  const rootListing=await page.evaluate(()=>window.stykDesktop.listLibrary()); assert.ok(rootListing.entries.some(i=>i.name==='Blue hero'));
+  // Exercise the real UI and constrained trash IPC with a reversible test substitute.
+  await current.app.evaluate(({shell})=>{global.libraryTrashed=[];shell.trashItem=async p=>{global.libraryTrashed.push(p);};});
+  await page.locator('[data-library-path="External asset.stkz"]').click(); await page.getByRole('button',{name:'Remove library item',exact:true}).click(); await page.getByRole('button',{name:'Move to Recycle Bin',exact:true}).click();
+  await page.waitForFunction(()=>!document.querySelector('.library-dialog').open); const trashed=await current.app.evaluate(()=>global.libraryTrashed);assert.equal(trashed.length,2);assert.ok(trashed.every(p=>p.startsWith(library)));
+  checks.push('Recycle Bin action targets only the chosen library asset and preview');
   const evidence={packaged,run,library,checks,errors}; await writeFile(path.join(run,'evidence.json'),JSON.stringify(evidence,null,2)); console.log(JSON.stringify(evidence,null,2));
 } catch(error) { if(current) { await current.page.screenshot({path:path.join(run,'failure.png')}).catch(()=>{}); console.error(await current.page.locator('.library-message').innerText().catch(()=>'')); } throw error; }
 finally {await close();}

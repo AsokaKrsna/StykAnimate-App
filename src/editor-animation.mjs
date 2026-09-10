@@ -4,7 +4,7 @@ import {composeAnimationChannels,animationChannels, animationEndTick, animationC
 import {buildGeometry, evaluatedFrame, nativeTimeline} from './pivot/geometry.mjs';
 import {previewBranchStyleAnimation,commitBranchStyleAnimation,cancelBranchStyleAnimation} from './editor-branch-style.mjs';
 
-import {keyEasing, assignKeyEasing, validateKeyEasing} from './keyframe-easing.mjs';
+import {keyEasing, assignKeyEasing, validateKeyEasing, inheritedKeyEasing} from './keyframe-easing.mjs';
 import {AUTHORING_PROPERTIES, isDiscreteAnimationProperty} from './animation-properties.mjs';
 import {projectNativePropertyChannel} from './native-property-projection.mjs';
 import {figurePoseSequences} from './native-pose-projection.mjs';
@@ -136,15 +136,9 @@ function putKey(editor, draft, entry) {
   let ticks = draft.keyTicks.get(channel);
   if (!ticks) { ticks = new Map(channel.keys.filter(key => !key.hidden).map(key => [key.tick, key])); draft.keyTicks.set(channel, ticks); }
   let key = ticks.get(tick);
-  // Inserting a pose continues its outgoing curve. Defaulting every new pose
-  // to Hold silently freezes an otherwise interpolated animation.
-  let previous;
-  if (property === 'pose' && !key) for (const candidate of channel.keys)
-    if (candidate.tick < tick && !candidate.hidden && (!previous || candidate.tick > previous.tick)) previous = candidate;
-  const inherited = previous?.interpolation === undefined && previous && editor.report.auto_easing ? 'auto' : previous?.interpolation;
-  const value = validateAnimationValue(target, property, raw), interpolation = entry.interpolation ?? key?.interpolation ?? inherited ??
-    (isDiscreteAnimationProperty(property) || property === 'pose' && editor.report.version < 5 ? 'hold' : 'linear');
-  const easing = {interpolation, ...(interpolation === 'bezier' ? {bezier: entry.bezier ?? key?.bezier ?? previous?.bezier} : {})};
+  const inherited = inheritedKeyEasing(channel.keys, tick, {property, autoEasing: property === 'pose' && editor.report.auto_easing});
+  const value = validateAnimationValue(target, property, raw), interpolation = entry.interpolation ?? key?.interpolation ?? inherited.interpolation;
+  const easing = {interpolation, ...(interpolation === 'bezier' ? {bezier: entry.bezier ?? key?.bezier ?? inherited.bezier} : {})};
   validateKeyEasing(easing, property);
   if (key) {
     if (!same(key.value, value) || key.interpolation !== interpolation || !same(key.bezier, easing.bezier) || key.passthrough) {

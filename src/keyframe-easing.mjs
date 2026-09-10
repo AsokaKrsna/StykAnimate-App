@@ -32,6 +32,15 @@ export function assignKeyEasing(key, easing) {
   Object.assign(key, fields);
   return key;
 }
+/** New keys continue the nearest earlier visible key, or start with Hold. */
+export function inheritedKeyEasing(keys, tick, {property, autoEasing = false} = {}) {
+  if (isDiscreteAnimationProperty(property)) return keyEasing({interpolation: 'hold'});
+  let previous;
+  for (const key of keys) if (!key.hidden && key.tick < tick && (!previous || key.tick > previous.tick)) previous = key;
+  return keyEasing(previous
+    ? {...previous, interpolation: previous.interpolation ?? (autoEasing ? 'auto' : 'linear')}
+    : {interpolation: 'hold'});
+}
 const coordinate = (t, a, b) => 3 * (1 - t) ** 2 * t * a + 3 * (1 - t) * t * t * b + t ** 3;
 /** Invert x(u) before evaluating y(u); elapsed time is not the curve parameter. */
 export function cubicBezierProgress(t, points = DEFAULT_BEZIER) {

@@ -14,6 +14,8 @@ const defaultPackagedPath = process.platform === 'win32' ? ['win-unpacked', 'Sty
   : [process.arch === 'arm64' ? 'linux-arm64-unpacked' : 'linux-unpacked', 'stykanimate-webapp'];
 const executablePath = packaged ? process.env.STYK_PACKAGED_EXECUTABLE || path.join(appRoot, 'release', ...defaultPackagedPath) : undefined;
 const profilePath = path.join(output, `${packaged ? 'packaged' : 'desktop'}-profile-${Date.now()}`);
+await mkdir(profilePath, {recursive:true});
+await writeFile(path.join(profilePath,'telemetry-state.json'),JSON.stringify({decided:true,consent:{analytics:false,diagnostics:false,policyVersion:'2026-09-10',updatedAt:Date.now()}}));
 const app = await electron.launch({ executablePath, args: packaged ? [] : [appRoot], cwd: appRoot, timeout: 45000, env: { ...process.env, STYK_DEBUG: '1', STYK_USER_DATA_DIR: profilePath } });
 const errors = [];
 let appClosed = false;

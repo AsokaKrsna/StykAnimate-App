@@ -1,3 +1,4 @@
+import {inheritedKeyEasing} from './keyframe-easing.mjs';
 /** Atomic figure commands over native source keys or explicitly selected authored ticks. */
 import {planFigureFrameOperation} from './range-figure-operations.mjs';
 import {createObject} from './demo.mjs';
@@ -5,9 +6,10 @@ import {frameOrder, setOrder} from './pivot/structure.mjs';
 import {evaluatedFrame, buildGeometry} from './pivot/geometry.mjs';
 import {validateObjectChanges, validateScene} from './pivot/model.mjs';
 import {animationChannelId, animationPropertyValue, validateAnimationDocument, validateAnimationValue} from './animation-channels.mjs';
-import {AUTHORING_PROPERTIES, isDiscreteAnimationProperty} from './animation-properties.mjs';
+import {AUTHORING_PROPERTIES} from './animation-properties.mjs';
 import {splitPosePropertyChanges} from './pose-property-split.mjs';
 import {snapshotPoseFrame, snapshotPoseObject} from './pose-snapshot.mjs';
+import {presencePlayback} from './movieclip-presence.mjs';
 import {translateIKTargets, remapIKFollowers} from './ik.mjs';
 
 const clone = value => structuredClone(value);
@@ -68,24 +70,29 @@ function insertionPlan(editor, operation) {
     if (!figure) throw new Error('Choose an existing figure definition.');
     const uid = identity(), x = operation.x ?? editor.report.canvas_width / 2, y = operation.y ?? editor.report.canvas_height / 2;
     if (![x, y].every(Number.isFinite)) throw new Error('Figure position must be finite.');
-    return {objects: [createObject(figure, uid, x, y)], order: [uid], definitions, hints, nextUid};
+    return {objects: [createObject(figure, uid, x, y,figure._styk?.movieclip&&editor.report._styk?.layerSheet?{_stykMovieclip:presencePlayback()}: {})], order: [uid], definitions, hints, nextUid};
   }
   const clipboard = editor._selectionClipboard ?? editor._figureClipboard;
   if (!clipboard) return null;
   const sourceObjects = clipboard.objects ?? [clipboard.object], sourceFigures = clipboard.figures ?? [clipboard.figure];
-  const uidMap = new Map(sourceObjects.map(object => [object.unique_id, identity()])), types = new Map();
   const existingTypes = new Map(editor.report.figure_types.map(figure => [figure.figure_type_id, figure]));
+  const retained = new Set(sourceObjects.filter(object => !operation.newIdentities && editor.report._styk?.layerSheet &&
+    clipboard.documentToken === editor._documentToken && !clipboard.freshTypes?.has(object.figure_type_id) &&
+    existingTypes.get(object.figure_type_id)?._styk?.movieclip).map(object => object.unique_id));
+  const uidMap = new Map(sourceObjects.map(object => [object.unique_id, retained.has(object.unique_id) ? object.unique_id : identity()])), types = new Map();
   for (const original of sourceFigures) {
     let figure = clipboard.documentToken === editor._documentToken && !clipboard.freshTypes?.has(original.figure_type_id) ? existingTypes.get(original.figure_type_id) : null;
     if (!figure) { figure = {...clone(original), figure_type_id: nextType++}; definitions.push(figure); }
     types.set(original.figure_type_id, {figure, indices: new Map(original.segments.map((segment, index) => [segment.segment_id, index])),
       handles: new Set([0, ...figure.segments.map(segment => segment.segment_id)])});
   }
-  const offset = operation.offset ?? 0;
+  const offset = operation.offset ?? (retained.size ? 0 : operation.defaultOffset ?? 0);
   if (!Number.isFinite(offset)) throw new Error('Paste offset must be finite.');
   const objects = sourceObjects.map(original => {
     const object = snapshotPoseObject(original), {figure, indices} = types.get(original.figure_type_id);
+    delete object._stykMovieclipPart;
     object.unique_id = uidMap.get(original.unique_id); object.figure_type_id = figure.figure_type_id; object.root_x += offset; object.root_y += offset;
+    if(figure._styk?.movieclip&&editor.report._styk?.layerSheet&&!retained.has(original.unique_id))object._stykMovieclip=presencePlayback({mode:original._stykMovieclip?.mode??'loop',speed:original._stykMovieclip?.speed??1});
     translateIKTargets(object, offset, offset); remapIKFollowers(object, uidMap);
     for (const [field, enabled, fallback] of [['angles', true, 'angle_rad'], ['lengths', object.len_flag, 'length'], ['bends', object.bend_flag, 'bend_rad']])
       if (enabled) object[field] = figure.segments.map(segment => original[field]?.[indices.get(segment.segment_id)] ?? segment[fallback] ?? 0);
@@ -93,7 +100,7 @@ function insertionPlan(editor, operation) {
       const target = uidMap.get(object.join.target_unique_id);
       if (target === undefined) object.join = null; else object.join.target_unique_id = target;
     }
-    const layer = clipboard.layers?.get(original.unique_id);
+    const layer = retained.has(original.unique_id) ? editor.layerForUid(original.unique_id) : clipboard.layers?.get(original.unique_id);
     if (clipboard.documentToken === editor._documentToken && editor.getLayer(layer)) hints.set(object.unique_id, layer);
     delete object.runtime_segments; return object;
   });
@@ -105,10 +112,21 @@ function insertionPlan(editor, operation) {
   return {objects, order: (clipboard.order ?? sourceObjects.map(object => object.unique_id)).map(uid => uidMap.get(uid)), definitions, hints, nextUid};
 }
 function insert(frame, payload) {
-  if (frame.objects.length + payload.objects.length > 65535) throw new Error('A native keyframe supports at most 65,535 figures.');
-  const objects = frame.objects.slice(), added = payload.objects.map(clone), slots = new Map(added.map((object, i) => [object.unique_id, objects.length + i]));
-  for (const object of added) { object.object_slot = slots.get(object.unique_id); if (object.join) object.join.target_object_slot = slots.get(object.join.target_unique_id); objects.push(object); }
-  const out = {...frame, objects}; setOrder(out, [...frameOrder(frame), ...payload.order]); if ('object_count' in out) out.object_count = objects.length;
+  const added = payload.objects.map(clone), replacements = new Map(added.map(object => [object.unique_id, object]));
+  // A pasted movieclip is another pose of the same instance. Upsert an existing
+  // occurrence so repeated pastes cannot create duplicate IDs in a frame.
+  const objects = frame.objects.map(object => replacements.get(object.unique_id) ?? object);
+  const present = new Set(frame.objects.map(object => object.unique_id));
+  objects.push(...added.filter(object => !present.has(object.unique_id)));
+  if (objects.length > 65535) throw new Error('A native keyframe supports at most 65,535 figures.');
+  objects.sort((a,b)=>a.unique_id-b.unique_id);
+  const slots = new Map(objects.map((object, i) => [object.unique_id, i]));
+  const out = {...frame, objects:objects.map((object, i)=>{
+    const parent=object.join&&(replacements.has(object.unique_id)?object.join.target_unique_id:frame.objects[object.join.target_object_slot]?.unique_id);
+    if(object.object_slot===i&&(!object.join||object.join.target_object_slot===slots.get(parent)&&object.join.target_unique_id===parent))return object;
+    return {...object,object_slot:i,...(object.join?{join:{...object.join,target_unique_id:parent,target_object_slot:slots.get(parent)}}:{})};
+  })};
+  setOrder(out, [...frameOrder(frame), ...payload.order.filter(uid => !present.has(uid))]);if('object_count' in out)out.object_count=objects.length;
   return {frame: out, changedUids: added.map(object => object.unique_id), structural: true};
 }
 function authoredDraft(editor, entries, sources = {}) {
@@ -126,7 +144,7 @@ function authoredDraft(editor, entries, sources = {}) {
     else {
       const used = new Set(channel.keys.map(key => key.id)); let keyId;
       do { keyId = `key-${after.nextKeyId++}`; } while (used.has(keyId));
-      key = {id: keyId, tick: entry.tick, value, interpolation: entry.property === 'pose' || isDiscreteAnimationProperty(entry.property) ? 'hold' : 'linear'}; channel.keys.push(key);
+      key = {id: keyId, tick: entry.tick, value, ...inheritedKeyEasing(channel.keys, entry.tick, {property: entry.property, autoEasing: entry.property === 'pose' && editor.report.auto_easing})}; channel.keys.push(key);
     }
   }
   if (editor.propertyChannels) for (const entry of entries) if(entry.property === 'pose') {
@@ -170,6 +188,10 @@ export const editorRangeCommandMethods = {
     for (const entry of target.frames) {
       const planned = payload && operation.kind !== 'duplicate' ? insert(entry.frame, payload) : planFigureFrameOperation(report, entry.frame, uids, {...operation, referenceUid: operation.referenceUid ?? this.selectedUid});
       if (!planned) continue;
+      if(operation.kind==='duplicate')for(const object of planned.frame.objects)if(payload.order.includes(object.unique_id)){
+        delete object._stykMovieclipPart;
+        if(object._stykMovieclip&&this.report._styk?.layerSheet)object._stykMovieclip=presencePlayback({mode:object._stykMovieclip.mode??'loop',speed:object._stykMovieclip.speed??1});
+      }
       this._synchronizeAnimationOrigins(planned.frame,entry.frame.objects,{includeNew:true,report});
       const present = new Set(planned.frame.objects.map(object => object.unique_id));
       validateObjectChanges(report, planned.frame, planned.changedUids.filter(uid => present.has(uid)));
@@ -216,7 +238,7 @@ export const editorRangeCommandMethods = {
     }
   },
   _commitAuthoredFigureRange(plans, operation, payload, report, label, selection) {
-    if(this.report._styk?.layerSheet)return this._commitSheetRange(plans,payload,label,selection);
+    if(this.report._styk?.layerSheet)return this._commitSheetRange(plans,payload,label,selection,operation);
     const entries = [], sources = {}; let nextSource = this._nextFrameIdentity;
     const numericOrder = operation.kind === 'order' && operation.numericOrder;
     const scalarOnly = numericOrder || operation.kind === 'scale' || (operation.kind === 'appearance' && !Object.keys(operation.patch ?? {}).some(key => !['field28', 'opacity'].includes(key)));

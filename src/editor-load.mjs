@@ -8,6 +8,7 @@ import {createFrame} from './demo.mjs';
 import {internPoseSequencesSteps} from './pose-sequences.mjs';
 import {expandPoseSequencesSteps} from './pose-sequence-storage.mjs';
 import {validateMovieclipGraph, movieclipAsset,movieclipSourceDocument,normalizeLegacyMovieclips,movieclipTypes} from './movieclips.mjs';
+import {continuations} from './movieclip-presence.mjs';
 import {nativeTimeline,timeline} from './pivot/geometry.mjs';
 import {validateLayerSheet,legacySheetReport} from './layer-sheet.mjs';
 
@@ -77,6 +78,7 @@ export function* prepareEditorLoadSteps(document, {sliceMs=4, movieclipVisited}=
   for (let index=0; index<report.keyframes.length+sources.length;index++) {
     const native=index<report.keyframes.length;
     const frame=native ? report.keyframes[index] : sources[index-report.keyframes.length];
+    for(const step of continuations(frame))nextUid=Math.max(nextUid,step.uid+1);
     if (native && !frame._styk?.frameId) {
       if (!Number.isSafeInteger(nextFrameIdentity)) throw new Error('Frame identity capacity exceeded.');
       missingIds.push({frame,id:`frame-${nextFrameIdentity++}`});

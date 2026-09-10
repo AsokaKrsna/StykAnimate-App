@@ -4,6 +4,7 @@ import {isMovieclip,movieclipAsset} from './movieclips.mjs';
 import {evaluatedFrame,buildGeometry,timeline} from './pivot/geometry.mjs';
 import {layerVisible} from './layers.mjs';
 import {createFrame} from './demo.mjs';
+import {setContinuations} from './movieclip-presence.mjs';
 
 export function createMovieclipMaterializer(report,{allowCompositeOpacity=false}={}){
   const figures=report.figure_types.filter(f=>!isMovieclip(f)),typeMaps=new WeakMap(),uids=new Map();
@@ -56,8 +57,9 @@ export function createMovieclipMaterializer(report,{allowCompositeOpacity=false}
       if(transform.flip<0){next.image_text_flags=Number(!object.image_text_flags);next.bend_flag=1;next.bends=g.segments.map(s=>-s.bend);}
       if(g.solvedLengths){next.len_flag=1;next.lengths=g.solvedLengths.slice();}
       delete next.runtime_segments;delete next._stykIK;delete next._stykAnimationOrigin;delete next._stykMovieclip;delete next._movieclipSample;
+      delete next._stykMovieclipPart;
       output.push(next);
     }
   }
-  return {figures,identities:uids,frame(frame){const objects=[];expand(report,frame,{a:1,b:0,c:0,d:1,x:0,y:0,angle:0,flip:1,scale:1,opacity:1},'',objects);const result=createFrame(objects,frame.duration_raw);return {...frame,...result,camera:frame.camera,background_id:frame.background_id,background_id_b:frame.background_id_b,background_mix:frame.background_mix};}};
+  return {figures,identities:uids,frame(frame){const objects=[];expand(report,frame,{a:1,b:0,c:0,d:1,x:0,y:0,angle:0,flip:1,scale:1,opacity:1},'',objects);const result=createFrame(objects,frame.duration_raw);return setContinuations({...frame,...result,camera:frame.camera,background_id:frame.background_id,background_id_b:frame.background_id_b,background_mix:frame.background_mix},[]);}};
 }

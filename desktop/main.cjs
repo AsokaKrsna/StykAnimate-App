@@ -1,12 +1,15 @@
 'use strict';
 
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell, session, clipboard } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, session, clipboard, contentTracing } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
-const { mkdirSync } = require('node:fs');
+const { mkdirSync, existsSync } = require('node:fs');
 const { startBackend } = require('./backend.cjs');
 const { RecoveryStore, atomicWrite } = require('./recovery.cjs');
 const { FileStreams } = require('./file-streams.cjs');
+const { SharedClipboard } = require('./shared-clipboard.cjs');
+const { workspaceDirectory } = require('./workspace-instance.cjs');
+const { spawn } = require('node:child_process');
 const { WorkspacePreferences } = require('./preferences.cjs');
 const { ProjectFiles } = require('./project-files.cjs');
 const { FontService } = require('./font-service.cjs');
@@ -14,6 +17,10 @@ const { VideoExportService } = require('./video-export-service.cjs');
 const { VfwExportService } = require('./vfw-export-service.cjs');
 const { RecentFiles } = require('./recent-files.cjs');
 const { LibraryStore } = require('./library-store.cjs');
+const { TelemetryService } = require('./telemetry.cjs');
+const { UpdateService, updateAvailability } = require('./updates.cjs');
+const releaseInfo = require('./release-info.json');
+const { RELEASES_URL, DONATE_URL } = require('./release-links.cjs');
 
 const APP_ROOT = path.resolve(__dirname, '..');
 const MAX_FILE_BYTES = 256 * 1024 * 1024;
@@ -32,6 +39,23 @@ let videoExports;
 let vfwExports;
 let recentFiles;
 let library;
+let telemetry;
+let telemetryReady;
+let telemetryClosed = false;
+let updates;
+let startupShown = false;
+let traceRunning = false;
+let pendingProtocol = process.argv.find(value => /^stykanimate:\/\//i.test(value));
+function handleProtocol(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'stykanimate:' || url.username || url.password || url.search || url.hash || url.port || !['', '/'].includes(url.pathname) || !['open', 'privacy'].includes(url.hostname)) return false;
+    if (!window || window.webContents.isLoading()) { pendingProtocol = value; return true; }
+    if (window.isMinimized()) window.restore(); window.show(); window.focus();
+    if (url.hostname === 'privacy') sendAction('privacy');
+    return true;
+  } catch { return false; }
+}
 const projectFiles = new ProjectFiles();
 let documentState = { name: 'Untitled', dirty: false };
 let quitting = false;
@@ -49,12 +73,21 @@ if (profileDirectory) {
   app.setPath('sessionData', profileDirectory);
   app.setPath('crashDumps', path.join(profileDirectory, 'crashes'));
 }
-if (!app.requestSingleInstanceLock()) app.quit();
+const primaryInstance = app.requestSingleInstanceLock();
+const instanceDirectory = primaryInstance ? app.getPath('userData') : workspaceDirectory(app.getPath('userData'));
+if (!primaryInstance) {
+  mkdirSync(instanceDirectory, {recursive: true});
+  app.setPath('sessionData', instanceDirectory);
+  app.setPath('crashDumps', path.join(instanceDirectory, 'crashes'));
+}
+if (!primaryInstance && pendingProtocol) app.quit();
 else {
   app.on('second-instance', (_event, argv) => {
-    if (window) { if (window.isMinimized()) window.restore(); window.focus(); }
-    for (const file of argv.filter((arg) => /\.(piv|stk|styk|stkz|stykmov|json|nodes|nodemc|stknds|zip)$/i.test(arg))) queueOpenFile(file);
+    // Each ordinary launch owns its project. Protocol links still target the
+    // primary workspace without opening an extra editor.
+    for (const value of argv.filter(arg => /^stykanimate:\/\//i.test(arg))) handleProtocol(value);
   });
+  app.on('open-url', (event, url) => { event.preventDefault(); handleProtocol(url); });
   app.on('open-file', (event, file) => { event.preventDefault(); queueOpenFile(file); });
   app.whenReady().then(start).catch(async (error) => {
     dialog.showErrorBox('StykAnimate could not start', error.message);
@@ -79,38 +112,41 @@ function windowState() {
 }
 
 function nativeMenu() {
-  const item = (label, action, accelerator) => ({ label, accelerator, click: () => sendAction(action) });
+  // Editor shortcuts belong to the renderer's customizable, focus-aware dispatcher.
+  // Native accelerators would intercept disabled/reassigned keys and text editing.
+  const item = (label, action) => ({ label, click: () => sendAction(action) });
   const template = [
     ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
     { label: 'File', submenu: [
-      item('New animation', 'new', 'CmdOrCtrl+N'),
-      item('Open…', 'open', 'CmdOrCtrl+O'),
+      item('New animation', 'new'),
+      item('New window', 'new-window'),
+      item('Open…', 'open'),
       { type: 'separator' },
-      item('Save', 'save', 'CmdOrCtrl+S'),
-      item('Save as…', 'save-as', 'CmdOrCtrl+Shift+S'),
+      item('Save', 'save'),
+      item('Save as…', 'save-as'),
       item('Save figure…', 'export-stkz'),
-      item('Export…', 'export', 'CmdOrCtrl+Shift+E'),
+      item('Export…', 'export'),
       { type: 'separator' },
       process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' },
     ] },
     { label: 'Edit', submenu: [
-      item('Undo', 'undo', 'CmdOrCtrl+Z'), item('Redo', 'redo', process.platform === 'darwin' ? 'Cmd+Shift+Z' : 'Ctrl+Y'),
+      item('Undo', 'undo'), item('Redo', 'redo'),
       { type: 'separator' },
-      item('Cut', 'cut', 'CmdOrCtrl+X'), item('Copy', 'copy', 'CmdOrCtrl+C'), item('Paste', 'paste', 'CmdOrCtrl+V'),
-      item('Duplicate', 'duplicate', 'CmdOrCtrl+D'), item('Delete', 'delete', 'Delete'),
-      { type: 'separator' }, item('Select all', 'select-all', 'CmdOrCtrl+A'),
+      item('Cut', 'cut'), item('Copy', 'copy'), item('Paste', 'paste'),
+      item('Duplicate', 'duplicate'), item('Delete', 'delete'),
+      { type: 'separator' }, item('Select all', 'select-all'),
     ] },
     { label: 'Animation', submenu: [
-      item('Play / pause', 'play'), item('Add frame', 'add-frame', 'F6'),
-      item('Previous frame', 'previous-frame', ','), item('Next frame', 'next-frame', '.'),
-      { type: 'separator' }, item('Onion skin', 'toggle-onion', 'O'),
+      item('Play / pause', 'play'), item('Add frame', 'add-frame'),
+      item('Previous frame', 'previous-frame'), item('Next frame', 'next-frame'),
+      { type: 'separator' }, item('Onion skin', 'toggle-onion'),
     ] },
     { label: 'View', submenu: [
-      item('Zoom in', 'zoom-in', 'CmdOrCtrl+Plus'), item('Zoom out', 'zoom-out', 'CmdOrCtrl+-'),
-      item('Fit canvas', 'zoom-reset', 'Shift+1'), { type: 'separator' }, { role: 'togglefullscreen' },
-      ...(!app.isPackaged ? [{ role: 'toggleDevTools' }] : []),
+      item('Zoom in', 'zoom-in'), item('Zoom out', 'zoom-out'),
+      item('Fit canvas', 'zoom-reset'), { type: 'separator' }, { role: 'togglefullscreen', accelerator: '' },
+      ...(!app.isPackaged ? [{ role: 'toggleDevTools', accelerator: '' }] : []),
     ] },
-    { label: 'Help', submenu: [item('Keyboard shortcuts', 'help'), item('About StykAnimate', 'about')] },
+    { label: 'Help', submenu: [item('Keyboard shortcuts', 'help'), item('Check for updates…', 'check-updates'), item('What’s new', 'release-notes'), item('Support development', 'donate'), item('About StykAnimate', 'about')] },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -154,9 +190,73 @@ async function queueOpenFile(file) {
 }
 
 function registerIpc() {
+  ipcMain.handle('styk:update-state', event => { trusted(event); return updates.snapshot(); });
+  ipcMain.handle('styk:update-check', event => { trusted(event); void updates.check(); return updates.snapshot(); });
+  ipcMain.handle('styk:update-releases', event => { trusted(event); return shell.openExternal(RELEASES_URL); });
+  ipcMain.handle('styk:donate', event => { trusted(event); return shell.openExternal(DONATE_URL); });
+  ipcMain.handle('styk:release-info', (event, startup = false) => {
+    trusted(event);
+    if (startup && startupShown) return null;
+    if (startup) startupShown = true;
+    return { ...releaseInfo, version: app.getVersion() };
+  });
+  ipcMain.handle('styk:update-restart', event => {
+    trusted(event);
+    return updates.restart(async () => {
+      const revision = documentState.revision;
+      if (documentState.dirty) {
+        const answer = await dialog.showMessageBox(window, {
+          type: 'question', title: 'Restart to update', message: `Save changes to ${documentState.name}?`,
+          detail: 'StykAnimate will close, install the downloaded update, and reopen.',
+          buttons: ['Save and restart', 'Cancel', 'Discard and restart'], defaultId: 0, cancelId: 1,
+        });
+        if (answer.response === 0) { sendAction('save-and-update'); return false; }
+        if (answer.response !== 2) return false;
+      }
+      if (telemetry && !telemetryClosed) { await telemetry.close().catch(() => {}); telemetryClosed = true; }
+      if (documentState.revision !== revision) return false;
+      quitting = true;
+      return true;
+    }, () => { quitting = false; });
+  });
+  const withTelemetry = handler => async (event, value) => { trusted(event); await telemetryReady; if (!telemetry) throw new Error('Privacy settings are unavailable. Please restart StykAnimate.'); return handler(value); };
+  ipcMain.handle('styk:telemetry-state', withTelemetry(() => telemetry.getState()));
+  ipcMain.handle('styk:telemetry-consent', withTelemetry(value => telemetry.setConsent(value)));
+  ipcMain.handle('styk:telemetry-record', withTelemetry(value => telemetry.record(value)));
+  ipcMain.handle('styk:telemetry-preview', withTelemetry(() => telemetry.preview()));
+  ipcMain.handle('styk:telemetry-sync', withTelemetry(async () => { await telemetry.upload(); return telemetry.getState(); }));
+  ipcMain.handle('styk:telemetry-delete', withTelemetry(() => telemetry.deleteData()));
+  ipcMain.handle('styk:telemetry-feedback', withTelemetry(value => telemetry.feedback(value)));
+  ipcMain.handle('styk:telemetry-export', withTelemetry(async () => {
+    const result = await dialog.showSaveDialog(window, { title: 'Save optional telemetry report', defaultPath: 'StykAnimate-telemetry.json', filters: [{ name: 'JSON report', extensions: ['json'] }] });
+    if (result.canceled || !result.filePath) return { saved: false };
+    await fs.writeFile(result.filePath, JSON.stringify(telemetry.preview(), null, 2), 'utf8'); return { saved: true };
+  }));
+  ipcMain.handle('styk:service-page', withTelemetry(page => {
+    const route = { home: '/', download: '/download/' }[page];
+    if (!route) throw new Error('Unknown StykAnimate page.');
+    if (!telemetry.siteUrl) throw new Error('The public website is not configured yet. Contact ale.ripreso@gmail.com.');
+    return shell.openExternal(telemetry.siteUrl + route);
+  }));
+  ipcMain.handle('styk:performance-trace', async event => {
+    trusted(event);
+    if (traceRunning) throw new Error('A performance recording is already running.');
+    traceRunning = true;
+    let temporary;
+    try {
+      await contentTracing.startRecording({ included_categories: ['v8.execute', 'disabled-by-default-v8.cpu_profiler', 'devtools.timeline'], recording_mode: 'record-until-full', trace_buffer_size_in_kb: 16384 });
+      await new Promise(resolve => setTimeout(resolve, !app.isPackaged && process.env.STYK_TRACE_TEST === '1' ? 2000 : 30000));
+      temporary = await contentTracing.stopRecording();
+      const result = await dialog.showSaveDialog(window, { title: 'Save local performance trace — review before sharing', defaultPath: 'StykAnimate-performance-trace.json', filters: [{ name: 'Chrome / Perfetto trace', extensions: ['json'] }] });
+      if (result.canceled || !result.filePath) return { saved: false };
+      await fs.copyFile(temporary, result.filePath); return { saved: true };
+    } finally { traceRunning = false; if (temporary) await fs.unlink(temporary).catch(() => {}); }
+  });
   for (const [channel, method] of [['list','list'], ['mkdir','createFolder'], ['thumbnail','thumbnail'], ['save-begin','beginSave'], ['write','write'], ['finish','finish'], ['cancel','cancel'], ['read-begin','beginRead'], ['read','read'], ['change','change']])
     ipcMain.handle(`styk:library-${channel}`, (event, ...args) => { trusted(event); return library[method](...args); });
   ipcMain.handle('styk:library-reveal', async (event, folder = '') => { trusted(event); const error = await shell.openPath(await library.folder(folder)); if (error) throw new Error(error); });
+  ipcMain.handle('styk:library-trash', (event, relative) => { trusted(event); return library.trash(relative, target => shell.trashItem(target)); });
+  ipcMain.handle('styk:library-thumbnail-cache', (event, options) => { trusted(event); return library.cacheThumbnail(options); });
   recentFiles = new RecentFiles({directory: app.getPath('userData'), limit: 20});
   ipcMain.handle('styk:recent-list', event => { trusted(event); return recentFiles.list(); });
   ipcMain.handle('styk:recent-open', async (event, id) => { trusted(event); return readImportFile(await recentFiles.resolve(id)); });
@@ -190,7 +290,19 @@ function registerIpc() {
     try { return await vfwExports.configure(options, hwnd); }
     finally { if (!owner.isDestroyed()) { owner.setEnabled(true); owner.focus(); } }
   });
-  const recovery = new RecoveryStore(app.getPath('userData'));
+  const recovery = new RecoveryStore(instanceDirectory);
+  const sharedClipboard = new SharedClipboard(clipboard);
+  for (const [channel, method] of [['write-begin', 'beginWrite'], ['write', 'write'], ['finish', 'finish'], ['read-begin', 'beginRead'], ['read', 'read'], ['cancel', 'cancel']])
+    ipcMain.handle(`styk:shared-clipboard-${channel}`, (event, ...args) => { trusted(event); return sharedClipboard[method](...args); });
+  app.on('will-quit', () => sharedClipboard.dispose());
+  ipcMain.handle('styk:new-window', event => {
+    trusted(event);
+    return new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, app.isPackaged ? [] : [APP_ROOT], {detached: true, stdio: 'ignore', windowsHide: true, env: process.env});
+      child.once('error', reject);
+      child.once('spawn', () => { child.unref(); resolve(true); });
+    });
+  });
   const preferences = new WorkspacePreferences(app.getPath('userData'));
   const editorSettings = new WorkspacePreferences(app.getPath('userData'), { filename: 'editor-settings.json' });
   const fonts = new FontService();
@@ -383,7 +495,7 @@ function registerIpc() {
   ipcMain.handle('styk:window-state', (event) => { trusted(event); return windowState(); });
   ipcMain.handle('styk:document-state', (event, state) => {
     trusted(event);
-    documentState = { name: String(state?.name || 'Untitled').slice(0, 180), dirty: Boolean(state?.dirty) };
+    documentState = { name: String(state?.name || 'Untitled').slice(0, 180), dirty: Boolean(state?.dirty), revision: String(state?.revision || '').slice(0, 160) };
     window.setTitle(`${documentState.dirty ? '• ' : ''}${documentState.name} — StykAnimate`);
     window.setDocumentEdited(documentState.dirty);
   });
@@ -394,6 +506,7 @@ async function createWindow() {
     width: 1560, height: 1000, minWidth: 1000, minHeight: 680,
     backgroundColor: '#191a1d', show: false,
     title: 'StykAnimate',
+    icon: path.join(__dirname, 'assets', 'stykanimate.png'),
     frame: process.platform === 'darwin',
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 16 } } : {}),
     autoHideMenuBar: process.platform !== 'darwin',
@@ -412,6 +525,8 @@ async function createWindow() {
     if (new URL(url).origin !== backend.origin) event.preventDefault();
   });
   window.webContents.on('will-attach-webview', (event) => event.preventDefault());
+  window.webContents.on('render-process-gone', (_event, details) => { if (details.reason !== 'clean-exit') telemetry?.error('RendererCrash', 'renderer', 'renderer_crashes'); });
+  window.on('unresponsive', () => telemetry?.error('RendererHang', 'renderer', 'renderer_hangs'));
   for (const event of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'focus', 'blur']) {
     window.on(event, () => window.webContents.send('styk:window-state', windowState()));
   }
@@ -430,32 +545,57 @@ async function createWindow() {
   window.on('closed', () => { window = null; });
   window.once('ready-to-show', () => window.show());
   await window.loadURL(backend.origin);
+  if (pendingProtocol) { const value = pendingProtocol; pendingProtocol = null; handleProtocol(value); }
   if (process.env.STYK_DEVTOOLS === '1') window.webContents.openDevTools({ mode: 'detach' });
   const files = pendingFiles.splice(0);
   for (const file of files) await queueOpenFile(file);
 }
 
 async function start() {
+  const unavailable = updateAvailability({ packaged: app.isPackaged, platform: process.platform,
+    portable: Boolean(process.env.PORTABLE_EXECUTABLE_DIR), installed: existsSync(path.join(path.dirname(process.execPath), 'Uninstall StykAnimate.exe')) });
+  const updater = unavailable ? null : require('electron-updater').autoUpdater;
+  if (updater) updater.installDirectory = path.dirname(process.execPath);
+  updates = new UpdateService({ updater,
+    currentVersion: app.getVersion(), unavailable,
+    onState: value => { if (value.status === 'error') quitting = false; if (window && !window.isDestroyed()) window.webContents.send('styk:update-state-changed', value); },
+  });
+  if (app.isPackaged) app.setAsDefaultProtocolClient('stykanimate');
+  telemetryReady = new TelemetryService({ directory: app.getPath('userData'), schemaPath: path.join(app.isPackaged ? path.join(process.resourcesPath, 'web') : APP_ROOT, 'src', 'telemetry-schema.mjs'), version: app.getVersion(), development: !app.isPackaged,
+    onState: value => { if (window && !window.isDestroyed()) window.webContents.send('styk:telemetry-state-changed', value); },
+  }).init().then(service => { telemetry = service; return service; }).catch(() => { /* Optional reporting cannot prevent startup. */ });
+  const memoryTimer = setInterval(() => {
+    if (telemetry?.state.consent.diagnostics && window?.isFocused()) {
+      const metrics = app.getAppMetrics();
+      telemetry.sampleMemory(metrics.reduce((sum, item) => sum + (item.memory?.workingSetSize || 0), 0) / 1024);
+      telemetry.record({ epoch: telemetry.epoch, data: { gauges: { process_cpu_percent: metrics.reduce((sum, item) => sum + (item.cpu?.percentCPUUsage || 0), 0) } } });
+    }
+  }, 60000); memoryTimer.unref();
   library = new LibraryStore(process.env.STYK_LIBRARY_DIR || path.join(app.getPath('documents'), 'StykAnimate', 'library'));
   // A temporarily unavailable Documents volume should not prevent animation work.
   await library.init().catch(error => console.warn('Library initialization:', error.message));
   backend = await startBackend({
     appRoot: APP_ROOT, resourcesPath: process.resourcesPath, packaged: app.isPackaged,
     log: (message) => { if (process.env.STYK_DEBUG === '1') process.stderr.write(message); },
-    onError: (message) => { if (window && !window.isDestroyed()) window.webContents.send('styk:backend-error', message); },
+    onError: (message) => { telemetry?.error('BackendError', 'backend', 'backend_errors'); if (window && !window.isDestroyed()) window.webContents.send('styk:backend-error', message); },
   });
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
   nativeMenu();
   registerIpc();
   await createWindow();
+  updates.start();
   app.on('activate', () => { if (!window) createWindow(); });
 }
 
 app.on('before-quit', (event) => {
   if (window && documentState.dirty && !quitting) { event.preventDefault(); window.close(); }
-  else quitting = true;
+  else {
+    quitting = true;
+    if (telemetry && !telemetryClosed) { event.preventDefault(); telemetryClosed = true; void telemetry.close().catch(() => {}).finally(() => app.quit()); }
+  }
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('will-quit', () => updates?.dispose());
 app.on('will-quit', () => { backend?.stop(); library?.dispose().catch(() => {}); fileStreams?.dispose().catch(() => {}); videoExports?.dispose().catch(() => {}); vfwExports?.dispose().catch(() => {}); });
 process.on('exit', () => backend?.stop());

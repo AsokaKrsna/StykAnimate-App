@@ -2,11 +2,11 @@ import {playbackSettings} from './movieclips.mjs';
 
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function movieclipInspector(editor,field){
-  const object=editor.object,figure=editor.figure,p=playbackSettings(object,{end:editor.totalTicks}),restart=p.restarts?.some(key=>key.tick===editor.tick);
+  const object=editor.object,figure=editor.figure,p=playbackSettings(object);
   const input=(name,label,value,min,max,step=1)=>`<label class="field"><span>${label}</span><input type="number" data-movieclip-field="${name}" aria-label="Movieclip ${label.toLowerCase()}" value="${value}" min="${min}" max="${max}" step="${step}"></label>`;
   return `<section class="inspector-section"><div class="object-heading"><input class="figure-name" data-movieclip-name aria-label="Movieclip name" value="${esc(figure.name)}" maxlength="120"></div><div class="movieclip-actions"><button class="button primary" data-action="movieclip-edit">Edit movieclip</button><button class="button" data-action="movieclip-unique">Make unique</button></div></section>
     <section class="inspector-section"><div class="inspector-title">Playback</div><select class="inline-select" data-movieclip-field="mode" aria-label="Movieclip playback">${[['loop','Loop'],['hold','Once · hold'],['once','Once · hide'],['single','Single frame']].map(([value,label])=>`<option value="${value}" ${p.mode===value?'selected':''}>${label}</option>`).join('')}</select><div class="field-grid movieclip-fields">
-    ${input('start','Start',p.start+1,1,10000001)}${input('end','End',p.end??editor.totalTicks,p.start+1,10000001)}${input('offset','Source frame',p.offset+1,1,10000001,.01)}${input('speed','Speed',p.speed,.01,100,.01)}</div><div class="movieclip-actions"><button class="button" data-action="${restart?'movieclip-clear-restart':'movieclip-restart'}">${restart?'Remove restart':'Restart here'}</button><button class="button" data-action="movieclip-split" ${editor.tick<=p.start||editor.tick>=(p.end??editor.totalTicks)?'disabled':''}>Split here</button></div></section>
+    ${input('offset','Source frame',p.offset+1,1,10000001,.01)}${input('speed','Speed',p.speed,.01,100,.01)}</div><p class="movieclip-count">${p.clock==='presence'?'Plays while present in frames. Missing frames pause playback.':'This clip uses its original saved timing.'}</p></section>
     <section class="inspector-section"><div class="inspector-title">Transform</div><div class="field-grid">${field('X','root_x',object.root_x,'px')}${field('Y','root_y',object.root_y,'px')}${field('Scale','scale',object.scale*100,'%','min="0.01"')}${field('Angle','rotation',(object.angles[0]??0)*180/Math.PI,'°')}${field('Opacity','figure_opacity',(1-(object.field28??0)/255)*100,'%','min="0" max="100"')}${field('Z-index','figure_z_order',object._stykZIndex??0,'','min="-1000000" max="1000000"')}</div></section>
     <section class="inspector-section"><div class="movieclip-actions"><button class="button" data-action="movieclip-break" title="Replace only frame ${editor.tick+1}">Break apart frame</button><button class="button" data-action="movieclip-bake">Bake animation</button><button class="button" data-action="movieclip-export">Export movieclip</button></div></section>`;
 }
@@ -41,8 +41,7 @@ export function installMovieclipUI({editor,actions,pause,finishEdit,getTimeline,
     'movieclip-edit':()=>{pause();finishEdit();setTool('select');editor.enterMovieclip();},
     'movieclip-done':()=>{pause();finishEdit();editor.leaveMovieclip();queueUI();},
     'movieclip-cancel':()=>{pause();editor.leaveMovieclip({save:false});queueUI();},
-    'movieclip-unique':()=>editor.makeMovieclipUnique(),'movieclip-restart':()=>editor.restartMovieclip(),'movieclip-clear-restart':()=>editor.removeMovieclipRestart(),
-    'movieclip-split':()=>editor.splitMovieclip(),
+    'movieclip-unique':()=>editor.makeMovieclipUnique(),
     'movieclip-break':()=>editor.breakApartMovieclip(),'movieclip-export':()=>exportClip(),
     'movieclip-bake':()=>editor.bakeMovieclip(),
   });
@@ -51,10 +50,9 @@ export function installMovieclipUI({editor,actions,pause,finishEdit,getTimeline,
   document.addEventListener('change',event=>{
     if(event.target.matches('[data-movieclip-name]')){try{pause();finishEdit();editor.renameMovieclip(event.target.value);}catch(error){onError(error);}queueUI();return;}
     const input=event.target.closest('[data-movieclip-field]');if(!input)return;
-    try{pause();finishEdit();const key=input.dataset.movieclipField;let value=key==='mode'?input.value:input.value===''&&key==='end'?null:Number(input.value);
-      if(key==='start'||key==='offset')value--;
-      if(key==='start'){const p=playbackSettings(editor.object);editor.placeMovieclip({start:value,end:(p.end??editor.totalTicks)+value-p.start},{move:true});}
-      else if(key==='end')editor.placeMovieclip({end:value});else editor.setMovieclipPlayback({[key]:value},{allFrames:true});queueUI();
+    try{pause();finishEdit();const key=input.dataset.movieclipField;if(!['mode','offset','speed'].includes(key))return;
+      const value=key==='mode'?input.value:Number(input.value)-(key==='offset'?1:0);
+      editor.setMovieclipPlayback({[key]:value},{allFrames:true});queueUI();
     }catch(error){onError(error);queueUI();}
   });
   function sync(){

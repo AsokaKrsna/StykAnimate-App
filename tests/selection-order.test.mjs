@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {builderDrawables} from '../src/editor-builder-style.mjs';
+import {resolveInstanceFigure} from '../src/animation-style.mjs';
 import {validateLayerSheet} from '../src/layer-sheet.mjs';
 
 function fixture({propertyChannels = true, joined = false} = {}) {
@@ -17,7 +18,7 @@ function fixture({propertyChannels = true, joined = false} = {}) {
   return editor;
 }
 const order = e => e.evaluatedFrame.object_draw_order_unique_ids;
-const internal = e => builderDrawables(e.figure).map(d => `${d.kind}:${d.index}`);
+const internal = e => builderDrawables(resolveInstanceFigure(e.figure,e.object)).map(d => `${d.kind}:${d.index}`);
 const segments = e => e.geometry.objects.get(e.selectedSlot).drawables.filter(d => d.seg).map(d => d.seg.segment_id);
 
 for (const propertyChannels of [false, true]) for (const [direction, selected, expected] of [
@@ -46,7 +47,10 @@ for (const [direction, joint, expected] of [
   e.undo(); assert.deepEqual(e.figure, original);
   e.redo(); assert.deepEqual(segments(e), expected);
   const reopened = new Editor({demo: false, layerTimeline: true}).load(e.serialize());
+  reopened.seek(5);
   reopened.select(1, joint); assert.deepEqual(segments(reopened), expected);
+  reopened.seek(0);assert.deepEqual(segments(reopened),[1,2,3,4]);
+  assert.deepEqual(e.figure,original);
 });
 
 test('branch ordering includes descendant segments and contained polygons even with attached figures selected', () => {

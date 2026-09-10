@@ -130,7 +130,7 @@ test('copying frames between projects imports definitions and remaps identities 
 
 test('extending a movieclip exposure continues its loop through the added cells',()=>{
   const e=new Editor({layerTimeline:true,propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:10});const uid=e.selectedUid;e.sheetInsertFrames(['layer-1'],10,10);
-  e.seek(15);const clip=e.evaluatedFrame.objects.find(o=>o.unique_id===uid);assert.ok(clip);assert.equal(clip._stykMovieclip.end,20);assert.equal(clip._movieclipSample,5);
+  e.seek(15);const clip=e.evaluatedFrame.objects.find(o=>o.unique_id===uid);assert.ok(clip);assert.equal(clip._stykMovieclip.clock,'presence');assert.equal(clip._movieclipSample,5);
   e.undo();e.seek(15);assert.ok(!e.evaluatedFrame.objects.some(o=>o.unique_id===uid));
 });
 
