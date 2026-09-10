@@ -1,11 +1,12 @@
-# StykAnimate 0.5.2
+# StykAnimate 0.5.5
 
-A new look for every frame.
+WELCOME TO THE FIRST BETA VERSION OF STYKANIMATE!
 
-- Meet Gesture, the new StykAnimate identity throughout the app and welcome screen.
-- Sharper app, Setup, Portable and uninstaller icons, with transparent edges and matching file icons.
-- Read the complete privacy notice directly inside Privacy & diagnostics.
+- Have fun! If you encounter any bugs, let me know on Discord or through the feedback modal in Help or Settings.
+- Send bug reports and ideas from Help → Send feedback / Report a bug or Settings → Feedback.
 
-StykAnimate is completely free. [Support development on Ko-fi](https://ko-fi.com/Q5Q41WY7QC).
+Free to create. Powered by your support.
+
+StykAnimate is completely free. If it helps bring your ideas to life, a donation helps keep development moving. [Support development on Ko-fi](https://ko-fi.com/Q5Q41WY7QC).
 
 Install the **Setup** version for automatic updates. Portable copies require manual updates.

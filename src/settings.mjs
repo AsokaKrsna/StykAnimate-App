@@ -103,6 +103,7 @@ export class EditorSettings {
     onResetWorkspace,
     localization,
     onPrivacy,
+    onFeedback,
   } = {}) {
     if (value === undefined) {
       try {
@@ -122,6 +123,7 @@ export class EditorSettings {
         localStorage.setItem(EDITOR_SETTINGS_KEY, JSON.stringify(next)));
     this.onResetWorkspace = onResetWorkspace;
     this.onPrivacy = onPrivacy;
+    this.onFeedback = onFeedback;
     this.tab = "interface";
     this.chain = Promise.resolve();
     this.pending = null;
@@ -139,6 +141,7 @@ export class EditorSettings {
       ["canvas", "Canvas", "frame"],
       ["animation", "Animation", "play"],
       ["shortcuts", "Shortcuts", "help"],
+      ...(onFeedback ? [["feedback", "Feedback", "help"]] : []),
     ]
       .map(
         ([id, name, symbol]) =>
@@ -193,6 +196,7 @@ export class EditorSettings {
       event.stopPropagation();
       const tab = event.target.closest("[role=tab]");
       if (tab) this.selectTab(tab.dataset.tab);
+      if (event.target.closest('[data-settings-feedback]')) { this.close(); this.onFeedback?.(); }
       if (event.target.closest("[data-settings-reset]"))
         Promise.resolve(this.onResetWorkspace?.()).catch((error) =>
           this.showError(error),
@@ -264,7 +268,7 @@ export class EditorSettings {
     void this.flush();
   }
   selectTab(tab) {
-    this.tab = ["interface", "canvas", "animation", "shortcuts"].includes(tab)
+    this.tab = ["interface", "canvas", "animation", "shortcuts", ...(this.onFeedback ? ['feedback'] : [])].includes(tab)
       ? tab
       : "interface";
     for (const button of this.dialog.querySelectorAll("[role=tab]")) {
@@ -303,6 +307,8 @@ export class EditorSettings {
       html = `<section class="styk-settings-group"><h3>Playback</h3>${this.checkbox("Loop animation", "loopPlayback")}</section><section class="styk-settings-group"><h3>Recovery</h3><label class="styk-settings-row"><span>Autosave interval</span><select data-setting="autosaveSeconds" aria-label="Autosave interval">${[[0, "Off"], [2.5, "2.5 seconds"], [5, "5 seconds"], [10, "10 seconds"], [30, "30 seconds"], [60, "1 minute"], ...([0, 2.5, 5, 10, 30, 60].includes(value.autosaveSeconds) ? [] : [[value.autosaveSeconds, `${value.autosaveSeconds} seconds`]])].map(([seconds, label]) => `<option value="${seconds}" ${value.autosaveSeconds === seconds ? "selected" : ""}>${label}</option>`).join("")}</select></label></section>`;
     if (this.tab === "shortcuts")
       html = this.hotkeySettings.html();
+    if (this.tab === 'feedback')
+      html = `<section class="styk-settings-group"><h3>Help improve StykAnimate</h3><p>Found a bug or have an idea? Send a message directly to the developer.</p><button type="button" class="button primary" data-settings-feedback>Send feedback or report a bug</button><p class="styk-settings-note">Feedback works even when optional diagnostics are off. Your draft stays available if you close the form before sending.</p></section>`;
     this.content.innerHTML = `${this.error ? `<div class="styk-settings-error" role="alert">${escape(this.error)}</div>` : ""}${html}`;
     if (this.tab === 'shortcuts') this.hotkeySettings.filter();
   }

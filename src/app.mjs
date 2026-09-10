@@ -24,6 +24,7 @@ import { PlaybackCache } from "./playback.mjs";
 import { PlaybackMetrics } from "./playback-metrics.mjs";
 import { DesktopTelemetryClient } from './telemetry-core.mjs';
 import { PrivacyUI } from './privacy-ui.mjs';
+import { FeedbackUI } from './feedback-ui.mjs';
 import { UpdateUI } from './update-ui.mjs';
 import { ReleaseSplash } from './support-ui.mjs';
 import { EditableScenePreparation } from './editable-scene-preparation.mjs';
@@ -250,7 +251,8 @@ const telemetry = new DesktopTelemetryClient(desktop, { getContext: () => ({
 function coarseGPUFamily(value = '') {
   return ['nvidia', 'amd', 'intel', 'apple', 'qualcomm', 'software'].find(name => String(value).toLowerCase().includes(name)) || 'unknown';
 }
-const privacyUI = new PrivacyUI(desktop, telemetry);
+const feedbackUI = new FeedbackUI(desktop);
+const privacyUI = new PrivacyUI(desktop, telemetry, feedbackUI);
 const releaseSplash = new ReleaseSplash(desktop);
 let updateNotice;
 const telemetryInit = telemetry.init().catch(() => null);
@@ -3827,6 +3829,7 @@ const actions = {
   "scene-settings": () => selectTrack({ id: "scene", kind: "scene" }),
   settings: () => editorSettings?.open(),
   privacy: () => privacyUI.open(),
+  feedback: () => feedbackUI.open(),
   website: () => desktop?.openServicePage('home'),
   "builder-static-handles": () =>
     editorSettings.commit({
@@ -3888,6 +3891,7 @@ const polygonSafeActions = new Set([
   "menu",
   "settings",
   "privacy",
+  "feedback",
   "check-updates",
   "release-notes",
   "donate",
@@ -5156,6 +5160,7 @@ async function init() {
       : undefined,
     onResetWorkspace: () => workspaceLayout?.reset(),
     onPrivacy: desktop?.getTelemetryState ? () => privacyUI.open() : undefined,
+    onFeedback: desktop?.sendTelemetryFeedback ? () => feedbackUI.open() : undefined,
   });
   state.settings = editorSettings.value;
   hotkeys.setBindings(state.settings.hotkeys);

@@ -50,6 +50,7 @@ export default Object.freeze({
   'settings.canvas': 'Area di disegno',
   'settings.animation': 'Animazione',
   'settings.shortcuts': 'Scorciatoie',
+  'settings.feedback': 'Feedback',
   'settings.language': 'Lingua',
   'settings.theme': 'Tema',
   'settings.light': 'Chiaro',

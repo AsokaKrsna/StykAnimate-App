@@ -50,6 +50,7 @@ export default Object.freeze({
   'settings.canvas': 'Canvas',
   'settings.animation': 'Animation',
   'settings.shortcuts': 'Shortcuts',
+  'settings.feedback': 'Feedback',
   'settings.language': 'Language',
   'settings.theme': 'Theme',
   'settings.light': 'Light',

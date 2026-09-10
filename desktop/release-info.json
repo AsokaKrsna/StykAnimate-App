@@ -1,9 +1,8 @@
 {
-  "version": "0.5.2",
-  "title": "A new look for every frame.",
+  "version": "0.5.5",
+  "title": "WELCOME TO THE FIRST BETA VERSION OF STYKANIMATE!",
   "notes": [
-    "Meet Gesture, the new StykAnimate identity throughout the app and welcome screen.",
-    "Sharper app, Setup, Portable and uninstaller icons, with transparent edges and matching file icons.",
-    "Read the complete privacy notice directly inside Privacy & diagnostics."
+    "Have fun! If you encounter any bugs, let me know on Discord or through the feedback modal in Help or Settings.",
+    "Send bug reports and ideas from Help → Send feedback / Report a bug or Settings → Feedback."
   ]
 }

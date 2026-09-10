@@ -63,7 +63,7 @@ export function applicationMenuItems(name, editor, desktop) {
       ['next-frame', 'next', 'Next frame', '→'], ['last-frame', 'next', 'Last frame', 'End'], null,
       ['add-frame', 'plus', 'Add Frame', 'A'], ['delete-frame', 'trash', 'Delete keyframe'],
     ],
-    help: [['help', 'help', 'Keyboard shortcuts', '?'], ['performance', 'activity', 'Performance'], ...(desktop?.getUpdateState ? [null, ['check-updates', 'import', 'Check for updates…'], ['release-notes', 'file', 'What’s new'], ['donate', 'help', 'Support development']] : []), ...(desktop?.getTelemetryState ? [null, ['privacy', 'settings', 'Privacy & diagnostics'], ['website', 'help', 'StykAnimate website']] : [])],
+    help: [['help', 'help', 'Keyboard shortcuts', '?'], ['performance', 'activity', 'Performance'], ...(desktop?.sendTelemetryFeedback ? [null, ['feedback', 'help', 'Send feedback / Report a bug…']] : []), ...(desktop?.getUpdateState ? [null, ['check-updates', 'import', 'Check for updates…'], ['release-notes', 'file', 'What’s new'], ['donate', 'help', 'Support development']] : []), ...(desktop?.getTelemetryState ? [null, ['privacy', 'settings', 'Privacy & diagnostics'], ['website', 'help', 'StykAnimate website']] : [])],
   };
   return (menus[name] || menus.file).map(item => item && HOTKEY_BY_ID.has(item[0]) ? [item[0], item[1], item[2], shortcutLabel(undefined, item[0]), item[4]] : item);
 }
