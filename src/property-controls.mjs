@@ -39,7 +39,6 @@ const STYLES = `
 .property-context-actions {display:flex;gap:6px;margin-top:8px;}
 .property-context-actions>.button {flex:1;min-width:0;}
 .property-opacity-grid {margin-top:8px;}
-[data-property-row="outline_opacity"] {grid-column:1/-1;margin-top:8px;}
 .segment-gradient-fields {margin-top:3px;}
 #inspector [data-action="mirror-segment-vertical"]>.icon,#inspector [data-action="mirror-branch-vertical"]>.icon {transform:rotate(90deg);}
 .property-color-line>.color-row {flex:1;min-width:0;margin:0;}

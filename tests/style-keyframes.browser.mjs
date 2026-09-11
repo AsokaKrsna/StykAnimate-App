@@ -106,7 +106,6 @@ try {
   await page.waitForFunction(() => window.styk?.ready);
   await mkdir(out, { recursive: true });
   for (const [key, kind, property] of [
-    ["outline_opacity", "figure", "outlineOpacity"],
     ["segment_opacity", "segment", "opacity"],
     ["segment_gradient_opacity", "segment", "gradientOpacity"],
   ]) {

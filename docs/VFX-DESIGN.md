@@ -61,7 +61,7 @@ Object sizes use local artwork units and scale with the instance. Scene sizes us
 ## Rendering and resource lifetime
 
 - `vfx-gpu.mjs`: one lazily created WebGL 2 filter executor per JavaScript realm, shared by portable Canvas render paths. It uses GPU textures and no CPU pixel readback. Fullscreen passes run filters in order. Shader programs compile lazily per operation (at most 26), avoiding compilation of the entire catalogue when a simple effect is first used.
-- Blur uses three separable box passes per axis as a Gaussian approximation. Large radii downsample on a stable grid and upsample afterward. Outline uses separable alpha dilation; its rounded mode uses bounded octagonal dilation, while legacy square outlines retain separable dilation. All color math is SDR, with premultiplied alpha at composition boundaries.
+- Blur uses three separable box passes per axis as a Gaussian approximation. Large radii downsample on a stable grid and upsample afterward. Outline uses separable alpha dilation; its rounded mode composes bounded 16-direction dilation passes, while legacy square outlines retain separable dilation. All color math is SDR, with premultiplied alpha at composition boundaries.
 - `vfx-canvas.mjs`: bounded owner crops, neighboring pixels for spatial filters, stable coordinates, and scene composition. Scene padding allows blur to leave and re-enter the frame before final clipping.
 - `vfx-viewport.mjs`: shared-device WebGPU final composition; selection handles follow the effect result.
 - `vfx-camera-gpu.mjs`: reuses the editor's primitive buffers, textures, and device for the camera image. It restores shared uniforms after the ordered camera submission.

@@ -77,7 +77,10 @@ export class PlaybackCache {
       return this.load(this.report, { revision: this.documentRevision, scale, cameraEnabled, storedFrames });
     if (this._patchPending || this._frameUpdates.size || this._sourceUpdates.size)
       return this.updateDocument({revision: this.documentRevision, scale, cameraEnabled, storedFrames});
-    this.invalidate({ scale, cameraEnabled, storedFrames, retainDocument: true }); this._refreshTimeline();
+    // Packets carry their own camera mode. A camera-only toggle such as
+    // timeline scrubbing keeps them so playback resumes warm instead of cold.
+    const retainTicks = scale === this.scale && storedFrames === this.storedFrames ? new Set(this.cache.keys()) : undefined;
+    this.invalidate({ scale, cameraEnabled, storedFrames, retainDocument: true, retainTicks }); this._refreshTimeline();
     this._retentionSnapshot = playbackRetentionSnapshot(this.report, this.entries, this); return this;
   }
   updateFrame(index, frame, { revision = this.documentRevision } = {}) {
@@ -233,12 +236,24 @@ export class PlaybackCache {
     if (this._loadAck) { clearTimeout(this._loadAck.timer); this._loadAck.reject(error); this._loadAck = null; }
     this._loadPromise = null;
   }
-  get(tick) {
+  // A packet retained across a camera-view toggle was cropped for the other
+  // mode. Reading paths evict it so the current view recompiles on demand.
+  _kept(tick) {
     const packet = this.cache.get(tick);
-    if (!packet) { this.stats.misses++; return null; }
+    if (!packet) return false;
+    if ((packet.cameraEnabled ?? true) === (this.cameraEnabled ?? true)) return true;
+    this.cache.delete(tick); this.bitmapPool.release(packet); this._packetSizes.delete(tick);
+    const footprint = this._packetFootprints.get(tick);
+    if (footprint) { this._packetFootprints.delete(tick); this._footprintBytes -= footprint.metadataBytes; this.stats.footprintBytes = this._footprintBytes; }
+    Object.assign(this.stats, { bytes: this.bitmapPool.bytes, bitmapResources: this.bitmapPool.resources.size, readyFrames: this.cache.size });
+    return false;
+  }
+  get(tick) {
+    if (!this._kept(tick)) { this.stats.misses++; return null; }
+    const packet = this.cache.get(tick);
     this.cache.delete(tick); this.cache.set(tick, packet); this.stats.hits++; return packet;
   }
-  has(tick) { return this.cache.has(tick); }
+  has(tick) { return this._kept(tick); }
   bufferedAhead(tick, count, end = this.totalTicks) {
     if(!this.has(tick))return false;
     const ticks=Array.from({length:Math.max(0,Math.min(count,end-tick))},(_,i)=>tick+i);
@@ -305,7 +320,7 @@ export class PlaybackCache {
     const requests = [], promises = [];
     for (const tick of new Set(ticks)) {
       if (!Number.isInteger(tick) || tick < 0 || tick >= this.totalTicks) continue;
-      if (this.cache.has(tick)) continue;
+      if (this.has(tick)) continue;
       let pending = this.pending.get(tick);
       if (!pending) {
         if (this.pending.size >= this.maxPending) break;

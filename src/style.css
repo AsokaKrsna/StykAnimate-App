@@ -1034,21 +1034,6 @@ input[type="checkbox"] {
 .inspector-section > .inline-select + .color-row {
   margin-top: 8px;
 }
-.inspector-section:has([data-field="outline_width"]) {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0 8px;
-}
-.inspector-section:has([data-field="outline_width"]) > .inspector-title {
-  grid-column: 1 / -1;
-}
-.inspector-section:has([data-field="outline_width"]) > .field-grid {
-  display: contents;
-}
-.inspector-section:has([data-field="outline_width"]) > .color-row {
-  margin: 0;
-  align-self: end;
-}
 .inline-select {
   width: 100%;
   height: 30px;
@@ -1521,9 +1506,6 @@ dialog::backdrop {
   .field > small {
     grid-column: 2;
     grid-row: 2;
-  }
-  .inspector-section:has([data-field="outline_width"]) > .color-row {
-    height: 43px;
   }
 }
 .export-grid {

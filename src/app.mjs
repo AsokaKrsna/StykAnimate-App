@@ -358,6 +358,15 @@ function syncPlayback() {
     state.playbackStoredFrames !== storedFrames ||
     state.playbackDraftRevision !== editor.frameDraftRevision
   ) {
+    // A camera-only toggle keeps prepared frames: packets carry their own crop
+    // mode, so scrubbing does not cold-start the next playback.
+    const cameraOnly =
+      state.playbackRevision === editor.revision &&
+      playback.report === editor.report &&
+      state.playbackScale === scale &&
+      state.playbackStoredFrames === storedFrames &&
+      state.playbackDraftRevision === editor.frameDraftRevision &&
+      state.playbackCameraEnabled !== cameraEnabled;
     if (
       state.playbackRevision !== editor.revision ||
       playback.report !== editor.report
@@ -383,7 +392,9 @@ function syncPlayback() {
     state.playbackStoredFrames = storedFrames;
     state.playbackDraftRevision = editor.frameDraftRevision;
     state.playbackPacket = null;
-    state.renderer?.clearPreparedFrames?.();
+    if (cameraOnly && state.renderer?.retainPreparedFrames)
+      state.renderer.retainPreparedFrames(editor.report, playback.cache.values());
+    else state.renderer?.clearPreparedFrames?.();
   }
 }
 function playbackRange() {
@@ -614,10 +625,7 @@ function propertyChannel(key) {
   const figure = {
     scale: "scale",
     figure_opacity: "opacity",
-    outline_opacity: "outlineOpacity",
-    outline_width: "outlineWidth",
     figure_color: "color",
-    outline_color: "outlineColor",
     figure_z_order: "zIndex",
   };
   const segment = {
@@ -672,7 +680,7 @@ function propertyChannel(key) {
   const factor =
     property === "rotation"
       ? 180 / Math.PI
-      : ["scale", "opacity", "outlineOpacity", "gradientOpacity"].includes(
+      : ["scale", "opacity", "gradientOpacity"].includes(
             property,
           )
         ? 100
@@ -808,6 +816,11 @@ function currentFrame() {
   return editor.report._styk?.layers?.fixed?.camera?.visible === false
     ? { ...frame, camera: null }
     : frame;
+}
+function previewPacket() {
+  if (!state.previewing || state.scrubbing) return null;
+  const packet = playback.has(editor.tick) ? playback.get(editor.tick) : null;
+  return packet && packet.cameraEnabled !== false ? packet : null;
 }
 function scenePoint(x, y, inverse = false) {
   if (!state.playing && !state.previewing) return { x, y };
@@ -1279,11 +1292,11 @@ function loop(now) {
   if (state.dirtyRender && state.renderer) {
     state.dirtyRender = false;
     const start = performance.now();
-    const packet = state.playing ? state.playbackPacket : null;
+    const packet = state.playing ? state.playbackPacket : previewPacket();
     if(state.editablePreparing){
       const held=state.editingPacket?.packet;
       if(held)state.renderer.renderPrepared(held.key,{report:editor.report,view:state.view,cameraEnabled:held.cameraEnabled,hiddenUids:effectiveHidden()});
-    } else if (packet && state.renderer.renderPrepared) {
+    } else if (packet && state.renderer.renderPrepared && (packet.cameraEnabled ?? true) === !state.scrubbing) {
       if (!state.renderer.hasPreparedFrame(packet.key))
         state.renderer.prepareFrame(packet, {
           report: editor.report,
@@ -1330,6 +1343,7 @@ function loop(now) {
         selectedUid: null,
         showHandles: false,
         liveEditing: Boolean(state.drag || keyboardHandleGesture),
+        playing: state.playing,
         artworkRevision: editor.definitionRevision,
         canvasHandles: state.handles && gpuHandlesEnabled() ? canvasHandles(geometry) : undefined,
         outlineHandles: state.settings.outlineHandles,
@@ -1354,6 +1368,7 @@ function loop(now) {
       if (!state.editablePreparing) drawCameraMonitor($('inspector').querySelector('[data-camera-monitor]'), {
         report:editor.report,frame,geometry:state.playing?null:state.drag?.geometry || keyboardHandleGesture?.geometry || editor.geometry,
         resources:state.renderer.resources,hiddenUids:effectiveHidden(),
+        prepared:packet?.key!==undefined&&state.renderer?.renderPreparedInto?{renderer:state.renderer,key:packet.key}:null,
       });
     }
     const elapsed = performance.now() - start;
@@ -4132,10 +4147,6 @@ $("inspector").addEventListener(
       editor.updateFigureStyle({ name: target.value });
       return;
     }
-    if (target.id === "outline-color") {
-      editor.updateFigureStyle({ outlineColor: target.value });
-      return;
-    }
     if (target.id === "segment-gradient-enabled") {
       updateBuilderStyle(
         {
@@ -4180,8 +4191,6 @@ $("inspector").addEventListener(
       const value = Number(target.value);
       if (!Number.isFinite(value)) throw new Error("Enter a finite number.");
       if (key === "fps") editor.setFPS(value);
-      else if (key === "outline_width")
-        editor.updateFigureStyle({ outlineWidth: value });
       else if (key === "duration") editor.setFrameDuration(value);
       else if (key.startsWith("group_")) {
         const b = selectionBounds();
@@ -5534,7 +5543,6 @@ installColorPickers((input, event) => {
       else editor.importSceneBackground({...paintBackground(paint),name:paint.type+' gradient'},{indices:rangeFrames()});
     }};
   }
-  if(input.id==='outline-color')return {anchor:input,gradients:false,paint:{type:'solid',stops:[{offset:0,color:parseColor(input.value).color,opacity:1-(resolveInstanceFigure(editor.figure,editor.object)?.segment_decode?.global_style?.u30??0)/255}]},onChange:paint=>editor.updateFigureStyle({outlineColor:paint.stops[0].color,outlineOpacity:paint.stops[0].opacity})};
   if(input.dataset.polygonColor!==undefined){const index=Number(input.dataset.polygonColor),p=resolveInstanceFigure(editor.figure,editor.object).polyfills[index];return {anchor:input,gradients:false,paint:{type:'solid',stops:[{offset:0,color:p.color_rgb,opacity:p.alpha_raw!==undefined?1-p.alpha_raw/255:p.color_alpha??1}]},onChange:paint=>editor.updatePolygon(index,{color:paint.stops[0].color,opacity:paint.stops[0].opacity})};}
   const pairs = {'background-first':'background-alpha','background-second':'background-alpha-b','text-color':'text-opacity','figure-color':'figure-opacity'};
   const opacityId=pairs[input.id], opacity=opacityId && document.getElementById(opacityId);

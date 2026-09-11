@@ -5,6 +5,27 @@ import {buildGeometry,drawGeometry} from './pivot/geometry.mjs';
 import {composeSceneGroups} from './scene-order.mjs';
 import {formatPropertyValue} from './property-controls.mjs';
 const playbackGeometry=new WeakMap();
+const monitorSurfaces=new WeakMap();
+
+/** One small MSAA surface per renderer. During playback the monitor reuses the
+ * already-prepared GPU frame instead of re-evaluating the scene on Canvas 2D. */
+class MonitorGpuSource {
+  constructor(renderer){this.renderer=renderer;this.canvas=new OffscreenCanvas(1,1);this.context=this.canvas.getContext('webgpu');}
+  render(ctx,{key,report,view,dpr,hiddenUids}){
+    const renderer=this.renderer;
+    if(!renderer?.renderPreparedInto||!this.context)return false;
+    const width=Math.max(1,Math.round(report.canvas_width*view.scale*dpr)),height=Math.max(1,Math.round(report.canvas_height*view.scale*dpr));
+    if(this.width!==width||this.height!==height){
+      this.width=width;this.height=height;this.canvas.width=width;this.canvas.height=height;
+      this.context.configure({device:renderer.device,format:renderer.format,alphaMode:'premultiplied'});
+      this.msaa?.destroy();
+      this.msaa=renderer.device.createTexture({label:'Camera monitor MSAA',size:[width,height],sampleCount:4,format:renderer.format,usage:GPUTextureUsage.RENDER_ATTACHMENT});
+    }
+    if(!renderer.renderPreparedInto(key,{report,view:{scale:width/report.canvas_width},target:{context:this.context,msaa:this.msaa,width,height},hiddenUids}))return false;
+    ctx.drawImage(this.canvas,view.x,view.y,report.canvas_width*view.scale,report.canvas_height*view.scale);
+    return true;
+  }
+}
 
 /** Update only camera readouts, preserving focused inputs and their transaction. */
 export function syncCameraControls(root, frame, {activeKey=null, guides=true}={}) {
@@ -21,16 +42,11 @@ export function syncCameraControls(root, frame, {activeKey=null, guides=true}={}
   root.querySelector('[data-action="camera-guides"]')?.setAttribute('aria-pressed',String(guides));
 }
 
-/** Draw on the app's animation frame, reusing evaluated geometry and media. */
-export function drawCameraMonitor(canvas, {report,frame,geometry,resources,hiddenUids}) {
+/** Draw on the app's animation frame, reusing evaluated geometry and media.
+ * A prepared playback packet renders through the shared GPU pipeline; other
+ * states fall back to the Canvas 2D artwork path below. */
+export function drawCameraMonitor(canvas, {report,frame,geometry,resources,hiddenUids,prepared}) {
   if(!canvas || !canvas.clientWidth) return;
-  if(!geometry) {
-    let cached=playbackGeometry.get(canvas);
-    if(cached?.frame!==frame || cached?.report!==report) {
-      cached={frame,report,geometry:buildGeometry(report,frame)};playbackGeometry.set(canvas,cached);
-    }
-    geometry=cached.geometry;
-  } else playbackGeometry.delete(canvas);
   const width=canvas.clientWidth, height=canvas.clientHeight, dpr=Math.min(globalThis.devicePixelRatio || 1,2);
   if(canvas.width!==Math.round(width*dpr) || canvas.height!==Math.round(height*dpr)) {
     canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);
@@ -38,6 +54,18 @@ export function drawCameraMonitor(canvas, {report,frame,geometry,resources,hidde
   const ctx=canvas.getContext('2d'), scale=Math.min(width/report.canvas_width,height/report.canvas_height);
   const view={scale,x:(width-report.canvas_width*scale)/2,y:(height-report.canvas_height*scale)/2};
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);
+  if(prepared){
+    let source=monitorSurfaces.get(prepared.renderer);
+    if(!source){source=new MonitorGpuSource(prepared.renderer);monitorSurfaces.set(prepared.renderer,source);}
+    if(source.render(ctx,{key:prepared.key,report,view,dpr,hiddenUids}))return;
+  }
+  if(!geometry) {
+    let cached=playbackGeometry.get(canvas);
+    if(cached?.frame!==frame || cached?.report!==report) {
+      cached={frame,report,geometry:buildGeometry(report,frame)};playbackGeometry.set(canvas,cached);
+    }
+    geometry=cached.geometry;
+  } else playbackGeometry.delete(canvas);
   ctx.save();ctx.beginPath();ctx.rect(view.x,view.y,report.canvas_width*scale,report.canvas_height*scale);ctx.clip();
   ctx.transform(...cameraMatrix({report,frame,view,cameraEnabled:true}));
   drawBackground(ctx,report,frame,report.canvas_width,report.canvas_height,

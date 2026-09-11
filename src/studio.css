@@ -281,7 +281,6 @@ dialog::backdrop { background: var(--theme-backdrop, #18273c55); backdrop-filter
 #inspector .connection-row > span { flex: 1; font-size: 11px; color: var(--theme-muted, #737373); }
 #inspector .connection-row .icon-button { width: 24px; height: 24px; }
 #inspector .inspector-title .icon-button { width: 20px; height: 20px; color: var(--theme-muted, #737373); }
-#inspector [data-property-row="outline_opacity"] { margin-top: 0; }
 #inspector .property-opacity-grid > .property-row { grid-column: 1 / -1; }
 #inspector .inspector-disclosure { padding: 12px 16px; }
 #inspector .inspector-disclosure > summary { margin: 0; }

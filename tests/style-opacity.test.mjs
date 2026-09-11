@@ -132,7 +132,7 @@ test("cancel restores an absent outline style and does not manufacture a gradien
   assert.equal(canEditNativeProperty(editor, "outline_opacity"), false);
 });
 
-test("inspector displays outline opacity and both endpoints only for an enabled gradient", () => {
+test("inspector displays both endpoints only for an enabled gradient and omits figure outline controls", () => {
   const editor = fixture();
   const html = inspectorView({ editor });
   for (const key of [
@@ -143,7 +143,11 @@ test("inspector displays outline opacity and both endpoints only for an enabled 
     assert.match(html, new RegExp(`data-property-row="${key}"`));
   }
   const selection=editor.selectedJoint;editor.select(editor.selectedUid,-1);
-  assert.match(inspectorView({editor}),/data-property="outline_opacity"/);editor.select(editor.selectedUid,selection);
+  const figureView=inspectorView({editor});
+  assert.doesNotMatch(figureView,/data-property="outline_opacity"/);
+  assert.doesNotMatch(figureView,/data-property="outline_width"/);
+  assert.doesNotMatch(figureView,/id="outline-color"/);
+  editor.select(editor.selectedUid,selection);
   assert.match(html, /Primary opacity/);
   assert.match(html, /Secondary opacity/);
   editor.figure.segments[0].secondary = null;

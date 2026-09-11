@@ -32,7 +32,7 @@ void main(){
  if(operation==11){vec2 xy=(vec2(gl_FragCoord.x,p.w-gl_FragCoord.y)*p.x-p.yz)/dimensions;pixel=sampleAt(vec2(xy.x,1.-xy.y));return;}
  if(operation==12){vec2 xy=(vec2(gl_FragCoord.x,p.w-gl_FragCoord.y)+p.yz)/p.x/dimensions;pixel=sampleAt(vec2(xy.x,1.-xy.y));return;}
  if(operation==13){pixel=vec4(1.-c.a);return;}
- if(operation==14){float a=c.a;for(int i=0;i<8;i++){float angle=float(i)*PI/4.;a=max(a,sampleAt(uv+vec2(cos(angle),sin(angle))*p.x/dimensions).a);}pixel=vec4(a);return;}
+ if(operation==14){float a=c.a;for(int i=0;i<16;i++){float angle=float(i)*PI/8.;a=max(a,sampleAt(uv+vec2(cos(angle),sin(angle))*p.x/dimensions).a);}pixel=vec4(a);return;}
  if(operation==15){vec4 front=texture(originalImage,uv),b=brush();float a=p.y>0.?c.a*front.a:max(0.,c.a-front.a);a*=p.x*b.a;if(p.z>0.)pixel=vec4(b.rgb*a,a);else if(p.y>0.)pixel=vec4(mix(front.rgb,b.rgb*front.a,clamp(c.a*p.x*b.a,0.,1.)),front.a);else pixel=front+vec4(b.rgb*a,a)*(1.-front.a);return;}
  if(operation==16){vec2 xy=globalPixel(),delta=xy-q.xy*outputSize,dir=p.y==1.?vec2(cos(p.z),sin(p.z)):normalize(delta+vec2(.00001));if(p.y==3.)dir=vec2(-dir.y,dir.x);vec4 sum=vec4(0);for(int i=0;i<33;i++){float t=float(i)/32.-.5;sum+=sampleGlobal(xy+dir*p.x*t*2.);}pixel=sum/33.;return;}
  if(operation==17){float n=noiseAt(globalPixel()/p.y,p.w,1.);float keep=p.x<=0.?1.:p.x>=1.?0.:smoothstep(p.x-p.z,p.x+p.z,n);float edge=(1.-smoothstep(p.x,p.x+q.x+p.z,n))*keep;vec4 b=brush();pixel=vec4(mix(c.rgb,b.rgb*c.a,edge*b.a)*keep,c.a*keep);return;}

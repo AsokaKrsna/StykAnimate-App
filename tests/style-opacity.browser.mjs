@@ -16,15 +16,21 @@ const check = (name, result) => {
 };
 const field = (key) => page.locator(`#inspector [data-property="${key}"]`);
 const snapshot = () =>
-  page.evaluate(() => ({
-    outline: styk.editor.figure.segment_decode.global_style.u30,
-    primary: styk.editor.figure.segments[0].transparency,
-    secondary: styk.editor.figure.segments[0].secondary?.a,
-    outlineColor: styk.editor.figure.segment_decode.global_style.rgb,
-    gradientColor: styk.editor.figure.segments[0].secondary?.rgb,
-    undo: styk.editor._undo.length,
-    active: styk.properties.active,
-  }));
+  page.evaluate(async () => {
+    const { resolveInstanceFigure } = await import("/src/animation-style.mjs");
+    const e = styk.editor,
+      figure = resolveInstanceFigure(e.figure, e.object),
+      style = figure.segment_decode?.global_style ?? {};
+    return {
+      outline: style.u30,
+      primary: figure.segments[0].transparency,
+      secondary: figure.segments[0].secondary?.a,
+      outlineColor: style.rgb,
+      gradientColor: figure.segments[0].secondary?.rgb,
+      undo: e._undo.length,
+      active: styk.properties.active,
+    };
+  });
 async function type(key, value) {
   await field(key).fill(String(value));
   await field(key).press("Enter");
@@ -67,17 +73,28 @@ try {
       gradient: { color: "#2cd876", opacity: 0.6 },
     });
   });
-  await field("outline_opacity").waitFor();
   await field("segment_gradient_opacity").waitFor();
   check(
-    "Actual inspector exposes outline and both gradient endpoint opacities",
+    "Actual inspector exposes both gradient endpoint opacities",
     (await field("segment_opacity").count()) === 1,
   );
+  await page.evaluate(() => styk.editor.select(styk.editor.selectedUid));
+  await page.waitForTimeout(60);
+  check(
+    "Figure inspector omits the removed outline controls",
+    (await field("outline_opacity").count()) === 0 &&
+      (await field("outline_width").count()) === 0 &&
+      (await page.locator("#outline-color").count()) === 0,
+  );
+  await page.evaluate(() => styk.editor.select(styk.editor.selectedUid, 0));
+  await field("segment_gradient_opacity").waitFor();
   let before = await snapshot();
-  await type("outline_opacity", 25);
+  await page.evaluate(() =>
+    styk.editor.updateFigureStyle({ outlineOpacity: 0.25 }),
+  );
   let after = await snapshot();
   check(
-    "Typing outline opacity changes only its native alpha in one undo",
+    "Outline opacity edits change only their native alpha in one undo",
     after.outline === 191 &&
       after.primary === before.primary &&
       after.secondary === before.secondary &&
@@ -155,9 +172,11 @@ try {
       (await snapshot()).undo === before.undo,
   );
   await field("segment_gradient_opacity").press("Escape");
-  await page.locator("#segment-gradient-color").evaluate((e) => {
-    e.value = "#2388bb";
-    e.dispatchEvent(new Event("change", { bubbles: true }));
+  await page.evaluate(async () => {
+    const { resolveInstanceFigure } = await import("/src/animation-style.mjs");
+    const e = styk.editor,
+      a = resolveInstanceFigure(e.figure, e.object).segments[0].secondary?.a ?? 0;
+    e.updateSegmentStyle({ gradient: { color: "#2388bb", opacity: 1 - a / 255 } });
   });
   await page.waitForTimeout(60);
   check(
@@ -179,20 +198,26 @@ try {
         .evaluate((e) => e.scrollWidth <= e.clientWidth + 1),
     );
     check(
-      `${width}px outline opacity retains full-width hierarchy`,
+      `${width}px gradient endpoint retains full-width hierarchy`,
       await page
-        .locator('[data-property-row="outline_opacity"]')
+        .locator('[data-property-row="segment_gradient_opacity"]')
         .evaluate((e) => e.getBoundingClientRect().width > 140),
     );
     await page.screenshot({ path: `${out}/inspector-${width}.png` });
   }
-  await page.locator("#segment-gradient-enabled").uncheck();
+  await page.evaluate(() =>
+    styk.editor.updateSegmentStyle({ gradient: null }),
+  );
   await page.waitForTimeout(60);
   check(
     "Removing a gradient removes its endpoint controls",
     (await field("segment_gradient_opacity").count()) === 0,
   );
-  await page.locator("#segment-gradient-enabled").check();
+  await page.evaluate(() =>
+    styk.editor.updateSegmentStyle({
+      gradient: { color: "#2cd876", opacity: 0.6 },
+    }),
+  );
   await field("segment_gradient_opacity").waitFor();
   check(
     "Enabling a gradient restores its endpoint opacity control",

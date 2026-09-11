@@ -31,10 +31,13 @@ try {
   check('Inspector opacity creates a property curve without a Pose key',await page.evaluate(()=>{
     const e=styk.editor;return e.animationChannels.some(c=>c.property==='opacity')&&!e.animationChannels.some(c=>c.property==='pose')&&e.evaluatedFrame.objects[0].field28===153;
   }));
-  await page.locator('input[data-property="outline_width"]').fill('8');await page.locator('input[data-property="outline_width"]').press('Enter');
-  await page.evaluate(()=>styk.editor.updateFigureStyle({outlineColor:'#db4455'}));
-  await page.waitForFunction(()=>document.querySelector('#outline-color')?.value==='#db4455');
-  check('Appearance controls display evaluated outline color and width',await page.evaluate(()=>styk.editor.animationChannels.some(c=>c.property==='outlineWidth')));
+  check('The inspector omits figure outline controls',await page.evaluate(()=>!document.querySelector('input[data-property="outline_width"],input[data-property="outline_opacity"],#outline-color')));
+  await page.evaluate(()=>styk.editor.updateFigureStyle({outlineWidth:8,outlineColor:'#db4455'}));
+  check('Figure style edits produce evaluated outline color and width',await page.evaluate(async()=>{
+    const {resolveInstanceFigure}=await import('/src/animation-style.mjs');
+    const style=resolveInstanceFigure(styk.editor.figure,styk.editor.object).segment_decode?.global_style;
+    return style?.outline_thickness===8&&style.rgb.join(',')==='219,68,85';
+  }));
   await page.screenshot({path:'artifacts/property-channels/figure.png'});
   await page.evaluate(()=>{
     const e=styk.editor;e.select(1,0);e.updateSegmentStyle({paint:{type:'linear',angle:20,stops:[{offset:0,color:[240,60,80],opacity:.8},{offset:1,color:[40,100,240],opacity:.3}]}});

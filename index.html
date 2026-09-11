@@ -81,6 +81,7 @@
         </div>
       </header>
       <section class="workspace">
+        <aside id="builder-outliner" class="builder-outliner" hidden aria-label="Figure hierarchy"></aside>
         <nav class="studio-rail" aria-label="Editor tools">
           <button class="rail-add" id="open-insert" title="Add to scene" aria-label="Add to scene" data-icon="plus"></button>
           <span class="rail-divider"></span>
@@ -139,6 +140,52 @@
             </div>
           </div>
           <div class="context-strip"><strong id="tool-context">Select</strong><span id="edit-scope">Current frame</span><button id="leave-rig" hidden>Return to animation →</button></div>
+          <div id="builder-bar" class="builder-bar" role="toolbar" aria-label="Figure builder" hidden>
+            <span class="builder-crumb"><strong id="builder-title">Build figure</strong><span id="builder-scope">Shared definition</span></span>
+            <span class="builder-group" aria-label="Draw">
+              <button class="builder-btn" data-tool="rig" data-icon="sliders" title="Edit joints — move points and resize" aria-label="Edit joints"></button>
+              <button class="builder-btn" data-tool="line" data-icon="line" title="Draw line · L" aria-label="Draw line"></button>
+              <button class="builder-btn" data-tool="circle" data-icon="circle" title="Draw circle · C" aria-label="Draw circle"></button>
+              <button class="builder-btn" data-tool="polygon" data-icon="polygon" title="Trace a polygon between joints" aria-label="Draw polygon"></button>
+              <button class="builder-btn" data-tool="handle-edit" data-icon="move" title="Edit handles · Ctrl R" aria-label="Edit handles"></button>
+              <button class="builder-btn" data-tool="hand" data-icon="hand" title="Pan canvas · H" aria-label="Pan canvas"></button>
+            </span>
+            <span class="builder-group" aria-label="Structure">
+              <button class="builder-btn" data-action="split-segment" data-icon="split" title="Split segment at midpoint · Shift: whole branch" aria-label="Split segment"></button>
+              <button class="builder-btn" data-action="unsplit-segment" data-icon="combine" title="Remove joint, keep endpoints · Ctrl Del" aria-label="Unsplit segment"></button>
+              <button class="builder-btn" data-action="origin-segment" data-icon="origin" title="Set figure origin at this joint" aria-label="Set origin"></button>
+              <button class="builder-btn" data-action="segment-values" data-icon="sliders" title="Segment values editor · I" aria-label="Segment values"></button>
+            </span>
+            <span class="builder-group" aria-label="Duplicate and flip">
+              <button class="builder-btn" data-action="duplicate-segment" data-shift-action="duplicate-branch" data-icon="duplicate" title="Duplicate segment · Shift: duplicate branch · Ctrl: flip copy" aria-label="Duplicate segment"></button>
+              <button class="builder-btn" data-action="mirror-segment" data-shift-action="mirror-branch" data-icon="flip" title="Flip segment horizontally · Shift: flip branch" aria-label="Flip horizontally"></button>
+              <button class="builder-btn" data-action="mirror-segment-vertical" data-shift-action="mirror-branch-vertical" data-icon="flip" title="Flip segment vertically · Shift: flip branch" aria-label="Flip vertically" style="transform:rotate(90deg)"></button>
+            </span>
+            <span class="builder-group" aria-label="Draw order">
+              <button class="builder-btn" data-action="segment-order-front" data-icon="bring-to-front" title="Draw on top · Shift: one step up" aria-label="Bring to front"></button>
+              <button class="builder-btn" data-action="segment-order-up" data-icon="chevron-up" title="One step up" aria-label="Move up"></button>
+              <button class="builder-btn" data-action="segment-order-down" data-icon="chevron-down" title="One step down" aria-label="Move down"></button>
+              <button class="builder-btn" data-action="segment-order-back" data-icon="send-to-back" title="Draw behind · Shift: one step down" aria-label="Send to back"></button>
+            </span>
+            <span class="builder-group" aria-label="Media">
+              <button class="builder-btn" data-action="add-sprite-segment" data-icon="image" title="Attach an image segment at a joint" aria-label="Add sprite segment"></button>
+              <button class="builder-btn" data-action="edit-text" data-icon="text" title="Edit the selected text segment" aria-label="Edit text segment"></button>
+            </span>
+            <span class="builder-group" aria-label="Builder options">
+              <button class="builder-btn builder-toggle" data-action="toggle-builder-branch" data-icon="nodes" title="Apply edits to the whole branch · or hold Shift" aria-label="Apply to branch" aria-pressed="false"><span>Branch</span></button>
+              <button class="builder-btn builder-toggle" data-action="toggle-isolate" data-icon="detach" title="Isolate joint · Hold Caps Lock" aria-label="Isolate joint" aria-pressed="false"></button>
+              <button class="builder-btn builder-toggle" data-action="builder-static-handles" data-icon="diamond" title="Show static handles · F10" aria-label="Static handles" aria-pressed="true"></button>
+              <button class="builder-btn builder-toggle" data-action="builder-highlight" data-icon="eye" title="Highlight selected segment · F12" aria-label="Highlight segment" aria-pressed="false"></button>
+              <button class="builder-btn" data-action="builder-canvas-color" data-icon="grid" title="Construction background color · F9" aria-label="Builder canvas color"></button>
+            </span>
+            <span class="builder-group" aria-label="Delete">
+              <button class="builder-btn" data-action="delete-single-segment" data-icon="close" title="Delete this joint only" aria-label="Delete joint"></button>
+              <button class="builder-btn danger" data-action="delete-segment" data-icon="trash" title="Delete branch · Shift Del" aria-label="Delete branch"></button>
+            </span>
+            <span class="builder-bar-end">
+              <button class="button primary small" id="builder-done" data-workspace-mode="animate">Done</button>
+            </span>
+          </div>
           <div
             id="viewport"
             tabindex="0"

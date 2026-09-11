@@ -29,8 +29,6 @@ const animatedProperties = new Set([
   "scale",
   "figure_opacity",
   "figure_z_order",
-  "outline_opacity",
-  "outline_width",
   "thickness",
   "segment_opacity",
   "segment_gradient_opacity",
@@ -210,7 +208,6 @@ export function inspectorView({
   const figure = resolveInstanceFigure(editor.figure, object),
     joint = editor.selectedJoint,
     segment = figure.segments[joint],
-    style = figure.segment_decode?.global_style || {},
     raw = Number(object.color_override_raw) >>> 0;
   const drawOrder = new Map(builderDrawables(figure).map((item,index)=>[`${item.kind}:${item.index}`,index+1]));
   const orderLimits = `min="1" max="${drawOrder.size}"`;
@@ -271,15 +268,6 @@ export function inspectorView({
       "Stacking",
       grid(field('Z-index', 'figure_z_order', object._stykZIndex ?? 0, '', 'min="-1000000" max="1000000"')) +
       tools(button('layer-back', 'send-to-back', 'Send to back') + button('layer-down', 'chevron-left', 'Send backward') + button('layer-up', 'chevron-right', 'Bring forward') + button('layer-front', 'bring-to-front', 'Bring to front')),
-    );
-    html += group(
-      "Outline",
-      grid(
-        field("Width", "outline_width", style.outline_thickness || 0, "px", 'min="0"') +
-        field("Opacity", "outline_opacity", (1 - (style.u30 ?? 0) / 255) * 100, "%", 'min="0" max="100"', {
-          id: "outline-opacity", legacyField: false, description: "Outline opacity",
-        }),
-      ) + `<div class="property-row property-color-line">${colorRow("outline-color", "Outline color", hex(style.rgb))}${keyControlGroup('outline_color','outline color',propertyState?.('outline_color'))}</div>`,
     );
   }
   if (jointScope && segment) {

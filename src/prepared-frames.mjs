@@ -73,8 +73,9 @@ export class PreparedFrameCache {
     this.report = report; this.revision = epoch;this.generation=renderer.generation;
     if (!renderer.backgroundsReady(report, packet.frame)) return null;
     const prior = this.frames.get(key);
-    if (prior && prior.cameraEnabled !== cameraEnabled) throw new Error('A prepared frame key cannot identify two camera views.');
-    if (prior?.generation === renderer.generation) { this.frames.delete(key); this.frames.set(key, prior); this.stats.hits++; return key; }
+    // A key's mode is fixed while cached; a packet compiled for the other
+    // camera view replaces the retained entry instead of coexisting with it.
+    if (prior?.generation === renderer.generation && prior.cameraEnabled === cameraEnabled) { this.frames.delete(key); this.frames.set(key, prior); this.stats.hits++; return key; }
     if (prior) this._remove(key);
     if (!(packet.shapes instanceof Float32Array) || packet.shapes.length % SHAPE_FLOATS || !(packet.transforms instanceof Float32Array) || packet.transforms.length < 4 || packet.transforms.length % 4) throw new TypeError('Invalid prepared-frame buffers.');
     const backgrounds = renderer.background({ report, frame: packet.frame, view, cameraEnabled }, descriptor => descriptor);
@@ -173,15 +174,7 @@ export class PreparedFrameCache {
     const uniform = new Float32Array([matrix[0], matrix[2], matrix[4], Math.hypot(matrix[0], matrix[1]), matrix[1], matrix[3], matrix[5], 0,
       renderer.width, renderer.height, renderer.dpr, 1, x, y, x + report.canvas_width * zoom, y + report.canvas_height * zoom]);
     renderer.device.queue.writeBuffer(renderer.uniform, 0, uniform);
-    let transformBytes = 0;
-    if ((typeof hiddenUids?.has === 'function' && hiddenUids.size !== 0) || dragTranslations?.size) {
-      frame.liveTransforms ??= new Float32Array(frame.transforms.length); frame.liveTransforms.set(frame.transforms);
-      for (let i = 1; i < frame.uids.length; i++) { const uid = frame.uids[i], delta = dragTranslations?.get(uid), offset = i * 4;
-        if (delta) { frame.liveTransforms[offset] += delta.x; frame.liveTransforms[offset + 1] += delta.y; }
-        if (hiddenUids?.has(uid)) frame.liveTransforms[offset + 3] = 0;
-      }
-      renderer.device.queue.writeBuffer(frame.transformBuffer, 0, frame.liveTransforms); frame.transformed = true; transformBytes = frame.liveTransforms.byteLength;
-    } else if (frame.transformed) { renderer.device.queue.writeBuffer(frame.transformBuffer, 0, frame.transforms); frame.transformed = false; transformBytes = frame.transforms.byteLength; }
+    const transformBytes = this._writeTransforms(frame, hiddenUids, dragTranslations);
     const encoder = renderer.device.createCommandEncoder({ label: `Prepared playback ${frame.key}` });
     const pass = encoder.beginRenderPass({ colorAttachments: [{ view: renderer.msaa.createView(), resolveTarget: renderer.context.getCurrentTexture().createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'discard' }] });
     pass.setPipeline(renderer.pipeline); pass.setBindGroup(0, frame.bindGroup);
@@ -191,6 +184,40 @@ export class PreparedFrameCache {
     Object.assign(renderer.stats, { mode: 'prepared playback', preparation: 'prepared', compiledObjects: 0, rasterizedObjects: 0, updatedObjects: 0, frameMs: performance.now() - start, drawCalls: frame.commands.length, primitives: frame.shapeCount, objects: frame.objectCount,
       textureObjects: frame.textureObjects, uploadBytes: 0, transformUploadBytes: transformBytes, gpuBytes: frame.bytes, preparedBytes: this.bytes, preparedFrames: this.frames.size,
       workerCompileMs: frame.compileMs, packetUploadMs: frame.prepareMs, warnings: frame.warnings });
+    return true;
+  }
+  _writeTransforms(frame, hiddenUids, dragTranslations) {
+    const renderer = this.renderer;
+    if ((typeof hiddenUids?.has === 'function' && hiddenUids.size !== 0) || dragTranslations?.size) {
+      frame.liveTransforms ??= new Float32Array(frame.transforms.length); frame.liveTransforms.set(frame.transforms);
+      for (let i = 1; i < frame.uids.length; i++) { const uid = frame.uids[i], delta = dragTranslations?.get(uid), offset = i * 4;
+        if (delta) { frame.liveTransforms[offset] += delta.x; frame.liveTransforms[offset + 1] += delta.y; }
+        if (hiddenUids?.has(uid)) frame.liveTransforms[offset + 3] = 0;
+      }
+      renderer.device.queue.writeBuffer(frame.transformBuffer, 0, frame.liveTransforms); frame.transformed = true;
+      return frame.liveTransforms.byteLength;
+    }
+    if (frame.transformed) { renderer.device.queue.writeBuffer(frame.transformBuffer, 0, frame.transforms); frame.transformed = false; return frame.transforms.byteLength; }
+    return 0;
+  }
+  /** Draw one prepared frame into a caller-owned surface such as the inspector
+   * camera monitor. The view scale is target pixels per scene pixel and the
+   * clip is the full target, matching the prepared camera crop. */
+  renderInto(key, { report = this.report, view = {}, target, hiddenUids, dragTranslations } = {}) {
+    const frame = this.frames.get(String(key)), renderer = this.renderer;
+    if (!frame || frame.generation !== renderer.generation || report !== this.report || !target?.context || !target?.msaa) { this.stats.misses++; return false; }
+    const width = Math.max(1, Math.round(target.width ?? 0)), height = Math.max(1, Math.round(target.height ?? 0));
+    const matrix = cameraMatrix({ report, frame: frame.nativeFrame, view, cameraEnabled: frame.cameraEnabled });
+    renderer.device.queue.writeBuffer(renderer.uniform, 0, new Float32Array([
+      matrix[0], matrix[2], matrix[4], Math.hypot(matrix[0], matrix[1]), matrix[1], matrix[3], matrix[5], 0,
+      width, height, 1, 1, 0, 0, width, height]));
+    this._writeTransforms(frame, hiddenUids, dragTranslations);
+    const encoder = renderer.device.createCommandEncoder({ label: `Prepared surface ${frame.key}` });
+    const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target.msaa.createView(), resolveTarget: target.context.getCurrentTexture().createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'discard' }] });
+    pass.setPipeline(renderer.pipeline); pass.setBindGroup(0, frame.bindGroup);
+    for (const command of frame.commands) { pass.setBindGroup(1, command.texture?.bindGroup || renderer.blankBindGroup); pass.draw(6, command.instanceCount, 0, command.firstInstance); }
+    pass.end(); renderer.device.queue.submit([encoder.finish()]);
+    this.frames.delete(frame.key); this.frames.set(frame.key, frame); this.stats.hits++;
     return true;
   }
 }

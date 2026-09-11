@@ -26,7 +26,7 @@ test('prepared draw commands retain painter order and merge adjacent vector rang
   assert.equal(backgroundCount, 1); assert.deepEqual(commands.map(c => [c.firstInstance, c.instanceCount, Boolean(c.texture)]), [[0, 3, false], [3, 1, true], [4, 6, false]]);
 });
 
-test('prepared camera mode defaults to the packet and rejects inconsistent cropped views', () => {
+test('prepared camera mode defaults to the packet and guards inconsistent cropped views', () => {
   const renderer = fakeRenderer(), cache = new PreparedFrameCache(renderer), neutral = packet('1:0');
   neutral.cameraEnabled = false; neutral.frame.camera = {x: 100, y: 50, scale: .5, angle_rad: .4};
   let backgroundMode; renderer.background = options => {backgroundMode = options.cameraEnabled; return [];};
@@ -36,7 +36,8 @@ test('prepared camera mode defaults to the packet and rejects inconsistent cropp
   assert.deepEqual([...uniform.slice(0, 7)], [2, 0, 3, 2, 0, 2, 4]);
   assert.throws(() => cache.prepare(neutral, {report, cameraEnabled: true}), /camera mode/);
   assert.throws(() => cache.render('1:0', {report, cameraEnabled: true}), /camera mode/);
-  assert.throws(() => cache.prepare({...neutral, cameraEnabled: true}, {report}), /two camera views/);
+  cache.prepare({...neutral, cameraEnabled: true}, {report});
+  assert.equal(cache.frames.get('1:0').cameraEnabled, true);
   assert.throws(() => cache.prepare({...neutral, key: '1:1', cameraEnabled: 'false'}, {report}), /boolean/);
   const legacy = packet('1:2'); cache.prepare(legacy, {report});
   assert.equal(cache.frames.get('1:2').cameraEnabled, true);

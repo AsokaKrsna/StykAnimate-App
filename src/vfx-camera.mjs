@@ -11,7 +11,11 @@ export class CameraVfx {
  render(context,options,dpr,resources){
   const {report,frame,view={},geometry,preparedFrame,hiddenUids,dragTranslations}=options;
   const camera=effectiveCamera(report,frame)??{},scale=camera.scale??1,angle=camera.angle_rad??0,cx=report.canvas_width/2,cy=report.canvas_height/2;
-  const world=options.cameraEnabled===false,zoom=(view.scale??1)*dpr,requested=Math.max(.01,zoom*(world?scale:1)),resolution=Math.min(requested,2048/Math.max(report.canvas_width,report.canvas_height));
+  // The software path re-rasterizes the camera image on every change; halve
+  // its cap while the scene is live so drags and playback stay responsive.
+  const world=options.cameraEnabled===false,zoom=(view.scale??1)*dpr,requested=Math.max(.01,zoom*(world?scale:1)),
+    cap=this.paint||!(options.liveEditing||options.playing)?2048:1024,
+    resolution=Math.min(requested,cap/Math.max(report.canvas_width,report.canvas_height));
   const width=Math.max(1,Math.ceil(report.canvas_width*resolution)),height=Math.max(1,Math.ceil(report.canvas_height*resolution));
   const hidden=preparedFrame?preparedFrame.uids.filter(uid=>hiddenUids?.has(uid)):geometry?.orderedObjects?.filter(g=>hiddenUids?.has(g.obj.unique_id)).map(g=>g.obj.unique_id)??[];
   const signature=JSON.stringify([options.resourceRevision,camera,width,height,frame.background_id,frame.background_id_b,frame.background_mix,frame._stykBackgroundColor,hidden,dragTranslations instanceof Map?[...dragTranslations]:dragTranslations]);

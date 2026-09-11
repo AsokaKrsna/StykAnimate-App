@@ -10,6 +10,15 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 - Add an editable HyperFrames launch video with synchronized app recordings, narration, motion graphics, and an original music bed.
 
+### Fixed
+
+- Speed up camera playback and preview: the inspector output monitor reuses the prepared GPU frame instead of re-evaluating the scene each frame, camera previews render prepared packets when available, prepared packets survive camera-view toggles such as timeline scrubbing, and the software camera-effects path halves its working resolution during interaction and playback.
+
+### Changed
+
+- Remove the duplicated figure Outline section from the Design inspector; outline authoring lives in the VFX panel.
+- Smooth rounded VFX outlines by widening the dilation kernel from 8 to 16 directions.
+
 ## [0.5.6]
 
 VFX, dark mode, and smoother animation workflows

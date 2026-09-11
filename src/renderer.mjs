@@ -327,6 +327,10 @@ class WebGPURenderer {
     if (rendered) { this.last = null; this.stats.primitiveUploadCalls = 0; }
     return rendered;
   }
+  renderPreparedInto(key, options) {
+    if (this.destroyed || this.deviceLost) return false;
+    return this.preparedFrames.renderInto(key, options);
+  }
   clearPreparedFrames() { this.preparedFrames.clear(); }
   retainPreparedFrames(report, packets) { this.preparedFrames.retainPackets(report, packets); }
   ensureBuffers(shapeCount, transformCount) {
