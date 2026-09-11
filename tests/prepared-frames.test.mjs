@@ -90,6 +90,90 @@ function textureRenderer(){
 }
 const imagePacket=(tick,artworkKey='shared')=>{const p=packet(`1:${tick}`);p.compatibility=[{artworkKey,bitmap:{width:10,height:10}}];p.groups[0].compatibilityIndex=0;return p;};
 
+function backgroundDescriptor(renderer, cacheKey = 'background-paint:one', bytes = 400) {
+  return {cacheKey, bytes, create() {
+    const texture = renderer.device.createTexture({label: cacheKey});
+    return {texture, bindGroup: renderer.textureBindGroup(texture), bytes};
+  }};
+}
+function setBackgrounds(renderer, descriptors) {
+  renderer.background = (options, resolve) => descriptors.map(descriptor => ({
+    data: new Float32Array(shapeRecord({mode: SHAPE.TEXTURE})), texture: resolve(descriptor),
+  }));
+}
+
+test('prepared backgrounds share immutable variants and outlive sibling frame eviction', () => {
+  const renderer = textureRenderer(), cache = new PreparedFrameCache(renderer, {maxBytes: 1600, maxFrames: 3});
+  const first = backgroundDescriptor(renderer), camera = backgroundDescriptor(renderer, 'background-paint:camera');
+  setBackgrounds(renderer, [first]);
+  cache.prepare(packet('1:0'), {report}); cache.prepare(packet('1:1'), {report});
+  assert.equal(renderer.textures.length, 1); assert.equal(cache.bytes, 848);
+  setBackgrounds(renderer, [camera]); cache.prepare(packet('1:2'), {report});
+  assert.equal(renderer.textures.length, 2); assert.equal(cache.bytes, 1472);
+  assert.equal(renderer.textures[0].destroyed, false); assert.equal(cache.render('1:0', {report}), true);
+  const writes = renderer.writes.length;
+  cache.prepare(packet('1:0'), {report});
+  assert.equal(renderer.writes.length, writes); assert.equal(renderer.textures.length, 2);
+  cache.retainPackets(report, [packet('1:0')]);
+  assert.equal(renderer.textures[0].destroyed, false); assert.equal(renderer.textures[1].destroyed, true);
+  assert.equal(cache.bytes, 624);
+  cache.clear(); assert.equal(cache.bytes, 0); assert.equal(cache.textures.size, 0);
+  assert.ok(renderer.textures.every(texture => texture.destroyed));
+});
+
+test('background blend references are charged and retained once per unique texture', () => {
+  const renderer = textureRenderer(), cache = new PreparedFrameCache(renderer, {maxBytes: 720});
+  const descriptor = backgroundDescriptor(renderer);
+  setBackgrounds(renderer, [descriptor, descriptor]);
+  cache.prepare(packet('1:0'), {report});
+  assert.equal(cache.bytes, 720); assert.equal(renderer.textures.length, 1);
+  const frame = cache.frames.get('1:0');
+  assert.equal(frame.commands[0].texture, frame.commands[1].texture);
+  assert.equal(frame.ownedTextures.length, 1); assert.equal(frame.ownedTextures[0].refs, 1);
+  cache.clear(); assert.equal(cache.bytes, 0); assert.equal(renderer.textures[0].destroyed, true);
+});
+
+test('background admission rejects before allocation and evicts before replacement upload', () => {
+  const renderer = textureRenderer(), cache = new PreparedFrameCache(renderer, {maxBytes: 624});
+  setBackgrounds(renderer, [backgroundDescriptor(renderer, 'background-paint:large', 401)]);
+  assert.throws(() => cache.prepare(packet('1:0'), {report}), /budget/);
+  assert.equal(renderer.textures.length, 0); assert.equal(renderer.buffers.length, 0);
+  setBackgrounds(renderer, [backgroundDescriptor(renderer)]); cache.prepare(packet('1:0'), {report});
+  const next = backgroundDescriptor(renderer, 'background-paint:next'), create = next.create;
+  next.create = () => {
+    assert.equal(renderer.textures[0].destroyed, true);
+    assert.ok(renderer.buffers.every(buffer => buffer.destroyed));
+    return create();
+  };
+  setBackgrounds(renderer, [next]); cache.prepare(packet('1:1'), {report});
+  assert.equal(cache.bytes, 624); assert.equal(cache.frames.size, 1); cache.clear();
+});
+
+test('failed preparation releases new background references and preserves cached siblings', () => {
+  const renderer = textureRenderer(), cache = new PreparedFrameCache(renderer);
+  const shared = backgroundDescriptor(renderer), fresh = backgroundDescriptor(renderer, 'background-paint:fresh');
+  setBackgrounds(renderer, [shared]); cache.prepare(packet('1:0'), {report});
+  const bytes = cache.bytes;
+  setBackgrounds(renderer, [shared, fresh]);
+  const createBuffer = renderer.device.createBuffer; let count = 0;
+  renderer.device.createBuffer = spec => {if (++count === 2) throw new Error('upload failed'); return createBuffer(spec);};
+  assert.throws(() => cache.prepare(packet('1:1'), {report}), /upload failed/);
+  assert.equal(cache.bytes, bytes); assert.equal(cache.frames.size, 1);
+  assert.equal(renderer.textures[0].destroyed, false); assert.equal(renderer.textures[1].destroyed, true);
+  assert.equal(cache.render('1:0', {report}), true); cache.clear();
+  assert.ok(renderer.buffers.every(buffer => buffer.destroyed));
+});
+
+test('a failed background creation unwinds already acquired shared references', () => {
+  const renderer = textureRenderer(), cache = new PreparedFrameCache(renderer);
+  const shared = backgroundDescriptor(renderer);
+  setBackgrounds(renderer, [shared]); cache.prepare(packet('1:0'), {report});
+  setBackgrounds(renderer, [shared, {cacheKey: 'background-paint:failure', bytes: 400, create() {throw new Error('copy failed');}}]);
+  assert.throws(() => cache.prepare(packet('1:1'), {report}), /copy failed/);
+  assert.equal(cache.bytes, 624); assert.equal(cache.textures.get(shared.cacheKey).refs, 1);
+  cache.clear(); assert.equal(cache.bytes, 0); assert.equal(renderer.textures[0].destroyed, true);
+});
+
 test('GPU frames share textures across packets and retain them until the last frame is evicted',()=>{
   const renderer=textureRenderer(),cache=new PreparedFrameCache(renderer,{maxBytes:1200,maxFrames:2});
   cache.prepare(imagePacket(0),{report});cache.prepare(imagePacket(1),{report});

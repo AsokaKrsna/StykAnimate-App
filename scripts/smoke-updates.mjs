@@ -32,12 +32,15 @@ try {
   assert.equal(await page.locator('.release-splash[open]').count(), 0);
   evidence.oncePerProcess = true;
   await page.locator('.titlebar [data-action="export"]').click();
-  await page.locator('.studio-export-dialog .support-donate').waitFor();
-  await page.locator('.studio-export-dialog .support-donate').click();
-  assert.equal((await application.evaluate(() => globalThis.openedLinks)).at(-1), 'https://ko-fi.com/Q5Q41WY7QC');
+  await page.locator('.studio-export-dialog #export-submit').waitFor();
+  await page.getByRole('combobox', { name: 'Export format', exact: true }).waitFor();
   await page.screenshot({ path: path.join(output, 'export.png') });
-  evidence.exportDonation = true;
+  evidence.exportPanel = true;
   await page.keyboard.press('Escape');
+  await page.locator('[data-app-menu="help"]').click();
+  await page.locator('[data-action="donate"]').click();
+  assert.equal((await application.evaluate(() => globalThis.openedLinks)).at(-1), 'https://ko-fi.com/Q5Q41WY7QC');
+  evidence.helpDonation = true;
 
   // Capture the production service through its public status operation. Only
   // this test process substitutes the installer; no test IPC exists in the app.

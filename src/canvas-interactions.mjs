@@ -5,6 +5,7 @@
 export const PIVOT_HANDLE_COLORS = Object.freeze({
   segment: '#ff0000', origin: '#ff8800', unselected: '#0000ff', unselectedOrigin: '#0080ff',
   joined: '#ffffff', unselectedJoined: '#d3d3d3', static: '#808080', selectedStatic: '#b04040',
+  activeSegment: '#ff6666', activeJoined: '#ffd6d6', activeStatic: '#cc4444',
 });
 
 let figureMetadata = new WeakMap(), topologyMetadata = new WeakMap(), topologyEpoch = 0;
@@ -96,7 +97,9 @@ export function getPivotHandleRadius(g, id, {
   return clamp(baseRadius * Math.abs(viewScale), minDiameter / 2, maxDiameter / 2);
 }
 
-export function pivotHandleColor({ selected = false, origin = false, joined = false, static: isStatic = false } = {}) {
+export function pivotHandleColor({ selected = false, nodeSelected = false, origin = false, joined = false, static: isStatic = false } = {}) {
+  if (selected && nodeSelected && !origin) return joined ? PIVOT_HANDLE_COLORS.activeJoined
+    : isStatic ? PIVOT_HANDLE_COLORS.activeStatic : PIVOT_HANDLE_COLORS.activeSegment;
   if (joined) return selected ? PIVOT_HANDLE_COLORS.joined : PIVOT_HANDLE_COLORS.unselectedJoined;
   if (isStatic) return selected ? PIVOT_HANDLE_COLORS.selectedStatic : PIVOT_HANDLE_COLORS.static;
   if (!selected) return origin ? PIVOT_HANDLE_COLORS.unselectedOrigin : PIVOT_HANDLE_COLORS.unselected;
@@ -142,7 +145,8 @@ export function getPivotHandles(geometry, {
       const ik = !builder && Boolean(g.obj._stykIK?.[id]?.enabled);
       result.push({ g, uid, joint, id, kind, point, selected, joined, static: isStatic, ik,
         action: kind === 'origin' ? 'move' : isStatic && !ik && !attaching && !allowStaticManipulation ? 'select' : 'pose',
-        color: builder && isStatic && !joined ? (builderSelection?.has(joint)?'#cc4444':'#999999') : pivotHandleColor({ selected, origin: kind === 'origin', joined, static: isStatic }),
+        color: builder && isStatic && !joined && !builderSelection?.has(joint) ? '#999999'
+          : pivotHandleColor({ selected, nodeSelected: Boolean(builderSelection?.has(joint)), origin: kind === 'origin', joined, static: isStatic }),
         radius: screenRadius / scale, screenRadius });
     };
     const topology=figureInfo(g).topology;

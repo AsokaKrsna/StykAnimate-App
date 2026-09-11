@@ -22,7 +22,7 @@ try {
   const saved = await page.evaluate(async () => {
     window.styk.workspace.float('right');
     await window.styk.workspace.flushPreferences();
-    window.styk.settingsUI.commit({locale:'it'});
+    window.styk.settingsUI.commit({locale:'it',theme:'dark'});
     await window.styk.settingsUI.flush();
     const snapshot = window.styk.workspace.preferences;
     const disk = await window.stykDesktop.getWorkspacePreferences();
@@ -37,6 +37,7 @@ try {
   assert.equal(saved.invalidRejected, true);
   assert.equal(saved.oversizedRejected, true);
   assert.equal(saved.editorSettings.locale,'it');
+  assert.equal(saved.editorSettings.theme,'dark');
   const closed = first.waitForEvent('close');
   await first.evaluate(({ app }) => app.exit(0)).catch(() => {});
   await closed;
@@ -48,6 +49,8 @@ try {
   assert.deepEqual(restored.snapshot, saved.snapshot);
   assert.deepEqual(restored.disk, saved.snapshot);
   assert.ok(restored.floating.right);
+  assert.equal(await restoredPage.locator('html').getAttribute('data-theme'),'dark');
+  assert.equal(restored.editorSettings.theme,'dark');
   assert.equal(restored.locale,'it');assert.equal(restored.documentLocale,'it');assert.deepEqual(restored.editorSettings,saved.editorSettings);
   await restoredPage.evaluate(async () => { window.styk.workspace.reset(); await window.styk.workspace.flushPreferences(); });
   const evidence = { passed: true, packaged, survivesProcessRestart: true, survivesOriginChange: true, firstOrigin: saved.origin, secondOrigin: restored.origin, snapshot: saved.snapshot, invalidRejected: saved.invalidRejected, oversizedRejected: saved.oversizedRejected, restoredFloatingPanel: true, restoredLocale:restored.locale, renderedDocumentLocale:restored.documentLocale, restoredEditorSettings:true, checkedAt: new Date().toISOString() };

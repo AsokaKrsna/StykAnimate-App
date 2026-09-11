@@ -10,12 +10,12 @@ Restart flushes workspace settings and clipboard persistence. Unsaved projects o
 
 Development, unpacked, and portable copies show an explanation and a downloads link. Automatic installation is currently Windows-only. macOS requires signing and platform testing before enabling updates there. Windows builds currently use the project's existing unsigned configuration; Windows may display its normal reputation warning on first installation.
 
-The welcome splash appears once each process launch (not every renderer reload). Help → What’s new reopens it. It uses bundled `desktop/release-info.json`, so the displayed notes match the installed version and work offline. It has X, Escape, and Start animating close controls. Ko-fi links in the splash and export window use the same fixed destination and open the system browser.
+The welcome splash appears once each process launch (not every renderer reload). Help → What’s new reopens it. It uses bundled `desktop/release-info.json`, so the displayed notes match the installed version and work offline. It has X, Escape, and Start animating close controls. Ko-fi links in the splash and Help → Support development use the same fixed destination and open the system browser.
 
 ## Publish a new version
 
-1. Set a new, higher `x.y.z` version in `package.json` and `package-lock.json`. Update `desktop/release-info.json` with the same version and the release's patch notes.
-2. Run `npm run release:prepare`, `npm run test:updates`, and `npm run test:updates:desktop`.
+1. Follow [the release history procedure](RELEASING.md): move completed `CHANGELOG.md` Unreleased entries into one new highest `x.y.z` section and align `package.json` and both root version fields in `package-lock.json`.
+2. Run `npm run release:prepare`, `npm run changelog:check`, `npm run test:updates`, and `npm run test:updates:desktop`. Commit both generated note files with the history and version files; do not author `desktop/release-info.json` directly.
 3. Commit the source to the private repository. Push a tag matching the version, for example `v0.5.1`. The **Build and release Windows app** workflow builds and publishes that version. Alternatively run the workflow manually: the default produces a draft; enable Publish to release it.
 4. Confirm the workflow passed and the public release has the Setup installer, Portable executable, Setup `.blockmap`, `latest.yml`, and `SHA256SUMS.txt`.
 

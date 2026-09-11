@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <limits>
 #include <new>
+#include <unordered_set>
 #include <vector>
 
 #if defined(_WIN32)
@@ -22,7 +23,7 @@ static_assert(sizeof(StykScanResult) == 40, "Unexpected scan ABI alignment");
 namespace {
 enum Error : std::uint32_t {
     Ok = 0, Eof = 1, FrameCount = 2, Budget = 3, Background = 4,
-    FigureType = 5, Nonfinite = 6, IdentityOrder = 7, ChangedType = 8,
+    FigureType = 5, Nonfinite = 6, DuplicateIdentity = 7, // Error 8 is retired (type transitions are valid).
     JoinSlot = 9, JoinHandle = 10, JoinCycle = 11, DrawOrder = 12,
     Metadata = 13, OutputCapacity = 14, Allocation = 15, Internal = 16
 };
@@ -70,10 +71,6 @@ struct Definition {
     std::vector<std::uint16_t> handles;
 };
 
-std::int64_t signed_uid(std::uint32_t uid) {
-    return static_cast<std::int64_t>(uid) - (uid >= 0x80000000u ? 0x100000000ll : 0ll);
-}
-
 void reserve_pose(std::uint64_t bytes, std::uint64_t maximum, StykScanResult& result, const Reader& reader) {
     if (result.pose_bytes > maximum || bytes > maximum - result.pose_bytes)
         throw Failure{Budget, reader.pos};
@@ -116,8 +113,8 @@ void scan(Reader& reader, const std::uint8_t* metadata, std::uint64_t metadata_s
     if (frame_count > 1000000) throw Failure{FrameCount, reader.pos - 4};
     reserve_pose(static_cast<std::uint64_t>(frame_count) * 512, budget, result, reader);
     if (frame_count > capacity || (frame_count && !durations)) throw Failure{OutputCapacity, reader.pos};
-    std::vector<std::uint32_t> identities, previous_ids;
-    std::vector<std::uint16_t> frame_types, previous_types, join_handles;
+    std::vector<std::uint16_t> frame_types, join_handles;
+    std::unordered_set<std::uint32_t> identities;
     std::vector<std::int32_t> join_slots;
     std::vector<std::uint8_t> checked;
     for (std::uint32_t fi = 0; fi < frame_count; ++fi) {
@@ -128,23 +125,18 @@ void scan(Reader& reader, const std::uint8_t* metadata, std::uint64_t metadata_s
             throw Failure{Background, reader.pos};
         const auto object_count = reader.u16();
         reserve_pose(static_cast<std::uint64_t>(object_count) * 512, budget, result, reader);
-        identities.resize(object_count); frame_types.resize(object_count);
+        frame_types.resize(object_count);
         join_slots.assign(object_count, -1); join_handles.resize(object_count);
-        auto previous_signed = -0x80000001ll;
-        std::size_t previous_cursor = 0;
+        identities.clear(); identities.reserve(object_count);
         for (std::uint32_t oi = 0; oi < object_count; ++oi) {
             result.error_object = oi;
             const auto uid = reader.u32(); const auto tid = reader.u16();
             const auto* type = by_id[tid];
             if (!type) throw Failure{FigureType, reader.pos};
             reader.finite(1, 4); reader.skip(5); // Scale, color and transparency.
-            const auto signed_value = signed_uid(uid);
-            if (signed_value <= previous_signed) throw Failure{IdentityOrder, reader.pos};
-            previous_signed = signed_value;
-            while (previous_cursor < previous_ids.size() && signed_uid(previous_ids[previous_cursor]) < signed_value)
-                ++previous_cursor;
-            if (previous_cursor < previous_ids.size() && previous_ids[previous_cursor] == uid &&
-                previous_types[previous_cursor] != tid) throw Failure{ChangedType, reader.pos};
+            if (!identities.insert(uid).second) throw Failure{DuplicateIdentity, reader.pos};
+            // Type changes retain both keys; the player holds incompatible rigs.
+            // Pose lengths and join handles still use each frame's own types.
             if (type->media) reader.skip(1);
             reserve_pose(static_cast<std::uint64_t>(type->count) * 24, budget, result, reader);
             reader.finite(type->count, 8); reader.finite(2, 4);
@@ -162,7 +154,7 @@ void scan(Reader& reader, const std::uint8_t* metadata, std::uint64_t metadata_s
                 if (target >= object_count) throw Failure{JoinSlot, reader.pos};
                 join_slots[oi] = target; join_handles[oi] = handle;
             }
-            identities[oi] = uid; frame_types[oi] = tid;
+            frame_types[oi] = tid;
         }
         for (std::uint32_t oi = 0; oi < object_count; ++oi) {
             result.error_object = oi;
@@ -198,8 +190,6 @@ void scan(Reader& reader, const std::uint8_t* metadata, std::uint64_t metadata_s
         }
         if (!reader.u8()) { reader.finite(2, 4); reader.finite(1, 8); reader.finite(1, 4); }
         durations[fi] = duration;
-        if (duration > 1) { previous_ids = identities; previous_types = frame_types; }
-        else { previous_ids.clear(); previous_types.clear(); }
     }
 }
 } // namespace

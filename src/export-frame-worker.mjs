@@ -1,8 +1,9 @@
 import { applyDocumentChunk } from "./document-transport.mjs";
 import { timeline, evaluatedFrame } from "./pivot/geometry.mjs";
 import { PlaybackResources } from "./playback-resources.mjs";
-import { exportFrameGeometry, drawExportScene } from "./export-frame-core.mjs";
-import { exportSamplingSize } from "./export-sampling.mjs";
+import { exportFrameGeometry, drawExportSceneTiled } from "./export-frame-core.mjs";
+import { exportMemoryPlan } from "./export-memory.mjs";
+import {exportContext, checkExportContext} from './export-canvas.mjs';
 import { exportSVG } from "./svg-export.mjs";
 import { rasterizeCrispSVG } from "./export-crisp.mjs";
 
@@ -12,7 +13,7 @@ let report,
   resources,
   options,
   canvas,
-  enlarged,
+  tile,
   running = false;
 function tickFrame(tick) {
   const end = rows.at(-1)?.start + rows.at(-1)?.count;
@@ -49,7 +50,7 @@ async function render(message) {
       frame.background_id,
       ...(frame.background_mix ? [frame.background_id_b] : []),
     ]);
-  await resources.preload([
+  if (message.svg || options.smoothing === "none") await resources.preload([
     ...geometry.drawables,
     ...(report.backgrounds || [])
       .filter(
@@ -74,7 +75,7 @@ async function render(message) {
       resources,
       smoothing: message.svg ? "edges" : options.smoothing,
     });
-    if (!message.svg) await rasterizeCrispSVG(svg, canvas);
+    if (!message.svg) {await rasterizeCrispSVG(svg, canvas); checkExportContext(exportContext(canvas));}
     return {
       ...(message.svg ? { svg } : { bitmap: canvas.transferToImageBitmap() }),
       stats: {
@@ -85,25 +86,18 @@ async function render(message) {
       },
     };
   }
-  const target = options.factor > 1 ? enlarged : canvas;
-  drawExportScene(target.getContext("2d"), report, frame, geometry, resources);
-  if (target !== canvas) {
-    const context = canvas.getContext("2d");
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    // At exactly 2:1 bilinear sampling averages each 2×2 premultiplied block,
-    // matching Pivot's specialized two-times downsampler without a CPU readback.
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = "low";
-    context.drawImage(target, 0, 0, canvas.width, canvas.height);
-  }
+  await drawExportSceneTiled(exportContext(canvas), report, frame, geometry, resources, options.tileSize, tile, options.factor);
+  checkExportContext(exportContext(canvas));
   return {
     bitmap: canvas.transferToImageBitmap(),
     stats: {
       workerMs: performance.now() - started,
       smoothing: options.smoothing,
-      renderWidth: target.width,
-      renderHeight: target.height,
+      renderWidth: options.renderWidth,
+      renderHeight: options.renderHeight,
+      maxRasterTileSide: options.tileSize * options.factor + 4 * options.factor,
+      maxWorkingBytes: options.maxWorkingBytes,
+      decodedImageBytes: resources.bytes,
     },
   };
 }
@@ -122,17 +116,20 @@ self.addEventListener("message", async ({ data: message }) => {
     if (message.operation === "start") {
       options = {
         ...message.options,
-        ...exportSamplingSize(
+        ...exportMemoryPlan(
           message.options.width,
           message.options.height,
           message.options.smoothing,
+          {maxWorkingBytes: message.options.maxWorkingBytes},
         ),
       };
       resources?.dispose();
       resources = new PlaybackResources({
         baseURL: options.baseURL,
         token: options.token,
-        maxBytes: 128 * 1024 * 1024,
+        maxBytes: options.assetBytes,
+        hardMaxBytes: options.assetBytes,
+        preview: false,
       });
       resources.svgBitmaps = new Map();
       resources.fetch = (url) => {
@@ -147,10 +144,9 @@ self.addEventListener("message", async ({ data: message }) => {
       };
       report = rows = frameDocument = undefined;
       canvas = new OffscreenCanvas(options.width, options.height);
-      enlarged =
-        options.factor > 1
-          ? new OffscreenCanvas(options.renderWidth, options.renderHeight)
-          : null;
+      exportContext(canvas);
+      tile = new OffscreenCanvas(1, 1);
+      exportContext(tile);
     } else if (message.operation === "chunk")
       report = applyDocumentChunk(report, message.chunk);
     else if (message.operation === "loaded") {
@@ -167,10 +163,15 @@ self.addEventListener("message", async ({ data: message }) => {
       result.bitmap ? [result.bitmap] : [],
     );
   } catch (error) {
+    resources?.dispose();
+    if (canvas) canvas.width = canvas.height = 1;
+    if (tile) tile.width = tile.height = 1;
+    report = rows = frameDocument = undefined;
     self.postMessage({
       id: message.id,
       ok: false,
       error: error?.message || String(error),
+      code: error?.code,
     });
   } finally {
     running = false;

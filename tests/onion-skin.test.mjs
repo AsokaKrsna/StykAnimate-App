@@ -34,7 +34,7 @@ test('keyframe ghosts follow authored key insertion, edits, retiming, deletion a
 
 test('authored key sampling handles between-key playheads, spacing and extended duration',()=>{
   const editor=fixture({count:1,objects:1,duration:1}),target={kind:'figure',uid:1};
-  editor.addAnimationKeys([0,5,10,15,20].map(tick=>({target,property:'x',tick,value:100+tick*10})));
+  editor.addAnimationKeys([0,5,10,15,20].map(tick=>({target,property:'x',tick,value:100+tick*10,interpolation:'linear'})));
   const cache=new OnionSkinCache(),settings=normalizeEditorSettings({onionBefore:1,onionAfter:1});
   editor.seek(12);assert.deepEqual(roots(cache.get(editor,settings)),[200,250]);
   assert.deepEqual(roots(cache.get(editor,{...settings,onionStep:2})),[150,300]);

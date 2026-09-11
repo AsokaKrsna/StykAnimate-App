@@ -60,7 +60,27 @@ export function cameraKeyboardDelta(viewport, handle, dx, dy) {
   return {scale:Math.max(.0001,viewport.camera.scale+direction*.01)/viewport.camera.scale};
 }
 
-export function drawCameraViewport(context, viewport, project, {active=true,onion=false,guides=true,hover=null,dragging=null}={}) {
+/** Screen-sized dots with a light halo remain legible over both artwork and the workspace. */
+export function drawCameraOutline(context, viewport, project) {
+  context.save();
+  context.globalAlpha=1;
+  context.lineCap='round';
+  context.lineJoin='round';
+  context.setLineDash([0,6]);
+  context.lineDashOffset=0;
+  context.beginPath();
+  viewport.corners.map(project).forEach((p,i)=>i?context.lineTo(p.x,p.y):context.moveTo(p.x,p.y));
+  context.closePath();
+  context.strokeStyle='rgba(255,255,255,.8)';
+  context.lineWidth=3;
+  context.stroke();
+  context.strokeStyle='#dc4545';
+  context.lineWidth=1.5;
+  context.stroke();
+  context.restore();
+}
+
+export function drawCameraViewport(context, viewport, project, {active=true,onion=false,guides=true,outline=true,hover=null,dragging=null}={}) {
   const points=viewport.corners.map(project), accent='#1689ee';
   const line = (a,b) => {context.beginPath();context.moveTo(a.x,a.y);context.lineTo(b.x,b.y);context.stroke();};
   context.save();
@@ -68,7 +88,8 @@ export function drawCameraViewport(context, viewport, project, {active=true,onio
   context.strokeStyle=onion?'#748194':accent;
   context.lineWidth=active?1.5:1;
   context.beginPath();points.forEach((p,i)=>i?context.lineTo(p.x,p.y):context.moveTo(p.x,p.y));context.closePath();
-  context.stroke();
+  if (onion) context.stroke();
+  else if (outline) drawCameraOutline(context,viewport,project);
   if (!active || onion) {context.restore();return;}
   if (guides) {
     context.save();context.globalAlpha=.35;context.lineWidth=1;context.setLineDash([4,4]);

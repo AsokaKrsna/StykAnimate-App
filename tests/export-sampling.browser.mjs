@@ -95,6 +95,8 @@ try {
         });
         try {
           await renderer.load(report);
+          check(kind + " " + smoothing + " output requests software readback",
+            renderer.context.getContextAttributes().willReadFrequently === true);
           const canvas = await renderer.renderTick(0);
           saved[smoothing] = new Uint8ClampedArray(pixels(canvas));
           const stat = summary(saved[smoothing]);
@@ -130,7 +132,7 @@ try {
             await resources.preload(geometry.drawables);
             const high = new OffscreenCanvas(256, 192);
             drawExportScene(
-              high.getContext("2d"),
+              high.getContext("2d", { willReadFrequently: true }),
               report,
               report.keyframes[0],
               geometry,
@@ -182,7 +184,7 @@ try {
             baseline.width = 128;
             baseline.height = 96;
             drawExportScene(
-              baseline.getContext("2d"),
+              baseline.getContext("2d", { willReadFrequently: true }),
               report,
               report.keyframes[0],
               exportFrameGeometry(report, report.keyframes[0]),

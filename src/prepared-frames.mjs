@@ -2,6 +2,7 @@ import { cameraMatrix, SHAPE_BYTES, SHAPE_FLOATS, SHAPE, shapeRecord } from './r
 import {bitmapKey,bitmapBytes} from './playback-bitmap-pool.mjs';
 import {playbackMemoryBudget} from './playback-budget.mjs';
 import {EditorRasterCache} from './renderer-raster-cache.mjs';
+import {hasSceneVfx} from './vfx-viewport.mjs';
 
 export function preparedCameraMode(packet, requested) {
   const mode = packet.cameraEnabled === undefined ? true : packet.cameraEnabled;
@@ -76,19 +77,35 @@ export class PreparedFrameCache {
     if (prior?.generation === renderer.generation) { this.frames.delete(key); this.frames.set(key, prior); this.stats.hits++; return key; }
     if (prior) this._remove(key);
     if (!(packet.shapes instanceof Float32Array) || packet.shapes.length % SHAPE_FLOATS || !(packet.transforms instanceof Float32Array) || packet.transforms.length < 4 || packet.transforms.length % 4) throw new TypeError('Invalid prepared-frame buffers.');
-    const backgrounds = renderer.background({ report, frame: packet.frame, view, cameraEnabled }), textures = [], ownedTextures = [];
+    const backgrounds = renderer.background({ report, frame: packet.frame, view, cameraEnabled }, descriptor => descriptor);
+    const textures = [], ownedTextures = [];
+    const backgroundTextures = new Map(backgrounds.filter(entry => entry.texture).map(entry => [entry.texture.cacheKey, entry.texture]));
+    const backgroundBytes = [...backgroundTextures.values()].reduce((sum, entry) => sum + entry.bytes, 0);
     const backgroundCountEstimate = backgrounds.reduce((sum, entry) => sum + entry.data.length / SHAPE_FLOATS, 0);
     const shapeBytesEstimate = Math.max(SHAPE_BYTES, packet.shapes.byteLength + backgroundCountEstimate * SHAPE_BYTES);
     const textureBytesEstimate = (packet.compatibility || []).reduce((sum, entry) => sum + (entry.bitmap ? entry.bitmap.width * entry.bitmap.height * 4 : 0), 0);
-    const reservedBytes = shapeBytesEstimate + packet.transforms.byteLength + textureBytesEstimate;
+    const reservedBytes = shapeBytesEstimate + packet.transforms.byteLength + textureBytesEstimate + backgroundBytes;
     if (reservedBytes > this.maxBytes || this.maxFrames < 1) throw new Error(`Prepared frame exceeds the ${Math.round(this.maxBytes / 1024 / 1024)} MB GPU cache budget.`);
     if (shapeBytesEstimate > device.limits.maxStorageBufferBindingSize || packet.transforms.byteLength > device.limits.maxStorageBufferBindingSize) throw new Error('Prepared frame exceeds this GPU’s storage-buffer limit.');
     // Evict before allocating textures so an upload does not temporarily double
     // the cache's GPU residency while an old frame is still retained.
-    const incrementalBytes=()=>shapeBytesEstimate+packet.transforms.byteLength+(packet.compatibility||[]).reduce((sum,entry)=>sum+(this.textures.has(bitmapKey(packet,entry))?0:bitmapBytes(entry)),0);
+    const incrementalBytes=()=>shapeBytesEstimate+packet.transforms.byteLength+
+      [...backgroundTextures].reduce((sum,[key,entry])=>sum+(this.textures.has(key)?0:entry.bytes),0)+
+      (packet.compatibility||[]).reduce((sum,entry)=>sum+(this.textures.has(bitmapKey(packet,entry))?0:bitmapBytes(entry)),0);
     while (this.frames.size && (this.frames.size >= this.maxFrames || this.bytes + incrementalBytes() > this.maxBytes)) this._remove(this.frames.keys().next().value, true);
     let shapeData = packet.shapes, textureBytes = 0,shapeBuffer,transformBuffer;
     try {
+      // Own background textures just like artwork. Never borrow the editable
+      // scene's mutable cache: pause, staging, and camera changes can replace it.
+      for (const [key, descriptor] of backgroundTextures) {
+        let resource = this.textures.get(key);
+        if (!resource) {
+          resource = {...descriptor.create(), key, refs: 0};
+          this.textures.set(key, resource); this.bytes += resource.bytes; this.stats.textureUploads++;
+        } else this.stats.reusedTextures++;
+        resource.refs++; ownedTextures.push(resource); textureBytes += resource.bytes;
+      }
+      for (const entry of backgrounds) if (entry.texture) entry.texture = this.textures.get(entry.texture.cacheKey);
       for (const [i, compatibility] of (packet.compatibility || []).entries()) {
         if (compatibility.bitmap) {
           const source = compatibility.bitmap;
@@ -136,7 +153,7 @@ export class PreparedFrameCache {
       if (shapeData.byteLength) device.queue.writeBuffer(shapeBuffer, offset, shapeData);
       device.queue.writeBuffer(transformBuffer, 0, packet.transforms);
       const bindGroup = device.createBindGroup({ layout: renderer.globalLayout, entries: [{ binding: 0, resource: { buffer: renderer.uniform } }, { binding: 1, resource: { buffer: shapeBuffer } }, { binding: 2, resource: { buffer: transformBuffer } }] });
-      const frame = { key, cameraEnabled, nativeFrame: packet.frame, shapeBuffer, transformBuffer, bindGroup, commands, ownedTextures,
+      const frame = { key, cameraEnabled, nativeFrame: packet.frame, shapeBuffer, transformBuffer, bindGroup, commands, backgroundCount, ownedTextures,
         transforms: packet.transforms.slice(), liveTransforms: null, transformed: false, uids: packet.uids.slice(), bytes,bufferBytes:shapeBytes+transformBytes,
         objectCount: packet.objectCount, shapeCount: shapeData.length / SHAPE_FLOATS + backgroundCount,
         textureObjects: packet.compatibility?.length || 0, warnings: packet.warnings || [], generation: renderer.generation,
@@ -153,8 +170,9 @@ export class PreparedFrameCache {
     cameraEnabled = preparedCameraMode(frame, cameraEnabled);
     this.frames.delete(frame.key); this.frames.set(frame.key, frame); this.stats.hits++;
     const matrix = cameraMatrix({ report, frame: frame.nativeFrame, view, cameraEnabled }), zoom = Number(view.scale ?? 1), x = Number(view.x ?? 0), y = Number(view.y ?? 0);
-    renderer.device.queue.writeBuffer(renderer.uniform, 0, new Float32Array([matrix[0], matrix[2], matrix[4], Math.hypot(matrix[0], matrix[1]), matrix[1], matrix[3], matrix[5], 0,
-      renderer.width, renderer.height, renderer.dpr, 1, x, y, x + report.canvas_width * zoom, y + report.canvas_height * zoom]));
+    const uniform = new Float32Array([matrix[0], matrix[2], matrix[4], Math.hypot(matrix[0], matrix[1]), matrix[1], matrix[3], matrix[5], 0,
+      renderer.width, renderer.height, renderer.dpr, 1, x, y, x + report.canvas_width * zoom, y + report.canvas_height * zoom]);
+    renderer.device.queue.writeBuffer(renderer.uniform, 0, uniform);
     let transformBytes = 0;
     if ((typeof hiddenUids?.has === 'function' && hiddenUids.size !== 0) || dragTranslations?.size) {
       frame.liveTransforms ??= new Float32Array(frame.transforms.length); frame.liveTransforms.set(frame.transforms);
@@ -169,6 +187,7 @@ export class PreparedFrameCache {
     pass.setPipeline(renderer.pipeline); pass.setBindGroup(0, frame.bindGroup);
     for (const command of frame.commands) { pass.setBindGroup(1, command.texture?.bindGroup || renderer.blankBindGroup); pass.draw(6, command.instanceCount, 0, command.firstInstance); }
     pass.end(); renderer.device.queue.submit([encoder.finish()]);
+    if(hasSceneVfx(frame.nativeFrame))renderer.finishSceneVfx({report,frame:frame.nativeFrame,view,cameraEnabled,preparedFrame:frame,viewportUniforms:uniform,hiddenUids,dragTranslations});
     Object.assign(renderer.stats, { mode: 'prepared playback', preparation: 'prepared', compiledObjects: 0, rasterizedObjects: 0, updatedObjects: 0, frameMs: performance.now() - start, drawCalls: frame.commands.length, primitives: frame.shapeCount, objects: frame.objectCount,
       textureObjects: frame.textureObjects, uploadBytes: 0, transformUploadBytes: transformBytes, gpuBytes: frame.bytes, preparedBytes: this.bytes, preparedFrames: this.frames.size,
       workerCompileMs: frame.compileMs, packetUploadMs: frame.prepareMs, warnings: frame.warnings });

@@ -20,9 +20,15 @@ import { encodeNativeVideo } from "./native-video-export.mjs";
 import { encodeVfwVideo } from "./vfw-video-export.mjs";
 import { VfwExportControls } from "./vfw-export-controls.mjs";
 import { getExportCapabilities } from "./export-capabilities.mjs";
+import { videoQualityOptions } from "./export-video-quality.mjs";
 import { PlaybackCache } from "./playback.mjs";
+import {PreviewImages} from './preview-images.mjs';
+import {backgroundImageAssets} from './scene-preparation.mjs';
 import { PlaybackMetrics } from "./playback-metrics.mjs";
 import { DesktopTelemetryClient } from './telemetry-core.mjs';
+import { workload, documentComplexity } from './telemetry-workload.mjs';
+import { sizeBucket } from './telemetry-schema.mjs';
+import { writeBrowserRecovery } from './browser-recovery.mjs';
 import { PrivacyUI } from './privacy-ui.mjs';
 import { FeedbackUI } from './feedback-ui.mjs';
 import { UpdateUI } from './update-ui.mjs';
@@ -46,6 +52,8 @@ import { ClipboardWorkerClient } from "./clipboard-worker-client.mjs";
 import { exportAnimation } from "./image-export.mjs";
 import { defaultGIFDither } from "./gif-options.mjs";
 import { ExportFrameRenderer } from "./export-frame-renderer.mjs";
+import { exportProgressMarkup, mountExportProgress } from "./export-progress.mjs";
+import { checkExportContext } from "./export-canvas.mjs";
 import {
   EXPORT_SMOOTHING,
   normalizeExportSmoothing,
@@ -60,6 +68,9 @@ import { UserLibrary } from './user-library.mjs';
 import { installLibraryDrag, installLibraryDrop } from './library-drag.mjs';
 import { SharedClipboard } from './shared-clipboard.mjs';
 import { PropertyControls } from "./property-controls.mjs";
+import {VfxInspector} from './vfx-inspector.mjs';
+import {VfxGizmos} from './vfx-gizmos.mjs';
+import {vfxIcon} from './vfx-icons.mjs';
 import {
   canEditNativeProperty,
   beginNativePropertyEdit,
@@ -81,6 +92,7 @@ import {
   cameraKeyboardDelta,
   cameraHandleCursor,
   drawCameraViewport,
+  drawCameraOutline,
 } from "./camera-overlay.mjs";
 import { EditorSettings, normalizeEditorSettings } from "./settings.mjs";
 import { HotkeyManager, isHotkeyInput } from "./hotkeys.mjs";
@@ -116,7 +128,7 @@ const $ = (id) => document.getElementById(id),
           "'": "&#39;",
         })[c],
     );
-const editor = new Editor({ demo: true, propertyChannels: true, layerTimeline: true }),
+const editor = new Editor({ demo: false, propertyChannels: true, layerTimeline: true }).newDocument(),
   desktop = window.stykDesktop,
   importer = new ImportClient(),
   documentExporter = new DocumentExporter(),
@@ -136,7 +148,9 @@ async function runDocumentExport(format, consume, { recovery = false } = {}) {
   exportJobs.add(job);
   const metric = recovery ? 'recovery' : format === 'styk' ? 'save' : 'export';
   const started = performance.now();
-  if (!recovery) telemetry.count(metric + '_started');
+  const context = telemetry.consent.diagnostics ? workload({ format, report: editor.report }) : {};
+  let stage = 'serialize';
+  telemetry.count(metric + '_started');
   try {
     const blob = await documentExporter.export(recovery ? editor.movieclipProjectReport() : editor.report, {
       format,
@@ -148,17 +162,24 @@ async function runDocumentExport(format, consume, { recovery = false } = {}) {
       signal: controller.signal,
       getRevision: () => `${editor.revision}:${editor.frameDraftRevision}`,
     });
+    context.size = sizeBucket(blob.size);
     telemetry.timing(metric + '_ms', performance.now() - started);
+    telemetry.operation({ ...context, operation: metric, stage: 'serialize', outcome: 'succeeded' }, performance.now() - started);
+    stage = 'write';
+    const writeStarted = performance.now();
     const saved = await consume(blob, controller.signal);
-    if (recovery) { if (saved) telemetry.count('recovery_saved'); }
+    telemetry.operation({ ...context, operation: metric, stage: 'write', outcome: saved ? 'succeeded' : 'cancelled' }, performance.now() - writeStarted);
+    telemetry.operation({ ...context, operation: metric, stage: 'complete', outcome: saved ? 'succeeded' : 'cancelled' }, performance.now() - started);
+    if (recovery) telemetry.count(saved ? 'recovery_saved' : 'recovery_cancelled');
     else {
       telemetry.count(metric + (saved ? '_succeeded' : '_cancelled'));
       if (saved) { telemetry.milestone(metric === 'save' ? 'first_save' : 'first_export'); if (metric === 'export') telemetry.count(['piv', 'stk'].includes(format) ? 'export_pivot' : 'export_native'); }
     }
     return saved;
   } catch (error) {
-    if (!recovery || error.name !== 'AbortError') telemetry.count(metric + (error.name === 'AbortError' ? '_cancelled' : '_failed'));
-    if (error.name !== 'AbortError') telemetry.error(error, metric);
+    telemetry.count(metric + (error.name === 'AbortError' ? '_cancelled' : '_failed'));
+    telemetry.operation({ ...context, operation: metric, stage: 'complete', outcome: error.name === 'AbortError' ? 'cancelled' : 'failed' }, performance.now() - started);
+    if (error.name !== 'AbortError') telemetry.error(error, metric, { ...context, stage });
     throw error;
   } finally {
     exportJobs.delete(job);
@@ -208,16 +229,29 @@ const state = {
   applyRange: false,
   scrubbing: false,
   cameraGuides: true,
+  vfxEnabled: true,
 };
+let canvas = $("scene"), rendererRecovery, gpuRecoveryAttempted = false;
 const viewport = $("viewport"),
-  canvas = $("scene"),
   overlay = $("overlay"),
   ctx = overlay.getContext("2d"),
-  images = new Map();
+  images = new PreviewImages({onReady: () => {
+    const renderer = state.renderer;
+    if (renderer) {
+      renderer.generation++; renderer.lastGeometry = null;
+      renderer.clearPreparedFrames?.();
+      for (const entry of renderer.backgroundImages?.values() || []) entry.texture.destroy();
+      renderer.backgroundImages?.clear(); renderer.backgroundKey = '';
+      renderer.clearOnionArtwork?.();
+    }
+    requestRender();
+  }, onError: error => status(error.message, true)});
 hydrateIcons();
 let timelineUI,
   studioShell,
   propertyControls,
+  vfxInspector,
+  vfxGizmos,
   editorSettings,
   appLocalization,
   vfwExportControls,
@@ -242,12 +276,17 @@ const exportTelemetry = new WeakMap();
 const telemetry = new DesktopTelemetryClient(desktop, { getContext: () => ({
   mode: state.settings.timelineMode, locale: state.settings.locale,
   playing: state.playing,
-  backend: state.renderer?.stats?.backend === 'WebGPU' ? 'webgpu' : 'unavailable',
+  backend: state.renderer?.stats?.backend === 'WebGPU' ? 'webgpu' : state.renderer?.stats?.backend === 'Canvas 2D fallback' ? 'canvas2d' : 'unavailable',
   gauges: { gpu_memory_mb: state.renderer?.stats?.gpuBytes / 1048576, draw_calls: state.renderer?.stats?.drawCalls,
     upload_kb: state.renderer?.stats?.uploadBytes / 1024, scene_figures: state.renderer?.stats?.objects,
     scene_primitives: state.renderer?.stats?.primitives, scene_frames: editor.totalTicks },
   gpuFamily: coarseGPUFamily(state.renderer?.stats?.adapter),
 }) });
+function recordPlaybackPresentation() {
+  const now = performance.now();
+  playbackMetrics.present(now);
+  telemetry.playbackPresent(now, playbackMetrics.targetFps);
+}
 function coarseGPUFamily(value = '') {
   return ['nvidia', 'amd', 'intel', 'apple', 'qualcomm', 'software'].find(name => String(value).toLowerCase().includes(name)) || 'unknown';
 }
@@ -274,7 +313,7 @@ const editablePreparation = new EditableScenePreparation(editor, {
   onError:fail,
 });
 let lastFpsUI = 0;
-function editingGestureActive(){return Boolean(state.drag||keyboardHandleGesture||editor._drag||editor._authoredPoseEdit||propertyControls?.active);}
+function editingGestureActive(){return Boolean(state.drag||keyboardHandleGesture||editor._drag||editor._authoredPoseEdit||propertyControls?.active||vfxInspector?.active||vfxGizmos?.active);}
 function queueUI() {
   if(state.editablePreparing)return;
   if (!uiScheduled)
@@ -355,42 +394,43 @@ function playbackRange() {
       }
     : { start: 0, end: editor.totalTicks };
 }
-function prepareAhead(start = editor.tick, count = 24) {
+function prepareAhead(start = editor.tick, count = 24, {bidirectional = false} = {}) {
   if (state.drag || state.scrubbing || !editor.totalTicks) return;
   syncPlayback();
   const range = playbackRange(),
     ticks = [];
-  count = Math.min(
-    count,
-    Math.max(
-      1,
-      Math.floor(
-        (playback.maxBytes * 0.65) /
-          (state.playbackPacket?.byteLength ||
-            state.lastPacketBytes ||
-            playback.maxBytes / 4),
-      ),
-    ),
-  );
-  for (let n = 0; n < Math.min(count, range.end - range.start); n++)
+  // PlaybackCache owns admission using unique bitmap footprints. Multiplying
+  // one frame's size here double-counts shared artwork and starves lookahead
+  // precisely when a scene changes from small vector frames to large rasters.
+  const behind=bidirectional?Math.min(4,Math.floor(count/4),Math.max(0,start-range.start)):0;
+  for (let n = 0; n < Math.min(count-behind, range.end - range.start); n++)
     ticks.push(
       range.start +
         ((Math.max(start, range.start) - range.start + n) %
           (range.end - range.start)),
     );
-  playback.prepareRange(ticks, { replacePending: true }).catch((error) => {
+  for(let n=1;n<=behind;n++)if(!ticks.includes(start-n))ticks.push(start-n);
+  return playback.prepareRange(ticks, { replacePending: true }).catch((error) => {
     if (error.name !== "AbortError" && state.playing) {
       pause();
       fail(error);
     }
   });
 }
-function warmPlayback() {
+let warmGeneration=0;
+function warmPlayback({immediate = false} = {}) {
+  const generation=++warmGeneration;
   if(state.editablePreparing)return;
   clearTimeout(warmTimer);
-  warmTimer = setTimeout(() => {
-    if (!state.playing && !state.drag && !state.scrubbing) prepareAhead();
-  }, 250);
+  const report=editor.report,revision=editor.revision,tick=editor.tick,draft=editor.frameDraftRevision,scale=state.view.scale;
+  const current=()=>generation===warmGeneration&&editor.report===report&&editor.revision===revision&&editor.tick===tick&&editor.frameDraftRevision===draft&&state.view.scale===scale&&!state.playing&&!editingGestureActive()&&!state.scrubbing&&!state.editablePreparing;
+  warmTimer = setTimeout(async () => {
+    if(!current())return;
+    // Learn the current frame's real footprint before widening the idle window.
+    // User input owns the foreground; obsolete warm-up never chases the playhead.
+    await prepareAhead(tick,2);
+    if(current())await prepareAhead(tick,24,{bidirectional:true});
+  }, immediate||playback.report!==report ? 0 : 150);
 }
 function previewScrub() {
   // Scrubbing is editing: render the current pose with selection and onions.
@@ -410,9 +450,11 @@ function prepareEditingFrame() {
   if(state.playing||state.previewing||state.drag||propertyControls?.active||!renderer?.prepareSceneUpdate||renderer.activeReport!==editor.report)return;
   if(preparationDefinitions!==editor.report.figure_types||preparationRevision!==editor.definitionRevision){
     preparationDefinitions=editor.report.figure_types;preparationRevision=editor.definitionRevision;
-    preparationSizes=new Map(preparationDefinitions.map(figure=>[figure.figure_type_id,figure.segments.length]));
+    // A clip's one editable handle can contain thousands of drawing elements.
+    // Prepare its nested scene cooperatively even when the outer frame is small.
+    preparationSizes=new Map(preparationDefinitions.map(figure=>[figure.figure_type_id,figure._styk?.movieclip ? 2000 : figure.segments.length]));
   }
-  const objects=editor.frame.objects;
+  const objects=editor.evaluatedFrame.objects;
   const dense=objects.length>=128||objects.reduce((count,object)=>count+(preparationSizes.get(object.figure_type_id)||0),0)>=2000;
   if(!dense)return;
   editablePreparation.start(renderer,geometry=>({
@@ -722,14 +764,7 @@ const assetUrl = (a) =>
   a?.asset_path ||
   a?.path;
 function imageFor(url) {
-  if (!url) return null;
-  if (images.has(url)) return images.get(url);
-  const img = new Image();
-  img.onload = requestRender;
-  img.onerror = () => status("One image asset could not be loaded", true);
-  img.src = url;
-  images.set(url, img);
-  return img;
+  return images.image(url);
 }
 const resources = { url: assetUrl, image: imageFor };
 function status(text, error = false, busy = false) {
@@ -766,7 +801,10 @@ function requestRender() {
   if (!raf) raf = requestAnimationFrame(loop);
 }
 function currentFrame() {
-  const frame = editor.evaluatedFrame || editor.frame;
+  // Playback already evaluated this exact tick in the worker. Overlays need
+  // its camera/scene metadata, not another evaluation of all figures on input.
+  const packet = state.playing && state.playbackPacket;
+  const frame = packet?.tick === editor.tick ? packet.frame : editor.evaluatedFrame || editor.frame;
   return editor.report._styk?.layers?.fixed?.camera?.visible === false
     ? { ...frame, camera: null }
     : frame;
@@ -935,7 +973,7 @@ function canvasHandles(geometry) {
     state.tool,
     state.handleEditHeld,
     usesBuilderBranch(),
-    isBuilderContext(state.tool) || editor.branchSelected ? editor.selectedJoint : -1,
+    editor.selectedJoint,
     settings.showUnselectedHandles,
     settings.handleSize,
     settings.autoSizeHandles,
@@ -962,7 +1000,7 @@ function canvasHandles(geometry) {
     lockedUids: locked,
     showUnselected: settings.showUnselectedHandles,
     showStatic: showStaticHandles(),
-    selectedJoint: isBuilderContext(state.tool) || editor.branchSelected ? editor.selectedJoint : -1,
+    selectedJoint: editor.selectedJoint,
     selectedBranch: usesBuilderBranch(),
     builder: isBuilderContext(state.tool),
     attaching: state.tool === "attach",
@@ -1078,6 +1116,7 @@ function overlayRender(geometry) {
       cameraViewport(editor.report, currentFrame(), state.view),
       screenPoint,
       {
+        outline: false,
         active:
           state.settings.showCamera &&
           editor.report._styk?.layers?.fixed?.camera?.locked !== true,
@@ -1194,7 +1233,8 @@ function loop(now) {
           packet &&
           (state.renderer.backgroundsReady?.(editor.report, packet.frame) ??
             true);
-        if (packet && backgroundsReady) {
+        const startupReady=playStarted || playback.bufferedAhead(next,Math.min(12,Math.max(2,Math.ceil(fps*.1))),range.end);
+        if (packet && backgroundsReady && startupReady) {
           editor.seek(next, { evaluate: false });
           state.playbackPacket = packet;
           advancedPlayback = true;
@@ -1257,7 +1297,7 @@ function loop(now) {
         hiddenUids: effectiveHidden(),
       });
       if (advancedPlayback && presented !== false)
-        playbackMetrics.present(performance.now());
+        recordPlaybackPresentation();
       ctx.clearRect(0, 0, overlay.width, overlay.height);
     } else if (!state.playing || !state.buffering) {
       const frame = currentFrame(),
@@ -1267,8 +1307,14 @@ function loop(now) {
           editor.geometry;
       const onionFrames = onionSkins(),
         editing = state.editingPacket;
+      if (geometry?.drawables) void images.prepare([
+        ...geometry.drawables,
+        ...onionFrames.flatMap(entry => entry.geometry?.drawables || []),
+        ...backgroundImageAssets(editor.report, frame).map(asset => ({type: 'image', asset})),
+      ], {scale: Math.max(1 / 64, 2 ** Math.ceil(Math.log2(playbackScale() || 1))), maxDimension: 4096}).catch(() => {});
       state.editingPacket = null;
       state.renderer.render({
+        vfxEnabled: state.vfxEnabled,
         preparedPacket:
           editing?.report === editor.report &&
           editing.revision === editor.revision &&
@@ -1294,9 +1340,14 @@ function loop(now) {
       });
       state.lastEditingPresentation = {tick:editor.tick,revision:editor.revision,at:performance.now(),
         sequence:(state.lastEditingPresentation?.sequence ?? 0)+1};
-      if (advancedPlayback) playbackMetrics.present(performance.now());
+      if (advancedPlayback) recordPlaybackPresentation();
       overlayRender(geometry);
+      $('preview-quality').hidden = !(images.reduced || state.renderer.stats?.previewReduced);
     }
+    // Final editor overlay pass: keep the actual camera above artwork and tool feedback.
+    ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+    drawCameraOutline(ctx, cameraViewport(editor.report, currentFrame(), state.view), screenPoint);
+    vfxGizmos?.draw(ctx);
     if (state.inspectorContext === 'camera') {
       const frame = currentFrame();
       syncCameraControls($('inspector'), frame, {activeKey:propertyControls?.activeKey,guides:state.cameraGuides});
@@ -1332,6 +1383,7 @@ function loop(now) {
       badge.textContent = sample.fps === null ? "— fps" : `${sample.fps.toFixed(1)} fps`;
       badge.dataset.health = sample.coherent === null ? "pending" : sample.coherent ? "good" : "low";
       badge.title = `Scene target: ${sample.targetFps.toFixed(1)} fps`;
+      $('preview-quality').hidden = !state.playbackPacket?.previewQuality?.reduced;
       lastFpsUI = measuredAt;
     }
   }
@@ -1346,6 +1398,8 @@ function play() {
   state.previewing = false;
   if (editor.totalTicks < 1) return;
   cancelDrag();
+  // Fit once on transport start; subsequent zoom and pan remain user-controlled.
+  fit();
   const range = playbackRange();
   playTick =
     editor.tick >= range.end - 1 || editor.tick < range.start
@@ -1355,6 +1409,7 @@ function play() {
   telemetry.count('playback_started');
   playbackMetrics.reset(playStart, editor.report.frame_delay_ms
     ? 1000 / editor.report.frame_delay_ms : editor.report.fps);
+  telemetry.playbackStart(telemetry.consent.diagnostics ? workload({ report: editor.report, fps: playbackMetrics.targetFps }) : {});
   lastFpsUI = playStart;
   $("playback-fps").textContent = "— fps";
   $("playback-fps").dataset.health = "pending";
@@ -1382,9 +1437,10 @@ function pause() {
     telemetry.count('playback_buffering', summary.bufferingEvents);
     telemetry.timing('playback_startup_ms', summary.startupMs);
     telemetry.timing('playback_buffering_ms', summary.bufferingMs);
-    for (const interval of summary.intervalsMs) telemetry.timing('playback_interval_ms', interval);
+    telemetry.playbackStop();
   }
   $("playback-fps").hidden = true;
+  $('preview-quality').hidden = true;
   if (wasPlaying && state.playbackPacket)
     state.editingPacket = {
       packet: state.playbackPacket,
@@ -1498,6 +1554,7 @@ function renderAssets() {
     : '<p class="property-note" style="padding:0 15px">Open StykAnimate, Pivot or Stick Nodes projects, figures and movie clips.</p>';
 }
 function renderInspector() {
+  vfxInspector?.sync();
   if (propertyControls?.active || (state.drag && state.drag.kind !== "pan"))
     return;
   const disclosureOwner = {
@@ -2326,14 +2383,14 @@ async function acceptImport(
         await desktop.activateDocument({ openToken })
       ).documentToken;
   }
-  state.lastImportWarnings = result.warnings || report._styk?.sticknodes?.warnings || [];
-  if(state.lastImportWarnings.length)showDialog('Stick Nodes import notes',`<p>The asset is ready to edit. These source features may look or behave differently:</p><ul>${state.lastImportWarnings.map(w=>`<li>${esc(w.message)}</li>`).join('')}</ul>`);
+  state.lastImportWarnings = [...(result.warnings || report._styk?.sticknodes?.warnings || []), ...(report.import_warnings || [])];
+  if(state.lastImportWarnings.length)showDialog(report.import_warnings?.length ? 'Pivot import notes' : 'Stick Nodes import notes',`<p>The asset is ready to edit. These source features may look or behave differently:</p><ul>${state.lastImportWarnings.map(w=>`<li>${esc(w.message)}</li>`).join('')}</ul>`);
   state.lastImport = result.timings || null;
   const ms = result.timings?.total_ms ?? result.timings?.decode_ms;
   status(
     `Opened ${result.filename || name || editor.name}${ms !== undefined ? ` · ${Math.round(ms)} ms${result.timings?.cache_hit ? " · cached" : ""}` : ""}`,
   );
-  warmPlayback();
+  warmPlayback({immediate:true});
   return true;
 }
 function cancelSpritePlacement() {
@@ -2505,19 +2562,28 @@ async function importFilesTracked(files) {
   try {
     for (const file of files) {
       recordImportKind(file.name);
+      const started = performance.now(), context = telemetry.consent.diagnostics ? workload({ format: file.name, bytes: file.size }) : {};
+      let outcome = 'succeeded';
+      try {
       if (/\.(png|jpe?g|gif|bmp|webp)$/i.test(file.name)) {
         if (
           !(await importMediaFile(file, {
             isCurrent: () => seq === importSequence,
           }))
-        )
-          return false;
+        ) { outcome = 'cancelled'; return false; }
         continue;
       }
       const result = await chooseSticknodesFile(file,()=>seq===importSequence);
-      if (!result || seq !== importSequence) return false;
+      if (!result || seq !== importSequence) { outcome = 'cancelled'; return false; }
+      if (telemetry.consent.diagnostics) context.complexity = documentComplexity(result.document);
+      telemetry.operation({ ...context, operation: 'import', stage: 'decode', outcome: 'succeeded' }, result.timings?.decode_ms);
       await acceptImport(result, file.name);
       telemetry.timing('import_decode_ms', result.timings?.decode_ms);
+      } catch (error) {
+        outcome = error.name === 'AbortError' ? 'cancelled' : 'failed';
+        if (outcome === 'failed') telemetry.error(error, 'import', { ...context, stage: 'decode' });
+        throw error;
+      } finally { telemetry.operation({ ...context, operation: 'import', stage: 'complete', outcome }, performance.now() - started); }
     }
   } catch(error) {
     if(error.name!=="AbortError")throw error;
@@ -2540,13 +2606,23 @@ async function openFile() {
 }
 async function acceptNativeFile(result) {
   const started = performance.now(); telemetry.count('import_started'); recordImportKind(result.filename);
+  const context = telemetry.consent.diagnostics ? workload({ format: result.filename, bytes: result.bytes?.byteLength }) : {};
   try {
     const accepted = await acceptNativeFileTracked(result);
+    if (telemetry.consent.diagnostics && accepted !== false) context.complexity = documentComplexity(editor.report);
+    telemetry.operation({ ...context, operation: 'import', stage: 'complete', outcome: accepted === false ? 'cancelled' : 'succeeded' }, performance.now() - started);
     telemetry.count(accepted === false ? 'import_cancelled' : 'import_succeeded');
     if (accepted !== false) telemetry.timing('import_ms', performance.now() - started);
-    telemetry.timing('import_decode_ms', state.lastImport?.decode_ms);
+    if (accepted !== false) {
+      telemetry.timing('import_decode_ms', state.lastImport?.decode_ms);
+      telemetry.operation({ ...context, operation: 'import', stage: 'decode', outcome: 'succeeded' }, state.lastImport?.decode_ms);
+    }
     return accepted;
-  } catch (error) { telemetry.count(error.name === 'AbortError' ? 'import_cancelled' : 'import_failed'); telemetry.error(error, 'import'); throw error; }
+  } catch (error) {
+    telemetry.count(error.name === 'AbortError' ? 'import_cancelled' : 'import_failed');
+    telemetry.operation({ ...context, operation: 'import', stage: 'complete', outcome: error.name === 'AbortError' ? 'cancelled' : 'failed' }, performance.now() - started);
+    if (error.name !== 'AbortError') telemetry.error(error, 'import', { ...context, stage: 'decode' }); throw error;
+  }
 }
 async function acceptNativeFileTracked(result) {
   pause();
@@ -2565,10 +2641,18 @@ async function openSample(path) {
   await acceptImport(await importer.openSample(path));
 }
 async function saveBlob(blob, filename, signal) {
-  const exportStart = signal && exportTelemetry.get(signal);
-  if (exportStart !== undefined) { telemetry.timing('export_ms', performance.now() - exportStart); exportTelemetry.delete(signal); }
+  const measurement = signal && exportTelemetry.get(signal), writeStarted = performance.now();
+  measurement?.onProgress?.({phase: 'saving'});
+  measurement?.releaseRenderer?.();
+  if (measurement) {
+    measurement.context.size = sizeBucket(blob.size);
+    telemetry.timing('export_ms', writeStarted - measurement.started);
+    telemetry.operation({ ...measurement.context, operation: 'export', stage: 'encode', outcome: 'succeeded' }, writeStarted - measurement.started);
+    measurement.stage = 'write';
+  }
+  let saved;
   if (desktop) {
-    return writeNativeBlob(desktop, blob, {
+    saved = await writeNativeBlob(desktop, blob, {
       signal,
       defaultPath: filename,
       filters: [
@@ -2578,14 +2662,17 @@ async function saveBlob(blob, filename, signal) {
         },
       ],
     });
-  }
+  } else {
   const url = URL.createObjectURL(blob),
     a = document.createElement("a");
   a.href = url;
   a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
-  return true;
+    saved = true;
+  }
+  if (measurement) telemetry.operation({ ...measurement.context, operation: 'export', stage: 'write', outcome: saved ? 'succeeded' : 'cancelled' }, performance.now() - writeStarted);
+  return saved;
 }
 async function saveNative({ saveAs = false } = {}) {
   finishCurrentEdit();
@@ -2673,7 +2760,7 @@ function exportOptions({ animation = true } = {}) {
     height: number("export-height", editor.report.canvas_height),
     start: number("export-start", 1) - 1,
     end: number("export-end", editor.totalTicks),
-    quality: number("export-quality", 94) / 100,
+    quality: $("export-quality")?.closest('label').hidden ? 0.94 : number("export-quality", 94) / 100,
     dither: $("export-gif-dither")?.checked ?? defaultGIFDither(editor.report),
     smoothing: normalizeExportSmoothing(
       $("export-smoothing")?.value || "edges",
@@ -2713,17 +2800,27 @@ async function withExportRenderer(
   options,
   report,
   render,
-  { frames = 1, title = "Exporting animation" } = {},
+  { frames = 1, title = "Exporting animation", format = 'unknown', fps, passes = 1, start = options.start ?? editor.tick } = {},
 ) {
+  if ([...exportJobs].some(job => job.raster)) throw new Error('An export is already running. Wait for it to finish or cancel it.');
+  pause();
+  interruptRecovery();
+  // Drop speculative playback pixels while keeping the editable document and
+  // active scene. Workers reload their disposable cache when playback resumes.
+  editablePreparation.cancel();
+  state.editingPacket = null;
+  playback.invalidate();
+  state.renderer?.clearPreparedFrames?.();
   const controller = new AbortController(),
-    job = { controller, recovery: false },
+    job = { controller, recovery: false, raster: true },
     source = editor.report;
   exportJobs.add(job);
-  telemetry.count('export_started'); exportTelemetry.set(controller.signal, performance.now());
+  const measurement = { started: performance.now(), stage: 'prepare', context: telemetry.consent.diagnostics ? workload({ format, report, fps }) : {} };
+  telemetry.count('export_started'); exportTelemetry.set(controller.signal, measurement);
   let frameRenderer;
   showDialog(
     title,
-    `<progress id="export-progress" max="${frames}" style="width:100%;accent-color:#0d99ff"></progress><div class="dialog-actions"><button class="button" id="cancel-export">Cancel</button></div>`,
+    exportProgressMarkup,
   );
   const progress = $("export-progress"),
     dialog = $("dialog"),
@@ -2731,7 +2828,9 @@ async function withExportRenderer(
   const onClose = () => {
     if (!dialog.open || !progress.isConnected) cancel();
   };
-  $("cancel-export").onclick = cancel;
+  const progressUI = mountExportProgress($("dialog-content"), {frames, passes, start}, cancel);
+  measurement.onProgress = value => progressUI.update(value);
+  measurement.releaseRenderer = () => frameRenderer?.dispose();
   dialog.addEventListener("close", onClose);
   try {
     frameRenderer = new ExportFrameRenderer({
@@ -2741,28 +2840,32 @@ async function withExportRenderer(
       baseURL: importer.baseURL,
       token: importer.token,
       signal: controller.signal,
+      onFrame: ({stage, tick}) => stage === 'rendering' ? progressUI.frameStarted(tick) : progressUI.frameRendered(),
       getRevision: () =>
         editor.report === source
           ? `${editor.revision}:${editor.frameDraftRevision}`
           : "replaced",
     });
     await frameRenderer.load(report);
-    progress.value = 0;
+    measurement.stage = 'encode';
     const saved = await render(
       frameRenderer,
       controller.signal,
-      ({ completed, total }) => {
-        if (!progress.isConnected) return;
-        if (Number.isFinite(total) && total > 0) progress.max = total;
-        progress.value = completed;
+      value => {
+        progressUI.update(value);
+        // Every consumer has acknowledged the last frame. Release raster pixels
+        // and the worker's document before container assembly and file writing.
+        if (value.completed === frames * passes) frameRenderer.dispose();
       },
     );
     telemetry.count(saved ? 'export_succeeded' : 'export_cancelled');
+    telemetry.operation({ ...measurement.context, operation: 'export', stage: 'complete', outcome: saved ? 'succeeded' : 'cancelled' }, performance.now() - measurement.started);
     if (saved) telemetry.milestone('first_export');
     return saved;
   } catch (error) {
     telemetry.count(error.name === 'AbortError' ? 'export_cancelled' : 'export_failed');
-    if (error.name !== 'AbortError') telemetry.error(error, 'export');
+    telemetry.operation({ ...measurement.context, operation: 'export', stage: 'complete', outcome: error.name === 'AbortError' ? 'cancelled' : 'failed' }, performance.now() - measurement.started);
+    if (error.name !== 'AbortError') telemetry.error(error, 'export', { ...measurement.context, stage: measurement.stage });
     if (error.name === "AbortError") {
       status("Export cancelled");
       return false;
@@ -2770,6 +2873,8 @@ async function withExportRenderer(
     throw error;
   } finally {
     frameRenderer?.dispose();
+    progressUI.dispose();
+    exportTelemetry.delete(controller.signal);
     exportJobs.delete(job);
     dialog.removeEventListener("close", onClose);
     if (progress.isConnected) closeDialog();
@@ -2789,6 +2894,7 @@ async function exportPNG() {
       const blob = await new Promise((resolve) =>
         canvas.toBlob(resolve, "image/png"),
       );
+      checkExportContext(renderer.context);
       if (!blob) throw new Error("PNG export failed.");
       if (signal.aborted)
         throw new DOMException("Export cancelled.", "AbortError");
@@ -2796,7 +2902,7 @@ async function exportPNG() {
       if (saved) status("PNG exported");
       return saved;
     },
-    { title: "Exporting frame" },
+    { title: "Exporting frame", format: 'png', start: editor.tick },
   );
 }
 async function exportSVGFrame() {
@@ -2817,7 +2923,7 @@ async function exportSVGFrame() {
       if (saved) status("SVG exported");
       return saved;
     },
-    { title: "Exporting vector frame" },
+    { title: "Exporting vector frame", format: 'svg', start: editor.tick },
   );
 }
 async function exportImages(format) {
@@ -2861,7 +2967,7 @@ async function exportImages(format) {
       if (saved) status("Animation exported");
       return saved;
     },
-    { frames: ticks },
+    { frames: ticks, format: format === 'apng' ? 'png' : format.split('-')[0], fps, passes: format === 'gif' ? 2 : 1 },
   );
 }
 async function exportVideo(format = "webm") {
@@ -2873,15 +2979,6 @@ async function exportVideo(format = "webm") {
     format === "webm" &&
     document.querySelector('[data-action="export-video"]')?.dataset.provider ===
       "FFmpeg";
-  const bitrate =
-    format === "webm"
-      ? Number($("export-webm-bitrate")?.value || 8) * 1e6
-      : undefined;
-  if (
-    bitrate !== undefined &&
-    (!Number.isFinite(bitrate) || bitrate < 100000 || bitrate > 200e6)
-  )
-    throw new Error("Choose a WebM bitrate between 0.1 and 200 Mbit/s.");
   const options = exportOptions(),
     report =
       state.settings.timelineMode === "simple"
@@ -2891,6 +2988,14 @@ async function exportVideo(format = "webm") {
     fps = report.frame_delay_ms ? 1000 / report.frame_delay_ms : report.fps,
     extension = format === "vfw" ? "avi" : format,
     filename = `${editor.name}.${extension}`;
+  const videoQuality = format === 'vfw' ? {} : videoQualityOptions({
+    width: options.width, height: options.height, fps,
+    preset: $('export-video-quality')?.value || 'recommended',
+    provider: format === 'webm' && !nativeWebm ? 'WebCodecs' : 'FFmpeg',
+    mode: $('export-bitrate-mode')?.value || 'auto',
+    manualMbps: $('export-video-bitrate')?.value,
+    lossless: format === 'avi' && ['ffv1', 'rawvideo'].includes(codec),
+  });
   await withExportRenderer(
     options,
     report,
@@ -2904,9 +3009,8 @@ async function exportVideo(format = "webm") {
       const blob = await encode({
         format,
         codec,
-        bitrate,
         desktop,
-        quality: options.quality,
+        ...videoQuality,
         ...vfw,
         width: options.width,
         height: options.height,
@@ -2920,7 +3024,7 @@ async function exportVideo(format = "webm") {
       if (saved) status(`${extension.toUpperCase()} exported`);
       return saved;
     },
-    { frames: ticks },
+    { frames: ticks, format: 'video', fps },
   );
 }
 function showDialog(title, body) {
@@ -3031,7 +3135,7 @@ function showExport() {
   vfwExportControls?.dispose();
   showDialog(
     "Export your animation",
-    `<details class="export-settings"><summary>Render settings <span>${editor.report.canvas_width} × ${editor.report.canvas_height} · ${editor.totalTicks} frames</span></summary><div class="text-options"><label>Width<input id="export-width" type="number" min="1" value="${editor.report.canvas_width}"></label><label>Height<input id="export-height" type="number" min="1" value="${editor.report.canvas_height}"></label><label class="check-row"><input type="checkbox" id="export-aspect" checked>Lock ratio</label></div><div class="text-options"><label>First frame<input id="export-start" type="number" min="1" max="${editor.totalTicks}" value="1"></label><label>Last frame<input id="export-end" type="number" min="1" max="${editor.totalTicks}" value="${editor.totalTicks}"></label><label>Lossy quality %<input id="export-quality" type="number" min="1" max="100" value="94"></label></div></details><div class="export-grid"><button class="export-option" data-action="export-stkz" ${editor.object ? "" : "disabled"}>${icon("person")}<span><strong>${isMovieclip(editor.figure)?"StykAnimate movieclip":"StykAnimate figure"}</strong><small>${isMovieclip(editor.figure)?".stykmov":".stkz"}</small></span></button><button class="export-option" data-action="export-piv">${icon("file")}<span><strong>Pivot animation</strong><small>.piv · Editable animation and media</small></span></button><button class="export-option" data-action="export-stk" ${editor.object ? "" : "disabled"}>${icon("person")}<span><strong>Pivot figure</strong><small>.stk · Reusable Pivot figure</small></span></button><button class="export-option" data-action="export-png">${icon("frame")}<span><strong>Current frame</strong><small>.png · Full canvas resolution</small></span></button><button class="export-option" data-action="export-svg">${icon("nodes")}<span><strong>Vector frame</strong><small>.svg · Editable paths and embedded media</small></span></button><button class="export-option" data-action="export-video">${icon("play")}<span><strong>Animation video</strong><small>.webm · Exact frame timing</small></span></button><button class="export-option" data-action="export-gif">${icon("loop")}<span><strong>Animated GIF</strong><small>.gif · Looping animation</small></span></button><button class="export-option" data-action="export-apng">${icon("frame")}<span><strong>Animated PNG</strong><small>.png · Lossless color and transparency</small></span></button><button class="export-option" data-action="export-png-sequence">${icon("duplicate")}<span><strong>PNG sequence</strong><small>.zip · Numbered lossless frames</small></span></button><button class="export-option" data-action="export-jpeg-sequence">${icon("duplicate")}<span><strong>JPEG sequence</strong><small>.zip · Numbered compact frames</small></span></button></div>`,
+    `<details class="export-settings"><summary>Render settings <span>${editor.report.canvas_width} × ${editor.report.canvas_height} · ${editor.totalTicks} frames</span></summary><div class="text-options"><label>Width<input id="export-width" type="number" min="1" value="${editor.report.canvas_width}"></label><label>Height<input id="export-height" type="number" min="1" value="${editor.report.canvas_height}"></label><label class="check-row"><input type="checkbox" id="export-aspect" checked>Lock ratio</label></div><div class="text-options"><label>First frame<input id="export-start" type="number" min="1" max="${editor.totalTicks}" value="1"></label><label>Last frame<input id="export-end" type="number" min="1" max="${editor.totalTicks}" value="${editor.totalTicks}"></label><label>Lossy quality %<input id="export-quality" type="number" min="1" max="100" value="94"></label></div></details><div class="export-grid"><button class="export-option" data-action="export-stkz" ${editor.object ? "" : "disabled"}>${icon("person")}<span><strong>${isMovieclip(editor.figure)?"StykAnimate movieclip":"StykAnimate figure"}</strong><small>${isMovieclip(editor.figure)?".stykmov":".stkz"}</small></span></button><button class="export-option" data-action="export-piv">${icon("file")}<span><strong>Pivot animation</strong><small>.piv · Editable animation and media</small></span></button><button class="export-option" data-action="export-stk" ${editor.object ? "" : "disabled"}>${icon("person")}<span><strong>Pivot figure</strong><small>.stk · Reusable Pivot figure</small></span></button><button class="export-option" data-action="export-png">${icon("frame")}<span><strong>PNG frame</strong><small>.png · Full canvas resolution</small></span></button><button class="export-option" data-action="export-svg">${icon("nodes")}<span><strong>SVG frame</strong><small>.svg · Editable paths and embedded media</small></span></button><button class="export-option" data-action="export-video">${icon("play")}<span><strong>WebM video</strong><small>.webm · Exact frame timing</small></span></button><button class="export-option" data-action="export-gif">${icon("loop")}<span><strong>Animated GIF</strong><small>.gif · Looping animation</small></span></button><button class="export-option" data-action="export-apng">${icon("frame")}<span><strong>Animated PNG</strong><small>.png · Lossless color and transparency</small></span></button><button class="export-option" data-action="export-png-sequence">${icon("duplicate")}<span><strong>PNG sequence</strong><small>.zip · Numbered lossless frames</small></span></button><button class="export-option" data-action="export-jpeg-sequence">${icon("duplicate")}<span><strong>JPEG sequence</strong><small>.zip · Numbered compact frames</small></span></button></div>`,
   );
   $("dialog-content")
     .querySelector(".export-settings")
@@ -3064,25 +3168,11 @@ function showExport() {
       "beforebegin",
       '<p class="property-note">Add the working pose as a frame to include it in animation exports. Your .styk project keeps the working pose.</p>',
     );
-  const defaultBitrate =
-    Math.round(
-      Math.max(
-        1,
-        Math.min(
-          50,
-          (editor.report.canvas_width *
-            editor.report.canvas_height *
-            editor.report.fps *
-            0.18) /
-            1e6,
-        ),
-      ) * 10,
-    ) / 10;
   $("dialog-content")
     .querySelector(".export-settings")
     .insertAdjacentHTML(
       "beforeend",
-      `<div class="text-options"><label>WebM bitrate · Mbit/s<input id="export-webm-bitrate" type="number" min="0.1" max="200" step="0.1" value="${defaultBitrate}"></label></div><div class="text-options export-codecs"><label>MP4 codec<select id="export-mp4-codec" aria-label="MP4 codec" disabled></select></label><label>AVI codec<select id="export-avi-codec" aria-label="AVI codec" disabled></select></label></div>`,
+      `<div class="text-options export-codecs"><label>MP4 codec<select id="export-mp4-codec" aria-label="MP4 codec" disabled></select></label><label>AVI codec<select id="export-avi-codec" aria-label="AVI codec" disabled></select></label></div>`,
     );
   for (const [id, label, note] of [
     ["mp4", "MP4 video", "H.264 video"],
@@ -3211,7 +3301,9 @@ function showExport() {
   for (const id of ["export-mp4-codec", "export-avi-codec"])
     $(id).onchange = () => void refreshCapabilities();
   void refreshCapabilities();
-  mountExportFlow($("dialog-content"));
+  mountExportFlow($("dialog-content"), {width: editor.report.canvas_width, height: editor.report.canvas_height,
+    totalFrames: editor.totalTicks, currentFrame: editor.tick + 1,
+    fps: editor.report.frame_delay_ms ? 1000 / editor.report.frame_delay_ms : editor.report.fps});
 }
 
 function showHelp() { editorSettings?.open("shortcuts"); }
@@ -3974,13 +4066,14 @@ document.addEventListener(
 
 $("inspector").addEventListener(
   "change",
-  guarded((e) => {
+  guarded(async (e) => {
     const target = e.target,
       key = target.dataset.field;
     pause();
     if(target.id==='figure-layer'){
-      finishCurrentEdit();editor.assignFiguresToLayer([...editor.selectedUids],target.value);
-      editor.setActiveLayer(target.value);state.selectedTrackId=target.value;timelineUI?.selectTrack?.(target.value);queueUI();requestRender();return;
+      finishCurrentEdit();const id=target.value,uids=[...editor.selectedUids];
+      const changed=await changeFigureLayer('Move figures to layer',options=>editor.assignFiguresToLayerAsync(uids,id,options));
+      if(changed){editor.setActiveLayer(id);state.selectedTrackId=id;timelineUI?.selectTrack?.(id);}queueUI();requestRender();return;
     }
     if (target.id === "builder-branch") {
       state.builderBranch = target.checked;
@@ -4301,6 +4394,8 @@ function finishCurrentEdit() {
   finishKeyboardHandle();
   endDrag();
   propertyControls?.commit();
+  vfxInspector?.commit();
+  vfxGizmos?.up();
   editor.commitDrag();
   editor.commitAnimationEdit();
 }
@@ -4607,14 +4702,14 @@ editor.addEventListener("change", (e) => {
   if (["edit", "history", "document", "frame-draft"].includes(kind))
     for (const job of exportJobs) job.controller.abort();
   if (
-    (kind === "edit" || kind === "frame-draft" || (kind === "history" && (e.detail.frameIndices || e.detail.animation) && !e.detail.structural)) &&
+    (kind === "edit" || kind === "frame-draft" || (kind === "history" && (e.detail.layerSheet || (e.detail.frameIndices || e.detail.animation) && !e.detail.structural))) &&
     !e.detail?.live &&
     playback.report === editor.report &&
     (state.playbackRevision !== editor.revision ||
       state.playbackDraftRevision !== editor.frameDraftRevision)
   ) {
     const metadataOnly = Boolean(
-      kind === "frame-draft" || e.detail.animation || e.detail.layerMetadata,
+      kind === "frame-draft" || e.detail.animation || e.detail.layerMetadata || e.detail.layerSheet,
     );
     const frameIndices =
       e.detail.frameIndices ??
@@ -4688,49 +4783,13 @@ function scheduleRecovery() {
           )
             return;
           if (desktop) {
-            await writeNativeBlob(desktop, blob, {
+            return await writeNativeBlob(desktop, blob, {
               recovery: true,
               name,
               signal,
             });
-            return;
           }
-          await new Promise((resolve, reject) => {
-            const request = indexedDB.open("stykanimate-recovery", 1);
-            request.onupgradeneeded = () =>
-              request.result.createObjectStore("documents");
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => {
-              const db = request.result;
-              if (signal.aborted) {
-                db.close();
-                resolve();
-                return;
-              }
-              const tx = db.transaction("documents", "readwrite");
-              const cancel = () => {
-                try {
-                  tx.abort();
-                } catch {}
-              };
-              signal.addEventListener("abort", cancel, { once: true });
-              tx.objectStore("documents").put(
-                { blob, name, savedAt: Date.now() },
-                "latest",
-              );
-              const complete = () => {
-                signal.removeEventListener("abort", cancel);
-                db.close();
-                resolve();
-              };
-              tx.oncomplete = complete;
-              tx.onabort = complete;
-              tx.onerror = () => {
-                complete();
-                reject(tx.error);
-              };
-            };
-          });
+          return writeBrowserRecovery(blob, name, signal);
         },
         { recovery: true },
       );
@@ -5040,6 +5099,7 @@ function mountTimeline() {
     state.settings.timelineMode === "simple" ? SimpleTimeline : Timeline;
   timelineUI = new TimelineClass($("timeline"), editor, {
     onAddFrame: () => actions["add-frame"](),
+    onDeleteLayer: id => changeFigureLayer('Delete layer',options=>editor.deleteLayerAsync(id,options)),
     hotkeys,
     runClipboardOperation,
     sharedClipboard,
@@ -5132,7 +5192,9 @@ function mountTimeline() {
 async function init() {
   if (desktop?.activateDocument)
     state.documentToken = (await desktop.activateDocument({})).documentToken;
-  const settingsValue = desktop?.getEditorSettings
+  const settingsValue = window.stykInitialEditorSettings
+    ? await window.stykInitialEditorSettings
+    : desktop?.getEditorSettings
     ? await desktop.getEditorSettings()
     : undefined;
   appLocalization = new AppLocalization({ locale: settingsValue?.locale });
@@ -5298,6 +5360,12 @@ async function init() {
     onError: fail,
   });
   window.styk.properties = propertyControls;
+  vfxInspector=new VfxInspector({editor,root:$('vfx-panel'),properties:$('inspector'),context:()=>state.inspectorContext,beforeEdit:()=>{pause();interruptRecovery();propertyControls?.commit();},onChange:()=>{queueUI();requestRender();},onError:fail});
+  window.styk.vfx=vfxInspector;
+  vfxGizmos=new VfxGizmos({canvas:overlay,inspector:vfxInspector,editor,getOptions:()=>({report:editor.report,frame:currentFrame(),geometry:state.playing?null:editor.geometry,view:state.view,cameraEnabled:state.playing||state.previewing,playing:state.playing,vfxEnabled:state.vfxEnabled,resources:state.renderer?.resources}),onChange:()=>{queueUI();requestRender();},onError:fail});
+  window.styk.vfxGizmos=vfxGizmos;
+  $('vfx-preview').innerHTML=vfxIcon('effects');
+  $('vfx-preview').addEventListener('click',()=>{finishCurrentEdit();pause();state.vfxEnabled=!state.vfxEnabled;playback.setVfxEnabled(state.vfxEnabled);state.playbackPacket=null;state.editingPacket=null;state.renderer?.clearPreparedFrames?.();state.renderer.lastGeometry=null;$('vfx-preview').setAttribute('aria-pressed',String(state.vfxEnabled));requestRender();queueUI();});
   assetLibrary = new AssetLibrary($("asset-list"), {
     onAdd: (id) => {
       pause();
@@ -5310,7 +5378,7 @@ async function init() {
     resources,
   });
   window.styk.assets = assetLibrary;
-  window.styk.library = new UserLibrary({editor, desktop, exporter:documentExporter, importer, pause, finishEdit:finishCurrentEdit, setTool, hotkeys});
+  window.styk.library = new UserLibrary({editor, desktop, exporter:documentExporter, importer, pause, finishEdit:finishCurrentEdit, setTool, vfxInspector, hotkeys});
   installLibraryDrop(viewport, {position: worldPoint, insert: (asset, point) => window.styk.library.insert(asset, point), onError: fail});
   installLibraryDrag(window.styk.library.grid, viewport, {
     getAsset: card => !window.styk.library.busy && window.styk.library.entries.find(item => item.path === card.dataset.libraryPath),
@@ -5369,6 +5437,37 @@ async function init() {
     console.warn(error);
   }
 }
+function recoverCanvas() {
+  if (rendererRecovery) return rendererRecovery;
+  rendererRecovery = (async () => {
+    // A canvas cannot switch context types. Replace only the scene surface;
+    // document/history and pointer handlers on the overlay remain available.
+    editablePreparation.cancel();
+    state.editingPacket = null;
+    playback.invalidate();
+    state.renderer?.destroy();
+    const replaceCanvas = () => {
+      const replacement = canvas.cloneNode(false);
+      canvas.replaceWith(replacement); canvas = replacement;
+    };
+    replaceCanvas();
+    const forceCanvas2D = gpuRecoveryAttempted;
+    gpuRecoveryAttempted = true;
+    try {
+      // A transient device reset need not disable acceleration for the session.
+      // Permit one GPU reconnect; a second loss takes the software path.
+      state.renderer = await createRenderer(canvas, {...rendererOptions(), forceCanvas2D});
+    } catch (error) {
+      // Initialization may fail after acquiring a WebGPU canvas context.
+      replaceCanvas();
+      state.renderer = await createRenderer(canvas, {...rendererOptions(), forceCanvas2D: true,
+        fallbackReason: `Graphics reconnection failed: ${error.message}`});
+    }
+    $("renderer-error").hidden = true;
+    resize(); requestRender();
+  })().finally(() => {rendererRecovery = null;});
+  return rendererRecovery;
+}
 function rendererOptions() {
   return {
     resources,
@@ -5403,13 +5502,12 @@ function rendererOptions() {
         viewport.classList.toggle("panning", state.tool === "hand");
         $("renderer-error").hidden = false;
         $("renderer-error").innerHTML =
-          '<p>The graphics device was disconnected. Your animation is still here.</p><button class="button" id="retry-renderer">Reconnect canvas</button>';
-        $("retry-renderer").onclick = guarded(async () => {
-          state.renderer.destroy();
-          state.renderer = await createRenderer(canvas, rendererOptions());
-          $("renderer-error").hidden = true;
-          resize();
-          requestRender();
+          '<p>The graphics device was reset. Reconnecting your canvas…</p><button class="button" id="retry-renderer">Reconnect canvas</button>';
+        $("retry-renderer").onclick = guarded(recoverCanvas);
+        // Reconnect acceleration once, then fall back without a retry loop.
+        recoverCanvas().catch(error => {
+          $("renderer-error").querySelector('p').textContent = 'The canvas could not reconnect. Your animation is still here and can be saved.';
+          status(error.message, true);
         });
       }
     },

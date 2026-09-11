@@ -5,6 +5,7 @@ import {evaluatedFrame,buildGeometry,timeline} from './pivot/geometry.mjs';
 import {layerVisible} from './layers.mjs';
 import {createFrame} from './demo.mjs';
 import {setContinuations} from './movieclip-presence.mjs';
+import {remapVfxOwner} from './vfx.mjs';
 
 export function createMovieclipMaterializer(report,{allowCompositeOpacity=false}={}){
   const figures=report.figure_types.filter(f=>!isMovieclip(f)),typeMaps=new WeakMap(),uids=new Map();
@@ -43,8 +44,10 @@ export function createMovieclipMaterializer(report,{allowCompositeOpacity=false}
       const point=p=>({x:transform.x+transform.a*p.x+transform.c*p.y,y:transform.y+transform.b*p.x+transform.d*p.y});
       if(isMovieclip(figure)){
         if(object._movieclipSample===null)continue;
+        if(object._stykVfx)throw new Error('This movieclip has container effects. Keep it as a movieclip to preserve the combined effect stack.');
         const asset=movieclipAsset(figure),local=localFrame(asset,object._movieclipSample??0),angle=object.angles?.[0]??0,
           scale=object.scale??1,c=Math.cos(angle)*scale,d=Math.sin(angle)*scale,root=point(g.root),flip=object.image_text_flags?-1:1;
+        if(local._stykVfx)throw new Error('This movieclip has scene effects. Keep it as a movieclip to preserve their composition.');
         const a=transform.a*c+transform.c*d,b=transform.b*c+transform.d*d,
           cy=(-transform.a*d+transform.c*c)*flip,dy=(-transform.b*d+transform.d*c)*flip,opacity=transform.opacity*(1-(object.field28??0)/255);
         if(!allowCompositeOpacity&&opacity<1&&local.objects.length>1)throw new Error('Pivot cannot preserve movieclip group opacity across multiple figures. Use .styk or a rendered export.');
@@ -55,6 +58,7 @@ export function createMovieclipMaterializer(report,{allowCompositeOpacity=false}
         root_x:root.x,root_y:root.y,join:null,scale:(object.scale??1)*transform.scale,
         angles:(g.solvedAngles??object.angles).map(a=>a*transform.flip+transform.angle),field28:Math.round(255*(1-transform.opacity*(1-(object.field28??0)/255)))};
       if(transform.flip<0){next.image_text_flags=Number(!object.image_text_flags);next.bend_flag=1;next.bends=g.segments.map(s=>-s.bend);}
+      remapVfxOwner(next,next.figure_type_id,undefined,object.figure_type_id);
       if(g.solvedLengths){next.len_flag=1;next.lengths=g.solvedLengths.slice();}
       delete next.runtime_segments;delete next._stykIK;delete next._stykAnimationOrigin;delete next._stykMovieclip;delete next._movieclipSample;
       delete next._stykMovieclipPart;

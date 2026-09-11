@@ -6,6 +6,34 @@ and codec/quality fields where applicable. Query again when dimensions or frame
 rate change. Browser video uses the available WebCodecs VP8/VP9 encoder; native
 formats depend on the desktop's probed, bundled FFmpeg executable.
 
+The video panel defaults to **Recommended**, with **Smaller file** and **Higher
+quality** alternatives. Bitrate and MP4/AVI codec controls are in a collapsed
+**Advanced video settings** section. Automatic mode uses native quality targets:
+H.264 CRF, VP9 constant quality with `-b:v 0`, or MPEG-4/WMV quantizer quality.
+Bitrate therefore follows scene complexity instead of a fixed source-size guess.
+Browser WebCodecs uses a target calculated from final output dimensions, frame
+rate and the selected preset. Changing resolution recalculates it. Manual mode
+accepts 0.1–200 Mbit/s, preserves the entered value when dimensions change, and
+hides the quality selector it overrides. Lossless AVI ignores bitrate/quality;
+installed VFW codecs retain their own provider-specific controls.
+
+`src/export-video-quality.mjs` is the common preset/planning layer. Recommended,
+Smaller file and Higher quality map to existing encoder quality values 0.8, 0.55
+and 0.95. For browser output, their target-rate multipliers are 1, 0.5 and 1.6
+over `max(1e6, width * height * fps * 0.18)`, bounded to 0.1–80 Mbit/s. These are
+encoding targets, not predictions or promises of exact file size or identical
+perceptual quality across codecs. Rendering memory limits remain independent.
+
+Automatic controls are checked by `tests/export-video-quality.test.mjs` and
+`tests/export-auto-quality.browser.mjs` (10 actual UI checks, including 1080p/4K
+encoder configurations and manual/automatic switching). The updated
+`tests/export-bitrate.browser.mjs` independently decodes the manual-rate output.
+`tests/export-4k.desktop.mjs` also checks that the real native IPC request carries
+the Recommended quality target without an explicit bitrate before decoding the
+saved 4K MP4/WebM files. Screenshots and requests are under
+`artifacts/export-auto-quality`, `artifacts/export-bitrate`, and
+`artifacts/export-4k`.
+
 | ID | Output | Encoder and controls |
 | --- | --- | --- |
 | `webm` | Video-only WebM | Desktop VP9 with transparency, quality and bitrate controls; portable WebCodecs VP8/VP9 fallback is opaque. |

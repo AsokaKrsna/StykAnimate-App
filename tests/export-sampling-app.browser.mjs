@@ -34,12 +34,19 @@ try {
   });
   async function open(mode) {
     await page.locator('[data-action="export"]').first().click();
-    await page.locator(".export-settings summary").click();
     await page.locator("#export-smoothing").selectOption(mode);
   }
+  async function selectFormat(action) {
+    const category = ["export-gif", "export-apng"].includes(action)
+      ? "animated"
+      : "frames";
+    await page.locator(`[data-category="${category}"]`).click();
+    await page.locator("#output-format").selectOption(action);
+  }
   async function download(action, name) {
+    await selectFormat(action);
     const waiting = page.waitForEvent("download");
-    await page.locator(`[data-action="${action}"]`).click();
+    await page.locator("#export-submit").click();
     const file = await waiting,
       target = path.join(output, name);
     await file.saveAs(target);
@@ -150,22 +157,26 @@ try {
     "SVG button ignores pixel smoothing and retains paths",
     svg.includes("<path") && !svg.includes('shape-rendering="crispEdges"'),
   );
-  await page.evaluate(async () => {
+  const usesLayerSheet = await page.evaluate(async () => {
     styk.settingsUI.commit({ timelineMode: "simple", autosaveSeconds: 0 });
     await styk.settingsUI.flush();
-    styk.editor.enableFrameDrafts({ mode: "add", restoreSaved: false });
+    // The current layer-sheet timeline stores numeric edits directly. Legacy
+    // documents retain the separate Simple working-pose export behavior.
+    const sheet = Boolean(styk.editor.report._styk?.layerSheet);
+    if (!sheet) styk.editor.enableFrameDrafts({ mode: "add", restoreSaved: false });
     styk.editor.select(1);
+    return sheet;
   });
   await page.locator('#inspector [data-field="root_x"]').fill("70.3");
-  await page.locator('#inspector [data-field="root_x"]').press("Enter");
+  await page.locator('#inspector [data-field="root_x"]').press("Tab");
   check(
-    "actual numeric edit creates an unstored Simple working pose",
+    "numeric edit is visible in the active Simple pose",
     await page.evaluate(
       () =>
-        styk.editor.frameDraft.dirty &&
-        styk.editor.frame.objects[0].root_x === 70.3,
+        styk.editor.evaluatedFrame.objects[0].root_x === 70.3,
     ),
   );
+  const revisionBeforeExports = await page.evaluate(() => styk.editor.revision);
   await open("none");
   const draft = await summary(
     await download("export-png", "working-draft.png"),
@@ -175,16 +186,18 @@ try {
     await download("export-apng", "stored-animation.apng"),
   );
   check(
-    "current-frame PNG includes working pose while animation keeps stored pose",
-    Math.abs(draft.x - stored.x - 40) < 1 &&
-      Math.abs(stored.x - summaries.none.x) < 1,
+    "current-frame and animation exports preserve the timeline's pose semantics",
+    Math.abs(draft.x - stored.x - (usesLayerSheet ? 0 : 40)) < 1 &&
+      Math.abs(stored.x - summaries.none.x - (usesLayerSheet ? 40 : 0)) < 1,
   );
   check(
-    "exports preserve dirty Simple working pose",
+    "exports preserve the Simple pose and document revision",
     await page.evaluate(
-      () =>
-        styk.editor.frameDraft.dirty &&
-        styk.editor.frame.objects[0].root_x === 70.3,
+      ({usesLayerSheet, revision}) =>
+        (usesLayerSheet || styk.editor.frameDraft.dirty) &&
+        styk.editor.evaluatedFrame.objects[0].root_x === 70.3 &&
+        styk.editor.revision === revision,
+      {usesLayerSheet, revision: revisionBeforeExports},
     ),
   );
   await open("none");
@@ -232,6 +245,35 @@ try {
     "actual Smooth sprites reduces checkerboard aliasing",
     sprite.sprites.gray > sprite.edges.gray + 20,
   );
+  // Lose only the export surface after PNG encoding, before the app can save it.
+  await page.evaluate(async () => {
+    const {ExportFrameRenderer} = await import('/src/export-frame-renderer.mjs');
+    const paint = ExportFrameRenderer.prototype._paint;
+    ExportFrameRenderer.prototype._paint = function(result) {
+      ExportFrameRenderer.prototype._paint = paint;
+      const canvas = paint.call(this, result), toBlob = canvas.toBlob;
+      canvas.toBlob = function(callback, ...args) {
+        return toBlob.call(this, blob => {
+          this.dispatchEvent(new Event('contextlost'));
+          callback(blob);
+        }, ...args);
+      };
+      return canvas;
+    };
+  });
+  let failedDownloads = 0;
+  const onFailedDownload = () => failedDownloads++;
+  page.on('download', onFailedDownload);
+  await open('sprites');
+  await selectFormat('export-png');
+  await page.locator('#export-submit').click();
+  await page.waitForFunction(() => !document.querySelector('#dialog').open &&
+    document.querySelector('#toast').textContent.includes('before saving an incomplete frame'));
+  check('canvas loss during PNG encoding produces a clear error and no download', failedDownloads === 0);
+  page.off('download', onFailedDownload);
+  await open('sprites');
+  check('a fresh PNG export succeeds after a lost export canvas',
+    (await summary(await download('export-png', 'retry-after-loss.png'))).hash === sprite.sprites.hash);
   let release;
   const gate = new Promise((resolve) => (release = resolve));
   let downloads = 0;
@@ -243,7 +285,8 @@ try {
   });
   try {
     await open("sprites");
-    await page.locator('[data-action="export-apng"]').click();
+    await selectFormat("export-apng");
+    await page.locator("#export-submit").click();
     await page.locator("#cancel-export").waitFor();
     check(
       "progress and Cancel are visible before worker loading finishes",
@@ -278,7 +321,12 @@ try {
     .catch(() => {});
   await writeFile(
     path.join(output, "failure.json"),
-    JSON.stringify({ checks, errors, error: error.stack }, null, 2),
+    JSON.stringify({ checks, errors, error: error.stack, editor: await page?.evaluate(() => ({
+      frameDraft: styk.editor.frameDraft,
+      rootX: styk.editor.frame.objects[0]?.root_x,
+      evaluatedX: styk.editor.evaluatedFrame.objects[0]?.root_x,
+      timelineMode: styk.state.settings.timelineMode,
+    })).catch(() => null) }, null, 2),
   );
   throw error;
 } finally {

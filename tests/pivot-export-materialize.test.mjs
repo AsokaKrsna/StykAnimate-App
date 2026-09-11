@@ -59,8 +59,21 @@ function compareFrames(original, a, exported, b) {
 }
 
 test('untouched native documents retain the exact original export path and references', () => {
-  const editor = new Editor({demo: false}); editor.addFigure(); const report = editor.report;
+  const native = emptyDocument();
+  // Native exposures have no authored per-frame easing metadata.
+  native.keyframes = [createFrame([createObject(native.figure_types[0], 1, 40, 200)], 4)];
+  const report = new Editor({demo: false}).load(native).report;
   assert.equal(needsPivotMaterialization(report), false); assert.equal(materializePivotDocument(report), report);
+});
+
+test('new documents retain authored Hold easing through native export materialization', () => {
+  const editor = new Editor({demo: false}); editor.addFigure(); const report = editor.report;
+  const before = structuredClone(report);
+  assert.equal(needsPivotMaterialization(report), true);
+  const output = materializePivotDocument(report);
+  assert.notEqual(output, report);
+  compareFrames(report, sample(report, 0), output, sample(output, 0));
+  assert.deepEqual(report, before);
 });
 
 test('layer ordering alone preserves native exposures and retained opaque fields without baking', () => {

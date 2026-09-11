@@ -20,6 +20,8 @@ const { LibraryStore } = require('./library-store.cjs');
 const { TelemetryService } = require('./telemetry.cjs');
 const { UpdateService, updateAvailability } = require('./updates.cjs');
 const releaseInfo = require('./release-info.json');
+let telemetryBuild = {};
+try { telemetryBuild = require('./telemetry-build.json'); } catch { /* Unpackaged/older source has unknown build metadata. */ }
 const { RELEASES_URL, DONATE_URL } = require('./release-links.cjs');
 
 const APP_ROOT = path.resolve(__dirname, '..');
@@ -562,6 +564,7 @@ async function start() {
   });
   if (app.isPackaged) app.setAsDefaultProtocolClient('stykanimate');
   telemetryReady = new TelemetryService({ directory: app.getPath('userData'), schemaPath: path.join(app.isPackaged ? path.join(process.resourcesPath, 'web') : APP_ROOT, 'src', 'telemetry-schema.mjs'), version: app.getVersion(), development: !app.isPackaged,
+    build: telemetryBuild.build, internal: telemetryBuild.internal === true,
     onState: value => { if (window && !window.isDestroyed()) window.webContents.send('styk:telemetry-state-changed', value); },
   }).init().then(service => { telemetry = service; return service; }).catch(() => { /* Optional reporting cannot prevent startup. */ });
   const memoryTimer = setInterval(() => {

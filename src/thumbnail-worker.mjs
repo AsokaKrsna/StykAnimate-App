@@ -1,5 +1,6 @@
 import { applyDocumentChunk } from "./document-transport.mjs";
 import { PlaybackResources } from "./playback-resources.mjs";
+import {previewMemoryPlan} from './playback-budget.mjs';
 import {
   evaluatedFrame,
   timeline,
@@ -19,6 +20,7 @@ import {
 import { layerVisible } from "./layers.mjs";
 import {sampleInbetweenPreview} from './editor-inbetween.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
+import {applySceneVfx} from './vfx-canvas.mjs';
 
 let report,
   storedReport,
@@ -65,7 +67,8 @@ async function receive(message) {
         resources?.dispose();
         resources = new PlaybackResources({
           ...message.options,
-          maxBytes: 24 * 1024 * 1024,
+          maxBytes: previewMemoryPlan().thumbnails,
+          preview: true,
         });
       } else {
         if (!report) throw new Error("Thumbnail document is unavailable.");
@@ -153,7 +156,7 @@ async function receive(message) {
         ...backgrounds
           .filter((bg) => resources.url(bg))
           .map((asset) => ({ type: "image", asset })),
-      ]);
+      ], {scale: Math.min(message.width / frameReport.canvas_width, message.height / frameReport.canvas_height), maxDimension: 512});
       check();
       if (!canvas) {
         canvas = new OffscreenCanvas(message.width, message.height);
@@ -193,6 +196,8 @@ async function receive(message) {
       for (const onion of onions) drawGeometry(context, onion, resources);
       drawGeometry(context, { drawables }, resources);
       context.restore();
+      const x=(message.width-width*scale)/2,y=(message.height-height*scale)/2;
+      applySceneVfx(context,frame,{scale,origin:{x:-x,y:-y},outputSize:{width:width*scale,height:height*scale},clip:{x,y,width:width*scale,height:height*scale}});
       check();
       const bitmap = canvas.transferToImageBitmap();
       releaseGeometryResources(context, { retainCanvases: true });

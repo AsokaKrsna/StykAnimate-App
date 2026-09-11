@@ -4,6 +4,23 @@ Implementation: [timeline.mjs](../src/timeline.mjs). Reproduce the browser check
 with `node tests/timeline.browser.mjs` from the app directory. Current results are
 in [timeline-verification.json](../artifacts/timeline-verification.json).
 
+## Layer exposure grid
+
+The movieclip inspector's **Add to next keyframes** action adds the selected
+instance at its current position to the next X existing authored keys on its
+owning layer. It skips keys already containing that instance without overwriting
+them, stops at the layer's end, and never creates frames or key boundaries.
+Other figures, Scene/Camera content, easing and timing stay intact. The additions
+retain one movieclip identity and playback clock and undo together in one step.
+Frame-only movieclip replacement boundaries do not count as authored keys.
+
+The current Advanced grid is implemented in `src/layer-timeline.mjs`. Dragging
+from an unselected cell (including an occupied key) selects a rectangular range.
+Only a range selected before pointer-down can move; Shift-drag extends selection.
+Clicking inside a selected range preserves it. Delete clears its keys without
+changing duration or shifting later keys; the opening key at tick zero is retained.
+Remove Frames remains a separate command that removes time.
+
 ## Independent layer and property tracks
 
 The default Advanced timeline uses the actual user layers, with permanent Scene

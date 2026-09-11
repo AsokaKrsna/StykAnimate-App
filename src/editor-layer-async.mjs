@@ -1,6 +1,7 @@
 import {validateAnimationDocument} from './animation-channels.mjs';
 import {validateObjectChanges} from './pivot/model.mjs';
 import {ensureLayerState} from './layers.mjs';
+import {planSheetAssignmentSteps,commitSheetAssignment,planSheetDeletionSteps,commitSheetDeletion} from './editor-layer-sheet.mjs';
 
 const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 const clone = value => structuredClone(value);
@@ -74,6 +75,14 @@ async function prepare(editor, params, options, context) {
   const wire = await planner({...params, nextFrameIdentity: context.identity}, {signal: options.signal, onProgress: options.onProgress});
   context.check(); const migration = await stage(editor, wire, context, options); context.check(); return migration;
 }
+async function prepareSheet(editor,options,build,commit){
+  const context=start(editor,options),state=editor.report._styk.layers,steps=build({...options,background:true});
+  for(;;){
+    context.check();if(state!==editor.report._styk.layers)throw new Error('Layer metadata changed while the change was prepared.');
+    const step=steps.next();if(step.done)return commit(editor,step.value);
+    options.onProgress?.(step.value);await pause();
+  }
+}
 
 export const editorLayerAsyncMethods = {
   setLayerMigrationPlanner(planner) {
@@ -81,7 +90,9 @@ export const editorLayerAsyncMethods = {
     this._layerMigrationPlanner = planner; return this;
   },
   async assignFiguresToLayerAsync(uids, id, options = {}) {
-    if(this.report._styk?.layerSheet)return this.assignFiguresToLayer(uids,id);
+    if(this.report._styk?.layerSheet){
+      return prepareSheet(this,options,options=>planSheetAssignmentSteps(this,uids,id,options),commitSheetAssignment);
+    }
     const context = start(this, options), state = checkLayer(this, id), ids = [...new Set(uids)];
     if (ids.some(uid => !this._layerUidCounts.has(uid))) throw new Error('Choose figures present in this animation.');
     const updates = ids.filter(uid => this.layerForUid(uid) !== id).map(uid => [['assignments', String(uid)], id]);
@@ -91,7 +102,10 @@ export const editorLayerAsyncMethods = {
     return this._layerEdit('Assign figures to layer', updates, {structural: true, reindex: true, migration});
   },
   async deleteLayerAsync(id, options = {}) {
-    if(this.report._styk?.layerSheet)return this.deleteLayer(id,options);
+    if(this.report._styk?.layerSheet){
+      if(options.targetLayerId)return this.deleteLayer(id,options);
+      return prepareSheet(this,options,options=>planSheetDeletionSteps(this,id,options),commitSheetDeletion);
+    }
     const context = start(this, options), state = checkLayer(this, id), position = state.order.indexOf(id);
     if (state.order.length === 1) throw new Error('Keep at least one user layer.');
     const target = options.targetLayerId ?? state.order[position - 1] ?? state.order[position + 1];

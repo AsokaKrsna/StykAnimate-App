@@ -147,7 +147,7 @@ export function sampleLayerSheet(report,tick,{sampleLegacy,sampleNative,resolveG
   });
   const result={...template,objects,object_count:objects.length,object_draw_order:objects.map((_,i)=>i),object_draw_order_unique_ids:objects.map(o=>o.unique_id),camera:camera?.camera??{is_default:true,x:0,y:0,scale:1,angle_rad:0}};
   setContinuations(result,[...frames].flatMap(([id,frame])=>continuations(frame).filter(step=>layerIdForUid(report,step.uid)===id)));
-  for(const field of ['background_id','background_id_b','background_mix','background_color','_stykBackgroundColor']){
+  for(const field of ['background_id','background_id_b','background_mix','background_color','_stykBackgroundColor','_stykVfx']){
     if(field in scene)result[field]=scene[field];else delete result[field];
   }
   return result;

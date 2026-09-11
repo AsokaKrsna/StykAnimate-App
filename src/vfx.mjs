@@ -1,0 +1,87 @@
+import {VFX_REGISTRY} from './vfx-registry.mjs';
+export {VFX_REGISTRY} from './vfx-registry.mjs';
+import {vfxPaint,interpolateVfxColor} from './vfx-paint.mjs';
+export const VFX_LIMIT=16;
+const empty=Object.freeze([]), parsed=new Map();
+export const isVfxProperty=property=>property==='vfxStack'||typeof property==='string'&&property.startsWith('vfx1:');
+export function vfxProperty(type,id,param){const value=`vfx1:${type}:${id}:${param}`;if(!vfxDescriptor(value))throw new Error('Invalid effect parameter.');return value;}
+export function vfxDescriptor(property){
+  if(property==='vfxStack')return {type:'stack',discrete:true};
+  if(typeof property!=='string'||!property.startsWith('vfx1:'))return null;
+  if(parsed.has(property))return parsed.get(property);
+  const parts=property.split(':'),[,effectType,id,param]=parts,definition=Object.hasOwn(VFX_REGISTRY,effectType)?VFX_REGISTRY[effectType]:null;
+  if(parts.length!==4||!definition||!/^[a-zA-Z0-9_-]{1,64}$/.test(id))return null;
+  const descriptor=param==='enabled'?{type:'number',default:1,min:0,max:1,step:1,discrete:true,label:'Enabled'}:definition.params[param];
+  if(!descriptor)return null;
+  const result={...descriptor,effectType,id,param};if(parsed.size>=4096)parsed.clear();parsed.set(property,result);return result;
+}
+export const vfxPropertyLabel=property=>property==='vfxStack'?'Effects':(()=>{const d=vfxDescriptor(property);return d?`${VFX_REGISTRY[d.effectType].name} · ${d.label}`:property;})();
+export function validateVfxValue(property,value){
+  if(property==='vfxStack')return validateVfxStack(value);
+  const d=vfxDescriptor(property);if(!d)throw new Error('Unknown VFX parameter.');
+  if(d.type==='color'&&typeof value==='object')return vfxPaint(value);
+  if(typeof value!=='number'||!Number.isFinite(value)||value<d.min||value>d.max||(d.type==='color'||d.discrete)&&!Number.isInteger(value))throw new Error(`${d.label} must be between ${d.min} and ${d.max}.`);
+  return value;
+}
+export function validateVfxStack(stack){
+  if(!Array.isArray(stack)||stack.length>VFX_LIMIT)throw new Error(`An effect stack supports up to ${VFX_LIMIT} effects.`);
+  const ids=new Set();return stack.map(effect=>{
+    if(!effect||![1,2].includes(effect.version)||!Object.hasOwn(VFX_REGISTRY,effect.type)||typeof effect.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(effect.id)||ids.has(effect.id)||typeof effect.enabled!=='boolean'||!effect.params||typeof effect.params!=='object'||Array.isArray(effect.params))throw new Error('Invalid VFX stack.');
+    ids.add(effect.id);const definition=VFX_REGISTRY[effect.type],params={};
+    if(Object.keys(effect.params).some(key=>!Object.hasOwn(definition.params,key)))throw new Error('Unknown VFX parameter.');
+    for(const [name,descriptor] of Object.entries(definition.params))params[name]=validateVfxValue(vfxProperty(effect.type,effect.id,name),effect.params[name]??descriptor.default);
+    if(effect.version===1&&effect.type==='outline'&&effect.params.rounded===undefined)params.rounded=0;
+    return {version:2,id:effect.id,type:effect.type,enabled:effect.enabled,params};
+  });
+}
+export function createVfx(type,id){if(!Object.hasOwn(VFX_REGISTRY,type))throw new Error('Choose an available effect.');return validateVfxStack([{version:2,type,id,enabled:true,params:{}}])[0];}
+export function vfxOwnerKey(target){return target.kind==='segment'?`${target.figureTypeId??'*'}/${target.handleId}`:'figure';}
+export function vfxStack(owner,target={kind:'figure'}){return owner?._stykVfx?.[vfxOwnerKey(target)]??empty;}
+export function setVfxStack(owner,target,stack){
+  const key=vfxOwnerKey(target),next={...owner._stykVfx};if(stack.length)next[key]=stack;else delete next[key];
+  if(Object.keys(next).length)owner._stykVfx=next;else delete owner._stykVfx;
+}
+export function validateVfxOwner(owner){
+  const value=owner?._stykVfx;if(value===undefined)return;
+  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length>65536)throw new Error('Invalid VFX owner.');
+  for(const [key,stack] of Object.entries(value)){if(key!=='figure'&&!/^(\*|[1-9]\d*)\/[1-9]\d*$/.test(key))throw new Error('Invalid VFX segment identity.');validateVfxStack(stack);}
+}
+/** Preserve instance-local node ownership when definitions/physical handles change. */
+export function remapVfxOwner(owner,typeId=owner.figure_type_id,handles,sourceType=owner.figure_type_id){
+ if(!owner._stykVfx)return;
+ const next={};for(const [key,stack] of Object.entries(owner._stykVfx)){
+  if(key==='figure'){next[key]=stack;continue;}
+  const [scope,id]=key.split('/'),handle=Number(id);
+  if(scope!=='*'&&Number(scope)!==sourceType){next[key]=stack;continue;}
+  for(const replacement of handles?.get(handle)??[handle])next[`${scope==='*'?'*':typeId}/${replacement}`]=stack;
+ }
+ if(Object.keys(next).length)owner._stykVfx=next;else delete owner._stykVfx;
+}
+export function vfxParameter(owner,target,property){const stack=vfxStack(owner,target);if(property==='vfxStack')return stack;const d=vfxDescriptor(property),effect=stack.find(e=>e.id===d?.id&&e.type===d.effectType);return effect?(d.param==='enabled'?Number(effect.enabled):effect.params[d.param]??d.default):undefined;}
+export function applyVfxParameter(owner,target,property,value){
+  if(property==='vfxStack'){setVfxStack(owner,target,value);return;}
+  const d=vfxDescriptor(property),stack=vfxStack(owner,target),index=stack.findIndex(e=>e.id===d.id&&e.type===d.effectType);if(index<0)return;
+  const result=stack.slice(),effect=resolvedVfx(stack[index]);result[index]=d.param==='enabled'?{...effect,enabled:Boolean(value)}:{...effect,params:{...effect.params,[d.param]:d.type==='color'?validateVfxValue(property,value):Math.max(d.min,Math.min(d.max,value))}};setVfxStack(owner,target,result);
+}
+export function interpolateVfx(a,b,t){
+  if(!a)return undefined;if(a===b||t===0||!b)return a;
+  const out={};for(const [key,stack] of Object.entries(a)){const next=new Map((b[key]??empty).map(e=>[e.id,e]));out[key]=stack.map(effect=>{
+    const other=next.get(effect.id);if(!other||other.type!==effect.type)return effect;
+    const params={};for(const [name,d] of Object.entries(VFX_REGISTRY[effect.type].params)){const av=resolvedVfx(effect).params[name],bv=resolvedVfx(other).params[name];if(d.discrete)params[name]=av;else if(d.type==='color')params[name]=interpolateVfxColor(av,bv,t);else params[name]=Math.max(d.min,Math.min(d.max,av+(bv-av)*t));}
+    return {...effect,params};});}return out;
+}
+const resolved=new WeakMap();
+export function resolvedVfx(effect){let value=resolved.get(effect);if(!value){value=validateVfxStack([effect])[0];resolved.set(effect,value);resolved.set(value,value);}return value;}
+export function activeVfx(stack){return stack?.length?stack.filter(e=>e.enabled).map(resolvedVfx).filter(e=>!neutralVfx(e)):empty;}
+export function neutralVfx({type,params:p}){return type==='tint'?p.mix===0:type==='glow'?p.intensity===0&&p.coreMix===0:type==='outline'?(p.width===0||p.opacity===0)&&!p.only:type==='blur'?p.radius===0:type==='shadow'?p.opacity===0:type==='grade'?p.exposure===0&&p.contrast===1&&p.saturation===1&&p.temperature===0&&!p.tint&&!p.shadows&&!p.highlights&&p.gamma===1:type==='pixelate'?p.size<=1&&(p.linked||p.sizeY<=1):type==='noise'||type==='vignette'?p.amount===0:type==='dissolve'?p.progress===0:type==='rgbSplit'?p.amount===0:type==='wave'||type==='shockwave'?p.strength===0:type==='bloom'||type==='lightSweep'?p.intensity===0:type==='crt'?!p.amount&&!p.curvature&&!p.chromatic:false;}
+export function vfxPadding(stack,scale=1,extent=0){let n=0;for(const {type,params:p} of activeVfx(stack)){let pad=0;if(['blur','glow','bloom'].includes(type))pad=p.radius*3+(p.spread??0);else if(type==='shadow')pad=p.radius*3+p.spread+Math.max(Math.abs(p.offsetX),Math.abs(p.offsetY));else if(type==='outline')pad=p.width;else if(type==='pixelate')pad=Math.max(p.size,p.linked?p.size:p.sizeY);else if(type==='rgbSplit')pad=p.amount*Math.max(Math.abs(p.red),Math.abs(p.green),Math.abs(p.blue));else if(type==='wave'||type==='shockwave')pad=Math.abs(p.strength);else if(type==='crt')pad=p.chromatic+p.curvature*extent/Math.max(.0001,scale);n+=Math.ceil(pad*scale);}return n;}
+export function documentHasVfx(report){
+ const pending=[report],seen=new Set();while(pending.length){const doc=pending.pop();if(!doc||seen.has(doc))continue;seen.add(doc);
+  if([doc._styk?.animation,doc._styk?.layerSheet?.legacyAnimation].some(a=>a?.channels?.some(c=>isVfxProperty(c.property))))return true;
+  const has=frame=>frame._stykVfx||frame.objects?.some(o=>o._stykVfx);
+  for(const frame of doc.keyframes??[])if(has(frame))return true;
+  for(const id in doc._styk?.frameSources)if(has(doc._styk.frameSources[id]))return true;
+  if(doc._styk?.movieclipSource?.document)pending.push(doc._styk.movieclipSource.document);
+  for(const figure of doc.figure_types??[])if(figure._styk?.movieclip?.document)pending.push(figure._styk.movieclip.document);
+ }return false;
+}

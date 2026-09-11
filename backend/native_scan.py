@@ -105,7 +105,7 @@ def _metadata(figures):
 
 
 _ERRORS = {1: "Unexpected EOF", 2: "Implausible keyframe count", 4: "Unknown background",
-    5: "Unknown figure type", 6: "Non-finite pose or camera", 7: "Object IDs must be unique and sorted as signed integers",
+    5: "Unknown figure type", 6: "Non-finite pose or camera", 7: "Duplicate object identity",
     8: "Cannot interpolate a changed figure type", 9: "Invalid joined object slot",
     10: "Unknown joined target handle", 11: "Cyclic object joins", 12: "Invalid object draw-order permutation",
     13: "Invalid native scanner definition metadata", 14: "Invalid native scanner output capacity",
@@ -140,6 +140,14 @@ def scan_keyframes(reader, figures, bg_slots, *, max_pose_bytes):
         max_pose_bytes, durations, count, ctypes.byref(result))
     reader.pos = result.end_offset
     if error:
+        if error in (7, 8):
+            # Older ABI-compatible accelerators also rejected signed-ID order
+            # and type transitions. The portable validator is authoritative for
+            # these codes: validate the entire table (including the pose budget)
+            # before either accepting it or requesting duplicate-ID recovery.
+            from fast_decode import scan_keyframes_python
+            reader.pos = start
+            return scan_keyframes_python(reader, figures, bg_slots, max_pose_bytes=max_pose_bytes)
         message = (f"Native scene exceeds the {max_pose_bytes // (1024 * 1024)} MiB pose budget" if error == 3
             else _ERRORS.get(error, "Unknown native scanner failure"))
         where = f" at payload offset {result.error_offset:#x}"

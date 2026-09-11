@@ -1,5 +1,6 @@
 import { documentChunks } from "./document-transport.mjs";
-import { exportSamplingSize } from "./export-sampling.mjs";
+import { exportMemoryPlan } from "./export-memory.mjs";
+import {exportContext, checkExportContext} from './export-canvas.mjs';
 
 const abortError = (message = "Export rendering cancelled.") =>
   new DOMException(message, "AbortError");
@@ -17,18 +18,24 @@ export class ExportFrameRenderer {
     getRevision,
     canvas,
     timeoutMs = 120000,
+    maxWorkingBytes,
+    onFrame,
   } = {}) {
-    Object.assign(this, exportSamplingSize(width, height, smoothing), {
+    if (signal?.aborted) throw abortError();
+    Object.assign(this, exportMemoryPlan(width, height, smoothing, {maxWorkingBytes}), {
       baseURL,
       token,
       signal,
       getRevision,
       timeoutMs,
+      onFrame,
     });
     this.canvas = canvas ?? document.createElement("canvas");
     this.canvas.width = width;
     this.canvas.height = height;
-    this.context = this.canvas.getContext("2d");
+    // Export frames are read by image/video encoders. Keep this large surface
+    // CPU-backed instead of competing with the editor's WebGPU allocations.
+    try {this.context = exportContext(this.canvas);} catch (error) {this.canvas.width = this.canvas.height = 1; throw error;}
     this.sequence = 0;
     this.disposed = false;
     this.loaded = false;
@@ -39,10 +46,10 @@ export class ExportFrameRenderer {
       maxMainSnapshotMs: 0,
       renderedFrames: 0,
     };
-    this.worker = new Worker(
+    try {this.worker = new Worker(
       new URL("./export-frame-worker.mjs", import.meta.url),
       { type: "module", name: "StykAnimate export rendering" },
-    );
+    );} catch (error) {this.canvas.width = this.canvas.height = 1; throw error;}
     this.worker.addEventListener("message", ({ data }) => {
       const pending = this.pending;
       if (!pending || pending.id !== data.id) {
@@ -51,9 +58,11 @@ export class ExportFrameRenderer {
       }
       this.pending = null;
       clearTimeout(pending.timer);
-      data.ok
-        ? pending.resolve(data)
-        : pending.reject(new Error(data.error || "Export rendering failed."));
+      if (data.ok) pending.resolve(data);
+      else {
+        const error = Object.assign(new Error(data.error || "Export rendering failed."), {code: data.code});
+        data.bitmap?.close(); this._fail(error); pending.reject(error);
+      }
     });
     this.worker.addEventListener("error", (event) => {
       event.preventDefault();
@@ -79,7 +88,8 @@ export class ExportFrameRenderer {
       this.pending.reject(error);
       this.pending = null;
     }
-    this.worker.terminate();
+    this.worker?.terminate();
+    this.canvas.width = this.canvas.height = 1;
   }
   _request(operation, payload = {}) {
     this._check();
@@ -143,6 +153,7 @@ export class ExportFrameRenderer {
           smoothing: this.smoothing,
           baseURL: this.baseURL,
           token: this.token,
+          maxWorkingBytes: this.maxWorkingBytes,
         },
       });
       const { _stykSource, ...renderReport } = report;
@@ -150,7 +161,7 @@ export class ExportFrameRenderer {
       await this._request("loaded");
       this.loaded = true;
       return this;
-    } finally {
+    } catch (error) {this._fail(error); throw error;} finally {
       this.busy = false;
     }
   }
@@ -159,10 +170,14 @@ export class ExportFrameRenderer {
       throw new Error("The export renderer returned no pixel frame.");
     try {
       this._check();
+      checkExportContext(this.context);
+      if (result.bitmap.width !== this.width || result.bitmap.height !== this.height)
+        throw new Error('The export renderer returned an incomplete frame.');
       this.context.setTransform(1, 0, 0, 1, 0, 0);
       this.context.clearRect(0, 0, this.width, this.height);
       this.context.imageSmoothingEnabled = false;
       this.context.drawImage(result.bitmap, 0, 0);
+      checkExportContext(this.context);
     } finally {
       result.bitmap.close();
     }
@@ -177,6 +192,7 @@ export class ExportFrameRenderer {
       throw new Error("Export frames must be rendered sequentially.");
     this.busy = true;
     try {
+      this.onFrame?.({stage: 'rendering', tick});
       if (frame) {
         await this._request("frame-start");
         await this._chunks({ keyframes: [frame] }, "frame-chunk");
@@ -189,10 +205,13 @@ export class ExportFrameRenderer {
       if (svg) {
         this._check();
         Object.assign(this.stats, result.stats);
+        this.onFrame?.({stage: 'rendered', tick});
         return result.svg;
       }
-      return await this._paint(result);
-    } finally {
+      const canvas = this._paint(result);
+      this.onFrame?.({stage: 'rendered', tick});
+      return canvas;
+    } catch (error) {this._fail(error); throw error;} finally {
       this.busy = false;
     }
   }

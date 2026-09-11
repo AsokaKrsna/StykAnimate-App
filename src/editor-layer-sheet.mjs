@@ -1,12 +1,14 @@
 import {nativeTimeline,evaluatedFrame,evaluatedNativeFrame,timeline,movieclipPresenceIndex} from './pivot/geometry.mjs';
 import {composePoseChannels} from './animation-pose.mjs';
 import {sheetKeyAt,validateLayerSheet,MAX_SHEET_TICKS} from './layer-sheet.mjs';
-import {snapshotPoseFrame} from './pose-snapshot.mjs';
+import {snapshotPoseFrame,poseObjectSignature} from './pose-snapshot.mjs';
 import {createFrame} from './demo.mjs';
-import {layerIdForUid} from './layers.mjs';
+import {layerIdForUid,validateLayerState} from './layers.mjs';
+import {LAYER_MIGRATION_LIMITS,LAYER_MIGRATION_WORKER_LIMITS} from './editor-layer-migration.mjs';
 import {keyEasing, inheritedKeyEasing} from './keyframe-easing.mjs';
 import {animationChannelId,composeAnimationChannels,validateAnimationValue} from './animation-channels.mjs';
 import {buildGeometry} from './pivot/geometry.mjs';
+import {remapVfxOwner} from './vfx.mjs';
 import {remapIKFollowers} from './ik.mjs';
 import {frameOrder,setOrder,normalizeFrame} from './pivot/structure.mjs';
 import {movieclipTypes,validatePlayback} from './movieclips.mjs';
@@ -52,6 +54,16 @@ function assertLayers(editor,ids){
   if(!ids.length)throw new Error('Select a layer.');
   for(const id of ids){const layer=editor.getLayer(id);if(!layer)throw new Error('The selected layer no longer exists.');if(layer.locked)throw new Error(`Unlock ${layer.name} before editing it.`);}
 }
+// Commands resolve ownership once, before capturing any layer's pose. New
+// figures use the active user layer; permanent scene/camera tracks cannot own
+// figures. Existing identities (including clipboard movieclips) keep theirs.
+function insertionOwner(editor,uid,hints){
+  const layers=editor.report._styk.layers;
+  const id=hints?.get(uid)??(editor._layerUidCounts.has(uid)||Object.hasOwn(layers.assignments,uid)?editor.layerForUid(uid):
+    Object.hasOwn(layers.byId,editor.activeLayerId)?editor.activeLayerId:layers.defaultLayerId);
+  if(!Object.hasOwn(layers.byId,id))throw new Error('Figures belong to an existing user layer.');
+  return id;
+}
 function planner(editor,ids){
   assertLayers(editor,ids);
   const before=editor.report._styk.layerSheet;if(!before)throw new Error('Open the layer timeline first.');
@@ -70,13 +82,18 @@ function planner(editor,ids){
   };
   const materialize=(id,key)=>{if(key.sourceTick===undefined)return;const old=before.tracks[id]?.keys.find(k=>k.id===key.id);key.value=capture(at(editor.report,old?.tick??key.tick),id);delete key.sourceTick;};
   const write=(id,tick,frame,{blank=false,easing}={})=>{
-    checkedTick(tick);const track=get(id),existing=track.keys.find(key=>key.tick===tick),key=existing??{id:`cell-${state.nextId++}`,tick,...inheritedKeyEasing(track.keys,tick)};
-    for(const object of frame?.objects??[])if(!originalIds.has(object.unique_id)&&!Object.hasOwn(layers.assignments,object.unique_id))layers.assignments[object.unique_id]=fixed(id)?layers.defaultLayerId:id;
+    checkedTick(tick);const track=get(id),{key:previous,index}=sheetKeyAt(track,tick),existing=previous?.tick===tick?previous:undefined;
+    const key=existing??{id:`cell-${state.nextId++}`,tick,...(easing?keyEasing(easing):inheritedKeyEasing(track.keys,tick))};
+    // Extending a short track must not revive its expired last exposure in the
+    // gap before the requested insertion. Absence is an explicit boundary.
+    if(!fixed(id)&&tick>track.end&&track.keys.length)track.keys.push({id:`cell-${state.nextId++}`,tick:track.end,interpolation:'constant',value:{frameId:null},empty:true});
+    for(const object of frame?.objects??[])if(!originalIds.has(object.unique_id)&&!Object.hasOwn(layers.assignments,object.unique_id))layers.assignments[object.unique_id]=insertionOwner(editor,object.unique_id,editor._newLayerHints);
     const owns=uid=>layerIdForUid({...editor.report,_styk:{...editor.report._styk,layers}},uid)===id;
     const empty=!fixed(id)&&!frame?.objects.some(o=>owns(o.unique_id))&&!continuations(frame).some(step=>owns(step.uid));
     key.value=blank||empty?{frameId:null}:capture(frame,id);key.empty=blank||empty;delete key.sourceTick;if(easing)Object.assign(key,keyEasing(easing));
     delete key.patchOnly;delete key.movieclipPatches;
-    if(!existing)track.keys.push(key);track.keys.sort((a,b)=>a.tick-b.tick);track.end=Math.max(track.end,tick+1);state.duration=Math.max(state.duration,track.end);return key;
+    if(!existing){if(!track.keys.length||tick>track.keys.at(-1).tick)track.keys.push(key);else track.keys.splice(index+1,0,key);}
+    track.end=Math.max(track.end,tick+1);state.duration=Math.max(state.duration,track.end);return key;
   };
   return {state,sources,layers,get,write,capture,materialize,before,get nextFrame(){return nextFrame;}};
 }
@@ -106,7 +123,7 @@ function publish(editor,plan,label,{selection=editor._selectionState(),assets,se
   }
   const report={...editor.report,_styk:{...editor.report._styk,layerSheet:plan.state,layers:plan.layers,
     frameSources:{...editor.report._styk.frameSources,...Object.fromEntries(plan.sources.map(s=>[s.id,s.after.value]))}}};
-  validateLayerSheet(report);
+  validateLayerState(plan.layers);validateLayerSheet(report);
   if(assets)for(const [field,change] of Object.entries(assets)){
     if(change.added)editor.report[field]=[...editor.report[field],...clone(change.added)];
     else editor.report[field]=change.after;
@@ -120,7 +137,8 @@ function publish(editor,plan,label,{selection=editor._selectionState(),assets,se
   editor._record({kind:'layer-sheet',label,before,after:plan.state,beforeLayers:clone(beforeLayers),afterLayers:clone(plan.layers),
     frameSourceChanges:plan.sources,assets,beforeSelection:selection,afterSelection:editor._selectionState(),structural:true,timing:true,retainGeometry,
     precomputedBytes:JSON.stringify({tracks:Object.keys(plan.state.tracks).filter(id=>before.tracks[id]!==plan.state.tracks[id]).map(id=>[before.tracks[id],plan.state.tracks[id]]),beforeLayers,afterLayers:plan.layers,sources:plan.sources,assets}).length*2});
-  editor._layerChanged({reindex:true});editor._emit('edit',{label,structural:true,timing:true,layerSheet:true});return true;
+  editor._layerChanged({reindex:true});editor._emit('edit',{label,structural:true,timing:true,layerSheet:true,
+    definition:Boolean(assets?.figure_types),frameIndices:[],sourceIds:plan.sources.map(source=>source.id)});return true;
 }
 function replaceAt(editor,plan,id,tick,uid,frame,options={},end=tick+1){
   checkedTick(tick);const track=plan.get(id);
@@ -139,6 +157,119 @@ function replaceAt(editor,plan,id,tick,uid,frame,options={},end=tick+1){
   for(const patch of key.movieclipPatches){members.delete(patch.uid);const source=plan.sources.find(source=>source.id===patch.frameId)?.after.value??editor.getFrameById(patch.frameId);for(const object of source.objects)members.add(object.unique_id);}
   key.empty=!members.size;
 }
+function* sampleSheetTracksSteps(editor,plan,ids,{background=false,maxSourceBytes=128*1024*1024}={},transform=frame=>frame){
+  const affected=new Set(ids),end=Math.max(0,...ids.map(id=>plan.state.tracks[id].end));
+  const limits=background?LAYER_MIGRATION_WORKER_LIMITS:LAYER_MIGRATION_LIMITS;
+  if(end>limits.maxTicks)throw new Error('This layer change needs more than 10,000 sampled frames. Use the background layer migration command.');
+  if(Object.entries(plan.state.tracks).reduce((sum,[id,track])=>sum+(affected.has(id)?track.end:track.keys.length),0)>1000000)
+    throw new Error('Preserving this layer change would exceed the one-million-key limit.');
+  if(!(maxSourceBytes>0))throw new Error('Layer migration source memory budget must be positive.');
+  for(const id of ids)plan.state.tracks[id]={...plan.state.tracks[id],keys:[]};
+  let objectPoses=0,segmentValues=0,keyCount=0,lastYield=performance.now();
+  for(let tick=0;tick<end;tick++){
+    const frame=transform(at(editor.report,tick));
+    for(const id of ids)if(tick<plan.state.tracks[id].end){
+      const key=plan.write(id,tick,frame,{easing:{interpolation:'constant'}});keyCount++;
+      const source=key.value.frameId?plan.sources.at(-1).after.value:null;
+      for(const object of source?.objects??[]){objectPoses++;segmentValues+=(object.angles?.length??0)+(object.lengths?.length??0)+(object.bends?.length??0);}
+    }
+    if(objectPoses>limits.maxObjectPoses||segmentValues>limits.maxSegmentValues||256*keyCount+512*objectPoses+8*segmentValues>maxSourceBytes)
+      throw new Error('This layer migration exceeds the retained pose memory budget. Move fewer figures at once.');
+    if((tick+1)%8===0||performance.now()-lastYield>=8||tick+1===end){
+      yield {phase:'sampling',completed:tick+1,total:end,sourceFrames:plan.sources.length,objectPoses,segmentValues};lastYield=performance.now();
+    }
+  }
+}
+/** Ownership changes never retime the source layers. A vacant destination can
+ * share the source's immutable poses and exact curves. Combining independent
+ * tracks requires sampling only the destination, including absence and clip
+ * continuations; hold keys preserve every integer output frame. */
+export function* planSheetAssignmentSteps(editor,uids,id,options={}){
+  if(!Object.hasOwn(editor.report._styk.layers.byId,id))throw new Error('Figures belong to user layers.');
+  const members=[...new Set(uids)];
+  if(members.some(uid=>!Number.isInteger(uid)||!editor._layerUidCounts.has(uid)))throw new Error('Choose figures present in this animation.');
+  const moved=members.filter(uid=>editor.layerForUid(uid)!==id);if(!moved.length)return null;
+  const sourceIds=[...new Set(moved.map(uid=>editor.layerForUid(uid)))],plan=planner(editor,[id,...sourceIds]);
+  for(const uid of moved)plan.layers.assignments[uid]=id;
+  const owns=(uid,destination)=>layerIdForUid({_styk:{layers:plan.layers}},uid)===destination;
+  const empty=(frame,destination)=>!frame.objects.some(o=>owns(o.unique_id,destination))&&!continuations(frame).some(step=>owns(step.uid,destination));
+  function* refreshMembership(destination){
+    const keys=plan.get(destination).keys;let lastYield=performance.now(),completed=0;
+    for(const key of keys){
+      key.empty=empty(at(editor.report,key.tick),destination);completed++;
+      if(completed%8===0||performance.now()-lastYield>=8){yield {phase:'planning',completed,total:keys.length};lastYield=performance.now();}
+    }
+  }
+  const vacant=!editor.getLayerFigureUids(id).length;
+  const trackSignature=track=>JSON.stringify({...track,keys:track.keys.map(({id,empty,...key})=>key)});
+  const destinationSignature=trackSignature(plan.before.tracks[id]);
+  const shared=sourceIds.every(source=>trackSignature(plan.before.tracks[source])===destinationSignature);
+  if(shared){
+    yield* refreshMembership(id);
+  }else if(vacant&&sourceIds.length===1){
+    const source=plan.before.tracks[sourceIds[0]];
+    plan.state.tracks[id]={...source,keys:source.keys.map(key=>({...key,id:`cell-${plan.state.nextId++}`}))};
+    yield* refreshMembership(id);
+    const previousEnd=plan.before.tracks[id].end;
+    if(previousEnd>source.end){plan.write(id,source.end,createFrame(),{blank:true,easing:{interpolation:'constant'}});plan.get(id).end=previousEnd;}
+  }else{
+    const end=Math.max(...[id,...sourceIds].map(layer=>plan.before.tracks[layer].end));
+    plan.state.tracks[id]={end,keys:[]};
+    yield* sampleSheetTracksSteps(editor,plan,[id],options);
+  }
+  // Empty indicators describe the new membership, while every source key,
+  // patch, duration and curve retains its original meaning.
+  for(const source of sourceIds)yield* refreshMembership(source);
+  return plan;
+}
+export function commitSheetAssignment(editor,plan){return plan?publish(editor,plan,'Move figures to layer'):false;}
+/** Remove ownership and content atomically. Only tracks which can inherit
+ * deleted native members or depend on their attachment geometry need baking.
+ * Detached children retain their world poses and movieclip presence clocks. */
+export function* planSheetDeletionSteps(editor,id,options={}){
+  const state=editor.report._styk.layers;
+  if(!Object.hasOwn(state.byId,id))throw new Error('Scene and Camera cannot be deleted.');
+  if(state.order.length===1)throw new Error('Keep at least one user layer.');
+  const target=state.order.find(value=>value!==id),plan=planner(editor,[id]),removed=new Set(editor.getLayerFigureUids(id));
+  for(const [uid,owner] of Object.entries(state.assignments))if(owner===id)removed.add(Number(uid));
+  // Inspect only sources used by surviving user tracks. Retained undo assets
+  // and scene/camera templates must not force unrelated layers to be baked.
+  const nativeFrames=new Set(editor.report.keyframes),importedLayers=new Set(),explicitOwners=new Map(),affected=new Set();
+  for(const channel of plan.before.legacyAnimation?.channels??[])if(channel.property==='pose')
+    for(const key of channel.keys){const frame=key.value?.frameId&&editor.getFrameById(key.value.frameId);if(frame)nativeFrames.add(frame);}
+  for(const owner of state.order)if(owner!==id)for(const key of plan.before.tracks[owner].keys){
+    if(key.sourceTick!==undefined)importedLayers.add(owner);
+    for(const value of [key.value,...(key.movieclipPatches??[])]){
+      const frame=value?.frameId&&editor.getFrameById(value.frameId);if(!frame)continue;
+      if(!explicitOwners.has(frame))explicitOwners.set(frame,new Set());explicitOwners.get(frame).add(owner);
+    }
+  }
+  const sources=[...new Set([...explicitOwners.keys(),...(importedLayers.size?nativeFrames:[])])];
+  let nativeMembers=false,work=0,lastYield=performance.now();
+  for(const frame of sources){
+    for(const step of continuations(frame))if(editor.layerForUid(step.uid)===id)removed.add(step.uid);
+    if(nativeFrames.has(frame)&&[...frame.objects.map(o=>o.unique_id),...continuations(frame).map(step=>step.uid)].some(uid=>removed.has(uid)))nativeMembers=true;
+    for(const object of frame.objects)if(object.join&&editor.layerForUid(object.unique_id)!==id&&
+      removed.has(frame.objects[object.join.target_object_slot]?.unique_id??object.join.target_unique_id)){
+      const owner=editor.layerForUid(object.unique_id);
+      if(explicitOwners.get(frame)?.has(owner)||nativeFrames.has(frame)&&importedLayers.has(owner))affected.add(owner);
+    }
+    if(++work%64===0||performance.now()-lastYield>=8){yield {phase:'planning',completed:work,total:sources.length};lastYield=performance.now();}
+  }
+  const fallback=plan.before.tracks[target];
+  if(fallback.keys.some(key=>key.sourceTick!==undefined&&nativeMembers||[key.value,...(key.movieclipPatches??[])].some(value=>{
+    const frame=value?.frameId&&editor.getFrameById(value.frameId);
+    return frame&&[...frame.objects.map(o=>o.unique_id),...continuations(frame).map(step=>step.uid)].some(uid=>removed.has(uid));
+  })))affected.add(target);
+  yield* sampleSheetTracksSteps(editor,plan,[...affected],options,frame=>ownedFrame(editor.report,frame,
+    [...frame.objects.map(o=>o.unique_id),...continuations(frame).map(step=>step.uid)].filter(uid=>!removed.has(uid))));
+  for(const uid of removed)plan.layers.assignments[uid]=target;
+  plan.layers.order=plan.layers.order.filter(value=>value!==id);delete plan.layers.byId[id];delete plan.state.tracks[id];
+  if(plan.layers.defaultLayerId===id)plan.layers.defaultLayerId=target;if(plan.layers.activeId===id)plan.layers.activeId=target;
+  plan.state.duration=Math.max(1,...Object.values(plan.state.tracks).map(track=>track.end));
+  return plan;
+}
+export function commitSheetDeletion(editor,plan){return publish(editor,plan,'Delete layer');}
 export function applyLayerSheetCommand(editor,command,direction){
   if(command.kind!=='layer-sheet')return false;
   editor.report._styk.layerSheet=command[direction];editor.report._styk.layers=clone(command[`${direction}Layers`]);
@@ -149,9 +280,24 @@ export function applyLayerSheetCommand(editor,command,direction){
   }
   editor._applyFrameSourceChanges(command,direction);editor._trackLayerCommand(command,direction);editor._layerChanged({reindex:true});editor._invalidate({timing:true,retainGeometry:command.retainGeometry});
   editor._restoreSelection(command[`${direction}Selection`]);editor._revision=command[`${direction}Revision`];
-  editor._emit('history',{label:command.label,structural:true,timing:true,layerSheet:true});return true;
+  editor._emit('history',{label:command.label,structural:true,timing:true,layerSheet:true,
+    definition:Boolean(command.assets?.figure_types),frameIndices:[],sourceIds:(command.frameSourceChanges||[]).map(source=>source.id)});return true;
 }
 export const editorLayerSheetMethods={
+  sheetExtendMovieclip(count){
+    const uid=this.selectedUid,id=this.layerForUid(uid),plan=planner(this,[id]);
+    const track=plan.get(id),keys=track.keys.filter(key=>!key.patchOnly&&key.tick>this.tick&&key.tick<track.end).slice(0,count);
+    const source=ownedFrame(this.report,this.selectionFrame,[uid]);
+    let added=0;
+    for(const key of keys){
+      if(at(this.report,key.tick).objects.some(object=>object.unique_id===uid))continue;
+      // Only existing boundaries: preserve the original pose and easing.
+      const index=track.keys.indexOf(key),end=track.keys[index+1]?.tick??track.end;
+      replaceAt(this,plan,id,key.tick,uid,source,{},end);added++;
+    }
+    if(added)publish(this,plan,'Add movieclip to next keyframes');
+    return added;
+  },
   sheetReplaceMovieclipFrames(frames,uid,children,label,options={}){
     const id=this.layerForUid(uid),plan=planner(this,[id]);
     for(const child of children)plan.layers.assignments[child]=id;
@@ -191,7 +337,7 @@ export const editorLayerSheetMethods={
     return publish(this,plan,'Delete figures',{selection});
   },
   _commitSheetRange(plans,payload,label,selection,operation={}){
-    const owner=uid=>payload?.hints.get(uid)??(this._layerUidCounts.has(uid)?this.layerForUid(uid):this.activeLayerId);
+    const owner=uid=>insertionOwner(this,uid,payload?.hints);
     const ids=[...new Set(plans.flatMap(p=>p.changedUids.map(owner)))],plan=planner(this,ids);
     for(const uid of payload?.order??[])plan.layers.assignments[uid]=owner(uid);
     for(const entry of plans){
@@ -199,8 +345,8 @@ export const editorLayerSheetMethods={
         for(const uid of operation.uids)if(entry.beforeFrame.objects.some(object=>object.unique_id===uid))replaceAt(this,plan,owner(uid),entry.tick,uid,createFrame());
         continue;
       }
-      for(const id of new Set(entry.changedUids.map(owner))){const {key,next}=sheetKeyAt(plan.get(id),entry.tick);
-        if(payload?.objects?.length&&payload.objects.every(object=>object._stykMovieclip&&!object.join)){
+      for(const id of new Set(entry.changedUids.map(owner))){const track=plan.get(id),{key,next}=sheetKeyAt(track,entry.tick),inside=entry.tick<track.end;
+        if(inside&&payload?.objects?.length&&payload.objects.every(object=>object._stykMovieclip&&!object.join)){
           // Clip-only insertion changes the chosen exposure's membership and
           // poses without resampling the surrounding figures' motion curves.
           for(const object of payload.objects)if(owner(object.unique_id)===id)replaceAt(this,plan,id,entry.tick,object.unique_id,
@@ -209,7 +355,7 @@ export const editorLayerSheetMethods={
         }
         const clipPaste=operation.kind==='paste'&&payload?.objects.some(object=>object._stykMovieclip&&owner(object.unique_id)===id);
         if(key?.patchOnly){const end=sheetKeyAt(plan.get(id),entry.tick).next?.tick;if(end!==undefined)plan.write(id,end,at(this.report,end),{easing:sheetKeyAt(plan.get(id),end).key});}
-        plan.write(id,!clipPaste&&key&&['constant','hold'].includes(key.interpolation)?key.tick:entry.tick,entry.frame,{easing:key??{interpolation:'constant'}});
+        plan.write(id,!clipPaste&&inside&&key&&['constant','hold'].includes(key.interpolation)?key.tick:entry.tick,entry.frame,{easing:key??{interpolation:'constant'}});
       }
     }
     const assets=payload?.definitions.length?{figure_types:{index:this.report.figure_types.length,added:clone(payload.definitions)}}:undefined;
@@ -266,39 +412,14 @@ export const editorLayerSheetMethods={
     return publish(this,plan,label);
   },
   sheetAssignFigures(uids,id){
-    if(!this.report._styk.layers.byId[id])throw new Error('Figures belong to user layers.');
-    const moved=[...new Set(uids)].filter(uid=>this.layerForUid(uid)!==id);if(!moved.length)return false;
-    if(moved.some(uid=>!this._layerUidCounts.has(uid)))throw new Error('Choose figures present in this animation.');
-    const ids=[...new Set([id,...moved.map(uid=>this.layerForUid(uid))])],plan=planner(this,ids);
-    const tracks=ids.map(id=>this.report._styk.layerSheet.tracks[id]);
-    const ticks=[...new Set([0,...tracks.flatMap(track=>track?.keys.map(k=>k.tick)??[])])].sort((a,b)=>a-b);
-    for(const uid of moved)plan.layers.assignments[uid]=id;
-    const untouched=tracks.every(track=>!track?.keys.length||track.keys.every(k=>k.sourceTick!==undefined));
-    for(const destination of ids){
-      const original=this.report._styk.layerSheet.tracks[destination],end=Math.max(...tracks.map(t=>t?.end??0));
-      const track={end,keys:[]};plan.state.tracks[destination]=track;
-      for(const tick of ticks.filter(t=>t<end)){
-        const easing=sheetKeyAt(original,tick).key??{interpolation:'linear'};
-        if(untouched)track.keys.push({id:`cell-${plan.state.nextId++}`,tick,sourceTick:tick,...keyEasing(easing)});
-        else plan.write(destination,tick,at(this.report,tick),{easing});
-      }
-    }
-    return publish(this,plan,'Move figures to layer');
+    if(this._drag)this.commitDrag();if(this._animationEdit)this.commitAnimationEdit();
+    const steps=planSheetAssignmentSteps(this,uids,id);
+    for(;;){const step=steps.next();if(step.done)return commitSheetAssignment(this,step.value);}
   },
   sheetDeleteLayer(id){
-    const state=this.report._styk.layers;if(state.order.length===1)throw new Error('Keep at least one user layer.');
-    const target=state.order.find(value=>value!==id),plan=planner(this,[id]),removed=new Set(this.getLayerFigureUids(id));
-    // Native source poses still contain the deleted members. Materialize the
-    // fallback layer before changing their metadata, so they cannot reappear.
-    const track=plan.get(target);
-    for(const key of track.keys)plan.materialize(target,key);
-    for(const key of track.keys)if(key.value?.frameId){const source=plan.sources.find(s=>s.id===key.value.frameId)?.after.value??this.getFrameById(key.value.frameId);
-      key.value=plan.capture(ownedFrame(this.report,source,source.objects.filter(o=>this.layerForUid(o.unique_id)===target&&!removed.has(o.unique_id)).map(o=>o.unique_id)),target);}
-    for(const uid of removed)plan.layers.assignments[uid]=target;
-    plan.layers.order=plan.layers.order.filter(value=>value!==id);delete plan.layers.byId[id];delete plan.state.tracks[id];
-    if(plan.layers.defaultLayerId===id)plan.layers.defaultLayerId=target;if(plan.layers.activeId===id)plan.layers.activeId=target;
-    plan.state.duration=Math.max(1,...Object.values(plan.state.tracks).map(t=>t.end));
-    return publish(this,plan,'Delete layer');
+    if(this._drag)this.commitDrag();if(this._animationEdit)this.commitAnimationEdit();
+    const steps=planSheetDeletionSteps(this,id);
+    for(;;){const step=steps.next();if(step.done)return commitSheetDeletion(this,step.value);}
   },
   selectSheetLayer(id,{contents=true}={}){
     if(!this.getLayer(id))return false;this.setActiveLayer(id);this._sheetSelection={id,contents};
@@ -380,8 +501,9 @@ export const editorLayerSheetMethods={
     return publish(this,plan,'Remove frames');
   },
   sheetCopyFrames(ids,start,end=start){
+    if(new Set(ids).size!==ids.length)throw new Error('Select distinct source layers.');
     assertLayers(this,ids);const rows=[];
-    for(const id of ids){const track=this.report._styk.layerSheet.tracks[id],ticks=[start,...(track?.keys??[]).filter(k=>k.tick>start&&k.tick<=end).map(k=>k.tick)];
+    for(const id of ids){const track=this.report._styk.layerSheet.tracks[id],ticks=[start,...(track?.keys??[]).filter(k=>k.tick>start&&k.tick<=end).map(k=>k.tick),...(!fixed(id)&&track.end>start&&track.end<=end?[track.end]:[])];
       rows.push({id,keys:ticks.map(tick=>{const frame=at(this.report,tick);return {offset:tick-start,frame:ownedFrame(this.report,frame,fixed(id)?[]:[...frame.objects.filter(o=>this.layerForUid(o.unique_id)===id).map(o=>o.unique_id),...continuations(frame).filter(step=>this.layerForUid(step.uid)===id).map(step=>step.uid)]),easing:keyEasing(sheetKeyAt(track,tick).key??{interpolation:'constant'})};})});}
     const types=new Set(rows.flatMap(row=>row.keys.flatMap(key=>[...key.frame.objects.map(o=>o.figure_type_id),...continuations(key.frame).map(step=>step.typeId)]))),phases={};
     for(const row of rows)for(const key of row.keys){
@@ -396,11 +518,15 @@ export const editorLayerSheetMethods={
   },
   sheetPasteFrames(ids,tick,{insert=false}={}){
     const clipboard=this._sheetClipboard;if(!clipboard)throw new Error('Copy timeline frames first.');
+    checkedTick(tick);
+    if(new Set(ids).size!==ids.length)throw new Error('Select distinct destination layers.');
     const foreign=clipboard.document!==this._documentToken;
     if(ids.length!==1&&ids.length!==clipboard.rows.length)throw new Error('Select one destination layer or the same number of layers as the copied range.');
     const ordered=this.getLayers().filter(l=>l.kind==='layer').map(l=>l.id).reverse(),offset=ordered.indexOf(ids[0]);
     const destinations=ids.length===clipboard.rows.length?ids:ordered.slice(offset,offset+clipboard.rows.length);
     if(destinations.length!==clipboard.rows.length)throw new Error('Create enough destination layers for this range.');
+    if(clipboard.rows.some((row,index)=>(fixed(row.id)||fixed(destinations[index]))&&row.id!==destinations[index]))
+      throw new Error('Paste frames into the same track kind: figures into user layers, Scene into Scene, and Camera into Camera.');
     const plan=planner(this,destinations),finish=tick+clipboard.duration,uidMap=new Map();
     if(finish>MAX_SHEET_TICKS)throw new Error('Pasted frames exceed the timeline limit.');
     const typeMap=new Map(),backgroundMap=new Map([[0,0]]),assets={};
@@ -408,8 +534,9 @@ export const editorLayerSheetMethods={
     // Allocate the entire range once, including identities represented only by
     // a broken frame. Remap before writing so joins and continuation references
     // also work when their owner first appears later in the copied range.
-    for(let i=0;i<destinations.length;i++)if(foreign||clipboard.rows[i].id!==destinations[i]){
+    for(let i=0;i<destinations.length;i++){
       for(const entry of clipboard.rows[i].keys)for(const uid of [...entry.frame.objects.map(o=>o.unique_id),...continuations(entry.frame).map(step=>step.uid),...entry.frame.objects.flatMap(o=>o._stykMovieclipPart?[o._stykMovieclipPart.instance]:[])]){
+        if(!foreign&&clipboard.rows[i].id===destinations[i]&&this.layerForUid(uid)===destinations[i])continue;
         if(!uidMap.has(uid)){if(nextUid>0x7ffffffe)throw new Error('Object identity capacity reached.');uidMap.set(uid,nextUid++);}
       }
     }
@@ -423,13 +550,17 @@ export const editorLayerSheetMethods={
       const id=destinations[i],row=clipboard.rows[i],track=plan.get(id),restore=at(this.report,finish),oldEnd=track.end;
       if(insert){for(const key of track.keys)if(key.tick>=tick)key.tick+=clipboard.duration;}
       else track.keys=track.keys.filter(k=>k.tick<tick||k.tick>=finish);
+      if(!fixed(id)&&tick>oldEnd&&track.keys.length)plan.write(id,oldEnd,createFrame(),{blank:true});
+      // Reserve the complete range before writing its sparse keys. Its interior
+      // is one copied exposure sequence, not separate insertions beyond an end.
+      track.end=Math.max(finish,oldEnd+(insert?clipboard.duration:0));
       for(const entry of row.keys){const frame=shiftClipTime(clone(entry.frame),tick-clipboard.start);
-        if(foreign){for(const object of frame.objects)object.figure_type_id=typeMap.get(object.figure_type_id);for(const field of ['background_id','background_id_b'])frame[field]=backgroundMap.get(frame[field])??0;}
-        if(foreign||row.id!==id){
-          for(const object of frame.objects){const old=object.unique_id;object.unique_id=uidMap.get(old);plan.layers.assignments[object.unique_id]=id;
-            if(usesPresence(object)&&clipboard.phases?.[old]!==undefined)object._stykMovieclip.offset=clipboard.phases[old];
-            if(object._stykMovieclipPart)object._stykMovieclipPart.instance=uidMap.get(object._stykMovieclipPart.instance);}
-          for(const step of continuations(frame)){const old=step.uid;step.uid=uidMap.get(old);plan.layers.assignments[step.uid]=id;if(foreign)step.typeId=typeMap.get(step.typeId);if(clipboard.phases?.[old]!==undefined)step.playback.offset=clipboard.phases[old];}
+        if(foreign){for(const object of frame.objects){remapVfxOwner(object,typeMap.get(object.figure_type_id));object.figure_type_id=typeMap.get(object.figure_type_id);}for(const field of ['background_id','background_id_b'])frame[field]=backgroundMap.get(frame[field])??0;}
+        if(uidMap.size||foreign){
+          for(const object of frame.objects){const old=object.unique_id;object.unique_id=uidMap.get(old)??old;if(uidMap.has(old))plan.layers.assignments[object.unique_id]=id;
+            if(uidMap.has(old)&&usesPresence(object)&&clipboard.phases?.[old]!==undefined)object._stykMovieclip.offset=clipboard.phases[old];
+            if(object._stykMovieclipPart)object._stykMovieclipPart.instance=uidMap.get(object._stykMovieclipPart.instance)??object._stykMovieclipPart.instance;}
+          for(const step of continuations(frame)){const old=step.uid;step.uid=uidMap.get(old)??old;if(uidMap.has(old))plan.layers.assignments[step.uid]=id;if(foreign)step.typeId=typeMap.get(step.typeId);if(uidMap.has(old)&&clipboard.phases?.[old]!==undefined)step.playback.offset=clipboard.phases[old];}
           for(const object of frame.objects){if(object.join)object.join.target_unique_id=uidMap.get(object.join.target_unique_id)??object.join.target_unique_id;remapIKFollowers(object,uidMap);}
           frame.object_draw_order_unique_ids=frame.object_draw_order.map(slot=>frame.objects[slot].unique_id);
         }
@@ -478,19 +609,26 @@ export const editorLayerSheetMethods={
   },
   _commitSheetPose(edit,drag){
     const before=edit.source,after=edit.frame,ids=new Set(),old=new Map(before.objects.map(o=>[o.unique_id,o])),current=new Map(after.objects.map(o=>[o.unique_id,o]));
-    for(const object of [...after.objects,...before.objects]){
-      const next=current.get(object.unique_id);
-      if(JSON.stringify(old.get(object.unique_id))!==JSON.stringify(next))ids.add(this._layerUidCounts.has(object.unique_id)?this.layerForUid(object.unique_id):this.activeLayerId);
-    }
+    const owner=uid=>insertionOwner(this,uid,this._newLayerHints);
+    const previous=new Map(before.objects.map(object=>[object.unique_id,poseObjectSignature(object,before)]));
+    const next=new Map(after.objects.map(object=>[object.unique_id,poseObjectSignature(object,after)]));
+    const changedUids=[...new Set([...old.keys(),...current.keys()])].filter(uid=>previous.get(uid)!==next.get(uid));
+    for(const uid of changedUids)ids.add(owner(uid));
+    const beforeOrder=frameOrder(before),afterOrder=frameOrder(after);
+    for(const id of new Set([...beforeOrder,...afterOrder].map(owner)))
+      if(JSON.stringify(beforeOrder.filter(uid=>owner(uid)===id))!==JSON.stringify(afterOrder.filter(uid=>owner(uid)===id)))ids.add(id);
     if(JSON.stringify(before.camera)!==JSON.stringify(after.camera))ids.add('camera');
-    if(['background_id','background_id_b','background_mix','background_color','_stykBackgroundColor'].some(k=>JSON.stringify(before[k])!==JSON.stringify(after[k])))ids.add('scene');
+    if(['background_id','background_id_b','background_mix','background_color','_stykBackgroundColor','_stykVfx'].some(k=>JSON.stringify(before[k])!==JSON.stringify(after[k])))ids.add('scene');
     if(!ids.size){this._drag=null;this._authoredPoseEdit=null;this._invalidate();return false;}
     const plan=planner(this,[...ids]);
-    for(const id of ids){const {key}=sheetKeyAt(plan.get(id),edit.tick),hold=key&&['constant','hold'].includes(key.interpolation);
+    // Resolve insertion ownership before any layer captures the complete scene.
+    // Capture order, normalized slots and unrelated edits must not choose it.
+    for(const object of after.objects)if(!this._layerUidCounts.has(object.unique_id))plan.layers.assignments[object.unique_id]=owner(object.unique_id);
+    for(const id of ids){const track=plan.get(id),{key}=sheetKeyAt(track,edit.tick),hold=key&&edit.tick<track.end&&['constant','hold'].includes(key.interpolation);
       const patchUids=new Set((key?.movieclipPatches??[]).flatMap(patch=>this.getFrameById(patch.frameId).objects.map(object=>object.unique_id)));
-      const changed=[...new Set([...old.keys(),...current.keys()])].filter(uid=>this.layerForUid(uid)===id&&JSON.stringify(old.get(uid))!==JSON.stringify(current.get(uid)));
+      const changed=changedUids.filter(uid=>owner(uid)===id);
       if(key?.movieclipPatches&&changed.length&&changed.every(uid=>patchUids.has(uid))){
-        key.empty=!after.objects.some(object=>this.layerForUid(object.unique_id)===id);
+        key.empty=!after.objects.some(object=>owner(object.unique_id)===id);
         key.movieclipPatches=key.movieclipPatches.map(patch=>{
           const source=this.getFrameById(patch.frameId),members=new Set(source.objects.map(object=>object.unique_id));
           if(!changed.some(uid=>members.has(uid)))return patch;
@@ -500,7 +638,7 @@ export const editorLayerSheetMethods={
         continue;
       }
       if(key?.patchOnly){const end=sheetKeyAt(plan.get(id),edit.tick).next?.tick;if(end!==undefined)plan.write(id,end,at(this.report,end),{easing:sheetKeyAt(plan.get(id),end).key});}
-      const membershipChanged=[...before.objects,...after.objects].some(object=>usesPresence(object)&&this.layerForUid(object.unique_id)===id&&old.has(object.unique_id)!==current.has(object.unique_id));
+      const membershipChanged=[...before.objects,...after.objects].some(object=>usesPresence(object)&&owner(object.unique_id)===id&&old.has(object.unique_id)!==current.has(object.unique_id));
       plan.write(id,hold&&!membershipChanged?key.tick:edit.tick,after,{easing:key??{interpolation:'constant'}});}
     this._drag=null;this._authoredPoseEdit=null;this._authoredCommitPreview=null;
     const assets={};

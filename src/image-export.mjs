@@ -39,6 +39,7 @@ export async function exportAnimation({
   quality = 0.94,
   dither = false,
   maxBytes = MAX_BYTES,
+  timeoutMs = 120000,
 }) {
   format =
     {
@@ -114,6 +115,7 @@ export async function exportAnimation({
     failure;
   const fail = (error) => {
     failure = error;
+    clearTimeout(pending?.timer);
     pending?.reject(error);
     pending = null;
     worker.terminate();
@@ -129,6 +131,7 @@ export async function exportAnimation({
     if (!pending || pending.id !== event.data?.id) return;
     const request = pending;
     pending = null;
+    clearTimeout(request.timer);
     event.data.ok
       ? request.resolve(event.data.blob)
       : request.reject(new Error(event.data.error || "Image encoding failed."));
@@ -141,10 +144,12 @@ export async function exportAnimation({
     check();
     return new Promise((resolve, reject) => {
       const id = ++sequence;
-      pending = { id, resolve, reject };
+      const timer = setTimeout(() => fail(new Error('Image encoding timed out. Export stopped; try again at a smaller size.')), timeoutMs);
+      pending = { id, resolve, reject, timer };
       try {
         worker.postMessage({ id, operation, ...data }, transfer);
       } catch (error) {
+        clearTimeout(timer);
         pending = null;
         reject(error);
       }
@@ -216,6 +221,7 @@ export async function exportAnimation({
     check();
     return blob;
   } finally {
+    clearTimeout(pending?.timer);
     signal?.removeEventListener("abort", abort);
     worker.terminate();
   }

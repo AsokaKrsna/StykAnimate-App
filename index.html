@@ -10,13 +10,16 @@
     />
     <title>StykAnimate — First steps</title>
     <link rel="icon" type="image/svg+xml" href="./mark.svg" />
+    <script src="./src/theme-bootstrap.js"></script>
     <link rel="stylesheet" href="./src/style.css" />
     <link rel="stylesheet" href="./src/studio.css" />
+    <link rel="stylesheet" href="./src/vfx.css" />
     <link rel="stylesheet" href="./src/user-library.css" />
     <link rel="stylesheet" href="./src/layer-timeline.css" />
     <link rel="stylesheet" href="./src/ik.css" />
     <link rel="stylesheet" href="./src/update-ui.css" />
     <link rel="stylesheet" href="./src/support-ui.css" />
+    <link rel="stylesheet" href="./src/theme.css" />
   </head>
   <body>
     <div id="app">
@@ -108,6 +111,7 @@
               ><span id="stage-size">960 × 540</span>
             </div>
             <div class="canvas-options">
+              <button type="button" id="vfx-preview" class="button subtle small" title="Toggle VFX preview" aria-label="VFX preview" aria-pressed="true"></button>
               <button class="button subtle small" data-action="undo" title="Undo · Ctrl+Z" aria-label="Undo" data-icon="undo"></button>
               <button class="button subtle small" data-action="redo" title="Redo · Ctrl+Shift+Z" aria-label="Redo" data-icon="redo"></button>
               <span class="divider"></span>
@@ -152,6 +156,7 @@
             </div>
             <div id="canvas-empty" hidden>Drop a StykAnimate, Pivot or Stick Nodes file here</div>
             <output id="playback-fps" aria-label="Playback frames per second" hidden>— fps</output>
+            <output id="preview-quality" title="Preview detail is reduced to keep animation within available memory. Original artwork and export quality are preserved." hidden>Reduced preview quality</output>
             <div id="renderer-error" hidden></div>
             <div id="polygon-controls" class="polygon-controls" hidden>
               <span id="polygon-count">0 joints</span
@@ -244,8 +249,9 @@
           </section>
         </main>
         <aside class="right-panel panel">
-          <div class="inspector-header"><div><strong class="panel-tab-title">Properties</strong><span id="inspector-context">Figure</span></div><button id="object-actions" class="icon-button" aria-label="Selection actions" title="Selection actions">•••</button></div>
+          <div class="inspector-header"><div><span class="panel-tab-title">Properties</span><span id="inspector-context">Figure</span></div><button id="object-actions" class="icon-button" aria-label="Selection actions" title="Selection actions">•••</button></div>
           <div id="inspector"></div>
+          <div id="vfx-panel" role="tabpanel" hidden></div>
         </aside>
       </section>
       <footer class="statusbar">

@@ -5,6 +5,7 @@ import path from 'node:path';
 const root = process.cwd(), source = process.argv[2] || 'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv';
 const suffix = (process.env.STYK_GPU_SUFFIX || '').replace(/[^a-z0-9-]/gi, '');
 const startTick = Number(process.env.STYK_START_TICK || 1824), endTick = Number(process.env.STYK_END_TICK || 1872);
+const fps = Number(process.env.STYK_PROBE_FPS || 16);
 const stallTrace = process.env.STYK_TRACE_STALL === '1';
 const desktop = process.env.STYK_DESKTOP === '1';
 const output = path.join(root, 'artifacts', `renderer-live-tail${suffix}`); await mkdir(output, {recursive: true});
@@ -17,27 +18,28 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   if (!desktop) await page.goto(process.env.STYK_URL || 'http://127.0.0.1:47831');
   await page.waitForFunction(() => window.styk?.ready);
-  if (desktop) {
+  if (desktop && process.env.STYK_DEFAULT_VIEWPORT !== '1') {
     await desktopApp.evaluate(({BrowserWindow}) => { const window = BrowserWindow.getAllWindows()[0]; window.setContentSize(1600, 1000); window.show(); window.focus(); });
     await page.waitForTimeout(200);
     const delta = await page.evaluate(() => ({width: 1120 - styk.state.renderer.width, height: 652 - styk.state.renderer.height}));
     await desktopApp.evaluate(({BrowserWindow}, delta) => { const window = BrowserWindow.getAllWindows()[0], [width, height] = window.getContentSize(); window.setContentSize(width + delta.width, height + delta.height); }, delta);
     await page.waitForTimeout(200);
   }
-  await page.evaluate(() => styk.editor.markSaved()); await page.locator('#file-input').setInputFiles(source);
+  await page.evaluate(() => {for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); styk.editor.markSaved();}); await page.locator('#file-input').setInputFiles(source);
   await page.waitForFunction(name => !styk.state.importing && styk.editor.name === name, path.basename(source, '.piv'), {timeout: 180000});
-  await page.evaluate(async ({startTick, endTick, adaptPrefetch}) => {
+  await page.evaluate(async ({startTick, endTick, fps, adaptPrefetch}) => {
     const {PlaybackCache} = await import('/src/playback.mjs'); window.__workerPackets = [];
     const receive = PlaybackCache.prototype._receive; PlaybackCache.prototype._receive = function(message) {
-      if (message.type === 'packet') __workerPackets.push({tick: message.tick, revision: message.revision, at: performance.now(), byteLength: message.packet?.byteLength, compileMs: message.packet?.compileMs});
+      if (message.type === 'packet') { const p = message.packet; __workerPackets.push({tick: message.tick, revision: message.revision, at: performance.now(), byteLength: p?.byteLength, compileMs: p?.compileMs,
+        sharing: p.sharing, timings: p.timings, cache: p.workerCache, rasters: p.compatibility.map(r => ({uid:r.uid,key:r.artworkKey,width:r.bitmap?.width,height:r.bitmap?.height,bounds:r.bounds}))}); }
       const result = receive.call(this, message);
       if (adaptPrefetch && message.type === 'packet' && message.revision === this.revision && this._prefetchRanks?.size) {
         void this.prepareRange([...this._prefetchRanks.keys()], {replacePending: true}).catch(error => { if (error.name !== 'AbortError') console.error(error); });
       }
       return result;
     };
-    const e = styk.editor; e.setFPS(16); e.markSaved(); styk.state.loop = false; styk.state.loopRange = {startTick, endTick}; e.seek(startTick); styk.fit();
-  }, {startTick, endTick, adaptPrefetch: process.env.STYK_ADAPT_PREFETCH === '1'});
+    const e = styk.editor; e.setFPS(fps); e.markSaved(); styk.state.loop = false; styk.state.loopRange = {startTick, endTick}; e.seek(startTick); styk.fit();
+  }, {startTick, endTick, fps, adaptPrefetch: process.env.STYK_ADAPT_PREFETCH === '1'});
   await page.waitForTimeout(2500);
   const configuration = await page.evaluate(async () => {
     const {cameraMatrix} = await import('/src/renderer.mjs'), renderer = styk.state.renderer;
@@ -52,10 +54,12 @@ try {
     }; requestAnimationFrame(raf);
     new PerformanceObserver(list => { for (const entry of list.getEntries()) records.longTasks.push({at: entry.startTime, ms: entry.duration}); }).observe({entryTypes: ['longtask']});
     const prepare = renderer.prepareFrame.bind(renderer); renderer.prepareFrame = (packet, options) => {
+      const uploaded = renderer.preparedFrames.stats.textureUploads, reused = renderer.preparedFrames.stats.reusedTextures;
       const start = performance.now(), result = prepare(packet, options);
       records.uploads.push({tick: packet.tick, at: start, cpuMs: performance.now() - start, packetBytes: packet.byteLength, packetScale: packet.scale, packetResolution: packet.resolution,
         matrixScale: Math.hypot(...cameraMatrix({report: options.report, frame: packet.frame, view: options.view}).slice(0, 2)) * renderer.dpr,
-        workerCompileMs: packet.compileMs, clipping: packet.clipping, gpuBytes: renderer.preparedFrames.bytes});
+        workerCompileMs: packet.compileMs, clipping: packet.clipping, gpuBytes: renderer.preparedFrames.bytes,
+        uploaded: renderer.preparedFrames.stats.textureUploads-uploaded, reused: renderer.preparedFrames.stats.reusedTextures-reused});
       return result;
     };
     const prepared = renderer.renderPrepared.bind(renderer); renderer.renderPrepared = (key, options) => {
@@ -83,7 +87,7 @@ try {
       'disabled-by-default-gpu.service', 'disabled-by-default-gpu.device', 'disabled-by-default-gpu.debug', 'disabled-by-default-skia', 'disabled-by-default-v8.gc',
     ]}});
   }
-  await page.evaluate(value => { window.__watchGap = value; }, stallTrace);
+  await page.evaluate(value => { for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); window.__watchGap = value; }, stallTrace);
   await page.locator('#play-button').click();
   const playbackEnded = page.waitForFunction(() => !styk.state.playing, null, {timeout: Math.max(45000, (endTick - startTick) * 100)}).then(() => null);
   const detectedStall = stallTrace ? await Promise.race([stallPromise, playbackEnded]) : await playbackEnded;

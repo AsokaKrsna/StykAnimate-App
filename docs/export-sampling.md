@@ -64,14 +64,79 @@ are in [vendor/resvg](../vendor/resvg/NOTICE.md).
 Only one frame request is active. Encoders already await this callback, so they
 provide backpressure. A changed document revision or cancellation stops the
 session; disposing releases the worker, image resources and output surface.
+The optional `onFrame({stage, tick})` callback reports `rendering` before a
+request and `rendered` only after a complete frame has been validated. It does
+not count encoder completion or saving. The application releases the renderer
+as soon as the last source frame is acknowledged, before final container
+assembly and saving; single-image exports release it after image encoding.
 The output canvas is reused and must be consumed before requesting the next
 frame. SVG methods return independent Blobs. A worker's embedded resource cache
-uses the existing decoded-image budget of 128 MiB. Ordinary output dimensions
+has a hard decoded-image allowance of at most 128 MiB. Ordinary output dimensions
 remain limited to 16,384 pixels per side and 16 million pixels total; Smooth
 sprites additionally limits each output side to 8,192 so its intermediate
-surface fits within 16,384 pixels. No smoothing additionally bounds its temporary
+sampling coordinates stay within 16,384 pixels. No smoothing additionally bounds its temporary
 padded bitmap to 128 MiB and 16,384 pixels per side; an extreme minification
 that exceeds this buffer reports an error before encoding. A very dense frame can still take appreciable worker time; this is not a zero-latency guarantee.
+
+## Export failure containment
+
+Raster output and encoder canvases request software storage. Smooth sprites
+renders tiles of at most 512 output pixels per side, then explicitly averages
+their premultiplied 2×2 samples. It never allocates a full double-resolution
+frame. Small memory allowances reduce tile size without changing output
+dimensions or smoothing. Translated Canvas paths may differ slightly in edge
+coverage from a full-surface raster; the regression suite bounds that difference.
+
+`exportMemoryPlan` reserves six frame-sized pixel buffers (ten for the additional
+crisp WASM/readback work), scratch surfaces, and decoded images. Its allowance is
+64–512 MiB based on the browser's RAM tier, or 256 MiB when unavailable. Tests can
+pass `maxWorkingBytes` to exercise smaller allowances. Oversized output fails
+before canvas allocation. PNG dimensions are checked before pixel decoding;
+other images use available asset metadata and a post-decode check that closes an
+oversized bitmap. Images keep their original resolution; they are not silently
+downsampled for export. These allowances do not measure free RAM or include the
+document, compressed sources, encoder internals, and other applications.
+
+The app permits one raster export at a time and releases speculative playback
+pixels before starting. Worker requests time out after two minutes; cancellation,
+worker errors, invalid frame dimensions and lost 2D surfaces stop the export and
+release its worker/output pixels. An invalid frame is never knowingly submitted
+as a successful frame. Native video jobs are cancelled when their frame worker
+fails or stalls. Browser WebM encoding requests a software encoder. Its pending
+input window targets 32 MiB of RGBA source pixels, at least one and at most four
+frames (one at 4K; a single larger frame may exceed 32 MiB). The window includes
+submitted frames awaiting encoded output, since
+`encodeQueueSize` alone excludes internally retained frames. Flushing each full
+window preserves quality mode and avoids waiting indefinitely for codec
+lookahead to fill. Existing output-frame validation rejects dropped frames.
+FFmpeg uses one filter thread and two encoding threads; H.264 above 1080p uses
+`zerolatency` tuning to remove its lookahead queue. This can increase file size
+at equivalent visual quality. Native output chunks become Blob parts rather
+than retaining the complete file as JavaScript ArrayBuffers.
+
+Object and tile rasterization share an 8 ms cooperative scheduling target.
+The worker yields when that time is consumed, instead of paying a nested timer
+delay for every object in every tile. Raster order, brush state, tile dimensions,
+sampling and resource allowances are unchanged. One expensive primitive or
+decode can still exceed this scheduling target.
+
+See [export experience and verification](export-experience.md) for the panel,
+progress semantics, measured 4K throughput and desktop export evidence.
+
+If the editor's WebGPU device is lost, its GPU resources are destroyed and the
+scene canvas is replaced with a software compatibility renderer automatically.
+The document, playhead, undo history and active software export remain available.
+Recovery makes one attempt and leaves Save and a manual retry available if
+software canvas creation also fails. Driver resets, total process memory
+exhaustion and browser/OS termination remain outside this guarantee.
+
+Regression commands:
+
+```powershell
+node --test tests/export-robustness.test.mjs tests/native-video-export.test.mjs tests/vfw-video.test.mjs
+node tests/export-memory.browser.mjs
+node tests/export-device-isolation.browser.mjs
+```
 
 The constructor's optional `token` is forwarded only to resource requests on
 `baseURL`'s origin. `stats` reports document transfer bounds, worker frame time

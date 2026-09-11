@@ -40,8 +40,8 @@ dialog.text-authoring-dialog{width:min(880px,calc(100vw - 32px));max-width:880px
 .text-authoring-layout{display:grid;grid-template-columns:320px minmax(0,1fr)}
 .text-authoring-fields{padding:18px 20px;border-right:1px solid var(--border,#e5e5e5);display:grid;gap:14px;align-content:start}
 .text-authoring-fields label{font-size:11px;display:grid;gap:7px;min-width:0;color:var(--text,#292929)}
-.text-authoring-fields input,.text-authoring-fields select,.text-authoring-fields textarea{box-sizing:border-box;width:100%;min-width:0;background:var(--input-bg,#f5f5f5);color:var(--text,#292929);border:1px solid transparent;border-radius:5px;font:inherit;font-size:12px;padding:7px 8px}
-.text-authoring-fields input:focus,.text-authoring-fields select:focus,.text-authoring-fields textarea:focus{outline:1px solid #0d99ff;border-color:#0d99ff}
+.text-authoring-fields input,.text-authoring-fields select,.text-authoring-fields textarea{box-sizing:border-box;width:100%;min-width:0;background:var(--input-bg,var(--theme-field, #f5f5f5));color:var(--text,#292929);border:1px solid transparent;border-radius:5px;font:inherit;font-size:12px;padding:7px 8px}
+.text-authoring-fields input:focus,.text-authoring-fields select:focus,.text-authoring-fields textarea:focus{outline:1px solid var(--theme-accent, #0d99ff);border-color:var(--theme-accent, #0d99ff)}
 .text-authoring-fields input:disabled{opacity:.55}
 .text-authoring-fields textarea{resize:vertical;min-height:92px;max-height:240px;line-height:1.5}
 .text-authoring-fields input[type=color]{height:30px;padding:3px;cursor:pointer}

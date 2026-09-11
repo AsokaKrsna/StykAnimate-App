@@ -10,7 +10,7 @@ async function sendResult(id, result, signal) {
   const started = performance.now(); let sequence = 0;
   // Definitions contain many tiny records. A 1 MiB clone budget avoids hundreds
   // of mostly empty message round trips; sender work still yields every 2 ms.
-  for (const chunk of documentChunks(result.document, {maxBytes: 1024 * 1024, timeBudgetMs: 2})) {
+  for (const chunk of documentChunks(result.document, {maxBytes: 1024 * 1024, timeBudgetMs: 2, sharedFigures:true})) {
     if (signal.aborted) return;
     const key = `${id}:${sequence}`;
     // Acknowledging each batch bounds queued receiver allocations and gives input
@@ -30,8 +30,9 @@ async function sendResult(id, result, signal) {
     ...(nativeTransfer?{nativeFrames:nativeTransfer}:{}) },nativeTransfer?[nativeTransfer.buffer]:[]);
 }
 
-function errorMessage(error) {
-  return {message: error?.message || String(error), code: error?.code, status: error?.status};
+function errorMessage(error, stage) {
+  return {message: error?.message || String(error), code: error?.code, status: error?.status,
+    telemetryStage: error?.telemetryStage || stage, telemetryCode: error?.telemetryCode || (stage === 'prepare' ? 'snapshot_failed' : 'decode_failed')};
 }
 
 async function importRequest(message, signal) {
@@ -56,7 +57,9 @@ async function importRequest(message, signal) {
     headers['Content-Type'] = 'application/json';
     body = JSON.stringify({path: message.path});
   } else throw new Error('Unknown import operation.');
-  const response = await fetch(new URL(path, message.baseURL), {method: 'POST', headers, body, signal});
+  const response = await fetch(new URL(path, message.baseURL), {method: 'POST', headers, body, signal}).catch(error => {
+    error.telemetryCode = 'backend_unavailable'; error.telemetryStage = 'request'; throw error;
+  });
   if(response.ok && response.headers.get('Content-Type')?.split(';')[0]===NATIVE_FRAME_CONTENT_TYPE) {
     const buffer=await response.arrayBuffer(), received=performance.now();
     const {result,offset}=unpackNativeFrameResponse(buffer), parsed=performance.now();
@@ -72,12 +75,14 @@ async function importRequest(message, signal) {
   catch {
     const error = new Error(response.ok ? 'The file service returned an unreadable project.' : `The file service failed (${response.status}).`);
     error.status = response.status;
+    error.telemetryCode = response.ok ? 'decode_failed' : response.status >= 500 ? 'backend_unavailable' : 'backend_rejected'; error.telemetryStage = response.ok ? 'decode' : 'request';
     throw error;
   }
   if (!response.ok || result?.ok === false) {
     const error = new Error(result?.error?.message || result?.error || result?.message || `Import failed (${response.status}).`);
     error.code = result?.code;
     error.status = response.status;
+    error.telemetryCode = response.status >= 500 ? 'backend_unavailable' : 'backend_rejected'; error.telemetryStage = 'request';
     throw error;
   }
   if (!result || typeof result !== 'object' || !result.document) throw new Error('The file service returned no editable document.');
@@ -99,9 +104,11 @@ self.addEventListener('message', event => {
   }
   const controller = new AbortController();
   pending.set(message.id, controller);
+  let stage = 'decode';
   importRequest(message, controller.signal).then(async result => {
+    stage = 'prepare';
     if (!controller.signal.aborted) await sendResult(message.id, result, controller.signal);
   }).catch(error => {
-    if (!controller.signal.aborted) self.postMessage({id: message.id, ok: false, error: errorMessage(error)});
+    if (!controller.signal.aborted) self.postMessage({id: message.id, ok: false, error: errorMessage(error, stage)});
   }).finally(() => pending.delete(message.id));
 });

@@ -58,6 +58,7 @@ export const editorCombineMethods = {
     let totalSegments = 0, totalPolygons = 0, scale = null;
     for (const slot of group.slots) {
       const g = geometry.objects.get(slot), style = g.fig.segment_decode?.global_style;
+      if(g.obj._stykVfx)throw new Error('Combine cannot preserve separate effect stacks. Convert the selection to a movieclip to keep its effects editable.');
       if (Number(g.obj.field28 ?? g.obj.transparency ?? 0) !== 0)
         throw new Error('Reset figure opacity to 100% before combining. Per-figure compositing cannot be flattened exactly.');
       if (Number(style?.outline_thickness ?? floatBits(style?.u28)) > 0)

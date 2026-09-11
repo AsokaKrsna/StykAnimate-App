@@ -3,6 +3,9 @@ import {isAnimationStyleProperty, animationStyleValue, setAnimationStyle} from '
 import {animationRotation, animationOriginOffset, correctAnimationOrigins} from './animation-origin.mjs';
 import {rotateOriginSupport} from './animation-origin-support.mjs';
 import {normalizePaint} from './paint.mjs';
+import {isVfxProperty,validateVfxValue,vfxParameter,applyVfxParameter} from './vfx.mjs';
+import {supportsAnimationProperty} from './animation-properties.mjs';
+import {interpolateVfxColor} from './vfx-paint.mjs';
 import {sampleNativePropertyCurve, shortestPropertyAngle} from './native-property-curve.mjs';
 import {validateKeyEasing, easedProgress, easingMode, autoValue} from './keyframe-easing.mjs';
 import {ANIMATION_PROPERTIES, isDiscreteAnimationProperty, isColorAnimationProperty, validateFigureZIndex, validateDrawableZIndex} from './animation-properties.mjs';
@@ -33,12 +36,13 @@ export function normalizeAnimationTarget(target) {
 }
 export function animationChannelId(target, property) {
   target = normalizeAnimationTarget(target);
-  if (!properties[target.kind].has(property)) throw new Error(`Property ${property} cannot animate on ${target.kind}.`);
+  if (!supportsAnimationProperty(target,property)) throw new Error(`Property ${property} cannot animate on ${target.kind}.`);
   const identity = target.kind === 'polygon' ? `${target.uid}/${target.polygonId}@${target.figureTypeId}` : target.kind === 'segment' ? `${target.uid}/${target.handleId}${target.figureTypeId === undefined ? '' : `@${target.figureTypeId}`}` : target.uid ?? target.id ?? '';
   return `${target.kind}:${encodeURIComponent(identity)}:${property}`;
 }
 export function validateAnimationValue(target, property, value) {
   animationChannelId(target, property);
+  if(isVfxProperty(property))return validateVfxValue(property,value);
   if (property === 'paint') return normalizePaint(value);
   if (property === 'pose') {
     if (value === null) return {frameId: null};
@@ -181,6 +185,7 @@ export function sampleAnimationChannel(channel, tick) {
       easingMode(b) === 'auto' ? neighbour(following, following?.tick - b.tick) : undefined);
   };
   if (isColorAnimationProperty(channel.property)) {
+    if(isVfxProperty(channel.property))return interpolateVfxColor(a.value,b.value,t);
     // Null explicitly returns control to the Scene background track; it is not
     // an ARGB zero and cannot be numerically interpolated into a solid color.
     if (a.value === null || b.value === null) return a.value;
@@ -216,6 +221,12 @@ export function sampleAnimationChannel(channel, tick) {
 /** Read a property from an already evaluated frame (used for diamonds and controls). */
 export function animationPropertyValue(report, frame, target, property, {resolveGeometry, objectIndex, figureIndex} = {}) {
   animationChannelId(target, property);
+  if(isVfxProperty(property)){
+    const owner=target.kind==='scene'?frame:frame.objects[objectIndex?objectIndex.get(target.uid):frame.objects.findIndex(o=>o.unique_id===target.uid)];
+    if(!owner)return undefined;
+    if(target.kind==='segment'&&(target.figureTypeId!==undefined&&target.figureTypeId!==owner.figure_type_id||!report.figure_types.find(f=>f.figure_type_id===owner.figure_type_id)?.segments?.some(s=>s.segment_id===target.handleId)))return undefined;
+    return vfxParameter(owner,target,property);
+  }
   if (property === 'pose') throw new Error('Pose keys reference source frames, not scalar property values.');
   if (target.kind === 'camera') return frame.camera?.[property === 'rotation' ? 'angle_rad' : property] ?? (property === 'scale' ? 1 : 0);
   if (target.kind === 'scene') {
@@ -249,7 +260,7 @@ export function animationPropertyValue(report, frame, target, property, {resolve
 export function composeAnimationChannels(report, frame, tick, {resolveGeometry} = {}) {
   const channels = animationChannels(report); if (!frame || !channels.length) return frame;
   const active = channels.filter(channel => channel.property !== 'pose').map(channel => ({channel, value: sampleAnimationChannel(channel, tick)})).filter(entry => entry.value !== undefined);
-  active.sort((a,b) => Number(b.channel.property === 'paint') - Number(a.channel.property === 'paint'));
+  active.sort((a,b) => Number(b.channel.property === 'vfxStack')*2+Number(b.channel.property === 'paint')-Number(a.channel.property === 'vfxStack')*2-Number(a.channel.property === 'paint'));
   if (!active.length) return frame;
   let out = frame, clonedObjects = false;
   const cloned = new Set(); let slots;
@@ -262,6 +273,15 @@ export function composeAnimationChannels(report, frame, tick, {resolveGeometry} 
   };
   const figureValues = new Map(), sceneValues = {}; let styleTypes, scopedStyles;
   for (const {channel, value} of active) {
+    if(isVfxProperty(channel.property)){
+      if(channel.target.kind==='scene')applyVfxParameter(ensureFrame(),channel.target,channel.property,value);
+      else{
+        slots??=new Map(frame.objects.map((object,index)=>[object.unique_id,index]));const slot=slots.get(channel.target.uid);if(slot===undefined)continue;
+        if(animationPropertyValue(report,out,channel.target,'vfxStack')===undefined)continue;
+        applyVfxParameter(editObject(slot,false),channel.target,channel.property,value);
+      }
+      continue;
+    }
     if (channel.target.kind === 'camera') {
       ensureFrame(); if (out.camera === frame.camera) out.camera = {x: 0, y: 0, scale: 1, angle_rad: 0, ...frame.camera, is_default: false};
       out.camera[channel.property === 'rotation' ? 'angle_rad' : channel.property] = value;

@@ -7,13 +7,14 @@ const folderIcon = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="cu
 const label = item => item.kind === 'folder' ? 'Folder' : item.kind === 'movieclip' ? 'Movieclip' : item.kind === 'set' ? 'Figure set' : 'Figure';
 
 export class UserLibrary {
-  constructor({editor, desktop, exporter, importer, pause, finishEdit, setTool, hotkeys = new HotkeyManager()}) {
+  constructor({editor, desktop, exporter, importer, pause, finishEdit, setTool, vfxInspector, hotkeys = new HotkeyManager()}) {
     this.hotkeys = hotkeys;
-    Object.assign(this, {editor, desktop, exporter, importer, pause, finishEdit, setTool});
+    Object.assign(this, {editor, desktop, exporter, importer, pause, finishEdit, setTool, vfxInspector});
     this.folder = ''; this.entries = []; this.selected = null; this.generation = 0; this.busy = false; this.thumbnails = new Map();
     this.panel = document.querySelector('.right-panel');
     const tabs = document.createElement('div'); tabs.className = 'inspector-switch'; tabs.setAttribute('role','tablist'); tabs.setAttribute('aria-label','Properties and asset library');
-    tabs.innerHTML = '<button type="button" role="tab" id="properties-tab" aria-controls="inspector" aria-selected="true">Properties</button><button type="button" role="tab" id="library-tab" aria-controls="user-library" aria-selected="false">Library</button>';
+    tabs.setAttribute('aria-label','Inspector');
+    tabs.innerHTML = '<button type="button" role="tab" id="properties-tab" data-vfx-tab="properties" aria-controls="inspector" aria-selected="true">Properties</button><button type="button" role="tab" id="vfx-tab" data-vfx-tab="vfx" aria-controls="vfx-panel" aria-selected="false" tabindex="-1">VFX</button><button type="button" role="tab" id="library-tab" aria-controls="user-library" aria-selected="false" tabindex="-1">Library</button>';
     this.panel.prepend(tabs);
     this.container = document.createElement('section'); this.container.id = 'user-library'; this.container.hidden = true; this.container.setAttribute('role','tabpanel'); this.container.setAttribute('aria-labelledby','library-tab');
     this.container.innerHTML = `<div class="library-tools"><label class="library-search">${icon('search')}<input type="search" aria-label="Search library" placeholder="Search" spellcheck="false"></label><button type="button" class="icon-button" data-library-action="refresh" aria-label="Refresh library" title="Refresh">${icon('rotate')}</button><button type="button" class="icon-button" data-library-action="folder" aria-label="New library folder" title="New folder">${icon('plus')}</button><button type="button" class="icon-button" data-library-action="reveal" aria-label="Open library folder" title="Open folder in Explorer">${folderIcon}</button></div>
@@ -27,8 +28,8 @@ export class UserLibrary {
     this.dialog = document.createElement('dialog'); this.dialog.className = 'library-dialog'; document.body.append(this.dialog);
     this.grid = this.container.querySelector('.library-grid'); this.message = this.container.querySelector('.library-message');
     this.input = this.container.querySelector('input'); this.filter = this.container.querySelector('select');
-    tabs.onclick = event => { if (event.target.closest('[role="tab"]')) this.show(event.target.id === 'library-tab'); };
-    tabs.onkeydown = event => { if (['ArrowLeft','ArrowRight'].includes(event.key)) { event.preventDefault(); this.show(event.key === 'ArrowRight'); tabs.querySelector('[aria-selected="true"]').focus(); } };
+    tabs.onclick = event => {const tab=event.target.closest('[role="tab"]');if(tab)this.showView(tab.id.replace('-tab',''));};
+    tabs.onkeydown = event => { if (['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) { event.preventDefault();const items=[...tabs.querySelectorAll('[role="tab"]')],index=items.indexOf(event.target),next=event.key==='Home'?0:event.key==='End'?2:(index+(event.key==='ArrowRight'?1:2))%3;items[next].click();items[next].focus();} };
     this.panel.addEventListener('click', event => {
       const action = event.target.closest('[data-library-action]')?.dataset.libraryAction; if (!action) return;
       event.stopPropagation(); this.run(() => this.action(action));
@@ -59,9 +60,13 @@ export class UserLibrary {
   }
   async run(operation) { try { await operation(); } catch (error) { this.message.textContent = error.message; this.message.dataset.error = 'true'; } }
   show(visible = true) {
-    this.visible = visible; this.container.hidden = !visible; this.propertySave.hidden = visible;
-    this.panel.querySelector('.inspector-header').hidden = visible; document.getElementById('inspector').hidden = visible;
-    document.getElementById('properties-tab').setAttribute('aria-selected', String(!visible)); document.getElementById('library-tab').setAttribute('aria-selected', String(visible));
+    this.showView(visible?'library':'properties');
+  }
+  showView(view) {
+    this.finishEdit?.();const visible=view==='library';this.vfxInspector?.setVisible(view==='vfx');
+    this.visible = visible; this.container.hidden = !visible; this.propertySave.hidden = view!=='properties';
+    this.panel.querySelector('.inspector-header').hidden = view!=='properties'; document.getElementById('inspector').hidden = view!=='properties';
+    for(const name of ['properties','vfx','library']){const tab=document.getElementById(`${name}-tab`);tab.setAttribute('aria-selected',String(view===name));tab.tabIndex=view===name?0:-1;}
     if (visible) this.run(() => this.refresh());
   }
   syncSelection() {

@@ -23,7 +23,7 @@ function filteredFrame(frame,selected){
     return next;
   });
   const result={...frame,objects,camera:{is_default:true,x:0,y:0,angle_rad:0,scale:1},background_id:0,background_id_b:0,background_mix:0};
-  delete result._stykBackgroundColor;delete result.background_color;
+  delete result._stykBackgroundColor;delete result.background_color;delete result._stykVfx;
   result._styk={...frame._styk};setContinuations(result,continuations(frame).filter(step=>selected.has(step.uid)));setOrder(result,frameOrder(frame).filter(uid=>selected.has(uid)));normalizeFrame(result);return result;
 }
 /** Sparse capture retains the original curves as an immutable baseline. Local
@@ -148,6 +148,23 @@ function validateReplacementOrder(editor,selected,start,end){
   }
 }
 export const editorMovieclipMethods={
+  addMovieclipToNextKeyframes(count){
+    if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');
+    if(!Number.isSafeInteger(count)||count<1)throw new Error('Enter a positive whole number of keyframes.');
+    if(this.getLayer(this.layerForUid(this.selectedUid))?.locked)throw new Error('Unlock the movieclip layer before editing it.');
+    if(this.report._styk?.layerSheet)return this.sheetExtendMovieclip(count);
+    const uid=this.selectedUid,source=filteredFrame(this.selectionFrame,new Set([uid])).objects[0],selection=this._selectionState();
+    const ticks=this.timeline.filter(row=>row.start>this.tick&&row.count>0).slice(0,count).map(row=>row.start);
+    return this.movieclipTimelineEdit('Add movieclip to next keyframes',()=>{
+      let added=0;
+      try{for(const tick of ticks){
+        this.seek(tick);
+        if(this.selectionFrame.objects.some(object=>object.unique_id===uid))continue;
+        this.transaction('Add movieclip to next keyframes',frame=>{frame.objects.push(clone(source));setOrder(frame,[...frameOrder(frame).filter(id=>id!==uid),uid]);normalizeFrame(frame);},{structural:true});added++;
+      }}finally{this._restoreSelection(selection);}
+      return added;
+    });
+  },
   _insertMovieclip(operation){
     if(this.report._styk?.layerSheet){
       this._insertingMovieclip=true;

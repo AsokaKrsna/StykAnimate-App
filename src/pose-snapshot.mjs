@@ -7,6 +7,17 @@ function poseFields(source) {
 /** Clipboard and history own saved pose data, never evaluated render caches. */
 export function snapshotPoseObject(object) { return structuredClone(poseFields(object)); }
 
+/** Compare saved poses by identity, independent of evaluation slots and caches. */
+export function poseObjectSignature(object, frame) {
+  const fields = poseFields(object);
+  delete fields.object_slot;
+  if (object.join) {
+    const {target_object_slot, target_unique_id, ...join} = object.join;
+    fields.join = {...join, target_unique_id: frame.objects[target_object_slot]?.unique_id ?? target_unique_id};
+  }
+  return JSON.stringify(fields);
+}
+
 /** Capture the authoritative pose owned by a gesture. Attachment ancestors are
  * retained for exact world-coordinate reconstruction; unrelated figures do not
  * become history assets. Every retained record remains independently owned. */

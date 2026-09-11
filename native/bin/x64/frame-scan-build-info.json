@@ -5,12 +5,12 @@
   "architecture": "x64",
   "source": {
     "path": "native/piv-frame-scan.cpp",
-    "sha256": "f3864d0e42a8106d31bc4321cc58342a3efd260d3357301794feb0cf36666d84"
+    "sha256": "0825b9c12d683bac119e61a1d6bcc848c48164c311e2c090101ca79a93767622"
   },
   "library": {
     "path": "native/bin/x64/styk-piv-frame-scan.dll",
-    "sha256": "7018d38a768594015ec4aa9ecb7fdeb86edc8493b3613b7996072d251932f11f",
-    "bytes": 132096
+    "sha256": "093c90a57da5a7b0e8558951540078d2eeddd81c9554ecac532426fbae568956",
+    "bytes": 134656
   },
   "toolchain": {
     "compiler": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe",

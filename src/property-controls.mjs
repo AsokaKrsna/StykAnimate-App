@@ -17,25 +17,25 @@ const STYLES = `
 .property-row>.field {flex:1;min-width:0;}
 .property-row.is-animatable>.field>.property-scrub {min-width:42px;}
 .property-row .property-scrub {cursor:ew-resize;touch-action:none;user-select:none;border-radius:2px;outline-offset:2px;}
-.property-row .property-scrub:hover {color:#0d99ff;}
-.property-row .property-scrub:focus-visible {outline:2px solid #80caff;}
+.property-row .property-scrub:hover {color:var(--theme-accent, #0d99ff);}
+.property-row .property-scrub:focus-visible {outline:2px solid var(--theme-accent, #80caff);}
 .property-row .field>input {min-width:35px;}
-.property-row .field>input[aria-invalid=true] {color:#d24646;}
+.property-row .field>input[aria-invalid=true] {color:var(--theme-danger, #d24646);}
 .property-key-controls {display:flex;align-items:center;gap:0;flex-shrink:0;}
-.property-key-controls button {width:18px;height:26px;padding:0;color:#888;border-radius:3px;}
-.property-key-controls button:hover:not(:disabled) {background:#e5f4ff;color:#0d99ff;}
+.property-key-controls button {width:18px;height:26px;padding:0;color:var(--theme-muted, #888);border-radius:3px;}
+.property-key-controls button:hover:not(:disabled) {background:var(--theme-selected-hover, #e5f4ff);color:var(--theme-accent, #0d99ff);}
 .property-key-controls button:disabled {opacity:.24;}
 .property-key-controls button>.icon {width:12px;height:12px;}
-.property-key-controls [data-property-key].is-keyed {color:#0d99ff;background:#e5f4ff;}
+.property-key-controls [data-property-key].is-keyed {color:var(--theme-accent, #0d99ff);background:var(--theme-selected, #e5f4ff);}
 .property-key-controls [data-property-key].is-keyed .icon {fill:currentColor;}
-.property-key-controls [data-property-key].is-animated {color:#0d99ff;}
-.property-row:has(.property-scrub:active)>.field {border-color:#0d99ff;}
+.property-key-controls [data-property-key].is-animated {color:var(--theme-accent, #0d99ff);}
+.property-row:has(.property-scrub:active)>.field {border-color:var(--theme-accent, #0d99ff);}
 .property-context-heading {display:flex;align-items:center;gap:9px;padding:14px 12px 12px;border-bottom:1px solid var(--border,#e5e5e5);}
-.property-context-heading>span {display:grid;place-items:center;width:26px;height:26px;border-radius:5px;background:#f2f2f2;color:#555;flex-shrink:0;}
+.property-context-heading>span {display:grid;place-items:center;width:26px;height:26px;border-radius:5px;background:var(--theme-field, #f2f2f2);color:var(--theme-secondary, #555);flex-shrink:0;}
 .property-context-heading strong {font-weight:600;font-size:12px;display:block;}
-.property-context-heading small {display:block;color:#888;font-size:10px;margin-top:3px;}
-.property-context-caption {font-size:10px;color:#888;line-height:1.45;margin:8px 0 0;}
-.property-frame-summary {display:flex;justify-content:space-between;align-items:center;padding:0 0 10px;color:#777;font-size:11px;}
+.property-context-heading small {display:block;color:var(--theme-muted, #888);font-size:10px;margin-top:3px;}
+.property-context-caption {font-size:10px;color:var(--theme-muted, #888);line-height:1.45;margin:8px 0 0;}
+.property-frame-summary {display:flex;justify-content:space-between;align-items:center;padding:0 0 10px;color:var(--theme-muted, #777);font-size:11px;}
 .property-context-actions {display:flex;gap:6px;margin-top:8px;}
 .property-context-actions>.button {flex:1;min-width:0;}
 .property-opacity-grid {margin-top:8px;}
@@ -44,9 +44,9 @@ const STYLES = `
 #inspector [data-action="mirror-segment-vertical"]>.icon,#inspector [data-action="mirror-branch-vertical"]>.icon {transform:rotate(90deg);}
 .property-color-line>.color-row {flex:1;min-width:0;margin:0;}
 .property-background-line {margin-top:8px;}
-.property-background-name {flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:4px;background:#f2f2f2;padding:8px;font-size:11px;color:#666;}
-.property-layer-name {width:100%;height:30px;border:1px solid transparent;border-radius:4px;background:#f2f2f2;padding:0 8px;font-size:11px;outline:none;}
-.property-layer-name:focus {border-color:#0d99ff;background:#fff;}
+.property-background-name {flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:4px;background:var(--theme-field, #f2f2f2);padding:8px;font-size:11px;color:var(--theme-secondary, #666);}
+.property-layer-name {width:100%;height:30px;border:1px solid transparent;border-radius:4px;background:var(--theme-field, #f2f2f2);padding:0 8px;font-size:11px;outline:none;}
+.property-layer-name:focus {border-color:var(--theme-accent, #0d99ff);background:var(--theme-panel, #fff);}
 .property-row:not(.is-animatable) .field {padding-inline:6px;gap:4px;}
 .property-row:not(.is-animatable) .field>.property-scrub {font-size:10px;}
 .property-row:not(.is-animatable) .field>input {min-width:24px;}
@@ -137,7 +137,7 @@ export class PropertyControls {
   }
   handles(input) {
     return Boolean(
-      input?.matches?.("input[type=number][data-property]") &&
+      input?.matches?.("input:is([type=number],[type=range])[data-property]") &&
         !input.disabled &&
         this.callbacks.canHandle?.(input.dataset.property, input) !== false,
     );

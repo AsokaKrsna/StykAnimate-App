@@ -4,7 +4,7 @@ import { playbackProperties } from './playback-patch.mjs';
 import {PlaybackPlanner} from './playback-planning.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
 import {PlaybackBitmapPool,packetFootprint,closePacketBitmaps} from './playback-bitmap-pool.mjs';
-import {playbackMemoryBudget} from './playback-budget.mjs';
+import {playbackMemoryBudget, previewMemoryPlan} from './playback-budget.mjs';
 import {playbackRetentionSnapshot,unchangedPlaybackTicks} from './playback-retention.mjs';
 
 const abortError = message => { const error = new Error(message); error.name = 'AbortError'; return error; };
@@ -45,8 +45,23 @@ export class PlaybackCache {
     this.needsLoad = true; this._loadWorker(); return this;
   }
   setInteractionActive(active) {
-    this.interactionActive=Boolean(active);
+    active=Boolean(active);
+    if(active===this.interactionActive)return;
+    this.interactionActive=active;
+    // Speculative packet rasterization shares the GPU with the editable canvas.
+    // Suspend it as well as snapshot serialization while foreground input owns
+    // the frame budget. Suspended requests must not time out during a long drag.
+    for(const pending of this.pending.values()){
+      clearTimeout(pending.timer);
+      pending.timer=!active&&this.timeoutMs>0?setTimeout(()=>this._fail(new Error('Playback preparation timed out.')),this.timeoutMs):null;
+    }
+    if(!this.disposed)this.worker.postMessage({type:'interaction',active});
     if(!active){this._releaseInteraction?.();this._releaseInteraction=null;this._interactionPromise=null;}
+  }
+  setVfxEnabled(enabled){
+    enabled=Boolean(enabled);if(enabled===(this.vfxEnabled!==false))return;
+    this.vfxEnabled=enabled;this.invalidate({retainDocument:this._mirrorAvailable&&!this.needsLoad&&!this._patchPending});
+    if(this.needsLoad)this._loadWorker();
   }
   async _yieldLoad() {
     await yieldToInput();
@@ -165,7 +180,7 @@ export class PlaybackCache {
       this._mirrorSources.clear(); this._mirrorTables = null; this._patchPending = false;
     }
     this.needsLoad = Boolean(this.report) && !retainDocument;
-    if (!this.disposed) this.worker.postMessage({ type: 'invalidate', revision: this.revision, retainDocument, options: { scale, cameraEnabled, storedFrames } });
+    if (!this.disposed) this.worker.postMessage({ type: 'invalidate', revision: this.revision, retainDocument, options: { scale, cameraEnabled, storedFrames, vfxEnabled:this.vfxEnabled!==false } });
     return this;
   }
   _loadWorker() {
@@ -176,12 +191,16 @@ export class PlaybackCache {
     const start = performance.now(), revision = this.revision, tables = this._snapshotTables(), sources = new Map(Object.entries(this.report._styk?.frameSources || {}));
     // Original encoded source is useful for saving, but has no role in playback.
     const { _stykSource, ...renderReport } = this.report;
-    const options = { scale: this.scale, cameraEnabled: this.cameraEnabled, storedFrames: this.storedFrames, baseURL: this.baseURL, token: this.token, maxPacketBytes: this.maxBytes };
+    // Leave room for background commands inside the existing cache allocation.
+    // Texture bytes do not share WebGPU's per-storage-buffer size limit; the
+    // worker checks vector buffers separately instead of capping all pixels.
+    const options = { scale: this.scale, cameraEnabled: this.cameraEnabled, storedFrames: this.storedFrames, vfxEnabled:this.vfxEnabled!==false, baseURL: this.baseURL, token: this.token,
+      maxPacketBytes: this.maxBytes * .8, maxAssetBytes: Math.min(previewMemoryPlan().workerImages, this.maxBytes / 4) };
     this.stats.loadKind = 'document'; this.stats.loadChunks = 0; this.stats.loadSerializationMs = 0; this.stats.loadMaxTaskMs = 0;
     this.stats.maxChunkBytes = 0; this.stats.patchFrames = 0; this.stats.patchSourceUpserts = 0; this.stats.patchSourceDeletes = 0;
     const task = (async () => {
       let sequence = 0;
-      for (const chunk of documentChunks(renderReport)) {
+      for (const chunk of documentChunks(renderReport,{maxBytes:1024*1024,timeBudgetMs:2,sharedFigures:true})) {
         if (revision !== this.revision || this.disposed) throw abortError('Playback snapshot was superseded.');
         await this._sendLoad({ type: 'load-chunk', revision, sequence: sequence++, chunk, options });
         await this._yieldLoad();
@@ -220,6 +239,13 @@ export class PlaybackCache {
     this.cache.delete(tick); this.cache.set(tick, packet); this.stats.hits++; return packet;
   }
   has(tick) { return this.cache.has(tick); }
+  bufferedAhead(tick, count, end = this.totalTicks) {
+    if(!this.has(tick))return false;
+    const ticks=Array.from({length:Math.max(0,Math.min(count,end-tick))},(_,i)=>tick+i);
+    // Admission learns unique bitmap footprints. A one-frame cache must never
+    // wait for a second frame that cannot coexist with its protected next tick.
+    return this._feasiblePrefetch(ticks).every(next=>this.has(next));
+  }
   _feasiblePrefetch(ticks) {
     const feasible = [],seen=new Set(); let estimatedBytes = 0,probed=false;
     for (const tick of ticks) {
@@ -285,7 +311,7 @@ export class PlaybackCache {
         if (this.pending.size >= this.maxPending) break;
         let resolve, reject;
         const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
-        const timer = this.timeoutMs > 0 ? setTimeout(() => this._fail(new Error('Playback preparation timed out.')), this.timeoutMs) : null;
+        const timer = this.timeoutMs > 0 && !this.interactionActive ? setTimeout(() => this._fail(new Error('Playback preparation timed out.')), this.timeoutMs) : null;
         pending = { promise, resolve, reject, timer }; this.pending.set(tick, pending); requests.push(tick);
       }
       promises.push(pending.promise);

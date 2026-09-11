@@ -3,10 +3,10 @@ import {objectBounds} from './renderer-geometry.mjs';
 import {PlaybackResources} from './playback-resources.mjs';
 
 self.onmessage = async ({data: {report, baseURL}}) => {
-  const resources = new PlaybackResources({baseURL, maxBytes: 192 * 1024 * 1024});
+  const resources = new PlaybackResources({baseURL, maxBytes: 8 * 1024 * 1024, preview: true});
   try {
     const geometry = buildGeometry(report, report.keyframes[0]);
-    await resources.preload(geometry.drawables);
+    await resources.preload(geometry.drawables, {maxDimension: 512});
     const bounds = objectBounds(geometry.drawables, resources), size = 320;
     const canvas = new OffscreenCanvas(size, size), context = canvas.getContext('2d');
     const scale = (size - 48) / Math.max(1, bounds.width, bounds.height);

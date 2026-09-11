@@ -1,11 +1,12 @@
 import earcut from '../vendor/earcut.mjs';
+import {hasDrawableVfx,drawableVfxPadding} from './vfx-canvas.mjs';
 import { mixColor } from './pivot/geometry.mjs';
 import { cameraIsIdentity, inverseCameraScale, effectiveCamera } from './pivot/background.mjs';
 
 // Each record is six aligned vec4s, consumed directly by the GPU storage buffer.
 export const SHAPE_FLOATS = 24;
 export const SHAPE_BYTES = SHAPE_FLOATS * 4;
-export const SHAPE = Object.freeze({ LINE: 0, CIRCLE: 1, SQUARE_LINE: 2, TRIANGLE: 3, TEXTURE: 4, RECT: 5, RADIAL_RECT: 6, DISABLED: -1 });
+export const SHAPE = Object.freeze({ LINE: 0, CIRCLE: 1, SQUARE_LINE: 2, TRIANGLE: 3, TEXTURE: 4, RECT: 5, RADIAL_RECT: 6, GLYPH: 7, DISABLED: -1 });
 
 export function cameraMatrix({ report, frame, view = {}, cameraEnabled = true }) {
   const zoom = Number(view.scale ?? 1), x = Number(view.x ?? 0), y = Number(view.y ?? 0);
@@ -72,7 +73,7 @@ function needsEvenOddRaster(points) {
   return false;
 }
 export function requiresCompatibilityTexture(items) {
-  return items.some(s => movieclipTransparency(s) || (s.seg?.paint && s.seg.paint.type !== 'solid') || s.type === 'text' || s.type === 'image' || s.opacity < .999999 || s.fig?.segment_decode?.global_style?.u28 || ((s.alpha < .999999 || s.seg?.secondary?.a > 0) && Math.abs(s.bend) > 1e-7) || (s.type === 'poly' && needsEvenOddRaster(s.points)));
+  return items.some(s => hasDrawableVfx(s) || movieclipTransparency(s) || (s.seg?.paint && s.seg.paint.type !== 'solid') || s.type === 'text' || s.type === 'image' || s.opacity < .999999 || s.fig?.segment_decode?.global_style?.u28 || ((s.alpha < .999999 || s.seg?.secondary?.a > 0) && Math.abs(s.bend) > 1e-7) || (s.type === 'poly' && needsEvenOddRaster(s.points)));
 }
 function movieclipTransparency(item) {
   if(item._movieclipOwner?.opacity < .999999)return true;
@@ -167,7 +168,7 @@ export function objectBounds(items, resources = {}) {
   for (const s of items) {
     let outline = 0;
     if (s.fig?.segment_decode?.global_style?.u28) outline = Math.abs(new Float32Array(new Uint32Array([s.fig.segment_decode.global_style.u28]).buffer)[0] * Number(s.obj.scale ?? 1));
-    const pad = Math.max(0, s.thickness ?? 0) / 2 + (Number.isFinite(outline) ? outline : 0) + 3;
+    const pad = Math.max(0, s.thickness ?? 0) / 2 + (Number.isFinite(outline) ? outline : 0) + 3 + (resources.vfxBounds===false?0:drawableVfxPadding(s));
     if (s.type === 'circle') include((s.start.x + s.end.x) / 2, (s.start.y + s.end.y) / 2, Math.abs(s.length) / 2 + pad);
     else for (const p of s.points || []) include(p.x, p.y, pad);
     if (s.type === 'image' && s.asset) {

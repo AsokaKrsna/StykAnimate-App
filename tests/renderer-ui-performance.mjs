@@ -48,6 +48,8 @@ try {
     const rect = document.getElementById('viewport').getBoundingClientRect(), point = worldToScreen(editor.geometry.objects.get(999).root, { report, frame: editor.frame, view: state.view });
     return { x: rect.left + point.x, y: rect.top + point.y, scale: state.view.scale, adapter: renderer.stats.adapter };
   }, fps);
+  await page.waitForFunction(() => !styk.state.editablePreparing && !styk.state.dirtyRender);
+  await page.evaluate(() => {for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();});
   await page.mouse.move(target.x, target.y); await page.mouse.down();
   await page.waitForFunction(() => window.styk.state.drag?.kind === 'move');
   const afterDown = await page.evaluate(() => window.__uiBench.drag.length);

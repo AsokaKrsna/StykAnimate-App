@@ -108,11 +108,12 @@ test('Simple working-frame paste can be discarded and its undo restores the copi
   e.discardFrameDraft();assert.deepEqual(poses(e),before);e.undo();assert.deepEqual(poses(e),after);
 });
 
-test('pasting across layers preserves internal attachments and leaves unrelated tracks untouched',()=>{
+test('pasting a group uses the active layer, preserves attachments and leaves unrelated tracks untouched',()=>{
   const e=fixture('sheet');const layer=e.createLayer('Child');e.assignFiguresToLayer([2,3,4],layer.id);
   e.selectConnected(1);e.copySelection();e.selectFrame(1);
   const before=e.report._styk.layerSheet,copy=e.pasteSelection(),geometry=buildGeometry(e.report,e.evaluatedFrame);
-  assert.equal(e.layerForUid(copy[0].unique_id),'layer-1');assert.equal(e.layerForUid(copy[1].unique_id),layer.id);
+  for(const object of copy)assert.equal(e.layerForUid(object.unique_id),layer.id);
+  assert.strictEqual(e.report._styk.layerSheet.tracks['layer-1'],before.tracks['layer-1']);
   assert.strictEqual(e.report._styk.layerSheet.tracks.camera,before.tracks.camera);
   assert.strictEqual(e.report._styk.layerSheet.tracks.scene,before.tracks.scene);
   for(const child of copy.slice(1))assert.deepEqual(geometry.objects.get(child.object_slot).root,geometry.objects.get(child.join.target_object_slot).joints.get(child.join.target_handle_id));

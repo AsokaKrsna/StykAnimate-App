@@ -1,4 +1,5 @@
 import {portableFigure, portableBackground} from './clipboard-assets.mjs';
+import {remapVfxOwner} from './vfx.mjs';
 import {equivalentClipboardAsset as equivalent} from './clipboard-asset-plan.mjs';
 import {applyClipboardUpgrade, pasteWithLegacyUpgrade} from './clipboard-legacy-upgrade.mjs';
 import {evaluatedFrame, nativeTimeline} from './pivot/geometry.mjs';
@@ -147,6 +148,7 @@ function plan(editor, index) {
     const frame = cleanFrame(clone(value));
     for (const object of frame.objects) {
       const usesSegmentColors = segmentColorTypes.has(object.figure_type_id);
+      remapVfxOwner(object,figures.ids.get(object.figure_type_id));
       object.unique_id = uidMap.get(object.unique_id); object.figure_type_id = figures.ids.get(object.figure_type_id);
       if (modernize && !usesSegmentColors) object.color_override_raw = (0xff000000 | ((Number(object.color_override_raw) | 0) < 0 ? 0 : Number(object.color_override_raw))) >>> 0;
     }

@@ -288,6 +288,8 @@ function encoderArguments(config, output) {
     "-loglevel",
     "error",
     "-nostdin",
+    "-filter_threads",
+    "1",
     "-y",
     "-threads",
     "1",
@@ -315,7 +317,7 @@ function encoderArguments(config, output) {
     );
   // Packed RGB-to-YUVA conversion rounds alpha 128..254 up by one.
   // Keep the original 8-bit alpha plane separate from chroma conversion.
-  if (config.codec === "vp9") args.push("-filter_threads", "1", "-vf", "format=rgba,split[c][a];[a]alphaextract[mask];[c]format=yuv420p[color];[color][mask]alphamerge");
+  if (config.codec === "vp9") args.push("-vf", "format=rgba,split[c][a];[a]alphaextract[mask];[c]format=yuv420p[color];[color][mask]alphamerge");
   args.push(
     "-c:v",
     codec.encoder,
@@ -328,13 +330,17 @@ function encoderArguments(config, output) {
     args.push(
       "-preset",
       "veryfast",
+      // Large frames must not collect a lookahead window of full-resolution
+      // reference images. This trades some compression efficiency for memory.
+      ...(config.width * config.height > 1920 * 1080 ? ["-tune", "zerolatency"] : []),
       ...(config.bitrate
         ? ["-b:v", String(Math.round(config.bitrate))]
         : ["-crf", String(Math.round(38 - config.quality * 20))]),
     );
   else if (config.codec === "vp9")
     args.push("-deadline","good","-cpu-used","4","-row-mt","1","-auto-alt-ref","0","-lag-in-frames","0",
-      "-b:v",String(Math.round(config.bitrate || Math.max(1000000,Math.min(50000000,config.width*config.height*config.fps*.18)))),
+      // With a CRF and zero target bitrate, VP9 adjusts data to scene complexity.
+      "-b:v",String(config.bitrate === undefined ? 0 : Math.round(config.bitrate)),
       "-crf",String(Math.round((1-config.quality)*48)));
   else if (codec.quality)
     args.push(

@@ -4,7 +4,7 @@ const MAX_BYTES = 256 * 1024 * 1024;
 const cancelled = () => new DOMException('Video export cancelled.', 'AbortError');
 
 export async function encodeNativeVideo({format, codec, width, height, fps, totalFrames, renderFrame, quality = 0.9,
-  bitrate, signal, onProgress, maxBytes = MAX_BYTES, desktop = globalThis.stykDesktop}) {
+  bitrate, signal, onProgress, maxBytes = MAX_BYTES, desktop = globalThis.stykDesktop, timeoutMs = 120000}) {
   if (!['webm', 'mp4', 'avi', 'wmv'].includes(format)) throw new Error('Choose WebM, MP4, AVI or WMV for native video export.');
   if (codec !== undefined && !{webm:['vp9'],mp4:['h264','mpeg4'],avi:['mpeg4','ffv1','rawvideo'],wmv:['wmv2']}[format].includes(codec)) throw new Error('Choose a supported codec for this video format.');
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16384 || height > 16384 || width * height > 16777216) throw new Error('Native video supports up to 16 million pixels per frame.');
@@ -20,18 +20,20 @@ export async function encodeNativeVideo({format, codec, width, height, fps, tota
   const worker = new Worker(new URL('./native-video-frame-worker.mjs', import.meta.url), {type: 'module', name: 'StykAnimate native video frames'});
   let pending, sequence = 0, failure, transfer, cancellation;
   const check = () => { if (signal?.aborted) throw cancelled(); if (failure) throw failure; };
-  const fail = error => { failure = error; pending?.reject(error); pending = null; worker.terminate(); };
+  const fail = error => { failure = error; clearTimeout(pending?.timer); pending?.reject(error); pending = null; worker.terminate(); };
   worker.addEventListener('error', event => { event.preventDefault(); fail(new Error(event.message || 'The video frame worker stopped.')); });
   worker.addEventListener('messageerror', () => fail(new Error('A video frame could not be transferred.')));
   worker.addEventListener('message', ({data}) => {
     if (data?.id !== pending?.id) return;
     const request = pending; pending = null;
+    clearTimeout(request.timer);
     data.ok ? request.resolve(data.blob) : request.reject(new Error(data.error || 'Video frame encoding failed.'));
   });
   const request = (operation, fields = {}, transfers = []) => {
     check(); return new Promise((resolve, reject) => {
-      const id = ++sequence; pending = {id, resolve, reject};
-      try { worker.postMessage({id, operation, ...fields}, transfers); } catch (error) { pending = null; reject(error); }
+      const id = ++sequence, timer = setTimeout(() => fail(new Error('Video frame encoding timed out. Export stopped; try again at a smaller size.')), timeoutMs);
+      pending = {id, resolve, reject, timer};
+      try { worker.postMessage({id, operation, ...fields}, transfers); } catch (error) { clearTimeout(timer); pending = null; reject(error); }
     });
   };
   const abort = () => {
@@ -70,7 +72,9 @@ export async function encodeNativeVideo({format, codec, width, height, fps, tota
       if (!bytes.byteLength && !chunk.done) throw new Error('The native video output stopped before completion.');
       size += bytes.byteLength;
       if (size > encoded.size || size > maxBytes) throw new Error('The native video exceeds its declared file size.');
-      parts.push(bytes); done = Boolean(chunk.done);
+      // Blob parts can spill to Chromium's backing store. Do not retain the
+      // entire encoded file as JS ArrayBuffers while the renderer is alive.
+      parts.push(new Blob([bytes])); done = Boolean(chunk.done);
     }
     if (size !== encoded.size) throw new Error('The native video output is incomplete.');
     const description = exportFormat(format), blob = new Blob(parts, {type: description.mimeType});
@@ -78,6 +82,7 @@ export async function encodeNativeVideo({format, codec, width, height, fps, tota
     onProgress?.({completed: totalFrames, total: totalFrames, progress: 1, phase: 'complete'});
     return blob;
   } finally {
+    clearTimeout(pending?.timer);
     signal?.removeEventListener('abort', abort); worker.terminate();
     if (transfer) await desktop.cancelVideoExport(transfer.token).catch(() => {});
     await cancellation;

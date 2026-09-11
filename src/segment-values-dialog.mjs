@@ -16,16 +16,16 @@ const esc = (value) =>
 const keys = ["angle", "bend", "length"];
 const CSS = `
 dialog.segment-values-dialog{width:min(380px,calc(100vw - 32px));max-width:380px}
-.segment-values-dialog .dialog-head{border-bottom:1px solid #e5e5e5;padding:15px 18px}
+.segment-values-dialog .dialog-head{border-bottom:1px solid var(--theme-border, #e5e5e5);padding:15px 18px}
 .segment-values-dialog .dialog-head h2{font-size:13px}
 .segment-values-dialog .dialog-body{padding:16px 18px}
-.segment-values-caption{font-size:11px;color:#767676;margin:0 0 14px}
+.segment-values-caption{font-size:11px;color:var(--theme-muted, #767676);margin:0 0 14px}
 .segment-values-fields{display:grid;gap:9px}
-.segment-values-fields .field{min-height:36px;background:#f5f5f5;display:flex;align-items:center;border:1px solid transparent;border-radius:5px;padding:0 9px!important;gap:8px!important}
-.segment-values-fields .field:focus-within{border-color:#0d99ff;background:#fff}
+.segment-values-fields .field{min-height:36px;background:var(--theme-field, #f5f5f5);display:flex;align-items:center;border:1px solid transparent;border-radius:5px;padding:0 9px!important;gap:8px!important}
+.segment-values-fields .field:focus-within{border-color:var(--theme-accent, #0d99ff);background:var(--theme-panel, #fff)}
 .segment-values-fields .property-scrub{font-size:11px!important;min-width:64px}
 .segment-values-fields input{background:transparent;flex:1;width:0;font:12px inherit;border:0;outline:none;padding:8px 0;appearance:textfield;text-align:right}
-.segment-values-fields small{font-size:10px;color:#999;min-width:17px;text-align:right}
+.segment-values-fields small{font-size:10px;color:var(--theme-muted, #999);min-width:17px;text-align:right}
 .segment-values-relative{display:flex;gap:7px;align-items:center;font-size:11px;margin:15px 0 8px}
 .segment-values-relative input{accent-color:#0d99ff;margin:0}
 .segment-values-help{font-size:10px!important;line-height:1.5;margin:0 0 15px}
@@ -35,9 +35,9 @@ dialog.segment-values-dialog{width:min(380px,calc(100vw - 32px));max-width:380px
 #segment-values-status{font-size:10px;min-height:14px;margin:8px 0 0}
 .segment-clipboard-fallback{margin-top:12px;display:grid;gap:7px}
 .segment-clipboard-fallback label{font-size:11px}
-#segment-clipboard-input{width:100%;box-sizing:border-box;border:1px solid #ddd;border-radius:4px;padding:8px;font:12px inherit;min-height:52px;resize:vertical}
+#segment-clipboard-input{width:100%;box-sizing:border-box;border:1px solid var(--theme-border, #ddd);border-radius:4px;padding:8px;font:12px inherit;min-height:52px;resize:vertical}
 .segment-clipboard-fallback .button{justify-self:end;font-size:11px}
-.segment-values-dialog .dialog-actions{border-top:1px solid #e5e5e5;margin:0;padding:12px 18px}
+.segment-values-dialog .dialog-actions{border-top:1px solid var(--theme-border, #e5e5e5);margin:0;padding:12px 18px}
 `;
 
 /** One native model gesture spans this dialog. Field gestures only update its preview. */

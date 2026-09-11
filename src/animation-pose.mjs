@@ -6,7 +6,7 @@ import {animationOriginHandleOrientation} from './animation-origin.mjs';
 import {rotateOriginSupport} from './animation-origin-support.mjs';
 const tracks = new WeakMap();
 const sourceIndices = new WeakMap();
-const SCENE_FIELDS = ['background_id', 'background_id_b', 'background_mix', 'background_color', '_stykBackgroundColor'];
+const SCENE_FIELDS = ['background_id', 'background_id_b', 'background_mix', 'background_color', '_stykBackgroundColor', '_stykVfx'];
 const NATIVE_PROPERTY_FIELDS = ['scale', 'field28', 'color_override_raw', 'color_override_rgb', 'color_override_mix', '_stykZIndex'];
 const NATIVE_OUTLINE_FIELDS = ['outlineColor', 'outlineWidth', 'outlineOpacity'];
 
@@ -32,7 +32,7 @@ function nativeAppearance(object, native) {
 }
 
 function blankPoseFrame(template) {
-  const {background_color, _stykBackgroundColor, ...fields} = template || {};
+  const {background_color, _stykBackgroundColor, _stykVfx, ...fields} = template || {};
   return {...fields, objects: [], object_count: 0, object_draw_order: [], object_draw_order_unique_ids: [],
     background_id: 0, background_id_b: 0, background_mix: 0,
     camera: {is_default: true, x: 0, y: 0, scale: 1, angle_rad: 0}};

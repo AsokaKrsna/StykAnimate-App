@@ -63,6 +63,23 @@ test('initial scene stages complete media and GPU data without changing or submi
   } finally {app.close();}
 });
 
+test('a failed background upload destroys its allocation without replacing the live texture', async () => {
+  const app = await graphics();
+  try {
+    const {renderer, queue, textures} = app, scene = fixture(1, true), frame = scene.keyframes[0];
+    app.images.set('memory:background', {complete: true, naturalWidth: 4, naturalHeight: 4});
+    renderer.render({report: scene, frame, cameraEnabled: false});
+    const liveTexture = renderer.layout.find(entry => entry.texture).texture.texture;
+    const oldGeometry = renderer.lastGeometry;
+    queue.copyExternalImageToTexture = () => {throw new Error('Background upload failed');};
+    await assert.rejects(renderer.prepareSceneUpdate({report: scene, frame, geometry: oldGeometry,
+      view: {scale: 1}, cameraEnabled: false}), /Background upload failed/);
+    assert.equal(liveTexture.destroyed, false);
+    assert.equal(textures.at(-1).destroyed, true);
+    assert.equal(renderer.lastGeometry, oldGeometry);
+  } finally {app.close();}
+});
+
 test('abort during staged GPU upload destroys only incoming buffers and textures', async () => {
   const app = await graphics();
   try {

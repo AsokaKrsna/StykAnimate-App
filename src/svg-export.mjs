@@ -3,6 +3,8 @@ import { buildGeometry, mixColor } from './pivot/geometry.mjs';
 import { backgroundBounds, sceneBackgroundColor } from './pivot/background.mjs';
 import { cameraMatrix } from './renderer-geometry.mjs';
 import { normalizeExportSmoothing } from './export-sampling.mjs';
+import {layerVisible} from './layers.mjs';
+import {activeVfx,vfxStack} from './vfx.mjs';
 
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;'}[c]));
 const clamp = value => Math.max(0, Math.min(1, Number(value) || 0));
@@ -85,6 +87,18 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
   const sceneHeight = dimension(report.canvas_height ?? 480, 'Scene height');
   width = dimension(width ?? sceneWidth, 'SVG width'); height = dimension(height ?? sceneHeight, 'SVG height');
   geometry ??= buildGeometry(report, frame);
+  const {hasDrawableVfx}=await import('./vfx-canvas.mjs');
+  if(activeVfx(vfxStack(frame)).length||geometry.drawables.some(hasDrawableVfx)){
+    if(!cameraEnabled)frame={...frame,camera:null};
+    geometry={...geometry,drawables:geometry.drawables.filter(item=>layerVisible(report,item.obj.unique_id))};
+    const {drawExportSceneTiled}=await import('./export-frame-core.mjs'),canvas=new OffscreenCanvas(width,height),context=canvas.getContext('2d');
+    try{
+      if(resources.preload)await drawExportSceneTiled(context,report,frame,geometry,resources);
+      else {const {drawExportScene}=await import('./export-frame-core.mjs');drawExportScene(context,report,frame,geometry,resources);}
+      const href=await dataURL(await canvas.convertToBlob({type:'image/png'}));
+      return new Blob([`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><desc>StykAnimate VFX artwork rendered as an embedded image.</desc><image width="${width}" height="${height}" href="${href}"/></svg>`],{type:'image/svg+xml'});
+    }finally{canvas.width=canvas.height=1;}
+  }
   const definitions = [], bitmaps = resources.svgBitmaps ?? new Map();
   const matrix = cameraMatrix({report, frame, cameraEnabled});
   const pixelScale = Math.min(width / sceneWidth, height / sceneHeight) * Math.hypot(matrix[0], matrix[1]);

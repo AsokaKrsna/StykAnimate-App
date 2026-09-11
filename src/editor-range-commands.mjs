@@ -1,4 +1,5 @@
 import {inheritedKeyEasing} from './keyframe-easing.mjs';
+import {remapVfxOwner} from './vfx.mjs';
 /** Atomic figure commands over native source keys or explicitly selected authored ticks. */
 import {planFigureFrameOperation} from './range-figure-operations.mjs';
 import {createObject} from './demo.mjs';
@@ -91,6 +92,7 @@ function insertionPlan(editor, operation) {
   const objects = sourceObjects.map(original => {
     const object = snapshotPoseObject(original), {figure, indices} = types.get(original.figure_type_id);
     delete object._stykMovieclipPart;
+    remapVfxOwner(object,figure.figure_type_id);
     object.unique_id = uidMap.get(original.unique_id); object.figure_type_id = figure.figure_type_id; object.root_x += offset; object.root_y += offset;
     if(figure._styk?.movieclip&&editor.report._styk?.layerSheet&&!retained.has(original.unique_id))object._stykMovieclip=presencePlayback({mode:original._stykMovieclip?.mode??'loop',speed:original._stykMovieclip?.speed??1});
     translateIKTargets(object, offset, offset); remapIKFollowers(object, uidMap);
@@ -100,7 +102,7 @@ function insertionPlan(editor, operation) {
       const target = uidMap.get(object.join.target_unique_id);
       if (target === undefined) object.join = null; else object.join.target_unique_id = target;
     }
-    const layer = retained.has(original.unique_id) ? editor.layerForUid(original.unique_id) : clipboard.layers?.get(original.unique_id);
+    const layer = retained.has(original.unique_id) ? editor.layerForUid(original.unique_id) : operation.newIdentities ? clipboard.layers?.get(original.unique_id) : undefined;
     if (clipboard.documentToken === editor._documentToken && editor.getLayer(layer)) hints.set(object.unique_id, layer);
     delete object.runtime_segments; return object;
   });

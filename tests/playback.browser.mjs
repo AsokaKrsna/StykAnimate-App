@@ -77,7 +77,7 @@ try {
     const cropReport = emptyDocument(); cropReport.figure_types = [sprite];
     const cropFrame = createFrame(Array.from({ length: 4 }, (_, i) => createObject(sprite, 100 + i, -250 + i * 10, -180 + i * 10, { scale: 400, field28: 71 })));
     cropFrame.camera = { x: 70, y: -40, angle_rad: .23, scale: 1.2 }; cropReport.keyframes = [cropFrame];
-    const croppedCache = new PlaybackCache(), cropImage = new Image(); cropImage.src = dataURL; await cropImage.decode();
+    const croppedCache = new PlaybackCache({maxBytes: 128 * 1024 * 1024}), cropImage = new Image(); cropImage.src = dataURL; await cropImage.decode();
     const cropResources = { url: asset => asset.data_url, image: () => cropImage };
     let clippingResult;
     try {

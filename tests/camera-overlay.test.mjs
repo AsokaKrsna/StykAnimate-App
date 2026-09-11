@@ -41,5 +41,5 @@ test('keyboard camera nudges are predictable in pixels, degrees and scale',()=>{
 test('inactive camera renders only an outline without misleading interactive grips',()=>{
  const calls=[],ctx=new Proxy({},{get:(o,k)=>k in o?o[k]:(...args)=>calls.push([k,...args]),set:(o,k,v)=>{o[k]=v;return true;}});
  drawCameraViewport(ctx,cameraViewport(report,frame,view),p=>p,{active:false});
- assert.equal(calls.filter(c=>c[0]==='stroke').length,1);assert.equal(calls.filter(c=>c[0]==='arc').length,0);
+ assert.equal(calls.filter(c=>c[0]==='stroke').length,2);assert.equal(calls.filter(c=>c[0]==='arc').length,0);
 });

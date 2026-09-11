@@ -92,6 +92,30 @@ class FastDecodeTests(unittest.TestCase):
             with self.subTest(size=size):
                 self.compare_frames(source[:size], invalid=True)
 
+    def test_unsorted_ids_preserve_source_slots(self):
+        for ids in ([1, 2, 0], [0, 1, 0xFFFFFFFF], [0x7FFFFFFF, 0x80000000, 2]):
+            self.compare_frames(frame_bytes([{"uid": uid} for uid in ids], order=[2, 0, 1]))
+
+    def test_scanners_request_duplicate_recovery_with_exact_location(self):
+        figures = [{"figure_type_id": 1, "segment_count": 1, "segments": [{"segment_id": 1}],
+            "image_assets": [], "text_assets": []}]
+        for ids, detail in [([1, 2, 1], "duplicate object ID 1 (also used by object 1)"),
+                ([0xFFFFFFFF, 0, 0xFFFFFFFF], "duplicate object ID 4294967295 (also used by object 1)")]:
+            first = frame_bytes([])
+            source = b"prefix!" + struct.pack("<I", 2) + first[4:] + frame_bytes([{"uid": uid} for uid in ids])[4:]
+            # One empty frame, then frame header and two complete 36-byte objects.
+            offset = 7 + len(first) + 7 + 2 * 36
+            messages = []
+            for decoder in (fast_decode.scan_keyframes_python, fast_decode.scan_keyframes):
+                reader = server.FastReader(source)
+                reader.pos = 7
+                with self.assertRaises(server.piv_codec.PivIdentityError) as error:
+                    decoder(reader, figures, 2)
+                messages.append(str(error.exception))
+            self.assertEqual(len(set(messages)), 1, messages)
+            self.assertIn(f"Pivot keyframe 2, object 3: {detail}", messages[0])
+            self.assertIn(f"payload offset {offset:#x}", messages[0])
+
     def test_nonfinite_numbers_are_rejected_at_every_float_location(self):
         for value in (math.inf, -math.inf, math.nan):
             for key in ("scale", "angle", "x", "y", "length", "bend"):
@@ -108,8 +132,6 @@ class FastDecodeTests(unittest.TestCase):
             frame_bytes([{"uid": 1}, {"uid": 2, "join": (0, 2)}]),
             frame_bytes([{"uid": 1, "join": (0, 0)}]),
             frame_bytes([{"uid": 1, "join": (1, 0)}, {"uid": 2, "join": (0, 0)}]),
-            frame_bytes([{"uid": 1}, {"uid": 1}]), frame_bytes([{"uid": 1}, {"uid": 0}]),
-            frame_bytes([{"uid": 0}, {"uid": 0xFFFFFFFF}]),
             frame_bytes([{"uid": 1}, {"uid": 2}], order=[0, 0]),
             frame_bytes([{"uid": 1}, {"uid": 2}], order=[0, 2])]
         for index, data in enumerate(invalid):
@@ -151,17 +173,18 @@ class FastDecodeTests(unittest.TestCase):
                         self.assertEqual({key: value for key, value in expected.items() if key != "keyframes"},
                             {key: value for key, value in scanned.items() if key != "keyframes"})
 
-    def test_scan_rejects_type_changes_on_interpolated_intervals_only(self):
+    def test_scan_accepts_type_changes_without_removing_frames_or_inbetweens(self):
         figures = [{"figure_type_id": tid, "segment_count": 1, "segments": [{"segment_id": 1}],
             "image_assets": [], "text_assets": []} for tid in (1, 2)]
         for duration in (0, 1, 2, 65535):
             source = struct.pack("<I", 2) + frame_bytes([{"uid": 1, "tid": 1}], duration=duration)[4:]
             source += frame_bytes([{"uid": 1, "tid": 2}])[4:]
-            if duration > 1:
-                with self.assertRaisesRegex(server.piv_codec.PivError, "Cannot interpolate a changed figure type"):
-                    fast_decode.scan_keyframes(server.FastReader(source), figures, 2)
-            else:
-                self.assertEqual(len(fast_decode.scan_keyframes(server.FastReader(source), figures, 2)), 2)
+            for decoder in (fast_decode.scan_keyframes_python, fast_decode.scan_keyframes):
+                with self.subTest(duration=duration, decoder=decoder.__name__):
+                    reader = server.FastReader(source)
+                    frames = decoder(reader, figures, 2)
+                    self.assertEqual([frame['duration_raw'] for frame in frames], [duration, 1])
+                    self.assertEqual(reader.pos, len(source))
 
     def test_scan_context_is_thread_local_and_restored_after_failure(self):
         path = server.WORKSPACE / "Pivot Animator v5/Animations/tween_camera.piv"

@@ -8,7 +8,7 @@ export function runTimelineHotkey(timeline, id, event = {}) {
   const methods = {copy:'copySelection', cut:'cutSelection', paste:'pasteSelection', 'select-all':'selectAll'};
   if (methods[id]) { timeline[methods[id]](); return true; }
   if (id === 'undo' || id === 'redo') { timeline._run(() => timeline.editor[id]()); return true; }
-  if (id === 'delete') { filmstrip ? timeline.action('delete') : timeline.removeFrames(); return true; }
+  if (id === 'delete') { filmstrip ? timeline.action('delete') : timeline.clearKeys(); return true; }
   if (id === 'add-frame') { filmstrip ? timeline.action('add') : timeline.addFrame(); return true; }
   const advanced = {'remove-frames':'removeFrames', 'clear-keys':'clearKeys'};
   if (!filmstrip && advanced[id]) { timeline[advanced[id]](); return true; }

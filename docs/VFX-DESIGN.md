@@ -1,0 +1,103 @@
+# VFX implementation
+
+VFX use the existing layer/pose editing system. There is no separate VFX timeline, autokey mode, or parameter-key interface. Effects are instance data and stay editable in native files.
+
+## User interaction
+
+The right panel has Properties, VFX, and Library tabs. VFX follows the selected figure or node; the target menu also offers Whole figure and Scene. Movieclip handles target the container artwork. Multiple selected figures receive independent stacks in one history operation.
+
+Effect cards provide distinct icons, an enable button, collapsible parameters, sliders, precise numeric entry, gradient swatches, and quick actions for duplicate, reset, and remove. A drag grip reorders the stack in one history operation; Alt+Up/Down provides keyboard reordering. Searchable effect and preset popups use the same registry and scope rules. The target toolbar and Add button remain visible while the stack scrolls. Labels retain the standard horizontal scrub interaction. A continuous slider or scrub previews through the existing editor transaction and creates one undo entry. Held exposures, interpolated frames, frame insertion, and frame copying keep the same behavior as Properties. Existing timeline controls own timing and easing.
+
+No captions, effect-cost badges, parameter diamonds, or additional animation modes appear in this panel. Presets install ordinary editable effects. Power up, Teleport, Impact, Hologram, Ice, Poison, Neon, Golden hour, and Retro screen join the original presets. Copy/paste gives each pasted effect a fresh identity. Selecting a card opens its controls and enables its canvas handles; changing targets or tabs hides the handles. Canvas drags use one stack transaction and Escape cancels it. Locked targets cannot be edited.
+
+## Current catalogue
+
+| Effect | Parameters |
+| --- | --- |
+| Tint | Color, mix |
+| Glow | Core/halo paints, radius, intensity, placement, spread, falloff, blend |
+| Outline | Paint, width, opacity, placement, rounded, outline only |
+| Blur | Mode, radius, angle, center |
+| Shadow | Paint, softness, X/Y offset, angle/distance, spread, opacity, placement |
+| Color grading | Exposure, contrast, saturation, temperature, tint, shadows, highlights, gamma |
+| Pixelate | Linked cell width/height, grid X/Y |
+| Noise | Amount, grain size, color grain, pattern, contrast, softness, seed, evolution |
+| Vignette | Amount, softness, paint, center, roundness, aspect, radius |
+| Dissolve | Progress, pattern scale, edge width/paint, softness, seed |
+| RGB split | Amount, angle, individual channel offsets |
+| Wave distortion | Strength, wavelength, angle, phase |
+| Shockwave | Radius, thickness, strength, center, falloff |
+| Bloom | Threshold, soft knee, radius, intensity, paint |
+| Light sweep | Position, angle, width, softness, intensity, paint |
+| CRT / scanlines | Scanlines, spacing, curvature, RGB fringe, phase, paint |
+
+Scene catalogues include camera distortions and CRT; object catalogues include silhouette effects. Vignette, Shockwave, and CRT are camera effects. Preset choices are filtered by their component effects.
+
+## Ownership, storage, and animation
+
+`src/vfx-registry.mjs` owns the effect schemas, scope rules, icons, and conditional/advanced inspector fields. `src/vfx.mjs` owns limits, validation, parameter descriptors, interpolation, padding, and remapping. Each stack contains at most 16 records:
+
+```js
+{version: 2, id: 'fx-stable-id', type: 'glow', enabled: true,
+ params: {color: 0x66ccff, radius: 12, intensity: 0.8}}
+```
+
+Saved poses use `_stykVfx.figure` for a figure/movieclip/scene stack. Node stacks use `_stykVfx['figureTypeId/handleId']`, scoped to the native physical handle and figure definition, never an array index. The owning pose supplies the instance UID. No GPU or UI state enters saved data.
+
+`src/editor-vfx.mjs` uses existing editor commands and history. The property adapter accepts `vfxStack` and typed `vfx1:type:effectId:parameter` addresses. The layer sheet composes these into its ordinary source poses and then discards the temporary property entries. It never creates a second set of animation tracks. Legacy documents without a layer sheet can still use the existing property adapter.
+
+Matching effect IDs/types interpolate numeric/color parameters through the existing pose easing. Enabled state, stack membership, seed, and order are discrete. New effects are not introduced before their source exposure. Remove/reset/reorder edit the current exposure like other pose edits. Copying frames, physical rig remapping, foreign definition remapping, undo/redo, native save, and recovery preserve ownership.
+
+## Composition
+
+Node artwork effects feed figure effects. Each movieclip composites its children, applies its local scene stack and container stack, and applies the container opacity once. Figure opacity likewise applies to the completed effect result. Native figure outlines remain part of the base artwork. A VFX outline expands the composited alpha silhouette.
+
+Scene effects process the camera output after object effects. During editing, the workspace remains in world coordinates: `CameraGpuSource` renders retained GPU artwork into an offscreen camera surface, `CameraVfx` applies effects, and the result is projected into the moved/rotated/scaled camera rectangle. The surrounding workspace is unchanged. Backgrounds follow the actual camera. Onion skins and editing handles render afterward as editor overlays. The camera preview is capped at 2048 pixels on its longest side; saved values and export resolution are unchanged.
+
+Playback reuses the prepared packet's GPU buffers and scene stack to filter the full camera image. Zooming or panning cannot change offscreen filter neighborhoods. The Canvas fallback, thumbnail worker, export workers, and SVG raster fallback use the same filter executor. Local movieclip samples include their child effects and scene effects. Converting a selection into a movieclip does not capture the parent scene's effects a second time.
+
+Object sizes use local artwork units and scale with the instance. Scene sizes use project output pixels. Noise is deterministic from spatial coordinates, seed, and explicit evolution; no wall-clock state or playback history enters evaluation. Pixel grids and blur downsampling are anchored independently of tile crops.
+
+## Rendering and resource lifetime
+
+- `vfx-gpu.mjs`: one lazily created WebGL 2 filter executor per JavaScript realm, shared by portable Canvas render paths. It uses GPU textures and no CPU pixel readback. Fullscreen passes run filters in order. Shader programs compile lazily per operation (at most 26), avoiding compilation of the entire catalogue when a simple effect is first used.
+- Blur uses three separable box passes per axis as a Gaussian approximation. Large radii downsample on a stable grid and upsample afterward. Outline uses separable alpha dilation; its rounded mode uses bounded octagonal dilation, while legacy square outlines retain separable dilation. All color math is SDR, with premultiplied alpha at composition boundaries.
+- `vfx-canvas.mjs`: bounded owner crops, neighboring pixels for spatial filters, stable coordinates, and scene composition. Scene padding allows blur to leave and re-enter the frame before final clipping.
+- `vfx-viewport.mjs`: shared-device WebGPU final composition; selection handles follow the effect result.
+- `vfx-camera-gpu.mjs`: reuses the editor's primitive buffers, textures, and device for the camera image. It restores shared uniforms after the ordered camera submission.
+- Existing artwork signatures include effects, including nested child values. Existing raster caches retain unchanged filtered artwork and invalidate changed values. Prepared workers bake object filters into their bounded compatibility packets; the scene stack remains compact packet metadata.
+
+No-effect documents do not create a VFX graphics context or offscreen filter textures and retain the vector path. Each filter surface is capped at 16,777,216 pixels and the graphics device's maximum texture size. The executor retains at most six working textures plus its output surface; these are transient working surfaces, separate from the existing raster cache budgets. It releases the graphics context after 30 seconds without filter work. Renderer destruction releases camera surfaces, textures, and scratch canvases. This is a bounded working set, not a claim that a large effect stack is free.
+
+Tiled export expands guards for scene effects and preserves spatial coordinates. A request whose effect neighborhood exceeds the surface cap fails explicitly rather than omitting effects. WebGL 2 is required for active VFX; unavailable/lost contexts produce explicit errors. Native saving remains independent of graphics availability.
+
+## File behavior
+
+`.styk`, `.stkz`, and `.stykmov` retain editable effects. Raster and video exports use the shared rendering path. SVG with active effects embeds the rendered frame as PNG at the requested dimensions; SVG without effects retains its vector path. PIV/STK export rejects effects rather than silently losing them. Combining separately filtered figures or breaking/baking a filtered movieclip container is rejected when its compositing cannot be represented by independent editable figures.
+
+## Extension contract
+
+A new effect needs a registry schema, validation/interpolation semantics, identity/no-op behavior, conservative sampling padding, an executor kernel, and catalogue scope. Any new temporal effect must define deterministic frame sampling and its own bounded state before entering this stack system. Add model, worker/export parity, and representative performance checks. The registry describes saved data; rendering resources stay in render modules; UI state stays in the inspector.
+
+## Verification
+
+- `node --test tests/vfx.test.mjs`: exposure semantics, tween/frame insertion, history, cancellation, presets, instance isolation, rig remapping, and reopening.
+- `node tests/vfx.browser.mjs`: all nine shader outputs, alpha/orientation, tiled/full-frame parity, binary native round-trip, lossy-format rejection, real slider and label drags, and tab navigation.
+- `node tests/vfx-rendering.browser.mjs`: live/real-worker prepared output, movieclips, worker raster/SVG exports, and moved/rotated camera boundaries, panned camera crops, and editor overlays on WebGPU and Canvas fallback.
+- `node scripts/benchmark-vfx.mjs`: 1,000-figure scenes at 1280x720 with cold and warmed timings, changing values, and retained memory counters.
+
+Browser scripts use installed Chrome and a local server at `http://127.0.0.1:47832`; override with `STYK_TEST_URL`. Measurement output is in `artifacts/vfx/`. Results depend on hardware, area, radius, and animated content. The measured 1,000-figure camera-editing case improved from approximately 35 ms to 5 ms median after sharing retained GPU artwork. Rebuilding geometry while animating ten glows remains a heavier case (approximately 23 ms median on the measured NVIDIA Lovelace device). Cold shader initialization remains a separate cost.
+
+## Expanded controls and rendering
+
+Glow includes inner/outer/both placement, spread, falloff, core and halo paints, and Normal/Add/Screen blending. Outline supports outside/inside/center placement, rounded edges, and outline-only output. Shadow adds spread and inner placement; angle/distance are derived views of the existing X/Y offsets, never duplicate saved state. Blur offers Gaussian, directional, zoom, and radial kernels with bounded sampling. Grading adds shadows, highlights, gamma, and green/magenta balance. Pixelation has linked or independent dimensions and grid offsets. Noise adds color grain, coherent clouds, contrast, and softness. Vignette adds center, aspect, roundness, radius, and paint.
+
+New effects are Dissolve, RGB split, Wave distortion, Shockwave, Bloom, Light sweep, and CRT/scanlines. Their Progress, Phase, and Evolution controls remain ordinary pose parameters. None relies on elapsed wall-clock time. Spatial kernels use stable full-owner coordinates; curved CRT exports include their displaced sampling neighborhood in tile guards.
+
+Every VFX color accepts either the legacy RGB integer or the existing normalized paint format: solid, linear, radial, angular, or diamond, with up to 32 stops and stop opacity. `vfx-paint.mjs` handles adaptation/interpolation; the GPU evaluates stops directly. Matching gradient layouts interpolate colors, offsets, opacity, and angle. Changes between gradient kinds or stop counts are discrete; solid/gradient transitions interpolate using the gradient layout. Version 1 stacks resolve compatible defaults lazily without mutating the document. New edits write version 2 records.
+
+The canvas-toolbar VFX button is a preview bypass. `vfx-preview.mjs` creates cached, copy-on-write views of evaluated geometry, including nested movieclip owners. The playback worker receives the same option, invalidates prepared packets, and prepares unfiltered artwork. It does not change the document, undo history, native saves, or export output. Handles and preview options never enter saved data.
+
+`vfx-gizmos.mjs` projects the selected effect's controls into camera or owner coordinates. It supports effect centers, shadow offset, blur/RGB direction, radii, grid/cell sizes, wavelength/strength, dissolve progress, light-sweep position, and CRT curvature. Only the selected, enabled, unlocked effect receives controls; playback never evaluates editor geometry for these overlays.
+
+`tests/vfx-expansion.browser.mjs` verifies the expanded kernels, multi-stop gradients, tiled parity, search, preset application, mouse/keyboard reordering, picker commits, canvas drag/cancel, selection visibility, and bypass isolation. `tests/vfx-rendering.browser.mjs` also checks live and real-worker bypass, including movieclips. The dense-scene benchmark adds distortion and bloom/CRT combinations. On the measured NVIDIA Lovelace device, those combinations took approximately 4–5 ms median at 1280×720 with 1,000 figures. Splitting shader compilation reduced the tested first grading/noise render from approximately 1,194 ms to 158 ms. These are local measurements; shader initialization, large radii, gradients, and changing artwork still have costs.

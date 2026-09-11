@@ -12,6 +12,15 @@ let registrySerial=0;
 const encoder=new TextEncoder();
 const digest=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),n=>n.toString(16).padStart(2,'0')).join('');
 
+// A sampled clip is rendered from its expanded drawables, never by traversing
+// the stored animation here. Child drawing definitions enter the signature below.
+function drawingDefinition(figure){
+  const clip=figure._styk?.movieclip;
+  if(!clip)return figure;
+  const {document,...settings}=clip;
+  return {...figure,_styk:{...figure._styk,movieclip:settings}};
+}
+
 export class ArtworkRegistry {
   constructor({maxBytes=64*1024*1024,maxEntries=512}={}){
     this.maxBytes=maxBytes;this.maxEntries=maxEntries;this.namespace=++registrySerial;this.artworkSerial=0;this.clear();
@@ -20,7 +29,7 @@ export class ArtworkRegistry {
   // Definitions may be edited in place. The editor supplies an explicit
   // definition revision; callers without one re-snapshot on every prepare.
   begin(revision){
-    if(revision===undefined||this.definitionRevision!==revision){this.figureCache=new WeakMap();this.definitionRevision=revision;}
+    if(revision===undefined||this.definitionRevision!==revision){this.figureCache=new WeakMap();this.byGeometry=new WeakMap();this.definitionRevision=revision;}
   }
   /** Stable cross-packet identity survives eviction of the large comparison
    * records. Local lookup still compares full content after its fast hash.
@@ -39,7 +48,7 @@ export class ArtworkRegistry {
   }
   definition(figure){
     let value=this.figureCache.get(figure);if(value)return value;
-    const text=JSON.stringify(figure);
+    const text=JSON.stringify(drawingDefinition(figure));
     if(text.length*2>this.maxBytes/4){value={id:++this.serial,unshared:true};this.figureCache.set(figure,value);return value;}
     value=this.definitions.get(text);
     if(!value){
@@ -62,11 +71,12 @@ export class ArtworkRegistry {
     let count=0;
     for(const item of items)count+=6+numericFields.length+(item.rgb?.length??0)+
       2*(Number(Boolean(item.start))+Number(Boolean(item.end))+(item.points?.length??0));
-    const data=new Float64Array(count),extra=[];let cursor=0;
+    const data=new Float64Array(count),extra=[],childFigures=new Map(),childDefinitions=[],effectOwners=new Set();let cursor=0;
     const point=p=>{data[cursor++]=p.x-g.root.x;data[cursor++]=p.y-g.root.y;};
     for(let i=0;i<items.length;i++){
       if(i && (i & 127)===0)yield {phase:'artwork signature',completed:i,total:items.length};
       const item=items[i],{start,end,points,seg,poly,asset}=item,type=types.indexOf(item.type);
+      if(item.obj!==g.obj&&item.obj?._stykVfx&&!effectOwners.has(item.obj)){effectOwners.add(item.obj);extra.push([i,'childEffects',item.obj._stykVfx]);}
       data[cursor++]=type;data[cursor++]=Number(Boolean(start));data[cursor++]=Number(Boolean(end));
       data[cursor++]=points?.length??-1;data[cursor++]=Number(Boolean(item.static));
       for(const field of numericFields){
@@ -82,10 +92,15 @@ export class ArtworkRegistry {
       if(seg&&seg!==g.fig.segments?.[item.index])extra.push([i,'seg',seg]);
       if(poly&&poly!==g.fig.polyfills?.[item.index])extra.push([i,'poly',poly]);
       if(asset)extra.push([i,'asset',asset]);
+      if(item.fig&&item.fig!==g.fig){
+        let index=childFigures.get(item.fig);
+        if(index===undefined){index=childDefinitions.length;childFigures.set(item.fig,index);childDefinitions.push(this.definition(item.fig).text??JSON.stringify(drawingDefinition(item.fig)));}
+        extra.push([i,'figure',index]);
+      }
       for(const key in item)if(Object.hasOwn(item,key)&&!knownFields.has(key))extra.push([i,key,item[key]]);
     }
     const object=Object.fromEntries(Object.entries(g.obj).filter(([key])=>!ignoredObjectKeys.has(key)));
-    const metadata=JSON.stringify([object,extra]);
+    const metadata=JSON.stringify(childDefinitions.length?[object,extra,childDefinitions]:[object,extra]);
     const words=new Uint32Array(data.buffer);
     const key=`${definition.id}:${textHash(metadata)}:${hash(words)}:${data.length}`;
     const bucket=this.buckets.get(key)||[];

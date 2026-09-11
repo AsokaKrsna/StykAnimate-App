@@ -109,7 +109,7 @@ test('dense single figures yield inside geometry, artwork signatures and GPU vec
 });
 
 test('playback document transfer yields to an active gesture and resumes every waiting sender',async()=>{
-  const cache=Object.create(PlaybackCache.prototype);cache.setInteractionActive(true);
+  const cache=Object.assign(Object.create(PlaybackCache.prototype),{pending:new Map(),worker:{postMessage(){}}});cache.setInteractionActive(true);
   let completed=0;const tasks=[cache._yieldLoad().then(()=>completed++),cache._yieldLoad().then(()=>completed++)];
   await new Promise(resolve=>setTimeout(resolve,20));assert.equal(completed,0);
   cache.setInteractionActive(false);await Promise.all(tasks);assert.equal(completed,2);

@@ -27,6 +27,10 @@ class PivError(ValueError):
     pass
 
 
+class PivIdentityError(PivError):
+    """Structurally readable frames need document-wide identity recovery."""
+
+
 class Reader:
     def __init__(self, data: bytes):
         self.data = data
@@ -277,6 +281,54 @@ def _figure(r: Reader, figure_id: int, assets_dir: Path | None) -> dict:
         image_assets=[x for x in side if x.get('kind')=='image'],z_order_mode='runtime_z_map')
 
 
+def _object_id_error(uid, previous_ids, frame_index, object_index, offset):
+    first = previous_ids[uid]
+    return PivIdentityError(f'Pivot keyframe {frame_index+1}, object {object_index+1}: '
+        f'duplicate object ID {uid} (also used by object {first+1}) '
+        f'at payload offset {offset:#x}. Identity recovery is required.')
+
+
+def _recover_object_ids(frames):
+    """Translate source slots to unambiguous editor identities, once per document.
+
+    PIV joins and draw order address slots, so unsorted IDs need no repair.
+    Reserve every source ID (including future keys) before assigning fresh uint32
+    IDs to extra occurrences. Keep the first occurrence's existing continuity;
+    isolate extras per key rather than guess which ambiguous pose continues.
+    Never reorder or discard source objects. The sparse audit also lets native
+    transport apply exactly these ID changes without re-encoding any pose bytes.
+    """
+    reserved, duplicates = set(), []
+    for fi, frame in enumerate(frames):
+        seen = set()
+        for oi, obj in enumerate(frame['objects']):
+            uid = obj['unique_id']
+            if uid in seen:
+                duplicates.append((fi, oi, obj))
+            seen.add(uid)
+        reserved.update(seen)
+    repairs, changed_frames, candidate = [], set(), 1
+    for fi, oi, obj in duplicates:
+        while candidate in reserved:
+            candidate += 1
+        if candidate > 0xFFFFFFFF:
+            raise PivError('No unused object identity remains for PIV recovery')
+        repairs.append(dict(keyframe_index=fi, object_slot=oi,
+            source_unique_id=obj['unique_id'], unique_id=candidate,
+            record_offset=obj['record_offset']))
+        obj['unique_id'] = candidate
+        reserved.add(candidate)
+        changed_frames.add(fi)
+    for fi in changed_frames:
+        frame = frames[fi]
+        objects = frame['objects']
+        for obj in objects:
+            if obj['join']:
+                obj['join']['target_unique_id'] = objects[obj['join']['target_object_slot']]['unique_id']
+        frame['object_draw_order_unique_ids'] = [objects[slot]['unique_id'] for slot in frame['object_draw_order']]
+    return repairs
+
+
 def _keyframes(r: Reader, figures: list, bg_slots: int) -> list:
     count = r.read('I')
     if count > 1000000:
@@ -342,10 +394,6 @@ def _keyframes(r: Reader, figures: list, bg_slots: int) -> list:
                     raise PivError(f'Cyclic object joins in frame {fi}')
                 visited.add(cursor)
                 cursor=objects[cursor]['join']['target_object_slot']
-        unique_ids=[obj['unique_id'] for obj in objects]
-        signed=lambda uid:uid if uid<0x80000000 else uid-0x100000000
-        if len(set(unique_ids))!=len(unique_ids) or unique_ids!=sorted(unique_ids,key=signed):
-            raise PivError(f'Object IDs must be unique and sorted as signed integers in frame {fi}')
         order=r.array('H',obj_count,p+'/object_draw_order')
         if sorted(order)!=list(range(obj_count)):
             raise PivError(f'Invalid object draw-order permutation in frame {fi} at {r.pos:#x}')
@@ -390,12 +438,10 @@ def _decode(source: bytes, source_path: str = '', assets_dir: Path | None = None
     for tid in range(2,figure_slots): figures.append(_figure(r,tid,assets_dir))
     frame_start=r.pos
     frames=_keyframes(r,figures,bg_slots)
-    for fi,(outgoing,incoming) in enumerate(zip(frames,frames[1:])):
-        if outgoing['duration_raw']<=1:continue
-        types_out={obj['unique_id']:obj['figure_type_id'] for obj in outgoing['objects']}
-        for obj in incoming['objects']:
-            if obj['unique_id'] in types_out and types_out[obj['unique_id']]!=obj['figure_type_id']:
-                raise PivError(f'Cannot interpolate a changed figure type for object {obj["unique_id"]} in frame {fi}')
+    identity_repairs = _recover_object_ids(frames)
+    # A UID can switch definitions between keys. Each pose was validated against
+    # its own type; playback holds incompatible rigs until the incoming key.
+    # Preserve the original frames and durations instead of rejecting the file.
     fps=r.read('I','/fps')
     if not 1<=fps<=1000: raise PivError(f'Invalid fps {fps} at {r.pos-4:#x}')
     trailer_start=r.pos
@@ -423,6 +469,14 @@ def _decode(source: bytes, source_path: str = '', assets_dir: Path | None = None
         notes=['Sequential binary grammar; no trace, marker scan, or external figure files needed.',
             'The first trailer byte is the inverted Auto-Easing option; further bytes are preserved.',
             *(['Auto-Easing omitted: standalone uses the fresh application default ON; native may inherit a different saved preference.'] if ease_raw is None else [])])
+    if identity_repairs:
+        affected = sorted({repair['keyframe_index']+1 for repair in identity_repairs})
+        keys = ', '.join(map(str, affected[:8])) + (' and more' if len(affected) > 8 else '')
+        report['piv_identity_recovery'] = dict(version=1, objects=identity_repairs)
+        report['import_warnings'] = [dict(code='piv_duplicate_object_ids', message=(
+            f'Recovered {len(identity_repairs)} duplicate figure IDs in keyframes {keys}. '
+            'Every figure, join, and layer was preserved. Extra occurrences now have separate '
+            'identities; review animation transitions around these keyframes.'))]
     return report,r,compressed
 
 

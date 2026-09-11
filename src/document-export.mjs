@@ -36,8 +36,8 @@ export class DocumentExporter {
     const fail = error => { failure = error; pending?.reject(error); pending = null; worker.terminate(); };
     const job = {cancel: () => fail(abortError())};
     this.jobs.add(job);
-    worker.addEventListener('error', event => { event.preventDefault(); fail(new Error(event.message || 'The document export worker stopped.')); });
-    worker.addEventListener('messageerror', () => fail(new Error('The document snapshot could not be transferred.')));
+    worker.addEventListener('error', event => { event.preventDefault(); fail(Object.assign(new Error(event.message || 'The document export worker stopped.'), { telemetryCode: 'worker_failed', telemetryStage: 'serialize' })); });
+    worker.addEventListener('messageerror', () => fail(Object.assign(new Error('The document snapshot could not be transferred.'), { telemetryCode: 'snapshot_failed', telemetryStage: 'prepare' })));
     worker.addEventListener('message', event => {
       if (!pending || pending.id !== event.data?.id) return;
       const request = pending; pending = null;
@@ -45,6 +45,7 @@ export class DocumentExporter {
       else {
         const error = new Error(event.data.error?.message || 'Document export failed.');
         error.code = event.data.error?.code; error.status = event.data.error?.status;
+        error.telemetryCode = event.data.error?.telemetryCode; error.telemetryStage = event.data.error?.telemetryStage;
         request.reject(error);
       }
     });
@@ -67,7 +68,7 @@ export class DocumentExporter {
     };
     const abort = () => fail(abortError());
     signal?.addEventListener('abort', abort, {once: true});
-    const timer = this.timeoutMs > 0 ? setTimeout(() => fail(new Error('Document export timed out.')), this.timeoutMs) : null;
+    const timer = this.timeoutMs > 0 ? setTimeout(() => fail(Object.assign(new Error('Document export timed out.'), { telemetryCode: 'timeout', telemetryStage: 'serialize' })), this.timeoutMs) : null;
     try {
       await request('start', {options: {sourceId, format, name, figureTypeId, figureUid, figureUids, tick, baseURL: this.baseURL, token: this.token}});
       const snapshotStarted = performance.now();

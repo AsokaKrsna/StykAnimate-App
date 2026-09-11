@@ -8,7 +8,7 @@ function fixture(){
   const report=emptyDocument();report.figure_types.push(defaultFigure(2));
   report.keyframes=[1,2,1].map((id,index)=>createFrame([createObject(report.figure_types[id-1],7,120,180)],index===2?1:5));
   const editor=new Editor({demo:false}).load(report);
-  editor.addAnimationKeys([global,a,b].flatMap((target,index)=>[0,10].map((tick,i)=>({target,property:'opacity',tick,value:index===0?i:index===1?.3:.8}))));
+  editor.addAnimationKeys([global,a,b].flatMap((target,index)=>[0,10].map((tick,i)=>({target,property:'opacity',tick,value:index===0?i:index===1?.3:.8,interpolation:'linear'}))));
   editor.markSaved();return editor;
 }
 const channel=(editor,target)=>editor.animationChannels.find(value=>value.id===animationChannelId(target,'opacity'));

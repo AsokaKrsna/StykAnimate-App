@@ -65,7 +65,7 @@ class NativeScanTests(unittest.TestCase):
                 accepted += self.compare(bytes(changed))
         self.assertGreater(accepted, 0)
 
-    def test_signed_uid_extremes_and_hidden_incoming_type_continuity(self):
+    def test_signed_uid_extremes_and_type_changes_including_hidden_frames(self):
         uids = [0x80000000, 0xFFFFFFFF, 0, 0x7FFFFFFF]
         for outgoing in (0, 1, 2, 65535):
             first = frame_bytes([{"uid": uid} for uid in uids], duration=outgoing)
@@ -73,8 +73,23 @@ class NativeScanTests(unittest.TestCase):
                 for change in (False, True):
                     second = frame_bytes([{"uid": uid, "tid": 2 if change else 1} for uid in uids], duration=incoming)
                     source = struct.pack("<I", 2) + first[4:] + second[4:]
-                    self.assertEqual(self.compare(source), not(change and outgoing > 1))
-        self.assertFalse(self.compare(frame_bytes([{"uid": 0}, {"uid": 0x80000000}])))
+                    self.assertTrue(self.compare(source))
+        self.assertTrue(self.compare(frame_bytes([{"uid": 0}, {"uid": 0x80000000}])))
+        self.assertFalse(self.compare(frame_bytes([{"uid": 0}, {"uid": 0x80000000}, {"uid": 0}])))
+
+    def test_old_accelerator_semantic_rejections_use_complete_portable_validation(self):
+        class OldLibrary:
+            def __init__(self, code): self.code = code
+            def styk_piv_scan(self, *args):
+                result = args[-1]._obj
+                result.end_offset = 11
+                return self.code
+        for code in (7, 8):
+            with mock.patch.object(native_scan, '_load', return_value=OldLibrary(code)):
+                self.assertTrue(self.compare(frame_bytes([{'uid': 0}, {'uid': 0x80000000}])))
+                self.assertFalse(self.compare(frame_bytes([{'uid': 0}, {'uid': 0}])))
+                self.assertFalse(self.compare(frame_bytes([{'uid': 0}, {'uid': 0x80000000}], order=[0, 0])))
+                self.assertFalse(self.compare(frame_bytes([{'uid': 0}], camera=(0., 0., float('nan'), 1.))))
 
     def test_long_forward_join_chain_and_cycle(self):
         objects = [{"uid": uid, **({"join": (uid+1, 0)} if uid < 4999 else {})} for uid in range(5000)]

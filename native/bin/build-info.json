@@ -16,13 +16,13 @@
     {
       "architecture": "x64",
       "path": "native/bin/x64/styk-vfw.exe",
-      "sha256": "cc0a8778ce001b11b0eb32948fb21b0604222e4a9304de1cf7f8753bd351d065",
+      "sha256": "77ca10484b98b835bf6f361b4b836cffe062b521e38807274e3f03939ec98a08",
       "bytes": 318976
     },
     {
       "architecture": "x86",
       "path": "native/bin/x86/styk-vfw.exe",
-      "sha256": "b828bf489bd5ba1044d26c8df383256ea51c8627d8bc8013409afd0fde80e7a2",
+      "sha256": "84d9a2f31331b638e1fc74ad058e43607abe630570e0b84efc2139dfc20d564c",
       "bytes": 259584
     }
   ]

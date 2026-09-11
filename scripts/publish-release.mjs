@@ -2,6 +2,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { verifyReleaseAssets, fileHash } from './release-assets.mjs';
+import { checkReleaseNotes } from './changelog.mjs';
+await checkReleaseNotes();
 const repo = 'filippocalippo/styk-animate-releases';
 const { version } = JSON.parse(await readFile('package.json', 'utf8'));
 const directory = process.argv.find(arg => arg.startsWith('--directory='))?.slice(12) || `release/${version}`;

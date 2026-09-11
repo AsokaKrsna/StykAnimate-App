@@ -1,28 +1,28 @@
-dialog.release-splash { width: min(520px, calc(100vw - 32px)); max-width: 520px; max-height: calc(100dvh - 32px); padding: 0; overflow: auto; border: 1px solid #dce5ed; border-radius: 18px; background: #fff; color: #242c36; box-shadow: 0 22px 80px #1b2b4838; }
-.release-splash::backdrop { background: #18223340; backdrop-filter: blur(4px); }
-.splash-close { position: absolute; top: 20px; right: 20px; z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #dbe4ec; border-radius: 8px; background: #ffffffb0; color: #657483; font-size: 21px; line-height: 1; cursor: pointer; }
-.splash-close:hover { background: #fff; color: #222; }
-.splash-intro { padding: 22px 24px 20px; border-bottom: 1px solid #e8eef3; background: linear-gradient(120deg, #f9fcff, #eff8fd); }
+dialog.release-splash { width: min(520px, calc(100vw - 32px)); max-width: 520px; max-height: calc(100dvh - 32px); padding: 0; overflow: auto; border: 1px solid var(--theme-border, #dce5ed); border-radius: 18px; background: var(--theme-panel, #fff); color: var(--theme-text, #242c36); box-shadow: 0 22px 80px var(--theme-shadow, #1b2b4838); }
+.release-splash::backdrop { background: var(--theme-backdrop, #18223340); backdrop-filter: blur(4px); }
+.splash-close { position: absolute; top: 20px; right: 20px; z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--theme-border, #dbe4ec); border-radius: 8px; background: var(--theme-overlay, #ffffffb0); color: var(--theme-muted, #657483); font-size: 21px; line-height: 1; cursor: pointer; }
+.splash-close:hover { background: var(--theme-hover, #fff); color: var(--theme-text, #222); }
+.splash-intro { padding: 22px 24px 20px; border-bottom: 1px solid var(--theme-border, #e8eef3); background: linear-gradient(120deg, var(--theme-subtle, #f9fcff), var(--theme-field, #eff8fd)); }
 .splash-brand { display: flex; align-items: center; gap: 10px; padding-right: 38px; }
 .splash-brand img { display: block; flex-shrink: 0; }
-.splash-wordmark { font-size: 14px; font-weight: 650; letter-spacing: -.3px; color: #32475a; }
-.splash-version { display: inline-block; margin-left: auto; padding: 4px 8px; border: 1px solid #d3e3ef; border-radius: 6px; color: #467290; background: #ffffffb0; font-size: 10px; font-weight: 550; white-space: nowrap; }
+.splash-wordmark { font-size: 14px; font-weight: 650; letter-spacing: -.3px; color: var(--theme-text, #32475a); }
+.splash-version { display: inline-block; margin-left: auto; padding: 4px 8px; border: 1px solid var(--theme-border, #d3e3ef); border-radius: 6px; color: var(--theme-accent, #467290); background: var(--theme-overlay, #ffffffb0); font-size: 10px; font-weight: 550; white-space: nowrap; }
 .splash-intro h1 { font-size: 25px; line-height: 1.2; letter-spacing: -.7px; margin: 18px 0 0; font-weight: 650; }
 .splash-notes { padding: 20px 24px 0; }
-.splash-notes h2 { font-size: 12px; margin: 0 0 11px; font-weight: 650; color: #3d5061; }
-.splash-notes ul { padding-left: 16px; margin: 0; display: grid; gap: 8px; color: #62717f; font-size: 12px; line-height: 1.55; }
-.splash-notes li::marker { color: #1789d4; }
-.support-card { margin: 20px 32px; padding: 20px; border-radius: 13px; border: 1px solid #f0d9d4; background: #fff7f4; }
-.support-card strong { color: #713e32; font-size: 13px; }
-.support-card p { color: #856257; font-size: 12px; line-height: 1.55; margin: 8px 0 15px; }
-.support-donate { display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 11px 18px; border-radius: 8px; background: #e45d42; color: #fff; font-size: 12px; font-weight: 650; text-decoration: none; box-shadow: 0 2px 3px #974e2918; }
-.support-donate:hover { background: #ce4d34; color: #fff; }
-.support-donate:focus-visible, .splash-close:focus-visible { outline: 3px solid #1789d4; outline-offset: 3px; }
-.release-splash .support-card { margin: 20px 24px 0; padding: 18px; background: linear-gradient(120deg, #fff8f4, #fff2ed); }
+.splash-notes h2 { font-size: 12px; margin: 0 0 11px; font-weight: 650; color: var(--theme-secondary, #3d5061); }
+.splash-notes ul { padding-left: 16px; margin: 0; display: grid; gap: 8px; color: var(--theme-secondary, #62717f); font-size: 12px; line-height: 1.55; }
+.splash-notes li::marker { color: var(--theme-accent, #1789d4); }
+.support-card { margin: 20px 32px; padding: 20px; border-radius: 13px; border: 1px solid var(--theme-border, #f0d9d4); background: var(--theme-subtle, #fff7f4); }
+.support-card strong { color: var(--theme-danger, #713e32); font-size: 13px; }
+.support-card p { color: var(--theme-danger, #856257); font-size: 12px; line-height: 1.55; margin: 8px 0 15px; }
+.support-donate { display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 11px 18px; border-radius: 8px; background: var(--theme-danger-action, #e45d42); color: #fff; font-size: 12px; font-weight: 650; text-decoration: none; box-shadow: 0 2px 3px var(--theme-shadow, #974e2918); }
+.support-donate:hover { background: var(--theme-danger-action, #ce4d34); color: #fff; }
+.support-donate:focus-visible, .splash-close:focus-visible { outline: 3px solid var(--theme-accent, #1789d4); outline-offset: 3px; }
+.release-splash .support-card { margin: 20px 24px 0; padding: 18px; background: linear-gradient(120deg, var(--theme-subtle, #fff8f4), var(--theme-field, #fff2ed)); }
 .release-splash .support-card p { margin: 8px 0 18px; }
-.release-splash .support-donate { display: flex; width: 100%; box-sizing: border-box; min-height: 48px; gap: 14px; padding: 13px 20px; font-size: 14px; border-radius: 9px; box-shadow: 0 3px 8px #974e2920; }
+.release-splash .support-donate { display: flex; width: 100%; box-sizing: border-box; min-height: 48px; gap: 14px; padding: 13px 20px; font-size: 14px; border-radius: 9px; box-shadow: 0 3px 8px var(--theme-shadow, #974e2920); }
 .splash-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 24px 20px; }
-.splash-footer > span { color: #89949e; font-size: 10px; }
+.splash-footer > span { color: var(--theme-muted, #89949e); font-size: 10px; }
 .splash-footer .button { font-size: 11px; gap: 10px; }
 .support-card-compact { display: flex; align-items: center; gap: 18px; margin: 18px 0 0; padding: 16px; }
 .support-card-compact p { margin-bottom: 0; }

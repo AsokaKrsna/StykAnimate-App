@@ -3,10 +3,12 @@ import { PIVOT_HANDLE_COLORS } from "./canvas-interactions.mjs";
 import { Localization, normalizeLocale, SUPPORTED_LOCALES } from "./localization.mjs";
 import { DEFAULT_HOTKEYS, normalizeHotkeys } from './hotkeys.mjs';
 import { HotkeySettings } from './hotkey-settings.mjs';
+import { applyEditorTheme, normalizeTheme } from './theme.mjs';
 
 export const EDITOR_SETTINGS_KEY = "stykanimate.editor.settings.v1";
 export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   locale: "en",
+  theme: "system",
   hotkeys: DEFAULT_HOTKEYS,
   timelineMode: "advanced",
   showHandles: true,
@@ -40,6 +42,7 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
 export function normalizeEditorSettings(value = {}) {
   const result = { ...DEFAULT_EDITOR_SETTINGS };
   result.locale = normalizeLocale(value?.locale);
+  result.theme = normalizeTheme(value?.theme);
   result.hotkeys = normalizeHotkeys(value?.hotkeys);
   if (value?.timelineMode === "simple" || value?.timelineMode === "advanced")
     result.timelineMode = value.timelineMode;
@@ -83,7 +86,7 @@ export function normalizeEditorSettings(value = {}) {
   return result;
 }
 const STYLE = `
-.styk-settings{width:650px;max-width:calc(100vw - 32px);height:470px;max-height:calc(100dvh - 48px);padding:0;border:1px solid #d9d9d9;border-radius:9px;background:#fff;color:#2c2c2c;box-shadow:0 15px 60px #0003;overflow:hidden;font:12px Inter,'Segoe UI',sans-serif}.styk-settings::backdrop{background:#0005}.styk-settings-head{height:53px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid #e5e5e5}.styk-settings-head h2{margin:0;font-size:14px;font-weight:600}.styk-settings-head button{height:27px;width:27px;border-radius:4px}.styk-settings-head .icon{width:16px;height:16px}.styk-settings-layout{display:flex;height:calc(100% - 53px)}.styk-settings-tabs{width:150px;flex-shrink:0;padding:12px 8px;border-right:1px solid #e5e5e5;background:#fafafa}.styk-settings-tabs button{display:flex;align-items:center;justify-content:flex-start;width:100%;height:33px;padding:0 10px;border-radius:4px;gap:9px;font-size:11px;margin-bottom:3px;color:#565656}.styk-settings-tabs button .icon{width:15px;height:15px}.styk-settings-tabs button[aria-selected=true]{background:#e5f4ff;color:#007be5;font-weight:600}.styk-settings-content{flex:1;min-width:0;overflow:auto;padding:20px}.styk-settings-content h3{margin:0 0 13px;font-size:12px;font-weight:600}.styk-settings-group+.styk-settings-group{margin-top:22px;padding-top:19px;border-top:1px solid #e5e5e5}.styk-settings-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:34px;margin:5px 0;font-size:11px}.styk-settings-row input[type=checkbox]{width:14px;height:14px;margin:0;accent-color:#0d99ff}.styk-settings-row input[type=number],.styk-settings-row select{width:84px;height:29px;padding:0 8px;border:1px solid transparent;border-radius:4px;background:#f2f2f2;font-size:11px}.styk-settings-row select{width:114px}.styk-settings-row input:focus,.styk-settings-row select:focus{outline:1px solid #0d99ff}.styk-settings-row input[type=range]{width:130px;accent-color:#0d99ff}.styk-settings-number{display:flex;align-items:center;gap:7px}.styk-settings-number small{font-size:10px;color:#858585;min-width:14px}.styk-settings-mode{display:block;position:relative;padding:14px 36px 14px 13px;border:1px solid #dedede;border-radius:6px;margin-bottom:10px;cursor:pointer}.styk-settings-mode:has(input:checked){border-color:#0d99ff;background:#f1f9ff}.styk-settings-mode input{position:absolute;right:13px;top:16px;accent-color:#0d99ff}.styk-settings-mode strong{display:block;font-size:12px;font-weight:600;margin-bottom:5px}.styk-settings-mode small{font-size:11px;color:#767676;line-height:1.5}.styk-settings-reset{height:29px;padding:0 10px;border:1px solid #dedede;border-radius:4px;font-size:11px}.styk-settings-note{font-size:10px;color:#858585;line-height:1.5;margin:12px 0 0}.styk-settings-shortcuts{display:grid;grid-template-columns:1fr auto;gap:9px 14px;font-size:11px}.styk-settings-shortcuts kbd{font:10px Inter,'Segoe UI',sans-serif;color:#767676;background:#f2f2f2;border-radius:3px;padding:2px 5px;text-align:right}.styk-settings-error{padding:8px 10px;margin-bottom:15px;border-radius:4px;background:#fff1f0;color:#b42318;font-size:11px;line-height:1.5}.styk-settings-preview{display:flex;align-items:center;gap:12px;padding:12px 0;color:#858585;font-size:10px}.styk-settings-node{display:inline-block;width:calc(var(--size)*2px);height:calc(var(--size)*2px);border-radius:50%;border:var(--node-outline,1px solid #000);background:var(--node-color)}@media(max-width:560px){.styk-settings-tabs{width:115px;padding:10px 5px}.styk-settings-tabs button{gap:6px;padding:0 6px}.styk-settings-content{padding:16px}.styk-settings-row{gap:8px}.styk-settings-row input[type=range]{width:90px}}
+.styk-settings{width:650px;max-width:calc(100vw - 32px);height:470px;max-height:calc(100dvh - 48px);padding:0;border:1px solid var(--theme-border, #d9d9d9);border-radius:9px;background:var(--theme-panel, #fff);color:var(--theme-text, #2c2c2c);box-shadow:0 15px 60px var(--theme-shadow, #0003);overflow:hidden;font:12px Inter,'Segoe UI',sans-serif}.styk-settings::backdrop{background:var(--theme-backdrop, #0005)}.styk-settings-head{height:53px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid var(--theme-border, #e5e5e5)}.styk-settings-head h2{margin:0;font-size:14px;font-weight:600}.styk-settings-head button{height:27px;width:27px;border-radius:4px}.styk-settings-head .icon{width:16px;height:16px}.styk-settings-layout{display:flex;height:calc(100% - 53px)}.styk-settings-tabs{width:150px;flex-shrink:0;padding:12px 8px;border-right:1px solid var(--theme-border, #e5e5e5);background:var(--theme-subtle, #fafafa)}.styk-settings-tabs button{display:flex;align-items:center;justify-content:flex-start;width:100%;height:33px;padding:0 10px;border-radius:4px;gap:9px;font-size:11px;margin-bottom:3px;color:var(--theme-secondary, #565656)}.styk-settings-tabs button .icon{width:15px;height:15px}.styk-settings-tabs button[aria-selected=true]{background:var(--theme-selected, #e5f4ff);color:var(--theme-accent, #007be5);font-weight:600}.styk-settings-content{flex:1;min-width:0;overflow:auto;padding:20px}.styk-settings-content h3{margin:0 0 13px;font-size:12px;font-weight:600}.styk-settings-group+.styk-settings-group{margin-top:22px;padding-top:19px;border-top:1px solid var(--theme-border, #e5e5e5)}.styk-settings-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:34px;margin:5px 0;font-size:11px}.styk-settings-row input[type=checkbox]{width:14px;height:14px;margin:0;accent-color:#0d99ff}.styk-settings-row input[type=number],.styk-settings-row select{width:84px;height:29px;padding:0 8px;border:1px solid transparent;border-radius:4px;background:var(--theme-field, #f2f2f2);font-size:11px}.styk-settings-row select{width:114px}.styk-settings-row input:focus,.styk-settings-row select:focus{outline:1px solid var(--theme-accent, #0d99ff)}.styk-settings-row input[type=range]{width:130px;accent-color:#0d99ff}.styk-settings-number{display:flex;align-items:center;gap:7px}.styk-settings-number small{font-size:10px;color:var(--theme-muted, #858585);min-width:14px}.styk-settings-mode{display:block;position:relative;padding:14px 36px 14px 13px;border:1px solid var(--theme-border, #dedede);border-radius:6px;margin-bottom:10px;cursor:pointer}.styk-settings-mode:has(input:checked){border-color:var(--theme-accent, #0d99ff);background:var(--theme-subtle, #f1f9ff)}.styk-settings-mode input{position:absolute;right:13px;top:16px;accent-color:#0d99ff}.styk-settings-mode strong{display:block;font-size:12px;font-weight:600;margin-bottom:5px}.styk-settings-mode small{font-size:11px;color:var(--theme-muted, #767676);line-height:1.5}.styk-settings-reset{height:29px;padding:0 10px;border:1px solid var(--theme-border, #dedede);border-radius:4px;font-size:11px}.styk-settings-note{font-size:10px;color:var(--theme-muted, #858585);line-height:1.5;margin:12px 0 0}.styk-settings-shortcuts{display:grid;grid-template-columns:1fr auto;gap:9px 14px;font-size:11px}.styk-settings-shortcuts kbd{font:10px Inter,'Segoe UI',sans-serif;color:var(--theme-muted, #767676);background:var(--theme-field, #f2f2f2);border-radius:3px;padding:2px 5px;text-align:right}.styk-settings-error{padding:8px 10px;margin-bottom:15px;border-radius:4px;background:var(--theme-subtle, #fff1f0);color:var(--theme-danger, #b42318);font-size:11px;line-height:1.5}.styk-settings-preview{display:flex;align-items:center;gap:12px;padding:12px 0;color:var(--theme-muted, #858585);font-size:10px}.styk-settings-node{display:inline-block;width:calc(var(--size)*2px);height:calc(var(--size)*2px);border-radius:50%;border:var(--node-outline,1px solid #000);background:var(--node-color)}@media(max-width:560px){.styk-settings-tabs{width:115px;padding:10px 5px}.styk-settings-tabs button{gap:6px;padding:0 6px}.styk-settings-content{padding:16px}.styk-settings-row{gap:8px}.styk-settings-row input[type=range]{width:90px}}
 `;
 const escape = (value) =>
   String(value).replace(
@@ -113,6 +116,7 @@ export class EditorSettings {
       }
     }
     this.value = normalizeEditorSettings(value);
+    applyEditorTheme(this.value.theme);
     this.localization = localization || new Localization({locale: this.value.locale});
     this.localization.setLocale(this.value.locale);
     this.getValue = getValue;
@@ -252,11 +256,13 @@ export class EditorSettings {
   }
   setValue(value) {
     this.value = normalizeEditorSettings(value);
+    applyEditorTheme(this.value.theme);
     const changed = this.localization.setLocale(this.value.locale);
     if (!changed && this.dialog.open) this.render();
   }
   open(tab = this.tab) {
     if (this.getValue) this.value = normalizeEditorSettings(this.getValue());
+    applyEditorTheme(this.value.theme);
     this.localization.setLocale(this.value.locale);
     this.dialog.lang = this.localization.locale;
     this.selectTab(tab);
@@ -288,7 +294,7 @@ export class EditorSettings {
     const value = this.value;
     let html = "";
     if (this.tab === "interface")
-      html = `<section class="styk-settings-group"><label class="styk-settings-row"><span>${escape(this.t('settings.language'))}</span><select data-setting="locale" aria-label="${escape(this.t('settings.language'))}">${SUPPORTED_LOCALES.map(locale => `<option value="${locale.id}" ${value.locale === locale.id ? 'selected' : ''}>${escape(locale.nativeName)}</option>`).join('')}</select></label>${value.locale !== 'en' ? `<p class="styk-settings-note" data-locale-coverage>${escape(this.t('settings.partialLanguage'))}</p>` : ''}</section><section class="styk-settings-group"><h3>${escape(this.t('timeline.title'))}</h3>${[
+      html = `<section class="styk-settings-group"><div class="styk-settings-row"><span>${escape(this.t('settings.theme'))}</span><div class="styk-settings-theme" role="radiogroup" aria-label="${escape(this.t('settings.theme'))}">${['system', 'light', 'dark'].map(theme => `<label><input type="radio" name="editor-theme" data-setting="theme" value="${theme}" ${value.theme === theme ? 'checked' : ''}><span>${escape(this.t('settings.' + theme))}</span></label>`).join('')}</div></div><label class="styk-settings-row"><span>${escape(this.t('settings.language'))}</span><select data-setting="locale" aria-label="${escape(this.t('settings.language'))}">${SUPPORTED_LOCALES.map(locale => `<option value="${locale.id}" ${value.locale === locale.id ? 'selected' : ''}>${escape(locale.nativeName)}</option>`).join('')}</select></label>${value.locale !== 'en' ? `<p class="styk-settings-note" data-locale-coverage>${escape(this.t('settings.partialLanguage'))}</p>` : ''}</section><section class="styk-settings-group"><h3>${escape(this.t('timeline.title'))}</h3>${[
         ["advanced", this.t("timeline.advanced"), this.t("settings.advancedDescription")],
         ["simple", this.t("timeline.simple"), this.t("settings.simpleDescription")],
       ]
@@ -319,6 +325,7 @@ export class EditorSettings {
     const previous = this.value;
     const next = normalizeEditorSettings({ ...previous, ...patch });
     this.value = next;
+    if (patch.theme !== undefined) applyEditorTheme(next.theme);
     if (patch.locale !== undefined) this.localization.setLocale(next.locale);
     const normalizedPatch = Object.fromEntries(
       Object.keys(patch)
@@ -331,6 +338,7 @@ export class EditorSettings {
       );
     } catch (error) {
       this.value = previous;
+      if (patch.theme !== undefined) applyEditorTheme(previous.theme);
       if (patch.locale !== undefined) this.localization.setLocale(previous.locale);
       this.showError(error);
       return;

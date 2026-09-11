@@ -2,6 +2,7 @@ import {buildGeometry, buildGeometryAsync, evaluatedFrame, timeline, shortest, i
 import {validateScene, validateObjectChanges, syncDerived} from './pivot/model.mjs';
 import {normalizeFrame, frameOrder, setOrder, deleteObject, moveLayer as reorderLayer, rotationEdits} from './pivot/structure.mjs';
 import {createDemo, emptyDocument, createObject, createFrame, defaultFigure} from './demo.mjs';
+import {createStartupDocument} from './startup-document.mjs';
 import {editorRangeMethods} from './editor-ranges.mjs';
 import {applyFrameTiming,captureTimingGeometry,restoreTimingGeometry} from './frame-timing-history.mjs';
 import {RetainedGeometryCache} from './playback-geometry-cache.mjs';
@@ -24,6 +25,8 @@ import {editorHandleEditMethods} from './editor-handle-edit.mjs';
 import {editorFigureTransformMethods} from './editor-figure-transform.mjs';
 import {editorRangeCommandMethods} from './editor-range-commands.mjs';
 import {editorSceneMethods} from './editor-scene.mjs';
+import {editorVfxMethods} from './editor-vfx.mjs';
+import {remapVfxOwner} from './vfx.mjs';
 import {editorHandleCommandMethods} from './editor-handle-commands.mjs';
 import {editorInbetweenMethods} from './editor-inbetween.mjs';
 import {editorFrameDraftMethods, validateSimpleFrameDraft, installFrameDraftPreflights} from './editor-frame-draft.mjs';
@@ -210,7 +213,7 @@ export class Editor extends EventTarget {
     if(kind==='seek')this._followSheetSelection();
     if(kind==='selection'&&!detail.sheetSelection)this._sheetSelection=null;
     if(detail.structural&&kind!=='document'){this._loadedFigureNames=null;this._loadedTimelineTracks=null;}
-    if (kind === 'document' || detail.definition || detail.structural) this._definitionRevision = this.definitionRevision + 1;
+    if (kind === 'document' || detail.definition || (detail.structural && !detail.layerSheet)) this._definitionRevision = this.definitionRevision + 1;
     if (this._layerEventPending && ['edit', 'history', 'document'].includes(kind)) {
       detail = {layers: true, layerRevision: this.layerRevision, ...detail}; this._layerEventPending = false;
     }
@@ -407,9 +410,7 @@ export class Editor extends EventTarget {
   markSaved() { this._savedRevision = this._revision; this._emit('saved'); }
 
   newDocument() {
-    const report=emptyDocument();
-    report.keyframes=[{...createFrame([createObject(report.figure_types[0],1,report.canvas_width/2,report.canvas_height/2)]), _styk: report.keyframes[0]._styk}];
-    return this.load(report,'Untitled animation');
+    return this.load(createStartupDocument(),'Untitled animation');
   }
   load(document, name, options = {}) {
     this._loadRequestId = (this._loadRequestId ?? 0) + 1;
@@ -1544,6 +1545,7 @@ export class Editor extends EventTarget {
       delete object._stykMovieclipPart;
       if(isMovieclip(figure))object._stykMovieclip=this.report._styk?.layerSheet?presencePlayback():{start:this.tick,end:null,offset:0,speed:1,mode:'loop'};
       translateIKTargets(object, dx, dy);
+      remapVfxOwner(object,newType);
       Object.assign(object, {figure_type_id: newType, unique_id: uid, root_x: object.root_x + dx, root_y: object.root_y + dy,
         join: original.join && slotMap.has(original.join.target_object_slot) ? {...original.join, target_object_slot: slotMap.get(original.join.target_object_slot)} : null});
       return object;
@@ -1583,6 +1585,7 @@ Object.assign(Editor.prototype, editorLayerSheetMethods);
 Object.assign(Editor.prototype, editorFigureTransformMethods);
 Object.assign(Editor.prototype, editorRangeCommandMethods);
 Object.assign(Editor.prototype, editorSceneMethods);
+Object.assign(Editor.prototype, editorVfxMethods);
 Object.assign(Editor.prototype, editorHandleCommandMethods);
 Object.assign(Editor.prototype, editorInbetweenMethods);
 Object.assign(Editor.prototype, editorInbetweenAsyncMethods);

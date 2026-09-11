@@ -46,6 +46,11 @@ for(const mode of ['advanced','simple'])test(`${mode} interpolates gradient, pol
   if(mode==='simple')e.enableFrameDrafts({mode:'update'});
   const edit=(index,opacity,secondary,width,x,color)=>{
     e.selectFrame(index);e.select(1,0);e.updateSegmentStyle({paint});numeric(e,'segment_opacity',opacity);numeric(e,'segment_gradient_opacity',secondary);
+    if(index===0){
+      // Newly introduced gradient endpoints start with Hold; opt into this test's linear curve.
+      const channel=e.animationChannels.find(channel=>channel.property==='gradientOpacity');
+      e.setAnimationKeysEasing([{channelId:channel.id,keyIds:[channel.keys[0].id]}],{interpolation:'linear'});
+    }
     e.updatePolygon(0,{opacity:opacity/100});e.updateFigureStyle({outlineWidth:width});e.setCameraValues({x});e.setSceneColor(color);
     if(mode==='simple')e.updateDraftFrame();
   };

@@ -7,6 +7,7 @@ import { timeline } from "./geometry.mjs";
 import { inverseCameraScale } from "./background.mjs";
 import { validateAnimationStyle } from '../animation-style.mjs';
 import {validateFigureZIndex} from '../animation-properties.mjs';
+import {validateVfxOwner} from '../vfx.mjs';
 import {validateOriginObject,validateOriginObjectSteps,validateOriginSupportSteps} from '../animation-origin-validation.mjs';
 export const MAX_EXPORT_PIXELS = 64 * 1024 * 1024;
 const finite = (value, label) => {
@@ -43,6 +44,7 @@ function validateObjectPose(report, object, figure, origin = true) {
   if(object._sticknodesShapes||object._sticknodesSprite)validateSticknodesObject(object,figure);
   validateIK(object);
   validateAnimationStyle(object);
+  validateVfxOwner(object);
   if (object._stykZIndex !== undefined) validateFigureZIndex(object._stykZIndex);
   if(origin&&(object._stykAnimationOrigin!==undefined||figure._styk?.animationOrigin))validateOriginObject(object,figure);
   for (const key of ['root_x', 'root_y', 'scale']) float32(object[key], `Object ${key}`);
@@ -210,6 +212,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
   }
   const continuationTypes=new Set([...types].filter(([,figure])=>figure._styk?.movieclip).map(([id])=>id));
   for (const frame of report.keyframes) {
+    validateVfxOwner(frame);
     validateContinuations(frame,continuationTypes);
     for(const step of continuations(frame))validatePlayback(step.playback);
     if (

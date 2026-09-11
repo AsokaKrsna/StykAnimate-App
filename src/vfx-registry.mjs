@@ -1,0 +1,28 @@
+/** Saved effect vocabulary and inspector metadata. Rendering never enters this module. */
+const n=(label,value,min,max,step=.01,unit='')=>({label,default:value,min,max,step,unit,type:'number'});
+const c=(label='Color',value=0x66ccff)=>({label,default:value,min:0,max:0xffffff,step:1,type:'color'});
+const choice=(label,value,options)=>({...n(label,value,0,options.length-1,1),discrete:true,options});
+const toggle=(label,value=0)=>({...choice(label,value,['Off','On']),toggle:true});
+const center={centerX:n('Center X',.5,0,1,.01,'%'),centerY:n('Center Y',.5,0,1,.01,'%')};
+const advanced=params=>Object.fromEntries(Object.entries(params).map(([k,v])=>[k,{...v,advanced:true}]));
+export const VFX_REGISTRY={
+ tint:{name:'Tint',category:'Color',icon:'tint',params:{color:c(),mix:n('Mix',.5,0,1,.01,'%')}},
+ glow:{name:'Glow',category:'Light',icon:'glow',params:{color:c('Halo color'),radius:n('Radius',12,0,128,1,'px'),intensity:n('Intensity',.8,0,3),mode:choice('Placement',0,['Outer','Inner','Both']),...advanced({spread:n('Spread',0,0,64,1,'px'),falloff:n('Falloff',1,.2,4),coreColor:c('Core color',0xffffff),coreMix:n('Core mix',0,0,1,.01,'%'),blend:choice('Blend',0,['Normal','Add','Screen'])})}},
+ outline:{name:'Outline',category:'Light',icon:'outline',params:{color:c('Color',0x111111),width:n('Width',3,0,64,1,'px'),opacity:n('Opacity',1,0,1,.01,'%'),mode:choice('Placement',0,['Outside','Inside','Center']),rounded:toggle('Rounded',1),only:toggle('Outline only')}},
+ shadow:{name:'Shadow',category:'Light',icon:'shadow',params:{color:c('Color',0),radius:n('Softness',8,0,128,1,'px'),offsetX:n('Offset X',8,-256,256,1,'px'),offsetY:n('Offset Y',8,-256,256,1,'px'),opacity:n('Opacity',.5,0,1,.01,'%'),spread:n('Spread',0,0,64,1,'px'),mode:choice('Placement',0,['Outer','Inner'])}},
+ blur:{name:'Blur',category:'Blur',icon:'blur',params:{mode:choice('Mode',0,['Gaussian','Directional','Zoom','Radial']),radius:n('Radius',4,0,128,1,'px'),angle:{...n('Angle',0,-180,180,1,'°'),when:{mode:[1]}},...Object.fromEntries(Object.entries(center).map(([k,v])=>[k,{...v,when:{mode:[2,3]}}]))}},
+ grade:{name:'Color grading',category:'Color',icon:'grade',params:{exposure:n('Exposure',0,-5,5,.05,'EV'),contrast:n('Contrast',1,0,3),saturation:n('Saturation',1,0,3),temperature:n('Temperature',0,-1,1),...advanced({tint:n('Tint',0,-1,1),shadows:n('Shadows',0,-1,1),highlights:n('Highlights',0,-1,1),gamma:n('Gamma',1,.1,4)})}},
+ pixelate:{name:'Pixelate',category:'Texture',icon:'pixelate',params:{size:n('Cell width',8,1,128,1,'px'),linked:toggle('Link dimensions',1),sizeY:{...n('Cell height',8,1,128,1,'px'),when:{linked:[0]}},...advanced({offsetX:n('Grid X',0,-128,128,1,'px'),offsetY:n('Grid Y',0,-128,128,1,'px')})}},
+ noise:{name:'Noise',category:'Texture',icon:'noise',params:{amount:n('Amount',.12,0,1,.01,'%'),size:n('Grain size',1,1,64,1,'px'),colored:toggle('Color grain'),pattern:choice('Pattern',0,['Grain','Clouds']),...advanced({contrast:n('Contrast',1,0,4),softness:n('Softness',0,0,1,.01,'%'),seed:{...n('Seed',1,0,65535,1),discrete:true},phase:n('Evolution',0,0,1000000,.1)})}},
+ vignette:{name:'Vignette',category:'Color',icon:'vignette',params:{amount:n('Amount',.4,0,1,.01,'%'),softness:n('Softness',.6,.01,1,.01,'%'),color:c('Color',0),...advanced({...center,roundness:n('Roundness',1,0,1,.01,'%'),aspect:n('Aspect',1,.2,5),radius:n('Radius',1,.1,2)})}},
+ dissolve:{name:'Dissolve',category:'Distort',icon:'dissolve',params:{progress:n('Progress',.35,0,1,.01,'%'),size:n('Pattern scale',24,1,256,1,'px'),edge:n('Edge width',.08,0,.5,.01,'%'),color:c('Edge color',0xff8800),softness:n('Softness',.03,.001,.2),seed:{...n('Seed',1,0,65535,1),discrete:true}}},
+ rgbSplit:{name:'RGB split',category:'Distort',icon:'rgbSplit',params:{amount:n('Amount',6,0,128,1,'px'),angle:n('Angle',0,-180,180,1,'°'),...advanced({red:n('Red offset',1,-2,2),green:n('Green offset',0,-2,2),blue:n('Blue offset',-1,-2,2)})}},
+ wave:{name:'Wave distortion',category:'Distort',icon:'wave',params:{strength:n('Strength',8,0,128,1,'px'),wavelength:n('Wavelength',64,4,512,1,'px'),angle:n('Angle',0,-180,180,1,'°'),phase:n('Phase',0,-360,360,1,'°')}},
+ shockwave:{name:'Shockwave',category:'Distort',icon:'shockwave',scene:true,params:{radius:n('Radius',80,0,2000,1,'px'),thickness:n('Thickness',24,1,256,1,'px'),strength:n('Strength',12,-128,128,1,'px'),...advanced({...center,falloff:n('Falloff',1,.2,4)})}},
+ bloom:{name:'Bloom',category:'Light',icon:'bloom',params:{threshold:n('Threshold',.65,0,1,.01,'%'),softness:n('Soft knee',.2,.001,1,.01,'%'),radius:n('Radius',16,0,128,1,'px'),intensity:n('Intensity',.8,0,3),color:c('Color',0xffffff)}},
+ lightSweep:{name:'Light sweep',category:'Light',icon:'lightSweep',params:{position:n('Position',.5,-.5,1.5,.01,'%'),angle:n('Angle',25,-180,180,1,'°'),width:n('Width',.2,.01,1,.01,'%'),softness:n('Softness',.6,.01,1,.01,'%'),intensity:n('Intensity',.8,0,3),color:c('Color',0xffffff)}},
+ crt:{name:'CRT / scanlines',category:'Texture',icon:'crt',scene:true,params:{amount:n('Scanlines',.25,0,1,.01,'%'),spacing:n('Line spacing',3,1,32,1,'px'),curvature:n('Curvature',0,0,.5),...advanced({chromatic:n('RGB fringe',0,0,16,1,'px'),phase:n('Phase',0,-32,32,.1,'px'),color:c('Line color',0)})}},
+};
+for(const definition of Object.values(VFX_REGISTRY)){for(const p of Object.values(definition.params))Object.freeze(p);Object.freeze(definition.params);Object.freeze(definition);}Object.freeze(VFX_REGISTRY);
+export const VFX_SCENE_TYPES=new Set(['tint','blur','grade','pixelate','noise','vignette','dissolve','rgbSplit','wave','shockwave','bloom','lightSweep','crt']);
+export const effectAvailable=(type,scene)=>scene?VFX_SCENE_TYPES.has(type):!VFX_REGISTRY[type]?.scene&&type!=='vignette';

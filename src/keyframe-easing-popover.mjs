@@ -4,27 +4,27 @@ import {createEasingControls} from './keyframe-easing-view.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
 
 const STYLES = `
-.styk-easing-popover{position:fixed;inset:auto;margin:0;padding:6px;width:232px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;box-sizing:border-box;border:1px solid #dce1e7;border-radius:8px;background:#fff;color:#333;box-shadow:0 4px 20px #0002;font:11px Inter,InterFallback,'Segoe UI',sans-serif}
+.styk-easing-popover{position:fixed;inset:auto;margin:0;padding:6px;width:232px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;box-sizing:border-box;border:1px solid var(--theme-border, #dce1e7);border-radius:8px;background:var(--theme-panel, #fff);color:var(--theme-text, #333);box-shadow:0 4px 20px var(--theme-shadow, #0002);font:11px Inter,InterFallback,'Segoe UI',sans-serif}
 .styk-easing-popover *{box-sizing:border-box}
 .styk-easing-popover [hidden]{display:none!important}
-.styk-easing-header{display:flex;align-items:center;justify-content:space-between;padding:1px 5px 5px;color:#77808c;font-size:10px}
-.styk-easing-header button{border:0;background:none;color:#77808c;font-size:17px;padding:0 3px;cursor:pointer}
+.styk-easing-header{display:flex;align-items:center;justify-content:space-between;padding:1px 5px 5px;color:var(--theme-muted, #77808c);font-size:10px}
+.styk-easing-header button{border:0;background:none;color:var(--theme-muted, #77808c);font-size:17px;padding:0 3px;cursor:pointer}
 .styk-easing-options{display:grid;gap:1px}
-.styk-easing-options button{display:flex;align-items:center;justify-content:space-between;width:100%;height:28px;border:0;border-radius:4px;padding:0 9px;background:#fff;color:#454b55;text-align:left;cursor:pointer;font:inherit}
-.styk-easing-options button:hover,.styk-easing-options button:focus-visible{background:#f0f5fa;outline:none}
-.styk-easing-options button[aria-checked=true]{background:#e8f4ff;color:#0877c5}
+.styk-easing-options button{display:flex;align-items:center;justify-content:space-between;width:100%;height:28px;border:0;border-radius:4px;padding:0 9px;background:var(--theme-panel, #fff);color:var(--theme-secondary, #454b55);text-align:left;cursor:pointer;font:inherit}
+.styk-easing-options button:hover,.styk-easing-options button:focus-visible{background:var(--theme-hover, #f0f5fa);outline:none}
+.styk-easing-options button[aria-checked=true]{background:var(--theme-selected, #e8f4ff);color:var(--theme-accent, #0877c5)}
 .styk-easing-options button[aria-checked=true]::after{content:'✓'}
 .styk-easing-options button:disabled{opacity:.35;cursor:default}
-.styk-easing-curve{display:block;width:100%;height:124px;margin-top:7px;border:1px solid #e5eaf0;border-radius:5px;background:#f8fafc;touch-action:none}
+.styk-easing-curve{display:block;width:100%;height:124px;margin-top:7px;border:1px solid var(--theme-border, #e5eaf0);border-radius:5px;background:var(--theme-subtle, #f8fafc);touch-action:none}
 .styk-easing-curve circle{cursor:grab;stroke-width:2}
-.styk-easing-curve text{font:9px sans-serif;fill:#8390a0}
+.styk-easing-curve text{font:9px sans-serif;fill:var(--theme-muted, #8390a0)}
 .styk-easing-points{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin:7px 0}
-.styk-easing-points label{font-size:9px;color:#7c8693}
-.styk-easing-points input{width:100%;height:25px;margin-top:3px;border:1px solid #dce1e7;border-radius:4px;padding:0 4px;font:10px inherit;background:#fff;color:#454b55;appearance:textfield}
-.styk-easing-points input:focus{outline:1px solid #0d99ff}
-.styk-easing-apply{display:block;width:100%;height:27px;border:0;border-radius:4px;background:#0d99ff;color:#fff;font:inherit;cursor:pointer}
+.styk-easing-points label{font-size:9px;color:var(--theme-muted, #7c8693)}
+.styk-easing-points input{width:100%;height:25px;margin-top:3px;border:1px solid var(--theme-border, #dce1e7);border-radius:4px;padding:0 4px;font:10px inherit;background:var(--theme-panel, #fff);color:var(--theme-secondary, #454b55);appearance:textfield}
+.styk-easing-points input:focus{outline:1px solid var(--theme-accent, #0d99ff)}
+.styk-easing-apply{display:block;width:100%;height:27px;border:0;border-radius:4px;background:var(--theme-action, #0d99ff);color:#fff;font:inherit;cursor:pointer}
 .styk-easing-apply:disabled{opacity:.4;cursor:default}
-.styk-easing-error{color:#c43d3d;font-size:10px;line-height:1.4}
+.styk-easing-error{color:var(--theme-danger, #c43d3d);font-size:10px;line-height:1.4}
 .styk-easing-error:empty{display:none}
 `;
 

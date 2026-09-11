@@ -1,4 +1,5 @@
 /** Export choices describe actual encoders; container extensions are never aliases. */
+import {videoQualityOptions} from './export-video-quality.mjs';
 const descriptions = [
   {id: 'webm', label: 'WebM video', extension: 'webm', mimeType: 'video/webm', kind: 'video', quality: 'bitrate'},
   {id: 'mp4', label: 'MP4 video', extension: 'mp4', mimeType: 'video/mp4', kind: 'video', quality: 'video'},
@@ -17,8 +18,8 @@ async function portableVideo(environment, {width, height, fps}) {
   for (const codec of ['vp8', 'vp09.00.51.08']) {
     try {
       const response = await environment.VideoEncoder.isConfigSupported({codec, width, height, framerate: fps,
-        bitrate: Math.round(Math.max(1e6, Math.min(50e6, width * height * fps * 0.18))),
-        latencyMode: 'quality', hardwareAcceleration: 'no-preference', alpha: 'discard'});
+        bitrate: videoQualityOptions({width, height, fps, provider: 'WebCodecs'}).bitrate,
+        latencyMode: 'quality', hardwareAcceleration: 'prefer-software', alpha: 'discard'});
       if (response.supported) return {supported: true, codec: codec === 'vp8' ? 'VP8' : 'VP9', provider: 'WebCodecs'};
     } catch { /* Try the next supported WebM encoder. */ }
   }

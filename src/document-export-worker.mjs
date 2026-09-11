@@ -7,6 +7,7 @@ import {materializeStyledFigureForStk} from './pivot-style-materialize.mjs';
 import {nativeFigureDocument} from './native-figure.mjs';
 import {validateMovieclipGraph,isMovieclip} from './movieclips.mjs';
 import {packPoseSequences} from './pose-sequence-storage.mjs';
+import {documentHasVfx} from './vfx.mjs';
 
 let document, config, running = false;
 const timings = {};
@@ -14,8 +15,9 @@ function reply(id, payload) { self.postMessage({id, ok: true, ...payload}); }
 
 self.addEventListener('message', async event => {
   const message = event.data;
-  if (running) { self.postMessage({id: message.id, ok: false, error: {message: 'The document export worker is busy.'}}); return; }
+  if (running) { self.postMessage({id: message.id, ok: false, error: {message: 'The document export worker is busy.', telemetryCode: 'worker_busy', telemetryStage: 'prepare'}}); return; }
   running = true;
+  let stage = 'prepare';
   try {
     if (message.operation === 'start') {
       config = message.options;
@@ -30,6 +32,8 @@ self.addEventListener('message', async event => {
       document._styk = {...document._styk, format: 'StykAnimate', format_version: 1,
         ...(config.name ? {name: config.name} : {})};
       for (const frame of document.keyframes || []) for (const object of frame.objects || []) delete object.runtime_segments;
+      stage = 'validate';
+      if(['piv','stk'].includes(config.format)&&documentHasVfx(document))throw Object.assign(new Error('Pivot files cannot preserve VFX. Save as .styk, .stkz or .stykmov to keep effects editable, or export an image/video.'),{telemetryCode:'unsupported_feature'});
       validateAnimationDocument(document);
       validateMovieclipGraph(document);
       if (config.format === 'stkz' || config.format === 'stykmov') {
@@ -45,7 +49,7 @@ self.addEventListener('message', async event => {
             (f._styk?.movieclip&&hasSourceShapes(f._styk.movieclip.document)))||
             doc.keyframes.some(f=>f.objects.some(o=>o._sticknodesSprite));
         };
-        if(hasSourceShapes(document))throw new Error('Pivot cannot retain these Stick Nodes shapes. Save as .styk, .stykmov or .stkz to keep them editable, or export SVG, PNG or video.');
+        if(hasSourceShapes(document))throw Object.assign(new Error('Pivot cannot retain these Stick Nodes shapes. Save as .styk, .stykmov or .stkz to keep them editable, or export SVG, PNG or video.'), {telemetryCode: 'unsupported_feature'});
       }
       if (config.format === 'piv') {
         const composing = performance.now(), originalFrames = document.keyframes.length;
@@ -54,7 +58,7 @@ self.addEventListener('message', async event => {
         timings.source_keyframes = originalFrames; timings.export_keyframes = document.keyframes.length;
       } else if (config.format === 'stk') {
         if(isMovieclip(document.figure_types.find(f=>f.figure_type_id===config.figureTypeId)))
-          throw new Error('Save movieclips as .stykmov. Use Break apart to export a still figure to Pivot.');
+          throw Object.assign(new Error('Save movieclips as .stykmov. Use Break apart to export a still figure to Pivot.'), {telemetryCode: 'unsupported_feature'});
         const resolved = materializeStyledFigureForStk(document, config);
         document = resolved.report; config.figureTypeId = resolved.figureTypeId;
       }
@@ -62,7 +66,7 @@ self.addEventListener('message', async event => {
         const figures=config.format==='stk'?document.figure_types.filter(f=>f.figure_type_id===config.figureTypeId):document.figure_types;
         const unsupported=p=>p && p.type!=='solid' && (p.type!=='linear'||p.angle%360!==0||p.stops.length!==2||p.stops[0].offset!==0||p.stops[1].offset!==1);
         if(figures.some(f=>f.segments.some(s=>unsupported(s.paint))) || (config.format==='piv' && document.backgrounds?.some(b=>b.paint&&b.paint.type!=='solid')))
-          throw new Error('Pivot files cannot represent these gradient fills. Save as .styk to keep editable gradients, or export SVG, PNG or video to preserve their appearance.');
+          throw Object.assign(new Error('Pivot files cannot represent these gradient fills. Save as .styk to keep editable gradients, or export SVG, PNG or video to preserve their appearance.'), {telemetryCode: 'unsupported_feature'});
       }
       synchronizeExistingDerived(document);
       // Zero stored frames are a valid native PIV boundary. The materializer
@@ -71,6 +75,7 @@ self.addEventListener('message', async event => {
       validateScene(config.format === 'piv' && document.keyframes.length === 0
         ? {...document, keyframes: [{objects: [], duration_raw: 0}]} : document);
       timings.normalize_ms = performance.now() - started;
+      stage = 'serialize';
       const serializing = performance.now();
       const body = JSON.stringify({document: config.format === 'styk' ? packPoseSequences(document) : document, sourceId: config.sourceId, format: config.format,
         filename: config.name, figureTypeId: config.figureTypeId});
@@ -81,6 +86,7 @@ self.addEventListener('message', async event => {
       const sending = performance.now();
       const headers = {'Content-Type': 'application/json'};
       if (config.token) headers.Authorization = `Bearer ${config.token}`;
+      stage = 'request';
       const response = await fetch(new URL('/api/export', config.baseURL), {method: 'POST', headers, body});
       if (!response.ok) {
         const text = await response.text();
@@ -88,6 +94,7 @@ self.addEventListener('message', async event => {
         try { details = JSON.parse(text); } catch { /* Preserve status for non-JSON failures. */ }
         const error = new Error(details?.error?.message || details?.error || `Document export failed (${response.status}).`);
         error.status = response.status; error.code = details?.code;
+        error.telemetryCode = response.status >= 500 ? 'backend_unavailable' : 'backend_rejected';
         throw error;
       }
       const blob = await response.blob();
@@ -100,6 +107,7 @@ self.addEventListener('message', async event => {
   } catch (error) {
     document = null;
     self.postMessage({id: message.id, ok: false, error: {message: error?.message || String(error),
-      code: error?.code, status: error?.status}});
+      code: error?.code, status: error?.status, telemetryStage: stage,
+      telemetryCode: error?.telemetryCode || (stage === 'validate' ? 'invalid_document' : stage === 'serialize' ? 'serialize_failed' : stage === 'request' ? 'backend_unavailable' : 'snapshot_failed')}});
   } finally { running = false; }
 });

@@ -54,4 +54,5 @@ module.exports = async function beforePack(context) {
       if (!item || item.sha256 !== hash(bytes) || item.bytes !== bytes.length) throw new Error(`Rebuild the ${arch} Windows codec helper before packaging.`);
     }
   }
+  await require('./build-telemetry-info.cjs').buildTelemetryInfo(appRoot);
 };

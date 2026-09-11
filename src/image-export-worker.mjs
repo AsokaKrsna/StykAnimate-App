@@ -1,5 +1,6 @@
 import { GIFPaletteBuilder } from "./gif-quantize.mjs";
 import { APNGEncoder, GIFEncoder, SequenceZIP } from "./image-codecs.mjs";
+import {exportContext, checkExportContext} from './export-canvas.mjs';
 
 let output, canvas, context, config, paletteBuilder;
 let busy = false;
@@ -19,10 +20,7 @@ self.addEventListener("message", async (event) => {
       config = message.config;
       if (config.format !== "svg-sequence") {
         canvas = new OffscreenCanvas(config.width, config.height);
-        context = canvas.getContext("2d", {
-          willReadFrequently:
-            config.format === "gif" || config.format === "gif-sequence",
-        });
+        context = exportContext(canvas);
         if (!context) throw new Error("A canvas image encoder is unavailable.");
       }
       const Encoder =
@@ -61,6 +59,7 @@ self.addEventListener("message", async (event) => {
       }
       const bitmap = message.bitmap;
       try {
+        checkExportContext(context);
         if (bitmap.width !== config.width || bitmap.height !== config.height)
           throw new Error("The rendered image frame has the wrong dimensions.");
         context.clearRect(0, 0, config.width, config.height);
@@ -72,6 +71,7 @@ self.addEventListener("message", async (event) => {
       } finally {
         bitmap.close();
       }
+      checkExportContext(context);
       if (config.format === "gif") {
         const rgba = context.getImageData(
           0,
@@ -96,6 +96,7 @@ self.addEventListener("message", async (event) => {
           type,
           quality: config.quality,
         });
+        checkExportContext(context);
         if (encoded.type !== type)
           throw new Error(
             `The browser does not support ${type} image encoding.`,
@@ -107,9 +108,12 @@ self.addEventListener("message", async (event) => {
       if (!output) throw new Error("The image export was not initialized.");
       const blob = output.finish();
       output = null;
+      if (canvas) canvas.width = canvas.height = 1;
       self.postMessage({ id: message.id, ok: true, blob });
     } else throw new Error("Unknown image export operation.");
   } catch (error) {
+    message.bitmap?.close();
+    if (canvas) canvas.width = canvas.height = 1;
     output = paletteBuilder = null;
     self.postMessage({
       id: message.id,

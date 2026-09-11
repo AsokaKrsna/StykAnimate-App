@@ -13,3 +13,6 @@ __pycache__/
 .env.*
 !.env.example
 !.env.sample
+
+# Generated per-package source identity (contains no user information).
+desktop/telemetry-build.json

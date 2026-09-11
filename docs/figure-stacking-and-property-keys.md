@@ -11,6 +11,15 @@ sequence for that figure instance. Editing another frame does not rewrite the
 shared figure definition or the order saved in earlier frames. Playback and
 native export preserve these internal orders.
 
+The canvas toolbar resolves the complete selection before choosing its order
+scope. A selection spanning attached figures moves all selected instances within
+their user layers, preserving their relative paint order and each figure's
+internal artwork. A selected joint in a single-segment figure, or a branch
+containing an entire figure, also moves the instance in scene order. A partial
+segment or branch selection confined to one figure changes only its internal
+order. Repeating a move at a boundary does not change scope or create history.
+The inspector's explicit segment and polygon Order controls remain internal.
+
 Blue diamonds indicate independent property animation. Filled diamonds mark a
 key at the current frame; outlines indicate animation between keys. Values that
 are only stored in pose keys have no inspector diamond or key-navigation controls.
@@ -46,3 +55,10 @@ for the complete property list and compatibility behavior.
 Regression coverage lives in `tests/figure-z-index.test.mjs` and
 `tests/figure-z-index.browser.mjs`, alongside existing animation, property-control,
 timeline, range-operation and clipboard checks.
+
+`tests/selection-order.test.mjs` covers selection scope, joined groups, stable
+ordering, history and reopening. `node tests/selection-order.browser.mjs` checks
+actual joint double-clicks and toolbar clicks in Simple and Advanced, including
+Shift moves, rendered order, unchanged poses/attachments and STYK/PIV round trips.
+It also accepts the reported `Firing Range Bren MKII.piv` path as its argument;
+the external project is read only and test exports stay in memory.

@@ -13,7 +13,7 @@ import {hasPinnedIK, interpolateIK} from '../ik.mjs';
 import {evaluateIKPose} from '../ik-evaluation.mjs';
 import {solveJoinedIK} from '../ik-joined.mjs';
 import {isMovieclip, sampleMovieclipObjects,movieclipTypes,movieclipSourceDocument} from '../movieclips.mjs';
-import {buildMovieclipGeometry} from '../movieclip-geometry.mjs';
+import {buildMovieclipGeometrySteps} from '../movieclip-geometry.mjs';
 import {sampleLayerSheet,invalidateLayerSheet} from '../layer-sheet.mjs';
 import {presenceIndex,presenceElapsed,invalidateMovieclipPresence,cachedPresenceIndex,usesPresence} from '../movieclip-presence.mjs';
 import {sticknodesShape,sticknodesCurve,sticknodesDrawables,sticknodesSpriteAsset} from '../sticknodes/geometry.mjs';
@@ -24,6 +24,10 @@ export function invalidateEvaluationCaches(report) {
   authoredTimelines.delete(report);
   invalidatePoseCache(report);
 }
+import {interpolateVfx} from '../vfx.mjs';
+import {vfxStack,activeVfx} from '../vfx.mjs';
+import {withVfx,segmentVfx,releaseVfxSurface} from '../vfx-canvas.mjs';
+import {objectBounds} from '../renderer-geometry.mjs';
 export const TAU = Math.PI * 2;
 export const lerp = (a, b, t) => Number(a) + (Number(b) - Number(a)) * t;
 export const shortest = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -236,6 +240,7 @@ export function evaluatedNativeFrame(report, index, t = 0, tweenCache, requested
       const constantTween=!legacyEasing&&tweenCache?.lookup(o,next,fig);
       if(constantTween?.value)return constantTween.value;
       const out = { ...o, runtime_segments: undefined };
+      if(o._stykVfx)out._stykVfx=interpolateVfx(o._stykVfx,byId.get(o.unique_id)?._stykVfx,t);
       const matching = (f) => {
         let objects = identities.get(f);
         if (!objects) { objects = new Map(f.objects.map(item => [item.unique_id, item])); identities.set(f, objects); }
@@ -397,6 +402,7 @@ export function evaluatedNativeFrame(report, index, t = 0, tweenCache, requested
   }
   // Image identities cannot share scalar tangents; each crossfade eases locally.
   Object.assign(frame, tweenBackground(a, b, auto ? easedProgress(a._styk.easing, t) : t));
+  if(a._stykVfx)frame._stykVfx=interpolateVfx(a._stykVfx,b._stykVfx,t);
   return correctAnimationOrigins(report, frame);
 }
 /** Every editor, worker and export samples the same authored scene. Native
@@ -519,7 +525,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       else warnings.push(`Unresolved join at object ${slot}`);
     }
     if (isMovieclip(fig)) {
-      const geometry = buildMovieclipGeometry(fig,obj,root,slot,{timeline,evaluatedFrame,buildGeometry});
+      const geometry = yield* buildMovieclipGeometrySteps(fig,obj,root,slot,{timeline,evaluatedFrame,buildGeometry,buildGeometrySteps});
       cache.set(slot,geometry); return geometry;
     }
     let plan = definitionPlans.get(fig);
@@ -838,6 +844,7 @@ const outlineCanvases = new WeakMap();
 /** Release temporary isolation surfaces after a one-shot raster has been captured.
  * Long-lived Canvas renderers can keep their scratch surfaces for ordinary reuse. */
 export function releaseGeometryResources(ctx, { retainCanvases = false } = {}) {
+  releaseVfxSurface(ctx);
   for (const cache of [groupCanvases, outlineCanvases]) {
     const scratch = cache.get(ctx);
     if (!scratch) continue;
@@ -862,11 +869,17 @@ function isolated(ctx, alpha, paint, cache) {
   }
   if (scratch.width !== ctx.canvas.width) scratch.width = ctx.canvas.width;
   if (scratch.height !== ctx.canvas.height) scratch.height = ctx.canvas.height;
-  const temp = scratch.getContext("2d");
+  // Opacity and outline isolation must follow the destination's storage policy;
+  // otherwise a software export silently creates full-size GPU scratch images.
+  const temp = scratch.getContext("2d", {
+    willReadFrequently: ctx.getContextAttributes?.().willReadFrequently === true,
+  });
+  if (!temp || temp.isContextLost?.()) throw new Error('The temporary drawing canvas is unavailable.');
   temp.setTransform(1, 0, 0, 1, 0, 0);
   temp.clearRect(0, 0, scratch.width, scratch.height);
   temp.setTransform(ctx.getTransform());
   paint(temp);
+  if (temp.isContextLost?.()) throw new Error('The temporary drawing canvas was lost while rendering.');
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha *= alpha;
@@ -881,7 +894,7 @@ function floatBits(n) {
 export function drawGeometry(ctx, geometry, resources = {}) {
   // The native export restores its brush after each frame. Opaque objects share
   // this state; every isolated opacity/outline pass starts with a fresh brush.
-  const mainStroke = { width: 1 };
+  const mainStroke = geometry.strokeState || { width: 1 };
   // Pivot applies object transparency once to the completed object, including overlaps.
   const groups = [];
   for (const s of geometry.drawables) {
@@ -895,15 +908,15 @@ export function drawGeometry(ctx, geometry, resources = {}) {
   for (const g of groups) {
     const owner = g.items[0]?._movieclipOwner;
     if (owner) {
-      isolated(ctx, owner.opacity, target => drawGeometry(target, {drawables:g.items.map(item => {
+      isolated(ctx,owner.opacity,target=>withVfx(target,owner.effects,filtered=>drawGeometry(filtered, {drawables:g.items.map(item => {
         const inner=item._movieclipInner;
         return {...item,slot:item._movieclipPart,_movieclipOwner:inner?.owner,_movieclipPart:inner?.part,_movieclipInner:inner?.inner};
-      })},resources), groupCanvases);
+      })},resources),{bounds:owner.effects?.length?objectBounds(g.items,resources):undefined,domainBounds:owner.effects?.length?objectBounds(g.items,{...resources,vfxBounds:false}):undefined,scale:owner.scale}),groupCanvases);
       continue;
     }
-    isolated(
-      ctx,
-      g.opacity,
+    const effects=vfxStack(g.items[0]?.obj);
+    isolated(ctx,g.opacity,filtered=>withVfx(
+      filtered,effects,
       (target) => {
         const stroke = target === ctx ? mainStroke : { width: 1 };
         const style = g.items.find((s) => s.fig)?.fig.segment_decode
@@ -938,8 +951,8 @@ export function drawGeometry(ctx, geometry, resources = {}) {
         }
         drawPrimitives(target, g.items, resources, stroke);
       },
-      groupCanvases,
-    );
+      {bounds:effects.length?objectBounds(g.items,resources):undefined,domainBounds:effects.length?objectBounds(g.items,{...resources,vfxBounds:false}):undefined,scale:Math.abs(g.items[0]?.obj.scale??1)},
+    ),groupCanvases);
   }
 }
 const vectorPaths = new WeakMap();
@@ -985,6 +998,8 @@ function strokeWidth(stroke, requested) {
 }
 function drawPrimitives(ctx, items, resources, stroke) {
   for (const s of items) {
+    const effects=!s._vfxSkipNode&&!s.outline?segmentVfx(s):[];
+    if(activeVfx(effects).length){withVfx(ctx,effects,target=>drawPrimitives(target,[{...s,_vfxSkipNode:true}],resources,stroke),{bounds:objectBounds([s],resources),domainBounds:objectBounds([s],{...resources,vfxBounds:false}),scale:Math.abs(s.obj.scale??1)});continue;}
     const brush = gradient(ctx, s) || rgba(s.rgb, s.alpha);
     ctx.fillStyle = brush;
     ctx.strokeStyle = brush;

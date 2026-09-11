@@ -14,6 +14,7 @@ test('new documents hold; inserted and blank layer keys inherit the previous cur
   e.newDocument();
   const id = e.activeLayerId;
   assert.equal(easingMode(e.layerFrameKeys(id)[0]), 'constant');
+  e.sheetSetDuration(6,id,0);
   e.sheetInsertKey([id], 5);
   assert.equal(easingMode(e.layerFrameKeys(id)[1]), 'constant');
   e.sheetSetEasing([id], 0, 0, {interpolation: 'bezier', bezier: [.1,.2,.8,.9]});

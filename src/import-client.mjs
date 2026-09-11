@@ -15,10 +15,10 @@ export class ImportClient {
     this.failure = null;
     this.worker = new Worker(workerURL, {type: 'module', name: 'StykAnimate file importer'});
     this.worker.addEventListener('message', event => this._receive(event.data));
-    this.worker.addEventListener('messageerror', () => this._fail(new Error('The imported project could not be transferred.')));
+    this.worker.addEventListener('messageerror', () => this._fail(Object.assign(new Error('The imported project could not be transferred.'), { telemetryCode: 'snapshot_failed', telemetryStage: 'prepare' })));
     this.worker.addEventListener('error', event => {
       event.preventDefault();
-      this._fail(new Error(event.message || 'The file importer stopped unexpectedly.'));
+      this._fail(Object.assign(new Error(event.message || 'The file importer stopped unexpectedly.'), { telemetryCode: 'worker_failed', telemetryStage: 'decode' }));
     });
   }
 
@@ -56,6 +56,7 @@ export class ImportClient {
       const error = new Error(message.error?.message || 'This file could not be imported.');
       if (message.error?.code) error.code = message.error.code;
       if (message.error?.status) error.status = message.error.status;
+      error.telemetryCode = message.error?.telemetryCode; error.telemetryStage = message.error?.telemetryStage;
       request.reject(error);
     }
   }
@@ -101,7 +102,7 @@ export class ImportClient {
     }
     const native = /\.(styk|stkz|stykmov|json)$/i.test(file.name);
     const limit = (native ? 256 : 128) * 1024 * 1024;
-    if (Number(file.size) > limit) throw new Error(`The file exceeds the ${limit / 1024 / 1024} MiB import limit.`);
+    if (Number(file.size) > limit) throw Object.assign(new Error(`The file exceeds the ${limit / 1024 / 1024} MiB import limit.`), { telemetryCode: 'file_too_large', telemetryStage: 'prepare' });
     const generation=this.cancelGeneration,bytes = await file.arrayBuffer();
     if(generation!==this.cancelGeneration)throw new DOMException('Import superseded.','AbortError');
     // Transfer ownership rather than structured-cloning a second upload buffer.

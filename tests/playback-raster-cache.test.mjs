@@ -21,3 +21,26 @@ test('invalidation during an asynchronous clone closes both owners',async()=>{
   const pending=cache.packetBitmap('a',()=>original);cache.dispose();resolve(packet);
   await assert.rejects(pending,{name:'AbortError'});assert.equal(original.closed,1);assert.equal(packet.closed,1);assert.equal(cache.bytes,0);
 });
+
+test('a repeated frame larger than the cache retains hits instead of cycling every raster',async()=>{
+  const cache=new PlaybackRasterCache({maxBytes:32,clone:async()=>bitmap()}),counts=new Map();
+  const render=key=>()=>{counts.set(key,(counts.get(key)||0)+1);return bitmap();};
+  for(let frame=0;frame<5;frame++){
+    cache.beginFrame();
+    for(const key of ['a','b','c']){const packet=await cache.packetBitmap(key,render(key));packet.close();assert.ok(cache.bytes<=32);}
+  }
+  assert.equal(counts.get('a'),1);assert.equal(counts.get('b'),1);assert.equal(counts.get('c'),5);assert.equal(cache.hits,8);
+  // A different scene can replace old entries after one frame of non-use.
+  for(let frame=0;frame<2;frame++){cache.beginFrame();for(const key of ['d','e'])(await cache.packetBitmap(key,render(key))).close();}
+  assert.deepEqual([...cache.entries.keys()],['d','e']);cache.dispose();assert.equal(cache.bytes,0);
+});
+
+test('frame admission bypasses oversized incoming artwork without evicting later hits',async()=>{
+  const cache=new PlaybackRasterCache({maxBytes:32,clone:async()=>bitmap()});
+  cache.beginFrame();await cache.packetBitmap('keep',bitmap);
+  const kept=cache.entries.get('keep');cache.beginFrame();
+  const incoming={...bitmap(),width:4};assert.equal(await cache.packetBitmap('incoming',()=>incoming),incoming);
+  await cache.packetBitmap('keep',()=>{throw new Error('Lost a later frame hit');});
+  assert.equal(kept.closed,0);assert.equal(cache.bytes,16);cache.clear();assert.equal(kept.closed,1);
+  cache.beginFrame();await cache.packetBitmap('replacement',bitmap);assert.equal(cache.bytes,16);cache.dispose();incoming.close();
+});

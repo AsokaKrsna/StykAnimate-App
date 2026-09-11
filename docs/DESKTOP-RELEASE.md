@@ -1,6 +1,6 @@
 # Desktop build and release verification
 
-Only Windows execution has been verified on this workstation. The existing GitHub Actions workflow builds unsigned Windows, macOS, and Linux artifacts on their respective hosts; it does not publish or use signing secrets. A successful CI run on another OS is required before claiming that platform is verified.
+Only Windows execution has been verified on this workstation. The current GitHub Actions workflow builds unsigned Windows artifacts and uploads a draft or publishes depending on its trigger. See [release history and shipping](RELEASING.md) before preparing a version or pushing a tag. macOS and Linux require their own host builds and execution evidence before claiming support is verified.
 
 The lockfile pins Electron, electron-builder, and Playwright. `scripts/requirements-build.txt` pins the Python compiler dependencies, orjson and the offline video encoder wheel. Build with Python 3.12 and Node 24 using the commands below on the target OS and architecture. Windows additionally requires MSVC C++ build tools and a Windows SDK; the build scripts discover them through vswhere. macOS and Linux use their host C++ compiler.
 

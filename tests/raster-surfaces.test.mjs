@@ -35,3 +35,17 @@ test('overlapping raster leases fail before overwriting an active object', () =>
     pool.release(); assert.equal(pool.acquire(80, 90).surface, active.surface); pool.dispose();
   } finally {globalThis.OffscreenCanvas = previous;}
 });
+
+test('worker path surfaces retain their software context policy across reuse and disposal',()=>{
+  const previous=globalThis.OffscreenCanvas,calls=[];
+  globalThis.OffscreenCanvas=class {
+    constructor(width,height){this.width=width;this.height=height;}
+    getContext(type,options){calls.push({type,options});return {canvas:this};}
+  };
+  try {
+    const pool=new RasterSurfacePool({contextOptions:{willReadFrequently:true}});
+    pool.acquire(40,50);pool.release();pool.acquire(80,90);pool.release();pool.dispose();
+    pool.acquire(40,50);pool.dispose();
+    assert.deepEqual(calls,[{type:'2d',options:{willReadFrequently:true}},{type:'2d',options:{willReadFrequently:true}}]);
+  }finally{globalThis.OffscreenCanvas=previous;}
+});

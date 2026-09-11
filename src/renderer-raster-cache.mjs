@@ -1,7 +1,8 @@
+import {previewMemoryPlan} from './playback-budget.mjs';
 /** Own editor textures independently of scene entries. Evict only at publication,
  * when the complete next layout is known, never while it is being assembled. */
 export class EditorRasterCache {
-  constructor({maxBytes = 128 * 1024 * 1024, maxEntries = 1024} = {}) {
+  constructor({maxBytes = previewMemoryPlan().editorRasters, maxEntries = 1024} = {}) {
     this.maxBytes = Math.max(0, maxBytes);
     this.maxEntries = Math.max(0, maxEntries);
     this.variants = new WeakMap();

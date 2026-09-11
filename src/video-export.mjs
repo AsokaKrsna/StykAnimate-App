@@ -3,8 +3,12 @@
  *          https://www.webmproject.org/docs/container/
  * Video only; VP8 preferred, VP9 fallback. No real-time/compositor dependency.
  */
+import {videoQualityOptions} from './export-video-quality.mjs';
 const text = new TextEncoder();
 const LIMIT = 512 * 1024 * 1024;
+// Include submitted but not yet output frames, not just encodeQueueSize: codecs
+// can dequeue a frame while retaining its pixels internally. At 4K allow one.
+export const videoFrameWindow = (width, height) => Math.max(1, Math.min(4, Math.floor(32 * 1024 * 1024 / (width * height * 4))));
 
 function bytes(value) {
   const result = [];
@@ -97,7 +101,7 @@ function cancelled() { return new DOMException('Video export cancelled.', 'Abort
  * @returns {Promise<Blob>} A seekable, video-only WebM file.
  */
 export async function encodeWebM({width, height, fps, totalFrames, renderFrame, onProgress,
-  signal, bitrate = Math.max(1e6, Math.min(50e6, width * height * fps * 0.18)), maxBytes = LIMIT}) {
+  signal, bitrate = videoQualityOptions({width, height, fps, provider: 'WebCodecs'}).bitrate, maxBytes = LIMIT}) {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16384 || height > 16384) {
     throw new Error('Video dimensions must be whole pixels between 1 and 16,384.');
   }
@@ -113,7 +117,7 @@ export async function encodeWebM({width, height, fps, totalFrames, renderFrame, 
   let config;
   for (const codec of ['vp8', 'vp09.00.51.08']) {
     const candidate = {codec, width, height, framerate: fps, bitrate: Math.round(bitrate),
-      latencyMode: 'quality', hardwareAcceleration: 'no-preference', alpha: 'discard'};
+      latencyMode: 'quality', hardwareAcceleration: 'prefer-software', alpha: 'discard'};
     try { if ((await VideoEncoder.isConfigSupported(candidate)).supported) { config = candidate; break; } }
     catch { /* Try the other WebM codec before reporting unavailable support. */ }
   }
@@ -121,6 +125,8 @@ export async function encodeWebM({width, height, fps, totalFrames, renderFrame, 
   if (!config) throw new Error('No VP8 or VP9 video encoder supports this canvas size. Try a smaller export resolution.');
   const muxer = new WebMMuxer({width, height, fps, totalFrames, codec: config.codec, maxBytes});
   let failure, wake;
+  const frameWindow = videoFrameWindow(width, height);
+  let submitted = 0;
   const encoder = new VideoEncoder({
     output(chunk) { try { muxer.add(chunk); } catch (error) { failure ||= error; wake?.(error); } },
     error(error) { failure ||= error; wake?.(error); },
@@ -133,15 +139,14 @@ export async function encodeWebM({width, height, fps, totalFrames, renderFrame, 
     const drain = () => new Promise((resolve, reject) => {
       const done = error => {
         clearTimeout(timer);
-        encoder.removeEventListener('dequeue', dequeue);
         wake = null;
         error ? reject(error) : resolve();
       };
-      const dequeue = () => { if (failure) done(failure); else if (encoder.encodeQueueSize < 4) done(); };
       const timer = setTimeout(() => done(new Error('The video encoder stopped accepting frames.')), 30000);
       wake = done;
-      encoder.addEventListener('dequeue', dequeue);
-      dequeue();
+      // Quality mode must not drop frames. Flush the bounded window instead of
+      // waiting on dequeue, which says nothing about internally retained pixels.
+      try {encoder.flush().then(() => done(failure), done);} catch (error) {done(error);}
     });
     for (let index = 0; index < totalFrames; index++) {
       check();
@@ -151,9 +156,9 @@ export async function encodeWebM({width, height, fps, totalFrames, renderFrame, 
       const timestamp = Math.round(index * 1e6 / fps);
       const duration = Math.round((index + 1) * 1e6 / fps) - timestamp;
       const frame = new VideoFrame(canvas, {timestamp, duration, alpha: 'discard'});
-      try { encoder.encode(frame, {keyFrame: index % Math.max(1, Math.round(fps * 2)) === 0}); }
+      try { submitted++; encoder.encode(frame, {keyFrame: index % Math.max(1, Math.round(fps * 2)) === 0}); }
       finally { frame.close(); }
-      if (encoder.encodeQueueSize >= 4) await drain();
+      if (submitted - muxer.frames >= frameWindow) await drain();
       check();
       onProgress?.({completed: index + 1, total: totalFrames, progress: (index + 1) / totalFrames});
       // Cooperatively yield so progress/cancellation still works when the frame

@@ -35,8 +35,12 @@ jobs:
           python -m pip install -r scripts/requirements-build.txt
       - name: Validate release and source
         run: |
-          npm run release:prepare
+          npm run changelog:check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test tests/changelog.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:updates
       - name: Build the standalone codecs and video encoder
         run: |

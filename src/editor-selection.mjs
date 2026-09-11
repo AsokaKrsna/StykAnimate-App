@@ -1,6 +1,7 @@
 import {frameOrder, setOrder} from './pivot/structure.mjs';
 import {objectBounds} from './renderer-geometry.mjs';
 import {segmentBranchIndices} from './editor-builder.mjs';
+import {builderStyleTargets} from './editor-builder-style.mjs';
 
 const validIds = (uids, existing) => new Set([...uids].filter(uid => existing.has(uid)));
 
@@ -143,6 +144,7 @@ export const editorSelectionMethods = {
     // selected instance with its extracted branch and a fresh definition.
     const count = this.copySelection({wholeFigures: true}), clipboard = this._selectionClipboard;
     const object = clipboard.objects.find(o => o.unique_id === this.selectedUid);
+    if(object._stykVfx){const next={};for(const [key,stack] of Object.entries(object._stykVfx)){if(key==='figure')next[key]=stack;else {const [scope,handle]=key.split('/');if(handles.has(Number(handle))&&(scope==='*'||Number(scope)===object.figure_type_id))next[`${branch.figure_type_id}/${handle}`]=stack;}}object._stykVfx=next;}
     object.figure_type_id = branch.figure_type_id; object.join = null;
     object.root_x = geometry.segments[joint].start.x; object.root_y = geometry.segments[joint].start.y;
     object.angles = branch.segments.map(s => s.angle_rad);
@@ -187,14 +189,20 @@ export const editorSelectionMethods = {
     return applySelection(this, ids);
   },
 
-  /** Order the actual selection; figure-only commands stay explicit for the
-   * figure inspector. Internal ordering follows the selected timeline pose. */
+  /** Attached figures form one scene-order selection. Only a partial selection
+   * inside a single figure uses its internal order; selecting the entire rig
+   * (including a single-segment figure) moves that instance in the scene. */
   orderSelection(direction, {frameIndices} = {}) {
     if (![1, -1, 'front', 'back'].includes(direction)) throw new Error('Choose a valid draw-order direction.');
-    if (!this.selectedObjects.length) return false;
-    if ((this.branchSelected || this.selectedObjects.length === 1) && this.figure?.segments[this.selectedJoint])
-      return this.moveBuilderOrder({kind: 'segment', index: this.selectedJoint},
-        direction === 1 ? 'up' : direction === -1 ? 'down' : direction, {branch: this.branchSelected});
+    const objects = this.selectedObjects;
+    if (!objects.length) return false;
+    if (objects.length === 1 && this.figure?.segments[this.selectedJoint]) {
+      const figure = this.figure, target = {kind: 'segment', index: this.selectedJoint};
+      const selected = builderStyleTargets(figure, target, {branch: this.branchSelected});
+      if (selected.length < figure.segments.length + (figure.polyfills?.length ?? 0))
+        return this.moveBuilderOrder(target, direction === 1 ? 'up' : direction === -1 ? 'down' : direction,
+          {branch: this.branchSelected});
+    }
     if (this.report._styk?.layerSheet)
       return this.applyFigureRange({kind: 'order', direction}, {ticks: frameIndices ? this.sheetEditTimes(frameIndices) : [this.tick]});
     if (frameIndices) return this.orderFiguresInFrames(direction, frameIndices);

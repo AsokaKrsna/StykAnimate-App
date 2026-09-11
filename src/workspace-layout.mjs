@@ -127,8 +127,8 @@ const STYLE = `
 .styk-workspace-splitter::after { content:""; position:absolute; background:transparent; transition:background 100ms; }
 .styk-workspace-splitter[data-axis="x"]::after { top:0; bottom:0; left:3px; width:1px; }
 .styk-workspace-splitter[data-axis="y"]::after { left:0; right:0; top:3px; height:1px; }
-.styk-workspace-splitter:hover::after,.styk-workspace-splitter:focus-visible::after,.styk-workspace-splitter[data-dragging]::after { background:#0d99ff; }
-.styk-workspace-splitter:focus-visible { outline:1px solid #80caff; outline-offset:-1px; }
+.styk-workspace-splitter:hover::after,.styk-workspace-splitter:focus-visible::after,.styk-workspace-splitter[data-dragging]::after { background:var(--theme-action-hover, #0d99ff); }
+.styk-workspace-splitter:focus-visible { outline:1px solid var(--theme-accent, #80caff); outline-offset:-1px; }
 body.styk-resizing-x,body.styk-resizing-x * { cursor:col-resize !important; user-select:none !important; }
 body.styk-resizing-y,body.styk-resizing-y * { cursor:row-resize !important; user-select:none !important; }
 `;

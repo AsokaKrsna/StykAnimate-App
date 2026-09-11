@@ -15,8 +15,9 @@ const wait=()=>page.waitForTimeout(100);
 try {
  await page.goto(url);await page.waitForFunction(()=>window.styk?.ready);
  check('WebGPU initialized',await value(()=>window.styk.state.renderer.stats.backend==='WebGPU'));
- check('Native demo loaded',await value(()=>window.styk.editor.frame.objects.length===3&&window.styk.editor.totalTicks===47));
+ check('One-frame Bubble startup loaded',await value(()=>window.styk.editor.figure.name==='Bubble'&&window.styk.editor.frame.objects.length===1&&window.styk.editor.totalTicks===1));
  await page.screenshot({path:path.join(out,'editor-default.png')});
+ await value(async()=>{const {createDemo}=await import('/src/demo.mjs');styk.editor.load(createDemo());});
  const origin=await value(()=>{const {editor,state}=window.styk,r=document.getElementById('viewport').getBoundingClientRect();return {x:r.x+state.view.x+editor.object.root_x*state.view.scale,y:r.y+state.view.y+editor.object.root_y*state.view.scale,rootX:editor.object.root_x,rootY:editor.object.root_y,scale:state.view.scale};});
  await page.mouse.move(origin.x,origin.y);await page.mouse.down();await page.mouse.move(origin.x+70,origin.y-25,{steps:8});await page.mouse.up();
  const moved=await value(()=>window.styk.editor.object.root_x);check('Pointer drag moves figure',Math.abs(moved-origin.rootX-70/origin.scale)<.1);

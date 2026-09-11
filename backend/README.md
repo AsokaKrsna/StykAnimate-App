@@ -129,7 +129,7 @@ The desktop now negotiates the internal native v5 frame transport. The existing
 parser reads definitions, assets and the trailer; `fast_decode.py` validates all
 frame bytes without allocating the 208,373 editable object dictionaries and pose
 lists in the Akane example. It checks every numeric field, background/type
-reference, signed identity order, joined target/cycle, drawing permutation and
+reference, identity uniqueness, joined target/cycle, drawing permutation and
 inter-frame figure-type change. The frontend reconstructs the same complete
 document from the validated original frame bytes. Legacy versions use their
 established complete decoder. This transport is not a new saved file format.
@@ -146,7 +146,41 @@ and reuses validated figure handle sets. Differential tests compare the complete
 decoded dictionaries and encoded bytes against the original reader across all
 37 corpus files. Scanner tests compare every non-frame header field and all
 legacy models, and exercise truncated records, nonfinite numbers, invalid joins,
-identity/order errors, interpolation type changes and concurrent request isolation.
+duplicate identities, unsorted IDs, interpolation type changes and concurrent request isolation.
+
+Modern PIV imports preserve source object slots even when IDs are not sorted.
+Joins and drawing order reference those slots, not signed-ID order; only the
+writer sorts records and remaps slots for export. Duplicate IDs use one shared
+document-wide recovery policy in `piv_codec.py`: reserve all source IDs, retain
+the first occurrence of each ID in each key, and give each extra occurrence a
+fresh uint32 ID unused anywhere in the animation. Extra occurrences are isolated
+per key rather than matched heuristically across frames. No figure, pose, join,
+draw-order slot, duration or hidden key is removed. The editor shows import notes
+identifying the affected keys because their interpolation identity is ambiguous.
+
+The native scanner requests recovery only after the portable scan validates the
+whole frame table and pose budget. JSON and native imports then share the same
+canonical recovery. A sparse `piv_identity_recovery` audit patches only UID
+fields in a private transport buffer, so joins, numeric bits and source offsets
+stay exact. The frontend rejects any duplicate identity left in that buffer.
+Old ABI-compatible scanners that reject ordering or type transitions fall back
+to complete portable validation. Other structural errors still reject the file.
+Original uploads and unchanged PIV exports remain byte-identical; edited PIV
+exports contain the recovered unique IDs, and native saves retain the audit.
+
+`backend/test_piv_identities.py` and `tests/piv-identities.test.mjs` cover global
+ID allocation, signed extremes, hidden keys, slot joins, wire/JSON equality,
+cache order, edit/undo, save/reopen, and late malformed data. Run
+`node tests/piv-identities.browser.mjs` for file-input/worker/editor verification;
+its optional source path runs the reported Suzuki fixture checks without storing
+the user's animation in the test suite.
+
+Figure-type changes for the same object ID are accepted across all keyframes,
+including intervals with inbetweens and hidden endpoints. Each pose and join is
+validated against its own frame's definitions. The player holds an incompatible
+outgoing figure until the next keyframe, then switches types; all source keys,
+durations and IDs are preserved. `test_piv_type_changes.py` covers both decoder
+paths, different rig sizes, compressed inputs and a 1,129-keyframe save/reopen.
 
 An isolated Akane scan took 1.431 seconds with Python cyclic GC enabled, compared
 with 5.427 seconds for the earlier full frame decoder in a separate component

@@ -3,13 +3,13 @@ import {releaseGeometryResources} from './pivot/geometry.mjs';
 /** One reusable Canvas2D context for serial object rasterization. Captured
  * ImageBitmaps own their pixels independently; no packet owns this scratch canvas. */
 export class RasterSurfacePool {
-  constructor() { this.surface = null; this.context = null; this.busy = false; }
+  constructor({contextOptions} = {}) { this.contextOptions = contextOptions; this.surface = null; this.context = null; this.busy = false; }
   acquire(width, height) {
     if (this.busy) throw new Error('A raster scratch surface cannot be used concurrently.');
     if (!this.surface) {
       this.surface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : document.createElement('canvas');
       this.surface.width = width; this.surface.height = height;
-      this.context = this.surface.getContext('2d');
+      this.context = this.surface.getContext('2d', this.contextOptions);
     } else {
       if (this.surface.width !== width) this.surface.width = width;
       if (this.surface.height !== height) this.surface.height = height;

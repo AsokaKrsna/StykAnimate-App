@@ -1,4 +1,5 @@
 import {sceneBackgroundColor} from './pivot/background.mjs';
+import {PreviewImages} from './preview-images.mjs';
 
 export function backgroundImageAssets(report, frame) {
   if (frame && sceneBackgroundColor(report, frame) !== undefined) return [];
@@ -15,7 +16,25 @@ export function frameImageAssets(geometry) {
 }
 
 /** A private image set. Incoming loads cannot clear or invalidate the live scene. */
-export function createSceneImages({url, signal, checkCurrent = () => {}, imageFactory = () => new Image()} = {}) {
+export function createSceneImages({url, signal, checkCurrent = () => {}, imageFactory} = {}) {
+  if (!imageFactory && typeof Worker !== 'undefined') {
+    const images = new PreviewImages(), assets = new Map();
+    let disposed = false;
+    const check = () => {if (disposed || signal?.aborted) throw new DOMException('Scene preparation cancelled.', 'AbortError'); checkCurrent();};
+    const abort = () => images.clear();
+    signal?.addEventListener('abort', abort, {once: true});
+    return {images, check, resources: {url, image: address => images.get(address)},
+      async load(next) {
+        check(); for (const asset of next) assets.set(url(asset), asset);
+        const timer = setInterval(() => {try {check();} catch {abort();}}, 50);
+        try {await images.prepare([...assets].map(([url, asset]) => ({type: 'image', asset: {...asset, asset_url: url}})), {maxDimension: 2048}); check();}
+        finally {clearInterval(timer);}
+      },
+      detach() {images.worker?.terminate(); images.worker = null; signal?.removeEventListener('abort', abort);},
+      dispose() {disposed = true; signal?.removeEventListener('abort', abort); images.clear();},
+    };
+  }
+  imageFactory ||= () => new Image();
   const images = new Map(), pending = new Map(), cancelWaits = new Set(); let disposed = false;
   const check = () => {
     if (disposed || signal?.aborted) throw new DOMException('Scene preparation cancelled.', 'AbortError');

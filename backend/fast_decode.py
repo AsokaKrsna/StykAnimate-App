@@ -33,8 +33,9 @@ def decode_for_native_wire(source: bytes, *, source_path: str = "", assets_dir=N
     """Validate a source and decode its assets without expanding native v5 poses.
 
     This report is exclusively for the negotiated native-frame transport. Its
-    v5 keyframes contain only duration shells; the transport sends the original
-    validated frame bytes. Normal JSON import/export must use decode_piv_bytes.
+    v5 keyframes normally contain only duration shells; duplicate source IDs
+    select full document recovery instead. The transport applies that recovery
+    to the validated frame bytes. Normal JSON import/export uses decode_piv_bytes.
     Legacy inputs still receive their complete established decoded documents.
     With with_payload=True, returns (report, validated_v5_payload) so transport
     can reuse the already inflated bytes. Legacy payload is None. Both captures
@@ -45,7 +46,15 @@ def decode_for_native_wire(source: bytes, *, source_path: str = "", assets_dir=N
     _context.native_wire = True
     _context.payload = None
     try:
-        report = piv_codec.decode_piv_bytes(source, source_path=source_path, assets_dir=assets_dir)
+        try:
+            report = piv_codec.decode_piv_bytes(source, source_path=source_path, assets_dir=assets_dir)
+        except piv_codec.PivIdentityError:
+            # Only duplicate identities select recovery. The portable scanner
+            # has checked the entire frame table and its allocation budget.
+            # Use the same document-wide policy as JSON import; the wire layer
+            # applies its sparse ID audit to a private copy of the frame bytes.
+            _context.native_wire = False
+            report = piv_codec.decode_piv_bytes(source, source_path=source_path, assets_dir=assets_dir)
         return (report, _context.payload) if with_payload else report
     finally:
         _context.native_wire = previous
@@ -67,7 +76,7 @@ def scan_keyframes_python(reader, figures: list, bg_slots: int, *, max_pose_byte
     """Validate the complete v5 frame grammar without building editable poses.
 
     Per-frame identities and joins are retained just long enough to validate
-    order, targets, cycles and outgoing interpolation. Numeric pose tuples are
+    uniqueness, targets and cycles. Numeric pose tuples are
     checked and discarded immediately; no float list, object dict or aliases
     are created for the browser to decode again from the original frame bytes.
     """
@@ -107,7 +116,8 @@ def scan_keyframes_python(reader, figures: list, bg_slots: int, *, max_pose_byte
         if count > 1000000:
             raise PivError(f"Implausible keyframe count {count} at {pos-4:#x}")
         reserve_pose(count * 512)
-        frames, previous_types, previous_duration = [], {}, 0
+        frames = []
+        identity_error = None
         for fi in range(count):
             start = pos
             duration, mix, bg = take(_FRAME)
@@ -116,8 +126,7 @@ def scan_keyframes_python(reader, figures: list, bg_slots: int, *, max_pose_byte
                 raise PivError(f"Unknown background in frame {fi} at {start:#x}")
             obj_count, = take(_SHORT)
             reserve_pose(obj_count * 512)
-            identities, frame_types, join_slots, join_handles = [], [], [], []
-            previous_signed_uid = -0x80000001
+            identities, frame_types, join_slots, join_handles = {}, [], [], []
             for oi in range(obj_count):
                 obj_start = pos
                 uid, tid, scale, _color, _transparency = take(_OBJECT)
@@ -126,14 +135,10 @@ def scan_keyframes_python(reader, figures: list, bg_slots: int, *, max_pose_byte
                     raise PivError(f"Unknown figure type {tid} in frame {fi}, object {oi} at {obj_start:#x}")
                 if not finite(scale):
                     raise PivError(f"Non-finite /keyframes/{fi}/objects/{oi}/scale")
-                signed_uid = uid if uid < 0x80000000 else uid - 0x100000000
-                if signed_uid <= previous_signed_uid:
-                    raise PivError(f"Object IDs must be unique and sorted as signed integers in frame {fi}")
-                previous_signed_uid = signed_uid
-                if previous_duration > 1:
-                    prior_type = previous_types.get(uid)
-                    if prior_type is not None and prior_type != tid:
-                        raise PivError(f"Cannot interpolate a changed figure type for object {uid} in frame {fi-1}")
+                if uid in identities and identity_error is None:
+                    identity_error = piv_codec._object_id_error(uid, identities, fi, oi, obj_start)
+                # A type change is a playback boundary, not a malformed pose.
+                # Read each object with its current definition's layout.
                 has_media, _handles, sc, pose_struct, lengths_struct, bends_struct = descriptor
                 if has_media:
                     take(_BYTE)
@@ -167,7 +172,7 @@ def scan_keyframes_python(reader, figures: list, bg_slots: int, *, max_pose_byte
                 else:
                     join_slots.append(-1)
                     join_handles.append(0)
-                identities.append(uid)
+                identities.setdefault(uid, oi)
                 frame_types.append(tid)
             for oi, slot in enumerate(join_slots):
                 if slot >= 0 and join_handles[oi] not in types[frame_types[slot]][1]:
@@ -196,8 +201,8 @@ def scan_keyframes_python(reader, figures: list, bg_slots: int, *, max_pose_byte
             if not default and not all(map(finite, take(_CAMERA))):
                 raise PivError(f"Non-finite camera in frame {fi}")
             frames.append({"duration_raw": duration, "objects": []})
-            previous_types = dict(zip(identities, frame_types)) if duration > 1 else {}
-            previous_duration = duration
+        if identity_error is not None:
+            raise identity_error
         return frames
     finally:
         reader.pos = pos
@@ -319,10 +324,6 @@ def read_keyframes(reader, figures: list, bg_slots: int) -> list:
                         break
                     cursor = join["target_object_slot"]
                 checked.update(pending)
-            unique_ids = [obj["unique_id"] for obj in objects]
-            signed = lambda uid: uid if uid < 0x80000000 else uid - 0x100000000
-            if len(set(unique_ids)) != len(unique_ids) or unique_ids != sorted(unique_ids, key=signed):
-                raise PivError(f"Object IDs must be unique and sorted as signed integers in frame {fi}")
             order = list(take(struct.Struct(f"<{obj_count}H")))
             if sorted(order) != list(range(obj_count)):
                 raise PivError(f"Invalid object draw-order permutation in frame {fi} at {pos:#x}")

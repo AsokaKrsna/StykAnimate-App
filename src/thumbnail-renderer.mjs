@@ -83,6 +83,7 @@ export class ThumbnailRenderer {
       this.pending.clear();
       worker.terminate();
       this.worker = null;
+      this.snapshot = null;
       this.fullSnapshot = true;
       this.loadedVersion = 0;
       this.onError(error);
@@ -106,10 +107,12 @@ export class ThumbnailRenderer {
         !(previous?.mode === 'add' && previous.baseline || draft?.mode === 'add' && draft.baseline) &&
         Boolean(previous?.empty) === Boolean(draft?.empty)) return;
     this.version++;
+    this.snapshot?.iterator.return?.();
+    this.snapshot = null;
     if (
       detail.kind === "document" ||
       (detail.kind === "history" && !detail.animation && !detail.frameIndices) ||
-      detail.structural
+      (detail.structural && !detail.layerSheet)
     )
       this.fullSnapshot = true;
     for (const index of detail.frameIndices || detail.changedFrames || [
@@ -155,6 +158,7 @@ export class ThumbnailRenderer {
         if (this.worker === worker) this.worker = null;
         this.fullSnapshot = true;
         this.loadedVersion = 0;
+        this.snapshot = null;
         reject(new Error("Frame preview timed out."));
       }, 60000);
       this.pending.set(id, {
@@ -175,60 +179,77 @@ export class ThumbnailRenderer {
   }
   async _snapshot(version, signal) {
     if (this.loadedVersion === version) return;
-    const report = this.editor.report;
-    const { _stykSource, keyframes, figure_types, ...properties } = report;
-    const full = this.fullSnapshot || !this.loadedVersion;
-    const frames = [...this.changedFrames]
-      .filter((index) => keyframes[index])
-      .map((index) => ({ index, frame: keyframes[index] }));
-    const payload = full
-      ? { ...properties, figure_types, keyframes }
-      : {
-          properties,
-          frames,
-          ...(this.definitionsChanged ? { figure_types } : {}),
-        };
-    const iterator = documentChunks(payload, {
-      maxBytes: 64 * 1024,
-      maxRecords: 128,
-      timeBudgetMs: 2,
-    });
-    for (;;) {
-      if (version !== this.version || signal.aborted) throw abortError();
-      const started = performance.now(),
-        next = iterator.next();
-      if (next.done) break;
-      const task = this._request(
-        "snapshot-chunk",
-        {
-          revision: version,
-          mode: full ? "document" : "patch",
-          chunk: next.value,
-        },
-        signal,
-      );
-      this.stats.maxMainTaskMs = Math.max(
-        this.stats.maxMainTaskMs,
-        performance.now() - started,
-      );
-      this.stats.maxChunkBytes = Math.max(
-        this.stats.maxChunkBytes,
-        next.value.estimatedBytes || 0,
-      );
-      this.stats.chunks++;
-      await task;
+    // A scroll or canvas gesture cancels the bitmap request, not acknowledged
+    // snapshot progress. Resume the same bounded transfer when the user rests.
+    // Document edits discard it, because its remaining records may have changed.
+    let snapshot=this.snapshot;
+    if(!snapshot||snapshot.version!==version){
+      const report = this.editor.report;
+      const { _stykSource, keyframes, figure_types, ...properties } = report;
+      const full = this.fullSnapshot || !this.loadedVersion;
+      const frames = [...this.changedFrames]
+        .filter((index) => keyframes[index])
+        .map((index) => ({ index, frame: keyframes[index] }));
+      const payload = full
+        ? { ...properties, figure_types, keyframes }
+        : {
+            properties,
+            frames,
+            ...(this.definitionsChanged ? { figure_types } : {}),
+          };
+      const iterator = documentChunks(payload, {
+        maxBytes: 64 * 1024,
+        maxRecords: 128,
+        timeBudgetMs: 2,
+        sharedFigures: true,
+      });
+      snapshot=this.snapshot={version,iterator,full};
     }
-    await this._request(
-      "snapshot-complete",
-      { revision: version, options: this.options },
-      signal,
-    );
-    if (version !== this.version || signal.aborted) throw abortError();
-    this.loadedVersion = version;
-    this.fullSnapshot = false;
-    this.changedFrames.clear();
-    this.definitionsChanged = false;
-    full ? this.stats.snapshots++ : this.stats.patches++;
+    const {iterator,full}=snapshot;
+    try {
+      for (;;) {
+        if (version !== this.version || signal.aborted) throw abortError();
+        const started = performance.now(),
+          next = iterator.next();
+        if (next.done) break;
+        const task = this._request(
+          "snapshot-chunk",
+          {
+            revision: version,
+            mode: full ? "document" : "patch",
+            chunk: next.value,
+          },
+          undefined,
+        );
+        this.stats.maxMainTaskMs = Math.max(
+          this.stats.maxMainTaskMs,
+          performance.now() - started,
+        );
+        this.stats.maxChunkBytes = Math.max(
+          this.stats.maxChunkBytes,
+          next.value.estimatedBytes || 0,
+        );
+        this.stats.chunks++;
+        await task;
+      }
+      await this._request(
+        "snapshot-complete",
+        { revision: version, options: this.options },
+        undefined,
+      );
+      if (version !== this.version) throw abortError();
+      this.loadedVersion = version;
+      if(this.snapshot===snapshot)this.snapshot=null;
+      this.fullSnapshot = false;
+      this.changedFrames.clear();
+      this.definitionsChanged = false;
+      full ? this.stats.snapshots++ : this.stats.patches++;
+    }catch(error){
+      if(error.name!=='AbortError'&&this.snapshot===snapshot){
+        iterator.return?.();this.snapshot=null;this.fullSnapshot=true;
+      }
+      throw error;
+    }
   }
   renderThumbnail = (index, canvas, { signal, inbetween, tick, storedFrames = this.options.storedFrames } = {}) => {
     if (this.disposed || this.paused || signal?.aborted)
@@ -300,6 +321,7 @@ export class ThumbnailRenderer {
   };
   destroy() {
     this.disposed = true;
+    this.snapshot?.iterator.return?.();this.snapshot=null;
     this.events.abort();
     this.currentAbort?.abort();
     for (const request of this.pending.values()) {

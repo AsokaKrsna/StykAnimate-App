@@ -8,17 +8,33 @@ const DAY = 86400000, UPLOAD_INTERVAL = 15 * 60000;
 const dayOf = time => new Date(time).toISOString().slice(0, 10);
 const enabled = consent => Boolean(consent?.analytics || consent?.diagnostics);
 const timeout = ms => AbortSignal.timeout(ms);
+const boundedAdd = (a = 0, b = 0) => Math.min(1e9, a + b);
+function mergeHistogram(target, incoming) {
+  if (target.count + incoming.count > 1e9 || target.sum + incoming.sum > 3.6e15) return false;
+  target.count += incoming.count; target.sum += incoming.sum; target.max = Math.max(target.max, incoming.max);
+  incoming.buckets.forEach((n, i) => target.buckets[i] += n);
+  return true;
+}
+function successBucket(milliseconds) {
+  return milliseconds < 60000 ? 'under-1m' : milliseconds < 300000 ? '1-5m' : milliseconds < 1800000 ? '5-30m' : milliseconds < 7200000 ? '30m-2h' : milliseconds < DAY ? '2-24h' : 'over-24h';
+}
+function mergedTraffic(previous, current) {
+  if (previous === current || previous === 'mixed' || previous === 'unknown') return previous;
+  return 'mixed';
+}
 function endpoint(value, development = false) {
   if (!value) return '';
   try { const url = new URL(value); if (url.username || url.password || url.search || url.hash || url.pathname !== '/') return '';
     return url.protocol === 'https:' || development && url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname) ? url.origin : ''; } catch { return ''; }
 }
 class TelemetryService {
-  constructor({ directory, schemaPath, version, development = false, siteUrl = development ? process.env.STYK_SITE_URL || config.siteUrl : config.siteUrl, fetchImpl = fetch, now = Date.now, onState = () => {} }) {
+  constructor({ directory, schemaPath, version, development = false, internal = false, build = 'unknown', siteUrl = development ? process.env.STYK_SITE_URL || config.siteUrl : config.siteUrl, fetchImpl = fetch, now = Date.now, onState = () => {} }) {
     this.store = new WorkspacePreferences(directory, { filename: 'telemetry-state.json', maxBytes: 300 * 1024 });
     this.schemaPath = schemaPath; this.version = version; this.channel = development ? 'development' : config.channel; this.siteUrl = endpoint(siteUrl, development);
+    // Classification comes from trusted main-process build settings, never renderer IPC.
+    this.traffic = development || internal === true ? 'internal' : 'external'; this.build = typeof build === 'string' && /^[a-f0-9]{12,40}$/.test(build) ? build : 'unknown';
     this.fetch = fetchImpl; this.now = now; this.onState = onState; this.epoch = 1; this.lastUpload = 0; this.nextUpload = 0; this.status = 'Waiting for your choice';
-    this.pending = Promise.resolve(); this.state = { consent: {}, days: {}, milestones: {}, deletions: [], sequence: 0, acknowledged: null };
+    this.pending = Promise.resolve(); this.state = { consent: {}, days: {}, milestones: {}, firstSuccess: {}, deletions: [], sequence: 0, acknowledged: null };
   }
   async init({ timers = true } = {}) {
     this.schema = await import(pathToFileURL(this.schemaPath).href);
@@ -33,12 +49,19 @@ class TelemetryService {
     this.state.deletions = (Array.isArray(loaded.deletions) ? loaded.deletions : []).filter(d => /^[a-f0-9]{64}$/.test(d?.token || '') && endpoint(d.url, true) === d.url).slice(0, 4);
     if (enabled(this.state.consent) && this.state.token) {
       for (const [day, data] of Object.entries(loaded.days || {}).slice(-7)) {
-        try { if (this.now() - Date.parse(day) < 7 * DAY) this.state.days[day] = this.schema.validateSnapshot(data); } catch { /* Discard corrupt local summaries. */ }
+        try { if (this.now() - Date.parse(day) < 7 * DAY) this.state.days[day] = this.schema.validateSnapshot({ ...data, consent: this.state.consent }); } catch { /* Discard corrupt local summaries. */ }
       }
       this.state.milestones = Object.assign({}, ...Object.values(this.state.days).map(d => d.milestones));
       if (this.state.consent.analytics) for (const key of this.schema.MILESTONES) {
         const day = loaded.milestones?.[key];
         if (typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(Date.parse(day)) && dayOf(Date.parse(day)) === day && day <= dayOf(this.now())) this.state.milestones[key] = day;
+      }
+      if (this.state.consent.analytics) {
+        const observedAt = loaded.firstObservedAt;
+        if (Number.isFinite(observedAt) && observedAt >= 0 && observedAt <= this.now() && dayOf(observedAt) === this.state.milestones.first_launch) this.state.firstObservedAt = observedAt;
+        for (const data of [...Object.values(this.state.days), loaded]) for (const key of ['save', 'export']) {
+          if (this.schema.FIRST_SUCCESS_BUCKETS.includes(data.firstSuccess?.[key]) && this.state.milestones[`first_${key}`]) this.state.firstSuccess[key] ||= data.firstSuccess[key];
+        }
       }
       this.ensureIdentity(); this.count('sessions_started'); this.milestone('first_launch');
       this.sessionCounted = this.state.consent.analytics;
@@ -75,9 +98,9 @@ class TelemetryService {
       this.ensureIdentity();
       // Changing a category drops its unsent data. Retained server history can be deleted separately.
       for (const [day, data] of Object.entries(this.state.days)) this.state.days[day] = this.schema.validateSnapshot({ ...data, consent: this.state.consent, sequence: ++this.state.sequence });
-      if (!value.analytics) this.state.milestones = {};
+      if (!value.analytics) { this.state.milestones = {}; this.state.firstSuccess = {}; delete this.state.firstObservedAt; }
       if (value.analytics && !this.sessionCounted) { this.count('sessions_started'); this.milestone('first_launch'); this.sessionCounted = true; }
-    } else { this.state.days = {}; this.state.milestones = {}; }
+    } else { this.state.days = {}; this.state.milestones = {}; this.state.firstSuccess = {}; delete this.state.firstObservedAt; }
     this.refreshStatus(); await this.persist(); this.configureTimer(); this.notify(); return this.getState();
   }
   today() {
@@ -88,41 +111,76 @@ class TelemetryService {
     if (!this.state.days[day] && this.state.acknowledged?.installationId === this.id) {
       this.state.days[day] = this.schema.validateSnapshot({ ...this.state.acknowledged, consent: this.state.consent, sequence: ++this.state.sequence });
       this.state.milestones = { ...this.state.days[day].milestones, ...this.state.milestones };
+      this.state.firstSuccess = { ...this.state.days[day].firstSuccess, ...this.state.firstSuccess };
     }
-    return this.state.days[day] ||= { schemaVersion: 1, installationId: this.id, day, sequence: ++this.state.sequence, app: { version: this.version, channel: this.channel }, consent: { ...this.state.consent },
+    if (this.state.days[day]) {
+      const current = this.state.days[day];
+      const previousTraffic = current.app.traffic || (current.app.channel === 'development' ? 'internal' : 'unknown');
+      const app = { version: this.version, channel: this.channel, traffic: mergedTraffic(previousTraffic, this.traffic), build: this.build };
+      if (current.schemaVersion !== this.schema.SCHEMA_VERSION || JSON.stringify(current.app) !== JSON.stringify(app)) {
+        this.state.days[day] = this.schema.validateSnapshot({ ...current, schemaVersion: this.schema.SCHEMA_VERSION, app, operationContexts: current.operationContexts || [], firstSuccess: this.state.firstSuccess, sequence: ++this.state.sequence });
+      }
+      return this.state.days[day];
+    }
+    return this.state.days[day] = { schemaVersion: this.schema.SCHEMA_VERSION, installationId: this.id, day, sequence: ++this.state.sequence, app: { version: this.version, channel: this.channel, traffic: this.traffic, build: this.build }, consent: { ...this.state.consent },
       environment: this.schema.sanitizeEnvironment({ os: process.platform, arch: process.arch, osVersion: process.platform === 'win32' ? Number(os.release().split('.')[2]) >= 22000 ? 'windows-11' : 'windows-10' : process.platform === 'darwin' ? 'mac' : 'linux',
         ramBucket: os.totalmem() <= 5 * 1073741824 ? '4-or-less' : os.totalmem() <= 9 * 1073741824 ? '8' : os.totalmem() <= 17 * 1073741824 ? '16' : os.totalmem() <= 33 * 1073741824 ? '32' : '64-plus',
         cpuBucket: os.availableParallelism() <= 2 ? '2-or-less' : os.availableParallelism() <= 4 ? '4' : os.availableParallelism() <= 8 ? '8' : os.availableParallelism() <= 16 ? '16' : '32-plus' }),
-      counters: {}, timings: {}, gauges: {}, errors: [], milestones: { ...this.state.milestones } };
+      counters: {}, timings: {}, gauges: {}, errors: [], operationContexts: [], firstSuccess: { ...this.state.firstSuccess }, milestones: { ...this.state.milestones } };
   }
   record({ epoch, data, environment }) {
     if (epoch !== this.epoch || !enabled(this.state.consent) || !data) return false;
     const today = dayOf(this.now());
-    if (!this.state.days[today] && Object.keys(data.counters || {}).every(key => key === 'idle_seconds') && !Object.keys(data.timings || {}).length && !Object.keys(data.gauges || {}).length && !Object.keys(data.milestones || {}).length && !data.errors?.length) return false;
-    const current = this.today(); let changed = false;
-    const safe = this.schema.validateSnapshot({ ...current, counters: {}, timings: {}, gauges: {}, errors: [], milestones: {}, ...data,
-      schemaVersion: 1, installationId: this.id, day: current.day, sequence: current.sequence, app: current.app, consent: this.state.consent, environment: this.schema.sanitizeEnvironment(environment) });
-    for (const [key, n] of Object.entries(safe.counters)) if (n > 0) { current.counters[key] = Math.min(1e9, (current.counters[key] || 0) + n); changed = true; }
+    if (!this.state.days[today] && Object.keys(data.counters || {}).every(key => key === 'idle_seconds') && !Object.keys(data.timings || {}).length && !Object.keys(data.gauges || {}).length && !Object.keys(data.milestones || {}).length && !data.errors?.length && !data.operationContexts?.length) return false;
+    const current = this.schema.validateSnapshot(this.today()); let changed = false;
+    const safe = this.schema.validateSnapshot({ ...current, counters: {}, timings: {}, gauges: {}, errors: [], milestones: {}, operationContexts: [], ...data,
+      schemaVersion: this.schema.SCHEMA_VERSION, installationId: this.id, day: current.day, sequence: current.sequence, app: current.app, consent: this.state.consent, firstSuccess: {}, environment: this.schema.sanitizeEnvironment(environment) });
+    const dropped = (key, n = 1) => { if (this.state.consent.diagnostics) { current.counters[key] = boundedAdd(current.counters[key], n); changed = true; } };
+    for (const [key, n] of Object.entries(safe.counters)) if (n > 0) { current.counters[key] = boundedAdd(current.counters[key], n); changed = true; }
     for (const [key, h] of Object.entries(safe.timings)) {
       if (!h.count) continue; changed = true;
       const target = current.timings[key] ||= this.schema.emptyHistogram();
-      target.count += h.count; target.sum += h.sum; target.max = Math.max(target.max, h.max); h.buckets.forEach((n, i) => target.buckets[i] += n);
+      if (!mergeHistogram(target, h)) dropped('dropped_samples', h.count);
+    }
+    for (const entry of safe.operationContexts) {
+      if (!entry.timing.count) continue;
+      const key = this.schema.contextKey(entry), existing = current.operationContexts.find(value => this.schema.contextKey(value) === key);
+      if (existing) { if (mergeHistogram(existing.timing, entry.timing)) changed = true; else dropped('dropped_operation_contexts', entry.timing.count); }
+      else if (current.operationContexts.length < this.schema.MAX_OPERATION_CONTEXTS) { current.operationContexts.push(entry); changed = true; }
+      else dropped('dropped_operation_contexts', entry.timing.count);
     }
     for (const [key, n] of Object.entries(safe.gauges)) if (current.gauges[key] === undefined || n > current.gauges[key]) { current.gauges[key] = n; changed = true; }
-    for (const [key, day] of Object.entries(safe.milestones)) if (!this.state.milestones[key]) { this.state.milestones[key] = day; changed = true; }
-    current.milestones = { ...this.state.milestones };
+    for (const [key, day] of Object.entries(safe.milestones)) if (!current.milestones[key]) {
+      current.milestones[key] = day; changed = true;
+      if (['first_save', 'first_export'].includes(key) && Number.isFinite(this.state.firstObservedAt) && this.now() >= this.state.firstObservedAt) current.firstSuccess[key.slice(6)] = successBucket(this.now() - this.state.firstObservedAt);
+    }
     for (const entry of safe.errors) { const existing = current.errors.find(e => e.fingerprint === entry.fingerprint);
       if (!entry.count) continue; changed = true;
-      if (existing) { existing.count += entry.count; existing.lastAt = Math.max(existing.lastAt, entry.lastAt); }
+      if (existing) { existing.count = boundedAdd(existing.count, entry.count); existing.firstAt = Math.min(existing.firstAt, entry.firstAt); existing.lastAt = Math.max(existing.lastAt, entry.lastAt); }
       else if (current.errors.length < 20) current.errors.push(entry);
+      else dropped('dropped_samples', entry.count);
     }
     for (const [key, value] of Object.entries(safe.environment)) if (value !== 'unknown' && value !== current.environment[key]) { current.environment[key] = value; changed = true; }
-    if (changed) current.sequence = ++this.state.sequence;
+    if (changed) {
+      // A valid IPC delta must never grow the persisted cumulative report past its transport limit.
+      let validated;
+      try { validated = this.schema.validateSnapshot(current); }
+      catch {
+        if (this.state.consent.diagnostics) { const previous = this.state.days[today]; previous.counters.dropped_samples = boundedAdd(previous.counters.dropped_samples, 1); previous.sequence = ++this.state.sequence; }
+        return false;
+      }
+      validated.sequence = ++this.state.sequence; this.state.days[today] = validated;
+      this.state.milestones = { ...validated.milestones }; this.state.firstSuccess = { ...validated.firstSuccess };
+    }
     return changed;
   }
   count(key, n = 1) { this.record({ epoch: this.epoch, data: { counters: { [key]: n } } }); }
-  milestone(key) { if (this.state.consent.analytics) this.record({ epoch: this.epoch, data: { milestones: { [key]: dayOf(this.now()) } } }); }
-  error(name, operation, counter) { if (this.state.consent.diagnostics) { if (counter) this.count(counter); this.record({ epoch: this.epoch, data: { errors: [this.schema.sanitizeError({ name }, operation, this.now())] } }); } }
+  milestone(key) {
+    if (!this.state.consent.analytics) return;
+    if (key === 'first_launch' && !this.state.milestones.first_launch && !this.state.acknowledged?.milestones?.first_launch) this.state.firstObservedAt = this.now();
+    this.record({ epoch: this.epoch, data: { milestones: { [key]: dayOf(this.now()) } } });
+  }
+  error(name, operation, counter, context = {}) { if (this.state.consent.diagnostics) { if (counter) this.count(counter); this.record({ epoch: this.epoch, data: { errors: [this.schema.sanitizeError({ name, code: context.code }, operation, this.now(), context)] } }); } }
   sampleMemory(megabytes) { if (this.state.consent.diagnostics) this.record({ epoch: this.epoch, data: { gauges: { process_memory_mb: megabytes } } }); }
   persist() { return this.store.set(this.state); }
   preview() { return { policyVersion: this.schema.POLICY_VERSION, retentionDays: 30, consent: this.getState().consent, snapshots: Object.values(this.state.days) }; }
@@ -164,7 +222,7 @@ class TelemetryService {
       if (this.state.deletions.length >= 4) throw new Error('Complete the pending deletion before resetting again.');
       this.state.deletions.push({ token: this.state.token, url: this.siteUrl });
     }
-    this.state.token = null; this.id = null; this.state.days = {}; this.state.milestones = {}; this.state.acknowledged = null; this.state.running = false;
+    this.state.token = null; this.id = null; this.state.days = {}; this.state.milestones = {}; this.state.firstSuccess = {}; delete this.state.firstObservedAt; this.state.acknowledged = null; this.state.running = false;
     this.state.consent = { analytics: false, diagnostics: false, policyVersion: this.schema.POLICY_VERSION, updatedAt: this.now() }; this.state.decided = true;
     await this.persist(); this.configureTimer(); this.refreshStatus(); this.notify(); await this.upload({ force: true }); return this.getState();
   }

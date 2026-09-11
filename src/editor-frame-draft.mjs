@@ -6,7 +6,7 @@ import {planDraftFrameAppend, rebaseDraftAnimation,placeAddedMovieclips} from '.
 
 const clone = value => structuredClone(value);
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
-const sceneFields = ['background_id', 'background_id_b', 'background_mix', 'background_color', '_stykBackgroundColor'];
+const sceneFields = ['background_id', 'background_id_b', 'background_mix', 'background_color', '_stykBackgroundColor', '_stykVfx'];
 export function validateSimpleFrameDraft(report, {validateFrame = true} = {}) {
   const state = report._styk?.simpleFrameDraft;
   if (state === undefined) return;

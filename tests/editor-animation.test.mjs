@@ -15,8 +15,8 @@ function fixture() {
 
 test('bulk key insertion is one undo operation and never modifies native frame data', () => {
   const editor = fixture(), frames = editor.report.keyframes, objects = frames[0].objects, before = structuredClone(frames), count = editor._undo.length;
-  editor.addAnimationKeys([{target: figureTarget, property: 'x', tick: 0, value: 0}, {target: figureTarget, property: 'x', tick: 10, value: 200},
-    {target: figureTarget, property: 'opacity', tick: 0, value: 1}, {target: figureTarget, property: 'opacity', tick: 10, value: .5}]);
+  editor.addAnimationKeys([{target: figureTarget, property: 'x', tick: 0, value: 0, interpolation: 'linear'}, {target: figureTarget, property: 'x', tick: 10, value: 200},
+    {target: figureTarget, property: 'opacity', tick: 0, value: 1, interpolation: 'linear'}, {target: figureTarget, property: 'opacity', tick: 10, value: .5}]);
   assert.equal(editor.animationChannels.length, 2); assert.equal(editor._undo.length, count + 1);
   assert.equal(editor.report.keyframes, frames); assert.equal(frames[0].objects, objects); assert.deepEqual(frames, before);
   editor.seek(5); near(editor.evaluatedFrame.objects[0].root_x, 100); assert.equal(editor.evaluatedFrame.objects[0].field28, 64);
@@ -27,8 +27,8 @@ test('bulk key insertion is one undo operation and never modifies native frame d
 
 test('moving one property key changes only its curve, collision rejection is atomic', () => {
   const editor = fixture();
-  editor.addAnimationKeys([{target: figureTarget, property: 'x', tick: 0, value: 0}, {target: figureTarget, property: 'x', tick: 10, value: 100},
-    {target: figureTarget, property: 'y', tick: 0, value: 200}, {target: figureTarget, property: 'y', tick: 10, value: 300}]);
+  editor.addAnimationKeys([{target: figureTarget, property: 'x', tick: 0, value: 0, interpolation: 'linear'}, {target: figureTarget, property: 'x', tick: 10, value: 100},
+    {target: figureTarget, property: 'y', tick: 0, value: 200, interpolation: 'linear'}, {target: figureTarget, property: 'y', tick: 10, value: 300}]);
   const x = editor.animationChannel(figureTarget, 'x'), y = editor.animationChannel(figureTarget, 'y');
   editor.moveAnimationKeys([{channelId: x.id, keyIds: [x.keys[1].id]}], 10);
   assert.equal(editor.animationChannel(figureTarget, 'y'), y); editor.seek(10);
@@ -52,8 +52,8 @@ test('scalar previews are bounded, one history entry on commit, and restore exac
 
 test('camera/scene and extended-duration keys evaluate through the common editor geometry path', () => {
   const editor = fixture();
-  editor.addAnimationKeys([{target: {kind: 'camera'}, property: 'x', tick: 0, value: 0}, {target: {kind: 'camera'}, property: 'x', tick: 40, value: 80},
-    {target: {kind: 'scene'}, property: 'color', tick: 0, value: 0xff000000}, {target: {kind: 'scene'}, property: 'color', tick: 40, value: 0xffffffff}]);
+  editor.addAnimationKeys([{target: {kind: 'camera'}, property: 'x', tick: 0, value: 0, interpolation: 'linear'}, {target: {kind: 'camera'}, property: 'x', tick: 40, value: 80},
+    {target: {kind: 'scene'}, property: 'color', tick: 0, value: 0xff000000, interpolation: 'linear'}, {target: {kind: 'scene'}, property: 'color', tick: 40, value: 0xffffffff}]);
   assert.equal(editor.totalTicks, 41); editor.seek(30);
   near(editor.evaluatedFrame.camera.x, 60); assert.equal(editor.evaluatedFrame._stykBackgroundColor, 0xffbfbfbf);
   assert.equal(editor.report.keyframes.length, 3);

@@ -46,9 +46,11 @@ function* frameSteps(report, bytes, byteOffset, sourceOffset, timeBudgetMs, stat
   const frames=new Array(count); let taskStarted=performance.now(), visited=0,visitedFloats=0;
   for(let fi=0;fi<count;fi++) {
     const start=pos+sourceOffset, duration=u16(), mix=u8(), background=u16(), backgroundB=mix?u16():null;
-    const objectCount=u16(), objects=new Array(objectCount);
+    const objectCount=u16(), objects=new Array(objectCount), identities=new Set();
     for(let oi=0;oi<objectCount;oi++) {
       const objectStart=pos+sourceOffset, uid=u32(), tid=u16(), figure=types.get(tid);
+      if(identities.has(uid)) throw new Error('Duplicate native figure identity; the backend must resolve source IDs before transfer.');
+      identities.add(uid);
       if(!figure) throw new Error('Unknown native figure type.');
       const segmentCount=figure.segment_count;
       if(!Number.isInteger(segmentCount)||segmentCount<0||segmentCount>30000) throw new Error('Invalid native segment count.');

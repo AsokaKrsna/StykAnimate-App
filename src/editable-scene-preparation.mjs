@@ -15,8 +15,9 @@ export class EditableScenePreparation {
     const job={controller:new AbortController(),started:performance.now(),timings:{}};this.job=job;this.onPending(true);
     const checkCurrent=()=>this.job===job&&editor.report===report&&editor.tick===tick&&editor.revision===revision&&editor.frameDraftRevision===draftRevision;
     job.promise=(async()=>{
-      // Let the transport state and its last presented frame paint first.
-      await new Promise(resolve=>requestAnimationFrame(resolve));
+      // Capture the final seek/draft state without delaying every scrub request
+      // by a display frame. The bounded geometry and GPU slices yield as needed.
+      await Promise.resolve();
       if(!checkCurrent())throw new DOMException('Editable preparation was cancelled.', 'AbortError');
       const geometry=await editor.prepareGeometry({signal:job.controller.signal,checkCurrent,onTiming:value=>{job.timings.geometry=value;}});
       if(!checkCurrent())throw new DOMException('Editable preparation was superseded.', 'AbortError');

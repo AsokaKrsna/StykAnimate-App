@@ -3,6 +3,7 @@ import {animationChannelId, validateAnimationDocument} from './animation-channel
 import {nativeSegmentOpacity} from './animation-style.mjs';
 import {repairIKTopology} from './ik-topology.mjs';
 import {movieclipSourceDocument} from './movieclips.mjs';
+import {remapVfxOwner} from './vfx.mjs';
 
 const clone = value => structuredClone(value);
 const reverseProperty = property => ({opacity:'gradientOpacity', gradientOpacity:'opacity', color:'gradientColor', gradientColor:'color'})[property] ?? property;
@@ -112,6 +113,7 @@ function repairStyles(editor, before, figure, explicit, reversedGradients, chann
   for (const entry of channelsOnly ? [] : before.frames) {
     const frame = editor._sourceFrame(entry);
     for (const object of frame.objects) {
+      if(object.figure_type_id===figure.figure_type_id)remapVfxOwner(object,figure.figure_type_id,changes);
       if(object.figure_type_id===figure.figure_type_id && object._sticknodesShapes){
         const shapes={};
         for(const [handle,shape] of Object.entries(object._sticknodesShapes)){

@@ -37,13 +37,14 @@ function boundedSize(value, limit) {
  */
 export function* documentChunks(report, options = 1000) {
   if (typeof options === 'number') options = { maxRecords: options };
-  const { maxRecords = 1000, maxBytes = 256 * 1024, timeBudgetMs = 3, omitRuntimeSegments = false } = options;
+  const { maxRecords = 1000, maxBytes = 256 * 1024, timeBudgetMs = 3, omitRuntimeSegments = false, sharedFigures = false } = options;
   if (!Number.isInteger(maxRecords) || maxRecords < 1) throw new Error('Document transport batch size must be a positive integer.');
   if (!Number.isInteger(maxBytes) || maxBytes < 1024) throw new Error('Document transport byte budget must be at least 1024.');
   if (!report || typeof report !== 'object' || Array.isArray(report)) throw new Error('Document transport requires a document record.');
   yield { header: {} };
   const stack = [{ value: report, path: [], keys: Object.keys(report), index: 0 }];
   const poseSequences = new WeakMap();
+  const figures = new WeakMap();
   const atomicLimit = Math.floor(maxBytes * .7), stringLength = Math.floor(maxBytes * .3);
   let operations = [], bytes = 64, started = performance.now();
   while (stack.length) {
@@ -59,6 +60,19 @@ export function* documentChunks(report, options = 1000) {
       const { runtime_segments, ...nativePose } = value; value = nativePose;
     }
     const pathBytes = path.reduce((sum, part) => sum + (typeof part === 'string' ? part.length * 2 + 16 : 16), 64);
+    // Preserve identity already present in the document, never merge merely
+    // similar figures. Movie-clip libraries often reuse the same definitions.
+    const figureEntry=sharedFigures&&path.at(-2)==='figure_types'&&value&&typeof value==='object'&&Object.hasOwn(value,'figure_type_id')&&Array.isArray(value.segments);
+    if(figureEntry){
+      const reference=figures.get(value);
+      if(reference){
+        if(reference.every((part,i)=>path[i]===part))throw new Error('Cyclic movieclip figure reference.');
+        const size=pathBytes+reference.reduce((sum,part)=>sum+String(part).length*2+16,64);
+        if(operations.length&&bytes+size>maxBytes){yield {operations,estimatedBytes:bytes};operations=[];bytes=64;started=performance.now();}
+        operations.push({path,figureReference:reference});bytes+=size;continue;
+      }
+      figures.set(value,path);
+    }
     if (key === 'keys' && frame.value.property === 'pose' && Array.isArray(value)) {
       const reference=poseSequences.get(value);
       if(reference){
@@ -71,7 +85,10 @@ export function* documentChunks(report, options = 1000) {
     const visitPoses = omitRuntimeSegments && path[0] === 'keyframes' && (path.length <= 2 || (path.length === 3 && path[2] === 'objects'));
     // Visit channel records even when small so shared sequences survive ACK
     // boundaries instead of being cloned again for every connected member.
-    const size = visitPoses || value?.property === 'pose' && Array.isArray(value.keys) ? atomicLimit + 1 : boundedSize(value, atomicLimit);
+    const visitFigures=sharedFigures&&((key==='figure_types'&&Array.isArray(value))||
+      (figureEntry&&value._styk?.movieclip)||(key==='_styk'&&value?.movieclip)||
+      (key==='movieclip'&&value?.document)||(key==='document'&&Array.isArray(value?.figure_types)));
+    const size = visitPoses || visitFigures || value?.property === 'pose' && Array.isArray(value.keys) ? atomicLimit + 1 : boundedSize(value, atomicLimit);
     if (size <= atomicLimit) {
       if (operations.length && bytes + size + pathBytes > maxBytes) {
         yield { operations, estimatedBytes: bytes }; operations = []; bytes = 64; started = performance.now();
@@ -111,7 +128,15 @@ export function applyDocumentChunk(report, chunk) {
       }
       const key = path.at(-1);
       if (!parent || typeof parent !== 'object' || !['string', 'number'].includes(typeof key)) throw new Error('Invalid document transport destination.');
-      if (Object.hasOwn(operation, 'reference')) {
+      if(Object.hasOwn(operation,'figureReference')){
+        const reference=operation.figureReference;
+        if(path.at(-2)!=='figure_types'||!Number.isInteger(key)||!Array.isArray(reference)||reference.at(-2)!=='figure_types'||!Number.isInteger(reference.at(-1))||reference.every((part,i)=>path[i]===part))
+          throw new Error('Invalid document figure reference.');
+        let value=report;
+        for(const part of reference){if(!value||typeof value!=='object'||!Object.hasOwn(value,part))throw new Error('Document figure reference has not arrived.');value=value[part];}
+        if(!value||!Array.isArray(value.segments)||!Object.hasOwn(value,'figure_type_id'))throw new Error('Document reference requires a figure definition.');
+        ownSet(parent,key,value);
+      } else if (Object.hasOwn(operation, 'reference')) {
         if(!Array.isArray(operation.reference)||!operation.reference.length)throw new Error('Invalid document sequence reference.');
         let value=report;
         for(const part of operation.reference){

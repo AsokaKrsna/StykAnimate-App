@@ -54,6 +54,7 @@ export default Object.freeze({
   'settings.language': 'Language',
   'settings.theme': 'Theme',
   'settings.light': 'Light',
+  'settings.system': 'System',
   'settings.dark': 'Dark',
   'settings.autosave': 'Autosave',
   'settings.timelineMode': 'Timeline mode',
