@@ -42,6 +42,7 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   onionCamera: false,
   onionShowOnTop: false,
   loopPlayback: true,
+  rendererMode: "auto",
   autosaveSeconds: 2.5,
 });
 export function normalizeEditorSettings(value = {}) {
@@ -94,6 +95,7 @@ export function normalizeEditorSettings(value = {}) {
     if (typeof value?.[key] === 'string' && /^#[0-9a-f]{6}$/i.test(value[key])) result[key] = value[key].toLowerCase();
   if (['all','selected'].includes(value?.onionScope)) result.onionScope = value.onionScope;
   if (['keyframes','frames'].includes(value?.onionMode)) result.onionMode = value.onionMode;
+  if (['auto','canvas','gpu'].includes(value?.rendererMode)) result.rendererMode = value.rendererMode;
   return result;
 }
 const STYLE = `
@@ -320,6 +322,8 @@ export class EditorSettings {
       html = `<section class="styk-settings-group"><h3>Joint handles</h3>${this.checkbox("Show handles", "showHandles")}${this.checkbox("Show virtual camera", "showCamera")}${this.checkbox("Show unselected figures", "showUnselectedHandles")}${this.checkbox("Motion paths", "motionPaths")}${this.checkbox("Size handles automatically", "autoSizeHandles")}${this.checkbox("Outline handles", "outlineHandles")}<label class="styk-settings-row"><span>Handle radius</span><span class="styk-settings-number"><input type="range" data-setting="handleSize" min="3" max="10" step="1" value="${value.handleSize}" aria-label="Handle radius"><small data-handle-value>${value.handleSize}px</small></span></label><div class="styk-settings-preview" style="--size:${value.handleSize};--node-outline:${value.outlineHandles ? "1px solid #000" : "0px solid transparent"}">${["segment", "origin", "unselected", "joined", "static"].map((kind) => `<span class="styk-settings-node" title="${kind === "segment" ? "Selected joint" : kind === "origin" ? "Figure origin" : kind === "unselected" ? "Unselected joint" : kind === "joined" ? "Joined joint" : "Static joint"}" style="--node-color:${PIVOT_HANDLE_COLORS[kind]}"></span>`).join("")}</div></section>`;
     if (this.tab === 'canvas')
       html += `<section class="styk-settings-group"><h3>Figure builder</h3>${this.checkbox('Show static handles','builderShowStaticHandles')}${this.checkbox('Highlight selected segment','builderHighlightSegment')}${this.checkbox('Use construction background','useBuilderCanvasColor')}<label class="styk-settings-row"><span>Construction color</span><input type="color" data-setting="builderCanvasColor" value="${value.builderCanvasColor}" aria-label="Construction background color"></label><p class="styk-settings-note">Construction aids appear while building. They do not change saved scene colors or exported frames.</p></section>`;
+    if (this.tab === 'canvas')
+      html += `<section class="styk-settings-group"><h3>Renderer</h3><label class="styk-settings-row"><span>Graphics mode</span><select data-setting="rendererMode" aria-label="Graphics mode">${[["auto", "Automatic"], ["canvas", "Compatibility (Canvas 2D)"], ["gpu", "WebGPU (including software adapters)"]].map(([id, label]) => `<option value="${id}" ${value.rendererMode === id ? "selected" : ""}>${label}</option>`).join("")}</select></label><p class="styk-settings-note">Compatibility mode renders on the CPU and is usually faster when WebGPU is missing or backed by a software adapter. Changing this reconnects the canvas.</p></section>`;
     if (this.tab === "animation")
       html = `<section class="styk-settings-group"><h3>Playback</h3>${this.checkbox("Loop animation", "loopPlayback")}</section><section class="styk-settings-group"><h3>Recovery</h3><label class="styk-settings-row"><span>Autosave interval</span><select data-setting="autosaveSeconds" aria-label="Autosave interval">${[[0, "Off"], [2.5, "2.5 seconds"], [5, "5 seconds"], [10, "10 seconds"], [30, "30 seconds"], [60, "1 minute"], ...([0, 2.5, 5, 10, 30, 60].includes(value.autosaveSeconds) ? [] : [[value.autosaveSeconds, `${value.autosaveSeconds} seconds`]])].map(([seconds, label]) => `<option value="${seconds}" ${value.autosaveSeconds === seconds ? "selected" : ""}>${label}</option>`).join("")}</select></label></section>`;
     if (this.tab === "shortcuts")

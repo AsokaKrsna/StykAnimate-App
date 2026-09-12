@@ -4,6 +4,7 @@ import {sheetKeyAt} from './layer-sheet.mjs';
 import {initializeLayerSheet} from './editor-layer-sheet.mjs';
 import {icon} from './icons.mjs';
 import {showTimelineMenu} from './timeline-menu.mjs';
+import {AudioTimeline} from './audio-timeline.mjs';
 
 export const ROW=32,HEADER=32;
 const MAX_SCROLL=8000000;
@@ -14,7 +15,7 @@ const element=(tag,parent,className,text)=>{const node=document.createElement(ta
 export class Timeline{
   constructor(container,editor,options={}){
     this.editor=editor;this.container=container;Object.assign(this,options);this.events=new AbortController();this.labels=[];this.pxPerTick=14;this.labelWidth=220;
-    this.channelMode=false;this.mode='layers';this.selectedLayers=new Set([editor.activeLayerId]);this.start=this.end=Math.max(0,Math.floor(editor.tick));this.selectedTrackId=editor.activeLayerId;
+    this.selectedLayers=new Set([editor.activeLayerId]);this.start=this.end=Math.max(0,Math.floor(editor.tick));this.selectedTrackId=editor.activeLayerId;
     if(!editor.report._styk.layerSheet){initializeLayerSheet(editor.report);editor._invalidate({timing:true});}
     attachTimelineHotkeys(this);
     this.root=element('div',container,'layer-timeline');this.dirty=true;
@@ -53,6 +54,7 @@ export class Timeline{
       if(d.kind==='seek'&&!this.gesture&&!this.selecting){this.start=this.end=Math.floor(editor.tick);}this.update(d.kind!=='seek'||!this.paused&&this.gesture?.kind!=='scrub');});
     this._on(window,'styk-theme-change',()=>this.resize());
     this.observer=new ResizeObserver(()=>this.resize());this.observer.observe(this.root);this._reindex();this.resize();
+    this.audio=new AudioTimeline(container,editor,{...options,host:this,engine:options.audioEngine,mode:'advanced'});
   }
   _on(target,name,fn,options={}){target.addEventListener(name,fn,{...options,signal:this.events.signal});}
   _button(parent,name,title,action){const button=element('button',parent,'icon-button');button.type='button';button.innerHTML=icon(name);button.title=title;button.setAttribute('aria-label',title);this._on(button,'click',event=>{this._run(()=>action(event));if(!this.menu)this.scroll?.focus({preventScroll:true});});return button;}
@@ -61,7 +63,6 @@ export class Timeline{
   get selectedTicks(){return [...new Set([this.start,...this.ids.flatMap(id=>this.editor.layerFrameKeys(id).filter(k=>k.tick>this.start&&k.tick<=this.end).map(k=>k.tick))])].sort((a,b)=>a-b);}
   get selectedTimeRange(){return {start:this.start,end:this.end+1};}
   get selectedFrameIndices(){return this.editor.timeline.filter(row=>row.start>=this.start&&row.start<=this.end).map(row=>row.index);}
-  get selectedAnimationKeys(){return [];}
   get loopRange(){return this.end>this.start?{start:this.start,end:this.end+1}:null;}
   _reindex(){
     if(!this.editor.report._styk.layerSheet){initializeLayerSheet(this.editor.report);this.editor._invalidate({timing:true});}
@@ -85,13 +86,14 @@ export class Timeline{
   _scrollToX(x){const max=this.logicalWidth-this.scroll.clientWidth;this.scroll.scrollLeft=max>0?clamp(x,0,max)/max*(this.scroll.scrollWidth-this.scroll.clientWidth):0;this.update();}
   _scrollToY(y){this.scroll.scrollTop=y;this.update();}
   resize(){
+    this.audio?.update();
     this._extent();const ratio=window.devicePixelRatio||1,width=Math.round(this.width*ratio),height=Math.round(this.height*ratio);
     if(this.canvas.width!==width||this.canvas.height!==height){this.canvas.width=width;this.canvas.height=height;this.canvas.style.width=`${this.width}px`;this.canvas.style.height=`${this.height}px`;}
     const css=getComputedStyle(this.root),color=name=>css.getPropertyValue(`--sheet-${name}`).trim();
     this.colors=Object.fromEntries(['surface','hover','line','ink','muted','accent','selected','span','tween','camera-accent','camera-tint','scene-accent','scene-tint'].map(name=>[name,color(name)]));this.font=css.fontFamily;
     this.update();
   }
-  setZoom(value){const old=this.pxPerTick,center=(this._offsetX()+this.width/2)/old;this.pxPerTick=clamp(Number(value)||14,6,36);this.zoomInput.value=String(this.pxPerTick);this._extent();this._scrollToX(center*this.pxPerTick-this.width/2);}
+  setZoom(value){const old=this.pxPerTick,center=(this._offsetX()+this.width/2)/old;this.pxPerTick=clamp(Number(value)||14,6,36);this.zoomInput.value=String(this.pxPerTick);this._extent();this._scrollToX(center*this.pxPerTick-this.width/2);this.audio?.update();}
   setPaused(value){const resumed=this.paused&&!value;this.paused=value;this.update(Boolean(resumed));}
   update(dirty=true){
     this.dirty||=dirty;if(this.disposed||this.raf)return;
@@ -99,6 +101,7 @@ export class Timeline{
   }
   render(){this.update();}
   _syncPlayhead(){
+    this.audio?.update(false);
     const tick=Math.floor(this.editor.tick),x=(tick+.5)*this.pxPerTick-this._offsetX();this.playhead.style.transform=`translateX(${x}px)`;
     if(this.playheadLabel.textContent!==String(tick+1))this.playheadLabel.textContent=String(tick+1);
     if(document.activeElement!==this.frameInput&&this.frameInput.value!==String(tick+1))this.frameInput.value=String(tick+1);
@@ -311,5 +314,5 @@ export class Timeline{
        locked&&{label:'Unlock layers',symbol:'unlock',action:()=>{for(const id of this.ids)editor.setLayerLocked(id,false);}}],
     ]);
   }
-  destroy(){this.disposed=true;this._cancelGesture();this.events.abort();this.menuEvents?.abort();this.observer.disconnect();if(this.raf)cancelAnimationFrame(this.raf);this.menu?.remove();this.root.remove();}
+  destroy(){this.disposed=true;this.audio?.destroy();this._cancelGesture();this.events.abort();this.menuEvents?.abort();this.observer.disconnect();if(this.raf)cancelAnimationFrame(this.raf);this.menu?.remove();this.root.remove();}
 }

@@ -3,6 +3,7 @@ import { timeline, evaluatedFrame } from "./pivot/geometry.mjs";
 import { PlaybackResources } from "./playback-resources.mjs";
 import { exportFrameGeometry, drawExportSceneTiled } from "./export-frame-core.mjs";
 import { exportMemoryPlan } from "./export-memory.mjs";
+import {diagnosticDetails} from './telemetry-schema.mjs';
 import {exportContext, checkExportContext} from './export-canvas.mjs';
 import { exportSVG } from "./svg-export.mjs";
 import { rasterizeCrispSVG } from "./export-crisp.mjs";
@@ -172,6 +173,7 @@ self.addEventListener("message", async ({ data: message }) => {
       ok: false,
       error: error?.message || String(error),
       code: error?.code,
+      ...diagnosticDetails(error,message.operation==='render'?'encode':'prepare','worker_failed'),
     });
   } finally {
     running = false;

@@ -15,13 +15,18 @@ export function initWorkspaceLayout({preferences: nativePreferences, onPersist, 
   // Give timeline its own full-width row, including the space below the inspector.
   workspace.append(timeline);
   const events = new AbortController();
-  let preferences = {}, sizes, expanded = false, gesture = null, chain = Promise.resolve(true);
+  let preferences = {}, sizes, expanded = false, gesture = null, chain = Promise.resolve(true), accessoryHeight = 0, accessoryFocused = false;
   try {
     const saved = nativePreferences?.studioVersion === 1 ? nativePreferences : JSON.parse(localStorage.getItem(KEY) || '{}');
     preferences = saved && typeof saved === 'object' && !Array.isArray(saved) ? {...saved} : {};
   } catch { /* Optional layout storage. */ }
+  const chromeHeight = () => [...timeline.children].filter(node => node.id !== 'timeline').reduce((sum, node) => sum + node.getBoundingClientRect().height, 2);
+  const resizeAccessory = (value, commit = false) => timeline.dispatchEvent(new CustomEvent('styk-audio-panel-resize', {detail:{height:value - chromeHeight(), commit}}));
   function apply() {
     sizes = constrainStudioLayout(preferences, workspace.clientWidth, workspace.clientHeight);
+    if (accessoryHeight) {
+      sizes = constrainStudioLayout({...preferences,timeline:accessoryFocused ? accessoryHeight + chromeHeight() : sizes.timeline + accessoryHeight},workspace.clientWidth,workspace.clientHeight);
+    }
     if (expanded) sizes.timeline = Math.max(sizes.timeline, Math.min(Math.round(workspace.clientHeight * .64), Math.max(200, workspace.clientHeight - 210)));
     workspace.style.setProperty('--studio-inspector', `${sizes.right}px`);
     workspace.style.setProperty('--studio-timeline', `${sizes.timeline}px`);
@@ -53,7 +58,7 @@ export function initWorkspaceLayout({preferences: nativePreferences, onPersist, 
     splitter.addEventListener('pointerdown', event => {
       if (event.button !== 0) return;
       event.preventDefault();
-      gesture = {name, start: name === 'right' ? event.clientX : event.clientY, initial: sizes[name], before: {...preferences}};
+      gesture = {name, start: name === 'right' ? event.clientX : event.clientY, initial: sizes[name], before: {...preferences}, focused:accessoryFocused};
       if (name === 'timeline') {
         expanded = false;
         expandButton.setAttribute('aria-pressed', 'false');
@@ -65,13 +70,15 @@ export function initWorkspaceLayout({preferences: nativePreferences, onPersist, 
     splitter.addEventListener('pointermove', event => {
       if (!gesture || gesture.name !== name) return;
       const coordinate = name === 'right' ? event.clientX : event.clientY;
-      preferences[name] = gesture.initial + gesture.start - coordinate;
+      if (name === 'timeline' && gesture.focused) { resizeAccessory(gesture.initial + gesture.start - coordinate); return; }
+      preferences[name] = gesture.initial + gesture.start - coordinate - (name === 'timeline' ? accessoryHeight : 0);
       apply();
     }, {signal: events.signal});
     const finish = (cancel = false) => {
       if (!gesture) return;
       if (cancel) preferences = gesture.before;
-      else preferences[name] = sizes[name];
+      if (name === 'timeline' && gesture.focused) resizeAccessory(cancel ? gesture.initial : sizes[name], !cancel);
+      else if (!cancel) preferences[name] = sizes[name] - (name === 'timeline' ? accessoryHeight : 0);
       gesture = null;
       delete splitter.dataset.dragging;
       apply();
@@ -84,8 +91,11 @@ export function initWorkspaceLayout({preferences: nativePreferences, onPersist, 
     splitter.addEventListener('keydown', event => {
       if (event.key === 'Escape' && gesture) { finish(true); return; }
       const direction = name === 'right' ? {ArrowLeft: 1, ArrowRight: -1} : {ArrowUp: 1, ArrowDown: -1};
+      if (name === 'timeline' && accessoryFocused && (direction[event.key] || event.key === 'Home')) {
+        event.preventDefault(); resizeAccessory(event.key === 'Home' ? 450 : sizes.timeline + direction[event.key] * (event.shiftKey ? 40 : 12), true); return;
+      }
       if (event.key === 'Home') delete preferences[name];
-      else if (direction[event.key]) preferences[name] = sizes[name] + direction[event.key] * (event.shiftKey ? 40 : 12);
+      else if (direction[event.key]) preferences[name] = sizes[name] + direction[event.key] * (event.shiftKey ? 40 : 12) - (name === 'timeline' ? accessoryHeight : 0);
       else return;
       event.preventDefault();
       if (name === 'timeline') { expanded = false; expandButton.setAttribute('aria-pressed', 'false'); expandButton.setAttribute('aria-label', 'Expand timeline'); }
@@ -107,6 +117,7 @@ export function initWorkspaceLayout({preferences: nativePreferences, onPersist, 
     get preferences() { return {...preferences}; },
     reset() { preferences = {}; expanded = false; expandButton.setAttribute('aria-pressed', 'false'); expandButton.setAttribute('aria-label', 'Expand timeline'); apply(); persist(); },
     resize: apply,
+    setTimelineAccessoryHeight(value, focused = false) { const next = clamp(Number(value) || 0,0,560); if(next!==accessoryHeight || focused!==accessoryFocused){accessoryHeight=next;accessoryFocused=focused;apply();} },
     flushPreferences: () => chain,
     destroy() { events.abort(); observer.disconnect(); Object.values(splitters).forEach(el => el.remove()); },
   };

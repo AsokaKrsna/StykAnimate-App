@@ -43,6 +43,21 @@ export const contextKey = value => Object.keys(OPERATION_CONTEXT_ENUMS).map(key 
 export function operationContext(value = {}) {
   return Object.fromEntries(Object.entries(OPERATION_CONTEXT_ENUMS).map(([key, choices]) => [key, choices.includes(value[key]) ? value[key] : choices.includes('unknown') ? 'unknown' : choices[0]]));
 }
+// Reserve the fixed context allowance for failures before successful work.
+// Never grow it: displaced timing samples remain visible in the drop counter.
+export function operationContextSlot(rows, value) {
+  const key=contextKey(value),existing=rows.find(row=>contextKey(row)===key);
+  if(existing)return {row:existing,dropped:0};
+  const priority=row=>(row.outcome==='failed'?100:row.outcome==='cancelled'?40:row.operation==='playback'?0:20)+(row.stage==='complete'?10:0);
+  let dropped=0;
+  if(rows.length>=MAX_OPERATION_CONTEXTS){
+    let index=0;
+    for(let i=1;i<rows.length;i++)if(priority(rows[i])<priority(rows[index]))index=i;
+    if(priority(value)<=priority(rows[index]))return {row:null,dropped:0};
+    dropped=rows[index].timing.count;rows.splice(index,1);
+  }
+  const row={...value,timing:emptyHistogram()};rows.push(row);return {row,dropped};
+}
 export function formatFamily(value = '') {
   const extension = String(value).toLowerCase().split('.').at(-1);
   return ['piv', 'stk'].includes(extension) ? 'pivot' : ['nodes', 'nodemc', 'stknds', 'zip'].includes(extension) ? 'sticknodes' : ['styk', 'stkz', 'stykmov', 'json', 'native'].includes(extension) ? 'native' : ['png', 'svg', 'gif', 'jpeg'].includes(extension) ? extension : extension === 'jpg' ? 'jpeg' : ['bmp', 'webp', 'media'].includes(extension) ? 'media' : ['mp4', 'webm', 'avi', 'video'].includes(extension) ? 'video' : 'unknown';
@@ -52,7 +67,7 @@ export const complexityBucket = n => !Number.isFinite(n) || n < 0 ? 'unknown' : 
 export const fpsBucket = n => !Number.isFinite(n) || n <= 0 ? 'unknown' : n <= 24 ? 'up-to-24' : n <= 30 ? '25-30' : n <= 60 ? '31-60' : 'over-60';
 export const ERROR_TYPES = Object.freeze(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'AbortError', 'OperationError', 'NotSupportedError', 'GPUError', 'RendererCrash', 'RendererHang', 'BackendError', 'UncleanExit']);
 export const ERROR_OPERATIONS = Object.freeze(['app', 'startup', 'import', 'save', 'export', 'playback', 'recovery', 'gpu', 'renderer', 'backend']);
-export const ERROR_MODULES = Object.freeze(['app.mjs', 'renderer.mjs', 'renderer-geometry.mjs', 'render-artwork.mjs', 'editor.mjs', 'editor-load.mjs', 'import-client.mjs', 'import-worker.mjs', 'document-export.mjs', 'document-export-worker.mjs', 'playback.mjs', 'playback-worker.mjs', 'export-frame-renderer.mjs', 'native-video.mjs', 'main.cjs', 'backend.cjs', 'file-streams.cjs', 'video-export-service.cjs', 'vfw-export-service.cjs']);
+export const ERROR_MODULES = Object.freeze(['app.mjs', 'renderer.mjs', 'renderer-geometry.mjs', 'render-artwork.mjs', 'editor.mjs', 'editor-load.mjs', 'import-client.mjs', 'import-worker.mjs', 'document-export.mjs', 'document-export-worker.mjs', 'playback.mjs', 'playback-worker.mjs', 'export-frame-renderer.mjs', 'native-video.mjs', 'main.cjs', 'backend.cjs', 'file-streams.cjs', 'video-export-service.cjs', 'vfw-export-service.cjs', 'camera-monitor.mjs', 'geometry.mjs', 'background.mjs', 'export-frame-worker.mjs', 'export-frame-core.mjs', 'export-canvas.mjs', 'export-memory.mjs', 'playback-resources.mjs', 'preview-image.mjs', 'native-container.mjs', 'vfx-camera.mjs', 'vfx-canvas.mjs', 'vfx-gpu.mjs', 'vfx-webgpu.mjs', 'vfx-viewport.mjs']);
 export const ENV_ENUMS = Object.freeze({
   os: ['win32', 'darwin', 'linux', 'web', 'unknown'], arch: ['x64', 'arm64', 'ia32', 'unknown'],
   osVersion: ['windows-10', 'windows-11', 'mac', 'linux', 'unknown'],
@@ -84,12 +99,15 @@ export function sanitizeEnvironment(value = {}) {
 export function sanitizeError(error, operation = 'app', now = Date.now(), context = {}) {
   const type = ERROR_TYPES.includes(error?.name) ? error.name : 'Error';
   // Only our module basenames and line numbers; never error text or stack arguments.
-  const frames = String(error?.stack || '').split('\n').slice(1, 12).map(line => {
+  const forwarded = Array.isArray(error?.telemetryFrames) ? error.telemetryFrames.filter(frame=>ERROR_MODULES.includes(frame?.module)&&Number.isSafeInteger(frame.line)&&frame.line>=0&&frame.line<=1e6).map(frame=>({module:frame.module,line:frame.line})).slice(0,5) : [];
+  const frames = forwarded.length ? forwarded : String(error?.stack || '').split('\n').slice(1, 12).map(line => {
     const match = line.match(/(?:\/|\\)([a-z][a-z0-9-]{0,70}\.(?:mjs|cjs)):(\d+):\d+/i);
     return match && ERROR_MODULES.includes(match[1]) ? { module: match[1], line: Math.min(1e6, Number(match[2])) } : null;
   }).filter(Boolean).slice(0, 5);
   const op = ERROR_OPERATIONS.includes(operation) ? operation : 'app';
-  const aliases = { ENOSPC: 'disk_full', EACCES: 'permission_denied', EPERM: 'permission_denied', import_timeout: 'timeout', ETIMEDOUT: 'timeout' };
+  const aliases = { ENOSPC: 'disk_full', EACCES: 'permission_denied', EPERM: 'permission_denied', import_timeout: 'timeout', ETIMEDOUT: 'timeout',
+    export_memory_limit:'out_of_memory', export_canvas_lost:'device_lost', codec_unavailable:'unsupported_format',
+    invalid_native_figure:'invalid_document',invalid_movieclip:'invalid_document',invalid_native_version:'unsupported_format' };
   const rawCode = error?.telemetryCode || error?.code, code = ERROR_CODES.includes(rawCode) ? rawCode : Object.hasOwn(aliases, rawCode) ? aliases[rawCode] : type === 'AbortError' ? 'cancelled' : 'unknown';
   const rawStage = error?.telemetryStage || context.stage, stage = OPERATION_CONTEXT_ENUMS.stage.includes(rawStage) ? rawStage : 'unknown';
   const format = OPERATION_CONTEXT_ENUMS.format.includes(context.format) ? context.format : 'unknown';
@@ -97,6 +115,12 @@ export function sanitizeError(error, operation = 'app', now = Date.now(), contex
   const signature = `${type}:${op}:${frames.map(frame => frame.module + ':' + frame.line).join(',')}:${code}:${stage}:${format}:${complexity}`;
   let hash = 2166136261; for (let i = 0; i < signature.length; i++) hash = Math.imul(hash ^ signature.charCodeAt(i), 16777619);
   return { fingerprint: (hash >>> 0).toString(16).padStart(8, '0'), type, operation: op, frames, code, stage, format, complexity, count: 1, firstAt: now, lastAt: now };
+}
+/** Worker messages retain safe source locations without transferring raw stacks. */
+export function diagnosticDetails(error, stage, fallback='unknown') {
+  const entry=sanitizeError(error,'app',0,{stage});
+  return {name:entry.type,telemetryCode:entry.code==='unknown'?fallback:entry.code,
+    telemetryStage:entry.stage,telemetryFrames:entry.frames};
 }
 function validHistogram(h) {
   return object(h) && Number.isSafeInteger(h.count) && number(h.count) && number(h.sum, 3.6e15) && number(h.max, 3600000) && Array.isArray(h.buckets) && h.buckets.length === HISTOGRAM_BOUNDS.length && h.buckets.every(n => Number.isSafeInteger(n) && number(n)) && h.buckets.reduce((a, b) => a + b, 0) === h.count && h.sum <= h.count * h.max + .01;

@@ -1,6 +1,7 @@
 /** Native VFW's RGB24 DIB uses BGR channels, bottom-up rows and DWORD padding. */
+import {EXPORT_MAX_PIXELS} from './export-sampling.mjs';
 export function rgbaToVfwBgr24(rgba, width, height) {
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16384 || height > 16384 || width * height > 16777216) throw new Error('Invalid Windows video dimensions.');
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16384 || height > 16384 || width * height > EXPORT_MAX_PIXELS) throw new Error('Invalid Windows video dimensions.');
   if (!(rgba instanceof Uint8Array || rgba instanceof Uint8ClampedArray) || rgba.byteLength !== width * height * 4) throw new Error('Windows video needs one exact RGBA frame.');
   const stride = Math.ceil(width * 3 / 4) * 4, bytes = new Uint8Array(stride * height);
   for (let y = 0; y < height; y++) {

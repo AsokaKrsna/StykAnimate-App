@@ -13,6 +13,12 @@ export function preparedCameraMode(packet, requested) {
   return mode;
 }
 
+/** One render-attachment descriptor honoring the active MSAA level. At 1× the
+ * pass draws straight into the resolve target instead of discarding samples. */
+const colorAttachment = (msaa, resolveView) => msaa
+  ? { view: msaa.createView(), resolveTarget: resolveView, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'discard' }
+  : { view: resolveView, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' };
+
 export function combinePreparedCommands(backgrounds, groups, textures) {
   const commands = []; let base = 0;
   const append = (firstInstance, instanceCount, texture = null) => {
@@ -176,7 +182,7 @@ export class PreparedFrameCache {
     renderer.device.queue.writeBuffer(renderer.uniform, 0, uniform);
     const transformBytes = this._writeTransforms(frame, hiddenUids, dragTranslations);
     const encoder = renderer.device.createCommandEncoder({ label: `Prepared playback ${frame.key}` });
-    const pass = encoder.beginRenderPass({ colorAttachments: [{ view: renderer.msaa.createView(), resolveTarget: renderer.context.getCurrentTexture().createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'discard' }] });
+    const pass = encoder.beginRenderPass({ colorAttachments: [colorAttachment(renderer.msaa, renderer.context.getCurrentTexture().createView())] });
     pass.setPipeline(renderer.pipeline); pass.setBindGroup(0, frame.bindGroup);
     for (const command of frame.commands) { pass.setBindGroup(1, command.texture?.bindGroup || renderer.blankBindGroup); pass.draw(6, command.instanceCount, 0, command.firstInstance); }
     pass.end(); renderer.device.queue.submit([encoder.finish()]);
@@ -205,7 +211,7 @@ export class PreparedFrameCache {
    * clip is the full target, matching the prepared camera crop. */
   renderInto(key, { report = this.report, view = {}, target, hiddenUids, dragTranslations } = {}) {
     const frame = this.frames.get(String(key)), renderer = this.renderer;
-    if (!frame || frame.generation !== renderer.generation || report !== this.report || !target?.context || !target?.msaa) { this.stats.misses++; return false; }
+    if (!frame || frame.generation !== renderer.generation || report !== this.report || !target?.context || (renderer.msaaCount > 1 && !target?.msaa)) { this.stats.misses++; return false; }
     const width = Math.max(1, Math.round(target.width ?? 0)), height = Math.max(1, Math.round(target.height ?? 0));
     const matrix = cameraMatrix({ report, frame: frame.nativeFrame, view, cameraEnabled: frame.cameraEnabled });
     renderer.device.queue.writeBuffer(renderer.uniform, 0, new Float32Array([
@@ -213,7 +219,7 @@ export class PreparedFrameCache {
       width, height, 1, 1, 0, 0, width, height]));
     this._writeTransforms(frame, hiddenUids, dragTranslations);
     const encoder = renderer.device.createCommandEncoder({ label: `Prepared surface ${frame.key}` });
-    const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target.msaa.createView(), resolveTarget: target.context.getCurrentTexture().createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'discard' }] });
+    const pass = encoder.beginRenderPass({ colorAttachments: [colorAttachment(target.msaa, target.context.getCurrentTexture().createView())] });
     pass.setPipeline(renderer.pipeline); pass.setBindGroup(0, frame.bindGroup);
     for (const command of frame.commands) { pass.setBindGroup(1, command.texture?.bindGroup || renderer.blankBindGroup); pass.draw(6, command.instanceCount, 0, command.firstInstance); }
     pass.end(); renderer.device.queue.submit([encoder.finish()]);

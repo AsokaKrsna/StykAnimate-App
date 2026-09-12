@@ -46,7 +46,9 @@ const bitmapCovers = (bitmap, rect, resolution) =>
  * the image cannot appear in the output, or {x,y,width,height,density}. */
 export function imageDrawNeed(item, sourceWidth, sourceHeight, view) {
   const a = item.asset;
-  if (!view || !a?.anchor_length || !item.start || !item.end) return null;
+  if (!view || !item.start || !item.end) return null;
+  // drawGeometry skips segments without an anchor entirely.
+  if (!a?.anchor_length) return { empty: true };
   let visible, outScale;
   if (view.matrix) {
     const inverse = invertMatrix(view.matrix);
@@ -188,11 +190,11 @@ export class PlaybackResources {
   }
   /** Decode one asset variant: only the needed source crop at the needed
    * sampling density when that is known, the complete source otherwise. */
-  async decodeVariant(blob, need, maxDimension) {
+  async decodeVariant(blob, need, maxDimension, sourceWidth, sourceHeight) {
     if (need !== 'whole' && need !== 'none' && typeof blob?.arrayBuffer === 'function') {
       const resolution = Math.min(1, need.density);
       const bitmap = await decodePreview(blob, {
-        width: need.width, height: need.height, maxPixels: Math.max(1, Math.ceil(need.width * resolution) * Math.ceil(need.height * resolution)),
+        width: sourceWidth, height: sourceHeight, maxPixels: Math.max(1, Math.ceil(need.width * resolution) * Math.ceil(need.height * resolution)),
         maxDimension, crop: need, check: this.check});
       return bitmap;
     }
@@ -250,7 +252,10 @@ export class PlaybackResources {
         if (!request.target) continue;
         const width = Math.max(1, Math.floor(request.target.width * ratio)), height = Math.max(1, Math.floor(request.target.height * ratio));
         const old = this.images.get(url);
-        if (bitmapCovers(old, request.crop, width / request.crop.width)) continue;
+        // Larger covering variants are kept to avoid churn, except under pixel
+        // pressure where they would keep this draw over its allowance.
+        if (bitmapCovers(old, request.crop, width / request.crop.width) &&
+            !(ratio < 1 && old.width * old.height > width * height * 1.05)) continue;
         // Coverage grows toward the union of the retained variant while it
         // stays inside the allowance, so pans decode larger regions rarely.
         let crop = request.crop, resolution = width / request.crop.width;
@@ -260,13 +265,12 @@ export class PlaybackResources {
         }
         targets.set(url, {...request, crop, resolution, pixels: Math.max(1, Math.ceil(crop.width * resolution) * Math.ceil(crop.height * resolution))});
       }
-      this.trimImages(needed, [...targets].reduce((sum, [url, target]) => sum + (this.images.has(url) ? 0 : target.pixels * 4), 0));
+      this.trimImages(needed, [...targets.values()].reduce((sum, target) => sum + target.pixels * 4, 0));
       for (const [url, target] of targets) {
-        if (this.images.has(url)) continue;
         const old = this.images.get(url);
         if (old) { this.images.delete(url); this.bytes -= old.width * old.height * 4; old.close(); }
         const bitmap = await decodePreview(target.source.blob, {
-          width: target.crop.width, height: target.crop.height, maxPixels: target.pixels, maxDimension,
+          width: target.width, height: target.height, maxPixels: target.pixels, maxDimension,
           crop: target.crop, check: this.check});
         this.images.set(url, bitmap); this.bytes += bitmap.width * bitmap.height * 4;
       }
@@ -281,10 +285,11 @@ export class PlaybackResources {
     this.trimImages(needed);
     this.checkImageBudget();
     for (const url of needed) {
-      const source = await this.source(url);
+      const blob = await imageBlob(url, this.baseURL, this.token, this.controller.signal);
+      const metadata = typeof blob?.arrayBuffer === 'function' ? await pngInfo(blob) : null;
       this.check();
       const asset = items.find(item => item.type === 'image' && this.url(item.asset) === url)?.asset;
-      const sourceWidth = source.info?.width || asset?.width || 0, sourceHeight = source.info?.height || asset?.height || 0;
+      const sourceWidth = metadata?.width || asset?.width || 0, sourceHeight = metadata?.height || asset?.height || 0;
       const need = this.urlNeed(items, url, sourceWidth, sourceHeight, view);
       const resolution = need === 'whole' || need === 'none' ? 1 : Math.min(1, need.density);
       const expectedPixels = need === 'none' ? 0 : need === 'whole' ? sourceWidth * sourceHeight
@@ -293,7 +298,16 @@ export class PlaybackResources {
       this.checkImageBudget(expectedPixels * 4);
       const old = this.images.get(url);
       if (need === 'none' || bitmapCovers(old, need === 'whole' ? {x: 0, y: 0, width: sourceWidth, height: sourceHeight} : need, resolution)) continue;
-      const bitmap = await this.decodeVariant(source.blob, need === 'none' ? 'none' : need, maxDimension);
+      // Tiles and frames that overlap the retained variant decode their union
+      // once instead of re-decoding every time the needed region moves.
+      let target = need;
+      if (old && need !== 'whole' && need !== 'none') {
+        const union = unionRect(need, bitmapSourceRect(old)), grown = Math.min(1, Math.max(resolution, bitmapResolution(old)));
+        const grownPixels = Math.ceil(union.width * grown) * Math.ceil(union.height * grown);
+        if (grownPixels * 4 <= Math.min(this.hardMaxBytes, Math.max(this.maxBytes, 1)) - (this.bytes - old.width * old.height * 4))
+          target = {...union, density: grown};
+      }
+      const bitmap = await this.decodeVariant(blob, target, maxDimension, sourceWidth, sourceHeight);
       if (this.disposed) {
         bitmap.close();
         throw new DOMException(

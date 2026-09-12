@@ -7,8 +7,8 @@ const { spawn } = require("node:child_process");
 const { randomUUID } = require("node:crypto");
 
 const MAX_CHUNK_BYTES = 256 * 1024,
-  MAX_FRAME_BYTES = 64 * 1024 * 1024,
-  MAX_OUTPUT_BYTES = 256 * 1024 * 1024;
+  MAX_FRAME_BYTES = 256 * 1024 * 1024,
+  MAX_OUTPUT_BYTES = 1024 * 1024 * 1024;
 const FORMATS = Object.freeze({
   webm: {defaultCodec:"vp9",codecs:["vp9"],muxer:"webm",mimeType:"video/webm",extension:"webm"},
   mp4: {
@@ -112,6 +112,26 @@ const removeFile = (filename) =>
   fs.unlink(filename).catch((error) => {
     if (error.code !== "ENOENT") throw error;
   });
+const moveFile = async (source, destination) => {
+  try {
+    await fs.rename(source, destination);
+  } catch (error) {
+    if (error.code !== "EXDEV") throw error;
+    // Cross-volume: stage beside the destination so a failed copy never
+    // leaves a truncated file at the chosen path.
+    const staged = path.join(
+      path.dirname(destination),
+      `.${path.basename(destination)}.${randomUUID()}.tmp`,
+    );
+    try {
+      await fs.copyFile(source, staged);
+      await fs.rename(staged, destination);
+    } finally {
+      await removeFile(staged);
+    }
+    await fs.unlink(source);
+  }
+};
 
 const CRC_TABLE = Uint32Array.from({ length: 256 }, (_, value) => {
   for (let bit = 0; bit < 8; bit++)
@@ -245,6 +265,8 @@ class PNGFrameValidator {
 }
 
 function validateConfig(value = {}) {
+  if (value.audio !== undefined && typeof value.audio !== 'boolean') throw new Error('Audio export must be enabled or disabled.');
+  if (value.audio && value.totalFrames / value.fps > 3600) throw new Error('Audio video exports support up to one hour.');
   if (!Object.hasOwn(FORMATS, value.format))
     throw new Error("Choose WebM, MP4, AVI, or WMV video.");
   const codec =
@@ -261,6 +283,7 @@ function validateConfig(value = {}) {
     );
   return {
     format: value.format,
+    ...(value.audio ? {audio: true} : {}),
     codec,
     width,
     height,
@@ -553,6 +576,11 @@ class VideoExportService {
         throw new Error(
           selectedCodec?.reason || available?.reason || capabilities.reason,
         );
+      if (config.audio) {
+        const audioCodec = {mp4:'aac',webm:'libopus',avi:'pcm_s16le',wmv:'wmav2'}[config.format];
+        const encoders = await probe(this.encoderPath, ['-hide_banner','-encoders']);
+        if (!new RegExp(`\\b${audioCodec}\\b`).test(encoders)) throw new Error(`This encoder does not support ${audioCodec} audio.`);
+      }
       await fs.mkdir(this.tempRoot, { recursive: true });
       directory = await fs.mkdtemp(
         path.join(this.tempRoot, "stykanimate-video-"),
@@ -664,6 +692,36 @@ class VideoExportService {
     }
     return result;
   }
+  writeAudioChunk(token, value) {
+    return this.use(token, 'writing', async job => {
+      if (!job.config.audio) throw new Error('Enable audio when beginning the video export.');
+      const bytes = binary(value), expected = Math.round(job.config.totalFrames / job.config.fps * 48000) * 8;
+      if (!bytes?.length || bytes.length > MAX_CHUNK_BYTES || bytes.length % 8 || (job.audioBytes ?? 0) + bytes.length > expected) throw new Error('Invalid stereo audio chunk.');
+      for (let at = 0; at < bytes.length; at += 4) { const sample = bytes.readFloatLE(at); if (!Number.isFinite(sample) || Math.abs(sample) > 1) throw new Error('Audio samples must be finite and normalized.'); }
+      if (!job.audioHandle) { job.audioPath = path.join(job.directory, 'mix.f32'); job.audioHandle = await fs.open(job.audioPath, 'wx'); }
+      let written = 0; while (written < bytes.length) { const result = await job.audioHandle.write(bytes, written, bytes.length - written); if (!result.bytesWritten) throw new Error('Audio writing stopped.'); written += result.bytesWritten; }
+      job.audioBytes = (job.audioBytes ?? 0) + bytes.length; return {written: job.audioBytes, total: expected};
+    });
+  }
+  async muxAudio(job) {
+    const expected = Math.round(job.config.totalFrames / job.config.fps * 48000) * 8;
+    if (job.audioBytes !== expected) throw new Error('Send the entire audio mix before finishing video export.');
+    await job.audioHandle.close(); job.audioHandle = null;
+    const output = path.join(job.directory, `mixed.${FORMATS[job.config.format].extension}`), codec = {mp4:'aac',webm:'libopus',avi:'pcm_s16le',wmv:'wmav2'}[job.config.format];
+    const args = ['-hide_banner','-loglevel','error','-nostdin','-y','-i',job.output,'-f','f32le','-ar','48000','-ac','2','-i',job.audioPath,
+      '-map','0:v:0','-map','1:a:0','-c:v','copy','-c:a',codec,...(codec === 'pcm_s16le' ? [] : ['-b:a','192k']),'-t',String(job.config.totalFrames / job.config.fps),...(job.config.format === 'mp4' ? ['-movflags','+faststart'] : []),output];
+    let stderr = '', timer; const child = job.muxChild = spawn(this.encoderPath, args, {windowsHide:true,stdio:['ignore','ignore','pipe']});
+    job.muxOutput = output; child.stderr.on('data', bytes => { stderr = (stderr + bytes).slice(-4096); });
+    job.muxClosed = new Promise(resolve => child.once('close',resolve));
+    try {
+      await new Promise((resolve,reject) => {
+        timer = setTimeout(() => { child.kill(); reject(new Error('Adding audio to the video timed out.')); },this.operationTimeoutMs);
+        child.once('error',reject); child.once('close',code => code === 0 ? resolve() : reject(new Error(`Audio encoding failed. ${stderr}`)));
+      });
+    } finally { clearTimeout(timer); }
+    if (job.cancelled) throw aborted();
+    job.silentOutput = job.output; job.output = output;
+  }
   beginFrame(token, { index, size } = {}) {
     return this.use(token, "writing", async (job) => {
       if (job.frame) throw new Error("Finish the previous PNG frame first.");
@@ -752,6 +810,7 @@ class VideoExportService {
         throw new Error(
           `Native video encoded ${job.encodedFrames} of ${job.config.totalFrames} frames. The video may exceed its size limit.`,
         );
+      if (job.config.audio) await this.muxAudio(job);
       const stat = await fs.stat(job.output);
       if (!stat.isFile() || !stat.size || stat.size > job.config.maxBytes)
         throw new Error("Encoded video exceeds its size limit.");
@@ -771,6 +830,29 @@ class VideoExportService {
         height: job.config.encodedHeight,
         codec: job.config.codec,
       };
+    });
+  }
+  /** Move the encoded file to a native-approved destination without piping
+   * its bytes through the renderer. */
+  save(token, destination) {
+    return this.use(token, "reading", async (job) => {
+      if (typeof destination !== "string" || !path.isAbsolute(destination))
+        throw new Error("A native-approved destination is required.");
+      if (job.handle) {
+        await job.handle.close();
+        job.handle = null;
+      }
+      try {
+        await moveFile(job.output, destination);
+      } catch (error) {
+        // Keep the reading session alive so chunked readback remains possible.
+        job.handle = await fs.open(job.output, "r").catch(() => null);
+        throw error;
+      }
+      const size = job.size;
+      // release() tolerates the already-moved output (ENOENT) and cleans the directory.
+      await this.release(job);
+      return { saved: true, path: destination, size };
     });
   }
   read(token) {
@@ -811,6 +893,8 @@ class VideoExportService {
       job.handle = null;
     }
     await removeFile(job.output);
+    if (job.audioHandle) { await job.audioHandle.close(); job.audioHandle = null; }
+    for (const file of new Set([job.audioPath,job.silentOutput,job.muxOutput].filter(file => file && file !== job.output))) await removeFile(file);
     await fs.rmdir(job.directory).catch((error) => {
       if (error.code !== "ENOENT") throw error;
     });
@@ -824,6 +908,8 @@ class VideoExportService {
     job.cancellation = (async () => {
       job.child.stdin.destroy();
       if (!job.exit) job.child.kill("SIGKILL");
+      job.muxChild?.kill();
+      if (job.muxClosed) await job.muxClosed;
       await job.closed;
       if (job.busy) await job.idle;
       await this.release(job);

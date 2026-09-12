@@ -17,7 +17,7 @@ export function withVfx(context,stack,paint,{bounds,domainBounds=bounds,scale=1}
  const corners=bounds?[[bounds.x,bounds.y],[bounds.x+bounds.width,bounds.y],[bounds.x,bounds.y+bounds.height],[bounds.x+bounds.width,bounds.y+bounds.height]].map(([x,y])=>({x:matrix.a*x+matrix.c*y+matrix.e,y:matrix.b*x+matrix.d*y+matrix.f})): [{x:0,y:0},{x:context.canvas.width,y:context.canvas.height}];
  const x=Math.max(-pad,Math.floor(Math.min(...corners.map(p=>p.x)))-pad),y=Math.max(-pad,Math.floor(Math.min(...corners.map(p=>p.y)))-pad),right=Math.min(context.canvas.width+pad,Math.ceil(Math.max(...corners.map(p=>p.x)))+pad),bottom=Math.min(context.canvas.height+pad,Math.ceil(Math.max(...corners.map(p=>p.y)))+pad),width=Math.max(1,right-x),height=Math.max(1,bottom-y);
  if(right<=-pad||bottom<=-pad||x>=context.canvas.width+pad||y>=context.canvas.height+pad)return;
- if(width*height>16777216)throw new Error('The VFX drawing region exceeds the graphics budget. Reduce the effect radius or output tile size.');
+ if(width*height>16777216)throw Object.assign(new Error('The VFX drawing region exceeds the graphics budget. Reduce the effect radius or output tile size.'),{telemetryCode:'out_of_memory'});
  let surface=surfaces.get(context);if(!surface){surface=new OffscreenCanvas(width,height);surfaces.set(context,surface);}if(surface.width!==width)surface.width=width;if(surface.height!==height)surface.height=height;
  const ctx=surface.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,width,height);ctx.setTransform(matrix.a,matrix.b,matrix.c,matrix.d,matrix.e-x,matrix.f-y);paint(ctx);
  // Anchor spatial filters to the full owner bounds, never the viewport/tile crop.
@@ -27,7 +27,7 @@ export function withVfx(context,stack,paint,{bounds,domainBounds=bounds,scale=1}
 export function applySceneVfx(context,frame,{scale=1,origin={x:0,y:0},outputSize,clip}={}){
  const stack=activeVfx(vfxStack(frame));if(!stack.length)return false;
  const pad=vfxPadding(stack,scale,Math.max(outputSize?.width??context.canvas.width,outputSize?.height??context.canvas.height)),width=context.canvas.width+2*pad,height=context.canvas.height+2*pad;
- if(width*height>16777216)throw new Error('The scene effect surface exceeds the graphics budget. Use smaller export tiles or reduce the effect radius.');
+ if(width*height>16777216)throw Object.assign(new Error('The scene effect surface exceeds the graphics budget. Use smaller export tiles or reduce the effect radius.'),{telemetryCode:'out_of_memory'});
  let source=context.canvas;
  if(pad||clip){source=sceneSurfaces.get(context);if(!source){source=new OffscreenCanvas(width,height);sceneSurfaces.set(context,source);}if(source.width!==width)source.width=width;if(source.height!==height)source.height=height;const c=source.getContext('2d');c.clearRect(0,0,width,height);c.save();if(clip){c.beginPath();c.rect(clip.x+pad,clip.y+pad,clip.width,clip.height);c.clip();}c.drawImage(context.canvas,pad,pad);c.restore();}
  const output=filterVfxCanvas(source,stack,{scale,origin:{x:origin.x-pad,y:origin.y-pad},outputSize:outputSize??{width:context.canvas.width,height:context.canvas.height}});context.save();context.setTransform(1,0,0,1,0,0);if(clip){context.beginPath();context.rect(clip.x,clip.y,clip.width,clip.height);context.clip();}context.clearRect(0,0,context.canvas.width,context.canvas.height);context.drawImage(output,-pad,-pad);context.restore();return true;

@@ -30,8 +30,13 @@ No captions, effect-cost badges, parameter diamonds, or additional animation mod
 | Bloom | Threshold, soft knee, radius, intensity, paint |
 | Light sweep | Position, angle, width, softness, intensity, paint |
 | CRT / scanlines | Scanlines, spacing, curvature, RGB fringe, phase, paint |
+| Turbulent displacement | Amount, scale, evolution, detail, seed |
+
+Every effect also has an animatable **Effect strength** from 0–100%. It mixes the completed effect with its input in premultiplied alpha. Zero strength bypasses filter work; 100% avoids the extra mixing pass. Older saved stacks resolve to 100% without changing their saved data.
 
 Scene catalogues include camera distortions and CRT; object catalogues include silhouette effects. Vignette, Shockwave, and CRT are camera effects. Preset choices are filtered by their component effects.
+
+Turbulent displacement uses up to four normalized coherent-noise octaves in a single GPU pass. Its two displacement components are each bounded by Amount, which also supplies the conservative tile guard. Evolution moves continuously through the noise field; seed and explicit evolution determine the output independently of playback order. WebGPU and WebGL implement identical kernels.
 
 ## Ownership, storage, and animation
 
@@ -60,7 +65,7 @@ Object sizes use local artwork units and scale with the instance. Scene sizes us
 
 ## Rendering and resource lifetime
 
-- `vfx-gpu.mjs`: one lazily created WebGL 2 filter executor per JavaScript realm, shared by portable Canvas render paths. It uses GPU textures and no CPU pixel readback. Fullscreen passes run filters in order. Shader programs compile lazily per operation (at most 26), avoiding compilation of the entire catalogue when a simple effect is first used.
+- `vfx-gpu.mjs`: one lazily created WebGL 2 filter executor per JavaScript realm, shared by portable Canvas render paths. It uses GPU textures and no CPU pixel readback. Fullscreen passes run filters in order. Shader programs compile lazily per operation (at most 28), avoiding compilation of the entire catalogue when a simple effect is first used.
 - Blur uses three separable box passes per axis as a Gaussian approximation. Large radii downsample on a stable grid and upsample afterward. Outline uses separable alpha dilation; its rounded mode composes bounded 16-direction dilation passes, while legacy square outlines retain separable dilation. All color math is SDR, with premultiplied alpha at composition boundaries.
 - `vfx-canvas.mjs`: bounded owner crops, neighboring pixels for spatial filters, stable coordinates, and scene composition. Scene padding allows blur to leave and re-enter the frame before final clipping.
 - `vfx-viewport.mjs`: shared-device WebGPU final composition; selection handles follow the effect result.
@@ -68,6 +73,8 @@ Object sizes use local artwork units and scale with the instance. Scene sizes us
 - Existing artwork signatures include effects, including nested child values. Existing raster caches retain unchanged filtered artwork and invalidate changed values. Prepared workers bake object filters into their bounded compatibility packets; the scene stack remains compact packet metadata.
 
 No-effect documents do not create a VFX graphics context or offscreen filter textures and retain the vector path. Each filter surface is capped at 16,777,216 pixels and the graphics device's maximum texture size. The executor retains at most six working textures plus its output surface; these are transient working surfaces, separate from the existing raster cache budgets. It releases the graphics context after 30 seconds without filter work. Renderer destruction releases camera surfaces, textures, and scratch canvases. This is a bounded working set, not a claim that a large effect stack is free.
+
+Partial strength retains one additional original-input texture only when needed.
 
 Tiled export expands guards for scene effects and preserves spatial coordinates. A request whose effect neighborhood exceeds the surface cap fails explicitly rather than omitting effects. WebGL 2 is required for active VFX; unavailable/lost contexts produce explicit errors. Native saving remains independent of graphics availability.
 
@@ -77,7 +84,7 @@ Tiled export expands guards for scene effects and preserves spatial coordinates.
 
 ## Extension contract
 
-A new effect needs a registry schema, validation/interpolation semantics, identity/no-op behavior, conservative sampling padding, an executor kernel, and catalogue scope. Any new temporal effect must define deterministic frame sampling and its own bounded state before entering this stack system. Add model, worker/export parity, and representative performance checks. The registry describes saved data; rendering resources stay in render modules; UI state stays in the inspector.
+A new effect needs a registry schema, validation/interpolation semantics, identity/no-op behavior, conservative sampling padding, an executor kernel, and catalogue scope. Add model, worker/export parity, and representative performance checks. The registry describes saved data; rendering resources stay in render modules; UI state stays in the inspector.
 
 ## Verification
 
@@ -85,6 +92,9 @@ A new effect needs a registry schema, validation/interpolation semantics, identi
 - `node tests/vfx.browser.mjs`: all nine shader outputs, alpha/orientation, tiled/full-frame parity, binary native round-trip, lossy-format rejection, real slider and label drags, and tab navigation.
 - `node tests/vfx-rendering.browser.mjs`: live/real-worker prepared output, movieclips, worker raster/SVG exports, and moved/rotated camera boundaries, panned camera crops, and editor overlays on WebGPU and Canvas fallback.
 - `node scripts/benchmark-vfx.mjs`: 1,000-figure scenes at 1280x720 with cold and warmed timings, changing values, and retained memory counters.
+- `node --test tests/vfx-strength.test.mjs`: compatible strength defaults, interpolation, zero-strength bypass, layer edits/undo/reopen, and turbulence bounds.
+- `node tests/vfx-strength.browser.mjs`: strength and turbulence on both GPU executors, tiled rendering, real playback and export workers, current-frame overrides, movieclips, native saves, and inspector controls. Images and numeric differences are written under `artifacts/vfx/strength-*`.
+- `node scripts/benchmark-vfx-strength.mjs`: 1,000 figures at 1280×720, with ten turbulent displacement stacks at full or partial strength, or scene turbulence. Reports evaluation/preparation, live rendering, and repeated prepared-frame presentation separately; prepared presentation is not a claim of sustained uncached playback throughput.
 
 Browser scripts use installed Chrome and a local server at `http://127.0.0.1:47832`; override with `STYK_TEST_URL`. Measurement output is in `artifacts/vfx/`. Results depend on hardware, area, radius, and animated content. The measured 1,000-figure camera-editing case improved from approximately 35 ms to 5 ms median after sharing retained GPU artwork. Rebuilding geometry while animating ten glows remains a heavier case (approximately 23 ms median on the measured NVIDIA Lovelace device). Cold shader initialization remains a separate cost.
 

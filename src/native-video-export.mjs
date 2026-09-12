@@ -1,24 +1,26 @@
 /** Canvas -> worker PNG -> bounded native FFmpeg stream. No lossy intermediate. */
 import {exportFormat} from './export-capabilities.mjs';
-const MAX_BYTES = 256 * 1024 * 1024;
+import {EXPORT_MAX_PIXELS} from './export-sampling.mjs';
+const MAX_BYTES = 1024 * 1024 * 1024;
 const cancelled = () => new DOMException('Video export cancelled.', 'AbortError');
 
 export async function encodeNativeVideo({format, codec, width, height, fps, totalFrames, renderFrame, quality = 0.9,
-  bitrate, signal, onProgress, maxBytes = MAX_BYTES, desktop = globalThis.stykDesktop, timeoutMs = 120000}) {
+  bitrate, signal, onProgress, maxBytes = MAX_BYTES, desktop = globalThis.stykDesktop, timeoutMs = 120000, sink, save, audioChunks}) {
   if (!['webm', 'mp4', 'avi', 'wmv'].includes(format)) throw new Error('Choose WebM, MP4, AVI or WMV for native video export.');
   if (codec !== undefined && !{webm:['vp9'],mp4:['h264','mpeg4'],avi:['mpeg4','ffv1','rawvideo'],wmv:['wmv2']}[format].includes(codec)) throw new Error('Choose a supported codec for this video format.');
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16384 || height > 16384 || width * height > 16777216) throw new Error('Native video supports up to 16 million pixels per frame.');
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16384 || height > 16384 || width * height > EXPORT_MAX_PIXELS) throw new Error(`Native video supports up to ${Math.round(EXPORT_MAX_PIXELS / 1e6)} million pixels per frame.`);
   if (!Number.isFinite(fps) || fps < 1 || fps > 1000 || !Number.isInteger(totalFrames) || totalFrames < 1 || totalFrames > 1000000) throw new Error('Choose a valid video frame rate and frame count.');
   if (!Number.isFinite(quality) || quality < 0 || quality > 1) throw new Error('Video quality must be between zero and one.');
   if (bitrate !== undefined && (!Number.isFinite(bitrate) || bitrate < 1000 || bitrate > 200e6)) throw new Error('Video bitrate must be between 1 kbit/s and 200 Mbit/s.');
-  if (!Number.isInteger(maxBytes) || maxBytes < 1024 || maxBytes > MAX_BYTES) throw new Error('Native video size must be limited to between 1 KiB and 256 MiB.');
+  if (!Number.isInteger(maxBytes) || maxBytes < 1024 || maxBytes > MAX_BYTES) throw new Error('Native video size must be limited to between 1 KiB and 1 GiB.');
   if (typeof renderFrame !== 'function') throw new Error('Native video export needs a frame renderer.');
   for (const method of ['beginVideoExport', 'beginVideoFrame', 'writeVideoChunk', 'endVideoFrame', 'finishVideoExport', 'readVideoChunk', 'cancelVideoExport'])
     if (typeof desktop?.[method] !== 'function') throw new Error('This video format requires the StykAnimate desktop app and its native encoder.');
   if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') throw new Error('Native video export needs worker canvas support.');
   if (signal?.aborted) throw cancelled();
+  if (audioChunks && typeof desktop?.writeVideoAudioChunk !== 'function') throw new Error('This desktop build does not support audio video export.');
   const worker = new Worker(new URL('./native-video-frame-worker.mjs', import.meta.url), {type: 'module', name: 'StykAnimate native video frames'});
-  let pending, sequence = 0, failure, transfer, cancellation;
+  let pending, sequence = 0, failure, transfer, cancellation, completed = false;
   const check = () => { if (signal?.aborted) throw cancelled(); if (failure) throw failure; };
   const fail = error => { failure = error; clearTimeout(pending?.timer); pending?.reject(error); pending = null; worker.terminate(); };
   worker.addEventListener('error', event => { event.preventDefault(); fail(new Error(event.message || 'The video frame worker stopped.')); });
@@ -42,11 +44,16 @@ export async function encodeNativeVideo({format, codec, width, height, fps, tota
   };
   signal?.addEventListener('abort', abort, {once: true});
   try {
-    transfer = await desktop.beginVideoExport({format, codec, width, height, fps, totalFrames, quality, bitrate, maxBytes});
+    transfer = await desktop.beginVideoExport({format, codec, width, height, fps, totalFrames, quality, bitrate, maxBytes, ...(audioChunks ? {audio:true} : {})});
     check();
     if (!transfer?.token) throw new Error('The native video encoder did not start.');
     const chunkSize = Math.min(256 * 1024, transfer.maxChunkBytes || 256 * 1024);
     if (!Number.isInteger(chunkSize) || chunkSize < 1) throw new Error('The native video transfer size is invalid.');
+    if (audioChunks) {
+      onProgress?.({completed:0,total:totalFrames,progress:0,phase:'mixing audio'});
+      for await (const pcm of audioChunks) { check(); await desktop.writeVideoAudioChunk(transfer.token, pcm); }
+      check();
+    }
     await request('start', {width, height,preserveAlpha:format==='webm'});
     for (let index = 0; index < totalFrames; index++) {
       check(); const canvas = await renderFrame(index); check();
@@ -64,7 +71,23 @@ export async function encodeNativeVideo({format, codec, width, height, fps, tota
     onProgress?.({completed: totalFrames, total: totalFrames, progress: 1, phase: 'encoding'});
     const encoded = await desktop.finishVideoExport(transfer.token); check();
     if (!Number.isSafeInteger(encoded?.size) || encoded.size < 1 || encoded.size > maxBytes) throw new Error('The native video file has an invalid size.');
-    const parts = []; let size = 0, done = false;
+    if (save && typeof desktop.saveVideoExport === 'function') {
+      // The encoded file already exists on disk in the main process; move it to
+      // the chosen destination without piping bytes through the renderer. A
+      // failed move keeps the reading session, so fall back to chunked
+      // readback instead of losing the finished export.
+      try {
+        const result = await desktop.saveVideoExport(transfer.token, save);
+        transfer = null;
+        check();
+        onProgress?.({completed: totalFrames, total: totalFrames, progress: 1, phase: 'complete'});
+        return result?.saved ? {saved: true, path: result.path, size: result.size} : {saved: false};
+      } catch (error) {
+        if (failure) throw failure;
+      }
+    }
+    let size = 0, done = false;
+    const parts = sink ? null : [];
     while (!done) {
       check(); const chunk = await desktop.readVideoChunk(transfer.token); check();
       const bytes = chunk?.bytes;
@@ -72,19 +95,23 @@ export async function encodeNativeVideo({format, codec, width, height, fps, tota
       if (!bytes.byteLength && !chunk.done) throw new Error('The native video output stopped before completion.');
       size += bytes.byteLength;
       if (size > encoded.size || size > maxBytes) throw new Error('The native video exceeds its declared file size.');
+      if (sink) await sink.write(bytes);
       // Blob parts can spill to Chromium's backing store. Do not retain the
       // entire encoded file as JS ArrayBuffers while the renderer is alive.
-      parts.push(new Blob([bytes])); done = Boolean(chunk.done);
+      else parts.push(new Blob([bytes]));
+      done = Boolean(chunk.done);
     }
     if (size !== encoded.size) throw new Error('The native video output is incomplete.');
-    const description = exportFormat(format), blob = new Blob(parts, {type: description.mimeType});
     transfer = null;
     onProgress?.({completed: totalFrames, total: totalFrames, progress: 1, phase: 'complete'});
+    if (sink) { const result = await sink.finish(); completed = true; return result; }
+    const description = exportFormat(format), blob = new Blob(parts, {type: description.mimeType});
     return blob;
   } finally {
     clearTimeout(pending?.timer);
     signal?.removeEventListener('abort', abort); worker.terminate();
     if (transfer) await desktop.cancelVideoExport(transfer.token).catch(() => {});
+    if (sink && !completed) await sink.abort();
     await cancellation;
   }
 }

@@ -36,14 +36,30 @@ try {
     PlaybackCache.prototype.prepareRange = function(...args) {globalThis.rangePlayback = this; return original.apply(this, args);};
   });
   const settle = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  const frames = () => page.evaluate(() => structuredClone(styk.editor.report.keyframes));
+  // Sheet edits write pose sources, never report.keyframes — compare evaluated
+  // output at each native frame's start tick instead. The top-level _styk only
+  // identifies which source pose was sampled; content comparisons ignore it.
+  const frames = () => page.evaluate(async () => {
+    const {evaluatedFrame} = await import('/src/pivot/geometry.mjs');
+    return styk.editor.timeline.map(row => {
+      const {_styk, ...frame} = evaluatedFrame(styk.editor.report, row.index, 0, row.start);
+      return JSON.parse(JSON.stringify(frame));
+    });
+  });
   async function point(uid, handle = 0) {
     return page.evaluate(({uid, handle}) => {
       const geometry = [...styk.editor.geometry.objects.values()].find(g => g.obj.unique_id === uid), p = geometry.joints.get(handle), rect = document.querySelector('#viewport').getBoundingClientRect(), view = styk.state.view;
       return {x: rect.left + view.x + p.x * view.scale, y: rect.top + view.y + p.y * view.scale, scale: view.scale};
     }, {uid, handle});
   }
-  async function selectFigure(uid, modifiers) {await page.locator(`.styk-tree-row[data-key="figure:${uid}"]`).click({modifiers}); await settle();}
+  async function selectFigure(uid, modifiers) {
+    await page.evaluate(({uid, add}) => styk.editor.select(uid, -1, {add}), {uid, add: Boolean(modifiers?.includes('Control'))});
+    await settle();
+  }
+  const cellPoint = (uid, tick) => page.evaluate(({uid, tick}) => {
+    const t = styk.timeline, row = t.tracks.findIndex(track => track.id === styk.editor.layerForUid(uid)), r = t.scroll.getBoundingClientRect();
+    return {x: r.left + (tick + .5) * t.pxPerTick - t._offsetX(), y: r.top + 32 + row * 32 + 16};
+  }, {uid, tick});
   async function resetRange(file = sourcePath) {
     await page.evaluate(() => {globalThis.previousRangeReport = styk.editor.report;});
     const choosing = page.waitForEvent('filechooser');
@@ -52,17 +68,14 @@ try {
     await page.waitForFunction(() => styk.editor.report !== globalThis.previousRangeReport || document.querySelector('#discard-changes'));
     if (await page.locator('#discard-changes').count()) await page.locator('#discard-changes').click();
     await page.waitForFunction(() => styk.editor.report !== globalThis.previousRangeReport); await settle();
-    await page.locator('[data-tab="layers"]').click();
-    if (await page.evaluate(() => styk.timeline.channelMode)) await page.getByRole('button', {name: 'Frames', exact: true}).click();
     await selectFigure(1);
-    for (const [tick, control] of [[0, false], [20, true]]) {
-      const p = await page.evaluate(tick => {const t = styk.timeline, r = t.scroll.getBoundingClientRect(); return {x: r.left + 12 + (tick + .5) * t.pxPerTick - t._offsetX(), y: r.top + 12};}, tick);
-      if (control) await page.keyboard.down('Control');
-      await page.mouse.click(p.x, p.y);
-      if (control) await page.keyboard.up('Control');
-    }
+    // Sheet ranges are contiguous columns: click frame 1, Shift-click frame 3.
+    await page.mouse.click(...Object.values(await cellPoint(1, 0)));
+    await page.keyboard.down('Shift');
+    await page.mouse.click(...Object.values(await cellPoint(1, 20)));
+    await page.keyboard.up('Shift');
     await settle(); await selectFigure(1);
-    assert.deepEqual(await page.evaluate(() => styk.state.rangeIndices), [0, 2]);
+    assert.deepEqual(await page.evaluate(() => styk.state.rangeIndices), [0, 1, 2]);
     await page.locator('#apply-range-movement').check(); await settle();
     assert.equal(await page.evaluate(() => styk.state.applyRange), true);
   }
@@ -91,18 +104,21 @@ try {
     const before = await frames(), history = await page.evaluate(() => styk.editor._undo.length);
     await operation(); await settle(); const after = await frames();
     assert.equal(await page.evaluate(() => styk.editor._undo.length), history + 1, `${name} must be one undo command`);
-    for (const index of [1, 3]) assert.deepEqual(after[index], before[index], `${name} changed unselected frame ${index}`);
-    for (const index of [0, 2]) {assert.notDeepEqual(after[index], before[index], `${name} did not change selected frame ${index}`); verify?.(after[index], before[index], index);}
+    for (const index of [3]) assert.deepEqual(after[index], before[index], `${name} changed unselected frame ${index}`);
+    for (const index of [0, 1, 2]) {assert.notDeepEqual(after[index], before[index], `${name} did not change selected frame ${index}`); verify?.(after[index], before[index], index);}
     await workerMatches();
     await page.locator('#viewport').click({position: {x: 5, y: 5}}); await page.keyboard.press('Control+z'); await settle();
     assert.deepEqual(await frames(), before, `${name} undo did not restore exact native frames`); await workerMatches();
     checks.push(name); console.log('PASS', name);
   }
-  await exercise('Toolbar Add inserts one common identity only in selected native frames', () => page.locator('.tool[data-action="add-figure"]').click(),
+  await exercise('Insert dialog adds one common identity only in selected native frames', async () => {
+      await page.locator('#open-insert').click();
+      await page.locator('#insert-dialog [data-action="add-figure"]').click();
+    },
     (after, before) => {assert.equal(after.objects.length, before.objects.length + 1); assert.ok(after.objects.some(o => o.unique_id > 3));});
-  await exercise('Asset library insertion honors the selected frame range', async () => {await page.locator('[data-tab="assets"]').click(); await page.locator('.styk-asset-row').first().click();},
+  await exercise('Asset library insertion honors the selected frame range', async () => {await page.locator('#open-insert').click(); await page.locator('#asset-list .styk-asset-row').first().click();},
     (after, before) => assert.equal(after.objects.length, before.objects.length + 1));
-  await exercise('Duplicate preserves each selected frame’s distinct source pose', () => page.locator('#inspector [data-action="duplicate"]').click(),
+  await exercise('Duplicate preserves each selected frame’s distinct source pose', () => page.evaluate(() => styk.actions.duplicate()),
     (after, before) => {const copy = after.objects.find(o => o.unique_id > 3); assert.ok(copy); assert.deepEqual(copy.angles, object(before, 1).angles); assert.equal(copy.scale, object(before, 1).scale);});
   await exercise('Delete removes the selected identity across the selected range', () => menuAction('delete'), after => assert.equal(object(after, 1), undefined));
   await exercise('Figure color applies only to the chosen identity in selected frames', async () => {await page.locator('#figure-color').fill('#123456'); await page.locator('#figure-color').dispatchEvent('change');},
@@ -111,15 +127,15 @@ try {
   await exercise('Position numeric input applies the absolute value to each selected frame', () => numeric('root_x', 240), after => assert.equal(object(after, 1).root_x, 240));
   await exercise('Scale numeric input preserves each frame’s pose while changing scale', () => numeric('scale', 80),
     (after, before) => {assert.equal(object(after, 1).scale, .8); assert.deepEqual(object(after, 1).angles, object(before, 1).angles);});
-  await exercise('Horizontal mirror updates each selected frame’s own pose', () => page.locator('#inspector [data-action="mirror"]').click(),
+  await exercise('Horizontal mirror updates each selected frame’s own pose', () => page.evaluate(() => styk.actions.mirror()),
     (after, before) => assert.notDeepEqual(object(after, 1).angles, object(before, 1).angles));
-  await exercise('Rotate button adds 15 degrees to each selected frame’s own pose', () => page.locator('#inspector [data-action="rotate"]').click(),
+  await exercise('Rotate button adds 15 degrees to each selected frame’s own pose', () => page.evaluate(() => styk.actions.rotate()),
     (after, before) => {object(after, 1).angles.forEach((angle, index) => assert.ok(Math.abs(angle - object(before, 1).angles[index] - Math.PI / 12) < 1e-9)); assert.equal(object(after, 1).root_x, object(before, 1).root_x);});
-  await exercise('Center button centers the root independently in each selected frame', () => page.locator('#inspector [data-action="center"]').click(),
+  await exercise('Center button centers the root independently in each selected frame', () => page.evaluate(() => styk.actions.center()),
     (after, before) => {assert.equal(object(after, 1).root_x, 360); assert.equal(object(after, 1).root_y, 215); assert.deepEqual(object(after, 1).angles, object(before, 1).angles);});
-  await exercise('Reset pose restores native definition angles in every selected frame', () => page.locator('#inspector [data-action="reset-pose"]').click(),
+  await exercise('Reset pose restores native definition angles in every selected frame', () => page.evaluate(() => styk.actions['reset-pose']()),
     (after, before) => {assert.deepEqual(object(after, 1).angles, report.figure_types[0].segments.map(segment => segment.angle_rad)); assert.equal(object(after, 1).len_flag, 0); assert.equal(object(after, 1).bend_flag, 0); assert.equal(object(after, 1).root_x, object(before, 1).root_x); assert.equal(object(after, 1).scale, object(before, 1).scale);});
-  await exercise('Align left uses each selected frame’s actual shape bounds', () => page.locator('#inspector [data-action="align-left"]').click(),
+  await exercise('Align left uses each selected frame’s actual shape bounds', () => page.evaluate(() => styk.actions['align-left']()),
     (after, before) => {
       const bounds = frame => [...buildGeometry(report, frame).objects.values()].filter(g => [1, 2].includes(g.obj.unique_id))
         .map(g => objectBounds([...g.segments.map(s => ({...s, type: s.seg.segment_type || 'line'})), ...g.polys]));
@@ -134,9 +150,9 @@ try {
     const p = await point(1); await page.mouse.click(p.x, p.y); await page.keyboard.press('Control+x');
   }, after => assert.equal(object(after, 1), undefined));
   await exercise('Canvas attachment joins to the same native handle across selected frames', async () => {
-    await page.locator('#inspector [data-action="attach-figure"]').click(); const p = await point(2, 1); await page.mouse.click(p.x, p.y);
+    await page.evaluate(() => styk.actions['attach-figure']()); const p = await point(2, 1); await page.mouse.click(p.x, p.y);
   }, after => {assert.equal(object(after, 1).join.target_unique_id, 2); assert.equal(object(after, 1).join.target_handle_id, 1);});
-  await exercise('Detach preserves world placement and unselected frame attachments', () => page.locator('#inspector [data-action="detach-figure"]').click(),
+  await exercise('Detach preserves world placement and unselected frame attachments', () => page.evaluate(() => styk.actions['detach-figure']()),
     (after, before) => {const root = buildGeometry(report, before).objects.get(object(before, 1).object_slot).root;
       assert.equal(object(after, 1).join, null); assert.ok(Math.abs(object(after, 1).root_x - root.x) < .001); assert.ok(Math.abs(object(after, 1).root_y - root.y) < .001);}, {file: joinedPath});
   await exercise('Canvas dragging applies a relative translation to every selected pose', async () => {

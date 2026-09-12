@@ -29,7 +29,8 @@ test('prepared raster cropping retains sample grid, filtering guards and origina
   const original = { x: -1000, y: -750, width: 3400, height: 2800 };
   const visible = { x: 0, y: 0, width: 640, height: 480 };
   const clipped = playbackRasterBounds(original, visible, 2);
-  assert.equal(clipped.pixelScale, 4096 / 3400);
+  assert.equal(clipped.pixelScale, 2);
+  assert.equal(playbackRasterBounds(original, visible, 8, 4096).pixelScale, 4096 / 3400);
   assert.ok(clipped.pixelWidth * clipped.pixelHeight < clipped.fullPixels / 15);
   assert.ok(Math.abs((clipped.x - original.x) * clipped.pixelScale - Math.round((clipped.x - original.x) * clipped.pixelScale)) < 1e-9);
   assert.ok(clipped.x <= visible.x - 2 / clipped.pixelScale);

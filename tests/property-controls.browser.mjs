@@ -84,9 +84,6 @@ try {
         values[key] = token;
         events.push(["cancel", key]);
       },
-      keyframe: ({ key }) => events.push(["key", key]),
-      navigate: ({ key, direction }) =>
-        events.push(["navigate", key, direction]),
       onError: (e) => errors.push(e.message),
     });
     window.props = {
@@ -102,13 +99,7 @@ try {
         host.innerHTML = inspectorView({
           editor,
           context,
-          propertyState: (key) => ({
-            value: values[key],
-            keyed: key === "camera_y",
-            animated: true,
-            previous: { tick: 0 },
-            next: { tick: 20 },
-          }),
+          propertyState: (key) => ({ value: values[key] }),
         });
       },
     };
@@ -205,23 +196,12 @@ try {
     "Out-of-range values cancel without a history entry",
     s.history.length === 6 && s.values.camera_scale === 100,
   );
-  await page.locator('#property-test [data-property-key="camera_x"]').click();
-  await page
-    .locator(
-      '#property-test [data-property-nav="camera_x"][data-direction="-1"]',
-    )
-    .click();
-  await page
-    .locator(
-      '#property-test [data-property-nav="camera_x"][data-direction="1"]',
-    )
-    .click();
   s = await snapshot();
   check(
-    "Diamond and previous/next controls route exact property callbacks",
-    s.events.some((e) => e[0] === "key" && e[1] === "camera_x") &&
-      s.events.filter((e) => e[0] === "navigate" && e[1] === "camera_x")
-        .length === 2,
+    "Layer-sheet property rows render no per-property key controls",
+    (await page
+      .locator("#property-test [data-property-key], #property-test [data-property-nav]")
+      .count()) === 0,
   );
   await mkdir("artifacts/property-controls", { recursive: true });
   await page.setViewportSize({ width: 900, height: 760 });

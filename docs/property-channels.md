@@ -1,5 +1,15 @@
 # Independent property channels
 
+> **Superseded authoring model.** Current documents use the layer sheet: every
+> inspector property edit writes a complete layer pose key (see
+> [layer-timeline.md](layer-timeline.md)). There are no per-property key
+> controls, property rows, or authored-key navigation. The channel machinery
+> below remains as the compatibility surface: imported and legacy channel data
+> is still evaluated, projected, and preserved on save, and the low-level
+> `Editor` APIs keep working for native tools. `_styk.animation` is removed from
+> the writable document when a layer sheet initializes; its channels migrate
+> into sheet keys.
+
 The app enables `Editor({propertyChannels: true})` in both Simple and Advanced
 mode. Both timelines edit the same document and use the same evaluator.
 
@@ -13,16 +23,19 @@ Independent properties are:
 | Camera | X, Y, scale, rotation |
 | Scene | Background asset, color |
 
-Property edits add or update only the affected property keys. They do not create
-an additional Pose key. Branch appearance edits author the affected segment and
-polygon channels; instance appearance edits do not change the shared figure type.
+Historically, property edits added or updated only the affected property keys
+without creating a Pose key. Under the layer sheet, the same edits are routed
+through `_sheetPropertyEntries`, which captures the owning layer's complete pose
+at the target tick: editing a held cell edits its preceding key, and an edit
+inside a tween writes a boundary at the entry's tick. Branch appearance edits
+still resolve through the same target vocabulary; instance appearance edits do
+not change the shared figure type.
 Fill style stores gradient type, angle and stop layout. Endpoint color and opacity
 have separate channels. Fill style, background asset and Z-index use Constant
 interpolation; color channels interpolate color components.
 
 The inspector calls the two spatial gradient endpoint controls **Primary opacity**
-and **Secondary opacity**. These are not animation start/end settings: each has
-its own temporal keyframes, interpolation and key navigation in both modes.
+and **Secondary opacity**. These are not animation start/end settings.
 
 Figure X/Y and rotation remain in Pose, with no separate key controls or new
 transform channels. Previously saved X/Y/rotation tracks remain readable.
@@ -50,14 +63,11 @@ This is a compatibility-preserving authoring split, not an eager rewrite of ever
 old snapshot. The low-level Editor default remains available for native tools and
 legacy consumers that intentionally edit native frames.
 
-Simple retains its Add/Update/Discard workflow, including property keys in its
-working draft and stored-frame projection. Adding a frame carries explicit
-property values into the new interval, continuing the property's easing rather
-than creating a Constant interval. Explicit Constant easing is preserved. Scene
-color defaults to linear interpolation, including from an unedited white background.
-Advanced exposes the independent channels,
-including unkeyed properties. With no figure selected, Scene and Camera are shown
-together. Undo/redo, ranges, playback and style export use the same channel values.
+The Simple filmstrip and the Advanced sheet share the same layer-sheet document;
+working-frame checkpoints and stored-frame projections apply to native documents
+without a layer sheet. With no figure selected, Scene and Camera are shown
+together in the inspector. Undo/redo, ranges, playback and style export read the
+same evaluated values regardless of which surface authored them.
 
 ## Architecture and performance
 

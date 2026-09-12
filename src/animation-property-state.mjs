@@ -4,6 +4,11 @@ import {sampleAnimationChannel} from './animation-channels.mjs';
  * No synthetic scalar keys are persisted or allocated for inherited poses. */
 export function animationPropertyState(editor, target, property, options = {}) {
   const tick = editor.tick, poseOnly = property === 'pose';
+  // Layer documents author complete cell poses; there is no per-property key
+  // surface to report. Inspector key controls are suppressed for these fields.
+  if (editor.report?._styk?.layerSheet) return {key: null, keyed: false, animated: false,
+    autoKey: false, poseKeyed: false, poseAnimated: false, source: 'pose',
+    poseOnly, previous: false, next: false, previousKey: null, nextKey: null};
   const channel = poseOnly ? null : editor.animationChannel(target, property, options);
   const own = neighbours(channel?.keys ?? [], tick);
   const scalar = sampleAnimationChannel(channel, tick);

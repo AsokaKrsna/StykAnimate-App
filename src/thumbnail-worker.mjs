@@ -156,7 +156,8 @@ async function receive(message) {
         ...backgrounds
           .filter((bg) => resources.url(bg))
           .map((asset) => ({ type: "image", asset })),
-      ], {scale: Math.min(message.width / frameReport.canvas_width, message.height / frameReport.canvas_height), maxDimension: 512});
+      ], {scale: Math.min(message.width / frameReport.canvas_width, message.height / frameReport.canvas_height), maxDimension: 512,
+        visible: backgroundBounds(frame, frameReport.canvas_width, frameReport.canvas_height, true, frameReport)});
       check();
       if (!canvas) {
         canvas = new OffscreenCanvas(message.width, message.height);

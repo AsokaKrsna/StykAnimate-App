@@ -21,14 +21,6 @@ const STYLES = `
 .property-row .property-scrub:focus-visible {outline:2px solid var(--theme-accent, #80caff);}
 .property-row .field>input {min-width:35px;}
 .property-row .field>input[aria-invalid=true] {color:var(--theme-danger, #d24646);}
-.property-key-controls {display:flex;align-items:center;gap:0;flex-shrink:0;}
-.property-key-controls button {width:18px;height:26px;padding:0;color:var(--theme-muted, #888);border-radius:3px;}
-.property-key-controls button:hover:not(:disabled) {background:var(--theme-selected-hover, #e5f4ff);color:var(--theme-accent, #0d99ff);}
-.property-key-controls button:disabled {opacity:.24;}
-.property-key-controls button>.icon {width:12px;height:12px;}
-.property-key-controls [data-property-key].is-keyed {color:var(--theme-accent, #0d99ff);background:var(--theme-selected, #e5f4ff);}
-.property-key-controls [data-property-key].is-keyed .icon {fill:currentColor;}
-.property-key-controls [data-property-key].is-animated {color:var(--theme-accent, #0d99ff);}
 .property-row:has(.property-scrub:active)>.field {border-color:var(--theme-accent, #0d99ff);}
 .property-context-heading {display:flex;align-items:center;gap:9px;padding:14px 12px 12px;border-bottom:1px solid var(--border,#e5e5e5);}
 .property-context-heading>span {display:grid;place-items:center;width:26px;height:26px;border-radius:5px;background:var(--theme-field, #f2f2f2);color:var(--theme-secondary, #555);flex-shrink:0;}
@@ -185,6 +177,7 @@ export class PropertyControls {
         token: undefined,
       };
     this.gesture = g;
+    this._settled = null;
     try {
       g.token = this.callbacks.begin?.(this._payload(g));
       if (g.token?.then)
@@ -235,9 +228,15 @@ export class PropertyControls {
     this.gesture = null;
     this._cleanup(g);
     if (commit && g.changed && !g.invalid) {
-      this.callbacks.commit?.(this._payload(g));
+      // Commit handlers may replace the row, which fires a re-entrant change
+      // on the detached input — and Enter's blur fires change too. Quantized
+      // model values (percent to 0-255) cannot be told apart from an edit by
+      // comparing formatted text, so mark the element and let _change consume
+      // exactly one consequential event instead.
       g.element.dataset.propertyValue = String(g.value);
       g.element.value = formatPropertyValue(g.value, g.precision);
+      this._settled = g.element;
+      this.callbacks.commit?.(this._payload(g));
     } else {
       this.callbacks.cancel?.(this._payload(g));
       g.element.dataset.propertyValue = String(g.initialValue);
@@ -361,6 +360,10 @@ export class PropertyControls {
   _change(event) {
     if (!this.handles(event.target)) return;
     event.stopImmediatePropagation();
+    if (event.target === this._settled) {
+      this._settled = null;
+      return;
+    }
     // Enter/Escape may format the display before a native blur/change arrives.
     // That formatting is not another user edit and must not round the model.
     if (
@@ -425,23 +428,7 @@ export class PropertyControls {
     if (this.suppressPointerClick && event.detail !== 0) {
       this.suppressPointerClick = false;
       this._consume(event);
-      return;
     }
-    const button = event.target.closest?.(
-      "[data-property-key],[data-property-nav]",
-    );
-    if (!button || button.disabled) return;
-    this._consume(event);
-    if (this.gesture) this._finish(true);
-    const key = button.dataset.propertyKey || button.dataset.propertyNav;
-    if (button.hasAttribute("data-property-key"))
-      this.callbacks.keyframe?.({ key, element: button });
-    else
-      this.callbacks.navigate?.({
-        key,
-        direction: Number(button.dataset.direction),
-        element: button,
-      });
   }
   destroy() {
     if (this.destroyed) return;

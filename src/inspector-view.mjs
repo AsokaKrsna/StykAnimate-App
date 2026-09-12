@@ -57,22 +57,7 @@ function numericField(
   value = state?.value ?? value;
   const description =
     options.description || `${label}${unit ? ` (${unit})` : ""}`;
-  const keys = animated
-    ? keyControlGroup(key, description, state)
-    : "";
-  return `<div class="property-row${keys ? " is-animatable" : options.wide ? " is-wide" : ""}" data-property-row="${key}" data-animation-source="${state?.source ?? ''}"><label class="field"><span class="property-scrub" data-property-scrub tabindex="0" role="button" aria-label="Scrub ${esc(description)}" title="Drag to adjust · Shift: fine · Alt: extra fine">${label}</span><input type="number" ${options.id ? `id="${options.id}"` : ""} ${options.legacyField === false ? "" : `data-field="${key}"`} data-property="${key}" data-property-value="${esc(value)}" data-property-precision="${precision}" data-property-step="1" value="${formatPropertyValue(value, precision)}" step="any" aria-label="${esc(description)}" ${limits}><small>${unit}</small></label>${keys}</div>`;
-}
-function keyControls(key, label, state = {}) {
-  if (state?.poseOnly || (state?.source === 'pose' || state?.poseKeyed || state?.poseAnimated) && !state?.animated && !state?.keyed) return '';
-  const title = `${state?.keyed ? 'Remove' : 'Add'} ${label} keyframe`;
-  const classes = state?.keyed ? 'is-keyed' : state?.animated ? 'is-animated' : '';
-  const marker =
-    `<button type="button" data-property-key="${key}" class="${classes}" aria-pressed="${Boolean(state?.keyed)}" title="${esc(title)}" aria-label="${esc(title)}">${icon('diamond')}</button>`;
-  return `<button type="button" data-property-nav="${key}" data-direction="-1" title="Previous ${esc(label)} keyframe" aria-label="Previous ${esc(label)} keyframe" ${state?.previous ? '' : 'disabled'}>${icon('chevron-left')}</button>${marker}<button type="button" data-property-nav="${key}" data-direction="1" title="Next ${esc(label)} keyframe" aria-label="Next ${esc(label)} keyframe" ${state?.next ? '' : 'disabled'}>${icon('chevron-right')}</button>`;
-}
-function keyControlGroup(key, label, state) {
-  const controls = keyControls(key, label, state);
-  return controls ? `<div class="property-key-controls">${controls}</div>` : '';
+  return `<div class="property-row${animated ? " is-animatable" : options.wide ? " is-wide" : ""}" data-property-row="${key}"><label class="field"><span class="property-scrub" data-property-scrub tabindex="0" role="button" aria-label="Scrub ${esc(description)}" title="Drag to adjust · Shift: fine · Alt: extra fine">${label}</span><input type="number" ${options.id ? `id="${options.id}"` : ""} ${options.legacyField === false ? "" : `data-field="${key}"`} data-property="${key}" data-property-value="${esc(value)}" data-property-precision="${precision}" data-property-step="1" value="${formatPropertyValue(value, precision)}" step="any" aria-label="${esc(description)}" ${limits}><small>${unit}</small></label></div>`;
 }
 const heading = (title, symbol) =>
   `<div class="property-context-heading"><span>${icon(symbol)}</span><div><strong>${esc(title)}</strong></div></div>`;
@@ -112,7 +97,6 @@ export function inspectorView({
   builderBranch = false,
   builder = false,
 }) {
-  if(editor.report._styk?.layerSheet){const original=propertyState;propertyState=key=>({...original?.(key),poseOnly:true});}
   const report = editor.report,
     frame = editor.frame,
     object = editor.object;
@@ -262,7 +246,7 @@ export function inspectorView({
     );
     html += group(
       "Appearance",
-      `<div class="property-paint-row">${colorRow("figure-color", "Figure color", fill)}${keyControlGroup('figure_color', 'figure color', propertyState?.('figure_color'))}${field("Opacity", "figure_opacity", (1 - (object.field28 || 0) / 255) * 100, "%", 'min="0" max="100"', { id: "figure-opacity", legacyField: false })}</div>`,
+      `<div class="property-paint-row">${colorRow("figure-color", "Figure color", fill)}${field("Opacity", "figure_opacity", (1 - (object.field28 || 0) / 255) * 100, "%", 'min="0" max="100"', { id: "figure-opacity", legacyField: false })}</div>`,
       button("reset-color", "undo", "Reset colors"),
     );
     html += group(
@@ -315,7 +299,7 @@ export function inspectorView({
         (isBuilderContext(tool) || builder ? `<label class="check-row"><input type="checkbox" id="builder-branch" ${builderBranch ? 'checked' : ''}>Apply to branch</label>` : '') +
         `<select id="segment-shape" class="inline-select" aria-label="Segment shape" ${["image", "text"].includes(shape) ? "disabled" : ""}>${[["line", "Round line"], ["squareLine", "Square line"], ["circle", "White circle"], ["circleFill", "Filled circle"], ["circleClear", "Clear circle"], ...(["image", "text"].includes(shape) ? [[shape, shape]] : [])].map(([v, n]) => `<option value="${v}" ${shape === v ? "selected" : ""}>${n}</option>`).join("")}</select>` +
         `<div class="property-paint-row"><button type="button" id="segment-color" data-paint-picker class="paint-trigger" aria-label="Segment color"><i style="background:${paintCSS(segmentPaint(segment))}"></i><span>${segmentPaint(segment).type === 'solid' ? hex(segment.color_rgb).toUpperCase() : segmentPaint(segment).type[0].toUpperCase()+segmentPaint(segment).type.slice(1)+' gradient'}</span></button>` +
-        `${keyControlGroup('segment_color','segment color',propertyState?.('segment_color'))}${field(segment.secondary ? "Primary opacity" : "Opacity", "segment_opacity", (1 - (segment.transparency || 0) / 255) * 100, "%", 'min="0" max="100"', { id: "segment-opacity", legacyField: false, description: "Primary color opacity" })}</div>` +
+        `${field(segment.secondary ? "Primary opacity" : "Opacity", "segment_opacity", (1 - (segment.transparency || 0) / 255) * 100, "%", 'min="0" max="100"', { id: "segment-opacity", legacyField: false, description: "Primary color opacity" })}</div>` +
         `<div class="compact-checks"><label class="check-row"><input type="checkbox" id="segment-gradient-enabled" ${segment.secondary ? "checked" : ""}>Secondary color</label><input type="color" id="segment-gradient-color" value="${hex(segment.secondary?.rgb ?? [255, 255, 255])}" aria-label="Secondary color" ${segment.secondary ? "" : "disabled"}></div>` +
         (segment.secondary ? grid(field("Secondary opacity", "segment_gradient_opacity", (1-(segment.secondary.a??0)/255)*100, "%", 'min="0" max="100"', {description:"Secondary gradient color opacity"})) : '') +
         `<label class="check-row"><input type="checkbox" id="static-joint" ${isStatic(segment) ? "checked" : ""}>Static</label>`,
@@ -398,8 +382,8 @@ function sceneView(editor, field, propertyState) {
     ) +
     group(
       "Background",
-      `<div class="property-row property-color-line">${colorRow("background-color", "Background color", color)}${keyControlGroup("scene_color", "background color", colorState)}</div>` +
-        `<div class="property-row property-background-line"><span class="property-background-name" title="${esc(bg?.name || "White")}">${esc(bg?.name || "White")}</span>${keyControlGroup("scene_background", "background", backgroundState)}</div>` +
+      `<div class="property-row property-color-line">${colorRow("background-color", "Background color", color)}</div>` +
+        `<div class="property-row property-background-line"><span class="property-background-name" title="${esc(bg?.name || "White")}">${esc(bg?.name || "White")}</span></div>` +
         tools(
           button("background-style", "sliders", "Background settings") +
             button("import-background", "image", "Import background"),

@@ -8,7 +8,7 @@ try{
   await page.evaluate(async()=>{const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs');const report=emptyDocument();report.keyframes=[0,60].map(x=>createFrame([createObject(report.figure_types[0],1,200+x,250)],12));styk.settingsUI.commit({timelineMode:'advanced'});styk.editor.load(report);styk.editor.sheetSetEasing(['layer-1'],0,12,{interpolation:'constant'});styk.fit();});
   const grid=page.getByRole('grid',{name:'Layer frames'});
   const cell=async(tick,row=0)=>{const box=await grid.boundingBox(),{ROW,HEADER,step,offset}=await page.evaluate(async()=>{const {ROW,HEADER}=await import('/src/layer-timeline.mjs');return {ROW,HEADER,step:styk.timeline.pxPerTick,offset:styk.timeline._offsetX()};});return {x:box.x+(tick+.5)*step-offset,y:box.y+HEADER+(row+2)*ROW+ROW/2};};
-  await page.mouse.click(...Object.values(await cell(5)));await grid.press('F6');
+  await page.mouse.click(...Object.values(await cell(5)));await grid.press('a');
   assert.deepEqual(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').map(k=>k.tick)),[0,5,12]);
   await page.evaluate(()=>styk.editor.updateObject({root_x:280}));
   await grid.press('Shift+ArrowRight');await grid.press('Shift+ArrowRight');
@@ -18,12 +18,13 @@ try{
   const ownership=await page.evaluate(()=>{const e=styk.editor;return {layer:e.activeLayerId,objects:e.evaluatedFrame.objects.map(o=>({uid:o.unique_id,layer:e.layerForUid(o.unique_id)})),channels:e.animationChannels.length};});
   assert.equal(ownership.layer,'layer-2');assert.equal(ownership.objects.length,2);assert.equal(ownership.channels,0);
   assert.equal(ownership.objects.filter(o=>o.layer==='layer-2').length,1);
-  const beforeDelete=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));await grid.press('Delete');
+  const beforeDelete=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));await page.mouse.click(...Object.values(await cell(1)));await grid.press('Delete');
   await grid.press('Control+z');assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),beforeDelete);
   await page.evaluate(()=>{styk.settingsUI.commit({timelineMode:'simple'});});
-  await page.getByRole('button',{name:'Add frame',exact:true}).click();
+  const beforeAdd=await page.evaluate(()=>styk.editor.tick);
+  await page.getByRole('button',{name:'Add Frame',exact:true}).click();
   const simple=await page.evaluate(()=>({duration:styk.editor.totalTicks,keys:styk.timeline.frameCount,draft:styk.editor.report._styk.simpleFrameDraft??null,tick:styk.editor.tick}));
-  assert.equal(simple.draft,null);assert.equal(simple.tick,simple.duration-1);
+  assert.equal(simple.draft,null);assert.equal(simple.tick,beforeAdd+1);assert.ok(simple.duration>simple.tick);
   await page.evaluate(()=>styk.settingsUI.commit({timelineMode:'advanced'}));
   const binary=await page.evaluate(async()=>{const {DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{Editor}=await import('/src/editor.mjs');const e=styk.editor,exporter=new DocumentExporter(),importer=new ImportClient();try{
     const samples=e=>{const output=[];for(let t=0;t<e.totalTicks;t++){e.seek(t);output.push(e.evaluatedFrame.objects.map(o=>[o.unique_id,o.root_x,o.root_y]));}return output;};
@@ -33,7 +34,7 @@ try{
   }finally{exporter.dispose();importer.dispose();}});
   assert.equal(binary.exact,true,JSON.stringify(binary));assert.equal(binary.pivotExact,true,JSON.stringify(binary));
   await page.evaluate(async()=>{const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs');const r=emptyDocument();r.keyframes=[0,60].map(x=>createFrame([createObject(r.figure_types[0],1,200+x,250)],12));styk.editor.load(r);styk.editor.createLayer('Overlay');});
-  await page.mouse.click(...Object.values(await cell(5,1)));await grid.press('F6');
+  await page.mouse.click(...Object.values(await cell(5,1)));await grid.press('a');
   const drag=async(from,to)=>{await page.mouse.move(from.x,from.y);await page.mouse.down();await page.mouse.move(to.x,to.y,{steps:8});await page.mouse.up();};
   await drag(await cell(5,1),await cell(8,1));
   assert.deepEqual(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').map(k=>k.tick)),[0,8,12]);
@@ -46,7 +47,7 @@ try{
   assert.deepEqual(await page.evaluate(()=>styk.editor.report._styk.layers.order),['layer-2','layer-1']);
   await page.getByRole('button',{name:'Select layer Overlay',exact:true}).dblclick();await page.locator('.sheet-layer-rename').fill('Effects');await page.locator('.sheet-layer-rename').press('Enter');
   await page.getByRole('button',{name:'Lock Effects',exact:true}).click();await page.mouse.click(...Object.values(await cell(2,1)));
-  const locked=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));await grid.press('F6');assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),locked);
+  const locked=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));await grid.press('a');assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),locked);
   await page.getByRole('button',{name:'Unlock Effects',exact:true}).click();
   await page.setViewportSize({width:900,height:700});
   await page.waitForFunction(()=>{const panel=document.querySelector('.layer-timeline'),grid=panel.querySelector('.sheet-scroll');return panel.getBoundingClientRect().right<=innerWidth&&grid.clientWidth>250;});

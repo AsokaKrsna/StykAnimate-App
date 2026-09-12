@@ -23,6 +23,15 @@ export function normalizeExportSmoothing(value = "edges") {
     throw new Error("Choose Smooth edges, No smoothing, or Smooth sprites.");
   return value;
 }
+
+/** Per-frame pixel bound for raster export paths. WebKit canvas surfaces stop
+ * rendering past 16.7 MP, so Safari keeps that bound; other engines support
+ * larger surfaces, and the export memory plan still rejects any frame the
+ * device cannot actually hold. The 16,384-per-side canvas limit is unchanged. */
+const SAFARI = typeof navigator !== "undefined" &&
+  /^((?!chrome|chromium|crios|edg|android|fxios).)*safari/i.test(navigator.userAgent || "");
+export const EXPORT_MAX_PIXELS = SAFARI ? 16777216 : 67108864;
+
 export function exportSamplingSize(width, height, smoothing = "edges") {
   smoothing = normalizeExportSmoothing(smoothing);
   if (
@@ -32,10 +41,10 @@ export function exportSamplingSize(width, height, smoothing = "edges") {
     height < 1 ||
     width > 16384 ||
     height > 16384 ||
-    width * height > 16777216
+    width * height > EXPORT_MAX_PIXELS
   )
     throw new Error(
-      "Export dimensions must be whole pixels, up to 16,384 per side and 16 million pixels per frame.",
+      `Export dimensions must be whole pixels, up to 16,384 per side and ${Math.round(EXPORT_MAX_PIXELS / 1e6)} million pixels per frame.`,
     );
   const factor = smoothing === "sprites" ? 2 : 1;
   if (width * factor > 16384 || height * factor > 16384)

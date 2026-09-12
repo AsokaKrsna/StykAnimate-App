@@ -18,8 +18,16 @@ test('export plans bound working pixels on small devices without lowering output
   }
   assert.throws(() => exportMemoryPlan(3840, 2160, 'sprites', {deviceMemory: 1}), {code: 'export_memory_limit'});
   assert.equal(exportMemoryPlan(3840, 2160, 'sprites', {deviceMemory: 4}).width, 3840);
-  for (const budget of [0, Infinity, NaN, 1024, 513 * MiB])
+  for (const budget of [0, Infinity, NaN, 1024, 2049 * MiB])
     assert.throws(() => exportMemoryPlan(32, 32, 'edges', {maxWorkingBytes: budget}));
+});
+
+test('larger memory tiers admit larger exports while small tiers still fail cleanly', () => {
+  assert.throws(() => exportMemoryPlan(8192, 4096, 'edges', {deviceMemory: 4}), {code: 'export_memory_limit'});
+  const plan = exportMemoryPlan(8192, 4096, 'edges', {deviceMemory: 16});
+  assert.equal(plan.width, 8192);
+  assert.equal(plan.maxWorkingBytes, 1024 * MiB);
+  assert.equal(exportMemoryPlan(8192, 8192, 'edges', {deviceMemory: 32}).maxWorkingBytes, 2048 * MiB);
 });
 
 test('2× downsampling averages premultiplied color without transparent color fringes', () => {
@@ -105,9 +113,10 @@ test('lost or undersized frames cannot be returned to an encoder, even if contex
 });
 
 test('worker memory failures retain their actionable error and release the export', async t => {
-  const state = environment(t, message => ({id: message.id, ok: false, code: 'export_memory_limit', error: 'Source image exceeds allowance.'}));
+  const frames=[{module:'export-frame-worker.mjs',line:180}];
+  const state = environment(t, message => ({id: message.id, ok: false, code: 'export_memory_limit', error: 'Source image exceeds allowance.',name:'RangeError',telemetryCode:'out_of_memory',telemetryStage:'prepare',telemetryFrames:frames}));
   const renderer = new ExportFrameRenderer({width: 32, height: 32});
-  await assert.rejects(renderer.load(documentData()), {code: 'export_memory_limit'});
+  await assert.rejects(renderer.load(documentData()), {code: 'export_memory_limit',name:'RangeError',telemetryCode:'out_of_memory',telemetryStage:'prepare',telemetryFrames:frames});
   assert.equal(renderer.canvas.width, 1); assert.ok(state.workers[0].terminated); renderer.dispose();
 });
 

@@ -404,6 +404,25 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(status, 204)
         self.assertEqual(headers["Access-Control-Allow-Origin"], "http://localhost:5173")
 
+    def test_static_files_revalidate_with_etag(self):
+        target = Path(self.directory.name) / "cacheable.js"
+        target.write_text("export const first = 1;", encoding="utf-8")
+        status, headers, data = self.request("GET", "/cacheable.js")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get("Cache-Control"), "no-cache")
+        etag = headers.get("ETag")
+        self.assertIsNotNone(etag)
+        status, _, data = self.request("GET", "/cacheable.js", headers={"If-None-Match": etag})
+        self.assertEqual(status, 304)
+        self.assertEqual(data, b"")
+        target.write_text("export const second = 22;", encoding="utf-8")
+        status, _, data = self.request("GET", "/cacheable.js", headers={"If-None-Match": etag})
+        self.assertEqual(status, 200)
+        self.assertIn(b"second = 22", data)
+        status, headers, _ = self.request("GET", "/api/health")
+        self.assertEqual(headers.get("Cache-Control"), "no-store")
+        self.assertNotIn("ETag", headers)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

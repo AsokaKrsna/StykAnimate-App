@@ -6,7 +6,7 @@ export function playbackProperties(report) {
   const properties = {};
   for (const key of Object.keys(report)) if (!retained.has(key)) {
     if (key === '_styk' && report._styk) {
-      const {frameSources, ...metadata} = report._styk; properties._styk = metadata;
+      const {frameSources, audio, ...metadata} = report._styk; properties._styk = metadata;
     } else properties[key] = report[key];
   }
   return properties;

@@ -12,6 +12,11 @@ const page = await browser.newPage({
   viewport: { width: 1560, height: 1000 },
   acceptDownloads: true,
 });
+// Headless Chrome aborts showSaveFilePicker; removing it exercises the
+// MemorySink + anchor-download fallback path instead of a silent cancel.
+await page.addInitScript(() => {
+  delete window.showSaveFilePicker;
+});
 page.setDefaultTimeout(15000);
 const checks = [],
   errors = [];
@@ -48,11 +53,23 @@ async function undo() {
   await page.locator('[data-tool="select"]').click();
   await page.keyboard.press("Control+z");
 }
+const exportCategories = {
+  video: ["export-mp4", "export-video", "export-avi", "export-wmv", "export-vfw"],
+  animated: ["export-gif", "export-apng"],
+  frames: ["export-png", "export-svg", "export-png-sequence", "export-jpeg-sequence", "export-gif-sequence", "export-svg-sequence"],
+  editable: ["export-stkz", "export-piv", "export-stk"],
+};
 async function exportDownload(action, filename) {
   await page.locator('.titlebar [data-action="export"]').click();
+  const category = Object.keys(exportCategories).find((key) =>
+    exportCategories[key].includes(action),
+  );
+  if (category)
+    await page.locator(`#dialog [data-category="${category}"]`).click();
+  await page.locator("#dialog #output-format").selectOption(action);
   const promise = page.waitForEvent("download");
   promise.catch(() => {});
-  await page.locator(`#dialog [data-action="${action}"]`).click();
+  await page.locator("#dialog #export-submit").click();
   const download = await promise,
     target = path.join(out, filename);
   await download.saveAs(target);
@@ -74,9 +91,47 @@ try {
         typeof styk.editor.duplicateSegmentBranch === "function",
     ),
   );
-  await value(() => styk.editor.newDocument());
-  await page.locator('[data-action="delete"]').click();
-  await page.locator('[data-tool="line"]').click();
+  // Regression: once a pose edit materializes the layer-sheet cell into a
+  // frame source, drawing a new figure with nothing selected must publish it
+  // to the evaluated frame — not just report.keyframes.
+  await value(() => {
+    const e = styk.editor;
+    e.select(e.frame.objects[0].unique_id);
+    e.updateObject({ root_x: e.object.root_x + 12 });
+    e.select(null);
+  });
+  check(
+    "Pose edit materializes the layer-sheet cell",
+    await value(
+      () =>
+        styk.editor.report._styk.layerSheet.tracks["layer-1"].keys[0].value
+          ?.frameId,
+    ),
+  );
+  await page.locator('[data-workspace-mode="rig"]').click();
+  const box = await page.locator("#overlay").boundingBox();
+  await page.mouse.move(box.x + 300, box.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 420, box.y + 300, { steps: 5 });
+  await page.mouse.up();
+  check(
+    "Builder draw creates a visible figure on a materialized cell",
+    await value(
+      () =>
+        styk.builder.session?.mode === "create" &&
+        styk.editor.figure?.segments.length === 1 &&
+        styk.editor.evaluatedFrame.objects.some(
+          (o) => o.unique_id === styk.editor.selectedUid,
+        ),
+    ),
+  );
+  await value(() => {
+    const e = styk.editor;
+    e.newDocument();
+    e.selectMany(e.frame.objects.map((o) => o.unique_id));
+    e.deleteSelection();
+  });
+  await page.locator('[data-workspace-mode="rig"]').click();
   const view = await page.locator("#overlay").boundingBox();
   const points = [
     [230, 180],
@@ -133,14 +188,24 @@ try {
     (await page.locator('[data-polygon-color="0"]').count()) === 1 &&
       (await page.locator('[data-delete-polygon="0"]').count()) === 1,
   );
+  await page
+    .locator('details[data-section="Polygons"] > summary')
+    .click();
   await page.locator('[data-polygon-color="0"]').fill("#0d99ff");
   await page.locator('[data-polygon-color="0"]').dispatchEvent("change");
   check(
     "Polygon color control edits native fill",
-    await value(
-      () =>
-        styk.editor.figure.polyfills[0].color_rgb.join(",") === "13,153,255",
-    ),
+    await value(async () => {
+      const { resolveInstanceFigure } = await import(
+        "/src/animation-style.mjs"
+      );
+      return (
+        resolveInstanceFigure(
+          styk.editor.figure,
+          styk.editor.object,
+        ).polyfills[0].color_rgb.join(",") === "13,153,255"
+      );
+    }),
   );
   await page.locator('[data-delete-polygon="0"]').click();
   check(
@@ -164,17 +229,27 @@ try {
     "Shape control restores line",
     await value(() => styk.editor.figure.segments[2].primitive_code === 0),
   );
-  await page.locator("#segment-color").fill("#ff8000");
-  await page.locator("#segment-color").dispatchEvent("change");
+  await page.locator("#segment-color").click();
+  await page.locator(".paint-picker [data-hex]").fill("FF8000");
+  await page.locator(".paint-picker [data-hex]").press("Tab");
+  await page.keyboard.press("Escape");
   await page.locator("#segment-opacity").fill("40");
   await page.locator("#segment-opacity").press("Tab");
   check(
     "Segment color and opacity preserve native values",
-    await value(
-      () =>
-        styk.editor.figure.segments[2].color_rgb.join(",") === "255,128,0" &&
-        styk.editor.figure.segments[2].transparency === 153,
-    ),
+    await value(async () => {
+      const { resolveInstanceFigure } = await import(
+        "/src/animation-style.mjs"
+      );
+      const segment = resolveInstanceFigure(
+        styk.editor.figure,
+        styk.editor.object,
+      ).segments[2];
+      return (
+        segment.color_rgb.join(",") === "255,128,0" &&
+        segment.transparency === 153
+      );
+    }),
   );
   await selectJoint(0);
   await page.locator('[data-action="split-segment"]').click();
@@ -182,7 +257,20 @@ try {
   await undo();
   check("Split undoes in one step", (await segmentCount()) === 3);
   await selectJoint(1);
-  await page.locator('[data-action="duplicate-branch"]').click();
+  await page
+    .locator('[data-action="duplicate-segment"]')
+    .click({ modifiers: ["Shift"] });
+  const parentJoint = await value(async () => {
+    const { worldToScreen } = await import("/src/renderer.mjs");
+    const { editor, state } = styk,
+      r = document.querySelector("#viewport").getBoundingClientRect(),
+      p = worldToScreen(
+        editor.geometry.objects.get(editor.selectedSlot).joints.get(0),
+        { report: editor.report, frame: editor.frame, view: state.view },
+      );
+    return { x: r.x + p.x, y: r.y + p.y };
+  });
+  await page.mouse.click(parentJoint.x, parentJoint.y);
   check("Duplicate branch clones descendants", (await segmentCount()) === 5);
   await page.locator('[data-action="delete-segment"]').click();
   check("Delete branch removes its descendants", (await segmentCount()) === 3);
@@ -214,8 +302,10 @@ try {
   );
   check(
     "Set origin moves orange root to the chosen endpoint",
-    (await value(() => styk.editor.object.root_x)) === beforeOrigin[2][0] &&
-      (await value(() => styk.editor.object.root_y)) === beforeOrigin[2][1],
+    Math.hypot(
+      (await value(() => styk.editor.object.root_x)) - beforeOrigin[2][0],
+      (await value(() => styk.editor.object.root_y)) - beforeOrigin[2][1],
+    ) < 0.001,
   );
   await page.screenshot({ path: path.join(out, "builder-workspace.png") });
   const figureFile = await exportDownload(
@@ -226,23 +316,27 @@ try {
     "Selected figure STK button downloads a native file",
     figureFile.bytes.length > 10 && figureFile.suggested.endsWith(".stk"),
   );
-  const beforeImport = await value(() => styk.editor.frame.objects.length);
+  const beforeImport = await value(
+    () => styk.editor.evaluatedFrame.objects.length,
+  );
   await page.locator("#file-input").setInputFiles(figureFile.target);
   await page.waitForFunction(
-    (n) => styk.editor.frame.objects.length === n + 1,
+    (n) => styk.editor.evaluatedFrame.objects.length === n + 1,
     beforeImport,
   );
   check(
     "Authored STK imports with joints, polygons, and style",
-    await value(
-      () =>
-        styk.editor.figure.segments.length === 3 &&
-        styk.editor.figure.polyfills.length === 1 &&
-        styk.editor.figure.segments.some(
+    await value(() => {
+      const imported = styk.editor.report.figure_types.at(-1);
+      return (
+        imported.segments.length === 3 &&
+        imported.polyfills.length === 1 &&
+        imported.segments.some(
           (s) =>
             s.color_rgb.join(",") === "255,128,0" && s.transparency === 153,
-        ),
-    ),
+        )
+      );
+    }),
   );
 
   // Small deterministic fixture; actions below still pass through the real export dialog.
@@ -251,14 +345,15 @@ try {
     e.newDocument();
     e.setCanvasSize(320, 180);
     e.setFPS(24);
+    e.select(e.evaluatedFrame.objects[0].unique_id);
     e.updateObject({ root_x: 150, root_y: 90, scale: 0.3 });
-    e.setFrameDuration(1);
-    e.addFrame();
+    e.sheetSetDuration(3, e.activeLayerId, 0);
+    e.sheetInsertKey([e.activeLayerId], 1);
+    e.sheetInsertKey([e.activeLayerId], 2);
+    e.seek(1);
     e.updateObject({ root_x: 160 });
-    e.setFrameDuration(1);
-    e.addFrame();
+    e.seek(2);
     e.updateObject({ root_x: 170 });
-    e.setFrameDuration(1);
     e.seek(0);
   });
   check(

@@ -5,6 +5,7 @@ import {icon} from './icons.mjs';
 import {keyEasing, EASING_MODES} from './keyframe-easing.mjs';
 import {showKeyframeEasingPopover} from './keyframe-easing-popover.mjs';
 import {showTimelineMenu} from './timeline-menu.mjs';
+import {AudioTimeline} from './audio-timeline.mjs';
 
 const WIDTH = 112;
 const el = (tag, parent, className, text) => {
@@ -25,11 +26,12 @@ export class SheetFilmstrip {
     this.events = new AbortController();
     this.cards = new Map();
     this.previews = new Map();
-    this.selected = new Set([0]);
-    this.anchor = 0;
     this.queue = [];
     this.generation = 0;
     this.times = sheetKeyTimes(editor.report);
+    this.selected = new Set([this.selectedIndex]);
+    this.anchor = this.selectedIndex;
+    this.revealPending = true;
     this.root = el('div', container, 'sheet-filmstrip');
     this.controls = el('div', this.root, 'sheet-filmstrip-controls');
     this.counter = el('div', this.controls, 'sheet-filmstrip-counter');
@@ -71,25 +73,28 @@ export class SheetFilmstrip {
     this._on(this.duration, 'change', () => this._run(() => this.setDuration(this.selectedFrameIndices, Number(this.duration.value))));
     this._on(editor, 'change', event => {
       const detail = event.detail ?? {};
-      if (detail.kind === 'document' || detail.structural || detail.timing || detail.kind === 'history') {
+      if (detail.kind === 'document' || detail.structural || detail.timing || detail.kind === 'history' && !detail.audio) {
         this.times = sheetKeyTimes(editor.report);
         this.generation++;
         this.previews.clear();
         this.queue = [];
         this.selected = new Set([...this.selected].filter(index => index < this.times.length));
         if (!this.selected.size || detail.kind === 'document') this.selected = new Set([this.selectedIndex]);
+        if (detail.kind === 'document') this.revealPending = true;
       }
       if (detail.kind === 'seek' && !this.selecting) {
         this.selected = new Set([this.selectedIndex]);
         this.anchor = this.selectedIndex;
+        this.revealPending = true;
       }
       this.update();
     });
     this.observer = new ResizeObserver(() => this.update());
     this.observer.observe(this.root);
     this.render();
+    this.audio = new AudioTimeline(container, editor, {...options, host:this, engine:options.audioEngine, mode:'simple'});
   }
-  _on(target, name, fn, options = {}) { target.addEventListener(name, fn, {...options, signal: this.events.signal}); }
+  _on(target, name, fn, options = {}) { target.addEventListener(name, fn, {signal: this.events.signal, ...options}); }
   _run(operation) {
     try { this.onSeek?.(); const result = operation(); this.update();
       if (result?.then) return result.catch(error => { this.onError?.(error); return false; }).finally(() => this.update());
@@ -115,6 +120,7 @@ export class SheetFilmstrip {
     return {start: times[0] ?? this.editor.tick, end: this.times[index + 1] ?? this.editor.totalTicks};
   }
   get frameCount() { return this.times.length; }
+  get stats() { return {rows: this.cards.size, cachedPreviews: this.previews.size, queuedPreviews: this.queue.length}; }
   ranges(indices = this.selectedFrameIndices) {
     return indices.filter(i => Number.isInteger(i) && i >= 0 && i < this.times.length)
       .map(i => ({index: i, start: this.times[i], end: this.times[i + 1] ?? this.editor.totalTicks}));
@@ -131,6 +137,7 @@ export class SheetFilmstrip {
     this.update();
   }
   ensureVisible(index) {
+    if (!this.strip.clientWidth) { this.revealPending = true; return; }
     const x = index * WIDTH;
     if (x < this.strip.scrollLeft) this.strip.scrollLeft = x;
     else if (x + WIDTH > this.strip.scrollLeft + this.strip.clientWidth) this.strip.scrollLeft = x + WIDTH - this.strip.clientWidth;
@@ -178,6 +185,13 @@ export class SheetFilmstrip {
     if (this.disposed) return;
     const width = `${this.times.length * WIDTH}px`;
     if (this.spacer.style.width !== width) this.spacer.style.width = width;
+    if (!this.strip.clientWidth) return;
+    // A hidden mount cannot scroll yet. Reveal once layout exists, then leave
+    // deliberate scrolling alone until the playhead is explicitly moved.
+    if (this.revealPending && this.strip.clientWidth) {
+      this.revealPending = false;
+      this.ensureVisible(this.selectedIndex);
+    }
     const first = Math.max(0, Math.floor(this.strip.scrollLeft / WIDTH) - 1);
     const last = Math.min(this.times.length, first + Math.ceil(this.strip.clientWidth / WIDTH) + 3);
     const active = this.selectedIndex, locked = this.locked;
@@ -190,11 +204,16 @@ export class SheetFilmstrip {
       mode === 'constant' ? 'None' : EASING_MODES.find(item => item.id === mode)?.label ?? 'None' : 'Mixed';
     this.duration.disabled = this.easingButton.disabled = this.mainButton.disabled = this.deleteButton.disabled = this.copyButton.disabled = locked;
     this.pasteButton.disabled = locked || (!this.sharedClipboard && !this.editor._sheetClipboard);
-    for (const [index, card] of this.cards) if (index < first || index >= last) { card.remove(); this.cards.delete(index); }
+    for (const [index, card] of this.cards) if (index < first || index >= last) {
+      card._events.abort(); card.remove(); this.cards.delete(index); this.previews.delete(index);
+    }
+    this.queue = this.queue.filter(item => this.cards.get(item.index) === item.card && item.generation === this.generation);
     for (let index = first; index < last; index++) {
       let card = this.cards.get(index);
       if (!card) {
         card = el('div', this.spacer, 'sheet-filmstrip-card');
+        card._events = new AbortController();
+        const listen = (target, name, fn) => this._on(target, name, fn, {signal: card._events.signal});
         card.dataset.frame = index;
         card.style.left = `${index * WIDTH}px`;
         el('span', card, 'sheet-frame-number', String(index + 1));
@@ -211,11 +230,11 @@ export class SheetFilmstrip {
         Object.assign(slider, {type: 'range', min: '0', step: '1'});
         slider.setAttribute('aria-label', `Frame ${index + 1} inbetweens`);
         const value = el('span', amount);
-        this._on(slider, 'input', () => { value.textContent = slider.value; slider.setAttribute('aria-valuetext', `${slider.value} inbetweens`); });
-        this._on(slider, 'change', () => this._run(() => this.setDuration([index], Number(slider.value))));
-        this._on(preview, 'click', event => this.selectFrame(index, {extend: event.shiftKey}));
-        this._on(preview, 'dblclick', () => this._run(() => this.showEasingPopover()));
-        this._on(card, 'contextmenu', event => { event.preventDefault(); if (!this.selected.has(index)) this.selectFrame(index); this._menu(event); });
+        listen(slider, 'input', () => { value.textContent = slider.value; slider.setAttribute('aria-valuetext', `${slider.value} inbetweens`); });
+        listen(slider, 'change', () => this._run(() => this.setDuration([index], Number(slider.value))));
+        listen(preview, 'click', event => this.selectFrame(index, {extend: event.shiftKey}));
+        listen(preview, 'dblclick', () => this._run(() => this.showEasingPopover()));
+        listen(card, 'contextmenu', event => { event.preventDefault(); if (!this.selected.has(index)) this.selectFrame(index); this._menu(event); });
         Object.assign(card, {_button: preview, _canvas: canvas, _slider: slider, _amount: value});
         this.cards.set(index, card);
       }
@@ -235,16 +254,16 @@ export class SheetFilmstrip {
     this._drain();
   }
   async _drain() {
-    if (this.busy || this.paused || this.disposed) return;
+    if (this.busy || this.paused || this.disposed || !this.strip.clientWidth) return;
     this.busy = true;
     try {
-      while (this.queue.length && !this.paused && !this.disposed) {
+      while (this.queue.length && !this.paused && !this.disposed && this.strip.clientWidth) {
         const item = this.queue.shift();
         if (item.generation !== this.generation || !item.card.isConnected) continue;
         const tick = this.times[item.index], rows = this.editor.timeline, index = Math.max(0, rows.findLastIndex(row => row.start <= tick));
         try {
           const done = await this.renderThumbnail?.(index, item.card._canvas, {tick, storedFrames: false});
-          if (done !== false && item.generation === this.generation) this.previews.set(item.index, item.generation);
+          if (done !== false && item.generation === this.generation && this.cards.get(item.index) === item.card) this.previews.set(item.index, item.generation);
         } catch (error) { if (error.name !== 'AbortError') this.onError?.(error); }
       }
     } finally { this.busy = false; }
@@ -295,9 +314,12 @@ export class SheetFilmstrip {
   setZoom() {}
   revealPlayhead() { this.ensureVisible(this.selectedIndex); this.update(); }
   destroy() {
+    this.audio?.destroy();
     this.disposed = true; this.generation++;
     if (this.raf) cancelAnimationFrame(this.raf);
     this.events.abort(); this.menuEvents?.abort(); this.observer.disconnect();
+    for (const card of this.cards.values()) card._events.abort();
+    this.cards.clear(); this.previews.clear(); this.queue = [];
     this.menu?.remove(); this.easingPopover?.hidePopover(); this.root.remove();
   }
 }

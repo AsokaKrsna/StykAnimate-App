@@ -1,6 +1,6 @@
 import { PlaybackResources } from './playback-resources.mjs';
 export { PlaybackResources } from './playback-resources.mjs';
-import { evaluatedFrame, timeline, buildGeometry, drawGeometry, invalidateEvaluationCaches } from './pivot/geometry.mjs';
+import { evaluatedFrame, timeline, buildGeometry, drawGeometry, releaseGeometryResources, invalidateEvaluationCaches } from './pivot/geometry.mjs';
 import { compileVectorObject, requiresCompatibilityTexture, objectBounds, cameraMatrix, shapeRecord, SHAPE, SHAPE_FLOATS } from './renderer-geometry.mjs';
 import { applyDocumentChunk } from './document-transport.mjs';
 import { applyPlaybackPatch } from './playback-patch.mjs';
@@ -12,6 +12,12 @@ import {PlaybackGeometryCache} from './playback-geometry-cache.mjs';
 import {PlaybackTweenCache} from './playback-tween-cache.mjs';
 import {vfxPreviewGeometry} from './vfx-preview.mjs';
 import {glyphTextureDescriptor,glyphTextureKey,drawGlyphMask,glyphTextureShape,glyphVisible} from './renderer-glyphs.mjs';
+import { drawBackground, backgroundBounds } from './pivot/background.mjs';
+import { layerVisible } from './layers.mjs';
+import { activeVfx, vfxStack } from './vfx.mjs';
+import { releaseVfxSurface } from './vfx-canvas.mjs';
+import { CameraVfx } from './vfx-camera.mjs';
+import { backgroundImageAssets } from './scene-preparation.mjs';
 const fallbackRasterSurfaces = new RasterSurfacePool();
 const yieldPlaybackTask = () => globalThis.scheduler?.yield ? scheduler.yield() : new Promise(resolve => {
   const channel = new MessageChannel();
@@ -49,7 +55,7 @@ export function playbackVisibleBounds(report, frame, cameraEnabled = true) {
 
 /** Retain the original object's pixel grid and resolution while allocating only
  * the visible subset. Two guard pixels preserve bilinear filtering and antialiasing. */
-export function playbackRasterBounds(bounds, visible, resolution, maxTextureDimension = 4096) {
+export function playbackRasterBounds(bounds, visible, resolution, maxTextureDimension = 8192) {
   const pixelScale = Math.min(resolution, maxTextureDimension / bounds.width, maxTextureDimension / bounds.height);
   const fullWidth = Math.max(1, Math.ceil(bounds.width * pixelScale)), fullHeight = Math.max(1, Math.ceil(bounds.height * pixelScale));
   const x0 = visible ? Math.max(0, Math.floor((visible.x - bounds.x) * pixelScale) - 2) : 0;
@@ -70,7 +76,9 @@ export async function compilePlaybackPacket(report, tick, options = {}) {
   for (;;) {
     if (options.cancelled?.()) throw new DOMException('Playback preparation was superseded.', 'AbortError');
     try {
-      const packet = await compilePacketAttempt(report, tick, {...options, quality, rasterizeVectors});
+      const packet = options.softwareFrames
+        ? await compileSoftwarePacket(report, tick, {...options, quality})
+        : await compilePacketAttempt(report, tick, {...options, quality, rasterizeVectors});
       const rasterScale = packet.compatibility.length ? quality : 1;
       packet.previewQuality = {scale: rasterScale, reduced: rasterScale < 1 || rasterizeVectors || Boolean(packet.previewQuality?.reduced)};
       packet.compileMs = performance.now() - started;
@@ -80,8 +88,9 @@ export async function compilePlaybackPacket(report, tick, options = {}) {
       if (error.code !== 'playback_frame_budget' || typeof OffscreenCanvas === 'undefined' || quality <= 1 / 4096) throw error;
       // Pixel pressure must not turn a cheap vector scene into hundreds of
       // separately rasterized images. Only compress vectors if their records
-      // alone cannot fit, independent of bitmap resolution.
-      if (!rasterizeVectors && (error.vectorOverflow || error.fixedBytes > (options.maxPacketBytes ?? 128 * 1024 * 1024))) rasterizeVectors = true;
+      // alone cannot fit, independent of bitmap resolution. Software packets
+      // are a single bitmap already, so pressure only lowers its resolution.
+      if (!options.softwareFrames && !rasterizeVectors && (error.vectorOverflow || error.fixedBytes > (options.maxPacketBytes ?? 128 * 1024 * 1024))) rasterizeVectors = true;
       else quality /= 2;
       // Failed packet clones were closed by the attempt. Drop retained originals
       // before allocating a lower-resolution replacement.
@@ -91,7 +100,7 @@ export async function compilePlaybackPacket(report, tick, options = {}) {
   }
 }
 
-async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, quality = 1, rasterizeVectors = false, entries, sampleReport, resources, maxTextureDimension = 4096, maxPacketBytes = 128 * 1024 * 1024, cameraEnabled = true, vfxEnabled = true, storedFrames = false, sharedArtwork = true, artworkRegistry, geometryCache, tweenCache, cancelled = () => false } = {}) {
+async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, quality = 1, rasterizeVectors = false, entries, sampleReport, resources, maxTextureDimension = 8192, maxPacketBytes = 128 * 1024 * 1024, cameraEnabled = true, vfxEnabled = true, storedFrames = false, sharedArtwork = true, artworkRegistry, geometryCache, tweenCache, cancelled = () => false } = {}) {
   resources?.artworkBitmaps?.beginFrame();
   if (typeof cameraEnabled !== 'boolean') throw new TypeError('Playback camera mode must be a boolean.');
   if (typeof storedFrames !== 'boolean') throw new TypeError('Playback stored-frame mode must be a boolean.');
@@ -242,6 +251,91 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
       byteLength: shapes.byteLength + transformData.byteLength + uidData.byteLength + bitmapBytes + fallbackBytes + groups.length * 64,
       compileMs: ended - started, timings: { evaluateMs: evaluated - started, geometryMs: geometrized - evaluated, compileMs: ended - geometrized } };
   } catch (error) { for (const entry of compatibility) entry.bitmap?.close(); throw error; }
+}
+
+/** One CameraVfx per worker: its scratch surface is resized per packet anyway.
+ * Lazily constructed so Node test workers without OffscreenCanvas still load. */
+let softwareCameraVfx = null;
+
+/** Software playback packets carry one composited artboard bitmap instead of
+ * shape records. The compatibility canvas blits it in a single draw call, so
+ * low-end machines never re-evaluate or re-rasterize the scene on the UI thread. */
+async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, quality = 1, entries, sampleReport, resources, maxPacketBytes = 128 * 1024 * 1024, cameraEnabled = true, vfxEnabled = true, storedFrames = false, hiddenUids, hiddenKey = '', geometryCache, tweenCache, cancelled = () => false, maxTextureDimension = 8192 } = {}) {
+  resources?.artworkBitmaps?.beginFrame();
+  if (typeof cameraEnabled !== 'boolean') throw new TypeError('Playback camera mode must be a boolean.');
+  if (typeof storedFrames !== 'boolean') throw new TypeError('Playback stored-frame mode must be a boolean.');
+  report = sampleReport || (storedFrames ? storedFrameReport(report) : report); entries ??= timeline(report);
+  const started = performance.now(), location = playbackLocation(entries, tick);
+  const native = evaluatedFrame(report, location.index, location.t, tick, {tweenCache}), evaluated = performance.now();
+  if (!native) throw new Error('The playback tick has no native frame.');
+  const sourceGeometry = geometryCache ? geometryCache.get(report, native, revision) : buildGeometry(report, native);
+  const geometry = vfxEnabled ? sourceGeometry : vfxPreviewGeometry(sourceGeometry), geometrized = performance.now();
+  const frame = { camera: native.camera, background_id: native.background_id, background_id_b: native.background_id_b, background_mix: native.background_mix, duration_raw: native.duration_raw,
+    ...(vfxEnabled && native._stykVfx ? {_stykVfx: native._stykVfx} : {}),
+    ...(native._stykBackgroundColor !== undefined ? {_stykBackgroundColor: native._stykBackgroundColor} : {}) };
+  // Visibility is baked into the bitmap: session-hidden and layer-hidden
+  // figures are excluded here, matching the live hiddenUids membership view.
+  const hiddenSet = hiddenUids instanceof Set ? hiddenUids : new Set(hiddenUids || []);
+  const drawables = geometry.drawables.filter(item => layerVisible(report, item.obj.unique_id) && !hiddenSet.has(item.obj.unique_id));
+  const uidSet = new Set(); for (const item of drawables) uidSet.add(item.obj.unique_id ?? item.slot);
+  const matrix = cameraMatrix({ report, frame, cameraEnabled, view: { scale } });
+  const hypot = Math.hypot(matrix[0], matrix[1]) || 1;
+  const resolution = Math.max(.5, Math.min(8, 2 ** Math.ceil(Math.log2(hypot)))) * quality;
+  // The bitmap covers the on-screen artboard: document pixels at view density
+  // times the same resolution ratio compatibility textures would use.
+  const pixelScale = Math.min(scale * resolution / hypot, maxTextureDimension / report.canvas_width, maxTextureDimension / report.canvas_height);
+  const pixelWidth = Math.max(1, Math.ceil(report.canvas_width * pixelScale)), pixelHeight = Math.max(1, Math.ceil(report.canvas_height * pixelScale));
+  const bitmapBytes = pixelWidth * pixelHeight * 4;
+  if (bitmapBytes + 128 > maxPacketBytes) {
+    const error = new Error('A playback frame exceeds its preparation memory budget.');
+    error.code = 'playback_frame_budget'; error.fixedBytes = bitmapBytes + 128; throw error;
+  }
+  const imageItems = drawables.filter(item => item.type === 'image' && item.asset);
+  const backgroundItems = backgroundImageAssets(report, frame).map(asset => ({ type: 'image', asset }));
+  let reducedImages = false;
+  if (resources && (imageItems.length || backgroundItems.length)) {
+    await resources.preload([...imageItems, ...backgroundItems],
+      { scale: resolution, maxDimension: maxTextureDimension, visible: playbackVisibleBounds(report, frame, cameraEnabled) });
+    reducedImages = Boolean(resources.pressureReduced);
+  }
+  if (cancelled()) throw new DOMException('Playback preparation was superseded.', 'AbortError');
+  let bitmap = null;
+  if (typeof OffscreenCanvas !== 'undefined') {
+    const canvas = new OffscreenCanvas(pixelWidth, pixelHeight), ctx = canvas.getContext('2d');
+    const scene = { ...geometry, drawables };
+    try {
+      // The artboard is the whole bitmap: document edges crop world content,
+      // exactly like the clip rect the live canvas path applies on screen.
+      ctx.setTransform(matrix[0] * resolution / hypot, matrix[1] * resolution / hypot,
+        matrix[2] * resolution / hypot, matrix[3] * resolution / hypot,
+        matrix[4] * resolution / hypot, matrix[5] * resolution / hypot);
+      drawBackground(ctx, report, frame, report.canvas_width, report.canvas_height,
+        { ...resources, bounds: backgroundBounds(frame, report.canvas_width, report.canvas_height, cameraEnabled, report) });
+      drawGeometry(ctx, { drawables }, resources);
+    } finally { releaseGeometryResources(ctx); }
+    if (activeVfx(vfxStack(frame)).length) {
+      // Mirror the live pass: camera-space scene, effects, then projection.
+      // view scale 1 with the bitmap density as dpr lands the artboard at 0,0.
+      softwareCameraVfx ??= new CameraVfx();
+      softwareCameraVfx.render(ctx, { report, frame, view: { x: 0, y: 0, scale: 1 }, geometry: scene,
+        cameraEnabled, playing: true, vfxEnabled, resourceRevision: revision }, pixelScale, resources);
+      releaseVfxSurface(ctx);
+    }
+    bitmap = typeof canvas.transferToImageBitmap === 'function' ? canvas.transferToImageBitmap() : await createImageBitmap(canvas);
+  }
+  const ended = performance.now();
+  return { key: `${revision}:${tick}`, revision, tick, frameIndex: location.index, frame,
+    softwareFrames: true, hiddenKey,
+    shapes: new Float32Array(0), transforms: new Float32Array([0, 0, 1, 1]), uids: Uint32Array.from(uidSet), groups: [],
+    compatibility: bitmap ? [{ bitmap, uid: 0, software: true }] : [],
+    previewQuality: { reduced: reducedImages },
+    objectCount: geometry.objects.size, shapeCount: 0, warnings: geometry.warnings, scale, resolution, cameraEnabled, storedFrames,
+    workerCache: { imageBytes: resources?.bytes || 0, sourceBytes: resources?.sourceBytes || 0,
+      rasterBytes: resources?.artworkBitmaps?.bytes || 0, rasterEntries: resources?.artworkBitmaps?.entries.size || 0,
+      vectorBytes: resources?.vectors?.bytes || 0, vectorEntries: resources?.vectors?.lru.size || 0,
+      alternateDrawables: geometryCache?.alternateDrawables || 0, tweenEntries: tweenCache?.entries.size || 0 },
+    byteLength: bitmapBytes + 128,
+    compileMs: ended - started, timings: { evaluateMs: evaluated - started, geometryMs: geometrized - evaluated, compileMs: ended - geometrized } };
 }
 
 export function packetTransferables(packet) {

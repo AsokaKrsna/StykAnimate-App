@@ -142,6 +142,64 @@ test('disposing private image resources rejects pending decode waiters directly'
   assert.equal(image.src, ''); assert.equal(images.images.size, 0);
 });
 
+test('a failing compatibility raster degrades its object without aborting the scene build', async () => {
+  const app = await graphics();
+  try {
+    const { renderer } = app, report = fixture(2);
+    const poly = { color_rgb: [240, 40, 20], alpha_raw: 0 }, fig = { figure_type_id: 1, segments: [], polyfills: [poly] };
+    const object = (uid, slot, x, y) => {
+      const obj = { unique_id: uid, object_slot: slot, figure_type_id: 1, root_x: x, root_y: y, scale: 1 }, root = { x, y };
+      return { obj, fig, slot, root, segments: [], polys: [], drawables: [{ type: 'poly', obj, fig, slot, index: 0, poly, points: [[0, 0], [24, 24], [0, 24], [24, 0]].map(([dx, dy]) => ({ x: x + dx, y: y + dy })), z: 0, rgb: [240, 40, 20], alpha: 1, opacity: 1 }] };
+    };
+    const scene = (items, previous, changed) => ({ objects: new Map(items.map(g => [g.slot, g])), orderedObjects: items, token: {}, previousToken: previous?.token, changedSlots: new Set(changed ?? items.map(g => g.slot)), warnings: [] });
+    const frame = items => ({ objects: items.map(g => g.obj), background_id: 0 });
+    // Canvas rasterization is unavailable under Node; stub the seam this test exercises.
+    let failRaster = false;
+    renderer.rasterObject = (source, items, scale, artwork = source, cache = renderer.rasterCache) => {
+      const hit = cache.get(artwork, 1, renderer.generation);
+      if (hit) return hit;
+      if (failRaster) throw new Error('probe raster failure');
+      const result = { bounds: { x: source.root.x, y: source.root.y, width: 24, height: 24 }, origin: { ...source.root }, texture: renderer.device.createTexture({ size: [8, 8], format: 'rgba8unorm', usage: 5 }), bindGroup: {}, generation: renderer.generation, resolution: 1, bytes: 256 };
+      cache.set(artwork, result); return result;
+    };
+    let geometry = scene([object(1, 0, 20, 20), object(2, 1, 80, 20)]);
+    const draw = () => renderer.render({ report, frame: frame(geometry.orderedObjects), geometry, view: { scale: 1, x: 0, y: 0 }, cameraEnabled: false });
+    draw();
+    assert.equal(renderer.stats.textureObjects, 2, 'Fixture needs compatibility textures.');
+    const kept = renderer.entries.get(1).texture;
+    failRaster = true;
+    const changed = { ...geometry.orderedObjects[0], drawables: geometry.orderedObjects[0].drawables.map(item => ({ ...item, rgb: [20, 220, 40] })) };
+    geometry = scene([changed, geometry.orderedObjects[1]], geometry, [0]);
+    draw();
+    assert.equal(renderer.stats.rasterFailures, 1);
+    assert.equal(renderer.entries.get(1).texture, kept, 'A failed raster must keep the previous texture.');
+    assert.notEqual(renderer.stats.preparation, 'failed');
+    // Without a surviving texture the object degrades to vector shapes.
+    renderer.rasterCache.clear();
+    geometry = scene([{ ...changed, drawables: changed.drawables.map(item => ({ ...item, rgb: [40, 40, 220] })) }, object(3, 2, 140, 20)], geometry, [0, 2]);
+    draw();
+    const degraded = renderer.entries.get(1);
+    assert.ok(degraded); assert.ok(!degraded.texture);
+    assert.ok(degraded.count > 0, 'Degraded object must still draw its vector shapes.');
+    // A whole-build failure draws the stale layout and does not retry per frame.
+    const originalPrepare = renderer.prepare;
+    let attempts = 0;
+    renderer.prepare = () => { attempts++; throw new Error('probe prepare failure'); };
+    renderer.generation++;
+    draw();
+    assert.equal(renderer.stats.prepareFailures, 1); assert.equal(renderer.stats.preparation, 'failed');
+    draw();
+    assert.equal(attempts, 1, 'Identical inputs must not retry the doomed build.');
+    geometry = scene([geometry.orderedObjects[0], object(4, 3, 200, 20)], geometry);
+    draw();
+    assert.equal(attempts, 2, 'Changed inputs must retry the build.');
+    renderer.prepare = originalPrepare;
+    geometry = scene(geometry.orderedObjects, geometry);
+    draw();
+    assert.equal(renderer.stats.preparation, 'layout');
+  } finally { app.close(); }
+});
+
 test('preparation samples the final viewport and activation cannot adopt a mismatched geometry', async () => {
   const app = await graphics();
   try {

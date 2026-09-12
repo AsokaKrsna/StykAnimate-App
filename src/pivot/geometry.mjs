@@ -16,6 +16,7 @@ import {isMovieclip, sampleMovieclipObjects,movieclipTypes,movieclipSourceDocume
 import {buildMovieclipGeometrySteps} from '../movieclip-geometry.mjs';
 import {sampleLayerSheet,invalidateLayerSheet} from '../layer-sheet.mjs';
 import {presenceIndex,presenceElapsed,invalidateMovieclipPresence,cachedPresenceIndex,usesPresence} from '../movieclip-presence.mjs';
+import {createSheetMembershipSampler} from '../movieclip-membership.mjs';
 import {sticknodesShape,sticknodesCurve,sticknodesDrawables,sticknodesSpriteAsset} from '../sticknodes/geometry.mjs';
 const authoredTimelines = new WeakMap();
 export function invalidateEvaluationCaches(report) {
@@ -412,10 +413,11 @@ export function movieclipPresenceIndex(report){
   const rows=timeline(report),sheet=report._styk?.layerSheet;
   const boundaries=sheet?[0,sheet.duration,...Object.values(sheet.tracks).flatMap(track=>[track.end,...track.keys.map(key=>key.tick)])]
     :[0,...rows.flatMap(row=>[row.start,row.start+row.count]),...(report._styk?.animation?.channels??[]).flatMap(channel=>channel.keys.map(key=>key.tick))];
-  return presenceIndex(report,boundaries,time=>{
+  const membership=createSheetMembershipSampler(report,nativeTimeline(report));
+  return presenceIndex(report,boundaries,membership??(time=>{
     let low=0,high=rows.length-1;while(low<high){const mid=(low+high+1)>>>1;if(rows[mid].start<=time)low=mid;else high=mid-1;}
     const row=rows[low];return evaluatedFrame(report,low,row?.count?(time-row.start)/row.count:0,time,{skipMovieclips:true});
-  });
+  }));
 }
 function sampleClips(report,frame,tick,retainedSamples=false){
   let clock;
@@ -874,12 +876,12 @@ function isolated(ctx, alpha, paint, cache) {
   const temp = scratch.getContext("2d", {
     willReadFrequently: ctx.getContextAttributes?.().willReadFrequently === true,
   });
-  if (!temp || temp.isContextLost?.()) throw new Error('The temporary drawing canvas is unavailable.');
+  if (!temp || temp.isContextLost?.()) throw Object.assign(new Error('The temporary drawing canvas is unavailable.'), { telemetryCode: 'device_lost' });
   temp.setTransform(1, 0, 0, 1, 0, 0);
   temp.clearRect(0, 0, scratch.width, scratch.height);
   temp.setTransform(ctx.getTransform());
   paint(temp);
-  if (temp.isContextLost?.()) throw new Error('The temporary drawing canvas was lost while rendering.');
+  if (temp.isContextLost?.()) throw Object.assign(new Error('The temporary drawing canvas was lost while rendering.'), { telemetryCode: 'device_lost' });
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha *= alpha;

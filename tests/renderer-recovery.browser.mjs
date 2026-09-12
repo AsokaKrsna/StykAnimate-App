@@ -56,9 +56,16 @@ try {
       assert.equal(playback.evaluations,0,'Camera/VFX overlays must not evaluate prepared playback frames on the UI thread');
       assert.deepEqual(playback.ticks,Array.from({length:playback.total},(_,i)=>i));
       await page.waitForFunction(()=>!styk.state.editablePreparing);
-      await page.evaluate(()=>{probe.old=styk.state.renderer;probe.old.device.destroy();});
-      await page.waitForFunction(()=>styk.state.renderer!==probe.old&&document.querySelector('#renderer-error').hidden&&!styk.state.dirtyRender);
-      assert.equal(await page.evaluate(()=>styk.state.renderer.stats.backend),'Canvas 2D fallback','Repeated losses must stop retrying the GPU');
+      // Consecutive losses retry acceleration with backoff until the recovery
+      // budget empties; only then does recovery settle on the software path.
+      let settled;
+      for(let loss=0;loss<6;loss++){
+        await page.evaluate(()=>{probe.old=styk.state.renderer;probe.old.device.destroy();});
+        await page.waitForFunction(()=>styk.state.renderer!==probe.old&&document.querySelector('#renderer-error').hidden&&!styk.state.dirtyRender,undefined,{timeout:60000});
+        settled=await page.evaluate(()=>styk.state.renderer.stats.backend);
+        if(settled==='Canvas 2D fallback')break;
+      }
+      assert.equal(settled,'Canvas 2D fallback','Repeated losses must settle on the software fallback once the GPU retry budget is exhausted');
       results.push({failure,...playback,identicalPixels:true});
     } else results.push({failure,backend:restored.backend,undoRedo:true});
     await page.screenshot({path:path.join(output,`${failure}.png`)});

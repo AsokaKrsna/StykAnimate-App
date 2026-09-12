@@ -107,6 +107,18 @@ test('cancelling while a write is pending waits for cleanup and preserves the de
   assert.equal(await readFile(destination, 'utf8'), 'keep me');
 });
 
+test('metadata failures cannot turn an already committed file into a failed save', async t => {
+  const errors=[];
+  const {streams,destination}=await fixture(t,{onCommitError:error=>{errors.push(error.code);throw new Error('Diagnostic reporter failed');}});
+  await writeFile(destination,'previous');
+  const {token}=await streams.beginWrite({destination,size:4,onCommit:()=>{throw Object.assign(new Error('Metadata unavailable'),{code:'ENOSPC'});}});
+  await streams.write(token,buffer([1,2,3,4]));
+  const result=await streams.finish(token);
+  assert.equal(result.saved,true);assert.equal(result.metadataSaved,false);
+  assert.deepEqual(errors,['ENOSPC']);assert.deepEqual(await readFile(destination),Buffer.from([1,2,3,4]));
+  assert.equal(streams.jobs.size,0);assert.deepEqual(await streams.cancel(token),{cancelled:false});
+});
+
 test('finished bytes are restart-readable in bounded ArrayBuffer chunks through EOF', async t => {
   const { root, streams, destination } = await fixture(t);
   const expected = Buffer.from([0, 255, 128, 1, 2, 3, 4, 5, 6, 7, 8]);
@@ -150,6 +162,53 @@ test('missing files return null and empty files produce an empty EOF chunk', asy
   assert.equal(result.bytes.byteLength, 0);
   assert.equal(result.done, true);
   await streams.closeRead(session.token);
+});
+
+test('streamed writes accept an unknown size, patch in place, and finish at any position', async t => {
+  const { streams, destination } = await fixture(t, { maxStreamBytes: 32 });
+  await writeFile(destination, 'previous');
+  const session = await streams.beginWrite({ destination, size: null, stream: true });
+  assert.equal(session.size, null);
+  for (const values of [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10]]) await streams.write(session.token, buffer(values));
+  await streams.patch(session.token, 2, buffer([90, 91]));
+  assert.deepEqual(await streams.finish(session.token), { saved: true, path: destination, size: 10 });
+  assert.deepEqual(await readFile(destination), Buffer.from([1, 2, 90, 91, 5, 6, 7, 8, 9, 10]));
+});
+
+test('streamed writes still bound chunk size, total bytes and patch range', async t => {
+  const { streams, destination } = await fixture(t, { maxStreamBytes: 10 });
+  await writeFile(destination, 'keep me');
+  const { token } = await streams.beginWrite({ destination, size: null, stream: true });
+  await streams.write(token, buffer([1, 2, 3, 4]));
+  await streams.write(token, buffer([5, 6]));
+  await rejection(() => streams.patch(token, 5, buffer([7, 8])));
+  await rejection(() => streams.patch(token, -1, buffer([7])));
+  await rejection(() => streams.patch(token, 0, new Uint8Array(0)));
+  await rejection(() => streams.write(token, buffer([7, 8, 9, 10, 11])));
+  await rejection(() => streams.write(token, 'text'));
+  assert.equal(await readFile(destination, 'utf8'), 'keep me');
+  await streams.finish(token);
+  assert.deepEqual(await readFile(destination), Buffer.from([1, 2, 3, 4, 5, 6]));
+});
+
+test('cancelling a streamed write removes the temporary file and preserves the destination', async t => {
+  const { streams, destination } = await fixture(t);
+  await writeFile(destination, 'original');
+  const { token } = await streams.beginWrite({ destination, size: null, stream: true });
+  await streams.write(token, buffer([1, 2, 3, 4]));
+  await streams.cancel(token);
+  assert.equal(await readFile(destination, 'utf8'), 'original');
+  await rejection(() => streams.patch(token, 0, buffer([9])));
+});
+
+test('a streamed write with a declared size still enforces it', async t => {
+  const { streams, destination } = await fixture(t, { maxStreamBytes: 32 });
+  const { token } = await streams.beginWrite({ destination, size: 5, stream: true });
+  await streams.write(token, buffer([1, 2, 3, 4]));
+  await rejection(() => streams.write(token, buffer([5, 6])));
+  await rejection(() => streams.finish(token));
+  await streams.write(token, buffer([5]));
+  assert.deepEqual(await streams.finish(token), { saved: true, path: destination, size: 5 });
 });
 
 test('read operations require a live token rather than a filename', async t => {

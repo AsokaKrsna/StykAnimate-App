@@ -45,7 +45,9 @@ const rootAt = (editor, tick) => {
   const frame = evaluatedFrame(editor.report, low, rows[low].count ? (tick - rows[low].start) / rows[low].count : 0, tick);
   return frame.objects.find(o => o.unique_id === 1);
 };
-const pathEntry = (editor, target, session) => new MotionPathCache().get(editor, target, {session});
+// Infinity keeps test sampling synchronous: production budgets the work per
+// frame, but assertions here must not depend on wall-clock timing.
+const pathEntry = (editor, target, session) => new MotionPathCache({budgetMs: Infinity}).get(editor, target, {session});
 
 test('path sampling returns one point per display tick with keyframe emphasis', () => {
   const editor = fixture();
@@ -297,11 +299,44 @@ test('joined children follow their parent through a remote root edit', () => {
   point(joinedRoot, parentEnd, 1e-3);
 });
 
+test('path sampling stays inside its per-call budget and completes over calls', () => {
+  const editor = fixture();
+  editor.select(1);
+  const target = motionPathTarget(editor);
+  const cache = new MotionPathCache({budgetMs: 0});
+  const entry = cache.get(editor, target);
+  assert.equal(entry.complete, false);
+  assert.ok(entry.points.size > 0 && entry.points.size < entry.ticks.length);
+  for (let calls = 0; !entry.complete && calls < 100; calls++) cache.get(editor, target);
+  assert.ok(entry.complete);
+  assert.equal(entry.points.size, entry.ticks.length);
+  near(entry.points.get(10).x, 300);
+});
+
+test('a committed edit keeps the old trail while it resamples under budget', () => {
+  const editor = fixture();
+  editor.select(1);
+  const target = motionPathTarget(editor);
+  const cache = new MotionPathCache({budgetMs: 0});
+  let entry = cache.get(editor, target);
+  while (!entry.complete) entry = cache.get(editor, target);
+  near(entry.points.get(10).x, 300);
+  assert.ok(editor.beginMotionPathEdit(rootTarget, 10));
+  editor.updateMotionPathEdit({x: 500, y: 400});
+  editor.commitMotionPathEdit();
+  entry = cache.get(editor, target);
+  assert.equal(entry.complete, false);
+  assert.ok(entry.points.size > 0, 'previous points remain during resampling');
+  while (!entry.complete) entry = cache.get(editor, target);
+  near(entry.points.get(10).x, 500);
+  near(entry.points.get(0).x, 100);
+});
+
 test('the path cache resamples only the live window while a session runs', () => {
   const editor = fixture();
   editor.select(1);
   const target = motionPathTarget(editor);
-  const cache = new MotionPathCache();
+  const cache = new MotionPathCache({budgetMs: Infinity});
   const entry = cache.get(editor, target);
   assert.equal(entry.points.size, entry.ticks.length);
   const revision = editor.revision;

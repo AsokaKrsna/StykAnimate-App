@@ -1,4 +1,6 @@
 /** Genuine installed Windows codecs, distinct from bundled FFmpeg encoders. */
+import {EXPORT_MAX_PIXELS} from './export-sampling.mjs';
+// The native VFW helper enforces this bound in compiled code; keep them in sync.
 const MAX_BYTES = 256 * 1024 * 1024;
 const cancelled = () => new DOMException('Windows video export cancelled.', 'AbortError');
 export async function getVfwCapabilities(options = {}, desktop = globalThis.stykDesktop) {
@@ -10,9 +12,9 @@ export async function configureVfwCodec(options, desktop = globalThis.stykDeskto
   return desktop.configureVfwCodec(options);
 }
 export async function encodeVfwVideo({codecId, width, height, fps, totalFrames, renderFrame, quality = .9, keyframeEvery = 0, bitrate = 0, configurationId,
-  signal, onProgress, maxBytes = MAX_BYTES, desktop = globalThis.stykDesktop, timeoutMs = 120000}) {
+  signal, onProgress, maxBytes = MAX_BYTES, desktop = globalThis.stykDesktop, timeoutMs = 120000, sink, save}) {
   if (!/^vfw:(x86|x64):[0-9a-f]{8}$/i.test(codecId ?? '')) throw new Error('Choose an installed Windows video codec.');
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16384 || height > 16384 || width * height > 16777216) throw new Error('Windows video supports up to 16 million pixels per frame.');
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16384 || height > 16384 || width * height > EXPORT_MAX_PIXELS) throw new Error(`Windows video supports up to ${Math.round(EXPORT_MAX_PIXELS / 1e6)} million pixels per frame.`);
   if (!Number.isFinite(fps) || fps < 1 || fps > 1000 || !Number.isInteger(totalFrames) || totalFrames < 1 || totalFrames > 1000000) throw new Error('Choose a valid video frame rate and frame count.');
   if (!Number.isFinite(quality) || quality < 0 || quality > 1) throw new Error('Video quality must be between zero and one.');
   if (!Number.isInteger(keyframeEvery) || keyframeEvery < 0 || keyframeEvery > 1000000 || !Number.isInteger(bitrate) || bitrate < 0 || bitrate > 200000000) throw new Error('Choose a valid codec keyframe interval and bitrate.');
@@ -22,7 +24,7 @@ export async function encodeVfwVideo({codecId, width, height, fps, totalFrames, 
   if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') throw new Error('Windows video export needs worker canvas support.');
   if (signal?.aborted) throw cancelled();
   const worker = new Worker(new URL('./vfw-frame-worker.mjs', import.meta.url), {type: 'module', name: 'StykAnimate Windows video frames'});
-  let pending, sequence = 0, failure, transfer, cancellation;
+  let pending, sequence = 0, failure, transfer, cancellation, completed = false;
   const check = () => { if (signal?.aborted) throw cancelled(); if (failure) throw failure; };
   const fail = error => { failure = error; clearTimeout(pending?.timer); pending?.reject(error); pending = null; worker.terminate(); };
   worker.addEventListener('error', event => { event.preventDefault(); fail(new Error(event.message || 'The Windows video worker stopped.')); });
@@ -54,19 +56,38 @@ export async function encodeVfwVideo({codecId, width, height, fps, totalFrames, 
     onProgress?.({completed: totalFrames, total: totalFrames, progress: 1, phase: 'encoding'});
     const encoded = await desktop.finishVfwExport(transfer.token); check();
     if (!Number.isSafeInteger(encoded?.size) || encoded.size < 256 || encoded.size > maxBytes) throw new Error('The Windows codec returned an empty or oversized AVI.');
-    const parts = []; let size = 0, done = false;
+    if (save && typeof desktop.saveVfwExport === 'function') {
+      // The encoded file already exists on disk in the main process; move it to
+      // the chosen destination without piping bytes through the renderer. A
+      // failed move keeps the reading session, so fall back to chunked
+      // readback instead of losing the finished export.
+      try {
+        const result = await desktop.saveVfwExport(transfer.token, save);
+        transfer = null; check();
+        onProgress?.({completed: totalFrames, total: totalFrames, progress: 1, phase: 'complete'});
+        return result?.saved ? {saved: true, path: result.path, size: result.size} : {saved: false};
+      } catch (error) {
+        if (failure) throw failure;
+      }
+    }
+    const parts = sink ? null : []; let size = 0, done = false;
     while (!done) {
       check(); const chunk = await desktop.readVfwChunk(transfer.token); check(); const bytes = chunk?.bytes;
       if (!(bytes instanceof ArrayBuffer) && !ArrayBuffer.isView(bytes)) throw new Error('The Windows codec returned an invalid output chunk.');
       if ((!bytes.byteLength && !chunk.done) || bytes.byteLength > 256 * 1024) throw new Error('The Windows video output chunk is invalid.');
       size += bytes.byteLength; if (size > encoded.size || size > maxBytes) throw new Error('The Windows video exceeds its declared size.');
-      parts.push(new Blob([bytes])); done = Boolean(chunk.done);
+      if (sink) await sink.write(bytes); else parts.push(new Blob([bytes]));
+      done = Boolean(chunk.done);
     }
     if (size !== encoded.size) throw new Error('The Windows video output is incomplete.');
-    const blob = new Blob(parts, {type: 'video/x-msvideo'}); onProgress?.({completed: totalFrames, total: totalFrames, progress: 1, phase: 'complete'}); return blob;
+    onProgress?.({completed: totalFrames, total: totalFrames, progress: 1, phase: 'complete'});
+    if (sink) { const result = await sink.finish(); completed = true; return result; }
+    const blob = new Blob(parts, {type: 'video/x-msvideo'}); return blob;
   } finally {
     clearTimeout(pending?.timer);
     signal?.removeEventListener('abort', abort); worker.terminate();
-    if (transfer) await desktop.cancelVfwExport(transfer.token).catch(() => {}); await cancellation;
+    if (transfer) await desktop.cancelVfwExport(transfer.token).catch(() => {});
+    if (sink && !completed) await sink.abort();
+    await cancellation;
   }
 }

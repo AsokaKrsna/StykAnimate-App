@@ -17,7 +17,11 @@ await mkdir("artifacts", { recursive: true });
 try {
   await page.goto(process.env.STYK_URL || "http://127.0.0.1:47831");
   await page.waitForFunction(() => window.styk?.ready && window.styk.assets);
-  await page.locator('[data-tab="assets"]').click();
+  await page.evaluate(async () => {
+    const {createDemo} = await import('/src/demo.mjs');
+    styk.editor.load(createDemo(), 'Asset library fixture');
+  });
+  await page.locator('#open-insert').click();
   await page.waitForFunction(
     () => window.styk.assets.stats.cachedPreviews === 3,
   );
@@ -38,14 +42,16 @@ try {
   );
   await page.screenshot({ path: "artifacts/asset-library-native.png" });
   const before = await page.evaluate(
-    () => window.styk.editor.frame.objects.length,
+    () => window.styk.editor.selectionFrame.objects.length,
   );
   await page.locator('.styk-asset-row[data-figure="1"]').click();
+  await page.waitForFunction(n=>styk.editor.selectionFrame.objects.length===n+1,before);
   check(
     "One library click adds exactly one figure",
-    (await page.evaluate(() => window.styk.editor.frame.objects.length)) ===
+    (await page.evaluate(() => window.styk.editor.selectionFrame.objects.length)) ===
       before + 1,
   );
+  await page.locator("#open-insert").click();
   await page.waitForFunction(
     () => window.styk.assets.stats.cachedPreviews === 3,
   );
@@ -68,15 +74,17 @@ try {
       (await page.locator(".styk-asset-name").innerText()) === "Bounce",
   );
   const keyboardBefore = await page.evaluate(
-    () => window.styk.editor.frame.objects.length,
+    () => window.styk.editor.selectionFrame.objects.length,
   );
   await page.locator(".styk-assets-search input").press("ArrowDown");
   await page.keyboard.press("Enter");
+  await page.waitForFunction(n=>styk.editor.selectionFrame.objects.length===n+1,keyboardBefore);
   check(
     "Keyboard adds the focused result once",
-    (await page.evaluate(() => window.styk.editor.frame.objects.length)) ===
+    (await page.evaluate(() => window.styk.editor.selectionFrame.objects.length)) ===
       keyboardBefore + 1,
   );
+  await page.locator("#open-insert").click();
   await page
     .locator(".styk-assets-search input")
     .fill("no figure has this name");
@@ -165,7 +173,7 @@ try {
     assets.update(window.largeLibrary);
   });
   await page.waitForFunction(
-    () => window.styk.assets.stats.cachedPreviews >= 5,
+    () => window.styk.assets.stats.cachedPreviews >= window.styk.assets.stats.rows,
   );
   check(
     "20,000 definitions create only visible row DOM",

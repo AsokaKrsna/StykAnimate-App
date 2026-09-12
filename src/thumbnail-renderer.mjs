@@ -13,6 +13,7 @@ export class ThumbnailRenderer {
       token = "",
       storedFrames = false,
       onError = () => {},
+      idleMs = 300000,
     } = {},
   ) {
     this.editor = editor;
@@ -29,6 +30,8 @@ export class ThumbnailRenderer {
     this.queued = 0;
     this.paused = false;
     this.disposed = false;
+    this.idleMs = idleMs;
+    this.idleTimer = null;
     this.stats = {
       backend: "Worker thumbnails",
       snapshots: 0,
@@ -74,6 +77,7 @@ export class ThumbnailRenderer {
         error.name = message.name || "Error";
         request.reject(error);
       }
+      this._scheduleIdle();
     });
     const fail = (error) => {
       for (const request of this.pending.values()) {
@@ -127,8 +131,27 @@ export class ThumbnailRenderer {
     this.paused = Boolean(paused);
     if (this.paused) this.currentAbort?.abort();
   }
+  _scheduleIdle() {
+    clearTimeout(this.idleTimer); this.idleTimer = null;
+    if (!this.worker || this.pending.size || this.disposed || this.idleMs <= 0) return;
+    // An idle worker still pins a whole document mirror. Release it after a
+    // rest; the next render pays one full snapshot instead of a small patch.
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (!this.worker || this.pending.size || this.disposed) return;
+      const worker = this.worker;
+      this.worker = null;
+      this.snapshot?.iterator.return?.();
+      this.snapshot = null;
+      this.fullSnapshot = true;
+      this.loadedVersion = 0;
+      worker.terminate();
+    }, this.idleMs);
+    this.idleTimer.unref?.();
+  }
   async _request(operation, data, signal) {
     if (signal?.aborted || this.disposed) throw abortError();
+    clearTimeout(this.idleTimer); this.idleTimer = null;
     const worker = this._worker(),
       id = ++this.sequence;
     return new Promise((resolve, reject) => {
@@ -146,6 +169,7 @@ export class ThumbnailRenderer {
         clearTimeout(request.timer);
         signal?.removeEventListener("abort", cancel);
         reject(abortError());
+        this._scheduleIdle();
       };
       const finish = (callback) => (value) => {
         signal?.removeEventListener("abort", cancel);
@@ -321,6 +345,7 @@ export class ThumbnailRenderer {
   };
   destroy() {
     this.disposed = true;
+    clearTimeout(this.idleTimer); this.idleTimer = null;
     this.snapshot?.iterator.return?.();this.snapshot=null;
     this.events.abort();
     this.currentAbort?.abort();

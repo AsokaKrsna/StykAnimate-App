@@ -7,15 +7,19 @@ export class CameraGpuSource {
  constructor(renderer){this.renderer=renderer;this.canvas=new OffscreenCanvas(1,1);this.context=this.canvas.getContext('webgpu');if(!this.context)throw new Error('Camera VFX require an offscreen graphics context.');}
  paint(target,options,width,height){
   const r=this.renderer,{report,frame}=options,scale=width/report.canvas_width;
-  if(this.width!==width||this.height!==height){
+  const samples=r.msaaCount>1?r.msaaCount:0;
+  if(this.width!==width||this.height!==height||this.msaaSamples!==samples){
    this.width=width;this.height=height;this.canvas.width=width;this.canvas.height=height;
    this.context.configure({device:r.device,format:r.format,alphaMode:'premultiplied'});
-   this.msaa?.destroy();this.msaa=r.device.createTexture({label:'VFX camera MSAA',size:[width,height],sampleCount:4,format:r.format,usage:GPUTextureUsage.RENDER_ATTACHMENT});
+   this.msaa?.destroy();this.msaaSamples=samples;
+   this.msaa=samples?r.device.createTexture({label:'VFX camera MSAA',size:[width,height],sampleCount:samples,format:r.format,usage:GPUTextureUsage.RENDER_ATTACHMENT}):null;
   }
   const matrix=cameraMatrix({report,frame,view:{scale},cameraEnabled:true});
   const uniform=new Float32Array([matrix[0],matrix[2],matrix[4],Math.hypot(matrix[0],matrix[1]),matrix[1],matrix[3],matrix[5],0,width,height,1,1,0,0,width,height]);
   r.device.queue.writeBuffer(r.uniform,0,uniform);
-  const encoder=r.device.createCommandEncoder({label:'VFX camera artwork'}),pass=encoder.beginRenderPass({colorAttachments:[{view:this.msaa.createView(),resolveTarget:this.context.getCurrentTexture().createView(),clearValue:{r:0,g:0,b:0,a:0},loadOp:'clear',storeOp:'discard'}]});
+  const encoder=r.device.createCommandEncoder({label:'VFX camera artwork'}),pass=encoder.beginRenderPass({colorAttachments:[this.msaa
+   ?{view:this.msaa.createView(),resolveTarget:this.context.getCurrentTexture().createView(),clearValue:{r:0,g:0,b:0,a:0},loadOp:'clear',storeOp:'discard'}
+   :{view:this.context.getCurrentTexture().createView(),clearValue:{r:0,g:0,b:0,a:0},loadOp:'clear',storeOp:'store'}]});
   const prepared=options.preparedFrame;
   pass.setPipeline(r.pipeline);pass.setBindGroup(0,prepared?.bindGroup??r.globalBindGroup);
   if(prepared){

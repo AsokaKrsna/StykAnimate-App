@@ -16,6 +16,11 @@ try {
   const page = await app.firstWindow(), errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.waitForFunction(() => window.styk?.ready && typeof window.stykDesktop?.beginVideoFrame === 'function', undefined, {timeout: 30000});
+  await page.evaluate(() => {
+    // Dismiss first-run overlays in this isolated test profile.
+    const dismiss = () => document.querySelectorAll('dialog.release-splash[open], dialog.styk-privacy[open]').forEach(dialog => dialog.close());
+    dismiss(); new MutationObserver(dismiss).observe(document.body, {subtree: true, childList: true, attributes: true, attributeFilter: ['open']});
+  });
   result = await page.evaluate(async () => {
     const [{encodeNativeVideo}, {getExportCapabilities}] = await Promise.all([import('/src/native-video-export.mjs'), import('/src/export-capabilities.mjs')]);
     const checks = [], assert = (value, label) => { if (!value) throw new Error(label); checks.push(label); };
@@ -70,10 +75,14 @@ try {
     const {emptyDocument, createObject} = await import('/src/demo.mjs');
     const report = emptyDocument(); report.canvas_width = 160; report.canvas_height = 90; report.fps = 16;
     const figure = report.figure_types[0]; figure.segments = [{...figure.segments[0], length: 60, thickness: 6, angle_rad: 0}]; figure.segment_count = 1;
-    const frame = report.keyframes[0]; frame.duration_raw = 15; frame.objects = [createObject(figure, 1, 50, 45)]; frame.object_draw_order = [0]; frame.object_draw_order_unique_ids = [1];
-    report.keyframes.push({...structuredClone(frame),duration_raw:1});
+    const frame = report.keyframes[0]; frame.duration_raw = 8; frame.objects = [createObject(figure, 1, 50, 45)]; frame.object_draw_order = [0]; frame.object_draw_order_unique_ids = [1];
+    report.keyframes.push({...structuredClone(frame),duration_raw:7}, {...structuredClone(frame),duration_raw:1});
+    // Layer-sheet documents route addAnimationKeys through the sheet entry path;
+    // per-keyframe colors exercise the same compositing at absolute ticks.
+    report.keyframes[0]._stykBackgroundColor = 0xfff00000;
+    report.keyframes[1]._stykBackgroundColor = 0xff0000f0;
+    report.keyframes[2]._stykBackgroundColor = 0xff0000f0;
     window.styk.editor.load(report);
-    window.styk.editor.addAnimationKeys([{target:{kind:'scene'},property:'color',tick:0,value:0xfff00000,interpolation:'hold'}, {target:{kind:'scene'},property:'color',tick:8,value:0xff0000f0,interpolation:'hold'}]);
     window.styk.editor.markSaved();
   });
   result.uiFiles = [];
@@ -82,13 +91,15 @@ try {
     await app.evaluate(({dialog}, filename) => { dialog.showSaveDialog = async () => ({canceled: false, filePath: filename}); }, destination);
     await page.locator('[data-action="export"]').first().click();
     const button = page.locator(`[data-action="export-${format}"]`);
-    await button.waitFor({state:'visible'});
+    await button.waitFor({state:'attached'});
     await page.waitForFunction(id => !document.querySelector(`[data-action="export-${id}"]`)?.disabled, format);
     if (format === 'mp4') {
       assert.ok(await page.locator('#dialog').evaluate(dialog=>dialog.scrollWidth<=dialog.clientWidth+1),'Export dialog must not scroll horizontally');
       await page.screenshot({path:path.join(output,'export-dialog.png')});
     }
-    await button.click();
+    await page.locator(`[data-category="${format.endsWith('sequence') ? 'frames' : 'video'}"]`).click();
+    await page.locator('#output-format').selectOption(`export-${format}`);
+    await page.locator('#export-submit').click();
     await page.waitForFunction(() => !document.querySelector('#dialog').open, undefined, {timeout:30000});
     const bytes = await readFile(destination); assert.ok(bytes.length > 100, `Actual${format}button saves a nonempty native file`);
     result.uiFiles.push({format, bytes:bytes.length, filename:path.basename(destination)});
@@ -115,12 +126,13 @@ try {
     const destination=path.join(output,`ui-${format}-${codec}.${format}`);
     await app.evaluate(({dialog},filename)=>{dialog.showSaveDialog=async()=>({canceled:false,filePath:filename});},destination);
     await page.locator('[data-action="export"]').first().click();
-    await page.locator('.export-settings summary').click();
+    await page.locator('#output-format').selectOption(`export-${format}`);
+    await page.locator('.export-advanced summary').click();
     await page.locator(`#export-${format}-codec option[value="${codec}"]`).waitFor({state:'attached'});
     await page.locator(`#export-${format}-codec`).selectOption(codec);
     assert.ok(await page.locator('#dialog').evaluate(dialog=>dialog.scrollWidth<=dialog.clientWidth+1),'Expanded export settings must not scroll horizontally');
     if(codec==='ffv1')await page.screenshot({path:path.join(output,'export-codecs.png')});
-    await page.locator(`[data-action="export-${format}"]`).click();
+    await page.locator('#export-submit').click();
     await page.waitForFunction(()=>!document.querySelector('#dialog').open,undefined,{timeout:30000});
     const bytes=await readFile(destination);assert.ok(bytes.length>100);
     result.uiFiles.push({format,codec,bytes:bytes.length,filename:path.basename(destination)});

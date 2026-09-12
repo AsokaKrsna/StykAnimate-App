@@ -3,6 +3,17 @@
 export const MOVIECLIP_VERSION = 1;
 export const isMovieclip = figure => Boolean(figure?._styk?.movieclip);
 export const movieclipAsset = figure => figure?._styk?.movieclip;
+/** Published clip documents are immutable: entering a clip owns a clone and
+ * leaving publishes a replacement. Clipboard/history need their own editable
+ * figure shell, but can retain the captured animation without copying it. */
+export function snapshotFigureDefinition(figure) {
+  const asset = movieclipAsset(figure);
+  if (!asset) return structuredClone(figure);
+  const {document, ...settings} = asset;
+  const copy = structuredClone({...figure, _styk: {...figure._styk, movieclip: settings}});
+  copy._styk.movieclip.document = document;
+  return copy;
+}
 const typeIndices = new WeakMap();
 const sourceDocuments=new WeakMap();
 export function movieclipSourceDocument(report){

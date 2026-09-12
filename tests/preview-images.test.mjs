@@ -37,3 +37,18 @@ test('rapid viewport requests coalesce and replaced copies release their pixels'
   await latest; assert.equal(a.closed, 1); assert.equal(images.size, 1); assert.equal(images.bytes, 32);
   images.clear(); assert.equal(c.closed, 1); assert.equal(images.bytes, 0);
 });
+
+test('an idle decoder worker releases and respawns with the decoded map intact', async t => {
+  const {images, workers} = setup(t); images.idleMs = 10;
+  const first = images.prepare([item('a')]), worker = workers[0], a = bitmap();
+  worker.onmessage({data: {id: worker.messages[0].id, images: [{url: 'a', bitmap: a, width: 4, height: 2}]}});
+  await first;
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(worker.terminated, true); assert.equal(images.worker, null);
+  assert.equal(images.get('a'), a, 'decoded bitmaps survive the worker release');
+  const second = images.prepare([item('a'), item('b')]);
+  assert.equal(workers.length, 2, 'a fresh worker is spawned for new work');
+  const b = bitmap();
+  workers[1].onmessage({data: {id: workers[1].messages[0].id, images: [{url: 'a', bitmap: a}, {url: 'b', bitmap: b, width: 4, height: 2}]}});
+  await second; assert.equal(images.get('b'), b);
+});

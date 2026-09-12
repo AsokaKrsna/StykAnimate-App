@@ -64,11 +64,51 @@ test('capability and dimension mistakes fail before a native job starts', async 
   await assert.rejects(() => encodeNativeVideo({...options, desktop, format: 'mkv'}), /WebM, MP4, AVI or WMV/);
   await assert.rejects(() => encodeNativeVideo({...options, desktop, codec: 'rawvideo'}), /supported codec/);
   await assert.rejects(() => encodeNativeVideo({...options, desktop, quality: 1.1}), /quality/);
-  await assert.rejects(() => encodeNativeVideo({...options, desktop, width: 10000, height: 10000}), /16 million/);
+  await assert.rejects(() => encodeNativeVideo({...options, desktop, width: 10000, height: 10000}), /million pixels/);
   await assert.rejects(() => encodeNativeVideo({...options, desktop: {}}), /desktop app/);
   assert.equal(calls.length, 0);
 }));
 test('a supported explicit codec reaches the native job without changing its container', async () => environment(async () => {
   const {desktop,calls}=service();const blob=await encodeNativeVideo({...options,format:'avi',codec:'ffv1',desktop});
   assert.equal(calls[0][1].format,'avi');assert.equal(calls[0][1].codec,'ffv1');assert.equal(blob.type,'video/x-msvideo');
+}));
+test('native save moves the encoded file without chunked readback', async () => environment(async () => {
+  const calls = [], reads = [];
+  const desktop = {
+    ...service().desktop,
+    saveVideoExport: async (token, options) => { calls.push(['save', token, options]); return {saved: true, path: 'C:/out/video.mp4', size: 6}; },
+  };
+  const base = service({readVideoChunk: async token => { reads.push(token); return {bytes: new Uint8Array([1]).buffer, done: true}; }});
+  Object.assign(desktop, base.desktop, {saveVideoExport: desktop.saveVideoExport});
+  const result = await encodeNativeVideo({...options, desktop, save: {defaultPath: 'video.mp4'}});
+  assert.deepEqual(result, {saved: true, path: 'C:/out/video.mp4', size: 6});
+  assert.equal(reads.length, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][2].defaultPath, 'video.mp4');
+}));
+test('a cancelled native save reports unsaved and a failed move falls back to readback', async () => environment(async () => {
+  let mode = 'cancel';
+  const desktop = service().desktop;
+  desktop.saveVideoExport = async token => {
+    if (mode === 'cancel') return {saved: false};
+    throw new Error('destination is read-only');
+  };
+  assert.deepEqual(await encodeNativeVideo({...options, desktop, save: {defaultPath: 'v.mp4'}}), {saved: false});
+  mode = 'fail';
+  const blob = await encodeNativeVideo({...options, desktop, save: {defaultPath: 'v.mp4'}});
+  assert.equal(blob.type, 'video/mp4');
+  assert.deepEqual([...new Uint8Array(await blob.arrayBuffer())], [1, 2, 3, 4, 5, 6]);
+}));
+test('a sink receives native output chunks and finishes instead of building a blob', async () => environment(async () => {
+  const written = [];
+  const sink = {
+    streamed: true,
+    async write(part) { written.push(new Uint8Array(part instanceof ArrayBuffer ? part : part.buffer)); },
+    async finish() { return {saved: true, path: '/out/v.mp4', size: written.reduce((n, p) => n + p.byteLength, 0)}; },
+    async abort() { this.aborted = true; },
+  };
+  const {desktop} = service();
+  const result = await encodeNativeVideo({...options, desktop, sink});
+  assert.deepEqual(result, {saved: true, path: '/out/v.mp4', size: 6});
+  assert.deepEqual(written.map(part => [...part]), [[1, 2, 3, 4], [5, 6]]);
 }));

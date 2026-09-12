@@ -1,4 +1,4 @@
-import { COUNTERS, DIAGNOSTIC_COUNTERS, TIMINGS, GAUGES, MAX_OPERATION_CONTEXTS, contextKey, operationContext, emptyHistogram, observe, sanitizeError, sanitizeEnvironment } from './telemetry-schema.mjs';
+import { COUNTERS, DIAGNOSTIC_COUNTERS, TIMINGS, GAUGES, operationContextSlot, operationContext, emptyHistogram, observe, sanitizeError, sanitizeEnvironment } from './telemetry-schema.mjs';
 import { InteractionMeasurements, PlaybackMeasurements } from './telemetry-measurements.mjs';
 const counters = new Set(COUNTERS), diagnosticCounters = new Set(DIAGNOSTIC_COUNTERS), timings = new Set(TIMINGS), gauges = new Set(GAUGES);
 export class TelemetryAccumulator {
@@ -19,22 +19,16 @@ export class TelemetryAccumulator {
   milestone(key) { if (this.consent.analytics) this.data.milestones[key] ||= new Date().toISOString().slice(0, 10); }
   operation(value, duration) {
     if (!this.consent.diagnostics || !Number.isFinite(duration) || duration < 0 || duration > 3600000) return;
-    const context = operationContext(value), key = contextKey(context);
-    let row = this.data.operationContexts.find(row => contextKey(row) === key);
-    if (!row) {
-      if (this.data.operationContexts.length >= MAX_OPERATION_CONTEXTS) { this.count('dropped_operation_contexts'); return; }
-      row = { ...context, timing: emptyHistogram() }; this.data.operationContexts.push(row);
-    }
+    const {row,dropped}=operationContextSlot(this.data.operationContexts,operationContext(value));
+    if(dropped)this.count('dropped_operation_contexts',dropped);
+    if(!row){this.count('dropped_operation_contexts');return;}
     observe(row.timing, duration);
   }
   operationSummary(value, timing) {
     if (!this.consent.diagnostics || !timing?.count) return;
-    const context = operationContext(value), key = contextKey(context);
-    let row = this.data.operationContexts.find(row => contextKey(row) === key);
-    if (!row) {
-      if (this.data.operationContexts.length >= MAX_OPERATION_CONTEXTS) { this.count('dropped_operation_contexts', timing.count); return; }
-      row = { ...context, timing: emptyHistogram() }; this.data.operationContexts.push(row);
-    }
+    const {row,dropped}=operationContextSlot(this.data.operationContexts,operationContext(value));
+    if(dropped)this.count('dropped_operation_contexts',dropped);
+    if(!row){this.count('dropped_operation_contexts',timing.count);return;}
     row.timing.count += timing.count; row.timing.sum += timing.sum; row.timing.max = Math.max(row.timing.max, timing.max);
     timing.buckets.forEach((n, i) => row.timing.buckets[i] += n);
   }

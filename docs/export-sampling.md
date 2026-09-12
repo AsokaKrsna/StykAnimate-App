@@ -71,8 +71,9 @@ as soon as the last source frame is acknowledged, before final container
 assembly and saving; single-image exports release it after image encoding.
 The output canvas is reused and must be consumed before requesting the next
 frame. SVG methods return independent Blobs. A worker's embedded resource cache
-has a hard decoded-image allowance of at most 128 MiB. Ordinary output dimensions
-remain limited to 16,384 pixels per side and 16 million pixels total; Smooth
+has a hard decoded-image allowance of at most 512 MiB. Ordinary output dimensions
+remain limited to 16,384 pixels per side and 67 million pixels total (16.7
+million in Safari, matching its canvas surface limit); Smooth
 sprites additionally limits each output side to 8,192 so its intermediate
 sampling coordinates stay within 16,384 pixels. No smoothing additionally bounds its temporary
 padded bitmap to 128 MiB and 16,384 pixels per side; an extreme minification
@@ -89,7 +90,8 @@ coverage from a full-surface raster; the regression suite bounds that difference
 
 `exportMemoryPlan` reserves six frame-sized pixel buffers (ten for the additional
 crisp WASM/readback work), scratch surfaces, and decoded images. Its allowance is
-64–512 MiB based on the browser's RAM tier, or 256 MiB when unavailable. Tests can
+64 MiB–2 GiB based on the device RAM hint (real system memory on desktop, the
+browser's bucketed RAM tier on the web), or 256 MiB when unavailable. Tests can
 pass `maxWorkingBytes` to exercise smaller allowances. Oversized output fails
 before canvas allocation. PNG dimensions are checked before pixel decoding;
 other images use available asset metadata and a post-decode check that closes an

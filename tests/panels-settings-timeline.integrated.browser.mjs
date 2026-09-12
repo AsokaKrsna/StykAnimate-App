@@ -1,6 +1,6 @@
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 const b = await chromium.launch({ channel: "chrome", headless: true }),
   p = await b.newPage({ viewport: { width: 1560, height: 1000 } }),
   checks = [],
@@ -11,34 +11,25 @@ const check = (label, value) => {
   checks.push(label);
   console.log("PASS", label);
 };
+await mkdir("artifacts", {recursive:true});
 try {
   await p.goto("http://127.0.0.1:47831");
   await p.waitForFunction(
-    () => window.styk?.ready && window.styk.layers && window.styk.settingsUI,
+    () => window.styk?.ready && window.styk.settingsUI,
   );
-  check(
-    "Actual app mounts fixed Scene Camera plus user layer tree",
-    (await p.locator("#layer-list [role=treeitem]").count()) >= 6,
-  );
-  await p.locator("#layer-list [data-kind=camera]").click();
-  check(
-    "Actual camera row opens camera inspector",
-    await p.evaluate(() => window.styk.state.inspectorContext === "camera"),
-  );
-  await p.locator("#layer-list [data-layer-command=create]").click();
-  await p.locator(".styk-layer-rename").fill("Characters");
-  await p.locator(".styk-layer-rename").press("Enter");
-  const layerId = await p.evaluate(
-    () => window.styk.editor.layers.find((l) => l.name === "Characters").id,
-  );
-  await p
-    .locator('#layer-list [data-key="figure:1"]')
-    .dragTo(p.locator(`#layer-list [data-key="${layerId}"]`));
-  await p.waitForFunction(id => window.styk.editor.layerForUid(1) === id, layerId);
-  check(
-    "Actual tree drag changes persistent layer assignment",
-    await p.evaluate((id) => window.styk.editor.layerForUid(1) === id, layerId),
-  );
+  await p.evaluate(async () => {const {createDemo}=await import('/src/demo.mjs');styk.editor.load(createDemo(), 'Panels fixture');});
+  check('Actual app mounts Camera, Scene and user layer rows', (await p.locator('.sheet-layer:not([hidden])').count()) === 3);
+  await p.locator('.sheet-layer[data-kind="camera"] .sheet-layer-name').click();
+  check('Camera row opens camera inspector', await p.evaluate(() => styk.state.inspectorContext === 'camera'));
+  await p.getByRole('button', {name:'New layer',exact:true}).click();
+  const layerId=await p.evaluate(() => styk.editor.activeLayerId);
+  await p.locator(`.sheet-layer[data-layer-id="${layerId}"] .sheet-layer-name`).dblclick();
+  await p.locator('.sheet-layer-rename').fill('Characters');
+  await p.locator('.sheet-layer-rename').press('Enter');
+  await p.evaluate(()=>styk.editor.select(1));
+  await p.locator('#figure-layer').selectOption(layerId);
+  await p.waitForFunction(id=>styk.editor.layerForUid(1)===id,layerId);
+  check('Inspector assignment moves the figure into its persistent layer', await p.evaluate(id=>styk.editor.getLayer(id).name==='Characters'&&styk.editor.layerForUid(1)===id,layerId));
   await p.screenshot({ path: "artifacts/layers-integrated-app.png" });
   await p.evaluate(() => window.styk.settingsUI.open("interface"));
   await p
@@ -46,12 +37,12 @@ try {
     .check();
   await p.getByRole("button", { name: "Close settings", exact: true }).click();
   await p.waitForFunction(
-    () => window.styk.timeline?.constructor.name === "SimpleTimeline",
+    () => window.styk.timeline?.root.classList.contains("sheet-filmstrip"),
   );
   await p.waitForFunction(() => window.styk.timeline.stats.cachedPreviews > 4);
   check(
     "Settings switches actual app to Simple filmstrip",
-    (await p.locator("#timeline .styk-simple-card").count()) > 4,
+    (await p.locator("#timeline .sheet-filmstrip-card").count()) > 4,
   );
   check(
     "Actual app filmstrip thumbnails contain scene artwork",
@@ -69,14 +60,12 @@ try {
       }),
   );
   const before = await p.evaluate(
-    () => window.styk.editor.report.keyframes.length,
+    () => window.styk.timeline.frameCount,
   );
-  if (await p.locator('#timeline [data-simple-action=update]').count())
-    await p.locator('#timeline [data-simple-action=update]').click();
-  await p.locator("#timeline [data-simple-action=add]").click();
+  await p.locator('#timeline .sheet-add-frame').click();
   check(
-    "Actual simple Add inserts one native keyframe",
-    (await p.evaluate(() => window.styk.editor.report.keyframes.length)) ===
+    "Actual Simple Add inserts one scene key",
+    (await p.evaluate(() => window.styk.timeline.frameCount)) ===
       before + 1,
   );
   await p.screenshot({ path: "artifacts/simple-timeline-integrated-app.png" });
@@ -105,7 +94,7 @@ try {
     "Browser reload restores Simple mode and handle preferences",
     await p.evaluate(
       () =>
-        window.styk.timeline.constructor.name === "SimpleTimeline" &&
+        window.styk.timeline.root.classList.contains("sheet-filmstrip") &&
         window.styk.state.settings.handleSize === 8 &&
         !window.styk.state.settings.showUnselectedHandles,
     ),

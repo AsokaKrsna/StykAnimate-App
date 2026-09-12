@@ -33,7 +33,7 @@ class TelemetryService {
     this.schemaPath = schemaPath; this.version = version; this.channel = development ? 'development' : config.channel; this.siteUrl = endpoint(siteUrl, development);
     // Classification comes from trusted main-process build settings, never renderer IPC.
     this.traffic = development || internal === true ? 'internal' : 'external'; this.build = typeof build === 'string' && /^[a-f0-9]{12,40}$/.test(build) ? build : 'unknown';
-    this.fetch = fetchImpl; this.now = now; this.onState = onState; this.epoch = 1; this.lastUpload = 0; this.nextUpload = 0; this.status = 'Waiting for your choice';
+    this.fetch = fetchImpl; this.now = now; this.onState = onState; this.epoch = 1; this.lastUpload = 0; this.nextUpload = 0; this.status = 'Waiting for your choice'; this.unsaved = false;
     this.pending = Promise.resolve(); this.state = { consent: {}, days: {}, milestones: {}, firstSuccess: {}, deletions: [], sequence: 0, acknowledged: null };
   }
   async init({ timers = true } = {}) {
@@ -75,11 +75,11 @@ class TelemetryService {
   configureTimer() {
     clearInterval(this.timer); this.timer = null;
     if (this.timersEnabled && (enabled(this.state.consent) || this.state.deletions.length)) {
-      this.timer = setInterval(() => { if (enabled(this.state.consent)) void this.persist().catch(() => {}); void this.upload().catch(() => {}); }, 60000); this.timer.unref?.();
+      this.timer = setInterval(() => { if (enabled(this.state.consent) && this.unsaved) void this.persist().catch(() => {}); void this.upload().catch(() => {}); }, 60000); this.timer.unref?.();
     }
   }
   ensureIdentity() {
-    if (!this.state.token) this.state.token = crypto.randomBytes(32).toString('hex');
+    if (!this.state.token) { this.state.token = crypto.randomBytes(32).toString('hex'); this.unsaved = true; }
     this.id = crypto.createHash('sha256').update(this.state.token).digest('hex');
   }
   refreshStatus() { this.status = this.state.deletions.length ? 'Deletion pending; retrying when online' : !enabled(this.state.consent) ? 'Collection is off' : !this.siteUrl ? 'Local only · service not configured' : 'Batched · sends at most every 15 minutes'; }
@@ -132,7 +132,10 @@ class TelemetryService {
     if (epoch !== this.epoch || !enabled(this.state.consent) || !data) return false;
     const today = dayOf(this.now());
     if (!this.state.days[today] && Object.keys(data.counters || {}).every(key => key === 'idle_seconds') && !Object.keys(data.timings || {}).length && !Object.keys(data.gauges || {}).length && !Object.keys(data.milestones || {}).length && !data.errors?.length && !data.operationContexts?.length) return false;
+    const sequenceBefore = this.state.sequence, dayCount = Object.keys(this.state.days).length, acknowledged = this.state.acknowledged;
     const current = this.schema.validateSnapshot(this.today()); let changed = false;
+    // today() can create, restore, or prune days and reset the acknowledged baseline.
+    if (this.state.sequence !== sequenceBefore || Object.keys(this.state.days).length !== dayCount || this.state.acknowledged !== acknowledged) this.unsaved = true;
     const safe = this.schema.validateSnapshot({ ...current, counters: {}, timings: {}, gauges: {}, errors: [], milestones: {}, operationContexts: [], ...data,
       schemaVersion: this.schema.SCHEMA_VERSION, installationId: this.id, day: current.day, sequence: current.sequence, app: current.app, consent: this.state.consent, firstSuccess: {}, environment: this.schema.sanitizeEnvironment(environment) });
     const dropped = (key, n = 1) => { if (this.state.consent.diagnostics) { current.counters[key] = boundedAdd(current.counters[key], n); changed = true; } };
@@ -144,10 +147,10 @@ class TelemetryService {
     }
     for (const entry of safe.operationContexts) {
       if (!entry.timing.count) continue;
-      const key = this.schema.contextKey(entry), existing = current.operationContexts.find(value => this.schema.contextKey(value) === key);
-      if (existing) { if (mergeHistogram(existing.timing, entry.timing)) changed = true; else dropped('dropped_operation_contexts', entry.timing.count); }
-      else if (current.operationContexts.length < this.schema.MAX_OPERATION_CONTEXTS) { current.operationContexts.push(entry); changed = true; }
-      else dropped('dropped_operation_contexts', entry.timing.count);
+      const slot=this.schema.operationContextSlot(current.operationContexts,this.schema.operationContext(entry));
+      if(slot.dropped)dropped('dropped_operation_contexts',slot.dropped);
+      if(slot.row){if(mergeHistogram(slot.row.timing,entry.timing))changed=true;else dropped('dropped_operation_contexts',entry.timing.count);}
+      else dropped('dropped_operation_contexts',entry.timing.count);
     }
     for (const [key, n] of Object.entries(safe.gauges)) if (current.gauges[key] === undefined || n > current.gauges[key]) { current.gauges[key] = n; changed = true; }
     for (const [key, day] of Object.entries(safe.milestones)) if (!current.milestones[key]) {
@@ -166,23 +169,31 @@ class TelemetryService {
       let validated;
       try { validated = this.schema.validateSnapshot(current); }
       catch {
-        if (this.state.consent.diagnostics) { const previous = this.state.days[today]; previous.counters.dropped_samples = boundedAdd(previous.counters.dropped_samples, 1); previous.sequence = ++this.state.sequence; }
+        if (this.state.consent.diagnostics) { const previous = this.state.days[today]; previous.counters.dropped_samples = boundedAdd(previous.counters.dropped_samples, 1); previous.sequence = ++this.state.sequence; this.unsaved = true; }
         return false;
       }
       validated.sequence = ++this.state.sequence; this.state.days[today] = validated;
       this.state.milestones = { ...validated.milestones }; this.state.firstSuccess = { ...validated.firstSuccess };
+      this.unsaved = true;
     }
     return changed;
   }
   count(key, n = 1) { this.record({ epoch: this.epoch, data: { counters: { [key]: n } } }); }
   milestone(key) {
     if (!this.state.consent.analytics) return;
-    if (key === 'first_launch' && !this.state.milestones.first_launch && !this.state.acknowledged?.milestones?.first_launch) this.state.firstObservedAt = this.now();
+    if (key === 'first_launch' && !this.state.milestones.first_launch && !this.state.acknowledged?.milestones?.first_launch) { this.state.firstObservedAt = this.now(); this.unsaved = true; }
     this.record({ epoch: this.epoch, data: { milestones: { [key]: dayOf(this.now()) } } });
   }
   error(name, operation, counter, context = {}) { if (this.state.consent.diagnostics) { if (counter) this.count(counter); this.record({ epoch: this.epoch, data: { errors: [this.schema.sanitizeError({ name, code: context.code }, operation, this.now(), context)] } }); } }
   sampleMemory(megabytes) { if (this.state.consent.diagnostics) this.record({ epoch: this.epoch, data: { gauges: { process_memory_mb: megabytes } } }); }
-  persist() { return this.store.set(this.state); }
+  persist() {
+    // set() serializes synchronously, so the flag is cleared as soon as the
+    // snapshot is captured; a failed write re-arms it for the next interval.
+    const write = this.store.set(this.state);
+    this.unsaved = false;
+    write.catch(() => { this.unsaved = true; });
+    return write;
+  }
   preview() { return { policyVersion: this.schema.POLICY_VERSION, retentionDays: 30, consent: this.getState().consent, snapshots: Object.values(this.state.days) }; }
   async upload({ force = false } = {}) {
     if (this.inflight || !this.siteUrl || !force && this.now() < this.nextUpload) return false;

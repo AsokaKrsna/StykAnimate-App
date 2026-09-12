@@ -1,5 +1,13 @@
 # Layers and frames
 
+Both views include shared [audio tracks](AUDIO.md) with waveform clips, source
+trimming, split/copy/paste, volume, fades and mute/solo. Audio uses seconds and
+snaps to the current frame rate. Explicit Ripple follows whole-scene time
+insertion/removal; single-layer pose edits leave audio timing intact. Audio has
+its own resize handle and expanded mixing view, visible volume controls, and
+direct clip dragging between tracks (Shift preserves time). Dropping onto the
+new-track row creates a destination in the same undo step.
+
 The Advanced timeline is an exposure sheet. Each row is a persistent user layer; each cell is one output frame. A scene frame is the complete vertical column. The Simple filmstrip displays the combined scene at the union of layer key times. Switching views changes no animation data and creates no working-frame or property-channel overlay.
 
 Select a layer to keep its contents selected while scrubbing, including when its contents change or disappear. Add or paste figures into that layer. Multiple figures and movieclips can share a layer. Layer order controls stacking. Rename by double-clicking the name; drag names or use the arrows to reorder. Eye and lock controls affect visibility and editability. Deleting a layer removes its contents and is undoable.
@@ -14,11 +22,15 @@ Select a layer to keep its contents selected while scrubbing, including when its
 | Delete selected frames | Delete |
 | Copy / cut / paste layer frames | Ctrl+C / X / V |
 
-Click a cell to select it; Shift extends the selection. Double-click a held or empty cell to insert a key, or use the inline plus on the selected cell. Double-click a key to select its exposure. Drag a key directly to retime it; Alt copies. Drag the exposure's right edge to change its duration. Drag between rows to transfer a frame range. Pasting replaces the destination range; Simple Paste inserts a complete scene range. Same-layer frame copies retain figure identities. Cross-layer or cross-project copies allocate distinct instance identities once per copied range. External attachment parents are not accidentally copied as new figures.
+Click a cell to select it; Shift extends the selection. Double-click a held or empty cell to insert a key, or use the inline plus on the selected cell. Double-click a key to select its exposure. Drag from an unselected cell, including a key, to select a range. Drag an already selected range to retime it; Alt copies. Drag the exposure's right edge to change its duration. Drag between rows to transfer a frame range. Pasting replaces the destination range; Simple Paste inserts a complete scene range. Same-layer frame copies retain figure identities. Cross-layer or cross-project copies allocate distinct instance identities once per copied range. External attachment parents are not accidentally copied as new figures.
 
-A Hold span displays one pose. Editing a held cell edits its preceding key; use F6 first to make a new pose. Beyond a layer's end, F6 carries forward its last pose. Choose “Insert blank keyframe” in the frame menu to intentionally clear the layer. Add Frame inserts a key at the selected cell; when every selected layer already holds a key there, it instead duplicates the current pose into the following cell and shifts later keys. Blank cells draw as outlined spans with open-circle keys. Simple mode duplicates all scene layers, including Camera and Scene. Each duplication is one undo step. Choose Linear or an easing curve to interpolate between keys. An edit within a tween creates a key at the playhead. Camera and Scene tracks are always visible above the figure layers, each with its own color and icon. Frame menus contain frame operations; layer menus contain naming, visibility, locking and layer operations. Delete and Cut remove time rather than authoring blank cells.
+A Hold span displays one pose. Editing a held cell edits its preceding key; press A first to make a new pose. Choose “Insert blank keyframe” in the frame menu to intentionally clear the layer. Add Frame inserts a key at the selected cell; when every selected layer already holds a key there, it instead duplicates the current pose into the following cell and shifts later keys. A key placed beyond a layer's end carries its last exposure forward to reach it. Blank cells draw as outlined spans with open-circle keys. Simple mode duplicates all scene layers, including Camera and Scene. Each duplication is one undo step. Choose Linear or an easing curve to interpolate between keys. An edit within a tween creates a key at the playhead. Camera and Scene tracks are always visible above the figure layers, each with its own color and icon. Frame menus contain frame operations; layer menus contain naming, visibility, locking and layer operations. Delete and Cut remove time rather than authoring blank cells.
 
 Simple Add frame copies the current complete scene to the end. The green slider below each preview changes its inbetweens. The Inbetweens field applies to all selected scene frames, and Tweening (or a double-click on a preview) opens the easing controls, including editable Bezier curves. These edits change all layers together. Edits made in either view are visible immediately in the other.
+
+Apply camera to figures preserves the projected pose at the selected sheet keys.
+Those new poses participate in the layer's interpolation, so neighboring tweens
+can change. Native save and Pivot export reproduce the resulting sheet animation.
 
 ## Document and compatibility
 
@@ -31,6 +43,12 @@ The former property-row Advanced component, per-figure movieclip bars, old Simpl
 Every edit plans and validates its result before publication, then records one undoable change. Clipboard transfers and movieclip commands group their constituent changes. Rendering, playback, thumbnails, SVG/image/video export and Pivot materialization sample `evaluatedFrame`. Native STYK files retain editable layer data. Pivot export samples the resulting scene in the export worker because Pivot has one scene-wide frame sequence.
 
 The grid renders visible rows and columns only. Pose history stores affected sources and shares unchanged tracks. Imported source evaluation is shared between layers sampling the same time. The Fig 107 diagnostic (`scripts/verify-layer-import.mjs`, using the local decoded fixture) checks duplicate identities, geometry evaluation and exact undo on 194 imported native frames / 3,782 historical instance IDs.
+
+Filmstrip cards own their event listeners and preview markers. Eviction releases
+both, prunes queued work, and rejects late results for replaced cards. Hidden
+mounts defer preview work and reveal the selected frame at their first visible
+layout; subsequent renders preserve deliberate scrolling. The focused regression
+is `node tests/sheet-filmstrip.browser.mjs`.
 
 The timeline uses the studio's icons, fields, menus and color tokens. Figure and movieclip Properties include a Layer selector. Scrubbing coalesces pointer positions to one seek per display frame, paints the playhead separately, and retains the grid and layer DOM. Unchanged imported poses retain native object identities for geometry reuse. `scripts/benchmark-layer-scrub.mjs` measures imported and edited-layer seeking against the native evaluator.
 

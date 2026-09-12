@@ -11,6 +11,7 @@ import {validateMovieclipGraph, movieclipAsset,movieclipSourceDocument,normalize
 import {continuations} from './movieclip-presence.mjs';
 import {nativeTimeline,timeline} from './pivot/geometry.mjs';
 import {validateLayerSheet,legacySheetReport} from './layer-sheet.mjs';
+import {validateAudioState, validateAudioAssetSteps} from './audio-model.mjs';
 
 const own = (value,key) => Object.prototype.hasOwnProperty.call(value,key);
 export const yieldLoadTask = globalThis.scheduler?.yield
@@ -33,6 +34,7 @@ export function* prepareEditorLoadSteps(document, {sliceMs=4, movieclipVisited}=
   const empty=report && Array.isArray(report.keyframes) && report.keyframes.length===0;
   if (empty) report.keyframes=[createFrame([],1)];
   yield* validateSceneSteps(report,{sliceMs});
+  if(report._styk?.audio){for(const asset of Object.values(report._styk.audio.assets??{}))yield* validateAudioAssetSteps(asset);validateAudioState(report._styk.audio);}
   const movieclipSource=movieclipSourceDocument(report);
   if(movieclipSource&&!movieclipVisited.has(movieclipSource))yield* prepareEditorLoadSteps(movieclipSource,{sliceMs,movieclipVisited});
   for (const figure of report.figure_types) {

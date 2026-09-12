@@ -180,13 +180,17 @@ export function sampleMotionPath(report, editor, target, {ticks, keyTicks, tween
   return {target, points};
 }
 
-/** Revision-aware path store. One live session resamples only its edit window. */
+/** Revision-aware path store. One live session resamples only its edit window.
+ * Sampling is time-budgeted: each get() works until a shared deadline so a dense
+ * scene refines progressively over frames instead of blocking input for seconds.
+ * Entries carry `complete` — callers should schedule another frame while false. */
 export class MotionPathCache {
-  constructor({maxPaths = 32} = {}) {
-    this.maxPaths = maxPaths; this.paths = new Map(); this.tweenCache = new PlaybackTweenCache();
+  constructor({maxPaths = 32, budgetMs = 6} = {}) {
+    this.maxPaths = maxPaths; this.budgetMs = budgetMs;
+    this.paths = new Map(); this.tweenCache = new PlaybackTweenCache();
   }
   clear() { this.paths.clear(); }
-  get(editor, target, {session, range = 0} = {}) {
+  get(editor, target, {session, range = 0, deadline} = {}) {
     const key = motionPathTargetKey(target);
     if (!key) return null;
     let entry = this.paths.get(key);
@@ -196,23 +200,49 @@ export class MotionPathCache {
       entry.range !== range;
     if (stale) {
       const plan = motionPathTicks(editor, {range});
+      // Keep the previous trail while it resamples so edits morph it instead of
+      // clearing and re-growing it; a replaced document or a retimed scene must
+      // start empty because its ticks no longer mean the same thing.
+      const keep = entry?.base === editor.report && entry.totalTicks === editor.totalTicks ? entry.points : null;
+      // The playhead's surroundings matter most — sample nearest ticks first.
+      const todo = [...plan.ticks].sort((a, b) => Math.abs(a - editor.tick) - Math.abs(b - editor.tick));
       entry = {key, base: editor.report, revision: editor.revision, layerRevision: editor.layerRevision,
         totalTicks: editor.totalTicks, range, ticks: plan.ticks, keyTicks: keyTicksForTarget(editor, target) ?? plan.keyTicks,
-        points: new Map(), fresh: true, liveRange: null, tweenCache: this.tweenCache};
+        points: keep ?? new Map(), todo: new Set(todo), liveRange: entry?.liveRange ?? null,
+        tweenCache: this.tweenCache, complete: false};
       this.paths.delete(key); this.paths.set(key, entry);
       while (this.paths.size > this.maxPaths) this.paths.delete(this.paths.keys().next().value);
     }
-    const rows = timeline(report), authored = Boolean(report._styk?.layerSheet || animationChannels(report).length);
+    if (entry.rowsFor !== report) { entry.rows = timeline(report); entry.rowsFor = report; }
+    const rows = entry.rows, authored = Boolean(report._styk?.layerSheet || animationChannels(report).length);
     const liveRange = session?.range;
-    for (const tick of entry.ticks) {
-      const live = liveRange && tick >= liveRange[0] && tick < liveRange[1];
-      // A cancelled gesture leaves no revision bump; resample its window once.
-      const staleLive = !session && entry.liveRange && tick >= entry.liveRange[0] && tick < entry.liveRange[1];
-      if (entry.points.has(tick) && !entry.fresh && !live && !staleLive) continue;
+    const staleRange = !session && entry.liveRange ? entry.liveRange : null;
+    if (staleRange) {
+      // A committed or cancelled gesture leaves no trace in the revision key;
+      // resample the window it touched once, ahead of the general backlog.
+      for (const tick of entry.ticks) if (tick >= staleRange[0] && tick < staleRange[1]) entry.todo.add(tick);
+    }
+    const until = deadline ?? performance.now() + this.budgetMs;
+    let started = false;
+    const take = tick => {
+      // Always sample at least once per call so a zero budget still progresses.
+      if (started && performance.now() > until) return false;
+      started = true;
       const value = samplePathPoint(report, target, tick, {rows, tweenCache: entry.tweenCache, authored});
       entry.points.set(tick, {tick, x: value?.x, y: value?.y, key: entry.keyTicks?.has(tick) ?? false, missing: !value});
+      entry.todo.delete(tick);
+      return true;
+    };
+    if (liveRange || staleRange) {
+      const center = session ? session.tick : editor.tick, urgent = [];
+      for (const tick of entry.ticks)
+        if ((liveRange && tick >= liveRange[0] && tick < liveRange[1]) ||
+            (staleRange && tick >= staleRange[0] && tick < staleRange[1])) urgent.push(tick);
+      urgent.sort((a, b) => Math.abs(a - center) - Math.abs(b - center));
+      for (const tick of urgent) if (!take(tick)) break;
     }
-    entry.fresh = false;
+    for (const tick of entry.todo) if (!take(tick)) break;
+    entry.complete = !entry.todo.size;
     entry.liveRange = liveRange ?? null;
     entry.live = session ?? null;
     return entry;

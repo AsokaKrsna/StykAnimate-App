@@ -134,7 +134,8 @@ export function sampleLayerSheet(report,tick,{sampleLegacy,sampleNative,resolveG
   // Imported layers commonly share one native pose. Retain its objects and
   // geometry identities instead of cloning the entire scene on every seek.
   if(camera===scene&&scene.objects?.every(object=>frames.get(layerIdForUid(report,object.unique_id))===scene)&&
-    [...frames.values()].every(frame=>!frame||frame===scene||!frame.objects.length))return scene;
+    continuations(scene).every(step=>frames.get(layerIdForUid(report,step.uid))===scene)&&
+    [...frames.values()].every(frame=>!frame||frame===scene||!frame.objects.length&&!continuations(frame).length))return scene;
   for(const id of report._styk.layers.order){
     const frame=frames.get(id);if(!frame)continue;
     for(const object of ordered(frame))if(layerIdForUid(report,object.unique_id)===id)records.push({object,parent:object.join?frame.objects[object.join.target_object_slot]?.unique_id:null});

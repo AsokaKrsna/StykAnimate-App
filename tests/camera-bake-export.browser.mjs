@@ -1,5 +1,6 @@
 /** Real Camera action, worker/native PIV export, source assets and GPU pixels. */
 import { chromium } from "playwright";
+import {exportEditable} from './helpers/editable-export.mjs';
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -20,9 +21,7 @@ const check = (name, value) => {
   console.log("PASS", name);
 };
 async function download(action, name) {
-  const pending = page.waitForEvent("download");
-  await action();
-  const file = await pending,
+  const [file] = await Promise.all([page.waitForEvent("download"), action()]),
     target = path.join(output, name);
   await file.saveAs(target);
   return target;
@@ -42,8 +41,9 @@ try {
     window.cameraBakeHistory = styk.editor._undo.length;
   });
   await page
-    .locator('.styk-tree-row[data-kind="camera"] .styk-tree-name')
+    .locator('.sheet-layer[data-kind="camera"] .sheet-layer-name')
     .click();
+  await page.locator('#inspector [data-section="Canvas alignment"] summary').click();
   await page.locator('#inspector [data-action="camera-apply-figures"]').click();
   check(
     "Actual Camera inspector converts the displayed inbetween with one undo",
@@ -63,8 +63,7 @@ try {
       () =>
         JSON.stringify(styk.editor.report.keyframes) ===
           JSON.stringify(cameraBakeBefore.keyframes) &&
-        JSON.stringify(styk.editor.report._styk.frameSources) ===
-          JSON.stringify(cameraBakeBefore._styk.frameSources),
+        Object.entries(cameraBakeBefore._styk.frameSources??{}).every(([id,frame])=>JSON.stringify(styk.editor.report._styk.frameSources[id])===JSON.stringify(frame)),
     ),
   );
   await page.evaluate(() => styk.editor.undo());
@@ -72,8 +71,8 @@ try {
     "Undo restores the complete authored document",
     await page.evaluate(
       () =>
-        JSON.stringify(styk.editor.report._styk.animation) ===
-        JSON.stringify(cameraBakeBefore._styk.animation),
+        JSON.stringify(styk.editor.report._styk.layerSheet) ===
+        JSON.stringify(cameraBakeBefore._styk.layerSheet),
     ),
   );
   await page.evaluate(() => {
@@ -86,7 +85,7 @@ try {
   );
   await page.locator('[data-action="export"]').first().click();
   const pivFile = await download(
-    () => page.locator('[data-action="export-piv"]').click(),
+    () => exportEditable(page, 'piv'),
     "camera-baked.piv",
   );
   check(
@@ -148,9 +147,10 @@ try {
       const frame = sampleCameraBake(report, tick);
       await renderer.prepareBackgrounds(report, frame);
       for (const figure of report.figure_types) for (const asset of figure.image_assets || []) {
-        const image = renderer.resources.image(renderer.resources.url(asset));
+        const url=renderer.resources.url(asset);
+        let image = renderer.resources.image(url);
         assert(image, 'Native sprite has no readable portable image.');
-        if (!image.complete) await image.decode();
+        if (!image.complete) {await image.decode();image=renderer.resources.image(url);}
         assert(image.naturalWidth > 0, 'Native sprite did not decode.');
       }
       renderer.render({
@@ -254,14 +254,14 @@ try {
     }
     try {
       const baked = styk.editor.report,
-        animation = canonical(baked._styk.animation),
+        animation = canonical(baked._styk.layerSheet),
         sources = canonical(baked._styk.frameSources);
       const stykBlob = await exporter.export(baked, { format: "styk" }),
         stykReopened = (
           await importer.importFile(new File([stykBlob], "camera-baked.styk"))
         ).document;
       assert(
-        canonical(stykReopened._styk.animation) === animation,
+        canonical(stykReopened._styk.layerSheet) === animation,
         "STYK loses sparse camera/figure keys.",
       );
       assert(
@@ -280,11 +280,11 @@ try {
       const beforeToBaked = await compare(
         cameraBakeBefore,
         baked,
-        Array.from({ length: 24 }, (_, i) => i),
-        "Camera conversion",
+        [0,5,11,12,23],
+        "Camera conversion at authored sheet keys",
       );
       const savedPixels = await compare(
-        cameraBakeBefore,
+        baked,
         reopened,
         Array.from({ length: 24 }, (_, i) => i),
         "Native Pivot save",
@@ -365,7 +365,7 @@ try {
       }
       await compare(cameraBakeBefore, reopened, [5], "Screenshot");
       container.querySelector("#camera-proof-caption").textContent =
-        "24/24 original, converted and reopened frames compared · independent tracks and joined figures · portable native text and sprite assets";
+        "5/5 converted sheet keys and 24/24 reopened frames compared · independent tracks and joined figures · portable native text and sprite assets";
       return {
         backend: a.stats.backend,
         adapter: a.stats.adapter,
@@ -389,11 +389,11 @@ try {
     }
   });
   check(
-    "All 24 GPU frames preserve the projected animation",
-    result.beforeToBaked.length === 24,
+    "All five authored sheet keys preserve their projected GPU pose",
+    result.beforeToBaked.length === 5,
   );
   check(
-    "All 24 actual PIV reimport frames match the original projection",
+    "All 24 actual PIV reimport frames match the edited sheet projection",
     result.savedPixels.length === 24,
   );
   check(

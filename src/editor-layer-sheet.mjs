@@ -6,12 +6,12 @@ import {createFrame} from './demo.mjs';
 import {layerIdForUid,validateLayerState} from './layers.mjs';
 import {LAYER_MIGRATION_LIMITS,LAYER_MIGRATION_WORKER_LIMITS} from './editor-layer-migration.mjs';
 import {keyEasing, inheritedKeyEasing} from './keyframe-easing.mjs';
-import {animationChannelId,composeAnimationChannels,validateAnimationValue} from './animation-channels.mjs';
+import {animationChannelId,composeAnimationChannels,normalizeAnimationTarget,validateAnimationValue} from './animation-channels.mjs';
 import {buildGeometry} from './pivot/geometry.mjs';
 import {remapVfxOwner} from './vfx.mjs';
 import {remapIKFollowers} from './ik.mjs';
 import {frameOrder,setOrder,normalizeFrame} from './pivot/structure.mjs';
-import {movieclipTypes,validatePlayback} from './movieclips.mjs';
+import {movieclipTypes,validatePlayback,snapshotFigureDefinition} from './movieclips.mjs';
 import {usesPresence,continuations,setContinuations,presenceElapsed} from './movieclip-presence.mjs';
 
 const clone=value=>structuredClone(value);
@@ -81,12 +81,13 @@ function planner(editor,ids){
     return track;
   };
   const materialize=(id,key)=>{if(key.sourceTick===undefined)return;const old=before.tracks[id]?.keys.find(k=>k.id===key.id);key.value=capture(at(editor.report,old?.tick??key.tick),id);delete key.sourceTick;};
-  const write=(id,tick,frame,{blank=false,easing}={})=>{
+  const write=(id,tick,frame,{blank=false,easing,extend=false}={})=>{
     checkedTick(tick);const track=get(id),{key:previous,index}=sheetKeyAt(track,tick),existing=previous?.tick===tick?previous:undefined;
     const key=existing??{id:`cell-${state.nextId++}`,tick,...(easing?keyEasing(easing):inheritedKeyEasing(track.keys,tick))};
-    // Extending a short track must not revive its expired last exposure in the
-    // gap before the requested insertion. Absence is an explicit boundary.
-    if(!fixed(id)&&tick>track.end&&track.keys.length)track.keys.push({id:`cell-${state.nextId++}`,tick:track.end,interpolation:'constant',value:{frameId:null},empty:true});
+    // A layer's end is an explicit absence boundary: bounded writes pad the gap
+    // before the requested position, while placing a keyframe carries the last
+    // exposure forward to reach it.
+    if(!extend&&!fixed(id)&&tick>track.end&&track.keys.length)track.keys.push({id:`cell-${state.nextId++}`,tick:track.end,interpolation:'constant',value:{frameId:null},empty:true});
     for(const object of frame?.objects??[])if(!originalIds.has(object.unique_id)&&!Object.hasOwn(layers.assignments,object.unique_id))layers.assignments[object.unique_id]=insertionOwner(editor,object.unique_id,editor._newLayerHints);
     const owns=uid=>layerIdForUid({...editor.report,_styk:{...editor.report._styk,layers}},uid)===id;
     const empty=!fixed(id)&&!frame?.objects.some(o=>owns(o.unique_id))&&!continuations(frame).some(step=>owns(step.uid));
@@ -125,7 +126,7 @@ function publish(editor,plan,label,{selection=editor._selectionState(),assets,se
     frameSources:{...editor.report._styk.frameSources,...Object.fromEntries(plan.sources.map(s=>[s.id,s.after.value]))}}};
   validateLayerState(plan.layers);validateLayerSheet(report);
   if(assets)for(const [field,change] of Object.entries(assets)){
-    if(change.added)editor.report[field]=[...editor.report[field],...clone(change.added)];
+    if(change.added)editor.report[field]=[...editor.report[field],...(field==='figure_types'?change.added.map(snapshotFigureDefinition):clone(change.added))];
     else editor.report[field]=change.after;
   }
   editor.report._styk.layerSheet=plan.state;editor.report._styk.layers=plan.layers;
@@ -275,7 +276,7 @@ export function applyLayerSheetCommand(editor,command,direction){
   editor.report._styk.layerSheet=command[direction];editor.report._styk.layers=clone(command[`${direction}Layers`]);
   if(command.layerChanges?.length)editor._applyLayerChanges(command.layerChanges,direction);
   if(command.assets)for(const [field,change] of Object.entries(command.assets)){
-    if(change.added)editor.report[field].splice(change.index,direction==='before'?change.added.length:0,...(direction==='after'?clone(change.added):[]));
+    if(change.added)editor.report[field].splice(change.index,direction==='before'?change.added.length:0,...(direction==='after'?(field==='figure_types'?change.added.map(snapshotFigureDefinition):clone(change.added)):[]));
     else editor.report[field]=change[direction].slice();
   }
   editor._applyFrameSourceChanges(command,direction);editor._trackLayerCommand(command,direction);editor._layerChanged({reindex:true});editor._invalidate({timing:true,retainGeometry:command.retainGeometry});
@@ -426,7 +427,7 @@ export const editorLayerSheetMethods={
         plan.write(id,!clipPaste&&inside&&key&&['constant','hold'].includes(key.interpolation)?key.tick:entry.tick,entry.frame,{easing:key??{interpolation:'constant'}});
       }
     }
-    const assets=payload?.definitions.length?{figure_types:{index:this.report.figure_types.length,added:clone(payload.definitions)}}:undefined;
+    const assets=payload?.definitions.length?{figure_types:{index:this.report.figure_types.length,added:payload.definitions.map(snapshotFigureDefinition)}}:undefined;
     // Insertion leaves existing definitions and poses untouched. The retained
     // cache still compares each UID/pose/join before reusing its geometry.
     return publish(this,plan,label,{selection,assets,selectUids:payload?.order,nextUid:payload?.nextUid,retainGeometry:Boolean(payload?.objects)});
@@ -505,7 +506,7 @@ export const editorLayerSheetMethods={
     for(const id of ids){const track=plan.get(id),previous=sheetKeyAt(track,tick).key;
       const sourceTick=!blank&&tick>=track.end?Math.max(0,track.end-1):tick;
       const frame=shiftClipTime(clone(at(this.report,sourceTick)),tick-sourceTick);
-      plan.write(id,tick,frame,{blank,easing:previous??{interpolation:'constant'}});}
+      plan.write(id,tick,frame,{blank,easing:previous??{interpolation:'constant'},extend:true});}
     return publish(this,plan,blank?'Insert blank keyframe':'Insert keyframe');
   },
   /** Insert a new pose after the current cell, shifting later keys atomically. */
@@ -516,7 +517,7 @@ export const editorLayerSheetMethods={
       for(const key of track.keys)if(key.tick>=start)key.tick++;
       track.end=Math.max(start,track.end)+1;
       retimeClips(this,plan,id,time=>time>=start?time+1:time);
-      plan.write(id,start,frame,{easing:previous??{interpolation:'constant'}});
+      plan.write(id,start,frame,{easing:previous??{interpolation:'constant'},extend:true});
       plan.state.duration=Math.max(plan.state.duration,track.end);
     }
     const selection=this._selectionState();
@@ -541,6 +542,8 @@ export const editorLayerSheetMethods={
     return publish(this,plan,'Clear frames');
   },
   sheetInsertFrames(ids,start,count=1){
+    if(this.audioRipple&&!this._audioRippling&&['scene','camera',...this.report._styk.layers.order].every(id=>ids.includes(id)))
+      return this.movieclipBatch('Insert scene frames with audio',()=>{this._audioRippling=true;try{this.rippleAudio(start,0,count);return this.sheetInsertFrames(ids,start,count);}finally{this._audioRippling=false;}});
     checkedTick(start);if(!Number.isInteger(count)||count<1||start+count>=MAX_SHEET_TICKS)throw new Error('Choose a valid frame count.');
     const plan=planner(this,ids),frame=at(this.report,Math.max(0,start-1));
     for(const id of ids){const track=plan.get(id),had=track.keys.some(k=>k.tick===start);
@@ -559,6 +562,8 @@ export const editorLayerSheetMethods={
     return publish(this,plan,'Insert frames');
   },
   sheetRemoveFrames(ids,start,end=start){
+    if(this.audioRipple&&!this._audioRippling&&['scene','camera',...this.report._styk.layers.order].every(id=>ids.includes(id)))
+      return this.movieclipBatch('Remove scene frames with audio',()=>{this._audioRippling=true;try{this.rippleAudio(start,end-start+1,0);return this.sheetRemoveFrames(ids,start,end);}finally{this._audioRippling=false;}});
     const count=end-start+1;if(count<1)throw new Error('Select frames to remove.');
     const plan=planner(this,ids),frame=at(this.report,end+1);
     for(const id of ids){const track=plan.get(id),restore=track.keys.some(k=>k.tick>=start&&k.tick<=end);
@@ -678,9 +683,11 @@ export const editorLayerSheetMethods={
   _commitSheetPose(edit,drag){
     const before=edit.source,after=edit.frame,ids=new Set(),old=new Map(before.objects.map(o=>[o.unique_id,o])),current=new Map(after.objects.map(o=>[o.unique_id,o]));
     const owner=uid=>insertionOwner(this,uid,this._newLayerHints);
-    const previous=new Map(before.objects.map(object=>[object.unique_id,poseObjectSignature(object,before)]));
-    const next=new Map(after.objects.map(object=>[object.unique_id,poseObjectSignature(object,after)]));
-    const changedUids=[...new Set([...old.keys(),...current.keys()])].filter(uid=>previous.get(uid)!==next.get(uid));
+    const candidates=edit.transaction?[...new Set([...old.keys(),...current.keys()])]:drag.before.map(object=>object.unique_id);
+    const changedUids=candidates.filter(uid=>{
+      const a=old.get(uid),b=current.get(uid);
+      return a!==b&&(!a||!b||poseObjectSignature(a,before)!==poseObjectSignature(b,after));
+    });
     for(const uid of changedUids)ids.add(owner(uid));
     const beforeOrder=frameOrder(before),afterOrder=frameOrder(after);
     for(const id of new Set([...beforeOrder,...afterOrder].map(owner)))
@@ -708,22 +715,49 @@ export const editorLayerSheetMethods={
       if(key?.patchOnly){const end=sheetKeyAt(plan.get(id),edit.tick).next?.tick;if(end!==undefined)plan.write(id,end,at(this.report,end),{easing:sheetKeyAt(plan.get(id),end).key});}
       const membershipChanged=[...before.objects,...after.objects].some(object=>usesPresence(object)&&owner(object.unique_id)===id&&old.has(object.unique_id)!==current.has(object.unique_id));
       plan.write(id,hold&&!membershipChanged?key.tick:edit.tick,after,{easing:key??{interpolation:'constant'}});}
-    this._drag=null;this._authoredPoseEdit=null;this._authoredCommitPreview=null;
+    // Keep the exact gesture preview through publication. Membership and clock
+    // edits must be sampled again; ordinary transforms already have their final
+    // pose and incremental geometry, including attached descendants.
+    const retainPreview=!edit.transaction&&changedUids.every(uid=>old.has(uid)&&current.has(uid)&&
+      JSON.stringify(old.get(uid)._stykMovieclip)===JSON.stringify(current.get(uid)._stykMovieclip));
+    const preview=retainPreview?{frame:after,geometry:this._geometry,incremental:this._incremental}:null;
+    this._drag=null;this._authoredPoseEdit=null;
     const assets={};
     for(const [field,previous] of [['figure_types',edit.beforeFigures],['backgrounds',edit.beforeBackgrounds]])if(previous&&JSON.stringify(previous)!==JSON.stringify(this.report[field]))assets[field]={before:previous,after:this.report[field].slice()};
-    return publish(this,plan,drag.label,{selection:drag.beforeSelection,assets:Object.keys(assets).length?assets:undefined});
+    this._authoredCommitPreview=preview;
+    try{return publish(this,plan,drag.label,{selection:drag.beforeSelection,assets:Object.keys(assets).length?assets:undefined,retainGeometry:retainPreview});}
+    finally{this._authoredCommitPreview=null;}
   },
+  /** Explicit property/pose authoring. An edit inside a tween writes a boundary
+   * at the entry's tick; editing a held cell edits its preceding key. Canvas
+   * pose edits keep the same held-cell rule in the draft path. */
   _sheetPropertyEntries(entries,label='Edit layer pose'){
     const byTick=new Map();for(const entry of entries){const tick=checkedTick(entry.tick??this.tick),list=byTick.get(tick)??[];list.push(entry);byTick.set(tick,list);}
     const ids=[...new Set(entries.map(e=>fixed(e.target.kind)?e.target.kind:e.target.kind==='layer'?e.target.id:this.layerForUid(e.target.uid)))],plan=planner(this,ids),result=[];
-    for(const [tick,list] of byTick){let frame=at(this.report,tick);
-      const channels=list.map((e,i)=>({id:animationChannelId(e.target,e.property),target:e.target,property:e.property,keys:[{id:`preview-${i}`,tick,value:e.property==='pose'?e.value:validateAnimationValue(e.target,e.property,e.value),interpolation:'constant'}]}));
-      const source={...this.report,_styk:{...this.report._styk,animation:{channels}}};
-      frame=composePoseChannels(source,frame,tick,{sampleNative:evaluatedNativeFrame,resolveGeometry:buildGeometry});
-      frame=composeAnimationChannels(source,frame,tick,{resolveGeometry:buildGeometry});
+    for(const [tick,list] of byTick){
+      const channels=[];
+      for(const e of list){
+        // A pose entry without a value captures the pose already at the tick.
+        if(e.property==='pose'&&e.value===undefined)continue;
+        const target=e.exactTarget?normalizeAnimationTarget(e.target):this.resolveAnimationTarget(e.target,e.property,tick);
+        channels.push({id:animationChannelId(target,e.property),target,property:e.property,
+          keys:[{id:`preview-${channels.length}`,tick,value:e.property==='pose'?e.value:validateAnimationValue(target,e.property,e.value),interpolation:'constant'}]});
+      }
+      const source=channels.length?{...this.report,_styk:{...this.report._styk,animation:{channels}}}:null;
+      const composed=new Map(),frameAt=skipPatches=>{
+        if(!composed.has(skipPatches)){let frame=at(this.report,tick,skipPatches?{skipMovieclipPatches:true}:{});
+          if(source){frame=composePoseChannels(source,frame,tick,{sampleNative:evaluatedNativeFrame,resolveGeometry:buildGeometry});
+            frame=composeAnimationChannels(source,frame,tick,{resolveGeometry:buildGeometry});}
+          composed.set(skipPatches,frame);}
+        return composed.get(skipPatches);};
       for(const id of ids){const selected=list.filter(e=>(fixed(e.target.kind)?e.target.kind:e.target.kind==='layer'?e.target.id:this.layerForUid(e.target.uid))===id);if(!selected.length)continue;
-        const key=sheetKeyAt(plan.get(id),tick).key,targetTick=key&&['constant','hold'].includes(key.interpolation)?key.tick:tick;
-        result.push(plan.write(id,targetTick,frame,{easing:key??{interpolation:'constant'}}));}
+        const {key:owner}=sheetKeyAt(plan.get(id),tick),
+          target=owner?.tick===tick||['constant','hold'].includes(owner?.interpolation)?owner:null,
+          patches=target?.movieclipPatches,
+          easing=selected.findLast(e=>e.interpolation!==undefined)??target??owner??{interpolation:'constant'};
+        const written=plan.write(id,target?target.tick:tick,frameAt(Boolean(patches?.length)||Boolean(target?.patchOnly)),{easing});
+        if(patches?.length){written.movieclipPatches=patches;written.empty=target.empty;}
+        result.push(written);}
     }
     publish(this,plan,label);return result;
   },

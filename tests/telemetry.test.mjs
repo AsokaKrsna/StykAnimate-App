@@ -81,6 +81,26 @@ test('unchanged and idle-only reports do not use hosting requests; new activity 
   assert.equal(service.record({ epoch: service.epoch, data: { counters: { idle_seconds: 15 } } }), false);
   assert.equal(service.preview().snapshots.some(value => value.day === new Date(now).toISOString().slice(0, 10)), false);
 });
+test('local checkpoints persist only when telemetry state changed', async () => {
+  const { service } = await fixture();
+  assert.equal(service.unsaved, false);
+  await service.setConsent(consent);
+  assert.equal(service.unsaved, false, 'explicit consent persistence already covers the change');
+  service.count('open');
+  assert.equal(service.unsaved, true);
+  await service.persist();
+  assert.equal(service.unsaved, false);
+  assert.equal(service.record({ epoch: service.epoch + 1, data: { counters: { open: 1 } } }), false);
+  assert.equal(service.unsaved, false, 'a rejected delta leaves nothing to persist');
+  service.count('open');
+  const set = service.store.set.bind(service.store);
+  service.store.set = () => Promise.reject(new Error('disk full'));
+  await assert.rejects(service.persist());
+  assert.equal(service.unsaved, true, 'a failed checkpoint is retried on the next interval');
+  service.store.set = set;
+  await service.persist();
+  assert.equal(service.unsaved, false);
+});
 test('first-observed milestones survive longer than the offline queue', async () => {
   let now = Date.now(); const { service, directory } = await fixture({ now: () => now });
   await service.setConsent(consent); service.milestone('first_save');

@@ -10,6 +10,12 @@ StykAnimate separates the editable Pivot document, background work, and presenta
 
 `src/pivot/` holds the established evaluation, validation, background and geometry semantics. Incremental geometry carries changed object slots without retaining a chain of prior scenes. A live whole-figure drag retains its geometry and changes only per-object GPU translations; the model commits the final coordinates once. Joint/rig edits update affected objects and joined descendants.
 
+Figure insertion, clipboard paste and decoded library drops share the range command planner. Validation and identity allocation finish before publication; undo retains inserted definitions and affected poses rather than the destination library. Published movieclip documents are immutable: clipboard/history copy the figure shell and retain that captured animation. Entering a clip clones its document; committing nested edits publishes a replacement. Imported external documents receive their own copy. Canvas pose commits retain the exact gesture preview when membership and playback settings are unchanged.
+
+Movieclip presence clocks on ordinary layer sheets use a temporary projection containing only instance identities, playback descriptors and continuation records. The existing sheet sampler handles blank spans, remapped native time and frame replacements; the clock never interpolates unrelated joints or builds artwork. The derived index is reused across seeks and invalidated with document edits. Legacy authored channels and inherited movieclip sources retain the general evaluator. `tests/movieclip-membership.test.mjs` compares projected membership with that evaluator and traps reads of unrelated pose arrays.
+
+See [copy/paste and insertion verification](INSERTION-PERFORMANCE.md) for measurements on the dense Akane scene and the remaining verification limits.
+
 ## Import and native codec
 
 Electron reads selected source files through its isolated bridge. A persistent loopback codec process uses the supplied PIV/STK readers and writers. The app-specific modern reader bulk-unpacks numeric arrays and omits obsolete scalar-edit binding allocations. Optional `orjson` accelerates large response encoding; the standard-library path remains available. This does not replace the binary grammar.
@@ -31,6 +37,12 @@ An oversized prepared packet is retried with lower raster detail. The editable r
 The virtualized timeline draws visible exposures and labels, with a separate playhead. Scrubbing requests worker-prepared frames; frame-local changes can update the worker mirror without retransmitting every keyframe. The editor schedules rendering when state changes or playback runs, with no permanent idle rendering loop. See [renderer details and benchmarks](renderer.md).
 
 ## Saving, recovery and exports
+
+Audio has its own immutable document state, editor commands and bounded mixer
+worker. Both timeline views share its clip UI; Web Audio schedules preview and
+the existing FFmpeg service muxes an offline mix into video. Prepared scene
+snapshots omit recordings. Native project saving retains original audio bytes.
+See [Audio architecture and verification](AUDIO.md) for timing, codecs and limits.
 
 `DocumentExporter` receives the live report directly. Calling `editor.serialize()`, `structuredClone(report)`, or `JSON.stringify(report)` first would reintroduce a full UI pause. Bounded snapshots reach a dedicated worker, which normalizes the document, validates it, serializes it, and requests native output. Only derived keyframe-object `runtime_segments` caches are omitted. A revision change or active edit aborts the snapshot; recovery is rescheduled after the next idle period. Native STYK stores original source bytes and digest metadata so unchanged source export remains possible after a backend restart.
 

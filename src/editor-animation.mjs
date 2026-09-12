@@ -74,6 +74,9 @@ export function draftAnimation(editor) {
 }
 export function recordAnimation(editor, label, draft, selection = editor._selectionState()) {
   if (!draft.changed) return false;
+  // The exposure sheet is the only animation store on layer documents. A
+  // channel write here would create invisible legacy state instead of cells.
+  if (editor.report._styk?.layerSheet) throw new Error('Layer timeline documents do not store property channels.');
   draft.finalize?.();
   if (draft.sources && Object.keys(draft.sources).length) {
     editor.report._styk ??= {}; editor.report._styk.frameSources ??= {};
@@ -454,7 +457,7 @@ export const editorAnimationMethods = {
   },
   commitAnimationEdit() {
     if(this._animationEdit?.sheet){const edit=this._animationEdit;this._animationEdit=null;this._sheetPropertyPreview=null;this._invalidate();
-      if(!edit.changed)return false;this._sheetPropertyEntries([{target:edit.target,property:edit.property,tick:edit.tick,value:edit.value}],`Edit ${edit.property}`);return true;}
+      if(!edit.changed)return false;this._sheetPropertyEntries([{target:edit.target,property:edit.property,tick:edit.tick,value:edit.value,exactTarget:edit.exactTarget}],`Edit ${edit.property}`);return true;}
     if(this._animationEdit?.branchStyle)return commitBranchStyleAnimation(this);
     const edit = this._animationEdit; if (!edit) return false;
     this._animationEdit = null;

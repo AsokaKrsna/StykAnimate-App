@@ -54,8 +54,9 @@ selects boxes by weighted RGB variance, splits the widest channel and uses
 integer weighted means. Nearest-color lookup uses an exact RGB search tree and
 a cache capped at 65,536 entries. Sierra Lite needs only two RGB rows. Temporal
 mapping retains one previous RGBA frame and one index buffer; one transferred
-bitmap is in flight. Encoded output remains bounded at 512 MiB. Existing limits
-of 16 million pixels per frame, 16,384 pixels per side and 1–50 fps for animated
+bitmap is in flight. Encoded output remains bounded at 512 MiB in memory, or
+16 GiB when a streamed file destination is available. Existing limits
+of 67 million pixels per frame (16.7 million in Safari), 16,384 pixels per side and 1–50 fps for animated
 GIF apply. Two render passes trade additional worker work for bounded memory;
 these tests do not establish large-animation export throughput.
 

@@ -1,26 +1,50 @@
 import {activeVfx,vfxStack} from './vfx.mjs';
 import {vfxGPUStats} from './vfx-gpu.mjs';
-import {releaseVfxSurface} from './vfx-canvas.mjs';
 import {CameraVfx} from './vfx-camera.mjs';
 import {CameraGpuSource} from './vfx-camera-gpu.mjs';
+import {vfxWebGPUFor} from './vfx-webgpu.mjs';
 const shader=`@group(0) @binding(0) var source:texture_2d<f32>;
-@vertex fn vertex(@builtin(vertex_index) i:u32)->@builtin(position) vec4f {let p=vec2f(f32((i<<1u)&2u),f32(i&2u));return vec4f(p*2.-1.,0.,1.);}
-@fragment fn fragment(@builtin(position) p:vec4f)->@location(0) vec4f {return textureLoad(source,vec2i(p.xy),0);}`;
+@group(0) @binding(1) var sourceSampler:sampler;
+struct VOut{ @builtin(position) position:vec4f, @location(0) uv:vec2f };
+@vertex fn vertex(@builtin(vertex_index) i:u32)->VOut {let p=vec2f(f32((i<<1u)&2u),f32(i&2u));return VOut(vec4f(p*2.-1.,0.,1.),vec2f(p.x,1.-p.y));}
+@fragment fn fragment(@location(0) uv:vec2f)->@location(0) vec4f {return textureSampleLevel(source,sourceSampler,uv,0.);}`;
+// Project the filtered camera surface over the artboard rect: v covers
+// [0,1]^2 across the report canvas, affine maps it into viewport pixels, and
+// uv.xy/zw select the filtered texture's unpadded centre.
+const quadShader=`struct Quad{affine:vec4f,extra:vec4f,uv:vec4f};
+@group(0) @binding(0) var<uniform> quad:Quad;
+@group(0) @binding(1) var tex:texture_2d<f32>;
+@group(0) @binding(2) var smp:sampler;
+struct QOut{@builtin(position) position:vec4f,@location(0) uv:vec2f};
+@vertex fn vertex(@builtin(vertex_index) i:u32)->QOut{
+ var v=array<vec2f,6>(vec2f(0.,0.),vec2f(1.,0.),vec2f(0.,1.),vec2f(0.,1.),vec2f(1.,0.),vec2f(1.,1.));
+ let t=v[i];let px=vec2f(quad.affine.x*t.x+quad.affine.z*t.y+quad.extra.x,quad.affine.y*t.x+quad.affine.w*t.y+quad.extra.y);
+ return QOut(vec4f(px.x/quad.extra.z*2.-1.,1.-px.y/quad.extra.w*2.,0.,1.),quad.uv.xy+t*quad.uv.zw);
+}
+@fragment fn fragment(@location(0) uv:vec2f)->@location(0) vec4f{return textureSampleLevel(tex,smp,uv,0.);}`;
 export const hasSceneVfx=frame=>Boolean(activeVfx(vfxStack(frame)).length);
-/** Bridge the completed GPU artwork through the same filter executor used by
- * workers/export, then draw editing handles after processing. No pixel readback. */
+/** Filter the completed GPU artwork on-device and project the camera image
+ * back into the viewport, then draw editing handles after processing. No pixel
+ * readback. */
 export class ViewportVfx{
- constructor(renderer){this.renderer=renderer;this.canvas=new OffscreenCanvas(1,1);this.context=this.canvas.getContext('2d');const d=renderer.device,module=d.createShaderModule({code:shader,label:'VFX final composition'});this.pipeline=d.createRenderPipeline({layout:'auto',vertex:{module,entryPoint:'vertex'},fragment:{module,entryPoint:'fragment',targets:[{format:renderer.format}]},multisample:{count:4}});}
- render(options){const r=this.renderer,w=r.canvas.width,h=r.canvas.height;if(this.canvas.width!==w)this.canvas.width=w;if(this.canvas.height!==h)this.canvas.height=h;
-  const c=this.context;c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,w,h);c.drawImage(r.canvas,0,0);
+ constructor(renderer){this.renderer=renderer;const d=renderer.device,module=d.createShaderModule({code:shader,label:'VFX final composition'}),quadModule=d.createShaderModule({code:quadShader,label:'VFX camera projection'});this.pipeline=d.createRenderPipeline({layout:'auto',vertex:{module,entryPoint:'vertex'},fragment:{module,entryPoint:'fragment',targets:[{format:renderer.format}]},multisample:{count:renderer.msaaCount}});this.quadPipeline=d.createRenderPipeline({layout:'auto',vertex:{module:quadModule,entryPoint:'vertex'},fragment:{module:quadModule,entryPoint:'fragment',targets:[{format:renderer.format,blend:{color:{srcFactor:'one',dstFactor:'one-minus-src-alpha',operation:'add'},alpha:{srcFactor:'one',dstFactor:'one-minus-src-alpha',operation:'add'}}}]},multisample:{count:renderer.msaaCount}});this.quadUniform=d.createBuffer({size:48,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});this.quadFloats=new Float32Array(12);}
+ render(options){const r=this.renderer,d=r.device,w=r.canvas.width,h=r.canvas.height;
   if(!this.camera){this.cameraSource=new CameraGpuSource(r);this.camera=new CameraVfx({paint:(...args)=>this.cameraSource.paint(...args)});}
-  this.camera.render(c,{...options,resourceRevision:r.generation},r.dpr,r.resources);
-  if(this.width!==w||this.height!==h){this.texture?.destroy();this.width=w;this.height=h;this.texture=r.device.createTexture({label:'VFX processed viewport',size:[w,h],format:'rgba8unorm',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});this.bindGroup=r.device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:this.texture.createView()}]});}
-  r.device.queue.copyExternalImageToTexture({source:this.canvas},{texture:this.texture,premultipliedAlpha:true},[w,h]);
-  const encoder=r.device.createCommandEncoder(),pass=encoder.beginRenderPass({colorAttachments:[{view:r.msaa.createView(),resolveTarget:r.context.getCurrentTexture().createView(),clearValue:{r:0,g:0,b:0,a:0},loadOp:'clear',storeOp:'discard'}]});pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.bindGroup);pass.draw(3);
+  const camera=this.camera.renderTexture({...options,resourceRevision:r.generation},r.dpr,r.resources,vfxWebGPUFor(d));
+  if(this.width!==w||this.height!==h||this.format!==r.format){this.texture?.destroy();this.width=w;this.height=h;this.format=r.format;this.texture=d.createTexture({label:'VFX processed viewport',size:[w,h],format:r.format,usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});this.bindGroup=d.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:this.texture.createView()},{binding:1,resource:r.sampler}]});}
+  const encoder=d.createCommandEncoder();
+  // Snapshot the rendered frame so the composite can keep the workspace around
+  // the artboard, then rebuild the canvas from the two textures.
+  encoder.copyTextureToTexture({texture:r.context.getCurrentTexture()},{texture:this.texture},[w,h]);
+  const pass=encoder.beginRenderPass({colorAttachments:[r.colorAttachment(r.context.getCurrentTexture().createView())]});
+  pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.bindGroup);pass.draw(3);
+  if(camera){const cw=camera.report.canvas_width,ch=camera.report.canvas_height,[a,b,c,d2,e,f]=camera.affine,tw=camera.texture.width??camera.surface.width,th=camera.texture.height??camera.surface.height;
+   this.quadFloats.set([a*cw,b*cw,c*ch,d2*ch,e,f,w,h,camera.pad/tw,camera.pad/th,camera.surface.width/tw,camera.surface.height/th]);
+   d.queue.writeBuffer(this.quadUniform,0,this.quadFloats);
+   pass.setPipeline(this.quadPipeline);pass.setBindGroup(0,d.createBindGroup({layout:this.quadPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.quadUniform}},{binding:1,resource:camera.texture.createView()},{binding:2,resource:r.sampler}]}));pass.draw(6);}
   if(!options.preparedFrame){pass.setPipeline(r.pipeline);pass.setBindGroup(0,r.globalBindGroup);for(const entry of r.layout){if(!entry.isOnion)continue;pass.setBindGroup(1,entry.texture?.bindGroup||r.blankBindGroup);pass.draw(6,entry.count,0,entry.offset);}}
-  if(options.canvasHandles)r.handleRenderer.draw(pass);pass.end();r.device.queue.submit([encoder.finish()]);
+  if(options.canvasHandles)r.handleRenderer.draw(pass);pass.end();d.queue.submit([encoder.finish()]);
   r.stats.vfx={...vfxGPUStats(),viewportBytes:w*h*8,cameraBytes:this.camera?this.camera.canvas.width*this.camera.canvas.height*24:0};
  }
- destroy(){this.texture?.destroy();this.camera?.destroy();this.cameraSource?.destroy();releaseVfxSurface(this.context);this.canvas.width=this.canvas.height=1;}
+ destroy(){this.texture?.destroy();this.quadUniform?.destroy();this.camera?.destroy();this.cameraSource?.destroy();}
 }

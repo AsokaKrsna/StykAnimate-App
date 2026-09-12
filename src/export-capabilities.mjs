@@ -1,5 +1,6 @@
 /** Export choices describe actual encoders; container extensions are never aliases. */
 import {videoQualityOptions} from './export-video-quality.mjs';
+import {EXPORT_MAX_PIXELS} from './export-sampling.mjs';
 const descriptions = [
   {id: 'webm', label: 'WebM video', extension: 'webm', mimeType: 'video/webm', kind: 'video', quality: 'bitrate'},
   {id: 'mp4', label: 'MP4 video', extension: 'mp4', mimeType: 'video/mp4', kind: 'video', quality: 'video'},
@@ -48,10 +49,10 @@ export async function getExportCapabilities({width = 640, height = 480, fps = 24
         defaultCodec: capability.defaultCodec, codecs: capability.codecs?.map(codec => ({...codec}))}
         : {supported: false, reason: native.reason || 'This native video encoder is unavailable.'};
       if (availability.supported && !raster) availability = {...availability, supported: false, reason: 'Native video export requires worker canvas support.'};
-      if (availability.supported && width * height > 16777216) availability = {...availability, supported: false, reason: 'Native video is limited to 16 million pixels per frame.'};
+      if (availability.supported && width * height > EXPORT_MAX_PIXELS) availability = {...availability, supported: false, reason: `Native video is limited to ${Math.round(EXPORT_MAX_PIXELS / 1e6)} million pixels per frame.`};
     } else if (description.id === 'svg-sequence') availability = {supported: worker, reason: worker ? undefined : 'SVG sequence export requires worker support.'};
     else if (!raster) availability = {supported: false, reason: 'Image export requires a browser with worker canvas encoding.'};
-    else if (width * height > 16777216) availability = {supported: false, reason: 'Raster image sequences are limited to 16 million pixels per frame.'};
+    else if (width * height > EXPORT_MAX_PIXELS) availability = {supported: false, reason: `Raster image exports are limited to ${Math.round(EXPORT_MAX_PIXELS / 1e6)} million pixels per frame.`};
     else if (description.id === 'gif' && fps > 50) availability = {supported: false, reason: 'Animated GIF supports 1–50 fps. Choose APNG or video for this frame rate.'};
     else availability = {supported: true, provider: 'Portable worker'};
     return {...description, ...availability};

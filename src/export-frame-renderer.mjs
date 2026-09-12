@@ -60,16 +60,17 @@ export class ExportFrameRenderer {
       clearTimeout(pending.timer);
       if (data.ok) pending.resolve(data);
       else {
-        const error = Object.assign(new Error(data.error || "Export rendering failed."), {code: data.code});
+        const error = Object.assign(new Error(data.error || "Export rendering failed."), {code: data.code,
+          name:data.name||'Error',telemetryCode:data.telemetryCode,telemetryStage:data.telemetryStage,telemetryFrames:data.telemetryFrames});
         data.bitmap?.close(); this._fail(error); pending.reject(error);
       }
     });
     this.worker.addEventListener("error", (event) => {
       event.preventDefault();
-      this._fail(new Error(event.message || "The export renderer stopped."));
+      this._fail(Object.assign(new Error(event.message || "The export renderer stopped."),{telemetryCode:'worker_failed',telemetryStage:'encode'}));
     });
     this.worker.addEventListener("messageerror", () =>
-      this._fail(new Error("An export frame could not be transferred.")),
+      this._fail(Object.assign(new Error("An export frame could not be transferred."),{telemetryCode:'snapshot_failed',telemetryStage:'prepare'})),
     );
     this.abort = () => this._fail(abortError());
     signal?.addEventListener("abort", this.abort, { once: true });
@@ -102,7 +103,7 @@ export class ExportFrameRenderer {
         timer =
           this.timeoutMs > 0
             ? setTimeout(
-                () => this._fail(new Error("Export rendering timed out.")),
+                () => this._fail(Object.assign(new Error("Export rendering timed out."),{telemetryCode:'timeout',telemetryStage:operation==='render'?'encode':'prepare'})),
                 this.timeoutMs,
               )
             : null;
@@ -157,6 +158,7 @@ export class ExportFrameRenderer {
         },
       });
       const { _stykSource, ...renderReport } = report;
+      if(renderReport._styk?.audio){const {audio,...metadata}=renderReport._styk;renderReport._styk=metadata;}
       await this._chunks(renderReport, "chunk");
       await this._request("loaded");
       this.loaded = true;

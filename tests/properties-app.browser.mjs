@@ -18,7 +18,7 @@ const state = () =>
     undo: styk.editor._undo.length,
     active: styk.properties.active,
     context: styk.state.inspectorContext,
-    camera: styk.editor.frame.camera,
+    camera: styk.editor.evaluatedFrame?.camera,
   }));
 const field = (key) => page.locator(`#inspector [data-property="${key}"]`);
 async function drag(key, dx, escape = false) {
@@ -62,27 +62,29 @@ try {
     "Actual app typing preserves exact native value",
     after.x === 350.123456 && after.undo === before.undo + 1,
   );
-  await page.locator('#inspector [data-property-key="root_x"]').click();
   check(
-    "Diamond explicitly creates an X channel",
-    await page.evaluate(() =>
-      Boolean(
-        styk.editor.animationChannel(
-          { kind: "figure", uid: styk.editor.selectedUid },
-          "x",
-        ),
-      ),
-    ),
+    "Typed property edits write a layer-sheet key, not a channel",
+    await page.evaluate(() => {
+      const e = styk.editor,
+        keys =
+          e.report._styk.layerSheet.tracks[e.layerForUid(e.selectedUid)].keys;
+      return (
+        e.animationChannels.length === 0 &&
+        keys.some((key) => key.sourceTick === undefined && key.value?.frameId)
+      );
+    }),
   );
   before = await state();
   await drag("root_x", 10);
   after = await state();
   check(
-    "Scrubbing a keyed property edits its channel in one undo",
-    after.undo === before.undo + 1 && after.channels === before.channels,
+    "Scrubbing a keyed property edits its sheet pose in one undo",
+    after.undo === before.undo + 1 &&
+      Math.abs(after.x - before.x - 10) < 0.001 &&
+      after.channels === 0,
   );
   await page
-    .locator('.styk-tree-row[data-kind="camera"] .styk-tree-name')
+    .locator('.sheet-layer[data-kind="camera"] .sheet-layer-name')
     .click();
   await field("camera_x").waitFor();
   check(
@@ -102,7 +104,7 @@ try {
       (await page.evaluate(() => styk.editor._undo.at(-1).bytes < 3500)),
   );
   await page
-    .locator('.styk-tree-row[data-kind="scene"] .styk-tree-name')
+    .locator('.sheet-layer[data-kind="scene"] .sheet-layer-name')
     .click();
   await field("canvas_width").waitFor();
   check(
@@ -121,7 +123,7 @@ try {
       (await page.evaluate(() => styk.editor.report.canvas_width === 970)),
   );
   await page
-    .locator('.styk-tree-row[data-kind="layer"] .styk-tree-name')
+    .locator('.sheet-layer[data-kind="layer"] .sheet-layer-name')
     .first()
     .click();
   await page.locator("#inspector-layer-name").waitFor();
@@ -142,19 +144,14 @@ try {
   );
   await page.setViewportSize({ width: 900, height: 760 });
   await page
-    .locator('.styk-tree-row[data-kind="camera"] .styk-tree-name')
+    .locator('.sheet-layer[data-kind="camera"] .sheet-layer-name')
     .click();
   await field("camera_x").waitFor();
   check(
-    "900px app keeps property navigation on one line",
-    await page
-      .locator("#inspector .property-key-controls")
-      .evaluateAll((rows) =>
-        rows.every((row) => {
-          const b = [...row.children].map((e) => e.getBoundingClientRect());
-          return b.every((r) => Math.abs(r.top - b[0].top) < 1);
-        }),
-      ),
+    "900px app camera properties render no key controls",
+    (await page
+      .locator("#inspector [data-property-key], #inspector [data-property-nav]")
+      .count()) === 0,
   );
   check(
     "900px app inspector has no horizontal clipping",

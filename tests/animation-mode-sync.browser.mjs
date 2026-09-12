@@ -24,52 +24,49 @@ try {
     styk.fit();
   });
   await mode('simple');
-  check('Settings mounts Simple using the current Advanced pose',await page.evaluate(()=>styk.editor.evaluatedFrame.objects[0].root_x===300&&Boolean(document.querySelector('.styk-simple-timeline'))));
+  check('Settings mounts Simple using the current Advanced pose',await page.evaluate(()=>styk.editor.evaluatedFrame.objects[0].root_x===300&&Boolean(document.querySelector('.sheet-filmstrip'))));
   await page.evaluate(async()=>{
     const {beginNativePropertyEdit,previewNativePropertyEdit,commitNativePropertyEdit}=await import('/src/native-property-edit.mjs');
     const token=beginNativePropertyEdit(styk.editor,'root_x');previewNativePropertyEdit(token,420);commitNativePropertyEdit(token);
   });
-  check('Simple marks a pose edit on an Advanced track as a working change',await page.evaluate(()=>styk.editor.frameDraft.dirty&&styk.editor.evaluatedFrame.objects[0].root_x===420));
-  await page.locator('.styk-simple-update').click();
+  check('Simple writes the pose edit straight into the layer sheet',await page.evaluate(()=>!styk.editor.frameDraft&&styk.editor.evaluatedFrame.objects[0].root_x===420&&styk.editor.animationChannels.length===0));
+  await page.locator('.sheet-add-frame').click();
   await mode('advanced');
-  check('Update carries the Simple pose into Advanced',await page.evaluate(()=>styk.editor.evaluatedFrame.objects[0].root_x===420&&!styk.editor.frameDraft));
+  check('The filmstrip edit and added key remain in Advanced',await page.evaluate(()=>styk.editor.evaluatedFrame.objects[0].root_x===420&&!styk.editor.frameDraft));
   await page.evaluate(()=>styk.editor.undo());
-  check('Advanced undo restores the pose from before the Simple edit',await page.evaluate(()=>styk.editor.evaluatedFrame.objects[0].root_x===300));
+  check('Advanced undo removes the added key',await page.evaluate(()=>styk.editor.evaluatedFrame.objects[0].root_x===420));
   await page.evaluate(()=>styk.editor.redo());
   await mode('simple');
   await page.evaluate(async()=>{
-    styk.editor.beginFrameDraft({mode:'add'});
     const {beginNativePropertyEdit,previewNativePropertyEdit,commitNativePropertyEdit}=await import('/src/native-property-edit.mjs');
     const token=beginNativePropertyEdit(styk.editor,'root_x');previewNativePropertyEdit(token,500);commitNativePropertyEdit(token);
   });
   await mkdir('artifacts/animation-mode-sync',{recursive:true});
-  await page.waitForFunction(()=>document.querySelectorAll('.styk-simple-preview canvas').length===3);
+  await page.waitForFunction(()=>document.querySelectorAll('.sheet-preview canvas').length>=3);
   await page.screenshot({path:'artifacts/animation-mode-sync/simple.png'});
   await mode('advanced');
-  check('Switching from a dirty Add stores a distinct frame and retains its source',await page.evaluate(async()=>{
-    const e=styk.editor,{evaluatedFrame,timeline}=await import('/src/pivot/geometry.mjs');
-    return e.report.keyframes.length===4&&e.evaluatedFrame.objects[0].root_x===500&&evaluatedFrame(e.report,2,0,timeline(e.report)[2].start).objects[0].root_x===420;
+  check('Switching back to Advanced preserves the authored pose and sheet',await page.evaluate(async()=>{
+    const e=styk.editor;
+    return Boolean(e.report._styk.layerSheet)&&e.evaluatedFrame.objects[0].root_x===500;
   }));
   await page.evaluate(()=>styk.editor.seek(styk.editor.totalTicks-1));
-  check('The final playback tick holds the added pose',await page.evaluate(()=>styk.editor.evaluatedFrame.objects[0].root_x===500));
+  check('The final playback tick holds the authored pose',await page.evaluate(()=>styk.editor.evaluatedFrame.objects[0].root_x===500));
+  const sheetBefore=await page.evaluate(()=>JSON.stringify(styk.editor.report._styk.layerSheet));
   for(let i=0;i<3;i++){await mode('simple');await mode('advanced');}
-  check('Repeated mode switches retain frame count, clear obsolete ranges, and mount one timeline',await page.evaluate(()=>styk.editor.report.keyframes.length===4&&styk.state.rangeIndices.length===0&&styk.state.loopRange===null&&!document.querySelector('.styk-simple-timeline')));
+  check('Repeated mode switches retain the sheet, clear obsolete ranges, and mount one timeline',await page.evaluate(before=>JSON.stringify(styk.editor.report._styk.layerSheet)===before&&styk.state.rangeIndices.length===0&&styk.state.loopRange===null&&!document.querySelector('.sheet-filmstrip'),sheetBefore));
   await page.screenshot({path:'artifacts/animation-mode-sync/advanced.png'});
   await mode('simple');
-  await page.evaluate(async()=>{
-    const e=styk.editor;e.report.auto_easing=true;e.setFramesDuration([1],20000);e.selectFrame(e.report.keyframes.length-1);e.select(1);
-    e.beginFrameDraft({mode:'add'});
-    const {beginNativePropertyEdit,previewNativePropertyEdit,commitNativePropertyEdit}=await import('/src/native-property-edit.mjs');
-    const token=beginNativePropertyEdit(e,'root_x');previewNativePropertyEdit(token,550);commitNativePropertyEdit(token);
-    window.modeBefore={timeline:styk.timeline,identity:e._nextFrameIdentity,count:e.report.keyframes.length};
+  await page.evaluate(()=>{
+    styk.editor.select(styk.editor.evaluatedFrame.objects[0].unique_id);
+    window.modeBefore={timeline:styk.timeline,revision:styk.editor.revision};
     styk.settingsUI.open('interface');
   });
   await page.locator('[data-setting="timelineMode"][value="advanced"]').click();
-  await page.waitForSelector('.styk-settings-error');
-  check('A rejected switch keeps the previous timeline, preferences, and working pose',await page.evaluate(()=>{
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(()=>styk.state.settings.timelineMode==='advanced');
+  check('A mode switch replaces the timeline and keeps the document revision',await page.evaluate(()=>{
     const e=styk.editor;
-    return styk.state.settings.timelineMode==='simple'&&styk.settingsUI.value.timelineMode==='simple'&&styk.timeline===modeBefore.timeline&&
-      !styk.timeline.disposed&&e.report.keyframes.length===modeBefore.count&&e._nextFrameIdentity===modeBefore.identity&&e.frameDraft.dirty;
+    return styk.state.settings.timelineMode==='advanced'&&styk.timeline!==modeBefore.timeline&&e.revision===modeBefore.revision;
   }));
   assert.deepEqual(errors,[]);
   await writeFile('artifacts/animation-mode-sync/report.json',JSON.stringify({checks,errors},null,2));

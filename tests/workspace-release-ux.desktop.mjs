@@ -79,6 +79,21 @@ try {
   page.setDefaultTimeout(10000);
   page.on("pageerror", (error) => errors.push(error.message));
   await page.waitForFunction(() => window.styk?.ready);
+  await page.evaluate(() => {
+    const dismiss = () =>
+      document
+        .querySelectorAll(
+          "dialog.release-splash[open], dialog.styk-privacy[open]",
+        )
+        .forEach((dialog) => dialog.close());
+    dismiss();
+    new MutationObserver(dismiss).observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["open"],
+    });
+  });
   metadata = await app.evaluate(({ app, BrowserWindow }) => ({
     version: app.getVersion(),
     packaged: app.isPackaged,
@@ -136,7 +151,7 @@ try {
     styk.editor.select(1);
     styk.editor.markSaved();
     styk.fit();
-    document.querySelector(".workspace")._stykLayout.reset();
+    window.styk.workspace.reset();
     window.layoutBaseline = {
       report: JSON.stringify(styk.editor.report),
       undo: styk.editor._undo.length,
@@ -165,13 +180,10 @@ try {
     );
     await settle();
   };
-  const panel = (name) => page.locator(`[data-workspace-panel="${name}"]`),
-    grip = (name) => page.locator(`[data-panel-move="${name}"]`),
-    toggle = (name) => page.locator(`[data-panel-toggle="${name}"]`);
   const layout = () =>
     page.evaluate(() => {
-      const l = document.querySelector(".workspace")._stykLayout;
-      return { sizes: l.sizes, floating: l.floating };
+      const l = window.styk.workspace;
+      return { sizes: l.sizes, preferences: l.preferences };
     });
   const documentUnchanged = () =>
     page.evaluate(() => {
@@ -218,121 +230,81 @@ try {
     }));
   await resize(1560, 1000);
   const initial = await layout();
+  // Studio splitters grow their panel when dragged away from the stage edge.
   for (const [name, dx, dy] of [
-    ["left", 54, 0],
     ["right", -40, 0],
     ["timeline", 0, -45],
   ])
-    await drag(
-      page.locator(`.styk-workspace-splitter[data-panel="${name}"]`),
-      dx,
-      dy,
-    );
+    await drag(page.locator(`.studio-splitter-${name}`), dx, dy);
   const resized = await layout();
   check(
-    "Wide desktop splitters resize both sidebars and the timeline",
-    Math.abs(resized.sizes.left - initial.sizes.left - 54) < 1 &&
-      Math.abs(resized.sizes.right - initial.sizes.right - 40) < 1 &&
+    "Wide desktop splitters resize the properties panel and the timeline",
+    Math.abs(resized.sizes.right - initial.sizes.right - 40) < 1 &&
       Math.abs(resized.sizes.timeline - initial.sizes.timeline - 45) < 1,
+    { initial, resized },
   );
   check(
     "Resizing updates the WebGPU surface without changing the document",
     (await gpuSized()) && (await documentUnchanged()),
   );
   await page.screenshot({ path: path.join(out, "wide-docked.png") });
-  await toggle("left").click();
-  const floating = await layout();
-  await drag(grip("left"), 220, 60);
-  const moved = await layout();
-  check(
-    "Layers undocks and moves as a floating panel",
-    Math.abs(moved.floating.left.x - floating.floating.left.x - 220) < 1 &&
-      Math.abs(moved.floating.left.y - floating.floating.left.y - 60) < 1 &&
-      (await panel("left").evaluate(
-        (el) => getComputedStyle(el).position === "fixed",
-      )),
-  );
-  await drag(panel("left").locator('[data-edge="se"]'), 64, 30);
-  const expanded = await layout();
-  check(
-    "Floating corner resizes width and height",
-    Math.abs(expanded.floating.left.width - moved.floating.left.width - 64) <
-      1 &&
-      Math.abs(
-        expanded.floating.left.height - moved.floating.left.height - 30,
-      ) < 1,
-  );
-  await grip("left").focus();
-  await page.keyboard.press("ArrowRight");
-  await page.keyboard.press("Shift+ArrowDown");
+  const rightSplitter = page.locator(".studio-splitter-right");
+  await rightSplitter.focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("Shift+ArrowLeft");
   await settle();
   const keyboard = await layout();
   check(
-    "Focused panel keyboard movement stays out of the canvas document",
-    keyboard.floating.left.x === expanded.floating.left.x + 10 &&
-      keyboard.floating.left.y === expanded.floating.left.y + 1 &&
+    "Focused splitter keyboard resizing stays out of the canvas document",
+    Math.abs(keyboard.sizes.right - resized.sizes.right - 52) < 1 &&
       (await documentUnchanged()),
   );
-  await drag(grip("left"), 30, 20, { cancel: true });
+  await drag(rightSplitter, -30, 0, { cancel: true });
   check(
-    "Escape cancels a floating move and releases pointer capture",
-    JSON.stringify((await layout()).floating.left) ===
-      JSON.stringify(keyboard.floating.left) &&
+    "Escape cancels a splitter drag and releases pointer capture",
+    Math.abs((await layout()).sizes.right - keyboard.sizes.right) < 1 &&
       (await page.evaluate(
         () =>
-          ![...document.querySelectorAll("[data-panel-move],[data-edge]")].some(
-            (el) => el.hasPointerCapture(1),
-          ),
+          ![
+            ...document.querySelectorAll(
+              ".studio-splitter-right,.studio-splitter-timeline",
+            ),
+          ].some((el) => el.hasPointerCapture(1)),
       )),
   );
-  await toggle("right").click();
-  await toggle("timeline").click();
+  await rightSplitter.dblclick();
   await settle();
   check(
-    "Layers, Properties and Timeline can float together",
-    Object.keys((await layout()).floating).length === 3 && (await gpuSized()),
+    "Double-click restores the default panel size",
+    Math.abs((await layout()).sizes.right - initial.sizes.right) < 1,
   );
+  await page.locator("#expand-timeline").click();
+  const expandedTimeline = await layout();
+  check(
+    "Expand timeline grows the sheet within the workspace height",
+    expandedTimeline.sizes.timeline > initial.sizes.timeline,
+  );
+  await page.locator("#expand-timeline").click();
+  await settle();
   await page.screenshot({ path: path.join(out, "wide-floating.png") });
   await resize(900, 760, true);
   const constrained = await layout();
   check(
-    "900px stress resize keeps every floating panel reachable",
-    await page.evaluate(() => {
-      const l = document.querySelector(".workspace")._stykLayout,
-        h = document.querySelector(".workspace").clientHeight;
-      return Object.values(l.floating).every(
-        (r) =>
-          r.x >= 0 &&
-          r.y >= 0 &&
-          r.x + r.width <= innerWidth + 1 &&
-          r.y + r.height <= h + 1,
-      );
-    }),
+    "900px stress resize keeps the workspace within its bounds",
+    constrained.sizes.right <= Math.min(390, 900 - 460) + 1 &&
+      constrained.sizes.timeline <= Math.max(200, 760 - 210) + 1 &&
+      (await page.evaluate(
+        () => document.querySelector("#viewport").clientWidth >= 300,
+      )),
+    constrained,
   );
-  await toggle("timeline").click();
-  await toggle("right").click();
-  const r = await grip("left").boundingBox();
-  await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(r.x + r.width / 2 - 20, r.y + r.height / 2 + 20, {
-    steps: 3,
-  });
-  const zone = await page.locator(".styk-panel-dock-zone").boundingBox();
-  await page.mouse.move(zone.x + zone.width / 2, zone.y + zone.height / 2, {
-    steps: 3,
-  });
-  check(
-    "Dragging into a dock target displays its active preview",
-    (await page.locator(".styk-panel-dock-zone[data-active]").count()) === 1,
-  );
-  await page.mouse.up();
+  await resize(1000, 760);
   await settle();
   check(
-    "Drag redocking restores all panels and leaves document history untouched",
-    Object.keys((await layout()).floating).length === 0 &&
-      (await documentUnchanged()),
+    "Workspace resizing leaves document history untouched",
+    await documentUnchanged(),
   );
-  // Check docked controls at the supported native minimum after the floating stress test.
+  // Check docked controls at the supported native minimum after the stress test.
   await resize(1000, 760);
   await page.locator('.brand[data-action="menu"]').click();
   await page.locator('#menu [data-action="settings"]').click();
@@ -352,16 +324,16 @@ try {
   );
   const row = (kind) =>
     page
-      .locator(`.styk-tree-row[data-kind="${kind}"]:visible .styk-tree-name`)
+      .locator(`.sheet-layer[data-kind="${kind}"] .sheet-layer-name`)
       .first();
   const field = (key) => page.locator(`#inspector [data-property="${key}"]`);
   const fixedKinds = await page
-    .locator(".styk-tree-row:visible")
+    .locator(".sheet-layer")
     .evaluateAll((rows) => rows.map((row) => row.dataset.kind));
   check(
-    "Scene and Camera remain distinct fixed rows before user layers",
-    fixedKinds[0] === "scene" &&
-      fixedKinds[1] === "camera" &&
+    "Camera and Scene remain distinct fixed rows before user layers",
+    fixedKinds[0] === "camera" &&
+      fixedKinds[1] === "scene" &&
       fixedKinds.filter((k) => k === "scene").length === 1 &&
       fixedKinds.filter((k) => k === "camera").length === 1,
     fixedKinds,
@@ -375,49 +347,30 @@ try {
   );
   const propertyLayout = await page.locator("#inspector").evaluate((el) => ({
     overflow: el.scrollWidth > el.clientWidth + 1,
-    rows: [...el.querySelectorAll(".property-key-controls")].map((row) => {
-      const p = el.getBoundingClientRect(),
-        rects = [...row.children].map((n) => n.getBoundingClientRect());
-      return (
-        rects.length === 3 &&
-        rects.every(
-          (r) =>
-            r.width >= 17 &&
-            Math.abs(r.top - rects[0].top) < 1 &&
-            r.left >= p.left &&
-            r.right <= p.right + 1,
-        )
-      );
-    }),
+    keyControls: el.querySelectorAll(
+      "[data-property-key],[data-property-nav],.property-key-controls",
+    ).length,
   }));
   check(
-    "1000px camera diamonds and previous/next controls are complete, aligned and unclipped",
-    !propertyLayout.overflow &&
-      propertyLayout.rows.length > 0 &&
-      propertyLayout.rows.every(Boolean),
+    "1000px camera properties render unclipped without key controls",
+    !propertyLayout.overflow && propertyLayout.keyControls === 0,
     propertyLayout,
   );
-  await page.locator('#inspector [data-property-key="camera_x"]').click();
   await page.locator("#scene").focus();
   await page.keyboard.press('End');
   await field("camera_x").fill("21.25");
   await field("camera_x").press("Enter");
   await settle();
   const cameraTick = await page.evaluate(() => styk.editor.tick);
-  await page
-    .locator('#inspector [data-property-nav="camera_x"][data-direction="-1"]')
-    .click();
   check(
-    "Previous camera key control navigates to the earlier key",
-    await page.evaluate((t) => styk.editor.tick < t, cameraTick),
-  );
-  await page
-    .locator('#inspector [data-property-nav="camera_x"][data-direction="1"]')
-    .click();
-  check(
-    "Next camera key control restores the edited key and precise value",
-    (await page.evaluate((t) => styk.editor.tick === t, cameraTick)) &&
-      Number(await field("camera_x").inputValue()) === 21.25,
+    "Camera numeric entry writes a camera sheet key with the precise value",
+    await page.evaluate(
+      (t) =>
+        styk.editor.report._styk.layerSheet.tracks.camera.keys.some(
+          (key) => key.tick === t && key.value?.frameId,
+        ) && Number(document.querySelector('#inspector [data-property="camera_x"]').value) === 21.25,
+      cameraTick,
+    ),
   );
   await page.screenshot({ path: path.join(out, "compact-camera.png") });
   const beforeScrub = await page.evaluate(() => ({
@@ -467,12 +420,12 @@ try {
       (await field("camera_x").count()) === 0,
   );
   const timelineKinds = await page
-    .locator("#timeline .styk-timeline-label:visible")
+    .locator("#timeline .sheet-layer")
     .evaluateAll((rows) => rows.map((row) => row.dataset.kind));
   check(
-    "Advanced timeline exposes Scene and Camera above the user layer",
-    timelineKinds[0] === "scene" &&
-      timelineKinds[1] === "camera" &&
+    "Advanced timeline exposes Camera and Scene above the user layer",
+    timelineKinds[0] === "camera" &&
+      timelineKinds[1] === "scene" &&
       timelineKinds.includes("layer"),
     timelineKinds,
   );
@@ -511,10 +464,10 @@ try {
     await settle();
   };
   await mode("simple");
-  await page.locator(".styk-simple-update").waitFor();
+  await page.locator(".sheet-filmstrip").waitFor();
   check(
-    "Simple mode fits Add/Update and inbetween controls at 1000px",
-    (await page.locator(".styk-simple-controls").evaluate((el) => {
+    "Simple mode fits the filmstrip controls at 1000px",
+    (await page.locator(".sheet-filmstrip-controls").evaluate((el) => {
       const p = el.getBoundingClientRect();
       return [...el.querySelectorAll("button,input")].every((e) => {
         const r = e.getBoundingClientRect();
@@ -525,80 +478,53 @@ try {
           r.right <= p.right + 1
         );
       });
-    })) && (await layout()).sizes.timeline >= 205,
+    })) && (await layout()).sizes.timeline >= 200,
   );
-  await page.locator(".styk-simple-update").click();
-  await row("figure").click();
+  const ticksBefore = await page.evaluate(() => styk.editor.totalTicks);
+  await page.locator(".sheet-add-frame").click();
+  await settle();
+  check(
+    "Simple Add Frame extends the sheet duration",
+    (await page.evaluate(() => styk.editor.totalTicks)) > ticksBefore,
+  );
+  await page.evaluate(() => styk.editor.select(1));
   await field("root_x").fill("230");
   await field("root_x").press("Enter");
-  const working = await page.evaluate(async () => {
-    const { storedFrameReport } = await import("/src/pivot-frame-draft.mjs");
-    return {
-      stored: storedFrameReport(styk.editor.report).keyframes.map(
-        (f) => f.objects[0].root_x,
-      ),
-      working: styk.editor.object.root_x,
-      mode: styk.editor.frameDraft.mode,
-    };
-  });
+  await settle();
   check(
-    "Simple Add keeps stored poses distinct from the live working pose",
-    JSON.stringify(working.stored) === "[100,120,140]" &&
-      working.working === 230 &&
-      working.mode === "add",
-    working,
+    "Simple edits write a layer-sheet key without a frame draft",
+    await page.evaluate(
+      () =>
+        !styk.editor.frameDraft &&
+        styk.editor.evaluatedFrame.objects[0].root_x === 230 &&
+        styk.editor.animationChannels.length === 0,
+    ),
   );
   check(
-    "Simple footer retains the native stored-key count while the Add pose is unsaved",
-    /^3 keys · \d+ frames · [\d.]+s$/.test(
+    "Simple footer reports the sheet key count",
+    /^\d+ keys · \d+ frames · [\d.]+s$/.test(
       await page.locator("#timeline-summary").textContent(),
     ),
   );
   await page.screenshot({ path: path.join(out, "compact-simple-working.png") });
   await mode("advanced");
   check(
-    "Simple to Advanced preserves saved poses and appends the distinct working pose once",
+    "Simple to Advanced restores the layer sheet and keeps the authored pose",
     await page.evaluate(
       () =>
-        !styk.editor.frameDraft &&
-        JSON.stringify(
-          styk.editor.report.keyframes.map((f) => f.objects[0].root_x),
-        ) === "[100,120,140,230]" &&
-        styk.editor.frameIndex === 3,
+        styk.editor.report._styk.layerSheet.tracks[
+          styk.editor.layerForUid(1)
+        ].keys.length > 0 &&
+        document.querySelectorAll("#timeline .sheet-layer").length > 0,
     ),
   );
-  await mode("simple");
-  await row("figure").click();
-  await field("root_x").fill("250");
-  await field("root_x").press("Enter");
-  check(
-    "Advanced to Simple restores Update mode at the same selected frame",
-    await page.evaluate(
-      () =>
-        styk.editor.frameDraft.mode === "update" &&
-        styk.editor.frameIndex === 3 &&
-        styk.editor.object.root_x === 250,
-    ),
-  );
-  await mode("advanced");
-  check(
-    "Switching an Update draft commits that frame without appending another",
-    await page.evaluate(
-      () =>
-        JSON.stringify(
-          styk.editor.report.keyframes.map((f) => f.objects[0].root_x),
-        ) === "[100,120,140,250]",
-    ),
-  );
-  await mode("simple");
   await settings();
   await page.locator("[data-settings-reset]").click();
   await page.locator(".styk-settings-head button").click();
   await settle();
   check(
-    "The actual Preferences reset returns a compact docked Simple workspace",
-    Object.keys((await layout()).floating).length === 0 &&
-      (await layout()).sizes.timeline >= 205 &&
+    "The actual Preferences reset returns a compact docked workspace",
+    (await layout()).sizes.timeline >= 200 &&
       !(await chromeFits()).overflow &&
       (await chromeFits()).controls,
   );
@@ -618,7 +544,7 @@ try {
   await page.evaluate(async () => {
     styk.editor.markSaved();
     await styk.settingsUI.flush();
-    await document.querySelector(".workspace")._stykLayout.flushPreferences();
+    await window.styk.workspace.flushPreferences();
   });
   await writeFile(
     path.join(out, "report.json"),

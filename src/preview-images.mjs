@@ -3,12 +3,13 @@ import {assetURL} from './playback-resources.mjs';
 /** One serial worker per image owner. Originals stay in the document; Map values
  * are disposable CanvasImageSources with original logical dimensions. */
 export class PreviewImages extends Map {
-  constructor({maxBytes = previewMemoryPlan().editorImages, onReady = () => {}, onError = () => {}} = {}) {
+  constructor({maxBytes = previewMemoryPlan().editorImages, onReady = () => {}, onError = () => {}, idleMs = 120000} = {}) {
     super(); Object.assign(this, {maxBytes, onReady, onError});
     this.sequence = 0; this.bytes = 0; this.waiters = new Map();
-    this.identities = new Map();
+    this.identities = new Map(); this.idleMs = idleMs; this.idleTimer = null;
   }
   clear() {
+    clearTimeout(this.idleTimer); this.idleTimer = null;
     this.worker?.terminate(); this.worker = null; this.busy = false; this.queued = null; this.signature = null;
     const error = new DOMException('Preview images were invalidated.', 'AbortError');
     for (const pending of this.waiters.values()) pending.reject(error);
@@ -44,6 +45,7 @@ export class PreviewImages extends Map {
   }
   drain() {
     if (this.busy || !this.queued) return;
+    clearTimeout(this.idleTimer); this.idleTimer = null;
     if (!this.worker) {
       const worker = this.worker = new Worker(new URL('./preview-image-worker.mjs', import.meta.url), {type: 'module', name: 'StykAnimate preview images'});
       worker.onmessage = ({data}) => {
@@ -54,15 +56,16 @@ export class PreviewImages extends Map {
         else {
           const keep = new Set(data.images.map(image => image.url));
           for (const [url, bitmap] of this) if (!keep.has(url)) {bitmap.close?.(); super.delete(url);}
-          for (const {url, bitmap, width, height} of data.images) {
+          for (const {url, bitmap, width, height, srcX, srcY, srcW, srcH} of data.images) {
             const previous = super.get(url);
             bitmap.complete = true; bitmap.naturalWidth = width; bitmap.naturalHeight = height;
+            if (srcW !== undefined) {bitmap.srcX = srcX; bitmap.srcY = srcY; bitmap.srcW = srcW; bitmap.srcH = srcH;}
             this.set(url, bitmap); previous?.dispatchEvent?.(new Event('load'));
           }
           this.bytes = [...this.values()].reduce((sum, item) => sum + (item.complete ? item.width * item.height * 4 : 0), 0);
           this.reduced = data.reduced; pending?.resolve(); this.onReady();
         }
-        this.drain();
+        this.drain(); this._scheduleIdle();
       };
       worker.onerror = event => {
         if (this.worker !== worker) return;
@@ -72,6 +75,17 @@ export class PreviewImages extends Map {
       };
     }
     const request = this.queued; this.queued = null; this.busy = true; this.worker.postMessage(request);
+  }
+  _scheduleIdle() {
+    clearTimeout(this.idleTimer); this.idleTimer = null;
+    if (!this.worker || this.busy || this.queued || this.idleMs <= 0) return;
+    // Decoded bitmaps live in this Map; the worker is a disposable decoder that
+    // respawns on the next prepare instead of idling in memory forever.
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (this.worker && !this.busy && !this.queued) { this.worker.terminate(); this.worker = null; }
+    }, this.idleMs);
+    this.idleTimer.unref?.();
   }
   image(url) {
     if (!url) return null;

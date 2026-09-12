@@ -2,6 +2,7 @@
 
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell, session, clipboard, contentTracing } = require('electron');
 const path = require('node:path');
+const os = require('node:os');
 const fs = require('node:fs/promises');
 const { mkdirSync, existsSync } = require('node:fs');
 const { startBackend } = require('./backend.cjs');
@@ -14,6 +15,7 @@ const { WorkspacePreferences } = require('./preferences.cjs');
 const { ProjectFiles } = require('./project-files.cjs');
 const { FontService } = require('./font-service.cjs');
 const { VideoExportService } = require('./video-export-service.cjs');
+const { AudioService } = require('./audio-service.cjs');
 const { VfwExportService } = require('./vfw-export-service.cjs');
 const { RecentFiles } = require('./recent-files.cjs');
 const { LibraryStore } = require('./library-store.cjs');
@@ -38,6 +40,7 @@ let window;
 let backend;
 let fileStreams;
 let videoExports;
+let audioImports;
 let vfwExports;
 let recentFiles;
 let library;
@@ -285,17 +288,40 @@ function registerIpc() {
     clipboard.writeText(text); return true;
   });
   const encoderRoot = app.isPackaged ? process.resourcesPath : path.join(APP_ROOT, 'build');
+  audioImports = new AudioService({encoderPath: path.join(encoderRoot, 'video-encoder', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'), tempRoot: app.getPath('temp')});
+  for (const [channel, method] of [['audio-begin','begin'],['audio-write','write'],['audio-finish','finish'],['audio-read','read'],['audio-cancel','cancel']])
+    ipcMain.handle(`styk:${channel}`, (event, ...args) => { trusted(event); return audioImports[method](...args); });
   videoExports = new VideoExportService({encoderPath: path.join(encoderRoot, 'video-encoder', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'), tempRoot: app.getPath('temp')});
   for (const [channel, method] of [
     ['video-capabilities', 'capabilities'], ['video-begin', 'begin'], ['video-frame-begin', 'beginFrame'], ['video-frame-chunk', 'writeFrameChunk'],
-    ['video-frame-end', 'endFrame'], ['video-finish', 'finish'], ['video-read', 'read'], ['video-cancel', 'cancel'],
+    ['video-frame-end', 'endFrame'], ['video-finish', 'finish'], ['video-read', 'read'], ['video-cancel', 'cancel'], ['video-audio-chunk', 'writeAudioChunk'],
   ]) ipcMain.handle(`styk:${channel}`, (event, ...args) => { trusted(event); return videoExports[method](...args); });
+  ipcMain.handle('styk:video-save', async (event, token, options) => {
+    trusted(event);
+    const filters = saveFilters(options, 'webm');
+    const result = await dialog.showSaveDialog(window, {
+      title: 'Save video', defaultPath: path.basename(String(options?.defaultPath || 'video.webm')), filters,
+      properties: ['createDirectory', 'showOverwriteConfirmation'],
+    });
+    if (result.canceled || !result.filePath) { await videoExports.cancel(token).catch(() => {}); return { saved: false }; }
+    return videoExports.save(token, result.filePath);
+  });
   const vfwRoot = app.isPackaged ? path.join(process.resourcesPath, 'vfw') : path.join(APP_ROOT, 'native', 'bin');
   vfwExports = new VfwExportService({helperPaths: {x86: path.join(vfwRoot, 'x86', 'styk-vfw.exe'), x64: path.join(vfwRoot, 'x64', 'styk-vfw.exe')}, tempRoot: app.getPath('temp')});
   for (const [channel, method] of [
     ['vfw-capabilities', 'capabilities'], ['vfw-begin', 'begin'], ['vfw-frame-begin', 'beginFrame'], ['vfw-frame-chunk', 'writeFrameChunk'],
     ['vfw-frame-end', 'endFrame'], ['vfw-finish', 'finish'], ['vfw-read', 'read'], ['vfw-cancel', 'cancel'],
   ]) ipcMain.handle(`styk:${channel}`, (event, ...args) => { trusted(event); return vfwExports[method](...args); });
+  ipcMain.handle('styk:vfw-save', async (event, token, options) => {
+    trusted(event);
+    const filters = saveFilters(options, 'avi');
+    const result = await dialog.showSaveDialog(window, {
+      title: 'Save video', defaultPath: path.basename(String(options?.defaultPath || 'video.avi')), filters,
+      properties: ['createDirectory', 'showOverwriteConfirmation'],
+    });
+    if (result.canceled || !result.filePath) { await vfwExports.cancel(token).catch(() => {}); return { saved: false }; }
+    return vfwExports.save(token, result.filePath);
+  });
   ipcMain.handle('styk:vfw-configure', async (event, options) => {
     trusted(event); const owner = window;
     const handle = owner.getNativeWindowHandle();
@@ -328,7 +354,7 @@ function registerIpc() {
   ipcMain.handle('styk:workspace-preferences-set', (event, value) => { trusted(event); return preferences.set(value); });
   ipcMain.handle('styk:editor-settings-get', (event) => { trusted(event); return editorSettings.get(); });
   ipcMain.handle('styk:editor-settings-set', (event, value) => { trusted(event); return editorSettings.set(value); });
-  fileStreams = new FileStreams();
+  fileStreams = new FileStreams({onCommitError:error=>telemetry?.error(error?.name||'Error','app',null,{code:error?.code||'write_failed',stage:'write'})});
   const clipboardFile = path.join(app.getPath('userData'), 'frame-clipboard.styk');
   let clipboardWriteToken = null, clipboardControl = Promise.resolve();
   ipcMain.handle('styk:clipboard-write-begin', (event, options) => {
@@ -394,19 +420,21 @@ function registerIpc() {
     recoveryControl = result.catch(() => {});
     return result;
   }
+  const saveFilters = (options, fallback = 'styk') => (Array.isArray(options?.filters) ? options.filters.slice(0, 8).map((filter) => ({
+    name: String(filter.name || 'File').slice(0, 80),
+    extensions: Array.isArray(filter.extensions) ? filter.extensions.filter((ext) => /^[a-z0-9*]{1,12}$/i.test(ext)) : [],
+  })).filter((filter) => filter.extensions.length) : [{ name: 'StykAnimate project', extensions: [fallback] }]);
   ipcMain.handle('styk:file-write-begin', async (event, options) => {
     trusted(event);
-    fileStreams.validateSize(options?.size);
-    const filters = Array.isArray(options.filters) ? options.filters.slice(0, 8).map((filter) => ({
-      name: String(filter.name || 'File').slice(0, 80),
-      extensions: Array.isArray(filter.extensions) ? filter.extensions.filter((ext) => /^[a-z0-9*]{1,12}$/i.test(ext)) : [],
-    })).filter((filter) => filter.extensions.length) : [{ name: 'StykAnimate project', extensions: ['styk'] }];
+    const stream = options?.stream === true;
+    if (stream) fileStreams.validateStreamSize(options?.size); else fileStreams.validateSize(options?.size);
+    const filters = saveFilters(options);
     const result = await dialog.showSaveDialog(window, {
       title: 'Save animation', defaultPath: path.basename(String(options.defaultPath || 'Untitled.styk')), filters,
       properties: ['createDirectory', 'showOverwriteConfirmation'],
     });
     if (result.canceled || !result.filePath) return null;
-    return fileStreams.beginWrite({ destination: result.filePath, size: options.size, onCommit: async () => {
+    return fileStreams.beginWrite({ destination: result.filePath, size: stream ? (options.size ?? null) : options.size, stream, onCommit: async () => {
       app.addRecentDocument(result.filePath);
       await rememberRecent(result.filePath);
     } });
@@ -423,6 +451,7 @@ function registerIpc() {
     });
   });
   ipcMain.handle('styk:file-write-chunk', (event, token, bytes) => { trusted(event); return fileStreams.write(token, bytes); });
+  ipcMain.handle('styk:file-write-patch', (event, token, offset, bytes) => { trusted(event); return fileStreams.patch(token, offset, bytes); });
   ipcMain.handle('styk:file-write-finish', async (event, token) => {
     trusted(event);
     const documentToken = projectTransfers.get(token);
@@ -506,6 +535,10 @@ function registerIpc() {
     return windowState();
   });
   ipcMain.handle('styk:window-state', (event) => { trusted(event); return windowState(); });
+  ipcMain.on('styk:memory-bytes', (event) => {
+    try { trusted(event); event.returnValue = os.totalmem(); }
+    catch { event.returnValue = 0; }
+  });
   ipcMain.handle('styk:document-state', (event, state) => {
     trusted(event);
     documentState = { name: String(state?.name || 'Untitled').slice(0, 180), dirty: Boolean(state?.dirty), revision: String(state?.revision || '').slice(0, 160) };
@@ -611,5 +644,5 @@ app.on('before-quit', (event) => {
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('will-quit', () => updates?.dispose());
-app.on('will-quit', () => { backend?.stop(); library?.dispose().catch(() => {}); fileStreams?.dispose().catch(() => {}); videoExports?.dispose().catch(() => {}); vfwExports?.dispose().catch(() => {}); });
+app.on('will-quit', () => { backend?.stop(); library?.dispose().catch(() => {}); fileStreams?.dispose().catch(() => {}); videoExports?.dispose().catch(() => {}); vfwExports?.dispose().catch(() => {}); audioImports?.dispose().catch(() => {}); });
 process.on('exit', () => backend?.stop());

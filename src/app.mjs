@@ -1,7 +1,6 @@
 import {installColorPickers} from './color-picker.mjs';
 import {installMovieclipUI} from './movieclip-ui.mjs';
 import {isMovieclip} from './movieclips.mjs';
-import {animationPropertyState} from './animation-property-state.mjs';
 import {segmentPaint, parseColor, hexColor, backgroundPaint, paintBackground} from './paint.mjs';
 import {resolveInstanceFigure, polygonIdentity} from './animation-style.mjs';
 import { applicationMenuItems } from "./application-menu.mjs";
@@ -19,9 +18,11 @@ import { encodeWebM } from "./video-export.mjs";
 import { encodeNativeVideo } from "./native-video-export.mjs";
 import { encodeVfwVideo } from "./vfw-video-export.mjs";
 import { VfwExportControls } from "./vfw-export-controls.mjs";
-import { getExportCapabilities } from "./export-capabilities.mjs";
+import { getExportCapabilities, exportFormat } from "./export-capabilities.mjs";
 import { videoQualityOptions } from "./export-video-quality.mjs";
 import { PlaybackCache } from "./playback.mjs";
+import {AudioEngine} from './audio-engine.mjs';
+import {audioState, audioFps, audibleClips} from './audio-model.mjs';
 import {PreviewImages} from './preview-images.mjs';
 import {backgroundImageAssets} from './scene-preparation.mjs';
 import { PlaybackMetrics } from "./playback-metrics.mjs";
@@ -29,6 +30,7 @@ import { DesktopTelemetryClient } from './telemetry-core.mjs';
 import { workload, documentComplexity } from './telemetry-workload.mjs';
 import { sizeBucket } from './telemetry-schema.mjs';
 import { writeBrowserRecovery } from './browser-recovery.mjs';
+import { openExportSink } from './export-sink.mjs';
 import { PrivacyUI } from './privacy-ui.mjs';
 import { FeedbackUI } from './feedback-ui.mjs';
 import { UpdateUI } from './update-ui.mjs';
@@ -55,6 +57,7 @@ import { ExportFrameRenderer } from "./export-frame-renderer.mjs";
 import { exportProgressMarkup, mountExportProgress } from "./export-progress.mjs";
 import { checkExportContext } from "./export-canvas.mjs";
 import {
+  EXPORT_MAX_PIXELS,
   EXPORT_SMOOTHING,
   normalizeExportSmoothing,
 } from "./export-sampling.mjs";
@@ -139,9 +142,16 @@ const editor = new Editor({ demo: false, propertyChannels: true, layerTimeline: 
   preparedScenes = new WeakMap(),
   exportJobs = new Set();
 let documentActivation = Promise.resolve();
+const audioEngine = new AudioEngine({desktop, onError: error => { pause(); fail(error); }});
+let audioPreparation, audioScrubController, audioScrubAt = 0;
 editor.setFrameClipboardWorker(clipboardWorker);
 function interruptRecovery() {
-  for (const job of exportJobs) if (job.recovery) job.controller.abort();
+  let aborted = false;
+  for (const job of exportJobs) if (job.recovery) { job.controller.abort(); aborted = true; }
+  // Every gesture that kills a running export restarts its serialization from
+  // zero; on large documents that work can never finish while the user keeps
+  // interacting. Back off so attempts spread out instead of churning forever.
+  if (aborted) state.recoveryBackoff = Math.min(12, (state.recoveryBackoff || 1) * 2);
   clearTimeout(state.recoveryTimer);
   if (editor.dirty) scheduleRecovery();
 }
@@ -222,10 +232,14 @@ const state = {
   lastPresent: 0,
   drawCalls: 0,
   recoveryTimer: null,
+  recoveryBackoff: 1,
   loadedName: null,
   playbackPacket: null,
   playbackRevision: null,
   playbackScale: null,
+  playbackSoftware: false,
+  playbackHiddenKey: "",
+  previewGovernor: { index: 0 },
   loopRange: null,
   buffering: false,
   backgroundPending: null,
@@ -237,7 +251,11 @@ const state = {
   motionPaths: false,
   hoverPathPoint: null,
 };
-let canvas = $("scene"), rendererRecovery, gpuRecoveryAttempted = false;
+// A lost device usually returns once the browser's GPU process settles, so
+// accelerated reconnects back off per consecutive loss; a renderer surviving
+// the stable window restores the retry budget for the next transient loss.
+const GPU_RECOVERY_DELAYS = [1000, 5000, 15000], GPU_STABLE_MS = 30000;
+let canvas = $("scene"), rendererRecovery, gpuRecoveryTimer, gpuRecoveryAttempts = 0, gpuStableTimer;
 const viewport = $("viewport"),
   overlay = $("overlay"),
   ctx = overlay.getContext("2d"),
@@ -249,6 +267,7 @@ const viewport = $("viewport"),
       for (const entry of renderer.backgroundImages?.values() || []) entry.texture.destroy();
       renderer.backgroundImages?.clear(); renderer.backgroundKey = '';
       renderer.clearOnionArtwork?.();
+      renderer.clearArtwork?.();
     }
     requestRender();
   }, onError: error => status(error.message, true)});
@@ -308,10 +327,10 @@ globalThis.addEventListener('pagehide', () => { void telemetry.flush(); telemetr
 const editablePreparation = new EditableScenePreparation(editor, {
   onPending(pending) {
     state.editablePreparing=pending;
-    thumbnailRenderer?.setPaused(pending||state.playing||editingGestureActive());
-    playback.setInteractionActive(pending||editingGestureActive()||state.scrubbing);
+    thumbnailRenderer?.setPaused(pending||state.playing||editingGestureActive()||document.hidden);
+    playback.setInteractionActive(pending||editingGestureActive()||state.scrubbing||document.hidden);
     if(!pending){
-      timelineUI?.setPaused?.(state.playing);
+      timelineUI?.setPaused?.(state.playing||document.hidden);
       state.editablePreparationStats=editablePreparation.stats;
       queueUI();requestRender();
     }
@@ -353,16 +372,29 @@ function playbackScale() {
       Math.max(0.5, Math.min(3, window.devicePixelRatio || 1)))
   );
 }
+const softwarePlayback = () => Boolean(state.renderer?.softwarePlayback);
+// Software packets bake object visibility into the bitmap, so the packet cache
+// observes the same inputs effectiveHidden() reads on the UI thread.
+function playbackHiddenKey() {
+  const layers = editor.report?._styk?.layers?.byId;
+  const layerBits = layers ? Object.keys(layers).sort().map((id) => `${id}:${layers[id].visible === false ? 0 : 1}`).join(",") : "";
+  return `${[...state.hidden].sort((a, b) => a - b).join(",")}|${layerBits}`;
+}
 function syncPlayback() {
   const scale = playbackScale(),
     cameraEnabled = !state.scrubbing,
-    storedFrames = !editor.report._styk?.layerSheet && state.settings.timelineMode === "simple";
+    storedFrames = !editor.report._styk?.layerSheet && state.settings.timelineMode === "simple",
+    softwareFrames = softwarePlayback(),
+    hiddenUids = softwareFrames ? [...state.hidden] : undefined,
+    hiddenKey = softwareFrames ? playbackHiddenKey() : "";
   if (
     state.playbackRevision !== editor.revision ||
     playback.report !== editor.report ||
     state.playbackScale !== scale ||
     state.playbackCameraEnabled !== cameraEnabled ||
     state.playbackStoredFrames !== storedFrames ||
+    state.playbackSoftware !== softwareFrames ||
+    state.playbackHiddenKey !== hiddenKey ||
     state.playbackDraftRevision !== editor.frameDraftRevision
   ) {
     // A camera-only toggle keeps prepared frames: packets carry their own crop
@@ -372,6 +404,8 @@ function syncPlayback() {
       playback.report === editor.report &&
       state.playbackScale === scale &&
       state.playbackStoredFrames === storedFrames &&
+      state.playbackSoftware === softwareFrames &&
+      state.playbackHiddenKey === hiddenKey &&
       state.playbackDraftRevision === editor.frameDraftRevision &&
       state.playbackCameraEnabled !== cameraEnabled;
     if (
@@ -383,6 +417,9 @@ function syncPlayback() {
         scale,
         cameraEnabled,
         storedFrames,
+        softwareFrames,
+        hiddenUids,
+        hiddenKey,
       });
     else if (state.playbackDraftRevision !== editor.frameDraftRevision)
       playback.updateDocument({
@@ -390,13 +427,18 @@ function syncPlayback() {
         scale,
         cameraEnabled,
         storedFrames,
+        softwareFrames,
+        hiddenUids,
+        hiddenKey,
         frameIndices: [],
       });
-    else playback.updateView({ scale, cameraEnabled, storedFrames });
+    else playback.updateView({ scale, cameraEnabled, storedFrames, softwareFrames, hiddenUids, hiddenKey });
     state.playbackRevision = editor.revision;
     state.playbackScale = scale;
     state.playbackCameraEnabled = cameraEnabled;
     state.playbackStoredFrames = storedFrames;
+    state.playbackSoftware = softwareFrames;
+    state.playbackHiddenKey = hiddenKey;
     state.playbackDraftRevision = editor.frameDraftRevision;
     state.playbackPacket = null;
     if (cameraOnly && state.renderer?.retainPreparedFrames)
@@ -415,6 +457,10 @@ function playbackRange() {
 function prepareAhead(start = editor.tick, count = 24, {bidirectional = false} = {}) {
   if (state.drag || state.scrubbing || !editor.totalTicks) return;
   syncPlayback();
+  // Preparation shares the CPU with the UI thread: shallow lookahead keeps
+  // few-core machines responsive while deep buffers still cover fast cores.
+  const cores = navigator.hardwareConcurrency || 4;
+  count = Math.max(Math.min(count, 8), Math.round(count * Math.min(1, cores / 8)));
   const range = playbackRange(),
     ticks = [];
   // PlaybackCache owns admission using unique bitmap footprints. Multiplying
@@ -441,7 +487,7 @@ function warmPlayback({immediate = false} = {}) {
   if(state.editablePreparing)return;
   clearTimeout(warmTimer);
   const report=editor.report,revision=editor.revision,tick=editor.tick,draft=editor.frameDraftRevision,scale=state.view.scale;
-  const current=()=>generation===warmGeneration&&editor.report===report&&editor.revision===revision&&editor.tick===tick&&editor.frameDraftRevision===draft&&state.view.scale===scale&&!state.playing&&!editingGestureActive()&&!state.scrubbing&&!state.editablePreparing;
+  const current=()=>generation===warmGeneration&&editor.report===report&&editor.revision===revision&&editor.tick===tick&&editor.frameDraftRevision===draft&&state.view.scale===scale&&!state.playing&&!editingGestureActive()&&!state.scrubbing&&!state.editablePreparing&&!document.hidden;
   warmTimer = setTimeout(async () => {
     if(!current())return;
     // Learn the current frame's real footprint before widening the idle window.
@@ -726,10 +772,7 @@ function propertyState(key) {
     editor.tick,
     binding.options,
   );
-  return {
-    ...animationPropertyState(editor, binding.target, binding.property, binding.options),
-    value: value === undefined ? undefined : binding.toUI(value),
-  };
+  return {value: value === undefined ? undefined : binding.toUI(value)};
 }
 function selectionBounds() {
   const bounds = {
@@ -890,21 +933,26 @@ function activeMotionPaths() {
   const camera = cameraSelected() && state.settings.showCamera;
   const range = Math.round(state.settings.motionPathRange) || 0;
   const session = editor._drag?.motionPath ? editor._drag : null;
+  const deadline = performance.now() + pathCache.budgetMs;
   const out = [];
+  let pending = false;
+  const collect = (target, color) => {
+    const entry = pathCache.get(editor, target, {session, range, deadline});
+    if (!entry) return;
+    pending ||= !entry.complete;
+    out.push({target, entry, color});
+  };
   if (camera) {
     const track = editor.report._styk?.layers?.fixed?.camera;
-    if (track?.visible !== false && !track?.locked) {
-      const entry = pathCache.get(editor, {kind: 'camera'}, {session, range});
-      if (entry) out.push({target: {kind: 'camera'}, entry, color: '#e8a13c'});
+    if (track?.visible !== false && !track?.locked) collect({kind: 'camera'}, '#e8a13c');
+  } else {
+    for (const target of motionPathTargets(editor, {all: Boolean(state.settings.motionPathAllTargets)})) {
+      if (isHidden(target.uid) || isLocked(target.uid)) continue;
+      collect(target, PATH_COLORS[out.length % PATH_COLORS.length]);
     }
-    return out;
   }
-  const targets = motionPathTargets(editor, {all: Boolean(state.settings.motionPathAllTargets)});
-  for (const target of targets) {
-    if (isHidden(target.uid) || isLocked(target.uid)) continue;
-    const entry = pathCache.get(editor, target, {session, range});
-    if (entry) out.push({target, entry, color: PATH_COLORS[out.length % PATH_COLORS.length]});
-  }
+  // Trail sampling continues across frames until every entry is complete.
+  if (pending) requestRender();
   return out;
 }
 function activeCameraHandle(point) {
@@ -950,12 +998,52 @@ function fit() {
   placeArtboard();
   requestRender();
 }
+// Sustained playback deficits lower the preview backing resolution and MSAA;
+// recovered headroom restores full quality. The overlay stays at native DPR so
+// handles and tool feedback remain crisp.
+const previewQualityLevels = [1, 0.75, 0.5];
+const previewMsaaLevels = [4, 2, 1];
+function previewRenderScale() {
+  return previewQualityLevels[state.previewGovernor?.index ?? 0];
+}
+function applyPreviewQuality(index) {
+  resize();
+  state.renderer?.setMsaa?.(previewMsaaLevels[index]);
+}
+function resetPreviewQuality() {
+  const governor = state.previewGovernor;
+  state.previewGovernor = { index: 0 };
+  if (governor?.index) applyPreviewQuality(0);
+}
+function adaptPreviewQuality(sample, now) {
+  const governor = (state.previewGovernor ??= { index: 0 });
+  if (sample.fps === null || state.buffering) {
+    governor.lowSince = governor.highSince = 0;
+    return;
+  }
+  const deficit = sample.fps < sample.targetFps * 0.92,
+    headroom = sample.fps >= sample.targetFps * 1.2;
+  governor.lowSince = deficit ? governor.lowSince ?? now : 0;
+  governor.highSince = headroom && governor.index > 0 ? governor.highSince ?? now : 0;
+  const due = now - (governor.changedAt ?? 0) > 2500;
+  if (due && governor.index < previewQualityLevels.length - 1 && governor.lowSince && now - governor.lowSince > 2000) {
+    governor.index++;
+    governor.changedAt = now;
+    governor.lowSince = governor.highSince = 0;
+    applyPreviewQuality(governor.index);
+  } else if (due && governor.index > 0 && governor.highSince && now - governor.highSince > 6000) {
+    governor.index--;
+    governor.changedAt = now;
+    governor.lowSince = governor.highSince = 0;
+    applyPreviewQuality(governor.index);
+  }
+}
 function resize() {
   const r = viewport.getBoundingClientRect(),
     d = window.devicePixelRatio || 1;
   overlay.width = Math.round(r.width * d);
   overlay.height = Math.round(r.height * d);
-  state.renderer?.resize(r.width, r.height, d);
+  state.renderer?.resize(r.width, r.height, d * previewRenderScale());
   timelineUI?.resize();
   placeArtboard();
   requestRender();
@@ -1277,8 +1365,8 @@ function overlayRender(geometry) {
 }
 function loop(now) {
   raf = 0;
-  playback.setInteractionActive(Boolean(editingGestureActive()||state.scrubbing||state.editablePreparing));
-  thumbnailRenderer?.setPaused(Boolean(editingGestureActive()||state.playing||state.editablePreparing));
+  playback.setInteractionActive(Boolean(editingGestureActive()||state.scrubbing||state.editablePreparing||document.hidden));
+  thumbnailRenderer?.setPaused(Boolean(editingGestureActive()||state.playing||state.editablePreparing||document.hidden));
   let advancedPlayback = false;
   if (!$("renderer-error").hidden) return;
   if (state.playing) {
@@ -1290,7 +1378,8 @@ function loop(now) {
     playbackMetrics.targetFps = fps;
     if (range.end <= range.start) {
       pause();
-    } else if (!playStarted || now >= playDeadline) {
+    } else if (state.audioReady !== false && !audioEngine.starting && (!playStarted || now >= playDeadline) &&
+      (!audioEngine.running || audioEngine.position + .00001 >= (editor.tick + 1) / fps)) {
       let next = playStarted ? editor.tick + 1 : playTick;
       if (next >= range.end) {
         if (state.loop) next = range.start;
@@ -1307,6 +1396,8 @@ function loop(now) {
             true);
         const startupReady=playStarted || playback.bufferedAhead(next,Math.min(12,Math.max(2,Math.ceil(fps*.1))),range.end);
         if (packet && backgroundsReady && startupReady) {
+          if (audioEngine.hasAudio && (!audioEngine.running || next < editor.tick || audioEngine.position > (next + 1.5) / fps))
+            void audioEngine.start(next / fps, range.end / fps);
           editor.seek(next, { evaluate: false });
           state.playbackPacket = packet;
           advancedPlayback = true;
@@ -1323,6 +1414,7 @@ function loop(now) {
           prepareAhead(next + 1, 24);
           state.dirtyRender = true;
         } else {
+          audioEngine.stop();
           state.buffering = true;
           $("preview-badge").textContent = "PREPARING";
           if (
@@ -1352,9 +1444,11 @@ function loop(now) {
     state.dirtyRender = false;
     const start = performance.now();
     const packet = state.playing ? state.playbackPacket : previewPacket();
+    let preparedPresented = false;
     if(state.editablePreparing){
       const held=state.editingPacket?.packet;
-      if(held)state.renderer.renderPrepared(held.key,{report:editor.report,view:state.view,cameraEnabled:held.cameraEnabled,hiddenUids:effectiveHidden()});
+      if(held)state.renderer.renderPrepared(held.key,{report:editor.report,view:state.view,cameraEnabled:held.cameraEnabled,hiddenUids:effectiveHidden(),hiddenKey:state.playbackHiddenKey});
+      preparedPresented = true;
     } else if (packet && state.renderer.renderPrepared && (packet.cameraEnabled ?? true) === !state.scrubbing) {
       if (!state.renderer.hasPreparedFrame(packet.key))
         state.renderer.prepareFrame(packet, {
@@ -1362,16 +1456,20 @@ function loop(now) {
           view: state.view,
           cameraEnabled: !state.scrubbing,
         });
-      const presented = state.renderer.renderPrepared(packet.key, {
+      // Software surfaces reject stale visibility or drag states; those ticks
+      // continue into the live render below instead of showing a frozen frame.
+      preparedPresented = state.renderer.renderPrepared(packet.key, {
         report: editor.report,
         view: state.view,
         cameraEnabled: !state.scrubbing,
         hiddenUids: effectiveHidden(),
-      });
-      if (advancedPlayback && presented !== false)
+        hiddenKey: state.playbackHiddenKey,
+      }) === true;
+      if (advancedPlayback && preparedPresented)
         recordPlaybackPresentation();
       ctx.clearRect(0, 0, overlay.width, overlay.height);
-    } else if (!state.playing || !state.buffering) {
+    }
+    if (!preparedPresented && !state.editablePreparing && (!state.playing || !state.buffering)) {
       const frame = currentFrame(),
         geometry =
           editor._drag?.motionPath?.display?.geometry ||
@@ -1416,7 +1514,7 @@ function loop(now) {
         sequence:(state.lastEditingPresentation?.sequence ?? 0)+1};
       if (advancedPlayback) recordPlaybackPresentation();
       overlayRender(geometry);
-      $('preview-quality').hidden = !(images.reduced || state.renderer.stats?.previewReduced);
+      $('preview-quality').hidden = !(images.reduced || state.renderer.stats?.previewReduced || state.previewGovernor?.index);
     }
     // Final editor overlay pass: keep the actual camera above artwork and tool feedback.
     ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
@@ -1426,6 +1524,7 @@ function loop(now) {
       const frame = currentFrame();
       syncCameraControls($('inspector'), frame, {activeKey:propertyControls?.activeKey,guides:state.cameraGuides});
       if (!state.editablePreparing) drawCameraMonitor($('inspector').querySelector('[data-camera-monitor]'), {
+        onError:error=>telemetry.error(error,'renderer'),onInvalidate:requestRender,
         report:editor.report,frame,geometry:state.playing?null:state.drag?.geometry || keyboardHandleGesture?.geometry || editor.geometry,
         resources:state.renderer.resources,hiddenUids:effectiveHidden(),
         prepared:packet?.key!==undefined&&state.renderer?.renderPreparedInto?{renderer:state.renderer,key:packet.key}:null,
@@ -1458,7 +1557,8 @@ function loop(now) {
       badge.textContent = sample.fps === null ? "— fps" : `${sample.fps.toFixed(1)} fps`;
       badge.dataset.health = sample.coherent === null ? "pending" : sample.coherent ? "good" : "low";
       badge.title = `Scene target: ${sample.targetFps.toFixed(1)} fps`;
-      $('preview-quality').hidden = !state.playbackPacket?.previewQuality?.reduced;
+      $('preview-quality').hidden = !(state.playbackPacket?.previewQuality?.reduced || state.previewGovernor?.index);
+      adaptPreviewQuality(sample, measuredAt);
       lastFpsUI = measuredAt;
     }
   }
@@ -1469,6 +1569,7 @@ function loop(now) {
 function play() {
   if (!$("renderer-error").hidden) return;
   if (state.playing) return pause();
+  if ([...exportJobs].some(job => job.raster)) return status('Finish or cancel the export before playing.');
   editablePreparation.cancel();
   state.previewing = false;
   if (editor.totalTicks < 1) return;
@@ -1494,6 +1595,16 @@ function play() {
   state.playbackPacket = null;
   prepareAhead(playTick, 24);
   state.playing = true;
+  audioScrubController?.abort();
+  audioEngine.stop(); audioEngine.hasAudio = false;
+  state.audioReady = !audibleClips(audioState(editor.report)).length;
+  if (!state.audioReady) {
+    audioPreparation?.abort(); const controller = audioPreparation = new AbortController();
+    state.buffering = true;
+    void audioEngine.unlock().then(() => audioEngine.prepare(editor.report, {start: range.start / audioFps(editor.report), end: range.end / audioFps(editor.report), signal: controller.signal}))
+      .then(() => { if (!controller.signal.aborted) { state.audioReady = true; requestRender(); } })
+      .catch(error => { if (!controller.signal.aborted) { pause(); fail(error); } });
+  }
   thumbnailRenderer?.setPaused(true);
   timelineUI?.setPaused?.(true);
   $("preview-badge").hidden = false;
@@ -1503,6 +1614,7 @@ function play() {
   requestRender();
 }
 function pause() {
+  audioPreparation?.abort(); audioScrubController?.abort(); audioEngine.stop(); state.audioReady = true;
   const wasPlaying = state.playing || state.previewing;
   if (state.playing) {
     playbackMetrics.stop(performance.now());
@@ -1525,10 +1637,11 @@ function pause() {
     };
   state.playing = false;
   state.previewing = false;
+  resetPreviewQuality();
   if (editor.endFrameDraftPreview()) state.editingPacket = null;
   const prepareEditable=Boolean(wasPlaying&&state.editingPacket&&state.renderer?.prepareSceneUpdate);
-  thumbnailRenderer?.setPaused(prepareEditable);
-  timelineUI?.setPaused?.(prepareEditable);
+  thumbnailRenderer?.setPaused(prepareEditable||document.hidden);
+  timelineUI?.setPaused?.(prepareEditable||document.hidden);
   state.buffering = false;
   state.playbackPacket = null;
   $("preview-badge").hidden = true;
@@ -2821,6 +2934,22 @@ async function saveBlob(blob, filename, signal) {
   if (measurement) telemetry.operation({ ...measurement.context, operation: 'export', stage: 'write', outcome: saved ? 'succeeded' : 'cancelled' }, performance.now() - writeStarted);
   return saved;
 }
+/** Route an encoder result to its saved state: a Blob goes through the
+ * classic save path; a sink finish() result is already on disk. */
+async function finishExport(output, filename, signal) {
+  const blob = output instanceof Blob ? output : output?.blob;
+  if (blob) return saveBlob(blob, filename, signal);
+  const measurement = signal && exportTelemetry.get(signal), finished = performance.now();
+  if (measurement) {
+    measurement.context.size = sizeBucket(output?.size ?? 0);
+    telemetry.timing('export_ms', finished - measurement.started);
+    telemetry.operation({ ...measurement.context, operation: 'export', stage: 'encode', outcome: 'succeeded' }, finished - measurement.started);
+    measurement.stage = 'write';
+    measurement.releaseRenderer?.();
+    telemetry.operation({ ...measurement.context, operation: 'export', stage: 'write', outcome: output?.saved ? 'succeeded' : 'cancelled' }, 0);
+  }
+  return Boolean(output?.saved);
+}
 async function saveNative({ saveAs = false } = {}) {
   finishCurrentEdit();
   while(editor._movieclipScopes?.length)editor.leaveMovieclip();
@@ -2920,10 +3049,10 @@ function exportOptions({ animation = true } = {}) {
     options.height < 1 ||
     options.width > 16384 ||
     options.height > 16384 ||
-    options.width * options.height > 16777216
+    options.width * options.height > EXPORT_MAX_PIXELS
   )
     throw new Error(
-      "Export size must be whole pixels, up to 16 million pixels per frame.",
+      `Export size must be whole pixels, up to ${Math.round(EXPORT_MAX_PIXELS / 1e6)} million pixels per frame.`,
     );
   if (
     animation &&
@@ -3091,31 +3220,49 @@ async function exportImages(format) {
     filename = `${editor.name}${format.endsWith("sequence") ? "-" + format : ""}.${extension}`,
     loop = state.loop;
   if (format === "svg-sequence") options.smoothing = "edges";
-  await withExportRenderer(
-    options,
-    report,
-    async (renderer, signal, onProgress) => {
-      const blob = await exportAnimation({
-        format,
-        width: options.width,
-        height: options.height,
-        quality: options.quality,
-        dither: options.dither,
-        fps,
-        totalFrames: ticks,
-        loop,
-        signal,
-        onProgress,
-        renderFrame: (index) => renderer.renderTick(index + options.start),
-        renderSVGFrame: (index) =>
-          renderer.renderSVGTick(index + options.start),
-      });
-      const saved = await saveBlob(blob, filename, signal);
-      if (saved) status("Animation exported");
-      return saved;
-    },
-    { frames: ticks, format: format === 'apng' ? 'png' : format.split('-')[0], fps, passes: format === 'gif' ? 2 : 1 },
-  );
+  if ([...exportJobs].some(job => job.raster)) throw new Error('An export is already running. Wait for it to finish or cancel it.');
+  // Streamed exports pick their destination up front, then write while encoding.
+  const sink = await openExportSink({
+    filename,
+    mimeType: exportFormat(format)?.mimeType,
+    desktop,
+  });
+  if (!sink) {
+    telemetry.count('export_cancelled');
+    return false;
+  }
+  try {
+    return await withExportRenderer(
+      options,
+      report,
+      async (renderer, signal, onProgress) => {
+        sink.signal = signal;
+        const output = await exportAnimation({
+          format,
+          width: options.width,
+          height: options.height,
+          quality: options.quality,
+          dither: options.dither,
+          fps,
+          totalFrames: ticks,
+          loop,
+          signal,
+          onProgress,
+          sink,
+          renderFrame: (index) => renderer.renderTick(index + options.start),
+          renderSVGFrame: (index) =>
+            renderer.renderSVGTick(index + options.start),
+        });
+        const saved = await finishExport(output, filename, signal);
+        if (saved) status("Animation exported");
+        return saved;
+      },
+      { frames: ticks, format: format === 'apng' ? 'png' : format.split('-')[0], fps, passes: format === 'gif' ? 2 : 1 },
+    );
+  } catch (error) {
+    await sink.abort().catch(() => {});
+    throw error;
+  }
 }
 async function exportVideo(format = "webm") {
   telemetry.count('export_video');
@@ -3143,36 +3290,75 @@ async function exportVideo(format = "webm") {
     manualMbps: $('export-video-bitrate')?.value,
     lossless: format === 'avi' && ['ffv1', 'rawvideo'].includes(codec),
   });
-  await withExportRenderer(
-    options,
-    report,
-    async (renderer, signal, onProgress) => {
-      const encode =
-        format === "vfw"
-          ? encodeVfwVideo
-          : format === "webm" && !nativeWebm
-            ? encodeWebM
-            : encodeNativeVideo;
-      const blob = await encode({
-        format,
-        codec,
+  const encode =
+    format === "vfw"
+      ? encodeVfwVideo
+      : format === "webm" && !nativeWebm
+        ? encodeWebM
+        : encodeNativeVideo;
+  const includeAudio = ($('export-audio')?.checked ?? true) && audibleClips(audioState(report)).some(clip => clip.start < options.end / fps && clip.start + clip.duration > options.start / fps);
+  if (includeAudio && encode !== encodeNativeVideo) throw new Error('Audio export requires a desktop FFmpeg video format. Choose MP4, WebM, AVI or WMV with FFmpeg, or turn off Include audio for a silent export.');
+  // Native exports keep the encoded file on disk in the desktop process; a
+  // direct save moves it without piping bytes through the renderer. Every
+  // other path streams encoder output into the chosen file as it is produced.
+  const saveMethod =
+    encode === encodeNativeVideo
+      ? "saveVideoExport"
+      : encode === encodeVfwVideo
+        ? "saveVfwExport"
+        : null;
+  const directSave =
+    saveMethod && typeof desktop?.[saveMethod] === "function";
+  if ([...exportJobs].some(job => job.raster)) throw new Error('An export is already running. Wait for it to finish or cancel it.');
+  const sink = directSave
+    ? null
+    : await openExportSink({
+        filename,
+        mimeType: exportFormat(format === "vfw" ? "avi" : format)?.mimeType,
         desktop,
-        ...videoQuality,
-        ...vfw,
-        width: options.width,
-        height: options.height,
-        fps,
-        totalFrames: ticks,
-        signal,
-        onProgress,
-        renderFrame: (index) => renderer.renderTick(index + options.start),
       });
-      const saved = await saveBlob(blob, filename, signal);
-      if (saved) status(`${extension.toUpperCase()} exported`);
-      return saved;
-    },
-    { frames: ticks, format: 'video', fps },
-  );
+  if (!directSave && !sink) {
+    telemetry.count('export_cancelled');
+    return false;
+  }
+  try {
+    return await withExportRenderer(
+      options,
+      report,
+      async (renderer, signal, onProgress) => {
+        if (sink) sink.signal = signal;
+        const output = await encode({
+          audioChunks: includeAudio ? audioEngine.exportChunks(report, {start:options.start / fps,duration:ticks / fps,signal}) : undefined,
+          format,
+          codec,
+          desktop,
+          ...videoQuality,
+          ...vfw,
+          width: options.width,
+          height: options.height,
+          fps,
+          totalFrames: ticks,
+          signal,
+          onProgress,
+          sink,
+          save: directSave
+            ? {
+                defaultPath: filename,
+                filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
+              }
+            : undefined,
+          renderFrame: (index) => renderer.renderTick(index + options.start),
+        });
+        const saved = await finishExport(output, filename, signal);
+        if (saved) status(`${extension.toUpperCase()} exported`);
+        return saved;
+      },
+      { frames: ticks, format: 'video', fps },
+    );
+  } catch (error) {
+    await sink?.abort().catch(() => {});
+    throw error;
+  }
 }
 function showDialog(title, body) {
   $("dialog-content").innerHTML =
@@ -3448,7 +3634,7 @@ function showExport() {
   for (const id of ["export-mp4-codec", "export-avi-codec"])
     $(id).onchange = () => void refreshCapabilities();
   void refreshCapabilities();
-  mountExportFlow($("dialog-content"), {width: editor.report.canvas_width, height: editor.report.canvas_height,
+  mountExportFlow($("dialog-content"), {audioClips:audibleClips(audioState(editor.report)),audioSupported:typeof desktop?.writeVideoAudioChunk==='function',width: editor.report.canvas_width, height: editor.report.canvas_height,
     totalFrames: editor.totalTicks, currentFrame: editor.tick + 1,
     fps: editor.report.frame_delay_ms ? 1000 / editor.report.frame_delay_ms : editor.report.fps});
 }
@@ -4014,7 +4200,7 @@ const actions = {
     if (document.activeElement?.closest("#timeline")) timelineUI.selectAll?.();
     else
       editor.selectMany(
-        editor.frame.objects
+        editor.selectionFrame.objects
           .filter((o) => !isHidden(o.unique_id) && !isLocked(o.unique_id))
           .map((o) => o.unique_id),
       );
@@ -4529,6 +4715,7 @@ $("media-input").addEventListener(
   }),
 );
 document.addEventListener("dragover", (e) => {
+  if (e.defaultPrevented) { $("canvas-empty").hidden = true; return; }
   if (e.dataTransfer.types.includes("Files")) {
     e.preventDefault();
     $("canvas-empty").hidden = false;
@@ -4540,9 +4727,10 @@ document.addEventListener("dragleave", (e) => {
 document.addEventListener(
   "drop",
   guarded((e) => {
+    const handled = e.defaultPrevented;
     e.preventDefault();
     $("canvas-empty").hidden = true;
-    if (e.dataTransfer.files.length)
+    if (!handled && e.dataTransfer.files.length)
       return importFiles([...e.dataTransfer.files]);
   }),
 );
@@ -4784,11 +4972,35 @@ window.addEventListener('blur', () => {
   if (state.drag) cancelDrag();
   state.builderShiftHeld = false;
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden) hotkeys.releaseAll(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    hotkeys.releaseAll();
+    // A hidden page cannot present anything; park speculative preparation the
+    // same way a long canvas drag does. Exports keep their own workers.
+    playback.setInteractionActive(true);
+    thumbnailRenderer?.setPaused(true);
+    timelineUI?.setPaused?.(true);
+    return;
+  }
+  playback.setInteractionActive(Boolean(editingGestureActive()||state.scrubbing||state.editablePreparing));
+  thumbnailRenderer?.setPaused(Boolean(editingGestureActive()||state.playing||state.editablePreparing));
+  timelineUI?.setPaused?.(Boolean(state.playing||state.editablePreparing));
+  // A warm-up skipped while hidden still owes the playhead its neighbors.
+  warmPlayback();
+});
 new MutationObserver(() => { if (document.querySelector('dialog[open]')) hotkeys.releaseAll(); })
   .observe(document.body, {subtree:true, attributes:true, attributeFilter:['open']});
 editor.addEventListener("change", (e) => {
   const kind = e.detail?.kind;
+  if (e.detail?.audio && !e.detail?.timing) {
+    pause();
+    for (const job of exportJobs) job.controller.abort();
+    // Audio metadata cannot invalidate any prepared animation pixels.
+    if (playback.report === editor.report) { playback.documentRevision = editor.revision; state.playbackRevision = editor.revision; }
+    queueUI(); if (editor.dirty) scheduleRecovery(); return;
+  }
+  if (['edit','history','document'].includes(kind) && !e.detail?.live) { audioPreparation?.abort(); audioScrubController?.abort(); audioEngine.stop(); }
+  if (kind === 'document') void audioEngine.clear().catch(fail);
   if (kind === 'edit' && !e.detail?.live) { telemetry.count('edits'); telemetry.milestone('first_edit'); }
   if(['edit','history','document','preview','frame-draft','seek'].includes(kind))editablePreparation.cancel();
   const selectedTrack = ["seek", "history", "frame-draft"].includes(kind)
@@ -4936,7 +5148,7 @@ function scheduleRecovery() {
     const report = editor.report,
       name = editor._movieclipScopes?.[0]?.parent.name ?? editor.name;
     try {
-      await runDocumentExport(
+      const saved = await runDocumentExport(
         "styk",
         async (blob, signal) => {
           if (
@@ -4958,11 +5170,12 @@ function scheduleRecovery() {
         },
         { recovery: true },
       );
+      if (saved) state.recoveryBackoff = 1;
     } catch (error) {
       if (error.name !== "AbortError")
         status(`Recovery copy could not be written: ${error.message}`, true);
     }
-  }, state.settings.autosaveSeconds * 1000);
+  }, state.settings.autosaveSeconds * 1000 * (state.recoveryBackoff || 1));
 }
 function offerRecovery() {
   if (desktop?.getRecoveryInfo) {
@@ -5081,6 +5294,7 @@ window.addEventListener("beforeunload", (e) => {
   }
 });
 window.styk = {
+  audioEngine,
   editor,
   state,
   actions,
@@ -5263,6 +5477,9 @@ function mountTimeline() {
   const TimelineClass =
     state.settings.timelineMode === "simple" ? SimpleTimeline : Timeline;
   timelineUI = new TimelineClass($("timeline"), editor, {
+    audioEngine,
+    onTogglePlay: play,
+    onAudioHeight: (height, focused) => workspaceLayout?.setTimelineAccessoryHeight(height, focused),
     onAddFrame: () => actions["add-frame"](),
     onDeleteLayer: id => changeFigureLayer('Delete layer',options=>editor.deleteLayerAsync(id,options)),
     hotkeys,
@@ -5325,8 +5542,18 @@ function mountTimeline() {
       state.scrubbing = true;
       requestRender();
     },
-    onScrub: previewScrub,
+    onScrub: tick => {
+      previewScrub(tick);
+      if (timelineUI?.audio?.scrub.checked && performance.now() - audioScrubAt > 100) {
+        audioScrubAt = performance.now(); audioScrubController?.abort(); const controller = audioScrubController = new AbortController();
+        const time = tick / audioFps(editor.report);
+        void audioEngine.unlock().then(() => audioEngine.prepare(editor.report, {start:time, end:time+.08, signal:controller.signal}))
+          .then(() => { if (!controller.signal.aborted) return audioEngine.start(time,time+.08); })
+          .catch(error => { if (!controller.signal.aborted) fail(error); });
+      }
+    },
     onScrubEnd: () => {
+      audioScrubController?.abort(); audioEngine.stop();
       state.scrubbing = false;
       queueUI();
       requestRender();
@@ -5375,6 +5602,7 @@ async function init() {
       state.settings = next;
       try { if (previousMode !== next.timelineMode) mountTimeline(); }
       catch (error) { state.settings = previousSettings; throw error; }
+      if (patch.rendererMode !== undefined && state.renderer) void recoverCanvas(true);
       if (patch.hotkeys) { hotkeys.setBindings(next.hotkeys); refreshHotkeyHints(hotkeys); }
       onionControls?.sync();
       pathControls?.sync();
@@ -5452,14 +5680,7 @@ async function init() {
         branch && ["segment_opacity", "segment_gradient_opacity"].includes(key)
           ? null
           : propertyChannel(key);
-      if (
-        binding &&
-        (editor.propertyChannels || binding.property === 'zIndex' || editor.animationChannel(
-          binding.target,
-          binding.property,
-          binding.options,
-        )?.keys.length)
-      ) {
+      if (binding && (editor.propertyChannels || binding.property === 'zIndex')) {
         editor.beginAnimationEdit(
           binding.target,
           binding.property,
@@ -5497,43 +5718,6 @@ async function init() {
       queueUI();
       requestRender();
     },
-    keyframe: ({ key }) => {
-      const binding = propertyChannel(key);
-      if (!binding) return;
-      pause();
-      const channel = editor.animationChannel(
-          binding.target,
-          binding.property,
-          binding.options,
-        ),
-        existing = channel?.keys.find((key) => key.tick === editor.tick && !key.hidden && !key.passthrough);
-      if (existing)
-        editor.deleteAnimationKeys([
-          { channelId: channel.id, keyIds: [existing.id] },
-        ]);
-      else
-        editor.addAnimationKey(
-          binding.target,
-          binding.property,
-          editor.tick,
-          editor.animationValue(
-            binding.target,
-            binding.property,
-            editor.tick,
-            binding.options,
-          ),
-          binding.options,
-        );
-      queueUI();
-    },
-    navigate: ({ key, direction }) => {
-      const info = propertyState(key);
-      const next = direction < 0 ? info.previousKey : info.nextKey;
-      if (next) {
-        pause();
-        editor.seek(next.tick);
-      }
-    },
     onError: fail,
   });
   window.styk.properties = propertyControls;
@@ -5562,7 +5746,9 @@ async function init() {
   installLibraryDrop(viewport, {position: worldPoint, insert: libraryInsert, onError: fail});
   installLibraryDrag(window.styk.library.grid, viewport, {
     getAsset: card => !window.styk.library.busy && window.styk.library.entries.find(item => item.path === card.dataset.libraryPath),
-    onStart: asset => window.styk.library.select(asset.path),
+    onStart: asset => { window.styk.library.hoverPreview.stop(); window.styk.library.closeMenu(); window.styk.library.select(asset.path); },
+    getDestination: (hit, asset) => window.styk.library.dragDestination(hit, asset),
+    moveItem: (asset, folder) => window.styk.library.moveItem(asset, folder),
     position: worldPoint, insert: libraryInsert, onError: fail,
   });
   $('library-tab')?.addEventListener('click', () => telemetry.count('library'));
@@ -5629,8 +5815,22 @@ async function init() {
     console.warn(error);
   }
 }
-function recoverCanvas() {
-  if (rendererRecovery) return rendererRecovery;
+function scheduleGpuRecovery() {
+  if (gpuRecoveryTimer !== undefined) return;
+  const delay = gpuRecoveryAttempts < GPU_RECOVERY_DELAYS.length ? GPU_RECOVERY_DELAYS[gpuRecoveryAttempts++] : 0;
+  gpuRecoveryTimer = setTimeout(() => {
+    gpuRecoveryTimer = undefined;
+    recoverCanvas().catch(error => {
+      $("renderer-error").querySelector('p').textContent = 'The canvas could not reconnect. Your animation is still here and can be saved.';
+      status(error.message, true);
+    });
+  }, delay);
+}
+function recoverCanvas(refreshGpuBudget) {
+  // Queue behind an in-flight recovery so a device lost mid-reconnect retries.
+  if (rendererRecovery) return rendererRecovery.finally(() => recoverCanvas(refreshGpuBudget));
+  clearTimeout(gpuRecoveryTimer); gpuRecoveryTimer = undefined;
+  if (refreshGpuBudget) gpuRecoveryAttempts = 0;
   rendererRecovery = (async () => {
     // A canvas cannot switch context types. Replace only the scene surface;
     // document/history and pointer handlers on the overlay remain available.
@@ -5643,11 +5843,10 @@ function recoverCanvas() {
       canvas.replaceWith(replacement); canvas = replacement;
     };
     replaceCanvas();
-    const forceCanvas2D = gpuRecoveryAttempted;
-    gpuRecoveryAttempted = true;
+    // An exhausted retry budget takes the software path until the renderer
+    // stays healthy or explicit user action refreshes the budget.
+    const forceCanvas2D = gpuRecoveryAttempts >= GPU_RECOVERY_DELAYS.length || state.settings.rendererMode === "canvas";
     try {
-      // A transient device reset need not disable acceleration for the session.
-      // Permit one GPU reconnect; a second loss takes the software path.
       state.renderer = await createRenderer(canvas, {...rendererOptions(), forceCanvas2D});
     } catch (error) {
       // Initialization may fail after acquiring a WebGPU canvas context.
@@ -5655,6 +5854,8 @@ function recoverCanvas() {
       state.renderer = await createRenderer(canvas, {...rendererOptions(), forceCanvas2D: true,
         fallbackReason: `Graphics reconnection failed: ${error.message}`});
     }
+    clearTimeout(gpuStableTimer);
+    gpuStableTimer = setTimeout(() => { gpuRecoveryAttempts = 0; }, GPU_STABLE_MS);
     $("renderer-error").hidden = true;
     resize(); requestRender();
   })().finally(() => {rendererRecovery = null;});
@@ -5663,6 +5864,8 @@ function recoverCanvas() {
 function rendererOptions() {
   return {
     resources,
+    forceCanvas2D: state.settings.rendererMode === "canvas",
+    allowSoftwareAdapter: state.settings.rendererMode === "gpu",
     onInvalidate: requestRender,
     onStatus: (message) => {
       const compatibility = message.backend === "Canvas 2D fallback";
@@ -5677,7 +5880,8 @@ function rendererOptions() {
         typeof message === "string" ? message : message.message || "Ready",
       );
       if (message.backend === "WebGPU device lost") {
-        telemetry.count('gpu_errors'); telemetry.error({ name: 'GPUError' }, 'gpu');
+        telemetry.count('gpu_errors');
+        telemetry.error(Object.assign(new Error('The graphics device was lost.'), { name: 'GPUError', telemetryCode: 'device_lost' }), 'gpu');
         pause();
         propertyControls?.cancel();
         cancelDrag();
@@ -5695,12 +5899,8 @@ function rendererOptions() {
         $("renderer-error").hidden = false;
         $("renderer-error").innerHTML =
           '<p>The graphics device was reset. Reconnecting your canvas…</p><button class="button" id="retry-renderer">Reconnect canvas</button>';
-        $("retry-renderer").onclick = guarded(recoverCanvas);
-        // Reconnect acceleration once, then fall back without a retry loop.
-        recoverCanvas().catch(error => {
-          $("renderer-error").querySelector('p').textContent = 'The canvas could not reconnect. Your animation is still here and can be saved.';
-          status(error.message, true);
-        });
+        $("retry-renderer").onclick = guarded(() => recoverCanvas(true));
+        scheduleGpuRecovery();
       }
     },
   };

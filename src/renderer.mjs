@@ -1,6 +1,7 @@
 import {canvasPaint} from './paint.mjs';
 import {ViewportVfx,hasSceneVfx} from './vfx-viewport.mjs';
 import {CameraVfx} from './vfx-camera.mjs';
+import {initVfxDevice,releaseVfxDevice} from './vfx-gpu.mjs';
 import {vfxPreviewOptions,vfxPreviewGeometry} from './vfx-preview.mjs';
 import { buildGeometry, buildGeometrySteps, drawGeometry, releaseGeometryResources } from './pivot/geometry.mjs';
 import { drawBackground, backgroundBounds, sceneBackgroundColor, effectiveCamera } from './pivot/background.mjs';
@@ -16,6 +17,26 @@ import {glyphTextureDescriptor,drawGlyphMask,glyphTextureShape} from './renderer
 import { uploadShapeLayoutSteps, SHAPE_UPLOAD_RECORDS } from './renderer-upload.mjs';
 import { backgroundImageAssets, frameImageAssets, createSceneImages, consumeSceneSteps } from './scene-preparation.mjs';
 export { cameraMatrix, worldToScreen, screenToWorld } from './renderer-geometry.mjs';
+function renderPreviewVfx(renderer,field,create,render) {
+  if(performance.now()<renderer.vfxRetryAt)return false;
+  try {
+    renderer[field]??=create();render(renderer[field]);
+    if(renderer.vfxRetryAt)renderer.options.onStatus?.({backend:renderer.stats.backend,message:'Camera effects preview restored.'});
+    renderer.vfxRetryAt=0;return true;
+  }
+  catch(error){
+    // The unfiltered scene is already visible. Release failed effect surfaces
+    // and leave editing available while a later frame retries the preview.
+    renderer.vfxRetryAt=performance.now()+1500;
+    try {renderer[field]?.destroy();} catch { /* A lost device may already be released. */ }
+    renderer[field]=null;renderer.stats.vfxFailures=(renderer.stats.vfxFailures||0)+1;
+    const failure=error instanceof Error?error:new Error('The camera effects preview failed.');
+    failure.telemetryStage??='prepare';
+    renderer.options.onStatus?.({backend:renderer.stats.backend,message:'Camera effects preview unavailable. Showing the scene without camera effects while retrying.'});
+    if(renderer.options.onError)renderer.options.onError(failure);else globalThis.reportError?.(failure);
+    return false;
+  }
+}
 function editorBackgroundColor(options) {
   const color=options.editorBackgroundColor;
   if(color===undefined||color===null)return undefined;
@@ -143,8 +164,15 @@ class CanvasFallback {
     if (!this.context) throw new Error('The compatibility canvas is unavailable.');
     this.stats = { backend: 'Canvas 2D fallback', reason, drawCalls: 0, primitives: 0, frameMs: 0, objects: 0, textureObjects: 0 };
     this.onionArtwork = new Map(); this.onionArtworkBytes = 0;
-    this.resources = createResources(options, () => { this.clearOnionArtwork(); if(this.vfxCamera)this.vfxCamera.frame=null; if (this.last) this.render(this.last); options.onInvalidate?.(); });
-    this.onContextLost = () => { this.contextLost = true; this.clearOnionArtwork(); };
+    // Unchanged live objects rasterize once into a bounded bitmap cache instead
+    // of re-stroking every primitive on each repaint, like the onion path.
+    this.artwork = new Map(); this.artworkBytes = 0;
+    // Software playback packets arrive as composited artboard bitmaps; copies
+    // outlive CPU packet eviction so presentation is one drawImage per tick.
+    this.softwarePlayback = true;
+    this.prepared = new Map(); this.preparedBytes = 0;
+    this.resources = createResources(options, () => { this.clearOnionArtwork(); this.clearArtwork(); if(this.vfxCamera)this.vfxCamera.frame=null; if (this.last) this.render(this.last); options.onInvalidate?.(); });
+    this.onContextLost = () => { this.contextLost = true; this.clearOnionArtwork(); this.clearArtwork(); this.clearPreparedFrames(); };
     this.onContextRestored = () => {
       if (this.destroyed) return;
       this.contextLost = false;
@@ -164,7 +192,75 @@ class CanvasFallback {
     for (const item of this.onionArtwork.values()) { item.canvas.width = 1; item.canvas.height = 1; }
     this.onionArtwork.clear(); this.onionArtworkBytes = 0;
   }
+  clearArtwork() {
+    for (const item of this.artwork.values()) { item.canvas.width = 1; item.canvas.height = 1; }
+    this.artwork.clear(); this.artworkBytes = 0;
+  }
+  // The bitmap inside a software packet belongs to the CPU packet pool; the
+  // prepared entry owns a same-size copy so LRU eviction cannot close pixels
+  // that a later tick still presents.
+  prepareFrame(packet, { report } = {}) {
+    if (this.destroyed || this.contextLost || this.context.isContextLost?.()) return null;
+    const source = packet?.compatibility?.[0]?.bitmap;
+    if (!packet?.softwareFrames || !source) return null;
+    const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(source.width, source.height) : this.canvas.ownerDocument.createElement('canvas');
+    canvas.width = source.width; canvas.height = source.height;
+    canvas.getContext('2d').drawImage(source, 0, 0);
+    const entry = { canvas, report, cameraEnabled: packet.cameraEnabled !== false,
+      hiddenKey: packet.hiddenKey || '', uids: packet.uids, bytes: source.width * source.height * 4 };
+    const old = this.prepared.get(packet.key);
+    if (old) { this.prepared.delete(packet.key); this.preparedBytes -= old.bytes; old.canvas.width = 1; old.canvas.height = 1; }
+    this.prepared.set(packet.key, entry); this.preparedBytes += entry.bytes;
+    while (this.prepared.size > 120 || this.preparedBytes > previewMemoryPlan().gpuFrames) {
+      const key = this.prepared.keys().next().value, item = this.prepared.get(key);
+      this.prepared.delete(key); this.preparedBytes -= item.bytes; item.canvas.width = 1; item.canvas.height = 1;
+    }
+    Object.assign(this.stats, { preparedFrames: this.prepared.size, preparedBytes: this.preparedBytes });
+    return packet.key;
+  }
+  hasPreparedFrame(key) { return this.prepared.has(String(key)); }
+  renderPrepared(key, { report, view = {}, hiddenUids, dragTranslations, cameraEnabled = true, hiddenKey = '' } = {}) {
+    const entry = this.prepared.get(String(key));
+    if (!entry || this.destroyed || this.contextLost || entry.report !== report) return false;
+    if (entry.cameraEnabled !== (cameraEnabled !== false)) return false;
+    // The bitmap baked a visibility signature. Any difference re-renders live.
+    if (entry.hiddenKey !== (hiddenKey || '')) return false;
+    if (hiddenUids?.has && entry.uids) for (const uid of entry.uids) if (hiddenUids.has(uid)) return false;
+    if (dragTranslations?.size || (dragTranslations && Object.keys(dragTranslations).length)) return false;
+    const ctx = this.context;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.save(); ctx.scale(this.dpr, this.dpr);
+    ctx.drawImage(entry.canvas, view.x || 0, view.y || 0,
+      report.canvas_width * (view.scale || 1), report.canvas_height * (view.scale || 1));
+    ctx.restore();
+    this.prepared.delete(String(key)); this.prepared.set(String(key), entry);
+    Object.assign(this.stats, { mode: 'prepared playback', frameMs: 0, drawCalls: 1, objects: 0, primitives: 0 });
+    return true;
+  }
+  clearPreparedFrames() {
+    for (const item of this.prepared.values()) { item.canvas.width = 1; item.canvas.height = 1; }
+    this.prepared.clear(); this.preparedBytes = 0;
+  }
+  retainPreparedFrames(report, packets) {
+    const keys = new Set();
+    for (const packet of packets || []) keys.add(String(packet.key));
+    for (const [key, item] of this.prepared) if (item.report !== report || !keys.has(key)) {
+      this.prepared.delete(key); this.preparedBytes -= item.bytes; item.canvas.width = 1; item.canvas.height = 1;
+    }
+  }
+  backgroundsReady() { return true; }
+  async prepareBackgrounds() {}
+  softwareRasterContext(canvas) {
+    const context=canvas.getContext('2d',{willReadFrequently:true});
+    if(context&&!context.isContextLost?.())return context;
+    canvas.width=canvas.height=1;this.rasterRetryAt=performance.now()+1500;
+    const error=Object.assign(new Error('A preview raster canvas is unavailable; drawing directly instead.'),{telemetryCode:'device_lost',telemetryStage:'prepare'});
+    this.options.onError?.(error);
+    if(!this.options.onError)globalThis.reportError?.(error);
+    return null;
+  }
   drawOnion(ctx, group, scale) {
+    if(performance.now()<this.rasterRetryAt){drawGeometry(ctx,{drawables:group.items},this.resources);return;}
     const resolution = Math.max(.5, Math.min(8, 2 ** Math.ceil(Math.log2(scale || 1))));
     let cached = this.onionArtwork.get(group.g);
     if (cached?.resolution !== resolution) {
@@ -174,7 +270,8 @@ class CanvasFallback {
       const width = Math.max(1, Math.ceil(bounds.width * pixelScale)), height = Math.max(1, Math.ceil(bounds.height * pixelScale));
       const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : this.canvas.ownerDocument.createElement('canvas');
       canvas.width = width; canvas.height = height;
-      const temp = canvas.getContext('2d');
+      const temp = this.softwareRasterContext(canvas);
+      if(!temp){drawGeometry(ctx,{drawables:group.items},this.resources);return;}
       temp.setTransform(pixelScale, 0, 0, pixelScale, -bounds.x * pixelScale, -bounds.y * pixelScale);
       drawGeometry(temp, {drawables: group.items}, this.resources);
       releaseGeometryResources(temp);
@@ -191,12 +288,47 @@ class CanvasFallback {
       item.canvas.width = 1; item.canvas.height = 1;
     }
   }
+  // Live objects reuse the same bounded raster strategy as onion skins. The
+  // renderSource identity survives seeks and translation-only edits, so an
+  // unchanged figure is one drawImage instead of re-stroking every primitive.
+  drawObject(ctx, group, scale) {
+    const source = group.g.renderSource || group.g;
+    if (group.items.length < 4 || typeof OffscreenCanvas === 'undefined' || performance.now()<this.rasterRetryAt) {
+      drawGeometry(ctx, { drawables: group.items }, this.resources); return;
+    }
+    const resolution = Math.max(.5, Math.min(8, 2 ** Math.ceil(Math.log2(scale || 1))));
+    let cached = this.artwork.get(source);
+    if (cached?.resolution !== resolution) {
+      if (cached) { this.artwork.delete(source); this.artworkBytes -= cached.bytes; cached.canvas.width = 1; cached.canvas.height = 1; }
+      const items = group.g.renderSource ? source.drawables : group.items;
+      const bounds = objectBounds(items, this.resources);
+      if (!(bounds.width > 0 && bounds.height > 0)) { drawGeometry(ctx, { drawables: group.items }, this.resources); return; }
+      const pixelScale = Math.min(resolution, 4096 / bounds.width, 4096 / bounds.height);
+      const width = Math.max(1, Math.ceil(bounds.width * pixelScale)), height = Math.max(1, Math.ceil(bounds.height * pixelScale));
+      const canvas = new OffscreenCanvas(width, height);
+      const temp = this.softwareRasterContext(canvas);
+      if(!temp){drawGeometry(ctx,{drawables:group.items},this.resources);return;}
+      temp.setTransform(pixelScale, 0, 0, pixelScale, -bounds.x * pixelScale, -bounds.y * pixelScale);
+      drawGeometry(temp, { drawables: items }, this.resources);
+      releaseGeometryResources(temp);
+      cached = { canvas, resolution, bounds, width: width / pixelScale, height: height / pixelScale, bytes: width * height * 4 };
+      this.artworkBytes += cached.bytes;
+      this.stats.rasterizedObjects = (this.stats.rasterizedObjects || 0) + 1;
+    }
+    this.artwork.delete(source); this.artwork.set(source, cached);
+    ctx.drawImage(cached.canvas, cached.bounds.x, cached.bounds.y, cached.width, cached.height);
+    while (this.artwork.size > 4096 || this.artworkBytes > previewMemoryPlan().editorRasters) {
+      const key = this.artwork.keys().next().value, item = this.artwork.get(key);
+      this.artwork.delete(key); this.artworkBytes -= item.bytes;
+      item.canvas.width = 1; item.canvas.height = 1;
+    }
+  }
   render(options) {
     options=vfxPreviewOptions(options);
     this.last = options; const start = performance.now(), ctx = this.context;
-    if (this.destroyed || this.contextLost || ctx.isContextLost?.()) return;
+    if (this.destroyed || this.contextLost || !ctx || ctx.isContextLost?.()) return;
     const { report, frame, view = {}, geometry = frame && (options.vfxEnabled===false?vfxPreviewGeometry(buildGeometry(report,frame)):buildGeometry(report,frame)), hiddenUids, dragTranslations } = options;
-    if (this.onionReport !== report) { this.clearOnionArtwork(); this.onionReport = report; }
+    if (this.onionReport !== report) { this.clearOnionArtwork(); this.clearArtwork(); this.clearPreparedFrames(); this.onionReport = report; }
     this.stats.onionRasterizedObjects = 0;
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     if (!frame || !report) return;
@@ -218,12 +350,12 @@ class CanvasFallback {
       const move = !group.isOnion && dragTranslations?.get(uid);
       ctx.save(); ctx.globalAlpha = group.opacity; if (move) ctx.translate(move.x, move.y);
       if (group.isOnion) this.drawOnion(ctx, group, scale);
-      else drawGeometry(ctx, {drawables: group.items}, this.resources);
+      else this.drawObject(ctx, group, scale);
       ctx.restore(); primitives += group.items.length;
     }
     ctx.restore();
     if(hasSceneVfx(frame)){
-      this.vfxCamera??=new CameraVfx();this.vfxCamera.render(ctx,{...options,geometry},this.dpr,this.resources);
+      renderPreviewVfx(this,'vfxCamera',()=>new CameraVfx(),camera=>camera.render(ctx,{...options,geometry},this.dpr,this.resources));
       ctx.save();ctx.scale(this.dpr,this.dpr);if(options.clipToCanvas!==false)clipArtboard();ctx.transform(...matrix);
       for(const group of composeSceneGroups(geometry,onions,frame)){if(!group.isOnion||hiddenUids?.has(group.g.obj.unique_id))continue;ctx.save();ctx.globalAlpha=group.opacity;this.drawOnion(ctx,group,scale);ctx.restore();}
       ctx.restore();
@@ -236,7 +368,7 @@ class CanvasFallback {
     this.vfxCamera?.destroy();
     this.canvas.removeEventListener?.('contextlost', this.onContextLost);
     this.canvas.removeEventListener?.('contextrestored', this.onContextRestored);
-    this.clearOnionArtwork(); releaseGeometryResources(this.context);
+    this.clearOnionArtwork(); this.clearArtwork(); this.clearPreparedFrames(); releaseGeometryResources(this.context);
   }
 }
 
@@ -249,6 +381,9 @@ class WebGPURenderer {
     this.artworkAliases = new WeakMap();
     this.preparedFrames = new PreparedFrameCache(this, options.preparedCache);
     this.rasterSurfaces = new RasterSurfacePool();
+    // Weak adapters lower MSAA through setMsaa; every render pass, pipeline and
+    // offscreen target reads this.msaaCount so attachments always agree.
+    this.msaaCount = Math.max(1, Math.min(4, Math.round(options.msaa || 4)));
     this.stats.preparedCache = this.preparedFrames.stats;
     this.resources = createResources(options, () => { this.generation++; this.lastGeometry = null; if (this.last) this.render(this.last); options.onInvalidate?.(); });
   }
@@ -267,13 +402,12 @@ class WebGPURenderer {
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
     ] });
-    this.pipeline = await d.createRenderPipelineAsync({ label: 'StykAnimate vector + asset compositor', layout: d.createPipelineLayout({ bindGroupLayouts: [this.globalLayout, this.textureLayout] }),
-      vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format: this.format, blend: { color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' } } }] },
-      primitive: { topology: 'triangle-list' }, multisample: { count: 4 },
-    });
+    this.vectorModule = module;
+    this.pipelineLayout = d.createPipelineLayout({ bindGroupLayouts: [this.globalLayout, this.textureLayout] });
+    this.pipeline = await this.createVectorPipeline();
     this.uniform = d.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.handleRenderer = new HandleRenderer(d,this.uniform);
-    await this.handleRenderer.initialize(this.format);
+    await this.handleRenderer.initialize(this.format, this.msaaCount);
     this.sampler = d.createSampler({ minFilter: 'linear', magFilter: 'linear' });
     this.nearestSampler = d.createSampler({ minFilter: 'nearest', magFilter: 'nearest' });
     this.blankTexture = d.createTexture({ size: [1, 1], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
@@ -281,8 +415,39 @@ class WebGPURenderer {
     this.blankBindGroup = this.textureBindGroup(this.blankTexture);
     this.ensureBuffers(1, 1);
     this.resize(this.canvas.clientWidth || 1, this.canvas.clientHeight || 1, globalThis.devicePixelRatio || 1);
-    this.device.lost.then(info => { if (!this.destroyed) { this.deviceLost = true; this.last = null; this.stats.reason = info.message; this.stats.message = `Graphics device disconnected: ${info.message || info.reason}. Reinitialize the renderer to continue.`; this.stats.backend = 'WebGPU device lost'; this.options.onStatus?.(this.stats); } });
+    this.device.lost.then(info => { if (!this.destroyed) { this.deviceLost = true; this.last = null; this.stats.reason = info.reason; this.stats.message = `Graphics device disconnected: ${info.message || info.reason}. Reinitialize the renderer to continue.`; this.stats.backend = 'WebGPU device lost'; this.options.onStatus?.(this.stats); } });
     this.device.addEventListener('uncapturederror', event => { if (this.destroyed || this.deviceLost) return; this.stats.warnings.push(event.error.message); this.options.onStatus?.(this.stats); });
+    initVfxDevice(this.device);
+  }
+  createVectorPipeline() {
+    return this.device.createRenderPipelineAsync({ label: 'StykAnimate vector + asset compositor', layout: this.pipelineLayout,
+      vertex: { module: this.vectorModule, entryPoint: 'vs' }, fragment: { module: this.vectorModule, entryPoint: 'fs', targets: [{ format: this.format, blend: { color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' } } }] },
+      primitive: { topology: 'triangle-list' }, multisample: { count: this.msaaCount },
+    });
+  }
+  /** Lower or restore MSAA at runtime. Pipelines, handle passes, VFX targets
+   * and the antialias texture all derive from msaaCount, so one rebuild keeps
+   * every attachment consistent. */
+  async setMsaa(count) {
+    count = Math.max(1, Math.min(4, Math.round(count) || 4));
+    if (this.destroyed || this.deviceLost || count === this.msaaCount) return;
+    this.msaaCount = count;
+    const pipeline = await this.createVectorPipeline();
+    // A newer setMsaa owns the count now; this pipeline matches a stale level.
+    if (this.destroyed || this.deviceLost || count !== this.msaaCount) return;
+    this.pipeline = pipeline;
+    await this.handleRenderer.initialize(this.format, count);
+    if (this.destroyed || this.deviceLost || count !== this.msaaCount) return;
+    // The VFX compositor pipeline bakes its own sample count; rebuild lazily.
+    this.vfxViewport?.destroy(); this.vfxViewport = null;
+    this.msaa?.destroy(); this.msaa = null;
+    this.canvas.width = 0;
+    this.resize(this.width || 1, this.height || 1, this.dpr || 1);
+  }
+  colorAttachment(view) {
+    return this.msaa
+      ? { view: this.msaa.createView(), resolveTarget: view, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'discard' }
+      : { view, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' };
   }
   textureBindGroup(texture, sampler = this.sampler) { return this.device.createBindGroup({ layout: this.textureLayout, entries: [{ binding: 0, resource: sampler }, { binding: 1, resource: texture.createView() }] }); }
   prepareInitialScene(options) { return prepareInitialScene(this, options); }
@@ -345,13 +510,16 @@ class WebGPURenderer {
     if (this.destroyed || this.deviceLost) return;
     width = Math.max(1, width); height = Math.max(1, height); dpr = Math.max(.5, Math.min(3, dpr));
     const pw = Math.max(1, Math.round(width * dpr)), ph = Math.max(1, Math.round(height * dpr));
-    if (this.canvas.width === pw && this.canvas.height === ph && this.msaa) { this.width = width; this.height = height; this.dpr = dpr; return; }
+    if (this.canvas.width === pw && this.canvas.height === ph && (this.msaa || this.msaaCount <= 1)) { this.width = width; this.height = height; this.dpr = dpr; return; }
     this.width = width; this.height = height; this.dpr = dpr; this.canvas.width = pw; this.canvas.height = ph;
-    this.context.configure({ device: this.device, format: this.format, alphaMode: 'premultiplied' });
-    this.msaa?.destroy(); this.msaa = this.device.createTexture({ label: '4× antialias canvas', size: [pw, ph], sampleCount: 4, format: this.format, usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    this.context.configure({ device: this.device, format: this.format, alphaMode: 'premultiplied', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+    this.msaa?.destroy();
+    this.msaa = this.msaaCount > 1
+      ? this.device.createTexture({ label: `${this.msaaCount}× antialias canvas`, size: [pw, ph], sampleCount: this.msaaCount, format: this.format, usage: GPUTextureUsage.RENDER_ATTACHMENT })
+      : null;
   }
   rasterObject(g, items, scale, artwork = g, cache = this.rasterCache) {
-    const bounds = objectBounds(items, this.resources), max = Math.min(4096, this.device.limits.maxTextureDimension2D);
+    const bounds = objectBounds(items, this.resources), max = Math.min(8192, this.device.limits.maxTextureDimension2D);
     const desired = Math.max(.5, Math.min(8, 2 ** Math.ceil(Math.log2(scale || 1))));
     const workingBudget = cache.maxBytes > 0 ? cache.maxBytes : previewMemoryPlan().editorRasters;
     const resolution = Math.min(desired * (this.previewRasterScale || 1), Math.sqrt(workingBudget / 4 / Math.max(1, bounds.width * bounds.height)));
@@ -377,6 +545,17 @@ class WebGPURenderer {
       cache.set(artwork, result); return result;
     } catch (error) { texture?.destroy(); throw error; }
     finally { this.rasterSurfaces.release(); }
+  }
+  // A failed raster must not abort the whole scene build: reuse the slot's or
+  // the artwork's previous texture, else the caller degrades to vector shapes.
+  // The error still reaches telemetry through the microtask, deduped there.
+  rasterFallback(error, artwork, prior) {
+    if (error?.name === 'AbortError') throw error;
+    this.stats.rasterFailures = (this.stats.rasterFailures || 0) + 1;
+    this.stats.lastRasterError = error?.message || String(error);
+    if (typeof window !== 'undefined') queueMicrotask(() => { throw error; });
+    const candidates = [prior?.texture, this.rasterCache.previous(artwork)];
+    return candidates.find(record => record && !record.destroyed) || null;
   }
   glyphTexture(glyph) {
     const cached=this.rasterCache.get(glyph.mask,glyph.variant,this.generation);
@@ -476,18 +655,23 @@ class WebGPURenderer {
     const desired=Math.max(.5,Math.min(8,2**Math.ceil(Math.log2(scale||1))))*(this.previewRasterScale||1);
     const glyph=this.options.sharedArtwork!==false && glyphTextureDescriptor(sourceItems,desired);
     if (glyph) {
-      texture=this.glyphTexture(glyph);this.rasterLease?.add(texture);data=glyphTextureShape(glyph,source.root,index);
+      try { texture=this.glyphTexture(glyph); } catch (error) { texture=this.rasterFallback(error, glyph.mask, prior); }
+      if (texture) { this.rasterLease?.add(texture); data=glyphTextureShape(glyph,source.root,index); }
     } else if (compatibility) {
       const artwork=this.artworkAliases.get(source) ?? (this.options.sharedArtwork===false||this.liveEditing?source:yield* this.artworks.getSteps(source,sourceItems));
       this.artworkAliases.set(g,artwork);
-      texture = this.rasterObject(source, sourceItems, scale, artwork);
-      this.rasterLease?.add(texture);
+      try { texture = this.rasterObject(source, sourceItems, scale, artwork); }
+      catch (error) { texture = this.rasterFallback(error, artwork, prior); }
+      if (texture) this.rasterLease?.add(texture);
       if (prior?.transform === index && prior.texture === texture) data = prior.data;
-      else { const b = texture.bounds, origin=texture.origin; data = new Float32Array(shapeRecord({ a: [b.x - origin.x, b.y - origin.y, b.x + b.width - origin.x, b.y + b.height - origin.y], color: [1, 1, 1, 1], mode: SHAPE.TEXTURE, transform: index })); }
-    } else {
+      else if (texture) { const b = texture.bounds, origin=texture.origin; data = new Float32Array(shapeRecord({ a: [b.x - origin.x, b.y - origin.y, b.x + b.width - origin.x, b.y + b.height - origin.y], color: [1, 1, 1, 1], mode: SHAPE.TEXTURE, transform: index })); }
+    }
+    if (!data) {
       let compiled = this.vectorCache.get(source);
       if (!compiled) { compiled = yield* compileVectorObjectSteps(sourceItems, source.root); this.vectorCache.set(source, compiled); this.stats.compiledObjects++; }
-      if (prior?.source === source && prior.transform === index) data = prior.data;
+      // A textured prior's data is a TEXTURE shape; it is only reusable while the
+      // entry still presents that texture.
+      if (prior?.source === source && prior.transform === index && (!prior.texture || prior.texture === texture)) data = prior.data;
       else { data = compiled.slice(); for (let j = 21; j < data.length; j += SHAPE_FLOATS) data[j] = index; }
     }
     return { key, uid, g, source, opacity, isOnion, root: g.root, transform: index, data, count: data.length / SHAPE_FLOATS, texture };
@@ -652,9 +836,27 @@ class WebGPURenderer {
     const camera = cameraMatrix(options), rasterResolution = Math.max(.5, Math.min(8, 2 ** Math.ceil(Math.log2(Math.hypot(camera[0], camera[1]) * this.dpr))));
     if (this.lastGeometry !== geometry || this.lastReport !== report || this.lastGeneration !== this.generation || this.backgroundKey !== backgroundKey || onionChanged || (this.stats.textureObjects && this.lastRasterResolution !== rasterResolution)) {
       const canUpdate = this.lastReport === report && this.lastGeneration === this.generation && this.backgroundKey === backgroundKey && !onionChanged && (!this.stats.textureObjects || this.lastRasterResolution === rasterResolution);
-      if (!canUpdate || !this.updateGeometry(options, geometry)) this.prepare(options, geometry);
-      this.lastReport = report; this.backgroundKey = backgroundKey; this.onionFrameRefs = [...onionFrames]; this.lastRasterResolution = rasterResolution;
+      // A failed build leaves the previous layout intact; drawing it beats
+      // retrying the same doomed work every frame. Retry when the inputs
+      // change, or after a pause for transient failures.
+      const failed = this.prepareFailure;
+      if (failed?.geometry === geometry && failed.generation === this.generation && failed.backgroundKey === backgroundKey && failed.rasterResolution === rasterResolution && performance.now() - failed.at < 1500) this.stats.preparation = 'failed';
+      else {
+        try {
+          if (!canUpdate || !this.updateGeometry(options, geometry)) this.prepare(options, geometry);
+          this.prepareFailure = null;
+          this.lastReport = report; this.backgroundKey = backgroundKey; this.onionFrameRefs = [...onionFrames]; this.lastRasterResolution = rasterResolution;
+        } catch (error) {
+          if (error?.name === 'AbortError') throw error;
+          this.prepareFailure = { geometry, generation: this.generation, backgroundKey, rasterResolution, at: performance.now() };
+          this.stats.prepareFailures = (this.stats.prepareFailures || 0) + 1;
+          this.stats.lastPrepareError = error?.message || String(error);
+          this.stats.preparation = 'failed';
+          if (typeof window !== 'undefined') queueMicrotask(() => { throw error; });
+        }
+      }
     } else { this.stats.uploadBytes = 0; this.stats.primitiveUploadCalls = 0; this.stats.updatedObjects = 0; this.stats.compiledObjects = 0; this.stats.rasterizedObjects = 0; this.stats.preparation = 'retained'; }
+    if (!this.layout) return geometry; // No build has ever succeeded; the canvas keeps its last frame.
     const matrix = cameraMatrix(options), zoom = Number(view.scale ?? 1), x = Number(view.x ?? 0), y = Number(view.y ?? 0);
     const uniform = new Float32Array([matrix[0], matrix[2], matrix[4], Math.hypot(matrix[0], matrix[1]), matrix[1], matrix[3], matrix[5], 0, this.width, this.height, this.dpr, options.clipToCanvas === false ? 0 : 1, x, y, x + report.canvas_width * zoom, y + report.canvas_height * zoom]);
     this.device.queue.writeBuffer(this.uniform, 0, uniform);
@@ -665,7 +867,7 @@ class WebGPURenderer {
     }
     this.device.queue.writeBuffer(this.transformBuffer, 0, this.transformData);
     const encoder = this.device.createCommandEncoder({ label: 'StykAnimate viewport frame' });
-    const pass = encoder.beginRenderPass({ colorAttachments: [{ view: this.msaa.createView(), resolveTarget: this.context.getCurrentTexture().createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'discard' }] });
+    const pass = encoder.beginRenderPass({ colorAttachments: [this.colorAttachment(this.context.getCurrentTexture().createView())] });
     pass.setPipeline(this.pipeline); pass.setBindGroup(0, this.globalBindGroup);
     let calls = 0, begin = -1, count = 0;
     const flush = () => { if (!count) return; pass.setBindGroup(1, this.blankBindGroup); pass.draw(6, count, 0, begin); calls++; begin = -1; count = 0; };
@@ -685,14 +887,14 @@ class WebGPURenderer {
       preparedBytes: this.preparedFrames.bytes, preparedFrames: this.preparedFrames.frames.size, workerCompileMs: null, packetUploadMs: null });
     return geometry;
   }
-  finishSceneVfx(options){this.vfxViewport??=new ViewportVfx(this);this.vfxViewport.render(options);}
+  finishSceneVfx(options){return renderPreviewVfx(this,'vfxViewport',()=>new ViewportVfx(this),viewport=>viewport.render(options));}
   destroy() {
     this.vfxViewport?.destroy();
     this.artworks.clear();
     this.destroyed = true; this.last = null; this.uploadStaging = null; this.onionScenes = []; this.preparedFrames.clear(); this.handleRenderer?.destroy(); this.msaa?.destroy(); this.shapeBuffer?.destroy(); this.transformBuffer?.destroy(); this.uniform?.destroy(); this.blankTexture?.destroy();
     this.rasterCache.clear();
     for (const entry of this.backgroundImages?.values() || []) entry.texture.destroy();
-    this.rasterSurfaces.dispose(); this.context.unconfigure(); this.device.destroy();
+    this.rasterSurfaces.dispose(); releaseVfxDevice(this.device); this.context.unconfigure(); this.device.destroy();
   }
 }
 
@@ -852,6 +1054,18 @@ function activatePreparedScene(renderer, prepared, options = {}) {
   renderer.last = null; prepared.view = {...view}; prepared.transfer(); return geometry;
 }
 
+/** A WebGPU adapter that rasterizes on the CPU. SwiftShader, llvmpipe and
+ * WARP-style drivers are slower than the Canvas compatibility path for this
+ * workload, so they route there unless explicitly allowed. */
+async function softwareAdapter(adapter) {
+  if (adapter?.isFallbackAdapter) return true;
+  let info = adapter?.info;
+  if (!info) { try { info = await adapter?.requestAdapterInfo?.(); } catch { info = null; } }
+  if (!info) return false;
+  const signature = [info.vendor, info.architecture, info.device, info.description].filter(Boolean).join(' ');
+  return /swiftshader|llvmpipe|lavapipe|basic render|software|\bwarp\b/i.test(signature);
+}
+
 /** WebGPU is preferred. Unsupported systems get a clearly labeled compatibility renderer. */
 export async function createRenderer(canvas, options = {}) {
   let reason = options.fallbackReason || 'WebGPU is unavailable in this browser or graphics driver.';
@@ -860,6 +1074,8 @@ export async function createRenderer(canvas, options = {}) {
     try {
       const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
       if (!adapter) throw new Error('No compatible WebGPU adapter was found.');
+      if (await softwareAdapter(adapter) && !options.allowSoftwareAdapter)
+        throw new Error('WebGPU resolved to a software adapter; the compatibility renderer is faster on this hardware.');
       device = await adapter.requestDevice();
       context = canvas.getContext('webgpu');
       if (!context) throw new Error('The canvas could not create a WebGPU context.');

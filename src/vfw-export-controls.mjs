@@ -1,4 +1,5 @@
 import {getVfwCapabilities, configureVfwCodec} from './vfw-video-export.mjs';
+import {EXPORT_MAX_PIXELS} from './export-sampling.mjs';
 
 const markup = `<h3>Windows AVI codecs</h3><label class="vfw-codec-label">Installed codec<select id="export-vfw-codec" aria-label="Installed Windows AVI codec" disabled><option>Checking installed codecs…</option></select></label>
 <div class="vfw-options"><label>Quality %<input id="export-vfw-quality" type="number" min="0" max="100" step="1" value="90" disabled></label><label>Keyframe every<input id="export-vfw-keyframes" type="number" min="0" max="1000000" step="1" value="0" title="0 uses the codec default" disabled></label><label>Rate · Mbit/s<input id="export-vfw-bitrate" type="number" min="0" max="200" step="0.1" value="0" title="0 uses the codec default" disabled></label></div>
@@ -28,7 +29,7 @@ export class VfwExportControls {
   }
   _size() {
     const size = this.getDimensions();
-    if (!Number.isInteger(size.width) || !Number.isInteger(size.height) || size.width < 1 || size.height < 1 || size.width > 16384 || size.height > 16384 || size.width * size.height > 16777216) throw new Error('Choose valid video dimensions up to 16 million pixels.');
+    if (!Number.isInteger(size.width) || !Number.isInteger(size.height) || size.width < 1 || size.height < 1 || size.width > 16384 || size.height > 16384 || size.width * size.height > EXPORT_MAX_PIXELS) throw new Error(`Choose valid video dimensions up to ${Math.round(EXPORT_MAX_PIXELS / 1e6)} million pixels.`);
     return {width: size.width, height: size.height};
   }
   _currentKey() { try { const size = this._size(); return `${size.width}:${size.height}`; } catch { return null; } }

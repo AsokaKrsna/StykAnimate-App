@@ -2,8 +2,9 @@
 
 Run `python backend/server.py --port 47831` from the app directory. Python 3.10+
 and its standard library are sufficient. Install the optional compiled encoder
-with `python -m pip install -r backend/requirements-fast.txt` for faster large
-imports; desktop builds bundle it. The service binds only to loopback,
+and zstd codec with `python -m pip install -r backend/requirements-fast.txt` for
+faster large imports and version-2 container sections; desktop builds bundle the
+encoder. The service binds only to loopback,
 serves the application, and keeps all file decoding outside the render process.
 
 The existing verified parsers in `tools/` and the native app's
@@ -21,6 +22,7 @@ tool is modified. It does not approximate unsupported files.
 | `POST /api/import?filename=name.piv` with raw bytes | `{ok,document,sourceId,filename,kind,version,timings}` |
 | `POST /api/open` with `{path}` | Same import response; path is workspace-relative |
 | `POST /api/export` with `{document,sourceId?,format,filename?,figureTypeId?}` | Binary `.piv`, `.stk`, `.styk`, or `.stkz`, with `Content-Disposition` |
+| `GET /api/source?id=<sourceId>` | Original uploaded source bytes (`STYKSRC1` envelope) for worker-side container builds |
 
 Errors are non-2xx JSON `{ok:false,error,code}`. `source_expired` (410) explicitly
 requires reopening the original source; it never silently drops unknown bytes.
@@ -82,12 +84,17 @@ backend restart, byte/SHA256 identity checks, and preservation of fractional edi
 
 The frontend `ImportClient` in `src/import-client.mjs` sends transferable upload
 buffers to `src/import-worker.mjs`; network reads and JSON parsing run there.
-Use `importFile(file)`, `openSample(path)`, `importNative(file)`, and `dispose()`.
-All import methods resolve the API response above. The worker appends
-`worker_fetch_ms`, `worker_parse_ms`, and `worker_ms` timings. Editable documents
-return through byte-bounded acknowledged chunks, including fragments for large
-embedded strings, so the UI never receives one giant structured-clone task.
-Those timings do not claim to measure total load-to-first-frame latency.
+Native containers (`.styk`/`.stkz`/`.stykmov`) decode locally in that worker —
+`src/native-container.mjs` reads version-1 and version-2 containers and legacy
+JSON, checks all digests, expands binary sections, and verifies the embedded
+source fingerprint — and only fall back to `/api/import` when the local codec
+cannot handle the file. Use `importFile(file)`, `openSample(path)`,
+`importNative(file)`, and `dispose()`. All import methods resolve the API
+response above. The worker appends `worker_fetch_ms`, `worker_parse_ms`, and
+`worker_ms` timings. Editable documents return through byte-bounded
+acknowledged chunks, including fragments for large embedded strings, so the UI
+never receives one giant structured-clone task. Those timings do not claim to
+measure total load-to-first-frame latency.
 
 Run `node tests/import-worker-browser.mjs` for real browser verification of
 transfer ownership, concurrent requests, native compatibility, and error handling.
@@ -232,5 +239,8 @@ digests. These sequential CPU measurements exclude HTTP, frontend work and
 rendering; the matched desktop benchmark determines user-visible import latency.
 
 Native `.styk` projects and `.stkz` figures now use lossless, versioned compressed
-containers with bounded inflation and SHA-256 checksums. Older JSON projects
-remain readable. See [Native file format](../docs/native-file-format.md).
+containers with bounded inflation and SHA-256 checksums. Version 2 stores a JSON
+skeleton plus binary sections for large numeric arrays and decoded base64/media
+payloads, compressed with zstd when the optional `zstandard` package is present
+(zlib otherwise). Version 1 and older JSON projects remain readable; new saves
+write version 2. See [Native file format](../docs/native-file-format.md).

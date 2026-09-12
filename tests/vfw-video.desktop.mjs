@@ -12,6 +12,11 @@ const app = await electron.launch({args: [root], cwd: root, timeout: 45000, env:
 try {
   const page = await app.firstWindow(), errors = []; page.on('pageerror', error => errors.push(error.message));
   await page.waitForFunction(() => window.styk?.ready && window.stykDesktop?.beginVfwExport, undefined, {timeout: 30000});
+  await page.evaluate(() => {
+    // Dismiss first-run overlays in this isolated test profile.
+    const dismiss = () => document.querySelectorAll('dialog.release-splash[open], dialog.styk-privacy[open]').forEach(dialog => dialog.close());
+    dismiss(); new MutationObserver(dismiss).observe(document.body, {subtree: true, childList: true, attributes: true, attributeFilter: ['open']});
+  });
   await app.evaluate(({ipcMain}) => {
     const original = ipcMain._invokeHandlers.get('styk:vfw-begin'); globalThis.__vfwTestRequests = [];
     ipcMain.removeHandler('styk:vfw-begin');
@@ -52,13 +57,18 @@ try {
   for (const file of result.files) await writeFile(path.join(output, file.name), Uint8Array.from(file.bytes)); delete result.files;
   await page.evaluate(async () => {
     const {emptyDocument, createFrame} = await import('/src/demo.mjs'); const report = emptyDocument(); report.canvas_width = 160; report.canvas_height = 92; report.fps = 16;
-    report.keyframes = [createFrame([], 5), createFrame([], 1)]; window.styk.editor.load(report);
-    window.styk.editor.addAnimationKeys([{target: {kind: 'scene'}, property: 'color', tick: 0, value: 0xffed1428, interpolation: 'hold'}, {target: {kind: 'scene'}, property: 'color', tick: 3, value: 0xff143ced, interpolation: 'hold'}]); window.styk.editor.markSaved();
+    report.keyframes = [createFrame([], 3), createFrame([], 2), createFrame([], 1)];
+    // Layer-sheet documents route addAnimationKeys through the sheet entry path;
+    // per-keyframe colors exercise the same compositing at absolute ticks.
+    report.keyframes[0]._stykBackgroundColor = 0xffed1428;
+    report.keyframes[1]._stykBackgroundColor = 0xff143ced;
+    report.keyframes[2]._stykBackgroundColor = 0xff143ced;
+    window.styk.editor.load(report); window.styk.editor.markSaved();
   });
   const filename = path.join(output, 'ui-windows-codec.avi');
   await app.evaluate(({dialog}, filename) => { dialog.showSaveDialog = async () => ({canceled: false, filePath: filename}); }, filename);
   await page.locator('[data-action="export"]').first().click();
-  await page.locator('.export-settings > summary').click();
+  await page.locator('#output-format').selectOption('export-vfw');
   await page.locator('#export-vfw-codec').waitFor({state: 'visible'});
   await page.waitForFunction(() => !document.querySelector('#export-vfw-codec').disabled);
   const installed = result.capabilities.codecs.find(codec => codec.arch === 'x86' && codec.supported && codec.configure && codec.dataRate);
@@ -74,7 +84,7 @@ try {
   await page.locator('#export-vfw-quality').fill('75'); await page.locator('#export-vfw-keyframes').fill('4'); await page.locator('#export-vfw-bitrate').fill('0.4');
   assert.ok(await page.locator('#dialog').evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth + 1)); result.checks.push('Installed codec controls fit the actual export dialog without horizontal scrolling');
   await page.screenshot({path: path.join(output, 'export-controls.png')});
-  await page.locator('[data-action="export-vfw"]').click();
+  await page.locator('#export-submit').click();
   await page.waitForFunction(() => !document.querySelector('#dialog').open, undefined, {timeout: 30000});
   const uiBytes = await readFile(filename); assert.ok(uiBytes.length > 256); result.checks.push('Actual Windows AVI export tile renders and saves through the native file dialog bridge');
   const requests = await app.evaluate(() => globalThis.__vfwTestRequests), request = requests.at(-1);

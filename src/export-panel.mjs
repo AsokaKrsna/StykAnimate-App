@@ -1,4 +1,5 @@
 import {exportMemoryPlan} from './export-memory.mjs';
+import {EXPORT_MAX_PIXELS} from './export-sampling.mjs';
 import {exportTime} from './export-progress.mjs';
 import {VIDEO_QUALITY_PRESETS, videoQualityOptions} from './export-video-quality.mjs';
 
@@ -11,7 +12,7 @@ const categories = [
 
 /** Rearrange the existing command controls; capability and export logic remain
  * with their owners. No duplicate settings or independent export state. */
-export function mountExportFlow(content, {width, height, totalFrames, currentFrame, fps}) {
+export function mountExportFlow(content, {width, height, totalFrames, currentFrame, fps, audioClips = [], audioSupported = false}) {
   const grid = content.querySelector('.export-grid'), settings = content.querySelector('.export-settings');
   if (!grid || !settings) return;
   const dialog = content.closest('dialog'), buttons = [...grid.querySelectorAll('[data-action]')];
@@ -34,6 +35,9 @@ export function mountExportFlow(content, {width, height, totalFrames, currentFra
   section('Output size', ['width', 'height', 'aspect'], `<label class="export-preset-label">Resolution<select id="export-resolution" aria-label="Resolution preset"><option value="original">Original · ${width} × ${height}</option><option value="720">HD · 720p</option><option value="1080">Full HD · 1080p</option><option value="2160">4K · 2160p</option><option value="custom">Custom size</option></select></label>`);
   const range = section('Frames', ['start', 'end'], '<button class="export-text-button" type="button" id="export-all-frames">Use entire animation</button>');
   const encoding = section('Quality', ['smoothing', 'quality', 'gif-dither']);
+  const audio = document.createElement('section'); audio.className = 'export-section';
+  audio.innerHTML = '<h3>Audio</h3><label class="check-row"><input type="checkbox" id="export-audio" checked>Include audio</label><p class="property-note">Mixes audible tracks, volume and fades. Sound requires a desktop FFmpeg video format. GIF, image and Pivot exports are silent.</p>';
+  settings.append(audio);
   encoding.querySelector('.text-options').insertAdjacentHTML('afterbegin', `<label>Video quality<select id="export-video-quality">${VIDEO_QUALITY_PRESETS.map(option => `<option value="${option.value}">${option.label}</option>`).join('')}</select></label>`);
   const advanced = document.createElement('details'); advanced.className = 'export-advanced';
   advanced.innerHTML = `<summary>Advanced video settings</summary><div class="text-options">
@@ -56,6 +60,7 @@ export function mountExportFlow(content, {width, height, totalFrames, currentFra
     const button = chosen(), action = select.value, editable = category === 'editable';
     const single = ['export-png', 'export-svg'].includes(action), vector = action.includes('svg');
     const video = category === 'video' && action !== 'export-vfw';
+    audio.hidden = category !== 'video' || !audioClips.length;
     const lossless = action === 'export-avi' && ['ffv1', 'rawvideo'].includes(input('avi-codec').value);
     const manual = video && !lossless && input('bitrate-mode').value === 'manual';
     settings.hidden = editable;
@@ -72,9 +77,12 @@ export function mountExportFlow(content, {width, height, totalFrames, currentFra
     let error = '';
     for (const control of settings.querySelectorAll('[aria-invalid]')) control.removeAttribute('aria-invalid');
     const invalid = (ids, message) => {for (const id of ids) input(id)?.setAttribute('aria-invalid', 'true'); error ||= message;};
+    if (category === 'video' && input('audio').checked && audioClips.some(clip => clip.start < last / fps && clip.start + clip.duration > (first - 1) / fps) &&
+      (!audioSupported || button?.dataset.provider !== 'FFmpeg' || action === 'export-vfw'))
+      error = 'Choose a desktop FFmpeg video format to include sound, or turn off Include audio for a silent export.';
     if (!editable) {
-      if (![w, h].every(n => Number.isInteger(n) && n >= 1 && n <= 16384) || w * h > 16777216)
-        invalid(['width', 'height'], 'Enter whole-pixel dimensions, up to 16 million pixels per frame.');
+      if (![w, h].every(n => Number.isInteger(n) && n >= 1 && n <= 16384) || w * h > EXPORT_MAX_PIXELS)
+        invalid(['width', 'height'], `Enter whole-pixel dimensions, up to ${Math.round(EXPORT_MAX_PIXELS / 1e6)} million pixels per frame.`);
       if (!single && (!Number.isInteger(first) || !Number.isInteger(last) || first < 1 || last < first || last > totalFrames))
         invalid(['start', 'end'], `Choose a frame range from 1 to ${totalFrames}. The last frame must be at or after the first.`);
       if (!error && !vector) {
@@ -113,7 +121,10 @@ export function mountExportFlow(content, {width, height, totalFrames, currentFra
       option.disabled = button.disabled; select.append(option);
     }
     const options = [...select.options];
-    select.value = options.find(option => option.value === old && !option.disabled)?.value || options.find(option => !option.disabled)?.value || options[0]?.value || '';
+    // Keep the chosen format even while its action is momentarily disabled
+    // (capability refresh, codec configuration); an unavailable choice already
+    // disables Export instead of silently switching formats.
+    select.value = options.find(option => option.value === old)?.value || options.find(option => !option.disabled)?.value || options[0]?.value || '';
     header.querySelectorAll('[data-category]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.category === category)));
     updateSettings();
   }

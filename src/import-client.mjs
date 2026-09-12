@@ -13,12 +13,17 @@ export class ImportClient {
     this.pending = new Map();
     this.disposed = false;
     this.failure = null;
-    this.worker = new Worker(workerURL, {type: 'module', name: 'StykAnimate file importer'});
-    this.worker.addEventListener('message', event => this._receive(event.data));
-    this.worker.addEventListener('messageerror', () => this._fail(Object.assign(new Error('The imported project could not be transferred.'), { telemetryCode: 'snapshot_failed', telemetryStage: 'prepare' })));
-    this.worker.addEventListener('error', event => {
+    this.workerURL=workerURL;this._startWorker();
+  }
+
+  _startWorker() {
+    const worker = new Worker(this.workerURL, {type: 'module', name: 'StykAnimate file importer'});
+    this.worker=worker;this.failure=null;
+    worker.addEventListener('message', event => {if(this.worker===worker)this._receive(event.data);});
+    worker.addEventListener('messageerror', () => {if(this.worker===worker)this._fail(Object.assign(new Error('The imported project could not be transferred.'), { telemetryCode: 'snapshot_failed', telemetryStage: 'prepare' }));});
+    worker.addEventListener('error', event => {
       event.preventDefault();
-      this._fail(Object.assign(new Error(event.message || 'The file importer stopped unexpectedly.'), { telemetryCode: 'worker_failed', telemetryStage: 'decode' }));
+      if(this.worker===worker)this._fail(Object.assign(new Error(event.message || 'The file importer stopped unexpectedly.'), { telemetryCode: 'worker_failed', telemetryStage: 'decode' }));
     });
   }
 
@@ -57,6 +62,7 @@ export class ImportClient {
       if (message.error?.code) error.code = message.error.code;
       if (message.error?.status) error.status = message.error.status;
       error.telemetryCode = message.error?.telemetryCode; error.telemetryStage = message.error?.telemetryStage;
+      error.telemetryFrames=message.error?.telemetryFrames;error.name=message.error?.name||'Error';
       request.reject(error);
     }
   }
@@ -73,15 +79,15 @@ export class ImportClient {
 
   _request(operation, payload, transfer = [], onProgress) {
     if (this.disposed) return Promise.reject(new Error('The file importer has been disposed.'));
-    if (this.failure) return Promise.reject(this.failure);
+    // Retry only the user's next operation; never silently repeat a failed one.
+    if(this.failure){try{this._startWorker();}catch(error){return Promise.reject(error);}}
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
       const timer = this.timeoutMs > 0 ? setTimeout(() => {
-        this.pending.delete(id);
-        this.worker.postMessage({operation: 'cancel', id});
         const error = new Error('The file import timed out. Try opening a smaller project.');
         error.code = 'import_timeout';
-        reject(error);
+        error.telemetryStage='decode';
+        this._fail(error);
       }, this.timeoutMs) : null;
       this.pending.set(id, {resolve, reject, timer, onProgress});
       try {
@@ -96,7 +102,6 @@ export class ImportClient {
 
   async importFile(file,{entryIndex,onProgress}={}) {
     if (this.disposed) throw new Error('The file importer has been disposed.');
-    if (this.failure) throw this.failure;
     if (!file || typeof file.arrayBuffer !== 'function' || typeof file.name !== 'string') {
       throw new TypeError('Choose a StykAnimate, Pivot or Stick Nodes file.');
     }

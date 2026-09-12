@@ -20,30 +20,36 @@ try {
   });
   await mode('advanced');
   for(const [key,value] of [['root_x',420],['root_y',300],['rotation',45],['scale',125]])await numeric(key,value);
-  check('Advanced inspector stores position and rotation in Pose with only scale independent',await page.evaluate(()=>{
-    const e=styk.editor;return e.evaluatedFrame.objects[0].root_x===420&&e.evaluatedFrame.objects[0].root_y===300
-      &&e.animationChannels.some(c=>c.property==='pose')&&e.animationChannels.some(c=>c.property==='scale')
-      &&!e.animationChannels.some(c=>c.target.kind==='figure'&&['x','y','rotation'].includes(c.property));
+  check('Advanced inspector writes the whole pose into the layer sheet',await page.evaluate(()=>{
+    const e=styk.editor,uid=e.selectedUid,id=e.layerForUid(uid),
+      keys=e.report._styk.layerSheet.tracks[id].keys;
+    return e.evaluatedFrame.objects[0].root_x===420&&e.evaluatedFrame.objects[0].root_y===300
+      &&e.evaluatedFrame.objects[0].scale===1.25
+      &&keys.some(key=>key.sourceTick===undefined&&key.tick===e.tick)
+      &&e.animationChannels.length===0;
   }));
-  check('Figure timeline and inspector omit separate position and rotation key controls',await page.evaluate(()=>
-    !styk.timeline.tracks.some(row=>row.target?.kind==='figure'&&['x','y','rotation'].includes(row.property))
-    &&!document.querySelector('[data-property-key="root_x"],[data-property-key="root_y"],[data-property-key="rotation"]')));
-  await mode('simple');await numeric('root_x',460);await page.locator('.styk-simple-update').click();await mode('advanced');
-  // Simple Update advances to the next frame. Inspect the frame just stored.
-  await page.evaluate(()=>styk.editor.seek(5));
-  check('Simple Update and Advanced agree on the edited Pose and scale',await page.evaluate(()=>styk.editor.evaluatedFrame.objects[0].root_x===460&&styk.editor.evaluatedFrame.objects[0].scale===1.25));
-  const snapshot=await page.evaluate(()=>JSON.stringify(styk.editor.animationChannels));
-  for(let i=0;i<3;i++){await mode('simple');await mode('advanced');}
-  check('Repeated switches retain key identities and values',snapshot===await page.evaluate(()=>JSON.stringify(styk.editor.animationChannels)));
+  check('Inspector omits per-property key controls',await page.evaluate(()=>
+    !document.querySelector('[data-property-key],[data-property-nav],.property-key-controls')));
+  await mode('simple');await numeric('root_x',460);
+  check('Filmstrip inspector edits the same layer key',await page.evaluate(()=>{
+    const e=styk.editor;return e.evaluatedFrame.objects[0].root_x===460&&e.animationChannels.length===0;
+  }));
+  const snapshot=await page.evaluate(()=>JSON.stringify(styk.editor.report._styk.layerSheet));
+  for(let i=0;i<3;i++){await mode('advanced');await mode('simple');}
+  check('Repeated timeline mode switches retain the layer sheet exactly',snapshot===await page.evaluate(()=>JSON.stringify(styk.editor.report._styk.layerSheet)));
+  await mode('advanced');
+  check('Advanced agrees with the filmstrip edit',await page.evaluate(()=>styk.editor.evaluatedFrame.objects[0].root_x===460&&styk.editor.evaluatedFrame.objects[0].scale===1.25));
   await page.evaluate(async()=>{
     const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs');const report=emptyDocument();
     report.keyframes=[createFrame([createObject(report.figure_types[0],1,100,240)],5)];
-    styk.editor.load(report);styk.editor.setSceneColor(0xffff0000);styk.editor.select(null);styk.fit();
+    styk.editor.load(report);styk.editor.select(null);styk.fit();
   });
-  await mode('simple');await page.evaluate(()=>{const e=styk.editor;e.beginFrameDraft({mode:'add'});e.setSceneColor(0xff0000ff);});
-  await page.locator('.styk-simple-update').click();await mode('advanced');
-  await page.evaluate(()=>{styk.editor.seek(2);styk.editor.select(null);});
-  check('Simple Add produces an interpolated scene color visible in Advanced',await page.evaluate(()=>styk.editor.evaluatedFrame._stykBackgroundColor===0xff990066));
+  await page.evaluate(()=>{const e=styk.editor;e.seek(0);e.setSceneColor(0xffff0000);e.sheetAppendFrame({duration:4});});
+  await page.evaluate(()=>{const e=styk.editor;e.seek(e.totalTicks-1);e.setSceneColor(0xff0000ff);e.seek(2);});
+  check('Scene sheet keys hold their authored color until the next key',await page.evaluate(()=>{
+    const e=styk.editor;return e.evaluatedFrame._stykBackgroundColor===0xffff0000
+      &&e.report._styk.layerSheet.tracks.scene.keys.some(key=>key.sourceTick===undefined);
+  }));
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   await mkdir('artifacts/timeline-sync-properties',{recursive:true});
   const screenshot=await page.screenshot({path:'artifacts/timeline-sync-properties/interpolated-scene.png'});
@@ -52,8 +58,10 @@ try {
     const canvas=new OffscreenCanvas(image.width,image.height),context=canvas.getContext('2d');context.drawImage(image,0,0);
     return [...context.getImageData(700,400,1,1).data];
   },[...screenshot]);
-  check('Rendered scene pixels show the interpolated purple rather than a held endpoint',Math.abs(pixel[0]-153)<=1&&pixel[1]===0&&Math.abs(pixel[2]-102)<=1);
+  check('Rendered scene pixels show the held red key',pixel[0]>200&&pixel[1]<60&&pixel[2]<60);
   await mode('simple');await mode('advanced');
-  check('Scene color interpolation survives another mode round trip',await page.evaluate(()=>{styk.editor.seek(2);return styk.editor.evaluatedFrame._stykBackgroundColor===0xff990066;}));
+  check('Scene keys survive another mode round trip',await page.evaluate(()=>{
+    const e=styk.editor;e.seek(2);return e.evaluatedFrame._stykBackgroundColor===0xffff0000;
+  }));
   assert.deepEqual(errors,[]);await writeFile('artifacts/timeline-sync-properties/report.json',JSON.stringify({checks,pixel,errors},null,2));
 } finally {await browser.close();}

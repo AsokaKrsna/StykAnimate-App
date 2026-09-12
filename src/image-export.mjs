@@ -1,4 +1,5 @@
 import { normalizeGIFDither } from "./gif-options.mjs";
+import { EXPORT_MAX_PIXELS } from "./export-sampling.mjs";
 /** Offline animated image and numbered image-sequence exports.
  * Each frame is snapshotted into a transferable ImageBitmap; palette creation,
  * LZW, PNG/JPEG compression, checksums, APNG and ZIP writing stay in a worker.
@@ -6,6 +7,10 @@ import { normalizeGIFDither } from "./gif-options.mjs";
  * then to encode. renderFrame must return the same committed image in both passes.
  */
 const MAX_BYTES = 512 * 1024 * 1024;
+// Streamed exports are bounded by the destination disk, not renderer memory.
+// ZIP32 stores 32-bit offsets, so sequences must stay under 4 GiB.
+const STREAM_MAX_BYTES = 16 * 1024 * 1024 * 1024;
+const ZIP_STREAM_MAX_BYTES = 0xfff00000;
 const formats = new Set([
   "gif",
   "apng",
@@ -22,8 +27,10 @@ const abortError = () =>
  * fps:number,totalFrames:number,renderFrame:(index:number)=>Promise<HTMLCanvasElement|OffscreenCanvas>|HTMLCanvasElement|OffscreenCanvas,
  * renderSVGFrame?:(index:number)=>Promise<Blob|string>|Blob|string,
  * onProgress?:(value:{phase:"palette"|"encode",completed:number,total:number,progress:number})=>void,
- * signal?:AbortSignal,loop?:boolean,quality?:number,dither?:boolean,maxBytes?:number}} options
- * @returns {Promise<Blob>} GIF, APNG, or ZIP containing numbered PNG/JPEG frames.
+ * signal?:AbortSignal,loop?:boolean,quality?:number,dither?:boolean,maxBytes?:number,
+ * sink?:{streamed:boolean,write(part:Blob)=>Promise<void>,finish()=>Promise<object>,abort()=>Promise<void>}}} options
+ * @returns {Promise<Blob|{saved:boolean,path?:string,size?:number,blob?:Blob}>} GIF, APNG, or ZIP
+ * containing numbered PNG/JPEG frames — a Blob, or the sink's finish() result.
  */
 export async function exportAnimation({
   format,
@@ -38,8 +45,9 @@ export async function exportAnimation({
   loop = true,
   quality = 0.94,
   dither = false,
-  maxBytes = MAX_BYTES,
+  maxBytes,
   timeoutMs = 120000,
+  sink,
 }) {
   format =
     {
@@ -58,10 +66,10 @@ export async function exportAnimation({
     height < 1 ||
     width > 16384 ||
     height > 16384 ||
-    (!vector && width * height > 16777216)
+    (!vector && width * height > EXPORT_MAX_PIXELS)
   ) {
     throw new Error(
-      "Image exports support dimensions up to 16,384 pixels and 16 million pixels per frame.",
+      `Image exports support dimensions up to 16,384 pixels and ${Math.round(EXPORT_MAX_PIXELS / 1e6)} million pixels per frame.`,
     );
   }
   const maxFrames = format.endsWith("sequence") ? 65534 : 100000;
@@ -92,8 +100,19 @@ export async function exportAnimation({
     );
   if (!Number.isFinite(quality) || quality < 0 || quality > 1)
     throw new Error("JPEG quality must be between zero and one.");
-  if (!Number.isInteger(maxBytes) || maxBytes < 1024 || maxBytes > MAX_BYTES)
-    throw new Error("Choose an export size limit between 1 KiB and 512 MiB.");
+  const streamed = sink?.streamed === true;
+  const maxBytesCap = streamed
+    ? format.endsWith("sequence")
+      ? ZIP_STREAM_MAX_BYTES
+      : STREAM_MAX_BYTES
+    : MAX_BYTES;
+  maxBytes ??= maxBytesCap;
+  if (!Number.isInteger(maxBytes) || maxBytes < 1024 || maxBytes > maxBytesCap)
+    throw new Error(
+      streamed
+        ? "The streamed export size limit is invalid."
+        : "Choose an export size limit between 1 KiB and 512 MiB.",
+    );
   dither = normalizeGIFDither(dither);
   if (signal?.aborted) throw abortError();
   if (
@@ -133,7 +152,7 @@ export async function exportAnimation({
     pending = null;
     clearTimeout(request.timer);
     event.data.ok
-      ? request.resolve(event.data.blob)
+      ? request.resolve(event.data)
       : request.reject(new Error(event.data.error || "Image encoding failed."));
   });
   const check = () => {
@@ -157,24 +176,31 @@ export async function exportAnimation({
   };
   const abort = () => fail(abortError());
   signal?.addEventListener("abort", abort, { once: true });
+  let completed = false;
+  const forward = async (response) => {
+    if (sink && response?.output instanceof Blob) await sink.write(response.output);
+  };
   try {
-    await request("start", {
-      config: {
-        format,
-        width,
-        height,
-        fps,
-        totalFrames,
-        loop,
-        quality,
-        dither,
-        maxBytes,
-      },
-    });
+    await forward(
+      await request("start", {
+        config: {
+          format,
+          width,
+          height,
+          fps,
+          totalFrames,
+          loop,
+          quality,
+          dither,
+          maxBytes,
+          stream: Boolean(sink),
+        },
+      }),
+    );
     const passes = format === "gif" ? 2 : 1,
       totalWork = totalFrames * passes;
     for (let pass = 0; pass < passes; pass++) {
-      if (pass === 1) await request("encode");
+      if (pass === 1) await forward(await request("encode"));
       for (let index = 0; index < totalFrames; index++) {
         check();
         if (vector) {
@@ -184,7 +210,7 @@ export async function exportAnimation({
             throw new Error(
               `Rendered SVG frame ${index + 1} must contain SVG text or a Blob.`,
             );
-          await request("frame", { svg });
+          await forward(await request("frame", { svg }));
           check();
           onProgress?.({
             phase: passes === 2 && pass === 0 ? "palette" : "encode",
@@ -204,7 +230,7 @@ export async function exportAnimation({
         try {
           check();
           // Backpressure: only one full-resolution frame is in flight at a time.
-          await request("frame", { bitmap }, [bitmap]);
+          await forward(await request("frame", { bitmap }, [bitmap]));
         } finally {
           bitmap.close();
         }
@@ -217,12 +243,20 @@ export async function exportAnimation({
         });
       }
     }
-    const blob = await request("finish");
+    const response = await request("finish");
     check();
-    return blob;
+    if (sink) {
+      await forward(response);
+      const result = await sink.finish();
+      completed = true;
+      return result;
+    }
+    completed = true;
+    return response.blob;
   } finally {
     clearTimeout(pending?.timer);
     signal?.removeEventListener("abort", abort);
     worker.terminate();
+    if (sink && !completed) await sink.abort();
   }
 }

@@ -26,13 +26,16 @@ struct Vertex { @builtin(position) position:vec4f, @location(0) local:vec2f, @lo
 
 export class HandleRenderer {
   constructor(device,uniform){this.device=device;this.uniform=uniform;this.previous=[];this.offsets=[];this.colors=new Map();}
-  async initialize(format){
+  async initialize(format,samples=4){
     const d=this.device,module=d.createShaderModule({code:shader,label:'Screen-sized editor handles'});
     const info=await module.getCompilationInfo(),errors=info.messages.filter(m=>m.type==='error');
     if(errors.length)throw new Error(errors.map(m=>m.message).join('\n'));
     this.pipeline=await d.createRenderPipelineAsync({label:'Retained editor handles',layout:'auto',vertex:{module,entryPoint:'vs'},
       fragment:{module,entryPoint:'fs',targets:[{format,blend:{color:{srcFactor:'one',dstFactor:'one-minus-src-alpha'},alpha:{srcFactor:'one',dstFactor:'one-minus-src-alpha'}}}]},
-      primitive:{topology:'triangle-list'},multisample:{count:4}});
+      primitive:{topology:'triangle-list'},multisample:{count:samples}});
+    // Auto bind-group layouts belong to the pipeline; rebuild the records
+    // buffer so the next update rebinds against the new layout.
+    this.buffer?.destroy();this.buffer=null;
   }
   update(handles,translations,outline){
     const d=this.device,size=Math.max(32,handles.length*32);let reset=this.outline!==outline;

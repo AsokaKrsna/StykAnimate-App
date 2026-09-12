@@ -25,6 +25,26 @@ try{
  assert.equal(result.tint.top[3],255);assert.ok(result.tint.top[0]>result.tint.bottom[0],'top/bottom must keep source orientation');
  assert.ok(result.glow.edge[3]>0,'glow expands alpha');assert.ok(result.outline.edge[3]>0,'outline expands alpha');assert.ok(result.blur.edge[3]>0,'blur expands alpha');
  console.log('GPU output',JSON.stringify(result));
+ // Cross-executor parity: the WGSL port must match the WebGL 2 executor on
+ // every registered effect before it can replace it on the viewport path.
+ const wgsl=await page.evaluate(async()=>{
+  const {createVfx,VFX_REGISTRY}=await import('/src/vfx.mjs'),{VfxGPU}=await import('/src/vfx-gpu.mjs'),{VfxWebGPU}=await import('/src/vfx-webgpu.mjs');
+  const adapter=await navigator.gpu?.requestAdapter(),device=await adapter?.requestDevice();if(!device)return null;
+  const gl=new VfxGPU(),wg=new VfxWebGPU(device),source=new OffscreenCanvas(96,80),c=source.getContext('2d');
+  c.fillStyle='#ff0000';c.fillRect(28,12,32,20);c.fillStyle='#0000ff';c.fillRect(28,48,32,20);
+  const read=canvas=>{const out=new OffscreenCanvas(96,80),ctx=out.getContext('2d',{willReadFrequently:true});ctx.drawImage(canvas,0,0);return ctx.getImageData(0,0,96,80).data;};
+  const results={};
+  // Each effect at defaults, plus a large-radius variant for the blur family so
+  // the downsampled ops 11/12 (and their mid-run slot resizes) are exercised.
+  for(const type of Object.keys(VFX_REGISTRY))for(const radius of['blur','glow','shadow','bloom'].includes(type)?[0,45]:[0]){
+   const effect=createVfx(type,'test');if(radius)effect.params.radius=radius;
+   const a=read(gl.run(source,[effect]));
+   const out=wg.run(source,[effect],{});await device.queue.onSubmittedWorkDone();const b=read(out);
+   let max=0,sum=0;for(let i=0;i<a.length;i++){const d=Math.abs(a[i]-b[i]);max=Math.max(max,d);sum+=d;}results[radius?`${type}-r${radius}`:type]={max,mean:sum/a.length};
+  }
+  gl.destroy();wg.destroy();device.destroy();return results;
+ });
+ if(wgsl){console.log('WGSL parity',JSON.stringify(wgsl));for(const [type,r] of Object.entries(wgsl))assert.ok(r.max<=24&&r.mean<.5,`${type}: WGSL executor diverged ${JSON.stringify(r)}`);}
  const parity=await page.evaluate(async()=>{
   const {emptyDocument,createObject,createFrame}=await import('/src/demo.mjs'),{createVfx}=await import('/src/vfx.mjs');
   const {exportFrameGeometry,drawExportScene,drawExportSceneTiled}=await import('/src/export-frame-core.mjs');

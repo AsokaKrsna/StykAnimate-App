@@ -56,6 +56,14 @@ export function drawExportScene(context, report, frame, geometry, resources) {
 export async function drawExportSceneSequential(context, report, frame, geometry, resources, viewport, yieldWork = exportYield()) {
   checkExportContext(context);
   const width = report.canvas_width, height = report.canvas_height;
+  // The document→output matrix for this surface, including tile offsets.
+  // Preloads use it to decode only the source region each draw samples.
+  const camera = cameraMatrix({report, frame}),
+    sx = (viewport?.width || context.canvas.width) / width,
+    sy = (viewport?.height || context.canvas.height) / height,
+    plan = {matrix: [sx * camera[0], sy * camera[1], sx * camera[2], sy * camera[3],
+      sx * camera[4] - (viewport?.x || 0), sy * camera[5] - (viewport?.y || 0)],
+      width: context.canvas.width, height: context.canvas.height};
   context.setTransform(1, 0, 0, 1, 0, 0);
   context.clearRect(0, 0, context.canvas.width, context.canvas.height);
   context.save();
@@ -63,16 +71,16 @@ export async function drawExportSceneSequential(context, report, frame, geometry
     if (viewport) context.translate(-viewport.x, -viewport.y);
     context.scale((viewport?.width || context.canvas.width) / width, (viewport?.height || context.canvas.height) / height);
     context.beginPath(); context.rect(0, 0, width, height); context.clip();
-    context.transform(...cameraMatrix({report, frame}));
+    context.transform(...camera);
     await resources.preload((report.backgrounds || []).filter(asset =>
       [frame.background_id, ...(frame.background_mix ? [frame.background_id_b] : [])].includes(asset.background_id) &&
-      ![2,3,4].includes(asset.kind) && asset.color === undefined).map(asset => ({type: 'image', asset})));
+      ![2,3,4].includes(asset.kind) && asset.color === undefined).map(asset => ({type: 'image', asset})), {plan});
     checkExportContext(context);
     drawBackground(context, report, frame, width, height, {...resources, bounds: backgroundBounds(frame, width, height, true, report)});
     const strokeState = {width: 1}; let items = [], slot;
     const draw = async () => {
       if (!items.length) return;
-      await resources.preload(items);
+      await resources.preload(items, {plan});
       checkExportContext(context);
       drawGeometry(context, {drawables: items, strokeState}, resources);
       checkExportContext(context);

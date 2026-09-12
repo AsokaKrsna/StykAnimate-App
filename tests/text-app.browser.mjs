@@ -1,4 +1,5 @@
 import {readNativeDocument} from '../scripts/read-native-document.mjs';
+import {exportEditable} from './helpers/editable-export.mjs';
 /** Actual app integration: native import, contextual Edit text, undo, Save and native exports. */
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
@@ -28,9 +29,7 @@ const ready = () =>
   );
 const blur = () => page.locator('[data-tool="select"]').first().click();
 async function download(action, name) {
-  const pending = page.waitForEvent("download");
-  await action();
-  const file = await pending,
+  const [file] = await Promise.all([page.waitForEvent("download"), action()]),
     target = path.join(output, name);
   await file.saveAs(target);
   return target;
@@ -58,7 +57,7 @@ const renderPixels = (target) =>
         () => {
           throw new Error("Text must use embedded vectors");
         };
-    drawGeometry(ctx, buildGeometry(doc, doc.keyframes[0]));
+    drawGeometry(ctx, buildGeometry(doc, styk.editor.evaluatedFrame));
     return Array.from(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
   });
 try {
@@ -87,16 +86,15 @@ try {
       figure: structuredClone(figure),
     };
   });
-  await page
-    .locator(`.styk-tree-row[data-key="figure:${target.uid}"] .styk-tree-name`)
-    .click();
+  await page.evaluate((uid) => styk.editor.select(uid), target.uid);
+  await page.locator('[data-action="edit-text"].button').waitFor({state:'visible'});
   check(
     "Imported native text exposes the contextual Edit text action without app metadata",
     !target.figure._styk?.textAuthoring &&
-      (await page.locator('[data-action="edit-text"]').isVisible()),
+      (await page.locator('[data-action="edit-text"].button').isVisible()),
   );
   const undo = await page.evaluate(() => styk.editor._undo.length);
-  await page.locator('[data-action="edit-text"]').click();
+  await page.locator('[data-action="edit-text"].button').click();
   await ready();
   check(
     "Root dialog recovers native Arial content and original glyph mode",
@@ -104,7 +102,9 @@ try {
       (await page.locator("#text-font").inputValue()) === "embedded",
   );
   await page.locator("#text-content").fill("Abc Abc");
-  await page.locator("#text-gradient-enabled").check();
+  await page.locator("#text-color").click();
+  await page.locator('.paint-picker [data-mode="gradient"]').click();
+  await page.getByRole('button', {name: 'Close color picker', exact: true}).click();
   await page.locator("#text-outline-width").fill(".6");
   await ready();
   check(
@@ -126,6 +126,7 @@ try {
         styk.editor.selectedUid === uid &&
         styk.editor.figure.figure_type_id === type &&
         styk.editor.figure.text_assets[0].text === "Abc Abc" &&
+        styk.editor.figure.segments[0].paint?.type === "linear" &&
         styk.editor._undo.length === undo + 1,
       { ...target, undo },
     ),
@@ -158,10 +159,8 @@ try {
     ),
   );
   await imported(page, nativeFile);
-  await page
-    .locator(`.styk-tree-row[data-key="figure:${target.uid}"] .styk-tree-name`)
-    .click();
-  await page.locator('[data-action="edit-text"]').click();
+  await page.evaluate((uid) => styk.editor.select(uid), target.uid);
+  await page.locator('[data-action="edit-text"].button').click();
   await ready();
   check(
     "Native Save/reopen retains original-font text editing and scale semantics",
@@ -171,10 +170,25 @@ try {
   );
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => !document.querySelector("#dialog").open);
+  check('Pivot export rejects text-run gradients instead of changing their appearance', await page.evaluate(async () => {
+    const {DocumentExporter} = await import('/src/document-export.mjs');
+    const exporter = new DocumentExporter();
+    try { await exporter.export(styk.editor.serialize(), {format:'piv'}); return false; }
+    catch (error) { return error.message.includes('cannot represent these gradient fills'); }
+    finally { exporter.dispose(); }
+  }));
+  await page.locator('[data-action="edit-text"].button').click();
+  await ready();
+  await page.locator('#text-color').click();
+  await page.locator('.paint-picker [data-mode="solid"]').click();
+  await page.getByRole('button', {name:'Close color picker',exact:true}).click();
+  await ready();
+  await page.locator('#create-text').click();
+  await page.waitForFunction(() => !document.querySelector('#dialog').open);
   const sourcePixels = await renderPixels(page);
   await page.locator('[data-action="export"]').first().click();
   const pivFile = await download(
-    () => page.locator('[data-action="export-piv"]').click(),
+    () => exportEditable(page, 'piv'),
     "native-text-edited.piv",
   );
   check(
@@ -192,6 +206,10 @@ try {
   await portable.waitForFunction(() => window.styk?.ready);
   await imported(portable, pivFile);
   const reopenedPixels = await renderPixels(portable);
+  await writeFile(path.join(output, 'pixel-comparison.json'), JSON.stringify({
+    changed: sourcePixels.filter((v,i)=>v!==reopenedPixels[i]).length,
+    max: sourcePixels.reduce((m,v,i)=>Math.max(m,Math.abs(v-reopenedPixels[i])),0),
+  }));
   check(
     "Fresh actual app reopens PIV with no font loading and identical rendered pixels",
     sourcePixels.every((value, index) => value === reopenedPixels[index]),
@@ -207,10 +225,8 @@ try {
     return e.frame.objects.find((o) => o.figure_type_id === f.figure_type_id)
       .unique_id;
   });
-  await portable
-    .locator(`.styk-tree-row[data-key="figure:${uid}"] .styk-tree-name`)
-    .click();
-  await portable.locator('[data-action="edit-text"]').click();
+  await portable.evaluate((uid) => styk.editor.select(uid), uid);
+  await portable.locator('[data-action="edit-text"].button').click();
   await portable.waitForFunction(
     () =>
       document.querySelector("#text-preview-state")?.textContent === "Ready",
@@ -240,7 +256,7 @@ try {
         styk.editor.figure.text_assets[0].font_style === 3,
     ),
   );
-  await page.locator('[data-action="edit-text"]').click();
+  await page.locator('[data-action="edit-text"].button').click();
   await ready();
   await page.locator("#text-content").fill("😀");
   await page.waitForFunction(
@@ -257,15 +273,15 @@ try {
   await page.waitForFunction(() => !document.querySelector("#dialog").open);
   await page.locator('[data-action="export"]').first().click();
   const stkFile = await download(
-    () => page.locator('[data-action="export-stk"]').click(),
+    () => exportEditable(page, 'stk'),
     "created-text.stk",
   );
   const beforeCount = await page.evaluate(
-    () => styk.editor.frame.objects.length,
+    () => styk.editor.selectionFrame.objects.length,
   );
   await page.locator("#file-input").setInputFiles(stkFile);
   await page.waitForFunction(
-    (count) => styk.editor.frame.objects.length === count + 1,
+    (count) => styk.editor.selectionFrame.objects.length === count + 1,
     beforeCount,
   );
   check(

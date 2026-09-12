@@ -1,5 +1,11 @@
 export const LIBRARY_DRAG_TYPE = 'application/x-stykanimate-library-asset';
 
+export function canMoveLibraryItem(item, folder) {
+  if (typeof folder !== 'string' || !item?.path) return false;
+  if (folder === item.path.split('/').slice(0, -1).join('/')) return false;
+  return item.kind !== 'folder' || folder !== item.path && !folder.startsWith(`${item.path}/`);
+}
+
 export function libraryDragData(item) {
   if (item.kind === 'folder') return null;
   return JSON.stringify({version: 1, path: item.path, name: item.name});
@@ -15,31 +21,42 @@ export function readLibraryDrag(transfer) {
 
 // Keep in-app drags out of the native OS drag loop. While held, only move a
 // cached thumbnail on the compositor; parsing and scene insertion happen on up.
-export function installLibraryDrag(source, target, {getAsset, onStart, position, insert, onError}) {
+export function installLibraryDrag(source, target, {getAsset, onStart, position, insert, getDestination, moveItem, onError}) {
   const doc = source.ownerDocument, win = doc.defaultView;
   let drag = null, frame = 0, suppressClick = false;
-  const overTarget = event => {
+  const destinationAt = event => {
     const hit = doc.elementFromPoint(event.clientX, event.clientY);
-    return Boolean(hit && target.contains(hit));
+    const folder = getDestination?.(hit, drag.asset);
+    if (folder) return {...folder, kind: 'folder'};
+    return hit && target.contains(hit) && drag.asset.kind !== 'folder' ? {element: target, kind: 'canvas'} : null;
   };
   const paint = () => {
     frame = 0;
     if (!drag?.ghost) return;
-    const over = overTarget(drag);
+    const destination = destinationAt(drag), over = destination?.element;
     drag.ghost.style.transform = `translate3d(${drag.clientX + 14}px, ${drag.clientY + 14}px, 0)`;
     if (drag.over !== over) {
+      drag.over?.classList.remove('library-folder-drop-target');
       drag.over = over;
-      target.classList.toggle('library-drop-target', over);
-      doc.documentElement.classList.toggle('library-pointer-over-target', over);
+      target.classList.toggle('library-drop-target', destination?.kind === 'canvas');
+      if (destination?.kind === 'folder') over.classList.add('library-folder-drop-target');
+      doc.documentElement.classList.toggle('library-pointer-over-target', destination?.kind === 'canvas');
+      drag.hint.textContent = destination?.kind === 'folder' ? `Move to ${destination.name}` : destination ? 'Add to scene' : 'Drop on a folder or canvas';
+    }
+    const scroll = source.parentElement, rect = scroll.getBoundingClientRect();
+    if (drag.clientX >= rect.left && drag.clientX <= rect.right && drag.clientY >= rect.top && drag.clientY <= rect.bottom) {
+      const amount = drag.clientY < rect.top + 28 ? -10 : drag.clientY > rect.bottom - 28 ? 10 : 0, before = scroll.scrollTop;
+      if (amount) { scroll.scrollTop += amount; if (scroll.scrollTop !== before) frame = win.requestAnimationFrame(paint); }
     }
   };
   const finish = event => {
     if (!drag || (event?.pointerId != null && event.pointerId !== drag.pointerId)) return;
     const ended = drag;
-    const drop = event?.type === 'pointerup' && event.button === 0 && ended.ghost && overTarget(event);
+    const drop = event?.type === 'pointerup' && event.button === 0 && ended.ghost ? destinationAt(event) : null;
     drag = null;
     win.cancelAnimationFrame(frame); frame = 0;
     ended.ghost?.remove(); ended.card.classList.remove('library-dragging');
+    ended.over?.classList.remove('library-folder-drop-target');
     target.classList.remove('library-drop-target');
     doc.documentElement.classList.remove('library-pointer-dragging', 'library-pointer-over-target');
     if (ended.card.hasPointerCapture(ended.pointerId)) ended.card.releasePointerCapture(ended.pointerId);
@@ -48,7 +65,7 @@ export function installLibraryDrag(source, target, {getAsset, onStart, position,
       event?.preventDefault(); event?.stopPropagation();
     }
     if (drop) {
-      try { Promise.resolve(insert(ended.asset, position(event))).catch(onError); }
+      try { Promise.resolve(drop.kind === 'folder' ? moveItem(ended.asset, drop.folder) : insert(ended.asset, position(event))).catch(onError); }
       catch (error) { onError(error); }
     }
   };
@@ -58,7 +75,7 @@ export function installLibraryDrag(source, target, {getAsset, onStart, position,
     const card = event.target.closest('[data-library-path]');
     if (!card || !source.contains(card)) return;
     const asset = getAsset(card);
-    if (!asset || asset.kind === 'folder') return;
+    if (!asset || asset.kind === 'folder' && !moveItem) return;
     drag = {card, asset, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY};
     card.setPointerCapture(event.pointerId);
   };
@@ -69,9 +86,11 @@ export function installLibraryDrag(source, target, {getAsset, onStart, position,
       if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 5) return;
       onStart?.(drag.asset);
       const ghost = doc.createElement('div'); ghost.className = 'library-drag-ghost'; ghost.setAttribute('aria-hidden', 'true');
+      ghost.style.setProperty('--library-matte', win.getComputedStyle(drag.card.querySelector('.library-thumbnail')).backgroundColor);
       const thumbnail = drag.card.querySelector('.library-thumbnail img');
       if (thumbnail) ghost.append(thumbnail.cloneNode());
       const name = doc.createElement('span'); name.textContent = drag.asset.name; ghost.append(name);
+      const hint = doc.createElement('small'); hint.textContent = drag.asset.kind === 'folder' ? 'Drop on a folder' : 'Drop on a folder or canvas'; ghost.append(hint); drag.hint = hint;
       doc.body.append(ghost); drag.ghost = ghost;
       drag.card.classList.add('library-dragging');
       doc.documentElement.classList.add('library-pointer-dragging');

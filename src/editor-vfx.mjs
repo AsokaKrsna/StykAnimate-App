@@ -1,6 +1,7 @@
 import {createVfx,vfxStack,vfxProperty,validateVfxStack} from './vfx.mjs';
 import {normalizeAnimationTarget} from './animation-channels.mjs';
 import {VFX_PRESETS} from './vfx-presets.mjs';
+import {effectAvailable} from './vfx-registry.mjs';
 const copy=value=>structuredClone(value);
 function targetFor(editor,target){
   target=normalizeAnimationTarget(target);if(!['scene','figure','segment'].includes(target.kind))throw new Error('Select a figure, node, movieclip, or Scene.');
@@ -13,6 +14,7 @@ export const editorVfxMethods={
   vfxEffects(target){return vfxStack(owner(this,target),target);},
   addVfx(targets,type){
     if(!Array.isArray(targets))targets=[targets];targets=targets.map(target=>targetFor(this,target));
+    if(targets.some(target=>!effectAvailable(type,target.kind==='scene')))throw new Error('This effect is not available for the selected target.');
     const entries=[],ids=[];for(const target of targets){const stack=this.vfxEffects(target),effect=createVfx(type,freshId());ids.push(effect.id);
       entries.push({target,property:'vfxStack',tick:this.tick,value:validateVfxStack([...stack,effect]),interpolation:'constant',exactTarget:true});}
     this.addAnimationKeys(entries);return ids;

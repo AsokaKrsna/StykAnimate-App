@@ -38,9 +38,10 @@ export class PlaybackCache {
     this.worker.addEventListener('error', event => { event.preventDefault?.(); this._fail(new Error(event.message || 'The playback worker stopped unexpectedly.')); });
     this.worker.addEventListener('messageerror', () => this._fail(new Error('A prepared playback frame could not be transferred.')));
   }
-  load(report, { scale = this.scale, revision, cameraEnabled = true, storedFrames = false } = {}) {
+  load(report, { scale = this.scale, revision, cameraEnabled = true, storedFrames = false, softwareFrames = false, hiddenUids, hiddenKey = '' } = {}) {
     if (this.disposed) throw new Error('The playback cache has been disposed.');
     this.invalidate(); this.report = report?.document ?? report?.report ?? report; this.scale = scale; this.cameraEnabled = cameraEnabled;
+    this.softwareFrames = softwareFrames; this.hiddenUids = hiddenUids; this.hiddenKey = hiddenKey;
     this.documentRevision = revision; this.storedFrames = storedFrames; this._refreshTimeline();
     this.needsLoad = true; this._loadWorker(); return this;
   }
@@ -67,20 +68,24 @@ export class PlaybackCache {
     await yieldToInput();
     if(this.interactionActive&&!this.disposed)await (this._interactionPromise??=new Promise(resolve=>{this._releaseInteraction=resolve;}));
   }
-  updateView({ scale = this.scale, cameraEnabled = this.cameraEnabled, storedFrames = this.storedFrames } = {}) {
+  updateView({ scale = this.scale, cameraEnabled = this.cameraEnabled, storedFrames = this.storedFrames,
+    softwareFrames = this.softwareFrames, hiddenUids = this.hiddenUids, hiddenKey = this.hiddenKey } = {}) {
     if (this.disposed) throw new Error('The playback cache has been disposed.');
-    if (scale === this.scale && cameraEnabled === this.cameraEnabled && storedFrames === this.storedFrames) return this;
-    if (!this.report) { this.scale = scale; this.cameraEnabled = cameraEnabled; this.storedFrames = storedFrames; return this; }
+    if (scale === this.scale && cameraEnabled === this.cameraEnabled && storedFrames === this.storedFrames &&
+      softwareFrames === this.softwareFrames && hiddenKey === this.hiddenKey) return this;
+    if (!this.report) { this.scale = scale; this.cameraEnabled = cameraEnabled; this.storedFrames = storedFrames; this.softwareFrames = softwareFrames; this.hiddenUids = hiddenUids; this.hiddenKey = hiddenKey; return this; }
     // Preserve an unfinished edit when the view changes; ordinary view changes
     // keep the acknowledged mirror without resending scene data.
     if (!this._mirrorAvailable || this.needsLoad)
-      return this.load(this.report, { revision: this.documentRevision, scale, cameraEnabled, storedFrames });
+      return this.load(this.report, { revision: this.documentRevision, scale, cameraEnabled, storedFrames, softwareFrames, hiddenUids, hiddenKey });
     if (this._patchPending || this._frameUpdates.size || this._sourceUpdates.size)
-      return this.updateDocument({revision: this.documentRevision, scale, cameraEnabled, storedFrames});
+      return this.updateDocument({revision: this.documentRevision, scale, cameraEnabled, storedFrames, softwareFrames, hiddenUids, hiddenKey});
     // Packets carry their own camera mode. A camera-only toggle such as
     // timeline scrubbing keeps them so playback resumes warm instead of cold.
-    const retainTicks = scale === this.scale && storedFrames === this.storedFrames ? new Set(this.cache.keys()) : undefined;
-    this.invalidate({ scale, cameraEnabled, storedFrames, retainDocument: true, retainTicks }); this._refreshTimeline();
+    // Bitmap packets bake visibility: a different hidden signature drops them.
+    const retainTicks = scale === this.scale && storedFrames === this.storedFrames &&
+      (!softwareFrames || hiddenKey === this.hiddenKey) ? new Set(this.cache.keys()) : undefined;
+    this.invalidate({ scale, cameraEnabled, storedFrames, softwareFrames, hiddenUids, hiddenKey, retainDocument: true, retainTicks }); this._refreshTimeline();
     this._retentionSnapshot = playbackRetentionSnapshot(this.report, this.entries, this); return this;
   }
   updateFrame(index, frame, { revision = this.documentRevision } = {}) {
@@ -107,14 +112,15 @@ export class PlaybackCache {
       tables.backgrounds.length === (report.backgrounds?.length || 0) && tables.backgrounds.every((value, index) => value === report.backgrounds[index]);
   }
   updateDocument({frameIndices = [], sourceIds = [], revision = this.documentRevision, scale = this.scale,
-    cameraEnabled = this.cameraEnabled, storedFrames = this.storedFrames, structural = false, definition = false, loadKind = 'patch'} = {}) {
+    cameraEnabled = this.cameraEnabled, storedFrames = this.storedFrames, softwareFrames = this.softwareFrames,
+    hiddenUids = this.hiddenUids, hiddenKey = this.hiddenKey, structural = false, definition = false, loadKind = 'patch'} = {}) {
     if (this.disposed) throw new Error('The playback cache has been disposed.');
     if (!this.report) throw new Error('Load a document before updating playback.');
     for (const index of frameIndices) if (!Number.isInteger(index) || index < 0 || index >= (this.report?.keyframes.length || 0))
       throw new Error('Playback frame updates must reference a frame in the current document.');
     for (const id of sourceIds) if (typeof id !== 'string' || !/^[a-z][a-z0-9-]{0,127}$/.test(id)) throw new Error('Invalid retained playback source ID.');
     if (!this._mirrorAvailable || this.needsLoad || structural || definition || !this._tablesMatch())
-      return this.load(this.report, {revision, scale, cameraEnabled, storedFrames});
+      return this.load(this.report, {revision, scale, cameraEnabled, storedFrames, softwareFrames, hiddenUids, hiddenKey});
     for (const index of frameIndices) this._frameUpdates.set(index, {frame: this.report.keyframes[index]});
     const sources = this.report._styk?.frameSources || {}, dirtySources = new Set([...this._sourceUpdates.keys(), ...sourceIds]);
     for (const [id, frame] of Object.entries(sources)) if (this._mirrorSources.get(id) !== frame) dirtySources.add(id);
@@ -126,7 +132,7 @@ export class PlaybackCache {
     this._refreshTimeline();
     const nextSnapshot = playbackRetentionSnapshot(this.report, this.entries, {scale, cameraEnabled, storedFrames});
     const retainTicks = dirtySources.size ? new Set() : unchangedPlaybackTicks(previousSnapshot, nextSnapshot, this.cache.values(), this._frameUpdates.keys());
-    this.invalidate({revision, scale, cameraEnabled, storedFrames, retainDocument: true, retainTicks}); this._patchPending = true;
+    this.invalidate({revision, scale, cameraEnabled, storedFrames, softwareFrames, hiddenUids, hiddenKey, retainDocument: true, retainTicks}); this._patchPending = true;
     this._retentionSnapshot = nextSnapshot;
     const generation = this.revision, updates = [...this._frameUpdates], sourceUpdates = [...this._sourceUpdates], started = performance.now();
     const payload = {properties: playbackProperties(this.report), frames: updates.map(([index, entry]) => ({index, frame: entry.frame})),
@@ -160,10 +166,12 @@ export class PlaybackCache {
       .finally(() => { if (this._loadPromise === task) this._loadPromise = null; });
     return this;
   }
-  invalidate({ scale = this.scale, revision = this.documentRevision, cameraEnabled = this.cameraEnabled, storedFrames = this.storedFrames, retainDocument = false, retainTicks } = {}) {
+  invalidate({ scale = this.scale, revision = this.documentRevision, cameraEnabled = this.cameraEnabled, storedFrames = this.storedFrames,
+    softwareFrames = this.softwareFrames, hiddenUids = this.hiddenUids, hiddenKey = this.hiddenKey, retainDocument = false, retainTicks } = {}) {
     this.planner.cancel(abortError('Background planning was invalidated by a document or view change.'));
     this._abortLoad(abortError('Playback snapshot was invalidated by a document change.'));
     this.revision++; this.scale = scale; this.documentRevision = revision; this.cameraEnabled = cameraEnabled; this.storedFrames = storedFrames;
+    this.softwareFrames = softwareFrames; this.hiddenUids = hiddenUids; this.hiddenKey = hiddenKey;
     for (const [tick, packet] of this.cache) if (!retainTicks?.has(tick)) {this.bitmapPool.release(packet); this.cache.delete(tick);}
     if (!this.cache.size) this.cacheEpoch = `${this.cacheNamespace}:${this.revision}`;
     this._retentionSnapshot = null;
@@ -183,7 +191,7 @@ export class PlaybackCache {
       this._mirrorSources.clear(); this._mirrorTables = null; this._patchPending = false;
     }
     this.needsLoad = Boolean(this.report) && !retainDocument;
-    if (!this.disposed) this.worker.postMessage({ type: 'invalidate', revision: this.revision, retainDocument, options: { scale, cameraEnabled, storedFrames, vfxEnabled:this.vfxEnabled!==false } });
+    if (!this.disposed) this.worker.postMessage({ type: 'invalidate', revision: this.revision, retainDocument, options: { scale, cameraEnabled, storedFrames, softwareFrames, hiddenUids, hiddenKey, vfxEnabled:this.vfxEnabled!==false } });
     return this;
   }
   _loadWorker() {
@@ -194,10 +202,12 @@ export class PlaybackCache {
     const start = performance.now(), revision = this.revision, tables = this._snapshotTables(), sources = new Map(Object.entries(this.report._styk?.frameSources || {}));
     // Original encoded source is useful for saving, but has no role in playback.
     const { _stykSource, ...renderReport } = this.report;
+    if(renderReport._styk?.audio){const {audio,...metadata}=renderReport._styk;renderReport._styk=metadata;}
     // Leave room for background commands inside the existing cache allocation.
     // Texture bytes do not share WebGPU's per-storage-buffer size limit; the
     // worker checks vector buffers separately instead of capping all pixels.
     const options = { scale: this.scale, cameraEnabled: this.cameraEnabled, storedFrames: this.storedFrames, vfxEnabled:this.vfxEnabled!==false, baseURL: this.baseURL, token: this.token,
+      softwareFrames: Boolean(this.softwareFrames), hiddenUids: this.hiddenUids, hiddenKey: this.hiddenKey || '',
       maxPacketBytes: this.maxBytes * .8, maxAssetBytes: Math.min(previewMemoryPlan().workerImages, this.maxBytes / 4) };
     this.stats.loadKind = 'document'; this.stats.loadChunks = 0; this.stats.loadSerializationMs = 0; this.stats.loadMaxTaskMs = 0;
     this.stats.maxChunkBytes = 0; this.stats.patchFrames = 0; this.stats.patchSourceUpserts = 0; this.stats.patchSourceDeletes = 0;
@@ -241,7 +251,10 @@ export class PlaybackCache {
   _kept(tick) {
     const packet = this.cache.get(tick);
     if (!packet) return false;
-    if ((packet.cameraEnabled ?? true) === (this.cameraEnabled ?? true)) return true;
+    const stale = (packet.cameraEnabled ?? true) !== (this.cameraEnabled ?? true) ||
+      Boolean(packet.softwareFrames) !== Boolean(this.softwareFrames) ||
+      (this.softwareFrames && (packet.hiddenKey || '') !== (this.hiddenKey || ''));
+    if (!stale) return true;
     this.cache.delete(tick); this.bitmapPool.release(packet); this._packetSizes.delete(tick);
     const footprint = this._packetFootprints.get(tick);
     if (footprint) { this._packetFootprints.delete(tick); this._footprintBytes -= footprint.metadataBytes; this.stats.footprintBytes = this._footprintBytes; }

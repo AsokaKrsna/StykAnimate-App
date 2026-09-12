@@ -5,16 +5,22 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
 class FileStreams {
-  constructor({ maxBytes = 256 * 1024 * 1024, maxChunkBytes = 256 * 1024, maxSessions = 8, ttlMs = 120000 } = {}) {
+  constructor({ maxBytes = 256 * 1024 * 1024, maxStreamBytes = 16 * 1024 * 1024 * 1024, maxChunkBytes = 256 * 1024, maxSessions = 8, ttlMs = 120000, onCommitError = () => {} } = {}) {
     this.maxBytes = maxBytes;
+    this.maxStreamBytes = maxStreamBytes;
     this.maxChunkBytes = maxChunkBytes;
     this.maxSessions = maxSessions;
     this.ttlMs = ttlMs;
+    this.onCommitError = onCommitError;
     this.jobs = new Map();
   }
 
   validateSize(size) {
     if (!Number.isSafeInteger(size) || size < 0 || size > this.maxBytes) throw new Error('The file size is invalid or exceeds the 256 MB limit.');
+  }
+
+  validateStreamSize(size) {
+    if (size !== null && size !== undefined && (!Number.isSafeInteger(size) || size < 0 || size > this.maxStreamBytes)) throw new Error('The streamed file size limit is invalid.');
   }
 
   touch(job) {
@@ -43,13 +49,14 @@ class FileStreams {
     finally { job.busy = false; job.resolveIdle?.(); job.idle = null; if (this.jobs.has(token) && !job.cancelled) this.touch(job); }
   }
 
-  async beginWrite({ destination, size, onCommit, exclusive = false } = {}) {
-    this.validateSize(size);
+  async beginWrite({ destination, size, onCommit, exclusive = false, stream = false } = {}) {
+    if (stream) this.validateStreamSize(size); else this.validateSize(size);
     if (typeof destination !== 'string' || !path.isAbsolute(destination)) throw new Error('A native-approved destination is required.');
     if (this.jobs.size >= this.maxSessions) throw new Error('Too many file transfers are active.');
     const temporary = path.join(path.dirname(destination), `.${path.basename(destination)}.${randomUUID()}.tmp`);
     const handle = await fs.open(temporary, 'wx');
-    try { return this.register({ mode: 'write', destination, temporary, handle, size, position: 0, onCommit, exclusive }); }
+    // Streamed writes declare their final size at finish time, not up front.
+    try { return this.register({ mode: 'write', destination, temporary, handle, size: stream ? (size ?? null) : size, stream, position: 0, onCommit, exclusive }); }
     catch (error) { await handle.close(); await fs.unlink(temporary); throw error; }
   }
 
@@ -60,7 +67,8 @@ class FileStreams {
       else if (ArrayBuffer.isView(chunk) && !(chunk instanceof DataView)) bytes = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
       else throw new Error('Each file chunk must contain binary bytes.');
       if (!bytes.byteLength || bytes.byteLength > this.maxChunkBytes) throw new Error('A file chunk must contain between 1 byte and 256 KB.');
-      if (job.position + bytes.byteLength > job.size) throw new Error('The file transfer exceeds its declared size.');
+      if (job.size !== null && job.position + bytes.byteLength > job.size) throw new Error('The file transfer exceeds its declared size.');
+      if (job.size === null && job.position + bytes.byteLength > this.maxStreamBytes) throw new Error('The streamed file exceeds the 16 GB limit.');
       let offset = 0;
       while (offset < bytes.length) {
         const result = await job.handle.write(bytes, offset, bytes.length - offset, job.position + offset);
@@ -72,26 +80,50 @@ class FileStreams {
     });
   }
 
+  /** Overwrite already-written bytes without moving the append position. */
+  patch(token, offset, chunk) {
+    return this.use(token, 'write', async (job) => {
+      let bytes;
+      if (chunk instanceof ArrayBuffer) bytes = Buffer.from(chunk);
+      else if (ArrayBuffer.isView(chunk) && !(chunk instanceof DataView)) bytes = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+      else throw new Error('Each file patch must contain binary bytes.');
+      if (!bytes.byteLength || bytes.byteLength > this.maxChunkBytes) throw new Error('A file patch must contain between 1 byte and 256 KB.');
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset + bytes.byteLength > job.position) throw new Error('A file patch must stay inside the written range.');
+      let written = 0;
+      while (written < bytes.length) {
+        const result = await job.handle.write(bytes, written, bytes.length - written, offset + written);
+        if (!result.bytesWritten) throw new Error('The file patch could not be written.');
+        written += result.bytesWritten;
+      }
+      return { patched: offset, bytes: bytes.length };
+    });
+  }
+
   finish(token) {
     return this.use(token, 'write', async (job) => {
-      if (job.position !== job.size) throw new Error('The file transfer is incomplete.');
+      if (job.size !== null && job.position !== job.size) throw new Error('The file transfer is incomplete.');
       await job.handle.sync();
       if (job.cancelled) throw new Error('The file transfer was cancelled.');
       await job.handle.close();
       job.handle = null;
       if (job.cancelled) throw new Error('The file transfer was cancelled.');
       try {
-        if (job.exclusive) { await fs.link(job.temporary, job.destination); await fs.unlink(job.temporary); }
+        if (job.exclusive) await fs.link(job.temporary, job.destination);
         else await fs.rename(job.temporary, job.destination);
-        this.jobs.delete(token);
-        clearTimeout(job.timer);
-        if (job.onCommit) await job.onCommit();
-        return { saved: true, path: job.destination, size: job.size };
       } catch (error) {
         this.jobs.delete(token);
+        clearTimeout(job.timer);
         await fs.unlink(job.temporary).catch((failure) => { if (failure.code !== 'ENOENT') throw failure; });
         throw error;
       }
+      // The destination is committed. Optional display metadata or temporary
+      // link cleanup must not report a failed save after replacing the file.
+      this.jobs.delete(token);clearTimeout(job.timer);
+      const result = { saved: true, path: job.destination, size: job.position };
+      const report = async error => {try {await this.onCommitError(error);} catch { /* Diagnostics cannot undo a committed file. */ }};
+      if(job.exclusive)await fs.unlink(job.temporary).catch(report);
+      if(job.onCommit)try {await job.onCommit();} catch(error) {result.metadataSaved=false;await report(error);}
+      return result;
     });
   }
 

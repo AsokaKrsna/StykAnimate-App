@@ -31,6 +31,9 @@ try {
    for(let dx=-5;dx<=5;dx++)if(px(4.5*t.pxPerTick+dx).some((v,i)=>Math.abs(v-bg[i])>24))count++;return count;});
  assert.ok(painted>2);
  await cell(30);await page.keyboard.press('a');assert.equal((await snap()).tick,30);assert.ok((await snap()).keys.includes(30));
+ // Placing a keyframe beyond a layer's end carries its last exposure forward instead of padding blank cells.
+ assert.deepEqual(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').filter(k=>k.empty).map(k=>k.tick)),[]);
+ assert.equal(await page.evaluate(()=>{styk.editor.seek(20,{allowBeyondEnd:true});return styk.editor.evaluatedFrame.objects.length;}),1);
  await page.evaluate(()=>styk.editor.setLayerLocked('layer-1',true));const locked=await snap();await page.keyboard.press('a');assert.deepEqual(await snap(),locked);
  await page.evaluate(()=>styk.editor.setLayerLocked('layer-1',false));
  await page.locator('[data-app-menu="animation"]').click();assert.equal(await page.locator('#menu [data-action="add-frame"]').count(),1);assert.equal(await page.locator('#menu [data-action="blank-frame"],#menu [data-action="duplicate-frame-after"]').count(),0);await page.keyboard.press('Escape');

@@ -77,13 +77,21 @@ frame followed by acknowledged chunks of at most 256 KiB. There is no lossy
 intermediate video. The service validates PNG structure and dimensions, accepts
 only fixed encoder/container choices, and owns temporary output paths. It accepts
 no renderer-selected executable, output path or command-line options. Cancel and
-failed rendering dispose the encoder and temporary output. Completed output is
-read back in bounded chunks before the ordinary save dialog.
+failed rendering dispose the encoder and temporary output. Completed output
+moves disk-to-disk into a native save dialog destination — staging beside the
+destination so a failed copy never leaves a truncated file — or falls back to
+bounded chunked readback on desktop builds without the save channel.
 
-Raster images/native video are limited to 16 million pixels per frame; dimensions
-are limited to 16,384 pixels. ZIP sequences allow up to 65,534 frames, reserving one
-entry for timing metadata. Portable image/WebM encoders have a 512 MiB output
-bound; native video uses 256 MiB to match the desktop file transfer limit. Frame
+Raster images/native video are limited to 67 million pixels per frame (16.7
+million in Safari, matching its canvas surface limit); dimensions are limited to
+16,384 pixels. ZIP sequences allow up to 65,534 frames, reserving one
+entry for timing metadata. When a streamed destination is available — the
+desktop file transfer or the File System Access API — encoders write output as
+it is produced, so the in-memory bound applies to chunks in flight and the
+output limit is 16 GiB (just under 4 GiB for ZIP sequences, which store 32-bit
+offsets); without a streamed destination the 512 MiB output bound still holds.
+Native FFmpeg video uses 1 GiB and Windows VFW video 256 MiB, matching
+their desktop transfer and native helper limits. Frame
 progress is reported after each complete source frame. Animated GIF reports
 `palette` and `encode` phases with `total = 2 * totalFrames`; native progress also
 distinguishes final encoding and completed output transfer.

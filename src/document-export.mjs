@@ -11,8 +11,8 @@ async function yieldToInput() {
  * getRevision catches committed edits between chunks and before returning data.
  */
 export class DocumentExporter {
-  constructor({baseURL = globalThis.location?.origin, token = '', targetRecords = 500,
-    targetBytes = 256 * 1024, timeoutMs = 300000} = {}) {
+  constructor({baseURL = globalThis.location?.origin, token = '', targetRecords = 2000,
+    targetBytes = 1024 * 1024, timeoutMs = 300000} = {}) {
     if (!baseURL) throw new Error('Document export requires the local file service URL.');
     this.baseURL = new URL(baseURL, globalThis.location?.href).origin;
     this.token = token;
@@ -46,6 +46,7 @@ export class DocumentExporter {
         const error = new Error(event.data.error?.message || 'Document export failed.');
         error.code = event.data.error?.code; error.status = event.data.error?.status;
         error.telemetryCode = event.data.error?.telemetryCode; error.telemetryStage = event.data.error?.telemetryStage;
+        error.telemetryFrames=event.data.error?.telemetryFrames;error.name=event.data.error?.name||'Error';
         request.reject(error);
       }
     });

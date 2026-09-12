@@ -8,8 +8,11 @@ self.onmessage = async ({data}) => {
     await resources.preload(data.items, data.options);
     for (const url of new Set(data.items.map(item => resources.url(item.asset)).filter(Boolean))) {
       const source = resources.images.get(url);
+      if (!source) continue;
       const bitmap = await createImageBitmap(source);
-      images.push({url, bitmap, width: source.naturalWidth, height: source.naturalHeight});
+      // Clones drop expandos; the crop rectangle travels in the message instead.
+      images.push({url, bitmap, width: source.naturalWidth, height: source.naturalHeight,
+        ...(source.srcW !== undefined ? {srcX: source.srcX, srcY: source.srcY, srcW: source.srcW, srcH: source.srcH} : {})});
     }
     self.postMessage({id: data.id, images, reduced: resources.pressureReduced}, images.map(image => image.bitmap));
     sent = true;

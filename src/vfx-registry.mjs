@@ -6,6 +6,7 @@ const toggle=(label,value=0)=>({...choice(label,value,['Off','On']),toggle:true}
 const center={centerX:n('Center X',.5,0,1,.01,'%'),centerY:n('Center Y',.5,0,1,.01,'%')};
 const advanced=params=>Object.fromEntries(Object.entries(params).map(([k,v])=>[k,{...v,advanced:true}]));
 export const VFX_REGISTRY={
+ turbulence:{name:'Turbulent displacement',category:'Distort',icon:'turbulence',params:{amount:n('Amount',12,0,128,1,'px'),size:n('Scale',48,4,512,1,'px'),evolution:n('Evolution',0,-10000,10000,.05),detail:{...n('Detail',3,1,4,1),discrete:true},seed:{...n('Seed',1,0,65535,1),discrete:true}}},
  tint:{name:'Tint',category:'Color',icon:'tint',params:{color:c(),mix:n('Mix',.5,0,1,.01,'%')}},
  glow:{name:'Glow',category:'Light',icon:'glow',params:{color:c('Halo color'),radius:n('Radius',12,0,128,1,'px'),intensity:n('Intensity',.8,0,3),mode:choice('Placement',0,['Outer','Inner','Both']),...advanced({spread:n('Spread',0,0,64,1,'px'),falloff:n('Falloff',1,.2,4),coreColor:c('Core color',0xffffff),coreMix:n('Core mix',0,0,1,.01,'%'),blend:choice('Blend',0,['Normal','Add','Screen'])})}},
  outline:{name:'Outline',category:'Light',icon:'outline',params:{color:c('Color',0x111111),width:n('Width',3,0,64,1,'px'),opacity:n('Opacity',1,0,1,.01,'%'),mode:choice('Placement',0,['Outside','Inside','Center']),rounded:toggle('Rounded',1),only:toggle('Outline only')}},
@@ -23,6 +24,6 @@ export const VFX_REGISTRY={
  lightSweep:{name:'Light sweep',category:'Light',icon:'lightSweep',params:{position:n('Position',.5,-.5,1.5,.01,'%'),angle:n('Angle',25,-180,180,1,'°'),width:n('Width',.2,.01,1,.01,'%'),softness:n('Softness',.6,.01,1,.01,'%'),intensity:n('Intensity',.8,0,3),color:c('Color',0xffffff)}},
  crt:{name:'CRT / scanlines',category:'Texture',icon:'crt',scene:true,params:{amount:n('Scanlines',.25,0,1,.01,'%'),spacing:n('Line spacing',3,1,32,1,'px'),curvature:n('Curvature',0,0,.5),...advanced({chromatic:n('RGB fringe',0,0,16,1,'px'),phase:n('Phase',0,-32,32,.1,'px'),color:c('Line color',0)})}},
 };
-for(const definition of Object.values(VFX_REGISTRY)){for(const p of Object.values(definition.params))Object.freeze(p);Object.freeze(definition.params);Object.freeze(definition);}Object.freeze(VFX_REGISTRY);
-export const VFX_SCENE_TYPES=new Set(['tint','blur','grade','pixelate','noise','vignette','dissolve','rgbSplit','wave','shockwave','bloom','lightSweep','crt']);
+for(const definition of Object.values(VFX_REGISTRY)){definition.params={effectStrength:n('Effect strength',1,0,1,.01,'%'),...definition.params};for(const p of Object.values(definition.params))Object.freeze(p);Object.freeze(definition.params);Object.freeze(definition);}Object.freeze(VFX_REGISTRY);
+export const VFX_SCENE_TYPES=new Set(['tint','blur','grade','pixelate','noise','vignette','dissolve','rgbSplit','wave','shockwave','bloom','lightSweep','crt','turbulence']);
 export const effectAvailable=(type,scene)=>scene?VFX_SCENE_TYPES.has(type):!VFX_REGISTRY[type]?.scene&&type!=='vignette';

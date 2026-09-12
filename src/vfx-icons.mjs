@@ -16,6 +16,7 @@ const shapes={
  bloom:'<path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5Z"/>',
  lightSweep:'<path d="m4 21 9-18h7l-9 18ZM3 8h4M17 16h4"/>',
  crt:'<rect x="2" y="5" width="20" height="15" rx="3"/><path d="m8 2 4 3 4-3M6 9h12M6 13h12M6 17h12"/>',
+ turbulence:'<path d="M2 7c6-9 10 9 20 0M2 12c8-9 9 9 20 0M2 17c5-9 13 9 20 0"/>',
  effects:'<path d="m12 3 2 7 7 2-7 2-2 7-2-7-7-2 7-2ZM20 2v4m-2-2h4"/>',
  grip:'<path d="M9 5h.1m5 0h.1M9 12h.1m5 0h.1M9 19h.1m5 0h.1" stroke-width="3"/>',
  camera:'<rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="12" cy="12" r="4"/>',

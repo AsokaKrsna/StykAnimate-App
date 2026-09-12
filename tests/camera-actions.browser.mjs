@@ -11,27 +11,29 @@ const check = (name, condition) => {
   checks.push(name);
   console.log("PASS", name);
 };
-const camera = () => page.evaluate(() => ({ ...styk.editor.frame.camera }));
+const camera = () => page.evaluate(() => ({ ...styk.editor.selectionFrame.camera }));
 const click = async (action) => {
-  await page.locator(`#inspector [data-action="${action}"]`).click();
+  const button=page.locator(`#inspector [data-action="${action}"]`);
+  const section=button.locator('xpath=ancestor::details');
+  if(await section.count()&&!await section.evaluate(e=>e.open))await section.locator('summary').click();
+  await button.click();
   await page.waitForTimeout(50);
 };
 try {
   await page.goto(process.env.STYK_URL || "http://127.0.0.1:47831");
   await page.waitForFunction(() => styk?.ready);
-  await page.evaluate(() => {
-    const e = styk.editor;
-    e.newDocument();
-    e.addFrame();
-    e.addFrame();
+  await page.evaluate(async () => {
+    const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs');
+    const report=emptyDocument();report.keyframes=Array.from({length:3},()=>createFrame([createObject(report.figure_types[0],1,480,280)]));
+    const e=styk.editor;e.load(report);
     e.selectFrame(1);
     e.setCameraValues({ x: 10, y: 20, scale: 1.2, angle_rad: 0.1 }, [0]);
     e.setCameraValues({ x: 30, y: 40, scale: 1.1, angle_rad: 0.3 }, [2]);
     e.setCameraValues({ x: 5, y: 6 }, [1]);
-    e.select(e.frame.objects[0].unique_id);
+    e.select(e.selectionFrame.objects[0].unique_id);
   });
   await page
-    .locator('.styk-tree-row[data-kind="camera"] .styk-tree-name')
+    .locator('.sheet-layer[data-kind="camera"] .sheet-layer-name')
     .click();
   check(
     "Camera selection retains figure targets and enables centering",
@@ -114,7 +116,7 @@ try {
     await page.evaluate(
       ({ undo, x }) =>
         styk.editor._undo.length === undo + 1 &&
-        styk.editor.frame.camera.is_default &&
+        styk.editor.selectionFrame.camera.x === 0 && styk.editor.selectionFrame.camera.y === 0 && styk.editor.selectionFrame.camera.scale === 1 &&
         styk.editor.object.root_x !== x,
       before,
     ),

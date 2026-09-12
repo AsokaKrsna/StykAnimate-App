@@ -9,6 +9,12 @@ function subscribe(channel, callback) {
   return () => ipcRenderer.removeListener(channel, listener);
 }
 
+// Sandboxed preloads cannot require('os'); total memory is a synchronous
+// main-process value. Failure degrades to the navigator.deviceMemory hint.
+function systemMemoryBytes() {
+  try { return ipcRenderer.sendSync('styk:memory-bytes') || 0; } catch { return 0; }
+}
+
 // Every privileged operation has a narrow handler in main.cjs. No filesystem,
 // Node.js, Electron object, or arbitrary IPC channel crosses this boundary.
 contextBridge.exposeInMainWorld('stykDesktop', Object.freeze({
@@ -21,6 +27,8 @@ contextBridge.exposeInMainWorld('stykDesktop', Object.freeze({
   readSharedClipboardChunk: token => ipcRenderer.invoke('styk:shared-clipboard-read', token),
   cancelSharedClipboardTransfer: token => ipcRenderer.invoke('styk:shared-clipboard-cancel', token),
   platform: process.platform,
+  memoryBytes: systemMemoryBytes(),
+  streamingFileWrite: true,
   importTransport: 'source-bytes-v1',
   getUpdateState: () => ipcRenderer.invoke('styk:update-state'),
   checkForUpdates: () => ipcRenderer.invoke('styk:update-check'),
@@ -63,11 +71,18 @@ contextBridge.exposeInMainWorld('stykDesktop', Object.freeze({
   writeClipboardText: text => ipcRenderer.invoke('styk:clipboard-text-write', text),
   getVideoCapabilities: options => ipcRenderer.invoke('styk:video-capabilities', options),
   beginVideoExport: options => ipcRenderer.invoke('styk:video-begin', options),
+  writeVideoAudioChunk: (token, bytes) => ipcRenderer.invoke('styk:video-audio-chunk', token, bytes),
+  beginAudioImport: options => ipcRenderer.invoke('styk:audio-begin', options),
+  writeAudioImport: (token, bytes) => ipcRenderer.invoke('styk:audio-write', token, bytes),
+  finishAudioImport: token => ipcRenderer.invoke('styk:audio-finish', token),
+  readAudioImport: token => ipcRenderer.invoke('styk:audio-read', token),
+  cancelAudioImport: token => ipcRenderer.invoke('styk:audio-cancel', token),
   beginVideoFrame: (token, options) => ipcRenderer.invoke('styk:video-frame-begin', token, options),
   writeVideoChunk: (token, bytes) => ipcRenderer.invoke('styk:video-frame-chunk', token, bytes),
   endVideoFrame: token => ipcRenderer.invoke('styk:video-frame-end', token),
   finishVideoExport: token => ipcRenderer.invoke('styk:video-finish', token),
   readVideoChunk: token => ipcRenderer.invoke('styk:video-read', token),
+  saveVideoExport: (token, options) => ipcRenderer.invoke('styk:video-save', token, options),
   cancelVideoExport: token => ipcRenderer.invoke('styk:video-cancel', token),
   getVfwCapabilities: options => ipcRenderer.invoke('styk:vfw-capabilities', options),
   configureVfwCodec: options => ipcRenderer.invoke('styk:vfw-configure', options),
@@ -77,6 +92,7 @@ contextBridge.exposeInMainWorld('stykDesktop', Object.freeze({
   endVfwFrame: token => ipcRenderer.invoke('styk:vfw-frame-end', token),
   finishVfwExport: token => ipcRenderer.invoke('styk:vfw-finish', token),
   readVfwChunk: token => ipcRenderer.invoke('styk:vfw-read', token),
+  saveVfwExport: (token, options) => ipcRenderer.invoke('styk:vfw-save', token, options),
   cancelVfwExport: token => ipcRenderer.invoke('styk:vfw-cancel', token),
   activateDocument: (options) => ipcRenderer.invoke('styk:document-activate', options),
   openFile: () => ipcRenderer.invoke('styk:open-file'),
@@ -90,6 +106,7 @@ contextBridge.exposeInMainWorld('stykDesktop', Object.freeze({
   beginClipboardWrite: (options) => ipcRenderer.invoke('styk:clipboard-write-begin', options),
   beginClipboardRead: () => ipcRenderer.invoke('styk:clipboard-read-begin'),
   writeFileChunk: (token, bytes) => ipcRenderer.invoke('styk:file-write-chunk', token, bytes),
+  patchFileWrite: (token, offset, bytes) => ipcRenderer.invoke('styk:file-write-patch', token, offset, bytes),
   finishFileWrite: (token) => ipcRenderer.invoke('styk:file-write-finish', token),
   cancelFileWrite: (token) => ipcRenderer.invoke('styk:file-write-cancel', token),
   getRecoveryInfo: () => ipcRenderer.invoke('styk:recovery-info'),

@@ -1,6 +1,8 @@
 /** Worker side of the file protocol. No scene rendering or UI state lives here. */
 import { documentChunks } from './document-transport.mjs';
+import {diagnosticDetails} from './telemetry-schema.mjs';
 import {NATIVE_FRAME_CONTENT_TYPE, unpackNativeFrameResponse} from './import-wire.mjs';
+import {decodeDocument, normalizeDecodedDocument, verifyEmbeddedSource} from './native-container.mjs';
 const pending = new Map();
 const receipts = new Map();
 
@@ -8,9 +10,9 @@ async function sendResult(id, result, signal) {
   const nativeTransfer=result.nativeTransfer; delete result.nativeTransfer;
   if (!nativeTransfer && Number(result.timings?.document_bytes || 0) < 1024 * 1024) { self.postMessage({ id, ok: true, result }); return; }
   const started = performance.now(); let sequence = 0;
-  // Definitions contain many tiny records. A 1 MiB clone budget avoids hundreds
-  // of mostly empty message round trips; sender work still yields every 2 ms.
-  for (const chunk of documentChunks(result.document, {maxBytes: 1024 * 1024, timeBudgetMs: 2, sharedFigures:true})) {
+  // 4 MiB clone packets cut the acknowledged round trips on dense scenes;
+  // sender work still yields every 2 ms so the channel stays responsive.
+  for (const chunk of documentChunks(result.document, {maxBytes: 4 * 1024 * 1024, timeBudgetMs: 2, sharedFigures:true})) {
     if (signal.aborted) return;
     const key = `${id}:${sequence}`;
     // Acknowledging each batch bounds queued receiver allocations and gives input
@@ -32,7 +34,7 @@ async function sendResult(id, result, signal) {
 
 function errorMessage(error, stage) {
   return {message: error?.message || String(error), code: error?.code, status: error?.status,
-    telemetryStage: error?.telemetryStage || stage, telemetryCode: error?.telemetryCode || (stage === 'prepare' ? 'snapshot_failed' : 'decode_failed')};
+    ...diagnosticDetails(error,stage,stage === 'prepare' ? 'snapshot_failed' : 'decode_failed')};
 }
 
 async function importRequest(message, signal) {
@@ -48,6 +50,28 @@ async function importRequest(message, signal) {
   if (message.operation === 'import') {
     if (!(message.bytes instanceof ArrayBuffer)) throw new Error('The importer did not receive the complete file bytes.');
     if (typeof message.filename !== 'string') throw new Error('The imported file needs a filename.');
+    const nativeKind = /\.(styk|stkz|stykmov)$/i.exec(message.filename)?.[1]?.toLowerCase();
+    if (nativeKind) {
+      // Native containers decode locally: verify, inflate and materialize in
+      // this worker instead of round-tripping a full JSON document through the
+      // file service. Sections using an unavailable codec still take the
+      // service path; service-side limits apply there.
+      try {
+        const decodeStarted = performance.now();
+        const decoded = await decodeDocument(new Uint8Array(message.bytes), nativeKind);
+        const document = normalizeDecodedDocument(decoded.document, nativeKind);
+        await verifyEmbeddedSource(document);
+        const parsed = performance.now();
+        return {ok: true, sourceId: null, filename: message.filename, kind: nativeKind, version: document.version,
+          document,
+          timings: {decode_ms: +(parsed - decodeStarted).toFixed(3), cache_hit: false,
+            total_ms: +(parsed - started).toFixed(3), source_bytes: message.bytes.byteLength,
+            document_bytes: decoded.materializedBytes, transport: `local-container-v${decoded.version}`,
+            worker_fetch_ms: 0, worker_parse_ms: +(parsed - decodeStarted).toFixed(3), worker_ms: +(parsed - started).toFixed(3)}};
+      } catch (error) {
+        if (error?.code !== 'codec_unavailable') throw error;
+      }
+    }
     path = `/api/import?filename=${encodeURIComponent(message.filename)}`;
     headers['Content-Type'] = 'application/octet-stream';
     body = message.bytes;

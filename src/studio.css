@@ -107,9 +107,6 @@
 #inspector .color-row { background: var(--theme-field, #f5f5f5); min-height: 32px; border-radius: 6px; }
 #inspector .transform-actions { gap: 5px; }
 #inspector .transform-actions .icon-button { border-radius: 5px; height: 28px; background: var(--theme-subtle, #f5f7fa); }
-#inspector .property-key-controls button { min-height: 28px; }
-#inspector .property-key-controls [data-property-nav] { opacity: .25; }
-#inspector .property-row:hover [data-property-nav], #inspector .property-row:focus-within [data-property-nav] { opacity: 1; }
 #inspector .property-note { display: block; font-size: 11px; line-height: 1.55; color: var(--theme-warning, #7c6a4e); background: var(--theme-field, #fff7e8); border-radius: 6px; padding: 8px 10px; }
 #inspector .inspector-section:has(> .property-note:only-child) { display: block; }
 #inspector .inspector-disclosure { padding-top: 13px; padding-bottom: 13px; }
@@ -278,17 +275,7 @@ dialog::backdrop { background: var(--theme-backdrop, #18273c55); backdrop-filter
 #inspector .field > .property-scrub { min-width: 0; font-size: 11px; color: var(--theme-muted, #737373); }
 #inspector .field > input { min-width: 0; width: 100%; font-size: 11px; font-weight: 400; color: var(--theme-text, #292929); text-align: left; }
 #inspector .field > small { font-size: 10px; color: var(--theme-muted, #737373); }
-#inspector .property-key-controls { position: relative; width: 16px; flex: 0 0 16px; gap: 0; }
-#inspector .property-key-controls button { height: 24px; min-height: 24px; width: 16px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--theme-muted, #a3a3a3); }
-#inspector .property-key-controls button:hover:not(:disabled) { background: var(--theme-selected-hover, #e5f4ff); color: var(--theme-accent, #0088e8); }
-#inspector .property-key-controls [data-property-key].is-keyed { background: var(--theme-selected, #e5f4ff); color: var(--theme-accent, #0088e8); }
-#inspector .property-key-controls [data-property-key].is-animated { color: var(--theme-accent, #0088e8); }
 #inspector .field-grid > .property-row[data-property-row="figure_z_order"] { grid-column: 1 / -1; }
-#inspector .property-key-controls [data-property-nav] { display: none; position: absolute; z-index: 8; top: 23px; width: 24px; height: 26px; background: var(--theme-panel, #fff); border: 1px solid var(--theme-border, #ddd); box-shadow: 0 2px 6px var(--theme-shadow, #00000012); opacity: 1; }
-#inspector .property-key-controls [data-direction="-1"] { right: 16px; }
-#inspector .property-key-controls [data-direction="1"] { right: -7px; }
-#inspector .property-key-controls:hover [data-property-nav], #inspector .property-key-controls:focus-within [data-property-nav] { display: block; }
-#inspector .property-key-controls button:disabled { color: var(--theme-muted, #c5c5c5); opacity: 1; }
 #inspector .color-row { height: 32px; min-height: 32px; padding: 0 8px; gap: 8px; margin-top: 8px; border: 1px solid transparent; border-radius: 5px; background: var(--theme-field, #f0f0f0); color: var(--theme-text, #292929); }
 #inspector .color-row:hover { border-color: var(--theme-border, #d4d4d4); }
 #inspector .color-row input[type=color] { width: 18px; height: 18px; border-radius: 3px; }
@@ -298,9 +285,6 @@ dialog::backdrop { background: var(--theme-backdrop, #18273c55); backdrop-filter
 #inspector .property-paint-row > .property-row.is-animatable { grid-column: auto; }
 #inspector .property-paint-row .property-scrub { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 #inspector .property-paint-row .field input { text-align: left; }
-#inspector .property-paint-row:has(> .property-key-controls) { grid-template-columns: minmax(0, 1fr) auto; }
-#inspector .property-paint-row:has(> .property-key-controls) > .property-row { grid-column: 1 / -1; }
-#inspector .property-paint-row:has(> .property-key-controls) .property-scrub { position: static; width: auto; height: auto; clip-path: none; }
 #inspector .paint-trigger { display: flex; justify-content: flex-start; align-items: center; gap: 8px; width: 100%; height: 32px; min-width: 0; padding: 0 8px; margin: 0; border: 1px solid transparent; border-radius: 5px; background: var(--theme-field, #f0f0f0); color: var(--theme-text, #292929); font-size: 11px; text-align: left; }
 #inspector .paint-trigger:hover { border-color: var(--theme-border, #d4d4d4); }
 #inspector .paint-trigger i { display: block; width: 18px; height: 18px; border-radius: 3px; border: 1px solid var(--theme-border-strong, #0000001a); flex-shrink: 0; }

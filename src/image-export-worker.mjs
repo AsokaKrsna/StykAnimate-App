@@ -4,6 +4,12 @@ import {exportContext, checkExportContext} from './export-canvas.mjs';
 
 let output, canvas, context, config, paletteBuilder;
 let busy = false;
+// In streaming mode the encoder's appended bytes are forwarded to the caller
+// with every response instead of being retained until finish.
+const respond = (id, fields = {}) => {
+  const chunk = config?.stream && output ? output.drain() : null;
+  self.postMessage({ id, ok: true, ...(chunk ? { output: chunk } : {}), ...fields });
+};
 self.addEventListener("message", async (event) => {
   const message = event.data;
   if (busy) {
@@ -31,13 +37,13 @@ self.addEventListener("message", async (event) => {
             : SequenceZIP;
       paletteBuilder = config.format === "gif" ? new GIFPaletteBuilder() : null;
       output = paletteBuilder ? null : new Encoder(config);
-      self.postMessage({ id: message.id, ok: true });
+      respond(message.id);
     } else if (message.operation === "encode") {
       if (!paletteBuilder || paletteBuilder.frames !== config.totalFrames)
         throw new Error("The GIF palette analysis is incomplete.");
       output = new GIFEncoder({ ...config, palette: paletteBuilder.finish() });
       paletteBuilder = null;
-      self.postMessage({ id: message.id, ok: true });
+      respond(message.id);
     } else if (message.operation === "frame") {
       if (!output && !paletteBuilder)
         throw new Error("The image export was not initialized.");
@@ -54,7 +60,7 @@ self.addEventListener("message", async (event) => {
         if (!/<svg(?:\s|>)/i.test(prefix))
           throw new Error("The vector frame does not contain an SVG document.");
         output.add(new Uint8Array(await svg.arrayBuffer()));
-        self.postMessage({ id: message.id, ok: true });
+        respond(message.id);
         return;
       }
       const bitmap = message.bitmap;
@@ -103,9 +109,16 @@ self.addEventListener("message", async (event) => {
           );
         output.add(new Uint8Array(await encoded.arrayBuffer()));
       }
-      self.postMessage({ id: message.id, ok: true });
+      respond(message.id);
     } else if (message.operation === "finish") {
       if (!output) throw new Error("The image export was not initialized.");
+      if (config.stream) {
+        output.finish();
+        if (canvas) canvas.width = canvas.height = 1;
+        respond(message.id);
+        output = null;
+        return;
+      }
       const blob = output.finish();
       output = null;
       if (canvas) canvas.width = canvas.height = 1;

@@ -43,10 +43,14 @@ PNG/JPEG sequence ZIPs contain `frame-000001.png` or `.jpg` onward, plus
 PNG preserves alpha; JPEG uses a white matte. ZIP stores the already-compressed
 image files with CRC32 and a complete central directory.
 
-Exports are bounded to 512 MiB encoded output, 16 million pixels per frame,
-and dimensions no greater than 16,384 pixels. ZIP supports 65,534 image frames
-plus its manifest; GIF/APNG support 100,000 frames. Requests outside these limits
-fail explicitly rather than truncate. `maxBytes` can lower the size limit.
+Exports are bounded to 512 MiB encoded output in memory, 67 million pixels per frame (16.7 million in Safari),
+and dimensions no greater than 16,384 pixels. When a streamed destination is
+available — the desktop chunked file transfer or the File System Access API —
+encoded bytes flow to the file as they are produced and the bound rises to
+16 GiB (just under 4 GiB for ZIP sequences, which store 32-bit offsets). ZIP
+supports 65,534 image frames plus its manifest; GIF/APNG support 100,000 frames.
+Requests outside these limits fail explicitly rather than truncate. `maxBytes`
+can lower the size limit.
 
 `src/svg-export.mjs` independently exports `exportSVG({report,frame,geometry,
 width,height,resources,cameraEnabled:true})`. It writes actual vector strokes,

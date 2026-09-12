@@ -72,6 +72,26 @@ try {
     }
     let invalid; try { await exportAnimation({...options, format: 'svg-sequence', renderSVGFrame: () => '<html>wrong format</html>'}); } catch (error) { invalid = error.message; }
     assert(invalid?.includes('SVG document'), 'Wrong vector output is rejected instead of receiving a false SVG extension');
+    // A streamed sink receives the worker's incremental output chunks; the
+    // reassembled bytes must equal the buffered export exactly.
+    for (const format of ['png-sequence', 'gif']) {
+      const sink = {
+        streamed: true, parts: [], aborted: false,
+        async write(part) { this.parts.push(part); },
+        async finish() { return {saved: true, size: this.parts.reduce((n, p) => n + (p.size ?? p.byteLength), 0), blob: new Blob(this.parts)}; },
+        async abort() { this.aborted = true; },
+      };
+      const streamed = await exportAnimation({...options, format, sink});
+      const plain = new Uint8Array(await (await exportAnimation({...options, format})).arrayBuffer());
+      const reassembled = new Uint8Array(await streamed.blob.arrayBuffer());
+      assert(streamed.saved && reassembled.length === plain.length && reassembled.every((byte, i) => byte === plain[i]), `${format}: streamed output is byte-identical`);
+      assert(sink.parts.length > 1, `${format}: output arrived in incremental chunks`);
+      let cancelSink; const controller = new AbortController();
+      const aborting = {streamed: true, writes: 0, async write() { this.writes++; }, async finish() { return {saved: true}; }, async abort() { cancelSink = true; }};
+      try { await exportAnimation({...options, format, sink: aborting, signal: controller.signal, onProgress: ({completed}) => { if (completed === 2) controller.abort(); }}); }
+      catch (error) { if (error.name !== 'AbortError') throw error; }
+      assert(cancelSink === true, `${format}: cancellation aborts the sink`);
+    }
     return {checks, reports, files};
   });
   if (errors.length) throw new Error(errors.join('\n'));

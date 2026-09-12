@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import unittest
@@ -50,6 +51,56 @@ class NativeFormatTests(unittest.TestCase):
         data = native.HEADER.pack(b'STYK', 1, 1, 0, len(self.payload), len(packed), hashlib.sha256(self.payload).digest()) + packed
         with self.assertRaises(ValueError):
             native.decode(data)
+
+
+class NativeFormatV2Tests(unittest.TestCase):
+    def setUp(self):
+        shared = [i * 0.125 for i in range(64)]
+        self.document = {
+            'version': 5, 'fps': 12, 'canvas': {'width': 640, 'height': 480},
+            'keyframes': [{'duration_raw': 2, 'objects': [
+                {'figure_type_id': 1, 'angles': shared, 'lengths': [12.5] * 64,
+                 'uids': [0, 255, 65536, 4294967295] * 12, 'neg': [-5, -3, 7] * 16,
+                 'huge': [2 ** 60] * 40, 'join': {'target_object_slot': 1}},
+                {'figure_type_id': 2, 'angles': shared}]}],
+            'figure_types': [{'figure_type_id': 1, 'segments': [{'kind': 'line'}]}],
+            '_stykSource': {'kind': 'piv', 'version': 5,
+                'source_base64': base64.b64encode(b'original source bytes ' * 8000).decode('ascii')},
+            'media': [{'name': 'a.png',
+                'data_url': 'data:image/png;base64,' + base64.b64encode(b'PNGDATA' * 30000).decode('ascii')}],
+            'title': 'S2B:looks like a marker', 'alt': 'S2E:already escaped',
+        }
+
+    def test_v2_round_trip_lossless_and_shared_identity(self):
+        encoded = native.encode_v2(self.document, 'styk')
+        self.assertEqual(encoded[:4], b'STYK')
+        self.assertEqual(encoded[4], 2)
+        decoded = json.loads(native.decode(encoded, 'styk'))
+        self.assertEqual(decoded, self.document)
+
+    def test_v2_marker_materialization_and_integrity(self):
+        encoded = native.encode_v2(self.document, 'styk')
+        # Skeleton resolves to the exact original values through markers.
+        decoded = json.loads(native.decode(encoded, 'styk'))
+        self.assertEqual(decoded['keyframes'][0]['objects'][0]['uids'][7], 4294967295)
+        self.assertEqual(decoded['keyframes'][0]['objects'][0]['huge'], [2 ** 60] * 40)
+        # Trailing data, truncation, and payload/section-table bit flips reject.
+        mid = len(encoded) // 2
+        for damaged in (encoded[:-1], encoded + b'x', encoded[:20],
+                        encoded[:mid] + bytes([encoded[mid] ^ 1]) + encoded[mid + 1:]):
+            with self.assertRaises(ValueError):
+                native.decode(damaged, 'styk')
+        with self.assertRaisesRegex(ValueError, 'extension'):
+            native.decode(encoded, 'stkz')
+        # v1 containers of the same document still decode identically.
+        payload = json.dumps(self.document, separators=(',', ':')).encode()
+        self.assertEqual(json.loads(native.decode(native.encode(payload, 'styk'))), self.document)
+
+    def test_v2_size_beats_v1_on_numeric_documents(self):
+        encoded_v2 = native.encode_v2(self.document, 'styk')
+        payload = json.dumps(self.document, separators=(',', ':')).encode()
+        encoded_v1 = native.encode(payload, 'styk')
+        self.assertLess(len(encoded_v2), len(encoded_v1))
 
 
 if __name__ == '__main__':

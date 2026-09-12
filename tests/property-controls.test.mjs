@@ -51,28 +51,17 @@ test("explicit inspector contexts isolate camera, scene, frame and layer control
   assert.ok(!layer.includes("root_x"));
 });
 
-test("composed property values preserve exact baselines and accessible key states", () => {
+test("composed property values preserve exact baselines without key controls", () => {
   const editor = new Editor();
   const html = inspectorView({
     editor,
     context: "camera",
     propertyState: (key) =>
-      key === "camera_x"
-        ? {
-            value: 12.123456789,
-            keyed: true,
-            animated: true,
-            previous: { tick: 0 },
-            next: { tick: 20 },
-          }
-        : {},
+      key === "camera_x" ? { value: 12.123456789 } : {},
   });
   assert.ok(html.includes('data-property-value="12.123456789"'));
   assert.ok(html.includes('value="12.123"'));
-  assert.ok(html.includes('aria-pressed="true"'));
-  assert.match(
-    html,
-    /data-property-nav="camera_x" data-direction="-1"[^>]*(?<!disabled)>/,
-  );
-  assert.ok(html.includes('aria-label="Remove X (px) keyframe"'));
+  assert.ok(!html.includes("data-property-key"));
+  assert.ok(!html.includes("data-property-nav"));
+  assert.ok(!html.includes("property-key-controls"));
 });

@@ -6,20 +6,46 @@ import {composeSceneGroups} from './scene-order.mjs';
 import {formatPropertyValue} from './property-controls.mjs';
 const playbackGeometry=new WeakMap();
 const monitorSurfaces=new WeakMap();
+const monitorStates=new WeakMap();
+
+function monitorState(canvas, options) {
+  let state=monitorStates.get(canvas);
+  if(!state){
+    state={retryAt:0};monitorStates.set(canvas,state);
+    canvas.addEventListener?.('contextlost',()=>{state.lost=true;});
+    canvas.addEventListener?.('contextrestored',()=>{
+      state.lost=false;state.retryAt=0;playbackGeometry.delete(canvas);
+      state.options.onInvalidate?.();
+    });
+  }
+  if(state.options?.report!==options.report){state.retryAt=0;playbackGeometry.delete(canvas);}
+  state.options=options;return state;
+}
+function reportMonitorError(error, options) {
+  if(!error||typeof error!=='object')error=new Error('The camera preview failed.');
+  error.telemetryStage??='prepare';
+  if(options.onError)options.onError(error);
+  else globalThis.reportError?.(error);
+}
 
 /** One small MSAA surface per renderer. During playback the monitor reuses the
  * already-prepared GPU frame instead of re-evaluating the scene on Canvas 2D. */
 class MonitorGpuSource {
-  constructor(renderer){this.renderer=renderer;this.canvas=new OffscreenCanvas(1,1);this.context=this.canvas.getContext('webgpu');}
+  constructor(renderer){
+    this.renderer=renderer;this.canvas=new OffscreenCanvas(1,1);this.context=this.canvas.getContext('webgpu');
+    renderer.device?.lost.then(()=>this.destroy());
+  }
+  destroy(){this.msaa?.destroy();this.msaa=null;this.context?.unconfigure();this.context=null;this.canvas.width=this.canvas.height=1;}
   render(ctx,{key,report,view,dpr,hiddenUids}){
     const renderer=this.renderer;
-    if(!renderer?.renderPreparedInto||!this.context)return false;
+    if(renderer.destroyed||renderer.deviceLost||!renderer?.renderPreparedInto||!this.context)return false;
     const width=Math.max(1,Math.round(report.canvas_width*view.scale*dpr)),height=Math.max(1,Math.round(report.canvas_height*view.scale*dpr));
-    if(this.width!==width||this.height!==height){
+    const samples=renderer.msaaCount>1?renderer.msaaCount:0;
+    if(this.width!==width||this.height!==height||this.msaaSamples!==samples){
       this.width=width;this.height=height;this.canvas.width=width;this.canvas.height=height;
       this.context.configure({device:renderer.device,format:renderer.format,alphaMode:'premultiplied'});
-      this.msaa?.destroy();
-      this.msaa=renderer.device.createTexture({label:'Camera monitor MSAA',size:[width,height],sampleCount:4,format:renderer.format,usage:GPUTextureUsage.RENDER_ATTACHMENT});
+      this.msaa?.destroy();this.msaaSamples=samples;
+      this.msaa=samples?renderer.device.createTexture({label:'Camera monitor MSAA',size:[width,height],sampleCount:samples,format:renderer.format,usage:GPUTextureUsage.RENDER_ATTACHMENT}):null;
     }
     if(!renderer.renderPreparedInto(key,{report,view:{scale:width/report.canvas_width},target:{context:this.context,msaa:this.msaa,width,height},hiddenUids}))return false;
     ctx.drawImage(this.canvas,view.x,view.y,report.canvas_width*view.scale,report.canvas_height*view.scale);
@@ -29,6 +55,7 @@ class MonitorGpuSource {
 
 /** Update only camera readouts, preserving focused inputs and their transaction. */
 export function syncCameraControls(root, frame, {activeKey=null, guides=true}={}) {
+  if(!root)return;
   const c=cameraValues(frame?.camera);
   const values={camera_x:c.x,camera_y:c.y,camera_scale:c.scale*100,camera_angle:c.angle_rad*180/Math.PI};
   for(const [key,value] of Object.entries(values)) {
@@ -45,19 +72,24 @@ export function syncCameraControls(root, frame, {activeKey=null, guides=true}={}
 /** Draw on the app's animation frame, reusing evaluated geometry and media.
  * A prepared playback packet renders through the shared GPU pipeline; other
  * states fall back to the Canvas 2D artwork path below. */
-export function drawCameraMonitor(canvas, {report,frame,geometry,resources,hiddenUids,prepared}) {
-  if(!canvas || !canvas.clientWidth) return;
+export function drawCameraMonitor(canvas, options) {
+  let {report,frame,geometry,resources,hiddenUids,prepared}=options;
+  if(!canvas || !canvas.clientWidth || !canvas.clientHeight || !report || !frame) return false;
+  const state=monitorState(canvas,options);
+  if(state.lost || performance.now()<state.retryAt)return false;
+  try {
   const width=canvas.clientWidth, height=canvas.clientHeight, dpr=Math.min(globalThis.devicePixelRatio || 1,2);
   if(canvas.width!==Math.round(width*dpr) || canvas.height!==Math.round(height*dpr)) {
     canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);
   }
-  const ctx=canvas.getContext('2d'), scale=Math.min(width/report.canvas_width,height/report.canvas_height);
+  const ctx=canvas.getContext('2d',{willReadFrequently:true}), scale=Math.min(width/report.canvas_width,height/report.canvas_height);
+  if(!ctx || ctx.isContextLost?.())throw Object.assign(new Error('The camera preview canvas is unavailable.'),{telemetryCode:'device_lost'});
   const view={scale,x:(width-report.canvas_width*scale)/2,y:(height-report.canvas_height*scale)/2};
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);
   if(prepared){
     let source=monitorSurfaces.get(prepared.renderer);
     if(!source){source=new MonitorGpuSource(prepared.renderer);monitorSurfaces.set(prepared.renderer,source);}
-    if(source.render(ctx,{key:prepared.key,report,view,dpr,hiddenUids}))return;
+    if(source.render(ctx,{key:prepared.key,report,view,dpr,hiddenUids}))return true;
   }
   if(!geometry) {
     let cached=playbackGeometry.get(canvas);
@@ -66,13 +98,24 @@ export function drawCameraMonitor(canvas, {report,frame,geometry,resources,hidde
     }
     geometry=cached.geometry;
   } else playbackGeometry.delete(canvas);
-  ctx.save();ctx.beginPath();ctx.rect(view.x,view.y,report.canvas_width*scale,report.canvas_height*scale);ctx.clip();
+  ctx.save();
+  try {
+  ctx.beginPath();ctx.rect(view.x,view.y,report.canvas_width*scale,report.canvas_height*scale);ctx.clip();
   ctx.transform(...cameraMatrix({report,frame,view,cameraEnabled:true}));
   drawBackground(ctx,report,frame,report.canvas_width,report.canvas_height,
     {...resources,bounds:backgroundBounds(frame,report.canvas_width,report.canvas_height,true,report)});
   for(const group of composeSceneGroups(geometry,[],frame)) {
     if(hiddenUids?.has(group.g.obj.unique_id)) continue;
-    ctx.save();ctx.globalAlpha=group.opacity;drawGeometry(ctx,{drawables:group.items},resources);ctx.restore();
+    ctx.save();try {ctx.globalAlpha=group.opacity;drawGeometry(ctx,{drawables:group.items},resources);}finally{ctx.restore();}
   }
-  ctx.restore();
+  } finally {ctx.restore();}
+  state.retryAt=0;return true;
+  } catch(error) {
+    // The monitor is auxiliary. A failure must not abort the editor's frame or
+    // re-evaluate a dense scene again on every animation frame.
+    state.retryAt=performance.now()+1500;
+    if(prepared){monitorSurfaces.get(prepared.renderer)?.destroy();monitorSurfaces.delete(prepared.renderer);}
+    playbackGeometry.delete(canvas);
+    reportMonitorError(error,options);return false;
+  }
 }

@@ -21,6 +21,7 @@ test("pixel sampling preserves requested output dimensions with bounded 2× spri
   }
   assert.equal(exportSamplingSize(8192, 1024, "sprites").renderWidth, 16384);
   assert.equal(exportSamplingSize(16384, 1, "edges").renderWidth, 16384);
+  assert.equal(exportSamplingSize(8192, 8192, "edges").width, 8192);
 });
 test("invalid modes and unsafe output/intermediate surfaces reject before allocation", () => {
   for (const mode of ["high", "", null, 2])
@@ -31,7 +32,7 @@ test("invalid modes and unsafe output/intermediate surfaces reject before alloca
     [1.1, 1],
     [Infinity, 2],
     [16385, 1],
-    [8192, 8192],
+    [16384, 8192],
   ])
     assert.throws(() => exportSamplingSize(w, h));
   assert.throws(() => exportSamplingSize(8193, 1, "sprites"), /8,192/);

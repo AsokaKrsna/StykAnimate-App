@@ -1,6 +1,8 @@
 # Shared animation state across timeline modes
 
-Simple and Advanced are views of the same `Editor` document, history, and pose evaluator. Native stored frames keep their identities; Advanced pose and property channels remain sparse. Switching views does not flatten the animation or create a second document.
+Simple and Advanced are views of the same `Editor` document, history, and pose evaluator. Switching views does not flatten the animation or create a second document.
+
+> Layer-sheet documents (every document opened by the app) do not use the working-frame checkpoints described below: the Simple filmstrip edits the same sheet keys as the Advanced exposure sheet, so Add/Update/Discard drafts and `storedFrameReport` apply only to native documents edited through the low-level `Editor` APIs.
 
 ## Working frames
 

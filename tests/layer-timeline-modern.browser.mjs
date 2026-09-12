@@ -16,7 +16,7 @@ try{
   await page.keyboard.press('Control+z');await settle();assert.equal(await field.inputValue(),'layer-1');
   const cell=(tick,row=1)=>page.evaluate(async({tick,row})=>{const {ROW,HEADER}=await import('/src/layer-timeline.mjs'),t=styk.timeline,b=t.scroll.getBoundingClientRect();return {x:b.x+(tick+.5)*t.pxPerTick-t._offsetX(),y:b.y+HEADER+(row+2)*ROW+ROW/2};},{tick,row});
   const click=async(tick,row=1)=>page.mouse.click(...Object.values(await cell(tick,row)));
-  await click(4);await settle();await page.getByRole('button',{name:'Insert keyframe here',exact:true}).click();
+  await click(4);await settle();await page.keyboard.press('a');
   assert.ok(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').some(k=>k.tick===4)));
   const p=await cell(7);await page.mouse.dblclick(p.x,p.y);await settle();assert.ok(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').some(k=>k.tick===7)));
   await page.mouse.dblclick(p.x,p.y);await settle();assert.deepEqual(await page.evaluate(()=>[styk.timeline.start,styk.timeline.end]),[7,11]);
@@ -24,10 +24,17 @@ try{
   const edge=await page.evaluate(async()=>{const {ROW,HEADER}=await import('/src/layer-timeline.mjs'),t=styk.timeline,b=t.scroll.getBoundingClientRect();return {x:b.x+12*t.pxPerTick-1,y:b.y+HEADER+3*ROW+ROW/2,step:t.pxPerTick};});
   const before=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));await page.mouse.move(edge.x,edge.y);await page.mouse.down();await page.mouse.move(edge.x+3*edge.step,edge.y,{steps:5});await page.mouse.up();
   assert.deepEqual(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').map(k=>k.tick)),[0,4,7,15]);await grid.press('Control+z');assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),before);
-  // An initial key drag moves directly without a preparatory selection click.
-  await click(1);const start=await cell(7),end=await cell(9);await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(end.x,end.y,{steps:4});await page.mouse.up();
-  assert.ok(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').some(k=>k.tick===9)));await grid.press('Control+z');
-  await click(7);const menuPoint=await cell(7);await page.mouse.click(menuPoint.x,menuPoint.y,{button:'right'});assert.equal(await page.getByRole('menuitem',{name:/Create tween|layer/i}).count(),0);assert.equal(await page.getByRole('menuitem',{name:'Insert blank keyframe',exact:true}).count(),1);await page.keyboard.press('Escape');await page.getByLabel('Frame interpolation',{exact:true}).selectOption('ease-in');await grid.press('Control+z');
+  // An unselected occupied key selects a range without editing the document.
+  await click(1);const selectionBefore=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));
+  const start=await cell(4),end=await cell(7);await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(end.x,end.y,{steps:4});await page.mouse.up();await settle();
+  assert.deepEqual(await page.evaluate(()=>[styk.timeline.start,styk.timeline.end]),[4,7]);
+  assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),selectionBefore);
+  // A subsequent drag moves every selected key, with exact undo.
+  const destination=await cell(6);await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(destination.x,destination.y,{steps:4});await page.mouse.up();await settle();
+  assert.deepEqual(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').map(k=>k.tick)),[0,6,9,12]);
+  assert.deepEqual(await page.evaluate(()=>[styk.timeline.start,styk.timeline.end]),[6,9]);
+  await grid.press('Control+z');assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),selectionBefore);
+  await click(7);const menuPoint=await cell(7);await page.mouse.click(menuPoint.x,menuPoint.y,{button:'right'});assert.equal(await page.getByRole('menuitem',{name:/Create tween|layer/i}).count(),0);assert.equal(await page.getByRole('menuitem',{name:/Add Frame/}).count(),1);await page.keyboard.press('Escape');await page.getByLabel('Frame interpolation',{exact:true}).selectOption('ease-in');await grid.press('Control+z');
   // High-polling pointers may report hundreds of positions between displays.
   // Only the latest position should evaluate, and layer DOM must stay intact.
   const fixture=await readFile(new URL('../artifacts/timeline-source.json',import.meta.url),'utf8').then(JSON.parse).catch(async error=>{
@@ -51,5 +58,5 @@ try{
   assert.deepEqual(await page.evaluate(()=>[styk.timeline.start,styk.timeline.end]),[17,17]);
   await page.evaluate(()=>{styk.editor.seek(10);styk.editor.select(styk.editor.evaluatedFrame.objects[0]?.unique_id);styk.editor.markSaved();styk.fit();});await settle();
   await page.screenshot({path:'artifacts/layer-modern-verified.png'});
-  assert.deepEqual(errors,[]);console.log('PASS layer assignment, inline/double-click keys, span selection/resize, direct key dragging, menus, and coalesced scrubbing',performance);
+  assert.deepEqual(errors,[]);console.log('PASS layer assignment, inline/double-click keys, span selection/resize, selection-first range dragging, menus, and coalesced scrubbing',performance);
 }catch(error){await page.screenshot({path:'artifacts/layer-modern-failure.png'});throw error;}finally{await browser.close();}

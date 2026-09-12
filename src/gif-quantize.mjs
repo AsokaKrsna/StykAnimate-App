@@ -1,7 +1,8 @@
 /** Whole-animation adaptive GIF palette and bounded Sierra Lite diffusion. */
 import { normalizeGIFDither } from "./gif-options.mjs";
+import { EXPORT_MAX_PIXELS } from "./export-sampling.mjs";
 const MAX_COLORS = 65536,
-  MAX_PIXELS = 16777216;
+  MAX_PIXELS = EXPORT_MAX_PIXELS;
 const colorOf = (data, i) => {
   const a = data[i + 3] / 255;
   return (

@@ -25,10 +25,11 @@ export async function saveLibraryFile(desktop, blob, options) {
     return await desktop.finishLibrarySave(transfer.token);
   } catch (error) { await desktop.cancelLibraryTransfer(transfer.token).catch(() => {}); throw error; }
 }
-export async function readLibraryFile(desktop, path) {
+export async function readLibraryFile(desktop, path, {signal} = {}) {
+  signal?.throwIfAborted();
   const transfer = await desktop.beginLibraryRead(path), parts = []; let size = 0;
   try {
-    for (;;) { const part = await desktop.readLibraryChunk(transfer.token); parts.push(part.bytes); size += part.bytes.byteLength; if (part.done) break; }
+    for (;;) { signal?.throwIfAborted(); const part = await desktop.readLibraryChunk(transfer.token); signal?.throwIfAborted(); parts.push(part.bytes); size += part.bytes.byteLength; if (part.done) break; }
     if (size !== transfer.size) throw new Error('The library file changed while reading.');
     return new File(parts, transfer.name);
   } finally { await desktop.cancelLibraryTransfer(transfer.token).catch(() => {}); }

@@ -25,7 +25,9 @@ test('rate and dimension limits match raster encoders while vector sequences rem
   const highRate = await getExportCapabilities({environment, fps: 60});
   assert.equal(highRate.formats.find(value => value.id === 'gif').supported, false);
   assert.equal(highRate.formats.find(value => value.id === 'gif-sequence').supported, true);
-  const large = await getExportCapabilities({environment, width: 5000, height: 5000});
+  const raised = await getExportCapabilities({environment, width: 5000, height: 5000});
+  assert.equal(raised.formats.find(value => value.id === 'png-sequence').supported, true);
+  const large = await getExportCapabilities({environment, width: 9000, height: 9000});
   assert.equal(large.formats.find(value => value.id === 'png-sequence').supported, false);
   assert.equal(large.formats.find(value => value.id === 'svg-sequence').supported, true);
   await assert.rejects(() => getExportCapabilities({width: -1}), /dimensions/);

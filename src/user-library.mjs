@@ -1,6 +1,9 @@
 import {icon} from './icons.mjs';
 import {HotkeyManager} from './hotkeys.mjs';
 import {librarySnapshot, libraryPreview, saveLibraryFile, readLibraryFile} from './library-files.mjs';
+import {LibraryHoverPreview} from './library-hover-preview.mjs';
+import {libraryPreviewMatte, LIBRARY_MATTES} from './library-preview-core.mjs';
+import {canMoveLibraryItem} from './library-drag.mjs';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const folderIcon = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
@@ -11,6 +14,7 @@ export class UserLibrary {
     this.hotkeys = hotkeys;
     Object.assign(this, {editor, desktop, exporter, importer, pause, finishEdit, setTool, vfxInspector});
     this.folder = ''; this.entries = []; this.selected = null; this.generation = 0; this.busy = false; this.thumbnails = new Map();
+    this.hoverPreview = new LibraryHoverPreview(desktop);
     this.panel = document.querySelector('.right-panel');
     const tabs = document.createElement('div'); tabs.className = 'inspector-switch'; tabs.setAttribute('role','tablist'); tabs.setAttribute('aria-label','Properties and asset library');
     tabs.setAttribute('aria-label','Inspector');
@@ -19,6 +23,7 @@ export class UserLibrary {
     this.container = document.createElement('section'); this.container.id = 'user-library'; this.container.hidden = true; this.container.setAttribute('role','tabpanel'); this.container.setAttribute('aria-labelledby','library-tab');
     this.container.innerHTML = `<div class="library-tools"><label class="library-search">${icon('search')}<input type="search" aria-label="Search library" placeholder="Search" spellcheck="false"></label><button type="button" class="icon-button" data-library-action="refresh" aria-label="Refresh library" title="Refresh">${icon('rotate')}</button><button type="button" class="icon-button" data-library-action="folder" aria-label="New library folder" title="New folder">${icon('plus')}</button><button type="button" class="icon-button" data-library-action="reveal" aria-label="Open library folder" title="Open folder in Explorer">${folderIcon}</button></div>
       <nav class="library-breadcrumbs" aria-label="Library folders"></nav><div class="library-filter"><select aria-label="Filter library assets"><option value="all">All assets</option><option value="figure">Figures & sets</option><option value="movieclip">Movieclips</option></select><span class="library-count"></span></div>
+      <div class="library-preview-controls"><label>Preview background<select aria-label="Preview background"><option value="auto">Auto contrast</option><option value="light">Light</option><option value="dark">Dark</option></select></label></div>
       <div class="library-content"><div class="library-grid" role="list" aria-label="Saved assets"></div><div class="library-empty">No assets in this folder</div></div>
       <div class="library-item-actions" hidden><button type="button" data-library-action="insert">Insert</button><button type="button" data-library-action="rename">Rename</button><button type="button" data-library-action="move">Move to…</button><button type="button" class="library-trash" data-library-action="trash" aria-label="Remove library item" title="Move to Recycle Bin">${icon('trash')}</button></div>
       <div class="library-message" role="status" aria-live="polite"></div><div class="library-save"><button type="button" class="button primary" data-library-action="save">${icon('plus')}<span>Add to library</span></button></div>`;
@@ -28,6 +33,39 @@ export class UserLibrary {
     this.dialog = document.createElement('dialog'); this.dialog.className = 'library-dialog'; document.body.append(this.dialog);
     this.grid = this.container.querySelector('.library-grid'); this.message = this.container.querySelector('.library-message');
     this.input = this.container.querySelector('input'); this.filter = this.container.querySelector('select');
+    this.container.querySelector('[aria-label="Preview background"]').onchange = event => { this.container.dataset.background = event.target.value; };
+    this.menu = document.createElement('div'); this.menu.className = 'library-context-menu'; this.menu.hidden = true;
+    this.menu.setAttribute('role', 'menu'); this.menu.setAttribute('aria-label', 'Library actions'); document.body.append(this.menu);
+    this.menu.onclick = event => {
+      const button = event.target.closest('[data-library-action]'); if (!button || button.disabled) return;
+      const action = button.dataset.libraryAction; this.closeMenu(true); this.run(() => this.action(action));
+    };
+    this.menu.onkeydown = event => {
+      event.stopPropagation();
+      const buttons = [...this.menu.querySelectorAll('button:not(:disabled)')], index = buttons.indexOf(document.activeElement);
+      if (event.key === 'Escape' || event.key === 'Tab') { this.closeMenu(event.key === 'Escape'); if (event.key === 'Escape') event.preventDefault(); }
+      else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length; buttons[next]?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', event => { if (!this.menu.contains(event.target)) this.closeMenu(); }, true);
+    window.addEventListener('blur', () => { this.closeMenu(); this.hoverPreview.stop(); });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) { this.closeMenu(); this.hoverPreview.stop(); } });
+    this.container.querySelector('.library-content').addEventListener('scroll', () => { this.closeMenu(); this.hoverPreview.stop(); }, {passive: true});
+    this.container.addEventListener('contextmenu', event => {
+      if (event.target.closest('input, select')) return;
+      event.preventDefault(); event.stopPropagation(); this.showMenu(event.target.closest('[data-library-path]'), event.clientX, event.clientY);
+    });
+    this.grid.addEventListener('pointerover', event => {
+      const card = event.target.closest('.library-card');
+      if (!card || card.contains(event.relatedTarget) || event.buttons || this.busy || !this.menu.hidden || this.dialog.open || card.querySelector('input')) return;
+      const item = this.entries.find(item => item.path === card.dataset.libraryPath);
+      if (item?.kind === 'movieclip') this.hoverPreview.start(card, item);
+    });
+    this.grid.addEventListener('pointerout', event => {
+      const card = event.target.closest('.library-card'); if (card && !card.contains(event.relatedTarget)) this.hoverPreview.stop();
+    });
+    this.grid.addEventListener('focusin', event => { const card = event.target.closest('[data-library-path]'); if (card) this.select(card.dataset.libraryPath); });
     tabs.onclick = event => {const tab=event.target.closest('[role="tab"]');if(tab)this.showView(tab.id.replace('-tab',''));};
     tabs.onkeydown = event => { if (['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) { event.preventDefault();const items=[...tabs.querySelectorAll('[role="tab"]')],index=items.indexOf(event.target),next=event.key==='Home'?0:event.key==='End'?2:(index+(event.key==='ArrowRight'?1:2))%3;items[next].click();items[next].focus();} };
     this.panel.addEventListener('click', event => {
@@ -35,10 +73,19 @@ export class UserLibrary {
       event.stopPropagation(); this.run(() => this.action(action));
     });
     this.input.oninput = () => this.render(); this.filter.onchange = () => this.render();
-    this.grid.onclick = event => { const card = event.target.closest('[data-library-path]'); if (card && !event.target.matches('input')) this.select(card.dataset.libraryPath); };
-    this.grid.ondblclick = event => { const card = event.target.closest('[data-library-path]'); if (card && !event.target.matches('input')) this.run(() => this.open(card.dataset.libraryPath)); };
+    this.grid.onclick = event => {
+      const card = event.target.closest('[data-library-path]'); if (!card || event.target.matches('input')) return;
+      this.select(card.dataset.libraryPath);
+      if (event.target.closest('.library-more')) { const rect = card.getBoundingClientRect(); this.showMenu(card, rect.right, rect.top + 24); }
+    };
+    this.grid.ondblclick = event => { const card = event.target.closest('[data-library-path]'); if (card && !event.target.closest('input, button')) this.run(() => this.open(card.dataset.libraryPath)); };
     this.grid.onkeydown = event => {
       if (event.target.matches('input')) return;
+      if (event.target.closest('button') && ['Enter', ' '].includes(event.key)) return;
+      if (event.key === 'ContextMenu' || event.key === 'F10' && event.shiftKey) {
+        event.preventDefault(); const card = event.target.closest('[data-library-path]'); if (card) { const rect = card.getBoundingClientRect(); this.showMenu(card, rect.left, rect.bottom); } return;
+      }
+      if (event.key === 'Delete') { event.preventDefault(); if (!event.repeat) this.run(() => this.action('trash')); return; }
       const command = this.hotkeys.resolve(event, ['library']);
       if (command?.scope === 'library') {
         event.preventDefault();
@@ -46,7 +93,8 @@ export class UserLibrary {
       }
       else if (event.key.startsWith('Arrow')) {
         event.preventDefault(); const cards = [...this.grid.querySelectorAll('[data-library-path]')], index = cards.indexOf(event.target.closest('[data-library-path]'));
-        const step = {ArrowLeft:-1,ArrowRight:1,ArrowUp:-2,ArrowDown:2}[event.key]; const card = cards[Math.max(0, Math.min(cards.length-1,index+step))];
+        const columns = Math.max(1, getComputedStyle(this.grid).gridTemplateColumns.split(' ').length);
+        const step = {ArrowLeft:-1,ArrowRight:1,ArrowUp:-columns,ArrowDown:columns}[event.key]; const card = cards[Math.max(0, Math.min(cards.length-1,index+step))];
         if (card) { this.select(card.dataset.libraryPath); card.focus(); }
       }
     };
@@ -63,6 +111,7 @@ export class UserLibrary {
     this.showView(visible?'library':'properties');
   }
   showView(view) {
+    this.closeMenu(); this.hoverPreview.stop();
     this.finishEdit?.();const visible=view==='library';this.vfxInspector?.setVisible(view==='vfx');
     this.visible = visible; this.container.hidden = !visible; this.propertySave.hidden = view!=='properties';
     this.panel.querySelector('.inspector-header').hidden = view!=='properties'; document.getElementById('inspector').hidden = view!=='properties';
@@ -78,6 +127,7 @@ export class UserLibrary {
   async refresh(folder = this.folder) {
     if (!this.desktop?.listLibrary) { this.message.textContent = 'Open the desktop app to use your Documents library.'; return; }
     const generation = ++this.generation;
+    this.closeMenu(); this.hoverPreview.stop();
     let result;
     try { result = await this.desktop.listLibrary(folder); }
     catch (error) { if (folder && /ENOENT/.test(error.message)) result = await this.desktop.listLibrary(''); else throw error; }
@@ -88,11 +138,13 @@ export class UserLibrary {
     let current = ''; for (const [i, part] of ['Library', ...this.folder.split('/').filter(Boolean)].entries()) {
       if (i) current += `${current ? '/' : ''}${part}`;
       const path = current, button = document.createElement('button'); button.type = 'button'; button.textContent = part; button.title = i ? part : this.root;
+      button.dataset.libraryFolder = path;
       button.onclick = () => this.run(() => this.refresh(path)); nav.append(button);
     }
     this.render();
   }
   render() {
+    this.closeMenu(); this.hoverPreview.stop();
     this.observer.disconnect(); this.grid.replaceChildren();
     const query = this.input.value.trim().toLocaleLowerCase(), items = this.entries.filter(item => item.name.toLocaleLowerCase().includes(query) && (this.filter.value === 'all' || item.kind === 'folder' || item.kind === this.filter.value || this.filter.value === 'figure' && item.kind === 'set'));
     this.container.querySelector('.library-count').textContent = `${items.length} ${items.length === 1 ? 'item' : 'items'}`;
@@ -101,11 +153,12 @@ export class UserLibrary {
     for (const item of items) {
       const card = document.createElement('div'); card.className = `library-card ${item.kind}`; card.dataset.libraryPath = item.path; card.tabIndex = 0; card.setAttribute('role','listitem'); card.setAttribute('aria-label',`${item.name}, ${label(item)}`); card.title = `Double-click to ${item.kind === 'folder' ? 'open' : 'insert'} ${item.name}`;
       card.draggable = false;
-      if (item.kind !== 'folder') card.title = `Drag to canvas or double-click to insert ${item.name}`;
-      card.innerHTML = `<div class="library-thumbnail">${item.kind === 'folder' ? folderIcon : '<span class="library-preview-loading"></span>'}${['movieclip','set'].includes(item.kind) ? `<span class="library-clip-badge" title="${label(item)}">${icon(item.kind === 'movieclip' ? 'play' : 'duplicate')}</span>` : ''}</div><div class="library-card-info"><span class="library-name">${esc(item.name)}</span></div>`;
+      card.title = item.kind === 'folder' ? `Double-click to open ${item.name}. Drag onto a folder to move.` : `${item.name}. Drag to canvas to insert, or onto a folder to move. Right-click for actions.${item.kind === 'movieclip' ? ' Hover to play.' : ''}`;
+      if (item.kind === 'folder') card.dataset.libraryFolder = item.path;
+      card.innerHTML = `<div class="library-thumbnail">${item.kind === 'folder' ? folderIcon : '<span class="library-preview-loading"></span>'}${['movieclip','set'].includes(item.kind) ? `<span class="library-clip-badge" title="${label(item)}">${icon(item.kind === 'movieclip' ? 'play' : 'duplicate')}</span>` : ''}<button type="button" class="library-more" aria-label="Actions for ${esc(item.name)}" aria-haspopup="menu">···</button>${item.kind === 'movieclip' ? '<span class="library-preview-hint">Hover to play</span><span class="library-preview-progress"></span>' : ''}</div><div class="library-card-info"><span class="library-name">${esc(item.name)}</span><span class="library-kind">${label(item)}</span></div>`;
       this.grid.append(card); if (item.kind !== 'folder') this.observer.observe(card);
     }
-    this.select(this.entries.some(item => item.path === this.selected) ? this.selected : null);
+    this.select(items.some(item => item.path === this.selected) ? this.selected : null);
   }
   async loadThumbnail(card, generation) {
     const path = card.dataset.libraryPath, item = this.entries.find(item => item.path === path); if (!item) return;
@@ -128,9 +181,17 @@ export class UserLibrary {
       const target = card.querySelector('.library-thumbnail'); target.querySelector('.library-preview-loading')?.remove();
       if (url) {
         this.thumbnails.delete(key); this.thumbnails.set(key, url); while (this.thumbnails.size > 128) this.thumbnails.delete(this.thumbnails.keys().next().value);
-        const image = new Image(); image.alt = item.name; image.src = url; image.draggable = false; target.prepend(image);
+        const image = new Image(); image.alt = item.name; image.draggable = false;
+        image.onload = () => {
+          if (!card.isConnected) return;
+          const sample = document.createElement('canvas'); sample.width = sample.height = 40;
+          const context = sample.getContext('2d', {willReadFrequently: true}); context.drawImage(image, 0, 0, 40, 40);
+          const matte = LIBRARY_MATTES[libraryPreviewMatte(context.getImageData(0, 0, 40, 40).data)];
+          card.dataset.matte = matte; if (!card.classList.contains('library-preview-playing')) card.style.setProperty('--library-matte', matte);
+        };
+        image.src = url; target.prepend(image);
       } else { target.insertAdjacentHTML('afterbegin', icon('person')); target.title = 'Preview unavailable for this file'; }
-    } catch { if (card.isConnected) card.querySelector('.library-thumbnail').innerHTML = icon('person'); }
+    } catch { if (card.isConnected) { card.querySelector('.library-preview-loading')?.remove(); card.querySelector('.library-thumbnail').insertAdjacentHTML('afterbegin', icon('person')); } }
   }
   select(path) {
     this.selected = path; for (const card of this.grid.children) card.classList.toggle('selected', card.dataset.libraryPath === path);
@@ -147,6 +208,36 @@ export class UserLibrary {
     if (action === 'move') return this.move();
     if (action === 'trash') return this.trash();
     if (action === 'insert') return this.open(this.selected);
+  }
+  closeMenu(restoreFocus = false) {
+    this.menu.hidden = true; if (restoreFocus) this.menuAnchor?.focus({preventScroll: true});
+  }
+  showMenu(card, x, y) {
+    this.hoverPreview.stop(); this.select(card?.dataset.libraryPath ?? null); this.menuAnchor = card ?? this.input;
+    const item = this.entries.find(item => item.path === this.selected);
+    const actions = item ? [
+      ['insert', item.kind === 'folder' ? 'Open folder' : 'Insert into scene', 'Enter'],
+      ['rename', 'Rename', 'F2'], ['move', 'Move to…', ''], null,
+      ['trash', 'Move to Recycle Bin', 'Del'],
+    ] : [['folder', 'New folder', ''], ['save', 'Add selection to library', ''], null, ['refresh', 'Refresh', ''], ['reveal', 'Open folder in Explorer', '']];
+    this.menu.innerHTML = actions.map(action => action ? `<button type="button" role="menuitem" data-library-action="${action[0]}" ${this.busy || !this.desktop?.listLibrary || action[0] === 'save' && !this.editor.selectedObjects.length ? 'disabled' : ''}><span>${action[1]}</span><kbd>${action[2]}</kbd></button>` : '<div role="separator"></div>').join('');
+    this.menu.hidden = false; const rect = this.menu.getBoundingClientRect();
+    this.menu.style.left = `${Math.max(8, Math.min(x, innerWidth - rect.width - 8))}px`;
+    this.menu.style.top = `${Math.max(8, Math.min(y, innerHeight - rect.height - 8))}px`;
+    this.menu.querySelector('button:not(:disabled)')?.focus({preventScroll: true});
+  }
+  dragDestination(hit, item) {
+    const target = hit?.closest('[data-library-folder]');
+    if (!target || !this.container.contains(target) || this.busy || !canMoveLibraryItem(item, target.dataset.libraryFolder)) return null;
+    return {element: target, folder: target.dataset.libraryFolder, name: target.dataset.libraryFolder.split('/').at(-1) || 'Library'};
+  }
+  async moveItem(item, folder) {
+    if (this.busy || !canMoveLibraryItem(item, folder)) return;
+    this.busy = true; this.syncSelection(); this.hoverPreview.stop();
+    try {
+      await this.desktop.changeLibraryItem({path: item.path, folder}); this.selected = null;
+      await this.refresh(); this.message.dataset.error = 'false'; this.message.textContent = `${item.name} moved to ${folder || 'Library'}`;
+    } finally { this.busy = false; this.syncSelection(); }
   }
   async save() {
     if (!this.editor.selectedObjects.length || this.busy) return;
@@ -170,6 +261,7 @@ export class UserLibrary {
   }
   async insert(item, position) {
     if (this.busy) return;
+    this.hoverPreview.stop();
     this.busy = true; this.syncSelection(); this.message.dataset.error = 'false'; this.message.textContent = `Inserting ${item.name}…`;
     try {
       this.pause(); this.finishEdit();
@@ -183,6 +275,7 @@ export class UserLibrary {
     } finally { this.busy = false; this.syncSelection(); }
   }
   rename() {
+    this.hoverPreview.stop();
     const item = this.entries.find(item => item.path === this.selected); if (!item || this.busy) return;
     const card = [...this.grid.children].find(card => card.dataset.libraryPath === item.path), name = card?.querySelector('.library-name'); if (!name || card.querySelector('input')) return;
     const input = document.createElement('input'); input.className = 'library-rename'; input.value = item.name; input.maxLength = 120; input.setAttribute('aria-label','Asset name'); name.replaceWith(input); input.focus(); input.select();

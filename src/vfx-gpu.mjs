@@ -1,6 +1,7 @@
 import {activeVfx} from './vfx.mjs';
 import {vfxPaint} from './vfx-paint.mjs';
 import {vfxVertex as vertex,vfxFragment as fragment} from './vfx-shaders.mjs';
+import {vfxWebGPUFor,releaseVfxWebGPU} from './vfx-webgpu.mjs';
 export class VfxGPU {
  constructor(){
   this.canvas=new OffscreenCanvas(1,1);const gl=this.gl=this.canvas.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:true});
@@ -11,7 +12,7 @@ export class VfxGPU {
   this.slots=[];this.framebuffer=gl.createFramebuffer();this.stats={passes:0,bytes:0,calls:0};
  }
  program(operation){
-  if(!Number.isInteger(operation)||operation<0||operation>25)throw new RangeError('Unknown VFX graphics operation.');
+  if(!Number.isInteger(operation)||operation<0||operation>27)throw new RangeError('Unknown VFX graphics operation.');
   let entry=this.programs.get(operation);if(entry)return entry;
   const gl=this.gl,shader=this.compile(gl.FRAGMENT_SHADER,fragment.replace('uniform int operation,paintType,stopCount;',`const int operation=${operation}; uniform int paintType,stopCount;`)),program=gl.createProgram();gl.attachShader(program,this.vertexShader);gl.attachShader(program,shader);gl.linkProgram(program);gl.deleteShader(shader);
   if(!gl.getProgramParameter(program,gl.LINK_STATUS)){const reason=gl.getProgramInfoLog(program);gl.deleteProgram(program);throw new Error(`VFX program: ${reason}`);}
@@ -44,6 +45,7 @@ export class VfxGPU {
   const save=(index=4)=>{const saved=this.slot(index,w,h);gl.bindFramebuffer(gl.FRAMEBUFFER,this.framebuffer);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,current.texture,0);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,saved.texture);gl.copyTexSubImage2D(gl.TEXTURE_2D,0,0,0,0,0,w,h);return saved;};
   const morph=(radius,rounded=false)=>{radius=Math.ceil(radius);let step=1;while(radius>0){const amount=Math.min(rounded?step:128,radius);if(rounded)pass(14,[amount,0,0,0]);else{pass(5,[amount,0,0,0]);pass(6,[amount,0,0,0]);}radius-=amount;step*=2;}};
   for(const {type,params:p} of stack){
+    const strengthSource=p.effectStrength<1?save(7):null;
     if(p.color!==undefined)paint(p.color);
     if(type==='tint')pass(1,[p.mix,0,0,0]);
     else if(type==='grade')pass(2,[p.exposure,p.contrast,p.saturation,p.temperature],[p.tint,p.shadows,p.highlights,p.gamma]);
@@ -60,18 +62,27 @@ export class VfxGPU {
     else if(type==='vignette')pass(10,[p.amount,p.softness,p.radius,0],[p.centerX,p.centerY,p.aspect,p.roundness]);
     else if(type==='dissolve')pass(17,[p.progress,p.size*scale,p.softness,p.seed],[p.edge,0,0,0]);
     else if(type==='rgbSplit')pass(18,[p.amount*scale,p.angle*Math.PI/180,0,0],[p.red,p.green,p.blue,0]);
+    else if(type==='turbulence')pass(27,[p.amount*scale,p.size*scale,p.evolution,p.seed],[p.detail,0,0,0]);
     else if(type==='wave')pass(19,[p.strength*scale,p.wavelength*scale,p.angle*Math.PI/180,p.phase*Math.PI/180]);
     else if(type==='shockwave')pass(20,[p.radius*scale,p.thickness*scale,p.strength*scale,p.falloff],[p.centerX,p.centerY,0,0]);
     else if(type==='bloom'){const saved=save();pass(21,[p.threshold,p.softness,0,0]);blur(p.radius*scale);pass(22,[p.intensity,0,0,0],undefined,saved);}
     else if(type==='lightSweep')pass(23,[p.position,p.angle*Math.PI/180,p.width,p.softness],[p.intensity,0,0,0]);
     else if(type==='crt')pass(24,[p.amount,p.spacing*scale,p.curvature,p.chromatic*scale],[p.phase*scale,0,0,0]);
+    if(strengthSource)pass(26,[p.effectStrength,0,0,0],undefined,strengthSource);
   }
-  pass(0,undefined,undefined,current,w,h,true);gl.flush();this.stats.calls++;this.stats.bytes=(w*h+this.slots.reduce((n,s)=>n+s.width*s.height,0))*4;return this.canvas;
+  pass(0,undefined,undefined,current,w,h,true);gl.flush();this.stats.calls++;this.stats.bytes=(w*h+this.slots.reduce((n,s)=>n+(s?s.width*s.height:0),0))*4;return this.canvas;
  }
  destroy(){for(const slot of this.slots)if(slot)this.gl.deleteTexture(slot.texture);this.slots=[];this.gl.deleteFramebuffer(this.framebuffer);for(const {program} of this.programs.values())this.gl.deleteProgram(program);this.programs.clear();this.gl.deleteShader(this.vertexShader);this.gl.getExtension('WEBGL_lose_context')?.loseContext();this.canvas.width=this.canvas.height=1;}
 }
-let executor,idleTimer,lastUse=0;
+let executor,idleTimer,lastUse=0,sharedDevice=null;
 function releaseIdle(){const wait=30000-(performance.now()-lastUse);if(wait>0){idleTimer=setTimeout(releaseIdle,wait);return;}releaseVfxGPU();}
-export function filterVfxCanvas(source,stack,options){if(!activeVfx(stack).length)return source;executor??=new VfxGPU();lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return executor.run(source,stack,options);}
-export function vfxGPUStats(){return executor?{...executor.stats}: {passes:0,bytes:0,calls:0};}
-export function releaseVfxGPU(){clearTimeout(idleTimer);idleTimer=undefined;executor?.destroy();executor=null;}
+/** Register the renderer's WebGPU device so the shared WGSL executor can run
+ * scene/drawable filters without leaving the device. Without one, callers fall
+ * back to the WebGL 2 executor. */
+export function initVfxDevice(device){sharedDevice=device;device.lost.then(()=>{if(sharedDevice===device)sharedDevice=null;releaseVfxWebGPU(device);});}
+export function releaseVfxDevice(device){if(sharedDevice===device)sharedDevice=null;releaseVfxWebGPU(device);}
+export function filterVfxCanvas(source,stack,options){if(!activeVfx(stack).length)return source;
+ if(sharedDevice){const gpu=vfxWebGPUFor(sharedDevice);lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return gpu.run(source,stack,options);}
+ executor??=new VfxGPU();lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return executor.run(source,stack,options);}
+export function vfxGPUStats(){const source=sharedDevice?vfxWebGPUFor(sharedDevice).stats:executor?.stats;return source?{...source}:{passes:0,bytes:0,calls:0};}
+export function releaseVfxGPU(){clearTimeout(idleTimer);idleTimer=undefined;executor?.destroy();executor=null;if(sharedDevice)releaseVfxWebGPU(sharedDevice);}

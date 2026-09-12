@@ -82,6 +82,22 @@ test('attachment changes and moving connected layer keys keep one instance of ev
     const child=objects.find(o=>o.unique_id===2);if(t>=7&&t<10){assert.ok(child.join);assert.deepEqual(e.geometry.objects.get(child.object_slot).root,e.geometry.objects.get(child.join.target_object_slot).joints.get(1));}}
 });
 
+test('a keyframe placed after a layer ends extends its last exposure instead of padding blank cells',()=>{
+  const e=fixture();e.sheetRemoveFrames(['layer-1'],10,20);
+  assert.deepEqual(e.layerFrameKeys('layer-1').map(k=>k.tick),[0]);
+  e.sheetInsertKey(['layer-1'],15);
+  assert.deepEqual(e.layerFrameKeys('layer-1').map(k=>k.tick),[0,15]);
+  assert.ok(!e.layerFrameKeys('layer-1').some(k=>k.empty));
+  assert.deepEqual(sample(e,12).map(o=>o.uid),[1,2]);
+  assert.equal(sample(e,15).find(o=>o.uid===1).x,0);
+});
+
+test('appending a scene frame keeps an ended layer absent through the gap',()=>{
+  const e=fixture();e.sheetRemoveFrames(['layer-1'],10,20);e.sheetAppendFrame();
+  assert.deepEqual(sample(e,15).map(o=>o.uid),[2]);
+  assert.equal(e.layerFrameKeys('layer-1').find(k=>k.tick===10)?.empty,true);
+});
+
 test('removing frames beyond a short layer does not shorten existing content',()=>{
   const e=fixture();e.sheetRemoveFrames(['layer-2'],30,35);assert.equal(e.report._styk.layerSheet.tracks['layer-2'].end,21);
 });
@@ -224,6 +240,42 @@ test('editing an imported Bezier curve updates its evaluated motion',()=>{
   e.sheetSetEasing(['layer-1'],0,0,{interpolation:'bezier',bezier:[0,0,1,1]});
   assert.ok(Math.abs(sample(e,2)[0].x-20)<1e-6);assert.ok(Math.abs(x-20)>1);
   e.undo();assert.deepEqual(e.serialize(),before);
+});
+
+test('property key authoring writes one boundary per entry tick inside a tween',()=>{
+  const e=fixture(),before=e.serialize();
+  e.sheetSetEasing(['scene'],0,9,{interpolation:'linear'});
+  e.addAnimationKeys([{target:{kind:'scene'},property:'color',tick:0,value:0xfff00000},{target:{kind:'scene'},property:'color',tick:8,value:0xff0000f0}]);
+  assert.deepEqual(e.report._styk.layerSheet.tracks.scene.keys.map(k=>k.tick),[0,8,10,20]);
+  for(const [tick,color] of [[0,0xfff00000],[7,0xfff00000],[8,0xff0000f0],[9,0xff0000f0]]){e.seek(tick);assert.equal(e.evaluatedFrame._stykBackgroundColor,color,`tick ${tick}`);}
+  assert.equal(e.report._styk.animation,undefined);
+  e.undo();assert.deepEqual(e.serialize(),before);
+});
+test('property edits on a held cell rewrite its preceding key',()=>{
+  const e=fixture();e.sheetSetEasing(['layer-1'],0,20,{interpolation:'constant'});e.seek(5);e.select(1);
+  const before=e.serialize();e.beginAnimationEdit({kind:'figure',uid:1},'x');e.previewAnimationEdit(42);e.commitAnimationEdit();
+  assert.deepEqual(e.layerFrameKeys('layer-1').map(k=>k.tick),[0,10,20]);
+  assert.equal(sample(e,0).find(o=>o.uid===1).x,42);assert.equal(sample(e,9).find(o=>o.uid===1).x,42);
+  assert.equal(e.report._styk.animation,undefined);e.undo();assert.deepEqual(e.serialize(),before);
+});
+test('property edits inside a tween create a boundary at the playhead',()=>{
+  const e=fixture();e.sheetSetEasing(['layer-1'],0,20,{interpolation:'linear'});e.seek(5);e.select(1);
+  const before=e.serialize();e.beginAnimationEdit({kind:'figure',uid:1},'x');e.previewAnimationEdit(42);e.commitAnimationEdit();
+  assert.deepEqual(e.layerFrameKeys('layer-1').map(k=>k.tick),[0,5,10,20]);
+  const x=t=>sample(e,t).find(o=>o.uid===1).x;
+  assert.equal(x(5),42);assert.ok(x(4)>0&&x(4)<42);assert.ok(x(9)>10&&x(9)<42);
+  assert.equal(e.report._styk.animation,undefined);e.undo();assert.deepEqual(e.serialize(),before);
+});
+test('a pose entry without a value captures the interpolated pose at its tick',()=>{
+  const e=fixture();e.sheetSetEasing(['layer-1'],0,20,{interpolation:'linear'});e.addAnimationKey({kind:'figure',uid:1},'pose',15);
+  assert.deepEqual(e.layerFrameKeys('layer-1').map(k=>k.tick),[0,10,15,20]);
+  assert.equal(sample(e,15).find(o=>o.uid===1).x,15);assert.equal(sample(e,19).find(o=>o.uid===1).x,19);
+  assert.equal(e.report._styk.animation,undefined);
+});
+test('property channels cannot persist into a layer document',()=>{
+  const e=fixture();assert.throws(()=>e.setAnimationKeysEasing([{channelId:'x',keyIds:['y']}],{interpolation:'linear'}));
+  const legacy=fixture({legacy:true});legacy.addAnimationKey({kind:'figure',uid:1},'x',0,5);
+  assert.equal(legacy.animationChannels.length,1);legacy.setAnimationKeysEasing([{channelId:legacy.animationChannels[0].id,keyIds:[legacy.animationChannels[0].keys[0].id]}],{interpolation:'linear'});
 });
 
 test('inserting opening frames keeps movieclips visible through the inserted time',()=>{

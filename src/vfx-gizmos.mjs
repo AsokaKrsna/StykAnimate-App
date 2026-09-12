@@ -42,6 +42,7 @@ export class VfxGizmos {
   if(type==='vignette')add('vignette',direction(b.width*.5*p.radius*p.aspect,0),'Radius');
   if(type==='pixelate'){const origin={x:b.x+p.offsetX*unit,y:b.y+p.offsetY*unit};add('grid',origin,'Grid');add('cell',{x:origin.x+p.size*unit,y:origin.y+(p.linked?p.size:p.sizeY)*unit},'Cell size');}
   if(type==='noise')add('grain',direction(p.size*unit,0),'Grain size');
+  if(type==='turbulence'){add('displacement',direction(p.amount*unit,0),'Amount');add('grain',direction(p.size*unit,Math.PI/2),'Scale');}
   if(type==='dissolve')add('progress',{x:b.x+b.width*p.progress,y:b.y+b.height},'Progress');
   if(type==='lightSweep')add('sweep',{x:center.x+Math.cos(angle)*(p.position-.5)*b.width,y:center.y+Math.sin(angle)*(p.position-.5)*b.height},'Position');
   if(type==='crt')add('curvature',{x:b.x+b.width*(1-p.curvature),y:center.y},'Curvature');
@@ -67,6 +68,7 @@ export class VfxGizmos {
   if(handle.kind==='grid'){set('offsetX',(at.x-b.x)/unit);set('offsetY',(at.y-b.y)/unit);}
   if(handle.kind==='cell'){set('size',(at.x-b.x)/unit-p.offsetX);if(!p.linked)set('sizeY',(at.y-b.y)/unit-p.offsetY);}
   if(handle.kind==='grain')set('size',distance);
+  if(handle.kind==='displacement')set('amount',distance);
   if(handle.kind==='progress')set('progress',(at.x-b.x)/b.width);
   if(handle.kind==='sweep'){const angle=p.angle*Math.PI/180;set('position',.5+dx/b.width*Math.cos(angle)+dy/b.height*Math.sin(angle));}
   if(handle.kind==='curvature')set('curvature',1-(at.x-b.x)/b.width);

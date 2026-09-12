@@ -139,8 +139,7 @@ export async function decodePreview(blob, {width, height, maxPixels, maxDimensio
           target ? {resizeWidth: target.width, resizeHeight: target.height, resizeQuality: 'pixelated'} : {})
       : await createImageBitmap(blob, target ? {resizeWidth: target.width, resizeHeight: target.height, resizeQuality: 'pixelated'} : {});
     // Unknown source dimensions are learned once; subsequent copies are bounded.
-    originalWidth ||= area ? bitmap.naturalWidth ?? bitmap.width : bitmap.width;
-    originalHeight ||= area ? bitmap.naturalHeight ?? bitmap.height : bitmap.height;
+    originalWidth ||= bitmap.width; originalHeight ||= bitmap.height;
     const bounded = fitImage(bitmap.width, bitmap.height, maxPixels, maxDimension);
     if (bounded.width !== bitmap.width || bounded.height !== bitmap.height) {
       const source = bitmap;

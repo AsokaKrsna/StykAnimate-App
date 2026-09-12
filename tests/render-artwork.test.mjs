@@ -59,6 +59,20 @@ test('non-finite and non-numeric attributes cannot alias absent or finite values
   }
 });
 
+test('embedded media payloads fingerprint once and keep artwork shareable',()=>{
+  const payload='x'.repeat(2*1024*1024);
+  const fig={segments:[],image_assets:[{data_url:payload,anchor_length:4,anchor_start:{x:0,y:0}}]};
+  const g={obj:{unique_id:1},fig,root:{x:0,y:0},drawables:[{type:'image',asset:fig.image_assets[0],start:{x:0,y:0},end:{x:4,y:0},seg:{},index:0}]};
+  const cache=new ArtworkRegistry({maxBytes:4*1024*1024});
+  const artwork=cache.get(g,g.drawables);
+  assert.ok(!artwork.definition.unshared,'a multi-megabyte payload must not make the figure definition unshareable');
+  assert.ok(artwork.metadata.length<64*1024,'the payload must not be serialized into the per-packet signature');
+  const moved={...g,drawables:g.drawables.map(item=>({...item}))};
+  assert.equal(cache.get(moved,moved.drawables),artwork);
+  const different={...g,drawables:g.drawables.map(item=>({...item,asset:{...item.asset,data_url:payload+'y'}}))};
+  assert.notEqual(cache.get(different,different.drawables),artwork);
+});
+
 test('cross-packet content identity survives registry eviction and keeps subpixel differences',async()=>{
   const {g}=pair(),cache=new ArtworkRegistry({maxEntries:1});
   const first=cache.get(g,g.drawables),key=await cache.contentKey(first);

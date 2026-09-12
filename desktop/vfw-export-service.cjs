@@ -12,7 +12,8 @@ const deferred = () => { let resolve, reject; const promise = new Promise((a, b)
 function integer(value, min, max, label) { if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${label} must be an integer from ${min} to ${max}.`); return value; }
 function dimensions(options = {}) {
   const width = integer(options.width ?? 640, 1, 16384, 'Video width'), height = integer(options.height ?? 480, 1, 16384, 'Video height');
-  if (width * height > 16 * 1024 * 1024) throw new Error('Video exceeds the 16-million-pixel limit.');
+  // Mirrors EXPORT_MAX_PIXELS in src/export-sampling.mjs.
+  if (width * height > 67108864) throw new Error('Video exceeds the 67-million-pixel limit.');
   const stride = Math.ceil(width * 3 / 4) * 4, frameBytes = stride * height;
   if (frameBytes > MAX_FRAME) throw new Error('A video frame exceeds the 64 MiB limit.');
   return {width, height, stride, frameBytes};
@@ -181,6 +182,30 @@ class VfwExportService {
     const job = this._job(token); if (!job.file) throw new Error('Finish the Windows video before reading it.');
     const data = Buffer.alloc(Math.min(CHUNK, job.size - job.read)), result = await job.file.read(data, 0, data.length, job.read); job.read += result.bytesRead;
     return {bytes: new Uint8Array(data.buffer, data.byteOffset, result.bytesRead), done: job.read >= job.size, read: job.read, total: job.size};
+  }
+  /** Move the encoded AVI to a native-approved destination without piping its
+   * bytes through the renderer. */
+  async save(token, destination) {
+    const job = this._job(token);
+    if (!job.file || !job.size) throw new Error('Finish the Windows video before saving it.');
+    if (typeof destination !== 'string' || !path.isAbsolute(destination)) throw new Error('A native-approved destination is required.');
+    await job.file.close(); job.file = null;
+    const size = job.size;
+    // On failure reopen the temp output so chunked readback remains possible.
+    const reopen = async (error) => { job.file = await fs.open(job.outputPath, 'r').catch(() => null); throw error; };
+    try { await fs.rename(job.outputPath, destination); }
+    catch (error) {
+      if (error.code !== 'EXDEV') await reopen(error);
+      else {
+        const staged = path.join(path.dirname(destination), `.${path.basename(destination)}.${randomUUID()}.tmp`);
+        try { await fs.copyFile(job.outputPath, staged); await fs.rename(staged, destination); }
+        catch (failure) { await reopen(failure); }
+        finally { await fs.unlink(staged).catch((failure) => { if (failure.code !== 'ENOENT') throw failure; }); }
+      }
+    }
+    this.jobs.delete(token); clearTimeout(job.timer);
+    await fs.rm(job.directory, {recursive: true, force: true});
+    return {saved: true, path: destination, size};
   }
   async cancel(token) {
     const job = this.jobs.get(token); if (!job) return {cancelled: false}; this.jobs.delete(token);

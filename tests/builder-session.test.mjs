@@ -128,6 +128,35 @@ test('create session discard removes the drawn figure and its object', () => {
   assert.equal(editor._undo.length, history);
 });
 
+test('create session draws a visible figure on a materialized layer-sheet cell', () => {
+  const report = emptyDocument(), walker = report.figure_types[0];
+  report.keyframes = [createFrame([createObject(walker, 1, 200, 200)], 4)];
+  const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: true}).load(report);
+  // A pose edit captures the layer cell into a frame source; afterwards the
+  // evaluated frame no longer mirrors report.keyframes[frameIndex].
+  editor.select(1);
+  editor.updateObject({root_x: 240});
+  assert.ok(editor.report._styk.layerSheet.tracks['layer-1'].keys[0].value?.frameId);
+  editor.select(null);
+  const session = new BuilderSession(editor).begin();
+  assert.equal(session.mode, 'create');
+  editor.addSegment({type: 'line', start: {x: 100, y: 100}});
+  session.sync();
+  const typeId = session.typeId, uid = session.uid;
+  assert.equal(editor.figure?.segments.length, 1);
+  assert.ok(editor.selectionFrame.objects.some(o => o.unique_id === uid));
+  // Extending the bound figure still works.
+  editor.addSegment({type: 'line', length: 60});
+  assert.equal(editor.figure?.segments.length, 2);
+  session.resolve('import');
+  assert.ok(editor.selectionFrame.objects.some(o => o.unique_id === uid));
+  editor.undo();
+  editor.undo();
+  assert.ok(!editor.report.figure_types.some(f => f.figure_type_id === typeId));
+  assert.ok(!editor.selectionFrame.objects.some(o => o.unique_id === uid));
+  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
+});
+
 test('undo inside a session reduces changed work but never crosses the baseline', () => {
   const editor = fixture();
   editor.select(1);

@@ -141,6 +141,21 @@ def validate_native_figure(document, kind="stkz"):
                               not figures[0].get("_styk", {}).get("movieclip")):
         raise ApiError(422, "invalid_movieclip", "A .stykmov file must contain one movieclip.")
 
+def decoded_json(data: bytes):
+    """Fast request/document parsing; identical semantics to stdlib json.
+
+    orjson is stricter about NaN, lone surrogates, and trailing bytes. Falling
+    back to stdlib on its parse errors keeps the established error behavior —
+    accepted nonfinite values still reach validate_document's rejection.
+    """
+    if _fast_json is not None:
+        try:
+            return _fast_json.loads(data)
+        except _fast_json.JSONDecodeError:
+            pass
+    return json.loads(data.decode("utf-8"))
+
+
 def encoded_json(value: object, *, validated: bool = False) -> bytes:
     if validated and _fast_json is not None:
         try:
@@ -305,6 +320,24 @@ class ProjectStore:
         data = bridge.read_bounded(path, MAX_DOCUMENT if path.suffix.lower() in (".styk", ".stkz", ".stykmov") else MAX_SOURCE)
         return self.import_bytes(data, path.name, as_json=as_json, prefer_native=prefer_native)
 
+    def source_record(self, source_id: str) -> tuple[bytes, bytes]:
+        """Retained original binary source plus provenance metadata for a
+        worker-side .styk build (mirrors what export embeds as _stykSource)."""
+        with self.lock:
+            entry = self.sources.get(source_id)
+            if entry:
+                self.sources.move_to_end(source_id)
+        if entry is None:
+            raise ApiError(410, "source_expired", "The original source expired from memory. Reopen the original file before exporting.")
+        if entry.kind not in ("piv", "stk") or not entry.data:
+            raise ApiError(422, "no_source", "The cached import has no binary source.")
+        if entry.digest is None:
+            entry.digest = document_digest(decoded_json(self._canonical_json(entry)))
+        meta = encoded_json({"kind": entry.kind, "version": entry.version,
+            "sha256": hashlib.sha256(entry.data).hexdigest(),
+            "document_sha256": entry.digest, "document_digest_version": 3})
+        return entry.data, meta
+
     def import_bytes(self, data: bytes, filename: str, *, as_json: bool = False, prefer_native: bool = False) -> dict | bytes:
         started = time.perf_counter()
         name = filename_only(filename)
@@ -345,7 +378,7 @@ class ProjectStore:
                             path.write_bytes(data)
                             document = bridge.stk_document(path, data)
                     else:
-                        document = json.loads(native_format.decode(data, kind).decode("utf-8-sig"))
+                        document = decoded_json(native_format.decode(data, kind).lstrip(b"\xef\xbb\xbf"))
                         # Compatibility with the web editor's early native-save
                         # wrapper. Current saves use the canonical document plus
                         # embedded source metadata, so original bytes survive.
@@ -406,7 +439,7 @@ class ProjectStore:
         if prefer_native and entry.kind == "piv" and entry.version == 5 and entry.native_wire is None:
             with self.decode_lock:
                 if entry.native_wire is None:
-                    parts = import_wire.native_frame_wire(json.loads(self._canonical_json(entry)), entry.data, piv_codec._unpack_source, encoded_json)
+                    parts = import_wire.native_frame_wire(decoded_json(self._canonical_json(entry)), entry.data, piv_codec._unpack_source, encoded_json)
                     if parts and entry.retained_size + len(parts[0]) + len(parts[1]) <= self.max_cache:
                         with self.lock:
                             entry.native_wire = parts
@@ -432,7 +465,7 @@ class ProjectStore:
             metadata["timings"]["total_ms"] = round((time.perf_counter() - started) * 1000, 3)
             return b"".join((b'{"document":', packed, b',', encoded_json(metadata)[1:]))
         packed = self._canonical_json(entry)
-        metadata["document"] = json.loads(packed)
+        metadata["document"] = decoded_json(packed)
         metadata["timings"]["document_bytes"] = len(packed)
         metadata["timings"]["total_ms"] = round((time.perf_counter() - started) * 1000, 3)
         return metadata
@@ -450,7 +483,7 @@ class ProjectStore:
             output_doc = dict(document)
             output_doc.pop("_stykSource", None)
             output_doc["_styk"] = {**document.get("_styk", {}), "format": "StykAnimate", "format_version": 1}
-            output = native_format.encode(encoded_json(output_doc, validated=True), format_name)
+            output = native_format.encode_v2(output_doc, format_name)
             base = re.sub(r'[\x00-\x1f\x7f/\\:*?"<>|]', "_", str(request.get("filename") or "Figure")).strip(" .")[:180] or "Figure"
             return output, f"{base}.{format_name}"
         source_id = request.get("sourceId")
@@ -461,7 +494,7 @@ class ProjectStore:
         if source_id and entry is None:
             raise ApiError(410, "source_expired", "The original source expired from memory. Reopen the original file before exporting.")
         if entry and entry.kind in ("piv", "stk") and entry.digest is None:
-            entry.digest = document_digest(json.loads(self._canonical_json(entry)))
+            entry.digest = document_digest(decoded_json(self._canonical_json(entry)))
         metadata = document.get("_stykSource", {})
         embedded_source = bridge.source_bytes(document)
         source = entry.data if entry and entry.kind in ("piv", "stk") else embedded_source
@@ -498,7 +531,7 @@ class ProjectStore:
                     "source_base64": base64.b64encode(entry.data).decode("ascii"),
                     "sha256": hashlib.sha256(entry.data).hexdigest(),
                     "document_sha256": entry.digest, "document_digest_version": 3}
-            output = native_format.encode(encoded_json(output_doc, validated=True), "styk")
+            output = native_format.encode_v2(output_doc, "styk")
         elif format_name == "stk":
             selected = request.get("figureTypeId")
             selection_matches = selected in (None, 2)
@@ -577,11 +610,14 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(401, "unauthorized", "The desktop session token is missing or invalid.")
         return origin
 
-    def _send(self, status: int, data: bytes, content_type: str, *, filename: str | None = None):
+    def _send(self, status: int, data: bytes, content_type: str, *, filename: str | None = None,
+              cache_control: str = "no-store", etag: str | None = None, length: int | None = None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(data) if length is None else length))
+        self.send_header("Cache-Control", cache_control)
+        if etag:
+            self.send_header("ETag", etag)
         self.send_header("X-Content-Type-Options", "nosniff")
         origin = self.headers.get("Origin")
         if origin and origin != "null":
@@ -660,6 +696,11 @@ class Handler(BaseHTTPRequestHandler):
                     "nativeFrameScannerInfo": {"abi": scanner["abi"], "sha256": scanner["sha256"]} if scanner["available"] else None})
             elif parsed.path == "/api/samples":
                 self._json(200, {"ok": True, "samples": self.server.store.samples()})
+            elif parsed.path == "/api/source":
+                source_id = parse_qs(parsed.query).get("id", [""])[0]
+                source, meta = self.server.store.source_record(source_id)
+                self._send(200, b"STYKSRC1" + struct.pack("<I", len(meta)) + meta + source,
+                    "application/octet-stream")
             elif parsed.path.startswith("/api/"):
                 raise ApiError(404, "route_not_found", "Unknown codec endpoint.")
             else:
@@ -673,7 +714,16 @@ class Handler(BaseHTTPRequestHandler):
                 mime = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
                 if target.suffix.lower() in (".js", ".mjs"):
                     mime = "text/javascript"
-                self._send(200, target.read_bytes(), mime)
+                # App resources are public static files: let the browser hold the
+                # bytes and answer revalidation with 304 instead of re-reading and
+                # re-sending every module on each worker spawn or reload.
+                stat = target.stat()
+                etag = '"%x-%x"' % (stat.st_mtime_ns, stat.st_size)
+                candidates = {token.strip().removeprefix("W/") for token in self.headers.get("If-None-Match", "").split(",")}
+                if "*" in candidates or etag in candidates:
+                    self._send(304, b"", mime, cache_control="no-cache", etag=etag, length=stat.st_size)
+                    return
+                self._send(200, target.read_bytes(), mime, cache_control="no-cache", etag=etag)
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception as exc:
@@ -689,7 +739,7 @@ class Handler(BaseHTTPRequestHandler):
                     prefer_native=import_wire.CONTENT_TYPE in self.headers.get("Accept", ""))
                 self._send(200, result, import_wire.CONTENT_TYPE if result.startswith(import_wire.MAGIC) else "application/json; charset=utf-8")
             elif parsed.path in ("/api/open", "/api/export"):
-                request = json.loads(self._body(MAX_DOCUMENT).decode("utf-8"))
+                request = decoded_json(self._body(MAX_DOCUMENT))
                 if not isinstance(request, dict):
                     raise ApiError(400, "invalid_request", "The request must be a JSON object.")
                 if parsed.path == "/api/open":

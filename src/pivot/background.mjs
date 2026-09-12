@@ -56,8 +56,10 @@ function hasTransparency(context, image, asset, resources) {
   if (resources.hasTransparency) return resources.hasTransparency(image, asset);
   if (asset.mime_type === "image/jpeg") return false;
   if (imageTransparency.has(image)) return imageTransparency.get(image);
-  const width = image.naturalWidth,
-    height = image.naturalHeight;
+  // Scan the decoded pixels that are actually drawn, not the logical size;
+  // downscaled preview variants are already bounded.
+  const width = image.width || image.naturalWidth,
+    height = image.height || image.naturalHeight;
   if (width * height > 64 * 1024 * 1024)
     throw new Error("Background alpha inspection is limited to 64 megapixels.");
   const surface =

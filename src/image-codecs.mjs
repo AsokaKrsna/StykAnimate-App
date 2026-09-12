@@ -46,6 +46,13 @@ class BoundedOutput {
   blob(type) {
     return new Blob(this.parts, { type });
   }
+  /** Return appended parts and release them; `size` keeps tracking the total. */
+  drain() {
+    if (!this.parts.length) return null;
+    const parts = this.parts;
+    this.parts = [];
+    return new Blob(parts);
+  }
 }
 
 function delayFraction(fps) {

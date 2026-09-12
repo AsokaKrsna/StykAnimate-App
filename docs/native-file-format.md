@@ -15,6 +15,62 @@ they omit other figures, project animation, backgrounds and original project
 source bytes. Import places the figure at the destination canvas center and
 assigns fresh IDs. A figure joined to another figure is saved detached.
 
+New saves write container version 2. A document of a dense imported scene is
+stored as a JSON skeleton plus binary sections, so typical projects shrink to
+roughly half their version-1 size and reopen in a fraction of the time. Version
+1 containers and original JSON files remain readable indefinitely; the next
+save upgrades them.
+
+## Container version 2
+
+The 56-byte header matches version 1, with version `2` in byte 4. All integers
+are little endian. After the header:
+
+| Bytes | Meaning |
+| --- | --- |
+| 4 | Section count `N` |
+| variable | Compressed UTF-8 JSON skeleton |
+| `N` × 64 | Section records (see below) |
+| variable | Compressed section payloads, in record order |
+
+Section record (64 bytes):
+
+| Offset | Bytes | Meaning |
+| --- | --- | --- |
+| 0 | 1 | Kind: `1` numeric arrays, `2` binary payloads |
+| 1 | 1 | Codec: `0` stored, `1` zlib DEFLATE, `2` zstd |
+| 2 | 2 | Reserved, `0` |
+| 4 | 4 | Reserved, `0` |
+| 8 | 8 | Uncompressed section length |
+| 16 | 8 | Stored section length |
+| 24 | 32 | SHA-256 of the uncompressed section |
+| 56 | 8 | Padding, `0` |
+
+Large values move out of the skeleton into sections, replaced by marker
+strings:
+
+- `S2B:<type>:<section>:<offset>:<count>` — a packed numeric array. `type` is
+  `u8`, `u16`, `u32`, `i32`, `f32` or `f64`, always the smallest exact
+  representation; `offset`/`count` are elements, not bytes.
+- `S2S:<section>:<offset>:<count>` — a base64 string stored as raw bytes.
+- `S2D:<section>:<offset>:<count>:<prefix>` — a data URL whose payload is
+  stored raw; `prefix` is the literal text before the base64 part.
+- `S2E:<rest>` — escapes a literal string that starts with a marker prefix.
+
+Only arrays of 32 or more values where every element is a finite JSON number
+are lifted; integers beyond ±2^53 and any mixed, boolean, or object arrays stay
+inline so every encoding round-trips exactly. Base64 payloads are lifted only
+in `source_base64`,
+`data_base64`, `source_b64` fields and in `data:` URLs of 64 KiB or more.
+Repeated large arrays and identical payloads share one encoded range; reading
+restores them as the same in-memory array. Reading is bounded: skeleton and
+each section cap at 256 MiB and every lifted region is verified against its
+section checksum before materialization.
+
+Skeletons and sections prefer zstd (vendored WASM on the client, the optional
+`zstandard` package in Python); writers fall back to zlib when zstd is
+unavailable. Readers require the codec the file declares.
+
 ## Container version 1
 
 All integers are unsigned and little endian. Header size is 56 bytes.
@@ -31,16 +87,30 @@ All integers are unsigned and little endian. Header size is 56 bytes.
 | 56 | variable | Compressed UTF-8 JSON document |
 
 The writer uses zlib level 3 to balance speed and size. Numeric values are
-preserved without lossy quantization. Encoding, compression and parsing stay
-off the UI thread; snapshots and desktop file transfers use bounded chunks.
-Both compressed and expanded data have a 256 MiB limit. The reader rejects
-unknown versions, wrong file kinds, invalid flags, truncation, trailing streams,
-length mismatches and checksum failures before accepting the document.
-Normal scene validation still runs after decompression.
+preserved without lossy quantization. Both compressed and expanded data have a
+256 MiB limit. The reader rejects unknown versions, wrong file kinds, invalid
+flags, truncation, trailing streams, length mismatches and checksum failures
+before accepting the document.
+
+## Both versions
+
+Encoding, compression and parsing stay off the UI thread; snapshots and
+desktop file transfers use bounded chunks. Save-side, the export worker builds
+`.styk` containers itself from the streamed snapshot, fetching the original
+source bytes through `GET /api/source` and falling back to the service when
+local encoding is unavailable. Open-side, the import worker decodes all three
+container kinds locally and only asks the service for files it cannot read
+(such as a missing zstd decoder). The service retains the same encode/decode
+rules so the fallback path and external tools produce identical bytes.
+
+The reader rejects unknown versions, wrong file kinds, invalid flags,
+truncation, trailing data, length mismatches and checksum failures before
+accepting the document. Normal scene validation still runs after decompression.
 
 Original JSON `.styk`/`.json` files and the early version-1 wrapper remain
 readable. Their next save writes the compressed container. Older releases that
-only understand JSON cannot open the new containers.
+only understand JSON cannot open the new containers, and releases predating
+version 2 reject its containers with an unsupported-version error.
 
 Desktop writes retain the existing temporary-file, flush and atomic-rename
 implementation: cancellation and incomplete writes preserve the last completed

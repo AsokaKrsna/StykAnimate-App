@@ -61,7 +61,7 @@ function hasTransparency(image, asset, resources) {
   if (resources.hasTransparency) return resources.hasTransparency(image, asset);
   if (asset.mime_type === 'image/jpeg') return false;
   if (!image) return true;
-  const width = image.naturalWidth, height = image.naturalHeight;
+  const width = image.width || image.naturalWidth, height = image.height || image.naturalHeight;
   if (width * height > 64 * 1024 * 1024) throw new RangeError('Background alpha inspection is limited to 64 megapixels.');
   const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : document.createElement('canvas');
   canvas.width = width; canvas.height = height;
