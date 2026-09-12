@@ -4,15 +4,17 @@ import {segmentBranchIndices} from './editor-builder.mjs';
 
 export const BUILDER_HIGHLIGHT_COLORS = Object.freeze({dynamic:'#0000ff',static:'#4444cc',path:'#0000ff'});
 export function isBuilderContext(tool) { return ['rig','line','circle','polygon'].includes(tool); }
-export function builderBackgroundColor(settings,{tool,playing=false,previewing=false}={}) {
-  if(!isBuilderContext(tool)||playing||previewing||!settings?.useBuilderCanvasColor)return undefined;
+/** `builderActive` keeps the construction background for every tool while a
+ * bounded builder session is open; outside a session it stays tool-scoped. */
+export function builderBackgroundColor(settings,{tool,playing=false,previewing=false,builderActive=false}={}) {
+  if(!(isBuilderContext(tool)||builderActive)||playing||previewing||!settings?.useBuilderCanvasColor)return undefined;
   const color=settings.builderCanvasColor;
   if(typeof color!=='string'||!/^#[0-9a-f]{6}$/i.test(color))return undefined;
   return (0xff000000|parseInt(color.slice(1),16))>>>0;
 }
-export function builderShowsStaticHandles(settings,{tool,handleEditHeld=false,connecting=false}={}) {
-  if(handleEditHeld||connecting||['line','circle','polygon','attach','handle-edit'].includes(tool))return true;
-  return tool==='rig'&&settings?.builderShowStaticHandles!==false;
+export function builderShowsStaticHandles(settings,{tool,handleEditHeld=false,connecting=false,builderActive=false}={}) {
+  if(handleEditHeld||connecting||['line','circle','polygon','attach'].includes(tool))return true;
+  return (tool==='rig'||builderActive)&&settings?.builderShowStaticHandles!==false;
 }
 
 const indices=new WeakMap();

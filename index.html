@@ -88,7 +88,6 @@
 <div class="tool-dock" role="toolbar" aria-label="Contextual tools" aria-orientation="vertical">
 <button class="tool" data-tool="select" data-icon="cursor" aria-label="Select and move" title="Select and move · V"><span class="tool-label">Select</span></button>
 <button class="tool" data-tool="pose" data-icon="nodes" aria-label="Pose joints" title="Pose joints · P"><span class="tool-label">Pose</span></button>
-<button class="tool" data-tool="handle-edit" data-icon="move" aria-label="Handle edit" title="Handle edit · R"><span class="tool-label">Handles</span></button>
 <button class="tool" data-tool="rig" data-icon="sliders" aria-label="Edit rig" title="Edit rig"><span class="tool-label">Joints</span></button>
 <button class="tool" data-tool="line" data-icon="line" aria-label="Add line segment" title="Add line segment · L"><span class="tool-label">Line</span></button>
 <button class="tool" data-tool="circle" data-icon="circle" aria-label="Add circle segment" title="Add circle segment · C"><span class="tool-label">Circle</span></button>
@@ -126,6 +125,13 @@
                 title="Show joints · J"
                 data-icon="nodes"
               ></button
+              ><button
+                class="icon-button"
+                id="paths-button"
+                data-action="toggle-motion-paths"
+                title="Motion paths · M"
+                data-icon="route"
+              ></button
               ><span class="divider"></span
               ><button
                 class="zoom-label"
@@ -141,15 +147,7 @@
           </div>
           <div class="context-strip"><strong id="tool-context">Select</strong><span id="edit-scope">Current frame</span><button id="leave-rig" hidden>Return to animation →</button></div>
           <div id="builder-bar" class="builder-bar" role="toolbar" aria-label="Figure builder" hidden>
-            <span class="builder-crumb"><strong id="builder-title">Build figure</strong><span id="builder-scope">Shared definition</span></span>
-            <span class="builder-group" aria-label="Draw">
-              <button class="builder-btn" data-tool="rig" data-icon="sliders" title="Edit joints — move points and resize" aria-label="Edit joints"></button>
-              <button class="builder-btn" data-tool="line" data-icon="line" title="Draw line · L" aria-label="Draw line"></button>
-              <button class="builder-btn" data-tool="circle" data-icon="circle" title="Draw circle · C" aria-label="Draw circle"></button>
-              <button class="builder-btn" data-tool="polygon" data-icon="polygon" title="Trace a polygon between joints" aria-label="Draw polygon"></button>
-              <button class="builder-btn" data-tool="handle-edit" data-icon="move" title="Edit handles · Ctrl R" aria-label="Edit handles"></button>
-              <button class="builder-btn" data-tool="hand" data-icon="hand" title="Pan canvas · H" aria-label="Pan canvas"></button>
-            </span>
+            <span class="builder-crumb"><strong id="builder-title">Build figure</strong></span>
             <span class="builder-group" aria-label="Structure">
               <button class="builder-btn" data-action="split-segment" data-icon="split" title="Split segment at midpoint · Shift: whole branch" aria-label="Split segment"></button>
               <button class="builder-btn" data-action="unsplit-segment" data-icon="combine" title="Remove joint, keep endpoints · Ctrl Del" aria-label="Unsplit segment"></button>

@@ -16,14 +16,19 @@ test('construction preferences validate and remain independent from scene/playba
  assert.equal(builderBackgroundColor({...s,useBuilderCanvasColor:false},{tool:'rig'}),undefined);
  assert.equal(normalizeEditorSettings({builderCanvasColor:'red'}).builderCanvasColor,'#ffffff');
  assert.equal(builderBackgroundColor({...s,builderCanvasColor:'#000000'},{tool:'rig'}),0xff000000);
+ // Inside a bounded builder session the construction background applies to every tool.
+ assert.equal(builderBackgroundColor(s,{tool:'select',builderActive:true}),0xffa0b1c2);
 });
 test('hide static applies only to Builder with native connecting and Handle Edit exceptions',()=>{
  const settings={builderShowStaticHandles:false};assert.equal(builderShowsStaticHandles(settings,{tool:'rig'}),false);
  assert.equal(builderShowsStaticHandles({}, {tool:'rig'}),true);
- for(const tool of ['line','circle','polygon','attach','handle-edit'])assert.equal(builderShowsStaticHandles(settings,{tool}),true);
+ for(const tool of ['line','circle','polygon','attach'])assert.equal(builderShowsStaticHandles(settings,{tool}),true);
  assert.equal(builderShowsStaticHandles(settings,{tool:'rig',connecting:true}),true);
  assert.equal(builderShowsStaticHandles(settings,{tool:'pose',handleEditHeld:true}),true);
  assert.equal(builderShowsStaticHandles(settings,{tool:'pose'}),false);
+ // A bounded builder session keeps construction aids for every tool.
+ assert.equal(builderShowsStaticHandles(settings,{tool:'select',builderActive:true}),false);
+ assert.equal(builderShowsStaticHandles({}, {tool:'select',builderActive:true}),true);
 });
 test('hidden static keeps only selected static or selected branch and native Builder colors',()=>{
  const g=figure(),geometry={objects:new Map([[0,g]])};

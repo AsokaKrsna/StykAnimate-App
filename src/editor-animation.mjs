@@ -22,7 +22,7 @@ function assignAnimation(editor, animation) {
   if (animation) editor.report._styk.animation = animation; else delete editor.report._styk.animation;
   editor._invalidate({timing: true, retainPropertyMarkers, retainGeometry: true});
 }
-function draftAnimation(editor) {
+export function draftAnimation(editor) {
   const before = currentAnimation(editor), after = {...before, version: 1, nextKeyId: before?.nextKeyId ?? 1, channels: [...animationChannels(editor.report)]};
   const cloned = new Map(), indices = new Map(after.channels.map((channel, index) => [channel.id, index]));
   const draft = {before, after, sources: {}, poseSources: new Map(), changed: false,
@@ -72,7 +72,7 @@ function draftAnimation(editor) {
   }};
   return draft;
 }
-function recordAnimation(editor, label, draft, selection = editor._selectionState()) {
+export function recordAnimation(editor, label, draft, selection = editor._selectionState()) {
   if (!draft.changed) return false;
   draft.finalize?.();
   if (draft.sources && Object.keys(draft.sources).length) {
@@ -108,7 +108,7 @@ function poseValue(editor, draft, tick) {
   for (const object of source.objects) delete object.runtime_segments;
   draft.sources[frameId] = source; const value = {frameId}; draft.poseSources.set(tick, value); return value;
 }
-function putKey(editor, draft, entry) {
+export function putKey(editor, draft, entry) {
   if(entry.exactTarget!==undefined&&typeof entry.exactTarget!=='boolean')throw new Error('Exact animation targeting must be a boolean.');
   const property = entry.property, tick = checkTick(entry.tick ?? editor.tick),target = entry.exactTarget
     ? normalizeAnimationTarget(entry.target) : editor.resolveAnimationTarget(entry.target,property,tick);

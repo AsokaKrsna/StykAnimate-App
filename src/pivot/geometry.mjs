@@ -1093,7 +1093,13 @@ function drawPrimitives(ctx, items, resources, stroke) {
       ctx.globalAlpha *= s.alpha;
       // Pivot requests FMX's high-speed (nearest-neighbor) bitmap sampler.
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 0, 0, a.display_width ?? img.naturalWidth, a.display_height ?? img.naturalHeight);
+      const iw = a.display_width ?? img.naturalWidth, ih = a.display_height ?? img.naturalHeight;
+      // Cropped variants carry their source rectangle; mapping it back into
+      // display space preserves the original placement and anchors.
+      if (img.srcW !== undefined && img.naturalWidth)
+        ctx.drawImage(img, (img.srcX * iw) / img.naturalWidth, (img.srcY * ih) / img.naturalHeight,
+          (img.srcW * iw) / img.naturalWidth, (img.srcH * ih) / img.naturalHeight);
+      else ctx.drawImage(img, 0, 0, iw, ih);
       ctx.restore();
       continue;
     }

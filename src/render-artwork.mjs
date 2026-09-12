@@ -12,13 +12,39 @@ let registrySerial=0;
 const encoder=new TextEncoder();
 const digest=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),n=>n.toString(16).padStart(2,'0')).join('');
 
+/** Embedded media payloads are megabyte strings that would dominate every
+ * signature. Each unique string is hashed once, then its object reference
+ * keeps the fingerprint valid; all other fields stay in the signature. */
+const PAYLOAD_LENGTH=512;
+const assetScrubs=new WeakMap();
+function scrubbedAsset(asset){
+  let cached=assetScrubs.get(asset),payloads=[];
+  if(cached){
+    let match=true;
+    for(const key in asset){const value=asset[key];
+      if(typeof value==='string'&&value.length>PAYLOAD_LENGTH){payloads.push(value);match&&=cached.strings[payloads.length-1]===value;}}
+    if(match&&payloads.length===cached.strings.length)return cached.value;
+  }
+  const value={...asset};payloads=[];
+  for(const key in value){const payload=value[key];
+    if(typeof payload==='string'&&payload.length>PAYLOAD_LENGTH){payloads.push(payload);value[key]=`#${payload.length}:${textHash(payload)}`;}}
+  assetScrubs.set(asset,{strings:payloads,value:payloads.length?value:asset});
+  return payloads.length?value:asset;
+}
+function scrubbedAssets(assets){
+  return assets?.some(asset=>{for(const key in asset)if(typeof asset[key]==='string'&&asset[key].length>PAYLOAD_LENGTH)return true;return false;})
+    ?assets.map(scrubbedAsset):assets;
+}
+
 // A sampled clip is rendered from its expanded drawables, never by traversing
 // the stored animation here. Child drawing definitions enter the signature below.
 function drawingDefinition(figure){
   const clip=figure._styk?.movieclip;
-  if(!clip)return figure;
-  const {document,...settings}=clip;
-  return {...figure,_styk:{...figure._styk,movieclip:settings}};
+  let definition=figure;
+  if(clip){const {document,...settings}=clip;definition={...figure,_styk:{...figure._styk,movieclip:settings}};}
+  const image_assets=scrubbedAssets(definition.image_assets),text_assets=scrubbedAssets(definition.text_assets);
+  if(image_assets===definition.image_assets&&text_assets===definition.text_assets)return definition;
+  return {...definition,image_assets,text_assets};
 }
 
 export class ArtworkRegistry {
@@ -91,7 +117,7 @@ export class ArtworkRegistry {
       if(type<0)extra.push([i,'type',item.type]);
       if(seg&&seg!==g.fig.segments?.[item.index])extra.push([i,'seg',seg]);
       if(poly&&poly!==g.fig.polyfills?.[item.index])extra.push([i,'poly',poly]);
-      if(asset)extra.push([i,'asset',asset]);
+      if(asset)extra.push([i,'asset',scrubbedAsset(asset)]);
       if(item.fig&&item.fig!==g.fig){
         let index=childFigures.get(item.fig);
         if(index===undefined){index=childDefinitions.length;childFigures.set(item.fig,index);childDefinitions.push(this.definition(item.fig).text??JSON.stringify(drawingDefinition(item.fig)));}

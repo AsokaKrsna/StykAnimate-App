@@ -64,11 +64,24 @@ export class BuilderSession {
   /** UIDs of bound-figure instances in the current selection frame. Lazily
    * rebuilt whenever the frame's object array changes identity. */
   get boundUids() {
-    const objects = this.editor.selectionFrame.objects;
-    if (objects !== this._uidsSource) {
-      this._uidsSource = objects;
-      this._uids = new Set(this.typeId === null ? [] :
-        objects.filter(object => object.figure_type_id === this.typeId).map(object => object.unique_id));
+    const editor = this.editor;
+    const sel = editor.selectionFrame.objects, authored = editor.frame.objects;
+    // Identity plus length: frames mutate object arrays in place
+    // (frame.objects.push), and the authored frame is unioned in so a
+    // just-created instance is bound before the evaluated frame catches up.
+    if (sel !== this._uidsSource || authored !== this._uidsAuthored || sel.length !== this._uidsLength ||
+        authored.length !== this._uidsAuthoredLength || this._uidsType !== this.typeId) {
+      this._uidsSource = sel;
+      this._uidsAuthored = authored;
+      this._uidsLength = sel.length;
+      this._uidsAuthoredLength = authored.length;
+      this._uidsType = this.typeId;
+      this._uids = new Set();
+      if (this.typeId !== null) {
+        for (const object of sel) if (object.figure_type_id === this.typeId) this._uids.add(object.unique_id);
+        if (sel !== authored)
+          for (const object of authored) if (object.figure_type_id === this.typeId) this._uids.add(object.unique_id);
+      }
     }
     return this._uids;
   }
@@ -86,7 +99,10 @@ export class BuilderSession {
     if (this.stale) return;
     if (this.editor._documentToken !== this.documentToken) { this.stale = true; return; }
     if (this.mode === 'create' && this.typeId === null) {
-      const object = this.editor.object;
+      // The authored keyframe is checked too: under the layer-sheet timeline
+      // the evaluated selection frame can lag a just-created object.
+      const object = this.editor.object ??
+        this.editor.frame.objects.find(candidate => candidate.unique_id === this.editor.selectedUid);
       if (object && !this.preexistingUids.has(object.unique_id) && !this.preexistingTypeIds.has(object.figure_type_id)) {
         this.typeId = object.figure_type_id;
         this.uid = object.unique_id;

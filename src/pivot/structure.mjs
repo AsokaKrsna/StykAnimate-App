@@ -103,6 +103,45 @@ export function deleteObject(report, index, slot, geometry) {
   setOrder(frame, ids);
   return frame;
 }
+/** Joins address object slots, never UIDs or segment-array indices. */
+export function resolveJoinSelection(frame, uids, ancestors = false) {
+  const objects = frame.objects, requested = new Set(uids), selectedSlots = [], children = new Map();
+  objects.forEach((object, slot) => {
+    if (requested.has(object.unique_id)) selectedSlots.push(slot);
+    if (object.join) {
+      const parent = object.join.target_object_slot, list = children.get(parent);
+      if (list) list.push(slot); else children.set(parent, [slot]);
+    }
+  });
+  const rootSlots = new Set(), resolved = new Map();
+  for (const selected of selectedSlots) {
+    let slot = selected;
+    if (ancestors) {
+      const path = [], visiting = new Set();
+      while (!resolved.has(slot) && objects[slot]?.join) {
+        if (visiting.has(slot)) throw new Error('Figures contain a cyclic join.');
+        visiting.add(slot); path.push(slot); slot = objects[slot].join.target_object_slot;
+        if (!objects[slot]) throw new Error('Join target is missing.');
+      }
+      slot = resolved.get(slot) ?? slot;
+      for (const visited of path) resolved.set(visited, slot);
+    }
+    rootSlots.add(slot);
+  }
+  const affected = new Set(rootSlots), queue = [...rootSlots];
+  for (let q = 0; q < queue.length; q++) for (const slot of children.get(queue[q]) ?? [])
+    if (!affected.has(slot)) { affected.add(slot); queue.push(slot); }
+  // Stable slot order makes motionless drags compare equal even when selection
+  // order differs from native object order.
+  const affectedSlots = [], orderedRoots = [];
+  objects.forEach((object, slot) => {
+    if (affected.has(slot)) affectedSlots.push(slot);
+    if (rootSlots.has(slot)) orderedRoots.push(slot);
+  });
+  return {rootSlots: orderedRoots, affectedSlots,
+    rootUids: orderedRoots.map(slot => objects[slot].unique_id),
+    affectedUids: affectedSlots.map(slot => objects[slot].unique_id)};
+}
 export function moveLayer(frame, slot, direction) {
   const out = structuredClone(frame),
     ids = frameOrder(out),

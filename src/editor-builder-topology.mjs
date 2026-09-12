@@ -165,4 +165,31 @@ export const editorBuilderTopologyMethods = {
     });
   },
   mirrorSegmentBranch(axis = 'horizontal') {return this.mirrorSegment(axis, {branch: true});},
+  /** Moves a segment inside the hierarchy: reparents it and/or repositions it
+   * among the new parent's children. `beforeId` names the sibling to insert
+   * ahead of; without it the segment becomes the last child of its subtree.
+   * Object pose arrays are index-keyed, so a reorder repacks every source
+   * frame through the ordinary topology command path. */
+  moveBuilderSegment(segmentId, {parentId, beforeId = null} = {}) {
+    const figure = this.figure, index = figure?.segments.findIndex(segment => segment.segment_id === segmentId) ?? -1;
+    if (index < 0) return false;
+    const segment = figure.segments[index], nextParent = parentId === undefined ? segment.parent_id : parentId;
+    if (nextParent !== 0) {
+      if (!figure.segments.some(candidate => candidate.segment_id === nextParent)) throw new Error('Choose a valid parent joint.');
+      for (let ancestor = nextParent; ancestor; ancestor = figure.segments.find(candidate => candidate.segment_id === ancestor)?.parent_id ?? 0)
+        if (ancestor === segmentId) throw new Error('A joint cannot move inside its own branch.');
+    }
+    return this._topologyEdit('Move segment', next => {
+      const [moved] = next.segments.splice(next.segments.findIndex(candidate => candidate.segment_id === segmentId), 1);
+      moved.parent_id = nextParent;
+      let at = beforeId === null || beforeId === undefined ? -1 : next.segments.findIndex(candidate => candidate.segment_id === beforeId);
+      if (at < 0) {
+        const subtree = new Set([nextParent]);
+        for (const candidate of next.segments) if (subtree.has(candidate.parent_id)) subtree.add(candidate.segment_id);
+        at = next.segments.length;
+        for (let i = next.segments.length - 1; i >= 0; i--) if (subtree.has(next.segments[i].segment_id)) {at = i + 1; break;}
+      }
+      next.segments.splice(at, 0, moved);
+    });
+  },
 };

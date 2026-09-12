@@ -47,12 +47,13 @@ let telemetryClosed = false;
 let updates;
 let startupShown = false;
 let traceRunning = false;
+let pageLoaded = false;
 let pendingProtocol = process.argv.find(value => /^stykanimate:\/\//i.test(value));
 function handleProtocol(value) {
   try {
     const url = new URL(value);
     if (url.protocol !== 'stykanimate:' || url.username || url.password || url.search || url.hash || url.port || !['', '/'].includes(url.pathname) || !['open', 'privacy'].includes(url.hostname)) return false;
-    if (!window || window.webContents.isLoading()) { pendingProtocol = value; return true; }
+    if (!window || !pageLoaded) { pendingProtocol = value; return true; }
     if (window.isMinimized()) window.restore(); window.show(); window.focus();
     if (url.hostname === 'privacy') sendAction('privacy');
     return true;
@@ -186,9 +187,19 @@ async function rememberRecent(file) {
 }
 
 async function queueOpenFile(file) {
-  if (!window || !backend || window.webContents.isLoading()) { pendingFiles.push(file); return; }
+  if (!window || !backend || !pageLoaded) { pendingFiles.push(file); return; }
   try { window.webContents.send('styk:file-opened', await readImportFile(file)); }
   catch (error) { dialog.showErrorBox('Unable to open file', error.message); }
+}
+
+// loadURL resolves around did-finish-load while webContents.isLoading() may
+// still report true, so opens queued here must be flushed by the load events
+// rather than a one-shot drain. did-finish-load also guarantees the renderer's
+// module scripts ran, so its onOpenFile/menu-action listeners are registered.
+async function flushPendingOpens() {
+  if (pendingProtocol) { const value = pendingProtocol; pendingProtocol = null; handleProtocol(value); }
+  const files = pendingFiles.splice(0);
+  for (const file of files) await queueOpenFile(file);
 }
 
 function registerIpc() {
@@ -546,11 +557,11 @@ async function createWindow() {
   });
   window.on('closed', () => { window = null; });
   window.once('ready-to-show', () => window.show());
+  window.webContents.on('did-start-loading', () => { pageLoaded = false; });
+  window.webContents.on('did-finish-load', () => { pageLoaded = true; void flushPendingOpens(); });
   await window.loadURL(backend.origin);
-  if (pendingProtocol) { const value = pendingProtocol; pendingProtocol = null; handleProtocol(value); }
   if (process.env.STYK_DEVTOOLS === '1') window.webContents.openDevTools({ mode: 'detach' });
-  const files = pendingFiles.splice(0);
-  for (const file of files) await queueOpenFile(file);
+  await flushPendingOpens();
 }
 
 async function start() {

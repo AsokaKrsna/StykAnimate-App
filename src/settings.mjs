@@ -14,12 +14,17 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   showHandles: true,
   showCamera: false,
   showUnselectedHandles: true,
+  motionPaths: false,
+  motionPathRange: 0,
+  motionPathLabels: true,
+  motionPathAllTargets: false,
   autoSizeHandles: true,
   outlineHandles: true,
   builderShowStaticHandles: true,
   builderHighlightSegment: false,
   builderCanvasColor: '#ffffff',
   useBuilderCanvasColor: false,
+  builderOutlinerWidth: 236,
   handleSize: 5,
   onionCount: 0,
   onionAhead: true,
@@ -50,6 +55,9 @@ export function normalizeEditorSettings(value = {}) {
     "showHandles",
     "showCamera",
     "showUnselectedHandles",
+    "motionPaths",
+    "motionPathLabels",
+    "motionPathAllTargets",
     "autoSizeHandles",
     "outlineHandles",
     "builderShowStaticHandles",
@@ -74,10 +82,13 @@ export function normalizeEditorSettings(value = {}) {
     ["onionAfter", 0, 10],
     ["onionStep", 1, 20],
     ["autosaveSeconds", 0, 300],
+    ["builderOutlinerWidth", 160, 520],
+    ["motionPathRange", 0, 4000],
   ])
     if (Number.isFinite(value?.[key]))
       result[key] = Math.max(min, Math.min(max, value[key]));
   result.onionCount = Math.round(result.onionCount);
+  result.motionPathRange = Math.round(result.motionPathRange);
   for (const key of ['onionBefore','onionAfter','onionStep']) result[key] = Math.round(result[key]);
   for (const key of ['onionBeforeColor','onionAfterColor'])
     if (typeof value?.[key] === 'string' && /^#[0-9a-f]{6}$/i.test(value[key])) result[key] = value[key].toLowerCase();
@@ -306,7 +317,7 @@ export class EditorSettings {
           "",
         )}</section>${this.onResetWorkspace ? `<section class="styk-settings-group"><h3>${escape(this.t('settings.workspace'))}</h3><button type="button" class="styk-settings-reset" data-settings-reset>${escape(this.t('settings.resetPanels'))}</button></section>` : ""}`;
     if (this.tab === "canvas")
-      html = `<section class="styk-settings-group"><h3>Joint handles</h3>${this.checkbox("Show handles", "showHandles")}${this.checkbox("Show virtual camera", "showCamera")}${this.checkbox("Show unselected figures", "showUnselectedHandles")}${this.checkbox("Size handles automatically", "autoSizeHandles")}${this.checkbox("Outline handles", "outlineHandles")}<label class="styk-settings-row"><span>Handle radius</span><span class="styk-settings-number"><input type="range" data-setting="handleSize" min="3" max="10" step="1" value="${value.handleSize}" aria-label="Handle radius"><small data-handle-value>${value.handleSize}px</small></span></label><div class="styk-settings-preview" style="--size:${value.handleSize};--node-outline:${value.outlineHandles ? "1px solid #000" : "0px solid transparent"}">${["segment", "origin", "unselected", "joined", "static"].map((kind) => `<span class="styk-settings-node" title="${kind === "segment" ? "Selected joint" : kind === "origin" ? "Figure origin" : kind === "unselected" ? "Unselected joint" : kind === "joined" ? "Joined joint" : "Static joint"}" style="--node-color:${PIVOT_HANDLE_COLORS[kind]}"></span>`).join("")}</div></section>`;
+      html = `<section class="styk-settings-group"><h3>Joint handles</h3>${this.checkbox("Show handles", "showHandles")}${this.checkbox("Show virtual camera", "showCamera")}${this.checkbox("Show unselected figures", "showUnselectedHandles")}${this.checkbox("Motion paths", "motionPaths")}${this.checkbox("Size handles automatically", "autoSizeHandles")}${this.checkbox("Outline handles", "outlineHandles")}<label class="styk-settings-row"><span>Handle radius</span><span class="styk-settings-number"><input type="range" data-setting="handleSize" min="3" max="10" step="1" value="${value.handleSize}" aria-label="Handle radius"><small data-handle-value>${value.handleSize}px</small></span></label><div class="styk-settings-preview" style="--size:${value.handleSize};--node-outline:${value.outlineHandles ? "1px solid #000" : "0px solid transparent"}">${["segment", "origin", "unselected", "joined", "static"].map((kind) => `<span class="styk-settings-node" title="${kind === "segment" ? "Selected joint" : kind === "origin" ? "Figure origin" : kind === "unselected" ? "Unselected joint" : kind === "joined" ? "Joined joint" : "Static joint"}" style="--node-color:${PIVOT_HANDLE_COLORS[kind]}"></span>`).join("")}</div></section>`;
     if (this.tab === 'canvas')
       html += `<section class="styk-settings-group"><h3>Figure builder</h3>${this.checkbox('Show static handles','builderShowStaticHandles')}${this.checkbox('Highlight selected segment','builderHighlightSegment')}${this.checkbox('Use construction background','useBuilderCanvasColor')}<label class="styk-settings-row"><span>Construction color</span><input type="color" data-setting="builderCanvasColor" value="${value.builderCanvasColor}" aria-label="Construction background color"></label><p class="styk-settings-note">Construction aids appear while building. They do not change saved scene colors or exported frames.</p></section>`;
     if (this.tab === "animation")

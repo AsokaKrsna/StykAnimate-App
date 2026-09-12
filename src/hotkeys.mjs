@@ -25,7 +25,6 @@ group('Tools', [
   ['tool-hand', 'Pan tool', ['KeyH']], ['tool-rig', 'Edit shared rig'], ['tool-polygon', 'Polygon tool'],
   ['add-text', 'Create text', ['KeyT']],
   ['handle-edit-hold', 'Hold to edit handles', ['KeyR'], {hold: true}],
-  ['tool-handle-edit', 'Toggle handle editing', ['Mod+KeyR']],
   ['isolate-hold', 'Hold to isolate joint', ['CapsLock'], {hold: true, extraShift: true}],
   ['toggle-isolate', 'Toggle joint isolation'],
 ]);
@@ -53,6 +52,7 @@ group('View & camera', [
   ['zoom-in', 'Zoom in', ['Equal', 'Shift+Equal']], ['zoom-out', 'Zoom out', ['Minus']],
   ['zoom-reset', 'Fit canvas', ['Shift+Digit1']], ['zoom-selection', 'Fit selection', ['Shift+Digit2']],
   ['toggle-handles', 'Show / hide joints', ['KeyJ']],
+  ['toggle-motion-paths', 'Show / hide motion paths', ['KeyM']],
   ['toggle-unselected-handles', 'Show / hide unselected handles', ['Mod+KeyH']],
   ['toggle-camera', 'Show / hide camera', ['Mod+KeyK']], ['camera-reset', 'Reset camera', ['Mod+Alt+KeyK']],
   ['camera-center', 'Center camera', ['F8']], ['camera-align-view', 'Align camera to view', ['F10']],

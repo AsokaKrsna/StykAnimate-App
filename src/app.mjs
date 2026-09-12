@@ -60,6 +60,7 @@ import {
 } from "./export-sampling.mjs";
 import { initWorkspaceLayout } from "./studio-layout.mjs";
 import { initStudioShell, mountExportFlow } from "./studio-shell.mjs";
+import { initBuilderMode } from "./builder-mode.mjs";
 import { inspectorView } from "./inspector-view.mjs";
 import { updateInspectorDOM } from "./inspector-dom.mjs";
 import {syncCameraControls, drawCameraMonitor} from './camera-monitor.mjs';
@@ -108,6 +109,8 @@ import {
   imageFileToBackground,
 } from "./media-authoring.mjs";
 import { icon, hydrateIcons } from "./icons.mjs";
+import { MotionPathCache, motionPathTargets, motionPathTargetKey, pickMotionPathPoint, drawMotionPath } from "./motion-path.mjs";
+import { MotionPathControls } from "./motion-path-controls.mjs";
 import { buildGeometry, evaluatedFrame, shortest } from "./pivot/geometry.mjs";
 import {
   cameraIsIdentity,
@@ -135,6 +138,7 @@ const editor = new Editor({ demo: false, propertyChannels: true, layerTimeline: 
   clipboardWorker = new ClipboardWorkerClient(),
   preparedScenes = new WeakMap(),
   exportJobs = new Set();
+let documentActivation = Promise.resolve();
 editor.setFrameClipboardWorker(clipboardWorker);
 function interruptRecovery() {
   for (const job of exportJobs) if (job.recovery) job.controller.abort();
@@ -230,6 +234,8 @@ const state = {
   scrubbing: false,
   cameraGuides: true,
   vfxEnabled: true,
+  motionPaths: false,
+  hoverPathPoint: null,
 };
 let canvas = $("scene"), rendererRecovery, gpuRecoveryAttempted = false;
 const viewport = $("viewport"),
@@ -249,6 +255,7 @@ const viewport = $("viewport"),
 hydrateIcons();
 let timelineUI,
   studioShell,
+  builderMode,
   propertyControls,
   vfxInspector,
   vfxGizmos,
@@ -494,12 +501,13 @@ const showStaticHandles = () =>
     tool: state.tool,
     handleEditHeld: state.handleEditHeld,
     connecting: Boolean(state.spritePlacement || state.duplicatePlacement),
+    builderActive: Boolean(builderMode?.active),
   });
 const usesBuilderBranch = (event) =>
   Boolean(
     editor.branchSelected ||
     event?.shiftKey ||
-      (isBuilderContext(state.tool) &&
+      ((isBuilderContext(state.tool) || builderMode?.active) &&
         (state.builderBranch || state.builderShiftHeld)),
   );
 function updateBuilderStyle(patch, event) {
@@ -513,8 +521,11 @@ const selection = () =>
 const isSelected = (uid) => selection().has(uid);
 const isHidden = (uid) =>
   state.hidden.has(uid) || !layerVisible(editor.report, uid);
+// During a builder session only bound-figure instances are selectable or
+// editable; every other object behaves as locked for picking and commands.
 const isLocked = (uid) =>
-  state.locked.has(uid) || layerLocked(editor.report, uid);
+  state.locked.has(uid) || layerLocked(editor.report, uid) ||
+  Boolean(builderMode?.boundUids && !builderMode.boundUids.has(uid));
 const renderHidden = { has: isHidden };
 // A membership view avoids evaluating or scanning a worker-prepared scene.
 function effectiveHidden() {
@@ -526,6 +537,11 @@ function selectTrack(track) {
     state.selectedTrackId = track.id;
     state.inspectorContext = 'figure'; state.inspectorTab = 'animation';
     queueUI(); return;
+  }
+  const trackUid = track.target?.uid ?? track.uid;
+  if (builderMode?.active && trackUid !== undefined && !builderMode.boundUids.has(trackUid)) {
+    toast('Finish the figure or return to Animate to select other figures.');
+    return;
   }
   const target = track.target || track;
   if (target.kind === "segment") {
@@ -812,7 +828,8 @@ function currentFrame() {
   // Playback already evaluated this exact tick in the worker. Overlays need
   // its camera/scene metadata, not another evaluation of all figures on input.
   const packet = state.playing && state.playbackPacket;
-  const frame = packet?.tick === editor.tick ? packet.frame : editor.evaluatedFrame || editor.frame;
+  const motionPath = editor._drag?.motionPath;
+  const frame = motionPath?.display?.frame ?? (packet?.tick === editor.tick ? packet.frame : editor.evaluatedFrame || editor.frame);
   return editor.report._styk?.layers?.fixed?.camera?.visible === false
     ? { ...frame, camera: null }
     : frame;
@@ -862,6 +879,33 @@ function worldPoint(event) {
 }
 function cameraSelected() {
   return state.inspectorContext === 'camera' && state.selectedTrackId === 'camera';
+}
+const pathCache = new MotionPathCache();
+const PATH_COLORS = ['#0d99ff', '#e8590c', '#12b886', '#7048e8', '#e64980', '#f08c00', '#0ca678', '#1098ad'];
+/** Every active trail: the camera, each selected figure, or every figure when
+ * "all targets" is on. The primary selection keeps the first (accent) colour. */
+function activeMotionPaths() {
+  if (!state.motionPaths || state.playing || state.previewing || state.editablePreparing || builderMode?.active) return [];
+  if (!["select", "pose"].includes(state.tool)) return [];
+  const camera = cameraSelected() && state.settings.showCamera;
+  const range = Math.round(state.settings.motionPathRange) || 0;
+  const session = editor._drag?.motionPath ? editor._drag : null;
+  const out = [];
+  if (camera) {
+    const track = editor.report._styk?.layers?.fixed?.camera;
+    if (track?.visible !== false && !track?.locked) {
+      const entry = pathCache.get(editor, {kind: 'camera'}, {session, range});
+      if (entry) out.push({target: {kind: 'camera'}, entry, color: '#e8a13c'});
+    }
+    return out;
+  }
+  const targets = motionPathTargets(editor, {all: Boolean(state.settings.motionPathAllTargets)});
+  for (const target of targets) {
+    if (isHidden(target.uid) || isLocked(target.uid)) continue;
+    const entry = pathCache.get(editor, target, {session, range});
+    if (entry) out.push({target, entry, color: PATH_COLORS[out.length % PATH_COLORS.length]});
+  }
+  return out;
 }
 function activeCameraHandle(point) {
   const track = editor.report._styk?.layers?.fixed?.camera;
@@ -993,16 +1037,18 @@ function canvasHandles(geometry) {
     settings.outlineHandles,
     state.view.scale,
     frame.camera?.scale,
+    builderMode?.session?.typeId ?? "none",
     ...selection(),
     ...state.hidden,
     ...state.locked,
   ].join("|");
   if (handleCache?.geometry === geometry && handleCache.key === key)
     return handleCache.handles;
+  const bound = builderMode?.boundUids;
   const hidden = effectiveHidden(frame),
     locked = new Set(state.locked);
   for (const object of frame.objects)
-    if (layerLocked(editor.report, object.unique_id))
+    if (layerLocked(editor.report, object.unique_id) || (bound && !bound.has(object.unique_id)))
       locked.add(object.unique_id);
   const handles = getPivotHandles(geometry, {
     descriptorCache: handleDescriptors,
@@ -1019,7 +1065,6 @@ function canvasHandles(geometry) {
     attaching: state.tool === "attach",
     allowStaticManipulation:
       state.tool === "rig" ||
-      state.tool === "handle-edit" ||
       state.handleEditHeld,
     viewScale: state.view.scale,
     autoSize: settings.autoSizeHandles,
@@ -1043,7 +1088,7 @@ function paintHandle(context, handle, delta) {
 }
 function gpuHandlesEnabled() {
   return Boolean(state.renderer?.handleRenderer) && !state.playing && !state.previewing &&
-    !(!editor.branchSelected && isBuilderContext(state.tool) && state.settings.builderHighlightSegment);
+    !(!editor.branchSelected && (isBuilderContext(state.tool) || builderMode?.active) && state.settings.builderHighlightSegment);
 }
 function drawCanvasHandles(geometry) {
   const handles = canvasHandles(geometry),
@@ -1084,6 +1129,7 @@ function drawCanvasHandles(geometry) {
 }
 const onionCache = new OnionSkinCache();
 let onionControls;
+let pathControls;
 function onionSkins() {
   if (!state.onion || state.playing || state.previewing) return [];
   return onionCache.get(editor, state.settings, {selected: selection(), hidden: effectiveHidden(), visibilityKey:[...state.hidden]});
@@ -1094,7 +1140,7 @@ function overlayRender(geometry) {
   ctx.clearRect(0, 0, overlay.width / d, overlay.height / d);
   if (state.playing || state.previewing) return;
   if (
-    !editor.branchSelected && isBuilderContext(state.tool) && state.settings.builderHighlightSegment &&
+    !editor.branchSelected && (isBuilderContext(state.tool) || builderMode?.active) && state.settings.builderHighlightSegment &&
     !isHidden(editor.selectedUid)
   )
     drawBuilderHighlight(ctx, geometry, {
@@ -1107,6 +1153,19 @@ function overlayRender(geometry) {
       dragTranslations: state.drag?.translations,
       cameraEnabled: false,
     });
+  const motionPaths = activeMotionPaths();
+  const dragPath = state.drag?.kind === "motion-path" ? state.drag : null;
+  for (const motionPath of motionPaths) {
+    const key = motionPathTargetKey(motionPath.target);
+    drawMotionPath(ctx, motionPath.entry, screenPoint, {
+      tick: editor.tick,
+      hover: state.hoverPathPoint?.key === key ? state.hoverPathPoint : null,
+      dragging: dragPath?.key === key ? {tick: dragPath.tick} : null,
+      color: motionPath.color,
+      labels: Boolean(state.settings.motionPathLabels),
+      faint: motionPaths.length > 1 && state.hoverPathPoint && state.hoverPathPoint.key !== key,
+    });
+  }
   if (state.handles && !gpuHandlesEnabled()) drawCanvasHandles(geometry);
   if (
     cameraSelected() &&
@@ -1315,6 +1374,7 @@ function loop(now) {
     } else if (!state.playing || !state.buffering) {
       const frame = currentFrame(),
         geometry =
+          editor._drag?.motionPath?.display?.geometry ||
           state.drag?.geometry ||
           keyboardHandleGesture?.geometry ||
           editor.geometry;
@@ -1596,6 +1656,7 @@ function renderInspector() {
     tool: editor.branchSelected ? "rig" : state.tool,
     rigMode: state.rigMode,
     builderBranch: usesBuilderBranch(),
+    builder: Boolean(builderMode?.active),
     selectionCount: editor.branchSelected ? 1 : selection().size,
     bounds: selection().size > 1 ? selectionBounds() : null,
     rangeIndices: editor.frameDraft?.mode === "add" ? [] : state.rangeIndices,
@@ -1631,10 +1692,13 @@ function renderInspector() {
 }
 
 function setTool(tool) {
-  if (tool !== state.tool && ['rig', 'line', 'circle', 'polygon', 'handle-edit'].includes(tool)) telemetry.count('builder');
-  if (isMovieclip(editor.figure) && ['rig','line','circle','polygon','handle-edit'].includes(tool)) {
+  if (tool !== state.tool && ['rig', 'line', 'circle', 'polygon'].includes(tool)) telemetry.count('builder');
+  if (!builderMode?.active && isMovieclip(editor.figure) && ['rig','line','circle','polygon'].includes(tool)) {
     editor.enterMovieclip();
   }
+  // Choosing a construction tool outside the builder opens a bounded session —
+  // on the selected figure when one is bound, or a new figure otherwise.
+  if (!builderMode?.active && ['rig', 'line', 'circle', 'polygon'].includes(tool)) builderMode?.enter();
   if (tool === "polygon" && state.tool === "polygon" && state.polygon) {
     finishPolygon();
     return;
@@ -1655,7 +1719,6 @@ function setTool(tool) {
     ["line", "circle", "polygon"].includes(tool),
   );
   $("viewport-hint").textContent = {
-    "handle-edit": "Move a handle · Hold R for temporary handle editing",
     select: "Drag to select · Shift-click to add · Drag a joint to pose",
     pose: "Rotate a joint · Ctrl-drag to stretch",
     rig: "Edit figure joints · Changes update every instance",
@@ -1896,6 +1959,37 @@ overlay.addEventListener(
       if (e.button === 2) state.suppressContext = true;
       return;
     }
+    if (
+      e.button === 0 &&
+      state.motionPaths &&
+      ["select", "pose"].includes(state.tool) &&
+      !builderMode?.active
+    ) {
+      const motionPaths = activeMotionPaths();
+      const screen = screenPoint(p);
+      let pathHit = null, hitTarget = null;
+      for (const motionPath of motionPaths) {
+        const hit = pickMotionPathPoint(
+          motionPath.entry,
+          screen,
+          { project: screenPoint, radius: 9 },
+        );
+        if (hit && (!pathHit || hit.distance < pathHit.distance)) { pathHit = hit; hitTarget = motionPath.target; }
+      }
+      if (pathHit && editor.beginMotionPathEdit(hitTarget, pathHit.tick)) {
+        state.drag = {
+          kind: "motion-path",
+          key: motionPathTargetKey(hitTarget),
+          tick: pathHit.tick,
+          start: p,
+          point: p,
+          moved: false,
+        };
+        viewport.classList.add("dragging");
+        requestRender();
+        return;
+      }
+    }
     if (state.tool === "attach") {
       const target = closestHandle(p, editor.selectedUid);
       if (!target) {
@@ -1938,7 +2032,9 @@ overlay.addEventListener(
         }
         if (parent) editor.select(hit.g.obj.unique_id, joint);
       }
-      if (!parent) editor.select(null);
+      // In the builder the bound figure stays selected: a stroke off-joint
+      // attaches to the selected joint or the root instead of a new figure.
+      if (!parent && !builderMode?.active) editor.select(null);
       state.drag = {
         kind: "draw",
         start: parent ? { ...parent } : p,
@@ -1974,13 +2070,12 @@ overlay.addEventListener(
       hit.g.segments[hit.joint].static &&
       !hit.g.obj._stykIK?.[hit.g.segments[hit.joint].seg.segment_id]?.enabled &&
       state.tool !== "rig" &&
-      state.tool !== "handle-edit" &&
       !state.handleEditHeld
     ) {
       toast("This joint follows its parent. Rotate a movable parent joint.");
       return;
     }
-    const handleEdit = state.tool === "handle-edit" || state.handleEditHeld;
+    const handleEdit = state.handleEditHeld;
     const figureTransform = e.altKey && hit.joint >= 0 && !handleEdit;
     if (e.button === 2) state.suppressContext = true;
     if (handleEdit) editor.beginHandleEditDrag({ bend: e.button === 2 });
@@ -2045,6 +2140,23 @@ overlay.addEventListener(
       state.hoverCameraHandle = activeCameraHandle(worldPoint(e));
       overlay.style.cursor = cameraHandleCursor(state.hoverCameraHandle, cameraViewport(editor.report,currentFrame(),state.view));
       if (previousCameraHandle?.index !== state.hoverCameraHandle?.index) requestRender();
+      const previousPathPoint = state.hoverPathPoint?.tick;
+      state.hoverPathPoint = null;
+      if (state.motionPaths && !state.hoverCameraHandle && ["select", "pose"].includes(state.tool) && !builderMode?.active) {
+        const motionPaths = activeMotionPaths();
+        const screen = screenPoint(worldPoint(e));
+        let pathHit = null, hitTarget = null;
+        for (const motionPath of motionPaths) {
+          const hit = pickMotionPathPoint(motionPath.entry, screen, { project: screenPoint, radius: 9 });
+          if (hit && (!pathHit || hit.distance < pathHit.distance)) { pathHit = hit; hitTarget = motionPath.target; }
+        }
+        if (pathHit) {
+          state.hoverPathPoint = { key: motionPathTargetKey(hitTarget), tick: pathHit.tick };
+          overlay.style.cursor = "grab";
+          if (previousPathPoint !== pathHit.tick) requestRender();
+        }
+        if (!state.hoverPathPoint && previousPathPoint !== undefined) requestRender();
+      }
       const geometry = editor.geometry;
       const handle =
         state.handles && !state.hoverCameraHandle
@@ -2089,6 +2201,18 @@ overlay.addEventListener(
     }
     if (drag.kind === "draw" || drag.kind === "marquee") {
       drag.current = p;
+      requestRender();
+      return;
+    }
+    if (drag.kind === "motion-path") {
+      if (p.x !== drag.point?.x || p.y !== drag.point?.y) {
+        drag.point = p;
+        drag.moved = true;
+        editor.updateMotionPathEdit(p, {
+          stretch: e.ctrlKey || e.metaKey,
+          isolate: Boolean(state.isolateHeld || state.isolateMode),
+        });
+      }
       requestRender();
       return;
     }
@@ -2188,6 +2312,9 @@ function endDrag() {
           uids.add(g.obj.unique_id);
       }
     editor.selectMarquee([...uids], { mode: drag.mode, initial: drag.initial });
+  } else if (drag.kind === "motion-path") {
+    if (drag.moved) editor.commitMotionPathEdit();
+    else editor.cancelMotionPathEdit();
   } else if (drag.kind === "camera") editor.commitCameraDrag();
   else if (drag.kind !== "pan") {
     if (drag.kind === "move" && drag.moved) {
@@ -2207,6 +2334,7 @@ function cancelDrag() {
   cancelPolygonDraft();
   if (!state.drag) return;
   if (state.drag.kind === "camera") editor.cancelCameraDrag();
+  if (state.drag.kind === "motion-path") editor.cancelMotionPathEdit();
   if (
     ["move", "pose", "rig", "bend", "handle-edit", "figure-transform"].includes(
       state.drag.kind,
@@ -2393,10 +2521,14 @@ async function acceptImport(
       images.clear();
       fit();
     }
-    if (desktop?.activateDocument)
+    if (desktop?.activateDocument) {
+      // A launch-time file open races init()'s document activation; the file's
+      // activation must be the one that binds the native save target.
+      await documentActivation;
       state.documentToken = (
         await desktop.activateDocument({ openToken })
       ).documentToken;
+    }
   }
   state.lastImportWarnings = [...(result.warnings || report._styk?.sticknodes?.warnings || []), ...(report.import_warnings || [])];
   if(state.lastImportWarnings.length)showDialog(report.import_warnings?.length ? 'Pivot import notes' : 'Stick Nodes import notes',`<p>The asset is ready to edit. These source features may look or behave differently:</p><ul>${state.lastImportWarnings.map(w=>`<li>${esc(w.message)}</li>`).join('')}</ul>`);
@@ -3078,7 +3210,7 @@ function showSegmentValues({ hover = false } = {}) {
     onError: fail,
   });
   segmentValuesDialog.open({
-    editMode: state.tool === "handle-edit" || state.handleEditHeld,
+    editMode: state.handleEditHeld,
     isolate: Boolean(state.isolateHeld || state.isolateMode),
   });
 }
@@ -3562,6 +3694,7 @@ const actions = {
   open: openFile,
   'new-window': () => desktop?.newWindow(),
   import: () => {
+    if (builderMode?.active) return toast("Finish the figure or return to Animate to import figures.");
     $("file-input").value = "";
     $("file-input").click();
   },
@@ -3678,10 +3811,9 @@ const actions = {
   "add-frame": () => {
     pause();finishCurrentEdit();
     if(editor.report._styk?.layerSheet) {
-      if(state.settings.timelineMode !== 'simple' && timelineUI.frameAddAtCell)
-        return timelineUI.addTrackKey();
-      const ids=state.settings.timelineMode==='simple'?['scene','camera',...editor.report._styk.layers.order]:timelineUI.ids;
-      const result=editor.sheetDuplicateFrameAfter(ids);
+      if(state.settings.timelineMode !== 'simple')
+        return timelineUI.addFrameCell();
+      const result=editor.sheetDuplicateFrameAfter(['scene','camera',...editor.report._styk.layers.order]);
       timelineUI.revealPlayhead();
       return result;
     }
@@ -3694,10 +3826,14 @@ const actions = {
   },
   "add-figure": () => {
     pause();
+    if (builderMode?.active) return toast("Finish the figure or return to Animate to add figures.");
     if (rangeFrames()) editor.addFigureInFrames(undefined, rangeFrames());
     else editor.addFigure();
   },
-  "add-text": () => showTextDialog(),
+  "add-text": () => {
+    if (builderMode?.active) return toast("Finish the figure or return to Animate to add text.");
+    showTextDialog();
+  },
   "edit-text": () => showTextDialog(true),
   "attach-figure": () => {
     if (editor.object) setTool("attach");
@@ -3866,6 +4002,7 @@ const actions = {
   paste: () => {
     if (document.activeElement?.closest("#timeline"))
       return timelineUI.pasteSelection();
+    if (builderMode?.active) return toast("Finish the figure or return to Animate to paste.");
     return sharedClipboard.paste('figures', () => {
       finishCurrentEdit();
       if (editor._selectionClipboard?.freshTypes?.size) return editor.pasteSelection();
@@ -3905,9 +4042,18 @@ const actions = {
   },
   "toggle-isolate": () => {
     state.isolateMode = !state.isolateMode;
-    const button = document.querySelector('[data-action="toggle-isolate"]');
-    button?.setAttribute("aria-pressed", String(state.isolateMode));
-    button?.classList.toggle("active", state.isolateMode);
+    document.querySelectorAll('[data-action="toggle-isolate"]').forEach((button) => {
+      button.setAttribute("aria-pressed", String(state.isolateMode));
+      button.classList.toggle("active", state.isolateMode);
+    });
+  },
+  "toggle-builder-branch": () => {
+    state.builderBranch = !state.builderBranch;
+    document.querySelectorAll('[data-action="toggle-builder-branch"]').forEach((button) => {
+      button.setAttribute("aria-pressed", String(state.builderBranch));
+      button.classList.toggle("active", state.builderBranch);
+    });
+    renderInspector();
   },
   "toggle-unselected-handles": () =>
     editorSettings.commit({
@@ -3916,6 +4062,13 @@ const actions = {
   "toggle-handles": () => {
     editorSettings.commit({ showHandles: !state.handles });
     $("handles-button").classList.toggle("active", state.handles);
+    requestRender();
+  },
+  "toggle-motion-paths": () => {
+    editorSettings.commit({ motionPaths: !state.motionPaths });
+    $("paths-button")?.classList.toggle("active", state.motionPaths);
+    if (!state.motionPaths) state.hoverPathPoint = null;
+    status(state.motionPaths ? "Motion paths on" : "Motion paths off");
     requestRender();
   },
   "toggle-loop": () => {
@@ -4066,12 +4219,16 @@ document.addEventListener(
     if (tool) setTool(tool.dataset.tool);
     const asset = e.target.closest("[data-figure]");
     if (asset) {
+      if (builderMode?.active) return toast("Finish the figure or return to Animate to insert figures.");
       if (rangeFrames())
         editor.addFigureInFrames(Number(asset.dataset.figure), rangeFrames());
       else editor.addFigure(Number(asset.dataset.figure));
     }
     const sample = e.target.closest("[data-sample]");
-    if (sample) openSample(sample.dataset.sample).catch(fail);
+    if (sample) {
+      if (builderMode?.active) return toast("Finish the figure or return to Animate to open samples.");
+      openSample(sample.dataset.sample).catch(fail);
+    }
     const joint = e.target.closest("[data-joint]");
     if (joint) editor.select(editor.selectedUid, Number(joint.dataset.joint));
     const polygon = e.target.closest("[data-delete-polygon]");
@@ -4466,7 +4623,7 @@ function keyboardHandle(event, key) {
   }
   const target = keyboardHandleGesture?.target ||
     state.hoverHandle || { uid: editor.selectedUid, joint: -1 };
-  const editMode = state.tool === "handle-edit" || state.handleEditHeld;
+  const editMode = state.handleEditHeld;
   if (
     target.uid == null ||
     isHidden(target.uid) ||
@@ -4534,7 +4691,7 @@ function locateHovered(direction) {
   editor.locateHandle(direction, {
     uid: target.uid,
     jointIndex: target.joint,
-    editMode: state.tool === "handle-edit" || state.handleEditHeld,
+    editMode: state.handleEditHeld,
   });
 }
 function hotkeyScopes(event) {
@@ -4544,7 +4701,7 @@ function hotkeyScopes(event) {
     if (state.hoverHandle || state.hoverCameraHandle) scopes.push('hover');
     scopes.push('canvas');
   }
-  if (isBuilderContext(state.tool)) scopes.push('builder');
+  if (isBuilderContext(state.tool) || builderMode?.active) scopes.push('builder');
   if (event.target.closest?.('.layer-timeline')) scopes.push('timeline');
   if (state.settings.timelineMode === 'simple') scopes.push('simple');
   return scopes;
@@ -4578,8 +4735,7 @@ function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
     finishKeyboardHandle(); return cycleFigure(id === 'previous-figure' ? -1 : 1);
   }
   if (id.startsWith('tool-')) {
-    const tool = id.slice(5);
-    return setTool(tool === 'handle-edit' && state.tool === tool ? 'select' : tool);
+    return setTool(id.slice(5));
   }
   if (id === 'segment-values') return showSegmentValues({hover: true});
   if (id === 'previous-exposure' || id === 'next-exposure')
@@ -5199,8 +5355,11 @@ function mountTimeline() {
   refreshHotkeyHints(hotkeys);
 }
 async function init() {
-  if (desktop?.activateDocument)
-    state.documentToken = (await desktop.activateDocument({})).documentToken;
+  if (desktop?.activateDocument) {
+    const activation = desktop.activateDocument({});
+    documentActivation = activation.catch(() => {});
+    state.documentToken = (await activation).documentToken;
+  }
   const settingsValue = window.stykInitialEditorSettings
     ? await window.stykInitialEditorSettings
     : desktop?.getEditorSettings
@@ -5218,8 +5377,13 @@ async function init() {
       catch (error) { state.settings = previousSettings; throw error; }
       if (patch.hotkeys) { hotkeys.setBindings(next.hotkeys); refreshHotkeyHints(hotkeys); }
       onionControls?.sync();
+      pathControls?.sync();
+      if (patch.motionPathRange !== undefined || patch.motionPathAllTargets !== undefined) pathCache.clear();
       state.handles = next.showHandles;
       state.loop = next.loopPlayback;
+      state.motionPaths = next.motionPaths;
+      $("paths-button")?.classList.toggle("active", state.motionPaths);
+      if (!state.motionPaths) state.hoverPathPoint = null;
       appLocalization.setLocale(next.locale);
       blueHandles = null;
       scheduleRecovery();
@@ -5242,10 +5406,14 @@ async function init() {
   window.styk.localization = appLocalization;
   state.handles = state.settings.showHandles;
   state.loop = state.settings.loopPlayback;
+  state.motionPaths = state.settings.motionPaths;
   window.styk.settingsUI = editorSettings;
   onionControls = new OnionControls({button: $("onion-settings-button"), toggleButton: $("onion-button"),
     getSettings: () => state.settings, getEnabled: () => state.onion,
     onChange: patch => editorSettings.commit(patch), onToggle: () => actions["toggle-onion"]()});
+  pathControls = new MotionPathControls({button: $("paths-button"),
+    getSettings: () => state.settings, getEnabled: () => state.motionPaths,
+    onChange: patch => editorSettings.commit(patch), onToggle: () => actions["toggle-motion-paths"]()});
   window.styk.onionCache = onionCache;
   const preferences = desktop?.getWorkspacePreferences
     ? await desktop.getWorkspacePreferences()
@@ -5378,6 +5546,7 @@ async function init() {
   assetLibrary = new AssetLibrary($("asset-list"), {
     onAdd: (id) => {
       pause();
+      if (builderMode?.active) return toast("Finish the figure or return to Animate to insert figures.");
       if (rangeFrames()) editor.addFigureInFrames(id, rangeFrames());
       else editor.addFigure(id);
       $("insert-dialog").close();
@@ -5388,11 +5557,13 @@ async function init() {
   });
   window.styk.assets = assetLibrary;
   window.styk.library = new UserLibrary({editor, desktop, exporter:documentExporter, importer, pause, finishEdit:finishCurrentEdit, setTool, vfxInspector, hotkeys});
-  installLibraryDrop(viewport, {position: worldPoint, insert: (asset, point) => window.styk.library.insert(asset, point), onError: fail});
+  const libraryInsert = (asset, point) =>
+    builderMode?.active ? toast("Finish the figure or return to Animate to insert figures.") : window.styk.library.insert(asset, point);
+  installLibraryDrop(viewport, {position: worldPoint, insert: libraryInsert, onError: fail});
   installLibraryDrag(window.styk.library.grid, viewport, {
     getAsset: card => !window.styk.library.busy && window.styk.library.entries.find(item => item.path === card.dataset.libraryPath),
     onStart: asset => window.styk.library.select(asset.path),
-    position: worldPoint, insert: (asset, point) => window.styk.library.insert(asset, point), onError: fail,
+    position: worldPoint, insert: libraryInsert, onError: fail,
   });
   $('library-tab')?.addEventListener('click', () => telemetry.count('library'));
   actions['add-to-library'] = () => { telemetry.count('library'); return window.styk.library.run(() => window.styk.library.save()); };
@@ -5404,8 +5575,20 @@ async function init() {
       mountTimeline(); state.inspectorContext=editor.object?'figure':'scene';state.inspectorTab='design';queueUI();
     }
   });
+  builderMode = initBuilderMode({
+    editor, state,
+    host: {
+      setTool, pause, finishCurrentEdit, cancelDrag, cancelPolygonDraft,
+      showDialog, closeDialog, toast, status, fail, queueUI, requestRender,
+      showCommandMenu,
+      commitSettings: patch => editorSettings.commit(patch),
+      onModeChange: () => studioShell?.sync(),
+    },
+  });
+  window.styk.builder = builderMode;
   studioShell = initStudioShell({editor, state, setTool, renderAssets, renderInspector, showCommandMenu,
-    actions, openTimelineSettings: () => editorSettings.open("interface"), getTimeline: () => timelineUI});
+    actions, openTimelineSettings: () => editorSettings.open("interface"), getTimeline: () => timelineUI,
+    builder: builderMode, toast});
   window.styk.studio = studioShell;
   if (desktop?.beginClipboardRead)
     nativeFrameClipboard = installNativeFrameClipboard(editor, desktop, {
@@ -5553,6 +5736,3 @@ installColorPickers((input, event) => {
   }};
 });
 
-for (const type of ['pointerdown', 'focusin']) viewport.addEventListener(type, () => {
-  if (timelineUI) timelineUI.frameAddAtCell = false;
-}, {capture: true});

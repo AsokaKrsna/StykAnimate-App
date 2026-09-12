@@ -110,6 +110,7 @@ export function inspectorView({
   context = "auto",
   propertyState,
   builderBranch = false,
+  builder = false,
 }) {
   if(editor.report._styk?.layerSheet){const original=propertyState;propertyState=key=>({...original?.(key),poseOnly:true});}
   const report = editor.report,
@@ -311,10 +312,11 @@ export function inspectorView({
     html += group("Appearance",
         grid(field("Width", "thickness", segment.thickness, "px", 'min="0"') +
         field('Order', 'segment_z_order', drawOrder.get(`segment:${joint}`), '', orderLimits, {animated:false})) +
-        (isBuilderContext(tool) ? `<label class="check-row"><input type="checkbox" id="builder-branch" ${builderBranch ? 'checked' : ''}>Apply to branch</label>` : '') +
+        (isBuilderContext(tool) || builder ? `<label class="check-row"><input type="checkbox" id="builder-branch" ${builderBranch ? 'checked' : ''}>Apply to branch</label>` : '') +
         `<select id="segment-shape" class="inline-select" aria-label="Segment shape" ${["image", "text"].includes(shape) ? "disabled" : ""}>${[["line", "Round line"], ["squareLine", "Square line"], ["circle", "White circle"], ["circleFill", "Filled circle"], ["circleClear", "Clear circle"], ...(["image", "text"].includes(shape) ? [[shape, shape]] : [])].map(([v, n]) => `<option value="${v}" ${shape === v ? "selected" : ""}>${n}</option>`).join("")}</select>` +
         `<div class="property-paint-row"><button type="button" id="segment-color" data-paint-picker class="paint-trigger" aria-label="Segment color"><i style="background:${paintCSS(segmentPaint(segment))}"></i><span>${segmentPaint(segment).type === 'solid' ? hex(segment.color_rgb).toUpperCase() : segmentPaint(segment).type[0].toUpperCase()+segmentPaint(segment).type.slice(1)+' gradient'}</span></button>` +
         `${keyControlGroup('segment_color','segment color',propertyState?.('segment_color'))}${field(segment.secondary ? "Primary opacity" : "Opacity", "segment_opacity", (1 - (segment.transparency || 0) / 255) * 100, "%", 'min="0" max="100"', { id: "segment-opacity", legacyField: false, description: "Primary color opacity" })}</div>` +
+        `<div class="compact-checks"><label class="check-row"><input type="checkbox" id="segment-gradient-enabled" ${segment.secondary ? "checked" : ""}>Secondary color</label><input type="color" id="segment-gradient-color" value="${hex(segment.secondary?.rgb ?? [255, 255, 255])}" aria-label="Secondary color" ${segment.secondary ? "" : "disabled"}></div>` +
         (segment.secondary ? grid(field("Secondary opacity", "segment_gradient_opacity", (1-(segment.secondary.a??0)/255)*100, "%", 'min="0" max="100"', {description:"Secondary gradient color opacity"})) : '') +
         `<label class="check-row"><input type="checkbox" id="static-joint" ${isStatic(segment) ? "checked" : ""}>Static</label>`,
     );

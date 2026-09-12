@@ -41,14 +41,14 @@ export class Timeline{
     this._button(footer,'more','Timeline options',event=>this._menu(event,{view:true}));
     this.live=element('div',this.root,'sheet-live');this.live.setAttribute('role','status');this.live.setAttribute('aria-live','polite');
     this._on(this.scroll,'scroll',()=>this.update());this._on(this.scroll,'pointerdown',event=>this._pointerDown(event));this._on(this.scroll,'pointermove',event=>this._pointerMove(event));this._on(this.scroll,'pointerup',event=>this._pointerUp(event));this._on(this.scroll,'pointercancel',()=>this._cancelGesture());this._on(this.scroll,'lostpointercapture',()=>this._cancelGesture());
-    this._on(this.scroll,'contextmenu',event=>{event.preventDefault();const hit=this._hit(event);if(hit.row<0||!this.tracks[hit.row])return this._menu(event,{view:true});this.frameAddAtCell=true;if(!this._contains(hit))this._selectCell(hit);this._menu(event);});
+    this._on(this.scroll,'contextmenu',event=>{event.preventDefault();const hit=this._hit(event);if(hit.row<0||!this.tracks[hit.row])return this._menu(event,{view:true});if(!this._contains(hit))this._selectCell(hit);this._menu(event);});
     this._on(this.scroll,'dblclick',event=>this._doubleClick(event));
     this._on(this.main,'pointerleave',()=>{if(!this.gesture){this.hover=null;this.update();}});
     this._on(this.scroll,'keydown',event=>this._keyDown(event));this._on(this.labelViewport,'wheel',event=>{event.preventDefault();this.scroll.scrollTop+=event.deltaY;},{passive:false});
     this._on(this.scroll,'wheel',event=>{if(event.ctrlKey||event.metaKey){event.preventDefault();this.setZoom(clamp(this.pxPerTick*(event.deltaY<0?1.15:.87),6,36));}else if(event.shiftKey){event.preventDefault();this.scroll.scrollLeft+=event.deltaY||event.deltaX;}},{passive:false});
     this._on(this.divider,'pointerdown',event=>{this._columnDrag={x:event.clientX,width:this.labelWidth};this.divider.setPointerCapture(event.pointerId);});
     this._on(this.divider,'pointermove',event=>{if(this._columnDrag){this.labelWidth=clamp(this._columnDrag.width+event.clientX-this._columnDrag.x,140,420);this.root.style.setProperty('--sheet-label',`${this.labelWidth}px`);this.resize();}});this._on(this.divider,'pointerup',()=>{this._columnDrag=null;});
-    this._on(editor,'change',event=>{const d=event.detail??{};if(d.kind==='document')this.frameAddAtCell=false;if(d.kind==='document'||d.structural||d.layers||d.timing||d.layerSheet)this._reindex();
+    this._on(editor,'change',event=>{const d=event.detail??{};if(d.kind==='document'||d.structural||d.layers||d.timing||d.layerSheet)this._reindex();
       if(d.kind==='selection'&&!d.sheetSelection&&editor.object){this.selectedTrackId=editor.layerForUid(editor.selectedUid);this.selectedLayers=new Set([this.selectedTrackId]);}
       if(d.kind==='seek'&&!this.gesture&&!this.selecting){this.start=this.end=Math.floor(editor.tick);}this.update(d.kind!=='seek'||!this.paused&&this.gesture?.kind!=='scrub');});
     this._on(window,'styk-theme-change',()=>this.resize());
@@ -115,7 +115,9 @@ export class Timeline{
       if(track)for(let i=Math.max(0,sheetKeyAt(track,first).index);i<track.keys.length;i++){
         const key=track.keys[i],next=track.keys[i+1],end=next?.tick??track.end;if(key.tick>last)break;if(end<=first)continue;
         const left=Math.max(-6,key.tick*step-sx+1),right=Math.min(w+6,end*step-sx-1),blank=key.empty??(key.value?.frameId===null),tween=next&&!blank&&!(next.empty??(next.value?.frameId===null))&&!['hold','constant'].includes(key.interpolation);
-        ctx.fillStyle=blank?c.surface:rowTint??(tween?c.tween:c.span);ctx.beginPath();ctx.roundRect(left,y+5,Math.max(0,right-left),ROW-10,4);ctx.fill();
+        ctx.beginPath();ctx.roundRect(left,y+5,Math.max(0,right-left),ROW-10,4);
+        if(blank){ctx.strokeStyle=c.muted;ctx.globalAlpha=.5;ctx.stroke();ctx.globalAlpha=1;}
+        else{ctx.fillStyle=rowTint??(tween?c.tween:c.span);ctx.fill();}
         if(tween&&right-left>32){ctx.strokeStyle=c.accent;ctx.globalAlpha=.55;ctx.beginPath();ctx.moveTo(left+13,y+ROW/2);ctx.lineTo(right-7,y+ROW/2);ctx.lineTo(right-11,y+ROW/2-3);ctx.moveTo(right-7,y+ROW/2);ctx.lineTo(right-11,y+ROW/2+3);ctx.stroke();ctx.globalAlpha=1;}
         if(!blank&&end-key.tick>1){ctx.fillStyle=c.muted;ctx.globalAlpha=.55;ctx.fillRect(end*step-sx-4,y+12,2,8);ctx.globalAlpha=1;}
       }
@@ -124,8 +126,10 @@ export class Timeline{
       ctx.lineWidth=1;ctx.strokeStyle=c.line;ctx.beginPath();
       for(let tick=first;tick<=last;tick++){const x=Math.round(tick*step-sx)+.5;ctx.moveTo(x,y);ctx.lineTo(x,y+ROW);}ctx.moveTo(0,y+ROW-.5);ctx.lineTo(w,y+ROW-.5);ctx.stroke();
       if(track)for(let i=Math.max(0,sheetKeyAt(track,first).index);i<track.keys.length;i++){
-        const key=track.keys[i];if(key.tick>last)break;if(key.tick<first||(key.empty??(key.value?.frameId===null)))continue;const x=(key.tick+.5)*step-sx;
-        ctx.beginPath();ctx.arc(x,y+ROW/2,Math.min(3.5,step/3),0,Math.PI*2);ctx.fillStyle=rowAccent??c.ink;ctx.fill();
+        const key=track.keys[i];if(key.tick>last)break;if(key.tick<first)continue;const x=(key.tick+.5)*step-sx;
+        ctx.beginPath();ctx.arc(x,y+ROW/2,Math.min(3.5,step/3),0,Math.PI*2);
+        if(key.empty??(key.value?.frameId===null)){ctx.fillStyle=c.surface;ctx.fill();ctx.strokeStyle=rowAccent??c.ink;ctx.stroke();}
+        else{ctx.fillStyle=rowAccent??c.ink;ctx.fill();}
       }
       if(selected){ctx.strokeStyle=rowAccent??c.accent;ctx.strokeRect(this.start*step-sx+.5,y+.5,(this.end-this.start+1)*step-1,ROW-1);}
       if(layer.locked){ctx.fillStyle=c.surface;ctx.globalAlpha=.45;ctx.fillRect(0,y,w,ROW);ctx.globalAlpha=1;}
@@ -185,7 +189,6 @@ export class Timeline{
   _hit(event){const rect=this.scroll.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top;return {tick:clamp(Math.floor((x+this._offsetX())/this.pxPerTick),0,9999999),row:y<HEADER?-1:Math.floor((y-HEADER+this._offsetY())/ROW),x,y};}
   _contains(hit){return hit.row>=0&&this.selectedLayers.has(this.tracks[hit.row]?.id)&&hit.tick>=this.start&&hit.tick<=this.end;}
   _selectCell(hit,{extend=false,notify=true}={}){
-    this.frameAddAtCell=true;
     const layer=this.tracks[hit.row];if(!layer)return;const changed=this.selectedTrackId!==layer.id,anchor=this.anchor??{tick:this.start,row:this.tracks.findIndex(l=>l.id===this.selectedTrackId)};
     if(extend){this.start=Math.min(anchor.tick,hit.tick);this.end=Math.max(anchor.tick,hit.tick);this.selectedLayers=new Set(this.tracks.slice(Math.min(anchor.row,hit.row),Math.max(anchor.row,hit.row)+1).map(l=>l.id));}
     else{this.start=this.end=hit.tick;this.selectedLayers=new Set([layer.id]);this.anchor={tick:hit.tick,row:hit.row};}
@@ -216,12 +219,11 @@ export class Timeline{
     if(event.clientX>=bounds.left+this.scroll.clientWidth||event.clientY>=bounds.top+this.scroll.clientHeight)return;
     if(event.button!==0)return;this.onSeek?.();const hit=this._hit(event);if(hit.row>=this.tracks.length)return;
     this.scroll.setPointerCapture(event.pointerId);this.scroll.focus({preventScroll:true});
-    if(hit.row<0){this.frameAddAtCell=false;this.gesture={kind:'scrub',pointer:event.pointerId};this.onScrubStart?.();this.pendingScrub=hit.tick;this.update(false);event.preventDefault();return;}
+    if(hit.row<0){this.gesture={kind:'scrub',pointer:event.pointerId};this.onScrubStart?.();this.pendingScrub=hit.tick;this.update(false);event.preventDefault();return;}
     const selected=this._contains(hit),span=selected?this._resizeHit(hit):null,layer=this.tracks[hit.row];
     if(span&&!event.shiftKey&&!event.altKey){this.gesture={kind:'resize',span,hit,pointer:event.pointerId,x:event.clientX,y:event.clientY,delta:0};event.preventDefault();return;}
     const move=!event.shiftKey&&!event.ctrlKey&&!event.metaKey&&!layer.locked&&selected;
     this.gesture={kind:move?'move':'select',pointer:event.pointerId,hit,x:event.clientX,y:event.clientY,delta:0,rowDelta:0,copy:event.altKey};
-    this.frameAddAtCell=true;
     if(!selected||event.shiftKey)this._selectCell(hit,{extend:event.shiftKey});event.preventDefault();
   }
   _pointerMove(event){
@@ -262,7 +264,11 @@ export class Timeline{
   seek(tick){if(!Number.isInteger(tick)||tick<0)throw new Error('Choose a valid frame.');this.onSeek?.();this.start=this.end=tick;this.editor.seek(tick,{allowBeyondEnd:true});this.update();}
   revealPlayhead(){const x=this.editor.tick*this.pxPerTick,left=this._offsetX();if(x<left)this._scrollToX(x);else if(x>left+this.width-30)this._scrollToX(x-this.width+60);}
   jumpKey(direction){const keys=this.editor.layerFrameKeys(this.selectedTrackId),tick=direction<0?[...keys].reverse().find(k=>k.tick<this.editor.tick)?.tick:keys.find(k=>k.tick>this.editor.tick)?.tick;if(tick!==undefined){this.seek(tick);this.revealPlayhead();}}
-  addFrame(){return this.onAddFrame?this.onAddFrame():this.frameAddAtCell?this.addTrackKey():this.duplicateFrameAfter();}
+  /** Add Frame inserts a key at the selected cell. When every selected layer
+   * already holds a key there, it instead duplicates the current pose into the
+   * following cell, shifting later keys. */
+  addFrame(){return this.onAddFrame?this.onAddFrame():this.addFrameCell();}
+  addFrameCell(){const onKey=this.ids.length>0&&this.ids.every(id=>this.editor.layerFrameKeys(id).some(key=>key.tick===this.start));return onKey?this.duplicateFrameAfter():this.addTrackKey();}
   addTrackKey(){return this._run(()=>this.editor.sheetInsertKey(this.ids,this.start));}
   duplicateFrameAfter(){return this._run(()=>{const result=this.editor.sheetDuplicateFrameAfter(this.ids);this.start=this.end=this.editor.tick;this.revealPlayhead();return result;});}
   insertFrames(){return this._run(()=>this.editor.sheetInsertFrames(this.ids,this.start,this.end-this.start+1));}

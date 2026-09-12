@@ -168,7 +168,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
       group.compatibilityIndex = compatibility.length;
       if (typeof OffscreenCanvas !== 'undefined') {
         if(descriptor.hasImages) {
-          await resources?.preload(items, {scale: resolution, maxDimension: maxTextureDimension});
+          await resources?.preload(items, {scale: resolution, maxDimension: maxTextureDimension, visible: visibleBounds});
           reducedImages ||= Boolean(resources?.pressureReduced);
         }
         if(!descriptor.bounds)descriptor.bounds=objectBounds(items,resources);

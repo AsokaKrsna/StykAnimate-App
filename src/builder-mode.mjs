@@ -10,23 +10,52 @@ const JOINT_COMMANDS = new Set(['split-segment', 'unsplit-segment', 'origin-segm
   'duplicate-branch', 'mirror-segment', 'mirror-segment-vertical', 'mirror-branch', 'mirror-branch-vertical',
   'segment-order-front', 'segment-order-up', 'segment-order-down', 'segment-order-back',
   'delete-single-segment', 'delete-segment', 'segment-values']);
-const FIGURE_COMMANDS = new Set(['add-sprite-segment', 'add-text']);
+const FIGURE_COMMANDS = new Set(['add-sprite-segment']);
 const TOGGLES = {'toggle-builder-branch': s => s.builderBranch || s.builderShiftHeld,
   'toggle-isolate': s => s.isolateMode,
   'builder-static-handles': s => s.settings.builderShowStaticHandles !== false,
   'builder-highlight': s => s.settings.builderHighlightSegment};
+const ENTRY_TOOLS = new Set(['rig', 'line', 'circle', 'polygon', 'attach']);
 
 export function initBuilderMode({editor, state, host}) {
   const workspace = document.querySelector('.workspace');
   const bar = document.getElementById('builder-bar');
   const outlinerHost = document.getElementById('builder-outliner');
+  if (!bar || !outlinerHost)
+    return {enter: () => false, requestExit: () => {}, leave: () => {}, sync: () => {},
+      get active() { return false; }, get session() { return null; }, get boundUids() { return null; },
+      get mode() { return 'animate'; }};
   let session = null, events = null;
+  /** Translates an outliner drop into a parent/sibling insert plan. 'before'
+   * and 'after' keep the target's parent; 'child' reparents onto the target
+   * (as first child so the drop point matches the row under the pointer). */
+  function dropPlan(draggedId, target, zone) {
+    const figure = session?.figure;
+    if (!figure) return null;
+    if (zone === 'child') {
+      const firstChild = figure.segments.find(segment =>
+        Number(segment.parent_id) === target.id && Number(segment.segment_id) !== draggedId);
+      return {parentId: target.id, beforeId: firstChild ? Number(firstChild.segment_id) : null};
+    }
+    const parentId = target.parent;
+    if (zone === 'before') return {parentId, beforeId: target.id};
+    const siblings = figure.segments.filter(segment =>
+      Number(segment.parent_id ?? 0) === parentId && Number(segment.segment_id) !== draggedId);
+    const at = siblings.findIndex(segment => Number(segment.segment_id) === target.id);
+    return {parentId, beforeId: at >= 0 && at + 1 < siblings.length ? Number(siblings[at + 1].segment_id) : null};
+  }
   const outliner = new FigureOutliner(outlinerHost, {
     editor,
+    settings: state.settings,
+    onMove: (draggedId, target, zone) => {
+      const plan = dropPlan(draggedId, target, zone);
+      if (!plan) return;
+      try { editor.moveBuilderSegment(draggedId, plan); } catch (error) { host.fail?.(error); }
+    },
+    onResize: width => host.commitSettings?.({builderOutlinerWidth: width}),
     onSelect: (entry, options = {}) => {
-      if (!session) return;
-      const uid = session.preferredUid;
-      if (uid === null || uid === undefined) return;
+      const uid = session?.preferredUid;
+      if (uid == null) return;
       if (options.polygon) {
         const ids = session.figure?.polyfills?.[entry.index]?.segment_ids ?? [];
         const joint = session.figure?.segments.findIndex(segment => segment.segment_id === ids[0]) ?? -1;
@@ -35,7 +64,7 @@ export function initBuilderMode({editor, state, host}) {
       }
       editor.select(uid, entry);
     },
-    onBranch: index => { if (session?.preferredUid !== null && session?.preferredUid !== undefined) editor.selectBranch(session.preferredUid, index); },
+    onBranch: index => { const uid = session?.preferredUid; if (uid != null) editor.selectBranch(uid, index); },
     onMenu: (entry, x, y) => {
       if (entry?.kind !== 'segment') return;
       host.showCommandMenu?.([
@@ -50,7 +79,7 @@ export function initBuilderMode({editor, state, host}) {
         null,
         ['delete-single-segment', 'close', 'Delete joint', ''],
         ['delete-segment', 'trash', 'Delete branch', 'Shift Del'],
-      ], {left: x, top: y});
+      ], {left: x, top: y, right: x, bottom: y, width: 0, height: 0});
     },
     onRename: name => { try { editor.updateFigureStyle({name}); } catch (error) { host.fail?.(error); } },
   });
@@ -74,8 +103,18 @@ export function initBuilderMode({editor, state, host}) {
     if (!session) return;
     session.sync();
     if (session.stale) { leave(); return; }
+    // Keep a bound instance on the current frame: the figure under
+    // construction is always editable, even on frames where it is absent.
+    if (session.typeId !== null && session.figure && !session.boundUids.size && !editor.dragging) {
+      try { editor.addFigure(session.typeId); } catch { /* stays unbound */ return; }
+      return;
+    }
     enforceSelection();
     outliner.update(session);
+    if (session.mode === 'create' && session.figure && state.inspectorContext === 'scene') {
+      state.inspectorContext = 'figure';
+      host.queueUI?.();
+    }
     sync();
   }
   /** Toolbar and outliner refresh: joint-gated commands, toggles, title. */
@@ -100,16 +139,13 @@ export function initBuilderMode({editor, state, host}) {
       });
     }
     const title = bar.querySelector('#builder-title');
-    const scope = bar.querySelector('#builder-scope');
     if (title) title.textContent = session.mode === 'edit' ? (figure?.name || 'Figure') : 'New figure';
-    if (scope) scope.textContent = session.mode === 'edit'
-      ? 'Shared definition — changes affect every instance'
-      : figure ? 'New figure — import or discard it when you leave' : 'Draw a line or circle to create a figure';
   }
   function enter() {
     if (session) return true;
     host.pause?.(); host.finishCurrentEdit?.(); host.cancelDrag?.(); host.cancelPolygonDraft?.();
-    document.getElementById('insert-dialog')?.close();
+    const insertDialog = document.getElementById('insert-dialog');
+    if (insertDialog?.open) insertDialog.close();
     session = new BuilderSession(editor).begin();
     session.entryTool = state.tool;
     events = new AbortController();
@@ -117,6 +153,7 @@ export function initBuilderMode({editor, state, host}) {
     workspace.dataset.mode = 'rig';
     bar.hidden = false;
     outlinerHost.hidden = false;
+    state.builderActive = true;
     state.inspectorContext = session.mode === 'edit' ? 'figure' : 'scene';
     state.inspectorTab = 'design';
     host.setTool(session.figure ? 'rig' : 'line');
@@ -132,10 +169,14 @@ export function initBuilderMode({editor, state, host}) {
     events?.abort(); events = null;
     const entryTool = session?.entryTool;
     session = null;
+    state.builderActive = false;
+    state.spritePlacement = null;
+    state.duplicatePlacement = null;
+    outliner.update(null);
     bar.hidden = true;
     outlinerHost.hidden = true;
     workspace.dataset.mode = 'animate';
-    host.setTool(entryTool && !['rig', 'line', 'circle', 'polygon', 'handle-edit', 'attach'].includes(entryTool) ? entryTool : 'select');
+    host.setTool(entryTool && !ENTRY_TOOLS.has(entryTool) ? entryTool : 'select');
     host.onModeChange?.();
     host.queueUI?.();
   }
@@ -156,12 +197,14 @@ export function initBuilderMode({editor, state, host}) {
         <button class="builder-exit-option" id="builder-exit-discard">${icon('reset')}<span><strong>Discard changes</strong><small>Undo everything done in the builder.</small></span></button>
       </div><div class="dialog-actions"><button class="button" id="builder-exit-cancel">Keep editing</button></div>`);
     const choose = choice => {
+      let imported;
       try {
         host.cancelPolygonDraft?.();
-        session.resolve(choice);
+        imported = session.resolve(choice);
       } catch (error) { host.fail?.(error); return; }
       host.closeDialog?.();
       leave();
+      if (imported) editor.select(imported.unique_id);
       host.status?.(choice === 'discard' ? 'Builder changes discarded'
         : choice === 'import-new' ? 'Imported as a new figure' : 'Figure updated');
     };

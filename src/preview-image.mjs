@@ -112,20 +112,35 @@ export async function samplePNG(blob, info, width, height, {check = () => {}, cr
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
-export async function decodePreview(blob, {width, height, maxPixels, maxDimension = 8192, check = () => {}}) {
+export async function decodePreview(blob, {width, height, maxPixels, maxDimension = 8192, crop, check = () => {}}) {
   check();
   const info = await pngInfo(blob);
   width = info?.width || width; height = info?.height || height;
   let originalWidth = width, originalHeight = height;
-  let target = width > 0 && height > 0 ? fitImage(width, height, maxPixels, maxDimension) : null, bitmap;
-  if (info && target && info.width * info.height > maxPixels && typeof DecompressionStream !== 'undefined') {
-    const pixels = await samplePNG(blob, info, target.width, target.height, {check});
+  // A crop requests only the source rectangle that can be sampled; decoded
+  // bitmaps report it through srcX/srcY/srcW/srcH in source pixels.
+  let area = null;
+  if (crop && width > 0 && height > 0) {
+    const x = Math.max(0, Math.min(width - 1, Math.floor(crop.x))), y = Math.max(0, Math.min(height - 1, Math.floor(crop.y)));
+    area = {x, y, width: Math.max(1, Math.min(width, Math.ceil(crop.x + crop.width)) - x),
+      height: Math.max(1, Math.min(height, Math.ceil(crop.y + crop.height)) - y)};
+  }
+  const sourceWidth = area?.width ?? width, sourceHeight = area?.height ?? height;
+  let target = sourceWidth > 0 && sourceHeight > 0 ? fitImage(sourceWidth, sourceHeight, maxPixels, maxDimension) : null, bitmap;
+  const cropped = area && (area.x > 0 || area.y > 0 || area.width < width || area.height < height);
+  if (info && target && typeof DecompressionStream !== 'undefined' &&
+      (cropped || info.width * info.height > maxPixels)) {
+    const pixels = await samplePNG(blob, info, target.width, target.height, {check, crop: area});
     if (pixels) bitmap = await createImageBitmap(new ImageData(pixels, target.width, target.height));
   }
   if (!bitmap) {
-    bitmap = await createImageBitmap(blob, target ? {resizeWidth: target.width, resizeHeight: target.height, resizeQuality: 'pixelated'} : {});
+    bitmap = area
+      ? await createImageBitmap(blob, area.x, area.y, area.width, area.height,
+          target ? {resizeWidth: target.width, resizeHeight: target.height, resizeQuality: 'pixelated'} : {})
+      : await createImageBitmap(blob, target ? {resizeWidth: target.width, resizeHeight: target.height, resizeQuality: 'pixelated'} : {});
     // Unknown source dimensions are learned once; subsequent copies are bounded.
-    originalWidth ||= bitmap.width; originalHeight ||= bitmap.height;
+    originalWidth ||= area ? bitmap.naturalWidth ?? bitmap.width : bitmap.width;
+    originalHeight ||= area ? bitmap.naturalHeight ?? bitmap.height : bitmap.height;
     const bounded = fitImage(bitmap.width, bitmap.height, maxPixels, maxDimension);
     if (bounded.width !== bitmap.width || bounded.height !== bitmap.height) {
       const source = bitmap;
@@ -135,5 +150,6 @@ export async function decodePreview(blob, {width, height, maxPixels, maxDimensio
   }
   try { check(); } catch (error) { bitmap.close(); throw error; }
   bitmap.complete = true; bitmap.naturalWidth = originalWidth; bitmap.naturalHeight = originalHeight;
+  if (area) { bitmap.srcX = area.x; bitmap.srcY = area.y; bitmap.srcW = area.width; bitmap.srcH = area.height; }
   return bitmap;
 }

@@ -284,6 +284,74 @@ export function applyLayerSheetCommand(editor,command,direction){
     definition:Boolean(command.assets?.figure_types),frameIndices:[],sourceIds:(command.frameSourceChanges||[]).map(source=>source.id)});return true;
 }
 export const editorLayerSheetMethods={
+  /** Motion-path drag support: a live plan writes layer/camera keys at one
+   * tick, and every further pointer move recaptures the same retained sources
+   * in place so one gesture produces one key per track. */
+  _sheetPoseDraftBegin(tick, layerIds) {
+    return {tick, plan: planner(this, layerIds), writes: new Map()};
+  },
+  _sheetPoseDraftWrite(draft, id, frame, changedUids) {
+    const {plan, tick} = draft, owns = uid => layerIdForUid({...this.report, _styk: {...this.report._styk, layers: plan.layers}}, uid) === id;
+    let entry = draft.writes.get(id);
+    if (!entry) {
+      const track = plan.get(id), {key, next} = sheetKeyAt(track, tick);
+      const patchUids = new Set((key?.movieclipPatches ?? []).flatMap(p => this.getFrameById(p.frameId)?.objects.map(o => o.unique_id) ?? []));
+      const changedHere = [...changedUids].filter(uid => owns(uid));
+      if (key?.movieclipPatches && changedHere.length && changedHere.every(uid => patchUids.has(uid))) {
+        key.empty = !frame.objects.some(o => owns(o.unique_id));
+        entry = {key, writeTick: tick, nextTick: next?.tick ?? track.end, patchSources: new Map(), patchOnly: true};
+        draft.writes.set(id, entry);
+      } else {
+        const writeTick = key && ['constant', 'hold'].includes(key.interpolation) ? key.tick : tick;
+        const written = plan.write(id, writeTick, frame, {easing: key ?? {interpolation: 'constant'}});
+        const sourceRecord = written?.value?.frameId ? plan.sources.at(-1) : null;
+        entry = {key: written, writeTick, sourceRecord, patchSources: new Map()};
+        entry.nextTick = sheetKeyAt(plan.get(id), writeTick).next?.tick ?? plan.get(id).end;
+        draft.writes.set(id, entry);
+        return entry;
+      }
+    }
+    const {key} = entry;
+    if (entry.patchOnly) {
+      const changedHere = [...changedUids].filter(uid => owns(uid));
+      key.empty = !frame.objects.some(o => owns(o.unique_id));
+      key.movieclipPatches = key.movieclipPatches.map(patch => {
+        const record = entry.patchSources.get(patch.uid);
+        const retained = record ? plan.sources.find(s => s.id === record.frameId)?.after.value : this.getFrameById(patch.frameId);
+        const members = [...(retained?.objects ?? []).map(o => o.unique_id)];
+        if (!changedHere.some(uid => members.includes(uid))) return patch;
+        const patchFrame = ownedFrame(this.report, frame, members);
+        setContinuations(patchFrame, continuations(retained));
+        const source = snapshotPoseFrame(patchFrame, members);
+        if (record) {
+          source._styk = {...source._styk, frameId: record.frameId};
+          setContinuations(source, continuations(patchFrame).filter(step => owns(step.uid)));
+          record.source.after.value = source;
+          return record.target;
+        }
+        const frameId = plan.capture(patchFrame, id).frameId;
+        const target = {...patch, frameId};
+        entry.patchSources.set(patch.uid, {frameId, target, source: plan.sources.at(-1)});
+        return target;
+      });
+      return entry;
+    }
+    if (entry.sourceRecord) {
+      const uids = fixed(id) ? [] : frame.objects.filter(o => owns(o.unique_id)).map(o => o.unique_id);
+      const source = snapshotPoseFrame(frame, uids);
+      source._styk = {...source._styk, frameId: entry.sourceRecord.id};
+      setContinuations(source, fixed(id) ? [] : continuations(frame).filter(step => owns(step.uid)));
+      entry.sourceRecord.after.value = source;
+      key.empty = !fixed(id) && !frame?.objects.some(o => owns(o.unique_id)) && !continuations(frame).some(s => owns(s.uid));
+    } else if (!fixed(id)) {
+      const has = frame?.objects.some(o => owns(o.unique_id)) || continuations(frame).some(s => owns(s.uid));
+      if (has) { const value = plan.capture(frame, id); key.value = value; key.empty = false; entry.sourceRecord = plan.sources.at(-1); }
+    }
+    return entry;
+  },
+  _sheetPoseDraftPublish(draft, label, selection) {
+    return publish(this, draft.plan, label, {selection});
+  },
   sheetExtendMovieclip(count){
     const uid=this.selectedUid,id=this.layerForUid(uid),plan=planner(this,[id]);
     const track=plan.get(id),keys=track.keys.filter(key=>!key.patchOnly&&key.tick>this.tick&&key.tick<track.end).slice(0,count);

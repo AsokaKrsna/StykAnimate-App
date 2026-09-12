@@ -1,6 +1,6 @@
 import {buildGeometry, buildGeometryAsync, evaluatedFrame, timeline, shortest, isStatic, invalidateEvaluationCaches} from './pivot/geometry.mjs';
 import {validateScene, validateObjectChanges, syncDerived} from './pivot/model.mjs';
-import {normalizeFrame, frameOrder, setOrder, deleteObject, moveLayer as reorderLayer, rotationEdits} from './pivot/structure.mjs';
+import {normalizeFrame, frameOrder, setOrder, deleteObject, moveLayer as reorderLayer, rotationEdits, resolveJoinSelection} from './pivot/structure.mjs';
 import {createDemo, emptyDocument, createObject, createFrame, defaultFigure} from './demo.mjs';
 import {createStartupDocument} from './startup-document.mjs';
 import {editorRangeMethods} from './editor-ranges.mjs';
@@ -45,6 +45,7 @@ import {editorLayerSheetMethods, initializeLayerSheet, applyLayerSheetCommand} f
 import {validateLayerSheet} from './layer-sheet.mjs';
 import {isMovieclip, invalidateMovieclipTypes,movieclipSourceFrames} from './movieclips.mjs';
 import {hasPinnedIK, translateIKTargets, remapIKFollowers} from './ik.mjs';
+import {editorMotionPathMethods} from './editor-motion-path.mjs';
 import {snapshotPoseObject} from './pose-snapshot.mjs';
 import {presencePlayback} from './movieclip-presence.mjs';
 
@@ -73,46 +74,6 @@ const event = detail => {
   if (typeof CustomEvent !== 'undefined') return new CustomEvent('change', {detail});
   const result = new Event('change'); Object.defineProperty(result, 'detail', {value: detail}); return result;
 };
-
-/** Joins address object slots, never UIDs or segment-array indices. */
-function resolveJoinSelection(frame, uids, ancestors = false) {
-  const objects = frame.objects, requested = new Set(uids), selectedSlots = [], children = new Map();
-  objects.forEach((object, slot) => {
-    if (requested.has(object.unique_id)) selectedSlots.push(slot);
-    if (object.join) {
-      const parent = object.join.target_object_slot, list = children.get(parent);
-      if (list) list.push(slot); else children.set(parent, [slot]);
-    }
-  });
-  const rootSlots = new Set(), resolved = new Map();
-  for (const selected of selectedSlots) {
-    let slot = selected;
-    if (ancestors) {
-      const path = [], visiting = new Set();
-      while (!resolved.has(slot) && objects[slot]?.join) {
-        if (visiting.has(slot)) throw new Error('Figures contain a cyclic join.');
-        visiting.add(slot); path.push(slot); slot = objects[slot].join.target_object_slot;
-        if (!objects[slot]) throw new Error('Join target is missing.');
-      }
-      slot = resolved.get(slot) ?? slot;
-      for (const visited of path) resolved.set(visited, slot);
-    }
-    rootSlots.add(slot);
-  }
-  const affected = new Set(rootSlots), queue = [...rootSlots];
-  for (let q = 0; q < queue.length; q++) for (const slot of children.get(queue[q]) ?? [])
-    if (!affected.has(slot)) { affected.add(slot); queue.push(slot); }
-  // Stable slot order makes motionless drags compare equal even when selection
-  // order differs from native object order.
-  const affectedSlots = [], orderedRoots = [];
-  objects.forEach((object, slot) => {
-    if (affected.has(slot)) affectedSlots.push(slot);
-    if (rootSlots.has(slot)) orderedRoots.push(slot);
-  });
-  return {rootSlots: orderedRoots, affectedSlots,
-    rootUids: orderedRoots.map(slot => objects[slot].unique_id),
-    affectedUids: affectedSlots.map(slot => objects[slot].unique_id)};
-}
 
 /**
  * Mutable native Pivot document + bounded command history. Pointer moves mutate
@@ -568,6 +529,7 @@ export class Editor extends EventTarget {
       changedUids: this._drag?.before.map(o => o.unique_id) ?? [this.selectedUid]});
   }
   commitDrag() {
+    if (this._drag?.motionPath) return this.commitMotionPathEdit();
     if (this._drag?.rig) return this.commitRigDrag();
     if (this._drag?.authored) return this.commitAuthoredPoseDrag();
     if (this._drag?.camera) return this.commitCameraDrag();
@@ -598,6 +560,7 @@ export class Editor extends EventTarget {
     this._emit('edit', {label: drag.label, changedUids: [...ids]}); return true;
   }
   cancelDrag() {
+    if (this._drag?.motionPath) return this.cancelMotionPathEdit();
     if (this._drag?.rig) return this.cancelRigDrag();
     if (this._drag?.authored) return this.cancelAuthoredPoseDrag();
     if (this._drag?.camera) return this.cancelCameraDrag();
@@ -1590,6 +1553,7 @@ Object.assign(Editor.prototype, editorHandleCommandMethods);
 Object.assign(Editor.prototype, editorInbetweenMethods);
 Object.assign(Editor.prototype, editorInbetweenAsyncMethods);
 Object.assign(Editor.prototype, editorOriginMutationMethods);
+Object.assign(Editor.prototype, editorMotionPathMethods);
 Object.defineProperties(Editor.prototype, Object.getOwnPropertyDescriptors(editorFrameDraftMethods));
 Editor.prototype._topologyEdit.frameDraftAware = true;
 Editor.prototype.replaceFigureDefinition.frameDraftAware = true;

@@ -1578,6 +1578,9 @@ dialog::backdrop {
 .onion-popover .onion-check{justify-content:flex-start;color:var(--theme-secondary, #5f6d7c)}.onion-check input{accent-color:#0d99ff;width:13px;height:13px;margin:0}
 .onion-popover details{border-top:1px solid var(--theme-border, #edf0f3);margin-top:14px;padding-top:12px}.onion-popover summary{cursor:pointer;color:var(--theme-secondary, #56687d)}.onion-popover footer{margin:14px 0 0;font-size:9px}
 .onion-popover :focus-visible{outline:2px solid var(--theme-accent, #0d99ff);outline-offset:2px}
+.path-popover{width:252px}
+.path-popover label{color:var(--theme-secondary, #5f6d7c)}
+.path-popover input[type=number]{height:26px;width:74px}
 #dialog:has(.export-grid) {
   width: 860px;
   max-width: calc(100vw - 40px);
