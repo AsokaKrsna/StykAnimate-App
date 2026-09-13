@@ -1,6 +1,6 @@
 'use strict';
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 function subscribe(channel, callback) {
   if (typeof callback !== 'function') throw new TypeError('A callback is required.');
@@ -19,6 +19,12 @@ function systemMemoryBytes() {
 // Node.js, Electron object, or arbitrary IPC channel crosses this boundary.
 contextBridge.exposeInMainWorld('stykDesktop', Object.freeze({
   isDesktop: true,
+  // Page zoom keeps CSS layout, pointer coordinates and devicePixelRatio aligned.
+  setUIScale: percent => {
+    if (!Number.isFinite(percent) || percent < 75 || percent > 200 || percent % 5 !== 0)
+      throw new RangeError('UI scale must be 75–200 in steps of 5.');
+    webFrame.setZoomFactor(percent / 100);
+  },
   newWindow: () => ipcRenderer.invoke('styk:new-window'),
   beginSharedClipboardWrite: () => ipcRenderer.invoke('styk:shared-clipboard-write-begin'),
   writeSharedClipboardChunk: (token, bytes) => ipcRenderer.invoke('styk:shared-clipboard-write', token, bytes),

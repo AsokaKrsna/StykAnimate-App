@@ -91,6 +91,8 @@ export const editorBuilderTopologyMethods = {
   deleteSingleSegment({preserveEndpoints = false} = {}) {
     const figure = this.figure, index = this.selectedJoint, segment = figure?.segments[index];
     if (!segment) return false;
+    if((figure.polyfills??[]).some(p=>p._stykSurface?.basis.includes(segment.segment_id)))
+      throw new Error('This joint controls face visibility. Change the fill reference joints before deleting it.');
     if (typeof preserveEndpoints !== 'boolean') throw new Error('Choose whether to preserve the other joints.');
     if (figure.segments.length === 1) throw new Error('A figure needs at least one segment. Delete the figure to remove it completely.');
     const tree = topology(figure.segments), children = tree.children.get(segment.segment_id) ?? [];

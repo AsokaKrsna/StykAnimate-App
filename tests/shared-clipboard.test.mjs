@@ -19,10 +19,19 @@ function instance(t, os) {
   return {editor, clipboard: new SharedClipboard(editor, desktop), native};
 }
 
-test('desktop clipboard keeps a movieclip ID when pasting back into its own document',async t=>{
+test('camera motion clips cross desktop instances with independent identities and one undo',async t=>{
+  const os=systemClipboard(),source=instance(t,os),target=instance(t,os),id=source.editor.addCameraMotion('shake',{start:4,duration:20});
+  source.editor.setCameraMotion(id,{params:{seed:123}});await source.clipboard.copy('camera-motion',()=>source.editor.copyCameraMotion(id));
+  const before=target.editor.serialize(),history=target.editor._undo.length;
+  await target.clipboard.paste('camera-motion',()=>target.editor.pasteCameraMotion(9));const pasted=target.editor.getCameraMotions()[0];
+  assert.notEqual(pasted.id,id);assert.equal(pasted.start,9);assert.equal(pasted.params.seed,123);assert.equal(target.editor._undo.length,history+1);
+  target.editor.undo();assert.deepEqual(target.editor.serialize(),before);
+});
+
+test('desktop clipboard retains absent movieclip IDs and creates a fresh ID on collision',async t=>{
   const {editor,clipboard}=instance(t,systemClipboard());editor.select(1);editor.createMovieclip({start:0,end:5});const uid=editor.selectedUid;
   await clipboard.copy('figures',()=>editor.copySelection());
-  for(const tick of [8,12,8]){editor.seek(tick);await clipboard.paste('figures',()=>editor.pasteSelection());assert.equal(editor.selectedUid,uid);assert.equal(editor.evaluatedFrame.objects.filter(object=>object.unique_id===uid).length,1);}
+  for(const tick of [8,12,8]){editor.seek(tick);const present=editor.evaluatedFrame.objects.some(object=>object.unique_id===uid);await clipboard.paste('figures',()=>editor.pasteSelection());assert.equal(editor.selectedUid===uid,!present);assert.equal(editor.evaluatedFrame.objects.filter(object=>object.unique_id===uid).length,1);}
   editor.seek(8);editor.select(uid);editor.deleteSelection();assert.ok(!editor.evaluatedFrame.objects.some(object=>object.unique_id===uid));
   await clipboard.paste('figures',()=>editor.pasteSelection());assert.equal(editor.selectedUid,uid);editor.serialize();
 });

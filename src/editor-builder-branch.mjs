@@ -8,6 +8,18 @@ import {builderDrawables} from './editor-builder-style.mjs';
 const clone = value => value === undefined ? undefined : structuredClone(value);
 const kinds = ['line', 'circle', 'image', 'circleFill', 'circleClear', 'text', 'squareLine'];
 const circles = new Set([1, 3, 4]);
+export function builderSelectionIndices(editor, whole = false) {
+  const ids = editor.selectedSegmentIds;
+  return ids?.size > 1 ? editor.figure.segments.flatMap((segment,index) => ids.has(segment.segment_id) ? [index] : [])
+    : whole ? branchSegmentIndices(editor.figure,editor.selectedJoint) : [editor.selectedJoint];
+}
+function selectionTargets(editor, whole, polygons) {
+  if (editor.selectedSegmentIds?.size > 1) {
+    const indices = builderSelectionIndices(editor);
+    return {indices,queue:indices,polygons:[]};
+  }
+  return branch(editor.figure,editor.selectedJoint,whole,polygons);
+}
 const finite = (value, label, min = -Infinity, max = Infinity) => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max)
     throw new Error(`${label} must be a finite number between ${min} and ${max}.`);
@@ -122,7 +134,7 @@ function apply(figure, patch) {
 export function builderBranchStyleBinding(editor, patch) {
   const figure = editor.figure, selected = editor.selectedJoint;
   if (!figure?.segments[selected]) return null;
-  const targets = branch(figure, selected, true, 'color' in patch || 'opacity' in patch);
+  const targets = selectionTargets(editor, true, 'color' in patch || 'opacity' in patch);
   const initial = stylePatch(figure, selected, patch, targets), keys = Object.keys(patch).sort().join(',');
   return {paths: initial.entries.map(entry => entry.path), segmentIndices: [...targets.indices], mutate(targetFigure, value = patch) {
     if (Object.keys(value).sort().join(',') !== keys) throw new Error('The branch style gesture fields changed.');
@@ -145,7 +157,7 @@ function command(editor, label, patch) {
   apply(figure, patch);
   editor._record({kind: 'native-properties', scope: 'figure', index, label, before, after: clone(patch),
     beforeSelection: selection, afterSelection: editor._selectionState(), definition: true, structural: false, timing: false});
-  editor._invalidate(); editor._emit('edit', {label, definition: true}); return true;
+  editor._invalidateFigure(figure.figure_type_id); editor._emit('edit', {label, definition: true}); return true;
 }
 function shapePatch(figure, indices, target) {
   const entries = [];
@@ -196,9 +208,10 @@ export const editorBuilderBranchMethods = {
     if (!figure?.segments[selected]) return false;
     if (typeof whole !== 'boolean') throw new Error('Choose whether to style the whole branch.');
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('Choose a segment style patch.');
-    const {shape, ...style} = patch, targets = branch(figure, selected, whole, 'color' in patch || 'opacity' in patch);
+    const {shape, ...style} = patch, targets = selectionTargets(this, whole, 'color' in patch || 'opacity' in patch);
     const changes = stylePatch(figure, selected, style, targets);
     if (this.propertyChannels && this.object && !('shape' in patch) && !('static' in patch)) {
+      const retained = {previous:this._geometry ?? this._incremental?.previous, dirtySlots:this._geometry ? [] : this._incremental?.dirtySlots ?? []};
       const entries = [];
       for (const index of targets.indices) {
         const target = {kind:'segment',uid:this.object.unique_id,handleId:figure.segments[index].segment_id,figureTypeId:figure.figure_type_id};
@@ -230,7 +243,9 @@ export const editorBuilderBranchMethods = {
       for (const index of targets.polygons) for (const property of ['color','opacity']) if (property in patch) entries.push({
         target:{kind:'polygon',uid:this.object.unique_id,polygonId:polygonIdentity(figure.polyfills[index],index),figureTypeId:figure.figure_type_id},property,
         value:property === 'color' ? styleColor(rgb(patch[property])) : patch[property]});
-      return this.addAnimationKeys(entries);
+      const changed = this.addAnimationKeys(entries);
+      if (changed) this._invalidateFigure(figure.figure_type_id, retained);
+      return changed;
     }
     if ('shape' in patch) {
       if (whole) throw new Error('Use the branch caps or circle-fill command to change shape.');
@@ -290,6 +305,7 @@ export const editorBuilderBranchMethods = {
     const figure = this.figure, selectedIndex = this.selectedJoint;
     if (!figure?.segments[selectedIndex]) return false;
     const targets = branch(figure, selectedIndex, whole);
+    if(targets.indices.some(i=>figure.segments[i]._stykRig))throw new Error('Split parts before configuring rig relationships. Connectors already have a sliding attachment joint.');
     if (figure.segments.length + targets.indices.length > 30000) throw new Error('A native Pivot figure supports at most 30,000 segments.');
     const allocated = newHandles(figure.segments, targets.queue.length), split = new Map(targets.queue.map((index, i) => [index, allocated[i]]));
     const originSplits = targets.queue.map(index => ({handleId: figure.segments[index].segment_id, newId: split.get(index), fraction}));

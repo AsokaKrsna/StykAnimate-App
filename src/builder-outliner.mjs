@@ -8,7 +8,7 @@
  */
 import {icon} from './icons.mjs';
 
-const ROW_HEIGHT = 26;
+const ROW_HEIGHT = 30;
 const STYLE = `
 .builder-outliner{position:relative;grid-column:1;grid-row:1;display:none;flex-direction:column;min-width:0;min-height:0;border-right:1px solid var(--theme-border,#e5e5e5);background:var(--theme-panel,#fff);font-size:11px;color:var(--theme-text,#2c2c2c)}
 .workspace[data-mode=rig] .builder-outliner{display:flex}
@@ -72,9 +72,14 @@ export class FigureOutliner {
         <input class="builder-name" aria-label="Figure name" spellcheck="false" maxlength="255">
         <span class="builder-outliner-count"></span>
       </div>
-      <div class="builder-tree" role="tree" aria-label="Figure hierarchy" tabindex="0"><div class="builder-tree-spacer"></div><div class="builder-drop" hidden></div></div>
-      <div class="builder-outliner-resize" role="separator" aria-orientation="vertical" aria-label="Resize panel" title="Drag to resize"></div>
-      <div class="builder-outliner-empty" hidden></div>`;
+      <div class="builder-tree" role="tree" aria-multiselectable="true" aria-label="Figure hierarchy" tabindex="0"><div class="builder-tree-spacer"></div><div class="builder-drop" hidden></div><div class="builder-outliner-empty" hidden></div></div>
+      <div class="builder-footer">
+        <button id="builder-snap" aria-pressed="true" aria-label="Smart snapping" title="Smart snapping · Alt to bypass">${icon('builder-snap')}</button>
+        <button id="builder-timeline-toggle" aria-expanded="false" aria-controls="animation-timeline" title="Show animation timeline">${icon('frame')}<span>Timeline</span></button>
+        <button data-action="zoom-selection" title="Fit figure · Shift 2" aria-label="Fit figure">${icon('center')}</button>
+      </div>
+      <div class="builder-outliner-resize" role="separator" tabindex="0" aria-orientation="vertical" aria-label="Resize figure structure" aria-valuemin="160" aria-valuemax="520" title="Drag or use arrow keys to resize · Home to reset"></div>
+      `;
     this.tree = container.querySelector('.builder-tree');
     this.spacer = container.querySelector('.builder-tree-spacer');
     this.nameInput = container.querySelector('.builder-name');
@@ -83,6 +88,16 @@ export class FigureOutliner {
     if (workspace && Number.isFinite(settings?.builderOutlinerWidth))
       workspace.style.setProperty('--builder-outliner-w', `${Math.max(160, Math.min(520, settings.builderOutlinerWidth))}px`);
     const resize = container.querySelector('.builder-outliner-resize');
+    resize.setAttribute('aria-valuenow', String(Math.max(160, Math.min(520, settings?.builderOutlinerWidth ?? 236))));
+    resize.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return;
+      event.preventDefault(); event.stopPropagation();
+      const width = event.key === 'Home' ? 236 : Math.max(160, Math.min(520,
+        container.getBoundingClientRect().width + (event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? 40 : 10)));
+      workspace?.style.setProperty('--builder-outliner-w', `${width}px`);
+      resize.setAttribute('aria-valuenow', String(width));
+      this.onResize(width);
+    });
     resize.addEventListener('pointerdown', event => {
       if (event.button !== 0) return;
       event.preventDefault();
@@ -92,6 +107,7 @@ export class FigureOutliner {
       const move = moveEvent => {
         const width = Math.max(160, Math.min(520, startWidth + moveEvent.clientX - startX));
         workspace?.style.setProperty('--builder-outliner-w', `${width}px`);
+        resize.setAttribute('aria-valuenow', String(Math.round(width)));
         this._width = width;
       };
       const up = upEvent => {
@@ -106,6 +122,8 @@ export class FigureOutliner {
       resize.addEventListener('pointercancel', up);
     });
     this.tree.addEventListener('scroll', () => this.render(), {passive: true});
+    this.resizeObserver = new ResizeObserver(() => { if (this.session) this.render(); });
+    this.resizeObserver.observe(this.tree);
     this.tree.addEventListener('click', event => {
       if (this._suppressClick) { this._suppressClick = false; return; }
       const row = event.target.closest('[data-row]');
@@ -127,12 +145,13 @@ export class FigureOutliner {
     });
     this.tree.addEventListener('contextmenu', event => {
       const row = event.target.closest('[data-row]');
-      const entry = row && this.rows[Number(row.dataset.row)];
-      if (!entry) return;
+      const keyboard = event.clientX === 0 && event.clientY === 0;
+      const entry = row ? this.rows[Number(row.dataset.row)] : keyboard ? this.rows[this.focus] : null;
       event.preventDefault();
       event.stopPropagation();
-      if (entry.kind === 'segment') this.activate(entry, event);
-      this.onMenu(entry, event.clientX, event.clientY);
+      if (entry?.kind === 'segment') this.activate(entry, event);
+      const rect = keyboard ? (this.tree.querySelector('[aria-selected=true]') || this.tree).getBoundingClientRect() : null;
+      this.onMenu(entry, rect ? rect.left + 24 : event.clientX, rect ? rect.bottom : event.clientY);
     });
     // Drag-reorder: armed on pointerdown over a segment row (twisty excluded),
     // begins past a 5px threshold, and resolves on release into a reparent
@@ -205,14 +224,18 @@ export class FigureOutliner {
         const parent = Number(figure.segments[index].parent_id ?? 0);
         return parent !== 0 && !ids.has(parent);
       })];
-    const visit = (index, depth, ancestry) => {
+    // Iterative traversal is linear and safe for long imported joint chains.
+    const visited = new Set(), stack = roots.reverse().map(index => ({index, depth: 0}));
+    while (stack.length) {
+      const {index, depth} = stack.pop();
+      if (visited.has(index)) continue;
+      visited.add(index);
       const segment = figure.segments[index], id = Number(segment.segment_id);
       const kids = children.get(id) ?? [];
       const collapsed = this.collapsed.has(id);
       rows.push({kind: 'segment', index, id, parent: Number(segment.parent_id ?? 0), depth, hasChildren: kids.length > 0, collapsed});
-      if (!collapsed) for (const child of kids) if (!ancestry.has(child)) visit(child, depth + 1, new Set(ancestry).add(child));
-    };
-    for (const index of roots) visit(index, 0, new Set([index]));
+      if (!collapsed) for (let i = kids.length - 1; i >= 0; i--) stack.push({index: kids[i], depth: depth + 1});
+    }
     const fills = figure.polyfills ?? [];
     if (fills.length) {
       rows.push({kind: 'header', label: 'Polygons', count: fills.length});
@@ -236,14 +259,14 @@ export class FigureOutliner {
       empty.hidden = Boolean(figure);
       if (!figure)
         empty.textContent = session?.mode === 'create'
-          ? 'Draw a line or circle to create the figure.'
+          ? 'Draw a line or circle to start.'
           : 'No instance in this frame.';
       this.container.querySelector('.builder-outliner-count').textContent =
         figure ? `${figure.segments.length} segment${figure.segments.length === 1 ? '' : 's'}` : '';
       if (document.activeElement !== this.nameInput) this.nameInput.value = figure?.name ?? '';
       this.nameInput.disabled = !figure;
       this.nameInput.placeholder = session?.mode === 'create' ? 'New figure' : 'Figure name';
-      this.focus = -1;
+      this.focus = this.rows.findIndex(row => row.kind === 'segment' && row.index === this.editor.selectedJoint);
     }
     this.render();
     if (session && this.editor.selectedJoint !== this._lastJoint) {
@@ -260,7 +283,7 @@ export class FigureOutliner {
       const parent = Number(segment.parent_id ?? 0), list = children.get(parent) ?? [];
       list.push(Number(segment.segment_id)); children.set(parent, list);
     }
-    for (const id of [...out]) for (const child of children.get(id) ?? []) if (!out.has(child)) out.add(child);
+    for (const id of out) for (const child of children.get(id) ?? []) if (!out.has(child)) out.add(child);
     return out;
   }
   showDrop(index, zone) {
@@ -277,7 +300,7 @@ export class FigureOutliner {
   }
   rowHtml(entry, index) {
     const editor = this.editor;
-    const selected = entry.kind === 'segment' && editor.selectedJoint === entry.index &&
+    const selected = entry.kind === 'segment' && editor.selectedSegmentIds.has(entry.id) &&
       this.session?.boundUids.has(editor.selectedUid);
     const style = `top:${index * ROW_HEIGHT}px;height:${ROW_HEIGHT}px`;
     if (entry.kind === 'header')
@@ -285,7 +308,7 @@ export class FigureOutliner {
     if (entry.kind === 'polygon') {
       const polygon = this.session.figure.polyfills[entry.index];
       const color = polygon?.color_rgb ? `rgb(${polygon.color_rgb.join(',')})` : 'transparent';
-      return `<div class="builder-tree-row" data-row="${index}" style="${style}" role="treeitem">
+      return `<div class="builder-tree-row" id="builder-fill-${entry.index}" data-row="${index}" style="${style}" role="treeitem" aria-selected="${editor.selectedPolygonIndex === entry.index}">
         <span class="builder-indent" style="width:${entry.depth * 14}px"></span>
         <span class="builder-twisty"></span>
         <span class="builder-poly-swatch" style="background:${color}"></span>
@@ -293,8 +316,8 @@ export class FigureOutliner {
       </div>`;
     }
     const segment = this.session.figure.segments[entry.index], kind = segmentKind(segment);
-    const badges = `${segment.static || segment.is_static ? '<b class="builder-badge" title="Static joint">S</b>' : ''}${segment.visible === false ? '<b class="builder-badge" title="Hidden">H</b>' : ''}`;
-    return `<div class="builder-tree-row" data-row="${index}" style="${style}" role="treeitem" aria-selected="${selected}">
+    const badges = `${segment._stykRig?.connector ? '<b class="builder-badge" title="Connector · sliding attachment joint">C</b>' : ''}${segment._stykRig?.stretch ? '<b class="builder-badge" title="Smart Stretch driver">↔</b>' : ''}${segment._stykRig?.follow ? '<b class="builder-badge" title="Stretch follower">F</b>' : ''}${segment.static || segment.is_static ? '<b class="builder-badge" title="Static joint">S</b>' : ''}${segment.visible === false ? '<b class="builder-badge" title="Hidden">H</b>' : ''}`;
+    return `<div class="builder-tree-row" id="builder-joint-${entry.id}" data-row="${index}" style="${style}" role="treeitem" aria-level="${entry.depth + 1}" ${entry.hasChildren ? `aria-expanded="${!entry.collapsed}"` : ''} aria-selected="${selected}">
       <span class="builder-indent" style="width:${entry.depth * 14}px"></span>
       <span class="builder-twisty${entry.hasChildren ? (entry.collapsed ? ' collapsed' : ' open') : ''}"></span>
       <span class="builder-row-icon">${icon(KIND_ICON[kind] ?? 'line')}</span>
@@ -303,18 +326,25 @@ export class FigureOutliner {
     </div>`;
   }
   render() {
-    if (!this.rows.length) { this.spacer.innerHTML = ''; this.spacer.style.height = '0px'; return; }
+    if (!this.rows.length) {
+      this.spacer.innerHTML = ''; this._rendered = ''; this.spacer.style.height = '0px';
+      this.tree.removeAttribute('aria-activedescendant'); return;
+    }
     const view = this.tree.clientHeight || 1, start = Math.max(0, Math.floor(this.tree.scrollTop / ROW_HEIGHT) - 4);
     const count = Math.min(this.rows.length - start, Math.ceil(view / ROW_HEIGHT) + 8);
     const rows = [];
     for (let i = start; i < start + count; i++) rows.push(this.rowHtml(this.rows[i], i));
     this.spacer.style.height = `${this.rows.length * ROW_HEIGHT}px`;
-    this.spacer.innerHTML = rows.join('');
+    const html = rows.join('');
+    if (this._rendered !== html) { this.spacer.innerHTML = html; this._rendered = html; }
+    const selected = this.spacer.querySelector('[aria-selected=true]');
+    if (selected) this.tree.setAttribute('aria-activedescendant', selected.id);
+    else this.tree.removeAttribute('aria-activedescendant');
   }
   keydown(event) {
     const keys = {ArrowDown: 1, ArrowUp: -1};
     if (event.key in keys) {
-      event.preventDefault();
+      event.preventDefault(); event.stopPropagation();
       const segments = this.rows.map((row, index) => row.kind === 'segment' ? index : -1).filter(index => index >= 0);
       if (!segments.length) return;
       const current = segments.indexOf(this.focus);
@@ -330,12 +360,13 @@ export class FigureOutliner {
           this.collapsed[event.key === 'ArrowRight' ? 'delete' : 'add'](entry.id);
           this._signature = '';
           this.update(this.session, {force: true});
+          this.focus = this.rows.findIndex(row => row.kind === 'segment' && row.id === entry.id);
         }
       }
-      event.preventDefault();
+      event.preventDefault(); event.stopPropagation();
     } else if (event.key === 'Enter' || event.key === ' ') {
       const entry = this.rows[this.focus];
-      if (entry) { event.preventDefault(); this.activate(entry, event); }
+      if (entry) { event.preventDefault(); event.stopPropagation(); this.activate(entry, event); }
     }
   }
   scrollToRow(index) {
@@ -347,7 +378,15 @@ export class FigureOutliner {
   revealSelected() {
     const joint = this.editor.selectedJoint;
     if (joint < 0) return;
-    const index = this.rows.findIndex(row => row.kind === 'segment' && row.index === joint);
-    if (index >= 0) this.scrollToRow(index);
+    let index = this.rows.findIndex(row => row.kind === 'segment' && row.index === joint);
+    if (index < 0 && this.session?.figure) {
+      const figure = this.session.figure, parents = new Map(figure.segments.map(s => [Number(s.segment_id), Number(s.parent_id)]));
+      const seen = new Set();
+      let id = parents.get(Number(figure.segments[joint]?.segment_id));
+      while (id && !seen.has(id)) { seen.add(id); this.collapsed.delete(id); id = parents.get(id); }
+      this.rows = this.buildRows(figure);
+      index = this.rows.findIndex(row => row.kind === 'segment' && row.index === joint);
+    }
+    if (index >= 0) { this.focus = index; this.scrollToRow(index); this.render(); }
   }
 }

@@ -1,3 +1,7 @@
+import {rigControlsView, connectorPositionView} from './rig-controls.mjs';
+import {polygonSurfaceView} from './builder-surface-ui.mjs';
+import {rigIKAllowed} from './rig-constraints.mjs';
+import {cameraMotionView,parallaxView} from './camera-motion-ui.mjs';
 import {segmentPaint, paintCSS} from './paint.mjs';
 import { icon } from "./icons.mjs";
 import { isStatic } from "./pivot/geometry.mjs";
@@ -57,7 +61,7 @@ function numericField(
   value = state?.value ?? value;
   const description =
     options.description || `${label}${unit ? ` (${unit})` : ""}`;
-  return `<div class="property-row${animated ? " is-animatable" : options.wide ? " is-wide" : ""}" data-property-row="${key}"><label class="field"><span class="property-scrub" data-property-scrub tabindex="0" role="button" aria-label="Scrub ${esc(description)}" title="Drag to adjust · Shift: fine · Alt: extra fine">${label}</span><input type="number" ${options.id ? `id="${options.id}"` : ""} ${options.legacyField === false ? "" : `data-field="${key}"`} data-property="${key}" data-property-value="${esc(value)}" data-property-precision="${precision}" data-property-step="1" value="${formatPropertyValue(value, precision)}" step="any" aria-label="${esc(description)}" ${limits}><small>${unit}</small></label></div>`;
+  return `<div class="property-row${animated ? " is-animatable" : options.wide ? " is-wide" : ""}" data-property-row="${key}"><label class="field"><span class="property-scrub" data-property-scrub tabindex="0" role="button" aria-label="Scrub ${esc(description)}" title="Drag to adjust Â· Shift: fine Â· Alt: extra fine">${label}</span><input type="number" ${options.id ? `id="${options.id}"` : ""} ${options.legacyField === false ? "" : `data-field="${key}"`} data-property="${key}" data-property-value="${esc(value)}" data-property-precision="${precision}" data-property-step="1" value="${formatPropertyValue(value, precision)}" step="any" aria-label="${esc(description)}" ${limits}><small>${unit}</small></label></div>`;
 }
 const heading = (title, symbol) =>
   `<div class="property-context-heading"><span>${icon(symbol)}</span><div><strong>${esc(title)}</strong></div></div>`;
@@ -71,7 +75,7 @@ const grid = (body) => `<div class="field-grid">${body}</div>`;
 const tools = (body) => `<div class="transform-actions">${body}</div>`;
 const builderOrderButtons = (kind, index) => tools(
   [['back','send-to-back','Send to back'],['down','chevron-left','Send backward'],['up','chevron-right','Bring forward'],['front','bring-to-front','Bring to front']]
-    .map(([direction,symbol,label]) => `<button type="button" class="icon-button" data-action="builder-order" data-kind="${kind}" data-index="${index}" data-direction="${direction}" title="${label} · ${kind}" aria-label="${label} · ${kind}">${icon(symbol)}</button>`).join(''),
+    .map(([direction,symbol,label]) => `<button type="button" class="icon-button" data-action="builder-order" data-kind="${kind}" data-index="${index}" data-direction="${direction}" title="${label} Â· ${kind}" aria-label="${label} Â· ${kind}">${icon(symbol)}</button>`).join(''),
 );
 const colorRow = (id, label, value, opacityId, opacity) =>
   `<div class="color-row"><input id="${id}" type="color" value="${value}" aria-label="${label}"><span class="hex-label">${value.slice(1).toUpperCase()}</span>${opacityId ? `<input id="${opacityId}" type="number" value="${num(opacity)}" min="0" max="100" aria-label="${label} opacity"><small>%</small>` : ""}</div>`;
@@ -123,7 +127,7 @@ export function inspectorView({
   if (resolvedContext === "frame") return frameView(editor, field);
   if (resolvedContext === "scene" || !object)
     return sceneView(editor, field, propertyState);
-  if (selectionCount===1 && isMovieclip(editor.figure)) return figureLayerField(editor)+movieclipInspector(editor,field);
+  if (selectionCount===1 && isMovieclip(editor.figure)) return figureLayerField(editor)+movieclipInspector(editor,field)+parallaxView(editor,editor.activeLayerId);
   const range =
     rangeIndices.length > 1
       ? group(
@@ -194,6 +198,11 @@ export function inspectorView({
     joint = editor.selectedJoint,
     segment = figure.segments[joint],
     raw = Number(object.color_override_raw) >>> 0;
+  if (builder && editor.selectedPolygonIndex >= 0) {
+    const index=editor.selectedPolygonIndex, polygon=figure.polyfills[index];
+    return group('Fill', `<div class="polygon-row"><input type="color" data-polygon-color="${index}" aria-label="Fill color" value="${hex(polygon.color_rgb)}"><button class="icon-button" data-delete-polygon="${index}" aria-label="Delete fill">${icon('trash')}</button></div>` +
+      field('Opacity',`polygon_${index}_opacity`,(polygon.alpha_raw!==undefined?1-polygon.alpha_raw/255:polygon.color_alpha??1)*100,'%', 'min="0" max="100"',{animated:Boolean(editor.propertyChannels)}) + polygonSurfaceView(editor,index) + builderOrderButtons('polygon',index));
+  }
   const drawOrder = new Map(builderDrawables(figure).map((item,index)=>[`${item.kind}:${item.index}`,index+1]));
   const orderLimits = `min="1" max="${drawOrder.size}"`;
   const fill = hex(
@@ -221,7 +230,7 @@ export function inspectorView({
     if (tool === "rig")
       html += group(
         "Edit rig",
-        `<select id="rig-mode" class="inline-select" aria-label="Rig edit mode"><option value="move" ${rigMode === "move" ? "selected" : ""}>Move joint</option><option value="rotate" ${rigMode === "rotate" ? "selected" : ""}>Rotate branch</option></select><button type="button" class="button" data-action="add-sprite-segment">${icon('image')}Add sprite part…</button>`,
+        `<select id="rig-mode" class="inline-select" aria-label="Rig edit mode"><option value="move" ${rigMode === "move" ? "selected" : ""}>Move joint</option><option value="rotate" ${rigMode === "rotate" ? "selected" : ""}>Rotate branch</option></select><button type="button" class="button" data-action="add-sprite-segment">${icon('image')}Add sprite partâ€¦</button>`,
       );
     if (figure.text_assets?.some((asset) => asset.glyphs?.length))
       html += group(
@@ -256,7 +265,14 @@ export function inspectorView({
     );
   }
   if (jointScope && segment) {
-    html += heading(`${editor.branchSelected ? 'Branch from joint' : 'Joint'} ${segment.segment_id}`, "nodes");
+    const connector=segment._stykRig?.connector;
+    if(connector&&editor.selectedSegmentIds.size<=1){
+      const scope=editor._connectorInspector,part=scope?.uid===editor.selectedUid&&scope?.id===segment.segment_id?scope.part:'slider';
+      html+=heading(`Connector ${segment.segment_id}`,'link')+`<div class="connector-property-tabs" role="group" aria-label="Connector properties">${[['segment','Segment'],['slider','Slider']].map(([value,label])=>`<button type="button" data-connector-part="${value}" aria-pressed="${part===value}">${label}</button>`).join('')}</div>`;
+      if(part==='slider')return html+group('Slider',connectorPositionView(editor)+`<label class="check-row"><input type="checkbox" id="static-joint" ${isStatic(segment)?'checked':''}>Static</label>`);
+    }
+    if(!connector||editor.selectedSegmentIds.size>1)html += heading(editor.selectedSegmentIds.size > 1 ? `${editor.selectedSegmentIds.size} segments` : `${editor.branchSelected ? 'Branch from joint' : 'Joint'} ${segment.segment_id}`, "nodes");
+    if(builder)html+=group('',`<label class="rig-select"><span>Joint name</span><input id="builder-joint-name" class="inline-select" aria-label="Joint name" maxlength="120" value="${esc(segment.name??'')}"></label>`);
     const ik = editor.getIKSettings();
     const shape = [
       "line",
@@ -270,19 +286,20 @@ export function inspectorView({
     html += group(
       "Transform",
       grid(
-        field(
+        (connector?'':field(
           "Angle",
           "joint_angle",
-          ((object.angles[joint] ?? segment.angle_rad) * 180) / Math.PI,
+          ((segment._stykRig?.angleLock ? editor.geometry.objects.get(editor.selectedSlot)?.segments[joint]?.angle : object.angles[joint] ?? segment.angle_rad) * 180) / Math.PI,
           "°",
-        ) +
-          field(
+          segment._stykRig?.angleLock ? 'disabled' : '',
+        )) +
+          (connector ? '' : field(
             "Length",
             "joint_length",
             object.len_flag ? object.lengths[joint] : segment.length,
             "px",
             'min="0"',
-          ) +
+          )) +
           field(
             "Bend",
             "joint_bend",
@@ -291,18 +308,19 @@ export function inspectorView({
               Math.PI,
             "°",
         ),
-      ) + ikControlsView(ik),
+      ) + (rigIKAllowed(figure,joint) ? ikControlsView(ik) : ''),
     );
+    html += rigControlsView(editor,{builder});
     html += group("Appearance",
         grid(field("Width", "thickness", segment.thickness, "px", 'min="0"') +
         field('Order', 'segment_z_order', drawOrder.get(`segment:${joint}`), '', orderLimits, {animated:false})) +
-        (isBuilderContext(tool) || builder ? `<label class="check-row"><input type="checkbox" id="builder-branch" ${builderBranch ? 'checked' : ''}>Apply to branch</label>` : '') +
+        ((isBuilderContext(tool) || builder) && editor.selectedSegmentIds.size <= 1 ? `<label class="check-row"><input type="checkbox" id="builder-branch" ${builderBranch ? 'checked' : ''}>Apply to branch</label>` : '') +
         `<select id="segment-shape" class="inline-select" aria-label="Segment shape" ${["image", "text"].includes(shape) ? "disabled" : ""}>${[["line", "Round line"], ["squareLine", "Square line"], ["circle", "White circle"], ["circleFill", "Filled circle"], ["circleClear", "Clear circle"], ...(["image", "text"].includes(shape) ? [[shape, shape]] : [])].map(([v, n]) => `<option value="${v}" ${shape === v ? "selected" : ""}>${n}</option>`).join("")}</select>` +
         `<div class="property-paint-row"><button type="button" id="segment-color" data-paint-picker class="paint-trigger" aria-label="Segment color"><i style="background:${paintCSS(segmentPaint(segment))}"></i><span>${segmentPaint(segment).type === 'solid' ? hex(segment.color_rgb).toUpperCase() : segmentPaint(segment).type[0].toUpperCase()+segmentPaint(segment).type.slice(1)+' gradient'}</span></button>` +
         `${field(segment.secondary ? "Primary opacity" : "Opacity", "segment_opacity", (1 - (segment.transparency || 0) / 255) * 100, "%", 'min="0" max="100"', { id: "segment-opacity", legacyField: false, description: "Primary color opacity" })}</div>` +
         `<div class="compact-checks"><label class="check-row"><input type="checkbox" id="segment-gradient-enabled" ${segment.secondary ? "checked" : ""}>Secondary color</label><input type="color" id="segment-gradient-color" value="${hex(segment.secondary?.rgb ?? [255, 255, 255])}" aria-label="Secondary color" ${segment.secondary ? "" : "disabled"}></div>` +
         (segment.secondary ? grid(field("Secondary opacity", "segment_gradient_opacity", (1-(segment.secondary.a??0)/255)*100, "%", 'min="0" max="100"', {description:"Secondary gradient color opacity"})) : '') +
-        `<label class="check-row"><input type="checkbox" id="static-joint" ${isStatic(segment) ? "checked" : ""}>Static</label>`,
+        (connector?'':`<label class="check-row"><input type="checkbox" id="static-joint" ${isStatic(segment) ? "checked" : ""}>Static</label>`),
     );
   }
   if (jointScope) return html;
@@ -318,7 +336,7 @@ export function inspectorView({
         "Figure");
   html += group(
     "Connection",
-    `<div class="connection-row"><span>${parent ? esc(parentName) + " · " + object.join.target_handle_id : "None"}</span>${button("attach-figure", "link", "Attach to a joint")}${button("detach-figure", "detach", "Detach figure", !parent)}${button("combine-figures", "combine", "Combine connected figures", !parent && !frame.objects.some((o) => o.join?.target_object_slot === object.object_slot))}</div>`,
+    `<div class="connection-row"><span>${parent ? esc(parentName) + " Â· " + object.join.target_handle_id : "None"}</span>${button("attach-figure", "link", "Attach to a joint")}${button("detach-figure", "detach", "Detach figure", !parent)}${button("combine-figures", "combine", "Combine connected figures", !parent && !frame.objects.some((o) => o.join?.target_object_slot === object.object_slot))}</div>`,
   );
   const polygons = figure.polyfills || [],
     start = Math.min(
@@ -336,11 +354,11 @@ export function inspectorView({
         )
         .join("") +
         (polygons.length > 12
-          ? `<div class="polygon-pagination">${button("polygons-previous", "chevron-left", "Previous polygons", start === 0)}<span>${start + 1}–${Math.min(start + 12, polygons.length)} / ${polygons.length}</span>${button("polygons-next", "chevron-right", "Next polygons", start + 12 >= polygons.length)}</div>`
+          ? `<div class="polygon-pagination">${button("polygons-previous", "chevron-left", "Previous polygons", start === 0)}<span>${start + 1}â€“${Math.min(start + 12, polygons.length)} / ${polygons.length}</span>${button("polygons-next", "chevron-right", "Next polygons", start + 12 >= polygons.length)}</div>`
           : ""),
       `<span>${polygons.length}</span>`,
     );
-  return html;
+  return html + parallaxView(editor,editor.activeLayerId);
 }
 
 function sceneView(editor, field, propertyState) {
@@ -398,10 +416,12 @@ function sceneView(editor, field, propertyState) {
 
 function cameraView(editor, field) {
   const c = cameraValues((editor.evaluatedFrame || editor.frame).camera);
+  const motion=editor._cameraInspectorTab==='motion';
   return (
     '<div class="camera-inspector">' +
-    `<div class="camera-heading"><span>${icon('camera')}</span><div><strong>Camera</strong><small>Compose your shot</small></div><span class="camera-live">Live</span></div>` +
-    `<div class="camera-monitor"><canvas data-camera-monitor aria-label="Live camera output"></canvas><div class="camera-monitor-caption"><span>${editor.report.canvas_width} × ${editor.report.canvas_height}</span><span data-camera-magnification>${num(100/c.scale)}% zoom</span></div></div>` +
+    `<div class="camera-heading"><span>${icon('camera')}</span><div><strong>Camera</strong></div><span class="camera-live">Live</span></div>` +
+    `<div class="camera-monitor"><canvas data-camera-monitor aria-label="Live camera output"></canvas><div class="camera-monitor-caption"><span>${editor.report.canvas_width} Ã— ${editor.report.canvas_height}</span><span data-camera-magnification>${num(100/c.scale)}% zoom</span></div></div>` +
+    `<div class="camera-inspector-tabs" role="tablist" aria-label="Camera controls"><button role="tab" data-camera-tab="transform" aria-selected="${!motion}">Transform</button><button role="tab" data-camera-tab="motion" aria-selected="${motion}">Motion</button></div><div ${motion?'hidden':''}>` +
     `<div class="camera-quick-actions"><button data-action="camera-guides" aria-pressed="true" title="Show composition guides">${icon('grid')}<span>Guides</span></button><button data-action="camera-level" title="Set camera rotation to zero">${icon('rotate')}<span>Level</span></button><button data-action="camera-reset" title="Reset camera pose">${icon('undo')}<span>Reset</span></button></div>` +
     group(
       "Transform",
@@ -423,8 +443,7 @@ function cameraView(editor, field) {
           ),
       ),
     ) +
-    `<p class="camera-help">Drag the center to move, corners to scale, or the top grip to rotate. <kbd>Shift</kbd> snaps rotation and scale. <kbd>Ctrl</kbd> locks movement to an axis.</p>` +
-    cameraActionsView({ editor, button, group, tools }) + '</div>'
+    cameraActionsView({ editor, button, group, tools }) + `</div><div ${motion?'':'hidden'}>` + cameraMotionView(editor) + '</div></div>'
   );
 }
 
@@ -470,6 +489,6 @@ function layerView(editor) {
     group(
       "Layer",
       `<label class="field-label" for="inspector-layer-name">Name</label><input id="inspector-layer-name" class="property-layer-name" data-layer-id="${esc(layer.id)}" value="${esc(layer.name)}" aria-label="Layer name" maxlength="160"><label class="check-row"><input id="inspector-layer-visible" data-layer-id="${esc(layer.id)}" type="checkbox" ${layer.visible ? "checked" : ""}>Visible</label><label class="check-row"><input id="inspector-layer-locked" data-layer-id="${esc(layer.id)}" type="checkbox" ${layer.locked ? "checked" : ""}>Locked</label>`,
-    )
+    ) + parallaxView(editor,layer.id)
   );
 }

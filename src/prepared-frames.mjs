@@ -182,10 +182,11 @@ export class PreparedFrameCache {
     renderer.device.queue.writeBuffer(renderer.uniform, 0, uniform);
     const transformBytes = this._writeTransforms(frame, hiddenUids, dragTranslations);
     const encoder = renderer.device.createCommandEncoder({ label: `Prepared playback ${frame.key}` });
-    const pass = encoder.beginRenderPass({ colorAttachments: [colorAttachment(renderer.msaa, renderer.context.getCurrentTexture().createView())] });
+    const timestampWrites=renderer.gpuTiming?.begin(renderer.measureFrame);
+    const pass = encoder.beginRenderPass({ colorAttachments: [colorAttachment(renderer.msaa, renderer.context.getCurrentTexture().createView())],...(timestampWrites?{timestampWrites}:{}) });
     pass.setPipeline(renderer.pipeline); pass.setBindGroup(0, frame.bindGroup);
     for (const command of frame.commands) { pass.setBindGroup(1, command.texture?.bindGroup || renderer.blankBindGroup); pass.draw(6, command.instanceCount, 0, command.firstInstance); }
-    pass.end(); renderer.device.queue.submit([encoder.finish()]);
+    pass.end();renderer.gpuTiming?.resolveInto(encoder,timestampWrites);renderer.device.queue.submit([encoder.finish()]);renderer.gpuTiming?.submitted(timestampWrites);
     if(hasSceneVfx(frame.nativeFrame))renderer.finishSceneVfx({report,frame:frame.nativeFrame,view,cameraEnabled,preparedFrame:frame,viewportUniforms:uniform,hiddenUids,dragTranslations});
     Object.assign(renderer.stats, { mode: 'prepared playback', preparation: 'prepared', compiledObjects: 0, rasterizedObjects: 0, updatedObjects: 0, frameMs: performance.now() - start, drawCalls: frame.commands.length, primitives: frame.shapeCount, objects: frame.objectCount,
       textureObjects: frame.textureObjects, uploadBytes: 0, transformUploadBytes: transformBytes, gpuBytes: frame.bytes, preparedBytes: this.bytes, preparedFrames: this.frames.size,

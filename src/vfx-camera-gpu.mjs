@@ -1,3 +1,4 @@
+import {parallaxResolver} from './layer-parallax.mjs';
 import {cameraMatrix} from './renderer-geometry.mjs';
 import {drawBackground,backgroundBounds} from './pivot/background.mjs';
 
@@ -17,6 +18,12 @@ export class CameraGpuSource {
   const matrix=cameraMatrix({report,frame,view:{scale},cameraEnabled:true});
   const uniform=new Float32Array([matrix[0],matrix[2],matrix[4],Math.hypot(matrix[0],matrix[1]),matrix[1],matrix[3],matrix[5],0,width,height,1,1,0,0,width,height]);
   r.device.queue.writeBuffer(r.uniform,0,uniform);
+  if(!options.preparedFrame&&options.cameraEnabled===false){
+    if(this.depthTransforms?.length!==r.transformData.length)this.depthTransforms=new Float32Array(r.transformData.length);
+    this.depthTransforms.set(r.transformData);const depth=parallaxResolver(report,frame);
+    for(const entry of r.layout){if(!entry.g||entry.isOnion)continue;const d=depth(entry.uid),i=entry.transform*4;this.depthTransforms[i]+=d.x;this.depthTransforms[i+1]+=d.y;}
+    r.device.queue.writeBuffer(r.transformBuffer,0,this.depthTransforms);
+  }
   const encoder=r.device.createCommandEncoder({label:'VFX camera artwork'}),pass=encoder.beginRenderPass({colorAttachments:[this.msaa
    ?{view:this.msaa.createView(),resolveTarget:this.context.getCurrentTexture().createView(),clearValue:{r:0,g:0,b:0,a:0},loadOp:'clear',storeOp:'discard'}
    :{view:this.context.getCurrentTexture().createView(),clearValue:{r:0,g:0,b:0,a:0},loadOp:'clear',storeOp:'store'}]});
@@ -36,6 +43,7 @@ export class CameraGpuSource {
   pass.end();r.device.queue.submit([encoder.finish()]);
   // Queue order makes the camera submission see its own uniforms, then restores
   // the editor state before subsequent work on the shared device.
+  if(!options.preparedFrame&&options.cameraEnabled===false)r.device.queue.writeBuffer(r.transformBuffer,0,r.transformData);
   if(options.viewportUniforms)r.device.queue.writeBuffer(r.uniform,0,options.viewportUniforms);
   target.setTransform(1,0,0,1,0,0);target.clearRect(0,0,width,height);target.save();
   target.transform(...matrix);drawBackground(target,report,frame,report.canvas_width,report.canvas_height,{...r.resources,bounds:backgroundBounds(frame,report.canvas_width,report.canvas_height,true,report)});target.restore();

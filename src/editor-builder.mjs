@@ -5,6 +5,8 @@ import {editorSpriteSegmentMethods} from './editor-sprite-segment.mjs';
 import {editorBuilderStyleMethods} from './editor-builder-style.mjs';
 import {editorBuilderBranchMethods} from './editor-builder-branch.mjs';
 import {styleColor, polygonIdentity} from './animation-style.mjs';
+import {remapRigReferences} from './rig-constraints.mjs';
+import {remapSurface, editableSurface} from './pivot/surfaces.mjs';
 
 const clone = value => structuredClone(value);
 const MAX_SEGMENTS = 30000;
@@ -65,6 +67,7 @@ const patchPolygon = (figure, polygon, patch) => {
   if ('color' in patch) polygon.color_rgb = rgb(patch.color);
   if ('opacity' in patch) { polygon.alpha_raw = transparency(patch.opacity); polygon.color_alpha = 1 - polygon.alpha_raw / 255; }
   if ('zOrder' in patch) { polygon.z_order = finite(patch.zOrder, 'Polygon order'); polygon.z_order_runtime_raw = polygon.z_order - 1; }
+  if ('surface' in patch) {if(patch.surface===null)delete polygon._stykSurface;else polygon._stykSurface=clone(patch.surface);}
   polygon.segment_ids_raw = [...polygon.segment_ids]; polygon.vertex_id_space = 'joint_tip_ids';
 };
 
@@ -107,7 +110,8 @@ export const editorBuilderMethods = {
   },
   updatePolygon(index, patch = {}) {
     if (!Number.isInteger(index) || !this.figure?.polyfills?.[index]) throw new Error('Select an existing polygon.');
-    for (const key of Object.keys(patch)) if (!['handleIds', 'color', 'opacity', 'zOrder'].includes(key)) throw new Error(`Polygon property ${key} is not editable.`);
+    for (const key of Object.keys(patch)) if (!['handleIds', 'color', 'opacity', 'zOrder', 'surface'].includes(key)) throw new Error(`Polygon property ${key} is not editable.`);
+    if('surface' in patch&&patch.surface!==null)patch={...patch,surface:editableSurface(patch.surface,this.figure,this.geometry.objects.get(this.selectedSlot).joints)};
     if (this.propertyChannels && this.object && Object.keys(patch).every(key => ['color','opacity'].includes(key))) {
       const target={kind:'polygon',uid:this.object.unique_id,polygonId:polygonIdentity(this.figure.polyfills[index],index),figureTypeId:this.figure.figure_type_id};
       return this.addAnimationKeys(Object.entries(patch).map(([property,value]) => ({target,property,value:property === 'color' ? styleColor(rgb(value)) : value})));
@@ -170,6 +174,7 @@ export const editorBuilderMethods = {
       const copies = indices.map(i => {
         const segment = clone(next.segments[i]); delete segment._logical_segment_id;
         segment.segment_id = remap.get(segment.segment_id);
+        remapRigReferences(segment, remap);
         segment.parent_id = next.segments[i].segment_id === selected.segment_id ? anchor : remap.get(segment.parent_id);
         segment.angle_rad = angleOf(segment.angle_rad); if (flip) segment.bend_rad = -(segment.bend_rad ?? 0);
         // Native Duplicate copies image flags, while text flags start at the
@@ -185,6 +190,7 @@ export const editorBuilderMethods = {
       for (const polygon of polygons) {
         polygon.polyfill_id = ++polygonId; polygon.segment_ids = polygon.segment_ids.map(id => remap.get(id) ?? anchor);
         polygon.segment_ids_raw = [...polygon.segment_ids];
+        remapSurface(polygon,id=>remap.get(id)??id);
       }
       [...copies, ...polygons].sort((a, b) => (a.z_order ?? 0) - (b.z_order ?? 0)).forEach((item, i) => { item.z_order = maxOrder + i + 1; item.z_order_runtime_raw = item.z_order - 1; });
       for (const frame of this._allSourceFrames()) for (const object of frame.objects) if (object.figure_type_id === next.figure_type_id) {

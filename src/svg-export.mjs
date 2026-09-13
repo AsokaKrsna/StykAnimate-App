@@ -1,3 +1,4 @@
+import {parallaxResolver} from './layer-parallax.mjs';
 import {svgPaintDefinition, segmentPaint, textPaintGeometry, shapePaintBounds} from './paint.mjs';
 import { buildGeometry, mixColor } from './pivot/geometry.mjs';
 import { backgroundBounds, sceneBackgroundColor } from './pivot/background.mjs';
@@ -263,7 +264,8 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
     return parts.join('');
   }
   const mainStroke = {width: 1};
-  async function renderGroups(items){
+  const parallax=parallaxResolver(report,frame,cameraEnabled);
+  async function renderGroups(items,nested=false){
   const groups=[];
   for (const s of items) {
     let group = groups.at(-1);
@@ -272,11 +274,13 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
   }
   let output='';
   for (const group of groups) {
+    const depth=nested?{x:0,y:0}:parallax(group.items[0].obj.unique_id);
+    const transform=`translate(${number(depth.x)} ${number(depth.y)})`;
     const owner=group.items[0]._movieclipOwner;
     if(owner){
       const children=group.items.map(item=>{const child={...item,slot:item._movieclipPart};delete child._movieclipOwner;delete child._movieclipPart;delete child._movieclipInner;
         if(item._movieclipInner){child._movieclipOwner=item._movieclipInner.owner;child._movieclipPart=item._movieclipInner.part;child._movieclipInner=item._movieclipInner.inner;}return child;});
-      output+=`<g data-movieclip-id="${escape(group.items[0].obj.unique_id)}" opacity="${number(clamp(owner.opacity))}">${await renderGroups(children)}</g>`;continue;
+      output+=`<g transform="${transform}" data-movieclip-id="${escape(group.items[0].obj.unique_id)}" opacity="${number(clamp(owner.opacity))}">${await renderGroups(children,true)}</g>`;continue;
     }
     if (group.opacity <= 0) continue;
     const stroke = group.opacity < 1 ? {width: 1} : mainStroke;
@@ -288,7 +292,7 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
       if (opacity > 0) content += `<g opacity="${number(opacity)}">${await primitives(outline, opacity < 1 ? {width: 1} : stroke)}</g>`;
     }
     content += await primitives(group.items, stroke);
-    output += `<g data-object-id="${escape(group.items[0].obj.unique_id ?? group.slot)}" opacity="${number(clamp(group.opacity ?? 1))}">${content}</g>`;
+    output += `<g transform="${transform}" data-object-id="${escape(group.items[0].obj.unique_id ?? group.slot)}" opacity="${number(clamp(group.opacity ?? 1))}">${content}</g>`;
   }
   return output;
   }

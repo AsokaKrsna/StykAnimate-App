@@ -154,13 +154,18 @@ export const editorMovieclipMethods={
     if(this.getLayer(this.layerForUid(this.selectedUid))?.locked)throw new Error('Unlock the movieclip layer before editing it.');
     if(this.report._styk?.layerSheet)return this.sheetExtendMovieclip(count);
     const uid=this.selectedUid,source=filteredFrame(this.selectionFrame,new Set([uid])).objects[0],selection=this._selectionState();
+    const layer=this.layerForUid(uid),orderIndex=frameOrder(this.selectionFrame).filter(id=>this.layerForUid(id)===layer).indexOf(uid);
     const ticks=this.timeline.filter(row=>row.start>this.tick&&row.count>0).slice(0,count).map(row=>row.start);
     return this.movieclipTimelineEdit('Add movieclip to next keyframes',()=>{
       let added=0;
       try{for(const tick of ticks){
         this.seek(tick);
         if(this.selectionFrame.objects.some(object=>object.unique_id===uid))continue;
-        this.transaction('Add movieclip to next keyframes',frame=>{frame.objects.push(clone(source));setOrder(frame,[...frameOrder(frame).filter(id=>id!==uid),uid]);normalizeFrame(frame);},{structural:true});added++;
+        this.transaction('Add movieclip to next keyframes',frame=>{
+          const order=frameOrder(frame),siblings=order.filter(id=>this.layerForUid(id)===layer);
+          const insertion=orderIndex<siblings.length?order.indexOf(siblings[orderIndex]):siblings.length?order.indexOf(siblings.at(-1))+1:order.length;
+          frame.objects.push(clone(source));order.splice(insertion,0,uid);setOrder(frame,order);normalizeFrame(frame);
+        },{structural:true});added++;
       }}finally{this._restoreSelection(selection);}
       return added;
     });
@@ -220,7 +225,9 @@ export const editorMovieclipMethods={
     if(this._drag)this.commitDrag();
     const capture=captureMovieclip(this,options);
     if(options.replace!==false)validateReplacementOrder(this,capture.selected,capture.start,capture.end);
-    const batch=options.end===undefined?this.movieclipBatch:this.movieclipTimelineEdit;
+    // Sheet replacement leaves native poses untouched; legacy preparation would
+    // materialize the entire layer even for a one-frame capture.
+    const batch=this.report._styk?.layerSheet||options.end===undefined?this.movieclipBatch:this.movieclipTimelineEdit;
     return batch.call(this,'Create movieclip',()=>{
       publishDefinition(this,capture.figure);
       if(options.replace===false)return capture.figure;
@@ -232,6 +239,10 @@ export const editorMovieclipMethods={
         const uid=this._identity(),pivot=movieclipAsset(figure).pivot,instance=createObject(figure,uid,pivot.x,pivot.y,
           {_stykMovieclip:this.report._styk?.layerSheet?presencePlayback():{start,end,offset:0,speed:1,mode:movieclipAsset(figure).duration===1?'single':'loop'}});
         const frame=createFrame([instance]),anchor=order[positions[0]]??[...selected][0];
+        if(this.report._styk?.layerSheet){
+          this.sheetCreateMovieclip({selected,start,end,instance,anchor});
+          this.seek(start);this.select(uid);return figure;
+        }
         const channels=[...selected].map(id=>maskedPose(this,id,start,end));
         channels.push(this.report._styk?.layerSheet?poseChannel(this,uid,[{tick:start,frame}],{start,end,orderAnchor:anchor}):{...poseChannel(this,uid,[{tick:start,frame}],{start,orderAnchor:anchor}),clipEnd:end});
         assignChildrenLayer(this,[uid],this.layerForUid(anchor));publishChannels(this,channels,'Create movieclip',{preserveDuration:true,replacePresence:{uids:selected,start,end}});

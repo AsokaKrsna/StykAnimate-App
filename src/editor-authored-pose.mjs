@@ -59,7 +59,7 @@ export const editorAuthoredPoseMethods = {
     const ids = new Set(previous.keys());
     if (edit.transaction) for (const object of edit.frame.objects) ids.add(object.unique_id);
     const after = edit.frame.objects.filter(object => ids.has(object.unique_id));
-    if (edit.transaction ? same(edit.source, edit.frame) : same(drag.before, after)) { this._drag = null; this._authoredPoseEdit = null; this._invalidate(); return false; }
+    if (!edit.keyAtPlayheadLayers?.length && (edit.transaction ? same(edit.source, edit.frame) : same(drag.before, after))) { this._drag = null; this._authoredPoseEdit = null; this._invalidate(); return false; }
     try {
       if (!edit.transaction) validateObjectChanges(this.report, edit.frame, ids);
       if (after.some(object => object.join)) {

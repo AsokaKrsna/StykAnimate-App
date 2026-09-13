@@ -1,6 +1,7 @@
 /** Reusable rig editing: frame-local previews, one definition commit per gesture. */
 import {buildGeometry, shortest} from './pivot/geometry.mjs';
 import {segmentBranchIndices} from './editor-builder.mjs';
+import {authoredRigTarget} from './rig-constraints.mjs';
 
 const EPS = 1e-9;
 function coordinates(x, y) {
@@ -34,6 +35,7 @@ function restorePreview(editor, drag) {
 export const editorRigMethods = {
   /** In reposition mode only the dragged joint moves; connected endpoints stay fixed. */
   beginRigDrag({reposition = true, label = 'Edit rig'} = {}) {
+    if (this.figure?.segments[this.selectedJoint]?._stykRig?.connector) return this.beginDrag('Slide connector');
     if (!this.figure?.segments[this.selectedJoint]) return false;
     if (Math.abs(this.object.scale) < EPS) throw new Error('Increase figure scale before editing its rig.');
     if (!this.beginDrag(label)) return false;
@@ -47,6 +49,7 @@ export const editorRigMethods = {
   },
   /** Safe for pointermove: never clones a definition or walks another animation frame. */
   editRigJoint(x, y, {stretch = false, isolate = false, reposition} = {}) {
+    if (this.figure?.segments[this.selectedJoint]?._stykRig?.connector) return this.slideConnector(x,y);
     coordinates(x, y);
     const active = Boolean(this._drag?.rig);
     if (!active && !this.beginRigDrag({reposition: reposition ?? true})) return false;
@@ -55,17 +58,30 @@ export const editorRigMethods = {
     try {
       const object = this.object, selected = rig.geometry.segments[rig.index], point = {x, y}, changes = new Map();
       const movePoint = reposition ?? rig.reposition;
-      if (Math.hypot(point.x - selected.end.x, point.y - selected.end.y) < EPS) {
+      if(selected.seg._stykRig?.angleLock){
+        const current=rig.object.len_flag?rig.object.lengths[rig.index]:rig.figure.segments[rig.index].length;
+        const chord=Math.hypot(selected.end.x-selected.start.x,selected.end.y-selected.start.y),axis=selected.angle+selected.bend/2;
+        if((stretch||movePoint)&&current>EPS&&chord>EPS){
+          const along=Math.max(0,(point.x-selected.start.x)*Math.cos(axis)+(point.y-selected.start.y)*Math.sin(axis));
+          changes.set(rig.index,{angle:rig.object.angles[rig.index],length:along*current/chord});
+        }
+      } else if (Math.hypot(point.x - selected.end.x, point.y - selected.end.y) < EPS) {
         // Exact pointer return restores the snapshot, without float32 chord drift.
       } else if (movePoint) {
-        changes.set(rig.index, chordPose(selected.start, point, selected.bend, object.scale, selected.angle));
+        const target=authoredRigTarget(selected,point.x,point.y);
+        changes.set(rig.index, chordPose(selected.start, target, selected.bend, object.scale, rig.object.angles[rig.index]));
         for (const i of rig.children) {
           const child = rig.geometry.segments[i];
-          changes.set(i, chordPose(point, child.end, child.bend, object.scale, child.angle));
+          // Explicit relationships keep controlling their parts during a rig
+          // edit. Re-fitting them would bake deformation into authored lengths.
+          if(child.connector||child.seg._stykRig?.follow||child.rigSpace?.followScale!==undefined||child.rigSpace?.locked)continue;
+          const target=authoredRigTarget({...child,start:point},child.end.x,child.end.y);
+          changes.set(i, chordPose(point, target, child.bend, object.scale, rig.object.angles[i]));
         }
       } else {
-        const pose = chordPose(selected.start, point, selected.bend, object.scale, selected.angle);
-        const delta = shortest(pose.angle - selected.angle);
+        const target=authoredRigTarget(selected,point.x,point.y);
+        const pose = chordPose(selected.start, target, selected.bend, object.scale, rig.object.angles[rig.index]);
+        const delta = shortest(pose.angle - rig.object.angles[rig.index]);
         for (const i of isolate ? [rig.index] : rig.branch) changes.set(i, {angle: rig.object.angles[i] + delta});
         if (stretch) changes.get(rig.index).length = pose.length;
       }
@@ -100,6 +116,7 @@ export const editorRigMethods = {
       operations.push({index: i, angleDelta, length, lengthDelta, ratio,
         defaultLength: length === undefined ? oldDefault : Math.abs(oldDefault) > EPS && ratio !== null ? oldDefault * ratio : length});
     }
+    const retainedGeometry = {previous:this._geometry ?? this._incremental?.previous, dirtySlots:this._geometry ? [] : this._incremental?.dirtySlots ?? []};
     // Remove the temporary pose before capturing the reusable document operation.
     this._drag = null;
     if (drag.authored) this._authoredPoseEdit = null;
@@ -109,7 +126,9 @@ export const editorRigMethods = {
     return this._topologyEdit(drag.label, figure => {
       for (const operation of operations) {
         const segment = figure.segments[operation.index]; segment.angle_rad += operation.angleDelta;
-        if (operation.length !== undefined) segment.length = operation.defaultLength;
+        if (operation.length !== undefined) {
+          segment.length = operation.defaultLength;
+        }
       }
       for (const frame of this._allSourceFrames()) {
         const affected = new Set();
@@ -154,7 +173,7 @@ export const editorRigMethods = {
           if (root) { object.root_x = root.x; object.root_y = root.y; }
         }
       }
-    });
+    }, {segmentIndices: operations.map(operation => operation.index), retainedGeometry});
   },
   cancelRigDrag() {
     const drag = this._drag; if (!drag?.rig) return false;

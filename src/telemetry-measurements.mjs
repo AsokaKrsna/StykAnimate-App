@@ -68,6 +68,7 @@ export class PlaybackMeasurements {
     // A 24 FPS project is assessed against its own intended interval, with 10% scheduling tolerance.
     const deadline = Number.isFinite(fps) && fps > 0 ? 1000 / fps : null;
     if (deadline && interval > deadline * 1.1) c.count('playback_missed_deadlines');
+    c.performance?.record('playback_interval',interval,{fps:bucket},1,deadline&&interval>deadline*1.1?1:0);
   }
   flush() {
     for (const [fps, timing] of this.groups) this.collector.operationSummary({ ...this.context, operation: 'playback', stage: 'playback', fps, outcome: 'succeeded' }, timing);

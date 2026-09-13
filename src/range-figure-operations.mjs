@@ -408,13 +408,44 @@ export function planFigureFrameOperation(report, frame, uids, input) {
       }
       center = {x: (minX + maxX) / 2, y: (minY + maxY) / 2};
     }
-    const transformed = operation.kind === 'scale' ? selected : affected;
+    let transformed = operation.kind === 'scale' ? selected : affected;
+    const part = operation.kind === 'mirror' ? operation.segmentSelection : null;
+    let partSlot, partHandles;
+    if (part) {
+      partSlot = slots.find(slot => objects[slot].unique_id === part.uid);
+      if (partSlot === undefined) return null;
+      const segments = types.get(objects[partSlot].figure_type_id).segments;
+      const existingHandles = new Set(segments.map(segment => segment.segment_id));
+      partHandles = new Set(part.handles.filter(id => existingHandles.has(id)));
+      if (!partHandles.size) return null;
+      if (part.branch) {
+        const byParent = new Map();
+        for (const segment of segments) {
+          if (!byParent.has(segment.parent_id)) byParent.set(segment.parent_id, []);
+          byParent.get(segment.parent_id).push(segment.segment_id);
+        }
+        for (const id of partHandles) for (const child of byParent.get(id) ?? []) partHandles.add(child);
+      }
+      transformed = new Set([partSlot]);
+      if (part.branch) for (const child of children.get(partSlot) ?? [])
+        if (partHandles.has(objects[child].join.target_handle_id))
+          for (const descendant of descendants(children, [child])) transformed.add(descendant);
+    }
     for (const slot of transformed) {
       const object = objects[slot], figure = types.get(object.figure_type_id), patch = {};
       // Materialize effective runtime lengths/bends before retiring a tween cache.
       if (object.runtime_segments) {
         if (!object.len_flag) { patch.len_flag = 1; patch.lengths = figure.segments.map((segment, index) => object.runtime_segments[index]?.length ?? segment.length); }
         if (!object.bend_flag) { patch.bend_flag = 1; patch.bends = figure.segments.map((segment, index) => object.runtime_segments[index]?.bend_rad ?? segment.bend_rad ?? 0); }
+      }
+      if (part && slot === partSlot) {
+        const horizontal = (operation.axis ?? 'horizontal') === 'horizontal';
+        patch.angles = object.angles.map((angle, index) => partHandles.has(figure.segments[index].segment_id) ? horizontal ? Math.PI - angle : -angle : angle);
+        const bends = patch.bends ?? (object.bend_flag ? object.bends : figure.segments.map(segment => segment.bend_rad ?? 0));
+        patch.bend_flag = 1;
+        patch.bends = bends.map((bend, index) => partHandles.has(figure.segments[index].segment_id) ? -bend : bend);
+        patchObject(slot, patch, ['runtime_segments']);
+        continue;
       }
       if (operation.kind === 'scale') {
         patch.scale = selectedScales.get(slot);

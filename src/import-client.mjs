@@ -68,6 +68,7 @@ export class ImportClient {
   }
 
   _fail(error) {
+    if(!this.disposed)this.diagnostics?.recovery('import_worker','started');
     this.failure = error;
     this.worker.terminate();
     for (const request of this.pending.values()) {
@@ -80,7 +81,7 @@ export class ImportClient {
   _request(operation, payload, transfer = [], onProgress) {
     if (this.disposed) return Promise.reject(new Error('The file importer has been disposed.'));
     // Retry only the user's next operation; never silently repeat a failed one.
-    if(this.failure){try{this._startWorker();}catch(error){return Promise.reject(error);}}
+    if(this.failure){try{this._startWorker();}catch(error){this.diagnostics?.recovery('import_worker','failed');return Promise.reject(error);}}
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
       const timer = this.timeoutMs > 0 ? setTimeout(() => {
@@ -89,7 +90,8 @@ export class ImportClient {
         error.telemetryStage='decode';
         this._fail(error);
       }, this.timeoutMs) : null;
-      this.pending.set(id, {resolve, reject, timer, onProgress});
+      const succeeded=value=>{this.diagnostics?.recovery('import_worker','recovered');resolve(value);};
+      this.pending.set(id, {resolve:succeeded, reject, timer, onProgress});
       try {
         this.worker.postMessage({id, operation, baseURL: this.baseURL, token: this.token, ...payload}, transfer);
       } catch (error) {

@@ -1,4 +1,4 @@
-import {ensureLayerState, validateLayerState, layerIdForUid, FIXED_LAYER_IDS} from './layers.mjs';
+import {ensureLayerState, validateLayerState, layerIdForUid, FIXED_LAYER_IDS, LAYER_COLORS} from './layers.mjs';
 import {planLayerMembershipMigration} from './editor-layer-migration.mjs';
 const owns = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 const clone = value => structuredClone(value);
@@ -121,6 +121,12 @@ export const editorLayerMethods = {
     if (FIXED_LAYER_IDS.includes(id)) throw new Error('Scene and Camera are permanent tracks and cannot be renamed.');
     if (!owns(ensureLayerState(this.report).byId, id)) throw new Error('Choose an existing user layer.');
     return this._layerEdit('Rename layer', [[['byId', id, 'name'], cleanName(name)]]);
+  },
+  setLayerColor(ids, color) {
+    if (color !== null && !owns(LAYER_COLORS, color)) throw new Error('Choose a layer color.');
+    const state = ensureLayerState(this.report), unique = [...new Set(ids)];
+    if (unique.some(id => !owns(state.byId, id))) throw new Error('Choose existing user layers.');
+    return this._layerEdit('Set layer color', unique.map(id => [['byId', id, 'color'], color, color === null]));
   },
   deleteLayer(id, {targetLayerId} = {}) {
     if(this.report._styk?.layerSheet&&!targetLayerId)return this.sheetDeleteLayer(id);

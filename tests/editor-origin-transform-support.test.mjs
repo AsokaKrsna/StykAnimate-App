@@ -94,7 +94,8 @@ for(const [name,operation,transform,affine]of [
   ['vertical mirror selection',e=>e.mirrorSelection('vertical'),pose=>mirrored(pose,'vertical'),'vertical'],
   ['reset pose',e=>e.resetPose(),null,null],
 ])test(`deleted reference support follows ${name} with COW ghosts and one exact undo`,()=>{
-  const editor=fixture(),before=record(editor),initial=points(editor),root=editor.geometry.objects.get(0).root;
+  const editor=fixture();editor.select(1,-1);
+  const before=record(editor),initial=points(editor),root=editor.geometry.objects.get(0).root;
   operation(editor);
   checkGhosts(ghosts(editor.object),ghosts(before.document.keyframes[0].objects[0]),transform??((pose,index)=>resetExpected(editor,index)));
   assert.notEqual(ghosts(editor.object),before.ghostMaps[0][0]);checkCow(editor,before);
@@ -112,7 +113,8 @@ for(const [name,operation,transform]of [
   ['horizontal mirror',e=>e.mirrorFiguresInFrames('horizontal',[0,2]),pose=>mirrored(pose,'horizontal')],
   ['reset',e=>e.resetPoseInFrames([0,2]),null],
 ])test(`native ${name} ranges transform each source's deleted reference without touching other frames`,()=>{
-  const editor=fixture(),before=record(editor),middle=editor.report.keyframes[1];operation(editor);
+  const editor=fixture();editor.select(1,-1);
+  const before=record(editor),middle=editor.report.keyframes[1];operation(editor);
   for(const index of [0,2]) {
     checkGhosts(ghosts(editor.report.keyframes[index].objects[0]),ghosts(before.document.keyframes[index].objects[0]),transform??((pose,index)=>resetExpected(editor,index)));
     assert.notEqual(ghosts(editor.report.keyframes[index].objects[0]),before.ghostMaps[index][0]);

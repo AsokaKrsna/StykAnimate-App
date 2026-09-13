@@ -687,11 +687,12 @@ class Handler(BaseHTTPRequestHandler):
             parsed = urlsplit(self.path)
             self._check_request(auth=parsed.path.startswith("/api/") and parsed.path != "/api/health")
             if parsed.path == "/api/health":
+                from process_metrics import memory_mib
                 scanner = fast_decode.native_scan.status()
                 self._json(200, {"ok": True, "name": "StykAnimate-webapp", "schemaVersion": 1,
                     "codec": "Pivot verified grammar / bulk reader", "versions": [2, 3, 4, 5],
                     "formats": ["piv", "stk", "styk", "stkz", "stykmov"], "maxImportBytes": MAX_SOURCE,
-                    "jsonEncoder": JSON_ENCODER,
+                    "jsonEncoder": JSON_ENCODER, "processMemoryMiB": memory_mib(),
                     "nativeFrameScanner": "cpp" if scanner["available"] else "python",
                     "nativeFrameScannerInfo": {"abi": scanner["abi"], "sha256": scanner["sha256"]} if scanner["available"] else None})
             elif parsed.path == "/api/samples":

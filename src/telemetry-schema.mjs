@@ -1,6 +1,8 @@
 // The same allowlist runs at the renderer, privileged desktop boundary, and Worker.
 // No document content, filenames, paths, raw exception messages, or user text belongs here.
-export const SCHEMA_VERSION = 2;
+import { emptyPerformance, validatePerformance, trimPerformance,provenance } from './telemetry-performance-schema.mjs';
+export * from './telemetry-performance-schema.mjs';
+export const SCHEMA_VERSION = 3;
 export const POLICY_VERSION = '2026-09-10';
 export const MAX_SNAPSHOT_BYTES = 32768;
 export const HISTOGRAM_BOUNDS = Object.freeze([1, 4, 8, 16, 33, 50, 100, 250, 500, 1000, 2500, 5000, 15000, 60000, 300000, 3600000]);
@@ -39,7 +41,7 @@ export const OPERATION_CONTEXT_ENUMS = Object.freeze({
 });
 export const ERROR_CODES = Object.freeze(['unknown', 'invalid_document', 'unsupported_format', 'unsupported_feature', 'file_too_large', 'snapshot_failed', 'serialize_failed', 'decode_failed', 'backend_unavailable', 'backend_rejected', 'write_failed', 'permission_denied', 'disk_full', 'worker_failed', 'worker_busy', 'timeout', 'out_of_memory', 'device_lost', 'cancelled']);
 export const TRAFFIC_TYPES = Object.freeze(['external', 'internal', 'mixed', 'unknown']);
-export const contextKey = value => Object.keys(OPERATION_CONTEXT_ENUMS).map(key => value[key]).join(':');
+export const contextKey = value => Object.keys(OPERATION_CONTEXT_ENUMS).map(key => value[key]).join(':')+(value.provenance?JSON.stringify(value.provenance):'');
 export function operationContext(value = {}) {
   return Object.fromEntries(Object.entries(OPERATION_CONTEXT_ENUMS).map(([key, choices]) => [key, choices.includes(value[key]) ? value[key] : choices.includes('unknown') ? 'unknown' : choices[0]]));
 }
@@ -126,7 +128,7 @@ function validHistogram(h) {
   return object(h) && Number.isSafeInteger(h.count) && number(h.count) && number(h.sum, 3.6e15) && number(h.max, 3600000) && Array.isArray(h.buckets) && h.buckets.length === HISTOGRAM_BOUNDS.length && h.buckets.every(n => Number.isSafeInteger(n) && number(n)) && h.buckets.reduce((a, b) => a + b, 0) === h.count && h.sum <= h.count * h.max + .01;
 }
 export function validateSnapshot(value) {
-  if (!object(value) || JSON.stringify(value).length > MAX_SNAPSHOT_BYTES || ![1, SCHEMA_VERSION].includes(value.schemaVersion) || !/^[a-f0-9]{64}$/.test(value.installationId || '') || !date(value.day) || !Number.isSafeInteger(value.sequence) || value.sequence < 1) fail();
+  if (!object(value) || JSON.stringify(value).length > MAX_SNAPSHOT_BYTES || ![1, 2, SCHEMA_VERSION].includes(value.schemaVersion) || !/^[a-f0-9]{64}$/.test(value.installationId || '') || !date(value.day) || !Number.isSafeInteger(value.sequence) || value.sequence < 1) fail();
   const consent = value.consent;
   if (!object(consent) || typeof consent.analytics !== 'boolean' || typeof consent.diagnostics !== 'boolean' || !consent.analytics && !consent.diagnostics || consent.policyVersion !== POLICY_VERSION || !number(consent.updatedAt, 1e14)) fail();
   if (!object(value.app) || !/^\d{1,3}\.\d{1,3}\.\d{1,3}(?:-[a-z0-9.]{1,24})?$/.test(value.app.version || '') || !['beta', 'stable', 'development'].includes(value.app.channel)) fail();
@@ -134,7 +136,7 @@ export function validateSnapshot(value) {
     app: { version: value.app.version, channel: value.app.channel },
     consent: { analytics: consent.analytics, diagnostics: consent.diagnostics, policyVersion: POLICY_VERSION, updatedAt: consent.updatedAt },
       environment: sanitizeEnvironment(value.environment), counters: {}, timings: {}, gauges: {}, milestones: {}, errors: [] };
-  if (value.schemaVersion === 2) {
+  if (value.schemaVersion >= 2) {
     if (!TRAFFIC_TYPES.includes(value.app.traffic) || typeof value.app.build !== 'string' || !/^(unknown|[a-f0-9]{12,40})$/.test(value.app.build)) fail();
     Object.assign(clean.app, { traffic: value.app.traffic, build: value.app.build });
     clean.operationContexts = []; clean.firstSuccess = {};
@@ -164,22 +166,45 @@ export function validateSnapshot(value) {
     });
     const code = e.code ?? 'unknown', stage = e.stage ?? 'unknown', format = e.format ?? 'unknown', complexity = e.complexity ?? 'unknown';
     if (!ERROR_CODES.includes(code) || stage !== 'unknown' && !OPERATION_CONTEXT_ENUMS.stage.includes(stage) || !OPERATION_CONTEXT_ENUMS.format.includes(format) || !OPERATION_CONTEXT_ENUMS.complexity.includes(complexity)) fail();
-    if (consent.diagnostics) clean.errors.push({ fingerprint: e.fingerprint, type: e.type, operation: e.operation, frames, ...(value.schemaVersion === 2 ? { code, stage, format, complexity } : {}), count: e.count, firstAt: e.firstAt, lastAt: e.lastAt });
+    if (consent.diagnostics) clean.errors.push({ fingerprint: e.fingerprint, type: e.type, operation: e.operation, frames, ...(value.schemaVersion >= 2 ? { code, stage, format, complexity } : {}),...(value.schemaVersion>=3?{provenance:provenance(e.provenance)}:{}), count: e.count, firstAt: e.firstAt, lastAt: e.lastAt });
   }
-  if (value.schemaVersion === 2) {
+  if (value.schemaVersion >= 2) {
     if (!Array.isArray(value.operationContexts || []) || (value.operationContexts || []).length > MAX_OPERATION_CONTEXTS || !object(value.firstSuccess || {})) fail();
     const seen = new Set();
     for (const row of value.operationContexts || []) {
       if (!object(row) || !Object.entries(OPERATION_CONTEXT_ENUMS).every(([key, choices]) => choices.includes(row[key])) || !validHistogram(row.timing)) fail();
       const key = contextKey(row); if (seen.has(key)) fail(); seen.add(key);
-      if (consent.diagnostics) clean.operationContexts.push({ ...operationContext(row), timing: { count: row.timing.count, sum: row.timing.sum, max: row.timing.max, buckets: [...row.timing.buckets] } });
+      if (consent.diagnostics) clean.operationContexts.push({ ...operationContext(row),...(value.schemaVersion>=3?{provenance:provenance(row.provenance)}:{}), timing: { count: row.timing.count, sum: row.timing.sum, max: row.timing.max, buckets: [...row.timing.buckets] } });
     }
     for (const [key, bucket] of Object.entries(value.firstSuccess || {})) {
       if (!['save', 'export'].includes(key) || !FIRST_SUCCESS_BUCKETS.includes(bucket)) fail();
       if (consent.analytics) clean.firstSuccess[key] = bucket;
     }
   }
+  if (value.schemaVersion >= 3) {
+    if (!Number.isSafeInteger(value.diagnosticGeneration ?? 0) || (value.diagnosticGeneration ?? 0)<0 || (value.diagnosticGeneration ?? 0)>1e9) fail();
+    clean.diagnosticGeneration=value.diagnosticGeneration??0;
+    const perf=validatePerformance(value.performance);
+    clean.performance=consent.diagnostics?perf:emptyPerformance();
+  }
   // Usage dimensions must not sneak into diagnostic-only consent.
   if (!consent.analytics) { clean.environment.mode = 'unknown'; clean.environment.locale = 'unknown'; }
   return clean;
+}
+
+// Diagnostic reset preserves product activity, milestones, consent and feedback.
+export const RESET_COUNTERS = Object.freeze(COUNTERS.filter(key=>DIAGNOSTIC_COUNTERS.includes(key)||/^(save|import|export|recovery)_(started|succeeded|saved|restored|failed|cancelled)$/.test(key)||/^playback_(seconds|frames|buffering)$/.test(key)));
+export function clearDiagnostics(snapshot,generation=0){
+  const clean={...snapshot,counters:{...snapshot.counters},timings:{},gauges:{},errors:[],operationContexts:[]};
+  for(const key of RESET_COUNTERS)delete clean.counters[key];
+  if(snapshot.schemaVersion>=3){clean.performance=emptyPerformance();clean.diagnosticGeneration=generation;}
+  return clean;
+}
+export function fitSnapshot(snapshot){
+  if(snapshot.performance){
+    trimPerformance(snapshot.performance);
+    const excess=JSON.stringify(snapshot).length-MAX_SNAPSHOT_BYTES+128;
+    if(excess>0)trimPerformance(snapshot.performance,Math.max(100,JSON.stringify(snapshot.performance).length-excess));
+  }
+  return snapshot;
 }

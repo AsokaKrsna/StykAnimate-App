@@ -6,8 +6,8 @@ import {pcmWave} from '../src/audio-pcm.mjs';
 const out = 'artifacts/audio-ux'; await mkdir(out, {recursive:true});
 const samples = Float32Array.from({length:48000 * 4}, (_, i) => Math.sin(i * Math.PI * 440 / 24000) * (.25 + .2 * Math.sin(i / 3000) ** 2));
 await writeFile(`${out}/Dialogue.wav`, new Uint8Array(await pcmWave([samples]).arrayBuffer()));
-const browser = await chromium.launch({channel:'chrome', headless:true}), page = await browser.newPage({viewport:{width:1440, height:1000}}), errors = [];
-page.on('pageerror', error => errors.push(error.message));
+const browser = await chromium.launch({channel:'chrome', headless:true, ignoreDefaultArgs:['--hide-scrollbars']}), page = await browser.newPage({viewport:{width:1440, height:1000}}), errors = [];
+page.on('pageerror', error => errors.push(error.stack ?? error.message));
 const settle = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 const state = () => page.evaluate(() => structuredClone(styk.editor.report._styk.audio));
 const gesture = async (from, to, key) => {
@@ -46,12 +46,11 @@ try {
   assert.deepEqual(await state(), moved);
   await page.locator(`[data-clip="${id}"]`).press('ArrowUp'); await settle(); assert.equal((await state()).tracks[0].clips[0].id, id);
   await page.locator(`[data-clip="${id}"]`).press('ArrowDown'); await settle(); assert.equal((await state()).tracks[1].clips[0].id, id);
-  const sizeBefore = await page.locator('.audio-body').evaluate(node => node.clientHeight);
-  const separator = page.getByRole('separator', {name:'Resize audio panel'}), box = await separator.boundingBox();
+  const sizeBefore = await page.locator('.sheet-main').evaluate(node => node.clientHeight);
+  const separator = page.getByRole('separator', {name:'Resize timeline', exact:true}), box = await separator.boundingBox();
   await gesture({x:box.x + box.width / 2, y:box.y + 3}, {x:box.x + box.width / 2, y:box.y - 90}); await release();
-  const resized = await page.locator('.audio-body').evaluate(node => node.clientHeight); assert.ok(resized > sizeBefore + 65, `${sizeBefore} -> ${resized}`);
-  const stored = await page.evaluate(() => styk.editor.audioView.height);
-  await separator.press('ArrowDown'); await settle(); assert.ok(await page.locator('.audio-body').evaluate(node => node.clientHeight) < resized);
+  const resized = await page.locator('.sheet-main').evaluate(node => node.clientHeight); assert.ok(resized > sizeBefore + 65, `${sizeBefore} -> ${resized}`);
+  await separator.press('ArrowDown'); await settle(); assert.ok(await page.locator('.sheet-main').evaluate(node => node.clientHeight) < resized);
   await separator.press('ArrowUp'); await settle();
 
   // Drop onto the new-track row creates and moves in one undo command.
@@ -67,20 +66,24 @@ try {
   const fade = await page.locator(`[data-clip="${id}"] .audio-fadeIn`).boundingBox();
   await gesture({x:fade.x + 5, y:fade.y + 5}, {x:fade.x + 47, y:fade.y + 5}); await release();
   assert.equal((await state()).tracks[2].clips[0].fadeIn, .25);
+  await page.getByRole('button',{name:'Audio clip controls',exact:true}).click();
   const volume = page.getByRole('slider', {name:'Selected clip volume'}); await volume.fill('75'); await volume.dispatchEvent('change'); await settle();
   assert.equal((await state()).tracks[2].clips[0].gain, .75);
+  await page.keyboard.press('Escape');
   await page.getByRole('slider', {name:'Volume for Audio 3', exact:true}).fill('80'); await page.getByRole('slider', {name:'Volume for Audio 3', exact:true}).dispatchEvent('change'); await settle();
   assert.equal((await state()).tracks[2].gain, .8);
+  await page.getByRole('button',{name:'Audio clip controls',exact:true}).click();
   await volume.focus(); await volume.press('Control+z'); await settle(); assert.equal((await state()).tracks[2].gain, 1);
   await volume.press('Control+z'); await settle(); assert.equal(await volume.inputValue(), '100');
   await volume.press('Control+y'); await volume.press('Control+y'); await settle();
+  await page.keyboard.press('Escape');
   await page.getByRole('button', {name:'Mute Audio 3', exact:true}).press('Space'); await settle(); assert.equal((await state()).tracks[2].mute, true);
   await page.getByRole('button', {name:'Mute Audio 3', exact:true}).press('Enter'); await settle(); assert.equal((await state()).tracks[2].mute, false);
 
   // Selection, preferences, and editing survive both timeline modes.
   await page.evaluate(() => styk.settingsUI.commit({timelineMode:'simple'})); await settle();
   assert.equal(await page.evaluate(() => styk.timeline.audio.selected), id);
-  assert.equal(await page.evaluate(() => styk.editor.audioView.height), stored);
+  assert.equal(await page.evaluate(() => styk.editor.audioPanelOpen), true);
   const simplePoint = await position(id, 35);
   await gesture(simplePoint, {x:simplePoint.x, y:await trackCenter(source)}, 'Shift'); await release('Shift');
   assert.equal((await state()).tracks[0].clips[0].id, id);
@@ -88,13 +91,13 @@ try {
   assert.equal(await page.locator(`[data-clip="${id}"]`).evaluate(node => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)', 'Hover must not cover the waveform');
   await page.screenshot({path:`${out}/simple.png`});
 
-  // Audio focus can expand even on a small screen and restores animation controls.
+  // The main timeline expansion works with the Audio tab on a small screen.
   await page.setViewportSize({width:960, height:720}); await settle();
   const compact = await page.locator('.audio-body').evaluate(node => node.clientHeight);
   const wheelBox = await page.locator('.audio-body').boundingBox(); await page.mouse.move(wheelBox.x + 400, wheelBox.y + 40); await page.mouse.wheel(70, 0); await settle();
   const offsetBeforeExpand = await page.evaluate(() => styk.timeline.strip.scrollLeft); assert.ok(offsetBeforeExpand > 0);
-  await page.getByRole('button', {name:'Expand audio panel', exact:true}).click(); await settle();
-  const expanded = await page.locator('.audio-body').evaluate(node => node.clientHeight); assert.ok(expanded > compact + 100, `${compact} -> ${expanded}`);
+  await page.getByRole('button', {name:'Expand timeline', exact:true}).click(); await settle();
+  const expanded = await page.locator('.audio-body').evaluate(node => node.clientHeight); assert.ok(expanded >= compact, `${compact} -> ${expanded}`);
   assert.equal(await page.evaluate(() => styk.timeline.strip.scrollLeft), offsetBeforeExpand, 'Expand preserves the timeline position');
   const focusPoint = await position(id, 35);
   await gesture(focusPoint, {x:focusPoint.x, y:await trackCenter(destination)}, 'Shift'); await release('Shift');
@@ -112,17 +115,17 @@ try {
   assert.equal(await page.getByText(/Choose a .*project/).count(), 0, 'Audio drops must not also invoke project import');
   await page.locator('.audio-body').press('Control+z'); await settle();
   await page.screenshot({path:`${out}/expanded-compact.png`});
-  await page.getByRole('button', {name:'Restore audio panel height', exact:true}).click(); await settle();
+  await page.getByRole('button', {name:'Restore timeline height', exact:true}).click(); await settle();
+  await page.getByRole('button', {name:'Audio', exact:true}).click(); await settle();
   assert.equal(await page.locator('.sheet-filmstrip-controls').evaluate(node => node.scrollHeight <= node.clientHeight + 1), true);
   await page.screenshot({path:`${out}/compact.png`});
+  await page.getByRole('button', {name:'Audio', exact:true}).click(); await settle();
 
   // Many tracks remain virtualized; dragging scrolls to a destination below the viewport.
   await page.setViewportSize({width:1440, height:1000}); await page.evaluate(() => styk.settingsUI.commit({timelineMode:'advanced'})); await settle();
-  await page.getByRole('button', {name:'Expand audio panel', exact:true}).click(); await settle();
-  const focusedHeight = await page.locator('.audio-body').evaluate(node => node.clientHeight);
+  const focusedHeight = await page.locator('.sheet-main').evaluate(node => node.clientHeight);
   await page.getByRole('separator', {name:'Resize timeline', exact:true}).press('ArrowDown'); await settle();
-  assert.ok(await page.locator('.audio-body').evaluate(node => node.clientHeight) < focusedHeight, 'Outer timeline resizing also resizes the focused audio area');
-  await page.getByRole('button', {name:'Restore audio panel height', exact:true}).click(); await settle();
+  assert.ok(await page.locator('.sheet-main').evaluate(node => node.clientHeight) < focusedHeight, 'Timeline resizing also resizes the shared audio viewport');
   // Snapping shows a guide; the preview leaves the document unchanged until release.
   await page.evaluate(() => {styk.timeline.audio.selected = styk.editor.report._styk.audio.tracks[0].clips[0].id;styk.editor.seek(24);}); await settle();
   const snapFrom = await position(id), snapBefore = await state();
@@ -130,22 +133,22 @@ try {
   assert.equal(await page.locator('.audio-snap-line').isVisible(), true); assert.deepEqual(await state(), snapBefore);
   await release(); assert.equal((await state()).tracks[0].clips[0].start, 2);
   await page.locator('.audio-body').press('Control+z'); await settle();
-  await page.evaluate(() => {for(let i=4;i<=18;i++)styk.editor.addAudioTrack(`Audio ${i}`); styk.timeline.audio.body.scrollTop=0;}); await settle();
+  await page.evaluate(() => {for(let i=4;i<=18;i++)styk.editor.addAudioTrack(`Audio ${i}`); styk.timeline.audio.verticalScroll.scrollTop=styk.timeline.audioTop;}); await settle();
   assert.ok(await page.locator('.audio-track').count() < 10);
-  const scrollPoint = await position(id), body = await page.locator('.audio-body').boundingBox();
+  const scrollPoint = await position(id), body = await page.locator('.sheet-scroll').boundingBox();
   await gesture(scrollPoint, {x:scrollPoint.x, y:body.y + body.height - 4}, 'Shift');
-  await page.waitForFunction(() => styk.timeline.audio.body.scrollTop > 450); await release('Shift');
+  await page.waitForFunction(() => styk.timeline.audio.verticalScroll.scrollTop > 650); await release('Shift');
   assert.ok((await state()).tracks.findIndex(track => track.clips.some(clip => clip.id === id)) >= 7);
   assert.ok(await page.locator('.audio-track').count() < 10);
   await page.evaluate(() => styk.settingsUI.commit({theme:'dark'})); await settle(); await page.screenshot({path:`${out}/dark-scrolled.png`});
-  assert.equal(await page.locator('.audio-ruler').evaluate(node => Math.abs(node.getBoundingClientRect().top - node.parentElement.getBoundingClientRect().top) <= 2), true);
+  assert.equal(await page.locator('.sheet-label-head').evaluate(node => Math.abs(node.getBoundingClientRect().top - node.parentElement.getBoundingClientRect().top) <= 2), true);
   assert.equal(await page.locator('.audio-timeline').evaluate(node => node.scrollWidth <= node.clientWidth + 1), true);
   // Dense documents keep drag work coalesced and tiny sound effects movable.
   await page.evaluate(() => {
     const report = styk.editor.serialize(), audio = report._styk.audio, assetId = Object.keys(audio.assets)[0];
     audio.tracks = Array.from({length:32}, (_, row) => ({id:`dense-track-${row}`, name:`Track ${row + 1}`, gain:1, mute:false, solo:false,
       clips:Array.from({length:128}, (_, i) => ({id:`dense-${row}-${i}`, assetId, start:i / 10, offset:0, duration:.05, fadeIn:0, fadeOut:0, gain:1}))}));
-    styk.editor.load(report); styk.timeline.audio.body.scrollTop = 0;
+    styk.editor.load(report); styk.timeline.audio.setOpen(true); styk.timeline.audio.verticalScroll.scrollTop = styk.timeline.audioTop;
   }); await settle();
   const tiny = await page.locator('[data-clip="dense-0-0"]').boundingBox();
   await page.keyboard.down('Shift'); await page.mouse.move(tiny.x + tiny.width / 2, tiny.y + 34); await page.mouse.down();

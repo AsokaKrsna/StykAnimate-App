@@ -352,10 +352,10 @@ function encoderArguments(config, output) {
   if (config.codec === "h264")
     args.push(
       "-preset",
-      "veryfast",
-      // Large frames must not collect a lookahead window of full-resolution
-      // reference images. This trades some compression efficiency for memory.
-      ...(config.width * config.height > 1920 * 1080 ? ["-tune", "zerolatency"] : []),
+      "fast",
+      // Better motion analysis compresses dense artwork much more efficiently
+      // than veryfast. Keep lookahead/B-frame queues disabled at every size.
+      "-tune", "zerolatency",
       ...(config.bitrate
         ? ["-b:v", String(Math.round(config.bitrate))]
         : ["-crf", String(Math.round(38 - config.quality * 20))]),

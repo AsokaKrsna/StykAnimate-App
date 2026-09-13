@@ -1,3 +1,6 @@
+import {cameraAtTime} from './camera-motion.mjs';
+import {drawParallaxGeometry} from './parallax-draw.mjs';
+import {parallaxResolver} from './layer-parallax.mjs';
 import { PlaybackResources } from './playback-resources.mjs';
 export { PlaybackResources } from './playback-resources.mjs';
 import { evaluatedFrame, timeline, buildGeometry, drawGeometry, releaseGeometryResources, invalidateEvaluationCaches } from './pivot/geometry.mjs';
@@ -109,13 +112,13 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
   const native = evaluatedFrame(report, location.index, location.t, tick, {tweenCache}), evaluated = performance.now();
   if (!native) throw new Error('The playback tick has no native frame.');
   const sourceGeometry=geometryCache?geometryCache.get(report,native,revision):buildGeometry(report,native),geometry=vfxEnabled?sourceGeometry:vfxPreviewGeometry(sourceGeometry),geometrized=performance.now();
-  const frame = { camera: native.camera, background_id: native.background_id, background_id_b: native.background_id_b, background_mix: native.background_mix, duration_raw: native.duration_raw,
+  const frame = { camera: cameraAtTime(report,native), background_id: native.background_id, background_id_b: native.background_id_b, background_mix: native.background_mix, duration_raw: native.duration_raw,
     ...(vfxEnabled&&native._stykVfx ? {_stykVfx:native._stykVfx} : {}),
     ...(native._stykBackgroundColor !== undefined ? {_stykBackgroundColor: native._stykBackgroundColor} : {}) };
   const groups = [], compatibility = [], chunks = [], transforms = [0, 0, 1, 1], uids = [0];
   const matrix = cameraMatrix({ report, frame, cameraEnabled, view: { scale } });
   const resolution = Math.max(.5, Math.min(8, 2 ** Math.ceil(Math.log2(Math.hypot(matrix[0], matrix[1]) || 1)))) * quality;
-  const visibleBounds = playbackVisibleBounds(report, frame, cameraEnabled);
+  const sceneVisibleBounds = playbackVisibleBounds(report, frame, cameraEnabled),parallax=parallaxResolver(report,native,cameraEnabled);
   const clipping = { culledObjects: 0, originalPixels: 0, retainedPixels: 0 };
   // Each unique bitmap has one packet owner and one transferable, even when
   // several ordered instances draw it. Camera crops are part of its identity.
@@ -149,7 +152,8 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     // Native object groups are contiguous. Keep the object's immutable array
     // identity so unchanged geometry also retains its exact artwork signature.
     items=g.drawables;
-    const uid = g.obj.unique_id ?? g.slot;
+    const uid = g.obj.unique_id ?? g.slot,depth=parallax(uid);
+    const visibleBounds=sceneVisibleBounds?{...sceneVisibleBounds,x:sceneVisibleBounds.x-depth.x,y:sceneVisibleBounds.y-depth.y}:null;
     const group = { firstInstance: shapeCount, instanceCount: 0, transformIndex, uid, slot: priorSlot };
     let data;
     let descriptor=resources?.geometryDescriptors?.get(g);
@@ -224,7 +228,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     }
     group.instanceCount = data.length / SHAPE_FLOATS; shapeCount += group.instanceCount;
     requireBudget(bitmapBytes + shapeCount * SHAPE_FLOATS * 4 + (groups.length + 1) * 84);
-    chunks.push(data); groups.push(group); transforms.push(g.root.x, g.root.y, 1, 1); uids.push(uid);
+    chunks.push(data); groups.push(group); transforms.push(g.root.x+depth.x, g.root.y+depth.y, 1, 1); uids.push(uid);
   };
   try {
     for (const s of geometry.drawables) {
@@ -270,7 +274,7 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
   if (!native) throw new Error('The playback tick has no native frame.');
   const sourceGeometry = geometryCache ? geometryCache.get(report, native, revision) : buildGeometry(report, native);
   const geometry = vfxEnabled ? sourceGeometry : vfxPreviewGeometry(sourceGeometry), geometrized = performance.now();
-  const frame = { camera: native.camera, background_id: native.background_id, background_id_b: native.background_id_b, background_mix: native.background_mix, duration_raw: native.duration_raw,
+  const frame = { camera: cameraAtTime(report,native), background_id: native.background_id, background_id_b: native.background_id_b, background_mix: native.background_mix, duration_raw: native.duration_raw,
     ...(vfxEnabled && native._stykVfx ? {_stykVfx: native._stykVfx} : {}),
     ...(native._stykBackgroundColor !== undefined ? {_stykBackgroundColor: native._stykBackgroundColor} : {}) };
   // Visibility is baked into the bitmap: session-hidden and layer-hidden
@@ -294,9 +298,10 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
   const backgroundItems = backgroundImageAssets(report, frame).map(asset => ({ type: 'image', asset }));
   let reducedImages = false;
   if (resources && (imageItems.length || backgroundItems.length)) {
-    await resources.preload([...imageItems, ...backgroundItems],
-      { scale: resolution, maxDimension: maxTextureDimension, visible: playbackVisibleBounds(report, frame, cameraEnabled) });
-    reducedImages = Boolean(resources.pressureReduced);
+    const visible=playbackVisibleBounds(report,frame,cameraEnabled),depth=parallaxResolver(report,native,cameraEnabled),groups=new Map();
+    for(const item of imageItems){const offset=depth(item.obj.unique_id),key=`${offset.x}:${offset.y}`;let group=groups.get(key);if(!group)groups.set(key,group={items:[],offset});group.items.push(item);}
+    for(const {items,offset} of groups.values()){await resources.preload(items,{scale:resolution,maxDimension:maxTextureDimension,visible:visible?{...visible,x:visible.x-offset.x,y:visible.y-offset.y}:undefined});reducedImages||=Boolean(resources.pressureReduced);}
+    if(backgroundItems.length){await resources.preload(backgroundItems,{scale:resolution,maxDimension:maxTextureDimension});reducedImages||=Boolean(resources.pressureReduced);}
   }
   if (cancelled()) throw new DOMException('Playback preparation was superseded.', 'AbortError');
   let bitmap = null;
@@ -311,13 +316,13 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
         matrix[4] * resolution / hypot, matrix[5] * resolution / hypot);
       drawBackground(ctx, report, frame, report.canvas_width, report.canvas_height,
         { ...resources, bounds: backgroundBounds(frame, report.canvas_width, report.canvas_height, cameraEnabled, report) });
-      drawGeometry(ctx, { drawables }, resources);
+      drawParallaxGeometry(ctx, { drawables }, resources,parallaxResolver(report,native,cameraEnabled));
     } finally { releaseGeometryResources(ctx); }
     if (activeVfx(vfxStack(frame)).length) {
       // Mirror the live pass: camera-space scene, effects, then projection.
       // view scale 1 with the bitmap density as dpr lands the artboard at 0,0.
       softwareCameraVfx ??= new CameraVfx();
-      softwareCameraVfx.render(ctx, { report, frame, view: { x: 0, y: 0, scale: 1 }, geometry: scene,
+      softwareCameraVfx.render(ctx, { report, frame: native, view: { x: 0, y: 0, scale: 1 }, geometry: scene,
         cameraEnabled, playing: true, vfxEnabled, resourceRevision: revision }, pixelScale, resources);
       releaseVfxSurface(ctx);
     }
@@ -357,9 +362,10 @@ export function createPlaybackWorkerEndpoint(postMessage) {
       while (queue.length && !planning.busy && !suspended) {
         const request = queue.shift(), snapshot = current, generation = serial;
         if (!snapshot || request.revision !== snapshot.revision) continue;
+        const started=request.queuedAt!==undefined?performance.now():null;
         try {
           const packet = await compilePlaybackPacket(snapshot.report, request.tick, { ...snapshot, artworkRegistry, geometryCache, tweenCache, cancelled: () => serial !== generation || suspended });
-          if (serial === generation && !suspended) postMessage({ type: 'packet', revision: snapshot.revision, tick: request.tick, packet }, packetTransferables(packet));
+          if (serial === generation && !suspended) postMessage({ type: 'packet', revision: snapshot.revision, tick: request.tick, packet,...(started!==null?{measurement:{queueMs:started-request.queuedAt,computeMs:performance.now()-started}}:{}) }, packetTransferables(packet));
           else {for (const entry of packet.compatibility) entry.bitmap?.close();if(serial===generation)queue.unshift(request);}
         } catch (error) {
           if (serial === generation) {
@@ -451,7 +457,8 @@ export function createPlaybackWorkerEndpoint(postMessage) {
       const keep = new Set(message.ticks);
       for (let i = queue.length - 1; i >= 0; i--) if (!keep.has(queue[i].tick)) queue.splice(i, 1);
     } else if (message.type === 'prepare' && message.revision === current?.revision) {
-      for (const tick of message.ticks) if (!queue.some(entry => entry.tick === tick)) queue.push({ revision: message.revision, tick });
+      const measured=new Set((message.measuredTicks||[]).slice(0,120));
+      for (const tick of message.ticks) if (!queue.some(entry => entry.tick === tick)) queue.push({ revision: message.revision, tick,...(measured.has(tick)?{queuedAt:performance.now()}:{}) });
       void drain();
     }
   };

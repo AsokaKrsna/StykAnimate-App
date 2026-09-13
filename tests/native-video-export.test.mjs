@@ -3,6 +3,27 @@ import assert from 'node:assert/strict';
 import {encodeNativeVideo} from '../src/native-video-export.mjs';
 
 const options = {format: 'mp4', width: 2, height: 2, fps: 24, totalFrames: 3, renderFrame: () => ({width: 2, height: 2})};
+
+test('direct worker PNG delivery keeps chunk backpressure without allocating a second worker or bitmap', async () => environment(async ({workers,bitmaps}) => {
+  const state=service();let consumed=0;
+  const original=state.desktop.endVideoFrame;
+  state.desktop.endVideoFrame=async token=>{await original(token);consumed++;};
+  const result=await encodeNativeVideo({...options,desktop:state.desktop,renderFrame:()=>{throw new Error('Unexpected canvas round trip');},
+    renderNativeFrame:async index=>{
+      assert.equal(index,consumed,'Do not render ahead of acknowledged input');
+      return {width:2,height:2,blob:new Blob([new Uint8Array(600000)],{type:'image/png'})};
+    }});
+  assert.equal(result.type,'video/mp4');assert.equal(workers.length,0);assert.equal(bitmaps.length,0);
+  assert.equal(consumed,3);assert.equal(state.chunkSizes.length,9);assert.ok(state.chunkSizes.every(size=>size<=262144));
+}));
+
+test('direct PNG delivery rejects incomplete frames and cancels the native job', async () => environment(async () => {
+  for(const frame of [{width:3,height:2,blob:new Blob(['x'],{type:'image/png'})},{width:2,height:2,blob:new Blob([],{type:'image/png'})}]){
+    const state=service();
+    await assert.rejects(encodeNativeVideo({...options,desktop:state.desktop,renderNativeFrame:()=>frame}),/incomplete/);
+    assert.ok(state.calls.some(c=>c[0]==='cancel'));assert.ok(!state.calls.some(c=>c[0]==='frame'));
+  }
+}));
 async function environment(run) {
   const saved = Object.fromEntries(['Worker', 'OffscreenCanvas', 'createImageBitmap'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   const workers = [], bitmaps = [];

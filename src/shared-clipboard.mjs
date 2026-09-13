@@ -1,5 +1,6 @@
 import {clipboardWireChunks, createClipboardWireDecoder} from './clipboard-wire.mjs';
 import {createFrame} from './demo.mjs';
+import {validateCameraMotion} from './camera-motion.mjs';
 
 const abort = () => new DOMException('The document changed during the clipboard operation.', 'AbortError');
 
@@ -13,7 +14,8 @@ export function clipboardSnapshot(editor, kind) {
     if (!editor._sheetClipboard) return null;
     data = {...editor._sheetClipboard, document: null,
       layerNames: Object.fromEntries(editor._sheetClipboard.rows.map(row => [row.id, editor.getLayer(row.id)?.name ?? 'Copied layer']))};
-  } else if (kind === 'frames') data = editor.frameClipboardDocumentView?.() ?? editor.frameClipboardDocument();
+  } else if (kind === 'camera-motion') data = editor._cameraMotionClipboard;
+  else if (kind === 'frames') data = editor.frameClipboardDocumentView?.() ?? editor.frameClipboardDocument();
   else throw new Error('Unsupported clipboard type.');
   return data ? {format: 'StykAnimate clipboard', version: 1, kind, data} : null;
 }
@@ -29,6 +31,8 @@ export async function restoreClipboard(editor, packet, checkCurrent = () => {}) 
   } else if (kind === 'sheet') {
     if (data.version !== 1 || !Array.isArray(data.rows) || !data.rows.length || !Number.isInteger(data.duration) || data.duration < 1 || !Array.isArray(data.figures) || !data.rows.every(row => typeof row.id === 'string' && Array.isArray(row.keys))) throw new Error('Invalid timeline clipboard.');
     editor._sheetClipboard = {...data, document: null};
+  } else if (kind === 'camera-motion') {
+    validateCameraMotion({version:1,clips:[data]});editor._cameraMotionClipboard=data;
   } else if (kind === 'frames') {
     if (editor.restoreFrameClipboardAsync) await editor.restoreFrameClipboardAsync(data, {checkCurrent});
     else editor.restoreFrameClipboard(data);

@@ -3,24 +3,36 @@ import { PIVOT_HANDLE_COLORS } from "./canvas-interactions.mjs";
 import { Localization, normalizeLocale, SUPPORTED_LOCALES } from "./localization.mjs";
 import { DEFAULT_HOTKEYS, normalizeHotkeys } from './hotkeys.mjs';
 import { HotkeySettings } from './hotkey-settings.mjs';
+import { applyUIScale, normalizeUIScale, UI_SCALE } from './ui-scale.mjs';
 import { applyEditorTheme, normalizeTheme } from './theme.mjs';
 
 export const EDITOR_SETTINGS_KEY = "stykanimate.editor.settings.v1";
 export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   locale: "en",
   theme: "system",
+  uiScale: 100,
   hotkeys: DEFAULT_HOTKEYS,
   timelineMode: "advanced",
   showHandles: true,
   showCamera: false,
   showUnselectedHandles: true,
+  canvasGrid: false,
+  canvasGuideVertical: false,
+  canvasGuideHorizontal: false,
+  canvasGuidesLocked: false,
+  canvasGridSpacing: 40,
+  canvasGridOpacity: 0.18,
+  canvasGuideX: 0.5,
+  canvasGuideY: 0.75,
   motionPaths: false,
   motionPathRange: 0,
   motionPathLabels: true,
+  motionPathDots: true,
   motionPathAllTargets: false,
   autoSizeHandles: true,
   outlineHandles: true,
   builderShowStaticHandles: true,
+  builderSmartSnapping: true,
   builderHighlightSegment: false,
   builderCanvasColor: '#ffffff',
   useBuilderCanvasColor: false,
@@ -31,6 +43,8 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   onionJoined: true,
   onionOpacity: 0.14,
   onionBefore: 2,
+  onionRangeBefore: null,
+  onionRangeAfter: null,
   onionAfter: 1,
   onionStep: 1,
   onionFade: true,
@@ -49,6 +63,7 @@ export function normalizeEditorSettings(value = {}) {
   const result = { ...DEFAULT_EDITOR_SETTINGS };
   result.locale = normalizeLocale(value?.locale);
   result.theme = normalizeTheme(value?.theme);
+  result.uiScale = normalizeUIScale(value?.uiScale);
   result.hotkeys = normalizeHotkeys(value?.hotkeys);
   if (value?.timelineMode === "simple" || value?.timelineMode === "advanced")
     result.timelineMode = value.timelineMode;
@@ -56,12 +71,15 @@ export function normalizeEditorSettings(value = {}) {
     "showHandles",
     "showCamera",
     "showUnselectedHandles",
+    "canvasGrid", "canvasGuideVertical", "canvasGuideHorizontal", "canvasGuidesLocked",
     "motionPaths",
     "motionPathLabels",
+    "motionPathDots",
     "motionPathAllTargets",
     "autoSizeHandles",
     "outlineHandles",
     "builderShowStaticHandles",
+    "builderSmartSnapping",
     "builderHighlightSegment",
     "useBuilderCanvasColor",
     "onionAhead",
@@ -76,11 +94,13 @@ export function normalizeEditorSettings(value = {}) {
   if (typeof value?.builderCanvasColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.builderCanvasColor))
     result.builderCanvasColor = value.builderCanvasColor.toLowerCase();
   for (const [key, min, max] of [
+    ["canvasGridSpacing", 4, 1000], ["canvasGridOpacity", 0.05, 0.6],
+    ["canvasGuideX", 0, 1], ["canvasGuideY", 0, 1],
     ["handleSize", 3, 10],
     ["onionCount", 0, 9],
     ["onionOpacity", 0, 1],
-    ["onionBefore", 0, 10],
-    ["onionAfter", 0, 10],
+    ["onionBefore", 0, Number.MAX_SAFE_INTEGER],
+    ["onionAfter", 0, Number.MAX_SAFE_INTEGER],
     ["onionStep", 1, 20],
     ["autosaveSeconds", 0, 300],
     ["builderOutlinerWidth", 160, 520],
@@ -88,6 +108,8 @@ export function normalizeEditorSettings(value = {}) {
   ])
     if (Number.isFinite(value?.[key]))
       result[key] = Math.max(min, Math.min(max, value[key]));
+  for(const key of ['onionRangeBefore','onionRangeAfter'])
+    if(Number.isFinite(value?.[key]))result[key]=Math.max(0,Math.min(10000000,Math.round(value[key])));
   result.onionCount = Math.round(result.onionCount);
   result.motionPathRange = Math.round(result.motionPathRange);
   for (const key of ['onionBefore','onionAfter','onionStep']) result[key] = Math.round(result[key]);
@@ -98,9 +120,6 @@ export function normalizeEditorSettings(value = {}) {
   if (['auto','canvas','gpu'].includes(value?.rendererMode)) result.rendererMode = value.rendererMode;
   return result;
 }
-const STYLE = `
-.styk-settings{width:650px;max-width:calc(100vw - 32px);height:470px;max-height:calc(100dvh - 48px);padding:0;border:1px solid var(--theme-border, #d9d9d9);border-radius:9px;background:var(--theme-panel, #fff);color:var(--theme-text, #2c2c2c);box-shadow:0 15px 60px var(--theme-shadow, #0003);overflow:hidden;font:12px Inter,'Segoe UI',sans-serif}.styk-settings::backdrop{background:var(--theme-backdrop, #0005)}.styk-settings-head{height:53px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid var(--theme-border, #e5e5e5)}.styk-settings-head h2{margin:0;font-size:14px;font-weight:600}.styk-settings-head button{height:27px;width:27px;border-radius:4px}.styk-settings-head .icon{width:16px;height:16px}.styk-settings-layout{display:flex;height:calc(100% - 53px)}.styk-settings-tabs{width:150px;flex-shrink:0;padding:12px 8px;border-right:1px solid var(--theme-border, #e5e5e5);background:var(--theme-subtle, #fafafa)}.styk-settings-tabs button{display:flex;align-items:center;justify-content:flex-start;width:100%;height:33px;padding:0 10px;border-radius:4px;gap:9px;font-size:11px;margin-bottom:3px;color:var(--theme-secondary, #565656)}.styk-settings-tabs button .icon{width:15px;height:15px}.styk-settings-tabs button[aria-selected=true]{background:var(--theme-selected, #e5f4ff);color:var(--theme-accent, #007be5);font-weight:600}.styk-settings-content{flex:1;min-width:0;overflow:auto;padding:20px}.styk-settings-content h3{margin:0 0 13px;font-size:12px;font-weight:600}.styk-settings-group+.styk-settings-group{margin-top:22px;padding-top:19px;border-top:1px solid var(--theme-border, #e5e5e5)}.styk-settings-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:34px;margin:5px 0;font-size:11px}.styk-settings-row input[type=checkbox]{width:14px;height:14px;margin:0;accent-color:#0d99ff}.styk-settings-row input[type=number],.styk-settings-row select{width:84px;height:29px;padding:0 8px;border:1px solid transparent;border-radius:4px;background:var(--theme-field, #f2f2f2);font-size:11px}.styk-settings-row select{width:114px}.styk-settings-row input:focus,.styk-settings-row select:focus{outline:1px solid var(--theme-accent, #0d99ff)}.styk-settings-row input[type=range]{width:130px;accent-color:#0d99ff}.styk-settings-number{display:flex;align-items:center;gap:7px}.styk-settings-number small{font-size:10px;color:var(--theme-muted, #858585);min-width:14px}.styk-settings-mode{display:block;position:relative;padding:14px 36px 14px 13px;border:1px solid var(--theme-border, #dedede);border-radius:6px;margin-bottom:10px;cursor:pointer}.styk-settings-mode:has(input:checked){border-color:var(--theme-accent, #0d99ff);background:var(--theme-subtle, #f1f9ff)}.styk-settings-mode input{position:absolute;right:13px;top:16px;accent-color:#0d99ff}.styk-settings-mode strong{display:block;font-size:12px;font-weight:600;margin-bottom:5px}.styk-settings-mode small{font-size:11px;color:var(--theme-muted, #767676);line-height:1.5}.styk-settings-reset{height:29px;padding:0 10px;border:1px solid var(--theme-border, #dedede);border-radius:4px;font-size:11px}.styk-settings-note{font-size:10px;color:var(--theme-muted, #858585);line-height:1.5;margin:12px 0 0}.styk-settings-shortcuts{display:grid;grid-template-columns:1fr auto;gap:9px 14px;font-size:11px}.styk-settings-shortcuts kbd{font:10px Inter,'Segoe UI',sans-serif;color:var(--theme-muted, #767676);background:var(--theme-field, #f2f2f2);border-radius:3px;padding:2px 5px;text-align:right}.styk-settings-error{padding:8px 10px;margin-bottom:15px;border-radius:4px;background:var(--theme-subtle, #fff1f0);color:var(--theme-danger, #b42318);font-size:11px;line-height:1.5}.styk-settings-preview{display:flex;align-items:center;gap:12px;padding:12px 0;color:var(--theme-muted, #858585);font-size:10px}.styk-settings-node{display:inline-block;width:calc(var(--size)*2px);height:calc(var(--size)*2px);border-radius:50%;border:var(--node-outline,1px solid #000);background:var(--node-color)}@media(max-width:560px){.styk-settings-tabs{width:115px;padding:10px 5px}.styk-settings-tabs button{gap:6px;padding:0 6px}.styk-settings-content{padding:16px}.styk-settings-row{gap:8px}.styk-settings-row input[type=range]{width:90px}}
-`;
 const escape = (value) =>
   String(value).replace(
     /[&<>"']/g,
@@ -120,6 +139,7 @@ export class EditorSettings {
     localization,
     onPrivacy,
     onFeedback,
+    onDonate,
   } = {}) {
     if (value === undefined) {
       try {
@@ -129,7 +149,10 @@ export class EditorSettings {
       }
     }
     this.value = normalizeEditorSettings(value);
+    // Motion-path visibility is session-only; keep saved display options.
+    this.value.motionPaths = false;
     applyEditorTheme(this.value.theme);
+    applyUIScale(this.value.uiScale);
     this.localization = localization || new Localization({locale: this.value.locale});
     this.localization.setLocale(this.value.locale);
     this.getValue = getValue;
@@ -141,39 +164,52 @@ export class EditorSettings {
     this.onResetWorkspace = onResetWorkspace;
     this.onPrivacy = onPrivacy;
     this.onFeedback = onFeedback;
+    this.onDonate = onDonate;
     this.tab = "interface";
     this.chain = Promise.resolve();
     this.pending = null;
     this.timer = null;
     this.error = null;
-    this.style = document.createElement("style");
+    this.style = document.createElement("link");
+    this.style.rel = "stylesheet";
+    this.style.href = new URL("./settings.css", import.meta.url).href;
     this.style.dataset.stykSettings = "";
-    this.style.textContent = STYLE;
     document.head.append(this.style);
     this.dialog = document.createElement("dialog");
     this.dialog.className = "styk-settings";
     this.dialog.setAttribute("aria-label", this.t("settings.editorLabel"));
-    this.dialog.innerHTML = `<header class="styk-settings-head"><h2>${escape(this.t("settings.title"))}</h2><button type="button" aria-label="${escape(this.t("settings.close"))}">${icon("x")}</button></header><div class="styk-settings-layout"><nav class="styk-settings-tabs" role="tablist" aria-label="${escape(this.t("settings.sections"))}">${[
+    this.dialog.innerHTML = `<header class="styk-settings-head"><h2>${escape(this.t("settings.title"))}</h2><button type="button" aria-label="${escape(this.t("settings.close"))}">${icon("x")}</button></header><div class="styk-settings-layout"><aside class="styk-settings-sidebar"><nav class="styk-settings-tabs" role="tablist" aria-orientation="vertical" aria-label="${escape(this.t("settings.sections"))}">${[
       ["interface", "Interface", "sliders"],
       ["canvas", "Canvas", "frame"],
       ["animation", "Animation", "play"],
-      ["shortcuts", "Shortcuts", "help"],
-      ...(onFeedback ? [["feedback", "Feedback", "help"]] : []),
+      ["shortcuts", "Shortcuts", "keyboard"],
+      ...(onFeedback ? [["feedback", "Feedback", "message"]] : []),
     ]
       .map(
         ([id, name, symbol]) =>
-          `<button type="button" role="tab" data-tab="${id}" aria-controls="styk-settings-content">${icon(symbol)}<span data-settings-tab-label>${escape(this.t('settings.' + id))}</span></button>`,
+          `<button type="button" role="tab" id="styk-settings-tab-${id}" data-tab="${id}" aria-controls="styk-settings-content">${icon(symbol)}<span data-settings-tab-label>${escape(this.t('settings.' + id))}</span></button>`,
       )
       .join(
         "",
-      )}</nav><section id="styk-settings-content" class="styk-settings-content" role="tabpanel"></section></div>`;
+      )}</nav><div class="styk-settings-actions"></div></aside><section id="styk-settings-content" class="styk-settings-content" role="tabpanel"></section></div>`;
     document.body.append(this.dialog);
     this.content = this.dialog.querySelector(".styk-settings-content");
+    this.compactLayout = window.matchMedia('(max-width:620px)');
+    this.syncTabOrientation = () => this.dialog.querySelector('[role=tablist]').setAttribute('aria-orientation', this.compactLayout.matches ? 'horizontal' : 'vertical');
+    this.compactLayout.addEventListener('change', this.syncTabOrientation);
+    this.syncTabOrientation();
     this.hotkeySettings = new HotkeySettings(this);
     if (onPrivacy) {
-      const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Privacy & diagnostics'; button.dataset.settingsPrivacy = '';
+      const button = document.createElement('button'); button.type = 'button'; button.innerHTML = `${icon('settings')}<span>Privacy & diagnostics</span>`; button.dataset.settingsPrivacy = ''; button.setAttribute('aria-label', 'Privacy & diagnostics'); button.title = 'Privacy & diagnostics';
       button.onclick = () => { this.close(); void this.onPrivacy(); };
-      this.dialog.querySelector('.styk-settings-tabs').append(button);
+      this.dialog.querySelector('.styk-settings-actions').append(button);
+    }
+    if (onDonate) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.dataset.settingsDonate = '';
+      button.innerHTML = `${icon('heart')}<span>${escape(this.t('settings.donate'))}</span>${icon('externalLink')}`;
+      button.onclick = () => Promise.resolve().then(() => this.onDonate()).catch(error => this.showError(error));
+      this.dialog.querySelector('.styk-settings-actions').append(button);
     }
     this.unsubscribeLocale = this.localization.subscribe(() => this.refreshLanguage());
     this.dialog.querySelector(".styk-settings-head button").onclick = () =>
@@ -213,7 +249,12 @@ export class EditorSettings {
       event.stopPropagation();
       const tab = event.target.closest("[role=tab]");
       if (tab) this.selectTab(tab.dataset.tab);
-      if (event.target.closest('[data-settings-feedback]')) { this.close(); this.onFeedback?.(); }
+      const feedback = event.target.closest('[data-settings-feedback]');
+      if (feedback) { this.close(); this.onFeedback?.({category: feedback.dataset.settingsFeedback}); }
+      if (event.target.closest("[data-scale-reset]")) {
+        this.commit({uiScale: 100});
+        this.syncScaleControl();
+      }
       if (event.target.closest("[data-settings-reset]"))
         Promise.resolve(this.onResetWorkspace?.()).catch((error) =>
           this.showError(error),
@@ -232,6 +273,10 @@ export class EditorSettings {
       this.commit({ [input.dataset.setting]: value });
     });
     this.dialog.addEventListener("input", (event) => {
+      if (event.target.dataset.setting === "uiScale") {
+        this.commit({uiScale: Number(event.target.value)});
+        this.syncScaleControl();
+      }
       if (event.target.dataset.setting === "handleSize") {
         const size = Number(event.target.value);
         this.content
@@ -252,6 +297,8 @@ export class EditorSettings {
     this.dialog.querySelector('[role=tablist]').setAttribute('aria-label', this.t('settings.sections'));
     for (const button of this.dialog.querySelectorAll('[data-tab]'))
       button.querySelector('[data-settings-tab-label]').textContent = this.t('settings.' + button.dataset.tab);
+    const donate = this.dialog.querySelector('[data-settings-donate] span');
+    if (donate) donate.textContent = this.t('settings.donate');
     if (!this.dialog.open) return;
     const active = document.activeElement, setting = active?.dataset.setting;
     const draft = active?.value;
@@ -270,12 +317,14 @@ export class EditorSettings {
   setValue(value) {
     this.value = normalizeEditorSettings(value);
     applyEditorTheme(this.value.theme);
+    applyUIScale(this.value.uiScale);
     const changed = this.localization.setLocale(this.value.locale);
     if (!changed && this.dialog.open) this.render();
   }
   open(tab = this.tab) {
     if (this.getValue) this.value = normalizeEditorSettings(this.getValue());
     applyEditorTheme(this.value.theme);
+    applyUIScale(this.value.uiScale);
     this.localization.setLocale(this.value.locale);
     this.dialog.lang = this.localization.locale;
     this.selectTab(tab);
@@ -295,7 +344,12 @@ export class EditorSettings {
       button.setAttribute("aria-selected", String(selected));
       button.tabIndex = selected ? 0 : -1;
     }
+    this.hotkeySettings.cancel();
+    this.hotkeySettings.conflict = null;
+    this.dialog.dataset.tab = this.tab;
+    this.content.setAttribute("aria-labelledby", `styk-settings-tab-${this.tab}`);
     this.render();
+    this.content.scrollTop = 0;
   }
   checkbox(label, key) {
     return `<label class="styk-settings-row"><span>${label}</span><input type="checkbox" data-setting="${key}" ${this.value[key] ? "checked" : ""}></label>`;
@@ -303,33 +357,47 @@ export class EditorSettings {
   number(label, key, min, max, unit = "", value = this.value[key]) {
     return `<label class="styk-settings-row"><span>${label}</span><span class="styk-settings-number"><input type="number" data-setting="${key}" min="${min}" max="${max}" value="${value}" aria-label="${label}"><small>${unit}</small></span></label>`;
   }
+  syncScaleControl() {
+    const input = this.content.querySelector('[data-setting="uiScale"]');
+    if (!input) return;
+    input.value = this.value.uiScale;
+    input.setAttribute('aria-valuetext', `${this.value.uiScale}%`);
+    this.content.querySelector('[data-scale-value]').value = `${this.value.uiScale}%`;
+    this.content.querySelector('[data-scale-reset]').disabled = this.value.uiScale === 100 || !window.stykDesktop?.setUIScale;
+  }
+  scaleControl() {
+    const available = typeof window.stykDesktop?.setUIScale === 'function';
+    return `<div class="styk-settings-scale"><div class="styk-settings-row"><label for="styk-ui-scale">${escape(this.t('settings.uiScale'))}</label><div class="styk-settings-scale-value"><output for="styk-ui-scale" data-scale-value>${this.value.uiScale}%</output><button type="button" class="styk-settings-reset" data-scale-reset title="${escape(this.t('settings.resetScale'))}" aria-label="${escape(this.t('settings.resetScale'))}" ${this.value.uiScale === 100 || !available ? 'disabled' : ''}>${icon('undo')}</button></div></div><input id="styk-ui-scale" type="range" data-setting="uiScale" min="${UI_SCALE.min}" max="${UI_SCALE.max}" step="${UI_SCALE.step}" value="${this.value.uiScale}" aria-valuetext="${this.value.uiScale}%" ${available ? '' : 'disabled'}><div class="styk-settings-scale-limits"><span>${UI_SCALE.min}%</span><span>${UI_SCALE.max}%</span></div>${available ? '' : `<p class="styk-settings-note">${escape(this.t('settings.browserScale'))}</p>`}</div>`;
+  }
   render() {
     const value = this.value;
     let html = "";
     if (this.tab === "interface")
-      html = `<section class="styk-settings-group"><div class="styk-settings-row"><span>${escape(this.t('settings.theme'))}</span><div class="styk-settings-theme" role="radiogroup" aria-label="${escape(this.t('settings.theme'))}">${['system', 'light', 'dark'].map(theme => `<label><input type="radio" name="editor-theme" data-setting="theme" value="${theme}" ${value.theme === theme ? 'checked' : ''}><span>${escape(this.t('settings.' + theme))}</span></label>`).join('')}</div></div><label class="styk-settings-row"><span>${escape(this.t('settings.language'))}</span><select data-setting="locale" aria-label="${escape(this.t('settings.language'))}">${SUPPORTED_LOCALES.map(locale => `<option value="${locale.id}" ${value.locale === locale.id ? 'selected' : ''}>${escape(locale.nativeName)}</option>`).join('')}</select></label>${value.locale !== 'en' ? `<p class="styk-settings-note" data-locale-coverage>${escape(this.t('settings.partialLanguage'))}</p>` : ''}</section><section class="styk-settings-group"><h3>${escape(this.t('timeline.title'))}</h3>${[
-        ["advanced", this.t("timeline.advanced"), this.t("settings.advancedDescription")],
-        ["simple", this.t("timeline.simple"), this.t("settings.simpleDescription")],
+      html = `<section class="styk-settings-group"><h3>${icon("sliders")}${escape(this.t("settings.appearance"))}</h3><div class="styk-settings-row"><span>${escape(this.t('settings.theme'))}</span><div class="styk-settings-theme" role="radiogroup" aria-label="${escape(this.t('settings.theme'))}">${['system', 'light', 'dark'].map(theme => `<label><input type="radio" name="editor-theme" data-setting="theme" value="${theme}" ${value.theme === theme ? 'checked' : ''}><span>${escape(this.t('settings.' + theme))}</span></label>`).join('')}</div></div><label class="styk-settings-row"><span>${escape(this.t('settings.language'))}</span><select data-setting="locale" aria-label="${escape(this.t('settings.language'))}">${SUPPORTED_LOCALES.map(locale => `<option value="${locale.id}" ${value.locale === locale.id ? 'selected' : ''}>${escape(locale.nativeName)}</option>`).join('')}</select></label>${value.locale !== 'en' ? `<p class="styk-settings-note" data-locale-coverage>${escape(this.t('settings.partialLanguage'))}</p>` : ''}${this.scaleControl()}</section><section class="styk-settings-group"><h3>${icon('layers')}${escape(this.t('timeline.title'))}</h3>${[
+        ["advanced", this.t("timeline.advanced")],
+        ["simple", this.t("timeline.simple")],
       ]
         .map(
-          ([id, label, note]) =>
-            `<label class="styk-settings-mode"><input type="radio" name="timeline-mode" data-setting="timelineMode" value="${id}" ${value.timelineMode === id ? "checked" : ""}><strong>${escape(label)}</strong><small>${escape(note)}</small></label>`,
+          ([id, label]) =>
+            `<label class="styk-settings-mode"><input type="radio" name="timeline-mode" data-setting="timelineMode" value="${id}" ${value.timelineMode === id ? "checked" : ""}><strong>${icon(id === "advanced" ? "layers" : "frame")}${escape(label)}</strong></label>`,
         )
         .join(
           "",
-        )}</section>${this.onResetWorkspace ? `<section class="styk-settings-group"><h3>${escape(this.t('settings.workspace'))}</h3><button type="button" class="styk-settings-reset" data-settings-reset>${escape(this.t('settings.resetPanels'))}</button></section>` : ""}`;
+        )}</section>${this.onResetWorkspace ? `<section class="styk-settings-group"><h3>${escape(this.t('settings.workspace'))}</h3><button type="button" class="styk-settings-reset" data-settings-reset>${icon("undo")}${escape(this.t('settings.resetPanels'))}</button></section>` : ""}`;
     if (this.tab === "canvas")
-      html = `<section class="styk-settings-group"><h3>Joint handles</h3>${this.checkbox("Show handles", "showHandles")}${this.checkbox("Show virtual camera", "showCamera")}${this.checkbox("Show unselected figures", "showUnselectedHandles")}${this.checkbox("Motion paths", "motionPaths")}${this.checkbox("Size handles automatically", "autoSizeHandles")}${this.checkbox("Outline handles", "outlineHandles")}<label class="styk-settings-row"><span>Handle radius</span><span class="styk-settings-number"><input type="range" data-setting="handleSize" min="3" max="10" step="1" value="${value.handleSize}" aria-label="Handle radius"><small data-handle-value>${value.handleSize}px</small></span></label><div class="styk-settings-preview" style="--size:${value.handleSize};--node-outline:${value.outlineHandles ? "1px solid #000" : "0px solid transparent"}">${["segment", "origin", "unselected", "joined", "static"].map((kind) => `<span class="styk-settings-node" title="${kind === "segment" ? "Selected joint" : kind === "origin" ? "Figure origin" : kind === "unselected" ? "Unselected joint" : kind === "joined" ? "Joined joint" : "Static joint"}" style="--node-color:${PIVOT_HANDLE_COLORS[kind]}"></span>`).join("")}</div></section>`;
-    if (this.tab === 'canvas')
-      html += `<section class="styk-settings-group"><h3>Figure builder</h3>${this.checkbox('Show static handles','builderShowStaticHandles')}${this.checkbox('Highlight selected segment','builderHighlightSegment')}${this.checkbox('Use construction background','useBuilderCanvasColor')}<label class="styk-settings-row"><span>Construction color</span><input type="color" data-setting="builderCanvasColor" value="${value.builderCanvasColor}" aria-label="Construction background color"></label><p class="styk-settings-note">Construction aids appear while building. They do not change saved scene colors or exported frames.</p></section>`;
-    if (this.tab === 'canvas')
-      html += `<section class="styk-settings-group"><h3>Renderer</h3><label class="styk-settings-row"><span>Graphics mode</span><select data-setting="rendererMode" aria-label="Graphics mode">${[["auto", "Automatic"], ["canvas", "Compatibility (Canvas 2D)"], ["gpu", "WebGPU (including software adapters)"]].map(([id, label]) => `<option value="${id}" ${value.rendererMode === id ? "selected" : ""}>${label}</option>`).join("")}</select></label><p class="styk-settings-note">Compatibility mode renders on the CPU and is usually faster when WebGPU is missing or backed by a software adapter. Changing this reconnects the canvas.</p></section>`;
+      html = `<div class="settings-canvas">
+        <section class="settings-card"><h3>${icon('nodes')}Joint handles</h3><div class="settings-control-grid">${this.checkbox('Show handles','showHandles')}${this.checkbox('Show unselected figures','showUnselectedHandles')}${this.checkbox('Automatic size','autoSizeHandles')}${this.checkbox('Outline handles','outlineHandles')}</div>
+        <div class="settings-handle-size"><label class="styk-settings-row"><span>Handle radius</span><span class="styk-settings-number"><input type="range" data-setting="handleSize" min="3" max="10" step="1" value="${value.handleSize}" aria-label="Handle radius"><small data-handle-value>${value.handleSize}px</small></span></label><div class="styk-settings-preview" aria-label="Joint handle preview" style="--size:${value.handleSize};--node-outline:${value.outlineHandles ? '1px solid #000' : '0px solid transparent'}">${['segment','origin','unselected','joined','static'].map(kind => `<span class="styk-settings-node" title="${{segment:'Selected joint',origin:'Figure origin',unselected:'Unselected joint',joined:'Joined joint',static:'Static joint'}[kind]}" style="--node-color:${PIVOT_HANDLE_COLORS[kind]}"></span>`).join('')}</div></div></section>
+        <section class="settings-card"><h3>${icon('eye')}Canvas overlays</h3><div class="settings-control-grid">${this.checkbox('Virtual camera','showCamera')}${this.checkbox('Motion paths','motionPaths')}</div></section>
+        <section class="settings-card"><h3>${icon('person')}Figure builder</h3><div class="settings-control-grid">${this.checkbox('Static handles','builderShowStaticHandles')}${this.checkbox('Highlight segment','builderHighlightSegment')}${this.checkbox('Construction background','useBuilderCanvasColor')}<label class="styk-settings-row"><span>Background color</span><input type="color" data-setting="builderCanvasColor" value="${value.builderCanvasColor}" aria-label="Construction background color"></label></div></section>
+        <section class="settings-card settings-renderer"><label for="settings-renderer">${icon('activity')}Graphics mode</label><select id="settings-renderer" data-setting="rendererMode" aria-label="Graphics mode">${[['auto','Automatic'],['canvas','Canvas 2D'],['gpu','WebGPU']].map(([id,label])=>`<option value="${id}" ${value.rendererMode===id?'selected':''}>${label}</option>`).join('')}</select></section>
+      </div>`;
     if (this.tab === "animation")
-      html = `<section class="styk-settings-group"><h3>Playback</h3>${this.checkbox("Loop animation", "loopPlayback")}</section><section class="styk-settings-group"><h3>Recovery</h3><label class="styk-settings-row"><span>Autosave interval</span><select data-setting="autosaveSeconds" aria-label="Autosave interval">${[[0, "Off"], [2.5, "2.5 seconds"], [5, "5 seconds"], [10, "10 seconds"], [30, "30 seconds"], [60, "1 minute"], ...([0, 2.5, 5, 10, 30, 60].includes(value.autosaveSeconds) ? [] : [[value.autosaveSeconds, `${value.autosaveSeconds} seconds`]])].map(([seconds, label]) => `<option value="${seconds}" ${value.autosaveSeconds === seconds ? "selected" : ""}>${label}</option>`).join("")}</select></label></section>`;
+      html = `<section class="styk-settings-group"><h3>${icon("play")}Playback</h3>${this.checkbox("Loop animation", "loopPlayback")}</section><section class="styk-settings-group"><h3>${icon("save")}Recovery</h3><label class="styk-settings-row"><span>Autosave interval</span><select data-setting="autosaveSeconds" aria-label="Autosave interval">${[[0, "Off"], [2.5, "2.5 seconds"], [5, "5 seconds"], [10, "10 seconds"], [30, "30 seconds"], [60, "1 minute"], ...([0, 2.5, 5, 10, 30, 60].includes(value.autosaveSeconds) ? [] : [[value.autosaveSeconds, `${value.autosaveSeconds} seconds`]])].map(([seconds, label]) => `<option value="${seconds}" ${value.autosaveSeconds === seconds ? "selected" : ""}>${label}</option>`).join("")}</select></label></section>`;
     if (this.tab === "shortcuts")
       html = this.hotkeySettings.html();
     if (this.tab === 'feedback')
-      html = `<section class="styk-settings-group"><h3>Help improve StykAnimate</h3><p>Found a bug or have an idea? Send a message directly to the developer.</p><button type="button" class="button primary" data-settings-feedback>Send feedback or report a bug</button><p class="styk-settings-note">Feedback works even when optional diagnostics are off. Your draft stays available if you close the form before sending.</p></section>`;
+      html = `<div class="settings-feedback-actions">${[['bug','bug','Report a bug'],['idea','lightbulb','Share an idea'],['other','message','Other feedback']].map(([category,symbol,label])=>`<button type="button" data-settings-feedback="${category}"><span class="settings-feedback-icon">${icon(symbol)}</span><span>${label}</span>${icon('chevronRight')}</button>`).join('')}</div>`;
     this.content.innerHTML = `${this.error ? `<div class="styk-settings-error" role="alert">${escape(this.error)}</div>` : ""}${html}`;
     if (this.tab === 'shortcuts') this.hotkeySettings.filter();
   }
@@ -340,6 +408,7 @@ export class EditorSettings {
     const previous = this.value;
     const next = normalizeEditorSettings({ ...previous, ...patch });
     this.value = next;
+    if (patch.uiScale !== undefined) applyUIScale(next.uiScale);
     if (patch.theme !== undefined) applyEditorTheme(next.theme);
     if (patch.locale !== undefined) this.localization.setLocale(next.locale);
     const normalizedPatch = Object.fromEntries(
@@ -353,6 +422,7 @@ export class EditorSettings {
       );
     } catch (error) {
       this.value = previous;
+      if (patch.uiScale !== undefined) { applyUIScale(previous.uiScale); this.syncScaleControl(); }
       if (patch.theme !== undefined) applyEditorTheme(previous.theme);
       if (patch.locale !== undefined) this.localization.setLocale(previous.locale);
       this.showError(error);
@@ -404,6 +474,7 @@ export class EditorSettings {
   async destroy() {
     await this.flush();
     this.unsubscribeLocale?.();
+    this.compactLayout.removeEventListener('change', this.syncTabOrientation);
     this.dialog.remove();
     this.style.remove();
   }

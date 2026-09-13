@@ -8,6 +8,8 @@ StykAnimate separates the editable Pivot document, background work, and presenta
 
 `editor.mjs` and its builder/range extensions operate on native figure IDs, object UIDs, segment record order, joins, media tables, and keyframes. History records affected state. Selection, editor visibility/locks, viewport transforms, and renderer caches are distinct from animation data. Shared definition edits propagate through instances and remain undoable. Rig topology traversals avoid recursive stack growth and repeated full-tree scans.
 
+Build Figure presentation lives in `builder-mode.mjs`, `builder-outliner.mjs`, and `builder-workspace.css`. The side toolbar retains its layout, with Chain pen beside Line; commands use the existing dispatcher. `builder-toolbar.mjs` owns the top bar’s native popover menus: bounded viewport placement, focus return, arrow navigation, type-ahead, and dismissal. Its session-scoped listeners are released on exit; commands continue through the existing delegated dispatcher. The bar exposes nine controls, including two direct flip buttons, and adapts labels to its available width. Selection gating and checked menu states remain in the builder controller. `builder-context-menu.mjs` supplies joint, branch, fill and empty-canvas menus shared by canvas and hierarchy right-clicks; the controller bounds targets to the current session and routes fill/branch commands through existing editor methods. Context-menu pages reuse the app menu and restore focus to their source. Builder entry hides the timeline until its footer toggle is expanded; leaving restores the animation layout without overwriting saved panel sizes. The outliner uses iterative hierarchy traversal and fixed 30 px virtual rows, observes viewport resizing, and only replaces row markup when it changes. Canvas selection reveals collapsed ancestors; keyboard navigation, accessible tree state, and keyboard resizing share the same row model. Drag exclusion covers the full descendant set, including malformed cycles.
+
 `src/pivot/` holds the established evaluation, validation, background and geometry semantics. Incremental geometry carries changed object slots without retaining a chain of prior scenes. A live whole-figure drag retains its geometry and changes only per-object GPU translations; the model commits the final coordinates once. Joint/rig edits update affected objects and joined descendants.
 
 Figure insertion, clipboard paste and decoded library drops share the range command planner. Validation and identity allocation finish before publication; undo retains inserted definitions and affected poses rather than the destination library. Published movieclip documents are immutable: clipboard/history copy the figure shell and retain that captured animation. Entering a clip clones its document; committing nested edits publishes a replacement. Imported external documents receive their own copy. Canvas pose commits retain the exact gesture preview when membership and playback settings are unchanged.
@@ -15,6 +17,11 @@ Figure insertion, clipboard paste and decoded library drops share the range comm
 Movieclip presence clocks on ordinary layer sheets use a temporary projection containing only instance identities, playback descriptors and continuation records. The existing sheet sampler handles blank spans, remapped native time and frame replacements; the clock never interpolates unrelated joints or builds artwork. The derived index is reused across seeks and invalidated with document edits. Legacy authored channels and inherited movieclip sources retain the general evaluator. `tests/movieclip-membership.test.mjs` compares projected membership with that evaluator and traps reads of unrelated pose arrays.
 
 See [copy/paste and insertion verification](INSERTION-PERFORMANCE.md) for measurements on the dense Akane scene and the remaining verification limits.
+
+Native connector and Smart Stretch relationships use the shared geometry evaluator,
+an iterative cached dependency plan and sparse editor commands. Connector midpoint
+positions reuse length channels; there is no second pose graph. Build Figure owns
+setup UI and a detached pose tester. See [rig contracts and verification](RIG-CONSTRAINTS.md).
 
 ## Import and native codec
 
@@ -30,11 +37,11 @@ The backend source/document cache has 24 entries and a 384 MiB budget. Source im
 
 `playback-worker.mjs` evaluates exact native ticks, compiles typed primitive packets, and rasterizes compatibility objects with OffscreenCanvas. `playback.mjs` and `prepared-frames.mjs` hold bounded CPU and GPU packet LRUs. Their hardware-based retention targets and related pixel-cache allocations are defined in `playback-budget.mjs`; an individual worker packet uses a smaller allowance to leave upload headroom. Each GPU packet uploads once; cached playback binds retained buffers and submits without main-thread scene evaluation or tessellation. Document revisions and resource/device changes invalidate the relevant caches. Missing packets hold the transport for preparation rather than silently skipping native output ticks. Background assets and the editor renderer have separate lifetimes.
 
-Compatibility textures are cropped to the camera-visible stage with a sampling guard, preserving their original pixel grid and individual figure identities. Raster resolution is rounded once, after applying the native camera to the physical viewport scale. Zoom changes update worker view options without retransmitting an unchanged document. Scrubbing keeps one preparation request in flight, shows completed previews, and coalesces newer pointer positions to the latest requested tick.
+Compatibility textures are cropped to the camera-visible stage with a sampling guard, preserving their original pixel grid and individual figure identities. Raster resolution is rounded once, after applying the native camera to the physical viewport scale. Zoom changes update worker view options without retransmitting an unchanged document. Advanced ruler scrubbing keeps one editable preparation in flight through canvas submission and coalesces newer pointer positions to the latest requested tick. The ruler displays the pending pointer target; the editor retains the tick of the scene being prepared. Release forces the exact final seek. Inspector refreshes and thumbnail work wait until scrubbing finishes.
 
 An oversized prepared packet is retried with lower raster detail. The editable renderer also plans its active texture set before allocation; original geometry, handles and image assets remain intact. See [Adaptive preview memory](ADAPTIVE-PREVIEW.md) for source-image copies, cancellation, cache allocations, full-quality export, validation and remaining browser/format limits. A scene that cannot fit even its minimal records or decode through the available runtime can still fail; sampled corpus success does not establish coverage of every frame in a large imported project.
 
-The virtualized timeline draws visible exposures and labels, with a separate playhead. Scrubbing requests worker-prepared frames; frame-local changes can update the worker mirror without retransmitting every keyframe. The editor schedules rendering when state changes or playback runs, with no permanent idle rendering loop. See [renderer details and benchmarks](renderer.md).
+The virtualized timeline draws visible exposures and labels, with a separate playhead. Scrubbing uses cooperative editable geometry and renderer preparation to preserve selection handles and onion skins; frame-local changes can update the playback worker mirror without retransmitting every keyframe. The editor schedules rendering when state changes or playback runs, with no permanent idle rendering loop. See [renderer details and benchmarks](renderer.md).
 
 ## Saving, recovery and exports
 
@@ -54,11 +61,41 @@ Desktop video streams PNG frames in acknowledged chunks to the bundled FFmpeg en
 
 ## Workspace and desktop boundary
 
+The canvas header contains workspace modes, scene properties and undo/redo. View
+controls (guides/grid, VFX, joints, paths and zoom) sit at the bottom-right of the viewport.
+The left tool rail has a divided stacking group: normal clicks move to front/back,
+and Shift-click moves one step. These use the existing selection-order command.
+Normal right-click opens a short menu for the hit figure or an empty-stage menu;
+clicking a selected figure preserves multi-selection. More figure actions holds
+less frequent commands. Shift + right-drag retains joint bending; Held R handle
+editing can use the same modified secondary gesture. Escape closes menus and
+returns focus, and pointer-down outside dismisses them before another gesture.
+
 Custom HTML/CSS provides compact editable controls, native keyboard/text behavior and a consistent neutral palette. The animation scene uses the custom GPU canvas. Layers, Properties and Timeline can float, move, resize and redock without changing the document. `initWorkspaceLayout({preferences,onPersist})` restores normalized geometry; settled changes are debounced and asynchronous writes are ordered. `flushPreferences()` lets close/tests await the last write.
 
 Electron uses context isolation, sandboxed renderer code, and no renderer Node globals. Native IPC exposes specific file/stream/window/preference operations, not arbitrary filesystem commands. Workspace preferences live in a fixed, atomically written user-data JSON file capped at 16 KiB. They and recovery survive a restarted process even though its loopback origin changes.
 
 Windows source execution and packaged snapshots are verified. A distributable includes the frozen codec sidecar, current web assets, source grammar, and licenses. Rebuild and verify the package after source changes; earlier smoke reports do not certify newer bytes. macOS/Linux targets require their own builds and actual platform verification.
+
+## Canvas guides and grid
+
+`src/canvas-guides.mjs` owns a fixed-size DOM overlay and a popover. It does not
+modify document poses, history, renderer caches or export surfaces. The vertical
+X and horizontal Y guides have independent visibility, scene-pixel inputs,
+edge-handle dragging, arrow-key nudges (Shift: 10 pixels), Escape cancellation,
+and a shared lock. Positions are clamped to the scene and stored as proportions
+in editor preferences, so they adapt when a different canvas size is loaded;
+these are workspace aids rather than per-project animation data. Numeric fields
+reuse `PropertyControls` for drag adjustment (Shift/Alt for finer steps), direct
+typing and Escape rollback. Live previews stay local; release commits preferences.
+
+The grid clips to the visible stage and uses CSS gradients. Its configured cell
+size stays in scene pixels; at low zoom the displayed step doubles until at least
+eight screen pixels apart. Rendering uses a constant number of DOM elements,
+skips inactive aids, and skips unchanged layout writes. Aids hide during playback
+and preview. Grid spacing, opacity, guide visibility, positions and locking use
+the existing normalized settings persistence. Guide edits do not dirty projects.
+See `tests/canvas-guides.browser.mjs` for UI verification.
 
 ## Reproducible evidence
 
@@ -73,3 +110,45 @@ Windows source execution and packaged snapshots are verified. A distributable in
 | Sampled prepared raster corpus | `node tests/renderer-corpus.mjs --prepared` | `artifacts/renderer-corpus-prepared/summary.json` |
 
 The UI tests use the local development server; profile scripts accept `STYK_URL`. Artifacts name the fixture, phase, timing scope, and observed limitations. Long-task absence, total job duration, CPU submission, GPU completion, and display latency are separate measurements.
+
+## Interface scale and settings
+
+`src/ui-scale.mjs` owns the 75%–200% presentation range, five-percent steps,
+normalization, and application through the narrow desktop `setUIScale` preload
+API. `EditorSettings` persists `uiScale` through the existing editor preferences
+store and reapplies it at startup. Old or invalid preferences default to 100%.
+Electron uses native page zoom so layout, pointer coordinates, viewport sizing,
+and device-pixel ratio stay in the same coordinate system. No document data,
+canvas view scale, undo history, or export dimensions are changed.
+
+The browser preview keeps browser-native zoom controls; it does not substitute
+CSS transforms that would desynchronize interactive editor coordinates.
+`src/settings.css` owns the panel presentation, including scrollable content and
+compact navigation at narrow logical viewport widths. Native slider keyboard
+behavior, labeled outputs, tab navigation, and Escape dismissal are preserved.
+Verify with `node --test tests/ui-scale.test.mjs` and
+`node tests/settings-scale.desktop.mjs` (isolated profile, process restart,
+canvas pointer alignment, light/dark and compact screenshots).
+
+`settings.css` also owns shortcut-editor styles; `HotkeySettings` must not inject
+CSS into the settings stylesheet link. Shortcut state and binding validation stay
+in `hotkey-settings.mjs` / `hotkeys.mjs`, with persistence owned by `EditorSettings`.
+Settings feedback actions forward their category to the shared `FeedbackUI` draft;
+the sidebar Donate action uses the existing `openDonate` desktop bridge. Neither
+is part of tab navigation. `node tests/settings-tabs.desktop.mjs` verifies shortcut
+editing, canvas controls, feedback categories, the donation callback, and responsive
+light/dark layouts without submitting feedback or visiting payment pages.
+
+### Construction gestures
+
+`builder-construction.mjs` owns the transient chain draft and a figure-scoped spatial index. Joint and sampled-midpoint candidates use a balanced k-d tree; sorted coordinate/length tables supply axis and equal-length targets. Tolerance stays in screen pixels, with point hysteresis and an Alt bypass. Rig gestures snapshot the index once and exclude the edited branch. Snapping changes position, not connectivity: starting at a native joint attaches the new branch; snapping an endpoint onto another joint does not weld handles or introduce cycles.
+
+The chain pen creates no document commands while clicking. Enter, double-click or Finish calls `Editor.addSegments` once. Backspace removes the last point; Escape, tool/session changes, external document edits and the chain context menu cancel the draft. Preview paths rebuild only when points or zoom change. The persisted `builderSmartSnapping` preference is UI state, absent from exported artwork.
+
+Append and rig commands use sparse definition snapshots: history contains appended records or explicitly changed segment indices, plus the existing affected source-pose journal. Unchanged segment references exist only during the synchronous command and never enter its history payload. Origin-support figures retain the full topology repair path. New-figure creation journals a definition splice rather than copying the complete definition table. Geometry invalidation retains unrelated objects while rebuilding every instance and joined dependent of the edited definition; IK, movieclip and slot-remapping cases retain conservative invalidation.
+
+`builder-duplicate-preview.mjs` caches a high-contrast branch silhouette, including circle and polygon fills, in one bitmap capped at 2048 × 2048 pixels. Pointer movement translates the bitmap and queries its joint index. Placement preserves the existing duplicate command's native topology and undo behavior; cancellation drops the bitmap and index. See `docs/BUILDER-PERFORMANCE.md` for measurements and limits.
+
+Builder node selection uses transient native handle IDs scoped to one object UID; Shift-click toggles those IDs in the canvas and hierarchy. Explicit multi-selection style edits target exactly those segments, with a single undo entry; single-node branch editing retains its existing scope. Builder Delete dispatches to segment/branch or selected-fill commands even under Select, so it cannot accidentally remove and recreate the session object. Selection is restored with command history and does not enter the saved figure format.
+
+`builder-fill.mjs` caches directed-edge region discovery by evaluated geometry in a WeakMap. Polyfill Shift-click uses closed line/curve outlines whose native endpoints coincide; dangling strokes are removed from face discovery. Crossings without joints do not create boundary connections, and compound holes are not generated. A preview shows the exact proposed region before committing one native `addPolygon` command. Direct interior clicks select the topmost visible fill in the builder figure, with joints taking precedence; fill color, opacity, order and deletion reuse the existing polygon commands.

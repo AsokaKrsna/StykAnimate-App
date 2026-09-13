@@ -285,6 +285,13 @@ export class PlaybackResources {
     this.trimImages(needed);
     this.checkImageBudget();
     for (const url of needed) {
+      const retained = this.images.get(url);
+      if (retained) {
+        const width = retained.naturalWidth || retained.width, height = retained.naturalHeight || retained.height;
+        const need = this.urlNeed(items, url, width, height, view);
+        if (need === 'none' || bitmapCovers(retained, need === 'whole' ? {x:0,y:0,width,height} : need,
+            need === 'whole' ? 1 : Math.min(1,need.density))) continue;
+      }
       const blob = await imageBlob(url, this.baseURL, this.token, this.controller.signal);
       const metadata = typeof blob?.arrayBuffer === 'function' ? await pngInfo(blob) : null;
       this.check();

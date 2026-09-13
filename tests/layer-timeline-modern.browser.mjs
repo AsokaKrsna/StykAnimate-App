@@ -19,7 +19,7 @@ try{
   await click(4);await settle();await page.keyboard.press('a');
   assert.ok(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').some(k=>k.tick===4)));
   const p=await cell(7);await page.mouse.dblclick(p.x,p.y);await settle();assert.ok(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').some(k=>k.tick===7)));
-  await page.mouse.dblclick(p.x,p.y);await settle();assert.deepEqual(await page.evaluate(()=>[styk.timeline.start,styk.timeline.end]),[7,11]);
+  await page.mouse.dblclick(p.x,p.y);await settle();assert.ok(await page.getByRole('dialog',{name:'Keyframe easing'}).isVisible());await page.getByRole('button',{name:'Close easing'}).click();const spanEnd=await cell(11);await page.keyboard.down('Shift');await page.mouse.click(spanEnd.x,spanEnd.y);await page.keyboard.up('Shift');await settle();assert.deepEqual(await page.evaluate(()=>[styk.timeline.start,styk.timeline.end]),[7,11]);
   // Resize the right edge of an exposure; following keys move in one undo.
   const edge=await page.evaluate(async()=>{const {ROW,HEADER}=await import('/src/layer-timeline.mjs'),t=styk.timeline,b=t.scroll.getBoundingClientRect();return {x:b.x+12*t.pxPerTick-1,y:b.y+HEADER+3*ROW+ROW/2,step:t.pxPerTick};});
   const before=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));await page.mouse.move(edge.x,edge.y);await page.mouse.down();await page.mouse.move(edge.x+3*edge.step,edge.y,{steps:5});await page.mouse.up();
@@ -34,7 +34,7 @@ try{
   assert.deepEqual(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').map(k=>k.tick)),[0,6,9,12]);
   assert.deepEqual(await page.evaluate(()=>[styk.timeline.start,styk.timeline.end]),[6,9]);
   await grid.press('Control+z');assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),selectionBefore);
-  await click(7);const menuPoint=await cell(7);await page.mouse.click(menuPoint.x,menuPoint.y,{button:'right'});assert.equal(await page.getByRole('menuitem',{name:/Create tween|layer/i}).count(),0);assert.equal(await page.getByRole('menuitem',{name:/Add Frame/}).count(),1);await page.keyboard.press('Escape');await page.getByLabel('Frame interpolation',{exact:true}).selectOption('ease-in');await grid.press('Control+z');
+  await click(7);const menuPoint=await cell(7);await page.mouse.click(menuPoint.x,menuPoint.y,{button:'right'});assert.equal(await page.getByRole('menuitem',{name:/Create tween|layer/i}).count(),0);assert.equal(await page.getByRole('menuitem',{name:/Add Frame/}).count(),1);await page.getByRole('menuitem',{name:'Change easing…',exact:true}).click();await page.getByRole('radio',{name:'Ease in',exact:true}).click();await grid.press('Control+z');
   // High-polling pointers may report hundreds of positions between displays.
   // Only the latest position should evaluate, and layer DOM must stay intact.
   const fixture=await readFile(new URL('../artifacts/timeline-source.json',import.meta.url),'utf8').then(JSON.parse).catch(async error=>{

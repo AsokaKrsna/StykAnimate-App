@@ -17,10 +17,10 @@ struct Vertex { @builtin(position) position:vec4f, @location(0) local:vec2f, @lo
   out.local=local;out.index=index;return out;
 }
 @fragment fn fs(v:Vertex)->@location(0) vec4f {
-  let h=handles[v.index];let distance=length(v.local);let aa=0.5/globals.viewport.z;
+  let h=handles[v.index];let diamond=h.color.w>=2;let distance=select(length(v.local),abs(v.local.x)+abs(v.local.y),diamond);let aa=0.5/globals.viewport.z;
   let coverage=1-smoothstep(h.point.z+h.point.w*0.5-aa,h.point.z+h.point.w*0.5+aa,distance);
   let stroke=h.point.w*smoothstep(h.point.z-0.5-aa,h.point.z-0.5+aa,distance);
-  let outlineColor=select(vec3f(0),vec3f(0.05098,0.6,1),h.color.w>0.5);
+  let outlineColor=select(vec3f(0),vec3f(0.05098,0.6,1),(u32(h.color.w)&1u)!=0u);
   return vec4f(mix(h.color.rgb,outlineColor,stroke)*coverage,coverage);
 }`;
 
@@ -74,7 +74,7 @@ export class HandleRenderer {
     if(!color){const hex=h.color.slice(1);color=[0,2,4].map(n=>parseInt(hex.slice(n,n+2),16)/255);this.colors.set(h.color,color);}
     const offset=index*8,data=this.data;
     data[offset]=h.point.x+x;data[offset+1]=h.point.y+y;data[offset+2]=h.screenRadius;data[offset+3]=outline||h.ik?1:0;
-    data[offset+4]=color[0];data[offset+5]=color[1];data[offset+6]=color[2];data[offset+7]=h.ik?1:0;
+    data[offset+4]=color[0];data[offset+5]=color[1];data[offset+6]=color[2];data[offset+7]=(h.ik?1:0)+(h.connector?2:0);
   }
   draw(pass){if(!this.count)return 0;pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.bindGroup);pass.draw(6,this.count);return 1;}
   destroy(){this.buffer?.destroy();this.previous=[];this.offsets=[];this.groups=null;this.data=null;}

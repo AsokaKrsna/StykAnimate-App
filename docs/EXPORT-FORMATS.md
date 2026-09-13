@@ -70,9 +70,13 @@ GIF stills retain one pass. The Boolean `dither` option is independent of edge
 smoothing. See [GIF color, bounds and native compatibility](gif-export.md).
 
 `encodeNativeVideo({format,codec,width,height,fps,totalFrames,renderFrame,quality,
-bitrate,signal,onProgress,desktop})` returns an encoded Blob. A worker preserves
-RGBA for WebM, or composites the other native formats over black, then compresses
-each frame as PNG. The desktop receives a declared
+bitrate,signal,onProgress,desktop})` returns an encoded Blob. The app instead
+supplies `renderNativeFrame`, which gets lossless PNGs directly from the scene
+worker and avoids the canvas/bitmap round trip and second worker. The original
+`renderFrame` canvas callback remains supported. Both paths preserve RGBA for
+WebM or composite the other native formats over black. H.264 uses `fast` with
+`zerolatency`, two encoding threads and unchanged CRF/bitrate controls.
+The desktop receives a declared
 frame followed by acknowledged chunks of at most 256 KiB. There is no lossy
 intermediate video. The service validates PNG structure and dimensions, accepts
 only fixed encoder/container choices, and owns temporary output paths. It accepts
@@ -82,8 +86,9 @@ moves disk-to-disk into a native save dialog destination — staging beside the
 destination so a failed copy never leaves a truncated file — or falls back to
 bounded chunked readback on desktop builds without the save channel.
 
-Raster images/native video are limited to 67 million pixels per frame (16.7
-million in Safari, matching its canvas surface limit); dimensions are limited to
+Raster images are limited to 67 million pixels per frame (16.7
+million in Safari, matching its canvas surface limit); the native FFmpeg service
+separately limits video to 16,777,216 pixels per frame. Dimensions are limited to
 16,384 pixels. ZIP sequences allow up to 65,534 frames, reserving one
 entry for timing metadata. When a streamed destination is available — the
 desktop file transfer or the File System Access API — encoders write output as

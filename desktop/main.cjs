@@ -614,6 +614,11 @@ async function start() {
   const memoryTimer = setInterval(() => {
     if (telemetry?.state.consent.diagnostics && window?.isFocused()) {
       const metrics = app.getAppMetrics();
+      const phase=telemetry.resourcePhase||'unknown',epoch=telemetry.epoch;
+      telemetry.sampleResources({memory_process:metrics.reduce((sum,item)=>sum+(item.memory?.workingSetSize||0),0)/1024},phase);
+      if(backend?.origin)void fetch(backend.origin+'/api/health',{signal:AbortSignal.timeout(1500)}).then(response=>response.json()).then(value=>{
+        if(telemetry.epoch===epoch&&window?.isFocused()&&Number.isFinite(value.processMemoryMiB))telemetry.sampleResources({memory_backend:value.processMemoryMiB},phase);
+      }).catch(()=>{});
       telemetry.sampleMemory(metrics.reduce((sum, item) => sum + (item.memory?.workingSetSize || 0), 0) / 1024);
       telemetry.record({ epoch: telemetry.epoch, data: { gauges: { process_cpu_percent: metrics.reduce((sum, item) => sum + (item.cpu?.percentCPUUsage || 0), 0) } } });
     }

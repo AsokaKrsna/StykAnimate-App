@@ -16,6 +16,24 @@ let report,
   canvas,
   tile,
   running = false;
+async function deliverFrame(message, stats) {
+  if (!message.native) return {bitmap: canvas.transferToImageBitmap(), stats};
+  const started = performance.now(), context = exportContext(canvas);
+  if (!message.preserveAlpha) {
+    // Composite behind the rendered pixels in place. No second full-size canvas
+    // or renderer-thread bitmap round trip is needed for opaque native video.
+    context.save();
+    try {
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.globalCompositeOperation = 'destination-over';
+      context.fillStyle = '#000'; context.fillRect(0, 0, canvas.width, canvas.height);
+    } finally {context.restore();}
+  }
+  const blob = await canvas.convertToBlob({type: 'image/png'});
+  checkExportContext(context);
+  if (blob.type !== 'image/png' || !blob.size) throw new Error('Lossless video frame encoding is unavailable.');
+  return {nativeFrame: {blob, width: canvas.width, height: canvas.height}, stats: {...stats, pngMs: performance.now() - started}};
+}
 function tickFrame(tick) {
   const end = rows.at(-1)?.start + rows.at(-1)?.count;
   if (!Number.isInteger(tick) || tick < 0 || tick >= end)
@@ -77,21 +95,17 @@ async function render(message) {
       smoothing: message.svg ? "edges" : options.smoothing,
     });
     if (!message.svg) {await rasterizeCrispSVG(svg, canvas); checkExportContext(exportContext(canvas));}
-    return {
-      ...(message.svg ? { svg } : { bitmap: canvas.transferToImageBitmap() }),
-      stats: {
+    const stats = {
         workerMs: performance.now() - started,
         smoothing: options.smoothing,
         renderWidth: options.width,
         renderHeight: options.height,
-      },
-    };
+      };
+    return message.svg ? {svg, stats} : deliverFrame(message, stats);
   }
   await drawExportSceneTiled(exportContext(canvas), report, frame, geometry, resources, options.tileSize, tile, options.factor);
   checkExportContext(exportContext(canvas));
-  return {
-    bitmap: canvas.transferToImageBitmap(),
-    stats: {
+  return deliverFrame(message, {
       workerMs: performance.now() - started,
       smoothing: options.smoothing,
       renderWidth: options.renderWidth,
@@ -99,8 +113,7 @@ async function render(message) {
       maxRasterTileSide: options.tileSize * options.factor + 4 * options.factor,
       maxWorkingBytes: options.maxWorkingBytes,
       decodedImageBytes: resources.bytes,
-    },
-  };
+    });
 }
 self.addEventListener("message", async ({ data: message }) => {
   if (running) {

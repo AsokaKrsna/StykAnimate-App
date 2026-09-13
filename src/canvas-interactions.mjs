@@ -112,7 +112,7 @@ export function pivotHandleColor({ selected = false, nodeSelected = false, origi
  * priority of reverse figures, reverse segment order, then each free origin.
  */
 export function getPivotHandles(geometry, {
-  frame, selectedUid = null, selectedUids, selectedJoint = -1, selectedBranch = false, builder = false, hiddenUids, lockedUids,
+  frame, selectedUid = null, selectedUids, selectedJoint = -1, selectedHandleIds, selectedBranch = false, builder = false, hiddenUids, lockedUids,
   showUnselected = true, showStatic = false, attaching = false, allowStaticManipulation = false,
   viewScale = 1, autoSize = true, minDiameter = 4, maxDiameter = 10, descriptorCache,
 } = {}) {
@@ -127,7 +127,7 @@ export function getPivotHandles(geometry, {
   const targets = attachments(geometry), result = [], groups = [];
   Object.defineProperty(result,'groups',{value:groups});
   const options = { viewScale, autoSize, minDiameter, maxDiameter }, scale = Math.max(1e-9, Math.abs(viewScale));
-  const settingsKey = [topologyEpoch,showUnselected,showStatic,attaching,allowStaticManipulation,viewScale,autoSize,minDiameter,maxDiameter,builder,selectedJoint,selectedBranch].join('|');
+  const settingsKey = [topologyEpoch,showUnselected,showStatic,attaching,allowStaticManipulation,viewScale,autoSize,minDiameter,maxDiameter,builder,selectedJoint,selectedBranch,[...(selectedHandleIds??[])].join(',')].join('|');
   if(descriptorCache && descriptorCache.key!==settingsKey){descriptorCache.key=settingsKey;descriptorCache.objects=new WeakMap();}
   for (const g of objects) {
     if (!g) continue;
@@ -141,9 +141,12 @@ export function getPivotHandles(geometry, {
     if(cached?.key===objectKey){groups.push({uid,offset:result.length,handles:cached.handles});for(const handle of cached.handles)result.push(handle);continue;}
     const first=result.length;
     const add = (point, joint, id, kind, isStatic = false, joined = false) => {
-      const screenRadius = getPivotHandleRadius(g, id, options);
+      const connector=joint>=0&&Boolean(g.segments[joint]?.connector);
+      // A slider's stored length is a fraction, not a physical segment length.
+      const screenRadius = connector ? (options.maxDiameter??10)/2 : getPivotHandleRadius(g, id, options);
       const ik = !builder && Boolean(g.obj._stykIK?.[id]?.enabled);
       result.push({ g, uid, joint, id, kind, point, selected, joined, static: isStatic, ik,
+        connector,
         action: kind === 'origin' ? 'move' : isStatic && !ik && !attaching && !allowStaticManipulation ? 'select' : 'pose',
         color: builder && isStatic && !joined && !builderSelection?.has(joint) ? '#999999'
           : pivotHandleColor({ selected, nodeSelected: Boolean(builderSelection?.has(joint)), origin: kind === 'origin', joined, static: isStatic }),
@@ -151,7 +154,7 @@ export function getPivotHandles(geometry, {
     };
     const topology=figureInfo(g).topology;
     const selectedStatic = uid===selectedUid && selectedJoint>=0 && Boolean(g.segments[selectedJoint]);
-    const builderSelection=selectedStatic?new Set([selectedJoint]):null;
+    const builderSelection=selectedStatic?new Set(selectedHandleIds?.size ? g.segments.flatMap((segment,index)=>selectedHandleIds.has(segmentId(segment))?[index]:[]) : [selectedJoint]):null;
     if(selectedStatic&&selectedBranch){
       const queue=[selectedJoint];
       for(let i=0;i<queue.length;i++)for(const child of topology.outgoing.get(segmentId(g.segments[queue[i]]))||[])
@@ -162,7 +165,7 @@ export function getPivotHandles(geometry, {
       const segment=g.segments[index];
       if(segment.static&&!showStatic&&!attaching&&!builderSelection?.has(index)&&!g.obj._stykIK?.[segmentId(segment)]?.enabled)continue;
       const id = segmentId(segment), joined = Boolean(joinedVertices?.has(id));
-      if (allEndpoints || joined) add(segment.end, segment.index, id, 'segment', Boolean(segment.static), joined);
+      if (allEndpoints || joined) add(segment.handle ?? segment.end, segment.index, id, 'segment', Boolean(segment.static), joined);
     }
     const ownHandles=result.slice(first);groups.push({uid,offset:first,handles:ownHandles});
     descriptorCache?.objects.set(g,{key:objectKey,handles:ownHandles});

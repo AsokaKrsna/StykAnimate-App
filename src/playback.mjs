@@ -20,9 +20,9 @@ const yieldToInput = () => globalThis.scheduler?.yield ? scheduler.yield() : new
  */
 export class PlaybackCache {
   constructor({ maxBytes = playbackMemoryBudget(), maxFrames = 120, maxPending = 120,
-    baseURL = globalThis.location?.href, token = '', scale = 1, onReady, onError, timeoutMs = 120000,
+    baseURL = globalThis.location?.href, token = '', scale = 1, onReady, onError, diagnostics, timeoutMs = 120000,
     workerURL = new URL('./playback-worker.mjs', import.meta.url), workerFactory } = {}) {
-    Object.assign(this, { maxBytes, maxFrames, maxPending, baseURL, token, scale, onReady, onError, timeoutMs });
+    Object.assign(this, { maxBytes, maxFrames, maxPending, baseURL, token, scale, onReady, onError, diagnostics, timeoutMs });
     this.cache = new Map(); this.pending = new Map(); this.revision = 0; this.disposed = false; this.needsLoad = false;
     this.cacheNamespace = globalThis.crypto.randomUUID();
     this._mirrorAvailable = false; this._frameUpdates = new Map(); this._protectedTick = null; this._prefetchRanks = null;
@@ -340,12 +340,13 @@ export class PlaybackCache {
         let resolve, reject;
         const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
         const timer = this.timeoutMs > 0 && !this.interactionActive ? setTimeout(() => this._fail(new Error('Playback preparation timed out.')), this.timeoutMs) : null;
-        pending = { promise, resolve, reject, timer }; this.pending.set(tick, pending); requests.push(tick);
+        const measured=this.diagnostics?.enabled&&Math.random()<1/30;
+        pending = { promise, resolve, reject, timer,...(measured?{measuredAt:performance.now(),context:this.diagnostics.context(),diagnosticGeneration:this.diagnostics.generation}: {}) }; this.pending.set(tick, pending); requests.push(tick);
       }
       promises.push(pending.promise);
     }
     this.stats.pendingFrames = this.pending.size;
-    if (requests.length) this.worker.postMessage({ type: 'prepare', revision, ticks: requests });
+    if (requests.length) this.worker.postMessage({ type: 'prepare', revision, ticks: requests,measuredTicks:requests.filter(tick=>this.pending.get(tick)?.measuredAt!==undefined) });
     // Resolve without retaining packet references outside the LRU.
     await Promise.all(promises); return { revision, readyFrames: this.cache.size, requestedFrames: requests.length };
   }
@@ -363,7 +364,15 @@ export class PlaybackCache {
     clearTimeout(pending.timer); this.pending.delete(message.tick); this.stats.pendingFrames = this.pending.size;
     if (message.type === 'error') { const error = new Error(message.message); if (message.code) error.code = message.code; pending.reject(error); this.onError?.(error); return; }
     const packet = message.packet;
+    if(pending.measuredAt!==undefined&&this.diagnostics?.enabled&&pending.diagnosticGeneration===this.diagnostics.generation&&packet){
+      const roundtrip=performance.now()-pending.measuredAt,compute=message.measurement?.computeMs,queued=message.measurement?.queueMs;
+      this.diagnostics.record('worker_roundtrip',roundtrip,pending.context);
+      this.diagnostics.record('worker_compute',compute,pending.context);
+      this.diagnostics.record('worker_queue',queued,pending.context);
+      if(Number.isFinite(compute)&&Number.isFinite(queued))this.diagnostics.record('worker_transfer',Math.max(0,roundtrip-compute-queued),pending.context);
+    }
     if (!packet) { pending.reject(new Error('The playback worker returned no render packet.')); return; }
+    this.diagnostics?.recovery('playback_worker','recovered');
     // Packet keys/revisions identify immutable compilation results. An epoch
     // identifies shared pixel ownership across explicitly retained revisions.
     packet.cacheEpoch = this.cacheEpoch;
@@ -409,6 +418,7 @@ export class PlaybackCache {
     if (this.failure) return;
     this._mirrorAvailable = false;
     this.failure = error; this.stats.failure = error.message;
+    this.diagnostics?.recovery('playback_worker','started');
     this.planner.cancel(error);
     this._abortLoad(error);
     this.worker.terminate();

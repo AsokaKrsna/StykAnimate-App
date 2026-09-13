@@ -7,12 +7,26 @@ edits. No audio is attached implicitly to a figure or nested movieclip.
 
 ## Using audio
 
-Drag the handle above **Audio** to resize its panel. Arrow keys on the handle
-resize it too; double-click or **Expand** opens a larger mixing view, temporarily
-folding the animation rows. **Show animation** returns to the previous height.
-The main transport stays available. The outer timeline resize handle also works
-in the mixing view. Height and collapse/focus preferences are remembered locally;
-switching between Simple and Advanced retains the selected audio clip.
+Click the **Audio** music-note icon in the timeline toolbar to open audio editing.
+Audio controls start hidden, including when opening a project with recordings.
+A small dot on the icon indicates that the project contains audio. Clicking the
+icon again, or **Close audio**, returns the space to animation. Hiding controls
+does not mute sound, stop playback, edit the project or add an undo step.
+
+In **Advanced**, audio tracks appear beneath animation layers in the same
+viewport, sharing its frame ruler, zoom, horizontal/vertical scrolling and
+playhead. The Audio group toolbar remains below the ruler while scrolling
+through sound tracks. Selecting a sound clip puts its editing controls in the
+existing timeline footer; selecting an animation cell or layer restores frame
+tools. In **Simple**, Audio is a dedicated tab occupying the filmstrip area;
+close it to return to scene previews. A horizontal scrollbar appears when needed
+and supports arrow keys and Home/End. The main transport stays available.
+
+Use the timeline's existing resize handle or **Expand timeline** for more room.
+The handle also supports arrow keys. Switching modes retains the open tab and
+selected audio clip for the current document; this state is not saved in a
+project or remembered at the next launch. See [Audio interface design](AUDIO-UX.md)
+for the research and verification behind this layout.
 
 Import a recording with **Import audio** or drop a file onto the audio lanes.
 The Import button starts at the playhead, using the selected audio track or a new
@@ -83,8 +97,11 @@ overlapping clips. Native document/container limits apply in addition to these.
 The decoded source Blob cache is limited to 768 MiB and evicts unused sources;
 an active mix too large for that cache fails explicitly and releases its cache.
 Waveforms have at most 4,096 bins; visible rows and waveform pixels are drawn
-only for the current viewport. A closed or replaced timeline releases its jobs,
-listeners, popovers and pointer gestures.
+only for the current viewport. Hidden audio controls skip waveform painting and
+cancel pointer gestures/popovers; transport resources remain owned by the audio
+engine. Replacing the timeline releases its jobs, listeners and DOM.
+Simple also defers new filmstrip thumbnail work while the Audio tab occupies
+that space, retaining only its time mapping and scroll range.
 
 Pointer movement only previews metadata; one validated command commits on
 release. Snapping searches a sorted list of boundaries, and Simple exposure
@@ -138,7 +155,9 @@ sample content and container duration with codec-appropriate tolerances.
 
 - `node --test tests/audio.test.mjs tests/audio-service.test.mjs`
 - `node tests/audio.browser.mjs` with the local server running
-- `node tests/audio-ux.browser.mjs` for resizing, expanded mixing, track transfers,
+- `node tests/audio-navigation.browser.mjs` for optional navigation, shared Advanced
+  coordinates, contextual tools, focus return, hidden playback and launch state
+- `node tests/audio-ux.browser.mjs` for timeline resizing/expansion, track transfers,
   drop import placement, fades, volume, snap guides and scrolling during drags
 - `node tests/audio.desktop.mjs` with a working Electron environment and bundled FFmpeg
 - `node tests/layer-timeline-modern.browser.mjs`
@@ -146,7 +165,8 @@ sample content and container duration with codec-appropriate tolerances.
 - `node scripts/benchmark-audio.mjs`
 - `npm test` and `npm run check`
 
-Evidence is written under `artifacts/audio/` and `artifacts/audio-desktop/`.
+Evidence is written under `artifacts/audio/`, `artifacts/audio-navigation/`,
+`artifacts/audio-ux/` and `artifacts/audio-desktop/`.
 The desktop test imports an actual MP3, exports all four formats plus a selected
 range and an MP4 through the Export panel, then independently decodes their
 soundtracks. It checks leading/trailing silence, audible samples, durations,

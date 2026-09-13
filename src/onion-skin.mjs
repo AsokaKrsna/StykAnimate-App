@@ -1,7 +1,7 @@
 import {buildGeometry, evaluatedFrame} from './pivot/geometry.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
 import {easingMode} from './keyframe-easing.mjs';
-import {sheetKeyTimes} from './layer-sheet.mjs';
+import {onionRangeLimit,onionRangeSnapshot,sceneKeyTicks} from './onion-range.mjs';
 import {RetainedGeometryCache} from './playback-geometry-cache.mjs';
 
 // A changed parent also moves its joined descendants, even when their own
@@ -19,27 +19,6 @@ function affectedSlots(frame, uids) {
   for (let i = 0; i < queue.length; i++) for (const slot of children.get(queue[i]) || [])
     if (!slots.has(slot)) { slots.add(slot); queue.push(slot); }
   return slots;
-}
-
-function sceneKeyTicks(editor, rows) {
-  // The exposure sheet owns authored time. Native frames are compatibility
-  // sources, so their indices cannot identify the sheet's neighboring poses.
-  if (editor.report._styk?.layerSheet) return sheetKeyTimes(editor.report);
-  const channels=editor.report._styk.animation.channels,ticks=new Set();
-  const figurePoses=new Set(),layerPoses=new Set();
-  for(const channel of channels){
-    for(const key of channel.keys)if(!key.hidden)ticks.add(key.tick);
-    if(channel.property==='pose'){
-      if(channel.target.kind==='figure')figurePoses.add(channel.target.uid);
-      if(channel.target.kind==='layer')layerPoses.add(channel.target.id);
-    }
-  }
-  // Native frames remain source assets when a pose track is authored. Their
-  // old times are keys only for figures still driven by the native timeline.
-  const usesNative=editor.layers.some(layer=>!layerPoses.has(layer.id) &&
-    layer.figureUids.some(uid=>!figurePoses.has(uid)));
-  if(usesNative)for(const row of rows)if(row.count>0)ticks.add(row.start);
-  return [...ticks].sort((a,b)=>a-b);
 }
 
 /** Keep sampled geometry independent of opacity, tint, selection and viewport. */
@@ -94,6 +73,10 @@ export class OnionSkinCache {
       editor.addEventListener('change',this.listener);
       this.report=null;
     }
+    if(settings.onionRangeBefore!=null||settings.onionRangeAfter!=null){
+      const range=onionRangeSnapshot(editor,settings);
+      settings={...settings,onionBefore:range.before.count,onionAfter:range.after.count};
+    }
     const report = editor.report, layerSheet = report._styk?.layerSheet;
     // Sheet publications replace immutable state, including during history.
     // Check it at the read boundary as well as listening for change events;
@@ -132,9 +115,15 @@ export class OnionSkinCache {
       while(low<high){const mid=(low+high)>>>1;if(keyTicks[mid]<currentTick)low=mid+1;else high=mid;}
       previousKey=low-1;nextKey=keyTicks[low]===currentTick?low+1:low;
     }
-    for (let distance = Math.max(settings.onionBefore,settings.onionAfter); distance > 0; distance--) {
+    // Preferences may span any number of samples. Do not iterate nonexistent
+    // frames when a saved range exceeds the current document or playhead bounds.
+    const available=direction=>settings.onionMode==='frames'||authoredKeys
+      ? onionRangeLimit(keyTicks??[],Math.floor(currentTick),direction,settings,editor.totalTicks)
+      : Math.max(0,Math.floor((direction<0?currentIndex+(!adding&&editor.tick>rows[editor.frameIndex]?.start?1:0):rows.length-1-currentIndex)/settings.onionStep));
+    const before=Math.min(settings.onionBefore,available(-1)),after=Math.min(settings.onionAfter,available(1));
+    for (let distance = Math.max(before,after); distance > 0; distance--) {
       for (const direction of [-1,1]) {
-        if (distance > (direction < 0 ? settings.onionBefore : settings.onionAfter)) continue;
+        if (distance > (direction < 0 ? before : after)) continue;
         let index = currentIndex + direction * distance * settings.onionStep, tick, ratio = 0;
         if (settings.onionMode === 'frames' || authoredKeys) {
           tick = authoredKeys ? keyTicks[direction<0?previousKey-(distance*settings.onionStep-1):nextKey+(distance*settings.onionStep-1)]
@@ -166,7 +155,6 @@ export class OnionSkinCache {
           this.samples.set(id,sample);this.stats.builds++;
         }
         else {this.samples.delete(id);this.samples.set(id,sample);this.stats.hits++;}
-        while(this.samples.size>this.maxEntries)this.samples.delete(this.samples.keys().next().value);
         let included = settings.onionScope === 'selected' ? new Set(selected) : null;
         if (included && settings.onionJoined) {
           const links=new Map(), connect=(a,b)=>{let list=links.get(a);if(!list)links.set(a,list=[]);list.push(b);};
@@ -193,6 +181,11 @@ export class OnionSkinCache {
         frames.push({frame:sample.frame,geometry,opacity:settings.onionOpacity*(settings.onionFade?1/distance:1),showOnTop:settings.onionShowOnTop});
       }
     }
+    // Retain the currently displayed range as well as the small warm cache.
+    // Evict after the batch: evicting while walking a range larger than the
+    // warm cache repeatedly discarded samples still needed by that same batch.
+    const cacheLimit=Math.max(this.maxEntries,frames.length);
+    while(this.samples.size>cacheLimit)this.samples.delete(this.samples.keys().next().value);
     this.last={signature,frames};return frames;
   }
 }

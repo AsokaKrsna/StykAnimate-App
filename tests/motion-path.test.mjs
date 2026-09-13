@@ -434,3 +434,76 @@ test('the range window keeps ticks around the playhead', () => {
 });
 
 
+test('range cache follows seeks, reuses overlapping samples and evicts old ticks', () => {
+  const editor = fixture(), cache = new MotionPathCache({budgetMs: Infinity});
+  editor.select(1); editor.seek(10);
+  const before = cache.get(editor, rootTarget, {range: 4}), shared = before.points.get(10);
+  editor.seek(12);
+  const after = cache.get(editor, rootTarget, {range: 4});
+  assert.equal(after.ticks[0], 8); assert.equal(after.ticks.at(-1), 16);
+  assert.equal(after.points.get(10), shared);
+  assert.equal(after.points.has(6), false);
+  assert.equal(pathPoints(after), pathPoints(after), 'ordered points are reused');
+});
+
+test('live sampling and cancelled windows finish with one sample per call', () => {
+  const editor = fixture(), cache = new MotionPathCache({budgetMs: Infinity});
+  editor.select(1); cache.get(editor, rootTarget);
+  editor.beginMotionPathEdit(rootTarget, 10); editor.updateMotionPathEdit({x: 550, y: 300});
+  cache.budgetMs = 0;
+  let entry, calls = 0;
+  do {entry = cache.get(editor, rootTarget, {session: editor._drag}); assert.ok(++calls < 100);} while (!entry.complete);
+  near(entry.points.get(10).x, 550); near(entry.points.get(15).x, 525);
+  editor.cancelMotionPathEdit(); calls = 0;
+  do {entry = cache.get(editor, rootTarget); assert.ok(++calls < 100);} while (!entry.complete);
+  near(entry.points.get(10).x, 300); near(entry.points.get(15).x, 400);
+});
+
+test('shared expired deadlines and pointer reads do not evaluate samples', () => {
+  const editor = fixture(), cache = new MotionPathCache();
+  editor.select(1);
+  const entry = cache.get(editor, rootTarget, {deadline: -Infinity});
+  assert.equal(entry.points.size, 0);
+  assert.equal(cache.peek(editor, rootTarget), entry);
+  assert.equal(entry.points.size, 0);
+  editor.updateObject({root_x: 120});
+  assert.equal(cache.peek(editor, rootTarget), null);
+});
+
+test('key-heavy plans remain bounded and preserve endpoints and playhead', () => {
+  const report = emptyDocument();
+  report.keyframes = Array.from({length: 5000}, () => createFrame([createObject(report.figure_types[0], 1, 100, 200)], 10));
+  const loaded = new Editor({demo:false}).load(report); loaded.seek(2345);
+  const plan = motionPathTicks(loaded, {maxPoints: 100});
+  assert.ok(plan.ticks.length <= 100);
+  assert.equal(plan.ticks[0], 0); assert.equal(plan.ticks.at(-1), loaded.totalTicks - 1);
+  assert.ok(plan.ticks.includes(2345));
+});
+
+test('overlapping points pick the nearest time instead of the last frame', () => {
+  const entry = {ticks:[0,1,2],points:new Map([0,1,2].map(t => [t,{tick:t,x:0,y:0}]))};
+  assert.equal(pickMotionPathPoint(entry, {x:0,y:0}, {project:p=>p,tick:1}).tick,1);
+});
+
+test('dense labels do not overlap and held markers collapse around the current frame', async () => {
+  const {layoutMotionPath} = await import('../src/motion-path.mjs');
+  const points = Array.from({length:1600}, (_,tick)=>({tick,x:tick%400,y:Math.floor(tick/400)*10,key:true}));
+  const entry = {ticks:points.map(p=>p.tick), points:new Map(points.map(p=>[p.tick,p]))};
+  const layout = layoutMotionPath(entry,p=>p,{tick:800,labels:true});
+  assert.ok(layout.badges.length<=48);
+  for (const [i,a] of layout.badges.entries()) for (const b of layout.badges.slice(i+1))
+    assert.ok(a.x+a.width<=b.x || b.x+b.width<=a.x || a.y+a.height<=b.y || b.y+b.height<=a.y);
+  const held = layoutMotionPath(entry,()=>({x:10,y:10}),{tick:800});
+  assert.equal(held.markers.length,1); assert.equal(held.markers[0].tick,800);
+  assert.equal(held.badges.length,0);
+});
+
+test('short plans retain every tick and a beyond-end playhead does not restart sampling', () => {
+  const editor = fixture();
+  assert.equal(motionPathTicks(editor, {maxPoints:21}).ticks.length,21);
+  editor.seek(30,{allowBeyondEnd:true});
+  const cache = new MotionPathCache({budgetMs:Infinity});
+  const entry = cache.get(editor,rootTarget,{range:4});
+  assert.equal(entry.ticks.at(-1),20);
+  assert.equal(cache.get(editor,rootTarget,{range:4}),entry);
+});

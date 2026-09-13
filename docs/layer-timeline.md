@@ -1,14 +1,21 @@
 # Layers and frames
 
-Both views include shared [audio tracks](AUDIO.md) with waveform clips, source
-trimming, split/copy/paste, volume, fades and mute/solo. Audio uses seconds and
-snaps to the current frame rate. Explicit Ripple follows whole-scene time
-insertion/removal; single-layer pose edits leave audio timing intact. Audio has
-its own resize handle and expanded mixing view, visible volume controls, and
-direct clip dragging between tracks (Shift preserves time). Dropping onto the
-new-track row creates a destination in the same undo step.
+The **Audio** icon opens shared [audio editing](AUDIO.md), hidden by default.
+Advanced places sound tracks under animation layers with one ruler, playhead,
+zoom and scroll area. Its footer follows the selected animation cell or audio
+clip. Simple opens an Audio tab in the filmstrip area. Closing audio editing
+restores animation space while sound keeps playing. The existing timeline resize
+handle and Expand control provide more room in either mode.
+
+Waveform clips support source trimming, split/copy/paste, volume, fades and
+mute/solo. Audio uses seconds and snaps to the current frame rate. Explicit
+Ripple follows whole-scene time insertion/removal; single-layer pose edits
+leave audio timing intact. Drag clips between tracks (Shift preserves time),
+or drop onto the new-track row to create a destination in the same undo step.
 
 The Advanced timeline is an exposure sheet. Each row is a persistent user layer; each cell is one output frame. A scene frame is the complete vertical column. The Simple filmstrip displays the combined scene at the union of layer key times. Switching views changes no animation data and creates no working-frame or property-channel overlay.
+
+Camera's disclosure collapses its motion lanes while retaining the camera keyframe row. A collapsed Camera shows the motion count. The control supports Enter/Space and Left/Right; collapsing affects only the view and survives edits and undo. Selecting a motion reveals its lanes again.
 
 Select a layer to keep its contents selected while scrubbing, including when its contents change or disappear. Add or paste figures into that layer. Multiple figures and movieclips can share a layer. Layer order controls stacking. Rename by double-clicking the name; drag names or use the arrows to reorder. Eye and lock controls affect visibility and editability. Deleting a layer removes its contents and is undoable.
 
@@ -69,3 +76,110 @@ The browser also checks key and cross-layer dragging, layer reordering, rename, 
 The polish checks exercise the green sliders, multi-frame inbetweens, preset and custom easing, menu contents and keyboard dismissal, opening-frame insertion, cut, exact undo, and keeping the current scene frame selected when earlier timing changes.
 
 Behavior references: [Adobe frames](https://helpx.adobe.com/animate/desktop/animation/frames-keyframes.html), [Pivot frames](https://www.pivotanimator.net/help5-2/animation_frame_controls.htm), [Stick Nodes movieclips](https://sticknodes.com/new-version-3-0-0-the-movieclip-update/).
+
+## Timeline organization and compact layout
+
+Advanced uses the existing transport header for Add Frame and a direct
+Simple/Advanced segmented switch. Extra view commands live in the ruler context menu. There is no persistent bottom command/status bar.
+A floating bottom-right zoom control serves both modes. Layer ordering remains
+available by dragging rows and through the layer commands.
+Audio clip controls open from the audio toolbar. Audio selection hides
+frame-authoring controls; switching back to frame cells restores them.
+
+Find layers filters user rows by case-insensitive words; Camera, camera motions
+and Scene remain available. Focus selected layers retains a fixed set of user
+rows until cleared. Both are view-only, do not change canvas visibility or undo,
+and reset on document load. Escape clears search/focus; Ctrl/Cmd+F from the grid
+focuses search. Selecting a filtered-out layer from another editor surface reveals
+it by clearing the filter. New layers are revealed too. Frame operations use only
+visible selected layer IDs; filtered-out rows are not implicit edit targets.
+
+Layer context menus offer saved color tags, focus and rename. Colors use validated
+optional layer metadata and sparse undoable commands; they never change rendering
+or frame data. Dragging above/below a user row shows the corresponding insertion
+edge. F2 renames a visible selected layer. The layer-name divider supports arrow
+keys (Shift for larger steps), Home and double-click reset.
+
+Ctrl/Cmd-wheel zooms around the pointer; slider zoom retains viewport center.
+Timeline indexing creates lazy key descriptors. Filtering traverses lightweight
+layer descriptors only; painting and row DOM remain viewport-bounded.
+
+Checks: `node --test tests/timeline-organization.test.mjs` and
+`node tests/timeline-organization.browser.mjs`, plus the existing layer timeline
+and audio navigation browser regressions. Browser artifacts are written to
+`artifacts/timeline-organization/`.
+
+### Contextual easing and view navigation
+
+Double-click an Advanced keyframe dot or Simple frame thumbnail to change easing.
+Right-click > Change easing preserves multi-frame selection. Advanced applies the
+curve to the selected layers' outgoing keys (including the exposure containing
+the range start). Simple retains its whole-scene boundary isolation. Each apply
+is one undo step. Both use the same preset/custom Bezier editor; locked selections
+cannot apply changes. Advanced has no persistent easing selector; Simple also exposes easing in its
+left sidebar.
+Inbetween sliders remain duration controls, independent of easing.
+
+Middle-button drag pans without changing selection or document data. The floating
+zoom control changes Advanced time scale or Simple thumbnail width; Simple audio
+uses that same variable frame-to-pixel mapping. Ctrl/Cmd-wheel zooms at the pointer.
+Simple cards retain viewport eviction and fixed, bounded thumbnail resolution.
+The contextual regression is `node tests/timeline-context.browser.mjs`.
+
+### Onion range and thumbnail lifetime
+
+Before/After are fixed output-frame distances from the playhead. Seeking,
+pending scrubs, panning, zooming and document boundaries never change these
+preferences. The ruler handles sit at `playhead - before` and `playhead + after`
+and move with it. Their positions are not pinned to authored keys or document
+edges. Only the visible projection clips at the timeline viewport. No additional
+onion toolbar or row is inserted above the ruler.
+
+Handles can be dragged outward to increase a distance or inward to decrease it.
+The settings panel provides numeric fields, single-frame minus/plus buttons and
+label scrubbing, including when a handle is outside the viewport. Both use eight
+pointer pixels per output frame, or 32 with Shift held when the gesture starts.
+Movement below one step does nothing. Timeline zoom and authored key spacing
+never change sensitivity. Handles support arrow keys and Home (zero).
+
+Sampling selects output frames or authored keys inside the requested range,
+respecting sample spacing and available document poses. It never rounds outward
+to a neighboring key. Only sample counts shrink near the document edges; the
+stored values, displayed values and visual offsets stay fixed. Ranges have no
+ten-frame cap. Simple mode uses the same settings panel without a ruler overlay.
+
+`onion-range.mjs` owns the cached document index and range/sample calculations.
+`onion-controller.mjs` owns the sole transient preference session. Ruler handles
+and `onion-frame-field.mjs` share `onion-range-drag.mjs`: displacement is measured
+from a fixed start, previews do not persist, and release commits once. Escape,
+pointer cancellation, blur, seeking, document edits and view disposal clear the
+session. A superseded view cannot commit another view's preview. Onion edits
+never enter document history. Native slider cancellation also suppresses its
+trailing release/change event.
+
+`onionRangeBefore`/`onionRangeAfter` store output-frame spans. The controller
+interprets legacy Before/After values as fixed distances (including their saved
+spacing), independent of document/key spacing, and persists the explicit pair
+on the first range/sampling edit.
+Colors and other settings retain their values. The renderer and views share the
+same range calculation; the geometry cache retains the active sample range or
+its 24-entry warm budget, whichever is larger, and shrinks when the range
+contracts. Eviction occurs after evaluating a batch so a large active range
+cannot evict its own samples during opacity adjustment.
+
+Verification: `node tests/onion-timeline-range.browser.mjs`,
+`node tests/onion-controls.desktop.mjs`, and the `onion-controller`,
+`onion-timeline-range`, `onion-skin`, `onion-layer-sheet`, and `onion-performance`
+unit tests. Desktop coverage includes native 75%, 100%, 150%, and 200% UI scaling.
+
+Audio tracks share the timeline's existing scroll area. Opening audio or adding
+tracks preserves the user's timeline height; resizing remains a manual action.
+
+Simple thumbnails retain up to 32 rendered canvases (7.5 MiB of pixel storage),
+independent of the viewport's card DOM. Cache eviction releases canvas storage.
+Returning to recent frames copies cached pixels without worker rendering. Pixel
+changes conservatively invalidate the cache; audio and layer label/color/lock
+changes do not. Cancellation retries use a 120 ms to 2 s bounded backoff and stop
+when paused/disposed. A separate render target prevents late results from painting
+stale cards. Document synchronization and rendering remain in ThumbnailRenderer's
+single worker; the UI yields between results. See THUMBNAIL-PERFORMANCE.md.

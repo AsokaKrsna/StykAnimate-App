@@ -49,6 +49,16 @@
  * SOFTWARE.
  */
 const shapes = Object.freeze({
+  // Builder glyphs depict the actual operation on a joint or segment.
+ "builder-chain": '<path d="M4 17l6-11 5 9 5-10"/><circle cx="4" cy="17" r="2"/><circle cx="10" cy="6" r="2"/><circle cx="15" cy="15" r="2"/>',
+ "builder-snap": '<path d="M5 4v9a7 7 0 0 0 14 0V4h-5v9a2 2 0 0 1-4 0V4zM5 8h5m4 0h5"/>',
+  "builder-split": '<path d="M5 16h4m6 0h4M12 3v6M9 6h6"/><circle cx="3" cy="16" r="2"/><circle cx="12" cy="16" r="3"/><circle cx="21" cy="16" r="2"/>',
+  "builder-unsplit": '<path d="M5 16h14M9 6h6"/><circle cx="3" cy="16" r="2"/><circle cx="21" cy="16" r="2"/><circle cx="12" cy="16" r="3" stroke-dasharray="2 3"/>',
+  "builder-branch": '<path d="M12 18V9m0 4L5 8m7 5 7-5"/><circle cx="12" cy="20" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="4" cy="6" r="2"/><circle cx="20" cy="6" r="2"/>',
+  "builder-front": '<rect x="3" y="8" width="11" height="11" rx="2"/><path d="M8 5V3h11a2 2 0 0 1 2 2v11h-2M8.5 16v-5m-2 2 2-2 2 2"/>',
+  "builder-back": '<rect x="10" y="3" width="11" height="11" rx="2"/><path d="M6 8H3v11a2 2 0 0 0 2 2h11v-3M15.5 6v5m-2-2 2 2 2-2"/>',
+  "builder-delete-joint": '<path d="M5 17h3m8 0h3M9 3l6 6m0-6L9 9"/><circle cx="3" cy="17" r="2"/><circle cx="12" cy="17" r="2" stroke-dasharray="1 3"/><circle cx="21" cy="17" r="2"/>',
+  music: '<path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />',
   "bring-to-front": '<rect x="8" y="8" width="8" height="8" rx="2" /><path d="M4 10a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2" /><path d="M14 20a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2" />',
   "send-to-back": '<rect x="14" y="14" width="8" height="8" rx="2" /><rect x="2" y="2" width="8" height="8" rx="2" /><path d="M7 14v1a2 2 0 0 0 2 2h1" /><path d="M14 7h1a2 2 0 0 1 2 2v1" />',
   text: '<path d="M12 4v16" /> <path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2" /> <path d="M9 20h6" />',
@@ -67,6 +77,12 @@ const shapes = Object.freeze({
     '<path d="M12 15V3" /> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /> <path d="m7 10 5 5 5-5" />',
   plus: '<path d="M5 12h14" /> <path d="M12 5v14" />',
   minus: '<path d="M5 12h14" />',
+  keyboard: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 15h10"/>',
+  heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>',
+  message: '<path d="M21 15a3 3 0 0 1-3 3H7l-5 4V5a3 3 0 0 1 3-3h13a3 3 0 0 1 3 3Z"/><path d="M7 7h10M7 12h6"/>',
+  bug: '<rect x="7" y="7" width="10" height="14" rx="5"/><path d="m9 7-2-4m8 4 2-4M3 9l4 2m10 0 4-2M3 15h4m10 0h4M3 21l4-3m10 0 4 3M12 7v14"/>',
+  lightbulb: '<path d="M9 18h6m-6 3h6M9 15c0-2-4-3-4-7a7 7 0 0 1 14 0c0 4-4 5-4 7Z"/>',
+  externalLink: '<path d="M15 3h6v6m0-6L10 14M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4"/>',
   search: '<path d="m21 21-4.34-4.34" /> <circle cx="11" cy="11" r="8" />',
   frame:
     '<line x1="22" x2="2" y1="6" y2="6" /> <line x1="22" x2="2" y1="18" y2="18" /> <line x1="6" x2="6" y1="2" y2="22" /> <line x1="18" x2="18" y1="2" y2="22" />',
@@ -75,6 +91,7 @@ const shapes = Object.freeze({
   help: '<circle cx="12" cy="12" r="10" /> <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /> <path d="M12 17h.01" />',
   onion: '<circle cx="15" cy="9" r="7" /> <circle cx="9" cy="15" r="7" />',
   line: '<path d="m7 17 10-10" /><circle cx="5" cy="19" r="2" /><circle cx="19" cy="5" r="2" />',
+  "motion-path": '<circle cx="4" cy="18" r="2" /><path d="M4 16V9a5 5 0 0 1 10 0v6a3 3 0 0 0 3 3h1" /><circle cx="20" cy="18" r="2" /><circle cx="14" cy="10" r="1.5" fill="currentColor" stroke="none" />',
   route:
     '<circle cx="6" cy="19" r="3" /><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15" /><circle cx="18" cy="5" r="3" />',
   circle: '<circle cx="12" cy="12" r="10" />',
@@ -109,6 +126,7 @@ const shapes = Object.freeze({
     '<path d="M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0Z" />',
   duplicate:
     '<rect width="14" height="14" x="8" y="8" rx="2" ry="2" /> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />',
+  "flip-vertical": '<path d="m7 3 5 5 5-5H7" /><path d="m7 21 5-5 5 5H7" /><path d="M2 12h2m4 0h2m4 0h2m4 0h2" />',
   flip: '<path d="m3 7 5 5-5 5V7" /> <path d="m21 7-5 5 5 5V7" /> <path d="M12 20v2" /> <path d="M12 14v2" /> <path d="M12 8v2" /> <path d="M12 2v2" />',
   rotate:
     '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /> <path d="M3 3v5h5" />',

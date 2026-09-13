@@ -4,6 +4,8 @@ import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createFrame,createObject,defaultFigure} from '../src/demo.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
 import {presencePlayback} from '../src/movieclip-presence.mjs';
+import {frameOrder,setOrder} from '../src/pivot/structure.mjs';
+import {applyLayerOrder} from '../src/layers.mjs';
 export function fixture(){
  const figure=defaultFigure(),child=emptyDocument();
  child.keyframes=[createFrame([createObject(figure,1,50,60)],20)];
@@ -43,4 +45,24 @@ test('counts keys after an inbetween and preserves a pre-existing instance at it
  e.seek(3);assert.equal(e.evaluatedFrame.objects.find(o=>o.unique_id===7).root_x,355);
  e.seek(6);assert.ok(e.evaluatedFrame.objects.some(o=>o.unique_id===other));
  e.seek(9);assert.equal(e.evaluatedFrame.objects.find(o=>o.unique_id===7).root_x,330);
+});
+
+test('extension retains back, middle and front stacking with tied and explicit z-index, across native and sheet frames',()=>{
+ for(const layerTimeline of [false,true])for(const position of [0,1,2])for(const depth of [0,12]){
+  const base=fixture(),report=structuredClone(base.report);delete report._styk.layerSheet;
+  const figure=report.figure_types[0],clip=report.figure_types[1],order=[11,3];order.splice(position,0,7);
+  report.keyframes=[0,1,2].map(n=>{
+   const objects=[createObject(figure,11,80,100,{_stykZIndex:depth}),createObject(figure,3,80,100,{_stykZIndex:depth})];
+   if(!n)objects.push(createObject(clip,7,80,100,{_stykZIndex:depth,_stykMovieclip:presencePlayback()}));
+   const frame=createFrame(objects,3);setOrder(frame,order.filter(uid=>!n||uid!==7));return frame;
+  });
+  const e=new Editor({demo:false,layerTimeline});e.load(report);e.select(7);const before=e.serialize();
+  assert.equal(e.addMovieclipToNextKeyframes(2),2);
+  const verify=editor=>{for(const tick of [0,3,4,6,7]){editor.seek(tick);const frame=editor.evaluatedFrame;
+   assert.equal(frame.objects.find(o=>o.unique_id===7)._stykZIndex,depth);
+   assert.deepEqual(frameOrder(applyLayerOrder(editor.report,frame)),order,`${layerTimeline}/${position}/${depth} at ${tick}`);
+  }};
+  verify(e);const saved=e.serialize();verify(new Editor({demo:false,layerTimeline}).load(saved));
+  e.undo();assert.deepEqual(e.serialize(),before);e.redo();verify(e);
+ }
 });

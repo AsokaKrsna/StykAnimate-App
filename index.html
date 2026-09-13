@@ -13,7 +13,15 @@
     <script src="./src/theme-bootstrap.js"></script>
     <link rel="stylesheet" href="./src/style.css" />
     <link rel="stylesheet" href="./src/studio.css" />
+    <link rel="stylesheet" href="./src/builder-workspace.css" />
+    <link rel="stylesheet" href="./src/rig-controls.css" />
+    <link rel="stylesheet" href="./src/motion-path.css" />
+    <link rel="stylesheet" href="./src/tweener.css" />
+    <link rel="stylesheet" href="./src/canvas-guides.css" />
+    <link rel="stylesheet" href="./src/onion-controls.css" />
+    <link rel="stylesheet" href="./src/movieclip-ui.css" />
     <link rel="stylesheet" href="./src/vfx.css" />
+    <link rel="stylesheet" href="./src/camera-motion.css" />
     <link rel="stylesheet" href="./src/user-library.css" />
     <link rel="stylesheet" href="./src/layer-timeline.css" />
     <link rel="stylesheet" href="./src/audio.css" />
@@ -44,14 +52,6 @@
         </button>
         <span id="save-state" class="save-state">Saved</span>
         <div class="title-spacer"></div>
-        <button
-          class="button subtle"
-          data-action="open"
-          title="Open a project · Ctrl+O"
-          data-icon="folder"
-        >
-          Open
-        </button>
         <button
           class="button subtle"
           data-action="save"
@@ -88,14 +88,19 @@
           <span class="rail-divider"></span>
 <div class="tool-dock" role="toolbar" aria-label="Contextual tools" aria-orientation="vertical">
 <button class="tool" data-tool="select" data-icon="cursor" aria-label="Select and move" title="Select and move · V"><span class="tool-label">Select</span></button>
-<button class="tool" data-tool="pose" data-icon="nodes" aria-label="Pose joints" title="Pose joints · P"><span class="tool-label">Pose</span></button>
 <button class="tool" data-tool="rig" data-icon="sliders" aria-label="Edit rig" title="Edit rig"><span class="tool-label">Joints</span></button>
+<button class="tool" id="tweener-button" data-tool="tweener" aria-label="Breakdown tweener" title="Tweener · Drag selected poses"></button>
 <button class="tool" data-tool="line" data-icon="line" aria-label="Add line segment" title="Add line segment · L"><span class="tool-label">Line</span></button>
+<button class="tool" data-tool="chain" data-icon="builder-chain" aria-label="Chain pen" title="Chain pen · Click to extend, Enter to finish"><span class="tool-label">Chain</span></button>
 <button class="tool" data-tool="circle" data-icon="circle" aria-label="Add circle segment" title="Add circle segment · C"><span class="tool-label">Circle</span></button>
-<button class="tool" data-tool="polygon" data-icon="polygon" aria-label="Create polygon" title="Create polygon"><span class="tool-label">Polygon</span></button>
+<button class="tool" data-tool="polygon" data-icon="polygon" aria-label="Create polygon" title="Create polygon · Shift-click: fill enclosed area"><span class="tool-label">Polygon</span></button>
 <button class="tool" data-tool="hand" data-icon="hand" aria-label="Pan canvas" title="Pan canvas · H"><span class="tool-label">Pan</span></button>
 <button class="tool" data-action="toggle-isolate" data-icon="detach" title="Isolate joint · Hold Caps Lock" aria-label="Isolate joint" aria-pressed="false"><span class="tool-label">Isolate</span></button>
 </div>
+          <div class="rail-order" role="group" aria-label="Selection stacking">
+            <button type="button" class="tool" data-selection-order data-action="selection-front" data-shift-action="selection-up" title="Bring to front · Shift-click: forward one step" aria-label="Bring to front; Shift-click for one step" data-icon="bring-to-front" disabled></button>
+            <button type="button" class="tool" data-selection-order data-action="selection-back" data-shift-action="selection-down" title="Send to back · Shift-click: backward one step" aria-label="Send to back; Shift-click for one step" data-icon="send-to-back" disabled></button>
+          </div>
           <div class="rail-bottom">
             <button class="tool" data-action="help" title="Keyboard shortcuts" aria-label="Keyboard shortcuts" data-icon="help"></button>
             <button class="tool" data-action="settings" title="Editor settings" aria-label="Editor settings" data-icon="settings"></button>
@@ -111,27 +116,78 @@
               <button class="scene-control" data-action="scene-settings" title="Scene properties" data-icon="frame">Scene</button><span>/</span
               ><span id="stage-size">960 × 540</span>
             </div>
-            <div class="canvas-options">
-              <button type="button" id="vfx-preview" class="button subtle small" title="Toggle VFX preview" aria-label="VFX preview" aria-pressed="true"></button>
+            <div class="canvas-options" role="toolbar" aria-label="Edit history">
               <button class="button subtle small" data-action="undo" title="Undo · Ctrl+Z" aria-label="Undo" data-icon="undo"></button>
               <button class="button subtle small" data-action="redo" title="Redo · Ctrl+Shift+Z" aria-label="Redo" data-icon="redo"></button>
-              <span class="divider"></span>
-              <button type="button" class="icon-button" data-selection-order data-action="selection-front" data-shift-action="selection-up" title="Bring to front · Shift-click: one step forward" aria-label="Bring to front" data-icon="bring-to-front" disabled></button>
-              <button type="button" class="icon-button" data-selection-order data-action="selection-back" data-shift-action="selection-down" title="Send to back · Shift-click: one step backward" aria-label="Send to back" data-icon="send-to-back" disabled></button>
-              <span class="divider"></span>
+            </div>
+          </div>
+          <div class="context-strip"><strong id="tool-context">Select</strong><span id="edit-scope">Current frame</span><button id="leave-rig" hidden>Return to animation →</button></div>
+          <div id="builder-bar" class="builder-bar" role="toolbar" aria-label="Figure builder" hidden>
+            <span id="builder-title" hidden>Build figure</span>
+            <div class="builder-primary-actions" role="group" aria-label="Segment actions">
+              <button class="builder-btn" data-action="split-segment" data-icon="builder-split" title="Split segment at midpoint · Shift: whole branch" aria-label="Split segment"><span class="builder-action-label">Split</span></button>
+              <button class="builder-btn" data-action="duplicate-segment" data-shift-action="duplicate-branch" data-icon="duplicate" title="Duplicate segment · Shift: duplicate branch · Ctrl: flip copy" aria-label="Duplicate segment"><span class="builder-action-label">Duplicate</span></button>
+              <button class="builder-btn" data-action="mirror-segment" data-shift-action="mirror-branch" data-icon="flip" title="Flip horizontally · Shift: branch" aria-label="Flip horizontally"></button>
+              <button class="builder-btn" data-action="mirror-segment-vertical" data-shift-action="mirror-branch-vertical" data-icon="flip-vertical" title="Flip vertically · Shift: branch" aria-label="Flip vertically"></button>
+            </div>
+            <div class="builder-secondary-actions" role="group" aria-label="More figure controls">
+              <button class="builder-btn builder-menu-trigger" popovertarget="builder-menu-edit" aria-haspopup="menu" aria-expanded="false" aria-controls="builder-menu-edit" aria-label="Edit" title="Edit" data-icon="sliders"><span class="builder-action-label">Edit</span><span class="builder-chevron" data-icon="chevron-down"></span></button>
+            <div id="builder-menu-edit" class="builder-popover" popover="auto" role="menu" aria-label="Edit">
+              <button role="menuitem" class="builder-menu-item builder-btn" data-action="rig-connect" data-icon="link"><span>Connect joints…</span></button>
+              <button role="menuitem" class="builder-menu-item builder-btn" data-action="rig-examples" data-icon="person"><span>Rig examples…</span></button>
+              <button role="menuitem" class="builder-menu-item builder-btn" data-action="unsplit-segment" data-icon="builder-unsplit" title="Remove joint, keep endpoints · Ctrl Del" aria-label="Unsplit segment"><span>Remove joint, keep endpoints</span></button>
+              <button role="menuitem" class="builder-menu-item builder-btn" data-action="origin-segment" data-icon="origin" title="Set figure origin at this joint" aria-label="Set origin"><span>Set origin here</span></button>
+              <button role="menuitem" class="builder-menu-item builder-btn" data-action="segment-values" data-icon="sliders" title="Segment values editor · I" aria-label="Segment values"><span>Exact values…</span></button>
+              <div class="builder-menu-separator" role="separator"></div>
+              <button role="menuitem" class="builder-menu-item builder-btn" data-action="add-sprite-segment" data-icon="image" title="Attach an image segment at a joint" aria-label="Add sprite segment"><span>Attach image…</span></button>
+              <button role="menuitem" class="builder-menu-item builder-btn" data-action="edit-text" data-icon="text" title="Edit the selected text segment" aria-label="Edit text segment"><span>Edit text…</span></button>
+              <div class="builder-menu-separator" role="separator"></div>
+              <button role="menuitem" class="builder-menu-item builder-btn" data-action="delete-single-segment" data-icon="builder-delete-joint" title="Delete this joint only" aria-label="Delete joint"><span>Delete joint only</span></button>
+              <button role="menuitem" class="builder-menu-item builder-btn danger" data-action="delete-segment" data-icon="trash" title="Delete branch · Shift Del" aria-label="Delete branch"><span>Delete branch</span></button>
+            </div>
+              <button class="builder-btn builder-menu-trigger builder-icon-trigger" popovertarget="builder-menu-arrange" aria-haspopup="menu" aria-expanded="false" aria-controls="builder-menu-arrange" aria-label="Arrange" title="Arrange" data-icon="layers"><span class="builder-action-label">Arrange</span><span class="builder-chevron" data-icon="chevron-down"></span></button>
+            <div id="builder-menu-arrange" class="builder-popover" popover="auto" role="menu" aria-label="Arrange">
+              <button role="menuitem" class="builder-menu-item builder-btn" data-action="segment-order-front" data-icon="builder-front" title="Draw on top · Shift: one step up" aria-label="Bring to front"><span>Bring to front</span></button>
+              <button role="menuitem" class="builder-menu-item builder-btn" data-action="segment-order-up" data-icon="arrow-up" title="One step up" aria-label="Move up"><span>Bring forward</span></button>
+              <button role="menuitem" class="builder-menu-item builder-btn" data-action="segment-order-down" data-icon="arrow-down" title="One step down" aria-label="Move down"><span>Send backward</span></button>
+              <button role="menuitem" class="builder-menu-item builder-btn" data-action="segment-order-back" data-icon="builder-back" title="Draw behind · Shift: one step down" aria-label="Send to back"><span>Send to back</span></button>
+            </div>
+              <button class="builder-btn builder-menu-trigger builder-icon-trigger" popovertarget="builder-menu-view" aria-haspopup="menu" aria-expanded="false" aria-controls="builder-menu-view" aria-label="View" title="View" data-icon="eye"><span class="builder-action-label">View</span><span class="builder-chevron" data-icon="chevron-down"></span></button>
+            <div id="builder-menu-view" class="builder-popover" popover="auto" role="menu" aria-label="View">
+              <button role="menuitemcheckbox" class="builder-menu-item builder-btn builder-toggle" data-action="toggle-isolate" data-icon="detach" title="Isolate joint · Hold Caps Lock" aria-label="Isolate joint" aria-pressed="false"><span>Isolate joint</span></button>
+              <button role="menuitemcheckbox" class="builder-menu-item builder-btn builder-toggle" data-action="builder-static-handles" data-icon="diamond" title="Show static handles · F10" aria-label="Static handles" aria-pressed="true"><span>Static handles</span></button>
+              <button role="menuitemcheckbox" class="builder-menu-item builder-btn builder-toggle" data-action="builder-highlight" data-icon="eye" title="Highlight selected segment · F12" aria-label="Highlight segment" aria-pressed="false"><span>Highlight segment</span></button>
+              <div class="builder-menu-separator" role="separator"></div>
+              <button role="menuitem" class="builder-menu-item builder-btn" data-action="builder-canvas-color" data-icon="grid" title="Construction background color · F9" aria-label="Builder canvas color"><span>Background color…</span></button>
+            </div>
+            </div>
+            <button class="builder-btn builder-toggle" data-action="toggle-builder-branch" data-icon="builder-branch" title="Apply edits to the whole branch · or hold Shift" aria-label="Apply to branch" aria-pressed="false"><span class="builder-action-label">Branch</span></button>
+            <span class="builder-bar-end">
+              <button class="builder-btn" data-action="rig-test" data-icon="play" aria-label="Test rig" title="Test a temporary pose without changing the figure"><span class="builder-action-label">Test rig</span></button>
+              <button class="button primary small" id="builder-done" data-workspace-mode="animate">Done</button></span>
+          </div>
+          <div
+            id="viewport"
+            tabindex="0"
+            aria-label="Animation canvas. V to select, H to pan. Drag a figure or joint to pose it."
+          >
+            <div class="canvas-view-controls" role="toolbar" aria-label="Canvas view">
+              <button type="button" id="canvas-guides-button" class="icon-button" data-icon="grid" title="Guides and grid" aria-label="Guides and grid" aria-haspopup="dialog" aria-expanded="false" aria-controls="canvas-guides-panel"></button>
+              <button type="button" id="vfx-preview" class="button subtle small" title="Toggle VFX preview" aria-label="VFX preview" aria-pressed="true">VFX</button>
               <button
                 class="icon-button active"
                 id="handles-button"
                 data-action="toggle-handles"
                 title="Show joints · J"
-                data-icon="nodes"
+                aria-label="Show joints"
+                data-icon="eye"
               ></button
               ><button
                 class="icon-button"
                 id="paths-button"
                 data-action="toggle-motion-paths"
                 title="Motion paths · M"
-                data-icon="route"
+                data-icon="motion-path"
               ></button
               ><span class="divider"></span
               ><button
@@ -145,51 +201,6 @@
                 100%
               </button>
             </div>
-          </div>
-          <div class="context-strip"><strong id="tool-context">Select</strong><span id="edit-scope">Current frame</span><button id="leave-rig" hidden>Return to animation →</button></div>
-          <div id="builder-bar" class="builder-bar" role="toolbar" aria-label="Figure builder" hidden>
-            <span class="builder-crumb"><strong id="builder-title">Build figure</strong></span>
-            <span class="builder-group" aria-label="Structure">
-              <button class="builder-btn" data-action="split-segment" data-icon="split" title="Split segment at midpoint · Shift: whole branch" aria-label="Split segment"></button>
-              <button class="builder-btn" data-action="unsplit-segment" data-icon="combine" title="Remove joint, keep endpoints · Ctrl Del" aria-label="Unsplit segment"></button>
-              <button class="builder-btn" data-action="origin-segment" data-icon="origin" title="Set figure origin at this joint" aria-label="Set origin"></button>
-              <button class="builder-btn" data-action="segment-values" data-icon="sliders" title="Segment values editor · I" aria-label="Segment values"></button>
-            </span>
-            <span class="builder-group" aria-label="Duplicate and flip">
-              <button class="builder-btn" data-action="duplicate-segment" data-shift-action="duplicate-branch" data-icon="duplicate" title="Duplicate segment · Shift: duplicate branch · Ctrl: flip copy" aria-label="Duplicate segment"></button>
-              <button class="builder-btn" data-action="mirror-segment" data-shift-action="mirror-branch" data-icon="flip" title="Flip segment horizontally · Shift: flip branch" aria-label="Flip horizontally"></button>
-              <button class="builder-btn" data-action="mirror-segment-vertical" data-shift-action="mirror-branch-vertical" data-icon="flip" title="Flip segment vertically · Shift: flip branch" aria-label="Flip vertically" style="transform:rotate(90deg)"></button>
-            </span>
-            <span class="builder-group" aria-label="Draw order">
-              <button class="builder-btn" data-action="segment-order-front" data-icon="bring-to-front" title="Draw on top · Shift: one step up" aria-label="Bring to front"></button>
-              <button class="builder-btn" data-action="segment-order-up" data-icon="chevron-up" title="One step up" aria-label="Move up"></button>
-              <button class="builder-btn" data-action="segment-order-down" data-icon="chevron-down" title="One step down" aria-label="Move down"></button>
-              <button class="builder-btn" data-action="segment-order-back" data-icon="send-to-back" title="Draw behind · Shift: one step down" aria-label="Send to back"></button>
-            </span>
-            <span class="builder-group" aria-label="Media">
-              <button class="builder-btn" data-action="add-sprite-segment" data-icon="image" title="Attach an image segment at a joint" aria-label="Add sprite segment"></button>
-              <button class="builder-btn" data-action="edit-text" data-icon="text" title="Edit the selected text segment" aria-label="Edit text segment"></button>
-            </span>
-            <span class="builder-group" aria-label="Builder options">
-              <button class="builder-btn builder-toggle" data-action="toggle-builder-branch" data-icon="nodes" title="Apply edits to the whole branch · or hold Shift" aria-label="Apply to branch" aria-pressed="false"><span>Branch</span></button>
-              <button class="builder-btn builder-toggle" data-action="toggle-isolate" data-icon="detach" title="Isolate joint · Hold Caps Lock" aria-label="Isolate joint" aria-pressed="false"></button>
-              <button class="builder-btn builder-toggle" data-action="builder-static-handles" data-icon="diamond" title="Show static handles · F10" aria-label="Static handles" aria-pressed="true"></button>
-              <button class="builder-btn builder-toggle" data-action="builder-highlight" data-icon="eye" title="Highlight selected segment · F12" aria-label="Highlight segment" aria-pressed="false"></button>
-              <button class="builder-btn" data-action="builder-canvas-color" data-icon="grid" title="Construction background color · F9" aria-label="Builder canvas color"></button>
-            </span>
-            <span class="builder-group" aria-label="Delete">
-              <button class="builder-btn" data-action="delete-single-segment" data-icon="close" title="Delete this joint only" aria-label="Delete joint"></button>
-              <button class="builder-btn danger" data-action="delete-segment" data-icon="trash" title="Delete branch · Shift Del" aria-label="Delete branch"></button>
-            </span>
-            <span class="builder-bar-end">
-              <button class="button primary small" id="builder-done" data-workspace-mode="animate">Done</button>
-            </span>
-          </div>
-          <div
-            id="viewport"
-            tabindex="0"
-            aria-label="Animation canvas. V to select, H to pan. Drag a figure or joint to pose it."
-          >
             <div id="artboard"><span class="artboard-name">Scene 01</span></div>
             <canvas id="scene" aria-label="WebGPU animation scene"></canvas>
             <canvas
@@ -204,6 +215,7 @@
             <output id="playback-fps" aria-label="Playback frames per second" hidden>— fps</output>
             <output id="preview-quality" title="Preview detail is reduced to keep animation within available memory. Original artwork and export quality are preserved." hidden>Reduced preview quality</output>
             <div id="renderer-error" hidden></div>
+            <div id="chain-controls" class="polygon-controls" hidden><span id="chain-count"></span><button id="chain-finish" title="Finish chain · Enter">Finish</button><button id="chain-cancel" aria-label="Cancel chain" title="Cancel · Escape">×</button></div>
             <div id="polygon-controls" class="polygon-controls" hidden>
               <span id="polygon-count">0 joints</span
               ><button
@@ -222,10 +234,10 @@
             </div>
             <div class="viewport-help" id="viewport-hint"></div>
           </div>
-          <section class="timeline-panel">
+          <section class="timeline-panel" id="animation-timeline">
             <div class="timeline-toolbar">
               <div class="timeline-title">Timeline</div>
-              <button id="timeline-workflow" class="workflow-button" title="Choose animation workflow">Keyframes <span>⌄</span></button>
+              <div id="timeline-workflow" class="segmented timeline-mode-switch" role="group" aria-label="Timeline mode"><button type="button" data-timeline-mode="simple" aria-pressed="false">Simple</button><button type="button" data-timeline-mode="advanced" aria-pressed="true">Advanced</button></div>
               <div class="playback-controls">
                 <button
                   class="icon-button"
@@ -274,6 +286,7 @@
                 >
               </div>
               <div class="timeline-onion-controls"><button class="icon-button" id="onion-button" data-action="toggle-onion" data-icon="onion" title="Onion skin · O" aria-label="Onion skin" aria-pressed="false"></button><button class="icon-button onion-options-button" id="onion-settings-button" title="Onion skin settings" aria-label="Onion skin settings">⌄</button></div>
+              <button id="timeline-audio" class="icon-button timeline-audio-toggle" title="Show audio" aria-label="Audio" aria-description="Show or hide audio editing. Audio keeps playing when hidden." aria-controls="timeline-audio-panel" aria-expanded="false" aria-pressed="false" data-icon="music"></button>
               <button id="expand-timeline" class="icon-button" title="Expand timeline" aria-label="Expand timeline" aria-pressed="false" data-icon="maximize"></button>
               <div class="timeline-actions">
                 <span data-icon="zoom"></span

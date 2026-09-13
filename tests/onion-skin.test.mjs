@@ -189,7 +189,7 @@ test('output-frame sampling uses interpolated poses and keeps its cache bounded'
 });
 test('onion preferences validate colors, scopes, counts and intervals',()=>{
   const value=normalizeEditorSettings({onionBefore:100,onionAfter:-3,onionStep:0,onionBeforeColor:'invalid',onionScope:'wrong'});
-  assert.equal(value.onionBefore,10);assert.equal(value.onionAfter,0);assert.equal(value.onionStep,1);assert.equal(value.onionBeforeColor,'#e76b70');assert.equal(value.onionScope,'all');
+  assert.equal(value.onionBefore,100);assert.equal(value.onionAfter,0);assert.equal(value.onionStep,1);assert.equal(value.onionBeforeColor,'#e76b70');assert.equal(value.onionScope,'all');
 });
 
 test('show on top changes composition without rebuilding or restyling sampled geometry',()=>{
@@ -202,4 +202,15 @@ test('show on top changes composition without rebuilding or restyling sampled ge
   assert.equal(cache.stats.builds,builds);
   assert.equal(top[0].geometry,behind[0].geometry);
   assert(cache.get(editor,settings).every(skin=>!skin.showOnTop));
+});
+
+test('ranges beyond ten render all available samples and skip nonexistent counts',()=>{
+  const editor=fixture({count:50,objects:1,duration:1});editor.seek(24);
+  const cache=new OnionSkinCache();
+  const settings=normalizeEditorSettings({onionBefore:20,onionAfter:18,onionFade:false});
+  assert.equal(cache.get(editor,settings).length,38);
+  assert.ok(cache.samples.size<=Math.max(cache.maxEntries,cache.last.frames.length));
+  settings.onionBefore=Number.MAX_SAFE_INTEGER;settings.onionAfter=Number.MAX_SAFE_INTEGER;
+  assert.equal(cache.get(editor,settings).length,49);
+  assert.ok(cache.samples.size<=Math.max(cache.maxEntries,cache.last.frames.length));
 });

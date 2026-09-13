@@ -45,6 +45,7 @@ function restoreObject(state, object) {
 export const editorHandleEditMethods = {
   beginHandleEditDrag({label = 'Reposition handle', bend = false} = {}) {
     const figure = this.figure, object = this.object, index = this.selectedJoint;
+    if(figure?.segments.some(s=>s._stykRig))throw new Error('Use Build Figure to reposition rig anchors, or drag a connector to slide its attachment. Free handle repositioning cannot preserve these constraints.');
     if (!figure || !object || index < -1 || index >= figure.segments.length || index < 0 && object.join) return false;
     if (!(Math.abs(object.scale) > EPS)) throw new Error('Increase figure scale before repositioning a handle.');
     if (!this.beginDrag(label)) return false;

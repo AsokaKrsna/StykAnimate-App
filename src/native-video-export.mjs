@@ -4,7 +4,7 @@ import {EXPORT_MAX_PIXELS} from './export-sampling.mjs';
 const MAX_BYTES = 1024 * 1024 * 1024;
 const cancelled = () => new DOMException('Video export cancelled.', 'AbortError');
 
-export async function encodeNativeVideo({format, codec, width, height, fps, totalFrames, renderFrame, quality = 0.9,
+export async function encodeNativeVideo({format, codec, width, height, fps, totalFrames, renderFrame, renderNativeFrame, quality = 0.9,
   bitrate, signal, onProgress, maxBytes = MAX_BYTES, desktop = globalThis.stykDesktop, timeoutMs = 120000, sink, save, audioChunks}) {
   if (!['webm', 'mp4', 'avi', 'wmv'].includes(format)) throw new Error('Choose WebM, MP4, AVI or WMV for native video export.');
   if (codec !== undefined && !{webm:['vp9'],mp4:['h264','mpeg4'],avi:['mpeg4','ffv1','rawvideo'],wmv:['wmv2']}[format].includes(codec)) throw new Error('Choose a supported codec for this video format.');
@@ -13,19 +13,20 @@ export async function encodeNativeVideo({format, codec, width, height, fps, tota
   if (!Number.isFinite(quality) || quality < 0 || quality > 1) throw new Error('Video quality must be between zero and one.');
   if (bitrate !== undefined && (!Number.isFinite(bitrate) || bitrate < 1000 || bitrate > 200e6)) throw new Error('Video bitrate must be between 1 kbit/s and 200 Mbit/s.');
   if (!Number.isInteger(maxBytes) || maxBytes < 1024 || maxBytes > MAX_BYTES) throw new Error('Native video size must be limited to between 1 KiB and 1 GiB.');
-  if (typeof renderFrame !== 'function') throw new Error('Native video export needs a frame renderer.');
+  const directFrames = typeof renderNativeFrame === 'function';
+  if (!directFrames && typeof renderFrame !== 'function') throw new Error('Native video export needs a frame renderer.');
   for (const method of ['beginVideoExport', 'beginVideoFrame', 'writeVideoChunk', 'endVideoFrame', 'finishVideoExport', 'readVideoChunk', 'cancelVideoExport'])
     if (typeof desktop?.[method] !== 'function') throw new Error('This video format requires the StykAnimate desktop app and its native encoder.');
   if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') throw new Error('Native video export needs worker canvas support.');
   if (signal?.aborted) throw cancelled();
   if (audioChunks && typeof desktop?.writeVideoAudioChunk !== 'function') throw new Error('This desktop build does not support audio video export.');
-  const worker = new Worker(new URL('./native-video-frame-worker.mjs', import.meta.url), {type: 'module', name: 'StykAnimate native video frames'});
+  const worker = directFrames ? null : new Worker(new URL('./native-video-frame-worker.mjs', import.meta.url), {type: 'module', name: 'StykAnimate native video frames'});
   let pending, sequence = 0, failure, transfer, cancellation, completed = false;
   const check = () => { if (signal?.aborted) throw cancelled(); if (failure) throw failure; };
-  const fail = error => { failure = error; clearTimeout(pending?.timer); pending?.reject(error); pending = null; worker.terminate(); };
-  worker.addEventListener('error', event => { event.preventDefault(); fail(new Error(event.message || 'The video frame worker stopped.')); });
-  worker.addEventListener('messageerror', () => fail(new Error('A video frame could not be transferred.')));
-  worker.addEventListener('message', ({data}) => {
+  const fail = error => { failure = error; clearTimeout(pending?.timer); pending?.reject(error); pending = null; worker?.terminate(); };
+  worker?.addEventListener('error', event => { event.preventDefault(); fail(new Error(event.message || 'The video frame worker stopped.')); });
+  worker?.addEventListener('messageerror', () => fail(new Error('A video frame could not be transferred.')));
+  worker?.addEventListener('message', ({data}) => {
     if (data?.id !== pending?.id) return;
     const request = pending; pending = null;
     clearTimeout(request.timer);
@@ -54,12 +55,20 @@ export async function encodeNativeVideo({format, codec, width, height, fps, tota
       for await (const pcm of audioChunks) { check(); await desktop.writeVideoAudioChunk(transfer.token, pcm); }
       check();
     }
-    await request('start', {width, height,preserveAlpha:format==='webm'});
+    if (worker) await request('start', {width, height,preserveAlpha:format==='webm'});
     for (let index = 0; index < totalFrames; index++) {
-      check(); const canvas = await renderFrame(index); check();
-      if (!canvas || canvas.width !== width || canvas.height !== height) throw new Error(`Rendered video frame ${index + 1} has the wrong dimensions.`);
-      const bitmap = await createImageBitmap(canvas); let png;
-      try { png = await request('frame', {bitmap}, [bitmap]); } finally { bitmap.close(); }
+      check(); let png;
+      if (directFrames) {
+        const frame = await renderNativeFrame(index); check();
+        if (frame?.width !== width || frame?.height !== height || !(frame.blob instanceof Blob) || frame.blob.type !== 'image/png' || !frame.blob.size)
+          throw new Error(`Rendered video frame ${index + 1} is incomplete.`);
+        png = frame.blob;
+      } else {
+        const canvas = await renderFrame(index); check();
+        if (!canvas || canvas.width !== width || canvas.height !== height) throw new Error(`Rendered video frame ${index + 1} has the wrong dimensions.`);
+        const bitmap = await createImageBitmap(canvas);
+        try { png = await request('frame', {bitmap}, [bitmap]); } finally { bitmap.close(); }
+      }
       check(); await desktop.beginVideoFrame(transfer.token, {index, size: png.size});
       for (let offset = 0; offset < png.size; offset += chunkSize) {
         check(); const bytes = await png.slice(offset, offset + chunkSize).arrayBuffer(); check();
@@ -109,7 +118,7 @@ export async function encodeNativeVideo({format, codec, width, height, fps, tota
     return blob;
   } finally {
     clearTimeout(pending?.timer);
-    signal?.removeEventListener('abort', abort); worker.terminate();
+    signal?.removeEventListener('abort', abort); worker?.terminate();
     if (transfer) await desktop.cancelVideoExport(transfer.token).catch(() => {});
     if (sink && !completed) await sink.abort();
     await cancellation;

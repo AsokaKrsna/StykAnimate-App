@@ -1,3 +1,5 @@
+import {validateSurface} from './surfaces.mjs';
+import {hasRigConstraints, rigConstraintPlanSteps, rigIKAllowed} from '../rig-constraints.mjs';
 import {validateSticknodesShape,validateSticknodesObject} from '../sticknodes/validation.mjs';
 import {normalizePaint} from '../paint.mjs';
 import {validatePlayback} from '../movieclips.mjs';
@@ -43,6 +45,7 @@ const validatedDefinitions = new WeakMap();
 function validateObjectPose(report, object, figure, origin = true) {
   if(object._sticknodesShapes||object._sticknodesSprite)validateSticknodesObject(object,figure);
   validateIK(object);
+  if(object._stykIK)for(const [id,c] of Object.entries(object._stykIK))if(c.enabled&&!rigIKAllowed(figure,figure.segments.findIndex(s=>s.segment_id===Number(id))))throw new Error('IK cannot drive a derived connector attachment or stretch follower.');
   validateAnimationStyle(object);
   validateVfxOwner(object);
   if (object._stykZIndex !== undefined) validateFigureZIndex(object._stykZIndex);
@@ -207,6 +210,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
       }
       for (const p of seen) done.add(p);
     }
+    if (hasRigConstraints(fig)) yield* rigConstraintPlanSteps(fig);
     typeHandles.set(fig.figure_type_id, new Set([0, ...parents.keys()]));
     if(fig._styk?.animationOrigin!==undefined)yield* validateOriginSupportSteps(fig,fig._styk.animationOrigin,{sliceMs});
   }
@@ -302,6 +306,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
         integer(style.u30, 0, 255, "Outline transparency");
     }
     for (const poly of fig.polyfills || []) {
+      if(poly._stykSurface)validateSurface(poly,typeHandles.get(fig.figure_type_id));
       if(poly.z_order!==undefined)float32(poly.z_order,'Polygon drawing order');
       if(poly.color_alpha!==undefined){finite(poly.color_alpha,'Polygon opacity');if(poly.color_alpha<0||poly.color_alpha>1)throw new Error('Polygon opacity must be between zero and one.');}
       if (poly.color_rgb) rgb(poly.color_rgb, "Polygon color");

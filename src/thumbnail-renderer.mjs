@@ -1,3 +1,4 @@
+import {layerAppearance,thumbnailVisualChange} from './thumbnail-validity.mjs';
 import { documentChunks } from "./document-transport.mjs";
 
 const abortError = () =>
@@ -19,6 +20,7 @@ export class ThumbnailRenderer {
     this.editor = editor;
     this.options = { baseURL, token, storedFrames };
     this.onError = onError;
+    this.layerAppearance=layerAppearance(editor.report._styk?.layers);
     this.version = 1;
     this.sequence = 0;
     this.loadedVersion = 0;
@@ -102,7 +104,8 @@ export class ThumbnailRenderer {
     return worker;
   }
   invalidate(detail = {}) {
-    if (!["document", "edit", "history", "frame-draft"].includes(detail.kind)) return;
+    const appearance=detail.layers||detail.kind==='document'?layerAppearance(this.editor.report._styk?.layers):this.layerAppearance;
+    const visual=thumbnailVisualChange(detail,this.layerAppearance,appearance);this.layerAppearance=appearance;if(!visual)return;
     const draft = this.editor.report._styk?.simpleFrameDraft;
     const previous = this.draftSnapshot;
     this.draftSnapshot = draft;

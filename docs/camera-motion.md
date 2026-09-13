@@ -1,0 +1,44 @@
+# Camera motion and layer parallax
+
+Select **Camera → Motion** to add Shake, Handheld, Wobble, Impact punch, or Zoom pulse. Select a clip to edit its timing, strength and preset controls. Advanced contains fades and the preset's noise or oscillation settings. Drag numeric labels horizontally to adjust values; Shift gives fine control and Alt gives extra-fine control. Click a label to type instead. Numeric edits preview immediately; releasing a drag or pressing Enter commits one undo step, and Escape restores the previous value. Timing and fades stay in whole frames. Seed uses typing or Randomize. Preview plays the selected clip's range; stopping restores the normal transport range.
+
+The live graph separates **Move** (X/Y in pixels), **Roll** (degrees), and **Zoom** (percent). It plots the selected clip's actual sampled output, with a zero line, frame axis, shaded fades and a playhead. Hover to read a frame's values. Editing movement, roll or zoom selects its graph view; changing a value or fade updates the graph before committing. Moving or resizing a timeline clip also previews its frame range here before release. The vertical scale stays steady when lowering amplitude and expands when needed; **Fit curve** resets it to the current range. Playback and seeking move the cursor without resampling the curve.
+
+Advanced timeline clips appear immediately below Camera. Use Camera's disclosure to collapse or expand its motion lanes; the camera keyframe row stays visible. Collapsing changes only the timeline view, clears a hidden motion selection, and survives edits and undo. Selecting a motion through the timeline reveals its lanes. Drag a clip's body to move, an edge to resize, or Alt-drag to duplicate. Arrow keys move the selected clip one frame, Shift-arrow moves ten; Ctrl/Cmd+D duplicates and Delete removes it. Copy, cut and paste use the shared StykAnimate clipboard. The eye mutes a clip. Camera locking protects motion edits too. Clip timing uses absolute document frames and is independent of figure exposure keys; editing figure exposures does not retime an effect.
+
+Select a figure layer and enable **Parallax**. Choose Distant, Background, Normal, or Foreground, or drag the X/Y labels or type percentages. Linked axes preview together; unlink them for independent responses. The reference button uses the authored camera position at the current frame. The collapsed Preview's Pan slider previews the result without creating camera keys.
+
+| Response | Camera translation |
+| --- | --- |
+| 0% | No apparent translation from camera travel |
+| 100% | Normal world movement |
+| Below 100% | Slower apparent movement, useful for distant layers |
+| Above 100% | Faster apparent movement, useful for foreground layers |
+
+Parallax affects translation; camera zoom and roll still apply to every layer. Joined components use their root figure's layer response so attachments stay connected. Additive camera motion affects the complete composed shot; shaking does not pull depth layers apart. The reference preserves placement when enabling the effect at that camera position. Editing the world canvas keeps authored figure positions and camera handles; the output monitor, playback and exports show the composed shot.
+
+**Bake to keys** converts all frames or the selected clip's range into held camera keys. It samples all enabled effects overlapping that range and mutes their baked portions. Adjacent curve spans are sampled as guards where needed to preserve every unedited integer output frame; adjoining Auto spans are included because their tangents are shared. The operation is one undo step. Baking is bounded to 100,000 samples including guards, and cancels if the document changes during preparation. Baking creates output-frame samples, so fractional-time interpolation may change. Muted effects remain editable; explicitly enabling a fully baked effect adds it again.
+
+## Saved data and evaluation
+
+- `_styk.cameraMotion` is a versioned immutable table of up to 256 clips. Each clip has a stable ID, preset type, start, duration, enabled flag, numeric parameters and optional baked ranges. Times are zero-based frame positions internally; the inspector displays the first frame as 1.
+- `_styk.layers.byId[id].parallax` stores `enabled`, `linked`, axis responses from 0 to 4, and a finite reference position. Absence means normal movement. Existing files require no migration.
+- `camera-motion.mjs` evaluates seeded smooth noise and analytical motion from timeline time. There is no accumulated random or playback state; seeking, reverse seeking, playback and export share the same sample. Translation and roll add; zoom contributions combine in logarithmic space with a finite bound.
+- Authored camera poses remain unchanged. Evaluated frames carry a transient `_cameraMotionTick`; pose snapshots omit it. `effectiveCamera` composes the output camera once. Prepared packets store that resolved camera without the transient clock, preventing double application.
+- `layer-parallax.mjs` computes `(1 − response) × (authored camera travel − reference)` per layer. Joined-root resolution uses path compression. Baked camera poses retain `_parallaxMotionOffset` to distinguish baked shake from depth-driving travel; the same camera easing interpolates that offset.
+- Motion commands retain only their small tables and any required exposure extension. Layer responses use existing layer commands. Both use the existing revision, undo, saving and worker invalidation paths; original figure definitions and artwork remain shared.
+- The inspector graph owns a retained DOM subtree. Parameter changes are coalesced to one chart update per display frame; a single selected-clip cache holds at most 2,049 samples per channel. The graph uses the runtime motion sampler, and cursor updates reuse the sampled geometry. Live timeline timing edits refresh motion row references without rebuilding unrelated key descriptors. Collapse state is local to the mounted timeline and resets for a new document.
+
+## Rendering, workers and exports
+
+GPU rendering updates the existing object transform buffer; parallax creates no alternate meshes or shaders. Canvas rendering translates object groups. Image decode/culling bounds account for those translations. The same projection is used by the monitor, scene effects, prepared GPU/Canvas playback, SVG and direct/sequential/tiled raster export. Movieclip contents inherit their outer instance's layer projection.
+
+Explicit baking uses one short-lived worker. Its projection includes native camera poses, camera channels, the camera exposure track and referenced camera pose sources; figure geometry, unrelated pose sources, audio and media are excluded. Acknowledged 64 KiB chunks bound transport. The worker samples cooperatively and returns one bounded transferable numeric buffer; the editor publishes the prepared camera keys atomically. This final publication is proportional to the number of camera keys generated.
+
+STYK keeps clips and layer responses editable. Native PIV materialization samples their appearance in the export worker and removes procedural metadata. Export conversion never rewrites the open project. Existing export frame/object limits still apply.
+
+## Verification
+
+Run `node --test tests/camera-motion.test.mjs tests/camera-motion-graph.test.mjs`, `node tests/camera-motion.browser.mjs`, `node tests/camera-motion-scrub.browser.mjs`, `node tests/camera-motion-graph.browser.mjs`, and `node tests/camera-motion-render.browser.mjs`. Browser tests use the local server from `npm run serve` (`STYK_URL` overrides its address). They exercise live curves and timeline resizing, collapse/expand, label scrubbing, modifiers, cancellation, locks/timing, worker baking, undo, actual binary STYK/PIV round trips, and pixel comparisons across rendering paths, with and without scene effects and movieclips.
+
+`node scripts/benchmark-camera-motion.mjs` measures a 1,500-figure scene with 16,500 vector records and three layers, plus the maximum 256-effect sampler. It asserts all 1,500 objects reuse their geometry after warm-up and records packet size, timings, runtime and source hashes in `artifacts/camera-motion/performance.json`. These are local preparation measurements, not a frame-rate guarantee.

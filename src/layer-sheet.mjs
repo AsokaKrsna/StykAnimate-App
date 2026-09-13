@@ -38,7 +38,8 @@ export function validateLayerSheet(report){
         if(!Array.isArray(key.movieclipPatches)||key.movieclipPatches.length>65535)throw new Error('Invalid movieclip frame replacements.');
         const replaced=new Set();
         for(const patch of key.movieclipPatches){if(!patch||!Number.isInteger(patch.uid)||patch.uid<0||replaced.has(patch.uid)||!poseSourceFrame(report,patch.frameId)||
-          patch.replacementUid!==undefined&&!poseSourceFrame(report,patch.frameId).objects.some(object=>object.unique_id===patch.replacementUid))throw new Error('Invalid movieclip frame replacement.');replaced.add(patch.uid);}
+          patch.replacementUid!==undefined&&!poseSourceFrame(report,patch.frameId).objects.some(object=>object.unique_id===patch.replacementUid)||
+          patch.orderIndex!==undefined&&(!Number.isInteger(patch.orderIndex)||patch.orderIndex<0||patch.orderIndex>65535))throw new Error('Invalid movieclip frame replacement.');replaced.add(patch.uid);}
       }
       if(/^cell-\d+$/.test(key.id))largest=Math.max(largest,Number(key.id.slice(5)));
       if(key.sourceTick!==undefined){if(!Number.isFinite(key.sourceTick)||key.sourceTick<0||key.sourceTick>MAX_SHEET_TICKS)throw new Error('Invalid imported layer timing.');}
@@ -71,7 +72,12 @@ function replaceMovieclipFrame(report,base,patch,resolveGeometry,replacement=pos
   frame.objects=frame.objects.filter(object=>!added.has(object.unique_id));
   frame.objects.push(...replacement.objects.map(object=>({...object,...(object.join?{join:{...object.join,target_unique_id:replacement.objects[object.join.target_object_slot]?.unique_id}}:{})})));
   const previous=frameOrder(base),anchor=previous.indexOf(removed),order=previous.filter(uid=>uid!==removed&&!added.has(uid));
-  order.splice(anchor<0?order.length:Math.min(anchor,order.length),0,...frameOrder(replacement));
+  let insertion=anchor<0?order.length:Math.min(anchor,order.length);
+  if(anchor<0&&patch.orderIndex!==undefined){
+    const layer=layerIdForUid(report,removed),siblings=order.filter(uid=>layerIdForUid(report,uid)===layer);
+    insertion=patch.orderIndex<siblings.length?order.indexOf(siblings[patch.orderIndex]):siblings.length?order.indexOf(siblings.at(-1))+1:order.length;
+  }
+  order.splice(insertion,0,...frameOrder(replacement));
   const slots=new Map(frame.objects.map((object,slot)=>[object.unique_id,slot]));
   for(const object of frame.objects)if(object.join)object.join.target_object_slot=slots.get(object.join.target_unique_id);
   setOrder(frame,order);normalizeFrame(frame);

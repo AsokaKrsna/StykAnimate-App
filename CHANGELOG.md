@@ -8,13 +8,41 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Added
 
-- Add editable audio tracks to Simple and Advanced timelines, with a resizable mixing panel, direct dragging between tracks, waveforms, trimming, splitting, volume and fade controls, synchronized playback, embedded project saving, and audio in desktop FFmpeg video exports.
+- Add a narrated 2:45 Advanced timeline tutorial with real ball-toss editing, editable After Effects motion graphics, and start/finished practice projects.
+
+- Add prominent Discord community and YouTube channel links to the homepage hero and every public website footer.
+
+- Add native two-anchor connectors with sliding attachment joints and Smart Stretch with automatic branch setup, signed multipliers, rigid/stop responses, impulse-axis resets and distance/slide drivers; add figure, parent and world angle locks, compact controls and Ctrl-to-stretch posing. Separate slider properties from segment appearance, with diamond slider handles and dotted endpoint guides. Add Builder one-sided fills with editable reference joints and reversible facing, joint naming and reliable drawing from overlapping attachments. All sixteen rig examples use authorable Builder features and ordinary joint previews; remove preset-only sliders and grouped shading. Add to Animate retains the tested pose and builder work, with editable figure/demo files, a tested rotating-cube recipe and matching native saving, playback and rendered exports.
+
+- Refine both timelines with a direct mode switch, layer search/focus and saved colors, contextual easing and Simple sidebar easing, rebuilt onion controls with fixed Before/After distances and ruler handles that follow the playhead, deliberate zoom-independent scrubbing, corrected pending-playhead regression coverage, shared cancellable previews, exact range sampling without a ten-frame cap, and themed settings without an extra timeline bar, refined audio controls that preserve timeline height, panning and floating zoom; remove extra Advanced menus and bottom bars, and cache/retry Simple thumbnails with bounded worker scheduling.
+
+- Add a remembered desktop UI scale slider (75%–200%) with live native scaling and one-click reset; refine Settings with grouped canvas controls, working shortcut search and rebinding, direct feedback actions, a sidebar Donate button, compact timeline choices, switches, icons, and a responsive layout.
+
+- Add a colored toolbar Tweener with Breakdown, Blend to Neighbor, Push and Relax, direct canvas dragging, Shift precision, Escape/right-click cancellation, independent layer neighbors and one-step undo.
+
+- Add a configurable canvas grid and vertical/horizontal guides with a compact icon-based panel, slidable numeric fields with fine adjustment and click-to-type editing, draggable edge handles, keyboard nudging, locking, and remembered editor preferences; keep aids out of playback and exports.
+
+- Add a vertical launch Short with energetic narration, focused feature demonstrations, and five matching cover designs.
+
+- Add editable camera shake, handheld motion, wobble, impact punches and zoom pulses with draggable inspector values, live motion graphs, collapsible timeline lanes and camera-key baking, plus layer parallax with linked axes and live preview; preserve their appearance across playback and exports.
+
+- Expand optional performance diagnostics with sampled editing and rendering stages, asynchronous GPU timings, worker queue costs, workload and build attribution, memory lifecycle and recovery outcomes, bounded stall summaries, and dashboard comparisons; add a scoped analytics reset that prevents queued diagnostic totals from returning.
+
+- Add editable audio through an optional timeline Audio tab, with integrated Advanced lanes sharing its ruler, scrolling and zoom, direct dragging between tracks, waveforms, trimming, splitting, volume and fade controls, synchronized playback, embedded project saving, and audio in desktop FFmpeg video exports.
 
 - Add animatable per-effect strength and turbulent displacement, with bounded GPU filters, canvas controls, and matching playback/export paths.
-- Rework Build figure into a bounded builder editor: a figure-hierarchy outliner with drag reordering and reparenting, a surfaced toolbar with structure, duplicate/flip, draw-order, media, and aid controls, and an exit dialog that updates the shared figure, imports it as a new figure, or discards the session.
-- Add Blender-style motion paths
+- Rework Build figure with compact command menus, direct horizontal/vertical flip buttons, contextual right-click actions, a virtual hierarchy and collapsible timeline; add a chain pen with atomic undo, remembered spatial snapping with Alt bypass, and a visible cached branch-copy preview. Reduce append/rig history copies and retain unrelated scene geometry during construction edits. Preserve poses when deleting builder selections, support Shift-click node selection with shared width/color edits, and add direct fill selection plus Shift-click enclosed-outline filling.
+- Add editable motion paths with compact range and scope settings, uncluttered trails and frame labels, offset-preserving drags and Shift axis constraints; keep sampling bounded, reuse cached hover data, and start hidden each session while retaining display options.
 
 ### Changed
+
+- Simplify workspace chrome with a quiet mode header, a leaner tool rail, and canvas view controls with a VFX label, eye icon for joints, and an integrated motion-path settings chevron; make right-click menus contextual with distinct horizontal/vertical flip icons, and put stacking in a divided toolbar group with Shift-click for one-step moves, preserve multi-selection, use Shift + right-drag for bending joints, and add Edit in build mode at the bottom of figure action menus.
+
+- Speed up high-resolution exports with off-tile drawing rejection, retained image reuse and direct worker-to-encoder frames; improve H.264 compression without raising quality targets or allowing encoder lookahead queues.
+
+- Widen canvas zoom to 0.1%–10,000% and display fractional percentages at low zoom.
+
+- Redesign movieclip Properties with live frame and duration values, compact controls, and keyframe-add feedback; retain stacking across added frames and create independent instances when pasting onto an existing clip.
 
 - Improve the asset library with adaptive thumbnail contrast, animated movieclip hover previews, right-click actions, and drag-to-folder organization.
 
@@ -28,6 +56,11 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Fixed
 
+- Make horizontal and vertical flips respect selected figure segments and branches, including timeline ranges; selecting the root still flips the whole figure.
+
+- Improve Advanced ruler scrubbing in dense scenes and movieclips by finishing one editable preview while coalescing pointer targets, deferring inspector refreshes and thumbnails, and seeking the exact final frame on release.
+
+- Reduce movieclip creation time and undo memory with sparse range replacements that preserve surrounding curves, connected figures, and playback continuity.
 - Keep Simple timeline thumbnails visible when returning to scrolled frames, release discarded card resources, and reveal the current frame after a hidden mount.
 - Make Select All include figures added through layer-sheet keys.
 - Reject Pivot exports of text-run gradient fills that native per-glyph gradients cannot reproduce.
@@ -41,7 +74,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Speed up camera playback and preview
 - Speed up playback and editing on low-end hardware
 - Make oversized embedded images lightweight
-- Recover from repeated GPU device disconnections
+- Recover from repeated GPU device disconnections and keep disconnected rendering inert before reading scene data, so independent software exports can continue through recovery.
 
 ## [0.5.6]
 

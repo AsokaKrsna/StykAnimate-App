@@ -112,6 +112,22 @@ test('lost or undersized frames cannot be returned to an encoder, even if contex
   assert.ok(state.workers.every(worker => worker.terminated));
 });
 
+test('native frame delivery rejects stale revisions and malformed PNG responses before publishing', async t => {
+  let revision=1, malformed=false;
+  const state=environment(t,message=>({id:message.id,ok:true,...(message.operation==='render'?
+    {nativeFrame:{width:32,height:32,blob:new Blob(malformed?[]:['png'],{type:'image/png'})}}:{})}));
+  for(const scenario of ['stale','malformed']){
+    const renderer=new ExportFrameRenderer({width:32,height:32,getRevision:()=>revision});
+    await renderer.load(documentData());
+    malformed=scenario==='malformed';
+    const pending=renderer.renderNativeTick(0);
+    if(scenario==='stale')revision++;
+    await assert.rejects(pending,scenario==='stale'?{name:'AbortError'}:/incomplete native frame/);
+    assert.equal(renderer.stats.renderedFrames,0);assert.equal(renderer.canvas.width,1);renderer.dispose();
+  }
+  assert.ok(state.workers.every(worker=>worker.terminated));
+});
+
 test('worker memory failures retain their actionable error and release the export', async t => {
   const frames=[{module:'export-frame-worker.mjs',line:180}];
   const state = environment(t, message => ({id: message.id, ok: false, code: 'export_memory_limit', error: 'Source image exceeds allowance.',name:'RangeError',telemetryCode:'out_of_memory',telemetryStage:'prepare',telemetryFrames:frames}));

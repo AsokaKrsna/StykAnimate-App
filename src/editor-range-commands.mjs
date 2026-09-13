@@ -44,10 +44,10 @@ function diffFrame(index, before, after) {
     ...(!equal(beforeOrder, afterOrder) ? {beforeOrder, afterOrder} : {}), ...(left.length ? {beforeFields: left, afterFields: right} : {})};
 }
 function applyFields(target, fields) { for (const field of fields ?? []) { if (field.exists) target[field.key] = clone(field.value); else delete target[field.key]; } }
-function sample(editor, tick) {
+function sample(editor, tick, options) {
   const entries = editor.timeline; let low = 0, high = entries.length - 1;
   while (low < high) { const mid = Math.ceil((low + high) / 2); if (entries[mid].start <= tick) low = mid; else high = mid - 1; }
-  const entry = entries[low]; return {index: low, tick, frame: evaluatedFrame(editor.report, low, entry.count > 0 ? Math.min(1, (tick - entry.start) / entry.count) : 0, tick)};
+  const entry = entries[low]; return {index: low, tick, frame: evaluatedFrame(editor.report, low, entry.count > 0 ? Math.min(1, (tick - entry.start) / entry.count) : 0, tick, options)};
 }
 function targets(editor, options) {
   if (options.atPlayhead) return {authored: Boolean(editor.report._styk?.layerSheet || editor.animationChannels.length || editor.report._styk?.movieclipSource),
@@ -62,7 +62,7 @@ function targets(editor, options) {
   if (editor.report._styk?.layerSheet || editor.propertyChannels || editor.animationChannels.length) return {authored: true, frames: [...new Set(indices.map(index => editor.timeline[index].start))].map(tick => sample(editor, tick))};
   return {authored: false, frames: indices.map(index => ({index, tick: editor.timeline[index].start, frame: editor.report.keyframes[index]}))};
 }
-function insertionPlan(editor, operation) {
+function insertionPlan(editor, operation, targetFrames) {
   let nextUid = editor._nextUid, nextType = 1;
   for (const figure of editor.report.figure_types) nextType = Math.max(nextType, figure.figure_type_id + 1);
   const definitions = [], hints = new Map();
@@ -78,9 +78,17 @@ function insertionPlan(editor, operation) {
   if (!clipboard) return null;
   const sourceObjects = clipboard.objects ?? [clipboard.object], sourceFigures = clipboard.figures ?? [clipboard.figure];
   const existingTypes = new Map(editor.report.figure_types.map(figure => [figure.figure_type_id, figure]));
-  const retained = new Set(sourceObjects.filter(object => !operation.newIdentities && editor.report._styk?.layerSheet &&
+  const linked = new Set(sourceObjects.filter(object => !operation.newIdentities && editor.report._styk?.layerSheet &&
     clipboard.documentToken === editor._documentToken && !clipboard.freshTypes?.has(object.figure_type_id) &&
     existingTypes.get(object.figure_type_id)?._styk?.movieclip).map(object => object.unique_id));
+  const occupied = new Set(targetFrames.flatMap(({frame})=>frame.objects.filter(object=>linked.has(object.unique_id)).map(object=>object.unique_id)));
+  // Once/hide clips still own their IDs after their artwork disappears. Inspect
+  // authored membership only for IDs absent from the already evaluated poses.
+  if(occupied.size<linked.size)for(const {tick} of targetFrames){
+    for(const object of sample(editor,tick,{skipMovieclips:true}).frame.objects)if(linked.has(object.unique_id))occupied.add(object.unique_id);
+    if(occupied.size===linked.size)break;
+  }
+  const retained = new Set([...linked].filter(uid=>!occupied.has(uid)));
   const uidMap = new Map(sourceObjects.map(object => [object.unique_id, retained.has(object.unique_id) ? object.unique_id : identity()])), types = new Map();
   for (const original of sourceFigures) {
     let figure = clipboard.documentToken === editor._documentToken && !clipboard.freshTypes?.has(original.figure_type_id) ? existingTypes.get(original.figure_type_id) : null;
@@ -100,6 +108,7 @@ function insertionPlan(editor, operation) {
     remapVfxOwner(object,figure.figure_type_id);
     object.unique_id = uidMap.get(original.unique_id); object.figure_type_id = figure.figure_type_id; object.root_x += dx; object.root_y += dy;
     if(figure._styk?.movieclip&&editor.report._styk?.layerSheet&&!retained.has(original.unique_id))object._stykMovieclip=presencePlayback({mode:original._stykMovieclip?.mode??'loop',speed:original._stykMovieclip?.speed??1});
+    if(linked.has(original.unique_id)&&!retained.has(original.unique_id))object._stykMovieclip.offset=clipboard.movieclipSamples?.[original.unique_id]??original._stykMovieclip?.offset??0;
     if (operation.importing && figure._styk?.movieclip && !editor.report._styk?.layerSheet) object._stykMovieclip = {start:editor.tick,end:null,offset:0,speed:1,mode:'loop'};
     translateIKTargets(object, dx, dy); remapIKFollowers(object, uidMap);
     for (const [field, enabled, fallback] of [['angles', true, 'angle_rad'], ['lengths', object.len_flag, 'length'], ['bends', object.bend_flag, 'bend_rad']])
@@ -108,7 +117,7 @@ function insertionPlan(editor, operation) {
       const target = uidMap.get(object.join.target_unique_id);
       if (target === undefined) object.join = null; else object.join.target_unique_id = target;
     }
-    const layer = retained.has(original.unique_id) ? editor.layerForUid(original.unique_id) : operation.newIdentities ? clipboard.layers?.get(original.unique_id) : undefined;
+    const layer = linked.has(original.unique_id) ? editor.layerForUid(original.unique_id) : operation.newIdentities ? clipboard.layers?.get(original.unique_id) : undefined;
     if (clipboard.documentToken === editor._documentToken && editor.getLayer(layer)) hints.set(object.unique_id, layer);
     delete object.runtime_segments; return object;
   });
@@ -121,8 +130,8 @@ function insertionPlan(editor, operation) {
 }
 function insert(frame, payload) {
   const added = payload.objects.map(clone), replacements = new Map(added.map(object => [object.unique_id, object]));
-  // A pasted movieclip is another pose of the same instance. Upsert an existing
-  // occurrence so repeated pastes cannot create duplicate IDs in a frame.
+  // The insertion planner resolves clipboard collisions once for the range.
+  // Retained IDs can still upsert when this helper serves other insertion paths.
   const objects = frame.objects.map(object => replacements.get(object.unique_id) ?? object);
   const present = new Set(frame.objects.map(object => object.unique_id));
   objects.push(...added.filter(object => !present.has(object.unique_id)));
@@ -172,11 +181,13 @@ export const editorRangeCommandMethods = {
   /** A result reports actual changes; missing figure identities are skipped. */
   applyFigureRange(operation, options = {}) {
     if (!operation || !labels[operation.kind]) throw new Error('Choose a supported figure range operation.');
+    if (operation.kind === 'mirror' && this.selectedJoint >= 0 && (this.selectedObjects.length === 1 || this.branchSelected))
+      operation = {...operation, segmentSelection: {uid: this.selectedUid, handles: [...this.selectedSegmentIds], branch: this.branchSelected}};
     if (this._drag) this.commitDrag(); if (this._animationEdit) this.commitAnimationEdit();
     const uids = [...new Set(options.uids ?? this.selectedUids)], target = targets(this, options);
     if (!target.frames.length) return zero();
     if (operation.kind === 'order' && target.authored) operation = {...operation, numericOrder: true};
-    let payload = ['add', 'paste'].includes(operation.kind) ? insertionPlan(this, operation) : null;
+    let payload = ['add', 'paste'].includes(operation.kind) ? insertionPlan(this, operation, target.frames) : null;
     if (operation.kind === 'duplicate') {
       const wanted = new Set(uids), present = new Set();
       for (const entry of target.frames) for (const object of entry.frame.objects) if (wanted.has(object.unique_id)) present.add(object.unique_id);

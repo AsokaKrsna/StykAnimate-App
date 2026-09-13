@@ -1,3 +1,8 @@
+import {documentHasRigConstraints} from './rig-constraints.mjs';
+import {documentHasSurfaces} from './pivot/surfaces.mjs';
+import {cameraAtTime} from './camera-motion.mjs';
+import {parallaxResolver} from './layer-parallax.mjs';
+const cameraFeatures=report=>Boolean(report._styk?.cameraMotion?.clips.some(c=>c.enabled)||report._styk?.layers?.order.some(id=>report._styk.layers.byId[id]?.parallax?.enabled));
 /** Native Pivot has one shared exposure sequence. Bake authored tracks only in
  * the export worker, keeping editable STYK sources and the UI document intact. */
 import {evaluatedFrame, nativeTimeline, timeline, buildGeometry} from './pivot/geometry.mjs';
@@ -17,7 +22,7 @@ const MAX_FRAMES = 100000, MAX_OBJECTS = 2000000, MAX_BACKGROUNDS = 65534;
 const activeChannels = report => animationChannels(report).filter(channel => channel.property === 'pose' || channel.keys.length);
 
 export function needsPivotMaterialization(report) {
-  if (report._styk?.layerSheet) return true;
+  if (cameraFeatures(report)||report._styk?.layerSheet) return true;
   if (movieclipTypes(report).size || report._styk?.movieclipSource) return true;
   if (hasIK(report)) return true;
   if (hasFrameEasing(report)) return true;
@@ -77,6 +82,8 @@ function sampleAt(report, rows, tick, hidden) {
 }
 
 export function materializePivotDocument(report) {
+  if(documentHasSurfaces(report))throw new Error('Pivot cannot preserve one-sided fills. Save as .styk or .stkz, or export images/video.');
+  if(documentHasRigConstraints(report))throw new Error('Pivot cannot preserve connectors or Smart Stretch. Save as .styk or .stkz, or export images/video.');
   report = materializeSimpleFrameDraftForPivot(report);
   if (report.keyframes.length && movieclipTypes(report).size) {
     const materializer=createMovieclipMaterializer(report),rows=timeline(report),total=rows.at(-1).start+rows.at(-1).count;
@@ -84,11 +91,12 @@ export function materializePivotDocument(report) {
     const frames=[];let index=0,objects=0;
     for(let tick=0;tick<total;tick++){
       while(index+1<rows.length&&rows[index+1].start<=tick)index++;
-      const row=rows[index],frame=materializer.frame(evaluatedFrame(report,index,row.count?(tick-row.start)/row.count:0,tick));
+      const row=rows[index],sample=evaluatedFrame(report,index,row.count?(tick-row.start)/row.count:0,tick),offset=parallaxResolver(report,sample),frame=materializer.frame({...sample,camera:cameraAtTime(report,sample),objects:sample.objects.map(o=>{const d=offset(o.unique_id);return d.x||d.y?{...o,root_x:o.root_x+d.x,root_y:o.root_y+d.y}:o;})});
+      delete frame._cameraMotionTick;
       frame.duration_raw=1;objects+=frame.objects.length;if(objects>MAX_OBJECTS)throw new Error('Movieclip export exceeds the object limit.');frames.push(frame);
     }
     const metadata={...report._styk};delete metadata.animation;delete metadata.frameSources;delete metadata.movieclipSource;delete metadata.layerSheet;
-    const fixed=metadata.layers?.fixed;delete metadata.layers;
+    const fixed=metadata.layers?.fixed;delete metadata.layers;delete metadata.cameraMotion;
     const output={...report,figure_types:materializer.figures,keyframes:frames,_styk:metadata,auto_easing:false,auto_easing_disabled_raw:1};
     if(fixed)ensureLayerState(output).fixed=fixed;
     return materializePivotDocument(output);
@@ -99,7 +107,7 @@ export function materializePivotDocument(report) {
     validateScene({...report,keyframes:[{objects:[],duration_raw:0}]});
     const output={...report,total_output_frames:0,duration_seconds:0};
     if (report._styk) {
-      output._styk={...report._styk};delete output._styk.animation;delete output._styk.layers;delete output._styk.frameSources;
+      output._styk={...report._styk};delete output._styk.animation; delete output._styk.cameraMotion;delete output._styk.layers;delete output._styk.frameSources;
     }
     return output;
   }
@@ -107,7 +115,7 @@ export function materializePivotDocument(report) {
   validateAnimationDocument(report);
   if (report._styk?.layers) validateLayerState(report._styk.layers);
   const channels = activeChannels(report), layers = report._styk?.layers;
-  const authored = !!report._styk?.layerSheet || hasIK(report) || hasFrameEasing(report) || channels.length > 0 || hasAnimationOrigins(report) || hasNativeStyleOverrides(report) || layers?.order.some(id => layers.byId[id]?.visible === false), rows = nativeTimeline(report), outputRows = timeline(report);
+  const authored = cameraFeatures(report) || !!report._styk?.layerSheet || hasIK(report) || hasFrameEasing(report) || channels.length > 0 || hasAnimationOrigins(report) || hasNativeStyleOverrides(report) || layers?.order.some(id => layers.byId[id]?.visible === false), rows = nativeTimeline(report), outputRows = timeline(report);
   const totalTicks = outputRows.at(-1).start + outputRows.at(-1).count;
   const {events: hidden, extraSources} = authored && !report._styk?.layerSheet ? hiddenExposures(report, rows, channels) : {events: [], extraSources: {}};
   const outputCount = authored ? totalTicks + hidden.length : report.keyframes.length;
@@ -116,7 +124,7 @@ export function materializePivotDocument(report) {
   if(report._styk?.layerSheet)output.version=5;
   const styleTypeId = createNativeStyleTable(output);
   if (output._styk) {
-    output._styk = {...output._styk}; delete output._styk.animation; delete output._styk.layers; delete output._styk.frameSources; delete output._styk.layerSheet;
+    output._styk = {...output._styk}; delete output._styk.animation; delete output._styk.cameraMotion; delete output._styk.layers; delete output._styk.frameSources; delete output._styk.layerSheet;
   }
   if (authored) { output.auto_easing = false; output.auto_easing_disabled_raw = 1; output.auto_easing_source = 'file'; }
   const colorIds = new Map(output.backgrounds.filter(bg => bg.kind === 2).map(bg => [bg.color, bg.background_id]));
@@ -130,7 +138,7 @@ export function materializePivotDocument(report) {
   };
   const append = (frame, duration) => {
     const geometry = frame.objects.some(object => object.join || hasPinnedIK(object)) ? buildGeometry(report, frame) : null;
-    const oldToNew = new Map(), objects = [];
+    const oldToNew = new Map(), objects = [],parallax=parallaxResolver(report,frame);
     frame.objects.forEach((object, slot) => {
       if (!layerVisible(report, object.unique_id)) return;
       oldToNew.set(slot, objects.length);
@@ -146,6 +154,7 @@ export function materializePivotDocument(report) {
         if (!root) throw new Error('An exported figure has unresolved joined geometry.');
         next.root_x = root.x; next.root_y = root.y;
       }
+      const depth=parallax(object.unique_id);next.root_x+=depth.x;next.root_y+=depth.y;
       objects.push(next);
     });
     for (const object of objects) if (object.join) {
@@ -161,6 +170,7 @@ export function materializePivotDocument(report) {
     if (sceneHidden || next._stykBackgroundColor !== undefined) {
       next.background_id = colorId(sceneHidden ? 0 : next._stykBackgroundColor); next.background_id_b = 0; next.background_mix = 0;
     }
+    next.camera=cameraAtTime(report,frame);delete next._cameraMotionTick;
     delete next._stykBackgroundColor;
     if (report._styk?.layers?.fixed?.camera?.visible === false) next.camera = {is_default: true, x: 0, y: 0, scale: 1, angle_rad: 0};
     // Existing aliases must agree with the authoritative native exposure.

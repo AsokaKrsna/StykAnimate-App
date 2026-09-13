@@ -3,7 +3,7 @@
 export function updateInspectorDOM(root, html, {preserveDisclosure = false} = {}) {
   const template = root.ownerDocument.createElement('template'); template.innerHTML = html;
   const identity = node => node.nodeType === 1
-    ? ['id','data-property','data-section','data-polygon-index'].map(name => node.getAttribute(name) ?? '').join('\0') : '';
+    ? ['id','data-property','data-section','data-polygon-index','data-inspector-owned'].map(name => node.getAttribute(name) ?? '').join('\0') : '';
   const reconcile = (parent, next) => {
     let current = parent.firstChild;
     for (const desired of [...next.childNodes]) {
@@ -14,6 +14,9 @@ export function updateInspectorDOM(root, html, {preserveDisclosure = false} = {}
       } else if (current.nodeType !== 1) {
         if (current.nodeValue !== desired.nodeValue) current.nodeValue = desired.nodeValue;
       } else {
+        // Imperative widgets reconcile their own content (for example, a live
+        // curve). Retain that subtree across ordinary inspector refreshes.
+        if(current.hasAttribute('data-inspector-owned')){current=following;continue;}
         const keepOpen = preserveDisclosure && current.nodeName === 'DETAILS';
         const value = desired.value, checked = desired.checked;
         for (const attribute of [...current.attributes]) {

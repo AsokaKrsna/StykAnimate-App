@@ -21,10 +21,10 @@ try{
   await page.locator('.movieclip-dialog input[name=end]').fill('5');await page.locator('.movieclip-dialog button[type=submit]').click();
   await page.waitForFunction(()=>styk.editor.figure?.name==='Five frames');await page.evaluate(()=>window.clipUid=styk.editor.selectedUid);
   check('Playback has no Start, End, Restart or Split controls',await page.locator('[data-movieclip-field=start],[data-movieclip-field=end],[data-action=movieclip-restart],[data-action=movieclip-split]').count()===0);
-  await select(0);await page.locator('[data-action=movieclip-break]').click();
+  await select(0);await page.locator('.movieclip-more > summary').click();await page.locator('[data-action=movieclip-break]').click();
   await page.waitForFunction(()=>!styk.editor.figure?._styk?.movieclip);
   const first=await page.evaluate(()=>styk.editor.selectedUid);
-  await select(1);await page.locator('[data-action=movieclip-break]').click();
+  await select(1);await page.locator('.movieclip-more > summary').click();await page.locator('[data-action=movieclip-break]').click();
   check('Adjacent breaks reuse one ordinary figure track',await page.evaluate(id=>styk.editor.selectedUid===id,first));
   check('Frame breaks use layer poses without figure channels',await page.evaluate(()=>styk.editor.animationChannels.length===0));
   check('Every frame retains the original scene geometry',await page.evaluate(()=>before.every((frame,t)=>JSON.stringify(frame)===JSON.stringify(snapshot(t)))));
@@ -49,7 +49,7 @@ try{
   check('Playback edits leave scene length unchanged',await page.evaluate(()=>styk.editor.totalTicks)===duration);
   await page.getByLabel('Movieclip speed',{exact:true}).fill('1');await page.getByLabel('Movieclip speed',{exact:true}).press('Tab');
   await page.evaluate(()=>window.restarted=Array.from({length:30},(_,t)=>snapshot(t)));
-  await select(2);await page.locator('[data-action=movieclip-bake]').click();
+  await select(2);await page.locator('.movieclip-more > summary').click();await page.locator('[data-action=movieclip-bake]').click();
   await page.waitForFunction(()=>styk.editor._undo.at(-1)?.label==='Bake animation');
   check('Bake button preserves previous breaks and every scene frame',await page.evaluate(()=>restarted.every((frame,t)=>JSON.stringify(frame)===JSON.stringify(snapshot(t)))));
   await page.evaluate(()=>styk.settingsUI.commit({timelineMode:'simple'}));
@@ -98,7 +98,9 @@ try{
     await page.keyboard.press('Control+v');await page.waitForFunction(()=>clipPhases()[2]===2);
     check(`${mode}: undo, redo and pasting back restore the same instance`,await page.evaluate(()=>JSON.stringify(clipPhases())==='[0,1,2,3,4]'&&styk.editor.selectedUid===clipUid));
     await page.keyboard.press('Control+v');await page.waitForFunction(()=>styk.editor._selectionClipboard.pastes===6);
-    check(`${mode}: repeated paste cannot duplicate an existing ID`,await page.evaluate(()=>styk.editor.evaluatedFrame.objects.length===1));
+    check(`${mode}: repeated paste creates an independent instance`,await page.evaluate(()=>styk.editor.evaluatedFrame.objects.length===2&&styk.editor.selectedUid!==clipUid&&new Set(styk.editor.evaluatedFrame.objects.map(o=>o.unique_id)).size===2));
+    await page.locator('#viewport').focus();await page.keyboard.press('Control+z');await page.waitForFunction(()=>styk.editor.evaluatedFrame.objects.length===1);
+    await page.evaluate(()=>styk.editor.select(clipUid));
     await page.locator('[data-action=movieclip-unique]').click();
     await page.waitForFunction(()=>styk.editor.selectedUid!==clipUid&&Boolean(styk.editor.figure?._styk?.movieclip));
     check(`${mode}: Make unique gives this frame an independent ID without changing its pose`,await page.evaluate(()=>styk.editor.object._movieclipSample===2&&JSON.stringify(clipPhases())==='[0,1,null,3,4]'));

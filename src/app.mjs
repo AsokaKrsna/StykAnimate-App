@@ -1,3 +1,10 @@
+import {rigControlChange, drawRigGuides, drawConnectorGuides} from './rig-controls.mjs';
+import {openSurfaceReference,changeSurfaceSide} from './builder-surface-ui.mjs';
+import {openRigTest, openRigExamples} from './rig-test-ui.mjs';
+import {bucketRegion, pickFigureFill, drawFillHighlight} from './builder-fill.mjs';
+import {duplicatePreview, drawDuplicatePreview} from './builder-duplicate-preview.mjs';
+import {createConstruction, strokeSegments} from './builder-construction.mjs';
+import {CameraMotionControls} from './camera-motion-ui.mjs';
 import {installColorPickers} from './color-picker.mjs';
 import {installMovieclipUI} from './movieclip-ui.mjs';
 import {isMovieclip} from './movieclips.mjs';
@@ -11,6 +18,7 @@ import { SheetFilmstrip as SimpleTimeline } from "./sheet-filmstrip.mjs";
 import { OnionSkinCache } from "./onion-skin.mjs";
 import {hasPinnedIK} from './ik.mjs';
 import { OnionControls } from "./onion-controls.mjs";
+import { OnionController } from "./onion-controller.mjs";
 import { ThumbnailRenderer } from "./thumbnail-renderer.mjs";
 import { BackgroundDialog } from "./background-dialog.mjs";
 import { ImportClient } from "./import-client.mjs";
@@ -28,9 +36,9 @@ import {backgroundImageAssets} from './scene-preparation.mjs';
 import { PlaybackMetrics } from "./playback-metrics.mjs";
 import { DesktopTelemetryClient } from './telemetry-core.mjs';
 import { workload, documentComplexity } from './telemetry-workload.mjs';
-import { sizeBucket } from './telemetry-schema.mjs';
+import { sizeBucket,complexityBucket,fpsBucket } from './telemetry-schema.mjs';
 import { writeBrowserRecovery } from './browser-recovery.mjs';
-import { openExportSink } from './export-sink.mjs';
+import { openExportSink as openExportSinkRaw } from './export-sink.mjs';
 import { PrivacyUI } from './privacy-ui.mjs';
 import { FeedbackUI } from './feedback-ui.mjs';
 import { UpdateUI } from './update-ui.mjs';
@@ -74,7 +82,6 @@ import { SharedClipboard } from './shared-clipboard.mjs';
 import { PropertyControls } from "./property-controls.mjs";
 import {VfxInspector} from './vfx-inspector.mjs';
 import {VfxGizmos} from './vfx-gizmos.mjs';
-import {vfxIcon} from './vfx-icons.mjs';
 import {
   canEditNativeProperty,
   beginNativePropertyEdit,
@@ -105,7 +112,7 @@ import { runTimelineHotkey } from "./timeline-hotkeys.mjs";
 import { AppLocalization } from "./localization-bindings.mjs";
 import { layerIdForUid, layerVisible, layerLocked } from "./layers.mjs";
 import { DocumentExporter } from "./document-export.mjs";
-import { writeNativeBlob, readNativeRecovery } from "./native-files.mjs";
+import { writeNativeBlob as writeNativeBlobRaw, readNativeRecovery } from "./native-files.mjs";
 import { objectBounds } from "./renderer-geometry.mjs";
 import {
   imageFileToFigure,
@@ -113,7 +120,9 @@ import {
 } from "./media-authoring.mjs";
 import { icon, hydrateIcons } from "./icons.mjs";
 import { MotionPathCache, motionPathTargets, motionPathTargetKey, pickMotionPathPoint, drawMotionPath } from "./motion-path.mjs";
+import { CanvasGuides } from "./canvas-guides.mjs";
 import { MotionPathControls } from "./motion-path-controls.mjs";
+import { TweenerControls } from "./tweener-controls.mjs";
 import { buildGeometry, evaluatedFrame, shortest } from "./pivot/geometry.mjs";
 import {
   cameraIsIdentity,
@@ -177,6 +186,7 @@ async function runDocumentExport(format, consume, { recovery = false } = {}) {
       getRevision: () => `${editor.revision}:${editor.frameDraftRevision}`,
     });
     context.size = sizeBucket(blob.size);
+    telemetry.performance.record('serialize',performance.now()-started);
     telemetry.timing(metric + '_ms', performance.now() - started);
     telemetry.operation({ ...context, operation: metric, stage: 'serialize', outcome: 'succeeded' }, performance.now() - started);
     stage = 'write';
@@ -275,7 +285,7 @@ hydrateIcons();
 let timelineUI,
   studioShell,
   builderMode,
-  propertyControls,
+  propertyControls, cameraMotionControls,
   vfxInspector,
   vfxGizmos,
   editorSettings,
@@ -298,10 +308,29 @@ let warmTimer = null,
   playStarted = false,
   uiScheduled = 0;
 const playbackMetrics = new PlaybackMetrics();
+async function openExportSink(options){
+  const enabled=telemetry.consent.diagnostics,context=enabled?telemetry.performance.context():null,epoch=telemetry.epoch,started=enabled?performance.now():0;
+  const onTiming=(metric,ms)=>{if(epoch===telemetry.epoch)telemetry.performance.record(metric,ms,context);};
+  const sink=await openExportSinkRaw({...options,...(enabled?{onTiming}:{})});
+  if(enabled)onTiming('dialog',performance.now()-started);
+  return sink;
+}
+function writeNativeBlob(bridge,blob,options={}){
+  const context=telemetry.consent.diagnostics?telemetry.performance.context():null,epoch=telemetry.epoch;
+  return writeNativeBlobRaw(bridge,blob,{...options,...(context?{onTiming:(metric,ms)=>{if(epoch===telemetry.epoch)telemetry.performance.record(metric,ms,context);}}:{})});
+}
 const exportTelemetry = new WeakMap();
 const telemetry = new DesktopTelemetryClient(desktop, { getContext: () => ({
   mode: state.settings.timelineMode, locale: state.settings.locale,
   playing: state.playing,
+  pending:playback.stats.pendingFrames,cacheBytes:playback.stats.bytes,cache:playback.stats,
+  performance:{
+    backend:state.renderer?.stats?.backend==='WebGPU'?'webgpu':state.renderer?.softwarePlayback?'canvas2d':'unavailable',
+    complexity:complexityBucket(state.renderer?.stats?.primitives),fps:fpsBucket(editor.report?.fps),
+    pixels:canvas.width*canvas.height<1e6?'under-1mp':canvas.width*canvas.height<4e6?'1-4mp':'4mp-plus',
+    phase:state.playing?'playing':'editing',quality:images.reduced||state.renderer?.stats?.previewReduced||state.previewGovernor?.index?'reduced':'full',
+    features:(state.onion?1:0)|(state.inspectorContext==='camera'?2:0)|(state.vfxEnabled?4:0)|(state.motionPaths?8:0)|(state.renderer?.stats?.textureObjects?16:0),
+  },
   backend: state.renderer?.stats?.backend === 'WebGPU' ? 'webgpu' : state.renderer?.stats?.backend === 'Canvas 2D fallback' ? 'canvas2d' : 'unavailable',
   gauges: { gpu_memory_mb: state.renderer?.stats?.gpuBytes / 1048576, draw_calls: state.renderer?.stats?.drawCalls,
     upload_kb: state.renderer?.stats?.uploadBytes / 1024, scene_figures: state.renderer?.stats?.objects,
@@ -317,22 +346,25 @@ function coarseGPUFamily(value = '') {
   return ['nvidia', 'amd', 'intel', 'apple', 'qualcomm', 'software'].find(name => String(value).toLowerCase().includes(name)) || 'unknown';
 }
 const feedbackUI = new FeedbackUI(desktop);
+importer.diagnostics=telemetry.performance;
 const privacyUI = new PrivacyUI(desktop, telemetry, feedbackUI);
 const releaseSplash = new ReleaseSplash(desktop);
 let updateNotice;
 const telemetryInit = telemetry.init().catch(() => null);
 globalThis.addEventListener('error', event => telemetry.error(event.error));
 globalThis.addEventListener('unhandledrejection', event => telemetry.error(event.reason));
-globalThis.addEventListener('pagehide', () => { void telemetry.flush(); telemetry.dispose(); });
+globalThis.addEventListener('pagehide', () => { telemetry.performance.finish();void telemetry.flush(); telemetry.dispose(); });
 const editablePreparation = new EditableScenePreparation(editor, {
+  diagnostics:telemetry.performance,
   onPending(pending) {
     state.editablePreparing=pending;
-    thumbnailRenderer?.setPaused(pending||state.playing||editingGestureActive()||document.hidden);
+    thumbnailRenderer?.setPaused(pending||state.playing||state.scrubbing||editingGestureActive()||document.hidden);
     playback.setInteractionActive(pending||editingGestureActive()||state.scrubbing||document.hidden);
     if(!pending){
       timelineUI?.setPaused?.(state.playing||document.hidden);
       state.editablePreparationStats=editablePreparation.stats;
-      queueUI();requestRender();
+      if(!state.scrubbing)queueUI();
+      requestRender();
     }
   },
   onReady(){state.editingPacket=null;status('Ready');warmPlayback();},
@@ -349,6 +381,7 @@ function queueUI() {
     });
 }
 const playback = new PlaybackCache({
+  diagnostics:telemetry.performance,
   onReady: (packet) => {
     state.lastPacketBytes = packet.byteLength;
     state.renderer
@@ -447,6 +480,7 @@ function syncPlayback() {
   }
 }
 function playbackRange() {
+  if(state.motionPreviewRange)return state.motionPreviewRange;
   return state.loopRange
     ? {
         start: Math.min(state.loopRange.startTick, editor.totalTicks - 1),
@@ -927,7 +961,7 @@ const pathCache = new MotionPathCache();
 const PATH_COLORS = ['#0d99ff', '#e8590c', '#12b886', '#7048e8', '#e64980', '#f08c00', '#0ca678', '#1098ad'];
 /** Every active trail: the camera, each selected figure, or every figure when
  * "all targets" is on. The primary selection keeps the first (accent) colour. */
-function activeMotionPaths() {
+function activeMotionPaths({sample = true} = {}) {
   if (!state.motionPaths || state.playing || state.previewing || state.editablePreparing || builderMode?.active) return [];
   if (!["select", "pose"].includes(state.tool)) return [];
   const camera = cameraSelected() && state.settings.showCamera;
@@ -935,9 +969,12 @@ function activeMotionPaths() {
   const session = editor._drag?.motionPath ? editor._drag : null;
   const deadline = performance.now() + pathCache.budgetMs;
   const out = [];
+  const targets = camera ? [] : motionPathTargets(editor, {all: Boolean(state.settings.motionPathAllTargets)})
+    .filter(target => !isHidden(target.uid) && !isLocked(target.uid));
+  const maxPoints = Math.min(1600, Math.floor(6400 / Math.max(1, targets.length)));
   let pending = false;
   const collect = (target, color) => {
-    const entry = pathCache.get(editor, target, {session, range, deadline});
+    const entry = sample ? pathCache.get(editor, target, {session, range, deadline, maxPoints}) : pathCache.peek(editor, target);
     if (!entry) return;
     pending ||= !entry.complete;
     out.push({target, entry, color});
@@ -946,13 +983,12 @@ function activeMotionPaths() {
     const track = editor.report._styk?.layers?.fixed?.camera;
     if (track?.visible !== false && !track?.locked) collect({kind: 'camera'}, '#e8a13c');
   } else {
-    for (const target of motionPathTargets(editor, {all: Boolean(state.settings.motionPathAllTargets)})) {
-      if (isHidden(target.uid) || isLocked(target.uid)) continue;
+    for (const target of targets) {
       collect(target, PATH_COLORS[out.length % PATH_COLORS.length]);
     }
   }
   // Trail sampling continues across frames until every entry is complete.
-  if (pending) requestRender();
+  if (sample && pending) requestRender();
   return out;
 }
 function activeCameraHandle(point) {
@@ -975,7 +1011,7 @@ function placeArtboard() {
     width: `${r.canvas_width * v.scale}px`,
     height: `${r.canvas_height * v.scale}px`,
   });
-  $("zoom-label").textContent = `${Math.round(v.scale * 100)}% ⌄`;
+  $("zoom-label").textContent = `${Number((v.scale * 100).toFixed(v.scale < 0.01 ? 2 : v.scale < 0.1 ? 1 : 0))}% ⌄`;
 }
 function fittedView(r = editor.report) {
   const rect = viewport.getBoundingClientRect(),
@@ -1053,7 +1089,7 @@ function zoom(factor, point) {
     px = point?.x ?? r.width / 2,
     py = point?.y ?? r.height / 2,
     v = state.view,
-    s = Math.min(12, Math.max(0.02, v.scale * factor)),
+    s = Math.min(100, Math.max(0.001, v.scale * factor)),
     k = s / v.scale;
   state.view = { x: px - (px - v.x) * k, y: py - (py - v.y) * k, scale: s };
   placeArtboard();
@@ -1113,6 +1149,7 @@ function canvasHandles(geometry) {
   const frame = currentFrame(),
     settings = state.settings;
   const key = [
+    builderMode?.active ? [...editor.selectedSegmentIds].join(',') : '',
     editor.layerRevision,
     showStaticHandles(),
     state.tool,
@@ -1148,6 +1185,7 @@ function canvasHandles(geometry) {
     showUnselected: settings.showUnselectedHandles,
     showStatic: showStaticHandles(),
     selectedJoint: editor.selectedJoint,
+    selectedHandleIds: builderMode?.active ? editor.selectedSegmentIds : undefined,
     selectedBranch: usesBuilderBranch(),
     builder: isBuilderContext(state.tool),
     attaching: state.tool === "attach",
@@ -1167,7 +1205,8 @@ function paintHandle(context, handle, delta) {
     : handle.point;
   const p = screenPoint(point);
   context.beginPath();
-  context.arc(p.x, p.y, handle.screenRadius, 0, Math.PI * 2);
+  if(handle.connector){const r=handle.screenRadius;context.moveTo(p.x,p.y-r);context.lineTo(p.x+r,p.y);context.lineTo(p.x,p.y+r);context.lineTo(p.x-r,p.y);context.closePath();}
+  else context.arc(p.x, p.y, handle.screenRadius, 0, Math.PI * 2);
   context.fillStyle = handle.color;
   context.strokeStyle = handle.ik ? '#0d99ff' : '#000000';
   context.lineWidth = 1;
@@ -1217,10 +1256,16 @@ function drawCanvasHandles(geometry) {
 }
 const onionCache = new OnionSkinCache();
 let onionControls;
+const onionController = new OnionController({editor,
+  getSettings: () => state.settings, getEnabled: () => state.onion,
+  onCommit: patch => editorSettings.commit(patch),
+  onToggle: () => actions["toggle-onion"](), onRender: () => requestRender(), onError: fail});
 let pathControls;
+let tweenerControls;
+let canvasGuides;
 function onionSkins() {
   if (!state.onion || state.playing || state.previewing) return [];
-  return onionCache.get(editor, state.settings, {selected: selection(), hidden: effectiveHidden(), visibilityKey:[...state.hidden]});
+  return onionCache.get(editor, onionController.settings, {selected: selection(), hidden: effectiveHidden(), visibilityKey:[...state.hidden]});
 }
 function overlayRender(geometry) {
   const d = window.devicePixelRatio || 1;
@@ -1251,6 +1296,7 @@ function overlayRender(geometry) {
       dragging: dragPath?.key === key ? {tick: dragPath.tick} : null,
       color: motionPath.color,
       labels: Boolean(state.settings.motionPathLabels),
+      dots: state.settings.motionPathDots !== false,
       faint: motionPaths.length > 1 && state.hoverPathPoint && state.hoverPathPoint.key !== key,
     });
   }
@@ -1334,11 +1380,20 @@ function overlayRender(geometry) {
     const pending = state.spritePlacement || state.duplicatePlacement,
       target = pending.hover,
       point = screenPoint(target?.point || pending.point);
+    drawDuplicatePreview(ctx,pending.preview,point,state.view.scale);
     ctx.beginPath();
     ctx.arc(point.x, point.y, 7, 0, Math.PI * 2);
     ctx.strokeStyle = target ? "#0d99ff" : "#888";
     ctx.lineWidth = 2;
     ctx.stroke();
+  }
+  construction?.draw(ctx);
+  if (state.handles) drawConnectorGuides(ctx,geometry,editor,screenPoint);
+  if (state.handles && builderMode?.active) drawRigGuides(ctx,geometry,editor,screenPoint);
+  if(builderMode?.active) {
+    const g=editor.geometry.objects.get(editor.selectedSlot);
+    if(editor.selectedPolygonIndex>=0)drawFillHighlight(ctx,g?.polys.find(p=>p.index===editor.selectedPolygonIndex)?.points,screenPoint);
+    if(state.tool==='polygon'&&state.builderShiftHeld)drawFillHighlight(ctx,state.bucketPreview?.points,screenPoint,{preview:true});
   }
   if (state.drag?.kind === "draw") {
     const p = screenPoint(state.drag.start),
@@ -1364,9 +1419,10 @@ function overlayRender(geometry) {
   }
 }
 function loop(now) {
+  canvasGuides?.render();
   raf = 0;
   playback.setInteractionActive(Boolean(editingGestureActive()||state.scrubbing||state.editablePreparing||document.hidden));
-  thumbnailRenderer?.setPaused(Boolean(editingGestureActive()||state.playing||state.editablePreparing||document.hidden));
+  thumbnailRenderer?.setPaused(Boolean(editingGestureActive()||state.playing||state.scrubbing||state.editablePreparing||document.hidden));
   let advancedPlayback = false;
   if (!$("renderer-error").hidden) return;
   if (state.playing) {
@@ -1443,6 +1499,9 @@ function loop(now) {
   if (state.dirtyRender && state.renderer) {
     state.dirtyRender = false;
     const start = performance.now();
+    const sampled=telemetry.isForeground&&telemetry.performance.sampleFrame(),stages=sampled?{}:null;
+    state.renderer.measureFrame=sampled;state.renderer.telemetryStages=null;
+    let stageStarted=sampled?performance.now():0;
     const packet = state.playing ? state.playbackPacket : previewPacket();
     let preparedPresented = false;
     if(state.editablePreparing){
@@ -1516,21 +1575,25 @@ function loop(now) {
       overlayRender(geometry);
       $('preview-quality').hidden = !(images.reduced || state.renderer.stats?.previewReduced || state.previewGovernor?.index);
     }
+    if(sampled){stages.scene=performance.now()-stageStarted;stageStarted=performance.now();Object.assign(stages,state.renderer.telemetryStages);}
     // Final editor overlay pass: keep the actual camera above artwork and tool feedback.
     ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
     drawCameraOutline(ctx, cameraViewport(editor.report, currentFrame(), state.view), screenPoint);
     vfxGizmos?.draw(ctx);
+    if(sampled){stages.overlay=performance.now()-stageStarted;stageStarted=performance.now();}
     if (state.inspectorContext === 'camera') {
       const frame = currentFrame();
       syncCameraControls($('inspector'), frame, {activeKey:propertyControls?.activeKey,guides:state.cameraGuides});
       if (!state.editablePreparing) drawCameraMonitor($('inspector').querySelector('[data-camera-monitor]'), {
-        onError:error=>telemetry.error(error,'renderer'),onInvalidate:requestRender,
+        onError:error=>telemetry.error(error,'renderer'),onInvalidate:requestRender,onRecovery:(kind,outcome)=>telemetry.performance.recovery(kind,outcome),
         report:editor.report,frame,geometry:state.playing?null:state.drag?.geometry || keyboardHandleGesture?.geometry || editor.geometry,
         resources:state.renderer.resources,hiddenUids:effectiveHidden(),
         prepared:packet?.key!==undefined&&state.renderer?.renderPreparedInto?{renderer:state.renderer,key:packet.key}:null,
       });
     }
     const elapsed = performance.now() - start;
+    if(sampled)stages.camera=performance.now()-stageStarted;
+    if(telemetry.isForeground&&!state.editablePreparing)telemetry.performance.frame(elapsed,stages||{},sampled);
     state.renderSamples.push(elapsed);
     if (telemetry.consent.diagnostics && state.drawCalls % 30 === 0) {
       telemetry.timing('frame_ms', elapsed);
@@ -1614,6 +1677,8 @@ function play() {
   requestRender();
 }
 function pause() {
+  state.motionPreviewRange=null;
+  if(state.playing)telemetry.performance.resources('stopped');
   audioPreparation?.abort(); audioScrubController?.abort(); audioEngine.stop(); state.audioReady = true;
   const wasPlaying = state.playing || state.previewing;
   if (state.playing) {
@@ -1732,18 +1797,18 @@ function renderAssets() {
   const figures = editor.report.figure_types;
   assetLibrary?.setVisible(state.activeTab === "assets");
   assetLibrary?.update(figures, { selectedId: editor.object?.figure_type_id });
-  $("sample-list").innerHTML = state.samples.length
+  $("sample-list").innerHTML = '<button class="sample-item" data-action="rig-examples"><span>Rig examples</span></button>' + (state.samples.length
     ? state.samples
         .map(
           (s) =>
             `<button class="sample-item" data-sample="${esc(s.path)}">${icon(s.kind === "stk" ? "person" : "file")}<span>${esc(s.name)}</span><small>${esc(s.kind?.toUpperCase() || "PIV")}</small></button>`,
         )
         .join("")
-    : '<p class="property-note" style="padding:0 15px">Open StykAnimate, Pivot or Stick Nodes projects, figures and movie clips.</p>';
+    : '<p class="property-note" style="padding:0 15px">Open StykAnimate, Pivot or Stick Nodes projects, figures and movie clips.</p>');
 }
 function renderInspector() {
   vfxInspector?.sync();
-  if (propertyControls?.active || (state.drag && state.drag.kind !== "pan"))
+  if (cameraMotionControls?.active || propertyControls?.active || (state.drag && state.drag.kind !== "pan"))
     return;
   const disclosureOwner = {
     document: editor._documentToken,
@@ -1776,6 +1841,7 @@ function renderInspector() {
     applyRange: state.applyRange,
     polygonPage: state.polygonPage || 0,
   }), {preserveDisclosure});
+  cameraMotionControls?.sync();
   refreshHotkeyHints(hotkeys, $('inspector'));
   if (state.polygon) {
     for (const input of $("inspector").querySelectorAll(
@@ -1804,20 +1870,23 @@ function renderInspector() {
     );
 }
 
+let construction;
 function setTool(tool) {
-  if (tool !== state.tool && ['rig', 'line', 'circle', 'polygon'].includes(tool)) telemetry.count('builder');
-  if (!builderMode?.active && isMovieclip(editor.figure) && ['rig','line','circle','polygon'].includes(tool)) {
+  if (state.tool !== tool) construction?.cancel();
+  if (tool !== state.tool && ['rig', 'line', 'chain', 'circle', 'polygon'].includes(tool)) telemetry.count('builder');
+  if (!builderMode?.active && isMovieclip(editor.figure) && ['rig','line','chain','circle','polygon'].includes(tool)) {
     editor.enterMovieclip();
   }
   // Choosing a construction tool outside the builder opens a bounded session —
   // on the selected figure when one is bound, or a new figure otherwise.
-  if (!builderMode?.active && ['rig', 'line', 'circle', 'polygon'].includes(tool)) builderMode?.enter();
+  if (!builderMode?.active && ['rig', 'line', 'chain', 'circle', 'polygon'].includes(tool)) builderMode?.enter();
   if (tool === "polygon" && state.tool === "polygon" && state.polygon) {
     finishPolygon();
     return;
   }
   if (state.drag) cancelDrag();
   if (state.tool !== tool) {
+    state.bucketPreview = null;
     cancelSpritePlacement();
     state.polygon = null;
     $("polygon-controls").hidden = true;
@@ -1829,20 +1898,22 @@ function setTool(tool) {
   viewport.classList.toggle("panning", tool === "hand");
   viewport.classList.toggle(
     "drawing",
-    ["line", "circle", "polygon"].includes(tool),
+    ["line", "chain", "circle", "polygon"].includes(tool),
   );
   $("viewport-hint").textContent = {
     select: "Drag to select · Shift-click to add · Drag a joint to pose",
-    pose: "Rotate a joint · Ctrl-drag to stretch",
+    pose: "Drag to pose · Ctrl-drag to stretch · Shift + right-drag to bend",
     rig: "Edit figure joints · Changes update every instance",
     hand: "Drag or scroll to pan · Ctrl-scroll to zoom",
+    chain: "Click to extend · Enter to finish · Backspace to remove · Esc to cancel",
     line: "Drag anywhere to draw · Start on a joint to extend a figure",
     circle: "Drag anywhere to draw · Start on a joint to extend a figure",
     polygon:
-      "Click figure joints to trace a polygon · Enter to finish · Esc to cancel",
+      "Click joints to trace · Shift-click an enclosed area to fill · Enter to finish",
     attach: "Click the parent joint · Esc to cancel",
+    tweener: "Drag horizontally to tween · Shift for precision · Esc / right-click cancels",
   }[tool];
-  if (["rig", "line", "circle", "polygon"].includes(tool)) {
+  if (["rig", "line", "chain", "circle", "polygon"].includes(tool)) {
     state.inspectorTab = "design";
     state.inspectorContext = editor.object ? "figure" : "scene";
   }
@@ -1852,6 +1923,7 @@ function setTool(tool) {
       b.classList.toggle("active", b.dataset.inspector === state.inspectorTab),
     );
   renderInspector();
+  tweenerControls?.sync();
   requestRender();
 }
 function closestHandle(p, excludedUid = null, { uid } = {}) {
@@ -1893,6 +1965,20 @@ function refreshPolygonDraft() {
   requestRender();
 }
 function polygonClick(p, event = {}) {
+  if (event.shiftKey && builderMode?.active) {
+    const g=editor.geometry.objects.get(editor.selectedSlot),existing=pickFigureFill(g,p);
+    if(existing){cancelPolygonDraft();editor.selectPolygon(editor.selectedUid,existing.index);return;}
+    const region=bucketRegion(g,p);
+    if(!region)return toast('No closed region here. Close the outline at its joints first.');
+    cancelPolygonDraft();
+    const polygon=editor.addPolygon(region.ids,{color:g.segments[editor.selectedJoint]?.rgb??g.segments[0]?.rgb??[43,43,43]});
+    editor.selectPolygon(editor.selectedUid,editor.figure.polyfills.indexOf(polygon));
+    state.bucketPreview=null;status('Fill added');return;
+  }
+  if (!state.polygon && builderMode?.active && !pick(p)) {
+    const fill=pickFigureFill(editor.geometry.objects.get(editor.selectedSlot),p);
+    if(fill){editor.selectPolygon(editor.selectedUid,fill.index);return;}
+  }
   let g = state.polygon
     ? [...editor.geometry.objects.values()].find(
         (g) => g.obj.unique_id === state.polygon.uid,
@@ -1962,6 +2048,15 @@ overlay.addEventListener(
   guarded((e) => {
     if (!$("renderer-error").hidden || !e.isPrimary) return;
     if (e.button !== 0 && e.button !== 1 && e.button !== 2) return;
+    if (state.drag?.kind === 'tweener' && e.button === 2) {
+      e.preventDefault();state.suppressContext = true;cancelDrag();return;
+    }
+    // A secondary click opens actions; Shift preserves the bend gesture.
+    if (e.button === 2 && !e.shiftKey) {
+      state.suppressContext = false;
+      return;
+    }
+    if (e.button === 2) state.suppressContext = true;
     if (state.previewing) {
       pause();
       return;
@@ -1988,6 +2083,11 @@ overlay.addEventListener(
       return;
     }
     const p = worldPoint(e);
+    if (state.tool === 'tweener') {
+      if (e.button === 0 && tweenerControls.begin(e)) state.drag = {kind:'tweener'};
+      else releaseCanvasPointer();
+      return;
+    }
     if (state.spritePlacement || state.duplicatePlacement) {
       releaseCanvasPointer();
       if (e.button !== 0) return;
@@ -2078,14 +2178,14 @@ overlay.addEventListener(
       ["select", "pose"].includes(state.tool) &&
       !builderMode?.active
     ) {
-      const motionPaths = activeMotionPaths();
+      const motionPaths = activeMotionPaths({sample: false});
       const screen = screenPoint(p);
       let pathHit = null, hitTarget = null;
       for (const motionPath of motionPaths) {
         const hit = pickMotionPathPoint(
           motionPath.entry,
           screen,
-          { project: screenPoint, radius: 9 },
+          { project: screenPoint, radius: 9, tick: editor.tick },
         );
         if (hit && (!pathHit || hit.distance < pathHit.distance)) { pathHit = hit; hitTarget = motionPath.target; }
       }
@@ -2096,12 +2196,23 @@ overlay.addEventListener(
           tick: pathHit.tick,
           start: p,
           point: p,
+          origin: {x: pathHit.x, y: pathHit.y},
           moved: false,
         };
         viewport.classList.add("dragging");
         requestRender();
         return;
       }
+    }
+    if (state.rigAnchorPick) {
+      const pending=state.rigAnchorPick,target=closestHandle(p);
+      releaseCanvasPointer();
+      if(pending.token!==editor._documentToken||pending.uid!==editor.selectedUid){state.rigAnchorPick=null;return;}
+      if(!target||target.g.obj.unique_id!==pending.uid){toast('Choose a joint on this figure. Escape cancels.');return;}
+      if(pending.key==='driver')editor.bindStretchParts(target.id);
+      else if(pending.key)editor.setRigBehavior({connector:{[pending.key]:target.id}});
+      else editor.addConnector(pending.start,target.id);
+      state.rigAnchorPick=null;toast(pending.key==='driver'?'Stretch driver connected.':pending.key?'Connector anchor updated.':'Connector added. Drag its middle joint to slide.');requestRender();return;
     }
     if (state.tool === "attach") {
       const target = closestHandle(p, editor.selectedUid);
@@ -2120,6 +2231,7 @@ overlay.addEventListener(
       status("Figures attached");
       return;
     }
+    if (state.tool === "chain") { releaseCanvasPointer(); if(e.button===0)construction.click(p,e); return; }
     if (state.tool === "polygon") {
       polygonClick(p, e);
       return;
@@ -2128,7 +2240,8 @@ overlay.addEventListener(
       const hit = pick(p),
         threshold = 10 / state.view.scale;
       let parent = null;
-      if (hit) {
+      const selectedPoint=builderMode?.active?editor.geometry.objects.get(editor.selectedSlot)?.joints.get(editor.figure?.segments[editor.selectedJoint]?.segment_id??0):null;
+      if (hit&&(!selectedPoint||Math.hypot(p.x-selectedPoint.x,p.y-selectedPoint.y)>threshold)) {
         let joint = -1,
           best = threshold * threshold;
         for (const [id, point] of hit.g.joints) {
@@ -2150,13 +2263,17 @@ overlay.addEventListener(
       if (!parent && !builderMode?.active) editor.select(null);
       state.drag = {
         kind: "draw",
-        start: parent ? { ...parent } : p,
+        start: builderMode?.active ? construction.start(p).point : (parent ? {...parent} : p),
         current: p,
       };
       requestRender();
       return;
     }
     const hit = pick(p);
+    if (!hit && e.button === 0 && builderMode?.active && ['select','rig'].includes(state.tool)) {
+      const polygon=pickFigureFill(editor.geometry.objects.get(editor.selectedSlot),p);
+      if(polygon){releaseCanvasPointer();editor.selectPolygon(editor.selectedUid,polygon.index);return;}
+    }
     if (e.button === 2 && (!hit || hit.joint < 0)) return;
     if (!hit) {
       const initial = e.shiftKey ? [...selection()] : [];
@@ -2171,10 +2288,13 @@ overlay.addEventListener(
       requestRender();
       return;
     }
-    if (e.shiftKey && !e.altKey) {
-      editor.select(hit.g.obj.unique_id, -1, { toggle: true });
+    if (e.button === 0 && e.shiftKey && !e.altKey) {
+      if (builderMode?.active && hit.joint >= 0) editor.toggleSegment(hit.g.obj.unique_id, hit.joint);
+      else editor.select(hit.g.obj.unique_id, -1, { toggle: true });
+      releaseCanvasPointer();
       return;
     }
+    if(hit.g.segments[hit.joint]?.connector)editor._connectorInspector=null;
     editor.select(hit.g.obj.unique_id, hit.joint, {
       add: hit.joint < 0 && isSelected(hit.g.obj.unique_id),
     });
@@ -2218,6 +2338,7 @@ overlay.addEventListener(
       joint: hit.joint,
       moved: false,
     };
+    if (state.drag.kind === "rig" && builderMode?.active) construction.beginRig();
     if (hit.joint < 0 && !handleEdit) {
       const uids = editor.resolveTranslationSelection().affectedUids;
       state.drag.ikLive = editor._drag.before.some(hasPinnedIK);
@@ -2233,6 +2354,19 @@ overlay.addEventListener(
   "pointermove",
   guarded((e) => {
     const drag = state.drag;
+    if (drag?.kind === 'tweener') {
+      if (e.buttons & 2) {e.preventDefault();state.suppressContext=true;cancelDrag();}
+      else tweenerControls.move(e);
+      return;
+    }
+    if (!drag && state.tool === 'tweener' && !state.space) return;
+    if(drag&&telemetry.isForeground)telemetry.performance.action(drag.kind==='pan'?'pan':'edit');
+    if (!drag && state.tool === 'polygon' && builderMode?.active) {
+      state.bucketPreview = e.shiftKey ? bucketRegion(editor.geometry.objects.get(editor.selectedSlot),worldPoint(e)) : null;
+      overlay.style.cursor = e.shiftKey ? (state.bucketPreview ? 'copy' : 'not-allowed') : '';
+      requestRender();return;
+    }
+    if (!drag && state.tool === "chain" && construction?.active) {construction.move(worldPoint(e),e);return;}
     if (!drag) {
       // Playback uses worker packets; hover must not materialize an editable
       // scene (and all its handles) for every mouse move between ticks.
@@ -2241,11 +2375,9 @@ overlay.addEventListener(
         const point = worldPoint(e),
           pending = state.spritePlacement || state.duplicatePlacement;
         pending.point = point;
-        pending.hover = closestHandle(
-          point,
-          null,
-          state.duplicatePlacement ? { uid: state.duplicatePlacement.uid } : {},
-        );
+        const snap = pending.preview?.index.nearest(point,10/state.view.scale,{jointsOnly:true});
+        pending.hover = pending.preview ? (snap ? {point:snap,id:snap.id} : null) : closestHandle(point);
+        if(state.duplicatePlacement)overlay.style.cursor="copy";
         requestRender();
         return;
       }
@@ -2253,20 +2385,20 @@ overlay.addEventListener(
       state.hoverCameraHandle = activeCameraHandle(worldPoint(e));
       overlay.style.cursor = cameraHandleCursor(state.hoverCameraHandle, cameraViewport(editor.report,currentFrame(),state.view));
       if (previousCameraHandle?.index !== state.hoverCameraHandle?.index) requestRender();
-      const previousPathPoint = state.hoverPathPoint?.tick;
+      const previousPathPoint = state.hoverPathPoint;
       state.hoverPathPoint = null;
       if (state.motionPaths && !state.hoverCameraHandle && ["select", "pose"].includes(state.tool) && !builderMode?.active) {
-        const motionPaths = activeMotionPaths();
+        const motionPaths = activeMotionPaths({sample: false});
         const screen = screenPoint(worldPoint(e));
         let pathHit = null, hitTarget = null;
         for (const motionPath of motionPaths) {
-          const hit = pickMotionPathPoint(motionPath.entry, screen, { project: screenPoint, radius: 9 });
+          const hit = pickMotionPathPoint(motionPath.entry, screen, { project: screenPoint, radius: 9, tick: editor.tick });
           if (hit && (!pathHit || hit.distance < pathHit.distance)) { pathHit = hit; hitTarget = motionPath.target; }
         }
         if (pathHit) {
           state.hoverPathPoint = { key: motionPathTargetKey(hitTarget), tick: pathHit.tick };
           overlay.style.cursor = "grab";
-          if (previousPathPoint !== pathHit.tick) requestRender();
+          if (previousPathPoint?.tick !== pathHit.tick || previousPathPoint?.key !== state.hoverPathPoint.key) requestRender();
         }
         if (!state.hoverPathPoint && previousPathPoint !== undefined) requestRender();
       }
@@ -2313,7 +2445,7 @@ overlay.addEventListener(
       return;
     }
     if (drag.kind === "draw" || drag.kind === "marquee") {
-      drag.current = p;
+      drag.current = drag.kind === "draw" && builderMode?.active ? construction.snap(p,e,drag.start) : p;
       requestRender();
       return;
     }
@@ -2321,7 +2453,11 @@ overlay.addEventListener(
       if (p.x !== drag.point?.x || p.y !== drag.point?.y) {
         drag.point = p;
         drag.moved = true;
-        editor.updateMotionPathEdit(p, {
+        const dx = p.x - drag.start.x, dy = p.y - drag.start.y;
+        const constrained = e.shiftKey
+          ? (Math.abs(dx) >= Math.abs(dy) ? {x: dx, y: 0} : {x: 0, y: dy})
+          : {x: dx, y: dy};
+        editor.updateMotionPathEdit({x: drag.origin.x + constrained.x, y: drag.origin.y + constrained.y}, {
           stretch: e.ctrlKey || e.metaKey,
           isolate: Boolean(state.isolateHeld || state.isolateMode),
         });
@@ -2348,13 +2484,14 @@ overlay.addEventListener(
         ctrlKey: e.ctrlKey || e.metaKey,
         shiftKey: e.shiftKey,
       });
-    else if (drag.kind === "rig")
-      editor.editRigJoint(p.x, p.y, {
+    else if (drag.kind === "rig") {
+      const target = builderMode?.active ? construction.rigSnap(p,e) : p;
+      editor.editRigJoint(target.x, target.y, {
         reposition: state.rigMode !== "rotate",
         stretch: e.ctrlKey || e.metaKey,
         isolate: Boolean(state.isolateHeld || state.isolateMode),
       });
-    else if (drag.kind === "bend")
+    } else if (drag.kind === "bend")
       editor.bendJoint(p.x, p.y, {
         stretch: e.ctrlKey || e.metaKey,
         isolate: Boolean(state.isolateHeld || state.isolateMode),
@@ -2375,13 +2512,16 @@ function releaseCanvasPointer() {
   if (id !== null && overlay.hasPointerCapture(id))
     overlay.releasePointerCapture(id);
 }
-function endDrag() {
+function endDrag(event) {
   const drag = state.drag;
+  if (drag?.kind === "draw" || drag?.kind === "rig") construction?.cancel();
   state.drag = null;
   releaseCanvasPointer();
   if (!drag) return;
   viewport.classList.remove("dragging");
-  if (drag.kind === "draw") {
+  if (drag.kind === 'tweener') {
+    tweenerControls.finish(true,event);
+  } else if (drag.kind === "draw") {
     const p = drag.start,
       q = drag.current,
       length = Math.hypot(q.x - p.x, q.y - p.y);
@@ -2389,9 +2529,8 @@ function endDrag() {
       if (!editor.addSegment)
         throw new Error("Segment authoring is unavailable.");
       editor.addSegment({
+        ...strokeSegments([p,q],editor.object?.scale??1)[0],
         type: state.tool,
-        length,
-        angle: Math.atan2(q.y - p.y, q.x - p.x),
         thickness: 7,
         start: p,
       });
@@ -2442,10 +2581,12 @@ function endDrag() {
   queueUI();
 }
 function cancelDrag() {
+  if (state.drag?.kind === "draw" || state.drag?.kind === "rig") construction?.cancel();
   releaseCanvasPointer();
   cancelSpritePlacement();
   cancelPolygonDraft();
   if (!state.drag) return;
+  if (state.drag.kind === 'tweener') tweenerControls.finish(false);
   if (state.drag.kind === "camera") editor.cancelCameraDrag();
   if (state.drag.kind === "motion-path") editor.cancelMotionPathEdit();
   if (
@@ -2461,6 +2602,7 @@ function cancelDrag() {
 overlay.addEventListener("pointerup", guarded(endDrag));
 
 overlay.addEventListener("dblclick", guarded((event) => {
+  if (event.button === 0 && state.tool === "chain" && construction?.active) {event.preventDefault();construction.commit();return;}
   if (event.button !== 0 || state.space || state.playing || state.previewing ||
       state.spritePlacement || state.duplicatePlacement ||
       !["select", "pose", "rig"].includes(state.tool)) return;
@@ -2501,6 +2643,7 @@ overlay.addEventListener("pointerleave", () => {
 viewport.addEventListener(
   "wheel",
   (e) => {
+    if(telemetry.isForeground)telemetry.performance.action(e.ctrlKey||e.metaKey?'zoom':'pan');
     e.preventDefault();
     interruptRecovery();
     const r = viewport.getBoundingClientRect();
@@ -2662,6 +2805,7 @@ function cancelSpritePlacement() {
   $("viewport-hint").textContent = pending.previousHint;
   state.spritePlacement = null;
   state.duplicatePlacement = null;
+  overlay.style.cursor = "";
   viewport.classList.remove("sprite-placement");
   requestRender();
 }
@@ -2682,11 +2826,13 @@ function beginDuplicatePlacement({ branch = false, flip = false } = {}) {
     handleId: segment.segment_id,
     branch,
     flip,
-    point: null,
+    point: editor.geometry.objects.get(editor.object.object_slot)?.segments[editor.selectedJoint]?.start,
+    preview: duplicatePreview(editor.geometry.objects.get(editor.object.object_slot),editor.selectedJoint,{branch,flip,scale:state.view.scale}),
     hover: null,
     previousHint: $("viewport-hint").textContent,
   };
   viewport.classList.add("sprite-placement");
+  overlay.style.cursor = "copy";
   $("viewport-hint").textContent =
     "Choose a parent joint for the copy · Esc to cancel";
   viewport.focus({ preventScroll: true });
@@ -2801,9 +2947,11 @@ async function chooseSticknodesFile(file,isCurrent=()=>true) {
   return isCurrent()?result:null;
 }
 async function importFiles(files) {
+  telemetry.performance.resources('before_open');
   const started = performance.now(); telemetry.count('import_started');
   try {
     const result = await importFilesTracked(files);
+    if(result!==false){telemetry.performance.closedAt=null;telemetry.performance.resources('opened');}
     telemetry.count(result === false ? 'import_cancelled' : 'import_succeeded');
     if (result !== false) telemetry.timing('import_ms', performance.now() - started);
     return result;
@@ -2837,6 +2985,7 @@ async function importFilesTracked(files) {
       if (!result || seq !== importSequence) { outcome = 'cancelled'; return false; }
       if (telemetry.consent.diagnostics) context.complexity = documentComplexity(result.document);
       telemetry.operation({ ...context, operation: 'import', stage: 'decode', outcome: 'succeeded' }, result.timings?.decode_ms);
+      telemetry.performance.record('decode',result.timings?.decode_ms);
       await acceptImport(result, file.name);
       telemetry.timing('import_decode_ms', result.timings?.decode_ms);
       } catch (error) {
@@ -2943,6 +3092,7 @@ async function finishExport(output, filename, signal) {
   if (measurement) {
     measurement.context.size = sizeBucket(output?.size ?? 0);
     telemetry.timing('export_ms', finished - measurement.started);
+    telemetry.performance.record('encode',finished-measurement.started);
     telemetry.operation({ ...measurement.context, operation: 'export', stage: 'encode', outcome: 'succeeded' }, finished - measurement.started);
     measurement.stage = 'write';
     measurement.releaseRenderer?.();
@@ -3348,6 +3498,7 @@ async function exportVideo(format = "webm") {
               }
             : undefined,
           renderFrame: (index) => renderer.renderTick(index + options.start),
+          ...(encode === encodeNativeVideo ? {renderNativeFrame: index => renderer.renderNativeTick(index + options.start, {preserveAlpha: format === 'webm'})} : {}),
         });
         const saved = await finishExport(output, filename, signal);
         if (saved) status(`${extension.toUpperCase()} exported`);
@@ -3793,62 +3944,95 @@ overlay.addEventListener(
   "contextmenu",
   guarded((e) => {
     e.preventDefault();
+    if (state.drag?.kind === 'tweener') {cancelDrag();state.suppressContext=false;return;}
     if (state.suppressContext) {
       state.suppressContext = false;
       return;
     }
+    if(construction?.active) {showCommandMenu([["chain-finish","check","Finish chain","Enter"],["chain-cancel","close","Cancel chain","Esc"]],{left:e.clientX,bottom:e.clientY});return;}
     pause();
     const hit = pick(worldPoint(e));
+    if (builderMode?.active) {
+      const fill = !hit && pickFigureFill(editor.geometry.objects.get(editor.selectedSlot),worldPoint(e));
+      if(fill)editor.selectPolygon(editor.selectedUid,fill.index);
+      return builderMode.showContextMenu({hit,entry:fill?{kind:'polygon',index:fill.index}:undefined,x:e.clientX,y:e.clientY});
+    }
     if (hit && !isSelected(hit.g.obj.unique_id))
       editor.select(hit.g.obj.unique_id, hit.joint);
-    const disabled = !editor.object;
-    showCommandMenu(
-      [
-        ["copy", "duplicate", "Copy", "Ctrl C", disabled],
-        ["paste", "clipboard", "Paste", "Ctrl V"],
-        ["duplicate", "duplicate", "Duplicate", "Ctrl D", disabled],
-        ["add-to-library", "plus", "Add to library", "", disabled],
+    if (hit && selection().size <= 1)
+      editor.select(hit.g.obj.unique_id, hit.joint);
+    const items = !hit ? [
+      ["paste", "clipboard", "Paste", "Ctrl V"],
+      ["select-all", "cursor", "Select all", "Ctrl A"],
+      null,
+      ["scene-settings", "frame", "Scene properties…"],
+      ["zoom-reset", "frame", "Fit canvas", "Shift 1"],
+    ] : [
+      ["copy", "duplicate", "Copy", "Ctrl C"],
+      ["paste", "clipboard", "Paste", "Ctrl V"],
+      ["duplicate", "duplicate", "Duplicate", "Ctrl D"],
+      null,
+      ["mirror", "flip", "Flip horizontal", "Shift H"],
+      ["mirror-vertical", "flip-vertical", "Flip vertical", "Shift V"],
+      null,
+      ...(hit.joint >= 0 && !editor.figure?._styk?.movieclip && selection().size <= 1 ? [["segment-values", "sliders", "Segment values…", "I"]] : []),
+      ["selection-more", "sliders", "More figure actions…"],
+      ["delete", "trash", "Delete", "Delete"],
+      ...(!builderMode?.active && !editor.figure?._styk?.movieclip ? [
         null,
-        ["mirror", "flip", "Flip horizontal", "Shift H", disabled],
-        ["mirror-vertical", "flip", "Flip vertical", "Shift V", disabled],
-        ["layer-front", "bring-to-front", "Bring to front", "", disabled],
-        ["layer-back", "send-to-back", "Send to back", "", disabled],
-        null,
-        ["select-same", "person", "Select same figure", "", disabled],
-        ["select-invert", "cursor", "Invert selection", ""],
-        ["attach-figure", "link", "Attach to joint", "", disabled],
-        ["detach-figure", "detach", "Detach", "", !editor.object?.join],
-        null,
-        [
-          "locate-previous",
-          "chevron-left",
-          "Match previous pose",
-          "L",
-          disabled,
-        ],
-        [
-          "locate-next",
-          "chevron-right",
-          "Match next pose",
-          "Shift L",
-          disabled,
-        ],
-        [
-          "segment-values",
-          "sliders",
-          "Segment values",
-          "I",
-          disabled || editor.selectedJoint < 0,
-        ],
-        null,
-        ["zoom-selection", "center", "Fit selection", "Shift 2", disabled],
-        ["delete", "trash", "Delete", "Delete", disabled],
-      ],
-      { left: e.clientX, bottom: e.clientY },
-    );
+        ["edit-in-build-mode", "nodes", "Edit in build mode", "", selection().size !== 1],
+      ] : []),
+    ];
+    showCommandMenu(items, { left: e.clientX, bottom: e.clientY });
   }),
 );
+const rigHost=()=>({editor,showDialog,closeDialog,resources,finish:()=>{pause();finishCurrentEdit();},builderActive:()=>Boolean(builderMode?.active),
+  addToAnimate:document=>{
+    pause();finishCurrentEdit();
+    const layer=editor.getLayer(editor.activeLayerId);
+    if(layer?.locked)throw new Error('Unlock the destination layer before adding an asset.');
+    if(layer?.visible===false)throw new Error('Choose a visible destination layer before adding an asset.');
+    builderMode?.keepChangesAndLeave();
+    const object=editor.importFigure(document),figure=editor.figure;
+    const control=figure._styk?.rigExample?.control;
+    setTool('select');state.inspectorContext='figure';
+    editor.select(object.unique_id,figure.segments.findIndex(s=>s.segment_id===control));
+    window.styk?.library?.showView('properties');
+    fitSelection();queueUI();
+    toast(`${figure.name} added to Animate.`);
+    return object;
+  }});
+const beginRigAnchorPick=key=>{
+  const s=editor.figure?.segments[editor.selectedJoint];if(!editor.figure||(!s&&key))return toast('Select a joint first.');
+  const ids=[...editor.selectedSegmentIds];
+  if(!key&&ids.length===2){editor.addConnector(ids[0],ids[1]);toast('Connector added. Drag its middle joint to slide.');return;}
+  setTool('rig');state.rigAnchorPick={key,start:s?.segment_id??0,uid:editor.selectedUid,token:editor._documentToken};
+  toast(key==='driver'?'Click a Smart Stretch joint on this figure. Escape cancels.':key?'Click the new anchor on this figure. Escape cancels.':'Click the second joint to create a connector. Escape cancels.');
+};
 const actions = {
+  'rig-connect':()=>beginRigAnchorPick(),
+  'rig-pick-start':()=>beginRigAnchorPick('start'),
+  'rig-pick-end':()=>beginRigAnchorPick('end'),
+  'rig-pick-driver':()=>beginRigAnchorPick('driver'),
+  'rig-bind-branch':()=>editor.bindStretchParts(editor.figure.segments[editor.selectedJoint].segment_id,{branch:true}),
+  'rig-test':()=>openRigTest(rigHost()),
+  'rig-examples':()=>openRigExamples(rigHost()),
+  "edit-in-build-mode": () => {
+    if (editor.object && selection().size === 1 && !editor.figure?._styk?.movieclip)
+      builderMode?.enter();
+  },
+  "selection-more": () => showCommandMenu([
+    ["add-to-library", "plus", "Add to library"],
+    ["select-same", "person", "Select same figure"],
+    ["select-invert", "cursor", "Invert selection"],
+    null,
+    ["attach-figure", "link", "Attach to joint"],
+    ["detach-figure", "detach", "Detach", "", !editor.object?.join],
+    null,
+    ["locate-previous", "chevron-left", "Match previous pose", "L"],
+    ["locate-next", "chevron-right", "Match next pose", "Shift L"],
+    ["zoom-selection", "center", "Fit selection", "Shift 2"],
+  ], $('menu')._anchor || viewport),
   "open-recent": async () => {
     pause();
     const entries = await desktop.listRecentFiles();
@@ -3929,6 +4113,7 @@ const actions = {
     if (await confirmReplace()) {
       pause();
       editor.newDocument();
+      telemetry.performance.resources('closed');telemetry.performance.closedAt=performance.now();
       if (desktop?.activateDocument)
         state.documentToken = (
           await desktop.activateDocument({})
@@ -3956,6 +4141,8 @@ const actions = {
       refreshPolygonDraft();
       return;
     }
+    if (cameraMotionControls?.active) propertyControls?.cancel();
+    cameraMotionControls?.cancel();
     editor.undo();
   },
   redo: () => {
@@ -3965,6 +4152,8 @@ const actions = {
       refreshPolygonDraft();
       return;
     }
+    if (cameraMotionControls?.active) propertyControls?.cancel();
+    cameraMotionControls?.cancel();
     editor.redo();
   },
   play: play,
@@ -4069,7 +4258,8 @@ const actions = {
       fraction: 0.5,
     }),
   "unsplit-segment": () => editor.unsplitSegment(),
-  "delete-single-segment": () => editor.deleteSingleSegment(),
+  "delete-single-segment": () => editor.selectedSegmentIds.size > 1
+    ? editor.deleteSegment({handleIds:editor.selectedSegmentIds,branch:false}) : editor.deleteSingleSegment(),
   "mirror-segment": () => editor.mirrorSegment("horizontal"),
   "mirror-segment-vertical": () => editor.mirrorSegment("vertical"),
   "mirror-branch": () => editor.mirrorSegmentBranch("horizontal"),
@@ -4085,7 +4275,7 @@ const actions = {
       branch: true,
       flip: Boolean(event?.ctrlKey || event?.metaKey),
     }),
-  "delete-segment": () => editor.deleteSegment(),
+  "delete-segment": () => editor.deleteSegment({handleIds:editor.selectedSegmentIds}),
   duplicate: () => {
     pause();
     if (editor.branchSelected) return editor.duplicateSelection();
@@ -4095,6 +4285,14 @@ const actions = {
   },
   delete: () => {
     pause();
+    // Builder scope belongs to the workspace, including Select-tool posing.
+    // Removing its instance would cause the session to recreate a default pose.
+    if (builderMode?.active && editor.selectedPolygonIndex >= 0) return editor.removePolygon(editor.selectedPolygonIndex);
+    if (builderMode?.active || state.tool === 'rig') {
+      if (editor.selectedJoint >= 0)
+        return usesBuilderBranch() ? actions['delete-segment']() : actions['delete-single-segment']();
+      if (builderMode?.active) return toast('Select a segment or branch to delete.');
+    }
     if (editor.branchSelected) return editor.deleteSelection();
     if (rangeFrames()) editor.deleteFiguresInFrames(rangeFrames());
     else editor.deleteSelection();
@@ -4223,7 +4421,7 @@ const actions = {
   "toggle-onion": () => {
     state.onion = !state.onion;
     $("onion-button").classList.toggle("active", state.onion);
-    onionControls?.sync();
+    onionController.sync();
     requestRender();
   },
   "toggle-isolate": () => {
@@ -4300,7 +4498,7 @@ const actions = {
     else editorSettings?.commit({showCamera:!state.settings.showCamera});
   },
   "camera-paste": () => editor.pasteCamera(rangeFrames()),
-  "camera-guides": () => {state.cameraGuides=!state.cameraGuides;requestRender();},
+  "camera-guides": () => {state.cameraGuides=!state.cameraGuides;$('inspector').querySelector('[data-action="camera-guides"]')?.setAttribute('aria-pressed',String(state.cameraGuides));requestRender();},
   "camera-level": () => editor.setCameraValues({angle_rad:0},rangeFrames()),
   "camera-reset": () => editor.resetCamera(rangeFrames()),
   "camera-center": () =>
@@ -4385,6 +4583,10 @@ for (const id of ["timeline", "fps"]) {
   $(id).addEventListener("focusin", cancelPolygonDraft);
   $(id).addEventListener("pointerdown", cancelPolygonDraft, true);
 }
+document.addEventListener("pointerdown", (event) => {
+  if (!$("menu").contains(event.target) && !event.target.closest('[data-app-menu]'))
+    $("menu").hidden = true;
+}, true);
 document.addEventListener(
   "click",
   guarded((e) => {
@@ -4398,6 +4600,7 @@ document.addEventListener(
       }
       if (action.dataset.action !== "menu") $("menu").hidden = true;
       const name = e.shiftKey ? action.dataset.shiftAction ?? action.dataset.action : action.dataset.action;
+      if (name.startsWith('builder-context-')) return builderMode?.runContextCommand(name);
       return actions[name]?.(action, e);
     }
     if (!$("menu").contains(e.target)) $("menu").hidden = true;
@@ -4418,7 +4621,13 @@ document.addEventListener(
     const joint = e.target.closest("[data-joint]");
     if (joint) editor.select(editor.selectedUid, Number(joint.dataset.joint));
     const polygon = e.target.closest("[data-delete-polygon]");
+    const connectorPart=e.target.closest('[data-connector-part]');
+    if(connectorPart){const segment=editor.figure?.segments[editor.selectedJoint];if(segment?._stykRig?.connector){editor._connectorInspector={uid:editor.selectedUid,id:segment.segment_id,part:connectorPart.dataset.connectorPart};renderInspector();}return;}
     if (polygon) editor.removePolygon(Number(polygon.dataset.deletePolygon));
+    const reference=e.target.closest('[data-polygon-reference]');
+    if(reference&&builderMode?.active)openSurfaceReference(editor,Number(reference.dataset.polygonReference),{showDialog,closeDialog});
+    const flip=e.target.closest('[data-polygon-flip]');
+    if(flip&&builderMode?.active){const index=Number(flip.dataset.polygonFlip),surface=editor.figure.polyfills[index]._stykSurface;if(surface)editor.updatePolygon(index,{surface:{...surface,flipped:!surface.flipped}});}
   }),
 );
 
@@ -4476,6 +4685,8 @@ $("inspector").addEventListener(
       state.rigMode = target.value;
       return;
     }
+    if (rigControlChange(editor,target)) return;
+    if(target.dataset.polygonSide!==undefined&&builderMode?.active){const index=Number(target.dataset.polygonSide),side=target.value;target.value=editor.figure.polyfills[index]._stykSurface?.side??(editor.figure.polyfills[index]._stykSurface?'front':'both');changeSurfaceSide(editor,index,side,{showDialog,closeDialog});return;}
     if (target.id === 'node-is-ik') { editor.setNodeIK({enabled: target.checked}); return; }
     if (target.id === 'node-ik-pinned') { telemetry.count('ik'); editor.setNodeIK({pinned: target.checked}); return; }
     if (target.id === 'node-ik-chain') { editor.setNodeIK({chainLength: target.valueAsNumber}); return; }
@@ -4490,6 +4701,7 @@ $("inspector").addEventListener(
       editor.updateFigureStyle({ name: target.value });
       return;
     }
+    if(target.id==='builder-joint-name'&&builderMode?.active){editor.updateSegment({name:target.value.trim().slice(0,120)});return;}
     if (target.id === "segment-gradient-enabled") {
       updateBuilderStyle(
         {
@@ -4749,6 +4961,7 @@ function finishCurrentEdit() {
   endDrag();
   propertyControls?.commit();
   vfxInspector?.commit();
+  if(cameraMotionControls?.active)cameraMotionControls.commit(cameraMotionControls.active.input);
   vfxGizmos?.up();
   editor.commitDrag();
   editor.commitAnimationEdit();
@@ -4895,6 +5108,7 @@ function hotkeyScopes(event) {
   return scopes;
 }
 function cancelKeyboardCommand() {
+  state.rigAnchorPick = null;
   if (keyboardHandleGesture) {
     if (keyboardHandleGesture.ownsDrag) editor.cancelDrag();
     keyboardHandleGesture = null; heldArrows.clear();
@@ -4929,7 +5143,6 @@ function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
   if (id === 'previous-exposure' || id === 'next-exposure')
     return timelineUI.selectFrame(timelineUI.selectedIndex + (id === 'previous-exposure' ? -1 : 1), {extend: modifiers.shift});
   if (event.target.closest?.('.layer-timeline,.sheet-filmstrip') && runTimelineHotkey(timelineUI, id, {shiftKey:modifiers.shift})) return;
-  if (id === 'delete' && state.tool === 'rig' && editor.selectedJoint >= 0) return actions['delete-single-segment']();
   return actions[id]?.();
 }
 function releaseKeyboardCommand(id, event) {
@@ -4965,6 +5178,7 @@ document.addEventListener('keydown', guarded(event => {
 // key starts. Matching uses the pressed physical key, even if modifiers change.
 document.addEventListener('keyup', guarded(event => {
   state.builderShiftHeld = event.shiftKey;
+  if(!event.shiftKey && state.tool==='polygon'){state.bucketPreview=null;overlay.style.cursor='';requestRender();}
   hotkeys.keyup(event);
 }), true);
 window.addEventListener('blur', () => {
@@ -5001,6 +5215,7 @@ editor.addEventListener("change", (e) => {
   }
   if (['edit','history','document'].includes(kind) && !e.detail?.live) { audioPreparation?.abort(); audioScrubController?.abort(); audioEngine.stop(); }
   if (kind === 'document') void audioEngine.clear().catch(fail);
+  if(kind==='seek'&&!state.playing&&telemetry.isForeground)telemetry.performance.action('seek');
   if (kind === 'edit' && !e.detail?.live) { telemetry.count('edits'); telemetry.milestone('first_edit'); }
   if(['edit','history','document','preview','frame-draft','seek'].includes(kind))editablePreparation.cancel();
   const selectedTrack = ["seek", "history", "frame-draft"].includes(kind)
@@ -5086,7 +5301,7 @@ editor.addEventListener("change", (e) => {
       state.playbackDraftRevision !== editor.frameDraftRevision)
   ) {
     const metadataOnly = Boolean(
-      kind === "frame-draft" || e.detail.animation || e.detail.layerMetadata || e.detail.layerSheet,
+      kind === "frame-draft" || e.detail.animation || e.detail.cameraMotion || e.detail.layerMetadata || e.detail.layerSheet,
     );
     const frameIndices =
       e.detail.frameIndices ??
@@ -5478,8 +5693,9 @@ function mountTimeline() {
     state.settings.timelineMode === "simple" ? SimpleTimeline : Timeline;
   timelineUI = new TimelineClass($("timeline"), editor, {
     audioEngine,
+    onCameraMotionPreview: clip => cameraMotionControls?.previewTimeline(clip),
     onTogglePlay: play,
-    onAudioHeight: (height, focused) => workspaceLayout?.setTimelineAccessoryHeight(height, focused),
+    onionController,
     onAddFrame: () => actions["add-frame"](),
     onDeleteLayer: id => changeFigureLayer('Delete layer',options=>editor.deleteLayerAsync(id,options)),
     hotkeys,
@@ -5535,6 +5751,9 @@ function mountTimeline() {
       queueUI();
     },
     onSeek: () => pause(),
+    // Wait for both preparation and its canvas submission before another seek.
+    // The timeline retains only the latest pointer target during this interval.
+    canScrub: () => !state.editablePreparing && !state.dirtyRender,
     onScrubStart: () => {
       pause();
       interruptRecovery();
@@ -5604,14 +5823,15 @@ async function init() {
       catch (error) { state.settings = previousSettings; throw error; }
       if (patch.rendererMode !== undefined && state.renderer) void recoverCanvas(true);
       if (patch.hotkeys) { hotkeys.setBindings(next.hotkeys); refreshHotkeyHints(hotkeys); }
-      onionControls?.sync();
-      pathControls?.sync();
+      onionController.sync();
       if (patch.motionPathRange !== undefined || patch.motionPathAllTargets !== undefined) pathCache.clear();
       state.handles = next.showHandles;
       state.loop = next.loopPlayback;
       state.motionPaths = next.motionPaths;
+      pathControls?.sync();
+      canvasGuides?.sync();
       $("paths-button")?.classList.toggle("active", state.motionPaths);
-      if (!state.motionPaths) state.hoverPathPoint = null;
+      if (!state.motionPaths) { state.hoverPathPoint = null; pathCache.clear(); }
       appLocalization.setLocale(next.locale);
       blueHandles = null;
       scheduleRecovery();
@@ -5623,7 +5843,8 @@ async function init() {
       : undefined,
     onResetWorkspace: () => workspaceLayout?.reset(),
     onPrivacy: desktop?.getTelemetryState ? () => privacyUI.open() : undefined,
-    onFeedback: desktop?.sendTelemetryFeedback ? () => feedbackUI.open() : undefined,
+    onFeedback: desktop?.sendTelemetryFeedback ? options => feedbackUI.open(options) : undefined,
+    onDonate: desktop?.openDonate ? () => desktop.openDonate() : undefined,
   });
   state.settings = editorSettings.value;
   hotkeys.setBindings(state.settings.hotkeys);
@@ -5636,12 +5857,18 @@ async function init() {
   state.loop = state.settings.loopPlayback;
   state.motionPaths = state.settings.motionPaths;
   window.styk.settingsUI = editorSettings;
-  onionControls = new OnionControls({button: $("onion-settings-button"), toggleButton: $("onion-button"),
-    getSettings: () => state.settings, getEnabled: () => state.onion,
-    onChange: patch => editorSettings.commit(patch), onToggle: () => actions["toggle-onion"]()});
+  onionControls = new OnionControls({button: $("onion-settings-button"), toggleButton: $("onion-button"), controller: onionController});
+  window.styk.onionController = onionController;
   pathControls = new MotionPathControls({button: $("paths-button"),
     getSettings: () => state.settings, getEnabled: () => state.motionPaths,
     onChange: patch => editorSettings.commit(patch), onToggle: () => actions["toggle-motion-paths"]()});
+  window.styk.tweener = tweenerControls = new TweenerControls({button: $('tweener-button'), editor, viewport,
+    getTool: () => state.tool, onSelect: () => setTool('tweener'),
+    beforeEdit: () => propertyControls?.commit(), onError: fail});
+  canvasGuides = new CanvasGuides({button: $('canvas-guides-button'), viewport,
+    getState: () => ({settings: state.settings, view: state.view, report: editor.report,
+      hidden: state.playing || state.previewing}),
+    onChange: patch => editorSettings.commit(patch)});
   window.styk.onionCache = onionCache;
   const preferences = desktop?.getWorkspacePreferences
     ? await desktop.getWorkspacePreferences()
@@ -5662,22 +5889,25 @@ async function init() {
     syncPlayback();
     return playback.planInsertInbetweens(params, options);
   });
+  cameraMotionControls = new CameraMotionControls($('inspector'),editor,{onError:fail,onRender:()=>{queueUI();requestRender();},beforeEdit:()=>{pause();interruptRecovery();propertyControls?.commit();},onPreview:clip=>{pause();editor.seek(clip.start);state.motionPreviewRange={start:clip.start,end:Math.min(editor.totalTicks,clip.start+clip.duration)};play();},getResources:()=>state.renderer?.resources});
   propertyControls = new PropertyControls($("inspector"), {
-    canHandle: (key) =>
-      Boolean(propertyChannel(key)) || canEditNativeProperty(editor, key),
-    getValue: (key) => {
+    canHandle: (key, input) =>
+      cameraMotionControls.handlesProperty(input) || Boolean(propertyChannel(key)) || canEditNativeProperty(editor, key),
+    getValue: (key, input) => {
+      if (cameraMotionControls.handlesProperty(input)) return cameraMotionControls.propertyValue(input);
       const value = propertyState(key).value;
       return (
         value ??
         getNativePropertyValue(editor, key, { bounds: selectionBounds })
       );
     },
-    begin: ({ key }) => {
+    begin: ({ key, element }) => {
       pause();
       interruptRecovery();
-      const branch = usesBuilderBranch();
+      if (cameraMotionControls.handlesProperty(element)) return { cameraMotion: cameraMotionControls.beginProperty(element) };
+      const branch = usesBuilderBranch() || editor.selectedSegmentIds.size > 1;
       const binding =
-        branch && ["segment_opacity", "segment_gradient_opacity"].includes(key)
+        branch && ["thickness", "segment_opacity", "segment_gradient_opacity"].includes(key)
           ? null
           : propertyChannel(key);
       if (binding && (editor.propertyChannels || binding.property === 'zIndex')) {
@@ -5698,12 +5928,14 @@ async function init() {
       };
     },
     preview: ({ value, token }) => {
+      if (token.cameraMotion) return cameraMotionControls.previewProperty(token.cameraMotion, value);
       if (token.binding)
         editor.previewAnimationEdit(token.binding.fromUI(value));
       else previewNativePropertyEdit(token.native, value);
       requestRender();
     },
     commit: ({ token, value }) => {
+      if (token.cameraMotion) return cameraMotionControls.commitProperty(token.cameraMotion, value);
       if(token.binding&&token.ticks){editor.cancelAnimationEdit();editor.addAnimationKeys(token.ticks.map(tick=>({target:token.binding.target,property:token.binding.property,tick,value:token.binding.fromUI(value),...token.binding.options})));
       } else if (token.binding && token.indices?.length > 1) {
         editor.cancelAnimationEdit();editor.addAnimationKeys(token.indices.map(index=>({target:token.binding.target,property:token.binding.property,
@@ -5713,7 +5945,8 @@ async function init() {
       queueUI();
     },
     cancel: ({ token }) => {
-      if (token?.binding) editor.cancelAnimationEdit();
+      if (token?.cameraMotion) cameraMotionControls.cancelProperty(token.cameraMotion);
+      else if (token?.binding) editor.cancelAnimationEdit();
       else if (token?.native) cancelNativePropertyEdit(token.native);
       queueUI();
       requestRender();
@@ -5725,7 +5958,6 @@ async function init() {
   window.styk.vfx=vfxInspector;
   vfxGizmos=new VfxGizmos({canvas:overlay,inspector:vfxInspector,editor,getOptions:()=>({report:editor.report,frame:currentFrame(),geometry:state.playing?null:editor.geometry,view:state.view,cameraEnabled:state.playing||state.previewing,playing:state.playing,vfxEnabled:state.vfxEnabled,resources:state.renderer?.resources}),onChange:()=>{queueUI();requestRender();},onError:fail});
   window.styk.vfxGizmos=vfxGizmos;
-  $('vfx-preview').innerHTML=vfxIcon('effects');
   $('vfx-preview').addEventListener('click',()=>{finishCurrentEdit();pause();state.vfxEnabled=!state.vfxEnabled;playback.setVfxEnabled(state.vfxEnabled);state.playbackPacket=null;state.editingPacket=null;state.renderer?.clearPreparedFrames?.();state.renderer.lastGeometry=null;$('vfx-preview').setAttribute('aria-pressed',String(state.vfxEnabled));requestRender();queueUI();});
   assetLibrary = new AssetLibrary($("asset-list"), {
     onAdd: (id) => {
@@ -5765,15 +5997,19 @@ async function init() {
     editor, state,
     host: {
       setTool, pause, finishCurrentEdit, cancelDrag, cancelPolygonDraft,
+      cancelConstruction: () => construction?.cancel(),
       showDialog, closeDialog, toast, status, fail, queueUI, requestRender,
       showCommandMenu,
       commitSettings: patch => editorSettings.commit(patch),
       onModeChange: () => studioShell?.sync(),
     },
   });
+  construction = createConstruction({editor,state,active:()=>Boolean(builderMode?.active),render:requestRender,project:screenPoint,onError:fail,commitSettings:patch=>editorSettings.commit(patch)});
+  actions['chain-finish'] = () => construction.commit();
+  actions['chain-cancel'] = () => construction.cancel();
   window.styk.builder = builderMode;
   studioShell = initStudioShell({editor, state, setTool, renderAssets, renderInspector, showCommandMenu,
-    actions, openTimelineSettings: () => editorSettings.open("interface"), getTimeline: () => timelineUI,
+    actions, setTimelineMode: mode => editorSettings.commit({timelineMode:mode}), getTimeline: () => timelineUI,
     builder: builderMode, toast});
   window.styk.studio = studioShell;
   if (desktop?.beginClipboardRead)
@@ -5855,6 +6091,7 @@ function recoverCanvas(refreshGpuBudget) {
         fallbackReason: `Graphics reconnection failed: ${error.message}`});
     }
     clearTimeout(gpuStableTimer);
+    telemetry.performance.recovery('gpu','recovered');
     gpuStableTimer = setTimeout(() => { gpuRecoveryAttempts = 0; }, GPU_STABLE_MS);
     $("renderer-error").hidden = true;
     resize(); requestRender();
@@ -5863,6 +6100,11 @@ function recoverCanvas(refreshGpuBudget) {
 }
 function rendererOptions() {
   return {
+    diagnosticsEnabled:()=>telemetry.consent.diagnostics&&telemetry.isForeground,
+    measurementContext:()=>({...telemetry.performance.context(),epoch:telemetry.epoch}),
+    onGpuTiming:(ms,context)=>{if(context.epoch===telemetry.epoch)telemetry.performance.record('gpu',ms,context);},
+    onGpuTimingSupport:supported=>telemetry.performance.supported('gpu',supported),
+    onRecovery:(kind,outcome)=>telemetry.performance.recovery(kind,outcome),
     resources,
     forceCanvas2D: state.settings.rendererMode === "canvas",
     allowSoftwareAdapter: state.settings.rendererMode === "gpu",
@@ -5880,6 +6122,7 @@ function rendererOptions() {
         typeof message === "string" ? message : message.message || "Ready",
       );
       if (message.backend === "WebGPU device lost") {
+        telemetry.performance.recovery('gpu','started');telemetry.performance.incident('gpu');
         telemetry.count('gpu_errors');
         telemetry.error(Object.assign(new Error('The graphics device was lost.'), { name: 'GPUError', telemetryCode: 'device_lost' }), 'gpu');
         pause();
@@ -5935,4 +6178,3 @@ installColorPickers((input, event) => {
     const field=document.getElementById(opacityId);if(field){field.value=paint.stops[0].opacity*100;field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));}
   }};
 });
-

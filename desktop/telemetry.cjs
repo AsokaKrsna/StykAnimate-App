@@ -40,6 +40,7 @@ class TelemetryService {
     this.schema = await import(pathToFileURL(this.schemaPath).href);
     const loaded = await this.store.get();
     this.state.sequence = Number.isSafeInteger(loaded.sequence) && loaded.sequence >= 0 ? loaded.sequence : 0;
+    this.state.diagnosticGeneration=Number.isSafeInteger(loaded.diagnosticGeneration)?Math.max(0,loaded.diagnosticGeneration):0;
     if (loaded.consent?.policyVersion === this.schema.POLICY_VERSION) {
       this.state.consent = { analytics: loaded.consent.analytics === true, diagnostics: loaded.consent.diagnostics === true, policyVersion: this.schema.POLICY_VERSION, updatedAt: Number(loaded.consent.updatedAt) || this.now() };
       this.state.decided = loaded.decided === true;
@@ -114,11 +115,12 @@ class TelemetryService {
       this.state.firstSuccess = { ...this.state.days[day].firstSuccess, ...this.state.firstSuccess };
     }
     if (this.state.days[day]) {
-      const current = this.state.days[day];
+      let current = this.state.days[day];
+      if(current.schemaVersion<3&&this.state.diagnosticGeneration>0)current=this.schema.clearDiagnostics(current,this.state.diagnosticGeneration);
       const previousTraffic = current.app.traffic || (current.app.channel === 'development' ? 'internal' : 'unknown');
       const app = { version: this.version, channel: this.channel, traffic: mergedTraffic(previousTraffic, this.traffic), build: this.build };
       if (current.schemaVersion !== this.schema.SCHEMA_VERSION || JSON.stringify(current.app) !== JSON.stringify(app)) {
-        this.state.days[day] = this.schema.validateSnapshot({ ...current, schemaVersion: this.schema.SCHEMA_VERSION, app, operationContexts: current.operationContexts || [], firstSuccess: this.state.firstSuccess, sequence: ++this.state.sequence });
+        this.state.days[day] = this.schema.validateSnapshot({ ...current, schemaVersion: this.schema.SCHEMA_VERSION,diagnosticGeneration:this.state.diagnosticGeneration||0, app, operationContexts: current.operationContexts || [], firstSuccess: this.state.firstSuccess, sequence: ++this.state.sequence });
       }
       return this.state.days[day];
     }
@@ -126,18 +128,19 @@ class TelemetryService {
       environment: this.schema.sanitizeEnvironment({ os: process.platform, arch: process.arch, osVersion: process.platform === 'win32' ? Number(os.release().split('.')[2]) >= 22000 ? 'windows-11' : 'windows-10' : process.platform === 'darwin' ? 'mac' : 'linux',
         ramBucket: os.totalmem() <= 5 * 1073741824 ? '4-or-less' : os.totalmem() <= 9 * 1073741824 ? '8' : os.totalmem() <= 17 * 1073741824 ? '16' : os.totalmem() <= 33 * 1073741824 ? '32' : '64-plus',
         cpuBucket: os.availableParallelism() <= 2 ? '2-or-less' : os.availableParallelism() <= 4 ? '4' : os.availableParallelism() <= 8 ? '8' : os.availableParallelism() <= 16 ? '16' : '32-plus' }),
-      counters: {}, timings: {}, gauges: {}, errors: [], operationContexts: [], firstSuccess: { ...this.state.firstSuccess }, milestones: { ...this.state.milestones } };
+      counters: {}, timings: {}, gauges: {}, errors: [], operationContexts: [], performance:this.schema.emptyPerformance(),diagnosticGeneration:this.state.diagnosticGeneration||0, firstSuccess: { ...this.state.firstSuccess }, milestones: { ...this.state.milestones } };
   }
   record({ epoch, data, environment }) {
     if (epoch !== this.epoch || !enabled(this.state.consent) || !data) return false;
     const today = dayOf(this.now());
-    if (!this.state.days[today] && Object.keys(data.counters || {}).every(key => key === 'idle_seconds') && !Object.keys(data.timings || {}).length && !Object.keys(data.gauges || {}).length && !Object.keys(data.milestones || {}).length && !data.errors?.length && !data.operationContexts?.length) return false;
+    if (!this.state.days[today] && Object.keys(data.counters || {}).every(key => key === 'idle_seconds') && !Object.keys(data.timings || {}).length && !Object.keys(data.gauges || {}).length && !Object.keys(data.milestones || {}).length && !data.errors?.length && !data.operationContexts?.length && !data.performance?.rows?.length && !data.performance?.incidents?.length) return false;
     const sequenceBefore = this.state.sequence, dayCount = Object.keys(this.state.days).length, acknowledged = this.state.acknowledged;
     const current = this.schema.validateSnapshot(this.today()); let changed = false;
     // today() can create, restore, or prune days and reset the acknowledged baseline.
     if (this.state.sequence !== sequenceBefore || Object.keys(this.state.days).length !== dayCount || this.state.acknowledged !== acknowledged) this.unsaved = true;
-    const safe = this.schema.validateSnapshot({ ...current, counters: {}, timings: {}, gauges: {}, errors: [], milestones: {}, operationContexts: [], ...data,
-      schemaVersion: this.schema.SCHEMA_VERSION, installationId: this.id, day: current.day, sequence: current.sequence, app: current.app, consent: this.state.consent, firstSuccess: {}, environment: this.schema.sanitizeEnvironment(environment) });
+    const safe = this.schema.validateSnapshot({ ...current, counters: {}, timings: {}, gauges: {}, errors: [], milestones: {}, operationContexts: [], performance:this.schema.emptyPerformance(), ...data,
+      schemaVersion: this.schema.SCHEMA_VERSION, diagnosticGeneration:this.state.diagnosticGeneration||0, installationId: this.id, day: current.day, sequence: current.sequence, app: current.app, consent: this.state.consent, firstSuccess: {}, environment: this.schema.sanitizeEnvironment(environment) });
+    const source=this.schema.provenance({release:this.version,build:this.build,traffic:this.traffic,ram:current.environment.ramBucket,cpu:current.environment.cpuBucket,gpu:safe.environment.gpuFamily!=='unknown'?safe.environment.gpuFamily:current.environment.gpuFamily});
     const dropped = (key, n = 1) => { if (this.state.consent.diagnostics) { current.counters[key] = boundedAdd(current.counters[key], n); changed = true; } };
     for (const [key, n] of Object.entries(safe.counters)) if (n > 0) { current.counters[key] = boundedAdd(current.counters[key], n); changed = true; }
     for (const [key, h] of Object.entries(safe.timings)) {
@@ -147,7 +150,7 @@ class TelemetryService {
     }
     for (const entry of safe.operationContexts) {
       if (!entry.timing.count) continue;
-      const slot=this.schema.operationContextSlot(current.operationContexts,this.schema.operationContext(entry));
+      const slot=this.schema.operationContextSlot(current.operationContexts,{...this.schema.operationContext(entry),provenance:source});
       if(slot.dropped)dropped('dropped_operation_contexts',slot.dropped);
       if(slot.row){if(mergeHistogram(slot.row.timing,entry.timing))changed=true;else dropped('dropped_operation_contexts',entry.timing.count);}
       else dropped('dropped_operation_contexts',entry.timing.count);
@@ -157,17 +160,20 @@ class TelemetryService {
       current.milestones[key] = day; changed = true;
       if (['first_save', 'first_export'].includes(key) && Number.isFinite(this.state.firstObservedAt) && this.now() >= this.state.firstObservedAt) current.firstSuccess[key.slice(6)] = successBucket(this.now() - this.state.firstObservedAt);
     }
-    for (const entry of safe.errors) { const existing = current.errors.find(e => e.fingerprint === entry.fingerprint);
+    for (const entry of safe.errors) { entry.provenance=source;const existing = current.errors.find(e => e.fingerprint === entry.fingerprint&&JSON.stringify(e.provenance)===JSON.stringify(source));
       if (!entry.count) continue; changed = true;
       if (existing) { existing.count = boundedAdd(existing.count, entry.count); existing.firstAt = Math.min(existing.firstAt, entry.firstAt); existing.lastAt = Math.max(existing.lastAt, entry.lastAt); }
       else if (current.errors.length < 20) current.errors.push(entry);
       else dropped('dropped_samples', entry.count);
     }
     for (const [key, value] of Object.entries(safe.environment)) if (value !== 'unknown' && value !== current.environment[key]) { current.environment[key] = value; changed = true; }
+    if(safe.performance.rows.length||safe.performance.incidents.length||Object.keys(safe.performance.coverage).length){this.schema.mergePerformance(current.performance,safe.performance,source);changed=true;}
+    // Use the latest heartbeat phase, not histogram insertion order across revisited phases.
+    if(this.state.consent.diagnostics&&['unknown','editing','playing','before_open','opened','stopped','closed','idle'].includes(data.resourcePhase))this.resourcePhase=data.resourcePhase;
     if (changed) {
       // A valid IPC delta must never grow the persisted cumulative report past its transport limit.
       let validated;
-      try { validated = this.schema.validateSnapshot(current); }
+      try { validated = this.schema.validateSnapshot(this.schema.fitSnapshot(current)); }
       catch {
         if (this.state.consent.diagnostics) { const previous = this.state.days[today]; previous.counters.dropped_samples = boundedAdd(previous.counters.dropped_samples, 1); previous.sequence = ++this.state.sequence; this.unsaved = true; }
         return false;
@@ -186,6 +192,12 @@ class TelemetryService {
   }
   error(name, operation, counter, context = {}) { if (this.state.consent.diagnostics) { if (counter) this.count(counter); this.record({ epoch: this.epoch, data: { errors: [this.schema.sanitizeError({ name, code: context.code }, operation, this.now(), context)] } }); } }
   sampleMemory(megabytes) { if (this.state.consent.diagnostics) this.record({ epoch: this.epoch, data: { gauges: { process_memory_mb: megabytes } } }); }
+  sampleResources(values,phase='unknown'){
+    if(!this.state.consent.diagnostics)return;
+    const performance=this.schema.emptyPerformance();
+    for(const [metric,value] of Object.entries(values))this.schema.recordPerformance(performance,metric,value,{phase});
+    this.record({epoch:this.epoch,data:{performance}});
+  }
   persist() {
     // set() serializes synchronously, so the flag is cleared as soon as the
     // snapshot is captured; a failed write re-arms it for the next interval.
@@ -221,6 +233,13 @@ class TelemetryService {
       finally { clearTimeout(abortTimer); this.controller = null; }
       if (epoch !== this.epoch) return false;
       if (!response.ok) { const seconds = Number(response.headers.get('Retry-After')); this.nextUpload = this.now() + Math.max(UPLOAD_INTERVAL, Number.isFinite(seconds) ? Math.min(86400, seconds) * 1000 : UPLOAD_INTERVAL); throw new Error('Service unavailable'); }
+      const receipt=await response.json().catch(()=>({}));
+      if(Number.isSafeInteger(receipt.diagnosticGeneration)&&receipt.diagnosticGeneration>(this.state.diagnosticGeneration||0)){
+        this.state.diagnosticGeneration=receipt.diagnosticGeneration;
+        for(const [key,value] of Object.entries(this.state.days))this.state.days[key]={...this.schema.clearDiagnostics(value,receipt.diagnosticGeneration),sequence:++this.state.sequence};
+        this.state.acknowledged=null;this.epoch++;this.unsaved=true;
+        this.lastUpload=this.now();this.nextUpload=this.now()+UPLOAD_INTERVAL;await this.persist();this.notify();return true;
+      }
       if (day !== dayOf(this.now()) && this.state.days[day]?.sequence === sequence) delete this.state.days[day];
       if (day === dayOf(this.now())) this.state.acknowledged = JSON.parse(payload);
       this.lastUpload = this.now(); this.nextUpload = this.now() + UPLOAD_INTERVAL + crypto.randomInt(0, 60000); this.refreshStatus(); await this.persist(); this.notify(); return true;

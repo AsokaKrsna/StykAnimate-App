@@ -79,6 +79,23 @@ sampling coordinates stay within 16,384 pixels. No smoothing additionally bounds
 padded bitmap to 128 MiB and 16,384 pixels per side; an extreme minification
 that exceeds this buffer reports an error before encoding. A very dense frame can still take appreciable worker time; this is not a zero-latency guarantee.
 
+Native FFmpeg video uses `renderNativeTick(tick, {preserveAlpha})` instead of
+presenting a bitmap on the UI thread. The same worker applies the black matte
+in place when alpha is not supported and returns `{blob, width, height}` with a
+lossless PNG. `encodeNativeVideo({renderNativeFrame})` validates the result and
+streams acknowledged 256 KiB chunks without allocating its legacy PNG worker.
+The presentation canvas stays 1×1 until a canvas consumer requests a frame.
+Timeout, revision checks, cancellation and final-frame disposal are unchanged;
+the conservative pixel allowance has not been increased.
+
+Tiled rendering builds one set of painter-ordered figure groups and conservative
+bounds per frame. It skips off-tile painting but advances the native shared
+stroke state with the same width-tolerance logic. Unknown image dimensions and
+VFX groups retain the full drawing path. Bounds include square-cap coverage,
+camera transforms and parallax. A retained decoded image that covers the next
+draw avoids fetching its compressed source again; image eviction limits remain
+unchanged.
+
 ## Export failure containment
 
 Raster output and encoder canvases request software storage. Smooth sprites
@@ -111,9 +128,10 @@ submitted frames awaiting encoded output, since
 `encodeQueueSize` alone excludes internally retained frames. Flushing each full
 window preserves quality mode and avoids waiting indefinitely for codec
 lookahead to fill. Existing output-frame validation rejects dropped frames.
-FFmpeg uses one filter thread and two encoding threads; H.264 above 1080p uses
-`zerolatency` tuning to remove its lookahead queue. This can increase file size
-at equivalent visual quality. Native output chunks become Blob parts rather
+FFmpeg uses one filter thread and two encoding threads; H.264 uses the `fast`
+preset with `zerolatency` tuning at every resolution to remove its lookahead
+and B-frame queues. Quality targets and manual bitrate controls are unchanged.
+Native output chunks become Blob parts rather
 than retaining the complete file as JavaScript ArrayBuffers.
 
 Object and tile rasterization share an 8 ms cooperative scheduling target.

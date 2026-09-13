@@ -79,11 +79,11 @@ try {
   await setup();await drag(2,1,{x:500,y:270},{keys:['Alt'],cancel:true,name:'Alt-Escape'});
   check('Escape cancels a real Alt transform exactly',await page.evaluate(()=>JSON.stringify(styk.editor.frame)===__frameBefore&&!styk.state.drag&&!styk.editor.dirty));
   await setup();
-  const right=await drag(1,1,{x:420,y:250},{button:'right',name:'right-bend'});
-  check('Right drag bends a dynamic handle without opening the context menu',right.kind==='bend'&&await page.evaluate(()=>styk.editor.frame.objects[0].bend_flag===1&&document.querySelector('#menu').hidden));
+  const right=await drag(1,1,{x:420,y:250},{keys:['Shift'],button:'right',name:'shift-right-bend'});
+  check('Shift + right drag bends a dynamic handle without opening the context menu',right.kind==='bend'&&await page.evaluate(()=>styk.editor.frame.objects[0].bend_flag===1&&document.querySelector('#menu').hidden));
   await setup();
-  const rightR=await drag(1,1,{x:432,y:236},{keys:['r'],button:'right',name:'R-right-bend'});
-  check('R plus right drag repositions with tangent-preserving bend mode',rightR.kind==='handle-edit'&&await page.evaluate(()=>styk.editor.frame.objects[0].bend_flag===1));
+  const rightR=await drag(1,1,{x:432,y:236},{keys:['r','Shift'],button:'right',name:'R-shift-right-bend'});
+  check('R plus Shift + right drag repositions with tangent-preserving bend mode',rightR.kind==='handle-edit'&&await page.evaluate(()=>styk.editor.frame.objects[0].bend_flag===1));
   await page.screenshot({path:path.join(out,'small-handle-edit.png')});
   if(process.env.STYK_SKIP_AKANE!=='1') {
     await page.evaluate(()=>styk.editor.markSaved());

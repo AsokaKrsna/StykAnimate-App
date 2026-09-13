@@ -26,13 +26,14 @@ const STYLES = `
 `;
 
 function keyAnchor(host, indices) {
-  const card = host.cards.get(indices[0]), rect = card?.querySelector('.styk-simple-preview, .sheet-preview')?.getBoundingClientRect() ?? host.strip.getBoundingClientRect();
+  if(host.easingAnchor)return host.easingAnchor;
+  const card = host.cards?.get(indices[0]), rect = card?.querySelector('.styk-simple-preview, .sheet-preview')?.getBoundingClientRect() ?? (host.strip??host.scroll).getBoundingClientRect();
   return {x: rect.left + rect.width / 2, y: rect.top};
 }
 
 /** Nonmodal, light-dismiss easing editor for the scene filmstrip. */
 export function showKeyframeEasingPopover() {
-  const indices = this.selectedFrameIndices;
+  const indices = this.captureEasingSelection?.() ?? this.selectedFrameIndices;
   if (!indices.length) return;
   const report = this.editor.report;
   const settings = this.easingSettings(indices);
@@ -59,7 +60,7 @@ export function showKeyframeEasingPopover() {
     if (popover.matches(':popover-open')) popover.hidePopover();
     events.abort(); popover.remove();
     if (this.easingPopover === popover) this.easingPopover = null;
-    if (focus && !this._destroyed && !this.disposed) this.strip.focus({preventScroll:true});
+    if (focus && !this._destroyed && !this.disposed) (this.strip??this.scroll).focus({preventScroll:true});
   };
   const save = () => {
     try {
@@ -78,7 +79,7 @@ export function showKeyframeEasingPopover() {
   popover.addEventListener('keydown', event => {event.stopPropagation(); if (event.key === 'Escape') {event.preventDefault(); close();}}, options);
   popover.addEventListener('toggle', event => {if (event.newState === 'closed') close(false);}, options);
   window.addEventListener('resize', () => close(false), options);
-  this.strip.addEventListener('scroll', () => close(false), options);
+  (this.strip??this.scroll).addEventListener('scroll', () => close(false), options);
   this.editor.addEventListener('change', () => close(false), options);
   popover.showPopover(); position(); controls.focus();
 }

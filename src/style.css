@@ -1561,26 +1561,6 @@ dialog::backdrop {
 .timeline-panel.simple-mode { min-height: 224px; }
 .timeline-onion-controls{display:flex;align-items:center;margin-left:auto;flex-shrink:0;border:1px solid var(--theme-border, #e1e5e9);border-radius:5px;padding:1px}
 .timeline-onion-controls .onion-options-button{width:19px;border-left:1px solid var(--theme-border, #e1e5e9);border-radius:0 3px 3px 0}
-.onion-popover{position:fixed;inset:auto;margin:0;width:292px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;padding:16px;border:1px solid var(--theme-border, #dce1e7);border-radius:10px;background:var(--theme-panel, #fff);color:var(--theme-text, #303843);box-shadow:0 12px 40px var(--theme-shadow, #14253830);font:11px Inter,'Segoe UI',sans-serif;z-index:80}
-.onion-popover header{display:flex;align-items:center;justify-content:space-between;font-size:13px}
-.onion-popover header button{padding:4px 10px;border-radius:12px;background:var(--theme-field, #eef1f4);color:var(--theme-muted, #647080);font:11px inherit}
-.onion-popover header button[aria-pressed=true]{background:var(--theme-selected, #e3f3ff);color:var(--theme-accent, #0877c5)}
-.onion-popover p,.onion-popover footer{color:var(--theme-muted, #7b8591);font-size:10px;line-height:1.5;margin:7px 0 14px}
-.onion-popover label{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px 0}
-.onion-popover input[type=number],.onion-popover select{height:28px;width:62px;border:1px solid var(--theme-border, #dce1e7);border-radius:4px;padding:0 6px;background:var(--theme-subtle, #f8fafc);color:inherit;font:inherit}
-.onion-popover select{width:143px}
-.onion-directions{display:flex;align-items:center;gap:12px;padding:0 0 8px;border-bottom:1px solid var(--theme-border, #edf0f3)}
-.onion-directions>div{flex:1}.onion-directions label{display:block;color:var(--theme-muted, #697687);margin-bottom:6px}
-.onion-directions input[type=number]{display:block;width:100%;margin-top:6px}
-.onion-directions input[type=color]{width:100%;height:20px;padding:0;border:0;background:transparent;cursor:pointer}
-.onion-current{color:var(--theme-secondary, #596776);font-size:12px;margin-top:19px}
-.onion-popover .onion-opacity{display:flex;flex-wrap:wrap;margin:16px 0}.onion-opacity output{margin-left:auto;font-variant-numeric:tabular-nums}.onion-opacity input{width:100%;accent-color:#0d99ff}
-.onion-popover .onion-check{justify-content:flex-start;color:var(--theme-secondary, #5f6d7c)}.onion-check input{accent-color:#0d99ff;width:13px;height:13px;margin:0}
-.onion-popover details{border-top:1px solid var(--theme-border, #edf0f3);margin-top:14px;padding-top:12px}.onion-popover summary{cursor:pointer;color:var(--theme-secondary, #56687d)}.onion-popover footer{margin:14px 0 0;font-size:9px}
-.onion-popover :focus-visible{outline:2px solid var(--theme-accent, #0d99ff);outline-offset:2px}
-.path-popover{width:252px}
-.path-popover label{color:var(--theme-secondary, #5f6d7c)}
-.path-popover input[type=number]{height:26px;width:74px}
 #dialog:has(.export-grid) {
   width: 860px;
   max-width: calc(100vw - 40px);

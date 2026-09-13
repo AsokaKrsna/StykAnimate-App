@@ -1,3 +1,5 @@
+import {surfaceCulled} from './surfaces.mjs';
+import {frameWithCameraTime} from '../camera-motion.mjs';
 import {canvasPaint, segmentPaint, textPaintGeometry, shapePaintBounds} from '../paint.mjs';
 // Scene evaluation is independent of the DOM so the regression harness can test it.
 import { tweenBackground } from "./background.mjs";
@@ -9,6 +11,7 @@ import {animationOriginLayout, animationOriginAngle, animationOriginBend, correc
 import {interpolateOriginSupport} from '../animation-origin-support.mjs';
 import {easedProgress, usesLegacyNativeEasing, easingMode, autoValue} from '../keyframe-easing.mjs';
 import {geometryDefinition} from './geometry-definition.mjs';
+import {hasRigConstraints, createRigEvaluation, rigConstraintPlanSteps} from '../rig-constraints.mjs';
 import {hasPinnedIK, interpolateIK} from '../ik.mjs';
 import {evaluateIKPose} from '../ik-evaluation.mjs';
 import {solveJoinedIK} from '../ik-joined.mjs';
@@ -102,8 +105,8 @@ export function nativeTimeline(report) {
 export function timeline(report) {
   const sheet=report._styk?.layerSheet;
   const entries = nativeTimeline(report).filter(entry=>!sheet||entry.start<sheet.duration), last = entries.at(-1);
-  if(sheet){for(const entry of entries)entry.count=Math.min(entry.count,sheet.duration-entry.start);if(last)last.count=sheet.duration-last.start;return entries;}
-  if (last) last.count = Math.max(last.count, (report._styk?.layerSheet?.duration ?? animationEndTick(report)) - last.start);
+  if(sheet){for(const entry of entries)entry.count=Math.min(entry.count,sheet.duration-entry.start);if(last)last.count=Math.max(sheet.duration,...(report._styk?.cameraMotion?.clips??[]).map(c=>c.start+c.duration))-last.start;return entries;}
+  if (last) last.count = Math.max(last.count, Math.max(animationEndTick(report),...(report._styk?.cameraMotion?.clips??[]).map(c=>c.start+c.duration)) - last.start);
   return entries;
 }
 function sameSign(a, b) {
@@ -400,6 +403,8 @@ export function evaluatedNativeFrame(report, index, t = 0, tweenCache, requested
         (f) => Number(f.camera?.[k] ?? (k === "scale" ? 1 : 0)),
         k === "angle_rad",
       );
+    if(a.camera._parallaxMotionOffset||b.camera._parallaxMotionOffset){frame.camera._parallaxMotionOffset={};
+      for(const axis of ['x','y'])frame.camera._parallaxMotionOffset[axis]=parameter(report,index,t,f=>Number(f.camera?._parallaxMotionOffset?.[axis]??0));}
   }
   // Image identities cannot share scalar tangents; each crossfade eases locally.
   Object.assign(frame, tweenBackground(a, b, auto ? easedProgress(a._styk.easing, t) : t));
@@ -438,7 +443,7 @@ export function evaluatedFrame(report, index, t = 0, absoluteTick, {tweenCache,s
       const current=rows[low];return evaluatedFrame(source,low,current?.count?(time-current.start)/current.count:0,time,{skipMovieclips:true});
     }});
     if(!skipMovieclips&&movieclipTypes(report).size)frame=sampleClips(report,frame,tick);
-    return applyLayerOrder(report,frame);
+    return frameWithCameraTime(report,applyLayerOrder(report,frame),tick);
   }
   let frame = evaluatedNativeFrame(report, index, t, tweenCache);
   const source = movieclipSourceDocument(report);
@@ -446,7 +451,9 @@ export function evaluatedFrame(report, index, t = 0, absoluteTick, {tweenCache,s
     const a=report.keyframes[index],b=report.keyframes[index+1];
     const start=a?._styk?.movieclipSourceTick;
     if (Number.isFinite(start)) {
-      const finish=b?._styk?.movieclipSourceTick??start,sourceTick=start+(finish-start)*Math.max(0,Math.min(1,t));
+      // The final captured frame still spans its fractional output interval.
+      // Continue sampling the retained curve until the crop ends.
+      const finish=b?._styk?.movieclipSourceTick??start+(timeline(report)[index]?.count??1),sourceTick=start+(finish-start)*Math.max(0,Math.min(1,t));
       let rows=authoredTimelines.get(source);if(!rows){rows=timeline(source);authoredTimelines.set(source,rows);}
       let low=0,high=rows.length-1;while(low<high){const mid=Math.ceil((low+high)/2);if(rows[mid].start<=sourceTick)low=mid;else high=mid-1;}
       const row=rows[low];frame={...evaluatedFrame(source,low,row.count?(sourceTick-row.start)/row.count:0,sourceTick,{skipMovieclips}),duration_raw:a.duration_raw,_styk:a._styk};
@@ -470,7 +477,9 @@ export function evaluatedFrame(report, index, t = 0, absoluteTick, {tweenCache,s
     const row=entries?.[index];
     frame = sampleClips(report, frame, absoluteTick ?? ((row?.start ?? 0) + t * (row?.count ?? 0)),Boolean(source));
   }
-  return applyLayerOrder(report, frame);
+  if(!report._styk?.cameraMotion?.clips.length)return applyLayerOrder(report,frame);
+  const row=absoluteTick===undefined?timeline(report)[index]:null;
+  return frameWithCameraTime(report,applyLayerOrder(report, frame),absoluteTick??((row?.start??0)+t*(row?.count??0)));
 }
 export function buildGeometry(report, frame, incremental = null) {
   const iterator = buildGeometrySteps(report, frame, incremental);
@@ -538,6 +547,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       {segments, ids} = plan;
     const scale = Number(obj.scale ?? 1),
       opacity = 1 - Number(obj.field28 ?? obj.transparency ?? 0) / 255;
+    const rig = hasRigConstraints(fig) ? createRigEvaluation(fig, obj, root, yield* rigConstraintPlanSteps(fig)) : null;
     function segmentAt(i, active) {
       if (renders.has(i)) return renders.get(i);
       if (active?.has(i)) {
@@ -550,27 +560,30 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         active ??= new Set(); active.add(i);
         segmentAt(parent, active);
       }
-      const start = joints.get(Number(seg.parent_id)) || root,
-        rt = obj.runtime_segments?.[i];
-      const angle = Number(
+      let start = joints.get(Number(seg.parent_id)) || root;
+      const rt = obj.runtime_segments?.[i];
+      let angle = Number(
         ik?.angles[i] ?? obj.angles?.[i] ?? rt?.angle_rad ?? seg.angle_rad ?? 0,
       );
-      const bend = Number(
+      let bend = Number(
         obj.bend_flag
           ? (obj.bends?.[i] ?? 0)
           : (rt?.bend_rad ?? seg.bend_rad ?? 0),
       );
-      const length =
+      let length =
         Number(
           ik?.lengths?.[i] ?? (obj.len_flag
             ? (obj.lengths?.[i] ?? seg.length)
             : (rt?.length ?? seg.length ?? 0)),
         ) * scale;
+      const rigPose = rig?.evaluate(i, {start,angle,length,bend}, joints);
+      if (rigPose) ({start,angle,length,bend} = rigPose);
       const points = arc(start, angle, length, bend),
         last = points.at(-1) || start,
         end = { x: Math.fround(last.x), y: Math.fround(last.y) };
       if (points.length) points[points.length - 1] = end;
-      joints.set(Number(seg.segment_id), end);
+      const handle = rigPose?.handle ? {x:Math.fround(rigPose.handle.x),y:Math.fround(rigPose.handle.y)} : end;
+      joints.set(Number(seg.segment_id), handle);
       const override = Number(obj.color_override_raw) >>> 0;
       const rgb =
         report.version < 5 && fig._styk?.colorMode !== 'segments'
@@ -622,12 +635,16 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         index: i,
         start,
         end,
+        ...(rigPose?.connector ? {handle, connector:true,attachmentPosition:rigPose.position} : {}),
+        ...(rigPose?.space ? {rigSpace:rigPose.space} : {}),
+        ...(rigPose?.childSpace ? {rigChildSpace:rigPose.childSpace} : {}),
+        ...(rigPose?.rotation ? {rigRotation:rigPose.rotation} : {}),
         points,
         angle,
         bend,
         length,
         z: Number(seg.z_order ?? i + 1),
-        thickness: Number(seg.thickness ?? 0) * Math.abs(scale),
+        thickness: Number(seg.thickness ?? 0) * Math.abs(scale) * (rigPose?.width ?? 1),
         rgb,
         alpha:
           seg.transparency === undefined
@@ -643,7 +660,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       return render;
     }
     let built = 0;
-    for (const i of plan.order) {
+    for (const i of rig?.plan.order ?? plan.order) {
       segmentAt(i);
       if ((++built & 127) === 0) yield {phase:'geometry',stage:'segments',slot,completed:built,total:plan.order.length};
     }
@@ -667,11 +684,12 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
           const a = Number(poly.segment_ids[j]), forward = malformedEdges.get(`${a}:${b}`);
           edge = forward || malformedEdges.get(`${b}:${a}`); reverse = !forward;
         }
-        if (edge && Math.abs(edge.bend) > 1e-7)
+        if (edge && Math.abs(edge.bend) > 1e-7 && (!edge.connector || edge.seg.parent_id===edge.seg._stykRig.connector.start)) {
+          const edgePoints=edge.connector?arc(edge.start,edge.angle,edge.length*edge.attachmentPosition,edge.bend*edge.attachmentPosition):edge.points;
           points.push(
-            ...(reverse ? [...edge.points].reverse() : edge.points).slice(1),
+            ...(reverse ? [...edgePoints].reverse() : edgePoints).slice(1),
           );
-        else if (joints.has(b)) points.push(joints.get(b));
+        } else if (joints.has(b)) points.push(joints.get(b));
         if ((j & 255) === 255) yield {phase:'geometry',stage:'polygon',slot,completed:j+1,total:polygon.edges.length};
       }
       if (
@@ -688,6 +706,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         slot,
         index: i,
         points,
+        ...(poly._stykSurface ? {culled:surfaceCulled(poly, points, joints)} : {}),
         z: Number(poly.z_order ?? 0),
         rgb: objectColor(poly.color_rgb ?? [0, 0, 0], obj),
         alpha:
@@ -771,7 +790,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       continue;
     }
     const local = g.drawables ?? [
-      ...g.polys,
+      ...g.polys.filter(p=>!p.culled),
       ...g.segments
         .filter((s) => s.seg.visible !== false)
         .flatMap((s) => sticknodesDrawables(s) ?? [{
@@ -909,6 +928,10 @@ export function drawGeometry(ctx, geometry, resources = {}) {
   }
   for (const g of groups) {
     const owner = g.items[0]?._movieclipOwner;
+    const skipPaint = geometry.skipPaint === true;
+    // Culled export objects still update Pivot's shared brush tolerance. An
+    // isolated object's brush is private, so it has no state to carry forward.
+    if (skipPaint && (owner || g.opacity < 1 || activeVfx(vfxStack(g.items[0]?.obj)).length)) continue;
     if (owner) {
       isolated(ctx,owner.opacity,target=>withVfx(target,owner.effects,filtered=>drawGeometry(filtered, {drawables:g.items.map(item => {
         const inner=item._movieclipInner;
@@ -938,7 +961,7 @@ export function drawGeometry(ctx, geometry, resources = {}) {
                   ? undefined
                   : s.thickness + 2 * ow * Math.abs(s.obj.scale ?? 1),
             }));
-          isolated(
+          if (!skipPaint || Number(style.u30 ?? 0) <= 0) isolated(
             target,
             1 - Number(style.u30 ?? 0) / 255,
             (c) =>
@@ -947,11 +970,12 @@ export function drawGeometry(ctx, geometry, resources = {}) {
                 outline,
                 resources,
                 c === target ? stroke : { width: 1 },
+                !skipPaint,
               ),
             outlineCanvases,
           );
         }
-        drawPrimitives(target, g.items, resources, stroke);
+        drawPrimitives(target, g.items, resources, stroke, !skipPaint);
       },
       {bounds:effects.length?objectBounds(g.items,resources):undefined,domainBounds:effects.length?objectBounds(g.items,{...resources,vfxBounds:false}):undefined,scale:Math.abs(g.items[0]?.obj.scale??1)},
     ),groupCanvases);
@@ -998,16 +1022,23 @@ function strokeWidth(stroke, requested) {
   if (Math.abs(requested - stroke.width) > 1e-4) stroke.width = requested;
   return stroke.width;
 }
-function drawPrimitives(ctx, items, resources, stroke) {
+function drawPrimitives(ctx, items, resources, stroke, paint = true) {
   for (const s of items) {
     const effects=!s._vfxSkipNode&&!s.outline?segmentVfx(s):[];
-    if(activeVfx(effects).length){withVfx(ctx,effects,target=>drawPrimitives(target,[{...s,_vfxSkipNode:true}],resources,stroke),{bounds:objectBounds([s],resources),domainBounds:objectBounds([s],{...resources,vfxBounds:false}),scale:Math.abs(s.obj.scale??1)});continue;}
-    const brush = gradient(ctx, s) || rgba(s.rgb, s.alpha);
-    ctx.fillStyle = brush;
-    ctx.strokeStyle = brush;
+    if(activeVfx(effects).length && paint){withVfx(ctx,effects,target=>drawPrimitives(target,[{...s,_vfxSkipNode:true}],resources,stroke),{bounds:objectBounds([s],resources),domainBounds:objectBounds([s],{...resources,vfxBounds:false}),scale:Math.abs(s.obj.scale??1)});continue;}
+    if (paint) {
+      const brush = gradient(ctx, s) || rgba(s.rgb, s.alpha);
+      ctx.fillStyle = brush;
+      ctx.strokeStyle = brush;
+    }
     if (s.type === "text") {
       const a = s.asset;
       if (!a?.normalized_svg_path || !a.bounds.width) continue;
+      const outlineWidth = (2 * s.outline) / Math.abs(s.obj.scale ?? 1);
+      if (!paint) {
+        if (s.outline && a.placements?.some(pl => pl.visible)) strokeWidth(stroke, outlineWidth);
+        continue;
+      }
       const reverse = Boolean(s.seg.extra_u8_a ?? s.seg.extra?.[1]),
         mirror =
           Boolean(s.seg.extra_u8_b ?? s.seg.extra?.[2]) !==
@@ -1033,7 +1064,7 @@ function drawPrimitives(ctx, items, resources, stroke) {
           ctx.strokeStyle = rgba(s.rgb);
           ctx.lineWidth = strokeWidth(
             stroke,
-            (2 * s.outline) / Math.abs(s.obj.scale ?? 1),
+            outlineWidth,
           );
           ctx.lineCap = ctx.lineJoin = "round";
           ctx.stroke(path);
@@ -1072,6 +1103,7 @@ function drawPrimitives(ctx, items, resources, stroke) {
       continue;
     }
     if (s.type === "image") {
+      if (!paint) continue;
       const a = s.asset,
         img = a && resources.image?.(resources.url?.(a));
       if (!a || !img?.complete || !img.naturalWidth || !a.anchor_length)
@@ -1108,6 +1140,7 @@ function drawPrimitives(ctx, items, resources, stroke) {
     if (s.type === "poly") {
       if (s.points.length < 3) continue;
       const width = strokeWidth(stroke, s.outline ? 2 * s.outline : 0);
+      if (!paint) continue;
       ctx.beginPath();
       ctx.moveTo(s.points[0].x, s.points[0].y);
       for (const p of s.points.slice(1)) ctx.lineTo(p.x, p.y);
@@ -1121,6 +1154,7 @@ function drawPrimitives(ctx, items, resources, stroke) {
     }
     let width = strokeWidth(stroke, s.baseThickness ?? s.thickness);
     if (s.outline) width = strokeWidth(stroke, width + 2 * s.outline);
+    if (!paint) continue;
     if (s.type === "circle") {
       const filled =
           s.seg.segment_kind === "circleFill" || width >= Math.abs(s.length),

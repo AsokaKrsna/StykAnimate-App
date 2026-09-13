@@ -66,9 +66,9 @@ test('global playback settings and frame-local Make unique retain sources with u
   editor.undo();editor.seek(3);editor.select(uid);assert.equal(editor.figure.figure_type_id,original);editor.undo();assert.equal(editor.object._stykMovieclip.speed,1);
 });
 
-test('legacy saved clips also retain pasted identity and support frame-only deletion and Make unique',()=>{
-  const e=legacyClip({start:3,end:24}),uid=e.selectedUid;e.copySelection();e.seek(10);e.pasteSelection();
-  assert.equal(e.selectedUid,uid);assert.equal(e.object._movieclipSample,7);const before=structuredClone(e.report);
+test('legacy saved clips support independent colliding paste, frame-only deletion and Make unique',()=>{
+  const e=legacyClip({start:3,end:24}),uid=e.selectedUid;e.seek(10);e.select(uid);e.copySelection();e.pasteSelection();
+  assert.notEqual(e.selectedUid,uid);assert.equal(e.object._movieclipSample,7);assert.ok(e.evaluatedFrame.objects.some(o=>o.unique_id===uid));e.undo();e.select(uid);const before=structuredClone(e.report);
   e.deleteSelection();assert.ok(!e.evaluatedFrame.objects.some(o=>o.unique_id===uid));
   for(const t of [3,9,11,20])close(scene(sample(e.report,t)),scene(sample(before,t)));
   e.undo();e.seek(10);e.select(uid);e.makeMovieclipUnique();assert.notEqual(e.selectedUid,uid);assert.equal(e.object._movieclipSample,7);

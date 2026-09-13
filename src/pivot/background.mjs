@@ -1,3 +1,4 @@
+import {cameraAtTime} from '../camera-motion.mjs';
 import {canvasPaint} from '../paint.mjs';
 // Backgrounds are native ARGB; figure COLORREF colors use a different byte order.
 export function backgroundColor(raw) {
@@ -23,7 +24,7 @@ export function sceneBackgroundColor(report, frame) {
 
 /** A hidden Camera track uses the untransformed animation viewport everywhere. */
 export function effectiveCamera(report, frame, cameraEnabled = true) {
-  return cameraEnabled && report?._styk?.layers?.fixed?.camera?.visible !== false ? frame?.camera : null;
+  return cameraEnabled && report?._styk?.layers?.fixed?.camera?.visible !== false ? cameraAtTime(report,frame) : null;
 }
 
 const imageTransparency = new WeakMap();

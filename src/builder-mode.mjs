@@ -4,6 +4,8 @@
 import {icon} from './icons.mjs';
 import {BuilderSession} from './builder-session.mjs';
 import {FigureOutliner} from './builder-outliner.mjs';
+import {bindBuilderToolbar} from './builder-toolbar.mjs';
+import {builderContextItems} from './builder-context-menu.mjs';
 
 const esc = value => String(value).replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
 const JOINT_COMMANDS = new Set(['split-segment', 'unsplit-segment', 'origin-segment', 'duplicate-segment',
@@ -15,7 +17,7 @@ const TOGGLES = {'toggle-builder-branch': s => s.builderBranch || s.builderShift
   'toggle-isolate': s => s.isolateMode,
   'builder-static-handles': s => s.settings.builderShowStaticHandles !== false,
   'builder-highlight': s => s.settings.builderHighlightSegment};
-const ENTRY_TOOLS = new Set(['rig', 'line', 'circle', 'polygon', 'attach']);
+const ENTRY_TOOLS = new Set(['rig', 'line', 'chain', 'circle', 'polygon', 'attach']);
 
 export function initBuilderMode({editor, state, host}) {
   const workspace = document.querySelector('.workspace');
@@ -25,7 +27,7 @@ export function initBuilderMode({editor, state, host}) {
     return {enter: () => false, requestExit: () => {}, leave: () => {}, sync: () => {},
       get active() { return false; }, get session() { return null; }, get boundUids() { return null; },
       get mode() { return 'animate'; }};
-  let session = null, events = null;
+  let session = null, events = null, context = null;
   /** Translates an outliner drop into a parent/sibling insert plan. 'before'
    * and 'after' keep the target's parent; 'child' reparents onto the target
    * (as first child so the drop point matches the row under the pointer). */
@@ -56,33 +58,54 @@ export function initBuilderMode({editor, state, host}) {
     onSelect: (entry, options = {}) => {
       const uid = session?.preferredUid;
       if (uid == null) return;
-      if (options.polygon) {
-        const ids = session.figure?.polyfills?.[entry.index]?.segment_ids ?? [];
-        const joint = session.figure?.segments.findIndex(segment => segment.segment_id === ids[0]) ?? -1;
-        editor.select(uid, joint);
-        return;
-      }
-      editor.select(uid, entry);
+      if (options.polygon) {editor.selectPolygon(uid,entry.index);return;}
+      if (options.shift) editor.toggleSegment(uid, entry);
+      else editor.select(uid, entry);
     },
     onBranch: index => { const uid = session?.preferredUid; if (uid != null) editor.selectBranch(uid, index); },
-    onMenu: (entry, x, y) => {
-      if (entry?.kind !== 'segment') return;
-      host.showCommandMenu?.([
-        ['split-segment', 'split', 'Split segment', ''],
-        ['unsplit-segment', 'combine', 'Remove joint, keep endpoints', 'Ctrl Del'],
-        ['origin-segment', 'origin', 'Set origin here', ''],
-        null,
-        ['duplicate-segment', 'duplicate', 'Duplicate segment', ''],
-        ['duplicate-branch', 'duplicate', 'Duplicate branch', ''],
-        ['mirror-segment', 'flip', 'Flip segment horizontally', ''],
-        ['mirror-branch', 'flip', 'Flip branch horizontally', ''],
-        null,
-        ['delete-single-segment', 'close', 'Delete joint', ''],
-        ['delete-segment', 'trash', 'Delete branch', 'Shift Del'],
-      ], {left: x, top: y, right: x, bottom: y, width: 0, height: 0});
-    },
+    onMenu: (entry, x, y) => showContextMenu({entry, x, y, tree: true}),
     onRename: name => { try { editor.updateFigureStyle({name}); } catch (error) { host.fail?.(error); } },
   });
+  const timelineToggle = outlinerHost.querySelector('#builder-timeline-toggle');
+  function showContextMenu({hit, entry, x, y, tree = false}) {
+    if (!session) return;
+    host.pause?.(); host.finishCurrentEdit?.();
+    const boundHit = hit && session.boundUids.has(hit.g.obj.unique_id);
+    const uid = boundHit ? hit.g.obj.unique_id : session.preferredUid;
+    const joint = tree && entry?.kind === 'segment' ? entry.index : boundHit ? hit.joint : -1;
+    if ((joint >= 0 || boundHit) && (editor.selectedUid !== uid || editor.selectedJoint !== joint)) editor.select(uid, joint);
+    if (entry?.kind === 'polygon') editor.selectPolygon(uid,entry.index);
+    const kind = entry?.kind === 'polygon' ? 'polygon' : joint >= 0 ? 'joint' : boundHit ? 'figure' : 'canvas';
+    context = {kind, uid, jointId: session.figure?.segments[joint]?.segment_id,
+      polygon: kind === 'polygon' ? session.figure?.polyfills?.[entry.index] : null,
+      anchor: {left: x, bottom: y, focus: () => (tree ? outliner.tree : document.getElementById('viewport'))?.focus({preventScroll: true})}};
+    for (const panel of bar.querySelectorAll(':popover-open')) panel.hidePopover();
+    showContextPage('main');
+  }
+  function showContextPage(page) {
+    if (!session || !context) return;
+    host.showCommandMenu?.(builderContextItems({kind: context.kind, page,
+      hasFigure: Boolean(session.figure), state: {...state, builderBranchSelected: editor.branchSelected, builderTimelineVisible: workspace.dataset.builderTimeline === 'visible'}}), context.anchor);
+  }
+  function runContextCommand(name) {
+    if (!session || !context) return;
+    const page = name.slice('builder-context-'.length);
+    if (['main', 'branch', 'arrange', 'view'].includes(page)) return showContextPage(page);
+    if (page.startsWith('tool-')) return host.setTool(page.slice(5));
+    if (page === 'timeline') return timelineToggle?.click();
+    const figure = session.figure;
+    if (!figure) return;
+    if (page.includes('fill')) {
+      const index = figure.polyfills?.indexOf(context.polygon) ?? -1;
+      if (index < 0) return;
+      if (page === 'delete-fill') return editor.removePolygon(index);
+      if (page === 'fill-front' || page === 'fill-back') return editor.moveBuilderOrder({kind: 'polygon', index}, page === 'fill-front' ? 'front' : 'back');
+    }
+    const joint = figure.segments.findIndex(segment => segment.segment_id === context.jointId);
+    if (joint < 0 || !session.boundUids.has(context.uid)) return;
+    if (page === 'select-branch') return editor.selectBranch(context.uid, joint);
+    if (page === 'split-branch') { editor.select(context.uid, joint); return editor.splitBuilderSegments({branch: true, fraction: .5}); }
+  }
   /** Selection may only contain bound instances; an empty selection reselects
    * the preferred instance so builder commands always have a figure. */
   function enforceSelection() {
@@ -135,9 +158,11 @@ export function initBuilderMode({editor, state, host}) {
       const pressed = Boolean(get(state));
       bar.querySelectorAll(`[data-action="${name}"]`).forEach(button => {
         button.setAttribute('aria-pressed', String(pressed));
+        if (button.getAttribute('role') === 'menuitemcheckbox') button.setAttribute('aria-checked', String(pressed));
         button.classList.toggle('active', pressed);
       });
     }
+    bar.querySelectorAll('[popovertarget="builder-menu-arrange"]').forEach(button => { button.disabled = !hasJoint; });
     const title = bar.querySelector('#builder-title');
     if (title) title.textContent = session.mode === 'edit' ? (figure?.name || 'Figure') : 'New figure';
   }
@@ -149,6 +174,16 @@ export function initBuilderMode({editor, state, host}) {
     session = new BuilderSession(editor).begin();
     session.entryTool = state.tool;
     events = new AbortController();
+    bindBuilderToolbar(bar, {signal: events.signal});
+    workspace.dataset.builderTimeline = 'hidden';
+    timelineToggle?.setAttribute('aria-expanded', 'false');
+    if (timelineToggle) timelineToggle.title = 'Show animation timeline';
+    timelineToggle?.addEventListener('click', () => {
+      const show = workspace.dataset.builderTimeline !== 'visible';
+      workspace.dataset.builderTimeline = show ? 'visible' : 'hidden';
+      timelineToggle.setAttribute('aria-expanded', String(show));
+      timelineToggle.title = show ? 'Hide animation timeline' : 'Show animation timeline';
+    }, {signal: events.signal});
     editor.addEventListener('change', onEditorChange, {signal: events.signal});
     workspace.dataset.mode = 'rig';
     bar.hidden = false;
@@ -166,7 +201,9 @@ export function initBuilderMode({editor, state, host}) {
   }
   /** Ends the session after applying the exit choice to the document. */
   function leave() {
+    host.cancelConstruction?.();
     events?.abort(); events = null;
+    context = null;
     const entryTool = session?.entryTool;
     session = null;
     state.builderActive = false;
@@ -176,9 +213,18 @@ export function initBuilderMode({editor, state, host}) {
     bar.hidden = true;
     outlinerHost.hidden = true;
     workspace.dataset.mode = 'animate';
+    delete workspace.dataset.builderTimeline;
     host.setTool(entryTool && !ENTRY_TOOLS.has(entryTool) ? entryTool : 'select');
     host.onModeChange?.();
     host.queueUI?.();
+  }
+  /** An explicit action can keep the live construction and continue in Animate.
+   * This preserves session commands and their undo history, including new rigs. */
+  function keepChangesAndLeave() {
+    if (!session) return;
+    host.finishCurrentEdit?.();
+    if (!session.stale) session.resolve(session.mode === 'edit' ? 'update' : 'import');
+    leave();
   }
   /** Animate button while building: silent exit when nothing changed, else the
    * update / import-new / discard or import / discard confirmation modal. */
@@ -215,7 +261,7 @@ export function initBuilderMode({editor, state, host}) {
     document.getElementById('builder-exit-cancel')?.addEventListener('click', () => host.closeDialog?.());
   }
   return {
-    enter, requestExit, leave, sync,
+    enter, requestExit, leave, keepChangesAndLeave, sync, showContextMenu, runContextCommand,
     get active() { return Boolean(session); },
     get session() { return session; },
     get boundUids() { return session?.boundUids ?? null; },

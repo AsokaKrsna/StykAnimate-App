@@ -74,6 +74,14 @@ test('ordinary cache eviction and disposal still release bitmap memory', async t
   await assert.rejects(preload('a'), { name: 'AbortError' });
 });
 
+test('retained export images need neither another fetch nor another decode', async t => {
+  const {resources,decoded,preload}=setup(t,{a:[2,2]},32);
+  await preload('a');
+  t.mock.method(globalThis,'fetch',async()=>{throw new Error('Unnecessary source fetch');});
+  for(let frame=0;frame<20;frame++)await preload('a');
+  assert.equal(decoded.length,1);assert.equal(resources.bytes,16);
+});
+
 async function imageFixture(t, maxBytes) {
   const png = await previewPNG(1024, 512), url = 'data:image/png;base64,' + png.toString('base64');
   const decoded = [], previousBitmap = Object.getOwnPropertyDescriptor(globalThis, 'createImageBitmap'),

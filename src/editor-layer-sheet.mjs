@@ -153,7 +153,8 @@ function replaceAt(editor,plan,id,tick,uid,frame,options={},end=tick+1){
   if(end<track.end&&!track.keys.some(key=>key.tick===end)){
     const restored=boundary(end);if(previous.length)restored.movieclipPatches=previous;
   }
-  const key=boundary(tick);key.movieclipPatches=[...previous.filter(patch=>patch.uid!==uid),{uid,frameId:plan.capture(frame,id).frameId,...options}];
+  const {frameId=plan.capture(frame,id).frameId,...patchOptions}=options;
+  const key=boundary(tick);key.movieclipPatches=[...previous.filter(patch=>patch.uid!==uid),{uid,frameId,...patchOptions}];
   const members=new Set(at(editor.report,tick).objects.filter(object=>editor.layerForUid(object.unique_id)===id).map(object=>object.unique_id));
   for(const patch of key.movieclipPatches){members.delete(patch.uid);const source=plan.sources.find(source=>source.id===patch.frameId)?.after.value??editor.getFrameById(patch.frameId);for(const object of source.objects)members.add(object.unique_id);}
   key.empty=!members.size;
@@ -357,12 +358,13 @@ export const editorLayerSheetMethods={
     const uid=this.selectedUid,id=this.layerForUid(uid),plan=planner(this,[id]);
     const track=plan.get(id),keys=track.keys.filter(key=>!key.patchOnly&&key.tick>this.tick&&key.tick<track.end).slice(0,count);
     const source=ownedFrame(this.report,this.selectionFrame,[uid]);
+    const orderIndex=frameOrder(this.selectionFrame).filter(value=>this.layerForUid(value)===id).indexOf(uid);
     let added=0;
     for(const key of keys){
       if(at(this.report,key.tick).objects.some(object=>object.unique_id===uid))continue;
       // Only existing boundaries: preserve the original pose and easing.
       const index=track.keys.indexOf(key),end=track.keys[index+1]?.tick??track.end;
-      replaceAt(this,plan,id,key.tick,uid,source,{},end);added++;
+      replaceAt(this,plan,id,key.tick,uid,source,{orderIndex},end);added++;
     }
     if(added)publish(this,plan,'Add movieclip to next keyframes');
     return added;
@@ -372,6 +374,37 @@ export const editorLayerSheetMethods={
     for(const child of children)plan.layers.assignments[child]=id;
     for(const {tick,frame} of frames)replaceAt(this,plan,id,tick,uid,frame,options);
     return publish(this,plan,label);
+  },
+  /** Replace only the captured membership. Existing pose keys remain the exact
+   * interpolation baseline, including curves crossing either range boundary. */
+  sheetCreateMovieclip({selected,start,end,instance,anchor}){
+    const owner=this.layerForUid(anchor),ids=[...new Set([...selected].map(uid=>this.layerForUid(uid)))],plan=planner(this,ids);
+    plan.layers.assignments[instance.unique_id]=owner;
+    const captured=new Map();
+    for(const id of ids){
+      const track=plan.get(id),uids=[...selected].filter(uid=>this.layerForUid(uid)===id);
+      if(id===owner&&end>track.end){
+        // Extend only the container's presence, leaving an ended base layer empty.
+        plan.write(id,track.end,createFrame(),{blank:true});track.end=end;
+      }
+      const times=[...new Set([start,...track.keys.filter(key=>key.tick>start&&key.tick<end).map(key=>key.tick)])];
+      for(let i=0;i<times.length;i++){
+        const tick=times[i];if(tick>=track.end)continue;
+        const source=at(this.report,tick),objects=new Map(source.objects.map(object=>[object.unique_id,object]));
+        for(const uid of uids){
+          const frame=createFrame(uid===anchor?[instance]:[]),object=objects.get(uid);
+          // Consumed source frames must still advance a replaced presence clip
+          // when that same instance reappears after the converted range.
+          const step=usesPresence(object)?{uid,typeId:object.figure_type_id,playback:object._stykMovieclip}:continuations(source).find(value=>value.uid===uid);
+          if(step)setContinuations(frame,[step]);
+          const signature=JSON.stringify([id,frame]);
+          let frameId=captured.get(signature);
+          if(!frameId){frameId=plan.capture(frame,id).frameId;captured.set(signature,frameId);}
+          replaceAt(this,plan,id,tick,uid,frame,{frameId},Math.min(times[i+1]??end,track.end));
+        }
+      }
+    }
+    return publish(this,plan,'Create movieclip');
   },
   sheetSetMovieclipPlayback(uid,patch,{allFrames=false,typeId}={}){
     const id=this.layerForUid(uid),plan=planner(this,[id]),track=plan.get(id);
@@ -681,7 +714,7 @@ export const editorLayerSheetMethods={
     });}finally{this._sheetClipboard=clipboard;}
   },
   _commitSheetPose(edit,drag){
-    const before=edit.source,after=edit.frame,ids=new Set(),old=new Map(before.objects.map(o=>[o.unique_id,o])),current=new Map(after.objects.map(o=>[o.unique_id,o]));
+    const before=edit.source,after=edit.frame,ids=new Set(edit.keyAtPlayheadLayers??[]),old=new Map(before.objects.map(o=>[o.unique_id,o])),current=new Map(after.objects.map(o=>[o.unique_id,o]));
     const owner=uid=>insertionOwner(this,uid,this._newLayerHints);
     const candidates=edit.transaction?[...new Set([...old.keys(),...current.keys()])]:drag.before.map(object=>object.unique_id);
     const changedUids=candidates.filter(uid=>{
@@ -702,7 +735,7 @@ export const editorLayerSheetMethods={
     for(const id of ids){const track=plan.get(id),{key}=sheetKeyAt(track,edit.tick),hold=key&&edit.tick<track.end&&['constant','hold'].includes(key.interpolation);
       const patchUids=new Set((key?.movieclipPatches??[]).flatMap(patch=>this.getFrameById(patch.frameId).objects.map(object=>object.unique_id)));
       const changed=changedUids.filter(uid=>owner(uid)===id);
-      if(key?.movieclipPatches&&changed.length&&changed.every(uid=>patchUids.has(uid))){
+      if(!edit.keyAtPlayhead&&key?.movieclipPatches&&changed.length&&changed.every(uid=>patchUids.has(uid))){
         key.empty=!after.objects.some(object=>owner(object.unique_id)===id);
         key.movieclipPatches=key.movieclipPatches.map(patch=>{
           const source=this.getFrameById(patch.frameId),members=new Set(source.objects.map(object=>object.unique_id));
@@ -714,7 +747,7 @@ export const editorLayerSheetMethods={
       }
       if(key?.patchOnly){const end=sheetKeyAt(plan.get(id),edit.tick).next?.tick;if(end!==undefined)plan.write(id,end,at(this.report,end),{easing:sheetKeyAt(plan.get(id),end).key});}
       const membershipChanged=[...before.objects,...after.objects].some(object=>usesPresence(object)&&owner(object.unique_id)===id&&old.has(object.unique_id)!==current.has(object.unique_id));
-      plan.write(id,hold&&!membershipChanged?key.tick:edit.tick,after,{easing:key??{interpolation:'constant'}});}
+      plan.write(id,hold&&!membershipChanged&&!edit.keyAtPlayhead?key.tick:edit.tick,after,{easing:key??{interpolation:'constant'}});}
     // Keep the exact gesture preview through publication. Membership and clock
     // edits must be sampled again; ordinary transforms already have their final
     // pose and incremental geometry, including attached descendants.
@@ -731,6 +764,12 @@ export const editorLayerSheetMethods={
   /** Explicit property/pose authoring. An edit inside a tween writes a boundary
    * at the entry's tick; editing a held cell edits its preceding key. Canvas
    * pose edits keep the same held-cell rule in the draft path. */
+  _sheetBakeCameraFrames(frames){
+    const plan=planner(this,['camera']);
+    for(const {tick,camera,restore} of frames){const easing=restore?(sheetKeyAt(plan.before.tracks.camera,tick).key??{interpolation:'constant'}):{interpolation:'constant'};
+      const key=plan.write('camera',tick,{objects:[],camera,duration_raw:1},{easing});if(easing.interpolation!=='bezier')delete key.bezier;}
+    publish(this,plan,'Bake camera motion',{retainGeometry:true});
+  },
   _sheetPropertyEntries(entries,label='Edit layer pose'){
     const byTick=new Map();for(const entry of entries){const tick=checkedTick(entry.tick??this.tick),list=byTick.get(tick)??[];list.push(entry);byTick.set(tick,list);}
     const ids=[...new Set(entries.map(e=>fixed(e.target.kind)?e.target.kind:e.target.kind==='layer'?e.target.id:this.layerForUid(e.target.uid)))],plan=planner(this,ids),result=[];

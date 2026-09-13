@@ -1,3 +1,5 @@
+import {validateCameraMotion} from './camera-motion.mjs';
+import {validateCameraParallaxOffset} from './layer-parallax.mjs';
 /** Sparse authored channels overlay the untouched native Pivot animation. */
 import {isAnimationStyleProperty, animationStyleValue, setAnimationStyle} from './animation-style.mjs';
 import {animationRotation, animationOriginOffset, correctAnimationOrigins} from './animation-origin.mjs';
@@ -73,13 +75,16 @@ export function validateAnimationDocument(report) {
 }
 /** Cooperative validation never mutates its document; callers may cancel between checkpoints. */
 export function* validateAnimationDocumentSteps(report) {
+  validateCameraMotion(report._styk?.cameraMotion);
   let scanned = 0;
   for (const frame of report.keyframes ?? []) {
+    validateCameraParallaxOffset(frame.camera);
     if (frame._styk?.easing) validateKeyEasing(frame._styk.easing);
     if (++scanned % 256 === 0) yield {phase: 'animation', frames: scanned};
   }
   for (const id in report._styk?.frameSources ?? {}) {
     const frame = report._styk.frameSources[id];
+    validateCameraParallaxOffset(frame.camera);
     if (frame._styk?.easing) validateKeyEasing(frame._styk.easing);
     if (++scanned % 256 === 0) yield {phase: 'animation', frames: scanned};
   }

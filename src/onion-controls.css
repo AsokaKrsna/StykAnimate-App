@@ -1,0 +1,53 @@
+/* Onion preferences use the workspace's panel, field and selection tokens. */
+.onion-popover{position:fixed;inset:auto;margin:0;width:348px;max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);box-sizing:border-box;overflow:auto;padding:0;border:1px solid var(--border);border-radius:12px;background:var(--panel);color:var(--text);box-shadow:0 10px 32px var(--theme-shadow,#0002);font:inherit;font-size:11px;z-index:80}
+.onion-popover header{display:flex;align-items:center;gap:6px;min-height:44px;padding:0 12px 0 16px;border-bottom:1px solid var(--border)}
+.onion-popover header strong{display:flex;align-items:center;gap:8px;margin-right:auto;font-size:12px;font-weight:600}
+.onion-popover .icon{width:15px;height:15px;flex-shrink:0}
+.onion-popover header .icon-button{display:grid;place-items:center;width:28px;height:28px;padding:0;border-radius:5px;color:var(--muted);background:transparent}
+.onion-popover header button:hover{background:var(--theme-hover, #f0f0f0);color:var(--text)}
+.onion-popover header button[aria-pressed=true]{background:var(--theme-selected, #e5f4ff);color:var(--theme-accent, #0d99ff)}
+.onion-popover section{padding:8px 14px}
+.onion-popover section+section{border-top:1px solid var(--border)}
+.onion-popover .onion-design-row{display:flex;align-items:center;gap:10px;min-height:36px;min-width:0}
+.onion-design-row>span:first-child{flex:0 0 56px;color:var(--muted)}
+.onion-popover .onion-value{display:flex;align-items:center;flex:0 0 48px;width:48px;height:28px;margin:0;border:1px solid transparent;border-radius:5px;background:var(--theme-field, #f2f2f2)}
+.onion-popover .onion-value:hover,.onion-popover select:hover{border-color:var(--theme-border-strong,var(--border))}
+.onion-popover .onion-value:focus-within{border-color:var(--theme-accent, #0d99ff)}
+.onion-popover input[type=number]{width:100%;min-width:0;height:26px;padding:0 7px;border:0;border-radius:5px;outline:none;background:transparent;color:inherit;font:inherit;text-align:right;font-variant-numeric:tabular-nums;cursor:text;appearance:textfield}
+.onion-popover input[type=number]:focus{cursor:text}
+.onion-popover input[type=number]::-webkit-inner-spin-button,.onion-popover input[type=number]::-webkit-outer-spin-button{appearance:none;margin:0}
+.onion-popover select{flex:1;min-width:0;height:28px;padding:0 8px;border:1px solid transparent;border-radius:5px;background:var(--theme-field, #f2f2f2);color:inherit;font:inherit}
+.onion-popover .onion-slider{flex:1;min-width:0;width:80px;height:28px;margin:0;padding:0;appearance:none;background:transparent;cursor:ew-resize;touch-action:none}
+.onion-slider::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right,var(--theme-accent, #0d99ff) var(--onion-progress),var(--theme-border-strong,var(--border)) var(--onion-progress))}
+.onion-slider::-webkit-slider-thumb{appearance:none;width:12px;height:12px;margin-top:-4px;border:2px solid var(--panel);border-radius:50%;background:var(--theme-accent, #0d99ff);box-shadow:0 0 0 1px var(--theme-accent, #0d99ff)}
+.onion-slider::-moz-range-track{height:4px;border-radius:2px;background:var(--border)}
+.onion-slider::-moz-range-progress{height:4px;background:var(--theme-accent, #0d99ff)}
+.onion-slider::-moz-range-thumb{width:10px;height:10px;border:2px solid var(--panel);border-radius:50%;background:var(--theme-accent, #0d99ff)}
+.onion-popover .onion-swatch{display:flex;align-items:center;gap:5px;margin:0;color:var(--muted)}
+.onion-popover input[type=color]{width:36px;height:26px;padding:3px;border:1px solid var(--border);border-radius:5px;background:var(--theme-field, #f2f2f2);cursor:pointer}
+.onion-popover input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+.onion-popover input[type=color]::-webkit-color-swatch{border:0;border-radius:2px}
+.onion-popover .onion-design-toggles{display:grid;grid-template-columns:1fr 1fr;gap:0 8px;padding-block:8px 10px}
+.onion-popover .onion-check{display:flex;align-items:center;gap:7px;min-height:30px;margin:0;cursor:pointer}
+.onion-check input{width:14px;height:14px;margin:0;accent-color:var(--theme-accent, #0d99ff);cursor:pointer;flex-shrink:0}
+.onion-popover :focus-visible{outline:2px solid var(--theme-accent, #0d99ff);outline-offset:2px}
+
+/* Shared range field. Text entry is never intercepted by a scrub gesture. */
+.onion-frame-field{display:flex;align-items:center;gap:6px;min-width:0;font-size:11px}
+.onion-frame-field .onion-scrub{height:28px;padding:0 4px;color:var(--muted);cursor:ew-resize;touch-action:none;font:inherit}
+.onion-frame-field .onion-stepper{display:flex;align-items:center;height:28px;border:1px solid transparent;border-radius:5px;background:var(--theme-field,#f2f2f2);min-width:0}
+.onion-frame-field .onion-stepper:focus-within{border-color:var(--theme-accent,#0d99ff)}
+.onion-frame-field .onion-stepper button{width:24px;min-width:24px;height:26px;padding:0;color:var(--muted);font:inherit;border-radius:4px}
+.onion-frame-field .onion-stepper input{width:44px;min-width:0;height:26px;padding:0 2px;border:0;background:transparent;outline:none;text-align:center;font:inherit;font-variant-numeric:tabular-nums;appearance:textfield;cursor:text}
+.onion-frame-field input::-webkit-inner-spin-button,.onion-frame-field input::-webkit-outer-spin-button{appearance:none;margin:0}
+.onion-frame-field :focus-visible{outline:2px solid var(--theme-accent,#0d99ff);outline-offset:1px}
+.onion-frame-pair{display:flex;gap:12px;justify-content:space-between}
+.onion-popover .onion-frame-field{flex:1;flex-wrap:wrap;gap:2px}
+.onion-popover .onion-frame-field .onion-scrub{width:100%;justify-content:flex-start;padding:0;height:24px}
+.onion-popover .onion-stepper{width:100%}
+.onion-popover .onion-stepper input{flex:1;width:40px}
+.onion-section-title{font-size:11px;font-weight:600;line-height:24px}
+.onion-popover .onion-range-info{font-size:10px;line-height:18px;color:var(--muted);margin:4px 0 0}
+.onion-popover input.onion-spacing{width:60px;height:28px;border:1px solid transparent;border-radius:5px;background:var(--theme-field,#f2f2f2);text-align:right;padding:0 8px}
+.onion-popover section{padding-block:6px}
+.onion-popover .onion-design-row{min-height:32px}

@@ -31,8 +31,9 @@ export class ExportFrameRenderer {
       onFrame,
     });
     this.canvas = canvas ?? document.createElement("canvas");
-    this.canvas.width = width;
-    this.canvas.height = height;
+    // Native video consumes worker PNGs directly; allocate presentation pixels
+    // only if a canvas consumer actually requests them.
+    this.canvas.width = this.canvas.height = 1;
     // Export frames are read by image/video encoders. Keep this large surface
     // CPU-backed instead of competing with the editor's WebGPU allocations.
     try {this.context = exportContext(this.canvas);} catch (error) {this.canvas.width = this.canvas.height = 1; throw error;}
@@ -172,6 +173,8 @@ export class ExportFrameRenderer {
       throw new Error("The export renderer returned no pixel frame.");
     try {
       this._check();
+      if (this.canvas.width !== this.width) this.canvas.width = this.width;
+      if (this.canvas.height !== this.height) this.canvas.height = this.height;
       checkExportContext(this.context);
       if (result.bitmap.width !== this.width || result.bitmap.height !== this.height)
         throw new Error('The export renderer returned an incomplete frame.');
@@ -187,7 +190,7 @@ export class ExportFrameRenderer {
     this.stats.renderedFrames++;
     return this.canvas;
   }
-  async _render({ tick, frame, svg = false }) {
+  async _render({ tick, frame, svg = false, native = false, preserveAlpha = false }) {
     this._check();
     if (!this.loaded) throw new Error("Load the animation before exporting.");
     if (this.busy)
@@ -203,7 +206,20 @@ export class ExportFrameRenderer {
         tick,
         override: Boolean(frame),
         svg,
+        native,
+        preserveAlpha,
       });
+      if (native) {
+        this._check();
+        const output = result.nativeFrame;
+        if (!(output?.blob instanceof Blob) || output.blob.type !== 'image/png' || !output.blob.size ||
+            output.width !== this.width || output.height !== this.height)
+          throw new Error('The export renderer returned an incomplete native frame.');
+        Object.assign(this.stats, result.stats);
+        this.stats.renderedFrames++;
+        this.onFrame?.({stage: 'rendered', tick});
+        return output;
+      }
       if (svg) {
         this._check();
         Object.assign(this.stats, result.stats);
@@ -219,6 +235,9 @@ export class ExportFrameRenderer {
   }
   renderTick(tick) {
     return this._render({ tick });
+  }
+  renderNativeTick(tick, {preserveAlpha = false} = {}) {
+    return this._render({tick, native: true, preserveAlpha});
   }
   renderFrame(frame) {
     return this._render({ frame });

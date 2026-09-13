@@ -126,10 +126,10 @@ test('cross-project clipboard carries broken frames, definitions and reserved id
   assert.deepEqual(phases(target,4,uid),[2,null,4,5]);assert.deepEqual(phases(reopen(target),4,uid),[2,null,4,5]);
 });
 
-test('Duplicate starts an independent instance, while object paste retains identity and phase',()=>{
+test('Duplicate starts at frame one; colliding single-figure paste retains the copied source phase',()=>{
   const e=fixture();e.seek(5);e.select(7);e.duplicateFigure();const duplicate=e.selectedUid;
   assert.notEqual(duplicate,7);assert.equal(phase(e,5,duplicate),0);assert.equal(phase(e,6,duplicate),1);assert.equal(phase(e,6),6);
-  e.select(7);e.copyFigure();e.pasteFigure();assert.equal(e.selectedUid,7);assert.equal(phase(e,5,e.selectedUid),5);
+  e.select(7);e.copyFigure();e.pasteFigure();assert.notEqual(e.selectedUid,7);assert.notEqual(e.selectedUid,duplicate);assert.equal(phase(e,5,e.selectedUid),5);assert.equal(phase(e,5),5);
 });
 
 test('hidden layers and opacity do not pause authored membership',()=>{
@@ -259,16 +259,38 @@ test('object copy/paste through five authored frames retains one clock; middle d
   }
 });
 
-test('repeated pastes update existing instances, retain layer ownership and do not move clip poses',()=>{
+test('repeated colliding pastes create fresh instances on the original layer and preserve existing poses',()=>{
   const e=fixture(),layer=e.createLayer('Other');e.copySelection();e.setActiveLayer(layer.id);
-  const next=e._nextUid;
-  for(const t of [5,5,1,9,1]){e.seek(t);e.pasteSelection();assert.equal(e.selectedUid,7);assert.equal(e.layerForUid(7),'layer-1');assert.equal(frame(e,t).objects.filter(o=>o.unique_id===7).length,1);assert.equal(e.object.root_x,300);}
-  assert.equal(e._nextUid,next);assert.deepEqual(phases(e,8),[0,1,2,3,4,5,6,7]);reopen(e);
+  const next=e._nextUid,ids=new Set([7]);
+  for(const t of [5,5,1,9,1]){
+    e.seek(t);const before=e.serialize(),history=e._undo.length;e.pasteSelection();const uid=e.selectedUid;
+    assert.ok(!ids.has(uid));ids.add(uid);assert.equal(e.layerForUid(uid),'layer-1');assert.equal(e.object._movieclipSample,0);
+    const objects=frame(e,t).objects;assert.equal(objects.find(o=>o.unique_id===7).root_x,300);assert.equal(new Set(objects.map(o=>o.unique_id)).size,objects.length);
+    assert.equal(e._undo.length,history+1);const after=e.serialize();e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.deepEqual(e.serialize(),after);
+  }
+  assert.equal(e._nextUid,next+5);assert.deepEqual(phases(e,8),[0,1,2,3,4,5,6,7]);assert.deepEqual(phases(reopen(e),8),phases(e,8));
 });
 
 test('pasting into a held blank exposure never inserts the clip into its preceding frames',()=>{
   const e=fixture();e.copySelection();e.sheetClearFrames(['layer-1'],0,10);e.sheetSetEasing(['layer-1'],0,11,{interpolation:'hold'});
   e.seek(5);e.pasteSelection();assert.equal(e.selectedUid,7);assert.deepEqual(phases(e,8),[null,null,null,null,null,0,1,2]);assert.equal(e.totalTicks,12);
+});
+
+test('mixed movieclip paste retains absent identities while remapping collisions once per range',()=>{
+ const e=fixture();e.addFigure(2);const second=e.selectedUid;e.selectMany([7,second]);e.copySelection();
+ e.seek(4);e.select(second);e.deleteSelection();e.seek(6);e.select(second);e.deleteSelection();
+ const before=e.serialize(),history=e._undo.length;
+ const result=e.applyFigureRange({kind:'paste'},{ticks:[4,6]});
+ const fresh=result.insertedUids.find(uid=>uid!==second);assert.notEqual(fresh,7);assert.equal(result.insertedUids.length,2);
+ for(const t of [4,6]){const ids=frame(e,t).objects.map(o=>o.unique_id);assert.ok(ids.includes(7)&&ids.includes(second)&&ids.includes(fresh));assert.equal(new Set(ids).size,ids.length);}
+ assert.equal(e._undo.length,history+1);e.undo();assert.deepEqual(e.serialize(),before);e.redo();reopen(e);
+});
+
+test('a hidden completed instance still collides, and paste starts a visible copy without rewriting its clock',()=>{
+ const e=fixture();e.setMovieclipPlayback({mode:'once'},{allFrames:true});e.copySelection();e.seek(9);
+ assert.equal(phase(e,9),null);const before=e.serialize();e.pasteSelection();const uid=e.selectedUid;
+ assert.notEqual(uid,7);assert.equal(phase(e,9,uid),0);assert.equal(phase(e,10,uid),1);assert.equal(phase(e,9),null);
+ e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.equal(phase(reopen(e),9,uid),0);
 });
 
 test('range paste reuses one movieclip identity and range delete removes only requested frames',()=>{
@@ -281,8 +303,8 @@ test('range paste reuses one movieclip identity and range delete removes only re
 
 test('cut/paste moves presence without renaming it, and pasted mixed selections preserve joins',()=>{
   const e=fixture();e.addFigure(1);const child=e.selectedUid;e.joinTo(7,0);e.selectMany([7,child]);e.copySelection();
-  e.seek(5);e.pasteSelection();const copy=e.selectedObjects.find(o=>o.unique_id!==7),result=frame(e,5);
-  assert.notEqual(copy.unique_id,child);assert.equal(result.objects[copy.join.target_object_slot].unique_id,7);
+  e.seek(5);e.pasteSelection();const copy=e.selectedObjects.find(o=>o.figure_type_id===1),parent=e.selectedObjects.find(o=>o.figure_type_id===2),result=frame(e,5);
+  assert.notEqual(parent.unique_id,7);assert.notEqual(copy.unique_id,child);assert.equal(result.objects[copy.join.target_object_slot].unique_id,parent.unique_id);
   assert.equal(result.objects[result.objects.find(o=>o.unique_id===child).join.target_object_slot].unique_id,7);
   e.seek(2);e.select(7);e.cutSelection();assert.deepEqual(phases(e,5),[0,1,null,2,3]);
   e.seek(2);e.pasteSelection();assert.equal(e.selectedUid,7);assert.deepEqual(phases(e,5),[0,1,2,3,4]);reopen(e);
@@ -320,12 +342,13 @@ test('pasting clips alongside frame-only breaks preserves unrelated curves and e
   e.seek(7);e.select(uid);e.breakApartMovieclip();const before=Array.from({length:e.totalTicks},(_,t)=>shape(e,t));
   const asset=e.createEmptyMovieclip('Other');e.seek(0);e.addFigure(asset.figure_type_id);const other=e.selectedUid;e.copySelection();
   // Empty assets produce no drawables, so every original curve must match.
-  for(const t of [7,11,7]){e.seek(t);e.pasteSelection();assert.equal(e.selectedUid,other);}
+  for(const t of [7,11,7]){e.seek(t);const present=e.evaluatedFrame.objects.some(o=>o.unique_id===other);e.pasteSelection();assert.equal(e.selectedUid===other,!present);}
   for(let t=0;t<e.totalTicks;t++)closeShape(shape(e,t),before[t]);reopen(e);
 });
 
 test('timing changes affect every pasted appearance, including clips present only in patches',()=>{
   const e=fixture({empty:true});e.addFigure(2);const uid=e.selectedUid;e.copySelection();e.sheetClearFrames(['layer-1'],0,11);
+  for(const t of [2,4])e.sheetInsertKey(['layer-1'],t);
   for(const t of [0,2,4]){e.seek(t);e.pasteSelection();}
   e.setMovieclipPlayback({speed:2,offset:1},{allFrames:true});assert.deepEqual(phases(e,8,uid),[1,3,5,7,1,3,5,7]);
   const saved=e.serialize();e.undo();assert.deepEqual(phases(e,8,uid),[0,1,2,3,4,5,6,7]);e.redo();assert.deepEqual(e.serialize(),saved);reopen(e);

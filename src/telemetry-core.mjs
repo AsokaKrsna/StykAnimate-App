@@ -1,5 +1,6 @@
 import { COUNTERS, DIAGNOSTIC_COUNTERS, TIMINGS, GAUGES, operationContextSlot, operationContext, emptyHistogram, observe, sanitizeError, sanitizeEnvironment } from './telemetry-schema.mjs';
 import { InteractionMeasurements, PlaybackMeasurements } from './telemetry-measurements.mjs';
+import { PerformanceMeasurements } from './telemetry-performance.mjs';
 const counters = new Set(COUNTERS), diagnosticCounters = new Set(DIAGNOSTIC_COUNTERS), timings = new Set(TIMINGS), gauges = new Set(GAUGES);
 export class TelemetryAccumulator {
   constructor() { this.consent = {}; this.reportedErrors = new WeakSet(); this.reset(); }
@@ -47,6 +48,7 @@ const ACTIONS = Object.freeze({ new: 'new_project', open: 'open', 'open-recent':
 export class DesktopTelemetryClient extends TelemetryAccumulator {
   constructor(bridge, { getContext = () => ({}) } = {}) {
     super(); this.bridge = bridge; this.getContext = getContext; this.lastActivity = 0; this.lastTick = performance.now(); this.epoch = 0;
+    this.performance = new PerformanceMeasurements(this, {getContext});
   }
   async init() {
     if (!this.bridge?.getTelemetryState) return null;
@@ -57,12 +59,13 @@ export class DesktopTelemetryClient extends TelemetryAccumulator {
   applyStatus(status) {
     if (status.epoch === this.epoch && this.initialized) return;
     this.initialized = true; this.epoch = status.epoch; this.configure(status.consent); this.stopSampling();
+    this.performance.reset();
     if (!this.consent.analytics && !this.consent.diagnostics) return;
     this.lastActivity = performance.now(); this.lastTick = this.lastActivity;
     this.lastWall = Date.now(); this.lastClock = this.lastActivity;
     this.interactions = new InteractionMeasurements(this); this.playbackMeasurements = new PlaybackMeasurements(this);
     this.isForeground = this.foreground();
-    this.onBoundary = () => { const now = performance.now(); this.isForeground = this.foreground(); this.interactions.boundary(now); this.playbackMeasurements.boundary(now); };
+    this.onBoundary = () => { const now = performance.now(); this.isForeground = this.foreground(); this.interactions.boundary(now); this.playbackMeasurements.boundary(now); this.performance.boundary(); };
     globalThis.document?.addEventListener('visibilitychange', this.onBoundary);
     for (const name of ['focus', 'blur', 'pageshow']) globalThis.addEventListener?.(name, this.onBoundary, { passive: true });
     this.onActivity = () => { this.lastActivity = performance.now(); };
@@ -71,11 +74,13 @@ export class DesktopTelemetryClient extends TelemetryAccumulator {
     this.timer = setInterval(() => this.tick(), 15000);
     if (this.consent.diagnostics && typeof PerformanceObserver !== 'undefined') {
       this.observers = [];
-      for (const type of ['longtask', 'event']) {
+      this.performance.supported('loaf',PerformanceObserver.supportedEntryTypes?.includes('long-animation-frame'));
+      for (const type of ['longtask', 'event', 'long-animation-frame']) {
         if (!PerformanceObserver.supportedEntryTypes?.includes(type)) continue;
         const observer = new PerformanceObserver(list => {
           const entries = list.getEntries(); this.checkClock();
-          if (type === 'event') this.interactions.observe(entries, { now: performance.now(), foreground: this.foreground() });
+          if(type==='long-animation-frame'){if(this.foreground())this.performance.loaf(entries);}
+          else if (type === 'event') this.interactions.observe(entries, { now: performance.now(), foreground: this.foreground() });
           else for (let i = 0; i < Math.min(entries.length, 100); i++) { this.count('long_tasks'); this.timing('long_task_ms', entries[i].duration); }
         });
         try { observer.observe({ type, buffered: false, ...(type === 'event' ? { durationThreshold: 40 } : {}) }); this.observers.push(observer); } catch { observer.disconnect(); }
@@ -97,9 +102,11 @@ export class DesktopTelemetryClient extends TelemetryAccumulator {
     this.lastWall = wall; this.lastClock = now;
   }
   playbackStart(context) { this.playbackMeasurements?.reset(context); }
+  error(error,operation='app',context={}){super.error(error,operation,context);this.performance?.incident('error');}
   playbackStop() { this.playbackMeasurements?.flush(); }
   playbackPresent(now, fps) { if (this.consent.diagnostics) this.playbackMeasurements?.present(now, fps, this.isForeground); }
   action(name) {
+    if(this.isForeground)this.performance.action(name);
     const key = ACTIONS[name] || (name.startsWith('camera-') ? 'camera' : name.startsWith('builder-') ? 'builder' : name.includes('inbetween') ? 'inbetween' : name.includes('movieclip') ? 'movieclip' : null);
     if (key) this.count(key);
   }
@@ -111,6 +118,7 @@ export class DesktopTelemetryClient extends TelemetryAccumulator {
     this.count(active ? 'active_seconds' : 'idle_seconds', seconds);
     if (active && ['simple', 'advanced'].includes(context.mode)) this.count(`mode_${context.mode}_seconds`, seconds);
     if (this.consent.diagnostics && foreground) {
+      this.performance.resources();
       this.gauge('js_heap_mb', performance.memory?.usedJSHeapSize / 1048576);
       for (const [key, value] of Object.entries(context.gauges || {})) this.gauge(key, value);
     }
@@ -120,7 +128,7 @@ export class DesktopTelemetryClient extends TelemetryAccumulator {
     if (!this.bridge?.recordTelemetry || !this.consent.analytics && !this.consent.diagnostics) return;
     this.interactions?.flush();
     this.playbackMeasurements?.flush();
-    const delta = this.drain(), epoch = this.epoch;
+    const delta = {...this.drain(),performance:this.performance.drain(),resourcePhase:this.performance.resourcePhase}, epoch = this.epoch;
     try { await this.bridge.recordTelemetry({ epoch, data: delta, environment: sanitizeEnvironment(context) }); }
     catch { this.count('dropped_samples'); } // Telemetry failure must never disrupt editing.
   }

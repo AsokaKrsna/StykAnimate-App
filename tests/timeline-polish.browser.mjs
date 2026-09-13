@@ -42,11 +42,11 @@ try {
   const eased=await page.evaluate(()=>{const e=styk.editor;e.seek(6);return e.evaluatedFrame.objects[0].root_x;});
   assert.ok(eased>200&&eased<260,`Expected eased inbetween, got ${eased}`);
   await page.evaluate(()=>styk.settingsUI.commit({timelineMode:'advanced'}));await settle();
-  assert.equal(await page.getByLabel('Frame interpolation',{exact:true}).inputValue(),'ease-in');
+  assert.equal(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1')[0].interpolation),'ease-in');
   await page.getByRole('grid',{name:'Layer frames'}).press('Control+z');await settle();assert.equal(await snapshot(),baseline);
   await page.evaluate(()=>{styk.settingsUI.commit({timelineMode:'simple'});styk.editor.seek(0);});await settle();
   // Custom curves use the existing curve editor and retain a single history entry.
-  await page.getByRole('button',{name:'Frame easing',exact:true}).click();
+  await preview(1).dblclick();
   await page.getByRole('radio',{name:'Bezier',exact:true}).click();
   await page.getByLabel('Control 1 · X',{exact:true}).fill('0.2');
   await page.getByRole('button',{name:'Apply',exact:true}).click();await settle();
@@ -56,7 +56,7 @@ try {
   await preview(1).click();await preview(2).click({modifiers:['Shift']});await preview(1).click({button:'right'});
   assert.deepEqual(await page.evaluate(()=>styk.timeline.selectedFrameIndices),[0,1]);
   const menu=page.getByRole('menu');
-  assert.deepEqual((await menu.getByRole('menuitem').allTextContents()).map(text=>text.trim()),['Frame easing…','Add FrameA','Copy framesCtrl+C','Cut framesCtrl+X','Paste framesCtrl+V','Delete framesDelete / Backspace']);
+  assert.deepEqual((await menu.getByRole('menuitem').allTextContents()).map(text=>text.trim()),['Change easing…','Add FrameA','Copy framesCtrl+C','Cut framesCtrl+X','Paste framesCtrl+V','Delete framesDelete / Backspace']);
   assert.equal(await menu.locator('button .icon').count(),6);
   const box=await menu.boundingBox();assert.ok(box.height<220&&box.y>=0&&box.y+box.height<=960);
   await page.screenshot({path:'artifacts/timeline-simple-menu.png'});
@@ -74,7 +74,7 @@ try {
   assert.equal(await page.evaluate(()=>styk.editor.evaluatedFrame.objects[0].root_x),320);
   await strip.press('Control+z');await settle();assert.equal(await snapshot(),baseline);
   await page.setViewportSize({width:900,height:700});await settle();
-  assert.equal(await page.getByRole('button',{name:'Frame easing',exact:true}).isVisible(),true);
+  assert.equal(await page.getByRole('slider',{name:'Timeline zoom',exact:true}).isVisible(),true);
   await page.screenshot({path:'artifacts/timeline-simple-compact.png'});
   await page.setViewportSize({width:1440,height:960});
   await page.evaluate(()=>{styk.settingsUI.commit({timelineMode:'advanced'});styk.editor.seek(0);});await settle();
@@ -90,8 +90,7 @@ try {
   assert.equal(await page.getByRole('menuitem',{name:/frame|tween/i}).count(),0);
   await page.getByRole('menuitem',{name:'Rename layer',exact:true}).click();
   await page.locator('.sheet-layer-rename').fill('Characters');await page.locator('.sheet-layer-rename').press('Enter');
-  await page.getByRole('button',{name:'Timeline options',exact:true}).click();
-  assert.deepEqual((await page.getByRole('menu').getByRole('menuitem').allTextContents()).map(text=>text.trim()),['Select Camera','Select Scene']);
+  await page.getByRole('grid',{name:'Layer frames'}).click({button:'right',position:{x:80,y:8}});assert.equal(await page.getByRole('menuitem',{name:'Select Camera',exact:true}).count(),1);assert.equal(await page.getByRole('menuitem',{name:'Select Scene',exact:true}).count(),1);
   await page.getByRole('menu').press('Escape');
   assert.deepEqual(errors,[]);
   console.log('PASS simple sliders, inbetweens, preset/custom easing, mode sync, undo, frame insert/cut, contextual menus, icons, and compact layout');

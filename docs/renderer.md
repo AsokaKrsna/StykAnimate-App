@@ -4,6 +4,8 @@ Node selection uses a lighter red tint within the selected figure, including sel
 
 Starting playback fits the scene to the viewport once, before preparing playback frames at the fitted resolution. Zoom and pan remain available during playback; pausing preserves the current view.
 
+Manual workspace zoom and Fit Selection support 0.1%–10,000%. These finite navigation bounds are independent of the renderer's texture and cache limits; Fit Canvas retains its automatic framing range.
+
 The editor draws the actual camera boundary as screen-sized red dots with a light contrast halo in the final Canvas overlay pass, above artwork and tool feedback, including playback and preview. This boundary stays visible regardless of camera selection, visibility, or interaction settings; camera handles and composition guides remain selection-dependent. The overlay is not part of exported artwork.
 
 During prepared playback, overlays use the exact displayed packet's camera/scene metadata instead of evaluating its figures again on the UI thread. Inactive VFX gizmos do not request geometry. A transient GPU device loss schedules accelerated reconnection on a new scene canvas with backoff (1 s, 5 s, then 15 s); initialization failure or exhausting that retry budget selects the software fallback. A renderer surviving 30 s without another loss restores the retry budget, and the manual reconnect action or a Graphics mode change always gets a fresh accelerated attempt. Document/history and overlay input handlers survive both paths. `tests/renderer-recovery.browser.mjs` covers reconnect pixels, bounded retries, both initialization failure stages, undo/redo, and zero extra frame evaluations during prepared playback.

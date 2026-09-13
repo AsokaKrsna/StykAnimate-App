@@ -42,3 +42,16 @@ changes. The pixel report is in
 [`artifacts/scene-background/report.json`](../artifacts/scene-background/report.json).
 These checks cover the engine and rendering contracts; they do not claim the
 separate background library dialog's UI workflow is complete.
+
+## Figure flips
+
+Horizontal and vertical flip commands use the active selection in both current-pose
+and timeline-range edits. A root selection flips the whole figure and its joined
+descendants. A segment selection reflects only the selected segment angles and
+bends around their parent joints; explicit branch selection includes descendants
+and figures attached to that branch. Unselected segment poses stay unchanged,
+and connected children follow their parent endpoints. Each command is one undo step.
+
+## Motion paths
+
+See [Motion paths](MOTION-PATHS.md) for display settings, remote pose gestures, cache ownership, sampling limits, and verification.

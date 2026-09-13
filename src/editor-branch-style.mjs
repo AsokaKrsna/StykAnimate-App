@@ -5,7 +5,7 @@ import {isDiscreteAnimationProperty} from './animation-properties.mjs';
 import {animationChannels,animationChannelId,validateAnimationValue,composeAnimationChannels} from './animation-channels.mjs';
 import {buildGeometry} from './pivot/geometry.mjs';
 import {animationStyleValue, polygonIdentity, resolveInstanceFigure} from './animation-style.mjs';
-import {branchSegmentIndices} from './editor-builder-branch.mjs';
+import {builderSelectionIndices} from './editor-builder-branch.mjs';
 
 const properties={segment_opacity:'opacity',segment_gradient_opacity:'gradientOpacity',thickness:'thickness'};
 export function branchOpacityPlan(editor,key) {
@@ -20,14 +20,14 @@ export function branchOpacityPlan(editor,key) {
   }
   let authored=Boolean(editor.propertyChannels);
   const entries=[], resolved=resolveInstanceFigure(figure,object);
-  for(const index of branchSegmentIndices(figure,editor.selectedJoint)){
+  for(const index of builderSelectionIndices(editor,true)){
     const segment=resolved.segments[index];if(property==='gradientOpacity'&&!segment.secondary)continue;
     const handleId=Number(segment.segment_id),captured=object._stykStyle?.segments?.[handleId]?.[property];
     authored ||= overridden.has(handleId)||Number.isFinite(captured);
     const target={kind:'segment',uid:object.unique_id,handleId,...(editor.propertyChannels||scoped.has(handleId)?{figureTypeId:figure.figure_type_id}:{})};
     entries.push({target,index,initialValue:animationStyleValue(figure,object,target,property)});
   }
-  if(editor.propertyChannels && property==='opacity') {
+  if(editor.propertyChannels && property==='opacity' && editor.selectedSegmentIds?.size <= 1) {
     const handles=new Set(entries.map(entry=>entry.target.handleId));handles.add(figure.segments[editor.selectedJoint]?.parent_id);
     figure.polyfills?.forEach((polygon,index)=>{
       if(!polygon.segment_ids?.every(id=>handles.has(id)))return;

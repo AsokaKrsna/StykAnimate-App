@@ -1,10 +1,10 @@
-const names = {select: 'Select', pose: 'Pose joints', rig: 'Edit shared rig', line: 'Draw a line', circle: 'Draw a circle', polygon: 'Draw a polygon', hand: 'Pan canvas', attach: 'Attach figure'};
-const builderTools = new Set(['select', 'rig', 'line', 'circle', 'polygon', 'hand']);
+const names = {select: 'Select', pose: 'Pose joints', tweener: 'Tweener', rig: 'Edit shared rig', line: 'Draw a line', chain: 'Chain pen', circle: 'Draw a circle', polygon: 'Draw a polygon', hand: 'Pan canvas', attach: 'Attach figure'};
+const builderTools = new Set(['select', 'rig', 'line', 'chain', 'circle', 'polygon', 'hand']);
 
 /** Presentation only: all editing still uses the existing document commands.
  * `builder` is the bounded builder-session controller from builder-mode.mjs;
  * it owns rig-mode entry, exit confirmation and the figure scope. */
-export function initStudioShell({editor, state, setTool, renderAssets, showCommandMenu, openTimelineSettings, builder, toast}) {
+export function initStudioShell({editor, state, setTool, renderAssets, showCommandMenu, setTimelineMode, builder, toast}) {
   const dialog = document.getElementById('insert-dialog');
   const workspace = document.querySelector('.workspace');
   const controller = new AbortController();
@@ -29,7 +29,7 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
   dialog.addEventListener('click', event => {
     if (event.target.closest('[data-action],[data-sample]')) dialog.close();
   }, options);
-  document.getElementById('timeline-workflow').addEventListener('click', openTimelineSettings, options);
+  document.getElementById('timeline-workflow').addEventListener('click',event=>{const button=event.target.closest('[data-timeline-mode]');if(button)setTimelineMode(button.dataset.timelineMode);},options);
   document.getElementById('object-actions').addEventListener('click', event => {
     showCommandMenu([
       ['duplicate', 'duplicate', 'Duplicate selection', 'Ctrl D', !editor.object],
@@ -48,6 +48,8 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
       ['delete', 'trash', 'Delete selection', 'Delete', !editor.object],
       null,
       ['scene-settings', 'frame', 'Scene properties', ''],
+      ...(!builder?.active && editor.object && !editor.figure?._styk?.movieclip ? [null,
+        ['edit-in-build-mode', 'nodes', 'Edit in build mode', '', editor.selectedUids.size !== 1]] : []),
     ], event.currentTarget);
   }, options);
   function sync() {
@@ -58,13 +60,13 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
       const tool = button.dataset.tool;
       button.hidden = current === 'rig'
         ? !builderTools.has(tool)
-        : !['select', 'pose', 'hand'].includes(tool);
+        : !['select', 'pose', 'hand', 'tweener'].includes(tool);
       button.setAttribute('aria-pressed', String(tool === state.tool));
       button.classList.toggle('active', tool === state.tool);
       if (!button.querySelector('.tool-label')) {
         const label = document.createElement('span');
         label.className = 'tool-label';
-        label.textContent = {select:'Select', pose:'Pose', rig:'Joints', line:'Line', circle:'Circle', polygon:'Polygon', hand:'Pan'}[tool];
+        label.textContent = {select:'Select', pose:'Pose', tweener:'Tween', rig:'Joints', line:'Line', chain:'Chain', circle:'Circle', polygon:'Polygon', hand:'Pan'}[tool];
         button.append(label);
       }
     });
@@ -86,7 +88,7 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
     document.getElementById('edit-scope').textContent = scopeText;
     document.getElementById('leave-rig').hidden = current !== 'rig';
     document.getElementById('selection-summary').textContent = scopeText;
-    document.getElementById('timeline-workflow').textContent = state.settings.timelineMode === 'simple' ? 'Frame-by-frame ⌄' : 'Layers & Frames ⌄';
+    document.querySelectorAll('[data-timeline-mode]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.timelineMode===state.settings.timelineMode)));
     const hint = document.getElementById('viewport-hint');
     if (!hint.textContent) hint.textContent = 'Drag to select · Shift-click to add · Drag a joint to pose';
     hint.hidden = Boolean(state.playing || state.previewing || ['select', 'pose', 'hand'].includes(state.tool));

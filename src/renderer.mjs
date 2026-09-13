@@ -1,4 +1,6 @@
+import {parallaxResolver} from './layer-parallax.mjs';
 import {canvasPaint} from './paint.mjs';
+import {GpuTiming,requestInstrumentedDevice} from './gpu-timing.mjs';
 import {ViewportVfx,hasSceneVfx} from './vfx-viewport.mjs';
 import {CameraVfx} from './vfx-camera.mjs';
 import {initVfxDevice,releaseVfxDevice} from './vfx-gpu.mjs';
@@ -20,14 +22,17 @@ export { cameraMatrix, worldToScreen, screenToWorld } from './renderer-geometry.
 function renderPreviewVfx(renderer,field,create,render) {
   if(performance.now()<renderer.vfxRetryAt)return false;
   try {
+    const started=renderer.measureFrame?performance.now():0;
     renderer[field]??=create();render(renderer[field]);
-    if(renderer.vfxRetryAt)renderer.options.onStatus?.({backend:renderer.stats.backend,message:'Camera effects preview restored.'});
+    if(renderer.measureFrame)(renderer.telemetryStages??={}).vfx=performance.now()-started;
+    if(renderer.vfxRetryAt){renderer.options.onRecovery?.('vfx','recovered');renderer.options.onStatus?.({backend:renderer.stats.backend,message:'Camera effects preview restored.'});}
     renderer.vfxRetryAt=0;return true;
   }
   catch(error){
     // The unfiltered scene is already visible. Release failed effect surfaces
     // and leave editing available while a later frame retries the preview.
     renderer.vfxRetryAt=performance.now()+1500;
+    renderer.options.onRecovery?.('vfx','started');
     try {renderer[field]?.destroy();} catch { /* A lost device may already be released. */ }
     renderer[field]=null;renderer.stats.vfxFailures=(renderer.stats.vfxFailures||0)+1;
     const failure=error instanceof Error?error:new Error('The camera effects preview failed.');
@@ -343,12 +348,13 @@ class CanvasFallback {
     ctx.transform(...cameraMatrix(options));
     const onions = (options.onionFrames || []).map(onion => ({geometry: onion.geometry || buildGeometry(report, onion.frame || onion), opacity: onion.opacity, beforeUid: onion.beforeUid, showOnTop: onion.showOnTop}));
     const matrix = cameraMatrix(options), scale = Math.hypot(matrix[0], matrix[1]) * this.dpr;
-    let primitives = 0;
+    let primitives = 0; const parallax=parallaxResolver(report,frame,options.cameraEnabled!==false);
     for (const group of composeSceneGroups(geometry, onions, frame)) {
       if(group.isOnion&&hasSceneVfx(frame))continue;
       const uid = group.g.obj.unique_id; if (hiddenUids?.has(uid)) continue;
       const move = !group.isOnion && dragTranslations?.get(uid);
       ctx.save(); ctx.globalAlpha = group.opacity; if (move) ctx.translate(move.x, move.y);
+      const depth=parallax(uid);ctx.translate(depth.x,depth.y);
       if (group.isOnion) this.drawOnion(ctx, group, scale);
       else this.drawObject(ctx, group, scale);
       ctx.restore(); primitives += group.items.length;
@@ -815,15 +821,17 @@ class WebGPURenderer {
     this.stats.sharedArtwork={...this.artworks.stats,entries:this.artworks.lru.size,bytes:this.artworks.bytes,definitionBytes:this.artworks.definitionBytes};
   }
   render(options) {
-    options=vfxPreviewOptions(options);
     if (this.destroyed || this.deviceLost) return;
+    options=vfxPreviewOptions(options);
     this.stats.rasterCacheMisses={};this.stats.rasterCacheMissSamples=[];
     this.liveEditing=Boolean(options.liveEditing);
     this.last = options.preparedPacket ? {...options, preparedPacket: undefined} : options; const start = performance.now();
     const { report, frame, view = {}, hiddenUids, dragTranslations } = options;
     if (!report || !frame) return;
     this.useReport(report);
+    let measureAt=this.measureFrame?performance.now():0;
     const geometry = options.geometry || (options.vfxEnabled===false?vfxPreviewGeometry(buildGeometry(report,frame)):buildGeometry(report, frame));
+    if(this.measureFrame){this.telemetryStages={geometry:performance.now()-measureAt};measureAt=performance.now();}
     this.stats.adoptedObjects = 0; this.stats.adoptedVectorBytes = 0;
     if (options.preparedPacket && (this.lastAdoptionToken !== geometry.token || this.lastAdoptionKey !== options.preparedPacket.key)) {
       const adopted = adoptPreparedVectors(options.preparedPacket, geometry, this.vectorCache, this.compatibilityCache);
@@ -857,17 +865,21 @@ class WebGPURenderer {
       }
     } else { this.stats.uploadBytes = 0; this.stats.primitiveUploadCalls = 0; this.stats.updatedObjects = 0; this.stats.compiledObjects = 0; this.stats.rasterizedObjects = 0; this.stats.preparation = 'retained'; }
     if (!this.layout) return geometry; // No build has ever succeeded; the canvas keeps its last frame.
+    if(this.measureFrame){this.telemetryStages.prepare=performance.now()-measureAt;measureAt=performance.now();}
     const matrix = cameraMatrix(options), zoom = Number(view.scale ?? 1), x = Number(view.x ?? 0), y = Number(view.y ?? 0);
     const uniform = new Float32Array([matrix[0], matrix[2], matrix[4], Math.hypot(matrix[0], matrix[1]), matrix[1], matrix[3], matrix[5], 0, this.width, this.height, this.dpr, options.clipToCanvas === false ? 0 : 1, x, y, x + report.canvas_width * zoom, y + report.canvas_height * zoom]);
     this.device.queue.writeBuffer(this.uniform, 0, uniform);
+    const parallax=parallaxResolver(report,frame,options.cameraEnabled!==false);
     for (const entry of this.layout) {
       if (!entry.g) continue;
+      const depth=parallax(entry.uid);
       const delta = entry.isOnion ? null : dragTranslations?.get?.(entry.uid) || dragTranslations?.[entry.uid];
-      this.transformData.set([entry.root.x + (delta?.x || 0), entry.root.y + (delta?.y || 0), entry.opacity, hiddenUids?.has(entry.uid) ? 0 : 1], entry.transform * 4);
+      this.transformData.set([entry.root.x + (delta?.x || 0)+depth.x, entry.root.y + (delta?.y || 0)+depth.y, entry.opacity, hiddenUids?.has(entry.uid) ? 0 : 1], entry.transform * 4);
     }
     this.device.queue.writeBuffer(this.transformBuffer, 0, this.transformData);
     const encoder = this.device.createCommandEncoder({ label: 'StykAnimate viewport frame' });
-    const pass = encoder.beginRenderPass({ colorAttachments: [this.colorAttachment(this.context.getCurrentTexture().createView())] });
+    const timestampWrites=this.gpuTiming?.begin(this.measureFrame);
+    const pass = encoder.beginRenderPass({ colorAttachments: [this.colorAttachment(this.context.getCurrentTexture().createView())], ...(timestampWrites?{timestampWrites}:{}) });
     pass.setPipeline(this.pipeline); pass.setBindGroup(0, this.globalBindGroup);
     let calls = 0, begin = -1, count = 0;
     const flush = () => { if (!count) return; pass.setBindGroup(1, this.blankBindGroup); pass.draw(6, count, 0, begin); calls++; begin = -1; count = 0; };
@@ -881,7 +893,8 @@ class WebGPURenderer {
     this.stats.handleUploadBytes=options.canvasHandles ? this.handleRenderer.update(options.canvasHandles,dragTranslations,options.outlineHandles) : 0;
     this.stats.handleDrawCalls=options.canvasHandles&&!hasSceneVfx(frame) ? this.handleRenderer.draw(pass) : 0;
     calls+=this.stats.handleDrawCalls;
-    pass.end(); this.device.queue.submit([encoder.finish()]);
+    pass.end(); this.gpuTiming?.resolveInto(encoder,timestampWrites);this.device.queue.submit([encoder.finish()]);this.gpuTiming?.submitted(timestampWrites);
+    if(this.measureFrame)this.telemetryStages.submit=performance.now()-measureAt;
     if(hasSceneVfx(frame))this.finishSceneVfx({...options,geometry,viewportUniforms:uniform});
     Object.assign(this.stats, { frameMs: performance.now() - start, drawCalls: calls, mode: 'retained editor', transformUploadBytes: this.transformData.byteLength,
       preparedBytes: this.preparedFrames.bytes, preparedFrames: this.preparedFrames.frames.size, workerCompileMs: null, packetUploadMs: null });
@@ -889,6 +902,7 @@ class WebGPURenderer {
   }
   finishSceneVfx(options){return renderPreviewVfx(this,'vfxViewport',()=>new ViewportVfx(this),viewport=>viewport.render(options));}
   destroy() {
+    this.gpuTiming?.destroy();
     this.vfxViewport?.destroy();
     this.artworks.clear();
     this.destroyed = true; this.last = null; this.uploadStaging = null; this.onionScenes = []; this.preparedFrames.clear(); this.handleRenderer?.destroy(); this.msaa?.destroy(); this.shapeBuffer?.destroy(); this.transformBuffer?.destroy(); this.uniform?.destroy(); this.blankTexture?.destroy();
@@ -1076,11 +1090,12 @@ export async function createRenderer(canvas, options = {}) {
       if (!adapter) throw new Error('No compatible WebGPU adapter was found.');
       if (await softwareAdapter(adapter) && !options.allowSoftwareAdapter)
         throw new Error('WebGPU resolved to a software adapter; the compatibility renderer is faster on this hardware.');
-      device = await adapter.requestDevice();
+      device = await requestInstrumentedDevice(adapter);
       context = canvas.getContext('webgpu');
       if (!context) throw new Error('The canvas could not create a WebGPU context.');
       const info = adapter.info;
       const renderer = new WebGPURenderer(canvas, device, context, navigator.gpu.getPreferredCanvasFormat(), { ...options, adapterName: [info?.vendor, info?.architecture, info?.device].filter(Boolean).join(' · ') });
+      renderer.gpuTiming=new GpuTiming(device,{enabled:options.diagnosticsEnabled,onTiming:options.onGpuTiming,onSupport:options.onGpuTimingSupport,getContext:options.measurementContext});
       await renderer.initialize(); options.onStatus?.(renderer.stats); return renderer;
     } catch (error) {
       reason = error.message; device?.destroy();

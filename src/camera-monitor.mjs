@@ -1,3 +1,7 @@
+import {drawExportScene} from './export-frame-core.mjs';
+import {activeVfx,vfxStack} from './vfx.mjs';
+import {parallaxResolver} from './layer-parallax.mjs';
+import {layerVisible} from './layers.mjs';
 import {cameraValues} from './editor-camera.mjs';
 import {cameraMatrix} from './renderer-geometry.mjs';
 import {drawBackground, backgroundBounds} from './pivot/background.mjs';
@@ -12,9 +16,9 @@ function monitorState(canvas, options) {
   let state=monitorStates.get(canvas);
   if(!state){
     state={retryAt:0};monitorStates.set(canvas,state);
-    canvas.addEventListener?.('contextlost',()=>{state.lost=true;});
+    canvas.addEventListener?.('contextlost',()=>{state.lost=true;state.options.onRecovery?.('camera','started');});
     canvas.addEventListener?.('contextrestored',()=>{
-      state.lost=false;state.retryAt=0;playbackGeometry.delete(canvas);
+      state.lost=false;state.retryAt=0;playbackGeometry.delete(canvas);state.options.onRecovery?.('camera','recovered');
       state.options.onInvalidate?.();
     });
   }
@@ -89,7 +93,7 @@ export function drawCameraMonitor(canvas, options) {
   if(prepared){
     let source=monitorSurfaces.get(prepared.renderer);
     if(!source){source=new MonitorGpuSource(prepared.renderer);monitorSurfaces.set(prepared.renderer,source);}
-    if(source.render(ctx,{key:prepared.key,report,view,dpr,hiddenUids}))return true;
+    if(source.render(ctx,{key:prepared.key,report,view,dpr,hiddenUids})){if(state.retryAt)options.onRecovery?.('camera','recovered');state.retryAt=0;return true;}
   }
   if(!geometry) {
     let cached=playbackGeometry.get(canvas);
@@ -98,22 +102,30 @@ export function drawCameraMonitor(canvas, options) {
     }
     geometry=cached.geometry;
   } else playbackGeometry.delete(canvas);
+  if(activeVfx(vfxStack(frame)).length){
+    const surface=state.effects??=new OffscreenCanvas(1,1),w=Math.max(1,Math.round(report.canvas_width*scale*dpr)),h=Math.max(1,Math.round(report.canvas_height*scale*dpr));
+    if(surface.width!==w)surface.width=w;if(surface.height!==h)surface.height=h;
+    drawExportScene(surface.getContext('2d'),report,frame,{...geometry,drawables:geometry.drawables.filter(item=>!hiddenUids?.has(item.obj.unique_id)&&layerVisible(report,item.obj.unique_id))},resources);
+    ctx.drawImage(surface,view.x,view.y,report.canvas_width*scale,report.canvas_height*scale);state.retryAt=0;return true;
+  }
   ctx.save();
   try {
   ctx.beginPath();ctx.rect(view.x,view.y,report.canvas_width*scale,report.canvas_height*scale);ctx.clip();
   ctx.transform(...cameraMatrix({report,frame,view,cameraEnabled:true}));
   drawBackground(ctx,report,frame,report.canvas_width,report.canvas_height,
     {...resources,bounds:backgroundBounds(frame,report.canvas_width,report.canvas_height,true,report)});
+  const parallax=parallaxResolver(report,frame);
   for(const group of composeSceneGroups(geometry,[],frame)) {
-    if(hiddenUids?.has(group.g.obj.unique_id)) continue;
-    ctx.save();try {ctx.globalAlpha=group.opacity;drawGeometry(ctx,{drawables:group.items},resources);}finally{ctx.restore();}
+    if(hiddenUids?.has(group.g.obj.unique_id)||!layerVisible(report,group.g.obj.unique_id)) continue;
+    ctx.save();try {ctx.globalAlpha=group.opacity;const depth=parallax(group.g.obj.unique_id);ctx.translate(depth.x,depth.y);drawGeometry(ctx,{drawables:group.items},resources);}finally{ctx.restore();}
   }
   } finally {ctx.restore();}
-  state.retryAt=0;return true;
+  if(state.retryAt)options.onRecovery?.('camera','recovered');state.retryAt=0;return true;
   } catch(error) {
     // The monitor is auxiliary. A failure must not abort the editor's frame or
     // re-evaluate a dense scene again on every animation frame.
     state.retryAt=performance.now()+1500;
+    options.onRecovery?.('camera','started');
     if(prepared){monitorSurfaces.get(prepared.renderer)?.destroy();monitorSurfaces.delete(prepared.renderer);}
     playbackGeometry.delete(canvas);
     reportMonitorError(error,options);return false;

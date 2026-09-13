@@ -64,7 +64,7 @@ try {
       f.segments=[{...f.segments[0],length:100,thickness:18,angle_rad:0}];f.segment_count=1;
       scene.keyframes=[180,400,620].map(x=>createFrame([createObject(f,1,x,270)],1));
       styk.editor.load(scene);styk.editor.enableFrameDrafts();styk.editor.selectFrame(1);
-      Object.assign(styk.state.settings,{onionBefore:1,onionAfter:1,onionMode:'keyframes',onionOpacity:.6,onionTint:true,onionBeforeColor:'#e76b70',onionAfterColor:'#549de7'});
+      Object.assign(styk.state.settings,{onionBefore:1,onionAfter:1,onionRangeBefore:1,onionRangeAfter:1,onionMode:'keyframes',onionOpacity:.6,onionTint:true,onionBeforeColor:'#e76b70',onionAfterColor:'#549de7'});
       styk.state.onion=true;styk.fit();
       return {backend:gpu.stats.backend,observations,comparisons,retainedCanvasRasterized,spriteAlpha};
     } finally {gpu.destroy();reference.destroy();fallback.destroy();}
@@ -79,7 +79,7 @@ try {
     scene.keyframes=[createFrame([createObject(figure,1,180,270)],1)];
     editor.load(scene);editor.disableFrameDrafts();editor.select(1);
     editor.sheetInsertFrames(['scene','camera',...editor.report._styk.layers.order],1,29);
-    Object.assign(state.settings,{onionBefore:1,onionAfter:1,onionMode:'keyframes'});
+    Object.assign(state.settings,{onionRangeBefore:10,onionRangeAfter:15,onionMode:'keyframes'});
     state.onion=true;styk.fit();
     const paint=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     await paint();
@@ -100,7 +100,10 @@ try {
     editor.undo();await capture('undo');editor.redo();await capture('redo');
     return observations;
   });
-  assert.deepEqual(authored.map(row=>row.roots),[[180,620],[180,740],[180,560],[180,740],[180,560],[180,740],[180,560]]);
+  // Inserting and retiming keys changes the poses inside the fixed 10/15-frame
+  // range; it never moves the range to keep a constant number of keys. The
+  // renderer composites the furthest samples first, then nearer before/after.
+  assert.deepEqual(authored.map(row=>row.roots),[[180,620],[180,740],[740,180,560],[560,180,740],[180,560],[560,180,740],[180,560]]);
   await page.screenshot({path:path.join(output,'onion-authored-edits.png')});
   result.authored=authored;
   await writeFile(path.join(output,'browser-report.json'),JSON.stringify({...result,errors},null,2));

@@ -341,3 +341,47 @@ dialog::backdrop { background: var(--theme-backdrop, #18273c55); backdrop-filter
   .camera-monitor canvas {height:100px;aspect-ratio:auto;}
   .camera-help {font-size:11px;}
 }
+
+/* Quiet workspace chrome: commands above, view controls beside the stage. */
+.titlebar { gap: 8px; padding-inline: 14px; background: var(--theme-panel, #fff); }
+.titlebar .title-divider { margin-inline: 8px; height: 16px; }
+.titlebar .button.primary { height: 28px; padding-inline: 12px; font-weight: 550; }
+.app-menubar > button { font-size: 11px; padding-inline: 8px; }
+.canvas-toolbar { height: 44px; min-height: 44px; padding-inline: 16px; background: var(--theme-panel, #fff); }
+.workspace-switch { padding: 0; gap: 16px; background: none; border-radius: 0; align-self: stretch; }
+.workspace-switch button { height: 100%; padding: 0 2px; border-radius: 0; border-bottom: 2px solid transparent; color: var(--muted); }
+.workspace-switch button[aria-pressed=true] { box-shadow: none; background: none; border-bottom-color: var(--theme-accent, #2385cd); }
+.canvas-toolbar .crumb { margin-left: 8px; opacity: .8; }
+.canvas-options { gap: 6px; }
+.canvas-options .button { width: 30px; height: 30px; }
+#viewport { background: var(--theme-workspace, #ededf0); }
+.studio-rail { left: 16px; padding: 6px; width: 46px; border-radius: 12px; box-shadow: 0 4px 16px var(--theme-shadow, #0000000a); }
+.studio-rail .tool, .rail-add { border-radius: 7px; }
+.canvas-view-controls { position: absolute; z-index: 26; right: 16px; bottom: 16px; display: flex; align-items: center; gap: 4px; height: 38px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); box-shadow: 0 3px 12px var(--theme-shadow, #0000000a); }
+.canvas-view-controls button { flex-shrink: 0; height: 28px; min-width: 28px; padding: 0 6px; border-radius: 5px; }
+.canvas-view-controls .divider { height: 16px; margin: 0 3px; }
+.canvas-view-controls .zoom-label { min-width: 58px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.viewport-help { left: 16px; bottom: 18px; transform: none; max-width: calc(100% - 270px); padding: 4px 0; background: none; border: 0; text-align: left; }
+.inspector-header { height: 44px; min-height: 44px; }
+#inspector .inspector-section { padding-block: 18px; }
+.timeline-toolbar { background: var(--theme-panel, #fff); }
+#menu { padding: 6px; border-radius: 10px; min-width: 236px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow-y: auto; box-shadow: 0 8px 32px var(--theme-shadow, #0000001c); }
+#menu .menu-item { height: 32px; gap: 10px; border-radius: 5px; font-size: 12px; }
+#menu .menu-item:focus-visible { outline: none; background: var(--theme-selected, #eaf3fb); color: var(--theme-text, #273c50); }
+#menu .menu-item[data-action="delete"] { color: var(--theme-danger-action, #ba4545); }
+#menu .menu-separator { margin: 5px 7px; }
+@media (max-width: 1050px) {
+  .titlebar { gap: 4px; padding-inline: 8px; }
+  .app-menubar > button { padding-inline: 6px; }
+  .canvas-toolbar .crumb { display: none; }
+  .viewport-help { display: none; }
+}
+@media (max-width: 760px) {
+  .titlebar .title-divider, .titlebar .button[data-action="save"] { display: none; }
+  .canvas-view-controls { right: 8px; bottom: 8px; }
+  .workspace-switch { gap: 10px; }
+}
+
+.studio-rail .rail-order { display:flex; flex-direction:column; gap:3px; position:relative; margin-top:3px; padding-top:7px; }
+.studio-rail .rail-order::before { content:""; position:absolute; top:0; left:5px; right:5px; height:1px; background:var(--border); }
+.studio-rail .rail-order button:disabled { opacity:.35; cursor:default; }

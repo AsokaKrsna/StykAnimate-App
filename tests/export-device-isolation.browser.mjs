@@ -33,6 +33,7 @@ try {
     await styk.acceptImport({document: report, kind: 'piv'}, 'Export device regression.piv');
     const source = styk.editor.report, revision = styk.editor.revision;
     const live = styk.state.renderer;
+    window.lostExportRenderer = live;
     check(live.stats.backend === 'WebGPU', 'A live hardware renderer is required.');
     let lost = false;
     live.device.lost.then(() => {lost = true;});
@@ -156,9 +157,11 @@ try {
       lostDeviceStopped: true, revision};
   });
   await page.waitForFunction(() => document.querySelector('#renderer-error').hidden &&
-    styk.state.renderer.stats.backend === 'Canvas 2D fallback');
+    styk.state.renderer !== window.lostExportRenderer &&
+    ['WebGPU','Canvas 2D fallback'].includes(styk.state.renderer.stats.backend));
   await page.screenshot({path: path.join(output, 'reconnected-editor.png')});
   const final = await page.evaluate(() => ({revision: styk.editor.revision,
+    backend: styk.state.renderer.stats.backend,
     objects: styk.state.renderer.stats.objects, warnings: styk.state.renderer.stats.warnings,
     png: window.exportRegressionPNG}));
   assert.equal(final.revision, result.revision);
@@ -171,7 +174,7 @@ try {
   await page.keyboard.press('Control+z');
   assert.equal(await page.evaluate(() => styk.editor.object.root_x), originalX);
   await writeFile(path.join(output, 'export.png'), Buffer.from(final.png.split(',')[1], 'base64'));
-  const report = {...result, automaticSoftwareRecovery: true, exportSurvivedDeviceLoss: true, editingAndUndo: true, errors};
+  const report = {...result, automaticRendererRecovery: true, recoveredBackend: final.backend, exportSurvivedDeviceLoss: true, editingAndUndo: true, errors};
   await writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report));
 } finally {await browser?.close(); await service.stop();}

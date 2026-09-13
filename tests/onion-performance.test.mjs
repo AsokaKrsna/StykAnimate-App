@@ -93,3 +93,12 @@ test('scrubbing keeps cache residency bounded and revisiting warm frames does no
   editor.load(emptyDocument()); cache.get(editor, settings);
   assert.equal(cache.retained.geometry, null); assert.equal(cache.samples.size, 0);
 });
+
+test('large displayed ranges retain samples across opacity and adjacent seeks, then shrink',()=>{
+  const {editor,cache,settings,built}=fixture();editor.seek(60);
+  Object.assign(settings,{onionMode:'frames',onionRangeBefore:25,onionRangeAfter:25});
+  assert.equal(cache.get(editor,settings).length,50);const baseline=built();
+  settings.onionOpacity=.45;cache.get(editor,settings);assert.equal(built(),baseline);
+  editor.seek(61);cache.get(editor,settings);assert.ok(built()-baseline<=4,'only the two newly sampled moving objects at each new tick rebuild');
+  settings.onionRangeBefore=1;settings.onionRangeAfter=1;cache.get(editor,settings);assert.ok(cache.samples.size<=cache.maxEntries);
+});

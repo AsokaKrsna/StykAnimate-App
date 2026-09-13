@@ -27,6 +27,7 @@ export class UserLibrary {
       <div class="library-content"><div class="library-grid" role="list" aria-label="Saved assets"></div><div class="library-empty">No assets in this folder</div></div>
       <div class="library-item-actions" hidden><button type="button" data-library-action="insert">Insert</button><button type="button" data-library-action="rename">Rename</button><button type="button" data-library-action="move">Move to…</button><button type="button" class="library-trash" data-library-action="trash" aria-label="Remove library item" title="Move to Recycle Bin">${icon('trash')}</button></div>
       <div class="library-message" role="status" aria-live="polite"></div><div class="library-save"><button type="button" class="button primary" data-library-action="save">${icon('plus')}<span>Add to library</span></button></div>`;
+    this.container.querySelector('.library-filter').insertAdjacentHTML('afterend','<button class="button rig-library-examples" data-action="rig-examples">Rig examples</button>');
     this.panel.append(this.container);
     this.propertySave = document.createElement('div'); this.propertySave.className = 'properties-library-save';
     this.propertySave.innerHTML = `<button type="button" class="button" data-library-action="save">${icon('plus')} Add to library</button>`; this.panel.append(this.propertySave);

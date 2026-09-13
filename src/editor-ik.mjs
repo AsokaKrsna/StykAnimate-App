@@ -1,4 +1,5 @@
 import {ikLayout, ikChain, ikFollowers, ikFollowerIndices, ikBendReference, solveObjectIK, MAX_IK_CHAIN} from './ik.mjs';
+import {rigIKAllowed} from './rig-constraints.mjs';
 import {ikComponents, joinedIKGraph} from './ik-joined.mjs';
 
 function context(editor) {
@@ -164,6 +165,7 @@ export const editorIKMethods = {
     }
   },
   setNodeIK(patch) {
+    if(patch.enabled&&this.figure&&!rigIKAllowed(this.figure,this.selectedJoint))throw new Error('Apply IK to the joints driving the rig. Connector attachments and stretch followers are derived from those controls.');
     const {handle} = controllerAt(this);
     if (!handle) return false;
     const settings = this.getIKSettings(), next = {...settings, ...patch}; delete next.maxLength;

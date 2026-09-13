@@ -64,7 +64,26 @@ try {
   });
   await phase('figure-drop','styk.editor.importFigure(__insert.figureAsset,{position:{x:300,y:200}}).unique_id');
   await page.evaluate(()=>{styk.editor.undo();styk.editor.select(__insert.uid);});
+  await page.evaluate(async()=>{
+    const {buildGeometry}=await import('/src/pivot/geometry.mjs'),{sampleSheet}=await import('/tests/helpers/sheet-samples.mjs');
+    const e=styk.editor,start=e.tick,end=Math.min(e.totalTicks,start+16);
+    __insert.captureTicks=[...new Set([Math.max(0,start-1),start,(start+end-1)/2,end-1,Math.min(e.totalTicks-1,end)])];
+    __insert.shape=t=>buildGeometry(e.report,sampleSheet(e.report,t)).drawables.map(d=>({type:d.type,rgb:d.rgb,alpha:d.alpha,points:d.points?.map(p=>[p.x,p.y])??[]}));
+    __insert.beforeCapture=__insert.captureTicks.map(__insert.shape);
+  });
   await phase('clip-create',`(()=>{const e=styk.editor;return e.createMovieclip({start:e.tick,end:Math.min(e.totalTicks,e.tick+16)}).figure_type_id;})()`);
+  const clipCheck=await page.evaluate(()=>{
+    const mismatches=[];
+    __insert.captureTicks.forEach((tick,i)=>{
+      const actual=__insert.shape(tick),expected=__insert.beforeCapture[i];
+      if(actual.length!==expected.length||actual.some((a,j)=>{
+        const b=expected[j];return a.type!==b.type||JSON.stringify(a.rgb)!==JSON.stringify(b.rgb)||a.alpha!==b.alpha||a.points.length!==b.points.length||a.points.some((p,k)=>p.some((n,l)=>Math.abs(n-b.points[k][l])>.0001));
+      }))mismatches.push(tick);
+    });
+    const command=styk.editor._undo.at(-1),sources=command.commands.flatMap(c=>c.frameSourceChanges??[]);
+    return {ticks:__insert.captureTicks,mismatches,historyBytes:command.bytes,sourceFrames:sources.length,sourceObjects:sources.reduce((n,s)=>n+s.after.value.objects.length,0)};
+  });
+  assert.deepEqual(clipCheck.mismatches,[],'Movieclip conversion preserves the dense scene before, inside and after its range.');
   await phase('clip-copy','styk.editor.copySelection()');
   await phase('clip-paste','styk.editor.pasteSelection({newIdentities:true}).length');
   await phase('clip-move',`(()=>{const e=styk.editor;e.beginTranslationDrag();e.moveSelection(20,10,{fromStart:true});return e.commitDrag();})()`);
@@ -90,6 +109,6 @@ try {
   const pointerCheck={target,moved};
   await page.screenshot({path:path.join(output,'result.png')});
   await Promise.all(sourceReads);
-  await writeFile(path.join(output,'report.json'),JSON.stringify({source,sourceHashes,scene,phases,pointerCheck,errors,limitations:['Headless Chrome; commands include synchronous application listeners; paint is two requestAnimationFrame callbacks, not display scanout.','Library drop measures decoded asset insertion; file reading/decoding and desktop clipboard transfer are excluded.']},null,2));
+  await writeFile(path.join(output,'report.json'),JSON.stringify({source,sourceHashes,scene,phases,clipCheck,pointerCheck,errors,limitations:['Headless Chrome; commands include synchronous application listeners; paint is two requestAnimationFrame callbacks, not display scanout.','Library drop measures decoded asset insertion; file reading/decoding and desktop clipboard transfer are excluded.']},null,2));
   if(errors.length)throw new Error(errors.join('\n'));
 } finally {await browser.close();}

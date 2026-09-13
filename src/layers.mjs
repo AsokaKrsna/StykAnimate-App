@@ -1,5 +1,7 @@
+import {validateParallax} from './layer-parallax.mjs';
 /** Persistent user layers. Native object slots and join references never change. */
 export const FIXED_LAYER_IDS = Object.freeze(['scene', 'camera']);
+export const LAYER_COLORS = Object.freeze({blue:'#3399ee',violet:'#9966dd',rose:'#df6690',orange:'#d99035',green:'#43a878',teal:'#36a8b5'});
 const owns = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 const record = value => value && typeof value === 'object' && !Array.isArray(value);
 export const isUserLayerId = id => typeof id === 'string' && /^layer-[1-9]\d*$/.test(id);
@@ -23,6 +25,8 @@ export function* validateLayerStateSteps(state) {
     const layer = state.byId[id];
     if (!record(layer) || typeof layer.name !== 'string' || !layer.name.trim() || layer.name.length > 160 ||
       typeof layer.visible !== 'boolean' || typeof layer.locked !== 'boolean') throw new Error('Invalid layer properties.');
+    validateParallax(layer.parallax);
+    if (layer.color !== undefined && !Object.hasOwn(LAYER_COLORS, layer.color)) throw new Error('Invalid layer color.');
     if (++work % 256 === 0) yield {phase:'layers', checked:work};
   }
   if (Object.keys(state.byId).length !== ids.size || state.nextId <= largest || !ids.has(state.defaultLayerId) ||

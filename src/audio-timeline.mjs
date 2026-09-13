@@ -1,40 +1,25 @@
 import {audioState, audioFps, audioEnd} from './audio-model.mjs';
 import {icon} from './icons.mjs';
 import {showTimelineMenu} from './timeline-menu.mjs';
-const ROW = 64, RULER = 22, DROP = 38, CHROME = 78, VIEW_KEY = 'stykanimate.audio-view.v1';
+const ROW = 64, RULER = 22, DROP = 38, TOOLBAR = 36;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const afterTime = (times, time) => { let low = 0, high = times.length; while (low < high) { const mid = (low + high) >>> 1; if (times[mid] <= time) low = mid + 1; else high = mid; } return low; };
 const el = (tag, parent, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; parent?.append(node); return node; };
 
 /** Shared audio lanes aligned to each timeline's actual time-to-pixel mapping. */
 export class AudioTimeline {
-  constructor(container, editor, {host, engine, mode = 'advanced', onError, onSeek, onScrubStart, onScrub, onScrubEnd, onTogglePlay, onAudioHeight} = {}) {
-    Object.assign(this, {editor, host, engine, mode, onError, onSeek, onScrubStart, onScrub, onScrubEnd, onTogglePlay, onAudioHeight});
+  constructor(container, editor, {host, engine, mode = 'advanced', onError, onSeek, onScrubStart, onScrub, onScrubEnd, onTogglePlay} = {}) {
+    Object.assign(this, {editor, host, engine, mode, onError, onSeek, onScrubStart, onScrub, onScrubEnd, onTogglePlay});
     this.events = new AbortController(); this.nodes = new Map(); this.labels = new Map();
-    let saved = {}; try { saved = JSON.parse(localStorage.getItem(VIEW_KEY) || '{}') || {}; } catch { /* Optional view preference. */ }
-    this.view = editor.audioView ??= {height: Number.isFinite(saved.height) ? clamp(saved.height, 96, 480) : 172, expanded: saved.expanded !== false, focused:Boolean(saved.focused), restoreHeight:Number.isFinite(saved.restoreHeight) ? clamp(saved.restoreHeight, 96, 480) : 172};
-    this.expanded = this.view.expanded;
+    this.integrated = mode === 'advanced'; this.open = Boolean(editor.audioPanelOpen);
     Object.assign(this, editor.audioSelection ?? {});
-    container.classList.add('has-audio-timeline'); this.root = el('section', container, 'audio-timeline'); this.root.setAttribute('aria-label', 'Audio timeline');
-    this.resizer = el('div', this.root, 'audio-resizer'); this.resizer.tabIndex = 0; this.resizer.setAttribute('role', 'separator'); this.resizer.setAttribute('aria-label', 'Resize audio panel'); this.resizer.setAttribute('aria-orientation', 'horizontal'); this.resizer.title = 'Drag to resize audio · Arrow keys to resize · Double-click to expand';
-    this.on(this.resizer, 'pointerdown', event => this.resizeDown(event));
-    this.on(this.resizer, 'pointermove', event => this.resizeMove(event));
-    this.on(this.resizer, 'pointerup', () => this.resizeEnd());
-    this.on(this.resizer, 'pointercancel', () => this.resizeEnd(true));
-    this.on(this.resizer, 'lostpointercapture', () => this.resizeEnd(true));
-    this.on(this.resizer, 'dblclick', () => this.expandPanel());
-    const timelinePanel = container.closest('.timeline-panel');
-    if (timelinePanel) this.on(timelinePanel, 'styk-audio-panel-resize', event => this.setHeight(event.detail.height - CHROME, event.detail.commit));
-    this.on(this.resizer, 'keydown', event => {
-      if (event.key === 'Escape' && this.resizing) this.resizeEnd(true);
-      else if (event.key === 'Home') this.setHeight(172, true);
-      else if (event.key === 'End') this.setHeight(480, true);
-      else if (['ArrowUp', 'ArrowDown'].includes(event.key)) this.setHeight(this.body.getBoundingClientRect().height + (event.key === 'ArrowUp' ? 1 : -1) * (event.shiftKey ? 64 : 16), true);
-      else return;
-      event.preventDefault(); event.stopPropagation();
-    });
+    this.container = container; container.classList.add('has-audio-timeline');
+    this.root = el('section', this.integrated ? host.main : container, `audio-timeline ${this.integrated ? 'audio-integrated' : 'audio-tab'}`);
+    this.root.id = 'timeline-audio-panel'; this.root.hidden = !this.open; this.root.setAttribute('aria-label', 'Audio timeline');
+    this.launcher = document.getElementById('timeline-audio');
+    if (this.launcher) this.on(this.launcher, 'click', () => this.setOpen(!this.open, {focus:true}));
     this.toolbar = el('div', this.root, 'audio-toolbar');
-    this.toggle = this.button(this.toolbar, 'Audio tracks', () => { this.expanded = !this.expanded; this.saveView(); this.update(); }, 'chevron-down');
+    el('span', this.toolbar, 'audio-heading-icon').innerHTML = icon('music');
     this.title = el('strong', this.toolbar, '', 'Audio');
     this.importButton = this.button(this.toolbar, 'Import audio', () => this.file.click(), 'plus'); el('span', this.importButton, '', 'Import audio');
     this.cancelImportButton=this.button(this.toolbar,'Cancel audio import',()=>this.importController?.abort(),'close');this.cancelImportButton.hidden=true;
@@ -46,16 +31,26 @@ export class AudioTimeline {
     this.scrubLabel = el('label', this.toolbar, 'audio-check', 'Scrub sound'); this.scrub = el('input', this.scrubLabel); this.scrub.type = 'checkbox'; this.scrub.setAttribute('aria-label', 'Hear audio while scrubbing');
     this.scrub.checked = Boolean(editor.audioScrub); this.on(this.scrub, 'change', () => { editor.audioScrub = this.scrub.checked; });
     this.rippleLabel = el('label', this.toolbar, 'audio-check', 'Ripple'); this.ripple = el('input', this.rippleLabel); this.ripple.type = 'checkbox'; this.ripple.checked = Boolean(editor.audioRipple); this.ripple.title = 'Move or split audio when time is inserted or removed across every animation layer'; this.ripple.setAttribute('aria-label', 'Ripple audio with scene frames'); this.on(this.ripple, 'change', () => { editor.audioRipple = this.ripple.checked; });
-    this.expandButton = this.button(this.toolbar, 'Expand audio panel', () => this.expandPanel(), 'expand'); el('span', this.expandButton, '', 'Expand');
+    this.closeButton = this.button(this.toolbar, 'Close audio', () => this.setOpen(false, {focus:true}), 'close');
+    this.closeButton.viewAction = true;
     this.file = el('input', this.root); this.file.type = 'file'; this.file.accept = '.wav,.mp3,.m4a,.aac,.flac,.ogg,.opus,.aif,.aiff,audio/*'; this.file.hidden = true; this.file.setAttribute('aria-label', 'Choose audio recording');
     this.on(this.file, 'change', () => { const file = this.file.files[0]; this.file.value = ''; if (file) void this.importFile(file); });
     this.body = el('div', this.root, 'audio-body'); this.body.tabIndex = 0; this.body.setAttribute('role', 'region'); this.body.setAttribute('aria-label', 'Audio clips'); this.scroll = this.body;
     this.ruler = el('div', this.body, 'audio-ruler'); el('span', this.ruler, '', 'TRACK / VOLUME'); this.rulerCanvas = el('canvas', this.ruler);
+    this.ruler.hidden = this.integrated;
     this.labelColumn = el('div', this.body, 'audio-labels'); this.lanes = el('div', this.body, 'audio-lanes'); this.canvas = el('canvas', this.lanes);
     this.clipLayer = el('div', this.lanes, 'audio-clips'); this.playhead = el('div', this.lanes, 'audio-playhead');
     this.snapLine = el('div', this.lanes, 'audio-snap-line'); this.snapLine.hidden = true;
     this.dropRow = el('div', this.lanes, 'audio-new-lane', '+ Drop a clip here to create a track');
     this.on(this.dropRow, 'dblclick', () => this.addTrack());
+    this.empty = el('div', this.body, 'audio-empty'); el('span', this.empty, 'audio-empty-icon').innerHTML = icon('music');
+    const emptyText = el('div', this.empty); el('strong', emptyText, '', 'Add music, dialogue or sound effects'); el('p', emptyText, '', 'Drop an audio file here, or choose Import audio.');
+    if (!this.integrated) {
+      this.horizontal = el('div', this.root, 'audio-horizontal'); this.horizontal.tabIndex = 0; this.horizontal.setAttribute('role', 'region'); this.horizontal.setAttribute('aria-label', 'Audio timeline position');
+      this.horizontalSpacer = el('div', this.horizontal);
+      this.on(this.horizontal, 'scroll', () => { if (this.open && this.horizontal.clientWidth) host.strip.scrollLeft = this.horizontal.scrollLeft; });
+      this.on(this.horizontal, 'keydown', event => { event.stopPropagation(); const direction = {ArrowLeft:-1, ArrowRight:1}[event.key]; if (direction || ['Home','End'].includes(event.key)) { event.preventDefault(); host.strip.scrollLeft = direction ? host.strip.scrollLeft + direction * (event.shiftKey ? this.horizontal.clientWidth : 40) : event.key === 'Home' ? 0 : host.strip.scrollWidth; this.update(); } });
+    }
     this.footer = el('div', this.root, 'audio-editbar');
     this.selectionInfo = el('div', this.footer, 'audio-selection-info');
     this.selectionName = el('strong', this.selectionInfo); this.selectionTime = el('span', this.selectionInfo);
@@ -67,6 +62,11 @@ export class AudioTimeline {
     this.duplicateButton = this.button(this.clipControls, 'Duplicate audio clip', () => { this.selected = editor.duplicateAudioClip(this.selected); }, 'duplicate'); el('span', this.duplicateButton, '', 'Duplicate');
     this.deleteButton = this.button(this.clipControls, 'Delete audio clip', () => { editor.deleteAudioClip(this.selected); this.selected = null; }, 'trash');
     this.propertiesButton = this.button(this.clipControls, 'Audio clip properties', () => this.properties(), 'sliders'); el('span', this.propertiesButton, '', 'Details');
+    this.footer.classList.add('audio-clip-popover');this.footer.setAttribute('popover','auto');this.footer.setAttribute('role','dialog');this.footer.setAttribute('aria-label','Audio clip controls');
+    this.clipToolsButton=this.button(this.toolbar,'Audio clip controls',()=>{if(this.footer.matches(':popover-open'))this.footer.hidePopover();else{this.footer.showPopover();this.positionClipTools();}},'sliders');this.clipToolsButton.viewAction=true;this.closeButton.before(this.clipToolsButton);this.clipToolsButton.setAttribute('aria-haspopup','dialog');
+    this.on(this.footer,'toggle',()=>{this.clipToolsButton.setAttribute('aria-expanded',String(this.footer.matches(':popover-open')));});
+    this.on(this.footer,'keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();this.footer.hidePopover();this.clipToolsButton.focus();}else this.keydown(event);});
+    this.on(window,'resize',()=>{if(this.footer.matches(':popover-open'))this.positionClipTools();});
     this.live = el('div', this.root, 'audio-live'); this.live.setAttribute('role', 'status'); this.live.setAttribute('aria-live', 'polite');
     this.on(this.root, 'keydown', event => this.keydown(event));
     this.on(this.body, 'scroll', () => this.update()); this.on(host.scroll ?? host.strip, 'scroll', () => this.update());
@@ -90,37 +90,39 @@ export class AudioTimeline {
       const rect = this.lanes.getBoundingClientRect(), inLanes = event.clientX >= rect.left && event.clientY >= rect.top && event.clientY < rect.bottom;
       if (file) void this.importFile(file, inLanes ? {trackId: this.trackAt(event.clientY)?.id, start: clamp(Math.round(this.xTick(event.clientX - rect.left)) / this.fps, 0, 3600)} : undefined);
     });
-    this.on(this.body, 'wheel', event => { if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) { event.preventDefault(); (host.scroll ?? host.strip).scrollLeft += event.deltaX || event.deltaY; } }, {passive: false});
-    this.on(editor, 'change', event => { const d = event.detail; if (d.kind === 'document') { this.importController?.abort(); this.selected = null; this.trackId = null; this.closeProperties(); } if (d.kind === 'history' || d.kind === 'document') this.resetVolumes = true; if (d.audio || d.kind === 'document') this.cancel(); if (!this.found().clip) this.selected = null; this.update(d.kind !== 'seek'); });
+    this.on(this.root, 'wheel', event => {
+      if (this.integrated && (event.ctrlKey || event.metaKey)) { event.preventDefault(); host.setZoom(host.pxPerTick * (event.deltaY < 0 ? 1.15 : .87)); }
+      else if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) { event.preventDefault(); (host.scroll ?? host.strip).scrollLeft += event.deltaX || event.deltaY; }
+      else if (this.integrated) { event.preventDefault(); host.scroll.scrollTop += event.deltaY; }
+    }, {passive: false});
+    this.on(editor, 'change', event => { const d = event.detail; if (d.kind === 'document') { this.importController?.abort(); this.selected = null; this.trackId = null; this.closeProperties(); this.setOpen(false); } if (d.kind === 'history' || d.kind === 'document') this.resetVolumes = true; if (d.audio || d.kind === 'document') this.cancel(); if (!this.found().clip) this.selected = null; this.update(d.kind !== 'seek'); });
     this.observer = new ResizeObserver(() => this.update()); this.observer.observe(container); this.observer.observe(this.body);
-    this.on(window, 'styk-theme-change', () => this.update()); this.on(window, 'blur', () => { this.cancel(); this.resizeEnd(true); }); this.update();
+    this.on(window, 'styk-theme-change', () => this.update()); this.on(window, 'blur', () => this.cancel()); this.update();
   }
   on(target, type, callback, options = {}) { target.addEventListener(type, callback, {...options, signal: target.closest?.('.audio-track,.audio-properties')?.events?.signal ?? this.events.signal}); }
   _run(action) { try { this.onSeek?.(); const result = action(); if (result?.then) result.catch(error => this.error(error)); this.update(); return result; } catch (error) { this.error(error); } }
   error(error) { this.live.textContent = error.message; this.onError?.(error); }
-  button(parent, title, action, symbol) { const node = el('button', parent, 'audio-button'); node.type = 'button'; node.title = title; node.setAttribute('aria-label', title); node.innerHTML = icon(symbol); this.on(node, 'click', () => this._run(action)); return node; }
-  saveView() { Object.assign(this.view, {expanded: this.expanded}); try { localStorage.setItem(VIEW_KEY, JSON.stringify(this.view)); } catch { /* Optional view preference. */ } }
-  setHeight(height, persist = false) { this.view.height = clamp(height, 96, 480); this.expanded = true; this.update(); if (persist) this.saveView(); }
-  expandPanel() {
-    if (this.view.focused && this.expanded) { this.view.focused = false; this.setHeight(this.view.restoreHeight ?? 172, true); }
-    else { this.view.restoreHeight = this.view.height; this.view.focused = true; this.setHeight(400, true); }
-  }
-  resizeDown(event) {
-    if (event.button !== 0) return;
-    event.preventDefault(); this.resizing = {y:event.clientY, height:this.body.hidden ? 0 : this.body.getBoundingClientRect().height, before:this.view.height, expanded:this.expanded, pointer:event.pointerId};
-    this.resizer.focus({preventScroll:true});
-    this.resizer.setPointerCapture(event.pointerId); this.resizer.dataset.dragging = 'true';
-  }
-  resizeMove(event) { if (this.resizing) this.setHeight(this.resizing.height + this.resizing.y - event.clientY); }
-  resizeEnd(cancel = false) {
-    const gesture = this.resizing; if (!gesture) return; this.resizing = null;
-    if (cancel) { this.view.height = gesture.before; this.expanded = gesture.expanded; } else this.saveView();
-    delete this.resizer.dataset.dragging;
-    if (this.resizer.hasPointerCapture(gesture.pointer)) this.resizer.releasePointerCapture(gesture.pointer);
+  button(parent, title, action, symbol) { const node = el('button', parent, 'audio-button'); node.type = 'button'; node.title = title; node.setAttribute('aria-label', title); node.innerHTML = icon(symbol); this.on(node, 'click', () => node.viewAction ? action() : this._run(action)); return node; }
+  get rulerHeight() { return this.integrated ? 0 : RULER; }
+  get bodyHeight() { const count = audioState(this.editor.report).tracks.length; return count ? this.rulerHeight + count * ROW + DROP : 112; }
+  get contentHeight() { return this.open ? TOOLBAR + this.bodyHeight : 0; }
+  get verticalScroll() { return this.integrated ? this.host.scroll : this.body; }
+  setOpen(value, {focus = false} = {}) {
+    const wasOpen = this.open; this.open = this.editor.audioPanelOpen = Boolean(value); this.cancel();
+    if (!this.open) { this.closeProperties(); this.menuEvents?.abort(); this.menu?.remove(); this.menu = null; }
+    this.root.hidden = !this.open;
+    if (this.integrated) {
+      if (this.open && !wasOpen) { this.returnScroll = this.host.scroll.scrollTop; this.revealGroup = true; }
+      this.host._extent();
+      if (!this.open && wasOpen) this.host.scroll.scrollTop = this.returnScroll ?? 0;
+    }
+    this.host.update();
+    if (focus) this.focusPending = true;
     this.update();
   }
+  clearSelection() { if (this.selected) { this.selected = null; this.update(); } }
   addTrack() {
-    this.trackId = this.editor.addAudioTrack(`Audio ${audioState(this.editor.report).tracks.length + 1}`); this.selected = null; this.expanded = true;
+    this.trackId = this.editor.addAudioTrack(`Audio ${audioState(this.editor.report).tracks.length + 1}`); this.selected = null; this.setOpen(true);
     this.revealTrack(this.trackId); this.update();
   }
   revealTrack(id) {
@@ -128,22 +130,32 @@ export class AudioTimeline {
     if (index < 0) return;
     this.revealId = id; this.update();
   }
-  trackAt(y) { return audioState(this.editor.report).tracks[Math.floor((y - this.lanes.getBoundingClientRect().top - RULER) / ROW)]; }
+  trackAt(y) { return audioState(this.editor.report).tracks[Math.floor((y - this.lanes.getBoundingClientRect().top - this.rulerHeight) / ROW)]; }
   get fps() { return audioFps(this.editor.report); }
   tickX(tick) {
     if (this.mode === 'advanced') return tick * this.host.pxPerTick - this.host._offsetX();
     const times = this.host.times, index = Math.max(0, afterTime(times, tick) - 1), start = times[index] ?? 0, end = times[index + 1] ?? this.editor.totalTicks;
-    return (index + (tick - start) / Math.max(1, end - start)) * 112 - this.host.strip.scrollLeft;
+    return (index + (tick - start) / Math.max(1, end - start)) * this.host.cardWidth - this.host.strip.scrollLeft;
   }
   xTick(x) {
     if (this.mode === 'advanced') return (x + this.host._offsetX()) / this.host.pxPerTick;
-    const position = (x + this.host.strip.scrollLeft) / 112, index = clamp(Math.floor(position), 0, this.host.times.length - 1), start = this.host.times[index] ?? 0, end = this.host.times[index + 1] ?? this.editor.totalTicks;
+    const position = (x + this.host.strip.scrollLeft) / this.host.cardWidth, index = clamp(Math.floor(position), 0, this.host.times.length - 1), start = this.host.times[index] ?? 0, end = this.host.times[index + 1] ?? this.editor.totalTicks;
     return start + (position - index) * Math.max(1, end - start);
   }
+  positionClipTools(){const rect=this.clipToolsButton.getBoundingClientRect(),panel=this.footer;panel.style.left=`${Math.max(8,Math.min(innerWidth-panel.offsetWidth-8,rect.right-panel.offsetWidth))}px`;panel.style.top=`${Math.max(8,Math.min(innerHeight-panel.offsetHeight-8,rect.top-panel.offsetHeight-6))}px`;}
   found() { const state = audioState(this.editor.report); for (const track of state.tracks) { const clip = track.clips.find(clip => clip.id === this.selected); if (clip) return {track, clip, asset: state.assets[clip.assetId]}; } return {}; }
-  update(dirty = true) { this.dirty ||= dirty; if (this.disposed || this.raf) return; this.raf = requestAnimationFrame(() => { this.raf = null; if (this.dirty) { this.dirty = false; this.paint(); } this.playhead.style.transform = `translateX(${this.tickX(this.editor.tick)}px)`; const {clip} = this.found(), time = this.editor.tick / this.fps; this.splitButton.disabled = !clip || time <= clip.start || time >= clip.start + clip.duration; }); }
+  update(dirty = true) { this.dirty ||= dirty; if (this.disposed || this.raf || !this.open && !this.dirty) return; this.raf = requestAnimationFrame(() => { this.raf = null; if (this.dirty) { this.dirty = false; this.paint(); } if (!this.open) return; if (!this.integrated) this.playhead.style.transform = `translateX(${this.tickX(this.editor.tick)}px)`; const {clip} = this.found(), time = this.editor.tick / this.fps; this.splitButton.disabled = !clip || time <= clip.start || time >= clip.start + clip.duration; }); }
   paint() {
     const state = audioState(this.editor.report), {clip, asset, track: owner} = this.found(), time = this.editor.tick / this.fps;
+    this.root.hidden = !this.open;
+    this.launcher?.setAttribute('aria-expanded', String(this.open)); this.launcher?.setAttribute('aria-pressed', String(this.open));
+    if (this.launcher) { this.launcher.dataset.hasAudio = String(state.tracks.some(track => track.clips.length)); this.launcher.title = `${this.open ? 'Hide' : 'Show'} audio${state.tracks.length ? ` · ${state.tracks.length} tracks` : ''}`; }
+    this.container.classList.toggle('audio-tab-open', this.open && !this.integrated);
+    if (this.integrated) { this.host.headerTools.classList.toggle('audio-selection', this.open && Boolean(clip)); this.host.root.classList.toggle('audio-visible', this.open); }
+    this.clipToolsButton.disabled=!clip;
+    if((!this.open||!clip)&&this.footer.matches(':popover-open'))this.footer.hidePopover();
+    if (this.focusPending) { this.focusPending = false; (this.open ? this.importButton : this.launcher)?.focus({preventScroll:true}); }
+    if (!this.open) return;
     this.splitButton.disabled = !clip || time <= clip.start || time >= clip.start + clip.duration;
     this.propertiesButton.disabled = this.duplicateButton.disabled = this.deleteButton.disabled = !clip;
     this.clipControls.hidden = !clip;
@@ -153,43 +165,49 @@ export class AudioTimeline {
     if (clip && (document.activeElement !== this.clipVolume || this.resetVolumes)) { this.clipVolume.value = String(Math.round(clip.gain * 100)); this.clipVolumeValue.textContent = `${Math.round(clip.gain * 100)}%`; }
     this.extendButton.disabled = audioEnd(state) <= this.editor.totalTicks / this.fps;
     this.extendButton.hidden = this.extendButton.disabled;
-    this.title.textContent = state.tracks.length ? `Audio · ${state.tracks.length}` : 'Audio'; this.toggle.setAttribute('aria-expanded', String(this.expanded));
-    this.toggle.style.transform = this.expanded ? '' : 'rotate(-90deg)';
-    this.body.hidden = this.footer.hidden = !this.expanded || !state.tracks.length; this.root.classList.toggle('audio-open', !this.body.hidden); this.hint.hidden = Boolean(state.tracks.length) && !this.importController;
-    this.resizer.hidden = !state.tracks.length;
-    this.expandButton.disabled = !state.tracks.length;
-    const large = this.expanded && this.view.focused && state.tracks.length > 0;
-    this.root.parentElement.classList.toggle('audio-focused', large);
-    this.expandButton.setAttribute('aria-label', large ? 'Restore audio panel height' : 'Expand audio panel'); this.expandButton.title = large ? 'Show animation frames and restore audio height' : 'Expand audio to focus on mixing'; this.expandButton.lastChild.textContent = large ? 'Show animation' : 'Expand'; this.expandButton.setAttribute('aria-pressed', String(large));
-    this.onAudioHeight?.(this.body.hidden ? (state.tracks.length ? 42 : 36) : CHROME + this.view.height, Boolean(large));
-    // Reserve the animation controls even when the workspace cannot grow further.
-    const reserve = large ? 0 : this.mode === 'simple' ? 180 : 120;
-    const bodyHeight = Math.max(48, Math.min(this.view.height, this.root.parentElement.clientHeight - reserve - CHROME));
-    this.body.style.height = `${bodyHeight}px`;
-    this.resizer.setAttribute('aria-valuenow', String(Math.round(bodyHeight))); this.resizer.setAttribute('aria-valuemin', '48'); this.resizer.setAttribute('aria-valuemax', '480');
-    const width = this.mode === 'advanced' ? this.host.labelWidth : 178; this.root.style.setProperty('--audio-label', `${width}px`);
-    if (this.body.hidden) return;
-    const height = RULER + state.tracks.length * ROW + DROP, w = Math.max(1, this.lanes.clientWidth), visibleHeight = Math.max(1, this.body.clientHeight);
+    this.title.textContent = state.tracks.length ? `Audio · ${state.tracks.length}` : 'Audio'; this.hint.hidden = Boolean(state.tracks.length) && !this.importController;
+    this.empty.hidden = Boolean(state.tracks.length); this.labelColumn.hidden = this.lanes.hidden = !state.tracks.length; this.ruler.hidden = this.integrated || !state.tracks.length;
+    const width = this.mode === 'advanced' ? this.host.labelWidth : this.host.controls.offsetWidth; this.root.style.setProperty('--audio-label', `${width}px`);
+    const height = this.bodyHeight;
+    if (this.integrated) {
+      this.host._extent(); this.body.style.height = `${height}px`;
+      if (this.revealGroup) { this.revealGroup = false; const bottom = this.host.audioTop + TOOLBAR + Math.min(height, ROW + DROP); if (bottom > this.host.scroll.scrollTop + this.host.height) this.host.scroll.scrollTop = Math.max(0, bottom - this.host.height); }
+      this.positionIntegrated();
+    } else this.body.style.height = `${Math.max(48, this.container.clientHeight - TOOLBAR - (state.tracks.length?14:0))}px`;
+    if (this.horizontal) {
+      const range = Math.max(0, this.host.strip.scrollWidth - this.host.strip.clientWidth);
+      this.horizontal.hidden = range <= 1 || !state.tracks.length;
+      this.horizontalSpacer.style.width = `${this.horizontal.clientWidth + range}px`; this.horizontal.scrollLeft = this.host.strip.scrollLeft;
+    }
+    const w = Math.max(1, this.lanes.clientWidth);
     this.lanes.style.height = this.labelColumn.style.height = `${height}px`; this.clipLayer.style.height = `${height}px`;
     this.dropRow.style.top = `${height - DROP}px`; this.dropRow.dataset.active = String(this.gesture?.target === 'new' || this.fileDropTrack === 'new');
     this.dropRow.textContent = this.gesture?.target === 'new' ? `Release to create a track · ${asset?.name ?? 'Audio'}` : '+ Drop a clip here to create a track';
     if (this.revealId) {
-      const top = RULER + state.tracks.findIndex(row => row.id === this.revealId) * ROW;
-      if (top < this.body.scrollTop) this.body.scrollTop = top;
-      else if (top + ROW > this.body.scrollTop + visibleHeight) this.body.scrollTop = top + ROW - visibleHeight;
+      const top = this.rulerHeight + state.tracks.findIndex(row => row.id === this.revealId) * ROW + (this.integrated ? this.host.audioTop + TOOLBAR : 0), scroll = this.verticalScroll, viewport = this.integrated ? this.host.height : this.body.clientHeight, margin = this.integrated ? 32 + TOOLBAR : RULER;
+      if (top < scroll.scrollTop + margin) scroll.scrollTop = Math.max(0, top - margin);
+      else if (top + ROW > scroll.scrollTop + viewport) scroll.scrollTop = top + ROW - viewport;
       this.revealId = null;
+      if (this.integrated) this.positionIntegrated();
     }
-    const sy = this.body.scrollTop;
+    const sy = this.integrated ? Math.max(0, this.host.scroll.scrollTop + 32 - this.host.audioTop) : this.body.scrollTop;
+    const visibleHeight = this.integrated ? Math.max(0, Math.min(height - sy, this.host.height - Math.max(32 + TOOLBAR, this.host.audioTop + TOOLBAR - this.host.scroll.scrollTop))) : Math.max(1, this.body.clientHeight);
     const dpr = window.devicePixelRatio || 1; this.canvas.width = Math.round(w * dpr); this.canvas.height = Math.round(visibleHeight * dpr); this.canvas.style.width = `${w}px`; this.canvas.style.height = `${visibleHeight}px`; this.canvas.style.top = `${sy}px`;
     const ctx = this.canvas.getContext('2d'), css = getComputedStyle(this.root), ink = css.getPropertyValue('--audio-ink').trim(), fill = css.getPropertyValue('--audio-fill').trim();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, visibleHeight); ctx.font = `10px ${css.fontFamily}`; ctx.fillStyle = css.color;
     const start = Math.max(0, this.xTick(0) / this.fps), end = this.xTick(w) / this.fps, interval = Math.max(.1, 10 ** Math.ceil(Math.log10(Math.max(.001, (end - start) / 10))));
-    this.rulerCanvas.width = Math.round(w * dpr); this.rulerCanvas.height = RULER * dpr; this.rulerCanvas.style.width = `${w}px`;
-    const ruler = this.rulerCanvas.getContext('2d'); ruler.setTransform(dpr,0,0,dpr,0,0); ruler.font = `10px ${css.fontFamily}`; ruler.fillStyle = css.color; ruler.globalAlpha = .65;
-    for (let time = Math.ceil(start / interval) * interval; time < end; time += interval) { const x = this.tickX(time * this.fps); ruler.fillText(`${Number(time.toFixed(2))}s`, x + 4, 14); ctx.globalAlpha = .12; ctx.fillRect(x, RULER - sy, 1, height); } ctx.globalAlpha = 1;
+    if (this.integrated) {
+      ctx.globalAlpha = .08;
+      for (let tick = Math.ceil(this.xTick(0)); tick < this.xTick(w); tick++) ctx.fillRect(Math.round(this.tickX(tick)), 0, 1, visibleHeight);
+    } else {
+      this.rulerCanvas.width = Math.round(w * dpr); this.rulerCanvas.height = RULER * dpr; this.rulerCanvas.style.width = `${w}px`;
+      const ruler = this.rulerCanvas.getContext('2d'); ruler.setTransform(dpr,0,0,dpr,0,0); ruler.font = `10px ${css.fontFamily}`; ruler.fillStyle = css.color; ruler.globalAlpha = .65;
+      for (let time = Math.ceil(start / interval) * interval; time < end; time += interval) { const x = this.tickX(time * this.fps); ruler.fillText(`${Number(time.toFixed(2))}s`, x + 4, 14); ctx.globalAlpha = .12; ctx.fillRect(x, this.rulerHeight - sy, 1, visibleHeight); }
+    }
+    ctx.globalAlpha = 1;
     const visible = new Set(), visibleTracks = new Set();
-    for (let index = Math.max(0, Math.floor((sy - RULER) / ROW)); index < Math.min(state.tracks.length, Math.ceil((sy + visibleHeight - RULER) / ROW)); index++) {
-      const track = state.tracks[index], top = RULER + index * ROW; visibleTracks.add(track.id);
+    for (let index = Math.max(0, Math.floor((sy - this.rulerHeight) / ROW)); visibleHeight > 0 && index < Math.min(state.tracks.length, Math.ceil((sy + visibleHeight - this.rulerHeight) / ROW)); index++) {
+      const track = state.tracks[index], top = this.rulerHeight + index * ROW; visibleTracks.add(track.id);
       let label = this.labels.get(track.id); if (!label) {
         label = el('div', this.labelColumn, 'audio-track'); label.events = new AbortController(); label.dataset.track = track.id; const name = el('input', label, 'audio-track-name'); name.setAttribute('aria-label', 'Audio track name'); name.maxLength = 120;
         this.on(label, 'pointerdown', () => { this.trackId = track.id; this.update(); });
@@ -237,6 +255,14 @@ export class AudioTimeline {
     this.snapLine.hidden = this.gesture?.snap == null;
     if (!this.snapLine.hidden) this.snapLine.style.left = `${this.tickX(this.gesture.snap * this.fps)}px`;
   }
+  positionIntegrated() {
+    const top = this.host.audioTop - this.host.scroll.scrollTop;
+    this.root.style.top = `${top}px`; this.root.style.right = `${this.host.scroll.offsetWidth - this.host.scroll.clientWidth}px`;
+    this.toolbar.style.transform = `translateY(${Math.max(0, 32 - top)}px)`;
+    this.host.root.style.setProperty('--audio-toolbar-top', `${Math.max(32, top)}px`);
+    this.host.root.style.setProperty('--audio-toolbar-bottom', `${Math.max(32, top) + TOOLBAR}px`);
+    this.root.style.clipPath = `inset(${Math.max(0, 32 - top)}px 0 ${Math.max(0, top + this.contentHeight - this.host.height)}px 0)`;
+  }
   down(event) {
     if (event.button !== 0) return; this.onSeek?.(); const node = event.target.closest('[data-clip]'), rect = this.lanes.getBoundingClientRect();
     const x = event.clientX - rect.left;
@@ -278,7 +304,7 @@ export class AudioTimeline {
         if (gesture.snap != null) start = delta;
       }
       gesture.patch = {start};
-      const row = Math.floor((event.clientY - this.lanes.getBoundingClientRect().top - RULER) / ROW), tracks = audioState(this.editor.report).tracks;
+      const row = Math.floor((event.clientY - this.lanes.getBoundingClientRect().top - this.rulerHeight) / ROW), tracks = audioState(this.editor.report).tracks;
       gesture.target = row >= tracks.length ? 'new' : tracks[Math.max(0, row)]?.id ?? gesture.source;
     }
     else if (gesture.kind === 'left') { const shift = clamp(delta, -Math.min(clip.start, clip.offset), clip.duration - Math.min(clip.duration, 1 / this.fps)); gesture.patch = {start: clip.start + shift, offset: clip.offset + shift, duration: clip.duration - shift}; }
@@ -290,12 +316,12 @@ export class AudioTimeline {
   }
   autoScroll() {
     this.dragRaf = null; const gesture = this.gesture; if (!gesture?.point || !gesture.moved) return;
-    const rect = this.body.getBoundingClientRect(), lanes = this.lanes.getBoundingClientRect(), point = gesture.point, scroll = this.host.scroll ?? this.host.strip;
+    const rect = this.integrated ? this.host.scroll.getBoundingClientRect() : this.body.getBoundingClientRect(), lanes = this.lanes.getBoundingClientRect(), point = gesture.point, scroll = this.host.scroll ?? this.host.strip, vertical = this.verticalScroll;
     const speed = (value, low, high) => value < low + 24 ? -Math.min(18, (low + 24 - value) / 3) : value > high - 24 ? Math.min(18, (value - high + 24) / 3) : 0;
-    const beforeX = scroll.scrollLeft, beforeY = this.body.scrollTop;
+    const beforeX = scroll.scrollLeft, beforeY = vertical.scrollTop;
     scroll.scrollLeft += speed(point.clientX, lanes.left, lanes.right);
-    if (gesture.kind === 'move') this.body.scrollTop += speed(point.clientY, rect.top, rect.bottom);
-    if (scroll.scrollLeft !== beforeX || this.body.scrollTop !== beforeY) this.move(point);
+    if (gesture.kind === 'move') vertical.scrollTop += speed(point.clientY, rect.top + (this.integrated ? 32 + TOOLBAR : 0), rect.top + (this.integrated ? this.host.height : rect.height));
+    if (scroll.scrollLeft !== beforeX || vertical.scrollTop !== beforeY) { if (this.integrated) this.positionIntegrated(); this.move(point); }
   }
   up(event) {
     const gesture = this.gesture; if (!gesture) return;
@@ -339,6 +365,7 @@ export class AudioTimeline {
   }
   async importFile(file, placement = {trackId:this.trackId, start:this.editor.tick / this.fps}) {
     if (!this.engine || this.importController) return;
+    if (!this.open) this.setOpen(true);
     this.onSeek?.(); const report = this.editor.report, start = placement.start, controller = this.importController = new AbortController(); this.importButton.disabled = true; this.importButton.lastChild.textContent = 'Importing…'; this.importButton.setAttribute('aria-busy', 'true'); this.cancelImportButton.hidden=false;
     try {
       const asset = await this.engine.import(file, {signal: controller.signal, onProgress: text => { this.live.textContent = text; this.hint.textContent = text; this.hint.hidden = false; }});
@@ -346,8 +373,8 @@ export class AudioTimeline {
       const ids=['scene','camera',...this.editor.report._styk.layers.order], extend=start+asset.duration>this.editor.totalTicks/this.fps&&ids.every(id=>!this.editor.getLayer(id)?.locked);
       const commit=()=>{this.selected=this.editor.importAudio(asset,{trackId:placement.trackId,start});if(extend)this.extend();};
       if(extend)this.editor.movieclipBatch('Import audio and extend animation',commit);else commit();
-      this.trackId = this.found().track.id; this.expanded = true;
-      this.revealTrack(this.trackId); this.saveView();
+      this.trackId = this.found().track.id;
+      this.revealTrack(this.trackId);
       this.live.textContent = `Imported ${asset.name}${extend?' and extended the animation':''}. Drag to move, drag an edge to trim.`;
     } catch (error) { if (error.name !== 'AbortError'&&!controller.signal.aborted) this.error(error); }
     finally { this.importController = null; this.importButton.disabled = false; this.importButton.lastChild.textContent = 'Import audio'; this.importButton.removeAttribute('aria-busy'); this.cancelImportButton.hidden=true; this.hint.textContent = 'Drop music, dialogue or sound effects'; this.update(); }
@@ -374,5 +401,5 @@ export class AudioTimeline {
     el('p', popover, '', 'Drag between tracks to move. Shift keeps timing; Alt turns off snapping. Drag the top clip handles to fade.'); this.on(popover, 'keydown', event => { if (event.key === 'Escape') this.closeProperties(); event.stopPropagation(); });
     popover.showPopover();
   }
-  destroy() { this.disposed = true; this.editor.audioSelection = {selected:this.selected, trackId:this.trackId}; this.root.parentElement.classList.remove('audio-focused'); this.onAudioHeight?.(0); this.importController?.abort(); this.cancel(); this.resizeEnd(true); this.events.abort(); for(const label of this.labels.values())label.events.abort(); this.menuEvents?.abort(); this.menu?.remove(); this.observer.disconnect(); if (this.raf) cancelAnimationFrame(this.raf); this.closeProperties(); this.root.remove(); }
+  destroy() { this.disposed = true; this.editor.audioSelection = {selected:this.selected, trackId:this.trackId}; this.container.classList.remove('audio-tab-open'); this.importController?.abort(); this.cancel(); this.events.abort(); for(const label of this.labels.values())label.events.abort(); this.menuEvents?.abort(); this.menu?.remove(); this.observer.disconnect(); if (this.raf) cancelAnimationFrame(this.raf); this.closeProperties(); this.footer.hidePopover();this.footer.remove(); this.root.remove(); }
 }

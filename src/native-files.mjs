@@ -11,7 +11,10 @@ export async function writeNativeBlob(desktop, blob, options = {}) {
   checkAbort(signal);
   const start = clipboard ? desktop.beginClipboardWrite : recovery ? desktop.beginRecoveryWrite : documentToken ? desktop.beginProjectWrite : desktop.beginFileWrite;
   if (typeof start !== 'function') throw new Error('Restart the latest desktop app to enable streaming file saves.');
+  const started=options.onTiming?performance.now():0;
   const transfer = await start({ size: blob.size, name, defaultPath, filters, documentToken, saveAs });
+  const writeStarted=options.onTiming?performance.now():0;
+  try{options.onTiming?.('dialog',writeStarted-started);}catch{/* Diagnostics cannot change file outcomes. */}
   if (!transfer) return false;
   const chunkSize = Math.min(CHUNK_BYTES, transfer.maxChunkBytes || CHUNK_BYTES);
   try {
@@ -24,6 +27,7 @@ export async function writeNativeBlob(desktop, blob, options = {}) {
     }
     checkAbort(signal);
     const result = await desktop.finishFileWrite(transfer.token);
+    try{options.onTiming?.('write',performance.now()-writeStarted);}catch{/* Diagnostics cannot change file outcomes. */}
     if (result?.saved) onSaved?.(result);
     return Boolean(result?.saved);
   } catch (error) {

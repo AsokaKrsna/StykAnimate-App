@@ -38,6 +38,7 @@ export function snapshotPoseFrame(frame, uids) {
     return {...object,object_slot:index,...(object.join?{join:{...object.join,target_object_slot:remap.get(object.join.target_object_slot)}}:{})};
   });
   const order=(frame.object_draw_order??slots).filter(slot=>remap.has(slot)).map(slot=>remap.get(slot));
-  return structuredClone({...frame,objects,object_count:objects.length,object_draw_order:order,
+  const {_cameraMotionTick,...saved}=frame;
+  return structuredClone({...saved,objects,object_count:objects.length,object_draw_order:order,
     object_draw_order_unique_ids:order.map(slot=>objects[slot].unique_id)});
 }

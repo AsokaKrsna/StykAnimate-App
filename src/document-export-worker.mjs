@@ -1,3 +1,5 @@
+import {documentHasRigConstraints} from './rig-constraints.mjs';
+import {documentHasSurfaces} from './pivot/surfaces.mjs';
 import {applyDocumentChunk} from './document-transport.mjs';
 import {diagnosticDetails} from './telemetry-schema.mjs';
 import {validateScene} from './pivot/model.mjs';
@@ -81,6 +83,7 @@ self.addEventListener('message', async event => {
         config.name = document._styk.name;
       }
       if(['piv','stk'].includes(config.format)) {
+        if(documentHasRigConstraints(document)||documentHasSurfaces(document))throw Object.assign(new Error('Pivot cannot preserve connectors, Smart Stretch or one-sided fills. Save as .styk or .stkz to keep the figure editable, or export SVG, images or video.'),{telemetryCode:'unsupported_feature'});
         const visited=new Set(),hasSourceShapes=doc=>{
           if(visited.has(doc))return false;visited.add(doc);
           return doc.figure_types.some(f=>f.segments.some(s=>s._sticknodes)||

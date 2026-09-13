@@ -16,7 +16,7 @@ const byteLength = (part) =>
 
 /** Chunks written through the desktop file transfer (bounded IPC frames). */
 class DesktopSink {
-  constructor(desktop, transfer, signal) {
+  constructor(desktop, transfer, signal, onTiming) {
     this.desktop = desktop;
     this.token = transfer.token;
     this.signal = signal;
@@ -24,6 +24,7 @@ class DesktopSink {
     this.streamed = true;
     this.position = 0;
     this.finished = this.aborted = false;
+    this.onTiming=onTiming;this.writeMs=0;
   }
   async write(part) {
     if (this.finished || this.aborted) throw new Error("The export destination is closed.");
@@ -44,7 +45,8 @@ class DesktopSink {
     for (let offset = 0; offset < bytes.byteLength; offset += this.chunkSize) {
       checkAbort(this.signal);
       const chunk = bytes.subarray(offset, Math.min(bytes.byteLength, offset + this.chunkSize));
-      await this.desktop.writeFileChunk(this.token, chunk);
+      const started=this.onTiming?performance.now():0;
+      try{await this.desktop.writeFileChunk(this.token, chunk);}finally{if(this.onTiming)this.writeMs+=performance.now()-started;}
       this.position += chunk.byteLength;
     }
   }
@@ -53,12 +55,15 @@ class DesktopSink {
     const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     if (data.byteLength > this.chunkSize) throw new Error("The export patch is too large.");
     checkAbort(this.signal);
-    await this.desktop.patchFileWrite(this.token, offset, data);
+    const started=this.onTiming?performance.now():0;
+    try{await this.desktop.patchFileWrite(this.token, offset, data);}finally{if(this.onTiming)this.writeMs+=performance.now()-started;}
   }
   async finish() {
     if (this.aborted) throw new Error("The export destination was cancelled.");
     checkAbort(this.signal);
+    const started=this.onTiming?performance.now():0;
     const result = await this.desktop.finishFileWrite(this.token);
+    if(this.onTiming){this.writeMs+=performance.now()-started;try{this.onTiming('write',this.writeMs);}catch{/* Optional observer cannot affect a committed file. */}}
     this.finished = true;
     return { saved: Boolean(result?.saved), path: result?.path, size: result?.size ?? this.position };
   }
@@ -154,7 +159,7 @@ export class MemorySink {
  * @returns {Promise<DesktopSink|FileSystemSink|MemorySink|null>} null when the
  * user cancels the destination picker.
  */
-export async function openExportSink({ filename, mimeType, desktop = globalThis.stykDesktop, signal } = {}) {
+export async function openExportSink({ filename, mimeType, desktop = globalThis.stykDesktop, signal, onTiming } = {}) {
   const extension = filename.includes(".") ? filename.split(".").at(-1) : "bin";
   if (typeof desktop?.beginFileWrite === "function" && desktop.streamingFileWrite === true) {
     const transfer = await desktop.beginFileWrite({
@@ -164,7 +169,7 @@ export async function openExportSink({ filename, mimeType, desktop = globalThis.
       filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
     });
     if (!transfer) return null;
-    return new DesktopSink(desktop, transfer, signal);
+    return new DesktopSink(desktop, transfer, signal,onTiming);
   }
   if (typeof globalThis.showSaveFilePicker === "function") {
     let handle;

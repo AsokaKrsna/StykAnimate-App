@@ -13,6 +13,10 @@ try {
   const page = await app.firstWindow(), checks = [], errors = [], outputs = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.waitForFunction(() => window.styk?.ready && window.stykDesktop?.beginVideoExport, undefined, { timeout: 30000 });
+  await page.evaluate(() => {
+    const dismiss = () => document.querySelectorAll('dialog.release-splash[open], dialog.styk-privacy[open]').forEach(dialog => dialog.close());
+    dismiss(); new MutationObserver(dismiss).observe(document.body, {subtree:true,childList:true,attributes:true,attributeFilter:['open']});
+  });
   await page.evaluate(async () => {
     const { emptyDocument, createFrame, createObject } = await import('/src/demo.mjs'), report = emptyDocument(), figure = report.figure_types[0];
     report.canvas_width = 65; report.canvas_height = 33; report.fps = 16;
@@ -28,17 +32,18 @@ try {
   checks.push('Capabilities declare native black matte for opaque video and alpha preservation for WebM');
   for (const format of ['mp4', 'avi', 'wmv', 'webm']) {
     await page.locator('[data-action="export"]').first().click();
-    await page.locator('.export-settings > summary').click();
-    await page.locator('#export-quality').fill('100');
-    const action = format === 'webm' ? 'export-video' : `export-${format}`, button = page.locator(`[data-action="${action}"]`);
+    const action = format === 'webm' ? 'export-video' : `export-${format}`;
     await page.waitForFunction(action => !document.querySelector(`[data-action="${action}"]`)?.disabled, action);
+    await page.locator('#output-format').selectOption(action);
+    await page.locator('#export-video-quality').selectOption('high');
     if (format === 'avi') {
+      await page.locator('.export-advanced > summary').click();
       await page.waitForFunction(() => document.querySelector('#export-avi-codec')?.options.length >= 3);
       await page.locator('#export-avi-codec').selectOption('ffv1');
     }
     const filename = path.join(output, `transparent-source.${format}`);
     await app.evaluate(({ dialog }, filename) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: filename }); }, filename);
-    await button.click();
+    await page.locator('#export-submit').click();
     await page.waitForFunction(() => !document.querySelector('#dialog').open, undefined, { timeout: 30000 });
     const bytes = await readFile(filename); assert.ok(bytes.length > 256);
     const codec = format === 'avi' ? 'ffv1' : capabilities.formats.find(item => item.id === format).defaultCodec;

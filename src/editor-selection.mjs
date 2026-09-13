@@ -1,3 +1,4 @@
+import {remapSurface} from './pivot/surfaces.mjs';
 import {frameOrder, setOrder} from './pivot/structure.mjs';
 import {objectBounds} from './renderer-geometry.mjs';
 import {segmentBranchIndices} from './editor-builder.mjs';
@@ -93,7 +94,32 @@ export const editorSelectionMethods = {
     return applySelection(this, ids, uid);
   },
 
+  selectPolygon(uid, index) {
+    const object = this.selectionFrame.objects.find(object => object.unique_id === uid);
+    const figure = this.report.figure_types.find(figure => figure.figure_type_id === object?.figure_type_id);
+    const polygon = figure?.polyfills?.[index];if(!polygon)return false;
+    this.select(uid,-1);
+    this._polygonSelection={uid,index,id:polygon.polyfill_id,typeId:figure.figure_type_id};
+    this._emit('selection');return true;
+  },
+  /** Toggle stable native handles inside one figure, without editing its pose. */
+  toggleSegment(uid, joint) {
+    this._polygonSelection = null;
+    const object = this.selectionFrame.objects.find(object => object.unique_id === uid);
+    const figure = this.report.figure_types.find(figure => figure.figure_type_id === object?.figure_type_id);
+    const id = figure?.segments[joint]?.segment_id;
+    if (id === undefined) return false;
+    const ids = new Set(uid === this.selectedUid ? this.selectedSegmentIds : []);
+    if (ids.has(id)) ids.delete(id); else ids.add(id);
+    const active = ids.has(id) ? id : [...ids].at(-1);
+    this._selectedUid = uid; this.selectedUids = new Set([uid]); this._branchSelection = null;
+    this.selectedJoint = active === undefined ? -1 : figure.segments.findIndex(segment => segment.segment_id === active);
+    this._segmentSelection = {uid, active, ids};
+    this._emit('selection'); return true;
+  },
+
   selectBranch(uid, joint) {
+    this._segmentSelection = null;
     const objects = this.selectionFrame.objects, slot = objects.findIndex(o => o.unique_id === uid);
     const figure = this.report.figure_types.find(f => f.figure_type_id === objects[slot]?.figure_type_id);
     if (!figure?.segments[joint]) return false;
@@ -137,6 +163,8 @@ export const editorSelectionMethods = {
     delete branch.segment_z_raw; delete branch.poly_z_raw;
     branch.polyfills = (branch.polyfills ?? []).filter(poly => poly.segment_ids.every(id => handles.has(id) || id === boundary)).map(poly => {
       poly.segment_ids = poly.segment_ids.map(id => id === boundary ? 0 : id);
+      if(poly._stykSurface?.basis.some(id=>!handles.has(id)&&id!==boundary))throw new Error('Copy the whole figure to include its face reference joints.');
+      remapSurface(poly,id=>id===boundary?0:id);
       poly.segment_ids_raw = [...poly.segment_ids]; return poly;
     });
     if (branch._styk) delete branch._styk.animationOrigin;

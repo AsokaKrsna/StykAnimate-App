@@ -1,10 +1,12 @@
+import {parallaxResolver,translatedPlan} from './layer-parallax.mjs';
+import {drawParallaxGeometry} from './parallax-draw.mjs';
 import { buildGeometry, drawGeometry, releaseGeometryResources } from "./pivot/geometry.mjs";
 import { drawBackground, backgroundBounds } from "./pivot/background.mjs";
-import { cameraMatrix } from "./renderer-geometry.mjs";
+import { cameraMatrix, objectBounds } from "./renderer-geometry.mjs";
 import { layerVisible } from "./layers.mjs";
 import {checkExportContext} from './export-canvas.mjs';
 import {downsampleExportPixels} from './export-sampling.mjs';
-import {applySceneVfx} from './vfx-canvas.mjs';
+import {applySceneVfx, hasDrawableVfx} from './vfx-canvas.mjs';
 import {vfxStack,vfxPadding} from './vfx.mjs';
 
 /** Share one scheduling deadline across objects and tiles. A timer per object
@@ -16,6 +18,46 @@ function exportYield() {
     await new Promise(resolve => setTimeout(resolve, 0));
     deadline = performance.now() + 8;
   };
+}
+
+/** Frame-local groups: compute bounds once, keep painter order and whole opacity
+ * groups. Unknown media dimensions and effect domains take the uncropped path. */
+export function exportDrawGroups(geometry, resources) {
+  const groups = [];
+  for (const item of geometry.drawables) {
+    let group = groups.at(-1);
+    if (!group || group.slot !== item.slot) {group = {slot: item.slot, items: []}; groups.push(group);}
+    group.items.push(item);
+  }
+  for (const group of groups) {
+    const uncertain = group.items.some(item => hasDrawableVfx(item) ||
+      // Without explicit display dimensions, actual decoded dimensions control
+      // placement. Unverified asset metadata must never hide a visible image.
+      (item.type === 'image' && (!(item.asset?.display_width > 0) || !(item.asset?.display_height > 0))));
+    group.bounds = uncertain ? null : objectBounds(group.items, resources);
+    // A rotated square cap extends farther on each axis than a round cap.
+    // Keep an extra full stroke width instead of relying on preview bounds.
+    if (group.bounds) {
+      const pad = group.items.reduce((n,item) => {
+        if (item.seg?.segment_kind !== 'squareLine') return n;
+        const bits = item.fig?.segment_decode?.global_style?.u28;
+        const outline = bits ? Math.abs(new Float32Array(new Uint32Array([bits]).buffer)[0] * Number(item.obj.scale ?? 1)) : 0;
+        return Math.max(n,Math.abs(item.thickness || 0) + (Number.isFinite(outline) ? 2*outline : 0));
+      },0);
+      group.bounds = {x:group.bounds.x-pad,y:group.bounds.y-pad,width:group.bounds.width+2*pad,height:group.bounds.height+2*pad};
+    }
+  }
+  return groups;
+}
+
+export function exportGroupOutside(bounds, plan) {
+  if (!bounds) return false;
+  const [a,b,c,d,e,f] = plan.matrix, {x,y,width,height} = bounds;
+  const x0 = a*x+c*y+e, y0 = b*x+d*y+f;
+  const xs = [x0,x0+a*width,x0+c*height,x0+a*width+c*height];
+  const ys = [y0,y0+b*width,y0+d*height,y0+b*width+d*height];
+  // Additional output-pixel coverage guard, including strongly minified paths.
+  return Math.max(...xs) < -2 || Math.max(...ys) < -2 || Math.min(...xs) > plan.width+2 || Math.min(...ys) > plan.height+2;
 }
 
 /** Shared portable renderer used only by export; editor GPU state is untouched. */
@@ -44,7 +86,7 @@ export function drawExportScene(context, report, frame, geometry, resources) {
       ...resources,
       bounds: backgroundBounds(frame, width, height, true, report),
     });
-    drawGeometry(context, geometry, resources);
+    drawParallaxGeometry(context, geometry, resources,parallaxResolver(report,frame));
   } finally {
     context.restore();
   }
@@ -53,7 +95,7 @@ export function drawExportScene(context, report, frame, geometry, resources) {
 
 /** Preserve painter order and native brush state while releasing each object's
  * decoded source before loading the next. Export never requests preview copies. */
-export async function drawExportSceneSequential(context, report, frame, geometry, resources, viewport, yieldWork = exportYield()) {
+export async function drawExportSceneSequential(context, report, frame, geometry, resources, viewport, yieldWork = exportYield(), groups = exportDrawGroups(geometry, resources)) {
   checkExportContext(context);
   const width = report.canvas_width, height = report.canvas_height;
   // The document→output matrix for this surface, including tile offsets.
@@ -77,19 +119,17 @@ export async function drawExportSceneSequential(context, report, frame, geometry
       ![2,3,4].includes(asset.kind) && asset.color === undefined).map(asset => ({type: 'image', asset})), {plan});
     checkExportContext(context);
     drawBackground(context, report, frame, width, height, {...resources, bounds: backgroundBounds(frame, width, height, true, report)});
-    const strokeState = {width: 1}; let items = [], slot;
-    const draw = async () => {
-      if (!items.length) return;
-      await resources.preload(items, {plan});
+    const strokeState = {width: 1},parallax=parallaxResolver(report,frame);
+    for (const {items,bounds} of groups) {
+      const depth=parallax(items[0].obj.unique_id);
+      const itemPlan = translatedPlan(plan,depth);
+      const skipPaint = exportGroupOutside(bounds, itemPlan);
+      if (!skipPaint) await resources.preload(items, {plan:itemPlan});
       checkExportContext(context);
-      drawGeometry(context, {drawables: items, strokeState}, resources);
+      context.save();try{context.translate(depth.x,depth.y);drawGeometry(context, {drawables: items, strokeState, skipPaint}, resources);}finally{context.restore();}
       checkExportContext(context);
-    };
-    for (const item of geometry.drawables) {
-      if (items.length && item.slot !== slot) {await draw(); items = []; await yieldWork();}
-      items.push(item); slot = item.slot;
+      await yieldWork();
     }
-    await draw();
   } finally {context.restore(); releaseGeometryResources(context, {retainCanvases: true});}
   applySceneVfx(context,frame,{scale:(viewport?.width||context.canvas.width)/width,origin:{x:viewport?.x??0,y:viewport?.y??0},outputSize:{width:viewport?.width||context.canvas.width,height:viewport?.height||context.canvas.height}});
 }
@@ -103,6 +143,7 @@ export async function drawExportSceneTiled(context, report, frame, geometry, res
     throw new Error('Invalid export tile dimensions.');
   const width = context.canvas.width, height = context.canvas.height;
   const yieldWork = exportYield();
+  const groups = exportDrawGroups(geometry, resources);
   if (factor === 1 && width <= tileSize && height <= tileSize) return drawExportSceneSequential(context, report, frame, geometry, resources);
   // Reuse the worker's tile and its opacity/outline contexts across frames.
   // Resizing releases pixels without accumulating thousands of GPU contexts.
@@ -121,7 +162,7 @@ export async function drawExportSceneTiled(context, report, frame, geometry, res
       tile.width = w * factor + left + (x + w < width ? guard : 0);
       tile.height = h * factor + top + (y + h < height ? guard : 0);
       await drawExportSceneSequential(tileContext, report, frame, geometry, resources,
-        {width: width * factor, height: height * factor, x: x * factor - left, y: y * factor - top}, yieldWork);
+        {width: width * factor, height: height * factor, x: x * factor - left, y: y * factor - top}, yieldWork, groups);
       checkExportContext(context); checkExportContext(tileContext);
       // Downsample each 2× tile directly with the same premultiplied box filter.
       // No full-size supersampled canvas is ever allocated.

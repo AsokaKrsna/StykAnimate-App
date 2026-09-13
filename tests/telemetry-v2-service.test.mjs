@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {emptyPerformance,recordPerformance,provenance} from '../src/telemetry-performance-schema.mjs';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -22,6 +23,25 @@ async function fixture(options = {}) {
 }
 const snapshot = service => service.preview().snapshots.at(-1);
 
+test('v3 observations keep trusted build provenance across an upgrade and ignore renderer build spoofing',async()=>{
+  const {service,directory}=await fixture({build:'a'.repeat(12)});await service.setConsent(consent);
+  const performance=emptyPerformance();recordPerformance(performance,'frame',20,{},provenance({release:'99.0.0',build:'f'.repeat(12),traffic:'external'}));
+  service.record({epoch:service.epoch,data:{performance}});await service.persist();
+  const restored=await fixture({directory,version:'0.6.0',build:'b'.repeat(12)});
+  restored.service.record({epoch:restored.service.epoch,data:{performance}});
+  const rows=snapshot(restored.service).performance.rows;
+  assert.equal(rows.length,2);assert.deepEqual(rows.map(row=>row.provenance.build),['a'.repeat(12),'b'.repeat(12)]);assert.ok(rows.every(row=>row.provenance.release!=='99.0.0'));
+  await service.close();await restored.service.close();
+});
+test('server reset receipt drops queued diagnostics, preserves usage and invalidates in-flight renderer deltas',async()=>{
+  const {service}=await fixture({fetchImpl:async()=>new Response(JSON.stringify({accepted:true,diagnosticGeneration:4}))});await service.setConsent(consent);
+  service.count('edits',9);service.count('save_failed',3);
+  const epoch=service.epoch;assert.equal(await service.upload({force:true}),true);
+  assert.equal(service.state.diagnosticGeneration,4);assert.equal(snapshot(service).counters.edits,9);assert.equal(snapshot(service).counters.save_failed,undefined);
+  assert.ok(service.epoch>epoch);assert.equal(service.record({epoch,data:{counters:{save_failed:3}}}),false);
+  service.count('save_failed',1);assert.equal(snapshot(service).counters.save_failed,1);await service.close();
+});
+
 test('context histograms and safe error fields survive cumulative upload and restart', async () => {
   let now = initialTime;
   const { service, directory, requests } = await fixture({ now: () => now });
@@ -31,7 +51,7 @@ test('context histograms and safe error fields survive cumulative upload and res
   service.record({ epoch: service.epoch, data: { operationContexts: [context({}, 80)], errors: [{ ...error, lastAt: now + 5000 }] } });
   await service.upload();
   const sent = JSON.parse(requests[0].body);
-  assert.equal(sent.schemaVersion, 2);
+  assert.equal(sent.schemaVersion, 3);
   assert.equal(sent.operationContexts.length, 1);
   assert.equal(sent.operationContexts[0].timing.count, 2);
   assert.equal(sent.operationContexts[0].timing.sum, 200);
@@ -112,7 +132,7 @@ test('legacy queued reports retain schema1 while upgraded current days keep tota
   const restored = await fixture({ directory, version: '0.5.6' });
   const current = snapshot(restored.service);
   assert.equal(restored.service.preview().snapshots[0].schemaVersion, 1);
-  assert.equal(current.schemaVersion, 2); assert.equal(current.app.version, '0.5.6'); assert.equal(current.app.traffic, 'unknown');
+  assert.equal(current.schemaVersion, 3); assert.equal(current.app.version, '0.5.6'); assert.equal(current.app.traffic, 'unknown');
   assert.equal(current.counters.save_succeeded, 3); assert.equal(current.counters.recovery_failed, 7);
   assert.equal(restored.service.state.firstObservedAt, undefined);
   restored.service.milestone('first_save'); assert.deepEqual(snapshot(restored.service).firstSuccess, {});

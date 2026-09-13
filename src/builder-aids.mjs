@@ -3,7 +3,7 @@ import { cameraMatrix } from './renderer-geometry.mjs';
 import {segmentBranchIndices} from './editor-builder.mjs';
 
 export const BUILDER_HIGHLIGHT_COLORS = Object.freeze({dynamic:'#0000ff',static:'#4444cc',path:'#0000ff'});
-export function isBuilderContext(tool) { return ['rig','line','circle','polygon'].includes(tool); }
+export function isBuilderContext(tool) { return ['rig','line','chain','circle','polygon'].includes(tool); }
 /** `builderActive` keeps the construction background for every tool while a
  * bounded builder session is open; outside a session it stays tool-scoped. */
 export function builderBackgroundColor(settings,{tool,playing=false,previewing=false,builderActive=false}={}) {
@@ -13,7 +13,7 @@ export function builderBackgroundColor(settings,{tool,playing=false,previewing=f
   return (0xff000000|parseInt(color.slice(1),16))>>>0;
 }
 export function builderShowsStaticHandles(settings,{tool,handleEditHeld=false,connecting=false,builderActive=false}={}) {
-  if(handleEditHeld||connecting||['line','circle','polygon','attach'].includes(tool))return true;
+  if(handleEditHeld||connecting||['line','chain','circle','polygon','attach'].includes(tool))return true;
   return (tool==='rig'||builderActive)&&settings?.builderShowStaticHandles!==false;
 }
 

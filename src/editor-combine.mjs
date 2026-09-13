@@ -1,3 +1,5 @@
+import {remapRigReferences,hasRigConstraints} from './rig-constraints.mjs';
+import {remapSurface} from './pivot/surfaces.mjs';
 import {buildGeometry, mixColor} from './pivot/geometry.mjs';
 import {validateScene} from './pivot/model.mjs';
 import {frameOrder, normalizeFrame, setOrder} from './pivot/structure.mjs';
@@ -79,6 +81,7 @@ export const editorCombineMethods = {
       // file's version. Keep legacy playback timing and unrelated figures intact.
       _styk: {colorMode: 'segments'}};
     const handles = new Map(), records = new Map(), assets = new Map();
+    const constrainedGroup=group.slots.some(slot=>hasRigConstraints(geometry.objects.get(slot).fig));
     let nextHandle = 1;
     for (const slot of group.slots) {
       const g = geometry.objects.get(slot), map = new Map(); handles.set(g.obj.unique_id, map);
@@ -100,12 +103,23 @@ export const editorCombineMethods = {
     };
     for (const slot of group.slots) {
       const g = geometry.objects.get(slot), map = handles.get(g.obj.unique_id), raw = Number(g.obj.color_override_raw) >>> 0;
+      const sourceRig=hasRigConstraints(g.fig);
       for (const render of g.segments) {
         const segment = clone(render.seg);
         for (const key of ['_logical_segment_id', 'z_order_runtime_raw']) delete segment[key];
         Object.assign(segment, {segment_id: map.get(render.seg.segment_id), parent_id: map.get(render.seg.parent_id),
           length: render.length / scale, thickness: render.thickness / scale, angle_rad: render.angle, bend_rad: render.bend,
           color_rgb: [...render.rgb], transparency: alphaByte(render.alpha), color_alpha: render.alpha, z_order: 0});
+        if(sourceRig){
+          const factor=Math.abs(g.obj.scale)/scale;
+          segment.angle_rad=(g.solvedAngles??g.obj.angles)[render.index]+(g.obj.scale<0?Math.PI:0);
+          segment.length=(g.obj.len_flag?g.obj.lengths[render.index]:render.seg.length)*(render.connector?1:factor);
+          segment.thickness=render.seg.thickness*factor;
+          if(segment._stykRig?.connector)segment._stykRig.connector.restLength*=factor;
+          if(segment._stykRig?.stretch)segment._stykRig.stretch.restLength*=factor;
+          remapRigReferences(segment,map);
+        }
+        if(constrainedGroup&&render.seg.parent_id===0&&g.obj.unique_id!==group.root.unique_id)segment._stykRig={...segment._stykRig,orientation:'world'};
         if (segment.secondary) {
           if (raw >>> 24 === 255) segment.secondary = null;
           else if (segment.segment_type !== 'text') segment.secondary.rgb = mixColor(segment.secondary.rgb, raw);
@@ -121,6 +135,7 @@ export const editorCombineMethods = {
       for (const render of g.polys) {
         const polygon = clone(render.poly); polygon.polyfill_id = figure.polyfills.length + 1;
         polygon.segment_ids = polygon.segment_ids.map(id => map.get(id)); polygon.segment_ids_raw = [...polygon.segment_ids];
+        remapSurface(polygon,id=>map.get(id));
         Object.assign(polygon, {color_rgb: [...render.rgb], alpha_raw: alphaByte(render.alpha), color_alpha: render.alpha, z_order: 0});
         delete polygon.z_order_runtime_raw; records.set(`${slot}:poly:${render.index}`, polygon); figure.polyfills.push(polygon);
       }

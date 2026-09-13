@@ -10,6 +10,7 @@ page.on('pageerror',error=>errors.push(error.message));
 const settle=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 try {
   await page.goto(process.env.STYK_URL??'http://127.0.0.1:47831'); await page.waitForFunction(()=>window.styk?.ready);
+  await page.getByRole('button',{name:'Audio',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Import audio',exact:true}).count(),1);
   assert.ok((await page.locator('body').innerText()).includes('Untitled animation'));
   assert.deepEqual(errors,[]);
@@ -56,6 +57,7 @@ try {
     const before=JSON.stringify(styk.editor.report._styk.audio);styk.editor.load(document);await styk.audioEngine.clear();await styk.audioEngine.prepare(styk.editor.report,{start:0,end:4});
     return {equal:JSON.stringify(styk.editor.report._styk.audio)===before,bytes:blob.size,prepared:styk.audioEngine.hasAudio};
   });assert.equal(persistence.equal,true);assert.equal(persistence.prepared,true);
+  await settle();assert.equal(await page.getByRole('button',{name:'Audio',exact:true}).getAttribute('aria-expanded'),'false','Opening a project does not open audio controls');
   await page.evaluate(()=>{styk.editor.seek(0);styk.actions.play();});
   await page.waitForFunction(()=>styk.audioEngine.running&&styk.editor.tick>=10,null,{timeout:30000});
   const sync=await page.evaluate(()=>({tick:styk.editor.tick,time:styk.audioEngine.position,fps:styk.editor.report.fps}));
@@ -74,6 +76,7 @@ try {
   await page.waitForFunction(()=>window.audioLoops>=2,null,{timeout:12000});
   const loopSync=await page.evaluate(()=>({tick:styk.editor.tick,time:styk.audioEngine.position}));
   await page.evaluate(()=>{styk.actions.play();styk.state.loopRange=null;styk.editor.removeEventListener('change',window.audioLoopListener);});
+  await page.getByRole('button',{name:'Audio',exact:true}).click();
   await page.getByLabel('Hear audio while scrubbing').check();
   const scrub=await page.locator('.audio-lanes').boundingBox();await page.mouse.move(scrub.x+40,scrub.y+10);await page.mouse.down();
   await page.waitForFunction(()=>styk.audioEngine.running);await page.mouse.up();assert.equal(await page.evaluate(()=>styk.audioEngine.running),false);

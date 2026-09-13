@@ -21,3 +21,7 @@ desktop/telemetry-build.json
 # Local media artifacts over GitHub's 100 MB file limit.
 design/higgsfield-launch/StykAnimate-Reborn-Editable.zip
 launchvideo/tools/ffprobe.exe
+
+# Local Python environments and downloaded tutorial voice models.
+.venv/
+videos/ik-tutorial/.models/
