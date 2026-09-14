@@ -104,6 +104,13 @@ its own origin. The picked figure supplies the gesture reference. Joined descend
 follow their parent and transform once even if also selected. Ctrl locks scale;
 Shift locks rotation. Release records one undo step, and Escape cancels the gesture.
 
+## Figure Properties
+
+Figure Properties places Color palette last in a collapsed disclosure. Compact
+swatches retain bulk replacement and accessible segment/fill counts without helper
+copy. Disclosure state survives ordinary edits. Layer parallax appears only in the
+layer inspector, never in figure, joint or movieclip Properties.
+
 ## Motion paths
 
 See [Motion paths](MOTION-PATHS.md) for display settings, remote pose gestures, cache ownership, sampling limits, and verification.

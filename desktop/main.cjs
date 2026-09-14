@@ -22,6 +22,7 @@ const { LibraryStore } = require('./library-store.cjs');
 const { TelemetryService } = require('./telemetry.cjs');
 const { UpdateService, updateAvailability } = require('./updates.cjs');
 const releaseInfo = require('./release-info.json');
+const getReleaseHistory = require('./release-history.cjs').createReleaseHistory();
 let telemetryBuild = {};
 try { telemetryBuild = require('./telemetry-build.json'); } catch { /* Unpackaged/older source has unknown build metadata. */ }
 const { RELEASES_URL, DONATE_URL } = require('./release-links.cjs');
@@ -210,6 +211,7 @@ function registerIpc() {
   ipcMain.handle('styk:update-check', event => { trusted(event); void updates.check(); return updates.snapshot(); });
   ipcMain.handle('styk:update-releases', event => { trusted(event); return shell.openExternal(RELEASES_URL); });
   ipcMain.handle('styk:donate', event => { trusted(event); return shell.openExternal(DONATE_URL); });
+  ipcMain.handle('styk:release-history', event => { trusted(event); return getReleaseHistory(); });
   ipcMain.handle('styk:release-info', (event, startup = false) => {
     trusted(event);
     if (startup && startupShown) return null;

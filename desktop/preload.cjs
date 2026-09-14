@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('stykDesktop', Object.freeze({
   openUpdateReleases: () => ipcRenderer.invoke('styk:update-releases'),
   onUpdateState: callback => subscribe('styk:update-state-changed', callback),
   getReleaseInfo: (startup = false) => ipcRenderer.invoke('styk:release-info', Boolean(startup)),
+  getReleaseHistory: () => ipcRenderer.invoke('styk:release-history'),
   openDonate: () => ipcRenderer.invoke('styk:donate'),
   getTelemetryState: () => ipcRenderer.invoke('styk:telemetry-state'),
   setTelemetryConsent: value => ipcRenderer.invoke('styk:telemetry-consent', value),

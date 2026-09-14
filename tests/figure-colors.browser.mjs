@@ -29,6 +29,7 @@ try{
   await choose('#segment-color','eecc11');
   assert.deepEqual(await palette(),[['#44aacc',info.segments-1],['#eecc11',1]]);
   await page.evaluate(uid=>styk.editor.select(uid),info.uid);await settle();
+  await page.locator('details[data-section="Color palette"] > summary').click();
   await choose('[data-palette-color="#44aacc"]','eecc11');assert.deepEqual(await palette(),[['#eecc11',info.segments]]);
   await page.evaluate(()=>styk.editor.undo());await settle();
   // The same open picker keeps editing its original members after a merge.

@@ -44,7 +44,7 @@ test('generates only the newest release, is idempotent, and catches partial/stal
   assert.match(notes, /New feature/);
   assert.doesNotMatch(notes, /Pending fix|Old fix/);
   const info = JSON.parse(await readFile(path.join(directory, 'desktop/release-info.json'), 'utf8'));
-  assert.deepEqual(info, { version: '0.10.0', title: 'Current release', notes: ['New feature.'] });
+  assert.deepEqual(info, { version: '0.10.0', title: 'Current release', notes: ['New feature.'], groups: [{name:'Added',notes:['New feature.']}] });
   await prepareReleaseNotes(directory, { env: {} });
   assert.equal(await readFile(path.join(directory, 'release-notes.md'), 'utf8'), notes);
   await checkReleaseNotes(directory, { env: {} });
@@ -95,6 +95,6 @@ test('rolling pending changes into a new version preserves history and exports o
   await writeFile(path.join(directory, 'package-lock.json'), JSON.stringify({ version: '0.11.0', packages: { '': { version: '0.11.0' } } }));
   await prepareReleaseNotes(directory, { env: {} });
   const info = JSON.parse(await readFile(path.join(directory, 'desktop/release-info.json'), 'utf8'));
-  assert.deepEqual(info, { version: '0.11.0', title: 'Next release', notes: ['Pending fix.'] });
+  assert.deepEqual(info, { version: '0.11.0', title: 'Next release', notes: ['Pending fix.'], groups: [{name:'Fixed',notes:['Pending fix.']}] });
 });
 

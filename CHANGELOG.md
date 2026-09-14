@@ -6,6 +6,15 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ## [Unreleased]
 
+## [1.0.1]
+
+A cleaner workspace
+
+### Changed
+
+- Move the figure color palette to a compact, collapsed section at the bottom of Properties and show parallax only for selected layers.
+- Simplify the welcome screen with Donate at the top, grouped changes in a scrollable reading area, and recent release changelogs in the same window.
+
 ## [1.0.0]
 
 Expanded animation tools, refined editing, and smoother playback

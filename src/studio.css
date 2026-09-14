@@ -386,11 +386,9 @@ dialog::backdrop { background: var(--theme-backdrop, #18273c55); backdrop-filter
 .studio-rail .rail-order::before { content:""; position:absolute; top:0; left:5px; right:5px; height:1px; background:var(--border); }
 .studio-rail .rail-order button:disabled { opacity:.35; cursor:default; }
 /* The selected figure's palette is bounded to 32 rows per page. */
-.palette-help { margin: 0 0 8px; font-size: 11px; line-height: 1.5; opacity: .65; }
-.figure-palette { display: grid; gap: 3px; }
-.figure-palette-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 5px 7px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.figure-palette { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.figure-palette-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 5px 7px; border: 1px solid var(--theme-border, #e2e6eb); border-radius: 7px; background: var(--theme-field, #f7f8fa); color: inherit; text-align: left; cursor: pointer; }
 .figure-palette-row:hover { background: color-mix(in srgb, currentColor 6%, transparent); }
 .figure-palette-row:focus-visible { outline: 2px solid #0d99ff; outline-offset: 1px; }
 .figure-palette-row i { flex: 0 0 20px; height: 20px; border: 1px solid #8886; border-radius: 5px; }
 .figure-palette-row span { font-size: 11px; font-variant-numeric: tabular-nums; }
-.figure-palette-row small { margin-left: auto; font-size: 10px; opacity: .65; }

@@ -70,7 +70,7 @@ const heading = (title, symbol) =>
   `<div class="property-context-heading"><span>${icon(symbol)}</span><div><strong>${esc(title)}</strong></div></div>`;
 const button = (action, symbol, title, disabled = false) =>
   `<button class="icon-button" data-action="${action}" title="${title}" aria-label="${title}" ${disabled ? "disabled" : ""}>${icon(symbol)}</button>`;
-const secondarySections = new Set(["Connections", "Polygons", "Canvas alignment", "Neighboring pose"]);
+const secondarySections = new Set(["Connections", "Polygons", "Canvas alignment", "Neighboring pose", "Color palette"]);
 const group = (title, body, extra = "") => secondarySections.has(title)
   ? `<details class="inspector-section inspector-disclosure" data-section="${esc(title)}"><summary class="inspector-title"><span>${title}</span>${extra}</summary><div class="inspector-disclosure-body">${body}</div></details>`
   : `<section class="inspector-section"><div class="inspector-title"><span>${title}</span>${extra}</div>${body}</section>`;
@@ -131,7 +131,7 @@ export function inspectorView({
   if (resolvedContext === "frame") return frameView(editor, field);
   if (resolvedContext === "scene" || !object)
     return sceneView(editor, field, propertyState);
-  if (selectionCount===1 && isMovieclip(editor.figure)) return figureLayerField(editor)+movieclipInspector(editor,field)+parallaxView(editor,editor.activeLayerId);
+  if (selectionCount===1 && isMovieclip(editor.figure)) return figureLayerField(editor)+movieclipInspector(editor,field);
   const range =
     rangeIndices.length > 1
       ? group(
@@ -258,11 +258,6 @@ export function inspectorView({
       `<div class="property-paint-row">${colorRow("figure-color", "Recolor all segments", fill,undefined,undefined,palette.length>1?'Mixed':undefined)}${field("Opacity", "figure_opacity", (1 - (object.field28 || 0) / 255) * 100, "%", 'min="0" max="100"', { id: "figure-opacity", legacyField: false })}</div>`,
       button("reset-color", "undo", "Reset colors"),
     );
-    const start=Math.min(Math.max(0,palettePage)*32,Math.max(0,Math.ceil(palette.length/32)-1)*32);
-    html += group('Color palette',
-      `<p class="palette-help">Change a color everywhere it appears in this figure.</p><div class="figure-palette" aria-label="Figure color palette">`+
-      palette.slice(start,start+32).map(entry=>`<button type="button" data-paint-picker data-palette-color="${entry.color}" class="figure-palette-row" aria-label="Replace ${entry.color.toUpperCase()}, ${entry.segments.length} segments${entry.polygons.length?`, ${entry.polygons.length} fills`:''}"><i style="background:${entry.color}"></i><span>${entry.color.toUpperCase()}</span><small>${entry.segments.length} ${entry.segments.length===1?'segment':'segments'}${entry.polygons.length?` · ${entry.polygons.length} ${entry.polygons.length===1?'fill':'fills'}`:''}</small></button>`).join('')+'</div>'+
-      (palette.length>32?`<div class="polygon-pagination">${button('palette-previous','chevron-left','Previous colors',start===0)}<span>${start+1}–${Math.min(start+32,palette.length)} / ${palette.length}</span>${button('palette-next','chevron-right','Next colors',start+32>=palette.length)}</div>`:''),`<span>${palette.length} ${palette.length===1?'color':'colors'}</span>`);
     html += group(
       "Stacking",
       grid(field('Z-index', 'figure_z_order', object._stykZIndex ?? 0, '', 'min="-1000000" max="1000000"')) +
@@ -370,7 +365,12 @@ export function inspectorView({
           : ""),
       `<span>${polygons.length}</span>`,
     );
-  return html + parallaxView(editor,editor.activeLayerId);
+  const paletteStart=Math.min(Math.max(0,palettePage)*32,Math.max(0,Math.ceil(palette.length/32)-1)*32);
+  html += group('Color palette',
+      `<div class="figure-palette" aria-label="Figure color palette">`+
+      palette.slice(paletteStart,paletteStart+32).map(entry=>`<button type="button" data-paint-picker data-palette-color="${entry.color}" class="figure-palette-row" aria-label="Replace ${entry.color.toUpperCase()}, ${entry.segments.length} segments${entry.polygons.length?`, ${entry.polygons.length} fills`:''}"><i style="background:${entry.color}"></i><span>${entry.color.toUpperCase()}</span></button>`).join('')+'</div>'+
+      (palette.length>32?`<div class="polygon-pagination">${button('palette-previous','chevron-left','Previous colors',paletteStart===0)}<span>${paletteStart+1}–${Math.min(paletteStart+32,palette.length)} / ${palette.length}</span>${button('palette-next','chevron-right','Next colors',paletteStart+32>=palette.length)}</div>`:''),`<span>${palette.length} ${palette.length===1?'color':'colors'}</span>`);
+  return html;
 }
 
 function sceneView(editor, field, propertyState) {
