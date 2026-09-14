@@ -6,6 +6,24 @@ import {normalizeEditorSettings} from '../src/settings.mjs';
 function key(code, props = {}) {
   return {code, key:code, preventDefault() {this.defaultPrevented = true;}, ...props};
 }
+
+test('J joins and unjoins once; Shift J controls visibility and old defaults migrate', () => {
+  const calls = [], manager = new HotkeyManager({run: id => calls.push(id)});
+  assert.equal(manager.resolve(key('KeyJ'))?.id, 'join-figure');
+  assert.equal(manager.resolve(key('KeyJ', {shiftKey: true}))?.id, 'toggle-handles');
+  manager.keydown(key('KeyJ')); manager.keydown(key('KeyJ', {repeat: true}));
+  assert.deepEqual(calls, ['join-figure']);
+  const migrated = normalizeHotkeys({'toggle-handles': ['KeyJ']});
+  assert.deepEqual(migrated['join-figure'], ['KeyJ']);
+  assert.deepEqual(migrated['toggle-handles'], ['Shift+KeyJ']);
+  assert.deepEqual(normalizeHotkeys(migrated), migrated);
+  for (const custom of [[], ['KeyQ']])
+    assert.deepEqual(normalizeHotkeys({'toggle-handles': custom})['toggle-handles'], custom);
+  const explicit = normalizeHotkeys({'join-figure': [], 'toggle-handles': ['KeyJ']});
+  assert.deepEqual(explicit['join-figure'], []);
+  assert.deepEqual(explicit['toggle-handles'], ['KeyJ']);
+  assert.deepEqual(normalizeHotkeys({save: ['KeyJ']})['join-figure'], []);
+});
 test('catalog defaults are unique, valid and stable; A replaces Ctrl Enter everywhere', () => {
   assert.equal(new Set(HOTKEY_COMMANDS.map(c => c.id)).size, HOTKEY_COMMANDS.length);
   assert.deepEqual(normalizeHotkeys(DEFAULT_HOTKEYS), DEFAULT_HOTKEYS);

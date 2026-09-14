@@ -23,7 +23,7 @@ try {
     const resources = { url: a => a?.asset_url || a?.data_url || a?.asset_path_relative || a?.asset_path,
       image: url => { if (!url) return null; if (images.has(url)) return images.get(url); const image = new Image(); image.src = url; images.set(url, image); return image; } };
     const renderer = await rendererModule.createRenderer(canvas, { resources });
-    window.__corpus = { renderer, rendererModule, geometryModule, backgroundModule, client: new ImportClient(), playback: new PlaybackCache({maxFrames: 6}), images, resources };
+    window.__corpus = { renderer, rendererModule, geometryModule, backgroundModule, client: new ImportClient(), playback: new PlaybackCache({maxFrames: 6,gpuIsolation:true}), images, resources };
   });
   for (const [i, fixture] of fixtures.entries()) {
     let result;
@@ -48,8 +48,10 @@ try {
           const frame = geometryModule.evaluatedFrame(report, keyframeIndex, tween), geometry = geometryModule.buildGeometry(report, frame), view = { x: 0, y: 0, scale };
           if (prepared) { const packet = playback.get(tick); if (!packet) throw new Error('Worker preparation did not retain the requested frame.'); renderer.prepareFrame(packet, {report, view}); if (!renderer.renderPrepared(packet.key, {report, view})) throw new Error('Prepared frame was not ready for presentation.'); }
           else renderer.render({ report, frame, geometry, view });
-          await renderer.device.queue.onSubmittedWorkDone();
+          // Snapshot in the submitting task: a visible WebGPU canvas can lose its
+          // current swap-chain contents at presentation while this promise waits.
           const gpu = renderer.canvas.toDataURL('image/png');
+          await renderer.device.queue.onSubmittedWorkDone();
           const reference = document.createElement('canvas'); reference.width = width; reference.height = height; const ctx = reference.getContext('2d');
           ctx.beginPath(); ctx.rect(0, 0, report.canvas_width * scale, report.canvas_height * scale); ctx.clip(); ctx.transform(...rendererModule.cameraMatrix({ report, frame, view }));
           backgroundModule.drawBackground(ctx, report, frame, report.canvas_width, report.canvas_height, { ...resources, bounds: backgroundModule.backgroundBounds(frame, report.canvas_width, report.canvas_height) });
@@ -87,4 +89,5 @@ try {
   const frames = results.flatMap(r => r.frames || []), material = frames.filter(f => f.meanAbsoluteChannelError > 2 || f.percentPixelsOverThreshold > 1);
   const summary = { files: results.length, failedFiles: results.filter(r => r.error).length, frames: frames.length, framesAboveConservativePixelThreshold: material.length, conservativeThreshold: 'Mean absolute channel error >2/255 OR >1% pixels with summed RGBA difference >80/1020.', framesWithInteriorMismatchAbove0_1Percent: frames.filter(f => f.interiorMismatchPercent > .1).length, interiorDefinition: 'Differing pixels more than two pixels from a reference edge (neighbor channel difference >20/255).', gpuErrors: frames.reduce((n, f) => n + f.gpu.warnings.length, 0), browserErrors, maxMAE: Math.max(...frames.map(f => f.meanAbsoluteChannelError)), maxMismatchPercent: Math.max(...frames.map(f => f.percentPixelsOverThreshold)), maxInteriorMismatchPercent: Math.max(...frames.map(f => f.interiorMismatchPercent)) };
   await writeFile(path.join(output, 'summary.json'), JSON.stringify(summary, null, 2)); console.log(JSON.stringify(summary, null, 2));
-} finally { await app.close(); }
+  if (summary.failedFiles || summary.gpuErrors || browserErrors.length || summary.maxMAE > 2 || summary.framesWithInteriorMismatchAbove0_1Percent) throw new Error('Renderer corpus has rendering errors or material pixel differences; inspect results.json.');
+} finally { await app.evaluate(({app}) => app.exit(0)).catch(() => {}); }

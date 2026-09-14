@@ -15,6 +15,7 @@ export function createNativeStyleTable(report) {
     const figure = figures.get(object.figure_type_id), style = object._stykStyle; if (!figure || !style) return object.figure_type_id;
     let indices = handles.get(figure); if (!indices) {indices = new Map(figure.segments.map(segment => [segment.segment_id, segment])); handles.set(figure, indices);}
     const signature = [];
+    if(object._styk?.colorMode==='segments' && figure._styk?.colorMode!=='segments')signature.push('colorMode:segments');
     for (const [id,values] of Object.entries(style.polygons ?? {})) if (figure.polyfills?.some((polygon,index) => polygonIdentity(polygon,index) === Number(id))) signature.push(`p:${id}:${JSON.stringify(values)}`);
     if (Number.isFinite(style.outlineColor) && style.outlineColor !== styleColor(figure.segment_decode?.global_style?.rgb)) signature.push(`oc:${style.outlineColor}`);
     if (Number.isFinite(style.outlineWidth) && style.outlineWidth !== Number(figure.segment_decode?.global_style?.outline_thickness ?? 0)) signature.push(`ow:${style.outlineWidth}`);

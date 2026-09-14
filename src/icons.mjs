@@ -49,6 +49,8 @@
  * SOFTWARE.
  */
 const shapes = Object.freeze({
+  pin: '<path d="m16 3 5 5-4 1-3 5v3l-7-7h3l5-3zM9 15l-6 6"/>',
+  "stretch-horizontal": '<path d="M4 12h16M7 9l-3 3 3 3m10-6 3 3-3 3M2 5v14M22 5v14"/>',
   // Builder glyphs depict the actual operation on a joint or segment.
  "builder-chain": '<path d="M4 17l6-11 5 9 5-10"/><circle cx="4" cy="17" r="2"/><circle cx="10" cy="6" r="2"/><circle cx="15" cy="15" r="2"/>',
  "builder-snap": '<path d="M5 4v9a7 7 0 0 0 14 0V4h-5v9a2 2 0 0 1-4 0V4zM5 8h5m4 0h5"/>',

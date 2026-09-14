@@ -12,6 +12,7 @@ import {splitPosePropertyChanges} from './pose-property-split.mjs';
 import {snapshotPoseFrame, snapshotPoseObject} from './pose-snapshot.mjs';
 import {presencePlayback} from './movieclip-presence.mjs';
 import {snapshotFigureDefinition} from './movieclips.mjs';
+import {modernizeLegacyObjectColor} from './clipboard-assets.mjs';
 import {translateIKTargets, remapIKFollowers} from './ik.mjs';
 
 const clone = value => structuredClone(value);
@@ -19,7 +20,7 @@ const equal = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b);
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const zero = () => ({changedFrames: 0, changedTicks: [], insertedUids: []});
 const labels = {add: 'Add figures across frames', paste: 'Paste figures across frames', duplicate: 'Duplicate figures across frames', delete: 'Delete figures across frames',
-  appearance: 'Set figure appearance across frames', order: 'Order figures across frames', join: 'Join figures across frames',
+  appearance: 'Set figure appearance across frames', recolor: 'Edit figure colors', order: 'Order figures across frames', join: 'Join figures across frames',
   detach: 'Detach figures across frames', mirror: 'Flip figures across frames', scale: 'Scale figures across frames',
   rotate: 'Rotate figures across frames', align: 'Align figures across frames', center: 'Center figures across frames', reset: 'Reset poses across frames'};
 const frameFields = frame => Object.fromEntries(Object.entries(frame).filter(([key]) => !['objects', 'object_draw_order', 'object_draw_order_unique_ids'].includes(key)));
@@ -77,9 +78,15 @@ function insertionPlan(editor, operation, targetFrames) {
   const clipboard = operation.clipboard ?? editor._selectionClipboard ?? editor._figureClipboard;
   if (!clipboard) return null;
   const sourceObjects = clipboard.objects ?? [clipboard.object], sourceFigures = clipboard.figures ?? [clipboard.figure];
+  const pasteMode = operation.pasteMode ?? 'instance';
+  if (!['default', 'unique', 'instance'].includes(pasteMode)) throw new Error('Choose a valid figure paste mode.');
+  // Decide once per copied definition. A range shares the prepared definitions;
+  // immutable movie documents remain shared until their editor publishes edits.
+  const independent = new Set(sourceFigures.filter(figure => pasteMode === 'unique' ||
+    (pasteMode === 'default' && !figure._styk?.movieclip)).map(figure => figure.figure_type_id));
   const existingTypes = new Map(editor.report.figure_types.map(figure => [figure.figure_type_id, figure]));
   const linked = new Set(sourceObjects.filter(object => !operation.newIdentities && editor.report._styk?.layerSheet &&
-    clipboard.documentToken === editor._documentToken && !clipboard.freshTypes?.has(object.figure_type_id) &&
+    clipboard.documentToken === editor._documentToken && !independent.has(object.figure_type_id) && !clipboard.freshTypes?.has(object.figure_type_id) &&
     existingTypes.get(object.figure_type_id)?._styk?.movieclip).map(object => object.unique_id));
   const occupied = new Set(targetFrames.flatMap(({frame})=>frame.objects.filter(object=>linked.has(object.unique_id)).map(object=>object.unique_id)));
   // Once/hide clips still own their IDs after their artwork disappears. Inspect
@@ -91,9 +98,15 @@ function insertionPlan(editor, operation, targetFrames) {
   const retained = new Set([...linked].filter(uid=>!occupied.has(uid)));
   const uidMap = new Map(sourceObjects.map(object => [object.unique_id, retained.has(object.unique_id) ? object.unique_id : identity()])), types = new Map();
   for (const original of sourceFigures) {
-    let figure = clipboard.documentToken === editor._documentToken && !clipboard.freshTypes?.has(original.figure_type_id) ? existingTypes.get(original.figure_type_id) : null;
-    if (!figure) { figure = {...(operation.importing ? clone(original) : snapshotFigureDefinition(original)), figure_type_id: nextType++}; definitions.push(figure); }
+    let figure = clipboard.documentToken === editor._documentToken && !independent.has(original.figure_type_id) && !clipboard.freshTypes?.has(original.figure_type_id) ? existingTypes.get(original.figure_type_id) : null;
+    if (!figure) {
+      figure = {...(operation.importing ? clone(original) : snapshotFigureDefinition(original)), figure_type_id: nextType++};
+      // Modern segment colors must not acquire the destination's legacy whole-figure interpretation.
+      if (clipboard.sourceVersion >= 5 && editor.report.version < 5) figure._styk = {...figure._styk, colorMode: 'segments'};
+      definitions.push(figure);
+    }
     types.set(original.figure_type_id, {figure, indices: new Map(original.segments.map((segment, index) => [segment.segment_id, index])),
+      legacyColor: clipboard.sourceVersion < 5 && original._styk?.colorMode !== 'segments',
       handles: new Set([0, ...figure.segments.map(segment => segment.segment_id)])});
   }
   const offset = operation.offset ?? (retained.size ? 0 : operation.defaultOffset ?? 0);
@@ -103,7 +116,8 @@ function insertionPlan(editor, operation, targetFrames) {
   const dy = operation.position ? operation.position.y - anchors.reduce((sum, object) => sum + object.root_y, 0) / anchors.length : offset;
   if (![dx, dy].every(Number.isFinite)) throw new Error('Choose a valid canvas position.');
   const objects = sourceObjects.map(original => {
-    const object = snapshotPoseObject(original), {figure, indices} = types.get(original.figure_type_id);
+    const object = snapshotPoseObject(original), {figure, indices, legacyColor} = types.get(original.figure_type_id);
+    if (legacyColor && editor.report.version >= 5) modernizeLegacyObjectColor(object);
     delete object._stykMovieclipPart;
     remapVfxOwner(object,figure.figure_type_id);
     object.unique_id = uidMap.get(original.unique_id); object.figure_type_id = figure.figure_type_id; object.root_x += dx; object.root_y += dy;
@@ -310,7 +324,7 @@ export const editorRangeCommandMethods = {
     this._emit('edit', {label, animation: true, structural: true, timing: true, changedUids: [...new Set(plans.flatMap(plan => plan.changedUids))]});
   },
   addFigureInFrames(typeId, indices, options = {}) { return this.applyFigureRange({kind: 'add', typeId, x: options.x, y: options.y}, {...options, indices}); },
-  pasteFiguresInFrames(indices, options = {}) { return this.applyFigureRange({kind: 'paste', offset: options.offset}, {...options, indices}); },
+  pasteFiguresInFrames(indices, options = {}) { return this.applyFigureRange({kind: 'paste', offset: options.offset, pasteMode: options.pasteMode ?? 'default'}, {...options, indices}); },
   duplicateFiguresInFrames(indices, options = {}) { return this.applyFigureRange({kind: 'duplicate', offset: options.offset}, {...options, indices}); },
   duplicateInFrames(indices, options = {}) { return this.duplicateFiguresInFrames(indices, options); },
   deleteFiguresInFrames(indices, options = {}) { return this.applyFigureRange({kind: 'delete'}, {...options, indices}); },

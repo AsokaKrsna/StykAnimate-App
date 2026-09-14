@@ -1,13 +1,13 @@
 import {buildGeometry, buildGeometryAsync} from './pivot/geometry.mjs';
 
 const wireOnly=new Set(['record_offset','record_end','object_slot','join']);
-function equal(a,b,ignoreWire=false){
+function equal(a,b,ignoreWire=false,ignoreOpacity=false){
   if(Object.is(a,b))return true;
   if(!a||!b||typeof a!=='object'||typeof b!=='object'||Array.isArray(a)!==Array.isArray(b))return false;
   if(Array.isArray(a))return a.length===b.length&&a.every((value,index)=>equal(value,b[index]));
   // Native tween evaluation explicitly clears this optional override. An absent
   // field and an undefined override both use the figure's normal geometry.
-  const relevant=(value,key)=>!ignoreWire||(!wireOnly.has(key)&&!(key==='runtime_segments'&&value[key]===undefined));
+  const relevant=(value,key)=>(!ignoreOpacity||!['field28','transparency'].includes(key))&&(!ignoreWire||(!wireOnly.has(key)&&!(key==='runtime_segments'&&value[key]===undefined)));
   const keys=Object.keys(a).filter(key=>relevant(a,key)),other=Object.keys(b).filter(key=>relevant(b,key));
   return keys.length===other.length&&keys.every(key=>Object.hasOwn(b,key)&&equal(a[key],b[key]));
 }
@@ -21,8 +21,8 @@ function sameJoin(a, b, aParent, bParent) {
 }
 /** Rebind slot metadata without recalculating points or tessellation. The old
  * object-local artwork remains valid and can be adopted by the renderer. */
-function rebind(g, object, slot) {
-  if (g.slot === slot && g.obj.join?.target_object_slot === object.join?.target_object_slot) return g;
+function rebind(g, object, slot, appearance = false) {
+  if (!appearance && g.slot === slot && g.obj.join?.target_object_slot === object.join?.target_object_slot) return g;
   const records = new Map(), children = new Map();
   const item = value => {
     if (!records.has(value)) {
@@ -31,12 +31,16 @@ function rebind(g, object, slot) {
         owner = children.get(value.obj);
         if (!owner) { owner = {...value.obj, object_slot: slot}; children.set(value.obj, owner); }
       }
-      records.set(value, {...value, obj: owner, slot});
+      records.set(value, {...value, obj: owner, slot, ...(appearance ? {opacity:1-Number(object.field28??object.transparency??0)/255} : {})});
     }
     return records.get(value);
   };
   const result = {...g, obj: object, slot, segments: g.segments.map(item), polys: g.polys.map(item), drawables: g.drawables?.map(item)};
-  Object.defineProperty(result, 'renderSource', {value: g.renderSource || g});
+  if (appearance) {
+    const source=g.renderSource||g;
+    Object.defineProperty(result, 'opacitySource', {value:source.opacitySource || source});
+  }
+  else Object.defineProperty(result, 'renderSource', {value: g.renderSource || g});
   return result;
 }
 const drawableCount = g => g.drawables?.length ?? g.segments.length + g.polys.length;
@@ -81,9 +85,14 @@ export class RetainedGeometryCache {
       const root=object.join?objects.get(Number(object.join.target_object_slot))?.joints.get(Number(object.join.target_handle_id??0)):null;
       let matched;
       for(const entry of [prior.get(object.unique_id),this.alternates.get(object.unique_id)]){
-        if(!entry||!equal(object,entry.g.obj,true)||!sameJoin(object.join,entry.g.obj.join,parent,entry.parent))continue;
+        if(!entry||!sameJoin(object.join,entry.g.obj.join,parent,entry.parent))continue;
+        const appearance = !equal(object,entry.g.obj,true);
+        // Opacity does not affect native joint evaluation. Rebind drawing
+        // metadata while retaining exact points; expanded clips own nested
+        // opacity and therefore keep the general evaluator.
+        if(appearance && (!equal(object,entry.g.obj,true,true) || entry.g.drawables.some(item=>item.obj!==entry.g.obj||item._movieclipOwner)))continue;
         if(object.join&&(!root||!Object.is(root.x,entry.g.root.x)||!Object.is(root.y,entry.g.root.y)))continue;
-        matched=rebind(entry.g,object,slot);break;
+        matched=rebind(entry.g,object,slot,appearance);break;
       }
       if(matched)objects.set(slot,matched);else dirtySlots.add(slot);
       for(const child of children.get(slot)??[])ready.push(child);

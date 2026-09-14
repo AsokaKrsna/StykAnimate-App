@@ -28,6 +28,8 @@ ordinary driver starts a separate scope. Select an affected detail and choose
 Ordinary drags rotate at the current length. **Hold Ctrl while dragging to
 stretch** (Command also works). Moving a figure preserves its pose.
 
+Enabling Smart Stretch captures the current segment length as its rest length,
+excluding figure scale. Connectors capture the current distance between anchors.
 Stretch settings contain rest length, minimum/maximum ratios and width response.
 Affected parts expose a signed linear **Multiplier**, **Reset impulse here** to
 restart the axis at that joint, and **Stop at this joint** to protect a branch.

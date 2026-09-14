@@ -60,7 +60,7 @@ export function isStatic(s) {
   );
 }
 export function arc(start, angle, length, bend = 0) {
-  if (![start.x, start.y, angle, length, bend].every(Number.isFinite))
+  if (!Number.isFinite(start.x) || !Number.isFinite(start.y) || !Number.isFinite(angle) || !Number.isFinite(length) || !Number.isFinite(bend))
     return [];
   if (Math.abs(bend) < 1e-7)
     return [
@@ -515,22 +515,25 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
   }
   const joinedIK = solveJoinedIK(report, frame, incremental?.previous ? incremental.dirtySlots : null);
   for (const slot of joinedIK.keys()) cache.delete(slot);
-  function* objectAt(slot, seen = new Set()) {
+  function* objectAt(slot, seen) {
     if (cache.has(slot)) return cache.get(slot);
     const obj = frame.objects[slot],
       fig = resolveInstanceFigure(types.get(Number(obj?.figure_type_id)), obj);
     if (!obj || !fig) return null;
-    if (seen.has(slot)) {
+    if (seen?.has(slot)) {
       warnings.push(`Cyclic join at object ${slot}`);
       return null;
     }
-    seen.add(slot);
     let root = { x: Number(obj.root_x ?? 0), y: Number(obj.root_y ?? 0) };
     if (obj.join) {
-      const parent = yield* objectAt(
-        Number(obj.join.target_object_slot),
-        new Set(seen),
-      );
+      const parentSlot=Number(obj.join.target_object_slot);
+      // Topological traversal normally resolved this parent already. Only an
+      // unresolved recursive attachment needs a cycle-detection path.
+      let parent=cache.get(parentSlot);
+      if(!cache.has(parentSlot)){
+        const path=new Set(seen);path.add(slot);
+        parent=yield* objectAt(parentSlot,path);
+      }
       const p = parent?.joints.get(Number(obj.join.target_handle_id ?? 0));
       if (p) root = { ...p };
       else warnings.push(`Unresolved join at object ${slot}`);
@@ -543,13 +546,13 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
     if (!plan) {plan = geometryDefinition(fig); definitionPlans.set(fig, plan);}
     const ik = joinedIK.get(slot) ?? (hasPinnedIK(obj) ? evaluateIKPose(report, `local:${obj.unique_id}`, fig, obj, root, plan) : null);
     const joints = new Map([[0, root]]),
-      renders = new Map(),
+      renders = [],
       {segments, ids} = plan;
     const scale = Number(obj.scale ?? 1),
       opacity = 1 - Number(obj.field28 ?? obj.transparency ?? 0) / 255;
     const rig = hasRigConstraints(fig) ? createRigEvaluation(fig, obj, root, yield* rigConstraintPlanSteps(fig)) : null;
     function segmentAt(i, active) {
-      if (renders.has(i)) return renders.get(i);
+      if (renders[i]) return renders[i];
       if (active?.has(i)) {
         warnings.push(`Cyclic segment ${i} in object ${slot}`);
         return null;
@@ -578,10 +581,18 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         ) * scale;
       const rigPose = rig?.evaluate(i, {start,angle,length,bend}, joints);
       if (rigPose) ({start,angle,length,bend} = rigPose);
-      const points = arc(start, angle, length, bend),
-        last = points.at(-1) || start,
-        end = { x: Math.fround(last.x), y: Math.fround(last.y) };
-      if (points.length) points[points.length - 1] = end;
+      let points,end;
+      if(Math.abs(bend)<1e-7&&Number.isFinite(start.x)&&Number.isFinite(start.y)&&Number.isFinite(angle)&&Number.isFinite(length)){
+        // The native endpoint is rounded once. A straight segment needs no
+        // intermediate unrounded point or curve-validation array.
+        end={x:Math.fround(start.x+length*Math.cos(angle)),y:Math.fround(start.y+length*Math.sin(angle))};
+        points=[start,end];
+      }else{
+        points=arc(start,angle,length,bend);
+        const last=points.at(-1)||start;
+        end={x:Math.fround(last.x),y:Math.fround(last.y)};
+        if(points.length)points[points.length-1]=end;
+      }
       const handle = rigPose?.handle ? {x:Math.fround(rigPose.handle.x),y:Math.fround(rigPose.handle.y)} : end;
       joints.set(Number(seg.segment_id), handle);
       const override = Number(obj.color_override_raw) >>> 0;
@@ -626,6 +637,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         };
       }
       const render = {
+        type: seg.segment_type === 'circle' || seg.segment_type === 'image' || seg.segment_type === 'text' ? seg.segment_type : 'line',
         seg,
         obj,
         fig,
@@ -635,10 +647,6 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         index: i,
         start,
         end,
-        ...(rigPose?.connector ? {handle, connector:true,attachmentPosition:rigPose.position} : {}),
-        ...(rigPose?.space ? {rigSpace:rigPose.space} : {}),
-        ...(rigPose?.childSpace ? {rigChildSpace:rigPose.childSpace} : {}),
-        ...(rigPose?.rotation ? {rigRotation:rigPose.rotation} : {}),
         points,
         angle,
         bend,
@@ -653,10 +661,14 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         opacity,
         static: isStatic(seg),
       };
+      if(rigPose?.connector){render.handle=handle;render.connector=true;render.attachmentPosition=rigPose.position;}
+      if(rigPose?.space)render.rigSpace=rigPose.space;
+      if(rigPose?.childSpace)render.rigChildSpace=rigPose.childSpace;
+      if(rigPose?.rotation)render.rigRotation=rigPose.rotation;
       const sourceShape=sticknodesShape(seg,obj);
       if(sourceShape?.sagitta&&Math.abs(bend)<1e-7){render.points=sticknodesCurve(sourceShape,start,angle,length,scale);render.bend=1e-6;render._sticknodesCurve=true;}
       if(obj._sticknodesSprite)render.asset=sticknodesSpriteAsset(asset,obj);
-      renders.set(i, render);
+      renders[i] = render;
       return render;
     }
     let built = 0;
@@ -667,7 +679,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
     if (plan.order.length < segments.length)
       warnings.push(`Cyclic segment hierarchy in object ${slot}`);
     const malformedEdges = ids.size !== segments.length ? new Map(
-      [...renders.values()].map((s) => [
+      renders.filter(Boolean).map((s) => [
         `${s.seg.parent_id}:${s.seg.segment_id}`,
         s,
       ]),
@@ -679,7 +691,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       if (polygon.first !== undefined && joints.has(polygon.first)) points.push(joints.get(polygon.first));
       for (let j = 0; j < polygon.edges.length; j++) {
         const step = polygon.edges[j], b = step.end;
-        let edge = renders.get(step.index), reverse = step.reverse;
+        let edge = renders[step.index], reverse = step.reverse;
         if (malformedEdges) {
           const a = Number(poly.segment_ids[j]), forward = malformedEdges.get(`${a}:${b}`);
           edge = forward || malformedEdges.get(`${b}:${a}`); reverse = !forward;
@@ -724,7 +736,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       fig,
       root,
       joints,
-      segments: [...renders.values()].sort((a, b) => a.index - b.index),
+      segments: renders.filter(Boolean),
       polys,
     };
     const renderSource=incremental?.renderSources?.get(slot);
@@ -793,12 +805,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       ...g.polys.filter(p=>!p.culled),
       ...g.segments
         .filter((s) => s.seg.visible !== false)
-        .flatMap((s) => sticknodesDrawables(s) ?? [{
-          ...s,
-          type: ["circle", "image", "text"].includes(s.seg.segment_type)
-            ? s.seg.segment_type
-            : "line",
-        }]),
+        .flatMap((s) => sticknodesDrawables(s) ?? [s]),
     ];
     if (!g.drawables) { local.sort((a, b) => a.z - b.z); g.drawables = local; }
     if (local.length) orderedObjects.push(g);
@@ -1143,7 +1150,7 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true) {
       if (!paint) continue;
       ctx.beginPath();
       ctx.moveTo(s.points[0].x, s.points[0].y);
-      for (const p of s.points.slice(1)) ctx.lineTo(p.x, p.y);
+      for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x, s.points[i].y);
       ctx.closePath();
       if (s.outline) {
         ctx.lineWidth = width;
@@ -1182,7 +1189,7 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true) {
     if (s.points.length < 2 || width <= 0) continue;
     ctx.beginPath();
     ctx.moveTo(s.points[0].x, s.points[0].y);
-    for (const p of s.points.slice(1)) ctx.lineTo(p.x, p.y);
+    for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x, s.points[i].y);
     ctx.lineWidth = width;
     ctx.lineCap = s.seg.segment_kind === "squareLine" ? "square" : "round";
     ctx.lineJoin = "round";

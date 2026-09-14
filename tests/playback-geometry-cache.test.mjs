@@ -6,6 +6,37 @@ import {createDemo} from '../src/demo.mjs';
 const drawing=g=>JSON.parse(JSON.stringify(g.drawables,(key,value)=>key==='record_offset'||key==='record_end'?undefined:value));
 const exact=(cache,report,frame,revision=1)=>{const g=cache.get(report,frame,revision),fresh=buildGeometry(report,frame);assert.deepEqual(drawing(g),drawing(fresh));assert.deepEqual(g.warnings,fresh.warnings);return g;};
 
+test('opacity-only seeks retain exact joints and update all drawing metadata without a scene chain',()=>{
+  const report=createDemo(),cache=new PlaybackGeometryCache(),frame=structuredClone(report.keyframes[0]);
+  frame.objects[2].join={target_object_slot:0,target_handle_id:1};
+  const first=exact(cache,report,frame);
+  for(const alpha of [64,128,255,0,200]){
+    const next=structuredClone(frame);next.objects[0].field28=alpha;
+    const scene=exact(cache,report,next),g=scene.objects.get(0);
+    assert.strictEqual(g.joints,first.objects.get(0).joints);
+    assert.strictEqual(scene.objects.get(2).joints,first.objects.get(2).joints);
+    assert.equal(g.opacitySource?.opacitySource,undefined);
+    assert.ok(scene.changedSlots.has(0));
+  }
+  const changed=structuredClone(frame);changed.objects[0].angles[0]+=.000001;
+  assert.notStrictEqual(exact(cache,report,changed).objects.get(0).joints,first.objects.get(0).joints);
+});
+
+test('alternating slot remaps and fades keep one canonical opacity source',()=>{
+  const report=createDemo(),cache=new PlaybackGeometryCache(),frame=structuredClone(report.keyframes[0]);
+  const initial=exact(cache,report,frame).objects.get(0);
+  for(let step=1;step<=12;step++){
+    const next=structuredClone(frame);next.objects[0].field28=step*10;
+    if(step%2)next.objects.reverse();
+    next.objects.forEach((o,slot)=>o.object_slot=slot);
+    next.object_draw_order=next.objects.map((_,i)=>i);next.object_draw_order_unique_ids=next.objects.map(o=>o.unique_id);
+    const g=[...exact(cache,report,next).objects.values()].find(g=>g.obj.unique_id===initial.obj.unique_id);
+    assert.strictEqual(g.joints,initial.joints);
+    const source=g.renderSource||g;
+    assert.equal(source.opacitySource?.opacitySource,undefined);
+  }
+});
+
 test('worker geometry reuses equal native objects across wire metadata and painter-order changes',()=>{
   const report=createDemo(),cache=new PlaybackGeometryCache(),a=exact(cache,report,report.keyframes[0]);
   const next=structuredClone(report.keyframes[0]);next.objects.forEach(o=>{o.record_offset=1234;o.record_end=4567;});next.object_draw_order.reverse();

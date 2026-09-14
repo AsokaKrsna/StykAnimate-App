@@ -1,4 +1,4 @@
-import {portableFigure, portableBackground} from './clipboard-assets.mjs';
+import {portableFigure, portableBackground, modernizeLegacyObjectColor} from './clipboard-assets.mjs';
 import {validateScene} from './pivot/model.mjs';
 import {validateAnimationDocument} from './animation-channels.mjs';
 import {validateFrameIdentities} from './editor-frames.mjs';
@@ -24,10 +24,7 @@ export function modernizeLegacyFrame(original, segmentColorTypes = new Set()) {
   for (const object of frame.objects) {
     delete object.runtime_segments;
     if (segmentColorTypes.has(object.figure_type_id)) continue;
-    const raw = Number(object.color_override_raw) >>> 0;
-    object.color_override_raw = (0xff000000 | ((raw | 0) < 0 ? 0 : raw & 0xffffff)) >>> 0;
-    object.color_override_rgb = [object.color_override_raw & 255,(object.color_override_raw >>> 8) & 255,(object.color_override_raw >>> 16) & 255];
-    object.color_override_mix = 255;
+    modernizeLegacyObjectColor(object);
   }
   return frame;
 }

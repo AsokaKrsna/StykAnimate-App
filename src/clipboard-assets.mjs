@@ -1,6 +1,15 @@
 const clone = value => structuredClone(value);
 const SOURCE_LOCATORS = new Set(['record_offset', 'record_end', 'records_start', 'records_end', 'source_start', 'source_end', 'source_offset', 'source_size', 'image_start']);
 
+/** Mutate an owned pose: legacy colors are absolute BGR, with negative black. */
+export function modernizeLegacyObjectColor(object) {
+  if (object._styk?.colorMode === 'segments') return;
+  const raw = Number(object.color_override_raw) >>> 0;
+  object.color_override_raw = (0xff000000 | ((raw | 0) < 0 ? 0 : raw & 0xffffff)) >>> 0;
+  object.color_override_rgb = [object.color_override_raw & 255, (object.color_override_raw >>> 8) & 255, (object.color_override_raw >>> 16) & 255];
+  object.color_override_mix = 255;
+}
+
 export function portableAsset(asset, {image = false} = {}) {
   const next = clone(asset);
   for (const key of SOURCE_LOCATORS) delete next[key];

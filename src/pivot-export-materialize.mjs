@@ -11,6 +11,7 @@ import {animationChannels, animationChannelId, validateAnimationDocument} from '
 import {applyLayerOrder, layerVisible, validateLayerState,ensureLayerState} from './layers.mjs';
 import {materializeSimpleFrameDraftForPivot} from './pivot-frame-draft.mjs';
 import {createNativeStyleTable, hasNativeStyleOverrides} from './pivot-style-materialize.mjs';
+import {modernizeLegacyObjectColor,portableFigure,portableBackground} from './clipboard-assets.mjs';
 import {hasAnimationOrigins} from './animation-origin.mjs';
 
 import {hasFrameEasing} from './keyframe-easing.mjs';
@@ -115,13 +116,21 @@ export function materializePivotDocument(report) {
   validateAnimationDocument(report);
   if (report._styk?.layers) validateLayerState(report._styk.layers);
   const channels = activeChannels(report), layers = report._styk?.layers;
-  const authored = cameraFeatures(report) || !!report._styk?.layerSheet || hasIK(report) || hasFrameEasing(report) || channels.length > 0 || hasAnimationOrigins(report) || hasNativeStyleOverrides(report) || layers?.order.some(id => layers.byId[id]?.visible === false), rows = nativeTimeline(report), outputRows = timeline(report);
+  const authored = report.version < 5 || cameraFeatures(report) || !!report._styk?.layerSheet || hasIK(report) || hasFrameEasing(report) || channels.length > 0 || hasAnimationOrigins(report) || hasNativeStyleOverrides(report) || layers?.order.some(id => layers.byId[id]?.visible === false), rows = nativeTimeline(report), outputRows = timeline(report);
   const totalTicks = outputRows.at(-1).start + outputRows.at(-1).count;
   const {events: hidden, extraSources} = authored && !report._styk?.layerSheet ? hiddenExposures(report, rows, channels) : {events: [], extraSources: {}};
   const outputCount = authored ? totalTicks + hidden.length : report.keyframes.length;
   if (outputCount < 1 || outputCount > MAX_FRAMES) throw new Error(`Native Pivot export needs ${outputCount.toLocaleString()} keys; the supported limit is ${MAX_FRAMES.toLocaleString()}. Reduce the authored duration before exporting.`);
   const output = {...report, backgrounds: [...(report.backgrounds ?? [])], keyframes: []};
-  if(report._styk?.layerSheet)output.version=5;
+  // Materialized per-segment styles use Pivot 5. Convert the untouched legacy
+  // colors too, before changing their interpretation in the output document.
+  const legacy=report.version<5;
+  const segmentColorTypes=new Set(report.figure_types.filter(figure=>figure._styk?.colorMode==='segments').map(figure=>figure.figure_type_id));
+  if(report._styk?.layerSheet||legacy)output.version=5;
+  if(legacy){
+    output.figure_types=report.figure_types.map(figure=>portableFigure(figure,true));
+    output.backgrounds=(report.backgrounds??[]).map(portableBackground);
+  }
   const styleTypeId = createNativeStyleTable(output);
   if (output._styk) {
     output._styk = {...output._styk}; delete output._styk.animation; delete output._styk.cameraMotion; delete output._styk.layers; delete output._styk.frameSources; delete output._styk.layerSheet;
@@ -143,6 +152,7 @@ export function materializePivotDocument(report) {
       if (!layerVisible(report, object.unique_id)) return;
       oldToNew.set(slot, objects.length);
       const next = {...object, object_slot: objects.length}; delete next.runtime_segments;
+      if(legacy&&!segmentColorTypes.has(object.figure_type_id))modernizeLegacyObjectColor(next);
       if (geometry?.objects.get(slot)?.solvedAngles) next.angles = geometry.objects.get(slot).solvedAngles.slice();
       if (geometry?.objects.get(slot)?.solvedLengths) {next.len_flag = 1; next.lengths = geometry.objects.get(slot).solvedLengths.slice();}
       delete next._stykIK;

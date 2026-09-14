@@ -52,6 +52,27 @@ test('smart stretch preserves panel widths, applies one axial deformation and cl
   e.updateSegment({length:36000});scene=g(e);near(scene.segments[0].length,360);near(scene.segments[1].length,120);
   e.updateSegment({length:0});near(g(e).segments[0].length,45);
 });
+test('enabling Smart Stretch captures posed length without figure scale and supports undo',()=>{
+  const e=editorFor('telescoping-panels');select(e,1);e.enableSmartStretch(false);
+  e.updateSegment({length:270});e.object.scale=2;e._invalidate();
+  assert.notEqual(e.figure.segments[0].length,270);
+  const before=e.serialize();
+  rigControlChange(e,{id:'rig-stretch-enabled',checked:true});
+  near(e.figure.segments[0]._stykRig.stretch.restLength,270);
+  e.undo();assert.deepEqual(e.serialize(),before);e.redo();
+  near(e.figure.segments[0]._stykRig.stretch.restLength,270);
+  e.setRigBehavior({stretch:{restLength:200}});e.enableSmartStretch(true);
+  near(e.figure.segments[0]._stykRig.stretch.restLength,200);
+  e.enableSmartStretch(false);e.updateSegment({length:315});e.enableSmartStretch(true);
+  near(e.figure.segments[0]._stykRig.stretch.restLength,315);
+});
+test('enabling connector Smart Stretch captures current anchor distance even when curved',()=>{
+  const e=editorFor('sliding-carriage');select(e,2);e.updateSegment({length:400});
+  select(e,3);e.updateSegment({bend_rad:Math.PI/2});e.object.scale=2;e._invalidate();
+  const shape=g(e).segments[2],span=Math.hypot(shape.end.x-shape.start.x,shape.end.y-shape.start.y)/2;
+  assert.notEqual(span,e.figure.segments[2]._stykRig.connector.restLength);
+  e.enableSmartStretch(true);near(e.figure.segments[2]._stykRig.stretch.restLength,span);
+});
 test('invalid rig changes and deleting referenced anchors fail atomically; disabling removes followers',()=>{
   const e=editorFor('nested-curve-controls');select(e,4);let before=e.serialize(),history=e._undo.length;
   for(const connector of [{end:6},{end:999},{start:1,end:1},{restLength:NaN}])assert.throws(()=>e.setRigBehavior({connector}),/itself|missing|different|between/);

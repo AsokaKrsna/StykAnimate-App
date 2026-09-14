@@ -1,7 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {previewPNG, rawPNG} from './preview-png-fixture.mjs';
-import {pngInfo, samplePNG, fitImage} from '../src/preview-image.mjs';
+import {pngInfo, imageInfo, samplePNG, fitImage, decodePreview} from '../src/preview-image.mjs';
+
+test('native BMP, GIF and JPEG headers supply actual dimensions without decoding pixels', async () => {
+  for(const topDown of [false,true]){
+    const bmp=Buffer.alloc(54);bmp.write('BM');bmp.writeUInt32LE(40,14);bmp.writeInt32LE(720,18);bmp.writeInt32LE(topDown?-405:405,22);
+    assert.deepEqual(await imageInfo(new Blob([bmp])),{width:720,height:405,format:'bmp'});
+    assert.equal(await imageInfo(new Blob([bmp.subarray(0,25)])),null);
+  }
+  const core=Buffer.alloc(26);core.write('BM');core.writeUInt32LE(12,14);core.writeUInt16LE(45,18);core.writeUInt16LE(23,20);
+  assert.deepEqual(await imageInfo(new Blob([core])),{width:45,height:23,format:'bmp'});
+  const gif=Buffer.alloc(13);gif.write('GIF89a');gif.writeUInt16LE(45,6);gif.writeUInt16LE(23,8);
+  assert.deepEqual(await imageInfo(new Blob([gif])),{width:45,height:23,format:'gif'});
+  const sof=Buffer.from([255,192,0,17,8,1,149,2,208,3,1,17,0,2,17,0,3,17,0]),end=Buffer.from([255,218,0,2]);
+  const jpeg=parts=>new Blob([Buffer.from([255,216]),...parts,sof,end]);
+  assert.deepEqual(await imageInfo(jpeg([])),{width:720,height:405,format:'jpeg'});
+  for(const little of [false,true]){
+    const exif=Buffer.alloc(36);exif.set([255,225,0,34]);exif.write('Exif\0\0',4);exif.write(little?'II':'MM',10);
+    const v=new DataView(exif.buffer,exif.byteOffset+10,26);v.setUint16(2,42,little);v.setUint32(4,8,little);v.setUint16(8,1,little);
+    v.setUint16(10,0x112,little);v.setUint16(12,3,little);v.setUint32(14,1,little);v.setUint16(18,6,little);
+    assert.deepEqual(await imageInfo(jpeg([exif])),{width:405,height:720,format:'jpeg'});
+    v.setUint32(4,0xffffffff,little);
+    assert.deepEqual(await imageInfo(jpeg([exif])),{width:720,height:405,format:'jpeg'},'invalid optional EXIF offsets cannot escape the metadata buffer');
+  }
+  assert.equal(await imageInfo(new Blob([Buffer.from([255,216,255,225,255,255])])),null);
+});
 
 test('PNG previews and native crops retain exact source pixels with bounded output', async () => {
   const blob = new Blob([await previewPNG(128, 64)]), info = await pngInfo(blob);
@@ -12,6 +36,18 @@ test('PNG previews and native crops retain exact source pixels with bounded outp
   assert.deepEqual([...pixels.slice(28, 32)], [35,180,90,255]);
   const crop = await samplePNG(blob, info, 4, 4, {crop: {x: 80, y: 20, width: 4, height: 4}});
   assert.deepEqual([...crop.slice(0, 4)], [35,180,90,255]);
+});
+
+test('ordinary cropped PNGs use bounded native decoding while tiny crops retain scanline decoding',async t=>{
+  const bitmap=globalThis.createImageBitmap,imageData=globalThis.ImageData,calls=[];
+  t.after(()=>{if(bitmap===undefined)delete globalThis.createImageBitmap;else globalThis.createImageBitmap=bitmap;if(imageData===undefined)delete globalThis.ImageData;else globalThis.ImageData=imageData;});
+  globalThis.ImageData=class {constructor(data,width,height){Object.assign(this,{data,width,height});}};
+  globalThis.createImageBitmap=async(source,...args)=>{calls.push(source);const o=args.at(-1);return {width:o?.resizeWidth||source.width,height:o?.resizeHeight||source.height,close(){}};};
+  const blob=new Blob([await previewPNG(128,64)]);
+  const native=await decodePreview(blob,{maxPixels:127*64,crop:{x:1,y:0,width:127,height:64}});
+  assert.equal(calls[0],blob);assert.equal(native.srcX,1);assert.equal(native.srcW,127);assert.equal(native.naturalWidth,128);
+  const crop=await decodePreview(blob,{maxPixels:4*4,crop:{x:80,y:20,width:4,height:4}});
+  assert.ok(calls[1] instanceof ImageData);assert.deepEqual([...calls[1].data.slice(0,4)],[35,180,90,255]);assert.equal(crop.width*crop.height,16);
 });
 
 test('streamed decoding yields and can be cancelled without completing an image', async () => {

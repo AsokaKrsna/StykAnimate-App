@@ -27,6 +27,7 @@ group('Tools', [
   ['handle-edit-hold', 'Hold to edit handles', ['KeyR'], {hold: true}],
   ['isolate-hold', 'Hold to isolate joint', ['CapsLock'], {hold: true, extraShift: true}],
   ['toggle-isolate', 'Toggle joint isolation'],
+  ['join-figure', 'Join / unjoin figure', ['KeyJ']],
 ]);
 group('Animation', [
   ['play-pan', 'Play / pause; hold to pan', ['Space'], {hold: true}],
@@ -51,7 +52,7 @@ group('Filmstrip', [
 group('View & camera', [
   ['zoom-in', 'Zoom in', ['Equal', 'Shift+Equal']], ['zoom-out', 'Zoom out', ['Minus']],
   ['zoom-reset', 'Fit canvas', ['Shift+Digit1']], ['zoom-selection', 'Fit selection', ['Shift+Digit2']],
-  ['toggle-handles', 'Show / hide joints', ['KeyJ']],
+  ['toggle-handles', 'Show / hide joints', ['Shift+KeyJ']],
   ['toggle-motion-paths', 'Show / hide motion paths', ['KeyM']],
   ['toggle-unselected-handles', 'Show / hide unselected handles', ['Mod+KeyH']],
   ['toggle-camera', 'Show / hide camera', ['Mod+KeyK']], ['camera-reset', 'Reset camera', ['Mod+Alt+KeyK']],
@@ -121,6 +122,10 @@ export function normalizeHotkeys(value, mac = isMacPlatform()) {
   // explicit Add Frame customization; otherwise carry over the old A action.
   const legacy = Object.hasOwn(input, 'duplicate-frame-after');
   const migrated = {...input};
+  // Old full preference snapshots stored J for visibility. Only migrate that
+  // exact old default; preserve custom assignments and explicit unassignments.
+  if (!Object.hasOwn(input, 'join-figure') && JSON.stringify(input['toggle-handles']) === '["KeyJ"]')
+    migrated['toggle-handles'] = ['Shift+KeyJ'];
   if (legacy && (!Array.isArray(input['add-frame']) || JSON.stringify(input['add-frame']) === '["F6"]'))
     migrated['add-frame'] = input['duplicate-frame-after'];
   const result = {}, customized = new Set();

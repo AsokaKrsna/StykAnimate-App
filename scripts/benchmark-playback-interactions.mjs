@@ -9,6 +9,10 @@ const output=path.resolve('artifacts/playback-interactions',label);await mkdir(o
 const desktop=process.env.STYK_PROBE_DESKTOP==='1';
 const host=desktop?await electron.launch({args:[process.cwd()],cwd:process.cwd(),env:{...process.env,STYK_USER_DATA_DIR:path.join(output,'profile')}}):await chromium.launch({channel:'chrome',headless:true});
 const page=desktop?await host.firstWindow():await host.newPage({viewport:{width:1600,height:1000}});
+if(desktop)await host.evaluate(({BrowserWindow})=>{
+  const w=BrowserWindow.getAllWindows()[0];w.webContents.setBackgroundThrottling(false);
+  w.setIgnoreMouseEvents(true);w.setFocusable(false);w.showInactive();
+});
 if(process.env.STYK_PROBE_MEMORY_GIB)await page.addInitScript(value=>Object.defineProperty(navigator,'deviceMemory',{get:()=>value}),Number(process.env.STYK_PROBE_MEMORY_GIB));
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 try {
@@ -29,14 +33,17 @@ try {
   await page.locator('#file-input').setInputFiles(source);
   await page.waitForFunction(name=>!styk.state.importing&&styk.editor.name===name,path.basename(source,'.piv'),{timeout:180000});
   console.log('IMPORTED');
+  const playbackProfiler=process.env.STYK_PROBE_PROFILE==='1'?await page.context().newCDPSession(page):null;
+  if(playbackProfiler){await playbackProfiler.send('Profiler.enable');await playbackProfiler.send('Profiler.start');}
   if(process.env.STYK_PROBE_GPU_CACHE_MIB)await page.evaluate(bytes=>{const cache=styk.state.renderer.preparedFrames;if(!cache)throw new Error('GPU cache override requires WebGPU.');cache.maxBytes=bytes;cache.stats.maxBytes=bytes;},Number(process.env.STYK_PROBE_GPU_CACHE_MIB)*1024*1024);
   await page.evaluate(async fps=>{
     const {PlaybackCache}=await import('/src/playback.mjs'),s=styk.state,e=styk.editor;
     e.setFPS(fps);e.markSaved();s.loop=false;e.seek(0);styk.fit();
-    window.probe={packets:[],presented:[],renders:[],longTasks:[]};
+    window.probe={packets:[],presented:[],renders:[],uploads:[],longTasks:[]};
     const receive=PlaybackCache.prototype._receive;
     PlaybackCache.prototype._receive=function(m){if(m.type==='packet'&&m.revision===this.revision){const p=m.packet;probe.packets.push({tick:p.tick,ms:p.compileMs,bytes:p.byteLength,quality:p.previewQuality,rasters:p.compatibility.length,groups:p.groups.length,timings:p.timings,cache:p.workerCache,sharing:p.sharing});}return receive.call(this,m);};
     const r=s.renderer,render=r.renderPrepared.bind(r);r.renderPrepared=(...args)=>{const start=performance.now(),result=render(...args);if(result&&s.playing&&probe.presented.at(-1)?.tick!==e.tick)probe.presented.push({tick:e.tick,at:performance.now(),ms:performance.now()-start});return result;};
+    const prepare=r.prepareFrame.bind(r);r.prepareFrame=(packet,...args)=>{const at=performance.now();try{return prepare(packet,...args);}finally{probe.uploads.push({tick:packet.tick,at,ms:performance.now()-at});}};
     const edit=r.render.bind(r);r.render=options=>{const start=performance.now(),result=edit(options);probe.renders.push({at:performance.now(),ms:performance.now()-start,kind:s.drag?.kind,preparation:r.stats.preparation,rasterized:r.stats.rasterizedObjects});return result;};
     new PerformanceObserver(list=>{for(const e of list.getEntries())probe.longTasks.push({at:e.startTime,ms:e.duration});}).observe({entryTypes:['longtask']});
     styk.actions.play();
@@ -47,12 +54,15 @@ try {
     await page.waitForTimeout(500);
     const status=await page.evaluate(()=>({playing:styk.state.playing,tick:styk.editor.tick,total:styk.editor.totalTicks,packet:probe.packets.at(-1),presentation:styk.performance().presentation.fps}));
     if(Date.now()>nextLog){console.log(JSON.stringify(status));nextLog=Date.now()+10000;}
-    if(!status.playing){complete=true;break;}
+    if(!status.playing){complete=status.tick===status.total-1;break;}
   }
-  if(!complete)await page.evaluate(()=>styk.actions.play());
+  if(!complete)await page.evaluate(()=>{if(styk.state.playing)styk.actions.play();});
   await page.waitForFunction(()=>!styk.state.editablePreparing,null,{timeout:60000});
   const playback=await page.evaluate(()=>({backend:styk.state.renderer.stats.backend,adapter:styk.state.renderer.stats.adapter,hardware:{deviceMemory:navigator.deviceMemory,cores:navigator.hardwareConcurrency,userAgent:navigator.userAgent},performance:styk.performance(),...probe}));
+  if(playbackProfiler){const {profile}=await playbackProfiler.send('Profiler.stop');await writeFile(path.join(output,'playback.cpuprofile'),JSON.stringify(profile));}
   await writeFile(path.join(output,'playback.json'),JSON.stringify({source,fps,complete,...playback,errors},null,2));
+  const totalTicks=await page.evaluate(()=>styk.editor.totalTicks);
+  if(!complete||playback.presented.length!==totalTicks||playback.presented.some((p,i)=>p.tick!==i))throw new Error('Playback ended before every sequential tick was presented.');
   console.log(JSON.stringify({complete,frames:playback.presented.length,slowest:playback.packets.slice().sort((a,b)=>b.ms-a.ms).slice(0,8),reduced:playback.packets.filter(p=>p.quality?.reduced).length}));
   await page.evaluate(()=>{for(const d of document.querySelectorAll('dialog[open]'))d.close();styk.editor.seek(styk.editor.totalTicks-1);styk.fit();});
   await page.waitForFunction(()=>!styk.state.editablePreparing&&!styk.state.dirtyRender);
@@ -90,6 +100,6 @@ try {
   console.log(JSON.stringify({panKind,poseKind,scrubActive,scrubTick,replayFrames:await page.evaluate(()=>probe.presented.length),errors}));
 }finally{
   await page.evaluate(()=>{styk.editor.markSaved();for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();}).catch(()=>{});
-  if(desktop)await page.evaluate(()=>window.close()).catch(()=>{});
-  await host.close();
+  if(desktop)await host.evaluate(({app})=>app.exit(0)).catch(()=>{});
+  else await host.close();
 }

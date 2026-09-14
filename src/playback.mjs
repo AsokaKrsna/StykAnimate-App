@@ -20,9 +20,9 @@ const yieldToInput = () => globalThis.scheduler?.yield ? scheduler.yield() : new
  */
 export class PlaybackCache {
   constructor({ maxBytes = playbackMemoryBudget(), maxFrames = 120, maxPending = 120,
-    baseURL = globalThis.location?.href, token = '', scale = 1, onReady, onError, diagnostics, timeoutMs = 120000,
+    baseURL = globalThis.location?.href, token = '', scale = 1, gpuIsolation = false, onReady, onError, diagnostics, timeoutMs = 120000,
     workerURL = new URL('./playback-worker.mjs', import.meta.url), workerFactory } = {}) {
-    Object.assign(this, { maxBytes, maxFrames, maxPending, baseURL, token, scale, onReady, onError, diagnostics, timeoutMs });
+    Object.assign(this, { maxBytes, maxFrames, maxPending, baseURL, token, scale, gpuIsolation, onReady, onError, diagnostics, timeoutMs });
     this.cache = new Map(); this.pending = new Map(); this.revision = 0; this.disposed = false; this.needsLoad = false;
     this.cacheNamespace = globalThis.crypto.randomUUID();
     this._mirrorAvailable = false; this._frameUpdates = new Map(); this._protectedTick = null; this._prefetchRanks = null;
@@ -191,7 +191,7 @@ export class PlaybackCache {
       this._mirrorSources.clear(); this._mirrorTables = null; this._patchPending = false;
     }
     this.needsLoad = Boolean(this.report) && !retainDocument;
-    if (!this.disposed) this.worker.postMessage({ type: 'invalidate', revision: this.revision, retainDocument, options: { scale, cameraEnabled, storedFrames, softwareFrames, hiddenUids, hiddenKey, vfxEnabled:this.vfxEnabled!==false } });
+    if (!this.disposed) this.worker.postMessage({ type: 'invalidate', revision: this.revision, retainDocument, options: { scale, cameraEnabled, storedFrames, softwareFrames, gpuIsolation:this.gpuIsolation, hiddenUids, hiddenKey, vfxEnabled:this.vfxEnabled!==false } });
     return this;
   }
   _loadWorker() {
@@ -207,7 +207,7 @@ export class PlaybackCache {
     // Texture bytes do not share WebGPU's per-storage-buffer size limit; the
     // worker checks vector buffers separately instead of capping all pixels.
     const options = { scale: this.scale, cameraEnabled: this.cameraEnabled, storedFrames: this.storedFrames, vfxEnabled:this.vfxEnabled!==false, baseURL: this.baseURL, token: this.token,
-      softwareFrames: Boolean(this.softwareFrames), hiddenUids: this.hiddenUids, hiddenKey: this.hiddenKey || '',
+      softwareFrames: Boolean(this.softwareFrames), gpuIsolation: this.gpuIsolation, hiddenUids: this.hiddenUids, hiddenKey: this.hiddenKey || '',
       maxPacketBytes: this.maxBytes * .8, maxAssetBytes: Math.min(previewMemoryPlan().workerImages, this.maxBytes / 4) };
     this.stats.loadKind = 'document'; this.stats.loadChunks = 0; this.stats.loadSerializationMs = 0; this.stats.loadMaxTaskMs = 0;
     this.stats.maxChunkBytes = 0; this.stats.patchFrames = 0; this.stats.patchSourceUpserts = 0; this.stats.patchSourceDeletes = 0;

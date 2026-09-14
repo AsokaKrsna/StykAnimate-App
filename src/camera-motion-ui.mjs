@@ -1,6 +1,6 @@
 import {CAMERA_MOTION_TYPES,MOTION_PARAMETERS,validateCameraMotion} from './camera-motion.mjs';
 import {CameraMotionGraph,motionGraphView} from './camera-motion-graph.mjs';
-import {drawCameraMonitor} from './camera-monitor.mjs';
+import {drawCameraMonitor,cameraMonitorVisible} from './camera-monitor.mjs';
 import {validateParallax} from './layer-parallax.mjs';
 import {icon} from './icons.mjs';
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -97,7 +97,7 @@ export class CameraMotionControls {
   }this.onRender?.();});}
   sync(pan=this.pan??0){this.graph.update();if(this.graph.previewClip)this.previewTimeline(this.graph.previewClip);this.pan=pan;const panel=this.root.querySelector('[data-parallax-layer]'),p=panel&&this.editor.getLayer(panel.dataset.parallaxLayer)?.parallax;
     if(p)for(const input of panel.querySelectorAll('input:is([type="number"],[type="range"])[data-parallax-field]'))if(input!==this.active?.input){const value=p[input.dataset.parallaxField==='movement'?'x':input.dataset.parallaxField]*100;input.value=String(value);input.dataset.propertyValue=String(value);}
-    const canvas=this.root.querySelector('[data-parallax-monitor]');if(!canvas?.clientHeight)return;
+    const canvas=this.root.querySelector('[data-parallax-monitor]');if(!cameraMonitorVisible(canvas))return;
     const editor=this.editor,frame=editor.evaluatedFrame,c=frame.camera??{};
     drawCameraMonitor(canvas,{report:editor.report,frame:{...frame,camera:{...c,is_default:false,x:(c.x??0)+pan*editor.report.canvas_width/200}},geometry:editor.geometry,resources:this.getResources?.(),onError:this.onError});
   }

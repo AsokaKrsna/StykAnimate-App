@@ -414,10 +414,10 @@ export function syncDerived(report) {
     for (const o of f.objects) {
       const raw = Number(o.color_override_raw) >>> 0;
       o.color_override_rgb =
-        report.version < 5 && !segmentColorTypes.has(o.figure_type_id) && (raw | 0) < 0
+        report.version < 5 && !segmentColorTypes.has(o.figure_type_id) && o._styk?.colorMode !== 'segments' && (raw | 0) < 0
           ? [0, 0, 0]
           : [raw & 255, (raw >>> 8) & 255, (raw >>> 16) & 255];
-      if (report.version >= 5 || segmentColorTypes.has(o.figure_type_id)) o.color_override_mix = raw >>> 24;
+      if (report.version >= 5 || segmentColorTypes.has(o.figure_type_id) || o._styk?.colorMode === 'segments') o.color_override_mix = raw >>> 24;
       o.transparency = Number(o.field28 ?? 0);
       o.opacity = 1 - o.transparency / 255;
     }

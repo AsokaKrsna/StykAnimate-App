@@ -194,3 +194,26 @@ interpolation matrices, chosen-ratio insertion/background-transition rejection,
 long-run playback drift, actual scrub preview presentation, and full
 visibility/lock/output semantics. T08 and T09 remain supported by the named
 timeline implementation and regression artifacts.
+
+
+## Canvas figure clipboard
+
+Canvas Ctrl/Cmd-V creates independent definitions for ordinary figures. Movieclips
+retain shared definitions and, in the layer sheet, reuse absent source instance
+IDs and playback clocks; collisions allocate fresh object IDs. Right-click offers
+Paste instance (shared definitions) and Paste unique copy (independent definitions,
+including movieclips). Mixed selections apply the default per figure type.
+Timeline-focused Ctrl/Cmd-V continues to paste timeline keys/frames.
+
+`pasteSelection` and `pasteFiguresInFrames` accept `pasteMode: 'default' |
+'instance' | 'unique'`. The insertion planner prepares one definition per copied
+type per operation, shared across range destinations, and records only inserted
+assets and changed poses. Unique copies use the captured clipboard design.
+Immutable movieclip documents are retained until editing publishes a replacement.
+Cross-document pastes import captured definitions because source IDs are local.
+
+Figure clipboard snapshots include `sourceVersion` so cross-project insertion
+preserves the source color interpretation. Legacy absolute colors (including
+negative black sentinels) become full-strength modern overrides; modern figures
+inserted into legacy projects retain segment-color semantics. Conversion touches
+only inserted poses and definitions, and stays inside the existing paste undo.

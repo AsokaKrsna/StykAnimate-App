@@ -8,14 +8,67 @@ export async function pngInfo(blob) {
   return {width, height, depth, color, interlace: header[28]};
 }
 
+/** Inspect common raster headers without allocating decoded source pixels.
+ * Native PIV backgrounds often contain BMPs without separate size metadata. */
+export async function imageInfo(blob) {
+  const png = await pngInfo(blob); if (png) return png;
+  const bytes = new Uint8Array(await blob.slice(0, 54).arrayBuffer()), view = new DataView(bytes.buffer);
+  if (bytes.length >= 26 && bytes[0] === 66 && bytes[1] === 77) {
+    const dib = view.getUint32(14, true);
+    const width = dib === 12 ? view.getUint16(18, true) : dib >= 40 && bytes.length >= 54 ? view.getInt32(18, true) : 0;
+    const height = dib === 12 ? view.getUint16(20, true) : dib >= 40 && bytes.length >= 54 ? Math.abs(view.getInt32(22, true)) : 0;
+    if (width > 0 && height > 0) return {width, height, format:'bmp'};
+  }
+  if (bytes.length >= 10 && String.fromCharCode(...bytes.subarray(0,6)).match(/^GIF8[79]a$/)) {
+    const width=view.getUint16(6,true),height=view.getUint16(8,true);
+    if(width&&height)return {width,height,format:'gif'};
+  }
+  if (bytes[0] === 255 && bytes[1] === 216) {
+    let offset=2,width,height,orientation=1;
+    // Metadata segments are length-prefixed. Skip their payloads instead of
+    // reading compressed image data or allocating a full decoded photograph.
+    for(let segments=0;segments<512&&offset+4<=blob.size;segments++){
+      const h=new Uint8Array(await blob.slice(offset,offset+4).arrayBuffer());
+      if(h[0]!==255)return null;
+      const marker=h[1];if(marker===255){offset++;continue;}
+      if(marker===218||marker===217)break;
+      if(marker===1||(marker>=208&&marker<=216)){offset+=2;continue;}
+      const length=h[2]*256+h[3];if(length<2||offset+2+length>blob.size)return null;
+      if(marker>=192&&marker<=207&&![196,200,204].includes(marker)&&length>=8){
+        const size=new DataView(await blob.slice(offset+5,offset+9).arrayBuffer());
+        height=size.getUint16(0);width=size.getUint16(2);
+      }
+      if(marker===225&&length>=16){
+        const exif=new Uint8Array(await blob.slice(offset+4,offset+2+length).arrayBuffer());
+        if(String.fromCharCode(...exif.subarray(0,6))==='Exif\0\0'){
+          const tiff=new DataView(exif.buffer,6),little=tiff.getUint16(0)===0x4949;
+          if((little||tiff.getUint16(0)===0x4d4d)&&tiff.getUint16(2,little)===42){
+            const directory=tiff.getUint32(4,little);
+            if(directory+2<=tiff.byteLength)for(let i=0,n=tiff.getUint16(directory,little);i<n;i++){
+              const p=directory+2+i*12;if(p+12>tiff.byteLength)break;
+              if(tiff.getUint16(p,little)===0x112&&tiff.getUint16(p+2,little)===3&&tiff.getUint32(p+4,little)===1)
+                orientation=tiff.getUint16(p+8,little);
+            }
+          }
+        }
+      }
+      offset+=2+length;
+    }
+    if(width&&height)return orientation>=5&&orientation<=8?{width:height,height:width,format:'jpeg'}:{width,height,format:'jpeg'};
+  }
+  return null;
+}
+
 export async function imageBlob(url, baseURL, token = '', signal) {
   if (url.startsWith('data:')) {
     const comma = url.indexOf(','), header = url.slice(5, comma), content = url.slice(comma + 1);
     if (comma < 0) throw new Error('Invalid embedded image.');
-    const bytes = /;base64/i.test(header) ? atob(content) : decodeURIComponent(content);
-    const parts = [];
-    for (let i = 0; i < bytes.length; i += 32768) parts.push(Uint8Array.from(bytes.slice(i, i + 32768), char => char.charCodeAt(0)));
-    return new Blob(parts, {type: header.split(';')[0] || 'image/png'});
+    const binary = /;base64/i.test(header) ? atob(content) : decodeURIComponent(content);
+    const bytes = new Uint8Array(binary.length);
+    // Indexed writes avoid a JS iterator/callback and a temporary substring
+    // for every byte of embedded, uncompressed native BMP backgrounds.
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], {type: header.split(';')[0] || 'image/png'});
   }
   const resolved = new URL(url, baseURL), headers = {};
   if (token && resolved.origin === new URL(baseURL).origin) headers.Authorization = `Bearer ${token}`;
@@ -83,11 +136,34 @@ export async function samplePNG(blob, info, width, height, {check = () => {}, cr
     for (let y = 0; y < info.height && targetY < height; y++) {
       await readInto(filter); await readInto(row);
       if (filter[0] > 4) throw new Error('Invalid PNG scanline filter.');
-      for (let i = 0; i < row.length; i++) {
-        const a = i >= stride ? row[i - stride] : 0, b = prior[i], c = i >= stride ? prior[i - stride] : 0;
-        row[i] += filter[0] === 1 ? a : filter[0] === 2 ? b : filter[0] === 3 ? Math.floor((a + b) / 2) : filter[0] === 4 ? paeth(a,b,c) : 0;
+      // The filter is constant for a whole scanline. Dispatch once instead of
+      // testing all five predictors for every byte of a large source image.
+      switch (filter[0]) {
+        case 1: for (let i = stride; i < row.length; i++) row[i] += row[i-stride]; break;
+        case 2: for (let i = 0; i < row.length; i++) row[i] += prior[i]; break;
+        case 3:
+          for (let i = 0; i < stride; i++) row[i] += prior[i] >> 1;
+          for (let i = stride; i < row.length; i++) row[i] += (row[i-stride] + prior[i]) >> 1;
+          break;
+        case 4:
+          for (let i = 0; i < stride; i++) row[i] += prior[i];
+          for (let i = stride; i < row.length; i++) row[i] += paeth(row[i-stride],prior[i],prior[i-stride]);
+          break;
       }
       while (targetY < height && sourceY(targetY) === y) {
+        if (info.depth === 8 && info.color === 6 && width === area.width) {
+          // Native-size RGBA crops already have the output byte layout. Copy
+          // the scanline without per-channel calls or numeric conversions.
+          output.set(row.subarray(area.x * 4, (area.x + width) * 4), targetY * width * 4);
+          targetY++; continue;
+        }
+        if (info.depth === 8 && info.color === 6) {
+          for (let x = 0, out = targetY * width * 4; x < width; x++, out += 4) {
+            const index = Math.min(info.width-1, area.x+Math.floor((x+.5)*area.width/width))*4;
+            output[out]=row[index]; output[out+1]=row[index+1]; output[out+2]=row[index+2]; output[out+3]=row[index+3];
+          }
+          targetY++; continue;
+        }
         for (let x = 0; x < width; x++) {
           const sx = Math.min(info.width - 1, area.x + Math.floor((x + .5) * area.width / width)), index = sx * channels, out = (targetY * width + x) * 4;
           const r = sample(index), g = channels >= 3 ? sample(index + 1) : r, b = channels >= 3 ? sample(index + 2) : r;
@@ -114,7 +190,7 @@ export async function samplePNG(blob, info, width, height, {check = () => {}, cr
 
 export async function decodePreview(blob, {width, height, maxPixels, maxDimension = 8192, crop, check = () => {}}) {
   check();
-  const info = await pngInfo(blob);
+  const info = await imageInfo(blob), png = info && info.depth !== undefined;
   width = info?.width || width; height = info?.height || height;
   let originalWidth = width, originalHeight = height;
   // A crop requests only the source rectangle that can be sampled; decoded
@@ -128,8 +204,13 @@ export async function decodePreview(blob, {width, height, maxPixels, maxDimensio
   const sourceWidth = area?.width ?? width, sourceHeight = area?.height ?? height;
   let target = sourceWidth > 0 && sourceHeight > 0 ? fitImage(sourceWidth, sourceHeight, maxPixels, maxDimension) : null, bitmap;
   const cropped = area && (area.x > 0 || area.y > 0 || area.width < width || area.height < height);
-  if (info && target && typeof DecompressionStream !== 'undefined' &&
-      (cropped || info.width * info.height > maxPixels)) {
+  // A tiny crop must not force a large source allocation. For ordinary images,
+  // however, decoding nearly the whole source scanline-by-scanline is much more
+  // expensive than the browser codec. Bound its possible temporary RGBA source
+  // to twice the requested pixel allowance, with an absolute 16 MiB ceiling.
+  const boundedNativeDecode = png && info.width * info.height <= Math.min(4 * 1024 * 1024, maxPixels * 2);
+  if (png && target && typeof DecompressionStream !== 'undefined' &&
+      !boundedNativeDecode && (cropped || info.width * info.height > maxPixels)) {
     const pixels = await samplePNG(blob, info, target.width, target.height, {check, crop: area});
     if (pixels) bitmap = await createImageBitmap(new ImageData(pixels, target.width, target.height));
   }

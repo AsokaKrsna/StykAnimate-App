@@ -1,5 +1,6 @@
 /** Native Pivot figure authoring. Definition edits clone only the reusable figure. */
 import {validateScene} from './pivot/model.mjs';
+import {usesSegmentColors} from './figure-colors.mjs';
 import {editorBuilderTopologyMethods} from './editor-builder-topology.mjs';
 import {editorSpriteSegmentMethods} from './editor-sprite-segment.mjs';
 import {editorBuilderStyleMethods} from './editor-builder-style.mjs';
@@ -111,6 +112,10 @@ export const editorBuilderMethods = {
   updatePolygon(index, patch = {}) {
     if (!Number.isInteger(index) || !this.figure?.polyfills?.[index]) throw new Error('Select an existing polygon.');
     for (const key of Object.keys(patch)) if (!['handleIds', 'color', 'opacity', 'zOrder', 'surface'].includes(key)) throw new Error(`Polygon property ${key} is not editable.`);
+    if ('color' in patch && this.object && Object.keys(patch).every(key=>['color','opacity'].includes(key)) &&
+      (this.propertyChannels || this.object._stykStyle || !usesSegmentColors(this.report,this.figure,this.object) || Number(this.object.color_override_raw)>>>24)) {
+      return this.editFigureColors({mode:'style',patch,figureTypeId:this.figure.figure_type_id,targets:{segments:[],polygons:[polygonIdentity(this.figure.polyfills[index],index)]}},{uids:[this.object.unique_id]}).changedFrames>0;
+    }
     if('surface' in patch&&patch.surface!==null)patch={...patch,surface:editableSurface(patch.surface,this.figure,this.geometry.objects.get(this.selectedSlot).joints)};
     if (this.propertyChannels && this.object && Object.keys(patch).every(key => ['color','opacity'].includes(key))) {
       const target={kind:'polygon',uid:this.object.unique_id,polygonId:polygonIdentity(this.figure.polyfills[index],index),figureTypeId:this.figure.figure_type_id};

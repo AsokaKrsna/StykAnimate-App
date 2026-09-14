@@ -73,7 +73,16 @@ function needsEvenOddRaster(points) {
   return false;
 }
 export function requiresCompatibilityTexture(items) {
-  return items.some(s => hasDrawableVfx(s) || movieclipTransparency(s) || (s.seg?.paint && s.seg.paint.type !== 'solid') || s.type === 'text' || s.type === 'image' || s.opacity < .999999 || s.fig?.segment_decode?.global_style?.u28 || ((s.alpha < .999999 || s.seg?.secondary?.a > 0) && Math.abs(s.bend) > 1e-7) || (s.type === 'poly' && needsEvenOddRaster(s.points)));
+  const single = singleVectorPrimitive(items);
+  return items.some(s => hasDrawableVfx(s) || movieclipTransparency(s) || (s.seg?.paint && s.seg.paint.type !== 'solid') || s.type === 'text' || s.type === 'image' || (s.opacity < .999999 && !single) || s.fig?.segment_decode?.global_style?.u28 || ((s.alpha < .999999 || s.seg?.secondary?.a > 0) && Math.abs(s.bend) > 1e-7) || (s.type === 'poly' && needsEvenOddRaster(s.points)));
+}
+/** One GPU primitive has no internal overlap, so its figure opacity can be
+ * applied directly. Bent strokes and white-backed rings need isolation. */
+export function singleVectorPrimitive(items) {
+  if (items.length !== 1) return false;
+  const s = items[0];
+  if (s.type === 'line') return s.points.length === 2 && Math.abs(s.bend || 0) < 1e-7;
+  return s.type === 'circle' && (s.seg.segment_kind !== 'circle' || s.thickness >= Math.abs(s.length));
 }
 function movieclipTransparency(item) {
   if(item._movieclipOwner?.opacity < .999999)return true;
@@ -120,6 +129,7 @@ export function compileVectorObject(items, root = { x: 0, y: 0 }, transform = 0)
 }
 export function* compileVectorObjectSteps(items, root = { x: 0, y: 0 }, transform = 0) {
   let result = new Float32Array(Math.max(1, items.length * 2) * SHAPE_FLOATS), used = 0, paint;
+  const opacity = singleVectorPrimitive(items) ? clamp(items[0].opacity ?? 1) : 1;
   const add = (mode, ax, ay, bx, by, cx = 0, cy = 0, radius = 0, inner = 0, white = false) => {
     if (used + SHAPE_FLOATS > result.length) { const grown = new Float32Array(result.length * 2); grown.set(result); result = grown; }
     result[used] = ax; result[used + 1] = ay; result[used + 2] = bx; result[used + 3] = by;
@@ -133,6 +143,8 @@ export function* compileVectorObjectSteps(items, root = { x: 0, y: 0 }, transfor
   for (const s of items) {
     if ((++completed & 127) === 0) yield {phase:'GPU vectors',completed,total:items.length};
     paint = brush(s, root);
+    paint.color[3] *= opacity;
+    if (paint.color2 !== paint.color) paint.color2[3] *= opacity;
     if (s.type === 'poly') {
       if (s.points.length < 3) continue;
       const points = new Float64Array(s.points.length * 2);

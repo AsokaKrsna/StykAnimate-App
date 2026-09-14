@@ -1,4 +1,5 @@
 import {normalizePaint} from './paint.mjs';
+import {usesSegmentColors} from './figure-colors.mjs';
 import {styleColor, polygonIdentity, resolveInstanceFigure, animationStyleValue} from './animation-style.mjs';
 import {segmentPaint} from './paint.mjs';
 /** Native Shift operations. Styles journal small fields; topology is committed
@@ -210,33 +211,21 @@ export const editorBuilderBranchMethods = {
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('Choose a segment style patch.');
     const {shape, ...style} = patch, targets = selectionTargets(this, whole, 'color' in patch || 'opacity' in patch);
     const changes = stylePatch(figure, selected, style, targets);
+    if (this.object && !('shape' in patch) && !('static' in patch) && ['color','paint','gradient'].some(key=>key in patch) &&
+      (this.propertyChannels || this.report._styk?.layerSheet || this.object._stykStyle || !usesSegmentColors(this.report,figure,this.object) || Number(this.object.color_override_raw)>>>24)) {
+      return this.editFigureColors({mode:'style',patch,figureTypeId:figure.figure_type_id,targets:{
+        segments:targets.indices.map(index=>({handleId:figure.segments[index].segment_id,stops:[]})),
+        polygons:targets.polygons.map(index=>polygonIdentity(figure.polyfills[index],index)),
+      }},{uids:[this.object.unique_id]}).changedFrames>0;
+    }
     if (this.propertyChannels && this.object && !('shape' in patch) && !('static' in patch)) {
       const retained = {previous:this._geometry ?? this._incremental?.previous, dirtySlots:this._geometry ? [] : this._incremental?.dirtySlots ?? []};
       const entries = [];
       for (const index of targets.indices) {
         const target = {kind:'segment',uid:this.object.unique_id,handleId:figure.segments[index].segment_id,figureTypeId:figure.figure_type_id};
-        let values={...patch};
-        if ('gradient' in values && !('paint' in values)) {
-          const paint=segmentPaint(resolveInstanceFigure(figure,this.object).segments[index]);
-          if (!values.gradient) {paint.type='solid';paint.stops=[paint.stops[0]];}
-          else {paint.type=paint.type === 'solid' ? 'linear' : paint.type;paint.stops=[paint.stops[0],{offset:1,color:rgb(values.gradient.color ?? '#ffffff'),opacity:values.gradient.opacity ?? 1}];}
-          values.paint=paint;
-        }
-        delete values.gradient;
-        if (values.paint) {
-          const paint=normalizePaint(values.paint);values={...values,paint,color:paint.stops[0].color,opacity:paint.stops[0].opacity};
-          if(paint.type !== 'solid') {values.gradientColor=styleColor(paint.stops.at(-1).color);values.gradientOpacity=paint.stops.at(-1).opacity;}
-          const current=segmentPaint(resolveInstanceFigure(figure,this.object).segments[index]);
-          const layout=p=>JSON.stringify({...p,stops:p.stops.map((stop,i)=>i===0||i===p.stops.length-1?{offset:stop.offset}:stop)});
-          if(layout(paint)===layout(current))delete values.paint;
-          else {
-            values.paint={...paint,stops:paint.stops.map(stop=>({...stop}))};
-            Object.assign(values.paint.stops[0],{color:current.stops[0].color,opacity:current.stops[0].opacity});
-            if(paint.type!=='solid')Object.assign(values.paint.stops.at(-1),{color:current.stops.at(-1).color,opacity:current.stops.at(-1).opacity});
-          }
-        }
-        for (const [property,raw] of Object.entries(values)) {
-          const value=property === 'color' ? styleColor(rgb(raw)) : raw;
+        // Color-bearing edits above share the recolor planner. Remaining scalar
+        // controls can retain their existing independent animation channels.
+        for (const [property,value] of Object.entries(patch)) {
           if(JSON.stringify(value)!==JSON.stringify(animationStyleValue(figure,this.object,target,property)))entries.push({target,property,value});
         }
       }

@@ -28,6 +28,72 @@ test('a queued old-worker response cannot replace the next document or leak its 
   await next; assert.equal(images.get('b'), valid); assert.equal(valid.naturalWidth, 8192); assert.equal(images.bytes, 32);
 });
 
+test('lazy background decode waits for its own pixels across coalesced requests', async t => {
+  const {images,workers}=setup(t),a=images.image('a'),b=images.image('b'),worker=workers[0];
+  let aReady=false,bReady=false;
+  const first=a.decode().then(()=>{aReady=true;}),second=b.decode().then(()=>{bReady=true;});
+  // Supersede the queued viewport request while both background URLs are needed.
+  const viewport=images.prepare([item('c')]);
+  assert.equal(images.image('b'),b,'pending identity survives repeated consumers');
+  worker.onmessage({data:{id:worker.messages[0].id,images:[{url:'a',bitmap:bitmap(),width:4,height:2}]}});
+  await first;assert.equal(aReady,true);assert.equal(bReady,false);
+  assert.equal(images.image('b'),b,'earlier response must not erase a later pending image');
+  const next=worker.messages[1];assert.deepEqual(new Set(next.items.map(i=>i.asset.url)),new Set(['a','b','c']));
+  worker.onmessage({data:{id:next.id,images:['a','b','c'].map(url=>({url,bitmap:bitmap(),width:4,height:2}))}});
+  await Promise.all([second,viewport]);assert.equal(bReady,true);assert.equal(images.pendingImages.size,0);
+});
+
+test('clearing or failing the decoder rejects lazy background waits', async t => {
+  const {images,workers}=setup(t),pending=images.image('a');
+  const cancelled=assert.rejects(pending.decode(),{name:'AbortError'});images.clear();await cancelled;
+  const next=images.image('b'),failure=assert.rejects(next.decode(),/invalid image/),worker=workers.at(-1);
+  worker.onmessage({data:{id:worker.messages[0].id,error:'invalid image'}});
+  await failure;assert.equal(images.has('b'),false);assert.equal(images.pendingImages.size,0);
+});
+
+test('lazy background lookahead decodes missing URLs and retains a bounded recent set', async t => {
+  const {images,workers}=setup(t);images.maxBytes=128;
+  const complete=async url=>{
+    const pending=images.image(url),worker=workers[0],request=worker.messages.at(-1),pixels=bitmap();
+    assert.deepEqual(request.items.map(i=>i.asset.url),[url],'visited backgrounds must not be sent for decoding again');
+    worker.onmessage({data:{id:request.id,images:[{url,bitmap:pixels,width:4,height:2}]}});
+    await pending.decode();return pixels;
+  };
+  const a=await complete('a'),b=await complete('b');assert.equal(images.bytes,64);
+  assert.equal(images.image('a'),a,'a cache hit refreshes recency without a new request');
+  const c=await complete('c');assert.equal(images.bytes,64);assert.equal(b.closed,1);
+  assert.equal(images.get('a'),a);assert.equal(images.get('c'),c);assert.equal(images.has('b'),false);
+  const viewport=images.prepare([item('d')]),worker=workers[0];
+  worker.onmessage({data:{id:worker.messages.at(-1).id,images:[{url:'d',bitmap:bitmap(),width:4,height:2}]}});
+  await viewport;assert.equal(a.closed,1);assert.equal(c.closed,1);assert.equal(images.size,1);
+});
+
+test('managed invalidation distinguishes new background pixels from resized artwork', async t => {
+  const {images,workers}=setup(t),notifications=[];images.managedInvalidation=true;images.onReady=info=>notifications.push(info);
+  const a=images.image('a'),worker=workers[0];let loads=0;a.addEventListener('load',()=>loads++);
+  assert.equal(a.previewInvalidationManaged,true);
+  worker.onmessage({data:{id:worker.messages[0].id,images:[{url:'a',bitmap:bitmap(),width:4,height:2}]}});
+  await a.decode();assert.equal(loads,1);assert.deepEqual(notifications,[{retained:true,resized:false}]);
+  const viewport=images.prepare([item('a')],{scale:2}),larger={...bitmap(),width:8,height:4};
+  worker.onmessage({data:{id:worker.messages[1].id,images:[{url:'a',bitmap:larger,width:4,height:2}]}});
+  await viewport;assert.deepEqual(notifications.at(-1),{retained:false,resized:true});
+});
+
+test('upcoming image priority prevents past-frame LRU hits from evicting the next background', async t => {
+  const {images,workers}=setup(t);images.maxBytes=128;
+  const complete=async url=>{
+    const pending=images.image(url),worker=workers[0],pixels=bitmap();
+    worker.onmessage({data:{id:worker.messages.at(-1).id,images:[{url,bitmap:pixels,width:4,height:2}]}});
+    await pending.decode();return pixels;
+  };
+  const next=await complete('next'),past=await complete('past');
+  images.image('past');images.priorityURLs=()=>['next'];
+  const future=await complete('future');assert.equal(images.get('next'),next);assert.equal(past.closed,1);
+  assert.equal(images.bytes,64);assert.equal(images.get('future'),future);
+  images.priorityURLs=()=>['next','future'];await complete('more');
+  assert.equal(images.bytes,64,'even an infeasible priority set cannot expand the retention budget');
+});
+
 test('rapid viewport requests coalesce and replaced copies release their pixels', async t => {
   const {images, workers} = setup(t), first = images.prepare([item('a')]), middle = images.prepare([item('b')]), latest = images.prepare([item('c')]);
   await middle; const worker = workers[0]; assert.equal(worker.messages.length, 1);

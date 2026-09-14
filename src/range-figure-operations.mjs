@@ -6,6 +6,7 @@
  * https://www.pivotanimator.net/help5-1/multi_figure_selection.htm
  */
 import {buildGeometry} from './pivot/geometry.mjs';
+import {validateRecolor, recolorObject} from './figure-colors.mjs';
 import {layerIdForUid} from './layers.mjs';
 import {objectBounds} from './renderer-geometry.mjs';
 import {rotateOriginSupport,mirrorOriginSupport,resetOriginSupport} from './animation-origin-support.mjs';
@@ -24,6 +25,7 @@ const integer = (value, min, max, label) => {
 function validateOperation(report, operation) {
   if (!operation || typeof operation !== 'object') throw new Error('Choose a figure operation.');
   const {kind} = operation;
+  if (kind === 'recolor') return validateRecolor(operation);
   if (kind === 'appearance') {
     const patch = {...(operation.patch ?? {})};
     if (operation.opacity !== undefined) {
@@ -209,6 +211,17 @@ export function planFigureFrameOperation(report, frame, uids, input) {
 
   if (operation.kind === 'appearance') {
     for (const slot of slots) patchObject(slot, operation.patch, owns(operation.patch, 'color_override_raw') ? ['color_transition'] : []);
+    return result();
+  }
+  if (operation.kind === 'recolor') {
+    const figures = new Map(report.figure_types.map(figure=>[figure.figure_type_id,figure]));
+    for (const slot of slots) {
+      const object=objects[slot], next=recolorObject(report,figures.get(object.figure_type_id),object,operation);
+      if(next!==object){
+        if(operation.mode!=='all'||operation.color)delete next.color_transition;
+        delete next.runtime_segments;changes.set(slot,next);
+      }
+    }
     return result();
   }
   if (operation.kind === 'duplicate') {

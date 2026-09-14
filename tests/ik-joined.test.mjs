@@ -246,7 +246,7 @@ test('unpinned root transforms carry the foot and re-pinning captures its curren
 test('pasting a joined rig remaps controller parenting to the pasted foot', () => {
   const e=rig(); e.setNodeIK({enabled:true}); e.rotateIKTarget(.4);
   e._selectIds([1,2,3,4]); e.copySelection(); e.pasteSelection();
-  const copies=e.frame.objects.slice(4), shin=copies.find(o=>o.figure_type_id===2), foot=copies.find(o=>o.figure_type_id===3);
+  const copies=e.frame.objects.slice(4), shin=copies.find(o=>o._stykIK?.[22]), foot=copies.find(o=>o.join?.target_unique_id===shin.unique_id);
   assert.ok(Object.hasOwn(shin._stykIK[22].joinedFollowers,String(foot.unique_id)));
   assert.equal(Object.keys(shin._stykIK[22].joinedFollowers).length,1);
   e.select(shin.unique_id,0); e.poseJoint(380,280);

@@ -7,13 +7,15 @@ import {initVfxDevice,releaseVfxDevice} from './vfx-gpu.mjs';
 import {vfxPreviewOptions,vfxPreviewGeometry} from './vfx-preview.mjs';
 import { buildGeometry, buildGeometrySteps, drawGeometry, releaseGeometryResources } from './pivot/geometry.mjs';
 import { drawBackground, backgroundBounds, sceneBackgroundColor, effectiveCamera } from './pivot/background.mjs';
-import { SHAPE, SHAPE_BYTES, SHAPE_FLOATS, shapeRecord, compileVectorObjectSteps, requiresCompatibilityTexture, adoptPreparedVectors, objectBounds, cameraMatrix, argbFloats } from './renderer-geometry.mjs';
+import { SHAPE, SHAPE_BYTES, SHAPE_FLOATS, shapeRecord, compileVectorObject, compileVectorObjectSteps, requiresCompatibilityTexture, adoptPreparedVectors, objectBounds, cameraMatrix, argbFloats } from './renderer-geometry.mjs';
 import { PreparedFrameCache } from './prepared-frames.mjs';
 import { RasterSurfacePool } from './raster-surfaces.mjs';
 import { EditorRasterCache } from './renderer-raster-cache.mjs';
 import {previewMemoryPlan} from './playback-budget.mjs';
 import { composeSceneGroups } from './scene-order.mjs';
 import { HandleRenderer } from './renderer-handles.mjs';
+import {opacityArtwork} from './renderer-opacity.mjs';
+import {rasterizeVectorGroup, supportsVectorIsolation} from './renderer-vector-raster.mjs';
 import { ArtworkRegistry } from './render-artwork.mjs';
 import {glyphTextureDescriptor,drawGlyphMask,glyphTextureShape} from './renderer-glyphs.mjs';
 import { uploadShapeLayoutSteps, SHAPE_UPLOAD_RECORDS } from './renderer-upload.mjs';
@@ -143,7 +145,7 @@ const uidOf = g => g?.obj?.unique_id ?? g?.slot;
 function createResources(options, invalidate) {
   const images = new Map(), watched = new WeakSet();
   const watch = image => {
-    if (image && !image.complete && !watched.has(image)) {
+    if (image && !image.complete && !image.previewInvalidationManaged && !watched.has(image)) {
       watched.add(image); image.addEventListener('load', invalidate, { once: true }); image.addEventListener('error', invalidate, { once: true });
     }
     return image;
@@ -297,7 +299,7 @@ class CanvasFallback {
   // renderSource identity survives seeks and translation-only edits, so an
   // unchanged figure is one drawImage instead of re-stroking every primitive.
   drawObject(ctx, group, scale) {
-    const source = group.g.renderSource || group.g;
+    const artworkView=opacityArtwork(group.g,group.items),{source,items}=artworkView;
     if (group.items.length < 4 || typeof OffscreenCanvas === 'undefined' || performance.now()<this.rasterRetryAt) {
       drawGeometry(ctx, { drawables: group.items }, this.resources); return;
     }
@@ -305,7 +307,6 @@ class CanvasFallback {
     let cached = this.artwork.get(source);
     if (cached?.resolution !== resolution) {
       if (cached) { this.artwork.delete(source); this.artworkBytes -= cached.bytes; cached.canvas.width = 1; cached.canvas.height = 1; }
-      const items = group.g.renderSource ? source.drawables : group.items;
       const bounds = objectBounds(items, this.resources);
       if (!(bounds.width > 0 && bounds.height > 0)) { drawGeometry(ctx, { drawables: group.items }, this.resources); return; }
       const pixelScale = Math.min(resolution, 4096 / bounds.width, 4096 / bounds.height);
@@ -321,7 +322,8 @@ class CanvasFallback {
       this.stats.rasterizedObjects = (this.stats.rasterizedObjects || 0) + 1;
     }
     this.artwork.delete(source); this.artwork.set(source, cached);
-    ctx.drawImage(cached.canvas, cached.bounds.x, cached.bounds.y, cached.width, cached.height);
+    ctx.save();ctx.globalAlpha*=artworkView.opacity;
+    ctx.drawImage(cached.canvas, cached.bounds.x, cached.bounds.y, cached.width, cached.height);ctx.restore();
     while (this.artwork.size > 4096 || this.artworkBytes > previewMemoryPlan().editorRasters) {
       const key = this.artwork.keys().next().value, item = this.artwork.get(key);
       this.artwork.delete(key); this.artworkBytes -= item.bytes;
@@ -411,6 +413,9 @@ class WebGPURenderer {
     this.vectorModule = module;
     this.pipelineLayout = d.createPipelineLayout({ bindGroupLayouts: [this.globalLayout, this.textureLayout] });
     this.pipeline = await this.createVectorPipeline();
+    // Raster artwork keeps its original antialiasing when the viewport changes
+    // MSAA level; the pipeline and sample count are an immutable pair.
+    this.isolationPipeline = this.pipeline; this.isolationSamples = this.msaaCount;
     this.uniform = d.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.handleRenderer = new HandleRenderer(d,this.uniform);
     await this.handleRenderer.initialize(this.format, this.msaaCount);
@@ -524,8 +529,8 @@ class WebGPURenderer {
       ? this.device.createTexture({ label: `${this.msaaCount}× antialias canvas`, size: [pw, ph], sampleCount: this.msaaCount, format: this.format, usage: GPUTextureUsage.RENDER_ATTACHMENT })
       : null;
   }
-  rasterObject(g, items, scale, artwork = g, cache = this.rasterCache) {
-    const bounds = objectBounds(items, this.resources), max = Math.min(8192, this.device.limits.maxTextureDimension2D);
+  rasterObject(g, items, scale, artwork = g, cache = this.rasterCache, vector = false) {
+    const bounds = this.geometryBounds(g,items), max = Math.min(8192, this.device.limits.maxTextureDimension2D);
     const desired = Math.max(.5, Math.min(8, 2 ** Math.ceil(Math.log2(scale || 1))));
     const workingBudget = cache.maxBytes > 0 ? cache.maxBytes : previewMemoryPlan().editorRasters;
     const resolution = Math.min(desired * (this.previewRasterScale || 1), Math.sqrt(workingBudget / 4 / Math.max(1, bounds.width * bounds.height)));
@@ -539,6 +544,12 @@ class WebGPURenderer {
     this.stats.rasterizedObjects = (this.stats.rasterizedObjects || 0) + 1;
     const pixelScale = Math.min(resolution, max / bounds.width, max / bounds.height);
     const width = Math.max(1, Math.ceil(bounds.width * pixelScale)), height = Math.max(1, Math.ceil(bounds.height * pixelScale));
+    if (vector && supportsVectorIsolation(items, pixelScale)) {
+      const data = compileVectorObject(items, g.root, 0);
+      const result = {...rasterizeVectorGroup(this, {data, width, height, pixelScale, bounds, root: g.root}),
+        bounds: {...bounds, width: width / pixelScale, height: height / pixelScale}, origin: {...g.root}, generation: this.generation, resolution};
+      cache.set(artwork, result); return result;
+    }
     const {surface, context: ctx} = this.rasterSurfaces.acquire(width, height); let texture;
     try {
       ctx.setTransform(pixelScale, 0, 0, pixelScale, -bounds.x * pixelScale, -bounds.y * pixelScale);
@@ -551,6 +562,15 @@ class WebGPURenderer {
       cache.set(artwork, result); return result;
     } catch (error) { texture?.destroy(); throw error; }
     finally { this.rasterSurfaces.release(); }
+  }
+  geometryBounds(g,items) {
+    this.boundsCache??=new WeakMap();
+    let entry=this.boundsCache.get(g);
+    if(!entry||entry.items!==items||entry.generation!==this.generation){
+      entry={items,generation:this.generation,bounds:objectBounds(items,this.resources)};
+      this.boundsCache.set(g,entry);
+    }
+    return entry.bounds;
   }
   // A failed raster must not abort the whole scene build: reuse the slot's or
   // the artwork's previous texture, else the caller degrades to vector shapes.
@@ -655,9 +675,11 @@ class WebGPURenderer {
     for(;;){const step=steps.next();if(step.done)return step.value;}
   }
   *objectEntrySteps(g, items, opacity, key, index, scale, isOnion = false) {
-    const uid = uidOf(g), prior = this.entries.get(key),source=g.renderSource||g,sourceItems=g.renderSource?source.drawables:items; let data, texture;
+    const artworkView = opacityArtwork(g,items);
+    const {source,items:sourceItems} = artworkView;
+    const uid = uidOf(g), prior = this.entries.get(key); let data, texture;
     let compatibility = this.compatibilityCache.get(source);
-    if (compatibility === undefined) { compatibility = requiresCompatibilityTexture(sourceItems); this.compatibilityCache.set(source, compatibility); }
+    if (compatibility === undefined) { compatibility = artworkView.isolated || requiresCompatibilityTexture(sourceItems); this.compatibilityCache.set(source, compatibility); }
     const desired=Math.max(.5,Math.min(8,2**Math.ceil(Math.log2(scale||1))))*(this.previewRasterScale||1);
     const glyph=this.options.sharedArtwork!==false && glyphTextureDescriptor(sourceItems,desired);
     if (glyph) {
@@ -666,7 +688,8 @@ class WebGPURenderer {
     } else if (compatibility) {
       const artwork=this.artworkAliases.get(source) ?? (this.options.sharedArtwork===false||this.liveEditing?source:yield* this.artworks.getSteps(source,sourceItems));
       this.artworkAliases.set(g,artwork);
-      try { texture = this.rasterObject(source, sourceItems, scale, artwork); }
+      try { texture = this.rasterObject(source, sourceItems, scale, artwork, this.rasterCache,
+        this.options.gpuIsolation !== false && artworkView.isolated && supportsVectorIsolation(sourceItems, desired)); }
       catch (error) { texture = this.rasterFallback(error, artwork, prior); }
       if (texture) this.rasterLease?.add(texture);
       if (prior?.transform === index && prior.texture === texture) data = prior.data;
@@ -680,7 +703,7 @@ class WebGPURenderer {
       if (prior?.source === source && prior.transform === index && (!prior.texture || prior.texture === texture)) data = prior.data;
       else { data = compiled.slice(); for (let j = 21; j < data.length; j += SHAPE_FLOATS) data[j] = index; }
     }
-    return { key, uid, g, source, opacity, isOnion, root: g.root, transform: index, data, count: data.length / SHAPE_FLOATS, texture };
+    return { key, uid, g, source, opacity, artworkOpacity:artworkView.opacity, isOnion, root: g.root, transform: index, data, count: data.length / SHAPE_FLOATS, texture };
   }
   uploadEntry(entry) {
     const padded = new Float32Array(entry.capacity * SHAPE_FLOATS); padded.set(entry.data);
@@ -745,16 +768,16 @@ class WebGPURenderer {
     const uniqueArtwork = new Set(), texturePlans = [];
     const desiredResolution = Math.max(.5, Math.min(8, 2 ** Math.ceil(Math.log2(scale || 1))));
     for (const {g, items} of groups) {
-      const source = g.renderSource || g, sourceItems = g.renderSource ? source.drawables : items;
+      const artworkView = opacityArtwork(g,items), {source,items:sourceItems} = artworkView;
       let compatibility = this.compatibilityCache.get(source);
-      if (compatibility === undefined) {compatibility = requiresCompatibilityTexture(sourceItems); this.compatibilityCache.set(source, compatibility);}
+      if (compatibility === undefined) {compatibility = artworkView.isolated || requiresCompatibilityTexture(sourceItems); this.compatibilityCache.set(source, compatibility);}
       if (!compatibility) continue;
       const glyph=this.options.sharedArtwork!==false && glyphTextureDescriptor(sourceItems,desiredResolution);
       if(glyph){texturePlans.push({items:sourceItems});yield {phase:'Preview memory',completed:texturePlans.length,total:groups.length};continue;}
       const artwork = this.artworkAliases.get(source) ?? (this.options.sharedArtwork === false || this.liveEditing ? source : yield* this.artworks.getSteps(source, sourceItems));
       this.artworkAliases.set(source, artwork);
       if (uniqueArtwork.has(artwork)) continue; uniqueArtwork.add(artwork);
-      texturePlans.push({items:sourceItems,bounds:objectBounds(sourceItems, this.resources)});
+      texturePlans.push({items:sourceItems,bounds:this.geometryBounds(source,sourceItems)});
       yield {phase: 'Preview memory', completed: uniqueArtwork.size, total: groups.length};
     }
     const bytesAt = scale => {
@@ -874,7 +897,7 @@ class WebGPURenderer {
       if (!entry.g) continue;
       const depth=parallax(entry.uid);
       const delta = entry.isOnion ? null : dragTranslations?.get?.(entry.uid) || dragTranslations?.[entry.uid];
-      this.transformData.set([entry.root.x + (delta?.x || 0)+depth.x, entry.root.y + (delta?.y || 0)+depth.y, entry.opacity, hiddenUids?.has(entry.uid) ? 0 : 1], entry.transform * 4);
+      this.transformData.set([entry.root.x + (delta?.x || 0)+depth.x, entry.root.y + (delta?.y || 0)+depth.y, entry.opacity * (entry.artworkOpacity ?? 1), hiddenUids?.has(entry.uid) ? 0 : 1], entry.transform * 4);
     }
     this.device.queue.writeBuffer(this.transformBuffer, 0, this.transformData);
     const encoder = this.device.createCommandEncoder({ label: 'StykAnimate viewport frame' });
@@ -944,7 +967,7 @@ async function prepareSceneUpdate(renderer, request) {
   try {
     check();
     stage=new WebGPURenderer(renderer.canvas,renderer.device,renderer.context,renderer.format,{...renderer.options,onInvalidate:undefined,onStatus:undefined});
-    for(const key of ['pipeline','globalLayout','textureLayout','uniform','sampler','nearestSampler','blankBindGroup','resources','rasterCache','vectorCache','compatibilityCache','artworks','artworkAliases'])stage[key]=renderer[key];
+    for(const key of ['pipeline','isolationPipeline','isolationSamples','globalLayout','textureLayout','uniform','sampler','nearestSampler','blankBindGroup','resources','rasterCache','vectorCache','compatibilityCache','artworks','artworkAliases','boundsCache'])stage[key]=renderer[key];
     stage.activeReport=report;stage.generation=generation;stage.rasterLease=lease;
     const timings={};let view={...(getView?.()||request.view||{})}, keys;
     for(;;){
@@ -1015,7 +1038,7 @@ async function prepareInitialScene(renderer, request) {
       stage = new WebGPURenderer(renderer.canvas, renderer.device, renderer.context, renderer.format, {
         ...renderer.options, resources: media.resources, onInvalidate: undefined, onStatus: undefined,
       });
-      for (const key of ['pipeline', 'globalLayout', 'textureLayout', 'uniform', 'sampler', 'nearestSampler', 'blankBindGroup']) stage[key] = renderer[key];
+      for (const key of ['pipeline', 'isolationPipeline', 'isolationSamples', 'globalLayout', 'textureLayout', 'uniform', 'sampler', 'nearestSampler', 'blankBindGroup']) stage[key] = renderer[key];
       stage.activeReport = report;
       for (;;) {
         stage.dpr = renderer.dpr;

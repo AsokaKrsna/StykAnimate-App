@@ -6,6 +6,13 @@ import {geometryFixture,geometrySummary} from './geometry-cooperative-fixture.mj
 
 const baseline=JSON.parse(await readFile(new URL('./geometry-cooperative-baseline.json',import.meta.url),'utf8'));
 const json=value=>JSON.parse(JSON.stringify(value));
+// Segment records now also carry the drawable kind, allowing the ordered
+// painter list to reference them directly. Compare every pre-existing field.
+const originalFields=geometry=>{
+  const summary=json(geometrySummary(geometry));
+  for(const [,object] of summary.objects)if(object)for(const segment of object.segments)delete segment.type;
+  return summary;
+};
 function manyFigures(count=400) {
   const report=geometryFixture(),frame=report.keyframes[0],template=frame.objects[0];
   frame.objects=Array.from({length:count},(_,slot)=>({...structuredClone(template),object_slot:slot,
@@ -20,8 +27,8 @@ test('sync and cooperative builders preserve all pre-change mixed primitive, leg
     const before=structuredClone(report),sync=buildGeometry(report,frame),steps=[];
     const asyncGeometry=await buildGeometryAsync(report,frame,null,{sliceMs:0,
       yieldControl:()=>Promise.resolve(),onProgress:step=>steps.push(step)});
-    assert.deepEqual(json(geometrySummary(sync)),entry.geometry);
-    assert.deepEqual(json(geometrySummary(asyncGeometry)),entry.geometry);
+    assert.deepEqual(originalFields(sync),entry.geometry);
+    assert.deepEqual(originalFields(asyncGeometry),entry.geometry);
     assert.deepEqual(asyncGeometry,sync,'Every returned field and lazy drawable view must agree');
     assert.deepEqual(report,before,'Preparation must not alter the document');
     assert.ok(steps.some(step=>step.stage==='objects'));assert.ok(steps.some(step=>step.stage==='drawables'));
@@ -30,6 +37,12 @@ test('sync and cooperative builders preserve all pre-change mixed primitive, leg
       assert.equal(object.fig,report.figure_types[0]);
     }
   }
+});
+
+test('native segment artwork reuses evaluated records without modifying the document',()=>{
+  const report=geometryFixture(),before=structuredClone(report),geometry=buildGeometry(report,report.keyframes[0]);
+  for(const g of geometry.objects.values())if(g)for(const s of g.drawables)if(s.seg)assert.ok(g.segments.includes(s));
+  assert.deepEqual(report,before);
 });
 
 test('incremental preparation retains unaffected references and exact joined descendant geometry',async()=>{

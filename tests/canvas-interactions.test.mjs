@@ -11,6 +11,29 @@ const object = (uid, slot, root, end, options = {}) => ({
 const geometry = objects => ({ objects: new Map(objects.map(g => [g.slot, g])), orderedObjects: objects,
   get drawables() { throw new Error('Handle preparation must not flatten rendering geometry.'); } });
 
+test('hidden static endpoints have retained selection-only targets without changing painted handles', () => {
+  const parent = object(1, 0, {x: 0, y: 0}, {x: 100, y: 0}, {static: true});
+  const scene = geometry([parent]), descriptorCache = {};
+  const visible = getPivotHandles(scene);
+  const options = {selectStatic: true, showUnselected: false, descriptorCache};
+  const targets = getPivotHandles(scene, options), hit = pickCanvasHandle(scene, {x: 100, y: 0}, {handles: targets});
+  assert.equal(hit.action, 'select'); assert.equal(hit.uid, 1); assert.equal(hit.id, 7);
+  assert.deepEqual(getPivotHandles(scene), visible);
+  assert.equal(getPivotHandles(scene, options)[1], targets[1]);
+  for (const key of ['hiddenUids', 'lockedUids'])
+    assert.equal(pickCanvasHandle(scene, hit.point, {...options, [key]: new Set([1])}), null);
+  assert.equal(getPivotHandles(scene, {...options, allowStaticManipulation: true})[1].action, 'pose');
+});
+
+test('join target handles include static endpoints, exclude ineligible figures and render white', () => {
+  const a = object(1, 0, {x: 0, y: 0}, {x: 100, y: 0}, {static: true});
+  const b = object(2, 1, {x: 200, y: 0}, {x: 230, y: 0});
+  const handles = getPivotHandles(geometry([a, b]), {attaching: true, joinTargetUids: new Set([1]), showUnselected: false});
+  assert.deepEqual(handles.map(h => h.uid), [1, 1]);
+  assert.ok(handles.every(h => h.color === '#ffffff'));
+  assert.equal(handles[1].id, 7);
+});
+
 test('padded node picking chooses the nearest node and keeps painter order for ties', () => {
   const a = object(1, 0, {x:0,y:0}, {x:20,y:0});
   const b = object(2, 1, {x:0,y:0}, {x:30,y:0});

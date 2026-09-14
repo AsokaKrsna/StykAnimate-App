@@ -76,3 +76,48 @@ test('invalid and origin-coincident starts leave the document and history untouc
   assert.throws(()=>editor.beginFigureHandleDrag(NaN,0),/finite/);
   assert.deepEqual(editor.report,before); assert.equal(editor._drag,null); assert.equal(editor._undo.length,0);
 });
+
+test('multiple selected subtrees transform once, retain separate origins, and undo together', () => {
+  for (const authored of [false, true]) {
+    const editor = fixture();
+    if (authored) editor.adoptNativePoseTrack({kind:'layer',id:'layer-1'});
+    editor.selectMany([3,4,2]);
+    const before = structuredClone(editor.frame), initial = editor.geometry, history = editor._undo.length;
+    const picked = initial.objects.get(1), start = picked.segments[0].end;
+    assert.equal(editor.selectedJoint, -1);
+    assert.equal(editor.beginFigureHandleDrag(start.x, start.y, {joint:0}), true);
+    editor.transformFigureHandle(picked.root.x + 156, picked.root.y);
+    for (const slot of [1,2,3]) {
+      near(editor.frame.objects[slot].scale, before.objects[slot].scale * 2);
+      const origin = initial.objects.get(slot === 2 ? 1 : slot).root;
+      for (const [id, point] of initial.objects.get(slot).joints)
+        pointNear(editor.geometry.objects.get(slot).joints.get(id), {
+          x:origin.x-2*(point.y-origin.y), y:origin.y+2*(point.x-origin.x),
+        });
+    }
+    assert.deepEqual(editor.frame.objects[0], before.objects[0]);
+    editor.commitFigureHandleDrag(); assert.equal(editor._undo.length, history + 1);
+    const after = structuredClone(editor.frame);
+    editor.undo(); assert.deepEqual(editor.frame, before);
+    editor.redo(); assert.deepEqual(editor.frame, after);
+    assert.deepEqual([...editor.selectedUids], [3,4,2]);
+  }
+});
+
+test('multiple figure transforms preserve modifier locks, exact return, and cancellation', () => {
+  for (const options of [{ctrlKey:true}, {shiftKey:true}, {}]) {
+    const editor = fixture(); editor.selectMany([4,2]);
+    const before = structuredClone(editor.report), picked = editor.geometry.objects.get(1), start = picked.segments[0].end;
+    editor.beginFigureHandleDrag(start.x, start.y, {joint:0});
+    editor.transformFigureHandle(picked.root.x + 156, picked.root.y, options);
+    for (const slot of [1,2,3]) {
+      near(editor.frame.objects[slot].scale, options.ctrlKey ? 1 : 2);
+      near(editor.frame.objects[slot].angles[0] - before.keyframes[0].objects[slot].angles[0], options.shiftKey ? 0 : Math.PI/2);
+    }
+    editor.transformFigureHandle(start.x,start.y);
+    assert.equal(editor.commitFigureHandleDrag(), false); assert.deepEqual(editor.report, before);
+    editor.beginFigureHandleDrag(start.x,start.y,{joint:0});
+    editor.transformFigureHandle(start.x+30,start.y-10); editor.cancelFigureHandleDrag();
+    assert.deepEqual(editor.report, before); assert.equal(editor._undo.length, 0);
+  }
+});

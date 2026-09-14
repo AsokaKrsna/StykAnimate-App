@@ -114,6 +114,7 @@ export function pivotHandleColor({ selected = false, nodeSelected = false, origi
 export function getPivotHandles(geometry, {
   frame, selectedUid = null, selectedUids, selectedJoint = -1, selectedHandleIds, selectedBranch = false, builder = false, hiddenUids, lockedUids,
   showUnselected = true, showStatic = false, attaching = false, allowStaticManipulation = false,
+  selectStatic = false, joinTargetUids,
   viewScale = 1, autoSize = true, minDiameter = 4, maxDiameter = 10, descriptorCache,
 } = {}) {
   if (!geometry?.objects) return [];
@@ -127,12 +128,13 @@ export function getPivotHandles(geometry, {
   const targets = attachments(geometry), result = [], groups = [];
   Object.defineProperty(result,'groups',{value:groups});
   const options = { viewScale, autoSize, minDiameter, maxDiameter }, scale = Math.max(1e-9, Math.abs(viewScale));
-  const settingsKey = [topologyEpoch,showUnselected,showStatic,attaching,allowStaticManipulation,viewScale,autoSize,minDiameter,maxDiameter,builder,selectedJoint,selectedBranch,[...(selectedHandleIds??[])].join(',')].join('|');
+  const settingsKey = [topologyEpoch,showUnselected,showStatic,attaching,allowStaticManipulation,selectStatic,viewScale,autoSize,minDiameter,maxDiameter,builder,selectedJoint,selectedBranch,[...(selectedHandleIds??[])].join(',')].join('|');
   if(descriptorCache && descriptorCache.key!==settingsKey){descriptorCache.key=settingsKey;descriptorCache.objects=new WeakMap();}
   for (const g of objects) {
     if (!g) continue;
     const uid = g.obj.unique_id;
     if (hiddenUids?.has(uid) || lockedUids?.has(uid)) continue;
+    if (attaching && joinTargetUids && !joinTargetUids.has(uid)) continue;
     const selected = uid === selectedUid || Boolean(selectedUids?.has(uid));
     const allEndpoints = selected || showUnselected || Boolean(g.obj.join) || attaching;
     const joinedVertices = targets.get(g.slot ?? g.obj.object_slot);
@@ -148,7 +150,7 @@ export function getPivotHandles(geometry, {
       result.push({ g, uid, joint, id, kind, point, selected, joined, static: isStatic, ik,
         connector,
         action: kind === 'origin' ? 'move' : isStatic && !ik && !attaching && !allowStaticManipulation ? 'select' : 'pose',
-        color: builder && isStatic && !joined && !builderSelection?.has(joint) ? '#999999'
+        color: attaching ? PIVOT_HANDLE_COLORS.joined : builder && isStatic && !joined && !builderSelection?.has(joint) ? '#999999'
           : pivotHandleColor({ selected, nodeSelected: Boolean(builderSelection?.has(joint)), origin: kind === 'origin', joined, static: isStatic }),
         radius: screenRadius / scale, screenRadius });
     };
@@ -161,11 +163,11 @@ export function getPivotHandles(geometry, {
         if(!builderSelection.has(child)){builderSelection.add(child);queue.push(child);}
     }
     if (!g.obj.join) add(g.root, -1, 0, 'origin');
-    for (const index of showStatic||attaching||selectedStatic||g.obj._stykIK?topology.allOrdered:topology.dynamicOrdered) {
+    for (const index of showStatic||selectStatic||attaching||selectedStatic||g.obj._stykIK?topology.allOrdered:topology.dynamicOrdered) {
       const segment=g.segments[index];
-      if(segment.static&&!showStatic&&!attaching&&!builderSelection?.has(index)&&!g.obj._stykIK?.[segmentId(segment)]?.enabled)continue;
+      if(segment.static&&!showStatic&&!selectStatic&&!attaching&&!builderSelection?.has(index)&&!g.obj._stykIK?.[segmentId(segment)]?.enabled)continue;
       const id = segmentId(segment), joined = Boolean(joinedVertices?.has(id));
-      if (allEndpoints || joined) add(segment.handle ?? segment.end, segment.index, id, 'segment', Boolean(segment.static), joined);
+      if (allEndpoints || joined || (selectStatic && segment.static)) add(segment.handle ?? segment.end, segment.index, id, 'segment', Boolean(segment.static), joined);
     }
     const ownHandles=result.slice(first);groups.push({uid,offset:first,handles:ownHandles});
     descriptorCache?.objects.set(g,{key:objectKey,handles:ownHandles});

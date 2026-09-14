@@ -12,6 +12,10 @@ const playbackGeometry=new WeakMap();
 const monitorSurfaces=new WeakMap();
 const monitorStates=new WeakMap();
 
+export function cameraMonitorVisible(canvas) {
+  return Boolean(canvas && canvas.checkVisibility?.({contentVisibilityAuto:true,visibilityProperty:true}) !== false && canvas.clientWidth && canvas.clientHeight);
+}
+
 function monitorState(canvas, options) {
   let state=monitorStates.get(canvas);
   if(!state){
@@ -78,7 +82,7 @@ export function syncCameraControls(root, frame, {activeKey=null, guides=true}={}
  * states fall back to the Canvas 2D artwork path below. */
 export function drawCameraMonitor(canvas, options) {
   let {report,frame,geometry,resources,hiddenUids,prepared}=options;
-  if(!canvas || !canvas.clientWidth || !canvas.clientHeight || !report || !frame) return false;
+  if(!cameraMonitorVisible(canvas) || !report || !frame) return false;
   const state=monitorState(canvas,options);
   if(state.lost || performance.now()<state.retryAt)return false;
   try {

@@ -1,4 +1,5 @@
 import {cameraAtTime} from './camera-motion.mjs';
+import {supportsVectorIsolation} from './renderer-vector-raster.mjs';
 import {drawParallaxGeometry} from './parallax-draw.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
 import { PlaybackResources } from './playback-resources.mjs';
@@ -20,6 +21,7 @@ import { layerVisible } from './layers.mjs';
 import { activeVfx, vfxStack } from './vfx.mjs';
 import { releaseVfxSurface } from './vfx-canvas.mjs';
 import { CameraVfx } from './vfx-camera.mjs';
+import {opacityArtwork} from './renderer-opacity.mjs';
 import { backgroundImageAssets } from './scene-preparation.mjs';
 const fallbackRasterSurfaces = new RasterSurfacePool();
 const yieldPlaybackTask = () => globalThis.scheduler?.yield ? scheduler.yield() : new Promise(resolve => {
@@ -103,7 +105,7 @@ export async function compilePlaybackPacket(report, tick, options = {}) {
   }
 }
 
-async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, quality = 1, rasterizeVectors = false, entries, sampleReport, resources, maxTextureDimension = 8192, maxPacketBytes = 128 * 1024 * 1024, cameraEnabled = true, vfxEnabled = true, storedFrames = false, sharedArtwork = true, artworkRegistry, geometryCache, tweenCache, cancelled = () => false } = {}) {
+async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, quality = 1, rasterizeVectors = false, gpuIsolation = false, entries, sampleReport, resources, maxTextureDimension = 8192, maxPacketBytes = 128 * 1024 * 1024, cameraEnabled = true, vfxEnabled = true, storedFrames = false, sharedArtwork = true, artworkRegistry, geometryCache, tweenCache, cancelled = () => false } = {}) {
   resources?.artworkBitmaps?.beginFrame();
   if (typeof cameraEnabled !== 'boolean') throw new TypeError('Playback camera mode must be a boolean.');
   if (typeof storedFrames !== 'boolean') throw new TypeError('Playback stored-frame mode must be a boolean.');
@@ -149,15 +151,18 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     if (cancelled()) throw new DOMException('Playback preparation was superseded.', 'AbortError');
     const g = geometry.objects.get(priorSlot), transformIndex = uids.length;
     if (!g) return;
+    if(g.drawables.every(item=>item.opacity<=0)){clipping.culledObjects++;return;}
     // Native object groups are contiguous. Keep the object's immutable array
     // identity so unchanged geometry also retains its exact artwork signature.
-    items=g.drawables;
+    const artworkView = opacityArtwork(g);
+    const source = artworkView.source;
+    items=artworkView.items;
     const uid = g.obj.unique_id ?? g.slot,depth=parallax(uid);
     const visibleBounds=sceneVisibleBounds?{...sceneVisibleBounds,x:sceneVisibleBounds.x-depth.x,y:sceneVisibleBounds.y-depth.y}:null;
     const group = { firstInstance: shapeCount, instanceCount: 0, transformIndex, uid, slot: priorSlot };
     let data;
-    let descriptor=resources?.geometryDescriptors?.get(g);
-    if(!descriptor){descriptor={compatibility:requiresCompatibilityTexture(items),hasImages:items.some(item=>item.type==='image')};resources?.geometryDescriptors?.set(g,descriptor);}
+    let descriptor=resources?.geometryDescriptors?.get(source);
+    if(!descriptor){descriptor={compatibility:artworkView.isolated||requiresCompatibilityTexture(items),hasImages:items.some(item=>item.type==='image')};resources?.geometryDescriptors?.set(source,descriptor);}
     const glyph = sharedArtwork && typeof OffscreenCanvas !== 'undefined' && glyphTextureDescriptor(items,resolution,maxTextureDimension);
     if (glyph) {
       if (!glyph.color[3] || !glyphVisible(glyph,visibleBounds)) {clipping.culledObjects++; return;}
@@ -177,26 +182,44 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
       }
       data=glyphTextureShape(glyph,g.root,transformIndex);
     } else if (descriptor.compatibility || rasterizeVectors) {
+      let vectorIsolation = gpuIsolation && artworkView.isolated && supportsVectorIsolation(items, resolution), isolationBounds;
+      if (vectorIsolation) {
+        descriptor.bounds ??= objectBounds(items, resources);
+        isolationBounds = playbackRasterBounds(descriptor.bounds, visibleBounds, resolution, maxTextureDimension);
+        if (!isolationBounds) {clipping.culledObjects++; return;}
+        vectorIsolation = supportsVectorIsolation(items, isolationBounds.pixelScale);
+      }
       if (items.every(item => item.opacity <= 0)) { clipping.culledObjects++; return; }
       group.compatibilityIndex = compatibility.length;
-      if (typeof OffscreenCanvas !== 'undefined') {
+      if (vectorIsolation || typeof OffscreenCanvas !== 'undefined') {
         if(descriptor.hasImages) {
           await resources?.preload(items, {scale: resolution, maxDimension: maxTextureDimension, visible: visibleBounds});
           reducedImages ||= Boolean(resources?.pressureReduced);
         }
         if(!descriptor.bounds)descriptor.bounds=objectBounds(items,resources);
-        const bounds = playbackRasterBounds(descriptor.bounds, visibleBounds, resolution, maxTextureDimension);
+        const bounds = isolationBounds || playbackRasterBounds(descriptor.bounds, visibleBounds, resolution, maxTextureDimension);
         if (!bounds) { clipping.culledObjects++; return; }
         const { pixelScale, pixelWidth: width, pixelHeight: height } = bounds;
         clipping.originalPixels += bounds.fullPixels; clipping.retainedPixels += width * height;
-        const artwork=artworks?.get(g,items),cropKey=JSON.stringify([bounds.x-g.root.x,bounds.y-g.root.y,width,height,pixelScale,descriptor.hasImages ? resources?.imageKey?.(items) : '']);
+        const artwork=artworks?.get(source,items),cropKey=JSON.stringify([bounds.x-source.root.x,bounds.y-source.root.y,width,height,pixelScale,descriptor.hasImages ? resources?.imageKey?.(items) : '']);
         const variants=artwork&&rasters.get(artwork),shared=variants?.get(cropKey);
         if(shared!==undefined){
           group.compatibilityIndex=shared;sharing.reusedInstances++;sharing.savedBitmapBytes+=width*height*4;
         }else{
         requireBudget(bitmapBytes + width * height * 4 + (shapeCount + 1) * SHAPE_FLOATS * 4 + (groups.length + 1) * 84);
-        const rasterKey=artwork?`${await artworks.contentKey(artwork)}:${cropKey}`:undefined;
+        const rasterKey=artwork?`${vectorIsolation?'vector:':''}${await artworks.contentKey(artwork)}:${cropKey}`:undefined;
         if(cancelled())throw new DOMException('Playback preparation was superseded.', 'AbortError');
+        const actualBounds = { x: bounds.x, y: bounds.y, width: width / pixelScale, height: height / pixelScale };
+        if (vectorIsolation) {
+          // The transfer owns a copy; retained vector cache buffers stay attached.
+          const compile = () => compileVectorObject(items, source.root, 0);
+          const data = resources?.vectors ? resources.vectors.get(source, 0, compile).slice() : compile();
+          // Reserve the eventual texture as well as CPU vectors. This deliberately
+          // overestimates shared GPU artwork in CPU admission to bound both caches.
+          bitmapBytes += width * height * 4 + data.byteLength;
+          compatibility.push({vectorRaster: {data, width, height}, bounds: actualBounds, root: source.root, resolution, pixelScale, uid,
+            artworkKey: rasterKey});
+        } else {
         const pool = resources?.rasterSurface?.(width,height,{hasImages:descriptor.hasImages}) || resources?.rasterSurfaces || fallbackRasterSurfaces;
         const rasterize=()=>{
         const {surface, context: ctx} = pool.acquire(width, height);
@@ -207,12 +230,12 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
         } finally { pool.release(); }
         };
         const bitmap=resources?.artworkBitmaps?await resources.artworkBitmaps.packetBitmap(rasterKey,rasterize):rasterize();
-        const actualBounds = { x: bounds.x, y: bounds.y, width: width / pixelScale, height: height / pixelScale };
         bitmapBytes += bitmap.width * bitmap.height * 4;
         // Ownership supplies its epoch in bitmapKey(); this key describes pixels
         // alone so unchanged artwork can share across retained frame revisions.
         const artworkKey=rasterKey||undefined;
         compatibility.push({ bitmap, bounds: actualBounds, root: g.root, resolution, pixelScale, uid, artworkKey });
+        }
         if(artwork){const next=variants||new Map();next.set(cropKey,group.compatibilityIndex);rasters.set(artwork,next);}
         }
         const raster=compatibility[group.compatibilityIndex],b=raster.bounds,origin=raster.root;
@@ -228,19 +251,19 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     }
     group.instanceCount = data.length / SHAPE_FLOATS; shapeCount += group.instanceCount;
     requireBudget(bitmapBytes + shapeCount * SHAPE_FLOATS * 4 + (groups.length + 1) * 84);
-    chunks.push(data); groups.push(group); transforms.push(g.root.x+depth.x, g.root.y+depth.y, 1, 1); uids.push(uid);
+    chunks.push(data); groups.push(group); transforms.push(g.root.x+depth.x, g.root.y+depth.y, artworkView.opacity, 1); uids.push(uid);
   };
   try {
-    for (const s of geometry.drawables) {
-      if (priorSlot !== s.slot) { await append(); items = [s]; priorSlot = s.slot;
-        if (groups.length && groups.length % 16 === 0) await yieldPlaybackTask();
-      }
+    for (const g of geometry.orderedObjects) {
+      await append(); items = g.drawables; priorSlot = g.slot;
+      if (groups.length && groups.length % 16 === 0) await yieldPlaybackTask();
     }
     await append();
     const shapes = new Float32Array(shapeCount * SHAPE_FLOATS); let offset = 0;
     for (const chunk of chunks) { shapes.set(chunk, offset); offset += chunk.length; }
     const transformData = new Float32Array(transforms), uidData = new Uint32Array(uids);
-    const fallbackBytes = compatibility.some(entry => !entry.bitmap) ? JSON.stringify(compatibility).length * 2 : 0;
+    const fallbackEntries = compatibility.filter(entry => !entry.bitmap && !entry.vectorRaster);
+    const fallbackBytes = fallbackEntries.length ? JSON.stringify(fallbackEntries).length * 2 : 0;
     const ended = performance.now();
     sharing.rasterCacheHits=(resources?.artworkBitmaps?.hits||0)-initialRasterHits;
     sharing.rasterCacheMisses=(resources?.artworkBitmaps?.misses||0)-initialRasterMisses;
@@ -344,7 +367,7 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
 }
 
 export function packetTransferables(packet) {
-  return [packet.shapes.buffer, packet.transforms.buffer, packet.uids.buffer, ...packet.compatibility.map(entry => entry.bitmap).filter(Boolean)];
+  return [packet.shapes.buffer, packet.transforms.buffer, packet.uids.buffer, ...packet.compatibility.map(entry => entry.bitmap || entry.vectorRaster?.data.buffer).filter(Boolean)];
 }
 
 /** Shared endpoint is also exercised with a real Node worker in regression tests. */

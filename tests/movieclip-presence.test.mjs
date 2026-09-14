@@ -303,8 +303,8 @@ test('range paste reuses one movieclip identity and range delete removes only re
 
 test('cut/paste moves presence without renaming it, and pasted mixed selections preserve joins',()=>{
   const e=fixture();e.addFigure(1);const child=e.selectedUid;e.joinTo(7,0);e.selectMany([7,child]);e.copySelection();
-  e.seek(5);e.pasteSelection();const copy=e.selectedObjects.find(o=>o.figure_type_id===1),parent=e.selectedObjects.find(o=>o.figure_type_id===2),result=frame(e,5);
-  assert.notEqual(parent.unique_id,7);assert.notEqual(copy.unique_id,child);assert.equal(result.objects[copy.join.target_object_slot].unique_id,parent.unique_id);
+  e.seek(5);e.pasteSelection();const copy=e.selectedObjects.find(o=>o.figure_type_id!==2),parent=e.selectedObjects.find(o=>o.figure_type_id===2),result=frame(e,5);
+  assert.notEqual(copy.figure_type_id,1);assert.notEqual(parent.unique_id,7);assert.notEqual(copy.unique_id,child);assert.equal(result.objects[copy.join.target_object_slot].unique_id,parent.unique_id);
   assert.equal(result.objects[result.objects.find(o=>o.unique_id===child).join.target_object_slot].unique_id,7);
   e.seek(2);e.select(7);e.cutSelection();assert.deepEqual(phases(e,5),[0,1,null,2,3]);
   e.seek(2);e.pasteSelection();assert.equal(e.selectedUid,7);assert.deepEqual(phases(e,5),[0,1,2,3,4]);reopen(e);
@@ -358,4 +358,20 @@ test('editing playback on the current pasted exposure works without adding timel
   const e=fixture();e.copySelection();e.sheetClearFrames(['layer-1'],0,11);e.seek(4);e.pasteSelection();const before=structure(e);
   e.setMovieclipPlayback({speed:2,offset:1});assert.equal(structure(e),before);assert.equal(phase(e,4),1);assert.equal(phase(e,6),5);
   e.undo();assert.equal(phase(e,6),2);e.redo();assert.equal(phase(reopen(e),6),5);
+});
+
+
+test('unique movieclip paste owns a definition and identity while default paste retains the clock',()=>{
+  const e=fixture();e.copySelection();const original=e.object.figure_type_id;
+  const document=e.figure._styk.movieclip.document;
+  e.sheetClearFrames(['layer-1'],0,11);e.seek(0);
+  const before=e.serialize();e.pasteSelection({pasteMode:'unique'});
+  assert.notEqual(e.selectedUid,7);const unique=e.object.figure_type_id;assert.notEqual(unique,original);
+  assert.equal(e.figure._styk.movieclip.document,document,'Immutable animation is shared without a deep copy.');
+  const after=e.serialize();e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.deepEqual(e.serialize(),after);
+  e.enterMovieclip();e.select(e.selectionFrame.objects[0].unique_id);e.moveSelection(15,20);e.leaveMovieclip();
+  assert.equal(e.report.figure_types.find(f=>f.figure_type_id===original)._styk.movieclip.document,document);
+  assert.notEqual(e.report.figure_types.find(f=>f.figure_type_id===unique)._styk.movieclip.document,document);
+  e.pasteSelection();assert.equal(e.selectedUid,7);assert.equal(e.object.figure_type_id,original);
+  reopen(e);
 });

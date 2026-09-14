@@ -31,17 +31,28 @@ try {
     const result=await page.evaluate(async()=>{
       const {buildGeometry}=await import('/src/pivot/geometry.mjs'),e=styk.editor;
       const signature=g=>g.drawables.map(({obj,fig,...shape})=>({...shape,obj:obj.unique_id,fig:fig.figure_type_id}));
-      return {count:e.selectedObjects.length,total:e.evaluatedFrame.objects.length,history:e._undo.length,undoLabel:e.undoLabel,
+      return {independent:e.selectedObjects.every(o=>o.figure_type_id!==1),count:e.selectedObjects.length,total:e.evaluatedFrame.objects.length,history:e._undo.length,undoLabel:e.undoLabel,
         geometry:JSON.stringify(signature(styk.state.renderer.lastGeometry))===JSON.stringify(signature(buildGeometry(e.report,e.evaluatedFrame))),
         report:JSON.stringify(e.serialize())};
     });
-    assert.equal(result.count,2);assert.equal(result.total,5);assert.equal(result.history,before.history+1);
+    assert.ok(result.independent);assert.equal(result.count,2);assert.equal(result.total,5);assert.equal(result.history,before.history+1);
     assert.equal(result.undoLabel,'Paste figures');assert.ok(result.geometry);
     await page.keyboard.press('Control+z');await settle();assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),before.report);
     await page.keyboard.press('Control+y');await settle();assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),result.report);
     await page.screenshot({path:`artifacts/figure-paste/${mode}-keyboard.png`});
     console.log(`PASS ${mode}: keyboard copy/paste between frames, exact rendered geometry and one undo/redo`);
   }
+  const canvas=page.locator('#scene');
+  const box=await canvas.boundingBox();
+  await page.mouse.click(box.x+box.width-35,box.y+35,{button:'right'});
+  await page.getByText('Paste instance',{exact:true}).waitFor({state:'visible'});
+  await page.screenshot({path:'artifacts/figure-paste/paste-menu.png'});
+  await page.getByText('Paste instance',{exact:true}).click();await settle();
+  assert.ok(await page.evaluate(()=>styk.editor.selectedObjects.every(o=>o.figure_type_id===1)));
+  await page.mouse.click(box.x+box.width-35,box.y+35,{button:'right'});
+  await page.getByText('Paste unique copy',{exact:true}).click();await settle();
+  assert.ok(await page.evaluate(()=>styk.editor.selectedObjects.every(o=>o.figure_type_id!==1)));
+  console.log('PASS right-click instance and unique copy actions');
   const saved=await page.evaluate(async()=>{
     const {DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{Editor}=await import('/src/editor.mjs');
     const exporter=new DocumentExporter(),importer=new ImportClient(),e=styk.editor;
@@ -54,5 +65,22 @@ try {
     }finally{exporter.dispose();importer.dispose();}
   });
   assert.ok(saved);assert.deepEqual(errors,[]);console.log('PASS binary save/reopen retains pasted poses, IDs and attachments');
+  await page.evaluate(async()=>{
+    const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs');
+    const {movieclipFigure}=await import('/src/movieclips.mjs');
+    const {presencePlayback}=await import('/src/movieclip-presence.mjs');
+    const child=emptyDocument();child.keyframes=[createFrame([createObject(child.figure_types[0],1,200,250)])];
+    const clip=movieclipFigure(2,'Paste test clip',child,{duration:1});
+    const report=emptyDocument();report.figure_types.push(clip);
+    report.keyframes=[createFrame([createObject(clip,7,300,300,{_stykMovieclip:presencePlayback()})]),createFrame([])];
+    styk.editor.load(report);styk.editor.select(7);styk.fit();document.activeElement?.blur();
+  });await settle();await page.keyboard.press('Control+c');
+  await page.evaluate(()=>{styk.editor.seek(1);document.activeElement?.blur();});await settle();
+  await page.keyboard.press('Control+v');await settle();
+  assert.deepEqual(await page.evaluate(()=>[styk.editor.selectedUid,styk.editor.object.figure_type_id]),[7,2]);
+  await page.mouse.click(box.x+box.width-35,box.y+35,{button:'right'});
+  await page.getByText('Paste unique copy',{exact:true}).click();await settle();
+  assert.ok(await page.evaluate(()=>styk.editor.selectedUid!==7&&styk.editor.object.figure_type_id!==2));
+  assert.deepEqual(errors,[]);console.log('PASS movieclip Ctrl+V preserves identity and right-click unique copy separates it');
   await page.evaluate(()=>styk.editor.markSaved());
 }finally{await browser.close();}

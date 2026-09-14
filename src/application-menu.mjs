@@ -32,7 +32,7 @@ export function applicationMenuItems(name, editor, desktop) {
     view: [
       ['zoom-in', 'plus', 'Zoom in', '+'], ['zoom-out', 'minus', 'Zoom out', '−'],
       ['zoom-reset', 'frame', 'Fit canvas', 'Shift 1'], ['zoom-selection', 'center', 'Fit selection', 'Shift 2', noFigure], null,
-      ['toggle-handles', 'nodes', 'Show / hide joints', 'J'],
+      ['toggle-handles', 'nodes', 'Show / hide joints', 'Shift J'],
       ['toggle-motion-paths', 'route', 'Show / hide motion paths', 'M'],
       ['toggle-onion', 'onion', 'Toggle onion skin', 'O'],
       ['scene-settings', 'frame', 'Scene properties'],

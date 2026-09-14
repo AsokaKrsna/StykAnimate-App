@@ -3,12 +3,23 @@ import {_electron as electron} from 'playwright';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
 const source=process.argv[2];if(!source)throw new Error('Provide a PIV animation.');
 const output=path.resolve('artifacts/editing-latency',process.env.STYK_PROBE_LABEL||'current');await mkdir(output,{recursive:true});
 const app=await electron.launch({args:[process.cwd()],env:{...process.env,STYK_USER_DATA_DIR:path.join(output,'profile')}});
 try {
   const page=await app.firstWindow(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];w.webContents.setBackgroundThrottling(false);w.setIgnoreMouseEvents(true);w.setFocusable(false);w.showInactive();});
   await page.waitForFunction(()=>window.styk?.ready);
+  if(process.env.STYK_BASELINE_REF){
+    const files=new Map(),ref=process.env.STYK_BASELINE_REF;
+    await page.context().route('**/src/**',async route=>{
+      const file=new URL(route.request().url()).pathname.slice(1);
+      if(!files.has(file))files.set(file,execFileSync('git',['show',`${ref}:${file}`],{maxBuffer:16*1024*1024}));
+      await route.fulfill({body:files.get(file),contentType:file.endsWith('.css')?'text/css':'text/javascript'});
+    });
+    await page.reload();await page.waitForFunction(()=>window.styk?.ready);
+  }
   if(process.env.STYK_BASELINE_DIRECTORY){
     const directory=path.resolve(process.env.STYK_BASELINE_DIRECTORY);
     for(const name of ['playback-worker.mjs','renderer.mjs','renderer-geometry.mjs','playback.mjs'])await page.route(`**/src/${name}`,async route=>route.fulfill({contentType:'text/javascript',body:await readFile(path.join(directory,name))}));
@@ -33,7 +44,8 @@ try {
   // A picked joint can belong to an attached figure. Validate the complete
   // visible pose rather than one selected object's local angle array.
   const poseSnapshot=()=>page.evaluate(()=>JSON.stringify([...styk.editor.geometry.objects.values()].map(g=>({uid:g.obj.unique_id,root:g.root,joints:[...g.joints].sort((a,b)=>a[0]-b[0])})).sort((a,b)=>a.uid-b.uid)));
-  for(const phase of['cold-seek','warm-seek'])for(const tick of[1871,1810,1805,1806,1870,1055,1312,1804,1871]){
+  const ticks=process.argv.length>3?process.argv.slice(3).map(Number):await page.evaluate(()=>[1,.96,.92,.93,.99,.55,.7,.91,1].map(n=>Math.round((styk.editor.totalTicks-1)*n)));
+  for(const phase of['cold-seek','warm-seek'])for(const tick of ticks){
     const request=await page.evaluate(({tick,phase})=>{const p=inputProbe;p.phase=phase;const at=performance.now();styk.editor.seek(tick);
       const s={tick,phase,at,commandMs:performance.now()-at};p.seeks.push(s);return s;},{tick,phase});
     await page.waitForFunction(q=>inputProbe.draws.some(d=>d.tick===q.tick&&d.at>=q.at&&d.completed),request);
@@ -44,7 +56,9 @@ try {
       const e=styk.editor,s=styk.state;inputProbe.phase=kind;inputProbe.lastInput=null;
       const r=document.querySelector('#overlay').getBoundingClientRect();
       if(kind==='pan')return{x:r.x+r.width*.4,y:r.y+r.height*.4};
-      e.select(460616,0);const g=e.geometry.objects.get(e.selectedSlot),point=g.segments.find(s=>!s.static&&s.length>3).end;
+      const editable=[...e.geometry.objects.values()].find(g=>g.segments.some(s=>!s.static&&s.length>3));
+      if(!editable)throw new Error('The benchmark requires a poseable joint.');
+      e.select(editable.obj.unique_id,0);const g=e.geometry.objects.get(e.selectedSlot),point=g.segments.find(s=>!s.static&&s.length>3).end;
       const {worldToScreen}=await import('/src/renderer.mjs'),screen=worldToScreen(point,{report:e.report,frame:e.evaluatedFrame,view:s.view,cameraEnabled:false});
       s.view.x+=r.width/2-screen.x;s.view.y+=r.height/2-screen.y;window.dispatchEvent(new Event('resize'));
       return{x:r.x+r.width/2,y:r.y+r.height/2};
@@ -80,4 +94,4 @@ try {
   for(const phase of['cold-seek','warm-seek'])summary[phase]={submit:q(result.seeks.filter(s=>s.phase===phase).map(s=>s.submitMs)),complete:q(result.seeks.filter(s=>s.phase===phase).map(s=>s.completeMs))};
   for(const kind of['pan','pose']){const draws=result.draws.filter(d=>d.kind===kind&&d.input&&d.completed);summary[kind]={submit:q(draws.map(d=>d.at-d.input)),complete:q(draws.map(d=>d.completed-d.input))};}
   summary.longTasks=result.longTasks;await writeFile(path.join(output,'report.json'),JSON.stringify({source,summary,...result,errors},null,2));console.log(JSON.stringify({summary,errors},null,2));assert.deepEqual(errors,[]);
-} finally {await app.close();}
+} finally {await app.evaluate(({app})=>app.exit(0)).catch(()=>{});}

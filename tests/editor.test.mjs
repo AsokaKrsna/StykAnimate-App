@@ -207,11 +207,11 @@ test('non-contiguous frame copy, cut, paste and reversal are atomic and undoable
   editor.undo(); assert.deepEqual(editor.serialize(), initial);
 });
 
-test('figure clipboard detaches world roots, reuses same-document definitions, and pastes across documents', () => {
+test('figure clipboard detaches world roots, creates independent definitions, and pastes across documents', () => {
   const editor = blank(), parent = editor.selectedUid, child = editor.duplicateFigure().unique_id;
   editor.joinFigure(parent, 2); const world = {...editor.geometry.objects.get(editor.selectedSlot).root};
   editor.copyFigure(); assert.equal(editor.hasFigureClipboard, true); const types = editor.report.figure_types.length;
-  const pasted = editor.pasteFigure(); assert.equal(editor.report.figure_types.length, types);
+  const pasted = editor.pasteFigure(); assert.equal(editor.report.figure_types.length, types + 1);
   assert.notEqual(pasted.unique_id, child); assert.equal(pasted.join, null); near(pasted.root_x, world.x + 24); near(pasted.root_y, world.y + 24);
   editor.undo(); assert.equal(editor.frame.objects.length, 2); editor.redo(); assert.equal(editor.frame.objects.length, 3);
   editor.load(emptyDocument()); const crossDocument = editor.pasteFigure(); assert.equal(editor.report.figure_types.length, 2);
@@ -223,7 +223,7 @@ test('figure clipboard detaches world roots, reuses same-document definitions, a
 
 test('clipboard pose remaps native handles when a shared definition topology changes', () => {
   const editor = blank(); editor.copyFigure(); editor.select(editor.selectedUid, 2); editor.deleteSegment();
-  const pasted = editor.pasteFigure(); assert.equal(pasted.angles.length, 8);
+  const pasted = editor.pasteFigure({pasteMode: 'instance'}); assert.equal(pasted.angles.length, 8);
   assert.doesNotThrow(() => validateScene(editor.serialize()));
 });
 

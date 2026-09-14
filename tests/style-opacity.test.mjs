@@ -132,8 +132,16 @@ test("cancel restores an absent outline style and does not manufacture a gradien
   assert.equal(canEditNativeProperty(editor, "outline_opacity"), false);
 });
 
-test("inspector displays both endpoints only for an enabled gradient and omits figure outline controls", () => {
+test("inspector shows secondary color only on circles and omits figure outline controls", () => {
   const editor = fixture();
+  const secondary = structuredClone(editor.figure.segments[0].secondary);
+  assert.doesNotMatch(inspectorView({editor}), /id="segment-gradient-enabled"|data-property="segment_gradient_opacity"/);
+  for (const shape of ['circle', 'circleFill', 'circleClear']) {
+    editor.convertSegment(shape);
+    const circle = inspectorView({editor});
+    assert.match(circle, /id="segment-gradient-enabled"/);
+    assert.match(circle, /data-property="segment_gradient_opacity"/);
+  }
   const html = inspectorView({ editor });
   for (const key of [
     "segment_opacity",
@@ -150,11 +158,19 @@ test("inspector displays both endpoints only for an enabled gradient and omits f
   editor.select(editor.selectedUid,selection);
   assert.match(html, /Primary opacity/);
   assert.match(html, /Secondary opacity/);
+  for (const shape of ['line', 'squareLine']) {
+    editor.convertSegment(shape);
+    assert.doesNotMatch(inspectorView({editor}), /id="segment-gradient-enabled"|data-property="segment_gradient_opacity"/);
+    assert.deepEqual(editor.figure.segments[0].secondary, secondary);
+  }
+  editor.convertSegment('circleFill');
   editor.figure.segments[0].secondary = null;
   assert.doesNotMatch(
     inspectorView({ editor }),
     /data-property="segment_gradient_opacity"/,
   );
+  assert.match(inspectorView({editor}), /id="segment-gradient-enabled"/);
+  assert.doesNotMatch(inspectorView({editor}), /id="segment-gradient-color"/);
 });
 
 test("edited native alpha bytes and untouched RGB values round-trip through real PIV and STK writers", () => {

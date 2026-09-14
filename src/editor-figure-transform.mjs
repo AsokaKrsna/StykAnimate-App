@@ -29,9 +29,9 @@ export function figureHandleTransform(state, point, {rotate = true, scale = true
 }
 
 export const editorFigureTransformMethods = {
-  beginFigureHandleDrag(x, y, {rotate = true, scale = true, label = 'Transform figure'} = {}) {
-    if (!this.object || this.selectedJoint < 0 || !this.figure?.segments[this.selectedJoint]) return false;
-    const original = this.geometry.objects.get(this.selectedSlot), handle = original?.segments[this.selectedJoint]?.end;
+  beginFigureHandleDrag(x, y, {rotate = true, scale = true, joint = this.selectedJoint, label = 'Transform figure'} = {}) {
+    if (!this.object || joint < 0 || !this.figure?.segments[joint]) return false;
+    const original = this.geometry.objects.get(this.selectedSlot), handle = original?.segments[joint]?.end;
     x ??= handle?.x; y ??= handle?.y; coordinates(x, y);
     if (!original || !(Math.abs(this.object.scale) > EPS)) throw new Error('Increase figure scale before transforming a handle.');
     // Validate before beginning a command so invalid starts leave history alone.
@@ -44,7 +44,8 @@ export const editorFigureTransformMethods = {
         const values = children.get(object.join.target_object_slot) || [];
         values.push(index); children.set(object.join.target_object_slot, values);
       });
-      const queue = [slot], affected = new Set(queue);
+      const queue = this.frame.objects.flatMap((object, index) => this.selectedUids.has(object.unique_id) ? [index] : []);
+      const affected = new Set(queue);
       for (let cursor = 0; cursor < queue.length; cursor++) for (const index of children.get(queue[cursor]) || [])
         if (!affected.has(index)) { affected.add(index); queue.push(index); }
       const snapshots = new Map(this._drag.before.map(object => [object.unique_id, object]));

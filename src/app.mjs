@@ -1,11 +1,14 @@
 import {rigControlChange, drawRigGuides, drawConnectorGuides} from './rig-controls.mjs';
+import {displayedSegmentPaint,displayedColor} from './figure-colors.mjs';
 import {openSurfaceReference,changeSurfaceSide} from './builder-surface-ui.mjs';
 import {openRigTest, openRigExamples} from './rig-test-ui.mjs';
 import {bucketRegion, pickFigureFill, drawFillHighlight} from './builder-fill.mjs';
+import {figureJoinAction, joinTargetUids} from './figure-join-action.mjs';
 import {duplicatePreview, drawDuplicatePreview} from './builder-duplicate-preview.mjs';
 import {createConstruction, strokeSegments} from './builder-construction.mjs';
 import {CameraMotionControls} from './camera-motion-ui.mjs';
 import {installColorPickers} from './color-picker.mjs';
+import {sampleCanvasRegion} from './canvas-color-sample.mjs';
 import {installMovieclipUI} from './movieclip-ui.mjs';
 import {isMovieclip} from './movieclips.mjs';
 import {segmentPaint, parseColor, hexColor, backgroundPaint, paintBackground} from './paint.mjs';
@@ -29,6 +32,8 @@ import { VfwExportControls } from "./vfw-export-controls.mjs";
 import { getExportCapabilities, exportFormat } from "./export-capabilities.mjs";
 import { videoQualityOptions } from "./export-video-quality.mjs";
 import { PlaybackCache } from "./playback.mjs";
+import {playbackWindow,playbackLookaheadSize,playbackStartupWindow} from './playback-window.mjs';
+import {PlaybackUploadWarmup} from './playback-upload.mjs';
 import {AudioEngine} from './audio-engine.mjs';
 import {audioState, audioFps, audibleClips} from './audio-model.mjs';
 import {PreviewImages} from './preview-images.mjs';
@@ -269,7 +274,10 @@ let canvas = $("scene"), rendererRecovery, gpuRecoveryTimer, gpuRecoveryAttempts
 const viewport = $("viewport"),
   overlay = $("overlay"),
   ctx = overlay.getContext("2d"),
-  images = new PreviewImages({onReady: () => {
+  images = new PreviewImages({managedInvalidation:true,priorityURLs:playbackImagePriority,onReady: ({retained=false,resized=false}={}) => {
+    // New lookahead backgrounds cannot change already-complete GPU frames.
+    // Keep their uploads resident; live edits/resized variants still invalidate.
+    if(state.playing&&retained&&!resized){requestRender();return;}
     const renderer = state.renderer;
     if (renderer) {
       renderer.generation++; renderer.lastGeometry = null;
@@ -306,6 +314,7 @@ let timelineUI,
 let warmTimer = null,
   playDeadline = 0,
   playStarted = false,
+  playStartupFrames = 2,
   uiScheduled = 0;
 const playbackMetrics = new PlaybackMetrics();
 async function openExportSink(options){
@@ -381,6 +390,7 @@ function queueUI() {
     });
 }
 const playback = new PlaybackCache({
+  gpuIsolation: true,
   diagnostics:telemetry.performance,
   onReady: (packet) => {
     state.lastPacketBytes = packet.byteLength;
@@ -396,6 +406,20 @@ const playback = new PlaybackCache({
     }
   },
 });
+const playbackUploadWarmup = new PlaybackUploadWarmup(requestRender);
+let playbackImageTicks=[];
+function playbackImagePriority() {
+  if(!state.playing)return [];
+  const urls=[];
+  // Plain LRU evicts the next prefetched image before recently displayed past
+  // frames. Refresh the bounded lookahead from farthest to nearest instead.
+  for(let i=playbackImageTicks.length-1;i>=0;i--){
+    const packet=playback.get(playbackImageTicks[i]);
+    if(packet)for(const asset of backgroundImageAssets(editor.report,packet.frame))urls.push(assetUrl(asset));
+  }
+  for(const asset of backgroundImageAssets(editor.report,state.playbackPacket?.frame||editor.frame))urls.push(assetUrl(asset));
+  return urls;
+}
 function playbackScale() {
   // Quantize only after applying the native camera in the worker. Rounding
   // both here and there can quadruple texture memory at an ordinary zoom.
@@ -494,20 +518,13 @@ function prepareAhead(start = editor.tick, count = 24, {bidirectional = false} =
   // Preparation shares the CPU with the UI thread: shallow lookahead keeps
   // few-core machines responsive while deep buffers still cover fast cores.
   const cores = navigator.hardwareConcurrency || 4;
-  count = Math.max(Math.min(count, 8), Math.round(count * Math.min(1, cores / 8)));
-  const range = playbackRange(),
-    ticks = [];
+  count = playbackLookaheadSize(count, cores);
+  const range = playbackRange();
   // PlaybackCache owns admission using unique bitmap footprints. Multiplying
   // one frame's size here double-counts shared artwork and starves lookahead
   // precisely when a scene changes from small vector frames to large rasters.
-  const behind=bidirectional?Math.min(4,Math.floor(count/4),Math.max(0,start-range.start)):0;
-  for (let n = 0; n < Math.min(count-behind, range.end - range.start); n++)
-    ticks.push(
-      range.start +
-        ((Math.max(start, range.start) - range.start + n) %
-          (range.end - range.start)),
-    );
-  for(let n=1;n<=behind;n++)if(!ticks.includes(start-n))ticks.push(start-n);
+  const ticks=playbackWindow(start,count,range,{loop:state.loop,bidirectional});
+  if(state.playing)playbackImageTicks=ticks;
   return playback.prepareRange(ticks, { replacePending: true }).catch((error) => {
     if (error.name !== "AbortError" && state.playing) {
       pause();
@@ -897,6 +914,23 @@ function guarded(fn) {
     }
   };
 }
+let pendingColorSample;
+function sampleCanvasColor(clientX,clientY,signal,radius=0) {
+  if(signal.aborted)return Promise.reject(new Error('Color sampling cancelled.'));
+  pendingColorSample?.finish(new Error('Color sampling superseded.'));
+  return new Promise((resolve,reject)=>{
+    const finish=(error,color)=>{
+      clearTimeout(timeout);signal.removeEventListener('abort',cancel);
+      if(pendingColorSample?.finish===finish)pendingColorSample=null;
+      if(error)reject(error);else resolve(color);
+    };
+    const cancel=()=>finish(new Error('Color sampling cancelled.'));
+    const timeout=setTimeout(()=>finish(new Error('Canvas is not ready. Try again.')),2000);
+    signal.addEventListener('abort',cancel,{once:true});
+    pendingColorSample={clientX,clientY,finish,radius};
+    requestRender();
+  });
+}
 function requestRender() {
   state.dirtyRender = true;
   if (!raf) raf = requestAnimationFrame(loop);
@@ -1145,7 +1179,9 @@ const handleSurface = new OffscreenCanvas(1, 1),
   handleContext = handleSurface.getContext("2d");
 let handleCache = null;
 const handleDescriptors = {};
-function canvasHandles(geometry) {
+const selectionHandleCache = new WeakMap();
+const selectionHandleDescriptors = {};
+function canvasHandles(geometry, {selectStatic = false} = {}) {
   const frame = currentFrame(),
     settings = state.settings;
   const key = [
@@ -1153,6 +1189,7 @@ function canvasHandles(geometry) {
     editor.layerRevision,
     showStaticHandles(),
     state.tool,
+    state.figureJoin?.uid,
     state.handleEditHeld,
     usesBuilderBranch(),
     editor.selectedJoint,
@@ -1167,8 +1204,8 @@ function canvasHandles(geometry) {
     ...state.hidden,
     ...state.locked,
   ].join("|");
-  if (handleCache?.geometry === geometry && handleCache.key === key)
-    return handleCache.handles;
+  const cached = selectStatic ? selectionHandleCache.get(geometry) : handleCache;
+  if (cached?.key === key && (selectStatic || cached.geometry === geometry)) return cached.handles;
   const bound = builderMode?.boundUids;
   const hidden = effectiveHidden(frame),
     locked = new Set(state.locked);
@@ -1176,7 +1213,9 @@ function canvasHandles(geometry) {
     if (layerLocked(editor.report, object.unique_id) || (bound && !bound.has(object.unique_id)))
       locked.add(object.unique_id);
   const handles = getPivotHandles(geometry, {
-    descriptorCache: handleDescriptors,
+    descriptorCache: selectStatic ? selectionHandleDescriptors : handleDescriptors,
+    selectStatic,
+    joinTargetUids: state.figureJoin?.targets,
     frame,
     selectedUid: editor.selectedUid,
     selectedUids: selection(),
@@ -1196,7 +1235,8 @@ function canvasHandles(geometry) {
     autoSize: settings.autoSizeHandles,
     maxDiameter: settings.handleSize * 2,
   });
-  handleCache = { geometry, key, handles };
+  if (selectStatic) selectionHandleCache.set(geometry, {key, handles});
+  else handleCache = { geometry, key, handles };
   return handles;
 }
 function paintHandle(context, handle, delta) {
@@ -1300,7 +1340,7 @@ function overlayRender(geometry) {
       faint: motionPaths.length > 1 && state.hoverPathPoint && state.hoverPathPoint.key !== key,
     });
   }
-  if (state.handles && !gpuHandlesEnabled()) drawCanvasHandles(geometry);
+  if ((state.handles || state.tool === 'attach') && !gpuHandlesEnabled()) drawCanvasHandles(geometry);
   if (
     cameraSelected() &&
     editor.report._styk?.layers?.fixed?.camera?.visible !== false &&
@@ -1450,7 +1490,16 @@ function loop(now) {
           packet &&
           (state.renderer.backgroundsReady?.(editor.report, packet.frame) ??
             true);
-        const startupReady=playStarted || playback.bufferedAhead(next,Math.min(12,Math.max(2,Math.ceil(fps*.1))),range.end);
+        if (!playStarted) playStartupFrames = Math.max(playStartupFrames, playbackStartupWindow(fps,
+          Math.max(playback.stats.lastCompileMs, playback.stats.compileMs / Math.max(1, playback.stats.preparedFrames)), navigator.hardwareConcurrency || 4));
+        let startupReady=playStarted || playback.bufferedAhead(next,playStartupFrames,range.end);
+        if(!playStarted&&startupReady&&backgroundsReady){
+          const packets=[];
+          for(let tick=next;tick<Math.min(range.end,next+playStartupFrames);tick++){
+            const ready=playback.get(tick);if(!ready)break;packets.push(ready);
+          }
+          startupReady=playbackUploadWarmup.step(state.renderer,packets,{report:editor.report,view:state.view,cameraEnabled:state.playbackCameraEnabled});
+        }
         if (packet && backgroundsReady && startupReady) {
           if (audioEngine.hasAudio && (!audioEngine.running || next < editor.tick || audioEngine.position > (next + 1.5) / fps))
             void audioEngine.start(next / fps, range.end / fps);
@@ -1562,7 +1611,7 @@ function loop(now) {
         liveEditing: Boolean(state.drag || keyboardHandleGesture),
         playing: state.playing,
         artworkRevision: editor.definitionRevision,
-        canvasHandles: state.handles && gpuHandlesEnabled() ? canvasHandles(geometry) : undefined,
+        canvasHandles: !pendingColorSample && (state.handles || state.tool === 'attach') && gpuHandlesEnabled() ? canvasHandles(geometry) : undefined,
         outlineHandles: state.settings.outlineHandles,
         onionFrames,
         hiddenUids: effectiveHidden(),
@@ -1574,6 +1623,14 @@ function loop(now) {
       if (advancedPlayback) recordPlaybackPresentation();
       overlayRender(geometry);
       $('preview-quality').hidden = !(images.reduced || state.renderer.stats?.previewReduced || state.previewGovernor?.index);
+    }
+    if(pendingColorSample && !state.editablePreparing && (!state.playing || !state.buffering || preparedPresented)){
+      const sample=pendingColorSample;
+      try{
+        const result=sampleCanvasRegion(canvas,sample.clientX,sample.clientY,sample.radius);
+        sample.finish(null,sample.radius?result:result.color);
+      }catch(error){sample.finish(error);}
+      requestRender(); // Restore GPU handles after sampling the artwork before presentation.
     }
     if(sampled){stages.scene=performance.now()-stageStarted;stageStarted=performance.now();Object.assign(stages,state.renderer.telemetryStages);}
     // Final editor overlay pass: keep the actual camera above artwork and tool feedback.
@@ -1654,6 +1711,8 @@ function play() {
   $("playback-fps").dataset.health = "pending";
   $("playback-fps").hidden = false;
   playStarted = false;
+  playStartupFrames = 2;
+  playbackUploadWarmup.reset();
   playDeadline = playStart;
   state.playbackPacket = null;
   prepareAhead(playTick, 24);
@@ -1677,6 +1736,7 @@ function play() {
   requestRender();
 }
 function pause() {
+  playbackUploadWarmup.reset();
   state.motionPreviewRange=null;
   if(state.playing)telemetry.performance.resources('stopped');
   audioPreparation?.abort(); audioScrubController?.abort(); audioEngine.stop(); state.audioReady = true;
@@ -1840,6 +1900,7 @@ function renderInspector() {
     rangeIndices: editor.frameDraft?.mode === "add" ? [] : state.rangeIndices,
     applyRange: state.applyRange,
     polygonPage: state.polygonPage || 0,
+    palettePage: state.palettePage || 0,
   }), {preserveDisclosure});
   cameraMotionControls?.sync();
   refreshHotkeyHints(hotkeys, $('inspector'));
@@ -1872,6 +1933,7 @@ function renderInspector() {
 
 let construction;
 function setTool(tool) {
+  if (tool !== 'attach') state.figureJoin = null;
   if (state.tool !== tool) construction?.cancel();
   if (tool !== state.tool && ['rig', 'line', 'chain', 'circle', 'polygon'].includes(tool)) telemetry.count('builder');
   if (!builderMode?.active && isMovieclip(editor.figure) && ['rig','line','chain','circle','polygon'].includes(tool)) {
@@ -2035,13 +2097,17 @@ function finishPolygon() {
 function pick(p) {
   if (!state.handles) return null;
   const geometry = editor.geometry;
-  return pickCanvasHandle(geometry, p, {
-    handles: canvasHandles(geometry),
+  const options = {
     project: screenPoint,
     projectionScale: !state.playing&&!state.previewing?state.view.scale:undefined,
     minRadius: 8,
     nearest: true,
-  });
+  };
+  const hit = pickCanvasHandle(geometry, p, {...options, handles: canvasHandles(geometry)});
+  // Visible handles keep priority. Hidden static endpoints are selection-only
+  // fallback targets, prepared lazily on clicks, never on pointer hover.
+  if (hit || builderMode?.active || !['select', 'pose'].includes(state.tool)) return hit;
+  return pickCanvasHandle(geometry, p, {...options, handles: canvasHandles(geometry, {selectStatic: true})});
 }
 overlay.addEventListener(
   "pointerdown",
@@ -2215,18 +2281,17 @@ overlay.addEventListener(
       state.rigAnchorPick=null;toast(pending.key==='driver'?'Stretch driver connected.':pending.key?'Connector anchor updated.':'Connector added. Drag its middle joint to slide.');requestRender();return;
     }
     if (state.tool === "attach") {
-      const target = closestHandle(p, editor.selectedUid);
-      if (!target) {
+      releaseCanvasPointer();
+      const pending = state.figureJoin;
+      if (!pending || selectedFigureJoinAction()?.uid !== pending.uid) {setTool('select'); return;}
+      const target = pickCanvasHandle(editor.geometry, p, {handles: canvasHandles(editor.geometry),
+        project: screenPoint, projectionScale: state.view.scale, minRadius: 8, nearest: true});
+      if (!target || isHidden(target.uid) || isLocked(target.uid)) {
         toast("Click a joint on the parent figure.");
         return;
       }
-      if (rangeFrames())
-        editor.joinFiguresInFrames(
-          target.g.obj.unique_id,
-          target.id,
-          rangeFrames(),
-        );
-      else editor.joinFigure(target.g.obj.unique_id, target.id);
+      editor.joinFiguresInFrames(target.uid, target.id, pending.indices,
+        {uids: [pending.uid], atPlayhead: !pending.indices});
       setTool("select");
       status("Figures attached");
       return;
@@ -2295,25 +2360,21 @@ overlay.addEventListener(
       return;
     }
     if(hit.g.segments[hit.joint]?.connector)editor._connectorInspector=null;
-    editor.select(hit.g.obj.unique_id, hit.joint, {
-      add: hit.joint < 0 && isSelected(hit.g.obj.unique_id),
-    });
-    if (
-      hit.joint >= 0 &&
-      hit.g.segments[hit.joint].static &&
-      !hit.g.obj._stykIK?.[hit.g.segments[hit.joint].seg.segment_id]?.enabled &&
-      state.tool !== "rig" &&
-      !state.handleEditHeld
-    ) {
-      toast("This joint follows its parent. Rotate a movable parent joint.");
-      return;
-    }
     const handleEdit = state.handleEditHeld;
     const figureTransform = e.altKey && hit.joint >= 0 && !handleEdit;
+    editor.select(hit.g.obj.unique_id, hit.joint, {
+      add: (hit.joint < 0 || figureTransform) && isSelected(hit.g.obj.unique_id),
+    });
+    if (
+      hit.action === 'select' && !figureTransform
+    ) {
+      releaseCanvasPointer();
+      return;
+    }
     if (e.button === 2) state.suppressContext = true;
     if (handleEdit) editor.beginHandleEditDrag({ bend: e.button === 2 });
     else if (figureTransform)
-      editor.beginFigureHandleDrag(p.x, p.y, { rotate: true, scale: true });
+      editor.beginFigureHandleDrag(p.x, p.y, { rotate: true, scale: true, joint: hit.joint });
     else if (hit.joint >= 0 && state.tool === "rig")
       editor.beginRigDrag({ reposition: state.rigMode !== "rotate" });
     else if (hit.joint >= 0) editor.beginDrag("Pose joint");
@@ -2609,7 +2670,7 @@ overlay.addEventListener("dblclick", guarded((event) => {
   const hit = pick(worldPoint(event));
   if (!hit || isHidden(hit.uid) || isLocked(hit.uid)) return;
   event.preventDefault();
-  if (hit.joint < 0) {
+  if (hit.joint < 0 || hit.action === 'select') {
     state.builderBranch = false;
     editor.selectConnected(hit.uid, {add: event.shiftKey, candidates: editor.selectionFrame.objects
       .filter(o => !isHidden(o.unique_id) && !isLocked(o.unique_id)).map(o => o.unique_id)});
@@ -3963,6 +4024,8 @@ overlay.addEventListener(
       editor.select(hit.g.obj.unique_id, hit.joint);
     const items = !hit ? [
       ["paste", "clipboard", "Paste", "Ctrl V"],
+      ["paste-instance", "clipboard", "Paste instance"],
+      ["paste-unique", "duplicate", "Paste unique copy"],
       ["select-all", "cursor", "Select all", "Ctrl A"],
       null,
       ["scene-settings", "frame", "Scene properties…"],
@@ -3970,10 +4033,13 @@ overlay.addEventListener(
     ] : [
       ["copy", "duplicate", "Copy", "Ctrl C"],
       ["paste", "clipboard", "Paste", "Ctrl V"],
+      ["paste-instance", "clipboard", "Paste instance"],
+      ["paste-unique", "duplicate", "Paste unique copy"],
       ["duplicate", "duplicate", "Duplicate", "Ctrl D"],
       null,
       ["mirror", "flip", "Flip horizontal", "Shift H"],
       ["mirror-vertical", "flip-vertical", "Flip vertical", "Shift V"],
+      joinMenuItem(),
       null,
       ...(hit.joint >= 0 && !editor.figure?._styk?.movieclip && selection().size <= 1 ? [["segment-values", "sliders", "Segment values…", "I"]] : []),
       ["selection-more", "sliders", "More figure actions…"],
@@ -4009,7 +4075,47 @@ const beginRigAnchorPick=key=>{
   setTool('rig');state.rigAnchorPick={key,start:s?.segment_id??0,uid:editor.selectedUid,token:editor._documentToken};
   toast(key==='driver'?'Click a Smart Stretch joint on this figure. Escape cancels.':key?'Click the new anchor on this figure. Escape cancels.':'Click the second joint to create a connector. Escape cancels.');
 };
+function pasteFigures(pasteMode = 'default') {
+  if (builderMode?.active) return toast("Finish the figure or return to Animate to paste.");
+  return sharedClipboard.paste('figures', () => {
+    finishCurrentEdit();
+    const options = {pasteMode};
+    if (editor._selectionClipboard?.freshTypes?.size) return editor.pasteSelection(options);
+    if (rangeFrames()) return editor.pasteFiguresInFrames(rangeFrames(), options);
+    return editor.pasteSelection(options);
+  });
+}
+function selectedFigureJoinAction() {
+  const action = figureJoinAction(editor);
+  return action && !builderMode?.active && !isHidden(action.uid) && !isLocked(action.uid) ? action : null;
+}
+function joinMenuItem() {
+  const action = selectedFigureJoinAction();
+  return ['join-figure', action?.kind === 'unjoin' ? 'detach' : 'link',
+    state.figureJoin ? 'Cancel joining' : action?.kind === 'unjoin' ? 'Unjoin figure' : 'Join figure…',
+    '', !action];
+}
+function toggleFigureJoin() {
+  if (state.figureJoin) {setTool('select'); return;}
+  pause(); finishCurrentEdit();
+  const action = selectedFigureJoinAction();
+  if (!action) return;
+  const indices = rangeFrames();
+  if (action.kind === 'unjoin') {
+    editor.detachFiguresInFrames(indices, {uids: [action.uid], atPlayhead: !indices});
+    status('Figure unjoined');
+    return;
+  }
+  const targets = joinTargetUids(editor.selectionFrame, action.uid);
+  for (const uid of targets) if (isHidden(uid) || isLocked(uid)) targets.delete(uid);
+  if (!targets.size) {toast('Add or unlock another figure to join to.'); return;}
+  state.figureJoin = {uid: action.uid, token: editor._documentToken, tick: editor.tick,
+    frameIndex: editor.frameIndex, revision: editor.revision, indices, targets};
+  setTool('attach');
+  viewport.focus({preventScroll: true});
+}
 const actions = {
+  'join-figure': toggleFigureJoin,
   'rig-connect':()=>beginRigAnchorPick(),
   'rig-pick-start':()=>beginRigAnchorPick('start'),
   'rig-pick-end':()=>beginRigAnchorPick('end'),
@@ -4026,8 +4132,7 @@ const actions = {
     ["select-same", "person", "Select same figure"],
     ["select-invert", "cursor", "Invert selection"],
     null,
-    ["attach-figure", "link", "Attach to joint"],
-    ["detach-figure", "detach", "Detach", "", !editor.object?.join],
+    joinMenuItem(),
     null,
     ["locate-previous", "chevron-left", "Match previous pose", "L"],
     ["locate-next", "chevron-right", "Match next pose", "Shift L"],
@@ -4210,13 +4315,8 @@ const actions = {
     showTextDialog();
   },
   "edit-text": () => showTextDialog(true),
-  "attach-figure": () => {
-    if (editor.object) setTool("attach");
-  },
-  "detach-figure": () =>
-    rangeFrames()
-      ? editor.detachFiguresInFrames(rangeFrames())
-      : editor.unjoinFigure(),
+  "attach-figure": toggleFigureJoin,
+  "detach-figure": () => {if (selectedFigureJoinAction()?.kind === 'unjoin') toggleFigureJoin();},
   "combine-figures": () => {
     const roots = editor.resolveTranslationSelection().rootUids;
     if (roots.length !== 1)
@@ -4245,6 +4345,8 @@ const actions = {
     state.polygonPage = Math.max(0, (state.polygonPage || 0) - 1);
     renderInspector();
   },
+  "palette-previous": () => { state.palettePage=Math.max(0,(state.palettePage||0)-1);renderInspector(); },
+  "palette-next": () => { state.palettePage=(state.palettePage||0)+1;renderInspector(); },
   "polygons-next": () => {
     state.polygonPage = (state.polygonPage || 0) + 1;
     renderInspector();
@@ -4331,7 +4433,7 @@ const actions = {
     rangeFrames()
       ? editor.resetPoseInFrames(rangeFrames())
       : editor.resetPose?.(),
-  "reset-color": () => updateSelection({ color_override_raw: 0 }),
+  "reset-color": () => editor.resetFigureColors({indices:rangeFrames()}),
   "selection-up": () => orderSelection(1),
   "selection-down": () => orderSelection(-1),
   "selection-front": () => orderSelection("front"),
@@ -4386,14 +4488,10 @@ const actions = {
   paste: () => {
     if (document.activeElement?.closest("#timeline"))
       return timelineUI.pasteSelection();
-    if (builderMode?.active) return toast("Finish the figure or return to Animate to paste.");
-    return sharedClipboard.paste('figures', () => {
-      finishCurrentEdit();
-      if (editor._selectionClipboard?.freshTypes?.size) return editor.pasteSelection();
-      if (rangeFrames()) return editor.pasteFiguresInFrames(rangeFrames());
-      return editor.pasteSelection();
-    });
+    return pasteFigures();
   },
+  'paste-instance': () => pasteFigures('instance'),
+  'paste-unique': () => pasteFigures('unique'),
   "select-all": () => {
     if (document.activeElement?.closest("#timeline")) timelineUI.selectAll?.();
     else
@@ -4833,13 +4931,7 @@ $("inspector").addEventListener(
       return;
     }
     if (target.id === "figure-color") {
-      const hex = target.value.slice(1),
-        r = parseInt(hex.slice(0, 2), 16),
-        g = parseInt(hex.slice(2, 4), 16),
-        b = parseInt(hex.slice(4, 6), 16);
-      updateSelection({
-        color_override_raw: (0xff000000 | (b << 16) | (g << 8) | r) >>> 0,
-      });
+      editor.setFigureColor(target.value,{indices:rangeFrames()});
     } else if (target.id === "figure-opacity")
       updateSelection({
         field28: Math.round(
@@ -5206,6 +5298,11 @@ new MutationObserver(() => { if (document.querySelector('dialog[open]')) hotkeys
   .observe(document.body, {subtree:true, attributes:true, attributeFilter:['open']});
 editor.addEventListener("change", (e) => {
   const kind = e.detail?.kind;
+  const joining = state.figureJoin;
+  if (joining && (joining.token !== editor._documentToken || joining.uid !== editor.selectedUid ||
+      joining.frameIndex !== editor.frameIndex || joining.tick !== editor.tick ||
+      joining.revision !== editor.revision || !selectedFigureJoinAction() ||
+      ['history', 'document', 'frame-draft'].includes(kind))) setTool('select');
   if (e.detail?.audio && !e.detail?.timing) {
     pause();
     for (const job of exportJobs) job.controller.abort();
@@ -6155,9 +6252,25 @@ init().catch((error) => {
 });
 
 installColorPickers((input, event) => {
+  if(input.dataset.paletteColor!==undefined){
+    const uid=editor.selectedUid,figure=editor.figure,report=editor.report,tick=editor.tick;
+    const entry=editor.figurePalette().find(entry=>entry.color===input.dataset.paletteColor);
+    if(!entry)return false;
+    return {anchor:input,paint:{type:'solid',stops:[{offset:0,color:parseColor(entry.color).color,opacity:1}]},gradients:false,alpha:false,onChange:paint=>{
+      if(editor.report!==report||editor.selectedUid!==uid||editor.figure!==figure||editor.tick!==tick)throw new Error('Selection changed. Reopen the palette.');
+      pause();editor.replaceFigureColor(entry.color,paint.stops[0].color,{targets:entry,indices:rangeFrames()});
+    }};
+  }
+  if(input.id==='figure-color'){
+    const report=editor.report,tick=editor.tick,uids=[...editor.selectedUids].join(',');let previous=input.value,previousOpacity=1-(editor.object.field28??0)/255;
+    return {anchor:input,paint:{type:'solid',stops:[{offset:0,color:parseColor(input.value).color,opacity:1-(editor.object.field28??0)/255}]},gradients:false,onChange:paint=>{
+      if(editor.report!==report||editor.tick!==tick||[...editor.selectedUids].join(',')!==uids)throw new Error('Selection changed. Reopen the color picker.');
+      const value=hexColor(paint.stops[0].color),opacity=paint.stops[0].opacity;pause();editor.setFigureColor(value===previous&&opacity!==previousOpacity?undefined:value,{indices:rangeFrames(),opacity});previous=value;previousOpacity=opacity;
+    }};
+  }
   if (input.id === 'segment-color') {
     const uid=editor.selectedUid, joint=editor.selectedJoint, figure=editor.figure;
-    return {anchor:input, paint:segmentPaint(resolveInstanceFigure(figure,editor.object).segments[joint]), onChange:paint=>{
+    return {anchor:input, paint:displayedSegmentPaint(editor.report,figure,editor.object,resolveInstanceFigure(figure,editor.object).segments[joint]), onChange:paint=>{
       if(editor.selectedUid!==uid || editor.selectedJoint!==joint || editor.figure!==figure) throw new Error('Selection changed. Reopen the color picker.');
       pause(); updateBuilderStyle({paint},event);
     }};
@@ -6169,7 +6282,7 @@ installColorPickers((input, event) => {
       else editor.importSceneBackground({...paintBackground(paint),name:paint.type+' gradient'},{indices:rangeFrames()});
     }};
   }
-  if(input.dataset.polygonColor!==undefined){const index=Number(input.dataset.polygonColor),p=resolveInstanceFigure(editor.figure,editor.object).polyfills[index];return {anchor:input,gradients:false,paint:{type:'solid',stops:[{offset:0,color:p.color_rgb,opacity:p.alpha_raw!==undefined?1-p.alpha_raw/255:p.color_alpha??1}]},onChange:paint=>editor.updatePolygon(index,{color:paint.stops[0].color,opacity:paint.stops[0].opacity})};}
+  if(input.dataset.polygonColor!==undefined){const index=Number(input.dataset.polygonColor),p=resolveInstanceFigure(editor.figure,editor.object).polyfills[index];return {anchor:input,gradients:false,paint:{type:'solid',stops:[{offset:0,color:displayedColor(editor.report,editor.figure,editor.object,p.color_rgb),opacity:p.alpha_raw!==undefined?1-p.alpha_raw/255:p.color_alpha??1}]},onChange:paint=>editor.updatePolygon(index,{color:paint.stops[0].color,opacity:paint.stops[0].opacity})};}
   const pairs = {'background-first':'background-alpha','background-second':'background-alpha-b','text-color':'text-opacity','figure-color':'figure-opacity'};
   const opacityId=pairs[input.id], opacity=opacityId && document.getElementById(opacityId);
   if(opacity) return {anchor:input,paint:{type:'solid',stops:[{offset:0,color:parseColor(input.value).color,opacity:Number(opacity.value)/100}]},gradients:false,onChange:paint=>{
@@ -6177,4 +6290,4 @@ installColorPickers((input, event) => {
     current.value=hexColor(paint.stops[0].color); current.dispatchEvent(new Event('input',{bubbles:true}));current.dispatchEvent(new Event('change',{bubbles:true}));
     const field=document.getElementById(opacityId);if(field){field.value=paint.stops[0].opacity*100;field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));}
   }};
-});
+}, {surface:()=>overlay,sample:sampleCanvasColor});

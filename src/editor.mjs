@@ -1,5 +1,6 @@
 import {remapSurface,surfaceHandles,protectSurfaceReferences} from './pivot/surfaces.mjs';
 import {editorRigConstraintMethods} from './editor-rig-constraints.mjs';
+import {editorColorMethods} from './editor-colors.mjs';
 import {editorCameraMotionMethods} from './editor-camera-motion.mjs';
 import {authoredRigTarget,hasRigConstraints} from './rig-constraints.mjs';
 import {editorTweenerMethods} from './editor-tweener.mjs';
@@ -661,7 +662,7 @@ export class Editor extends EventTarget {
     if (root) { object.root_x = root.x; object.root_y = root.y; }
     object.join = null; delete object.runtime_segments;
     this._selectionClipboard = null;
-    this._figureClipboard = {object, figure: snapshotFigureDefinition(this.figure), movieclipSamples: isMovieclip(this.figure)&&Number.isFinite(this.object._movieclipSample)?{[object.unique_id]:this.object._movieclipSample}:{}, documentToken: this._documentToken, offset: 24, pastes: 0};
+    this._figureClipboard = {object, figure: snapshotFigureDefinition(this.figure), movieclipSamples: isMovieclip(this.figure)&&Number.isFinite(this.object._movieclipSample)?{[object.unique_id]:this.object._movieclipSample}:{}, documentToken: this._documentToken, sourceVersion: this.report.version, offset: 24, pastes: 0};
     return true;
   }
   cutFigure() {
@@ -669,8 +670,8 @@ export class Editor extends EventTarget {
     if (!this.copyFigure()) return false;
     this._figureClipboard.offset = 0; return this.deleteFigure();
   }
-  pasteFigure() {
-    return this.pasteSelection().at(-1) ?? null;
+  pasteFigure(options) {
+    return this.pasteSelection(options).at(-1) ?? null;
   }
   deleteFigure() {
     return this.deleteSelection();
@@ -841,14 +842,14 @@ export class Editor extends EventTarget {
       }
       delete out.runtime_segments; return out;
     });
-    this._selectionClipboard = {objects, figures, movieclipSamples: Object.fromEntries(selected.filter(object=>figures.some(figure=>figure.figure_type_id===object.figure_type_id&&isMovieclip(figure))&&Number.isFinite(object._movieclipSample)).map(object=>[object.unique_id,object._movieclipSample])), layers: new Map(selected.map(object => [object.unique_id, this.layerForUid(object.unique_id)])), order: frameOrder(this.selectionFrame).filter(id => ids.has(id)), documentToken: this._documentToken, offset: 24, pastes: 0};
+    this._selectionClipboard = {objects, figures, movieclipSamples: Object.fromEntries(selected.filter(object=>figures.some(figure=>figure.figure_type_id===object.figure_type_id&&isMovieclip(figure))&&Number.isFinite(object._movieclipSample)).map(object=>[object.unique_id,object._movieclipSample])), layers: new Map(selected.map(object => [object.unique_id, this.layerForUid(object.unique_id)])), order: frameOrder(this.selectionFrame).filter(id => ids.has(id)), documentToken: this._documentToken, sourceVersion: this.report.version, offset: 24, pastes: 0};
     this._figureClipboard = null; return objects.length;
   }
   cutSelection() {
     const count = this.copySelection(); if (!count) return 0;
     this._selectionClipboard.offset = 0; this.deleteSelection(); return count;
   }
-  pasteSelection({newIdentities = false} = {}) {
+  pasteSelection({newIdentities = false, pasteMode = 'default'} = {}) {
     const clipboard = this._selectionClipboard ?? this._figureClipboard;
     if (!clipboard) return [];
     if (!Number.isInteger(this.tick) && (this.report._styk?.layerSheet || this.animationChannels.length || this.report._styk?.movieclipSource)) {
@@ -856,14 +857,14 @@ export class Editor extends EventTarget {
     }
     // One prepared insertion owns validation, IDs, assets and history. The
     // destination's unchanged figures and library never become paste snapshots.
-    const result = this.applyFigureRange({kind: 'paste', defaultOffset: clipboard.offset * (clipboard.pastes + 1), newIdentities},
+    const result = this.applyFigureRange({kind: 'paste', defaultOffset: clipboard.offset * (clipboard.pastes + 1), newIdentities, pasteMode},
       {atPlayhead: true, label: this._selectionClipboard ? 'Paste figures' : 'Paste figure'});
     if (result.insertedUids.length) clipboard.pastes++;
     return this.selectedObjects;
   }
   duplicateSelection() {
     const groupClipboard = this._selectionClipboard, singleClipboard = this._figureClipboard;
-    try { if (!this.copySelection()) return []; return this.pasteSelection({newIdentities: true}); }
+    try { if (!this.copySelection()) return []; return this.pasteSelection({newIdentities: true, pasteMode: 'instance'}); }
     finally { this._selectionClipboard = groupClipboard; this._figureClipboard = singleClipboard; }
   }
   _frameSplice(label, index, remove, insert) {
@@ -1612,6 +1613,7 @@ export class Editor extends EventTarget {
 }
 
 Object.assign(Editor.prototype, editorRangeMethods);
+Object.assign(Editor.prototype, editorColorMethods);
 Object.assign(Editor.prototype, editorBuilderMethods);
 Object.assign(Editor.prototype, editorCombineMethods);
 Object.assign(Editor.prototype, editorRigMethods);

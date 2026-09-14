@@ -1,8 +1,8 @@
 /** Packet metadata is private; bitmap storage may be shared across frames.
  * Identity uses SHA-256 of complete unquantized worker artwork, crop and
  * resolution; the registry's fast local hash alone never grants equality. */
-export const bitmapKey=(packet,entry)=>entry.artworkKey===undefined?entry.bitmap:`${packet.cacheEpoch ?? packet.revision}:${entry.artworkKey}`;
-export const bitmapBytes=entry=>entry.bitmap?entry.bitmap.width*entry.bitmap.height*4:0;
+export const bitmapKey=(packet,entry)=>entry.artworkKey===undefined?(entry.bitmap || entry.vectorRaster):`${packet.cacheEpoch ?? packet.revision}:${entry.artworkKey}`;
+export const bitmapBytes=entry=>{const image=entry.bitmap || entry.vectorRaster;return image?image.width*image.height*4:0;};
 export function closePacketBitmaps(packet){
   for(const bitmap of new Set((packet?.compatibility||[]).map(e=>e.bitmap).filter(Boolean)))bitmap.close();
 }

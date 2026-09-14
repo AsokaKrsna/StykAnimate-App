@@ -91,6 +91,21 @@ function textureRenderer(){
 }
 const imagePacket=(tick,artworkKey='shared')=>{const p=packet(`1:${tick}`);p.compatibility=[{artworkKey,bitmap:{width:10,height:10}}];p.groups[0].compatibilityIndex=0;return p;};
 
+test('isolated vector textures share GPU ownership and warmup cannot evict the first frame',()=>{
+  const renderer=textureRenderer(),createTexture=renderer.device.createTexture;
+  renderer.device.createTexture=spec=>Object.assign(createTexture(spec),{createView(){return {};}});
+  renderer.device.limits.maxTextureDimension2D=4096;renderer.isolationSamples=4;renderer.isolationPipeline={};renderer.format='bgra8unorm';
+  const vector=tick=>{const p=imagePacket(tick);p.compatibility=[{artworkKey:'vector:shared',vectorRaster:{data:new Float32Array(shapeRecord({})),width:10,height:10},
+    root:{x:20,y:30},bounds:{x:20,y:30,width:10,height:10},pixelScale:1}];return p;};
+  const cache=new PreparedFrameCache(renderer,{maxBytes:1024,maxFrames:10});
+  cache.prepare(vector(0),{report});assert.equal(renderer.copies.length,0);assert.equal(cache.textures.size,1);
+  assert.equal(cache.canWarm(vector(1),{report}),true);cache.prepare(vector(1),{report});
+  assert.equal(cache.textures.size,1);assert.equal(renderer.textures.length,2,'one retained raster and one released MSAA scratch');
+  assert.equal(renderer.textures[1].destroyed,true);assert.equal(cache.canWarm(vector(2),{report}),false);
+  assert.equal(cache.has('1:0'),true);cache.clear();assert.equal(cache.bytes,0);
+  assert.ok(renderer.textures.every(t=>t.destroyed));assert.ok(renderer.buffers.every(b=>b.destroyed));
+});
+
 function backgroundDescriptor(renderer, cacheKey = 'background-paint:one', bytes = 400) {
   return {cacheKey, bytes, create() {
     const texture = renderer.device.createTexture({label: cacheKey});

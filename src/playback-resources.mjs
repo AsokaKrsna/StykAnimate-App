@@ -1,7 +1,7 @@
 import { RasterSurfacePool } from "./raster-surfaces.mjs";
 import { PlaybackRasterCache } from './playback-raster-cache.mjs';
 import {PlaybackVectorCache} from './playback-vector-cache.mjs';
-import {decodePreview, fitImage, pngInfo, imageBlob} from './preview-image.mjs';
+import {decodePreview, fitImage, imageInfo, imageBlob} from './preview-image.mjs';
 import {previewMemoryPlan} from './playback-budget.mjs';
 
 export const assetURL = (a) =>
@@ -155,7 +155,7 @@ export class PlaybackResources {
     this.check();
     if (this.sources.has(url)) return this.sources.get(url);
     const blob = await imageBlob(url, this.baseURL, this.token, this.controller.signal); this.check();
-    const info = await pngInfo(blob); this.check();
+    const info = await imageInfo(blob); this.check();
     // Compressed copies are disposable too; source files remain in the document.
     while (this.sources.size && this.sourceBytes + blob.size > this.maxBytes / 2) {
       const [key, value] = this.sources.entries().next().value;
@@ -293,7 +293,7 @@ export class PlaybackResources {
             need === 'whole' ? 1 : Math.min(1,need.density))) continue;
       }
       const blob = await imageBlob(url, this.baseURL, this.token, this.controller.signal);
-      const metadata = typeof blob?.arrayBuffer === 'function' ? await pngInfo(blob) : null;
+      const metadata = typeof blob?.arrayBuffer === 'function' ? await imageInfo(blob) : null;
       this.check();
       const asset = items.find(item => item.type === 'image' && this.url(item.asset) === url)?.asset;
       const sourceWidth = metadata?.width || asset?.width || 0, sourceHeight = metadata?.height || asset?.height || 0;

@@ -3,6 +3,7 @@ import {bitmapKey,bitmapBytes} from './playback-bitmap-pool.mjs';
 import {playbackMemoryBudget} from './playback-budget.mjs';
 import {EditorRasterCache} from './renderer-raster-cache.mjs';
 import {hasSceneVfx} from './vfx-viewport.mjs';
+import {rasterizeVectorGroup} from './renderer-vector-raster.mjs';
 
 export function preparedCameraMode(packet, requested) {
   const mode = packet.cameraEnabled === undefined ? true : packet.cameraEnabled;
@@ -70,6 +71,27 @@ export class PreparedFrameCache {
     for (const key of this.frames.keys()) if (!keep.has(key)) this._remove(key);
     this.stats.retainedFrames = this.frames.size;
   }
+  /** Exact residency check for speculative uploads. This never evicts a frame
+   * or allocates GPU objects; actual admission still happens in prepare(). */
+  canWarm(packet, {report, view = {scale:1}, cameraEnabled} = {}) {
+    if(this.has(packet.key))return true;
+    if(this.report!==report||this.generation!==this.renderer.generation||this.frames.size>=this.maxFrames)return false;
+    if(!this.renderer.backgroundsReady(report,packet.frame))return false;
+    cameraEnabled=preparedCameraMode(packet,cameraEnabled);
+    const backgrounds=this.renderer.background({report,frame:packet.frame,view,cameraEnabled},descriptor=>descriptor);
+    let bytes=Math.max(SHAPE_BYTES,packet.shapes.byteLength+backgrounds.reduce((n,b)=>n+b.data.byteLength,0))+packet.transforms.byteLength;
+    const seen=new Set();
+    for(const b of backgrounds)if(b.texture&&!seen.has(b.texture.cacheKey)){
+      seen.add(b.texture.cacheKey);if(!this.textures.has(b.texture.cacheKey))bytes+=b.texture.bytes;
+    }
+    for(const entry of packet.compatibility||[]){
+      // Legacy fallback dimensions are unknown until Canvas rasterization.
+      if(!entry.bitmap&&!entry.vectorRaster)return false;
+      const key=bitmapKey(packet,entry);
+      if(!seen.has(key)){seen.add(key);if(!this.textures.has(key))bytes+=bitmapBytes(entry);}
+    }
+    return this.bytes+bytes<=this.maxBytes;
+  }
   prepare(packet, { report, view = { scale: 1 }, cameraEnabled } = {}) {
     const start = performance.now(), renderer = this.renderer, device = renderer.device, key = String(packet.key);
     cameraEnabled = preparedCameraMode(packet, cameraEnabled);
@@ -90,7 +112,7 @@ export class PreparedFrameCache {
     const backgroundBytes = [...backgroundTextures.values()].reduce((sum, entry) => sum + entry.bytes, 0);
     const backgroundCountEstimate = backgrounds.reduce((sum, entry) => sum + entry.data.length / SHAPE_FLOATS, 0);
     const shapeBytesEstimate = Math.max(SHAPE_BYTES, packet.shapes.byteLength + backgroundCountEstimate * SHAPE_BYTES);
-    const textureBytesEstimate = (packet.compatibility || []).reduce((sum, entry) => sum + (entry.bitmap ? entry.bitmap.width * entry.bitmap.height * 4 : 0), 0);
+    const textureBytesEstimate = (packet.compatibility || []).reduce((sum, entry) => sum + bitmapBytes(entry), 0);
     const reservedBytes = shapeBytesEstimate + packet.transforms.byteLength + textureBytesEstimate + backgroundBytes;
     if (reservedBytes > this.maxBytes || this.maxFrames < 1) throw new Error(`Prepared frame exceeds the ${Math.round(this.maxBytes / 1024 / 1024)} MB GPU cache budget.`);
     if (shapeBytesEstimate > device.limits.maxStorageBufferBindingSize || packet.transforms.byteLength > device.limits.maxStorageBufferBindingSize) throw new Error('Prepared frame exceeds this GPU’s storage-buffer limit.');
@@ -114,17 +136,20 @@ export class PreparedFrameCache {
       }
       for (const entry of backgrounds) if (entry.texture) entry.texture = this.textures.get(entry.texture.cacheKey);
       for (const [i, compatibility] of (packet.compatibility || []).entries()) {
-        if (compatibility.bitmap) {
-          const source = compatibility.bitmap;
+        if (compatibility.bitmap || compatibility.vectorRaster) {
+          const source = compatibility.bitmap || compatibility.vectorRaster;
           const resourceKey=bitmapKey(packet,compatibility);
           let resource=this.textures.get(resourceKey);
           if(!resource){
             if (!source.width || !source.height) throw new Error('Prepared-frame image was released before GPU upload.');
+            if (compatibility.vectorRaster) resource = {...rasterizeVectorGroup(renderer, {...compatibility, ...source}), key: resourceKey, refs: 0};
+            else {
             const texture = device.createTexture({ label: `Prepared ${key} object ${compatibility.uid}`, size: [source.width, source.height], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
             try{
               device.queue.copyExternalImageToTexture({ source }, { texture, premultipliedAlpha: true }, [source.width, source.height]);
               resource = { key:resourceKey,refs:0,width:source.width,height:source.height,texture, bindGroup: renderer.textureBindGroup(texture), bytes: source.width * source.height * 4 };
             }catch(error){texture.destroy();throw error;}
+            }
             this.textures.set(resourceKey,resource);this.bytes+=resource.bytes;this.stats.textureUploads++;
           }else{
             if(source.width&&(resource.width!==source.width||resource.height!==source.height))throw new Error('Shared GPU artwork has inconsistent dimensions.');

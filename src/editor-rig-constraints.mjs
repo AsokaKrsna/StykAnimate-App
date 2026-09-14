@@ -38,7 +38,12 @@ export const editorRigConstraintMethods = {
   enableSmartStretch(enabled) {
     if(!enabled)return this.setRigBehavior({stretch:null});
     const figure=this.figure,index=this.selectedJoint,seg=figure?.segments[index];if(!seg)return false;
-    const r={...seg._stykRig,stretch:{restLength:Math.max(.0001,seg._stykRig?.connector?.restLength??seg.length),min:0,max:10,width:'keep',...seg._stykRig?.stretch,branch:true}};
+    const shape=this.geometry.objects.get(this.selectedSlot)?.segments[index];
+    const scale=Math.max(1e-8,Math.abs(this.object.scale??1));
+    const currentLength=shape?(seg._stykRig?.connector?
+      Math.hypot(shape.end.x-shape.start.x,shape.end.y-shape.start.y):Math.abs(shape.length))/scale:
+      seg._stykRig?.connector?.restLength??Math.abs(seg.length);
+    const r={...seg._stykRig,stretch:{restLength:Math.max(.0001,currentLength),min:0,max:10,width:'keep',...seg._stykRig?.stretch,branch:true}};
     const changes=new Map([[index,r]]),children=new Map();
     figure.segments.forEach((s,i)=>{const list=children.get(s.parent_id)??[];list.push(i);children.set(s.parent_id,list);});
     const queue=[index];

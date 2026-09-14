@@ -10,6 +10,7 @@ export const nativeSegmentOpacity = segment => segment.transparency === undefine
 
 /** Validate the small persisted overlay without inspecting shared assets. */
 export function validateAnimationStyle(object) {
+  if (object?._styk?.colorMode !== undefined && object._styk.colorMode !== 'segments') throw new Error('Invalid instance color mode.');
   const style = object?._stykStyle; if (style === undefined) return object;
   const record = value => value && typeof value === 'object' && !Array.isArray(value);
   const opacity = value => { if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) throw new Error('Instance style opacity must be between zero and one.'); };
@@ -101,10 +102,13 @@ export function setAnimationStyle(object, target, property, value) {
  * No retained cache means ordinary in-place native type edits remain visible.
  */
 export function resolveInstanceFigure(figure, object) {
-  const style = object?._stykStyle;
-  if (!figure || !style) return figure;
+  const style = object?._stykStyle ?? {};
+  if (!figure || !object?._stykStyle && object?._styk?.colorMode !== 'segments') return figure;
   let result = figure;
   const copy = () => { if (result === figure) result = {...figure}; };
+  if(object?._styk?.colorMode === 'segments' && figure._styk?.colorMode !== 'segments'){
+    copy();result._styk={...figure._styk,colorMode:'segments'};
+  }
   if (Number.isFinite(style.outlineOpacity)) {
     const u30 = alphaByte(style.outlineOpacity);
     if (u30 !== Number(figure.segment_decode?.global_style?.u30 ?? 0)) {

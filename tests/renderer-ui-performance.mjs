@@ -10,7 +10,17 @@ const errors = [];
 const quantiles = values => { const sorted = [...values].sort((a, b) => a - b); return { count: sorted.length, p50: sorted[Math.floor(sorted.length * .5)] ?? 0, p95: sorted[Math.floor(sorted.length * .95)] ?? 0, max: sorted.at(-1) ?? 0 }; };
 try {
   const page = await app.firstWindow(); page.on('pageerror', error => errors.push(error.message));
+  await app.evaluate(({BrowserWindow}) => {
+    const window=BrowserWindow.getAllWindows()[0];window.webContents.setBackgroundThrottling(false);
+    window.setIgnoreMouseEvents(true);window.setFocusable(false);window.showInactive();
+  });
   await page.waitForFunction(() => window.styk?.ready === true, { timeout: 25000 });
+  // Resolve first-run consent in this isolated benchmark profile before input
+  // timing; closing the welcome dialog can schedule the consent dialog later.
+  await page.evaluate(()=>stykDesktop.setTelemetryConsent({analytics:false,diagnostics:false}));
+  await page.reload();
+  await page.waitForFunction(()=>styk?.ready);
+  await page.evaluate(()=>{for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();});
   const target = await page.evaluate(async fps => {
     const { defaultFigure, createObject, createFrame, emptyDocument } = await import('/src/demo.mjs');
     const { worldToScreen } = await import('/src/renderer.mjs');
@@ -50,7 +60,19 @@ try {
   }, fps);
   await page.waitForFunction(() => !styk.state.editablePreparing && !styk.state.dirtyRender);
   await page.evaluate(() => {for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();});
+  // Loading and fitting can resize the workspace while initial preparation
+  // finishes. Locate the handle only after the final view has been published.
+  Object.assign(target,await page.evaluate(async()=>{
+    const {worldToScreen}=await import('/src/renderer.mjs'),{editor,state}=styk;
+    const rect=document.getElementById('overlay').getBoundingClientRect();
+    const point=worldToScreen(editor.geometry.objects.get(editor.selectedSlot).root,{report:editor.report,frame:editor.frame,view:state.view,cameraEnabled:false});
+    return {x:rect.left+point.x,y:rect.top+point.y,scale:state.view.scale};
+  }));
   await page.mouse.move(target.x, target.y); await page.mouse.down();
+  if(!await page.evaluate(()=>styk.state.drag?.kind==='move')){
+    await page.screenshot({path:path.join(output,'renderer-ui-target-failure.png')});
+    throw new Error(`Root target did not start translation: ${JSON.stringify(await page.evaluate(()=>({drag:styk.state.drag?.kind,selection:styk.editor.selectedSlot,view:styk.state.view})))}`);
+  }
   await page.waitForFunction(() => window.styk.state.drag?.kind === 'move');
   const afterDown = await page.evaluate(() => window.__uiBench.drag.length);
   for (let step = 1; step <= 60; step++) {
@@ -81,4 +103,4 @@ try {
   if (metrics.errors.length) throw new Error(metrics.errors.join('\n'));
   if (!metrics.drag.allGeometryReferencesStable || metrics.drag.totalGeometryUploadBytes !== 0) throw new Error('A translation gesture rebuilt or uploaded scene geometry.');
   if (Math.abs(metrics.drag.finalWorldDelta.x - metrics.drag.expectedWorldDelta.x) > .01 || Math.abs(metrics.drag.finalWorldDelta.y - metrics.drag.expectedWorldDelta.y) > .01) throw new Error('Pointer release did not commit the GPU translation delta.');
-} finally { await app.close(); }
+} finally { await app.evaluate(({app}) => app.exit(0)).catch(() => {}); }

@@ -26,7 +26,7 @@ try {
   assert.deepEqual(await page.evaluate(()=>[...styk.editor.selectedUids]),[101,707]);
   assert.equal(await page.evaluate(()=>styk.editor.canUndo),false);
   await page.keyboard.press('Control+c'); await page.keyboard.press('Control+v');
-  assert.equal(await page.evaluate(()=>styk.editor.frame.objects.length),5);
+  assert.equal(await page.evaluate(()=>styk.editor.selectionFrame.objects.length),5);
   assert.equal(await page.evaluate(()=>{const objects=styk.editor.selectedObjects;return objects[1].join.target_unique_id===objects[0].unique_id}),true);
   await page.keyboard.press('Control+z');
   p=await point(2); await page.mouse.dblclick(p.x,p.y);

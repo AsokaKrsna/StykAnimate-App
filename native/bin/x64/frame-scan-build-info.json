@@ -9,7 +9,7 @@
   },
   "library": {
     "path": "native/bin/x64/styk-piv-frame-scan.dll",
-    "sha256": "093c90a57da5a7b0e8558951540078d2eeddd81c9554ecac532426fbae568956",
+    "sha256": "fc663060c4c189033344c4677d9194de2e470bedbfbb1141965aca74d17dfbdf",
     "bytes": 134656
   },
   "toolchain": {

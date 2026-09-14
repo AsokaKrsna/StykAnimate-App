@@ -1,9 +1,7 @@
-.ik-settings {margin-top:12px;font-size:11px;color:var(--theme-text, #333)}
-.ik-switches {display:flex;align-items:center;gap:14px;min-height:24px}
-.ik-check {display:inline-flex;align-items:center;gap:5px;white-space:nowrap;cursor:pointer}
-.ik-check input {appearance:none;flex:none;width:12px;height:12px;margin:0;border:1px solid var(--theme-border, #a6a6a6);border-radius:3px;background:var(--theme-panel, #fff);cursor:pointer}
-.ik-check input:checked {border-color:var(--theme-accent, #0d99ff);background:var(--theme-action, #0d99ff)}
-.ik-check input:checked::after {content:'';display:block;width:5px;height:3px;margin:2px 0 0 2px;border:solid #fff;border-width:0 0 1.5px 1.5px;transform:rotate(-45deg)}
+.ik-settings {font-size:11px;color:var(--theme-text, #333)}
+#inspector .ik-settings > .property-toggle {min-height:24px;padding:0;border:0;background:none;font-size:12px;font-weight:600;color:var(--theme-text, #292929)}
+.ik-options {margin-top:12px;padding-left:10px;border-left:2px solid var(--theme-border, #e6e6e6)}
+.ik-options[hidden] {display:none}
 .ik-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
 #inspector .ik-grid .field {display:flex;align-items:center;gap:6px}
 #inspector .ik-grid .field>span {flex:none;font-size:11px}
@@ -18,4 +16,4 @@
 .ik-segments span {display:flex;align-items:center;justify-content:center;height:24px;padding:0 5px;border-radius:3px;color:var(--theme-muted, #737373)}
 .ik-segments input:checked+span {background:var(--theme-panel, #fff);color:var(--theme-text, #262626);box-shadow:0 1px 3px var(--theme-shadow, #00000014)}
 .ik-segments label:hover span {color:var(--theme-text, #262626)}
-.ik-check input:focus-visible,.ik-segments input:focus-visible+span {outline:2px solid var(--theme-accent, #0d99ff);outline-offset:2px}
+.ik-segments input:focus-visible+span {outline:2px solid var(--theme-accent, #0d99ff);outline-offset:2px}

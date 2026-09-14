@@ -74,7 +74,7 @@ test('single and range paste remap changed handles and detach a copied join whos
     e.report.keyframes=[createFrame([])];e.load(e.report);
     // Retain same-document semantics for the copied definition snapshot.
     e._selectionClipboard.documentToken=e._documentToken;
-    if(range)e.pasteFiguresInFrames([0]);else e.pasteSelection();
+    if(range)e.pasteFiguresInFrames([0],{pasteMode:'instance'});else e.pasteSelection({pasteMode:'instance'});
     for(const object of e.selectedObjects){assert.equal(object.join,null);assert.equal(object.angles.length,figure.segments.length);}
     validateScene(e.report);
   }
@@ -127,4 +127,27 @@ for(const mode of ['native','sheet'])test(`${mode}: paste, undo and redo reuse u
     assert.strictEqual(actual.objects.get(0),original.objects.get(0));
     assert.deepEqual(signature(actual),signature(buildGeometry(e.report,e.evaluatedFrame)));
   }
+});
+
+for(const mode of ['native','authored','sheet'])test(`${mode}: default figure paste isolates builder edits, instance paste shares them`,()=>{
+  const e=fixture(mode,{parts:1});e.copySelection();
+  const original=e.object.figure_type_id,before=poses(e),beforeFigures=structuredClone(e.report.figure_types);
+  e.pasteSelection();const unique=e.object.figure_type_id;
+  assert.notEqual(unique,original);const after=e.serialize();
+  e.undo();assert.deepEqual(poses(e),before);assert.deepEqual(e.report.figure_types,beforeFigures);e.redo();assert.deepEqual(e.serialize(),after);
+  e.select(e.selectedUid,0);e.updateSegment({thickness:37});
+  assert.notEqual(e.report.figure_types.find(f=>f.figure_type_id===original).segments[0].thickness,37);
+  e.pasteSelection();assert.notEqual(e.object.figure_type_id,unique);
+  e.pasteSelection({pasteMode:'instance'});assert.equal(e.object.figure_type_id,original);
+  e.select(e.selectedUid,0);e.updateSegment({thickness:41});
+  assert.equal(e.report.figure_types.find(f=>f.figure_type_id===original).segments[0].thickness,41);
+  validateScene(e.report);
+});
+
+test('range paste allocates one independent definition per copied type for the whole range',()=>{
+  const e=fixture('native',{parts:1});e.copySelection();const original=e.object.figure_type_id;
+  const before=e.serialize();e.pasteFiguresInFrames([1,2,3]);const after=e.serialize();
+  const uid=e.selectedUid,types=[1,2,3].map(i=>e.report.keyframes[i].objects.find(o=>o.unique_id===uid).figure_type_id);
+  assert.equal(new Set(types).size,1);assert.notEqual(types[0],original);
+  assert.equal(e.report.figure_types.length,2);e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.deepEqual(e.serialize(),after);
 });

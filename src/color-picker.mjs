@@ -1,4 +1,5 @@
 import {clamp, hexColor, parseColor, normalizePaint, paintCSS, samplePaint, canvasPaint} from './paint.mjs';
+import {createColorMagnifier} from './color-picker-magnifier.mjs';
 
 function hsv(rgb) {
   const [r,g,b] = rgb.map(v => v / 255), max = Math.max(r,g,b), min = Math.min(r,g,b), d = max-min;
@@ -9,9 +10,14 @@ function rgb(h,s,v) {
   return [f(5),f(3),f(1)];
 }
 let active;
+let canvasSampler;
 export function openColorPicker({anchor, paint, gradients = true, alpha = true, onChange}) {
   active?.();
   let dragCleanup;
+  const lifetime = new AbortController(), surface = canvasSampler?.surface();
+  const magnifier=surface && createColorMagnifier({anchor,signal:lifetime.signal,sample:canvasSampler.sample});
+  let sampling = false, samplePointer = null;
+  surface?.classList.add('paint-eyedropper');
   let draft = normalizePaint(paint), selected = 0, savedGradient, hue = hsv(draft.stops[0].color)[0];
   const panel = document.createElement('div'); panel.className='paint-picker'; panel.setAttribute('role','dialog'); panel.setAttribute('aria-label','Color picker'); panel.setAttribute('popover','manual');
   panel.innerHTML = `<header><strong>Fill</strong><button type="button" data-close aria-label="Close color picker">×</button></header>
@@ -23,11 +29,41 @@ export function openColorPicker({anchor, paint, gradients = true, alpha = true, 
   (anchor.closest('dialog') || document.body).append(panel); panel.showPopover();
   const $ = s => panel.querySelector(s), stop = () => draft.stops[selected];
   const rect=anchor.getBoundingClientRect(); panel.style.left=Math.max(8,Math.min(rect.left-292,innerWidth-300))+'px'; panel.style.top=Math.max(8,Math.min(rect.top,innerHeight-panel.offsetHeight-8))+'px';
-  const close = () => {dragCleanup?.();panel.remove(); document.removeEventListener('pointerdown',outside,true); document.removeEventListener('keydown',key,true); if(anchor.isConnected)anchor.focus(); if(active===close)active=null;}; active=close;
-  const outside=e=>{if(!panel.contains(e.target)&&e.target!==anchor)close();};
+  const close = () => {lifetime.abort();surface?.classList.remove('paint-eyedropper');dragCleanup?.();panel.remove(); document.removeEventListener('pointerdown',outside,true); document.removeEventListener('keydown',key,true); if(anchor.isConnected)anchor.focus(); if(active===close)active=null;}; active=close;
+  const onCanvas=e=>surface && (e.target===surface || surface.contains(e.target));
+  const consume=e=>{e.preventDefault();e.stopImmediatePropagation();};
+  const outside=e=>{
+    if(onCanvas(e) && !dragCleanup){
+      consume(e);
+      if(e.button!==0 || sampling)return;
+      magnifier?.hide();
+      samplePointer=e.pointerId;
+      sampling=true;
+      const selectedStop=stop();
+      Promise.resolve().then(()=>canvasSampler.sample(e.clientX,e.clientY,lifetime.signal)).then(color=>{
+        if(lifetime.signal.aborted)return;
+        selectedStop.color=color;
+        hue=hsv(stop().color)[0];draw();commit();
+      }).catch(error=>{if(!lifetime.signal.aborted)$('.paint-error').textContent=error.message;}).finally(()=>{sampling=false;});
+      return;
+    }
+    if(!panel.contains(e.target)&&e.target!==anchor)close();
+  };
   const key=e=>{if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();close();}else if(panel.contains(e.target)){if(e.key==='Tab'){const items=[...panel.querySelectorAll('button,input,select,[tabindex]')].filter(n=>!n.disabled&&n.getClientRects().length);const i=items.indexOf(document.activeElement);if(e.shiftKey&&i===0){e.preventDefault();items.at(-1).focus();}else if(!e.shiftKey&&i===items.length-1){e.preventDefault();items[0].focus();}} }};
   panel.addEventListener('keydown',e=>e.stopPropagation());
   document.addEventListener('pointerdown',outside,true);document.addEventListener('keydown',key,true);
+  for(const type of ['pointermove','pointerup','click','dblclick','contextmenu','pointercancel']){
+    document.addEventListener(type,e=>{
+      if(type==='pointermove'){
+        if(onCanvas(e) && !dragCleanup && !sampling)magnifier?.move(e);else magnifier?.hide();
+      }
+      if(dragCleanup)return;
+      if(onCanvas(e) || (samplePointer!==null && e.pointerId===samplePointer))consume(e);
+      if(type==='click'||type==='pointercancel')samplePointer=null;
+    },{capture:true,signal:lifetime.signal});
+  }
+  surface?.addEventListener('pointerleave',()=>magnifier?.hide(),{signal:lifetime.signal});
+  window.addEventListener('blur',()=>magnifier?.hide(),{signal:lifetime.signal});
   const commit=()=>{try{onChange(normalizePaint(draft));$('.paint-error').textContent='';}catch(e){$('.paint-error').textContent=e.message;}};
   function draw() {
     const s=stop(), [,,v]=hsv(s.color), saturation=hsv(s.color)[1], gradient=draft.type!=='solid';
@@ -71,7 +107,8 @@ export function openColorPicker({anchor, paint, gradients = true, alpha = true, 
 }
 
 /** Retain existing input/change bindings while replacing platform color dialogs. */
-export function installColorPickers(resolve) {
+export function installColorPickers(resolve, sampler) {
+  canvasSampler=sampler;
   document.addEventListener('click',e=>{
     const input=e.target.closest('input[type="color"], [data-paint-picker]');if(!input||input.disabled)return;
     e.preventDefault();e.stopImmediatePropagation();const custom=input.paintPicker?.(e) ?? resolve?.(input,e);if(custom===false)return;
