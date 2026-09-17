@@ -600,7 +600,7 @@ export class SupportCenter {
       const usage = el('progress'); usage.max = data.limits.storageBytes || 1; usage.value = data.capacity.file_bytes; usage.setAttribute('aria-label', 'Attachment storage used');
       summary.append(headline, usage); if (data.capacity.paused) summary.append(el('span', 'Intake paused', 'sc-capacity-paused')); box.append(summary);
       const grid = el('div', null, 'sc-capacity-grid');
-      for (const [name, value, maximum, format] of [['Files reserved', data.capacity.file_bytes, data.limits.storageBytes, formatBytes], ['Reports', data.capacity.thread_count, data.limits.threads, String], ['Requests today', data.budget?.requests || 0, data.limits.dailyRequests, String], ['Writes today', data.budget?.writes || 0, data.limits.dailyWrites, String]]) {
+      for (const [name, value, maximum, format] of [['Files reserved', data.capacity.file_bytes, data.limits.storageBytes, formatBytes], ['Reports', data.capacity.thread_count, data.limits.threads, String], ['Creator requests today', data.budget?.requests || 0, data.limits.dailyRequests, String], ['Creator writes today', data.budget?.writes || 0, data.limits.dailyWrites, String]]) {
         const item = el('div'); item.append(el('span', name, 'sc-small'), el('strong', `${format(value)} / ${format(maximum)}`)); const bar = el('progress'); bar.max = maximum || 1; bar.value = value; bar.setAttribute('aria-label', name); item.append(bar); grid.append(item);
       }
       box.append(grid);

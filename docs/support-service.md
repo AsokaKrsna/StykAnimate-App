@@ -115,12 +115,18 @@ allowances reject traffic. Do not upgrade the plan to make support requests succ
 | Estimated stored support text and record overhead | 24 MiB |
 | Daily admitted support requests | 3,000 |
 | Daily reserved reads / writes | 750,000 / 16,000 |
-| Daily live connections / automatic requests | 500 / 1,000 globally; 40 / 200 per inbox or administrator |
+| Daily live connections / automatic requests | 500 / 1,000 globally; 40 / 200 per inbox |
 | Daily R2 upload / download attempts | 100 / 600 |
 | Per creator per day | 180 requests / 5 report attempts |
 | Per daily salted IP per day | 600 requests / 15 report attempts |
 | Edge throttles | 40 support requests/minute per inbox; existing 120/minute IP edge limit |
 | Retention | Conversations: 90 days from creation; attachments: 30 days or earlier thread expiry |
+
+Signed-in moderation (`/api/v1/admin/support/`) is never charged to or blocked by the
+daily ledger or the per-actor buckets: anonymous traffic cannot lock the administrator
+out, and moderation browsing does not consume the public allowance. Admin requests
+remain bounded by the edge throttles, the shared global live budget, and the same
+per-query result bounds.
 
 `SUPPORT_STORAGE_BYTES`, `SUPPORT_DAILY_REQUESTS` and `SUPPORT_DAILY_WRITES` may lower
 their ceilings, including to zero; values above the source ceilings cannot raise them.
