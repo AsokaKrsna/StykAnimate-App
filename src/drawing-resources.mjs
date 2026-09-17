@@ -40,8 +40,10 @@ class DrawingWorker {
  * lazily so this stays safe in non-DOM contexts. */
 export class StrokeWorker {
   open(){if(!this.worker){this.worker=new Worker(new URL('./drawing-stroke-worker.mjs',import.meta.url),{type:'module',name:'StykAnimate drawing stroke'});this.worker.onmessage=({data})=>this.onmessage?.(data);this.worker.onerror=event=>{event.preventDefault();this.onerror?.(new Error(event.message||'Drawing stroke worker stopped.'));};this.worker.onmessageerror=()=>this.onerror?.(new Error('Stroke pixels could not be transferred.'));}}
-  post(message,transfer){this.open();this.worker.postMessage(message,transfer??[]);}
+  post(message,transfer){if(this.closed)return;this.open();this.worker.postMessage(message,transfer??[]);}
+  // dispose() stays respawnable for crash recovery; close() is permanent.
   dispose(){this.worker?.terminate();this.worker=null;}
+  close(){this.closed=true;this.dispose();}
 }
 
 const sideBytes=s=>s==null?0:s.byteLength===4?TILE_BYTES:s.byteLength;
@@ -52,13 +54,17 @@ const tilePayload=(store,rect)=>{const tiles=[];for(const [tx,ty] of TileStore.t
  * preview PNG on data_url keep legacy asset consumers working. */
 export class DrawingResources {
   constructor(report,{tileBytes=192*1024*1024,levelBytes=64*1024*1024,scratchBytes=64*1024*1024,onChange=()=>{},onError=()=>{},worker,strokeWorker}={}) {
-    Object.assign(this,{report,tileBudget:tileBytes,levelBudget:levelBytes,scratchBudget:scratchBytes,onChange,onError,entries:new Map(),worker:worker??new DrawingWorker(),decodeWorker:worker??new DrawingWorker(),strokeWorker:strokeWorker??new StrokeWorker(),generation:1,surfaceVersion:0,decodeQueue:[],thumbnailQueue:new Map(),thumbnailCache:new Map(),thumbnailWorker:worker??new DrawingWorker()});owners.set(report,this);
+    Object.assign(this,{report,tileBudget:tileBytes,levelBudget:levelBytes,scratchBudget:scratchBytes,onChange,onError,entries:new Map(),worker:worker??new DrawingWorker(),decodeWorker:worker??new DrawingWorker(),strokeWorker:strokeWorker??new StrokeWorker(),generation:1,surfaceVersion:0,decodeQueue:[],thumbnailQueue:new Map(),thumbnailCache:new Map(),thumbnailWorker:worker??new DrawingWorker(),decodes:0,lastEncode:null});owners.set(report,this);
   }
+  /** While a stroke session or scrub owns the UI thread, the publication
+   * debounce and the thumbnail pump wait; clearing busy re-arms both. */
+  set busy(value){value=Boolean(value);if(this._busy===value)return;this._busy=value;if(!value){this.schedule();this.pumpThumbnail();}}
+  get busy(){return Boolean(this._busy);}
   entry(figure) {
     const d=drawingMetadata(figure);let entry=this.entries.get(d.celId);
     if(!entry){entry={id:d.celId,store:null,revision:d.revision,published:null,loading:null,pinned:false,used:performance.now(),stamp:0,dirty:null,deferred:[],levels:null,levelsUsed:0,owner:this};this.entries.set(d.celId,entry);}return entry;
   }
-  get stats(){let tiles=0,bytes=0,levelBytes=0,scratchBytes=0,unpublished=0;for(const e of this.entries.values()){if(e.store){tiles+=e.store.size;bytes+=e.store.bytes;}for(const level of e.levels??[])levelBytes+=level?.bytes??0;if(e._scratch?.canvas)scratchBytes+=e._scratch.canvas.width*e._scratch.canvas.height*4;if((e.store||e.deferred?.length)&&e.published?.revision!==e.revision)unpublished++;}return {tiles,bytes,levelBytes,scratchBytes,entries:this.entries.size,unpublished,inFlight:this.encoding?1:0};}
+  get stats(){let tiles=0,bytes=0,levelBytes=0,scratchBytes=0,unpublished=0;for(const e of this.entries.values()){if(e.store){tiles+=e.store.size;bytes+=e.store.bytes;}for(const level of e.levels??[])levelBytes+=level?.bytes??0;if(e._scratch?.canvas)scratchBytes+=e._scratch.canvas.width*e._scratch.canvas.height*4;if((e.store||e.deferred?.length)&&e.published?.revision!==e.revision)unpublished++;}return {tiles,bytes,levelBytes,scratchBytes,entries:this.entries.size,unpublished,inFlight:this.encoding?1:0,workers:[this.worker,this.decodeWorker,this.thumbnailWorker,this.strokeWorker].filter(w=>w.worker).length,decodes:this.decodes,lastEncode:this.lastEncode};}
   dropScratch(e){if(!e._scratch)return;if(e._scratch.canvas)e._scratch.canvas.width=e._scratch.canvas.height=1;e._scratch=null;}
   /** Rebuildable presenter scratch canvases yield to newer work first. */
   scratchReserved(entry){let bytes=this.stats.scratchBytes;for(const e of [...this.entries.values()].sort((a,b)=>a.used-b.used)){if(bytes<=this.scratchBudget)break;if(e===entry||!e._scratch?.canvas)continue;bytes-=e._scratch.canvas.width*e._scratch.canvas.height*4;this.dropScratch(e);}}
@@ -87,6 +93,7 @@ export class DrawingResources {
   }
   discard(figure){const id=drawingMetadata(figure)?.celId,e=this.entries.get(id);if(!e||this.report.figure_types.some(f=>drawingMetadata(f)?.celId===id))return;this.entries.delete(id);this.surfaceVersion++;this.onChange();}
   async surface(figure) {
+    if(this.disposed)throw new DOMException('Drawing document closed.','AbortError');
     const e=this.entry(figure);e.used=performance.now();
     if(e.store)return e;
     if(e.loading)return e.loading;
@@ -104,16 +111,18 @@ export class DrawingResources {
   }
   decode(e,request){
     return new Promise((resolve,reject)=>{
+      if(this.disposed){reject(new DOMException('Drawing document closed.','AbortError'));return;}
       if(this.decodeQueue.length>=2)this.decodeQueue.shift().reject(new DOMException('A newer drawing was requested.','AbortError'));
       this.decodeQueue.push({e,request,resolve,reject});this.pumpDecode();
     });
   }
   pumpDecode(){
     if(this.decoding||this.disposed||!this.decodeQueue.length)return;
-    const job=this.decodeQueue.shift();this.decoding=true;
+    const job=this.decodeQueue.shift();this.decoding=true;this.decodes++;job.e.decodes=(job.e.decodes??0)+1;
     job.request().then(job.resolve,job.reject).finally(()=>{this.decoding=false;this.pumpDecode();});
   }
   thumbnail(figure,onReady){
+    if(this.disposed)return null;
     const d=drawingMetadata(figure),e=this.entries.get(d.celId),version=e?.revision??d.revision,hit=this.thumbnailCache.get(d.celId);
     if(hit?.version===version)return hit.canvas;
     if(!this.thumbnailQueue.has(d.celId)&&this.thumbnailActive!==d.celId){
@@ -123,11 +132,17 @@ export class DrawingResources {
     return hit?.canvas;
   }
   pumpThumbnail(){
-    if(this.thumbnailActive||this.disposed||!this.thumbnailQueue.size)return;
+    if(this.thumbnailActive||this.disposed||this._busy||!this.thumbnailQueue.size)return;
     const [id,job]=this.thumbnailQueue.entries().next().value;this.thumbnailQueue.delete(id);this.thumbnailActive=id;
     const d=drawingMetadata(job.figure),e=this.entries.get(id),asset=job.figure.image_assets[0];
-    const payload=e?.store?{bounds:e.store.bounds,tiles:e.store.bounds?tilePayload(e.store,e.store.bounds):[]}
-      :d.version===1?{legacy:{url:asset.data_url,crop:d.crop}}:asset.styk_tiles?{url:asset.styk_tiles}:{bounds:null,tiles:[]};
+    // Resident stores rasterize from the smallest mip still spanning ~64 px;
+    // blob/legacy payloads mip inside the worker after decoding.
+    let payload;
+    if(e?.store){
+      const bounds=e.store.bounds,k=bounds?Math.max(0,Math.min(4,Math.floor(Math.log2(Math.max(bounds.width,bounds.height)/64)))):0;
+      const level=k?levelStore(e,k):e.store,levelBounds=level.bounds;
+      payload={bounds:levelBounds,tiles:levelBounds?tilePayload(level,levelBounds):[]};
+    }else payload=d.version===1?{legacy:{url:asset.data_url,crop:d.crop}}:asset.styk_tiles?{url:asset.styk_tiles}:{bounds:null,tiles:[]};
     const transfers=payload.tiles?.map(t=>t.pixels)??[];
     this.thumbnailWorker.request('thumbnail',payload,{transfer:transfers}).then(result=>{
       if(this.disposed)return;const c=document.createElement('canvas');c.width=result.width;c.height=result.height;c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(result.pixels),c.width,c.height),0,0);
@@ -137,7 +152,7 @@ export class DrawingResources {
   /** The renderer-facing presenter: the live store plus scratch and mip
    * rasterizers. Levels are entry-owned caches rebuilt lazily and evicted
    * first under memory pressure. */
-  presenter(figure){const e=this.entry(figure);e.used=performance.now();e.scratch??=(rect,options)=>presenterScratch(e,rect,options);e.level??=k=>{e.levelsUsed=performance.now();return levelStore(e,k);};return e;}
+  presenter(figure){const e=this.entry(figure);e.used=performance.now();e.scratch??=(rect,options)=>presenterScratch(e,rect,options);e.level??=k=>{e.levelsUsed=performance.now();return levelStore(e,k);};if(!e.store&&!e.loading)this.schedule();return e;}
   present(e,dirty) {
     const rect=dirty?{x:dirty.x,y:dirty.y,width:(dirty.right??dirty.x+dirty.width)-dirty.x,height:(dirty.bottom??dirty.y+dirty.height)-dirty.y}:null;
     invalidateLevels(e,rect);
@@ -179,7 +194,7 @@ export class DrawingResources {
     else if(source.loading)target.loading=source.loading.then(entry=>{if(!target.store)target.store=entry.store?.fork()??null;return target;});
     this.schedule();
   }
-  schedule(){if(this.timer||this.encoding||this.disposed)return;this.timer=setTimeout(()=>{this.timer=null;this.flush().catch(this.onError);},80);}
+  schedule(){if(this.timer||this.encoding||this.disposed||this._busy)return;this.timer=setTimeout(()=>{this.timer=null;if(this._busy)return;this.flush().catch(this.onError);},80);}
   async flush({signal}={}) {
     if(this.disposed)throw new DOMException('Drawing document closed.','AbortError');
     if(this.encoding){await this.encoding;return this.flush({signal});}
@@ -191,15 +206,26 @@ export class DrawingResources {
     const revision=e.revision,generation=this.generation,figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===e.id);
     this.encoding=(async()=>{
       const tiles=[...e.store].filter(t=>!tileTransparent(t));
-      // Missing PNGs encode in the worker, which also assembles and base64s
-      // the publication blob so the main thread never builds it.
-      const payload=tiles.map(t=>t.png?{tx:t.tx,ty:t.ty,png:t.png.slice().buffer}:{tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer});
-      const result=await this.worker.request('encode-tiles',{tiles:payload},{signal,transfer:payload.flatMap(t=>[t.pixels,t.png].filter(Boolean))});
+      // Tiles keep their worker-encoded PNG until a mutation clears it, so a
+      // re-publish ships pixels only for changed tiles; the worker reassembles
+      // the whole blob from its per-cel cache plus these fresh encodes.
+      const keep=tiles.map(t=>tileKey(t.tx,t.ty));
+      let fresh=tiles.filter(t=>!t.png).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
+      let result=await this.worker.request('encode-tiles',{celId:e.id,keep,tiles:fresh},{signal,transfer:fresh.map(t=>t.pixels)});
+      if(result.missing?.length){
+        if(this.disposed||generation!==this.generation||revision!==e.revision)return;
+        // The worker cache lost PNGs the store still trusts; resend them once.
+        const wanted=new Set(result.missing);
+        fresh=[...e.store].filter(t=>wanted.has(tileKey(t.tx,t.ty))).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
+        result=await this.worker.request('encode-tiles',{celId:e.id,keep,tiles:fresh},{signal,transfer:fresh.map(t=>t.pixels)});
+        if(result.missing?.length)throw new Error('The drawing encoder lost its tile cache. Try again.');
+      }
       if(this.disposed||generation!==this.generation||revision!==e.revision)return;
       // Tiles replaced since the snapshot carry stale bytes; publish again.
       if(tiles.some(t=>e.store.get(t.tx,t.ty)!==t))return;
       const sent=new Map(tiles.map(t=>[tileKey(t.tx,t.ty),t]));
       for(const t of result.tiles??[]){const tile=sent.get(tileKey(t.tx,t.ty));if(tile&&e.store.get(t.tx,t.ty)===tile)tile.png=new Uint8Array(t.png);}
+      this.lastEncode={encoded:result.encoded??0,reused:result.reused??0};
       e.store.freeze();
       const asset=figure.image_assets[0],d=drawingMetadata(figure);
       if(tiles.length)asset.styk_tiles=result.blobUrl;else delete asset.styk_tiles;
@@ -220,5 +246,5 @@ export class DrawingResources {
     const reachable=new Set(this.report.figure_types.map(f=>drawingMetadata(f)?.celId));
     for(const [id,e] of this.entries)if(!reachable.has(id)&&!retained.has(id)&&!e.pinned)this.entries.delete(id);
   }
-  dispose(){this.disposed=true;this.generation++;clearTimeout(this.timer);this.worker.dispose();this.decodeWorker.dispose();this.thumbnailWorker.dispose();this.strokeWorker.dispose();this.thumbnailQueue.clear();for(const t of this.thumbnailCache.values())t.canvas.width=t.canvas.height=1;this.thumbnailCache.clear();for(const job of this.decodeQueue)job.reject(new DOMException('Drawing document closed.','AbortError'));this.decodeQueue=[];this.entries.clear();owners.delete(this.report);}
+  dispose(){this.disposed=true;this.generation++;clearTimeout(this.timer);this.worker.dispose();this.decodeWorker.dispose();this.thumbnailWorker.dispose();if(this.strokeWorker.close)this.strokeWorker.close();else this.strokeWorker.dispose();this.thumbnailQueue.clear();for(const t of this.thumbnailCache.values())t.canvas.width=t.canvas.height=1;this.thumbnailCache.clear();for(const job of this.decodeQueue)job.reject(new DOMException('Drawing document closed.','AbortError'));this.decodeQueue=[];this.entries.clear();owners.delete(this.report);}
 }

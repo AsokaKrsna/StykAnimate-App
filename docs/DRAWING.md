@@ -87,9 +87,12 @@ are not supported.
 one report. Resident tiles are limited to 192 MiB; stores that match their
 published `styk_tiles` may be evicted and re-decoded on demand, while
 unpublished work is never evicted. Cold requests coalesce into a bounded
-queue. Thumbnails have one worker, at most 48 queued requests and 256 small
-cached images. Renderer GPU drawing textures follow the current layout and are
-released with it.
+queue: at most two decodes wait, and a newer seek supersedes the oldest.
+Seeking prefetches the two unique neighbouring cels on each side of the
+playhead plus the current one, queued last so it wins eviction. Thumbnails
+have one worker, at most 48 queued requests and 256 small cached images;
+their pump pauses while a stroke or a scrub owns the thread. Renderer GPU
+drawing textures follow the current layout and are released with it.
 
 `drawing-pixels.mjs` rasterizes real, distance-resampled samples. Stroke opacity
 caps the whole stroke, while flow accumulates dabs. Pressure release cannot
@@ -100,17 +103,23 @@ lost capture, Escape and blur cannot leave a half-committed stroke.
 
 Undo belongs to the editor's chronological history. Before/after tile records
 are exact; absent sides are `null` and uniform tiles use a four-byte color
-representation. The shared 48 MiB budget accounts for both undo and redo.
+representation. The shared 48 MiB budget accounts for both undo and redo. An
+edit larger than the remaining budget evicts the oldest commands until it
+fits; only an edit larger than the whole budget is rejected before mutation.
 Evicted stores do not require an asynchronous history cursor: records apply
 synchronously to whatever store the cel resolves to. Fill, paste, resample and
 thumbnails compute in workers over bounded tile regions. Lasso preview always
 uses the original selection, with one resample when applied.
 
-The tile encoder receives frozen tiles and reuses per-tile PNGs, so unchanged
-tiles are never re-encoded. Generation, cel and revision checks reject stale
-results. Failed encoding retains dirty work for retry. Exact PNG
-encoding/decoding avoids premultiplication rounding in saved pixels. Encoding
-is derived publication, not another edit.
+The pixel worker keeps a bounded per-cel cache of encoded tile PNGs. Each
+publication sends pixels only for tiles whose PNG is not already trusted,
+plus the ordered key list the blob must carry; cached PNGs fill the rest, and
+missing cache entries trigger exactly one resend. Blob assembly happens in
+the worker. Generation, cel and revision checks reject stale results. Failed
+encoding retains dirty work for retry, and the publication debounce yields to
+active strokes and scrubbing. Exact PNG encoding/decoding avoids
+premultiplication rounding in saved pixels. Encoding is derived publication,
+not another edit.
 
 Live drawing textures participate in the normal scene compositor, including
 ordering, opacity, erasing, camera and clipping. Tiles are painted into a

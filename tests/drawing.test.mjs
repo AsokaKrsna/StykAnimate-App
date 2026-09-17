@@ -5,7 +5,7 @@ import {DrawingResources} from '../src/drawing-resources.mjs';
 import {DrawingStroke,floodTiles,lassoMask,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
 import {drawingMetadata,validateDrawings,drawingMatrix,drawingPixelMatrix,inversePoint,transformPoint,migrateDrawingFigure,EMPTY_PNG} from '../src/drawing-model.mjs';
 import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from '../src/drawing-tiles.mjs';
-import {encodeTileBlob,decodeTileBlob,assembleTileBlobBytes,TILE_BLOB_PREFIX} from '../src/drawing-tile-codec.mjs';
+import {encodeTileBlob,decodeTileBlob,assembleTileBlobBytes,TILE_BLOB_PREFIX,TileEncodeCache} from '../src/drawing-tile-codec.mjs';
 import {encodeDrawingPNG,decodeDrawingPNG} from '../src/drawing-png.mjs';
 import {encodePNGPortable} from '../src/sticknodes/decoder/png-browser.mjs';
 import {StrokeEngine} from '../src/drawing-stroke-engine.mjs';
@@ -21,6 +21,9 @@ import {createFrame,createObject} from '../src/demo.mjs';
 // real worker. OffscreenCanvas ops (paste/resample/thumbnail) are not stubbed.
 function workerStub(){
   const storeOf=data=>{const store=new TileStore();for(const t of data.tiles??[])store.tiles.set(tileKey(t.tx,t.ty),{tx:t.tx,ty:t.ty,pixels:new Uint8ClampedArray(t.pixels),frozen:false,png:t.png?new Uint8Array(t.png):undefined});return store;};
+  // Mirrors drawing-worker.mjs: the encoded-tile cache survives requests so a
+  // re-publish only encodes tiles the caller resent.
+  const encodeCache=new TileEncodeCache();
   return {async request(kind,data){
     if(kind==='decode-legacy'){
       const crop=data.crop??{x:0,y:0},image=await decodeDrawingPNG(data.url),tiles=[];
@@ -33,14 +36,11 @@ function workerStub(){
     }
     if(kind==='decode-tiles')return {tiles:(await decodeTileBlob(data.url)).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,png:t.png.buffer}))};
     if(kind==='encode-tiles'){
-      const out=[],assembly=[];
-      for(const t of data.tiles??[]){
-        const png=t.png?new Uint8Array(t.png):new Uint8Array(await encodePNGPortable({width:TILE,height:TILE,channels:4},new Uint8ClampedArray(t.pixels)));
-        if(!t.png)out.push({tx:t.tx,ty:t.ty,png:png.slice().buffer});
-        assembly.push({tx:t.tx,ty:t.ty,png});
-      }
-      const bytes=assembleTileBlobBytes(assembly);let text='';for(let i=0;i<bytes.length;i+=16384)text+=String.fromCharCode(...bytes.subarray(i,i+16384));
-      return {tiles:out,blobUrl:TILE_BLOB_PREFIX+btoa(text)};
+      const result=await encodeCache.encode(data.celId,data.keep??[],data.tiles??[]);
+      if(result.missing)return{missing:result.missing};
+      const out=result.tiles.map(t=>({tx:t.tx,ty:t.ty,png:t.png.slice().buffer}));
+      let text='';for(let i=0;i<result.bytes.length;i+=16384)text+=String.fromCharCode(...result.bytes.subarray(i,i+16384));
+      return {tiles:out,blobUrl:TILE_BLOB_PREFIX+btoa(text),encoded:result.encoded,reused:result.reused};
     }
     if(kind==='fill'){
       const store=storeOf(data),before=new Map();
@@ -332,14 +332,14 @@ test('a replacement document disposes drawing workers and their pending state',a
 });
 test('failed encoders retain dirty pixels and a retry publishes the same committed revision',async()=>{
   const {e,resources}=fixture();try{await stroke(e);const figure=e.drawingTarget().figure,entry=resources.entry(figure),revision=e.revision,pixels=storePixels(entry.store);let calls=0;
-    resources.worker={async request(){if(!calls++)throw new Error('encoder failure');return workerStub().request('encode-tiles',{tiles:[...entry.store].map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer})),region:entry.store.bounds});},dispose(){}};
+    const inner=workerStub();resources.worker={async request(kind,data){if(!calls++)throw new Error('encoder failure');return inner.request(kind,data);},dispose(){}};
     await assert.rejects(resources.flush(),/encoder failure/);assert.notEqual(entry.published?.revision,entry.revision);assert.deepEqual(storePixels(entry.store),pixels);assert.equal(e.revision,revision);
     await resources.flush();assert.equal(entry.published.revision,entry.revision);assert.equal(e.revision,revision);
     assert.ok(figure.image_assets[0].styk_tiles?.startsWith(TILE_BLOB_PREFIX));
   }finally{resources.dispose();}
 });
 test('out-of-order encode results never replace newer committed tiles',async()=>{
-  const {e,resources}=fixture();try{await stroke(e);let release,calls=0;resources.worker={request(){calls++;if(calls===1)return new Promise(resolve=>release=resolve);return workerStub().request('encode-tiles',arguments[1]);},dispose(){}};
+  const {e,resources}=fixture();try{await stroke(e);let release,calls=0;const inner=workerStub();resources.worker={request(){calls++;if(calls===1)return new Promise(resolve=>release=resolve);return inner.request('encode-tiles',arguments[1]);},dispose(){}};
     const pending=resources.flush();await stroke(e,80);const entry=resources.entry(e.drawingTarget().figure),latest=storePixels(entry.store);release({tiles:[]});await pending;
     assert.equal(calls,2);assert.equal(entry.published.revision,entry.revision);assert.deepEqual(storePixels(entry.store),latest);
   }finally{resources.dispose();}
@@ -598,4 +598,77 @@ test('flattening a tile store yields a PNG at source resolution with source-spac
   const capped=await flattenedDrawingPNG({store:huge},{maxPixels:1024*1024});
   assert.equal(capped.level,3);assert.equal(capped.scale,8,'oversized bounds flatten at a mip level');
   assert.ok(capped.width*capped.height<=1024*1024);
+});
+
+test('publication re-encodes only changed tiles and resends PNGs the worker cache lost',async()=>{
+  const {e,resources}=fixture();try{
+    // A multi-tile cel: the dab trail at y=10 spans tiles 0..2 on x.
+    const target=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:32,y:32}}),surface=await e.drawingResources.surface(target.figure);
+    const brush=new DrawingStroke(surface.store,{size:16,pressureSize:false});
+    brush.sample({x:10,y:10});brush.sample({x:150,y:10});e.commitDrawingPixels(target,brush.finish());
+    await resources.flush();
+    const figure=e.drawingTarget().figure,entry=resources.entry(figure),size=entry.store.size;
+    assert.ok(size>1);assert.equal(resources.stats.lastEncode.encoded,size,'first publish encodes every tile');
+    // One-tile stroke: exactly one encode, every other PNG reused from the cache.
+    const dab=new DrawingStroke(entry.store,{size:8,pressureSize:false});dab.sample({x:20,y:20});e.commitDrawingPixels(e.drawingTarget(),dab.finish());
+    await resources.flush();
+    assert.equal(resources.stats.lastEncode.encoded,1);assert.equal(resources.stats.lastEncode.reused,size-1);
+    // Worker restart drops the whole encoded cache: the keep-list misses and
+    // the main thread resends the still-valid PNG bytes once.
+    resources.worker=workerStub();
+    const dab2=new DrawingStroke(entry.store,{size:8,pressureSize:false});dab2.sample({x:30,y:30});e.commitDrawingPixels(e.drawingTarget(),dab2.finish());
+    await resources.flush();
+    assert.equal(resources.stats.lastEncode.encoded,size-1,'missing PNGs resent exactly once');
+    const decoded=await decodeTileBlob(figure.image_assets[0].styk_tiles);
+    assert.equal(decoded.length,entry.store.size);
+    for(const t of decoded)assert.deepEqual([...t.pixels],[...entry.store.get(t.tx,t.ty).pixels]);
+  }finally{resources.dispose();}
+});
+
+test('an edit larger than the remaining history evicts older commands; one over the whole budget is rejected before mutation',async()=>{
+  const {e,resources}=fixture();try{
+    await stroke(e);const firstBytes=e._undo.at(-1).bytes;
+    const dab=x=>{const t=e.drawingTarget(),surface=resources.entry(t.figure);const b=new DrawingStroke(surface.store,{size:8,pressureSize:false});b.sample({x,y:40});e.commitDrawingPixels(t,b.finish());return e._undo.at(-1).bytes;};
+    const strokeBytes=dab(100);dab(200);
+    // Budget fits the creation batch plus two strokes, not three.
+    e.historyBytes=firstBytes+2*strokeBytes+64;
+    const before=e.revision;dab(300);
+    assert.equal(e._undo.length,3,'the creation command was evicted, not rejected');
+    assert.ok(e.historySize<=e.historyBytes);assert.ok(e.revision>before);
+    e.undo();e.undo();assert.equal(e._undo.length,1,'undo stops at the evicted boundary');
+    // An edit larger than the entire budget throws before any pixel mutates.
+    e.historyBytes=TILE_BYTES;
+    const pixels=storePixels(resources.entry(e.drawingTarget().figure).store),revision=e.revision;
+    assert.throws(()=>e.commitDrawingPixels(e.drawingTarget(),[{tx:9,ty:9,before:null,after:new Uint8ClampedArray(TILE_BYTES)},{tx:10,ty:9,before:null,after:new Uint8ClampedArray(TILE_BYTES)}]),/undo budget/);
+    assert.equal(e.revision,revision);assert.deepEqual(storePixels(resources.entry(e.drawingTarget().figure).store),pixels);
+  }finally{resources.dispose();}
+});
+
+test('undo after a published clean store is evicted by reserve() rebuilds exact pixels',async()=>{
+  const {e,resources}=fixture();try{
+    const {surface}=await stroke(e),first=storePixels(surface.store);await resources.flush();
+    await stroke(e,80);await resources.flush();const figure=e.drawingTarget().figure,entry=resources.entry(figure);
+    resources.reserve(resources.tileBudget);assert.equal(entry.store,null,'clean published store evicted');
+    e.undo();const restored=await resources.surface(figure);assert.deepEqual(storePixels(restored.store),first);
+    e.redo();assert.notDeepEqual(storePixels((await resources.surface(figure)).store),first);
+  }finally{resources.dispose();}
+});
+
+test('a burst of surface requests keeps at most two decodes queued and decodes the newest',async()=>{
+  const {e,resources}=fixture();try{
+    const figures=[];
+    for(let i=0;i<10;i++){
+      const figure=createDrawingFigure({pixelsPerUnit:1,figureTypeId:100+i});figure._styk.drawing.celId=`cel-burst-${i}`;e.report.figure_types.push(figure);figures.push(figure);
+      const pixels=new Uint8ClampedArray(TILE_BYTES);pixels.set([i,0,0,255],0);resources.install(figure,[{tx:0,ty:0,pixels}]);
+    }
+    await resources.flush();
+    for(const figure of figures){const entry=resources.entry(figure);entry.store=null;assert.ok(entry.published?.url,'every cel published before eviction');}
+    const pending=figures.map(figure=>resources.surface(figure).catch(error=>error));
+    assert.ok(resources.decodeQueue.length<=2,'decode queue stays bounded');
+    const results=await Promise.all(pending);
+    assert.ok(results.at(-1).store?.size===1,'the final seek decodes its cel');
+    assert.ok(results[8].store?.size===1);
+    assert.ok(results.slice(1,8).every(r=>r?.name==='AbortError'),'superseded decodes abort');
+    assert.ok(resources.stats.decodes<=3,`decodes ${resources.stats.decodes}`);
+  }finally{resources.dispose();}
 });

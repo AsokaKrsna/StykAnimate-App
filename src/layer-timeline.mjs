@@ -11,6 +11,7 @@ import {attachTimelineHotkeys} from './timeline-hotkeys.mjs';
 import {pasteSheetClipboard} from './shared-clipboard.mjs';
 import {sheetKeyAt} from './layer-sheet.mjs';
 import {initializeLayerSheet} from './editor-layer-sheet.mjs';
+import {drawingMetadata} from './drawing-model.mjs';
 import {icon} from './icons.mjs';
 import {showTimelineMenu} from './timeline-menu.mjs';
 import {AudioTimeline} from './audio-timeline.mjs';
@@ -155,7 +156,7 @@ export class Timeline{
         if(blank){ctx.strokeStyle=c.muted;ctx.globalAlpha=.5;ctx.stroke();ctx.globalAlpha=1;}
         else{ctx.fillStyle=rowTint??(tween?c.tween:c.span);ctx.fill();}
         if(tween&&right-left>32){ctx.strokeStyle=c.accent;ctx.globalAlpha=.55;ctx.beginPath();ctx.moveTo(left+13,y+ROW/2);ctx.lineTo(right-7,y+ROW/2);ctx.lineTo(right-11,y+ROW/2-3);ctx.moveTo(right-7,y+ROW/2);ctx.lineTo(right-11,y+ROW/2+3);ctx.stroke();ctx.globalAlpha=1;}
-        if(layer.drawing&&!blank&&right-left>34){const source=key.value?.frameId&&this.editor.getFrameById(key.value.frameId),object=source?.objects.find(o=>this.editor.layerForUid(o.unique_id)===layer.id),figure=object&&this.editor.report.figure_types.find(f=>f.figure_type_id===object.figure_type_id);if(figure){const thumb=this.editor.drawingResources.thumbnail(figure,()=>{if(!this.disposed)this.update();});if(thumb){const width=Math.min(40,right-left-12);ctx.drawImage(thumb,left+8,y+7,width,ROW-14);}}}
+        if(layer.drawing&&!blank&&right-left>34){const source=key.value?.frameId&&this.editor.getFrameById(key.value.frameId),object=source?.objects.find(o=>this.editor.layerForUid(o.unique_id)===layer.id),figure=object&&this.editor.report.figure_types.find(f=>f.figure_type_id===object.figure_type_id);if(figure&&drawingMetadata(figure)){const thumb=this.editor.drawingResources.thumbnail(figure,()=>{if(!this.disposed)this.update();});if(thumb){const width=Math.min(40,right-left-12);ctx.drawImage(thumb,left+8,y+7,width,ROW-14);}}}
         if(!blank&&end-key.tick>1){ctx.fillStyle=c.muted;ctx.globalAlpha=.55;ctx.fillRect(end*step-sx-4,y+12,2,8);ctx.globalAlpha=1;}
       }
       if(selected){ctx.fillStyle=rowTint??c.selected;ctx.globalAlpha=.65;ctx.fillRect(this.start*step-sx,y+1,(this.end-this.start+1)*step,ROW-2);ctx.globalAlpha=1;}

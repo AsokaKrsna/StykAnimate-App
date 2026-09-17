@@ -1,4 +1,4 @@
-import {TILE,TILE_BYTES,tileTransparent,TileStore} from './drawing-tiles.mjs';
+import {TILE,TILE_BYTES,tileTransparent,TileStore,tileKey,parseTileKey} from './drawing-tiles.mjs';
 import {encodePNGPortable} from './sticknodes/decoder/png-browser.mjs';
 import {decodeDrawingPNGBytes} from './drawing-png.mjs';
 export const TILE_BLOB_PREFIX='data:application/x-styk-tiles;base64,';
@@ -34,3 +34,34 @@ export async function decodeTileBlob(url){
   return tiles;
 }
 export function tileStoreFromList(tiles){const store=new TileStore();for(const tile of tiles)store.tiles.set(`${tile.tx},${tile.ty}`,{tx:tile.tx,ty:tile.ty,pixels:new Uint8ClampedArray(tile.pixels),frozen:false,png:tile.png});return store;}
+
+/** Per-cel encoded-tile cache owned by the pixel worker. Publication sends
+ * only tiles whose PNG the main thread no longer trusts plus the ordered key
+ * list the blob must carry; cached PNGs assemble unchanged tiles. `stamp` is
+ * the cache's recency clock for LRU eviction across all cels. */
+export class TileEncodeCache {
+  constructor({maxBytes=64*1024*1024}={}){this.cels=new Map();this.bytes=0;this.clock=0;this.maxBytes=maxBytes;}
+  cel(id){let cel=this.cels.get(id);if(!cel)this.cels.set(id,cel=new Map());else{this.cels.delete(id);this.cels.set(id,cel);}return cel;}
+  /** keep lists every tile key this publication carries, in blob order; tiles
+   * are the changed ones to encode. Returns {missing} when a kept key lacks a
+   * cached PNG so the caller can resend those pixels once. */
+  async encode(celId,keep,tiles){
+    const cel=this.cel(celId),wanted=new Set(keep),encoded=[];
+    for(const key of [...cel.keys()])if(!wanted.has(key)){this.bytes-=cel.get(key).png.length;cel.delete(key);}
+    for(const tile of tiles){
+      const png=new Uint8Array(await encodePNGPortable({width:TILE,height:TILE,channels:4},new Uint8ClampedArray(tile.pixels))),key=tileKey(tile.tx,tile.ty),old=cel.get(key);
+      if(old)this.bytes-=old.png.length;cel.set(key,{png,stamp:++this.clock});this.bytes+=png.length;encoded.push({tx:tile.tx,ty:tile.ty,png});
+    }
+    // Bound the cache globally, oldest cel entries first, but never drop a key
+    // this publication still needs.
+    for(const [id,entries] of this.cels){
+      if(this.bytes<=this.maxBytes)break;
+      for(const [key,entry] of entries){if(this.bytes<=this.maxBytes)break;if(id===celId&&wanted.has(key))continue;this.bytes-=entry.png.length;entries.delete(key);}
+      if(!entries.size)this.cels.delete(id);
+    }
+    const assembly=[],missing=[];
+    for(const key of keep){const hit=cel.get(key);if(!hit){missing.push(key);continue;}const [tx,ty]=parseTileKey(key);assembly.push({tx,ty,png:hit.png});}
+    if(missing.length)return{missing};
+    return{tiles:encoded,bytes:assembleTileBlobBytes(assembly),encoded:encoded.length,reused:keep.length-encoded.length};
+  }
+}

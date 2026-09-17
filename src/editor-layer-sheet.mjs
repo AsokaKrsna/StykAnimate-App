@@ -692,8 +692,8 @@ export const editorLayerSheetMethods={
       if(!insert&&finish<oldEnd&&(!track.keys.some(k=>k.tick===finish)||track.keys.find(k=>k.tick===finish)?.patchOnly))plan.write(id,finish,restore);
       track.end=Math.max(finish,oldEnd+(insert?clipboard.duration:0));plan.state.duration=Math.max(plan.state.duration,track.end);
     }
-    this.drawingResources.checkClipboard(drawingForks,clipboard);
-    const result=publish(this,plan,'Paste frames',{assets:Object.keys(assets).length?assets:undefined});this._nextUid=nextUid;this.drawingResources.pasteClipboard(drawingForks,clipboard);return result;
+    if(drawingForks.length)this.drawingResources.checkClipboard(drawingForks,clipboard);
+    const result=publish(this,plan,'Paste frames',{assets:Object.keys(assets).length?assets:undefined});this._nextUid=nextUid;if(drawingForks.length)this.drawingResources.pasteClipboard(drawingForks,clipboard);return result;
   },
   sheetMoveFrames(ids,start,end,delta,{copy=false,replace=true}={}){
     if(!Number.isInteger(delta)||start+delta<0)throw new Error('Frames cannot move before frame 1.');if(!delta)return false;
@@ -715,7 +715,7 @@ export const editorLayerSheetMethods={
         track.keys.push(moved);}
       track.keys.sort((a,b)=>a.tick-b.tick);track.end=Math.max(track.end,finish+1);plan.state.duration=Math.max(plan.state.duration,track.end);
     }
-    this.drawingResources.checkForks(forks.map(([old])=>old));
+    if(forks.length)this.drawingResources.checkForks(forks.map(([old])=>old));
     const result=publish(this,plan,copy?'Copy frames':'Move frames',{assets:added.length?{figure_types:{added}}:undefined});for(const [old,figure] of forks)this.drawingResources.fork(old,figure);return result;
   },
   sheetTransferFrames(ids,destinations,start,end,tick,{copy=false}={}){

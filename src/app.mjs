@@ -1,4 +1,5 @@
-import {drawingBarrier} from './drawing-resources.mjs';
+import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
+import {drawingMetadata} from './drawing-model.mjs';
 import {builderStrokeAppearance, setBuilderStroke, copyBuilderAppearance, pasteBuilderAppearance} from './builder-appearance.mjs';
 import {rigControlChange, drawRigGuides, drawConnectorGuides} from './rig-controls.mjs';
 import {displayedSegmentPaint,displayedColor} from './figure-colors.mjs';
@@ -905,7 +906,7 @@ function imageFor(url) {
   return images.image(url);
 }
 let drawingController;
-const resources = { url: assetUrl, image: imageFor, drawing:figure=>drawingController?.resource(figure), drawingLoad:figure=>editor?.drawingResources?.surface(figure) };
+const resources = { url: assetUrl, image: imageFor, drawing:figure=>drawingController?.resource(figure), drawingLoad:figure=>drawingMetadata(figure)?editor?.drawingResources.surface(figure):null };
 function status(text, error = false, busy = false) {
   $("status").textContent = text;
   $("status-dot").className =
@@ -5698,6 +5699,7 @@ window.styk = {
   importFiles,
   acceptImport,
   fit,
+  drawingResourcesFor,
   performance: () => ({
     editingPresentation:state.lastEditingPresentation,
     editablePreparation:{pending:editablePreparation.pending,...editablePreparation.stats},
@@ -5942,6 +5944,7 @@ function mountTimeline() {
       interruptRecovery();
       clearTimeout(warmTimer);
       state.scrubbing = true;
+      const drawing=drawingResourcesFor(editor.report);if(drawing)drawing.busy=true;
       requestRender();
     },
     onScrub: tick => {
@@ -5957,6 +5960,7 @@ function mountTimeline() {
     onScrubEnd: () => {
       audioScrubController?.abort(); audioEngine.stop();
       state.scrubbing = false;
+      const drawing=drawingResourcesFor(editor.report);if(drawing)drawing.busy=false;
       queueUI();
       requestRender();
       warmPlayback();

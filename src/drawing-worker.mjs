@@ -2,13 +2,19 @@ import {TILE,TILE_BYTES,tileKey,TileStore,tileTransparent} from './drawing-tiles
 import {floodTiles,tileChanges,tileAlignedRect} from './drawing-pixels.mjs';
 import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {decodeDrawingPNG} from './drawing-png.mjs';
-import {decodeTileBlob,tileStoreFromList,assembleTileBlobBytes,TILE_BLOB_PREFIX} from './drawing-tile-codec.mjs';
+import {decodeTileBlob,tileStoreFromList,TILE_BLOB_PREFIX,TileEncodeCache} from './drawing-tile-codec.mjs';
+import {levelStore} from './drawing-raster.mjs';
 import {encodePNGPortable} from './sticknodes/decoder/png-browser.mjs';
 
 const storeOf=data=>{const store=new TileStore();for(const t of data.tiles??[])store.tiles.set(tileKey(t.tx,t.ty),{tx:t.tx,ty:t.ty,pixels:new Uint8ClampedArray(t.pixels),frozen:false,png:t.png?new Uint8Array(t.png):undefined});return store;};
 const beforeOf=(store,rect)=>{const before=new Map();for(const [tx,ty] of TileStore.tilesInRect(rect.x,rect.y,rect.width,rect.height))before.set(tileKey(tx,ty),store.get(tx,ty)?.pixels.slice()??null);return before;};
 const changesReply=(id,store,before,maxBytes)=>{const tiles=tileChanges(store,before,maxBytes);self.postMessage({id,tiles},tiles.flatMap(t=>[t.before?.buffer,t.after?.buffer].filter(Boolean)));};
 const validRect=r=>r&&[r.x,r.y].every(Number.isSafeInteger)&&Number.isInteger(r.width)&&Number.isInteger(r.height)&&r.width>0&&r.height>0&&r.width*r.height<=DRAWING_MAX_PIXELS;
+// Encoded tiles persist across publications so a re-publish only encodes
+// tiles the main thread resent; the blob is assembled here, never upstream.
+const encodeCache=new TileEncodeCache();
+/** The smallest mip level whose bounds still span ~64 output pixels. */
+const thumbnailLevel=bounds=>bounds?Math.max(0,Math.min(4,Math.floor(Math.log2(Math.max(bounds.width,bounds.height)/64)))):0;
 
 self.onmessage=async({data})=>{
   const {id,kind}=data;
@@ -29,14 +35,11 @@ self.onmessage=async({data})=>{
       self.postMessage({id,tiles},tiles.flatMap(t=>[t.pixels,t.png]));return;
     }
     if(kind==='encode-tiles'){
-      const out=[],assembly=[];
-      for(const t of data.tiles??[]){
-        const png=t.png?new Uint8Array(t.png):new Uint8Array(await encodePNGPortable({width:TILE,height:TILE,channels:4},new Uint8ClampedArray(t.pixels)));
-        if(!t.png)out.push({tx:t.tx,ty:t.ty,png:png.slice().buffer});
-        assembly.push({tx:t.tx,ty:t.ty,png});
-      }
-      const bytes=assembleTileBlobBytes(assembly);let text='';for(let i=0;i<bytes.length;i+=16384)text+=String.fromCharCode(...bytes.subarray(i,i+16384));
-      self.postMessage({id,tiles:out,blobUrl:TILE_BLOB_PREFIX+btoa(text)},out.map(t=>t.png));return;
+      const result=await encodeCache.encode(data.celId,data.keep??[],data.tiles??[]);
+      if(result.missing){self.postMessage({id,missing:result.missing});return;}
+      const out=result.tiles.map(t=>({tx:t.tx,ty:t.ty,png:t.png.slice().buffer}));
+      let text='';for(let i=0;i<result.bytes.length;i+=16384)text+=String.fromCharCode(...result.bytes.subarray(i,i+16384));
+      self.postMessage({id,tiles:out,blobUrl:TILE_BLOB_PREFIX+btoa(text),encoded:result.encoded,reused:result.reused},out.map(t=>t.png));return;
     }
     if(kind==='fill'){
       if(!validRect(data.bounds))throw new Error('Invalid fill bounds.');
@@ -96,7 +99,11 @@ self.onmessage=async({data})=>{
           const tile={tx,ty,pixels,frozen:false};if(!tileTransparent(tile))store.tiles.set(tileKey(tx,ty),tile);}}
       else if(data.url)store=tileStoreFromList(await decodeTileBlob(data.url));
       else store=storeOf(data);
-      const bounds=data.bounds??store.bounds;
+      let bounds=data.bounds??store.bounds;
+      // Blob and legacy payloads hold full-resolution tiles; rasterize them
+      // from the smallest mip still spanning ~64 px instead of reading bounds
+      // at source resolution.
+      if((data.url||data.legacy)&&bounds){const k=thumbnailLevel(bounds);if(k)store=levelStore({store,levels:[]},k);bounds=store.bounds;}
       if(!bounds||!validRect(bounds)){self.postMessage({id,width:1,height:1,pixels:new Uint8ClampedArray(4).buffer});return;}
       const source=new OffscreenCanvas(bounds.width,bounds.height);source.getContext('2d').putImageData(new ImageData(store.readRect(bounds.x,bounds.y,bounds.width,bounds.height),bounds.width,bounds.height),0,0);
       const ratio=Math.min(64/bounds.width,32/bounds.height),w=Math.max(1,Math.round(bounds.width*ratio)),h=Math.max(1,Math.round(bounds.height*ratio)),out=new OffscreenCanvas(w,h),ctx=out.getContext('2d');ctx.drawImage(source,0,0,w,h);

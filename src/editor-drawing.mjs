@@ -49,9 +49,9 @@ export const editorDrawingMethods={
       plan.write(id,tick,frame,{blank,easing:{interpolation:'constant'}});changed=true;
     }
     if(!changed)return false;
-    this.drawingResources.checkForks(forks.map(([old])=>old));
+    if(forks.length){this.drawingResources.checkForks(forks.map(([old])=>old));}
     const result=drawingSheetPublish(this,plan,blank?'Blank drawing':'Copy drawing',{assets:added.length?{figure_types:{added}}:undefined});
-    for(const [old,copy] of forks)this.drawingResources?.fork(old,copy);return result;
+    for(const [old,copy] of forks)this.drawingResources.fork(old,copy);return result;
   },
   nextDrawing(ids=[this.activeLayerId],{blank=true,length=1,tick=this.tick}={}) {
     assertDrawingTargets(this,ids);if(!Number.isInteger(length)||length<1||length>65535)throw new Error('Choose an exposure length of 1–65,535 frames.');
@@ -102,7 +102,7 @@ export const editorDrawingMethods={
     if(!tiles.length)return false;assertDrawingTargets(this,[target.id]);
     const current=this.drawingTarget(target.id);
     if(current.key.id!==target.key.id)throw new Error('The drawing exposure changed before the edit finished.');
-    const bytes=pixelChangeBytes(tiles);if(bytes>this.historyBytes-65536)throw new Error('This pixel edit exceeds the undo budget. Use a smaller area or shorter stroke.');
+    const bytes=pixelChangeBytes(tiles);if(bytes>this.historyBytes)throw new Error('This pixel edit exceeds the undo budget. Use a smaller area or shorter stroke.');
     const celId=drawingMetadata(target.figure).celId,beforeBounds=drawingMetadata(target.figure).bounds??null;
     this.drawingResources.checkHistory({kind:'drawing-pixels',celId,tiles},'after');
     const commit=()=>{

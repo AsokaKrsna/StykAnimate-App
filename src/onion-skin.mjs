@@ -1,4 +1,5 @@
 import {sheetKeyAt} from './layer-sheet.mjs';
+import {drawingMetadata,isDrawingLayer} from './drawing-model.mjs';
 import {buildGeometry, evaluatedFrame} from './pivot/geometry.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
 import {easingMode} from './keyframe-easing.mjs';
@@ -19,7 +20,25 @@ export function drawingOnionSamples(editor,settings){
   return samples;
 }
 
-// A changed parent also moves its joined descendants, even when their own
+/** The cel showing under the playhead plus up to `before`/`after` unique
+ * neighbouring cels of the drawing layer `layerId`. Callers surface
+ * `neighbors` first and `current` last so a bounded decode queue drops stale
+ * prefetches before the cel the playhead actually shows. */
+export function drawingCelPrefetch(editor,layerId,{before=2,after=2}={}){
+  const layer=editor.getLayer(layerId);if(!isDrawingLayer(layer)||!layer.visible)return null;
+  const track=editor.report._styk?.layerSheet?.tracks[layerId];if(!track)return null;
+  const index=sheetKeyAt(track,editor.tick).index;
+  const figureAt=key=>{const frame=key?.value?.frameId?editor.getFrameById(key.value.frameId):null;const object=frame?.objects.find(o=>editor.layerForUid(o.unique_id)===layerId);const figure=object&&editor.report.figure_types.find(f=>f.figure_type_id===object.figure_type_id);return figure&&drawingMetadata(figure)?figure:null;};
+  const current=figureAt(track.keys[index]),neighbors=[],seen=new Set([drawingMetadata(current)?.celId]);
+  for(const direction of [-1,1]){
+    let found=0;
+    for(let distance=1;index+direction*distance>=0&&index+direction*distance<track.keys.length&&found<(direction<0?before:after);distance++){
+      const figure=figureAt(track.keys[index+direction*distance]);if(!figure||seen.has(drawingMetadata(figure).celId))continue;
+      seen.add(drawingMetadata(figure).celId);neighbors.push(figure);found++;
+    }
+  }
+  return{current,neighbors};
+}
 // native object records have not changed.
 function affectedSlots(frame, uids) {
   const slots = new Set(), children = new Map(), queue = [];
