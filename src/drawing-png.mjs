@@ -3,10 +3,11 @@ import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {crc32} from './sticknodes/decoder/archive.mjs';
 export function drawingPNGBytes(url){if(typeof url!=='string'||!url.startsWith('data:image/png;base64,'))throw new Error('Drawing pixels need an embedded PNG.');return Uint8Array.from(atob(url.slice(22)),c=>c.charCodeAt(0));}
 export async function encodeDrawingPNG(pixels,width,height){const bytes=await encodePNGPortable({width,height,channels:4},pixels);let text='';for(let i=0;i<bytes.length;i+=16384)text+=String.fromCharCode(...bytes.subarray(i,i+16384));return 'data:image/png;base64,'+btoa(text);}
+export function decodeDrawingPNG(url){return decodeDrawingPNGBytes(drawingPNGBytes(url));}
 /** Decode our portable PNG without premultiplication, including filter modes
  * emitted by other conforming RGBA/RGB encoders. All allocations are bounded. */
-export async function decodeDrawingPNG(url){
-  const bytes=drawingPNGBytes(url),view=new DataView(bytes.buffer),signature=[137,80,78,71,13,10,26,10];if(!signature.every((n,i)=>bytes[i]===n))throw new Error('Invalid drawing PNG signature.');
+export async function decodeDrawingPNGBytes(bytes){
+  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),signature=[137,80,78,71,13,10,26,10];if(!signature.every((n,i)=>bytes[i]===n))throw new Error('Invalid drawing PNG signature.');
   let width,height,channels;const parts=[];
   for(let pos=8;pos+12<=bytes.length;){const length=view.getUint32(pos),end=pos+12+length;if(end>bytes.length)throw new Error('Truncated drawing PNG.');const type=String.fromCharCode(...bytes.subarray(pos+4,pos+8)),data=bytes.subarray(pos+8,pos+8+length);
     if(crc32(bytes.subarray(pos+4,pos+8+length))!==view.getUint32(pos+8+length))throw new Error('Drawing PNG checksum mismatch.');

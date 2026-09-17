@@ -1,5 +1,6 @@
 import {surfaceCulled} from './surfaces.mjs';
 import {primitiveOutsideRasterClip} from './raster-clip.mjs';
+import {paintDrawingTiles} from '../drawing-raster.mjs';
 import {vfxRenderFrame,frameWithVfxTime} from '../vfx-clips.mjs';
 import {frameWithCameraTime} from '../camera-motion.mjs';
 import {canvasPaint, segmentPaint, textPaintGeometry, shapePaintBounds} from '../paint.mjs';
@@ -1117,10 +1118,7 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null
     if (s.type === "image") {
       if (!paint) continue;
       const a = s.asset,live=resources.drawing?.(s.fig);
-      let img = live?.canvas ?? (a && resources.image?.(resources.url?.(a)));
-      if(s.onionTint&&img?.complete&&img.naturalWidth&&resources.tint)img=resources.tint(img,s.onionTint,live?.stamp??0);
-      if (!a || !img?.complete || !img.naturalWidth || !a.anchor_length)
-        continue;
+      if (!a || !a.anchor_length) continue;
       const reverse = Boolean(s.seg.extra_u8_a ?? s.seg.extra?.[1]),
         mirror =
           Boolean(s.seg.extra_u8_b ?? s.seg.extra?.[2]) !==
@@ -1136,11 +1134,22 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null
       const scale =
         Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) / a.anchor_length;
       ctx.scale(mirror ? -scale : scale, scale);
-      ctx.translate(-a.anchor_start.x, -a.anchor_start.y);
       ctx.globalAlpha *= s.alpha;
       // Preserve Pivot sprite sampling; authored drawings use smooth scaling.
       ctx.imageSmoothingEnabled = Boolean(s.fig?._styk?.drawing);
       if(ctx.imageSmoothingEnabled)ctx.imageSmoothingQuality='high';
+      if (live?.store) {
+        // Tiles live in the cel's pixel space, anchored at drawing_anchor.
+        const anchor=a.drawing_anchor??a.anchor_start;
+        ctx.translate(-anchor.x,-anchor.y);
+        paintDrawingTiles(ctx,live,{tint:s.onionTint,tintFn:resources.tint});
+        ctx.restore();
+        continue;
+      }
+      ctx.translate(-a.anchor_start.x, -a.anchor_start.y);
+      let img = resources.image?.(resources.url?.(a));
+      if(s.onionTint&&img?.complete&&img.naturalWidth&&resources.tint)img=resources.tint(img,s.onionTint,live?.stamp??0);
+      if (!img?.complete || !img.naturalWidth){ctx.restore();continue;}
       const iw = a.display_width ?? img.naturalWidth, ih = a.display_height ?? img.naturalHeight;
       // Cropped variants carry their source rectangle; mapping it back into
       // display space preserves the original placement and anchors.

@@ -95,7 +95,7 @@ group('Figure builder', [
 group('Polygon', [['finish-polygon', 'Finish polygon', ['Enter']]], 'polygon');
 group('Drawing', [
   ['drawing-brush','Brush',['KeyB']],['drawing-eraser','Eraser',['KeyE']],['drawing-fill','Fill',['KeyG']],
-  ['drawing-eyedropper','Eyedropper',['KeyI']],['drawing-lasso','Select pixels',['KeyL']],
+  ['drawing-lasso','Select pixels',['KeyL']],
   ['drawing-smaller','Smaller brush',['BracketLeft'],{repeat:true}],['drawing-larger','Larger brush',['BracketRight'],{repeat:true}],
   ['drawing-apply','Apply pixel selection',['Enter']],
 ], 'drawing');

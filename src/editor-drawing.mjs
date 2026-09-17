@@ -1,4 +1,4 @@
-import {drawingMetadata,isDrawingLayer,drawingDimensions,createDrawingFigure,copyDrawingFigure,DRAWING_BLEED} from './drawing-model.mjs';
+import {drawingMetadata,isDrawingLayer,createDrawingFigure,copyDrawingFigure,migrateDrawingFigure,syncDrawingAsset,EMPTY_PNG} from './drawing-model.mjs';
 import {drawingSheetPlan,drawingSheetPublish} from './editor-layer-sheet.mjs';
 import {sheetKeyAt,MAX_SHEET_TICKS} from './layer-sheet.mjs';
 import {createFrame,createObject} from './demo.mjs';
@@ -13,6 +13,8 @@ export function applyDrawingCommand(editor,command,direction) {
   const figure=editor.report.figure_types.find(f=>drawingMetadata(f)?.celId===command.celId);
   if(!figure)throw new Error('The drawing history references a missing cel.');
   editor.drawingResources.apply(figure,command.tiles,direction);
+  const d=drawingMetadata(figure);
+  if(d.version===2){d.bounds=command[direction==='before'?'beforeBounds':'afterBounds']??null;syncDrawingAsset(figure);}
   editor._revision=command[`${direction}Revision`];editor._invalidate({timing:false});
   editor._emit('history',{label:command.label,definition:true,drawing:true});return true;
 }
@@ -70,47 +72,50 @@ export const editorDrawingMethods={
     for(const {id} of spans)if(this.report._styk.layerSheet.tracks[id].end+count>MAX_SHEET_TICKS)throw new Error('This exposure exceeds the timeline limit.');
     return this.movieclipBatch('Extend drawing exposure',()=>{for(const {id,end} of spans)this.sheetInsertFrames([id],end,count);return true;});
   },
-  prepareDrawingCel({pixelsPerUnit=1,paintArea}={}) {
+  prepareDrawingCel({pixelsPerUnit=1,world={x:0,y:0}}={}) {
     const target=this.drawingTarget();if(target.figure)return target;
-    const dimensions=drawingDimensions(paintArea?.width??this.report.canvas_width,paintArea?.height??this.report.canvas_height,pixelsPerUnit),figure=createDrawingFigure({...dimensions,...(paintArea?{origin:{x:paintArea.x-DRAWING_BLEED,y:paintArea.y-DRAWING_BLEED}}:{}),figureTypeId:this.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1)});
-    const d=drawingMetadata(figure),anchor=figure.image_assets[0].anchor_start;
+    const figure=createDrawingFigure({pixelsPerUnit,figureTypeId:this.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1)});
     const uid=this.getLayerFigureUids(target.id)[0]??this._nextUid;
-    const object=createObject(figure,uid,d.origin.x+anchor.x/pixelsPerUnit,d.origin.y+anchor.y/pixelsPerUnit,{scale:1/pixelsPerUnit});
+    const object=createObject(figure,uid,world.x,world.y,{scale:1/pixelsPerUnit});
     return {...target,figure,object,created:true};
   },
-  resampleDrawing(target,{width,height,pixelsPerUnit,dataUrl}) {
+  /** Publish a resampled cel: the tile list and bounds come from the worker;
+   * pixel (0,0) stays fixed so anchors and the segment scale with the ratio. */
+  resampleDrawing(target,{pixelsPerUnit,tiles,bounds}) {
     assertDrawingTargets(this,[target.id]);const current=this.drawingTarget(target.id);
     if(current.key.id!==target.key.id||current.figure!==target.figure)throw new Error('The drawing changed before resampling.');
-    if(dataUrl.length*2>this.historyBytes-65536)throw new Error('This resample exceeds the undo budget. Choose a smaller drawing.');
-    const old=drawingMetadata(target.figure),ratio=pixelsPerUnit/old.pixelsPerUnit,figure=copyDrawingFigure(target.figure,this.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1)),asset=figure.image_assets[0];
-    Object.assign(figure._styk.drawing,{width,height,pixelsPerUnit,crop:{x:0,y:0,width,height},empty:false,revision:0});
-    Object.assign(asset,{width,height,display_width:width,display_height:height,data_url:dataUrl,anchor_length:asset.anchor_length*ratio});
-    for(const key of ['anchor_start','anchor_end'])asset[key]={x:asset[key].x*ratio,y:asset[key].y*ratio};
-    figure.segments[0].length*=ratio;
+    const old=drawingMetadata(target.figure),ratio=pixelsPerUnit/old.pixelsPerUnit,typeId=this.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1);
+    const figure=old.version===1?migrateDrawingFigure(target.figure,typeId,{bounds,anchorScale:ratio}):copyDrawingFigure(target.figure,typeId),asset=figure.image_assets[0];
+    const fd=drawingMetadata(figure);fd.pixelsPerUnit=pixelsPerUnit;fd.bounds=bounds?{...bounds}:null;fd.revision=0;
+    if(old.version===2)asset.drawing_anchor={x:(asset.drawing_anchor?.x??0)*ratio,y:(asset.drawing_anchor?.y??0)*ratio};
+    asset.anchor_length*=ratio;figure.segments[0].length*=ratio;
+    delete asset.styk_tiles;asset.data_url=EMPTY_PNG;asset.width=asset.height=1;syncDrawingAsset(figure);
     const object=structuredClone(target.object);object.figure_type_id=figure.figure_type_id;object.scale*=old.pixelsPerUnit/pixelsPerUnit;if(object.len_flag)object.lengths=object.lengths.map(n=>n*ratio);
     const plan=drawingSheetPlan(this,[target.id]);plan.definitions=[...this.report.figure_types,figure];plan.write(target.id,target.key.tick,createFrame([object]),{easing:{interpolation:'constant'}});
-    return drawingSheetPublish(this,plan,'Resample drawing',{assets:{figure_types:{added:[figure]}}});
+    const result=drawingSheetPublish(this,plan,'Resample drawing',{assets:{figure_types:{added:[figure]}}});
+    this.drawingResources.install(figure,tiles);return result;
   },
   commitDrawingPixels(target,tiles,label='Brush stroke') {
     if(!tiles.length)return false;assertDrawingTargets(this,[target.id]);
     const current=this.drawingTarget(target.id);
     if(current.key.id!==target.key.id)throw new Error('The drawing exposure changed before the edit finished.');
     const bytes=pixelChangeBytes(tiles);if(bytes>this.historyBytes-65536)throw new Error('This pixel edit exceeds the undo budget. Use a smaller area or shorter stroke.');
-    if(target.created&&bytes+target.figure.image_assets[0].data_url.length*2>this.historyBytes-65536)throw new Error('This drawing expansion exceeds the undo budget. Use another drawing layer or a lower resolution.');
-    this.drawingResources.checkHistory({kind:'drawing-pixels',celId:drawingMetadata(target.figure).celId,tiles},'after');
+    const celId=drawingMetadata(target.figure).celId,beforeBounds=drawingMetadata(target.figure).bounds??null;
+    this.drawingResources.checkHistory({kind:'drawing-pixels',celId,tiles},'after');
     const commit=()=>{
-      if(target.created){
+      if(target.created||target.migratedFrom){
         const plan=drawingSheetPlan(this,[target.id]);plan.layers.assignments[target.object.unique_id]=target.id;plan.definitions=[...this.report.figure_types,target.figure];
         plan.write(target.id,target.key.tick,createFrame([target.object]),{easing:{interpolation:'constant'}});
-        drawingSheetPublish(this,plan,'Create drawing cel',{assets:{figure_types:{added:[target.figure]}},nextUid:Math.max(this._nextUid,target.object.unique_id+1)});
+        drawingSheetPublish(this,plan,target.created?'Create drawing cel':'Migrate drawing',{assets:{figure_types:{added:[target.figure]}},nextUid:Math.max(this._nextUid,(target.object.unique_id??0)+1)});
       }
-      const figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===drawingMetadata(target.figure).celId);
+      if(target.migratedFrom)this.drawingResources.retarget(target.migratedFrom,target.figure);
+      const figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===celId);
       this.drawingResources.apply(figure,tiles,'after');
-      this._record({kind:'drawing-pixels',celId:drawingMetadata(figure).celId,tiles,label,precomputedBytes:bytes});
+      this._record({kind:'drawing-pixels',celId,tiles,label,beforeBounds,afterBounds:drawingMetadata(figure).bounds??null,precomputedBytes:bytes});
       this.selectSheetLayer(target.id);this._invalidate({timing:false});this._emit('edit',{label,definition:true,drawing:true});return true;
     };
-    // Only cel creation changes sheet structure. Subsequent strokes are pixel
-    // commands and must not rebuild timing or invalidate every timeline row.
-    return target.created?this.movieclipBatch(label,commit):commit();
+    // Cel creation and migration change sheet structure. Subsequent strokes are
+    // pixel commands and must not rebuild timing or invalidate timeline rows.
+    return (target.created||target.migratedFrom)?this.movieclipBatch(label,commit):commit();
   },
 };

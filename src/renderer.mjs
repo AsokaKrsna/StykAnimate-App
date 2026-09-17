@@ -25,7 +25,7 @@ import { ArtworkRegistry } from './render-artwork.mjs';
 import {glyphTextureDescriptor,drawGlyphMask,glyphTextureShape} from './renderer-glyphs.mjs';
 import { uploadShapeLayoutSteps, SHAPE_UPLOAD_RECORDS } from './renderer-upload.mjs';
 import { backgroundImageAssets, frameImageAssets, createSceneImages, consumeSceneSteps } from './scene-preparation.mjs';
-import {drawingMatrix,drawingMetadata} from './drawing-model.mjs';
+import {drawingMatrix,drawingPixelMatrix,drawingMetadata} from './drawing-model.mjs';
 export { cameraMatrix, worldToScreen, screenToWorld } from './renderer-geometry.mjs';
 function renderPreviewVfx(renderer,field,create,render) {
   if(performance.now()<renderer.vfxRetryAt)return false;
@@ -321,7 +321,7 @@ class CanvasFallback {
   // renderSource identity survives seeks and translation-only edits, so an
   // unchanged figure is one drawImage instead of re-stroking every primitive.
   drawObject(ctx, group, scale) {
-    if(group.items.length===1&&this.resources.drawing?.(group.items[0].fig)?.canvas){drawGeometry(ctx,{drawables:group.items},this.resources);return;}
+    if(group.items.length===1&&this.resources.drawing?.(group.items[0].fig)?.store){drawGeometry(ctx,{drawables:group.items},this.resources);return;}
     const artworkView=opacityArtwork(group.g,group.items),{source,items}=artworkView;
     if (group.items.length < 4 && !group.items.some(hasDrawableVfx) || typeof OffscreenCanvas === 'undefined' || performance.now()<this.rasterRetryAt) {
       drawGeometry(ctx, { drawables: group.items }, this.resources); return;
@@ -723,17 +723,36 @@ class WebGPURenderer {
     const {source,items:sourceItems} = artworkView;
     const uid = uidOf(g), prior = this.entries.get(key); let data, texture;
     const drawing=sourceItems.length===1&&!isOnion&&drawingMetadata(sourceItems[0].fig)&&this.resources.drawing?.(sourceItems[0].fig);
-    if(drawing?.canvas&&!hasDrawableVfx(sourceItems[0])) {
-      this.drawingTextures??=new Map();texture=this.drawingTextures.get(drawing.id);
-      if(!texture||texture.width!==drawing.width||texture.height!==drawing.height){
-        texture?.texture.destroy();
-        if(drawing.width>this.device.limits.maxTextureDimension2D||drawing.height>this.device.limits.maxTextureDimension2D)throw new Error('Drawing exceeds the graphics device texture limit. Choose Canvas graphics mode.');
-        const gpu=this.device.createTexture({size:[drawing.width,drawing.height],format:'rgba8unorm',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});
-        texture={texture:gpu,bindGroup:this.textureBindGroup(gpu),width:drawing.width,height:drawing.height,stamp:-1,bytes:drawing.width*drawing.height*4};this.drawingTextures.set(drawing.id,texture);
+    if(drawing?.store&&!hasDrawableVfx(sourceItems[0])) {
+      const item=sourceItems[0],matrix=drawingPixelMatrix(item),bounds=drawing.store.bounds;
+      // Visible pixel rect: viewport → world → cel pixel space.
+      let rect=bounds?{...bounds}:null,cam=this.activeCamera;
+      if(cam&&rect){
+        const cd=cam[0]*cam[3]-cam[1]*cam[2],md=matrix[0]*matrix[3]-matrix[1]*matrix[2];
+        if(Math.abs(cd)>1e-12&&Math.abs(md)>1e-12){
+          const toWorld=p=>({x:(cam[3]*(p.x-cam[4])-cam[2]*(p.y-cam[5]))/cd,y:(cam[0]*(p.y-cam[5])-cam[1]*(p.x-cam[4]))/cd});
+          const toPixel=p=>({x:(matrix[3]*(p.x-matrix[4])-matrix[2]*(p.y-matrix[5]))/md,y:(matrix[0]*(p.y-matrix[5])-matrix[1]*(p.x-matrix[4]))/md});
+          const ps=[[0,0],[this.width,0],[this.width,this.height],[0,this.height]].map(([x,y])=>toPixel(toWorld({x,y})));
+          const vx=Math.min(...ps.map(p=>p.x)),vy=Math.min(...ps.map(p=>p.y)),vx1=Math.max(...ps.map(p=>p.x)),vy1=Math.max(...ps.map(p=>p.y));
+          rect={x:Math.max(rect.x,vx),y:Math.max(rect.y,vy),width:Math.min(rect.x+rect.width,vx1)-Math.max(rect.x,vx),height:Math.min(rect.y+rect.height,vy1)-Math.max(rect.y,vy)};
+          if(rect.width<=0||rect.height<=0)rect=null;
+        }
       }
-      texture.drawing=drawing;const [a,b,c,d,e,f]=drawingMatrix(sourceItems[0]);
-      data=new Float32Array(shapeRecord({a:[e-source.root.x,f-source.root.y,0,0],b:[a*drawing.width,b*drawing.width,c*drawing.height,d*drawing.height],mode:9,color:[1,1,1,sourceItems[0].alpha],transform:index}));
-      return {key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:1,texture};
+      const scratch=rect&&drawing.scratch?.(rect);
+      if(scratch){
+        this.drawingTextures??=new Map();texture=this.drawingTextures.get(drawing.id);
+        const w=scratch.canvas.width,h=scratch.canvas.height,rectKey=`${scratch.x},${scratch.y},${w},${h}`;
+        if(!texture||texture.width!==w||texture.height!==h){
+          texture?.texture.destroy();
+          if(w>this.device.limits.maxTextureDimension2D||h>this.device.limits.maxTextureDimension2D)throw new Error('Drawing exceeds the graphics device texture limit. Choose Canvas graphics mode.');
+          const gpu=this.device.createTexture({size:[w,h],format:'rgba8unorm',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});
+          texture={texture:gpu,bindGroup:this.textureBindGroup(gpu),width:w,height:h,stamp:-1,rectKey:null,bytes:w*h*4};this.drawingTextures.set(drawing.id,texture);
+        }
+        texture.drawing=drawing;texture.canvas=scratch.canvas;texture.dirty=scratch.dirty;texture.nextRectKey=rectKey;
+        const ox=matrix[0]*scratch.x+matrix[2]*scratch.y+matrix[4],oy=matrix[1]*scratch.x+matrix[3]*scratch.y+matrix[5];
+        data=new Float32Array(shapeRecord({a:[ox-source.root.x,oy-source.root.y,0,0],b:[matrix[0]*scratch.width,matrix[1]*scratch.width,matrix[2]*scratch.height,matrix[3]*scratch.height],mode:9,color:[1,1,1,sourceItems[0].alpha],transform:index}));
+        return {key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:1,texture};
+      }
     }
     let compatibility = this.compatibilityCache.get(source);
     if (compatibility === undefined) { compatibility = artworkView.isolated || requiresCompatibilityTexture(sourceItems); this.compatibilityCache.set(source, compatibility); }
@@ -774,6 +793,7 @@ class WebGPURenderer {
     const ordered = geometry.orderedObjects, before = old.orderedObjects;
     if (!ordered || ordered.length !== before?.length || ordered.some((g, i) => g.slot !== before[i].slot || uidOf(g) !== uidOf(before[i]))) return false;
     const matrix = cameraMatrix(options), scale = Math.hypot(matrix[0], matrix[1]) * this.dpr, updates = [];
+    this.activeCamera = matrix;
     this.artworks.begin(options.artworkRevision);
     this.stats.compiledObjects = 0; this.stats.rasterizedObjects = 0;
     for (const slot of geometry.changedSlots) {
@@ -811,6 +831,7 @@ class WebGPURenderer {
     geometry=options.vfxEnabled===false?vfxPreviewGeometry(geometry):connectedVfxGeometry(geometry,options.frame,options.report,options.hiddenUids);
     this.artworks.begin(options.artworkRevision);
     const matrix = cameraMatrix(options), scale = Math.hypot(matrix[0], matrix[1]) * this.dpr, next = [];
+    this.activeCamera = matrix;
     this.stats.compiledObjects = 0; this.stats.rasterizedObjects = 0;
     const reuseOnions = this.lastGeneration === this.generation && (this.lastGeometry === geometry || geometry.previousToken === this.lastGeometry?.token);
     const previousOnions = reuseOnions ? this.onionScenes || [] : [], onionScenes = [];
@@ -950,10 +971,14 @@ class WebGPURenderer {
     const liveTextures=new Set(this.layout.map(entry=>entry.texture));
     for(const [id,texture] of this.drawingTextures??[]){
       if(!liveTextures.has(texture)){texture.texture.destroy();this.drawingTextures.delete(id);continue;}
-      const drawing=texture.drawing;if(texture.stamp===drawing.stamp)continue;
-      const r=texture.stamp<0||!drawing.dirtyRect?{x:0,y:0,right:drawing.width,bottom:drawing.height}:drawing.dirtyRect;
-      this.device.queue.copyExternalImageToTexture({source:drawing.canvas,origin:[r.x,r.y]},{texture:texture.texture,origin:[r.x,r.y],premultipliedAlpha:true},[r.right-r.x,r.bottom-r.y]);
-      texture.stamp=drawing.stamp;drawing.dirtyRect=null;
+      const drawing=texture.drawing;if(texture.stamp===drawing.stamp&&texture.rectKey===texture.nextRectKey)continue;
+      const canvas=texture.canvas;if(!canvas)continue;
+      // A re-anchored scratch was repainted wholesale; only same-rect updates
+      // can ship the dirty subregion.
+      const dirty=texture.stamp<0||texture.rectKey!==texture.nextRectKey?null:texture.dirty;
+      const r=dirty?{x:dirty.x,y:dirty.y,width:dirty.width,height:dirty.height}:{x:0,y:0,width:canvas.width,height:canvas.height};
+      if(r.width>0&&r.height>0)this.device.queue.copyExternalImageToTexture({source:canvas,origin:[r.x,r.y]},{texture:texture.texture,origin:[r.x,r.y],premultipliedAlpha:true},[r.width,r.height]);
+      texture.stamp=drawing.stamp;texture.rectKey=texture.nextRectKey;drawing.dirty=null;
     }
     if(this.measureFrame){this.telemetryStages.prepare=performance.now()-measureAt;measureAt=performance.now();}
     this.stats.drawingGpuBytes=[...(this.drawingTextures?.values()??[])].reduce((n,t)=>n+t.bytes,0);

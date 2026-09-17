@@ -1,64 +1,81 @@
 import {createImageFigure} from './media-authoring.mjs';
+import {TILE_BLOB_PREFIX} from './drawing-tile-codec.mjs';
 
 export const DRAWING_TILE = 64;
 export const DRAWING_MAX_PIXELS = 16 * 1024 * 1024;
-export const DRAWING_BLEED = 32;
 export const EMPTY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
 export const drawingMetadata = figure => figure?._styk?.drawing;
 export const isDrawingLayer = layer => layer?.drawing?.version === 1;
 export function drawingId() { return `cel-${globalThis.crypto.randomUUID()}`; }
-export function drawingDimensions(width,height,pixelsPerUnit=1) {
+/** v2 drawing cel: an ordinary image figure whose raster lives in the sparse
+ * tile blob on image_assets[0].styk_tiles. The carrier PNG on data_url is a
+ * derived, bounds-sized preview so legacy asset consumers keep working. */
+export function createDrawingFigure({pixelsPerUnit=1,figureTypeId=1,celId=drawingId()}={}) {
   if (![1,2,4].includes(pixelsPerUnit)) throw new Error('Choose 1×, 2× or 4× drawing resolution.');
-  const w=Math.ceil((width+2*DRAWING_BLEED)*pixelsPerUnit),h=Math.ceil((height+2*DRAWING_BLEED)*pixelsPerUnit);
-  if (![w,h].every(n=>Number.isInteger(n)&&n>0&&n<=8192)||w*h>DRAWING_MAX_PIXELS)
-    throw new Error('The drawing exceeds the 16 megapixel paint area. Choose 1× or a smaller stage.');
-  return {width:w,height:h,pixelsPerUnit,bytes:w*h*4};
-}
-export function createDrawingFigure({width,height,pixelsPerUnit=1,figureTypeId=1,celId=drawingId(),origin={x:-DRAWING_BLEED,y:-DRAWING_BLEED},dataUrl=EMPTY_PNG,empty=true}={}) {
-  const figure=createImageFigure({width,height,dataUrl,figureTypeId,name:'Drawing'});
-  figure._styk.drawing={version:1,celId,width,height,pixelsPerUnit,origin:{...origin},crop:{x:0,y:0,width,height},revision:0,empty};
-  // A one-pixel transparent carrier is valid for an authored empty full surface.
-  if(empty) {figure.image_assets[0].width=1;figure.image_assets[0].height=1;}
-  figure.image_assets[0].display_width=width;figure.image_assets[0].display_height=height;
+  const figure=createImageFigure({width:256,height:1,dataUrl:EMPTY_PNG,figureTypeId,name:'Drawing'});
+  const a=figure.image_assets[0];
+  Object.assign(a,{width:1,height:1,display_width:1,display_height:1,anchor_start:{x:0,y:0},anchor_end:{x:256,y:0},anchor_length:256,anchor_angle_rad:0,drawing_anchor:{x:0,y:0}});
+  figure.segments[0].length=256;
+  figure._styk.drawing={version:2,celId,pixelsPerUnit,revision:0,bounds:null};
   return figure;
 }
-export function copyDrawingFigure(figure,typeId) {
+export function copyDrawingFigure(figure,typeId,celId=drawingId()) {
   const result=structuredClone(figure);
-  result.figure_type_id=typeId;result._styk.drawing={...result._styk.drawing,celId:drawingId()};
+  result.figure_type_id=typeId;result._styk.drawing={...result._styk.drawing,celId};
   return result;
 }
-/** Grow in pixel space without changing the object's world-space pose. */
-export function drawingExpansion(figure,points,{empty=false,margin=32,maxPixels=DRAWING_MAX_PIXELS}={}) {
-  const d=drawingMetadata(figure),xs=points.map(p=>p.x),ys=points.map(p=>p.y);
-  if(!points.length||![...xs,...ys,margin].every(Number.isFinite))throw new Error('Invalid drawing bounds.');
-  const left=Math.floor(Math.min(...xs)-margin),top=Math.floor(Math.min(...ys)-margin),right=Math.ceil(Math.max(...xs)+margin),bottom=Math.ceil(Math.max(...ys)+margin);
-  if(left>=0&&top>=0&&right<=d.width&&bottom<=d.height)return null;
-  const x=Math.floor((empty?left:Math.min(0,left))/64)*64,y=Math.floor((empty?top:Math.min(0,top))/64)*64;
-  const width=Math.ceil(((empty?right:Math.max(d.width,right))-x)/64)*64,height=Math.ceil(((empty?bottom:Math.max(d.height,bottom))-y)/64)*64;
-  if(width>8192||height>8192||width*height>Math.min(maxPixels,DRAWING_MAX_PIXELS))throw new Error('This drawing has reached its raster memory limit. Use another drawing layer for distant artwork or a lower resolution.');
-  return {x,y,width,height,offsetX:-x,offsetY:-y};
-}
-export function expandedDrawingFigure(figure,bounds,typeId,dataUrl=EMPTY_PNG) {
-  const d=drawingMetadata(figure),copy=copyDrawingFigure(figure,typeId),a=copy.image_assets[0];
-  Object.assign(copy._styk.drawing,{width:bounds.width,height:bounds.height,origin:{x:d.origin.x+bounds.x/d.pixelsPerUnit,y:d.origin.y+bounds.y/d.pixelsPerUnit},crop:{x:0,y:0,width:bounds.width,height:bounds.height},empty:dataUrl===EMPTY_PNG,revision:0});
-  Object.assign(a,{width:dataUrl===EMPTY_PNG?1:bounds.width,height:dataUrl===EMPTY_PNG?1:bounds.height,display_width:bounds.width,display_height:bounds.height,data_url:dataUrl});
-  for(const key of ['anchor_start','anchor_end'])a[key]={x:a[key].x+bounds.offsetX,y:a[key].y+bounds.offsetY};
+/** v1 → v2 figure with identical anchors and segment geometry, so the same
+ * object poses pixel space identically. Legacy surface pixel p sat at sprite
+ * point p - anchor_start - crop; tiles keep those pixel coordinates, so the
+ * migrated drawing_anchor is anchor_start + crop (scaled when the pixel space
+ * itself was rescaled). The caller supplies the pixel-space bounds and the new
+ * cel identity the entry is retargeted to. */
+export function migrateDrawingFigure(figure,typeId,{celId=drawingId(),bounds=null,anchorScale=1}={}) {
+  const old=drawingMetadata(figure);if(!old||old.version!==1)throw new Error('Only v1 drawings migrate.');
+  const copy=structuredClone(figure),a=copy.image_assets[0];
+  copy.figure_type_id=typeId;delete a.styk_tiles;
+  const anchor={x:((a.anchor_start?.x??0)+old.crop.x)*anchorScale,y:((a.anchor_start?.y??0)+old.crop.y)*anchorScale};
+  Object.assign(a,{data_url:EMPTY_PNG,width:1,height:1,display_width:1,display_height:1,drawing_anchor:anchor});
+  copy._styk.drawing={version:2,celId,pixelsPerUnit:old.pixelsPerUnit,revision:0,bounds:bounds?{...bounds}:null};
   return copy;
 }
+/** Pixel-space artwork bounds for either drawing version, or null when empty. */
+export function drawingPixelBounds(figure) {
+  const d=drawingMetadata(figure);if(!d)return null;
+  if(d.version===1)return{x:0,y:0,width:d.width,height:d.height};
+  return d.bounds?{...d.bounds}:null;
+}
+/** Keep the carrier's placement fields consistent with the v2 bounds metadata
+ * so the published PNG preview and bounds consumers stay correct. The derived
+ * PNG covers only the bounds, so its anchor_start is the drawing_anchor
+ * expressed in PNG coordinates: drawing_anchor - bounds origin. */
+export function syncDrawingAsset(figure) {
+  const d=drawingMetadata(figure),a=figure?.image_assets?.[0];if(!a||d?.version!==2)return;
+  const anchor=a.drawing_anchor??{x:0,y:0},b=d.bounds;
+  const start=b?{x:anchor.x-b.x,y:anchor.y-b.y}:{x:anchor.x,y:anchor.y};
+  Object.assign(a,{display_width:Math.max(1,b?.width??1),display_height:Math.max(1,b?.height??1),anchor_start:start,anchor_end:{x:start.x+a.anchor_length,y:start.y}});
+}
+const integerRect=r=>r&&[r.x,r.y,r.width,r.height].every(Number.isSafeInteger)&&r.width>0&&r.height>0&&r.width<=16384&&r.height<=16384&&r.width*r.height<=4*DRAWING_MAX_PIXELS;
 export function validateDrawingFigure(figure) {
   const d=drawingMetadata(figure);if(d===undefined)return;
   const point=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y);
-  if(!d||d.version!==1||typeof d.celId!=='string'||!/^cel-[a-zA-Z0-9-]{1,100}$/.test(d.celId)||
-    ![d.width,d.height].every(n=>Number.isInteger(n)&&n>0&&n<=8192)||d.width*d.height>DRAWING_MAX_PIXELS||
-    ![1,2,4].includes(d.pixelsPerUnit)||!point(d.origin)||!point(d.crop)||
-    ![d.crop.x,d.crop.y,d.crop.width,d.crop.height].every(Number.isInteger)||d.crop.x<0||d.crop.y<0||d.crop.width<1||d.crop.height<1||
-    d.crop.x+d.crop.width>d.width||d.crop.y+d.crop.height>d.height||!Number.isSafeInteger(d.revision)||d.revision<0||typeof d.empty!=='boolean')
-    throw new Error('Invalid drawing metadata or paint dimensions.');
+  const identity=typeof d?.celId!=='string'||!/^cel-[a-zA-Z0-9-]{1,100}$/.test(d.celId)||![1,2,4].includes(d.pixelsPerUnit)||!Number.isSafeInteger(d.revision)||d.revision<0;
+  if(d.version===1){
+    if(identity||![d.width,d.height].every(n=>Number.isInteger(n)&&n>0&&n<=8192)||d.width*d.height>DRAWING_MAX_PIXELS||
+      !point(d.origin)||!point(d.crop)||
+      ![d.crop.x,d.crop.y,d.crop.width,d.crop.height].every(Number.isInteger)||d.crop.x<0||d.crop.y<0||d.crop.width<1||d.crop.height<1||
+      d.crop.x+d.crop.width>d.width||d.crop.y+d.crop.height>d.height||typeof d.empty!=='boolean')
+      throw new Error('Invalid drawing metadata or paint dimensions.');
+  } else if(d.version===2){
+    if(identity||!(d.bounds===null||integerRect(d.bounds)))throw new Error('Invalid drawing metadata.');
+  } else throw new Error('Invalid drawing metadata or paint dimensions.');
   const a=figure.image_assets?.[0];
   if(figure.segments?.length!==1||figure.segments[0].segment_type!=='image'||figure.image_assets.length!==1||!a?.data_url?.startsWith('data:image/png;base64,')||
-    !((a.width===d.crop.width&&a.height===d.crop.height)||(d.empty&&a.width===1&&a.height===1)))
+    (d.version===1&&!((a.width===d.crop.width&&a.height===d.crop.height)||(d.empty&&a.width===1&&a.height===1)))||
+    (d.version===2&&!((a.width===1&&a.height===1)||(d.bounds&&a.width===d.bounds.width&&a.height===d.bounds.height))))
     throw new Error('A drawing needs one embedded PNG sprite matching its pixel dimensions.');
   if(a.data_url.length>96*1024*1024)throw new Error('Drawing PNG exceeds the asset limit.');
+  if(d.version===2&&a.styk_tiles!==undefined&&(typeof a.styk_tiles!=='string'||!a.styk_tiles.startsWith(TILE_BLOB_PREFIX)||a.styk_tiles.length>TILE_BLOB_PREFIX.length+96*1024*1024))throw new Error('Invalid drawing tile blob.');
   let header;try{header=Uint8Array.from(atob(a.data_url.slice(22,66)),c=>c.charCodeAt(0));}catch{throw new Error('Invalid drawing PNG header.');}
   if(header.length<24||![137,80,78,71,13,10,26,10].every((v,i)=>header[i]===v))throw new Error('Invalid drawing PNG header.');
   const view=new DataView(header.buffer);if(view.getUint32(16)!==a.width||view.getUint32(20)!==a.height)throw new Error('Drawing PNG dimensions do not match its metadata.');
@@ -78,13 +95,18 @@ export function validateDrawings(report) {
   }
 }
 
-/** Sprite pixel → world affine, matching Pivot's image compositor exactly. */
-export function drawingMatrix(item) {
+/** Sprite pixel → world affine, matching Pivot's image compositor exactly. The
+ * optional anchor selects the sprite-space origin; v2 cels anchor placement at
+ * the published bounds while tiles stay anchored at drawing_anchor. */
+export function drawingMatrix(item,anchor) {
   const a=item.asset,reverse=Boolean(item.seg.extra_u8_a??item.seg.extra?.[1]),mirror=Boolean(item.seg.extra_u8_b??item.seg.extra?.[2])!==Boolean(item.obj.image_text_flags);
+  anchor??=a.anchor_start;
   const start=reverse?item.end:item.start,angle=(mirror?item.angle+a.anchor_angle_rad-Math.PI:item.angle-a.anchor_angle_rad)+(reverse?Math.PI:0);
   const scale=Math.hypot(item.end.x-item.start.x,item.end.y-item.start.y)/a.anchor_length;
   const c=Math.cos(angle)*scale,s=Math.sin(angle)*scale,m=mirror?-1:1;
-  return [c*m,s*m,-s,c,start.x-c*m*a.anchor_start.x+s*a.anchor_start.y,start.y-s*m*a.anchor_start.x-c*a.anchor_start.y];
+  return [c*m,s*m,-s,c,start.x-c*m*anchor.x+s*anchor.y,start.y-s*m*anchor.x-c*anchor.y];
 }
+/** Tile-pixel → world affine: the coordinate space strokes and stores use. */
+export function drawingPixelMatrix(item) {return drawingMatrix(item,item.asset.drawing_anchor??item.asset.anchor_start);}
 export function transformPoint(matrix,p) {const [a,b,c,d,e,f]=matrix;return {x:a*p.x+c*p.y+e,y:b*p.x+d*p.y+f};}
 export function inversePoint(matrix,p) {const [a,b,c,d,e,f]=matrix,det=a*d-b*c;if(Math.abs(det)<1e-12)throw new Error('Set a nonzero drawing scale before painting.');return {x:(d*(p.x-e)-c*(p.y-f))/det,y:(a*(p.y-f)-b*(p.x-e))/det};}

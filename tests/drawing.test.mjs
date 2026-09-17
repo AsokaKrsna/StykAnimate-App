@@ -2,17 +2,70 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {DrawingResources} from '../src/drawing-resources.mjs';
-import {DrawingStroke,floodPixels,lassoMask,writeTile} from '../src/drawing-pixels.mjs';
-import {drawingMetadata,validateDrawings,drawingMatrix,inversePoint,transformPoint,drawingExpansion,expandedDrawingFigure,drawingDimensions,EMPTY_PNG} from '../src/drawing-model.mjs';
+import {DrawingStroke,floodTiles,lassoMask,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
+import {drawingMetadata,validateDrawings,drawingMatrix,drawingPixelMatrix,inversePoint,transformPoint,migrateDrawingFigure,EMPTY_PNG} from '../src/drawing-model.mjs';
+import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from '../src/drawing-tiles.mjs';
+import {encodeTileBlob,decodeTileBlob,TILE_BLOB_PREFIX} from '../src/drawing-tile-codec.mjs';
+import {encodeDrawingPNG,decodeDrawingPNG,decodeDrawingPNGBytes} from '../src/drawing-png.mjs';
+import {encodePNGPortable} from '../src/sticknodes/decoder/png-browser.mjs';
+import {createImageFigure} from '../src/media-authoring.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
-import {createFrame} from '../src/demo.mjs';
+import {createFrame,createObject} from '../src/demo.mjs';
 
+// In-process stand-in for drawing-worker.mjs; the browser tests exercise the
+// real worker. OffscreenCanvas ops (paste/resample/thumbnail) are not stubbed.
+function workerStub(){
+  const storeOf=data=>{const store=new TileStore();for(const t of data.tiles??[])store.tiles.set(tileKey(t.tx,t.ty),{tx:t.tx,ty:t.ty,pixels:new Uint8ClampedArray(t.pixels),frozen:false,png:t.png?new Uint8Array(t.png):undefined});return store;};
+  const tilePixels=async t=>t.pixels?new Uint8ClampedArray(t.pixels):(await decodeDrawingPNGBytes(new Uint8Array(t.png))).pixels;
+  return {async request(kind,data){
+    if(kind==='decode-legacy'){
+      const crop=data.crop??{x:0,y:0},image=await decodeDrawingPNG(data.url),tiles=[];
+      for(const [tx,ty] of TileStore.tilesInRect(crop.x,crop.y,image.width,image.height)){
+        const pixels=new Uint8ClampedArray(TILE_BYTES),ox=tx*TILE-crop.x,oy=ty*TILE-crop.y;
+        for(let py=Math.max(0,-oy);py<Math.min(TILE,image.height-oy);py++)pixels.set(image.pixels.subarray(((py+oy)*image.width+Math.max(0,ox))*4,((py+oy)*image.width+Math.min(image.width,ox+TILE))*4),(py*TILE+Math.max(0,-ox))*4);
+        const tile={tx,ty,pixels};if(!tileTransparent(tile))tiles.push({tx,ty,pixels:pixels.buffer});
+      }
+      return {tiles};
+    }
+    if(kind==='decode-tiles')return {tiles:(await decodeTileBlob(data.url)).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,png:t.png.buffer}))};
+    if(kind==='encode-tiles'){
+      const out=[];
+      for(const t of data.tiles??[])if(!t.png)out.push({tx:t.tx,ty:t.ty,png:(await encodePNGPortable({width:TILE,height:TILE,channels:4},new Uint8ClampedArray(t.pixels))).buffer});
+      let dataUrl,width,height;
+      if(data.region){const r=data.region,pixels=new Uint8ClampedArray(r.width*r.height*4);
+        for(const t of data.tiles??[]){const source=await tilePixels(t),ox=t.tx*TILE-r.x,oy=t.ty*TILE-r.y;
+          for(let py=Math.max(0,-oy);py<Math.min(TILE,r.height-oy);py++)pixels.set(source.subarray((py*TILE+Math.max(0,-ox))*4,(py*TILE+Math.min(TILE,r.width-ox))*4),((py+oy)*r.width+Math.max(0,ox))*4);}
+        dataUrl=await encodeDrawingPNG(pixels,r.width,r.height);width=r.width;height=r.height;}
+      return {tiles:out,dataUrl,width,height};
+    }
+    if(kind==='fill'){
+      const store=storeOf(data),before=new Map();
+      for(const [tx,ty] of TileStore.tilesInRect(data.bounds.x,data.bounds.y,data.bounds.width,data.bounds.height))before.set(tileKey(tx,ty),store.get(tx,ty)?.pixels.slice()??null);
+      floodTiles(store,{...data.options,bounds:data.bounds,source:data.source?new Uint8ClampedArray(data.source):undefined});
+      return {tiles:tileChanges(store,before,data.maxBytes)};
+    }
+    throw new Error(`Unstubbed drawing worker op: ${kind}`);
+  },dispose(){}};
+}
 function fixture(){
   const e=new Editor({demo:false,layerTimeline:true});e.report.canvas_width=64;e.report.canvas_height=64;
-  const worker={async request(kind,{width,height,tiles=[]}){const pixels=new Uint8ClampedArray(width*height*4);for(const t of tiles)writeTile(pixels,width,t,t.pixels);return kind==='decode'?{pixels:pixels.buffer}:{dataUrl:EMPTY_PNG};},dispose(){}};
-  const resources=new DrawingResources(e.report,{worker});e.createDrawingLayer();return {e,resources};
+  const resources=new DrawingResources(e.report,{worker:workerStub()});e.createDrawingLayer();return {e,resources};
 }
-async function stroke(e,x=40){const target=e.prepareDrawingCel(),surface=await e.drawingResources.surface(target.figure),brush=new DrawingStroke(surface.pixels,surface.width,surface.height,{size:8,pressureSize:false});brush.sample({x,y:40});const tiles=brush.finish();e.commitDrawingPixels(target,tiles);return {target,surface,tiles};}
+async function stroke(e,x=40,y=40){
+  const target=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:32,y:32}}),surface=await e.drawingResources.surface(target.figure);
+  const brush=new DrawingStroke(surface.store,{size:8,pressureSize:false});brush.sample({x,y});
+  const tiles=brush.finish();e.commitDrawingPixels(target,tiles);return {target,surface,tiles};
+}
+const snapshotStore=store=>new Map([...store].map(t=>[tileKey(t.tx,t.ty),t.pixels.slice()]));
+const storePixels=store=>{const b=store.bounds;return b?store.readRect(b.x,b.y,b.width,b.height):new Uint8ClampedArray(0);};
+async function legacyFigure({width=96,height=64,pixelsPerUnit=2,figureTypeId=1}={}){
+  const pixels=new Uint8ClampedArray(width*height*4);
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++)if((x*7+y*11)%13<3)pixels.set([x%256,y%256,(x+y)%256,255],(y*width+x)*4);
+  const figure=createImageFigure({width,height,dataUrl:await encodeDrawingPNG(pixels,width,height),figureTypeId,name:'Drawing'});
+  figure.image_assets[0].display_width=width;figure.image_assets[0].display_height=height;
+  figure._styk.drawing={version:1,celId:'cel-legacy-1',width,height,pixelsPerUnit,origin:{x:0,y:0},crop:{x:0,y:0,width,height},revision:0,empty:false};
+  return {figure,pixels};
+}
 
 test('Add Frame makes a blank only on the active drawing at a key, inside a hold and after its end',async()=>{
   const {e,resources}=fixture();try{
@@ -25,44 +78,177 @@ test('Add Frame makes a blank only on the active drawing at a key, inside a hold
   }finally{resources.dispose();}
 });
 
-test('paint growth preserves pixel world positions with rotated, mirrored and reversed poses',async()=>{
+test('TileStore forks share tiles, copy-on-write diverges and bounds track occupied pixels',()=>{
+  const store=new TileStore();store.writeRect(-70,-70,140,140,new Uint8ClampedArray(140*140*4).fill(255));
+  assert.deepEqual(store.bounds,{x:-70,y:-70,width:140,height:140});
+  assert.deepEqual(store.pixel(-1,-1),[255,255,255,255]);
+  assert.deepEqual(store.pixel(-70,-70),[255,255,255,255]);
+  assert.deepEqual(store.pixel(70,70),[0,0,0,0]);
+  const fork=store.fork();
+  assert.ok([...store].every(t=>t.frozen));assert.ok([...fork].every(t=>t.frozen));
+  assert.equal(fork.get(-2,-2),store.get(-2,-2));
+  const writable=fork.writable(0,0);writable.pixels[3]=0;
+  assert.notEqual(fork.get(0,0),store.get(0,0));assert.equal(store.get(0,0).pixels[3],255);
+  store.writable(-2,-2).pixels[0]=7;assert.equal(fork.get(-2,-2).pixels[0],0);assert.equal(store.get(-2,-2).pixels[0],7);
+  assert.equal(fork.pixel(70,70)[3],0);
+});
+
+test('TileStore set/delete/prune handle 4-byte uniform tiles and fully transparent tiles',()=>{
+  const store=new TileStore();store.set(1,-1,new Uint8ClampedArray([9,8,7,6]));
+  assert.equal(store.get(1,-1).pixels.length,TILE_BYTES);assert.deepEqual(store.pixel(64,-64),[9,8,7,6]);
+  assert.equal(store.pixel(64,-64)[3],6);assert.deepEqual(store.bounds,{x:64,y:-64,width:64,height:64});
+  store.writable(9,9);assert.equal(store.size,2);
+  assert.deepEqual(store.prune().sort(),['9,9']);assert.equal(store.size,1);
+  store.set(1,-1,new Uint8ClampedArray(4));store.prune();assert.equal(store.size,0);assert.equal(store.bounds,null);
+  store.set(-1,-1,null);assert.equal(store.size,0);
+  store.freeze();const tile=store.get(-3,0)??store.writable(-3,0);assert.equal(tile.frozen,false);
+});
+
+test('a stroke crossing tile boundaries and negative coordinates matches its positive-space copy',()=>{
+  const a=new TileStore(),b=new TileStore(),run=(store,dx,dy)=>{
+    const s=new DrawingStroke(store,{size:16,color:[10,20,30],pressureSize:false,hardness:.5,flow:.7,opacity:.8});
+    s.sample({x:dx,y:dy});s.sample({x:dx+30,y:dy+10});s.sample({x:dx+60,y:dy-20});return s.finish();
+  };
+  run(a,300,300);run(b,-84,-84); // same dab positions shifted -384px (6 tiles)
+  assert.ok([...b].some(t=>t.tx<0||t.ty<0),'expected tiles at negative coordinates');
+  assert.deepEqual(a.readRect(250,240,140,110),b.readRect(-134,-144,140,110));
+});
+
+test('stroke undo restores null for newly allocated tiles and reapplies exactly',()=>{
+  const store=new TileStore();
+  const s=new DrawingStroke(store,{size:12,color:[255,0,0],pressureSize:false});
+  s.sample({x:-70,y:-30});s.sample({x:-10,y:-50});const changes=s.finish();
+  assert.ok(changes.length>=2&&changes.every(c=>c.before===null));
+  applyTileChanges(store,changes,'before');
+  for(const c of changes)assert.ok(!store.has(c.tx,c.ty));
+  assert.equal(store.bounds,null);
+  applyTileChanges(store,changes,'after');
+  assert.ok(store.pixel(-70,-30)[3]>0);
+});
+
+test('floodTiles stays inside its bounds, closes gaps and allocates only touched tiles',()=>{
+  const wall=new Uint8ClampedArray(10*10*4);for(let y=0;y<10;y++)if(y!==5)wall.set([0,0,0,255],(y*10+5)*4);
+  const leaky=new TileStore();leaky.writeRect(0,0,10,10,wall);
+  floodTiles(leaky,{x:0,y:0,color:[255,0,0,255],tolerance:0,bounds:{x:0,y:0,width:10,height:10}});
+  assert.equal(leaky.pixel(0,0)[3],255);assert.equal(leaky.pixel(9,5)[3],255);assert.equal(leaky.size,1);
+  const sealed=new TileStore();sealed.writeRect(0,0,10,10,wall);
+  floodTiles(sealed,{x:0,y:0,color:[255,0,0,255],tolerance:0,gap:1,bounds:{x:0,y:0,width:10,height:10}});
+  assert.equal(sealed.pixel(9,5)[3],0);assert.equal(sealed.pixel(9,9)[3],0);
+  // A seed outside the bounds rect is rejected silently.
+  const empty=new TileStore();floodTiles(empty,{x:500,y:0,color:[1,2,3,255],bounds:{x:0,y:0,width:10,height:10}});assert.equal(empty.size,0);
+  assert.throws(()=>floodTiles(empty,{x:0,y:0,bounds:{x:0,y:0,width:8192,height:8193}}),/bounds/);
+});
+
+test('lassoMask allocates only the polygon bounding box',()=>{
+  const mask=lassoMask([{x:10,y:20},{x:40,y:20},{x:40,y:50},{x:10,y:50}]);
+  assert.deepEqual({x:mask.x,y:mask.y,width:mask.width,height:mask.height},{x:10,y:20,width:30,height:30});
+  assert.equal(mask.mask.length,900);assert.equal(mask.mask.reduce((a,b)=>a+b,0),900);
+  const small=lassoMask([{x:1,y:1},{x:2,y:1}]);assert.equal(small.mask.reduce((a,b)=>a+b,0),0);
+});
+
+test('tile blobs round-trip exact RGBA at negative coordinates and skip transparent tiles',async()=>{
+  const store=new TileStore(),px=new Uint8ClampedArray(TILE_BYTES);
+  px.set([1,2,3,4],0);px.set([200,100,50,255],(33*64+17)*4);px.set([9,9,9,128],TILE_BYTES-4);
+  store.set(-3,2,px);store.set(0,-1,new Uint8ClampedArray([77,88,99,255]));
+  store.writable(7,7).pixels.set([5,5,5,0],0); // transparent: must be skipped
+  const url=await encodeTileBlob(store);assert.ok(url.startsWith(TILE_BLOB_PREFIX));
+  const tiles=await decodeTileBlob(url);assert.equal(tiles.length,2);
+  const map=new Map(tiles.map(t=>[tileKey(t.tx,t.ty),t]));
+  assert.deepEqual([...map.get('-3,2').pixels],[...px]);
+  assert.ok([...map.get('0,-1').pixels].every((n,i)=>n===[77,88,99,255][i%4]));
+  assert.ok(map.get('0,-1').png?.length);
+  const bad=TILE_BLOB_PREFIX+btoa('STYT');
+  await assert.rejects(decodeTileBlob(bad),/tile blob/);
+});
+
+test('v1 to v2 migration preserves pixel world positions with rotated, mirrored and reversed poses',async()=>{
   const {e,resources}=fixture();try{
-    const {target}=await stroke(e),bounds=drawingExpansion(target.figure,[{x:-50,y:-30},{x:190,y:180}],{margin:10}),copy=expandedDrawingFigure(target.figure,bounds,20);
-    assert.ok(bounds.width>128&&bounds.height>128);assert.equal(drawingExpansion(copy,[{x:40,y:40}],{margin:2}),null);
+    const {figure:v1}=await legacyFigure(),migrated=migrateDrawingFigure(v1,99,{bounds:{x:0,y:0,width:96,height:64}});
+    assert.equal(drawingMetadata(migrated).version,2);assert.ok(/^cel-/.test(drawingMetadata(migrated).celId));
     for(const mirror of [0,1])for(const reverse of [0,1]){
-      const old=structuredClone(target.figure),next=structuredClone(copy),object={...target.object,angle_rad:.8,scale:1.5};
-      for(const f of [old,next])Object.assign(f.segments[0],{extra_u8_a:reverse,extra_u8_b:mirror});
-      const matrix=f=>drawingMatrix(buildGeometry({...e.report,figure_types:[f]},createFrame([{...object,figure_type_id:f.figure_type_id}])).drawables[0]);
-      const a=transformPoint(matrix(old),{x:50,y:60}),b=transformPoint(matrix(next),{x:50+bounds.offsetX,y:60+bounds.offsetY});
-      assert.ok(Math.hypot(a.x-b.x,a.y-b.y)<1e-8);
+      const object={...createObject(v1,7,0,0),angle_rad:.8,angles:[.8],scale:1.5,image_text_flags:0};
+      for(const f of [v1,migrated])f.segments[0].extra_u8_a=reverse,f.segments[0].extra_u8_b=mirror;
+      const item=f=>buildGeometry({...e.report,figure_types:[f]},createFrame([{...object,figure_type_id:f.figure_type_id}])).drawables[0];
+      const a=transformPoint(drawingMatrix(item(v1)),{x:50.25,y:60.75}),b=transformPoint(drawingPixelMatrix(item(migrated)),{x:50.25,y:60.75});
+      assert.ok(Math.hypot(a.x-b.x,a.y-b.y)<1e-8,`mirror=${mirror} reverse=${reverse}`);
     }
-    assert.throws(()=>drawingExpansion(target.figure,[{x:1e6,y:0}]),/memory limit/);
-    assert.throws(()=>drawingExpansion(target.figure,[{x:200,y:200}],{maxPixels:1000}),/memory limit/);
   }finally{resources.dispose();}
 });
 
-test('4x cels validate and pointer-centered blank creation is independent of stage dimensions',()=>{
+test('v1 cels decode into tiles at crop offsets through the resource store',async()=>{
   const {e,resources}=fixture();try{
-    assert.equal(drawingDimensions(64,64,4).width,512);
-    e.report.canvas_width=8000;e.report.canvas_height=8000;
-    const target=e.prepareDrawingCel({pixelsPerUnit:4,paintArea:{x:3000,y:-100,width:256,height:256}});
-    assert.equal(target.figure._styk.drawing.pixelsPerUnit,4);assert.equal(target.figure._styk.drawing.origin.x,2968);
-    validateDrawings({...e.report,figure_types:[...e.report.figure_types,target.figure]});
+    const {figure:v1,pixels}=await legacyFigure({figureTypeId:50});
+    e.report.figure_types.push(v1);
+    const entry=await resources.surface(v1);
+    assert.deepEqual(entry.store.bounds,{x:0,y:0,width:96,height:64});
+    assert.deepEqual([...entry.store.readRect(0,0,96,64)],[...pixels]);
   }finally{resources.dispose();}
 });
 
-test('high-resolution brush tips retain their logical size instead of capping at 2048 pixels',()=>{
-  const pixels=new Uint8ClampedArray(2200*2*4),brush=new DrawingStroke(pixels,2200,2,{size:4096,pressureSize:false});
-  brush.dab({x:1100,y:1});assert.equal(pixels[2190*4+3],255);
+test('copyDrawingFigure plus a resource fork shares tiles until only the edited tile diverges',async()=>{
+  const {e,resources}=fixture();try{
+    const {target,surface}=await stroke(e);e.extendDrawing(undefined,9);e.seek(5);e.drawingKey();const copy=e.drawingTarget();
+    assert.notEqual(drawingMetadata(copy.figure).celId,drawingMetadata(target.figure).celId);
+    const s1=resources.entry(target.figure).store,s2=resources.entry(copy.figure).store;
+    assert.notEqual(s1,s2);assert.ok(s2.size>0);
+    assert.ok([...s2].every(t=>s1.get(t.tx,t.ty)===t),'forked tiles are shared');
+    assert.ok([...s1].every(t=>t.frozen));
+    const brush=new DrawingStroke(s2,{size:8,pressureSize:false});brush.sample({x:70,y:20});const changes=brush.finish();
+    e.commitDrawingPixels(copy,changes);
+    const diverged=new Set(changes.map(c=>tileKey(c.tx,c.ty)));
+    for(const t of s2)assert.equal(s1.get(t.tx,t.ty)===t,!diverged.has(tileKey(t.tx,t.ty)));
+  }finally{resources.dispose();}
 });
+
+test('commit, undo and redo restore exact tile pixels and bounds metadata',async()=>{
+  const {e,resources}=fixture();try{
+    const {surface}=await stroke(e);
+    const figure=e.drawingTarget().figure,first=snapshotStore(surface.store),bounds1={...drawingMetadata(figure).bounds};
+    assert.ok(bounds1.width>0);
+    const brush=new DrawingStroke(surface.store,{size:8,pressureSize:false});brush.sample({x:60,y:50});
+    e.commitDrawingPixels(e.drawingTarget(),brush.finish());
+    assert.notDeepEqual(drawingMetadata(figure).bounds,bounds1);
+    e.undo();
+    const store=resources.entry(figure).store;
+    assert.deepEqual(snapshotStore(store),first);assert.deepEqual(drawingMetadata(figure).bounds,bounds1);
+    e.redo();
+    assert.notDeepEqual(snapshotStore(resources.entry(figure).store),first);
+    assert.notDeepEqual(drawingMetadata(figure).bounds,bounds1);
+  }finally{resources.dispose();}
+});
+
+test('checkHistory rejects tile work that would exceed the resident budget',async()=>{
+  const e=new Editor({demo:false,layerTimeline:true});
+  const resources=new DrawingResources(e.report,{worker:workerStub(),tileBytes:1024});
+  try{
+    const tiles=[{tx:0,ty:0,before:null,after:new Uint8ClampedArray(TILE_BYTES)}];
+    assert.throws(()=>resources.checkHistory({kind:'drawing-pixels',celId:'cel-x',tiles},'after'),/publication|undoing/);
+  }finally{resources.dispose();}
+});
+
+test('validateDrawings accepts v1 and v2 figures and rejects malformed tile blobs',async()=>{
+  const {e,resources}=fixture();try{
+    await stroke(e);await resources.flush();
+    validateDrawings(e.report);
+    const {figure:v1}=await legacyFigure({figureTypeId:88});e.report.figure_types.push(v1);validateDrawings(e.report);
+    const figure=e.drawingTarget().figure,asset=figure.image_assets[0];
+    assert.ok(asset.styk_tiles?.startsWith(TILE_BLOB_PREFIX));
+    const bad=structuredClone(figure);bad._styk.drawing.celId='cel-bad-2';bad.image_assets[0].styk_tiles='data:image/png;base64,AAAA';
+    e.report.figure_types.push(bad);assert.throws(()=>validateDrawings(e.report),/tile blob/);e.report.figure_types.pop();
+    const dup=structuredClone(figure);e.report.figure_types.push(dup);assert.throws(()=>validateDrawings(e.report),/unique/);e.report.figure_types.pop();
+    drawingMetadata(figure).bounds={x:0,y:0,width:99999,height:1};
+    assert.throws(()=>validateDrawings(e.report),/metadata/);
+  }finally{resources.dispose();}
+});
+
 test('a hold edits its owning drawing, copy splits independently and mixed undo restores exact bytes',async()=>{
   const {e,resources}=fixture();try{
-    const {target,surface}=await stroke(e),original=surface.pixels.slice();e.extendDrawing(undefined,9);e.seek(5);
+    const {target,surface}=await stroke(e),original=storePixels(surface.store);e.extendDrawing(undefined,9);e.seek(5);
     assert.equal(e.drawingTarget().key.tick,0);e.drawingKey();const copy=e.drawingTarget();
     assert.notEqual(drawingMetadata(copy.figure).celId,drawingMetadata(target.figure).celId);
     assert.equal(copy.object.unique_id,target.object.unique_id);assert.equal(copy.end,10);
-    await stroke(e,70);assert.deepEqual(surface.pixels,original);e.undo();e.undo();assert.equal(e.drawingTarget().key.tick,0);
-    e.undo();e.undo();assert.equal(e.drawingTarget().figure,undefined);assert.equal(e.report.figure_types[0].name,'Walker');e.redo();assert.deepEqual(resources.entry(target.figure).pixels,original);
+    await stroke(e,70);assert.deepEqual(storePixels(resources.entry(target.figure).store),original);e.undo();e.undo();assert.equal(e.drawingTarget().key.tick,0);
+    e.undo();e.undo();assert.equal(e.drawingTarget().figure,undefined);assert.equal(e.report.figure_types[0].name,'Walker');e.redo();assert.deepEqual(storePixels(resources.entry(target.figure).store),original);
   }finally{resources.dispose();}
 });
 test('blank replacement and next drawing preserve unrelated layers and boundaries',async()=>{
@@ -83,15 +269,16 @@ test('drawing target and atomic lock checks reject before mutation',()=>{
   }finally{resources.dispose();}
 });
 test('stroke opacity caps overlapping dabs; cancellation and transparent erasing preserve exact history',()=>{
-  const pixels=new Uint8ClampedArray(64*64*4),b=new DrawingStroke(pixels,64,64,{size:20,opacity:.5,flow:1,pressureSize:false});
-  for(let i=0;i<8;i++)b.dab({x:20,y:20});assert.equal(pixels[(20*64+20)*4+3],128);
-  b.cancel();assert.ok(pixels.every(n=>n===0));
-  pixels.fill(255);const eraser=new DrawingStroke(pixels,64,64,{size:20,opacity:.5,erase:true,pressureSize:false});for(let i=0;i<8;i++)eraser.dab({x:20,y:20});assert.equal(pixels[(20*64+20)*4+3],128);
-  const tiles=eraser.finish();writeTile(pixels,64,tiles[0],tiles[0].before);assert.ok(pixels.every(n=>n===255));
+  const store=new TileStore(),b=new DrawingStroke(store,{size:20,opacity:.5,flow:1,pressureSize:false});
+  for(let i=0;i<8;i++)b.dab({x:20,y:20});assert.equal(store.pixel(20,20)[3],128);
+  b.cancel();assert.equal(store.size,0);
+  const full=new Uint8ClampedArray(64*64*4).fill(255);store.writeRect(0,0,64,64,full);
+  const eraser=new DrawingStroke(store,{size:20,opacity:.5,erase:true,pressureSize:false});for(let i=0;i<8;i++)eraser.dab({x:20,y:20});assert.equal(store.pixel(20,20)[3],128);
+  const tiles=eraser.finish();applyTileChanges(store,tiles,'before');assert.deepEqual(store.readRect(0,0,64,64),full);
 });
 test('tile budget rejects long strokes and rollback restores every touched tile',()=>{
-  const pixels=new Uint8ClampedArray(128*64*4),stroke=new DrawingStroke(pixels,128,64,{size:8,maxBytes:33088});stroke.sample({x:10,y:20});
-  assert.throws(()=>stroke.sample({x:100,y:20}),/budget/);stroke.cancel();assert.ok(pixels.every(n=>n===0));
+  const store=new TileStore(),stroke=new DrawingStroke(store,{size:8,maxBytes:33088});stroke.sample({x:10,y:20});
+  assert.throws(()=>stroke.sample({x:100,y:20}),/budget/);stroke.cancel();assert.equal(store.size,0);
 });
 test('undo and redo retain a shared history byte budget',async()=>{
   const {e,resources}=fixture();try{await stroke(e);const bytes=e.historySize;e.undo();assert.equal(e.historySize,bytes);e.redo();assert.equal(e.historySize,bytes);e.undo();const redo=e._redo.reduce((n,c)=>n+c.bytes,0);e.renameLayer(e.activeLayerId,'Ink');assert.equal(e.historySize,bytes-redo+e._undo.at(-1).bytes);}finally{resources.dispose();}
@@ -102,11 +289,6 @@ test('painting an existing cel does not publish structural timeline changes',asy
     e.undo();e.redo();assert.ok(events.every(event=>!event.structural&&!event.timing));
   }finally{resources.dispose();}
 });
-test('fill treats transparent RGB consistently, stops at boundaries, and lasso masks pixels',()=>{
-  const p=new Uint8ClampedArray(10*10*4);for(let y=0;y<10;y++)p.set([0,0,0,255],(y*10+5)*4);p.set([240,0,0,0],0);
-  floodPixels(p,10,10,{x:0,y:0,color:[255,0,0,255],tolerance:0});assert.equal(p[3],255);assert.equal(p[(9*10+9)*4+3],0);
-  const mask=lassoMask(10,10,[{x:1,y:1},{x:4,y:1},{x:4,y:4},{x:1,y:4}]);assert.equal(mask.reduce((a,b)=>a+b,0),9);
-});
 test('sprite mapping inverts scale, rotation, mirror, reverse and crop anchor',()=>{
   for(const mirror of [0,1])for(const reverse of [0,1]){
     const angle=.7,item={asset:{anchor_start:{x:32,y:20},anchor_length:40,anchor_angle_rad:.2},seg:{extra_u8_a:reverse,extra_u8_b:mirror},obj:{},angle,start:{x:80,y:90},end:{x:80+80*Math.cos(angle),y:90+80*Math.sin(angle)}};
@@ -114,24 +296,27 @@ test('sprite mapping inverts scale, rotation, mirror, reverse and crop anchor',(
   }
 });
 test('malformed and duplicate drawing metadata is rejected',async()=>{
-  const {e,resources}=fixture();try{const {target}=await stroke(e);validateDrawings(e.report);const copy=structuredClone(target.figure);e.report.figure_types.push(copy);assert.throws(()=>validateDrawings(e.report),/unique/);e.report.figure_types.pop();drawingMetadata(e.report.figure_types.at(-1)).width=1e9;assert.throws(()=>validateDrawings(e.report),/dimensions/);}finally{resources.dispose();}
+  const {e,resources}=fixture();try{const {target}=await stroke(e);validateDrawings(e.report);const copy=structuredClone(target.figure);e.report.figure_types.push(copy);assert.throws(()=>validateDrawings(e.report),/unique/);e.report.figure_types.pop();drawingMetadata(e.report.figure_types.at(-1)).bounds={x:0,y:0,width:0,height:1};assert.throws(()=>validateDrawings(e.report),/metadata/);}finally{resources.dispose();}
 });
-
-
 test('pressure release cannot remove paint laid earlier in the same stroke',()=>{
-  const pixels=new Uint8ClampedArray(32*32*4),b=new DrawingStroke(pixels,32,32,{size:16,pressureSize:false,pressureOpacity:true,flow:1});
-  b.dab({x:16,y:16,pressure:1});const before=pixels.slice();b.dab({x:16,y:16,pressure:.1});assert.deepEqual(pixels,before);
+  const store=new TileStore(),b=new DrawingStroke(store,{size:16,pressureSize:false,pressureOpacity:true,flow:1});
+  b.dab({x:16,y:16,pressure:1});const before=store.readRect(0,0,32,32);b.dab({x:16,y:16,pressure:.1});assert.deepEqual(store.readRect(0,0,32,32),before);
 });
 test('clipboard captures pending pixels once and remains independent of later source edits',async()=>{
   const {e,resources}=fixture();try{
-    await stroke(e);e.sheetCopyFrames([e.activeLayerId],0,0);const source=e.drawingTarget(),original=resources.entry(source.figure).pixels.slice();
+    await stroke(e);e.sheetCopyFrames([e.activeLayerId],0,0);const source=e.drawingTarget(),original=storePixels(resources.entry(source.figure).store);
     await stroke(e,80);const layer=e.createDrawingLayer('Pasted');e.sheetPasteFrames([layer.id],0);const pasted=await resources.surface(e.drawingTarget().figure);
-    assert.deepEqual(pasted.pixels,original);assert.notEqual(e.drawingTarget().figure._styk.drawing.celId,source.figure._styk.drawing.celId);
-    await stroke(e,100);assert.notDeepEqual(resources.entry(source.figure).pixels,pasted.pixels);
+    assert.deepEqual(storePixels(pasted.store),original);assert.notEqual(e.drawingTarget().figure._styk.drawing.celId,source.figure._styk.drawing.celId);
+    await stroke(e,100);assert.notDeepEqual(storePixels(resources.entry(source.figure).store),storePixels(pasted.store));
   }finally{resources.dispose();}
 });
-test('history restores tile snapshots synchronously after decoded surface eviction',async()=>{
-  const {e,resources}=fixture();try{const {surface}=await stroke(e),first=surface.pixels.slice();await stroke(e,80);surface.pixels=null;e.undo();const restored=await resources.surface(e.drawingTarget().figure);assert.deepEqual(restored.pixels,first);e.redo();assert.notDeepEqual(restored.pixels,first);}finally{resources.dispose();}
+test('history restores tile snapshots synchronously after a published store is evicted',async()=>{
+  const {e,resources}=fixture();try{
+    const {surface}=await stroke(e),first=storePixels(surface.store);await resources.flush();
+    await stroke(e,80);resources.entry(e.drawingTarget().figure).store=null;
+    e.undo();const restored=await resources.surface(e.drawingTarget().figure);assert.deepEqual(storePixels(restored.store),first);
+    e.redo();assert.notDeepEqual(storePixels(restored.store),first);
+  }finally{resources.dispose();}
 });
 test('drawing onion samples skip the current held cel and retain frame-mode sampling',async()=>{
   const {drawingOnionSamples}=await import('../src/onion-skin.mjs');const {e,resources}=fixture();try{await stroke(e);e.extendDrawing(undefined,9);e.seek(5);e.drawingKey();e.seek(7);
@@ -141,27 +326,27 @@ test('drawing onion samples skip the current held cel and retain frame-mode samp
 test('a replacement document disposes drawing workers and their pending state',async()=>{
   const {e,resources}=fixture();await stroke(e);e.load(new Editor({demo:false}).report);assert.equal(resources.disposed,true);assert.equal(resources.entries.size,0);
 });
-
-
 test('failed encoders retain dirty pixels and a retry publishes the same committed revision',async()=>{
-  const {e,resources}=fixture();try{await stroke(e);const figure=e.drawingTarget().figure,entry=resources.entry(figure),revision=e.revision,pixels=entry.pixels.slice();let calls=0;
-    resources.worker={async request(){if(!calls++)throw new Error('encoder failure');return {dataUrl:EMPTY_PNG};},dispose(){}};
-    await assert.rejects(resources.flush(),/encoder failure/);assert.ok(entry.tiles.size);assert.deepEqual(entry.pixels,pixels);assert.equal(e.revision,revision);
-    await resources.flush();assert.equal(entry.tiles.size,0);assert.equal(e.revision,revision);
+  const {e,resources}=fixture();try{await stroke(e);const figure=e.drawingTarget().figure,entry=resources.entry(figure),revision=e.revision,pixels=storePixels(entry.store);let calls=0;
+    resources.worker={async request(){if(!calls++)throw new Error('encoder failure');return workerStub().request('encode-tiles',{tiles:[...entry.store].map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer})),region:entry.store.bounds});},dispose(){}};
+    await assert.rejects(resources.flush(),/encoder failure/);assert.notEqual(entry.published?.revision,entry.revision);assert.deepEqual(storePixels(entry.store),pixels);assert.equal(e.revision,revision);
+    await resources.flush();assert.equal(entry.published.revision,entry.revision);assert.equal(e.revision,revision);
+    assert.ok(figure.image_assets[0].styk_tiles?.startsWith(TILE_BLOB_PREFIX));
   }finally{resources.dispose();}
 });
 test('out-of-order encode results never replace newer committed tiles',async()=>{
-  const {e,resources}=fixture();try{await stroke(e);let release,calls=0;resources.worker={request(){calls++;if(calls===1)return new Promise(resolve=>release=resolve);return Promise.resolve({dataUrl:EMPTY_PNG});},dispose(){}};
-    const pending=resources.flush();await stroke(e,80);const entry=resources.entry(e.drawingTarget().figure),latest=entry.pixels.slice();release({dataUrl:'stale PNG'});await pending;
-    assert.equal(calls,2);assert.equal(entry.base,EMPTY_PNG);assert.deepEqual(entry.pixels,latest);assert.equal(entry.tiles.size,0);
+  const {e,resources}=fixture();try{await stroke(e);let release,calls=0;resources.worker={request(){calls++;if(calls===1)return new Promise(resolve=>release=resolve);return workerStub().request('encode-tiles',arguments[1]);},dispose(){}};
+    const pending=resources.flush();await stroke(e,80);const entry=resources.entry(e.drawingTarget().figure),latest=storePixels(entry.store);release({tiles:[]});await pending;
+    assert.equal(calls,2);assert.equal(entry.published.revision,entry.revision);assert.deepEqual(storePixels(entry.store),latest);
   }finally{resources.dispose();}
 });
-
-
-test('uniform full-surface fill history is compact and restores exact RGBA',async()=>{
-  const {pixelChanges,pixelChangeBytes}=await import('../src/drawing-pixels.mjs');const width=1984,height=1144,before=new Uint8ClampedArray(width*height*4),after=new Uint8ClampedArray(before.length);for(let p=0;p<after.length;p+=4)after.set([90,30,70,127],p);
-  const tiles=pixelChanges(before,after,width,height,1024*1024);assert.ok(pixelChangeBytes(tiles)<100000);
-  const restored=before.slice();for(const tile of tiles)writeTile(restored,width,tile,tile.after);assert.deepEqual(restored,after);for(const tile of tiles)writeTile(restored,width,tile,tile.before);assert.deepEqual(restored,before);
+test('uniform full-region fill history is compact and restores exact RGBA',()=>{
+  const store=new TileStore(),rect={x:0,y:0,width:1984,height:1152},before=new Map();
+  for(const [tx,ty] of TileStore.tilesInRect(rect.x,rect.y,rect.width,rect.height))before.set(tileKey(tx,ty),null);
+  const after=new Uint8ClampedArray(rect.width*rect.height*4);new Uint32Array(after.buffer).fill(0x7F461E5A);store.writeRect(rect.x,rect.y,rect.width,rect.height,after);
+  const tiles=tileChanges(store,before,1024*1024);assert.ok(pixelChangeBytes(tiles)<100000);
+  applyTileChanges(store,tiles,'before');assert.equal(store.size,0);
+  applyTileChanges(store,tiles,'after');assert.deepEqual(store.readRect(0,0,rect.width,rect.height),after);
 });
 test('whole-scene paste matches drawing tracks by kind and pads extra drawing layers',async()=>{
   const {pasteSheetClipboard}=await import('../src/shared-clipboard.mjs');const {e,resources}=fixture(),other=new Editor({demo:false,layerTimeline:true});
@@ -173,4 +358,19 @@ test('whole-scene paste matches drawing tracks by kind and pads extra drawing la
     assert.ok(other.getLayer(existing.id).drawing);assert.ok(other.getLayer(surplus.id).drawing);assert.equal(other.layers.filter(l=>l.drawing).length,2);
     other.undo();assert.deepEqual(other.serialize(),before);
   }finally{resources.dispose();other.drawingResources.dispose();}
+});
+test('high-resolution brush tips retain their logical size instead of capping at 2048 pixels',()=>{
+  const store=new TileStore(),brush=new DrawingStroke(store,{size:4096,pressureSize:false,maxBytes:256*1024*1024});
+  brush.dab({x:1100,y:1});assert.equal(store.pixel(2190,0)[3],255);
+});
+test('v2 cels place pixel (0,0) at the pointer world position independently of stage size',async()=>{
+  const {e,resources}=fixture();try{
+    e.report.canvas_width=8000;e.report.canvas_height=8000;
+    const target=e.prepareDrawingCel({pixelsPerUnit:4,world:{x:3000,y:-100}});
+    assert.equal(target.figure._styk.drawing.pixelsPerUnit,4);assert.equal(target.figure._styk.drawing.version,2);
+    const item=buildGeometry({...e.report,figure_types:[...e.report.figure_types,target.figure]},createFrame([target.object])).drawables[0];
+    const origin=transformPoint(drawingPixelMatrix(item),{x:0,y:0});
+    assert.ok(Math.hypot(origin.x-3000,origin.y+100)<1e-8);
+    validateDrawings({...e.report,figure_types:[...e.report.figure_types,target.figure]});
+  }finally{resources.dispose();}
 });

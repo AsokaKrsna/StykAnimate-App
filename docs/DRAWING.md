@@ -10,9 +10,9 @@ layer; otherwise select an existing visible, unlocked drawing layer.
 - **B / E:** Brush / Eraser. Ink, Pencil, Soft and Marker presets are starting
   points; size, opacity, flow, hardness, pressure curves and smoothing remain
   editable with the same numeric fields and scrubbing used elsewhere.
-- **[ / ]:** change brush size. **I:** sample the active drawing's color and
-  return to Brush. **G:** fill with tolerance, expansion and gap closing;
-  optionally sample visible artwork while writing only to this drawing.
+- **[ / ]:** change brush size. **G:** fill with tolerance, expansion and gap
+  closing; optionally sample visible artwork while writing only to this
+  drawing.
 - **L:** lasso pixels, drag to move, set scale/angle in Properties, Enter to
   apply or Escape to cancel. Copy/cut/paste uses the shared clipboard. Timeline
   focus retains frame clipboard routing.
@@ -23,8 +23,8 @@ layer; otherwise select an existing visible, unlocked drawing layer.
   controls; timing actions stay in the timeline. Dynamics and Raster quality
   are collapsed until needed.
 - New cels default to 2 pixels per scene unit; Raster quality offers 1×, 2×
-  and 4×, current pixel dimensions, and an explicit undoable resample.
-  View rotation is temporary. Neither zoom nor stage resizing resamples ink.
+  and 4× and an explicit undoable resample. View rotation is temporary.
+  Neither zoom nor stage resizing resamples ink.
 
 All shortcut bindings are configurable in the existing shortcut preferences.
 **A** creates a blank at the playhead inside a hold, or a next blank after
@@ -49,47 +49,47 @@ its explicit frame-based sampling.
 
 `report._styk.layers.byId[id].drawing` is `{version: 1}`. Drawing layers contain
 at most one drawing image object per exposure. `_styk.drawing` on its figure
-contains `{version, celId, width, height, pixelsPerUnit, origin, crop, revision,
-empty}`. Origin is the logical upper-left before posing; crop describes pixel
-bounds. Painting grows the uncropped surface around the visible view, with
-space for the brush tip. First strokes allocate around the pointer, independently
-of stage dimensions. Integer offsets preserve exact pixels and shifted sprite
-anchors preserve placement, including rotated and mirrored poses. Growth and
-its stroke are one undo command. No paint-boundary rectangle is shown.
-
-This is expandable raster storage, not an infinite tiled canvas. Format limits
-are 16,777,216 pixels and 8,192 pixels per axis; the 96 MiB editing cache currently
-allows at most 12,582,912 resident pixels including the canvas. When the entire
-zoomed-out viewport cannot fit, growth targets the pointer area. A stroke that
-would cross the remaining boundary is cancelled with guidance rather than
-silently clipped. Oversized history requests preserve existing work.
+contains `{version, celId, pixelsPerUnit, revision, bounds}` at version 2, or
+`{version: 1, celId, width, height, pixelsPerUnit, origin, crop, revision,
+empty}` for unmigrated cels. Version 2 pixels live in a sparse 64×64 tile store
+with unbounded coordinates; the store is the single authoritative raster and
+`bounds` is the occupied-pixel bounding box. Painting allocates only touched
+tiles; strokes may cross the stage edge and negative coordinates freely.
+Legacy v1 cels keep their full surface until the first pixel edit migrates
+them; migration and its stroke are one undo command and pixel positions are
+preserved exactly, including rotated and mirrored poses.
 
 Layer IDs identify tracks, key IDs identify exposure boundaries, cel IDs identify
 editable pixels, figure type IDs identify sprite definitions. Object UIDs stay
 stable within a drawing layer. Copied keys get independent cel/definition IDs.
-Immutable PNG strings and immutable pending tiles may initially be shared.
-Clipboard capture snapshots pending pixels at copy time. A subsequent source
-edit cannot alter the captured copy. Runtime values never enter document data.
-Pixel clipboard data includes the drawing origin, so expanded cels paste into
-blank frames without shifting or cropping artwork. Aligned, unscaled copies
-preserve exact RGBA; scaling and transformed selections resample once. Paste
-compositing and tile history run in the drawing worker.
+Copied cels share frozen tiles until an edit diverges them. Clipboard capture
+forks the store at copy time; a subsequent source edit cannot alter the
+captured copy. Runtime values never enter document data. Pixel clipboard data
+includes the selection's world origin, so pastes land at the same world
+position. Aligned, unscaled copies preserve exact RGBA; scaling and transformed
+selections resample once. Paste compositing, fill and tile history run in the
+drawing worker.
 Whole-scene paste matches drawing and figure layer kinds, creates missing layers,
 and shifts surplus destination layers together in the same undo command.
 
-The persistent carrier is an ordinary PNG image figure. Authored empty cels may
-use a valid transparent 1×1 PNG until pixels are published. Metadata, PNG header
-sizes, decode bounds and CRCs are validated. Pixel content and initial transforms
-hold between keys; pixel morphs and implicit crossfades are not supported.
+The persistent carrier is an ordinary PNG image figure so pose, anchor and
+transform tooling keep working. Authored v2 cels carry a transparent 1×1 PNG;
+committed pixels publish as a `styk_tiles` data URL holding a bounded blob of
+per-tile PNGs, plus a derived `data_url` PNG over the occupied bounds for
+legacy consumers. Unmigrated v1 cels still publish a full `data_url` PNG.
+Metadata, PNG header sizes, decode bounds and CRCs are validated. Pixel content
+and initial transforms hold between keys; pixel morphs and implicit crossfades
+are not supported.
 
 ## Runtime and performance
 
-`drawing-resources.mjs` owns decoded surfaces, pending tile replacements, worker
-jobs and disposal for one report. The decoded pixel+canvas cache is limited to
-96 MiB; committed pending tiles to 96 MiB. Dirty pixels survive decoded eviction.
-Cold requests coalesce into a bounded queue. Thumbnails have one worker, at most
-48 queued requests and 256 small cached images. Renderer GPU drawing textures
-follow the current layout and are released with it.
+`drawing-resources.mjs` owns sparse tile stores, worker jobs and disposal for
+one report. Resident tiles are limited to 192 MiB; stores that match their
+published `styk_tiles` may be evicted and re-decoded on demand, while
+unpublished work is never evicted. Cold requests coalesce into a bounded
+queue. Thumbnails have one worker, at most 48 queued requests and 256 small
+cached images. Renderer GPU drawing textures follow the current layout and are
+released with it.
 
 `drawing-pixels.mjs` rasterizes real, distance-resampled samples. Stroke opacity
 caps the whole stroke, while flow accumulates dabs. Pressure release cannot
@@ -98,25 +98,26 @@ fallback. A cold-start gesture retains at most 256 samples; canvas publication
 coalesces into one animation-frame callback. Pointer capture, cancellation,
 lost capture, Escape and blur cannot leave a half-committed stroke.
 
-Undo belongs to the editor's chronological history. Before/after RGBA tiles are
-exact; uniform tiles use a four-byte color representation. The shared 48 MiB
-budget accounts for both undo and redo. Evicted surfaces do not require an
-asynchronous history cursor: immutable replacement tiles apply synchronously.
-Fill and paint-area growth compute pixels and PNG data in workers. Growth
-results are checked against document revision and gesture lifetime; cancelled
-or stale growth cannot publish an asset or leave input locked. Lasso preview always uses
-the original selection, with one resample when applied.
+Undo belongs to the editor's chronological history. Before/after tile records
+are exact; absent sides are `null` and uniform tiles use a four-byte color
+representation. The shared 48 MiB budget accounts for both undo and redo.
+Evicted stores do not require an asynchronous history cursor: records apply
+synchronously to whatever store the cel resolves to. Fill, paste, resample and
+thumbnails compute in workers over bounded tile regions. Lasso preview always
+uses the original selection, with one resample when applied.
 
-The encoder receives immutable PNG+tile snapshots, never an actively painted
-canvas. Generation, cel and revision checks reject stale results. Failed encoding
-retains dirty work for retry. Exact PNG encoding/decoding avoids premultiplication
-rounding in saved pixels. Encoding is derived publication, not another edit.
+The tile encoder receives frozen tiles and reuses per-tile PNGs, so unchanged
+tiles are never re-encoded. Generation, cel and revision checks reject stale
+results. Failed encoding retains dirty work for retry. Exact PNG
+encoding/decoding avoids premultiplication rounding in saved pixels. Encoding
+is derived publication, not another edit.
 
 Live drawing textures participate in the normal scene compositor, including
-ordering, opacity, erasing, camera and clipping. WebGPU uses affine textured
-quads and dirty rectangle uploads; Canvas uses the same drawing resource.
-Overlays contain only cursor and selection feedback. Canvas and SVG use smooth
-drawing filtering; imported Pivot sprites retain their existing sampling.
+ordering, opacity, erasing, camera and clipping. Tiles are painted into a
+bounded scratch covering the visible tile rect; WebGPU uploads its dirty
+regions and Canvas draws it once. Overlays contain only cursor and selection
+feedback. Canvas and SVG use smooth drawing filtering; imported Pivot sprites
+retain their existing sampling.
 
 ## Saving, reuse and exports
 
@@ -145,9 +146,9 @@ fill/selection/resample history, clipboard, both renderer paths and encoders.
 
 Mouse/browser checks and deterministic pressure tests do not certify physical
 pen drivers, input-to-photon latency or every GPU. Tilt, textured brushes,
-vector strokes, resolution-independent drawing and infinite tiled storage are outside
-this implementation. Large selections still require a bounded full editing
-surface; history rejects a noncompressible edit that exceeds its byte budget.
+vector strokes and resolution-independent drawing are outside this
+implementation. Fill regions are bounded to 16 megapixels; history rejects a
+noncompressible edit that exceeds its byte budget.
 
 ## Camera zoom quality: recommended next architecture
 

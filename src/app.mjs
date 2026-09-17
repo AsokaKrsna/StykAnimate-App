@@ -1946,7 +1946,7 @@ function renderInspector() {
 
 let construction;
 function setTool(tool) {
-  if(drawingController?.active){const name=tool==='hand'?'pan':tool==='select'?'transform':tool.replace('drawing-','');if(['brush','eraser','fill','eyedropper','lasso','transform','pan'].includes(name))return drawingController.setTool(name);return;}
+  if(drawingController?.active){const name=tool==='hand'?'pan':tool==='select'?'transform':tool.replace('drawing-','');if(['brush','eraser','fill','lasso','transform','pan'].includes(name))return drawingController.setTool(name);return;}
 
   if (tool !== 'attach') state.figureJoin = null;
   if (state.tool !== tool) construction?.cancel();
@@ -5268,7 +5268,7 @@ function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
   editablePreparation.cancel();
   if(drawingController?.active){
     if(id==='play-pan')drawingController.finish();
-    if(id.startsWith('drawing-')){drawingController.finish();const tool=id.slice(8);if(['brush','eraser','fill','eyedropper','lasso'].includes(tool))drawingController.tool=tool;else if(tool==='apply')drawingController.applySelection();else{drawingController.settings.size=Math.max(.5,Math.min(2048,drawingController.settings.size*(tool==='smaller'?.8:1.25)));queueUI();}drawingController.sync();return;}
+    if(id.startsWith('drawing-')){drawingController.finish();const tool=id.slice(8);if(['brush','eraser','fill','lasso'].includes(tool))drawingController.tool=tool;else if(tool==='apply')drawingController.applySelection();else{drawingController.settings.size=Math.max(.5,Math.min(2048,drawingController.settings.size*(tool==='smaller'?.8:1.25)));queueUI();}drawingController.sync();return;}
     if(['copy','cut','paste'].includes(id)&&!event.target.closest?.('.layer-timeline,.sheet-filmstrip')&&(drawingController.selection||id==='paste'&&drawingController.pixelClipboard))return drawingController.action(id+'-pixels');
     if(id!=='cancel'&&id!=='play-pan')drawingController.finish();if(['previous-frame','next-frame','previous-keyframe','next-keyframe','first-frame','last-frame'].includes(id))drawingController.applySelection();
   }

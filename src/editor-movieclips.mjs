@@ -225,7 +225,7 @@ export const editorMovieclipMethods={
     return this.editFrameDraftTimeline(()=>this.movieclipBatch(label,()=>{if(this.report._styk?.layerSheet&&!usesPresence(this.object))this._prepareSheetMovieclips();return operation();}));
   },
   createMovieclip(options={}){
-    if(drawingResourcesFor(this.report)?.stats.queued)throw new Error('Finish drawing publication before creating a movieclip.');
+    if(drawingResourcesFor(this.report)?.stats.unpublished)throw new Error('Finish drawing publication before creating a movieclip.');
     if(this._drag)this.commitDrag();
     const capture=captureMovieclip(this,options);
     if(options.replace!==false)validateReplacementOrder(this,capture.selected,capture.start,capture.end);
@@ -471,7 +471,7 @@ export const editorMovieclipMethods={
     return this.movieclipTimelineEdit('Bake animation',()=>this._publishExpandedMovieclip(frames,uid,materializer,{start,end,label:'Bake animation'}));
   },
   enterMovieclip(typeId=this.figure?.figure_type_id){
-    if(drawingResourcesFor(this.report)?.stats.queued)throw new Error('Finish drawing publication before editing a movieclip.');
+    if(drawingResourcesFor(this.report)?.stats.unpublished)throw new Error('Finish drawing publication before editing a movieclip.');
     const figure=this.report.figure_types.find(f=>f.figure_type_id===typeId);if(!isMovieclip(figure))throw new Error('Choose a movieclip.');
     if(this._drag)this.commitDrag();if(this._animationEdit)this.commitAnimationEdit();
     const scopes=this._movieclipScopes??[],parent={};
@@ -493,7 +493,7 @@ export const editorMovieclipMethods={
     const scopes=this._movieclipScopes;if(!scopes?.length)return false;
     if(this._drag)this.commitDrag();if(this._animationEdit)this.commitAnimationEdit();
     if(save&&this._frameDraftEnabled)this.disableFrameDrafts();
-    if(save&&drawingResourcesFor(this.report)?.stats.queued)throw new Error('Finish drawing publication before leaving this movieclip.');
+    if(save&&drawingResourcesFor(this.report)?.stats.unpublished)throw new Error('Finish drawing publication before leaving this movieclip.');
     const changed=this.revision!==this._savedRevision;
     const scope=scopes.at(-1),document=save?storedFrameReport(this.report,{validate:false}):null;
     const duration=save?Math.max(1,this.totalTicks):0;

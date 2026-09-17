@@ -3,7 +3,7 @@ import {drawingMetadata,isDrawingLayer} from './drawing-model.mjs';
 
 export const DRAWING_TOOLS = [
   ['brush','Brush','brush','Paint · B'], ['eraser','Eraser','eraser','Erase · E'],
-  ['fill','Fill','paint-bucket','Fill · G'], ['eyedropper','Sample','pipette','Sample color · I'],
+  ['fill','Fill','paint-bucket','Fill · G'],
   ['lasso','Lasso','lasso','Select pixels · L'], ['transform','Transform','transform','Transform drawing · V'],
 ];
 export const BRUSH_PRESETS = [
@@ -31,11 +31,10 @@ export function drawingInspector(drawing,{numericField,group,grid,heading},poseV
     html+=details('Dynamics',grid(field('Flow','flow',s.flow*100,'%','min="0" max="100"'))+check('pressureSize','Size pressure')+check('pressureOpacity','Opacity pressure')+grid(field('Size curve','sizeCurve',s.sizeCurve,'','min="0.1" max="4"')+field('Opacity curve','opacityCurve',s.opacityCurve,'','min="0.1" max="4"')));
   }
   if(tool==='fill')html+=group('Fill',color+grid(field('Tolerance','tolerance',s.tolerance,'','min="0" max="255"')+field('Expand','expansion',s.expansion,'px','min="0" max="16"')+field('Close gaps','gap',s.gap,'px','min="0" max="8"'))+check('sampleAll','Sample all layers'));
-  if(tool==='eyedropper')html+=group('Color',color);
   if(tool==='lasso')html+=group('Selection',grid(field('Scale','selectionScale',(drawing.selection?.scale??1)*100,'%','min="1" max="1000"')+field('Angle','selectionAngle',drawing.selection?.angle??0,'°'))+`<div class="property-context-actions">${button('apply-selection','Apply','check',!drawing.selection)}${button('cancel-selection','Deselect','close',!drawing.selection)}</div>`);
   if(tool==='transform')html+=`<div class="drawing-pose">${poseView}</div>`;
   if(tool==='pan')html+=group('View',grid(field('Rotation','viewAngle',(drawing.state.view.rotation??0)*180/Math.PI,'°','min="-180" max="180"')));
-  const d=drawingMetadata(target?.figure),ratio=d?s.resolution/d.pixelsPerUnit:1,canResample=d&&d.width*ratio<=8192&&d.height*ratio<=8192&&d.width*d.height*ratio*ratio<=drawing.owner.decodedBudget/8;
-  html+=details('Raster quality',`<label class="drawing-resolution">New drawings<select class="inline-select" data-draw-setting="resolution" aria-label="New drawing resolution">${[1,2,4].map(n=>`<option value="${n}" ${s.resolution===n?'selected':''}>${n}×</option>`).join('')}</select></label>${d?`<div class="drawing-resolution-info">Current: ${d.pixelsPerUnit}× · ${d.width} × ${d.height} px</div>`:''}<div class="property-context-actions">${button('resample','Resample drawing','transform',!canResample||ratio===1,!canResample&&d?'The selected resolution exceeds the editing memory limit.':'Resize pixels to the selected resolution. Upscaling cannot recover missing detail.')}</div>`);
+  const d=drawingMetadata(target?.figure),ratio=d?s.resolution/d.pixelsPerUnit:1,canResample=Boolean(d);
+  html+=details('Raster quality',`<label class="drawing-resolution">New drawings<select class="inline-select" data-draw-setting="resolution" aria-label="New drawing resolution">${[1,2,4].map(n=>`<option value="${n}" ${s.resolution===n?'selected':''}>${n}×</option>`).join('')}</select></label>${d?`<div class="drawing-resolution-info">Current: ${d.pixelsPerUnit}×</div>`:''}<div class="property-context-actions">${button('resample','Resample drawing','transform',!canResample||ratio===1,'Resize pixels to the selected resolution. Upscaling cannot recover missing detail.')}</div>`);
   return html;
 }
