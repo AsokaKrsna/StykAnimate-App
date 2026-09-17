@@ -7,7 +7,7 @@ await mkdir(output,{recursive:true});
 const browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage({viewport:{width:1440,height:1000}});
 page.on('pageerror',e=>errors.push(e.stack));
 const check=(name,value)=>{assert.ok(value,name);checks.push(name);console.log('PASS',name);};
-const stroke=async(x,y,dx=90,dy=35)=>{await page.mouse.move(x,y);await page.mouse.down();await page.waitForFunction(()=>Boolean(styk.drawing.gesture));await page.mouse.move(x+dx,y+dy,{steps:12});await page.mouse.up();};
+const stroke=async(x,y,dx=90,dy=35)=>{await page.mouse.move(x,y);await page.mouse.down();await page.waitForFunction(()=>Boolean(styk.drawing.gesture));await page.mouse.move(x+dx,y+dy,{steps:12});await page.mouse.up();await page.waitForFunction(()=>!styk.drawing.gesture);};
 try{
   await page.goto(process.env.STYK_URL||'http://127.0.0.1:47839');await page.waitForFunction(()=>styk.ready);
   // pix: snapshot a tile store's occupied bounds + RGBA; pixEq: exact compare.
@@ -65,7 +65,7 @@ try{
   check('resampling a cel preserves its world placement',scaling.pose);
   await page.mouse.move(x,y);await page.mouse.down({button:'middle'});await page.mouse.move(x+500,y+180,{steps:10});await page.mouse.up({button:'middle'});
   await page.evaluate(()=>{window.cancelState={revision:styk.editor.revision,figures:styk.editor.report.figure_types.length,entries:styk.drawing.owner.entries.size};});
-  await page.mouse.move(x,y);await page.mouse.down();await page.waitForFunction(()=>Boolean(styk.drawing.gesture));await page.mouse.move(x+40,y+10);await page.keyboard.press('Escape');await page.mouse.up();
+  await page.mouse.move(x,y);await page.mouse.down();await page.waitForFunction(()=>Boolean(styk.drawing.gesture));await page.mouse.move(x+40,y+10);await page.keyboard.press('Escape');await page.mouse.up();await page.waitForFunction(()=>!styk.drawing.gesture);
   check('cancelled stroke publishes no cel, history or orphan store entry',await page.evaluate(()=>styk.editor.revision===cancelState.revision&&styk.editor.report.figure_types.length===cancelState.figures&&styk.drawing.owner.entries.size===cancelState.entries));
   await page.evaluate(()=>{const d=styk.drawing,e=styk.editor;d.owner.entry(e.drawingTarget().figure).store=null;window.releaseDecode=null;const request=d.owner.decodeWorker.request.bind(d.owner.decodeWorker);d.owner.decodeWorker.request=(kind,...args)=>{const result=request(kind,...args);return kind==='decode-tiles'?result.then(async r=>{await new Promise(resolve=>window.releaseDecode=resolve);return r;}):result;};});
   await page.mouse.move(x,y);await page.mouse.down();await page.waitForFunction(()=>Boolean(window.releaseDecode));

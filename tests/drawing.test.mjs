@@ -8,6 +8,7 @@ import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from '../src/drawing-
 import {encodeTileBlob,decodeTileBlob,TILE_BLOB_PREFIX} from '../src/drawing-tile-codec.mjs';
 import {encodeDrawingPNG,decodeDrawingPNG,decodeDrawingPNGBytes} from '../src/drawing-png.mjs';
 import {encodePNGPortable} from '../src/sticknodes/decoder/png-browser.mjs';
+import {StrokeEngine} from '../src/drawing-stroke-engine.mjs';
 import {createImageFigure} from '../src/media-authoring.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {createFrame,createObject} from '../src/demo.mjs';
@@ -373,4 +374,88 @@ test('v2 cels place pixel (0,0) at the pointer world position independently of s
     assert.ok(Math.hypot(origin.x-3000,origin.y+100)<1e-8);
     validateDrawings({...e.report,figure_types:[...e.report.figure_types,target.figure]});
   }finally{resources.dispose();}
+});
+
+// The stroke worker's engine runs in-process here; the browser tests exercise
+// the real worker. The driver mirrors the controller: each batch carries the
+// store tiles in its sample bounding box (expanded by the dab radius) that the
+// worker has not seen for this stroke yet.
+function strokeDrive(engine,id,settings,chunks,{store=new TileStore()}={}){
+  const sent=new Set(),replies=[],margin=(settings.size??8)*.55+3;
+  engine.begin(id,settings);let seq=0;
+  for(const samples of chunks){
+    const x=Math.floor(Math.min(...samples.map(p=>p.x))-margin),y=Math.floor(Math.min(...samples.map(p=>p.y))-margin);
+    const width=Math.ceil(Math.max(...samples.map(p=>p.x))+margin)-x,height=Math.ceil(Math.max(...samples.map(p=>p.y))+margin)-y,tiles=[];
+    for(const [tx,ty] of TileStore.tilesInRect(x,y,width,height)){
+      const key=tileKey(tx,ty);if(sent.has(key))continue;sent.add(key);
+      const tile=store.get(tx,ty);tiles.push({tx,ty,pixels:tile?tile.pixels.slice().buffer:null});
+    }
+    replies.push(engine.samples(id,++seq,samples,tiles));
+  }
+  return {replies,changes:engine.end(id)};
+}
+const replayFinal=(initial,changes)=>{const store=new TileStore();for(const [key,pixels] of initial){const [tx,ty]=key.split(',').map(Number);store.set(tx,ty,pixels);}applyTileChanges(store,changes,'after');return store;};
+const pathPoints=n=>Array.from({length:n},(_,i)=>({x:10+i*2.4,y:10+Math.sin(i/9)*40+i*1.3,pressure:.4+.6*(i%7)/6,time:i*8}));
+
+test('stroke engine batches of 1, 3 and 17 samples produce byte-identical tiles',()=>{
+  const seedStore=()=>{const store=new TileStore();const px=new Uint8ClampedArray(TILE_BYTES);for(let i=0;i<TILE*TILE;i++)px.set([30,60,90,200],i*4);store.set(1,0,px);store.set(2,1,px.slice());return store;};
+  const samples=pathPoints(51),settings={size:14,color:[200,40,80],hardness:.6,flow:.8,texture:.4,seed:9,stabilization:.3,spacingRatio:.09};
+  const chunk=n=>{const out=[];for(let i=0;i<samples.length;i+=n)out.push(samples.slice(i,i+n));return out;};
+  const initial=snapshotStore(seedStore()),results=[1,3,17,51].map(n=>{const {changes}=strokeDrive(new StrokeEngine(),'s',settings,chunk(n),{store:seedStore()});return replayFinal(initial,changes);});
+  for(const store of results.slice(1))assert.deepEqual(store.readRect(-64,-64,512,512),results[0].readRect(-64,-64,512,512));
+  assert.ok(results[0].bounds&&results[0].size>4,'expected a multi-tile stroke');
+});
+
+test('a stabilized stroke crossing four tiles leaves no gaps along its path',()=>{
+  const engine=new StrokeEngine(),settings={size:12,color:[0,0,0],stabilization:.5,spacingRatio:.08,pressureSize:false,seed:3};
+  const samples=Array.from({length:40},(_,i)=>({x:8+i*5,y:12+i*3.2,pressure:1,time:i*8}));
+  const {changes}=strokeDrive(engine,'s',settings,[samples]);
+  const store=replayFinal(new Map(),changes);
+  const near=(x,y)=>{for(let dy=-24;dy<=24;dy++)for(let dx=-24;dx<=24;dx++)if(store.pixel(Math.round(x)+dx,Math.round(y)+dy)[3]>200)return true;return false;};
+  for(let i=0;i<50;i++){const t=i/49,x=8+(8+39*5-8)*t,y=12+(12+39*3.2-12)*t;assert.ok(near(x,y),`gap near ${x},${y}`);}
+});
+
+test('a tap yields one dab and the final dab lands exactly on the last input',()=>{
+  const engine=new StrokeEngine(),settings={size:10,color:[9,9,9],pressureSize:false,spacingRatio:1,stabilization:.6,seed:1};
+  const tap=strokeDrive(engine,'tap',settings,[[{x:33,y:41,pressure:1,time:0}]]);
+  const tapStore=replayFinal(new Map(),tap.changes);
+  assert.ok(tapStore.pixel(33,41)[3]>200);
+  const drag=strokeDrive(engine,'drag',settings,[Array.from({length:6},(_,i)=>({x:20+i*30,y:20,pressure:1,time:i*16}))]);
+  const dragStore=replayFinal(new Map(),drag.changes);
+  assert.ok(dragStore.pixel(170,20)[3]>200,'the stabilized tail reaches the final input');
+});
+
+test('pencil texture is deterministic per seed and differs between seeds',()=>{
+  const samples=pathPoints(30),settings={size:16,color:[40,40,40],texture:.6,spacingRatio:.05,hardness:.8,flow:1,pressureSize:false};
+  const run=seed=>{const {changes}=strokeDrive(new StrokeEngine(),'s',{...settings,seed},[samples]);return replayFinal(new Map(),changes).readRect(0,0,256,256);};
+  assert.deepEqual(run(5),run(5));assert.notDeepEqual(run(5),run(6));
+  const flat={...settings,texture:0,seed:5};
+  assert.deepEqual(replayFinal(new Map(),strokeDrive(new StrokeEngine(),'s',flat,[samples]).changes).readRect(0,0,256,256),replayFinal(new Map(),strokeDrive(new StrokeEngine(),'s',flat,[samples]).changes).readRect(0,0,256,256));
+});
+
+test('stroke engine replies carry only tiles changed by that batch and cancel returns nothing',()=>{
+  const engine=new StrokeEngine(),settings={size:8,color:[1,2,3],pressureSize:false,seed:2};
+  const {replies}=strokeDrive(engine,'s',settings,[[{x:10,y:10,pressure:1,time:0},{x:150,y:10,pressure:1,time:8}],[{x:150,y:150,pressure:1,time:16}]]);
+  const keys=r=>new Set(r.tiles.map(t=>tileKey(t.tx,t.ty)));
+  assert.ok(keys(replies[0]).has('0,0')&&keys(replies[0]).has('1,0'));
+  // The turn continues from (150,10): tiles 0,0 and 1,0 are untouched now.
+  assert.ok(keys(replies[1]).has('2,1')&&!keys(replies[1]).has('0,0')&&!keys(replies[1]).has('1,0'));
+  assert.ok(replies[0].dirty.width%64===0&&replies[0].dirty.x%64===0);
+  engine.begin('x',{size:8,pressureSize:false});engine.samples('x',1,[{x:5,y:5}],[{tx:0,ty:0,pixels:null}]);
+  engine.cancel('x');assert.equal(engine.end('x'),null);assert.equal(engine.samples('x',2,[{x:9,y:9}],[]),null);
+  engine.begin('y',{size:8,pressureSize:false});
+  assert.ok(engine.samples('y',2,[{x:5,y:5}],[]));assert.equal(engine.samples('y',1,[{x:9,y:9}],[]),null,'out-of-order batches are ignored');
+});
+
+test('stroke engine end records equal the diff between initial and final tiles',()=>{
+  const initialStore=new TileStore(),px=new Uint8ClampedArray(TILE_BYTES);
+  for(let i=0;i<TILE*TILE;i++)px.set([200,100,50,255],i*4);initialStore.set(0,0,px);
+  const initial=snapshotStore(initialStore),samples=pathPoints(24),settings={size:18,color:[10,20,30],flow:1,seed:4,spacingRatio:.07};
+  const {changes}=strokeDrive(new StrokeEngine(),'s',settings,[samples],{store:initialStore});
+  const control=new TileStore();control.set(0,0,px.slice());
+  const brush=new DrawingStroke(control,settings);for(const p of samples)brush.sample(p);brush.finish();
+  const result=replayFinal(initial,changes);
+  assert.deepEqual(result.readRect(-64,-64,384,384),control.readRect(-64,-64,384,384));
+  applyTileChanges(result,changes,'before');
+  assert.deepEqual(result.readRect(0,0,64,64),initialStore.readRect(0,0,64,64));
 });

@@ -33,7 +33,7 @@ try{
   await page.evaluate(()=>window.styk.drawing.action('copy-key'));
   check('Copy here splits the hold into an independent drawing',await page.evaluate(()=>{const e=styk.editor,id=e.drawingTarget().figure._styk.drawing.celId;e.seek(0);const old=e.drawingTarget().figure._styk.drawing.celId;e.seek(4);return id!==old;}));
   await page.evaluate(()=>styk.drawing.prepareVisible());
-  await page.locator('[data-tool="drawing-eraser"]').click();await page.mouse.move(start.x,start.y);await page.mouse.down();await page.waitForFunction(()=>Boolean(styk.drawing.gesture));await page.mouse.move(end.x,end.y,{steps:16});await page.mouse.up();
+  await page.locator('[data-tool="drawing-eraser"]').click();await page.mouse.move(start.x,start.y);await page.mouse.down();await page.waitForFunction(()=>Boolean(styk.drawing.gesture));await page.mouse.move(end.x,end.y,{steps:16});await page.mouse.up();await page.waitForFunction(()=>!styk.drawing.gesture);
   const counts=await page.evaluate(async()=>{const e=styk.editor,copied=pix(styk.drawing.owner.entry(e.drawingTarget().figure).store).pixels.filter((n,i)=>i%4===3&&n).length;e.seek(0);await styk.drawing.prepareVisible();const original=pix(styk.drawing.owner.entry(e.drawingTarget().figure).store).pixels.filter((n,i)=>i%4===3&&n).length;return {original,copied};});
   check('erasing the copy preserves original pixels',counts.original>counts.copied);
   await page.evaluate(()=>styk.drawing.barrier());
@@ -108,7 +108,7 @@ try{
   });
   check('Canvas fallback renders rotated artwork with rotated stage clipping',presentation.painted&&presentation.transparentCorner);
   await page.locator('[data-tool="drawing-brush"]').click();
-  const revisionBeforeCancel=await page.evaluate(()=>styk.editor.revision);await page.mouse.move(start.x+30,start.y+20);await page.mouse.down();await page.waitForFunction(()=>Boolean(styk.drawing.gesture));await page.mouse.move(end.x,end.y+40,{steps:4});await page.keyboard.press('Escape');await page.mouse.up();
+  const revisionBeforeCancel=await page.evaluate(()=>styk.editor.revision);await page.mouse.move(start.x+30,start.y+20);await page.mouse.down();await page.waitForFunction(()=>Boolean(styk.drawing.gesture));await page.mouse.move(end.x,end.y+40,{steps:4});await page.keyboard.press('Escape');await page.mouse.up();await page.waitForFunction(()=>!styk.drawing.gesture);
   check('Escape rolls back a captured stroke without a history entry',await page.evaluate(()=>styk.editor.revision)===revisionBeforeCancel);
   await page.keyboard.press('Shift+a');check('existing Shift+A extends the active drawing exposure',await page.evaluate(()=>styk.editor.undoLabel==='Extend drawing exposure'));
   const lifecycle=await page.evaluate(async()=>{

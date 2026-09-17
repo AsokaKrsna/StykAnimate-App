@@ -7,10 +7,10 @@ export const DRAWING_TOOLS = [
   ['lasso','Lasso','lasso','Select pixels · L'], ['transform','Transform','transform','Transform drawing · V'],
 ];
 export const BRUSH_PRESETS = [
-  {id:'ink',name:'Ink',description:'Crisp, pressure-sensitive lines',size:8,hardness:1,flow:1,opacity:1,pressureSize:true,pressureOpacity:false},
-  {id:'pencil',name:'Pencil',description:'Fine lines for rough animation',size:2,hardness:.85,flow:.7,opacity:1,pressureSize:true,pressureOpacity:true},
-  {id:'soft',name:'Soft',description:'Soft edges for shading',size:32,hardness:0,flow:.25,opacity:1,pressureSize:true,pressureOpacity:false},
-  {id:'marker',name:'Marker',description:'Even translucent strokes',size:24,hardness:.95,flow:1,opacity:.35,pressureSize:false,pressureOpacity:false},
+  {id:'ink',name:'Ink',description:'Crisp, pressure-sensitive lines',size:8,hardness:1,flow:1,opacity:1,pressureSize:true,pressureOpacity:false,spacingRatio:.08,texture:0},
+  {id:'pencil',name:'Pencil',description:'Fine lines for rough animation',size:2,hardness:.85,flow:.7,opacity:1,pressureSize:true,pressureOpacity:true,spacingRatio:.05,texture:.6},
+  {id:'soft',name:'Soft',description:'Soft edges for shading',size:32,hardness:0,flow:.25,opacity:1,pressureSize:true,pressureOpacity:false,spacingRatio:.1,texture:0},
+  {id:'marker',name:'Marker',description:'Even translucent strokes',size:24,hardness:.95,flow:1,opacity:.35,pressureSize:false,pressureOpacity:false,spacingRatio:.12,texture:0},
 ];
 
 /** Tool properties use the shared inspector fields; timing stays in the timeline. */
