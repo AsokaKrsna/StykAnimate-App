@@ -192,7 +192,7 @@ export class DrawingController {
       if(queued&&!this.gesture){this.loading=null;this.run(()=>this.down({...queued.event,samples:queued.samples,released:queued.released}));}
     }
   }
-  move(event){this.cursor=pointerSample(event);if(this.loading?.id===event.pointerId){const samples=this.loading.samples;if(samples.length>=256)samples.splice(1,128);samples.push(pointerSample(event));return;}const g=this.gesture;if(!g||g.id!==event.pointerId){this.onRender();return;}
+  move(event){this.cursor=pointerSample(event);if(this.loading?.id===event.pointerId){this.loading.samples.push(pointerSample(event));return;}const g=this.gesture;if(!g||g.id!==event.pointerId){this.onRender();return;}
     if(g.kind==='pan'){const rect=this.viewport.getBoundingClientRect();this.state.view.x=g.view.x+(event.clientX-g.start.clientX)*this.viewport.clientWidth/rect.width;this.state.view.y=g.view.y+(event.clientY-g.start.clientY)*this.viewport.clientHeight/rect.height;}
     else if(g.kind==='stroke'){if(!g.session.ended){const samples=event.getCoalescedEvents?.();for(const sample of samples?.length?samples:[event])this.sampleStroke(sample);}}
     else if(g.kind==='pose'){const p=this.point(event);this.editor.moveSelection(p.x-g.start.x,p.y-g.start.y,{fromStart:true});}

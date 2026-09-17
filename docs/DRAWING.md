@@ -8,21 +8,23 @@ layer; otherwise select an existing visible, unlocked drawing layer.
 ## Workflow
 
 - **B / E:** Brush / Eraser. Ink, Pencil, Soft and Marker presets are starting
-  points; size, opacity, flow, hardness, pressure curves and smoothing remain
-  editable with the same numeric fields and scrubbing used elsewhere.
+  points; a live preview stroke in Properties reflects the current tip. Size,
+  opacity, flow, hardness, pressure curves and smoothing remain editable with
+  the same numeric fields and scrubbing used elsewhere.
 - **[ / ]:** change brush size. **G:** fill with tolerance, expansion and gap
   closing; optionally sample visible artwork while writing only to this
   drawing.
 - **L:** lasso pixels, drag to move, set scale/angle in Properties, Enter to
-  apply or Escape to cancel. Copy/cut/paste uses the shared clipboard. Timeline
-  focus retains frame clipboard routing.
+  apply or Escape to cancel. Copy/cut/paste uses the shared clipboard and
+  Delete removes selected pixels without touching the clipboard. Timeline
+  focus retains frame clipboard and frame deletion routing.
 - **V:** transform the whole cel using the existing pose controls. Pixel
   selection and cel pose are distinct. **H / middle mouse / held Space:** pan. Touch pans;
   a recent pen gesture suppresses touch painting/navigation from a palm.
 - Brush and Eraser retain independent tip settings. Properties contains tool
-  controls; timing actions stay in the timeline. Dynamics and Raster quality
+  controls; timing actions stay in the timeline. Dynamics and Resolution
   are collapsed until needed.
-- New cels default to 2 pixels per scene unit; Raster quality offers 1×, 2×
+- New cels default to 2 pixels per scene unit; Resolution offers 1×, 2×
   and 4× and an explicit undoable resample. View rotation is temporary.
   Neither zoom nor stage resizing resamples ink.
 
@@ -97,8 +99,9 @@ drawing textures follow the current layout and are released with it.
 `drawing-pixels.mjs` rasterizes real, distance-resampled samples. Stroke opacity
 caps the whole stroke, while flow accumulates dabs. Pressure release cannot
 remove previously deposited paint. Coalesced events have an ordinary-event
-fallback. A cold-start gesture retains at most 256 samples; canvas publication
-coalesces into one animation-frame callback. Pointer capture, cancellation,
+fallback. A gesture queued behind a closing stroke retains every sample;
+canvas publication coalesces into one animation-frame callback. Pointer
+capture, cancellation,
 lost capture, Escape and blur cannot leave a half-committed stroke.
 
 Undo belongs to the editor's chronological history. Before/after tile records
@@ -150,38 +153,48 @@ Run `node --test tests/drawing.test.mjs`, `node tests/drawing.browser.mjs` and
 `STYK_URL`). See [verification report](../artifacts/drawing/VERIFICATION.md).
 The pan, expansion and shortcut refinements have a separate regression suite:
 `node tests/drawing-ux.browser.mjs`; see its [report](../artifacts/drawing-ux/VERIFICATION.md).
+`tests/drawing-stroke.browser.mjs` covers the worker stroke pipeline,
+`tests/drawing-render.browser.mjs` covers visible-tile rendering and seams,
+`tests/drawing-save.browser.mjs` covers save/reload/recovery fidelity and
+`tests/drawing-timeline.browser.mjs` covers cache bounding and the
+drawing-free-document overhead contract.
 Browser tests exercise native codec reopening, pixel fidelity, nested scopes,
 fill/selection/resample history, clipboard, both renderer paths and encoders.
 
 Mouse/browser checks and deterministic pressure tests do not certify physical
-pen drivers, input-to-photon latency or every GPU. Tilt, textured brushes,
-vector strokes and resolution-independent drawing are outside this
-implementation. Fill regions are bounded to 16 megapixels; history rejects a
-noncompressible edit that exceeds its byte budget.
+pen drivers, input-to-photon latency or every GPU. Tilt, vector strokes and
+resolution-independent drawing are outside this implementation. Fill regions
+are bounded to 16 megapixels; history rejects a noncompressible edit that
+exceeds its byte budget.
 
-## Camera zoom quality: recommended next architecture
+## Camera zoom quality and the road to vector ink
 
-The current fixes remove nearest-neighbor blocks and offer more source pixels.
-Choose resolution before drawing: 2× uses four times the pixels of 1×, and 4×
-uses sixteen times as many. For a raster shot, source pixels per scene unit
-should cover the maximum camera magnification multiplied by the export scale.
-Upscaling an old cel smooths its existing samples; it cannot recover lost detail.
+The sparse tile engine keeps scene dimensions, drawing resolution, editor zoom
+and camera zoom as separate contracts. Choose resolution before drawing: 2×
+uses four times the pixels of 1×, and 4× uses sixteen times as many. For a
+raster shot, source pixels per scene unit should cover the maximum camera
+magnification multiplied by the export scale. Upscaling an old cel smooths its
+existing samples; it cannot recover lost detail.
 [Canvas image smoothing](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/imageSmoothingEnabled)
-controls filtering, not the amount of source detail.
+controls filtering, not the amount of source detail. Exports always render
+the authoritative source tiles at output resolution; preview mip levels never
+substitute for them.
 
-For deep zooms, the recommended next step is a hybrid drawing layer:
+Raster tiles — including the sparse allocation, copy-on-write cel sharing,
+visible-tile streaming and bounded caches the format now provides — remain
+the right representation for Soft and textured paint. For arbitrarily deep
+zooms, the recommended next step is a hybrid drawing layer:
 
 - Store Ink and Pencil as editable pressure-aware vector paths, rasterized or
   tessellated at the required view/export scale in workers. Keep the existing
   layer sheet, cel ownership, commands, clipboard and save pipeline. Bound the
   derived geometry cache by scale and revision. Vector artwork can scale without
   the source-resolution limit of bitmap ink; see [SVG](https://developer.mozilla.org/en-US/docs/Web/SVG).
-- Retain Soft and textured paint as raster tiles in sparse world coordinates.
-  Allocate occupied tiles, stream visible tiles and export through bounded tiles.
-  This supports much larger scenes without allocating empty space between marks.
+- Keep Soft and textured paint as raster tiles alongside the vector layer,
+  sharing the same sparse world coordinates and streaming path.
 - Design vector erasing, fill boundaries and mixed vector/raster compositing as
   explicit document semantics, including undo and backward-compatible export.
-  Existing PNG cels remain raster; tracing would be an optional, lossy operation.
+  Existing cels remain raster; tracing would be an optional, lossy operation.
 
 These are proposed follow-up changes, not capabilities of the current raster cel
 format. Implementing a second standalone drawing workspace would lose the shared
