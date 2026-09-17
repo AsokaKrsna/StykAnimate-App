@@ -94,6 +94,12 @@
 <button class="tool" data-tool="chain" data-icon="builder-chain" aria-label="Chain pen" title="Chain pen · Click to extend, Enter to finish"><span class="tool-label">Chain</span></button>
 <button class="tool" data-tool="circle" data-icon="circle" aria-label="Add circle segment" title="Add circle segment · C"><span class="tool-label">Circle</span></button>
 <button class="tool" data-tool="polygon" data-icon="polygon" aria-label="Create polygon" title="Create polygon · Shift-click: fill enclosed area"><span class="tool-label">Polygon</span></button>
+<button class="tool" data-tool="drawing-brush" data-icon="brush" aria-label="Brush" title="Brush · B" hidden><span class="tool-label">Brush</span></button>
+<button class="tool" data-tool="drawing-eraser" data-icon="eraser" aria-label="Eraser" title="Eraser · E" hidden><span class="tool-label">Eraser</span></button>
+<button class="tool" data-tool="drawing-fill" data-icon="paint-bucket" aria-label="Fill" title="Fill · G" hidden><span class="tool-label">Fill</span></button>
+<button class="tool" data-tool="drawing-eyedropper" data-icon="pipette" aria-label="Sample" title="Sample · I" hidden><span class="tool-label">Sample</span></button>
+<button class="tool" data-tool="drawing-lasso" data-icon="lasso" aria-label="Lasso" title="Lasso · L" hidden><span class="tool-label">Lasso</span></button>
+<button class="tool" data-tool="drawing-transform" data-icon="transform" aria-label="Transform" title="Transform · V" hidden><span class="tool-label">Transform</span></button>
 <button class="tool" data-tool="hand" data-icon="hand" aria-label="Pan canvas" title="Pan canvas · H"><span class="tool-label">Pan</span></button>
 <button class="tool" data-action="toggle-isolate" data-icon="detach" title="Isolate joint · Hold Caps Lock" aria-label="Isolate joint" aria-pressed="false"><span class="tool-label">Isolate</span></button>
 </div>
@@ -110,6 +116,7 @@
           <div class="canvas-toolbar">
             <div class="workspace-switch" role="group" aria-label="Editing workspace">
               <button type="button" data-workspace-mode="animate" aria-pressed="true">Animate</button>
+              <button type="button" data-workspace-mode="draw" aria-pressed="false">Draw</button>
               <button type="button" data-workspace-mode="rig" aria-pressed="false">Build figure</button>
             </div>
             <div class="crumb">
@@ -133,6 +140,9 @@
             <div class="builder-secondary-actions" role="group" aria-label="More figure controls">
               <button class="builder-btn builder-menu-trigger" popovertarget="builder-menu-edit" aria-haspopup="menu" aria-expanded="false" aria-controls="builder-menu-edit" aria-label="Edit" title="Edit" data-icon="sliders"><span class="builder-action-label">Edit</span><span class="builder-chevron" data-icon="chevron-down"></span></button>
             <div id="builder-menu-edit" class="builder-popover" popover="auto" role="menu" aria-label="Edit">
+              <button role="menuitem" class="builder-menu-item builder-btn" data-action="copy-builder-appearance" data-icon="duplicate"><span>Copy appearance</span></button>
+              <button role="menuitem" class="builder-menu-item builder-btn" data-action="paste-builder-appearance" data-icon="clipboard" title="Paste appearance - Shift: whole branch"><span>Paste appearance</span></button>
+              <div class="builder-menu-separator" role="separator"></div>
               <button role="menuitem" class="builder-menu-item builder-btn" data-action="rig-connect" data-icon="link"><span>Connect joints…</span></button>
               <button role="menuitem" class="builder-menu-item builder-btn" data-action="rig-examples" data-icon="person"><span>Rig examples…</span></button>
               <button role="menuitem" class="builder-menu-item builder-btn" data-action="unsplit-segment" data-icon="builder-unsplit" title="Remove joint, keep endpoints · Ctrl Del" aria-label="Unsplit segment"><span>Remove joint, keep endpoints</span></button>
@@ -213,7 +223,7 @@
             </div>
             <div id="canvas-empty" hidden>Drop a StykAnimate, Pivot or Stick Nodes file here</div>
             <output id="playback-fps" aria-label="Playback frames per second" hidden>— fps</output>
-            <output id="preview-quality" title="Preview detail is reduced to keep animation within available memory. Original artwork and export quality are preserved." hidden>Reduced preview quality</output>
+            <output id="preview-quality" title="Preview detail follows your playback quality setting or available memory. Original artwork and export quality are preserved." hidden>Reduced preview quality</output>
             <div id="renderer-error" hidden></div>
             <div id="chain-controls" class="polygon-controls" hidden><span id="chain-count"></span><button id="chain-finish" title="Finish chain · Enter">Finish</button><button id="chain-cancel" aria-label="Cancel chain" title="Cancel · Escape">×</button></div>
             <div id="polygon-controls" class="polygon-controls" hidden>

@@ -1,3 +1,4 @@
+import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {parallaxResolver,translatedPlan} from './layer-parallax.mjs';
 import {drawParallaxGeometry} from './parallax-draw.mjs';
 import { buildGeometry, drawGeometry, releaseGeometryResources } from "./pivot/geometry.mjs";
@@ -6,8 +7,8 @@ import { cameraMatrix, objectBounds } from "./renderer-geometry.mjs";
 import { layerVisible } from "./layers.mjs";
 import {checkExportContext} from './export-canvas.mjs';
 import {downsampleExportPixels} from './export-sampling.mjs';
-import {applySceneVfx, hasDrawableVfx} from './vfx-canvas.mjs';
-import {vfxStack,vfxPadding} from './vfx.mjs';
+import {prepareSceneVfx, hasDrawableVfx} from './vfx-canvas.mjs';
+import {sceneVfxBounds} from './vfx-scene.mjs';
 
 /** Share one scheduling deadline across objects and tiles. A timer per object
  * incurs Chromium's nested-timer delay thousands of times on dense 4K frames. */
@@ -62,7 +63,7 @@ export function exportGroupOutside(bounds, plan) {
 
 /** Shared portable renderer used only by export; editor GPU state is untouched. */
 export function exportFrameGeometry(report, frame) {
-  const geometry = buildGeometry(report, frame);
+  const geometry = connectedVfxGeometry(buildGeometry(report, frame),frame,report);
   return {
     ...geometry,
     drawables: geometry.drawables.filter((item) =>
@@ -71,33 +72,40 @@ export function exportFrameGeometry(report, frame) {
   };
 }
 export function drawExportScene(context, report, frame, geometry, resources) {
+  if(!geometry.connectedVfxSource)geometry=connectedVfxGeometry(geometry,frame,report);
   const width = report.canvas_width,
     height = report.canvas_height;
+  const scene=prepareSceneVfx(context,frame,undefined,context.canvas.width/width);
+  context=scene.context;
   context.setTransform(1, 0, 0, 1, 0, 0);
   context.clearRect(0, 0, context.canvas.width, context.canvas.height);
   context.save();
   try {
-    context.scale(context.canvas.width / width, context.canvas.height / height);
-    context.beginPath();
-    context.rect(0, 0, width, height);
-    context.clip();
+    context.translate(-scene.viewport.x,-scene.viewport.y);
+    context.scale(scene.outputSize.width / width, scene.outputSize.height / height);
     context.transform(...cameraMatrix({ report, frame }));
     drawBackground(context, report, frame, width, height, {
       ...resources,
-      bounds: backgroundBounds(frame, width, height, true, report),
+      bounds: backgroundBounds(frame, width, height, true, report,sceneVfxBounds(report,scene)),
+      paintBounds: backgroundBounds(frame, width, height, true, report),
     });
     drawParallaxGeometry(context, geometry, resources,parallaxResolver(report,frame));
   } finally {
     context.restore();
   }
-  applySceneVfx(context,frame,{scale:context.canvas.width/width,outputSize:{width:context.canvas.width,height:context.canvas.height}});
+  scene.finish();
 }
 
 /** Preserve painter order and native brush state while releasing each object's
  * decoded source before loading the next. Export never requests preview copies. */
-export async function drawExportSceneSequential(context, report, frame, geometry, resources, viewport, yieldWork = exportYield(), groups = exportDrawGroups(geometry, resources)) {
+export async function drawExportSceneSequential(context, report, frame, geometry, resources, viewport, yieldWork = exportYield(), groups) {
+  if(!geometry.connectedVfxSource)geometry=connectedVfxGeometry(geometry,frame,report);
+  groups??=exportDrawGroups(geometry,resources);
   checkExportContext(context);
   const width = report.canvas_width, height = report.canvas_height;
+  const scene=prepareSceneVfx(context,frame,viewport,(viewport?.width||context.canvas.width)/width);
+  context=scene.context;viewport=scene.viewport;
+  checkExportContext(context);
   // The document→output matrix for this surface, including tile offsets.
   // Preloads use it to decode only the source region each draw samples.
   const camera = cameraMatrix({report, frame}),
@@ -112,13 +120,12 @@ export async function drawExportSceneSequential(context, report, frame, geometry
   try {
     if (viewport) context.translate(-viewport.x, -viewport.y);
     context.scale((viewport?.width || context.canvas.width) / width, (viewport?.height || context.canvas.height) / height);
-    context.beginPath(); context.rect(0, 0, width, height); context.clip();
     context.transform(...camera);
     await resources.preload((report.backgrounds || []).filter(asset =>
       [frame.background_id, ...(frame.background_mix ? [frame.background_id_b] : [])].includes(asset.background_id) &&
       ![2,3,4].includes(asset.kind) && asset.color === undefined).map(asset => ({type: 'image', asset})), {plan});
     checkExportContext(context);
-    drawBackground(context, report, frame, width, height, {...resources, bounds: backgroundBounds(frame, width, height, true, report)});
+    drawBackground(context, report, frame, width, height, {...resources, bounds: backgroundBounds(frame, width, height, true, report,sceneVfxBounds(report,scene)),paintBounds:backgroundBounds(frame,width,height,true,report)});
     const strokeState = {width: 1},parallax=parallaxResolver(report,frame);
     for (const {items,bounds} of groups) {
       const depth=parallax(items[0].obj.unique_id);
@@ -131,13 +138,14 @@ export async function drawExportSceneSequential(context, report, frame, geometry
       await yieldWork();
     }
   } finally {context.restore(); releaseGeometryResources(context, {retainCanvases: true});}
-  applySceneVfx(context,frame,{scale:(viewport?.width||context.canvas.width)/width,origin:{x:viewport?.x??0,y:viewport?.y??0},outputSize:{width:viewport?.width||context.canvas.width,height:viewport?.height||context.canvas.height}});
+  scene.finish();
 }
 
 /** Keep opacity/outline scratch surfaces tile-sized for large exports. Guard
  * pixels keep antialiasing continuous across tile boundaries. The final output
  * canvas retains the requested dimensions and every tile samples originals. */
 export async function drawExportSceneTiled(context, report, frame, geometry, resources, tileSize = 1024, tile, factor = 1) {
+  if(!geometry.connectedVfxSource)geometry=connectedVfxGeometry(geometry,frame,report);
   checkExportContext(context);
   if (!Number.isInteger(tileSize) || tileSize < 1 || tileSize > 1024 || ![1, 2].includes(factor))
     throw new Error('Invalid export tile dimensions.');
@@ -150,7 +158,7 @@ export async function drawExportSceneTiled(context, report, frame, geometry, res
   tile ??= new OffscreenCanvas(1, 1);
   const tileContext = tile.getContext('2d', {
     willReadFrequently: context.getContextAttributes?.().willReadFrequently === true,
-  }), guard = 2 * factor + vfxPadding(vfxStack(frame),width*factor/report.canvas_width,Math.max(width,height)*factor);
+  }), guard = 2 * factor; // scene filtering owns its sampling halo, including outer edges
   checkExportContext(tileContext);
   context.setTransform(1, 0, 0, 1, 0, 0); context.clearRect(0, 0, width, height);
   context.imageSmoothingEnabled = factor > 1;

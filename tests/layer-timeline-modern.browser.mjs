@@ -34,6 +34,26 @@ try{
   assert.deepEqual(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').map(k=>k.tick)),[0,6,9,12]);
   assert.deepEqual(await page.evaluate(()=>[styk.timeline.start,styk.timeline.end]),[6,9]);
   await grid.press('Control+z');assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),selectionBefore);
+  // Dropping a selected key on another replaces it, with one-step undo/redo.
+  await click(4);await settle();
+  const replaceBefore=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));
+  await page.evaluate(()=>styk.settingsUI.open('animation'));
+  const replacement=page.getByRole('checkbox',{name:'Replace keyframes on drop',exact:true});
+  assert.equal(await replacement.isChecked(),true);await replacement.uncheck();
+  await page.evaluate(async()=>{await styk.settingsUI.flush();styk.settingsUI.close();});
+  assert.equal(await page.evaluate(async()=>{const {EDITOR_SETTINGS_KEY,normalizeEditorSettings}=await import('/src/settings.mjs');return normalizeEditorSettings(JSON.parse(localStorage.getItem(EDITOR_SETTINGS_KEY))).replaceKeyframesOnDrop;}),false);
+  await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(end.x,end.y,{steps:4});await page.mouse.up();await settle();
+  assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),replaceBefore);
+  await page.evaluate(()=>styk.settingsUI.open('animation'));await replacement.check();
+  await page.screenshot({path:'artifacts/keyframe-replacement-setting.png'});
+  await page.evaluate(async()=>{await styk.settingsUI.flush();styk.settingsUI.close();});
+  await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(end.x,end.y,{steps:4});await page.mouse.up();await settle();
+  assert.deepEqual(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').map(k=>k.tick)),[0,7,12]);
+  const replaceAfter=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));
+  await page.screenshot({path:'artifacts/layer-key-replacement.png'});
+  await grid.press('Control+z');assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),replaceBefore);
+  await grid.press('Control+Shift+z');assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),replaceAfter);
+  await grid.press('Control+z');
   await click(7);const menuPoint=await cell(7);await page.mouse.click(menuPoint.x,menuPoint.y,{button:'right'});assert.equal(await page.getByRole('menuitem',{name:/Create tween|layer/i}).count(),0);assert.equal(await page.getByRole('menuitem',{name:/Add Frame/}).count(),1);await page.getByRole('menuitem',{name:'Change easing…',exact:true}).click();await page.getByRole('radio',{name:'Ease in',exact:true}).click();await grid.press('Control+z');
   // High-polling pointers may report hundreds of positions between displays.
   // Only the latest position should evaluate, and layer DOM must stay intact.

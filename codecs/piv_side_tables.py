@@ -268,11 +268,28 @@ def _image_metadata(blob: bytes) -> dict[str, Any]:
     return {'mime_type': 'application/octet-stream', 'extension': '.bin'}
 
 
-def _read_image(r: _Reader, index: int) -> dict[str, Any]:
+def _read_image(r: _Reader, index: int, *, allow_missing_end: bool = False) -> dict[str, Any]:
     start = r.pos
     ax, ay, bx, by = r.unpack('<iiii', 'image.anchor_points')
+    pointer = r.pos
     end = r.unpack('<Q', 'image.absolute_end')[0]
     image_start = r.pos
+    recovery = None
+    if end == pointer:
+        # A failed native image save can leave its unpatched end placeholder.
+        # Consume the pointer itself, never rewind into the anchors.
+        recovery = 'unpatched_end'
+        end = r.pos
+    elif allow_missing_end and end > len(r.data) and r.data[pointer:pointer + 2] == b'\0\0':
+        # Restricted recovery: the LAST image has no payload/end field, and
+        # the owning figure has implicit order, no text/outline, zero polygons,
+        # and a complete nonempty name immediately after its anchors. The rest
+        # of the figure table, frames and trailer must still validate normally.
+        size = r.data[pointer + 2]
+        name = r.data[pointer + 3:pointer + 3 + size]
+        if size and len(name) == size and all(c >= 32 and c != 127 for c in name):
+            recovery = 'omitted_end'
+            r.pos = image_start = end = pointer
     blob = r.take(end - r.pos, 'image.encoded_data')
     encoded = base64.b64encode(blob).decode('ascii')
     asset = {'kind': 'image', 'asset_index': index, 'table_index': index,
@@ -283,6 +300,18 @@ def _read_image(r: _Reader, index: int) -> dict[str, Any]:
              'data_base64': encoded, **_image_metadata(blob)}
     if asset['mime_type'].startswith('image/'):
         asset['data_url'] = 'data:' + asset['mime_type'] + ';base64,' + encoded
+    if not blob:
+        # Canonicalize absent pixels as a valid transparent image, keeping the
+        # anchors and an explicit provenance flag. All consumers (including
+        # edited PIV writers) see consistent media. The source cache/native save
+        # retains the original empty/corrupt record for exact unchanged export.
+        asset['missing_image_data'] = True
+        asset['data_base64'] = (
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAarVyFEAAAAASUVORK5CYII=')
+        asset.update(mime_type='image/png', extension='.png', width=1, height=1,
+                     data_url='data:image/png;base64,' + asset['data_base64'])
+    if recovery:
+        asset['image_record_recovery'] = dict(kind=recovery, offset=pointer)
     return asset
 
 
@@ -290,7 +319,8 @@ def _primitive(segment: dict[str, Any]) -> int:
     return int(segment.get('primitive_code', segment.get('primitive', -1)))
 
 
-def parse_side_tables(data: bytes, pos: int, segments: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+def parse_side_tables(data: bytes, pos: int, segments: list[dict[str, Any]], *,
+                      allow_missing_image_end: bool = False) -> tuple[list[dict[str, Any]], int]:
     """Read conditional image then text tables immediately after figure bends.
 
     The returned assets use separate zero-based indexes for each kind. A segment
@@ -305,7 +335,9 @@ def parse_side_tables(data: bytes, pos: int, segments: list[dict[str, Any]]) -> 
         if primitive not in kinds:
             continue
         count = r.u16(kind + '.table_count')
-        table_assets = [reader(r, index) for index in range(count)]
+        table_assets = [reader(r, index, allow_missing_end=(allow_missing_image_end and
+                         index == count - 1 and 5 not in kinds)) if kind == 'image'
+                        else reader(r, index) for index in range(count)]
         assets.extend(table_assets)
         for segment in segments:
             if _primitive(segment) != primitive:

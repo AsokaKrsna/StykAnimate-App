@@ -128,8 +128,3 @@ export const editorRangeMethods = {
     return planned.reduce((sum, entry) => sum + entry.count, 0);
   },
 };
-
-export function installEditorRanges(Editor) {
-  Object.assign(Editor.prototype, editorRangeMethods);
-  return Editor;
-}

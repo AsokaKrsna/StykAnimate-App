@@ -264,5 +264,3 @@ export const editorInbetweenMethods = {
     return result;
   },
 };
-
-export function installEditorInbetweens(Editor) { Object.assign(Editor.prototype, editorInbetweenMethods); return Editor; }

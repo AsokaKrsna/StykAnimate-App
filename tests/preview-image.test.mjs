@@ -1,7 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {previewPNG, rawPNG} from './preview-png-fixture.mjs';
-import {pngInfo, imageInfo, samplePNG, fitImage, decodePreview} from '../src/preview-image.mjs';
+import {pngInfo, imageInfo, imageBlob, samplePNG, fitImage, decodePreview} from '../src/preview-image.mjs';
+
+test('embedded image native and fallback decoding preserve exact bytes and MIME types', async t => {
+  const bytes = Buffer.from(Array.from({length:4097}, (_,i) => i % 256)), base64 = bytes.toString('base64');
+  for (const encoded of [base64, base64.replace(/=+$/, ''), base64.replace(/.{80}/g, '$&\n')]) {
+    const blob = await imageBlob(`data:image/bmp;base64,${encoded}`);
+    assert.equal(blob.type, 'image/bmp'); assert.deepEqual(Buffer.from(await blob.arrayBuffer()), bytes);
+  }
+  const descriptor = Object.getOwnPropertyDescriptor(Uint8Array, 'fromBase64');
+  Object.defineProperty(Uint8Array, 'fromBase64', {configurable:true, value:undefined});
+  t.after(() => {if (descriptor) Object.defineProperty(Uint8Array, 'fromBase64', descriptor); else delete Uint8Array.fromBase64;});
+  assert.deepEqual(Buffer.from(await (await imageBlob(`data:image/bmp;base64,${base64}`)).arrayBuffer()), bytes);
+  assert.deepEqual([...new Uint8Array(await (await imageBlob('data:image/png,%00%7F')).arrayBuffer())], [0,127]);
+});
+
+test('extreme image aspect ratios respect the actual pixel allowance', () => {
+  for (const [width, height] of [[1, 100000], [100000, 1], [3, 200000], [200000, 3]]) {
+    for (const pixels of [1, 4, 128, 1024]) {
+      const size = fitImage(width, height, pixels, 8192);
+      assert.ok(size.width * size.height <= pixels);
+      assert.ok(size.width >= 1 && size.height >= 1);
+      assert.ok(size.width <= 8192 && size.height <= 8192);
+    }
+  }
+});
 
 test('native BMP, GIF and JPEG headers supply actual dimensions without decoding pixels', async () => {
   for(const topDown of [false,true]){

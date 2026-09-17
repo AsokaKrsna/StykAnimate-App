@@ -1,0 +1,25 @@
+/* Drawing extends the studio's rail and inspector, using shared theme tokens. */
+.drawing-presets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.drawing-preset{display:flex;flex-direction:column;align-items:center;gap:7px;padding:9px 3px;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--text);font:inherit;font-size:11px;min-height:58px;cursor:pointer}
+.drawing-preset:hover{background:var(--theme-hover,#f0f0f0)}
+.drawing-preset[aria-pressed=true]{border-color:var(--theme-accent,#0d99ff);background:var(--theme-selection,#e5f3ff)}
+.drawing-brush-swatch{display:block;width:30px;height:6px;border-radius:50%;background:currentColor;transform:rotate(-18deg);margin:5px 0}
+.drawing-brush-swatch.pencil{height:2px;opacity:.65}
+.drawing-brush-swatch.soft{height:10px;filter:blur(3px)}
+.drawing-brush-swatch.marker{height:10px;border-radius:1px;opacity:.4}
+.drawing-toggle{display:flex;gap:7px;align-items:center;font-size:11px;margin-top:10px;line-height:1.4}
+.drawing-toggle input{accent-color:var(--theme-accent,#0d99ff)}
+.drawing-resolution{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px}
+.drawing-pose>.property-context-heading{display:none}
+.sheet-layer[data-drawing=true] .sheet-layer-name>.icon{color:var(--theme-accent,#0d99ff)}
+.sheet-layer[data-drawing=true] .sheet-layer-name>span::after{content:'DRAW';font-size:8px;font-weight:600;letter-spacing:.4px;color:var(--muted);margin-left:8px}
+.workspace[data-mode=draw] .rail-order{display:none}
+
+.workspace[data-mode=draw] .tweener-tool{display:none}
+.workspace[data-mode=draw] #inspector .inspector-section{padding-block:12px}
+.workspace[data-mode=draw] #inspector .inspector-title{margin-bottom:8px}
+.workspace[data-mode=draw] #inspector .property-context-caption{margin-bottom:0}
+.workspace[data-mode=draw] #inspector .color-row{margin-bottom:12px}
+.drawing-resolution-info,.drawing-empty{font-size:11px;color:var(--muted);line-height:1.5;margin-top:10px}
+.drawing-preset:focus-visible{outline:2px solid var(--theme-accent,#0d99ff);outline-offset:2px}
+.workspace[data-mode=draw] .properties-library-save{display:none}

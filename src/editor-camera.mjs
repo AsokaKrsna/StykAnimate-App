@@ -379,8 +379,3 @@ export const editorCameraMethods = {
     return this.setCameraValues(Object.fromEntries(keys.map(key => [key, camera[key]])), indices);
   },
 };
-
-export function installEditorCamera(Editor) {
-  Object.assign(Editor.prototype, editorCameraMethods);
-  return Editor;
-}

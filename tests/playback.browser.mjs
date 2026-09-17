@@ -63,7 +63,10 @@ try {
       const image = new Image(); image.src = dataURL; await image.decode();
       ctx.setTransform(item.resolution, 0, 0, item.resolution, -item.bounds.x * item.resolution, -item.bounds.y * item.resolution);
       drawGeometry(ctx, buildGeometry(mediaReport, mediaReport.keyframes[0]), { url: asset => asset.data_url, image: () => image });
-      const actual = new OffscreenCanvas(item.bitmap.width, item.bitmap.height), actualCtx = actual.getContext('2d'); actualCtx.drawImage(item.bitmap, 0, 0);
+      const actual = new OffscreenCanvas(item.bitmap.width, item.bitmap.height), actualCtx = actual.getContext('2d');
+      // Playback stores opaque artwork and applies isolation alpha on the quad.
+      const group=packet.groups.find(group=>group.uid===item.uid);
+      actualCtx.globalAlpha=packet.transforms[group.transformIndex*4+2];actualCtx.drawImage(item.bitmap, 0, 0);
       const a = actualCtx.getImageData(0, 0, actual.width, actual.height).data, b = ctx.getImageData(0, 0, expected.width, expected.height).data;
       let different = 0, visible = 0; for (let i = 0; i < a.length; i++) { if (a[i] !== b[i]) different++; if (i % 4 === 3 && a[i]) visible++; }
       assert(visible > 0, 'Worker sprite raster is empty.'); assert(different === 0, `Worker sprite raster differs from native reference in ${different} channels.`);
@@ -73,7 +76,8 @@ try {
       assert(media.stats.loadChunks === priorChunks, 'Zoom invalidation retransmitted media document data.');
     } finally { media.dispose(); }
     // These four visible translucent sprites required over 128 MB before stage
-    // cropping. Every retained pixel must equal its original uncropped raster.
+    // cropping. Compare opaque artwork before quad opacity (checked above),
+    // avoiding repeated premultiplication in the native isolation reference.
     const cropReport = emptyDocument(); cropReport.figure_types = [sprite];
     const cropFrame = createFrame(Array.from({ length: 4 }, (_, i) => createObject(sprite, 100 + i, -250 + i * 10, -180 + i * 10, { scale: 400, field28: 71 })));
     cropFrame.camera = { x: 70, y: -40, angle_rad: .23, scale: 1.2 }; cropReport.keyframes = [cropFrame];
@@ -90,10 +94,11 @@ try {
         const group = packet.groups.find(group => group.uid === entry.uid), items = geometry.drawables.filter(item => item.slot === group.slot);
         const bounds = objectBounds(items, cropResources), ratio = entry.pixelScale;
         const full = new OffscreenCanvas(Math.ceil(bounds.width * ratio), Math.ceil(bounds.height * ratio)), ctx = full.getContext('2d', { willReadFrequently: true });
-        ctx.setTransform(ratio, 0, 0, ratio, -bounds.x * ratio, -bounds.y * ratio); drawGeometry(ctx, { drawables: items }, cropResources);
+        const opaque=items.map(item=>({...item,obj:{...item.obj,field28:0,transparency:0},opacity:1}));
+        ctx.setTransform(ratio, 0, 0, ratio, -bounds.x * ratio, -bounds.y * ratio); drawGeometry(ctx, { drawables: opaque }, cropResources);
         const offsetX = Math.round((entry.bounds.x - bounds.x) * ratio), offsetY = Math.round((entry.bounds.y - bounds.y) * ratio);
         const expected = ctx.getImageData(offsetX, offsetY, entry.bitmap.width, entry.bitmap.height).data;
-        const surface = new OffscreenCanvas(entry.bitmap.width, entry.bitmap.height), actualCtx = surface.getContext('2d'); actualCtx.drawImage(entry.bitmap, 0, 0);
+        const surface = new OffscreenCanvas(entry.bitmap.width, entry.bitmap.height), actualCtx = surface.getContext('2d');actualCtx.drawImage(entry.bitmap, 0, 0);
         const actual = actualCtx.getImageData(0, 0, surface.width, surface.height).data;
         for (let i = 0; i < actual.length; i++) if (actual[i] !== expected[i]) different++;
         checkedPixels += actual.length / 4;

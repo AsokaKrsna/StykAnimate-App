@@ -34,6 +34,20 @@ Read the relevant contract before changing behavior. Current code and workflow c
 - Preserve staged/atomic file replacement, recovery, and save-before-close behavior. Failed or cancelled saves must preserve existing files and unsaved work.
 - Keep Electron context isolation and narrow preload/IPC APIs. Use local codec and export paths; remote processing of user projects requires an explicit product requirement.
 
+## Evidence and complexity
+
+- For nontrivial fixes, identify the failing behavior, owning layer, and invariant to preserve. Reproduce the defect where practical; distinguish confirmed causes from hypotheses and state verification limits.
+- Add focused behavioral regression coverage where useful, confirming it exposes the original defect where practical. Test observable outcomes; change expectations only when the contract changes or the old expectation is demonstrably wrong.
+- Before adding helpers, state, caches, dependencies, or fallbacks, inspect existing implementations. Prefer clear ownership and current needs over speculative abstractions. Trace relevant indirect uses before deletion, including workers, dynamic imports, IPC, configuration, and packaging. Keep useful boundaries; line count is not a quality target.
+- Compare performance on the same workload and settings, measuring the affected interaction, stalls, memory, and visual correctness as relevant. Report tradeoffs explicitly; CPU throttling does not establish behavior on other GPUs. Verify cancellation, stale results, disposal, and recovery when changing asynchronous work or resource lifetimes.
+- Review the final diff for duplicated state, unnecessary abstractions, abandoned experiments, weakened tests, and scope expansion. Scale investigation and verification to the change; repeat or broaden passing checks only when new evidence warrants it. Documentation-only changes need documentation checks, not application benchmarks.
+
+## Progressive commits
+
+- During implementation, commit completed, coherent steps after their relevant checks pass. Keep each commit independently understandable and include its related tests and documentation. Use meaningful milestones rather than a commit per file or tool action; do not commit known-broken intermediate states.
+- Review staged changes and stage only this task's files or hunks. Preserve unrelated work and other tasks' commits. Use a concise imperative subject describing the outcome, with a body explaining motivation or tradeoffs when useful. Do not include secrets or private user data.
+- Local commits do not authorize pushing, publishing, or rewriting shared history. Follow explicit user instructions to leave work uncommitted. Keep release metadata together as required below.
+
 ## Environment and verification
 
 Use locked dependencies and the runtimes in `.github/workflows/desktop-release.yml` (currently Node 24.11.0 and Python 3.12.9 for releases). Use `npm ci`; avoid incidental upgrades. See `README.md` for source setup and `scripts/requirements-build.txt` for packaging prerequisites. Run commands from the repository root.
@@ -44,13 +58,10 @@ Run `npm run check` after JavaScript changes and tests covering affected behavio
 
 ## Changelog and shipping
 
-- `CHANGELOG.md` is the authored release history. Add completed changes only to its top `Unreleased` section during development. Keep future ideas in planning documents.
-- Before completing a feature or fix, update its existing entry or add one concise entry. Read pending notes for equivalent wording; one change gets one entry, even across several tasks.
+- `CHANGELOG.md` is public release history for people using the app. Add completed, user-relevant changes only to its top `Unreleased` section during development. Private or internal-only work, agent instructions, tests, refactors without observable effects, and build housekeeping do not need public entries; keep necessary engineering context in internal documentation or commits.
+- Before completing a user-facing feature or fix, update its existing entry or add one concise entry. Describe what users can do or what problem is resolved in natural, plain language. Include technical detail only when it helps users understand compatibility, limitations, or an action they must take. Omit private implementation details, identifiers, paths, and diagnostic data.
+- Group related work by user-visible outcome rather than listing every code change. Read pending notes for equivalent wording; one outcome gets one entry, even across several tasks. Prefer "Reduce pauses when editing complex animations" over a list of cache, allocation, and worker changes. Keep future ideas out of release notes.
 - For a release, follow `docs/RELEASING.md`: move pending entries into one new highest version, leave an empty `Unreleased` section, and align package versions. Subsequent work goes into `Unreleased`, never an older release.
 - Run `npm run release:prepare` and `npm run changelog:check`. Commit the changelog, both package version files, and both generated note files together. Generate notes through the script; never append history to the current release payload.
 - Published sections are immutable during ordinary work. Software fixes need a higher version. Review semantic duplicates manually; validation catches normalized text duplicates and structural errors, not equivalent meanings.
 - Shipping includes exact-artifact verification and the history update. Implementing a feature alone does not authorize publishing. When shipping is authorized, complete the documented process without redundant approval. Tag pushes can publish immediately.
-
-## Instruction maintenance
-
-Keep this file a concise repository map with concrete requirements and completion checks. Put detailed procedures in linked documents. Wording follows OpenAI's [GPT-6 Astra guidance](https://developers.openai.com/api/docs/guides/latest-model#prompting-best-practices) and [AGENTS.md guidance](https://developers.openai.com/codex/guides/agents-md), reviewed 2026-09-10. This file guides behavior; it does not select a model or override system/developer instructions.

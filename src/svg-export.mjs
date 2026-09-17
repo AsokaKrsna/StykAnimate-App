@@ -1,7 +1,7 @@
 import {parallaxResolver} from './layer-parallax.mjs';
 import {svgPaintDefinition, segmentPaint, textPaintGeometry, shapePaintBounds} from './paint.mjs';
 import { buildGeometry, mixColor } from './pivot/geometry.mjs';
-import { backgroundBounds, sceneBackgroundColor } from './pivot/background.mjs';
+import { backgroundBounds, backgroundImageTiles, backgroundImageRaster, sceneBackgroundColor } from './pivot/background.mjs';
 import { cameraMatrix } from './renderer-geometry.mjs';
 import { normalizeExportSmoothing } from './export-sampling.mjs';
 import {layerVisible} from './layers.mjs';
@@ -58,21 +58,6 @@ async function decodeImage(href, image) {
   if (!image.naturalWidth) throw new Error('Could not decode an SVG bitmap resource.');
   return image;
 }
-function hasTransparency(image, asset, resources) {
-  if (resources.hasTransparency) return resources.hasTransparency(image, asset);
-  if (asset.mime_type === 'image/jpeg') return false;
-  if (!image) return true;
-  const width = image.width || image.naturalWidth, height = image.height || image.naturalHeight;
-  if (width * height > 64 * 1024 * 1024) throw new RangeError('Background alpha inspection is limited to 64 megapixels.');
-  const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : document.createElement('canvas');
-  canvas.width = width; canvas.height = height;
-  const ctx = canvas.getContext('2d', {willReadFrequently: true});
-  ctx.drawImage(image, 0, 0);
-  const pixels = ctx.getImageData(0, 0, width, height).data;
-  for (let i = 3; i < pixels.length; i += 4) if (pixels[i] !== 255) return true;
-  return false;
-}
-
 /**
  * Export one evaluated Pivot frame as self-contained, editable SVG vectors.
  * Bitmap segments/backgrounds are embedded; text uses decoded glyph outlines.
@@ -129,9 +114,9 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
     })());
     return bitmaps.get(url);
   };
-  async function imageElement(image, transform, scale = 1, opacity = 1) {
+  async function imageElement(image, transform, scale = 1, opacity = 1, drawing = false) {
     const attributes = `opacity="${number(clamp(opacity))}" transform="${transform}"`;
-    if (smoothing !== 'none') return `<image width="${number(image.width)}" height="${number(image.height)}" ${attributes} preserveAspectRatio="none" image-rendering="pixelated" href="${escape(image.href)}"/>`;
+    if (drawing || smoothing !== 'none') return `<image width="${number(image.width)}" height="${number(image.height)}" ${attributes} preserveAspectRatio="none" image-rendering="${drawing ? 'auto' : 'pixelated'}" href="${escape(image.href)}"/>`;
     if (!(scale * pixelScale > 0)) return '';
     // resvg applies coverage AA to image quads even when shape AA is disabled.
     // Extend edge texels beyond that boundary, then use a hard geometric clip.
@@ -185,8 +170,22 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
     } else if (bg.kind === 2 || bg.color !== undefined) content = rect(argb(bg.color));
     else {
       const image = await bitmap(bg), scale = Math.max(sceneWidth / image.width, sceneHeight / image.height);
-      if (alpha === 1 && bounds.clearRaster && !hasTransparency(image.image, bg, resources)) content += rect(paint([0, 0, 0]));
-      content += await imageElement(image, `scale(${number(scale)})`, scale);
+      const tiles = backgroundImageTiles(sceneWidth, sceneHeight, image.width, image.height, bounds);
+      if (tiles.length === 1) content += await imageElement(image, `scale(${number(scale)})`, scale);
+      else {
+        // Bake only the raster background to avoid antialiased SVG slice seams.
+        // Preserve source density where possible, with bounded export memory.
+        const raster = backgroundImageRaster(sceneWidth,sceneHeight,image.width,image.height,bounds);
+        const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(raster.pixelWidth, raster.pixelHeight) : document.createElement('canvas');
+        canvas.width = raster.pixelWidth; canvas.height = raster.pixelHeight;
+        try {
+          const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
+          for (const tile of raster.tiles) ctx.drawImage(image.image, ...tile);
+          const blob = canvas.convertToBlob ? await canvas.convertToBlob({type:'image/png'})
+            : await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Could not extend background edges.')), 'image/png'));
+          content += `<image x="${number(raster.x)}" y="${number(raster.y)}" width="${number(raster.width)}" height="${number(raster.height)}" preserveAspectRatio="none" image-rendering="pixelated" href="${escape(await dataURL(blob))}"/>`;
+        } finally {canvas.width = canvas.height = 1;}
+      }
     }
     return `<g opacity="${number(clamp(alpha))}">${content}</g>`;
   }
@@ -243,7 +242,7 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
         const a = s.asset, image = await bitmap(a), reverse = Boolean(s.seg.extra_u8_a ?? s.seg.extra?.[1]), mirror = Boolean(s.seg.extra_u8_b ?? s.seg.extra?.[2]) !== Boolean(s.obj.image_text_flags);
         const start = reverse ? s.end : s.start, angle = (mirror ? s.angle + a.anchor_angle_rad - Math.PI : s.angle - a.anchor_angle_rad) + (reverse ? Math.PI : 0);
         const scale = Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) / a.anchor_length;
-        parts.push(await imageElement(image, `translate(${number(start.x)} ${number(start.y)}) rotate(${number(angle * 180 / Math.PI)}) scale(${number(mirror ? -scale : scale)} ${number(scale)}) translate(${number(-a.anchor_start.x)} ${number(-a.anchor_start.y)}) scale(${number(a.display_width ? a.display_width / a.width : 1)} ${number(a.display_height !== undefined ? a.display_height / a.height : 1)})`, scale, s.alpha));
+        parts.push(await imageElement(image, `translate(${number(start.x)} ${number(start.y)}) rotate(${number(angle * 180 / Math.PI)}) scale(${number(mirror ? -scale : scale)} ${number(scale)}) translate(${number(-a.anchor_start.x)} ${number(-a.anchor_start.y)}) scale(${number(a.display_width ? a.display_width / a.width : 1)} ${number(a.display_height !== undefined ? a.display_height / a.height : 1)})`, scale, s.alpha, Boolean(s.fig?._styk?.drawing)));
       } else if (s.type === 'poly') {
         if (s.points.length < 3) continue;
         const width = strokeWidth(stroke, s.outline ? 2 * s.outline : 0);

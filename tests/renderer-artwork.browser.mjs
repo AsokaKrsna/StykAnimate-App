@@ -142,7 +142,9 @@ try{
     patchReport.keyframes=Array.from({length:5},(_,index)=>{
       const frame=structuredClone(native.keyframes[0]);frame.duration_raw=4;frame.objects[0].root_x+=index*8;return frame;
     });
-    const patchCache=new PlaybackCache();
+    // Compare retention against a fresh compile using the same CPU/GPU surface
+    // policy as the real worker. Default non-preview Canvas AA can differ.
+    const patchCache=new PlaybackCache(),patchReferenceResources=new PlaybackResources({preview:true});
     try{
       patchCache.load(patchReport);const ticks=Array.from({length:patchCache.totalTicks},(_,i)=>i);
       await patchCache.prepareRange(ticks);
@@ -155,7 +157,7 @@ try{
       await patchCache.prepareRange(ticks);
       if(!patchCache.get(8).compatibility.some(entry=>originalPixelKeys.has(entry.artworkKey)))throw new Error('Unchanged sibling artwork identity changed across a frame revision.');
       for(const tick of ticks){
-        const actual=patchCache.get(tick),reference=await compilePlaybackPacket(patchReport,tick,{sharedArtwork:false});
+        const actual=patchCache.get(tick),reference=await compilePlaybackPacket(patchReport,tick,{sharedArtwork:false,resources:patchReferenceResources});
         a.r.prepareFrame(actual,{report:patchReport});a.r.renderPrepared(actual.key,{report:patchReport});const pixels=read(a);
         b.r.clearPreparedFrames();b.r.prepareFrame(reference,{report:patchReport});b.r.renderPrepared(reference.key,{report:patchReport});
         const max=difference(pixels,read(b));if(max)throw new Error(`Revision-retained playback ${tick} differs by ${max}`);
@@ -163,7 +165,7 @@ try{
         for(const entry of reference.compatibility)entry.bitmap?.close();
       }
       if(a.r.preparedFrames.frames.get(retainedPacket.key)!==retainedGPU||a.r.preparedFrames.stats.uploads-uploads!==7)throw new Error('Retained GPU buffers were uploaded again.');
-    }finally{patchCache.dispose();}
+    }finally{patchCache.dispose();patchReferenceResources.dispose();}
     const offscreen = globalThis.OffscreenCanvas; let fallbackPacket;
     try {
       globalThis.OffscreenCanvas = undefined;

@@ -33,47 +33,6 @@ export function normalizeFrame(frame) {
   setOrder(frame, ids);
   return frame;
 }
-export function duplicateObject(report, index, slot) {
-  const frame = structuredClone(report.keyframes[index]),
-    obj = structuredClone(frame.objects[slot]);
-  if (!obj) throw new Error("Select a figure first.");
-  obj.unique_id = nextIdentity(report);
-  obj.root_x += 20;
-  obj.root_y += 20;
-  frame.objects.push(obj);
-  const ids = frameOrder(report.keyframes[index]);
-  ids.push(obj.unique_id);
-  setOrder(frame, ids);
-  return normalizeFrame(frame);
-}
-export function addObject(report, index, type) {
-  const frame = structuredClone(report.keyframes[index]),
-    fig = report.figure_types.find((f) => f.figure_type_id === type);
-  if (!fig) throw new Error("Choose a figure type.");
-  const obj = {
-    object_slot: frame.objects.length,
-    unique_id: nextIdentity(report),
-    figure_type_id: type,
-    scale: 1,
-    color_override_raw: 0,
-    field28: 0,
-    angles: fig.segments.map((s) => s.angle_rad),
-    root_x: report.canvas_width / 2,
-    root_y: report.canvas_height / 2,
-    len_flag: 0,
-    lengths: [],
-    bend_flag: 0,
-    bends: [],
-    join: null,
-  };
-  if (fig.image_assets?.length || fig.text_assets?.length)
-    obj.image_text_flags = 0;
-  frame.objects.push(obj);
-  const ids = frameOrder(report.keyframes[index]);
-  ids.push(obj.unique_id);
-  setOrder(frame, ids);
-  return normalizeFrame(frame);
-}
 export function deleteObject(report, index, slot, geometry) {
   const frame = structuredClone(report.keyframes[index]),
     removed = frame.objects[slot];

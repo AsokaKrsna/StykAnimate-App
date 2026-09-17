@@ -12,12 +12,23 @@ export function playbackProperties(report) {
   return properties;
 }
 
+/** Compare immutable retained poses by identity, including explicitly dirtied
+ * in-place edits and IDs whose preceding worker commit is not yet confirmed. */
+export function retainedSourceChanges(report, mirror, dirty = []) {
+  const sources = report._styk?.frameSources || {}, ids = new Set(dirty);
+  for (const [id, frame] of Object.entries(sources)) if (mirror.get(id) !== frame) ids.add(id);
+  for (const id of mirror.keys()) if (!own(sources, id)) ids.add(id);
+  return [...ids].map(id => ({id, frame: own(sources, id) ? sources[id] : null}));
+}
+
 /** Validate the entire incoming transaction before replacing any live mirror field. */
 export function applyPlaybackPatch(report, patch) {
   if (!patch?.properties || typeof patch.properties !== 'object' || Array.isArray(patch.properties) ||
     Object.keys(patch.properties).some(key => retained.has(key)) || own(patch.properties._styk || {}, 'frameSources') ||
     !Array.isArray(patch.frames) || !Array.isArray(patch.sources) || typeof patch.hasFrameSources !== 'boolean')
     throw new Error('Invalid playback document patch.');
+  for (const table of ['figure_types', 'backgrounds']) if (own(patch, table) && !Array.isArray(patch[table]))
+    throw new Error('Invalid render media table patch.');
   const frameIndices = new Set(), sourceIds = new Set();
   for (const entry of patch.frames) {
     if (!Number.isInteger(entry.index) || entry.index < 0 || entry.index >= report.keyframes.length || frameIndices.has(entry.index) || !Array.isArray(entry.frame?.objects))
@@ -38,5 +49,6 @@ export function applyPlaybackPatch(report, patch) {
   for (const [key, value] of Object.entries(patch.properties)) Object.defineProperty(report, key, {value, enumerable: true, configurable: true, writable: true});
   if (patch.hasFrameSources) report._styk.frameSources = sources;
   for (const entry of patch.frames) report.keyframes[entry.index] = entry.frame;
+  for (const table of ['figure_types', 'backgrounds']) if (own(patch, table)) report[table] = patch[table];
   return report;
 }

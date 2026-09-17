@@ -82,8 +82,8 @@ test('retained export images need neither another fetch nor another decode', asy
   assert.equal(decoded.length,1);assert.equal(resources.bytes,16);
 });
 
-async function imageFixture(t, maxBytes) {
-  const png = await previewPNG(1024, 512), url = 'data:image/png;base64,' + png.toString('base64');
+async function imageFixture(t, maxBytes, width = 1024, height = 512) {
+  const png = await previewPNG(width, height), url = 'data:image/png;base64,' + png.toString('base64');
   const decoded = [], previousBitmap = Object.getOwnPropertyDescriptor(globalThis, 'createImageBitmap'),
     previousImageData = Object.getOwnPropertyDescriptor(globalThis, 'ImageData');
   globalThis.ImageData = class { constructor(data, width, height) { this.data = data; this.width = width; this.height = height; } };
@@ -99,9 +99,9 @@ async function imageFixture(t, maxBytes) {
   });
   // The full 2 MiB image exceeds the allowance; only its visible source crop
   // is needed. Anchored 1:1 at the document origin like a placed bitmap figure.
-  const asset = { data_url: url, width: 1024, height: 512, display_width: 1024, display_height: 512,
-    anchor_start: { x: 0, y: 0 }, anchor_length: 1024, anchor_angle_rad: 0 };
-  const item = { type: 'image', asset, start: { x: 0, y: 0 }, end: { x: 1024, y: 0 }, angle: 0, seg: {}, obj: {} };
+  const asset = { data_url: url, width, height, display_width: width, display_height: height,
+    anchor_start: { x: 0, y: 0 }, anchor_length: width, anchor_angle_rad: 0 };
+  const item = { type: 'image', asset, start: { x: 0, y: 0 }, end: { x: width, y: 0 }, angle: 0, seg: {}, obj: {} };
   return { resources, decoded, url, item };
 }
 
@@ -142,4 +142,83 @@ test('preview variants cover unchanged and contained draws without redecoding', 
   assert.equal(decoded.length, 2);
   assert.ok(grown.srcX + grown.srcW >= 112 && grown.srcY + grown.srcH >= 66, 'the union variant must cover both views');
   assert.equal(first.closed, 1, 'the replaced variant releases its pixels');
+});
+
+test('covered preview images avoid reconstructing large encoded sources', async t => {
+  const {resources, item, url} = await imageFixture(t, 4 * 1024 * 1024);
+  resources.preview = true;
+  const visible = {x: 0, y: 0, width: 64, height: 64};
+  await resources.preload([item], {scale: 1, visible});
+  const image = resources.image(url);
+  // Oversized compressed/native sources are intentionally not retained.
+  resources.sources.clear(); resources.sourceBytes = 0;
+  t.mock.method(resources, 'source', () => {throw new Error('Covered pixels must not reload their encoded source.');});
+  await resources.preload([item], {scale: 1, visible});
+  assert.equal(resources.image(url), image);
+});
+
+test('simultaneous preview crop growth shares one image allowance', async t => {
+  const {resources, item} = await imageFixture(t, 60000 * 4);
+  resources.preview = true;
+  const other = {...item, asset: {...item.asset, data_url: item.asset.data_url.replace('image/png;', 'image/x-png;')}};
+  const items = [item, other];
+  await resources.preload(items, {scale: 1, visible: {x: 0, y: 0, width: 96, height: 96}});
+  await resources.preload(items, {scale: 1, visible: {x: 400, y: 0, width: 96, height: 96}});
+  assert.ok(resources.bytes <= resources.maxBytes, `Both unions exceeded the shared allowance: ${resources.bytes}`);
+  for (const image of resources.images.values()) {
+    assert.ok(image.srcX <= 400 && image.srcX + image.srcW >= 496);
+    assert.equal(image.width, image.srcW, 'Budgeted coverage growth must preserve visible pixel density.');
+  }
+  assert.equal(resources.pressureReduced, false);
+});
+
+test('export crop replacement releases obsolete pixels before checking the new allocation', async t => {
+  const {resources, item, url} = await imageFixture(t, 11000 * 4);
+  const plan = x => ({matrix:[1,0,0,1,-x,0],width:96,height:96});
+  await resources.preload([item], {plan:plan(0)});
+  const first = resources.image(url);
+  await resources.preload([item], {plan:plan(400)});
+  const next = resources.image(url);
+  assert.equal(first.closed, 1);
+  assert.notEqual(next, first);
+  assert.equal(next.width, next.srcW);
+  assert.ok(next.srcX <= 400 && next.srcX + next.srcW >= 496);
+  assert.ok(resources.bytes <= resources.hardMaxBytes);
+});
+
+test('disposal during a preview decode closes its late bitmap without retaining stale pixels', async t => {
+  const {resources, item, decoded} = await imageFixture(t, 1024 * 1024);
+  resources.preview = true;
+  const original = globalThis.createImageBitmap;
+  let entered, release;
+  const ready = new Promise(resolve => {entered=resolve;}), gate = new Promise(resolve => {release=resolve;});
+  globalThis.createImageBitmap = async (...args) => {
+    const bitmap = await original(...args); entered(); await gate; return bitmap;
+  };
+  const pending = resources.preload([item], {scale:1, visible:{x:0,y:0,width:64,height:64}});
+  const cancelled = assert.rejects(pending, {name:'AbortError'});
+  await ready; resources.dispose(); release(); await cancelled;
+  assert.equal(resources.bytes,0); assert.equal(resources.images.size,0);
+  assert.ok(decoded.every(bitmap => bitmap.closed===1));
+});
+
+test('thin previews stay bounded, remain reusable and regain detail on both axes', async t => {
+  const {resources, item, url, decoded} = await imageFixture(t, 128 * 4, 1, 4096);
+  resources.preview = true;
+  await resources.preload([item]);
+  const first = resources.image(url);
+  assert.equal(first.width,1); assert.equal(first.height,128);
+  await resources.preload([item]); assert.equal(decoded.length,1);
+  resources.maxBytes = resources.hardMaxBytes = 4096 * 4;
+  await resources.preload([item]);
+  assert.equal(resources.image(url).height,4096);
+  assert.equal(first.closed,1); assert.equal(decoded.length,2);
+  await resources.preload([item]); assert.equal(decoded.length,2);
+});
+
+test('unchanged odd-size preview dimensions do not cause repeated decode work', async t => {
+  const {resources, item, decoded} = await imageFixture(t, 10000 * 4, 101, 53);
+  resources.preview = true;
+  for (let i=0;i<5;i++) await resources.preload([item],{scale:.4});
+  assert.equal(decoded.length,1);
 });

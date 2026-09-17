@@ -13,6 +13,11 @@ from pathlib import Path
 import struct
 from typing import Any
 
+if __package__:
+    from .image_stream import jpeg_end
+else:
+    from image_stream import jpeg_end
+
 
 _BUILTIN_VALUES = (
     (0,32.,-1.5707963267948968,14.,0,0),(1,32.,-1.5707963267948968,14.,0,0),
@@ -84,9 +89,12 @@ def _image(reader: Reader, kind: str, name: str, assets_root: Path | None = None
         end = reader.value('Q')
         if end <= reader.pos:
             raise ValueError(f"Invalid JPEG end pointer {end} at byte {start}")
-        blob = reader.read(end - reader.pos)
-        if not blob.startswith(b'\xff\xd8') or not blob.endswith(b'\xff\xd9'):
-            raise ValueError(f"Invalid JPEG boundaries at byte {start}")
+        # Native Pivot decodes the first image, then seeks to the declared end.
+        # Some saved resources retain large amounts of old data after EOI. Keep
+        # the record extent, but do not duplicate that data in browser media.
+        image_end = jpeg_end(reader.data, reader.pos, end)
+        blob = reader.data[reader.pos:image_end]
+        reader.pos = end
         width = height = None
         mime = 'image/jpeg'
     asset = {'kind': kind, 'mime_type': mime, 'width': width, 'height': height,

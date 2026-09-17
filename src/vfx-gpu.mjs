@@ -2,10 +2,12 @@ import {activeVfx} from './vfx.mjs';
 import {vfxPaint} from './vfx-paint.mjs';
 import {vfxVertex as vertex,vfxFragment as fragment} from './vfx-shaders.mjs';
 import {vfxWebGPUFor,releaseVfxWebGPU} from './vfx-webgpu.mjs';
+import {fitsVfxSurface,vfxSurfaceError,VFX_MAX_DIMENSION} from './vfx-surface.mjs';
 export class VfxGPU {
  constructor(){
   this.canvas=new OffscreenCanvas(1,1);const gl=this.gl=this.canvas.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:true});
   if(!gl)throw new Error('VFX require an available WebGL 2 graphics context.');
+  this.maxDimension=Math.min(VFX_MAX_DIMENSION,gl.getParameter(gl.MAX_TEXTURE_SIZE));
   this.compile=(type,code)=>{const shader=gl.createShader(type);gl.shaderSource(shader,code);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS)){const reason=gl.getShaderInfoLog(shader);gl.deleteShader(shader);throw new Error(`VFX shader: ${reason}`);}return shader;};
   this.vertexShader=this.compile(gl.VERTEX_SHADER,vertex);this.programs=new Map();
   this.paintColors=new Float32Array(128);this.paintOffsets=new Float32Array(32);
@@ -25,7 +27,7 @@ export class VfxGPU {
  run(source,stack,{scale=1,origin={x:0,y:0},outputSize}={}){
   stack=activeVfx(stack);if(!stack.length)return source;
   const gl=this.gl,w=source.width,h=source.height;if(gl.isContextLost())throw new Error('The VFX graphics context was lost. Retry after reloading the document.');
-  if(!w||!h||w*h>16777216||Math.max(w,h)>gl.getParameter(gl.MAX_TEXTURE_SIZE))throw new Error('The VFX surface exceeds the graphics budget. Reduce the render tile size.');
+  if(!fitsVfxSurface(w,h,this.maxDimension))throw vfxSurfaceError();
   if(this.canvas.width!==w)this.canvas.width=w;if(this.canvas.height!==h)this.canvas.height=h;
   gl.disable(gl.BLEND);gl.activeTexture(gl.TEXTURE0);const input=this.slot(0,w,h);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,source);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
@@ -84,5 +86,9 @@ export function releaseVfxDevice(device){if(sharedDevice===device)sharedDevice=n
 export function filterVfxCanvas(source,stack,options){if(!activeVfx(stack).length)return source;
  if(sharedDevice){const gpu=vfxWebGPUFor(sharedDevice);lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return gpu.run(source,stack,options);}
  executor??=new VfxGPU();lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return executor.run(source,stack,options);}
+export function vfxSurfaceDimension(){
+ if(sharedDevice)return Math.min(VFX_MAX_DIMENSION,sharedDevice.limits.maxTextureDimension2D);
+ executor??=new VfxGPU();lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return executor.maxDimension;
+}
 export function vfxGPUStats(){const source=sharedDevice?vfxWebGPUFor(sharedDevice).stats:executor?.stats;return source?{...source}:{passes:0,bytes:0,calls:0};}
 export function releaseVfxGPU(){clearTimeout(idleTimer);idleTimer=undefined;executor?.destroy();executor=null;if(sharedDevice)releaseVfxWebGPU(sharedDevice);}

@@ -26,6 +26,7 @@ export function* validateLayerStateSteps(state) {
     if (!record(layer) || typeof layer.name !== 'string' || !layer.name.trim() || layer.name.length > 160 ||
       typeof layer.visible !== 'boolean' || typeof layer.locked !== 'boolean') throw new Error('Invalid layer properties.');
     validateParallax(layer.parallax);
+    if (layer.drawing !== undefined && (!record(layer.drawing) || layer.drawing.version !== 1)) throw new Error('Invalid drawing layer metadata.');
     if (layer.color !== undefined && !Object.hasOwn(LAYER_COLORS, layer.color)) throw new Error('Invalid layer color.');
     if (++work % 256 === 0) yield {phase:'layers', checked:work};
   }

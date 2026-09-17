@@ -1,3 +1,4 @@
+import {drawingResourcesFor} from './drawing-resources.mjs';
 import {movieclipFigure,movieclipAsset,isMovieclip,playbackSettings,validatePlayback,invalidateMovieclipTypes,movieclipSourceFrames,movieclipTime} from './movieclips.mjs';
 import {evaluatedFrame,timeline,buildGeometry,movieclipPresenceIndex} from './pivot/geometry.mjs';
 import {createFrame,createObject,emptyDocument} from './demo.mjs';
@@ -48,10 +49,12 @@ export function captureMovieclip(editor,{start=editor.tick,end=start+1,uids=[...
   for(const frame of Object.values(sources))for(const obj of frame.objects)usedTypes.add(obj.figure_type_id);
   const channels=(report._styk?.animation?.channels??[]).filter(channel=>['figure','segment','polygon'].includes(channel.target.kind)?selected.has(channel.target.uid):channel.target.kind==='layer'&&usedLayers.has(channel.target.id));
   const metadata={...report._styk,animation:{...report._styk?.animation,version:1,nextKeyId:report._styk?.animation?.nextKeyId??1,channels:clone(channels)},frameSources:sources};
+  if(metadata.vfxClips)metadata.vfxClips={...metadata.vfxClips,clips:metadata.vfxClips.clips.filter(c=>c.target.kind!=='scene'&&selected.has(c.target.uid))};
   delete metadata.simpleFrameDraft;
   if(metadata.movieclipSource){
     const retained=clone(metadata.movieclipSource.document);
     const prune=document=>{
+      if(document._styk?.vfxClips)document._styk.vfxClips={...document._styk.vfxClips,clips:document._styk.vfxClips.clips.filter(c=>c.target.kind!=='scene'&&selected.has(c.target.uid))};
       document.keyframes=document.keyframes.map(frame=>filteredFrame(frame,selected));
       if(document._styk?.frameSources)document._styk.frameSources=Object.fromEntries(Object.entries(document._styk.frameSources).map(([id,frame])=>[id,filteredFrame(frame,selected)]));
       if(document._styk?.animation)document._styk.animation.channels=document._styk.animation.channels.filter(c=>['figure','segment','polygon'].includes(c.target.kind)?selected.has(c.target.uid):c.target.kind==='layer'&&usedLayers.has(c.target.id));
@@ -222,6 +225,7 @@ export const editorMovieclipMethods={
     return this.editFrameDraftTimeline(()=>this.movieclipBatch(label,()=>{if(this.report._styk?.layerSheet&&!usesPresence(this.object))this._prepareSheetMovieclips();return operation();}));
   },
   createMovieclip(options={}){
+    if(drawingResourcesFor(this.report)?.stats.queued)throw new Error('Finish drawing publication before creating a movieclip.');
     if(this._drag)this.commitDrag();
     const capture=captureMovieclip(this,options);
     if(options.replace!==false)validateReplacementOrder(this,capture.selected,capture.start,capture.end);
@@ -467,12 +471,13 @@ export const editorMovieclipMethods={
     return this.movieclipTimelineEdit('Bake animation',()=>this._publishExpandedMovieclip(frames,uid,materializer,{start,end,label:'Bake animation'}));
   },
   enterMovieclip(typeId=this.figure?.figure_type_id){
+    if(drawingResourcesFor(this.report)?.stats.queued)throw new Error('Finish drawing publication before editing a movieclip.');
     const figure=this.report.figure_types.find(f=>f.figure_type_id===typeId);if(!isMovieclip(figure))throw new Error('Choose a movieclip.');
     if(this._drag)this.commitDrag();if(this._animationEdit)this.commitAnimationEdit();
     const scopes=this._movieclipScopes??[],parent={};
     for(const key of Object.keys(this))if(key!=='_movieclipScopes')parent[key]=this[key];
     const document=clone(movieclipAsset(figure).document);
-    this.load(document,figure.name);this._movieclipScopes=[...scopes,{parent,typeId,name:figure.name}];
+    this.load(document,figure.name,{preserveDrawingResources:true});this._movieclipScopes=[...scopes,{parent,typeId,name:figure.name}];
     this._emit('movieclip-scope',{structural:true,timing:true});return this;
   },
   movieclipProjectReport(){
@@ -488,9 +493,11 @@ export const editorMovieclipMethods={
     const scopes=this._movieclipScopes;if(!scopes?.length)return false;
     if(this._drag)this.commitDrag();if(this._animationEdit)this.commitAnimationEdit();
     if(save&&this._frameDraftEnabled)this.disableFrameDrafts();
+    if(save&&drawingResourcesFor(this.report)?.stats.queued)throw new Error('Finish drawing publication before leaving this movieclip.');
     const changed=this.revision!==this._savedRevision;
     const scope=scopes.at(-1),document=save?storedFrameReport(this.report,{validate:false}):null;
     const duration=save?Math.max(1,this.totalTicks):0;
+    drawingResourcesFor(this.report)?.dispose();
     for(const key of Object.keys(this))if(key!=='_movieclipScopes')delete this[key];
     Object.assign(this,scope.parent);this._movieclipScopes=scopes.slice(0,-1);
     if(save&&changed){

@@ -1,3 +1,4 @@
+import {drawingMetadata,drawingId} from './drawing-model.mjs';
 import {inheritedKeyEasing} from './keyframe-easing.mjs';
 import {remapVfxOwner} from './vfx.mjs';
 /** Atomic figure commands over native source keys or explicitly selected authored ticks. */
@@ -82,7 +83,7 @@ function insertionPlan(editor, operation, targetFrames) {
   if (!['default', 'unique', 'instance'].includes(pasteMode)) throw new Error('Choose a valid figure paste mode.');
   // Decide once per copied definition. A range shares the prepared definitions;
   // immutable movie documents remain shared until their editor publishes edits.
-  const independent = new Set(sourceFigures.filter(figure => pasteMode === 'unique' ||
+  const independent = new Set(sourceFigures.filter(figure => drawingMetadata(figure) || pasteMode === 'unique' ||
     (pasteMode === 'default' && !figure._styk?.movieclip)).map(figure => figure.figure_type_id));
   const existingTypes = new Map(editor.report.figure_types.map(figure => [figure.figure_type_id, figure]));
   const linked = new Set(sourceObjects.filter(object => !operation.newIdentities && editor.report._styk?.layerSheet &&
@@ -101,6 +102,7 @@ function insertionPlan(editor, operation, targetFrames) {
     let figure = clipboard.documentToken === editor._documentToken && !independent.has(original.figure_type_id) && !clipboard.freshTypes?.has(original.figure_type_id) ? existingTypes.get(original.figure_type_id) : null;
     if (!figure) {
       figure = {...(operation.importing ? clone(original) : snapshotFigureDefinition(original)), figure_type_id: nextType++};
+      if(drawingMetadata(figure))figure._styk={...figure._styk,drawing:{...drawingMetadata(figure),celId:drawingId()}};
       // Modern segment colors must not acquire the destination's legacy whole-figure interpretation.
       if (clipboard.sourceVersion >= 5 && editor.report.version < 5) figure._styk = {...figure._styk, colorMode: 'segments'};
       definitions.push(figure);

@@ -5,6 +5,11 @@ export function refreshHotkeyHints(hotkeys, root = document) {
   for (const node of root.querySelectorAll('[data-action],[data-tool],[data-hotkey-command]')) {
     let id = node.dataset.hotkeyCommand || (node.id === 'play-button' ? 'play-pan' : node.dataset.tool ? `tool-${node.dataset.tool}` : node.dataset.action);
     if (id === 'delete-single-segment') id = 'delete';
+    if (node.closest('#builder-bar')) {
+      if (id === 'duplicate-segment') id = 'duplicate';
+      if (id === 'mirror-segment') id = 'mirror';
+      if (id === 'mirror-segment-vertical') id = 'mirror-vertical';
+    }
     if (id === 'play' && !hotkeys.label('play')) id = 'play-pan';
     if (!HOTKEY_BY_ID.has(id)) continue;
     const label = hotkeys.label(id), kbd = node.querySelector('kbd');

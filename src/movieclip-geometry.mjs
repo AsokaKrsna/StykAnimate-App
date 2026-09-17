@@ -1,3 +1,5 @@
+import {vfxStack} from './vfx.mjs';
+import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {movieclipAsset, playbackSettings} from './movieclips.mjs';
 import {layerVisible} from './layers.mjs';
 
@@ -5,8 +7,14 @@ const caches = new WeakMap();
 const MAX_FRAMES = 48, MAX_POINTS = 250000;
 // One budget for every asset in this renderer, including nested assets.
 const retained=new Map();let retainedPoints=0;
-const scaledOwner=(owner,scale)=>({...owner,scale:(owner.scale??1)*Math.abs(scale)});
-const scaledInner=(inner,scale)=>inner?{...inner,owner:scaledOwner(inner.owner,scale),inner:scaledInner(inner.inner,scale)}:undefined;
+function scaledOwner(owner,scale,point){
+  const result={...owner,scale:(owner.scale??1)*Math.abs(scale)},bounds=owner.domainBounds;
+  if(bounds){const corners=[[bounds.x,bounds.y],[bounds.x+bounds.width,bounds.y],[bounds.x,bounds.y+bounds.height],[bounds.x+bounds.width,bounds.y+bounds.height]].map(([x,y])=>point({x,y}));
+    const x=Math.min(...corners.map(p=>p.x)),y=Math.min(...corners.map(p=>p.y));
+    result.domainBounds={x,y,width:Math.max(...corners.map(p=>p.x))-x,height:Math.max(...corners.map(p=>p.y))-y};}
+  return result;
+}
+const scaledInner=(inner,transformOwner)=>inner?{...inner,owner:transformOwner(inner.owner),inner:scaledInner(inner.inner,transformOwner)}:undefined;
 function touch(cache){retained.delete(cache);retained.set(cache,true);}
 function evict(cache){const first=cache.frames.entries().next().value;if(!first)return;cache.frames.delete(first[0]);cache.points-=first[1].points;retainedPoints-=first[1].points;if(!cache.frames.size)retained.delete(cache);}
 export function movieclipCacheStats(figure) {
@@ -22,8 +30,8 @@ function* sampleSteps(asset, local, api) {
   let low=0,high=rows.length-1;
   while(low<high){const mid=Math.ceil((low+high)/2);if(rows[mid].start<=tick)low=mid;else high=mid-1;}
   const row=rows[low], frame=api.evaluatedFrame(asset.document,low,row.count?(tick-row.start)/row.count:0,tick);
-  const geometry=api.buildGeometrySteps ? yield* api.buildGeometrySteps(asset.document,frame) : api.buildGeometry(asset.document,frame);
-  if(frame._stykVfx?.figure)geometry.sceneEffects=frame._stykVfx.figure;
+  const geometry=connectedVfxGeometry(api.buildGeometrySteps ? yield* api.buildGeometrySteps(asset.document,frame) : api.buildGeometry(asset.document,frame),frame,asset.document);
+  if(vfxStack(frame).length)geometry.sceneEffects=vfxStack(frame);
   const points=geometry.drawables.reduce((n,s)=>n+(s.points?.length??1),0);
   cache.misses++;
   if(points<=MAX_POINTS){
@@ -37,10 +45,6 @@ function* sampleSteps(asset, local, api) {
 }
 /** One selectable container, with independently styled child render groups.
  * Cached local geometry is shared by all instances of an immutable asset. */
-export function buildMovieclipGeometry(fig,obj,root,slot,api) {
-  const steps=buildMovieclipGeometrySteps(fig,obj,root,slot,api);
-  for(;;){const step=steps.next();if(step.done)return step.value;}
-}
 export function* buildMovieclipGeometrySteps(fig,obj,root,slot,api) {
   const asset=movieclipAsset(fig), scale=Number(obj.scale??1), angle=Number(obj.angles?.[0]??0),
     a=Math.cos(angle)*scale,b=Math.sin(angle)*scale,flip=obj.image_text_flags?-1:1;
@@ -52,7 +56,8 @@ export function* buildMovieclipGeometrySteps(fig,obj,root,slot,api) {
   const local=obj._movieclipSample??(obj._movieclipSample===null?null:playbackSettings(obj).offset);
   if(local===null)return geometry;
   const source=yield* sampleSteps(asset,local,api), owner={opacity:1-Number(obj.field28??0)/255,effects:source.sceneEffects?.length?[...source.sceneEffects,...(obj._stykVfx?.figure??[])]:obj._stykVfx?.figure,scale:Math.abs(scale)};
-  const objects=new Map();
+  const objects=new Map(),owners=new Map();
+  const transformOwner=owner=>{let result=owners.get(owner);if(!result){result=scaledOwner(owner,scale,point);owners.set(owner,result);}return result;};
   let completed=0;
   for(const item of source.drawables){
     if((++completed & 127)===0)yield {phase:'geometry',stage:'movieclip',completed,total:source.drawables.length};
@@ -61,7 +66,7 @@ export function* buildMovieclipGeometrySteps(fig,obj,root,slot,api) {
     if(!child){child={...item.obj,unique_id:obj.unique_id,object_slot:slot,scale:(item.obj.scale??1)*scale,image_text_flags:Number(Boolean(item.obj.image_text_flags)!==Boolean(obj.image_text_flags))};objects.set(item.obj,child);}
     geometry.drawables.push({...item,obj:child,slot,
       _movieclipOwner:owner,_movieclipPart:item.slot,
-      ...(item._movieclipOwner?{_movieclipInner:{owner:scaledOwner(item._movieclipOwner,scale),part:item._movieclipPart,inner:scaledInner(item._movieclipInner,scale)}}:{}),
+      ...(item._movieclipOwner?{_movieclipInner:{owner:transformOwner(item._movieclipOwner),part:item._movieclipPart,inner:scaledInner(item._movieclipInner,transformOwner)}}:{}),
       points:item.points?.map(point),start:item.start&&point(item.start),end:item.end&&point(item.end),
       angle:item.angle===undefined?undefined:item.angle*flip+angle,bend:(item.bend??0)*flip,
       length:item.length===undefined?undefined:item.length*scale,

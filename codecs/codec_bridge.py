@@ -21,7 +21,9 @@ import zlib
 
 WORKSPACE = Path(__file__).resolve().parents[2]
 sys.dont_write_bytecode = True
-sys.path.insert(0, str(WORKSPACE / "tools"))
+# Resolve companions from the same codec bundle in source and packaged builds.
+# A neighbouring research project's tools must never shadow shipped parsers.
+sys.path.insert(0, str(Path(os.environ.get("STYK_TOOLS_ROOT", Path(__file__).resolve().parent)).resolve()))
 from piv_codec import PivError, Reader, MAX_SEGMENTS, _builtin_man, _figure, decode_piv_bytes
 from piv_full_writer import encode_piv_project
 from piv_migrate import migrate_legacy_bytes

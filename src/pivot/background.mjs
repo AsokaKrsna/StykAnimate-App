@@ -27,8 +27,6 @@ export function effectiveCamera(report, frame, cameraEnabled = true) {
   return cameraEnabled && report?._styk?.layers?.fixed?.camera?.visible !== false ? cameraAtTime(report,frame) : null;
 }
 
-const imageTransparency = new WeakMap();
-
 // Native rendering decides identity from the camera values after loading.
 // Its scale/angle tolerances differ from its relative comparison to zero.
 export function cameraIsIdentity(camera) {
@@ -53,50 +51,76 @@ export function inverseCameraScale(camera) {
   return inverse;
 }
 
-function hasTransparency(context, image, asset, resources) {
-  if (resources.hasTransparency) return resources.hasTransparency(image, asset);
-  if (asset.mime_type === "image/jpeg") return false;
-  if (imageTransparency.has(image)) return imageTransparency.get(image);
-  // Scan the decoded pixels that are actually drawn, not the logical size;
-  // downscaled preview variants are already bounded.
-  const width = image.width || image.naturalWidth,
-    height = image.height || image.naturalHeight;
-  if (width * height > 64 * 1024 * 1024)
-    throw new Error("Background alpha inspection is limited to 64 megapixels.");
-  const surface =
-    typeof OffscreenCanvas !== "undefined"
-      ? new OffscreenCanvas(width, height)
-      : context.canvas.ownerDocument.createElement("canvas");
-  surface.width = width;
-  surface.height = height;
-  const target = surface.getContext("2d", { willReadFrequently: true });
-  target.drawImage(image, 0, 0);
-  const data = target.getImageData(0, 0, width, height).data;
-  let transparent = false;
-  for (let i = 3; i < data.length; i += 4)
-    if (data[i] !== 255) {
-      transparent = true;
-      break;
-    }
-  imageTransparency.set(image, transparent);
-  return transparent;
+// Nine source slices extend edge pixels without moving or stretching the artwork.
+// Source dimensions may be a downscaled preview; placement uses logical dimensions.
+export function backgroundImageTiles(width, height, imageWidth, imageHeight, bounds, sourceWidth = imageWidth, sourceHeight = imageHeight) {
+  const scale = Math.max(width / imageWidth, height / imageHeight);
+  const w = imageWidth * scale, h = imageHeight * scale;
+  const axes = (size, source, low, high) => [
+    [0, 1, low, Math.max(0, -low)],
+    [0, source, 0, size],
+    [source - 1, 1, size, Math.max(0, high - size)],
+  ];
+  const tiles = [];
+  for (const [sx, sw, dx, dw] of axes(w, sourceWidth, Math.min(0, bounds.x), bounds.x + bounds.width))
+    for (const [sy, sh, dy, dh] of axes(h, sourceHeight, Math.min(0, bounds.y), bounds.y + bounds.height))
+      if (dw > 0 && dh > 0) tiles.push([sx, sy, sw, sh, dx, dy, dw, dh]);
+  return tiles;
+}
+
+// Align slice boundaries to one raster grid, then transform the image once.
+// This avoids both gaps and doubled alpha at rotated/subpixel slice corners.
+export function backgroundImageRaster(width, height, imageWidth, imageHeight, bounds, sourceWidth = imageWidth, sourceHeight = imageHeight) {
+  const scale = Math.max(width / imageWidth, height / imageHeight);
+  const density = Math.min(sourceWidth / (imageWidth * scale), sourceHeight / (imageHeight * scale),
+    16382 / bounds.width, 16382 / bounds.height, Math.sqrt(31 * 1024 * 1024 / (bounds.width * bounds.height)));
+  const left = Math.floor(bounds.x * density), top = Math.floor(bounds.y * density);
+  const pixelWidth = Math.max(1, Math.ceil((bounds.x + bounds.width) * density) - left);
+  const pixelHeight = Math.max(1, Math.ceil((bounds.y + bounds.height) * density) - top);
+  const rect = {x: left / density, y: top / density, width: pixelWidth / density, height: pixelHeight / density};
+  const tiles = backgroundImageTiles(width, height, imageWidth, imageHeight, rect, sourceWidth, sourceHeight).map(
+    ([sx,sy,sw,sh,dx,dy,dw,dh]) => {
+      const x = Math.round(dx*density)-left, y = Math.round(dy*density)-top;
+      return [sx,sy,sw,sh,x,y,Math.round((dx+dw)*density)-left-x,Math.round((dy+dh)*density)-top-y];
+    }).filter(tile => tile[6] > 0 && tile[7] > 0);
+  return {...rect, pixelWidth, pixelHeight, tiles};
+}
+
+const imageEdgeSurfaces = new WeakMap();
+function drawImageTiles(context, image, width, height, bounds) {
+  const sourceWidth = image.width || image.naturalWidth, sourceHeight = image.height || image.naturalHeight;
+  const tiles = backgroundImageTiles(width,height,image.naturalWidth,image.naturalHeight,bounds,sourceWidth,sourceHeight);
+  if (tiles.length === 1) {context.drawImage(image, ...tiles[0]); return;}
+  let surface = imageEdgeSurfaces.get(context);
+  if (!surface) {
+    surface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(1, 1)
+      : context.canvas.ownerDocument.createElement('canvas');
+    imageEdgeSurfaces.set(context, surface);
+  }
+  const raster = backgroundImageRaster(width,height,image.naturalWidth,image.naturalHeight,bounds,sourceWidth,sourceHeight);
+  surface.width = raster.pixelWidth; surface.height = raster.pixelHeight;
+  try {
+    const target = surface.getContext('2d'); target.imageSmoothingEnabled = false;
+    for (const tile of raster.tiles) target.drawImage(image, ...tile);
+    context.drawImage(surface, raster.x, raster.y, raster.width, raster.height);
+  } finally {surface.width = surface.height = 1;}
 }
 
 // Solids and gradients are world-aligned infinite backgrounds. Their brush
 // coordinates stay fixed while their painted bounds cover the camera viewport.
-export function backgroundBounds(frame, width, height, cameraEnabled = true, report) {
+export function backgroundBounds(frame, width, height, cameraEnabled = true, report, viewport={x:0,y:0,width,height}) {
   const camera = effectiveCamera(report, frame, cameraEnabled);
   if (cameraIsIdentity(camera))
-    return { x: 0, y: 0, width, height, clearRaster: false };
+    return { ...viewport, clearRaster: false };
   const s = Number(camera.scale ?? 1),
     a = Number(camera.angle_rad ?? 0),
     cos = Math.cos(a),
     sin = Math.sin(a);
   const points = [
-    [0, 0],
-    [width, 0],
-    [width, height],
-    [0, height],
+    [viewport.x, viewport.y],
+    [viewport.x+viewport.width, viewport.y],
+    [viewport.x+viewport.width, viewport.y+viewport.height],
+    [viewport.x, viewport.y+viewport.height],
   ].map(([x, y]) => {
     const dx = (x - width / 2) * s,
       dy = (y - height / 2) * s;
@@ -205,7 +229,7 @@ export function drawBackground(
       context.fillStyle = "#fff";
       fill();
     } else if (bg.paint) {
-      context.fillStyle=canvasPaint(context,bg.paint,{x:0,y:height/2},{x:width,y:height/2},c=>c,bounds);
+      context.fillStyle=canvasPaint(context,bg.paint,{x:0,y:height/2},{x:width,y:height/2},c=>c,resources.paintBounds||bounds);
       context.fillRect(bounds.x,bounds.y,bounds.width,bounds.height);
     } else if (bg.kind === 3 || bg.kind === 4) {
       let gradient;
@@ -249,30 +273,8 @@ export function drawBackground(
     } else {
       const img = resources.image?.(resources.url?.(bg));
       if (img?.complete && img.naturalWidth) {
-        // Native raster backgrounds remain finite under the camera. Full-opacity
-        // layers clear their surround; partial cross-fades keep the prior layer.
-        if (alpha === 1 && bounds.clearRaster) {
-          if (hasTransparency(context, img, bg, resources))
-            context.clearRect(bounds.x, bounds.y, bounds.width, bounds.height);
-          else {
-            context.fillStyle = "#000";
-            fill();
-          }
-        }
         context.imageSmoothingEnabled = false;
-        // Pivot fits uniformly from the top-left. Overflow stays in world space
-        // and can become visible when the camera moves beyond the canvas.
-        const scale = Math.max(
-          width / img.naturalWidth,
-          height / img.naturalHeight,
-        );
-        context.drawImage(
-          img,
-          0,
-          0,
-          img.naturalWidth * scale,
-          img.naturalHeight * scale,
-        );
+        drawImageTiles(context, img, width, height, bounds);
       }
     }
     context.restore();

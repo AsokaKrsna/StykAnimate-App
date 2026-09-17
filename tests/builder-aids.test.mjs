@@ -53,3 +53,19 @@ test('sprite highlight strokes its anchor and blue/white ancestry without painti
  assert.ok(!calls.some(x=>x.key==='drawImage'));
  assert.equal(JSON.stringify(g),before);
 });
+
+test('branch guides follow curved centerlines at fixed screen width without repainting artwork',()=>{
+ const g=figure();g.fig={segments:g.segments.map(s=>s.seg)};
+ g.segments[1].seg.segment_type='line';g.segments[1].static=false;
+ g.segments[1].thickness=200;
+ const before=JSON.stringify(g);
+ for(const scale of [.1,1,10]){
+  const calls=[],ctx=new Proxy({},{get(target,key){if(key in target)return target[key];return(...args)=>calls.push({key,args,color:target.strokeStyle,width:target.lineWidth});},set(target,key,value){target[key]=value;return true;}});
+  assert.equal(drawBuilderHighlight(ctx,{objects:new Map([[0,g]])},{uid:7,jointIndex:1,branch:true,report:{canvas_width:100,canvas_height:100},frame:{camera:{is_default:true}},view:{scale},dragTranslations:new Map([[7,{x:3,y:4}]])}),true);
+  assert.deepEqual(calls.filter(c=>c.key==='stroke').map(c=>[c.color,c.width]),[['#0000ff',1.5/scale],['#4444cc',1.5/scale]]);
+  assert.ok(calls.some(c=>c.key==='lineTo'&&c.args[0]===99&&c.args[1]===99));
+  assert.ok(calls.some(c=>c.key==='translate'&&c.args[0]===3&&c.args[1]===4));
+  assert.ok(!calls.some(c=>['fill','drawImage','fillRect'].includes(c.key)));
+ }
+ assert.equal(JSON.stringify(g),before);
+});

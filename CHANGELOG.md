@@ -6,6 +6,58 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ## [Unreleased]
 
+### Added
+
+- Draw and animate on dedicated drawing layers with brush presets, pressure, erasing, fill, onion skin and pixel selection; pan while painting, create blank drawing frames with A, paint beyond the stage, and choose higher-resolution strokes using the shared timeline, undo, saving and export tools.
+
+## [1.0.6]
+
+Private feedback conversations and playback refinements
+
+### Added
+
+- Add saved Normal, Medium, Low, Draft and Automatic playback quality options in Animation settings, with Normal as the default and full-resolution editing restored on pause.
+- Add private bug-report and feedback conversations in the app and on the website, with attachments and developer replies.
+- Add a saved Animation setting to fit the view when playback starts, enabled by default; turn it off to preserve zoom and pan.
+- Add Ctrl+Shift+V to paste figures in their original position, alongside Ctrl+V with its existing offset.
+
+### Fixed
+
+- Preserve the edited pose and appearance when importing builder changes as a new figure, keeping original instances unchanged after deleting parts.
+- Reduce dense-animation stalls and image allocations.
+- Retain the selected VFX clip when using frame-navigation shortcuts in the timeline.
+- Reduce long-project editing overhead by transferring only changed thumbnail poses, retaining unchanged inspector icons, and avoiding redundant timeline layout work.
+- Render the artwork surrounding the camera before applying scene VFX, preventing black shockwave bands and clipped filter edges in exports, playback, and thumbnails; preserve bounded sampling surfaces and tiny-blur guards.
+- Preserve original sprite image colors and transparency on import instead of automatically erasing pixels matching the bottom-left corner.
+- Show a checkerboard behind transparent scene areas during editing and playback.
+
+## [1.0.5]
+
+Independent VFX animation and refined editing
+
+### Added
+
+- Add builder appearance copy and paste for selected segments and branches.
+
+### Changed
+
+- Make Build-mode Duplicate and Flip shortcuts respect segment/branch scope, and add configurable S to split and B to toggle Branch.
+- Add a saved Canvas setting for Scroll to zoom or Ctrl + scroll to zoom, keeping Ctrl + scroll as the default.
+- Default previous/next frame shortcuts to comma/period and add configurable Shift+comma/period keyframe jumps, preserving custom assignments.
+- Add a configurable Extend keyframe shortcut, defaulting to Shift+A.
+- Add persistent VFX clips with independent timing, parameter keys and fades, so effects can be animated without changing pose frames.
+- Apply effects across connected figures while preserving their drawing order and editable parts.
+- Make color picker canvas sampling opt-in through an Eyedropper button, allowing ordinary outside clicks to dismiss the panel.
+
+### Fixed
+
+- Prevent dragging selected empty timeline cells from creating blank frames.
+- Allow dragged layer keyframes to replace destination keys, including Alt-drag copies and overlapping selections, with one-step undo and a saved Animation setting enabled by default.
+- Make new builder lines and chain links inherit their parent segment’s colour and thickness, including per-instance style edits.
+- Import Pivot projects with padded JPEG resources or recoverable missing image records, preserving animation and original-source exports while reporting absent artwork.
+- Keep figures sharp when invisible construction segments extend far beyond their visible artwork, without enlarging raster memory budgets.
+- Extend image background edges during camera motion to prevent exposed white or black margins in previews, playback, and exports.
+
 ## [1.0.1]
 
 A cleaner workspace

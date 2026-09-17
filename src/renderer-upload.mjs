@@ -33,8 +33,3 @@ export function* uploadShapeLayoutSteps(queue, buffer, entries, staging) {
   }
   flush(); return {bytes, calls};
 }
-
-export function uploadShapeLayout(queue, buffer, entries, staging) {
-  const steps = uploadShapeLayoutSteps(queue, buffer, entries, staging);
-  for (;;) {const step = steps.next(); if (step.done) return step.value;}
-}

@@ -32,12 +32,22 @@ const containsRect = (outer, inner) =>
 const bitmapSourceRect = bitmap => bitmap.srcW !== undefined
   ? { x: bitmap.srcX, y: bitmap.srcY, width: bitmap.srcW, height: bitmap.srcH }
   : { x: 0, y: 0, width: bitmap.naturalWidth || bitmap.width, height: bitmap.naturalHeight || bitmap.height };
-const bitmapResolution = bitmap => bitmap.width / Math.max(1, bitmapSourceRect(bitmap).width);
+const bitmapResolution = bitmap => {
+  const rect = bitmapSourceRect(bitmap);
+  return Math.min(bitmap.width / Math.max(1, rect.width), bitmap.height / Math.max(1, rect.height));
+};
 /** One decoded variant serves a draw when it covers the needed source region
  * at the needed sampling density. Keeping larger variants avoids re-decoding
  * multi-megabyte sources on every zoom or pan direction change. */
-const bitmapCovers = (bitmap, rect, resolution) =>
-  bitmap && containsRect(bitmapSourceRect(bitmap), rect) && bitmapResolution(bitmap) >= resolution - 1e-6;
+const bitmapCovers = (bitmap, rect, resolution) => {
+  if (!bitmap) return false;
+  const source = bitmapSourceRect(bitmap);
+  // Both axes must carry enough samples. Allow the same whole-pixel rounding
+  // as the decoder, avoiding repeated decodes of unchanged odd-size images.
+  return containsRect(source, rect) &&
+    bitmap.width >= Math.max(1, Math.floor(source.width * resolution + 1e-6)) &&
+    bitmap.height >= Math.max(1, Math.floor(source.height * resolution + 1e-6));
+};
 
 /** The source-pixel crop and sampling density one image item needs for a draw.
  * `view` is {matrix, width, height} (document→output pixels, as on export) or
@@ -122,6 +132,8 @@ export class PlaybackResources {
   rasterSurface(width,height,{hasImages=false}={}) {
     // Small path surfaces avoid GPU-service stalls. Large fills need GPU
     // throughput; image surfaces also avoid reading accelerated sources back.
+    // CPU and accelerated Skia differ in antialiased coverage, so routing must
+    // stay fixed for pixel parity.
     return !hasImages && width*height<=512*512 ? this.pathRasterSurfaces : this.rasterSurfaces;
   }
   url = assetURL;
@@ -220,9 +232,11 @@ export class PlaybackResources {
         const asset = item.asset, url = this.url(asset); if (!url) continue;
         let request = requests.get(url);
         if (!request) {
-          const source = await this.source(url);
-          const width = source.info?.width || asset.width || asset.pixel_width || 4096;
-          const height = source.info?.height || asset.height || asset.pixel_height || 4096;
+          // A retained variant already knows the logical dimensions. Fetch or
+          // rebuild encoded bytes only if this draw actually needs a new decode.
+          const retained = this.images.get(url), source = retained ? null : await this.source(url);
+          const width = retained?.naturalWidth || source?.info?.width || asset.width || asset.pixel_width || 4096;
+          const height = retained?.naturalHeight || source?.info?.height || asset.height || asset.pixel_height || 4096;
           request = {source, width, height, density: 0, crop: null, whole: false}; requests.set(url, request);
         }
         const need = imageDrawNeed(item, request.width, request.height, view);
@@ -250,26 +264,55 @@ export class PlaybackResources {
       const targets = new Map();
       for (const [url, request] of requests) {
         if (!request.target) continue;
-        const width = Math.max(1, Math.floor(request.target.width * ratio)), height = Math.max(1, Math.floor(request.target.height * ratio));
+        const width = Math.max(1, Math.floor(request.target.width * ratio));
+        const resolution = width / request.crop.width;
+        targets.set(url, {...request, pixels:Math.max(1, Math.ceil(request.crop.width*resolution)*Math.ceil(request.crop.height*resolution)), resolution});
+      }
+      // Reserve every simultaneous image's needed pixels before spending spare
+      // space on larger retained variants or a union crop for future pans.
+      let reservedPixels = [...targets.values()].reduce((sum, target) => sum + target.pixels, 0);
+      // Whole-pixel rounding can exceed the proportional allowance slightly.
+      // Keep the existing sampling dimensions whenever they already fit.
+      if (reservedPixels > allowance) {
+        const fraction = allowance / reservedPixels;
+        for (const target of targets.values()) {
+          target.pixels = Math.max(1, Math.floor(target.pixels * fraction));
+          const fitted = fitImage(target.crop.width, target.crop.height, target.pixels, maxDimension);
+          target.resolution = Math.min(fitted.width / target.crop.width, fitted.height / target.crop.height);
+        }
+        reservedPixels = [...targets.values()].reduce((sum, target) => sum + target.pixels, 0);
+      }
+      const active = new Set(targets.keys());
+      for (const [url, target] of targets) {
+        const available = Math.max(target.pixels, allowance - (reservedPixels - target.pixels));
         const old = this.images.get(url);
         // Larger covering variants are kept to avoid churn, except under pixel
         // pressure where they would keep this draw over its allowance.
-        if (bitmapCovers(old, request.crop, width / request.crop.width) &&
-            !(ratio < 1 && old.width * old.height > width * height * 1.05)) continue;
-        // Coverage grows toward the union of the retained variant while it
-        // stays inside the allowance, so pans decode larger regions rarely.
-        let crop = request.crop, resolution = width / request.crop.width;
-        if (old && ratio >= 1) {
-          const union = unionRect(crop, bitmapSourceRect(old)), grown = Math.min(1, Math.max(resolution, bitmapResolution(old)));
-          if (union.width * union.height * grown ** 2 <= allowance) {crop = union; resolution = grown;}
+        const oldPixels = old ? old.width * old.height : 0;
+        if (bitmapCovers(old, target.crop, target.resolution) && oldPixels <= available &&
+            !(ratio < 1 && oldPixels > target.pixels * 1.05)) {
+          reservedPixels += oldPixels - target.pixels; targets.delete(url); continue;
         }
-        targets.set(url, {...request, crop, resolution, pixels: Math.max(1, Math.ceil(crop.width * resolution) * Math.ceil(crop.height * resolution))});
+        // Coverage grows toward the union of the retained variant while it
+        // fits alongside all other images, so pans decode larger regions rarely.
+        if (old && ratio >= 1) {
+          const union = unionRect(target.crop, bitmapSourceRect(old)), grown = Math.min(1, Math.max(target.resolution, bitmapResolution(old)));
+          const pixels = Math.ceil(union.width * grown) * Math.ceil(union.height * grown);
+          if (pixels <= available) {
+            reservedPixels += pixels - target.pixels; target.crop = union; target.pixels = pixels;
+          }
+        }
       }
-      this.trimImages(needed, [...targets.values()].reduce((sum, target) => sum + target.pixels * 4, 0));
-      for (const [url, target] of targets) {
+      // Release all superseded variants before decoding replacements. An image
+      // outside the draw may be evicted too, even if its URL appeared in items.
+      for (const url of targets.keys()) {
         const old = this.images.get(url);
         if (old) { this.images.delete(url); this.bytes -= old.width * old.height * 4; old.close(); }
-        const bitmap = await decodePreview(target.source.blob, {
+      }
+      this.trimImages(active, [...targets.values()].reduce((sum, target) => sum + target.pixels * 4, 0));
+      for (const [url, target] of targets) {
+        const source = target.source || await this.source(url);
+        const bitmap = await decodePreview(source.blob, {
           width: target.width, height: target.height, maxPixels: target.pixels, maxDimension,
           crop: target.crop, check: this.check});
         this.images.set(url, bitmap); this.bytes += bitmap.width * bitmap.height * 4;
@@ -299,10 +342,6 @@ export class PlaybackResources {
       const sourceWidth = metadata?.width || asset?.width || 0, sourceHeight = metadata?.height || asset?.height || 0;
       const need = this.urlNeed(items, url, sourceWidth, sourceHeight, view);
       const resolution = need === 'whole' || need === 'none' ? 1 : Math.min(1, need.density);
-      const expectedPixels = need === 'none' ? 0 : need === 'whole' ? sourceWidth * sourceHeight
-        : Math.ceil(need.width * resolution) * Math.ceil(need.height * resolution);
-      this.trimImages(needed, expectedPixels * 4);
-      this.checkImageBudget(expectedPixels * 4);
       const old = this.images.get(url);
       if (need === 'none' || bitmapCovers(old, need === 'whole' ? {x: 0, y: 0, width: sourceWidth, height: sourceHeight} : need, resolution)) continue;
       // Tiles and frames that overlap the retained variant decode their union
@@ -314,6 +353,15 @@ export class PlaybackResources {
         if (grownPixels * 4 <= Math.min(this.hardMaxBytes, Math.max(this.maxBytes, 1)) - (this.bytes - old.width * old.height * 4))
           target = {...union, density: grown};
       }
+      // Preload owns these variants serially. A crop that no longer covers the
+      // draw can be released before decoding its replacement; counting both
+      // would reject a moving camera even when each required crop fits.
+      if (old) { this.images.delete(url); this.bytes -= old.width * old.height * 4; old.close(); }
+      const density = target === 'whole' ? 1 : Math.min(1, target.density);
+      const expectedPixels = target === 'whole' ? sourceWidth * sourceHeight
+        : Math.ceil(target.width * density) * Math.ceil(target.height * density);
+      this.trimImages(needed, expectedPixels * 4);
+      this.checkImageBudget(expectedPixels * 4);
       const bitmap = await this.decodeVariant(blob, target, maxDimension, sourceWidth, sourceHeight);
       if (this.disposed) {
         bitmap.close();
@@ -330,7 +378,6 @@ export class PlaybackResources {
       bitmap.complete = true;
       bitmap.naturalWidth = sourceWidth || bitmap.width;
       bitmap.naturalHeight = sourceHeight || bitmap.height;
-      if (old) { this.images.delete(url); this.bytes -= old.width * old.height * 4; old.close(); }
       this.images.set(url, bitmap);
       this.bytes += decodedBytes;
     }

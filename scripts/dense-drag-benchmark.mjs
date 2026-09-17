@@ -47,6 +47,7 @@ async function install(page){
     }
     const samples=styk.state.renderSamples,push=samples.push;
     samples.push=function(...args){if(b.active)b.frames.push({at:performance.now(),part:b.part,cpuMs:args[0],inputId:b.lastInput?.id,dragKind:styk.state.drag?.kind,
+      editablePreparing:Boolean(styk.state.editablePreparing),revision:e.revision,
       preparation:r.stats.preparation,updatedObjects:r.stats.updatedObjects,rasterizedObjects:r.stats.rasterizedObjects,uploadBytes:r.stats.uploadBytes,drawCalls:r.stats.drawCalls});return push.apply(this,args);};
     new PerformanceObserver(list=>{if(b.active)for(const e of list.getEntries())b.longTasks.push({at:e.startTime,ms:e.duration});}).observe({entryTypes:['longtask']});
     let last=performance.now();function tick(now){if(b.active)b.raf.push({at:now,ms:now-last,part:b.part});last=now;requestAnimationFrame(tick);}requestAnimationFrame(tick);
@@ -77,9 +78,11 @@ async function locate(page,scenario,prior){
     const ranked=candidates.map(h=>({h,descendants:h.joint<0?0:descendants(h)}));
     ranked.sort((a,b)=>scenario.kind==='leaf'?a.descendants-b.descendants:scenario.kind==='root'?b.h.uid-a.h.uid:b.descendants-a.descendants);
     if(prior){const index=ranked.findIndex(({h})=>h.uid===prior.uid&&h.joint===prior.joint);if(index>0)ranked.unshift(...ranked.splice(index,1));}
-    // Probe ranked candidates until one is exposed; scanning every candidate
-    // against every handle makes the benchmark's setup quadratic at 5x size.
-    const chosen=ranked.find(({h})=>{const hit=pickCanvasHandle(g,h.point,{...options,handles,project});return hit?.uid===h.uid&&hit.joint===h.joint;});
+    // Probe ranked candidates until one is exposed under the app's own pick
+    // options (nearest hit within minRadius); scanning every candidate against
+    // every handle makes the benchmark's setup quadratic at 5x size.
+    const appPick={...options,handles,project,nearest:true,minRadius:8,projectionScale:styk.state.view.scale};
+    const chosen=ranked.find(({h})=>{const hit=pickCanvasHandle(g,h.point,appPick);return hit?.uid===h.uid&&hit.joint===h.joint&&hit.action!=='select';});
     if(!chosen)throw new Error('No exposed '+scenario.kind+' handle in the measured viewport.');
     const {h,descendants:count}=chosen,p=project(h.point);
     return {uid:h.uid,joint:h.joint,id:h.id,descendants:count,static:h.static,handleCount:handles.length,world:{...h.point},x:r.left+p.x,y:r.top+p.y,figureSegments:h.g.segments.length};
@@ -88,7 +91,7 @@ async function locate(page,scenario,prior){
 
 async function state(page){
   return page.evaluate(()=>({revision:styk.editor.revision,frameIndex:styk.editor.frameIndex,selected:[...styk.editor.selectedUids],historyBytes:styk.editor.historySize,
-    objects:styk.editor.frame.objects.map(o=>({uid:o.unique_id,root:[o.root_x,o.root_y],scale:o.scale,angles:[...o.angles||[]],lengths:[...o.lengths||[]],bends:[...o.bends||[]]})),
+    objects:styk.editor.evaluatedFrame.objects.map(o=>({uid:o.unique_id,root:[o.root_x,o.root_y],scale:o.scale,angles:[...o.angles||[]],lengths:[...o.lengths||[]],bends:[...o.bends||[]]})),
     definitions:styk.editor.report.figure_types.map(f=>({id:f.figure_type_id,segments:f.segments.map(s=>[s.length,s.angle_rad,s.bend_rad])}))}));
 }
 
@@ -102,6 +105,8 @@ function changes(before,after){
 
 function summary(data){
   const inputs=new Map(data.inputs.map(i=>[i.id,i])),seen=new Set(),latencies=[];
+  const release=data.inputs.findLast(i=>i.type==='pointerup');
+  const finalScene=release&&data.frames.find(f=>f.at>=release.at&&!f.editablePreparing);
   for(const f of data.frames)if(!seen.has(f.inputId)&&inputs.has(f.inputId)){
     seen.add(f.inputId);const input=inputs.get(f.inputId);latencies.push({type:input.type,part:input.part,ms:f.at-input.at,fromEventMs:f.at-input.eventAt});
   }
@@ -115,7 +120,8 @@ function summary(data){
   const methods={};for(const c of data.calls)(methods[c.name]??=[]).push(c.ms);
   const moveInputs=data.inputs.filter(i=>['motion','first-move'].includes(i.part));
   const insideTask=v=>v.at>=data.start&&v.at<data.end;
-  return {parts,methods:Object.fromEntries(Object.entries(methods).map(([k,v])=>[k,quantiles(v)])),longTasks:quantiles(data.longTasks.filter(insideTask).map(v=>v.ms)),
+  return {parts,releaseToFinalSceneMs:finalScene?finalScene.at-release.at:null,editablePreparation:data.editablePreparation,
+    methods:Object.fromEntries(Object.entries(methods).map(([k,v])=>[k,quantiles(v)])),longTasks:quantiles(data.longTasks.filter(insideTask).map(v=>v.ms)),
     excludedLongTasks:data.longTasks.filter(v=>!insideTask(v)),
     motionInputRate:moveInputs.length>1?1000*(moveInputs.length-1)/(moveInputs.at(-1).at-moveInputs[0].at):null,
     maxRasterizedObjects:Math.max(0,...data.frames.map(f=>f.rasterizedObjects||0)),maxUpdatedObjects:Math.max(0,...data.frames.map(f=>f.updatedObjects||0)),
@@ -144,8 +150,9 @@ export async function benchmarkDrags(page,result,output,{source,cpu=false}){
     await page.evaluate(()=>styk.editor.markSaved());await page.locator('#file-input').setInputFiles(source);
     await page.waitForFunction(name=>styk.editor.name===name&&!styk.state.importing,path.basename(source,'.piv'),{timeout:180000});
     await scaleBenchmarkScene(page);
+    if(process.env.STYK_DRAG_FRAME)await page.evaluate(tick=>styk.editor.seek(tick),Number(process.env.STYK_DRAG_FRAME));
     await page.waitForTimeout(200);
-    await page.evaluate(s=>{styk.state.tool=s.tool||'select';styk.state.onion=Boolean(s.onion);if(s.selectedOnly)styk.state.settings.showUnselectedHandles=false;if(s.onion)styk.editor.selectFrame(1);if(s.scale)styk.state.view.scale=s.scale;styk.state.dirtyRender=true;window.dispatchEvent(new Event('resize'));},scenario);
+    await page.evaluate(s=>{styk.state.tool=s.tool||'select';styk.state.onion=Boolean(s.onion);if(s.selectedOnly)styk.state.settings.showUnselectedHandles=false;if(s.onion&&!process.env.STYK_DRAG_FRAME)styk.editor.selectFrame(1);if(s.scale)styk.state.view.scale=s.scale;styk.state.dirtyRender=true;window.dispatchEvent(new Event('resize'));},scenario);
     await page.waitForTimeout(350);
     await install(page);
     let target=await locate(page,scenario);
@@ -188,11 +195,11 @@ export async function benchmarkDrags(page,result,output,{source,cpu=false}){
       if(scenario.modifier)await page.keyboard.up(scenario.modifier);
       // A rig commit can take longer than a fixed 300 ms observation window.
       // Require its release render so a missing slow sample cannot look faster.
-      await page.waitForFunction(()=>{const b=__dragBench,up=b.inputs.findLast(i=>i.type==='pointerup');return up&&b.frames.some(f=>f.at>=up.at);},null,{timeout:5000});
+      await page.waitForFunction(()=>{const b=__dragBench,up=b.inputs.findLast(i=>i.type==='pointerup');return up&&!styk.state.editablePreparing&&b.frames.some(f=>f.at>=up.at&&!f.editablePreparing&&f.revision===styk.editor.revision);},null,{timeout:30000});
       // Include the first release render in 'up', then separately observe deferred work.
       await page.waitForTimeout(80);await page.evaluate(()=>__dragBench.part='settle');await page.waitForTimeout(220);
       if(client){const {profile}=await client.send('Profiler.stop');await writeFile(path.join(output,`${name}.cpuprofile`),JSON.stringify(profile));}
-      const data=await page.evaluate(()=>{const b=__dragBench;b.active=false;return{start:b.started,end:performance.now(),inputs:b.inputs,frames:b.frames,calls:b.calls,raf:b.raf,longTasks:b.longTasks,heapBytes:performance.memory?.usedJSHeapSize,renderer:structuredClone(styk.state.renderer.stats)};});
+      const data=await page.evaluate(()=>{const b=__dragBench;b.active=false;return{start:b.started,end:performance.now(),inputs:b.inputs,frames:b.frames,calls:b.calls,raf:b.raf,longTasks:b.longTasks,heapBytes:performance.memory?.usedJSHeapSize,renderer:structuredClone(styk.state.renderer.stats),editablePreparation:styk.state.editablePreparationStats};});
       const after=await state(page),changed=changes(before,after);
       if(!changed.objects&&!changed.definitions)throw new Error(`${name} did not edit the document.`);
       if(scenario.group&&changed.roots!==scenario.group)throw new Error(`${name} moved ${changed.roots} roots instead of ${scenario.group}.`);

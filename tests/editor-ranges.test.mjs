@@ -1,12 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {installEditorRanges} from '../src/editor-ranges.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {evaluatedFrame, timeline, buildGeometry} from '../src/pivot/geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 
-installEditorRanges(Editor);
 const clone = value => structuredClone(value);
 const withoutFrameId = frame => { const value = clone(frame); if (value._styk) delete value._styk.frameId; return value; };
 const assertUniqueFrameIds = editor => assert.equal(new Set(editor.report.keyframes.map(frame => frame._styk.frameId)).size, editor.report.keyframes.length);

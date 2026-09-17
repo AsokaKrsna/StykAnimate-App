@@ -48,7 +48,7 @@ export class PlaybackMeasurements {
   constructor(collector) { this.collector = collector; this.reset(); }
   reset(context = {}) { this.last = null; this.boundaryAt = 0; this.context = context; this.groups = new Map(); }
   boundary(now) { this.boundaryAt = now; }
-  present(now, fps, foreground) {
+  present(now, fps, foreground, schedule) {
     const c = this.collector;
     if (!c.consent.diagnostics) { this.last = null; return; }
     if (!Number.isFinite(now)) { this.last = null; return; }
@@ -69,6 +69,13 @@ export class PlaybackMeasurements {
     const deadline = Number.isFinite(fps) && fps > 0 ? 1000 / fps : null;
     if (deadline && interval > deadline * 1.1) c.count('playback_missed_deadlines');
     c.performance?.record('playback_interval',interval,{fps:bucket},1,deadline&&interval>deadline*1.1?1:0);
+    // Preserve historical intervals. Healthy 24 FPS on a 60 Hz display has
+    // 33/50ms intervals. Allow one measured callback after the intended deadline
+    // and retain submission delays/stalls beyond that allowance separately.
+    if(deadline&&Number.isFinite(schedule?.deadline)&&schedule.deadline>=this.boundaryAt&&Number.isFinite(schedule?.refreshMs)&&schedule.refreshMs>=4&&schedule.refreshMs<=50){
+      const late=Math.max(0,now-schedule.deadline-schedule.refreshMs);
+      if(late<=MAX_REGULAR_MS)c.performance?.record('playback_lateness',late,{fps:bucket},1,late>deadline*.1?1:0);
+    }
   }
   flush() {
     for (const [fps, timing] of this.groups) this.collector.operationSummary({ ...this.context, operation: 'playback', stage: 'playback', fps, outcome: 'succeeded' }, timing);

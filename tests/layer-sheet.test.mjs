@@ -43,9 +43,41 @@ test('copy between layers remaps instances once across the entire copied range',
   const start=sample(e,0),end=sample(e,10),copy=start.find(o=>o.uid!==1);assert.ok(copy);assert.equal(copy.uid,end.find(o=>o.uid!==1).uid);assert.notEqual(copy.uid,1);
   assert.equal(e.layerForUid(copy.uid),'layer-2');assert.equal(e.layerForUid(1),'layer-1');
 });
-test('locks, collisions and invalid input leave the complete project unchanged',()=>{
-  const e=fixture();const before=e.serialize();assert.throws(()=>e.sheetMoveFrames(['layer-1'],0,0,10),/destination/);assert.deepEqual(e.serialize(),before);
+test('locks and invalid input leave the complete project unchanged',()=>{
+  const e=fixture();const before=e.serialize();assert.throws(()=>e.sheetMoveFrames(['layer-1'],0,0,-1),/before/);assert.deepEqual(e.serialize(),before);
   e.setLayerLocked('layer-1',true);const locked=e.serialize();assert.throws(()=>e.sheetInsertKey(['layer-1'],4),/Unlock/);assert.deepEqual(e.serialize(),locked);
+});
+
+test('key replacement preserves incoming poses, identities, intervening keys and exact undo',()=>{
+  for(const copy of [false,true])for(const delta of [10,-10]){
+    const e=fixture();e.sheetInsertKey(['layer-1'],15);
+    const start=delta>0?0:10,end=start+10,before=e.serialize(),duration=e.totalTicks;
+    const track=()=>e.report._styk.layerSheet.tracks['layer-1'];
+    const sources=structuredClone(track().keys.filter(k=>k.tick>=start&&k.tick<=end));
+    const poses=sources.map(key=>sample(e,key.tick).find(o=>o.uid===1));
+    const other=structuredClone(e.report._styk.layerSheet.tracks['layer-2']);
+    e.sheetMoveFrames(['layer-1'],start,end,delta,{copy});
+    for(const source of sources){
+      const moved=track().keys.find(k=>k.tick===source.tick+delta);
+      assert.equal(moved.interpolation,source.interpolation);
+      assert.deepEqual(sample(e,moved.tick).find(o=>o.uid===1),poses[sources.indexOf(source)]);
+      if(copy)assert.notEqual(moved.id,source.id);else assert.equal(moved.id,source.id);
+    }
+    if(delta>0)assert.ok(track().keys.some(k=>k.tick===15));
+    assert.equal(e.totalTicks,duration);assert.deepEqual(e.report._styk.layerSheet.tracks['layer-2'],other);
+    validateLayerSheet(e.report);const after=e.serialize();e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.deepEqual(e.serialize(),after);
+  }
+});
+
+test('disabled replacement rejects collisions atomically and still permits free destinations',()=>{
+  for(const copy of [false,true]){
+    const e=fixture(),before=e.serialize();
+    assert.throws(()=>e.sheetMoveFrames(['layer-2','layer-1'],0,0,10,{copy,replace:false}),/destination contains/);
+    assert.deepEqual(e.serialize(),before);
+    e.sheetMoveFrames(['layer-1'],10,10,2,{copy,replace:false});
+    assert.ok(e.layerFrameKeys('layer-1').some(key=>key.tick===12));
+    e.undo();assert.deepEqual(e.serialize(),before);
+  }
 });
 test('property controls preview, commit and undo a layer pose without property tracks',()=>{
   const e=fixture();e.seek(0);e.select(1);const before=e.serialize();e.beginAnimationEdit({kind:'figure',uid:1},'x');e.previewAnimationEdit(45);

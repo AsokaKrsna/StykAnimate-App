@@ -3,6 +3,7 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import backendService from '../desktop/backend.cjs';
+import {exportEditable} from './helpers/editable-export.mjs';
 
 const root = path.resolve(import.meta.dirname, '..'), output = path.join(root, 'artifacts', 'media-worker');
 await mkdir(output, { recursive: true });
@@ -51,14 +52,16 @@ try {
     prototypes.forEach((prototype, index) => { prototype.getImageData = function (...args) { if (activeImports) mainScans++; return originals[index].apply(this, args); }; });
     try {
       for (const [name, source] of sources) {
-        const file = new File([source], name, { type: source.type }), native = /\.(png|bmp|gif)$/.test(name);
+        const file = new File([source], name, { type: source.type });
         const figure = await imageFileToFigure(file), data = await pixels(figure.image_assets[0].data_url);
-        assert(data[(height - 1) * width * 4 + 3] === (native ? 0 : 255), `${name}: automatic transparency matches the actual source format`);
+        assert(data[(height - 1) * width * 4 + 3] === 255, `${name}: default sprite import preserves the corner color`);
         assert(data[(2 * width + 3) * 4 + 3] === 255, `${name}: figure interior remains opaque`);
         const background = await imageFileToBackground(file), backgroundPixels = await pixels(background.data_url);
         assert(backgroundPixels[(height - 1) * width * 4 + 3] === 255, `${name}: background import preserves opaque pixels`);
         fixtures.push({ name, mimeType: source.type, bytes: [...new Uint8Array(await source.arrayBuffer())] });
       }
+      const keyed = await imageFileToFigure(new File([png], 'Key.png', { type: 'image/png' }), { preserveOpaqueBackground: false });
+      assert((await pixels(keyed.image_assets[0].data_url))[(height - 1) * width * 4 + 3] === 0, 'Explicit color-key opt-in still removes matching corner pixels');
       const preserved = await imageFileToFigure(new File([png], 'Keep.png', { type: 'image/png' }), { preserveOpaqueBackground: true });
       assert((await pixels(preserved.image_assets[0].data_url))[(height - 1) * width * 4 + 3] === 255, 'Explicit preserveOpaqueBackground keeps native-format backgrounds');
       const withAlpha = rgba.slice(); withAlpha[(2 * width + 3) * 4 + 3] = 128;
@@ -105,14 +108,13 @@ try {
     }
     return result;
   });
-  assert.equal(imported.length, 3); assert.ok(imported.every(item => item.keyAlpha === 0));
-  result.checks.push('Actual PNG/BMP/GIF file-input imports use the native automatic key without extra user prompts');
+  assert.equal(imported.length, 3); assert.ok(imported.every(item => item.keyAlpha === 255));
+  result.checks.push('Actual PNG/BMP/GIF file-input imports preserve opaque artwork without extra user prompts');
   const outputs = {};
   for (const format of ['piv', 'stk']) {
     await page.locator('[data-action="export"]').first().click();
-    const downloadPromise = page.waitForEvent('download');
-    await page.locator(`[data-action="export-${format}"]`).click();
-    const download = await downloadPromise, filename = path.join(output, `native-sprites.${format}`); await download.saveAs(filename);
+    const [download] = await Promise.all([page.waitForEvent('download'), exportEditable(page, format)]);
+    const filename = path.join(output, `native-sprites.${format}`); await download.saveAs(filename);
     await page.waitForFunction(() => !document.querySelector('#dialog').open);
     const bytes = await readFile(filename);
     const restored = await page.evaluate(async ({ bytes, format }) => {

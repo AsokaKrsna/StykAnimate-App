@@ -1,16 +1,39 @@
 {
-  "version": "1.0.1",
-  "title": "A cleaner workspace",
+  "version": "1.0.6",
+  "title": "Private feedback conversations and playback refinements",
   "notes": [
-    "Move the figure color palette to a compact, collapsed section at the bottom of Properties and show parallax only for selected layers.",
-    "Simplify the welcome screen with Donate at the top, grouped changes in a scrollable reading area, and recent release changelogs in the same window."
+    "Add saved Normal, Medium, Low, Draft and Automatic playback quality options in Animation settings, with Normal as the default and full-resolution editing restored on pause.",
+    "Add private bug-report and feedback conversations in the app and on the website, with attachments and developer replies.",
+    "Add a saved Animation setting to fit the view when playback starts, enabled by default; turn it off to preserve zoom and pan.",
+    "Add Ctrl+Shift+V to paste figures in their original position, alongside Ctrl+V with its existing offset.",
+    "Preserve the edited pose and appearance when importing builder changes as a new figure, keeping original instances unchanged after deleting parts.",
+    "Reduce dense-animation stalls and image allocations.",
+    "Retain the selected VFX clip when using frame-navigation shortcuts in the timeline.",
+    "Reduce long-project editing overhead by transferring only changed thumbnail poses, retaining unchanged inspector icons, and avoiding redundant timeline layout work.",
+    "Render the artwork surrounding the camera before applying scene VFX, preventing black shockwave bands and clipped filter edges in exports, playback, and thumbnails; preserve bounded sampling surfaces and tiny-blur guards.",
+    "Preserve original sprite image colors and transparency on import instead of automatically erasing pixels matching the bottom-left corner.",
+    "Show a checkerboard behind transparent scene areas during editing and playback."
   ],
   "groups": [
     {
-      "name": "Changed",
+      "name": "Added",
       "notes": [
-        "Move the figure color palette to a compact, collapsed section at the bottom of Properties and show parallax only for selected layers.",
-        "Simplify the welcome screen with Donate at the top, grouped changes in a scrollable reading area, and recent release changelogs in the same window."
+        "Add saved Normal, Medium, Low, Draft and Automatic playback quality options in Animation settings, with Normal as the default and full-resolution editing restored on pause.",
+        "Add private bug-report and feedback conversations in the app and on the website, with attachments and developer replies.",
+        "Add a saved Animation setting to fit the view when playback starts, enabled by default; turn it off to preserve zoom and pan.",
+        "Add Ctrl+Shift+V to paste figures in their original position, alongside Ctrl+V with its existing offset."
+      ]
+    },
+    {
+      "name": "Fixed",
+      "notes": [
+        "Preserve the edited pose and appearance when importing builder changes as a new figure, keeping original instances unchanged after deleting parts.",
+        "Reduce dense-animation stalls and image allocations.",
+        "Retain the selected VFX clip when using frame-navigation shortcuts in the timeline.",
+        "Reduce long-project editing overhead by transferring only changed thumbnail poses, retaining unchanged inspector icons, and avoiding redundant timeline layout work.",
+        "Render the artwork surrounding the camera before applying scene VFX, preventing black shockwave bands and clipped filter edges in exports, playback, and thumbnails; preserve bounded sampling surfaces and tiny-blur guards.",
+        "Preserve original sprite image colors and transparency on import instead of automatically erasing pixels matching the bottom-left corner.",
+        "Show a checkerboard behind transparent scene areas during editing and playback."
       ]
     }
   ]

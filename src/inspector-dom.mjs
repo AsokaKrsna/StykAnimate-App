@@ -17,6 +17,10 @@ export function updateInspectorDOM(root, html, {preserveDisclosure = false} = {}
         // Imperative widgets reconcile their own content (for example, a live
         // curve). Retain that subtree across ordinary inspector refreshes.
         if(current.hasAttribute('data-inspector-owned')){current=following;continue;}
+        // Icons have no dirty form state. Compare unchanged SVG trees natively
+        // instead of walking every path/attribute in JavaScript on each edit.
+        // Foreign HTML can contain live controls, so it keeps normal reconciliation.
+        if(current.localName==='svg'&&!current.querySelector('foreignObject')&&current.isEqualNode(desired)){current=following;continue;}
         const keepOpen = preserveDisclosure && current.nodeName === 'DETAILS';
         const value = desired.value, checked = desired.checked;
         for (const attribute of [...current.attributes]) {

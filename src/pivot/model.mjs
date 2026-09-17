@@ -11,7 +11,6 @@ import { validateAnimationStyle } from '../animation-style.mjs';
 import {validateFigureZIndex} from '../animation-properties.mjs';
 import {validateVfxOwner} from '../vfx.mjs';
 import {validateOriginObject,validateOriginObjectSteps,validateOriginSupportSteps} from '../animation-origin-validation.mjs';
-export const MAX_EXPORT_PIXELS = 64 * 1024 * 1024;
 const finite = (value, label) => {
   if (typeof value !== "number" || !Number.isFinite(value))
     throw new Error(`${label} must be a finite number.`);
@@ -422,14 +421,4 @@ export function syncDerived(report) {
       o.opacity = 1 - o.transparency / 255;
     }
   }
-}
-export function validateRaster(width, height) {
-  if (
-    !Number.isInteger(width) ||
-    !Number.isInteger(height) ||
-    width < 1 ||
-    height < 1 ||
-    width * height > MAX_EXPORT_PIXELS
-  )
-    throw new Error("PNG export is limited to 64 megapixels.");
 }

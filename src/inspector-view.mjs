@@ -1,3 +1,4 @@
+import {drawingInspector} from './drawing-view.mjs';
 import {rigControlsView, connectorPositionView} from './rig-controls.mjs';
 import {figureJoinAction} from './figure-join-action.mjs';
 import {polygonSurfaceView} from './builder-surface-ui.mjs';
@@ -64,7 +65,7 @@ function numericField(
   value = state?.value ?? value;
   const description =
     options.description || `${label}${unit ? ` (${unit})` : ""}`;
-  return `<div class="property-row${animated ? " is-animatable" : options.wide ? " is-wide" : ""}" data-property-row="${key}"><label class="field"><span class="property-scrub" data-property-scrub tabindex="0" role="button" aria-label="Scrub ${esc(description)}" title="Drag to adjust Â· Shift: fine Â· Alt: extra fine">${label}</span><input type="number" ${options.id ? `id="${options.id}"` : ""} ${options.legacyField === false ? "" : `data-field="${key}"`} data-property="${key}" data-property-value="${esc(value)}" data-property-precision="${precision}" data-property-step="1" value="${formatPropertyValue(value, precision)}" step="any" aria-label="${esc(description)}" ${limits}><small>${unit}</small></label></div>`;
+  return `<div class="property-row${animated ? " is-animatable" : options.wide ? " is-wide" : ""}" data-property-row="${key}"><label class="field"><span class="property-scrub" data-property-scrub tabindex="0" role="button" aria-label="Scrub ${esc(description)}" title="Drag to adjust · Shift: fine · Alt: extra fine">${label}</span><input type="number" ${options.id ? `id="${options.id}"` : ""} ${options.legacyField === false ? "" : `data-field="${key}"`} data-property="${key}" data-property-value="${esc(value)}" data-property-precision="${precision}" data-property-step="1" value="${formatPropertyValue(value, precision)}" step="any" aria-label="${esc(description)}" ${limits}><small>${unit}</small></label></div>`;
 }
 const heading = (title, symbol) =>
   `<div class="property-context-heading"><span>${icon(symbol)}</span><div><strong>${esc(title)}</strong></div></div>`;
@@ -78,7 +79,7 @@ const grid = (body) => `<div class="field-grid">${body}</div>`;
 const tools = (body) => `<div class="transform-actions">${body}</div>`;
 const builderOrderButtons = (kind, index) => tools(
   [['back','send-to-back','Send to back'],['down','chevron-left','Send backward'],['up','chevron-right','Bring forward'],['front','bring-to-front','Bring to front']]
-    .map(([direction,symbol,label]) => `<button type="button" class="icon-button" data-action="builder-order" data-kind="${kind}" data-index="${index}" data-direction="${direction}" title="${label} Â· ${kind}" aria-label="${label} Â· ${kind}">${icon(symbol)}</button>`).join(''),
+    .map(([direction,symbol,label]) => `<button type="button" class="icon-button" data-action="builder-order" data-kind="${kind}" data-index="${index}" data-direction="${direction}" title="${label} · ${kind}" aria-label="${label} · ${kind}">${icon(symbol)}</button>`).join(''),
 );
 const colorRow = (id, label, value, opacityId, opacity, caption = value.slice(1).toUpperCase()) =>
   `<div class="color-row"><input id="${id}" type="color" value="${value}" aria-label="${label}"><span class="hex-label">${esc(caption)}</span>${opacityId ? `<input id="${opacityId}" type="number" value="${num(opacity)}" min="0" max="100" aria-label="${label} opacity"><small>%</small>` : ""}</div>`;
@@ -104,7 +105,14 @@ export function inspectorView({
   propertyState,
   builderBranch = false,
   builder = false,
+  drawing,
+  hotkeyLabel,
 }) {
+  if(drawing?.active){
+    const o=editor.object,f=editor.figure,p=(label,key,value,unit='',limits='')=>numericField(label,key,value,unit,limits,propertyState?.(key));
+    const poseView=drawing.tool==='transform'&&o?group('Transform drawing',grid(p('X','root_x',o.root_x,'px')+p('Y','root_y',o.root_y,'px')+p('Scale','scale',o.scale*100,'%','min="0.01"')+p('Angle','rotation',((o.angles[0]??0)-(f.segments[0]?.angle_rad??0))*180/Math.PI,'°')+p('Opacity','figure_opacity',(1-(o.field28??0)/255)*100,'%','min="0" max="100"'))):'';
+    return drawingInspector(drawing,{numericField,group,grid,heading,hotkeyLabel,esc},poseView);
+  }
   const report = editor.report,
     frame = editor.frame,
     object = editor.object;
@@ -208,8 +216,9 @@ export function inspectorView({
   }
   const drawOrder = new Map(builderDrawables(figure).map((item,index)=>[`${item.kind}:${item.index}`,index+1]));
   const orderLimits = `min="1" max="${drawOrder.size}"`;
-  const palette = joint < 0 ? figurePalette(report,figure,object) : [];
-  const fill = palette[0]?.color ?? '#000000';
+  const palette = joint < 0 ? editor.figurePalette() : [];
+  const ownPalette = joint < 0 ? figurePalette(report,figure,object) : [];
+  const fill = ownPalette[0]?.color ?? '#000000';
   const kind = figure.segments.every((s) => s.primitive_code === 5)
     ? "text"
     : figure.segments.every((s) => s.primitive_code === 2)
@@ -255,7 +264,7 @@ export function inspectorView({
     );
     html += group(
       "Appearance",
-      `<div class="property-paint-row">${colorRow("figure-color", "Recolor all segments", fill,undefined,undefined,palette.length>1?'Mixed':undefined)}${field("Opacity", "figure_opacity", (1 - (object.field28 || 0) / 255) * 100, "%", 'min="0" max="100"', { id: "figure-opacity", legacyField: false })}</div>`,
+      `<div class="property-paint-row">${colorRow("figure-color", "Recolor all segments", fill,undefined,undefined,ownPalette.length>1?'Mixed':undefined)}${field("Opacity", "figure_opacity", (1 - (object.field28 || 0) / 255) * 100, "%", 'min="0" max="100"', { id: "figure-opacity", legacyField: false })}</div>`,
       button("reset-color", "undo", "Reset colors"),
     );
     html += group(

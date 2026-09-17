@@ -37,6 +37,19 @@ merely from normalization. A Blob returns to the renderer without JSON or
 base64 conversion. Use the native Blob streaming helper to save it through
 Electron; browser downloads and IndexedDB can consume the Blob directly.
 
+Sectioned containers keep separate limits: 256 MiB for the compressed file and
+each binary section, 384 MiB for the JSON skeleton, and the existing 1 GiB
+combined materialization estimate. Both readers and writers enforce these
+bounds; version-1 limits stay unchanged. Every decoded section must match its
+declared length and checksum, including zstd sections. Capacity failures do not
+retry through a larger JSON request that could obscure the original error.
+
+For native-frame imports, `/api/source` hashes the canonical decoded scene one
+frame at a time under the decode lock. It retains only the digest, so native
+saving does not depend on the separate 256 MiB JSON response limit or construct
+a second complete normalized pose inventory. Fingerprint version 3 and its
+numeric/opaque-field semantics remain unchanged.
+
 The native file writer reports success at atomic destination commit. A later
 failure updating optional recent-file or recovery display metadata does not
 turn a saved document into a failed save; it reports an app diagnostic and sets
@@ -72,3 +85,13 @@ Pivot text gradients are vertical within each glyph. Modern gradient fills span
 the complete text run, so `.piv` and `.stk` export rejects them even when they are
 linear with two stops. Save as `.styk` to retain editable fills, export SVG/images
 or video to preserve their appearance, or choose a solid text fill for Pivot.
+
+## Drawing publication
+
+Pass the live report, as above: `DocumentExporter` and `ExportFrameRenderer`
+await its drawing publication barrier before transport. PNG publication is
+derived state and does not advance the edit revision. App save/play finishes
+active drawing edits; recovery includes committed strokes. Clipboard, library,
+playback and thumbnail snapshots use the same barrier. Movieclip scopes flush
+before copying their document. Failed/cancelled publication retains live work
+and existing atomic writes retain the prior file. See [DRAWING.md](DRAWING.md).

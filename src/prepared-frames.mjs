@@ -1,9 +1,10 @@
 import { cameraMatrix, SHAPE_BYTES, SHAPE_FLOATS, SHAPE, shapeRecord } from './renderer-geometry.mjs';
 import {bitmapKey,bitmapBytes} from './playback-bitmap-pool.mjs';
-import {playbackMemoryBudget} from './playback-budget.mjs';
+import {playbackMemoryBudget,playbackReuseMemoryPlan} from './playback-budget.mjs';
 import {EditorRasterCache} from './renderer-raster-cache.mjs';
 import {hasSceneVfx} from './vfx-viewport.mjs';
-import {rasterizeVectorGroup} from './renderer-vector-raster.mjs';
+import {rasterizeVectorVfx} from './renderer-vfx-vector.mjs';
+import {encodeVectorRaster} from './renderer-vector-raster.mjs';
 
 export function preparedCameraMode(packet, requested) {
   const mode = packet.cameraEnabled === undefined ? true : packet.cameraEnabled;
@@ -33,16 +34,32 @@ export function combinePreparedCommands(backgrounds, groups, textures) {
   return { commands, backgroundCount: base };
 }
 
+/** Recycle exact-sized allocations only. Changing the physical texture size
+ * changes filtering/coverage rounding even when the UV rectangle is corrected. */
+const poolableEntry = entry => { const image = entry.bitmap || entry.vectorRaster;
+  return Boolean(image?.width) && !entry.glyphMask && !entry.vfx && Math.max(image.width, image.height) >= 64; };
+const preparedEntryBytes = bitmapBytes;
+
 /** Owns only uploaded GPU resources. The playback controller owns packet/bitmap lifetime. */
 export class PreparedFrameCache {
   constructor(renderer, { maxBytes = playbackMemoryBudget(), maxFrames = 120 } = {}) {
     this.renderer = renderer; this.maxBytes = maxBytes; this.maxFrames = maxFrames;
     this.frames = new Map(); this.bytes = 0; this.report = null; this.revision = null;
     this.textures=new Map();this.generation=null;
+    // Texture alloc/destroy churn stalls the shared GPU process; recycled
+    // exact-sized textures reuse matching allocations during playback. One
+    // antialias target per size is enough: raster passes serialize on the
+    // queue, so they can share an attachment within and across submissions.
+    const reuse=playbackReuseMemoryPlan(maxBytes);
+    this.texturePool=new Map();this.poolQueue=[];this.texturePoolBytes=0;this.maxTexturePoolBytes=reuse.gpuRecycled;
+    this.msaaPool=new Map();this.scratch={uniform:[],transforms:[],shapes:new Map()};
+    this.maxMsaaPoolBytes=reuse.gpuMsaa;
+    this.maxScratchBytes=reuse.gpuScratch;
     // The no-OffscreenCanvas path has the same owner and budget as uploaded
     // bitmaps. Editable layout eviction must never destroy a prepared texture.
     this.fallbackRasters = new EditorRasterCache();
-    this.stats = { frames: 0, bytes: 0, maxBytes, maxFrames, hits: 0, misses: 0, evictions: 0, uploads: 0,textureUploads:0,reusedTextures:0,uniqueTextures:0 };
+    this.stats = { frames: 0, bytes: 0, maxBytes, maxFrames, hits: 0, misses: 0, evictions: 0, uploads: 0,textureUploads:0,reusedTextures:0,uniqueTextures:0,pooledTextures:0,
+      warmFrames:0,warmSlices:0,warmCpuMs:0,warmMaxSliceMs:0,warmFailures:0 };
   }
   has(key) {
     const frame = this.frames.get(String(key));
@@ -60,12 +77,67 @@ export class PreparedFrameCache {
   _releaseTextures(resources){
     for(const resource of resources)if(!--resource.refs){
       if (resource.raster) this.fallbackRasters.delete(resource.raster);
-      else resource.texture.destroy();
+      else if (resource.poolable && resource.poolKey) {
+        // Adjacent frames need similar bucket sizes; trimming the oldest pooled
+        // textures keeps room for fresh releases instead of refusing them.
+        while (this.poolQueue.length && this.texturePoolBytes + resource.bytes > this.maxTexturePoolBytes) {
+          const oldest = this.poolQueue.shift(), list = this.texturePool.get(oldest.poolKey), at = list?.indexOf(oldest) ?? -1;
+          if (at >= 0) list.splice(at, 1);
+          if (!list?.length) this.texturePool.delete(oldest.poolKey);
+          this.texturePoolBytes -= oldest.bytes; oldest.texture.destroy();
+        }
+        if (this.texturePoolBytes + resource.bytes <= this.maxTexturePoolBytes) {
+          let bucket = this.texturePool.get(resource.poolKey);
+          if (!bucket) { bucket = []; this.texturePool.set(resource.poolKey, bucket); }
+          bucket.push(resource); this.poolQueue.push(resource); this.texturePoolBytes += resource.bytes;
+        } else resource.texture.destroy();
+      } else resource.texture.destroy();
       this.textures.delete(resource.key);this.bytes-=resource.bytes;
     }
   }
-  clear() { for (const key of this.frames.keys()) this._remove(key); this.report = null; this.revision = null; }
+  clear() { this.cancelWarm(); for (const key of this.frames.keys()) this._remove(key); this.report = null; this.revision = null;
+    for (const bucket of this.texturePool.values()) for (const resource of bucket) resource.texture.destroy();
+    this.texturePool.clear(); this.poolQueue.length = 0; this.texturePoolBytes = 0;
+    for (const entry of this.msaaPool.values()) entry.destroy(); this.msaaPool.clear();
+    for (const buffer of this.scratch.uniform) buffer.destroy(); this.scratch.uniform.length = 0;
+    for (const buffer of this.scratch.transforms) buffer.destroy(); this.scratch.transforms.length = 0;
+    for (const list of this.scratch.shapes.values()) for (const buffer of list) buffer.destroy(); this.scratch.shapes.clear();
+    Object.assign(this.stats,{msaaPoolBytes:0,scratchBytes:0,texturePoolBytes:0}); }
+  _pooledTexture(poolKey) {
+    const bucket = this.texturePool.get(poolKey);
+    const resource = bucket?.pop();
+    if (resource) this._unpool(poolKey, bucket, resource);
+    return resource;
+  }
+  _unpool(poolKey, bucket, resource) {
+    this.texturePoolBytes -= resource.bytes;
+    if (!bucket?.length) this.texturePool.delete(poolKey);
+    const at = this.poolQueue.indexOf(resource); if (at >= 0) this.poolQueue.splice(at, 1);
+  }
+  _isolationMsaa(poolKey, width, height) {
+    const samples = this.renderer.isolationSamples;
+    if (samples <= 1) return null;
+    const key = `${poolKey}x${samples}`; let entry = this.msaaPool.get(key);
+    if (!entry) { const texture = this.renderer.device.createTexture({ label: 'Pooled isolation antialiasing', size: [width, height], sampleCount: samples,
+      format: this.renderer.format, usage: GPUTextureUsage.RENDER_ATTACHMENT }); entry={texture,bytes:width*height*4*samples,destroy:()=>texture.destroy()}; }
+    this.msaaPool.delete(key);this.msaaPool.set(key,entry);
+    return entry.texture;
+  }
+  /** Trim only after submitting or discarding the batch. Destroying an MSAA
+   * attachment or recycling a buffer referenced by an unsubmitted encoder
+   * would invalidate that entire batch. Active work retains its own leases. */
+  _trimRasterScratch() {
+    let msaaBytes=0;for(const entry of this.msaaPool.values())msaaBytes+=entry.bytes;
+    for(const [key,entry] of this.msaaPool){if(msaaBytes<=this.maxMsaaPoolBytes)break;entry.destroy();this.msaaPool.delete(key);msaaBytes-=entry.bytes;}
+    let scratchBytes=0;
+    for(const list of [this.scratch.uniform,this.scratch.transforms,...this.scratch.shapes.values()]){
+      for(let i=list.length-1;i>=0;i--){const buffer=list[i];if(scratchBytes+buffer.size>this.maxScratchBytes){list.splice(i,1);buffer.destroy();}else scratchBytes+=buffer.size;}
+    }
+    for(const [key,list] of this.scratch.shapes)if(!list.length)this.scratch.shapes.delete(key);
+    Object.assign(this.stats,{msaaPoolBytes:msaaBytes,scratchBytes,texturePoolBytes:this.texturePoolBytes});
+  }
   retainPackets(report, packets) {
+    this.cancelWarm();
     if (report !== this.report || this.generation !== this.renderer.generation) {this.clear(); return;}
     const keep = new Set(Array.from(packets, packet => String(packet.key)));
     for (const key of this.frames.keys()) if (!keep.has(key)) this._remove(key);
@@ -88,11 +160,57 @@ export class PreparedFrameCache {
       // Legacy fallback dimensions are unknown until Canvas rasterization.
       if(!entry.bitmap&&!entry.vectorRaster)return false;
       const key=bitmapKey(packet,entry);
-      if(!seen.has(key)){seen.add(key);if(!this.textures.has(key))bytes+=bitmapBytes(entry);}
+      if(!seen.has(key)){seen.add(key);if(!this.textures.has(key))bytes+=preparedEntryBytes(entry);}
     }
     return this.bytes+bytes<=this.maxBytes;
   }
   prepare(packet, { report, view = { scale: 1 }, cameraEnabled } = {}) {
+    const options={report,view,cameraEnabled};
+    let steps;
+    if(this.warming?.packet===packet&&this.generation===this.renderer.generation&&this.warming.options.report===report&&this.warming.options.cameraEnabled===cameraEnabled){
+      steps=this.warming.steps;this.warming=null;
+    }else{this.cancelWarm();steps=this.prepareSteps(packet,options);}
+    for(;;){const step=steps.next();if(step.done)return step.value;}
+  }
+  cancelWarm() {const warm=this.warming;this.warming=null;warm?.steps.return();}
+  /** Reserve only unprotected LRU entries for one speculative upload. The
+   * displayed frame and every requested successor keep their GPU resources. */
+  beginWarm(packet, options, protectedKeys) {
+    if(this.warming||this.renderer.destroyed||this.renderer.deviceLost||this.has(packet.key)||this.report!==options.report||this.generation!==this.renderer.generation||
+      this.revision!==(packet.cacheEpoch??packet.revision)||!this.renderer.backgroundsReady(options.report,packet.frame))return null;
+    const cameraEnabled=preparedCameraMode(packet,options.cameraEnabled);
+    const backgrounds=this.renderer.background({...options,frame:packet.frame,cameraEnabled},descriptor=>descriptor);
+    const required=new Map();
+    for(const b of backgrounds)if(b.texture)required.set(b.texture.cacheKey,b.texture.bytes);
+    for(const entry of packet.compatibility||[]){
+      if(!entry.bitmap&&!entry.vectorRaster)return null;
+      required.set(bitmapKey(packet,entry),preparedEntryBytes(entry));
+    }
+    const buffers=Math.max(SHAPE_BYTES,packet.shapes.byteLength+backgrounds.reduce((n,b)=>n+b.data.byteLength,0))+packet.transforms.byteLength;
+    const refs=new Map([...this.textures].map(([key,resource])=>[key,resource.refs]));
+    let bytes=this.bytes,count=this.frames.size;const evict=[];
+    const fits=()=>count<this.maxFrames&&bytes+buffers+[...required].reduce((n,[key,size])=>n+(refs.has(key)?0:size),0)<=this.maxBytes;
+    for(const [key,frame] of this.frames){
+      if(fits())break;
+      if(protectedKeys.has(key))continue;
+      evict.push(key);count--;bytes-=frame.bufferBytes;
+      for(const resource of frame.ownedTextures){const next=refs.get(resource.key)-1;if(next)refs.set(resource.key,next);else{refs.delete(resource.key);bytes-=resource.bytes;}}
+    }
+    if(!fits())return null;
+    for(const key of evict)this._remove(key,true);
+    const warm={packet,options,steps:this.prepareSteps(packet,options)};this.warming=warm;return warm;
+  }
+  stepWarm(warm, sliceMs=2) {
+    if(this.warming!==warm)return true;
+    if(this.generation!==this.renderer.generation||this.renderer.destroyed||this.renderer.deviceLost){this.cancelWarm();return true;}
+    const started=performance.now();
+    let sliceBytes = 0;
+    try{do{const step=warm.steps.next();if(step.done){this.warming=null;this.stats.warmFrames++;return true;}sliceBytes+=step.value||0;}while(performance.now()-started<sliceMs&&sliceBytes<6*1024*1024);}
+    catch(error){this.cancelWarm();throw error;}
+    finally{const elapsed=performance.now()-started;warm.sliceBytes=sliceBytes;this.stats.warmSlices++;this.stats.warmCpuMs+=elapsed;this.stats.warmMaxSliceMs=Math.max(this.stats.warmMaxSliceMs,elapsed);}
+    return false;
+  }
+  *prepareSteps(packet, { report, view = { scale: 1 }, cameraEnabled } = {}) {
     const start = performance.now(), renderer = this.renderer, device = renderer.device, key = String(packet.key);
     cameraEnabled = preparedCameraMode(packet, cameraEnabled);
     if (!report) throw new TypeError('Preparing a frame requires its report.');
@@ -112,7 +230,7 @@ export class PreparedFrameCache {
     const backgroundBytes = [...backgroundTextures.values()].reduce((sum, entry) => sum + entry.bytes, 0);
     const backgroundCountEstimate = backgrounds.reduce((sum, entry) => sum + entry.data.length / SHAPE_FLOATS, 0);
     const shapeBytesEstimate = Math.max(SHAPE_BYTES, packet.shapes.byteLength + backgroundCountEstimate * SHAPE_BYTES);
-    const textureBytesEstimate = (packet.compatibility || []).reduce((sum, entry) => sum + bitmapBytes(entry), 0);
+    const textureBytesEstimate = (packet.compatibility || []).reduce((sum, entry) => sum + preparedEntryBytes(entry), 0);
     const reservedBytes = shapeBytesEstimate + packet.transforms.byteLength + textureBytesEstimate + backgroundBytes;
     if (reservedBytes > this.maxBytes || this.maxFrames < 1) throw new Error(`Prepared frame exceeds the ${Math.round(this.maxBytes / 1024 / 1024)} MB GPU cache budget.`);
     if (shapeBytesEstimate > device.limits.maxStorageBufferBindingSize || packet.transforms.byteLength > device.limits.maxStorageBufferBindingSize) throw new Error('Prepared frame exceeds this GPU’s storage-buffer limit.');
@@ -120,35 +238,78 @@ export class PreparedFrameCache {
     // the cache's GPU residency while an old frame is still retained.
     const incrementalBytes=()=>shapeBytesEstimate+packet.transforms.byteLength+
       [...backgroundTextures].reduce((sum,[key,entry])=>sum+(this.textures.has(key)?0:entry.bytes),0)+
-      (packet.compatibility||[]).reduce((sum,entry)=>sum+(this.textures.has(bitmapKey(packet,entry))?0:bitmapBytes(entry)),0);
+      (packet.compatibility||[]).reduce((sum,entry)=>sum+(this.textures.has(bitmapKey(packet,entry))?0:preparedEntryBytes(entry)),0);
     while (this.frames.size && (this.frames.size >= this.maxFrames || this.bytes + incrementalBytes() > this.maxBytes)) this._remove(this.frames.keys().next().value, true);
-    let shapeData = packet.shapes, textureBytes = 0,shapeBuffer,transformBuffer;
+    let shapeData = packet.shapes, textureBytes = 0,shapeBuffer,transformBuffer,committed=false;
+    // Every isolated vector raster in one frame records into a single command
+    // buffer: thousands of separate submits would starve the GPU process.
+    const rasterBatch={encoder:null,cleanups:[],pending:new Set(),bytes:0};
+    const flushRasterBatch=()=>{if(!rasterBatch.encoder)return;
+      device.queue.submit([rasterBatch.encoder.finish()]);rasterBatch.encoder=null;
+      const cleanups=rasterBatch.cleanups.splice(0);for(const cleanup of cleanups)cleanup();
+      rasterBatch.bytes=0;this._trimRasterScratch();};
     try {
       // Own background textures just like artwork. Never borrow the editable
       // scene's mutable cache: pause, staging, and camera changes can replace it.
       for (const [key, descriptor] of backgroundTextures) {
-        let resource = this.textures.get(key);
+        let resource = this.textures.get(key);const uploaded=!resource;
         if (!resource) {
           resource = {...descriptor.create(), key, refs: 0};
           this.textures.set(key, resource); this.bytes += resource.bytes; this.stats.textureUploads++;
         } else this.stats.reusedTextures++;
         resource.refs++; ownedTextures.push(resource); textureBytes += resource.bytes;
+        yield uploaded ? resource.bytes : 0;
       }
       for (const entry of backgrounds) if (entry.texture) entry.texture = this.textures.get(entry.texture.cacheKey);
-      for (const [i, compatibility] of (packet.compatibility || []).entries()) {
+      for (const [i,compatibility] of (packet.compatibility || []).entries()) {
         if (compatibility.bitmap || compatibility.vectorRaster) {
+          const uploadMark=this.stats.textureUploads;
           const source = compatibility.bitmap || compatibility.vectorRaster;
           const resourceKey=bitmapKey(packet,compatibility);
           let resource=this.textures.get(resourceKey);
           if(!resource){
             if (!source.width || !source.height) throw new Error('Prepared-frame image was released before GPU upload.');
-            if (compatibility.vectorRaster) resource = {...rasterizeVectorGroup(renderer, {...compatibility, ...source}), key: resourceKey, refs: 0};
-            else {
-            const texture = device.createTexture({ label: `Prepared ${key} object ${compatibility.uid}`, size: [source.width, source.height], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+            // Filtered VFX and glyph masks retain their established ownership;
+            // regular artwork may borrow an unused matching allocation.
+            const poolable=poolableEntry(compatibility);
+            this.stats[poolable?'poolableUploads':'unpooledUploads']=(this.stats[poolable?'poolableUploads':'unpooledUploads']||0)+1;
+            // Dimensions alone do not establish texture compatibility. Vector
+            // targets use the renderer format; external uploads require COPY_DST
+            // and RGBA. Keep both allocation contracts distinct during reuse.
+            const poolClass=compatibility.vectorRaster?`vector:${renderer.format}`:'bitmap:rgba8unorm';
+            const poolW=source.width,poolH=source.height,poolKey=`${poolClass}:${poolW}x${poolH}`;
+            const pooled=poolable?this._pooledTexture(poolKey):null;
+            if(pooled)this.stats.pooledTextures++;
+            if (compatibility.vectorRaster) {this.stats[compatibility.vfx?'vfxRasters':'vectorRasters']=(this.stats[compatibility.vfx?'vfxRasters':'vectorRasters']||0)+1;
+              if(compatibility.vfx)resource={...rasterizeVectorVfx(renderer,{...compatibility.vfx,data:source.data},{...compatibility,...source}),key:resourceKey,refs:0};
+              else{rasterBatch.encoder??=device.createCommandEncoder({label:`Prepared ${key} vector rasters`});
+                let raster;
+                try{raster=encodeVectorRaster(renderer,rasterBatch.encoder,{...compatibility,...source,
+                  target:{texture:pooled?.texture,bindGroup:pooled?.bindGroup,width:poolW,height:poolH},
+                  msaa:poolable?this._isolationMsaa(poolKey,poolW,poolH):undefined,viewport:[poolW,poolH],scratch:poolable?this.scratch:undefined});}
+                catch(error){pooled?.texture.destroy();throw error;}
+                rasterBatch.cleanups.push(raster.cleanup);
+                rasterBatch.bytes+=poolW*poolH*4*Math.max(1,renderer.isolationSamples)+source.data.byteLength;
+                resource={key:resourceKey,refs:0,texture:raster.texture,bindGroup:raster.bindGroup,width:raster.width,height:raster.height,bytes:raster.bytes,poolable,poolClass,poolKey,poolW,poolH};}}
+            else {this.stats.bitmapUploads=(this.stats.bitmapUploads||0)+1;
+            const texture = pooled?.texture ?? device.createTexture({ label: `Prepared ${key} object ${compatibility.uid}`, size: [poolW, poolH], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+            resource = { key:resourceKey,refs:0,width:source.width,height:source.height,texture, bindGroup: pooled?.bindGroup ?? renderer.textureBindGroup(texture), bytes: poolW * poolH * 4, poolable, poolClass, poolKey, poolW, poolH };
+            rasterBatch.pending.add(resource);
             try{
-              device.queue.copyExternalImageToTexture({ source }, { texture, premultipliedAlpha: true }, [source.width, source.height]);
-              resource = { key:resourceKey,refs:0,width:source.width,height:source.height,texture, bindGroup: renderer.textureBindGroup(texture), bytes: source.width * source.height * 4 };
-            }catch(error){texture.destroy();throw error;}
+              // Band large copies so a single texture cannot monopolize the GPU
+              // queue; the generator yields between bands for warm pacing.
+              const bandRows=Math.max(1,Math.floor((8*1024*1024)/(source.width*4)));
+              for(let y=0;y<source.height;y+=bandRows){
+                const rows=Math.min(bandRows,source.height-y);
+                device.queue.copyExternalImageToTexture({ source, origin: [0, y] }, { texture, origin: [0, y], premultipliedAlpha: true }, [source.width, rows]);
+                if(y+bandRows<source.height)yield source.width*rows*4;
+              }
+            }catch(error){
+              texture.destroy();
+              rasterBatch.pending.delete(resource);resource=null;
+              throw error;
+            }
+            rasterBatch.pending.delete(resource);
             }
             this.textures.set(resourceKey,resource);this.bytes+=resource.bytes;this.stats.textureUploads++;
           }else{
@@ -157,6 +318,11 @@ export class PreparedFrameCache {
           }
           resource.refs++;
           textures.push(resource); ownedTextures.push(resource); textureBytes += resource.bytes;
+          // Bound transient attachments/buffers as well as retained scratch.
+          // Publication still waits for the complete frame; queue order keeps
+          // earlier passes ahead of subsequent writes into recycled scratch.
+          if(rasterBatch.bytes>=8*1024*1024||rasterBatch.cleanups.length>=32)flushRasterBatch();
+          yield this.stats.textureUploads > uploadMark ? resource.bytes : 0;
         } else {
           // Runtimes without worker OffscreenCanvas use the established object-level renderer.
           const matrix = cameraMatrix({ report, frame: packet.frame, view, cameraEnabled });
@@ -172,6 +338,7 @@ export class PreparedFrameCache {
           shapeData.set(shapeRecord({ mode: SHAPE.TEXTURE, color: [1, 1, 1, 1], transform: group.transformIndex, a: [b.x - root.x, b.y - root.y, b.x + b.width - root.x, b.y + b.height - root.y] }), group.firstInstance * SHAPE_FLOATS);
         }
       }
+      flushRasterBatch();
       const { commands, backgroundCount } = combinePreparedCommands(backgrounds, packet.groups, textures);
       const shapeBytes = Math.max(SHAPE_BYTES, shapeData.byteLength + backgroundCount * SHAPE_BYTES), transformBytes = packet.transforms.byteLength, bytes = shapeBytes + transformBytes + textureBytes;
       // Fallback raster dimensions are known only after object rasterization.
@@ -185,7 +352,7 @@ export class PreparedFrameCache {
       if (shapeData.byteLength) device.queue.writeBuffer(shapeBuffer, offset, shapeData);
       device.queue.writeBuffer(transformBuffer, 0, packet.transforms);
       const bindGroup = device.createBindGroup({ layout: renderer.globalLayout, entries: [{ binding: 0, resource: { buffer: renderer.uniform } }, { binding: 1, resource: { buffer: shapeBuffer } }, { binding: 2, resource: { buffer: transformBuffer } }] });
-      const frame = { key, cameraEnabled, nativeFrame: packet.frame, shapeBuffer, transformBuffer, bindGroup, commands, backgroundCount, ownedTextures,
+      const frame = { key, cameraEnabled, nativeFrame: packet.frame, connectedVfxUids:packet.connectedVfxUids, shapeBuffer, transformBuffer, bindGroup, commands, backgroundCount, ownedTextures,
         transforms: packet.transforms.slice(), liveTransforms: null, transformed: false, uids: packet.uids.slice(), bytes,bufferBytes:shapeBytes+transformBytes,
         objectCount: packet.objectCount, shapeCount: shapeData.length / SHAPE_FLOATS + backgroundCount,
         textureObjects: packet.compatibility?.length || 0, warnings: packet.warnings || [], generation: renderer.generation,
@@ -193,12 +360,14 @@ export class PreparedFrameCache {
       this.frames.set(key, frame); this.bytes += frame.bufferBytes; this.stats.uploads++;
       Object.assign(this.stats, { frames: this.frames.size, bytes: this.bytes,uniqueTextures:this.textures.size });
       Object.assign(renderer.stats || {}, { preparedBytes: this.bytes, preparedFrames: this.frames.size });
+      committed=true;
       return key;
-    } catch (error) { this._releaseTextures(ownedTextures);shapeBuffer?.destroy();transformBuffer?.destroy();throw error; }
+    } finally {for(const pending of rasterBatch.pending)pending.texture.destroy();for(const cleanup of rasterBatch.cleanups.splice(0))cleanup();if(!committed){this._releaseTextures(ownedTextures);shapeBuffer?.destroy();transformBuffer?.destroy();}this._trimRasterScratch();}
   }
   render(key, { report = this.report, view = {}, hiddenUids, dragTranslations, cameraEnabled } = {}) {
     const start = performance.now(), frame = this.frames.get(String(key)), renderer = this.renderer;
     if (!frame || frame.generation !== renderer.generation || report !== this.report) { this.stats.misses++; return false; }
+    if(frame.connectedVfxUids?.some(uid=>hiddenUids?.has(uid)))return false;
     cameraEnabled = preparedCameraMode(frame, cameraEnabled);
     this.frames.delete(frame.key); this.frames.set(frame.key, frame); this.stats.hits++;
     const matrix = cameraMatrix({ report, frame: frame.nativeFrame, view, cameraEnabled }), zoom = Number(view.scale ?? 1), x = Number(view.x ?? 0), y = Number(view.y ?? 0);
@@ -238,6 +407,7 @@ export class PreparedFrameCache {
   renderInto(key, { report = this.report, view = {}, target, hiddenUids, dragTranslations } = {}) {
     const frame = this.frames.get(String(key)), renderer = this.renderer;
     if (!frame || frame.generation !== renderer.generation || report !== this.report || !target?.context || (renderer.msaaCount > 1 && !target?.msaa)) { this.stats.misses++; return false; }
+    if(frame.connectedVfxUids?.some(uid=>hiddenUids?.has(uid)))return false;
     const width = Math.max(1, Math.round(target.width ?? 0)), height = Math.max(1, Math.round(target.height ?? 0));
     const matrix = cameraMatrix({ report, frame: frame.nativeFrame, view, cameraEnabled: frame.cameraEnabled });
     renderer.device.queue.writeBuffer(renderer.uniform, 0, new Float32Array([

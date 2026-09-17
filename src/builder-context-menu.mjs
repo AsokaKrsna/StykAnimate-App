@@ -27,6 +27,8 @@ export function builderContextItems({kind, page = 'main', hasFigure, state}) {
     [branch ? 'builder-context-split-branch' : 'split-segment', 'builder-split', branch ? 'Split branch segments' : 'Split segment', ''],
     [branch ? 'duplicate-branch' : 'duplicate-segment', 'duplicate', branch ? 'Duplicate branch' : 'Duplicate segment', ''],
     ['segment-values', 'sliders', 'Exact values…', 'I'], null,
+    ['copy-builder-appearance', 'duplicate', 'Copy appearance', ''],
+    ['paste-builder-appearance', 'clipboard', branch ? 'Paste appearance to branch' : 'Paste appearance', '', !state.builderAppearance], null,
     ['mirror-segment', 'flip', 'Flip horizontally', ''],
     ['mirror-segment-vertical', 'flip-vertical', 'Flip vertically', ''],
     ['builder-context-branch', 'builder-branch', 'Branch…', ''],

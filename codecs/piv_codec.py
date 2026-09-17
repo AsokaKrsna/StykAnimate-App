@@ -231,7 +231,8 @@ def _figure(r: Reader, figure_id: int, assets_dir: Path | None) -> dict:
         except ImportError as exc:
             raise PivError(f'Figure {figure_id} contains unsupported image/text tables at {r.pos:#x}') from exc
         try:
-            side, r.pos = parse_side_tables(r.data,r.pos,segments)
+            side, r.pos = parse_side_tables(r.data,r.pos,segments,
+                allow_missing_image_end=bool(flags & 16 and not flags & 64))
         except ValueError as exc:
             raise PivError(f'Invalid side table in figure {figure_id}: {exc}') from exc
         if assets_dir:
@@ -477,6 +478,17 @@ def _decode(source: bytes, source_path: str = '', assets_dir: Path | None = None
             f'Recovered {len(identity_repairs)} duplicate figure IDs in keyframes {keys}. '
             'Every figure, join, and layer was preserved. Extra occurrences now have separate '
             'identities; review animation transitions around these keyframes.'))]
+    missing_images = [dict(figure_type_id=f['figure_type_id'], figure_name=f['name'],
+                           asset_index=a['asset_index'], source_start=a['source_start'],
+                           recovery=a.get('image_record_recovery'))
+                      for f in figures for a in f.get('image_assets', []) if a.get('missing_image_data')]
+    if missing_images:
+        report['piv_missing_images'] = missing_images
+        names = ', '.join(dict.fromkeys(a['figure_name'] for a in missing_images))
+        report.setdefault('import_warnings', []).append(dict(code='piv_missing_image_data', message=(
+            f'{len(missing_images)} embedded images contain no image data ({names}). '
+            'Their figures, anchors and animation are preserved, but these images are transparent. '
+            'The missing artwork must be replaced from its original image.')))
     return report,r,compressed
 
 

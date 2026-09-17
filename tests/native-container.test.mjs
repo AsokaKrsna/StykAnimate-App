@@ -2,10 +2,24 @@
  *  corruption rejection, and compatibility with the v1/legacy formats. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildContainerV1, buildContainerV2, decodeDocument, liftDocument,
+import {buildContainerV1, buildContainerV2, encodeContainerV2, decodeDocument, liftDocument,
   normalizeDecodedDocument, bytesToBase64, base64ToBytes} from '../src/native-container.mjs';
 
 const floats = () => Array.from({length: 64}, (_, i) => Math.sin(i) * 180);
+
+test('sectioned metadata has a separate bound while payload and aggregate limits remain enforced',async()=>{
+  const bytes=await buildContainerV2({name:'small'},'styk');
+  for(const [version,raw,message] of [[1,300*1024*1024,/uncompressed size/],
+    [2,385*1024*1024,/uncompressed size/],[2,300*1024*1024,/invalid payload length/]]) {
+    const malformed=bytes.slice(),view=new DataView(malformed.buffer);
+    view.setUint8(4,version);view.setBigUint64(8,BigInt(raw),true);
+    await assert.rejects(decodeDocument(malformed,'styk'),message);
+  }
+  await assert.rejects(encodeContainerV2({skeleton:{},sections:[{bytes:{byteLength:257*1024*1024}}]},'styk'),
+    error=>error.code==='document_too_large');
+  await assert.rejects(encodeContainerV2({skeleton:{},sections:[{bytes:{byteLength:200*1024*1024}},{bytes:{byteLength:200*1024*1024}}]},'styk'),
+    error=>error.code==='document_too_large');
+});
 
 test('v2 round-trips a document losslessly', async () => {
   const shared = floats();

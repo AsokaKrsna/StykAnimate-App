@@ -1,16 +1,14 @@
 # Sprite image import
 
-PNG, GIF and BMP sprite imports now apply Pivot's automatic transparency rule.
-If a decoded image contains any transparency, that alpha is retained. Otherwise,
-every pixel matching the bottom-left RGB color becomes transparent. The native
-manual documents this behavior for sprite loading; backgrounds are a separate
-image workflow. [Pivot sprite manual](https://pivotanimator.net/help5-2/sprites.htm),
-[background manual](https://pivotanimator.net/help5-2/backgrounds.htm).
+PNG, GIF, BMP, JPEG and WebP sprite imports preserve source colors and alpha by
+default. Opaque artwork stays opaque, including pixels that match the bottom-left
+corner. All background imports also preserve their pixels. The image's actual
+byte signature is used for format validation, even when its filename or MIME
+label disagrees. No additional import dialog is required.
 
-JPEG and WebP are additional supported formats and preserve their pixels by
-default. All background imports preserve their pixels. The image's actual byte
-signature determines the default, even when a filename or MIME label disagrees.
-No additional import dialog is required.
+Pivot-style bottom-left color-key removal is available only through explicit API
+opt-in. It removes every exact RGB match across an opaque image, including artwork
+inside the sprite; any existing transparency disables that removal.
 
 The existing API remains compatible:
 
@@ -25,7 +23,7 @@ Explicit `preserveOpaqueBackground: true` retains opaque sprite backgrounds;
 source alpha always wins. Results remain regular reusable figure/background
 objects containing embedded PNG bytes and the original source name.
 
-`media-image-worker.mjs` decodes the image, reads alpha, applies any color key and
+`media-image-worker.mjs` decodes the image, applies any explicitly requested color key and
 compresses the normalized PNG outside the UI thread. The worker returns a Blob;
 the caller asynchronously converts it to the existing data-URL asset format.
 Native PNG/GIF/BMP headers are checked before allocating decoded surfaces, and
@@ -36,9 +34,16 @@ Animated image inputs become a single still sprite rather than animation frames.
 
 Verification:
 
-- Five media unit tests cover factories, undo/redo/serialization, source signatures,
+- Preservation-default regression: both supplied eye images decode and import with
+  zero changed RGBA bytes; their rendered previews were visually inspected.
+  Media unit tests and the media browser test (including PIV/STK round trips) pass.
+  The broader media-worker browser suite passes its import assertions but currently
+  times out waiting for an export download, so its full run is not certified for
+  this change. The coverage below describes the existing suite and earlier runs.
+
+- Five media unit tests cover factories, undo/redo/serialization, source signatures, preservation defaults,
   explicit options, color-key matching and alpha precedence.
-- [30 browser checks](../artifacts/media-worker/report.json) decode actual PNG,
+- [Browser checks](../artifacts/media-worker/report.json) decode actual PNG,
   BMP, GIF, JPEG and WebP files; verify transparency, source-alpha precedence,
   background preservation, mislabeled signatures, dimension rejection, cancellation
   and retry. Neither main-thread Canvas nor OffscreenCanvas pixel reads occur

@@ -25,16 +25,33 @@ try{
    check(color(renderer===gpu?gpuCanvas:fallbackCanvas).every((v,i)=>Math.abs(v-expected[i])<=1),`${renderer.stats.backend} construction background ${value??'restored'}`);
   }
   const overlay=make(),ctx=overlay.getContext('2d');drawBuilderHighlight(ctx,geometry,{uid:7,jointIndex:0,report,frame,view:options.view});
-  check(color(overlay,30,40).join(',')==='0,0,255,255','Selected vector becomes solid blue despite gradient/alpha');
+  check(color(overlay,30,40)[2]===255&&color(overlay,30,40)[3]>0&&color(overlay,30,44)[3]===0,'Selected vector has a thin guide without repainting its thickness');
   const invisibleGeometry=buildGeometry({...report,figure_types:[{...f,segments:[{...f.segments[0],thickness:0}]}]},frame);ctx.clearRect(0,0,100,80);
   drawBuilderHighlight(ctx,invisibleGeometry,{uid:7,jointIndex:0,report,frame,view:options.view});check(color(overlay,30,40)[2]>200&&color(overlay,30,44)[3]===0,'Zero-thickness connector gets native 1.5-pixel construction highlight');
   const staticGeometry=buildGeometry({...report,figure_types:[{...f,segments:[{...f.segments[0],is_static:true,aux_code:1,flags:256}]}]},frame);ctx.clearRect(0,0,100,80);
-  drawBuilderHighlight(ctx,staticGeometry,{uid:7,jointIndex:0,report,frame,view:options.view});check(color(overlay,30,40).join(',')==='68,68,204,255','Static selected vector uses native dull blue');
+  drawBuilderHighlight(ctx,staticGeometry,{uid:7,jointIndex:0,report,frame,view:options.view});check(color(overlay,30,40)[2]===204&&color(overlay,30,44)[3]===0,'Static selected vector uses native dull blue');
   const imageGeometry=buildGeometry({...report,figure_types:[{...f,segments:[{...f.segments[0],segment_type:'image'}]}]},frame);ctx.clearRect(0,0,100,80);
   drawBuilderHighlight(ctx,imageGeometry,{uid:7,jointIndex:0,report,frame,view:options.view,resources:{image(){throw Error('Bitmap recoloring is forbidden.');}}});check(color(overlay,30,44)[3]===0&&color(overlay,30,40)[2]>200,'Sprite highlight draws only its thin anchor line');
   const glyph={svg_path:'M0 0L20 0L20 12L0 12Z'},asset={asset_index:0,normalized_svg_path:'M0 0L20 0L20 12L0 12Z',bounds:{left:0,bottom:12,width:20,height:12},glyphs:[glyph],placements:[{visible:true,glyph_index:0,x:0,y:12}]};
   const textGeometry=buildGeometry({...report,figure_types:[{...f,text_assets:[asset],segments:[{...f.segments[0],segment_type:'text',extra_u16:0}]}]},frame);ctx.clearRect(0,0,100,80);
-  drawBuilderHighlight(ctx,textGeometry,{uid:7,jointIndex:0,report,frame,view:options.view});check(color(overlay,30,45).join(',')==='0,0,255,255','Embedded text glyphs use blue silhouette');
+  drawBuilderHighlight(ctx,textGeometry,{uid:7,jointIndex:0,report,frame,view:options.view});check(color(overlay,30,45)[3]===0&&color(overlay,30,40)[2]===255,'Text uses a thin pivot guide without repainting glyphs');
+  // A selected rear segment must not repaint the body of an overlapping
+  // foreground figure. Exercise the common overlay with both scene backends.
+  const overlapFrame={...frame,objects:[...frame.objects,createObject(f,8,25,42)],object_draw_order:[0,1],object_draw_order_unique_ids:[7,8]};
+  const overlapGeometry=buildGeometry(report,overlapFrame);
+  const gallery=document.createElement('div');gallery.id='highlight-regression';gallery.style.cssText='position:fixed;inset:0 auto auto 0;z-index:99999;background:white;padding:16px;display:grid;grid-template-columns:repeat(3,300px);gap:12px';document.body.append(gallery);
+  for(const renderer of [gpu,fallback]){
+   renderer.render({...options,frame:overlapFrame,geometry:overlapGeometry});if(renderer.device)await renderer.device.queue.onSubmittedWorkDone();
+   const scene=renderer===gpu?gpuCanvas:fallbackCanvas;
+   const before=make(),selected=make(),deselected=make();
+   before.getContext('2d').drawImage(scene,0,0);selected.getContext('2d').drawImage(scene,0,0);
+   drawBuilderHighlight(selected.getContext('2d'),overlapGeometry,{uid:7,jointIndex:0,report,frame:overlapFrame,view:options.view});
+   deselected.getContext('2d').drawImage(scene,0,0);
+   check(color(selected,30,44).join(',')===color(before,30,44).join(','),`${renderer.stats.backend} selecting a rear segment preserves foreground artwork outside the guide`);
+   check(color(selected,30,40).join(',')!==color(before,30,40).join(','),`${renderer.stats.backend} selected guide remains visible`);
+   check(color(deselected,30,40).join(',')===color(before,30,40).join(','),`${renderer.stats.backend} deselection restores the exact scene`);
+   for(const [label,canvas] of [['Before',before],['Selected',selected],['Deselected',deselected]]){const card=document.createElement('div');card.textContent=renderer.stats.backend+' '+label;canvas.style.cssText='display:block;width:300px;height:240px;image-rendering:pixelated';card.append(canvas);gallery.append(card);}
+  }
   const svg=await exportSVG({...options,editorBackgroundColor:0xffa0b1c2}),url=URL.createObjectURL(svg),image=new Image();image.src=url;await image.decode();const exported=make();exported.getContext('2d').drawImage(image,0,0);URL.revokeObjectURL(url);
   check(color(exported).join(',')==='18,52,86,255','SVG ignores editor-only construction background');check(JSON.stringify(report)===before,'Every aid leaves native document bytes unchanged');
   const incoming=structuredClone(report),incomingFrame=incoming.keyframes[0];
@@ -49,6 +66,8 @@ try{
   check(gpu.shapeBuffer===buffer&&color(gpuCanvas).join(',')==='160,177,194,255','First live render adopts prepared color and GPU buffer without cold rebuild');
   gpu.destroy();fallback.destroy();return results;
  });checks.push(...pixels);
+ await page.locator('#highlight-regression').screenshot({path:path.join(output,'selection-order.png')});await page.locator('#highlight-regression').evaluate(el=>el.remove());
+ if(!process.argv.includes('--pixels-only')){
  await page.evaluate(async()=>{const {emptyDocument,defaultFigure}=await import('/src/demo.mjs');const e=window.styk.editor;e.load(emptyDocument());const f=defaultFigure(201);f.segments=f.segments.slice(0,4).map(s=>({...s,is_static:true,aux_code:Number(s.aux_code)|1,flags:Number(s.flags)|256}));f.segment_count=4;e.importFigure(f);e.select(e.selectedUid,2);e.markSaved();window.__aidBefore=JSON.stringify(e.report);window.__aidHistory=e._undo.length;});
  await page.locator('[data-tool="rig"]').click();await page.keyboard.press('F10');
  check(await page.evaluate(()=>window.styk.state.settings.builderShowStaticHandles===false),'Builder F10 toggles static handles');
@@ -75,5 +94,6 @@ try{
  await page.locator('[data-tool="rig"]').click();await page.keyboard.press('Control+z');
  await page.waitForFunction(old=>JSON.stringify(window.styk.editor.figure.segments.map(s=>s.thickness))===JSON.stringify(old),widths);
  check(true,'One actual Undo restores heterogeneous branch widths');
- check(errors.length===0,'No application errors');await writeFile(path.join(output,'report.json'),JSON.stringify({checks,errors},null,2));console.log(JSON.stringify({checks:checks.length,errors}));
+ }
+ check(errors.length===0,'No application errors');await writeFile(path.join(output,process.argv.includes('--pixels-only')?'selection-order-report.json':'report.json'),JSON.stringify({checks,errors},null,2));console.log(JSON.stringify({checks:checks.length,errors}));
 }finally{await browser?.close();await backend.stop();}

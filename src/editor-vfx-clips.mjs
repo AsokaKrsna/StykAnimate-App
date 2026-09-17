@@ -1,0 +1,80 @@
+import {createVfxClip,validateVfxClips,vfxClips,sampleVfxClip,clipTime,sameVfxTarget} from './vfx-clips.mjs';
+import {createVfx,vfxProperty,vfxDescriptor,validateVfxValue} from './vfx.mjs';
+import {VFX_PRESETS} from './vfx-presets.mjs';
+import {normalizeAnimationTarget} from './animation-channels.mjs';
+import {connectedVfxConflict} from './vfx-connected.mjs';
+const id=()=>crypto.randomUUID(),bytes=new WeakMap();
+function size(c){let n=bytes.get(c);if(n===undefined){n=JSON.stringify(c).length*2;bytes.set(c,n);}return n;}
+function unlocked(editor,target){const layer=editor.getLayer(target.kind==='scene'?'scene':editor.layerForUid(target.uid));if(layer?.locked)throw new Error(`Unlock ${layer.name} before editing effects.`);}
+function publish(editor,clips,label){
+ const before=editor.report._styk.vfxClips??null,after={version:1,clips};validateVfxClips(after,{immutable:true});
+ const old=new Set(before?.clips??[]),next=new Set(clips);for(const c of [...old,...next])if(!old.has(c)||!next.has(c))unlocked(editor,c.target);
+ if(editor._drag)editor.commitDrag();if(editor._animationEdit)editor.commitAnimationEdit();
+ if(editor._vfxClipEdit){editor.report._styk.vfxClips=after;editor._invalidate({timing:true});editor._emit('preview',{vfxClips:true});return true;}
+ const beforeSelection=editor._selectionState();editor.report._styk.vfxClips=after;
+ const end=Math.max(1,...clips.map(c=>c.duration===null?0:c.start+c.duration)),sheet=editor.report._styk.layerSheet;let layerSheetPatch;
+ if(sheet&&end>sheet.duration){const tracks={...sheet.tracks};for(const [key,t] of Object.entries(tracks))if(t.end===sheet.duration)tracks[key]={...t,end};const updated={...sheet,duration:end,tracks};layerSheetPatch={before:sheet,after:updated};editor.report._styk.layerSheet=updated;}
+ editor._invalidate({timing:true});
+ const changed=[...old].filter(c=>!next.has(c)).concat(clips.filter(c=>!old.has(c)));
+ editor._record({kind:'vfx-clips',label,before,after,beforeSelection,afterSelection:editor._selectionState(),timing:true,layerSheetPatch,precomputedBytes:changed.reduce((n,c)=>n+size(c),512)+(old.size+next.size)*8+(layerSheetPatch?Object.keys(sheet.tracks).length*160:0)});
+ editor._emit('edit',{label,vfxClips:true,timing:true,frameIndices:[]});return true;
+}
+function find(editor,id){const c=vfxClips(editor.report).find(c=>c.id===id);if(!c)throw new Error('Select an effect clip.');return c;}
+function checkScope(editor,clip){if(clip.includeAttached&&clip.target.kind==='figure'){const conflict=connectedVfxConflict(editor.evaluatedFrame,clip.target.uid);if(conflict)throw new Error(conflict);}}
+export const editorVfxClipMethods={
+ beginVfxClipEdit(){this.commitVfxClipEdit();if(this._animationEdit)this.commitAnimationEdit();this._vfxClipEdit={before:this.report._styk.vfxClips};},
+ commitVfxClipEdit(){const edit=this._vfxClipEdit;if(!edit)return false;const after=this.report._styk.vfxClips;this._vfxClipEdit=null;this.report._styk.vfxClips=edit.before;if(after===edit.before)return false;return publish(this,after.clips,'Edit effect');},
+ cancelVfxClipEdit(){const edit=this._vfxClipEdit;if(!edit)return false;this._vfxClipEdit=null;this.report._styk.vfxClips=edit.before;this._invalidate({timing:true});this._emit('preview',{vfxClips:true});return true;},
+ getVfxClips(target){return vfxClips(this.report).filter(c=>!target||sameVfxTarget(c.target,target));},
+ sampleVfxClip(id,tick=this.tick){return sampleVfxClip(find(this,id),tick);},
+ addVfxClip(target,type,options={}){target=normalizeAnimationTarget(target);const clip=createVfxClip(target,type,id(),id(),options);checkScope(this,clip);publish(this,[...vfxClips(this.report),clip],'Add effect clip');return clip.id;},
+ addVfxGroup(target,preset,options={}){const p=VFX_PRESETS[preset];if(!p)throw new Error('Choose an effect preset.');const clip=createVfxClip(normalizeAnimationTarget(target),p.effects[0][0],id(),id(),options);checkScope(this,clip);clip.name=preset;clip.effects=p.effects.map(([type,params])=>{const effect=createVfx(type,id());return {...effect,params:{...effect.params,...params}};});publish(this,[...vfxClips(this.report),clip],'Add effect group');return clip.id;},
+ setVfxClip(id,patch){const c=find(this,id);if(Object.keys(patch).some(k=>!['name','start','duration','offset','enabled','strength','fadeIn','fadeOut','includeAttached','effects','keys'].includes(k)))throw new Error('Unsupported effect clip property.');
+  if(patch.includeAttached){const conflict=connectedVfxConflict(this.evaluatedFrame,c.target.uid);if(conflict)throw new Error(conflict);}
+  const next={...c,...patch};if(Object.keys(patch).every(key=>Object.is(c[key],next[key])))return false;
+  return publish(this,vfxClips(this.report).map(item=>item===c?next:item),'Edit effect clip');},
+ trimVfxClipStart(id,start){const c=find(this,id);if(c.duration===null)return false;
+  start=Math.max(0,Math.min(c.start+c.duration-1,Math.round(start)));const delta=start-c.start,offset=c.offset+delta;
+  // Rebase only on commit when revealing time before the source origin. Keys
+  // keep their document frames; pointer previews never copy channel arrays.
+  const keys=offset<0?Object.fromEntries(Object.entries(c.keys).map(([property,channel])=>[property,channel.map(k=>({...k,tick:k.tick-offset}))])):c.keys;
+  return this.setVfxClip(id,{start,duration:c.duration-delta,offset:Math.max(0,offset),keys});},
+ deleteVfxClip(id){find(this,id);return publish(this,vfxClips(this.report).filter(c=>c.id!==id),'Delete effect clip');},
+ moveVfxClipOrder(id,delta){if(![-1,1].includes(delta))throw new Error('Choose an effect order.');const clips=[...vfxClips(this.report)],i=clips.findIndex(c=>c.id===id);if(i<0)return false;let j=i+delta;while(j>=0&&j<clips.length&&!sameVfxTarget(clips[i].target,clips[j].target))j+=delta;if(j<0||j>=clips.length)return false;[clips[i],clips[j]]=[clips[j],clips[i]];return publish(this,clips,'Reorder effects');},
+ copyVfxClip(id){const c=find(this,id);this._vfxClipClipboard=structuredClone(c);this._vfxClipClipboardValues=structuredClone(sampleVfxClip(c,this.tick));return true;},
+ pasteVfxClip(target,{animation=true,start=Math.floor(this.tick)}={}){const source=this._vfxClipClipboard;if(!source)throw new Error('Copy an effect clip first.');const map=new Map(source.effects.map(e=>[e.id,id()])),clip={...structuredClone(source),id:id(),target:normalizeAnimationTarget(target),effects:(animation?source.effects:this._vfxClipClipboardValues??source.effects).map(e=>({...e,id:map.get(e.id)})),keys:{}};
+  if(animation)for(const [property,keys] of Object.entries(source.keys)){const d=vfxDescriptor(property);clip.keys[vfxProperty(d.effectType,map.get(d.id),d.param)]=structuredClone(keys);}
+  if(clip.duration!==null)clip.start=start;publish(this,[...vfxClips(this.report),clip],animation?'Paste effect animation':'Paste effect values');return clip.id;},
+ duplicateVfxClip(id){this.copyVfxClip(id);const c=find(this,id);return this.pasteVfxClip(c.target,{start:c.duration===null?0:c.start+c.duration});},
+ addVfxGroupEffect(id,type){const c=find(this,id),effect=createVfx(type,crypto.randomUUID());this.setVfxClip(id,{effects:[...c.effects,effect]});return effect.id;},
+ reorderVfxGroupEffect(id,effectId,index){const c=find(this,id),from=c.effects.findIndex(e=>e.id===effectId);if(from<0||!Number.isInteger(index)||index<0||index>=c.effects.length)throw new Error('Choose an effect order.');if(from===index)return false;const effects=[...c.effects];effects.splice(index,0,effects.splice(from,1)[0]);return this.setVfxClip(id,{effects});},
+ setVfxClipParameter(id,effectId,param,value,options){return this.setVfxClipParameters(id,effectId,{[param]:value},options);},
+ // Spatial handles can edit several values. Validate and publish one record,
+ // retaining untouched channel arrays and each existing key's easing.
+ setVfxClipParameters(id,effectId,values,{key=false,tick=this.tick}={}){const c=find(this,id),effect=c.effects.find(e=>e.id===effectId);if(!effect)throw new Error('Select an effect.');let updated=effect,table=c.keys;
+  for(const [param,value] of Object.entries(values)){const property=vfxProperty(effect.type,effectId,param);validateVfxValue(property,value);
+   if(key||c.keys[property]?.length){const time=Math.floor(clipTime(c,tick)),channel=c.keys[property]??[],index=channel.findIndex(k=>k.tick===time),old=channel[index];if(old&&Object.is(old.value,value))continue;
+    const keys=[...channel],next={...old,tick:time,value,interpolation:old?.interpolation??(vfxDescriptor(property).discrete?'constant':'linear')};if(index<0)keys.push(next);else keys[index]=next;keys.sort((a,b)=>a.tick-b.tick);table={...table,[property]:keys};
+   }else if(param==='enabled'){if(updated.enabled!==Boolean(value))updated={...updated,enabled:Boolean(value)};}
+   else if(!Object.is(updated.params[param],value))updated={...updated,params:{...updated.params,[param]:value}};
+  }
+  if(updated===effect&&table===c.keys)return false;
+  return this.setVfxClip(id,{effects:updated===effect?c.effects:c.effects.map(e=>e===effect?updated:e),keys:table});},
+ toggleVfxClipKey(id,property,tick=this.tick){const c=find(this,id),time=Math.floor(clipTime(c,tick)),keys=c.keys[property]??[],existing=keys.find(k=>k.tick===time);if(existing){const next={...c.keys,[property]:keys.filter(k=>k!==existing)};if(!next[property].length)delete next[property];return this.setVfxClip(id,{keys:next});}const d=vfxDescriptor(property),effect=sampleVfxClip(c,tick).find(e=>e.id===d.id);return this.setVfxClipParameter(id,d.id,d.param,d.param==='enabled'?+effect.enabled:effect.params[d.param],{key:true,tick});},
+ moveVfxClipKey(id,property,from,to){const c=find(this,id),keys=c.keys[property]??[],time=Math.max(0,Math.round(to));if(keys.some(k=>k.tick===time&&k.tick!==from))throw new Error('An effect key already exists here.');return this.setVfxClip(id,{keys:{...c.keys,[property]:keys.map(k=>k.tick===from?{...k,tick:time}:k).sort((a,b)=>a.tick-b.tick)}});},
+ // A diamond edits its visible parameters at this source frame. Check every
+ // selected destination before publishing, so collisions cannot split an edit.
+ moveVfxClipKeys(id,from,to,{properties=null}={}){
+  const c=find(this,id),time=Math.max(0,Math.round(to));if(time===from)return false;
+  const keys={...c.keys};let changed=false;
+  for(const [property,channel] of Object.entries(c.keys)){
+   if(properties&&!properties.includes(property))continue;
+   if(!channel.some(k=>k.tick===from))continue;
+   if(channel.some(k=>k.tick===time))throw new Error('An effect key already exists here.');
+   keys[property]=channel.map(k=>k.tick===from?{...k,tick:time}:k).sort((a,b)=>a.tick-b.tick);changed=true;
+  }
+  return changed&&this.setVfxClip(id,{keys});
+ },
+ deleteVfxClipKeys(id,tick,{properties=null}={}){const c=find(this,id),keys={...c.keys};let changed=false;for(const [property,channel] of Object.entries(c.keys)){if(properties&&!properties.includes(property)||!channel.some(k=>k.tick===tick))continue;const next=channel.filter(k=>k.tick!==tick);if(next.length)keys[property]=next;else delete keys[property];changed=true;}return changed&&this.setVfxClip(id,{keys});},
+ setVfxClipEasing(id,property,tick,interpolation){const c=find(this,id);return this.setVfxClip(id,{keys:{...c.keys,[property]:(c.keys[property]??[]).map(k=>k.tick===tick?{tick:k.tick,value:k.value,interpolation}:k)}});},
+};

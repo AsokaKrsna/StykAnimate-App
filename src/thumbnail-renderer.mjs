@@ -1,5 +1,7 @@
+import {drawingBarrier} from './drawing-resources.mjs';
 import {layerAppearance,thumbnailVisualChange} from './thumbnail-validity.mjs';
 import { documentChunks } from "./document-transport.mjs";
+import {playbackProperties, retainedSourceChanges} from './playback-patch.mjs';
 
 const abortError = () =>
   new DOMException("Thumbnail superseded.", "AbortError");
@@ -21,12 +23,16 @@ export class ThumbnailRenderer {
     this.options = { baseURL, token, storedFrames };
     this.onError = onError;
     this.layerAppearance=layerAppearance(editor.report._styk?.layers);
+    this.draftSnapshot = editor.report._styk?.simpleFrameDraft;
     this.version = 1;
     this.sequence = 0;
     this.loadedVersion = 0;
     this.fullSnapshot = true;
     this.changedFrames = new Set();
     this.definitionsChanged = false;
+    this.mirrorSources = new Map();
+    this.changedSources = new Set();
+    this.mirrorTables = null;
     this.pending = new Map();
     this.chain = Promise.resolve();
     this.queued = 0;
@@ -46,6 +52,10 @@ export class ThumbnailRenderer {
       mediaBytes: 0,
       pending: 0,
       cancelled: 0,
+      snapshotBytes: 0,
+      lastSnapshotBytes: 0,
+      sourceUpserts: 0,
+      sourceDeletes: 0,
     };
     this.events = new AbortController();
     editor.addEventListener(
@@ -65,6 +75,7 @@ export class ThumbnailRenderer {
       { type: "module", name: "StykAnimate frame thumbnails" },
     ));
     worker.addEventListener("message", (event) => {
+      if (this.worker !== worker) { event.data.bitmap?.close(); return; }
       const message = event.data,
         request = this.pending.get(message.id);
       if (!request) {
@@ -82,6 +93,7 @@ export class ThumbnailRenderer {
       this._scheduleIdle();
     });
     const fail = (error) => {
+      if (this.worker !== worker) return;
       for (const request of this.pending.values()) {
         clearTimeout(request.timer);
         request.reject(error);
@@ -92,6 +104,7 @@ export class ThumbnailRenderer {
       this.snapshot = null;
       this.fullSnapshot = true;
       this.loadedVersion = 0;
+      this._clearMirror();
       this.onError(error);
     };
     worker.addEventListener("error", (event) => {
@@ -120,19 +133,29 @@ export class ThumbnailRenderer {
       detail.kind === "document" ||
       (detail.kind === "history" && !detail.animation && !detail.frameIndices) ||
       (detail.structural && !detail.layerSheet)
-    )
+    ) {
       this.fullSnapshot = true;
+      this._clearMirror();
+    }
     for (const index of detail.frameIndices || detail.changedFrames || [
       detail.frameIndex ?? this.editor.frameIndex,
     ])
       this.changedFrames.add(index);
     if (detail.definition) this.definitionsChanged = true;
+    for (const id of detail.sourceIds || []) this.changedSources.add(id);
+    // Definition commands can also repair source poses in place.
+    if (detail.definition) for (const id of Object.keys(this.editor.report._styk?.frameSources || {})) this.changedSources.add(id);
     this.currentAbort?.abort();
   }
   setPaused(paused) {
     if(this.paused===Boolean(paused))return;
     this.paused = Boolean(paused);
     if (this.paused) this.currentAbort?.abort();
+  }
+  _clearMirror() {
+    this.mirrorSources.clear();
+    this.changedSources.clear();
+    this.mirrorTables = null;
   }
   _scheduleIdle() {
     clearTimeout(this.idleTimer); this.idleTimer = null;
@@ -148,6 +171,7 @@ export class ThumbnailRenderer {
       this.snapshot = null;
       this.fullSnapshot = true;
       this.loadedVersion = 0;
+      this._clearMirror();
       worker.terminate();
     }, this.idleMs);
     this.idleTimer.unref?.();
@@ -186,6 +210,7 @@ export class ThumbnailRenderer {
         this.fullSnapshot = true;
         this.loadedVersion = 0;
         this.snapshot = null;
+        this._clearMirror();
         reject(new Error("Frame preview timed out."));
       }, 60000);
       this.pending.set(id, {
@@ -205,6 +230,7 @@ export class ThumbnailRenderer {
     });
   }
   async _snapshot(version, signal) {
+    await drawingBarrier(this.editor.report,{signal});if(version!==this.version||signal.aborted)throw abortError();
     if (this.loadedVersion === version) return;
     // A scroll or canvas gesture cancels the bitmap request, not acknowledged
     // snapshot progress. Resume the same bounded transfer when the user rests.
@@ -213,16 +239,26 @@ export class ThumbnailRenderer {
     if(!snapshot||snapshot.version!==version){
       const report = this.editor.report;
       const { _stykSource, keyframes, figure_types, ...properties } = report;
-      const full = this.fullSnapshot || !this.loadedVersion;
+      const full = this.fullSnapshot || !this.loadedVersion || this.mirrorTables?.frames !== keyframes.length;
       const frames = [...this.changedFrames]
         .filter((index) => keyframes[index])
         .map((index) => ({ index, frame: keyframes[index] }));
+      const sources = retainedSourceChanges(report, this.mirrorSources, this.changedSources);
+      // Retain uncertainty until the complete transaction is acknowledged. A
+      // cancelled request can already have committed on the worker.
+      for (const {id} of sources) this.changedSources.add(id);
+      const tables = {frames:keyframes.length, figures:figure_types};
+      const sourceSnapshot = full ? new Map(Object.entries(report._styk?.frameSources || {})) : null;
       const payload = full
         ? { ...properties, figure_types, keyframes }
         : {
-            properties,
+            properties: playbackProperties(report),
             frames,
-            ...(this.definitionsChanged ? { figure_types } : {}),
+            sources,
+            hasFrameSources: report._styk?.frameSources !== undefined,
+            ...(this.definitionsChanged || this.mirrorTables?.figures !== figure_types ? { figure_types } : {}),
+            // Background records have legacy in-place edits without source IDs.
+            ...(report.backgrounds ? {backgrounds:report.backgrounds} : {}),
           };
       const iterator = documentChunks(payload, {
         maxBytes: 64 * 1024,
@@ -230,7 +266,7 @@ export class ThumbnailRenderer {
         timeBudgetMs: 2,
         sharedFigures: true,
       });
-      snapshot=this.snapshot={version,iterator,full};
+      snapshot=this.snapshot={version,iterator,full,sources,sourceSnapshot,tables,bytes:0};
     }
     const {iterator,full}=snapshot;
     try {
@@ -257,8 +293,11 @@ export class ThumbnailRenderer {
           next.value.estimatedBytes || 0,
         );
         this.stats.chunks++;
+        snapshot.bytes += next.value.estimatedBytes || 0;
+        this.stats.snapshotBytes += next.value.estimatedBytes || 0;
         await task;
       }
+      if (version !== this.version || signal.aborted) throw abortError();
       await this._request(
         "snapshot-complete",
         { revision: version, options: this.options },
@@ -266,6 +305,15 @@ export class ThumbnailRenderer {
       );
       if (version !== this.version) throw abortError();
       this.loadedVersion = version;
+      if (full) this.mirrorSources = snapshot.sourceSnapshot;
+      else for (const {id,frame} of snapshot.sources) {
+        if (frame === null) this.mirrorSources.delete(id); else this.mirrorSources.set(id,frame);
+      }
+      this.mirrorTables = snapshot.tables;
+      this.changedSources.clear();
+      this.stats.lastSnapshotBytes = snapshot.bytes;
+      this.stats.sourceUpserts = full ? this.mirrorSources.size : snapshot.sources.filter(entry=>entry.frame!==null).length;
+      this.stats.sourceDeletes = full ? 0 : snapshot.sources.filter(entry=>entry.frame===null).length;
       if(this.snapshot===snapshot)this.snapshot=null;
       this.fullSnapshot = false;
       this.changedFrames.clear();
@@ -359,5 +407,6 @@ export class ThumbnailRenderer {
     this.pending.clear();
     this.worker?.terminate();
     this.worker = null;
+    this._clearMirror();
   }
 }

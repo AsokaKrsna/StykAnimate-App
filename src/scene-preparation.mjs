@@ -1,6 +1,21 @@
 import {sceneBackgroundColor} from './pivot/background.mjs';
 import {PreviewImages} from './preview-images.mjs';
 
+const imageItems = new WeakMap();
+/** Drawing lists are immutable geometry resources, including nested clip
+ * primitives. Reuse their image subset without flattening the whole scene on
+ * every pointer frame just to discard its lines and polygons. */
+export function frameImageDrawables(geometry) {
+  const images = [];
+  for (const group of geometry?.orderedObjects || []) {
+    const items = group.drawables;
+    let cached = imageItems.get(items);
+    if (!cached) {cached = items.filter(item => item.type === 'image' && item.asset); imageItems.set(items, cached);}
+    for (const item of cached) images.push(item);
+  }
+  return images;
+}
+
 export function backgroundImageAssets(report, frame) {
   if (frame && sceneBackgroundColor(report, frame) !== undefined) return [];
   const ids = frame ? new Set([Number(frame.background_id || 0), ...(frame.background_mix ? [Number(frame.background_id_b || 0)] : [])]) : null;
@@ -8,11 +23,7 @@ export function backgroundImageAssets(report, frame) {
 }
 
 export function frameImageAssets(geometry) {
-  const assets = new Set();
-  for (const group of geometry.orderedObjects || []) for (const item of group.drawables) {
-    if (item.type === 'image' && item.asset) assets.add(item.asset);
-  }
-  return [...assets];
+  return [...new Set(frameImageDrawables(geometry).map(item => item.asset))];
 }
 
 /** A private image set. Incoming loads cannot clear or invalidate the live scene. */

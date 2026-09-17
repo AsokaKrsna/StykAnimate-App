@@ -4,6 +4,8 @@ The desktop collector, Cloudflare service and private dashboard use one versione
 
 ## Architecture
 
+Foreground playback retains the legacy interval-overrun counter for historical continuity. It can count normal 24 FPS / 60 Hz cadence mismatch. The separate `playback_lateness` metric measures render submission after the scheduled frame deadline, subtracting one observed display callback interval; its missed count uses an additional 10% of the project frame interval as tolerance. A fixed 32-sample callback buffer is observed from the existing loop only with diagnostics consent, excludes pauses, and resets on playback start/background. This is scheduling evidence, not monitor presentation time; initial callbacks without a cadence estimate are excluded. Known recoverable command preconditions use `UserActionError`, remain visible to users, and do not generate failure incidents. A propagated error object generates one incident.
+
 ```mermaid
 flowchart LR
   Editor[Editor actions and sampled performance] --> Consent[Consent-gated in-memory accumulator]

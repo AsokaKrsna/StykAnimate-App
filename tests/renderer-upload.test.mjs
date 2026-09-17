@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {uploadShapeLayout, SHAPE_UPLOAD_RECORDS} from '../src/renderer-upload.mjs';
+import {uploadShapeLayoutSteps, SHAPE_UPLOAD_RECORDS} from '../src/renderer-upload.mjs';
 import {SHAPE, SHAPE_FLOATS, SHAPE_BYTES} from '../src/renderer-geometry.mjs';
 
 function verify(capacities, stagingRecords) {
@@ -23,7 +23,15 @@ function verify(capacities, stagingRecords) {
   // Nonzero view offset and stale data verify padding is explicitly initialized.
   const backing = new Float32Array(stagingRecords * SHAPE_FLOATS + 8).fill(999);
   const staging = backing.subarray(4, backing.length - 4);
-  const stats = uploadShapeLayout(queue, actual, entries, staging);
+  const steps = uploadShapeLayoutSteps(queue, actual, entries, staging);
+  let step = steps.next(), previousBytes = 0;
+  while (!step.done) {
+    assert.ok(step.value.bytes > previousBytes, 'each yield follows an uploaded batch');
+    assert.equal(step.value.calls, uploads.length);
+    previousBytes = step.value.bytes;
+    step = steps.next();
+  }
+  const stats = step.value;
   assert.deepEqual(actual, expected);
   assert.equal(stats.bytes, expected.byteLength);
   assert.equal(stats.calls, Math.ceil(offset / stagingRecords));
@@ -42,7 +50,7 @@ test('large layouts have bounded staging and submission count independent of obj
   assert.ok(SHAPE_UPLOAD_RECORDS * SHAPE_BYTES < 1024 * 1024);
 });
 test('empty layouts upload nothing and invalid noncontiguous layouts are rejected', () => {
-  assert.deepEqual(uploadShapeLayout({}, {}, [], new Float32Array(SHAPE_FLOATS)), {bytes: 0, calls: 0});
-  assert.throws(() => uploadShapeLayout({}, {}, [], new Float32Array(0)), /at least one record/);
-  assert.throws(() => uploadShapeLayout({}, {}, [{offset: 1, count: 0, capacity: 1, data: new Float32Array(0)}], new Float32Array(SHAPE_FLOATS)), /contiguous/);
+  assert.deepEqual(uploadShapeLayoutSteps({}, {}, [], new Float32Array(SHAPE_FLOATS)).next().value, {bytes: 0, calls: 0});
+  assert.throws(() => uploadShapeLayoutSteps({}, {}, [], new Float32Array(0)).next(), /at least one record/);
+  assert.throws(() => uploadShapeLayoutSteps({}, {}, [{offset: 1, count: 0, capacity: 1, data: new Float32Array(0)}], new Float32Array(SHAPE_FLOATS)).next(), /contiguous/);
 });

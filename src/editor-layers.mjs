@@ -108,13 +108,13 @@ export const editorLayerMethods = {
     for (const change of changes) write(state, change.path, change[direction]);
     this._layerChanged({reindex: true});
   },
-  createLayer(name, {index, activate = true} = {}) {
+  createLayer(name, {index, activate = true, drawing = false} = {}) {
     const state = ensureLayerState(this.report), id = `layer-${state.nextId}`;
     if (state.order.length >= 10000) throw new Error('A project supports at most 10,000 user layers.');
     const insertion = index ?? state.order.length;
     if (!Number.isInteger(insertion) || insertion < 0 || insertion > state.order.length) throw new Error('Invalid layer position.');
     const title = cleanName(name ?? `Layer ${state.nextId}`), order = state.order.slice(); order.splice(insertion, 0, id);
-    this._layerEdit('Create layer', [[['byId', id], {name: title, visible: true, locked: false}], [['order'], order], [['nextId'], state.nextId + 1]],
+    this._layerEdit('Create layer', [[['byId', id], {name: title, visible: true, locked: false, ...(drawing ? {drawing:{version:1}} : {})}], [['order'], order], [['nextId'], state.nextId + 1]],
       {structural: true, reindex: true, activeId: activate ? id : undefined}); return this.getLayer(id);
   },
   renameLayer(id, name) {

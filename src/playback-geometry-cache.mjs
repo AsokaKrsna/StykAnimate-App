@@ -1,3 +1,4 @@
+import {vfxRenderFrame} from './vfx-clips.mjs';
 import {buildGeometry, buildGeometryAsync} from './pivot/geometry.mjs';
 
 const wireOnly=new Set(['record_offset','record_end','object_slot','join']);
@@ -54,14 +55,17 @@ export class RetainedGeometryCache {
   }
   retainRevision(revision){this.revision=revision;}
   adopt(report,frame,revision,geometry){
+    frame=vfxRenderFrame(report,frame);
     if(this.report!==report||this.revision!==revision||this.version!==report.version)this.clear();
     Object.assign(this,{report,frame,revision,geometry,version:report.version,reusedObjects:0});
   }
   get(report,frame,revision){
+    frame=vfxRenderFrame(report,frame);
     const incremental=this.plan(report,frame,revision);
     return this.publish(report,frame,revision,buildGeometry(report,frame,incremental),incremental);
   }
   async getAsync(report,frame,revision,options={}){
+    frame=vfxRenderFrame(report,frame);
     const baseline=this.geometry, baselineRevision=this.revision, baselineReport=this.report;
     const incremental=this.plan(report,frame,revision);
     const geometry=await buildGeometryAsync(report,frame,incremental,options);
@@ -99,7 +103,10 @@ export class RetainedGeometryCache {
     }
     // Let the native builder report invalid/cyclic attachments exactly as before.
     if(ready.length!==seen.size)return null;
-    return {previous:{...this.geometry,objects},dirtySlots};
+    // The native builder needs the object map and invalidation token only.
+    // Spreading the scene invokes its lazy drawables getter, flattening every
+    // primitive even though retained playback consumes ordered object groups.
+    return {previous:{objects,token:this.geometry.token},dirtySlots};
   }
   publish(report,frame,revision,geometry,incremental){
     if(!incremental){this.alternates.clear();this.alternateDrawables=0;}

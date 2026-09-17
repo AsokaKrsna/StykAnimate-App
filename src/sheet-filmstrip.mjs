@@ -308,6 +308,12 @@ export class SheetFilmstrip {
       }
     });
   }
+  extendKeyframe() {
+    const ranges = this.ranges().sort((a, b) => b.start - a.start);
+    return this._run(() => this.editor.movieclipBatch('Extend keyframe', () => {
+      for (const {end} of ranges) this.editor.sheetInsertFrames(this.ids, end, 1);
+    }));
+  }
   keydown(event) {
     if (event.target.matches('input,select,textarea')) { event.stopPropagation(); return; }
     if (this.ownsHotkeys && this.hotkeys.keydown(event, ['simple'])) event.stopPropagation();

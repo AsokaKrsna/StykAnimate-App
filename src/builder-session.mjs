@@ -25,6 +25,7 @@
 import {isMovieclip} from './movieclips.mjs';
 import {frameOrder, setOrder, normalizeFrame} from './pivot/structure.mjs';
 import {validateScene} from './pivot/model.mjs';
+import {nativeFigureDocument} from './native-figure.mjs';
 
 const clone = value => structuredClone(value);
 
@@ -127,15 +128,21 @@ export class BuilderSession {
     return null;
   }
   _resolveImportNew() {
-    const editor = this.editor, edited = this.figure && clone(this.figure);
-    if (!edited?.segments?.length) throw new Error('The edited figure no longer exists.');
+    const editor = this.editor;
+    if (!this.figure?.segments?.length) throw new Error('The edited figure no longer exists.');
+    // The definition alone is not the displayed figure: native poses, paint
+    // overrides and rig controls belong to its instance. Capture both before
+    // undo restores the original, using the same portable format as the library.
+    const edited = clone(nativeFigureDocument(editor.report, {
+      figureUid: this.preferredUid, tick: editor.tick, sourceFrame: editor.selectionFrame,
+    }));
     this.undoSession();
     const source = editor.selectionFrame.objects.find(object => object.unique_id === this.uid)
       ?? editor.selectionFrame.objects.find(object => object.figure_type_id === this.typeId);
     const position = source
       ? {x: source.root_x + 24, y: source.root_y + 24}
       : {x: editor.report.canvas_width / 2, y: editor.report.canvas_height / 2};
-    return editor.importFigure({figure_types: [edited]}, {position});
+    return editor.importFigure(edited, {position});
   }
   /** Covers the rare case where session commands were evicted before discard:
    * restores the bound definition (edit) or removes the created figure

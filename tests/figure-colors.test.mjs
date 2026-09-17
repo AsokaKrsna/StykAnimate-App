@@ -19,6 +19,41 @@ function fixture({version=5,raw=0,layerTimeline=true,propertyChannels=true}={}){
 const palette=e=>e.figurePalette().map(p=>[p.color,p.segments.length]);
 const colors=e=>buildGeometry(e.report,e.evaluatedFrame).objects.get(e.selectedSlot).segments.map(s=>s.rgb);
 
+for(const settings of [{layerTimeline:true},{layerTimeline:false,propertyChannels:false},{layerTimeline:false,propertyChannels:true}])test(`attached palette preserves instance membership and undo: ${JSON.stringify(settings)}`,()=>{
+  const report=fixture().serialize(), child=structuredClone(report.figure_types[0]);
+  child.figure_type_id=2;child.segments.forEach(s=>s.color_rgb=[10,20,30]);
+  child.segments[0].secondary={rgb:[200,40,50],a:77};
+  child.polyfills=[{polyfill_id:7,segment_ids:[0,1,2],color_rgb:[200,40,50],alpha_raw:33,z_order:1}];
+  report.figure_types.push(child);
+  report.keyframes=report.keyframes.map(()=>createFrame([
+    createObject(report.figure_types[0],1,100,200),
+    createObject(child,2,140,200,{join:{target_object_slot:0,target_handle_id:1}}),
+    createObject(child,3,180,200,{join:{target_object_slot:1,target_handle_id:1}}),
+    createObject(child,4,300,200),
+  ],10));
+  delete report._styk;
+  const e=new Editor({demo:false,...settings}).load(report);e.select(1);
+  assert.deepEqual(palette(e),[['#0a141e',9],['#c82832',5]]);
+  const entry=e.figurePalette().find(row=>row.color==='#c82832');
+  assert.equal(entry.polygons.length,2);
+  const unrelated=structuredClone(e.selectionFrame.objects[3]);
+  e.replaceFigureColor(entry.color,'#0a141e',{targets:entry});
+  assert.deepEqual(palette(e),[['#0a141e',12]]);assert.equal(e._undo.length,1);
+  e.replaceFigureColor(entry.color,'#778899',{targets:entry});
+  assert.deepEqual(palette(e),[['#0a141e',9],['#778899',5]]);
+  assert.deepEqual(e.selectionFrame.objects[3],unrelated);
+  const resolved=resolveInstanceFigure(child,e.selectionFrame.objects[1]);
+  assert.deepEqual(resolved.polyfills[0].color_rgb,[119,136,153]);
+  assert.deepEqual(resolved.segments[0].color_rgb,[10,20,30]);
+  assert.deepEqual(resolved.segments[0].secondary.rgb,[119,136,153]);
+  const reopened=new Editor({demo:false,...settings}).load(JSON.parse(JSON.stringify(e.serialize())));reopened.select(1);
+  assert.deepEqual(palette(reopened),palette(e));
+  e.undo();e.undo();assert.deepEqual(palette(e),[['#0a141e',9],['#c82832',5]]);
+  e.redo();assert.deepEqual(palette(e),[['#0a141e',12]]);
+  e.select(2);assert.deepEqual(palette(e),[['#0a141e',8]]);
+  e.select(1,0);assert.deepEqual(palette(e),[['#0a141e',4]]);
+});
+
 for(const version of [2,3,4,5])test(`Pivot ${version}: whole figure, node, whole figure, palette, undo and reopen`,()=>{
   const e=fixture({version,raw:version<5?196:0}),definitions=structuredClone(e.report.figure_types);
   const other=structuredClone(e.evaluatedFrame.objects[1]);

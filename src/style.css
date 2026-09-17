@@ -1,3 +1,4 @@
+@import url('./drawing.css');
 :root {
   font-family: Inter, "Segoe UI Variable Text", "Segoe UI", sans-serif;
   font-size: 12px;
@@ -541,7 +542,8 @@ input[type="checkbox"] {
 }
 #artboard {
   position: absolute;
-  background: #fff;
+  /* Display-only backing: scene alpha reveals the grid without changing exports. */
+  background: repeating-conic-gradient(#ddd 0% 25%, #fff 0% 50%) 0 0 / 16px 16px;
   box-shadow:
     0 0 0 1px var(--theme-shadow, #00000005),
     0 2px 5px var(--theme-shadow, #0000000a);
@@ -2069,3 +2071,5 @@ dialog.styk-settings .styk-settings-row select[data-setting="locale"] {
 .paint-magnifier-label{height:28px;display:flex;gap:7px;align-items:center;justify-content:center}
 .paint-magnifier-label span{width:12px;height:12px;border:1px solid #fff8;border-radius:3px}
 .paint-magnifier-label code{font:11px/1.2 Consolas,monospace;letter-spacing:.3px}
+.paint-picker [data-eyedropper]{display:inline-flex;align-items:center;gap:6px;margin-left:auto;border:1px solid var(--theme-border, #ddd);font:inherit}
+.paint-picker [data-eyedropper][aria-pressed=true]{background:var(--theme-accent, #0d99ff);color:#fff;border-color:transparent}

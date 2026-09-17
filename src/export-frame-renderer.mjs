@@ -1,4 +1,5 @@
 import { documentChunks } from "./document-transport.mjs";
+import {drawingBarrier} from './drawing-resources.mjs';
 import { exportMemoryPlan } from "./export-memory.mjs";
 import {exportContext, checkExportContext} from './export-canvas.mjs';
 
@@ -143,6 +144,7 @@ export class ExportFrameRenderer {
   }
   async load(report) {
     this._check();
+    await drawingBarrier(report,{signal:this.signal});this._check();
     if (this.busy) throw new Error("Wait for the current export frame.");
     this.busy = true;
     this.loaded = false;

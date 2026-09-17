@@ -18,6 +18,8 @@ try{
   }gpu.destroy();return results;
  });
  console.log('Expanded rendering',JSON.stringify(parity));for(const row of parity){assert.equal(row.error,0,JSON.stringify(row));assert.ok(row.max<=3,JSON.stringify(row));}
+ // Rendering can be checked independently of the legacy pose-effect UI.
+ if(!process.argv.includes('--render-only')){
  await page.getByRole('tab',{name:'VFX',exact:true}).click();await page.selectOption('#vfx-scope','figure');
  const add=async type=>{await page.locator('[data-vfx-action="add"]').click();await page.locator('.vfx-catalog [data-choice="'+type+'"]').click();};
  await add('glow');await add('shadow');
@@ -41,5 +43,6 @@ try{
  const snapshot=await page.evaluate(()=>JSON.stringify(styk.editor.report));await page.locator('#vfx-preview').click();await page.waitForFunction(()=>!styk.vfxGizmos.handles.length);assert.equal(await page.locator('#vfx-preview').getAttribute('aria-pressed'),'false');assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.report)),snapshot);await page.locator('#vfx-preview').click();
  await page.getByRole('button',{name:'Effect presets',exact:true}).click();await page.locator('.vfx-catalog [data-choice="Ice"]').click();assert.ok(await cards.count()>2);
  await fs.mkdir('artifacts/vfx',{recursive:true});await page.screenshot({path:'artifacts/vfx/expanded-inspector.png'});await page.locator('[data-vfx-action="add"]').click();await page.screenshot({path:'artifacts/vfx/expanded-catalog.png'});await page.keyboard.press('Escape');await page.evaluate(()=>document.documentElement.dataset.theme='dark');await page.screenshot({path:'artifacts/vfx/expanded-dark.png'});
- assert.deepEqual(errors,[]);await fs.writeFile('artifacts/vfx/expanded-rendering.json',JSON.stringify(parity,null,2));console.log('Expanded VFX controls passed');
+ }
+ assert.deepEqual(errors,[]);await fs.mkdir('artifacts/vfx',{recursive:true});await fs.writeFile('artifacts/vfx/expanded-rendering.json',JSON.stringify(parity,null,2));console.log(process.argv.includes('--render-only')?'Expanded VFX rendering passed':'Expanded VFX controls passed');
 }finally{await browser.close();}

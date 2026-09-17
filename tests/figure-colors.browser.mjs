@@ -44,6 +44,31 @@ try{
   await choose('#figure-color','9933ee');assert.deepEqual(await palette(),[['#9933ee',info.segments]]);
   await page.evaluate(()=>styk.editor.undo());await settle();
   assert.deepEqual(await palette(),[['#778899',info.segments-1],['#eecc11',1]]);
-  assert.deepEqual(errors,[]);await writeFile('artifacts/figure-palette/browser-report.json',JSON.stringify({...info,palette:await palette(),errors},null,2));
+  await page.evaluate(async()=>{
+    const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs');
+    const report=emptyDocument(),root=report.figure_types[0],child=structuredClone(root);
+    root.segments.forEach(s=>s.color_rgb=[200,40,50]);
+    child.figure_type_id=2;child.segments.forEach(s=>s.color_rgb=[10,20,30]);
+    report.figure_types.push(child);
+    report.keyframes=[createFrame([
+      createObject(root,1,280,250),
+      createObject(child,2,350,250,{join:{target_object_slot:0,target_handle_id:1}}),
+      createObject(child,3,420,250,{join:{target_object_slot:1,target_handle_id:1}}),
+      createObject(child,4,650,250),
+    ])];
+    styk.editor.load(report);styk.editor.select(1);styk.actions['zoom-selection']();
+  });
+  await settle();
+  const disclosure=page.locator('details[data-section="Color palette"]');
+  if(await disclosure.getAttribute('open')===null)await disclosure.locator('summary').click();
+  assert.equal(await page.locator('[data-palette-color="#0a141e"]').count(),1);
+  await choose('[data-palette-color="#0a141e"]','44aacc');
+  const attached=await page.evaluate(()=>[0,1,2,3].map(slot=>styk.state.renderer.lastGeometry.objects.get(slot).segments[0].rgb));
+  assert.deepEqual(attached,[[200,40,50],[68,170,204],[68,170,204],[10,20,30]]);
+  await page.locator('.figure-palette').scrollIntoViewIfNeeded();
+  await page.screenshot({path:'artifacts/figure-palette/attached-palette.png'});
+  await page.evaluate(()=>styk.editor.undo());await settle();
+  assert.equal(await page.locator('[data-palette-color="#0a141e"]').count(),1);
+  assert.deepEqual(errors,[]);await writeFile('artifacts/figure-palette/browser-report.json',JSON.stringify({...info,palette:await palette(),attached,errors},null,2));
   console.log('PASS visible figure/node/palette edits, merge, repeated picker edits, undo, and rendered geometry',info);
 }finally{await browser.close();}

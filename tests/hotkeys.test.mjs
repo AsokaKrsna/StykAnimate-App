@@ -7,6 +7,24 @@ function key(code, props = {}) {
   return {code, key:code, preventDefault() {this.defaultPrevented = true;}, ...props};
 }
 
+test('Ctrl V pastes normally and Ctrl Shift V pastes in place', () => {
+  const manager = new HotkeyManager();
+  assert.equal(manager.resolve(key('KeyV', {ctrlKey: true}))?.id, 'paste');
+  assert.equal(manager.resolve(key('KeyV', {ctrlKey: true, shiftKey: true}))?.id, 'paste-in-place');
+  assert.deepEqual(normalizeHotkeys({})['paste-in-place'], ['Mod+Shift+KeyV']);
+});
+
+test('builder split supports extra Shift without treating a remapped binding Shift as scope', () => {
+  const calls = [], manager = new HotkeyManager({run: (id, event, modifiers) => calls.push([id, modifiers.shift])});
+  assert.equal(manager.resolve(key('KeyS')), null);
+  manager.keydown(key('KeyS'), ['builder']);
+  manager.keydown(key('KeyS', {shiftKey: true}), ['builder']);
+  manager.keydown(key('KeyB'), ['builder']);
+  manager.setBindings({'split-segment': ['Mod+Shift+KeyQ']});
+  manager.keydown(key('KeyQ', {ctrlKey: true, shiftKey: true}), ['builder']);
+  assert.deepEqual(calls, [['split-segment', false], ['split-segment', true], ['toggle-builder-branch', false], ['split-segment', false]]);
+});
+
 test('J joins and unjoins once; Shift J controls visibility and old defaults migrate', () => {
   const calls = [], manager = new HotkeyManager({run: id => calls.push(id)});
   assert.equal(manager.resolve(key('KeyJ'))?.id, 'join-figure');
@@ -61,13 +79,13 @@ test('exact modifier matching avoids destructive plain-key fallthrough', () => {
   const manager = new HotkeyManager();
   assert.equal(manager.resolve(key('KeyA', {ctrlKey:true}))?.id, 'select-all');
   assert.equal(manager.resolve(key('KeyA', {altKey:true})), null);
-  assert.equal(manager.resolve(key('KeyA', {shiftKey:true})), null);
+  assert.equal(manager.resolve(key('KeyA', {shiftKey:true}))?.id, 'extend-keyframe');
   assert.equal(manager.resolve(key('Delete', {ctrlKey:true})), null);
 });
 test('context precedence preserves canvas nudging, hovered locate and builder shortcuts', () => {
   const manager = new HotkeyManager();
   assert.equal(manager.resolve(key('ArrowRight'), ['canvas'])?.id, 'handle-right');
-  assert.equal(manager.resolve(key('ArrowRight'), ['timeline'])?.id, 'next-frame');
+  assert.equal(manager.resolve(key('Period'), ['timeline'])?.id, 'next-frame');
   assert.equal(manager.resolve(key('KeyL'), ['hover','canvas'])?.id, 'locate-previous');
   assert.equal(manager.resolve(key('KeyL'))?.id, 'tool-line');
   assert.equal(manager.resolve(key('F10'), ['canvas','builder'])?.id, 'builder-static-handles');
@@ -75,7 +93,7 @@ test('context precedence preserves canvas nudging, hovered locate and builder sh
 });
 test('conflicts account for aliases and Shift selection variants within a scope', () => {
   assert.deepEqual(findHotkeyConflicts(DEFAULT_HOTKEYS, 'save', 'Ctrl+KeyZ', false).map(c=>c.id), ['undo']);
-  assert.deepEqual(findHotkeyConflicts(DEFAULT_HOTKEYS, 'save', 'Shift+ArrowRight').map(c=>c.id), ['next-frame']);
+  assert.deepEqual(findHotkeyConflicts(DEFAULT_HOTKEYS, 'save', 'Shift+Period').map(c=>c.id), ['next-keyframe']);
   assert.deepEqual(findHotkeyConflicts(DEFAULT_HOTKEYS, 'tool-select', 'KeyA').map(c=>c.id), ['add-frame']);
   assert.deepEqual(findHotkeyConflicts(DEFAULT_HOTKEYS, 'handle-right', 'ArrowRight'), []);
 });
@@ -87,7 +105,7 @@ test('conflicting persisted assignments recover deterministically with custom bi
 test('non-repeat commands execute once, navigation repeats, blocked commands are consumed', () => {
   const calls = [], manager = new HotkeyManager({run:id=>calls.push(id)});
   manager.keydown(key('KeyA')); manager.keydown(key('KeyA', {repeat:true}));
-  manager.keydown(key('ArrowRight')); manager.keydown(key('ArrowRight', {repeat:true}));
+  manager.keydown(key('Period')); manager.keydown(key('Period', {repeat:true}));
   const blocked = key('Delete'); manager.keydown(blocked, [], () => false);
   assert.equal(blocked.defaultPrevented, true);
   assert.deepEqual(calls, ['add-frame','next-frame','next-frame']);
@@ -129,11 +147,11 @@ test('hints show alternatives and cleared shortcuts without reverting to default
   assert.equal(isHotkeyInput(null),false);
 });
 test('Shift inside a custom binding does not accidentally extend or align the action', () => {
-  const gestures=[],manager=new HotkeyManager({bindings:{'next-frame':['Mod+Shift+KeyB'],'handle-right':['KeyQ']},run:(id,event,modifiers)=>gestures.push([id,modifiers.shift])});
-  manager.keydown(key('KeyB',{ctrlKey:true,shiftKey:true}));
+  const gestures=[],manager=new HotkeyManager({bindings:{'timeline-layer-down':['Mod+Shift+KeyB'],'handle-right':['KeyQ']},run:(id,event,modifiers)=>gestures.push([id,modifiers.shift])});
+  manager.keydown(key('KeyB',{ctrlKey:true,shiftKey:true}), ['timeline']);
   manager.keydown(key('KeyQ'),['canvas']);
   manager.keydown(key('KeyQ',{shiftKey:true,repeat:true}),['canvas']);
-  assert.deepEqual(gestures,[['next-frame',false],['handle-right',false],['handle-right',true]]);
+  assert.deepEqual(gestures,[['timeline-layer-down',false],['handle-right',false],['handle-right',true]]);
 });
 
 test('retired frame commands migrate without losing custom or disabled bindings', () => {
@@ -142,4 +160,22 @@ test('retired frame commands migrate without losing custom or disabled bindings'
   assert.deepEqual(normalizeHotkeys({'add-frame':['F7'],'duplicate-frame-after':['KeyB']})['add-frame'], ['F7']);
   assert.deepEqual(normalizeHotkeys({'add-frame':[],'duplicate-frame-after':['KeyB']})['add-frame'], []);
   for (const id of ['blank-frame','insert-frames','duplicate-frame-after']) assert.equal(id in DEFAULT_HOTKEYS, false);
+});
+
+
+test('frame and keyframe punctuation defaults work in every editing scope', () => {
+  const manager = new HotkeyManager();
+  for (const scopes of [[], ['timeline'], ['simple'], ['canvas'], ['builder']]) {
+    for (const [code, direction] of [['Comma', 'previous'], ['Period', 'next']]) {
+      assert.equal(manager.resolve(key(code), scopes)?.id, `${direction}-frame`);
+      assert.equal(manager.resolve(key(code, {shiftKey:true}), scopes)?.id, `${direction}-keyframe`);
+    }
+  }
+  const old = normalizeHotkeys({'previous-frame':['ArrowLeft'], 'next-frame':['ArrowRight'], 'previous-exposure':['Comma'], 'next-exposure':['Period']});
+  assert.deepEqual(old, DEFAULT_HOTKEYS);
+  assert.deepEqual(normalizeHotkeys(old), old);
+  const custom = normalizeHotkeys({'previous-frame':[], 'next-frame':['KeyQ'], 'next-exposure':['KeyW']});
+  assert.deepEqual(custom['previous-frame'], []);
+  assert.deepEqual(custom['next-frame'], ['KeyQ']);
+  assert.deepEqual(custom['next-exposure'], ['KeyW']);
 });

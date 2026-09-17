@@ -1,20 +1,6 @@
 import {parseReleaseNotes} from './release-notes.mjs';
 export const DONATE_URL = 'https://ko-fi.com/Q5Q41WY7QC';
 
-export function supportCard({ compact = false, desktop = globalThis.stykDesktop } = {}) {
-  const card = document.createElement('section');
-  card.className = `support-card${compact ? ' support-card-compact' : ''}`;
-  card.setAttribute('aria-label', 'Support StykAnimate');
-  card.innerHTML = `<div><strong>Free to create. Powered by your support.</strong><p>StykAnimate is completely free. If it helps bring your ideas to life, a donation helps keep development moving.</p></div><a class="support-donate" href="${DONATE_URL}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">♥</span> Donate on Ko-fi <span aria-hidden="true">↗</span></a>`;
-  card.querySelector('a').addEventListener('click', async event => {
-    if (!desktop?.openDonate) return;
-    event.preventDefault();
-    try { await desktop.openDonate(); }
-    catch { card.querySelector('p').textContent = `Open ${DONATE_URL} in your browser to support development.`; }
-  });
-  return card;
-}
-
 export class ReleaseSplash {
   constructor(desktop) { this.desktop = desktop; }
   async open({ startup = false } = {}) {

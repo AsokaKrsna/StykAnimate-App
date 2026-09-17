@@ -54,6 +54,18 @@ class NativeFormatTests(unittest.TestCase):
 
 
 class NativeFormatV2Tests(unittest.TestCase):
+    def test_sectioned_metadata_and_file_limits_are_independent_and_bounded(self):
+        document = {'metadata': 'x' * 1500}
+        encoded = native.encode_v2(document, 'styk', max_bytes=1024, max_skeleton_bytes=2048)
+        self.assertLess(len(encoded), 1024)
+        self.assertEqual(json.loads(native.decode(encoded, max_bytes=1024, max_skeleton_bytes=2048)), document)
+        with self.assertRaisesRegex(ValueError, 'uncompressed size'):
+            native.decode(encoded, max_bytes=1024, max_skeleton_bytes=1000)
+        with self.assertRaisesRegex(ValueError, 'uncompressed size'):
+            native.encode_v2(document, 'styk', max_bytes=1024, max_skeleton_bytes=1000)
+        with self.assertRaisesRegex(ValueError, 'uncompressed size'):
+            native.encode_v2({'array': [float(i) + .1 for i in range(200)]}, 'styk', max_bytes=1024)
+
     def setUp(self):
         shared = [i * 0.125 for i in range(64)]
         self.document = {

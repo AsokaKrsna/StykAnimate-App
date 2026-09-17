@@ -25,6 +25,32 @@ export function figurePalette(report, figure, object) {
   resolved.polyfills?.forEach((polygon,index)=>row(displayedColor(report,resolved,object,polygon.color_rgb??[0,0,0])).polygons.push(polygonIdentity(polygon,index)));
   return [...colors.values()].sort((a,b)=>b.segments.length-a.segments.length || a.color.localeCompare(b.color));
 }
+/** Palette membership is scoped by instance: attached rigs can reuse handle IDs. */
+export function attachedFigurePalette(report, frame, uid) {
+  const objects=frame.objects, start=objects.findIndex(object=>object.unique_id===uid);
+  if(start<0)return [];
+  const children=new Map(), figures=new Map(report.figure_types.map(figure=>[figure.figure_type_id,figure]));
+  objects.forEach((object,slot)=>{
+    const parent=object.join?.target_object_slot;
+    if(parent===undefined)return;
+    if(!children.has(parent))children.set(parent,[]);
+    children.get(parent).push(slot);
+  });
+  const queue=[start], seen=new Set(queue), colors=new Map();
+  for(let cursor=0;cursor<queue.length;cursor++){
+    const slot=queue[cursor], object=objects[slot], figure=figures.get(object.figure_type_id);
+    if(figure)for(const entry of figurePalette(report,figure,object)){
+      if(!colors.has(entry.color))colors.set(entry.color,{color:entry.color,segments:[],polygons:[],instances:{}});
+      const row=colors.get(entry.color);
+      for(const segment of entry.segments)row.segments.push(segment);
+      for(const polygon of entry.polygons)row.polygons.push(polygon);
+      row.instances[object.unique_id]={...entry,figureTypeId:figure.figure_type_id};
+    }
+    for(const child of children.get(slot)??[])if(!seen.has(child)){seen.add(child);queue.push(child);}
+  }
+  if(queue.length===1)for(const row of colors.values())delete row.instances;
+  return [...colors.values()].sort((a,b)=>b.segments.length-a.segments.length||a.color.localeCompare(b.color));
+}
 const rgb=value=>{
   if(typeof value==='string')return parseColor(value).color;
   if(!Array.isArray(value)||value.length!==3||value.some(n=>!Number.isInteger(n)||n<0||n>255))throw new Error('Choose three RGB bytes or a hex color.');
@@ -39,6 +65,10 @@ export function validateRecolor(input) {
   if(operation.opacity!==undefined)opacity(operation.opacity);
   if(operation.mode==='replace'&&(!operation.color||!operation.from&&!operation.targets))throw new Error('Choose the color to replace.');
   if(operation.targets){
+    if(operation.targets.instances)for(const [uid,targets] of Object.entries(operation.targets.instances)){
+      if(!Number.isInteger(Number(uid))||Number(uid)<0||Number(uid)>0xffffffff||targets.instances)throw new Error('Choose valid palette instances.');
+      validateRecolor({...operation,targets});
+    }
     if(!Array.isArray(operation.targets.segments)||!Array.isArray(operation.targets.polygons??[]))throw new Error('Choose valid palette targets.');
     for(const entry of operation.targets.segments)if(!Number.isInteger(entry.handleId)||entry.handleId<1||entry.handleId>65535||!Array.isArray(entry.stops)||entry.stops.some(index=>!Number.isInteger(index)||index<0||index>=32))throw new Error('Choose valid segment color stops.');
     for(const id of operation.targets.polygons??[])if(!Number.isInteger(id)||id<1||id>65535)throw new Error('Choose valid fill identities.');
@@ -56,6 +86,11 @@ export function validateRecolor(input) {
 }
 /** Returns the original object for no-ops. Only the edited instance owns overlays. */
 export function recolorObject(report, figure, object, operation) {
+  if(operation.targets?.instances){
+    const targets=operation.targets.instances[object.unique_id];
+    if(!targets)return object;
+    operation={...operation,targets,figureTypeId:targets.figureTypeId};
+  }
   if(operation.figureTypeId!==undefined&&operation.figureTypeId!==figure.figure_type_id)return object;
   const fields={};
   if(operation.opacity!==undefined){const value=Math.round((1-operation.opacity)*255);if(value!==(object.field28??0))fields.field28=value;}

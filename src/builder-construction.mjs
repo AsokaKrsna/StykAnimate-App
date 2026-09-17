@@ -1,3 +1,4 @@
+import {builderStrokeAppearance, setBuilderStroke} from './builder-appearance.mjs';
 import {segmentBranchIndices} from './editor-builder.mjs';
 /** Gesture-local spatial index. Construction never scans unrelated scene objects. */
 export class ConstructionIndex {
@@ -46,7 +47,7 @@ export class ConstructionIndex {
 function lowerBound(values,value,key){let lo=0,hi=values.length;while(lo<hi){const m=(lo+hi)>>1;if(key(values[m])<value)lo=m+1;else hi=m;}return lo;}
 export function strokeSegments(points,scale=1) {
   if(!Number.isFinite(scale)||Math.abs(scale)<1e-8)throw new Error('Set a nonzero figure scale before drawing.');
-  return points.slice(1).map((p,i)=>({type:'line',length:Math.hypot(p.x-points[i].x,p.y-points[i].y)/Math.abs(scale),angle:Math.atan2(p.y-points[i].y,p.x-points[i].x)-(scale<0?Math.PI:0),thickness:7,start:points[0]}));
+  return points.slice(1).map((p,i)=>({type:'line',length:Math.hypot(p.x-points[i].x,p.y-points[i].y)/Math.abs(scale),angle:Math.atan2(p.y-points[i].y,p.x-points[i].x)-(scale<0?Math.PI:0),start:points[0]}));
 }
 /** Owns transient pen paths and gesture-local snapping, never document topology. */
 export function createConstruction({editor, state, active, render, project,
@@ -155,7 +156,7 @@ export function createConstruction({editor, state, active, render, project,
       if (!active()) return;
       if (!draft) {
         const initial = start(point);
-        draft = {points: [initial.point], parentId: initial.parentId, current: initial.point};
+        draft = {points: [initial.point], parentId: initial.parentId, current: initial.point, appearance:builderStrokeAppearance(editor, initial.parentId)};
       } else {
         if ((editor.figure?.segments.length ?? 0) + draft.points.length > 30000) {
           onError(new Error('Figure segment capacity reached. Finish or shorten the chain.'));
@@ -180,12 +181,14 @@ export function createConstruction({editor, state, active, render, project,
         const origin = project({x: 0, y: 0}), x = project({x: 1, y: 0}), y = project({x: 0, y: 1});
         ctx.save();
         ctx.transform(x.x - origin.x, x.y - origin.y, y.x - origin.x, y.y - origin.y, origin.x, origin.y);
-        ctx.lineWidth = 3 / state.view.scale; ctx.strokeStyle = '#0d99ff';
+        setBuilderStroke(ctx, draft.appearance);
+        if (!draft.appearance.width) ctx.lineWidth = 1 / state.view.scale;
         ctx.stroke(draft.path);
+        ctx.lineWidth = 1 / state.view.scale; ctx.strokeStyle = '#0d99ff'; ctx.setLineDash([]);
         ctx.fillStyle = '#fff'; ctx.fill(draft.markers); ctx.stroke(draft.markers);
         ctx.restore();
         const from = project(draft.points.at(-1)), to = project(draft.current);
-        ctx.save(); ctx.lineWidth = 2; ctx.strokeStyle = '#0d99ff'; ctx.setLineDash([5, 4]);
+        ctx.save(); setBuilderStroke(ctx, draft.appearance, state.view.scale);
         ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke(); ctx.restore();
       }
       if (feedback?.kind) {

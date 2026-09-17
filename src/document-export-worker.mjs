@@ -126,6 +126,10 @@ self.addEventListener('message', async event => {
           blob = new Blob([await buildNativeContainer()]);
           timings.container_build_ms = +(performance.now() - building).toFixed(3);
         } catch (error) {
+          // A capacity rejection also applies to the JSON service fallback.
+          // Preserve that actionable error instead of attempting an even larger
+          // string and replacing it with a V8 "Invalid string length" failure.
+          if (error?.code === 'document_too_large') throw error;
           // The service path remains authoritative for unusual documents and
           // produces the same user-facing errors on genuinely invalid input.
           timings.local_build_error = error?.message || String(error);

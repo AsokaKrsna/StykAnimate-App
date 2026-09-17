@@ -9,6 +9,9 @@ const hash=values=>{let n=2166136261;for(let i=0;i<values.length;i++)n=Math.imul
 const textHash=value=>{let n=2166136261;for(let i=0;i<value.length;i++)n=Math.imul(n^value.charCodeAt(i),16777619);return n>>>0;};
 const equal=(a,b)=>{if(a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(!Object.is(a[i],b[i]))return false;return true;};
 let registrySerial=0;
+// A worker has its own module counters. Local fallback keys cross that boundary
+// with packets, so a realm identifier is necessary even when no digest is used.
+const realmNamespace=globalThis.crypto?.randomUUID?.() ?? `${Date.now()}:${Math.random()}`;
 const encoder=new TextEncoder();
 const digest=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),n=>n.toString(16).padStart(2,'0')).join('');
 
@@ -17,39 +20,39 @@ const digest=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('
  * keeps the fingerprint valid; all other fields stay in the signature. */
 const PAYLOAD_LENGTH=512;
 const assetScrubs=new WeakMap();
-function scrubbedAsset(asset){
-  let cached=assetScrubs.get(asset),payloads=[];
-  if(cached){
-    let match=true;
-    for(const key in asset){const value=asset[key];
-      if(typeof value==='string'&&value.length>PAYLOAD_LENGTH){payloads.push(value);match&&=cached.strings[payloads.length-1]===value;}}
-    if(match&&payloads.length===cached.strings.length)return cached.value;
+const samePayloads=(a,b)=>a.length===b.length&&a.every((value,index)=>value.text===b[index].text);
+const payloadDigest=payload=>payload.digest??=digest(encoder.encode(payload.text));
+function scrubbedAsset(asset,payloads){
+  const cached=assetScrubs.get(asset),records=new Map(),value={...asset};
+  for(const key in value){const text=value[key];
+    if(typeof text!=='string'||text.length<=PAYLOAD_LENGTH)continue;
+    const prior=cached?.get(key),record=prior?.text===text?prior:{text,key:`#${text.length}:${textHash(text)}`};
+    records.set(key,record);payloads.push(record);value[key]=record.key;
   }
-  const value={...asset};payloads=[];
-  for(const key in value){const payload=value[key];
-    if(typeof payload==='string'&&payload.length>PAYLOAD_LENGTH){payloads.push(payload);value[key]=`#${payload.length}:${textHash(payload)}`;}}
-  assetScrubs.set(asset,{strings:payloads,value:payloads.length?value:asset});
-  return payloads.length?value:asset;
+  assetScrubs.set(asset,records);
+  // Payload digests can be retained, but placement/anchor/metadata values may
+  // change in place. Always snapshot those current fields with the signature.
+  return records.size?value:asset;
 }
-function scrubbedAssets(assets){
+function scrubbedAssets(assets,payloads){
   return assets?.some(asset=>{for(const key in asset)if(typeof asset[key]==='string'&&asset[key].length>PAYLOAD_LENGTH)return true;return false;})
-    ?assets.map(scrubbedAsset):assets;
+    ?assets.map(asset=>scrubbedAsset(asset,payloads)):assets;
 }
 
 // A sampled clip is rendered from its expanded drawables, never by traversing
 // the stored animation here. Child drawing definitions enter the signature below.
-function drawingDefinition(figure){
+function drawingDefinition(figure,payloads){
   const clip=figure._styk?.movieclip;
   let definition=figure;
   if(clip){const {document,...settings}=clip;definition={...figure,_styk:{...figure._styk,movieclip:settings}};}
-  const image_assets=scrubbedAssets(definition.image_assets),text_assets=scrubbedAssets(definition.text_assets);
+  const image_assets=scrubbedAssets(definition.image_assets,payloads),text_assets=scrubbedAssets(definition.text_assets,payloads);
   if(image_assets===definition.image_assets&&text_assets===definition.text_assets)return definition;
   return {...definition,image_assets,text_assets};
 }
 
 export class ArtworkRegistry {
   constructor({maxBytes=64*1024*1024,maxEntries=512}={}){
-    this.maxBytes=maxBytes;this.maxEntries=maxEntries;this.namespace=++registrySerial;this.artworkSerial=0;this.clear();
+    this.maxBytes=maxBytes;this.maxEntries=maxEntries;this.namespace=`${realmNamespace}:${++registrySerial}`;this.artworkSerial=0;this.clear();
   }
   clear(){this.buckets=new Map();this.lru=new Map();this.definitions=new Map();this.byGeometry=new WeakMap();this.figureCache=new WeakMap();this.bytes=0;this.definitionBytes=0;this.serial=0;this.stats={hits:0,misses:0,evictions:0};}
   // Definitions may be edited in place. The editor supplies an explicit
@@ -64,8 +67,10 @@ export class ArtworkRegistry {
     if(!artwork.data||!artwork.definition.text||!globalThis.crypto?.subtle)return Promise.resolve(`local:${this.namespace}:${artwork.id}`);
     return artwork.contentKeyPromise??=(async()=>{
       const definition=artwork.definition;
-      const definitionKey=await (definition.contentDigest??=digest(encoder.encode(definition.text)));
-      const header=encoder.encode(JSON.stringify(['styk-artwork-v1',definitionKey,artwork.metadata,artwork.data.byteLength]));
+      const definitionKey=await (definition.contentDigest??=(async()=>digest(encoder.encode(JSON.stringify([
+        definition.text,await Promise.all(definition.payloads.map(payloadDigest))]))))());
+      const payloadKeys=await Promise.all(artwork.payloads.map(payloadDigest));
+      const header=encoder.encode(JSON.stringify(['styk-artwork-v2',definitionKey,artwork.metadata,payloadKeys,artwork.data.byteLength]));
       const bytes=new Uint8Array(4+header.byteLength+artwork.data.byteLength);
       new DataView(bytes.buffer).setUint32(0,header.byteLength,true);bytes.set(header,4);
       bytes.set(new Uint8Array(artwork.data.buffer,artwork.data.byteOffset,artwork.data.byteLength),4+header.byteLength);
@@ -74,12 +79,13 @@ export class ArtworkRegistry {
   }
   definition(figure){
     let value=this.figureCache.get(figure);if(value)return value;
-    const text=JSON.stringify(drawingDefinition(figure));
-    if(text.length*2>this.maxBytes/4){value={id:++this.serial,unshared:true};this.figureCache.set(figure,value);return value;}
-    value=this.definitions.get(text);
+    const payloads=[],text=JSON.stringify(drawingDefinition(figure,payloads));
+    if(text.length*2>this.maxBytes/4){value={id:++this.serial,unshared:true,payloads};this.figureCache.set(figure,value);return value;}
+    let bucket=this.definitions.get(text)||[];
+    value=bucket.find(entry=>samePayloads(entry.payloads,payloads));
     if(!value){
-      if(this.definitionBytes+text.length*2>this.maxBytes/4){this.clear();}
-      value={id:++this.serial,text};this.definitions.set(text,value);this.definitionBytes+=text.length*2;
+      if(this.definitionBytes+text.length*2>this.maxBytes/4){this.clear();bucket=[];}
+      value={id:++this.serial,text,payloads};bucket.push(value);this.definitions.set(text,bucket);this.definitionBytes+=text.length*2;
     }
     this.figureCache.set(figure,value);return value;
   }
@@ -97,7 +103,7 @@ export class ArtworkRegistry {
     let count=0;
     for(const item of items)count+=6+numericFields.length+(item.rgb?.length??0)+
       2*(Number(Boolean(item.start))+Number(Boolean(item.end))+(item.points?.length??0));
-    const data=new Float64Array(count),extra=[],childFigures=new Map(),childDefinitions=[],effectOwners=new Set();let cursor=0;
+    const data=new Float64Array(count),extra=[],payloads=[],childFigures=new Map(),childDefinitions=[],effectOwners=new Set();let cursor=0;
     const point=p=>{data[cursor++]=p.x-g.root.x;data[cursor++]=p.y-g.root.y;};
     for(let i=0;i<items.length;i++){
       if(i && (i & 127)===0)yield {phase:'artwork signature',completed:i,total:items.length};
@@ -117,10 +123,12 @@ export class ArtworkRegistry {
       if(type<0)extra.push([i,'type',item.type]);
       if(seg&&seg!==g.fig.segments?.[item.index])extra.push([i,'seg',seg]);
       if(poly&&poly!==g.fig.polyfills?.[item.index])extra.push([i,'poly',poly]);
-      if(asset)extra.push([i,'asset',scrubbedAsset(asset)]);
+      if(asset)extra.push([i,'asset',scrubbedAsset(asset,payloads)]);
       if(item.fig&&item.fig!==g.fig){
         let index=childFigures.get(item.fig);
-        if(index===undefined){index=childDefinitions.length;childFigures.set(item.fig,index);childDefinitions.push(this.definition(item.fig).text??JSON.stringify(drawingDefinition(item.fig)));}
+        if(index===undefined){index=childDefinitions.length;childFigures.set(item.fig,index);const child=this.definition(item.fig);
+          if(child.text!==undefined){childDefinitions.push(child.text);payloads.push(...child.payloads);}
+          else childDefinitions.push(JSON.stringify(drawingDefinition(item.fig,payloads)));}
         extra.push([i,'figure',index]);
       }
       for(const key in item)if(Object.hasOwn(item,key)&&!knownFields.has(key))extra.push([i,key,item[key]]);
@@ -130,11 +138,11 @@ export class ArtworkRegistry {
     const words=new Uint32Array(data.buffer);
     const key=`${definition.id}:${textHash(metadata)}:${hash(words)}:${data.length}`;
     const bucket=this.buckets.get(key)||[];
-    let artwork=bucket.find(entry=>entry.definition===definition&&entry.metadata===metadata&&equal(entry.data,data));
+    let artwork=bucket.find(entry=>entry.definition===definition&&entry.metadata===metadata&&samePayloads(entry.payloads,payloads)&&equal(entry.data,data));
     if(artwork){this.stats.hits++;this.lru.delete(artwork);this.lru.set(artwork,true);}
     else{
       this.stats.misses++;
-      artwork={definition,metadata,data,key,id:++this.artworkSerial,bytes:data.byteLength+metadata.length*2};
+      artwork={definition,metadata,data,payloads,key,id:++this.artworkSerial,bytes:data.byteLength+metadata.length*2+payloads.length*8};
       if(artwork.bytes<=this.maxBytes){
         bucket.push(artwork);this.buckets.set(key,bucket);this.lru.set(artwork,true);this.bytes+=artwork.bytes;
         while(this.bytes>this.maxBytes||this.lru.size>this.maxEntries){

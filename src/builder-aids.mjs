@@ -1,4 +1,3 @@
-import { drawGeometry } from './pivot/geometry.mjs';
 import { cameraMatrix } from './renderer-geometry.mjs';
 import {segmentBranchIndices} from './editor-builder.mjs';
 
@@ -34,27 +33,28 @@ export function builderHighlightPath(g,jointIndex) {
   }
   return points;
 }
-/** Builder-only paint: no document/geometry mutations, bitmap recoloring, or
- * exported-frame effects. Native reference: artifacts/native-static/builder-aids.md. */
-export function drawBuilderHighlight(ctx,geometry,{uid,jointIndex,branch=false,report,frame,view,resources={},dragTranslations,cameraEnabled=true}={}) {
+/** Screen-sized construction guides only. Artwork belongs to the scene painter:
+ * repainting selected silhouettes here bypasses every native occlusion boundary. */
+export function drawBuilderHighlight(ctx,geometry,{uid,jointIndex,branch=false,report,frame,view,dragTranslations,cameraEnabled=true}={}) {
   let g;
   for(const candidate of geometry?.objects?.values?.()||[])if(candidate.obj.unique_id===uid){g=candidate;break;}
   const selected=g?.segments?.[jointIndex];if(!selected)return false;
   const matrix=cameraMatrix({report,frame,view,cameraEnabled}),scale=Math.hypot(matrix[0],matrix[1]);
   if(!(scale>0))return false;
-  const width=1.5/scale,color=selected.static?BUILDER_HIGHLIGHT_COLORS.static:BUILDER_HIGHLIGHT_COLORS.dynamic;
+  const width=1.5/scale;
   ctx.save();ctx.transform(...matrix);
   const delta=dragTranslations?.get(uid);if(delta)ctx.translate(delta.x,delta.y);
   ctx.globalAlpha=1;ctx.lineWidth=width;ctx.lineCap='butt';ctx.lineJoin='miter';ctx.setLineDash([]);
   const highlighted = branch ? segmentBranchIndices(g.fig.segments, selected.seg.segment_id).map(i => g.segments[i]) : [selected];
-  for (const selected of highlighted) {
-  if(selected.seg.segment_type==='image'){
-    ctx.strokeStyle=color;ctx.beginPath();ctx.moveTo(selected.start.x,selected.start.y);ctx.lineTo(selected.end.x,selected.end.y);ctx.stroke();
-  }else{
-    const fig={...selected.fig,segment_decode:{...selected.fig?.segment_decode,global_style:undefined}};
-    const shape={...selected,type:selected.seg.segment_type||'line',fig,seg:{...selected.seg,secondary:null},thickness:selected.thickness===0?width:selected.thickness,rgb:selected.static?[68,68,204]:[0,0,255],alpha:1,opacity:1};
-    drawGeometry(ctx,{drawables:[shape]},resources);
-  }
+  for (const segment of highlighted) {
+    // Curved strokes follow their evaluated centerline. Circles, text and
+    // images expose their pivot connection without repainting their contents.
+    const points=segment.seg.segment_type==='line' && segment.points?.length>1
+      ? segment.points : [segment.start,segment.end];
+    ctx.strokeStyle=segment.static?BUILDER_HIGHLIGHT_COLORS.static:BUILDER_HIGHLIGHT_COLORS.dynamic;
+    ctx.beginPath();ctx.moveTo(points[0].x,points[0].y);
+    for(let i=1;i<points.length;i++)ctx.lineTo(points[i].x,points[i].y);
+    ctx.stroke();
   }
   const path=branch ? [] : builderHighlightPath(g,jointIndex);
   if(path.length>1){

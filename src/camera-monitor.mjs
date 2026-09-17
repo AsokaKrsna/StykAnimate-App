@@ -1,4 +1,5 @@
 import {drawExportScene} from './export-frame-core.mjs';
+import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {activeVfx,vfxStack} from './vfx.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
 import {layerVisible} from './layers.mjs';
@@ -106,6 +107,7 @@ export function drawCameraMonitor(canvas, options) {
     }
     geometry=cached.geometry;
   } else playbackGeometry.delete(canvas);
+  geometry=connectedVfxGeometry(geometry,frame,report,hiddenUids);
   if(activeVfx(vfxStack(frame)).length){
     const surface=state.effects??=new OffscreenCanvas(1,1),w=Math.max(1,Math.round(report.canvas_width*scale*dpr)),h=Math.max(1,Math.round(report.canvas_height*scale*dpr));
     if(surface.width!==w)surface.width=w;if(surface.height!==h)surface.height=h;

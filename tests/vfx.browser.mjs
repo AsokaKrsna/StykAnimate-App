@@ -80,16 +80,16 @@ try{
  await page.locator('.vfx-catalog [data-choice="noise"]').click();
  await page.getByRole('spinbutton',{name:'Noise Amount'}).fill('25');
  await page.getByRole('spinbutton',{name:'Noise Amount'}).press('Enter');
- assert.equal(await page.evaluate(()=>window.styk.editor.vfxEffects({kind:'scene'})[0]?.params.amount),.25);
+ assert.equal(await page.evaluate(()=>window.styk.editor.sampleVfxClip(styk.vfx.selectedClip)[0]?.params.amount),.25);
  const beforeDrag=await page.evaluate(()=>({history:styk.editor._undo.length,keys:styk.editor.report._styk.layerSheet.tracks.scene.keys.length}));
  const slider=page.getByRole('slider',{name:'Noise Amount slider'}),box=await slider.boundingBox();
  await page.mouse.move(box.x+box.width*.25,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width*.75,box.y+box.height/2,{steps:12});await page.mouse.up();
- const dragged=await page.evaluate(()=>({amount:styk.editor.vfxEffects({kind:'scene'})[0].params.amount,history:styk.editor._undo.length,keys:styk.editor.report._styk.layerSheet.tracks.scene.keys.length}));
+ const dragged=await page.evaluate(()=>({amount:styk.editor.sampleVfxClip(styk.vfx.selectedClip)[0].params.amount,history:styk.editor._undo.length,keys:styk.editor.report._styk.layerSheet.tracks.scene.keys.length}));
  assert.ok(dragged.amount>.7&&dragged.amount<.8);assert.equal(dragged.history,beforeDrag.history+1);assert.equal(dragged.keys,beforeDrag.keys);
  await page.evaluate(()=>styk.editor.undo());
- const label=page.locator('#vfx-panel [data-property-scrub]').first(),labelBox=await label.boundingBox();
+ const label=page.locator('#vfx-panel [data-property-scrub]').filter({hasText:/^Amount$/}),labelBox=await label.boundingBox();
  await page.mouse.move(labelBox.x+10,labelBox.y+labelBox.height/2);await page.mouse.down();await page.mouse.move(labelBox.x+35,labelBox.y+labelBox.height/2,{steps:8});await page.mouse.up();
- assert.equal(await page.evaluate(()=>styk.editor.vfxEffects({kind:'scene'})[0].params.amount),.5);
+ assert.equal(await page.evaluate(()=>styk.editor.sampleVfxClip(styk.vfx.selectedClip)[0].params.amount),.5);
  assert.equal(await page.locator('#vfx-panel [data-property-key]').count(),0);
  await page.getByRole('tab',{name:'Library',exact:true}).click();assert.equal(await page.locator('#vfx-panel').isVisible(),false);
  await page.getByRole('tab',{name:'VFX',exact:true}).click();assert.equal(await page.locator('#inspector').isVisible(),false);
@@ -97,8 +97,7 @@ try{
  await page.evaluate(()=>{const e=styk.editor;e.select(e.evaluatedFrame.objects[0].unique_id,1);});
  await page.waitForFunction(()=>styk.vfx.targets()[0]?.kind==='segment');
  await page.locator('[data-vfx-action="add"]').click();await page.locator('.vfx-catalog [data-choice="glow"]').click();
- assert.equal(await page.evaluate(()=>styk.editor.vfxEffects(styk.vfx.targets()[0])[0].type),'glow');
+ assert.equal(await page.evaluate(()=>styk.editor.sampleVfxClip(styk.vfx.selectedClip)[0].type),'glow');
  await page.evaluate(()=>{document.documentElement.dataset.theme='dark';});await page.screenshot({path:'artifacts/vfx/inspector-dark.png'});
  assert.deepEqual(errors,[]);console.log('VFX browser checks passed');
 }finally{await browser.close();}
-

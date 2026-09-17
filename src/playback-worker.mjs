@@ -1,3 +1,6 @@
+import {vectorVfxSource} from './renderer-vfx-vector.mjs';
+import {vfxRasterScale} from './vfx-canvas.mjs';
+import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {cameraAtTime} from './camera-motion.mjs';
 import {supportsVectorIsolation} from './renderer-vector-raster.mjs';
 import {drawParallaxGeometry} from './parallax-draw.mjs';
@@ -15,12 +18,13 @@ import {ArtworkRegistry} from './render-artwork.mjs';
 import {PlaybackGeometryCache} from './playback-geometry-cache.mjs';
 import {PlaybackTweenCache} from './playback-tween-cache.mjs';
 import {vfxPreviewGeometry} from './vfx-preview.mjs';
-import {glyphTextureDescriptor,glyphTextureKey,drawGlyphMask,glyphTextureShape,glyphVisible} from './renderer-glyphs.mjs';
+import {glyphTextureDescriptor,glyphTextureKey,drawGlyphMask,glyphTextureShape,glyphVisible,cropGlyphTexture} from './renderer-glyphs.mjs';
 import { drawBackground, backgroundBounds } from './pivot/background.mjs';
 import { layerVisible } from './layers.mjs';
 import { activeVfx, vfxStack } from './vfx.mjs';
 import { releaseVfxSurface } from './vfx-canvas.mjs';
 import { CameraVfx } from './vfx-camera.mjs';
+import {sceneVfxPlan} from './vfx-scene.mjs';
 import {opacityArtwork} from './renderer-opacity.mjs';
 import { backgroundImageAssets } from './scene-preparation.mjs';
 const fallbackRasterSurfaces = new RasterSurfacePool();
@@ -43,17 +47,25 @@ export function playbackLocation(entries, tick) {
   return { index: low, t: entry?.count > 1 ? (tick - entry.start) / entry.count : 0 };
 }
 
-/** Prepared frames always clip to the native artboard. Invert that rectangle into
- * world space; its AABB conservatively includes every visible rotated-camera pixel. */
-export function playbackVisibleBounds(report, frame, cameraEnabled = true) {
+/** Invert the artboard and effect sampling region into world space before
+ * culling artwork or decoding image crops. */
+export function playbackVisibleBounds(report, frame, cameraEnabled = true, effectScale = 1) {
   const [a, b, c, d, e, f] = cameraMatrix({ report, frame, cameraEnabled });
   const determinant = a * d - b * c;
   if (!Number.isFinite(determinant) || !determinant) return null;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const [x, y] of [[0, 0], [report.canvas_width, 0], [0, report.canvas_height], [report.canvas_width, report.canvas_height]]) {
+  // Raster crops and image decodes must retain the same neighbors as the
+  // camera compositor. Use the smaller software preview cap conservatively.
+  const density=Math.max(1/65536,Math.min(effectScale,1024/Math.max(report.canvas_width,report.canvas_height)));
+  const pad=sceneVfxPlan(frame,report.canvas_width*density,report.canvas_height*density,undefined,density).pad/density;
+  for (const [x, y] of [[0-pad, 0-pad], [report.canvas_width+pad, 0-pad], [0-pad, report.canvas_height+pad], [report.canvas_width+pad, report.canvas_height+pad]]) {
     const wx = (d * (x - e) - c * (y - f)) / determinant;
     const wy = (-b * (x - e) + a * (y - f)) / determinant;
     x0 = Math.min(x0, wx); x1 = Math.max(x1, wx); y0 = Math.min(y0, wy); y1 = Math.max(y1, wy);
+  }
+  if(!cameraEnabled&&activeVfx(vfxStack(frame)).length){
+    const camera=playbackVisibleBounds(report,frame,true,effectScale);
+    if(camera){x0=Math.min(x0,camera.x);y0=Math.min(y0,camera.y);x1=Math.max(x1,camera.x+camera.width);y1=Math.max(y1,camera.y+camera.height);}
   }
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
@@ -77,29 +89,45 @@ export function playbackRasterBounds(bounds, visible, resolution, maxTextureDime
 export async function compilePlaybackPacket(report, tick, options = {}) {
   let quality = options.resources?.previewScale || 1;
   let rasterizeVectors = false;
+  let rasterRetry = false;
+  const frameBudget=options.maxPacketBytes??128*1024*1024;
   const started = performance.now();
   for (;;) {
     if (options.cancelled?.()) throw new DOMException('Playback preparation was superseded.', 'AbortError');
+    const recovering=!options.softwareFrames&&options.resources?.previewPressureScale<quality;
+    const maxPacketBytes=recovering?frameBudget/4:frameBudget;
     try {
       const packet = options.softwareFrames
         ? await compileSoftwarePacket(report, tick, {...options, quality})
-        : await compilePacketAttempt(report, tick, {...options, quality, rasterizeVectors});
+        : await compilePacketAttempt(report, tick, {...options, maxPacketBytes, quality, rasterizeVectors});
       const rasterScale = packet.compatibility.length ? quality : 1;
       packet.previewQuality = {scale: rasterScale, reduced: rasterScale < 1 || rasterizeVectors || Boolean(packet.previewQuality?.reduced)};
       packet.compileMs = performance.now() - started;
-      if (options.resources) options.resources.previewScale = quality;
+      if(options.resources){
+        const resources=options.resources,budget=frameBudget;
+        // Recover one level only after eight consecutive lightweight packets.
+        // Fourfold pixel growth must still leave room for several future frames,
+        // otherwise sharper packets can drain the lookahead and cause stalls.
+        const headroom=!options.softwareFrames&&!rasterRetry&&!rasterizeVectors&&quality<1&&packet.byteLength*4<=budget/4;
+        const prior=resources.previewRecovery;
+        const count=headroom?(prior?.tick===tick-1?prior.count+1:1):0;
+        resources.previewScale=count>=8?Math.min(1,quality*2):quality;
+        resources.previewRecovery={tick,count:count>=8?0:count};
+      }
       return packet;
     } catch (error) {
-      if (error.code !== 'playback_frame_budget' || typeof OffscreenCanvas === 'undefined' || quality <= 1 / 4096) throw error;
+      if (!['playback_frame_budget','vfx_surface_budget'].includes(error.code) || typeof OffscreenCanvas === 'undefined' || quality <= 1 / 4096) throw error;
       // Pixel pressure must not turn a cheap vector scene into hundreds of
       // separately rasterized images. Only compress vectors if their records
       // alone cannot fit, independent of bitmap resolution. Software packets
       // are a single bitmap already, so pressure only lowers its resolution.
       if (!options.softwareFrames && !rasterizeVectors && (error.vectorOverflow || error.fixedBytes > (options.maxPacketBytes ?? 128 * 1024 * 1024))) rasterizeVectors = true;
       else quality /= 2;
-      // Failed packet clones were closed by the attempt. Drop retained originals
-      // before allocating a lower-resolution replacement.
-      options.resources?.artworkBitmaps?.clear();
+      if(options.resources&&!recovering&&!options.softwareFrames)options.resources.previewPressureScale=quality;
+      // Failed packet clones were closed by the attempt. A rejected allocation
+      // plan can keep bounded originals; drawing failures release them before
+      // allocating a lower-resolution replacement.
+      if(!error.preflight){rasterRetry=true;options.resources?.artworkBitmaps?.clear();}
       await yieldPlaybackTask();
     }
   }
@@ -113,15 +141,15 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
   const started = performance.now(), location = playbackLocation(entries, tick);
   const native = evaluatedFrame(report, location.index, location.t, tick, {tweenCache}), evaluated = performance.now();
   if (!native) throw new Error('The playback tick has no native frame.');
-  const sourceGeometry=geometryCache?geometryCache.get(report,native,revision):buildGeometry(report,native),geometry=vfxEnabled?sourceGeometry:vfxPreviewGeometry(sourceGeometry),geometrized=performance.now();
+  const sourceGeometry=geometryCache?geometryCache.get(report,native,revision):buildGeometry(report,native),geometry=vfxEnabled?connectedVfxGeometry(sourceGeometry,native,report):vfxPreviewGeometry(sourceGeometry),geometrized=performance.now();
   const frame = { camera: cameraAtTime(report,native), background_id: native.background_id, background_id_b: native.background_id_b, background_mix: native.background_mix, duration_raw: native.duration_raw,
-    ...(vfxEnabled&&native._stykVfx ? {_stykVfx:native._stykVfx} : {}),
+    ...(vfxEnabled&&vfxStack(native).length ? {_stykVfx:{figure:vfxStack(native)}} : {}),
     ...(native._stykBackgroundColor !== undefined ? {_stykBackgroundColor: native._stykBackgroundColor} : {}) };
-  const groups = [], compatibility = [], chunks = [], transforms = [0, 0, 1, 1], uids = [0];
+  const groups = [], compatibility = [], chunks = [], rasterJobs = [], keyJobs = [], transforms = [0, 0, 1, 1], uids = [0];
   const matrix = cameraMatrix({ report, frame, cameraEnabled, view: { scale } });
   const resolution = Math.max(.5, Math.min(8, 2 ** Math.ceil(Math.log2(Math.hypot(matrix[0], matrix[1]) || 1)))) * quality;
-  const sceneVisibleBounds = playbackVisibleBounds(report, frame, cameraEnabled),parallax=parallaxResolver(report,native,cameraEnabled);
-  const clipping = { culledObjects: 0, originalPixels: 0, retainedPixels: 0 };
+  const sceneVisibleBounds = playbackVisibleBounds(report, frame, cameraEnabled,scale*quality),parallax=parallaxResolver(report,native,cameraEnabled);
+  const clipping = { culledObjects: 0, culledPrimitives: 0, originalPixels: 0, retainedPixels: 0 };
   // Each unique bitmap has one packet owner and one transferable, even when
   // several ordered instances draw it. Camera crops are part of its identity.
   const artworks=sharedArtwork?(artworkRegistry||new ArtworkRegistry()):null,rasters=new Map();
@@ -140,7 +168,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     const vectorOverflow = shapeCount * SHAPE_FLOATS * 4 > 64 * 1024 * 1024;
     if (bytes > maxPacketBytes || vectorOverflow) {
       const error = new Error('A playback frame exceeds its preparation memory budget.');
-      error.code = 'playback_frame_budget'; error.vectorOverflow = vectorOverflow;
+      error.code = 'playback_frame_budget'; error.vectorOverflow = vectorOverflow; error.preflight = true;
       error.fixedBytes = shapeCount * SHAPE_FLOATS * 4 + (groups.length + 1) * 84; throw error;
     }
   };
@@ -163,41 +191,54 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     let data;
     let descriptor=resources?.geometryDescriptors?.get(source);
     if(!descriptor){descriptor={compatibility:artworkView.isolated||requiresCompatibilityTexture(items),hasImages:items.some(item=>item.type==='image')};resources?.geometryDescriptors?.set(source,descriptor);}
-    const glyph = sharedArtwork && typeof OffscreenCanvas !== 'undefined' && glyphTextureDescriptor(items,resolution,maxTextureDimension);
+    let glyph = sharedArtwork && typeof OffscreenCanvas !== 'undefined' && glyphTextureDescriptor(items,resolution,maxTextureDimension);
     if (glyph) {
       if (!glyph.color[3] || !glyphVisible(glyph,visibleBounds)) {clipping.culledObjects++; return;}
-      const variants=rasters.get(glyph.mask), shared=variants?.get(glyph.variant);
+      clipping.originalPixels+=glyph.width*glyph.height;
+      glyph=cropGlyphTexture(glyph,visibleBounds);
+      if(!glyph){clipping.culledObjects++;return;}
+      clipping.retainedPixels+=glyph.width*glyph.height;
+      // Separate imported definitions can contain identical glyph paths. Use
+      // the same content identity as packet/GPU ownership before admission,
+      // otherwise duplicate masks can falsely trigger a quality reduction.
+      const rasterKey=await glyphTextureKey(glyph),shared=rasters.get(rasterKey);
+      if(cancelled())throw new DOMException('Playback preparation was superseded.', 'AbortError');
       if (shared !== undefined) {
         group.compatibilityIndex=shared; sharing.reusedInstances++; sharing.savedBitmapBytes+=glyph.bytes;
       } else {
         requireBudget(bitmapBytes+glyph.bytes+(shapeCount+1)*SHAPE_FLOATS*4+(groups.length+1)*84);
-        const rasterKey=await glyphTextureKey(glyph), pool=resources?.rasterSurface?.(glyph.width,glyph.height) || resources?.rasterSurfaces || fallbackRasterSurfaces;
-        if(cancelled())throw new DOMException('Playback preparation was superseded.', 'AbortError');
+        const pool=resources?.rasterSurface?.(glyph.width,glyph.height) || resources?.rasterSurfaces || fallbackRasterSurfaces;
         const rasterize=()=>{const {surface,context}=pool.acquire(glyph.width,glyph.height);
           try {drawGlyphMask(context,glyph);return surface.transferToImageBitmap();} finally {pool.release();}};
-        const bitmap=resources?.artworkBitmaps?await resources.artworkBitmaps.packetBitmap(rasterKey,rasterize):rasterize();
         group.compatibilityIndex=compatibility.length;
-        compatibility.push({bitmap,uid,artworkKey:rasterKey,glyphMask:true}); bitmapBytes+=glyph.bytes;
-        const next=variants || new Map();next.set(glyph.variant,group.compatibilityIndex);rasters.set(glyph.mask,next);
+        const entry={uid,artworkKey:rasterKey,glyphMask:true};compatibility.push(entry);bitmapBytes+=glyph.bytes;
+        rasterJobs.push(async()=>{entry.bitmap=resources?.artworkBitmaps?await resources.artworkBitmaps.packetBitmap(rasterKey,rasterize):rasterize();});
+        rasters.set(rasterKey,group.compatibilityIndex);
       }
       data=glyphTextureShape(glyph,g.root,transformIndex);
     } else if (descriptor.compatibility || rasterizeVectors) {
+      descriptor.bounds??=objectBounds(items,resources);
+      const rasterResolution=vfxRasterScale(items,descriptor.bounds,resolution,maxTextureDimension);
+      reducedImages ||= rasterResolution<resolution;
       let vectorIsolation = gpuIsolation && artworkView.isolated && supportsVectorIsolation(items, resolution), isolationBounds;
       if (vectorIsolation) {
         descriptor.bounds ??= objectBounds(items, resources);
-        isolationBounds = playbackRasterBounds(descriptor.bounds, visibleBounds, resolution, maxTextureDimension);
+        isolationBounds = playbackRasterBounds(descriptor.bounds, visibleBounds, rasterResolution, maxTextureDimension);
         if (!isolationBounds) {clipping.culledObjects++; return;}
         vectorIsolation = supportsVectorIsolation(items, isolationBounds.pixelScale);
       }
+      let vectorVfx=gpuIsolation?vectorVfxSource(items,resolution):null;
+      if(vectorVfx){descriptor.bounds??=objectBounds(items,resources);const full=playbackRasterBounds(descriptor.bounds,null,rasterResolution,maxTextureDimension);
+        if(full.fullPixels<=16777216&&full.fullPixels*4<maxPacketBytes/2&&vectorVfxSource(items,full.pixelScale)){isolationBounds=full;}else vectorVfx=null;}
       if (items.every(item => item.opacity <= 0)) { clipping.culledObjects++; return; }
       group.compatibilityIndex = compatibility.length;
-      if (vectorIsolation || typeof OffscreenCanvas !== 'undefined') {
+      if (vectorVfx || vectorIsolation || typeof OffscreenCanvas !== 'undefined') {
         if(descriptor.hasImages) {
           await resources?.preload(items, {scale: resolution, maxDimension: maxTextureDimension, visible: visibleBounds});
           reducedImages ||= Boolean(resources?.pressureReduced);
         }
         if(!descriptor.bounds)descriptor.bounds=objectBounds(items,resources);
-        const bounds = isolationBounds || playbackRasterBounds(descriptor.bounds, visibleBounds, resolution, maxTextureDimension);
+        const bounds = isolationBounds || playbackRasterBounds(descriptor.bounds, visibleBounds, rasterResolution, maxTextureDimension);
         if (!bounds) { clipping.culledObjects++; return; }
         const { pixelScale, pixelWidth: width, pixelHeight: height } = bounds;
         clipping.originalPixels += bounds.fullPixels; clipping.retainedPixels += width * height;
@@ -207,34 +248,47 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
           group.compatibilityIndex=shared;sharing.reusedInstances++;sharing.savedBitmapBytes+=width*height*4;
         }else{
         requireBudget(bitmapBytes + width * height * 4 + (shapeCount + 1) * SHAPE_FLOATS * 4 + (groups.length + 1) * 84);
-        const rasterKey=artwork?`${vectorIsolation?'vector:':''}${await artworks.contentKey(artwork)}:${cropKey}`:undefined;
-        if(cancelled())throw new DOMException('Playback preparation was superseded.', 'AbortError');
+        // Content digests run on the crypto thread; start them eagerly and
+        // resolve every key together after traversal instead of serializing a
+        // worker event-loop hop for every compatibility object.
+        const keyJob=artwork?{promise:artworks.contentKey(artwork).then(key=>`${vectorVfx?'vfx-vector:':vectorIsolation?'vector:':''}${key}:${cropKey}`),key:undefined,entry:null}:null;
+        if(keyJob)keyJobs.push(keyJob);
+        const pendingKey=async()=>keyJob?(keyJob.key??await keyJob.promise):undefined;
         const actualBounds = { x: bounds.x, y: bounds.y, width: width / pixelScale, height: height / pixelScale };
-        if (vectorIsolation) {
+        if(vectorVfx){const data=compileVectorObject(vectorVfx.items,source.root,0);bitmapBytes+=width*height*4+data.byteLength;
+          const entry={vectorRaster:{data,width,height},vfx:{stack:vectorVfx.stack,scale:vectorVfx.scale,domain:vectorVfx.domain??objectBounds(vectorVfx.items,{...resources,vfxBounds:false})},bounds:actualBounds,root:source.root,resolution,pixelScale,uid};
+          compatibility.push(entry);if(keyJob)keyJob.entry=entry;
+        }else if (vectorIsolation) {
           // The transfer owns a copy; retained vector cache buffers stay attached.
           const compile = () => compileVectorObject(items, source.root, 0);
           const data = resources?.vectors ? resources.vectors.get(source, 0, compile).slice() : compile();
           // Reserve the eventual texture as well as CPU vectors. This deliberately
           // overestimates shared GPU artwork in CPU admission to bound both caches.
           bitmapBytes += width * height * 4 + data.byteLength;
-          compatibility.push({vectorRaster: {data, width, height}, bounds: actualBounds, root: source.root, resolution, pixelScale, uid,
-            artworkKey: rasterKey});
+          const entry={vectorRaster: {data, width, height}, bounds: actualBounds, root: source.root, resolution, pixelScale, uid};
+          compatibility.push(entry);if(keyJob)keyJob.entry=entry;
         } else {
         const pool = resources?.rasterSurface?.(width,height,{hasImages:descriptor.hasImages}) || resources?.rasterSurfaces || fallbackRasterSurfaces;
+        const rasterItems=items;
         const rasterize=()=>{
         const {surface, context: ctx} = pool.acquire(width, height);
         try {
           ctx.setTransform(pixelScale, 0, 0, pixelScale, -bounds.x * pixelScale, -bounds.y * pixelScale);
-          drawGeometry(ctx, { drawables: items }, resources);
+          drawGeometry(ctx, { drawables: rasterItems,
+            ...(rasterItems.length >= 64 && width*height < bounds.fullPixels
+              ? {clipBounds:{...actualBounds,guard:2/pixelScale,stats:clipping}} : {}) }, resources);
           return surface.transferToImageBitmap();
         } finally { pool.release(); }
         };
-        const bitmap=resources?.artworkBitmaps?await resources.artworkBitmaps.packetBitmap(rasterKey,rasterize):rasterize();
-        bitmapBytes += bitmap.width * bitmap.height * 4;
+        bitmapBytes += width * height * 4;
         // Ownership supplies its epoch in bitmapKey(); this key describes pixels
         // alone so unchanged artwork can share across retained frame revisions.
-        const artworkKey=rasterKey||undefined;
-        compatibility.push({ bitmap, bounds: actualBounds, root: g.root, resolution, pixelScale, uid, artworkKey });
+        const entry={bounds:actualBounds,root:g.root,resolution,pixelScale,uid};compatibility.push(entry);
+        if(keyJob)keyJob.entry=entry;
+        const capture=async()=>{const rasterKey=await pendingKey();entry.bitmap=resources?.artworkBitmaps?await resources.artworkBitmaps.packetBitmap(rasterKey,rasterize):rasterize();};
+        // Image decodes are a bounded moving working set. Consume them before
+        // another object's preload can replace the variant used in this key.
+        if(descriptor.hasImages)await capture();else rasterJobs.push(capture);
         }
         if(artwork){const next=variants||new Map();next.set(cropKey,group.compatibilityIndex);rasters.set(artwork,next);}
         }
@@ -262,16 +316,28 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     const shapes = new Float32Array(shapeCount * SHAPE_FLOATS); let offset = 0;
     for (const chunk of chunks) { shapes.set(chunk, offset); offset += chunk.length; }
     const transformData = new Float32Array(transforms), uidData = new Uint32Array(uids);
-    const fallbackEntries = compatibility.filter(entry => !entry.bitmap && !entry.vectorRaster);
+    const fallbackEntries = compatibility.filter(entry => entry.items);
     const fallbackBytes = fallbackEntries.length ? JSON.stringify(fallbackEntries).length * 2 : 0;
+    requireBudget(shapes.byteLength + transformData.byteLength + uidData.byteLength + bitmapBytes + fallbackBytes + groups.length * 64);
+    if(keyJobs.length){
+      if(cancelled())throw new DOMException('Playback preparation was superseded.', 'AbortError');
+      // One event-loop turn resolves every pending digest; image captures that
+      // already awaited their own key observe the settled job below.
+      await Promise.all(keyJobs.map(job=>job.promise.then(key=>{job.key=key;if(job.entry)job.entry.artworkKey=key||undefined;})));
+    }
+    // Admit the complete packet before capturing path/glyph rasters. Images
+    // consume their currently decoded variant during traversal above.
+    for(let i=0;i<rasterJobs.length;i++){
+      if(cancelled())throw new DOMException('Playback preparation was superseded.', 'AbortError');
+      await rasterJobs[i]();if((i+1)%16===0)await yieldPlaybackTask();
+    }
     const ended = performance.now();
     sharing.rasterCacheHits=(resources?.artworkBitmaps?.hits||0)-initialRasterHits;
     sharing.rasterCacheMisses=(resources?.artworkBitmaps?.misses||0)-initialRasterMisses;
     sharing.reusedVectorObjects=(resources?.vectors?.hits||0)-initialVectorHits;
-    requireBudget(shapes.byteLength + transformData.byteLength + uidData.byteLength + bitmapBytes + fallbackBytes + groups.length * 64);
     return { key: `${revision}:${tick}`, revision, tick, frameIndex: location.index, frame, shapes, transforms: transformData, uids: uidData, groups, compatibility,
       previewQuality: {reduced: reducedImages},
-      objectCount: geometry.objects.size, shapeCount, warnings: geometry.warnings, scale, resolution, clipping, sharing, reusedGeometryObjects:geometryCache?.reusedObjects||0, cameraEnabled, storedFrames,
+      connectedVfxUids:geometry.connectedVfxUids, objectCount: geometry.objects.size, shapeCount, warnings: geometry.warnings, scale, resolution, clipping, sharing, reusedGeometryObjects:geometryCache?.reusedObjects||0, cameraEnabled, storedFrames,
       workerCache: {imageBytes:resources?.bytes||0,sourceBytes:resources?.sourceBytes||0,rasterBytes:resources?.artworkBitmaps?.bytes||0,rasterEntries:resources?.artworkBitmaps?.entries.size||0,
         vectorBytes:resources?.vectors?.bytes||0,vectorEntries:resources?.vectors?.lru.size||0,
         alternateDrawables:geometryCache?.alternateDrawables||0,tweenEntries:tweenCache?.entries.size||0},
@@ -296,9 +362,9 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
   const native = evaluatedFrame(report, location.index, location.t, tick, {tweenCache}), evaluated = performance.now();
   if (!native) throw new Error('The playback tick has no native frame.');
   const sourceGeometry = geometryCache ? geometryCache.get(report, native, revision) : buildGeometry(report, native);
-  const geometry = vfxEnabled ? sourceGeometry : vfxPreviewGeometry(sourceGeometry), geometrized = performance.now();
+  const geometry = vfxEnabled ? connectedVfxGeometry(sourceGeometry,native,report,hiddenUids instanceof Set?hiddenUids:new Set(hiddenUids||[])) : vfxPreviewGeometry(sourceGeometry), geometrized = performance.now();
   const frame = { camera: cameraAtTime(report,native), background_id: native.background_id, background_id_b: native.background_id_b, background_mix: native.background_mix, duration_raw: native.duration_raw,
-    ...(vfxEnabled && native._stykVfx ? {_stykVfx: native._stykVfx} : {}),
+    ...(vfxEnabled && vfxStack(native).length ? {_stykVfx:{figure:vfxStack(native)}} : {}),
     ...(native._stykBackgroundColor !== undefined ? {_stykBackgroundColor: native._stykBackgroundColor} : {}) };
   // Visibility is baked into the bitmap: session-hidden and layer-hidden
   // figures are excluded here, matching the live hiddenUids membership view.
@@ -321,7 +387,7 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
   const backgroundItems = backgroundImageAssets(report, frame).map(asset => ({ type: 'image', asset }));
   let reducedImages = false;
   if (resources && (imageItems.length || backgroundItems.length)) {
-    const visible=playbackVisibleBounds(report,frame,cameraEnabled),depth=parallaxResolver(report,native,cameraEnabled),groups=new Map();
+    const visible=playbackVisibleBounds(report,frame,cameraEnabled,scale*quality),depth=parallaxResolver(report,native,cameraEnabled),groups=new Map();
     for(const item of imageItems){const offset=depth(item.obj.unique_id),key=`${offset.x}:${offset.y}`;let group=groups.get(key);if(!group)groups.set(key,group={items:[],offset});group.items.push(item);}
     for(const {items,offset} of groups.values()){await resources.preload(items,{scale:resolution,maxDimension:maxTextureDimension,visible:visible?{...visible,x:visible.x-offset.x,y:visible.y-offset.y}:undefined});reducedImages||=Boolean(resources.pressureReduced);}
     if(backgroundItems.length){await resources.preload(backgroundItems,{scale:resolution,maxDimension:maxTextureDimension});reducedImages||=Boolean(resources.pressureReduced);}
@@ -374,6 +440,8 @@ export function packetTransferables(packet) {
 export function createPlaybackWorkerEndpoint(postMessage) {
   let current = null, incoming = null, incomingFrames = null, incomingPatch = null, serial = 0, latestRevision = 0, running = false, suspended = false;
   const queue = [];
+  let delivery = null, deliverySerial = 0;
+  const releaseDelivery = () => { const prior = delivery; delivery = null; prior?.resolve(); };
   const artworkRegistry=new ArtworkRegistry();
   const geometryCache=new PlaybackGeometryCache();
   const tweenCache=new PlaybackTweenCache();
@@ -387,8 +455,20 @@ export function createPlaybackWorkerEndpoint(postMessage) {
         if (!snapshot || request.revision !== snapshot.revision) continue;
         const started=request.queuedAt!==undefined?performance.now():null;
         try {
-          const packet = await compilePlaybackPacket(snapshot.report, request.tick, { ...snapshot, artworkRegistry, geometryCache, tweenCache, cancelled: () => serial !== generation || suspended });
-          if (serial === generation && !suspended) postMessage({ type: 'packet', revision: snapshot.revision, tick: request.tick, packet,...(started!==null?{measurement:{queueMs:started-request.queuedAt,computeMs:performance.now()-started}}:{}) }, packetTransferables(packet));
+          const cancelled=()=>serial!==generation||suspended;
+          const packet = await compilePlaybackPacket(snapshot.report, request.tick, { ...snapshot, artworkRegistry, geometryCache, tweenCache, cancelled });
+          if (serial === generation && !suspended) {
+            // Bound current-revision unadmitted packets to one. The controller
+            // sends retention changes before ACK, avoiding speculative bursts
+            // while its thread is delayed by presentation or memory pressure.
+            const deliveryId = snapshot.acknowledgePackets ? ++deliverySerial : undefined;
+            const accepted = deliveryId && new Promise(resolve => { delivery = {revision:snapshot.revision, deliveryId, resolve}; });
+            try {
+              postMessage({type:'packet', revision:snapshot.revision, tick:request.tick, packet, ...(deliveryId ? {deliveryId} : {}),
+                ...(started!==null?{measurement:{queueMs:started-request.queuedAt,computeMs:performance.now()-started}}:{})}, packetTransferables(packet));
+              if (accepted) await accepted;
+            } catch (error) { releaseDelivery(); for (const entry of packet.compatibility) entry.bitmap?.close(); throw error; }
+          }
           else {for (const entry of packet.compatibility) entry.bitmap?.close();if(serial===generation)queue.unshift(request);}
         } catch (error) {
           if (serial === generation) {
@@ -402,6 +482,10 @@ export function createPlaybackWorkerEndpoint(postMessage) {
     } finally { running = false; }
   }
   return message => {
+    if (message.type === 'packet-ack') {
+      if (delivery?.revision === message.revision && delivery.deliveryId === message.deliveryId) releaseDelivery();
+      return;
+    }
     if(message.type==='interaction'){suspended=Boolean(message.active);if(!suspended)void drain();return;}
     if (planning.receive(message)) return;
     if (message.type === 'patch-chunk') {
@@ -451,7 +535,7 @@ export function createPlaybackWorkerEndpoint(postMessage) {
         if (message.chunk.header) {
           planning.cancel();
           tweenCache.clear();
-          serial++; queue.length = 0; current?.resources.dispose(); current = null;
+          serial++; releaseDelivery(); queue.length = 0; current?.resources.dispose(); current = null;
           incoming = { ...message.options, revision: message.revision, report: applyDocumentChunk(null, message.chunk) };
         } else {
           if (incoming?.revision !== message.revision) throw new Error('Playback snapshot chunks arrived before their header.');
@@ -466,15 +550,15 @@ export function createPlaybackWorkerEndpoint(postMessage) {
     } else if (message.type === 'load') {
       planning.cancel();
       tweenCache.clear();
-      serial++; queue.length = 0; current?.resources.dispose();
+      serial++; releaseDelivery(); queue.length = 0; current?.resources.dispose();
       latestRevision = message.revision; incoming = null;
       current = refreshSampling({ ...message, resources: new PlaybackResources({...message, preview: true, maxBytes: message.maxAssetBytes || (message.maxPacketBytes || 128 * 1024 * 1024) / 4}) });
       postMessage({ type: 'loaded', revision: message.revision });
     } else if (message.type === 'invalidate') {
       planning.cancel();
-      serial++; latestRevision = message.revision; queue.length = 0; incoming = null; incomingFrames = null; incomingPatch = null;
+      serial++; releaseDelivery(); latestRevision = message.revision; queue.length = 0; incoming = null; incomingFrames = null; incomingPatch = null;
       tweenCache.clear();
-      if (message.retainDocument && current) { current.resources.previewScale = 1; geometryCache.retainRevision(message.revision);invalidateEvaluationCaches(current.report); current = refreshSampling({ ...current, ...message.options, revision: message.revision }); }
+      if (message.retainDocument && current) { current.resources.previewScale = 1; current.resources.previewPressureScale = undefined; current.resources.previewRecovery = null; geometryCache.retainRevision(message.revision);invalidateEvaluationCaches(current.report); current = refreshSampling({ ...current, ...message.options, revision: message.revision }); }
       else { geometryCache.clear();artworkRegistry.clear();current?.resources.dispose(); current = null; }
     } else if (message.type === 'retain' && message.revision === current?.revision) {
       const keep = new Set(message.ticks);

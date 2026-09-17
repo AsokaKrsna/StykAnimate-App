@@ -1,3 +1,6 @@
+import {installVfxTimeline,paintVfxRow} from './vfx-clip-timeline.mjs';
+import {vfxIcon} from './vfx-icons.mjs';
+import {vfxChannelLabel,vfxChannelRevision} from './vfx-key-channels.mjs';
 import {mountTimelineNavigation} from './timeline-navigation.mjs';
 import {showKeyframeEasingPopover} from './keyframe-easing-popover.mjs';
 import {keyEasing} from './keyframe-easing.mjs';
@@ -43,10 +46,11 @@ export class Timeline{
     this._button(head,'plus','New layer',()=>this.newLayer());
     const frameTools=element('div',this.headerTools,'sheet-frame-tools');
     this.keyButton=this._button(frameTools,'plus','Add Frame',()=>this.addFrame());this.keyButton.classList.add('sheet-add-button');element('span',this.keyButton,'','Add Frame');this.keyButton.dataset.hotkeyCommand='add-frame';
+    this.copyDrawingButton=this._button(frameTools,'duplicate','Next copied drawing',()=>this._run(()=>editor.nextDrawing([editor.activeLayerId],{blank:false})));this.copyDrawingButton.hidden=true;
     this.zoomInput=element('input',null,'sheet-zoom');Object.assign(this.zoomInput,{type:'range',min:'1',max:'36',value:'14'});this.zoomInput.setAttribute('aria-label','Timeline zoom');this._on(this.zoomInput,'input',()=>this.setZoom(Number(this.zoomInput.value)));
     this.live=element('div',this.root,'sheet-live');this.live.setAttribute('role','status');this.live.setAttribute('aria-live','polite');
     this._on(this.scroll,'scroll',()=>this.update());this._on(this.scroll,'pointerdown',event=>this._pointerDown(event));this._on(this.scroll,'pointermove',event=>this._pointerMove(event));this._on(this.scroll,'pointerup',event=>this._pointerUp(event));this._on(this.scroll,'pointercancel',()=>this._cancelGesture());this._on(this.scroll,'lostpointercapture',()=>this._cancelGesture());
-    this._on(this.scroll,'contextmenu',event=>{event.preventDefault();const hit=this._hit(event);if(hit.row<0||!this.tracks[hit.row])return this._menu(event,{view:true});if(!this._contains(hit))this._selectCell(hit);this._menu(event);});
+    this._on(this.scroll,'contextmenu',event=>{event.preventDefault();const hit=this._hit(event);if(hit.row<0||!this.tracks[hit.row])return this._menu(event,{view:true});if(this.tracks[hit.row]?.kind.startsWith('vfx')){this._selectVfxRow(this.tracks[hit.row]);return;}if(!this._contains(hit))this._selectCell(hit);this._menu(event);});
     this._on(this.scroll,'dblclick',event=>this._doubleClick(event));
     this._on(this.main,'pointerleave',()=>{if(!this.gesture){this.hover=null;this.update();}});
     this._on(this.scroll,'keydown',event=>this._keyDown(event));this._on(this.labelViewport,'wheel',event=>{event.preventDefault();this.scroll.scrollTop+=event.deltaY;},{passive:false});
@@ -58,7 +62,8 @@ export class Timeline{
     this._on(this.divider,'dblclick',()=>{this.labelWidth=220;this.root.style.setProperty('--sheet-label','220px');this.resize();});
     this._on(this.divider,'lostpointercapture',()=>{this._columnDrag=null;});
     this._on(editor,'change' ,event=>{const d=event.detail??{};if(d.kind==='document'){this.cameraMotionsCollapsed=false;this.layerQuery='';this.focusedLayerIds=null;this.layerSearch.value='';}
-      if(d.kind==='document'||d.structural||d.layers||d.timing||d.layerSheet)this._reindex();
+      if(d.kind==='vfx-channels'&&this.gesture?.kind.startsWith('vfx'))this._cancelGesture();
+      if(d.kind==='vfx-selection'||d.kind==='vfx-target'||d.kind==='selection'&&editor._vfxTimelineVisible||d.kind==='document'||d.structural||d.layers||d.timing||d.layerSheet)this._reindex();
       else if(this.motionState!==editor.report._styk.cameraMotion)this._refreshMotionRows();
       if(d.kind==='selection'&&!d.sheetSelection&&editor.object){this.selectedTrackId=editor.layerForUid(editor.selectedUid);this.selectedLayers=new Set([this.selectedTrackId]);this.revealSelectedLayer();}
       if(d.kind==='seek'&&!this.gesture&&!this.selecting){this.start=this.end=Math.floor(editor.tick);}this.update(d.kind!=='seek'||!this.paused&&this.gesture?.kind!=='scrub');});
@@ -89,9 +94,13 @@ export class Timeline{
     this.scroll.setAttribute('aria-rowcount',String(this.tracks.length));this.scroll.setAttribute('aria-colcount',String(this.editor.report._styk.layerSheet.duration));this._extent();
   }
   _extent(){
-    if(!this.main)return;this.width=Math.max(1,this.scroll.clientWidth);this.height=Math.max(1,this.scroll.clientHeight);
-    this.root.style.setProperty('--sheet-scrollbar-x',`${this.scroll.offsetHeight-this.scroll.clientHeight}px`);
-    this.root.style.setProperty('--sheet-scrollbar-y',`${this.scroll.offsetWidth-this.scroll.clientWidth}px`);
+    if(!this.main)return;
+    // Read geometry together before changing inherited CSS. A write between
+    // these reads forces another layout for every timeline paint.
+    const {clientWidth,clientHeight,offsetWidth,offsetHeight}=this.scroll;
+    this.width=Math.max(1,clientWidth);this.height=Math.max(1,clientHeight);
+    for(const [name,value] of [['--sheet-scrollbar-x',`${offsetHeight-clientHeight}px`],['--sheet-scrollbar-y',`${offsetWidth-clientWidth}px`]])
+      if(this.root.style.getPropertyValue(name)!==value)this.root.style.setProperty(name,value);
     this.audioTop=HEADER+this.tracks.length*ROW;
     this.logicalWidth=Math.max(this.width,(Math.max(this.editor.totalTicks,this.end+1)+60)*this.pxPerTick);this.logicalHeight=Math.max(this.height,this.audioTop+(this.audio?.contentHeight??0));
     const width=`${Math.min(MAX_SCROLL,this.logicalWidth)}px`,height=`${Math.min(MAX_SCROLL,this.logicalHeight)}px`;
@@ -135,9 +144,10 @@ export class Timeline{
     ctx.save();ctx.beginPath();ctx.rect(0,HEADER,w,h-HEADER);ctx.clip();
     for(let index=firstRow;index<lastRow;index++){
       const layer=this.tracks[index],track=state.tracks[layer.id],y=HEADER+index*ROW-sy,selected=this.selectedLayers.has(layer.id);
+      if(layer.kind.startsWith('vfx')){paintVfxRow(this,ctx,layer,y);continue;}
       if(layer.kind==='motion'){paintMotionRow(this,ctx,layer,y);continue;}
-      const rowAccent=layer.kind==='camera'?c['camera-accent']:layer.kind==='scene'?c['scene-accent']:LAYER_COLORS[layer.color]??null;
-      const rowTint=layer.kind==='camera'?c['camera-tint']:layer.kind==='scene'?c['scene-tint']:null;
+      const rowAccent=layer.kind==='camera'?c['camera-accent']:layer.kind==='scene'?c['scene-accent']:LAYER_COLORS[layer.color]??(layer.drawing?c.accent:null);
+      const rowTint=layer.kind==='camera'?c['camera-tint']:layer.kind==='scene'?c['scene-tint']:layer.drawing?c.selected:null;
       if(track)for(let i=Math.max(0,sheetKeyAt(track,first).index);i<track.keys.length;i++){
         const key=track.keys[i],next=track.keys[i+1],end=next?.tick??track.end;if(key.tick>last)break;if(end<=first)continue;
         const left=Math.max(-6,key.tick*step-sx+1),right=Math.min(w+6,end*step-sx-1),blank=key.empty??(key.value?.frameId===null),tween=next&&!blank&&!(next.empty??(next.value?.frameId===null))&&!['hold','constant'].includes(key.interpolation);
@@ -145,6 +155,7 @@ export class Timeline{
         if(blank){ctx.strokeStyle=c.muted;ctx.globalAlpha=.5;ctx.stroke();ctx.globalAlpha=1;}
         else{ctx.fillStyle=rowTint??(tween?c.tween:c.span);ctx.fill();}
         if(tween&&right-left>32){ctx.strokeStyle=c.accent;ctx.globalAlpha=.55;ctx.beginPath();ctx.moveTo(left+13,y+ROW/2);ctx.lineTo(right-7,y+ROW/2);ctx.lineTo(right-11,y+ROW/2-3);ctx.moveTo(right-7,y+ROW/2);ctx.lineTo(right-11,y+ROW/2+3);ctx.stroke();ctx.globalAlpha=1;}
+        if(layer.drawing&&!blank&&right-left>34){const source=key.value?.frameId&&this.editor.getFrameById(key.value.frameId),object=source?.objects.find(o=>this.editor.layerForUid(o.unique_id)===layer.id),figure=object&&this.editor.report.figure_types.find(f=>f.figure_type_id===object.figure_type_id);if(figure){const thumb=this.editor.drawingResources.thumbnail(figure,()=>{if(!this.disposed)this.update();});if(thumb){const width=Math.min(40,right-left-12);ctx.drawImage(thumb,left+8,y+7,width,ROW-14);}}}
         if(!blank&&end-key.tick>1){ctx.fillStyle=c.muted;ctx.globalAlpha=.55;ctx.fillRect(end*step-sx-4,y+12,2,8);ctx.globalAlpha=1;}
       }
       if(selected){ctx.fillStyle=rowTint??c.selected;ctx.globalAlpha=.65;ctx.fillRect(this.start*step-sx,y+1,(this.end-this.start+1)*step,ROW-2);ctx.globalAlpha=1;}
@@ -171,10 +182,11 @@ export class Timeline{
     ctx.font=`10px ${this.font}`;ctx.textAlign='center';ctx.textBaseline='middle';
     const interval=step<2?50:step<5?20:step<9?10:5;for(let tick=first;tick<=last;tick++){const x=(tick+.5)*step-sx;if(tick===0||(tick+1)%interval===0){ctx.fillStyle=c.muted;ctx.fillText(String(tick+1),x,14);ctx.fillStyle=c.line;ctx.fillRect(Math.round(x),25,1,4);}}
     this._paintLabels(firstRow,lastRow,sy);
-    const locked=this.ids.some(id=>this.editor.getLayer(id)?.locked);this.keyButton.disabled=locked||!this.ids.length;
+    const active=this.editor.getLayer(this.editor.activeLayerId),drawing=Boolean(active?.drawing),locked=drawing?active.locked||!active.visible:this.ids.some(id=>this.editor.getLayer(id)?.locked),label=drawing?'Blank frame':'Add Frame';
+    this.keyButton.disabled=locked||!this.ids.length;this.keyButton.lastChild.textContent=label;this.keyButton.dataset.hotkeyTitle=label;this.keyButton.setAttribute('aria-label',label);this.keyButton.title=label+(this.shortcut('add-frame')?' \u00b7 '+this.shortcut('add-frame'):'');this.copyDrawingButton.hidden=!drawing;this.copyDrawingButton.disabled=locked;
   }
   _paintLabels(first,last,sy){
-    const signature=[first,last,sy,this.editor.layerRevision,this.editor.activeLayerId,this.editor._selectedCameraMotion,...this.ids].join(':');if(signature===this.labelSignature)return;this.labelSignature=signature;
+    const signature=[first,last,sy,this.editor.layerRevision,this.editor.activeLayerId,this.editor._selectedCameraMotion,this.editor._selectedVfxClip,vfxChannelRevision(this.editor),...this.ids].join(':');if(signature===this.labelSignature)return;this.labelSignature=signature;
     for(let slot=0;slot<last-first;slot++){
       let node=this.labels[slot];if(!node){
         node=element('div',this.labelViewport,'sheet-layer');node.setAttribute('role','row');
@@ -183,22 +195,24 @@ export class Timeline{
         this._on(disclosure,'keydown',event=>{if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();event.stopPropagation();this._setCameraMotionsCollapsed(event.key==='ArrowLeft');}});
         node._disclosure=disclosure;
         const name=this._button(node,'layers','Select layer',event=>this._selectLayer(node._id,event));name.classList.add('sheet-layer-name');element('span',name);
+        const channels=element('button',node,'vfx-channel-trigger');channels.type='button';channels.innerHTML=icon('sliders');channels.setAttribute('aria-label','Visible effect keys');channels.setAttribute('aria-haspopup','dialog');element('span',channels);node._channels=channels;this._on(channels,'click',event=>{event.stopPropagation();this._run(()=>this._openVfxChannels(channels));});
         this._on(name,'dblclick',event=>{event.stopPropagation();this._renameLayer(node);});
-        const eye=this._button(node,'eye','Toggle layer visibility',()=>{const row=this.tracks.find(t=>t.id===node._id);return row?.kind==='motion'?this.editor.setCameraMotion(row.id,{enabled:!row.visible}):this.editor.setLayerVisible(node._id,!row.visible);});eye.classList.add('sheet-layer-state');
+        const eye=this._button(node,'eye','Toggle layer visibility',()=>{const row=this.tracks.find(t=>t.id===node._id);if(row?.kind.startsWith('vfx'))return;return row?.kind==='motion'?this.editor.setCameraMotion(row.id,{enabled:!row.visible}):this.editor.setLayerVisible(node._id,!row.visible);});eye.classList.add('sheet-layer-state');
         const lock=this._button(node,'lock','Toggle layer lock',()=>this.editor.setLayerLocked(node._id,!this.editor.getLayer(node._id).locked));lock.classList.add('sheet-layer-state');
         name.draggable=true;this._on(name,'dragstart',event=>{this.dragLayer=node._id;event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',node._id);});
         this._on(node,'dragover',event=>{if(this.dragLayer&&this.dragLayer!==node._id&&this.editor.getLayer(node._id)?.kind==='layer'){event.preventDefault();node.dataset.drop=event.clientY<node.getBoundingClientRect().top+ROW/2?'before':'after';}});this._on(node,'dragleave',()=>delete node.dataset.drop);
         this._on(node,'drop',event=>{event.preventDefault();const before=node.dataset.drop==='before';delete node.dataset.drop;const from=this.dragLayer;this.dragLayer=null;if(from&&from!==node._id&&this.editor.getLayer(node._id)?.kind==='layer')this._run(()=>{const order=this.editor.report._styk.layers.order.filter(id=>id!==from);this.editor.moveLayerTo(from,order.indexOf(node._id)+(before?1:0));});});
         this._on(name,'dragend',()=>{this.dragLayer=null;for(const label of this.labels)delete label.dataset.drop;});
-        node._name=name;node._eye=eye;node._lock=lock;this._on(node,'contextmenu',event=>{event.preventDefault();this._selectLayer(node._id,event);this._menu(event,{layer:true});});this.labels.push(node);
+        node._name=name;node._eye=eye;node._lock=lock;this._on(node,'contextmenu',event=>{event.preventDefault();this._selectLayer(node._id,event);if(this.tracks.find(t=>t.id===node._id)?.kind.startsWith('vfx'))return;this._menu(event,{layer:true});});this.labels.push(node);
       }
       const layer=this.tracks[first+slot];node.hidden=false;node._id=layer.id;node.dataset.layerId=layer.id;node.dataset.selected=String(layer.kind==='motion'?this.editor._selectedCameraMotion===layer.id:this.selectedLayers.has(layer.id));node.dataset.active=String(layer.id===this.editor.activeLayerId);node.style.transform=`translateY(${(first+slot)*ROW-sy}px)`;
-      node.style.setProperty('--layer-color',LAYER_COLORS[layer.color]??'transparent');node.dataset.color=layer.color??'';node.dataset.kind=layer.kind;node.dataset.hidden=String(layer.visible===false);node.dataset.locked=String(Boolean(layer.locked));node.setAttribute('aria-selected',node.dataset.selected);
-      if(node._kind!==layer.kind){node._name.innerHTML=icon(layer.kind==='camera'?'camera':layer.kind==='scene'?'scene':layer.kind==='motion'?'activity':'layers')+'<span></span>';node._kind=layer.kind;}
-      node._name.draggable=layer.kind==='layer';node._lock.hidden=layer.kind==='motion';
+      node.style.setProperty('--layer-color',LAYER_COLORS[layer.color]??'transparent');node.dataset.color=layer.color??'';node.dataset.kind=layer.kind;node.dataset.drawing=String(Boolean(layer.drawing));node.dataset.hidden=String(layer.visible===false);node.dataset.locked=String(Boolean(layer.locked));node.setAttribute('aria-selected',node.dataset.selected);
+      const visualKind=layer.drawing?'drawing':layer.kind;if(node._kind!==visualKind){node._name.innerHTML=(layer.kind==='vfx'?vfxIcon('effects'):icon(layer.kind==='camera'?'camera':layer.kind==='scene'?'scene':layer.kind==='motion'?'activity':layer.drawing?'brush':'layers'))+'<span></span>';node._kind=visualKind;}
+      node._name.draggable=layer.kind==='layer';node._lock.hidden=layer.kind==='motion'||layer.kind.startsWith('vfx');node._eye.hidden=layer.kind.startsWith('vfx');
+      const clip=layer.kind==='vfx'&&layer.clips.find(c=>c.id===this.editor._selectedVfxClip);node._channels.hidden=!clip||!Object.values(clip.keys).some(keys=>keys.length);if(clip){const label=vfxChannelLabel(this.editor,clip);node._channels.lastChild.textContent=label;node._channels.title=`Visible effect keys · ${label}`;}
       node._disclosure.hidden=layer.kind!=='camera'||!this.editor.getCameraMotions().length;
       node._disclosure.setAttribute('aria-expanded',String(!this.cameraMotionsCollapsed));node._disclosure.title=`${this.cameraMotionsCollapsed?'Expand':'Collapse'} camera motions`;node._disclosure.setAttribute('aria-label',node._disclosure.title);
-      node._name.lastChild.textContent=layer.name+(layer.kind==='camera'&&this.cameraMotionsCollapsed?` · ${this.editor.getCameraMotions().length}`:'')+(layer.parallax?.enabled?` · ${Math.round(layer.parallax.x*100)}%`:'');node._name.title=layer.name;node._name.setAttribute('aria-label',`Select layer ${layer.name}`);
+      node._name.lastChild.textContent=layer.name+(layer.kind==='camera'&&this.cameraMotionsCollapsed?` · ${this.editor.getCameraMotions().length}`:'')+(layer.parallax?.enabled?` · ${Math.round(layer.parallax.x*100)}%`:'');node._name.title=layer.name+(layer.drawing?' · Drawing layer':'');node._name.setAttribute('aria-label',`Select layer ${layer.name}`);
       node._eye.dataset.on=String(!layer.visible);node._eye.innerHTML=icon(layer.visible?'eye':'eye-off');node._eye.setAttribute('aria-label',`${layer.visible?'Hide':'Show'} ${layer.name}`);node._eye.title=`${layer.visible?'Hide':'Show'} ${layer.name}`;
       node._lock.dataset.on=String(layer.locked);node._lock.setAttribute('aria-label',`${layer.locked?'Unlock':'Lock'} ${layer.name}`);node._lock.title=`${layer.locked?'Unlock':'Lock'} ${layer.name}`;
     }
@@ -206,6 +220,8 @@ export class Timeline{
   }
   _selectLayer(id,event={}){
     if(typeof id==='object')id=id._id;
+    if(this.tracks.find(t=>t.id===id)?.kind.startsWith('vfx'))return this._selectVfxRow(this.tracks.find(t=>t.id===id));
+    this.editor._selectedVfxClip=null;
     if(this.tracks.find(t=>t.id===id)?.kind==='motion')return this._selectMotion(id);
     this.editor._selectedCameraMotion=null;
     if(event.shiftKey){const a=this.tracks.findIndex(t=>t.id===this.selectedTrackId),b=this.tracks.findIndex(t=>t.id===id);this.selectedLayers=new Set(this.tracks.slice(Math.min(a,b),Math.max(a,b)+1).map(t=>t.id));}
@@ -219,7 +235,7 @@ export class Timeline{
   _hit(event){const rect=this.scroll.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top;return {tick:clamp(Math.floor((x+this._offsetX())/this.pxPerTick),0,9999999),row:y<HEADER?-1:Math.floor((y-HEADER+this._offsetY())/ROW),x,y};}
   _contains(hit){return hit.row>=0&&this.selectedLayers.has(this.tracks[hit.row]?.id)&&hit.tick>=this.start&&hit.tick<=this.end;}
   _selectCell(hit,{extend=false,notify=true}={}){
-    const layer=this.tracks[hit.row];if(!layer)return;if(layer.kind==='motion')return this._selectMotion(layer.id);this.editor._selectedCameraMotion=null;const changed=this.selectedTrackId!==layer.id,anchor=this.anchor??{tick:this.start,row:this.tracks.findIndex(l=>l.id===this.selectedTrackId)};
+    const layer=this.tracks[hit.row];if(!layer)return;if(layer.kind.startsWith('vfx'))return this._selectVfxRow(layer);if(layer.kind==='motion')return this._selectMotion(layer.id);this.editor._selectedCameraMotion=null;const changed=this.selectedTrackId!==layer.id,anchor=this.anchor??{tick:this.start,row:this.tracks.findIndex(l=>l.id===this.selectedTrackId)};
     if(extend){this.start=Math.min(anchor.tick,hit.tick);this.end=Math.max(anchor.tick,hit.tick);this.selectedLayers=new Set(this.tracks.slice(Math.min(anchor.row,hit.row),Math.max(anchor.row,hit.row)+1).map(l=>l.id));}
     else{this.start=this.end=hit.tick;this.selectedLayers=new Set([layer.id]);this.anchor={tick:hit.tick,row:hit.row};}
     this.selectedTrackId=layer.id;
@@ -228,7 +244,7 @@ export class Timeline{
     if(notify||changed)this.onTrackSelect?.(this.trackById.get(layer.id));this.live.textContent=`${layer.name}, frame ${this.start+1}${this.end>this.start?` to ${this.end+1}`:''}`;this.update();
   }
   _doubleClick(event){
-    const hit=this._hit(event),layer=this.tracks[hit.row];if(!layer)return;if(layer.kind==='motion')return this._selectMotion(layer.id);
+    const hit=this._hit(event),layer=this.tracks[hit.row];if(!layer)return;if(layer.kind.startsWith('vfx'))return this._selectVfxRow(layer);if(layer.kind==='motion')return this._selectMotion(layer.id);
     const track=this.editor.report._styk.layerSheet.tracks[layer.id],{key,next}=sheetKeyAt(track,hit.tick);
     if(key?.tick!==hit.tick){this._selectCell(hit);this.addTrackKey();}
     else{if(!this._contains(hit))this._selectCell(hit);this.showEasingPopover(event);}
@@ -261,7 +277,11 @@ export class Timeline{
     if(this._motionDown(event,hit))return;
     const selected=this._contains(hit),span=selected?this._resizeHit(hit):null,layer=this.tracks[hit.row];
     if(span&&!event.shiftKey&&!event.altKey){this.gesture={kind:'resize',span,hit,pointer:event.pointerId,x:event.clientX,y:event.clientY,delta:0};event.preventDefault();return;}
-    const move=!event.shiftKey&&!event.ctrlKey&&!event.metaKey&&!layer.locked&&selected;
+    const track=this.editor.report._styk.layerSheet.tracks[layer.id];
+    // A preceding key does not expose cells beyond the track's exclusive end.
+    // Explicit blank exposures still count as frames and remain draggable.
+    const occupied=hit.tick<track?.end&&Boolean(sheetKeyAt(track,hit.tick).key);
+    const move=!event.shiftKey&&!event.ctrlKey&&!event.metaKey&&!layer.locked&&selected&&occupied;
     this.gesture={kind:move?'move':'select',pointer:event.pointerId,hit,x:event.clientX,y:event.clientY,delta:0,rowDelta:0,copy:event.altKey};
     if(!selected||event.shiftKey)this._selectCell(hit,{extend:event.shiftKey});event.preventDefault();
   }
@@ -293,7 +313,7 @@ export class Timeline{
       const done=this._run(()=>{
         if(destinations.some(id=>!id))throw new Error('Choose destination layers inside the timeline.');
         const containsKeys=this.ids.some(id=>this.editor.layerFrameKeys(id).some(k=>k.tick>=this.start&&k.tick<=this.end));
-        return g.rowDelta||!containsKeys?this.editor.sheetTransferFrames(this.ids,destinations,this.start,this.end,this.start+g.delta,{copy:g.copy}):this.editor.sheetMoveFrames(this.ids,this.start,this.end,g.delta,{copy:g.copy});
+        return g.rowDelta||!containsKeys?this.editor.sheetTransferFrames(this.ids,destinations,this.start,this.end,this.start+g.delta,{copy:g.copy}):this.editor.sheetMoveFrames(this.ids,this.start,this.end,g.delta,{copy:g.copy,replace:this.getSettings?.().replaceKeyframesOnDrop!==false});
       });
       if(done){this.selectedLayers=new Set(destinations);this.selectedTrackId=destinations[0];this.start+=g.delta;this.end+=g.delta;this.editor.selectSheetLayer(destinations[0]);this.selecting=true;try{this.editor.seek(this.start,{allowBeyondEnd:true});}finally{this.selecting=false;}}
     }
@@ -309,10 +329,11 @@ export class Timeline{
    * already holds a key there, it instead duplicates the current pose into the
    * following cell, shifting later keys. */
   addFrame(){return this.onAddFrame?this.onAddFrame():this.addFrameCell();}
-  addFrameCell(){const onKey=this.ids.length>0&&this.ids.every(id=>this.editor.layerFrameKeys(id).some(key=>key.tick===this.start));return onKey?this.duplicateFrameAfter():this.addTrackKey();}
+  addFrameCell(){if(this.editor.getLayer(this.editor.activeLayerId)?.drawing)return this._run(()=>this.editor.addDrawingFrame(this.editor.activeLayerId,this.start));const onKey=this.ids.length>0&&this.ids.every(id=>this.editor.layerFrameKeys(id).some(key=>key.tick===this.start));return onKey?this.duplicateFrameAfter():this.addTrackKey();}
   addTrackKey(){return this._run(()=>this.editor.sheetInsertKey(this.ids,this.start));}
   duplicateFrameAfter(){return this._run(()=>{const result=this.editor.sheetDuplicateFrameAfter(this.ids);this.start=this.end=this.editor.tick;this.revealPlayhead();return result;});}
   insertFrames(){return this._run(()=>this.editor.sheetInsertFrames(this.ids,this.start,this.end-this.start+1));}
+  extendKeyframe(){return this._run(()=>this.editor.movieclipBatch('Extend keyframe',()=>{for(const id of this.ids){const {start,end}=this.editor.sheetSpan(id,this.start);this.editor.sheetSetDuration(end-start+1,id,this.start);}}));}
   clearKeys(){if(this.editor._selectedCameraMotion)return this._run(()=>this.editor.deleteCameraMotion(this.editor._selectedCameraMotion));return this.end>0?this._run(()=>this.editor.sheetClearKeys(this.ids,Math.max(1,this.start),this.end)):false;}
   removeFrames(){return this._run(()=>this.editor.sheetRemoveFrames(this.ids,this.start,this.end));}
   copySelection(){if(this.editor._selectedCameraMotion)return this._copyMotion();this.editor._cameraMotionClipboard=null;const ids=this.ids,start=this.start,end=this.end;return this._clipboard('copy',()=>this.editor.sheetCopyFrames(ids,start,end));}
@@ -352,6 +373,7 @@ export class Timeline{
        {label:selected?.visible===false?'Show layer':'Hide layer',symbol:selected?.visible===false?'eye':'eye-off',action:()=>editor.setLayerVisible(selected.id,selected.visible===false)},
        {label:selected?.locked?'Unlock layer':'Lock layer',symbol:selected?.locked?'unlock':'lock',action:()=>editor.setLayerLocked(selected.id,!selected.locked)}],
       [{label:'New layer',symbol:'plus',action:()=>this.newLayer()},
+       {label:'New drawing layer',symbol:'brush',action:()=>{const layer=editor.createDrawingLayer();this._selectLayer(layer.id);}},
        selected?.kind==='layer'&&!selected.locked&&editor.report._styk.layers.order.length>1&&{label:'Delete layer',symbol:'trash',danger:true,action:()=>this.deleteLayer()}],
     ]);
     const hasKey=this.ids.some(id=>editor.layerFrameKeys(id).some(k=>k.tick>0&&k.tick>=this.start&&k.tick<=this.end)),
@@ -360,7 +382,8 @@ export class Timeline{
       destinations=clipboard&&(this.ids.length===clipboard.rows.length?this.ids:this.ids.length===1?order.slice(order.indexOf(this.ids[0]),order.indexOf(this.ids[0])+clipboard.rows.length):[]),
       canPaste=this.sharedClipboard || destinations?.length===clipboard?.rows.length&&destinations?.every(id=>!editor.getLayer(id)?.locked);
     showTimelineMenu(this,event,[
-      [!locked&&this.ids.length>0&&{label:'Change easing…',symbol:'sliders',action:()=>this.showEasingPopover(event)},!locked&&{label:'Add Frame',shortcut:this.shortcut('add-frame'),symbol:'plus',action:()=>this.addFrame()}],
+      [!selected?.drawing&&!locked&&this.ids.length>0&&{label:'Change easing…',symbol:'sliders',action:()=>this.showEasingPopover(event)},!locked&&{label:'Add Frame',shortcut:this.shortcut('add-frame'),symbol:'plus',action:()=>this.addFrame()}],
+      [selected?.drawing&&!locked&&{label:'Blank drawing here',shortcut:this.shortcut('insert-blank-key'),symbol:'frame',action:()=>editor.drawingKey(this.ids,this.start,{blank:true})},selected?.drawing&&!locked&&{label:'Copy drawing here',shortcut:this.shortcut('insert-copied-key'),symbol:'duplicate',action:()=>editor.drawingKey(this.ids,this.start)},hasFrames&&!locked&&{label:'Extend exposure',shortcut:this.shortcut('extend-keyframe'),symbol:'plus',action:()=>this.extendKeyframe()}],
       [hasFrames&&!locked&&{label:'Copy frames',shortcut:this.shortcut('copy'),symbol:'duplicate',action:()=>this.copySelection()},
        hasFrames&&!locked&&{label:'Cut frames',shortcut:this.shortcut('cut'),symbol:'cut',action:()=>this.cutSelection()},
        canPaste&&!locked&&{label:'Paste frames',shortcut:this.shortcut('paste'),symbol:'clipboard',action:()=>this.pasteSelection()}],
@@ -373,3 +396,5 @@ export class Timeline{
 }
 
 Object.assign(Timeline.prototype,cameraMotionTimelineMethods,timelineOrganizationMethods);
+
+installVfxTimeline(Timeline);

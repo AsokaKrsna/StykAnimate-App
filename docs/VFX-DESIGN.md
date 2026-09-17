@@ -67,7 +67,8 @@ Object sizes use local artwork units and scale with the instance. Scene sizes us
 
 - `vfx-gpu.mjs`: one lazily created WebGL 2 filter executor per JavaScript realm, shared by portable Canvas render paths. It uses GPU textures and no CPU pixel readback. Fullscreen passes run filters in order. Shader programs compile lazily per operation (at most 28), avoiding compilation of the entire catalogue when a simple effect is first used.
 - Blur uses three separable box passes per axis as a Gaussian approximation. Large radii downsample on a stable grid and upsample afterward. Outline uses separable alpha dilation; its rounded mode composes bounded 16-direction dilation passes, while legacy square outlines retain separable dilation. All color math is SDR, with premultiplied alpha at composition boundaries.
-- `vfx-canvas.mjs`: bounded owner crops, neighboring pixels for spatial filters, stable coordinates, and scene composition. Scene padding allows blur to leave and re-enter the frame before final clipping.
+- `vfx-canvas.mjs`: bounded owner crops, neighboring pixels for spatial filters, stable coordinates, and scene composition. `prepareSceneVfx` obtains the scene source before painting and filters it before cropping to the output. Padding contains real neighboring artwork and background pixels, rather than transparent borders added to an already clipped camera image.
+- `vfx-scene.mjs`: shared camera/tile sampling plans. Effect centers, noise, paint coordinates and scale stay anchored to the complete output. Camera previews, export tiles, thumbnail sources, and playback raster/image crops retain the required neighborhood. Background paint coordinates remain independent of expanded coverage. Tiny Gaussian blur guards cover the executors' minimum kernel even at reduced resolution.
 - `vfx-viewport.mjs`: shared-device WebGPU final composition; selection handles follow the effect result.
 - `vfx-camera-gpu.mjs`: reuses the editor's primitive buffers, textures, and device for the camera image. It restores shared uniforms after the ordered camera submission.
 - Existing artwork signatures include effects, including nested child values. Existing raster caches retain unchanged filtered artwork and invalidate changed values. Prepared workers bake object filters into their bounded compatibility packets; the scene stack remains compact packet metadata.
@@ -76,7 +77,7 @@ No-effect documents do not create a VFX graphics context or offscreen filter tex
 
 Partial strength retains one additional original-input texture only when needed.
 
-Tiled export expands guards for scene effects and preserves spatial coordinates. A request whose effect neighborhood exceeds the surface cap fails explicitly rather than omitting effects. WebGL 2 is required for active VFX; unavailable/lost contexts produce explicit errors. Native saving remains independent of graphics availability.
+Tiled export uses a small antialiasing overlap; scene preparation owns one effect halo on every edge, including the outside of the camera. Source culling and image decoding use that expanded surface. Reusable source canvases belong to the existing render-context lifetime, and surface limits are checked before allocating their pixels. No-effect scenes do not allocate an effect source. A request whose effect neighborhood exceeds the surface cap fails explicitly rather than omitting effects. WebGL 2 is required for active VFX when no shared WebGPU device is available; unavailable/lost contexts produce explicit errors. Native saving remains independent of graphics availability.
 
 ## File behavior
 
@@ -88,6 +89,9 @@ A new effect needs a registry schema, validation/interpolation semantics, identi
 
 ## Verification
 
+- `node --test tests/vfx-scene.test.mjs`: stable camera/tile coordinates, sampling limits, zero-strength bypass, small blur kernels and expanded playback crops.
+- `node tests/vfx-camera-sampling.browser.mjs`: independent oversized-scene oracle with artwork beyond the camera; positive/negative shockwaves, other spatial filters and stacks, transformed cameras, gradients/image backgrounds, tile seams, real bitmap/PNG/SVG workers, smoothing, transparency, thumbnails, and Canvas/WebGPU live/prepared output. `node tests/vfx-camera-codecs.mjs` then encodes the worker PNG through the native MP4/AVI service and decodes every resulting frame.
+- `node scripts/benchmark-vfx-camera-sampling.mjs` measures 1,000 figures at 1280×720; `--baseline=HEAD` serves the previous rendering modules through browser request interception without changing the checkout. Results and before/after images live in `artifacts/vfx/camera-sampling/`. This measures preview submission plus GPU completion and export rendering plus readback, excluding document loading and encoding.
 - `node --test tests/vfx.test.mjs`: exposure semantics, tween/frame insertion, history, cancellation, presets, instance isolation, rig remapping, and reopening.
 - `node tests/vfx.browser.mjs`: all nine shader outputs, alpha/orientation, tiled/full-frame parity, binary native round-trip, lossy-format rejection, real slider and label drags, and tab navigation.
 - `node tests/vfx-rendering.browser.mjs`: live/real-worker prepared output, movieclips, worker raster/SVG exports, and moved/rotated camera boundaries, panned camera crops, and editor overlays on WebGPU and Canvas fallback.

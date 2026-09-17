@@ -1,13 +1,14 @@
 import {parallaxResolver} from './layer-parallax.mjs';
 import {cameraMatrix} from './renderer-geometry.mjs';
 import {drawBackground,backgroundBounds} from './pivot/background.mjs';
+import {sceneVfxBounds} from './vfx-scene.mjs';
 
 /** Re-render retained GPU artwork into camera coordinates. Share the device,
  * primitive buffers and textures; own only one camera surface and MSAA target. */
 export class CameraGpuSource {
  constructor(renderer){this.renderer=renderer;this.canvas=new OffscreenCanvas(1,1);this.context=this.canvas.getContext('webgpu');if(!this.context)throw new Error('Camera VFX require an offscreen graphics context.');}
- paint(target,options,width,height){
-  const r=this.renderer,{report,frame}=options,scale=width/report.canvas_width;
+ paint(target,options,width,height,plan){
+  const r=this.renderer,{report,frame}=options,scale=plan.outputSize.width/report.canvas_width;
   const samples=r.msaaCount>1?r.msaaCount:0;
   if(this.width!==width||this.height!==height||this.msaaSamples!==samples){
    this.width=width;this.height=height;this.canvas.width=width;this.canvas.height=height;
@@ -15,7 +16,7 @@ export class CameraGpuSource {
    this.msaa?.destroy();this.msaaSamples=samples;
    this.msaa=samples?r.device.createTexture({label:'VFX camera MSAA',size:[width,height],sampleCount:samples,format:r.format,usage:GPUTextureUsage.RENDER_ATTACHMENT}):null;
   }
-  const matrix=cameraMatrix({report,frame,view:{scale},cameraEnabled:true});
+  const matrix=cameraMatrix({report,frame,view:{scale,x:-plan.viewport.x,y:-plan.viewport.y},cameraEnabled:true});
   const uniform=new Float32Array([matrix[0],matrix[2],matrix[4],Math.hypot(matrix[0],matrix[1]),matrix[1],matrix[3],matrix[5],0,width,height,1,1,0,0,width,height]);
   r.device.queue.writeBuffer(r.uniform,0,uniform);
   if(!options.preparedFrame&&options.cameraEnabled===false){
@@ -46,7 +47,7 @@ export class CameraGpuSource {
   if(!options.preparedFrame&&options.cameraEnabled===false)r.device.queue.writeBuffer(r.transformBuffer,0,r.transformData);
   if(options.viewportUniforms)r.device.queue.writeBuffer(r.uniform,0,options.viewportUniforms);
   target.setTransform(1,0,0,1,0,0);target.clearRect(0,0,width,height);target.save();
-  target.transform(...matrix);drawBackground(target,report,frame,report.canvas_width,report.canvas_height,{...r.resources,bounds:backgroundBounds(frame,report.canvas_width,report.canvas_height,true,report)});target.restore();
+  target.transform(...matrix);drawBackground(target,report,frame,report.canvas_width,report.canvas_height,{...r.resources,bounds:backgroundBounds(frame,report.canvas_width,report.canvas_height,true,report,sceneVfxBounds(report,plan)),paintBounds:backgroundBounds(frame,report.canvas_width,report.canvas_height,true,report)});target.restore();
   target.drawImage(this.canvas,0,0);
  }
  destroy(){this.msaa?.destroy();this.context.unconfigure();this.canvas.width=this.canvas.height=1;}

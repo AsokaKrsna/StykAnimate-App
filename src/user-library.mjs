@@ -1,3 +1,4 @@
+import {drawingBarrier} from './drawing-resources.mjs';
 import {icon} from './icons.mjs';
 import {HotkeyManager} from './hotkeys.mjs';
 import {librarySnapshot, libraryPreview, saveLibraryFile, readLibraryFile} from './library-files.mjs';
@@ -246,6 +247,7 @@ export class UserLibrary {
     this.message.dataset.error = 'false'; this.message.textContent = 'Saving artwork and preview…';
     const folder = this.folder;
     try {
+      const revision=this.editor.revision;await drawingBarrier(this.editor.report);if(revision!==this.editor.revision)throw new Error('The selection changed before saving to the library. Try again.');
       const report = librarySnapshot(this.editor), format = report._styk.libraryKind === 'movieclip' ? 'stykmov' : 'stkz';
       const [thumbnail, blob] = await Promise.all([libraryPreview(report), this.exporter.export(report, {format, figureUids:report.keyframes[0].objects.map(o => o.unique_id)})]);
       let name = report._styk.name.replace(/[<>:"/\\|?*\x00-\x1f]/g,'-').replace(/^\.+|[. ]+$/g,'').slice(0,110).trim() || 'Untitled asset';

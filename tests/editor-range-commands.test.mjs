@@ -9,6 +9,26 @@ function fixture() {
   report.keyframes = [0, 1, 2].map(index => createFrame([createObject(figure, 1, 100 + index * 20, 180), createObject(figure, 2, 260, 180), createObject(figure, 3, 420, 180)], 5));
   const editor = new Editor({demo: false}).load(report); editor.select(1); return editor;
 }
+
+test('paste in place preserves coordinates and undo without advancing the normal paste offset', () => {
+  const editor = fixture(); editor.selectMany([1, 2]); editor.copySelection();
+  const positions = editor.selectedObjects.map(o => [o.root_x, o.root_y]);
+  const before = clone(editor.report);
+  for (let i = 0; i < 2; i++) {
+    const pasted = editor.pasteSelection({offset: 0});
+    assert.deepEqual(pasted.map(o => [o.root_x, o.root_y]), positions);
+    assert.ok(pasted.every(o => ![1, 2].includes(o.unique_id)));
+  }
+  editor.undo(); editor.undo(); assert.deepEqual(editor.report, before);
+  editor.redo(); assert.deepEqual(editor.selectedObjects.map(o => [o.root_x, o.root_y]), positions);
+  for (const offset of [24, 48]) {
+    const pasted = editor.pasteSelection();
+    assert.deepEqual(pasted.map(o => [o.root_x, o.root_y]), positions.map(([x, y]) => [x + offset, y + offset]));
+  }
+  const result = editor.pasteFiguresInFrames([0, 2], {offset: 0});
+  for (const index of [0, 2]) assert.deepEqual(editor.report.keyframes[index].objects
+    .filter(o => result.insertedUids.includes(o.unique_id)).map(o => [o.root_x, o.root_y]), positions);
+});
 test('appearance range follows native identity through arbitrary slots and absent figures with one sparse undo', () => {
   const editor = fixture(), report = editor.report; report.keyframes[1].objects.reverse();
   report.keyframes[1].objects.forEach((object, slot) => object.object_slot = slot);

@@ -6,6 +6,17 @@ import {createDemo} from '../src/demo.mjs';
 const drawing=g=>JSON.parse(JSON.stringify(g.drawables,(key,value)=>key==='record_offset'||key==='record_end'?undefined:value));
 const exact=(cache,report,frame,revision=1)=>{const g=cache.get(report,frame,revision),fresh=buildGeometry(report,frame);assert.deepEqual(drawing(g),drawing(fresh));assert.deepEqual(g.warnings,fresh.warnings);return g;};
 
+test('retained preparation never materializes the previous flattened scene',()=>{
+  const report=createDemo(),cache=new PlaybackGeometryCache(),frame=report.keyframes[0];
+  const first=cache.get(report,frame,1);
+  Object.defineProperty(first,'drawables',{get(){throw new Error('Unexpected full-scene flatten');}});
+  const next=structuredClone(frame);next.objects[0].angles[0]+=.01;
+  const updated=exact(cache,report,next);
+  assert.strictEqual(updated.previousToken,first.token);
+  assert.strictEqual(updated.objects.get(1),first.objects.get(1));
+  assert.ok(updated.changedSlots.has(0));
+});
+
 test('opacity-only seeks retain exact joints and update all drawing metadata without a scene chain',()=>{
   const report=createDemo(),cache=new PlaybackGeometryCache(),frame=structuredClone(report.keyframes[0]);
   frame.objects[2].join={target_object_slot:0,target_handle_id:1};

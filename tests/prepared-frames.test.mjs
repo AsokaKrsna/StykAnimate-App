@@ -91,6 +91,99 @@ function textureRenderer(){
 }
 const imagePacket=(tick,artworkKey='shared')=>{const p=packet(`1:${tick}`);p.compatibility=[{artworkKey,bitmap:{width:10,height:10}}];p.groups[0].compatibilityIndex=0;return p;};
 
+test('cancelling or failing a banded upload never publishes or retains a partial texture',()=>{
+  const renderer=textureRenderer(),cache=new PreparedFrameCache(renderer,{maxBytes:64*1024*1024}),options={report};
+  cache.prepare(imagePacket(0),options);const priorBytes=cache.bytes;
+  const next=imagePacket(1,'large');next.compatibility[0].bitmap={width:2048,height:2048};
+  const warm=cache.beginWarm(next,options,new Set(['1:0']));assert.ok(warm);
+  cache.stepWarm(warm,0);const partial=renderer.textures.at(-1);
+  assert.equal(cache.has(next.key),false);cache.cancelWarm();
+  assert.equal(partial.destroyed,true);assert.equal(cache.bytes,priorBytes);assert.equal(cache.texturePoolBytes,0);
+  let copies=0;renderer.device.queue.copyExternalImageToTexture=()=>{if(++copies===2)throw new Error('upload failed');};
+  assert.throws(()=>cache.prepare(next,options),/upload failed/);
+  assert.equal(renderer.textures.at(-1).destroyed,true);assert.equal(cache.bytes,priorBytes);assert.equal(cache.has(next.key),false);
+  cache.clear();assert.ok(renderer.textures.every(t=>t.destroyed));
+});
+
+test('raster scratch and free texture retention remain bounded across changing dimensions',()=>{
+  const renderer=textureRenderer(),create=renderer.device.createTexture;
+  renderer.device.createTexture=spec=>Object.assign(create(spec),{createView(){return {};}});
+  renderer.device.limits.maxTextureDimension2D=4096;renderer.isolationSamples=4;renderer.format='bgra8unorm';
+  const cache=new PreparedFrameCache(renderer,{maxBytes:2*1024*1024,maxFrames:1});
+  for(let tick=0;tick<40;tick++){
+    const next=imagePacket(tick,`vector:${tick}`),width=65+tick*4,height=65+tick*3;
+    next.compatibility=[{artworkKey:`vector:${tick}`,vectorRaster:{data:new Float32Array(24*2000),width,height},
+      root:{x:0,y:0},bounds:{x:0,y:0,width,height},pixelScale:1}];
+    cache.prepare(next,{report});
+    assert.ok(cache.stats.msaaPoolBytes<=cache.maxMsaaPoolBytes);
+    assert.ok(cache.stats.scratchBytes<=cache.maxScratchBytes);
+    assert.ok(cache.texturePoolBytes<=cache.maxTexturePoolBytes);
+  }
+  cache.clear();assert.ok(renderer.textures.every(t=>t.destroyed));assert.ok(renderer.buffers.every(b=>b.destroyed));
+  assert.equal(cache.stats.msaaPoolBytes,0);assert.equal(cache.stats.scratchBytes,0);assert.equal(cache.texturePoolBytes,0);
+});
+
+test('larger pooled targets cannot consume the protected warm-frame reservation',()=>{
+  const renderer=textureRenderer(),cache=new PreparedFrameCache(renderer,{maxBytes:1000000,maxFrames:2});
+  const big=imagePacket(0,'big');big.compatibility[0].bitmap={width:256,height:256};
+  const shown=imagePacket(1,'shown');shown.compatibility[0].bitmap={width:128,height:128};
+  cache.maxTexturePoolBytes=1000000;
+  cache.prepare(big,{report});cache.prepare(shown,{report});cache._remove(big.key);
+  const future=imagePacket(2,'future');future.compatibility[0].bitmap={width:128,height:128};
+  cache.maxBytes=cache.bytes+128*128*4+224;
+  const warm=cache.beginWarm(future,{report},new Set([shown.key,future.key]));assert.ok(warm);
+  while(!cache.stepWarm(warm,0))assert.ok(cache.has(shown.key));
+  assert.ok(cache.has(shown.key));assert.ok(cache.bytes<=cache.maxBytes);cache.clear();
+});
+
+test('speculative uploads preserve displayed frames, yield between textures and publish atomically',()=>{
+  const renderer=textureRenderer(),cache=new PreparedFrameCache(renderer,{maxBytes:4096,maxFrames:2}),options={report};
+  cache.prepare(imagePacket(0,'old'),options);cache.prepare(imagePacket(1,'displayed'),options);
+  const future=imagePacket(2,'next');future.compatibility.push({artworkKey:'second',bitmap:{width:10,height:10}});
+  const warm=cache.beginWarm(future,options,new Set(['1:1','1:2']));
+  assert.ok(warm);assert.equal(cache.has('1:0'),false);assert.equal(cache.has('1:1'),true);
+  assert.equal(cache.stepWarm(warm,0),false);assert.equal(cache.has('1:2'),false);
+  while(!cache.stepWarm(warm,0))assert.equal(cache.has('1:1'),true);
+  assert.equal(cache.has('1:2'),true);assert.equal(renderer.copies.length,4);assert.ok(cache.bytes<=4096);
+  cache.clear();assert.ok(renderer.textures.every(texture=>texture.destroyed));assert.equal(cache.bytes,0);
+});
+
+test('cancelling or adopting an unfinished upload releases exactly its owned resources',()=>{
+  const renderer=textureRenderer(),cache=new PreparedFrameCache(renderer),options={report};
+  cache.prepare(imagePacket(0),options);const residentBytes=cache.bytes,shared=renderer.textures[0];
+  const next=imagePacket(1);next.compatibility.push({artworkKey:'new',bitmap:{width:10,height:10}});
+  let warm=cache.beginWarm(next,options,new Set(['1:0']));
+  for(let i=0;i<2;i++)assert.equal(cache.stepWarm(warm,0),false);
+  cache.cancelWarm();assert.equal(cache.bytes,residentBytes);assert.equal(shared.destroyed,false);assert.equal(renderer.textures[1].destroyed,true);
+  warm=cache.beginWarm(next,options,new Set(['1:0']));cache.stepWarm(warm,0);
+  assert.equal(cache.prepare(next,options),'1:1');assert.equal(cache.stepWarm(warm),true);assert.equal(cache.warming,null);
+  cache.clear();assert.equal(cache.bytes,0);assert.ok(renderer.textures.every(t=>t.destroyed));
+});
+
+test('speculative admission cannot evict protected frames or mutate an infeasible cache',()=>{
+  const renderer=textureRenderer(),cache=new PreparedFrameCache(renderer,{maxBytes:700,maxFrames:2}),options={report};
+  cache.prepare(imagePacket(0),options);const bytes=cache.bytes,count=renderer.textures.length;
+  assert.equal(cache.beginWarm(imagePacket(1,'new'),options,new Set(['1:0'])),null);
+  assert.equal(cache.bytes,bytes);assert.equal(cache.has('1:0'),true);assert.equal(renderer.textures.length,count);
+  assert.equal(cache.beginWarm({...imagePacket(1),revision:2},options,new Set()),null);
+  cache.clear();
+});
+
+test('resource generation changes cancel staged ownership before resuming or foreground adoption',()=>{
+  const renderer=textureRenderer(),cache=new PreparedFrameCache(renderer),options={report};
+  const first=imagePacket(0),next=imagePacket(1,'next');cache.prepare(first,options);
+  let warm=cache.beginWarm(next,options,new Set([first.key]));cache.stepWarm(warm,0);
+  renderer.generation++;
+  assert.equal(cache.stepWarm(warm,0),true);assert.equal(cache.warming,null);assert.equal(cache.has(next.key),false);
+  assert.equal(renderer.textures.at(-1).destroyed,true,'obsolete partial texture released');
+  cache.prepare(next,options);assert.equal(cache.has(next.key),true);assert.equal(cache.generation,renderer.generation);
+  const last=imagePacket(2,'last');warm=cache.beginWarm(last,options,new Set([next.key]));cache.stepWarm(warm,0);
+  const partial=renderer.textures.at(-1);renderer.generation++;
+  cache.prepare(last,options);assert.equal(partial.destroyed,true,'foreground does not adopt obsolete generation');
+  assert.equal(cache.has(last.key),true);assert.equal(cache.generation,renderer.generation);
+  cache.clear();assert.equal(cache.bytes,0);assert.ok(renderer.textures.every(texture=>texture.destroyed));
+});
+
 test('isolated vector textures share GPU ownership and warmup cannot evict the first frame',()=>{
   const renderer=textureRenderer(),createTexture=renderer.device.createTexture;
   renderer.device.createTexture=spec=>Object.assign(createTexture(spec),{createView(){return {};}});

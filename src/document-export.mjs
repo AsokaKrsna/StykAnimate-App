@@ -1,4 +1,5 @@
 import {documentChunks} from './document-transport.mjs';
+import {drawingBarrier} from './drawing-resources.mjs';
 
 function abortError(message = 'Document export cancelled.') { return new DOMException(message, 'AbortError'); }
 async function yieldToInput() {
@@ -31,6 +32,8 @@ export class DocumentExporter {
     if (!['piv', 'stk', 'styk', 'stkz', 'stykmov'].includes(format)) throw new Error('Choose a .piv, .stk, .styk, .stkz, or .stykmov export.');
     if (signal?.aborted) throw abortError();
     const originalRevision = getRevision?.(), started = performance.now();
+    await drawingBarrier(report,{signal});
+    if(signal?.aborted||getRevision&&getRevision()!==originalRevision)throw abortError('The document changed while preparing drawing pixels.');
     const worker = new Worker(new URL('./document-export-worker.mjs', import.meta.url), {type: 'module', name: 'StykAnimate document export'});
     let pending, sequence = 0, failure, count = 0, prepMax = 0, postMax = 0, mainWork = 0;
     const fail = error => { failure = error; pending?.reject(error); pending = null; worker.terminate(); };

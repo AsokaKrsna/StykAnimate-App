@@ -4,6 +4,7 @@ import {Editor} from '../src/editor.mjs';
 import {BuilderSession} from '../src/builder-session.mjs';
 import {emptyDocument, createObject, createFrame, defaultFigure} from '../src/demo.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
+import {nativeFigureDocument} from '../src/native-figure.mjs';
 
 /** One scene with two figures: the bound figure has two instances, the other
  * figure is an unjoined neighbor used to prove builder edits stay scoped. */
@@ -89,6 +90,40 @@ test('import-new restores the original and adds the edited figure as a new type'
   // One undoable import command on top of the restored baseline.
   editor.undo();
   assert.ok(!editor.report.figure_types.some(f => f.figure_type_id === added.figure_type_id));
+  editor.redo();
+  assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
+});
+
+for (const mode of ['native', 'simple', 'advanced']) test(`import-new preserves a posed, styled figure after deletion (${mode})`, () => {
+  const layerTimeline = mode === 'advanced';
+  const report = emptyDocument(), definition = report.figure_types[0];
+  const pose = createObject(definition, 1, 180, 160, {
+    angles: definition.segments.map((s, i) => s.angle_rad + .12 * (i + 1)),
+    len_flag: 1, lengths: definition.segments.map((s, i) => s.length * (1 + i / 10)),
+    bend_flag: 1, bends: definition.segments.map((s, i) => i / 100), scale: 1.4,
+    _stykStyle: {segments: {'1': {color: 0x465a28, opacity: .8, thickness: 13}}},
+  });
+  report.keyframes = [createFrame([pose, createObject(definition, 2, 500, 160)], 4)];
+  const editor = new Editor({demo: false, propertyChannels: layerTimeline, layerTimeline}).load(report);
+  if (mode === 'simple') editor.enableFrameDrafts();
+  editor.select(1);
+  if (layerTimeline) editor.updateObject({root_x: 200});
+  const original = structuredClone(editor.report);
+  const session = new BuilderSession(editor).begin();
+  editor.select(1, 0); editor.updateSegment({thickness: 18});
+  editor.select(1, 3); editor.deleteSingleSegment();
+  const edited = structuredClone(nativeFigureDocument(editor.report, {figureUid: 1, tick: editor.tick, sourceFrame: editor.selectionFrame}));
+  const imported = session.resolve('import-new');
+  const expected = edited.keyframes[0].objects[0];
+  for (const field of ['angles', 'lengths', 'bends', 'len_flag', 'bend_flag', 'scale', '_stykStyle'])
+    assert.deepEqual(imported[field], expected[field], field);
+  assert.deepEqual(figure(editor, 1), original.figure_types[0]);
+  for (const uid of [1, 2]) assert.deepEqual(
+    nativeFigureDocument(editor.report, {figureUid: uid, tick: editor.tick, sourceFrame: editor.selectionFrame}),
+    nativeFigureDocument(original, {figureUid: uid, tick: editor.tick}),
+    'Original instances keep their complete appearance');
+  editor.undo();
+  assert.deepEqual(editor.report, original);
   editor.redo();
   assert.doesNotThrow(() => validateScene({...editor.report, keyframes: editor._allSourceFrames()}));
 });

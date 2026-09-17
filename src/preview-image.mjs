@@ -63,6 +63,8 @@ export async function imageBlob(url, baseURL, token = '', signal) {
   if (url.startsWith('data:')) {
     const comma = url.indexOf(','), header = url.slice(5, comma), content = url.slice(comma + 1);
     if (comma < 0) throw new Error('Invalid embedded image.');
+    if (/;base64/i.test(header) && typeof Uint8Array.fromBase64 === 'function')
+      return new Blob([Uint8Array.fromBase64(content)], {type: header.split(';')[0] || 'image/png'});
     const binary = /;base64/i.test(header) ? atob(content) : decodeURIComponent(content);
     const bytes = new Uint8Array(binary.length);
     // Indexed writes avoid a JS iterator/callback and a temporary substring
@@ -78,8 +80,16 @@ export async function imageBlob(url, baseURL, token = '', signal) {
 }
 
 export function fitImage(width, height, maxPixels, maxDimension = 8192) {
-  const scale = Math.min(1, Math.sqrt(maxPixels / (width * height)), maxDimension / width, maxDimension / height);
-  return {width: Math.max(1, Math.floor(width * scale)), height: Math.max(1, Math.floor(height * scale))};
+  const pixels = Math.max(1, Math.floor(maxPixels));
+  const scale = Math.min(1, Math.sqrt(pixels / (width * height)), maxDimension / width, maxDimension / height);
+  let fittedWidth = Math.max(1, Math.floor(width * scale)), fittedHeight = Math.max(1, Math.floor(height * scale));
+  // Clamping a very thin dimension to one pixel must not push the other axis
+  // beyond the pixel allowance (for example, a 1 × 100000 source).
+  if (fittedWidth * fittedHeight > pixels) {
+    if (fittedWidth >= fittedHeight) fittedWidth = Math.max(1, Math.floor(pixels / fittedHeight));
+    else fittedHeight = Math.max(1, Math.floor(pixels / fittedWidth));
+  }
+  return {width:fittedWidth, height:fittedHeight};
 }
 
 const paeth = (a, b, c) => {

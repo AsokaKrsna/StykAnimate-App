@@ -19,7 +19,9 @@ Frame-only movieclip replacement boundaries do not count as authored keys.
 
 The current Advanced grid is implemented in `src/layer-timeline.mjs`. Dragging
 from an unselected cell (including an occupied key) selects a rectangular range.
-Only a range selected before pointer-down can move; Shift-drag extends selection.
+Only a range selected before pointer-down can move, starting on an existing pose
+or blank exposure. Empty cells outside exposures select ranges without moving or
+creating frames; Shift-drag extends selection.
 Clicking inside a selected range preserves it. Delete clears its keys without
 changing duration or shifting later keys; the opening key at tick zero is retained.
 Remove Frames remains a separate command that removes time.
@@ -28,6 +30,9 @@ The ruler coalesces pending pointer positions while an editable preview is being
 prepared and submitted. Release requests the exact final tick. See
 [editable scrubbing measurements](SCRUB-PERFORMANCE.md) for the scheduling
 contract, correctness checks, and remaining performance limits.
+
+With a VFX clip selected, previous/next frame shortcuts move the playhead without
+selecting a layer cell or clearing the clip selection, including outside its duration.
 
 ## Independent layer and property tracks
 
@@ -217,3 +222,18 @@ preserves the source color interpretation. Legacy absolute colors (including
 negative black sentinels) become full-strength modern overrides; modern figures
 inserted into legacy projects retain segment-color semantics. Conversion touches
 only inserted poses and definitions, and stays inside the existing paste undo.
+
+## Drawing layers
+
+Drawing rows have a brush icon, DRAW badge and cel thumbnails in wide exposures.
+They share the same sheet as figure, Scene and Camera rows. On an active drawing
+layer, A inserts a blank at a held cell or a next blank after the exposure at a
+key. Only that drawing layer changes, in Simple and Advanced timelines and in
+Draw or Animate. Shift+A extends the hold, and F7 inserts a blank here. Copy here
+is in the context menu; Next copied drawing is in the timeline toolbar. No F5 extension alias is
+added. These current bindings supersede legacy F6 descriptions above.
+
+Blank/copy at the playhead preserve later keys; Next blank/copy inserts time
+after the current exposure. Drawing copies detach pixels, while a hold retains
+one cel. Clear keys and Remove frames retain their existing distinct timing
+semantics. See [the drawing contract](DRAWING.md) for target and history rules.

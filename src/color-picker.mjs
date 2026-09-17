@@ -16,11 +16,10 @@ export function openColorPicker({anchor, paint, gradients = true, alpha = true, 
   let dragCleanup;
   const lifetime = new AbortController(), surface = canvasSampler?.surface();
   const magnifier=surface && createColorMagnifier({anchor,signal:lifetime.signal,sample:canvasSampler.sample});
-  let sampling = false, samplePointer = null;
-  surface?.classList.add('paint-eyedropper');
+  let sampling = false, samplePointer = null, eyedropper = false;
   let draft = normalizePaint(paint), selected = 0, savedGradient, hue = hsv(draft.stops[0].color)[0];
   const panel = document.createElement('div'); panel.className='paint-picker'; panel.setAttribute('role','dialog'); panel.setAttribute('aria-label','Color picker'); panel.setAttribute('popover','manual');
-  panel.innerHTML = `<header><strong>Fill</strong><button type="button" data-close aria-label="Close color picker">×</button></header>
+  panel.innerHTML = `<header><strong>Fill</strong><button type="button" data-eyedropper aria-pressed="false" title="Pick a color from the canvas"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5 5 5M16 7l3-3a2.1 2.1 0 0 1 3 3l-3 3M15 8 4 19l-1 3 3-1L17 10"/></svg>Eyedropper</button><button type="button" data-close aria-label="Close color picker">×</button></header>
     <div class="paint-tabs"><button type="button" data-mode="solid">◼ &nbsp; Solid</button>${gradients ? '<button type="button" data-mode="gradient">◩ &nbsp; Gradient</button>' : ''}</div>
     <section data-gradient><div class="paint-toolbar"><select aria-label="Gradient type"><option value="linear">Linear</option><option value="radial">Radial</option><option value="angular">Angular</option><option value="diamond">Diamond</option></select><label><input data-angle type="number" step="1" aria-label="Gradient angle">°</label><button type="button" data-reverse title="Reverse gradient" aria-label="Reverse gradient">⇄</button><button type="button" data-rotate title="Rotate 90°" aria-label="Rotate gradient">↻</button></div><canvas class="paint-preview" width="520" height="140" aria-label="Gradient preview"></canvas><div class="paint-ramp" aria-label="Gradient stops"></div><div class="paint-toolbar"><strong>Stops</strong><button type="button" data-add aria-label="Add gradient stop">+</button><button type="button" data-remove aria-label="Remove gradient stop">−</button><label class="paint-position"><input data-position type="number" min="0" max="100" step="1" aria-label="Stop position">%</label></div></section>
     <div class="paint-sv" tabindex="0" role="slider" aria-label="Saturation and brightness" aria-valuemin="0" aria-valuemax="100"><i></i></div>
@@ -28,12 +27,19 @@ export function openColorPicker({anchor, paint, gradients = true, alpha = true, 
     <div class="paint-values"><label>HEX<input data-hex type="text" spellcheck="false" maxlength="9" aria-label="Hex color"></label><label data-opacity-label>Alpha %<input data-opacity type="number" min="0" max="100" step="1" aria-label="Alpha percent"></label></div><p class="paint-error" role="status"></p>`;
   (anchor.closest('dialog') || document.body).append(panel); panel.showPopover();
   const $ = s => panel.querySelector(s), stop = () => draft.stops[selected];
+  $('[data-eyedropper]').hidden=!surface;
+  $('[data-eyedropper]').onclick=()=>{
+    eyedropper=!eyedropper;
+    $('[data-eyedropper]').setAttribute('aria-pressed',String(eyedropper));
+    surface?.classList.toggle('paint-eyedropper',eyedropper);
+    if(!eyedropper)magnifier?.hide();
+  };
   const rect=anchor.getBoundingClientRect(); panel.style.left=Math.max(8,Math.min(rect.left-292,innerWidth-300))+'px'; panel.style.top=Math.max(8,Math.min(rect.top,innerHeight-panel.offsetHeight-8))+'px';
   const close = () => {lifetime.abort();surface?.classList.remove('paint-eyedropper');dragCleanup?.();panel.remove(); document.removeEventListener('pointerdown',outside,true); document.removeEventListener('keydown',key,true); if(anchor.isConnected)anchor.focus(); if(active===close)active=null;}; active=close;
   const onCanvas=e=>surface && (e.target===surface || surface.contains(e.target));
   const consume=e=>{e.preventDefault();e.stopImmediatePropagation();};
   const outside=e=>{
-    if(onCanvas(e) && !dragCleanup){
+    if(eyedropper && onCanvas(e) && !dragCleanup){
       consume(e);
       if(e.button!==0 || sampling)return;
       magnifier?.hide();
@@ -55,10 +61,10 @@ export function openColorPicker({anchor, paint, gradients = true, alpha = true, 
   for(const type of ['pointermove','pointerup','click','dblclick','contextmenu','pointercancel']){
     document.addEventListener(type,e=>{
       if(type==='pointermove'){
-        if(onCanvas(e) && !dragCleanup && !sampling)magnifier?.move(e);else magnifier?.hide();
+        if(eyedropper && onCanvas(e) && !dragCleanup && !sampling)magnifier?.move(e);else magnifier?.hide();
       }
       if(dragCleanup)return;
-      if(onCanvas(e) || (samplePointer!==null && e.pointerId===samplePointer))consume(e);
+      if((eyedropper && onCanvas(e)) || (samplePointer!==null && e.pointerId===samplePointer))consume(e);
       if(type==='click'||type==='pointercancel')samplePointer=null;
     },{capture:true,signal:lifetime.signal});
   }

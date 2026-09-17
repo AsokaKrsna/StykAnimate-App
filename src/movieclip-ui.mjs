@@ -1,3 +1,4 @@
+import {drawingBarrier} from './drawing-resources.mjs';
 import {playbackSettings,movieclipAsset,movieclipTime} from './movieclips.mjs';
 import {icon} from './icons.mjs';
 
@@ -44,9 +45,10 @@ export function installMovieclipUI({editor,actions,pause,finishEdit,getTimeline,
       ${mode==='empty'?'':`${range}<label>Contents<select name="contents"><option value="selected" ${editor.selectedUids.size?'':'disabled'} ${editor.selectedUids.size?'selected':''}>Selected figures</option><option value="all" ${editor.selectedUids.size?'':'selected'}>All figures</option></select></label><label class="movieclip-check"><input name="replace" type="checkbox" checked>Replace selection</label>`}
       <div class="movieclip-error" role="alert" hidden></div><footer><button type="button" class="button" data-cancel>Cancel</button><button type="submit" class="button primary">Create</button></footer></form>`;
     dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();
-    dialog.querySelector('form').onsubmit=event=>{
+    dialog.querySelector('form').onsubmit=async event=>{
       event.preventDefault();const form=event.currentTarget,values=new FormData(form),name=String(values.get('name')).trim();if(!name)return;
       try{
+        const revision=editor.revision;await drawingBarrier(editor.report);if(revision!==editor.revision)throw new Error('The scene changed. Try creating the movieclip again.');
         const figure=mode==='empty'?editor.createEmptyMovieclip(name):editor.createMovieclip({name,start:Number(values.get('start'))-1,...(mode==='range'?{end:Number(values.get('end'))}:{}),uids:values.get('contents')==='all'?[]:[...editor.selectedUids],replace:values.has('replace')});
         dialog.close();setTool('select');if(mode==='empty')editor.enterMovieclip(figure.figure_type_id);queueUI();
       }catch(error){const target=dialog.querySelector('[role="alert"]');target.hidden=false;target.textContent=error.message;}
@@ -55,8 +57,8 @@ export function installMovieclipUI({editor,actions,pause,finishEdit,getTimeline,
   }
   Object.assign(actions,{
     'movieclip-new':()=>open('empty'),'movieclip-create':()=>open('selection'),'movieclip-range':()=>open('range'),
-    'movieclip-edit':()=>{pause();finishEdit();setTool('select');editor.enterMovieclip();},
-    'movieclip-done':()=>{pause();finishEdit();editor.leaveMovieclip();queueUI();},
+    'movieclip-edit':async()=>{pause();finishEdit();await drawingBarrier(editor.report);setTool('select');editor.enterMovieclip();},
+    'movieclip-done':async()=>{pause();finishEdit();await drawingBarrier(editor.report);editor.leaveMovieclip();queueUI();},
     'movieclip-cancel':()=>{pause();editor.leaveMovieclip({save:false});queueUI();},
     'movieclip-unique':()=>editor.makeMovieclipUnique(),
     'movieclip-break':()=>editor.breakApartMovieclip(),'movieclip-export':()=>exportClip(),

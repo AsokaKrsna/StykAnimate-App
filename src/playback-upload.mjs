@@ -28,3 +28,46 @@ export class PlaybackUploadWarmup {
     return false;
   }
 }
+
+const yieldUpload=()=>globalThis.scheduler?.yield?scheduler.yield():new Promise(resolve=>{
+  const channel=new MessageChannel();channel.port1.onmessage=()=>{channel.port1.close();channel.port2.close();resolve();};channel.port2.postMessage(null);
+});
+
+/** A few ready successors share the existing GPU cache. Upload work yields
+ * between textures; input, revision changes and the displayed frame take priority. */
+export class PlaybackUploadAhead {
+  constructor({yieldControl=yieldUpload,onError=()=>{}}={}){this.yieldControl=yieldControl;this.onError=onError;this.request=null;this.running=false;}
+  reset(){this.request=null;this.cache?.cancelWarm();this.cache=null;}
+  update(renderer, packets, options, isCurrent){
+    const cache=renderer?.preparedFrames;
+    if(!cache?.beginWarm||renderer.destroyed||renderer.deviceLost){this.reset();return;}
+    if(this.cache!==cache)this.reset();
+    if(packets.every(packet=>cache.has(packet.key))){this.reset();return;}
+    this.cache=cache;this.request={renderer,packets,options,isCurrent};
+    if(!this.running)void this.drain();
+  }
+  async drain(){
+    this.running=true;
+    try{
+      // Start after the current presentation task can return to the browser.
+      await this.yieldControl();
+      while(this.request){
+        const request=this.request,{packets,options,isCurrent}=request,cache=this.cache;
+        const packet=packets.find(p=>!cache.has(p.key));
+        if(request.renderer.destroyed||request.renderer.deviceLost||!packet||!isCurrent(packet))break;
+        let warm=cache.warming;
+        if(warm&&warm.packet!==packet){cache.cancelWarm();warm=null;}
+        warm??=cache.beginWarm(packet,options,new Set(packets.map(p=>String(p.key))));
+        if(!warm)break;
+        cache.stepWarm(warm);
+        await this.yieldControl();
+      }
+    }catch(error){
+      // Foreground preparation remains authoritative if speculative allocation
+      // fails. Keep the failure visible in diagnostics without discarding frames.
+      if(this.cache?.stats)this.cache.stats.warmFailures++;
+      this.cache?.cancelWarm();this.onError(error);
+    }
+    finally{this.running=false;this.cache?.cancelWarm();}
+  }
+}

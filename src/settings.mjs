@@ -5,6 +5,7 @@ import { DEFAULT_HOTKEYS, normalizeHotkeys } from './hotkeys.mjs';
 import { HotkeySettings } from './hotkey-settings.mjs';
 import { applyUIScale, normalizeUIScale, UI_SCALE } from './ui-scale.mjs';
 import { applyEditorTheme, normalizeTheme } from './theme.mjs';
+import {normalizePlaybackQuality, playbackQualityOptions} from './preview-quality.mjs';
 
 export const EDITOR_SETTINGS_KEY = "stykanimate.editor.settings.v1";
 export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
@@ -13,10 +14,12 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   uiScale: 100,
   hotkeys: DEFAULT_HOTKEYS,
   timelineMode: "advanced",
+  replaceKeyframesOnDrop: true,
   showHandles: true,
   showCamera: false,
   showUnselectedHandles: true,
   canvasGrid: false,
+  canvasZoomGesture: "ctrl-scroll",
   canvasGuideVertical: false,
   canvasGuideHorizontal: false,
   canvasGuidesLocked: false,
@@ -56,6 +59,8 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   onionCamera: false,
   onionShowOnTop: false,
   loopPlayback: true,
+  fitViewOnPlayback: true,
+  playbackQuality: 'normal',
   rendererMode: "auto",
   autosaveSeconds: 2.5,
 });
@@ -65,9 +70,13 @@ export function normalizeEditorSettings(value = {}) {
   result.theme = normalizeTheme(value?.theme);
   result.uiScale = normalizeUIScale(value?.uiScale);
   result.hotkeys = normalizeHotkeys(value?.hotkeys);
+  result.playbackQuality = normalizePlaybackQuality(value?.playbackQuality);
+  if (['scroll', 'ctrl-scroll'].includes(value?.canvasZoomGesture))
+    result.canvasZoomGesture = value.canvasZoomGesture;
   if (value?.timelineMode === "simple" || value?.timelineMode === "advanced")
     result.timelineMode = value.timelineMode;
   for (const key of [
+    "replaceKeyframesOnDrop",
     "showHandles",
     "showCamera",
     "showUnselectedHandles",
@@ -89,6 +98,7 @@ export function normalizeEditorSettings(value = {}) {
     "onionCamera",
     "onionShowOnTop",
     "loopPlayback",
+    "fitViewOnPlayback",
   ])
     if (typeof value?.[key] === "boolean") result[key] = value[key];
   if (typeof value?.builderCanvasColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.builderCanvasColor))
@@ -386,6 +396,7 @@ export class EditorSettings {
         )}</section>${this.onResetWorkspace ? `<section class="styk-settings-group"><h3>${escape(this.t('settings.workspace'))}</h3><button type="button" class="styk-settings-reset" data-settings-reset>${icon("undo")}${escape(this.t('settings.resetPanels'))}</button></section>` : ""}`;
     if (this.tab === "canvas")
       html = `<div class="settings-canvas">
+        <section class="settings-card"><label class="styk-settings-row"><span>Zoom gesture</span><select data-setting="canvasZoomGesture" aria-label="Zoom gesture"><option value="ctrl-scroll" ${value.canvasZoomGesture === 'ctrl-scroll' ? 'selected' : ''}>Ctrl + scroll to zoom</option><option value="scroll" ${value.canvasZoomGesture === 'scroll' ? 'selected' : ''}>Scroll to zoom</option></select></label></section>
         <section class="settings-card"><h3>${icon('nodes')}Joint handles</h3><div class="settings-control-grid">${this.checkbox('Show handles','showHandles')}${this.checkbox('Show unselected figures','showUnselectedHandles')}${this.checkbox('Automatic size','autoSizeHandles')}${this.checkbox('Outline handles','outlineHandles')}</div>
         <div class="settings-handle-size"><label class="styk-settings-row"><span>Handle radius</span><span class="styk-settings-number"><input type="range" data-setting="handleSize" min="3" max="10" step="1" value="${value.handleSize}" aria-label="Handle radius"><small data-handle-value>${value.handleSize}px</small></span></label><div class="styk-settings-preview" aria-label="Joint handle preview" style="--size:${value.handleSize};--node-outline:${value.outlineHandles ? '1px solid #000' : '0px solid transparent'}">${['segment','origin','unselected','joined','static'].map(kind => `<span class="styk-settings-node" title="${{segment:'Selected joint',origin:'Figure origin',unselected:'Unselected joint',joined:'Joined joint',static:'Static joint'}[kind]}" style="--node-color:${PIVOT_HANDLE_COLORS[kind]}"></span>`).join('')}</div></div></section>
         <section class="settings-card"><h3>${icon('eye')}Canvas overlays</h3><div class="settings-control-grid">${this.checkbox('Virtual camera','showCamera')}${this.checkbox('Motion paths','motionPaths')}</div></section>
@@ -393,7 +404,7 @@ export class EditorSettings {
         <section class="settings-card settings-renderer"><label for="settings-renderer">${icon('activity')}Graphics mode</label><select id="settings-renderer" data-setting="rendererMode" aria-label="Graphics mode">${[['auto','Automatic'],['canvas','Canvas 2D'],['gpu','WebGPU']].map(([id,label])=>`<option value="${id}" ${value.rendererMode===id?'selected':''}>${label}</option>`).join('')}</select></section>
       </div>`;
     if (this.tab === "animation")
-      html = `<section class="styk-settings-group"><h3>${icon("play")}Playback</h3>${this.checkbox("Loop animation", "loopPlayback")}</section><section class="styk-settings-group"><h3>${icon("save")}Recovery</h3><label class="styk-settings-row"><span>Autosave interval</span><select data-setting="autosaveSeconds" aria-label="Autosave interval">${[[0, "Off"], [2.5, "2.5 seconds"], [5, "5 seconds"], [10, "10 seconds"], [30, "30 seconds"], [60, "1 minute"], ...([0, 2.5, 5, 10, 30, 60].includes(value.autosaveSeconds) ? [] : [[value.autosaveSeconds, `${value.autosaveSeconds} seconds`]])].map(([seconds, label]) => `<option value="${seconds}" ${value.autosaveSeconds === seconds ? "selected" : ""}>${label}</option>`).join("")}</select></label></section>`;
+      html = `<section class="styk-settings-group"><h3>${icon("frame")}Timeline</h3>${this.checkbox("Replace keyframes on drop", "replaceKeyframesOnDrop")}<p class="styk-settings-note">Dragging or Alt-dragging selected keys onto existing keys on the same layer replaces them. Turn off to block occupied destinations.</p></section><section class="styk-settings-group"><h3>${icon("play")}Playback</h3><label class="styk-settings-row"><span>Playback quality</span><select data-setting="playbackQuality" aria-label="Playback quality" aria-describedby="playback-quality-note">${playbackQualityOptions.map(option=>`<option value="${option.id}" ${value.playbackQuality===option.id?'selected':''}>${option.label}</option>`).join('')}</select></label><p id="playback-quality-note" class="styk-settings-note">Lower quality reduces preview resolution for smoother playback. Automatic adjusts it while playing. Editing and exports are unaffected.</p>${this.checkbox("Loop animation", "loopPlayback")}${this.checkbox("Fit view when playback starts", "fitViewOnPlayback")}<p class="styk-settings-note">Turn off to keep your current zoom and pan when starting playback.</p></section><section class="styk-settings-group"><h3>${icon("save")}Recovery</h3><label class="styk-settings-row"><span>Autosave interval</span><select data-setting="autosaveSeconds" aria-label="Autosave interval">${[[0, "Off"], [2.5, "2.5 seconds"], [5, "5 seconds"], [10, "10 seconds"], [30, "30 seconds"], [60, "1 minute"], ...([0, 2.5, 5, 10, 30, 60].includes(value.autosaveSeconds) ? [] : [[value.autosaveSeconds, `${value.autosaveSeconds} seconds`]])].map(([seconds, label]) => `<option value="${seconds}" ${value.autosaveSeconds === seconds ? "selected" : ""}>${label}</option>`).join("")}</select></label></section>`;
     if (this.tab === "shortcuts")
       html = this.hotkeySettings.html();
     if (this.tab === 'feedback')

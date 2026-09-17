@@ -1,3 +1,4 @@
+import {validateVfxClips} from './vfx-clips.mjs';
 import {validateCameraMotion} from './camera-motion.mjs';
 import {validateCameraParallaxOffset} from './layer-parallax.mjs';
 /** Sparse authored channels overlay the untouched native Pivot animation. */
@@ -75,6 +76,7 @@ export function validateAnimationDocument(report) {
 }
 /** Cooperative validation never mutates its document; callers may cancel between checkpoints. */
 export function* validateAnimationDocumentSteps(report) {
+  validateVfxClips(report._styk?.vfxClips);
   validateCameraMotion(report._styk?.cameraMotion);
   let scanned = 0;
   for (const frame of report.keyframes ?? []) {

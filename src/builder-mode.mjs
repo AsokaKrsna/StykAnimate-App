@@ -8,7 +8,7 @@ import {bindBuilderToolbar} from './builder-toolbar.mjs';
 import {builderContextItems} from './builder-context-menu.mjs';
 
 const esc = value => String(value).replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
-const JOINT_COMMANDS = new Set(['split-segment', 'unsplit-segment', 'origin-segment', 'duplicate-segment',
+const JOINT_COMMANDS = new Set(['copy-builder-appearance', 'paste-builder-appearance', 'split-segment', 'unsplit-segment', 'origin-segment', 'duplicate-segment',
   'duplicate-branch', 'mirror-segment', 'mirror-segment-vertical', 'mirror-branch', 'mirror-branch-vertical',
   'segment-order-front', 'segment-order-up', 'segment-order-down', 'segment-order-back',
   'delete-single-segment', 'delete-segment', 'segment-values']);
@@ -27,7 +27,7 @@ export function initBuilderMode({editor, state, host}) {
     return {enter: () => false, requestExit: () => {}, leave: () => {}, sync: () => {},
       get active() { return false; }, get session() { return null; }, get boundUids() { return null; },
       get mode() { return 'animate'; }};
-  let session = null, events = null, context = null;
+  let session = null, events = null, context = null, resolving = false;
   /** Translates an outliner drop into a parent/sibling insert plan. 'before'
    * and 'after' keep the target's parent; 'child' reparents onto the target
    * (as first child so the drop point matches the row under the pointer). */
@@ -123,7 +123,7 @@ export function initBuilderMode({editor, state, host}) {
     else if (selected.length || editor.selectedUid !== null) editor.select(null);
   }
   function onEditorChange() {
-    if (!session) return;
+    if (!session || resolving) return;
     session.sync();
     if (session.stale) { leave(); return; }
     // Keep a bound instance on the current frame: the figure under
@@ -148,7 +148,7 @@ export function initBuilderMode({editor, state, host}) {
     const hasJoint = Boolean(figure) && boundSelected && editor.selectedJoint >= 0;
     bar.querySelectorAll('[data-action]').forEach(button => {
       const name = button.dataset.action;
-      if (JOINT_COMMANDS.has(name)) button.disabled = !hasJoint;
+      if (JOINT_COMMANDS.has(name)) button.disabled = !hasJoint || (name === 'paste-builder-appearance' && !state.builderAppearance);
       else if (FIGURE_COMMANDS.has(name)) button.disabled = !figure || !session.boundUids.size;
       else if (name === 'edit-text') button.disabled = !(hasJoint && figure.segments[editor.selectedJoint]?.primitive_code === 5);
     });
@@ -245,9 +245,13 @@ export function initBuilderMode({editor, state, host}) {
     const choose = choice => {
       let imported;
       try {
+        // Undo/import emits changes synchronously. Selection confinement and
+        // auto-insertion belong to live editing, not the exit transaction.
+        resolving = true;
         host.cancelPolygonDraft?.();
         imported = session.resolve(choice);
       } catch (error) { host.fail?.(error); return; }
+      finally { resolving = false; }
       host.closeDialog?.();
       leave();
       if (imported) editor.select(imported.unique_id);

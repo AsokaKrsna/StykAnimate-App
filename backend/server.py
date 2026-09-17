@@ -202,6 +202,38 @@ def document_digest(document: dict, *, canonical: bool = True, runtime_aliases: 
         allow_nan=False, separators=(",", ":")).encode("ascii")).hexdigest()
 
 
+def source_document_digest(document: dict) -> str:
+    """The v3 fingerprint, encoded one frame at a time without a JSON transport.
+
+    Native frame imports can legitimately exceed the legacy JSON response limit.
+    Saving their original source needs a fingerprint, not a second complete JSON
+    buffer or a second normalized pose inventory. Decoder allocation remains
+    serialized by ProjectStore.decode_lock; only one frame is normalized here.
+    """
+    digest = hashlib.sha256()
+    def emit(value):
+        digest.update(json.dumps(value, sort_keys=True, ensure_ascii=True,
+            allow_nan=False, separators=(",", ":")).encode("ascii"))
+    digest.update(b'{')
+    keys = sorted(k for k in document if k not in ("_stykSource", "_styk", "_stykWeb"))
+    for i, key in enumerate(keys):
+        if i: digest.update(b',')
+        emit(key); digest.update(b':')
+        if key == "keyframes":
+            digest.update(b'[')
+            for index, frame in enumerate(document[key]):
+                if index: digest.update(b',')
+                normalized = _canonical_numbers(frame)
+                for obj in normalized.get("objects", []):
+                    obj.pop("runtime_segments", None)
+                emit(normalized)
+            digest.update(b']')
+        else:
+            emit(_canonical_numbers(document[key]))
+    digest.update(b'}')
+    return digest.hexdigest()
+
+
 def compact_media_aliases(document: dict) -> None:
     """Keep one writable representation of every embedded asset.
 
@@ -280,14 +312,27 @@ class ProjectStore:
         # Negotiated native imports retain validated source bytes and a small
         # definition header. Export/legacy JSON clients alone need this full
         # object inventory; do not keep its 100+ MB encoding in the hot cache.
-        document = piv_codec.decode_piv_bytes(entry.data, source_path=entry.filename)
-        for key in ("editable_paths", "_codec", "_stykWeb"):
-            document.pop(key, None)
-        compact_media_aliases(document)
+        document = self._decode_canonical(entry)
         packed = encoded_json(document, validated=True)
         if len(packed) > MAX_DOCUMENT:
             raise ApiError(413, "document_too_large", "The decoded project exceeds the JSON transport limit.")
         return packed
+
+    def _decode_canonical(self, entry: Source) -> dict:
+        document = piv_codec.decode_piv_bytes(entry.data, source_path=entry.filename)
+        for key in ("editable_paths", "_codec", "_stykWeb"):
+            document.pop(key, None)
+        compact_media_aliases(document)
+        return document
+
+    def _source_digest(self, entry: Source) -> str:
+        with self.decode_lock:
+            if entry.digest is None:
+                if entry.document_json is not None:
+                    entry.digest = document_digest(decoded_json(entry.document_json))
+                else:
+                    entry.digest = source_document_digest(self._decode_canonical(entry))
+            return entry.digest
 
     def samples(self) -> list[dict]:
         result = []
@@ -331,8 +376,7 @@ class ProjectStore:
             raise ApiError(410, "source_expired", "The original source expired from memory. Reopen the original file before exporting.")
         if entry.kind not in ("piv", "stk") or not entry.data:
             raise ApiError(422, "no_source", "The cached import has no binary source.")
-        if entry.digest is None:
-            entry.digest = document_digest(decoded_json(self._canonical_json(entry)))
+        self._source_digest(entry)
         meta = encoded_json({"kind": entry.kind, "version": entry.version,
             "sha256": hashlib.sha256(entry.data).hexdigest(),
             "document_sha256": entry.digest, "document_digest_version": 3})
@@ -494,7 +538,7 @@ class ProjectStore:
         if source_id and entry is None:
             raise ApiError(410, "source_expired", "The original source expired from memory. Reopen the original file before exporting.")
         if entry and entry.kind in ("piv", "stk") and entry.digest is None:
-            entry.digest = document_digest(decoded_json(self._canonical_json(entry)))
+            self._source_digest(entry)
         metadata = document.get("_stykSource", {})
         embedded_source = bridge.source_bytes(document)
         source = entry.data if entry and entry.kind in ("piv", "stk") else embedded_source

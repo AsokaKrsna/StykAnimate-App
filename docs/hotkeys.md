@@ -6,6 +6,15 @@ Open **Settings → Shortcuts** (or **Help → Keyboard shortcuts**). Click a bi
 
 ## Architecture
 
+In Build mode, **Ctrl+D** starts placement of a copy of the selected segment,
+and **Shift+H / Shift+V** flip the selected segment horizontally / vertically.
+These shortcuts use the selected branch or the persistent **Branch** toggle
+(**B**) to include descendants. Their Ctrl/Shift binding modifiers do not change
+scope or mirror a duplicate. **S** splits the selected segment(s) at the midpoint;
+**Shift+S** temporarily includes the branch. All use the shortcut settings,
+including remapped bindings; Shift included in a custom Split binding is part of
+that binding, not a branch modifier. Escape cancels duplicate placement.
+
 - `src/hotkeys.mjs` is the command catalog and pure dispatcher. Stable command IDs connect labels, defaults, context, repetition and held-key behavior. Every supported binding is validated and normalized. `Mod` maps to Ctrl on Windows/Linux and Command on macOS; physical `KeyboardEvent.code` values keep bindings stable across Caps Lock and shifted punctuation.
 - `src/app.mjs` provides the context and command adapter, retaining editing transactions, renderer recovery restrictions and polygon draft protections. `src/timeline-hotkeys.mjs` shares timeline behavior between the integrated app and standalone timeline widgets. Specific contexts override editor-wide bindings.
 - `src/hotkey-settings.mjs` owns recording, search, conflict replacement and focus. `EditorSettings` owns normalization and persistence using the existing browser or desktop preference store. Absent command IDs inherit defaults; an empty array explicitly disables a command. Invalid preferences are repaired deterministically, with customized bindings taking precedence over conflicting defaults. Save errors remain visible and can be retried by closing Settings again.

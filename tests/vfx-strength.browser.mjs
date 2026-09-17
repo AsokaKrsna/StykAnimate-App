@@ -74,6 +74,8 @@ try{
  await fs.mkdir('artifacts/vfx',{recursive:true});
  await page.evaluate(()=>{const grid=document.createElement('div');grid.id='strength-review';grid.style='position:fixed;inset:0;z-index:99999;overflow:auto;background:#e6e9ef;display:grid;grid-template-columns:repeat(2,480px);gap:20px;padding:24px;';for(const {scenario,dataURL} of window.strengthResults){const tile=document.createElement('div');tile.innerHTML=`<h3>${scenario}</h3><img src="${dataURL}">`;grid.append(tile);}document.body.append(grid);});
  await page.screenshot({path:'artifacts/vfx/strength-rendering.png',fullPage:true});for(const render of await page.evaluate(()=>window.strengthResults))await fs.writeFile(`artifacts/vfx/strength-${render.scenario}.png`,Buffer.from(render.dataURL.split(',')[1],'base64'));await page.locator('#strength-review').evaluate(node=>node.remove());
+ // Rendering can be checked independently of the legacy pose-effect UI.
+ if(!process.argv.includes('--render-only')){
  await page.getByRole('tab',{name:'VFX',exact:true}).click();await page.selectOption('#vfx-scope','figure');
  for(const type of ['tint','turbulence']){await page.locator('[data-vfx-action="add"]').click();assert.equal(await page.locator('[data-choice="motionTrail"], [data-choice="afterimage"]').count(),0);await page.locator(`[data-choice="${type}"]`).click();}
  assert.equal(await page.locator('.vfx-effect').count(),2);
@@ -81,5 +83,6 @@ try{
  const strength=page.getByRole('spinbutton',{name:'Turbulent displacement Effect strength',exact:true});await strength.fill('35');await strength.press('Enter');
  assert.equal(await page.evaluate(()=>styk.vfx.selectedEffect().effect.params.effectStrength),.35);
  await page.screenshot({path:'artifacts/vfx/strength-inspector.png'});
+ }
  assert.deepEqual(errors,[]);await fs.writeFile('artifacts/vfx/strength-verification.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
 }finally{await browser.close();}

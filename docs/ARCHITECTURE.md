@@ -47,6 +47,27 @@ An oversized prepared packet is retried with lower raster detail. The editable r
 
 The virtualized timeline draws visible exposures and labels, with a separate playhead. Scrubbing uses cooperative editable geometry and renderer preparation to preserve selection handles and onion skins; frame-local changes can update the playback worker mirror without retransmitting every keyframe. The editor schedules rendering when state changes or playback runs, with no permanent idle rendering loop. See [renderer details and benchmarks](renderer.md).
 
+## Thumbnail worker synchronization
+
+`thumbnail-renderer.mjs` and playback share the retained-source comparison and
+validated patch contract in `playback-patch.mjs`. Unchanged historical poses and
+figure definitions remain in the thumbnail worker; edits send source additions,
+replacements and deletions with changed native frames and render metadata.
+Definition edits explicitly dirty source poses because legacy commands can repair
+them in place. Legacy background tables still accompany thumbnail patches.
+
+Transfers are acknowledged in chunks of at most 64 KiB with a 2 ms construction
+target. The worker validates the complete patch before publishing it. The main
+thread updates its reference mirror only after the matching revision's ACK;
+uncertain source IDs survive cancellation, including an edit undone while its
+worker commit is awaiting acknowledgement. Pauses resume staged chunks, while
+document edits discard stale staging. Replacement documents, native frame topology
+changes, worker failures and idle disposal use the full snapshot fallback.
+The existing eight-request bound and filmstrip bitmap cache remain the owners of
+queued work and displayed previews. Source mirrors clear when their worker dies.
+See [Randombattle measurements](RANDOMBATTLE-PERFORMANCE-2026-09-15.md) and
+`tests/thumbnail-patch.test.mjs`, `tests/thumbnail-source-patches.browser.mjs`.
+
 ## Saving, recovery and exports
 
 Audio has its own immutable document state, editor commands and bounded mixer
@@ -67,6 +88,8 @@ Desktop video streams PNG frames in acknowledged chunks to the bundled FFmpeg en
 
 The canvas header contains workspace modes, scene properties and undo/redo. View
 controls (guides/grid, VFX, joints, paths and zoom) sit at the bottom-right of the viewport.
+Figure effects can isolate joined descendants through a render-only container;
+see [Effects and connected figures](VFX.md) for scope, draw-order and timing rules.
 The left tool rail has a divided stacking group: normal clicks move to front/back,
 and Shift-click moves one step. These use the existing selection-order command.
 Normal right-click opens a short menu for the hit figure or an empty-stage menu;
@@ -117,6 +140,10 @@ The UI tests use the local development server; profile scripts accept `STYK_URL`
 
 ## Interface scale and settings
 
+Settings → Animation → Playback includes “Fit view when playback starts”, enabled
+by default. Disabling it preserves the current canvas zoom and pan on transport
+start. The preference persists through the existing editor settings store.
+
 `src/ui-scale.mjs` owns the 75%–200% presentation range, five-percent steps,
 normalization, and application through the narrow desktop `setUIScale` preload
 API. `EditorSettings` persists `uiScale` through the existing editor preferences
@@ -147,6 +174,10 @@ light/dark layouts without submitting feedback or visiting payment pages.
 
 `builder-construction.mjs` owns the transient chain draft and a figure-scoped spatial index. Joint and sampled-midpoint candidates use a balanced k-d tree; sorted coordinate/length tables supply axis and equal-length targets. Tolerance stays in screen pixels, with point hysteresis and an Alt bypass. Rig gestures snapshot the index once and exclude the edited branch. Snapping changes position, not connectivity: starting at a native joint attaches the new branch; snapping an endpoint onto another joint does not weld handles or introduce cycles.
 
+New builder segments inherit colour and thickness from their native parent handle, including per-instance style edits; explicit thickness arguments take precedence. Chain links carry these values forward. Origin-attached segments retain the default thickness of 8 and the figure's first segment colour (new figures use purple).
+
+Drawing previews snapshot inherited colour and world-space width at gesture start and scale with canvas zoom; zero-width construction lines retain a thin guide. Builder Edit and joint context menus copy the primary selected joint’s displayed paint (including gradients and opacity) and thickness into an app-local clipboard. Paste reuses the existing selection/branch style command as one undo step, preserving topology, shape, rig properties and draw order. Explicit multi-selection targets only those joints.
+
 The chain pen creates no document commands while clicking. Enter, double-click or Finish calls `Editor.addSegments` once. Backspace removes the last point; Escape, tool/session changes, external document edits and the chain context menu cancel the draft. Preview paths rebuild only when points or zoom change. The persisted `builderSmartSnapping` preference is UI state, absent from exported artwork.
 
 Append and rig commands use sparse definition snapshots: history contains appended records or explicitly changed segment indices, plus the existing affected source-pose journal. Unchanged segment references exist only during the synchronous command and never enter its history payload. Origin-support figures retain the full topology repair path. New-figure creation journals a definition splice rather than copying the complete definition table. Geometry invalidation retains unrelated objects while rebuilding every instance and joined dependent of the edited definition; IK, movieclip and slot-remapping cases retain conservative invalidation.
@@ -156,3 +187,12 @@ Append and rig commands use sparse definition snapshots: history contains append
 Builder node selection uses transient native handle IDs scoped to one object UID; Shift-click toggles those IDs in the canvas and hierarchy. Explicit multi-selection style edits target exactly those segments, with a single undo entry; single-node branch editing retains its existing scope. Builder Delete dispatches to segment/branch or selected-fill commands even under Select, so it cannot accidentally remove and recreate the session object. Selection is restored with command history and does not enter the saved figure format.
 
 `builder-fill.mjs` caches directed-edge region discovery by evaluated geometry in a WeakMap. Polyfill Shift-click uses closed line/curve outlines whose native endpoints coincide; dangling strokes are removed from face discovery. Crossings without joints do not create boundary connections, and compound holes are not generated. A preview shows the exact proposed region before committing one native `addPolygon` command. Direct interior clicks select the topmost visible fill in the builder figure, with joints taking precedence; fill color, opacity, order and deletion reuse the existing polygon commands.
+
+## Raster drawing integration
+
+Drawing layers use the ordinary layer-sheet and image-figure contracts.
+`editor-drawing.mjs` supplies commands; `drawing-resources.mjs` owns transient
+surfaces and worker publication; `drawing-controller.mjs` owns pointer gestures.
+`drawing-view.mjs` extends the shared inspector primitives and tool rail.
+Pixel history participates in the existing command stream and its shared
+undo/redo byte budget. See [drawing ownership and workflow](DRAWING.md).

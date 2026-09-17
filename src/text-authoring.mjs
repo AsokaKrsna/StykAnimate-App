@@ -56,16 +56,6 @@ export function parseTextFont(bytes, { name = "Font file" } = {}) {
     name,
   };
 }
-export async function loadTextFontFile(file) {
-  if (!file || typeof file.arrayBuffer !== "function")
-    throw new Error("Choose a TTF or OTF font file.");
-  if (file.size > MAX_FONT_BYTES)
-    throw new Error("Choose a font smaller than 32 MB.");
-  return parseTextFont(await file.arrayBuffer(), {
-    name: file.name || "Font file",
-  });
-}
-
 /** Loads a bundled OFL font once. No installed fonts, network service, or Canvas text API. */
 export async function loadTextFont({ bold = false, italic = false } = {}) {
   const style = Number(!!bold) | (Number(!!italic) << 1);

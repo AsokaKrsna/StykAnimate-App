@@ -11,6 +11,7 @@ try{
   await page.mouse.click(...Object.values(await cell(5)));await grid.press('a');
   assert.deepEqual(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').map(k=>k.tick)),[0,5,12]);
   await page.evaluate(()=>styk.editor.updateObject({root_x:280}));
+  await page.evaluate(()=>styk.settingsUI.commit({hotkeys:{...styk.hotkeys.bindings,'next-frame':['ArrowRight','Shift+ArrowRight']}}));
   await grid.press('Shift+ArrowRight');await grid.press('Shift+ArrowRight');
   assert.deepEqual(await page.evaluate(()=>[styk.timeline.start,styk.timeline.end]),[5,7]);
   await grid.press('Control+c');await page.getByRole('button',{name:'New layer',exact:true}).click();
@@ -43,7 +44,8 @@ try{
   const moved=await page.evaluate(()=>{const e=styk.editor;return {active:e.activeLayerId,owners:e.evaluatedFrame.objects.map(o=>e.layerForUid(o.unique_id))};});
   assert.deepEqual(moved,{active:'layer-2',owners:['layer-2']});
   await grid.press('Control+z');assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())===JSON.stringify(beforeTransfer)),true);
-  await page.locator('[data-layer-id="layer-2"] .sheet-layer-name').dragTo(page.locator('[data-layer-id="layer-1"] .sheet-layer-name'));
+  // Drop below the midpoint; the exact center is the before/after boundary.
+  await page.locator('[data-layer-id="layer-2"] .sheet-layer-name').dragTo(page.locator('[data-layer-id="layer-1"] .sheet-layer-name'),{targetPosition:{x:50,y:22}});
   assert.deepEqual(await page.evaluate(()=>styk.editor.report._styk.layers.order),['layer-2','layer-1']);
   await page.getByRole('button',{name:'Select layer Overlay',exact:true}).dblclick();await page.locator('.sheet-layer-rename').fill('Effects');await page.locator('.sheet-layer-rename').press('Enter');
   await page.getByRole('button',{name:'Lock Effects',exact:true}).click();await page.mouse.click(...Object.values(await cell(2,1)));

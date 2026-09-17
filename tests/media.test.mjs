@@ -42,7 +42,7 @@ test('invalid geometry, remote media, and invalid pixel arrays fail before autho
   assert.throws(() => applySpriteColorKey(new Uint8Array(3), 1, 1), /four bytes/);
 });
 
-test('native transparency defaults follow actual PNG/GIF/BMP signatures and explicit caller intent', () => {
+test('all image formats preserve pixels by default and honor explicit color-key intent', () => {
   const signatures = [
     ['png', [137,80,78,71,13,10,26,10]], ['gif', [71,73,70,56,57,97]],
     ['gif', [71,73,70,56,55,97]], ['bmp', [66,77]], ['jpeg', [255,216,255]],
@@ -50,7 +50,7 @@ test('native transparency defaults follow actual PNG/GIF/BMP signatures and expl
   ];
   for (const [format, bytes] of signatures) {
     assert.equal(mediaImageFormat(Uint8Array.from(bytes)), format);
-    assert.equal(preserveMediaBackground(format), !['png','gif','bmp'].includes(format));
+    assert.equal(preserveMediaBackground(format), true);
     assert.equal(preserveMediaBackground(format, true), true);
     assert.equal(preserveMediaBackground(format, false), false);
   }

@@ -1,16 +1,21 @@
+import {DRAWING_TOOLS} from './drawing-view.mjs';
 const names = {select: 'Select', pose: 'Pose joints', tweener: 'Tweener', rig: 'Edit shared rig', line: 'Draw a line', chain: 'Chain pen', circle: 'Draw a circle', polygon: 'Draw a polygon', hand: 'Pan canvas', attach: 'Attach figure'};
 const builderTools = new Set(['select', 'rig', 'line', 'chain', 'circle', 'polygon', 'hand']);
 
 /** Presentation only: all editing still uses the existing document commands.
  * `builder` is the bounded builder-session controller from builder-mode.mjs;
  * it owns rig-mode entry, exit confirmation and the figure scope. */
-export function initStudioShell({editor, state, setTool, renderAssets, showCommandMenu, setTimelineMode, builder, toast}) {
+export function initStudioShell({editor, state, setTool, renderAssets, showCommandMenu, setTimelineMode, builder, drawing, toast}) {
   const dialog = document.getElementById('insert-dialog');
   const workspace = document.querySelector('.workspace');
   const controller = new AbortController();
   const options = {signal: controller.signal};
-  const mode = () => builder?.active ? 'rig' : 'animate';
+  const mode = () => drawing?.active ? 'draw' : builder?.active ? 'rig' : 'animate';
+  let pendingDraw=false;
   function changeMode(next) {
+    pendingDraw=next==='draw';
+    if(next==='draw'){if(builder?.active){builder.requestExit();if(builder.active)return;}pendingDraw=false;drawing?.enter();sync();return;}
+    drawing?.exit();
     if (next === 'rig') builder?.enter();
     else builder?.requestExit();
     sync();
@@ -18,6 +23,7 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
   document.querySelectorAll('[data-workspace-mode]').forEach(button => button.addEventListener('click', () => changeMode(button.dataset.workspaceMode), options));
   document.getElementById('leave-rig').addEventListener('click', () => changeMode('animate'), options);
   document.getElementById('open-insert').addEventListener('click', () => {
+    if(drawing?.active){drawing.run(()=>drawing.action('new'));return;}
     if (builder?.active) { toast?.('Finish the figure or return to Animate to insert figures.'); return; }
     state.activeTab = 'assets';
     dialog.showModal();
@@ -53,12 +59,13 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
     ], event.currentTarget);
   }, options);
   function sync() {
+    if(pendingDraw&&!builder?.active){pendingDraw=false;drawing?.enter();}
     const current = mode();
-    workspace.dataset.mode = current;
+    workspace.dataset.mode = current;document.getElementById('open-insert').setAttribute('aria-label',current==='draw'?'New drawing layer':'Add to scene');document.getElementById('open-insert').title=current==='draw'?'New drawing layer':'Add to scene';
     document.querySelectorAll('[data-workspace-mode]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.workspaceMode === current)));
     document.querySelectorAll('.tool-dock [data-tool]').forEach(button => {
       const tool = button.dataset.tool;
-      button.hidden = current === 'rig'
+      button.hidden = current === 'draw' ? !['hand',...DRAWING_TOOLS.map(t=>'drawing-'+t[0])].includes(tool) : current === 'rig'
         ? !builderTools.has(tool)
         : !['select', 'pose', 'hand', 'tweener'].includes(tool);
       button.setAttribute('aria-pressed', String(tool === state.tool));
@@ -93,6 +100,7 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
     if (!hint.textContent) hint.textContent = 'Drag to select · Shift-click to add · Drag a joint to pose';
     hint.hidden = Boolean(state.playing || state.previewing || ['select', 'pose', 'hand'].includes(state.tool));
     builder?.sync();
+    if(drawing?.active){hint.hidden=true;workspace.dataset.mode='draw';document.getElementById('tool-context').textContent='Draw · '+drawing.tool;document.getElementById('edit-scope').textContent=drawing.exposureLabel;document.getElementById('inspector-context').textContent='Drawing';drawing.sync();}
   }
   sync();
   return {sync, destroy: () => controller.abort()};

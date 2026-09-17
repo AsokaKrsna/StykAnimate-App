@@ -85,12 +85,10 @@ export function mediaImageFormat(bytes) {
   return null;
 }
 
-/** Native sprite formats use bottom-left color only when source alpha is absent.
- * Extra JPEG/WebP support preserves the image unless callers explicitly opt in.
- */
+/** Preserve source pixels by default; callers may explicitly request Pivot color key. */
 export function preserveMediaBackground(format, explicit) {
   if (explicit !== undefined && typeof explicit !== 'boolean') throw new Error('Image transparency option must be true or false.');
-  return explicit ?? !['png', 'gif', 'bmp'].includes(format);
+  return explicit ?? true;
 }
 
 async function decodeImage(file, {maxPixels = DEFAULT_MEDIA_PIXELS, preserveOpaqueBackground, signal} = {}) {

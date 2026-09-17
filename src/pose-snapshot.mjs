@@ -1,11 +1,22 @@
-function poseFields(source) {
+const poseVectors = new Set(['angles','lengths','bends']);
+function poseFields(source, vectors, retainRuntime = false) {
   const object = {};
-  for (const key of Object.keys(source)) if (key !== 'runtime_segments' && key !== '_movieclipSample') object[key] = source[key];
+  for (const key of Object.keys(source)) if ((retainRuntime || key !== 'runtime_segments') && key !== '_movieclipSample') {
+    if (vectors && poseVectors.has(key) && Array.isArray(source[key])) {vectors[key] = source[key].slice();object[key] = null;}
+    else object[key] = source[key];
+  }
   return object;
 }
 
-/** Clipboard and history own saved pose data, never evaluated render caches. */
-export function snapshotPoseObject(object) { return structuredClone(poseFields(object)); }
+/** Clipboard snapshots omit evaluation caches. Native history opts into runtime
+ * segments because imported poses can store authoritative lengths/bends there.
+ * Numeric placeholders keep the original property order during the fast copy. */
+export function snapshotPoseObject(object, {retainRuntime = false} = {}) {
+  const vectors = {}, fields = poseFields(object, vectors, retainRuntime);
+  // Validated native poses own plain numeric arrays. Copy their storage directly
+  // instead of sending every number through structuredClone's object walker.
+  return Object.assign(structuredClone(fields), vectors);
+}
 
 /** Compare saved poses by identity, independent of evaluation slots and caches. */
 export function poseObjectSignature(object, frame) {
@@ -38,7 +49,7 @@ export function snapshotPoseFrame(frame, uids) {
     return {...object,object_slot:index,...(object.join?{join:{...object.join,target_object_slot:remap.get(object.join.target_object_slot)}}:{})};
   });
   const order=(frame.object_draw_order??slots).filter(slot=>remap.has(slot)).map(slot=>remap.get(slot));
-  const {_cameraMotionTick,...saved}=frame;
+  const {_cameraMotionTick,_vfxTimelineTick,_vfxTimelineScene,...saved}=frame;
   return structuredClone({...saved,objects,object_count:objects.length,object_draw_order:order,
     object_draw_order_unique_ids:order.map(slot=>objects[slot].unique_id)});
 }

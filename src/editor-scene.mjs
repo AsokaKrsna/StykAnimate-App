@@ -248,5 +248,3 @@ export const editorSceneMethods = {
     commit(this, state, 'Rename background'); return true;
   },
 };
-
-export function installEditorScene(Editor) { Object.assign(Editor.prototype, editorSceneMethods); return Editor; }

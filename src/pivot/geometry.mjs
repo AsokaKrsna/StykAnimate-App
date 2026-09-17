@@ -1,4 +1,6 @@
 import {surfaceCulled} from './surfaces.mjs';
+import {primitiveOutsideRasterClip} from './raster-clip.mjs';
+import {vfxRenderFrame,frameWithVfxTime} from '../vfx-clips.mjs';
 import {frameWithCameraTime} from '../camera-motion.mjs';
 import {canvasPaint, segmentPaint, textPaintGeometry, shapePaintBounds} from '../paint.mjs';
 // Scene evaluation is independent of the DOM so the regression harness can test it.
@@ -105,8 +107,8 @@ export function nativeTimeline(report) {
 export function timeline(report) {
   const sheet=report._styk?.layerSheet;
   const entries = nativeTimeline(report).filter(entry=>!sheet||entry.start<sheet.duration), last = entries.at(-1);
-  if(sheet){for(const entry of entries)entry.count=Math.min(entry.count,sheet.duration-entry.start);if(last)last.count=Math.max(sheet.duration,...(report._styk?.cameraMotion?.clips??[]).map(c=>c.start+c.duration))-last.start;return entries;}
-  if (last) last.count = Math.max(last.count, Math.max(animationEndTick(report),...(report._styk?.cameraMotion?.clips??[]).map(c=>c.start+c.duration)) - last.start);
+  if(sheet){for(const entry of entries)entry.count=Math.min(entry.count,sheet.duration-entry.start);if(last)last.count=Math.max(sheet.duration,...(report._styk?.cameraMotion?.clips??[]).map(c=>c.start+c.duration),...(report._styk?.vfxClips?.clips??[]).map(c=>c.duration===null?0:c.start+c.duration))-last.start;return entries;}
+  if (last) last.count = Math.max(last.count, Math.max(animationEndTick(report),...(report._styk?.cameraMotion?.clips??[]).map(c=>c.start+c.duration),...(report._styk?.vfxClips?.clips??[]).map(c=>c.duration===null?0:c.start+c.duration)) - last.start);
   return entries;
 }
 function sameSign(a, b) {
@@ -434,6 +436,7 @@ function sampleClips(report,frame,tick,retainedSamples=false){
   };
   return sampleMovieclipObjects(report,frame,tick,buildGeometry,elapsed,retainedSamples);
 }
+const withRuntimeTime=(report,frame,tick)=>frameWithCameraTime(report,frameWithVfxTime(report,frame,tick),tick);
 export function evaluatedFrame(report, index, t = 0, absoluteTick, {tweenCache,skipMovieclips=false,skipMovieclipPatches=false} = {}) {
   if(report._styk?.layerSheet){
     const row=timeline(report)[index],tick=absoluteTick??((row?.start??0)+t*(row?.count??0));
@@ -443,7 +446,7 @@ export function evaluatedFrame(report, index, t = 0, absoluteTick, {tweenCache,s
       const current=rows[low];return evaluatedFrame(source,low,current?.count?(time-current.start)/current.count:0,time,{skipMovieclips:true});
     }});
     if(!skipMovieclips&&movieclipTypes(report).size)frame=sampleClips(report,frame,tick);
-    return frameWithCameraTime(report,applyLayerOrder(report,frame),tick);
+    return withRuntimeTime(report,applyLayerOrder(report,frame),tick);
   }
   let frame = evaluatedNativeFrame(report, index, t, tweenCache);
   const source = movieclipSourceDocument(report);
@@ -477,9 +480,9 @@ export function evaluatedFrame(report, index, t = 0, absoluteTick, {tweenCache,s
     const row=entries?.[index];
     frame = sampleClips(report, frame, absoluteTick ?? ((row?.start ?? 0) + t * (row?.count ?? 0)),Boolean(source));
   }
-  if(!report._styk?.cameraMotion?.clips.length)return applyLayerOrder(report,frame);
+  if(!report._styk?.cameraMotion?.clips.length&&!report._styk?.vfxClips?.clips.length)return applyLayerOrder(report,frame);
   const row=absoluteTick===undefined?timeline(report)[index]:null;
-  return frameWithCameraTime(report,applyLayerOrder(report, frame),absoluteTick??((row?.start??0)+t*(row?.count??0)));
+  return withRuntimeTime(report,applyLayerOrder(report, frame),absoluteTick??((row?.start??0)+t*(row?.count??0)));
 }
 export function buildGeometry(report, frame, incremental = null) {
   const iterator = buildGeometrySteps(report, frame, incremental);
@@ -492,6 +495,7 @@ export function buildGeometry(report, frame, incremental = null) {
 /** Shares the exact synchronous builder, with checkpoints inside dense figures
  * as well as between objects. Partial geometry is never published. */
 export function* buildGeometrySteps(report, frame, incremental = null) {
+  if(frame._vfxTimelineTick!==undefined){frame=vfxRenderFrame(report,frame);if(incremental){const dirtySlots=new Set(incremental.dirtySlots);frame.objects.forEach((o,i)=>{if(o._stykVfx!==incremental.previous?.objects.get(i)?.obj._stykVfx)dirtySlots.add(i);});incremental={...incremental,dirtySlots};}}
   const types = new Map(), definitions = report.figure_types || [];
   for (let index = 0; index < definitions.length; index++) {
     const figure = definitions[index];
@@ -943,7 +947,7 @@ export function drawGeometry(ctx, geometry, resources = {}) {
       isolated(ctx,owner.opacity,target=>withVfx(target,owner.effects,filtered=>drawGeometry(filtered, {drawables:g.items.map(item => {
         const inner=item._movieclipInner;
         return {...item,slot:item._movieclipPart,_movieclipOwner:inner?.owner,_movieclipPart:inner?.part,_movieclipInner:inner?.inner};
-      })},resources),{bounds:owner.effects?.length?objectBounds(g.items,resources):undefined,domainBounds:owner.effects?.length?objectBounds(g.items,{...resources,vfxBounds:false}):undefined,scale:owner.scale}),groupCanvases);
+      })},resources),{bounds:owner.effects?.length?objectBounds(g.items,resources):undefined,domainBounds:owner.effects?.length?(owner.domainBounds??objectBounds(g.items,{...resources,vfxBounds:false})):undefined,scale:owner.scale}),groupCanvases);
       continue;
     }
     const effects=vfxStack(g.items[0]?.obj);
@@ -982,7 +986,8 @@ export function drawGeometry(ctx, geometry, resources = {}) {
             outlineCanvases,
           );
         }
-        drawPrimitives(target, g.items, resources, stroke, !skipPaint);
+        const clip = !effects.length && !(ow > 0) ? geometry.clipBounds : null;
+        drawPrimitives(target, g.items, resources, stroke, !skipPaint, clip);
       },
       {bounds:effects.length?objectBounds(g.items,resources):undefined,domainBounds:effects.length?objectBounds(g.items,{...resources,vfxBounds:false}):undefined,scale:Math.abs(g.items[0]?.obj.scale??1)},
     ),groupCanvases);
@@ -1029,7 +1034,7 @@ function strokeWidth(stroke, requested) {
   if (Math.abs(requested - stroke.width) > 1e-4) stroke.width = requested;
   return stroke.width;
 }
-function drawPrimitives(ctx, items, resources, stroke, paint = true) {
+function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null) {
   for (const s of items) {
     const effects=!s._vfxSkipNode&&!s.outline?segmentVfx(s):[];
     if(activeVfx(effects).length && paint){withVfx(ctx,effects,target=>drawPrimitives(target,[{...s,_vfxSkipNode:true}],resources,stroke),{bounds:objectBounds([s],resources),domainBounds:objectBounds([s],{...resources,vfxBounds:false}),scale:Math.abs(s.obj.scale??1)});continue;}
@@ -1111,8 +1116,9 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true) {
     }
     if (s.type === "image") {
       if (!paint) continue;
-      const a = s.asset,
-        img = a && resources.image?.(resources.url?.(a));
+      const a = s.asset,live=resources.drawing?.(s.fig);
+      let img = live?.canvas ?? (a && resources.image?.(resources.url?.(a)));
+      if(s.onionTint&&img?.complete&&img.naturalWidth&&resources.tint)img=resources.tint(img,s.onionTint,live?.stamp??0);
       if (!a || !img?.complete || !img.naturalWidth || !a.anchor_length)
         continue;
       const reverse = Boolean(s.seg.extra_u8_a ?? s.seg.extra?.[1]),
@@ -1132,8 +1138,9 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true) {
       ctx.scale(mirror ? -scale : scale, scale);
       ctx.translate(-a.anchor_start.x, -a.anchor_start.y);
       ctx.globalAlpha *= s.alpha;
-      // Pivot requests FMX's high-speed (nearest-neighbor) bitmap sampler.
-      ctx.imageSmoothingEnabled = false;
+      // Preserve Pivot sprite sampling; authored drawings use smooth scaling.
+      ctx.imageSmoothingEnabled = Boolean(s.fig?._styk?.drawing);
+      if(ctx.imageSmoothingEnabled)ctx.imageSmoothingQuality='high';
       const iw = a.display_width ?? img.naturalWidth, ih = a.display_height ?? img.naturalHeight;
       // Cropped variants carry their source rectangle; mapping it back into
       // display space preserves the original placement and anchors.
@@ -1148,6 +1155,7 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true) {
       if (s.points.length < 3) continue;
       const width = strokeWidth(stroke, s.outline ? 2 * s.outline : 0);
       if (!paint) continue;
+      if (clip && primitiveOutsideRasterClip(s, clip, width)) {if (clip.stats) clip.stats.culledPrimitives++; continue;}
       ctx.beginPath();
       ctx.moveTo(s.points[0].x, s.points[0].y);
       for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x, s.points[i].y);
@@ -1162,6 +1170,7 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true) {
     let width = strokeWidth(stroke, s.baseThickness ?? s.thickness);
     if (s.outline) width = strokeWidth(stroke, width + 2 * s.outline);
     if (!paint) continue;
+    if (clip && primitiveOutsideRasterClip(s, clip, width)) {if (clip.stats) clip.stats.culledPrimitives++; continue;}
     if (s.type === "circle") {
       const filled =
           s.seg.segment_kind === "circleFill" || width >= Math.abs(s.length),

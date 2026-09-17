@@ -24,6 +24,7 @@ export function applicationMenuItems(name, editor, desktop) {
     edit: [
       ['undo', 'undo', 'Undo', 'Ctrl Z'], ['redo', 'redo', 'Redo', 'Ctrl Shift Z'], null,
       ['copy', 'duplicate', 'Copy', 'Ctrl C', noFigure], ['paste', 'clipboard', 'Paste', 'Ctrl V'],
+      ['paste-in-place', 'clipboard', 'Paste in place', 'Ctrl Shift V'],
       ['duplicate', 'duplicate', 'Duplicate selection', 'Ctrl D', noFigure],
       ['delete', 'trash', 'Delete selection', 'Delete', noFigure], null,
       ['select-all', 'cursor', 'Select all', 'Ctrl A'], ['select-invert', 'cursor', 'Invert selection'], null,

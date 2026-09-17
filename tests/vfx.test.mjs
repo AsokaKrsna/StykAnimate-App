@@ -55,9 +55,9 @@ test('every VFX color supports bounded gradients, alpha, undo and native exposur
  const reopen=new Editor({demo:false}).load(structuredClone(e.report));reopen.seek(5);assert.deepEqual(reopen.vfxEffects(target),e.vfxEffects(target));assert.ok(before);
  assert.throws(()=>validateVfxValue(vfxProperty('glow',id,'color'),{...paint,stops:Array(33).fill(paint.stops[0])}));
 });
-test('presets validate, reordering is one history entry, and pasted effects have fresh identities',()=>{
+test('presets validate, reordering is one history entry, and paste updates matching effect identities',()=>{
  const e=fixture(true);for(const [name,preset] of Object.entries(VFX_PRESETS)){const clean=fixture(true);clean.applyVfxPreset(target,name);assert.equal(clean.vfxEffects(target).length,preset.effects.length);validateVfxStack(clean.vfxEffects(target));}
- e.applyVfxPreset(target,'Power up');const old=e.vfxEffects(target).map(e=>e.id),history=e._undo.length;e.reorderVfx(target,old[0],1);assert.equal(e._undo.length,history+1);assert.deepEqual(e.vfxEffects(target).map(e=>e.id),old.toReversed());e.undo();assert.deepEqual(e.vfxEffects(target).map(e=>e.id),old);e.pasteVfx(target,e.vfxEffects(target));assert.equal(new Set(e.vfxEffects(target).map(e=>e.id)).size,4);
+ e.applyVfxPreset(target,'Power up');const old=e.vfxEffects(target).map(e=>e.id),history=e._undo.length;e.reorderVfx(target,old[0],1);assert.equal(e._undo.length,history+1);assert.deepEqual(e.vfxEffects(target).map(e=>e.id),old.toReversed());e.undo();assert.deepEqual(e.vfxEffects(target).map(e=>e.id),old);e.pasteVfx(target,e.vfxEffects(target));assert.equal(new Set(e.vfxEffects(target).map(e=>e.id)).size,2);
 });
 test('preview bypass strips only render effects and never changes the editable document',()=>{
  const e=fixture(true);e.addVfx(target,'glow');const before=e.serialize(),geometry=buildGeometry(e.report,e.evaluatedFrame),clean=vfxPreviewGeometry(geometry);

@@ -6,17 +6,18 @@ import { cameraIsIdentity, inverseCameraScale, effectiveCamera } from './pivot/b
 // Each record is six aligned vec4s, consumed directly by the GPU storage buffer.
 export const SHAPE_FLOATS = 24;
 export const SHAPE_BYTES = SHAPE_FLOATS * 4;
-export const SHAPE = Object.freeze({ LINE: 0, CIRCLE: 1, SQUARE_LINE: 2, TRIANGLE: 3, TEXTURE: 4, RECT: 5, RADIAL_RECT: 6, GLYPH: 7, DISABLED: -1 });
+export const SHAPE = Object.freeze({ LINE: 0, CIRCLE: 1, SQUARE_LINE: 2, TRIANGLE: 3, TEXTURE: 4, RECT: 5, RADIAL_RECT: 6, GLYPH: 7, BACKGROUND_IMAGE: 8, DISABLED: -1 });
 
 export function cameraMatrix({ report, frame, view = {}, cameraEnabled = true }) {
   const zoom = Number(view.scale ?? 1), x = Number(view.x ?? 0), y = Number(view.y ?? 0);
+  const rotate=matrix=>{if(!view.rotation)return matrix;const [a,b,c,d,e,f]=matrix,r=Math.cos(view.rotation),s=Math.sin(view.rotation),cx=x+(report?.canvas_width??640)*zoom/2,cy=y+(report?.canvas_height??480)*zoom/2;return [r*a-s*b,s*a+r*b,r*c-s*d,s*c+r*d,cx+r*(e-cx)-s*(f-cy),cy+s*(e-cx)+r*(f-cy)];};
   const camera = effectiveCamera(report, frame, cameraEnabled);
-  if (cameraIsIdentity(camera)) return [zoom, 0, 0, zoom, x, y];
+  if (cameraIsIdentity(camera)) return rotate([zoom, 0, 0, zoom, x, y]);
   const scale = inverseCameraScale(camera) * zoom;
   const angle = -Number(camera.angle_rad ?? 0), a = Math.cos(angle) * scale, b = Math.sin(angle) * scale;
   const cx = Number(report?.canvas_width ?? 640) / 2, cy = Number(report?.canvas_height ?? 480) / 2;
   const px = cx + Number(camera.x ?? 0), py = cy + Number(camera.y ?? 0);
-  return [a, b, -b, a, x + cx * zoom - a * px + b * py, y + cy * zoom - b * px - a * py];
+  return rotate([a, b, -b, a, x + cx * zoom - a * px + b * py, y + cy * zoom - b * px - a * py]);
 }
 export function worldToScreen(point, options) {
   const [a, b, c, d, e, f] = cameraMatrix(options);
@@ -180,6 +181,10 @@ export function objectBounds(items, resources = {}) {
   for (const s of items) {
     let outline = 0;
     if (s.fig?.segment_decode?.global_style?.u28) outline = Math.abs(new Float32Array(new Uint32Array([s.fig.segment_decode.global_style.u28]).buffer)[0] * Number(s.obj.scale ?? 1));
+    // Zero-width construction lines have handles/topology but paint no pixels.
+    // Including distant control endpoints can reduce an entire isolated figure
+    // to a handful of pixels at the texture-size limit. Outlines still paint.
+    if (s.type === 'line' && (s.baseThickness ?? s.thickness) === 0 && !outline && !s.outline) continue;
     const pad = Math.max(0, s.thickness ?? 0) / 2 + (Number.isFinite(outline) ? outline : 0) + 3 + (resources.vfxBounds===false?0:drawableVfxPadding(s));
     if (s.type === 'circle') include((s.start.x + s.end.x) / 2, (s.start.y + s.end.y) / 2, Math.abs(s.length) / 2 + pad);
     else for (const p of s.points || []) include(p.x, p.y, pad);

@@ -12,6 +12,7 @@ const { SharedClipboard } = require('./shared-clipboard.cjs');
 const { workspaceDirectory } = require('./workspace-instance.cjs');
 const { spawn } = require('node:child_process');
 const { WorkspacePreferences } = require('./preferences.cjs');
+const { SupportService } = require('./support.cjs');
 const { ProjectFiles } = require('./project-files.cjs');
 const { FontService } = require('./font-service.cjs');
 const { VideoExportService } = require('./video-export-service.cjs');
@@ -238,6 +239,26 @@ function registerIpc() {
     }, () => { quitting = false; });
   });
   const withTelemetry = handler => async (event, value) => { trusted(event); await telemetryReady; if (!telemetry) throw new Error('Privacy settings are unavailable. Please restart StykAnimate.'); return handler(value); };
+  const support = new SupportService({ directory: app.getPath('userData'), version: app.getVersion(), development: !app.isPackaged });
+  ipcMain.handle('styk:support-context', event => { trusted(event); return support.context(); });
+  ipcMain.handle('styk:support-live', (event, id) => { trusted(event); return support.connectLive(id, value => { if (!event.sender.isDestroyed()) event.sender.send('styk:support-live-event', value); }); });
+  ipcMain.handle('styk:support-live-close', (event, connection) => { trusted(event); if (Number.isSafeInteger(connection)) support.closeLive(connection); });
+  app.on('browser-window-created', (_event, createdWindow) => createdWindow.on('closed', () => support.closeLive()));
+  ipcMain.handle('styk:support-save-state', (event, value) => { trusted(event); return support.saveState(value); });
+  ipcMain.handle('styk:support-request', (event, value) => { trusted(event); return support.request(value); });
+  ipcMain.handle('styk:support-copy-access', async event => { trusted(event); clipboard.writeText(await support.accessLink()); return { copied: true }; });
+  ipcMain.handle('styk:support-restore', (event, key) => { trusted(event); return support.restore(key); });
+  ipcMain.handle('styk:support-download', async (event, value) => {
+    trusted(event);
+    if (!/^[a-f0-9]{32}$/.test(value?.threadId || '') || !/^[a-f0-9]{32}$/.test(value?.fileId || '')) throw new Error('Invalid attachment.');
+    const result = await support.request({ path: `/threads/${value.threadId}/files/${value.fileId}` });
+    if (!result.ok) throw new Error('Attachment could not be downloaded.');
+    const encoded = /filename\*=UTF-8''([^;]+)/.exec(result.disposition)?.[1];
+    let name = 'attachment'; try { if (encoded) name = path.basename(decodeURIComponent(encoded)); } catch { /* Safe fallback. */ }
+    const destination = await dialog.showSaveDialog(window, { title: 'Save report attachment', defaultPath: name });
+    if (destination.canceled || !destination.filePath) return { saved: false };
+    await atomicWrite(destination.filePath, Buffer.from(result.bytes)); return { saved: true };
+  });
   ipcMain.handle('styk:telemetry-state', withTelemetry(() => telemetry.getState()));
   ipcMain.handle('styk:telemetry-consent', withTelemetry(value => telemetry.setConsent(value)));
   ipcMain.handle('styk:telemetry-record', withTelemetry(value => telemetry.record(value)));
@@ -627,7 +648,7 @@ async function start() {
   }, 60000); memoryTimer.unref();
   library = new LibraryStore(process.env.STYK_LIBRARY_DIR || path.join(app.getPath('documents'), 'StykAnimate', 'library'));
   // A temporarily unavailable Documents volume should not prevent animation work.
-  await library.init().catch(error => console.warn('Library initialization:', error.message));
+  void library.init().catch(error => console.warn('Library initialization:', error.message));
   backend = await startBackend({
     appRoot: APP_ROOT, resourcesPath: process.resourcesPath, packaged: app.isPackaged,
     log: (message) => { if (process.env.STYK_DEBUG === '1') process.stderr.write(message); },

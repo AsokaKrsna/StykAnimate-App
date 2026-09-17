@@ -130,3 +130,12 @@ project bytes.
 
 The package build tracks `native_format.py` alongside the codec's other runtime
 sources, so an old sidecar must be rebuilt before packaging the new formats.
+
+## Raster drawing metadata
+
+Native projects retain version-1 drawing layer markers and `_styk.drawing`
+metadata on PNG image figures. The record distinguishes cel identity, pixel
+size, resolution, origin/crop, revision and authored empty carriers. PNG pixels
+are lossless; runtime surfaces and worker state are never serialized. PIV/STK
+exports materialize compatible visual sprites; their external drawing-layer
+editability is not promised. See [the drawing schema](DRAWING.md).

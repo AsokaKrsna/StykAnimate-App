@@ -21,7 +21,9 @@ Select a layer to keep its contents selected while scrubbing, including when its
 
 | Action | Shortcut |
 | --- | --- |
-| Extend exposure / insert frames | F5 |
+| Previous / next frame (scene frame in Simple) | , / . |
+| Jump to previous / next keyframe on the selected layer (scene frame in Simple) | Shift+, / Shift+. |
+| Extend keyframe by one output frame | Shift+A |
 | Remove selected frames | Shift+F5 |
 | Insert a pose key | F6 |
 | Duplicate current pose into the following cell | Ctrl+Enter |
@@ -40,6 +42,16 @@ Those new poses participate in the layer's interpolation, so neighboring tweens
 can change. Native save and Pivot export reproduce the resulting sheet animation.
 
 ## Document and compatibility
+
+**Settings > Animation > Timeline > Replace keyframes on drop** is enabled by
+default and saved with editor preferences. Turning it off blocks occupied
+destinations when dragging or Alt-dragging keys within a layer.
+
+Dragging selected keys onto existing keys replaces keys at their exact landing
+frames on the same layer. Incoming poses and easing win; intervening keys survive.
+Alt-drag copies follow the same rule. Overlapping selections are captured before
+replacement, and one Undo restores both source and overwritten keys. This follows
+[Adobe Premiere's keyframe replacement behavior](https://helpx.adobe.com/sa_en/premiere/desktop/add-video-effects/control-effects-and-transitions-using-keyframes/edit-keyframes-graphs.html).
 
 `_styk.layerSheet` owns the duration and every layer's ordered key sequence. Keys have stable cell IDs and either a retained pose reference (or explicit blank) or an imported source time. Figure `unique_id`, layer ID, cell ID, and pose-source ID are different identities. Changing time never allocates a figure identity.
 

@@ -9,7 +9,7 @@ test('pixel packet admission follows cache capacity instead of the vector buffer
   for(const maxBytes of [32,128,512].map(n=>n*mib)){
     const cache=new PlaybackCache({maxBytes,workerFactory:()=>({postMessage(){},addEventListener(){},terminate(){}})});
     let admission;
-    cache._sendLoad=async message=>{admission??=message.options;};
+    cache._sendLoad=async(client,message)=>{admission??=message.options;};
     try {
       cache.load(createDemo());await cache._loadPromise;
       assert.ok(admission.maxPacketBytes<maxBytes,'Background upload headroom must remain');

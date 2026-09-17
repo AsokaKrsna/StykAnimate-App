@@ -1,6 +1,30 @@
 # Scene background editing
 
-While the color picker is open, the pointer becomes an eyedropper over the editor canvas. A floating loupe enlarges an 11×11 pixel neighborhood, marks the center pixel and shows its HEX color. Click to copy the rendered RGB color into the solid color or selected gradient stop, preserving opacity. Sampling keeps the picker and canvas selection open; Escape or clicking another control closes the picker. The normal paint command supplies undo. Pixels are read immediately after a requested render, with GPU handles omitted for that sample, so idle WebGPU canvases and scaled preview buffers are supported. Hover requests are coalesced to at most 30 per second with one readback in flight, stop when the pointer is idle, and cancel on leaving the canvas or closing the picker. The loupe never intercepts canvas input or enters the sampled artwork.
+## Importing builder edits as a new figure
+
+Build figure → Done → Import as new figure captures the bound instance's displayed
+pose, style overrides and edited definition through the native figure format used
+by the library. The capture owns its data before session undo restores the original
+definition and instances. Import creates a separate definition and instance as one
+undoable command. Deleting parts must not reset surviving angles, lengths, bends,
+scale or paint to definition defaults. Regression coverage is in
+`tests/builder-session.test.mjs` and `tests/builder-import-new.desktop.mjs`.
+
+## Canvas navigation
+
+Ctrl+V pastes copied figures with the existing offset. Ctrl+Shift+V (**Paste in
+place**) preserves their copied canvas positions without advancing the offset
+for subsequent normal pastes. On macOS, use Command instead of Ctrl. Both commands
+are available in the Edit and canvas context menus and can be remapped in
+Settings → Shortcuts. With timeline focus, both paste frames at the playhead.
+
+Settings → Canvas → Zoom gesture saves a choice of **Ctrl + scroll to zoom**
+(the default) or **Scroll to zoom**. In the default mode, plain scrolling pans
+and Shift + scroll pans horizontally. Ctrl or Command + scroll zooms around the
+pointer in either mode. Middle-button drag and Space + drag remain available
+for panning. This preference changes the workspace view, not the document.
+
+The color picker opens with canvas sampling off, so clicking outside the panel dismisses it. Click the Eyedropper button to enable sampling and its canvas cursor; click it again to turn sampling off. A floating loupe enlarges an 11×11 pixel neighborhood, marks the center pixel and shows its HEX color. Click to copy the rendered RGB color into the solid color or selected gradient stop, preserving opacity. Sampling keeps the picker and canvas selection open; Escape or clicking another control closes the picker. The normal paint command supplies undo. Pixels are read immediately after a requested render, with GPU handles omitted for that sample, so idle WebGPU canvases and scaled preview buffers are supported. Hover requests are coalesced to at most 30 per second with one readback in flight, stop when the pointer is idle, and cancel on leaving the canvas or closing the picker. The loupe never intercepts canvas input or enters the sampled artwork.
 
 `src/editor-scene.mjs` is installed on `Editor`. It supplies these commands:
 
@@ -64,6 +88,10 @@ recolor plans. `src/editor-colors.mjs` publishes them through the existing figur
 range commands. The Properties palette counts a segment once for each color it
 uses, including gradient stops; polygon uses are listed separately. Palette rows
 are paged in groups of 32. Bitmap pixels and VFX colors are not palette entries.
+Selecting a figure origin includes its attached descendants in the palette.
+Replacement targets retain each instance UID and definition identity, so shared
+handle IDs cannot recolor unrelated figures; nested attachments participate in
+the same undo step. Selecting a node retains its owning figure's palette.
 
 Figure color assigns one RGB to every segment stop and fill. Palette replacement
 changes only the matching stops/fills. Node edits preserve the other displayed

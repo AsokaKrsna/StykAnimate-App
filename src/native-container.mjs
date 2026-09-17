@@ -18,6 +18,10 @@
  * shared pose/key sequences keep their identity through a save/load cycle.
  */
 const HEADER = 56, SECTION = 64, MAX_BYTES = 256 * 1024 * 1024;
+// A sectioned scene's JSON metadata can exceed its compressed-file/section
+// limit. Keep it below the engine string ceiling and retain the 1 GiB combined
+// materialization budget; source uploads and individual sections stay bounded.
+const MAX_SKELETON_BYTES = 384 * 1024 * 1024;
 const MAGIC = {styk: 'STYK', stkz: 'STKZ', stykmov: 'STMV'};
 const LIFT_MIN_ARRAY = 32, LIFT_MIN_STRING = 64 * 1024;
 const B64_FIELDS = new Set(['data_base64', 'source_base64']);
@@ -90,7 +94,9 @@ async function unpack(codec, bytes, rawLength) {
   if (codec === 2) {
     const z = await zstd();
     if (!z) throw Object.assign(new Error('This project uses zstd compression this build cannot decode. Update the app to open this file.'), {code: 'codec_unavailable'});
-    return z.decompress(bytes, rawLength); // returns a Promise; awaited by caller
+    const out = await z.decompress(bytes, rawLength);
+    if (out.byteLength !== rawLength) throw new Error('The StykAnimate file is damaged (invalid payload length).');
+    return out;
   }
   throw new Error('Unsupported StykAnimate file version. Update the app to open this file.');
 }
@@ -103,7 +109,7 @@ function parseHeader(bytes, kind) {
   const version = view.getUint8(4), codec = view.getUint8(5), flags = view.getUint16(6, true);
   if (flags !== 0) throw new Error('Unsupported StykAnimate file version. Update the app to open this file.');
   const raw = view.getBigUint64(8, true), stored = view.getBigUint64(16, true);
-  if (raw <= 0n || raw > BigInt(MAX_BYTES) || stored > BigInt(MAX_BYTES))
+  if (raw <= 0n || raw > BigInt(version === 2 ? MAX_SKELETON_BYTES : MAX_BYTES) || stored > BigInt(MAX_BYTES))
     throw new Error('The native document exceeds the uncompressed size limit.');
   return {view, version, codec, raw: Number(raw), stored: Number(stored), digest: bytes.subarray(24, 56)};
 }
@@ -316,7 +322,10 @@ export function liftDocument(document, {preBlobs = []} = {}) {
 /** Assemble a lifted document into container v2 bytes. */
 export async function encodeContainerV2(lifted, kind) {
   const skeletonBytes = encoder.encode(JSON.stringify(lifted.skeleton));
-  if (skeletonBytes.byteLength > MAX_BYTES) throw new Error('The StykAnimate document exceeds the uncompressed size limit.');
+  if (skeletonBytes.byteLength > MAX_SKELETON_BYTES ||
+      lifted.sections.some(section => section.bytes.byteLength > MAX_BYTES) ||
+      skeletonBytes.byteLength + lifted.sections.reduce((sum, section) => sum + section.bytes.byteLength * 3, 0) > MAX_BYTES * 4)
+    throw Object.assign(new Error('The StykAnimate document exceeds the uncompressed size limit.'), {code:'document_too_large'});
   const jsonPacked = await pack(skeletonBytes);
   const packed = [];
   for (const section of lifted.sections) {
@@ -326,6 +335,7 @@ export async function encodeContainerV2(lifted, kind) {
   }
   let total = HEADER + 4 + jsonPacked.bytes.byteLength + packed.length * SECTION;
   for (const section of packed) total += section.stored.byteLength;
+  if (total > MAX_BYTES) throw Object.assign(new Error('The native file exceeds the compressed size limit.'), {code:'document_too_large'});
   const out = new Uint8Array(total), view = new DataView(out.buffer);
   out.set(encoder.encode(MAGIC[kind]), 0);
   view.setUint8(4, 2); view.setUint8(5, jsonPacked.codec); view.setUint16(6, 0, true);

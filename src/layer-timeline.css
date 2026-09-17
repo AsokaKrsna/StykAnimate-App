@@ -25,6 +25,18 @@
 .sheet-scroll{position:absolute;left:var(--sheet-label);right:0;top:0;bottom:0;overflow:scroll;outline:none;overscroll-behavior:contain;scrollbar-width:auto;scrollbar-color:auto;touch-action:none}
 .sheet-spacer{pointer-events:none;min-width:100%;min-height:100%}
 .sheet-canvas{position:absolute;left:var(--sheet-label);top:0;pointer-events:none}
+.vfx-timeline-overlay{position:absolute;left:var(--sheet-label);right:var(--sheet-scrollbar-y,14px);top:32px;bottom:var(--sheet-scrollbar-x,14px);overflow:hidden;pointer-events:none}
+.vfx-timeline-overlay[hidden]{display:none}
+.layer-timeline .vfx-fade-handle{position:absolute;transform:translate(-50%,-50%);width:14px;height:14px;min-height:0;padding:0;border:0;border-radius:3px;background:transparent;pointer-events:auto;cursor:ew-resize;touch-action:none}
+.vfx-fade-handle::after{content:'';position:absolute;inset:3px;border:1px solid var(--sheet-accent);border-radius:50%;background:var(--sheet-surface)}
+.vfx-fade-handle[data-dragging=true]::before{content:attr(aria-valuetext);position:absolute;top:13px;left:50%;transform:translateX(-50%);padding:2px 5px;border-radius:3px;background:var(--sheet-surface);color:var(--sheet-ink);font-size:10px;white-space:nowrap;box-shadow:0 0 0 1px var(--sheet-line)}
+.vfx-fade-handle:hover::after,.vfx-fade-handle:focus-visible::after{background:var(--sheet-accent)}
+.vfx-fade-handle:disabled{pointer-events:none;opacity:.4}
+.sheet-layer[data-kind=vfx]{padding-left:20px}
+.sheet-layer>.vfx-channel-trigger{display:flex;align-items:center;gap:5px;max-width:112px;min-width:24px;height:24px;padding:2px 5px;border:0;border-radius:4px;background:var(--sheet-hover);color:var(--sheet-muted);font:inherit;font-size:10px;cursor:pointer}
+.sheet-layer>.vfx-channel-trigger>.icon{width:12px;height:12px;flex-shrink:0}
+.sheet-layer>.vfx-channel-trigger[hidden]{display:none}
+.sheet-layer>.vfx-channel-trigger:hover{color:var(--sheet-accent);background:var(--sheet-selected)}
 .sheet-playhead-clip{position:absolute;left:var(--sheet-label);right:var(--sheet-scrollbar-y,14px);top:0;bottom:var(--sheet-scrollbar-x,14px);pointer-events:none;overflow:hidden}
 .sheet-playhead{position:absolute;top:0;bottom:0;width:1px;background:var(--sheet-accent);will-change:transform}
 .sheet-playhead>span{position:absolute;top:5px;left:0;transform:translateX(-50%);min-width:22px;height:22px;border-radius:5px;background:var(--sheet-accent);color:white;display:flex;align-items:center;justify-content:center;padding:0 4px;font-size:10px;font-family:inherit;font-variant-numeric:tabular-nums;box-shadow:0 0 0 2px var(--sheet-surface)}

@@ -1,4 +1,5 @@
 import { applyDocumentChunk } from "./document-transport.mjs";
+import {applyPlaybackPatch} from './playback-patch.mjs';
 import { PlaybackResources } from "./playback-resources.mjs";
 import {previewMemoryPlan} from './playback-budget.mjs';
 import {
@@ -20,7 +21,10 @@ import {
 import { layerVisible } from "./layers.mjs";
 import {sampleInbetweenPreview} from './editor-inbetween.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
-import {applySceneVfx} from './vfx-canvas.mjs';
+import {activeVfx,vfxStack} from './vfx.mjs';
+import {drawExportScene} from './export-frame-core.mjs';
+import {sceneVfxPlan,sceneVfxBounds} from './vfx-scene.mjs';
+import {connectedVfxGeometry} from './vfx-connected.mjs';
 
 let report,
   storedReport,
@@ -30,6 +34,7 @@ let report,
   entries,
   canvas,
   context,
+  effectCanvas,
   revision = 0;
 let rendering = false,
   activeRequest = null;
@@ -72,12 +77,7 @@ async function receive(message) {
         });
       } else {
         if (!report) throw new Error("Thumbnail document is unavailable.");
-        for (const [key, value] of Object.entries(incoming.value.properties))
-          report[key] = value;
-        for (const entry of incoming.value.frames)
-          report.keyframes[entry.index] = entry.frame;
-        if (incoming.value.figure_types)
-          report.figure_types = incoming.value.figure_types;
+        applyPlaybackPatch(report, incoming.value);
         invalidateEvaluationCaches(report);
       }
       revision = message.revision;
@@ -126,7 +126,7 @@ async function receive(message) {
         0,
         message.tick??frameEntries[message.index]?.start,
       );
-      const geometry = buildGeometry(frameReport, frame);
+      const geometry = connectedVfxGeometry(buildGeometry(frameReport, frame),frame,frameReport);
       const drawables = geometry.drawables.filter((item) =>
         layerVisible(frameReport, item.obj.unique_id),
       );
@@ -138,8 +138,8 @@ async function receive(message) {
           const index = message.index + (direction < 0 ? -distance : distance - 1);
           if (!frameReport.keyframes[index]) continue;
           const source = evaluatedFrame(frameReport, index, 0, frameEntries[index]?.start);
-          const ghost = buildGeometry(frameReport, source).drawables.filter(item => layerVisible(frameReport, item.obj.unique_id));
-          onions.push({drawables: ghost.map(item => ({...item, opacity: item.opacity * preview.onionOpacity / distance}))});
+          const ghost = connectedVfxGeometry(buildGeometry(frameReport, source),source,frameReport).drawables.filter(item => layerVisible(frameReport, item.obj.unique_id));
+          onions.push({drawables: ghost.map(item => ({...item,slot:`onion/${index}/${item.slot}`,opacity: item.opacity * preview.onionOpacity / distance}))});
         }
       }
       const backgrounds =
@@ -150,6 +150,9 @@ async function receive(message) {
                 Number(bg.background_id) === Number(frame.background_id_b),
             )
           : [];
+      const width=frameReport.canvas_width,height=frameReport.canvas_height,
+        scale=Math.min(message.width/width,message.height/height),hasSceneEffects=activeVfx(vfxStack(frame)).length>0;
+      const effectPlan=hasSceneEffects?sceneVfxPlan(frame,Math.ceil(width*scale),Math.ceil(height*scale),undefined,scale):null;
       await resources.preload([
         ...drawables,
         ...onions.flatMap(geometry => geometry.drawables),
@@ -157,7 +160,7 @@ async function receive(message) {
           .filter((bg) => resources.url(bg))
           .map((asset) => ({ type: "image", asset })),
       ], {scale: Math.min(message.width / frameReport.canvas_width, message.height / frameReport.canvas_height), maxDimension: 512,
-        visible: backgroundBounds(frame, frameReport.canvas_width, frameReport.canvas_height, true, frameReport)});
+        visible: backgroundBounds(frame,width,height,true,frameReport,effectPlan?sceneVfxBounds(frameReport,effectPlan):undefined)});
       check();
       if (!canvas) {
         canvas = new OffscreenCanvas(message.width, message.height);
@@ -165,12 +168,18 @@ async function receive(message) {
       }
       canvas.width = message.width;
       canvas.height = message.height;
-      const width = frameReport.canvas_width,
-        height = frameReport.canvas_height;
       // Uniform framing preserves artboard proportions in the fixed filmstrip cell.
-      const scale = Math.min(message.width / width, message.height / height);
       context.fillStyle = "#f5f5f5";
       context.fillRect(0, 0, message.width, message.height);
+      if(hasSceneEffects){
+        effectCanvas??=new OffscreenCanvas(1,1);
+        effectCanvas.width=Math.ceil(width*scale);effectCanvas.height=Math.ceil(height*scale);
+        const effectContext=effectCanvas.getContext('2d');
+        try{
+          drawExportScene(effectContext,frameReport,frame,{...geometry,drawables:[...onions.flatMap(onion=>onion.drawables),...drawables],connectedVfxSource:geometry.connectedVfxSource??geometry},resources);
+          context.drawImage(effectCanvas,(message.width-width*scale)/2,(message.height-height*scale)/2,width*scale,height*scale);
+        }finally{releaseGeometryResources(effectContext);effectCanvas.width=effectCanvas.height=1;}
+      }else{
       context.save();
       context.translate(
         (message.width - width * scale) / 2,
@@ -197,8 +206,7 @@ async function receive(message) {
       for (const onion of onions) drawGeometry(context, onion, resources);
       drawGeometry(context, { drawables }, resources);
       context.restore();
-      const x=(message.width-width*scale)/2,y=(message.height-height*scale)/2;
-      applySceneVfx(context,frame,{scale,origin:{x:-x,y:-y},outputSize:{width:width*scale,height:height*scale},clip:{x,y,width:width*scale,height:height*scale}});
+      }
       check();
       const bitmap = canvas.transferToImageBitmap();
       releaseGeometryResources(context, { retainCanvases: true });

@@ -1,6 +1,7 @@
 import {clipboardWireChunks, createClipboardWireDecoder} from './clipboard-wire.mjs';
 import {createFrame} from './demo.mjs';
 import {validateCameraMotion} from './camera-motion.mjs';
+import {drawingBarrier} from './drawing-resources.mjs';
 
 const abort = () => new DOMException('The document changed during the clipboard operation.', 'AbortError');
 
@@ -14,7 +15,8 @@ export function clipboardSnapshot(editor, kind) {
     if (!editor._sheetClipboard) return null;
     data = {...editor._sheetClipboard, document: null,
       layerNames: Object.fromEntries(editor._sheetClipboard.rows.map(row => [row.id, editor.getLayer(row.id)?.name ?? 'Copied layer']))};
-  } else if (kind === 'camera-motion') data = editor._cameraMotionClipboard;
+  } else if (kind === 'drawing-pixels') data=editor._drawingPixelClipboard;
+  else if (kind === 'camera-motion') data = editor._cameraMotionClipboard;
   else if (kind === 'frames') data = editor.frameClipboardDocumentView?.() ?? editor.frameClipboardDocument();
   else throw new Error('Unsupported clipboard type.');
   return data ? {format: 'StykAnimate clipboard', version: 1, kind, data} : null;
@@ -31,6 +33,10 @@ export async function restoreClipboard(editor, packet, checkCurrent = () => {}) 
   } else if (kind === 'sheet') {
     if (data.version !== 1 || !Array.isArray(data.rows) || !data.rows.length || !Number.isInteger(data.duration) || data.duration < 1 || !Array.isArray(data.figures) || !data.rows.every(row => typeof row.id === 'string' && Array.isArray(row.keys))) throw new Error('Invalid timeline clipboard.');
     editor._sheetClipboard = {...data, document: null};
+  } else if (kind === 'drawing-pixels') {
+    if(![data.width,data.height].every(n=>Number.isInteger(n)&&n>0&&n<=8192)||data.width*data.height>16*1024*1024||![1,2,4].includes(data.pixelsPerUnit)||typeof data.dataUrl!=='string'||!data.dataUrl.startsWith('data:image/png;base64,')||data.dataUrl.length>96*1024*1024)throw new Error('Invalid drawing pixel clipboard.');
+    if(data.origin&&![data.origin.x,data.origin.y].every(Number.isFinite))throw new Error('Invalid drawing pixel origin.');
+    editor._drawingPixelClipboard=data;
   } else if (kind === 'camera-motion') {
     validateCameraMotion({version:1,clips:[data]});editor._cameraMotionClipboard=data;
   } else if (kind === 'frames') {
@@ -53,6 +59,7 @@ export class SharedClipboard {
   }
   copy(kind, operation) {
     return this.run(async () => {
+      const revision=this.editor.revision;await drawingBarrier(this.editor.report);if(revision!==this.editor.revision)throw abort();
       const result = await operation();
       if (!result) return result;
       const packet = clipboardSnapshot(this.editor, kind);
@@ -106,19 +113,23 @@ export function pasteSheetClipboard(editor, ids, tick, {insert = false, wholeSce
   const selected = ids.filter(id => !fixed(id));
   const order = wholeScene ? editor.report._styk.layers.order : [...editor.report._styk.layers.order].reverse();
   const start = Math.max(0, order.indexOf(selected[0] ?? editor.activeLayerId));
-  const available = selected.length > 1 ? selected : order.slice(start);
+  const available = wholeScene ? [...order] : selected.length > 1 ? selected : order.slice(start);
   return editor.movieclipBatch('Paste frames', () => {
     let index = 0;
     const destinations = clipboard.rows.map(row => {
       if (fixed(row.id)) return row.id;
       if (wholeScene && clipboard.document === editor._documentToken && editor.getLayer(row.id)) return row.id;
-      return available[index++] ?? editor.createLayer(clipboard.layerNames?.[row.id] ?? 'Copied layer').id;
+      if (wholeScene) {
+        const match=available.findIndex(id=>Boolean(editor.getLayer(id)?.drawing)===Boolean(row.drawing));
+        return match>=0?available.splice(match,1)[0]:editor.createLayer(clipboard.layerNames?.[row.id]??'Copied layer',{drawing:row.drawing}).id;
+      }
+      return available[index++] ?? editor.createLayer(clipboard.layerNames?.[row.id] ?? 'Copied layer',{drawing:row.drawing}).id;
     });
     const extra = wholeScene && clipboard.rows.some(row => row.id === 'scene') && clipboard.rows.some(row => row.id === 'camera')
       ? editor.report._styk.layers.order.filter(id => !destinations.includes(id)) : [];
     // A whole-scene insertion also shifts surplus destination layers. Empty
     // copied exposures keep their existing figures out of the inserted scene.
-    if (extra.length) editor._sheetClipboard = {...clipboard, rows: [...clipboard.rows, ...extra.map(id => ({id,
+    if (extra.length) editor._sheetClipboard = {...clipboard, rows: [...clipboard.rows, ...extra.map(id => ({id,drawing:Boolean(editor.getLayer(id)?.drawing),
       keys: [{offset: 0, frame: createFrame([]), easing: {interpolation: 'constant'}}]}))]};
     try { return editor.sheetPasteFrames([...destinations, ...extra], tick, {insert}); }
     finally { editor._sheetClipboard = clipboard; }

@@ -1,5 +1,9 @@
 # Rendering architecture
 
+GPU startup shares an eight-second budget across adapter discovery, device creation and shader/pipeline compilation. Failed or timed-out initialization selects Canvas compatibility rendering, releases late devices, and does not retry automatically at startup. The scene canvas acquires its WebGPU context only after compilation succeeds; if final context configuration fails, startup replaces that surface before falling back. This bounds asynchronous waits, but cannot interrupt a blocked OS graphics driver. `tests/startup-fallback.desktop.mjs` exercises startup failures and pending GPU operations in Electron. The optional Documents library initializes without delaying the desktop window.
+
+Artwork bounds exclude zero-width construction lines that have no figure or branch outline. Their joints and topology remain editable. The shared bounds calculation feeds editor raster allocation, playback preparation, export culling and effect surfaces, so distant invisible endpoints cannot lower the visible figure's resolution or consume its texture budget. Visible strokes, filled shapes, media and outlines retain conservative bounds. `tests/renderer-construction-bounds.test.mjs` and its browser counterpart cover topology preservation and matching editor, Canvas and prepared-playback pixels.
+
 Node selection uses a lighter red tint within the selected figure, including selected branch descendants. Canvas and WebGPU share the handle colors from `src/canvas-interactions.mjs`; static and joined nodes retain distinct tints. Selection changes invalidate handle caches without changing artwork.
 
 Starting playback fits the scene to the viewport once, before preparing playback frames at the fitted resolution. Zoom and pan remain available during playback; pausing preserves the current view.
@@ -8,7 +12,7 @@ Manual workspace zoom and Fit Selection support 0.1%–10,000%. These finite nav
 
 The editor draws the actual camera boundary as screen-sized red dots with a light contrast halo in the final Canvas overlay pass, above artwork and tool feedback, including playback and preview. This boundary stays visible regardless of camera selection, visibility, or interaction settings; camera handles and composition guides remain selection-dependent. The overlay is not part of exported artwork.
 
-During prepared playback, overlays use the exact displayed packet's camera/scene metadata instead of evaluating its figures again on the UI thread. Inactive VFX gizmos do not request geometry. A transient GPU device loss schedules accelerated reconnection on a new scene canvas with backoff (1 s, 5 s, then 15 s); initialization failure or exhausting that retry budget selects the software fallback. A renderer surviving 30 s without another loss restores the retry budget, and the manual reconnect action or a Graphics mode change always gets a fresh accelerated attempt. Document/history and overlay input handlers survive both paths. `tests/renderer-recovery.browser.mjs` covers reconnect pixels, bounded retries, both initialization failure stages, undo/redo, and zero extra frame evaluations during prepared playback.
+During prepared playback, overlays use the exact displayed packet's camera/scene metadata instead of evaluating its figures again on the UI thread. Inactive VFX gizmos do not request geometry. A transient GPU device loss schedules accelerated reconnection on a new scene canvas with backoff (1 s, then 5 s); initialization failure or exhausting those two accelerated attempts selects the software fallback immediately. A renderer surviving 30 s without another loss restores the retry budget, and the manual reconnect action or a Graphics mode change always gets a fresh accelerated attempt. Document/history and overlay input handlers survive both paths. `tests/renderer-recovery.browser.mjs` covers reconnect pixels, bounded retries, both initialization failure stages, undo/redo, and zero extra frame evaluations during prepared playback.
 
 `src/renderer.mjs` creates a WebGPU viewport with a premultiplied transparent canvas and multisample antialiasing. The MSAA level defaults to four samples and adapts at runtime through `setMsaa()`; the vector pipeline, handle pipeline, canvas antialias texture, camera monitor surface, VFX camera source and VFX compositor all derive their sample counts from the same `msaaCount`, so one rebuild keeps every attachment consistent. Adapters reporting `isFallbackAdapter` or a software signature (SwiftShader, llvmpipe, lavapipe, WARP, Basic Render) route to the Canvas compatibility renderer, which is faster than CPU-emulated WebGPU for this workload; the Graphics mode setting can force either backend explicitly. The imported Pivot geometry is compiled into a retained storage buffer of 96-byte shape records. A WGSL shader renders signed-distance capsules, square-ended lines, discs and rings; Earcut triangulates polygon fills. Gradient colors interpolate in the shader. Scene backgrounds and anchored asset images are composited in the decoder's painter order.
 
@@ -30,6 +34,8 @@ Single solid text glyphs use reusable alpha masks from `renderer-glyphs.mjs`. An
 
 Playback caches immutable vector commands by geometry identity, retaining at most 32 MiB and 4,096 entries, further limited by the hardware plan. A changed painter slot patches a private copy of the transform indices; it never mutates an already published packet. Geometry keys are weak and the LRU owns only arrays, avoiding retention of obsolete scene graphs. Document/resource disposal clears the cache.
 
+Playback shares identical glyph content across definitions and can crop large masks to the camera's sampling bounds on their original pixel grid. Independent off-crop contours are culled using conservative control-point bounds; unsupported paths use the original painter. Allocation planning precedes bitmap captures. Up to three ready successors can upload into the existing GPU cache in cancellable slices, protecting the displayed frame and publishing only complete frames. See [adaptive preview](ADAPTIVE-PREVIEW.md) for admission, cancellation and quality-recovery rules, and [the Uriel report](URIEL-PERFORMANCE-2026-09-16.md) for measured results and remaining stalls.
+
 Preview workers rasterize path-only scratch surfaces of at most 262,144 pixels on a software-oriented Canvas context. Larger fills and image compositing retain acceleration. This keeps small Canvas jobs from blocking WebGPU presentation without moving large raster workloads onto the CPU. Two reusable scratch contexts own no retained packet pixels, release storage between captures, and are disposed with the worker resources. Export keeps its existing accelerated/original-resolution policy.
 
 Foreground editing, scrubbing and editable-frame preparation suspend queued playback compilation and its request timeouts; work resumes afterward. Superseded revisions still cancel and close partial packets. Cooperative scheduling between frames uses scheduler/MessageChannel tasks rather than clamped timers. Playback starts with about 100 ms of nearby packets (2–12 ticks), restricted to the active range and the measured cache capacity, so a one-frame cache cannot deadlock waiting for two frames. No ticks are skipped to improve measured FPS. See [the general optimization measurements](PERFORMANCE-OPTIMIZATION-2026-09-11.md) for full-animation, generated-scene, editing and pixel checks and their limits.
@@ -38,7 +44,7 @@ The Canvas 2D fallback requests a software-oriented surface (`willReadFrequently
 
 The fallback participates in prepared playback through **software packets**: when `PlaybackCache` is configured with `softwareFrames: true`, the playback worker evaluates the tick, bakes session-hidden and layer-hidden figures out of the drawable set, rasterizes the whole artboard — background, camera transform and camera VFX included — into one `ImageBitmap`, and transfers it instead of shape records. `prepareFrame()` copies that bitmap into a renderer-owned canvas so CPU packet eviction cannot invalidate the presented surface, and `renderPrepared()` composites it with a single `drawImage`. No geometry evaluation or scene rasterization happens on the UI thread during prepared playback. Because visibility is baked into the pixels, packets carry a `hiddenKey` signature: a different session-hidden set or layer-visibility state rejects the surface and falls back to live rendering, as does any active drag translation or camera-mode mismatch. Prepared surfaces share the GPU-frame memory allocation and the 120-frame LRU; `retainPreparedFrames` keeps them across camera-only view toggles exactly like GPU packets. Editing and scrubbing on the fallback reuse the same bounded raster strategy as onion skins: each unchanged live object is drawn once into an artwork canvas keyed by `renderSource` identity and blitted on later repaints, bounded by the editor-raster allocation.
 
-While playing, a quality governor watches measured presentation FPS. A deficit sustained past about two seconds lowers the preview backing resolution to 75% then 50% and steps MSAA 4 → 2 → 1 on the WebGPU path; roughly six seconds of headroom restores each level, and pausing resets to full quality. Since the reduced backing updates `renderer.dpr`, worker packet resolution, software bitmaps and compatibility textures all shrink together. The overlay stays at native device pixel ratio so handles remain crisp, and the “Reduced preview quality” badge reflects governor state. Speculative prefetch depth also scales with `navigator.hardwareConcurrency` (minimum eight ticks, reaching the full lookahead on eight or more logical cores) so worker compilation does not starve few-core machines. On the GPU path, the viewport VFX working surface halves during playback, quartering its filter and copyExternalImageToTexture cost; the Canvas camera-VFX path already applied the same halving. `tests/playback-software.test.mjs` covers the packet contract, visibility baking, camera-mode semantics, cache retention and bitmap lifetime; `tests/playback-software.browser.mjs` verifies a real composited surface, presentation, stale-state rejection and eviction in Chrome.
+While playing, a quality governor watches measured presentation FPS. A deficit sustained past about two seconds lowers the preview backing resolution to 75% then 50% and steps MSAA 4 → 1 → 1 on the WebGPU path; roughly six seconds at 98% of the target presentation rate restores each level, and pausing resets to full quality. Since the reduced backing updates `renderer.dpr`, worker packet resolution, software bitmaps and compatibility textures all shrink together. The overlay stays at native device pixel ratio so handles remain crisp, and the “Reduced preview quality” badge reflects governor state. Speculative prefetch depth also scales with `navigator.hardwareConcurrency` (minimum eight ticks, reaching the full lookahead on eight or more logical cores) so worker compilation does not starve few-core machines. On the GPU path, the viewport VFX working surface halves during playback, quartering its filter and copyExternalImageToTexture cost; the Canvas camera-VFX path already applied the same halving. `tests/playback-software.test.mjs` covers the packet contract, visibility baking, camera-mode semantics, cache retention and bitmap lifetime; `tests/playback-software.browser.mjs` verifies a real composited surface, presentation, stale-state rejection and eviction in Chrome.
 
 API:
 
@@ -49,23 +55,37 @@ const renderer = await createRenderer(canvas, {
   onStatus: displayRendererStatus,
   forceCanvas2D: false,        // skip WebGPU entirely (compatibility mode)
   allowSoftwareAdapter: false, // opt back into CPU-emulated WebGPU adapters
-  msaa: 4,                     // initial multisample count, clamped to 1–4
+  msaa: 4,                     // initial multisample count: 1 or 4
 });
 renderer.resize(cssWidth, cssHeight, devicePixelRatio);
 renderer.render({ report, frame, geometry, view: { x, y, scale },
   hiddenUids: new Set(), dragTranslations: new Map(), onionFrames: [],
   clipToCanvas: false }); // editor workspace; omit for clipped playback/export
-renderer.setMsaa?.(2);          // WebGPU only: rebuild pipelines and targets
+await renderer.setMsaa?.(1);          // WebGPU only: rebuild pipelines and targets
 renderer.destroy();
 ```
 
 `geometry` is the decoded `buildGeometry()` result. It must remain stable during a translation gesture; `dragTranslations` is a map from figure UID to world-coordinate delta. Commit the actual editor transform once the gesture ends. `cameraMatrix`, `worldToScreen` and `screenToWorld` are exported for overlays and hit testing. Handles are drawn by the editor overlay, outside the content renderer.
 
-`clipToCanvas: false` lets figures and onion skins extend beyond the artboard throughout the editor viewport. Document camera transforms and workspace pan/zoom still apply to the full scene. Backgrounds remain clipped to the artboard, including rotated-camera image and gradient backgrounds. Clipping is a uniform/shape flag, so toggling it does not rebuild geometry or upload shape buffers. Ordinary rendering defaults to clipping, and prepared playback always clips. The Canvas compatibility renderer follows the same behavior.
+`clipToCanvas: false` lets figures and onion skins extend beyond the artboard throughout the editor viewport. Document camera transforms and workspace pan/zoom still apply to the full scene. Backgrounds remain clipped to the artboard, including rotated-camera image and gradient backgrounds. Image backgrounds keep their original world placement and top-left uniform cover fit; exposed areas repeat the nearest edge pixel under camera pan, rotation, and zoom-out. WebGPU samples the original texture with clamped world-space coordinates and no extra raster allocation. Canvas and SVG assemble at most nine slices on one pixel grid before transforming the image, preventing seams and doubled alpha. Temporary surfaces are capped at 16,384 pixels per side and 32 megapixels and released after drawing; extreme bounds can reduce background sampling detail. Transparency and background crossfades remain intact. Clipping is a uniform/shape flag, so toggling it does not rebuild geometry or upload shape buffers. Ordinary rendering defaults to clipping, and prepared playback always clips. The Canvas compatibility renderer follows the same behavior.
 
 Only currently displayed onion scene graphs are retained. Changing a raster zoom bucket reuses those graphs and compiled vectors; document/geometry invalidation rebuilds them. On the Akane final frame with two dense neighbor onions (43,204 primitives and 36 compatibility textures), retained translation measured 0.4–0.5 ms p95 at 1×, 2× and 8× zoom with zero vector compilation or shape uploads. Editor GPU residency ranged from 24.6 to 79.3 MB. Changing texture resolution took roughly 8–12 ms; first activation of both uncached onion frames still took about 75 ms. Most fresh-render comparisons were pixel-identical; one repeated texture rasterization differed at seven pixels by one channel unit out of 255. See `artifacts/renderer-edit-profile-onion-zoom/report.json`. These are CPU-submission measurements, with the same hardware and UI exclusions as the editing benchmark.
 
 Onion entries accept `{frame, geometry, opacity, beforeUid}`. With no `beforeUid`, the skin remains behind the complete current scene. With an anchor UID, its groups appear immediately before that current figure, in the supplied far-to-near order, even if the current figure has no visible artwork. Skins whose anchor is absent from the current frame are omitted. `src/scene-order.mjs` supplies the same order to WebGPU and Canvas; hidden UIDs affect both. Historical skins stay at their stored positions during live figure translation, including at 100% opacity. Five GPU/Canvas fixtures verify background/anchored ordering, multiple skins, foreground occlusion, visibility and stationary history during drag. Interior colors match expected compositing within one channel unit; sparse stroke-corner antialias differences remain. See `tests/scene-order.test.mjs`, `tests/renderer-onion-order.mjs` and `artifacts/renderer-onion-order/`.
+
+MSAA changes compile the vector and handle pipelines privately, then publish them
+with a matching attachment in one synchronous step. Rendering continues with the
+old complete resources while compilation is pending. Superseded or failed changes
+cannot replace them; completion requests an idle repaint without clearing the
+canvas. Viewport backing dimensions fit `device.limits.maxTextureDimension2D`
+by reducing density while retaining CSS coordinates and aspect ratio. This is a
+dimension limit, not a VRAM budget.
+
+`tests/renderer-quality.desktop.mjs` checks delayed compilation with a concurrent
+resize, unsupported sample normalization, failed/superseded changes, prepared
+playback, idle invalidation, device disposal and oversized viewports. The real
+app governor is exercised by `tests/preview-quality.desktop.mjs`; deterministic
+clock cases live in `tests/preview-quality.test.mjs`.
 
 ## Prepared playback
 
@@ -81,6 +101,8 @@ An actual visible desktop Akane test at tick 1871 verified one native translatio
 
 Prepared compatibility surfaces are cropped to the inverse-camera artboard bounds, with two raster-pixel guards and the original raster sampling grid. Fully offstage and zero-opacity compatibility objects are culled. Each visible figure keeps its own texture and UID, so layer visibility remains independent. Editor textures retain off-artboard content for posing. After a one-shot raster is captured by an `ImageBitmap` or GPU copy, its temporary canvas and nested opacity/outline scratch canvases release their backing surfaces; the captured bitmap remains owned by the CPU playback cache until eviction. Long-lived Canvas renderer contexts retain their reusable scratch canvases.
 
+Cropped compatibility rasters with at least 64 drawables also pass their actual world-space raster clip to the native painter. Uncropped surfaces avoid the extra tests. Plain line/circle/polygon painting skips wholly outside primitives using conservative stroke/cap bounds and two output-pixel guards, after advancing native brush state. Outlines, figure effects and movieclip containers retain the full path; segment effects bypass primitive clipping. This removes unnecessary Canvas commands without changing visible geometry or object identity. `clipping.culledPrimitives` records work avoided, and `tests/raster-clip.browser.mjs` checks exact CPU/GPU pixels and brush state.
+
 `src/raster-surfaces.mjs` retains one scratch canvas/context per worker resource owner or WebGPU renderer, together with its reusable opacity/outline contexts. Each lease restores fresh Canvas2D drawing state. After capture, the contexts keep their identities while their pixel storage shrinks to 1×1; a packet owns its independently captured bitmap. Resource disposal releases the small fixed set of contexts. This prevents thousands of short-lived Canvas contexts from accumulating for a later GPU resource-pool cleanup burst. The serial lease rejects overlapping use rather than allowing two objects to overwrite the same scratch surface.
 
 `src/prepared-frames.mjs` uploads each packet once and retains GPU buffers, bind groups and draw commands. `renderPrepared()` then binds an existing packet and submits it; there is no geometry evaluation, tessellation, per-object compilation or shape-buffer upload on a cached playback frame. The GPU packet LRU retains up to 120 frames and uses `playbackMemoryBudget()` (128 MiB without a hardware memory hint, otherwise 32 MiB–1 GiB). It evicts before allocating replacement textures, rejects a single packet exceeding its budget, and invalidates on report, document revision, decoded-resource generation or device destruction. The CPU playback controller owns transferred bitmaps under a separate budget from the same policy. Document data, decoded background images, worker asset caches and ordinary editor resources have separate lifetimes outside these packet-cache limits.
@@ -92,6 +114,8 @@ Prepared frames own their background GPU textures independently of editable and 
 The same lifetime bug also occurred without editing a background: inserting `Flash aura.stykmov` into the middle of `16 Akane vs Akato Segundo round (2).piv`, then replaying, produced 24 consecutive empty canvas frames in a pre-fix browser run. WebGPU rejected the draw because the existing imported background texture had been destroyed during return to editing. `scripts/verify-movieclip-playback.mjs` loads those source files without modifying them, inserts the library movieclip through `Editor.importFigure`, and verifies exact tick order, visible canvas pixels, movieclip presence, replay and undo/redo. It records GPU errors and hashes both source files before/after. `STYK_PROBE_TICK`, `STYK_PROBE_MODE`, and `STYK_PROBE_FULL=1` select another insertion tick, timeline mode, or additional full-animation replays; `STYK_URL` selects the running local server. Reports and captures default to `artifacts/akane-flash-aura/`.
 
 Prefetch plans a nearest-first prefix that fits the CPU budget, using remembered packet sizes as frames become known. Its bounded size metadata survives packet eviction and clears when document or view revision changes. The required next tick is always admitted. Every received packet immediately trims the remaining speculative queue to the newly measured prefix, before the next animation-loop request. This also bounds a cold batch whose sizes were initially unknown. Explicit pending requests outside that speculative window survive the automatic trim; cancelled packets already being computed release their bitmaps on arrival. These rules prevent redundant compatibility rasterization from accumulating in the shared GPU queue.
+
+The controller opts into acknowledged packet delivery. After sending a packet, the worker waits until admission/disposal and queue trimming finish before preparing another. At most one current-revision transferred packet awaits admission; the retained frame budget and lookahead are unchanged. Each acknowledgement matches both revision and delivery ID. Full/chunked replacement loads and invalidation release obsolete waits, while interaction suspension still prevents new compilation. Stale packets close on arrival. Direct endpoint consumers that omit this option keep the existing unacknowledged protocol. `tests/playback-delivery.test.mjs` covers these ownership and cancellation boundaries.
 
 ```js
 await renderer.prepareBackgrounds(report, packet.frame);
@@ -164,6 +188,37 @@ Ordinary PNG crops use the browser decoder when the possible full RGBA source fi
 
 See [the collection benchmark](animation-corpus-performance.md) for coverage, before/after results, remaining stalls and reproduction commands.
 
+## Shared definition redraws
+
+Dense definition edits and structural undo/redo use `EditableScenePreparation`,
+as timeline seeks do. The native command finishes atomically first; geometry and
+WebGPU artwork then stage in cooperative slices while the canvas retains its
+last visible gesture. Panels and background preparation wait for activation.
+A newer edit, seek, document or graphics lifetime cancels obsolete staging.
+This preserves the exact native scene and export quality; it does not make the
+required instance reconstruction free or promise a maximum task duration.
+
+Image preparation reads cached image subsets of immutable object drawing lists,
+including nested clip instances, without flattening every line and polygon on
+each pointer frame. The original image records retain their anchor geometry for
+resolution selection. Weak ownership follows the geometry's lifetime.
+
+Shared-rig history copies native numeric pose vectors directly and retains all
+other saved fields, including imported runtime lengths/bends. Its memory charge
+uses a conservative constant per numeric element instead of formatting whole
+pose arrays as JSON to measure them. Validation and independent undo ownership
+remain intact. See [shared-rig verification](SHARED-RIG-PERFORMANCE-2026-09-16.md).
+
 ## Preview failure recovery
 
 The camera output monitor contains its own drawing failures, reports diagnostics, and backs off for 1.5 seconds. A restored canvas invalidates the monitor immediately. Failed camera-effect surfaces are released and recreated on a later render in both GPU and software modes; the base scene stays editable and a status message identifies the temporary unfiltered preview. A failed software object-raster allocation falls back to direct drawing under the same retry delay. These preview fallbacks never change the document or weaken export fidelity checks: failed export rendering still rejects instead of producing blank or partially filtered frames.
+
+## Live drawing surfaces
+
+A drawing resource can supply the active image figure's canvas directly.
+WebGPU composes an affine RGBA quad in the existing ordered layout and uploads
+the accumulated dirty rectangle once per render; Canvas bypasses stale artwork
+caches for that surface. Surface residency/publication invalidates derived
+layouts. Layout replacement, cancellation and disposal release owned textures.
+Drawing GPU bytes are included in renderer accounting. View rotation transforms
+both artwork and stage clipping, and is excluded from exported camera state.

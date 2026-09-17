@@ -1,3 +1,5 @@
+import {drawingBarrier} from './drawing-resources.mjs';
+import {builderStrokeAppearance, setBuilderStroke, copyBuilderAppearance, pasteBuilderAppearance} from './builder-appearance.mjs';
 import {rigControlChange, drawRigGuides, drawConnectorGuides} from './rig-controls.mjs';
 import {displayedSegmentPaint,displayedColor} from './figure-colors.mjs';
 import {openSurfaceReference,changeSurfaceSide} from './builder-surface-ui.mjs';
@@ -15,7 +17,8 @@ import {segmentPaint, parseColor, hexColor, backgroundPaint, paintBackground} fr
 import {resolveInstanceFigure, polygonIdentity} from './animation-style.mjs';
 import { applicationMenuItems } from "./application-menu.mjs";
 import { Editor } from "./editor.mjs";
-import { createRenderer } from "./renderer.mjs";
+import { createRenderer,worldToScreen,screenToWorld } from "./renderer.mjs";
+import {DrawingController} from './drawing-controller.mjs';
 import { Timeline } from "./layer-timeline.mjs";
 import { SheetFilmstrip as SimpleTimeline } from "./sheet-filmstrip.mjs";
 import { OnionSkinCache } from "./onion-skin.mjs";
@@ -33,12 +36,14 @@ import { getExportCapabilities, exportFormat } from "./export-capabilities.mjs";
 import { videoQualityOptions } from "./export-video-quality.mjs";
 import { PlaybackCache } from "./playback.mjs";
 import {playbackWindow,playbackLookaheadSize,playbackStartupWindow} from './playback-window.mjs';
-import {PlaybackUploadWarmup} from './playback-upload.mjs';
+import {PlaybackUploadWarmup,PlaybackUploadAhead} from './playback-upload.mjs';
 import {AudioEngine} from './audio-engine.mjs';
 import {audioState, audioFps, audibleClips} from './audio-model.mjs';
 import {PreviewImages} from './preview-images.mjs';
-import {backgroundImageAssets} from './scene-preparation.mjs';
+import {backgroundImageAssets,frameImageDrawables} from './scene-preparation.mjs';
 import { PlaybackMetrics } from "./playback-metrics.mjs";
+import {PlaybackCadence} from './playback-cadence.mjs';
+import {previewQualityLevels, previewMsaaLevels, updatePreviewQuality, playbackQualityIndex} from './preview-quality.mjs';
 import { DesktopTelemetryClient } from './telemetry-core.mjs';
 import { workload, documentComplexity } from './telemetry-workload.mjs';
 import { sizeBucket,complexityBucket,fpsBucket } from './telemetry-schema.mjs';
@@ -170,7 +175,7 @@ function interruptRecovery() {
   if (editor.dirty) scheduleRecovery();
 }
 async function runDocumentExport(format, consume, { recovery = false } = {}) {
-  if (!recovery) finishCurrentEdit();
+  if (!recovery){finishCurrentEdit();await drawingController?.barrier();}
   const controller = new AbortController(),
     job = { controller, recovery };
   exportJobs.add(job);
@@ -180,6 +185,7 @@ async function runDocumentExport(format, consume, { recovery = false } = {}) {
   let stage = 'serialize';
   telemetry.count(metric + '_started');
   try {
+    const drawingRevision=editor.revision;await drawingBarrier(editor.report,{signal:controller.signal});if(drawingRevision!==editor.revision)throw new DOMException('The drawing changed during export.','AbortError');
     const blob = await documentExporter.export(recovery ? editor.movieclipProjectReport() : editor.report, {
       format,
       name: recovery ? editor._movieclipScopes?.[0]?.parent.name ?? editor.name : editor.name,
@@ -269,7 +275,7 @@ const state = {
 // A lost device usually returns once the browser's GPU process settles, so
 // accelerated reconnects back off per consecutive loss; a renderer surviving
 // the stable window restores the retry budget for the next transient loss.
-const GPU_RECOVERY_DELAYS = [1000, 5000, 15000], GPU_STABLE_MS = 30000;
+const GPU_RECOVERY_DELAYS = [1000, 5000], GPU_STABLE_MS = 30000;
 let canvas = $("scene"), rendererRecovery, gpuRecoveryTimer, gpuRecoveryAttempts = 0, gpuStableTimer;
 const viewport = $("viewport"),
   overlay = $("overlay"),
@@ -317,6 +323,8 @@ let warmTimer = null,
   playStartupFrames = 2,
   uiScheduled = 0;
 const playbackMetrics = new PlaybackMetrics();
+const playbackCadence = new PlaybackCadence();
+let presentationDeadline = null;
 async function openExportSink(options){
   const enabled=telemetry.consent.diagnostics,context=enabled?telemetry.performance.context():null,epoch=telemetry.epoch,started=enabled?performance.now():0;
   const onTiming=(metric,ms)=>{if(epoch===telemetry.epoch)telemetry.performance.record(metric,ms,context);};
@@ -349,7 +357,7 @@ const telemetry = new DesktopTelemetryClient(desktop, { getContext: () => ({
 function recordPlaybackPresentation() {
   const now = performance.now();
   playbackMetrics.present(now);
-  telemetry.playbackPresent(now, playbackMetrics.targetFps);
+  telemetry.playbackPresent(now, playbackMetrics.targetFps,{deadline:presentationDeadline,refreshMs:playbackCadence.interval});
 }
 function coarseGPUFamily(value = '') {
   return ['nvidia', 'amd', 'intel', 'apple', 'qualcomm', 'software'].find(name => String(value).toLowerCase().includes(name)) || 'unknown';
@@ -407,6 +415,7 @@ const playback = new PlaybackCache({
   },
 });
 const playbackUploadWarmup = new PlaybackUploadWarmup(requestRender);
+const playbackUploadAhead = new PlaybackUploadAhead();
 let playbackImageTicks=[];
 function playbackImagePriority() {
   if(!state.playing)return [];
@@ -454,6 +463,15 @@ function syncPlayback() {
     state.playbackHiddenKey !== hiddenKey ||
     state.playbackDraftRevision !== editor.frameDraftRevision
   ) {
+    // A density change changes cached pixels, not the current pose. Keep the
+    // uploaded presentation until the replacement view is ready; CPU bitmap
+    // invalidation cannot invalidate an independently owned GPU frame.
+    const heldPacket = state.playing && state.playbackPacket &&
+      state.playbackRevision === editor.revision && playback.report === editor.report &&
+      state.playbackStoredFrames === storedFrames && state.playbackSoftware === softwareFrames &&
+      state.playbackHiddenKey === hiddenKey && state.playbackDraftRevision === editor.frameDraftRevision &&
+      state.playbackCameraEnabled === cameraEnabled && state.renderer?.hasPreparedFrame(state.playbackPacket.key)
+      ? state.playbackPacket : null;
     // A camera-only toggle keeps prepared frames: packets carry their own crop
     // mode, so scrubbing does not cold-start the next playback.
     const cameraOnly =
@@ -497,9 +515,11 @@ function syncPlayback() {
     state.playbackSoftware = softwareFrames;
     state.playbackHiddenKey = hiddenKey;
     state.playbackDraftRevision = editor.frameDraftRevision;
-    state.playbackPacket = null;
+    state.playbackPacket = heldPacket;
     if (cameraOnly && state.renderer?.retainPreparedFrames)
       state.renderer.retainPreparedFrames(editor.report, playback.cache.values());
+    else if (heldPacket && state.renderer?.retainPreparedFrames)
+      state.renderer.retainPreparedFrames(editor.report, [heldPacket]);
     else state.renderer?.clearPreparedFrames?.();
   }
 }
@@ -512,7 +532,7 @@ function playbackRange() {
       }
     : { start: 0, end: editor.totalTicks };
 }
-function prepareAhead(start = editor.tick, count = 24, {bidirectional = false} = {}) {
+function prepareAhead(start = editor.tick, count = 48, {bidirectional = false} = {}) {
   if (state.drag || state.scrubbing || !editor.totalTicks) return;
   syncPlayback();
   // Preparation shares the CPU with the UI thread: shallow lookahead keeps
@@ -544,7 +564,7 @@ function warmPlayback({immediate = false} = {}) {
     // Learn the current frame's real footprint before widening the idle window.
     // User input owns the foreground; obsolete warm-up never chases the playhead.
     await prepareAhead(tick,2);
-    if(current())await prepareAhead(tick,24,{bidirectional:true});
+    if(current())await prepareAhead(tick,48,{bidirectional:true});
   }, immediate||playback.report!==report ? 0 : 150);
 }
 function previewScrub() {
@@ -884,7 +904,8 @@ const assetUrl = (a) =>
 function imageFor(url) {
   return images.image(url);
 }
-const resources = { url: assetUrl, image: imageFor };
+let drawingController;
+const resources = { url: assetUrl, image: imageFor, drawing:figure=>drawingController?.resource(figure) };
 function status(text, error = false, busy = false) {
   $("status").textContent = text;
   $("status-dot").className =
@@ -950,43 +971,12 @@ function previewPacket() {
   const packet = playback.has(editor.tick) ? playback.get(editor.tick) : null;
   return packet && packet.cameraEnabled !== false ? packet : null;
 }
-function scenePoint(x, y, inverse = false) {
-  if (!state.playing && !state.previewing) return { x, y };
-  const c = currentFrame()?.camera,
-    w = editor.report.canvas_width,
-    h = editor.report.canvas_height;
-  if (cameraIsIdentity(c)) return { x, y };
-  const a = Number(c.angle_rad || 0),
-    scale = 1 / inverseCameraScale(c);
-  if (inverse) {
-    const dx = (x - w / 2) * scale,
-      dy = (y - h / 2) * scale;
-    return {
-      x: dx * Math.cos(a) - dy * Math.sin(a) + w / 2 + Number(c.x || 0),
-      y: dx * Math.sin(a) + dy * Math.cos(a) + h / 2 + Number(c.y || 0),
-    };
-  }
-  const dx = x - w / 2 - Number(c.x || 0),
-    dy = y - h / 2 - Number(c.y || 0);
-  return {
-    x: (dx * Math.cos(a) + dy * Math.sin(a)) / scale + w / 2,
-    y: (-dx * Math.sin(a) + dy * Math.cos(a)) / scale + h / 2,
-  };
-}
 function screenPoint(p) {
-  const q = scenePoint(p.x, p.y);
-  return {
-    x: q.x * state.view.scale + state.view.x,
-    y: q.y * state.view.scale + state.view.y,
-  };
+  return worldToScreen(p,{report:editor.report,frame:currentFrame(),view:state.view,cameraEnabled:state.playing||state.previewing});
 }
 function worldPoint(event) {
   const r = viewport.getBoundingClientRect();
-  return scenePoint(
-    (event.clientX - r.left - state.view.x) / state.view.scale,
-    (event.clientY - r.top - state.view.y) / state.view.scale,
-    true,
-  );
+  return screenToWorld({x:(event.clientX-r.left)*viewport.clientWidth/r.width,y:(event.clientY-r.top)*viewport.clientHeight/r.height},{report:editor.report,frame:currentFrame(),view:state.view,cameraEnabled:state.playing||state.previewing});
 }
 function cameraSelected() {
   return state.inspectorContext === 'camera' && state.selectedTrackId === 'camera';
@@ -1071,42 +1061,41 @@ function fit() {
 // Sustained playback deficits lower the preview backing resolution and MSAA;
 // recovered headroom restores full quality. The overlay stays at native DPR so
 // handles and tool feedback remain crisp.
-const previewQualityLevels = [1, 0.75, 0.5];
-const previewMsaaLevels = [4, 2, 1];
 function previewRenderScale() {
   return previewQualityLevels[state.previewGovernor?.index ?? 0];
 }
+let pendingPreviewQuality = null;
 function applyPreviewQuality(index) {
+  pendingPreviewQuality = index;
+  requestRender();
+}
+function commitPreviewQuality() {
+  if (pendingPreviewQuality === null) return;
+  const index = pendingPreviewQuality;
+  pendingPreviewQuality = null;
   resize();
-  state.renderer?.setMsaa?.(previewMsaaLevels[index]);
+  const pending = state.renderer?.setMsaa?.(previewMsaaLevels[index]);
+  pending?.catch(error => {
+    telemetry.error(error, 'gpu');
+    status('The previous antialiasing setting was retained after a graphics error.', true);
+    requestRender();
+  });
 }
 function resetPreviewQuality() {
   const governor = state.previewGovernor;
   state.previewGovernor = { index: 0 };
   if (governor?.index) applyPreviewQuality(0);
 }
+function selectPlaybackQuality() {
+  const index = playbackQualityIndex(state.settings.playbackQuality);
+  const previous = state.previewGovernor?.index ?? 0;
+  state.previewGovernor = {index};
+  if (index !== previous) applyPreviewQuality(index);
+}
 function adaptPreviewQuality(sample, now) {
+  if (state.settings.playbackQuality !== 'auto') return;
   const governor = (state.previewGovernor ??= { index: 0 });
-  if (sample.fps === null || state.buffering) {
-    governor.lowSince = governor.highSince = 0;
-    return;
-  }
-  const deficit = sample.fps < sample.targetFps * 0.92,
-    headroom = sample.fps >= sample.targetFps * 1.2;
-  governor.lowSince = deficit ? governor.lowSince ?? now : 0;
-  governor.highSince = headroom && governor.index > 0 ? governor.highSince ?? now : 0;
-  const due = now - (governor.changedAt ?? 0) > 2500;
-  if (due && governor.index < previewQualityLevels.length - 1 && governor.lowSince && now - governor.lowSince > 2000) {
-    governor.index++;
-    governor.changedAt = now;
-    governor.lowSince = governor.highSince = 0;
-    applyPreviewQuality(governor.index);
-  } else if (due && governor.index > 0 && governor.highSince && now - governor.highSince > 6000) {
-    governor.index--;
-    governor.changedAt = now;
-    governor.lowSince = governor.highSince = 0;
-    applyPreviewQuality(governor.index);
-  }
+  if (updatePreviewQuality(governor, sample, now, state.buffering)) applyPreviewQuality(governor.index);
 }
 function resize() {
   const r = viewport.getBoundingClientRect(),
@@ -1438,9 +1427,8 @@ function overlayRender(geometry) {
   if (state.drag?.kind === "draw") {
     const p = screenPoint(state.drag.start),
       q = screenPoint(state.drag.current || state.drag.start);
-    ctx.strokeStyle = "#0d99ff";
-    ctx.lineWidth = 3;
-    ctx.setLineDash([5, 4]);
+    ctx.save();
+    setBuilderStroke(ctx, state.drag.appearance, state.view.scale);
     ctx.beginPath();
     if (state.tool === "circle") {
       ctx.arc(
@@ -1455,12 +1443,16 @@ function overlayRender(geometry) {
       ctx.lineTo(q.x, q.y);
     }
     ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.restore();
   }
 }
 function loop(now) {
   canvasGuides?.render();
   raf = 0;
+  // Resizing clears the backing surface. Commit at the start of a paint task,
+  // before drawing, never after publishing that task's completed frame.
+  commitPreviewQuality();
+  if (state.playing) syncPlayback();
   playback.setInteractionActive(Boolean(editingGestureActive()||state.scrubbing||state.editablePreparing||document.hidden));
   thumbnailRenderer?.setPaused(Boolean(editingGestureActive()||state.playing||state.scrubbing||state.editablePreparing||document.hidden));
   let advancedPlayback = false;
@@ -1471,6 +1463,7 @@ function loop(now) {
         : editor.report.fps,
       range = playbackRange(),
       interval = 1000 / fps;
+    if(telemetry.consent.diagnostics&&telemetry.isForeground)playbackCadence.observe(now);else playbackCadence.reset();
     playbackMetrics.targetFps = fps;
     if (range.end <= range.start) {
       pause();
@@ -1506,6 +1499,7 @@ function loop(now) {
           editor.seek(next, { evaluate: false });
           state.playbackPacket = packet;
           advancedPlayback = true;
+          presentationDeadline = playStarted ? playDeadline : null;
           playDeadline =
             !playStarted || state.buffering
               ? now + interval
@@ -1516,7 +1510,7 @@ function loop(now) {
             status("Playing");
             $("preview-badge").textContent = "PLAYING";
           }
-          prepareAhead(next + 1, 24);
+          prepareAhead(next + 1, 48);
           state.dirtyRender = true;
         } else {
           audioEngine.stop();
@@ -1540,7 +1534,7 @@ function loop(now) {
                 fail(error);
               });
           }
-          prepareAhead(next, 24);
+          prepareAhead(next, 48);
         }
       }
     }
@@ -1578,17 +1572,19 @@ function loop(now) {
       ctx.clearRect(0, 0, overlay.width, overlay.height);
     }
     if (!preparedPresented && !state.editablePreparing && (!state.playing || !state.buffering)) {
-      const frame = currentFrame(),
+      const drawingPreview=drawingController?.renderPreview;
+      const frame = drawingPreview?.frame??currentFrame(),
         geometry =
+          drawingPreview?.geometry ||
           editor._drag?.motionPath?.display?.geometry ||
           state.drag?.geometry ||
           keyboardHandleGesture?.geometry ||
           editor.geometry;
       const onionFrames = onionSkins(),
         editing = state.editingPacket;
-      if (geometry?.drawables) void images.prepare([
-        ...geometry.drawables,
-        ...onionFrames.flatMap(entry => entry.geometry?.drawables || []),
+      if (geometry) void images.prepare([
+        ...frameImageDrawables(geometry),
+        ...onionFrames.flatMap(entry => frameImageDrawables(entry.geometry)),
         ...backgroundImageAssets(editor.report, frame).map(asset => ({type: 'image', asset})),
       ], {scale: Math.max(1 / 64, 2 ** Math.ceil(Math.log2(playbackScale() || 1))), maxDimension: 4096}).catch(() => {});
       state.editingPacket = null;
@@ -1600,7 +1596,7 @@ function loop(now) {
           editing.tick === editor.tick
             ? editing.packet
             : undefined,
-        report: editor.report,
+        report: drawingPreview?.report??editor.report,
         frame,
         geometry,
         view: state.view,
@@ -1622,6 +1618,7 @@ function loop(now) {
         sequence:(state.lastEditingPresentation?.sequence ?? 0)+1};
       if (advancedPlayback) recordPlaybackPresentation();
       overlayRender(geometry);
+      drawingController?.overlayDraw(ctx);
       $('preview-quality').hidden = !(images.reduced || state.renderer.stats?.previewReduced || state.previewGovernor?.index);
     }
     if(pendingColorSample && !state.editablePreparing && (!state.playing || !state.buffering || preparedPresented)){
@@ -1671,6 +1668,14 @@ function loop(now) {
   }
   if (state.playing) {
     const measuredAt = performance.now();
+    if(playStarted&&!state.buffering&&state.playbackPacket){
+      const packets=[state.playbackPacket],range=playbackRange();
+      for(const tick of playbackWindow(editor.tick+1,3,range,{loop:state.loop})){
+        const packet=playback.get(tick);if(!packet)break;packets.push(packet);
+      }
+      playbackUploadAhead.update(state.renderer,packets,{report:editor.report,view:state.view,cameraEnabled:state.playbackCameraEnabled},
+        packet=>state.playing&&!state.scrubbing&&playback.cache.get(packet.tick)===packet);
+    }
     playbackMetrics.buffering(state.buffering, measuredAt);
     if (measuredAt - lastFpsUI >= 250) {
       const sample = playbackMetrics.snapshot(measuredAt), badge = $("playback-fps");
@@ -1686,7 +1691,8 @@ function loop(now) {
   // Keep that request instead of starting a second animation loop.
   if (!raf && (state.playing || state.dirtyRender)) raf = requestAnimationFrame(loop);
 }
-function play() {
+async function play() {
+  if(!state.playing){try{await drawingController?.barrier();}catch(error){fail(error);return;}}
   if (!$("renderer-error").hidden) return;
   if (state.playing) return pause();
   if ([...exportJobs].some(job => job.raster)) return status('Finish or cancel the export before playing.');
@@ -1694,14 +1700,16 @@ function play() {
   state.previewing = false;
   if (editor.totalTicks < 1) return;
   cancelDrag();
-  // Fit once on transport start; subsequent zoom and pan remain user-controlled.
-  fit();
+  // Optionally fit once on transport start; subsequent zoom and pan remain user-controlled.
+  if (state.settings.fitViewOnPlayback) fit();
+  selectPlaybackQuality();
   const range = playbackRange();
   playTick =
     editor.tick >= range.end - 1 || editor.tick < range.start
       ? range.start
       : editor.tick;
   playStart = performance.now();
+  playbackCadence.reset();presentationDeadline=null;
   telemetry.count('playback_started');
   playbackMetrics.reset(playStart, editor.report.frame_delay_ms
     ? 1000 / editor.report.frame_delay_ms : editor.report.fps);
@@ -1715,7 +1723,9 @@ function play() {
   playbackUploadWarmup.reset();
   playDeadline = playStart;
   state.playbackPacket = null;
-  prepareAhead(playTick, 24);
+  // A changed density is committed with its repaint at the next animation task.
+  // Avoid queuing obsolete full-size packets just before that transaction.
+  if (pendingPreviewQuality === null) prepareAhead(playTick, 48);
   state.playing = true;
   audioScrubController?.abort();
   audioEngine.stop(); audioEngine.hasAudio = false;
@@ -1736,6 +1746,7 @@ function play() {
   requestRender();
 }
 function pause() {
+  playbackUploadAhead.reset();
   playbackUploadWarmup.reset();
   state.motionPreviewRange=null;
   if(state.playing)telemetry.performance.resources('stopped');
@@ -1889,6 +1900,8 @@ function renderInspector() {
   updateInspectorDOM($("inspector"), inspectorView({
     editor,
     tab: state.inspectorTab,
+    drawing: drawingController,
+    hotkeyLabel:id=>hotkeys.label(id),
     context: editor.branchSelected ? "figure" : state.inspectorContext,
     propertyState,
     tool: editor.branchSelected ? "rig" : state.tool,
@@ -1933,6 +1946,8 @@ function renderInspector() {
 
 let construction;
 function setTool(tool) {
+  if(drawingController?.active){const name=tool==='hand'?'pan':tool==='select'?'transform':tool.replace('drawing-','');if(['brush','eraser','fill','eyedropper','lasso','transform','pan'].includes(name))return drawingController.setTool(name);return;}
+
   if (tool !== 'attach') state.figureJoin = null;
   if (state.tool !== tool) construction?.cancel();
   if (tool !== state.tool && ['rig', 'line', 'chain', 'circle', 'polygon'].includes(tool)) telemetry.count('builder');
@@ -1966,7 +1981,9 @@ function setTool(tool) {
     select: "Drag to select · Shift-click to add · Drag a joint to pose",
     pose: "Drag to pose · Ctrl-drag to stretch · Shift + right-drag to bend",
     rig: "Edit figure joints · Changes update every instance",
-    hand: "Drag or scroll to pan · Ctrl-scroll to zoom",
+    hand: state.settings.canvasZoomGesture === 'scroll'
+      ? "Drag to pan · Scroll to zoom"
+      : "Drag or scroll to pan · Ctrl-scroll to zoom",
     chain: "Click to extend · Enter to finish · Backspace to remove · Esc to cancel",
     line: "Drag anywhere to draw · Start on a joint to extend a figure",
     circle: "Drag anywhere to draw · Start on a joint to extend a figure",
@@ -2331,6 +2348,7 @@ overlay.addEventListener(
         start: builderMode?.active ? construction.start(p).point : (parent ? {...parent} : p),
         current: p,
       };
+      state.drag.appearance = builderStrokeAppearance(editor);
       requestRender();
       return;
     }
@@ -2592,7 +2610,6 @@ function endDrag(event) {
       editor.addSegment({
         ...strokeSegments([p,q],editor.object?.scale??1)[0],
         type: state.tool,
-        thickness: 7,
         start: p,
       });
       status("Segment added");
@@ -2704,11 +2721,12 @@ overlay.addEventListener("pointerleave", () => {
 viewport.addEventListener(
   "wheel",
   (e) => {
-    if(telemetry.isForeground)telemetry.performance.action(e.ctrlKey||e.metaKey?'zoom':'pan');
+    const shouldZoom = state.settings.canvasZoomGesture === 'scroll' || e.ctrlKey || e.metaKey;
+    if(telemetry.isForeground)telemetry.performance.action(shouldZoom ? 'zoom' : 'pan');
     e.preventDefault();
     interruptRecovery();
     const r = viewport.getBoundingClientRect();
-    if (!e.ctrlKey && !e.metaKey) {
+    if (!shouldZoom) {
       state.view.x -= e.shiftKey ? e.deltaY : e.deltaX;
       state.view.y -= e.shiftKey ? e.deltaX : e.deltaY;
       placeArtboard();
@@ -3047,7 +3065,7 @@ async function importFilesTracked(files) {
       if (telemetry.consent.diagnostics) context.complexity = documentComplexity(result.document);
       telemetry.operation({ ...context, operation: 'import', stage: 'decode', outcome: 'succeeded' }, result.timings?.decode_ms);
       telemetry.performance.record('decode',result.timings?.decode_ms);
-      await acceptImport(result, file.name);
+      if(await acceptImport(result, file.name)===false){outcome='cancelled';return false;}
       telemetry.timing('import_decode_ms', result.timings?.decode_ms);
       } catch (error) {
         outcome = error.name === 'AbortError' ? 'cancelled' : 'failed';
@@ -3162,8 +3180,8 @@ async function finishExport(output, filename, signal) {
   return Boolean(output?.saved);
 }
 async function saveNative({ saveAs = false } = {}) {
-  finishCurrentEdit();
-  while(editor._movieclipScopes?.length)editor.leaveMovieclip();
+  finishCurrentEdit();await drawingController?.barrier();
+  while(editor._movieclipScopes?.length){await drawingBarrier(editor.report);editor.leaveMovieclip();}
   interruptRecovery();
   status("Saving project…", false, true);
   const revision = editor.revision,
@@ -4024,6 +4042,7 @@ overlay.addEventListener(
       editor.select(hit.g.obj.unique_id, hit.joint);
     const items = !hit ? [
       ["paste", "clipboard", "Paste", "Ctrl V"],
+      ["paste-in-place", "clipboard", "Paste in place", "Ctrl Shift V"],
       ["paste-instance", "clipboard", "Paste instance"],
       ["paste-unique", "duplicate", "Paste unique copy"],
       ["select-all", "cursor", "Select all", "Ctrl A"],
@@ -4033,6 +4052,7 @@ overlay.addEventListener(
     ] : [
       ["copy", "duplicate", "Copy", "Ctrl C"],
       ["paste", "clipboard", "Paste", "Ctrl V"],
+      ["paste-in-place", "clipboard", "Paste in place", "Ctrl Shift V"],
       ["paste-instance", "clipboard", "Paste instance"],
       ["paste-unique", "duplicate", "Paste unique copy"],
       ["duplicate", "duplicate", "Duplicate", "Ctrl D"],
@@ -4075,11 +4095,11 @@ const beginRigAnchorPick=key=>{
   setTool('rig');state.rigAnchorPick={key,start:s?.segment_id??0,uid:editor.selectedUid,token:editor._documentToken};
   toast(key==='driver'?'Click a Smart Stretch joint on this figure. Escape cancels.':key?'Click the new anchor on this figure. Escape cancels.':'Click the second joint to create a connector. Escape cancels.');
 };
-function pasteFigures(pasteMode = 'default') {
+function pasteFigures(pasteMode = 'default', offset) {
   if (builderMode?.active) return toast("Finish the figure or return to Animate to paste.");
   return sharedClipboard.paste('figures', () => {
     finishCurrentEdit();
-    const options = {pasteMode};
+    const options = {pasteMode, offset};
     if (editor._selectionClipboard?.freshTypes?.size) return editor.pasteSelection(options);
     if (rangeFrames()) return editor.pasteFiguresInFrames(rangeFrames(), options);
     return editor.pasteSelection(options);
@@ -4248,6 +4268,8 @@ const actions = {
     }
     if (cameraMotionControls?.active) propertyControls?.cancel();
     cameraMotionControls?.cancel();
+    vfxInspector?.finishForHistory();
+    vfxGizmos?.up();
     editor.undo();
   },
   redo: () => {
@@ -4259,6 +4281,8 @@ const actions = {
     }
     if (cameraMotionControls?.active) propertyControls?.cancel();
     cameraMotionControls?.cancel();
+    vfxInspector?.finishForHistory();
+    vfxGizmos?.up();
     editor.redo();
   },
   play: play,
@@ -4288,8 +4312,11 @@ const actions = {
       return timelineUI.selectFrame(timelineUI.frameCount - 1);
     editor.seek(Math.max(0, editor.totalTicks - 1));
   },
+  "previous-keyframe": () => { pause(); runTimelineHotkey(timelineUI, 'previous-keyframe'); },
+  "next-keyframe": () => { pause(); runTimelineHotkey(timelineUI, 'next-keyframe'); },
   "add-frame": () => {
     pause();finishCurrentEdit();
+    if(editor.getLayer(editor.activeLayerId)?.drawing)return editor.addDrawingFrame();
     if(editor.report._styk?.layerSheet) {
       if(state.settings.timelineMode !== 'simple')
         return timelineUI.addFrameCell();
@@ -4298,6 +4325,12 @@ const actions = {
       return result;
     }
     return editor.addFrame();
+  },
+  "extend-keyframe": () => {
+    pause();finishCurrentEdit();
+    if(drawingController?.active)return editor.extendDrawing(timelineUI?.ids?.length?timelineUI.ids:[editor.activeLayerId],drawingController.settings.length);
+    if(editor.report._styk?.layerSheet) return timelineUI.extendKeyframe();
+    return editor.setFrameDuration(editor.frame.duration_raw + 1);
   },
   "delete-frame": () => {
     pause();
@@ -4359,6 +4392,16 @@ const actions = {
       branch: usesBuilderBranch(event),
       fraction: 0.5,
     }),
+  "copy-builder-appearance": () => {
+    if (!builderMode?.active) return;
+    state.builderAppearance = copyBuilderAppearance(editor);
+    builderMode.sync();
+    if (state.builderAppearance) status("Appearance copied");
+  },
+  "paste-builder-appearance": (button, event) => {
+    if (!builderMode?.active) return;
+    if (pasteBuilderAppearance(editor, state.builderAppearance, {branch:usesBuilderBranch(event)})) status("Appearance pasted");
+  },
   "unsplit-segment": () => editor.unsplitSegment(),
   "delete-single-segment": () => editor.selectedSegmentIds.size > 1
     ? editor.deleteSegment({handleIds:editor.selectedSegmentIds,branch:false}) : editor.deleteSingleSegment(),
@@ -4489,6 +4532,11 @@ const actions = {
     if (document.activeElement?.closest("#timeline"))
       return timelineUI.pasteSelection();
     return pasteFigures();
+  },
+  'paste-in-place': () => {
+    if (document.activeElement?.closest("#timeline"))
+      return timelineUI.pasteSelection();
+    return pasteFigures('default', 0);
   },
   'paste-instance': () => pasteFigures('instance'),
   'paste-unique': () => pasteFigures('unique'),
@@ -5048,6 +5096,7 @@ function finishKeyboardHandle() {
   queueUI();
 }
 function finishCurrentEdit() {
+  drawingController?.finish();
   pause();
   finishKeyboardHandle();
   endDrag();
@@ -5189,6 +5238,7 @@ function locateHovered(direction) {
 }
 function hotkeyScopes(event) {
   const scopes = [];
+  if(drawingController?.active&&!event.target.closest?.('.layer-timeline,.sheet-filmstrip'))scopes.push('drawing');
   if (state.polygon) scopes.push('polygon');
   if (event.target.closest?.('#viewport')) {
     if (state.hoverHandle || state.hoverCameraHandle) scopes.push('hover');
@@ -5200,6 +5250,7 @@ function hotkeyScopes(event) {
   return scopes;
 }
 function cancelKeyboardCommand() {
+  if(drawingController?.active){drawingController.cancel();drawingController.cancelSelection();}
   state.rigAnchorPick = null;
   if (keyboardHandleGesture) {
     if (keyboardHandleGesture.ownsDrag) editor.cancelDrag();
@@ -5213,6 +5264,31 @@ function cancelKeyboardCommand() {
 }
 function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
   editablePreparation.cancel();
+  if(drawingController?.active){
+    if(id==='play-pan')drawingController.finish();
+    if(id.startsWith('drawing-')){drawingController.finish();const tool=id.slice(8);if(['brush','eraser','fill','eyedropper','lasso'].includes(tool))drawingController.tool=tool;else if(tool==='apply')drawingController.applySelection();else{drawingController.settings.size=Math.max(.5,Math.min(2048,drawingController.settings.size*(tool==='smaller'?.8:1.25)));queueUI();}drawingController.sync();return;}
+    if(['copy','cut','paste'].includes(id)&&!event.target.closest?.('.layer-timeline,.sheet-filmstrip')&&(drawingController.selection||id==='paste'&&drawingController.pixelClipboard))return drawingController.action(id+'-pixels');
+    if(id!=='cancel'&&id!=='play-pan')drawingController.finish();if(['previous-frame','next-frame','previous-keyframe','next-keyframe','first-frame','last-frame'].includes(id))drawingController.applySelection();
+  }
+  if(['insert-copied-key','insert-blank-key'].includes(id)){
+    finishCurrentEdit();const ids=event.target.closest?.('.layer-timeline')?timelineUI.ids:[editor.activeLayerId];
+    return editor.sheetInsertKey(ids,editor.tick,{blank:id==='insert-blank-key'});
+  }
+  if (builderMode?.active) {
+    // Shortcut modifiers identify commands; only an extra Shift on Split
+    // extends its scope. Ctrl+D must not create a mirrored copy, and the
+    // Shift in Shift+H/V must not implicitly select descendants.
+    const branch = Boolean(editor.branchSelected || state.builderBranch);
+    if (id === 'duplicate') return beginDuplicatePlacement({branch});
+    if (id === 'mirror' || id === 'mirror-vertical') {
+      finishCurrentEdit();
+      return editor.mirrorSegment(id === 'mirror' ? 'horizontal' : 'vertical', {branch});
+    }
+    if (id === 'split-segment') {
+      finishCurrentEdit();
+      return editor.splitBuilderSegments({branch: branch || modifiers.shift, fraction: .5});
+    }
+  }
   if (id === 'cancel') return cancelKeyboardCommand();
   if (id === 'handle-edit-hold') { state.handleEditHeld = true; requestRender(); return; }
   if (id === 'isolate-hold') { state.isolateHeld = true; return; }
@@ -5259,7 +5335,8 @@ document.addEventListener('keydown', guarded(event => {
   state.builderShiftHeld = event.shiftKey;
   const scopes = hotkeyScopes(event), command = hotkeys.resolve(event, scopes);
   const builderCheckbox = command?.scope === 'builder' && command.id.startsWith('builder-') && event.target.matches?.('input[type=checkbox],input[type=radio]');
-  if (document.querySelector('dialog[open]') || (isHotkeyInput(event.target) && !builderCheckbox)) return;
+  const effectHistory = ['undo','redo'].includes(command?.id) && vfxInspector?.ownsHistoryTarget(event.target);
+  if (document.querySelector('dialog[open]') || (isHotkeyInput(event.target) && !builderCheckbox && !effectHistory)) return;
   hotkeys.keydown(event, scopes, command => {
     if (state.polygon && !polygonCommands.has(command.id)) return false;
     if (!$('renderer-error').hidden && !['save','save-as','open','new','cancel','settings','help'].includes(command.id)) return false;
@@ -5432,6 +5509,11 @@ editor.addEventListener("change", (e) => {
     requestRender();
     return;
   }
+  // A shared definition commit (and its undo/redo) invalidates every instance.
+  // Use the same bounded staging as a seek before panels or rendering force a
+  // synchronous rebuild. The previous canvas remains visible until activation.
+  if (e.detail?.definition || kind === 'history' && e.detail?.structural)
+    queueEditingFrame();
   queueUI();
   if (["edit", "history", "document", "frame-draft"].includes(kind))
     warmPlayback();
@@ -5575,6 +5657,7 @@ if (desktop) {
   else document.querySelector(".titlebar").style.paddingLeft = "84px";
   desktop.onMenuAction?.(
     guarded((action) => {
+      if (['undo','redo'].includes(action) && vfxInspector?.ownsHistoryTarget(document.activeElement) && !$("dialog").open) return actions[action]();
       if (
         document.activeElement?.matches(
           "input,textarea,[contenteditable=true]",
@@ -5789,6 +5872,7 @@ function mountTimeline() {
   const TimelineClass =
     state.settings.timelineMode === "simple" ? SimpleTimeline : Timeline;
   timelineUI = new TimelineClass($("timeline"), editor, {
+    getSettings: () => state.settings,
     audioEngine,
     onCameraMotionPreview: clip => cameraMotionControls?.previewTimeline(clip),
     onTogglePlay: play,
@@ -5919,10 +6003,11 @@ async function init() {
       try { if (previousMode !== next.timelineMode) mountTimeline(); }
       catch (error) { state.settings = previousSettings; throw error; }
       if (patch.rendererMode !== undefined && state.renderer) void recoverCanvas(true);
+      if (patch.playbackQuality !== undefined && state.playing) selectPlaybackQuality();
       if (patch.hotkeys) { hotkeys.setBindings(next.hotkeys); refreshHotkeyHints(hotkeys); }
       onionController.sync();
       if (patch.motionPathRange !== undefined || patch.motionPathAllTargets !== undefined) pathCache.clear();
-      state.handles = next.showHandles;
+      state.handles = drawingController?.active ? false : next.showHandles;
       state.loop = next.loopPlayback;
       state.motionPaths = next.motionPaths;
       pathControls?.sync();
@@ -5989,8 +6074,9 @@ async function init() {
   cameraMotionControls = new CameraMotionControls($('inspector'),editor,{onError:fail,onRender:()=>{queueUI();requestRender();},beforeEdit:()=>{pause();interruptRecovery();propertyControls?.commit();},onPreview:clip=>{pause();editor.seek(clip.start);state.motionPreviewRange={start:clip.start,end:Math.min(editor.totalTicks,clip.start+clip.duration)};play();},getResources:()=>state.renderer?.resources});
   propertyControls = new PropertyControls($("inspector"), {
     canHandle: (key, input) =>
-      cameraMotionControls.handlesProperty(input) || Boolean(propertyChannel(key)) || canEditNativeProperty(editor, key),
+      (drawingController?.active&&key.startsWith('draw:')) || cameraMotionControls.handlesProperty(input) || Boolean(propertyChannel(key)) || canEditNativeProperty(editor, key),
     getValue: (key, input) => {
+      if(key.startsWith('draw:'))return drawingController.propertyValue(key);
       if (cameraMotionControls.handlesProperty(input)) return cameraMotionControls.propertyValue(input);
       const value = propertyState(key).value;
       return (
@@ -5999,6 +6085,7 @@ async function init() {
       );
     },
     begin: ({ key, element }) => {
+      if(key.startsWith('draw:')){drawingController.finish();return {drawing:key,initial:drawingController.propertyValue(key)};}
       pause();
       interruptRecovery();
       if (cameraMotionControls.handlesProperty(element)) return { cameraMotion: cameraMotionControls.beginProperty(element) };
@@ -6025,6 +6112,7 @@ async function init() {
       };
     },
     preview: ({ value, token }) => {
+      if(token.drawing)return drawingController.propertySet(token.drawing,value);
       if (token.cameraMotion) return cameraMotionControls.previewProperty(token.cameraMotion, value);
       if (token.binding)
         editor.previewAnimationEdit(token.binding.fromUI(value));
@@ -6032,6 +6120,7 @@ async function init() {
       requestRender();
     },
     commit: ({ token, value }) => {
+      if(token.drawing){drawingController.propertySet(token.drawing,value);queueUI();return;}
       if (token.cameraMotion) return cameraMotionControls.commitProperty(token.cameraMotion, value);
       if(token.binding&&token.ticks){editor.cancelAnimationEdit();editor.addAnimationKeys(token.ticks.map(tick=>({target:token.binding.target,property:token.binding.property,tick,value:token.binding.fromUI(value),...token.binding.options})));
       } else if (token.binding && token.indices?.length > 1) {
@@ -6042,6 +6131,7 @@ async function init() {
       queueUI();
     },
     cancel: ({ token }) => {
+      if(token?.drawing){drawingController.propertySet(token.drawing,token.initial);queueUI();return;}
       if (token?.cameraMotion) cameraMotionControls.cancelProperty(token.cameraMotion);
       else if (token?.binding) editor.cancelAnimationEdit();
       else if (token?.native) cancelNativePropertyEdit(token.native);
@@ -6053,7 +6143,7 @@ async function init() {
   window.styk.properties = propertyControls;
   vfxInspector=new VfxInspector({editor,root:$('vfx-panel'),properties:$('inspector'),context:()=>state.inspectorContext,beforeEdit:()=>{pause();interruptRecovery();propertyControls?.commit();},onChange:()=>{queueUI();requestRender();},onError:fail});
   window.styk.vfx=vfxInspector;
-  vfxGizmos=new VfxGizmos({canvas:overlay,inspector:vfxInspector,editor,getOptions:()=>({report:editor.report,frame:currentFrame(),geometry:state.playing?null:editor.geometry,view:state.view,cameraEnabled:state.playing||state.previewing,playing:state.playing,vfxEnabled:state.vfxEnabled,resources:state.renderer?.resources}),onChange:()=>{queueUI();requestRender();},onError:fail});
+  vfxGizmos=new VfxGizmos({canvas:overlay,inspector:vfxInspector,editor,pickNativeHandle:event=>pick(worldPoint(event)),getOptions:()=>({report:editor.report,frame:currentFrame(),geometry:state.playing?null:editor.geometry,view:state.view,cameraEnabled:state.playing||state.previewing,playing:state.playing,vfxEnabled:state.vfxEnabled,resources:state.renderer?.resources}),onChange:()=>{queueUI();requestRender();},onError:fail});
   window.styk.vfxGizmos=vfxGizmos;
   $('vfx-preview').addEventListener('click',()=>{finishCurrentEdit();pause();state.vfxEnabled=!state.vfxEnabled;playback.setVfxEnabled(state.vfxEnabled);state.playbackPacket=null;state.editingPacket=null;state.renderer?.clearPreparedFrames?.();state.renderer.lastGeometry=null;$('vfx-preview').setAttribute('aria-pressed',String(state.vfxEnabled));requestRender();queueUI();});
   assetLibrary = new AssetLibrary($("asset-list"), {
@@ -6105,9 +6195,11 @@ async function init() {
   actions['chain-finish'] = () => construction.commit();
   actions['chain-cancel'] = () => construction.cancel();
   window.styk.builder = builderMode;
+  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getResources:()=>resources,getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard});
+  window.styk.drawing=drawingController;
   studioShell = initStudioShell({editor, state, setTool, renderAssets, renderInspector, showCommandMenu,
     actions, setTimelineMode: mode => editorSettings.commit({timelineMode:mode}), getTimeline: () => timelineUI,
-    builder: builderMode, toast});
+    builder: builderMode, drawing:drawingController, toast});
   window.styk.studio = studioShell;
   if (desktop?.beginClipboardRead)
     nativeFrameClipboard = installNativeFrameClipboard(editor, desktop, {
@@ -6119,7 +6211,14 @@ async function init() {
   window.styk.clipboard = sharedClipboard;
   window.styk.thumbnails = thumbnailRenderer;
   mountTimeline();
-  state.renderer = await createRenderer(canvas, rendererOptions());
+  try {
+    state.renderer = await createRenderer(canvas, rendererOptions());
+  } catch (error) {
+    // A failure during context configuration leaves this canvas GPU-only.
+    const replacement = canvas.cloneNode(false);
+    canvas.replaceWith(replacement); canvas = replacement;
+    state.renderer = await createRenderer(canvas, {...rendererOptions(), forceCanvas2D: true, fallbackReason: error.message});
+  }
   new ResizeObserver(resize).observe(viewport);
   resize();
   fit();
@@ -6150,7 +6249,9 @@ async function init() {
 }
 function scheduleGpuRecovery() {
   if (gpuRecoveryTimer !== undefined) return;
-  const delay = gpuRecoveryAttempts < GPU_RECOVERY_DELAYS.length ? GPU_RECOVERY_DELAYS[gpuRecoveryAttempts++] : 0;
+  // Two accelerated attempts; exhausting them selects software immediately.
+  // Count the fallback too, so recovery does not confuse it with the last retry.
+  const delay = GPU_RECOVERY_DELAYS[gpuRecoveryAttempts++] ?? 0;
   gpuRecoveryTimer = setTimeout(() => {
     gpuRecoveryTimer = undefined;
     recoverCanvas().catch(error => {
@@ -6178,7 +6279,7 @@ function recoverCanvas(refreshGpuBudget) {
     replaceCanvas();
     // An exhausted retry budget takes the software path until the renderer
     // stays healthy or explicit user action refreshes the budget.
-    const forceCanvas2D = gpuRecoveryAttempts >= GPU_RECOVERY_DELAYS.length || state.settings.rendererMode === "canvas";
+    const forceCanvas2D = gpuRecoveryAttempts > GPU_RECOVERY_DELAYS.length || state.settings.rendererMode === "canvas";
     try {
       state.renderer = await createRenderer(canvas, {...rendererOptions(), forceCanvas2D});
     } catch (error) {

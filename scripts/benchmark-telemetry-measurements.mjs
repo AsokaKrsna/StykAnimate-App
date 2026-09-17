@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { TelemetryAccumulator, DesktopTelemetryClient } from '../src/telemetry-core.mjs';
 import { InteractionMeasurements, PlaybackMeasurements } from '../src/telemetry-measurements.mjs';
 import { documentComplexity } from '../src/telemetry-workload.mjs';
+import { PlaybackCadence } from '../src/playback-cadence.mjs';
 
 const rounds = 7, playbackCalls = 250000, observerCallbacks = 25000;
 const summarize = samples => { const sorted = [...samples].sort((a, b) => a - b); return { medianMicroseconds: sorted[Math.floor(sorted.length / 2)] * 1000, worstMicroseconds: sorted.at(-1) * 1000 }; };
@@ -18,8 +19,10 @@ for (const enabled of [false, true]) {
     client.playbackMeasurements = new PlaybackMeasurements(client);
     client.playbackStart({ format: 'native', size: '1-10mb', complexity: '100-999' });
     const playbackStart = performance.now();
+    const cadence=new PlaybackCadence();
     for (let n = 0; n < playbackCalls; n++) {
-      client.playbackPresent(n * (1000 / 60), 60);
+      const now=n*(1000/60);if(enabled)cadence.observe(now);
+      client.playbackPresent(now,60,{deadline:now,refreshMs:cadence.interval});
       if (n % 900 === 899) client.playbackStop(); // The same aggregate flush performed by the15-second sampler.
     }
     client.playbackStop();

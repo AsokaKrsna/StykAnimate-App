@@ -12,39 +12,73 @@ export function supportsVectorIsolation(items, resolution) {
 
 /** Composite an opaque vector group before applying its figure opacity. The
  * result has the same lifetime as any other cached compatibility texture. */
-export function rasterizeVectorGroup(renderer, {data, width, height, pixelScale, bounds, root}) {
+export function rasterizeVectorGroup(renderer, spec) {
+  const device = renderer.device;
+  const encoder = device.createCommandEncoder({label: 'Composite isolated vector artwork'});
+  let raster;
+  try {
+    raster = encodeVectorRaster(renderer, encoder, spec);
+    device.queue.submit([encoder.finish()]);
+    return raster;
+  } catch (error) { raster?.texture.destroy(); throw error; }
+  finally {
+    // Submitted commands retain their resources until GPU execution completes.
+    // No scratch allocation is kept in the editor or packet caches.
+    raster?.cleanup();
+  }
+}
+
+/** Records one isolation raster into a shared command encoder. Callers submit
+ * the encoder once for a whole batch, then run every returned cleanup — the
+ * submitted commands retain their scratch buffers until GPU execution
+ * completes. The texture and bind group outlive the cleanup.
+ * `target` reuses an exact-sized texture with its original sampling grid.
+ * `msaa` shares one matching attachment across a batch — passes
+ * execute in submission order, so serial reuse stays correct. */
+export function encodeVectorRaster(renderer, encoder, {data, width, height, pixelScale, bounds, root, target, msaa, viewport, scratch}) {
   const device = renderer.device;
   if (!(data instanceof Float32Array) || data.length % SHAPE_FLOATS ||
     data.byteLength > device.limits.maxStorageBufferBindingSize || !Number.isInteger(width) || !Number.isInteger(height) ||
     width < 1 || height < 1 || width > device.limits.maxTextureDimension2D || height > device.limits.maxTextureDimension2D ||
     !Number.isFinite(pixelScale) || pixelScale <= 0) throw new TypeError('Invalid isolated vector artwork.');
-  let texture, msaa, uniform, shapes, transforms;
+  const targetWidth = target?.width ?? width, targetHeight = target?.height ?? height;
+  const viewportWidth = viewport?.[0] ?? targetWidth, viewportHeight = viewport?.[1] ?? targetHeight;
+  const shapeBytes = Math.max(SHAPE_BYTES, data.byteLength);
+  // Queued writes execute after earlier submits, so pooled scratch buffers are
+  // reusable as soon as their previous batch is submitted.
+  const scratchKey = 2 ** Math.ceil(Math.log2(shapeBytes));
+  let texture, ownedMsaa, uniform, shapes, transforms;
   try {
-    texture = device.createTexture({label: 'Isolated vector artwork', size: [width, height], format: renderer.format,
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT});
+    texture = target?.texture ?? device.createTexture({label: 'Isolated vector artwork', size: [targetWidth, targetHeight], format: renderer.format,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC});
     const samples = renderer.isolationSamples;
-    if (samples > 1) msaa = device.createTexture({label: 'Isolated vector antialiasing', size: [width, height], sampleCount: samples,
+    if (!msaa && samples > 1) ownedMsaa = device.createTexture({label: 'Isolated vector antialiasing', size: [targetWidth, targetHeight], sampleCount: samples,
       format: renderer.format, usage: GPUTextureUsage.RENDER_ATTACHMENT});
-    uniform = device.createBuffer({size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
-    shapes = device.createBuffer({size: Math.max(SHAPE_BYTES, data.byteLength), usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST});
-    transforms = device.createBuffer({size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST});
+    const antialias = msaa || ownedMsaa;
+    uniform = scratch?.uniform.pop() ?? device.createBuffer({size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
+    shapes = scratch?.shapes.get(scratchKey)?.pop() ?? device.createBuffer({size: scratchKey, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST});
+    transforms = scratch?.transforms.pop() ?? device.createBuffer({size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST});
     device.queue.writeBuffer(uniform, 0, new Float32Array([
       pixelScale, 0, -(bounds.x-root.x)*pixelScale, pixelScale,
-      0, pixelScale, -(bounds.y-root.y)*pixelScale, 0, width, height, 1, 1, 0, 0, width, height]));
+      0, pixelScale, -(bounds.y-root.y)*pixelScale, 0, viewportWidth, viewportHeight, 1, 1, 0, 0, viewportWidth, viewportHeight]));
     device.queue.writeBuffer(shapes, 0, data);
     device.queue.writeBuffer(transforms, 0, new Float32Array([0, 0, 1, 1]));
     const bindings = device.createBindGroup({layout: renderer.globalLayout, entries: [
       {binding: 0, resource: {buffer: uniform}}, {binding: 1, resource: {buffer: shapes}}, {binding: 2, resource: {buffer: transforms}}]});
-    const encoder = device.createCommandEncoder({label: 'Composite isolated vector artwork'});
-    const pass = encoder.beginRenderPass({colorAttachments: [{view: (msaa || texture).createView(),
-      ...(msaa ? {resolveTarget: texture.createView()} : {}), clearValue: {r: 0, g: 0, b: 0, a: 0}, loadOp: 'clear', storeOp: msaa ? 'discard' : 'store'}]});
+    const pass = encoder.beginRenderPass({colorAttachments: [{view: (antialias || texture).createView(),
+      ...(antialias ? {resolveTarget: texture.createView()} : {}), clearValue: {r: 0, g: 0, b: 0, a: 0}, loadOp: 'clear', storeOp: antialias ? 'discard' : 'store'}]});
     pass.setPipeline(renderer.isolationPipeline); pass.setBindGroup(0, bindings); pass.setBindGroup(1, renderer.blankBindGroup);
-    pass.draw(6, data.length / SHAPE_FLOATS); pass.end(); device.queue.submit([encoder.finish()]);
-    return {texture, bindGroup: renderer.textureBindGroup(texture), width, height, bytes: width*height*4};
-  } catch (error) {texture?.destroy(); throw error;}
-  finally {
-    // Submitted commands retain their resources until GPU execution completes.
-    // No scratch allocation is kept in the editor or packet caches.
-    msaa?.destroy(); uniform?.destroy(); shapes?.destroy(); transforms?.destroy();
+    pass.draw(6, data.length / SHAPE_FLOATS); pass.end();
+    const recycle = buffer => { if (buffer) buffer.destroy(); };
+    const cleanup = scratch ? () => {
+      ownedMsaa?.destroy();
+      if (uniform) { scratch.uniform.push(uniform); uniform = null; }
+      if (shapes) { let list = scratch.shapes.get(scratchKey); if (!list) scratch.shapes.set(scratchKey, list = []); list.push(shapes); shapes = null; }
+      if (transforms) { scratch.transforms.push(transforms); transforms = null; }
+    } : () => { ownedMsaa?.destroy(); recycle(uniform); recycle(shapes); recycle(transforms); };
+    return {texture, bindGroup: target?.bindGroup ?? renderer.textureBindGroup(texture), width, height, bytes: targetWidth*targetHeight*4, cleanup};
+  } catch (error) {
+    if (!target?.texture) texture?.destroy(); ownedMsaa?.destroy(); uniform?.destroy(); shapes?.destroy(); transforms?.destroy();
+    throw error;
   }
 }

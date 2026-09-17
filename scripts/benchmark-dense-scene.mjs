@@ -23,6 +23,8 @@ for(const name of (await readdir(path.join(root,'src'),{recursive:true})).filter
   await writeFile(path.join(output,'sources',name),bytes);
 }
 console.log('OUTPUT',output);
+await mkdir(path.join(output,'profile'),{recursive:true});
+await writeFile(path.join(output,'profile','telemetry-state.json'),JSON.stringify({decided:true,consent:{analytics:false,diagnostics:false,policyVersion:'2026-09-10',updatedAt:Date.now()}}));
 const app = await electron.launch({args:[root],cwd:root,timeout:60000,env:{...process.env,STYK_USER_DATA_DIR:path.join(output,'profile')}});
 try {
   const page=await app.firstWindow({timeout:60000});
@@ -45,6 +47,11 @@ try {
     w.setIgnoreMouseEvents(true);w.setFocusable(false);w.showInactive();
   });
   result.environment.backgroundThrottling=false;
+  const cpuThrottleRate = Number(process.env.STYK_BENCHMARK_CPU_RATE || 1);
+  if (!Number.isFinite(cpuThrottleRate) || cpuThrottleRate < 1 || cpuThrottleRate > 20) throw new Error('STYK_BENCHMARK_CPU_RATE must be between 1 and 20.');
+  const throttleSession = await page.context().newCDPSession(page);
+  await throttleSession.send('Emulation.setCPUThrottlingRate', {rate:cpuThrottleRate});
+  result.environment.cpuThrottleRate = cpuThrottleRate;
   result.environment.nativeInputIsolation='Window ignores native mouse input and cannot take desktop keyboard focus; benchmark input uses CDP.';
   result.environment.sourcePolicy='Captured src modules/styles, including worker requests; isolated benchmark background throttling disabled.';
   try{await page.waitForFunction(()=>window.styk?.ready);}
@@ -87,7 +94,7 @@ try {
       localGroups.set(pose+'|'+local,(localGroups.get(pose+'|'+local)||0)+1);
     }
     const byUid=new Map(r.keyframes[0].objects.map(o=>[o.unique_id,JSON.stringify(o)]));
-    return {name:e.name,reuseAnalysis:{objectKeys:Object.keys(e.frame.objects[0]),poseGroups:poseGroups.size,exactLocalGroups:localGroups.size,largestExactGroup:Math.max(...localGroups.values()),unchangedFullObjects:r.keyframes.map(f=>f.objects.filter(o=>byUid.get(o.unique_id)===JSON.stringify(o)).length)},fps:r.fps,frameDelayMs:r.frame_delay_ms,targetFps:r.frame_delay_ms?1000/r.frame_delay_ms:r.fps,
+    return {name:e.name,reuseAnalysis:{objectKeys:Object.keys(e.frame.objects[0]??{}),poseGroups:poseGroups.size,exactLocalGroups:localGroups.size,largestExactGroup:localGroups.size?Math.max(...localGroups.values()):0,unchangedFullObjects:r.keyframes.map(f=>f.objects.filter(o=>byUid.get(o.unique_id)===JSON.stringify(o)).length)},fps:r.fps,frameDelayMs:r.frame_delay_ms,targetFps:r.frame_delay_ms?1000/r.frame_delay_ms:r.fps,
       totalTicks:e.totalTicks,canvas:[r.canvas_width,r.canvas_height],figureTypes:r.figure_types.map(f=>({id:f.figure_type_id,segments:f.segments.length,segmentTypes:f.segments.reduce((a,s)=>(a[s.segment_type]=(a[s.segment_type]||0)+1,a),{}),polygons:f.polygons?.length,keys:Object.keys(f)})),
       frames:r.keyframes.map((f,i)=>({index:i,objects:f.objects.length,segments:f.objects.reduce((n,o)=>n+(sizes.get(o.figure_type_id)||0),0),joined:f.objects.filter(o=>o.join).length,inbetweens:f.inbetweens,keys:i===0?Object.keys(f):undefined})),
       renderer:structuredClone(styk.state.renderer.stats),settings:structuredClone(styk.state.settings),view:{...styk.state.view},onion:styk.state.onion,handles:styk.state.handles,
@@ -123,7 +130,7 @@ async function benchmark(page,app,result,output,mode) {
     const {PlaybackCache}=await import('/src/playback.mjs');
     const receive=PlaybackCache.prototype._receive, get=PlaybackCache.prototype.get;
     PlaybackCache.prototype.get=function(...args){b.cache=this;return get.apply(this,args);};
-    PlaybackCache.prototype._receive=function(data){b.cache=this;if(b.active&&data.type==='packet')b.packets.push({at:performance.now(),tick:data.tick,bytes:data.packet.byteLength,timings:data.packet.timings,compileMs:data.packet.compileMs,clipping:data.packet.clipping,sharing:data.packet.sharing,reusedGeometryObjects:data.packet.reusedGeometryObjects,compatibility:data.packet.compatibility.length});return receive.call(this,data);};
+    PlaybackCache.prototype._receive=function(data,...args){b.cache=this;if(b.active&&data.type==='packet')b.packets.push({at:performance.now(),tick:data.tick,bytes:data.packet.byteLength,timings:data.packet.timings,compileMs:data.packet.compileMs,clipping:data.packet.clipping,sharing:data.packet.sharing,reusedGeometryObjects:data.packet.reusedGeometryObjects,compatibility:data.packet.compatibility.length});return receive.call(this,data,...args);};
     const r=styk.state.renderer,e=styk.editor;
     const geometry=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(e),'geometry');
     Object.defineProperty(e,'geometry',{configurable:true,get(){const start=performance.now();try{return geometry.get.call(this);}finally{if(b.active)b.calls.push({name:'editor.geometry',start,ms:performance.now()-start});}}});

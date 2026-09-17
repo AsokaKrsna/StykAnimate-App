@@ -1,10 +1,12 @@
 import {objectBounds,cameraMatrix,worldToScreen} from './renderer-geometry.mjs';
 import {VFX_REGISTRY} from './vfx.mjs';
+import {connectedVfxGeometry} from './vfx-connected.mjs';
+import {vfxRenderFrame} from './vfx-clips.mjs';
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 /** Ephemeral canvas controls. A drag edits one stack through the normal history transaction. */
 export class VfxGizmos {
- constructor({canvas,inspector,editor,getOptions,onChange,onError}){
-  Object.assign(this,{canvas,inspector,editor,getOptions,onChange,onError});this.abort=new AbortController();this.handles=[];
+ constructor({canvas,inspector,editor,getOptions,pickNativeHandle,onChange,onError}){
+  Object.assign(this,{canvas,inspector,editor,getOptions,pickNativeHandle,onChange,onError});this.abort=new AbortController();this.handles=[];
   for(const [type,handler] of [['pointerdown','down'],['pointermove','move'],['pointerup','up'],['pointercancel','cancel'],['lostpointercapture','cancel']])canvas.addEventListener(type,e=>{try{this[handler](e);}catch(error){this.cancel();onError(error);}},{capture:true,signal:this.abort.signal});
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&this.drag){event.preventDefault();event.stopImmediatePropagation();this.cancel();}},{capture:true,signal:this.abort.signal});
  }
@@ -12,6 +14,7 @@ export class VfxGizmos {
  control(){
   if(!this.inspector.visible)return null;
   const selected=this.inspector.selectedEffect();if(!selected||!selected.effect.enabled)return null;
+  if(this.editor.dragging&&!this.drag)return null;
   const options=this.getOptions();if(options.playing||options.vfxEnabled===false)return null;
   const {target,effect}=selected,layer=this.editor.getLayer(target.kind==='scene'?'scene':this.editor.layerForUid(target.uid));if(layer?.locked)return null;
   let bounds,unit=1,map,inverse;
@@ -20,7 +23,9 @@ export class VfxGizmos {
    map=p=>({x:(d*(p.x-e)-c*(p.y-f))/det,y:(-b*(p.x-e)+a*(p.y-f))/det});inverse=p=>({x:a*p.x+c*p.y+e,y:b*p.x+d*p.y+f});
   }else{
    let items=options.geometry.drawables.filter(item=>item.obj.unique_id===target.uid);if(target.kind==='segment')items=items.filter(item=>item.seg?.segment_id===target.handleId&&item.fig?.figure_type_id===target.figureTypeId);
-   if(!items.length)return null;bounds=objectBounds(items,{...options.resources,vfxBounds:false});unit=Math.max(.000001,Math.abs(items[0].obj.scale??1));map=p=>p;inverse=p=>p;
+   const frame=vfxRenderFrame(options.report,options.frame),owner=frame.objects.find(o=>o.unique_id===target.uid);
+   if(target.kind==='figure'&&(selected.includeAttached||owner?._stykVfxScope===1)){const grouped=connectedVfxGeometry(options.geometry,frame,options.report,options.hiddenUids),slot=frame.objects.indexOf(owner);items=grouped.connectedVfxAssemblies?.get(slot)??grouped.objects.get(slot)?.drawables??items;}
+   if(!items.length)return null;bounds=objectBounds(items,{...options.resources,vfxBounds:false});unit=Math.max(.000001,Math.abs(owner?.scale??1));map=p=>p;inverse=p=>p;
   }
   const [a,b,c,d,e,f]=cameraMatrix(options),det=a*d-b*c;
   const project=p=>worldToScreen(map(p),options),unproject=p=>inverse({x:(d*(p.x-e)-c*(p.y-f))/det,y:(-b*(p.x-e)+a*(p.y-f))/det});
@@ -53,9 +58,15 @@ export class VfxGizmos {
   context.restore();
  }
  point(event){const rect=this.canvas.getBoundingClientRect();return {x:event.clientX-rect.left,y:event.clientY-rect.top};}
- down(event){if(event.button!==0)return;const point=this.point(event),handle=[...this.handles].reverse().find(h=>Math.hypot(h.screen.x-point.x,h.screen.y-point.y)<11);if(!handle)return;const control=this.control();if(!control)return;event.preventDefault();event.stopImmediatePropagation();this.inspector.commit();this.inspector.beforeEdit();const stack=structuredClone(this.editor.vfxEffects(control.target));this.editor.beginAnimationEdit(control.target,'vfxStack',{exactTarget:true});this.drag={control,handle,stack,start:control.unproject(point),pointerId:event.pointerId};this.canvas.setPointerCapture(event.pointerId);this.onChange();}
+ down(event){if(event.button!==0)return;const point=this.point(event);let handle,distance=121;
+  for(const h of this.handles){const d=(h.screen.x-point.x)**2+(h.screen.y-point.y)**2;if(d<distance){handle=h;distance=d;}}
+  if(!handle)return;
+  // VFX hit slop must not steal a nearer figure origin or joint. Resolve
+  // against the app's visible native handles, including its zoom/settings.
+  if((this.pickNativeHandle?.(event)?.distanceSquared??Infinity)<=distance)return;
+  const control=this.control();if(!control)return;event.preventDefault();event.stopImmediatePropagation();this.inspector.commit();this.inspector.beforeEdit();const stack=control.clip?null:structuredClone(this.editor.vfxEffects(control.target));if(control.clip)this.editor.beginVfxClipEdit();else this.editor.beginAnimationEdit(control.target,'vfxStack',{exactTarget:true});this.drag={control,handle,stack,start:control.unproject(point),pointerId:event.pointerId};this.canvas.setPointerCapture(event.pointerId);this.onChange();}
  move(event){if(!this.drag)return;event.preventDefault();event.stopImmediatePropagation();const {control,handle,stack,start}=this.drag,{bounds:b,unit,effect}=control,p={...effect.params},current=control.unproject(this.point(event)),at={x:handle.point.x+current.x-start.x,y:handle.point.y+current.y-start.y},center={x:b.x+b.width*(p.centerX??.5),y:b.y+b.height*(p.centerY??.5)},dx=at.x-center.x,dy=at.y-center.y,distance=Math.hypot(dx,dy)/unit;
-  const set=(name,value)=>{const d=VFX_REGISTRY[effect.type].params[name];p[name]=clamp(value,d.min,d.max);};
+  const changed={};const set=(name,value)=>{const d=VFX_REGISTRY[effect.type].params[name];p[name]=clamp(d.discrete?Math.round(value):value,d.min,d.max);changed[name]=p[name];};
   if(handle.kind==='center'){set('centerX',(at.x-b.x)/b.width);set('centerY',(at.y-b.y)/b.height);}
   if(handle.kind==='radius')set('radius',distance);
   if(handle.kind==='width')set('width',(at.x-b.x-b.width)/unit);
@@ -72,9 +83,9 @@ export class VfxGizmos {
   if(handle.kind==='progress')set('progress',(at.x-b.x)/b.width);
   if(handle.kind==='sweep'){const angle=p.angle*Math.PI/180;set('position',.5+dx/b.width*Math.cos(angle)+dy/b.height*Math.sin(angle));}
   if(handle.kind==='curvature')set('curvature',1-(at.x-b.x)/b.width);
-  const next=stack.map(item=>item.id===effect.id?{...item,version:2,params:p}:item);this.editor.previewAnimationEdit(next);this.onChange();
+  if(control.clip)this.editor.setVfxClipParameters(control.clip,effect.id,changed);else{const next=stack.map(item=>item.id===effect.id?{...item,version:2,params:p}:item);this.editor.previewAnimationEdit(next);}this.onChange();
  }
- up(event){if(!this.drag)return;event?.preventDefault();event?.stopImmediatePropagation();const id=this.drag.pointerId;this.drag=null;this.editor.commitAnimationEdit();if(this.canvas.hasPointerCapture(id))this.canvas.releasePointerCapture(id);this.inspector.sync();this.onChange();}
- cancel(){if(!this.drag)return;const id=this.drag.pointerId;this.drag=null;this.editor.cancelAnimationEdit();if(this.canvas.hasPointerCapture(id))this.canvas.releasePointerCapture(id);this.inspector.sync();this.onChange();}
+ up(event){if(!this.drag)return;event?.preventDefault();event?.stopImmediatePropagation();const {pointerId:id,control}=this.drag;this.drag=null;if(control.clip)this.editor.commitVfxClipEdit();else this.editor.commitAnimationEdit();if(this.canvas.hasPointerCapture(id))this.canvas.releasePointerCapture(id);this.inspector.sync();this.onChange();}
+ cancel(){if(!this.drag)return;const {pointerId:id,control}=this.drag;this.drag=null;if(control.clip)this.editor.cancelVfxClipEdit();else this.editor.cancelAnimationEdit();if(this.canvas.hasPointerCapture(id))this.canvas.releasePointerCapture(id);this.inspector.sync();this.onChange();}
  destroy(){this.cancel();this.abort.abort();}
 }

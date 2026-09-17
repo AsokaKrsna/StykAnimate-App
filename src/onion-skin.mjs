@@ -1,8 +1,23 @@
+import {sheetKeyAt} from './layer-sheet.mjs';
 import {buildGeometry, evaluatedFrame} from './pivot/geometry.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
 import {easingMode} from './keyframe-easing.mjs';
 import {onionRangeLimit,onionRangeSnapshot,sceneKeyTicks} from './onion-range.mjs';
 import {RetainedGeometryCache} from './playback-geometry-cache.mjs';
+
+/** One neighboring authored exposure per layer; never repeat the current hold. */
+export function drawingOnionSamples(editor,settings){
+  if(settings.onionMode==='frames')return [];
+  const samples=[];
+  for(const layer of editor.layers??[]){if(!layer.drawing||!layer.visible)continue;const track=editor.report._styk?.layerSheet?.tracks[layer.id];if(!track)continue;
+    const current=sheetKeyAt(track,editor.tick).index;
+    for(const direction of [-1,1])for(let distance=1;distance<=(direction<0?settings.onionBefore:settings.onionAfter);distance++){
+      const key=track.keys[current+direction*distance*settings.onionStep];if(!key)break;if(key.value?.frameId===null)continue;
+      samples.push({tick:key.tick,direction,distance,drawingLayer:layer.id});
+    }
+  }
+  return samples;
+}
 
 // A changed parent also moves its joined descendants, even when their own
 // native object records have not changed.
@@ -121,6 +136,7 @@ export class OnionSkinCache {
       ? onionRangeLimit(keyTicks??[],Math.floor(currentTick),direction,settings,editor.totalTicks)
       : Math.max(0,Math.floor((direction<0?currentIndex+(!adding&&editor.tick>rows[editor.frameIndex]?.start?1:0):rows.length-1-currentIndex)/settings.onionStep));
     const before=Math.min(settings.onionBefore,available(-1)),after=Math.min(settings.onionAfter,available(1));
+    const candidates=[];
     for (let distance = Math.max(before,after); distance > 0; distance--) {
       for (const direction of [-1,1]) {
         if (distance > (direction < 0 ? before : after)) continue;
@@ -138,6 +154,15 @@ export class OnionSkinCache {
           if(index<0 || index>=rows.length) continue;
           tick=rows[index].start;
         }
+        candidates.push({index,tick,ratio,distance,direction});
+      }
+    }
+    for(const candidate of drawingOnionSamples(editor,settings)){
+      let index=0;for(let i=0;i<rows.length&&rows[i].start<=candidate.tick;i++)index=i;
+      candidates.push({...candidate,index,ratio:rows[index].count?(candidate.tick-rows[index].start)/rows[index].count:0});
+    }
+    candidates.sort((a,b)=>b.distance-a.distance);
+    for(const {index,tick,ratio,distance,direction,drawingLayer} of candidates){
         const id=`${index}:${tick}`;
         let sample=this.samples.get(id);
         if(!sample || sample.dirtyUids || sample.stale){
@@ -162,16 +187,16 @@ export class OnionSkinCache {
           const queue=[...included];for(let i=0;i<queue.length;i++)for(const uid of links.get(queue[i])??[])if(!included.has(uid)){included.add(uid);queue.push(uid);}
         }
         const color = settings.onionTint ? (direction<0?settings.onionBeforeColor:settings.onionAfterColor) : null;
-        const styleKey=JSON.stringify([color,included?[...included]:null,hiddenKey,editor.layerRevision]);
+        const styleKey=JSON.stringify([color,included?[...included]:null,hiddenKey,editor.layerRevision,drawingLayer,settings.onionMode]);
         let cache=this.styles.get(sample.geometry);if(!cache)this.styles.set(sample.geometry,cache=new Map());
         let geometry=cache.get(styleKey);
         if(!geometry){
           const rgb=color?.slice(1).match(/../g).map(value=>parseInt(value,16));
-          const orderedObjects=sample.geometry.orderedObjects.filter(g=>(!included||included.has(g.obj.unique_id))&&!hidden.has(g.obj.unique_id)).map(g=>{
+          const orderedObjects=sample.geometry.orderedObjects.filter(g=>(!included||included.has(g.obj.unique_id))&&!hidden.has(g.obj.unique_id)&&(settings.onionMode==='frames'||(drawingLayer?editor.layerForUid(g.obj.unique_id)===drawingLayer:!editor.getLayer(editor.layerForUid(g.obj.unique_id))?.drawing))).map(g=>{
             if(!rgb)return g;
             let styles=this.objectStyles.get(g);if(!styles)this.objectStyles.set(g,styles=new Map());
             let styled=styles.get(color);
-            if(!styled){styled={...g,drawables:g.drawables.map(item=>({...item,rgb,seg:item.seg?{...item.seg,secondary:null}:item.seg}))};styles.set(color,styled);while(styles.size>4)styles.delete(styles.keys().next().value);}
+            if(!styled){styled={...g,drawables:g.drawables.map(item=>({...item,rgb,onionTint:rgb,seg:item.seg?{...item.seg,secondary:null}:item.seg}))};styles.set(color,styled);while(styles.size>4)styles.delete(styles.keys().next().value);}
             return styled;
           });
           let drawables;
@@ -179,7 +204,6 @@ export class OnionSkinCache {
           cache.set(styleKey,geometry);while(cache.size>4)cache.delete(cache.keys().next().value);
         }
         frames.push({frame:sample.frame,geometry,opacity:settings.onionOpacity*(settings.onionFade?1/distance:1),showOnTop:settings.onionShowOnTop});
-      }
     }
     // Retain the currently displayed range as well as the small warm cache.
     // Evict after the batch: evicting while walking a range larger than the

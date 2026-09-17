@@ -6,7 +6,7 @@ export const PERFORMANCE_METRICS = Object.freeze(Object.fromEntries([
   ...['edit','seek','pan','zoom','undo','redo','command'].map(name=>['action_'+name,{family:'action',unit:'ms'}]),
   ...['heap','gpu','process','backend','cache'].map(name=>['memory_'+name,{family:'memory',unit:'MiB'}]),
   ...['hits','misses','evictions','pending'].map(name=>['cache_'+name,{family:'cache',unit:'count'}]),
-  ['playback_interval',{family:'playback',unit:'ms'}], ['quality_reduced',{family:'playback',unit:'ms'}],
+  ['playback_interval',{family:'playback',unit:'ms'}], ['playback_lateness',{family:'playback',unit:'ms'}], ['quality_reduced',{family:'playback',unit:'ms'}],
   ...['gpu','vfx','import_worker','playback_worker','camera'].map(name=>['recovery_'+name,{family:'recovery',unit:'ms'}]),
 ]));
 export const PERFORMANCE_CONTEXT = Object.freeze({
@@ -23,7 +23,7 @@ export const COVERAGE_KEYS = Object.freeze(['frame_candidates','frame_sampled','
 export const MAX_PERFORMANCE_ROWS=48, MAX_INCIDENTS=3, PERFORMANCE_BYTE_BUDGET=16000;
 const familyCaps={stage:24,action:7,memory:18,cache:4,playback:3,recovery:8};
 const indexes=new WeakMap();
-const priority=row=>PERFORMANCE_METRICS[row.metric].family==='recovery'?100:PERFORMANCE_METRICS[row.metric].family==='memory'&&['closed','idle'].includes(row.context.phase)?90:PERFORMANCE_METRICS[row.metric].family==='memory'&&['stopped','before_open','opened'].includes(row.context.phase)?70:row.metric.startsWith('action_')?50:row.metric==='playback_interval'?45:row.metric==='frame'?40:20;
+const priority=row=>PERFORMANCE_METRICS[row.metric].family==='recovery'?100:PERFORMANCE_METRICS[row.metric].family==='memory'&&['closed','idle'].includes(row.context.phase)?90:PERFORMANCE_METRICS[row.metric].family==='memory'&&['stopped','before_open','opened'].includes(row.context.phase)?70:row.metric.startsWith('action_')?50:row.metric==='playback_lateness'?46:row.metric==='playback_interval'?45:row.metric==='frame'?40:20;
 const validNumber=(n,max=1e9)=>Number.isFinite(n)&&n>=0&&n<=max;
 const integer=(n,max=1e9)=>Number.isSafeInteger(n)&&validNumber(n,max);
 const sameFields=(a,b)=>b&&Object.keys(a).length===Object.keys(b).length&&Object.entries(a).every(([key,value])=>b[key]===value);

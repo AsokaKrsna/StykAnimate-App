@@ -1,4 +1,5 @@
 import {activeVfx} from './vfx.mjs';
+import {fitsVfxSurface,vfxSurfaceError} from './vfx-surface.mjs';
 import {vfxPaint} from './vfx-paint.mjs';
 // WGSL port of vfx-shaders.mjs. The vertex keeps the GLSL uv convention
 // (uv.y=0 at the framebuffer bottom); copyExternalImageToTexture stores image
@@ -108,10 +109,11 @@ export class VfxWebGPU{
  run(source,stack,{scale=1,origin={x:0,y:0},outputSize,pad=0,texture=false}={}){
   stack=activeVfx(stack);if(!stack.length)return texture?null:source;
   const w=source.width,h=source.height,W=w+2*pad,H=h+2*pad;
-  if(!W||!H||W*H>16777216||Math.max(W,H)>this.device.limits.maxTextureDimension2D)throw Object.assign(new Error('The VFX surface exceeds the graphics budget. Reduce the render tile size.'),{telemetryCode:'out_of_memory'});
-  const input=this.slot(0,W,H);
+  if(!fitsVfxSurface(W,H,this.device.limits.maxTextureDimension2D))throw vfxSurfaceError();
+  if(source.texture&&pad)throw new Error('GPU artwork must include its effect padding.');
+  const input=source.texture?{texture:source.texture,view:source.texture.createView(),width:w,height:h}:this.slot(0,W,H);
   if(pad){const clear=this.device.createCommandEncoder(),rp=clear.beginRenderPass({colorAttachments:[{view:input.view,clearValue:{r:0,g:0,b:0,a:0},loadOp:'clear',storeOp:'store'}]});rp.end();this.device.queue.submit([clear.finish()]);}
-  this.device.queue.copyExternalImageToTexture({source},{texture:input.texture,origin:[pad,pad,0],premultipliedAlpha:true},[w,h]);
+  if(!source.texture)this.device.queue.copyExternalImageToTexture({source},{texture:input.texture,origin:[pad,pad,0],premultipliedAlpha:true},[w,h]);
   if(!texture){if(this.canvas.width!==W)this.canvas.width=W;if(this.canvas.height!==H)this.canvas.height=H;if(!this.context){this.context=this.canvas.getContext('webgpu');if(!this.context)throw new Error('VFX require an available WebGPU canvas context.');}if(!this.configured){this.context.configure({device:this.device,format:'rgba8unorm',alphaMode:'premultiplied'});this.configured=true;}}
   this.stats.passes=0;let brushType=0,brushAngle=0,brushStops=1;
   let current=input,encoder=this.device.createCommandEncoder(),uOffset=0;
@@ -128,6 +130,7 @@ export class VfxWebGPU{
    rp.setPipeline(this.pipeline(operation));rp.setBindGroup(0,bindGroup);rp.draw(3);rp.end();
    this.stats.passes++;uOffset+=UNIFORM_STRIDE;if(uOffset+UNIFORM_STRIDE>this.uniforms.size)submit();if(next)current=next;
   };
+  if(source.texture)pass(0); // Resolve the source format before RGBA-only scratch copies.
   const blur=radius=>{if(radius<=0)return;const factor=Math.max(1,Math.ceil(radius/20)),ox=((origin.x%factor)+factor)%factor,oy=((origin.y%factor)+factor)%factor,bw=Math.max(1,Math.ceil((W+ox)/factor)),bh=Math.max(1,Math.ceil((H+oy)/factor));if(factor>1)pass(11,[factor,ox,oy,bh],undefined,current,bw,bh);const r=Math.min(128,Math.max(1,Math.round(radius/factor*.57735)));for(let i=0;i<3;i++){pass(3,[r,0,0,0],undefined,current,bw,bh);pass(4,[r,0,0,0],undefined,current,bw,bh);}if(factor>1)pass(12,[factor,ox,oy,H]);};
   const paint=value=>{const brush=vfxPaint(value);brushType=['solid','linear','radial','angular','diamond'].indexOf(brush.type);brushAngle=brush.angle*Math.PI/180;brushStops=brush.stops.length;brush.stops.forEach((s,x)=>{this.paintColors.set([...s.color.map(n=>n/255),s.opacity],x*4);this.paintOffsets[x]=s.offset;});};
   const save=(index=4)=>{const saved=this.slot(index,W,H);encoder.copyTextureToTexture({texture:current.texture},{texture:saved.texture},[W,H]);return saved;};

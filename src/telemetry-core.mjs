@@ -1,6 +1,7 @@
 import { COUNTERS, DIAGNOSTIC_COUNTERS, TIMINGS, GAUGES, operationContextSlot, operationContext, emptyHistogram, observe, sanitizeError, sanitizeEnvironment } from './telemetry-schema.mjs';
 import { InteractionMeasurements, PlaybackMeasurements } from './telemetry-measurements.mjs';
 import { PerformanceMeasurements } from './telemetry-performance.mjs';
+import { UserActionError } from './user-action-error.mjs';
 const counters = new Set(COUNTERS), diagnosticCounters = new Set(DIAGNOSTIC_COUNTERS), timings = new Set(TIMINGS), gauges = new Set(GAUGES);
 export class TelemetryAccumulator {
   constructor() { this.consent = {}; this.reportedErrors = new WeakSet(); this.reset(); }
@@ -34,12 +35,13 @@ export class TelemetryAccumulator {
     timing.buckets.forEach((n, i) => row.timing.buckets[i] += n);
   }
   error(error, operation = 'app', context = {}) {
-    if (!this.consent.diagnostics) return;
+    if (!this.consent.diagnostics || error instanceof UserActionError) return false;
     if (error && typeof error === 'object') { if (this.reportedErrors.has(error)) return; this.reportedErrors.add(error); }
     const entry = sanitizeError(error, operation, Date.now(), context), existing = this.data.errors.find(e => e.fingerprint === entry.fingerprint);
     if (existing) { existing.count++; existing.lastAt = entry.lastAt; }
     else if (this.data.errors.length < 20) this.data.errors.push(entry);
     else this.count('dropped_samples');
+    return true;
   }
   drain() { const data = this.data; this.reset(); return data; }
 }
@@ -102,9 +104,9 @@ export class DesktopTelemetryClient extends TelemetryAccumulator {
     this.lastWall = wall; this.lastClock = now;
   }
   playbackStart(context) { this.playbackMeasurements?.reset(context); }
-  error(error,operation='app',context={}){super.error(error,operation,context);this.performance?.incident('error');}
+  error(error,operation='app',context={}){if(super.error(error,operation,context))this.performance?.incident('error');}
   playbackStop() { this.playbackMeasurements?.flush(); }
-  playbackPresent(now, fps) { if (this.consent.diagnostics) this.playbackMeasurements?.present(now, fps, this.isForeground); }
+  playbackPresent(now, fps, schedule) { if (this.consent.diagnostics) this.playbackMeasurements?.present(now, fps, this.isForeground, schedule); }
   action(name) {
     if(this.isForeground)this.performance.action(name);
     const key = ACTIONS[name] || (name.startsWith('camera-') ? 'camera' : name.startsWith('builder-') ? 'builder' : name.includes('inbetween') ? 'inbetween' : name.includes('movieclip') ? 'movieclip' : null);

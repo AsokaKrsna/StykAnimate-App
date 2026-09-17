@@ -15,7 +15,8 @@ group('Project & editing', [
   ['settings', 'Settings', ['Mod+Comma']], ['help', 'Keyboard shortcuts', ['Shift+Slash']],
   ['undo', 'Undo', ['Mod+KeyZ']], ['redo', 'Redo', ['Mod+Shift+KeyZ', 'Mod+KeyY']],
   ['copy', 'Copy selection / frames', ['Mod+KeyC']], ['cut', 'Cut selection / frames', ['Mod+KeyX']],
-  ['paste', 'Paste selection / frames', ['Mod+KeyV']], ['select-all', 'Select all', ['Mod+KeyA']],
+  ['paste', 'Paste selection / frames', ['Mod+KeyV']],
+  ['paste-in-place', 'Paste in place', ['Mod+Shift+KeyV']], ['select-all', 'Select all', ['Mod+KeyA']],
   ['duplicate', 'Duplicate selection', ['Mod+KeyD']], ['delete', 'Delete selection / frames', ['Delete', 'Backspace']],
   ['cancel', 'Cancel current gesture', ['Escape']],
 ]);
@@ -30,12 +31,17 @@ group('Tools', [
   ['join-figure', 'Join / unjoin figure', ['KeyJ']],
 ]);
 group('Animation', [
+  ['insert-copied-key', 'Insert copied key at playhead', []],
+  ['insert-blank-key', 'Insert blank key at playhead', ['F7']],
   ['play-pan', 'Play / pause; hold to pan', ['Space'], {hold: true}],
   ['play', 'Play / pause immediately'],
   ['add-frame', 'Add Frame', ['KeyA']],
+  ['extend-keyframe', 'Extend keyframe', ['Shift+KeyA']],
   ['delete-frame', 'Delete frames'],
-  ['previous-frame', 'Previous frame', ['ArrowLeft'], {repeat: true, extraShift: true}],
-  ['next-frame', 'Next frame', ['ArrowRight'], {repeat: true, extraShift: true}],
+  ['previous-frame', 'Previous frame', ['Comma'], {repeat: true}],
+  ['next-frame', 'Next frame', ['Period'], {repeat: true}],
+  ['previous-keyframe', 'Jump to previous keyframe', ['Shift+Comma'], {repeat: true}],
+  ['next-keyframe', 'Jump to next keyframe', ['Shift+Period'], {repeat: true}],
   ['first-frame', 'First frame', ['Home']], ['last-frame', 'Last frame', ['End']],
   ['toggle-loop', 'Toggle playback loop'], ['toggle-onion', 'Toggle onion skin', ['KeyO']],
 ]);
@@ -46,8 +52,8 @@ group('Timeline', [
   ['timeline-layer-down', 'Select layer below', ['ArrowDown'], {repeat: true, extraShift: true}],
 ], 'timeline');
 group('Filmstrip', [
-  ['previous-exposure', 'Previous exposure', ['Comma'], {repeat: true, extraShift: true}],
-  ['next-exposure', 'Next exposure', ['Period'], {repeat: true, extraShift: true}],
+  ['previous-exposure', 'Previous exposure', [], {repeat: true, extraShift: true}],
+  ['next-exposure', 'Next exposure', [], {repeat: true, extraShift: true}],
 ], 'simple');
 group('View & camera', [
   ['zoom-in', 'Zoom in', ['Equal', 'Shift+Equal']], ['zoom-out', 'Zoom out', ['Minus']],
@@ -78,6 +84,8 @@ group('Hovered handle', [
   ['locate-next', 'Locate handle in next frame', ['Shift+KeyL']],
 ], 'hover');
 group('Figure builder', [
+  ['split-segment', 'Split segment / branch', ['KeyS'], {extraShift: true}],
+  ['toggle-builder-branch', 'Toggle branch scope', ['KeyB']],
   ['builder-canvas-color', 'Construction background color', ['F9']],
   ['builder-static-handles', 'Show static handles', ['F10']],
   ['builder-highlight', 'Highlight selected segment', ['F12']],
@@ -85,11 +93,17 @@ group('Figure builder', [
   ['delete-segment', 'Delete branch', ['Shift+Delete', 'Shift+Backspace']],
 ], 'builder');
 group('Polygon', [['finish-polygon', 'Finish polygon', ['Enter']]], 'polygon');
+group('Drawing', [
+  ['drawing-brush','Brush',['KeyB']],['drawing-eraser','Eraser',['KeyE']],['drawing-fill','Fill',['KeyG']],
+  ['drawing-eyedropper','Eyedropper',['KeyI']],['drawing-lasso','Select pixels',['KeyL']],
+  ['drawing-smaller','Smaller brush',['BracketLeft'],{repeat:true}],['drawing-larger','Larger brush',['BracketRight'],{repeat:true}],
+  ['drawing-apply','Apply pixel selection',['Enter']],
+], 'drawing');
 group('Library', [['library-open', 'Open / insert library item', ['Enter']], ['library-rename', 'Rename library item', ['F2']]], 'library');
 
 export const HOTKEY_COMMANDS = Object.freeze(commands);
 export const HOTKEY_BY_ID = new Map(commands.map(command => [command.id, command]));
-export const HOTKEY_SCOPES = Object.freeze({global: 'Editor', canvas: 'Canvas focused', hover: 'Handle hovered', builder: 'Figure builder', timeline: 'Advanced timeline focused', simple: 'Simple timeline mode', polygon: 'Drawing polygon', library: 'Library focused'});
+export const HOTKEY_SCOPES = Object.freeze({global: 'Editor', canvas: 'Canvas focused', hover: 'Handle hovered', builder: 'Figure builder', timeline: 'Advanced timeline focused', simple: 'Simple timeline mode', polygon: 'Drawing polygon', library: 'Library focused',drawing:'Drawing workspace'});
 export const DEFAULT_HOTKEYS = Object.freeze(Object.fromEntries(commands.map(c => [c.id, c.defaults])));
 const codePattern = /^(Key[A-Z]|Digit[0-9]|F([1-9]|1[0-9]|2[0-4])|Arrow(Left|Right|Up|Down)|Space|Enter|Escape|Tab|Backspace|Delete|Insert|Home|End|PageUp|PageDown|CapsLock|Comma|Period|Slash|Backslash|Semicolon|Quote|BracketLeft|BracketRight|Minus|Equal|Backquote|Numpad[0-9]|Numpad(Add|Subtract|Multiply|Divide|Decimal|Enter))$/;
 const modifierOrder = ['Mod', 'Ctrl', 'Meta', 'Alt', 'Shift'];
@@ -122,6 +136,13 @@ export function normalizeHotkeys(value, mac = isMacPlatform()) {
   // explicit Add Frame customization; otherwise carry over the old A action.
   const legacy = Object.hasOwn(input, 'duplicate-frame-after');
   const migrated = {...input};
+  // Upgrade the old navigation defaults once; retain custom and disabled keys.
+  if (!Object.hasOwn(input, 'next-keyframe') && !Object.hasOwn(input, 'previous-keyframe')) {
+    for (const [id, oldKey, newKeys] of [
+      ['previous-frame', 'ArrowLeft', ['Comma']], ['next-frame', 'ArrowRight', ['Period']],
+      ['previous-exposure', 'Comma', []], ['next-exposure', 'Period', []],
+    ]) if (JSON.stringify(input[id]) === JSON.stringify([oldKey])) migrated[id] = newKeys;
+  }
   // Old full preference snapshots stored J for visibility. Only migrate that
   // exact old default; preserve custom assignments and explicit unassignments.
   if (!Object.hasOwn(input, 'join-figure') && JSON.stringify(input['toggle-handles']) === '["KeyJ"]')

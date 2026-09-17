@@ -4,6 +4,17 @@ import {ArtworkRegistry} from '../src/render-artwork.mjs';
 import {Editor} from '../src/editor.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 
+test('unshared artwork identities cannot alias between independent worker realms',async()=>{
+  // Independent module instances model worker-local counters starting at zero.
+  const {ArtworkRegistry:First}=await import('../src/render-artwork.mjs?realm=first');
+  const {ArtworkRegistry:Second}=await import('../src/render-artwork.mjs?realm=second');
+  const a=new First({maxBytes:1}),b=new Second({maxBytes:1}),{g,moved}=pair();
+  moved.obj.futureRenderFlag='different artwork';
+  const left=a.get(g,g.drawables),right=b.get(moved,moved.drawables);
+  assert.equal(left.definition.unshared,true);assert.equal(right.definition.unshared,true);
+  assert.notEqual(await a.contentKey(left),await b.contentKey(right));
+});
+
 function pair(){
   const e=new Editor({demo:false});e.addFigure();const g=e.geometry.objects.get(0);
   const translate=p=>({x:p.x+32,y:p.y-16});
@@ -71,6 +82,28 @@ test('embedded media payloads fingerprint once and keep artwork shareable',()=>{
   assert.equal(cache.get(moved,moved.drawables),artwork);
   const different={...g,drawables:g.drawables.map(item=>({...item,asset:{...item.asset,data_url:payload+'y'}}))};
   assert.notEqual(cache.get(different,different.drawables),artwork);
+});
+
+test('embedded media short-hash collisions never share local or cross-worker artwork',async()=>{
+  const payloads=['0w7kc1j','1dvdycr'].map(suffix=>'x'.repeat(600)+suffix);
+  const fnv=text=>{let h=2166136261;for(const c of text)h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0;};
+  assert.equal(fnv(payloads[0]),fnv(payloads[1]));
+  const make=payload=>{const asset={data_url:payload,anchor_length:4},fig={segments:[],image_assets:[asset]};
+    return {obj:{unique_id:1},fig,root:{x:0,y:0},drawables:[{type:'image',asset,start:{x:0,y:0},end:{x:4,y:0},seg:{},index:0}]};};
+  const a=make(payloads[0]),b=make(payloads[1]),registry=new ArtworkRegistry();
+  const left=registry.get(a,a.drawables),right=registry.get(b,b.drawables);
+  assert.notEqual(left,right);
+  assert.notEqual(await registry.contentKey(left),await registry.contentKey(right));
+  const other=new ArtworkRegistry();assert.equal(await registry.contentKey(left),await other.contentKey(other.get(a,a.drawables)));
+});
+
+test('image metadata edits invalidate artwork even when embedded bytes are unchanged',async()=>{
+  const asset={data_url:'x'.repeat(600),anchor_length:4,display_width:80},fig={segments:[],image_assets:[asset]};
+  const g={obj:{unique_id:1},fig,root:{x:0,y:0},drawables:[{type:'image',asset,start:{x:0,y:0},end:{x:4,y:0},seg:{},index:0}]};
+  const registry=new ArtworkRegistry(),before=registry.get(g,g.drawables),key=await registry.contentKey(before);
+  asset.display_width=120;registry.begin(2);
+  const after=registry.get(g,g.drawables);
+  assert.notEqual(after,before);assert.notEqual(await registry.contentKey(after),key);
 });
 
 test('cross-packet content identity survives registry eviction and keeps subpixel differences',async()=>{

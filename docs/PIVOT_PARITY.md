@@ -429,8 +429,8 @@ local release notes, [polygon paths](../../docs/PIV_POLY_PATH_FINDINGS.md),
   alpha and segment opacity compose correctly; transparent primitives cannot
   be reordered merely to increase batching.
 - [ ] R03 Image sampling, reflection, deformation, and native tint exceptions.
-  Sprite import supports BMP/GIF/PNG and native bottom-left color-key behavior
-  when source transparency is absent.
+  Sprite import preserves BMP/GIF/PNG pixels by default; explicit API opt-in supports
+  native bottom-left color-key behavior when source transparency is absent.
   **Progress:** actual PNG/JPEG import, optional native color key and embedded
   image round trips pass media tests. The GPU smoke report confirms nearest
   background sampling. BMP/GIF and the complete media-deformation matrix remain open.

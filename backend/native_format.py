@@ -37,6 +37,7 @@ HEADER = struct.Struct('<4sBBHQQ32s')
 SECTION = struct.Struct('<BBHIQQ32s8x')
 VERSION = 1
 MAX_BYTES = 256 * 1024 * 1024
+MAX_SKELETON_BYTES = 384 * 1024 * 1024
 MAGIC = {'styk': b'STYK', 'stkz': b'STKZ', 'stykmov': b'STMV'}
 LIFT_MIN_ARRAY = 32
 LIFT_MIN_STRING = 64 * 1024
@@ -218,13 +219,16 @@ def _materialize(node, sections):
     return walk(node)
 
 
-def encode_v2(document: dict, kind: str, *, max_bytes=MAX_BYTES) -> bytes:
+def encode_v2(document: dict, kind: str, *, max_bytes=MAX_BYTES,
+              max_skeleton_bytes=MAX_SKELETON_BYTES) -> bytes:
     """Serialize an editable document dict as a sectioned container v2."""
     if kind not in MAGIC:
         raise ValueError('Unknown StykAnimate file kind.')
     skeleton, sections = _lift(document)
     payload = json.dumps(skeleton, ensure_ascii=False, allow_nan=False, separators=(',', ':')).encode('utf-8')
-    if not payload or len(payload) > max_bytes:
+    if (not payload or len(payload) > max_skeleton_bytes or
+            any(len(raw) > max_bytes for _, raw in sections) or
+            len(payload) + sum(len(raw) * 3 for _, raw in sections) > max_bytes * 4):
         raise ValueError('The native document exceeds the uncompressed size limit.')
     codec, packed_payload = _pack(payload)
     records = bytearray()
@@ -276,7 +280,8 @@ def _decode_v2(data: bytes, kind: str, header_fields, max_bytes: int) -> bytes:
     return json.dumps(document, ensure_ascii=True, allow_nan=False, separators=(',', ':')).encode('ascii')
 
 
-def decode(data: bytes, kind='styk', *, max_bytes=MAX_BYTES) -> bytes:
+def decode(data: bytes, kind='styk', *, max_bytes=MAX_BYTES,
+           max_skeleton_bytes=MAX_SKELETON_BYTES) -> bytes:
     if kind not in MAGIC:
         raise ValueError('Unknown StykAnimate file kind.')
     if len(data) > max_bytes:
@@ -292,7 +297,7 @@ def decode(data: bytes, kind='styk', *, max_bytes=MAX_BYTES) -> bytes:
         raise ValueError('The StykAnimate file type does not match its extension.')
     if version not in (1, 2) or compression not in (0, 1, 2) or flags != 0:
         raise ValueError('Unsupported StykAnimate file version. Update the app to open this file.')
-    if not 0 < size <= max_bytes:
+    if not 0 < size <= (max_skeleton_bytes if version == 2 else max_bytes):
         raise ValueError('The native document exceeds the uncompressed size limit.')
     if version == 2:
         return _decode_v2(data, kind, fields, max_bytes)

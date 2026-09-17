@@ -13,6 +13,7 @@ import {remapIKFollowers} from './ik.mjs';
 import {frameOrder,setOrder,normalizeFrame} from './pivot/structure.mjs';
 import {movieclipTypes,validatePlayback,snapshotFigureDefinition} from './movieclips.mjs';
 import {usesPresence,continuations,setContinuations,presenceElapsed} from './movieclip-presence.mjs';
+import {drawingMetadata,isDrawingLayer,copyDrawingFigure} from './drawing-model.mjs';
 
 const clone=value=>structuredClone(value);
 const fixed=id=>id==='scene'||id==='camera';
@@ -64,6 +65,8 @@ function insertionOwner(editor,uid,hints){
   if(!Object.hasOwn(layers.byId,id))throw new Error('Figures belong to an existing user layer.');
   return id;
 }
+export function drawingSheetPlan(editor,ids){return planner(editor,ids);}
+export function drawingSheetPublish(editor,plan,label,options){return publish(editor,plan,label,options);}
 function planner(editor,ids){
   assertLayers(editor,ids);
   const before=editor.report._styk.layerSheet;if(!before)throw new Error('Open the layer timeline first.');
@@ -90,13 +93,19 @@ function planner(editor,ids){
     if(!extend&&!fixed(id)&&tick>track.end&&track.keys.length)track.keys.push({id:`cell-${state.nextId++}`,tick:track.end,interpolation:'constant',value:{frameId:null},empty:true});
     for(const object of frame?.objects??[])if(!originalIds.has(object.unique_id)&&!Object.hasOwn(layers.assignments,object.unique_id))layers.assignments[object.unique_id]=insertionOwner(editor,object.unique_id,editor._newLayerHints);
     const owns=uid=>layerIdForUid({...editor.report,_styk:{...editor.report._styk,layers}},uid)===id;
+    if (isDrawingLayer(layers.byId[id])) {
+      const objects=(frame?.objects??[]).filter(o=>owns(o.unique_id));
+      if(objects.length>1||objects.some(o=>!drawingMetadata((planDefinitions??editor.report.figure_types).find(f=>f.figure_type_id===o.figure_type_id))))
+        throw new Error('Drawing layers accept one drawing cel at a time. Choose a figure layer for figures or imported images.');
+    }
     const empty=!fixed(id)&&!frame?.objects.some(o=>owns(o.unique_id))&&!continuations(frame).some(step=>owns(step.uid));
     key.value=blank||empty?{frameId:null}:capture(frame,id);key.empty=blank||empty;delete key.sourceTick;if(easing)Object.assign(key,keyEasing(easing));
     delete key.patchOnly;delete key.movieclipPatches;
     if(!existing){if(!track.keys.length||tick>track.keys.at(-1).tick)track.keys.push(key);else track.keys.splice(index+1,0,key);}
     track.end=Math.max(track.end,tick+1);state.duration=Math.max(state.duration,track.end);return key;
   };
-  return {state,sources,layers,get,write,capture,materialize,before,get nextFrame(){return nextFrame;}};
+  let planDefinitions;
+  return {state,sources,layers,get,write,capture,materialize,before,set definitions(value){planDefinitions=value;},get nextFrame(){return nextFrame;}};
 }
 function retimeClips(editor,plan,id,map){
   if(!movieclipTypes(editor.report).size)return;
@@ -126,6 +135,7 @@ function publish(editor,plan,label,{selection=editor._selectionState(),assets,se
     frameSources:{...editor.report._styk.frameSources,...Object.fromEntries(plan.sources.map(s=>[s.id,s.after.value]))}}};
   validateLayerState(plan.layers);validateLayerSheet(report);
   if(assets)for(const [field,change] of Object.entries(assets)){
+    if(change.added&&change.index===undefined)change.index=editor.report[field].length;
     if(change.added)editor.report[field]=[...editor.report[field],...(field==='figure_types'?change.added.map(snapshotFigureDefinition):clone(change.added))];
     else editor.report[field]=change.after;
   }
@@ -188,6 +198,7 @@ function* sampleSheetTracksSteps(editor,plan,ids,{background=false,maxSourceByte
  * continuations; hold keys preserve every integer output frame. */
 export function* planSheetAssignmentSteps(editor,uids,id,options={}){
   if(!Object.hasOwn(editor.report._styk.layers.byId,id))throw new Error('Figures belong to user layers.');
+  if(isDrawingLayer(editor.getLayer(id))||uids.some(uid=>isDrawingLayer(editor.getLayer(editor.layerForUid(uid)))))throw new Error('Use drawing key copy/paste between drawing layers. Figure migration cannot change drawing ownership.');
   const members=[...new Set(uids)];
   if(members.some(uid=>!Number.isInteger(uid)||!editor._layerUidCounts.has(uid)))throw new Error('Choose figures present in this animation.');
   const moved=members.filter(uid=>editor.layerForUid(uid)!==id);if(!moved.length)return null;
@@ -535,6 +546,7 @@ export const editorLayerSheetMethods={
   },
   layerFrameKeys(id=this.activeLayerId){return this.report._styk.layerSheet?.tracks[id]?.keys??[];},
   sheetInsertKey(ids=[this.activeLayerId],tick=this.tick,{blank=false}={}){
+    if(ids.some(id=>isDrawingLayer(this.getLayer(id))))return this.drawingKey(ids,tick,{blank});
     checkedTick(tick);const plan=planner(this,ids);
     for(const id of ids){const track=plan.get(id),previous=sheetKeyAt(track,tick).key;
       const sourceTick=!blank&&tick>=track.end?Math.max(0,track.end-1):tick;
@@ -544,6 +556,7 @@ export const editorLayerSheetMethods={
   },
   /** Insert a new pose after the current cell, shifting later keys atomically. */
   sheetDuplicateFrameAfter(ids=[this.activeLayerId],tick=this.tick){
+    if(ids.some(id=>isDrawingLayer(this.getLayer(id))))return this.nextDrawing(ids,{blank:false});
     checkedTick(tick);const start=checkedTick(tick+1),plan=planner(this,ids);
     for(const id of ids){const track=plan.get(id),sourceTick=Math.min(tick,Math.max(0,track.end-1));
       const frame=shiftClipTime(clone(at(this.report,sourceTick)),start-sourceTick),previous=sheetKeyAt(track,sourceTick).key;
@@ -559,6 +572,7 @@ export const editorLayerSheetMethods={
     return true;
   },
   sheetSetEasing(ids,start,end,easing){
+    if(ids.some(id=>isDrawingLayer(this.getLayer(id)))&&!['constant','hold'].includes(easing.interpolation))throw new Error('Drawing exposures hold their pixels and pose. Use copied keys to animate a drawing transform.');
     const plan=planner(this,ids),fields=keyEasing(easing);
     for(const id of ids){const track=plan.get(id),first=sheetKeyAt(track,start).key;
       for(const key of track.keys)if(key===first||key.tick>=start&&key.tick<=end){delete key.bezier;Object.assign(key,fields);}}
@@ -610,7 +624,7 @@ export const editorLayerSheetMethods={
     if(new Set(ids).size!==ids.length)throw new Error('Select distinct source layers.');
     assertLayers(this,ids);const rows=[];
     for(const id of ids){const track=this.report._styk.layerSheet.tracks[id],ticks=[start,...(track?.keys??[]).filter(k=>k.tick>start&&k.tick<=end).map(k=>k.tick),...(!fixed(id)&&track.end>start&&track.end<=end?[track.end]:[])];
-      rows.push({id,keys:ticks.map(tick=>{const frame=at(this.report,tick);return {offset:tick-start,frame:ownedFrame(this.report,frame,fixed(id)?[]:[...frame.objects.filter(o=>this.layerForUid(o.unique_id)===id).map(o=>o.unique_id),...continuations(frame).filter(step=>this.layerForUid(step.uid)===id).map(step=>step.uid)]),easing:keyEasing(sheetKeyAt(track,tick).key??{interpolation:'constant'})};})});}
+      rows.push({id,drawing:isDrawingLayer(this.getLayer(id)),keys:ticks.map(tick=>{const frame=at(this.report,tick);return {offset:tick-start,frame:ownedFrame(this.report,frame,fixed(id)?[]:[...frame.objects.filter(o=>this.layerForUid(o.unique_id)===id).map(o=>o.unique_id),...continuations(frame).filter(step=>this.layerForUid(step.uid)===id).map(step=>step.uid)]),easing:keyEasing(sheetKeyAt(track,tick).key??{interpolation:'constant'})};})});}
     const types=new Set(rows.flatMap(row=>row.keys.flatMap(key=>[...key.frame.objects.map(o=>o.figure_type_id),...continuations(key.frame).map(step=>step.typeId)]))),phases={};
     for(const row of rows)for(const key of row.keys){
       const members=[...key.frame.objects.filter(usesPresence).map(o=>({uid:o.unique_id,typeId:o.figure_type_id,playback:o._stykMovieclip})),...continuations(key.frame)];
@@ -620,7 +634,7 @@ export const editorLayerSheetMethods={
         phases[member.uid]=member.playback.mode==='single'?member.playback.offset??0:member.playback.mode==='loop'?raw%asset.duration:Math.min(raw,asset.duration-(member.playback.mode==='once'?0:1));
       }
     }
-    this._sheetClipboard={version:1,start,duration:end-start+1,rows,phases,document:this._documentToken,figures:clone(this.report.figure_types.filter(f=>types.has(f.figure_type_id))),backgrounds:clone(this.report.backgrounds??[])};return this._sheetClipboard;
+    this._sheetClipboard={version:1,start,duration:end-start+1,rows,phases,document:this._documentToken,figures:clone(this.report.figure_types.filter(f=>types.has(f.figure_type_id))),backgrounds:clone(this.report.backgrounds??[])};if(this._sheetClipboard.figures.some(drawingMetadata))this.drawingResources.captureClipboard(this._sheetClipboard);return this._sheetClipboard;
   },
   sheetPasteFrames(ids,tick,{insert=false}={}){
     const clipboard=this._sheetClipboard;if(!clipboard)throw new Error('Copy timeline frames first.');
@@ -631,11 +645,12 @@ export const editorLayerSheetMethods={
     const ordered=this.getLayers().filter(l=>l.kind==='layer').map(l=>l.id).reverse(),offset=ordered.indexOf(ids[0]);
     const destinations=ids.length===clipboard.rows.length?ids:ordered.slice(offset,offset+clipboard.rows.length);
     if(destinations.length!==clipboard.rows.length)throw new Error('Create enough destination layers for this range.');
+    if(clipboard.rows.some((row,i)=>Boolean(row.drawing)!==isDrawingLayer(this.getLayer(destinations[i]))))throw new Error('Paste drawing keys into drawing layers and figure keys into figure layers.');
     if(clipboard.rows.some((row,index)=>(fixed(row.id)||fixed(destinations[index]))&&row.id!==destinations[index]))
       throw new Error('Paste frames into the same track kind: figures into user layers, Scene into Scene, and Camera into Camera.');
     const plan=planner(this,destinations),finish=tick+clipboard.duration,uidMap=new Map();
     if(finish>MAX_SHEET_TICKS)throw new Error('Pasted frames exceed the timeline limit.');
-    const typeMap=new Map(),backgroundMap=new Map([[0,0]]),assets={};
+    const typeMap=new Map(),backgroundMap=new Map([[0,0]]),assets={},drawingForks=[];
     let nextUid=this._nextUid;
     // Allocate the entire range once, including identities represented only by
     // a broken frame. Remap before writing so joins and continuation references
@@ -646,11 +661,12 @@ export const editorLayerSheetMethods={
         if(!uidMap.has(uid)){if(nextUid>0x7ffffffe)throw new Error('Object identity capacity reached.');uidMap.set(uid,nextUid++);}
       }
     }
-    if(foreign){
+    if(foreign||clipboard.figures.some(drawingMetadata)){
       const figures=this.report.figure_types.slice(),backgrounds=(this.report.backgrounds??[]).slice();let type=Math.max(0,...figures.map(f=>f.figure_type_id))+1,bg=Math.max(0,...backgrounds.map(b=>b.background_id))+1;
-      for(const figure of clipboard.figures??[]){typeMap.set(figure.figure_type_id,type);figures.push({...clone(figure),figure_type_id:type++});}
-      if(clipboard.rows.some(row=>row.id==='scene'))for(const background of clipboard.backgrounds??[]){backgroundMap.set(background.background_id,bg);backgrounds.push({...clone(background),background_id:bg++});}
-      assets.figure_types={before:this.report.figure_types,after:figures};assets.backgrounds={before:this.report.backgrounds??[],after:backgrounds};
+      for(const figure of clipboard.figures??[]){if(!foreign&&!drawingMetadata(figure))continue;typeMap.set(figure.figure_type_id,type);const copy=drawingMetadata(figure)?copyDrawingFigure(figure,type++):{...clone(figure),figure_type_id:type++};figures.push(copy);if(drawingMetadata(figure)&&!foreign)drawingForks.push([figure,copy]);}
+      if(foreign&&clipboard.rows.some(row=>row.id==='scene'))for(const background of clipboard.backgrounds??[]){backgroundMap.set(background.background_id,bg);backgrounds.push({...clone(background),background_id:bg++});}
+      assets.figure_types={added:figures.slice(this.report.figure_types.length)};if(backgrounds.length>(this.report.backgrounds?.length??0))assets.backgrounds={added:backgrounds.slice(this.report.backgrounds?.length??0)};
+      plan.definitions=figures;
     }
     for(let i=0;i<destinations.length;i++){
       const id=destinations[i],row=clipboard.rows[i],track=plan.get(id),restore=at(this.report,finish),oldEnd=track.end;
@@ -661,7 +677,8 @@ export const editorLayerSheetMethods={
       // is one copied exposure sequence, not separate insertions beyond an end.
       track.end=Math.max(finish,oldEnd+(insert?clipboard.duration:0));
       for(const entry of row.keys){const frame=shiftClipTime(clone(entry.frame),tick-clipboard.start);
-        if(foreign){for(const object of frame.objects){remapVfxOwner(object,typeMap.get(object.figure_type_id));object.figure_type_id=typeMap.get(object.figure_type_id);}for(const field of ['background_id','background_id_b'])frame[field]=backgroundMap.get(frame[field])??0;}
+        for(const object of frame.objects)if(typeMap.has(object.figure_type_id)){remapVfxOwner(object,typeMap.get(object.figure_type_id));object.figure_type_id=typeMap.get(object.figure_type_id);}
+        if(foreign)for(const field of ['background_id','background_id_b'])frame[field]=backgroundMap.get(frame[field])??0;
         if(uidMap.size||foreign){
           for(const object of frame.objects){const old=object.unique_id;object.unique_id=uidMap.get(old)??old;if(uidMap.has(old))plan.layers.assignments[object.unique_id]=id;
             if(uidMap.has(old)&&usesPresence(object)&&clipboard.phases?.[old]!==undefined)object._stykMovieclip.offset=clipboard.phases[old];
@@ -675,22 +692,31 @@ export const editorLayerSheetMethods={
       if(!insert&&finish<oldEnd&&(!track.keys.some(k=>k.tick===finish)||track.keys.find(k=>k.tick===finish)?.patchOnly))plan.write(id,finish,restore);
       track.end=Math.max(finish,oldEnd+(insert?clipboard.duration:0));plan.state.duration=Math.max(plan.state.duration,track.end);
     }
-    const result=publish(this,plan,'Paste frames',{assets:foreign?assets:undefined});this._nextUid=nextUid;return result;
+    this.drawingResources.checkClipboard(drawingForks,clipboard);
+    const result=publish(this,plan,'Paste frames',{assets:Object.keys(assets).length?assets:undefined});this._nextUid=nextUid;this.drawingResources.pasteClipboard(drawingForks,clipboard);return result;
   },
-  sheetMoveFrames(ids,start,end,delta,{copy=false}={}){
+  sheetMoveFrames(ids,start,end,delta,{copy=false,replace=true}={}){
     if(!Number.isInteger(delta)||start+delta<0)throw new Error('Frames cannot move before frame 1.');if(!delta)return false;
-    const plan=planner(this,ids),finish=end+delta;
+    const plan=planner(this,ids),finish=end+delta,added=[],forks=[];let drawingType=this.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1);
     for(const id of ids){const track=plan.get(id),selected=track.keys.filter(k=>k.tick>=start&&k.tick<=end);
       if(!selected.length){const key=plan.write(id,start,at(this.report,start));selected.push(key);}
       const selectedIds=new Set(selected.map(k=>k.id));
-      if(track.keys.some(k=>!selectedIds.has(k.id)&&k.tick>=start+delta&&k.tick<=finish))throw new Error('The destination contains keyframes. Clear it first or use Paste frames to replace it.');
+      if(!replace&&track.keys.some(key=>(copy||!selectedIds.has(key.id))&&key.tick>=start+delta&&key.tick<=finish))
+        throw new Error('The destination contains keyframes. Enable Replace keyframes on drop in Settings > Animation to replace them.');
+      for(const key of selected)plan.materialize(id,key);
+      // Snapshot the selection before removing collisions, including overlapping
+      // copies. Only exact landing ticks replace keys; intervening keys survive.
+      const landingTicks=new Set(selected.map(key=>key.tick+delta));
+      track.keys=track.keys.filter(key=>!landingTicks.has(key.tick)&&(copy||!selectedIds.has(key.id)));
       for(const key of selected){const moved={...key,tick:key.tick+delta,...(copy?{id:`cell-${plan.state.nextId++}`}:{})};
         const source=key.value?.frameId&&(plan.sources.find(s=>s.id===key.value.frameId)?.after.value??this.getFrameById(key.value.frameId));
+        if(copy&&source&&isDrawingLayer(this.getLayer(id))){const frame=clone(source);for(const object of frame.objects){const original=this.report.figure_types.find(f=>f.figure_type_id===object.figure_type_id),figure=copyDrawingFigure(original,drawingType++);added.push(figure);forks.push([original,figure]);object.figure_type_id=figure.figure_type_id;}moved.value=plan.capture(frame,id);}
         if(source?.objects.some(o=>o._stykMovieclip))moved.value=plan.capture(shiftClipTime(clone(source),delta),id);
-        if(copy)track.keys.push(moved);else Object.assign(key,moved);}
+        track.keys.push(moved);}
       track.keys.sort((a,b)=>a.tick-b.tick);track.end=Math.max(track.end,finish+1);plan.state.duration=Math.max(plan.state.duration,track.end);
     }
-    return publish(this,plan,copy?'Copy frames':'Move frames');
+    this.drawingResources.checkForks(forks.map(([old])=>old));
+    const result=publish(this,plan,copy?'Copy frames':'Move frames',{assets:added.length?{figure_types:{added}}:undefined});for(const [old,figure] of forks)this.drawingResources.fork(old,figure);return result;
   },
   sheetTransferFrames(ids,destinations,start,end,tick,{copy=false}={}){
     assertLayers(this,[...ids,...destinations]);const clipboard=this._sheetClipboard;
