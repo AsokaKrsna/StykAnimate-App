@@ -1,5 +1,5 @@
 import {BRUSH_PRESETS} from './drawing-view.mjs';
-import {tileChanges,lassoMask,tileAlignedRect} from './drawing-pixels.mjs';
+import {tileChanges,lassoMask,tileAlignedRect,DrawingStroke} from './drawing-pixels.mjs';
 import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,inversePoint,transformPoint,DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {TILE,tileKey,parseTileKey,TileStore} from './drawing-tiles.mjs';
 import {encodeDrawingPNG} from './drawing-png.mjs';
@@ -31,6 +31,8 @@ export class DrawingController {
       event.stopImmediatePropagation();event.preventDefault();this.run(()=>handler(event));
     },{...opts,capture:true});
     window.addEventListener('blur',()=>this.cancel(),opts);
+    // The brush ring tracks the last move; it must not linger once the pointer leaves.
+    overlay.addEventListener('pointerleave',()=>{if(this.cursor){this.cursor=null;this.onRender();}},opts);
     editor.addEventListener('change',event=>{
       const kind=event.detail.kind;
       if(kind==='document'){this.cancel();this.selection=null;this.bind();}
@@ -62,9 +64,9 @@ export class DrawingController {
     if(found.current)owner.surface(found.current).catch(miss);
   }
   run(operation){try{const result=operation();if(result?.catch)result.catch(error=>{this.cancel();if(error.name!=='AbortError')this.onError(error);});return result;}catch(error){this.cancel();this.onError(error);}}
-  enter(){if(this.active)return;this.beforeEdit();this.prior={handles:this.state.handles,tool:this.state.tool,rotation:this.state.view.rotation??0};this.active=true;this.state.handles=false;this.state.tool='drawing-brush';this.state.drawing=true;this.bind();
+  enter(){if(this.active)return;this.beforeEdit();this.prior={handles:this.state.handles,tool:this.state.tool,rotation:this.state.view.rotation??0};this.active=true;this.state.handles=false;this.state.tool='drawing-brush';this.state.drawing=true;this.cursor=null;this.bind();
     const layers=this.editor.layers.filter(layer=>isDrawingLayer(layer)&&!layer.locked&&layer.visible),target=layers.find(l=>l.id===this.editor.activeLayerId)||layers.find(l=>l.id===this.lastLayer)||layers.at(-1);if(target){this.editor.selectSheetLayer(target.id);this.state.selectedTrackId=target.id;}this.sync();this.prepareVisible();this.onUI();this.onRender();}
-  exit(){if(!this.active)return;this.finish();this.applySelection();this.active=false;this.state.drawing=false;Object.assign(this.state,{handles:this.prior.handles,tool:this.prior.tool});this.state.view.rotation=this.prior.rotation;this.onUI();this.onRender();}
+  exit(){if(!this.active)return;this.finish();this.applySelection();this.active=false;this.state.drawing=false;this.cursor=null;Object.assign(this.state,{handles:this.prior.handles,tool:this.prior.tool});this.state.view.rotation=this.prior.rotation;this.onUI();this.onRender();}
   get tool(){return this.state.tool==='hand'?'pan':this.state.tool.replace('drawing-','');}
   set tool(value){this.setTool(value);}
   setTool(value){this.finish();if(this.selection&&value!=='lasso')this.applySelection();
@@ -75,9 +77,9 @@ export class DrawingController {
     this.state.tool=value==='pan'?'hand':'drawing-'+value;if(value==='transform'){try{const t=this.editor.drawingTarget();if(t.object)this.editor.select(t.object.unique_id);}catch{}}this.sync();this.onUI();this.onRender();}
   get pixelClipboard(){return this.editor._drawingPixelClipboard;}
   get exposureLabel(){try{const t=this.editor.drawingTarget();return `${t.figure?'Drawing':'Blank'} · frames ${t.key.tick+1}–${t.end}${this.editor.tick!==t.key.tick?' · editing hold':''}`;}catch{return 'No drawing exposure at this frame';}}
-  sync(){if(!this.active)return;try{const t=this.editor.drawingTarget();this.exposure={layerId:t.id,start:t.key.tick,end:t.end};this.lastLayer=t.id;}catch{this.exposure=null;}this.viewport.setAttribute('aria-label','Drawing canvas. B brush, E eraser, L select pixels, H pan.');this.overlay.style.cursor=this.tool==='pan'?'grab':this.tool==='transform'?'move':'crosshair';}
+  sync(){if(!this.active)return;try{const t=this.editor.drawingTarget();this.exposure={layerId:t.id,start:t.key.tick,end:t.end};this.lastLayer=t.id;}catch{this.exposure=null;}this.viewport.setAttribute('aria-label','Drawing canvas. B brush, E eraser, G fill, L select pixels, V transform, H pan.');this.overlay.style.cursor=this.tool==='pan'?'grab':this.tool==='transform'?'move':'crosshair';}
   propertyValue(key){key=key.slice(5);if(key==='viewAngle')return (this.state.view.rotation??0)*180/Math.PI;if(key==='selectionScale')return (this.selection?.scale??1)*100;if(key==='selectionAngle')return this.selection?.angle??0;return this.settings[key]*(['opacity','flow','hardness','stabilization'].includes(key)?100:1);}
-  propertySet(key,value){key=key.slice(5);if(key==='viewAngle')this.state.view.rotation=value*Math.PI/180;else if(key==='selectionScale'||key==='selectionAngle'){if(this.selection){this.selection[key==='selectionScale'?'scale':'angle']=key==='selectionScale'?value/100:value;this.previewSelection();}}else{this.settings[key]=value/(['opacity','flow','hardness','stabilization'].includes(key)?100:1);if(['size','opacity','flow','hardness'].includes(key))this.settings.preset=null;}this.onRender();}
+  propertySet(key,value){key=key.slice(5);if(key==='viewAngle')this.state.view.rotation=value*Math.PI/180;else if(key==='selectionScale'||key==='selectionAngle'){if(this.selection){this.selection[key==='selectionScale'?'scale':'angle']=key==='selectionScale'?value/100:value;this.previewSelection();}}else{this.settings[key]=value/(['opacity','flow','hardness','stabilization'].includes(key)?100:1);if(['size','opacity','flow','hardness'].includes(key))this.settings.preset=null;}this.onRender();this.paintPreview(this.panel);}
   async prepareVisible(){const owner=this.owner;if(!owner||!this.active||this.gesture)return;let target;try{target=this.editor.drawingTarget();}catch{return;}if(!target.figure)return;const revision=this.editor.revision;try{await owner.surface(target.figure);if(owner===this.owner&&revision===this.editor.revision){this.onRender();}}catch(error){if(error.name!=='AbortError')this.onError(error);}}
   get renderPreview(){const g=this.gesture;if(!g?.target?.created&&!g?.target?.migratedFrom)return null;if(!g.preview){const report={...this.editor.report,figure_types:[...this.editor.report.figure_types,g.target.figure],_styk:{...this.editor.report._styk,layers:{...this.editor.report._styk.layers,assignments:{...this.editor.report._styk.layers.assignments,[g.target.object.unique_id]:g.target.id}}}},frame=createFrame([...this.editor.evaluatedFrame.objects.filter(o=>o.unique_id!==g.target.object.unique_id),g.target.object]);Object.assign(frame,{camera:this.editor.evaluatedFrame.camera});for(const key of ['background_id','background_id_b','background_mix','background_color','_stykBackgroundColor'])if(key in this.editor.evaluatedFrame)frame[key]=this.editor.evaluatedFrame[key];g.preview={report,frame,geometry:buildGeometry(report,frame)};}return g.preview;}
   resource(figure){if(!drawingMetadata(figure))return null;const entry=this.owner?.presenter(figure);return entry?.store?entry:null;}
@@ -277,10 +279,21 @@ export class DrawingController {
   cancelSelection(){this.endSelection(true);}
   async action(action){this.finish();const e=this.editor,ids=[e.activeLayerId];
     if(action==='new'){const layer=e.createDrawingLayer();this.state.selectedTrackId=layer.id;this.getTimeline()?.selectTrack?.(layer.id);this.sync();this.onUI();return;}
-    if(!['copy-pixels','cut-pixels','apply-selection','cancel-selection'].includes(action))this.applySelection();
+    if(!['copy-pixels','cut-pixels','delete-pixels','apply-selection','cancel-selection'].includes(action))this.applySelection();
     if(action==='blank')return e.drawingKey(ids,e.tick,{blank:true});if(action==='copy-key'){if(!e.drawingKey(ids))this.onStatus('This cell already starts a drawing. Use Next copy to add time.');return;}
     if(action==='extend')return e.extendDrawing(ids,this.settings.length);if(action==='next-blank'||action==='next-copy')return e.nextDrawing(ids,{blank:action==='next-blank',length:this.settings.length});
     if(action==='apply-selection')return this.applySelection();if(action==='cancel-selection')return this.cancelSelection();if(action==='retry')return this.barrier();
+    if(action==='reset-rotation'){this.state.view.rotation=0;this.onRender();return;}
+    if(action==='delete-pixels'){
+      const s=this.selection;if(!s)return;const B=s.mask;
+      // Same removal as cut-pixels, without the clipboard write.
+      try{
+        for(const key of s.touched){const o=s.original.get(key),[tx,ty]=key.split(',').map(Number);o?s.surface.store.set(tx,ty,o):s.surface.store.delete(tx,ty);}
+        s.surface.store.writeRect(B.x,B.y,B.width,B.height,s.basePixels);
+        e.commitDrawingPixels(s.target,tileChanges(s.surface.store,s.original,e.historyBytes),'Delete selected pixels');
+      }finally{this.endSelection(false);}
+      return;
+    }
     if(action==='duplicate-layer'){await this.barrier();const source=e.getLayer(e.activeLayerId),end=e.report._styk.layerSheet.tracks[source.id].end;const old=e._sheetClipboard;try{e.sheetCopyFrames([source.id],0,end-1);return e.movieclipBatch('Duplicate drawing layer',()=>{const layer=e.createLayer(source.name+' copy',{drawing:true});e.sheetPasteFrames([layer.id],0);});}finally{e._sheetClipboard=old;}}
     if(['copy-pixels','cut-pixels'].includes(action))return this.getClipboard().copy('drawing-pixels',async()=>{
       const s=this.selection;if(!s)throw new Error('Select pixels with the lasso first.');
@@ -339,6 +352,37 @@ export class DrawingController {
   }
 
   change(event){this.finish();const input=event.target,name=input.dataset.drawSetting;if(!name)return;this.settings[name]=input.type==='checkbox'?input.checked:input.type==='color'?input.value:Number(input.value);this.sync();this.onUI();}
-  overlayDraw(ctx){if(!this.active)return;let target;try{target=this.gesture?.target??this.editor.drawingTarget();}catch{return;}if(!target.figure)return;const g=this.gesture,item=this.renderPreview?.geometry.drawables.find(i=>i.obj.unique_id===target.object.unique_id)??this.editor.geometry.drawables.find(i=>i.obj.unique_id===target.object.unique_id&&i.type==='image');if(!item)return;const matrix=drawingPixelMatrix(item),screen=p=>worldToScreen(transformPoint(matrix,p),{report:this.editor.report,frame:this.editor.evaluatedFrame,view:this.state.view,cameraEnabled:false}),d=drawingMetadata(target.figure);ctx.save();ctx.setLineDash([4,4]);ctx.lineWidth=1;const points=g?.kind==='lasso'?g.points:this.selection?.points;if(points?.length){ctx.strokeStyle='#2878ed';ctx.beginPath();points.forEach((p,i)=>{const s=this.selection,angle=(s?.angle??0)*Math.PI/180,x=s?(p.x-s.cx)*s.scale:p.x,y=s?(p.y-s.cy)*s.scale:p.y,q=screen(s?{x:s.cx+s.dx+Math.cos(angle)*x-Math.sin(angle)*y,y:s.cy+s.dy+Math.sin(angle)*x+Math.cos(angle)*y}:p);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});ctx.closePath();ctx.stroke();}if(this.cursor&&['brush','eraser'].includes(this.tool)){const p=this.pixel(this.cursor,target),center=screen(p),edge=screen({x:p.x+this.settings.size*d.pixelsPerUnit/2,y:p.y}),radius=Math.hypot(edge.x-center.x,edge.y-center.y);ctx.setLineDash([]);ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.beginPath();ctx.arc(center.x,center.y,Math.max(1,radius),0,Math.PI*2);ctx.stroke();ctx.strokeStyle='#333';ctx.lineWidth=1;ctx.stroke();}ctx.restore();}
+  /** The inspector's live brush sample, rasterized by the real stroke engine so
+   * hardness, flow, opacity, texture and pressure render faithfully. Preview
+   * pixels cap the brush at 30 px so the dab stays readable; pixelsPerUnit
+   * keeps the stabilization pull honest at that capped scale. Any failure here
+   * must never break the inspector. */
+  paintPreview(root){
+    const preview=root?.querySelector?.('[data-brush-preview]');if(!preview)return;
+    try{
+      const dpr=window.devicePixelRatio||1,w=Math.round(preview.clientWidth*dpr),h=Math.round(preview.clientHeight*dpr);
+      if(w<8||h<8)return;
+      if(preview.width!==w||preview.height!==h){preview.width=w;preview.height=h;}
+      const s=this.settings,erase=this.tool==='eraser',color=s.color.slice(1).match(/../g).map(n=>parseInt(n,16));
+      const px=Math.max(1,Math.min(30,s.size)),ppu=px/Math.max(.5,s.size);
+      const pad=Math.ceil(px/2)+3,span=Math.max(1,w-2*pad),mid=h/2,amp=Math.max(0,Math.min(h*.22,mid-pad-2));
+      const store=new TileStore();
+      if(erase){
+        // A solid mid-gray band lets the transparent erase cut show the
+        // checkerboard behind the canvas.
+        const band={x:pad,y:Math.floor(mid-amp-px*.6),width:span,height:Math.max(1,Math.ceil(2*(amp+px*.6)))};
+        for(const [tx,ty] of TileStore.tilesInRect(band.x,band.y,band.width,band.height))store.set(tx,ty,new Uint8ClampedArray([136,136,136,255]));
+      }
+      const stroke=new DrawingStroke(store,{size:px,color,opacity:s.opacity,flow:s.flow,hardness:s.hardness,pressureSize:s.pressureSize,pressureOpacity:s.pressureOpacity,sizeCurve:s.sizeCurve,opacityCurve:s.opacityCurve,stabilization:s.stabilization,spacingRatio:s.spacingRatio??.12,texture:s.texture??0,erase,seed:1,pixelsPerUnit:ppu});
+      const n=40;
+      for(let i=0;i<n;i++){const t=i/(n-1);stroke.sample({x:pad+span*t,y:mid+Math.sin(t*Math.PI*2)*amp,pressure:.15+.85*Math.sin(Math.PI*t),time:i});}
+      stroke.finish();
+      const bounds=store.bounds;if(!bounds)return;
+      const ctx=preview.getContext('2d');
+      ctx.clearRect(0,0,w,h);
+      ctx.putImageData(new ImageData(store.readRect(bounds.x,bounds.y,bounds.width,bounds.height),bounds.width,bounds.height),bounds.x,bounds.y);
+    }catch{}
+  }
+  overlayDraw(ctx){if(!this.active)return;let target;try{target=this.gesture?.target??this.editor.drawingTarget();}catch{return;}if(!target.figure)return;const g=this.gesture,item=this.renderPreview?.geometry.drawables.find(i=>i.obj.unique_id===target.object.unique_id)??this.editor.geometry.drawables.find(i=>i.obj.unique_id===target.object.unique_id&&i.type==='image');if(!item)return;const matrix=drawingPixelMatrix(item),screen=p=>worldToScreen(transformPoint(matrix,p),{report:this.editor.report,frame:this.editor.evaluatedFrame,view:this.state.view,cameraEnabled:false}),d=drawingMetadata(target.figure);ctx.save();ctx.setLineDash([4,4]);ctx.lineWidth=1;const points=g?.kind==='lasso'?g.points:this.selection?.points;if(points?.length){ctx.strokeStyle='#2878ed';ctx.beginPath();points.forEach((p,i)=>{const s=this.selection,angle=(s?.angle??0)*Math.PI/180,x=s?(p.x-s.cx)*s.scale:p.x,y=s?(p.y-s.cy)*s.scale:p.y,q=screen(s?{x:s.cx+s.dx+Math.cos(angle)*x-Math.sin(angle)*y,y:s.cy+s.dy+Math.sin(angle)*x+Math.cos(angle)*y}:p);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});ctx.closePath();ctx.stroke();}if(this.cursor&&this.gesture?.kind!=='pan'&&this.state.drag?.kind!=='pan'&&['brush','eraser'].includes(this.tool)){const p=this.pixel(this.cursor,target),center=screen(p),edge=screen({x:p.x+this.settings.size*d.pixelsPerUnit/2,y:p.y}),radius=Math.hypot(edge.x-center.x,edge.y-center.y);ctx.setLineDash([]);ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.beginPath();ctx.arc(center.x,center.y,Math.max(1,radius),0,Math.PI*2);ctx.stroke();ctx.strokeStyle='#333';ctx.lineWidth=1;ctx.stroke();}ctx.restore();}
   destroy(){this.cancel();this.cancelSelection();this.events.abort();this.owner?.dispose();}
 }

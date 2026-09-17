@@ -1916,6 +1916,7 @@ function renderInspector() {
     polygonPage: state.polygonPage || 0,
     palettePage: state.palettePage || 0,
   }), {preserveDisclosure});
+  drawingController?.active && drawingController.paintPreview($("inspector"));
   cameraMotionControls?.sync();
   refreshHotkeyHints(hotkeys, $('inspector'));
   if (state.polygon) {
@@ -5271,6 +5272,10 @@ function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
     if(id==='play-pan')drawingController.finish();
     if(id.startsWith('drawing-')){drawingController.finish();const tool=id.slice(8);if(['brush','eraser','fill','lasso'].includes(tool))drawingController.tool=tool;else if(tool==='apply')drawingController.applySelection();else{drawingController.settings.size=Math.max(.5,Math.min(2048,drawingController.settings.size*(tool==='smaller'?.8:1.25)));queueUI();}drawingController.sync();return;}
     if(['copy','cut','paste'].includes(id)&&!event.target.closest?.('.layer-timeline,.sheet-filmstrip')&&(drawingController.selection||id==='paste'&&drawingController.pixelClipboard))return drawingController.action(id+'-pixels');
+    // Delete keeps its global binding: the drawing scope deliberately leaves it
+    // unbound so the global command always dispatches; only a live pixel
+    // selection reroutes it to delete-pixels. Timeline focus keeps frame edits.
+    if(id==='delete'&&drawingController.selection&&!event.target.closest?.('.layer-timeline,.sheet-filmstrip'))return drawingController.action('delete-pixels');
     if(id!=='cancel'&&id!=='play-pan')drawingController.finish();if(['previous-frame','next-frame','previous-keyframe','next-keyframe','first-frame','last-frame'].includes(id))drawingController.applySelection();
   }
   if(['insert-copied-key','insert-blank-key'].includes(id)){

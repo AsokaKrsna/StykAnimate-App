@@ -215,10 +215,16 @@ The camera output monitor contains its own drawing failures, reports diagnostics
 
 ## Live drawing surfaces
 
-A drawing resource can supply the active image figure's canvas directly.
-WebGPU composes an affine RGBA quad in the existing ordered layout and uploads
-the accumulated dirty rectangle once per render; Canvas bypasses stale artwork
-caches for that surface. Surface residency/publication invalidates derived
-layouts. Layout replacement, cancellation and disposal release owned textures.
-Drawing GPU bytes are included in renderer accounting. View rotation transforms
-both artwork and stage clipping, and is excluded from exported camera state.
+A drawing resource supplies a visible-tile presenter for the active image
+figure rather than a full-cel surface. Tiles are painted into a bounded
+scratch canvas covering only the visible tile rectangle, anchored to stable
+device pixels so panning reuses it; mip levels serve zoomed-out views and are
+invalidated by tile dirty regions. WebGPU composes the scratch as an affine
+RGBA quad in the existing ordered layout, sizes its texture to the scratch
+bounds and uploads only dirty rectangles; Canvas draws the scratch once.
+Unused drawing textures are retained in a bounded LRU before eviction, so
+timeline hops do not force full re-uploads. Surface residency/publication
+invalidates derived layouts. Layout replacement, cancellation and disposal
+release owned textures. Drawing GPU bytes are included in renderer accounting.
+View rotation transforms both artwork and stage clipping, and is excluded from
+exported camera state.

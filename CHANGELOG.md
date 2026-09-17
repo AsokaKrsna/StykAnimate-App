@@ -8,7 +8,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Added
 
-- Draw and animate on dedicated drawing layers with brush presets, pressure, erasing, fill, onion skin and pixel selection; pan while painting, create blank drawing frames with A, paint beyond the stage, and choose higher-resolution strokes using the shared timeline, undo, saving and export tools.
+- Draw and animate on dedicated drawing layers with brush presets, pressure, erasing, fill, onion skin and pixel selection you can copy, cut and delete; pan while painting, create blank drawing frames with A, paint beyond the stage, and choose higher-resolution strokes using the shared timeline, undo, saving and export tools.
 
 ### Fixed
 

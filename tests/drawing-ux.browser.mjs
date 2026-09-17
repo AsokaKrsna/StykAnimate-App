@@ -23,8 +23,19 @@ try{
   await stroke(x,y);
   check('normal brush drawing defaults to 2x pixels',await page.evaluate(()=>styk.editor.drawingTarget().figure._styk.drawing.pixelsPerUnit===2));
   check('Properties contains no exposure or frame creation controls',await page.locator('#inspector [data-draw-action="blank"],#inspector [data-draw-action="copy-key"],#inspector [data-draw-action^="next-"],#inspector [data-property="draw:length"]').count()===0);
+  check('brush preview paints a live stroke sample',await page.locator('canvas.drawing-preview').isVisible()&&await page.evaluate(()=>{const c=document.querySelector('canvas.drawing-preview'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let a=0;for(let i=3;i<d.length;i+=4)a+=d[i];return a>0;}));
+  check('dynamics toggles render as property switches',await page.locator('.property-toggle input[data-draw-setting="pressureSize"]').count()===1&&await page.locator('.property-toggle input[data-draw-setting="pressureOpacity"]').count()===1);
+  check('drawing eyedropper is fully removed',await page.locator('[data-tool="drawing-eyedropper"],[data-draw-action="eyedropper"],[data-icon="pipette"]').count()===0);
+  await page.locator('#viewport').focus();await page.keyboard.press('i');
+  check('i does not activate a drawing eyedropper',await page.evaluate(()=>styk.drawing.tool==='brush'));
+  await page.mouse.move(x,y);
+  check('brush ring tracks the pointer',await page.evaluate(()=>Boolean(styk.drawing.cursor)));
+  const inspectorBox=await page.locator('#inspector').boundingBox();await page.mouse.move(inspectorBox.x+inspectorBox.width/2,inspectorBox.y+inspectorBox.height/2);
+  check('brush ring clears when the pointer leaves the canvas',await page.evaluate(()=>styk.drawing.cursor===null));
   check('copied drawing action is available in the timeline',await page.getByRole('button',{name:'Next copied drawing',exact:true}).isVisible());
-  await page.locator('[data-draw-preset="pencil"]').click();await page.locator('[data-tool="drawing-eraser"]').click();await page.evaluate(()=>styk.drawing.propertySet('draw:size',42));await page.locator('[data-tool="drawing-brush"]').click();
+  await page.locator('[data-draw-preset="pencil"]').click();await page.waitForSelector('[data-draw-preset="pencil"][aria-pressed="true"]');
+  check('the active preset shows its pressed state',await page.locator('[data-draw-preset="pencil"][aria-pressed="true"]').isVisible());
+  await page.locator('[data-tool="drawing-eraser"]').click();await page.evaluate(()=>styk.drawing.propertySet('draw:size',42));await page.locator('[data-tool="drawing-brush"]').click();
   check('Brush remembers its preset and size independently of Eraser',await page.evaluate(()=>styk.drawing.settings.size===2&&styk.drawing.settings.preset==='pencil'));
   await page.locator('[data-tool="drawing-eraser"]').click();check('Eraser remembers its own size',await page.evaluate(()=>styk.drawing.settings.size===42));await page.locator('[data-tool="drawing-brush"]').click();await page.locator('[data-draw-preset="ink"]').click();
   await page.evaluate(async()=>{await styk.drawing.barrier();const e=styk.editor,d=styk.drawing,t=e.drawingTarget(),{drawingPixelMatrix}=await import('/src/drawing-model.mjs'),s=await d.owner.surface(t.figure);window.oldDrawing={id:t.figure._styk.drawing.celId,figure:t.figure,object:structuredClone(t.object),snap:pix(s.store),matrix:drawingPixelMatrix(d.geometryItem(t)),revision:e.revision};});
@@ -54,6 +65,17 @@ try{
     const exact=world&&snap.bounds.width===grownDrawing.snap.bounds.width&&snap.bounds.height===grownDrawing.snap.bounds.height&&visEq(snap,grownDrawing.snap)&&pasted.figure._styk.drawing.celId!==target.figure._styk.drawing.celId;
     e.undo();e.undo();e.seek(0);await d.prepareVisible();return exact;
   }));
+  await page.locator('[data-tool="drawing-lasso"]').click();
+  await page.evaluate(async()=>{const d=styk.drawing,t=styk.editor.drawingTarget(),s=await d.owner.surface(t.figure),B=s.store.bounds;window.deleteBefore=pix(s.store);d.makeSelection({target:t,surface:s,points:[{x:B.x,y:B.y},{x:B.x+B.width,y:B.y},{x:B.x+B.width,y:B.y+B.height},{x:B.x,y:B.y+B.height}]});d.onUI();});
+  check('a pixel selection exposes copy, cut and delete actions',await page.locator('[data-draw-action="copy-pixels"]').isVisible()&&await page.locator('[data-draw-action="cut-pixels"]').isVisible()&&await page.locator('[data-draw-action="delete-pixels"]').isVisible());
+  await page.locator('#viewport').focus();await page.keyboard.press('Delete');
+  check('Delete removes the selected pixels and consumes the selection',await page.evaluate(()=>{const s=styk.drawing.owner.entry(styk.editor.drawingTarget().figure).store;return !styk.drawing.selection&&s.bounds===null;}));
+  await page.keyboard.press('Control+z');
+  check('undo restores the deleted pixels',await page.evaluate(()=>pixEq(pix(styk.drawing.owner.entry(styk.editor.drawingTarget().figure).store),deleteBefore)));
+  await page.evaluate(()=>{window.deleteProbe={revision:styk.editor.revision,objects:styk.editor.evaluatedFrame.objects.length};styk.editor.select(styk.editor.drawingTarget().object.unique_id);});
+  await page.keyboard.press('Delete');
+  check('Delete without a pixel selection keeps its global figure delete',await page.evaluate(()=>!styk.drawing.selection&&styk.editor.revision!==deleteProbe.revision&&styk.editor.evaluatedFrame.objects.length<deleteProbe.objects));
+  await page.keyboard.press('Control+z');await page.evaluate(()=>styk.drawing.prepareVisible());
   const scaling=await page.evaluate(async()=>{
     const {drawingPixelMatrix,transformPoint}=await import('/src/drawing-model.mjs'),{drawGeometry}=await import('/src/pivot/geometry.mjs'),{exportSVG}=await import('/src/svg-export.mjs');
     const e=styk.editor,d=styk.drawing,t=e.drawingTarget(),item=d.geometryItem(t),p={x:400,y:320},before=transformPoint(drawingPixelMatrix(item),p);

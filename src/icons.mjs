@@ -63,7 +63,6 @@ const shapes = Object.freeze({
   brush: '<path d="m14 6 4-4 4 4-4 4-4-4Zm0 0-5 8 2 2 7-6M9 14c-6-1-2 6-7 6 7 3 10-1 9-4"/>',
   eraser: '<path d="m4 14 9-11a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3L11 21H8l-4-4a2 2 0 0 1 0-3ZM9 9l8 8M11 21h11"/>',
   'paint-bucket': '<path d="m4 10 7-7 10 10-8 8-9-9v-2ZM4 12h15M6 2l7 7M21 17s-3 3-1 5c3 1 3-2 1-5Z"/>',
-  pipette: '<path d="m15 3 6 6M16 4l3-2 3 3-3 3M16 6 3 19v3h3L19 9M7 15l3 3"/>',
   lasso: '<ellipse cx="12" cy="9" rx="9" ry="6"/><path d="M5 14c-5 8 9 10 6 4"/><circle cx="5" cy="14" r="2"/>',
   transform: '<rect x="5" y="5" width="14" height="14" rx="1"/><rect x="2" y="2" width="5" height="5"/><rect x="17" y="2" width="5" height="5"/><rect x="17" y="17" width="5" height="5"/><rect x="2" y="17" width="5" height="5"/>',
   music: '<path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />',

@@ -111,7 +111,7 @@ export function inspectorView({
   if(drawing?.active){
     const o=editor.object,f=editor.figure,p=(label,key,value,unit='',limits='')=>numericField(label,key,value,unit,limits,propertyState?.(key));
     const poseView=drawing.tool==='transform'&&o?group('Transform drawing',grid(p('X','root_x',o.root_x,'px')+p('Y','root_y',o.root_y,'px')+p('Scale','scale',o.scale*100,'%','min="0.01"')+p('Angle','rotation',((o.angles[0]??0)-(f.segments[0]?.angle_rad??0))*180/Math.PI,'°')+p('Opacity','figure_opacity',(1-(o.field28??0)/255)*100,'%','min="0" max="100"'))):'';
-    return drawingInspector(drawing,{numericField,group,grid,heading,hotkeyLabel,esc},poseView);
+    return drawingInspector(drawing,{numericField,group,grid,heading,hotkeyLabel,esc,propertyToggle},poseView);
   }
   const report = editor.report,
     frame = editor.frame,
