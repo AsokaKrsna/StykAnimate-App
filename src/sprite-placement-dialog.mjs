@@ -1,5 +1,6 @@
 import {icon} from './icons.mjs';
 import {PIVOT_HANDLE_COLORS} from './canvas-interactions.mjs';
+import {drawingMetadata} from './drawing-model.mjs';
 
 const MIN=-2147483648,MAX=2147483647;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -48,6 +49,7 @@ export class SpritePlacementDialog {
   open(figure) {
     this.cancel();
     const asset=figure?.image_assets?.[0];
+    if(drawingMetadata(figure)?.version===2)throw new Error('Drawing cels paint from tiles; choose an imported PNG sprite.');
     if(!asset||!Number.isInteger(asset.width)||asset.width<1||!Number.isInteger(asset.height)||asset.height<1||asset.width*asset.height>16*1024*1024||
       typeof asset.data_url!=='string'||!/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(asset.data_url))throw new Error('Choose a decoded PNG sprite of at most 16 million pixels.');
     this.figure=figure;this.points={start:{...asset.anchor_start},end:{...asset.anchor_end}};placedSpriteFigure(figure,this.points);

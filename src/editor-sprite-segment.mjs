@@ -1,6 +1,7 @@
 /** Attach a placed embedded sprite to an existing reusable Pivot rig. */
 import {portableAsset} from './clipboard-assets.mjs';
 import {normalizeBuilderOrder} from './editor-builder-style.mjs';
+import {drawingMetadata} from './drawing-model.mjs';
 
 const MAX_SEGMENTS = 30000, MAX_ASSETS = 65535;
 const assetId = (asset, index) => asset.asset_index ?? asset.table_index ?? asset.image_index ?? asset.sprite_index ?? index;
@@ -59,6 +60,8 @@ export const editorSpriteSegmentMethods = {
     if (!figure || !this.object) throw new Error('Select a figure before attaching a sprite.');
     if (spriteFigure?.segments?.length !== 1 || !imageSegment(spriteFigure.segments[0]) || spriteFigure.image_assets?.length !== 1)
       throw new Error('Choose one imported image to attach as a sprite segment.');
+    if (drawingMetadata(spriteFigure)?.version === 2)
+      throw new Error('Drawing cels cannot be attached as sprite images.');
     const sourceSegment = spriteFigure.segments[0], sourceAsset = spriteFigure.image_assets[0];
     if (mediaId(sourceSegment) !== assetId(sourceAsset, 0)) throw new Error('The sprite segment does not reference its image asset.');
     const asset = portableAsset(sourceAsset, {image: true});

@@ -1,21 +1,14 @@
 import {TILE,TILE_BYTES,tileKey,TileStore,tileTransparent} from './drawing-tiles.mjs';
 import {floodTiles,tileChanges,tileAlignedRect} from './drawing-pixels.mjs';
 import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
-import {encodeDrawingPNG,decodeDrawingPNG,decodeDrawingPNGBytes} from './drawing-png.mjs';
-import {decodeTileBlob,tileStoreFromList} from './drawing-tile-codec.mjs';
+import {decodeDrawingPNG} from './drawing-png.mjs';
+import {decodeTileBlob,tileStoreFromList,assembleTileBlobBytes,TILE_BLOB_PREFIX} from './drawing-tile-codec.mjs';
 import {encodePNGPortable} from './sticknodes/decoder/png-browser.mjs';
 
 const storeOf=data=>{const store=new TileStore();for(const t of data.tiles??[])store.tiles.set(tileKey(t.tx,t.ty),{tx:t.tx,ty:t.ty,pixels:new Uint8ClampedArray(t.pixels),frozen:false,png:t.png?new Uint8Array(t.png):undefined});return store;};
 const beforeOf=(store,rect)=>{const before=new Map();for(const [tx,ty] of TileStore.tilesInRect(rect.x,rect.y,rect.width,rect.height))before.set(tileKey(tx,ty),store.get(tx,ty)?.pixels.slice()??null);return before;};
 const changesReply=(id,store,before,maxBytes)=>{const tiles=tileChanges(store,before,maxBytes);self.postMessage({id,tiles},tiles.flatMap(t=>[t.before?.buffer,t.after?.buffer].filter(Boolean)));};
 const validRect=r=>r&&[r.x,r.y].every(Number.isSafeInteger)&&Number.isInteger(r.width)&&Number.isInteger(r.height)&&r.width>0&&r.height>0&&r.width*r.height<=DRAWING_MAX_PIXELS;
-
-async function tilePixels(tile){
-  if(tile.pixels)return new Uint8ClampedArray(tile.pixels);
-  const decoded=await decodeDrawingPNGBytes(new Uint8Array(tile.png));
-  if(decoded.width!==TILE||decoded.height!==TILE)throw new Error('Drawing tile blob carries a non-tile image.');
-  return decoded.pixels;
-}
 
 self.onmessage=async({data})=>{
   const {id,kind}=data;
@@ -36,20 +29,14 @@ self.onmessage=async({data})=>{
       self.postMessage({id,tiles},tiles.flatMap(t=>[t.pixels,t.png]));return;
     }
     if(kind==='encode-tiles'){
-      const out=[];
-      for(const t of data.tiles??[])if(!t.png)out.push({tx:t.tx,ty:t.ty,png:(await encodePNGPortable({width:TILE,height:TILE,channels:4},new Uint8ClampedArray(t.pixels))).buffer});
-      let dataUrl,width,height;
-      if(data.region){
-        if(!validRect(data.region))throw new Error('Invalid drawing encode region.');
-        const r=data.region,pixels=new Uint8ClampedArray(r.width*r.height*4);
-        for(const t of data.tiles??[]){
-          const source=await tilePixels(t),ox=t.tx*TILE-r.x,oy=t.ty*TILE-r.y;
-          for(let py=Math.max(0,-oy);py<Math.min(TILE,r.height-oy);py++)
-            pixels.set(source.subarray((py*TILE+Math.max(0,-ox))*4,(py*TILE+Math.min(TILE,r.width-ox))*4),((py+oy)*r.width+Math.max(0,ox))*4);
-        }
-        dataUrl=await encodeDrawingPNG(pixels,r.width,r.height);width=r.width;height=r.height;
+      const out=[],assembly=[];
+      for(const t of data.tiles??[]){
+        const png=t.png?new Uint8Array(t.png):new Uint8Array(await encodePNGPortable({width:TILE,height:TILE,channels:4},new Uint8ClampedArray(t.pixels)));
+        if(!t.png)out.push({tx:t.tx,ty:t.ty,png:png.slice().buffer});
+        assembly.push({tx:t.tx,ty:t.ty,png});
       }
-      self.postMessage({id,tiles:out,dataUrl,width,height},out.map(t=>t.png));return;
+      const bytes=assembleTileBlobBytes(assembly);let text='';for(let i=0;i<bytes.length;i+=16384)text+=String.fromCharCode(...bytes.subarray(i,i+16384));
+      self.postMessage({id,tiles:out,blobUrl:TILE_BLOB_PREFIX+btoa(text)},out.map(t=>t.png));return;
     }
     if(kind==='fill'){
       if(!validRect(data.bounds))throw new Error('Invalid fill bounds.');

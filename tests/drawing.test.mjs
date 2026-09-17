@@ -5,10 +5,14 @@ import {DrawingResources} from '../src/drawing-resources.mjs';
 import {DrawingStroke,floodTiles,lassoMask,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
 import {drawingMetadata,validateDrawings,drawingMatrix,drawingPixelMatrix,inversePoint,transformPoint,migrateDrawingFigure,EMPTY_PNG} from '../src/drawing-model.mjs';
 import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from '../src/drawing-tiles.mjs';
-import {encodeTileBlob,decodeTileBlob,TILE_BLOB_PREFIX} from '../src/drawing-tile-codec.mjs';
-import {encodeDrawingPNG,decodeDrawingPNG,decodeDrawingPNGBytes} from '../src/drawing-png.mjs';
+import {encodeTileBlob,decodeTileBlob,assembleTileBlobBytes,TILE_BLOB_PREFIX} from '../src/drawing-tile-codec.mjs';
+import {encodeDrawingPNG,decodeDrawingPNG} from '../src/drawing-png.mjs';
 import {encodePNGPortable} from '../src/sticknodes/decoder/png-browser.mjs';
 import {StrokeEngine} from '../src/drawing-stroke-engine.mjs';
+import {presenterScratch,levelStore,invalidateLevels,flattenedDrawingPNG} from '../src/drawing-raster.mjs';
+import {DrawingTileProvider} from '../src/drawing-provider.mjs';
+import {createDrawingFigure} from '../src/drawing-model.mjs';
+import {objectBounds} from '../src/renderer-geometry.mjs';
 import {createImageFigure} from '../src/media-authoring.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {createFrame,createObject} from '../src/demo.mjs';
@@ -17,7 +21,6 @@ import {createFrame,createObject} from '../src/demo.mjs';
 // real worker. OffscreenCanvas ops (paste/resample/thumbnail) are not stubbed.
 function workerStub(){
   const storeOf=data=>{const store=new TileStore();for(const t of data.tiles??[])store.tiles.set(tileKey(t.tx,t.ty),{tx:t.tx,ty:t.ty,pixels:new Uint8ClampedArray(t.pixels),frozen:false,png:t.png?new Uint8Array(t.png):undefined});return store;};
-  const tilePixels=async t=>t.pixels?new Uint8ClampedArray(t.pixels):(await decodeDrawingPNGBytes(new Uint8Array(t.png))).pixels;
   return {async request(kind,data){
     if(kind==='decode-legacy'){
       const crop=data.crop??{x:0,y:0},image=await decodeDrawingPNG(data.url),tiles=[];
@@ -30,14 +33,14 @@ function workerStub(){
     }
     if(kind==='decode-tiles')return {tiles:(await decodeTileBlob(data.url)).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,png:t.png.buffer}))};
     if(kind==='encode-tiles'){
-      const out=[];
-      for(const t of data.tiles??[])if(!t.png)out.push({tx:t.tx,ty:t.ty,png:(await encodePNGPortable({width:TILE,height:TILE,channels:4},new Uint8ClampedArray(t.pixels))).buffer});
-      let dataUrl,width,height;
-      if(data.region){const r=data.region,pixels=new Uint8ClampedArray(r.width*r.height*4);
-        for(const t of data.tiles??[]){const source=await tilePixels(t),ox=t.tx*TILE-r.x,oy=t.ty*TILE-r.y;
-          for(let py=Math.max(0,-oy);py<Math.min(TILE,r.height-oy);py++)pixels.set(source.subarray((py*TILE+Math.max(0,-ox))*4,(py*TILE+Math.min(TILE,r.width-ox))*4),((py+oy)*r.width+Math.max(0,ox))*4);}
-        dataUrl=await encodeDrawingPNG(pixels,r.width,r.height);width=r.width;height=r.height;}
-      return {tiles:out,dataUrl,width,height};
+      const out=[],assembly=[];
+      for(const t of data.tiles??[]){
+        const png=t.png?new Uint8Array(t.png):new Uint8Array(await encodePNGPortable({width:TILE,height:TILE,channels:4},new Uint8ClampedArray(t.pixels)));
+        if(!t.png)out.push({tx:t.tx,ty:t.ty,png:png.slice().buffer});
+        assembly.push({tx:t.tx,ty:t.ty,png});
+      }
+      const bytes=assembleTileBlobBytes(assembly);let text='';for(let i=0;i<bytes.length;i+=16384)text+=String.fromCharCode(...bytes.subarray(i,i+16384));
+      return {tiles:out,blobUrl:TILE_BLOB_PREFIX+btoa(text)};
     }
     if(kind==='fill'){
       const store=storeOf(data),before=new Map();
@@ -458,4 +461,141 @@ test('stroke engine end records equal the diff between initial and final tiles',
   assert.deepEqual(result.readRect(-64,-64,384,384),control.readRect(-64,-64,384,384));
   applyTileChanges(result,changes,'before');
   assert.deepEqual(result.readRect(0,0,64,64),initialStore.readRect(0,0,64,64));
+});
+
+// Phase 3: mip levels, tile-anchored scratch, budgets and the shared provider.
+// TileStore.set accepts a 4-byte colour as a uniform tile fill.
+const px=(tile,x,y)=>[...tile.pixels.slice((y*TILE+x)*4,(y*TILE+x)*4+4)];
+
+test('level tiles are 2x2 premultiplied box averages with clean alpha edges',()=>{
+  const store=new TileStore(),entry={store,levels:[]};
+  // Source px(0,0)=opaque red, px(1,0)=half green, a 2x2 opaque blue block at
+  // (32..33,32..33), everything else transparent.
+  const p=new Uint8ClampedArray(TILE_BYTES);p.set([255,0,0,255],0);p.set([0,255,0,128],4);
+  for(let y=32;y<34;y++)for(let x=32;x<34;x++)p.set([0,0,255,255],(y*TILE+x)*4);
+  store.set(0,0,p);
+  const tile=levelStore(entry,1).get(0,0);
+  assert.ok(tile,'the covering level tile exists');
+  // a=Math.round(383/4)=96, r=Math.round(65025/383)=170, g=Math.round(32640/383)=85
+  assert.deepEqual(px(tile,0,0),[170,85,0,96]);
+  // Fully transparent 2x2 groups stay exactly zero (no hue bleed at alpha edges).
+  assert.deepEqual(px(tile,1,1),[0,0,0,0]);
+  // A solid 2x2 group of opaque blue averages to opaque blue exactly.
+  assert.deepEqual(px(tile,16,16),[0,0,255,255]);
+});
+
+test('level invalidation drops only the covering tiles after a source change',()=>{
+  const store=new TileStore(),entry={store,levels:[]};
+  store.set(0,0,new Uint8ClampedArray([255,0,0,255]));store.set(4,4,new Uint8ClampedArray([0,255,0,255]));
+  const level=levelStore(entry,1),a=level.get(0,0),b=level.get(2,2);
+  assert.deepEqual(px(a,0,0),[255,0,0,255]);assert.deepEqual(px(b,0,0),[0,255,0,255]);
+  store.set(0,0,new Uint8ClampedArray([0,0,255,255]));
+  invalidateLevels(entry,{x:0,y:0,width:64,height:64});
+  const next=levelStore(entry,1);
+  assert.equal(next.get(2,2),b,'unrelated level tiles keep their cache entry');
+  assert.notEqual(next.get(0,0),a,'the covering level tile was rebuilt');
+  assert.deepEqual(px(next.get(0,0),0,0),[0,0,255,255]);
+});
+
+test('a level store repopulated after an empty read reports fresh bounds',()=>{
+  const store=new TileStore(),entry={store,levels:[]};
+  // Reads on the still-empty level cache empty bounds; lazy repopulation must
+  // invalidate them or every mip render sees zero coverage.
+  const empty=levelStore(entry,1);
+  assert.equal(empty.tileBounds,null);
+  store.set(0,0,new Uint8ClampedArray([255,0,0,255]));
+  const level=levelStore(entry,1);
+  assert.equal(level,empty,'the same level store is repopulated in place');
+  assert.deepEqual(level.tileBounds,{x:0,y:0,width:64,height:64});
+  assert.ok(level.bounds,'alpha bounds refresh too');
+});
+
+test('presenter scratch anchors on tiles: sub-tile pans reuse, stamps reblit dirty tiles only',()=>{
+  globalThis.OffscreenCanvas??=class{constructor(w,h){this.width=w;this.height=h;}getContext(){return this._ctx??={clearRect(){},putImageData(){},drawImage(){},getImageData(){return{data:new Uint8ClampedArray(this.width*4)}}};}};
+  globalThis.ImageData??=class{constructor(pixels,w,h){this.data=pixels;this.width=w;this.height=h;}};
+  const store=new TileStore();store.set(0,0,new Uint8ClampedArray([10,20,30,255]));store.set(1,0,new Uint8ClampedArray([40,50,60,255]));store.set(4,0,new Uint8ClampedArray([70,80,90,255]));store.set(5,0,new Uint8ClampedArray([1,2,3,255]));
+  const presenter={id:'cel-t',store,stamp:1,dirty:null,level:k=>levelStore(presenter,k)};
+  // The visible rect plus one tile of margin, clamped to coverage {0,0,384,64}.
+  const first=presenterScratch(presenter,{x:10,y:10,width:60,height:60});
+  assert.equal(first.x%TILE,0);assert.equal(first.y%TILE,0);
+  assert.deepEqual({x:first.x,y:first.y,width:first.width,height:first.height},{x:0,y:0,width:192,height:64});
+  const blits=presenter._scratch.blits;
+  // A sub-tile pan keeps the anchored rect and reblits nothing.
+  const second=presenterScratch(presenter,{x:13,y:17,width:60,height:60});
+  assert.equal(second.anchorKey,first.anchorKey);assert.equal(presenter._scratch.blits,blits);
+  // A stamp change blits only the tiles intersecting the dirty rect.
+  presenter.stamp=2;presenter.dirty={x:0,y:0,width:64,height:64};
+  const third=presenterScratch(presenter,{x:13,y:17,width:60,height:60});
+  assert.equal(third.anchorKey,first.anchorKey);assert.equal(presenter._scratch.blits,blits+1);
+  assert.deepEqual(third.dirty,{x:0,y:0,width:64,height:64});
+  // A pan to a new tile anchor repaints the whole scratch and clears dirty.
+  const fourth=presenterScratch(presenter,{x:250,y:10,width:60,height:60});
+  assert.notEqual(fourth.anchorKey,first.anchorKey);assert.ok(presenter._scratch.blits>blits+1);
+  assert.equal(fourth.dirty,null,'a re-anchored scratch uploads wholesale');
+});
+
+test('resource eviction frees scratch, then levels, then published stores',()=>{
+  const report={figure_types:[]},resources=new DrawingResources(report,{worker:workerStub(),tileBytes:3*TILE_BYTES});
+  try{
+    const fig=id=>{const f=createDrawingFigure({celId:id});report.figure_types.push(f);return f;};
+    const [a,b,c]=[fig('cel-a'),fig('cel-b'),fig('cel-c')];
+    const ea=resources.entry(a),eb=resources.entry(b),ec=resources.entry(c);
+    ea.store=new TileStore();ea.store.set(0,0,new Uint8ClampedArray([1,2,3,255]));ea.published={revision:0};ea.used=1;
+    eb.store=new TileStore();eb.store.set(0,0,new Uint8ClampedArray([1,2,3,255]));eb.published={revision:0};eb.used=2;
+    ec.store=new TileStore();ec.store.set(0,0,new Uint8ClampedArray([1,2,3,255]));ec.used=3; // unpublished: never evicts
+    ea._scratch={canvas:{width:64,height:64}};levelStore(eb,1);
+    assert.equal(resources.stats.bytes,3*TILE_BYTES);
+    resources.reserve(TILE_BYTES,null);
+    assert.equal(ea._scratch,null);assert.equal(eb.levels,null);
+    assert.equal(ea.store,null,'oldest published store evicts first');
+    assert.ok(eb.store&&ec.store,'newer and unpublished stores survive');
+    assert.equal(resources.stats.bytes,2*TILE_BYTES);
+    assert.throws(()=>resources.reserve(3*TILE_BYTES,null),/memory is full/);
+  }finally{resources.dispose();}
+});
+
+test('the drawing provider decodes published blobs and evicts LRU over budget',async()=>{
+  const store=new TileStore();store.set(-1,0,new Uint8ClampedArray([7,8,9,200]));store.set(3,3,new Uint8ClampedArray([4,5,6,255]));
+  const figure=id=>{const f=createDrawingFigure({celId:id});f._styk.drawing.revision=1;f._styk.drawing.bounds={...store.bounds};return f;};
+  const blob=await encodeTileBlob(store);
+  const provider=new DrawingTileProvider({budgetBytes:4*TILE_BYTES});
+  try{
+    const [a,b,c]=[figure('cel-a'),figure('cel-b'),figure('cel-c')];
+    a.image_assets[0].styk_tiles=blob;b.image_assets[0].styk_tiles=blob;c.image_assets[0].styk_tiles=blob;
+    await provider.prepare([a]);assert.equal(provider.presenter(a).store.pixel(-32,5)[3],200);
+    assert.equal(provider.presenter(a).store.tileBounds.x,-64);
+    await provider.prepare([b]);await provider.prepare([c]);
+    assert.equal(provider.presenter(a),null,'LRU eviction released the oldest cel');
+    assert.ok(provider.presenter(b)?.store&&provider.presenter(c)?.store);
+    assert.ok(provider.bytes<=provider.budgetBytes);
+    // A matching revision is a cache hit; a stale revision decodes again.
+    await provider.prepare([b]);b._styk.drawing.revision=2;await provider.prepare([b]);
+    assert.equal(provider.entries.get('cel-b').revision,2);
+  }finally{provider.dispose();}
+});
+
+test('a v2 cel world bounds equal its tile bounds through drawingPixelMatrix',()=>{
+  const figure=createDrawingFigure({celId:'cel-bounds'});
+  // Tile bounds that also cover the segment endpoints, which objectBounds
+  // unions with the image quad for every figure.
+  figure._styk.drawing.bounds={x:-64,y:-64,width:384,height:192};
+  const object=createObject(figure,7,120,-40,{scale:1.5});
+  const item=buildGeometry({figure_types:[figure],canvas_width:640,canvas_height:480},createFrame([object])).drawables[0];
+  const bounds=objectBounds([item],{}),matrix=drawingPixelMatrix(item),b=figure._styk.drawing.bounds;
+  const corners=[[b.x,b.y],[b.x+b.width,b.y],[b.x,b.y+b.height],[b.x+b.width,b.y+b.height]].map(([x,y])=>transformPoint(matrix,{x,y}));
+  const x0=Math.min(...corners.map(p=>p.x)),y0=Math.min(...corners.map(p=>p.y)),x1=Math.max(...corners.map(p=>p.x)),y1=Math.max(...corners.map(p=>p.y));
+  // objectBounds adds a 3px guard pad around painted geometry.
+  assert.deepEqual(bounds,{x:Math.floor(x0-3),y:Math.floor(y0-3),width:Math.ceil(x1+3)-Math.floor(x0-3),height:Math.ceil(y1+3)-Math.floor(y0-3)});
+});
+
+test('flattening a tile store yields a PNG at source resolution with source-space anchors',async()=>{
+  const store=new TileStore();store.set(1,1,new Uint8ClampedArray([9,9,9,255]));
+  const flat=await flattenedDrawingPNG({store});
+  assert.equal(flat.scale,1);assert.deepEqual({x:flat.x,y:flat.y},{x:64,y:64});
+  const decoded=await decodeDrawingPNG(flat.dataUrl);
+  assert.equal(decoded.width,64);assert.equal(decoded.height,64);assert.deepEqual([...decoded.pixels.slice(0,4)],[9,9,9,255]);
+  const huge=new TileStore();huge.set(0,0,new Uint8ClampedArray([1,1,1,255]));huge.set(64,64,new Uint8ClampedArray([1,1,1,255])); // 4160px bounds
+  const capped=await flattenedDrawingPNG({store:huge},{maxPixels:1024*1024});
+  assert.equal(capped.level,3);assert.equal(capped.scale,8,'oversized bounds flatten at a mip level');
+  assert.ok(capped.width*capped.height<=1024*1024);
 });

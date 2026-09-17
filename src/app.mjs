@@ -905,7 +905,7 @@ function imageFor(url) {
   return images.image(url);
 }
 let drawingController;
-const resources = { url: assetUrl, image: imageFor, drawing:figure=>drawingController?.resource(figure) };
+const resources = { url: assetUrl, image: imageFor, drawing:figure=>drawingController?.resource(figure), drawingLoad:figure=>editor?.drawingResources?.surface(figure) };
 function status(text, error = false, busy = false) {
   $("status").textContent = text;
   $("status-dot").className =

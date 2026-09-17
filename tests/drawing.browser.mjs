@@ -38,8 +38,11 @@ try{
   check('erasing the copy preserves original pixels',counts.original>counts.copied);
   await page.evaluate(()=>styk.drawing.barrier());
   check('publication drains all dirty work',await page.evaluate(()=>styk.drawing.owner.stats.unpublished===0&&!styk.drawing.owner.stats.inFlight));
-  const exact=await page.evaluate(async()=>{const {decodeDrawingPNG}=await import('/src/drawing-png.mjs'),e=styk.editor,d=styk.drawing,figure=e.drawingTarget().figure,snap=pix(d.owner.entry(figure).store),decoded=await decodeDrawingPNG(figure.image_assets[0].data_url);return decoded.width===snap.bounds.width&&decoded.height===snap.bounds.height&&decoded.pixels.every((n,i)=>n===snap.pixels[i]);});
-  check('published PNG matches committed RGBA',exact);
+  const exact=await page.evaluate(async()=>{const {decodeTileBlob}=await import('/src/drawing-tile-codec.mjs'),{TileStore}=await import('/src/drawing-tiles.mjs'),e=styk.editor,d=styk.drawing,figure=e.drawingTarget().figure,asset=figure.image_assets[0],snap=pix(d.owner.entry(figure).store);
+    const tiles=await decodeTileBlob(asset.styk_tiles),store=new TileStore();
+    for(const t of tiles)store.set(t.tx,t.ty,t.pixels);
+    return asset.width===1&&asset.height===1&&pixEq(pix(store),snap);});
+  check('published tile blob matches committed RGBA over a 1x1 carrier',exact);
   const native=await page.evaluate(async()=>{
     const {DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{Editor}=await import('/src/editor.mjs'),{decodeDrawingPNG}=await import('/src/drawing-png.mjs'),{decodeTileBlob}=await import('/src/drawing-tile-codec.mjs'),{TileStore}=await import('/src/drawing-tiles.mjs');
     const exporter=new DocumentExporter(),importer=new ImportClient(),e=styk.editor;

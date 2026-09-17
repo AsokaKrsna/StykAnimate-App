@@ -95,3 +95,12 @@ active drawing edits; recovery includes committed strokes. Clipboard, library,
 playback and thumbnail snapshots use the same barrier. Movieclip scopes flush
 before copying their document. Failed/cancelled publication retains live work
 and existing atomic writes retain the prior file. See [DRAWING.md](DRAWING.md).
+
+## Drawing flattening
+
+`.piv`, `.stk` and SVG exports cannot carry the sparse tile store, so each v2
+drawing cel materializes as an ordinary PNG sprite covering its tile bounds.
+Rasterization uses source resolution up to a 16 Mpx cap; beyond that the
+largest mip level that fits is used and the export stats record the
+downsampled count. Anchors are rewritten into flattened-pixel coordinates so
+world placement is identical.

@@ -415,6 +415,9 @@ class WebGPURenderer {
     this.artworkAliases = new WeakMap();
     this.preparedFrames = new PreparedFrameCache(this, options.preparedCache);
     this.rasterSurfaces = new RasterSurfacePool();
+    // Live drawing scratch textures persist across layout changes; the LRU
+    // budget evicts the oldest only when the cap is exceeded.
+    this.drawingTextureBudget = options.drawingTextureBudget ?? 96 * 1024 * 1024;
     // Weak adapters lower MSAA through setMsaa; every render pass, pipeline and
     // offscreen target reads this.msaaCount so attachments always agree.
     this.msaaCount = normalizeMsaaCount(options.msaa);
@@ -510,6 +513,8 @@ class WebGPURenderer {
     if (this.activeReport === report) return;
     if (this.activeReport) {
       for (const entry of this.backgroundImages?.values() || []) entry.texture.destroy();
+      for (const texture of this.drawingTextures?.values() ?? []) texture.texture.destroy();
+      this.drawingTextures?.clear();
       this.backgroundImages?.clear(); this.resources.clear(); this.preparedFrames.clear();
       this.rasterCache.clear();
       this.layout = []; this.entries.clear(); this.vectorCache = new WeakMap(); this.compatibilityCache = new WeakMap();
@@ -738,19 +743,29 @@ class WebGPURenderer {
           if(rect.width<=0||rect.height<=0)rect=null;
         }
       }
-      const scratch=rect&&drawing.scratch?.(rect);
+      // Mip level from screen pixels per source pixel: at deviceScale < 1 a
+      // downsampled level keeps the scratch inside the texture-size limit.
+      const maxSide=this.device.limits.maxTextureDimension2D;
+      const deviceScale=Math.max(1e-9,scale*Math.hypot(matrix[0],matrix[1]));
+      let scratch=null,level=Math.max(0,Math.min(4,Math.floor(-Math.log2(deviceScale))));
+      for(;rect&&level<=4;level++){
+        const result=drawing.scratch?.(rect,{level,maxSide});
+        if(result){scratch=result;break;}
+      }
+      if(rect&&!scratch)throw new Error('Drawing exceeds the graphics device texture limit. Choose Canvas graphics mode.');
       if(scratch){
         this.drawingTextures??=new Map();texture=this.drawingTextures.get(drawing.id);
-        const w=scratch.canvas.width,h=scratch.canvas.height,rectKey=`${scratch.x},${scratch.y},${w},${h}`;
+        const w=scratch.canvas.width,h=scratch.canvas.height,rectKey=`${level}:${scratch.x},${scratch.y},${w},${h}`;
         if(!texture||texture.width!==w||texture.height!==h){
           texture?.texture.destroy();
-          if(w>this.device.limits.maxTextureDimension2D||h>this.device.limits.maxTextureDimension2D)throw new Error('Drawing exceeds the graphics device texture limit. Choose Canvas graphics mode.');
           const gpu=this.device.createTexture({size:[w,h],format:'rgba8unorm',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});
-          texture={texture:gpu,bindGroup:this.textureBindGroup(gpu),width:w,height:h,stamp:-1,rectKey:null,bytes:w*h*4};this.drawingTextures.set(drawing.id,texture);
+          texture={texture:gpu,bindGroup:this.textureBindGroup(gpu),width:w,height:h,stamp:-1,rectKey:null,bytes:w*h*4};
         }
+        // Most-recently-used ordering: the render loop evicts from the front.
+        this.drawingTextures.delete(drawing.id);this.drawingTextures.set(drawing.id,texture);
         texture.drawing=drawing;texture.canvas=scratch.canvas;texture.dirty=scratch.dirty;texture.nextRectKey=rectKey;
-        const ox=matrix[0]*scratch.x+matrix[2]*scratch.y+matrix[4],oy=matrix[1]*scratch.x+matrix[3]*scratch.y+matrix[5];
-        data=new Float32Array(shapeRecord({a:[ox-source.root.x,oy-source.root.y,0,0],b:[matrix[0]*scratch.width,matrix[1]*scratch.width,matrix[2]*scratch.height,matrix[3]*scratch.height],mode:9,color:[1,1,1,sourceItems[0].alpha],transform:index}));
+        const q=2**level,ox=matrix[0]*scratch.x*q+matrix[2]*scratch.y*q+matrix[4],oy=matrix[1]*scratch.x*q+matrix[3]*scratch.y*q+matrix[5];
+        data=new Float32Array(shapeRecord({a:[ox-source.root.x,oy-source.root.y,0,0],b:[matrix[0]*scratch.width*q,matrix[1]*scratch.width*q,matrix[2]*scratch.height*q,matrix[3]*scratch.height*q],mode:9,color:[1,1,1,sourceItems[0].alpha],transform:index}));
         return {key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:1,texture};
       }
     }
@@ -969,9 +984,12 @@ class WebGPURenderer {
     } else { this.stats.uploadBytes = 0; this.stats.primitiveUploadCalls = 0; this.stats.updatedObjects = 0; this.stats.compiledObjects = 0; this.stats.rasterizedObjects = 0; this.stats.preparation = 'retained'; }
     if (!this.layout) return geometry; // No build has ever succeeded; the canvas keeps its last frame.
     const liveTextures=new Set(this.layout.map(entry=>entry.texture));
+    let drawingGpuBytes=0;
     for(const [id,texture] of this.drawingTextures??[]){
-      if(!liveTextures.has(texture)){texture.texture.destroy();this.drawingTextures.delete(id);continue;}
-      const drawing=texture.drawing;if(texture.stamp===drawing.stamp&&texture.rectKey===texture.nextRectKey)continue;
+      const drawing=texture.drawing;
+      drawingGpuBytes+=texture.bytes;
+      if(!liveTextures.has(texture)||!drawing)continue;
+      if(texture.stamp===drawing.stamp&&texture.rectKey===texture.nextRectKey)continue;
       const canvas=texture.canvas;if(!canvas)continue;
       // A re-anchored scratch was repainted wholesale; only same-rect updates
       // can ship the dirty subregion.
@@ -980,8 +998,17 @@ class WebGPURenderer {
       if(r.width>0&&r.height>0)this.device.queue.copyExternalImageToTexture({source:canvas,origin:[r.x,r.y]},{texture:texture.texture,origin:[r.x,r.y],premultipliedAlpha:true},[r.width,r.height]);
       texture.stamp=drawing.stamp;texture.rectKey=texture.nextRectKey;drawing.dirty=null;
     }
+    // Retain textures past their layout slot; evict least-recently-used only
+    // when the drawing texture budget is exceeded (Map order is MRU-last).
+    if(drawingGpuBytes>this.drawingTextureBudget){
+      for(const [id,texture] of this.drawingTextures){
+        if(drawingGpuBytes<=this.drawingTextureBudget)break;
+        if(liveTextures.has(texture))continue;
+        texture.texture.destroy();this.drawingTextures.delete(id);drawingGpuBytes-=texture.bytes;
+      }
+    }
+    this.stats.drawingGpuBytes=drawingGpuBytes;
     if(this.measureFrame){this.telemetryStages.prepare=performance.now()-measureAt;measureAt=performance.now();}
-    this.stats.drawingGpuBytes=[...(this.drawingTextures?.values()??[])].reduce((n,t)=>n+t.bytes,0);
     const matrix = cameraMatrix(options), zoom = Number(view.scale ?? 1), x = Number(view.x ?? 0), y = Number(view.y ?? 0);
     const uniform = new Float32Array([matrix[0], matrix[2], matrix[4], Math.hypot(matrix[0], matrix[1]), matrix[1], matrix[3], matrix[5], view.rotation??0, this.width, this.height, this.dpr, options.clipToCanvas === false ? 0 : 1, x, y, x + report.canvas_width * zoom, y + report.canvas_height * zoom]);
     this.device.queue.writeBuffer(this.uniform, 0, uniform);

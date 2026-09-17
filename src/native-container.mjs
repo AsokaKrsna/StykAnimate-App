@@ -263,7 +263,7 @@ export function liftDocument(document, {preBlobs = []} = {}) {
       if (value.length >= LIFT_MIN_STRING) {
         let base64 = null, prefix = '';
         if (B64_FIELDS.has(key)) base64 = value;
-        else if (key === 'data_url' && value.startsWith('data:')) {
+        else if ((key === 'data_url' || key === 'styk_tiles') && value.startsWith('data:')) {
           const comma = value.indexOf(',');
           if (comma > 5 && value.slice(0, comma).endsWith(';base64')) { base64 = value.slice(comma + 1); prefix = value.slice(0, comma + 1); }
         }

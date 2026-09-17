@@ -3,6 +3,7 @@ import { createObject, createFrame } from "./demo.mjs";
 import { buildGeometry, drawGeometry } from "./pivot/geometry.mjs";
 import { objectBounds } from "./renderer-geometry.mjs";
 import {movieclipAssetFigures} from './movieclips.mjs';
+import {drawingMetadata} from './drawing-model.mjs';
 
 const ROW_HEIGHT = 74;
 const THUMB_SIZE = 54;
@@ -526,7 +527,13 @@ export class AssetLibrary {
       };
     const loaded = new Map();
     let pixels = 0;
+    // v2 drawing cels carry a 1×1 carrier; their pixels come from the tile
+    // store, so load those stores instead of decoding the placeholder.
+    const drawingFigures = nested.filter(f => drawingMetadata(f)?.version === 2);
+    if (drawingFigures.length && this.resources.drawingLoad)
+      await Promise.all(drawingFigures.map(f => this.resources.drawingLoad(f)));
     for (const asset of imageAssets) {
+      if (asset.styk_tiles !== undefined || drawingFigures.some(f => f.image_assets?.includes(asset))) continue;
       const url = this.resources.url?.(asset) || defaultUrl(asset);
       if (!url || loaded.has(url)) continue;
       const image = await this.loadImage(url, generation);
@@ -547,6 +554,7 @@ export class AssetLibrary {
     const resources = {
       url: (asset) => this.resources.url?.(asset) || defaultUrl(asset),
       image: (url) => loaded.get(url),
+      drawing: (fig) => this.resources.drawing?.(fig),
     };
     const object = createObject(figure, 1, 0, 0);
     const geometry = buildGeometry(

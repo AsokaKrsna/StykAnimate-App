@@ -8,8 +8,8 @@ export const drawingMetadata = figure => figure?._styk?.drawing;
 export const isDrawingLayer = layer => layer?.drawing?.version === 1;
 export function drawingId() { return `cel-${globalThis.crypto.randomUUID()}`; }
 /** v2 drawing cel: an ordinary image figure whose raster lives in the sparse
- * tile blob on image_assets[0].styk_tiles. The carrier PNG on data_url is a
- * derived, bounds-sized preview so legacy asset consumers keep working. */
+ * tile blob on image_assets[0].styk_tiles. The carrier PNG on data_url stays
+ * 1×1 transparent; every consumer reads tiles through a presenter. */
 export function createDrawingFigure({pixelsPerUnit=1,figureTypeId=1,celId=drawingId()}={}) {
   if (![1,2,4].includes(pixelsPerUnit)) throw new Error('Choose 1×, 2× or 4× drawing resolution.');
   const figure=createImageFigure({width:256,height:1,dataUrl:EMPTY_PNG,figureTypeId,name:'Drawing'});
@@ -35,7 +35,10 @@ export function migrateDrawingFigure(figure,typeId,{celId=drawingId(),bounds=nul
   const copy=structuredClone(figure),a=copy.image_assets[0];
   copy.figure_type_id=typeId;delete a.styk_tiles;
   const anchor={x:((a.anchor_start?.x??0)+old.crop.x)*anchorScale,y:((a.anchor_start?.y??0)+old.crop.y)*anchorScale};
-  Object.assign(a,{data_url:EMPTY_PNG,width:1,height:1,display_width:1,display_height:1,drawing_anchor:anchor});
+  // v2 keeps anchor_start fixed at drawing_anchor so sprite-space and
+  // pixel-space matrices coincide; anchor_end preserves length and direction.
+  const end={x:anchor.x+(a.anchor_end?.x??0)-(a.anchor_start?.x??0),y:anchor.y+(a.anchor_end?.y??0)-(a.anchor_start?.y??0)};
+  Object.assign(a,{data_url:EMPTY_PNG,width:1,height:1,display_width:1,display_height:1,anchor_start:{...anchor},anchor_end:end,drawing_anchor:anchor});
   copy._styk.drawing={version:2,celId,pixelsPerUnit:old.pixelsPerUnit,revision:0,bounds:bounds?{...bounds}:null};
   return copy;
 }
@@ -44,16 +47,6 @@ export function drawingPixelBounds(figure) {
   const d=drawingMetadata(figure);if(!d)return null;
   if(d.version===1)return{x:0,y:0,width:d.width,height:d.height};
   return d.bounds?{...d.bounds}:null;
-}
-/** Keep the carrier's placement fields consistent with the v2 bounds metadata
- * so the published PNG preview and bounds consumers stay correct. The derived
- * PNG covers only the bounds, so its anchor_start is the drawing_anchor
- * expressed in PNG coordinates: drawing_anchor - bounds origin. */
-export function syncDrawingAsset(figure) {
-  const d=drawingMetadata(figure),a=figure?.image_assets?.[0];if(!a||d?.version!==2)return;
-  const anchor=a.drawing_anchor??{x:0,y:0},b=d.bounds;
-  const start=b?{x:anchor.x-b.x,y:anchor.y-b.y}:{x:anchor.x,y:anchor.y};
-  Object.assign(a,{display_width:Math.max(1,b?.width??1),display_height:Math.max(1,b?.height??1),anchor_start:start,anchor_end:{x:start.x+a.anchor_length,y:start.y}});
 }
 const integerRect=r=>r&&[r.x,r.y,r.width,r.height].every(Number.isSafeInteger)&&r.width>0&&r.height>0&&r.width<=16384&&r.height<=16384&&r.width*r.height<=4*DRAWING_MAX_PIXELS;
 export function validateDrawingFigure(figure) {
@@ -72,7 +65,7 @@ export function validateDrawingFigure(figure) {
   const a=figure.image_assets?.[0];
   if(figure.segments?.length!==1||figure.segments[0].segment_type!=='image'||figure.image_assets.length!==1||!a?.data_url?.startsWith('data:image/png;base64,')||
     (d.version===1&&!((a.width===d.crop.width&&a.height===d.crop.height)||(d.empty&&a.width===1&&a.height===1)))||
-    (d.version===2&&!((a.width===1&&a.height===1)||(d.bounds&&a.width===d.bounds.width&&a.height===d.bounds.height))))
+    (d.version===2&&!(a.width===1&&a.height===1&&a.display_width===1&&a.display_height===1)))
     throw new Error('A drawing needs one embedded PNG sprite matching its pixel dimensions.');
   if(a.data_url.length>96*1024*1024)throw new Error('Drawing PNG exceeds the asset limit.');
   if(d.version===2&&a.styk_tiles!==undefined&&(typeof a.styk_tiles!=='string'||!a.styk_tiles.startsWith(TILE_BLOB_PREFIX)||a.styk_tiles.length>TILE_BLOB_PREFIX.length+96*1024*1024))throw new Error('Invalid drawing tile blob.');
@@ -96,8 +89,8 @@ export function validateDrawings(report) {
 }
 
 /** Sprite pixel → world affine, matching Pivot's image compositor exactly. The
- * optional anchor selects the sprite-space origin; v2 cels anchor placement at
- * the published bounds while tiles stay anchored at drawing_anchor. */
+ * optional anchor selects the sprite-space origin; v2 carriers fix
+ * anchor_start at drawing_anchor so both matrices coincide. */
 export function drawingMatrix(item,anchor) {
   const a=item.asset,reverse=Boolean(item.seg.extra_u8_a??item.seg.extra?.[1]),mirror=Boolean(item.seg.extra_u8_b??item.seg.extra?.[2])!==Boolean(item.obj.image_text_flags);
   anchor??=a.anchor_start;

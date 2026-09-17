@@ -1,8 +1,8 @@
-import {drawingMetadata,syncDrawingAsset,EMPTY_PNG,DRAWING_MAX_PIXELS} from './drawing-model.mjs';
-import {TileStore,TILE_BYTES,tileKey,tileTransparent} from './drawing-tiles.mjs';
+import {drawingMetadata,EMPTY_PNG} from './drawing-model.mjs';
+import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from './drawing-tiles.mjs';
 import {applyTileChanges} from './drawing-pixels.mjs';
-import {TILE_BLOB_PREFIX,assembleTileBlobBytes,tileStoreFromList} from './drawing-tile-codec.mjs';
-import {presenterScratch} from './drawing-raster.mjs';
+import {tileStoreFromList} from './drawing-tile-codec.mjs';
+import {presenterScratch,levelStore,invalidateLevels} from './drawing-raster.mjs';
 
 const owners=new WeakMap(),clipboardPixels=new WeakMap();
 export const drawingClipboardPixels=clipboard=>clipboardPixels.get(clipboard);
@@ -44,7 +44,6 @@ export class StrokeWorker {
   dispose(){this.worker?.terminate();this.worker=null;}
 }
 
-const base64=bytes=>{let text='';for(let i=0;i<bytes.length;i+=16384)text+=String.fromCharCode(...bytes.subarray(i,i+16384));return btoa(text);};
 const sideBytes=s=>s==null?0:s.byteLength===4?TILE_BYTES:s.byteLength;
 const tilePayload=(store,rect)=>{const tiles=[];for(const [tx,ty] of TileStore.tilesInRect(rect.x,rect.y,rect.width,rect.height)){const tile=store.get(tx,ty);if(tile)tiles.push({tx,ty,pixels:tile.pixels.slice().buffer});}return tiles;};
 
@@ -52,19 +51,29 @@ const tilePayload=(store,rect)=>{const tiles=[];for(const [tx,ty] of TileStore.t
  * the per-tile PNG blob on image_assets[0].styk_tiles plus a bounds-sized
  * preview PNG on data_url keep legacy asset consumers working. */
 export class DrawingResources {
-  constructor(report,{tileBytes=192*1024*1024,onChange=()=>{},onError=()=>{},worker,strokeWorker}={}) {
-    Object.assign(this,{report,tileBudget:tileBytes,onChange,onError,entries:new Map(),worker:worker??new DrawingWorker(),decodeWorker:worker??new DrawingWorker(),strokeWorker:strokeWorker??new StrokeWorker(),generation:1,surfaceVersion:0,decodeQueue:[],thumbnailQueue:new Map(),thumbnailCache:new Map(),thumbnailWorker:worker??new DrawingWorker()});owners.set(report,this);
+  constructor(report,{tileBytes=192*1024*1024,levelBytes=64*1024*1024,scratchBytes=64*1024*1024,onChange=()=>{},onError=()=>{},worker,strokeWorker}={}) {
+    Object.assign(this,{report,tileBudget:tileBytes,levelBudget:levelBytes,scratchBudget:scratchBytes,onChange,onError,entries:new Map(),worker:worker??new DrawingWorker(),decodeWorker:worker??new DrawingWorker(),strokeWorker:strokeWorker??new StrokeWorker(),generation:1,surfaceVersion:0,decodeQueue:[],thumbnailQueue:new Map(),thumbnailCache:new Map(),thumbnailWorker:worker??new DrawingWorker()});owners.set(report,this);
   }
   entry(figure) {
     const d=drawingMetadata(figure);let entry=this.entries.get(d.celId);
-    if(!entry){entry={id:d.celId,store:null,revision:d.revision,published:null,loading:null,pinned:false,used:performance.now(),stamp:0,dirty:null,deferred:[]};this.entries.set(d.celId,entry);}return entry;
+    if(!entry){entry={id:d.celId,store:null,revision:d.revision,published:null,loading:null,pinned:false,used:performance.now(),stamp:0,dirty:null,deferred:[],levels:null,levelsUsed:0,owner:this};this.entries.set(d.celId,entry);}return entry;
   }
-  get stats(){let tiles=0,bytes=0,unpublished=0;for(const e of this.entries.values()){if(e.store){tiles+=e.store.size;bytes+=e.store.bytes;}if((e.store||e.deferred?.length)&&e.published?.revision!==e.revision)unpublished++;}return {tiles,bytes,entries:this.entries.size,unpublished,inFlight:this.encoding?1:0};}
+  get stats(){let tiles=0,bytes=0,levelBytes=0,scratchBytes=0,unpublished=0;for(const e of this.entries.values()){if(e.store){tiles+=e.store.size;bytes+=e.store.bytes;}for(const level of e.levels??[])levelBytes+=level?.bytes??0;if(e._scratch?.canvas)scratchBytes+=e._scratch.canvas.width*e._scratch.canvas.height*4;if((e.store||e.deferred?.length)&&e.published?.revision!==e.revision)unpublished++;}return {tiles,bytes,levelBytes,scratchBytes,entries:this.entries.size,unpublished,inFlight:this.encoding?1:0};}
+  dropScratch(e){if(!e._scratch)return;if(e._scratch.canvas)e._scratch.canvas.width=e._scratch.canvas.height=1;e._scratch=null;}
+  /** Rebuildable presenter scratch canvases yield to newer work first. */
+  scratchReserved(entry){let bytes=this.stats.scratchBytes;for(const e of [...this.entries.values()].sort((a,b)=>a.used-b.used)){if(bytes<=this.scratchBudget)break;if(e===entry||!e._scratch?.canvas)continue;bytes-=e._scratch.canvas.width*e._scratch.canvas.height*4;this.dropScratch(e);}}
+  /** Derived mip chains are the cheapest cache: evict least-recently-used first. */
+  levelsReserved(entry){entry.levelsUsed=performance.now();let bytes=this.stats.levelBytes;for(const e of [...this.entries.values()].sort((a,b)=>a.levelsUsed-b.levelsUsed)){if(bytes<=this.levelBudget)break;if(e===entry||!e.levels)continue;bytes-=e.levels.reduce((n,l)=>n+(l?.bytes??0),0);e.levels=null;}}
   reserve(bytes,except) {
     const resident=()=>this.stats.bytes;
+    if(resident()+bytes<=this.tileBudget)return;
+    // Rebuildable memory frees before authoritative tiles: presenter
+    // scratches, then derived mip levels, then published-and-clean stores.
+    for(const e of this.entries.values())if(e!==except)this.dropScratch(e);
+    for(const e of this.entries.values())if(e!==except)e.levels=null;
     for(const e of [...this.entries.values()].sort((a,b)=>a.used-b.used)){
       if(resident()+bytes<=this.tileBudget)break;
-      if(e===except||e.pinned||!e.store||e.published?.revision!==e.revision)continue;e.store=null;this.surfaceVersion++;
+      if(e===except||e.pinned||!e.store||e.published?.revision!==e.revision)continue;e.store=null;e.levels=null;this.surfaceVersion++;
     }
     if(resident()+bytes>this.tileBudget)throw new Error('Drawing memory is full. Choose 1× resolution or finish the current edit.');
   }
@@ -74,7 +83,7 @@ export class DrawingResources {
   install(figure,tiles){
     const e=this.entry(figure),store=new TileStore();
     for(const t of tiles??[])store.set(t.tx,t.ty,new Uint8ClampedArray(t.pixels));
-    e.store=store;e.deferred=[];e.published=null;e.revision=drawingMetadata(figure).revision;e.stamp++;e.dirty=store.bounds?{...store.bounds}:null;this.surfaceVersion++;this.onChange();this.schedule();return e;
+    e.store=store;e.deferred=[];e.published=null;e.revision=drawingMetadata(figure).revision;e.stamp++;e.dirty=store.bounds?{...store.bounds}:null;e.levels=null;this.dropScratch(e);this.surfaceVersion++;this.onChange();this.schedule();return e;
   }
   discard(figure){const id=drawingMetadata(figure)?.celId,e=this.entries.get(id);if(!e||this.report.figure_types.some(f=>drawingMetadata(f)?.celId===id))return;this.entries.delete(id);this.surfaceVersion++;this.onChange();}
   async surface(figure) {
@@ -88,7 +97,7 @@ export class DrawingResources {
       if(this.disposed||generation!==this.generation)throw new DOMException('Drawing changed.','AbortError');
       const store=tileStoreFromList(result.tiles);
       for(const step of e.deferred)applyTileChanges(store,step.changes,step.direction);
-      e.deferred=[];this.reserve(store.bytes,e);e.store=store;e.stamp++;e.dirty=null;this.surfaceVersion++;
+      e.deferred=[];this.reserve(store.bytes,e);e.store=store;e.stamp++;e.dirty=null;e.levels=null;this.dropScratch(e);this.surfaceVersion++;
       e.published??={revision:base,url:d.version===2?asset.styk_tiles??null:null};
       this.onChange();return e;
     })().finally(()=>{e.loading=null;});return e.loading;
@@ -125,10 +134,13 @@ export class DrawingResources {
       this.thumbnailCache.get(id)?.canvas.remove();this.thumbnailCache.set(id,{version:job.version,canvas:c});while(this.thumbnailCache.size>256){const [old,entry]=this.thumbnailCache.entries().next().value;entry.canvas.width=entry.canvas.height=1;this.thumbnailCache.delete(old);}job.onReady?.();
     },error=>{if(error.name!=='AbortError')this.onError(error);}).finally(()=>{this.thumbnailActive=null;this.pumpThumbnail();});
   }
-  /** The renderer-facing presenter: the live store plus a scratch rasterizer. */
-  presenter(figure){const e=this.entry(figure);e.scratch??=rect=>presenterScratch(e,rect);return e;}
+  /** The renderer-facing presenter: the live store plus scratch and mip
+   * rasterizers. Levels are entry-owned caches rebuilt lazily and evicted
+   * first under memory pressure. */
+  presenter(figure){const e=this.entry(figure);e.used=performance.now();e.scratch??=(rect,options)=>presenterScratch(e,rect,options);e.level??=k=>{e.levelsUsed=performance.now();return levelStore(e,k);};return e;}
   present(e,dirty) {
     const rect=dirty?{x:dirty.x,y:dirty.y,width:(dirty.right??dirty.x+dirty.width)-dirty.x,height:(dirty.bottom??dirty.y+dirty.height)-dirty.y}:null;
+    invalidateLevels(e,rect);
     e.stamp++;e.dirty=rect?(e.dirty?{x:Math.min(e.dirty.x,rect.x),y:Math.min(e.dirty.y,rect.y),width:Math.max(e.dirty.x+e.dirty.width,rect.x+rect.width)-Math.min(e.dirty.x,rect.x),height:Math.max(e.dirty.y+e.dirty.height,rect.y+rect.height)-Math.min(e.dirty.y,rect.y)}:rect):null;
     this.onChange();
   }
@@ -139,8 +151,9 @@ export class DrawingResources {
     if(e.store){applyTileChanges(e.store,changes,direction);e.store.prune();}
     else e.deferred.push({changes,direction});
     e.revision++;const d=drawingMetadata(figure);d.revision=e.revision;
-    if(d.version===2&&e.store){d.bounds=e.store.bounds?{...e.store.bounds}:null;syncDrawingAsset(figure);}
-    this.present(e,e.store?.bounds??undefined);this.schedule();
+    if(d.version===2&&e.store)d.bounds=e.store.bounds?{...e.store.bounds}:null;
+    let dirty=null;for(const c of changes){const rect={x:c.tx*TILE,y:c.ty*TILE,width:TILE,height:TILE};dirty=dirty?{x:Math.min(dirty.x,rect.x),y:Math.min(dirty.y,rect.y),width:Math.max(dirty.x+dirty.width,rect.x+rect.width)-Math.min(dirty.x,rect.x),height:Math.max(dirty.y+dirty.height,rect.y+rect.height)-Math.min(dirty.y,rect.y)}:rect;}
+    this.present(e,dirty);this.schedule();
   }
   checkHistory(command,direction){
     const pending=new Map();const visit=c=>{if(c.commands){for(const child of direction==='before'?[...c.commands].reverse():c.commands)visit(child);}else if(c.kind==='drawing-pixels'){let tiles=pending.get(c.celId);if(!tiles)pending.set(c.celId,tiles=new Map());for(const tile of c.tiles)tiles.set(tileKey(tile.tx,tile.ty),sideBytes(tile[direction]));}};visit(command);
@@ -154,7 +167,7 @@ export class DrawingResources {
   pasteClipboard(forks,clipboard){
     const snapshots=clipboardPixels.get(clipboard);
     for(const [old,copy] of forks){const source=snapshots?.get(drawingMetadata(old).celId);if(!source)continue;const e=this.entry(copy);
-      e.published=source.published?{...source.published}:null;e.revision=source.revision;e.store=source.store?source.store.fork():null;e.deferred=[];
+      e.published=source.published?{...source.published}:null;e.revision=source.revision;e.store=source.store?source.store.fork():null;e.deferred=[];e.levels=null;this.dropScratch(e);
       if(source.loading&&!e.store)e.loading=source.loading.then(entry=>{if(!e.store)e.store=entry.store?.fork()??null;return e;});
       this.schedule();}
   }
@@ -162,7 +175,7 @@ export class DrawingResources {
   fork(old,copy) {
     const source=this.entry(old),target=this.entry(copy);
     target.published=source.published?{...source.published}:null;target.revision=source.revision;target.deferred=[];
-    if(source.store){if(source.store.bytes>this.tileBudget-this.stats.bytes)throw new Error('Wait for drawing publication before copying more drawings.');target.store=source.store.fork();}
+    if(source.store){if(source.store.bytes>this.tileBudget-this.stats.bytes)throw new Error('Wait for drawing publication before copying more drawings.');target.store=source.store.fork();target.levels=null;this.dropScratch(target);}
     else if(source.loading)target.loading=source.loading.then(entry=>{if(!target.store)target.store=entry.store?.fork()??null;return target;});
     this.schedule();
   }
@@ -178,9 +191,10 @@ export class DrawingResources {
     const revision=e.revision,generation=this.generation,figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===e.id);
     this.encoding=(async()=>{
       const tiles=[...e.store].filter(t=>!tileTransparent(t));
+      // Missing PNGs encode in the worker, which also assembles and base64s
+      // the publication blob so the main thread never builds it.
       const payload=tiles.map(t=>t.png?{tx:t.tx,ty:t.ty,png:t.png.slice().buffer}:{tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer});
-      const bounds=e.store.bounds,region=bounds&&bounds.width<=8192&&bounds.height<=8192&&bounds.width*bounds.height<=DRAWING_MAX_PIXELS?bounds:null;
-      const result=await this.worker.request('encode-tiles',{tiles:payload,region},{signal,transfer:payload.flatMap(t=>[t.pixels,t.png].filter(Boolean))});
+      const result=await this.worker.request('encode-tiles',{tiles:payload},{signal,transfer:payload.flatMap(t=>[t.pixels,t.png].filter(Boolean))});
       if(this.disposed||generation!==this.generation||revision!==e.revision)return;
       // Tiles replaced since the snapshot carry stale bytes; publish again.
       if(tiles.some(t=>e.store.get(t.tx,t.ty)!==t))return;
@@ -188,11 +202,10 @@ export class DrawingResources {
       for(const t of result.tiles??[]){const tile=sent.get(tileKey(t.tx,t.ty));if(tile&&e.store.get(t.tx,t.ty)===tile)tile.png=new Uint8Array(t.png);}
       e.store.freeze();
       const asset=figure.image_assets[0],d=drawingMetadata(figure);
-      if(tiles.length)asset.styk_tiles=TILE_BLOB_PREFIX+base64(assembleTileBlobBytes(tiles));else delete asset.styk_tiles;
-      if(result.dataUrl&&region){asset.data_url=result.dataUrl;asset.width=region.width;asset.height=region.height;}
-      else{asset.data_url=EMPTY_PNG;asset.width=asset.height=1;}
+      if(tiles.length)asset.styk_tiles=result.blobUrl;else delete asset.styk_tiles;
+      asset.data_url=EMPTY_PNG;asset.width=asset.height=asset.display_width=asset.display_height=1;
       // This is derived publication, never a semantic editor edit.
-      d.bounds=bounds?{...bounds}:null;d.revision=revision;syncDrawingAsset(figure);
+      d.bounds=e.store.bounds?{...e.store.bounds}:null;d.revision=revision;
       e.published={revision,url:asset.styk_tiles??null};e.failed=null;
       this.surfaceVersion++;this.onChange();
     })();

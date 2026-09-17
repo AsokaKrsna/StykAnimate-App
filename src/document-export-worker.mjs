@@ -12,6 +12,7 @@ import {validateMovieclipGraph,isMovieclip} from './movieclips.mjs';
 import {packPoseSequences} from './pose-sequence-storage.mjs';
 import {documentHasVfx} from './vfx.mjs';
 import {liftDocument, encodeContainerV2, validateNativeFigure} from './native-container.mjs';
+import {flattenDrawingFigures} from './drawing-flatten.mjs';
 
 let document, config, running = false;
 const timings = {};
@@ -91,6 +92,15 @@ self.addEventListener('message', async event => {
             doc.keyframes.some(f=>f.objects.some(o=>o._sticknodesSprite));
         };
         if(hasSourceShapes(document))throw Object.assign(new Error('Pivot cannot retain these Stick Nodes shapes. Save as .styk, .stykmov or .stkz to keep them editable, or export SVG, PNG or video.'), {telemetryCode: 'unsupported_feature'});
+      }
+      if (['piv','stk'].includes(config.format)) {
+        // Pivot formats cannot carry tile blobs: drawing cels flatten into
+        // ordinary sprites at source resolution (largest mip level past the
+        // 16 Mpx cap), with anchors rewritten so placement is identical.
+        const flattenStats = {}, flattening = performance.now();
+        timings.drawing_flattens = await flattenDrawingFigures(document, {stats: flattenStats});
+        if (flattenStats.downsampled) timings.drawing_downsampled = flattenStats.downsampled;
+        timings.drawing_flatten_ms = +(performance.now() - flattening).toFixed(3);
       }
       if (config.format === 'piv') {
         const composing = performance.now(), originalFrames = document.keyframes.length;

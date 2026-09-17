@@ -6,6 +6,9 @@ import { cameraMatrix } from './renderer-geometry.mjs';
 import { normalizeExportSmoothing } from './export-sampling.mjs';
 import {layerVisible} from './layers.mjs';
 import {activeVfx,vfxStack} from './vfx.mjs';
+import {drawingMetadata,EMPTY_PNG,DRAWING_MAX_PIXELS} from './drawing-model.mjs';
+import {decodeTileBlob,tileStoreFromList} from './drawing-tile-codec.mjs';
+import {flattenedDrawingPNG} from './drawing-raster.mjs';
 
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;'}[c]));
 const clamp = value => Math.max(0, Math.min(1, Number(value) || 0));
@@ -239,7 +242,19 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
         parts.push(`<g transform="translate(${number(start.x)} ${number(start.y)}) rotate(${number(angle * 180 / Math.PI)}) scale(${number(mirror ? -xs : xs)} ${number(s.obj.scale ?? 1)})">${glyphs.join('')}</g>`);
       } else if (s.type === 'image') {
         if (!s.asset?.anchor_length) continue;
-        const a = s.asset, image = await bitmap(a), reverse = Boolean(s.seg.extra_u8_a ?? s.seg.extra?.[1]), mirror = Boolean(s.seg.extra_u8_b ?? s.seg.extra?.[2]) !== Boolean(s.obj.image_text_flags);
+        let a = s.asset;
+        // SVG cannot carry tile blobs: flatten the store into a PNG at source
+        // resolution (the largest mip level under the pixel cap), with anchors
+        // rewritten into flattened-pixel coordinates so placement is identical.
+        if (drawingMetadata(s.fig)?.version === 2) {
+          const holder={store:tileStoreFromList(a.styk_tiles?await decodeTileBlob(a.styk_tiles):[])};
+          const flat=await flattenedDrawingPNG(holder,{maxPixels:DRAWING_MAX_PIXELS});
+          const anchor=a.drawing_anchor??a.anchor_start??{x:0,y:0};
+          a={...a,data_url:flat?.dataUrl??EMPTY_PNG,width:flat?.width??1,height:flat?.height??1,
+            display_width:(flat?.width??1)*(flat?.scale??1),display_height:(flat?.height??1)*(flat?.scale??1),
+            anchor_start:flat?{x:anchor.x-flat.x,y:anchor.y-flat.y}:anchor};
+        }
+        const image = await bitmap(a), reverse = Boolean(s.seg.extra_u8_a ?? s.seg.extra?.[1]), mirror = Boolean(s.seg.extra_u8_b ?? s.seg.extra?.[2]) !== Boolean(s.obj.image_text_flags);
         const start = reverse ? s.end : s.start, angle = (mirror ? s.angle + a.anchor_angle_rad - Math.PI : s.angle - a.anchor_angle_rad) + (reverse ? Math.PI : 0);
         const scale = Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) / a.anchor_length;
         parts.push(await imageElement(image, `translate(${number(start.x)} ${number(start.y)}) rotate(${number(angle * 180 / Math.PI)}) scale(${number(mirror ? -scale : scale)} ${number(scale)}) translate(${number(-a.anchor_start.x)} ${number(-a.anchor_start.y)}) scale(${number(a.display_width ? a.display_width / a.width : 1)} ${number(a.display_height !== undefined ? a.display_height / a.height : 1)})`, scale, s.alpha, Boolean(s.fig?._styk?.drawing)));

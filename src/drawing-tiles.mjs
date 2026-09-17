@@ -9,7 +9,7 @@ export function tileTransparent(tile){tile.alphaBounds??=alphaBounds(tile.pixels
 /** Sparse unbounded pixel surface. Tiles are shared by reference until a
  * writable() or fork() call marks them frozen, after which mutation copies. */
 export class TileStore {
-  constructor(tiles=new Map()){this.tiles=tiles;this._bounds=undefined;}
+  constructor(tiles=new Map()){this.tiles=tiles;this._bounds=undefined;this._tileBounds=undefined;}
   get(tx,ty){return this.tiles.get(tileKey(tx,ty));}
   has(tx,ty){return this.tiles.has(tileKey(tx,ty));}
   get size(){return this.tiles.size;}
@@ -17,21 +17,22 @@ export class TileStore {
   keys(){return this.tiles.keys();}
   values(){return this.tiles.values();}
   [Symbol.iterator](){return this.tiles.values();}
+  _changed(){this._bounds=undefined;this._tileBounds=undefined;}
   writable(tx,ty,{create=true}={}) {
     const key=tileKey(tx,ty);let tile=this.tiles.get(key);
-    if(!tile){if(!create)return null;tile={tx,ty,pixels:new Uint8ClampedArray(TILE_BYTES),frozen:false};this.tiles.set(key,tile);this._bounds=undefined;return tile;}
+    if(!tile){if(!create)return null;tile={tx,ty,pixels:new Uint8ClampedArray(TILE_BYTES),frozen:false};this.tiles.set(key,tile);this._changed();return tile;}
     if(tile.frozen){tile={tx,ty,pixels:tile.pixels.slice(),frozen:false};this.tiles.set(key,tile);}
-    tile.png=undefined;tile.alphaBounds=undefined;this._bounds=undefined;return tile;
+    tile.png=undefined;tile.alphaBounds=undefined;this._changed();return tile;
   }
   set(tx,ty,pixels) {
     const key=tileKey(tx,ty);
-    if(pixels==null){if(this.tiles.delete(key))this._bounds=undefined;return;}
+    if(pixels==null){if(this.tiles.delete(key))this._changed();return;}
     let full;
     if(pixels.byteLength===4){full=new Uint8ClampedArray(TILE_BYTES);const word=new Uint32Array(Uint8Array.from(pixels).buffer)[0];new Uint32Array(full.buffer).fill(word);}
     else{full=new Uint8ClampedArray(pixels);if(full.byteLength!==TILE_BYTES)throw new Error('Tile pixels must be 4 uniform bytes or one full tile.');}
-    this.tiles.set(key,{tx,ty,pixels:full,frozen:false});this._bounds=undefined;
+    this.tiles.set(key,{tx,ty,pixels:full,frozen:false});this._changed();
   }
-  delete(tx,ty){if(this.tiles.delete(tileKey(tx,ty)))this._bounds=undefined;}
+  delete(tx,ty){if(this.tiles.delete(tileKey(tx,ty)))this._changed();}
   fork(){for(const tile of this.tiles.values())tile.frozen=true;return new TileStore(new Map(this.tiles));}
   freeze(){for(const tile of this.tiles.values())tile.frozen=true;}
   get bounds() {
@@ -43,6 +44,14 @@ export class TileStore {
       x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x+tile.alphaBounds.width);y1=Math.max(y1,y+tile.alphaBounds.height);
     }
     return this._bounds=Number.isFinite(x0)?{x:x0,y:y0,width:x1-x0,height:y1-y0}:null;
+  }
+  /** Tile-aligned coverage: the rect exactly containing every present tile.
+   * Unlike `bounds` it is unaffected by alpha and never crops a tile. */
+  get tileBounds() {
+    if(this._tileBounds!==undefined)return this._tileBounds;
+    let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+    for(const tile of this.tiles.values()){x0=Math.min(x0,tile.tx);y0=Math.min(y0,tile.ty);x1=Math.max(x1,tile.tx);y1=Math.max(y1,tile.ty);}
+    return this._tileBounds=Number.isFinite(x0)?{x:x0*TILE,y:y0*TILE,width:(x1-x0+1)*TILE,height:(y1-y0+1)*TILE}:null;
   }
   readRect(x,y,width,height) {
     const out=new Uint8ClampedArray(width*height*4);
@@ -66,7 +75,7 @@ export class TileStore {
     if(!tile)return[0,0,0,0];
     const i=((y-tile.ty*TILE)*TILE+(x-tile.tx*TILE))*4;return[tile.pixels[i],tile.pixels[i+1],tile.pixels[i+2],tile.pixels[i+3]];
   }
-  prune(){const removed=[];for(const [key,tile] of this.tiles)if(tileTransparent(tile)){this.tiles.delete(key);removed.push(key);}if(removed.length)this._bounds=undefined;return removed;}
+  prune(){const removed=[];for(const [key,tile] of this.tiles)if(tileTransparent(tile)){this.tiles.delete(key);removed.push(key);}if(removed.length)this._changed();return removed;}
   static tilesInRect(x,y,width,height) {
     if(width<=0||height<=0)return[];
     const out=[],x1=Math.floor((x+width-1)/TILE),y1=Math.floor((y+height-1)/TILE);

@@ -1,4 +1,4 @@
-import {drawingMetadata,isDrawingLayer,createDrawingFigure,copyDrawingFigure,migrateDrawingFigure,syncDrawingAsset,EMPTY_PNG} from './drawing-model.mjs';
+import {drawingMetadata,isDrawingLayer,createDrawingFigure,copyDrawingFigure,migrateDrawingFigure,EMPTY_PNG} from './drawing-model.mjs';
 import {drawingSheetPlan,drawingSheetPublish} from './editor-layer-sheet.mjs';
 import {sheetKeyAt,MAX_SHEET_TICKS} from './layer-sheet.mjs';
 import {createFrame,createObject} from './demo.mjs';
@@ -14,7 +14,7 @@ export function applyDrawingCommand(editor,command,direction) {
   if(!figure)throw new Error('The drawing history references a missing cel.');
   editor.drawingResources.apply(figure,command.tiles,direction);
   const d=drawingMetadata(figure);
-  if(d.version===2){d.bounds=command[direction==='before'?'beforeBounds':'afterBounds']??null;syncDrawingAsset(figure);}
+  if(d.version===2)d.bounds=command[direction==='before'?'beforeBounds':'afterBounds']??null;
   editor._revision=command[`${direction}Revision`];editor._invalidate({timing:false});
   editor._emit('history',{label:command.label,definition:true,drawing:true});return true;
 }
@@ -87,9 +87,12 @@ export const editorDrawingMethods={
     const old=drawingMetadata(target.figure),ratio=pixelsPerUnit/old.pixelsPerUnit,typeId=this.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1);
     const figure=old.version===1?migrateDrawingFigure(target.figure,typeId,{bounds,anchorScale:ratio}):copyDrawingFigure(target.figure,typeId),asset=figure.image_assets[0];
     const fd=drawingMetadata(figure);fd.pixelsPerUnit=pixelsPerUnit;fd.bounds=bounds?{...bounds}:null;fd.revision=0;
-    if(old.version===2)asset.drawing_anchor={x:(asset.drawing_anchor?.x??0)*ratio,y:(asset.drawing_anchor?.y??0)*ratio};
-    asset.anchor_length*=ratio;figure.segments[0].length*=ratio;
-    delete asset.styk_tiles;asset.data_url=EMPTY_PNG;asset.width=asset.height=1;syncDrawingAsset(figure);
+    // Anchors sit in pixel space: rescaling pixels rescales them. anchor_start
+    // stays pinned to drawing_anchor and anchor_end keeps its direction.
+    const direction=asset.anchor_length?{x:(asset.anchor_end.x-asset.anchor_start.x)/asset.anchor_length,y:(asset.anchor_end.y-asset.anchor_start.y)/asset.anchor_length}:{x:1,y:0};
+    if(old.version===2){const anchor={x:(asset.drawing_anchor?.x??0)*ratio,y:(asset.drawing_anchor?.y??0)*ratio};asset.anchor_start={...anchor};asset.drawing_anchor=anchor;}
+    asset.anchor_length*=ratio;asset.anchor_end={x:asset.anchor_start.x+direction.x*asset.anchor_length,y:asset.anchor_start.y+direction.y*asset.anchor_length};figure.segments[0].length*=ratio;
+    delete asset.styk_tiles;asset.data_url=EMPTY_PNG;asset.width=asset.height=asset.display_width=asset.display_height=1;
     const object=structuredClone(target.object);object.figure_type_id=figure.figure_type_id;object.scale*=old.pixelsPerUnit/pixelsPerUnit;if(object.len_flag)object.lengths=object.lengths.map(n=>n*ratio);
     const plan=drawingSheetPlan(this,[target.id]);plan.definitions=[...this.report.figure_types,figure];plan.write(target.id,target.key.tick,createFrame([object]),{easing:{interpolation:'constant'}});
     const result=drawingSheetPublish(this,plan,'Resample drawing',{assets:{figure_types:{added:[figure]}}});

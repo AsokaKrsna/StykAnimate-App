@@ -2,6 +2,7 @@ import earcut from '../vendor/earcut.mjs';
 import {hasDrawableVfx,drawableVfxPadding} from './vfx-canvas.mjs';
 import { mixColor } from './pivot/geometry.mjs';
 import { cameraIsIdentity, inverseCameraScale, effectiveCamera } from './pivot/background.mjs';
+import { drawingPixelBounds } from './drawing-model.mjs';
 
 // Each record is six aligned vec4s, consumed directly by the GPU storage buffer.
 export const SHAPE_FLOATS = 24;
@@ -190,11 +191,15 @@ export function objectBounds(items, resources = {}) {
     else for (const p of s.points || []) include(p.x, p.y, pad);
     if (s.type === 'image' && s.asset) {
       const a = s.asset, image = resources.image?.(resources.url?.(a));
-      const width = a.display_width ?? (image?.naturalWidth || a.width || a.pixel_width || 1), height = a.display_height ?? (image?.naturalHeight || a.height || a.pixel_height || 1);
+      // v2 drawings size from authoritative tile bounds; the 1×1 carrier PNG
+      // is never a raster source. A live store covers strokes still in flight.
+      const tiles = resources.drawing?.(s.fig)?.store?.bounds ?? drawingPixelBounds(s.fig);
+      const width = tiles?.width ?? a.display_width ?? (image?.naturalWidth || a.width || a.pixel_width || 1), height = tiles?.height ?? a.display_height ?? (image?.naturalHeight || a.height || a.pixel_height || 1);
+      const bx = tiles?.x ?? 0, by = tiles?.y ?? 0;
       const reverse = Boolean(s.seg.extra_u8_a ?? s.seg.extra?.[1]), mirror = Boolean(s.seg.extra_u8_b ?? s.seg.extra?.[2]) !== Boolean(s.obj.image_text_flags);
       const start = reverse ? s.end : s.start, angle = (mirror ? s.angle + a.anchor_angle_rad - Math.PI : s.angle - a.anchor_angle_rad) + (reverse ? Math.PI : 0);
       const scale = Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) / (a.anchor_length || 1), cos = Math.cos(angle), sin = Math.sin(angle);
-      for (const [x, y] of [[0, 0], [width, 0], [width, height], [0, height]]) {
+      for (const [x, y] of [[bx, by], [bx + width, by], [bx + width, by + height], [bx, by + height]]) {
         const px = (x - (a.anchor_start?.x || 0)) * scale * (mirror ? -1 : 1), py = (y - (a.anchor_start?.y || 0)) * scale;
         include(start.x + px * cos - py * sin, start.y + px * sin + py * cos, pad);
       }

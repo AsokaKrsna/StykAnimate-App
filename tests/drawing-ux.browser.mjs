@@ -42,7 +42,10 @@ try{
   await page.keyboard.press('Control+z');check('stroke undo restores the same cel',await page.evaluate(()=>styk.editor.drawingTarget().figure._styk.drawing.celId===oldDrawing.id));
   await page.keyboard.press('Control+Shift+z');await page.evaluate(()=>styk.drawing.prepareVisible());check('redo restores the painted tiles exactly',await page.evaluate(()=>{const t=styk.editor.drawingTarget(),s=styk.drawing.owner.entry(t.figure);return t.figure._styk.drawing.celId===grownDrawing.id&&pixEq(pix(s.store),grownDrawing.snap);}));
   await page.evaluate(()=>styk.drawing.barrier());
-  check('tile cel publishes exact PNG pixels',await page.evaluate(async()=>{const {decodeDrawingPNG}=await import('/src/drawing-png.mjs'),f=styk.editor.drawingTarget().figure,p=await decodeDrawingPNG(f.image_assets[0].data_url),snap=grownDrawing.snap;return p.width===snap.bounds.width&&p.height===snap.bounds.height&&p.pixels.every((v,i)=>v===snap.pixels[i]);}));
+  check('tile cel publishes exact tile pixels',await page.evaluate(async()=>{const {decodeTileBlob}=await import('/src/drawing-tile-codec.mjs'),{TileStore}=await import('/src/drawing-tiles.mjs'),f=styk.editor.drawingTarget().figure,snap=grownDrawing.snap;
+    const tiles=await decodeTileBlob(f.image_assets[0].styk_tiles),store=new TileStore();
+    for(const t of tiles)store.set(t.tx,t.ty,t.pixels);
+    return pixEq(pix(store),snap);}));
   check('pixel paste into a blank cel preserves artwork and its world origin',await page.evaluate(async()=>{
     const e=styk.editor,d=styk.drawing,target=e.drawingTarget(),surface=await d.owner.surface(target.figure),B=surface.store.bounds;
     d.makeSelection({target,surface,points:[{x:B.x,y:B.y},{x:B.x+B.width,y:B.y},{x:B.x+B.width,y:B.y+B.height},{x:B.x,y:B.y+B.height}]});await d.action('copy-pixels');d.cancelSelection();e.addDrawingFrame();await d.action('paste-pixels');
