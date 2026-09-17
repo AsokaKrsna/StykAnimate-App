@@ -17,6 +17,10 @@ export class DrawingTileProvider {
   }
   /** Decode styk_tiles blobs into tile stores. v1 cels keep the PNG path. */
   async prepare(figures) {
+    // Collect every cel this draw needs before evicting: the budget is a
+    // retention target and must never remove what the current draw reads.
+    const needed=new Set();
+    for(const figure of figures??[]){const d=drawingMetadata(figure);if(d?.version===2)needed.add(d.celId);}
     for(const figure of figures??[]){
       const d=drawingMetadata(figure);
       if(!d||d.version!==2)continue;
@@ -29,9 +33,8 @@ export class DrawingTileProvider {
       e.scratch=(rect,options)=>presenterScratch(e,rect,options);
       e.level=k=>{e.levelsUsed=++this.clock;return levelStore(e,k);};
       this.entries.set(d.celId,e);this.bytes+=e.bytes;
-      // The just-prepared cel is needed by this draw; older entries evict first.
-      for(const [id,old] of this.entries){if(this.bytes<=this.budgetBytes||old===e)break;this.entries.delete(id);this.bytes-=old.bytes;}
     }
+    for(const [id,old] of this.entries){if(this.bytes<=this.budgetBytes)break;if(needed.has(id))continue;this.entries.delete(id);this.bytes-=old.bytes;}
   }
   dispose(){this.entries.clear();this.bytes=0;}
 }

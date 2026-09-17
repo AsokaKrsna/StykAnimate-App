@@ -727,7 +727,17 @@ class WebGPURenderer {
     const artworkView = opacityArtwork(g,items);
     const {source,items:sourceItems} = artworkView;
     const uid = uidOf(g), prior = this.entries.get(key); let data, texture;
-    const drawing=sourceItems.length===1&&!isOnion&&drawingMetadata(sourceItems[0].fig)&&this.resources.drawing?.(sourceItems[0].fig);
+    const drawingMeta=sourceItems.length===1&&!isOnion?drawingMetadata(sourceItems[0].fig):null;
+    const drawing=drawingMeta&&this.resources.drawing?.(sourceItems[0].fig);
+    if(drawing&&!drawing.store&&drawingMeta.version===2&&!hasDrawableVfx(sourceItems[0])){
+      // An evicted v2 store re-decodes via the presenter; keep the last
+      // retained texture until then and never fall back to the stale
+      // published placeholder. v1 keeps the generic path below: its data URL
+      // is the real PNG.
+      const retained=prior?.texture?.drawing===drawing?prior:null;
+      const data=retained?retained.data:new Float32Array(shapeRecord({mode:SHAPE.DISABLED,transform:index}));
+      return {key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:retained?.texture??null};
+    }
     if(drawing?.store&&!hasDrawableVfx(sourceItems[0])) {
       const item=sourceItems[0],matrix=drawingPixelMatrix(item),bounds=drawing.store.bounds;
       // Visible pixel rect: viewport → world → cel pixel space.
@@ -754,7 +764,11 @@ class WebGPURenderer {
       }
       if(rect&&!scratch)throw new Error('Drawing exceeds the graphics device texture limit. Choose Canvas graphics mode.');
       if(scratch){
-        this.drawingTextures??=new Map();texture=this.drawingTextures.get(drawing.id);
+        // Textures key to the scratch anchor, not just the cel: alternating
+        // anchors keep independent canvases AND textures, so a deferred
+        // upload can never read a canvas repainted for another anchor.
+        this.drawingTextures??=new Map();
+        const textureKey=`${drawing.id}|${scratch.anchorKey}`;texture=this.drawingTextures.get(textureKey);
         const w=scratch.canvas.width,h=scratch.canvas.height,rectKey=`${level}:${scratch.x},${scratch.y},${w},${h}`;
         if(!texture||texture.width!==w||texture.height!==h){
           texture?.texture.destroy();
@@ -762,7 +776,7 @@ class WebGPURenderer {
           texture={texture:gpu,bindGroup:this.textureBindGroup(gpu),width:w,height:h,stamp:-1,rectKey:null,bytes:w*h*4};
         }
         // Most-recently-used ordering: the render loop evicts from the front.
-        this.drawingTextures.delete(drawing.id);this.drawingTextures.set(drawing.id,texture);
+        this.drawingTextures.delete(textureKey);this.drawingTextures.set(textureKey,texture);
         texture.drawing=drawing;texture.canvas=scratch.canvas;texture.dirty=scratch.dirty;texture.nextRectKey=rectKey;
         const q=2**level,ox=matrix[0]*scratch.x*q+matrix[2]*scratch.y*q+matrix[4],oy=matrix[1]*scratch.x*q+matrix[3]*scratch.y*q+matrix[5];
         data=new Float32Array(shapeRecord({a:[ox-source.root.x,oy-source.root.y,0,0],b:[matrix[0]*scratch.width*q,matrix[1]*scratch.width*q,matrix[2]*scratch.height*q,matrix[3]*scratch.height*q],mode:9,color:[1,1,1,sourceItems[0].alpha],transform:index}));
@@ -996,7 +1010,7 @@ class WebGPURenderer {
       const dirty=texture.stamp<0||texture.rectKey!==texture.nextRectKey?null:texture.dirty;
       const r=dirty?{x:dirty.x,y:dirty.y,width:dirty.width,height:dirty.height}:{x:0,y:0,width:canvas.width,height:canvas.height};
       if(r.width>0&&r.height>0)this.device.queue.copyExternalImageToTexture({source:canvas,origin:[r.x,r.y]},{texture:texture.texture,origin:[r.x,r.y],premultipliedAlpha:true},[r.width,r.height]);
-      texture.stamp=drawing.stamp;texture.rectKey=texture.nextRectKey;drawing.dirty=null;
+      texture.stamp=drawing.stamp;texture.rectKey=texture.nextRectKey;
     }
     // Retain textures past their layout slot; evict least-recently-used only
     // when the drawing texture budget is exceeded (Map order is MRU-last).

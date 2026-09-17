@@ -86,10 +86,16 @@ are not supported.
 ## Runtime and performance
 
 `drawing-resources.mjs` owns sparse tile stores, worker jobs and disposal for
-one report. Resident tiles are limited to 192 MiB; stores that match their
-published `styk_tiles` may be evicted and re-decoded on demand, while
-unpublished work is never evicted. Cold requests coalesce into a bounded
-queue: at most two decodes wait, and a newer seek supersedes the oldest.
+one report. Resident tiles are limited to 192 MiB; accounting deduplicates
+pixel buffers, so copy-on-write forks share counted bytes until they diverge.
+New work reserves before it is rejected: presenter scratches free first, then
+derived mip levels, then published-clean stores (which re-decode on demand),
+while unpublished work is never evicted. A presenter asked for an evicted cel
+kicks its re-decode itself — real failures back off behind `decodeError`
+instead of retrying every frame — and v2 renderers keep their last texture or
+draw nothing rather than flashing the stale 1×1 placeholder. Cold requests
+coalesce into a bounded queue: at most two decodes wait, and a newer seek
+supersedes the oldest.
 Seeking prefetches the two unique neighbouring cels on each side of the
 playhead plus the current one, queued last so it wins eviction. Thumbnails
 have one worker, at most 48 queued requests and 256 small cached images;
@@ -98,7 +104,13 @@ drawing textures follow the current layout and are released with it.
 
 `drawing-pixels.mjs` rasterizes real, distance-resampled samples. Stroke opacity
 caps the whole stroke, while flow accumulates dabs. Pressure release cannot
-remove previously deposited paint. Coalesced events have an ordinary-event
+remove previously deposited paint. Stabilization is a distance-windowed
+weighted average of the raw path — a linear-ramp centroid over
+`stabilization × 48` source pixels of trailing path length — so every input
+sample yields output with no dead zone and the finish drains the tail to the
+exact endpoint. Pushed points, raw or smoothed, are joined by quadratic
+midpoint segments sampled by arc length, which keeps corners smooth at zero
+lag. Coalesced events have an ordinary-event
 fallback. A gesture queued behind a closing stroke retains every sample;
 canvas publication coalesces into one animation-frame callback. Pointer
 capture, cancellation,
@@ -125,9 +137,13 @@ premultiplication rounding in saved pixels. Encoding is derived publication,
 not another edit.
 
 Live drawing textures participate in the normal scene compositor, including
-ordering, opacity, erasing, camera and clipping. Tiles are painted into a
-bounded scratch covering the visible tile rect; WebGPU uploads its dirty
-regions and Canvas draws it once. Overlays contain only cursor and selection
+ordering, opacity, erasing, camera and clipping. Tiles are painted into
+tile-anchored scratch canvases; each presenter keeps a bounded LRU of them,
+and a request contained in an already-painted cover reuses it without
+repainting, so zooming inside a painted region and alternating WebGPU/Canvas
+anchors never share or thrash one canvas. Each scratch tracks its own pending
+dirty rect; WebGPU uploads those dirty regions and Canvas draws the scratch
+once. Overlays contain only cursor and selection
 feedback. Canvas and SVG use smooth drawing filtering; imported Pivot sprites
 retain their existing sampling.
 

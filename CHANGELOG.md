@@ -13,6 +13,10 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 ### Fixed
 
 - Keep locked IK ancestors unchanged when posing attached figures on another layer, and clear rejected pose edits so saving, tools, and timeline navigation remain available.
+- Keep drawings visible after their tiles are evicted under memory pressure: cels re-decode on demand instead of disappearing or showing stale placeholders.
+- Count shared copy-on-write tiles once in drawing memory accounting, and free rebuildable caches before rejecting edits that exceed the tile budget.
+- Stop zooming and alternating render paths from repainting shared scratch canvases, removing flicker and unnecessary tile redraws while panning.
+- Smooth strokes without dead zones or gaps: stabilized drawing follows the path continuously, and unstabilized strokes curve through sharp corners and always end on the final sample.
 
 ## [1.0.6]
 

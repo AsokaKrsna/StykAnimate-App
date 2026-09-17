@@ -38,6 +38,30 @@ try{
   await page.mouse.move(end.x+40,end.y);await page.mouse.down();await page.mouse.up();
   await page.waitForFunction(r=>styk.editor.revision!==r,tapRevision);
   check('a quick tap after the stroke still commits its own dab',await page.evaluate(()=>styk.editor.undoLabel==='Brush stroke'));
+  // Stroke quality regressions, run against the same in-page stroke engine.
+  const quality=await page.evaluate(async()=>{
+    const {DrawingStroke}=await import('/src/drawing-pixels.mjs'),{TileStore}=await import('/src/drawing-tiles.mjs');
+    const near=(store,x,y,r)=>{for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++)if(store.pixel(Math.round(x)+dx,Math.round(y)+dy)[3]>100)return true;return false;};
+    // Jittery input at stabilization 0 plus a 90° corner: no ink gaps.
+    const jit=[{x:20,y:20}];let x=20,y=20;
+    for(let i=1;i<=20;i++)jit.push({x:x+=4,y:y+(i%2?1.6:-1.6)});
+    const cx=x,cy=y;for(let i=1;i<=20;i++)jit.push({x:cx,y:cy+i*4});
+    const a=new DrawingStroke(new TileStore(),{size:8,pressureSize:false,stabilization:0,spacingRatio:.2});
+    for(const p of jit)a.sample(p);a.finish();
+    let gaps=0;for(let i=1;i<jit.length;i++){const p=jit[i-1],q=jit[i],n=Math.max(1,Math.ceil(Math.hypot(q.x-p.x,q.y-p.y)/2));for(let j=0;j<=n;j++)if(!near(a.store,p.x+(q.x-p.x)*j/n,p.y+(q.y-p.y)*j/n,8))gaps++;}
+    // A slow small circle at stabilization .95 must follow the curve, not stall.
+    const circ=[];for(let i=0;i<=120;i++){const t=i/120*Math.PI*2;circ.push({x:200+20*Math.cos(t),y:200+20*Math.sin(t),time:i*50});}
+    const b=new DrawingStroke(new TileStore(),{size:10,pressureSize:false,stabilization:.95,spacingRatio:.1,pixelsPerUnit:1});
+    for(const p of circ)b.sample(p);b.finish();
+    let covered=0;for(const p of circ)if(near(b.store,p.x,p.y,24))covered++;
+    let painted=0,bb=b.store.bounds;for(let py=bb.y;py<bb.y+bb.height;py++)for(let px=bb.x;px<bb.x+bb.width;px++)if(b.store.pixel(px,py)[3]>100)painted++;
+    // The final dab lands exactly on the last sample at both stabilizations.
+    const end=stab=>{const store=new TileStore(),s=new DrawingStroke(store,{size:6,pressureSize:false,stabilization:stab,pixelsPerUnit:1});s.sample({x:10,y:10});s.sample({x:30,y:16});s.sample({x:47.3,y:22.6});s.finish();return Math.max(store.pixel(47,22)[3],store.pixel(47,23)[3],store.pixel(48,22)[3],store.pixel(48,23)[3]);};
+    return {gaps,covered:covered/circ.length,painted,end0:end(0),end95:end(.95)};
+  });
+  check('a jittery unstabilized stroke paints a continuous curve through its corner',quality.gaps===0);
+  check('a heavily stabilized slow stroke follows its curve instead of stalling',quality.covered>.9&&quality.painted>120);
+  check('stroke endpoints land exactly on the final sample',quality.end0>200&&quality.end95>200);
   const fill=await page.evaluate(async()=>{
     const d=styk.drawing,start=performance.now();
     const result=await d.owner.worker.request('fill',{bounds:{x:-2048,y:-2048,width:4096,height:4096},tiles:[],options:{x:-2048,y:-2048,color:[20,40,60,255],tolerance:16,expansion:1,gap:0},maxBytes:64*1024*1024});
@@ -45,6 +69,6 @@ try{
   });
   check('a 4096x4096 tile fill completes under one second',fill.ms<1000&&fill.tiles>1000);
   check('no uncaught browser errors',errors.length===0);
-  await writeFile(path.join(output,'stroke.json'),JSON.stringify({checks,errors,stats,wallMs,fillMs:fill.ms,fillTiles:fill.tiles,browser:await browser.version()},null,2));
+  await writeFile(path.join(output,'stroke.json'),JSON.stringify({checks,errors,stats,wallMs,quality,fillMs:fill.ms,fillTiles:fill.tiles,browser:await browser.version()},null,2));
 }catch(error){await page.screenshot({path:path.join(output,'failure.png')});await writeFile(path.join(output,'failure.json'),JSON.stringify({message:error.message,errors,checks},null,2));throw error;}
 finally{await browser.close();}

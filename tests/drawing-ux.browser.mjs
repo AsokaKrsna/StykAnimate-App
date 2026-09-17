@@ -92,9 +92,12 @@ try{
   await page.evaluate(()=>{window.cancelState={revision:styk.editor.revision,figures:styk.editor.report.figure_types.length,entries:styk.drawing.owner.entries.size};});
   await page.mouse.move(x,y);await page.mouse.down();await page.waitForFunction(()=>Boolean(styk.drawing.gesture));await page.mouse.move(x+40,y+10);await page.keyboard.press('Escape');await page.mouse.up();await page.waitForFunction(()=>!styk.drawing.gesture);
   check('cancelled stroke publishes no cel, history or orphan store entry',await page.evaluate(()=>styk.editor.revision===cancelState.revision&&styk.editor.report.figure_types.length===cancelState.figures&&styk.drawing.owner.entries.size===cancelState.entries));
-  await page.evaluate(()=>{const d=styk.drawing,e=styk.editor;d.owner.entry(e.drawingTarget().figure).store=null;window.releaseDecode=null;const request=d.owner.decodeWorker.request.bind(d.owner.decodeWorker);d.owner.decodeWorker.request=(kind,...args)=>{const result=request(kind,...args);return kind==='decode-tiles'?result.then(async r=>{await new Promise(resolve=>window.releaseDecode=resolve);return r;}):result;};});
+  await page.evaluate(()=>{const d=styk.drawing,e=styk.editor;d.owner.entry(e.drawingTarget().figure).store=null;window.releaseDecode=null;const request=d.owner.decodeWorker.request.bind(d.owner.decodeWorker);window.decodeRequest=request;d.owner.decodeWorker.request=(kind,...args)=>{const result=request(kind,...args);return kind==='decode-tiles'?result.then(async r=>{await new Promise(resolve=>window.releaseDecode=resolve);return r;}):result;};});
   await page.mouse.move(x,y);await page.mouse.down();await page.waitForFunction(()=>Boolean(window.releaseDecode));
   await page.evaluate(()=>{styk.editor.renameLayer(styk.editor.activeLayerId,'Ink');releaseDecode();});await page.waitForFunction(()=>!styk.drawing.loading);await page.mouse.up();
+  // The gate was a one-shot: later decodes (including eviction re-decodes the
+  // presenter kicks) must run unimpeded or the decode pump stalls for good.
+  await page.evaluate(()=>{styk.drawing.owner.decodeWorker.request=window.decodeRequest;});
   check('a document edit invalidates a pending cel decode and releases input',await page.evaluate(()=>!styk.drawing.gesture&&styk.editor.drawingTarget().figure._styk.drawing.celId===grownDrawing.id&&styk.editor.report.figure_types.length===cancelState.figures));
   await page.evaluate(()=>styk.fit());await page.screenshot({path:path.join(output,'workspace.png')});
   for(const mode of ['advanced','simple']){
@@ -108,6 +111,89 @@ try{
   await page.locator('[data-timeline-mode="advanced"]').click();await page.setViewportSize({width:1024,height:768});await page.evaluate(()=>styk.fit());await page.screenshot({path:path.join(output,'workspace-compact.png')});
   check('compact inspector keeps size and opacity visible',await page.locator('[data-property="draw:size"]').isVisible()&&await page.locator('[data-property="draw:opacity"]').isVisible());
   check('changing timeline layout keeps figure handles hidden in Draw',await page.evaluate(()=>!styk.state.handles));
+
+  // Budget regressions: a resident-store overflow must evict rebuildable work
+  // instead of rejecting the edit, and forked cels share counted tiles.
+  const probe=await page.evaluate(async()=>{
+    const {DrawingStroke}=await import('/src/drawing-pixels.mjs');
+    const e=styk.editor,d=styk.drawing,owner=d.owner,TILE_B=64*64*4,out={};
+    const old=owner.tileBudget;owner.tileBudget=4*TILE_B;
+    try{
+      e.createDrawingLayer('Budget probe');e.selectSheetLayer(e.layers.at(-1).id);
+      out.tick0=e.tick;
+      const t0=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:32,y:32}}),s0=await owner.surface(t0.figure);
+      const dot=new DrawingStroke(s0.store,{size:12,pressureSize:false});dot.sample({x:40,y:40});
+      e.commitDrawingPixels(t0,dot.finish());await d.barrier();
+      out.fig0=t0.figure;out.tick1=null;
+      e.nextDrawing([e.activeLayerId],{blank:true,length:1});out.tick1=e.tick;
+      const t1=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:32,y:32}}),s1=await owner.surface(t1.figure);
+      const band=new DrawingStroke(s1.store,{size:48,pressureSize:false});
+      band.sample({x:32,y:32});band.sample({x:230,y:32});
+      try{e.commitDrawingPixels(t1,band.finish());out.evicted=!owner.entry(out.fig0).store;}
+      catch(error){out.error=String(error?.message??error);}
+      out.fig1=t1.figure;
+      const before=owner.stats.bytes;
+      e.nextDrawing([e.activeLayerId],{blank:false,length:1});
+      out.forkBefore=before;out.forkAfter=owner.stats.bytes;
+    }finally{owner.tileBudget=old;}
+    return out;
+  });
+  check('a stroke that would overflow the tile budget evicts clean stores instead',probe.evicted===true&&!probe.error);
+  check('a copied cel does not double-count shared tiles',probe.forkAfter===probe.forkBefore);
+  // Seeking back to the evicted cel re-decodes it and paints real tiles.
+  const redecode=await page.evaluate(async(probe)=>{
+    const e=styk.editor,d=styk.drawing,owner=d.owner;
+    e.seek(probe.tick0);d.prepareVisible();
+    const entry=d.resource(probe.fig0);
+    if(!entry)return {entry:false};
+    const kicked=!entry.store&&Boolean(entry.loading)||Boolean(entry.store);
+    const deadline=performance.now()+5000;
+    while(!owner.entry(probe.fig0).store&&performance.now()<deadline)await new Promise(r=>setTimeout(r,30));
+    const store=Boolean(owner.entry(probe.fig0).store);
+    if(!store)return {entry:true,kicked,store};
+    const v=document.querySelector('#viewport'),vr0=v.getBoundingClientRect();
+    v.dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,clientX:vr0.left+10,clientY:vr0.top+10}));
+    await new Promise(r=>setTimeout(r,150));
+    // A framebuffer readback at the dab's world position proves the tile path,
+    // not the 1×1 placeholder data_url, drew the cel.
+    const {drawingPixelMatrix,transformPoint}=await import('/src/drawing-model.mjs'),{worldToScreen}=await import('/src/renderer-geometry.mjs');
+    const p=worldToScreen(transformPoint(drawingPixelMatrix(d.geometryItem(e.drawingTarget())),{x:40,y:40}),{report:e.report,frame:e.evaluatedFrame,view:styk.state.view,cameraEnabled:false});
+    const c=document.querySelector('#scene'),image=new Image();image.src=c.toDataURL();await image.decode();
+    const o=new OffscreenCanvas(image.naturalWidth,image.naturalHeight),ctx=o.getContext('2d');
+    ctx.drawImage(image,0,0);
+    const cr=c.getBoundingClientRect(),vr=document.querySelector('#viewport').getBoundingClientRect();
+    const px=Math.round(p.x-(cr.left-vr.left)),py=Math.round(p.y-(cr.top-vr.top));
+    const pxData=ctx.getImageData(Math.max(0,px-2),Math.max(0,py-2),5,5).data;
+    let alpha=0;for(let i=3;i<pxData.length;i+=4)alpha=Math.max(alpha,pxData[i]);
+    return {entry:true,kicked,store,alpha,px,py};
+  },probe);
+  check('an evicted cel re-decodes through resource() and repaints its tiles',redecode.store===true&&redecode.alpha>200);
+  // Scratch hysteresis and per-anchor retention.
+  const scratchCheck=await page.evaluate(async(probe)=>{
+    const {presenterScratch}=await import('/src/drawing-raster.mjs');
+    const e=styk.editor,d=styk.drawing;
+    e.seek(probe.tick1);d.prepareVisible();
+    await new Promise(r=>setTimeout(r,50));
+    const entry=d.owner.presenter(e.drawingTarget().figure);
+    d.owner.dropScratch(entry);
+    const b=entry.store.tileBounds;
+    const r1=presenterScratch(entry,{x:b.x,y:b.y,width:32,height:32});
+    const s1=entry._scratches.get(r1.anchorKey),blits=s1.blits;
+    const inner=presenterScratch(entry,{x:b.x+4,y:b.y+4,width:8,height:8});
+    const hysteresis=inner.canvas===r1.canvas&&s1.blits===blits;
+    const r2=presenterScratch(entry,{x:b.x+b.width-32,y:b.y,width:32,height:32});
+    const s2=entry._scratches.get(r2.anchorKey);
+    const distinct=s2&&r2.canvas!==r1.canvas;
+    const back=presenterScratch(entry,{x:b.x,y:b.y,width:32,height:32});
+    const alternation=back.canvas===r1.canvas&&s1.blits===blits;
+    const ctx1=r1.canvas.getContext('2d'),ctx2=r2.canvas.getContext('2d');
+    const alphaAt=(ctx,x,y)=>ctx.getImageData(Math.max(0,Math.round(x)),Math.max(0,Math.round(y)),1,1).data[3];
+    // Each scratch paints its own anchor's tiles: ink exists inside each cover.
+    const ink1=alphaAt(ctx1,40-r1.x,40-r1.y)>0,ink2=alphaAt(ctx2,Math.min(r2.width-1,230-r2.x),40-r2.y)>0;
+    return {hysteresis,distinct,alternation,ink1,ink2,covers:[r1.anchorKey,r2.anchorKey]};
+  },probe);
+  check('a contained rect reuses the painted scratch without repainting',scratchCheck.hysteresis);
+  check('alternating rects keep distinct scratch canvases',scratchCheck.distinct&&scratchCheck.alternation&&scratchCheck.ink1&&scratchCheck.ink2);
   check('no uncaught browser errors',errors.length===0);
   await writeFile(path.join(output,'ux.json'),JSON.stringify({checks,errors,growth,strokeMs,browser:await browser.version()},null,2));
 }catch(error){await page.screenshot({path:path.join(output,'failure.png')});await writeFile(path.join(output,'failure.json'),JSON.stringify({error:error.stack,checks,errors},null,2));throw error;}

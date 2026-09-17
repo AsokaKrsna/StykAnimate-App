@@ -46,7 +46,7 @@ function workerStub(){
       const store=storeOf(data),before=new Map();
       for(const [tx,ty] of TileStore.tilesInRect(data.bounds.x,data.bounds.y,data.bounds.width,data.bounds.height))before.set(tileKey(tx,ty),store.get(tx,ty)?.pixels.slice()??null);
       floodTiles(store,{...data.options,bounds:data.bounds,source:data.source?new Uint8ClampedArray(data.source):undefined});
-      return {tiles:tileChanges(store,before,data.maxBytes)};
+      return {tiles:tileChanges(store,before)};
     }
     throw new Error(`Unstubbed drawing worker op: ${kind}`);
   },dispose(){}};
@@ -226,7 +226,7 @@ test('checkHistory rejects tile work that would exceed the resident budget',asyn
   const resources=new DrawingResources(e.report,{worker:workerStub(),tileBytes:1024});
   try{
     const tiles=[{tx:0,ty:0,before:null,after:new Uint8ClampedArray(TILE_BYTES)}];
-    assert.throws(()=>resources.checkHistory({kind:'drawing-pixels',celId:'cel-x',tiles},'after'),/publication|undoing/);
+    assert.throws(()=>resources.checkHistory({kind:'drawing-pixels',celId:'cel-x',tiles},'after'),/memory is full/);
   }finally{resources.dispose();}
 });
 
@@ -280,9 +280,47 @@ test('stroke opacity caps overlapping dabs; cancellation and transparent erasing
   const eraser=new DrawingStroke(store,{size:20,opacity:.5,erase:true,pressureSize:false});for(let i=0;i<8;i++)eraser.dab({x:20,y:20});assert.equal(store.pixel(20,20)[3],128);
   const tiles=eraser.finish();applyTileChanges(store,tiles,'before');assert.deepEqual(store.readRect(0,0,64,64),full);
 });
-test('tile budget rejects long strokes and rollback restores every touched tile',()=>{
+test('long strokes spanning tiles are never refused; rollback restores every touched tile',()=>{
   const store=new TileStore(),stroke=new DrawingStroke(store,{size:8,maxBytes:33088});stroke.sample({x:10,y:20});
-  assert.throws(()=>stroke.sample({x:100,y:20}),/budget/);stroke.cancel();assert.equal(store.size,0);
+  // Midpoint interpolation lags half a segment: the second tile is touched
+  // once the next push curves through it. The former undo-budget throw is
+  // gone: authored strokes always finish, and cancel() still restores.
+  stroke.sample({x:100,y:20});stroke.sample({x:190,y:20});
+  assert.ok(store.size>=2);stroke.cancel();assert.equal(store.size,0);
+});
+test('an unstabilized jittery stroke paints a continuous curve through its corner',()=>{
+  const store=new TileStore(),s=new DrawingStroke(store,{size:8,color:[0,0,0],pressureSize:false,stabilization:0,spacingRatio:.2});
+  const pts=[{x:20,y:20,pressure:1,time:0}];
+  let x=20,y=20;
+  for(let i=1;i<=20;i++)pts.push({x:x+=4,y:y+(i%2?1.6:-1.6),pressure:1,time:i*8});
+  const cx=x,cy=y; // a 90-degree turn: midpoint interpolation must still cover it
+  for(let i=1;i<=20;i++)pts.push({x:cx,y:cy+i*4,pressure:1,time:(20+i)*8});
+  for(const p of pts)s.sample(p);s.finish();
+  const near=(x,y)=>{for(let dy=-8;dy<=8;dy++)for(let dx=-8;dx<=8;dx++)if(store.pixel(Math.round(x)+dx,Math.round(y)+dy)[3]>150)return true;return false;};
+  for(let i=1;i<pts.length;i++){
+    const a=pts[i-1],b=pts[i],steps=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/2));
+    for(let j=0;j<=steps;j++)assert.ok(near(a.x+(b.x-a.x)*j/steps,a.y+(b.y-a.y)*j/steps),`gap near sample ${i}`);
+  }
+});
+test('a heavily stabilized slow stroke follows its curve instead of stalling',()=>{
+  const store=new TileStore(),s=new DrawingStroke(store,{size:10,color:[0,0,0],pressureSize:false,stabilization:.95,spacingRatio:.1,pixelsPerUnit:1});
+  const pts=[];for(let i=0;i<=120;i++){const a=i/120*Math.PI*2;pts.push({x:200+20*Math.cos(a),y:200+20*Math.sin(a),pressure:1,time:i*50});}
+  for(const p of pts)s.sample(p);s.finish();
+  // Every raw point ends within half the averaging window of committed ink.
+  const radius=Math.ceil(.95*48/2);
+  const near=(x,y)=>{for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++)if(store.pixel(Math.round(x)+dx,Math.round(y)+dy)[3]>100)return true;return false;};
+  let covered=0;for(const p of pts)if(near(p.x,p.y))covered++;
+  assert.ok(covered/pts.length>.9,`only ${covered}/${pts.length} raw points near ink`);
+  let painted=0,b=store.bounds;for(let y=b.y;y<b.y+b.height;y++)for(let x=b.x;x<b.x+b.width;x++)if(store.pixel(x,y)[3]>100)painted++;
+  assert.ok(painted>120,`a slow stroke deposits real ink, not a dot (${painted}px)`);
+});
+test('the stroke ends exactly on the final input at any stabilization',()=>{
+  for(const stabilization of [0,.95]){
+    const store=new TileStore(),s=new DrawingStroke(store,{size:6,pressureSize:false,stabilization,pixelsPerUnit:1});
+    s.sample({x:10,y:10});s.sample({x:30,y:16});s.sample({x:47.3,y:22.6});s.finish();
+    const hit=Math.max(store.pixel(47,22)[3],store.pixel(47,23)[3],store.pixel(48,22)[3],store.pixel(48,23)[3]);
+    assert.ok(hit>200,`stabilization ${stabilization} endpoint dab at the last sample`);
+  }
 });
 test('undo and redo retain a shared history byte budget',async()=>{
   const {e,resources}=fixture();try{await stroke(e);const bytes=e.historySize;e.undo();assert.equal(e.historySize,bytes);e.redo();assert.equal(e.historySize,bytes);e.undo();const redo=e._redo.reduce((n,c)=>n+c.bytes,0);e.renameLayer(e.activeLayerId,'Ink');assert.equal(e.historySize,bytes-redo+e._undo.at(-1).bytes);}finally{resources.dispose();}
@@ -348,7 +386,7 @@ test('uniform full-region fill history is compact and restores exact RGBA',()=>{
   const store=new TileStore(),rect={x:0,y:0,width:1984,height:1152},before=new Map();
   for(const [tx,ty] of TileStore.tilesInRect(rect.x,rect.y,rect.width,rect.height))before.set(tileKey(tx,ty),null);
   const after=new Uint8ClampedArray(rect.width*rect.height*4);new Uint32Array(after.buffer).fill(0x7F461E5A);store.writeRect(rect.x,rect.y,rect.width,rect.height,after);
-  const tiles=tileChanges(store,before,1024*1024);assert.ok(pixelChangeBytes(tiles)<100000);
+  const tiles=tileChanges(store,before);assert.ok(pixelChangeBytes(tiles)<100000);
   applyTileChanges(store,tiles,'before');assert.equal(store.size,0);
   applyTileChanges(store,tiles,'after');assert.deepEqual(store.readRect(0,0,rect.width,rect.height),after);
 });
@@ -441,8 +479,9 @@ test('stroke engine replies carry only tiles changed by that batch and cancel re
   const {replies}=strokeDrive(engine,'s',settings,[[{x:10,y:10,pressure:1,time:0},{x:150,y:10,pressure:1,time:8}],[{x:150,y:150,pressure:1,time:16}]]);
   const keys=r=>new Set(r.tiles.map(t=>tileKey(t.tx,t.ty)));
   assert.ok(keys(replies[0]).has('0,0')&&keys(replies[0]).has('1,0'));
-  // The turn continues from (150,10): tiles 0,0 and 1,0 are untouched now.
-  assert.ok(keys(replies[1]).has('2,1')&&!keys(replies[1]).has('0,0')&&!keys(replies[1]).has('1,0'));
+  // The midpoint curve from (80,10) toward (150,150) stays inside tiles
+  // 1,0/2,0/2,1: tile 0,0 is untouched by this batch.
+  assert.ok(keys(replies[1]).has('2,1')&&!keys(replies[1]).has('0,0'));
   assert.ok(replies[0].dirty.width%64===0&&replies[0].dirty.x%64===0);
   engine.begin('x',{size:8,pressureSize:false});engine.samples('x',1,[{x:5,y:5}],[{tx:0,ty:0,pixels:null}]);
   engine.cancel('x');assert.equal(engine.end('x'),null);assert.equal(engine.samples('x',2,[{x:9,y:9}],[]),null);
@@ -510,28 +549,56 @@ test('a level store repopulated after an empty read reports fresh bounds',()=>{
   assert.ok(level.bounds,'alpha bounds refresh too');
 });
 
-test('presenter scratch anchors on tiles: sub-tile pans reuse, stamps reblit dirty tiles only',()=>{
-  globalThis.OffscreenCanvas??=class{constructor(w,h){this.width=w;this.height=h;}getContext(){return this._ctx??={clearRect(){},putImageData(){},drawImage(){},getImageData(){return{data:new Uint8ClampedArray(this.width*4)}}};}};
+const stubScratchCanvases=()=>{
+  globalThis.OffscreenCanvas??=class{constructor(w,h){this.width=w;this.height=h;this.painted=[];}getContext(){const canvas=this;return this._ctx??={clearRect(){},putImageData:(img,x,y)=>canvas.painted.push({x,y,pixels:img.data.slice()}),drawImage(){},getImageData(){return{data:new Uint8ClampedArray(this.width*4)}}};}};
   globalThis.ImageData??=class{constructor(pixels,w,h){this.data=pixels;this.width=w;this.height=h;}};
+};
+
+test('presenter scratch anchors on tiles: sub-tile pans reuse, stamps reblit dirty tiles only',()=>{
+  stubScratchCanvases();
   const store=new TileStore();store.set(0,0,new Uint8ClampedArray([10,20,30,255]));store.set(1,0,new Uint8ClampedArray([40,50,60,255]));store.set(4,0,new Uint8ClampedArray([70,80,90,255]));store.set(5,0,new Uint8ClampedArray([1,2,3,255]));
-  const presenter={id:'cel-t',store,stamp:1,dirty:null,level:k=>levelStore(presenter,k)};
+  const presenter={id:'cel-t',store,stamp:1,level:k=>levelStore(presenter,k)};
   // The visible rect plus one tile of margin, clamped to coverage {0,0,384,64}.
   const first=presenterScratch(presenter,{x:10,y:10,width:60,height:60});
   assert.equal(first.x%TILE,0);assert.equal(first.y%TILE,0);
   assert.deepEqual({x:first.x,y:first.y,width:first.width,height:first.height},{x:0,y:0,width:192,height:64});
-  const blits=presenter._scratch.blits;
+  const scratch=presenter._scratches.get(first.anchorKey),blits=scratch.blits;
   // A sub-tile pan keeps the anchored rect and reblits nothing.
   const second=presenterScratch(presenter,{x:13,y:17,width:60,height:60});
-  assert.equal(second.anchorKey,first.anchorKey);assert.equal(presenter._scratch.blits,blits);
-  // A stamp change blits only the tiles intersecting the dirty rect.
-  presenter.stamp=2;presenter.dirty={x:0,y:0,width:64,height:64};
+  assert.equal(second.anchorKey,first.anchorKey);assert.equal(scratch.blits,blits);
+  // A stamp change blits only the tiles intersecting the scratch's pending rect.
+  presenter.stamp=2;scratch.pending={x:0,y:0,width:64,height:64};
   const third=presenterScratch(presenter,{x:13,y:17,width:60,height:60});
-  assert.equal(third.anchorKey,first.anchorKey);assert.equal(presenter._scratch.blits,blits+1);
+  assert.equal(third.anchorKey,first.anchorKey);assert.equal(scratch.blits,blits+1);
   assert.deepEqual(third.dirty,{x:0,y:0,width:64,height:64});
-  // A pan to a new tile anchor repaints the whole scratch and clears dirty.
+  // Zooming inside the painted cover reuses the canvas without repainting.
+  const inner=presenterScratch(presenter,{x:30,y:20,width:40,height:30});
+  assert.equal(inner.canvas,first.canvas);assert.equal(inner.anchorKey,first.anchorKey);assert.equal(scratch.blits,blits+1);
+  // A rect beyond every painted cover anchors a second scratch; both persist.
   const fourth=presenterScratch(presenter,{x:250,y:10,width:60,height:60});
-  assert.notEqual(fourth.anchorKey,first.anchorKey);assert.ok(presenter._scratch.blits>blits+1);
+  assert.notEqual(fourth.anchorKey,first.anchorKey);assert.notEqual(fourth.canvas,first.canvas);
+  const scratch2=presenter._scratches.get(fourth.anchorKey);
+  assert.ok(scratch2.blits>0,'a re-anchored scratch repaints wholesale');
   assert.equal(fourth.dirty,null,'a re-anchored scratch uploads wholesale');
+  // Alternating rects keep their own canvases: returning to the first rect
+  // hits its cover hysteresis instead of repainting a shared canvas.
+  const fifth=presenterScratch(presenter,{x:10,y:10,width:60,height:60});
+  assert.equal(fifth.canvas,first.canvas);assert.equal(scratch.blits,blits+1);
+  assert.equal(presenter._scratches.size,2);
+});
+
+test('present() marks a per-scratch pending rect at its own mip level',async()=>{
+  stubScratchCanvases();
+  const {e,resources}=fixture();try{
+    const {target}=await stroke(e),entry=resources.presenter(target.figure);
+    const first=presenterScratch(entry,{x:0,y:0,width:200,height:60});
+    const scratch=entry._scratches.get(first.anchorKey),blits=scratch.blits;
+    resources.present(entry,{x:0,y:0,width:8,height:8});
+    const second=presenterScratch(entry,{x:0,y:0,width:200,height:60});
+    assert.equal(second.canvas,first.canvas);assert.equal(scratch.blits,blits+1,'only the covering tile repaints');
+    assert.deepEqual(second.dirty,{x:0,y:0,width:64,height:64});
+    assert.equal(scratch.pending,null,'the repaint consumed the pending rect');
+  }finally{resources.dispose();}
 });
 
 test('resource eviction frees scratch, then levels, then published stores',()=>{
@@ -543,14 +610,70 @@ test('resource eviction frees scratch, then levels, then published stores',()=>{
     ea.store=new TileStore();ea.store.set(0,0,new Uint8ClampedArray([1,2,3,255]));ea.published={revision:0};ea.used=1;
     eb.store=new TileStore();eb.store.set(0,0,new Uint8ClampedArray([1,2,3,255]));eb.published={revision:0};eb.used=2;
     ec.store=new TileStore();ec.store.set(0,0,new Uint8ClampedArray([1,2,3,255]));ec.used=3; // unpublished: never evicts
-    ea._scratch={canvas:{width:64,height:64}};levelStore(eb,1);
+    ea._scratches=new Map([['0:0,0,64,64',{level:0,cover:{x:0,y:0,width:64,height:64},canvas:{width:64,height:64},ctx:null,stamp:0,pending:null,blits:0,used:0}]]);levelStore(eb,1);
     assert.equal(resources.stats.bytes,3*TILE_BYTES);
     resources.reserve(TILE_BYTES,null);
-    assert.equal(ea._scratch,null);assert.equal(eb.levels,null);
+    assert.equal(ea._scratches,null);assert.equal(eb.levels,null);
     assert.equal(ea.store,null,'oldest published store evicts first');
     assert.ok(eb.store&&ec.store,'newer and unpublished stores survive');
     assert.equal(resources.stats.bytes,2*TILE_BYTES);
-    assert.throws(()=>resources.reserve(3*TILE_BYTES,null),/memory is full/);
+    // Required dirty work stays resident above the soft budget; only the hard
+    // ceiling (4× the tile budget) still refuses.
+    resources.reserve(3*TILE_BYTES,null);
+    assert.ok(ec.store,'unpublished store survives over the soft budget');
+    assert.throws(()=>resources.reserve(12*TILE_BYTES,null),/memory is full/);
+  }finally{resources.dispose();}
+});
+
+test('a stroke over the remaining tile budget evicts clean stores instead of throwing',async()=>{
+  const e=new Editor({demo:false,layerTimeline:true});e.report.canvas_width=64;e.report.canvas_height=64;
+  const resources=new DrawingResources(e.report,{worker:workerStub(),tileBytes:4*TILE_BYTES});
+  try{
+    e.createDrawingLayer();
+    const t1=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:32,y:32}}),s1=await resources.surface(t1.figure);
+    const b1=new DrawingStroke(s1.store,{size:8,pressureSize:false});b1.sample({x:40,y:40});e.commitDrawingPixels(t1,b1.finish());
+    await resources.flush();
+    const fig1=t1.figure;
+    assert.equal(resources.entry(fig1).published?.revision,resources.entry(fig1).revision,'first cel published clean');
+    e.extendDrawing(undefined,9);e.seek(5);e.drawingKey(undefined,5,{blank:true});
+    const t2=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:32,y:32}}),s2=await resources.surface(t2.figure);
+    // Four touched tiles + the resident cel exceed the 4-tile budget: the
+    // clean store must evict rather than rejecting the edit.
+    const b2=new DrawingStroke(s2.store,{size:48,pressureSize:false});
+    b2.sample({x:32,y:32});b2.sample({x:230,y:32});
+    e.commitDrawingPixels(t2,b2.finish());
+    assert.equal(resources.entry(fig1).store,null,'the published-clean store evicted to make room');
+    assert.equal(resources.entry(e.drawingTarget().figure).store.size,4);
+  }finally{resources.dispose();}
+});
+
+test('presenter() kicks a re-decode when the published store was evicted',async()=>{
+  const {e,resources}=fixture();try{
+    const {target}=await stroke(e);await resources.flush();
+    const figure=target.figure,entry=resources.entry(figure);
+    entry.store=null;
+    assert.equal(resources.presenter(figure),entry,'the presenter still resolves');
+    assert.ok(entry.loading,'the missing store starts decoding again');
+    await entry.loading;assert.ok(entry.store?.size>0);
+    // A failed decode records decodeError instead of retrying every frame.
+    entry.store=null;resources.decodeWorker={request:()=>Promise.reject(new Error('decode broke')),dispose(){}};
+    resources.presenter(figure);await new Promise(r=>setTimeout(r,20));
+    assert.ok(entry.decodeError,'a real decode failure is recorded');
+    assert.equal(entry.loading,null);
+    resources.presenter(figure);await new Promise(r=>setTimeout(r,20));
+    assert.equal(entry.loading,null,'decodeError prevents a retry storm');
+  }finally{resources.dispose();}
+});
+
+test('forking a cel does not double-count copy-on-write tiles in the byte stats',async()=>{
+  const {e,resources}=fixture();try{
+    const {target}=await stroke(e);e.extendDrawing(undefined,9);e.seek(5);
+    const before=resources.stats.bytes;
+    e.drawingKey(); // a copied key forks the store: tiles stay shared
+    assert.equal(resources.stats.bytes,before,'shared tiles count once');
+    const copy=e.drawingTarget(),s2=resources.entry(copy.figure).store;
+    const b=new DrawingStroke(s2,{size:8,pressureSize:false});b.sample({x:70,y:20});e.commitDrawingPixels(copy,b.finish());
+    assert.ok(resources.stats.bytes>before,'a diverged tile adds real bytes');
   }finally{resources.dispose();}
 });
 
@@ -625,7 +748,7 @@ test('publication re-encodes only changed tiles and resends PNGs the worker cach
   }finally{resources.dispose();}
 });
 
-test('an edit larger than the remaining history evicts older commands; one over the whole budget is rejected before mutation',async()=>{
+test('an edit larger than the remaining history evicts older commands; oversized edits still apply with exact undo',async()=>{
   const {e,resources}=fixture();try{
     await stroke(e);const firstBytes=e._undo.at(-1).bytes;
     const dab=x=>{const t=e.drawingTarget(),surface=resources.entry(t.figure);const b=new DrawingStroke(surface.store,{size:8,pressureSize:false});b.sample({x,y:40});e.commitDrawingPixels(t,b.finish());return e._undo.at(-1).bytes;};
@@ -636,11 +759,14 @@ test('an edit larger than the remaining history evicts older commands; one over 
     assert.equal(e._undo.length,3,'the creation command was evicted, not rejected');
     assert.ok(e.historySize<=e.historyBytes);assert.ok(e.revision>before);
     e.undo();e.undo();assert.equal(e._undo.length,1,'undo stops at the evicted boundary');
-    // An edit larger than the entire budget throws before any pixel mutates.
-    e.historyBytes=TILE_BYTES;
-    const pixels=storePixels(resources.entry(e.drawingTarget().figure).store),revision=e.revision;
-    assert.throws(()=>e.commitDrawingPixels(e.drawingTarget(),[{tx:9,ty:9,before:null,after:new Uint8ClampedArray(TILE_BYTES)},{tx:10,ty:9,before:null,after:new Uint8ClampedArray(TILE_BYTES)}]),/undo budget/);
-    assert.equal(e.revision,revision);assert.deepEqual(storePixels(resources.entry(e.drawingTarget().figure).store),pixels);
+    // An edit larger than the soft budget still applies and keeps an exact
+    // record; eviction — never rejection — bounds history memory.
+    e.historyBytes=64;
+    const tiles=[{tx:9,ty:9,before:null,after:new Uint8ClampedArray(TILE_BYTES).fill(255)},{tx:10,ty:9,before:null,after:new Uint8ClampedArray(TILE_BYTES).fill(255)}];
+    e.commitDrawingPixels(e.drawingTarget(),tiles);
+    assert.equal(e._undo.at(-1).kind,'drawing-pixels');
+    assert.equal(resources.entry(e.drawingTarget().figure).store.get(9,9)?.pixels.length,TILE_BYTES);
+    e.undo();assert.equal(resources.entry(e.drawingTarget().figure).store.get(9,9),undefined);
   }finally{resources.dispose();}
 });
 

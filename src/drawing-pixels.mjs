@@ -17,15 +17,16 @@ const sideEqual=(a,b)=>a===b||(a&&b&&a.length===b.length&&a.every((n,i)=>n===b[i
 /** Tile-oriented undo records: {tx,ty,before,after} with each side null, a
  * 4-byte uniform array, or a full tile. `beforeTiles` maps tile keys to the
  * pre-edit pixels (or null when absent) and must cover every tile touched. */
-export function tileChanges(store,beforeTiles,maxBytes) {
-  const changes=[];let bytes=0;
+/** The undo record is exact: every touched tile keeps its pre-edit pixels. An
+ * edit is never refused for size — history eviction retires older records. */
+export function tileChanges(store,beforeTiles) {
+  const changes=[];
   for(const [key,beforeValue] of beforeTiles){
     const [tx,ty]=key.split(',').map(Number),afterValue=store.get(tx,ty)?.pixels??null;
     if(beforeValue===null&&afterValue===null)continue;
     if(beforeValue&&afterValue&&sideEqual(beforeValue,afterValue))continue;
     const before=normSide(compactTile(beforeValue)),after=normSide(compactTile(afterValue));
     if(before===null&&after===null)continue;
-    bytes+=(before?.byteLength??0)+(after?.byteLength??0)+64;if(bytes>maxBytes)throw new Error('This pixel edit exceeds the undo budget. Select a smaller area or use 1× resolution.');
     changes.push({tx,ty,before,after});
   }
   return changes;
@@ -44,8 +45,10 @@ const hashPixel=(x,y,seed)=>{let h=(Math.imul(x,374761393)^Math.imul(y,668265263
 
 /** Exact CPU raster with tile-local stroke coverage on an unbounded TileStore.
  * Opacity caps an entire stroke; flow accumulates dabs without multiplying it.
- * The tip is a pull-string: it follows input only beyond `stabilization*32*ppu`
- * pixels, so the drawn path is rate-independent and ends exactly on input. */
+ * Stabilization is a distance-windowed trailing average over the raw path, so
+ * every sample yields output with no dead zone; consecutive pushed points are
+ * joined by quadratic midpoint segments, which keeps corners smooth at zero
+ * lag, and the stroke still ends exactly on the final input. */
 export class DrawingStroke {
   constructor(store,{size=8,color=[0,0,0],opacity=1,flow=1,hardness=1,erase=false,pressureSize=true,pressureOpacity=false,sizeCurve=1,opacityCurve=1,stabilization=0,spacingRatio=.12,texture=0,seed=0,pixelsPerUnit=1,maxBytes=48*1024*1024}={}) {
     if(!(store instanceof TileStore))throw new Error('Strokes draw into a tile store.');
@@ -55,9 +58,9 @@ export class DrawingStroke {
   nextRand(){let t=this.rand=(this.rand+0x6D2B79F5)>>>0;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;}
   tile(tx,ty) {
     const key=tileKey(tx,ty);let tile=this.tiles.get(key);if(tile)return tile;
-    const cost=TILE*TILE*8+64;
-    if(this.bytes+cost>this.maxBytes)throw new Error('This stroke exceeds the undo budget. Use shorter strokes or a smaller brush.');
-    this.bytes+=cost;const existing=this.store.get(tx,ty);
+    // A stroke is authored input: tracking its tiles is never refused. The
+    // before/coverage record is what keeps cancel() and undo exact.
+    this.bytes+=TILE*TILE*8+64;const existing=this.store.get(tx,ty);
     tile={tx,ty,before:existing?existing.pixels.slice():null,coverage:new Float32Array(TILE*TILE),pixels:this.store.writable(tx,ty).pixels};this.tiles.set(key,tile);return tile;
   }
   dab(p) {
@@ -85,32 +88,60 @@ export class DrawingStroke {
     this.lastDab={x:p.x,y:p.y};
     if(right>left&&bottom>top)this.dirty=this.dirty?{x:Math.min(this.dirty.x,left),y:Math.min(this.dirty.y,top),right:Math.max(this.dirty.right,right),bottom:Math.max(this.dirty.bottom,bottom)}:{x:left,y:top,right,bottom};
   }
-  sample(input,{final=false}={}) {
+  /** Smoothed point: weighted centroid of the distance-windowed raw tail.
+   * Linear-ramp weights (newest heaviest) keep the average trailing the input
+   * by roughly half the window while staying responsive at every speed. */
+  smoothed(){
+    const tail=this.tail;let sum=0,x=0,y=0,pressure=0,time=0;
+    for(let i=0;i<tail.length;i++){const w=i+1;sum+=w;x+=tail[i].x*w;y+=tail[i].y*w;pressure+=tail[i].pressure*w;time+=tail[i].time*w;}
+    return {x:x/sum,y:y/sum,pressure:pressure/sum,time:time/sum};
+  }
+  sample(input) {
     if(this.closed)throw new Error('The stroke has already ended.');
     if(![input.x,input.y,input.pressure??1,input.time??0].every(Number.isFinite))return;
     const p={...input,pressure:input.pressure??1,time:input.time??0};
     this.rawLast=p;
-    if(!this.last){this.dab(p);this.last={...p};this.remaining=0;return;}
-    let target=p;
-    const radius=this.stabilization*32*this.pixelsPerUnit;
-    if(!final&&radius>0){
-      const dx=p.x-this.last.x,dy=p.y-this.last.y,distance=Math.hypot(dx,dy);
-      if(distance<=radius)return;
-      const pull=(distance-radius)/distance;target={...p,x:this.last.x+dx*pull,y:this.last.y+dy*pull};
-    }
-    this.interpolate(target);
+    if(this.stabilization<=0){this.push(p);return;}
+    const tail=this.tail??=[],window=this.stabilization*48*this.pixelsPerUnit;
+    tail.push(p);
+    // Trim the tail to a window of path length, keeping at least two samples.
+    let keep=1,arc=0;
+    for(let i=tail.length-1;i>0;i--){arc+=Math.hypot(tail[i].x-tail[i-1].x,tail[i].y-tail[i-1].y);if(arc>window)break;keep++;}
+    if(tail.length>Math.max(2,keep))tail.splice(0,tail.length-Math.max(2,keep));
+    this.push(this.smoothed());
   }
-  interpolate(p) {
-    const from=this.last,dx=p.x-from.x,dy=p.y-from.y,distance=Math.hypot(dx,dy),spacing=Math.max(.25,this.size*this.spacingRatio);
-    let pos=spacing-this.remaining;
-    for(;pos<=distance;pos+=spacing){const t=pos/distance;this.dab({x:from.x+dx*t,y:from.y+dy*t,pressure:from.pressure+(p.pressure-from.pressure)*t,time:from.time+(p.time-from.time)*t});}
-    this.remaining=(this.remaining+distance)%spacing;this.last={...p};
+  /** Push a path point: join it to the previous one with a quadratic midpoint
+   * segment so every sample — smoothed or raw — produces a smooth curve. */
+  push(p){
+    if(!this.prevRaw){this.dab(p);this.prevRaw=p;this.prevMid=null;this.remaining=0;return;}
+    const prev=this.prevRaw,mid={x:(prev.x+p.x)/2,y:(prev.y+p.y)/2,pressure:(prev.pressure+p.pressure)/2,time:(prev.time+p.time)/2};
+    this.curve(this.prevMid??prev,prev,mid);
+    this.prevRaw=p;this.prevMid=mid;
+  }
+  /** Dab along the quadratic Bézier a→b with control c, sampled by arc length
+   * at the running `spacing`/`remaining` accumulator. */
+  curve(a,c,b){
+    const spacing=Math.max(.25,this.size*this.spacingRatio);
+    const q=t=>{const u=1-t;return{x:u*u*a.x+2*u*t*c.x+t*t*b.x,y:u*u*a.y+2*u*t*c.y+t*t*b.y,pressure:u*u*a.pressure+2*u*t*c.pressure+t*t*b.pressure,time:u*u*a.time+2*u*t*c.time+t*t*b.time};};
+    const steps=Math.max(4,Math.min(64,Math.ceil((Math.hypot(c.x-a.x,c.y-a.y)+Math.hypot(b.x-c.x,b.y-c.y))/(spacing/2))));
+    let pos=spacing-this.remaining,prev=a,arc=0;
+    for(let i=1;i<=steps;i++){
+      const p=q(i/steps),seg=Math.hypot(p.x-prev.x,p.y-prev.y);
+      while(seg>0&&arc+seg>=pos){const t=(pos-arc)/seg;this.dab({x:prev.x+(p.x-prev.x)*t,y:prev.y+(p.y-prev.y)*t,pressure:prev.pressure+(p.pressure-prev.pressure)*t,time:prev.time+(p.time-prev.time)*t});pos+=spacing;}
+      arc+=seg;prev=p;
+    }
+    this.remaining=(this.remaining+arc)%spacing;
   }
   cancel(){if(this.closed)return;for(const tile of this.tiles.values()){if(tile.before)this.store.set(tile.tx,tile.ty,tile.before);else this.store.delete(tile.tx,tile.ty);}this.closed=true;}
   finish(){if(this.closed)return[];this.closed=true;
-    // Flush the pull string: the final dab lands exactly on the last input.
-    if(this.last&&this.rawLast){
-      if(this.rawLast.x!==this.last.x||this.rawLast.y!==this.last.y)this.interpolate(this.rawLast);
+    // Drain the averaging tail: the smoothed point converges to the last
+    // input, so the curve catches up smoothly instead of jumping.
+    const tail=this.tail;
+    if(tail)while(tail.length>1){tail.shift();this.push(this.smoothed());}
+    if(this.prevRaw&&this.rawLast){
+      // Close the final half-segment, then land the exact endpoint dab.
+      if(this.rawLast.x!==this.prevRaw.x||this.rawLast.y!==this.prevRaw.y)this.push(this.rawLast);
+      this.push(this.prevRaw);
       if(this.lastDab?.x!==this.rawLast.x||this.lastDab?.y!==this.rawLast.y)this.dab(this.rawLast);
     }
     const changes=[];for(const tile of this.tiles.values()){

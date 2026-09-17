@@ -54,44 +54,98 @@ export function invalidateLevels(entry,dirty){
     for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++)level.delete(tx,ty);
   }
 }
-/** Rasterize the level-`level` tiles covering `rect` into one reusable,
- * tile-anchored scratch canvas per presenter. The scratch origin snaps to
- * tile boundaries with one tile of margin and clamps to the store's tile
- * coverage, so sub-tile pans reuse it unchanged; a stamp change re-blits only
- * the tiles intersecting `presenter.dirty`. Returns level-space geometry plus
- * `scale` (2**level) and `dirty` in canvas coordinates, or null when the
- * anchored rect exceeds maxSide (raise the level and retry). */
+/** Rasterize the level-`level` tiles covering `rect` into a tile-anchored
+ * scratch canvas. Each presenter keeps a small LRU of scratches keyed by
+ * anchor so the WebGPU and Canvas/onion paths — and alternating view rects —
+ * never share one canvas. Hysteresis: a request fully inside a scratch's
+ * painted `cover` reuses it without computing a new anchor, so zooming into
+ * an already-painted region costs no repaint. A stamp change re-blits only
+ * the tiles intersecting that scratch's `pending` rect (level-space; null
+ * means the whole cover). Returns level-space geometry plus `scale`
+ * (2**level) and `dirty` in canvas coordinates, or null when the anchored
+ * rect exceeds maxSide (raise the level and retry). */
 export function presenterScratch(presenter,rect,{maxSide=4096,level=0}={}){
   const scale=1<<level,store=level?presenter.level?.(level):presenter.store,coverage=store?.tileBounds;
   if(!coverage||!rect||!(rect.width>0&&rect.height>0))return null;
-  const region=aligned(rect.x/scale-TILE,rect.y/scale-TILE,rect.width/scale+2*TILE,rect.height/scale+2*TILE);
-  const x=Math.max(region.x,coverage.x),y=Math.max(region.y,coverage.y),x1=Math.min(region.x+region.width,coverage.x+coverage.width),y1=Math.min(region.y+region.height,coverage.y+coverage.height);
-  if(!(x1>x&&y1>y)||x1-x>maxSide||y1-y>maxSide)return null;
-  const w=x1-x,h=y1-y,anchorKey=`${level}:${x},${y},${w},${h}`,s=presenter._scratch??={blits:0};
-  const result={canvas:s.canvas,x,y,width:w,height:h,level,scale,stamp:presenter.stamp,anchorKey,dirty:null};
-  if(s.canvas&&s.anchorKey===anchorKey){
-    if(s.stamp===presenter.stamp)return result;
-    const c=s.canvas.getContext('2d'),d=presenter.dirty;presenter.dirty=null;
-    const dr=d?{x:Math.floor(d.x/scale),y:Math.floor(d.y/scale),width:Math.ceil((d.x+d.width)/scale)-Math.floor(d.x/scale),height:Math.ceil((d.y+d.height)/scale)-Math.floor(d.y/scale)}:{x,y,width:w,height:h};
-    // Tiles outside the anchored rect are clipped away before blitting.
-    const bx=Math.max(dr.x,x),by=Math.max(dr.y,y),bx1=Math.min(dr.x+dr.width,x+w),by1=Math.min(dr.y+dr.height,y+h);
-    for(const [tx,ty] of TileStore.tilesInRect(bx,by,Math.max(0,bx1-bx),Math.max(0,by1-by))){paintTile(c,store,tx,ty,x,y);s.blits++;}
-    s.stamp=presenter.stamp;result.canvas=s.canvas;
-    const dx=Math.max(dr.x,x),dy=Math.max(dr.y,y),dw=Math.min(dr.x+dr.width,x+w)-dx,dh=Math.min(dr.y+dr.height,y+h)-dy;
-    if(dw>0&&dh>0)result.dirty={x:dx-x,y:dy-y,width:dw,height:dh};
-    return result;
+  const scratches=presenter._scratches??=new Map();
+  const want={x:rect.x/scale,y:rect.y/scale,right:(rect.x+rect.width)/scale,bottom:(rect.y+rect.height)/scale};
+  let s=null;
+  for(const candidate of scratches.values()){
+    const c=candidate.cover;
+    if(candidate.level!==level||!c)continue;
+    if(want.x>=c.x&&want.y>=c.y&&want.right<=c.x+c.width&&want.bottom<=c.y+c.height&&(!s||c.width*c.height<s.cover.width*s.cover.height))s=candidate;
   }
-  const canvas=s.canvas??=newCanvas(1,1);if(canvas.width!==w)canvas.width=w;if(canvas.height!==h)canvas.height=h;
-  presenter.owner?.scratchReserved?.(presenter);
-  const c=canvas.getContext('2d');c.clearRect(0,0,w,h);
-  for(const [tx,ty] of TileStore.tilesInRect(x,y,w,h)){paintTile(c,store,tx,ty,x,y);s.blits++;}
-  Object.assign(s,{anchorKey,stamp:presenter.stamp});presenter.dirty=null;result.canvas=canvas;
+  if(!s){
+    const region=aligned(rect.x/scale-TILE,rect.y/scale-TILE,rect.width/scale+2*TILE,rect.height/scale+2*TILE);
+    const x=Math.max(region.x,coverage.x),y=Math.max(region.y,coverage.y),x1=Math.min(region.x+region.width,coverage.x+coverage.width),y1=Math.min(region.y+region.height,coverage.y+coverage.height);
+    if(!(x1>x&&y1>y)||x1-x>maxSide||y1-y>maxSide)return null;
+    const anchorKey=`${level}:${x},${y},${x1-x},${y1-y}`;
+    s=scratches.get(anchorKey);
+    if(!s){
+      s={anchorKey,level,cover:{x,y,width:x1-x,height:y1-y},canvas:null,ctx:null,stamp:-1,pending:null,blits:0,used:0};
+      scratches.set(anchorKey,s);
+      if(scratches.size>4){ // bounded LRU: drop the least-recently-used anchor
+        let oldest=null,oldestKey=null;
+        for(const [key,c] of scratches)if(c!==s&&(!oldest||c.used<oldest.used)){oldest=c;oldestKey=key;}
+        if(oldest){if(oldest.canvas)oldest.canvas.width=oldest.canvas.height=1;scratches.delete(oldestKey);}
+      }
+      presenter.owner?.scratchReserved?.(presenter);
+    }
+  }
+  s.used=presenter._scratchClock=(presenter._scratchClock??0)+1;
+  const {x,y,width:w,height:h}=s.cover;
+  const result={canvas:s.canvas,x,y,width:w,height:h,level,scale,stamp:presenter.stamp,anchorKey:s.anchorKey,dirty:null};
+  if(s.canvas&&s.stamp===presenter.stamp)return result;
+  s.canvas??=newCanvas(w,h);s.ctx??=s.canvas.getContext('2d');
+  if(s.canvas.width!==w)s.canvas.width=w;if(s.canvas.height!==h)s.canvas.height=h;
+  const c=s.ctx,pending=s.pending??s.cover;
+  const bx=Math.max(pending.x,x),by=Math.max(pending.y,y),bx1=Math.min(pending.x+pending.width,x+w),by1=Math.min(pending.y+pending.height,y+h);
+  const full=pending===s.cover||(bx<=x&&by<=y&&bx1>=x+w&&by1>=y+h);
+  if(full)c.clearRect(0,0,w,h);
+  for(const [tx,ty] of TileStore.tilesInRect(bx,by,Math.max(0,bx1-bx),Math.max(0,by1-by))){paintTile(c,store,tx,ty,x,y);s.blits++;}
+  s.stamp=presenter.stamp;s.pending=null;result.canvas=s.canvas;
+  if(!full){
+    // Tiles repaint wholesale, so the upload region is the tile-aligned
+    // coverage of the repainted band clipped to the canvas.
+    const tx0=Math.floor(bx/TILE)*TILE,ty0=Math.floor(by/TILE)*TILE,tx1=Math.ceil(bx1/TILE)*TILE,ty1=Math.ceil(by1/TILE)*TILE;
+    const dx0=Math.max(tx0,x),dy0=Math.max(ty0,y),dx1=Math.min(tx1,x+w),dy1=Math.min(ty1,y+h);
+    result.dirty=dx1>dx0&&dy1>dy0?{x:dx0-x,y:dy0-y,width:dx1-dx0,height:dy1-dy0}:{x:0,y:0,width:0,height:0};
+  }
   return result;
+}
+/** Paint tiles through bounded strip canvases when even the smallest mip's
+ * anchored region exceeds the scratch ceiling. Each strip paints a one-tile
+ * margin but only draws its core, so smoothing taps read real neighbours and
+ * the cores tile the region exactly — same pixels, bounded memory. */
+function paintDrawingStrips(ctx,presenter,rect,level,{tint,tintFn}={}){
+  const scale=1<<level,store=level?presenter.level?.(level):presenter.store,coverage=store?.tileBounds;
+  if(!coverage)return;
+  const region=aligned(rect.x/scale-TILE,rect.y/scale-TILE,rect.width/scale+2*TILE,rect.height/scale+2*TILE);
+  const x=Math.max(region.x,coverage.x),y=Math.max(region.y,coverage.y),
+    x1=Math.min(region.x+region.width,coverage.x+coverage.width),y1=Math.min(region.y+region.height,coverage.y+coverage.height);
+  if(!(x1>x&&y1>y))return;
+  const STRIP=4096;
+  for(let cy=y;cy<y1;cy+=STRIP){
+    const cy1=Math.min(y1,cy+STRIP);
+    for(let cx=x;cx<x1;cx+=STRIP){
+      const cx1=Math.min(x1,cx+STRIP),
+        px0=Math.max(region.x,cx-TILE),py0=Math.max(region.y,cy-TILE),
+        px1=Math.min(region.x+region.width,cx1+TILE),py1=Math.min(region.y+region.height,cy1+TILE);
+      const canvas=newCanvas(px1-px0,py1-py0),c=canvas.getContext('2d');
+      for(const [tx,ty] of TileStore.tilesInRect(px0,py0,px1-px0,py1-py0))paintTile(c,store,tx,ty,px0,py0);
+      let source=canvas;
+      if(tint&&tintFn)source=tintFn(canvas,tint,`${presenter.stamp}:${level}:${cx},${cy}`)??canvas;
+      ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+      // The source sub-rect drops the margin; core rects tile seamlessly.
+      ctx.drawImage(source,cx-px0,cy-py0,cx1-cx,cy1-cy,cx*scale,cy*scale,(cx1-cx)*scale,(cy1-cy)*scale);
+    }
+  }
 }
 /** Paint the visible tiles under the context's current transform. The mip
  * level follows the output sampling density; the scratch is one image, so no
  * seams can appear between tiles, and its one-tile margin keeps filter taps
- * inside painted coverage at every zoom and rotation. */
+ * inside painted coverage at every zoom and rotation. Regions larger than the
+ * scratch ceiling at every mip still paint exactly, streamed through strips. */
 export function paintDrawingTiles(ctx,presenter,{tint,tintFn}={}){
   const m=ctx.getTransform(),rect=visiblePixelRect(ctx);
   const k0=Math.max(0,Math.min(4,Math.floor(-Math.log2(Math.hypot(m.a,m.b)||1))));
@@ -103,6 +157,7 @@ export function paintDrawingTiles(ctx,presenter,{tint,tintFn}={}){
     ctx.drawImage(source,scratch.x*scratch.scale,scratch.y*scratch.scale,scratch.width*scratch.scale,scratch.height*scratch.scale);
     return;
   }
+  paintDrawingStrips(ctx,presenter,rect,presenter.level?4:0,{tint,tintFn});
 }
 /** Flatten a tile store (or a {store,level} presenter) into a PNG data URL of
  * its bounds. Regions beyond maxPixels rasterize at the largest mip level

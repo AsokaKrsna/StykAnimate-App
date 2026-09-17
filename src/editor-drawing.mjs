@@ -102,7 +102,9 @@ export const editorDrawingMethods={
     if(!tiles.length)return false;assertDrawingTargets(this,[target.id]);
     const current=this.drawingTarget(target.id);
     if(current.key.id!==target.key.id)throw new Error('The drawing exposure changed before the edit finished.');
-    const bytes=pixelChangeBytes(tiles);if(bytes>this.historyBytes)throw new Error('This pixel edit exceeds the undo budget. Use a smaller area or shorter stroke.');
+    // The record commits at any size: history eviction retires older entries,
+    // and reserve() bounds resident stores before this point is reached.
+    const bytes=pixelChangeBytes(tiles);
     const celId=drawingMetadata(target.figure).celId,beforeBounds=drawingMetadata(target.figure).bounds??null;
     this.drawingResources.checkHistory({kind:'drawing-pixels',celId,tiles},'after');
     const commit=()=>{

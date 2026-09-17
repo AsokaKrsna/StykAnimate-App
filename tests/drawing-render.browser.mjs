@@ -98,10 +98,10 @@ try{
     // A sub-tile pan keeps the anchored scratch: no tile re-blits.
     await page.evaluate(()=>setView({scale:1}));
     await page.waitForTimeout(120);
-    const blits=await page.evaluate(()=>{const e=styk.drawing.owner.entry(styk.editor.drawingTarget().figure);return e._scratch?.blits??null;});
+    const blits=await page.evaluate(()=>{const e=styk.drawing.owner.entry(styk.editor.drawingTarget().figure);return [...e._scratches?.values()??[]].reduce((n,s)=>n+s.blits,0)||null;});
     await page.evaluate(()=>{styk.state.view.x-=3;kick();});
     await page.waitForTimeout(120);
-    const after=await page.evaluate(()=>styk.drawing.owner.entry(styk.editor.drawingTarget().figure)._scratch?.blits??null);
+    const after=await page.evaluate(()=>{const e=styk.drawing.owner.entry(styk.editor.drawingTarget().figure);return [...e._scratches?.values()??[]].reduce((n,s)=>n+s.blits,0)||null;});
     check(`${backend} a 3px pan reuses the anchored tile scratch`,blits!==null&&after===blits);
   }
 

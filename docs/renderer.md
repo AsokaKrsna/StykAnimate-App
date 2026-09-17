@@ -216,12 +216,19 @@ The camera output monitor contains its own drawing failures, reports diagnostics
 ## Live drawing surfaces
 
 A drawing resource supplies a visible-tile presenter for the active image
-figure rather than a full-cel surface. Tiles are painted into a bounded
-scratch canvas covering only the visible tile rectangle, anchored to stable
-device pixels so panning reuses it; mip levels serve zoomed-out views and are
-invalidated by tile dirty regions. WebGPU composes the scratch as an affine
-RGBA quad in the existing ordered layout, sizes its texture to the scratch
-bounds and uploads only dirty rectangles; Canvas draws the scratch once.
+figure rather than a full-cel surface. Tiles are painted into bounded
+scratch canvases covering tile-anchored rectangles: each presenter keeps a
+small LRU of them keyed by anchor, and a requested rect contained in an
+already-painted cover reuses that scratch without repainting, so zooming
+into painted regions and alternating Canvas/WebGPU anchors keep independent
+surfaces. Mip levels serve zoomed-out views and are invalidated by tile dirty
+regions; each scratch tracks its own pending dirty rect per mip level.
+WebGPU composes the scratch as an affine
+RGBA quad in the existing ordered layout, retains its texture keyed to the
+scratch anchor so deferred uploads always read the matching canvas, and
+uploads only dirty rectangles; Canvas draws the scratch once. An evicted
+presenter keeps its slot: the last texture stays bound until the store
+re-decodes, and v2 cels never fall back to the placeholder data URL.
 Unused drawing textures are retained in a bounded LRU before eviction, so
 timeline hops do not force full re-uploads. Surface residency/publication
 invalidates derived layouts. Layout replacement, cancellation and disposal

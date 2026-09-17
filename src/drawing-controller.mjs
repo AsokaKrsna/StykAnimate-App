@@ -82,7 +82,9 @@ export class DrawingController {
   propertySet(key,value){key=key.slice(5);if(key==='viewAngle')this.state.view.rotation=value*Math.PI/180;else if(key==='selectionScale'||key==='selectionAngle'){if(this.selection){this.selection[key==='selectionScale'?'scale':'angle']=key==='selectionScale'?value/100:value;this.previewSelection();}}else{this.settings[key]=value/(['opacity','flow','hardness','stabilization'].includes(key)?100:1);if(['size','opacity','flow','hardness'].includes(key))this.settings.preset=null;}this.onRender();this.paintPreview(this.panel);}
   async prepareVisible(){const owner=this.owner;if(!owner||!this.active||this.gesture)return;let target;try{target=this.editor.drawingTarget();}catch{return;}if(!target.figure)return;const revision=this.editor.revision;try{await owner.surface(target.figure);if(owner===this.owner&&revision===this.editor.revision){this.onRender();}}catch(error){if(error.name!=='AbortError')this.onError(error);}}
   get renderPreview(){const g=this.gesture;if(!g?.target?.created&&!g?.target?.migratedFrom)return null;if(!g.preview){const report={...this.editor.report,figure_types:[...this.editor.report.figure_types,g.target.figure],_styk:{...this.editor.report._styk,layers:{...this.editor.report._styk.layers,assignments:{...this.editor.report._styk.layers.assignments,[g.target.object.unique_id]:g.target.id}}}},frame=createFrame([...this.editor.evaluatedFrame.objects.filter(o=>o.unique_id!==g.target.object.unique_id),g.target.object]);Object.assign(frame,{camera:this.editor.evaluatedFrame.camera});for(const key of ['background_id','background_id_b','background_mix','background_color','_stykBackgroundColor'])if(key in this.editor.evaluatedFrame)frame[key]=this.editor.evaluatedFrame[key];g.preview={report,frame,geometry:buildGeometry(report,frame)};}return g.preview;}
-  resource(figure){if(!drawingMetadata(figure))return null;const entry=this.owner?.presenter(figure);return entry?.store?entry:null;}
+  /** The renderer keeps the presenter even after its store is evicted:
+   * presenter() kicks the re-decode, and v2 callers skip the stale data URL. */
+  resource(figure){if(!drawingMetadata(figure))return null;return this.owner?.presenter(figure)??null;}
   point(event){const rect=this.viewport.getBoundingClientRect();return screenToWorld({x:(event.clientX-rect.left)*this.viewport.clientWidth/rect.width,y:(event.clientY-rect.top)*this.viewport.clientHeight/rect.height},{report:this.editor.report,frame:this.editor.evaluatedFrame,view:this.state.view,cameraEnabled:false});}
   geometryItem(target){let item;if(target.created||target.migratedFrom)item=buildGeometry({...this.editor.report,figure_types:[...this.editor.report.figure_types,target.figure]},createFrame([target.object])).drawables[0];else item=this.editor.geometry.drawables.find(i=>i.obj.unique_id===target.object.unique_id&&i.type==='image');if(!item)throw new Error('The drawing pose is unavailable.');return item;}
   pixelMatrix(target){return drawingPixelMatrix(this.geometryItem(target));}
@@ -130,7 +132,7 @@ export class DrawingController {
       this.sessions.set(s.id,s);this.gesture={id:event.pointerId,target,surface,kind:'stroke',session:s};
       // Painting owns the UI thread: publication and thumbnails wait it out.
       s.owner.busy=true;
-      this.owner.strokeWorker.post({kind:'begin',stroke:s.id,settings:{size,pixelsPerUnit:d.pixelsPerUnit,color,opacity:this.settings.opacity,flow:this.settings.flow,hardness:this.settings.hardness,pressureSize:this.settings.pressureSize,pressureOpacity:this.settings.pressureOpacity,sizeCurve:this.settings.sizeCurve,opacityCurve:this.settings.opacityCurve,stabilization:this.settings.stabilization,spacingRatio:this.settings.spacingRatio??.12,texture:this.settings.texture??0,erase:s.erase,seed:s.id,maxBytes:this.editor.historyBytes}});
+      this.owner.strokeWorker.post({kind:'begin',stroke:s.id,settings:{size,pixelsPerUnit:d.pixelsPerUnit,color,opacity:this.settings.opacity,flow:this.settings.flow,hardness:this.settings.hardness,pressureSize:this.settings.pressureSize,pressureOpacity:this.settings.pressureOpacity,sizeCurve:this.settings.sizeCurve,opacityCurve:this.settings.opacityCurve,stabilization:this.settings.stabilization,spacingRatio:this.settings.spacingRatio??.12,texture:this.settings.texture??0,erase:s.erase,seed:s.id}});
       this.sampleStroke(pending.event);
     }
     for(const sample of pending.samples)this.move({...sample,pointerId:event.pointerId});if(pending.released)this.finish();this.onRender();
@@ -233,7 +235,7 @@ export class DrawingController {
       let source;
       if(this.settings.sampleAll){await this.barrierForComposite();const c=canvas(bounds.width,bounds.height),ctx=c.getContext('2d'),inverse=new DOMMatrix(this.pixelMatrix(target)).inverse();ctx.setTransform(inverse.a,inverse.b,inverse.c,inverse.d,inverse.e-bounds.x,inverse.f-bounds.y);drawGeometry(ctx,{drawables:this.editor.geometry.drawables.filter(i=>this.editor.getLayer(this.editor.layerForUid(i.obj.unique_id))?.visible!==false)},this.getResources());source=ctx.getImageData(0,0,c.width,c.height).data.buffer;}
       const tiles=[...TileStore.tilesInRect(bounds.x,bounds.y,bounds.width,bounds.height)].map(([tx,ty])=>surface.store.get(tx,ty)).filter(Boolean).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
-      const result=await owner.worker.request('fill',{bounds,tiles,options:{...point,color:[...this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16)),Math.round(this.settings.opacity*255)],tolerance:this.settings.tolerance,expansion:this.settings.expansion,gap:this.settings.gap},source,maxBytes:this.editor.historyBytes},{transfer:[...tiles.map(t=>t.pixels),...(source?[source]:[])]});
+      const result=await owner.worker.request('fill',{bounds,tiles,options:{...point,color:[...this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16)),Math.round(this.settings.opacity*255)],tolerance:this.settings.tolerance,expansion:this.settings.expansion,gap:this.settings.gap},source},{transfer:[...tiles.map(t=>t.pixels),...(source?[source]:[])]});
       if(controller.signal.aborted||owner!==this.owner||revision!==this.editor.revision)throw new DOMException('Fill superseded by another edit.','AbortError');
       this.editor.commitDrawingPixels(target,result.tiles,'Fill drawing');this.onStatus('Drawing filled.');
     }finally{surface.pinned=false;owner.busy=false;if(this.fillAbort===controller)this.fillAbort=null;this.onRender();}
@@ -272,7 +274,7 @@ export class DrawingController {
     this.owner.present(s.surface,R);this.onRender();
   }
   selectionContains(point){const s=this.selection;if(!s)return false;const B=s.mask,angle=-s.angle*Math.PI/180,x=point.x-s.cx-s.dx,y=point.y-s.cy-s.dy,px=Math.floor(s.cx+(Math.cos(angle)*x-Math.sin(angle)*y)/s.scale),py=Math.floor(s.cy+(Math.sin(angle)*x+Math.cos(angle)*y)/s.scale);return px>=B.x&&py>=B.y&&px<B.x+B.width&&py<B.y+B.height&&Boolean(B.mask[(py-B.y)*B.width+(px-B.x)]);}
-  applySelection(){const s=this.selection;if(!s)return;if(!s.dx&&!s.dy&&s.scale===1&&!s.angle){this.cancelSelection();return;}try{const tiles=tileChanges(s.surface.store,s.original,this.editor.historyBytes);this.editor.commitDrawingPixels(s.target,tiles,'Transform selected pixels');}finally{this.endSelection(false);this.onRender();}}
+  applySelection(){const s=this.selection;if(!s)return;if(!s.dx&&!s.dy&&s.scale===1&&!s.angle){this.cancelSelection();return;}try{const tiles=tileChanges(s.surface.store,s.original);this.editor.commitDrawingPixels(s.target,tiles,'Transform selected pixels');}finally{this.endSelection(false);this.onRender();}}
   endSelection(restore=true){const s=this.selection;if(!s)return;this.selection=null;const store=s.surface.store;
     if(restore)for(const key of s.touched){const o=s.original.get(key),[tx,ty]=key.split(',').map(Number);o?store.set(tx,ty,o):store.delete(tx,ty);}
     this.owner.present(s.surface);s.surface.pinned=false;if(s.cutout)s.cutout.width=s.cutout.height=1;if(s.preview)s.preview.width=s.preview.height=1;}
@@ -290,7 +292,7 @@ export class DrawingController {
       try{
         for(const key of s.touched){const o=s.original.get(key),[tx,ty]=key.split(',').map(Number);o?s.surface.store.set(tx,ty,o):s.surface.store.delete(tx,ty);}
         s.surface.store.writeRect(B.x,B.y,B.width,B.height,s.basePixels);
-        e.commitDrawingPixels(s.target,tileChanges(s.surface.store,s.original,e.historyBytes),'Delete selected pixels');
+        e.commitDrawingPixels(s.target,tileChanges(s.surface.store,s.original),'Delete selected pixels');
       }finally{this.endSelection(false);}
       return;
     }
@@ -309,7 +311,7 @@ export class DrawingController {
       if(e.revision!==revision||this.selection!==s)throw new DOMException('The selection changed. Copy it again.','AbortError');
       const metadata=drawingMetadata(s.target.figure),world=transformPoint(this.pixelMatrix(s.target),{x:rect.x,y:rect.y});
       e._drawingPixelClipboard={pixelsPerUnit:metadata.pixelsPerUnit,x:rect.x,y:rect.y,width:rect.width,height:rect.height,dataUrl,world};
-      if(action==='cut-pixels'){try{for(const key of s.touched){const o=s.original.get(key),[tx,ty]=key.split(',').map(Number);o?s.surface.store.set(tx,ty,o):s.surface.store.delete(tx,ty);}s.surface.store.writeRect(B.x,B.y,B.width,B.height,s.basePixels);const tiles=tileChanges(s.surface.store,s.original,e.historyBytes);e.commitDrawingPixels(s.target,tiles,'Cut selected pixels');}finally{this.endSelection(false);}}return true;
+      if(action==='cut-pixels'){try{for(const key of s.touched){const o=s.original.get(key),[tx,ty]=key.split(',').map(Number);o?s.surface.store.set(tx,ty,o):s.surface.store.delete(tx,ty);}s.surface.store.writeRect(B.x,B.y,B.width,B.height,s.basePixels);const tiles=tileChanges(s.surface.store,s.original);e.commitDrawingPixels(s.target,tiles,'Cut selected pixels');}finally{this.endSelection(false);}}return true;
     });
     if(action==='paste-pixels')return this.getClipboard().paste('drawing-pixels',async()=>{
       const clip=e._drawingPixelClipboard;if(!clip)throw new Error('Copy selected pixels first.');this.cancelSelection();
@@ -331,7 +333,7 @@ export class DrawingController {
         const bounds=tileAlignedRect(Math.floor(x),Math.floor(y),Math.max(1,Math.ceil(x+clip.width*rr)-Math.floor(x)),Math.max(1,Math.ceil(y+clip.height*rr)-Math.floor(y)));
         if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw new Error('This paste exceeds the pixel limit. Use a smaller selection.');
         const tiles=[...TileStore.tilesInRect(bounds.x,bounds.y,bounds.width,bounds.height)].map(([tx,ty])=>surface.store.get(tx,ty)).filter(Boolean).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
-        const result=await owner.worker.request('paste',{bounds,tiles,clip:{width:clip.width,height:clip.height,dataUrl:clip.dataUrl},x,y,ratio:rr,maxBytes:e.historyBytes},{transfer:tiles.map(t=>t.pixels)});
+        const result=await owner.worker.request('paste',{bounds,tiles,clip:{width:clip.width,height:clip.height,dataUrl:clip.dataUrl},x,y,ratio:rr},{transfer:tiles.map(t=>t.pixels)});
         if(!current())throw new DOMException('The drawing changed before paste.','AbortError');
         return e.commitDrawingPixels(target,result.tiles,'Paste selected pixels');
       }finally{if(surface){surface.pinned=false;owner.present(surface);}owner.discard(target.figure);}

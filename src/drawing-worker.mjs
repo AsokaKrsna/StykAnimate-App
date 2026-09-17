@@ -8,7 +8,7 @@ import {encodePNGPortable} from './sticknodes/decoder/png-browser.mjs';
 
 const storeOf=data=>{const store=new TileStore();for(const t of data.tiles??[])store.tiles.set(tileKey(t.tx,t.ty),{tx:t.tx,ty:t.ty,pixels:new Uint8ClampedArray(t.pixels),frozen:false,png:t.png?new Uint8Array(t.png):undefined});return store;};
 const beforeOf=(store,rect)=>{const before=new Map();for(const [tx,ty] of TileStore.tilesInRect(rect.x,rect.y,rect.width,rect.height))before.set(tileKey(tx,ty),store.get(tx,ty)?.pixels.slice()??null);return before;};
-const changesReply=(id,store,before,maxBytes)=>{const tiles=tileChanges(store,before,maxBytes);self.postMessage({id,tiles},tiles.flatMap(t=>[t.before?.buffer,t.after?.buffer].filter(Boolean)));};
+const changesReply=(id,store,before)=>{const tiles=tileChanges(store,before);self.postMessage({id,tiles},tiles.flatMap(t=>[t.before?.buffer,t.after?.buffer].filter(Boolean)));};
 const validRect=r=>r&&[r.x,r.y].every(Number.isSafeInteger)&&Number.isInteger(r.width)&&Number.isInteger(r.height)&&r.width>0&&r.height>0&&r.width*r.height<=DRAWING_MAX_PIXELS;
 // Encoded tiles persist across publications so a re-publish only encodes
 // tiles the main thread resent; the blob is assembled here, never upstream.
@@ -45,7 +45,7 @@ self.onmessage=async({data})=>{
       if(!validRect(data.bounds))throw new Error('Invalid fill bounds.');
       const store=storeOf(data),before=beforeOf(store,data.bounds);
       floodTiles(store,{...data.options,bounds:data.bounds,source:data.source?new Uint8ClampedArray(data.source):undefined});
-      changesReply(id,store,before,data.maxBytes);return;
+      changesReply(id,store,before);return;
     }
     if(kind==='paste'){
       if(!validRect(data.bounds))throw new Error('Invalid paste bounds.');
@@ -72,7 +72,7 @@ self.onmessage=async({data})=>{
         for(const [tx,ty] of TileStore.tilesInRect(rect.x,rect.y,rect.width,rect.height)){const tile=store.writable(tx,ty),ox=tx*TILE-rect.x,oy=ty*TILE-rect.y;
           for(let py=Math.max(0,-oy);py<Math.min(TILE,rect.height-oy);py++)tile.pixels.set(pixels.data.subarray(((py+oy)*rect.width+Math.max(0,ox))*4,((py+oy)*rect.width+Math.min(rect.width,ox+TILE))*4),(py*TILE+Math.max(0,-ox))*4);}
       }
-      changesReply(id,store,before,data.maxBytes);return;
+      changesReply(id,store,before);return;
     }
     if(kind==='resample'){
       const bounds=data.bounds,ratio=data.ratio;
