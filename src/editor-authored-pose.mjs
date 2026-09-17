@@ -71,8 +71,10 @@ export const editorAuthoredPoseMethods = {
         this._synchronizeAnimationOrigins(edit.frame,drag.before);
       }
       if (edit.transaction) validateScene({...this.report, keyframes: [edit.frame]});
+      // Sheet planning can reject a cross-layer edit after pose validation.
+      // Release the draft on that failure too, or every save/seek retries it.
+      if(this.report._styk?.layerSheet)return this._commitSheetPose(edit,drag);
     } catch (error) { this.cancelAuthoredPoseDrag(); throw error; }
-    if(this.report._styk?.layerSheet)return this._commitSheetPose(edit,drag);
     const split = this.propertyChannels ? splitPosePropertyChanges(this.report, edit.source, edit.frame, ids, edit.tick) : null;
     const entries = split?.entries ?? [];
     let sourceId;

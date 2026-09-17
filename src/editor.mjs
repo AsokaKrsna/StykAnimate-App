@@ -22,7 +22,7 @@ import {editorRigMethods} from './editor-rig.mjs';
 import {editorSelectionMethods} from './editor-selection.mjs';
 import {editorLayerMethods} from './editor-layers.mjs';
 import {editorLayerAsyncMethods} from './editor-layer-async.mjs';
-import {ensureLayerState, validateLayerState} from './layers.mjs';
+import {ensureLayerState, validateLayerState, layerLocked} from './layers.mjs';
 import {editorAnimationMethods} from './editor-animation.mjs';
 import {validateAnimationDocument} from './animation-channels.mjs';
 import {editorFrameMethods, validateFrameIdentities} from './editor-frames.mjs';
@@ -643,6 +643,9 @@ export class Editor extends EventTarget {
       if (posed && this._drag?.before.some(hasPinnedIK)) {
         const geometry = this.geometry;
         for (const before of this._drag.before) {
+          // IK dependency capture includes locked ancestors needed to evaluate
+          // an editable attachment. Their evaluated pose is not an authored edit.
+          if (layerLocked(this.report, before.unique_id)) continue;
           const object = this.frame.objects.find(o => o.unique_id === before.unique_id);
           const posedGeometry = geometry.objects.get(object?.object_slot), solved = posedGeometry?.solvedAngles;
           this._bakeIKFollowers(object, posedGeometry);

@@ -1,6 +1,7 @@
 import {ikLayout, ikChain, ikFollowers, ikFollowerIndices, ikBendReference, solveObjectIK, MAX_IK_CHAIN} from './ik.mjs';
 import {rigIKAllowed} from './rig-constraints.mjs';
 import {ikComponents, joinedIKGraph} from './ik-joined.mjs';
+import {layerLocked} from './layers.mjs';
 
 function context(editor) {
   const frame = editor.selectionFrame;
@@ -148,7 +149,9 @@ export const editorIKMethods = {
     let geometry;
     for (const before of this._drag?.before ?? []) {
       const object = this.frame.objects[before.object_slot];
-      if (object?.unique_id !== before.unique_id) continue;
+      // Joined IK captures ancestors for evaluation too. Remembering a solver
+      // branch must not author metadata on a locked, otherwise untouched layer.
+      if (object?.unique_id !== before.unique_id || layerLocked(this.report, object.unique_id)) continue;
       for (const [id, c] of Object.entries(object._stykIK ?? {})) {
         if (!c.enabled || !c.pinned || c.bendDirection !== 0) continue;
         geometry ??= this.geometry;

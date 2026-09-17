@@ -5259,6 +5259,8 @@ function cancelKeyboardCommand() {
   hotkeys.releaseAll();
   timelineUI?._cancelGesture?.();
   cancelDrag();
+  // Pointer-up may already have cleared the UI gesture before its commit failed.
+  if (editor._drag) editor.cancelDrag();
   if (state.tool === 'attach') setTool('select');
   $('menu').hidden = true;
 }

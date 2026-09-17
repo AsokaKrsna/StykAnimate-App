@@ -81,6 +81,13 @@ a non-circle hides those controls without discarding existing native color data.
 See [figure joining and static-node selection](FIGURE-JOINING.md) for the shared
 J/context-menu action, soft static selection, native evidence and verification.
 
+Posing an attachment on an unlocked layer can evaluate its locked IK ancestors,
+but must not bake their solved angles or update their bend references. Actual pose
+changes crossing into a locked layer are rejected atomically. A rejected layer-sheet
+commit clears its draft, leaving saving and navigation available; Escape also
+cancels a model gesture left behind after pointer-up. Regression coverage is in
+`tests/locked-layer-pose.test.mjs`.
+
 ## Figure colors
 
 `src/figure-colors.mjs` reads displayed segment and fill colors and builds pure

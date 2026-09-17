@@ -10,6 +10,10 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 - Draw and animate on dedicated drawing layers with brush presets, pressure, erasing, fill, onion skin and pixel selection; pan while painting, create blank drawing frames with A, paint beyond the stage, and choose higher-resolution strokes using the shared timeline, undo, saving and export tools.
 
+### Fixed
+
+- Keep locked IK ancestors unchanged when posing attached figures on another layer, and clear rejected pose edits so saving, tools, and timeline navigation remain available.
+
 ## [1.0.6]
 
 Private feedback conversations and playback refinements
