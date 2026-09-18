@@ -813,3 +813,38 @@ test('a burst of surface requests keeps at most two decodes queued and decodes t
     assert.ok(resources.stats.decodes<=3,`decodes ${resources.stats.decodes}`);
   }finally{resources.dispose();}
 });
+
+test('a gesture commit releases its pin so the broadcast barrier publishes the last stroke',async()=>{
+  const {e,resources}=fixture();try{
+    const target=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:32,y:32}}),surface=await resources.surface(target.figure);
+    const brush=new DrawingStroke(surface.store,{size:8,pressureSize:false});brush.sample({x:40,y:40});
+    // commitStroke ordering: pin and busy stay held across the synchronous emit
+    // that mirrors the document into playback; the barrier inside it must see
+    // the committed tiles, not the previous published blob.
+    surface.pinned=true;resources.busy=true;
+    let published,figureIndices;
+    const listener=event=>{
+      const d=event.detail??{};
+      if(d.kind!=='edit'||!d.drawing)return;
+      figureIndices=d.figureIndices;
+      published=(async()=>{await resources.flush();return e.report.figure_types.find(f=>drawingMetadata(f)?.celId===drawingMetadata(target.figure).celId);})();
+    };
+    e.addEventListener('change',listener);
+    try{e.commitDrawingPixels(target,brush.finish());}finally{resources.busy=false;surface.pinned=false;e.removeEventListener('change',listener);}
+    const figure=await published,entry=resources.entry(target.figure);
+    assert.ok(figure,'the drawing emit published during the commit broadcast');
+    assert.deepEqual(figureIndices,[e.report.figure_types.indexOf(figure)]);
+    assert.ok(figure.image_assets[0].styk_tiles,'the last stroke is in the serialized asset');
+    assert.equal((await decodeTileBlob(figure.image_assets[0].styk_tiles)).length,entry.store.size);
+    assert.equal(drawingMetadata(figure).revision,entry.revision);
+    assert.equal(entry.published.revision,entry.revision);
+    // A second stroke republishes: the mirror never lags one stroke behind.
+    surface.pinned=true;resources.busy=true;published=null;
+    e.addEventListener('change',listener);
+    const dab=new DrawingStroke(entry.store,{size:8,pressureSize:false});dab.sample({x:20,y:20});
+    try{e.commitDrawingPixels(e.drawingTarget(),dab.finish());}finally{resources.busy=false;surface.pinned=false;e.removeEventListener('change',listener);}
+    const figure2=await published,d2=drawingMetadata(figure2);
+    assert.equal(d2.revision,entry.revision);assert.ok(d2.revision>1);
+    assert.equal((await decodeTileBlob(figure2.image_assets[0].styk_tiles)).length,entry.store.size);
+  }finally{resources.dispose();}
+});

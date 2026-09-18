@@ -116,6 +116,29 @@ test('view changes merge unfinished patches and topology/definition changes use 
   } finally {cache.dispose();}
 });
 
+test('sparse figure updates replace retained definitions in place and keep identity checks', async () => {
+  const editor = fixture(), report = editor.report, messages = [], cache = new PlaybackCache({workerFactory: factory(messages)});
+  try {
+    cache.load(report, {revision: editor.revision}); await matches(cache, report, 0); messages.length = 0;
+    // In-place definition edits (drawing pixel commits) ship only the changed
+    // figure: definition stays true while the table match still holds.
+    report.figure_types[0].name = 'Renamed figure';
+    cache.updateDocument({figureIndices: [0], definition: true, revision: editor.revision});
+    await cache.prepareRange([0]);
+    const patch = patches(messages).at(-1);
+    assert.deepEqual(patch.figureUpdates.map(entry => entry.index), [0]);
+    assert.equal(patch.figureUpdates[0].figure.name, 'Renamed figure');
+    assert.equal(cache.stats.loadKind, 'patch'); assert.equal(cache.stats.patchFigures, 1);
+    assert.equal(cache._mirrorTables.definitions[0], report.figure_types[0]);
+    assert.equal(cache._figureUpdates.size, 0);
+    // A wrong figure_type_id can never replace a retained definition.
+    const before = structuredClone(report);
+    assert.throws(() => applyPlaybackPatch(report, {properties: playbackProperties(report), frames: [], sources: [], hasFrameSources: false,
+      figureUpdates: [{index: 0, figure: {...report.figure_types[0], figure_type_id: 999}}]}), /targets/);
+    assert.deepEqual(report, before);
+  } finally {cache.dispose();}
+});
+
 test('malformed complete patches cannot partially change retained worker data', () => {
   const report = createDemo(), before = structuredClone(report), properties = playbackProperties(report);
   assert.throws(() => applyPlaybackPatch(report, {properties: {...properties, fps: 10}, frames: [{index: 999, frame: report.keyframes[0]}], sources: [], hasFrameSources: false}), /targets/);

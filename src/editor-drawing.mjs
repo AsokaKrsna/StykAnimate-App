@@ -16,7 +16,7 @@ export function applyDrawingCommand(editor,command,direction) {
   const d=drawingMetadata(figure);
   if(d.version===2)d.bounds=command[direction==='before'?'beforeBounds':'afterBounds']??null;
   editor._revision=command[`${direction}Revision`];editor._invalidate({timing:false});
-  editor._emit('history',{label:command.label,definition:true,drawing:true});return true;
+  editor._emit('history',{label:command.label,definition:true,drawing:true,figureIndices:[editor.report.figure_types.indexOf(figure)]});return true;
 }
 export const editorDrawingMethods={
   addDrawingFrame(id=this.activeLayerId,tick=this.tick) {
@@ -95,8 +95,10 @@ export const editorDrawingMethods={
     delete asset.styk_tiles;asset.data_url=EMPTY_PNG;asset.width=asset.height=asset.display_width=asset.display_height=1;
     const object=structuredClone(target.object);object.figure_type_id=figure.figure_type_id;object.scale*=old.pixelsPerUnit/pixelsPerUnit;if(object.len_flag)object.lengths=object.lengths.map(n=>n*ratio);
     const plan=drawingSheetPlan(this,[target.id]);plan.definitions=[...this.report.figure_types,figure];plan.write(target.id,target.key.tick,createFrame([object]),{easing:{interpolation:'constant'}});
-    const result=drawingSheetPublish(this,plan,'Resample drawing',{assets:{figure_types:{added:[figure]}}});
-    this.drawingResources.install(figure,tiles);return result;
+    // Install before publishing so the broadcast's own drawing barrier can
+    // encode the resampled tiles instead of serializing an empty cel.
+    this.drawingResources.install(figure,tiles);
+    return drawingSheetPublish(this,plan,'Resample drawing',{assets:{figure_types:{added:[figure]}}});
   },
   commitDrawingPixels(target,tiles,label='Brush stroke') {
     if(!tiles.length)return false;assertDrawingTargets(this,[target.id]);
@@ -108,16 +110,19 @@ export const editorDrawingMethods={
     const celId=drawingMetadata(target.figure).celId,beforeBounds=drawingMetadata(target.figure).bounds??null;
     this.drawingResources.checkHistory({kind:'drawing-pixels',celId,tiles},'after');
     const commit=()=>{
+      if(target.migratedFrom)this.drawingResources.retarget(target.migratedFrom,target.figure);
+      // Committing ends the gesture's exclusive hold on the store: publication
+      // barriers triggered by this commit's own broadcast must see the tiles.
+      this.drawingResources.entry(target.figure).pinned=false;
       if(target.created||target.migratedFrom){
         const plan=drawingSheetPlan(this,[target.id]);plan.layers.assignments[target.object.unique_id]=target.id;plan.definitions=[...this.report.figure_types,target.figure];
         plan.write(target.id,target.key.tick,createFrame([target.object]),{easing:{interpolation:'constant'}});
         drawingSheetPublish(this,plan,target.created?'Create drawing cel':'Migrate drawing',{assets:{figure_types:{added:[target.figure]}},nextUid:Math.max(this._nextUid,(target.object.unique_id??0)+1)});
       }
-      if(target.migratedFrom)this.drawingResources.retarget(target.migratedFrom,target.figure);
       const figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===celId);
       this.drawingResources.apply(figure,tiles,'after');
       this._record({kind:'drawing-pixels',celId,tiles,label,beforeBounds,afterBounds:drawingMetadata(figure).bounds??null,precomputedBytes:bytes});
-      this.selectSheetLayer(target.id);this._invalidate({timing:false});this._emit('edit',{label,definition:true,drawing:true});return true;
+      this.selectSheetLayer(target.id);this._invalidate({timing:false});this._emit('edit',{label,definition:true,drawing:true,figureIndices:[this.report.figure_types.indexOf(figure)]});return true;
     };
     // Cel creation and migration change sheet structure. Subsequent strokes are
     // pixel commands and must not rebuild timing or invalidate timeline rows.

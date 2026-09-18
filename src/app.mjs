@@ -5476,7 +5476,7 @@ editor.addEventListener("change", (e) => {
   if (["edit", "history", "document", "frame-draft"].includes(kind))
     for (const job of exportJobs) job.controller.abort();
   if (
-    (kind === "edit" || kind === "frame-draft" || (kind === "history" && (e.detail.layerSheet || (e.detail.frameIndices || e.detail.animation) && !e.detail.structural))) &&
+    (kind === "edit" || kind === "frame-draft" || (kind === "history" && (e.detail.layerSheet || e.detail.figureIndices?.length || (e.detail.frameIndices || e.detail.animation) && !e.detail.structural))) &&
     !e.detail?.live &&
     playback.report === editor.report &&
     (state.playbackRevision !== editor.revision ||
@@ -5493,6 +5493,7 @@ editor.addEventListener("change", (e) => {
       revision: editor.revision,
       frameIndices,
       sourceIds: e.detail.sourceIds || [],
+      figureIndices: e.detail.figureIndices || [],
       definition: Boolean(e.detail.definition),
       structural: Boolean(e.detail.structural && !metadataOnly),
     });

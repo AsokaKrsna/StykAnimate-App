@@ -132,7 +132,11 @@ plus the ordered key list the blob must carry; cached PNGs fill the rest, and
 missing cache entries trigger exactly one resend. Blob assembly happens in
 the worker. Generation, cel and revision checks reject stale results. Failed
 encoding retains dirty work for retry, and the publication debounce yields to
-active strokes and scrubbing. Exact PNG encoding/decoding avoids
+active strokes and scrubbing. A gesture's pin on its tile store ends inside
+the commit, before the change broadcast — the playback/export barriers that
+broadcast triggers always see the committed tiles, and pixel commits reach
+the playback worker as sparse figure updates instead of full snapshots.
+Exact PNG encoding/decoding avoids
 premultiplication rounding in saved pixels. Encoding is derived publication,
 not another edit.
 

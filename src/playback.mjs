@@ -30,7 +30,8 @@ export class PlaybackCache {
     this.cache = new Map(); this.pending = new Map(); this.revision = 0; this.disposed = false; this.needsLoad = false;
     this.cacheNamespace = globalThis.crypto.randomUUID();
     this._mirrorAvailable = false; this._frameUpdates = new Map(); this._protectedTick = null; this._prefetchRanks = null;
-    this._mirrorSources = new Map(); this._sourceUpdates = new Map(); this._mirrorTables = null; this._patchPending = false;
+    this._mirrorSources = new Map(); this._sourceUpdates = new Map(); this._figureUpdates = new Map();
+    this._mirrorTables = null; this._patchPending = false;
     this._packetSizes = new Map(); this._sizeLimit = Math.max(256, maxFrames * 4, maxPending * 4); this._recentPacketBytes = 0;
     this.bitmapPool=new PlaybackBitmapPool();this._packetFootprints=new Map();this._footprintBytes=0;this._recentShared=false;
     this.stats = { backend: 'Worker prepared playback', revision: 0, readyFrames: 0, pendingFrames: 0, bytes: 0,bitmapResources:0,footprintBytes:0,
@@ -95,7 +96,7 @@ export class PlaybackCache {
     // keep the acknowledged mirror without resending scene data.
     if (!this._mirrorAvailable || this.needsLoad)
       return this.load(this.report, { revision: this.documentRevision, scale, cameraEnabled, storedFrames, softwareFrames, hiddenUids, hiddenKey });
-    if (this._patchPending || this._frameUpdates.size || this._sourceUpdates.size)
+    if (this._patchPending || this._frameUpdates.size || this._sourceUpdates.size || this._figureUpdates.size)
       return this.updateDocument({revision: this.documentRevision, scale, cameraEnabled, storedFrames, softwareFrames, hiddenUids, hiddenKey});
     // Packets carry their own camera mode. A camera-only toggle such as
     // timeline scrubbing keeps them so playback resumes warm instead of cold.
@@ -128,17 +129,22 @@ export class PlaybackCache {
       tables.definitions.length === (report.figure_types?.length || 0) && tables.definitions.every((value, index) => value === report.figure_types[index]) &&
       tables.backgrounds.length === (report.backgrounds?.length || 0) && tables.backgrounds.every((value, index) => value === report.backgrounds[index]);
   }
-  updateDocument({frameIndices = [], sourceIds = [], revision = this.documentRevision, scale = this.scale,
+  updateDocument({frameIndices = [], sourceIds = [], figureIndices = [], revision = this.documentRevision, scale = this.scale,
     cameraEnabled = this.cameraEnabled, storedFrames = this.storedFrames, softwareFrames = this.softwareFrames,
     hiddenUids = this.hiddenUids, hiddenKey = this.hiddenKey, structural = false, definition = false, loadKind = 'patch'} = {}) {
     if (this.disposed) throw new Error('The playback cache has been disposed.');
     if (!this.report) throw new Error('Load a document before updating playback.');
     for (const index of frameIndices) if (!Number.isInteger(index) || index < 0 || index >= (this.report?.keyframes.length || 0))
       throw new Error('Playback frame updates must reference a frame in the current document.');
+    for (const index of figureIndices) if (!Number.isInteger(index) || index < 0 || index >= (this.report?.figure_types?.length || 0))
+      throw new Error('Playback figure updates must reference a figure in the current document.');
     for (const id of sourceIds) if (typeof id !== 'string' || !/^[a-z][a-z0-9-]{0,127}$/.test(id)) throw new Error('Invalid retained playback source ID.');
-    if (!this._mirrorAvailable || this.needsLoad || structural || definition || !this._tablesMatch())
+    if (!this._mirrorAvailable || this.needsLoad || structural || (definition && !figureIndices.length) || !this._tablesMatch())
       return this.load(this.report, {revision, scale, cameraEnabled, storedFrames, softwareFrames, hiddenUids, hiddenKey});
     for (const index of frameIndices) this._frameUpdates.set(index, {frame: this.report.keyframes[index]});
+    // In-place definition edits travel as sparse figure replacements; the worker
+    // validates figure_type_id identity so a stale write can never land.
+    for (const index of figureIndices) this._figureUpdates.set(index, {figure: this.report.figure_types[index]});
     const sourceChanges = retainedSourceChanges(this.report, this._mirrorSources, [...this._sourceUpdates.keys(), ...sourceIds]);
     const dirtySources = new Set(sourceChanges.map(entry => entry.id));
     // Keep all uncertain IDs until an ACK. A cancelled transaction may already
@@ -147,14 +153,19 @@ export class PlaybackCache {
     const previousSnapshot = this._retentionSnapshot;
     this._refreshTimeline();
     const nextSnapshot = playbackRetentionSnapshot(this.report, this.entries, {scale, cameraEnabled, storedFrames});
-    const retainTicks = dirtySources.size ? new Set() : unchangedPlaybackTicks(previousSnapshot, nextSnapshot, this.cache.values(), this._frameUpdates.keys());
+    const figureUpdates = [...this._figureUpdates];
+    // A replaced figure can appear on any tick; sparse updates drop every
+    // retained packet instead of guessing which exposures show the cel.
+    const retainTicks = dirtySources.size || figureUpdates.length ? new Set() : unchangedPlaybackTicks(previousSnapshot, nextSnapshot, this.cache.values(), this._frameUpdates.keys());
     this.invalidate({revision, scale, cameraEnabled, storedFrames, softwareFrames, hiddenUids, hiddenKey, retainDocument: true, retainTicks}); this._patchPending = true;
     this._retentionSnapshot = nextSnapshot;
     const generation = this.revision, updates = [...this._frameUpdates], sourceUpdates = [...this._sourceUpdates], started = performance.now();
     const payload = {properties: playbackProperties(this.report), frames: updates.map(([index, entry]) => ({index, frame: entry.frame})),
-      sources: sourceUpdates.map(([id, entry]) => ({id, frame: entry.frame})), hasFrameSources: this.report._styk?.frameSources !== undefined};
+      sources: sourceUpdates.map(([id, entry]) => ({id, frame: entry.frame})), hasFrameSources: this.report._styk?.frameSources !== undefined,
+      figureUpdates: figureUpdates.map(([index, entry]) => ({index, figure: entry.figure}))};
     Object.assign(this.stats, {loadKind, loadChunks: 0, loadSerializationMs: 0, loadMaxTaskMs: 0, maxChunkBytes: 0,
-      patchFrames: updates.length, patchSourceUpserts: sourceUpdates.filter(([, entry]) => entry.frame !== null).length,
+      patchFrames: updates.length, patchFigures: figureUpdates.length,
+      patchSourceUpserts: sourceUpdates.filter(([, entry]) => entry.frame !== null).length,
       patchSourceDeletes: sourceUpdates.filter(([, entry]) => entry.frame === null).length});
     const task = (async () => {
       await drawingBarrier(this.report);
@@ -170,6 +181,10 @@ export class PlaybackCache {
       await this._broadcastLoad({type: 'patch-complete', revision: generation, sequence}, 'loaded');
       if (generation === this.revision) {
         for (const [index, entry] of updates) if (this._frameUpdates.get(index) === entry) this._frameUpdates.delete(index);
+        for (const [index, entry] of figureUpdates) {
+          this._mirrorTables.definitions[index] = entry.figure;
+          if (this._figureUpdates.get(index) === entry) this._figureUpdates.delete(index);
+        }
         for (const [id, entry] of sourceUpdates) {
           if (entry.frame === null) this._mirrorSources.delete(id); else this._mirrorSources.set(id, entry.frame);
           if (this._sourceUpdates.get(id) === entry) this._sourceUpdates.delete(id);
@@ -205,6 +220,7 @@ export class PlaybackCache {
       pendingFrames: 0,bitmapResources:this.bitmapPool.resources.size,footprintBytes:this._footprintBytes,workerCache:null,lastSharing:null,reusedGeometryObjects:0 });
     if (!retainDocument) {
       this._mirrorAvailable = false; this._frameUpdates.clear(); this._sourceUpdates.clear();
+      this._figureUpdates.clear();
       this._mirrorSources.clear(); this._mirrorTables = null; this._patchPending = false;
     }
     this.needsLoad = Boolean(this.report) && !retainDocument;
@@ -228,7 +244,8 @@ export class PlaybackCache {
       softwareFrames: Boolean(this.softwareFrames), gpuIsolation: this.gpuIsolation, hiddenUids: this.hiddenUids, hiddenKey: this.hiddenKey || '',
       acknowledgePackets: true, maxPacketBytes: this.maxBytes * .8, maxAssetBytes: Math.min(previewMemoryPlan().workerImages, this.maxBytes / 4) };
     this.stats.loadKind = 'document'; this.stats.loadChunks = 0; this.stats.loadSerializationMs = 0; this.stats.loadMaxTaskMs = 0;
-    this.stats.maxChunkBytes = 0; this.stats.patchFrames = 0; this.stats.patchSourceUpserts = 0; this.stats.patchSourceDeletes = 0;
+    this.stats.maxChunkBytes = 0; this.stats.patchFrames = 0; this.stats.patchFigures = 0;
+    this.stats.patchSourceUpserts = 0; this.stats.patchSourceDeletes = 0;
     const task = (async () => {
       await drawingBarrier(this.report);
       let sequence = 0;

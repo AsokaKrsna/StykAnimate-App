@@ -25,15 +25,24 @@ export function retainedSourceChanges(report, mirror, dirty = []) {
 export function applyPlaybackPatch(report, patch) {
   if (!patch?.properties || typeof patch.properties !== 'object' || Array.isArray(patch.properties) ||
     Object.keys(patch.properties).some(key => retained.has(key)) || own(patch.properties._styk || {}, 'frameSources') ||
-    !Array.isArray(patch.frames) || !Array.isArray(patch.sources) || typeof patch.hasFrameSources !== 'boolean')
+    !Array.isArray(patch.frames) || !Array.isArray(patch.sources) || typeof patch.hasFrameSources !== 'boolean' ||
+    (own(patch, 'figureUpdates') && !Array.isArray(patch.figureUpdates)))
     throw new Error('Invalid playback document patch.');
   for (const table of ['figure_types', 'backgrounds']) if (own(patch, table) && !Array.isArray(patch[table]))
     throw new Error('Invalid render media table patch.');
-  const frameIndices = new Set(), sourceIds = new Set();
+  const frameIndices = new Set(), sourceIds = new Set(), figureIndices = new Set();
   for (const entry of patch.frames) {
     if (!Number.isInteger(entry.index) || entry.index < 0 || entry.index >= report.keyframes.length || frameIndices.has(entry.index) || !Array.isArray(entry.frame?.objects))
       throw new Error('Playback frame update targets are invalid.');
     frameIndices.add(entry.index);
+  }
+  // Sparse figure replacements must keep identity: objects reference figures by
+  // figure_type_id, so a mismatched update would corrupt the mirror.
+  for (const entry of patch.figureUpdates ?? []) {
+    if (!Number.isInteger(entry.index) || entry.index < 0 || entry.index >= report.figure_types.length || figureIndices.has(entry.index) ||
+      entry.figure?.figure_type_id !== report.figure_types[entry.index].figure_type_id)
+      throw new Error('Playback figure update targets are invalid.');
+    figureIndices.add(entry.index);
   }
   for (const entry of patch.sources) {
     if (!sourceId(entry.id) || sourceIds.has(entry.id) ||
@@ -49,6 +58,7 @@ export function applyPlaybackPatch(report, patch) {
   for (const [key, value] of Object.entries(patch.properties)) Object.defineProperty(report, key, {value, enumerable: true, configurable: true, writable: true});
   if (patch.hasFrameSources) report._styk.frameSources = sources;
   for (const entry of patch.frames) report.keyframes[entry.index] = entry.frame;
+  for (const entry of patch.figureUpdates ?? []) report.figure_types[entry.index] = entry.figure;
   for (const table of ['figure_types', 'backgrounds']) if (own(patch, table)) report[table] = patch[table];
   return report;
 }
