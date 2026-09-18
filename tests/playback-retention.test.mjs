@@ -105,6 +105,53 @@ test('superseding pending patches preserves only packets independent of both edi
   } finally {cache.dispose();}
 });
 
+test('layer sheet history retains packets on spans whose cells and sources are unchanged', async () => {
+  const editor = new Editor({demo: false, layerTimeline: true}).load(fixture());
+  assert.ok(editor.report._styk.layerSheet, 'fixture migrates to the layer timeline');
+  const cache = new PlaybackCache({workerFactory});
+  let detail = null;
+  editor.addEventListener('change', event => { if (['edit', 'history'].includes(event.detail?.kind)) detail = event.detail; });
+  const publish = () => cache.updateDocument({revision: editor.revision, frameIndices: detail.frameIndices ?? detail.changedFrames ?? [],
+    sourceIds: detail.sourceIds ?? [], figureIndices: detail.figureIndices ?? []});
+  try {
+    cache.load(editor.report); await matches(cache, editor.report);
+    const before = new Map(cache.cache);
+    editor.seek(4); editor.select(1); editor.moveSelection(13, -7); publish();
+    assert.equal(cache.get(8), before.get(8), 'packets beyond the moved cell survive');
+    assert.equal(cache.get(4), null, 'the rewritten cell drops its packets');
+    await matches(cache, editor.report);
+    const afterMove = new Map(cache.cache);
+    editor.undo(); publish();
+    assert.equal(cache.get(8), afterMove.get(8), 'undo retains packets on untouched spans');
+    assert.equal(cache.get(4), null, 'undo drops the restored span for recompilation');
+    await matches(cache, editor.report);
+  } finally {cache.dispose();}
+});
+
+test('a changed retained source drops only the layer sheet spans that reference it', async () => {
+  const editor = new Editor({demo: false, layerTimeline: true}).load(fixture());
+  const cache = new PlaybackCache({workerFactory});
+  let detail = null;
+  editor.addEventListener('change', event => { if (['edit', 'history'].includes(event.detail?.kind)) detail = event.detail; });
+  const publish = () => cache.updateDocument({revision: editor.revision, frameIndices: detail.frameIndices ?? detail.changedFrames ?? [],
+    sourceIds: detail.sourceIds ?? [], figureIndices: detail.figureIndices ?? []});
+  try {
+    cache.load(editor.report); await matches(cache, editor.report);
+    editor.seek(4); editor.select(1); editor.moveSelection(13, -7); publish();
+    await matches(cache, editor.report);
+    const sourceId = Object.keys(editor.report._styk.frameSources ?? {})[0];
+    assert.ok(sourceId, 'the move captured a retained pose source');
+    const before = new Map(cache.cache);
+    const source = structuredClone(editor.report._styk.frameSources[sourceId]);
+    source.objects[0].root_x += 33;
+    editor.report._styk.frameSources[sourceId] = source;
+    detail = {frameIndices: [], sourceIds: [sourceId], figureIndices: []}; publish();
+    assert.equal(cache.get(12), before.get(12), 'spans sampling other cells retain their packets');
+    assert.equal(cache.get(4), null, 'spans referencing the changed source drop');
+    await matches(cache, editor.report);
+  } finally {cache.dispose();}
+});
+
 test('Auto easing invalidates neighboring tangents when a non-endpoint pose or mode changes', async () => {
   const report = fixture(), cache = new PlaybackCache({workerFactory});
   for (const frame of report.keyframes) frame._styk.easing = {interpolation: 'auto'};

@@ -156,7 +156,7 @@ export class PlaybackCache {
     const figureUpdates = [...this._figureUpdates];
     // A replaced figure can appear on any tick; sparse updates drop every
     // retained packet instead of guessing which exposures show the cel.
-    const retainTicks = dirtySources.size || figureUpdates.length ? new Set() : unchangedPlaybackTicks(previousSnapshot, nextSnapshot, this.cache.values(), this._frameUpdates.keys());
+    const retainTicks = figureUpdates.length ? new Set() : unchangedPlaybackTicks(previousSnapshot, nextSnapshot, this.cache.values(), this._frameUpdates.keys(), dirtySources);
     this.invalidate({revision, scale, cameraEnabled, storedFrames, softwareFrames, hiddenUids, hiddenKey, retainDocument: true, retainTicks}); this._patchPending = true;
     this._retentionSnapshot = nextSnapshot;
     const generation = this.revision, updates = [...this._frameUpdates], sourceUpdates = [...this._sourceUpdates], started = performance.now();
