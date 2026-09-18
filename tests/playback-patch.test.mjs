@@ -139,6 +139,22 @@ test('sparse figure updates replace retained definitions in place and keep ident
   } finally {cache.dispose();}
 });
 
+test('a figure patch rebuilds retained worker geometry for the replaced definition', async () => {
+  const editor = fixture(), report = editor.report, messages = [], cache = new PlaybackCache({workerFactory: factory(messages)});
+  try {
+    cache.load(report, {revision: editor.revision}); await matches(cache, report, 0); await matches(cache, report, 1);
+    // A drawing commit mutates the figure in place; the patch replaces the
+    // worker's mirror object. Retained drawables would keep the superseded
+    // reference, so the worker must rebuild slots bound to that figure.
+    const figure = report.figure_types[0]; figure.segments[0].length += 37; figure._styk ??= {};
+    cache.updateDocument({figureIndices: [0], definition: true, revision: editor.revision});
+    await matches(cache, report, 0); await matches(cache, report, 1);
+    assert.equal(cache.stats.loadKind, 'patch'); assert.equal(cache.stats.patchFigures, 1);
+    const packet = cache.get(0);
+    assert.ok(packet.reusedGeometryObjects < packet.objectCount, 'the patched slot rebuilt instead of retaining stale drawables');
+  } finally {cache.dispose();}
+});
+
 test('malformed complete patches cannot partially change retained worker data', () => {
   const report = createDemo(), before = structuredClone(report), properties = playbackProperties(report);
   assert.throws(() => applyPlaybackPatch(report, {properties: {...properties, fps: 10}, frames: [{index: 999, frame: report.keyframes[0]}], sources: [], hasFrameSources: false}), /targets/);

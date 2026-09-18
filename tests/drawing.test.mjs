@@ -712,6 +712,25 @@ test('the drawing provider decodes published blobs and evicts LRU over budget',a
   }finally{provider.dispose();}
 });
 
+test('the drawing provider never serves a superseded revision',async()=>{
+  const store=new TileStore();store.set(0,0,new Uint8ClampedArray([7,8,9,255]));
+  const blob=await encodeTileBlob(store);
+  const provider=new DrawingTileProvider();
+  try{
+    const figure=createDrawingFigure({celId:'cel-gate'});
+    figure._styk.drawing.revision=1;figure._styk.drawing.bounds={...store.bounds};figure.image_assets[0].styk_tiles=blob;
+    await provider.prepare([figure]);
+    assert.equal(provider.presenter(figure)?.store?.pixel(5,5)?.[3],255);
+    // A patch bumps the figure's revision before the worker re-decodes; the
+    // stale store must not answer bounds or paint queries in between.
+    figure._styk.drawing.revision=2;
+    assert.equal(provider.presenter(figure),null);
+    await provider.prepare([figure]);
+    assert.equal(provider.presenter(figure)?.revision,2);
+    assert.equal(provider.presenter(figure)?.store?.pixel(5,5)?.[3],255);
+  }finally{provider.dispose();}
+});
+
 test('a v2 cel world bounds equal its tile bounds through drawingPixelMatrix',()=>{
   const figure=createDrawingFigure({celId:'cel-bounds'});
   // Tile bounds that also cover the segment endpoints, which objectBounds

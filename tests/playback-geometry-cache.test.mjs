@@ -101,6 +101,27 @@ test('insertions, deletion, and slot remapping retain exact joined geometry and 
   assert.deepEqual(restored.objects.get(2).root,initial.objects.get(2).root);
 });
 
+test('a figure patch rebuilds slots bound to the replaced definition',()=>{
+  const report=createDemo(),cache=new PlaybackGeometryCache(),frame=structuredClone(report.keyframes[0]);
+  exact(cache,report,frame,1);
+  // A document patch swaps the figure record while keeping its id. Retained
+  // drawables would keep the superseded reference; the dirty mark rebuilds them.
+  cache.retainRevision(2);
+  const replaced=structuredClone(report.figure_types[0]);replaced.segments[0].thickness+=5;
+  report.figure_types[0]=replaced;
+  cache.markFiguresDirty([replaced.figure_type_id]);
+  const g=exact(cache,report,frame,2);
+  const slot=frame.objects.findIndex(o=>o.figure_type_id===replaced.figure_type_id);
+  assert.ok(slot>=0);
+  assert.strictEqual(g.objects.get(slot).drawables[0].fig,replaced);
+  assert.ok(g.changedSlots.has(slot));
+  // Unrelated objects still reuse retained geometry.
+  assert.ok(cache.reusedObjects>0&&cache.reusedObjects<frame.objects.length);
+  // Stale alternates can never re-enter for a replaced figure.
+  cache.retainRevision(3);const g3=exact(cache,report,frame,3);
+  assert.strictEqual(g3.objects.get(slot).drawables[0].fig,replaced);
+});
+
 test('alternate object residency is bounded and eviction cannot change geometry',()=>{
   const report=createDemo(),cache=new PlaybackGeometryCache({maxAlternateDrawables:20,maxAlternates:1}),a=structuredClone(report.keyframes[0]);
   exact(cache,report,a);const b=structuredClone(a);for(const o of b.objects)o.root_x+=1;

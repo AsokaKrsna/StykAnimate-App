@@ -10,10 +10,12 @@ export class DrawingTileProvider {
   constructor({budgetBytes=96*1024*1024}={}) {
     Object.assign(this,{budgetBytes,entries:new Map(),bytes:0,clock:0});
   }
-  /** Sync presenter lookup: {id,store,stamp,dirty:null,scratch,level} or null. */
+  /** Sync presenter lookup: {id,store,stamp,dirty:null,scratch,level} or null.
+   * A superseded entry is never authoritative — bounds and paint callers must
+   * fall back to the figure's published metadata until prepare() re-decodes. */
   presenter(figure) {
-    const e=this.entries.get(drawingMetadata(figure)?.celId);
-    return e?.store?e:null;
+    const d=drawingMetadata(figure),e=this.entries.get(d?.celId);
+    return e?.store&&e.revision===d?.revision?e:null;
   }
   /** Decode styk_tiles blobs into tile stores. v1 cels keep the PNG path. */
   async prepare(figures) {

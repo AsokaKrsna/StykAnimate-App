@@ -54,6 +54,17 @@ export class RetainedGeometryCache {
     Object.assign(this,{maxAlternateDrawables,maxAlternates});this.clear();
   }
   retainRevision(revision){this.revision=revision;}
+  /** A document patch replaces figure definitions in place; retained drawables
+   * would keep referencing the superseded figure objects and rasterize stale
+   * artwork. Rebuild slots bound to a replaced figure until a scene publishes —
+   * by then no reachable record can still hold an outdated reference. */
+  markFiguresDirty(ids){
+    if(!this.dirtyFigures)this.dirtyFigures=new Set();
+    for(const id of ids)this.dirtyFigures.add(String(id));
+    for(const [uid,entry] of this.alternates)
+      if(this.dirtyFigures.has(String(entry.g.obj.figure_type_id))){this.alternates.delete(uid);this.alternateDrawables-=drawableCount(entry.g);}
+    this.dirtyVersion++;
+  }
   adopt(report,frame,revision,geometry){
     frame=vfxRenderFrame(report,frame);
     if(this.report!==report||this.revision!==revision||this.version!==report.version)this.clear();
@@ -66,10 +77,10 @@ export class RetainedGeometryCache {
   }
   async getAsync(report,frame,revision,options={}){
     frame=vfxRenderFrame(report,frame);
-    const baseline=this.geometry, baselineRevision=this.revision, baselineReport=this.report;
+    const baseline=this.geometry, baselineRevision=this.revision, baselineReport=this.report, baselineDirty=this.dirtyVersion;
     const incremental=this.plan(report,frame,revision);
     const geometry=await buildGeometryAsync(report,frame,incremental,options);
-    if(this.geometry!==baseline||this.revision!==baselineRevision||this.report!==baselineReport||options.checkCurrent?.()===false)
+    if(this.geometry!==baseline||this.revision!==baselineRevision||this.report!==baselineReport||this.dirtyVersion!==baselineDirty||options.checkCurrent?.()===false)
       throw new DOMException('Geometry preparation was superseded.', 'AbortError');
     return this.publish(report,frame,revision,geometry,incremental);
   }
@@ -88,6 +99,7 @@ export class RetainedGeometryCache {
       const slot=ready[i],object=frame.objects[slot],parent=parentUid(object,frame);
       const root=object.join?objects.get(Number(object.join.target_object_slot))?.joints.get(Number(object.join.target_handle_id??0)):null;
       let matched;
+      if(!this.dirtyFigures?.has(String(object.figure_type_id)))
       for(const entry of [prior.get(object.unique_id),this.alternates.get(object.unique_id)]){
         if(!entry||!sameJoin(object.join,entry.g.obj.join,parent,entry.parent))continue;
         const appearance = !equal(object,entry.g.obj,true);
@@ -120,14 +132,16 @@ export class RetainedGeometryCache {
       if(!old||old===current.get(old.obj.unique_id))continue;
       const uid=old.obj.unique_id,prior=this.alternates.get(uid);if(prior){this.alternates.delete(uid);this.alternateDrawables-=drawableCount(prior.g);}
       if(drawableCount(old)>this.maxAlternateDrawables)continue;
+      if(this.dirtyFigures?.has(String(old.obj.figure_type_id)))continue;
       this.alternates.set(uid,{g:old,parent:parentUid(old.obj,this.frame)});this.alternateDrawables+=drawableCount(old);
       while(this.alternateDrawables>this.maxAlternateDrawables||this.alternates.size>this.maxAlternates){
         const [key,value]=this.alternates.entries().next().value;this.alternates.delete(key);this.alternateDrawables-=drawableCount(value.g);
       }
     }
     this.report=report;this.version=report.version;this.revision=revision;this.frame=frame;this.geometry=geometry;
+    this.dirtyFigures=null;this.dirtyVersion++;
     return geometry;
   }
-  clear(){this.report=null;this.frame=null;this.geometry=null;this.revision=null;this.reusedObjects=0;this.alternates=new Map();this.alternateDrawables=0;}
+  clear(){this.report=null;this.frame=null;this.geometry=null;this.revision=null;this.reusedObjects=0;this.alternates=new Map();this.alternateDrawables=0;this.dirtyFigures=null;this.dirtyVersion=0;}
 }
 export {RetainedGeometryCache as PlaybackGeometryCache};

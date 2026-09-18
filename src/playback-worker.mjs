@@ -503,6 +503,13 @@ export function createPlaybackWorkerEndpoint(postMessage) {
       if (incomingPatch?.revision !== message.revision || current?.revision !== message.revision) return;
       try {
         applyPlaybackPatch(current.report, incomingPatch.patch);
+        // Retained geometry drawables still reference the superseded figure
+        // objects; force their slots to rebuild against the patched table.
+        const dirty = new Set();
+        for (const entry of incomingPatch.patch.figureUpdates ?? []) dirty.add(entry.figure?.figure_type_id);
+        for (const figure of incomingPatch.patch.figure_types ?? []) dirty.add(figure?.figure_type_id);
+        dirty.delete(undefined);
+        if (dirty.size) geometryCache.markFiguresDirty(dirty);
         invalidateEvaluationCaches(current.report); refreshSampling(current); incomingPatch = null;
         postMessage({type: 'loaded', revision: message.revision, sequence: message.sequence});
       } catch (error) { postMessage({type: 'load-error', revision: message.revision, message: error.message}); }
