@@ -554,6 +554,21 @@ const stubScratchCanvases=()=>{
   globalThis.ImageData??=class{constructor(pixels,w,h){this.data=pixels;this.width=w;this.height=h;}};
 };
 
+test('oversized coverage still renders: mip escalation fits, clamp guarantees a scratch',()=>{
+  stubScratchCanvases();
+  // Tiles 2000 cells apart: ~128k px of coverage, beyond every old mip cap.
+  const store=new TileStore();store.set(0,0,new Uint8ClampedArray([1,2,3,255]));store.set(2000,0,new Uint8ClampedArray([4,5,6,255]));
+  const presenter={id:'cel-huge',store,stamp:1,level:k=>levelStore(presenter,k)};
+  const rect={x:0,y:0,width:129000,height:64};
+  let s=null,level=-1;
+  for(let k=0;k<=8;k++){s=presenterScratch(presenter,rect,{level:k,maxSide:4096});if(s){level=k;break;}}
+  assert.ok(s,'a fitting mip level always exists');
+  assert.ok(level>0&&level<=8,`escalated to level ${level}`);
+  // clamp guarantees a scratch even without escalation, trimmed to maxSide.
+  const clamped=presenterScratch(presenter,rect,{level:0,maxSide:4096,clamp:true});
+  assert.ok(clamped&&clamped.width<=4096&&clamped.height<=4096,'clamped scratch fits the texture limit');
+});
+
 test('presenter scratch anchors on tiles: sub-tile pans reuse, stamps reblit dirty tiles only',()=>{
   stubScratchCanvases();
   const store=new TileStore();store.set(0,0,new Uint8ClampedArray([10,20,30,255]));store.set(1,0,new Uint8ClampedArray([40,50,60,255]));store.set(4,0,new Uint8ClampedArray([70,80,90,255]));store.set(5,0,new Uint8ClampedArray([1,2,3,255]));

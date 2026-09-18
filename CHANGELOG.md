@@ -19,6 +19,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Count shared copy-on-write tiles once in drawing memory accounting, and free rebuildable caches before rejecting edits that exceed the tile budget.
 - Stop zooming and alternating render paths from repainting shared scratch canvases, removing flicker and unnecessary tile redraws while panning.
 - Smooth strokes without dead zones or gaps: stabilized drawing follows the path continuously, and unstabilized strokes curve through sharp corners and always end on the final sample.
+- Render drawings of any span without failing: mip levels now escalate to 256× and the scratch clamps to the texture limit around the visible span instead of throwing and blanking the whole frame.
 
 ## [1.0.6]
 

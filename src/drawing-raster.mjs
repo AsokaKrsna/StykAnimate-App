@@ -63,8 +63,11 @@ export function invalidateLevels(entry,dirty){
  * the tiles intersecting that scratch's `pending` rect (level-space; null
  * means the whole cover). Returns level-space geometry plus `scale`
  * (2**level) and `dirty` in canvas coordinates, or null when the anchored
- * rect exceeds maxSide (raise the level and retry). */
-export function presenterScratch(presenter,rect,{maxSide=4096,level=0}={}){
+ * rect exceeds maxSide (raise the level and retry). With `clamp`, an
+ * oversized region is trimmed to maxSide around the wanted span instead —
+ * a guaranteed scratch whenever the wanted rect overlaps coverage; distant
+ * coverage outside the window simply waits for a nearer view. */
+export function presenterScratch(presenter,rect,{maxSide=4096,level=0,clamp=false}={}){
   const scale=1<<level,store=level?presenter.level?.(level):presenter.store,coverage=store?.tileBounds;
   if(!coverage||!rect||!(rect.width>0&&rect.height>0))return null;
   const scratches=presenter._scratches??=new Map();
@@ -77,8 +80,15 @@ export function presenterScratch(presenter,rect,{maxSide=4096,level=0}={}){
   }
   if(!s){
     const region=aligned(rect.x/scale-TILE,rect.y/scale-TILE,rect.width/scale+2*TILE,rect.height/scale+2*TILE);
-    const x=Math.max(region.x,coverage.x),y=Math.max(region.y,coverage.y),x1=Math.min(region.x+region.width,coverage.x+coverage.width),y1=Math.min(region.y+region.height,coverage.y+coverage.height);
-    if(!(x1>x&&y1>y)||x1-x>maxSide||y1-y>maxSide)return null;
+    let x=Math.max(region.x,coverage.x),y=Math.max(region.y,coverage.y),x1=Math.min(region.x+region.width,coverage.x+coverage.width),y1=Math.min(region.y+region.height,coverage.y+coverage.height);
+    if(!(x1>x&&y1>y))return null;
+    if(x1-x>maxSide||y1-y>maxSide){
+      if(!clamp)return null;
+      // Too large even for this mip: keep the maxSide window covering as
+      // much of the wanted span as possible, centered on it.
+      if(x1-x>maxSide){const mid=(Math.max(x,want.x)+Math.min(x1,want.right))/2;x=Math.max(x,Math.min(Math.floor(mid-maxSide/2),x1-maxSide));x1=x+maxSide;}
+      if(y1-y>maxSide){const mid=(Math.max(y,want.y)+Math.min(y1,want.bottom))/2;y=Math.max(y,Math.min(Math.floor(mid-maxSide/2),y1-maxSide));y1=y+maxSide;}
+    }
     const anchorKey=`${level}:${x},${y},${x1-x},${y1-y}`;
     s=scratches.get(anchorKey);
     if(!s){
@@ -148,8 +158,8 @@ function paintDrawingStrips(ctx,presenter,rect,level,{tint,tintFn}={}){
  * scratch ceiling at every mip still paint exactly, streamed through strips. */
 export function paintDrawingTiles(ctx,presenter,{tint,tintFn}={}){
   const m=ctx.getTransform(),rect=visiblePixelRect(ctx);
-  const k0=Math.max(0,Math.min(4,Math.floor(-Math.log2(Math.hypot(m.a,m.b)||1))));
-  for(let k=k0;k<=4;k++){
+  const k0=Math.max(0,Math.min(8,Math.floor(-Math.log2(Math.hypot(m.a,m.b)||1))));
+  for(let k=k0;k<=8;k++){
     const scratch=presenterScratch(presenter,rect,{level:k});if(!scratch)continue;
     let source=scratch.canvas;
     if(tint&&tintFn)source=tintFn(source,tint,`${scratch.stamp}:${scratch.anchorKey}`)??source;
@@ -157,7 +167,7 @@ export function paintDrawingTiles(ctx,presenter,{tint,tintFn}={}){
     ctx.drawImage(source,scratch.x*scratch.scale,scratch.y*scratch.scale,scratch.width*scratch.scale,scratch.height*scratch.scale);
     return;
   }
-  paintDrawingStrips(ctx,presenter,rect,presenter.level?4:0,{tint,tintFn});
+  paintDrawingStrips(ctx,presenter,rect,presenter.level?8:0,{tint,tintFn});
 }
 /** Flatten a tile store (or a {store,level} presenter) into a PNG data URL of
  * its bounds. Regions beyond maxPixels rasterize at the largest mip level

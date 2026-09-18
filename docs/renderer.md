@@ -221,8 +221,11 @@ scratch canvases covering tile-anchored rectangles: each presenter keeps a
 small LRU of them keyed by anchor, and a requested rect contained in an
 already-painted cover reuses that scratch without repainting, so zooming
 into painted regions and alternating Canvas/WebGPU anchors keep independent
-surfaces. Mip levels serve zoomed-out views and are invalidated by tile dirty
-regions; each scratch tracks its own pending dirty rect per mip level.
+surfaces. Mip levels serve zoomed-out views, escalate to level 8 (256×) so
+coverage of any span fits, and are invalidated by tile dirty regions; when a
+region still exceeds the texture limit the scratch clamps to it around the
+visible span instead of failing — a drawing is never rejected for size. Each
+scratch tracks its own pending dirty rect per mip level.
 WebGPU composes the scratch as an affine
 RGBA quad in the existing ordered layout, retains its texture keyed to the
 scratch anchor so deferred uploads always read the matching canvas, and

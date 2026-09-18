@@ -755,14 +755,22 @@ class WebGPURenderer {
       }
       // Mip level from screen pixels per source pixel: at deviceScale < 1 a
       // downsampled level keeps the scratch inside the texture-size limit.
+      // Levels escalate to 8 (256x) so even a drawing spanning megapixels of
+      // coverage fits; `clamp` then guarantees a scratch by trimming the
+      // painted band to the texture limit around the visible span. A drawing
+      // is never rejected for size — rejection would blank the whole frame.
       const maxSide=this.device.limits.maxTextureDimension2D;
       const deviceScale=Math.max(1e-9,scale*Math.hypot(matrix[0],matrix[1]));
-      let scratch=null,level=Math.max(0,Math.min(4,Math.floor(-Math.log2(deviceScale))));
-      for(;rect&&level<=4;level++){
+      let scratch=null,level=Math.max(0,Math.min(8,Math.floor(-Math.log2(deviceScale))));
+      for(;rect&&level<=8;level++){
         const result=drawing.scratch?.(rect,{level,maxSide});
         if(result){scratch=result;break;}
       }
-      if(rect&&!scratch)throw new Error('Drawing exceeds the graphics device texture limit. Choose Canvas graphics mode.');
+      if(rect&&!scratch){level=8;scratch=drawing.scratch?.(rect,{level,maxSide,clamp:true});}
+      if(rect&&!scratch){
+        const data=new Float32Array(shapeRecord({mode:SHAPE.DISABLED,transform:index}));
+        return {key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:null};
+      }
       if(scratch){
         // Textures key to the scratch anchor, not just the cel: alternating
         // anchors keep independent canvases AND textures, so a deferred
