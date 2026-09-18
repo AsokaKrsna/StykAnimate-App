@@ -104,6 +104,35 @@ test('multiple selected subtrees transform once, retain separate origins, and un
   }
 });
 
+test('independent figures in a group transform orbit the dragged origin like Pivot', () => {
+  const report = emptyDocument(), figure = report.figure_types[0];
+  report.keyframes = [createFrame([createObject(figure,1,100,200), createObject(figure,5,400,200)])];
+  const editor = new Editor({demo:false}).load(report); editor.selectMany([5,1]);
+  const before = structuredClone(editor.frame), picked = editor.geometry.objects.get(0), start = picked.segments[0].end;
+  editor.beginFigureHandleDrag(start.x, start.y, {joint:0});
+  editor.transformFigureHandle(picked.root.x + 156, picked.root.y);
+  near(editor.frame.objects[0].root_x, picked.root.x); near(editor.frame.objects[0].root_y, picked.root.y);
+  // (400,200) rotated +π/2 and scaled ×2 about (100,200) lands at (100,800).
+  near(editor.frame.objects[1].root_x, 100); near(editor.frame.objects[1].root_y, 800);
+  near(editor.frame.objects[1].scale, 2);
+  editor.commitFigureHandleDrag(); assert.equal(editor._undo.length, 1);
+  const after = structuredClone(editor.frame);
+  editor.undo(); assert.deepEqual(editor.frame, before);
+  editor.redo(); assert.deepEqual(editor.frame, after);
+});
+
+test('Ctrl-locked group rotation orbits positions without scaling them toward the origin', () => {
+  const report = emptyDocument(), figure = report.figure_types[0];
+  report.keyframes = [createFrame([createObject(figure,1,100,200), createObject(figure,5,400,200)])];
+  const editor = new Editor({demo:false}).load(report); editor.selectMany([5,1]);
+  const picked = editor.geometry.objects.get(0), start = picked.segments[0].end;
+  editor.beginFigureHandleDrag(start.x, start.y, {joint:0});
+  editor.transformFigureHandle(picked.root.x + 156, picked.root.y, {ctrlKey: true});
+  near(editor.frame.objects[1].scale, 1);
+  near(editor.frame.objects[1].root_x, 100); near(editor.frame.objects[1].root_y, 500);
+  editor.cancelFigureHandleDrag();
+});
+
 test('multiple figure transforms preserve modifier locks, exact return, and cancellation', () => {
   for (const options of [{ctrlKey:true}, {shiftKey:true}, {}]) {
     const editor = fixture(); editor.selectMany([4,2]);

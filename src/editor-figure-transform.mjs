@@ -66,15 +66,24 @@ export const editorFigureTransformMethods = {
     }
     try {
       const {radians, factor} = figureHandleTransform(edit.transform, {x, y}, {...edit, ...options});
+      const cos = Math.cos(radians), sin = Math.sin(radians), origin = edit.transform.origin;
       for (const {slot, before} of edit.targets) {
         const object = this.frame.objects[slot];
         if (before._stykAnimationOrigin) object._stykAnimationOrigin = {...before._stykAnimationOrigin};
+        // Multi-figure drags transform the group about the dragged figure's
+        // origin like Pivot: every selected root orbits and scales toward it.
+        // The dragged root sits at the origin and therefore stays fixed.
+        const dx = (before.root_x ?? 0) - origin.x, dy = (before.root_y ?? 0) - origin.y;
+        object.root_x = origin.x + (dx * cos - dy * sin) * factor;
+        object.root_y = origin.y + (dx * sin + dy * cos) * factor;
         object.scale = before.scale * factor;
         for (let index = 0; index < before.angles.length; index++) object.angles[index] = before.angles[index] + radians;
         rotateOriginSupport(this.report.figure_types.find(figure => figure.figure_type_id === object.figure_type_id), object, radians);
-        // The selected origin remains fixed; joined descendants derive their
-        // positions from the transformed parent vertices and commit canonically.
+        // Joined descendants derive their positions from the transformed parent
+        // vertices and commit canonically; their stored roots follow the group.
         if (Math.abs(radians) < EPS && Math.abs(factor - 1) < EPS) {
+          if ('root_x' in before) { object.root_x = before.root_x; object.root_y = before.root_y; }
+          else { delete object.root_x; delete object.root_y; }
           object.scale = before.scale;
           for (let index = 0; index < before.angles.length; index++) object.angles[index] = before.angles[index];
           if (before._stykAnimationOrigin) object._stykAnimationOrigin = {...before._stykAnimationOrigin};
