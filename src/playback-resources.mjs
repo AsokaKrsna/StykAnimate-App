@@ -115,8 +115,13 @@ export class PlaybackResources {
     maxPacketBytes = 128 * 1024 * 1024,
     preview = false,
     hardMaxBytes = Infinity,
+    // Absolute ceiling for pixels required simultaneously by one draw. Retention
+    // still targets hardMaxBytes; required decodes may exceed it up to this
+    // limit rather than refusing an export that would fit in real memory.
+    absoluteMaxBytes,
   } = {}) {
     Object.assign(this, { baseURL, token, maxBytes, preview, hardMaxBytes });
+    this.absoluteMaxBytes = absoluteMaxBytes ?? hardMaxBytes;
     this.images = new Map();
     this.bytes = 0;
     this.disposed = false;
@@ -178,7 +183,7 @@ export class PlaybackResources {
     if (this.disposed) throw new DOMException("Playback assets were invalidated.", "AbortError");
   };
   checkImageBudget(incomingBytes = 0) {
-    if (this.bytes + incomingBytes > this.hardMaxBytes) {
+    if (this.bytes + incomingBytes > Math.max(this.hardMaxBytes, this.absoluteMaxBytes)) {
       const error = new Error('This frame needs more image memory than the export allowance. Reduce the source image dimensions and try again. Your animation has not changed.');
       error.code = 'export_memory_limit'; throw error;
     }
@@ -216,7 +221,12 @@ export class PlaybackResources {
       if (item.type !== 'image' || this.url(item.asset) !== url) continue;
       const need = imageDrawNeed(item, sourceWidth, sourceHeight, view);
       if (need?.empty) continue;
-      if (!need) { whole = true; continue; }
+      // With a view and known source dimensions, an uncomputable need means
+      // the placement cannot draw (no anchors, degenerate span or singular
+      // matrix) — never decode the complete source for an image that cannot
+      // appear in the region. Unknown dimensions keep the whole decode:
+      // unverified metadata must never hide a visible image.
+      if (!need) { whole ||= !view || !(sourceWidth > 0 && sourceHeight > 0); continue; }
       density = Math.max(density, need.density);
       merged = merged ? unionRect(merged, need) : { x: need.x, y: need.y, width: need.width, height: need.height };
     }

@@ -48,10 +48,17 @@ export class ExportFrameRenderer {
       maxMainSnapshotMs: 0,
       renderedFrames: 0,
     };
-    try {this.worker = new Worker(
+    try {this._spawn();} catch (error) {this.canvas.width = this.canvas.height = 1; throw error;}
+    this.abort = () => this._fail(abortError());
+    signal?.addEventListener("abort", this.abort, { once: true });
+    if (signal?.aborted) this.abort();
+  }
+  _spawn() {
+    this.worker?.terminate();
+    this.worker = new Worker(
       new URL("./export-frame-worker.mjs", import.meta.url),
       { type: "module", name: "StykAnimate export rendering" },
-    );} catch (error) {this.canvas.width = this.canvas.height = 1; throw error;}
+    );
     this.worker.addEventListener("message", ({ data }) => {
       const pending = this.pending;
       if (!pending || pending.id !== data.id) {
@@ -63,8 +70,11 @@ export class ExportFrameRenderer {
       if (data.ok) pending.resolve(data);
       else {
         const error = Object.assign(new Error(data.error || "Export rendering failed."), {code: data.code,
-          name:data.name||'Error',telemetryCode:data.telemetryCode,telemetryStage:data.telemetryStage,telemetryFrames:data.telemetryFrames});
-        data.bitmap?.close(); this._fail(error); pending.reject(error);
+          name:data.name||'Error',recoverable:Boolean(data.recoverable),telemetryCode:data.telemetryCode,telemetryStage:data.telemetryStage,telemetryFrames:data.telemetryFrames});
+        data.bitmap?.close();
+        // Recoverable render errors keep the worker alive for a tile retry.
+        if (!error.recoverable) this._fail(error);
+        pending.reject(error);
       }
     });
     this.worker.addEventListener("error", (event) => {
@@ -74,9 +84,6 @@ export class ExportFrameRenderer {
     this.worker.addEventListener("messageerror", () =>
       this._fail(Object.assign(new Error("An export frame could not be transferred."),{telemetryCode:'snapshot_failed',telemetryStage:'prepare'})),
     );
-    this.abort = () => this._fail(abortError());
-    signal?.addEventListener("abort", this.abort, { once: true });
-    if (signal?.aborted) this.abort();
   }
   _check() {
     if (this.failure) throw this.failure;
@@ -162,6 +169,8 @@ export class ExportFrameRenderer {
       });
       const { _stykSource, ...renderReport } = report;
       if(renderReport._styk?.audio){const {audio,...metadata}=renderReport._styk;renderReport._styk=metadata;}
+      // Kept so a dead worker can be rebuilt mid-export without a second load.
+      this._report = renderReport;
       await this._chunks(renderReport, "chunk");
       await this._request("loaded");
       this.loaded = true;
@@ -169,6 +178,35 @@ export class ExportFrameRenderer {
     } catch (error) {this._fail(error); throw error;} finally {
       this.busy = false;
     }
+  }
+  /** Resource failures retriable at smaller tiles or after a worker rebuild;
+   * aborts, document errors and encoder faults are not. */
+  _recoverable(error) {
+    if (error?.name === 'AbortError') return false;
+    return Boolean(error?.recoverable) ||
+      ['vfx_surface_budget', 'export_memory_limit', 'export_canvas_lost'].includes(error?.code) ||
+      ['timeout', 'worker_failed', 'snapshot_failed'].includes(error?.telemetryCode);
+  }
+  /** Replace a dead or wedged worker and replay the loaded document. */
+  async _rebuild(tileSize) {
+    this.failure = null;
+    this.loaded = false;
+    this._spawn();
+    await this._request("start", {
+      options: {
+        width: this.width,
+        height: this.height,
+        smoothing: this.smoothing,
+        baseURL: this.baseURL,
+        token: this.token,
+        maxWorkingBytes: this.maxWorkingBytes,
+      },
+    });
+    await this._chunks(this._report, "chunk");
+    await this._request("loaded");
+    this.loaded = true;
+    if (tileSize && tileSize !== this.tileSize)
+      await this._request("retile", { tileSize });
   }
   _paint(result) {
     if (!result.bitmap)
@@ -200,17 +238,40 @@ export class ExportFrameRenderer {
     this.busy = true;
     try {
       this.onFrame?.({stage: 'rendering', tick});
-      if (frame) {
+      const sendFrame = async () => {
+        if (!frame) return;
         await this._request("frame-start");
         await this._chunks({ keyframes: [frame] }, "frame-chunk");
+      };
+      await sendFrame();
+      const payload = {tick, override: Boolean(frame), svg, native, preserveAlpha};
+      // Retry ladder: resource failures halve the render tile to a 32px floor,
+      // then rebuild the worker once and try again. Output pixels are identical;
+      // only the amount of frame held in memory per pass changes.
+      let result, tileSize = this.tileSize, rebuilt = false;
+      for (;;) {
+        try {
+          result = await this._request("render", payload);
+          break;
+        } catch (error) {
+          if (!this._recoverable(error) || this.signal?.aborted) throw error;
+          if (this.failure || (tileSize <= 32 && !rebuilt)) {
+            if (rebuilt) throw error;
+            rebuilt = true;
+            this.onFrame?.({stage: 'rebuilding', tick});
+            await this._rebuild(tileSize);
+            await sendFrame();
+            continue;
+          }
+          if (tileSize > 32) {
+            tileSize = Math.max(32, Math.floor(tileSize / 2));
+            this.onFrame?.({stage: 'retrying', tick, tileSize});
+            await this._request("retile", { tileSize });
+            continue;
+          }
+          throw error;
+        }
       }
-      const result = await this._request("render", {
-        tick,
-        override: Boolean(frame),
-        svg,
-        native,
-        preserveAlpha,
-      });
       if (native) {
         this._check();
         const output = result.nativeFrame;
@@ -253,6 +314,7 @@ export class ExportFrameRenderer {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this._report = null;
     this.signal?.removeEventListener("abort", this.abort);
     this._fail(abortError());
     this.canvas.width = this.canvas.height = 1;

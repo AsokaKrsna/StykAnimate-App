@@ -924,6 +924,37 @@ function floatBits(n) {
   const a = new Uint32Array([n]);
   return new Float32Array(a.buffer)[0];
 }
+/** Fingerprint of everything that could change a group's painted pixels.
+ * withVfx caches filtered surfaces per (context, stack object, signature);
+ * this hint is the signature's content component, so a repeated signature can
+ * only come from identical painted content. A false miss only refilters; a
+ * false hit would reuse wrong pixels, so the projection stays generous. */
+function vfxCacheHint(items) {
+  let h = "";
+  for (const i of items) {
+    let obj = "", paint = "", style = "";
+    try { obj = JSON.stringify(i.obj); } catch {}
+    try { paint = JSON.stringify(i.seg?.paint); } catch {}
+    try { style = JSON.stringify(i.fig?.segment_decode?.global_style); } catch {}
+    h += (i.type ?? "") + "|" + (i.obj?.unique_id ?? "") + "|" +
+      (i.seg?.segment_id ?? "") + "|" + (i.fig?.figure_type_id ?? "") + "|" +
+      (i.thickness ?? "") + "|" + (i.baseThickness ?? "") + "|" +
+      (i.outline ?? "") + "|" + (i.rgb ?? "") + "|" + (i.alpha ?? "") + "|" +
+      (i.start?.x ?? "") + "," + (i.start?.y ?? "") + "|" +
+      (i.end?.x ?? "") + "," + (i.end?.y ?? "") + "|" + (i.bend ?? "") + "|" +
+      (i.asset?.normalized_svg_path ?? i.asset?.image_id ?? i.asset?.background_id ?? "") + "|" +
+      (i._movieclipPart ?? "") + "|" + obj + "|" + paint + "|" + style + "|";
+    if (i.points) for (const p of i.points) h += p.x + "," + p.y + ";";
+    for (let inner = i._movieclipInner; inner; inner = inner.inner) {
+      let fx = "";
+      try { fx = JSON.stringify(inner.owner?.effects); } catch {}
+      h += ">" + (inner.part ?? "") + "~" + (inner.owner?.opacity ?? "") + "~" +
+        (inner.owner?.scale ?? "") + "~" + fx;
+    }
+    h += "#";
+  }
+  return h;
+}
 export function drawGeometry(ctx, geometry, resources = {}) {
   // The native export restores its brush after each frame. Opaque objects share
   // this state; every isolated opacity/outline pass starts with a fresh brush.
@@ -948,7 +979,7 @@ export function drawGeometry(ctx, geometry, resources = {}) {
       isolated(ctx,owner.opacity,target=>withVfx(target,owner.effects,filtered=>drawGeometry(filtered, {drawables:g.items.map(item => {
         const inner=item._movieclipInner;
         return {...item,slot:item._movieclipPart,_movieclipOwner:inner?.owner,_movieclipPart:inner?.part,_movieclipInner:inner?.inner};
-      })},resources),{bounds:owner.effects?.length?objectBounds(g.items,resources):undefined,domainBounds:owner.effects?.length?(owner.domainBounds??objectBounds(g.items,{...resources,vfxBounds:false})):undefined,scale:owner.scale}),groupCanvases);
+      })},resources),{bounds:owner.effects?.length?objectBounds(g.items,resources):undefined,domainBounds:owner.effects?.length?(owner.domainBounds??objectBounds(g.items,{...resources,vfxBounds:false})):undefined,scale:owner.scale,cacheHint:vfxCacheHint(g.items),outputRect:geometry.outputRect}),groupCanvases);
       continue;
     }
     const effects=vfxStack(g.items[0]?.obj);
@@ -983,14 +1014,16 @@ export function drawGeometry(ctx, geometry, resources = {}) {
                 resources,
                 c === target ? stroke : { width: 1 },
                 !skipPaint,
+                null,
+                geometry.outputRect,
               ),
             outlineCanvases,
           );
         }
         const clip = !effects.length && !(ow > 0) ? geometry.clipBounds : null;
-        drawPrimitives(target, g.items, resources, stroke, !skipPaint, clip);
+        drawPrimitives(target, g.items, resources, stroke, !skipPaint, clip, geometry.outputRect);
       },
-      {bounds:effects.length?objectBounds(g.items,resources):undefined,domainBounds:effects.length?objectBounds(g.items,{...resources,vfxBounds:false}):undefined,scale:Math.abs(g.items[0]?.obj.scale??1)},
+      {bounds:effects.length?objectBounds(g.items,resources):undefined,domainBounds:effects.length?objectBounds(g.items,{...resources,vfxBounds:false}):undefined,scale:Math.abs(g.items[0]?.obj.scale??1),cacheHint:vfxCacheHint(g.items),outputRect:geometry.outputRect},
     ),groupCanvases);
   }
 }
@@ -1035,10 +1068,10 @@ function strokeWidth(stroke, requested) {
   if (Math.abs(requested - stroke.width) > 1e-4) stroke.width = requested;
   return stroke.width;
 }
-function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null) {
+function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null, outputRect = null) {
   for (const s of items) {
     const effects=!s._vfxSkipNode&&!s.outline?segmentVfx(s):[];
-    if(activeVfx(effects).length && paint){withVfx(ctx,effects,target=>drawPrimitives(target,[{...s,_vfxSkipNode:true}],resources,stroke),{bounds:objectBounds([s],resources),domainBounds:objectBounds([s],{...resources,vfxBounds:false}),scale:Math.abs(s.obj.scale??1)});continue;}
+    if(activeVfx(effects).length && paint){withVfx(ctx,effects,target=>drawPrimitives(target,[{...s,_vfxSkipNode:true}],resources,stroke),{bounds:objectBounds([s],resources),domainBounds:objectBounds([s],{...resources,vfxBounds:false}),scale:Math.abs(s.obj.scale??1),cacheHint:vfxCacheHint([s]),outputRect});continue;}
     if (paint) {
       const brush = gradient(ctx, s) || rgba(s.rgb, s.alpha);
       ctx.fillStyle = brush;

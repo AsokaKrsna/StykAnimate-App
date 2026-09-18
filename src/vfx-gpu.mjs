@@ -3,6 +3,7 @@ import {vfxPaint} from './vfx-paint.mjs';
 import {vfxVertex as vertex,vfxFragment as fragment} from './vfx-shaders.mjs';
 import {vfxWebGPUFor,releaseVfxWebGPU} from './vfx-webgpu.mjs';
 import {fitsVfxSurface,vfxSurfaceError,VFX_MAX_DIMENSION} from './vfx-surface.mjs';
+import {filterVfxCPU} from './vfx-cpu.mjs';
 export class VfxGPU {
  constructor(){
   this.canvas=new OffscreenCanvas(1,1);const gl=this.gl=this.canvas.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:true});
@@ -83,12 +84,20 @@ function releaseIdle(){const wait=30000-(performance.now()-lastUse);if(wait>0){i
  * back to the WebGL 2 executor. */
 export function initVfxDevice(device){sharedDevice=device;device.lost.then(()=>{if(sharedDevice===device)sharedDevice=null;releaseVfxWebGPU(device);});}
 export function releaseVfxDevice(device){if(sharedDevice===device)sharedDevice=null;releaseVfxWebGPU(device);}
+let cpuFallbacks=0;
+/** Filter a canvas through the active GPU executor when possible. Any GPU
+ * failure — missing WebGL2, lost context, oversized surface — falls back to
+ * the deterministic software executor so a filter call can never fail. */
 export function filterVfxCanvas(source,stack,options){if(!activeVfx(stack).length)return source;
- if(sharedDevice){const gpu=vfxWebGPUFor(sharedDevice);lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return gpu.run(source,stack,options);}
- executor??=new VfxGPU();lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return executor.run(source,stack,options);}
+ try{
+  if(sharedDevice){const gpu=vfxWebGPUFor(sharedDevice);lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return gpu.run(source,stack,options);}
+  executor??=new VfxGPU();lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return executor.run(source,stack,options);
+ }catch(error){cpuFallbacks++;return filterVfxCPU(source,stack,options);}}
+/** Executor surface edge, or 0 when no GPU executor exists (callers then take
+ * the software path, which is bounded only by memory). */
 export function vfxSurfaceDimension(){
  if(sharedDevice)return Math.min(VFX_MAX_DIMENSION,sharedDevice.limits.maxTextureDimension2D);
- executor??=new VfxGPU();lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return executor.maxDimension;
+ try{executor??=new VfxGPU();lastUse=performance.now();idleTimer??=setTimeout(releaseIdle,30000);return executor.maxDimension;}catch{return 0;}
 }
-export function vfxGPUStats(){const source=sharedDevice?vfxWebGPUFor(sharedDevice).stats:executor?.stats;return source?{...source}:{passes:0,bytes:0,calls:0};}
+export function vfxGPUStats(){const source=sharedDevice?vfxWebGPUFor(sharedDevice).stats:executor?.stats;return {...(source??{passes:0,bytes:0,calls:0}),cpuFallbacks};}
 export function releaseVfxGPU(){clearTimeout(idleTimer);idleTimer=undefined;executor?.destroy();executor=null;if(sharedDevice)releaseVfxWebGPU(sharedDevice);}

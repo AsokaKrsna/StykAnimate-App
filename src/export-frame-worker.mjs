@@ -2,7 +2,7 @@ import { applyDocumentChunk } from "./document-transport.mjs";
 import { timeline, evaluatedFrame } from "./pivot/geometry.mjs";
 import { PlaybackResources } from "./playback-resources.mjs";
 import { exportFrameGeometry, drawExportSceneTiled } from "./export-frame-core.mjs";
-import { exportMemoryPlan } from "./export-memory.mjs";
+import { exportMemoryPlan, EXPORT_MAX_WORKING_BYTES } from "./export-memory.mjs";
 import {diagnosticDetails} from './telemetry-schema.mjs';
 import {exportContext, checkExportContext} from './export-canvas.mjs';
 import { exportSVG } from "./svg-export.mjs";
@@ -143,6 +143,7 @@ self.addEventListener("message", async ({ data: message }) => {
         token: options.token,
         maxBytes: options.assetBytes,
         hardMaxBytes: options.assetBytes,
+        absoluteMaxBytes: EXPORT_MAX_WORKING_BYTES,
         preview: false,
       });
       resources.svgBitmaps = new Map();
@@ -170,6 +171,8 @@ self.addEventListener("message", async ({ data: message }) => {
     } else if (message.operation === "frame-start") frameDocument = undefined;
     else if (message.operation === "frame-chunk")
       frameDocument = applyDocumentChunk(frameDocument, message.chunk);
+    else if (message.operation === "retile")
+      options.tileSize = Math.max(1, Math.min(1024, message.tileSize | 0));
     else if (message.operation === "render") result = await render(message);
     else throw new Error("Unknown export renderer operation.");
     self.postMessage(
@@ -177,15 +180,30 @@ self.addEventListener("message", async ({ data: message }) => {
       result.bitmap ? [result.bitmap] : [],
     );
   } catch (error) {
-    resources?.dispose();
-    if (canvas) canvas.width = canvas.height = 1;
-    if (tile) tile.width = tile.height = 1;
-    report = rows = frameDocument = undefined;
+    // Render failures keep the loaded document so the renderer can retry the
+    // same frame at smaller tiles. Only prepare/load errors still tear down.
+    const recoverable = message.operation === "render";
+    if (!recoverable) {
+      resources?.dispose();
+      if (canvas) canvas.width = canvas.height = 1;
+      report = rows = frameDocument = undefined;
+    } else {
+      // Free tile scratch and retained decodes before the retry; they are
+      // re-decoded from the document if the smaller plan still needs them.
+      if (tile) tile.width = tile.height = 1;
+      resources?.trimImages?.(new Set());
+      if (error?.code === 'export_canvas_lost') {
+        // A lost 2D context never recovers; replace its canvas before retrying.
+        try { canvas = new OffscreenCanvas(options.width, options.height); exportContext(canvas); } catch {}
+        try { tile = new OffscreenCanvas(1, 1); exportContext(tile); } catch {}
+      }
+    }
     self.postMessage({
       id: message.id,
       ok: false,
       error: error?.message || String(error),
       code: error?.code,
+      recoverable,
       ...diagnosticDetails(error,message.operation==='render'?'encode':'prepare','worker_failed'),
     });
   } finally {

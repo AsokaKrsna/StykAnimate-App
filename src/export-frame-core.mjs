@@ -76,22 +76,26 @@ export function drawExportScene(context, report, frame, geometry, resources) {
   const width = report.canvas_width,
     height = report.canvas_height;
   const scene=prepareSceneVfx(context,frame,undefined,context.canvas.width/width);
-  context=scene.context;
-  context.setTransform(1, 0, 0, 1, 0, 0);
-  context.clearRect(0, 0, context.canvas.width, context.canvas.height);
-  context.save();
-  try {
-    context.translate(-scene.viewport.x,-scene.viewport.y);
-    context.scale(scene.outputSize.width / width, scene.outputSize.height / height);
-    context.transform(...cameraMatrix({ report, frame }));
-    drawBackground(context, report, frame, width, height, {
-      ...resources,
-      bounds: backgroundBounds(frame, width, height, true, report,sceneVfxBounds(report,scene)),
-      paintBounds: backgroundBounds(frame, width, height, true, report),
-    });
-    drawParallaxGeometry(context, geometry, resources,parallaxResolver(report,frame));
-  } finally {
-    context.restore();
+  // Parts repaint one strip each when the padded source exceeds a canvas.
+  for (const part of scene.parts) {
+    const pctx=part.context;
+    pctx.setTransform(1, 0, 0, 1, 0, 0);
+    pctx.clearRect(0, 0, pctx.canvas.width, pctx.canvas.height);
+    pctx.save();
+    try {
+      pctx.translate(-part.origin.x,-part.origin.y);
+      pctx.scale(scene.outputSize.width / width, scene.outputSize.height / height);
+      pctx.transform(...cameraMatrix({ report, frame }));
+      drawBackground(pctx, report, frame, width, height, {
+        ...resources,
+        bounds: backgroundBounds(frame, width, height, true, report,sceneVfxBounds(report,{viewport:{x:part.origin.x,y:part.origin.y,width:scene.outputSize.width,height:scene.outputSize.height},width:pctx.canvas.width,height:pctx.canvas.height})),
+        paintBounds: backgroundBounds(frame, width, height, true, report),
+      });
+      drawParallaxGeometry(pctx, geometry, resources,parallaxResolver(report,frame),{x:-part.origin.x-(scene.pad??0),y:-part.origin.y-(scene.pad??0),width:scene.outputSize.width+2*(scene.pad??0),height:scene.outputSize.height+2*(scene.pad??0)});
+    } finally {
+      pctx.restore();
+    }
+    part.done();
   }
   scene.finish();
 }
@@ -104,40 +108,49 @@ export async function drawExportSceneSequential(context, report, frame, geometry
   checkExportContext(context);
   const width = report.canvas_width, height = report.canvas_height;
   const scene=prepareSceneVfx(context,frame,viewport,(viewport?.width||context.canvas.width)/width);
-  context=scene.context;viewport=scene.viewport;
-  checkExportContext(context);
-  // The document→output matrix for this surface, including tile offsets.
-  // Preloads use it to decode only the source region each draw samples.
   const camera = cameraMatrix({report, frame}),
-    sx = (viewport?.width || context.canvas.width) / width,
-    sy = (viewport?.height || context.canvas.height) / height,
-    plan = {matrix: [sx * camera[0], sy * camera[1], sx * camera[2], sy * camera[3],
-      sx * camera[4] - (viewport?.x || 0), sy * camera[5] - (viewport?.y || 0)],
-      width: context.canvas.width, height: context.canvas.height};
-  context.setTransform(1, 0, 0, 1, 0, 0);
-  context.clearRect(0, 0, context.canvas.width, context.canvas.height);
-  context.save();
-  try {
-    if (viewport) context.translate(-viewport.x, -viewport.y);
-    context.scale((viewport?.width || context.canvas.width) / width, (viewport?.height || context.canvas.height) / height);
-    context.transform(...camera);
-    await resources.preload((report.backgrounds || []).filter(asset =>
-      [frame.background_id, ...(frame.background_mix ? [frame.background_id_b] : [])].includes(asset.background_id) &&
-      ![2,3,4].includes(asset.kind) && asset.color === undefined).map(asset => ({type: 'image', asset})), {plan});
+    sx = scene.outputSize.width / width,
+    sy = scene.outputSize.height / height;
+  // Parts repaint one strip each when the padded source exceeds a canvas.
+  for (const part of scene.parts) {
+    context=part.context;
     checkExportContext(context);
-    drawBackground(context, report, frame, width, height, {...resources, bounds: backgroundBounds(frame, width, height, true, report,sceneVfxBounds(report,scene)),paintBounds:backgroundBounds(frame,width,height,true,report)});
-    const strokeState = {width: 1},parallax=parallaxResolver(report,frame);
-    for (const {items,bounds} of groups) {
-      const depth=parallax(items[0].obj.unique_id);
-      const itemPlan = translatedPlan(plan,depth);
-      const skipPaint = exportGroupOutside(bounds, itemPlan);
-      if (!skipPaint) await resources.preload(items, {plan:itemPlan});
+    // The document→output matrix for this surface, including tile offsets.
+    // Preloads use it to decode only the source region each draw samples.
+    const plan = {matrix: [sx * camera[0], sy * camera[1], sx * camera[2], sy * camera[3],
+      sx * camera[4] - part.origin.x, sy * camera[5] - part.origin.y],
+      width: context.canvas.width, height: context.canvas.height};
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, context.canvas.width, context.canvas.height);
+    context.save();
+    try {
+      context.translate(-part.origin.x, -part.origin.y);
+      context.scale(sx, sy);
+      context.transform(...camera);
+      await resources.preload((report.backgrounds || []).filter(asset =>
+        [frame.background_id, ...(frame.background_mix ? [frame.background_id_b] : [])].includes(asset.background_id) &&
+        ![2,3,4].includes(asset.kind) && asset.color === undefined).map(asset => ({type: 'image', asset})), {plan});
       checkExportContext(context);
-      context.save();try{context.translate(depth.x,depth.y);drawGeometry(context, {drawables: items, strokeState, skipPaint}, resources);}finally{context.restore();}
-      checkExportContext(context);
-      await yieldWork();
-    }
-  } finally {context.restore(); releaseGeometryResources(context, {retainCanvases: true});}
+      drawBackground(context, report, frame, width, height, {...resources, bounds: backgroundBounds(frame, width, height, true, report,sceneVfxBounds(report,{viewport:{x:part.origin.x,y:part.origin.y,width:scene.outputSize.width,height:scene.outputSize.height},width:context.canvas.width,height:context.canvas.height})),paintBounds:backgroundBounds(frame,width,height,true,report)});
+      const strokeState = {width: 1},parallax=parallaxResolver(report,frame);
+      for (const {items,bounds} of groups) {
+        const depth=parallax(items[0].obj.unique_id);
+        const itemPlan = translatedPlan(plan,depth);
+        const skipPaint = exportGroupOutside(bounds, itemPlan);
+        if (!skipPaint) await resources.preload(items, {plan:itemPlan});
+        checkExportContext(context);
+        // The output surface in this part's canvas coordinates, expanded by
+        // the scene halo and parallax so every tile's canvas maps inside it;
+        // group effect caches key their filtered source region against it.
+        const spad=(scene.pad??0)+Math.hypot(depth.x,depth.y);
+        context.save();try{context.translate(depth.x,depth.y);drawGeometry(context, {drawables: items, strokeState, skipPaint,
+          outputRect:{x:depth.x-part.origin.x-spad,y:depth.y-part.origin.y-spad,width:scene.outputSize.width+2*spad,height:scene.outputSize.height+2*spad}}, resources);}finally{context.restore();}
+        checkExportContext(context);
+        await yieldWork();
+      }
+    } finally {context.restore(); releaseGeometryResources(context, {retainCanvases: true});}
+    part.done();
+  }
   scene.finish();
 }
 
