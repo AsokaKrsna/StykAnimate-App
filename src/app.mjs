@@ -2139,12 +2139,9 @@ overlay.addEventListener(
     if (state.drag?.kind === 'tweener' && e.button === 2) {
       e.preventDefault();state.suppressContext = true;cancelDrag();return;
     }
-    // A secondary click opens actions; Shift preserves the bend gesture.
-    if (e.button === 2 && !e.shiftKey) {
-      state.suppressContext = false;
-      return;
-    }
-    if (e.button === 2) state.suppressContext = true;
+    // A stationary right press opens actions; dragging bends the joint under
+    // the pointer. Shift keeps the original immediate bend gesture.
+    if (e.button === 2) state.suppressContext = e.shiftKey;
     if (state.previewing) {
       pause();
       return;
@@ -2171,6 +2168,12 @@ overlay.addEventListener(
       return;
     }
     const p = worldPoint(e);
+    // Posing tools turn a right drag into a bend; everywhere else a right
+    // press stays a plain click that opens the context menu on release.
+    if (e.button === 2 && !e.shiftKey && (builderMode?.active || !["select", "pose", "rig"].includes(state.tool))) {
+      releaseCanvasPointer();
+      return;
+    }
     if (state.tool === 'tweener') {
       if (e.button === 0 && tweenerControls.begin(e)) state.drag = {kind:'tweener'};
       else releaseCanvasPointer();
@@ -2237,7 +2240,7 @@ overlay.addEventListener(
     }
     const camera = activeCameraHandle(p);
     if (
-      (e.button === 0 || e.button === 2) &&
+      (e.button === 0 || (e.button === 2 && e.shiftKey)) &&
       camera &&
       ["select", "pose"].includes(state.tool)
     ) {
@@ -2382,6 +2385,22 @@ overlay.addEventListener(
       releaseCanvasPointer();
       return;
     }
+    if (e.button === 2 && !e.shiftKey) {
+      // The press may still become a bend once the pointer travels; a release
+      // in place opens the context menu instead of starting a pose gesture.
+      if (hit.action === "select") {
+        releaseCanvasPointer();
+        return;
+      }
+      state.drag = {
+        kind: "maybe-bend",
+        hit,
+        start: p,
+        clientX: e.clientX,
+        clientY: e.clientY,
+      };
+      return;
+    }
     if(hit.g.segments[hit.joint]?.connector)editor._connectorInspector=null;
     const handleEdit = state.handleEditHeld;
     const figureTransform = e.altKey && hit.joint >= 0 && !handleEdit;
@@ -2515,6 +2534,37 @@ overlay.addEventListener(
       return;
     }
     const p = worldPoint(e);
+    if (drag.kind === "maybe-bend") {
+      // Crossing a few pixels turns the right press into a bend and suppresses
+      // the context menu that a stationary release would open.
+      if (Math.hypot(e.clientX - drag.clientX, e.clientY - drag.clientY) < 4)
+        return;
+      const hit = drag.hit;
+      editor.select(hit.g.obj.unique_id, hit.joint);
+      if (!editor.beginDrag("Pose joint")) {
+        state.drag = null;
+        releaseCanvasPointer();
+        return;
+      }
+      state.suppressContext = true;
+      state.drag = {
+        kind: "bend",
+        bend: true,
+        constrain: e.ctrlKey || e.metaKey,
+        axis: null,
+        start: drag.start,
+        root: { x: hit.g.obj.root_x, y: hit.g.obj.root_y },
+        joint: hit.joint,
+        moved: true,
+      };
+      editor.bendJoint(p.x, p.y, {
+        stretch: e.ctrlKey || e.metaKey,
+        isolate: Boolean(state.isolateHeld || state.isolateMode),
+        snapTolerance: 6 / state.view.scale,
+      });
+      requestRender();
+      return;
+    }
     if (drag.kind === "camera") {
       if (
         (p.x === drag.lastPoint?.x && p.y === drag.lastPoint?.y) ||
@@ -2651,7 +2701,7 @@ function endDrag(event) {
     if (drag.moved) editor.commitMotionPathEdit();
     else editor.cancelMotionPathEdit();
   } else if (drag.kind === "camera") editor.commitCameraDrag();
-  else if (drag.kind !== "pan") {
+  else if (drag.kind !== "pan" && drag.kind !== "maybe-bend") {
     if (drag.kind === "move" && drag.moved) {
       const delta = drag.ikLive ? drag.delta : drag.translations.get(editor.selectedUid);
       if (rangeFrames()) {

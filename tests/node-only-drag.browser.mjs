@@ -58,7 +58,20 @@ try {
   await page.keyboard.press('Escape'); await page.mouse.up();
   await setup();
   const origin=await drag(1,0,{x:325,y:240},{name:'origin'});
-  check('Dragging the origin node still moves the figure',origin.kind==='move'&&await page.evaluate(()=>styk.editor.frame.objects[0].root_x!==300));
+  check('Dragging the origin node still moves the figure',origin.kind==='move'&&await page.evaluate(()=>styk.editor.evaluatedFrame.objects.find(o=>o.unique_id===1).root_x!==300));
+  const bendStart=await worldPoint(1,1),bendScreen=await screenPoint(bendStart),clickBefore=await page.evaluate(()=>JSON.stringify(styk.editor.evaluatedFrame));
+  await page.mouse.move(bendScreen.x,bendScreen.y); await page.mouse.down({button:'right'}); await page.mouse.up({button:'right'});
+  await page.waitForFunction(()=>!document.getElementById('menu').hidden,{timeout:3000});
+  check('A stationary right-click opens the context menu instead of bending',await page.evaluate(before=>JSON.stringify(styk.editor.evaluatedFrame)===before,clickBefore));
+  await page.keyboard.press('Escape'); await settle();
+  const bendBefore=await page.evaluate(()=>JSON.stringify(styk.editor.evaluatedFrame));
+  await drag(1,1,{x:bendStart.x+50,y:bendStart.y-40},{button:'right',name:'right-bend'});
+  check('A right-button drag bends the joint and keeps the menu closed',await page.evaluate(before=>JSON.stringify(styk.editor.evaluatedFrame)!==before,bendBefore)&&await page.evaluate(()=>document.getElementById('menu').hidden));
+  check('The bend commits as a pose edit',await page.evaluate(()=>styk.editor._undo.at(-1)?.label==='Pose joint'));
+  await page.keyboard.press('Control+z'); await settle();
+  const shiftBefore=await page.evaluate(()=>JSON.stringify(styk.editor.evaluatedFrame));
+  await drag(1,1,{x:bendStart.x+40,y:bendStart.y-30},{button:'right',keys:['Shift'],name:'shift-bend'});
+  check('Shift-right-drag keeps the immediate bend gesture',await page.evaluate(before=>JSON.stringify(styk.editor.evaluatedFrame)!==before,shiftBefore)&&await page.evaluate(()=>document.getElementById('menu').hidden));
   await page.screenshot({path:path.join(out,'node-only-drag.png')});
   check('No browser runtime errors',errors.length===0);
 } finally {await browser.close();}
