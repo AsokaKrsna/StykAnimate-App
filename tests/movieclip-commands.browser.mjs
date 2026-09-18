@@ -113,6 +113,20 @@ try{
     });
     check(`${mode}: binary STYK reload preserves copied and unique identities`,roundtrip);
   }
+  await page.evaluate(async()=>{
+    const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs'),{movieclipFigure}=await import('/src/movieclips.mjs');
+    const source=emptyDocument();
+    source.keyframes=[createFrame([createObject(source.figure_types[0],11,200,250),createObject(source.figure_types[0],12,200,200,{join:{target_object_slot:0,target_handle_id:1}})])];
+    const report=emptyDocument();report.figure_types.push(movieclipFigure(2,'Joined clip',source,{duration:1,pivot:{x:200,y:250}}));
+    report.keyframes=Array.from({length:3},()=>createFrame());
+    styk.editor.load(report);styk.settingsUI.commit({timelineMode:'advanced'});styk.editor.seek(0);styk.editor.addFigure(2);window.clipUid=styk.editor.selectedUid;
+  });
+  await select(0);await page.locator('.movieclip-more > summary').click();await page.locator('[data-action=movieclip-break]').click();
+  await page.waitForFunction(()=>!styk.editor.figure?._styk?.movieclip);
+  check('Break apart preserves joins between expanded figures',await page.evaluate(()=>{
+    const objects=styk.editor.evaluatedFrame.objects,joined=objects.filter(o=>o.join),uids=new Set(objects.map(o=>o.unique_id));
+    return joined.length===1&&joined.every(o=>uids.has(o.join.target_unique_id)&&objects[o.join.target_object_slot]?.unique_id===o.join.target_unique_id);
+  }));
   check('No browser errors',errors.length===0);
 }catch(error){await page.screenshot({path:path.join(out,'commands-failure.png')});throw error;}
 finally{await writeFile(path.join(out,'commands-results.json'),JSON.stringify({checks,errors},null,2));await browser.close();}
