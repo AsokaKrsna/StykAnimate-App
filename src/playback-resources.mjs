@@ -66,7 +66,8 @@ export function imageDrawNeed(item, sourceWidth, sourceHeight, view) {
   let visible, outScale;
   if (view.matrix) {
     const inverse = invertMatrix(view.matrix);
-    if (!inverse) return null;
+    // A singular output projection cannot show any part of the image.
+    if (!inverse) return { empty: true };
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const [px, py] of [[0, 0], [view.width, 0], [0, view.height], [view.width, view.height]]) {
       const p = applyMatrix(inverse, px, py);
@@ -75,7 +76,9 @@ export function imageDrawNeed(item, sourceWidth, sourceHeight, view) {
     visible = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
     outScale = Math.max(Math.hypot(view.matrix[0], view.matrix[1]), Math.hypot(view.matrix[2], view.matrix[3]));
   } else { visible = view.visible; outScale = view.scale; }
-  if (!visible || !(outScale > 0) || !(sourceWidth > 0 && sourceHeight > 0)) return null;
+  if (!visible) return null;
+  if (!(outScale > 0)) return { empty: true };
+  if (!(sourceWidth > 0 && sourceHeight > 0)) return null;
   const displayWidth = a.display_width ?? sourceWidth, displayHeight = a.display_height ?? sourceHeight;
   if (!(displayWidth > 0 && displayHeight > 0)) return null;
   const kx = displayWidth / sourceWidth, ky = displayHeight / sourceHeight;
@@ -83,7 +86,7 @@ export function imageDrawNeed(item, sourceWidth, sourceHeight, view) {
   const mirror = Boolean(item.seg?.extra_u8_b ?? item.seg?.extra?.[2]) !== Boolean(item.obj?.image_text_flags);
   const start = reverse ? item.end : item.start;
   const scale = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y) / a.anchor_length;
-  if (!(scale > 0)) return null;
+  if (!(scale > 0)) return { empty: true };
   const angle = (mirror ? item.angle + a.anchor_angle_rad - Math.PI : item.angle - a.anchor_angle_rad) + (reverse ? Math.PI : 0);
   const cos = Math.cos(angle), sin = Math.sin(angle), mx = mirror ? -1 : 1, anchor = a.anchor_start || { x: 0, y: 0 };
   // Matches drawGeometry: translate(start)·rotate(angle)·scale(±s,s)·translate(-anchor)·display-stretch.
@@ -91,7 +94,7 @@ export function imageDrawNeed(item, sourceWidth, sourceHeight, view) {
     start.x - mx * scale * cos * anchor.x + scale * sin * anchor.y,
     start.y - mx * scale * sin * anchor.x - scale * cos * anchor.y];
   const inverse = invertMatrix(matrix);
-  if (!inverse) return null;
+  if (!inverse) return { empty: true };
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const [px, py] of [[visible.x, visible.y], [visible.x + visible.width, visible.y],
     [visible.x, visible.y + visible.height], [visible.x + visible.width, visible.y + visible.height]]) {
@@ -221,12 +224,11 @@ export class PlaybackResources {
       if (item.type !== 'image' || this.url(item.asset) !== url) continue;
       const need = imageDrawNeed(item, sourceWidth, sourceHeight, view);
       if (need?.empty) continue;
-      // With a view and known source dimensions, an uncomputable need means
-      // the placement cannot draw (no anchors, degenerate span or singular
-      // matrix) — never decode the complete source for an image that cannot
-      // appear in the region. Unknown dimensions keep the whole decode:
-      // unverified metadata must never hide a visible image.
-      if (!need) { whole ||= !view || !(sourceWidth > 0 && sourceHeight > 0); continue; }
+      // A null need means the placement is unknown — synthetic items like
+      // background images have no anchors, and unverified metadata must never
+      // hide a visible image. Provably invisible placements return {empty}
+      // from imageDrawNeed and are the only needs that skip decoding.
+      if (!need) { whole = true; continue; }
       density = Math.max(density, need.density);
       merged = merged ? unionRect(merged, need) : { x: need.x, y: need.y, width: need.width, height: need.height };
     }

@@ -109,17 +109,21 @@ coverage from a full-surface raster; the regression suite bounds that difference
 crisp WASM/readback work), scratch surfaces, and decoded images. Its allowance is
 64 MiB–2 GiB based on the device RAM hint (real system memory on desktop, the
 browser's bucketed RAM tier on the web), or 256 MiB when unavailable. Tests can
-pass `maxWorkingBytes` to exercise smaller allowances. Oversized output fails
-before canvas allocation. PNG dimensions are checked before pixel decoding;
+pass `maxWorkingBytes` to exercise smaller allowances. Legal output dimensions
+are never refused for budget reasons: the plan floors at what the frame needs
+and reduces raster tile size instead. PNG dimensions are checked before pixel decoding;
 other images use available asset metadata and a post-decode check that closes an
 oversized bitmap. Images keep their original resolution; they are not silently
 downsampled for export. These allowances do not measure free RAM or include the
 document, compressed sources, encoder internals, and other applications.
 
 The app permits one raster export at a time and releases speculative playback
-pixels before starting. Worker requests time out after two minutes; cancellation,
-worker errors, invalid frame dimensions and lost 2D surfaces stop the export and
-release its worker/output pixels. An invalid frame is never knowingly submitted
+pixels before starting. Worker requests time out after two minutes. Recoverable
+frame failures first retry the same frame at progressively smaller raster tiles,
+then rebuild the worker and canvas once at the smallest tile before the export
+fails; a successful tile size is reused for later frames. Cancellation,
+exhausted retries, invalid frame dimensions and unrecoverable 2D surface loss
+stop the export and release its worker/output pixels. An invalid frame is never knowingly submitted
 as a successful frame. Native video jobs are cancelled when their frame worker
 fails or stalls. Browser WebM encoding requests a software encoder. Its pending
 input window targets 32 MiB of RGBA source pixels, at least one and at most four

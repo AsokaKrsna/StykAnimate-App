@@ -13,6 +13,8 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 ### Fixed
 
 - Keep locked IK ancestors unchanged when posing attached figures on another layer, and clear rejected pose edits so saving, tools, and timeline navigation remain available.
+- Keep exports from failing on demanding animations: legal output sizes like 4K now render even when effect halos, large images, or dense drawing layers exceed surface and memory budgets. The exporter filters each oversized effect region once per frame instead of per tile, retries at smaller tiles, rebuilds lost canvases, and falls back to exact software filtering — never lowering resolution or dropping effects.
+- Stop rejecting oversized drawing edits and strokes: drawing, filling, and pasting always apply under a high hard memory ceiling instead of failing partway through a stroke.
 - Keep drawings visible after their tiles are evicted under memory pressure: cels re-decode on demand instead of disappearing or showing stale placeholders.
 - Count shared copy-on-write tiles once in drawing memory accounting, and free rebuildable caches before rejecting edits that exceed the tile budget.
 - Stop zooming and alternating render paths from repainting shared scratch canvases, removing flicker and unnecessary tile redraws while panning.

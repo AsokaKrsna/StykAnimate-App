@@ -248,28 +248,27 @@ export class ExportFrameRenderer {
       // Retry ladder: resource failures halve the render tile to a 32px floor,
       // then rebuild the worker once and try again. Output pixels are identical;
       // only the amount of frame held in memory per pass changes.
-      let result, tileSize = this.tileSize, rebuilt = false;
+      let result, tileSize = this.tileSize, mayRebuild = true;
       for (;;) {
         try {
           result = await this._request("render", payload);
+          this.tileSize = tileSize; // later frames start at the size that worked
           break;
         } catch (error) {
           if (!this._recoverable(error) || this.signal?.aborted) throw error;
-          if (this.failure || (tileSize <= 32 && !rebuilt)) {
-            if (rebuilt) throw error;
-            rebuilt = true;
-            this.onFrame?.({stage: 'rebuilding', tick});
-            await this._rebuild(tileSize);
-            await sendFrame();
-            continue;
-          }
-          if (tileSize > 32) {
+          // A wedged worker can't answer retile either; then or at the 32px
+          // floor the ladder rebuilds it once with the document replayed.
+          if (!this.failure && tileSize > 32) {
             tileSize = Math.max(32, Math.floor(tileSize / 2));
             this.onFrame?.({stage: 'retrying', tick, tileSize});
-            await this._request("retile", { tileSize });
-            continue;
+            try { await this._request("retile", { tileSize }); continue; }
+            catch { /* fall through to the rebuild */ }
           }
-          throw error;
+          if (!mayRebuild) throw error; // the rebuilt worker already had its ladder
+          mayRebuild = false;
+          this.onFrame?.({stage: 'rebuilding', tick});
+          await this._rebuild(tileSize);
+          await sendFrame();
         }
       }
       if (native) {
