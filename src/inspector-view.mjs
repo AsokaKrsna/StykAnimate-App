@@ -76,6 +76,7 @@ const group = (title, body, extra = "") => secondarySections.has(title)
   ? `<details class="inspector-section inspector-disclosure" data-section="${esc(title)}"><summary class="inspector-title"><span>${title}</span>${extra}</summary><div class="inspector-disclosure-body">${body}</div></details>`
   : `<section class="inspector-section"><div class="inspector-title"><span>${title}</span>${extra}</div>${body}</section>`;
 const grid = (body) => `<div class="field-grid">${body}</div>`;
+const scrubHint = `<p class="property-context-caption">Drag a label to scrub its value · Shift or Alt for finer steps</p>`;
 const tools = (body) => `<div class="transform-actions">${body}</div>`;
 const builderOrderButtons = (kind, index) => tools(
   [['back','send-to-back','Send to back'],['down','chevron-left','Send backward'],['up','chevron-right','Bring forward'],['front','bring-to-front','Bring to front']]
@@ -166,7 +167,7 @@ export function inspectorView({
             field("Y", "group_y", b.minY, "px") +
             field("W", "group_width", b.maxX - b.minX, "px", 'min="0.01"') +
             field("H", "group_height", b.maxY - b.minY, "px", 'min="0.01"'),
-        ) +
+        ) + scrubHint +
           tools(
             button("mirror", "flip", "Flip horizontally") +
               button("rotate", "rotate", "Rotate 15°") +
@@ -260,7 +261,7 @@ export function inspectorView({
               Math.PI,
             "°",
           ),
-      ),
+      ) + scrubHint,
     );
     html += group(
       "Appearance",

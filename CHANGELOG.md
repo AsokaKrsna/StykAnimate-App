@@ -10,8 +10,17 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 - Draw and animate on dedicated drawing layers backed by a sparse tiled raster engine: brush presets with pressure and textured pencil, erasing, fill, onion skin and pixel selection you can copy, cut and delete. Unchanged cels share tiles copy-on-write, strokes rasterize in workers, only visible tiles render with mip-level filtering, changed tiles publish incrementally, and older PNG drawings migrate on first edit. Pan while painting, create blank drawing frames with A, paint beyond the stage, and choose higher-resolution strokes using the shared timeline, undo, saving and export tools.
 
+### Changed
+
+- Scale and rotate a multi-figure selection around the dragged figure's pivot like Pivot: Alt-drag now moves every selected figure's position toward or around the shared origin instead of resizing each figure in place, and Ctrl+Alt keeps rotating the group without scaling.
+- Show a ⇔ marker on scrubbable property labels and a hint in Transform sections that dragging a label adjusts its value, with Shift or Alt for finer steps.
+
 ### Fixed
 
+- Restore right-click bending on the canvas: releasing a stationary right press opens the context menu while dragging with the button held bends the node under the pointer, matching Pivot-style gestures.
+- Keep connected figures joined when using Break apart frame or Bake animation on a movieclip, so expanded figures stay attached to their parents instead of separating.
+- Apply movieclip Transform edits from the inspector: Scale, Angle, Opacity and Z-index fields now update the placed instance instead of leaving it unchanged.
+- Keep feedback attachments bound to the report or reply they were chosen for: a failed upload no longer attaches later file picks to the already-sent conversation.
 - Keep locked IK ancestors unchanged when posing attached figures on another layer, and clear rejected pose edits so saving, tools, and timeline navigation remain available.
 - Keep exports from failing on demanding animations: legal output sizes like 4K now render even when effect halos, large images, or dense drawing layers exceed surface and memory budgets. The exporter filters each oversized effect region once per frame instead of per tile, retries at smaller tiles, rebuilds lost canvases, and falls back to exact software filtering — never lowering resolution or dropping effects.
 - Stop rejecting oversized drawing edits and strokes: drawing, filling, and pasting always apply under a high hard memory ceiling instead of failing partway through a stroke.

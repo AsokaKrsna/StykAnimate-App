@@ -17,7 +17,9 @@ const STYLES = `
 .property-row>.field {flex:1;min-width:0;}
 .property-row.is-animatable>.field>.property-scrub {min-width:42px;}
 .property-row .property-scrub {cursor:ew-resize;touch-action:none;user-select:none;border-radius:2px;outline-offset:2px;}
+.property-row .property-scrub::after {content:"⇔";margin-inline-start:2px;opacity:.35;font-size:.85em;}
 .property-row .property-scrub:hover {color:var(--theme-accent, #0d99ff);}
+.property-row .property-scrub:hover::after,.property-row .property-scrub:focus-visible::after {opacity:1;color:var(--theme-accent, #0d99ff);}
 .property-row .property-scrub:focus-visible {outline:2px solid var(--theme-accent, #80caff);}
 .property-row .field>input {min-width:35px;}
 .property-row .field>input[aria-invalid=true] {color:var(--theme-danger, #d24646);}
