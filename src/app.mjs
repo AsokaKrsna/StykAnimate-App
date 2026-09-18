@@ -781,7 +781,10 @@ function propertyChannel(key) {
   } else if (scene[key]) {
     target = { kind: "scene" };
     property = scene[key];
-  } else if (figure[key] && editor.object && selection().size === 1) {
+  } else if (figure[key] && editor.object && selection().size === 1 && !isMovieclip(editor.figure)) {
+    // Scalar channels cannot reach presence-clocked movieclip objects: they are
+    // stored inside movieclip patch frames, not the composed pose. The native
+    // pose path edits them directly instead.
     target = { kind: "figure", uid: editor.object.unique_id };
     property = figure[key];
   } else if (segment[key] && editor.object && selection().size === 1) {

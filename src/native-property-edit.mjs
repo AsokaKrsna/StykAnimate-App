@@ -14,6 +14,7 @@ const poseKeys = new Set([
   "scale",
   "rotation",
   "figure_opacity",
+  "figure_z_order",
   "group_x",
   "group_y",
   "group_width",
@@ -58,6 +59,7 @@ const names = {
   joint_angle: "Joint angle",
   joint_length: "Joint length",
   joint_bend: "Joint bend",
+  figure_z_order: "Z-index",
 };
 const clone = (value) =>
   value === undefined ? undefined : structuredClone(value);
@@ -129,7 +131,7 @@ export function canEditNativeProperty(editor, key) {
     return Boolean(resolveInstanceFigure(editor.figure,editor.object)?.segments[editor.selectedJoint]?.secondary);
   if (
     key.startsWith("group_") ||
-    ["root_x", "root_y", "scale", "rotation", "figure_opacity"].includes(key)
+    ["root_x", "root_y", "scale", "rotation", "figure_opacity", "figure_z_order"].includes(key)
   )
     return Boolean(editor.object);
   if (
@@ -164,6 +166,7 @@ export function getNativePropertyValue(editor, key, { bounds } = {}) {
       Math.PI
     );
   if (key === "figure_opacity") return (1 - (object.field28 ?? 0) / 255) * 100;
+  if (key === "figure_z_order") return object._stykZIndex ?? 0;
   if (cameraKeys.has(key)) {
     const c = cameraValues(editor.evaluatedFrame.camera);
     return key === "camera_scale"
@@ -212,11 +215,13 @@ function validate(key, value) {
     throw new Error("Enter a finite number within the native range.");
   if (/^polygon_\d+_opacity$/.test(key) && (value < 0 || value > 100))
     throw new Error('Polygon opacity must be from 0 to 100%.');
-  const integer = ["fps", "canvas_width", "canvas_height", "duration"].includes(
+  const integer = ["fps", "canvas_width", "canvas_height", "duration", "figure_z_order"].includes(
     key,
   );
   const min =
-    key === "duration"
+    key === "figure_z_order"
+      ? -1000000
+      : key === "duration"
       ? 0
       : integer
         ? 1
@@ -236,7 +241,9 @@ function validate(key, value) {
             ? 0.01
             : -Infinity;
   const max =
-    key === "fps"
+    key === "figure_z_order"
+      ? 1000000
+      : key === "fps"
       ? 1000
       : key === "duration"
         ? 65535
@@ -537,6 +544,14 @@ export function previewNativePropertyEdit(token, value) {
       editor._objectEdit("Figure opacity", () => {
         for (const object of editor.selectedObjects) {
           object.field28 = Math.round((1 - value / 100) * 255);
+          delete object.runtime_segments;
+        }
+      });
+    else if (key === "figure_z_order")
+      editor._objectEdit(token.label, () => {
+        for (const object of editor.selectedObjects) {
+          if (value) object._stykZIndex = value;
+          else delete object._stykZIndex;
           delete object.runtime_segments;
         }
       });

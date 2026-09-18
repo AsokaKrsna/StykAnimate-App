@@ -21,6 +21,15 @@ try{
   await page.locator('.movieclip-dialog input[name=end]').fill('5');await page.locator('.movieclip-dialog button[type=submit]').click();
   await page.waitForFunction(()=>styk.editor.figure?.name==='Five frames');await page.evaluate(()=>window.clipUid=styk.editor.selectedUid);
   check('Playback has no Start, End, Restart or Split controls',await page.locator('[data-movieclip-field=start],[data-movieclip-field=end],[data-action=movieclip-restart],[data-action=movieclip-split]').count()===0);
+  await page.getByLabel('Scale (%)',{exact:true}).fill('150');await page.getByLabel('Scale (%)',{exact:true}).press('Tab');
+  check('Movieclip scale field edits the presence-clocked instance',await page.evaluate(()=>Math.abs(styk.editor.object.scale-1.5)<1e-6));
+  await page.getByLabel('Opacity (%)',{exact:true}).fill('50');await page.getByLabel('Opacity (%)',{exact:true}).press('Tab');
+  check('Movieclip opacity field edits the presence-clocked instance',await page.evaluate(()=>Math.abs((styk.editor.object.field28??0)-128)<=1));
+  await page.getByLabel('Z-index',{exact:true}).fill('3');await page.getByLabel('Z-index',{exact:true}).press('Tab');
+  check('Movieclip z-index field edits the presence-clocked instance',await page.evaluate(()=>styk.editor.object._stykZIndex===3));
+  await page.getByLabel('Scale (%)',{exact:true}).fill('100');await page.getByLabel('Scale (%)',{exact:true}).press('Tab');
+  await page.getByLabel('Opacity (%)',{exact:true}).fill('100');await page.getByLabel('Opacity (%)',{exact:true}).press('Tab');
+  await page.getByLabel('Z-index',{exact:true}).fill('0');await page.getByLabel('Z-index',{exact:true}).press('Tab');
   await select(0);await page.locator('.movieclip-more > summary').click();await page.locator('[data-action=movieclip-break]').click();
   await page.waitForFunction(()=>!styk.editor.figure?._styk?.movieclip);
   const first=await page.evaluate(()=>styk.editor.selectedUid);
