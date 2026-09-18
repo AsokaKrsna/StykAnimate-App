@@ -24,10 +24,13 @@ export class SupportCenter {
     document.addEventListener('visibilitychange', this.onVisibility);
     window.addEventListener('focus', this.onVisibility);
     root.addEventListener('pointerdown', this.onActivity); root.addEventListener('keydown', this.onActivity);
-    this.beforeUnload = event => { if (this.busy || this.files?.length) { event.preventDefault(); event.returnValue = ''; } };
+    this.beforeUnload = event => { if (this.busy || this.pendingFiles.length) { event.preventDefault(); event.returnValue = ''; } };
     window.addEventListener('beforeunload', this.beforeUnload);
   }
   $(selector) { return this.root.querySelector(selector); }
+  /** Files are bound to the send they were queued with: a failed upload retries
+   * its own list, never whatever happens to be selected in the form later. */
+  get pendingFiles() { return this.pendingCreation?.queue ?? this.pendingMessage?.queue ?? (this.files ??= []); }
   mount() {
     this.root.classList.add('support-center');
     if (this.admin) { this.root.classList.add('sc-admin'); this.root.dataset.view = 'inbox'; this.mountAdmin(); return; }
@@ -63,7 +66,7 @@ export class SupportCenter {
   async setLayout(layout) {
     if (!this.admin || this.layout === layout) return;
     this.hideCardPreview();
-    if (layout === 'board' && (this.busy || this.files?.length || this.pendingMessage)) { this.notice('Finish sending or remove selected files before switching to the board.'); return; }
+    if (layout === 'board' && (this.busy || this.pendingFiles.length || this.pendingMessage)) { this.notice('Finish sending or remove selected files before switching to the board.'); return; }
     this.layout = layout; this.root.dataset.layout = layout;
     try { localStorage.setItem('styk-admin-layout', layout); } catch { /* Preference stays in memory. */ }
     this.root.querySelectorAll('[data-layout]').forEach(node => node.setAttribute('aria-pressed', String(node.dataset.layout === layout)));
@@ -178,7 +181,7 @@ export class SupportCenter {
     this.$('[data-nav-inbox]')?.setAttribute('aria-current', view !== 'create' ? 'page' : 'false');
   }
   showInbox() {
-    if (this.busy || this.files?.length || this.pendingCreation) { this.notice('Finish sending or remove selected files before switching views.'); return; }
+    if (this.busy || this.pendingFiles.length || this.pendingCreation || this.pendingMessage) { this.notice('Finish sending or remove selected files before switching views.'); return; }
     this.resetDetail(); this.thread = null; this.setView('inbox'); if (this.admin) this.emptyDetail(); this.renderList(); void this.loadList();
   }
   async start() {
@@ -214,7 +217,7 @@ export class SupportCenter {
   showCreate(category) {
     if (this.busy) { this.notice('Please wait for the current send to finish.'); return; }
     if (this.pendingCreation) { this.notice('Retry the remaining attachments or continue to the conversation first.'); return; }
-    if (this.files?.length) { this.notice('Send or remove the selected files before switching views.'); return; }
+    if (this.pendingFiles.length) { this.notice('Send or remove the selected files before switching views.'); return; }
     this.resetDetail(); this.thread = null; this.setView('create'); this.renderList();
     const draft = this.drafts.create || {}; this.createId = draft.requestId || crypto.randomUUID();
     const box = this.$('[data-body]');
@@ -268,21 +271,23 @@ export class SupportCenter {
     zone.ondragover = event => { event.preventDefault(); if (!this.busy) zone.classList.add('sc-drag'); };
     zone.ondragleave = () => zone.classList.remove('sc-drag');
     zone.ondrop = event => { event.preventDefault(); zone.classList.remove('sc-drag'); this.addFiles([...event.dataTransfer.files]); };
+    this.renderPendingFiles();
   }
   async addFiles(files) {
     if (this.busy || (this.config && !this.config.attachments) || (!this.admin && ['closed', 'spam'].includes(this.thread?.status))) return;
-    const current = this.thread?.fileCount || 0, used = this.thread?.fileBytes || 0;
+    if (this.pendingCreation || this.pendingMessage) { this.notice('Finish or cancel the current send before adding more files.', true); return; }
+    const pending = this.pendingFiles, current = this.thread?.fileCount || 0, used = this.thread?.fileBytes || 0;
     this.setBusy(true, 'Preparing files…'); this.preparing = new AbortController();
     const status = this.$('.sc-preparing'), label = el('span'); status.hidden = false;
     status.replaceChildren(label, button('Cancel', () => this.preparing?.abort()));
     try {
       for (const original of files.slice(0, 6)) {
-        if (current + this.files.length >= 6) { this.notice('A conversation can hold up to 6 files and 24 MB.', true); break; }
+        if (current + pending.length >= 6) { this.notice('A conversation can hold up to 6 files and 24 MB.', true); break; }
         try {
           label.textContent = `Preparing ${original.name}…`;
           const file = await prepareSupportFile(original, { signal: this.preparing.signal, progress: percent => { label.textContent = `Compressing ${original.name} · ${percent}%`; } });
-          if (used + this.files.reduce((n, f) => n + f.file.size, 0) + file.size > SUPPORT_LIMITS.threadFileBytes) { this.notice('A conversation can hold up to 6 files and 24 MB. Remove a file before adding another.', true); break; }
-          this.files.push({ file, id: crypto.randomUUID(), originalBytes: original.size });
+          if (used + pending.reduce((n, f) => n + f.file.size, 0) + file.size > SUPPORT_LIMITS.threadFileBytes) { this.notice('A conversation can hold up to 6 files and 24 MB. Remove a file before adding another.', true); break; }
+          pending.push({ file, id: crypto.randomUUID(), originalBytes: original.size });
           this.renderPendingFiles();
         } catch (error) { if (error.name === 'AbortError') break; this.notice(supportError(error), true); }
       }
@@ -291,12 +296,12 @@ export class SupportCenter {
   renderPendingFiles() {
     const mount = this.$('[data-pending-files]'); if (!mount) return;
     for (const media of mount.querySelectorAll('[src]')) { URL.revokeObjectURL(media.src); this.previews.delete(media.src); } mount.replaceChildren();
-    this.files.forEach((entry, index) => {
+    this.pendingFiles.forEach((entry, index) => {
       const node = el('div', null, 'sc-file sc-attachment-card'), mime = supportFileType(entry.file.name);
       if (mime?.startsWith('image/') || mime?.startsWith('video/')) node.append(this.mediaPreview(entry.file, mime, entry.file.name));
       else node.append(el('div', 'STYK', 'sc-project-preview'));
       node.append(el('span', entry.file.name, 'sc-file-name'), el('span', formatBytes(entry.file.size) + (entry.originalBytes > entry.file.size ? ` · −${Math.round((1 - entry.file.size / entry.originalBytes) * 100)}%` : ''), 'sc-small'));
-      const remove = button('×', () => { if (!this.busy) { this.files.splice(index, 1); this.renderPendingFiles(); } }); remove.setAttribute('aria-label', `Remove ${entry.file.name}`); node.append(remove); mount.append(node);
+      const remove = button('×', () => { if (!this.busy) { this.pendingFiles.splice(index, 1); this.renderPendingFiles(); } }); remove.setAttribute('aria-label', `Remove ${entry.file.name}`); node.append(remove); mount.append(node);
     });
   }
   mediaPreview(blob, mime, name) {
@@ -312,11 +317,11 @@ export class SupportCenter {
     if (submit) { if (value) { submit.dataset.previous = submit.textContent; submit.textContent = label; } else submit.textContent = submit.dataset.previous || 'Send message'; }
     if (!value) { this.syncComposerState(); this.flushLive(); }
   }
-  async uploadPending(threadId, messageId) {
-    while (this.files.length) {
-      const entry = this.files[0]; this.notice(`Uploading ${entry.file.name}…`);
+  async uploadPending(threadId, messageId, queue = this.files) {
+    while (queue.length) {
+      const entry = queue[0]; this.notice(`Uploading ${entry.file.name}…`);
       await this.api(`/threads/${threadId}/files?message=${messageId}&upload=${entry.id}`, { method: 'POST', body: entry.file, headers: { 'X-File-Name': encodeURIComponent(entry.file.name), 'Content-Type': 'application/octet-stream' } });
-      this.files.shift(); this.renderPendingFiles();
+      queue.shift(); this.renderPendingFiles();
     }
   }
   async createReport(form) {
@@ -324,8 +329,9 @@ export class SupportCenter {
     this.remember(); const payload = Object.fromEntries(new FormData(form)); payload.requestId = this.createId; payload.source = this.context.source || 'website';
     this.setBusy(true); let created;
     try {
-      created = this.pendingCreation || await this.api('/threads', { method: 'POST', body: payload }); this.pendingCreation = created;
-      await this.uploadPending(created.id, created.messageId);
+      created = this.pendingCreation || await this.api('/threads', { method: 'POST', body: payload });
+      if (!this.pendingCreation) created.queue = this.files; this.pendingCreation = created; this.files = [];
+      await this.uploadPending(created.id, created.messageId, created.queue);
       this.pendingCreation = null; this.saveDraft('create', {}); this.createId = crypto.randomUUID(); form.reset(); this.setBusy(false);
       await this.loadList(); await this.openThread(created.id); this.notice('Report sent. Replies will appear here.');
     } catch (error) {
@@ -335,7 +341,7 @@ export class SupportCenter {
         actions.append(button('Continue to conversation', async () => { this.pendingCreation = null; this.files = []; form.reset(); this.saveDraft('create', {}); await this.loadList(); await this.openThread(created.id); }));
         this.$('[data-retry]')?.remove(); form.append(actions);
       }
-    } finally { this.setBusy(false); if (this.pendingCreation) { form.querySelector('[type=submit]').textContent = 'Retry attachments'; for (const node of form.querySelectorAll('input:not([type=file]),textarea')) node.readOnly = true; } }
+    } finally { this.setBusy(false); if (this.pendingCreation) { form.querySelector('[type=submit]').textContent = 'Retry attachments'; for (const node of form.querySelectorAll('input:not([type=file]),textarea')) node.readOnly = true; const fileInput = form.querySelector('[type=file]'); if (fileInput) fileInput.disabled = true; } }
   }
   async loadList(append = false) {
     if (this.listBusy) return; this.listBusy = true;
@@ -377,7 +383,7 @@ export class SupportCenter {
   async openThread(id) {
     if (this.busy) { this.notice('Please wait for the current send to finish.'); return; }
     if (this.pendingCreation) { this.notice('Retry the remaining attachments or continue to the conversation first.'); return; }
-    if (this.files?.length) { this.notice('Send or remove the selected files before switching conversations.'); return; }
+    if (this.pendingFiles.length || this.pendingMessage) { this.notice('Send or remove the selected files before switching conversations.'); return; }
     this.resetDetail(); this.setView('thread'); const generation = this.generation; this.thread = null;
     this.$('[data-body]').append(el('p', 'Opening conversation…', 'sc-small'));
     try {
@@ -496,9 +502,10 @@ export class SupportCenter {
       const log = this.$('.sc-conversation'); log.append(optimistic); log.scrollTop = log.scrollHeight;
     }
     try {
-      const sent = this.pendingMessage || await this.api(`/threads/${id}/messages`, { method: 'POST', body: { requestId: this.replyId, message: text, internal } }); this.pendingMessage = sent;
+      const sent = this.pendingMessage || await this.api(`/threads/${id}/messages`, { method: 'POST', body: { requestId: this.replyId, message: text, internal } });
+      if (!this.pendingMessage && !internal) sent.queue = this.files; this.pendingMessage = sent; if (!internal) this.files = [];
       if (sent.message) { optimistic?.remove(); this.messages.set(sent.id, { ...sent.message, localReceipt: true }); this.renderMessages(); const log = this.$('.sc-conversation'); log.scrollTop = log.scrollHeight; }
-      if (!internal) await this.uploadPending(id, sent.id);
+      if (!internal) await this.uploadPending(id, sent.id, sent.queue);
       this.pendingMessage = null; this.files = []; form.elements.message.value = ''; this.replyId = crypto.randomUUID(); this.saveDraft(id, {});
       this.notice('');
       let status = form.querySelector('.sc-send-status'); if (!status) { status = el('span', null, 'sc-send-status'); status.setAttribute('role', 'status'); form.querySelector('footer>div').append(status); }
@@ -506,7 +513,7 @@ export class SupportCenter {
       this.setBusy(false); await this.refreshThread();
       this.lastActivity = Date.now(); this.livePaused = false; this.schedule(); form.elements.message.focus();
     } catch (error) { this.notice(this.pendingMessage ? `Message sent; an attachment needs attention. ${supportError(error)} Retry or remove the remaining file.` : supportError(error), true); }
-    finally { optimistic?.remove(); this.setBusy(false); form.elements.message.readOnly = Boolean(this.pendingMessage); if (this.pendingMessage) form.querySelector('[type=submit]').textContent = 'Retry attachments'; }
+    finally { optimistic?.remove(); this.setBusy(false); form.elements.message.readOnly = Boolean(this.pendingMessage); if (this.pendingMessage) { form.querySelector('[type=submit]').textContent = 'Retry attachments'; const fileInput = form.querySelector('[type=file]'); if (fileInput) fileInput.disabled = true; } }
   }
   async refreshThread(more = false, automatic = false) {
     if (!this.thread || this.busy || this.detailBusy) return; this.detailBusy = true;
@@ -658,7 +665,7 @@ export class SupportCenter {
     mount.querySelector('form').onsubmit = async event => {
       event.preventDefault(); if (this.busy) return; const raw = event.target.elements.access.value.trim(); let key = raw;
       if (this.listBusy || this.detailBusy || this.fileLoading) { this.notice('Wait for the current inbox request to finish, then try again.'); return; }
-      if (this.files?.length || this.pendingCreation) { this.notice('Send or remove the selected files and finish any attachment retry before changing inboxes.'); return; }
+      if (this.pendingFiles.length || this.pendingCreation || this.pendingMessage) { this.notice('Send or remove the selected files and finish any attachment retry before changing inboxes.'); return; }
       try {
         if (raw.includes('#')) key = new URLSearchParams(new URL(raw).hash.slice(1)).get('key');
         if (!/^[a-f0-9]{64}$/.test(key || '')) throw new Error();
