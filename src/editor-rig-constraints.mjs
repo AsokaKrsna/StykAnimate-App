@@ -34,6 +34,24 @@ function change(editor,label,changes) {
   editor._invalidateFigure(figure.figure_type_id);editor._emit('edit',{label,definition:true});return true;
 }
 
+
+function appendRigJoint(editor,definition,label) {
+  const figure=editor.figure;if(!figure)throw new Error('Select a figure before adding a rig joint.');
+  if(figure.segments.length>=30000)throw new Error('Figure segment capacity reached.');
+  const id=Math.max(0,...figure.segments.map(s=>s.segment_id))+1;
+  if(id>65535)throw new Error('Figure joint capacity reached.');
+  const segment={segment_id:id,bend_rad:0,thickness:0,primitive_code:0,aux_code:0,flags:0,
+    segment_type:'line',segment_kind:'line',color_rgb:[13,153,255],transparency:0,visible:true,z_order:figure.segments.length+1,...definition};
+  rigConstraintPlan({...figure,segments:[...figure.segments,segment]});
+  editor._topologyEdit(label,next=>{
+    next.segments.push(segment);
+    for(const frame of editor._allSourceFrames())for(const o of frame.objects)if(o.figure_type_id===next.figure_type_id){
+      o.angles.push(segment.angle_rad);if(o.len_flag)o.lengths.push(segment.length);if(o.bend_flag)o.bends.push(0);delete o.runtime_segments;
+    }
+    editor.selectedJoint=next.segments.length-1;
+  },{appendOnly:true});return segment;
+}
+
 export const editorRigConstraintMethods = {
   enableSmartStretch(enabled) {
     if(!enabled)return this.setRigBehavior({stretch:null});
@@ -59,29 +77,20 @@ export const editorRigConstraintMethods = {
     finite(position,0,1,'Slide position');finite(thickness,0,1e6,'Thickness');
     const g=this.geometry.objects.get(this.selectedSlot), a=g?.joints.get(start),b=g?.joints.get(end);
     if(!a||!b||start===end)throw new Error('Choose two different joints in this figure.');
-    if(figure.segments.length>=30000)throw new Error('Figure segment capacity reached.');
-    const id=Math.max(0,...figure.segments.map(s=>s.segment_id))+1;
-    if(id>65535)throw new Error('Figure joint capacity reached.');
     const span=Math.hypot(b.x-a.x,b.y-a.y)/Math.max(1e-8,Math.abs(this.object.scale));
     if(span<1e-8)throw new Error('Separate the anchors before creating a connector. They can overlap when animated.');
-    const segment={segment_id:id,parent_id:start,length:position,angle_rad:Math.atan2(b.y-a.y,b.x-a.x),bend_rad:0,
-      thickness,primitive_code:0,aux_code:0,flags:0,segment_type:'line',segment_kind:'line',
-      color_rgb:[13,153,255],transparency:0,visible:true,z_order:figure.segments.length+1,
-      _stykRig:{connector:{start,end,restLength:span}}};
-    rigConstraintPlan({...figure,segments:[...figure.segments,segment]});
-    this._topologyEdit('Connect joints',next=>{
-      next.segments.push(segment);
-      for(const frame of this._allSourceFrames())for(const o of frame.objects)if(o.figure_type_id===next.figure_type_id){
-        o.angles.push(segment.angle_rad);if(o.len_flag)o.lengths.push(position);if(o.bend_flag)o.bends.push(0);delete o.runtime_segments;
-      }
-      this.selectedJoint=next.segments.length-1;
-    },{appendOnly:true});return segment;
+    return appendRigJoint(this,{parent_id:start,length:position,angle_rad:Math.atan2(b.y-a.y,b.x-a.x),thickness,
+      _stykRig:{connector:{start,end,restLength:span}}},'Connect joints');
+  },
+  addWeightedJoint(origin,anchors) {
+    const weighted={origin,anchors:clone(anchors)};
+    return appendRigJoint(this,{parent_id:origin,length:0,angle_rad:0,name:'Weighted joint',_stykRig:{weighted}},'Add weighted joint');
   },
   setRigBehavior(patch) {
     const figure=this.figure,index=this.selectedJoint,seg=figure?.segments[index];if(!seg)return false;
     const r={...seg._stykRig}, changes=new Map();
-    for(const key of Object.keys(patch))if(!['connector','stretch','follow','orientation','response','angleLock'].includes(key))throw new Error('Unknown rig behavior.');
-    for(const key of ['response','angleLock'])if(key in patch){if(patch[key])r[key]={...r[key],...patch[key]};else delete r[key];}
+    for(const key of Object.keys(patch))if(!['connector','stretch','follow','orientation','response','angleLock','weighted'].includes(key))throw new Error('Unknown rig behavior.');
+    for(const key of ['response','angleLock','weighted'])if(key in patch){if(patch[key])r[key]={...r[key],...patch[key]};else delete r[key];}
     if('orientation' in patch)r.orientation=patch.orientation;
     if('connector' in patch) {
       if(!r.connector)throw new Error('Create a connector with Connect joints.');

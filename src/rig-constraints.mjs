@@ -4,6 +4,7 @@
  * carried between frames: arbitrary seeks and collapsed spans are deterministic.
  */
 import {animationRotation} from './animation-origin.mjs';
+import {sameWeightedJoint,validateWeightedJoint,weightedJoint} from './rig-weighted.mjs';
 const plans = new WeakMap();
 const EPS = 1e-8;
 export const clampRig = (n, min, max) => Math.max(min, Math.min(max, n));
@@ -31,12 +32,13 @@ export function* rigConstraintPlanSteps(figure) {
       p.branch===d?.branch&&p.source===d?.source&&p.restPosition===d?.restPosition&&p.automatic===f?.automatic&&
       p.responseMode===r?.response?.mode&&p.multiplier===r?.response?.multiplier&&p.reset===r?.response?.reset&&
       p.lockMode===r?.angleLock?.mode&&p.lockSpace===r?.angleLock?.space&&p.lockReference===r?.angleLock?.reference&&p.lockAngle===r?.angleLock?.angle&&p.lockRest===r?.angleLock?.restAngle&&p.lockFigureRest===r?.angleLock?.figureRestAngle&&p.lockMultiplier===r?.angleLock?.multiplier&&
-      p.secondaryReference===r?.angleLock?.secondary?.reference&&p.secondaryRest===r?.angleLock?.secondary?.restAngle&&p.secondaryMultiplier===r?.angleLock?.secondary?.multiplier;
+      p.secondaryReference===r?.angleLock?.secondary?.reference&&p.secondaryRest===r?.angleLock?.secondary?.restAngle&&p.secondaryMultiplier===r?.angleLock?.secondary?.multiplier&&sameWeightedJoint(p.weighted,r?.weighted);
   })) return previous;
   const signature=new Array(segments.length),ids=new Map(),outgoing=new Array(segments.length),indegree=new Uint32Array(segments.length);
   for(let i=0;i<segments.length;i++){
     const s=segments[i],r=s._stykRig,c=r?.connector,d=r?.stretch,f=r?.follow;
     signature[i]={id:s.segment_id,parent:s.parent_id,start:c?.start,end:c?.end,span:c?.restLength,rest:d?.restLength,min:d?.min,max:d?.max,width:d?.width,driver:f?.driver,mode:f?.mode,influence:f?.influence,orientation:r?.orientation};
+    if(r?.weighted)signature[i].weighted=structuredClone(r.weighted);
     Object.assign(signature[i],{branch:d?.branch,source:d?.source,restPosition:d?.restPosition,automatic:f?.automatic,
       responseMode:r?.response?.mode,multiplier:r?.response?.multiplier,reset:r?.response?.reset,
       lockMode:r?.angleLock?.mode,lockSpace:r?.angleLock?.space,lockReference:r?.angleLock?.reference,lockAngle:r?.angleLock?.angle,lockRest:r?.angleLock?.restAngle,lockFigureRest:r?.angleLock?.figureRestAngle,lockMultiplier:r?.angleLock?.multiplier,
@@ -50,9 +52,13 @@ export function* rigConstraintPlanSteps(figure) {
   for(let i=0;i<segments.length;i++) {
     const s=segments[i];
     const r=s._stykRig, c=r?.connector, d=r?.stretch, f=r?.follow;
-    if(r && (typeof r !== 'object' || Array.isArray(r) || Object.keys(r).some(k=>!['connector','stretch','follow','orientation','response','angleLock'].includes(k)))) throw new Error('Invalid rig behavior.');
+    if(r && (typeof r !== 'object' || Array.isArray(r) || Object.keys(r).some(k=>!['connector','stretch','follow','orientation','response','angleLock','weighted'].includes(k)))) throw new Error('Invalid rig behavior.');
     if(r?.orientation!==undefined&&!['inherit','world'].includes(r.orientation))throw new Error('Choose a valid attachment orientation.');
     const dependencies = new Set([s.parent_id]);
+    if(r?.weighted){
+      if(c||d||f||r.response||r.angleLock)throw new Error('A weighted joint follows its anchors; apply other behaviors to those anchors.');
+      validateWeightedJoint(r.weighted,reference,dependencies);
+    }
     if(c) {
       reference(c.start,'Connector start',true); reference(c.end,'Connector end',true);
       if(c.start === c.end) throw new Error('Choose two different connector anchors.');
@@ -110,7 +116,7 @@ export function* rigConstraintPlanSteps(figure) {
   for(const i of order){
     const r=segments[i]._stykRig??{},parent=ids.get(segments[i].parent_id),f=r.follow;
     let source=f&&!f.automatic?{driver:ids.get(f.driver),axis:ids.get(f.driver),legacy:true}:
-      r.stretch&&!r.connector?undefined:outputs[parent];
+      (r.stretch&&!r.connector)||r.weighted?undefined:outputs[parent];
     if(source?.legacy&&outputs[parent]?.driver===source.driver)source.axis=outputs[parent].axis;
     blocked[i]=r.stretch?undefined:blocked[parent];
     if(r.response?.mode==='stop'){blocked[i]=source?.driver??blocked[i];source=undefined;}
@@ -126,6 +132,7 @@ export function* rigConstraintPlanSteps(figure) {
 export function remapRigReferences(segment, remap) {
   const r=segment._stykRig;if(!r)return;
   segment._stykRig={...r,
+    ...(r.weighted?{weighted:{origin:remap.get(r.weighted.origin)??r.weighted.origin,anchors:r.weighted.anchors.map(a=>({...a,joint:remap.get(a.joint)??a.joint}))}}:{}),
     ...(r.connector?{connector:{...r.connector,start:remap.get(r.connector.start)??r.connector.start,end:remap.get(r.connector.end)??r.connector.end}}:{}),
     ...(r.follow?{follow:{...r.follow,driver:remap.get(r.follow.driver)??r.follow.driver}}:{}),
     ...(r.angleLock?.reference!==undefined?{angleLock:{...r.angleLock,reference:remap.get(r.angleLock.reference)??r.angleLock.reference,
@@ -138,7 +145,7 @@ export function rigIKAllowed(figure,index) {
   if(!figure.segments[index])return false;
   if(!hasRigConstraints(figure))return true;
   const plan=rigConstraintPlan(figure);let i=index;
-  while(i!==undefined){const s=figure.segments[i];if(s._stykRig?.connector||s._stykRig?.follow||s._stykRig?.angleLock||plan.inputs[i])return false;i=plan.ids.get(s.parent_id);}
+  while(i!==undefined){const s=figure.segments[i];if(s._stykRig?.connector||s._stykRig?.follow||s._stykRig?.angleLock||s._stykRig?.weighted||plan.inputs[i])return false;i=plan.ids.get(s.parent_id);}
   return true;
 }
 /** One lightweight context per evaluated object; outputs are bounded by its rig.
@@ -149,6 +156,7 @@ export function createRigEvaluation(figure, object, root, plan=rigConstraintPlan
     const seg=figure.segments[i], r=seg._stykRig, c=r?.connector, d=r?.stretch, f=r?.follow, response=r?.response, lock=r?.angleLock;
     const parent=states[plan.ids.get(seg.parent_id)], rotation=r?.orientation==='world'?0:parent?.rotation??0;
     let {start,angle,length,bend}=input, width=1, inheritedRotation=rotation, ratio=1, handle, followAxis, followScale, position,span;
+    if(r?.weighted)return states[i]=weightedJoint(r.weighted,joints,root,angle);
     angle+=rotation;
     const source=plan.inputs[i],driver=source&&states[source.driver];
     let lockedAngle;

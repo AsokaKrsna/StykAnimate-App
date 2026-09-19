@@ -4192,6 +4192,7 @@ function toggleFigureJoin() {
 const actions = {
   'join-figure': toggleFigureJoin,
   'rig-connect':()=>beginRigAnchorPick(),
+  'rig-weighted':()=>{const s=editor.figure?.segments[editor.selectedJoint];if(s)editor.addWeightedJoint(s.parent_id,[{joint:s.segment_id,weight:.5}]);},
   'rig-pick-start':()=>beginRigAnchorPick('start'),
   'rig-pick-end':()=>beginRigAnchorPick('end'),
   'rig-pick-driver':()=>beginRigAnchorPick('driver'),

@@ -7,6 +7,12 @@ export function rigControlsView(editor,{builder=false}={}) {
   if(!builder)return '';
   const seg=editor.figure?.segments[editor.selectedJoint];if(!seg)return '';
   const r=seg._stykRig??{},c=r.connector,d=r.stretch,f=r.follow,response=r.response??{},lock=r.angleLock;
+  if(r.weighted){
+    const w=r.weighted,body=field('rig-weighted-origin','Origin joint',w.origin,0,65535)+w.anchors.map((a,i)=>
+      `<div class="rig-field-pair">${field(`rig-weighted-joint-${i}`,`Anchor ${i+1}`,a.joint,0,65535)}${field(`rig-weighted-weight-${i}`,'Weight',a.weight,-100,100,'×')}</div>`).join('')+
+      field('rig-weighted-count','Number of anchors',w.anchors.length,1,16);
+    return `<section class="inspector-section rig-properties"><div class="inspector-title">Weighted joint</div>${body}<p class="field-hint">Offsets from the origin are multiplied by their weights and added. Pose the anchors to move this joint.</p></section>`;
+  }
   const plan=rigConstraintPlan(editor.figure),source=plan.inputs[editor.selectedJoint];
   const option=(v,label,current)=>`<option value="${v}" ${v===current?'selected':''}>${label}</option>`;
   const select=(id,label,items,current)=>`<label class="rig-select"><span>${label}</span><select id="${id}" class="inline-select" aria-label="${label}">${items.map(([v,l])=>option(v,l,current)).join('')}</select></label>`;
@@ -14,7 +20,7 @@ export function rigControlsView(editor,{builder=false}={}) {
   const pick=(action,label)=>`<button class="icon-button" data-action="${action}" title="${label}" aria-label="${label}">${icon('origin')}</button>`;
   const name=id=>esc(id===0?'Origin':editor.figure.segments[plan.ids.get(id)]?.name||`Joint ${id}`);
   let body=c?`<div class="rig-anchors">${['start','end'].map((key,i)=>`<div class="rig-anchor"><span class="rig-anchor-letter">${i?'B':'A'}</span><span class="rig-anchor-name" title="${name(c[key])}">${name(c[key])}</span>${pick(`rig-pick-${key}`,`Pick anchor ${i?'B':'A'} on canvas`)}</div>`).join('')}</div>`:
-    `<button class="button rig-connect" data-action="rig-connect">${icon('link')}Connect joints</button>`;
+    `<button class="button rig-connect" data-action="rig-connect">${icon('link')}Connect joints</button><button class="button rig-connect" data-action="rig-weighted">${icon('nodes')}Add weighted joint</button>`;
   body+=check('rig-stretch-enabled','Smart Stretch',d,'expand','Hold Ctrl while dragging to stretch. New attached parts follow automatically.');
   if(d) {
     if(c)body+=select('rig-source','Driven by',[['span','Anchor distance'],['slide','Slide position'],['combined','Distance × slide']],d.source??'span');
@@ -46,7 +52,20 @@ export function rigControlsView(editor,{builder=false}={}) {
 export function rigControlChange(editor,target) {
   const id=target.id;if(!id.startsWith('rig-')||id==='rig-mode')return false;
   const value=target.valueAsNumber;
-  if(id==='rig-position')editor.setConnectorPosition(value/100);
+  if(id.startsWith('rig-weighted-')){
+    const weighted=structuredClone(editor.figure.segments[editor.selectedJoint]._stykRig.weighted),match=/^rig-weighted-(joint|weight)-(\d+)$/.exec(id);
+    if(match)weighted.anchors[Number(match[2])][match[1]]=value;
+    else if(id==='rig-weighted-origin')weighted.origin=value;
+    else if(id==='rig-weighted-count'){
+      if(!Number.isInteger(value)||value<1||value>16)throw new Error('Choose 1–16 anchors.');
+      const used=new Set([weighted.origin,editor.figure.segments[editor.selectedJoint].segment_id,...weighted.anchors.map(a=>a.joint)]);
+      const available=[0,...editor.figure.segments.map(s=>s.segment_id)].filter(id=>!used.has(id));
+      while(weighted.anchors.length<value){const joint=available.shift();if(joint===undefined)throw new Error('Add another anchor joint first.');weighted.anchors.push({joint,weight:0});}
+      weighted.anchors.length=value;
+    }else return false;
+    editor.setRigBehavior({weighted});
+  }
+  else if(id==='rig-position')editor.setConnectorPosition(value/100);
   else if(id==='rig-stretch-enabled')editor.enableSmartStretch(target.checked);
   else if(id==='rig-rest')editor.setRigBehavior({stretch:{restLength:value}});
   else if(id==='rig-min')editor.setRigBehavior({stretch:{min:value/100}});

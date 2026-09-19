@@ -14,6 +14,16 @@ from that joint, join another figure to it, use it as another connector's anchor
 or include it in a polygon. Anchor Pick buttons reconnect an existing connector.
 Curved connectors retain both anchors and slide along the curve.
 
+**Weighted joints:** select an anchor and choose **Add weighted joint**. The new
+joint starts halfway between the selected anchor and its parent. Its inspector
+sets an origin and up to 16 distinct anchors with signed weights. The position is
+the origin plus the weighted offsets from that origin; two weights of 0.5 blend
+two anchors, while signed weights can combine projected axes. These joints can
+drive fills, connectors and attached parts. Move their anchors to pose them.
+Their dependencies participate in the same cycle checks, duplication, undo and
+native saving as connectors. IK belongs on the driving bones. They add no
+animation channels or renderer state.
+
 The diamond handle selects **Slider** controls (position and Static). **Segment**
 contains the connector artwork and rig setup. Selected sliders show dotted A/B
 guides to their anchors in Builder and Animate. These are editor guides only;
