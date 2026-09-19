@@ -32,13 +32,16 @@ try {
       const tile = new OffscreenCanvas(512, 512), tileCtx = tile.getContext('2d', {willReadFrequently: true});
       // Two simulated export tiles of one 1024x512 output, sharing the tile
       // context like drawExportSceneTiled does.
-      const outputs = [];
+      const outputs = []; let hintCalls=0,content='fixture-items';
+      const hint=()=>{hintCalls++;return content;};
+      withVfx(tileCtx, [], () => {}, {cacheHint:hint});
+      check(hintCalls===0,'Unfiltered painting must not evaluate cache fingerprints.');
       for (const tileX of [0, 512]) {
         tileCtx.setTransform(1, 0, 0, 1, 0, 0);
         tileCtx.clearRect(0, 0, 512, 512);
         tileCtx.setTransform(scale, 0, 0, scale, -tileX, 0);
         withVfx(tileCtx, stack, paint, {
-          bounds, domainBounds: bounds, scale: 1, cacheHint: 'fixture-items',
+          bounds, domainBounds: bounds, scale: 1, cacheHint: hint,
           outputRect: {x: -tileX, y: 0, width: 1024, height: 512},
         });
         tileCtx.setTransform(1, 0, 0, 1, 0, 0);
@@ -59,6 +62,12 @@ try {
         for (let i = 0; i < out.length; i++) max = Math.max(max, Math.abs(out[i] - expected[i]));
       }
       check(max === 0, `Cached tile composites diverge from the full-width render (max delta ${max}).`);
+      check(hintCalls===2,'Each cached software render evaluates its current content once.');
+      const before=calls;content='changed artwork';
+      tileCtx.setTransform(scale,0,0,scale,-512,0);
+      withVfx(tileCtx,stack,paint,{bounds,domainBounds:bounds,scale:1,cacheHint:hint,
+        outputRect:{x:-512,y:0,width:1024,height:512}});
+      check(calls===before+1,'Changing a lazy fingerprint invalidates the filtered region.');
       tile.width = tile.height = ref.width = ref.height = 1;
       return {cpuPasses: calls, filteredPixels: totalPixels, maxDelta: max};
     } finally {VfxCPU.prototype.runPixels = original;}

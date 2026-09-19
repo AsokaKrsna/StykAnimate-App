@@ -17,6 +17,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Fixed
 
+- Reduce lag and memory pressure when posing dense figures: drawing avoids repeated pose serialization, and dragging releases superseded geometry instead of retaining every intermediate pose.
 - Restore right-click bending on the canvas: releasing a stationary right press opens the context menu while dragging with the button held bends the node under the pointer, matching Pivot-style gestures.
 - Keep connected figures joined when using Break apart frame or Bake animation on a movieclip, so expanded figures stay attached to their parents instead of separating.
 - Apply movieclip Transform edits from the inspector: Scale, Angle, Opacity and Z-index fields now update the placed instance instead of leaving it unchanged.

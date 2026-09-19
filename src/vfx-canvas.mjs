@@ -138,7 +138,10 @@ export function withVfx(context,stack,paint,{bounds,domainBounds=bounds,scale=1,
  // region keeps every needed tap and canvas calls stay integer-aligned.
  {const rx=Math.floor(rin.x),ry=Math.floor(rin.y);rin.width=Math.ceil(rin.x+rin.width)-rx;rin.height=Math.ceil(rin.y+rin.height)-ry;rin.x=rx;rin.y=ry;}
  if(cacheHint!==undefined&&typeof stackObj==='object'&&stackObj!==null&&rin.width>0&&rin.height>0&&rin.width*rin.height<=VFX_CPU_PIXELS){
-  const sig=`${rin.x-anchorX},${rin.y-anchorY},${rin.width},${rin.height}|${pixelScale}|${outputSize.width},${outputSize.height}|${cacheHint}`;
+  // Fingerprints are only needed by this oversized software cache. Ordinary
+  // painting and GPU filtering must not serialize a dense pose on each redraw.
+  const content=typeof cacheHint==='function'?cacheHint():cacheHint;
+  const sig=`${rin.x-anchorX},${rin.y-anchorY},${rin.width},${rin.height}|${pixelScale}|${outputSize.width},${outputSize.height}|${content}`;
   let entry=cacheGet(context,stackObj,sig);
   if(!entry){
    const data=paintSourceRect(paintAt,rin);

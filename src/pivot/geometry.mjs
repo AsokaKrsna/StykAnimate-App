@@ -816,11 +816,16 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
     if (local.length) orderedObjects.push(g);
     yield {phase: 'geometry', stage: 'drawables', completed: ++collected, total: order.length};
   }
-  // Keep edit invalidation metadata without retaining a chain of previous scenes.
-  // The flattened compatibility view is created only when a consumer needs it.
+  return publishedGeometry(cache,orderedObjects,incremental?.previous?.token,
+    incremental?.dirtySlots ? new Set(incremental.dirtySlots) : null,warnings);
+}
+
+// Build the lazy view in its own scope. A getter defined inside the generator
+// captures its shared context, including incremental.previous, and keeps every
+// earlier pose alive even though the returned fields only mention its token.
+function publishedGeometry(objects,orderedObjects,previousToken,changedSlots,warnings) {
   let drawables;
-  return { objects: cache, orderedObjects, token: {}, previousToken: incremental?.previous?.token,
-    changedSlots: incremental?.dirtySlots ? new Set(incremental.dirtySlots) : null,
+  return { objects, orderedObjects, token: {}, previousToken, changedSlots,
     get drawables() { return drawables ??= orderedObjects.flatMap(g => g.drawables); }, warnings };
 }
 
@@ -931,11 +936,18 @@ function floatBits(n) {
  * false hit would reuse wrong pixels, so the projection stays generous. */
 function vfxCacheHint(items) {
   let h = "";
+  // A dense figure shares one pose across all its faces. Include shared records
+  // once, with local references, instead of repeating its full joint arrays for
+  // every face. This dictionary belongs to this signature only.
+  const records = new Map();
+  const record = value => {
+    if (records.has(value)) return `@${records.get(value)}`;
+    const id = records.size; records.set(value, id);
+    let text = ""; try { text = JSON.stringify(value) ?? ""; } catch {}
+    return `@${id}:${text.length}:${text}`;
+  };
   for (const i of items) {
-    let obj = "", paint = "", style = "";
-    try { obj = JSON.stringify(i.obj); } catch {}
-    try { paint = JSON.stringify(i.seg?.paint); } catch {}
-    try { style = JSON.stringify(i.fig?.segment_decode?.global_style); } catch {}
+    const obj = record(i.obj), paint = record(i.seg?.paint), style = record(i.fig?.segment_decode?.global_style);
     h += (i.type ?? "") + "|" + (i.obj?.unique_id ?? "") + "|" +
       (i.seg?.segment_id ?? "") + "|" + (i.fig?.figure_type_id ?? "") + "|" +
       (i.thickness ?? "") + "|" + (i.baseThickness ?? "") + "|" +
@@ -979,7 +991,7 @@ export function drawGeometry(ctx, geometry, resources = {}) {
       isolated(ctx,owner.opacity,target=>withVfx(target,owner.effects,filtered=>drawGeometry(filtered, {drawables:g.items.map(item => {
         const inner=item._movieclipInner;
         return {...item,slot:item._movieclipPart,_movieclipOwner:inner?.owner,_movieclipPart:inner?.part,_movieclipInner:inner?.inner};
-      })},resources),{bounds:owner.effects?.length?objectBounds(g.items,resources):undefined,domainBounds:owner.effects?.length?(owner.domainBounds??objectBounds(g.items,{...resources,vfxBounds:false})):undefined,scale:owner.scale,cacheHint:vfxCacheHint(g.items),outputRect:geometry.outputRect}),groupCanvases);
+      })},resources),{bounds:owner.effects?.length?objectBounds(g.items,resources):undefined,domainBounds:owner.effects?.length?(owner.domainBounds??objectBounds(g.items,{...resources,vfxBounds:false})):undefined,scale:owner.scale,cacheHint:()=>vfxCacheHint(g.items),outputRect:geometry.outputRect}),groupCanvases);
       continue;
     }
     const effects=vfxStack(g.items[0]?.obj);
@@ -1023,7 +1035,7 @@ export function drawGeometry(ctx, geometry, resources = {}) {
         const clip = !effects.length && !(ow > 0) ? geometry.clipBounds : null;
         drawPrimitives(target, g.items, resources, stroke, !skipPaint, clip, geometry.outputRect);
       },
-      {bounds:effects.length?objectBounds(g.items,resources):undefined,domainBounds:effects.length?objectBounds(g.items,{...resources,vfxBounds:false}):undefined,scale:Math.abs(g.items[0]?.obj.scale??1),cacheHint:vfxCacheHint(g.items),outputRect:geometry.outputRect},
+      {bounds:effects.length?objectBounds(g.items,resources):undefined,domainBounds:effects.length?objectBounds(g.items,{...resources,vfxBounds:false}):undefined,scale:Math.abs(g.items[0]?.obj.scale??1),cacheHint:()=>vfxCacheHint(g.items),outputRect:geometry.outputRect},
     ),groupCanvases);
   }
 }
@@ -1071,7 +1083,7 @@ function strokeWidth(stroke, requested) {
 function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null, outputRect = null) {
   for (const s of items) {
     const effects=!s._vfxSkipNode&&!s.outline?segmentVfx(s):[];
-    if(activeVfx(effects).length && paint){withVfx(ctx,effects,target=>drawPrimitives(target,[{...s,_vfxSkipNode:true}],resources,stroke),{bounds:objectBounds([s],resources),domainBounds:objectBounds([s],{...resources,vfxBounds:false}),scale:Math.abs(s.obj.scale??1),cacheHint:vfxCacheHint([s]),outputRect});continue;}
+    if(activeVfx(effects).length && paint){withVfx(ctx,effects,target=>drawPrimitives(target,[{...s,_vfxSkipNode:true}],resources,stroke),{bounds:objectBounds([s],resources),domainBounds:objectBounds([s],{...resources,vfxBounds:false}),scale:Math.abs(s.obj.scale??1),cacheHint:()=>vfxCacheHint([s]),outputRect});continue;}
     if (paint) {
       const brush = gradient(ctx, s) || rgba(s.rgb, s.alpha);
       ctx.fillStyle = brush;
