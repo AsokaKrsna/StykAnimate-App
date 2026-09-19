@@ -26,5 +26,15 @@ try{
     await settle();
   }
   assert.deepEqual(await page.evaluate(()=>styk.editor.geometry.objects.get(styk.editor.selectedSlot).polys.filter(p=>!p.culled).map(p=>p.index)),[0,2,5]);
+  await page.evaluate(()=>styk.editor.selectPolygon(styk.editor.selectedUid,0));await settle();
+  await page.locator('[data-polygon-reference="0"]').click();
+  await page.getByRole('textbox',{name:'Depth joints',exact:true}).fill('99999');
+  await page.locator('#fill-reference-form [type="submit"]').click();
+  assert.match(await page.locator('#fill-reference-error').innerText(),/existing reference joints/);
+  await page.getByRole('textbox',{name:'Depth joints',exact:true}).fill('1, 2');
+  await page.locator('#fill-reference-form [type="submit"]').click();await settle();
+  assert.deepEqual(await page.evaluate(()=>styk.editor.figure.polyfills[0]._stykSurface.depth),[1,2]);
+  await page.evaluate(()=>styk.editor.undo());await settle();
+  assert.equal(await page.evaluate(()=>styk.editor.figure.polyfills[0]._stykSurface.depth),undefined);
   assert.deepEqual(errors,[]);console.log('PASS: connect from Origin, draw on overlapping connector attachment, rename joint and create all six cube faces using canvas clicks and normal Builder controls.');
 }finally{await browser.close();}

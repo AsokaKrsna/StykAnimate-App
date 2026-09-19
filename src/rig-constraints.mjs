@@ -30,7 +30,7 @@ export function* rigConstraintPlanSteps(figure) {
       p.rest===d?.restLength&&p.min===d?.min&&p.max===d?.max&&p.width===d?.width&&p.driver===f?.driver&&p.mode===f?.mode&&p.influence===f?.influence&&p.orientation===r?.orientation&&
       p.branch===d?.branch&&p.source===d?.source&&p.restPosition===d?.restPosition&&p.automatic===f?.automatic&&
       p.responseMode===r?.response?.mode&&p.multiplier===r?.response?.multiplier&&p.reset===r?.response?.reset&&
-      p.lockMode===r?.angleLock?.mode&&p.lockReference===r?.angleLock?.reference&&p.lockAngle===r?.angleLock?.angle&&p.lockRest===r?.angleLock?.restAngle&&p.lockFigureRest===r?.angleLock?.figureRestAngle&&p.lockMultiplier===r?.angleLock?.multiplier;
+      p.lockMode===r?.angleLock?.mode&&p.lockSpace===r?.angleLock?.space&&p.lockReference===r?.angleLock?.reference&&p.lockAngle===r?.angleLock?.angle&&p.lockRest===r?.angleLock?.restAngle&&p.lockFigureRest===r?.angleLock?.figureRestAngle&&p.lockMultiplier===r?.angleLock?.multiplier;
   })) return previous;
   const signature=new Array(segments.length),ids=new Map(),outgoing=new Array(segments.length),indegree=new Uint32Array(segments.length);
   for(let i=0;i<segments.length;i++){
@@ -38,7 +38,7 @@ export function* rigConstraintPlanSteps(figure) {
     signature[i]={id:s.segment_id,parent:s.parent_id,start:c?.start,end:c?.end,span:c?.restLength,rest:d?.restLength,min:d?.min,max:d?.max,width:d?.width,driver:f?.driver,mode:f?.mode,influence:f?.influence,orientation:r?.orientation};
     Object.assign(signature[i],{branch:d?.branch,source:d?.source,restPosition:d?.restPosition,automatic:f?.automatic,
       responseMode:r?.response?.mode,multiplier:r?.response?.multiplier,reset:r?.response?.reset,
-      lockMode:r?.angleLock?.mode,lockReference:r?.angleLock?.reference,lockAngle:r?.angleLock?.angle,lockRest:r?.angleLock?.restAngle,lockFigureRest:r?.angleLock?.figureRestAngle,lockMultiplier:r?.angleLock?.multiplier});
+      lockMode:r?.angleLock?.mode,lockSpace:r?.angleLock?.space,lockReference:r?.angleLock?.reference,lockAngle:r?.angleLock?.angle,lockRest:r?.angleLock?.restAngle,lockFigureRest:r?.angleLock?.figureRestAngle,lockMultiplier:r?.angleLock?.multiplier});
     ids.set(s.segment_id,i);outgoing[i]=[];
     if((i&255)===255)yield {phase:'rig',stage:'references',completed:i+1,total:segments.length};
   }
@@ -84,6 +84,7 @@ export function* rigConstraintPlanSteps(figure) {
     if(lock){
       if(c)throw new Error('Connector angles are controlled by their anchors. Lock an anchor or an attached part.');
       if(!['world','figure','parent'].includes(lock.mode))throw new Error('Choose a valid angle lock.');
+      if(lock.space!==undefined&&!['rendered','authored'].includes(lock.space))throw new Error('Choose a valid angle-lock space.');
       number(lock.angle,'Locked angle',-1e6,1e6);number(lock.multiplier,'Angle multiplier',-10,10);
       if(lock.mode==='parent'){reference(lock.reference,'Angle reference');dependencies.add(lock.reference);number(lock.restAngle,'Reference angle',-1e6,1e6);}
       if(lock.mode==='figure')number(lock.restAngle,'Figure reference angle',-1e6,1e6);
@@ -142,6 +143,14 @@ export function createRigEvaluation(figure, object, root, plan=rigConstraintPlan
     let {start,angle,length,bend}=input, width=1, inheritedRotation=rotation, ratio=1, handle, followAxis, followScale, position,span;
     angle+=rotation;
     const source=plan.inputs[i],driver=source&&states[source.driver];
+    let lockedAngle;
+    if(lock){
+      const figureDelta=lock.mode==='parent'&&lock.figureRestAngle!==undefined?animationRotation(figure,object)-lock.figureRestAngle:0;
+      const reference=lock.mode==='parent'?states[plan.ids.get(lock.reference)]:null;
+      const difference=lock.mode==='parent'?(lock.space==='authored'?reference.authoredAngle:reference.angle)-lock.restAngle-figureDelta:lock.mode==='figure'?animationRotation(figure,object)-lock.restAngle:0;
+      lockedAngle=lock.angle+figureDelta+lock.multiplier*Math.atan2(Math.sin(difference),Math.cos(difference));
+      if(lock.space==='authored'){angle=lockedAngle;inheritedRotation=angle-input.angle;}
+    }
     const rawAngle=angle;
     const incoming=driver?.ratio??1;
     if(c) {
@@ -180,15 +189,13 @@ export function createRigEvaluation(figure, object, root, plan=rigConstraintPlan
       else if(!c && actual<=EPS)length=d.restLength*ratio*scale;
       width*=rigWidth(Math.abs(ratio),d.width);
     }
-    if(lock){
-      const figureDelta=lock.mode==='parent'&&lock.figureRestAngle!==undefined?animationRotation(figure,object)-lock.figureRestAngle:0;
-      const difference=lock.mode==='parent'?states[plan.ids.get(lock.reference)].angle-lock.restAngle-figureDelta:lock.mode==='figure'?animationRotation(figure,object)-lock.restAngle:0;
+    if(lock&&lock.space!=='authored'){
       // Parent multipliers act within the figure. A whole-figure rotation must
       // still carry a counter-rotating attachment with the rest of its artwork.
-      angle=lock.angle+figureDelta+lock.multiplier*Math.atan2(Math.sin(difference),Math.cos(difference));
+      angle=lockedAngle;
       inheritedRotation=angle-input.angle;
     }
-    const result={start,angle,length,bend,width,handle,position,connector:Boolean(c),rotation:inheritedRotation,ratio,
+    const result={start,angle,authoredAngle:c||(lock&&lock.space!=='authored')?angle:rawAngle,length,bend,width,handle,position,connector:Boolean(c),rotation:inheritedRotation,ratio,
       impulseAngle:c?angle:response?.reset?rawAngle:angle,
       space:rotation||followScale!==undefined||lock?{rotation,followAxis,followScale,locked:Boolean(lock)}:undefined};
     states[i]=result;
@@ -199,12 +206,22 @@ export function createRigEvaluation(figure, object, root, plan=rigConstraintPlan
 }
 
 /** Invert the derived local space for predictable direct posing of details. */
-export function authoredRigTarget(shape,x,y) {
+export function authoredRigTarget(shape,x,y,pose) {
   const space=shape.rigSpace;if(!space)return {x,y};
   let dx=x-shape.start.x,dy=y-shape.start.y;
   if(space.followScale!==undefined){
-    if(Math.abs(space.followScale)<1e-8)throw new Error('Expand the stretch driver before posing a fully compressed part.');
-    const c=Math.cos(space.followAxis),s=Math.sin(space.followAxis),along=(dx*c+dy*s)/space.followScale,side=-dx*s+dy*c;
+    const c=Math.cos(space.followAxis),s=Math.sin(space.followAxis);let side=-dx*s+dy*c,along;
+    if(Math.abs(space.followScale)<1e-4&&pose&&Math.abs(shape.bend??0)<1e-7){
+      // An edge-on fixed-length control has lost one visible coordinate. Lift
+      // the remaining coordinate onto its authored circle, keeping the nearest
+      // branch instead of dividing pointer noise by zero or flipping the joint.
+      const radius=Math.abs(pose.length);side=clampRig(side,-radius,radius);
+      const prior=pose.length*Math.cos(pose.angle+space.rotation-space.followAxis);
+      along=(prior<0?-1:1)*Math.sqrt(Math.max(0,radius*radius-side*side));
+    }else{
+      if(Math.abs(space.followScale)<1e-8)throw new Error('Expand the stretch driver before posing a fully compressed part.');
+      along=(dx*c+dy*s)/space.followScale;
+    }
     dx=along*c-side*s;dy=along*s+side*c;
   }
   const c=Math.cos(space.rotation),s=Math.sin(space.rotation);

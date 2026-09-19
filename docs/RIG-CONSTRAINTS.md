@@ -38,6 +38,12 @@ Attachment settings retain explicit driver picking and legacy influence/orientat
 rotation multiplier for the parent mode. Locked drags preserve the angle; edit
 **Locked angle** to change it. These controls support projection and mechanical
 constructions across branches.
+**Apply angle lock → Before stretch** follows the reference's authored angle and
+then projects the vector through Smart Stretch. **After stretch** remains the
+default for existing rigs. Before-stretch followers keep surface vertices on a
+rotating joint even when its projected angle reverses or collapses. Ordinary
+fixed-length posing at a fully compressed view preserves the current bend branch;
+stretching still requires expanding that view first.
 Disabling a driver removes its follower bindings atomically; Undo restores them.
 
 A connector's span is determined by its anchors. Its Smart Stretch source can be
@@ -101,7 +107,7 @@ figure, two controls, four radii, eight corners, six fills and twelve connectors
 `node scripts/build-rig-collection.mjs` generates a reusable `.stkz` figure
 and an animated `.styk` project per example in `artifacts/connector-3d-rigs/`. Projects are
 73 ticks at 24 FPS, including a closing pose. These are editable 2D constructions
-producing 3D-style projections. They do not add a mesh engine or depth sorting.
+producing 3D-style projections. They do not add a mesh engine.
 
 The rotating constructions transfer yaw through a connector whose sliding joint
 is at its start. Attached radial vectors inherit that angle. A separate Smart
@@ -125,8 +131,13 @@ One-sided polygons store `_stykSurface: {basis: [origin, x, y], side: 'front' |
 'back', flipped: boolean}`. Both removes this optional property. Older basis-only
 records mean Front. Geometry uses signed area relative to the reference triangle,
 preserving facing through mirrors and ID remapping. Collapsed references and
-edge-on faces render hidden. No per-pose mesh state or depth sorting is retained;
-this supports convex projected solids, not general intersecting 3D meshes.
+edge-on faces render hidden. The optional **Depth joints** field accepts existing
+joint IDs separated by commas. Their mean projected coordinate along reference X,
+in units of that reference axis, offsets the fill's ordinary Z-index. Store these
+references as `depth: [jointId, ...]` inside `_stykSurface`. Depth guides remap and
+remain protected like facing references. Without them the original painter order
+is unchanged. This is authored painter ordering, not intersection splitting or a
+general 3D depth buffer; intersecting faces need suitable surface construction.
 Ordinary polygons remain double-sided. Native saving, Canvas, WebGPU, playback
 and SVG share the same visibility decision. Pivot export rejects one-sided fills
 instead of silently discarding them. Partial branch copies requiring outside

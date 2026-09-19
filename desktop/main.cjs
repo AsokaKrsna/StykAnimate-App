@@ -594,12 +594,49 @@ async function createWindow() {
     if (new URL(url).origin !== backend.origin) event.preventDefault();
   });
   window.webContents.on('will-attach-webview', (event) => event.preventDefault());
-  window.webContents.on('render-process-gone', (_event, details) => { if (details.reason !== 'clean-exit') telemetry?.error('RendererCrash', 'renderer', 'renderer_crashes'); });
+  const editorWindow = window;
+  let rendererFailed = false, crashDialogPending = false;
+  async function offerRendererRecovery() {
+    if (crashDialogPending || editorWindow.isDestroyed()) return;
+    crashDialogPending = true;
+    try {
+      const answer = await dialog.showMessageBox(editorWindow, {
+        type: 'error', title: 'Editor stopped', message: 'The animation editor stopped unexpectedly.',
+        detail: 'Saved files and any recovery snapshot remain on disk. Reopen the editor to use the recovery option or open your saved project. Changes made after the last saved snapshot may be lost.',
+        buttons: ['Reopen editor', 'Keep window open', 'Close window'], defaultId: 0, cancelId: 1,
+      });
+      if (editorWindow.isDestroyed() || !rendererFailed) return;
+      if (answer.response === 0) {
+        documentState = { name: 'Untitled', dirty: false };
+        await editorWindow.loadURL(backend.origin);
+      } else if (answer.response === 2) {
+        // The dead renderer cannot save. Closing this window must retain the
+        // existing recovery file and must not wait for a save acknowledgement.
+        documentState.dirty = false;
+        rendererFailed = false;
+        editorWindow.close();
+      }
+    } catch (error) {
+      console.error('Could not reopen the editor:', error.message);
+    } finally { crashDialogPending = false; }
+  }
+  window.webContents.on('render-process-gone', (_event, details) => {
+    if (details.reason === 'clean-exit' || quitting) return;
+    rendererFailed = true; pageLoaded = false;
+    telemetry?.error('RendererCrash', 'renderer', 'renderer_crashes');
+    // One bounded, local diagnostic survives even when optional telemetry is
+    // disabled. It contains no document contents or user identifiers.
+    void atomicWrite(path.join(instanceDirectory, 'last-renderer-crash.json'), Buffer.from(JSON.stringify({
+      version: app.getVersion(), occurredAt: new Date().toISOString(), reason: details.reason, exitCode: details.exitCode,
+    }))).catch(() => {});
+    void offerRendererRecovery();
+  });
   window.on('unresponsive', () => telemetry?.error('RendererHang', 'renderer', 'renderer_hangs'));
   for (const event of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'focus', 'blur']) {
     window.on(event, () => window.webContents.send('styk:window-state', windowState()));
   }
   window.on('close', async (event) => {
+    if (!quitting && rendererFailed) { event.preventDefault(); void offerRendererRecovery(); return; }
     if (!quitting && documentState.dirty) {
       event.preventDefault();
       const answer = await dialog.showMessageBox(window, {
@@ -614,7 +651,7 @@ async function createWindow() {
   window.on('closed', () => { window = null; });
   window.once('ready-to-show', () => window.show());
   window.webContents.on('did-start-loading', () => { pageLoaded = false; });
-  window.webContents.on('did-finish-load', () => { pageLoaded = true; void flushPendingOpens(); });
+  window.webContents.on('did-finish-load', () => { rendererFailed = false; pageLoaded = true; void flushPendingOpens(); });
   await window.loadURL(backend.origin);
   if (process.env.STYK_DEVTOOLS === '1') window.webContents.openDevTools({ mode: 'detach' });
   await flushPendingOpens();

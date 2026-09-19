@@ -1091,7 +1091,8 @@ export class Editor extends EventTarget {
         obj.len_flag=1;obj.lengths[this.selectedJoint]=along*current/chordLength;
       },{posed:true});
     }
-    ({x,y}=authoredRigTarget(shape,x,y));
+    ({x,y}=authoredRigTarget(shape,x,y,stretch?undefined:{angle:this.object.angles[this.selectedJoint],
+      length:(this.object.len_flag?this.object.lengths[this.selectedJoint]:seg.length)*Number(this.object.scale??1)}));
     const angle = Math.atan2(y - shape.start.y, x - shape.start.x) - shape.bend / 2;
     return this._objectEdit('Pose joint', obj => {
       const defaults = this._poseSnapState();

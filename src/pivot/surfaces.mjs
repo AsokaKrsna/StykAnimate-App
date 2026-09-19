@@ -1,6 +1,7 @@
 /** Optional single-sided native fills. A local reference triangle preserves
  * winding under reflection, rotation, joining and ID remapping. Ordinary
- * polygons remain double-sided. No sorting or mesh state is retained. */
+ * polygons remain double-sided. Optional depth guides offset native painter
+ * order without storing any per-pose surface state. */
 export function surfaceCulled(poly, points, joints) {
   const basis=poly._stykSurface?.basis;if(!basis)return false;
   const o=joints.get(basis[0]),x=joints.get(basis[1]),y=joints.get(basis[2]);
@@ -16,19 +17,31 @@ export function surfaceCulled(poly, points, joints) {
   const facing=(poly._stykSurface.side==='back'?-1:1)*(poly._stykSurface.flipped?-1:1);
   return area*Math.sign(parity)*facing<=extent*2e-7;
 }
-export function surfaceHandles(poly) {return [...(poly.segment_ids??[]),...(poly._stykSurface?.basis??[])];}
+export function surfaceOrder(poly,joints) {
+  const surface=poly._stykSurface,base=Number(poly.z_order??0);
+  if(!surface?.depth?.length)return base;
+  const o=joints.get(surface.basis[0]),x=joints.get(surface.basis[1]);
+  if(!o||!x)return base;
+  const dx=x.x-o.x,dy=x.y-o.y,den=dx*dx+dy*dy;
+  if(den<1e-16)return base;
+  let depth=0;
+  for(const id of surface.depth){const p=joints.get(id);if(!p)return base;depth+=((p.x-o.x)*dx+(p.y-o.y)*dy)/den;}
+  return base+depth/surface.depth.length;
+}
+export function surfaceHandles(poly) {return [...(poly.segment_ids??[]),...(poly._stykSurface?.basis??[]),...(poly._stykSurface?.depth??[])];}
 export function documentHasSurfaces(document,seen=new Set()) {
   if(seen.has(document))return false;seen.add(document);
   return document.figure_types.some(f=>f.polyfills?.some(p=>p._stykSurface)||(f._styk?.movieclip&&documentHasSurfaces(f._styk.movieclip.document,seen)));
 }
 export function remapSurface(poly, remap) {
-  if(poly._stykSurface)poly._stykSurface={...poly._stykSurface,basis:poly._stykSurface.basis.map(remap)};
+  if(poly._stykSurface)poly._stykSurface={...poly._stykSurface,basis:poly._stykSurface.basis.map(remap),...(poly._stykSurface.depth?{depth:poly._stykSurface.depth.map(remap)}:{})};
 }
 export function validateSurface(poly, ids) {
   const s=poly._stykSurface;if(s===undefined)return;
   if(!s||!Array.isArray(s.basis)||s.basis.length!==3||new Set(s.basis).size!==3||s.basis.some(id=>!Number.isInteger(id)||!ids.has(id)))throw new Error('Face visibility needs three distinct existing reference joints.');
   if(s.side!==undefined&&!['front','back'].includes(s.side))throw new Error('Choose Front, Back or Both for face visibility.');
   if(s.flipped!==undefined&&typeof s.flipped!=='boolean')throw new Error('Face facing must be a boolean.');
+  if(s.depth!==undefined&&(!Array.isArray(s.depth)||!s.depth.length||s.depth.length>1024||s.depth.some(id=>!Number.isInteger(id)||!ids.has(id))))throw new Error('Face depth needs existing reference joints (up to 1024).');
 }
 
 /** Authoring validation is separate from pose evaluation: a valid reference may
@@ -39,10 +52,10 @@ export function editableSurface(surface, figure, joints) {
   const cross=o&&x&&y?(x.x-o.x)*(y.y-o.y)-(x.y-o.y)*(y.x-o.x):0;
   const scale=o&&x&&y?Math.hypot(x.x-o.x,x.y-o.y)*Math.hypot(y.x-o.x,y.y-o.y):0;
   if(!scale||Math.abs(cross)<=scale*1e-7)throw new Error('Reference joints must form a triangle. Choose a different X or Y joint.');
-  return {basis:[...surface.basis],side:surface.side??'front',flipped:surface.flipped??false};
+  return {basis:[...surface.basis],side:surface.side??'front',flipped:surface.flipped??false,...(surface.depth?{depth:[...surface.depth]}:{})};
 }
 
 export function protectSurfaceReferences(figure, removed) {
-  if((figure.polyfills??[]).some(p=>!p.segment_ids.some(id=>removed.has(id))&&p._stykSurface?.basis.some(id=>removed.has(id))))
+  if((figure.polyfills??[]).some(p=>!p.segment_ids.some(id=>removed.has(id))&&[...(p._stykSurface?.basis??[]),...(p._stykSurface?.depth??[])].some(id=>removed.has(id))))
     throw new Error('This joint controls face visibility. Change the fill reference joints before deleting it.');
 }

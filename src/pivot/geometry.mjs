@@ -1,4 +1,4 @@
-import {surfaceCulled} from './surfaces.mjs';
+import {surfaceCulled,surfaceOrder} from './surfaces.mjs';
 import {primitiveOutsideRasterClip} from './raster-clip.mjs';
 import {paintDrawingTiles} from '../drawing-raster.mjs';
 import {vfxRenderFrame,frameWithVfxTime} from '../vfx-clips.mjs';
@@ -724,7 +724,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         index: i,
         points,
         ...(poly._stykSurface ? {culled:surfaceCulled(poly, points, joints)} : {}),
-        z: Number(poly.z_order ?? 0),
+        z: surfaceOrder(poly,joints),
         rgb: objectColor(poly.color_rgb ?? [0, 0, 0], obj),
         alpha:
           poly.alpha_raw === undefined
@@ -1081,7 +1081,25 @@ function strokeWidth(stroke, requested) {
   return stroke.width;
 }
 function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null, outputRect = null) {
-  for (const s of items) {
+  for (let itemIndex=0;itemIndex<items.length;itemIndex++) {
+    const s=items[itemIndex];
+    // Adjacent opaque triangles of a projected solid share coverage. Filling
+    // each separately antialiases the internal edges against the background.
+    // Union consecutive, equally wound faces without crossing painter layers.
+    if(paint&&ctx.globalAlpha===1&&opaqueSurfaceTriangle(s)){
+      const winding=triangleWinding(s.points),rgb=s.rgb;
+      ctx.fillStyle=rgba(rgb,1);strokeWidth(stroke,0);ctx.beginPath();
+      let end=itemIndex;
+      for(;;){
+        const face=items[end],p=face.points;
+        if(clip&&primitiveOutsideRasterClip(face,clip,0)){if(clip.stats)clip.stats.culledPrimitives++;}
+        else{ctx.moveTo(p[0].x,p[0].y);ctx.lineTo(p[1].x,p[1].y);ctx.lineTo(p[2].x,p[2].y);ctx.closePath();}
+        const next=items[end+1];
+        if(!opaqueSurfaceTriangle(next)||next.rgb.some((c,i)=>c!==rgb[i])||triangleWinding(next.points)!==winding)break;
+        end++;
+      }
+      ctx.fill('nonzero');itemIndex=end;continue;
+    }
     const effects=!s._vfxSkipNode&&!s.outline?segmentVfx(s):[];
     if(activeVfx(effects).length && paint){withVfx(ctx,effects,target=>drawPrimitives(target,[{...s,_vfxSkipNode:true}],resources,stroke),{bounds:objectBounds([s],resources),domainBounds:objectBounds([s],{...resources,vfxBounds:false}),scale:Math.abs(s.obj.scale??1),cacheHint:()=>vfxCacheHint([s]),outputRect});continue;}
     if (paint) {
@@ -1263,3 +1281,5 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null
     ctx.stroke();
   }
 }
+function opaqueSurfaceTriangle(s){return s?.type==='poly'&&s.poly?._stykSurface?.depth?.length&&s.points.length===3&&s.alpha===1&&!s.outline;}
+function triangleWinding([a,b,c]){return Math.sign((b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x));}

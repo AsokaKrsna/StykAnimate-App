@@ -34,6 +34,7 @@ export function rigControlsView(editor,{builder=false}={}) {
   if(!c){
     body+=select('rig-angle-lock','Angle lock',[['off','Off'],['figure','Figure'],['parent','Movable parent'],['world','World']],lock?.mode??'off');
     if(lock)body+=`<div class="rig-field-pair">${field('rig-lock-angle','Locked angle',Math.round(lock.angle*180/Math.PI*100)/100,-36000,36000,'°')}${lock.mode==='parent'?field('rig-lock-multiplier','Rotation',lock.multiplier,-10,10,'×'):''}</div>`;
+    if(lock)body+=select('rig-lock-space','Apply angle lock',[['rendered','After stretch'],['authored','Before stretch']],lock.space??'rendered');
     body+=`<details class="rig-advanced"><summary>${icon('link')}Attachment settings</summary><div class="rig-settings"><div class="rig-anchor"><span class="rig-anchor-name">${source?name(editor.figure.segments[source.driver].segment_id):'Automatic'}</span>${pick('rig-pick-driver','Pick stretch driver on canvas')}</div>
       ${select('rig-orientation','Attachment orientation',[['inherit','Follow connector'],['world','Keep authored angle']],r.orientation??'inherit')}
       ${f&&!f.automatic&&response.multiplier===undefined?field('rig-influence','Legacy influence',f.influence,-4,4,'×'):''}
@@ -62,6 +63,7 @@ export function rigControlChange(editor,target) {
   else if(id==='rig-angle-lock')editor.setAngleLock(target.value);
   else if(id==='rig-lock-angle')editor.setRigBehavior({angleLock:{angle:value*Math.PI/180}});
   else if(id==='rig-lock-multiplier')editor.setRigBehavior({angleLock:{multiplier:value}});
+  else if(id==='rig-lock-space')editor.setRigBehavior({angleLock:{space:target.value}});
   else if(id==='rig-orientation')editor.setRigBehavior({orientation:target.value});
   else if(id==='rig-follow-driver')editor.bindStretchParts(value);
   else if(id==='rig-follow-mode')editor.setRigBehavior({follow:{mode:target.value}});

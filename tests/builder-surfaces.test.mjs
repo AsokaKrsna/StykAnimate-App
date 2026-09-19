@@ -7,6 +7,7 @@ import {buildContainerV2,decodeDocument} from '../src/native-container.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {pickFigureFill} from '../src/builder-fill.mjs';
+import {surfaceOrder,surfaceHandles,remapSurface,validateSurface} from '../src/pivot/surfaces.mjs';
 const fixture=()=>{const e=new Editor({demo:false});return {e,q:buildRotatingCube(e)};};
 const select=(e,id)=>e.select(e.selectedUid,e.figure.segments.findIndex(s=>s.segment_id===id));
 const visible=e=>e.geometry.objects.get(e.selectedSlot).polys.filter(p=>!p.culled).map(p=>p.index);
@@ -63,4 +64,35 @@ test('one-sided fills also work on ordinary figures with no rig constraints',()=
   e.addPolygon([0,x,y]);e.updatePolygon(0,{surface:{basis:[0,x,y],side:'front'}});assert.deepEqual(visible(e),[0]);
   e.updatePolygon(0,{surface:{basis:[0,x,y],side:'back'}});assert.deepEqual(visible(e),[]);assert.throws(()=>materializePivotDocument(e.serialize()),/one-sided fills/);
   assert.throws(()=>materializePivotDocument({figure_types:[{segments:[],_styk:{movieclip:{document:e.serialize()}}}]}),/one-sided fills/);
+});
+
+test('depth guides change painter order continuously and survive affine transforms and ID remapping',()=>{
+  const poly={z_order:2,segment_ids:[0,1,2],_stykSurface:{basis:[0,1,2],depth:[3,4]}};
+  const positions=[[10,20],[40,20],[10,50],[70,0],[-20,90]];
+  const joints=new Map(positions.map(([x,y],id)=>[id,{x,y}]));
+  assert.equal(surfaceOrder(poly,joints),2.5);
+  for(const scale of [-2,3]){
+    const a=.7,c=Math.cos(a),s=Math.sin(a);
+    const transformed=new Map([...joints].map(([id,p])=>[id,{x:80+scale*(p.x*c-p.y*s),y:60+scale*(p.x*s+p.y*c)}]));
+    assert.ok(Math.abs(surfaceOrder(poly,transformed)-2.5)<1e-10);
+  }
+  joints.set(3,{x:-50,y:0});assert.equal(surfaceOrder(poly,joints),.5);
+  const remap=id=>id+10;remapSurface(poly,remap);assert.deepEqual(poly._stykSurface.depth,[13,14]);
+  assert.ok(surfaceHandles(poly).includes(14));
+  const mapped=new Map([...joints].map(([id,p])=>[remap(id),p]));assert.equal(surfaceOrder(poly,mapped),.5);
+  mapped.set(11,mapped.get(10));assert.equal(surfaceOrder(poly,mapped),2);
+  assert.equal(surfaceOrder({z_order:7},joints),7);
+  for(const depth of [[],[999],[NaN],'3'])assert.throws(()=>validateSurface({_stykSurface:{basis:[0,1,2],depth}},new Set([0,1,2,3])),/Face depth/);
+});
+
+test('depth references support normal authoring, undo, deletion protection and native round trips',async()=>{
+  const {e,q}=fixture(),guide=e.addSegment({parentId:0,length:90,angle:0}).segment_id;
+  const before=e.serialize();e.updatePolygon(0,{surface:{basis:q.basis,side:'front',depth:[guide]}});
+  assert.notEqual(e.geometry.objects.get(e.selectedSlot).polys[0].z,0);
+  select(e,guide);const posed=e.serialize();assert.throws(()=>e.deleteSingleSegment(),/reference joints/);assert.deepEqual(e.serialize(),posed);
+  for(const kind of ['styk','stkz']){
+    const d=(await decodeDocument(await buildContainerV2(posed,kind),kind)).document;validateScene(d);
+    assert.deepEqual(d.figure_types.find(f=>f.figure_type_id===e.figure.figure_type_id).polyfills[0]._stykSurface.depth,[guide]);
+  }
+  e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.deepEqual(e.serialize(),posed);
 });
