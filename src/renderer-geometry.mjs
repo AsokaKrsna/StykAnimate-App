@@ -75,6 +75,7 @@ function needsEvenOddRaster(points) {
   return false;
 }
 export function requiresCompatibilityTexture(items) {
+  if(items.some(s=>s.poly?._stykSurface?.depthTest))return true;
   const single = singleVectorPrimitive(items);
   return items.some(s => hasDrawableVfx(s) || movieclipTransparency(s) || (s.seg?.paint && s.seg.paint.type !== 'solid') || s.type === 'text' || s.type === 'image' || (s.opacity < .999999 && !single) || s.fig?.segment_decode?.global_style?.u28 || ((s.alpha < .999999 || s.seg?.secondary?.a > 0) && Math.abs(s.bend) > 1e-7) || (s.type === 'poly' && needsEvenOddRaster(s.points)));
 }

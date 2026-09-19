@@ -77,7 +77,7 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
   width = dimension(width ?? sceneWidth, 'SVG width'); height = dimension(height ?? sceneHeight, 'SVG height');
   geometry ??= buildGeometry(report, frame);
   const {hasDrawableVfx}=await import('./vfx-canvas.mjs');
-  if(activeVfx(vfxStack(frame)).length||geometry.drawables.some(hasDrawableVfx)){
+  if(activeVfx(vfxStack(frame)).length||geometry.drawables.some(item=>hasDrawableVfx(item)||item.poly?._stykSurface?.depthTest)){
     if(!cameraEnabled)frame={...frame,camera:null};
     geometry={...geometry,drawables:geometry.drawables.filter(item=>layerVisible(report,item.obj.unique_id))};
     const {drawExportSceneTiled}=await import('./export-frame-core.mjs'),canvas=new OffscreenCanvas(width,height),context=canvas.getContext('2d');
@@ -85,7 +85,7 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
       if(resources.preload)await drawExportSceneTiled(context,report,frame,geometry,resources);
       else {const {drawExportScene}=await import('./export-frame-core.mjs');drawExportScene(context,report,frame,geometry,resources);}
       const href=await dataURL(await canvas.convertToBlob({type:'image/png'}));
-      return new Blob([`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><desc>StykAnimate VFX artwork rendered as an embedded image.</desc><image width="${width}" height="${height}" href="${href}"/></svg>`],{type:'image/svg+xml'});
+      return new Blob([`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><desc>StykAnimate composited artwork rendered as an embedded image.</desc><image width="${width}" height="${height}" href="${href}"/></svg>`],{type:'image/svg+xml'});
     }finally{canvas.width=canvas.height=1;}
   }
   const definitions = [], bitmaps = resources.svgBitmaps ?? new Map();

@@ -1,4 +1,5 @@
-import {surfaceCulled,surfaceOrder} from './surfaces.mjs';
+import {surfaceCulled,surfaceOrder,surfaceDepthValues} from './surfaces.mjs';
+import {depthSurface,paintDepthSurfaces,releaseSurfaceRaster} from '../surface-raster.mjs';
 import {primitiveOutsideRasterClip} from './raster-clip.mjs';
 import {paintDrawingTiles} from '../drawing-raster.mjs';
 import {vfxRenderFrame,frameWithVfxTime} from '../vfx-clips.mjs';
@@ -725,6 +726,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         points,
         ...(poly._stykSurface ? {culled:surfaceCulled(poly, points, joints)} : {}),
         z: surfaceOrder(poly,joints),
+        ...(poly._stykSurface?.depthTest?{depthValues:surfaceDepthValues(poly,joints)}:{}),
         rgb: objectColor(poly.color_rgb ?? [0, 0, 0], obj),
         alpha:
           poly.alpha_raw === undefined
@@ -882,6 +884,7 @@ const outlineCanvases = new WeakMap();
 /** Release temporary isolation surfaces after a one-shot raster has been captured.
  * Long-lived Canvas renderers can keep their scratch surfaces for ordinary reuse. */
 export function releaseGeometryResources(ctx, { retainCanvases = false } = {}) {
+  if (!retainCanvases) releaseSurfaceRaster(ctx);
   releaseVfxSurface(ctx);
   for (const cache of [groupCanvases, outlineCanvases]) {
     const scratch = cache.get(ctx);
@@ -1083,6 +1086,10 @@ function strokeWidth(stroke, requested) {
 function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null, outputRect = null) {
   for (let itemIndex=0;itemIndex<items.length;itemIndex++) {
     const s=items[itemIndex];
+    if(paint&&depthSurface(s)){
+      let end=itemIndex+1;while(end<items.length&&depthSurface(items[end]))end++;
+      paintDepthSurfaces(ctx,items.slice(itemIndex,end));itemIndex=end-1;continue;
+    }
     // Adjacent opaque triangles of a projected solid share coverage. Filling
     // each separately antialiases the internal edges against the background.
     // Union consecutive, equally wound faces without crossing painter layers.

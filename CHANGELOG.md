@@ -18,7 +18,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 ### Fixed
 
 - Reduce lag and memory pressure when posing dense figures: drawing avoids repeated pose serialization, and dragging releases superseded geometry instead of retaining every intermediate pose.
-- Keep projected rig controls usable in edge-on views, support angle followers before projection, and let fills follow depth guides for clean connections as articulated figures turn.
+- Keep projected rig controls usable in edge-on views, support angle followers before projection, and let triangular fills use depth guides to resolve intersecting surfaces as articulated figures turn.
 - Offer recovery and reopening when the desktop editor stops unexpectedly, instead of leaving a black window that cannot save or close normally.
 - Restore right-click bending on the canvas: releasing a stationary right press opens the context menu while dragging with the button held bends the node under the pointer, matching Pivot-style gestures.
 - Keep connected figures joined when using Break apart frame or Bake animation on a movieclip, so expanded figures stay attached to their parents instead of separating.

@@ -116,7 +116,7 @@ export const editorBuilderMethods = {
       (this.propertyChannels || this.object._stykStyle || !usesSegmentColors(this.report,this.figure,this.object) || Number(this.object.color_override_raw)>>>24)) {
       return this.editFigureColors({mode:'style',patch,figureTypeId:this.figure.figure_type_id,targets:{segments:[],polygons:[polygonIdentity(this.figure.polyfills[index],index)]}},{uids:[this.object.unique_id]}).changedFrames>0;
     }
-    if('surface' in patch&&patch.surface!==null)patch={...patch,surface:editableSurface(patch.surface,this.figure,this.geometry.objects.get(this.selectedSlot).joints)};
+    if('surface' in patch&&patch.surface!==null)patch={...patch,surface:editableSurface(patch.surface,this.figure,this.geometry.objects.get(this.selectedSlot).joints,patch.handleIds??this.figure.polyfills[index].segment_ids)};
     if (this.propertyChannels && this.object && Object.keys(patch).every(key => ['color','opacity'].includes(key))) {
       const target={kind:'polygon',uid:this.object.unique_id,polygonId:polygonIdentity(this.figure.polyfills[index],index),figureTypeId:this.figure.figure_type_id};
       return this.addAnimationKeys(Object.entries(patch).map(([property,value]) => ({target,property,value:property === 'color' ? styleColor(rgb(value)) : value})));

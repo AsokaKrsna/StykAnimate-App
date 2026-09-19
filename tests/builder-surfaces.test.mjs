@@ -7,7 +7,7 @@ import {buildContainerV2,decodeDocument} from '../src/native-container.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {pickFigureFill} from '../src/builder-fill.mjs';
-import {surfaceOrder,surfaceHandles,remapSurface,validateSurface} from '../src/pivot/surfaces.mjs';
+import {surfaceOrder,surfaceDepthValues,surfaceHandles,remapSurface,validateSurface} from '../src/pivot/surfaces.mjs';
 const fixture=()=>{const e=new Editor({demo:false});return {e,q:buildRotatingCube(e)};};
 const select=(e,id)=>e.select(e.selectedUid,e.figure.segments.findIndex(s=>s.segment_id===id));
 const visible=e=>e.geometry.objects.get(e.selectedSlot).polys.filter(p=>!p.culled).map(p=>p.index);
@@ -95,4 +95,28 @@ test('depth references support normal authoring, undo, deletion protection and n
     assert.deepEqual(d.figure_types.find(f=>f.figure_type_id===e.figure.figure_type_id).polyfills[0]._stykSurface.depth,[guide]);
   }
   e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.deepEqual(e.serialize(),posed);
+});
+
+test('intersection depth preserves each corner through transforms and native authoring',async()=>{
+  const e=new Editor({demo:false});
+  const x=e.addSegment({parentId:0,length:40,angle:0}).segment_id,y=e.addSegment({parentId:0,length:40,angle:Math.PI/2}).segment_id;
+  const z=e.addSegment({parentId:0,length:80,angle:0}).segment_id;
+  e.addPolygon([0,x,y]);const surface={basis:[0,x,y],depth:[z,0,x],depthTest:true,side:'front'};
+  const before=e.serialize();e.updatePolygon(0,{surface});
+  const get=()=>e.geometry.objects.get(e.selectedSlot).polys[0].depthValues;
+  assert.deepEqual(get(),[2,0,1]);
+  e.select(e.selectedUid,-1);e.rotateFigure(.73);e.scaleSelection(2.4);e.moveSelection(-80,170);
+  for(const [i,z]of get().entries())assert.ok(Math.abs(z-[2,0,1][i])<1e-5);
+  const posed=e.serialize();
+  for(const patch of [{surface:{...surface,depth:[z]}},{surface:{...surface,depthTest:'yes'}},{handleIds:[0,x,y,z]}]){
+    assert.throws(()=>e.updatePolygon(0,patch),/Depth testing/);assert.deepEqual(e.serialize(),posed);
+  }
+  for(const kind of ['styk','stkz']){
+    const d=(await decodeDocument(await buildContainerV2(posed,kind),kind)).document;
+    assert.equal(d.figure_types.find(f=>f.figure_type_id===e.figure.figure_type_id).polyfills[0]._stykSurface.depthTest,true);
+  }
+  e.undo();e.undo();e.undo();e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.deepEqual(get(),[2,0,1]);
+  const poly=e.figure.polyfills[0],g=e.geometry.objects.get(e.selectedSlot);
+  const shifted=structuredClone(poly);remapSurface(shifted,id=>id+100);
+  assert.deepEqual(surfaceDepthValues(shifted,new Map([...g.joints].map(([id,p])=>[id+100,p]))),get());
 });

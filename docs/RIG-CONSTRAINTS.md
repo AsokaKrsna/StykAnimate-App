@@ -136,8 +136,15 @@ joint IDs separated by commas. Their mean projected coordinate along reference X
 in units of that reference axis, offsets the fill's ordinary Z-index. Store these
 references as `depth: [jointId, ...]` inside `_stykSurface`. Depth guides remap and
 remain protected like facing references. Without them the original painter order
-is unchanged. This is authored painter ordering, not intersection splitting or a
-general 3D depth buffer; intersecting faces need suitable surface construction.
+is unchanged. For opaque triangular fills, **Depth test intersections** uses one
+depth joint per corner, in vertex order, to resolve crossing surfaces per pixel.
+Store `depthTest: true` alongside the three `depth` references. Consecutive opaque
+depth-tested fills within a figure share a depth buffer; ordinary fills and other
+figures retain their painter order. Transparent fills retain painter ordering.
+The compositor reuses bounded 1024-pixel tiles and falls back to software depth
+testing if its graphics context is unavailable or lost. Native files retain all
+editable joints and colors; rendered exports preserve intersections. SVG embeds
+the rendered frame as an image when depth-tested fills are present.
 Ordinary polygons remain double-sided. Native saving, Canvas, WebGPU, playback
 and SVG share the same visibility decision. Pivot export rejects one-sided fills
 instead of silently discarding them. Partial branch copies requiring outside

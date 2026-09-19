@@ -321,6 +321,9 @@ class CanvasFallback {
   // renderSource identity survives seeks and translation-only edits, so an
   // unchanged figure is one drawImage instead of re-stroking every primitive.
   drawObject(ctx, group, scale) {
+    // Projected meshes change each pose. Reuse this renderer's depth surface
+    // instead of creating and destroying a graphics context for every raster.
+    if(group.items.some(item=>item.poly?._stykSurface?.depthTest)){drawGeometry(ctx,{drawables:group.items},this.resources);return;}
     if(group.items.length===1&&this.resources.drawing?.(group.items[0].fig)?.store){drawGeometry(ctx,{drawables:group.items},this.resources);return;}
     const artworkView=opacityArtwork(group.g,group.items),{source,items}=artworkView;
     if (group.items.length < 4 && !group.items.some(hasDrawableVfx) || typeof OffscreenCanvas === 'undefined' || performance.now()<this.rasterRetryAt) {

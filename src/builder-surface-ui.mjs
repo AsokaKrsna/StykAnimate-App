@@ -20,6 +20,11 @@ export function openSurfaceReference(editor,index,host,{side}={}) {
   depthField.innerHTML='<span>Depth joints (optional)</span><input class="inline-select" aria-label="Depth joints" placeholder="Joint IDs separated by commas"><small class="property-note">Their average position along the reference X axis offsets this fill’s Z-index.</small>';
   const depthInput=depthField.querySelector('input');depthInput.value=(polygon._stykSurface?.depth??[]).join(', ');
   form.querySelector('.fill-reference-fields').append(depthField);
+  const testField=document.createElement('label');testField.className='rig-select';
+  testField.innerHTML='<span><input type="checkbox" aria-label="Depth test intersections"> Depth test intersections</span><small class="property-note">For opaque triangles: enter one depth joint per corner, in the same order as the fill vertices.</small>';
+  const testInput=testField.querySelector('input');testInput.checked=Boolean(polygon._stykSurface?.depthTest);
+  testInput.disabled=polygon.segment_ids.length!==3;
+  form.querySelector('.fill-reference-fields').append(testField);
   for(const input of inputs){
     const suggest=()=>{const query=input.value.includes(' · ')?'':input.value.trim().toLowerCase(),found=[];
       for(const joint of joints){if(!query||String(joint.id)===query||joint.name.toLowerCase().includes(query)){found.push(`<option value="${esc(labels.get(joint.id))}"></option>`);if(found.length===60)break;}}
@@ -32,7 +37,7 @@ export function openSurfaceReference(editor,index,host,{side}={}) {
       if(token!==editor._documentToken||uid!==editor.selectedUid||type!==editor.figure?.figure_type_id||editor.figure.polyfills[index]?.polyfill_id!==id)throw new Error('The fill changed. Close this dialog and select it again.');
       const basis=inputs.map(input=>{const match=/^(\d+)(?: · .*)?$/.exec(input.value.trim());return match?Number(match[1]):NaN;});
       const text=depthInput.value.trim(),depth=text?text.split(',').map(value=>/^\d+$/.test(value.trim())?Number(value.trim()):NaN):undefined;
-      editor.updatePolygon(index,{surface:{basis,side:side??polygon._stykSurface?.side??'front',flipped:polygon._stykSurface?.flipped??false,...(depth?{depth}:{})}});host.closeDialog();
+      editor.updatePolygon(index,{surface:{basis,side:side??polygon._stykSurface?.side??'front',flipped:polygon._stykSurface?.flipped??false,...(depth?{depth}:{}),...(testInput.checked?{depthTest:true}:{})}});host.closeDialog();
     }catch(error){const status=form.querySelector('[role="status"]');status.hidden=false;status.textContent=error.message;}
   });
   inputs[basis[1]===null?1:0].focus();

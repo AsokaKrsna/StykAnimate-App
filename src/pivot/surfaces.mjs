@@ -28,6 +28,11 @@ export function surfaceOrder(poly,joints) {
   for(const id of surface.depth){const p=joints.get(id);if(!p)return base;depth+=((p.x-o.x)*dx+(p.y-o.y)*dy)/den;}
   return base+depth/surface.depth.length;
 }
+export function surfaceDepthValues(poly,joints){
+  if(!poly._stykSurface?.depthTest)return undefined;
+  const s=poly._stykSurface,o=joints.get(s.basis[0]),x=joints.get(s.basis[1]),dx=x.x-o.x,dy=x.y-o.y,den=dx*dx+dy*dy;
+  return s.depth.map(id=>{const p=joints.get(id);return Number(poly.z_order??0)+(den>1e-16?((p.x-o.x)*dx+(p.y-o.y)*dy)/den:0);});
+}
 export function surfaceHandles(poly) {return [...(poly.segment_ids??[]),...(poly._stykSurface?.basis??[]),...(poly._stykSurface?.depth??[])];}
 export function documentHasSurfaces(document,seen=new Set()) {
   if(seen.has(document))return false;seen.add(document);
@@ -42,17 +47,18 @@ export function validateSurface(poly, ids) {
   if(s.side!==undefined&&!['front','back'].includes(s.side))throw new Error('Choose Front, Back or Both for face visibility.');
   if(s.flipped!==undefined&&typeof s.flipped!=='boolean')throw new Error('Face facing must be a boolean.');
   if(s.depth!==undefined&&(!Array.isArray(s.depth)||!s.depth.length||s.depth.length>1024||s.depth.some(id=>!Number.isInteger(id)||!ids.has(id))))throw new Error('Face depth needs existing reference joints (up to 1024).');
+  if(s.depthTest!==undefined&&(typeof s.depthTest!=='boolean'||s.depthTest&&(s.depth?.length!==3||poly.segment_ids?.length!==3)))throw new Error('Depth testing needs a triangle with one depth joint per corner.');
 }
 
 /** Authoring validation is separate from pose evaluation: a valid reference may
  * temporarily flatten during animation, in which case its faces are hidden. */
-export function editableSurface(surface, figure, joints) {
-  validateSurface({_stykSurface:surface},new Set([0,...figure.segments.map(s=>s.segment_id)]));
+export function editableSurface(surface, figure, joints, handleIds) {
+  validateSurface({_stykSurface:surface,segment_ids:handleIds},new Set([0,...figure.segments.map(s=>s.segment_id)]));
   const [o,x,y]=surface.basis.map(id=>joints.get(id));
   const cross=o&&x&&y?(x.x-o.x)*(y.y-o.y)-(x.y-o.y)*(y.x-o.x):0;
   const scale=o&&x&&y?Math.hypot(x.x-o.x,x.y-o.y)*Math.hypot(y.x-o.x,y.y-o.y):0;
   if(!scale||Math.abs(cross)<=scale*1e-7)throw new Error('Reference joints must form a triangle. Choose a different X or Y joint.');
-  return {basis:[...surface.basis],side:surface.side??'front',flipped:surface.flipped??false,...(surface.depth?{depth:[...surface.depth]}:{})};
+  return {basis:[...surface.basis],side:surface.side??'front',flipped:surface.flipped??false,...(surface.depth?{depth:[...surface.depth]}:{}),...(surface.depthTest?{depthTest:true}:{})};
 }
 
 export function protectSurfaceReferences(figure, removed) {
