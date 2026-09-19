@@ -45,7 +45,7 @@
 .spatial-rig{display:grid;gap:8px}.spatial-rig>.inspector-title{margin:0 0 2px}.spatial-rig .property-context-caption{margin:0}
 .spatial-rig button:not(.icon-button){font:inherit;font-size:11px;color:var(--theme-text,#292929);border:1px solid transparent;border-radius:4px;background:var(--theme-field,#f2f2f2);cursor:pointer;padding:6px 8px;min-height:28px}
 .spatial-rig button:not(.icon-button):hover{background:var(--theme-hover,#e8e8e8)}.spatial-rig button:focus-visible{outline:2px solid var(--theme-accent,#0d99ff);outline-offset:1px}
-.spatial-rig button[aria-pressed=true]{background:var(--theme-accent-soft,#e5f3ff);color:var(--theme-accent,#0d99ff)}
+.spatial-rig button[aria-pressed=true]{background:var(--theme-selected,#e5f3ff);color:var(--theme-accent,#0d99ff)}
 .spatial-modes,.spatial-trunk,.spatial-part-actions{display:flex;gap:4px}.spatial-modes>button,.spatial-trunk>button,.spatial-part-actions>button{flex:1;min-width:0}
 .spatial-modes>button,.spatial-plant{display:flex;align-items:center;justify-content:center;gap:6px}.spatial-modes .icon,.spatial-plant .icon{width:14px;height:14px}
 .spatial-targets{display:grid;grid-template-columns:1fr 1fr;gap:4px}.spatial-targets button:first-child{grid-column:1/-1}
