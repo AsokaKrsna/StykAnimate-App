@@ -33,6 +33,11 @@ try{
  for(const label of ['Turn','Tilt','Bend']){const field=page.getByRole('spinbutton',{name:label+' degrees',exact:true});await field.fill('23');await field.press('Tab');}
  const pose=await page.evaluate(()=>styk.editor.getSpatialPose());for(const n of Object.values(pose))assert.ok(Math.abs(n-23*Math.PI/180)<1e-7);
  await page.getByRole('button',{name:'Reset pose',exact:true}).click();
+ const pad=page.getByRole('button',{name:'Turn and tilt',exact:true});await pad.scrollIntoViewIfNeeded();const pb=await pad.boundingBox(),padBefore=await page.evaluate(()=>({doc:styk.editor.serialize(),undo:styk.editor._undo.length}));
+ await page.mouse.move(pb.x+pb.width/2,pb.y+pb.height/2);await page.mouse.down();await page.mouse.move(pb.x+pb.width/2+20,pb.y+pb.height/2+12,{steps:8});await page.keyboard.press('Escape');await page.mouse.up();assert.deepEqual(await page.evaluate(()=>styk.editor.serialize()),padBefore.doc);
+ await page.mouse.move(pb.x+pb.width/2,pb.y+pb.height/2);await page.mouse.down();await page.mouse.move(pb.x+pb.width/2+20,pb.y+pb.height/2+12,{steps:8});await page.mouse.up();
+ const padAfter=await page.evaluate(()=>({pose:styk.editor.getSpatialPose(),undo:styk.editor._undo.length}));assert.ok(Math.abs(padAfter.pose.turn-20*Math.PI/180)<1e-7);assert.ok(Math.abs(padAfter.pose.pitch-12*Math.PI/180)<1e-7);assert.equal(padAfter.undo,padBefore.undo+1);await page.evaluate(()=>styk.editor.undo());
+ await pad.focus();await pad.press('ArrowRight');assert.ok(Math.abs(await page.evaluate(()=>styk.editor.getSpatialPose().turn)-5*Math.PI/180)<1e-7);await page.evaluate(()=>styk.editor.undo());
  const point=await page.evaluate(()=>{const{editor:e,state}=styk,g=e.geometry.objects.get(0),p=g.segments[e.selectedJoint].start,r=document.getElementById('viewport').getBoundingClientRect();return{x:r.x+state.view.x+p.x*state.view.scale,y:r.y+state.view.y+p.y*state.view.scale};});
  const initial=await page.evaluate(()=>styk.editor.object.angles.slice());
  await page.mouse.move(point.x+3,point.y+3);await page.mouse.down();await page.mouse.move(point.x+35,point.y-15,{steps:10});
@@ -64,6 +69,18 @@ try{
   assert.ok(await page.evaluate(()=>styk.editor._drag?.changed),'Pole drag changes the live pose');await page.keyboard.press('Escape');await page.mouse.up();assert.deepEqual(await page.evaluate(()=>styk.editor.serialize()),pole.doc,'Escape restores the IK pole gesture');
   await page.mouse.move(pole.x,pole.y);await page.mouse.down();await page.mouse.move(pole.x-35,pole.y-10,{steps:8});await page.mouse.up();await page.evaluate(()=>styk.editor.undo());assert.deepEqual(await page.evaluate(()=>styk.editor.serialize()),pole.doc,'Pole dragging is one undo step');
   await page.getByRole('button',{name:'Release feet',exact:true}).click();await plant.waitFor();
+  const depthHandle=await page.evaluate(async()=>{const{spatialDepthGizmo}=await import('/src/spatial-controls.mjs'),s=styk,d=spatialDepthGizmo(s.editor,p=>({x:p.x*s.state.view.scale+s.state.view.x,y:p.y*s.state.view.scale+s.state.view.y})),r=document.getElementById('viewport').getBoundingClientRect();return{x:d.screen.x+r.x,y:d.screen.y+r.y,depth:d.depth,scale:s.state.view.scale,doc:s.editor.serialize(),undo:s.editor._undo.length};});
+  await page.mouse.move(depthHandle.x,depthHandle.y);await page.mouse.down();await page.mouse.move(depthHandle.x,depthHandle.y-12,{steps:8});
+  assert.equal(await page.evaluate(()=>styk.state.drag?.spatial?.kind),'depth');await page.keyboard.press('Escape');await page.mouse.up();assert.deepEqual(await page.evaluate(()=>styk.editor.serialize()),depthHandle.doc);
+  await page.mouse.move(depthHandle.x,depthHandle.y);await page.mouse.down();await page.mouse.move(depthHandle.x,depthHandle.y-12,{steps:8});await page.mouse.up();
+  assert.ok(Math.abs(await page.getByRole('spinbutton',{name:'Target depth',exact:true}).inputValue()-depthHandle.depth-12/depthHandle.scale)<.11);assert.equal(await page.evaluate(()=>styk.editor._undo.length),depthHandle.undo+1);await page.evaluate(()=>styk.editor.undo());
+  // Limb controls stay attached to their IK target while Rotate selects the
+  // foot itself, and the slider remains one gesture despite that mapping.
+  await page.getByRole('button',{name:'Rotate',exact:true}).click();
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  const freeSwivel=page.getByRole('slider',{name:'Bend direction',exact:true});await freeSwivel.scrollIntoViewIfNeeded();const fs=await freeSwivel.boundingBox(),saved=await page.evaluate(()=>({doc:styk.editor.serialize(),undo:styk.editor._undo.length,index:styk.editor.selectedJoint}));
+  await page.mouse.move(fs.x+fs.width*.5,fs.y+fs.height*.5);await page.mouse.down();await page.mouse.move(fs.x+fs.width*.6,fs.y+fs.height*.5,{steps:8});await page.mouse.up();assert.equal(await page.evaluate(()=>styk.editor._undo.length),saved.undo+1);assert.equal(await page.evaluate(()=>styk.editor.selectedJoint),saved.index);await page.evaluate(()=>styk.editor.undo());assert.deepEqual(await page.evaluate(()=>styk.editor.serialize()),saved.doc);
+  await page.getByRole('button',{name:'Pose',exact:true}).click();
  }
  const form=page.locator('[data-drawing-group]');if(await form.count()){
   const old=await page.evaluate(()=>styk.editor.selectionFrame.objects[1]._stykMovieclip.offset);await form.selectOption('1');await page.waitForTimeout(200);

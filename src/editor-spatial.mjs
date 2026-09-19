@@ -6,6 +6,12 @@ import {ikChain,ikLayout,ikFollowerIndices,solveObjectIK} from './ik.mjs';
 import {rigIKContext} from './ik-rig.mjs';
 
 export const editorSpatialMethods={
+ _releaseSpatialChain(object,index=this.selectedJoint){
+  // Direct FK manipulation takes ownership of this limb. The object edit has
+  // already baked its displayed IK pose; release only the chain being rotated.
+  for(const[id,c]of Object.entries(object._stykIK??{}))if(c.enabled&&c.pinned&&c.spatialTarget&&ikChain(this.figure,Number(id),c.chainLength).includes(index))
+   object._stykIK={...object._stykIK,[id]:{...c,pinned:false}};
+ },
  getSpatialIKPole(){
   const f=this.figure,o=this.object,s=f?.segments[this.selectedJoint],c=o?._stykIK?.[s?.segment_id];
   if(!c?.enabled||!c.spatialTarget||c.bendDirection!==0)return null;
@@ -16,15 +22,29 @@ export const editorSpatialMethods={
   const pole=this.getSpatialIKPole();if(!pole)return false;
   if(![x,y,depth??pole.point[2]].every(Number.isFinite))throw new Error('Choose a finite IK pole position.');
   const v=[x-pole.center[0],y-pole.center[1],(depth??pole.point[2])-pole.center[2]],n=Math.hypot(...v);if(n<1e-6)return false;
-  const f=this.figure,g=this.geometry.objects.get(this.selectedSlot);
-  return this._objectEdit('Move IK pole',o=>{
-   const c=o._stykIK[pole.handle],next={...c,spatialTarget:{...c.spatialTarget,pole:v.map(x=>x/n),swivel:0}};
+  return this.setSpatialIKTarget({pole:v.map(x=>x/n),swivel:0});
+ },
+ setSpatialIKTarget(patch){
+  const f=this.figure,id=f?.segments[this.selectedJoint]?.segment_id,c=this.object?._stykIK?.[id];
+  if(!c?.enabled||!c.spatialTarget||c.bendDirection!==0)return false;
+  for(const[k,v]of Object.entries(patch)){
+   if(k==='pole'){if(!Array.isArray(v)||v.length!==3||!v.every(Number.isFinite)||Math.abs(Math.hypot(...v)-1)>1e-5)throw new Error('Choose a unit IK pole direction.');}
+   else if(!['depth','swivel'].includes(k)||!Number.isFinite(v)||Math.abs(v)>1e6)throw new Error('Choose a finite spatial IK adjustment.');
+  }
+  const g=this.geometry.objects.get(this.selectedSlot);
+  return this._objectEdit(patch.pole?'Move IK pole':'Adjust spatial IK target',o=>{
+   let capture;
    if(!c.pinned){
-    const capture=captureSpatialIK(f,o,g,ikChain(f,pole.handle,c.chainLength),ikFollowerIndices(f,pole.handle),c.target.rotation);
-    Object.assign(next,capture,{target:{...c.target,...g.joints.get(pole.handle)},spatialTarget:{...capture.spatialTarget,pole:v.map(x=>x/n),swivel:0}});
-    const solved=solveObjectIK(f,o,g.root,ikLayout(f),{[pole.handle]:{...next,pinned:true}},{includePoints:false});o.angles=solved.angles;
+    const key=`${o.unique_id}:${id}`;this._drag.spatialIKCapture??=new Map();
+    if(!this._drag.spatialIKCapture.has(key))this._drag.spatialIKCapture.set(key,captureSpatialIK(f,o,g,ikChain(f,id,c.chainLength),ikFollowerIndices(f,id),c.target.rotation,c.spatialTarget.swivel));
+    capture=this._drag.spatialIKCapture.get(key);
    }
-   o._stykIK={...o._stykIK,[pole.handle]:next};delete o.runtime_segments;
+   const next={...c,...capture,target:{...c.target,...(!c.pinned?g.joints.get(id):{})},spatialTarget:{...(capture?.spatialTarget??c.spatialTarget),...patch}};
+   if(!c.pinned){
+    const solved=solveObjectIK(f,o,g.root,ikLayout(f),{[id]:{...next,pinned:true}},{includePoints:false});o.angles=solved.angles;
+    if(solved.lengths){o.lengths=solved.lengths;o.len_flag=1;}
+   }
+   o._stykIK={...o._stykIK,[id]:next};delete o.runtime_segments;
   },{posed:true});
  },
  setSpatialFeetPinned(pinned){
@@ -45,11 +65,13 @@ export const editorSpatialMethods={
  setSpatialPose(patch){
   const before=this.getSpatialPose();if(!before)return false;
   for(const[k,v]of Object.entries(patch))if(!['bend','turn','pitch'].includes(k)||!Number.isFinite(v)||Math.abs(v)>1e6)throw new Error('Choose a finite joint rotation.');
+  if(Object.entries(patch).every(([k,v])=>Math.abs(v-before[k])<1e-12))return false;
   const f=this.figure,r=f.segments[this.selectedJoint]._stykRig.spatial,ids=rigConstraintPlan(f).ids;
   const frame=this.geometry.objects.get(this.selectedSlot).segments[this.selectedJoint].spatialFrame;
   const parent=quatMultiply(frame.q,inverseQuaternion(spatialQuaternion(before.bend,before.turn,before.pitch))),next={...before,...patch};
   const world=spatialWorldQuaternion(quatMultiply(parent,spatialQuaternion(next.bend,next.turn,next.pitch)),f,this.object),handle=f.segments[this.selectedJoint].segment_id;
   return this._objectEdit('Rotate articulated joint',o=>{
+   this._releaseSpatialChain(o);
    if(patch.bend!==undefined)this._rotateJoint((patch.bend-before.bend)*(o.image_text_flags?-1:1));
    for(const key of ['turn','pitch'])if(patch[key]!==undefined)o.angles[ids.get(r[key])]+=(patch[key]-before[key])*(o.image_text_flags?-1:1);
    for(const [id,c]of Object.entries(o._stykIK??{}))if(c.enabled&&c.pinned&&c.spatialFollowers?.[handle])o._stykIK={...o._stykIK,[id]:{...c,spatialFollowers:{...c.spatialFollowers,[handle]:quatMultiply(spatialQuaternion(-c.target.rotation,0,0),world)}}};
@@ -67,11 +89,12 @@ export const editorSpatialMethods={
  },
  poseSpatialJoint(x,y,{stretch=false}={}){
   const f=this.figure,o=this.object,i=this.selectedJoint,s=f?.segments[i];if(!o||!spatialBone(s))return false;
-  const g=this.geometry.objects.get(this.selectedSlot),angles=o.angles.slice();let lengths;
+  const g=this.geometry.objects.get(this.selectedSlot),angles=(g.solvedAngles??o.angles).slice();let lengths;
   if(stretch){lengths=o.len_flag?o.lengths.slice():f.segments.map(s=>s.length);const shape=g.segments[i],span=Math.hypot(shape.end.x-shape.start.x,shape.end.y-shape.start.y);if(span>1e-6)lengths[i]*=Math.hypot(x-shape.start.x,y-shape.start.y)/span;}
   const context=rigIKContext(f,o,g.root,[s.segment_id],angles,()=>lengths);context.refine([i],{x,y});
   const ids=rigConstraintPlan(f).ids,r=s._stykRig.spatial;
   return this._objectEdit('Pose articulated joint',target=>{
+   this._releaseSpatialChain(target);
    this._rotateJoint(angles[i]-target.angles[i]);
    target.angles[ids.get(r.turn)]=angles[ids.get(r.turn)];target.angles[ids.get(r.pitch)]=angles[ids.get(r.pitch)];
    if(lengths){target.lengths=lengths;target.len_flag=1;}

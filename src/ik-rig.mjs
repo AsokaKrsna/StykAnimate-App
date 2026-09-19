@@ -3,7 +3,7 @@
  * rebuilt during a solve. Authored angles remain the animation channels. */
 import {spatialBone,spatialPoint,quatMultiply,quaternionPose,betweenVectors} from './rig-spatial.mjs';
 import {animationRotation} from './animation-origin.mjs';
-import {inverseQuaternion,spatialWorldVector,spatialWorldQuaternion,spatialKnee} from './ik-spatial.mjs';
+import {inverseQuaternion,spatialWorldVector,spatialWorldQuaternion,spatialKnee,spatialIKOrientation} from './ik-spatial.mjs';
 import {createRigEvaluation,rigConstraintPlan} from './rig-constraints.mjs';
 
 export function rigIKContext(figure,object,root,handles,angles,lengths,plan=rigConstraintPlan(figure)) {
@@ -102,10 +102,12 @@ export function rigIKContext(figure,object,root,handles,angles,lengths,plan=rigC
   if(length(base,middle)<1e-8||length(middle,end)<1e-8)return null;
   const solved=spatialKnee(base,aim,pole,settings.swivel??0,length(base,middle),length(middle,end));
   const unit=v=>{const n=Math.hypot(...v);return v.map(x=>x/Math.max(n,1e-9));};
-  for(const [i,tip] of [[a,solved.knee],[b,solved.end]]){
+  for(const [j,i,tip] of [[0,a,solved.knee],[1,b,solved.end]]){
    const r=figure.segments[i]._stykRig.spatial,frame=sample.states[i].spatial,start=spatialPoint(frame,r.origin),end=spatialPoint(frame,r.tip);
-   const rotation=betweenVectors(unit(end.map((v,k)=>v-start[k])),unit(tip.map((v,k)=>v-start[k])));
-   setOrientation(i,quatMultiply(rotation,frame.q),sample);sample=evaluate();
+   const direction=unit(tip.map((v,k)=>v-start[k]));
+   const q=settings.normals?spatialIKOrientation(frame.axis,settings.normals[j],direction,solved.normal)
+    :quatMultiply(betweenVectors(unit(end.map((v,k)=>v-start[k])),direction),frame.q);
+   setOrientation(i,q,sample);sample=evaluate();
   }
   const p=sample.points.get(figure.segments[b].segment_id);return {sample,error:Math.hypot(p.x-target.x,p.y-target.y),iterations:1};
  }

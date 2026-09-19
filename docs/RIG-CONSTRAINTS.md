@@ -91,15 +91,30 @@ to steer its knee or elbow. Pole gestures preserve target orientation, use one
 undo step and support Escape cancellation. Directly rotating a planted foot
 updates its stored orientation.
 
+Blue hand/foot outlines select and place IK targets; the selected target also
+has a purple **Z** handle for forward/back depth. **Bend direction** and **Target
+depth** work on free and planted limbs. Native **Pinned** and **Stretch** switches
+show each limb's behavior. The **Turn / tilt** pad adjusts two rotation channels
+in one gesture; arrow keys step by five degrees (one degree with Shift). Hips,
+chest, head, ankle and toe shortcuts select their native articulation controls.
+Direct rotation of a constrained thigh/shin or upper/forearm
+bakes the displayed pose and releases only that limb, so its outgoing foot/hand
+follows naturally. Rotating the body or pelvis keeps the other targets planted.
+
 Spatial IK evaluates only the driving dependency closure, excluding skin vertices
 from solver iterations. Two-bone spatial chains in one figure use an analytic
 3D solver with persistent target depth and a knee/elbow pole when bend direction
 is Automatic. Other chains and explicit planar bend directions retain the
 projected solver. Optional `spatialTarget` metadata stores depth, a world-space
-unit pole and a swivel angle; `spatialFollowers` and `joinedSpatialFollowers`
+unit pole, a swivel angle and optional two local unit `normals` defining the
+captured bend plane; `spatialFollowers` and `joinedSpatialFollowers`
 store unit quaternions relative to target rotation. Native interpolation uses
 short-arc rotation interpolation. Ordinary limbs retain the planar solver.
 Joined figures preserve their original control reference spaces in virtual chains.
+The analytic solver aligns each bone axis and captured plane normal directly,
+instead of accumulating shortest-swing rotations from previous samples. Free
+target drags retain one captured reference for the gesture. This avoids axial
+twist drift on closed drag paths without adding a second animated skeleton.
 
 Spatial bindings are currently authored in native definition data. Build Figure
 cannot reposition their rest joints, reparent bound bones, mirror an individual

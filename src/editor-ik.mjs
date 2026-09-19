@@ -87,7 +87,7 @@ function capture(figure, object, geometry, handle, controller) {
   if (index < 0 || !point) throw new Error('Select a valid IK node.');
   const points = [geometry.segments[chain[0]].start, ...chain.map(i => geometry.segments[i].end)];
   const lengths = chain.map(i => {const s = geometry.segments[i]; return Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y);});
-  return {...captureSpatialIK(figure,object,geometry,chain,ikFollowerIndices(figure,handle),rotation),target: {...point, rotation}, followers, bendDirection: controller?.bendDirection ?? bendDirection,
+  return {...captureSpatialIK(figure,object,geometry,chain,ikFollowerIndices(figure,handle),rotation,controller?.spatialTarget?.swivel??0),target: {...point, rotation}, followers, bendDirection: controller?.bendDirection ?? bendDirection,
     bendReference: ikBendReference(points, lengths, controller?.bendReference)};
 }
 
@@ -176,6 +176,7 @@ export const editorIKMethods = {
     }
   },
   setNodeIK(patch) {
+    if(Object.keys(patch).length===1&&patch.swivel!==undefined&&this.getSpatialIKPole())return this.setSpatialIKTarget({swivel:patch.swivel});
     if(patch.enabled&&this.figure&&!rigIKAllowed(this.figure,this.selectedJoint))throw new Error('Apply IK to the driving bones. Connector, weighted and angle-locked attachments follow those controls.');
     const {handle} = controllerAt(this);
     if (!handle) return false;
@@ -239,7 +240,11 @@ export const editorIKMethods = {
       // transforms carry the limb. Pinning makes the target persist in world space.
       if (!current.pinned && graph) Object.assign(next, poseGraph(this, graph, handle, current, geometry, target));
       else if (!current.pinned) {
-        const temporary = {...next, ...capture(this.figure, object, geometry, handle, current), target, pinned: true};
+        const key=`${object.unique_id}:${handle}`;
+        this._drag.ikCapture??=new Map();
+        if(!this._drag.ikCapture.has(key))this._drag.ikCapture.set(key,capture(this.figure,object,geometry,handle,current));
+        const captured=this._drag.ikCapture.get(key);
+        const temporary = {...next, ...(captured.spatialTarget?captured:capture(this.figure,object,geometry,handle,current)), target, pinned: true};
         const baseline = this._drag.before.find(o => o.unique_id === object.unique_id);
         const source = {...object, len_flag: baseline.len_flag, lengths: baseline.lengths};
         const solution = solveObjectIK(this.figure, source, geometry.root, ikLayout(this.figure), {[handle]: temporary});

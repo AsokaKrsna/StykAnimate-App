@@ -1055,6 +1055,8 @@ export class Editor extends EventTarget {
   }
   rotateJoint(delta, options = {}) {
     finite(delta, 'Joint rotation'); if (!this.figure?.segments[this.selectedJoint]) return false;
+    const spatial=this.getSpatialPose();
+    if(spatial&&!options.isolate)return this.setSpatialPose({bend:spatial.bend+delta*(this.object.image_text_flags?-1:1)});
     return this._objectEdit('Rotate joint', () => this._rotateJoint(delta, true, options), {posed: true});
   }
   _poseSnapState() {

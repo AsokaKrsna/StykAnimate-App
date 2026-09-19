@@ -2174,7 +2174,7 @@ overlay.addEventListener(
     const p = worldPoint(e);
     if(e.button===0&&state.handles&&!builderMode?.active&&['select','pose'].includes(state.tool)){
       const spatial=spatialGizmoDrag(editor,screenPoint(p),screenPoint);
-      if(spatial){if(!editor.beginDrag(spatial.kind==='pole'?'Move IK pole':'Rotate articulated joint'))return;state.drag={kind:'spatial',spatial};viewport.classList.add('dragging');return;}
+      if(spatial){if(spatial.index!==undefined)editor.select(editor.selectedUid,spatial.index);if(!editor.beginDrag(spatial.kind==='pole'?'Move IK pole':spatial.kind==='target'?'Move IK target':spatial.kind==='depth'?'Change target depth':'Rotate articulated joint'))return;state.drag={kind:'spatial',spatial};viewport.classList.add('dragging');return;}
     }
     // Posing tools turn a right drag into a bend; everywhere else a right
     // press stays a plain click that opens the context menu on release.

@@ -14,7 +14,7 @@ export function spatialWorldQuaternion(q,figure,object,inverse=false){
  const a=animationRotation(figure,object),reflect=v=>object.image_text_flags?[-v[0],v[1],-v[2],v[3]]:v;
  return inverse?reflect(quatMultiply(spatialQuaternion(-a,0,0),q)):quatMultiply(spatialQuaternion(a,0,0),reflect(q));
 }
-export function captureSpatialIK(figure,object,geometry,chain,followers,rotation=0){
+export function captureSpatialIK(figure,object,geometry,chain,followers,rotation=0,swivel=0){
  const spatialFollowers={};
  for(const i of followers){const q=geometry.segments[i]?.spatialFrame?.q;if(q)spatialFollowers[figure.segments[i].segment_id]=quatMultiply(spatialQuaternion(-rotation,0,0),spatialWorldQuaternion(q,figure,object));}
  const shapes=chain.map(i=>geometry.segments[i]);let spatialTarget;
@@ -22,7 +22,10 @@ export function captureSpatialIK(figure,object,geometry,chain,followers,rotation
   const points=[spatialPoint(shapes[0].spatialFrame,shapes[0].seg._stykRig.spatial.origin),...shapes.map(s=>spatialPoint(s.spatialFrame,s.seg._stykRig.spatial.tip))];
   const axis=normalize(points[2].map((v,i)=>v-points[0][i])),knee=points[1].map((v,i)=>v-points[0][i]);let pole=knee.map((v,i)=>v-axis[i]*dot(knee,axis));
   if(Math.hypot(...pole)<1e-5){const hint=quatRotate(shapes[0].spatialFrame.q,[0,0,1]);pole=hint.map((v,i)=>v-axis[i]*dot(hint,axis));if(Math.hypot(...pole)<1e-5)pole=cross(axis,[0,1,0]);}
-  spatialTarget={depth:points[2][2]*object.scale,pole:normalize(spatialWorldVector(pole,figure,object)),swivel:0};
+  const normal=normalize(cross(axis,pole));
+  const direction=normalize(pole),side=cross(axis,direction),reference=direction.map((v,i)=>v*Math.cos(swivel)-side[i]*Math.sin(swivel));
+  spatialTarget={depth:points[2][2]*object.scale,pole:normalize(spatialWorldVector(reference,figure,object)),swivel,
+   normals:shapes.map(s=>normalize(quatRotate(inverseQuaternion(s.spatialFrame.q),normal)))};
  }
  return {...(Object.keys(spatialFollowers).length?{spatialFollowers}:{}),...(spatialTarget?{spatialTarget}:{})};
 }
@@ -32,7 +35,16 @@ export function spatialKnee(base,end,pole,swivel,a,b){
  if(Math.hypot(...direction)<1e-6)direction=cross(axis,Math.abs(axis[0])<.8?[1,0,0]:[0,1,0]);
  direction=normalize(direction);const side=cross(axis,direction),cs=Math.cos(swivel),sn=Math.sin(swivel);
  const along=(a*a-b*b+d*d)/(2*d),height=Math.sqrt(Math.max(0,a*a-along*along));
- return {knee:base.map((v,i)=>v+axis[i]*along+(direction[i]*cs+side[i]*sn)*height),end:base.map((v,i)=>v+axis[i]*d)};
+ const bend=direction.map((v,i)=>v*cs+side[i]*sn);
+ return {knee:base.map((v,i)=>v+axis[i]*along+bend[i]*height),end:base.map((v,i)=>v+axis[i]*d),normal:normalize(cross(axis,bend))};
+}
+/** Align both the bone axis and its captured bend-plane normal. A shortest
+ * swing from the previous pose alone accumulates axial twist on closed drags. */
+export function spatialIKOrientation(axis,normal,direction,plane){
+ const aim=normalize(direction),swing=betweenVectors(normalize(axis),aim),turned=quatRotate(swing,normal);
+ const angle=Math.atan2(dot(aim,cross(turned,plane)),dot(turned,plane))/2;
+ const twist=[...aim.map(v=>v*Math.sin(angle)),Math.cos(angle)];
+ return quatMultiply(twist,swing);
 }
 /** A pole is a direction in scene space; its displayed handle has a stable
  * radius derived from the limb, so dragging never adds another pose hierarchy. */
