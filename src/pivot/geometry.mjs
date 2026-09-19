@@ -655,6 +655,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         end,
         points,
         angle,
+        ...(rigPose?{authoredAngle:rigPose.authoredAngle}:{}),
         bend,
         length,
         z: Number(seg.z_order ?? i + 1),

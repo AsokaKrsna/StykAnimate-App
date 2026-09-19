@@ -117,7 +117,18 @@ export const editorRigConstraintMethods = {
       lock.reference=this.figure.segments[index].segment_id;lock.restAngle=geometry.segments[index].angle;
       lock.figureRestAngle=animationRotation(this.figure,this.object);
     }
-    return this.setRigBehavior({angleLock:lock});
+    return this.setRigBehavior({angleLock:{...lock,secondary:null}});
+  },
+  setSecondaryAngleReference(reference) {
+    const lock=this.figure?.segments[this.selectedJoint]?._stykRig?.angleLock;
+    if(lock?.mode!=='parent')throw new Error('Choose a parent angle lock first.');
+    if(reference===0)return this.setRigBehavior({angleLock:{secondary:null}});
+    const index=this.figure.segments.findIndex(s=>s.segment_id===reference);
+    if(index<0)throw new Error('Choose an existing second angle reference.');
+    const shape=this.geometry.objects.get(this.selectedSlot).segments[index];
+    const angle=lock.space==='authored'?(shape.authoredAngle??shape.angle):shape.angle;
+    const figureDelta=lock.figureRestAngle===undefined?0:animationRotation(this.figure,this.object)-lock.figureRestAngle;
+    return this.setRigBehavior({angleLock:{secondary:{reference,restAngle:angle-figureDelta,multiplier:1}}});
   },
   bindStretchParts(driver,{mode='stretch',influence=1,branch=false}={}) {
     const figure=this.figure;if(!figure)return false;

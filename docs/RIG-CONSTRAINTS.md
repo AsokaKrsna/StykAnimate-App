@@ -204,6 +204,14 @@ angles use radians. World locks ignore ancestor rotations; Figure locks use the
 existing figure rotation channel. Parent references are captured from the nearest
 movable ancestor at setup and remain stable native IDs.
 
+Parent locks can add a second rotation through **Add a second rotation**. Choose
+its joint ID (0 disables it), multiplier and captured rest angle. The optional
+`secondary: {reference, restAngle, multiplier}` contributes that joint's angle
+change in the same authored/rendered space as the primary reference. Whole-figure
+rotation is applied once. This lets native constructions combine independent
+turn and nod controls without singular angle-bisector constructions. Both
+references participate in dependency validation, remapping, saving and undo.
+
 The iterative dependency plan includes hierarchy, connector anchors and explicit
 stretch drivers. Compilation is O(V + E), cached by definition, and yields during
 cold validation/preparation. Cycles and missing references fail before publication.

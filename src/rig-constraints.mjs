@@ -30,7 +30,8 @@ export function* rigConstraintPlanSteps(figure) {
       p.rest===d?.restLength&&p.min===d?.min&&p.max===d?.max&&p.width===d?.width&&p.driver===f?.driver&&p.mode===f?.mode&&p.influence===f?.influence&&p.orientation===r?.orientation&&
       p.branch===d?.branch&&p.source===d?.source&&p.restPosition===d?.restPosition&&p.automatic===f?.automatic&&
       p.responseMode===r?.response?.mode&&p.multiplier===r?.response?.multiplier&&p.reset===r?.response?.reset&&
-      p.lockMode===r?.angleLock?.mode&&p.lockSpace===r?.angleLock?.space&&p.lockReference===r?.angleLock?.reference&&p.lockAngle===r?.angleLock?.angle&&p.lockRest===r?.angleLock?.restAngle&&p.lockFigureRest===r?.angleLock?.figureRestAngle&&p.lockMultiplier===r?.angleLock?.multiplier;
+      p.lockMode===r?.angleLock?.mode&&p.lockSpace===r?.angleLock?.space&&p.lockReference===r?.angleLock?.reference&&p.lockAngle===r?.angleLock?.angle&&p.lockRest===r?.angleLock?.restAngle&&p.lockFigureRest===r?.angleLock?.figureRestAngle&&p.lockMultiplier===r?.angleLock?.multiplier&&
+      p.secondaryReference===r?.angleLock?.secondary?.reference&&p.secondaryRest===r?.angleLock?.secondary?.restAngle&&p.secondaryMultiplier===r?.angleLock?.secondary?.multiplier;
   })) return previous;
   const signature=new Array(segments.length),ids=new Map(),outgoing=new Array(segments.length),indegree=new Uint32Array(segments.length);
   for(let i=0;i<segments.length;i++){
@@ -38,7 +39,8 @@ export function* rigConstraintPlanSteps(figure) {
     signature[i]={id:s.segment_id,parent:s.parent_id,start:c?.start,end:c?.end,span:c?.restLength,rest:d?.restLength,min:d?.min,max:d?.max,width:d?.width,driver:f?.driver,mode:f?.mode,influence:f?.influence,orientation:r?.orientation};
     Object.assign(signature[i],{branch:d?.branch,source:d?.source,restPosition:d?.restPosition,automatic:f?.automatic,
       responseMode:r?.response?.mode,multiplier:r?.response?.multiplier,reset:r?.response?.reset,
-      lockMode:r?.angleLock?.mode,lockSpace:r?.angleLock?.space,lockReference:r?.angleLock?.reference,lockAngle:r?.angleLock?.angle,lockRest:r?.angleLock?.restAngle,lockFigureRest:r?.angleLock?.figureRestAngle,lockMultiplier:r?.angleLock?.multiplier});
+      lockMode:r?.angleLock?.mode,lockSpace:r?.angleLock?.space,lockReference:r?.angleLock?.reference,lockAngle:r?.angleLock?.angle,lockRest:r?.angleLock?.restAngle,lockFigureRest:r?.angleLock?.figureRestAngle,lockMultiplier:r?.angleLock?.multiplier,
+      secondaryReference:r?.angleLock?.secondary?.reference,secondaryRest:r?.angleLock?.secondary?.restAngle,secondaryMultiplier:r?.angleLock?.secondary?.multiplier});
     ids.set(s.segment_id,i);outgoing[i]=[];
     if((i&255)===255)yield {phase:'rig',stage:'references',completed:i+1,total:segments.length};
   }
@@ -89,6 +91,11 @@ export function* rigConstraintPlanSteps(figure) {
       if(lock.mode==='parent'){reference(lock.reference,'Angle reference');dependencies.add(lock.reference);number(lock.restAngle,'Reference angle',-1e6,1e6);}
       if(lock.mode==='figure')number(lock.restAngle,'Figure reference angle',-1e6,1e6);
       if(lock.figureRestAngle!==undefined)number(lock.figureRestAngle,'Parent lock figure reference angle',-1e6,1e6);
+      if(lock.secondary!=null){
+        if(lock.mode!=='parent'||typeof lock.secondary!=='object'||Array.isArray(lock.secondary))throw new Error('A second angle reference requires a parent angle lock.');
+        reference(lock.secondary.reference,'Second angle reference');dependencies.add(lock.secondary.reference);
+        number(lock.secondary.restAngle,'Second reference angle',-1e6,1e6);number(lock.secondary.multiplier,'Second rotation multiplier',-10,10);
+      }
     }
     for(const id of dependencies) {reference(id,'Rig parent',true);if(id) {const p=ids.get(id);outgoing[p].push(i);indegree[i]++;}}
     if((i&255)===255)yield {phase:'rig',stage:'dependencies',completed:i+1,total:segments.length};
@@ -121,7 +128,8 @@ export function remapRigReferences(segment, remap) {
   segment._stykRig={...r,
     ...(r.connector?{connector:{...r.connector,start:remap.get(r.connector.start)??r.connector.start,end:remap.get(r.connector.end)??r.connector.end}}:{}),
     ...(r.follow?{follow:{...r.follow,driver:remap.get(r.follow.driver)??r.follow.driver}}:{}),
-    ...(r.angleLock?.reference!==undefined?{angleLock:{...r.angleLock,reference:remap.get(r.angleLock.reference)??r.angleLock.reference}}:{})};
+    ...(r.angleLock?.reference!==undefined?{angleLock:{...r.angleLock,reference:remap.get(r.angleLock.reference)??r.angleLock.reference,
+      ...(r.angleLock.secondary?{secondary:{...r.angleLock.secondary,reference:remap.get(r.angleLock.secondary.reference)??r.angleLock.secondary.reference}}:{})}}:{})};
 }
 export function rigWidth(ratio, response) {
   return response==='inverse'?1/Math.max(.01,ratio):response==='scale'?ratio:1;
@@ -149,6 +157,10 @@ export function createRigEvaluation(figure, object, root, plan=rigConstraintPlan
       const reference=lock.mode==='parent'?states[plan.ids.get(lock.reference)]:null;
       const difference=lock.mode==='parent'?(lock.space==='authored'?reference.authoredAngle:reference.angle)-lock.restAngle-figureDelta:lock.mode==='figure'?animationRotation(figure,object)-lock.restAngle:0;
       lockedAngle=lock.angle+figureDelta+lock.multiplier*Math.atan2(Math.sin(difference),Math.cos(difference));
+      if(lock.secondary){
+        const other=states[plan.ids.get(lock.secondary.reference)],delta=(lock.space==='authored'?other.authoredAngle:other.angle)-lock.secondary.restAngle-figureDelta;
+        lockedAngle+=lock.secondary.multiplier*Math.atan2(Math.sin(delta),Math.cos(delta));
+      }
       if(lock.space==='authored'){angle=lockedAngle;inheritedRotation=angle-input.angle;}
     }
     const rawAngle=angle;
