@@ -35,6 +35,7 @@ function restorePreview(editor, drag) {
 export const editorRigMethods = {
   /** In reposition mode only the dragged joint moves; connected endpoints stay fixed. */
   beginRigDrag({reposition = true, label = 'Edit rig'} = {}) {
+    if(this.figure?.segments[this.selectedJoint]?._stykRig?.spatial)throw new Error('Use Pose or Rotate to articulate this joint. Its rest position belongs to the spatial skin binding.');
     if(this.figure?.segments[this.selectedJoint]?._stykRig?.weighted)return false;
     if (this.figure?.segments[this.selectedJoint]?._stykRig?.connector) return this.beginDrag('Slide connector');
     if (!this.figure?.segments[this.selectedJoint]) return false;

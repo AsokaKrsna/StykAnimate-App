@@ -1,4 +1,4 @@
-import {surfaceCulled,surfaceOrder,surfaceDepthValues} from './surfaces.mjs';
+import {createSurfaceEvaluation} from './surfaces.mjs';
 import {depthSurface,paintDepthSurfaces,releaseSurfaceRaster} from '../surface-raster.mjs';
 import {primitiveOutsideRasterClip} from './raster-clip.mjs';
 import {paintDrawingTiles} from '../drawing-raster.mjs';
@@ -588,7 +588,9 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       const rigPose = rig?.evaluate(i, {start,angle,length,bend}, joints);
       if (rigPose) ({start,angle,length,bend} = rigPose);
       let points,end;
-      if(Math.abs(bend)<1e-7&&Number.isFinite(start.x)&&Number.isFinite(start.y)&&Number.isFinite(angle)&&Number.isFinite(length)){
+      if(rigPose?.handle&&(seg._stykRig?.spatial||seg._stykRig?.weighted)){
+        end={x:Math.fround(rigPose.handle.x),y:Math.fround(rigPose.handle.y)};points=[start,end];
+      }else if(Math.abs(bend)<1e-7&&Number.isFinite(start.x)&&Number.isFinite(start.y)&&Number.isFinite(angle)&&Number.isFinite(length)){
         // The native endpoint is rounded once. A straight segment needs no
         // intermediate unrounded point or curve-validation array.
         end={x:Math.fround(start.x+length*Math.cos(angle)),y:Math.fround(start.y+length*Math.sin(angle))};
@@ -599,7 +601,8 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         end={x:Math.fround(last.x),y:Math.fround(last.y)};
         if(points.length)points[points.length-1]=end;
       }
-      const handle = rigPose?.handle ? {x:Math.fround(rigPose.handle.x),y:Math.fround(rigPose.handle.y)} : end;
+      const handle = rigPose?.handle&&!(seg._stykRig?.spatial||seg._stykRig?.weighted) ? {x:Math.fround(rigPose.handle.x),y:Math.fround(rigPose.handle.y)} : end;
+      if(rigPose?.depthOffset)handle.depthOffset=rigPose.depthOffset;
       joints.set(Number(seg.segment_id), handle);
       const override = Number(obj.color_override_raw) >>> 0;
       const rgb =
@@ -655,7 +658,6 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         end,
         points,
         angle,
-        ...(rigPose?{authoredAngle:rigPose.authoredAngle}:{}),
         bend,
         length,
         z: Number(seg.z_order ?? i + 1),
@@ -668,6 +670,8 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         opacity,
         static: isStatic(seg),
       };
+      if(rigPose)render.authoredAngle=rigPose.authoredAngle;
+      if(rigPose?.spatial)render.spatialFrame=rigPose.spatial;
       if(rigPose?.connector){render.handle=handle;render.connector=true;render.attachmentPosition=rigPose.position;}
       if(rigPose?.space)render.rigSpace=rigPose.space;
       if(rigPose?.childSpace)render.rigChildSpace=rigPose.childSpace;
@@ -691,7 +695,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         s,
       ]),
     ) : null;
-    const polys = [];
+    const polys = [],surfaceEvaluation=createSurfaceEvaluation(joints);
     for (let i = 0; i < (fig.polyfills?.length ?? 0); i++) {
       const poly = fig.polyfills[i];
       const polygon = plan.polygons[i], points = [];
@@ -717,7 +721,8 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         points[0].y === points.at(-1).y
       )
         points.pop();
-      polys.push({
+      const surface=poly._stykSurface?surfaceEvaluation(poly,points):null;
+      const render={
         type: "poly",
         poly,
         obj,
@@ -725,16 +730,16 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         slot,
         index: i,
         points,
-        ...(poly._stykSurface ? {culled:surfaceCulled(poly, points, joints)} : {}),
-        z: surfaceOrder(poly,joints),
-        ...(poly._stykSurface?.depthTest?{depthValues:surfaceDepthValues(poly,joints)}:{}),
+        z:surface?.z??Number(poly.z_order??0),
         rgb: objectColor(poly.color_rgb ?? [0, 0, 0], obj),
         alpha:
           poly.alpha_raw === undefined
             ? (poly.color_alpha ?? 1)
             : 1 - poly.alpha_raw / 255,
         opacity,
-      });
+      };
+      if(surface){render.culled=surface.culled;if(surface.depthValues)render.depthValues=surface.depthValues;}
+      polys.push(render);
       if ((i & 31) === 31) yield {phase:'geometry',stage:'polygons',slot,completed:i+1,total:fig.polyfills.length};
     }
     const geometry = {

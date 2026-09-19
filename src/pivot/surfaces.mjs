@@ -2,11 +2,11 @@
  * winding under reflection, rotation, joining and ID remapping. Ordinary
  * polygons remain double-sided. Optional depth guides offset native painter
  * order without storing any per-pose surface state. */
-export function surfaceCulled(poly, points, joints) {
+export function surfaceCulled(poly, points, joints, cachedParity) {
   const basis=poly._stykSurface?.basis;if(!basis)return false;
-  const o=joints.get(basis[0]),x=joints.get(basis[1]),y=joints.get(basis[2]);
-  if(!o||!x||!y||points.length<3)return true;
-  const parity=(x.x-o.x)*(y.y-o.y)-(x.y-o.y)*(y.x-o.x),p=points[0];
+  let parity=cachedParity;
+  if(parity===undefined){const o=joints.get(basis[0]),x=joints.get(basis[1]),y=joints.get(basis[2]);if(!o||!x||!y)return true;parity=(x.x-o.x)*(y.y-o.y)-(x.y-o.y)*(y.x-o.x);}
+  if(points.length<3)return true;const p=points[0];
   let area=0,extent=0;
   for(let i=1;i<points.length;i++){
     const x=points[i].x-p.x,y=points[i].y-p.y;extent=Math.max(extent,x*x+y*y);
@@ -25,13 +25,37 @@ export function surfaceOrder(poly,joints) {
   const dx=x.x-o.x,dy=x.y-o.y,den=dx*dx+dy*dy;
   if(den<1e-16)return base;
   let depth=0;
-  for(const id of surface.depth){const p=joints.get(id);if(!p)return base;depth+=((p.x-o.x)*dx+(p.y-o.y)*dy)/den;}
+  for(const id of surface.depth){const p=depthPoint(joints,id);if(!p)return base;depth+=((p.x-o.x)*dx+(p.y-o.y)*dy)/den;}
   return base+depth/surface.depth.length;
 }
 export function surfaceDepthValues(poly,joints){
   if(!poly._stykSurface?.depthTest)return undefined;
   const s=poly._stykSurface,o=joints.get(s.basis[0]),x=joints.get(s.basis[1]),dx=x.x-o.x,dy=x.y-o.y,den=dx*dx+dy*dy;
-  return s.depth.map(id=>{const p=joints.get(id);return Number(poly.z_order??0)+(den>1e-16?((p.x-o.x)*dx+(p.y-o.y)*dy)/den:0);});
+  return s.depth.map(id=>{const p=depthPoint(joints,id);return Number(poly.z_order??0)+(den>1e-16?((p.x-o.x)*dx+(p.y-o.y)*dy)/den:0);});
+}
+function depthPoint(joints,id){const p=joints.get(id);if(!p?.depthOffset)return p;const root=joints.get(0);return{x:root.x+p.depthOffset.x,y:root.y+p.depthOffset.y};}
+/** One pose owns this small cache. Shared surface vertices are projected once,
+ * independent of triangle count; no definition or previous pose is retained. */
+export function createSurfaceEvaluation(joints){
+  const frames=new Map(),root=joints.get(0);let lastBasis,lastFrame;
+  return(poly,points)=>{
+    const s=poly._stykSurface,base=Number(poly.z_order??0),basis=s.basis;
+    const same=lastBasis&&basis[0]===lastBasis[0]&&basis[1]===lastBasis[1]&&basis[2]===lastBasis[2];
+    let f=same?lastFrame:frames.get(basis.join(':'));
+    if(!f){const o=joints.get(s.basis[0]),x=joints.get(s.basis[1]),y=joints.get(s.basis[2]);
+      if(!o||!x||!y)return{culled:true,z:base};
+      const dx=x.x-o.x,dy=x.y-o.y;f={o,dx,dy,den:dx*dx+dy*dy,parity:dx*(y.y-o.y)-dy*(y.x-o.x),depth:new Map()};frames.set(basis.join(':'),f);}
+    lastBasis=basis;lastFrame=f;
+    let sum=0;const values=s.depthTest?new Array(s.depth.length):undefined;
+    for(let i=0;i<(s.depth?.length??0);i++){
+      const id=s.depth[i];let value=f.depth.get(id);
+      if(value===undefined){const p=joints.get(id);value=!p||f.den<1e-16?0:p.depthOffset?
+        ((root.x+p.depthOffset.x-f.o.x)*f.dx+(root.y+p.depthOffset.y-f.o.y)*f.dy)/f.den:
+        ((p.x-f.o.x)*f.dx+(p.y-f.o.y)*f.dy)/f.den;f.depth.set(id,value);}
+      sum+=value;if(values)values[i]=base+value;
+    }
+    return{culled:surfaceCulled(poly,points,joints,f.parity),z:base+(s.depth?.length?sum/s.depth.length:0),depthValues:values};
+  };
 }
 export function surfaceHandles(poly) {return [...(poly.segment_ids??[]),...(poly._stykSurface?.basis??[]),...(poly._stykSurface?.depth??[])];}
 export function documentHasSurfaces(document,seen=new Set()) {

@@ -114,7 +114,7 @@ export function pivotHandleColor({ selected = false, nodeSelected = false, origi
 export function getPivotHandles(geometry, {
   frame, selectedUid = null, selectedUids, selectedJoint = -1, selectedHandleIds, selectedBranch = false, builder = false, hiddenUids, lockedUids,
   showUnselected = true, showStatic = false, attaching = false, allowStaticManipulation = false,
-  selectStatic = false, joinTargetUids,
+  selectStatic = false, joinTargetUids, spatialMode = 'pose',
   viewScale = 1, autoSize = true, minDiameter = 4, maxDiameter = 10, descriptorCache,
 } = {}) {
   if (!geometry?.objects) return [];
@@ -128,7 +128,7 @@ export function getPivotHandles(geometry, {
   const targets = attachments(geometry), result = [], groups = [];
   Object.defineProperty(result,'groups',{value:groups});
   const options = { viewScale, autoSize, minDiameter, maxDiameter }, scale = Math.max(1e-9, Math.abs(viewScale));
-  const settingsKey = [topologyEpoch,showUnselected,showStatic,attaching,allowStaticManipulation,selectStatic,viewScale,autoSize,minDiameter,maxDiameter,builder,selectedJoint,selectedBranch,[...(selectedHandleIds??[])].join(',')].join('|');
+  const settingsKey = [topologyEpoch,spatialMode,showUnselected,showStatic,attaching,allowStaticManipulation,selectStatic,viewScale,autoSize,minDiameter,maxDiameter,builder,selectedJoint,selectedBranch,[...(selectedHandleIds??[])].join(',')].join('|');
   if(descriptorCache && descriptorCache.key!==settingsKey){descriptorCache.key=settingsKey;descriptorCache.objects=new WeakMap();}
   for (const g of objects) {
     if (!g) continue;
@@ -142,14 +142,17 @@ export function getPivotHandles(geometry, {
     const cached=descriptorCache?.objects.get(g);
     if(cached?.key===objectKey){groups.push({uid,offset:result.length,handles:cached.handles});for(const handle of cached.handles)result.push(handle);continue;}
     const first=result.length;
+    const rotateSpatial = !builder && selected && spatialMode === 'rotate';
     const add = (point, joint, id, kind, isStatic = false, joined = false) => {
+      const spatial = rotateSpatial && Boolean(g.segments[joint]?.spatialFrame);
+      if(spatial)point=g.segments[joint].start;
       const connector=joint>=0&&Boolean(g.segments[joint]?.connector);
       // A slider's stored length is a fraction, not a physical segment length.
       const screenRadius = connector ? (options.maxDiameter??10)/2 : getPivotHandleRadius(g, id, options);
       const ik = !builder && Boolean(g.obj._stykIK?.[id]?.enabled);
       result.push({ g, uid, joint, id, kind, point, selected, joined, static: isStatic, ik,
         connector,
-        action: kind === 'origin' ? 'move' : isStatic && !ik && !attaching && !allowStaticManipulation ? 'select' : 'pose',
+        action: spatial ? 'select' : kind === 'origin' ? 'move' : isStatic && !ik && !attaching && !allowStaticManipulation ? 'select' : 'pose',
         color: attaching ? PIVOT_HANDLE_COLORS.joined : builder && isStatic && !joined && !builderSelection?.has(joint) ? '#999999'
           : pivotHandleColor({ selected, nodeSelected: Boolean(builderSelection?.has(joint)), origin: kind === 'origin', joined, static: isStatic }),
         radius: screenRadius / scale, screenRadius });

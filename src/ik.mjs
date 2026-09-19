@@ -2,6 +2,9 @@
  * Constraints belong to a pose instance and address stable handle IDs, never array slots.
  * Two-link limbs use an analytic solve; longer chains use bounded FABRIK iterations.
  */
+import {hasRigConstraints,derivedRigJoint,authoredRigTarget} from './rig-constraints.mjs';
+import {spatialBone} from './rig-spatial.mjs';
+import {rigIKContext} from './ik-rig.mjs';
 export const MAX_IK_CHAIN = 256;
 const EPS = 1e-10, TAU = 2 * Math.PI;
 const wrap = a => ((a + Math.PI) % TAU + TAU) % TAU - Math.PI;
@@ -38,6 +41,7 @@ export function ikLayout(figure) {
 export function ikChain(figure, handle, length, layout = ikLayout(figure)) {
   const chain = [], seen = new Set(); let i = layout.ids.get(Number(handle));
   while (i !== undefined && chain.length < Math.min(length, MAX_IK_CHAIN) && !seen.has(i)) {
+    if(derivedRigJoint(figure.segments[i]))break;
     seen.add(i); chain.push(i); i = layout.ids.get(figure.segments[i].parent_id);
   }
   return chain.reverse();
@@ -254,7 +258,10 @@ export function solveObjectIK(figure, object, root, layout = ikLayout(figure), c
     const s = figure.segments[i], p = points.get(s.parent_id) ?? root, c = chord(figure, object, i, lengths), a = angles[i] + c.bend / 2;
     points.set(s.segment_id, {x: p.x + Math.cos(a) * c.signed, y: p.y + Math.sin(a) * c.signed});
   };
-  for (const i of layout.order) forward(i);
+  const rig=hasRigConstraints(figure)?rigIKContext(figure,object,root,active.map(([id])=>id),angles,()=>lengths):null;
+  const refresh=()=>{const sample=rig.evaluate();for(const [id,p]of sample.points)points.set(id,p);return sample;};
+  let rigSample=rig?refresh():null;
+  if(!rig)for (const i of layout.order) forward(i);
   const chains = new Map(active.map(([id, c]) => [id, ikChain(figure, id, c.chainLength, layout)]));
   if (active.length > 1) {
     const rank = new Map(layout.order.map((i, order) => [i, order]));
@@ -264,9 +271,9 @@ export function solveObjectIK(figure, object, root, layout = ikLayout(figure), c
     const chain = chains.get(id);
     if (!chain.length || chain.some(i => claimed.has(i))) { results.set(Number(id), {conflict: true}); continue; }
     chain.forEach(i => claimed.add(i));
-    const chainSet = new Set(chain), base = points.get(figure.segments[chain[0]].parent_id) ?? root;
+    const chainSet = new Set(chain), base = rigSample?.states[chain[0]]?.start ?? points.get(figure.segments[chain[0]].parent_id) ?? root;
     const positions = [base, ...chain.map(i => points.get(figure.segments[i].segment_id))].map(p => ({...p}));
-    const chords = chain.map(i => chord(figure, object, i, lengths));
+    const chords = chain.map(i => rig&&!spatialBone(figure.segments[i])?{bend:0,signed:Math.hypot(points.get(figure.segments[i].segment_id).x-(rigSample.states[i]?.start??root).x,points.get(figure.segments[i].segment_id).y-(rigSample.states[i]?.start??root).y)}:chord(figure, object, i, lengths));
     const reach = chords.reduce((sum, c) => sum + Math.abs(c.signed), 0), distance = Math.hypot(c.target.x - base.x, c.target.y - base.y);
     const stretch = c.allowStretch && reach > EPS ? Math.max(1, distance / reach) : 1;
     if (stretch > 1) {
@@ -275,11 +282,28 @@ export function solveObjectIK(figure, object, root, layout = ikLayout(figure), c
     }
     const result = solveIKPoints(positions, chords.map(c => Math.abs(c.signed)), c.target, c.bendDirection, {bendReference: c.bendReference});
     const deltas = new Map();
+    const originalAngles=chain.map(i=>angles[i]);
     chain.forEach((i, j) => {
-      if (Math.abs(chords[j].signed) < EPS) return;
-      const a = Math.atan2(positions[j + 1].y - positions[j].y, positions[j + 1].x - positions[j].x) - chords[j].bend / 2 - (chords[j].signed < 0 ? Math.PI : 0);
+      if (Math.abs(chords[j].signed) < EPS || spatialBone(figure.segments[i])) return;
+      let a = Math.atan2(positions[j + 1].y - positions[j].y, positions[j + 1].x - positions[j].x) - chords[j].bend / 2 - (chords[j].signed < 0 ? Math.PI : 0);
+      if(rig){const state=rigSample.states[i],target={x:state.start.x+positions[j+1].x-positions[j].x,y:state.start.y+positions[j+1].y-positions[j].y};
+        if(Math.abs(state.space?.followScale??1)<1e-8&&Math.abs(state.bend)>1e-7)a=angles[i];
+        else{const authored=authoredRigTarget({start:state.start,rigSpace:state.space,bend:state.bend},target.x,target.y,{angle:angles[i],length:(lengths?.[i]??(object.len_flag?object.lengths[i]:figure.segments[i].length))*object.scale});
+          a=Math.atan2(authored.y-state.start.y,authored.x-state.start.x)-state.bend/2-(object.scale<0?Math.PI:0);}}
+
       const delta = wrap(a - angles[i]); angles[i] += delta; deltas.set(figure.segments[i].segment_id, delta);
     });
+    if(rig){
+      if(c.bendDirection&&chain.length===2&&chain.every(i=>spatialBone(figure.segments[i]))) {
+        const start=rigSample.states[chain[0]].start,middle=rigSample.points.get(figure.segments[chain[0]].segment_id),end=rigSample.points.get(figure.segments[chain[1]].segment_id);
+        const side=(end.x-start.x)*(middle.y-start.y)-(end.y-start.y)*(middle.x-start.x);
+        if(side*c.bendDirection<1e-7)rig.refine([chain[0]],positions[1]);
+      }
+      const refined=rig.refine(chain,c.target);rigSample=refined.sample;result.error=refined.error;result.iterations+=refined.iterations;
+      chain.forEach((i,j)=>deltas.set(figure.segments[i].segment_id,wrap(angles[i]-originalAngles[j])));
+      const posed=[rigSample.states[chain[0]]?.start??rigSample.points.get(figure.segments[chain[0]].parent_id)??root,...chain.map(i=>rigSample.points.get(figure.segments[i].segment_id))];
+      result.bendReference=ikBendReference(posed,posed.slice(1).map((p,i)=>Math.hypot(p.x-posed[i].x,p.y-posed[i].y)),c.bendReference);
+    }
     // Only the next articulated group follows the target. Construction artwork
     // attached to the constrained bone continues to inherit its solved rotation.
     const followers = ikFollowers(figure, object, id, c, layout);
@@ -295,11 +319,13 @@ export function solveObjectIK(figure, object, root, layout = ikLayout(figure), c
           : deltas.get(s.parent_id);
         if (delta !== undefined) { angles[i] += delta; deltas.set(s.segment_id, delta); }
       }
-      forward(i);
+      if(!rig)forward(i);
       for (const child of layout.children.get(s.segment_id) ?? []) if (!visited.has(child)) { visited.add(child); affected.push(child); }
     }
+    if(rig)rigSample=refresh();
     results.set(Number(id), {...result, target: c.target, chain, stretch, followers, attachmentOffsets});
   }
+  if(rig){const final=rig.evaluate(true);return {angles,lengths,results,points:final.points};}
   return {angles, lengths, results, points};
 }
 

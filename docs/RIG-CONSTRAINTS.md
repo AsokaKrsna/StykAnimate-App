@@ -68,6 +68,40 @@ Animate retains ordinary handles and the selected connector's Slide field.
 controls, enter angle/length/slide values, Fit view or Reset test. Closing the test
 preserves the live definition, animation and undo history.
 
+## Spatial articulation and posing
+
+A native spatial construction uses ordinary angle channels for three-axis joint
+rotation. Parent transforms, rest origins, rest tips and up to four skin weights
+are definition data in `_stykRig.spatial`. Skin vertices remain native joints
+used by editable fills. Dual-quaternion blending preserves volume through twists;
+axial stretching uses weighted transformed positions. Derived depth participates
+in the existing surface evaluator and renderer. There is no additional animation
+clock, pose store or renderer scene graph.
+
+In Animate, **Pose** places hands and feet through the existing IK settings.
+**Rotate** selects joint pivots on the canvas and shows local X/Y/Z rings, a free
+trackball and an outer view ring. Shift gives finer movement. Whole body and limb
+shortcuts select the relevant target or rotation control. **Exact angles** exposes
+the same native channels numerically. Each drag is one undo step; Escape cancels
+it. Pinned IK targets retain the established scene-space pin behavior.
+
+Spatial IK evaluates only the driving dependency closure, excluding skin vertices
+from solver iterations. It supports compound depth rotations and the existing
+bend direction, chain length and stretch settings. Ordinary limbs continue to use
+the established planar solver. Joined figures preserve their original control
+reference spaces when a virtual chain is needed.
+
+Spatial bindings are currently authored in native definition data. Build Figure
+cannot reposition their rest joints, reparent bound bones, mirror an individual
+bound branch or combine the spatial assembly into a flat definition: those actions
+would require rebinding the skin. Whole-figure reflection, posing, native saving,
+undo, playback and joined assemblies remain supported.
+
+Attached movieclips may expose named drawing sets. Form and view selectors choose
+existing single-frame playback offsets, including through the Advanced timeline.
+The head drawing remains discrete; selecting a drawing creates an ordinary
+undoable pose edit and retains the body selection.
+
 ## Editable 3D constructions
 
 Open **Library → Rig examples**, or **Build Figure → Edit → Rig examples**.

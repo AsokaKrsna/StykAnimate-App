@@ -2,10 +2,10 @@
  * by the normal dependency plan; no solver, per-frame cache or pose state. */
 export function sameWeightedJoint(a,b) {
   return a===b||Boolean(a&&b&&a.origin===b.origin&&a.anchors?.length===b.anchors?.length&&
-    a.anchors.every((v,i)=>v.joint===b.anchors[i].joint&&v.weight===b.anchors[i].weight));
+    a.anchors.every((v,i)=>v.joint===b.anchors[i].joint&&v.weight===b.anchors[i].weight)&&sameWeightedJoint(a.depth,b.depth));
 }
-export function validateWeightedJoint(value,reference,dependencies) {
-  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['origin','anchors'].includes(k))||
+export function validateWeightedJoint(value,reference,dependencies,depth=false) {
+  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['origin','anchors',...(!depth?['depth']:[])].includes(k))||
     !Array.isArray(value.anchors)||value.anchors.length<1||value.anchors.length>16)throw new Error('A weighted joint requires 1–16 anchors.');
   reference(value.origin,'Weighted origin',true);dependencies.add(value.origin);
   const seen=new Set();
@@ -16,12 +16,23 @@ export function validateWeightedJoint(value,reference,dependencies) {
     seen.add(anchor.joint);
     if(!Number.isFinite(anchor.weight)||Math.abs(anchor.weight)>100)throw new Error('Anchor weight must be between −100 and 100.');
   }
+  if(value.depth!==undefined)validateWeightedJoint(value.depth,reference,dependencies,true);
 }
-export function weightedJoint(value,joints,root,inputAngle) {
+export function remapWeightedJoint(value,remap) {
+  return {origin:remap.get(value.origin)??value.origin,anchors:value.anchors.map(a=>({...a,joint:remap.get(a.joint)??a.joint})),
+    ...(value.depth?{depth:remapWeightedJoint(value.depth,remap)}:{})};
+}
+function position(value,joints,root){
   const start=joints.get(value.origin)??root;let dx=0,dy=0;
   for(const {joint,weight} of value.anchors){const p=joints.get(joint)??root;dx+=(p.x-start.x)*weight;dy+=(p.y-start.y)*weight;}
+  return {start,dx,dy};
+}
+export function weightedJoint(value,joints,root,inputAngle) {
+  const {start,dx,dy}=position(value,joints,root);
   const angle=Math.hypot(dx,dy)<1e-8?inputAngle:Math.atan2(dy,dx);
+  const depth=value.depth?position(value.depth,joints,root):null;
   return {start,angle,authoredAngle:angle,length:Math.hypot(dx,dy),bend:0,width:1,
     handle:{x:start.x+dx,y:start.y+dy},rotation:angle-inputAngle,ratio:1,impulseAngle:angle,
+    ...(depth?{depthOffset:{x:depth.start.x+depth.dx-root.x,y:depth.start.y+depth.dy-root.y}}:{}),
     space:{rotation:angle-inputAngle,locked:true}};
 }

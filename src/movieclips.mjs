@@ -1,3 +1,4 @@
+import {validateDrawingSets} from './movieclip-drawings.mjs';
 /** Movieclip assets are immutable figure definitions. Scene poses contain only
  * a small playback descriptor; sampled scenes and geometry never enter history. */
 export const MOVIECLIP_VERSION = 1;
@@ -172,6 +173,7 @@ export function validateMovieclipGraph(report) {
           !Number.isInteger(asset.sourceStart) || asset.sourceStart < 0 || !Number.isFinite(asset.pivot?.x) || !Number.isFinite(asset.pivot?.y))
         throw new Error('Invalid movieclip asset.');
       if (figure.segments?.length !== 1) throw new Error('Movieclip containers require one transform handle.');
+      validateDrawingSets(asset);
       visit(asset.document, depth + 1);
     }
     visiting.delete(document); visited.add(document);

@@ -8,9 +8,10 @@ export function rigControlsView(editor,{builder=false}={}) {
   const seg=editor.figure?.segments[editor.selectedJoint];if(!seg)return '';
   const r=seg._stykRig??{},c=r.connector,d=r.stretch,f=r.follow,response=r.response??{},lock=r.angleLock;
   if(r.weighted){
-    const w=r.weighted,body=field('rig-weighted-origin','Origin joint',w.origin,0,65535)+w.anchors.map((a,i)=>
-      `<div class="rig-field-pair">${field(`rig-weighted-joint-${i}`,`Anchor ${i+1}`,a.joint,0,65535)}${field(`rig-weighted-weight-${i}`,'Weight',a.weight,-100,100,'×')}</div>`).join('')+
-      field('rig-weighted-count','Number of anchors',w.anchors.length,1,16);
+    const fields=(w,prefix)=>field(prefix+'origin','Origin joint',w.origin,0,65535)+w.anchors.map((a,i)=>
+      `<div class="rig-field-pair">${field(`${prefix}joint-${i}`,`Anchor ${i+1}`,a.joint,0,65535)}${field(`${prefix}weight-${i}`,'Weight',a.weight,-100,100,'\u00d7')}</div>`).join('')+field(prefix+'count','Number of anchors',w.anchors.length,1,16);
+    const w=r.weighted,body=fields(w,'rig-weighted-')+`<label class="check-row rig-toggle"><span>Include surface depth</span><input id="rig-weighted-depth-enabled" type="checkbox" ${w.depth?'checked':''}></label>`+
+      (w.depth?`<details class="rig-advanced"><summary>Depth anchors</summary>${fields(w.depth,'rig-weighted-depth-')}</details>`:'');
     return `<section class="inspector-section rig-properties"><div class="inspector-title">Weighted joint</div>${body}<p class="field-hint">Offsets from the origin are multiplied by their weights and added. Pose the anchors to move this joint.</p></section>`;
   }
   const plan=rigConstraintPlan(editor.figure),source=plan.inputs[editor.selectedJoint];
@@ -53,16 +54,21 @@ export function rigControlChange(editor,target) {
   const id=target.id;if(!id.startsWith('rig-')||id==='rig-mode')return false;
   const value=target.valueAsNumber;
   if(id.startsWith('rig-weighted-')){
-    const weighted=structuredClone(editor.figure.segments[editor.selectedJoint]._stykRig.weighted),match=/^rig-weighted-(joint|weight)-(\d+)$/.exec(id);
-    if(match)weighted.anchors[Number(match[2])][match[1]]=value;
-    else if(id==='rig-weighted-origin')weighted.origin=value;
-    else if(id==='rig-weighted-count'){
-      if(!Number.isInteger(value)||value<1||value>16)throw new Error('Choose 1–16 anchors.');
-      const used=new Set([weighted.origin,editor.figure.segments[editor.selectedJoint].segment_id,...weighted.anchors.map(a=>a.joint)]);
-      const available=[0,...editor.figure.segments.map(s=>s.segment_id)].filter(id=>!used.has(id));
-      while(weighted.anchors.length<value){const joint=available.shift();if(joint===undefined)throw new Error('Add another anchor joint first.');weighted.anchors.push({joint,weight:0});}
-      weighted.anchors.length=value;
-    }else return false;
+    const weighted=structuredClone(editor.figure.segments[editor.selectedJoint]._stykRig.weighted);
+    if(id==='rig-weighted-depth-enabled'){
+      if(target.checked)weighted.depth={origin:weighted.origin,anchors:weighted.anchors.map(a=>({...a,weight:0}))};else weighted.depth=undefined;
+    }else{
+      const depth=id.startsWith('rig-weighted-depth-'),w=depth?weighted.depth:weighted,prefix=depth?'rig-weighted-depth-':'rig-weighted-',key=id.slice(prefix.length),match=/^(joint|weight)-(\d+)$/.exec(key);
+      if(match)w.anchors[Number(match[2])][match[1]]=value;
+      else if(key==='origin')w.origin=value;
+      else if(key==='count'){
+        if(!Number.isInteger(value)||value<1||value>16)throw new Error('Choose 1-16 anchors.');
+        const used=new Set([w.origin,editor.figure.segments[editor.selectedJoint].segment_id,...w.anchors.map(a=>a.joint)]);
+        const available=[0,...editor.figure.segments.map(s=>s.segment_id)].filter(id=>!used.has(id));
+        while(w.anchors.length<value){const joint=available.shift();if(joint===undefined)throw new Error('Add another anchor joint first.');w.anchors.push({joint,weight:0});}
+        w.anchors.length=value;
+      }else return false;
+    }
     editor.setRigBehavior({weighted});
   }
   else if(id==='rig-position')editor.setConnectorPosition(value/100);

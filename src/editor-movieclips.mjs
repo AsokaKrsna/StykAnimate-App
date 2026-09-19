@@ -3,7 +3,7 @@ import {movieclipFigure,movieclipAsset,isMovieclip,playbackSettings,validatePlay
 import {evaluatedFrame,timeline,buildGeometry,movieclipPresenceIndex} from './pivot/geometry.mjs';
 import {createFrame,createObject,emptyDocument} from './demo.mjs';
 import {frameOrder,setOrder,normalizeFrame} from './pivot/structure.mjs';
-import {layerIdForUid} from './layers.mjs';
+import {layerLocked,layerIdForUid} from './layers.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
 import {createMovieclipMaterializer} from './movieclip-materialize.mjs';
 import {animationChannelId,validateAnimationDocument,sampleAnimationChannel} from './animation-channels.mjs';
@@ -294,6 +294,14 @@ export const editorMovieclipMethods={
     name=String(name).trim();if(!name||name.length>120)throw new Error('Use a name from 1 to 120 characters.');
     if(name===this.figure.name)return;
     return publishDefinition(this,{...this.figure,name},this.report.figure_types.indexOf(this.figure),'Rename movieclip');
+  },
+  setMovieclipDrawing(uid,group,view){
+    const object=this.selectionFrame.objects.find(o=>o.unique_id===uid),figure=this.report.figure_types.find(f=>f.figure_type_id===object?.figure_type_id),drawing=movieclipAsset(figure)?.drawingSets?.[group]?.views?.[view];
+    if(!drawing||!Number.isInteger(group)||!Number.isInteger(view))throw new Error('Choose an existing drawing.');
+    if(uid!==this.selectedUid&&object.join?.target_unique_id!==this.selectedUid)throw new Error('Select the drawing or its parent rig.');
+    if(layerLocked(this.report,uid))throw new Error('Unlock the drawing layer before changing it.');
+    const settings=validatePlayback({...playbackSettings(object),mode:'single',offset:drawing.frame});
+    return this._objectEdit('Change drawing',()=>{this.frame.objects.find(o=>o.unique_id===uid)._stykMovieclip=settings;});
   },
   setMovieclipPlayback(patch,{allFrames=false}={}){
     if(!isMovieclip(this.figure))throw new Error('Select a movieclip.');

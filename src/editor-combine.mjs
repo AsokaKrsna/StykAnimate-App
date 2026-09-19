@@ -1,4 +1,5 @@
 import {remapRigReferences,hasRigConstraints} from './rig-constraints.mjs';
+import {hasSpatialRig} from './rig-spatial.mjs';
 import {remapSurface} from './pivot/surfaces.mjs';
 import {buildGeometry, mixColor} from './pivot/geometry.mjs';
 import {validateScene} from './pivot/model.mjs';
@@ -30,6 +31,8 @@ export const editorCombineMethods = {
 
   /** Collapse a connected subtree into one native figure in the active keyframe. */
   combineJoinedFigure(uid = this.selectedUid, {name, authored = false} = {}) {
+    if(joinedGroup(this,uid).slots.some(slot=>hasSpatialRig(this.report.figure_types.find(f=>f.figure_type_id===this.frame.objects[slot].figure_type_id))))
+      throw new Error('Keep spatial rigs joined to preserve their skin bindings and independent rotation spaces.');
     if (!authored && this.dragging) this.commitDrag();
     if (!authored && this.animationChannels.length) {
       const figureIndex = this.report.figure_types.length, beforeSelection = this._selectionState();

@@ -11,6 +11,16 @@ const object = (uid, slot, root, end, options = {}) => ({
 const geometry = objects => ({ objects: new Map(objects.map(g => [g.slot, g])), orderedObjects: objects,
   get drawables() { throw new Error('Handle preparation must not flatten rendering geometry.'); } });
 
+test('Rotate selects spatial pivots while Pose retains native endpoints and IK dragging',()=>{
+  const g=object(1,0,{x:0,y:0},{x:20,y:40});g.segments[0].start={x:10,y:20};g.segments[0].spatialFrame={q:[0,0,0,1]};
+  const scene=geometry([g]),descriptorCache={};
+  const handles=mode=>getPivotHandles(scene,{selectedUid:1,spatialMode:mode,descriptorCache});
+  assert.deepEqual(handles('pose')[1].point,g.segments[0].end);
+  assert.deepEqual(handles('rotate')[1].point,g.segments[0].start);assert.equal(handles('rotate')[1].action,'select');
+  assert.equal(handles('pose')[1].action,'pose');
+  assert.deepEqual(getPivotHandles(scene,{selectedUid:1,spatialMode:'rotate',builder:true})[1].point,g.segments[0].end);
+});
+
 test('hidden static endpoints have retained selection-only targets without changing painted handles', () => {
   const parent = object(1, 0, {x: 0, y: 0}, {x: 100, y: 0}, {static: true});
   const scene = geometry([parent]), descriptorCache = {};

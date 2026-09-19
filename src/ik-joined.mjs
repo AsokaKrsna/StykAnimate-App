@@ -4,6 +4,7 @@
 import {ikLayout, ikChain, solveObjectIK, hasPinnedIK, ikFollowers, ikAttachments, ikConstruction} from './ik.mjs';
 import {resolveInstanceFigure} from './animation-style.mjs';
 import {evaluateIKPose} from './ik-evaluation.mjs';
+import {hasRigConstraints,remapRigReferences} from './rig-constraints.mjs';
 
 export function ikComponents(frame) {
   const neighbors = frame.objects.map(() => []);
@@ -22,6 +23,8 @@ export function ikComponents(frame) {
 
 export function joinedIKGraph(report, frame, slots) {
   const types = new Map(report.figure_types.map(f => [f.figure_type_id, f])), entries = [], maps = new Map(), roots = new Map();
+  // Reject unsupported groups before allocating a dense native skeleton.
+  if(slots.some(slot=>{const o=frame.objects[slot],f=types.get(o?.figure_type_id);return !f||f._styk?.movieclip;}))return null;
   const figure = {segments: []}, object = {scale: 1, angles: [], len_flag: 1, lengths: [], bend_flag: 1, bends: [], _stykIK: {}};
   for (const slot of slots) {
     const source = frame.objects[slot], fig = resolveInstanceFigure(types.get(source.figure_type_id), source);
@@ -48,10 +51,16 @@ export function joinedIKGraph(report, frame, slots) {
   for (const slot of slots) {
     const source = frame.objects[slot], fig = resolveInstanceFigure(types.get(source.figure_type_id), source), ids = maps.get(slot);
     rootId(slot);
-    fig.segments.forEach(s => {figure.segments[ids.get(s.segment_id) - 1].parent_id = s.parent_id ? ids.get(s.parent_id) ?? rootId(slot) : rootId(slot);});
+    const group={figure:fig,object:source,ids,rootId:rootId(slot)},remap=new Map([[0,group.rootId],...ids]);
+    fig.segments.forEach((s,index) => {
+      const i=ids.get(s.segment_id)-1,segment=figure.segments[i];segment.parent_id=s.parent_id?ids.get(s.parent_id)??group.rootId:group.rootId;
+      if(s._stykRig){segment._stykRig=s._stykRig;remapRigReferences(segment,remap);}
+      (figure._rigSources??=[])[i]={group,index};
+    });
     figure.polyfills ??= [];
     for (const polygon of fig.polyfills ?? []) figure.polyfills.push({segment_ids: polygon.segment_ids.map(id => id ? ids.get(id) : rootId(slot))});
   }
+  if(!hasRigConstraints(figure))delete figure._rigSources;
   const layout = ikLayout(figure);
   const owners = new Map(), byUid = new Map(slots.map(slot => [frame.objects[slot].unique_id, slot]));
   function mapController(slot, handle, c) {

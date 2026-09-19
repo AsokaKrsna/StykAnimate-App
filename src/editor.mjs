@@ -1,3 +1,4 @@
+import {editorSpatialMethods,spatialBone,spatialSkin} from './editor-spatial.mjs';
 import {resolveInstanceFigure} from './animation-style.mjs';
 import {remapSurface,surfaceHandles,protectSurfaceReferences} from './pivot/surfaces.mjs';
 import {UserActionError} from './user-action-error.mjs';
@@ -1072,13 +1073,14 @@ export class Editor extends EventTarget {
     return state;
   }
   poseJoint(x, y, {stretch = false, isolate = false, snap = true, snapTolerance = 6} = {}) {
-    if(this.figure?.segments[this.selectedJoint]?._stykRig?.weighted)return false;
+    if(spatialSkin(this.figure?.segments[this.selectedJoint])||this.figure?.segments[this.selectedJoint]?._stykRig?.weighted)return false;
     finite(x, 'Joint X'); finite(y, 'Joint Y');
     finite(snapTolerance, 'Snap tolerance'); if (snapTolerance < 0) throw new Error('Snap tolerance cannot be negative.');
     if (!this.object || this.selectedJoint < 0) return false;
     if (this.figure?.segments[this.selectedJoint]?._stykRig?.connector) return this.slideConnector(x,y);
     if (this.object._stykIK?.[this.figure?.segments[this.selectedJoint]?.segment_id]?.enabled) return this.poseIKTarget(x, y);
     const seg = this.figure?.segments[this.selectedJoint]; if (!seg || isStatic(seg)) return false;
+    if(spatialBone(seg))return this.poseSpatialJoint(x,y,{stretch});
     const shape = this.geometry.objects.get(this.selectedSlot)?.segments[this.selectedJoint]; if (!shape) return false;
     if(seg._stykRig?.angleLock){
       if(!stretch||Math.abs(this.object.scale)<1e-8)return false;
@@ -1654,7 +1656,7 @@ Object.assign(Editor.prototype, editorColorMethods);
 Object.assign(Editor.prototype, editorBuilderMethods);
 Object.assign(Editor.prototype, editorCombineMethods);
 Object.assign(Editor.prototype, editorRigMethods);
-Object.assign(Editor.prototype, editorRigConstraintMethods);
+Object.assign(Editor.prototype, editorRigConstraintMethods, editorSpatialMethods);
 Object.assign(Editor.prototype, editorSelectionMethods);
 Object.assign(Editor.prototype, editorLayerMethods);
 Object.assign(Editor.prototype, editorLayerAsyncMethods);

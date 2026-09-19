@@ -144,6 +144,7 @@ export const editorBuilderTopologyMethods = {
     const figure = this.figure, index = this.selectedJoint, segment = figure?.segments[index]; if (!segment) return false;
     const tree = topology(figure.segments), indices = [index];
     if (branch) for (let i = 0; i < indices.length; i++) for (const child of tree.children.get(figure.segments[indices[i]].segment_id) ?? []) indices.push(child);
+    if(indices.some(i=>figure.segments[i]._stykRig?.spatial))throw new Error('Flip the complete spatial figure in Animate to preserve its skin bindings.');
     const reflect = angle => axis === 'horizontal' ? (angle < 0 ? -Math.PI - angle : Math.PI - angle) : -angle;
     return this._topologyEdit(`Flip ${branch ? 'branch' : 'segment'} ${axis}`, next => {
       const frames = [];
@@ -176,6 +177,7 @@ export const editorBuilderTopologyMethods = {
     const figure = this.figure, index = figure?.segments.findIndex(segment => segment.segment_id === segmentId) ?? -1;
     if (index < 0) return false;
     const segment = figure.segments[index], nextParent = parentId === undefined ? segment.parent_id : parentId;
+    if(segment._stykRig?.spatial&&nextParent!==segment.parent_id)throw new Error('A spatial joint must keep its bound parent. Pose it in Animate or update its spatial binding first.');
     if (nextParent !== 0) {
       if (!figure.segments.some(candidate => candidate.segment_id === nextParent)) throw new Error('Choose a valid parent joint.');
       for (let ancestor = nextParent; ancestor; ancestor = figure.segments.find(candidate => candidate.segment_id === ancestor)?.parent_id ?? 0)

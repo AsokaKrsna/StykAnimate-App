@@ -1,3 +1,4 @@
+import {installSpatialControls,drawSpatialGizmo,spatialGizmoDrag,updateSpatialGizmo,spatialControlMode} from './spatial-controls.mjs';
 import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
 import {builderStrokeAppearance, setBuilderStroke, copyBuilderAppearance, pasteBuilderAppearance} from './builder-appearance.mjs';
@@ -1186,6 +1187,7 @@ function canvasHandles(geometry, {selectStatic = false} = {}) {
     state.handleEditHeld,
     usesBuilderBranch(),
     editor.selectedJoint,
+    spatialControlMode(editor),
     settings.showUnselectedHandles,
     settings.handleSize,
     settings.autoSizeHandles,
@@ -1206,6 +1208,7 @@ function canvasHandles(geometry, {selectStatic = false} = {}) {
     if (layerLocked(editor.report, object.unique_id) || (bound && !bound.has(object.unique_id)))
       locked.add(object.unique_id);
   const handles = getPivotHandles(geometry, {
+    spatialMode: builderMode?.active || !['select','pose'].includes(state.tool) ? 'pose' : spatialControlMode(editor),
     descriptorCache: selectStatic ? selectionHandleDescriptors : handleDescriptors,
     selectStatic,
     joinTargetUids: state.figureJoin?.targets,
@@ -1423,6 +1426,7 @@ function overlayRender(geometry) {
   construction?.draw(ctx);
   if (state.handles) drawConnectorGuides(ctx,geometry,editor,screenPoint);
   if (state.handles && builderMode?.active) drawRigGuides(ctx,geometry,editor,screenPoint);
+  if(state.handles&&!builderMode?.active)drawSpatialGizmo(ctx,editor,screenPoint);
   if(builderMode?.active) {
     const g=editor.geometry.objects.get(editor.selectedSlot);
     if(editor.selectedPolygonIndex>=0)drawFillHighlight(ctx,g?.polys.find(p=>p.index===editor.selectedPolygonIndex)?.points,screenPoint);
@@ -1608,7 +1612,7 @@ function loop(now) {
         editorBackgroundColor: builderBackgroundColor(state.settings, state),
         selectedUid: null,
         showHandles: false,
-        liveEditing: Boolean(state.drag || keyboardHandleGesture),
+        liveEditing: Boolean(editor.dragging || state.drag || keyboardHandleGesture),
         playing: state.playing,
         artworkRevision: editor.definitionRevision,
         canvasHandles: !pendingColorSample && (state.handles || state.tool === 'attach') && gpuHandlesEnabled() ? canvasHandles(geometry) : undefined,
@@ -2168,6 +2172,10 @@ overlay.addEventListener(
       return;
     }
     const p = worldPoint(e);
+    if(e.button===0&&state.handles&&!builderMode?.active&&['select','pose'].includes(state.tool)){
+      const spatial=spatialGizmoDrag(editor,screenPoint(p),screenPoint);
+      if(spatial){if(!editor.beginDrag('Rotate articulated joint'))return;state.drag={kind:'spatial',spatial};viewport.classList.add('dragging');return;}
+    }
     // Posing tools turn a right drag into a bend; everywhere else a right
     // press stays a plain click that opens the context menu on release.
     if (e.button === 2 && !e.shiftKey && (builderMode?.active || !["select", "pose", "rig"].includes(state.tool))) {
@@ -2565,6 +2573,7 @@ overlay.addEventListener(
       requestRender();
       return;
     }
+    if(drag.kind==='spatial'){updateSpatialGizmo(editor,drag.spatial,screenPoint(p),e.shiftKey);requestRender();return;}
     if (drag.kind === "camera") {
       if (
         (p.x === drag.lastPoint?.x && p.y === drag.lastPoint?.y) ||
@@ -2723,7 +2732,7 @@ function cancelDrag() {
   if (state.drag.kind === "camera") editor.cancelCameraDrag();
   if (state.drag.kind === "motion-path") editor.cancelMotionPathEdit();
   if (
-    ["move", "pose", "rig", "bend", "handle-edit", "figure-transform"].includes(
+    ["move", "pose", "spatial", "rig", "bend", "handle-edit", "figure-transform"].includes(
       state.drag.kind,
     )
   )
@@ -4127,6 +4136,7 @@ overlay.addEventListener(
     showCommandMenu(items, { left: e.clientX, bottom: e.clientY });
   }),
 );
+const spatialControls=installSpatialControls({editor,root:$("inspector"),refresh:()=>{queueUI();requestRender();},guard:guarded});
 const rigHost=()=>({editor,showDialog,closeDialog,resources,finish:()=>{pause();finishCurrentEdit();},builderActive:()=>Boolean(builderMode?.active),
   addToAnimate:document=>{
     pause();finishCurrentEdit();
@@ -5152,6 +5162,7 @@ function finishKeyboardHandle() {
   queueUI();
 }
 function finishCurrentEdit() {
+  spatialControls?.finish(true);
   drawingController?.finish();
   pause();
   finishKeyboardHandle();

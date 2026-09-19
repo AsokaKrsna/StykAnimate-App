@@ -34,6 +34,21 @@ test('subpixel geometry differences are not quantized away',()=>{
   assert.notEqual(first,cache.get(moved,moved.drawables));
 });
 
+test('surface depth and facing participate in exact artwork identity',()=>{
+  for(const [left,right] of [
+    [{depthValues:[1,2,3]},{depthValues:[1,2,3+1e-9]}],
+    [{depthValues:[]},{}], [{culled:false},{culled:true}], [{culled:false},{}],
+    [{depthValues:[null]},{depthValues:[0]}],
+  ]){
+    const {g,moved}=pair(),cache=new ArtworkRegistry();
+    Object.assign(g.drawables[0],left);Object.assign(moved.drawables[0],right);
+    assert.notEqual(cache.get(g,g.drawables),cache.get(moved,moved.drawables));
+  }
+  const {g,moved}=pair(),cache=new ArtworkRegistry();
+  Object.assign(g.drawables[0],{depthValues:[1,2,3],culled:false});Object.assign(moved.drawables[0],{depthValues:[1,2,3],culled:false});
+  assert.equal(cache.get(g,g.drawables),cache.get(moved,moved.drawables));
+});
+
 test('runtime cache payloads do not duplicate the exact evaluated artwork signature',()=>{
   const {g,moved}=pair(),cache=new ArtworkRegistry();
   g.obj.runtime_segments=[{length:1}];moved.obj.runtime_segments=[{length:999,cacheOnly:true}];

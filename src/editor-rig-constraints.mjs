@@ -89,8 +89,8 @@ export const editorRigConstraintMethods = {
   setRigBehavior(patch) {
     const figure=this.figure,index=this.selectedJoint,seg=figure?.segments[index];if(!seg)return false;
     const r={...seg._stykRig}, changes=new Map();
-    for(const key of Object.keys(patch))if(!['connector','stretch','follow','orientation','response','angleLock','weighted'].includes(key))throw new Error('Unknown rig behavior.');
-    for(const key of ['response','angleLock','weighted'])if(key in patch){if(patch[key])r[key]={...r[key],...patch[key]};else delete r[key];}
+    for(const key of Object.keys(patch))if(!['connector','stretch','follow','orientation','response','angleLock','weighted','spatial'].includes(key))throw new Error('Unknown rig behavior.');
+    for(const key of ['response','angleLock','weighted','spatial'])if(key in patch){if(patch[key])r[key]={...r[key],...patch[key]};else delete r[key];}
     if('orientation' in patch)r.orientation=patch.orientation;
     if('connector' in patch) {
       if(!r.connector)throw new Error('Create a connector with Connect joints.');

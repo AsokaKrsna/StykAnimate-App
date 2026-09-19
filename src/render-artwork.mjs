@@ -3,7 +3,7 @@
  * quantization or fast-hash-only equality can merge distinct poses or styles. */
 const ignoredObjectKeys=new Set(['unique_id','object_slot','root_x','root_y','join','record_offset','record_end','runtime_segments']);
 const numericFields=['index','version','angle','bend','length','z','thickness','alpha','opacity'];
-const knownFields=new Set(['obj','fig','slot','start','end','points','seg','poly','asset','type','rgb','static',...numericFields]);
+const knownFields=new Set(['obj','fig','slot','start','end','points','seg','poly','asset','type','rgb','static','depthValues','culled',...numericFields]);
 const types=['line','circle','image','text','poly'];
 const hash=values=>{let n=2166136261;for(let i=0;i<values.length;i++)n=Math.imul(n^values[i],16777619);return n>>>0;};
 const textHash=value=>{let n=2166136261;for(let i=0;i<value.length;i++)n=Math.imul(n^value.charCodeAt(i),16777619);return n>>>0;};
@@ -101,7 +101,7 @@ export class ArtworkRegistry {
     // segments. Write it once into its final buffer, avoiding a large growing
     // JS array plus a second copy on every dense-scene frame change.
     let count=0;
-    for(const item of items)count+=6+numericFields.length+(item.rgb?.length??0)+
+    for(const item of items)count+=8+numericFields.length+(item.rgb?.length??0)+(item.depthValues?.length??0)+
       2*(Number(Boolean(item.start))+Number(Boolean(item.end))+(item.points?.length??0));
     const data=new Float64Array(count),extra=[],payloads=[],childFigures=new Map(),childDefinitions=[],effectOwners=new Set();let cursor=0;
     const point=p=>{data[cursor++]=p.x-g.root.x;data[cursor++]=p.y-g.root.y;};
@@ -117,6 +117,10 @@ export class ArtworkRegistry {
         if(value!==undefined&&value!==null&&(typeof value!=='number'||!Number.isFinite(value)))extra.push([i,field,typeof value,String(value)]);
       }
       const rgb=item.rgb;data[cursor++]=rgb?.length??-1;if(rgb)for(const n of rgb)data[cursor++]=n;
+      const depth=item.depthValues;data[cursor++]=depth?.length??-1;if(depth)for(const n of depth)data[cursor++]=n;
+      data[cursor++]=item.culled===undefined?0:item.culled===false?1:item.culled===true?2:3;
+      if(item.culled!==undefined&&typeof item.culled!=='boolean')extra.push([i,'culled',item.culled]);
+      if(depth!==undefined&&(!Array.isArray(depth)||depth.some(n=>typeof n!=='number'||!Number.isFinite(n))))extra.push([i,'depthValues',depth]);
       if(start)point(start);if(end)point(end);if(points)for(const p of points)point(p);
       // Most records reference the definition directly. Styled/generated
       // records and future drawing attributes remain part of exact identity.

@@ -2,6 +2,7 @@
  * from the dependency snapshot; every numeric solver input is compared by value,
  * so in-place edits, undo and arbitrary timeline seeks cannot reuse stale poses. */
 import {solveObjectIK, ikConstruction} from './ik.mjs';
+import {hasRigConstraints,rigConstraintPlan} from './rig-constraints.mjs';
 
 const documents = new WeakMap();
 const MAX_ENTRIES = 1024, MAX_BONES = 250000;
@@ -29,7 +30,8 @@ export function evaluateIKPose(report, key, figure, object, root, layout) {
   if (!cache) documents.set(report, cache = {entries: new Map(), bones: 0});
   const inputs = poseInputs(figure, object, root), controllers = JSON.stringify(object._stykIK);
   const previous = cache.entries.get(key), bones = figure.segments.length;
-  if (previous && previous.controllers === controllers && previous.inputs.length === inputs.length &&
+  const rigPlan=hasRigConstraints(figure)?rigConstraintPlan(figure):null;
+  if (previous && previous.rigPlan===rigPlan && previous.controllers === controllers && previous.inputs.length === inputs.length &&
       inputs.every((value, i) => Object.is(value, previous.inputs[i]))) {
     cache.entries.delete(key); cache.entries.set(key, previous);
     return previous.solution;
@@ -37,7 +39,7 @@ export function evaluateIKPose(report, key, figure, object, root, layout) {
   const solution = solveObjectIK(figure, object, root, layout);
   if (previous) {cache.entries.delete(key); cache.bones -= previous.bones;}
   if (bones <= MAX_BONES) {
-    cache.entries.set(key, {inputs, controllers, solution, bones}); cache.bones += bones;
+    cache.entries.set(key, {inputs, controllers, solution, bones, rigPlan}); cache.bones += bones;
     while (cache.entries.size > MAX_ENTRIES || cache.bones > MAX_BONES) {
       const oldest = cache.entries.keys().next().value;
       cache.bones -= cache.entries.get(oldest).bones; cache.entries.delete(oldest);
