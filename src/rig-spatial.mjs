@@ -64,3 +64,29 @@ export function evaluateSpatial(s,{segment,input,get,root,scale,figureAngle,rest
   const depthOffset={x:point[2]*scale*cs,y:point[2]*scale*sn};handle.depthOffset=depthOffset;
   return{start,handle,angle,authoredAngle:input.angle,restAngle:segment.angle_rad??0,length:Math.hypot(dx,dy),bend:0,width:1,rotation:angle-input.angle,ratio:1,impulseAngle:angle,depthOffset,spatial,space:{rotation:angle-input.angle,locked:Boolean(s.bindings),spatial:true}};
 }
+
+const wrap=a=>Math.atan2(Math.sin(a),Math.cos(a));
+const normalize=v=>{const n=Math.hypot(...v);return v.map(x=>x/n);};
+const dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0);
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const axes=[[1,0,0],[0,1,0],[0,0,1]];
+/** Choose the equivalent native Euler channels nearest the previous pose.
+ * The manipulator itself rotates quaternions, including at Euler singularities. */
+export function quaternionPose(q,previous){
+ const [x,y,z,w]=normalize(q),sy=Math.max(-1,Math.min(1,2*(w*y-z*x))),turn=Math.asin(sy);
+ let pitch,bend;
+ if(Math.abs(sy)>1-1e-10){
+  pitch=previous.pitch;
+  const a=quatMultiply([x,y,z,w],[-Math.sin(pitch/2),0,0,Math.cos(pitch/2)]);
+  bend=2*Math.atan2(a[2],a[3]);
+ }else{
+  pitch=Math.atan2(2*(w*x+y*z),1-2*(x*x+y*y));
+  bend=Math.atan2(2*(w*z+x*y),1-2*(y*y+z*z));
+ }
+ const candidates=[{pitch,turn,bend},{pitch:pitch+Math.PI,turn:Math.PI-turn,bend:bend+Math.PI}].map(p=>Object.fromEntries(Object.keys(p).map(k=>[k,previous[k]+wrap(p[k]-previous[k])])));
+ return candidates.sort((a,b)=>Object.keys(a).reduce((s,k)=>s+(a[k]-previous[k])**2-(b[k]-previous[k])**2,0))[0];
+}
+export function betweenVectors(a,b){
+ const d=dot(a,b);if(d<-.999999){const axis=normalize(cross(a,Math.abs(a[0])<.8?axes[0]:axes[1]));return [...axis,0];}
+ return normalize([...cross(a,b),1+d]);
+}

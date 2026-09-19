@@ -47,6 +47,24 @@ try{
  await page.mouse.move(ik.x,ik.y);await page.mouse.down();await page.mouse.move(ik.x+12,ik.y-15,{steps:12});await page.mouse.up();
  const end=await page.evaluate(()=>{const e=styk.editor;return e.geometry.objects.get(0).segments[e.selectedJoint].end;});
  assert.ok(Math.hypot(end.x-ik.world.x-12/ik.scale,end.y-ik.world.y+15/ik.scale)<.5,'Pointer drag reaches the IK target');
+ const plant=page.getByRole('button',{name:'Plant both feet',exact:true});
+ if(await plant.count()){
+  const beforePlant=await page.evaluate(()=>({doc:styk.editor.serialize(),undo:styk.editor._undo.length}));
+  await plant.click();assert.equal(await page.evaluate(()=>styk.editor._undo.length),beforePlant.undo+1);
+  await page.getByRole('button',{name:'Release feet',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Left foot',exact:true}).click();
+  const swivel=page.getByRole('slider',{name:'Bend direction',exact:true});await swivel.scrollIntoViewIfNeeded();const rect=await swivel.boundingBox();
+  const plantedBefore=await page.evaluate(()=>{const e=styk.editor,g=e.geometry.objects.get(0);return{end:g.segments[e.selectedJoint].end,undo:e._undo.length,angles:e.object.angles.slice()};});
+  await page.mouse.move(rect.x+rect.width*.5,rect.y+rect.height*.5);await page.mouse.down();await page.mouse.move(rect.x+rect.width*.7,rect.y+rect.height*.5,{steps:8});await page.mouse.up();
+  const plantedAfter=await page.evaluate(()=>{const e=styk.editor;return{end:e.geometry.objects.get(0).segments[e.selectedJoint].end,undo:e._undo.length,swivel:e.getIKSettings().spatialTarget.swivel};});
+  assert.ok(plantedAfter.swivel>.3);assert.equal(plantedAfter.undo,plantedBefore.undo+1);assert.ok(Math.hypot(plantedAfter.end.x-plantedBefore.end.x,plantedAfter.end.y-plantedBefore.end.y)<.01);
+  await page.evaluate(()=>styk.editor.undo());assert.deepEqual(await page.evaluate(()=>styk.editor.object.angles),plantedBefore.angles);
+  const pole=await page.evaluate(async()=>{const{spatialPoleGizmo}=await import('/src/spatial-controls.mjs'),s=styk,p=spatialPoleGizmo(s.editor,p=>({x:p.x*s.state.view.scale+s.state.view.x,y:p.y*s.state.view.scale+s.state.view.y})),r=document.getElementById('viewport').getBoundingClientRect();return{x:p.screen.x+r.x,y:p.screen.y+r.y,doc:s.editor.serialize()};});
+  await page.mouse.move(pole.x,pole.y);await page.mouse.down();await page.mouse.move(pole.x-45,pole.y-16,{steps:8});assert.equal(await page.evaluate(()=>styk.state.drag?.spatial?.kind),'pole');
+  assert.ok(await page.evaluate(()=>styk.editor._drag?.changed),'Pole drag changes the live pose');await page.keyboard.press('Escape');await page.mouse.up();assert.deepEqual(await page.evaluate(()=>styk.editor.serialize()),pole.doc,'Escape restores the IK pole gesture');
+  await page.mouse.move(pole.x,pole.y);await page.mouse.down();await page.mouse.move(pole.x-35,pole.y-10,{steps:8});await page.mouse.up();await page.evaluate(()=>styk.editor.undo());assert.deepEqual(await page.evaluate(()=>styk.editor.serialize()),pole.doc,'Pole dragging is one undo step');
+  await page.getByRole('button',{name:'Release feet',exact:true}).click();await plant.waitFor();
+ }
  const form=page.locator('[data-drawing-group]');if(await form.count()){
   const old=await page.evaluate(()=>styk.editor.selectionFrame.objects[1]._stykMovieclip.offset);await form.selectOption('1');await page.waitForTimeout(200);
   assert.notEqual(await page.evaluate(()=>styk.editor.selectionFrame.objects[1]._stykMovieclip.offset),old);assert.equal(await page.evaluate(()=>styk.editor.selectedUid),1);

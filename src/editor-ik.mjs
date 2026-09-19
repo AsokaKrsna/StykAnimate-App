@@ -1,3 +1,5 @@
+import {quatMultiply,spatialQuaternion} from './rig-spatial.mjs';
+import {captureSpatialIK} from './ik-spatial.mjs';
 import {ikLayout, ikChain, ikFollowers, ikFollowerIndices, ikBendReference, solveObjectIK, MAX_IK_CHAIN} from './ik.mjs';
 import {rigIKAllowed} from './rig-constraints.mjs';
 import {ikComponents, joinedIKGraph} from './ik-joined.mjs';
@@ -10,17 +12,19 @@ function context(editor) {
   return slots?.length > 1 ? joinedIKGraph(editor.report, frame, slots) : null;
 }
 function captureFor(editor, geometry, handle, controller, graph) {
-  if (!graph) return capture(editor.figure, geometry, handle, controller);
+  if (!graph) return capture(editor.figure, editor.object, geometry, handle, controller);
   const chain = graph.chain(editor.selectedSlot, handle, controller.chainLength), scene = editor.geometry;
   const shapes = chain.map(i => {const e = graph.entries[i]; return scene.objects.get(e.slot).segments[e.index];});
-  const rotation = controller.target?.rotation ?? 0, followers = {}, joinedFollowers = {};
+  const rotation = controller.target?.rotation ?? 0, followers = {}, joinedFollowers = {}, spatialFollowers={},joinedSpatialFollowers={};
   const id = graph.maps.get(editor.selectedSlot).get(handle);
   for (const i of ikFollowerIndices(graph.figure, id, graph.layout)) {
     const entry = graph.entries[i], angle = scene.objects.get(entry.slot).segments[entry.index].angle - rotation;
     if (entry.slot === editor.selectedSlot) followers[entry.handle] = angle;
     else (joinedFollowers[entry.uid] ??= {})[entry.handle] = angle;
+    const g=scene.objects.get(entry.slot),q=captureSpatialIK(g.fig,g.obj,g,[],[entry.index],rotation).spatialFollowers?.[entry.handle];
+    if(q){if(entry.slot===editor.selectedSlot)spatialFollowers[entry.handle]=q;else(joinedSpatialFollowers[entry.uid]??={})[entry.handle]=q;}
   }
-  return {target: {...geometry.joints.get(handle), rotation}, followers, joinedFollowers,
+  return {target: {...geometry.joints.get(handle), rotation}, followers, joinedFollowers,...(Object.keys(spatialFollowers).length?{spatialFollowers}:{}),...(Object.keys(joinedSpatialFollowers).length?{joinedSpatialFollowers}:{}),
     bendDirection: controller.bendDirection,
     bendReference: ikBendReference([shapes[0].start, ...shapes.map(s => s.end)], shapes.map(s => Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y)), controller.bendReference)};
 }
@@ -63,7 +67,7 @@ function controllerAt(editor) {
   const handle = editor.figure?.segments[editor.selectedJoint]?.segment_id;
   return {handle, controller: editor.object?._stykIK?.[handle]};
 }
-function capture(figure, geometry, handle, controller) {
+function capture(figure, object, geometry, handle, controller) {
   const index = figure.segments.findIndex(s => s.segment_id === handle), point = geometry.joints.get(handle);
   const rotation = controller?.target?.rotation ?? 0, followers = {};
   for (const i of ikFollowerIndices(figure, handle)) {
@@ -83,7 +87,7 @@ function capture(figure, geometry, handle, controller) {
   if (index < 0 || !point) throw new Error('Select a valid IK node.');
   const points = [geometry.segments[chain[0]].start, ...chain.map(i => geometry.segments[i].end)];
   const lengths = chain.map(i => {const s = geometry.segments[i]; return Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y);});
-  return {target: {...point, rotation}, followers, bendDirection: controller?.bendDirection ?? bendDirection,
+  return {...captureSpatialIK(figure,object,geometry,chain,ikFollowerIndices(figure,handle),rotation),target: {...point, rotation}, followers, bendDirection: controller?.bendDirection ?? bendDirection,
     bendReference: ikBendReference(points, lengths, controller?.bendReference)};
 }
 
@@ -117,8 +121,12 @@ export const editorIKMethods = {
         if (!selected.has(`${child.slot}:${child.index}`)) continue;
         next ??= {...current, followers: {...current.followers}, joinedFollowers: {...current.joinedFollowers}};
         const angle = followers[figure.segments[i].segment_id] + delta;
-        if (child.slot === owner.slot) next.followers[child.handle] = angle;
-        else next.joinedFollowers[child.uid] = {...next.joinedFollowers[child.uid], [child.handle]: angle};
+        if (child.slot === owner.slot) {next.followers[child.handle] = angle;if(current.spatialFollowers?.[child.handle])next.spatialFollowers={...current.spatialFollowers,[child.handle]:quatMultiply(spatialQuaternion(delta,0,0),current.spatialFollowers[child.handle])};}
+        else {
+          next.joinedFollowers[child.uid] = {...next.joinedFollowers[child.uid], [child.handle]: angle};
+          const q=current.joinedSpatialFollowers?.[child.uid]?.[child.handle];
+          if(q)next.joinedSpatialFollowers={...next.joinedSpatialFollowers,[child.uid]:{...next.joinedSpatialFollowers?.[child.uid],[child.handle]:quatMultiply(spatialQuaternion(delta,0,0),q)}};
+        }
       }
       if (next) object._stykIK = {...object._stykIK, [owner.handle]: next};
     }
@@ -172,7 +180,7 @@ export const editorIKMethods = {
     const {handle} = controllerAt(this);
     if (!handle) return false;
     const settings = this.getIKSettings(), next = {...settings, ...patch}; delete next.maxLength;
-    if (Object.keys(patch).some(k => !['enabled', 'pinned', 'allowStretch', 'chainLength', 'bendDirection'].includes(k))) throw new Error('Unknown IK setting.');
+    if (Object.keys(patch).some(k => !['enabled', 'pinned', 'allowStretch', 'chainLength', 'bendDirection', 'swivel'].includes(k))) throw new Error('Unknown IK setting.');
     if (!Number.isInteger(next.chainLength) || next.chainLength < 1 || next.chainLength > settings.maxLength)
       throw new Error(`Chain length must be between 1 and ${settings.maxLength}.`);
     if (typeof next.enabled !== 'boolean' || typeof next.pinned !== 'boolean' || typeof next.allowStretch !== 'boolean' || ![-1, 0, 1].includes(next.bendDirection))
@@ -186,6 +194,7 @@ export const editorIKMethods = {
           ikChain(graph?.figure ?? this.figure, id, other.chainLength, graph?.layout).some(i => chain.has(i)))
         throw new Error('IK chains cannot share bones. Shorten the chain or disable the overlapping controller.');
     }
+    if(patch.swivel!==undefined){if(!Number.isFinite(patch.swivel)||Math.abs(patch.swivel)>1e6||!settings.spatialTarget)throw new Error('Choose a finite spatial bend direction.');next.spatialTarget={...settings.spatialTarget,swivel:patch.swivel};delete next.swivel;}
     const scene = this.geometry, geometry = scene.objects.get(this.selectedSlot);
     const solved = geometry.ik?.get(handle);
     if (solved?.followers) Object.assign(next, {followers: solved.followers}, solved.joinedFollowers ? {joinedFollowers: solved.joinedFollowers} : {});
@@ -230,7 +239,7 @@ export const editorIKMethods = {
       // transforms carry the limb. Pinning makes the target persist in world space.
       if (!current.pinned && graph) Object.assign(next, poseGraph(this, graph, handle, current, geometry, target));
       else if (!current.pinned) {
-        const temporary = {...next, ...capture(this.figure, geometry, handle, current), target, pinned: true};
+        const temporary = {...next, ...capture(this.figure, object, geometry, handle, current), target, pinned: true};
         const baseline = this._drag.before.find(o => o.unique_id === object.unique_id);
         const source = {...object, len_flag: baseline.len_flag, lengths: baseline.lengths};
         const solution = solveObjectIK(this.figure, source, geometry.root, ikLayout(this.figure), {[handle]: temporary});
@@ -238,6 +247,8 @@ export const editorIKMethods = {
         object.len_flag = solution.lengths ? 1 : baseline.len_flag;
         object.lengths = (solution.lengths ?? baseline.lengths).slice();
         next.followers = temporary.followers;
+        if(temporary.spatialFollowers)next.spatialFollowers=temporary.spatialFollowers;
+        if(temporary.spatialTarget)next.spatialTarget=temporary.spatialTarget;
         next.bendReference = solution.results.get(handle)?.bendReference ?? temporary.bendReference;
       }
       object._stykIK = {...object._stykIK, [handle]: next}; delete object.runtime_segments;

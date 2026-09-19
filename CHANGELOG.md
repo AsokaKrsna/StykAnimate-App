@@ -8,7 +8,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Added
 
-- Pose spatial character rigs with hand and foot targets, on-canvas three-axis rotation rings, free rotation, and named drawing selectors for attached parts. Joint rotations use the existing timeline, IK, undo and native saving.
+- Pose spatial character rigs with hand and foot targets, on-canvas three-axis rotation rings, free rotation, and named drawing selectors for attached parts. Plant feet to preserve their position and orientation as the hips move, and drag IK poles to steer knees and elbows. Joint rotations use the existing timeline, IK, undo and native saving.
 - Blend multiple rig anchors with editable weighted joints, so connected surfaces can share articulation controls and projected axes.
 - Draw and animate on dedicated drawing layers backed by a sparse tiled raster engine: brush presets with pressure and textured pencil, erasing, fill, onion skin and pixel selection you can copy, cut and delete. Unchanged cels share tiles copy-on-write, strokes rasterize in workers, only visible tiles render with mip-level filtering, changed tiles publish incrementally, and older PNG drawings migrate on first edit. Pan while painting, create blank drawing frames with A, paint beyond the stage, and choose higher-resolution strokes using the shared timeline, undo, saving and export tools.
 

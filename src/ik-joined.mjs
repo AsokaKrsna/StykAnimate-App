@@ -66,7 +66,7 @@ export function joinedIKGraph(report, frame, slots) {
   function mapController(slot, handle, c) {
     const id = maps.get(slot).get(Number(handle));
     const mappedController = {...c};
-    for (const [local, joined] of [['followers','joinedFollowers'],['attachmentOffsets','joinedAttachmentOffsets']]) {
+    for (const [local, joined] of [['followers','joinedFollowers'],['attachmentOffsets','joinedAttachmentOffsets'],['spatialFollowers','joinedSpatialFollowers']]) {
       const offsets = {};
       for (const [child, angle] of Object.entries(c[local] ?? {})) {
         const mapped = maps.get(slot).get(Number(child)); if (mapped) offsets[mapped] = angle;
@@ -102,7 +102,7 @@ export function joinedIKGraph(report, frame, slots) {
       for (const [id, result] of solution.results) {
         const owner = owners.get(id); if (!owner) continue;
         const offsets = {};
-        for (const [local, joined] of [['followers','joinedFollowers'],['attachmentOffsets','joinedAttachmentOffsets']]) {
+        for (const [local, joined] of [['followers','joinedFollowers'],['attachmentOffsets','joinedAttachmentOffsets'],['spatialFollowers','joinedSpatialFollowers']]) {
           offsets[local] = {}; offsets[joined] = {};
           for (const [child, angle] of Object.entries(result[local] ?? {})) {
             const entry = entries[Number(child) - 1];

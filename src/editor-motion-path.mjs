@@ -1,3 +1,4 @@
+import {captureSpatialIK} from './ik-spatial.mjs';
 /** Motion-path edit sessions. A dragged trail point rewrites the pose at its own
  * display tick while the playhead stays put. The session poses a cloned
  * evaluated frame, samples through a virtual report for live feedback, and
@@ -133,14 +134,16 @@ function poseIKRemote(session, report, slot, point) {
     const chain = graph.chain(slot, target.handleId, controller.chainLength);
     if (!chain.length) return false;
     const shapes = chain.map(i => { const e = graph.entries[i]; return scene.objects.get(e.slot).segments[e.index]; });
-    const rotation = controller.target?.rotation ?? 0, followers = {}, joinedFollowers = {};
+    const rotation = controller.target?.rotation ?? 0, followers = {}, joinedFollowers = {}, spatialFollowers={},joinedSpatialFollowers={};
     const id = graph.maps.get(slot).get(target.handleId);
     for (const i of ikFollowerIndices(graph.figure, id, graph.layout)) {
       const entry = graph.entries[i], angle = scene.objects.get(entry.slot).segments[entry.index].angle - rotation;
       if (entry.slot === slot) followers[entry.handle] = angle;
       else (joinedFollowers[entry.uid] ??= {})[entry.handle] = angle;
+      const g=scene.objects.get(entry.slot),q=captureSpatialIK(g.fig,g.obj,g,[],[entry.index],rotation).spatialFollowers?.[entry.handle];
+      if(q){if(entry.slot===slot)spatialFollowers[entry.handle]=q;else(joinedSpatialFollowers[entry.uid]??={})[entry.handle]=q;}
     }
-    const captured = {target: {...geometry.joints.get(target.handleId), rotation}, followers, joinedFollowers,
+    const captured = {target: {...geometry.joints.get(target.handleId), rotation}, followers, joinedFollowers,spatialFollowers,joinedSpatialFollowers,
       bendDirection: controller.bendDirection,
       bendReference: ikBendReference([shapes[0].start, ...shapes.map(s => s.end)], shapes.map(s => Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y)), controller.bendReference)};
     const temporary = {...next, ...captured, target: next.target, pinned: true};
@@ -156,7 +159,7 @@ function poseIKRemote(session, report, slot, point) {
       entryObject.lengths = (result.lengths ?? baseline?.lengths ?? []).slice();
       delete entryObject.runtime_segments; session.dirtySlots.add(s);
     }
-    Object.assign(next, {followers: temporary.followers, joinedFollowers: temporary.joinedFollowers,
+    Object.assign(next, {followers: temporary.followers, joinedFollowers: temporary.joinedFollowers,spatialFollowers:temporary.spatialFollowers,joinedSpatialFollowers:temporary.joinedSpatialFollowers,
       bendDirection: temporary.bendDirection, bendReference: solved.results.get(id)?.bendReference ?? captured.bendReference});
   } else {
     const index = figure.segments.findIndex(s => s.segment_id === target.handleId);
@@ -178,7 +181,7 @@ function poseIKRemote(session, report, slot, point) {
     }
     const points = [geometry.segments[chain[0]].start, ...chain.map(i => geometry.segments[i].end)];
     const lengths = chain.map(i => { const s = geometry.segments[i]; return Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y); });
-    const captured = {target: {...geometry.joints.get(target.handleId), rotation}, followers,
+    const captured = {...captureSpatialIK(figure,object,geometry,chain,ikFollowerIndices(figure,target.handleId),rotation),target: {...geometry.joints.get(target.handleId), rotation}, followers,
       bendDirection: controller.bendDirection ?? bendDirection,
       bendReference: ikBendReference(points, lengths, controller.bendReference)};
     const temporary = {...next, ...captured, target: next.target, pinned: true};
@@ -190,6 +193,8 @@ function poseIKRemote(session, report, slot, point) {
     object.lengths = (solution.lengths ?? baseline.lengths).slice();
     delete object.runtime_segments; session.dirtySlots.add(slot);
     next.followers = temporary.followers;
+    if(temporary.spatialFollowers)next.spatialFollowers=temporary.spatialFollowers;
+    if(temporary.spatialTarget)next.spatialTarget=temporary.spatialTarget;
     next.bendReference = solution.results.get(target.handleId)?.bendReference ?? temporary.bendReference;
   }
   object._stykIK = {...object._stykIK, [target.handleId]: next};

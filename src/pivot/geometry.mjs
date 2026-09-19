@@ -550,13 +550,14 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
     }
     let plan = definitionPlans.get(fig);
     if (!plan) {plan = geometryDefinition(fig); definitionPlans.set(fig, plan);}
-    const ik = joinedIK.get(slot) ?? (hasPinnedIK(obj) ? evaluateIKPose(report, `local:${obj.unique_id}`, fig, obj, root, plan) : null);
+    const rigPlan=hasRigConstraints(fig)?yield* rigConstraintPlanSteps(fig):null;
+    const ik = joinedIK.get(slot) ?? (hasPinnedIK(obj) ? evaluateIKPose(report, `local:${obj.unique_id}`, fig, obj, root, plan,rigPlan) : null);
     const joints = new Map([[0, root]]),
       renders = [],
       {segments, ids} = plan;
     const scale = Number(obj.scale ?? 1),
       opacity = 1 - Number(obj.field28 ?? obj.transparency ?? 0) / 255;
-    const rig = hasRigConstraints(fig) ? createRigEvaluation(fig, obj, root, yield* rigConstraintPlanSteps(fig)) : null;
+    const rig = rigPlan ? createRigEvaluation(fig, obj, root, rigPlan) : null;
     function segmentAt(i, active) {
       if (renders[i]) return renders[i];
       if (active?.has(i)) {

@@ -1,9 +1,10 @@
+import {interpolateQuaternion,interpolatePole} from './ik-spatial.mjs';
 /** Target controllers for native, absolute-angle skeletons. No renderer/editor dependencies.
  * Constraints belong to a pose instance and address stable handle IDs, never array slots.
  * Two-link limbs use an analytic solve; longer chains use bounded FABRIK iterations.
  */
 import {hasRigConstraints,derivedRigJoint,authoredRigTarget} from './rig-constraints.mjs';
-import {spatialBone} from './rig-spatial.mjs';
+import {quatMultiply,spatialQuaternion,spatialBone,spatialPoint} from './rig-spatial.mjs';
 import {rigIKContext} from './ik-rig.mjs';
 export const MAX_IK_CHAIN = 256;
 const EPS = 1e-10, TAU = 2 * Math.PI;
@@ -20,7 +21,7 @@ export function remapIKFollowers(object, uidMap) {
   if (!object._stykIK) return;
   object._stykIK = Object.fromEntries(Object.entries(object._stykIK).map(([id, c]) => {
     const next = {...c};
-    for (const field of ['joinedFollowers','joinedAttachmentOffsets']) if (c[field]) next[field] = Object.fromEntries(Object.entries(c[field])
+    for (const field of ['joinedFollowers','joinedAttachmentOffsets','joinedSpatialFollowers']) if (c[field]) next[field] = Object.fromEntries(Object.entries(c[field])
       .filter(([uid]) => uidMap.has(Number(uid))).map(([uid, followers]) => [uidMap.get(Number(uid)), followers]));
     return [id,next];
   }));
@@ -55,6 +56,11 @@ export const ikConstruction = s => s.aux_code !== undefined ? Boolean(s.aux_code
  * and its foot. Polygon-connected sibling branches must use one space so a
  * filled foot cannot tear apart when its vertices use different tree branches. */
 export function ikFollowerIndices(figure, handle, layout = ikLayout(figure)) {
+  const direct=layout.children.get(Number(handle))??[];
+  // Spatial skin belongs to explicit bone bindings, not polygon-connected
+  // native branches. Avoid scanning every triangle for each controller.
+  if(spatialBone(figure.segments[layout.ids.get(Number(handle))])&&direct.every(i=>figure.segments[i]._stykRig?.spatial))
+    return direct.filter(i=>spatialBone(figure.segments[i])&&!ikConstruction(figure.segments[i]));
   const candidates = [], owners = new Map(), queue = (layout.children.get(Number(handle)) ?? []).map(i => [i, null]);
   for (let q = 0; q < queue.length; q++) {
     const [i, owner] = queue[q], s = figure.segments[i];
@@ -125,6 +131,10 @@ export function validateIK(object) {
         Object.entries(c[field]).some(([uid, children]) => !/^[1-9]\d*$/.test(uid) || !children || typeof children !== 'object' || Array.isArray(children) ||
           Object.entries(children).some(([id, a]) => !/^[1-9]\d*$/.test(id) || !Number.isFinite(a)))))
       throw new Error('Invalid joined IK orientation.');
+    const quaternion=q=>Array.isArray(q)&&q.length===4&&q.every(Number.isFinite)&&Math.abs(Math.hypot(...q)-1)<1e-5;
+    const quaternionTable=t=>t&&typeof t==='object'&&!Array.isArray(t)&&Object.entries(t).every(([id,q])=>/^[1-9]\d*$/.test(id)&&quaternion(q));
+    if(c.spatialFollowers!==undefined&&!quaternionTable(c.spatialFollowers)||c.joinedSpatialFollowers!==undefined&&(!c.joinedSpatialFollowers||typeof c.joinedSpatialFollowers!=='object'||Array.isArray(c.joinedSpatialFollowers)||Object.entries(c.joinedSpatialFollowers).some(([id,t])=>!/^[1-9]\d*$/.test(id)||!quaternionTable(t))))throw new Error('Invalid spatial IK orientation.');
+    if(c.spatialTarget!==undefined){const t=c.spatialTarget;if(!t||!Number.isFinite(t.depth)||!Number.isFinite(Math.fround(t.depth))||!Array.isArray(t.pole)||t.pole.length!==3||!t.pole.every(Number.isFinite)||Math.abs(Math.hypot(...t.pole)-1)>1e-5||!Number.isFinite(t.swivel))throw new Error('Invalid spatial IK target.');}
     if (c.bendReference !== undefined && (!c.bendReference || ![-1, 1].includes(c.bendReference.side) ||
         !['angle', 'axis', 'ratio'].every(k => Number.isFinite(c.bendReference[k])) || c.bendReference.ratio < 0 ||
         c.bendReference.shape !== undefined && (!Array.isArray(c.bendReference.shape) || c.bendReference.shape.length > MAX_IK_CHAIN || !c.bendReference.shape.every(Number.isFinite))))
@@ -249,7 +259,7 @@ function chord(figure, object, i, lengths) {
  * topology cannot leave stale global cache entries. Work is O(segments + chain * iterations).
  * Disjoint limbs may share a base. Overlapping chains have deterministic handle priority.
  */
-export function solveObjectIK(figure, object, root, layout = ikLayout(figure), controllers = object._stykIK) {
+export function solveObjectIK(figure, object, root, layout = ikLayout(figure), controllers = object._stykIK, {includePoints=true,rigPlan}={}) {
   const active = Object.entries(controllers ?? {}).filter(([id, c]) => c.enabled && c.pinned && layout.ids.has(Number(id)));
   if (!active.length) return null;
   const angles = object.angles.slice(), points = new Map([[0, root]]), results = new Map(), claimed = new Set();
@@ -258,7 +268,7 @@ export function solveObjectIK(figure, object, root, layout = ikLayout(figure), c
     const s = figure.segments[i], p = points.get(s.parent_id) ?? root, c = chord(figure, object, i, lengths), a = angles[i] + c.bend / 2;
     points.set(s.segment_id, {x: p.x + Math.cos(a) * c.signed, y: p.y + Math.sin(a) * c.signed});
   };
-  const rig=hasRigConstraints(figure)?rigIKContext(figure,object,root,active.map(([id])=>id),angles,()=>lengths):null;
+  const rig=hasRigConstraints(figure)?rigIKContext(figure,object,root,active.flatMap(([id,c])=>[id,...Object.keys(c.spatialFollowers??{})]),angles,()=>lengths,rigPlan):null;
   const refresh=()=>{const sample=rig.evaluate();for(const [id,p]of sample.points)points.set(id,p);return sample;};
   let rigSample=rig?refresh():null;
   if(!rig)for (const i of layout.order) forward(i);
@@ -275,7 +285,8 @@ export function solveObjectIK(figure, object, root, layout = ikLayout(figure), c
     const positions = [base, ...chain.map(i => points.get(figure.segments[i].segment_id))].map(p => ({...p}));
     const chords = chain.map(i => rig&&!spatialBone(figure.segments[i])?{bend:0,signed:Math.hypot(points.get(figure.segments[i].segment_id).x-(rigSample.states[i]?.start??root).x,points.get(figure.segments[i].segment_id).y-(rigSample.states[i]?.start??root).y)}:chord(figure, object, i, lengths));
     const reach = chords.reduce((sum, c) => sum + Math.abs(c.signed), 0), distance = Math.hypot(c.target.x - base.x, c.target.y - base.y);
-    const stretch = c.allowStretch && reach > EPS ? Math.max(1, distance / reach) : 1;
+    const spatialDistance=c.bendDirection===0&&!figure._rigSources&&c.spatialTarget&&rigSample?Math.hypot(distance,c.spatialTarget.depth-((rigSample.states[chain[0]]?.spatial?spatialPoint(rigSample.states[chain[0]].spatial,figure.segments[chain[0]]._stykRig.spatial.origin)[2]:0)*object.scale)):distance;
+    const stretch = c.allowStretch && reach > EPS ? Math.max(1, spatialDistance / reach) : 1;
     if (stretch > 1) {
       lengths ??= figure.segments.map((s, i) => object.len_flag ? object.lengths[i] : s.length);
       chain.forEach((i, j) => { lengths[i] *= stretch; chords[j].signed *= stretch; });
@@ -299,7 +310,7 @@ export function solveObjectIK(figure, object, root, layout = ikLayout(figure), c
         const side=(end.x-start.x)*(middle.y-start.y)-(end.y-start.y)*(middle.x-start.x);
         if(side*c.bendDirection<1e-7)rig.refine([chain[0]],positions[1]);
       }
-      const refined=rig.refine(chain,c.target);rigSample=refined.sample;result.error=refined.error;result.iterations+=refined.iterations;
+      const refined=rig.solveSpatial(chain,c.target,c.bendDirection===0?c.spatialTarget:null)??rig.refine(chain,c.target);rigSample=refined.sample;result.error=refined.error;result.iterations+=refined.iterations;
       chain.forEach((i,j)=>deltas.set(figure.segments[i].segment_id,wrap(angles[i]-originalAngles[j])));
       const posed=[rigSample.states[chain[0]]?.start??rigSample.points.get(figure.segments[chain[0]].parent_id)??root,...chain.map(i=>rigSample.points.get(figure.segments[i].segment_id))];
       result.bendReference=ikBendReference(posed,posed.slice(1).map((p,i)=>Math.hypot(p.x-posed[i].x,p.y-posed[i].y)),c.bendReference);
@@ -322,10 +333,20 @@ export function solveObjectIK(figure, object, root, layout = ikLayout(figure), c
       if(!rig)forward(i);
       for (const child of layout.children.get(s.segment_id) ?? []) if (!visited.has(child)) { visited.add(child); affected.push(child); }
     }
-    if(rig)rigSample=refresh();
-    results.set(Number(id), {...result, target: c.target, chain, stretch, followers, attachmentOffsets});
+    if(rig){
+      for(const [child,q] of Object.entries(c.spatialFollowers??{})){
+        const i=layout.ids.get(Number(child));if(i===undefined||!spatialBone(figure.segments[i]))continue;
+        const descendants=[],queue=[...(layout.children.get(Number(child))??[])];
+        for(let j=0;j<queue.length;j++){descendants.push(queue[j]);queue.push(...(layout.children.get(figure.segments[queue[j]].segment_id)??[]));}
+        rig.orientWorld(i,quatMultiply(spatialQuaternion(c.target.rotation,0,0),q),descendants);
+      }
+      rigSample=refresh();
+    }
+    results.set(Number(id), {...result, target: c.target, chain, stretch, followers, attachmentOffsets, ...(c.spatialFollowers?{spatialFollowers:c.spatialFollowers}: {})});
   }
-  if(rig){const final=rig.evaluate(true);return {angles,lengths,results,points:final.points};}
+  // Geometry evaluates the complete skin once from these solved angles. Its
+  // cache needs only the pose, while direct solver callers can request points.
+  if(rig)return {angles,lengths,results,...(includePoints?{points:rig.evaluate(true).points}:{})};
   return {angles, lengths, results, points};
 }
 
@@ -344,7 +365,10 @@ export function interpolateIK(a, b, t, sample) {
     let bendReference = c.bendReference;
     if (bendReference?.shape?.length && bendReference.shape.length === next.bendReference?.shape?.length)
       bendReference = {...bendReference, shape: bendReference.shape.map((a, i) => a + wrap(next.bendReference.shape[i] - a) * t)};
-    table[id] = {...c, target, followers, ...(joinedFollowers ? {joinedFollowers} : {}), ...(bendReference ? {bendReference} : {})};
+    const spatialFollowers=c.spatialFollowers?Object.fromEntries(Object.entries(c.spatialFollowers).map(([id,q])=>[id,next.spatialFollowers?.[id]?interpolateQuaternion(q,next.spatialFollowers[id],t):q])):undefined;
+    const joinedSpatialFollowers=c.joinedSpatialFollowers?Object.fromEntries(Object.entries(c.joinedSpatialFollowers).map(([uid,children])=>[uid,Object.fromEntries(Object.entries(children).map(([id,q])=>[id,next.joinedSpatialFollowers?.[uid]?.[id]?interpolateQuaternion(q,next.joinedSpatialFollowers[uid][id],t):q]))])):undefined;
+    const spatialTarget=c.spatialTarget&&next.spatialTarget?{depth:c.spatialTarget.depth+(next.spatialTarget.depth-c.spatialTarget.depth)*t,swivel:c.spatialTarget.swivel+wrap(next.spatialTarget.swivel-c.spatialTarget.swivel)*t,pole:interpolatePole(c.spatialTarget.pole,next.spatialTarget.pole,t)}:c.spatialTarget;
+    table[id] = {...c, target, followers, ...(spatialFollowers?{spatialFollowers}:{}),...(joinedSpatialFollowers?{joinedSpatialFollowers}:{}),...(spatialTarget?{spatialTarget}:{}), ...(joinedFollowers ? {joinedFollowers} : {}), ...(bendReference ? {bendReference} : {})};
   }
   return table;
 }

@@ -25,18 +25,17 @@ function poseInputs(figure, object, root) {
   return values;
 }
 
-export function evaluateIKPose(report, key, figure, object, root, layout) {
+export function evaluateIKPose(report, key, figure, object, root, layout, rigPlan=hasRigConstraints(figure)?rigConstraintPlan(figure):null) {
   let cache = documents.get(report);
   if (!cache) documents.set(report, cache = {entries: new Map(), bones: 0});
   const inputs = poseInputs(figure, object, root), controllers = JSON.stringify(object._stykIK);
   const previous = cache.entries.get(key), bones = figure.segments.length;
-  const rigPlan=hasRigConstraints(figure)?rigConstraintPlan(figure):null;
   if (previous && previous.rigPlan===rigPlan && previous.controllers === controllers && previous.inputs.length === inputs.length &&
       inputs.every((value, i) => Object.is(value, previous.inputs[i]))) {
     cache.entries.delete(key); cache.entries.set(key, previous);
     return previous.solution;
   }
-  const solution = solveObjectIK(figure, object, root, layout);
+  const solution = solveObjectIK(figure, object, root, layout, object._stykIK, {includePoints:false,rigPlan});
   if (previous) {cache.entries.delete(key); cache.bones -= previous.bones;}
   if (bones <= MAX_BONES) {
     cache.entries.set(key, {inputs, controllers, solution, bones, rigPlan}); cache.bones += bones;

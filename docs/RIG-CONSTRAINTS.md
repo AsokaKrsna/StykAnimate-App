@@ -83,13 +83,23 @@ In Animate, **Pose** places hands and feet through the existing IK settings.
 trackball and an outer view ring. Shift gives finer movement. Whole body and limb
 shortcuts select the relevant target or rotation control. **Exact angles** exposes
 the same native channels numerically. Each drag is one undo step; Escape cancels
-it. Pinned IK targets retain the established scene-space pin behavior.
+it. **Plant both feet** retains foot position, depth and orientation while the
+hips move; **Release feet** lets the whole character move. A planted spatial
+target exposes **Bend direction** to swivel its knee or elbow around the target
+axis. In Pose mode, select a limb target and drag the gold **IK pole** diamond
+to steer its knee or elbow. Pole gestures preserve target orientation, use one
+undo step and support Escape cancellation. Directly rotating a planted foot
+updates its stored orientation.
 
 Spatial IK evaluates only the driving dependency closure, excluding skin vertices
-from solver iterations. It supports compound depth rotations and the existing
-bend direction, chain length and stretch settings. Ordinary limbs continue to use
-the established planar solver. Joined figures preserve their original control
-reference spaces when a virtual chain is needed.
+from solver iterations. Two-bone spatial chains in one figure use an analytic
+3D solver with persistent target depth and a knee/elbow pole when bend direction
+is Automatic. Other chains and explicit planar bend directions retain the
+projected solver. Optional `spatialTarget` metadata stores depth, a world-space
+unit pole and a swivel angle; `spatialFollowers` and `joinedSpatialFollowers`
+store unit quaternions relative to target rotation. Native interpolation uses
+short-arc rotation interpolation. Ordinary limbs retain the planar solver.
+Joined figures preserve their original control reference spaces in virtual chains.
 
 Spatial bindings are currently authored in native definition data. Build Figure
 cannot reposition their rest joints, reparent bound bones, mirror an individual

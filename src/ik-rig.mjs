@@ -1,11 +1,13 @@
 /** Projection adapter for the existing IK solver. Only dependencies of the
  * driven bones participate in iterative evaluation; surface vertices are never
  * rebuilt during a solve. Authored angles remain the animation channels. */
-import {spatialBone} from './rig-spatial.mjs';
+import {spatialBone,spatialPoint,quatMultiply,quaternionPose,betweenVectors} from './rig-spatial.mjs';
+import {animationRotation} from './animation-origin.mjs';
+import {inverseQuaternion,spatialWorldVector,spatialWorldQuaternion,spatialKnee} from './ik-spatial.mjs';
 import {createRigEvaluation,rigConstraintPlan} from './rig-constraints.mjs';
 
-export function rigIKContext(figure,object,root,handles,angles,lengths) {
- const plan=rigConstraintPlan(figure),needed=new Set(),queue=handles.map(id=>plan.ids.get(Number(id))).filter(i=>i!==undefined);
+export function rigIKContext(figure,object,root,handles,angles,lengths,plan=rigConstraintPlan(figure)) {
+ const needed=new Set(),queue=handles.map(id=>plan.ids.get(Number(id))).filter(i=>i!==undefined);
  for(let q=0;q<queue.length;q++){
   const i=queue[q];if(needed.has(i))continue;needed.add(i);
   for(const dependency of plan.dependencies[i])queue.push(dependency);
@@ -74,5 +76,38 @@ export function rigIKContext(figure,object,root,handles,angles,lengths) {
   }
   return {sample,error,iterations:used};
  }
- return {evaluate,refine,dependencyCount:order.length};
+ function setOrientation(i,q,sample,descendants=[]){
+  const s=figure.segments[i],r=s._stykRig.spatial,source=figure._rigSources?.[i],f=source?.group.figure??figure,o=source?.group.object??object;
+  const parentId=source?source.group.figure.segments[source.index]._stykRig.spatial.parent:r.parent;
+  const parent=parentId?sample.states[plan.ids.get(source?source.group.ids.get(parentId):parentId)]?.spatial:null,frame=sample.states[i].spatial;
+  const angle=animationRotation(f,o),sign=o.image_text_flags?-1:1,turn=plan.ids.get(r.turn),pitch=plan.ids.get(r.pitch);
+  const local=quatMultiply(inverseQuaternion(parent?.q??[0,0,0,1]),q),previous={bend:frame.nativeBend-(parent?.nativeBend??0),turn:(angles[turn]-angle)*sign-figure.segments[turn].angle_rad,pitch:(angles[pitch]-angle)*sign-figure.segments[pitch].angle_rad};
+  const pose=quaternionPose(local,previous),delta=(pose.bend-previous.bend)*sign;
+  angles[i]+=delta;angles[turn]=angle+(pose.turn+figure.segments[turn].angle_rad)*sign;angles[pitch]=angle+(pose.pitch+figure.segments[pitch].angle_rad)*sign;
+  for(const child of descendants)angles[child]+=delta;
+ }
+ function orientWorld(i,q,descendants){
+  const source=figure._rigSources?.[i],f=source?.group.figure??figure,o=source?.group.object??object;
+  setOrientation(i,spatialWorldQuaternion(q,f,o,true),evaluate(),descendants);
+ }
+ function solveSpatial(chain,target,settings){
+  if(chain.length!==2||!settings||!chain.every(i=>spatialBone(figure.segments[i]))||Math.abs(object.scale)<1e-9)return null;
+  // Cross-figure chains retain the projection solver; each source can have a
+  // different scale/placement. The analytic solver owns a single spatial rig.
+  if(figure._rigSources)return null;
+  let sample=evaluate();const [a,b]=chain,sa=figure.segments[a]._stykRig.spatial,sb=figure.segments[b]._stykRig.spatial;
+  const base=spatialPoint(sample.states[a].spatial,sa.origin),middle=spatialPoint(sample.states[a].spatial,sa.tip),end=spatialPoint(sample.states[b].spatial,sb.tip);
+  const aim=spatialWorldVector([(target.x-root.x)/object.scale,(target.y-root.y)/object.scale,settings.depth/object.scale],figure,object,true);
+  const length=(p,q)=>Math.hypot(...p.map((v,i)=>v-q[i])),pole=spatialWorldVector(settings.pole,figure,object,true);
+  if(length(base,middle)<1e-8||length(middle,end)<1e-8)return null;
+  const solved=spatialKnee(base,aim,pole,settings.swivel??0,length(base,middle),length(middle,end));
+  const unit=v=>{const n=Math.hypot(...v);return v.map(x=>x/Math.max(n,1e-9));};
+  for(const [i,tip] of [[a,solved.knee],[b,solved.end]]){
+   const r=figure.segments[i]._stykRig.spatial,frame=sample.states[i].spatial,start=spatialPoint(frame,r.origin),end=spatialPoint(frame,r.tip);
+   const rotation=betweenVectors(unit(end.map((v,k)=>v-start[k])),unit(tip.map((v,k)=>v-start[k])));
+   setOrientation(i,quatMultiply(rotation,frame.q),sample);sample=evaluate();
+  }
+  const p=sample.points.get(figure.segments[b].segment_id);return {sample,error:Math.hypot(p.x-target.x,p.y-target.y),iterations:1};
+ }
+ return {evaluate,refine,solveSpatial,orientWorld,dependencyCount:order.length};
 }
