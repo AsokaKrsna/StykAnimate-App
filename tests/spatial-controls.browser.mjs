@@ -19,6 +19,16 @@ try{
   }
   s.editor.load(document);s.editor.select(1,-1);s.state.onion=false;s.state.settings.autosaveSeconds=0;s.fit();
  },doc);
+ const eyes=page.getByRole('combobox',{name:'Eyes',exact:true});
+ if(await eyes.count()){
+  const original=await page.evaluate(()=>styk.editor.serialize()),count=await page.evaluate(()=>styk.editor._undo.length);
+  for(const label of ['Neutral','Focused','Closed']){
+   await eyes.selectOption({label});
+   assert.equal(await page.evaluate(async()=>{const{poseChoiceGroups}=await import('/src/rig-pose-choices.mjs');const e=styk.editor,g=poseChoiceGroups(e.figure,e.object)[0];return g.choices.find(c=>c.id===g.value)?.label;}),label);
+  }
+  await eyes.selectOption('0');assert.equal(await page.evaluate(()=>styk.editor._undo.length),count+4);
+  await page.evaluate(()=>{for(let i=0;i<4;i++)styk.editor.undo();});assert.deepEqual(await page.evaluate(()=>styk.editor.serialize()),original);
+ }
  await page.getByRole('button',{name:'Rotate',exact:true}).click();
  assert.ok(await page.evaluate(()=>Boolean(styk.editor.getSpatialPose())),'Rotate selects the first articulation');
  await page.getByText('Exact angles',{exact:true}).click();

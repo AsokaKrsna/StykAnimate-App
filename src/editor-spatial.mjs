@@ -4,8 +4,19 @@ import {spatialBone,spatialSkin,quatMultiply,spatialQuaternion} from './rig-spat
 import {inverseQuaternion,spatialWorldQuaternion,spatialPoleHandle,captureSpatialIK} from './ik-spatial.mjs';
 import {ikChain,ikLayout,ikFollowerIndices,solveObjectIK} from './ik.mjs';
 import {rigIKContext} from './ik-rig.mjs';
+import {poseChoiceGroups} from './rig-pose-choices.mjs';
 
 export const editorSpatialMethods={
+ setPoseChoice(name,id){
+  const group=poseChoiceGroups(this.figure,this.object).find(g=>g.name===name);if(!group)return false;
+  if(id!==0&&!group.choices.some(c=>c.id===id))throw new Error('Choose an available rig pose.');
+  if(group.value===id)return false;
+  return this._objectEdit('Change '+name,o=>{
+   const lengths=o.len_flag?o.lengths.slice():this.figure.segments.map(s=>s.length);
+   for(const c of group.choices)lengths[c.index]=c.id===id?c.shown:c.hidden;
+   o.lengths=lengths;o.len_flag=1;delete o.runtime_segments;
+  },{posed:true});
+ },
  _releaseSpatialChain(object,index=this.selectedJoint){
   // Direct FK manipulation takes ownership of this limb. The object edit has
   // already baked its displayed IK pose; release only the chain being rotated.

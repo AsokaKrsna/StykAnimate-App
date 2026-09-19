@@ -101,6 +101,16 @@ Direct rotation of a constrained thigh/shin or upper/forearm
 bakes the displayed pose and releases only that limb, so its outgoing foot/hand
 follows naturally. Rotating the body or pelvis keeps the other targets planted.
 
+Spatial bones may expose mutually exclusive named poses with segment metadata
+`_stykPoseChoice: {group, label, shown, hidden}`. The two numbers are finite native
+lengths, not another pose store. Each group becomes one inspector selector with
+a Hidden option. Changing it sets the selected bone to its shown length and the
+others to their hidden lengths in one undoable edit. Intermediate channel values
+display as Custom pose. Names and lengths are validated on import; the metadata
+contains no external joint references, so ordinary duplication/remapping retains
+its meaning. This supports optional expression geometry that collapses inside a
+head at zero length and uses the existing surface depth, saving and playback.
+
 Spatial IK evaluates only the driving dependency closure, excluding skin vertices
 from solver iterations. Two-bone spatial chains in one figure use an analytic
 3D solver with persistent target depth and a knee/elbow pole when bend direction

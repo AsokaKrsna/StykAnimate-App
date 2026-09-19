@@ -5,6 +5,7 @@ import {normalizePaint} from '../paint.mjs';
 import {validatePlayback} from '../movieclips.mjs';
 import {validateContinuations,continuations} from '../movieclip-presence.mjs';
 import {validateIK} from '../ik.mjs';
+import {validatePoseChoice} from '../rig-pose-choices.mjs';
 import { timeline } from "./geometry.mjs";
 import { inverseCameraScale } from "./background.mjs";
 import { validateAnimationStyle } from '../animation-style.mjs';
@@ -193,6 +194,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
       for (const k of ["length", "angle_rad", "thickness"])
         (k === "angle_rad" ? finite : float32)(s[k], `Segment ${k}`);
       styleValues(s);
+      validatePoseChoice(s);
       if (due()) yield progress('figures');
     }
     const done = new Set([0]);
