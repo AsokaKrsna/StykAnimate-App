@@ -35,16 +35,23 @@ export function spatialQuaternion(bend,turn,pitch){
 export function spatialPoint(frame,point){
   let p=point;
   if(Math.abs(frame.stretch-1)>EPS){const v=frame.axis,d=(point[0]-frame.origin[0])*v[0]+(point[1]-frame.origin[1])*v[1]+(point[2]-frame.origin[2])*v[2];p=point.map((n,i)=>n+d*(frame.stretch-1)*v[i]);}
-  const rotated=quatRotate(frame.q,p);return rotated.map((v,i)=>v+frame.t[i]);
+  const rotated=quatRotate(frame.q,p);for(let i=0;i<3;i++)rotated[i]+=frame.t[i];return rotated;
 }
 function skinPoint(s,get){
   if(s.bindings.length===1)return spatialPoint(get(s.bindings[0].joint).spatial,s.point);
-  const first=get(s.bindings[0].joint).spatial,values=[0,0,0,0,0,0,0,0];let stretch=false;
-  for(const b of s.bindings){const f=get(b.joint).spatial;stretch||=Math.abs(f.stretch-1)>EPS;const sign=f.q.reduce((n,v,i)=>n+v*first.q[i],0)<0?-1:1,w=b.weight*sign;for(let i=0;i<4;i++){values[i]+=f.q[i]*w;values[i+4]+=f.dual[i]*w;}}
+  const first=get(s.bindings[0].joint).spatial.q;let x=0,y=0,z=0,w=0,dx=0,dy=0,dz=0,dw=0,stretch=false;
+  // Skin is evaluated for every mesh vertex. Accumulate the dual quaternion
+  // in scalars so the hot path allocates only its final point.
+  for(const b of s.bindings){const f=get(b.joint).spatial,q=f.q,d=f.dual;stretch||=Math.abs(f.stretch-1)>EPS;
+    const weight=b.weight*(q[0]*first[0]+q[1]*first[1]+q[2]*first[2]+q[3]*first[3]<0?-1:1);
+    x+=q[0]*weight;y+=q[1]*weight;z+=q[2]*weight;w+=q[3]*weight;dx+=d[0]*weight;dy+=d[1]*weight;dz+=d[2]*weight;dw+=d[3]*weight;
+  }
   if(stretch){const p=[0,0,0];for(const b of s.bindings){const v=spatialPoint(get(b.joint).spatial,s.point);for(let i=0;i<3;i++)p[i]+=v[i]*b.weight;}return p;}
-  const norm=Math.hypot(...values.slice(0,4));for(let i=0;i<8;i++)values[i]/=norm;
-  const q=values.slice(0,4),d=values.slice(4),t=quatMultiply(d,[-q[0],-q[1],-q[2],q[3]]),p=quatRotate(q,s.point);
-  return p.map((v,i)=>v+2*t[i]);
+  const norm=Math.hypot(x,y,z,w);x/=norm;y/=norm;z/=norm;w/=norm;dx/=norm;dy/=norm;dz/=norm;dw/=norm;
+  const[a,b,c]=s.point,tx=2*(y*c-z*b),ty=2*(z*a-x*c),tz=2*(x*b-y*a);
+  return[a+w*tx+y*tz-z*ty+2*(-dw*x+dx*w-dy*z+dz*y),
+    b+w*ty+z*tx-x*tz+2*(-dw*y+dx*z+dy*w-dz*x),
+    c+w*tz+x*ty-y*tx+2*(-dw*z-dx*y+dy*x+dz*w)];
 }
 export function evaluateSpatial(s,{segment,input,get,root,scale,figureAngle,restAngle,referenceRest,mirror=false}){
   const cs=Math.cos(figureAngle),sn=Math.sin(figureAngle),sign=mirror?-1:1,project=p=>({x:root.x+(p[0]*cs-p[1]*sign*sn)*scale,y:root.y+(p[0]*sn+p[1]*sign*cs)*scale});
