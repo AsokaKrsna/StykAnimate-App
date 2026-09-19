@@ -45,10 +45,10 @@ export function paintDepthSurfaces(ctx,items){
   let r=caches.get(ctx);if(r?.gl?.isContextLost()){releaseSurfaceRaster(ctx);r={canvas:makeCanvas(ctx,1,1)};}
   if(!r)r=create(ctx);caches.set(ctx,r);
   const data=new Float32Array(items.length*18);let at=0,minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
-  for(const s of items)for(let i=0;i<3;i++){
-    const p=s.points[i],z=s.depthValues[i];data.set([p.x,p.y,z,s.rgb[0]/255,s.rgb[1]/255,s.rgb[2]/255],at);at+=6;
+  for(const s of items){const red=s.rgb[0]/255,green=s.rgb[1]/255,blue=s.rgb[2]/255;for(let i=0;i<3;i++){
+    const p=s.points[i],z=s.depthValues[i];data[at++]=p.x;data[at++]=p.y;data[at++]=z;data[at++]=red;data[at++]=green;data[at++]=blue;
     minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);minZ=Math.min(minZ,z);maxZ=Math.max(maxZ,z);
-  }
+  }}
   if(!(maxX>minX&&maxY>minY))return;
   const matrix=ctx.getTransform(),scale=Math.max(1e-6,Math.hypot(matrix.a,matrix.b),Math.hypot(matrix.c,matrix.d)),inverse=matrix.inverse();
   const corners=[[0,0],[ctx.canvas.width,0],[0,ctx.canvas.height],[ctx.canvas.width,ctx.canvas.height]].map(([x,y])=>({x:inverse.a*x+inverse.c*y+inverse.e,y:inverse.b*x+inverse.d*y+inverse.f}));

@@ -247,7 +247,7 @@ export const editorIKMethods = {
         const temporary = {...next, ...(captured.spatialTarget?captured:capture(this.figure,object,geometry,handle,current)), target, pinned: true};
         const baseline = this._drag.before.find(o => o.unique_id === object.unique_id);
         const source = {...object, len_flag: baseline.len_flag, lengths: baseline.lengths};
-        const solution = solveObjectIK(this.figure, source, geometry.root, ikLayout(this.figure), {[handle]: temporary});
+        const solution = solveObjectIK(this.figure, source, geometry.root, ikLayout(this.figure), {[handle]: temporary}, {includePoints:false});
         object.angles = solution.angles;
         object.len_flag = solution.lengths ? 1 : baseline.len_flag;
         object.lengths = (solution.lengths ?? baseline.lengths).slice();

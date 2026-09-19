@@ -28,51 +28,15 @@ export function spatialControlsView(editor){
  const trunk=[['Pelvis','Hips'],['Lower torso','Torso'],['Waist','Waist'],['Chest','Chest'],[bones.some(b=>b.s.name==='Head')?'Head':'Neck','Head']].flatMap(([name,label])=>{const b=bones.find(b=>b.s.name===name);return b?[choose(b.i,label,true)]:[];}).join('');
  const rows=pose?['pitch','turn','bend'].map((key,i)=>{const value=pose[key]*DEG,label=['Tilt','Turn','Bend'][i];return`<div class="spatial-axis spatial-${key}"><label for="spatial-${key}-number">${label}</label><input id="spatial-${key}-range" type="range" min="-180" max="180" step="0.1" value="${wrap(pose[key])*DEG}" data-spatial-axis="${key}" aria-label="${label}"><label class="field"><input id="spatial-${key}-number" type="number" step="1" value="${Math.round(value*10)/10}" data-spatial-axis="${key}" aria-label="${label} degrees"><small>°</small></label></div>`;}).join(''):'';
  const endpoint=limb?childOf(editor.figure.segments[limb.index].segment_id):null,toe=endpoint?childOf(endpoint.s.segment_id):null;
- const limbTools=ik?`<div class="spatial-limb" data-section="spatial-limb"><div class="property-toggle-grid">${propertyToggle('spatial-pin','Pinned',ik.pinned,'pin',{title:'Keep target position and orientation when the body moves'})}${propertyToggle('spatial-stretch','Stretch',ik.allowStretch,'stretch-horizontal',{title:'Allow the limb to reach beyond its rest length'})}</div><label class="spatial-parameter"><span>Bend direction</span><input type="range" min="-180" max="180" step="1" value="${wrap(ik.spatialTarget.swivel)*DEG}" data-spatial-swivel aria-label="Bend direction"></label><label class="field"><span>Depth</span><input type="number" step="1" value="${Math.round(ik.spatialTarget.depth*10)/10}" data-spatial-depth aria-label="Target depth"><small>px</small></label>${endpoint?`<div class="spatial-part-actions">${choose(endpoint.i,/foot|ankle/i.test(endpoint.s.name??'')?'Ankle rotation':'Hand rotation',true)}${toe?choose(toe.i,'Toe bend',true):''}</div>`:''}</div>`:'';
+ const limbTools=ik?`<div class="spatial-limb" data-section="spatial-limb"><div class="property-toggle-grid">${propertyToggle('spatial-pin','Pinned',ik.pinned,'pin',{title:'Keep target position and orientation when the body moves'})}</div><details class="spatial-exact" data-section="spatial-limb-options"><summary>More limb options</summary><div class="property-toggle-grid">${propertyToggle('spatial-stretch','Stretch',ik.allowStretch,'stretch-horizontal',{title:'Allow the limb to reach beyond its rest length'})}</div><label class="spatial-parameter"><span>Bend direction</span><input type="range" min="-180" max="180" step="1" value="${wrap(ik.spatialTarget.swivel)*DEG}" data-spatial-swivel aria-label="Bend direction"></label><label class="field"><span>Depth</span><input type="number" step="1" value="${Math.round(ik.spatialTarget.depth*10)/10}" data-spatial-depth aria-label="Target depth"><small>px</small></label></details>${endpoint?`<div class="spatial-part-actions">${choose(endpoint.i,/foot|ankle/i.test(endpoint.s.name??'')?'Ankle rotation':'Hand rotation',true)}${toe?choose(toe.i,'Toe bend',true):''}</div>`:''}</div>`:'';
  const pad=pose&&mode==='rotate'?`<div class="spatial-orientation" data-section="spatial-orientation"><button type="button" class="spatial-pad" data-spatial-pad aria-label="Turn and tilt" title="Drag to turn and tilt · Arrow keys adjust · Shift for precision"><svg viewBox="0 0 90 72" aria-hidden="true"><path d="M8 36H82M45 7V65"/><circle cx="${45+Math.sin(pose.turn)*31}" cy="${36+Math.sin(pose.pitch)*23}" r="5"/></svg></button><div><strong>Turn / tilt</strong><p class="property-context-caption">Drag in two directions.<br>Shift for precision.</p><button type="button" class="spatial-reset" data-spatial-reset="joint">Reset joint</button></div></div><details class="spatial-exact" data-section="spatial-exact"><summary>Exact angles</summary>${rows}</details>`:'';
- return`<section class="inspector-section spatial-rig" data-section="spatial-rig"><div class="inspector-title"><span>Character rig</span><button type="button" class="icon-button" data-spatial-reset="all" title="Reset pose" aria-label="Reset pose">${icon('rotate')}</button></div><div class="spatial-modes" role="group" aria-label="Rig tools">${[['pose','Pose','move'],['rotate','Rotate','rotate']].map(([value,label,symbol])=>`<button type="button" data-spatial-mode="${value}" aria-label="${label}" aria-pressed="${value===mode}">${icon(symbol)}${label}</button>`).join('')}</div>${shortcuts}${trunk?`<div class="spatial-trunk" role="group" aria-label="Torso controls">${trunk}</div>`:''}${feet.length?`<button type="button" class="spatial-plant" data-spatial-feet="${planted?'release':'plant'}">${icon('pin')}${planted?'Release feet':'Plant both feet'}</button>`:''}<select class="inline-select" id="spatial-joint" aria-label="Articulation"><option value="-1" ${pose?'':'selected'}>Move whole character</option>${bones.map(({s,i})=>`<option value="${i}" ${selected===i?'selected':''}>${esc(s.name||'Joint '+s.segment_id)}</option>`).join('')}</select>${pad}${limbTools}${choices}<p class="property-context-caption">${mode==='pose'?'Drag a target to pose. Gold pole: bend direction. Z: depth.':'Rotate a limb to release its pin; its hand or foot follows. Body turns retain planted targets.'}</p></section>`;
+ return`<section class="inspector-section spatial-rig" data-section="spatial-rig"><div class="inspector-title"><span>Character rig</span><button type="button" class="icon-button" data-spatial-reset="all" title="Reset pose" aria-label="Reset pose">${icon('rotate')}</button></div><div class="spatial-modes" role="group" aria-label="Rig tools">${[['pose','Pose','move'],['rotate','Rotate','rotate']].map(([value,label,symbol])=>`<button type="button" data-spatial-mode="${value}" aria-label="${label}" aria-pressed="${value===mode}">${icon(symbol)}${label}</button>`).join('')}</div>${shortcuts}${trunk?`<div class="spatial-trunk" role="group" aria-label="Torso controls">${trunk}</div>`:''}${bones.some(b=>/sash upper$/.test(b.s.name))?`<div class="spatial-targets" role="group" aria-label="Belt ties">${bones.filter(b=>/sash upper$/.test(b.s.name)).map(b=>choose(b.i,b.s.name.replace('sash upper','tie'))).join('')}</div>`:''}${feet.length?`<button type="button" class="spatial-plant" data-spatial-feet="${planted?'release':'plant'}">${icon('pin')}${planted?'Release feet':'Plant both feet'}</button>`:''}<select class="inline-select" id="spatial-joint" aria-label="Articulation"><option value="-1" ${pose?'':'selected'}>Move whole character</option>${bones.map(({s,i})=>`<option value="${i}" ${selected===i?'selected':''}>${esc(s.name||'Joint '+s.segment_id)}</option>`).join('')}</select>${pad}${limbTools}${choices}<p class="property-context-caption">${mode==='pose'?'Drag joints to pose. Drag a planted knee or elbow to aim its bend. Use Rotate to turn or tilt.':'Rotate a limb to release its pin; its hand or foot follows. Body turns retain planted targets.'}</p></section>`;
 }
 export function spatialGizmo(editor,project){return spatialControlMode(editor)==='rotate'?createSpatialGizmo(editor,project):null;}
-export function spatialTargetGizmos(editor,project){
- if(spatialControlMode(editor)!=='pose')return[];
- const f=editor.figure,g=editor.geometry.objects.get(editor.selectedSlot);if(!f||!g)return[];
- return f.segments.flatMap((s,index)=>{
-  const c=editor.object?._stykIK?.[s.segment_id];if(!c?.enabled||!c.spatialTarget)return[];
-  const child=f.segments.find(n=>spatialBone(n)&&n._stykRig.spatial.parent===s.segment_id),name=(child?.name??s.name??'IK target').replace(/ ankle$/,'');
-  return[{index,name,foot:/foot|ankle/i.test(name),pinned:c.pinned,world:g.joints.get(s.segment_id),screen:project(g.joints.get(s.segment_id))}];
- });
-}
-export function spatialDepthGizmo(editor,project){
- const target=spatialTargetGizmos(editor,project).find(t=>t.index===editor.selectedJoint);if(!target)return null;
- const c=editor.object._stykIK[editor.figure.segments[target.index].segment_id];
- return{...target,depth:c.spatialTarget.depth,screen:{x:target.screen.x+35,y:target.screen.y-30},anchor:target.screen};
-}
-export function spatialPoleGizmo(editor,project){
- if(spatialControlMode(editor)!=='pose')return null;const pole=editor.getSpatialIKPole();if(!pole)return null;
- const point=project({x:pole.point[0],y:pole.point[1]}),center=project({x:pole.center[0],y:pole.center[1]}),knee=project({x:pole.knee[0],y:pole.knee[1]});
- if(Math.hypot(point.x-center.x,point.y-center.y)<35){const d=Math.hypot(pole.axis[0],pole.axis[1]);point.x+=d>1e-6?pole.axis[1]/d*55:55;point.y-=d>1e-6?pole.axis[0]/d*55:0;}
- return{...pole,screen:point,kneeScreen:knee};
-}
 export function drawSpatialGizmo(ctx,editor,project){
  drawRotationGizmo(ctx,spatialGizmo(editor,project));
- for(const t of spatialTargetGizmos(editor,project)){
-  const{x,y}=t.screen,selected=t.index===editor.selectedJoint;
-  ctx.save();ctx.strokeStyle=selected?'#f7bd49':'#127fbd';ctx.fillStyle=selected?'#153c5e':'#e3f5ff';ctx.lineWidth=2.5;ctx.beginPath();
-  if(t.foot){ctx.moveTo(x-10,y-7);ctx.lineTo(x+5,y-7);ctx.lineTo(x+11,y+2);ctx.lineTo(x+11,y+7);ctx.lineTo(x-10,y+7);ctx.closePath();}else ctx.roundRect(x-8,y-8,16,16,4);
-  ctx.fill();ctx.stroke();ctx.font='11px system-ui';const label=t.name.replace(/^Left /,'L ').replace(/^Right /,'R ')+(t.pinned?' · planted':'');ctx.lineWidth=3;ctx.strokeStyle='#fff';ctx.strokeText(label,x+15,y+16);ctx.fillStyle='#16445e';ctx.fillText(label,x+15,y+16);ctx.restore();
- }
- const depth=spatialDepthGizmo(editor,project);
- if(depth){const{x,y}=depth.screen;ctx.save();ctx.strokeStyle='#9563d4';ctx.lineWidth=1.5;ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(depth.anchor.x,depth.anchor.y);ctx.lineTo(x,y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#ede0ff';ctx.beginPath();ctx.arc(x,y,9,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#633596';ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.fillText('Z',x,y+4);ctx.restore();}
- const p=spatialPoleGizmo(editor,project);if(!p)return;
- ctx.save();ctx.strokeStyle='#d59c29';ctx.fillStyle='#ffcf64';ctx.lineWidth=1.5;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(p.kneeScreen.x,p.kneeScreen.y);ctx.lineTo(p.screen.x,p.screen.y);ctx.stroke();ctx.setLineDash([]);
- ctx.beginPath();ctx.moveTo(p.screen.x,p.screen.y-8);ctx.lineTo(p.screen.x+8,p.screen.y);ctx.lineTo(p.screen.x,p.screen.y+8);ctx.lineTo(p.screen.x-8,p.screen.y);ctx.closePath();ctx.fill();ctx.stroke();ctx.font='11px system-ui';ctx.strokeStyle='#ffffff';ctx.lineWidth=3;ctx.strokeText('IK pole',p.screen.x+12,p.screen.y+4);ctx.fillStyle='#624413';ctx.fillText('IK pole',p.screen.x+12,p.screen.y+4);ctx.restore();
 }
 export function spatialGizmoDrag(editor,point,project){
- const pole=spatialPoleGizmo(editor,project);if(pole&&Math.hypot(point.x-pole.screen.x,point.y-pole.screen.y)<12){const a=project({x:0,y:0}),b=project({x:1,y:0});return{kind:'pole',pole,start:point,scale:Math.hypot(b.x-a.x,b.y-a.y)};}
- const depth=spatialDepthGizmo(editor,project),a=project({x:0,y:0}),b=project({x:1,y:0}),scale=Math.hypot(b.x-a.x,b.y-a.y);
- if(depth&&Math.hypot(point.x-depth.screen.x,point.y-depth.screen.y)<12)return{kind:'depth',depth:depth.depth,start:point,scale};
- const target=spatialTargetGizmos(editor,project).find(t=>Math.abs(point.x-t.screen.x)<=12&&Math.abs(point.y-t.screen.y)<=10);
- if(target)return{kind:'target',target,index:target.index,start:point,scale};
  const gizmo=spatialGizmo(editor,project);if(!gizmo)return null;
  // A visible neighboring pivot wins over an overlapping rotation sphere.
  const g=editor.geometry.objects.get(editor.selectedSlot);
@@ -80,11 +44,7 @@ export function spatialGizmoDrag(editor,point,project){
  return startRotationGizmo(gizmo,point);
 }
 export function updateSpatialGizmo(editor,drag,point,precision=false){
- const k=(precision?.2:1)/Math.max(1e-9,drag.scale??1),dx=(point.x-(drag.start?.x??0))*k,dy=(point.y-(drag.start?.y??0))*k;
- if(drag.kind==='pole')editor.setSpatialIKPole(drag.pole.point[0]+dx,drag.pole.point[1]+dy,drag.pole.point[2]);
- else if(drag.kind==='depth')editor.setSpatialIKTarget({depth:drag.depth-dy});
- else if(drag.kind==='target')editor.poseIKTarget(drag.target.world.x+dx,drag.target.world.y+dy);
- else editor.setSpatialPose(rotateGizmo(drag,point,precision));
+ editor.setSpatialPose(rotateGizmo(drag,point,precision));
 }
 
 export function installSpatialControls({editor,root,refresh,guard}){

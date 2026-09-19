@@ -68,22 +68,18 @@ try{
   await plant.click();assert.equal(await page.evaluate(()=>styk.editor._undo.length),beforePlant.undo+1);
   await page.getByRole('button',{name:'Release feet',exact:true}).waitFor();
   await page.getByRole('button',{name:'Left foot',exact:true}).click();
+  await page.getByText('More limb options',{exact:true}).click();
   const swivel=page.getByRole('slider',{name:'Bend direction',exact:true});await swivel.scrollIntoViewIfNeeded();const rect=await swivel.boundingBox();
   const plantedBefore=await page.evaluate(()=>{const e=styk.editor,g=e.geometry.objects.get(0);return{end:g.segments[e.selectedJoint].end,undo:e._undo.length,angles:e.object.angles.slice()};});
   await page.mouse.move(rect.x+rect.width*.5,rect.y+rect.height*.5);await page.mouse.down();await page.mouse.move(rect.x+rect.width*.7,rect.y+rect.height*.5,{steps:8});await page.mouse.up();
   const plantedAfter=await page.evaluate(()=>{const e=styk.editor;return{end:e.geometry.objects.get(0).segments[e.selectedJoint].end,undo:e._undo.length,swivel:e.getIKSettings().spatialTarget.swivel};});
   assert.ok(plantedAfter.swivel>.3);assert.equal(plantedAfter.undo,plantedBefore.undo+1);assert.ok(Math.hypot(plantedAfter.end.x-plantedBefore.end.x,plantedAfter.end.y-plantedBefore.end.y)<.01);
   await page.evaluate(()=>styk.editor.undo());assert.deepEqual(await page.evaluate(()=>styk.editor.object.angles),plantedBefore.angles);
-  const pole=await page.evaluate(async()=>{const{spatialPoleGizmo}=await import('/src/spatial-controls.mjs'),s=styk,p=spatialPoleGizmo(s.editor,p=>({x:p.x*s.state.view.scale+s.state.view.x,y:p.y*s.state.view.scale+s.state.view.y})),r=document.getElementById('viewport').getBoundingClientRect();return{x:p.screen.x+r.x,y:p.screen.y+r.y,doc:s.editor.serialize()};});
-  await page.mouse.move(pole.x,pole.y);await page.mouse.down();await page.mouse.move(pole.x-45,pole.y-16,{steps:8});assert.equal(await page.evaluate(()=>styk.state.drag?.spatial?.kind),'pole');
-  assert.ok(await page.evaluate(()=>styk.editor._drag?.changed),'Pole drag changes the live pose');await page.keyboard.press('Escape');await page.mouse.up();assert.deepEqual(await page.evaluate(()=>styk.editor.serialize()),pole.doc,'Escape restores the IK pole gesture');
-  await page.mouse.move(pole.x,pole.y);await page.mouse.down();await page.mouse.move(pole.x-35,pole.y-10,{steps:8});await page.mouse.up();await page.evaluate(()=>styk.editor.undo());assert.deepEqual(await page.evaluate(()=>styk.editor.serialize()),pole.doc,'Pole dragging is one undo step');
+  // Pose uses native joints only; no IK target, depth or pole overlays.
+  assert.equal(await page.evaluate(async()=>{const{spatialGizmoDrag}=await import('/src/spatial-controls.mjs');return spatialGizmoDrag(styk.editor,{x:0,y:0},p=>p);}),null);
   await page.getByRole('button',{name:'Release feet',exact:true}).click();await plant.waitFor();
-  const depthHandle=await page.evaluate(async()=>{const{spatialDepthGizmo}=await import('/src/spatial-controls.mjs'),s=styk,d=spatialDepthGizmo(s.editor,p=>({x:p.x*s.state.view.scale+s.state.view.x,y:p.y*s.state.view.scale+s.state.view.y})),r=document.getElementById('viewport').getBoundingClientRect();return{x:d.screen.x+r.x,y:d.screen.y+r.y,depth:d.depth,scale:s.state.view.scale,doc:s.editor.serialize(),undo:s.editor._undo.length};});
-  await page.mouse.move(depthHandle.x,depthHandle.y);await page.mouse.down();await page.mouse.move(depthHandle.x,depthHandle.y-12,{steps:8});
-  assert.equal(await page.evaluate(()=>styk.state.drag?.spatial?.kind),'depth');await page.keyboard.press('Escape');await page.mouse.up();assert.deepEqual(await page.evaluate(()=>styk.editor.serialize()),depthHandle.doc);
-  await page.mouse.move(depthHandle.x,depthHandle.y);await page.mouse.down();await page.mouse.move(depthHandle.x,depthHandle.y-12,{steps:8});await page.mouse.up();
-  assert.ok(Math.abs(await page.getByRole('spinbutton',{name:'Target depth',exact:true}).inputValue()-depthHandle.depth-12/depthHandle.scale)<.11);assert.equal(await page.evaluate(()=>styk.editor._undo.length),depthHandle.undo+1);await page.evaluate(()=>styk.editor.undo());
+  const depth=page.getByRole('spinbutton',{name:'Target depth',exact:true}),beforeDepth=await page.evaluate(()=>({doc:styk.editor.serialize(),undo:styk.editor._undo.length}));
+  await depth.fill('12');await depth.press('Tab');assert.equal(await page.evaluate(()=>styk.editor._undo.length),beforeDepth.undo+1);await page.evaluate(()=>styk.editor.undo());assert.deepEqual(await page.evaluate(()=>styk.editor.serialize()),beforeDepth.doc);
   // Limb controls stay attached to their IK target while Rotate selects the
   // foot itself, and the slider remains one gesture despite that mapping.
   await page.getByRole('button',{name:'Rotate',exact:true}).click();

@@ -78,28 +78,36 @@ axial stretching uses weighted transformed positions. Derived depth participates
 in the existing surface evaluator and renderer. There is no additional animation
 clock, pose store or renderer scene graph.
 
-In Animate, **Pose** places hands and feet through the existing IK settings.
-**Rotate** selects joint pivots on the canvas and shows local X/Y/Z rings, a free
-trackball and an outer view ring. Shift gives finer movement. Whole body and limb
-shortcuts select the relevant target or rotation control. **Exact angles** exposes
-the same native channels numerically. Each drag is one undo step; Escape cancels
-it. **Plant both feet** retains foot position, depth and orientation while the
-hips move; **Release feet** lets the whole character move. A planted spatial
-target exposes **Bend direction** to swivel its knee or elbow around the target
-axis. In Pose mode, select a limb target and drag the gold **IK pole** diamond
-to steer its knee or elbow. Pole gestures preserve target orientation, use one
-undo step and support Escape cancellation. Directly rotating a planted foot
-updates its stored orientation.
+In Animate, **Pose** uses the ordinary joint markers. Hand and foot endpoints
+use the existing IK settings. Dragging a free spatial joint rotates it in the
+view plane, preserving its depth and avoiding arbitrary axial twist. Use
+**Rotate** for turn/tilt and for a joint projected exactly edge-on. Rotate shows
+local X/Y/Z rings, a free trackball and an outer view ring; Shift gives finer
+movement. Whole body, limb, torso and belt-tie shortcuts select native joints.
+Each drag is one undo step; Escape cancels it.
 
-Blue hand/foot outlines select and place IK targets; the selected target also
-has a purple **Z** handle for forward/back depth. **Bend direction** and **Target
-depth** work on free and planted limbs. Native **Pinned** and **Stretch** switches
-show each limb's behavior. The **Turn / tilt** pad adjusts two rotation channels
-in one gesture; arrow keys step by five degrees (one degree with Shift). Hips,
-chest, head, ankle and toe shortcuts select their native articulation controls.
-Direct rotation of a constrained thigh/shin or upper/forearm
-bakes the displayed pose and releases only that limb, so its outgoing foot/hand
-follows naturally. Rotating the body or pelvis keeps the other targets planted.
+**Plant both feet** retains foot position, depth and orientation while the hips
+move; **Release feet** lets the character move. Drag a planted knee or elbow's
+ordinary joint marker to steer its existing bend plane while its endpoint stays
+planted. Pose does not draw separate IK targets, pole diamonds or depth handles.
+**More limb options** contains Bend direction, Target depth and Stretch; these
+remain available for free and planted limbs. **Pinned** stays visible.
+
+The **Turn / tilt** pad adjusts two rotation channels in one gesture; arrow keys
+step five degrees (one with Shift). **Exact angles** exposes the same native
+channels numerically. Rotating a constrained thigh/shin or upper/forearm bakes
+the displayed pose and releases only that limb, so its foot/hand follows.
+Rotating a planted foot updates its stored orientation. Body/pelvis turns keep
+other targets planted. The lower torso remains independent of the pelvis.
+
+Live object-pose edits reuse evaluated spatial branches and fills whose numeric
+inputs and dependencies are unchanged. This reuse requires the editor's explicit
+pose-only invalidation; definition edits and replacement objects rebuild normally.
+Global transforms/appearance invalidate evaluated records. Polygon dependencies
+include winding bases and depth guides, even when they are not visible corners.
+The derived cache belongs to published geometry through a WeakMap and never
+retains a predecessor scene; ordinary worker builds avoid compiling unused fill
+dependency tables. Cancellation, undo and fresh evaluation remain equivalent.
 
 Spatial bones may expose mutually exclusive named poses with segment metadata
 `_stykPoseChoice: {group, label, shown, hidden}`. The two numbers are finite native

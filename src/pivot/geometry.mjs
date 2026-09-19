@@ -15,6 +15,7 @@ import {animationOriginLayout, animationOriginAngle, animationOriginBend, correc
 import {interpolateOriginSupport} from '../animation-origin-support.mjs';
 import {easedProgress, usesLegacyNativeEasing, easingMode, autoValue} from '../keyframe-easing.mjs';
 import {geometryDefinition} from './geometry-definition.mjs';
+import {geometryPose,geometryPosePlan} from './geometry-pose.mjs';
 import {hasRigConstraints, createRigEvaluation, rigConstraintPlanSteps} from '../rig-constraints.mjs';
 import {hasPinnedIK, interpolateIK} from '../ik.mjs';
 import {evaluateIKPose} from '../ik-evaluation.mjs';
@@ -550,7 +551,8 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
     }
     let plan = definitionPlans.get(fig);
     if (!plan) {plan = geometryDefinition(fig); definitionPlans.set(fig, plan);}
-    const rigPlan=hasRigConstraints(fig)?yield* rigConstraintPlanSteps(fig):null;
+    const previous = incremental?.previous?.objects.get(slot), poseAllowed = incremental?.poseSlots?.has(slot);
+    const rigPlan=geometryPosePlan(fig,obj,previous,poseAllowed) ?? (hasRigConstraints(fig)?yield* rigConstraintPlanSteps(fig):null);
     const ik = joinedIK.get(slot) ?? (hasPinnedIK(obj) ? evaluateIKPose(report, `local:${obj.unique_id}`, fig, obj, root, plan,rigPlan) : null);
     const joints = new Map([[0, root]]),
       renders = [],
@@ -558,6 +560,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
     const scale = Number(obj.scale ?? 1),
       opacity = 1 - Number(obj.field28 ?? obj.transparency ?? 0) / 255;
     const rig = rigPlan ? createRigEvaluation(fig, obj, root, rigPlan) : null;
+    const pose = geometryPose(fig, obj, root, rig, previous, poseAllowed, report.version);
     function segmentAt(i, active) {
       if (renders[i]) return renders[i];
       if (active?.has(i)) {
@@ -586,6 +589,12 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
             ? (obj.lengths?.[i] ?? seg.length)
             : (rt?.length ?? seg.length ?? 0)),
         ) * scale;
+      if (pose?.reuse(i, angle, length, bend)) {
+        const prior = previous.segments[i];
+        joints.set(Number(seg.segment_id), previous.joints.get(Number(seg.segment_id)));
+        renders[i] = prior;
+        return prior;
+      }
       const rigPose = rig?.evaluate(i, {start,angle,length,bend}, joints);
       if (rigPose) ({start,angle,length,bend} = rigPose);
       let points,end;
@@ -698,6 +707,11 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
     ) : null;
     const polys = [],surfaceEvaluation=createSurfaceEvaluation(joints);
     for (let i = 0; i < (fig.polyfills?.length ?? 0); i++) {
+      if (pose?.reusePolygon(i)) {
+        polys.push(previous.polys[i]);
+        if ((i & 31) === 31) yield {phase:'geometry',stage:'polygons',slot,completed:i+1,total:fig.polyfills.length};
+        continue;
+      }
       const poly = fig.polyfills[i];
       const polygon = plan.polygons[i], points = [];
       if (polygon.first !== undefined && joints.has(polygon.first)) points.push(joints.get(polygon.first));
@@ -755,6 +769,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
     };
     const renderSource=incremental?.renderSources?.get(slot);
     if(renderSource)Object.defineProperty(geometry,'renderSource',{value:renderSource});
+    pose?.publish(geometry);
     cache.set(slot, geometry);
     return geometry;
   }

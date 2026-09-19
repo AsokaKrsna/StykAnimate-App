@@ -1,9 +1,8 @@
 import {animationRotation} from './animation-origin.mjs';
 import {rigConstraintPlan} from './rig-constraints.mjs';
-import {spatialBone,spatialSkin,quatMultiply,spatialQuaternion} from './rig-spatial.mjs';
+import {spatialBone,spatialSkin,quatMultiply,spatialQuaternion,quaternionPose} from './rig-spatial.mjs';
 import {inverseQuaternion,spatialWorldQuaternion,spatialPoleHandle,captureSpatialIK} from './ik-spatial.mjs';
 import {ikChain,ikLayout,ikFollowerIndices,solveObjectIK} from './ik.mjs';
-import {rigIKContext} from './ik-rig.mjs';
 import {poseChoiceGroups} from './rig-pose-choices.mjs';
 
 export const editorSpatialMethods={
@@ -100,15 +99,29 @@ export const editorSpatialMethods={
  },
  poseSpatialJoint(x,y,{stretch=false}={}){
   const f=this.figure,o=this.object,i=this.selectedJoint,s=f?.segments[i];if(!o||!spatialBone(s))return false;
-  const g=this.geometry.objects.get(this.selectedSlot),angles=(g.solvedAngles??o.angles).slice();let lengths;
-  if(stretch){lengths=o.len_flag?o.lengths.slice():f.segments.map(s=>s.length);const shape=g.segments[i],span=Math.hypot(shape.end.x-shape.start.x,shape.end.y-shape.start.y);if(span>1e-6)lengths[i]*=Math.hypot(x-shape.start.x,y-shape.start.y)/span;}
-  const context=rigIKContext(f,o,g.root,[s.segment_id],angles,()=>lengths);context.refine([i],{x,y});
+  if(![x,y].every(Number.isFinite))return false;
+  // A planted knee/elbow steers its existing bend plane directly. Its end
+  // target stays planted; no separate canvas pole is needed.
+  if(!stretch)for(const[id,c]of Object.entries(o._stykIK??{})){
+   if(!c.enabled||!c.pinned||!c.spatialTarget||c.bendDirection!==0)continue;
+   const chain=ikChain(f,Number(id),c.chainLength);if(chain.length!==2||chain[0]!==i)continue;
+   try{this.selectedJoint=rigConstraintPlan(f).ids.get(Number(id));const pole=this.getSpatialIKPole();return pole?this.setSpatialIKPole(x,y,pole.knee[2]):false;}
+   finally{this.selectedJoint=i;}
+  }
+  const g=this.geometry.objects.get(this.selectedSlot),shape=g.segments[i],before=this.getSpatialPose(),span=Math.hypot(shape.end.x-shape.start.x,shape.end.y-shape.start.y),distance=Math.hypot(x-shape.start.x,y-shape.start.y);
+  if(span<1e-6||distance<1e-6)return false;
+  // Pose in the view plane without an underdetermined three-axis solve.
+  // This preserves foreshortening and axial twist, including closed drags.
+  const angle=Math.atan2(y-shape.start.y,x-shape.start.x)-Math.atan2(shape.end.y-shape.start.y,shape.end.x-shape.start.x);
+  const parent=quatMultiply(shape.spatialFrame.q,inverseQuaternion(spatialQuaternion(before.bend,before.turn,before.pitch)));
+  const world=quatMultiply(spatialQuaternion(angle,0,0),spatialWorldQuaternion(shape.spatialFrame.q,f,o));
+  const pose=quaternionPose(quatMultiply(inverseQuaternion(parent),spatialWorldQuaternion(world,f,o,true)),before);
   const ids=rigConstraintPlan(f).ids,r=s._stykRig.spatial;
   return this._objectEdit('Pose articulated joint',target=>{
    this._releaseSpatialChain(target);
-   this._rotateJoint(angles[i]-target.angles[i]);
-   target.angles[ids.get(r.turn)]=angles[ids.get(r.turn)];target.angles[ids.get(r.pitch)]=angles[ids.get(r.pitch)];
-   if(lengths){target.lengths=lengths;target.len_flag=1;}
+   const sign=target.image_text_flags?-1:1;this._rotateJoint((pose.bend-before.bend)*sign);
+   for(const key of ['turn','pitch'])target.angles[ids.get(r[key])]+=(pose[key]-before[key])*sign;
+   if(stretch){const lengths=target.len_flag?target.lengths.slice():f.segments.map(s=>s.length);lengths[i]*=distance/span;target.lengths=lengths;target.len_flag=1;}
   },{posed:true});
  },
 };

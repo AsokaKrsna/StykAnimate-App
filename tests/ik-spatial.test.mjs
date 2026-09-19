@@ -112,3 +112,25 @@ test('target depth and full knee orbits work for free and planted limbs without 
   const saved=e.serialize();e.beginDrag('Depth');e.setSpatialIKTarget({depth:-30});e.cancelDrag();assert.deepEqual(e.serialize(),saved);
  }
 });
+
+test('direct joint dragging preserves depth and returns without accumulated twist',()=>{
+ for(const mirror of [false,true])for(const scale of [.65,1.4]){
+  const{e,body,upper,foot}=fixture();e.select(1,-1);if(mirror)e.mirrorFigure();e.object.scale=scale;e.touch();
+  e.select(1,body-1);e.setSpatialPose({turn:.6,pitch:.3});e.select(1,upper-1);e.setSpatialPose({turn:.4,pitch:.2});
+  const g=e.geometry.objects.get(0).segments[upper-1],center={...g.start},point={...g.end},before=state(e,upper),boot=state(e,foot),saved=e.serialize();
+  const radius=Math.hypot(point.x-center.x,point.y-center.y),angle=Math.atan2(point.y-center.y,point.x-center.x);
+  e.beginDrag('Pose knee');
+  for(let i=1;i<=60;i++){const a=angle+i*Math.PI/30;e.poseJoint(center.x+radius*Math.cos(a),center.y+radius*Math.sin(a));near(state(e,upper).p[2],before.p[2],1e-5);}
+  sameOrientation(state(e,upper).q,before.q);sameOrientation(state(e,foot).q,boot.q);e.cancelDrag();assert.deepEqual(e.serialize(),saved);
+ }
+});
+
+test('dragging a planted knee steers the existing pole and retains the foot',()=>{
+ const{e,upper,lower,foot}=fixture();e.select(1,lower-1);e.setNodeIK({enabled:true,pinned:true,bendDirection:0});e.poseIKTarget(215,245);
+ const before=e.serialize(),ankle=state(e,lower),boot=state(e,foot),knee=state(e,upper);e.select(1,upper-1);
+ e.beginDrag('Pose knee');e.poseJoint(knee.end.x+60,knee.end.y-20);
+ assert.equal(e.selectedJoint,upper-1);assert.equal(e.object._stykIK[lower].pinned,true);
+ assert.ok(Math.hypot(...state(e,upper).p.map((v,i)=>v-knee.p[i]))>5);
+ near(state(e,lower).end.x,ankle.end.x);near(state(e,lower).end.y,ankle.end.y);sameOrientation(state(e,foot).q,boot.q);
+ e.cancelDrag();assert.deepEqual(e.serialize(),before);
+});

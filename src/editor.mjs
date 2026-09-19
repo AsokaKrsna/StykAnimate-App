@@ -225,19 +225,21 @@ export class Editor extends EventTarget {
   }
   /** Keep the last published scene across object edits, including edits queued
    * before the next render. Join descendants depend on their parent's pose. */
-  _invalidateObjects(uids, retained = null, {translation = false} = {}) {
+  _invalidateObjects(uids, retained = null, {translation = false, pose = false} = {}) {
     const previous = retained?.previous ?? this._geometry ?? this._incremental?.previous;
     const pending = retained?.dirtySlots ?? (this._geometry ? [] : this._incremental?.dirtySlots ?? []);
     const affected=this._ikPoseSlots(this.frame, resolveJoinSelection(this.frame, uids).affectedSlots);
     const dirtySlots = new Set([...pending, ...affected]), pendingSet=new Set(pending);
     const renderSources=new Map(this._geometry||retained?[]:this._incremental?.renderSources);
+    const poseSlots=new Set(this._geometry||retained?[]:this._incremental?.poseSlots);
     for(const slot of affected){
+      if(pose&&(!pendingSet.has(slot)||poseSlots.has(slot)))poseSlots.add(slot);else poseSlots.delete(slot);
       if(translation && previous && (this._geometry || !pendingSet.has(slot) || renderSources.has(slot))){
         const g=previous.objects.get(slot);if(g)renderSources.set(slot,g.renderSource||g);
       }else renderSources.delete(slot);
     }
     this._invalidate();
-    if (previous) this._incremental = {previous, dirtySlots, renderSources};
+    if (previous) this._incremental = {previous, dirtySlots, renderSources, poseSlots};
   }
   /** Definition edits invalidate every instance and joined dependent, retaining unrelated artwork. */
   _invalidateFigure(typeId, retained = null) {
@@ -590,7 +592,7 @@ export class Editor extends EventTarget {
     if(this._drag)this._synchronizeAnimationOrigins(this.frame,this._drag.before);
     if (this._drag) this._drag.changed = true;
     else this._revision = ++this._revisionSerial;
-    this._invalidateObjects(this._drag?.before.map(o => o.unique_id) ?? [this.selectedUid],null,{translation:translation && !this.animationChannels.length && !this._drag?.before.some(o=>o.runtime_segments || hasPinnedIK(o))});
+    this._invalidateObjects(this._drag?.before.map(o => o.unique_id) ?? [this.selectedUid],null,{pose:true,translation:translation && !this.animationChannels.length && !this._drag?.before.some(o=>o.runtime_segments || hasPinnedIK(o))});
     this._rememberIKBends();
     this._emit('edit', {live: Boolean(this._drag),
       changedUids: this._drag?.before.map(o => o.unique_id) ?? [this.selectedUid]});
