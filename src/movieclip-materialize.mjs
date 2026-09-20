@@ -45,8 +45,8 @@ export function createMovieclipMaterializer(report,{allowCompositeOpacity=false}
       if(isMovieclip(figure)){
         if(object._movieclipSample===null)continue;
         if(object._stykVfx)throw new Error('This movieclip has container effects. Keep it as a movieclip to preserve the combined effect stack.');
-        const asset=movieclipAsset(figure),local=localFrame(asset,object._movieclipSample??0),angle=object.angles?.[0]??0,
-          scale=object.scale??1,c=Math.cos(angle)*scale,d=Math.sin(angle)*scale,root=point(g.root),flip=object.image_text_flags?-1:1;
+        const asset=movieclipAsset(figure),local=localFrame(asset,g.drawingView?.frame??object._movieclipSample??0),angle=g.drawingTransform?.angle??object.angles?.[0]??0,
+          scale=g.drawingTransform?.scale??object.scale??1,c=Math.cos(angle)*scale,d=Math.sin(angle)*scale,root=point(g.root),flip=g.drawingTransform?.flip??(object.image_text_flags?-1:1);
         if(local._stykVfx)throw new Error('This movieclip has scene effects. Keep it as a movieclip to preserve their composition.');
         const a=transform.a*c+transform.c*d,b=transform.b*c+transform.d*d,
           cy=(-transform.a*d+transform.c*c)*flip,dy=(-transform.b*d+transform.d*c)*flip,opacity=transform.opacity*(1-(object.field28??0)/255);

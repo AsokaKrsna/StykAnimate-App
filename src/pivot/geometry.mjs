@@ -534,7 +534,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       warnings.push(`Cyclic join at object ${slot}`);
       return null;
     }
-    let root = { x: Number(obj.root_x ?? 0), y: Number(obj.root_y ?? 0) };
+    let root = { x: Number(obj.root_x ?? 0), y: Number(obj.root_y ?? 0) },joinedParent;
     if (obj.join) {
       const parentSlot=Number(obj.join.target_object_slot);
       // Topological traversal normally resolved this parent already. Only an
@@ -545,11 +545,12 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         parent=yield* objectAt(parentSlot,path);
       }
       const p = parent?.joints.get(Number(obj.join.target_handle_id ?? 0));
+      joinedParent=parent;
       if (p) root = { ...p };
       else warnings.push(`Unresolved join at object ${slot}`);
     }
     if (isMovieclip(fig)) {
-      const geometry = yield* buildMovieclipGeometrySteps(fig,obj,root,slot,{timeline,evaluatedFrame,buildGeometry,buildGeometrySteps});
+      const geometry = yield* buildMovieclipGeometrySteps(fig,obj,root,slot,{timeline,evaluatedFrame,buildGeometry,buildGeometrySteps,joinedParent});
       cache.set(slot,geometry); return geometry;
     }
     const previous = incremental?.previous?.objects.get(slot), poseAllowed = incremental?.poseSlots?.has(slot);

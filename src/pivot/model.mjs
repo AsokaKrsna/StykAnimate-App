@@ -93,7 +93,7 @@ export function validateObjectChanges(report, frame, changedUids) {
     if (changed.has(object.unique_id)) slots.push(slot);
   });
   if (slots.length !== changed.size) throw new Error('A gesture cannot change figure identities.');
-  validateSpatialJoins(frame);
+  validateSpatialJoins(frame,report.figure_types);
   for (const slot of slots) validateObjectPose(report, frame.objects[slot], definition(frame.objects[slot].figure_type_id));
   const finished = new Set();
   for (const initial of slots) {
@@ -232,7 +232,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
     )
       throw new Error("Invalid keyframe objects or duration.");
     totalObjects += frame.objects.length;
-    validateSpatialJoins(frame);
+    validateSpatialJoins(frame,report.figure_types);
     if (totalObjects > 2000000)
       throw new Error("Scene exceeds the two-million-object limit.");
     const uids = new Set();

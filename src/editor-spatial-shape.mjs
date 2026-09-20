@@ -7,7 +7,7 @@ export const editorSpatialShapeMethods={
  setSpatialCamera(patch){
   const object=this.object,figure=this.figure;if(!object||!figure?.segments.some(spatialBone))return false;
   const camera={...spatialCamera(object),...patch},state={...object._stykSpatial,camera};
-  if(camera.strength&&!spatialPerspectiveAvailable(this.selectionFrame.objects,object))throw new Error('Perspective requires a single spatial figure. Separate joined figures before enabling it.');
+  if(camera.strength&&!spatialPerspectiveAvailable(this.selectionFrame.objects,object,this.report.figure_types))throw new Error('Perspective requires a single spatial figure. Separate joined figures before enabling it.');
   validateSpatialPose({...object,_stykSpatial:state},figure);
   if(Object.entries(camera).every(([k,v])=>v===spatialCamera(object)[k]))return false;
   return this._objectEdit('Adjust perspective',o=>{o._stykSpatial=state;delete o.runtime_segments;});

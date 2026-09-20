@@ -8,6 +8,8 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Added
 
+- Attached head drawings can switch in discrete directions as a spatial rig turns or tilts, with one Form selector for transformations and no blending between drawings.
+
 - Spatial rigs can preserve authored silhouettes during turns with four or eight smoothly connected reference views on solid shapes, using the existing rotation controls, animation and native saving.
 - Animate close-up kicks and punches on spatial rigs with optional perspective, toward-camera limb controls, and adjustable part size, length, width and taper. Controls support pose keys, undo and native saving; perspective is available for single spatial figures.
 - Pose spatial character rigs with ordinary joint dragging, three-axis rotation rings, a turn/tilt pad and named drawing or expression selectors. Form and view selectors share the posing panel's field styling and alignment. Rotate the entire character together with its planted targets, or plant feet as the hips move, steer planted knees and elbows directly, or rotate a limb to release its pin and carry its hand or foot. Free feet and hands follow their shin or forearm; direct joint shortcuts select each limb articulation. Joint dragging preserves depth and repeated target drags retain their bend plane. Poses use the existing timeline, IK, undo and native saving.

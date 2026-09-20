@@ -167,6 +167,24 @@ existing single-frame playback offsets, including through the Advanced timeline.
 The head drawing remains discrete; selecting a drawing creates an ordinary
 undoable pose edit and retains the body selection.
 
+Attached drawing banks may opt into stepped rotation with
+`drawingRotation: {steps, tiltThreshold}`. Each form contains exactly three rows
+of `steps` views: level, up, down, ordered from front around a full turn. A
+joined spatial bone selects the nearest direction and switches tilt at the
+specified radian threshold. Its composed orientation uses native angle hints
+to keep equivalent Euler branches stable at side and back views. The drawing
+is anchored to the bone origin and follows its roll; no drawing interpolation
+or hidden 3D head geometry is used.
+
+The existing single-frame offset chooses the form. Only the selected drawing
+is evaluated through the bounded movieclip cache. Derived selection lives in
+geometry, not saved document state; direct posing, workers, seeking, reverse
+playback and explicit materialization share it. The Form selector appears above
+body controls. Existing manually selected drawing banks remain unchanged.
+Rotation-driven drawings support the spatial parent's perspective: their anchor
+and scale use its depth projection. Other joined drawings retain their existing
+orthographic restriction. Body rotation, articulation and IK are unchanged.
+
 Whole-character orientation uses **Rotate figure** in the Character rig inspector.
 It rotates the root spatial articulation and carries existing spatial targets,
 bend-plane directions and foot/hand orientations around that pivot. Pin states

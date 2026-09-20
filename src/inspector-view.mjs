@@ -213,7 +213,7 @@ export function inspectorView({
     joint = editor.selectedJoint,
     segment = figure.segments[joint];
   if(!builder&&figure.segments.some(s=>s._stykRig?.spatial?.origin)){
-    return spatialControlsView(editor)+joinedDrawingSetsView(editor)+(joint<0?group('Placement',grid(field('X','root_x',object.root_x,'px')+field('Y','root_y',object.root_y,'px')+field('Scale','scale',object.scale*100,'%','min="0.01"'))):'');
+    return joinedDrawingSetsView(editor)+spatialControlsView(editor)+(joint<0?group('Placement',grid(field('X','root_x',object.root_x,'px')+field('Y','root_y',object.root_y,'px')+field('Scale','scale',object.scale*100,'%','min="0.01"'))):'');
   }
   if (builder && editor.selectedPolygonIndex >= 0) {
     const index=editor.selectedPolygonIndex, polygon=figure.polyfills[index];
@@ -236,7 +236,7 @@ export function inspectorView({
   );
   // Pivot origins use -1; segment endpoint indices start at zero.
   const jointScope = joint >= 0 && Boolean(segment);
-  let html = (jointScope ? "" : title) + figureLayerField(editor) + range + (!builder ? spatialControlsView(editor)+joinedDrawingSetsView(editor) : "");
+  let html = (jointScope ? "" : title) + figureLayerField(editor) + range + (!builder ? joinedDrawingSetsView(editor)+spatialControlsView(editor) : "");
   if (!jointScope) {
     if (object.join || frame.objects.some(part => part.join?.target_object_slot === object.object_slot)) {
       html += group('Connected figure',

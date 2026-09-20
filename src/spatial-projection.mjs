@@ -4,9 +4,13 @@ export const cameraDefaults = Object.freeze({strength: 0, distance: 600});
 export const shapeDefaults = Object.freeze({width: 1, taper: 0});
 export const spatialCamera = object => ({...cameraDefaults, centerX:object?.root_x??0, centerY:object?.root_y??0, ...object?._stykSpatial?.camera});
 export const spatialShape = (object, id) => ({...shapeDefaults, ...object?._stykSpatial?.shape?.[id]});
-export const spatialPerspectiveAvailable = (objects, object) => !object?.join && !objects.some(o=>o.join?.target_object_slot===object?.object_slot);
-export function validateSpatialJoins(frame){
-  for(const o of frame.objects)if(o.join&&(o._stykSpatial?.camera?.strength||frame.objects[o.join.target_object_slot]?._stykSpatial?.camera?.strength))throw new Error('Perspective requires a single spatial figure. Disable perspective before joining separate figures.');
+function projectedDrawing(objects,object,figures){
+  const parent=objects[object.join?.target_object_slot],figure=id=>figures?.find(f=>f.figure_type_id===id);
+  return Boolean(figure(object.figure_type_id)?._styk?.movieclip?.drawingRotation&&figure(parent?.figure_type_id)?.segments.some(s=>s.segment_id===object.join.target_handle_id&&s._stykRig?.spatial?.origin));
+}
+export const spatialPerspectiveAvailable = (objects, object, figures) => !object?.join && !objects.some(o=>o.join?.target_object_slot===object?.object_slot&&!projectedDrawing(objects,o,figures));
+export function validateSpatialJoins(frame,figures){
+  for(const o of frame.objects)if(o.join&&(o._stykSpatial?.camera?.strength||frame.objects[o.join.target_object_slot]?._stykSpatial?.camera?.strength&&!projectedDrawing(frame.objects,o,figures)))throw new Error('Perspective requires a single spatial figure or a rotation-driven drawing attachment. Disable perspective before joining separate figures.');
 }
 export function projection(object, root) {
   const c = object?._stykSpatial?.camera;
