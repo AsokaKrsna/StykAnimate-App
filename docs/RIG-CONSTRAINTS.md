@@ -78,10 +78,10 @@ axial stretching uses weighted transformed positions. Derived depth participates
 in the existing surface evaluator and renderer. There is no additional animation
 clock, pose store or renderer scene graph.
 
-Authored single-bone skin can optionally provide `viewPoints`: four finite XYZ
-positions relative to the binding's rest origin, ordered at turns of 0, 90, 180
-and 270 degrees. Each target uses the frontal axes of that view. This supports
-art-directed silhouettes on solid clumps without changing topology or blending
+Authored single-bone skin can optionally provide `viewPoints`: four or eight finite XYZ
+positions relative to the binding's rest origin, ordered in equal turn steps
+starting at 0 degrees (90-degree or 45-degree spacing). Each target uses the
+frontal axes of that view. This supports art-directed silhouettes on solid clumps without changing topology or blending
 drawings. The composed bone orientation selects adjacent targets; smoothstep
 interpolation wraps continuously at 360 degrees. The inverse heading transform
 then retains physical tilt and roll. Near a vertical viewing direction, where
@@ -137,6 +137,9 @@ display as Custom pose. Names and lengths are validated on import; the metadata
 contains no external joint references, so ordinary duplication/remapping retains
 its meaning. This supports optional expression geometry that collapses inside a
 head at zero length and uses the existing surface depth, saving and playback.
+Choices whose hidden length is zero scale bound geometry in all three axes, so
+hidden expressions have no visible area at any viewing angle. Ordinary spatial
+bones continue to stretch only along their axis.
 
 Spatial IK evaluates only the driving dependency closure, excluding skin vertices
 from solver iterations. Two-bone spatial chains in one figure use an analytic

@@ -8,7 +8,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Added
 
-- Spatial rigs can preserve authored silhouettes during turns with smoothly corrected solid shapes, using the existing rotation controls, animation and native saving.
+- Spatial rigs can preserve authored silhouettes during turns with four or eight smoothly connected reference views on solid shapes, using the existing rotation controls, animation and native saving.
 - Animate close-up kicks and punches on spatial rigs with optional perspective, toward-camera limb controls, and adjustable part size, length, width and taper. Controls support pose keys, undo and native saving; perspective is available for single spatial figures.
 - Pose spatial character rigs with ordinary joint dragging, three-axis rotation rings, a turn/tilt pad and named drawing or expression selectors. Form and view selectors share the posing panel's field styling and alignment. Rotate the entire character together with its planted targets, or plant feet as the hips move, steer planted knees and elbows directly, or rotate a limb to release its pin and carry its hand or foot. Free feet and hands follow their shin or forearm; direct joint shortcuts select each limb articulation. Joint dragging preserves depth and repeated target drags retain their bend plane. Poses use the existing timeline, IK, undo and native saving.
 - Blend multiple rig anchors with editable weighted joints, so connected surfaces can share articulation controls and projected axes.
@@ -20,6 +20,8 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Show a ⇔ marker on scrubbable property labels and a hint in Transform sections that dragging a label adjusts its value, with Shift or Alt for finer steps.
 
 ### Fixed
+
+- Keep hidden rig expressions invisible from every angle instead of leaving flattened eyes visible through a turned head.
 
 - Keep drawing responsive at high zoom, with consistent brush smoothing, timely live ink updates, and reliable fast strokes over existing paint.
 

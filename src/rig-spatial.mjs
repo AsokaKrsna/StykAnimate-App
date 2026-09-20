@@ -9,7 +9,7 @@ const sameVector=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&a.length===3&&b.leng
 export function sameSpatial(a,b){
   if(a===b)return true;if(!a||!b)return false;
   if(a.bindings||b.bindings)return Boolean(Array.isArray(a.bindings)&&Array.isArray(b.bindings)&&a.bindings.length===b.bindings.length&&sameVector(a.point,b.point)&&a.bindings.every((v,i)=>v?.joint===b.bindings[i]?.joint&&v?.weight===b.bindings[i]?.weight)&&
-    (a.viewPoints===b.viewPoints||Array.isArray(a.viewPoints)&&Array.isArray(b.viewPoints)&&a.viewPoints.length===4&&b.viewPoints.length===4&&sameVector(a.viewPoints[0],b.viewPoints[0])&&sameVector(a.viewPoints[1],b.viewPoints[1])&&sameVector(a.viewPoints[2],b.viewPoints[2])&&sameVector(a.viewPoints[3],b.viewPoints[3])));
+    (a.viewPoints===b.viewPoints||Array.isArray(a.viewPoints)&&Array.isArray(b.viewPoints)&&a.viewPoints.length===b.viewPoints.length&&a.viewPoints.every((p,i)=>sameVector(p,b.viewPoints[i]))));
   return a.parent===b.parent&&a.turn===b.turn&&a.pitch===b.pitch&&sameVector(a.origin,b.origin)&&sameVector(a.tip,b.tip);
 }
 export function validateSpatial(s,reference,dependencies,segments,ids){
@@ -18,7 +18,7 @@ export function validateSpatial(s,reference,dependencies,segments,ids){
   const ref=(id,label,bone=false)=>{reference(id,label,true);dependencies.add(id);if(id&&bone&&!spatialBone(segments[ids.get(id)]))throw new Error(`${label} must be an articulated spatial joint.`);};
   if(s.bindings){
     if(Object.keys(s).some(k=>!['point','bindings','viewPoints'].includes(k))||!vector(s.point)||!Array.isArray(s.bindings)||!s.bindings.length||s.bindings.length>4)throw new Error('A skin point needs a position and 1–4 joint bindings.');
-    if(s.viewPoints!==undefined&&(!Array.isArray(s.viewPoints)||s.viewPoints.length!==4||[0,1,2,3].some(i=>!vector(s.viewPoints[i]))||s.bindings.length!==1))throw new Error('View-corrected skin needs four cardinal view positions and one joint binding.');
+    if(s.viewPoints!==undefined&&(!Array.isArray(s.viewPoints)||![4,8].includes(s.viewPoints.length)||Array.from({length:s.viewPoints.length},(_,i)=>i).some(i=>!vector(s.viewPoints[i]))||s.bindings.length!==1))throw new Error('View-corrected skin needs four cardinal or eight evenly spaced view positions and one joint binding.');
     const seen=new Set();let sum=0;
     for(const b of s.bindings){if(!b||Object.keys(b).some(k=>!['joint','weight'].includes(k))||!Number.isFinite(b.weight)||b.weight<=0||b.weight>1||seen.has(b.joint))throw new Error('Skin weights must use distinct joints and positive weights.');ref(b.joint,'Skin binding',true);if(!b.joint)throw new Error('Bind skin to an articulated joint.');seen.add(b.joint);sum+=b.weight;}
     if(Math.abs(sum-1)>1e-6)throw new Error('Skin weights must add up to one.');
@@ -38,7 +38,8 @@ export function spatialQuaternion(bend,turn,pitch){
 export function spatialPoint(frame,point){
   let p=point;
   if(frame.shape){const offset=shapeOffset(frame,point);p=point.map((n,i)=>n+offset[i]);}
-  if(Math.abs(frame.stretch-1)>EPS){const v=frame.axis,d=(point[0]-frame.origin[0])*v[0]+(point[1]-frame.origin[1])*v[1]+(point[2]-frame.origin[2])*v[2];p=p.map((n,i)=>n+d*(frame.stretch-1)*v[i]);}
+  if(frame.choiceScale!==undefined){p=p.map((n,i)=>frame.origin[i]+(n-frame.origin[i])*frame.choiceScale);}
+  else if(Math.abs(frame.stretch-1)>EPS){const v=frame.axis,d=(point[0]-frame.origin[0])*v[0]+(point[1]-frame.origin[1])*v[1]+(point[2]-frame.origin[2])*v[2];p=p.map((n,i)=>n+d*(frame.stretch-1)*v[i]);}
   const rotated=quatRotate(frame.q,p);for(let i=0;i<3;i++)rotated[i]+=frame.t[i];return rotated;
 }
 function shapeOffset(frame,point){
@@ -70,18 +71,20 @@ function skinPoint(s,get){
   }
   return result;
 }
-// Cardinal targets are expressed relative to the binding origin, in the
+// Evenly spaced turn targets are expressed relative to the binding origin, in the
 // frontal coordinate axes of each view. A pose owns one interpolation frame;
 // skin vertices contain only authored positions, never evaluated scene state.
 function viewCorrectedPoint(s,f){
   let v=f.viewInterpolation;
   if(!v){
     const [x,y,z,w]=f.q,fx=2*(w*y-x*z),fz=1-2*(x*x+y*y),horizontal=Math.hypot(fx,fz);
-    const yaw=horizontal>1e-9?Math.atan2(fx,fz):0,phase=(yaw/(Math.PI/2)+4)%4,index=Math.floor(phase),u=phase-index;
+    const yaw=horizontal>1e-9?Math.atan2(fx,fz):0;
+    const interval=count=>{const phase=(yaw/(2*Math.PI)*count+count)%count,index=Math.floor(phase),u=phase-index;return {index,next:(index+1)%count,blend:u*u*(3-2*u)};};
     const confidence=Math.max(0,Math.min(1,(horizontal-.05)/.2));
-    v=f.viewInterpolation={index,next:(index+1)%4,blend:u*u*(3-2*u),cos:Math.cos(yaw),sin:Math.sin(yaw),strength:confidence*confidence*(3-2*confidence)};
+    v=f.viewInterpolation={four:interval(4),eight:interval(8),cos:Math.cos(yaw),sin:Math.sin(yaw),strength:confidence*confidence*(3-2*confidence)};
   }
-  const a=s.viewPoints[v.index],b=s.viewPoints[v.next],t=v.blend;
+  const interval=s.viewPoints.length===8?v.eight:v.four;
+  const a=s.viewPoints[interval.index],b=s.viewPoints[interval.next],t=interval.blend;
   const x=a[0]+(b[0]-a[0])*t,y=a[1]+(b[1]-a[1])*t,z=a[2]+(b[2]-a[2])*t;
   const p=s.point,k=v.strength;
   return [p[0]+(f.origin[0]+x*v.cos-z*v.sin-p[0])*k,
@@ -98,6 +101,9 @@ export function evaluateSpatial(s,{segment,input,get,root,scale,figureAngle,rest
     const origin=parent?spatialPoint(parent,s.origin):s.origin,v=s.tip.map((n,i)=>n-s.origin[i]),length=Math.hypot(...v),rotatedOrigin=quatRotate(q,s.origin),t=origin.map((n,i)=>n-rotatedOrigin[i]);
     const stretch=length>EPS&&Math.abs(scale)>EPS?input.length/scale/length:1,axis=length>EPS?v.map(n=>n/length):[0,1,0];
     spatial={q,t,dual:quatMultiply([...t,0],q).map(n=>n*.5),nativeBend,origin:s.origin,axis,stretch};
+    // A hidden expression must lose its area, not flatten into a visible card.
+    // Ordinary bones retain axial stretching and their existing radial width.
+    if(segment._stykPoseChoice?.hidden===0)spatial.choiceScale=stretch;
     if(shape&&(shape.width!==1||shape.taper!==0)){spatial.shape=shape;spatial.restLength=Math.max(EPS,length);}
     point=spatialPoint(spatial,s.tip);start=project(origin);
   }
