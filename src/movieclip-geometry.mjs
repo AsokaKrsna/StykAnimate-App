@@ -5,6 +5,7 @@ import {layerVisible} from './layers.mjs';
 import {rotatedDrawing,drawingRotationReference} from './movieclip-drawings.mjs';
 import {animationRotation} from './animation-origin.mjs';
 import {projection} from './spatial-projection.mjs';
+import {buildMovieclipMeshSteps} from './movieclip-mesh.mjs';
 
 const caches = new WeakMap();
 const MAX_FRAMES = 48, MAX_POINTS = 250000;
@@ -49,6 +50,7 @@ function* sampleSteps(asset, local, api) {
 /** One selectable container, with independently styled child render groups.
  * Cached local geometry is shared by all instances of an immutable asset. */
 export function* buildMovieclipGeometrySteps(fig,obj,root,slot,api) {
+  if(movieclipAsset(fig).spatialMeshes)return yield* buildMovieclipMeshSteps(fig,obj,root,slot,api.joinedParent,api.objectColor,api.previous);
   const asset=movieclipAsset(fig),parent=api.joinedParent,
     joint=asset.drawingRotation&&parent?.segments.find(s=>s.seg.segment_id===obj.join?.target_handle_id),
     figureAngle=joint?.spatialFrame?animationRotation(parent.fig,parent.obj):0,

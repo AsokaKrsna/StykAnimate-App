@@ -481,6 +481,7 @@ export const editorMovieclipMethods={
   enterMovieclip(typeId=this.figure?.figure_type_id){
     if(drawingResourcesFor(this.report)?.stats.unpublished)throw new Error('Finish drawing publication before editing a movieclip.');
     const figure=this.report.figure_types.find(f=>f.figure_type_id===typeId);if(!isMovieclip(figure))throw new Error('Choose a movieclip.');
+    if(movieclipAsset(figure).spatialMeshes)throw new Error('This is an attached mesh. Pose its parent joint and choose a Form in the inspector; its geometry is authored in the source model.');
     if(this._drag)this.commitDrag();if(this._animationEdit)this.commitAnimationEdit();
     const scopes=this._movieclipScopes??[],parent={};
     for(const key of Object.keys(this))if(key!=='_movieclipScopes')parent[key]=this[key];

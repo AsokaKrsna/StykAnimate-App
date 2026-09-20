@@ -6,6 +6,7 @@ import {layerVisible} from './layers.mjs';
 import {createFrame} from './demo.mjs';
 import {setContinuations} from './movieclip-presence.mjs';
 import {remapVfxOwner} from './vfx.mjs';
+import {materializeMeshGeometry} from './movieclip-mesh-materialize.mjs';
 
 export function createMovieclipMaterializer(report,{allowCompositeOpacity=false}={}){
   const figures=report.figure_types.filter(f=>!isMovieclip(f)),typeMaps=new WeakMap(),uids=new Map();
@@ -45,6 +46,11 @@ export function createMovieclipMaterializer(report,{allowCompositeOpacity=false}
       if(isMovieclip(figure)){
         if(object._movieclipSample===null)continue;
         if(object._stykVfx)throw new Error('This movieclip has container effects. Keep it as a movieclip to preserve the combined effect stack.');
+        if(g.meshAttachment){
+          if(nextType>65535)throw new Error('Flattening movieclips exceeds the figure limit.');
+          const baked=materializeMeshGeometry(g,point,nextType++,identity(id),transform.opacity);
+          anchors.set(slot,output.length);figures.push(baked.figure);output.push(baked.object);continue;
+        }
         const asset=movieclipAsset(figure),local=localFrame(asset,g.drawingView?.frame??object._movieclipSample??0),angle=g.drawingTransform?.angle??object.angles?.[0]??0,
           scale=g.drawingTransform?.scale??object.scale??1,c=Math.cos(angle)*scale,d=Math.sin(angle)*scale,root=point(g.root),flip=g.drawingTransform?.flip??(object.image_text_flags?-1:1);
         if(local._stykVfx)throw new Error('This movieclip has scene effects. Keep it as a movieclip to preserve their composition.');

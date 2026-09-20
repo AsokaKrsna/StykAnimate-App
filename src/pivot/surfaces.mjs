@@ -65,7 +65,7 @@ export function createSurfaceEvaluation(joints){
 export function surfaceHandles(poly) {return [...(poly.segment_ids??[]),...(poly._stykSurface?.basis??[]),...(poly._stykSurface?.depth??[])];}
 export function documentHasSurfaces(document,seen=new Set()) {
   if(seen.has(document))return false;seen.add(document);
-  return document.figure_types.some(f=>f.polyfills?.some(p=>p._stykSurface)||(f._styk?.movieclip&&documentHasSurfaces(f._styk.movieclip.document,seen)));
+  return document.figure_types.some(f=>f.polyfills?.some(p=>p._stykSurface)||f._styk?.movieclip?.spatialMeshes||(f._styk?.movieclip&&documentHasSurfaces(f._styk.movieclip.document,seen)));
 }
 export function remapSurface(poly, remap) {
   if(poly._stykSurface)poly._stykSurface={...poly._stykSurface,basis:poly._stykSurface.basis.map(remap),...(poly._stykSurface.depth?{depth:poly._stykSurface.depth.map(remap)}:{})};

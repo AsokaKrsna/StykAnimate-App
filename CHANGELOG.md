@@ -8,6 +8,8 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Added
 
+- Attach solid meshes to spatial rigs with continuous rotation and named forms, using existing posing controls, undo, native saving and rendered exports without adding a joint for every vertex.
+
 - Attached head drawings can switch in discrete directions as a spatial rig turns or tilts, with one Form selector for transformations and no blending between drawings.
 
 - Spatial rigs can preserve authored silhouettes during turns with four or eight smoothly connected reference views on solid shapes, using the existing rotation controls, animation and native saving.

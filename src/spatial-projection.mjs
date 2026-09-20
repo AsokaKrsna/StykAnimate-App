@@ -6,7 +6,8 @@ export const spatialCamera = object => ({...cameraDefaults, centerX:object?.root
 export const spatialShape = (object, id) => ({...shapeDefaults, ...object?._stykSpatial?.shape?.[id]});
 function projectedDrawing(objects,object,figures){
   const parent=objects[object.join?.target_object_slot],figure=id=>figures?.find(f=>f.figure_type_id===id);
-  return Boolean(figure(object.figure_type_id)?._styk?.movieclip?.drawingRotation&&figure(parent?.figure_type_id)?.segments.some(s=>s.segment_id===object.join.target_handle_id&&s._stykRig?.spatial?.origin));
+  const asset=figure(object.figure_type_id)?._styk?.movieclip;
+  return Boolean((asset?.drawingRotation||asset?.spatialMeshes)&&figure(parent?.figure_type_id)?.segments.some(s=>s.segment_id===object.join.target_handle_id&&s._stykRig?.spatial?.origin));
 }
 export const spatialPerspectiveAvailable = (objects, object, figures) => !object?.join && !objects.some(o=>o.join?.target_object_slot===object?.object_slot&&!projectedDrawing(objects,o,figures));
 export function validateSpatialJoins(frame,figures){

@@ -1,4 +1,5 @@
 import {validateDrawingSets} from './movieclip-drawings.mjs';
+import {validateMovieclipMeshes} from './movieclip-mesh.mjs';
 /** Movieclip assets are immutable figure definitions. Scene poses contain only
  * a small playback descriptor; sampled scenes and geometry never enter history. */
 export const MOVIECLIP_VERSION = 1;
@@ -10,9 +11,10 @@ export const movieclipAsset = figure => figure?._styk?.movieclip;
 export function snapshotFigureDefinition(figure) {
   const asset = movieclipAsset(figure);
   if (!asset) return structuredClone(figure);
-  const {document, ...settings} = asset;
+  const {document, spatialMeshes, ...settings} = asset;
   const copy = structuredClone({...figure, _styk: {...figure._styk, movieclip: settings}});
   copy._styk.movieclip.document = document;
+  if(spatialMeshes)copy._styk.movieclip.spatialMeshes=spatialMeshes;
   return copy;
 }
 const typeIndices = new WeakMap();
@@ -174,6 +176,7 @@ export function validateMovieclipGraph(report) {
         throw new Error('Invalid movieclip asset.');
       if (figure.segments?.length !== 1) throw new Error('Movieclip containers require one transform handle.');
       validateDrawingSets(asset);
+      validateMovieclipMeshes(asset);
       visit(asset.document, depth + 1);
     }
     visiting.delete(document); visited.add(document);

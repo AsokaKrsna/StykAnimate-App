@@ -550,7 +550,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       else warnings.push(`Unresolved join at object ${slot}`);
     }
     if (isMovieclip(fig)) {
-      const geometry = yield* buildMovieclipGeometrySteps(fig,obj,root,slot,{timeline,evaluatedFrame,buildGeometry,buildGeometrySteps,joinedParent});
+      const geometry = yield* buildMovieclipGeometrySteps(fig,obj,root,slot,{timeline,evaluatedFrame,buildGeometry,buildGeometrySteps,joinedParent,objectColor,previous:incremental?.previous?.objects.get(slot)});
       cache.set(slot,geometry); return geometry;
     }
     const previous = incremental?.previous?.objects.get(slot), poseAllowed = incremental?.poseSlots?.has(slot);
