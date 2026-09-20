@@ -592,7 +592,7 @@ export class Editor extends EventTarget {
     if(this._drag)this._synchronizeAnimationOrigins(this.frame,this._drag.before);
     if (this._drag) this._drag.changed = true;
     else this._revision = ++this._revisionSerial;
-    this._invalidateObjects(this._drag?.before.map(o => o.unique_id) ?? [this.selectedUid],null,{pose:true,translation:translation && !this.animationChannels.length && !this._drag?.before.some(o=>o.runtime_segments || hasPinnedIK(o))});
+    this._invalidateObjects(this._drag?.before.map(o => o.unique_id) ?? [this.selectedUid],null,{pose:true,translation:translation && !this.animationChannels.length && !this._drag?.before.some(o=>o.runtime_segments || o._stykSpatial?.camera?.strength || hasPinnedIK(o))});
     this._rememberIKBends();
     this._emit('edit', {live: Boolean(this._drag),
       changedUids: this._drag?.before.map(o => o.unique_id) ?? [this.selectedUid]});

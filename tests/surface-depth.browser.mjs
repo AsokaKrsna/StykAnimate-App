@@ -19,6 +19,11 @@ try{
    }
    if(contexts!==1)throw new Error('Depth renderer recreated its context between poses.');
    releaseSurfaceRaster(ctx);paintDepthSurfaces(ctx,[red,blue]);if(contexts!==2)throw new Error('Released depth resources were reused.');
+   // Near-plane clipping can produce a convex quad. Both halves must use the
+   // same depth interpolation in WebGL and in the software fallback.
+   const quad={...red,points:[{x:20,y:20},{x:220,y:20},{x:220,y:220},{x:20,y:220}],depthValues:[1,-1,-1,1]};
+   ctx.clearRect(0,0,240,240);paintDepthSurfaces(ctx,[quad,blue]);
+   for(const [x,y,color]of [[40,40,0],[40,180,0],[180,40,2],[180,180,0]])if(ctx.getImageData(x,y,1,1).data[color]!==255)throw new Error(`Clipped face fan failed ${software}: ${x},${y}`);
    // A tile boundary must not expose the background inside a connected surface.
    c.width=2100;c.height=1200;ctx.setTransform(10,0,0,10,0,0);paintDepthSurfaces(ctx,[red,blue]);
    for(const x of [1023,1024,1025])if(ctx.getImageData(x,500,1,1).data[3]!==255)throw new Error('Depth tile seam.');

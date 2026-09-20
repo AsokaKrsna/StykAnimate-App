@@ -1,3 +1,4 @@
+import {validateSpatialPose,validateSpatialJoins} from '../spatial-projection.mjs';
 import {validateSurface} from './surfaces.mjs';
 import {hasRigConstraints, rigConstraintPlanSteps, rigIKAllowed} from '../rig-constraints.mjs';
 import {validateSticknodesShape,validateSticknodesObject} from '../sticknodes/validation.mjs';
@@ -45,6 +46,7 @@ const validatedDefinitions = new WeakMap();
 function validateObjectPose(report, object, figure, origin = true) {
   if(object._sticknodesShapes||object._sticknodesSprite)validateSticknodesObject(object,figure);
   validateIK(object);
+  validateSpatialPose(object,figure);
   if(object._stykIK)for(const [id,c] of Object.entries(object._stykIK))if(c.enabled&&!rigIKAllowed(figure,figure.segments.findIndex(s=>s.segment_id===Number(id))))throw new Error('IK cannot drive a derived connector, weighted or angle-locked attachment.');
   validateAnimationStyle(object);
   validateVfxOwner(object);
@@ -91,6 +93,7 @@ export function validateObjectChanges(report, frame, changedUids) {
     if (changed.has(object.unique_id)) slots.push(slot);
   });
   if (slots.length !== changed.size) throw new Error('A gesture cannot change figure identities.');
+  validateSpatialJoins(frame);
   for (const slot of slots) validateObjectPose(report, frame.objects[slot], definition(frame.objects[slot].figure_type_id));
   const finished = new Set();
   for (const initial of slots) {
@@ -229,6 +232,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
     )
       throw new Error("Invalid keyframe objects or duration.");
     totalObjects += frame.objects.length;
+    validateSpatialJoins(frame);
     if (totalObjects > 2000000)
       throw new Error("Scene exceeds the two-million-object limit.");
     const uids = new Set();

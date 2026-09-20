@@ -1,3 +1,4 @@
+import {unprojectJoint,unprojectSpatial} from './spatial-projection.mjs';
 import {geometryPlans} from './pivot/geometry-pose.mjs';
 import {quatMultiply,spatialQuaternion} from './rig-spatial.mjs';
 import {captureSpatialIK} from './ik-spatial.mjs';
@@ -25,7 +26,7 @@ function captureFor(editor, geometry, handle, controller, graph) {
     const g=scene.objects.get(entry.slot),q=captureSpatialIK(g.fig,g.obj,g,[],[entry.index],rotation).spatialFollowers?.[entry.handle];
     if(q){if(entry.slot===editor.selectedSlot)spatialFollowers[entry.handle]=q;else(joinedSpatialFollowers[entry.uid]??={})[entry.handle]=q;}
   }
-  return {target: {...geometry.joints.get(handle), rotation}, followers, joinedFollowers,...(Object.keys(spatialFollowers).length?{spatialFollowers}:{}),...(Object.keys(joinedSpatialFollowers).length?{joinedSpatialFollowers}:{}),
+  return {target: {...unprojectJoint(geometry.joints.get(handle)), rotation}, followers, joinedFollowers,...(Object.keys(spatialFollowers).length?{spatialFollowers}:{}),...(Object.keys(joinedSpatialFollowers).length?{joinedSpatialFollowers}:{}),
     bendDirection: controller.bendDirection,
     bendReference: ikBendReference([shapes[0].start, ...shapes.map(s => s.end)], shapes.map(s => Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y)), controller.bendReference)};
 }
@@ -88,7 +89,7 @@ function capture(figure, object, geometry, handle, controller) {
   if (index < 0 || !point) throw new Error('Select a valid IK node.');
   const points = [geometry.segments[chain[0]].start, ...chain.map(i => geometry.segments[i].end)];
   const lengths = chain.map(i => {const s = geometry.segments[i]; return Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y);});
-  return {...captureSpatialIK(figure,object,geometry,chain,ikFollowerIndices(figure,handle,layout),rotation,controller?.spatialTarget?.swivel??0),target: {...point, rotation}, followers, bendDirection: controller?.bendDirection ?? bendDirection,
+  return {...captureSpatialIK(figure,object,geometry,chain,ikFollowerIndices(figure,handle,layout),rotation,controller?.spatialTarget?.swivel??0),target: {...unprojectJoint(point), rotation}, followers, bendDirection: controller?.bendDirection ?? bendDirection,
     bendReference: ikBendReference(points, lengths, controller?.bendReference)};
 }
 
@@ -234,6 +235,8 @@ export const editorIKMethods = {
     const {handle, controller} = controllerAt(this);
     if (!controller?.enabled) return false;
     const geometry = this.geometry.objects.get(this.selectedSlot), graph = context(this);
+    const raw=unprojectSpatial({x,y},controller.pinned?controller.spatialTarget?.depth??0:geometry.joints.get(handle)?.rawPoint?.[2]??controller.spatialTarget?.depth??0,this.object,geometry.root);
+    x=raw.x;y=raw.y;
     return this._objectEdit('Move IK target', object => {
       const current = object._stykIK[handle], target = {...current.target, x, y};
       const next = {...current, target};

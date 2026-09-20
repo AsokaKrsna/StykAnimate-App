@@ -58,3 +58,5 @@
 .spatial-rig .spatial-reset{background:transparent;font-size:10px;padding:0;min-height:18px;color:var(--theme-muted,#767676)}
 .spatial-exact{border-top:1px solid var(--border);padding-top:8px}.spatial-exact summary{cursor:pointer;font-size:11px;color:var(--theme-muted,#767676)}.spatial-exact[open]{display:grid;gap:8px}
 .spatial-axis{display:grid;grid-template-columns:30px minmax(30px,1fr) 62px;gap:6px;align-items:center;font-size:11px;color:var(--theme-muted,#767676)}.spatial-axis>input{width:100%;min-width:0;margin:0;accent-color:var(--theme-accent,#0d99ff)}.spatial-axis .field{padding:0 6px}.spatial-axis .field input{min-width:0}
+
+.spatial-proportion{grid-template-columns:76px minmax(30px,1fr) 68px}.spatial-proportion .field small{font-size:10px}.spatial-depth{display:grid;gap:4px;padding-top:6px}

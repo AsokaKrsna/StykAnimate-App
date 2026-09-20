@@ -38,7 +38,7 @@ function depthPoint(joints,id){const p=joints.get(id);if(!p?.depthOffset)return 
  * independent of triangle count; no definition or previous pose is retained. */
 export function createSurfaceEvaluation(joints){
   const frames=new Map(),root=joints.get(0);let lastBasis,lastFrame;
-  return(poly,points)=>{
+  return(poly,points,projected)=>{
     const s=poly._stykSurface,base=Number(poly.z_order??0),basis=s.basis;
     const same=lastBasis&&basis[0]===lastBasis[0]&&basis[1]===lastBasis[1]&&basis[2]===lastBasis[2];
     let f=same?lastFrame:frames.get(basis.join(':'));
@@ -46,6 +46,11 @@ export function createSurfaceEvaluation(joints){
       if(!o||!x||!y)return{culled:true,z:base};
       const dx=x.x-o.x,dy=x.y-o.y;f={o,dx,dy,den:dx*dx+dy*dy,parity:dx*(y.y-o.y)-dy*(y.x-o.x),depth:new Map()};frames.set(basis.join(':'),f);}
     lastBasis=basis;lastFrame=f;
+    if(projected){
+      let sum=0;const values=projected.depthValues;
+      for(let i=0;i<values.length;i++){sum+=values[i];values[i]+=base;}
+      return{culled:surfaceCulled(poly,points,joints,f.parity),z:base+sum/(values.length||1),depthValues:values};
+    }
     let sum=0;const values=s.depthTest?new Array(s.depth.length):undefined;
     for(let i=0;i<(s.depth?.length??0);i++){
       const id=s.depth[i];let value=f.depth.get(id);

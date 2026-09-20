@@ -2453,7 +2453,7 @@ overlay.addEventListener(
     if (state.drag.kind === "rig" && builderMode?.active) construction.beginRig();
     if (hit.joint < 0 && !handleEdit) {
       const uids = editor.resolveTranslationSelection().affectedUids;
-      state.drag.ikLive = editor._drag.before.some(hasPinnedIK);
+      state.drag.ikLive = editor._drag.before.some(o=>hasPinnedIK(o)||o._stykSpatial?.camera?.strength);
       if (!state.drag.ikLive) {
         state.drag.geometry = editor.geometry;
         state.drag.translations = new Map([...uids].map((uid) => [uid, { x: 0, y: 0 }]));

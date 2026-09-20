@@ -53,6 +53,12 @@ export function repairIKTopology(editor, before, figure, explicit) {
   for (const entry of before.frames) {
     const frame = editor._sourceFrame(entry);
     const handled = repairJoined(editor,frame,entry,before,figure,explicit);
+    let bones;
+    for(const object of frame?.objects??[])if(object.figure_type_id===figure.figure_type_id&&object._stykSpatial?.shape){
+      bones??=new Set(figure.segments.filter(s=>s._stykRig?.spatial?.origin).map(s=>s.segment_id));
+      const shape={};for(const[id,value]of Object.entries(object._stykSpatial.shape))for(const target of explicit.get(Number(id))??[Number(id)])if(bones.has(target))shape[target]=value;
+      object._stykSpatial={...object._stykSpatial,shape};
+    }
     for (const object of frame?.objects ?? []) {
       if (handled.has(object.object_slot) || object.figure_type_id !== figure.figure_type_id || !object._stykIK) continue;
       layout ??= ikLayout(figure);

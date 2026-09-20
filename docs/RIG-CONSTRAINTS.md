@@ -165,6 +165,49 @@ solved shin or forearm. Planting captures world orientation; direct chain rotati
 releases only that limb. The inspector offers direct limb-joint rotation shortcuts
 without introducing additional pose state.
 
+### Perspective and artistic proportions
+
+**Perspective** in the Character rig inspector is optional and starts at zero.
+Increase its strength, then use **Toward camera** on a hand/foot target to bring
+the limb forward. Smaller camera **Distance** increases foreshortening. Depth
+movement follows the cursor's view ray; reachable targets keep their screen
+position while their surrounding mesh grows or recedes. Ordinary reach limits
+still apply; **Stretch** remains an explicit choice. **Center on figure** aligns
+the camera with the current root. Its center then stays fixed when hips move,
+so a planted foot does not slide. Figure Scale provides shot framing.
+
+**Shape** identifies the selected articulation. **Part size** scales its native
+length, radial width and descendant bones together (for example, ankle and toes).
+**Length**, **Width** and **Taper** adjust that bone locally. Positive taper widens
+the tip with a smooth transition along the bone. Zero-length root controls use
+figure Scale instead of length/part-size controls. **Reset this bone's shape**
+restores that bone's original length, width and taper; child settings are retained.
+All controls use the existing pose keys, native saving, undo and gesture cancellation.
+
+The optional object field `_stykSpatial` contains `camera` (strength 0–1,
+distance 10–100000 in unscaled figure units, scene-space centerX/centerY) and
+`shape`, keyed by stable bone ID, with width 0.1–5 and taper −0.9–3. Missing values
+use orthographic projection and original proportions. Native lengths remain the
+sole length channels. Pose interpolation blends these values, including neutral
+endpoints; Tweener push clamps extrapolated values to their valid ranges.
+Topology transactions remap/prune shape references.
+
+IK and its persisted targets remain in pre-projection scene space. Perspective
+is applied once after skin deformation; pointer inputs are unprojected at the
+target's depth. With k = strength / (distance × instance scale), projection uses
+1 / (1 − k × depth). Depth-tested triangles clip at denominator 0.05 and use
+depth / (1 − k × depth), which interpolates correctly in screen space. Clipped
+convex quads share the same fan triangulation in GPU and software rendering.
+Camera changes invalidate projection; width/taper changes invalidate only their
+rig dependencies. Perspective root movement must rebuild projection and cannot
+reuse a uniform artwork translation. No renderer or playback clock is added.
+
+Perspective currently applies to a single spatial figure. Separately joined
+figures/drawing banks retain their existing orthographic projection; enabling
+perspective on them or joining an active perspective figure is rejected before
+publication. This avoids mixing projected attachment roots with unprojected IK.
+Part proportions remain available on ordinary joined spatial constructions.
+
 ## Editable 3D constructions
 
 Open **Library → Rig examples**, or **Build Figure → Edit → Rig examples**.

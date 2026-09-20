@@ -28,7 +28,7 @@ function poseInputs(figure, object, root) {
 export function evaluateIKPose(report, key, figure, object, root, layout, rigPlan=hasRigConstraints(figure)?rigConstraintPlan(figure):null) {
   let cache = documents.get(report);
   if (!cache) documents.set(report, cache = {entries: new Map(), bones: 0});
-  const inputs = poseInputs(figure, object, root), controllers = JSON.stringify(object._stykIK);
+  const inputs = poseInputs(figure, object, root), controllers = JSON.stringify([object._stykIK,object._stykSpatial?.shape]);
   const previous = cache.entries.get(key), bones = figure.segments.length;
   if (previous && previous.rigPlan===rigPlan && previous.controllers === controllers && previous.inputs.length === inputs.length &&
       inputs.every((value, i) => Object.is(value, previous.inputs[i]))) {

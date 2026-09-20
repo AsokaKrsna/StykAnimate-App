@@ -2,7 +2,7 @@
  * still supplies ordinary editable joints. Every rendering path paints the same
  * depth-tested triangles through drawGeometry, including worker/export canvases. */
 const caches=new WeakMap(),TILE=1024;
-export const depthSurface=s=>s?.type==='poly'&&s.poly?._stykSurface?.depthTest&&s.depthValues?.length===3&&s.points.length===3&&s.alpha===1&&!s.outline;
+export const depthSurface=s=>s?.type==='poly'&&s.poly?._stykSurface?.depthTest&&s.depthValues?.length===s.points.length&&s.points.length>=3&&s.points.length<=4&&s.alpha===1&&!s.outline;
 const makeCanvas=(ctx,w,h)=>typeof OffscreenCanvas!=='undefined'?new OffscreenCanvas(w,h):Object.assign(ctx.canvas.ownerDocument.createElement('canvas'),{width:w,height:h});
 function create(ctx){
   const canvas=makeCanvas(ctx,1,1),gl=canvas.getContext('webgl2',{alpha:true,antialias:true,premultipliedAlpha:true,preserveDrawingBuffer:true});
@@ -44,9 +44,9 @@ function software(r,data,box,w,h){
 export function paintDepthSurfaces(ctx,items){
   let r=caches.get(ctx);if(r?.gl?.isContextLost()){releaseSurfaceRaster(ctx);r={canvas:makeCanvas(ctx,1,1)};}
   if(!r)r=create(ctx);caches.set(ctx,r);
-  const data=new Float32Array(items.length*18);let at=0,minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
-  for(const s of items){const red=s.rgb[0]/255,green=s.rgb[1]/255,blue=s.rgb[2]/255;for(let i=0;i<3;i++){
-    const p=s.points[i],z=s.depthValues[i];data[at++]=p.x;data[at++]=p.y;data[at++]=z;data[at++]=red;data[at++]=green;data[at++]=blue;
+  const vertexCount=items.reduce((sum,s)=>sum+(s.points.length-2)*3,0),data=new Float32Array(vertexCount*6);let at=0,minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
+  for(const s of items){const red=s.rgb[0]/255,green=s.rgb[1]/255,blue=s.rgb[2]/255;for(let triangle=1;triangle<s.points.length-1;triangle++)for(let vertex=0;vertex<3;vertex++){
+    const i=vertex?triangle+vertex-1:0,p=s.points[i],z=s.depthValues[i];data[at++]=p.x;data[at++]=p.y;data[at++]=z;data[at++]=red;data[at++]=green;data[at++]=blue;
     minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);minZ=Math.min(minZ,z);maxZ=Math.max(maxZ,z);
   }}
   if(!(maxX>minX&&maxY>minY))return;
@@ -59,7 +59,7 @@ export function paintDepthSurfaces(ctx,items){
   for(let y=minY;y<maxY;y+=step)for(let x=minX;x<maxX;x+=step){
     const width=Math.min(step,maxX-x),height=Math.min(step,maxY-y),w=Math.max(1,Math.ceil(width*scale)),h=Math.max(1,Math.ceil(height*scale)),box=[x,y,width,height];
     if(r.canvas.width!==w)r.canvas.width=w;if(r.canvas.height!==h)r.canvas.height=h;
-    if(r.gl){const gl=r.gl;gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clearDepth(1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.uniform4fv(r.box,box);gl.drawArrays(gl.TRIANGLES,0,items.length*3);gl.flush();}
+    if(r.gl){const gl=r.gl;gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clearDepth(1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.uniform4fv(r.box,box);gl.drawArrays(gl.TRIANGLES,0,vertexCount);gl.flush();}
     else software(r,data,box,w,h);
     ctx.drawImage(r.canvas,x,y,width,height);
   }

@@ -1,3 +1,4 @@
+import {projection,projectSpatialFace,interpolateSpatialPose} from '../spatial-projection.mjs';
 import {createSurfaceEvaluation} from './surfaces.mjs';
 import {depthSurface,paintDepthSurfaces,releaseSurfaceRaster} from '../surface-raster.mjs';
 import {primitiveOutsideRasterClip} from './raster-clip.mjs';
@@ -249,6 +250,7 @@ export function evaluatedNativeFrame(report, index, t = 0, tweenCache, requested
       const constantTween=!legacyEasing&&tweenCache?.lookup(o,next,fig);
       if(constantTween?.value)return constantTween.value;
       const out = { ...o, runtime_segments: undefined };
+      if(o._stykSpatial||next._stykSpatial)out._stykSpatial=interpolateSpatialPose(o,next,t);
       if(o._stykVfx)out._stykVfx=interpolateVfx(o._stykVfx,byId.get(o.unique_id)?._stykVfx,t);
       const matching = (f) => {
         let objects = identities.get(f);
@@ -614,6 +616,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       }
       const handle = rigPose?.handle&&!(seg._stykRig?.spatial||seg._stykRig?.weighted) ? {x:Math.fround(rigPose.handle.x),y:Math.fround(rigPose.handle.y)} : end;
       if(rigPose?.depthOffset)handle.depthOffset=rigPose.depthOffset;
+      if(rigPose?.handle?.rawPoint)handle.rawPoint=rigPose.handle.rawPoint;
       joints.set(Number(seg.segment_id), handle);
       const override = Number(obj.color_override_raw) >>> 0;
       const rgb =
@@ -706,7 +709,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         s,
       ]),
     ) : null;
-    const polys = [],surfaceEvaluation=createSurfaceEvaluation(joints);
+    const polys = [],surfaceEvaluation=createSurfaceEvaluation(joints),camera=projection(obj,root);
     for (let i = 0; i < (fig.polyfills?.length ?? 0); i++) {
       if (pose?.reusePolygon(i)) {
         polys.push(previous.polys[i]);
@@ -737,7 +740,9 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
         points[0].y === points.at(-1).y
       )
         points.pop();
-      const surface=poly._stykSurface?surfaceEvaluation(poly,points):null;
+      const projected=poly._stykSurface?.depthTest?projectSpatialFace(points,camera):null;
+      if(projected&&projected.points!==points)points.splice(0,points.length,...projected.points);
+      const surface=poly._stykSurface?surfaceEvaluation(poly,points,projected):null;
       const render={
         type: "poly",
         poly,

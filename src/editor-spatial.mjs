@@ -1,3 +1,5 @@
+import {editorSpatialShapeMethods} from './editor-spatial-shape.mjs';
+import {unprojectSpatial,unprojectJoint,projectSpatial,projection} from './spatial-projection.mjs';
 import {geometryPlans} from './pivot/geometry-pose.mjs';
 import {animationRotation} from './animation-origin.mjs';
 import {rigConstraintPlan} from './rig-constraints.mjs';
@@ -10,6 +12,7 @@ const plans=e=>geometryPlans(e.geometry.objects.get(e.selectedSlot));
 const layout=e=>plans(e)?.definition??ikLayout(e.figure);
 const rigPlan=e=>plans(e)?.plan??rigConstraintPlan(e.figure);
 export const editorSpatialMethods={
+ ...editorSpatialShapeMethods,
  setPoseChoice(name,id){
   const group=poseChoiceGroups(this.figure,this.object).find(g=>g.name===name);if(!group)return false;
   if(id!==0&&!group.choices.some(c=>c.id===id))throw new Error('Choose an available rig pose.');
@@ -35,7 +38,8 @@ export const editorSpatialMethods={
  setSpatialIKPole(x,y,depth){
   const pole=this.getSpatialIKPole();if(!pole)return false;
   if(![x,y,depth??pole.point[2]].every(Number.isFinite))throw new Error('Choose a finite IK pole position.');
-  const v=[x-pole.center[0],y-pole.center[1],(depth??pole.point[2])-pole.center[2]],n=Math.hypot(...v);if(n<1e-6)return false;
+  const g=this.geometry.objects.get(this.selectedSlot),p=unprojectSpatial({x,y},depth??pole.point[2],this.object,g.root);
+  const v=[p.x-pole.center[0],p.y-pole.center[1],(depth??pole.point[2])-pole.center[2]],n=Math.hypot(...v);if(n<1e-6)return false;
   return this.setSpatialIKTarget({pole:v.map(x=>x/n),swivel:0});
  },
  setSpatialIKTarget(patch){
@@ -53,7 +57,11 @@ export const editorSpatialMethods={
     if(!this._drag.spatialIKCapture.has(key))this._drag.spatialIKCapture.set(key,captureSpatialIK(f,o,g,ikChain(f,id,c.chainLength,layout(this)),ikFollowerIndices(f,id,layout(this)),c.target.rotation,c.spatialTarget.swivel));
     capture=this._drag.spatialIKCapture.get(key);
    }
-   const next={...c,...capture,target:{...c.target,...(!c.pinned?g.joints.get(id):{})},spatialTarget:{...(capture?.spatialTarget??c.spatialTarget),...patch}};
+   const next={...c,...capture,target:{...c.target,...(!c.pinned?unprojectJoint(g.joints.get(id)):{})},spatialTarget:{...(capture?.spatialTarget??c.spatialTarget),...patch}};
+   if(patch.depth!==undefined){
+    const screen=c.pinned?projectSpatial([c.target.x,c.target.y,c.spatialTarget.depth],projection(o,g.root)):g.joints.get(id);
+    Object.assign(next.target,unprojectSpatial(screen,patch.depth,o,g.root));
+   }
    if(!c.pinned){
     const solved=solveObjectIK(f,o,g.root,layout(this),{[id]:{...next,pinned:true}},{includePoints:false,rigPlan:rigPlan(this),followTargetOrientation:false});o.angles=solved.angles;
     if(solved.lengths){o.lengths=solved.lengths;o.len_flag=1;}
@@ -127,11 +135,13 @@ export const editorSpatialMethods={
    try{this.selectedJoint=rigPlan(this).ids.get(Number(id));const pole=this.getSpatialIKPole();return pole?this.setSpatialIKPole(x,y,pole.knee[2]):false;}
    finally{this.selectedJoint=i;}
   }
-  const g=this.geometry.objects.get(this.selectedSlot),shape=g.segments[i],before=this.getSpatialPose(),span=Math.hypot(shape.end.x-shape.start.x,shape.end.y-shape.start.y),distance=Math.hypot(x-shape.start.x,y-shape.start.y);
+  const g=this.geometry.objects.get(this.selectedSlot),shape=g.segments[i],before=this.getSpatialPose(),start=unprojectJoint(shape.start),end=unprojectJoint(shape.end);
+  ({x,y}=unprojectSpatial({x,y},shape.end.rawPoint?.[2]??0,o,g.root));
+  const span=Math.hypot(end.x-start.x,end.y-start.y),distance=Math.hypot(x-start.x,y-start.y);
   if(span<1e-6||distance<1e-6)return false;
   // Pose in the view plane without an underdetermined three-axis solve.
   // This preserves foreshortening and axial twist, including closed drags.
-  const angle=Math.atan2(y-shape.start.y,x-shape.start.x)-Math.atan2(shape.end.y-shape.start.y,shape.end.x-shape.start.x);
+  const angle=Math.atan2(y-start.y,x-start.x)-Math.atan2(end.y-start.y,end.x-start.x);
   const parent=quatMultiply(shape.spatialFrame.q,inverseQuaternion(spatialQuaternion(before.bend,before.turn,before.pitch)));
   const world=quatMultiply(spatialQuaternion(angle,0,0),spatialWorldQuaternion(shape.spatialFrame.q,f,o));
   const pose=quaternionPose(quatMultiply(inverseQuaternion(parent),spatialWorldQuaternion(world,f,o,true)),before);

@@ -15,7 +15,7 @@ export function rigIKContext(figure,object,root,handles,angles,lengths,plan=rigC
  const order=plan.order.filter(i=>needed.has(i)),sourcePlans=new Map();
  function evaluate(all=false){
   const current=lengths(),points=new Map([[0,root]]),states=[],contexts=new Map();
-  const evaluation=figure._rigSources?null:createRigEvaluation(figure,object,root,plan,states);
+  const evaluation=figure._rigSources?null:createRigEvaluation(figure,object,root,plan,states,{project:false});
   for(const i of all?plan.order:order){
    const s=figure.segments[i],start=points.get(s.parent_id)??root,bend=object.bend_flag?object.bends[i]:s.bend_rad??0;
    const length=(current?.[i]??(object.len_flag?object.lengths[i]:s.length))*object.scale;
@@ -26,7 +26,7 @@ export function rigIKContext(figure,object,root,handles,angles,lengths,plan=rigC
     if(!context){
      const g=source.group,origin=points.get(g.rootId)??root;
      if(!sourcePlans.has(g))sourcePlans.set(g,rigConstraintPlan(g.figure));
-     context={evaluation:createRigEvaluation(g.figure,g.object,origin,sourcePlans.get(g),[]),joints:{get:id=>points.get(id?g.ids.get(id):g.rootId)}};
+     context={evaluation:createRigEvaluation(g.figure,g.object,origin,sourcePlans.get(g),[],{project:false}),joints:{get:id=>points.get(id?g.ids.get(id):g.rootId)}};
      contexts.set(g,context);
     }
     p=context.evaluation.evaluate(source.index,{start,angle:angles[i],length,bend},context.joints);states[i]=p;

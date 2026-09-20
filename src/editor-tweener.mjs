@@ -1,3 +1,4 @@
+import {interpolateSpatialPose} from './spatial-projection.mjs';
 import {evaluatedFrame, evaluatedNativeFrame, shortest} from './pivot/geometry.mjs';
 import {sheetKeyAt} from './layer-sheet.mjs';
 import {layerLocked, layerVisible} from './layers.mjs';
@@ -6,7 +7,7 @@ import {interpolateIK} from './ik.mjs';
 
 export const TWEENER_MODES = Object.freeze(['breakdown', 'neighbor', 'push', 'relax']);
 const fields = ['root_x', 'root_y', 'scale', 'angles', 'len_flag', 'lengths', 'bend_flag', 'bends',
-  '_stykAnimationOrigin'];
+  '_stykAnimationOrigin', '_stykSpatial'];
 const copy = value => structuredClone(value);
 
 /** Strict neighbors exclude the key being edited and clip replacement boundaries. */
@@ -123,6 +124,7 @@ export const editorTweenerMethods = {
         poseInto(object, value);
         if (start._stykIK) object._stykIK = copy(interpolateIK(start, value, mode === 'push' ? -1 : 1));
         if (mode === 'push') {
+          if(start._stykSpatial||value._stykSpatial)object._stykSpatial=interpolateSpatialPose(start,value,-1);
           // Reflect the relaxed displacement around the immutable starting pose.
           for (const field of ['root_x','root_y','scale']) object[field] = 2 * start[field] - value[field];
           object.scale = Math.max(0, object.scale);
