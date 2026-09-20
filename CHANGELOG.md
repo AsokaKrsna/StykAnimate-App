@@ -22,7 +22,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 - Keep drawing responsive at high zoom, with consistent brush smoothing, timely live ink updates, and reliable fast strokes over existing paint.
 
-- Reduce lag and memory pressure when posing dense figures: pose input is coalesced to the latest position per frame, unchanged spatial branches, fills and topology plans are reused, redundant skin evaluation and temporary allocations are reduced, and dragging releases superseded geometry instead of retaining every intermediate pose.
+- Reduce lag and memory pressure when posing dense figures: pose input is coalesced to the latest position per frame, unchanged spatial branches, fills, topology plans and drawing order are reused, and dragging releases superseded geometry. Dense 360 surfaces reuse bounded upload buffers during editing, playback preparation and export.
 - Keep projected rig controls usable in edge-on views, combine two joint rotations before projection, and let triangular fills use depth guides to resolve intersecting surfaces as articulated figures turn.
 - Offer recovery and reopening when the desktop editor stops unexpectedly, instead of leaving a black window that cannot save or close normally.
 - Restore right-click bending on the canvas: releasing a stationary right press opens the context menu while dragging with the button held bends the node under the pointer, matching Pivot-style gestures.

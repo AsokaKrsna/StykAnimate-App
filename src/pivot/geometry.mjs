@@ -1,6 +1,7 @@
 import {projection,projectSpatialFace,interpolateSpatialPose} from '../spatial-projection.mjs';
 import {createSurfaceEvaluation} from './surfaces.mjs';
 import {depthSurface,paintDepthSurfaces,releaseSurfaceRaster} from '../surface-raster.mjs';
+import {orderPoseDrawables} from './geometry-order.mjs';
 import {primitiveOutsideRasterClip} from './raster-clip.mjs';
 import {paintDrawingTiles} from '../drawing-raster.mjs';
 import {vfxRenderFrame,frameWithVfxTime} from '../vfx-clips.mjs';
@@ -774,6 +775,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       polys,
     };
     const renderSource=incremental?.renderSources?.get(slot);
+    if (pose && poseAllowed) geometry.drawables = orderPoseDrawables(geometry, previous);
     if(renderSource)Object.defineProperty(geometry,'renderSource',{value:renderSource});
     pose?.publish(geometry);
     cache.set(slot, geometry);

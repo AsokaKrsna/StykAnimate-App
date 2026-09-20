@@ -1,7 +1,7 @@
 /** Small, bounded depth compositor for native projected solid fills. The rig
  * still supplies ordinary editable joints. Every rendering path paints the same
  * depth-tested triangles through drawGeometry, including worker/export canvases. */
-const caches=new WeakMap(),TILE=1024;
+const caches=new WeakMap(),TILE=1024,MAX_RETAINED_FLOATS=2*1024*1024;
 export const depthSurface=s=>s?.type==='poly'&&s.poly?._stykSurface?.depthTest&&s.depthValues?.length===s.points.length&&s.points.length>=3&&s.points.length<=4&&s.alpha===1&&!s.outline;
 const makeCanvas=(ctx,w,h)=>typeof OffscreenCanvas!=='undefined'?new OffscreenCanvas(w,h):Object.assign(ctx.canvas.ownerDocument.createElement('canvas'),{width:w,height:h});
 function create(ctx){
@@ -44,17 +44,34 @@ function software(r,data,box,w,h){
 export function paintDepthSurfaces(ctx,items){
   let r=caches.get(ctx);if(r?.gl?.isContextLost()){releaseSurfaceRaster(ctx);r={canvas:makeCanvas(ctx,1,1)};}
   if(!r)r=create(ctx);caches.set(ctx,r);
-  const vertexCount=items.reduce((sum,s)=>sum+(s.points.length-2)*3,0),data=new Float32Array(vertexCount*6);let at=0,minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
-  for(const s of items){const red=s.rgb[0]/255,green=s.rgb[1]/255,blue=s.rgb[2]/255;for(let triangle=1;triangle<s.points.length-1;triangle++)for(let vertex=0;vertex<3;vertex++){
-    const i=vertex?triangle+vertex-1:0,p=s.points[i],z=s.depthValues[i];data[at++]=p.x;data[at++]=p.y;data[at++]=z;data[at++]=red;data[at++]=green;data[at++]=blue;
-    minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);minZ=Math.min(minZ,z);maxZ=Math.max(maxZ,z);
-  }}
+  const vertexCount=items.reduce((sum,s)=>sum+(s.points.length-2)*3,0),length=vertexCount*6;
+  let data;
+  if(length<=MAX_RETAINED_FLOATS){
+    if(!r.data || r.data.length<length || r.data.length>Math.max(1024,length*4))
+      r.data=new Float32Array(Math.max(1024,length));
+    data=r.data.subarray(0,length);
+  }else{r.data=undefined;data=new Float32Array(length);}
+  let at=0,minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
+  for(const s of items){const red=s.rgb[0]/255,green=s.rgb[1]/255,blue=s.rgb[2]/255;
+    for(let i=0;i<s.points.length;i++){
+      const p=s.points[i],z=s.depthValues[i];
+      minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);minZ=Math.min(minZ,z);maxZ=Math.max(maxZ,z);
+      // Native triangles are already a fan. A clipped quad repeats corners
+      // zero and two, using the values just written, without another scan.
+      if(i>=3){data.copyWithin(at,at-18,at-12);at+=6;data.copyWithin(at,at-12,at-6);at+=6;}
+      data[at++]=p.x;data[at++]=p.y;data[at++]=z;data[at++]=red;data[at++]=green;data[at++]=blue;
+    }
+  }
   if(!(maxX>minX&&maxY>minY))return;
   const matrix=ctx.getTransform(),scale=Math.max(1e-6,Math.hypot(matrix.a,matrix.b),Math.hypot(matrix.c,matrix.d)),inverse=matrix.inverse();
   const corners=[[0,0],[ctx.canvas.width,0],[0,ctx.canvas.height],[ctx.canvas.width,ctx.canvas.height]].map(([x,y])=>({x:inverse.a*x+inverse.c*y+inverse.e,y:inverse.b*x+inverse.d*y+inverse.f}));
   minX=Math.max(minX-2/scale,Math.min(...corners.map(p=>p.x)));minY=Math.max(minY-2/scale,Math.min(...corners.map(p=>p.y)));
   maxX=Math.min(maxX+2/scale,Math.max(...corners.map(p=>p.x)));maxY=Math.min(maxY+2/scale,Math.max(...corners.map(p=>p.y)));
-  if(r.gl){const gl=r.gl;gl.useProgram(r.program);gl.bindBuffer(gl.ARRAY_BUFFER,r.buffer);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STREAM_DRAW);gl.uniform2f(r.depth,minZ,Math.max(1e-8,maxZ-minZ));}
+  if(r.gl){const gl=r.gl;gl.useProgram(r.program);gl.bindBuffer(gl.ARRAY_BUFFER,r.buffer);
+    if(!r.bufferBytes||r.bufferBytes<data.byteLength||r.bufferBytes>Math.max(4096,data.byteLength*4)){
+      r.bufferBytes=Math.max(4096,data.byteLength);gl.bufferData(gl.ARRAY_BUFFER,r.bufferBytes,gl.STREAM_DRAW);
+    }
+    gl.bufferSubData(gl.ARRAY_BUFFER,0,data);gl.uniform2f(r.depth,minZ,Math.max(1e-8,maxZ-minZ));}
   const step=TILE/scale;
   for(let y=minY;y<maxY;y+=step)for(let x=minX;x<maxX;x+=step){
     const width=Math.min(step,maxX-x),height=Math.min(step,maxY-y),w=Math.max(1,Math.ceil(width*scale)),h=Math.max(1,Math.ceil(height*scale)),box=[x,y,width,height];
