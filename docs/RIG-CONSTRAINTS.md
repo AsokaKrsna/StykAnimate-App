@@ -78,6 +78,25 @@ axial stretching uses weighted transformed positions. Derived depth participates
 in the existing surface evaluator and renderer. There is no additional animation
 clock, pose store or renderer scene graph.
 
+Authored single-bone skin can optionally provide `viewPoints`: four finite XYZ
+positions relative to the binding's rest origin, ordered at turns of 0, 90, 180
+and 270 degrees. Each target uses the frontal axes of that view. This supports
+art-directed silhouettes on solid clumps without changing topology or blending
+drawings. The composed bone orientation selects adjacent targets; smoothstep
+interpolation wraps continuously at 360 degrees. The inverse heading transform
+then retains physical tilt and roll. Near a vertical viewing direction, where
+heading is undefined, correction fades smoothly to the ordinary rest position.
+Stretch, shape, figure reflection and perspective follow the existing pipeline.
+Multi-bone skin cannot use view targets.
+
+Targets are definition data saved and remapped with the skin, driven by ordinary
+turn/tilt/roll animation channels. There are no extra animation tracks or controls.
+The interpolation frame is computed once per evaluated bone and retained only in
+that pose's derived geometry. Definition changes invalidate it through the normal
+rig plan; undo, native round trips and fresh/partial evaluation use the same path.
+Targets require authoring and visual review at intermediate turns and tilts;
+interpolation alone does not guarantee a nonintersecting or accurate silhouette.
+
 In Animate, **Pose** uses the ordinary joint markers. Hand and foot endpoints
 use the existing IK settings. Dragging a free spatial joint rotates it in the
 view plane, preserving its depth and avoiding arbitrary axial twist. Use

@@ -5,18 +5,20 @@ const EPS=1e-9;
 export const spatialBone=s=>Boolean(s?._stykRig?.spatial?.origin);
 export const spatialSkin=s=>Boolean(s?._stykRig?.spatial?.bindings);
 export const hasSpatialRig=figure=>Boolean(figure?.segments.some(s=>s._stykRig?.spatial));
-const sameVector=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&a.length===3&&b.length===3&&a.every((v,i)=>v===b[i]);
+const sameVector=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&a.length===3&&b.length===3&&a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2];
 export function sameSpatial(a,b){
   if(a===b)return true;if(!a||!b)return false;
-  if(a.bindings||b.bindings)return Boolean(Array.isArray(a.bindings)&&Array.isArray(b.bindings)&&a.bindings.length===b.bindings.length&&sameVector(a.point,b.point)&&a.bindings.every((v,i)=>v?.joint===b.bindings[i]?.joint&&v?.weight===b.bindings[i]?.weight));
+  if(a.bindings||b.bindings)return Boolean(Array.isArray(a.bindings)&&Array.isArray(b.bindings)&&a.bindings.length===b.bindings.length&&sameVector(a.point,b.point)&&a.bindings.every((v,i)=>v?.joint===b.bindings[i]?.joint&&v?.weight===b.bindings[i]?.weight)&&
+    (a.viewPoints===b.viewPoints||Array.isArray(a.viewPoints)&&Array.isArray(b.viewPoints)&&a.viewPoints.length===4&&b.viewPoints.length===4&&sameVector(a.viewPoints[0],b.viewPoints[0])&&sameVector(a.viewPoints[1],b.viewPoints[1])&&sameVector(a.viewPoints[2],b.viewPoints[2])&&sameVector(a.viewPoints[3],b.viewPoints[3])));
   return a.parent===b.parent&&a.turn===b.turn&&a.pitch===b.pitch&&sameVector(a.origin,b.origin)&&sameVector(a.tip,b.tip);
 }
 export function validateSpatial(s,reference,dependencies,segments,ids){
-  const vector=v=>Array.isArray(v)&&v.length===3&&v.every(n=>Number.isFinite(n)&&Math.abs(n)<=1e6);
+  const vector=v=>Array.isArray(v)&&v.length===3&&[0,1,2].every(i=>Number.isFinite(v[i])&&Math.abs(v[i])<=1e6);
   if(!s||typeof s!=='object'||Array.isArray(s))throw new Error('Invalid spatial joint.');
   const ref=(id,label,bone=false)=>{reference(id,label,true);dependencies.add(id);if(id&&bone&&!spatialBone(segments[ids.get(id)]))throw new Error(`${label} must be an articulated spatial joint.`);};
   if(s.bindings){
-    if(Object.keys(s).some(k=>!['point','bindings'].includes(k))||!vector(s.point)||!Array.isArray(s.bindings)||!s.bindings.length||s.bindings.length>4)throw new Error('A skin point needs a position and 1–4 joint bindings.');
+    if(Object.keys(s).some(k=>!['point','bindings','viewPoints'].includes(k))||!vector(s.point)||!Array.isArray(s.bindings)||!s.bindings.length||s.bindings.length>4)throw new Error('A skin point needs a position and 1–4 joint bindings.');
+    if(s.viewPoints!==undefined&&(!Array.isArray(s.viewPoints)||s.viewPoints.length!==4||[0,1,2,3].some(i=>!vector(s.viewPoints[i]))||s.bindings.length!==1))throw new Error('View-corrected skin needs four cardinal view positions and one joint binding.');
     const seen=new Set();let sum=0;
     for(const b of s.bindings){if(!b||Object.keys(b).some(k=>!['joint','weight'].includes(k))||!Number.isFinite(b.weight)||b.weight<=0||b.weight>1||seen.has(b.joint))throw new Error('Skin weights must use distinct joints and positive weights.');ref(b.joint,'Skin binding',true);if(!b.joint)throw new Error('Bind skin to an articulated joint.');seen.add(b.joint);sum+=b.weight;}
     if(Math.abs(sum-1)>1e-6)throw new Error('Skin weights must add up to one.');
@@ -26,7 +28,7 @@ export function validateSpatial(s,reference,dependencies,segments,ids){
     if(!s.turn||!s.pitch||s.turn===s.pitch)throw new Error('Choose separate turn and tilt controls.');
   }
 }
-export function remapSpatial(s,map){return s.bindings?{point:[...s.point],bindings:s.bindings.map(b=>({...b,joint:map.get(b.joint)??b.joint}))}:{...s,origin:[...s.origin],tip:[...s.tip],...Object.fromEntries(['parent','turn','pitch'].map(k=>[k,map.get(s[k])??s[k]]))};}
+export function remapSpatial(s,map){return s.bindings?{point:[...s.point],bindings:s.bindings.map(b=>({...b,joint:map.get(b.joint)??b.joint})),...(s.viewPoints?{viewPoints:s.viewPoints.map(p=>[...p])}:{})}:{...s,origin:[...s.origin],tip:[...s.tip],...Object.fromEntries(['parent','turn','pitch'].map(k=>[k,map.get(s[k])??s[k]]))};}
 export function quatMultiply(a,b){return[a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]];}
 export function quatRotate(q,p){const[x,y,z,w]=q,[a,b,c]=p,tx=2*(y*c-z*b),ty=2*(z*a-x*c),tz=2*(x*b-y*a);return[a+w*tx+y*tz-z*ty,b+w*ty+z*tx-x*tz,c+w*tz+x*ty-y*tx];}
 export function spatialQuaternion(bend,turn,pitch){
@@ -45,7 +47,7 @@ function shapeOffset(frame,point){
   return r.map((n,i)=>(n-d*frame.axis[i])*amount);
 }
 function skinPoint(s,get){
-  if(s.bindings.length===1)return spatialPoint(get(s.bindings[0].joint).spatial,s.point);
+  if(s.bindings.length===1){const f=get(s.bindings[0].joint).spatial;return spatialPoint(f,s.viewPoints?viewCorrectedPoint(s,f):s.point);}
   const first=get(s.bindings[0].joint).spatial.q;let x=0,y=0,z=0,w=0,dx=0,dy=0,dz=0,dw=0,stretch=false,shaped=false;
   // Skin is evaluated for every mesh vertex. Accumulate the dual quaternion
   // in scalars so the hot path allocates only its final point.
@@ -67,6 +69,23 @@ function skinPoint(s,get){
     const rotated=quatRotate([x,y,z,w],offset);for(let i=0;i<3;i++)result[i]+=rotated[i];
   }
   return result;
+}
+// Cardinal targets are expressed relative to the binding origin, in the
+// frontal coordinate axes of each view. A pose owns one interpolation frame;
+// skin vertices contain only authored positions, never evaluated scene state.
+function viewCorrectedPoint(s,f){
+  let v=f.viewInterpolation;
+  if(!v){
+    const [x,y,z,w]=f.q,fx=2*(w*y-x*z),fz=1-2*(x*x+y*y),horizontal=Math.hypot(fx,fz);
+    const yaw=horizontal>1e-9?Math.atan2(fx,fz):0,phase=(yaw/(Math.PI/2)+4)%4,index=Math.floor(phase),u=phase-index;
+    const confidence=Math.max(0,Math.min(1,(horizontal-.05)/.2));
+    v=f.viewInterpolation={index,next:(index+1)%4,blend:u*u*(3-2*u),cos:Math.cos(yaw),sin:Math.sin(yaw),strength:confidence*confidence*(3-2*confidence)};
+  }
+  const a=s.viewPoints[v.index],b=s.viewPoints[v.next],t=v.blend;
+  const x=a[0]+(b[0]-a[0])*t,y=a[1]+(b[1]-a[1])*t,z=a[2]+(b[2]-a[2])*t;
+  const p=s.point,k=v.strength;
+  return [p[0]+(f.origin[0]+x*v.cos-z*v.sin-p[0])*k,
+    p[1]+(f.origin[1]+y-p[1])*k,p[2]+(f.origin[2]+x*v.sin+z*v.cos-p[2])*k];
 }
 export function evaluateSpatial(s,{segment,input,get,root,scale,figureAngle,restAngle,referenceRest,mirror=false,camera,shape}){
   const cs=Math.cos(figureAngle),sn=Math.sin(figureAngle),sign=mirror?-1:1,project=p=>camera?projectSpatial([root.x+(p[0]*cs-p[1]*sign*sn)*scale,root.y+(p[0]*sn+p[1]*sign*cs)*scale,p[2]*scale],camera):({x:root.x+(p[0]*cs-p[1]*sign*sn)*scale,y:root.y+(p[0]*sn+p[1]*sign*cs)*scale});
