@@ -15,7 +15,7 @@ export function drawingSelection(asset,object){
 }
 export function drawingSetsView(figure,object){
  const asset=figure?._styk?.movieclip;if(!asset?.drawingSets)return'';
- const{group,view}=drawingSelection(asset,object),sets=asset.drawingSets,select=(key,label,items,current)=>`<label class="spatial-select"><span>${label}</span><select data-drawing-${key} data-drawing-uid="${object.unique_id}" aria-label="${esc(figure.name)} ${label.toLowerCase()}">${items.map((item,i)=>`<option value="${i}" ${i===current?'selected':''}>${esc(item.name)}</option>`).join('')}</select></label>`;
+ const{group,view}=drawingSelection(asset,object),sets=asset.drawingSets,select=(key,label,items,current)=>`<label class="spatial-choice"><span>${label}</span><select class="inline-select" data-drawing-${key} data-drawing-uid="${object.unique_id}" aria-label="${esc(figure.name)} ${label.toLowerCase()}">${items.map((item,i)=>`<option value="${i}" ${i===current?'selected':''}>${esc(item.name)}</option>`).join('')}</select></label>`;
  return`<section class="inspector-section spatial-rig" data-section="drawing-bank-${object.unique_id}"><strong>${esc(figure.name)}</strong>${select('group','Form',sets,group)}${select('view','View',sets[group].views,view)}</section>`;
 }
 export function joinedDrawingSetsView(editor){
