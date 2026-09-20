@@ -60,23 +60,48 @@ export function cameraKeyboardDelta(viewport, handle, dx, dy) {
   return {scale:Math.max(.0001,viewport.camera.scale+direction*.01)/viewport.camera.scale};
 }
 
+/** Clip before Canvas tessellates the dotted path. Canvas clipping alone still
+ * expands every offscreen dash on an enormously magnified camera perimeter.
+ * Keep distance along the original perimeter so panning never resets dots. */
+export function cameraOutlineSegments(points,rect){
+  const segments=[];let distance=0;
+  for(let i=0;i<points.length;i++){
+    const a=points[i],b=points[(i+1)%points.length],dx=b.x-a.x,dy=b.y-a.y,length=Math.hypot(dx,dy);
+    let start=0,end=1;
+    for(const [p,q] of [[-dx,a.x-rect.x],[dx,rect.x+rect.width-a.x],[-dy,a.y-rect.y],[dy,rect.y+rect.height-a.y]]){
+      if(p===0){if(q<0){end=-1;break;}continue;}
+      const t=q/p;if(p<0)start=Math.max(start,t);else end=Math.min(end,t);
+    }
+    if(start<=end&&length>0)segments.push({a:{x:a.x+dx*start,y:a.y+dy*start},b:{x:a.x+dx*end,y:a.y+dy*end},offset:(distance+length*start)%6});
+    distance=(distance+length)%6;
+  }
+  return segments;
+}
+
 /** Screen-sized dots with a light halo remain legible over both artwork and the workspace. */
 export function drawCameraOutline(context, viewport, project) {
+  const points=viewport.corners.map(project);
+  let segments=null;
+  if(Number.isFinite(context.canvas?.width)&&Number.isFinite(context.canvas?.height)){
+    const inverse=context.getTransform().inverse(),w=context.canvas.width,h=context.canvas.height;
+    const corners=[[0,0],[w,0],[w,h],[0,h]].map(([x,y])=>({x:inverse.a*x+inverse.c*y+inverse.e,y:inverse.b*x+inverse.d*y+inverse.f}));
+    const x=Math.min(...corners.map(p=>p.x))-3,y=Math.min(...corners.map(p=>p.y))-3;
+    const rect={x,y,width:Math.max(...corners.map(p=>p.x))+3-x,height:Math.max(...corners.map(p=>p.y))+3-y};
+    if(points.some(p=>p.x<rect.x||p.y<rect.y||p.x>rect.x+rect.width||p.y>rect.y+rect.height))segments=cameraOutlineSegments(points,rect);
+  }
+  if(segments?.length===0)return;
   context.save();
   context.globalAlpha=1;
   context.lineCap='round';
   context.lineJoin='round';
   context.setLineDash([0,6]);
   context.lineDashOffset=0;
-  context.beginPath();
-  viewport.corners.map(project).forEach((p,i)=>i?context.lineTo(p.x,p.y):context.moveTo(p.x,p.y));
-  context.closePath();
-  context.strokeStyle='rgba(255,255,255,.8)';
-  context.lineWidth=3;
-  context.stroke();
-  context.strokeStyle='#dc4545';
-  context.lineWidth=1.5;
-  context.stroke();
+  if(!segments){context.beginPath();points.forEach((p,i)=>i?context.lineTo(p.x,p.y):context.moveTo(p.x,p.y));context.closePath();}
+  for(const [color,width] of [['rgba(255,255,255,.8)',3],['#dc4545',1.5]]){
+    context.strokeStyle=color;context.lineWidth=width;
+    if(!segments)context.stroke();
+    else for(const segment of segments){context.lineDashOffset=segment.offset;context.beginPath();context.moveTo(segment.a.x,segment.a.y);context.lineTo(segment.b.x,segment.b.y);context.stroke();}
+  }
   context.restore();
 }
 

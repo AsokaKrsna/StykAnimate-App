@@ -20,6 +20,8 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Fixed
 
+- Keep drawing responsive at high zoom, with consistent brush smoothing, timely live ink updates, and reliable fast strokes over existing paint.
+
 - Reduce lag and memory pressure when posing dense figures: pose input is coalesced to the latest position per frame, unchanged spatial branches, fills and topology plans are reused, redundant skin evaluation and temporary allocations are reduced, and dragging releases superseded geometry instead of retaining every intermediate pose.
 - Keep projected rig controls usable in edge-on views, combine two joint rotations before projection, and let triangular fills use depth guides to resolve intersecting surfaces as articulated figures turn.
 - Offer recovery and reopening when the desktop editor stops unexpectedly, instead of leaving a black window that cannot save or close normally.

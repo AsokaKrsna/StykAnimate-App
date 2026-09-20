@@ -87,7 +87,7 @@ export class DrawingController {
   resource(figure){if(!drawingMetadata(figure))return null;return this.owner?.presenter(figure)??null;}
   point(event){const rect=this.viewport.getBoundingClientRect();return screenToWorld({x:(event.clientX-rect.left)*this.viewport.clientWidth/rect.width,y:(event.clientY-rect.top)*this.viewport.clientHeight/rect.height},{report:this.editor.report,frame:this.editor.evaluatedFrame,view:this.state.view,cameraEnabled:false});}
   geometryItem(target){let item;if(target.created||target.migratedFrom)item=buildGeometry({...this.editor.report,figure_types:[...this.editor.report.figure_types,target.figure]},createFrame([target.object])).drawables[0];else item=this.editor.geometry.drawables.find(i=>i.obj.unique_id===target.object.unique_id&&i.type==='image');if(!item)throw new Error('The drawing pose is unavailable.');return item;}
-  pixelMatrix(target){return drawingPixelMatrix(this.geometryItem(target));}
+  pixelMatrix(target){return this.gesture?.session?.target===target?this.gesture.session.pixelMatrix:drawingPixelMatrix(this.geometryItem(target));}
   pixel(event,target){return inversePoint(this.pixelMatrix(target),this.point(event));}
   async down(event){
     if(this.gesture){
@@ -128,11 +128,16 @@ export class DrawingController {
     }else{
       this.cancelSelection();const color=this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16));
       const d=drawingMetadata(target.figure),size=this.settings.size*d.pixelsPerUnit,s={id:++this.strokeId,target,surface,seq:0,sent:new Set(),before:new Map(),pending:[],posted:new Map(),outstanding:0,ended:false,cancelled:false,erase:this.tool==='eraser'||event.button===5||Boolean(event.buttons&32),revision:this.editor.revision,owner:this.owner,margin:size*.55+3};
+      // A stroke keeps one pose transform. Sampling must not rebuild geometry
+      // for a newly created cel on every coalesced pen event.
+      s.pixelMatrix=this.pixelMatrix(target);
       s.done=new Promise(resolve=>s.resolveDone=resolve);
       this.sessions.set(s.id,s);this.gesture={id:event.pointerId,target,surface,kind:'stroke',session:s};
       // Painting owns the UI thread: publication and thumbnails wait it out.
       s.owner.busy=true;
-      this.owner.strokeWorker.post({kind:'begin',stroke:s.id,settings:{size,pixelsPerUnit:d.pixelsPerUnit,color,opacity:this.settings.opacity,flow:this.settings.flow,hardness:this.settings.hardness,pressureSize:this.settings.pressureSize,pressureOpacity:this.settings.pressureOpacity,sizeCurve:this.settings.sizeCurve,opacityCurve:this.settings.opacityCurve,stabilization:this.settings.stabilization,spacingRatio:this.settings.spacingRatio??.12,texture:this.settings.texture??0,erase:s.erase,seed:s.id}});
+      const pixelsPerScreenUnit=1/Math.max(1e-9,Math.hypot(s.pixelMatrix[0],s.pixelMatrix[1])*(this.state.view.scale||1));
+      s.margin+=Math.max(0,Math.min(.95,this.settings.stabilization))*48*Math.max(.01,Math.min(64,pixelsPerScreenUnit));
+      this.owner.strokeWorker.post({kind:'begin',stroke:s.id,settings:{size,pixelsPerUnit:pixelsPerScreenUnit,color,opacity:this.settings.opacity,flow:this.settings.flow,hardness:this.settings.hardness,pressureSize:this.settings.pressureSize,pressureOpacity:this.settings.pressureOpacity,sizeCurve:this.settings.sizeCurve,opacityCurve:this.settings.opacityCurve,stabilization:this.settings.stabilization,spacingRatio:this.settings.spacingRatio??.12,texture:this.settings.texture??0,erase:s.erase,seed:s.id}});
       this.sampleStroke(pending.event);
     }
     for(const sample of pending.samples)this.move({...sample,pointerId:event.pointerId});if(pending.released)this.finish();this.onRender();
@@ -141,15 +146,24 @@ export class DrawingController {
   sampleStroke(event){
     const g=this.gesture,s=g?.session;
     if(g?.kind!=='stroke'||s.ended||s.cancelled)return;
-    const p=this.pixel(event,g.target);
+    const p=inversePoint(s.pixelMatrix,this.point(event));
     s.pending.push({x:p.x,y:p.y,pressure:event.pointerType==='pen'?event.pressure||.05:1,time:event.timeStamp});
     if(!s.raf)s.raf=requestAnimationFrame(()=>{s.raf=null;this.flushStroke(s);});
   }
   flushStroke(s){
-    if(this.sessions.get(s.id)!==s||!s.pending.length)return;
+    if(this.sessions.get(s.id)!==s)return;
+    if(!s.pending.length){this.endStrokeWorker(s);return;}
+    // Bound posted work. Keep real samples locally until an ACK frees a slot;
+    // release queues its end only after the final sample batch was sent.
+    if(s.outstanding>=2)return;
     const samples=s.pending,m=s.margin;s.pending=[];
-    const x=Math.floor(Math.min(...samples.map(p=>p.x))-m),y=Math.floor(Math.min(...samples.map(p=>p.y))-m);
-    const rect={x,y,width:Math.ceil(Math.max(...samples.map(p=>p.x))+m)-x,height:Math.ceil(Math.max(...samples.map(p=>p.y))+m)-y};
+    let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+    // The next quadratic starts behind the previous sample. Seed its bridge,
+    // too, or a fast cross-batch jump can overwrite existing ink with blank.
+    for(const list of [s.seedTail??[],samples])for(const p of list){x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x);y1=Math.max(y1,p.y);}
+    s.seedTail=[...(s.seedTail??[]),...samples.slice(-2)].slice(-2);
+    const x=Math.floor(x0-m),y=Math.floor(y0-m);
+    const rect={x,y,width:Math.ceil(x1+m)-x,height:Math.ceil(y1+m)-y};
     const tiles=[];
     for(const [tx,ty] of TileStore.tilesInRect(rect.x,rect.y,rect.width,rect.height)){
       const key=tileKey(tx,ty);if(s.sent.has(key))continue;s.sent.add(key);
@@ -157,8 +171,10 @@ export class DrawingController {
     }
     const seq=++s.seq;s.outstanding++;s.posted.set(seq,performance.now());
     this.strokeStats.batches++;this.strokeStats.maxQueueDepth=Math.max(this.strokeStats.maxQueueDepth,s.outstanding);
-    this.owner.strokeWorker.post({kind:'samples',stroke:s.id,seq,samples,tiles},tiles.map(t=>t.pixels).filter(Boolean));
+    s.owner.strokeWorker.post({kind:'samples',stroke:s.id,seq,samples,tiles},tiles.map(t=>t.pixels).filter(Boolean));
+    this.endStrokeWorker(s);
   }
+  endStrokeWorker(s){if(s.ended&&!s.pending.length&&!s.endPosted){s.endPosted=true;s.owner.strokeWorker.post({kind:'end',stroke:s.id});}}
   strokeMessage(data){
     const s=this.sessions.get(data.stroke);if(!s)return;
     if(data.kind==='error'){const message=data.message;this.cancel();this.onError(new Error(message));return;}
@@ -169,6 +185,8 @@ export class DrawingController {
       const store=s.surface.store;
       for(const t of data.tiles){const key=tileKey(t.tx,t.ty);if(!s.before.has(key))s.before.set(key,store.get(t.tx,t.ty)?.pixels.slice()??null);store.set(t.tx,t.ty,new Uint8ClampedArray(t.pixels));}
       if(data.tiles.length){this.owner.present(s.surface,data.dirty);this.onRender();}
+      if(s.ended)this.flushStroke(s);
+      else if(s.pending.length&&!s.raf)s.raf=requestAnimationFrame(()=>{s.raf=null;this.flushStroke(s);});
       return;
     }
     if(data.kind==='done'){this.sessions.delete(s.id);this.commitStroke(s,data.changes);}
@@ -209,7 +227,7 @@ export class DrawingController {
     if(g.kind==='pan'){this.gesture=null;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);return;}
     if(g.kind==='stroke'){
       const s=g.session;s.ended=true;cancelAnimationFrame(s.raf);s.raf=null;
-      this.flushStroke(s);this.owner.strokeWorker.post({kind:'end',stroke:s.id});
+      this.flushStroke(s);
       if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);
       return; // the gesture stays closing until the worker's done arrives
     }

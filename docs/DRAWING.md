@@ -106,12 +106,21 @@ drawing textures follow the current layout and are released with it.
 caps the whole stroke, while flow accumulates dabs. Pressure release cannot
 remove previously deposited paint. Stabilization is a distance-windowed
 weighted average of the raw path — a linear-ramp centroid over
-`stabilization × 48` source pixels of trailing path length — so every input
+`stabilization × 48` screen pixels of trailing path length, converted through
+the cel pose and zoom at stroke start — so every input
 sample yields output with no dead zone and the finish drains the tail to the
 exact endpoint. Pushed points, raw or smoothed, are joined by quadratic
 midpoint segments sampled by arc length, which keeps corners smooth at zero
 lag. Coalesced events have an ordinary-event
-fallback. A gesture queued behind a closing stroke retains every sample;
+fallback. Running distance and weighted sums replace repeated tail scans;
+the smoothing window retains at most 4,096 samples, including stationary pen
+input, and release drains it in linear time. This limit affects only the
+smoothing history, not the input samples sent for painting. A stroke snapshots
+its pixel transform once. At most two sample batches are posted to its worker;
+acknowledgments release pending real samples before the final end message.
+Seed regions include the preceding curve and smoothing margin so inter-batch
+movement preserves existing pixels and exact undo records.
+A gesture queued behind a closing stroke retains every sample;
 canvas publication coalesces into one animation-frame callback. Pointer
 capture, cancellation,
 lost capture, Escape and blur cannot leave a half-committed stroke.
@@ -152,6 +161,14 @@ texture limit, and the scratch clamps to that limit around the visible span
 as a final guarantee — a drawing is never rejected for size. Overlays contain only cursor and selection
 feedback. Canvas and SVG use smooth drawing filtering; imported Pivot sprites
 retain their existing sampling.
+
+The retained WebGPU layout refreshes drawing entries by pixel stamp and view,
+including empty and previously offscreen cels, without rebuilding unrelated
+scene geometry. Effects bypass views are idempotent, so render preparation
+does not wrap an already prepared view and invalidate the scene each frame.
+The camera's dotted outline clips its path before Canvas expands the dashes;
+offscreen perimeter length therefore cannot dominate drawing at deep zoom.
+See [zoom performance verification](DRAWING-PERFORMANCE.md).
 
 ## Saving, reuse and exports
 

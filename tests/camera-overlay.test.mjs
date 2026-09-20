@@ -1,8 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {cameraViewport,pickCameraHandle,cameraDragDelta,cameraKeyboardDelta,drawCameraViewport} from '../src/camera-overlay.mjs';
+import {cameraViewport,pickCameraHandle,cameraDragDelta,cameraKeyboardDelta,drawCameraViewport,cameraOutlineSegments} from '../src/camera-overlay.mjs';
 const report={canvas_width:600,canvas_height:340},frame={camera:{is_default:false,x:23,y:-8,scale:.8,angle_rad:.4}},view={scale:1.5};
 const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-10,`${a} != ${b}`);
+
+test('camera outline clips huge offscreen edges and preserves dash phase',()=>{
+ const rect={x:0,y:0,width:100,height:80};
+ const segments=cameraOutlineSegments([{x:-10001,y:10},{x:10000,y:10},{x:10000,y:10000},{x:-10001,y:10000}],rect);
+ assert.deepEqual(segments,[{a:{x:0,y:10},b:{x:100,y:10},offset:10001%6}]);
+ assert.deepEqual(cameraOutlineSegments([{x:-100,y:-100},{x:200,y:-100},{x:200,y:200},{x:-100,y:200}],rect),[]);
+ const rotated=cameraOutlineSegments([{x:50,y:-10000},{x:10000,y:40},{x:50,y:10000},{x:-10000,y:40}],rect);
+ assert.deepEqual(rotated,[]);
+ const diagonal=cameraOutlineSegments([{x:-10,y:-10},{x:110,y:110},{x:110,y:-10}],rect);
+ assert.equal(diagonal.length,1);close(diagonal[0].offset,Math.hypot(10,10)%6);
+ assert.deepEqual(diagonal[0].a,{x:0,y:0});assert.deepEqual(diagonal[0].b,{x:80,y:80});
+});
 
 test('camera has four corners, a center move grip, and a screen-sized rotation stalk',()=>{
  const v=cameraViewport(report,frame,view);assert.equal(v.handles.length,6);

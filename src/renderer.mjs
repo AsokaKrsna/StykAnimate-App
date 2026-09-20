@@ -732,6 +732,7 @@ class WebGPURenderer {
     const uid = uidOf(g), prior = this.entries.get(key); let data, texture;
     const drawingMeta=sourceItems.length===1&&!isOnion?drawingMetadata(sourceItems[0].fig):null;
     const drawing=drawingMeta&&this.resources.drawing?.(sourceItems[0].fig);
+    const drawingState=drawing?{drawing,drawingStamp:drawing.stamp,drawingCamera:this.activeCamera,drawingWidth:this.width,drawingHeight:this.height}:{};
     if(drawing&&!drawing.store&&drawingMeta.version===2&&!hasDrawableVfx(sourceItems[0])){
       // An evicted v2 store re-decodes via the presenter; keep the last
       // retained texture until then and never fall back to the stale
@@ -739,7 +740,7 @@ class WebGPURenderer {
       // is the real PNG.
       const retained=prior?.texture?.drawing===drawing?prior:null;
       const data=retained?retained.data:new Float32Array(shapeRecord({mode:SHAPE.DISABLED,transform:index}));
-      return {key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:retained?.texture??null};
+      return {...drawingState,key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:retained?.texture??null};
     }
     if(drawing?.store&&!hasDrawableVfx(sourceItems[0])) {
       const item=sourceItems[0],matrix=drawingPixelMatrix(item),bounds=drawing.store.bounds;
@@ -770,9 +771,9 @@ class WebGPURenderer {
         if(result){scratch=result;break;}
       }
       if(rect&&!scratch){level=8;scratch=drawing.scratch?.(rect,{level,maxSide,clamp:true});}
-      if(rect&&!scratch){
+      if(!scratch){
         const data=new Float32Array(shapeRecord({mode:SHAPE.DISABLED,transform:index}));
-        return {key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:null};
+        return {...drawingState,key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:null};
       }
       if(scratch){
         // Textures key to the scratch anchor, not just the cel: alternating
@@ -791,7 +792,7 @@ class WebGPURenderer {
         texture.drawing=drawing;texture.canvas=scratch.canvas;texture.dirty=scratch.dirty;texture.nextRectKey=rectKey;
         const q=2**level,ox=matrix[0]*scratch.x*q+matrix[2]*scratch.y*q+matrix[4],oy=matrix[1]*scratch.x*q+matrix[3]*scratch.y*q+matrix[5];
         data=new Float32Array(shapeRecord({a:[ox-source.root.x,oy-source.root.y,0,0],b:[matrix[0]*scratch.width*q,matrix[1]*scratch.width*q,matrix[2]*scratch.height*q,matrix[3]*scratch.height*q],mode:9,color:[1,1,1,sourceItems[0].alpha],transform:index}));
-        return {key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:1,texture};
+        return {...drawingState,key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:1,texture};
       }
     }
     let compatibility = this.compatibilityCache.get(source);
@@ -1008,6 +1009,19 @@ class WebGPURenderer {
       }
     } else { this.stats.uploadBytes = 0; this.stats.primitiveUploadCalls = 0; this.stats.updatedObjects = 0; this.stats.compiledObjects = 0; this.stats.rasterizedObjects = 0; this.stats.preparation = 'retained'; }
     if (!this.layout) return geometry; // No build has ever succeeded; the canvas keeps its last frame.
+    // Pixel edits and panning do not change document geometry. Refresh only
+    // live drawing entries; a stamp must never upload an unpainted scratch.
+    // This also wakes entries that were empty or outside the previous view.
+    this.activeCamera=camera;
+    for(const entry of this.layout){
+      if(!entry.drawing)continue;
+      if(entry.drawingStamp===entry.drawing.stamp&&entry.drawingWidth===this.width&&entry.drawingHeight===this.height&&entry.drawingCamera?.every((v,i)=>v===camera[i]))continue;
+      const next=this.objectEntry(entry.g,entry.g.drawables,entry.opacity,entry.key,entry.transform,Math.hypot(camera[0],camera[1])*this.dpr);
+      this.stats.textureObjects+=Number(!!next.texture)-Number(!!entry.texture);
+      this.stats.uploadBytes+=this.uploadEntry({...next,offset:entry.offset,capacity:entry.capacity});
+      this.stats.primitiveUploadCalls++;this.stats.updatedObjects++;
+      Object.assign(entry,next);
+    }
     const liveTextures=new Set(this.layout.map(entry=>entry.texture));
     let drawingGpuBytes=0;
     for(const [id,texture] of this.drawingTextures??[]){

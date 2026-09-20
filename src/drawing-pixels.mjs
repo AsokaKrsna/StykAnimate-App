@@ -1,5 +1,6 @@
 import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {TILE,TILE_BYTES,tileKey,TileStore} from './drawing-tiles.mjs';
+import {DrawingSmoother} from './drawing-smoother.mjs';
 const clamp=(n,a=0,b=1)=>Math.max(a,Math.min(b,n));
 export function assertPixels(pixels,width,height) {
   if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width*height>DRAWING_MAX_PIXELS||
@@ -92,9 +93,7 @@ export class DrawingStroke {
    * Linear-ramp weights (newest heaviest) keep the average trailing the input
    * by roughly half the window while staying responsive at every speed. */
   smoothed(){
-    const tail=this.tail;let sum=0,x=0,y=0,pressure=0,time=0;
-    for(let i=0;i<tail.length;i++){const w=i+1;sum+=w;x+=tail[i].x*w;y+=tail[i].y*w;pressure+=tail[i].pressure*w;time+=tail[i].time*w;}
-    return {x:x/sum,y:y/sum,pressure:pressure/sum,time:time/sum};
+    return this.smoother.value();
   }
   sample(input) {
     if(this.closed)throw new Error('The stroke has already ended.');
@@ -102,13 +101,8 @@ export class DrawingStroke {
     const p={...input,pressure:input.pressure??1,time:input.time??0};
     this.rawLast=p;
     if(this.stabilization<=0){this.push(p);return;}
-    const tail=this.tail??=[],window=this.stabilization*48*this.pixelsPerUnit;
-    tail.push(p);
-    // Trim the tail to a window of path length, keeping at least two samples.
-    let keep=1,arc=0;
-    for(let i=tail.length-1;i>0;i--){arc+=Math.hypot(tail[i].x-tail[i-1].x,tail[i].y-tail[i-1].y);if(arc>window)break;keep++;}
-    if(tail.length>Math.max(2,keep))tail.splice(0,tail.length-Math.max(2,keep));
-    this.push(this.smoothed());
+    this.smoother??=new DrawingSmoother(this.stabilization*48*this.pixelsPerUnit);
+    this.push(this.smoother.add(p));
   }
   /** Push a path point: join it to the previous one with a quadratic midpoint
    * segment so every sample — smoothed or raw — produces a smooth curve. */
@@ -136,8 +130,8 @@ export class DrawingStroke {
   finish(){if(this.closed)return[];this.closed=true;
     // Drain the averaging tail: the smoothed point converges to the last
     // input, so the curve catches up smoothly instead of jumping.
-    const tail=this.tail;
-    if(tail)while(tail.length>1){tail.shift();this.push(this.smoothed());}
+    const smoother=this.smoother;
+    if(smoother)while(smoother.size>1){smoother.shift();this.push(this.smoothed());}
     if(this.prevRaw&&this.rawLast){
       // Close the final half-segment, then land the exact endpoint dab.
       if(this.rawLast.x!==this.prevRaw.x||this.rawLast.y!==this.prevRaw.y)this.push(this.rawLast);
