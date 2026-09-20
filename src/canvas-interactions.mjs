@@ -64,7 +64,7 @@ function incidentMinimum(g,id,info){
     const segment=g.segments[index],parentIndex=topology.incoming.get(Number(segment.seg?.parent_id??0));
     if(parentIndex===undefined||!g.segments[parentIndex].static)candidate(segment);
   }
-  for(const child of topology.outgoing.get(id)||[])candidate(g.segments[child]);
+  for(const child of topology.outgoing.get(id)||[]){candidate(g.segments[child]);if(entry.length===0&&entry.thickness===0)break;}
   info.incident.set(id,entry);return entry;
 }
 
@@ -142,7 +142,7 @@ export function getPivotHandles(geometry, {
     const cached=descriptorCache?.objects.get(g);
     if(cached?.key===objectKey){groups.push({uid,offset:result.length,handles:cached.handles});for(const handle of cached.handles)result.push(handle);continue;}
     const first=result.length;
-    const rotateSpatial = !builder && selected && spatialMode === 'rotate';
+    const rotateSpatial = !builder && selected && (spatialMode === 'rotate' || spatialMode === 'figure');
     const add = (point, joint, id, kind, isStatic = false, joined = false) => {
       const spatial = rotateSpatial && Boolean(g.segments[joint]?.spatialFrame);
       if(spatial)point=g.segments[joint].start;

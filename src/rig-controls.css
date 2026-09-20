@@ -48,7 +48,7 @@
 .spatial-rig button[aria-pressed=true]{background:var(--theme-selected,#e5f3ff);color:var(--theme-accent,#0d99ff)}
 .spatial-modes,.spatial-trunk,.spatial-part-actions{display:flex;gap:4px}.spatial-modes>button,.spatial-trunk>button,.spatial-part-actions>button{flex:1;min-width:0}
 .spatial-modes>button,.spatial-plant{display:flex;align-items:center;justify-content:center;gap:6px}.spatial-modes .icon,.spatial-plant .icon{width:14px;height:14px}
-.spatial-targets{display:grid;grid-template-columns:1fr 1fr;gap:4px}.spatial-targets button:first-child{grid-column:1/-1}
+.spatial-targets{display:grid;grid-template-columns:1fr 1fr;gap:4px}
 .spatial-trunk{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
 .spatial-choice{display:grid;grid-template-columns:70px minmax(0,1fr);gap:8px;align-items:center;font-size:11px;color:var(--theme-muted,#767676)}
 .spatial-limb{display:grid;gap:8px;border-top:1px solid var(--border,#e5e5e5);padding-top:8px;font-size:11px}.spatial-limb .property-toggle-grid{gap:4px}

@@ -145,6 +145,26 @@ existing single-frame playback offsets, including through the Advanced timeline.
 The head drawing remains discrete; selecting a drawing creates an ordinary
 undoable pose edit and retains the body selection.
 
+Whole-character orientation uses **Rotate figure** in the Character rig inspector.
+It rotates the root spatial articulation and carries existing spatial targets,
+bend-plane directions and foot/hand orientations around that pivot. Pin states
+are preserved. Local torso articulation continues to leave targets planted.
+**Move figure** selects the ordinary translation control; **Pose** retains direct
+joint dragging. No separate animated rotation state is stored.
+
+Spatial canvas drags and root moves with planted targets keep only the latest
+pending pointer sample. The existing render loop applies it before drawing;
+release flushes it before committing, and cancellation discards it. Paint and
+construction gestures keep their original input paths. Published spatial geometry
+owns reusable definition and rig plans; only the editor's certified pose-only
+invalidation can carry them into another geometry. Other definition changes and
+history replacement continue to validate topology.
+
+Free spatial IK targets retain the ankle or hand articulation relative to the
+solved shin or forearm. Planting captures world orientation; direct chain rotation
+releases only that limb. The inspector offers direct limb-joint rotation shortcuts
+without introducing additional pose state.
+
 ## Editable 3D constructions
 
 Open **Library → Rig examples**, or **Build Figure → Edit → Rig examples**.

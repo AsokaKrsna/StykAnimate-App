@@ -19,7 +19,7 @@ export function createSpatialGizmo(editor,project){
  const screen=v=>[(v[0]*cs-v[1]*mirror*sn)*sign,(v[0]*sn+v[1]*mirror*cs)*sign,v[2]];
  const fromScreen=v=>quatRotate(inverse(parent),[(v[0]*cs+v[1]*sn)*sign,(-v[0]*sn+v[1]*cs)*sign*mirror,v[2]]);
  const rings=axes.map((_,i)=>({axis:i,color:['#ee727c','#65d7a0','#74adff'][i],u:screen(quatRotate(world,axes[(i+1)%3])),v:screen(quatRotate(world,axes[(i+2)%3]))}));
- return {center:project(shape.start),radius:RADIUS,pose,q,fromScreen,rings};
+ return {center:project(shape.start),radius:RADIUS,pose,q,fromScreen,rings,label:shape.seg?.name||'Joint rotation'};
 }
 export const ringPoint=(ring,t,radius=RADIUS)=>ring.u.map((v,i)=>(v*Math.cos(t)+ring.v[i]*Math.sin(t))*radius);
 export function drawRotationGizmo(ctx,gizmo){
@@ -33,7 +33,7 @@ export function drawRotationGizmo(ctx,gizmo){
  }
  ctx.globalAlpha=.85;ctx.strokeStyle='#dde5f1';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,radius+9,0,TAU);ctx.stroke();
  ctx.globalAlpha=1;ctx.fillStyle='#192234';ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,4,0,TAU);ctx.fill();ctx.stroke();
- ctx.font='10px system-ui';ctx.textAlign='center';ctx.fillStyle='#192234';ctx.fillRect(-48,-radius-31,96,17);ctx.fillStyle='#fff';ctx.fillText('FREE ROTATION',0,-radius-19);ctx.restore();
+ ctx.font='10px system-ui';ctx.textAlign='center';ctx.fillStyle='#192234';const label=gizmo.label??'Joint rotation',width=Math.min(220,Math.max(96,ctx.measureText(label).width+16));ctx.fillRect(-width/2,-radius-31,width,17);ctx.fillStyle='#fff';ctx.fillText(label,0,-radius-19,width-12);ctx.restore();
 }
 function sphere(point,g){
  const x=(point.x-g.center.x)/g.radius,y=(point.y-g.center.y)/g.radius,r2=x*x+y*y;

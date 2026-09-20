@@ -15,7 +15,7 @@ import {animationOriginLayout, animationOriginAngle, animationOriginBend, correc
 import {interpolateOriginSupport} from '../animation-origin-support.mjs';
 import {easedProgress, usesLegacyNativeEasing, easingMode, autoValue} from '../keyframe-easing.mjs';
 import {geometryDefinition} from './geometry-definition.mjs';
-import {geometryPose,geometryPosePlan} from './geometry-pose.mjs';
+import {geometryPose,geometryPosePlan,geometryPlans} from './geometry-pose.mjs';
 import {hasRigConstraints, createRigEvaluation, rigConstraintPlanSteps} from '../rig-constraints.mjs';
 import {hasPinnedIK, interpolateIK} from '../ik.mjs';
 import {evaluateIKPose} from '../ik-evaluation.mjs';
@@ -549,10 +549,11 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       const geometry = yield* buildMovieclipGeometrySteps(fig,obj,root,slot,{timeline,evaluatedFrame,buildGeometry,buildGeometrySteps});
       cache.set(slot,geometry); return geometry;
     }
-    let plan = definitionPlans.get(fig);
-    if (!plan) {plan = geometryDefinition(fig); definitionPlans.set(fig, plan);}
     const previous = incremental?.previous?.objects.get(slot), poseAllowed = incremental?.poseSlots?.has(slot);
-    const rigPlan=geometryPosePlan(fig,obj,previous,poseAllowed) ?? (hasRigConstraints(fig)?yield* rigConstraintPlanSteps(fig):null);
+    const retainedPlan=geometryPosePlan(fig,obj,previous,poseAllowed);
+    let plan = definitionPlans.get(fig);
+    if (!plan) {plan = retainedPlan ? geometryPlans(previous).definition : geometryDefinition(fig); definitionPlans.set(fig, plan);}
+    const rigPlan=retainedPlan ?? (hasRigConstraints(fig)?yield* rigConstraintPlanSteps(fig):null);
     const ik = joinedIK.get(slot) ?? (hasPinnedIK(obj) ? evaluateIKPose(report, `local:${obj.unique_id}`, fig, obj, root, plan,rigPlan) : null);
     const joints = new Map([[0, root]]),
       renders = [],
@@ -560,7 +561,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
     const scale = Number(obj.scale ?? 1),
       opacity = 1 - Number(obj.field28 ?? obj.transparency ?? 0) / 255;
     const rig = rigPlan ? createRigEvaluation(fig, obj, root, rigPlan) : null;
-    const pose = geometryPose(fig, obj, root, rig, previous, poseAllowed, report.version);
+    const pose = geometryPose(fig, obj, root, rig, previous, poseAllowed, report.version, plan);
     function segmentAt(i, active) {
       if (renders[i]) return renders[i];
       if (active?.has(i)) {

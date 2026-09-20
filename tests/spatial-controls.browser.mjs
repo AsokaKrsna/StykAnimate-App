@@ -62,6 +62,22 @@ try{
  await page.mouse.move(ik.x,ik.y);await page.mouse.down();await page.mouse.move(ik.x+12,ik.y-15,{steps:12});await page.mouse.up();
  const end=await page.evaluate(()=>{const e=styk.editor;return e.geometry.objects.get(0).segments[e.selectedJoint].end;});
  assert.ok(Math.hypot(end.x-ik.world.x-12/ik.scale,end.y-ik.world.y+15/ik.scale)<.5,'Pointer drag reaches the IK target');
+ // Bursty pointer devices must evaluate only the newest pose in a frame.
+ const burstPoint=await page.evaluate(()=>{const e=styk.editor,g=e.geometry.objects.get(0),p=g.segments[e.selectedJoint].end,r=document.getElementById('viewport').getBoundingClientRect(),v=styk.state.view;return{x:r.x+v.x+p.x*v.scale,y:r.y+v.y+p.y*v.scale};});
+ await page.mouse.move(burstPoint.x,burstPoint.y);await page.mouse.down();
+ const burst=await page.evaluate(({x,y})=>{
+  const e=styk.editor,overlay=document.getElementById('overlay'),original=e.poseJoint.bind(e);let calls=0;e.poseJoint=(...args)=>{calls++;return original(...args);};
+  for(let i=1;i<=24;i++)overlay.dispatchEvent(new PointerEvent('pointermove',{pointerId:1,clientX:x+i/2,clientY:y-i/3,buttons:1,isPrimary:true}));
+  const before=calls;overlay.dispatchEvent(new PointerEvent('pointerup',{pointerId:1,clientX:x+12,clientY:y-8,isPrimary:true}));
+  e.poseJoint=original;return{before,after:calls,dragging:e.dragging};
+ },burstPoint);
+ await page.mouse.up();assert.equal(burst.before,0);assert.equal(burst.after,1);assert.equal(burst.dragging,false);await page.evaluate(()=>styk.editor.undo());
+ await page.getByRole('button',{name:'Rotate figure',exact:true}).click();
+ const figureBefore=await page.evaluate(()=>styk.editor.serialize());
+ await page.getByRole('button',{name:'Turn and tilt',exact:true}).press('ArrowRight');
+ assert.notDeepEqual(await page.evaluate(()=>styk.editor.serialize()),figureBefore);
+ await page.evaluate(()=>styk.editor.undo());assert.deepEqual(await page.evaluate(()=>styk.editor.serialize()),figureBefore);
+ await page.getByRole('button',{name:'Pose',exact:true}).click();
  const plant=page.getByRole('button',{name:'Plant both feet',exact:true});
  if(await plant.count()){
   const beforePlant=await page.evaluate(()=>({doc:styk.editor.serialize(),undo:styk.editor._undo.length}));
@@ -86,6 +102,13 @@ try{
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   const freeSwivel=page.getByRole('slider',{name:'Bend direction',exact:true});await freeSwivel.scrollIntoViewIfNeeded();const fs=await freeSwivel.boundingBox(),saved=await page.evaluate(()=>({doc:styk.editor.serialize(),undo:styk.editor._undo.length,index:styk.editor.selectedJoint}));
   await page.mouse.move(fs.x+fs.width*.5,fs.y+fs.height*.5);await page.mouse.down();await page.mouse.move(fs.x+fs.width*.6,fs.y+fs.height*.5,{steps:8});await page.mouse.up();assert.equal(await page.evaluate(()=>styk.editor._undo.length),saved.undo+1);assert.equal(await page.evaluate(()=>styk.editor.selectedJoint),saved.index);await page.evaluate(()=>styk.editor.undo());assert.deepEqual(await page.evaluate(()=>styk.editor.serialize()),saved.doc);
+  await page.getByRole('button',{name:'Pose',exact:true}).click();
+ }
+ if(doc){
+  await page.getByRole('button',{name:'Left foot',exact:true}).click();
+  for(const [label,name] of [['Thigh rotation','Left thigh'],['Shin rotation','Left lower leg'],['Ankle rotation','Left foot ankle'],['Toe bend','Left foot toe']]){
+   await page.getByRole('button',{name:label,exact:true}).click();assert.equal(await page.evaluate(()=>styk.editor.figure.segments[styk.editor.selectedJoint].name),name);
+  }
   await page.getByRole('button',{name:'Pose',exact:true}).click();
  }
  const form=page.locator('[data-drawing-group]');if(await form.count()){

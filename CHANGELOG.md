@@ -8,7 +8,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Added
 
-- Pose spatial character rigs with ordinary joint dragging, three-axis rotation rings, a turn/tilt pad and named drawing or expression selectors. Plant feet as the hips move, steer planted knees and elbows directly, or rotate a limb to release its pin and carry its hand or foot. Joint dragging preserves depth and repeated target drags retain their bend plane. Poses use the existing timeline, IK, undo and native saving.
+- Pose spatial character rigs with ordinary joint dragging, three-axis rotation rings, a turn/tilt pad and named drawing or expression selectors. Rotate the entire character together with its planted targets, or plant feet as the hips move, steer planted knees and elbows directly, or rotate a limb to release its pin and carry its hand or foot. Free feet and hands follow their shin or forearm; direct joint shortcuts select each limb articulation. Joint dragging preserves depth and repeated target drags retain their bend plane. Poses use the existing timeline, IK, undo and native saving.
 - Blend multiple rig anchors with editable weighted joints, so connected surfaces can share articulation controls and projected axes.
 - Draw and animate on dedicated drawing layers backed by a sparse tiled raster engine: brush presets with pressure and textured pencil, erasing, fill, onion skin and pixel selection you can copy, cut and delete. Unchanged cels share tiles copy-on-write, strokes rasterize in workers, only visible tiles render with mip-level filtering, changed tiles publish incrementally, and older PNG drawings migrate on first edit. Pan while painting, create blank drawing frames with A, paint beyond the stage, and choose higher-resolution strokes using the shared timeline, undo, saving and export tools.
 
@@ -19,7 +19,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Fixed
 
-- Reduce lag and memory pressure when posing dense figures: unchanged spatial branches and fills are reused, redundant skin evaluation and temporary allocations are reduced, and dragging releases superseded geometry instead of retaining every intermediate pose.
+- Reduce lag and memory pressure when posing dense figures: pose input is coalesced to the latest position per frame, unchanged spatial branches, fills and topology plans are reused, redundant skin evaluation and temporary allocations are reduced, and dragging releases superseded geometry instead of retaining every intermediate pose.
 - Keep projected rig controls usable in edge-on views, combine two joint rotations before projection, and let triangular fills use depth guides to resolve intersecting surfaces as articulated figures turn.
 - Offer recovery and reopening when the desktop editor stops unexpectedly, instead of leaving a black window that cannot save or close normally.
 - Restore right-click bending on the canvas: releasing a stationary right press opens the context menu while dragging with the button held bends the node under the pointer, matching Pivot-style gestures.

@@ -259,7 +259,7 @@ function chord(figure, object, i, lengths) {
  * topology cannot leave stale global cache entries. Work is O(segments + chain * iterations).
  * Disjoint limbs may share a base. Overlapping chains have deterministic handle priority.
  */
-export function solveObjectIK(figure, object, root, layout = ikLayout(figure), controllers = object._stykIK, {includePoints=true,rigPlan}={}) {
+export function solveObjectIK(figure, object, root, layout = ikLayout(figure), controllers = object._stykIK, {includePoints=true,rigPlan,followTargetOrientation=true}={}) {
   const active = Object.entries(controllers ?? {}).filter(([id, c]) => c.enabled && c.pinned && layout.ids.has(Number(id)));
   if (!active.length) return null;
   const angles = object.angles.slice(), points = new Map([[0, root]]), results = new Map(), claimed = new Set();
@@ -317,8 +317,8 @@ export function solveObjectIK(figure, object, root, layout = ikLayout(figure), c
     }
     // Only the next articulated group follows the target. Construction artwork
     // attached to the constrained bone continues to inherit its solved rotation.
-    const followers = ikFollowers(figure, object, id, c, layout);
-    const attachmentOffsets = ikAttachments(figure, object, id, c, layout, followers);
+    const followers = followTargetOrientation ? ikFollowers(figure, object, id, c, layout) : {};
+    const attachmentOffsets = followTargetOrientation ? ikAttachments(figure, object, id, c, layout, followers) : {};
     const affected = [...chain], visited = new Set(chain);
     for (let q = 0; q < affected.length; q++) {
       const i = affected[q], s = figure.segments[i];
@@ -334,7 +334,7 @@ export function solveObjectIK(figure, object, root, layout = ikLayout(figure), c
       for (const child of layout.children.get(s.segment_id) ?? []) if (!visited.has(child)) { visited.add(child); affected.push(child); }
     }
     if(rig){
-      for(const [child,q] of Object.entries(c.spatialFollowers??{})){
+      for(const [child,q] of Object.entries(followTargetOrientation?c.spatialFollowers??{}:{})){
         const i=layout.ids.get(Number(child));if(i===undefined||!spatialBone(figure.segments[i]))continue;
         const descendants=[],queue=[...(layout.children.get(Number(child))??[])];
         for(let j=0;j<queue.length;j++){descendants.push(queue[j]);queue.push(...(layout.children.get(figure.segments[queue[j]].segment_id)??[]));}

@@ -17,11 +17,9 @@ export function geometryDefinition(figure) {
   for (let i = 0; i < segments.length; i++) {
     const parent = Number(segments[i].parent_id);
     if (!ids.has(parent)) order.push(i);
-    else {
-      let list = children.get(parent);
-      if (!list) children.set(parent, list = []);
-      list.push(i);
-    }
+    let list = children.get(parent);
+    if (!list) children.set(parent, list = []);
+    list.push(i);
   }
   for (let q = 0; q < order.length; q++) {
     const list = children.get(Number(segments[order[q]].segment_id));

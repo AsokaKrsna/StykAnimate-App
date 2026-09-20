@@ -1455,6 +1455,7 @@ function overlayRender(geometry) {
   }
 }
 function loop(now) {
+  flushPoseMove();
   canvasGuides?.render();
   raf = 0;
   // Resizing clears the backing surface. Commit at the start of a paint task,
@@ -2461,9 +2462,12 @@ overlay.addEventListener(
     requestRender();
   }),
 );
-overlay.addEventListener(
-  "pointermove",
-  guarded((e) => {
+let pendingPoseMove = null;
+function flushPoseMove() {
+  const pending=pendingPoseMove;pendingPoseMove=null;
+  if(pending&&pending.drag===state.drag&&pending.gesture===editor._drag)moveCanvasPointer(pending.event);
+}
+const moveCanvasPointer = guarded((e) => {
     const drag = state.drag;
     if (drag?.kind === 'tweener') {
       if (e.buttons & 2) {e.preventDefault();state.suppressContext=true;cancelDrag();}
@@ -2647,8 +2651,15 @@ overlay.addEventListener(
         snapTolerance: 6 / state.view.scale,
       });
     requestRender();
-  }),
-);
+  });
+overlay.addEventListener('pointermove', e => {
+  const drag=state.drag;
+  // Keep one latest sample for expensive spatial posing. Drawing and other
+  // tools retain their complete input paths; release flushes before history.
+  if(drag&&editor.dragging&&(drag.kind==='spatial'||drag.kind==='move'&&drag.ikLive||drag.kind==='pose'&&editor.figure?.segments.some(s=>s._stykRig?.spatial))){
+    pendingPoseMove={drag,gesture:editor._drag,event:e};requestRender();
+  }else moveCanvasPointer(e);
+});
 function releaseCanvasPointer() {
   const id = canvasPointerId;
   canvasPointerId = null;
@@ -2656,6 +2667,7 @@ function releaseCanvasPointer() {
     overlay.releasePointerCapture(id);
 }
 function endDrag(event) {
+  flushPoseMove();
   const drag = state.drag;
   if (drag?.kind === "draw" || drag?.kind === "rig") construction?.cancel();
   state.drag = null;
@@ -2723,6 +2735,7 @@ function endDrag(event) {
   queueUI();
 }
 function cancelDrag() {
+  pendingPoseMove=null;
   if (state.drag?.kind === "draw" || state.drag?.kind === "rig") construction?.cancel();
   releaseCanvasPointer();
   cancelSpritePlacement();

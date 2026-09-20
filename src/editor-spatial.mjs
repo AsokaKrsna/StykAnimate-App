@@ -1,10 +1,14 @@
+import {geometryPlans} from './pivot/geometry-pose.mjs';
 import {animationRotation} from './animation-origin.mjs';
 import {rigConstraintPlan} from './rig-constraints.mjs';
-import {spatialBone,spatialSkin,quatMultiply,spatialQuaternion,quaternionPose} from './rig-spatial.mjs';
-import {inverseQuaternion,spatialWorldQuaternion,spatialPoleHandle,captureSpatialIK} from './ik-spatial.mjs';
+import {spatialBone,spatialSkin,quatMultiply,quatRotate,spatialPoint,spatialQuaternion,quaternionPose} from './rig-spatial.mjs';
+import {inverseQuaternion,spatialWorldQuaternion,spatialWorldVector,spatialPoleHandle,captureSpatialIK} from './ik-spatial.mjs';
 import {ikChain,ikLayout,ikFollowerIndices,solveObjectIK} from './ik.mjs';
 import {poseChoiceGroups} from './rig-pose-choices.mjs';
 
+const plans=e=>geometryPlans(e.geometry.objects.get(e.selectedSlot));
+const layout=e=>plans(e)?.definition??ikLayout(e.figure);
+const rigPlan=e=>plans(e)?.plan??rigConstraintPlan(e.figure);
 export const editorSpatialMethods={
  setPoseChoice(name,id){
   const group=poseChoiceGroups(this.figure,this.object).find(g=>g.name===name);if(!group)return false;
@@ -19,13 +23,13 @@ export const editorSpatialMethods={
  _releaseSpatialChain(object,index=this.selectedJoint){
   // Direct FK manipulation takes ownership of this limb. The object edit has
   // already baked its displayed IK pose; release only the chain being rotated.
-  for(const[id,c]of Object.entries(object._stykIK??{}))if(c.enabled&&c.pinned&&c.spatialTarget&&ikChain(this.figure,Number(id),c.chainLength).includes(index))
+  for(const[id,c]of Object.entries(object._stykIK??{}))if(c.enabled&&c.pinned&&c.spatialTarget&&ikChain(this.figure,Number(id),c.chainLength,layout(this)).includes(index))
    object._stykIK={...object._stykIK,[id]:{...c,pinned:false}};
  },
  getSpatialIKPole(){
   const f=this.figure,o=this.object,s=f?.segments[this.selectedJoint],c=o?._stykIK?.[s?.segment_id];
   if(!c?.enabled||!c.spatialTarget||c.bendDirection!==0)return null;
-  const pole=spatialPoleHandle(f,o,this.geometry.objects.get(this.selectedSlot),ikChain(f,s.segment_id,c.chainLength),c.spatialTarget);
+  const pole=spatialPoleHandle(f,o,this.geometry.objects.get(this.selectedSlot),ikChain(f,s.segment_id,c.chainLength,layout(this)),c.spatialTarget);
   return pole?{...pole,handle:s.segment_id}:null;
  },
  setSpatialIKPole(x,y,depth){
@@ -46,12 +50,12 @@ export const editorSpatialMethods={
    let capture;
    if(!c.pinned){
     const key=`${o.unique_id}:${id}`;this._drag.spatialIKCapture??=new Map();
-    if(!this._drag.spatialIKCapture.has(key))this._drag.spatialIKCapture.set(key,captureSpatialIK(f,o,g,ikChain(f,id,c.chainLength),ikFollowerIndices(f,id),c.target.rotation,c.spatialTarget.swivel));
+    if(!this._drag.spatialIKCapture.has(key))this._drag.spatialIKCapture.set(key,captureSpatialIK(f,o,g,ikChain(f,id,c.chainLength,layout(this)),ikFollowerIndices(f,id,layout(this)),c.target.rotation,c.spatialTarget.swivel));
     capture=this._drag.spatialIKCapture.get(key);
    }
    const next={...c,...capture,target:{...c.target,...(!c.pinned?g.joints.get(id):{})},spatialTarget:{...(capture?.spatialTarget??c.spatialTarget),...patch}};
    if(!c.pinned){
-    const solved=solveObjectIK(f,o,g.root,ikLayout(f),{[id]:{...next,pinned:true}},{includePoints:false});o.angles=solved.angles;
+    const solved=solveObjectIK(f,o,g.root,layout(this),{[id]:{...next,pinned:true}},{includePoints:false,rigPlan:rigPlan(this),followTargetOrientation:false});o.angles=solved.angles;
     if(solved.lengths){o.lengths=solved.lengths;o.len_flag=1;}
    }
    o._stykIK={...o._stykIK,[id]:next};delete o.runtime_segments;
@@ -72,26 +76,41 @@ export const editorSpatialMethods={
   const sign=o.image_text_flags?-1:1,parentAngle=parent===undefined?0:(angles[parent]-delta)*sign-f.segments[parent].angle_rad;
   return{bend:(angles[index]-delta)*sign-s.angle_rad-parentAngle,turn:(angles[turn]-delta)*sign-f.segments[turn].angle_rad,pitch:(angles[pitch]-delta)*sign-f.segments[pitch].angle_rad};
  },
- setSpatialPose(patch){
+ setSpatialPose(patch,{wholeFigure=false}={}){
   const before=this.getSpatialPose();if(!before)return false;
   for(const[k,v]of Object.entries(patch))if(!['bend','turn','pitch'].includes(k)||!Number.isFinite(v)||Math.abs(v)>1e6)throw new Error('Choose a finite joint rotation.');
   if(Object.entries(patch).every(([k,v])=>Math.abs(v-before[k])<1e-12))return false;
-  const f=this.figure,r=f.segments[this.selectedJoint]._stykRig.spatial,ids=rigConstraintPlan(f).ids;
+  const f=this.figure,r=f.segments[this.selectedJoint]._stykRig.spatial,ids=rigPlan(this).ids;
   const frame=this.geometry.objects.get(this.selectedSlot).segments[this.selectedJoint].spatialFrame;
   const parent=quatMultiply(frame.q,inverseQuaternion(spatialQuaternion(before.bend,before.turn,before.pitch))),next={...before,...patch};
   const world=spatialWorldQuaternion(quatMultiply(parent,spatialQuaternion(next.bend,next.turn,next.pitch)),f,this.object),handle=f.segments[this.selectedJoint].segment_id;
+  if(wholeFigure&&r.parent)throw new Error('Select the root articulation to rotate the whole figure.');
+  const controllers=wholeFigure?this.object._stykIK:null;
+  const delta=wholeFigure?quatMultiply(world,inverseQuaternion(spatialWorldQuaternion(frame.q,f,this.object))):null;
+  const root=this.geometry.objects.get(this.selectedSlot).root;
+  const center=wholeFigure?spatialWorldVector(spatialPoint(frame,r.origin),f,this.object).map((v,i)=>v*this.object.scale+(i===0?root.x:i===1?root.y:0)):null;
   return this._objectEdit('Rotate articulated joint',o=>{
    this._releaseSpatialChain(o);
    if(patch.bend!==undefined)this._rotateJoint((patch.bend-before.bend)*(o.image_text_flags?-1:1));
    for(const key of ['turn','pitch'])if(patch[key]!==undefined)o.angles[ids.get(r[key])]+=(patch[key]-before[key])*(o.image_text_flags?-1:1);
    for(const [id,c]of Object.entries(o._stykIK??{}))if(c.enabled&&c.pinned&&c.spatialFollowers?.[handle])o._stykIK={...o._stykIK,[id]:{...c,spatialFollowers:{...c.spatialFollowers,[handle]:quatMultiply(spatialQuaternion(-c.target.rotation,0,0),world)}}};
+   // Figure orientation moves the existing targets and their bend planes as
+   // one rigid transform. Local torso posing still leaves planted feet alone.
+   if(controllers)o._stykIK=Object.fromEntries(Object.entries(controllers).map(([id,c])=>{
+    if(!c.spatialTarget)return[id,c];
+    const p=quatRotate(delta,[c.target.x-center[0],c.target.y-center[1],c.spatialTarget.depth-center[2]]);
+    const rotate=q=>quatMultiply(spatialQuaternion(-c.target.rotation,0,0),quatMultiply(delta,quatMultiply(spatialQuaternion(c.target.rotation,0,0),q)));
+    return[id,{...c,target:{...c.target,x:center[0]+p[0],y:center[1]+p[1]},
+     spatialTarget:{...c.spatialTarget,depth:center[2]+p[2],pole:quatRotate(delta,c.spatialTarget.pole)},
+     ...(c.spatialFollowers?{spatialFollowers:Object.fromEntries(Object.entries(c.spatialFollowers).map(([id,q])=>[id,rotate(q)]))}:{})}];
+   }));
   },{posed:true});
  },
  resetSpatialPose(all=false){
   if(!all)return this.setSpatialPose({bend:0,turn:0,pitch:0});
   const f=this.figure,o=this.object;if(!f||!o)return false;
   return this._objectEdit('Reset articulated rig',o=>{
-   const delta=animationRotation(f,o),ids=rigConstraintPlan(f).ids;
+   const delta=animationRotation(f,o),ids=rigPlan(this).ids;
    for(const s of f.segments)if(spatialBone(s))for(const id of [s.segment_id,s._stykRig.spatial.turn,s._stykRig.spatial.pitch]){const i=ids.get(id);o.angles[i]=f.segments[i].angle_rad*(o.image_text_flags?-1:1)+delta;}
    // Targets must release when the animator explicitly restores the rest pose.
    if(o._stykIK)o._stykIK=Object.fromEntries(Object.entries(o._stykIK).map(([id,c])=>[id,{...c,pinned:false}]));
@@ -104,8 +123,8 @@ export const editorSpatialMethods={
   // target stays planted; no separate canvas pole is needed.
   if(!stretch)for(const[id,c]of Object.entries(o._stykIK??{})){
    if(!c.enabled||!c.pinned||!c.spatialTarget||c.bendDirection!==0)continue;
-   const chain=ikChain(f,Number(id),c.chainLength);if(chain.length!==2||chain[0]!==i)continue;
-   try{this.selectedJoint=rigConstraintPlan(f).ids.get(Number(id));const pole=this.getSpatialIKPole();return pole?this.setSpatialIKPole(x,y,pole.knee[2]):false;}
+   const chain=ikChain(f,Number(id),c.chainLength,layout(this));if(chain.length!==2||chain[0]!==i)continue;
+   try{this.selectedJoint=rigPlan(this).ids.get(Number(id));const pole=this.getSpatialIKPole();return pole?this.setSpatialIKPole(x,y,pole.knee[2]):false;}
    finally{this.selectedJoint=i;}
   }
   const g=this.geometry.objects.get(this.selectedSlot),shape=g.segments[i],before=this.getSpatialPose(),span=Math.hypot(shape.end.x-shape.start.x,shape.end.y-shape.start.y),distance=Math.hypot(x-shape.start.x,y-shape.start.y);
@@ -116,7 +135,7 @@ export const editorSpatialMethods={
   const parent=quatMultiply(shape.spatialFrame.q,inverseQuaternion(spatialQuaternion(before.bend,before.turn,before.pitch)));
   const world=quatMultiply(spatialQuaternion(angle,0,0),spatialWorldQuaternion(shape.spatialFrame.q,f,o));
   const pose=quaternionPose(quatMultiply(inverseQuaternion(parent),spatialWorldQuaternion(world,f,o,true)),before);
-  const ids=rigConstraintPlan(f).ids,r=s._stykRig.spatial;
+  const ids=rigPlan(this).ids,r=s._stykRig.spatial;
   return this._objectEdit('Pose articulated joint',target=>{
    this._releaseSpatialChain(target);
    const sign=target.image_text_flags?-1:1;this._rotateJoint((pose.bend-before.bend)*sign);

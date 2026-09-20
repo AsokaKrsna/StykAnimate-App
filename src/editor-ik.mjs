@@ -1,3 +1,4 @@
+import {geometryPlans} from './pivot/geometry-pose.mjs';
 import {quatMultiply,spatialQuaternion} from './rig-spatial.mjs';
 import {captureSpatialIK} from './ik-spatial.mjs';
 import {ikLayout, ikChain, ikFollowers, ikFollowerIndices, ikBendReference, solveObjectIK, MAX_IK_CHAIN} from './ik.mjs';
@@ -69,11 +70,11 @@ function controllerAt(editor) {
 }
 function capture(figure, object, geometry, handle, controller) {
   const index = figure.segments.findIndex(s => s.segment_id === handle), point = geometry.joints.get(handle);
-  const rotation = controller?.target?.rotation ?? 0, followers = {};
-  for (const i of ikFollowerIndices(figure, handle)) {
+  const rotation = controller?.target?.rotation ?? 0, followers = {}, layout=geometryPlans(geometry)?.definition??ikLayout(figure);
+  for (const i of ikFollowerIndices(figure, handle, layout)) {
     const s = geometry.segments[i]; followers[s.seg.segment_id] = s.angle - rotation;
   }
-  const chain = ikChain(figure, handle, controller?.chainLength ?? 2);
+  const chain = ikChain(figure, handle, controller?.chainLength ?? 2, layout);
   let bendDirection = controller?.bendDirection ?? 1;
   if (chain.length >= 2) {
     const a = geometry.segments[chain[0]].start, c = geometry.segments[chain.at(-1)].end;
@@ -87,7 +88,7 @@ function capture(figure, object, geometry, handle, controller) {
   if (index < 0 || !point) throw new Error('Select a valid IK node.');
   const points = [geometry.segments[chain[0]].start, ...chain.map(i => geometry.segments[i].end)];
   const lengths = chain.map(i => {const s = geometry.segments[i]; return Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y);});
-  return {...captureSpatialIK(figure,object,geometry,chain,ikFollowerIndices(figure,handle),rotation,controller?.spatialTarget?.swivel??0),target: {...point, rotation}, followers, bendDirection: controller?.bendDirection ?? bendDirection,
+  return {...captureSpatialIK(figure,object,geometry,chain,ikFollowerIndices(figure,handle,layout),rotation,controller?.spatialTarget?.swivel??0),target: {...point, rotation}, followers, bendDirection: controller?.bendDirection ?? bendDirection,
     bendReference: ikBendReference(points, lengths, controller?.bendReference)};
 }
 
@@ -102,7 +103,7 @@ export const editorIKMethods = {
   _rotateIKFollowers(targets, delta, includeJoint) {
     if (!delta || !this._drag?.before.some(o => Object.values(o._stykIK ?? {}).some(c => c.enabled && c.pinned))) return;
     const graph = context(this), figure = graph?.figure ?? this.figure, source = graph?.object ?? this.object;
-    const layout = graph?.layout ?? ikLayout(figure);
+    const layout = graph?.layout ?? geometryPlans(this.geometry.objects.get(this.selectedSlot))?.definition ?? ikLayout(figure);
     const selected = new Set(targets.map(([slot, index]) => `${slot}:${index}`));
     const entryAt = i => graph?.entries[i] ?? {slot: this.selectedSlot, index: i, handle: figure.segments[i].segment_id};
     for (const [id, c] of Object.entries(source._stykIK ?? {})) {
@@ -147,7 +148,7 @@ export const editorIKMethods = {
   getIKSettings() {
     const {handle, controller} = controllerAt(this);
     const graph = handle ? context(this) : null;
-    const maxLength = handle ? (graph ? graph.chain(this.selectedSlot, handle, MAX_IK_CHAIN) : ikChain(this.figure, handle, MAX_IK_CHAIN)).length : 0;
+    const maxLength = handle ? (graph ? graph.chain(this.selectedSlot, handle, MAX_IK_CHAIN) : ikChain(this.figure, handle, MAX_IK_CHAIN,geometryPlans(this._geometry?.objects.get(this.selectedSlot))?.definition)).length : 0;
     return {enabled: false, pinned: false, allowStretch: false, bendDirection: 0, chainLength: Math.min(2, maxLength), ...controller, maxLength};
   },
   _rememberIKBends() {
@@ -247,7 +248,7 @@ export const editorIKMethods = {
         const temporary = {...next, ...(captured.spatialTarget?captured:capture(this.figure,object,geometry,handle,current)), target, pinned: true};
         const baseline = this._drag.before.find(o => o.unique_id === object.unique_id);
         const source = {...object, len_flag: baseline.len_flag, lengths: baseline.lengths};
-        const solution = solveObjectIK(this.figure, source, geometry.root, ikLayout(this.figure), {[handle]: temporary}, {includePoints:false});
+        const solution = solveObjectIK(this.figure, source, geometry.root, geometryPlans(geometry)?.definition??ikLayout(this.figure), {[handle]: temporary}, {includePoints:false,rigPlan:geometryPlans(geometry)?.plan,followTargetOrientation:!temporary.spatialTarget});
         object.angles = solution.angles;
         object.len_flag = solution.lengths ? 1 : baseline.len_flag;
         object.lengths = (solution.lengths ?? baseline.lengths).slice();

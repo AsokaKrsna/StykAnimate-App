@@ -3,13 +3,14 @@ import {animationRotation} from '../animation-origin.mjs';
 // Derived data belongs to its published geometry. A successor shares unchanged
 // records and numeric dependencies, never the previous geometry or its caches.
 const poses = new WeakMap();
+export const geometryPlans = geometry => poses.get(geometry);
 
 // poseSlots is the editor's guarantee that the definition did not change.
 export function geometryPosePlan(figure, object, previous, allowed) {
   return allowed && previous?.fig === figure && previous.obj === object ? poses.get(previous)?.plan : undefined;
 }
 
-export function geometryPose(figure, object, root, rig, previous, allowed, version) {
+export function geometryPose(figure, object, root, rig, previous, allowed, version, definition) {
   if (!rig?.plan.signature.some(s => s.spatial) || object.runtime_segments ||
       object.color_transition || object._sticknodesSprite) return null;
   const globals = [version, root.x, root.y, Number(object.scale ?? 1),
@@ -42,7 +43,7 @@ export function geometryPose(figure, object, root, rig, previous, allowed, versi
       return !polygons[index].some(i => changed[i]);
     },
     publish(geometry) {
-      poses.set(geometry, {plan: rig.plan, globals, inputs, states: rig.states, polygons});
+      poses.set(geometry, {plan: rig.plan, definition, globals, inputs, states: rig.states, polygons});
     },
   };
 }

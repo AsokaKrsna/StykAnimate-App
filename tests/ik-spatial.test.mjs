@@ -4,7 +4,7 @@ import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
 import {Editor} from '../src/editor.mjs';
 import {spatialPoint,quatRotate,quatMultiply} from '../src/rig-spatial.mjs';
-import {spatialWorldQuaternion,inverseQuaternion} from '../src/ik-spatial.mjs';
+import {spatialWorldQuaternion,spatialWorldVector,inverseQuaternion} from '../src/ik-spatial.mjs';
 import {validateIK,interpolateIK} from '../src/ik.mjs';
 function fixture(){
  const q=construction();q.add(0,0,0,'Figure rotation');
@@ -55,7 +55,7 @@ test('dragging a spatial pole changes the knee, retains the foot, and cancels as
   const{e,lower,upper,foot}=fixture();e.select(1,lower-1);e.setNodeIK({enabled:true,pinned,bendDirection:0});e.poseIKTarget(215,245);
   const before=e.serialize(),pole=e.getSpatialIKPole(),knee=state(e,upper),ankle=state(e,lower),boot=state(e,foot);assert.ok(pole);
   e.beginDrag('Move IK pole');e.setSpatialIKPole(pole.point[0]+80,pole.point[1]-20,pole.point[2]);
-  assert.ok(Math.hypot(...state(e,upper).p.map((v,i)=>v-knee.p[i]))>5);near(state(e,lower).end.x,ankle.end.x);near(state(e,lower).end.y,ankle.end.y);sameOrientation(state(e,foot).q,boot.q);assert.equal(e.object._stykIK[lower].pinned,pinned);
+  assert.ok(Math.hypot(...state(e,upper).p.map((v,i)=>v-knee.p[i]))>5);near(state(e,lower).end.x,ankle.end.x);near(state(e,lower).end.y,ankle.end.y);sameOrientation(state(e,foot).q,pinned?boot.q:quatMultiply(quatMultiply(state(e,lower).q,inverseQuaternion(ankle.q)),boot.q));assert.equal(e.object._stykIK[lower].pinned,pinned);
   e.cancelDrag();assert.deepEqual(e.serialize(),before);
  }
 });
@@ -98,15 +98,15 @@ test('native angle edits carry the foot, while a no-op spatial edit leaves its p
  e.undo();assert.deepEqual(e.serialize(),old);
 });
 
-test('target depth and full knee orbits work for free and planted limbs without changing boot orientation',()=>{
+test('target depth and full knee orbits preserve planted orientation or the free ankle articulation',()=>{
  for(const pinned of [false,true]){
   const{e,lower,foot}=fixture();e.select(1,lower-1);e.setNodeIK({enabled:true,pinned,bendDirection:0});e.poseIKTarget(215,235);
-  const boot=state(e,foot);e.setSpatialIKTarget({depth:35});near(state(e,lower).p[2],35);near(state(e,lower).end.x,215);near(state(e,lower).end.y,235);
-  sameOrientation(state(e,foot).q,boot.q);const before=state(e,lower);
+  const boot=state(e,foot),shin=state(e,lower);e.setSpatialIKTarget({depth:35});near(state(e,lower).p[2],35);near(state(e,lower).end.x,215);near(state(e,lower).end.y,235);
+  sameOrientation(state(e,foot).q,pinned?boot.q:quatMultiply(quatMultiply(state(e,lower).q,inverseQuaternion(shin.q)),boot.q));const before=state(e,lower),footBefore=state(e,foot);
   // Separate edits and a single continuous gesture must agree. Neither can
   // repeatedly add the previously displayed swivel to the new value.
   for(const angle of [Math.PI/2,Math.PI,Math.PI*1.5,Math.PI*2])e.setNodeIK({swivel:angle});
-  sameOrientation(state(e,lower).q,before.q);sameOrientation(state(e,foot).q,boot.q);
+  sameOrientation(state(e,lower).q,before.q);sameOrientation(state(e,foot).q,footBefore.q);
   e.beginDrag('Orbit knee');for(let i=0;i<=72;i++)e.setSpatialIKTarget({swivel:i*Math.PI/36});e.commitDrag();
   sameOrientation(state(e,lower).q,before.q);assert.equal(e.object._stykIK[lower].pinned,pinned);
   const saved=e.serialize();e.beginDrag('Depth');e.setSpatialIKTarget({depth:-30});e.cancelDrag();assert.deepEqual(e.serialize(),saved);
@@ -133,4 +133,26 @@ test('dragging a planted knee steers the existing pole and retains the foot',()=
  assert.ok(Math.hypot(...state(e,upper).p.map((v,i)=>v-knee.p[i]))>5);
  near(state(e,lower).end.x,ankle.end.x);near(state(e,lower).end.y,ankle.end.y);sameOrientation(state(e,foot).q,boot.q);
  e.cancelDrag();assert.deepEqual(e.serialize(),before);
+});
+
+
+test('whole-figure orientation rigidly carries planted ankles, poles and boots with undo and cancellation',()=>{
+ for(const mirror of [false,true])for(const scale of [1.4,.8]){
+  const{e,body,upper,lower,foot,toe}=fixture();e.object.scale=scale;
+  e.select(1,-1);if(mirror)e.mirrorFigure();
+  e.select(1,foot-1);e.setSpatialPose({turn:.3,pitch:.2});
+  e.select(1,lower-1);e.setNodeIK({enabled:true,pinned:true,bendDirection:0});
+  e.rotateIKTarget(.25);const p=state(e,lower).end;e.poseIKTarget(p.x+12,p.y-15*scale);
+  const position=id=>{const g=e.geometry.objects.get(0),p=spatialWorldVector(state(e,id).p,e.figure,e.object);return[p[0]*scale+g.root.x,p[1]*scale+g.root.y,p[2]*scale];};
+  const ids=[upper,lower,foot,toe],before=ids.map(id=>({p:position(id),q:state(e,id).q})),saved=e.serialize(),base=state(e,body).q,root=e.geometry.objects.get(0).root;
+  e.select(1,body-1);e.beginDrag('Orient figure');
+  for(const turn of [.4,1.1,-.6]){
+   e.setSpatialPose({turn,pitch:.3,bend:.2},{wholeFigure:true});const delta=quatMultiply(state(e,body).q,inverseQuaternion(base));
+   ids.forEach((id,i)=>{const expected=quatRotate(delta,[before[i].p[0]-root.x,before[i].p[1]-root.y,before[i].p[2]]),actual=position(id);expected[0]+=root.x;expected[1]+=root.y;actual.forEach((v,j)=>near(v,expected[j],.005));sameOrientation(state(e,id).q,quatMultiply(delta,before[i].q));});
+   assert.equal(e.object._stykIK[lower].pinned,true);validateIK(e.object);
+  }
+  e.cancelDrag();assert.deepEqual(e.serialize(),saved);
+  e.setSpatialPose({turn:.8},{wholeFigure:true});const reopened=new Editor({demo:false});reopened.load(e.serialize());sameOrientation(state(reopened,foot).q,state(e,foot).q);
+  e.undo();assert.deepEqual(e.serialize(),saved);
+ }
 });
