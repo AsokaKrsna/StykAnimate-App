@@ -24,7 +24,7 @@ class DrawingWorker {
     if(this.pending.size>=2)return Promise.reject(new Error('Drawing worker is busy. Wait for the current operation.'));
     if(!this.worker){
       this.worker=new Worker(new URL('./drawing-worker.mjs',import.meta.url),{type:'module',name:'StykAnimate drawing pixels'});
-      this.worker.onmessage=({data})=>{const pending=this.pending.get(data.id);if(!pending){data.bitmap?.close();return;}this.pending.delete(data.id);pending.finish(data.error?new Error(data.error):null,data);};
+      this.worker.onmessage=({data})=>{const pending=this.pending.get(data.id);if(!pending){data.bitmap?.close();return;}if(data.fatal){this.dispose(new Error(data.error||'Drawing worker could not load. Retry the operation.'));return;}this.pending.delete(data.id);pending.finish(data.error?new Error(data.error):null,data);};
       this.worker.onerror=e=>{e.preventDefault();this.dispose(new Error(e.message||'Drawing worker stopped. Retry the operation.'));};
       this.worker.onmessageerror=()=>this.dispose(new Error('Drawing pixels could not be transferred.'));
     }

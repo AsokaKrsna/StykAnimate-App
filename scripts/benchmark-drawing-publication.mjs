@@ -7,10 +7,13 @@ import os from 'node:os';
 const baseline=process.env.STYK_PUBLICATION_BASELINE,output=process.env.STYK_PUBLICATION_ARTIFACTS||'artifacts/drawing-publication';
 const revisions=[baseline,'working-tree'].filter(Boolean),runs=[];await mkdir(output,{recursive:true});
 const sources=new Map();if(baseline)for(const name of ['drawing-tiles','drawing-resources','drawing-tile-codec','drawing-worker','drawing-history','drawing-controller','editor-drawing','editor'])sources.set(name,execFileSync('git',['show',`${baseline}:src/${name}.mjs`],{encoding:'utf8'}));
+if(baseline&&execFileSync('git',['ls-tree','--name-only',baseline,'src/drawing-preparation.mjs'],{encoding:'utf8'}).trim())sources.set('drawing-preparation',execFileSync('git',['show',`${baseline}:src/drawing-preparation.mjs`],{encoding:'utf8'}));
 for(const kind of ['opaque8k','textured4k'])for(let pass=0;pass<3;pass++)for(const revision of pass%2?[...revisions].reverse():revisions){
   const browser=await chromium.launch({channel:'chrome',headless:true});
   try{
     const context=await browser.newContext({viewport:{width:1440,height:1000}}),errors=[];
+    // Routing disables HTTP caching; apply it equally to both revisions.
+    await context.route('**/*',route=>route.continue());
     if(revision!=='working-tree')for(const [name,body] of sources)await context.route(`**/src/${name}.mjs`,route=>route.fulfill({contentType:'text/javascript',body}));
     const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
     await page.goto(process.env.STYK_URL||'http://127.0.0.1:47839');await page.waitForFunction(()=>window.styk?.ready);await page.locator('[data-workspace-mode="draw"]').click();

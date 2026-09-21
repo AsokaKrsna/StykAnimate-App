@@ -24,6 +24,17 @@ async function fixture(options={}){
 const changes=(color=[127,5,249,1])=>Array.from({length:130},(_,tx)=>({tx,ty:-1,before:null,after:new Uint8ClampedArray(color)}));
 const command=(target,tiles)=>({kind:'drawing-pixels',celId:drawingMetadata(target.figure).celId,tiles});
 
+test('preparation reuses private full-tile allocations and expands only compact colors',()=>{
+  const full=new Uint8ClampedArray(TILE_BYTES);for(let i=0;i<full.length;i+=4)full.set([127,5,249,0],i);
+  full.set([31,63,95,1],(21*64+11)*4);
+  const expected=full.slice(),uniform=new Uint8ClampedArray([17,23,41,255]),empty=new Uint8ClampedArray(TILE_BYTES);
+  const tiles=materializeDrawingTiles([{tx:-2,ty:3,pixels:full.buffer},{tx:1,ty:2,pixels:uniform.buffer},{tx:7,ty:8,pixels:empty.buffer},{tx:9,ty:10,pixels:null}]);
+  assert.equal(tiles[0].pixels,full.buffer,'worker returns the existing private allocation');assert.deepEqual(new Uint8ClampedArray(tiles[0].pixels),expected);
+  assert.deepEqual(tiles[0].alphaBounds,{x:11,y:21,width:1,height:1});
+  assert.notEqual(tiles[1].pixels,uniform.buffer);assert.equal(tiles[1].pixels.byteLength,TILE_BYTES);assert.ok(new Uint8ClampedArray(tiles[1].pixels).every((v,i)=>v===uniform[i%4]));
+  assert.equal(tiles[2].pixels,null);assert.equal(tiles[3].pixels,null);
+});
+
 test('large replacements stay detached until one atomic commit adopts them',async()=>{
   const f=await fixture(),{editor,worker,owner,target,surface}=f,tiles=changes(),gate=deferred(),started=deferred();
   worker.before=async count=>{if(count===1){started.resolve();await gate.promise;}};

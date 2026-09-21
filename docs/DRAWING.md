@@ -217,6 +217,13 @@ reservation. A closing stroke retains its visible preview while preparation is
 pending; saving and the next gesture wait for that transaction. Resampling
 adopts the worker's already-complete pixel buffers directly.
 
+The preparation worker reuses its transferred full-tile buffers; it expands
+only compact uniform colors. The main thread's original history arrays stay
+unchanged. Its lightweight entry point loads codecs and other pixel operations
+on demand in the same worker, keeping their caches for later requests. A module
+load failure releases that worker and rejects all pending requests so retrying
+can start a fresh one. This adds no extra worker or queue.
+
 Undo belongs to the editor's chronological history. Before/after tile records
 are exact; absent sides are `null` and uniform tiles use a four-byte color
 representation. Where workers and IndexedDB are available, records of at least
