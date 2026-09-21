@@ -27,14 +27,14 @@ try{
     e.commitDrawingPixels(t,[{tx:0,ty:0,before:null,after:new Uint8ClampedArray(64*64*4).map((n,i)=>i%4===3?255:120)}]);
     const original=s.store.get(0,0).pixels.slice();
     const make=()=>d.makeSelection({target:e.drawingTarget(),surface:s,points:[{x:8,y:8},{x:16,y:8},{x:16,y:16},{x:8,y:16}]});
-    make();d.selection.dx=32;d.previewSelection();
+    await make();d.selection.dx=32;d.previewSelection();
     const p=d.resource(t.figure),scratch=p.scratch({x:0,y:0,width:64,height:64}),ctx=scratch.canvas.getContext('2d');
     const preview=ctx.getImageData(10,10,1,1).data[3]===0&&ctx.getImageData(42,10,1,1).data[3]===255;
     const untouched=s.store.get(0,0).pixels.every((n,i)=>n===original[i]);
-    d.cancelSelection();make();d.selection.dx=640000;d.previewSelection();await d.applySelection();
+    d.cancelSelection();await make();d.selection.dx=640000;d.previewSelection();await d.applySelection();
     const moved=s.store.pixel(640010,10)[3]===255&&s.store.pixel(10,10)[3]===0;
     e.undo();const exact=s.store.get(0,0).pixels.every((n,i)=>n===original[i]);
-    make();d.selection.angle=35;d.previewSelection();await d.applySelection();e.undo();
+    await make();d.selection.angle=35;d.previewSelection();await d.applySelection();e.undo();
     return {preview,untouched,moved,exact,rotationUndo:s.store.get(0,0).pixels.every((n,i)=>n===original[i])};
   });
   for(const [name,value] of Object.entries(selection))check('selection: '+name,value);

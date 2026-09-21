@@ -77,12 +77,12 @@ try{
     const {drawingMetadata}=await import('/src/drawing-model.mjs');
     const e=styk.editor,d=styk.drawing,owner=d.owner;await d.prepareVisible();const surface=await owner.surface(e.drawingTarget().figure),before=pix(surface.store),B=surface.store.bounds;
     const region=()=>[{x:B.x,y:B.y},{x:B.x+B.width,y:B.y},{x:B.x+B.width,y:B.y+B.height},{x:B.x,y:B.y+B.height}];
-    d.makeSelection({target:e.drawingTarget(),surface,points:region()});
+    await d.makeSelection({target:e.drawingTarget(),surface,points:region()});
     d.selection.dx=14;d.previewSelection();const hitTest=d.selectionContains({x:B.x+30,y:B.y+30})&&!d.selectionContains({x:B.x-1,y:B.y+30});
     const preview=pix(surface.store);d.selection.dx=28;d.previewSelection();d.selection.dx=14;d.previewSelection();
     const repeat=pixEq(pix(surface.store),preview);
     await d.applySelection();e.undo();const exact=pixEq(pix(surface.store),before);
-    d.makeSelection({target:e.drawingTarget(),surface,points:region()});
+    await d.makeSelection({target:e.drawingTarget(),surface,points:region()});
     await d.action('copy-pixels');d.cancelSelection();await d.action('paste-pixels');e.undo();
     const clipboard=styk.clipboard.kind==='drawing-pixels'&&pixEq(pix(surface.store),before);
     d.settings.color='#d62030';await d.fill(e.drawingTarget(),surface,{x:B.x+1,y:B.y+1});const filled=surface.store.pixel(B.x+1,B.y+1)[3]===255;e.undo();const fillUndo=pixEq(pix(surface.store),before);

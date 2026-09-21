@@ -41,11 +41,11 @@ try{
   const copied=await page.evaluate(async()=>{
     const {e,d,target,surface}=await freshDrawing(),{decodeDrawingPNG}=await import('/src/drawing-png.mjs');
     const pixels=new Uint8ClampedArray(64*64*4);pixels.set([127,5,249,1],(30*64+30)*4);e.commitDrawingPixels(target,[{tx:0,ty:0,before:null,after:pixels}]);
-    d.makeSelection({target:e.drawingTarget(),surface,points:[{x:28,y:28},{x:32,y:28},{x:32,y:32},{x:28,y:32}]});d.selection.angle=90;d.selection.dx=100;
+    await d.makeSelection({target:e.drawingTarget(),surface,points:[{x:28,y:28},{x:32,y:28},{x:32,y:32},{x:28,y:32}]});d.selection.angle=90;d.selection.dx=100;
     await d.action('copy-pixels');const clip=e._drawingPixelClipboard,image=await decodeDrawingPNG(clip.dataUrl),exact=image.pixels[3]===1&&image.pixels[0]===127&&image.pixels[1]===5&&image.pixels[2]===249;
     d.cancelSelection();await d.action('paste-pixels');
     const copied=exact&&surface.store.pixel(129,30).join(',')==='127,5,249,1'&&surface.store.pixel(30,30).join(',')==='127,5,249,1';
-    e.undo();d.makeSelection({target:e.drawingTarget(),surface,points:[{x:28,y:28},{x:32,y:28},{x:32,y:32},{x:28,y:32}]});await d.action('cut-pixels');
+    e.undo();await d.makeSelection({target:e.drawingTarget(),surface,points:[{x:28,y:28},{x:32,y:28},{x:32,y:32},{x:28,y:32}]});await d.action('cut-pixels');
     const cut=surface.store.pixel(30,30)[3]===0&&!d.operation&&!d.selection;e.undo();return copied&&cut&&surface.store.pixel(30,30).join(',')==='127,5,249,1';
   });
   check('transformed copy and cut preserve low-alpha colors, world placement and exact undo',copied);

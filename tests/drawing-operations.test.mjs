@@ -4,7 +4,7 @@ import {DrawingController} from '../src/drawing-controller.mjs';
 import {restoreClipboard} from '../src/shared-clipboard.mjs';
 import {DrawingResources} from '../src/drawing-resources.mjs';
 import {createDrawingFigure} from '../src/drawing-model.mjs';
-import {TILE_BYTES} from '../src/drawing-tiles.mjs';
+import {TILE_BYTES,TileStore} from '../src/drawing-tiles.mjs';
 
 function fixture(){
   const d=Object.create(DrawingController.prototype),holds=new Map();
@@ -12,6 +12,13 @@ function fixture(){
   return d;
 }
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
+
+test('input tile copying shares one reservation across source and destination',async()=>{
+  const d=fixture(),store=new TileStore();store.set(0,0,new Uint8ClampedArray([1,2,3,255]));
+  const op={maxBytes:TILE_BYTES,check:()=>{}};
+  const tiles=await d.copyWorkerTiles({store},op);assert.equal(tiles[0].pixels.byteLength,TILE_BYTES);
+  await assert.rejects(d.copyWorkerTiles({store},op),/memory/);assert.equal(op.copiedBytes,TILE_BYTES);assert.equal(store.pixel(0,0)[0],1);
+});
 
 test('warm history keeps synchronous command behavior and avoids a pixel operation',()=>{
   const d=fixture();d.owner.history={needsLoad:()=>false};d.editor._undo=[{}];d.editor.undo=()=>true;

@@ -5,9 +5,10 @@ import {decodeDrawingPNG,encodeDrawingPNG} from './drawing-png.mjs';
 import {decodeTileBlob,tileStoreFromList,TILE_BLOB_PREFIX,TileEncodeCache} from './drawing-tile-codec.mjs';
 import {levelStore,invalidateLevels} from './drawing-raster.mjs';
 import {transformSelectedPixels} from './drawing-selection.mjs';
+import {captureSelection} from './drawing-lasso.mjs';
 import {transformTiles,TRANSFORM_BYTES} from './drawing-transform.mjs';
 
-const storeOf=data=>{const store=new TileStore();for(const t of data.tiles??[])store.tiles.set(tileKey(t.tx,t.ty),{tx:t.tx,ty:t.ty,pixels:new Uint8ClampedArray(t.pixels),frozen:false,png:t.png?new Uint8Array(t.png):undefined});return store;};
+const storeOf=data=>{const store=new TileStore();for(const t of data.tiles??[])store.tiles.set(tileKey(t.tx,t.ty),{tx:t.tx,ty:t.ty,pixels:new Uint8ClampedArray(t.pixels),alphaBounds:t.alphaBounds,frozen:false,png:t.png?new Uint8Array(t.png):undefined});return store;};
 const changesReply=(id,store,before)=>{const tiles=tileChanges(store,before);self.postMessage({id,tiles},tiles.flatMap(t=>[t.before?.buffer,t.after?.buffer].filter(Boolean)));};
 const validRect=r=>r&&[r.x,r.y].every(Number.isSafeInteger)&&Number.isInteger(r.width)&&Number.isInteger(r.height)&&r.width>0&&r.height>0&&r.width*r.height<=DRAWING_MAX_PIXELS;
 // Encoded tiles persist across publications so a re-publish only encodes
@@ -46,10 +47,15 @@ self.onmessage=async({data})=>{
       const store=storeOf(data),tiles=floodTiles(store,{...data.options,bounds:data.bounds,source:data.source?new Uint8ClampedArray(data.source):undefined});
       self.postMessage({id,tiles},tiles.flatMap(t=>[t.before?.buffer,t.after?.buffer].filter(Boolean)));return;
     }
+    if(kind==='select'){
+      const result=captureSelection(storeOf(data),data.points,{maxBytes:data.maxBytes});
+      const tiles=result.tiles.map(t=>({...t,pixels:t.full?null:t.pixels.buffer,remaining:t.remaining?.buffer??null}));
+      self.postMessage({id,tiles},tiles.flatMap(t=>[t.pixels,t.remaining].filter(Boolean)));return;
+    }
     if(kind==='selection'||kind==='copy-selection'){
-      const store=storeOf(data),tiles=transformSelectedPixels(store,{...data.selection,pixels:new Uint8ClampedArray(data.selection.pixels),mask:{...data.selection.mask,mask:new Uint8Array(data.selection.mask.mask)}});
+      const store=storeOf(data),source=storeOf(data.selection),tiles=transformSelectedPixels(store,{...data.selection,source});
       if(kind==='copy-selection'){
-        const bounds=store.bounds??{x:data.selection.mask.x,y:data.selection.mask.y,width:1,height:1};
+        const bounds=store.bounds??{x:data.selection.bounds.x,y:data.selection.bounds.y,width:1,height:1};
         if(!validRect(bounds)||bounds.width>8192||bounds.height>8192)throw new Error('The PNG clipboard is limited to 16 megapixels and 8192 pixels per side. Select a smaller region.');
         const dataUrl=await encodeDrawingPNG(store.readRect(bounds.x,bounds.y,bounds.width,bounds.height),bounds.width,bounds.height);
         self.postMessage({id,bounds,dataUrl});return;

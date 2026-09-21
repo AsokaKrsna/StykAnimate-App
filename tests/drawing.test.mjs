@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {DrawingResources} from '../src/drawing-resources.mjs';
-import {DrawingStroke,floodTiles,lassoMask,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
+import {DrawingStroke,floodTiles,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
 import {drawingMetadata,validateDrawings,drawingMatrix,drawingPixelMatrix,inversePoint,transformPoint,migrateDrawingFigure,EMPTY_PNG} from '../src/drawing-model.mjs';
 import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from '../src/drawing-tiles.mjs';
 import {encodeTileBlob,decodeTileBlob,assembleTileBlobBytes,TILE_BLOB_PREFIX,TileEncodeCache} from '../src/drawing-tile-codec.mjs';
@@ -165,13 +165,6 @@ test('floodTiles stays inside its bounds, closes gaps and allocates only touched
   // A seed outside the bounds rect is rejected silently.
   const empty=new TileStore();floodTiles(empty,{x:500,y:0,color:[1,2,3,255],bounds:{x:0,y:0,width:10,height:10}});assert.equal(empty.size,0);
   assert.throws(()=>floodTiles(empty,{x:0,y:0,bounds:{x:0,y:0,width:8192,height:8193}}),/bounds/);
-});
-
-test('lassoMask allocates only the polygon bounding box',()=>{
-  const mask=lassoMask([{x:10,y:20},{x:40,y:20},{x:40,y:50},{x:10,y:50}]);
-  assert.deepEqual({x:mask.x,y:mask.y,width:mask.width,height:mask.height},{x:10,y:20,width:30,height:30});
-  assert.equal(mask.mask.length,900);assert.equal(mask.mask.reduce((a,b)=>a+b,0),900);
-  const small=lassoMask([{x:1,y:1},{x:2,y:1}]);assert.equal(small.mask.reduce((a,b)=>a+b,0),0);
 });
 
 test('tile blobs round-trip exact RGBA at negative coordinates and skip transparent tiles',async()=>{

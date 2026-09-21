@@ -1,6 +1,7 @@
 import {strokeRegion} from './drawing-stroke-region.mjs';
 import {BRUSH_PRESETS} from './drawing-view.mjs';
-import {lassoMask,DrawingStroke} from './drawing-pixels.mjs';
+import {DrawingStroke} from './drawing-pixels.mjs';
+import {lassoBounds,lassoContains,selectionStores} from './drawing-lasso.mjs';
 import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,inversePoint,transformPoint} from './drawing-model.mjs';
 import {TILE,tileKey,parseTileKey,TileStore} from './drawing-tiles.mjs';
 import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
@@ -12,6 +13,7 @@ import {TRANSFORM_BYTES,transformSupportBounds,tileIntersects,inverseMatrix,mult
 import {selectionMatrix,selectionTiles,selectionPresenter} from './drawing-selection.mjs';
 
 const pointerSample=e=>({clientX:e.clientX,clientY:e.clientY,pressure:e.pressure,pointerType:e.pointerType,timeStamp:e.timeStamp,button:e.button,buttons:e.buttons});
+const yieldToInput=()=>globalThis.scheduler?.yield?globalThis.scheduler.yield():new Promise(resolve=>setTimeout(resolve,0));
 const canvas=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c;};
 const brushKeys=['preset','size','opacity','flow','hardness','pressureSize','pressureOpacity','sizeCurve','opacityCurve','stabilization','spacingRatio','texture'];
 const unionRects=(a,b)=>{if(!a)return b?{...b}:null;if(!b)return{...a};const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);return{x,y,width:Math.max(a.x+a.width,b.x+b.width)-x,height:Math.max(a.y+a.height,b.y+b.height)-y};};
@@ -38,7 +40,7 @@ export class DrawingController {
     editor.addEventListener('change',event=>{
       const kind=event.detail.kind;
       if(kind==='document'){this.cancel();this.selection=null;this.bind();}
-      if(kind==='seek'){this.finish();this.cancelSelection();}
+      if(kind==='seek'){this.finish();if(this.operation?.selection)this.operation.abort.abort();this.cancelSelection();}
       if(kind==='history'){if(!this.operation?.history)this.cancel();this.cancelSelection();}
       if(kind==='document'||kind==='seek')this.prefetchCels();
       if(this.active){this.sync();this.prepareVisible();}
@@ -72,18 +74,18 @@ export class DrawingController {
   settle({selection=false}={}){
     if(this.operation)return this.operation.done.then(()=>this.settle({selection}));
     if(this.loading?.done){const pending=this.loading;pending.released=true;return pending.done.then(()=>this.settle({selection}));}
-    this.finish();const stroke=this.gesture?.session?.done;
+    const finish=this.finish();if(finish?.then)return finish.then(()=>this.settle({selection}));const stroke=this.gesture?.session?.done;
     if(stroke)return stroke.then(()=>this.settle({selection}));
     return this.selection?.committing??(selection?this.applySelection():null);
   }
   /** One pixel transaction owns worker work and its target until publication.
    * Navigation/save barriers await it; Escape terminates it without publishing. */
-  pixelOperation(label,operation){
-    if(this.operation)return this.operation.done.then(()=>this.pixelOperation(label,operation));
-    const owner=this.owner,revision=this.editor.revision,op={owner,abort:new AbortController()};
+  pixelOperation(label,operation,{selection=false}={}){
+    if(this.operation)return this.operation.done.then(()=>this.pixelOperation(label,operation,{selection}));
+    const owner=this.owner,revision=this.editor.revision,op={owner,selection,abort:new AbortController()};
     op.check=()=>{if(op.abort.signal.aborted||owner!==this.owner||revision!==this.editor.revision)throw new DOMException('Drawing operation superseded.','AbortError');};
-    op.reserve=(surface,requested=TRANSFORM_BYTES)=>{op.check();owner.hold(op,0);owner.reserve(0,surface);const s=owner.stats;op.maxBytes=Math.min(requested,Math.max(0,owner.hardBudget-s.bytes-s.historyBytes-s.deferredBytes-s.workingBytes));owner.hold(op,op.maxBytes,surface);};
-    op.received=tiles=>owner.hold(op,tiles.reduce((n,t)=>n+(t.pixels?.byteLength??0)+(t.before?.byteLength??0)+(t.after?.byteLength??0),0));
+    op.reserve=(surface,requested=TRANSFORM_BYTES)=>{op.check();op.copiedBytes=0;owner.hold(op,0);owner.reserve(0,surface);const s=owner.stats;op.maxBytes=Math.min(requested,Math.max(0,owner.hardBudget-s.bytes-s.historyBytes-s.deferredBytes-s.workingBytes));owner.hold(op,op.maxBytes,surface);};
+    op.received=tiles=>owner.hold(op,tiles.reduce((n,t)=>n+(t.pixels?.byteLength??0)+(t.before?.byteLength??0)+(t.after?.byteLength??0)+(t.remaining?.byteLength??0),0));
     this.operation=op;owner.busy=true;this.onStatus(label+'… Escape cancels.');
     op.done=Promise.resolve().then(()=>operation(op)).then(value=>{op.succeeded=true;return value;}).finally(()=>{
       owner.hold(op,0);owner.busy=false;if(this.operation===op)this.operation=null;
@@ -96,8 +98,10 @@ export class DrawingController {
     const tiles=[];let copied=0;
     for(const tile of surface.store){
       if(!predicate(tile))continue;
-      tiles.push({tx:tile.tx,ty:tile.ty,pixels:tile.pixels.slice().buffer});
-      if(++copied%128===0){await new Promise(resolve=>setTimeout(resolve,0));op.check();}
+      if((op.copiedBytes??0)+tile.pixels.byteLength>op.maxBytes)throw new Error('The operation exceeds the drawing working memory limit.');
+      op.copiedBytes=(op.copiedBytes??0)+tile.pixels.byteLength;
+      tiles.push({tx:tile.tx,ty:tile.ty,pixels:tile.pixels.slice().buffer,alphaBounds:tile.alphaBounds});
+      if(++copied%128===0){await yieldToInput();op.check();}
     }
     return tiles;
   }
@@ -273,7 +277,7 @@ export class DrawingController {
     else if(g.kind==='selection-move'){const p=this.pixel(event,g.target);this.selection.dx=g.dx+p.x-g.start.x;this.selection.dy=g.dy+p.y-g.start.y;this.previewSelection();}
     this.onRender();
   }
-  up(event,cancel=false){if(this.loading?.id===event.pointerId){if(cancel){this.sequence++;this.loading=null;}else this.loading.released=true;return;}const g=this.gesture;if(!g||g.id!==event.pointerId)return;if(g.kind==='stroke'&&g.session.ended)return;cancel?this.cancel():this.finish();}
+  up(event,cancel=false){if(this.loading?.id===event.pointerId){if(cancel){this.sequence++;this.loading=null;}else this.loading.released=true;return;}const g=this.gesture;if(!g||g.id!==event.pointerId)return;if(g.kind==='stroke'&&g.session.ended)return;return cancel?this.cancel():this.finish();}
   finish(){const g=this.gesture;
     if(g?.kind==='stroke'&&g.session.ended)return; // the done reply completes the commit
     if(this.loading)this.cancel();if(!g)return;
@@ -286,8 +290,8 @@ export class DrawingController {
     }
     this.gesture=null;try{
     if(g.kind==='pose')this.editor.commitDrag();
-    else if(g.kind==='lasso')this.makeSelection(g);
-  }finally{g.surface.pinned=Boolean(this.selection?.surface===g.surface);if(this.selection?.surface===g.surface)this.previewSelection();else{this.owner.present(g.surface);this.owner.discard(g.target.figure);}if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.sync();this.onUI();this.onRender();}}
+    else if(g.kind==='lasso')return this.run(()=>this.makeSelection(g));
+  }finally{g.surface.pinned=g.kind==='lasso'&&Boolean(this.operation)||Boolean(this.selection?.surface===g.surface);if(this.selection?.surface===g.surface)this.previewSelection();else{this.owner.present(g.surface);if(!g.surface.pinned)this.owner.discard(g.target.figure);}if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.sync();this.onUI();this.onRender();}}
   cancel(){this.operation?.abort.abort();this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();return;}this.gesture=null;if(g.kind==='pan'){Object.assign(this.state.view,g.view);this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.hold?.(s,0);s.owner.busy=false;this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
   async barrier(options){await this.settle({selection:true});if(this.loading)throw new Error('Wait for the drawing to finish loading.');await drawingBarrier(this.editor.report,options);}
   /** Fill bounds follow the document, independent of display zoom. */
@@ -312,14 +316,18 @@ export class DrawingController {
   });}
   async barrierForComposite(){await drawingBarrier(this.editor.report);const assets=this.editor.geometry.drawables.filter(i=>i.type==='image');await Promise.all(assets.map(async i=>{const image=this.getResources().image(this.getResources().url(i.asset));if(image&&!image.complete)await image.decode?.();}));}
   makeSelection(g){
-    const mask=lassoMask(g.points);if(!mask.mask.some(Boolean))return;this.cancelSelection();
-    const xs=g.points.map(p=>p.x),ys=g.points.map(p=>p.y),region=g.surface.store.readRect(mask.x,mask.y,mask.width,mask.height);
-    const s=this.selection={cx:(Math.min(...xs)+Math.max(...xs))/2,cy:(Math.min(...ys)+Math.max(...ys))/2,target:g.target,surface:g.surface,mask,points:g.points,originalPixels:region,dx:0,dy:0,scale:1,angle:0,filter:this.settings.filter};
-    const cut=region.slice(),coverage=new Uint8ClampedArray(region.length);
-    for(let p=0;p<mask.mask.length;p++){if(mask.mask[p])coverage[p*4+3]=255;else cut[p*4+3]=0;}
-    s.cutout=canvas(mask.width,mask.height);s.cutout.getContext('2d').putImageData(new ImageData(cut,mask.width,mask.height),0,0);
-    s.maskCanvas=canvas(mask.width,mask.height);s.maskCanvas.getContext('2d').putImageData(new ImageData(coverage,mask.width,mask.height),0,0);
-    s.presenter=selectionPresenter(s,this.owner.presenter(g.target.figure));g.surface.pinned=true;this.owner.surfaceVersion++;this.owner.onChange();this.previewSelection();
+    const bounds=lassoBounds(g.points);if(!bounds)return;this.cancelSelection();
+    const xs=g.points.map(p=>p.x),ys=g.points.map(p=>p.y),cx=(Math.min(...xs)+Math.max(...xs))/2,cy=(Math.min(...ys)+Math.max(...ys))/2;
+    return this.pixelOperation('Selecting pixels',async op=>{
+      const owner=op.owner;g.surface.pinned=true;
+      try{
+        op.reserve(g.surface);const tiles=await this.copyWorkerTiles(g.surface,op,t=>tileIntersects(t,bounds));
+        const result=await owner.worker.request('select',{tiles,points:g.points,maxBytes:op.maxBytes},{signal:op.abort.signal,transfer:tiles.map(t=>t.pixels)});
+        op.check();op.received(result.tiles);
+        const stores=selectionStores(g.surface.store,result.tiles),s={...stores,cx,cy,target:g.target,surface:g.surface,bounds,points:g.points,dx:0,dy:0,scale:1,angle:0,filter:this.settings.filter};
+        s.presenter=selectionPresenter(s,owner);this.selection=s;owner.hold(op,0);owner.surfaceVersion++;owner.onChange();this.previewSelection();this.onUI();this.onStatus('Pixels selected.');
+      }finally{g.surface.pinned=this.selection?.surface===g.surface;if(!g.surface.pinned)owner.discard(g.target.figure);}
+    },{selection:true});
   }
   previewSelection(){const s=this.selection;if(!s||s.committing)return;s.presenter.stamp++;this.onRender();}
   commitSelection(s,label,{remove=false,operation}={}){
@@ -327,19 +335,21 @@ export class DrawingController {
     const commit=async op=>{
       if(this.selection!==s)throw new DOMException('Selection changed.','AbortError');
       const owner=op.owner,abort=s.abort=op.abort;op.reserve(s.surface);
-      const matrix=selectionMatrix(s),selected=new Set(selectionTiles(s.surface.store,s.mask,matrix,this.settings.filter));
+      const matrix=selectionMatrix(s),selected=new Set(selectionTiles(s.surface.store,s.source,matrix,this.settings.filter,{remove,maxBytes:op.maxBytes}));
       const tiles=await this.copyWorkerTiles(s.surface,op,t=>selected.has(t));
-      const pixels=s.originalPixels.slice().buffer,mask={...s.mask,mask:s.mask.mask.slice().buffer};
-      const result=await owner.worker.request('selection',{tiles,selection:{matrix,mask,pixels,remove,filter:this.settings.filter,maxBytes:op.maxBytes}},{signal:abort.signal,transfer:[pixels,mask.mask,...tiles.map(t=>t.pixels)]});
+      const source=await this.copyWorkerTiles({store:s.source},op);
+      const result=await owner.worker.request('selection',{tiles,selection:{matrix,tiles:source,remove,filter:this.settings.filter,maxBytes:op.maxBytes}},{signal:abort.signal,transfer:[...source.map(t=>t.pixels),...tiles.map(t=>t.pixels)]});
       op.check();if(this.selection!==s)throw new DOMException('Selection changed.','AbortError');op.received(result.tiles);
-      this.endSelection(false);return this.editor.commitDrawingPixels(s.target,result.tiles,label);
+      // The selection buffers remain live until the cel replacement finishes;
+      // keep them in the owner's budget while it reserves the committed tiles.
+      const changed=this.editor.commitDrawingPixels(s.target,result.tiles,label);this.endSelection(false);return changed;
     };
     s.committing=(operation?commit(operation):this.pixelOperation(label,commit)).finally(()=>{if(this.selection===s)this.endSelection(false);this.onRender();});
     return s.committing;
   }
-  selectionContains(point){const s=this.selection;if(!s)return false;const B=s.mask,angle=-s.angle*Math.PI/180,x=point.x-s.cx-s.dx,y=point.y-s.cy-s.dy,px=Math.floor(s.cx+(Math.cos(angle)*x-Math.sin(angle)*y)/s.scale),py=Math.floor(s.cy+(Math.sin(angle)*x+Math.cos(angle)*y)/s.scale);return px>=B.x&&py>=B.y&&px<B.x+B.width&&py<B.y+B.height&&Boolean(B.mask[(py-B.y)*B.width+(px-B.x)]);}
+  selectionContains(point){const s=this.selection;if(!s)return false;const angle=-s.angle*Math.PI/180,x=point.x-s.cx-s.dx,y=point.y-s.cy-s.dy,px=Math.floor(s.cx+(Math.cos(angle)*x-Math.sin(angle)*y)/s.scale),py=Math.floor(s.cy+(Math.sin(angle)*x+Math.cos(angle)*y)/s.scale);return lassoContains(s.points,px,py);}
   applySelection(){const s=this.selection;if(!s)return;if(s.committing)return s.committing;if(!s.dx&&!s.dy&&s.scale===1&&!s.angle){this.cancelSelection();return;}return this.commitSelection(s,'Transform selected pixels');}
-  endSelection(cancel=true){const s=this.selection;if(!s)return;this.selection=null;if(cancel)s.abort?.abort();s.presenter?.dispose();s.surface.pinned=false;for(const c of [s.cutout,s.maskCanvas])if(c)c.width=c.height=1;this.owner.surfaceVersion++;this.owner.present(s.surface);this.onRender();}
+  endSelection(cancel=true){const s=this.selection;if(!s)return;this.selection=null;if(cancel)s.abort?.abort();s.presenter?.dispose();s.surface.pinned=false;this.owner.surfaceVersion++;this.owner.present(s.surface);this.onRender();}
   cancelSelection(){this.endSelection(true);}
   async action(action){if(action==='cancel-selection')return this.cancelSelection();const pending=this.settle();if(pending)await pending;const e=this.editor,ids=[e.activeLayerId];
     if(action==='new'){const layer=e.createDrawingLayer();this.state.selectedTrackId=layer.id;this.getTimeline()?.selectTrack?.(layer.id);this.sync();this.onUI();return;}
@@ -354,8 +364,8 @@ export class DrawingController {
       const s=this.selection;if(!s)throw new Error('Select pixels with the lasso first.');
       await this.pixelOperation('Copying pixels',async op=>{
         op.reserve(s.surface);
-        const pixels=s.originalPixels.slice().buffer,mask={...s.mask,mask:s.mask.mask.slice().buffer};
-        const result=await op.owner.worker.request('copy-selection',{selection:{pixels,mask,matrix:selectionMatrix(s),filter:this.settings.filter,maxBytes:op.maxBytes}},{signal:op.abort.signal,transfer:[pixels,mask.mask]});
+        const tiles=await this.copyWorkerTiles({store:s.source},op);
+        const result=await op.owner.worker.request('copy-selection',{selection:{tiles,bounds:s.bounds,matrix:selectionMatrix(s),filter:this.settings.filter,maxBytes:op.maxBytes}},{signal:op.abort.signal,transfer:tiles.map(t=>t.pixels)});
         op.check();if(this.selection!==s)throw new DOMException('The selection changed. Copy it again.','AbortError');
         const rect=result.bounds,matrix=multiplyMatrix(this.pixelMatrix(s.target),[1,0,0,1,rect.x,rect.y]),world={x:matrix[4],y:matrix[5]};
         e._drawingPixelClipboard={pixelsPerUnit:drawingMetadata(s.target.figure).pixelsPerUnit,...rect,dataUrl:result.dataUrl,world,matrix};

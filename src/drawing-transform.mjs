@@ -61,6 +61,12 @@ function planTransform(source,matrix,filter,maxBytes,baseBytes,tileCost){
   return {level,candidates};
 }
 
+/** Existing destination tiles must be seeded from the same sparse support
+ * used by the transform, including filtering across tile boundaries. */
+export function transformTileCoverage(source,matrix,filter='smooth',maxBytes=TRANSFORM_BYTES){
+  return planTransform(source,matrix,filter,maxBytes,source.bytes,TILE_BYTES*2).candidates;
+}
+
 /** Cache the four adjacent tiles used by bilinear interpolation. Sampling
  * accumulates premultiplied colors and never round-trips through a canvas. */
 function sampler(store){

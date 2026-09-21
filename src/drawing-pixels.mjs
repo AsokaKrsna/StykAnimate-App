@@ -203,14 +203,3 @@ export function floodTiles(store,{x,y,color=[0,0,0,255],tolerance=16,expansion=0
   }
   return tileChanges(store,before);
 }
-
-/** A lasso mask allocated only around the polygon bounding box. */
-export function lassoMask(points) {
-  const xs=points.map(p=>p.x),ys=points.map(p=>p.y);
-  const x0=Math.floor(Math.min(...xs)),y0=Math.floor(Math.min(...ys)),width=Math.ceil(Math.max(...xs))-x0,height=Math.ceil(Math.max(...ys))-y0;
-  if(points.length>=3&&(![x0,y0,width,height].every(Number.isSafeInteger)||width*height>DRAWING_MAX_PIXELS))throw new Error('The selection exceeds 16 megapixels. Select a smaller region.');
-  const mask=new Uint8Array(Math.max(0,width)*Math.max(0,height));
-  if(points.length<3||width<1||height<1)return{x:x0,y:y0,width:Math.max(0,width),height:Math.max(0,height),mask};
-  for(let y=0;y<height;y++){const crosses=[],wy=y0+y+.5;for(let i=0,j=points.length-1;i<points.length;j=i++){const a=points[i],b=points[j];if((a.y>wy)!==(b.y>wy))crosses.push(a.x+(wy-a.y)*(b.x-a.x)/(b.y-a.y));}crosses.sort((a,b)=>a-b);for(let i=0;i+1<crosses.length;i+=2)for(let x=Math.max(0,Math.ceil(crosses[i]-.5-x0));x<Math.min(width,Math.ceil(crosses[i+1]-.5-x0));x++)mask[y*width+x]=1;}
-  return{x:x0,y:y0,width,height,mask};
-}

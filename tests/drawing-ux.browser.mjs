@@ -59,14 +59,16 @@ try{
     return pixEq(pix(store),snap);}));
   check('pixel paste into a blank cel preserves artwork and its world origin',await page.evaluate(async()=>{
     const e=styk.editor,d=styk.drawing,target=e.drawingTarget(),surface=await d.owner.surface(target.figure),B=surface.store.bounds;
-    d.makeSelection({target,surface,points:[{x:B.x,y:B.y},{x:B.x+B.width,y:B.y},{x:B.x+B.width,y:B.y+B.height},{x:B.x,y:B.y+B.height}]});await d.action('copy-pixels');d.cancelSelection();e.addDrawingFrame();await d.action('paste-pixels');
+    await d.makeSelection({target,surface,points:[{x:B.x,y:B.y},{x:B.x+B.width,y:B.y},{x:B.x+B.width,y:B.y+B.height},{x:B.x,y:B.y+B.height}]});await d.action('copy-pixels');d.cancelSelection();e.addDrawingFrame();await d.action('paste-pixels');
     const pasted=e.drawingTarget(),entry=await d.owner.surface(pasted.figure),snap=pix(entry.store),clip=e._drawingPixelClipboard;
     const world=pasted.object&&clip?.world&&Math.hypot(pasted.object.root_x-clip.world.x,pasted.object.root_y-clip.world.y)<1e-6;
     const exact=world&&snap.bounds.width===grownDrawing.snap.bounds.width&&snap.bounds.height===grownDrawing.snap.bounds.height&&visEq(snap,grownDrawing.snap)&&pasted.figure._styk.drawing.celId!==target.figure._styk.drawing.celId;
     e.undo();e.undo();e.seek(0);await d.prepareVisible();return exact;
   }));
   await page.locator('[data-tool="drawing-lasso"]').click();
-  await page.evaluate(async()=>{const d=styk.drawing,t=styk.editor.drawingTarget(),s=await d.owner.surface(t.figure),B=s.store.bounds;window.deleteBefore=pix(s.store);d.makeSelection({target:t,surface:s,points:[{x:B.x,y:B.y},{x:B.x+B.width,y:B.y},{x:B.x+B.width,y:B.y+B.height},{x:B.x,y:B.y+B.height}]});d.onUI();});
+  await page.evaluate(async()=>{const d=styk.drawing,t=styk.editor.drawingTarget(),s=await d.owner.surface(t.figure),B=s.store.bounds;window.deleteBefore=pix(s.store);await d.makeSelection({target:t,surface:s,points:[{x:B.x,y:B.y},{x:B.x+B.width,y:B.y},{x:B.x+B.width,y:B.y+B.height},{x:B.x,y:B.y+B.height}]});d.onUI();});
+  // Worker completion queues the inspector update for the next animation frame.
+  await page.locator('[data-draw-action="copy-pixels"]').waitFor({state:'visible'});
   check('a pixel selection exposes copy, cut and delete actions',await page.locator('[data-draw-action="copy-pixels"]').isVisible()&&await page.locator('[data-draw-action="cut-pixels"]').isVisible()&&await page.locator('[data-draw-action="delete-pixels"]').isVisible());
   await page.locator('#viewport').focus();await page.keyboard.press('Delete');await page.waitForFunction(()=>!styk.drawing.selection);
   check('Delete removes the selected pixels and consumes the selection',await page.evaluate(()=>{const s=styk.drawing.owner.entry(styk.editor.drawingTarget().figure).store;return !styk.drawing.selection&&s.bounds===null;}));

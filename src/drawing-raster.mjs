@@ -142,7 +142,7 @@ export function presenterScratch(presenter,rect,{maxSide=4096,level=0,clamp=fals
  * anchored region exceeds the scratch ceiling. Each strip paints a one-tile
  * margin but only draws its core, so smoothing taps read real neighbours and
  * the cores tile the region exactly — same pixels, bounded memory. */
-function paintDrawingStrips(ctx,presenter,rect,level,{tint,tintFn}={}){
+function paintDrawingStrips(ctx,presenter,rect,level,{tint,tintFn,filter='smooth'}={}){
   const scale=1<<level,store=level?presenter.level?.(level):presenter.store,coverage=store?.tileBounds;
   if(!coverage)return;
   const region=aligned(rect.x/scale-TILE,rect.y/scale-TILE,rect.width/scale+2*TILE,rect.height/scale+2*TILE);
@@ -160,7 +160,7 @@ function paintDrawingStrips(ctx,presenter,rect,level,{tint,tintFn}={}){
       for(const [tx,ty] of TileStore.tilesInRect(px0,py0,px1-px0,py1-py0))paintTile(c,store,tx,ty,px0,py0);
       let source=canvas;
       if(tint&&tintFn)source=tintFn(canvas,tint,`${presenter.stamp}:${level}:${cx},${cy}`)??canvas;
-      ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+      ctx.imageSmoothingEnabled=filter!=='nearest';ctx.imageSmoothingQuality='high';
       // The source sub-rect drops the margin; core rects tile seamlessly.
       ctx.drawImage(source,cx-px0,cy-py0,cx1-cx,cy1-cy,cx*scale,cy*scale,(cx1-cx)*scale,(cy1-cy)*scale);
     }
@@ -171,19 +171,19 @@ function paintDrawingStrips(ctx,presenter,rect,level,{tint,tintFn}={}){
  * seams can appear between tiles, and its one-tile margin keeps filter taps
  * inside painted coverage at every zoom and rotation. Regions larger than the
  * scratch ceiling at every mip still paint exactly, streamed through strips. */
-export function paintDrawingTiles(ctx,presenter,{tint,tintFn}={}){
+export function paintDrawingTiles(ctx,presenter,{tint,tintFn,filter='smooth'}={}){
   const m=ctx.getTransform(),rect=visiblePixelRect(ctx);
   const k0=Math.max(0,Math.min(8,Math.floor(-Math.log2(Math.hypot(m.a,m.b)||1))));
   for(let k=k0;k<=8;k++){
     const scratch=presenter.scratch?presenter.scratch(rect,{level:k}):presenterScratch(presenter,rect,{level:k});if(!scratch)continue;
     let source=scratch.canvas;
     if(tint&&tintFn)source=tintFn(source,tint,`${scratch.stamp}:${scratch.anchorKey}`)??source;
-    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+    ctx.imageSmoothingEnabled=filter!=='nearest';ctx.imageSmoothingQuality='high';
     ctx.drawImage(source,scratch.x*scratch.scale,scratch.y*scratch.scale,scratch.width*scratch.scale,scratch.height*scratch.scale);
     return;
   }
   if(presenter.owner?.previews&&presenter.store?.size>64)return;
-  paintDrawingStrips(ctx,presenter,rect,presenter.level?8:0,{tint,tintFn});
+  paintDrawingStrips(ctx,presenter,rect,presenter.level?8:0,{tint,tintFn,filter});
 }
 /** Flatten a tile store (or a {store,level} presenter) into a PNG data URL of
  * its bounds. Regions beyond maxPixels rasterize at the largest mip level

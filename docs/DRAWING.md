@@ -79,12 +79,19 @@ packets with only a world origin remain supported. Aligned copies and
 right-angle rotations/reflections preserve exact nonzero-alpha RGBA. Scaling
 and transformed selections use a shared worker rasterizer. Paste compositing, fill and tile history run in the
 drawing worker.
-Selection previews composite a masked cutout over the cel without changing its
-tile store. Applying a selection runs in the pixel worker and touches only the
-source and destination tiles; integer translations preserve exact RGBA. Empty
-space between those regions costs no tile storage. Commands that change the
-exposure or document await this transaction. Dense lasso masks are bounded to
-16 megapixels before allocation.
+Lasso capture scans occupied tile rows in the pixel worker. Its even-odd polygon
+describes empty selected space without a dense mask; one tile-sized coverage
+buffer is reused. Fully selected tiles share the immutable cel buffers, while
+partial tiles retain separate selected and remaining pixels. Bounds are prepared
+in the worker too. Temporary selection surfaces use the same bounded preview
+worker, mip and scratch caches as cels and participate in memory accounting,
+without entering document publication. Previews never change the cel store.
+Applying a selection touches only source and destination tiles; integer
+translations preserve exact RGBA. Empty distance and polygon area impose no
+pixel-allocation limit. Commands await the transaction, and Escape, seeking or
+replacing the document discards stale capture replies and releases temporary
+surfaces. Lasso input remains bounded to 8,192 vertices and the working memory
+budget.
 
 `drawing-transform.mjs` is the shared affine kernel for selection commits,
 copy, paste and resolution changes. It plans output tiles from occupied source
@@ -97,7 +104,7 @@ resampling. Individual jobs are limited by available working memory, with a
 384 MiB transform ceiling. Dense clipboard PNGs remain limited to 16 MP and
 8192 pixels per side; copying/transcoding them runs in the worker.
 
-Fill, copy, paste, resample and selection commits share one pixel transaction
+Fill, copy, paste, resample, selection capture and commits share one pixel transaction
 gate. Save and editing commands await publication; a following pointer gesture
 retains its samples until the preceding operation commits. Escape cancels the
 worker, discards its late result and releases reservations. Input copying yields
@@ -300,8 +307,8 @@ resolution-independent drawing are outside this implementation. Fill regions
 are bounded to 64 megapixels and follow stage plus artwork bounds, independently
 of zoom. Scanline fill keeps tiled source/output pixels, bounded masks and a
 bounded span stack, with a fast path for uniform regions. Cancellation terminates
-the worker and the next operation starts a fresh worker. Dense lasso masks and
-PNG clipboard regions still have 16-megapixel limits. Resampling and transformed
+the worker and the next operation starts a fresh worker. PNG clipboard regions
+still have 16-megapixel limits. Sparse lasso capture, resampling and transformed
 paste output are bounded by occupied tiles and available memory instead of a
 dense bounding-box limit. The embedded tile-blob and native-container limits
 remain separate persistence constraints.

@@ -59,7 +59,7 @@ export class DrawingResources {
     // tileBudget is the retention target; hardBudget is the only point a
     // required working set is refused. Between them, required dirty/pinned
     // tiles stay resident while publication frees them in the background.
-    Object.assign(this,{report,tileBudget:tileBytes,hardBudget:hardBytes??tileBytes*4,levelBudget:levelBytes,scratchBudget:scratchBytes,onChange,onError,entries:new Map(),worker:worker??new DrawingWorker(),decodeWorker:worker??new DrawingWorker(),strokeWorker:strokeWorker??new StrokeWorker(),generation:1,surfaceVersion:0,decodeQueue:[],thumbnailQueue:new Map(),thumbnailCache:new Map(),thumbnailWorker:worker??new DrawingWorker(),decodes:0,lastEncode:null});owners.set(report,this);
+    Object.assign(this,{report,tileBudget:tileBytes,hardBudget:hardBytes??tileBytes*4,levelBudget:levelBytes,scratchBudget:scratchBytes,onChange,onError,entries:new Map(),transients:new Set(),worker:worker??new DrawingWorker(),decodeWorker:worker??new DrawingWorker(),strokeWorker:strokeWorker??new StrokeWorker(),generation:1,surfaceVersion:0,decodeQueue:[],thumbnailQueue:new Map(),thumbnailCache:new Map(),thumbnailWorker:worker??new DrawingWorker(),decodes:0,lastEncode:null});owners.set(report,this);
     if(typeof Worker!=='undefined')this.previews=new DrawingPreviewCache(new DrawingWorker(),{budgetBytes:scratchBytes,onReady:()=>this.onChange(),onError,reserve:bytes=>this.scratchReserved(null,bytes),hold:(job,bytes)=>this.hold(job,bytes,job.entry)});
     this.history=history===false?null:history??(typeof Worker!=='undefined'&&typeof indexedDB!=='undefined'?new DrawingHistory({reserve:bytes=>this.reserve(bytes),hold:bytes=>this.hold(this.history,bytes),onWarning:error=>this.onError(error)}):null);
   }
@@ -84,18 +84,19 @@ export class DrawingResources {
   }
   /** Resident tile bytes dedupe by pixel buffer: copy-on-write forks share
    * tiles, so shared tiles count once, not once per entry. */
-  residentPixels(){const seen=new Set();for(const e of this.entries.values())if(e.store)for(const t of e.store)seen.add(t.pixels);return seen;}
-  get stats(){let tiles=0,bytes=0,levelBytes=0,scratchBytes=0,unpublished=0,deferredBytes=0;const deferred=new Set();for(const e of this.entries.values()){if(e.store)tiles+=e.store.size;for(const step of e.deferred??[])if(!deferred.has(step.changes)&&!this.history?.owns(step.changes)){deferred.add(step.changes);deferredBytes+=historyPixelBytes(step.changes);}for(const level of e.levels??[])levelBytes+=level?.bytes??0;for(const s of e._scratches?.values()??[])if(s.canvas)scratchBytes+=s.canvas.width*s.canvas.height*4;if((e.store||e.deferred?.length)&&e.published?.revision!==e.revision)unpublished++;}for(const pixels of this.residentPixels())bytes+=pixels.byteLength;return {tiles,bytes,historyBytes:this.history?.residentBytes??0,deferredBytes,workingBytes:this.workingBytes,levelBytes,scratchBytes:scratchBytes+(this.previews?.bytes??0),entries:this.entries.size,unpublished,inFlight:this.encoding?1:0,workers:[this.worker,this.decodeWorker,this.thumbnailWorker,this.strokeWorker,this.previews?.worker,this.history?.disk].filter(w=>w?.worker).length,decodes:this.decodes,lastEncode:this.lastEncode};}
+  *surfaces(){yield* this.entries.values();yield* this.transients;}
+  residentPixels(){const seen=new Set();for(const e of this.surfaces())if(e.store)for(const t of e.store)seen.add(t.pixels);return seen;}
+  get stats(){let tiles=0,bytes=0,levelBytes=0,scratchBytes=0,unpublished=0,deferredBytes=0;const deferred=new Set();for(const e of this.surfaces()){if(e.store)tiles+=e.store.size;for(const step of e.deferred??[])if(!deferred.has(step.changes)&&!this.history?.owns(step.changes)){deferred.add(step.changes);deferredBytes+=historyPixelBytes(step.changes);}for(const level of e.levels??[])levelBytes+=level?.bytes??0;for(const s of e._scratches?.values()??[])if(s.canvas)scratchBytes+=s.canvas.width*s.canvas.height*4;if(!e.transient&&(e.store||e.deferred?.length)&&e.published?.revision!==e.revision)unpublished++;}for(const pixels of this.residentPixels())bytes+=pixels.byteLength;return {tiles,bytes,historyBytes:this.history?.residentBytes??0,deferredBytes,workingBytes:this.workingBytes,levelBytes,scratchBytes:scratchBytes+(this.previews?.bytes??0),entries:this.entries.size,transients:this.transients.size,unpublished,inFlight:this.encoding?1:0,workers:[this.worker,this.decodeWorker,this.thumbnailWorker,this.strokeWorker,this.previews?.worker,this.history?.disk].filter(w=>w?.worker).length,decodes:this.decodes,lastEncode:this.lastEncode};}
   dropScratch(e){this.previews?.drop(e);const map=e._scratches;if(!map)return;for(const s of map.values())if(s.canvas)s.canvas.width=s.canvas.height=1;e._scratches=null;}
   /** Rebuildable presenter scratch canvases yield to newer work first. */
   scratchReserved(entry,requested=0,keep=null){
-    const candidates=[];for(const e of this.entries.values())for(const [key,s] of e._scratches??[])if(s!==keep&&s.canvas)candidates.push({e,key,s});
+    const candidates=[];for(const e of this.surfaces())for(const [key,s] of e._scratches??[])if(s!==keep&&!s.pinned&&s.canvas)candidates.push({e,key,s});
     for(const {e,key,s} of candidates.sort((a,b)=>a.e.used-b.e.used||a.s.used-b.s.used)){if(this.stats.scratchBytes+requested<=this.scratchBudget)break;s.canvas.width=s.canvas.height=1;e._scratches.delete(key);if(!e._scratches.size)e._scratches=null;}
     for(const key of this.previews?.cache.keys()??[]){if(this.stats.scratchBytes+requested<=this.scratchBudget)break;this.previews.remove(key);}
     return this.stats.scratchBytes+requested<=this.scratchBudget;
   }
   /** Derived mip chains are the cheapest cache: evict least-recently-used first. */
-  levelsReserved(entry){entry.levelsUsed=performance.now();let bytes=this.stats.levelBytes;for(const e of [...this.entries.values()].sort((a,b)=>a.levelsUsed-b.levelsUsed)){if(bytes<=this.levelBudget)break;if(e===entry||!e.levels)continue;bytes-=e.levels.reduce((n,l)=>n+(l?.bytes??0),0);e.levels=null;e.levelKnown=null;}}
+  levelsReserved(entry){entry.levelsUsed=performance.now();let bytes=this.stats.levelBytes;for(const e of [...this.surfaces()].sort((a,b)=>a.levelsUsed-b.levelsUsed)){if(bytes<=this.levelBudget)break;if(e===entry||!e.levels)continue;bytes-=e.levels.reduce((n,l)=>n+(l?.bytes??0),0);e.levels=null;e.levelKnown=null;}}
   reserve(bytes,except) {
     if(!Number.isFinite(bytes)||bytes<0)throw new Error('Invalid drawing memory reservation.');
     const resident=()=>{const s=this.stats;return s.bytes+s.historyBytes+s.deferredBytes+s.workingBytes;},target=Math.min(this.tileBudget,this.hardBudget);
@@ -103,8 +104,8 @@ export class DrawingResources {
     this.history?.trim(0);
     // Rebuildable memory frees before authoritative tiles: presenter
     // scratches, then derived mip levels, then published-and-clean stores.
-    for(const e of this.entries.values())if(e!==except)this.dropScratch(e);
-    for(const e of this.entries.values())if(e!==except){e.levels=null;e.levelKnown=null;}
+    for(const e of this.surfaces())if(e!==except&&![...e._scratches?.values()??[]].some(s=>s.pinned))this.dropScratch(e);
+    for(const e of this.surfaces())if(e!==except){e.levels=null;e.levelKnown=null;}
     for(const e of [...this.entries.values()].sort((a,b)=>a.used-b.used)){
       if(resident()+bytes<=target)break;
       if(e===except||e.pinned||!e.store||e.published?.revision!==e.revision)continue;e.store=null;e.levels=null;e.levelKnown=null;this.surfaceVersion++;
@@ -120,7 +121,7 @@ export class DrawingResources {
   hold(key,bytes,entry){this.working??=new Map();const old=this.working.get(key)??0;if(bytes>old)this.reserve(bytes-old,entry);if(bytes)this.working.set(key,bytes);else this.working.delete(key);}
   /** Replacing a shared buffer keeps its old bytes alive in another cel. */
   replacementBytes(entry,changes,direction){
-    const retained=new Set();for(const other of this.entries.values())if(other!==entry&&other.store)for(const tile of other.store)retained.add(tile.pixels);
+    const retained=new Set();for(const other of this.surfaces())if(other!==entry&&other.store)for(const tile of other.store)retained.add(tile.pixels);
     let bytes=0;for(const c of changes){const old=entry.store?.get(c.tx,c.ty)?.pixels;bytes+=sideBytes(c[direction])-(old&&!retained.has(old)?old.byteLength:0);}return Math.max(0,bytes);
   }
   /** Move an in-flight or resident entry under a new cel id (lazy migration). */
@@ -196,8 +197,18 @@ export class DrawingResources {
   /** The renderer-facing presenter: the live store plus scratch and mip
    * rasterizers. Levels are entry-owned caches rebuilt lazily and evicted
    * first under memory pressure. */
+  rasterPresenter(e){
+    e.used=performance.now();e.scratch??=(rect,options)=>this.previews&&e.store?.size>64?this.previews.scratch(e,rect,options):presenterScratch(e,rect,options);e.level??=(k,rect)=>{e.levelsUsed=performance.now();return levelStore(e,k,rect);};return e;
+  }
+  /** Temporary selection surfaces participate in pixel/cache accounting but
+   * never enter document publication, decoding, thumbnails or cel eviction. */
+  transient(store){
+    const e={id:'selection-'+(this.transientId=(this.transientId??0)+1),store,transient:true,pinned:true,stamp:0,levelsUsed:0,owner:this};
+    this.transients.add(e);return this.rasterPresenter(e);
+  }
+  releaseTransient(e){if(!this.transients.delete(e))return;e.disposed=true;this.dropScratch(e);e.store=null;e.levels=null;e.levelKnown=null;}
   presenter(figure){
-    const e=this.entry(figure);e.used=performance.now();e.scratch??=(rect,options)=>this.previews&&e.store?.size>64?this.previews.scratch(e,rect,options):presenterScratch(e,rect,options);e.level??=(k,rect)=>{e.levelsUsed=performance.now();return levelStore(e,k,rect);};
+    const e=this.rasterPresenter(this.entry(figure));
     // An evicted store re-decodes here, not on the next stroke: superseded
     // decodes retry freely, real failures back off behind decodeError.
     if(!e.store&&!e.loading&&!e.decodeError)this.surface(figure).catch(error=>{if(error.name==='AbortError')return;e.decodeError=error;this.onError(error);});
@@ -315,5 +326,5 @@ export class DrawingResources {
     const reachable=new Set(this.report.figure_types.map(f=>drawingMetadata(f)?.celId));
     for(const [id,e] of this.entries)if(!reachable.has(id)&&!retained.has(id)&&!e.pinned){e.disposed=true;this.dropScratch(e);e.store=null;e.levels=null;e.levelKnown=null;this.entries.delete(id);}
   }
-  dispose(){if(this.disposed)return this.disposal;this.disposed=true;this.disposal=this.history?.dispose().catch(()=>{})??Promise.resolve();this.previews?.dispose();this.generation++;clearTimeout(this.timer);this.worker.dispose();this.decodeWorker.dispose();this.thumbnailWorker.dispose();if(this.strokeWorker.close)this.strokeWorker.close();else this.strokeWorker.dispose();this.thumbnailQueue.clear();for(const t of this.thumbnailCache.values())t.canvas.width=t.canvas.height=1;this.thumbnailCache.clear();for(const job of this.decodeQueue)job.reject(new DOMException('Drawing document closed.','AbortError'));this.decodeQueue=[];this.entries.clear();this.working?.clear();owners.delete(this.report);return this.disposal;}
+  dispose(){if(this.disposed)return this.disposal;this.disposed=true;this.disposal=this.history?.dispose().catch(()=>{})??Promise.resolve();this.previews?.dispose();this.generation++;clearTimeout(this.timer);this.worker.dispose();this.decodeWorker.dispose();this.thumbnailWorker.dispose();if(this.strokeWorker.close)this.strokeWorker.close();else this.strokeWorker.dispose();this.thumbnailQueue.clear();for(const t of this.thumbnailCache.values())t.canvas.width=t.canvas.height=1;this.thumbnailCache.clear();for(const job of this.decodeQueue)job.reject(new DOMException('Drawing document closed.','AbortError'));this.decodeQueue=[];for(const e of this.surfaces()){this.dropScratch(e);e.disposed=true;e.store=null;e.levels=null;e.levelKnown=null;}this.transients.clear();this.entries.clear();this.working?.clear();owners.delete(this.report);return this.disposal;}
 }
