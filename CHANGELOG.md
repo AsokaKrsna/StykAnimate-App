@@ -26,7 +26,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Fixed
 
-- Reduce drawing lag by keeping brush-cursor movement independent of artwork rendering, stopping unnecessary idle redraws, and giving strokes priority over background previews. Shorten waits after large drawing edits, undo and redo with faster loading and pixel pastes, and smaller background tile updates. Fill regions up to 64 megapixels without changing behavior when zoomed out.
+- Reduce drawing lag as artwork and frames accumulate, keep brush-cursor movement independent of artwork rendering, stop unnecessary idle redraws, and prioritize strokes over background previews. Shorten waits after large drawing edits, undo and redo with faster loading and pixel pastes, and smaller background tile updates. Fill regions up to 64 megapixels without changing behavior when zoomed out.
 
 - Select, copy, paste, transform and resample large or widely spaced drawings without allocating empty space, keep lasso capture responsive in the background, preserve translucent colors and rotated or mirrored pixel pastes, and offer crisp pixel-art filtering. Failed or cancelled clipboard transfers keep cut artwork intact.
 

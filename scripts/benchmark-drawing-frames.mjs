@@ -15,7 +15,7 @@ page.on('pageerror',e=>errors.push(e.message));
 try{
   // Keep HTTP-cache policy identical when serving a comparison revision.
   await page.route('**/*',route=>route.continue());
-  if(process.env.STYK_DOTS_BASELINE)for(const file of ['app.mjs','drawing-controller.mjs','renderer-geometry.mjs']){
+  if(process.env.STYK_DOTS_BASELINE)for(const file of ['app.mjs','drawing-controller.mjs','renderer-geometry.mjs','drawing-resources.mjs','drawing-tiles.mjs']){
     const body=execFileSync('git',['show',`${process.env.STYK_DOTS_BASELINE}:src/${file}`],{encoding:'utf8',maxBuffer:4*1024*1024});
     await page.route(`**/src/${file}`,route=>route.fulfill({body,contentType:'text/javascript'}));
   }

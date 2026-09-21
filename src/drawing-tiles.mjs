@@ -24,14 +24,32 @@ function alphaBounds(pixels){
 }
 export function tileTransparent(tile){if(tile.alphaBounds===undefined)tile.alphaBounds=alphaBounds(tile.pixels);return !tile.alphaBounds;}
 
+// Keep ownership notifications at the map boundary: decoders and selection
+// assembly also insert already-owned tiles directly, preserving PNG caches.
+class TileMap extends Map {
+  set(key,tile){
+    if(tile?.pixels?.byteLength!==TILE_BYTES)throw new Error('Tile pixels must be one full tile.');
+    const old=super.get(key);super.set(key,tile);
+    if(old?.pixels!==tile.pixels)this.onPixels?.(old?.pixels,tile.pixels);
+    return this;
+  }
+  delete(key){const old=super.get(key);if(!super.delete(key))return false;this.onPixels?.(old.pixels,null);return true;}
+  clear(){if(this.onPixels)for(const tile of this.values())this.onPixels(tile.pixels,null);super.clear();}
+}
+
 /** Sparse unbounded pixel surface. Tiles are shared by reference until a
  * writable() or fork() call marks them frozen, after which mutation copies. */
 export class TileStore {
-  constructor(tiles=new Map()){this.tiles=tiles;this._bounds=undefined;this._tileBounds=undefined;}
+  constructor(tiles){this.tiles=new TileMap(tiles);this._bounds=undefined;this._tileBounds=undefined;}
   get(tx,ty){return this.tiles.get(tileKey(tx,ty));}
   has(tx,ty){return this.tiles.has(tileKey(tx,ty));}
   get size(){return this.tiles.size;}
-  get bytes(){let bytes=0;for(const tile of this.tiles.values())bytes+=tile.pixels.byteLength;return bytes;}
+  get bytes(){return this.tiles.size*TILE_BYTES;}
+  observePixels(listener){
+    this.pixelListeners??=new Set();this.pixelListeners.add(listener);
+    this.tiles.onPixels??=(before,after)=>{for(const notify of this.pixelListeners)notify(before,after);};
+    return()=>{this.pixelListeners.delete(listener);if(!this.pixelListeners.size)this.tiles.onPixels=null;};
+  }
   keys(){return this.tiles.keys();}
   values(){return this.tiles.values();}
   [Symbol.iterator](){return this.tiles.values();}
@@ -60,7 +78,7 @@ export class TileStore {
     this.tiles.set(tileKey(tx,ty),{tx,ty,pixels,alphaBounds,frozen:false,version:++tileVersion});this._changed();
   }
   delete(tx,ty){if(this.tiles.delete(tileKey(tx,ty)))this._changed();}
-  fork(){for(const tile of this.tiles.values())tile.frozen=true;return new TileStore(new Map(this.tiles));}
+  fork(){for(const tile of this.tiles.values())tile.frozen=true;return new TileStore(this.tiles);}
   freeze(){for(const tile of this.tiles.values())tile.frozen=true;}
   get bounds() {
     if(this._bounds!==undefined)return this._bounds;

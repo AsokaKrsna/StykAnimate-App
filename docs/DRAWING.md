@@ -166,6 +166,14 @@ are not supported.
 one report. Resident tiles have a 192 MiB retention target and a 768 MiB hard
 working ceiling by default; accounting deduplicates
 pixel buffers, so copy-on-write forks share counted bytes until they diverge.
+The owner indexes resident pixel references. Enrolling or removing a store
+visits its tiles once; subsequent tile-map writes update reference counts
+directly. Warm reservations inspect resident store membership and changed
+tiles, without rebuilding sets of every pixel buffer. Multiple tile positions
+sharing one array retain it until the last reference is removed. Store byte
+counts use the fixed 64×64 RGBA tile size. Scratch and mip eviction inspect
+their own caches, without scanning source pixels. Collection, transient
+release and disposal detach observers and release the index's references.
 New work reserves before it is rejected: presenter scratches free first, then
 derived mip levels, then published-clean stores (which re-decode on demand),
 while unpublished work is never evicted. A presenter asked for an evicted cel
