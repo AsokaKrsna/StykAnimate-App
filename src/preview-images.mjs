@@ -1,5 +1,5 @@
 import {previewMemoryPlan} from './playback-budget.mjs';
-import {assetURL} from './playback-resources.mjs';
+import {assetURL} from './image-resources.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
 /** One serial worker per image owner. Originals stay in the document; Map values
  * are disposable CanvasImageSources with original logical dimensions. */
@@ -19,7 +19,7 @@ export class PreviewImages extends Map {
     for (const pending of this.pendingImages.values()) pending.reject(error);
     this.pendingImages.clear();
     for (const bitmap of this.values()) bitmap.close?.();
-    super.clear(); this.bytes = 0; this.identities.clear(); this.current = null;
+    super.clear(); this.bytes = 0; this.identities.clear(); this.current = null; this.lastPreparation = null;
   }
   set(url, bitmap) {
     const old = super.get(url);
@@ -62,6 +62,7 @@ export class PreviewImages extends Map {
       worker.onmessage = ({data}) => {
         if (this.worker !== worker) {for (const image of data.images || []) image.bitmap.close(); return;}
         this.busy = false;
+        this.lastPreparation = {...data.timings, roundTripMs: performance.now() - this.requestStarted};
         const pending = this.waiters.get(data.id); this.waiters.delete(data.id);
         if (data.error) {
           this.signature = null; const error = new Error(data.error); pending?.reject(error);
@@ -103,7 +104,8 @@ export class PreviewImages extends Map {
         this.waiters.clear(); worker.terminate(); this.worker = null; this.busy = false; this.signature = null; this.onError(error);
       };
     }
-    const request = this.queued; this.queued = null; this.busy = true; this.worker.postMessage(request);
+    const request = this.queued; this.queued = null; this.busy = true;
+    this.requestStarted = performance.now(); this.worker.postMessage(request);
   }
   _scheduleIdle() {
     clearTimeout(this.idleTimer); this.idleTimer = null;

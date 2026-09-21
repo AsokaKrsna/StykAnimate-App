@@ -28,6 +28,18 @@ test('a queued old-worker response cannot replace the next document or leak its 
   await next; assert.equal(images.get('b'), valid); assert.equal(valid.naturalWidth, 8192); assert.equal(images.bytes, 32);
 });
 
+test('image preparation diagnostics retain only the latest response and clear with its owner', async t => {
+  const {images, workers} = setup(t), first = images.prepare([item('a')]), worker = workers[0];
+  const timings = {moduleReadyMs: 20, preloadMs: 3, bitmapCopyMs: 1, images: 1, decodedBytes: 32};
+  worker.onmessage({data: {id: worker.messages[0].id, images: [{url: 'a', bitmap: bitmap(), width: 4, height: 2}], timings}});
+  await first;
+  assert.equal(images.lastPreparation.preloadMs, 3);
+  assert.ok(images.lastPreparation.roundTripMs >= 0);
+  images.clear();
+  worker.onmessage({data: {id: worker.messages[0].id, images: [], timings}});
+  assert.equal(images.lastPreparation, null, 'an obsolete worker cannot republish diagnostics');
+});
+
 test('lazy background decode waits for its own pixels across coalesced requests', async t => {
   const {images,workers}=setup(t),a=images.image('a'),b=images.image('b'),worker=workers[0];
   let aReady=false,bReady=false;

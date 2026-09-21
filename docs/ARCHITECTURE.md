@@ -49,6 +49,14 @@ The virtualized timeline draws visible exposures and labels, with a separate pla
 
 ## Thumbnail worker synchronization
 
+Image-only preview workers use `image-resources.mjs` for encoded sources, crop
+selection, decoded variants, byte accounting and disposal. Playback extends
+that same image owner with drawing tiles and vector/raster caches in
+`playback-resources.mjs`; image decoding does not import the geometry evaluator
+or create rendering caches. Diagnostics retain one completed image job, not a
+history of requests. `tests/image-resources.browser.mjs` verifies decoding with
+the geometry module unavailable, exact pixels, reuse, cancellation and residency.
+
 `thumbnail-renderer.mjs` and playback share the retained-source comparison and
 validated patch contract in `playback-patch.mjs`. Unchanged historical poses and
 figure definitions remain in the thumbnail worker; edits send source additions,
