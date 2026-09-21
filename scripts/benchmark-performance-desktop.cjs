@@ -35,6 +35,10 @@ async function run(window) {
   // The driver disables collection before launch in this disposable profile.
   // Close the release splash before timing the import.
   await execute("for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); styk.editor.markSaved();");
+  // A benchmark-only opt-out compares the ordinary transport on identical
+  // production bytes. It does not alter document, worker, or rendering settings.
+  if(process.env.STYK_BENCH_PLAYBACK_TRANSPORT === 'document')
+    await execute("import('/src/playback.mjs').then(({PlaybackCache})=>{PlaybackCache.prototype.stageNativeSnapshot=()=>false;})");
   const imported = await execute(`(async () => {
     const tasks = [], errors = [], observer = new PerformanceObserver(list => tasks.push(...list.getEntries().map(entry => entry.duration)));
     const onError = event => errors.push(event.message); window.addEventListener('error', onError);

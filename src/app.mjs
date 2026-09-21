@@ -2920,6 +2920,12 @@ async function acceptImport(
             : undefined,
         },
       );
+      if(result.playbackFrames) {
+        const importedReport=editor.report,revision=editor.revision,draft=editor.frameDraftRevision;
+        playback.stageNativeSnapshot(importedReport,result.playbackFrames,{revision,
+          isCurrent:()=>editor.report===importedReport&&editor.revision===revision&&editor.frameDraftRevision===draft&&!editingGestureActive()});
+        delete result.playbackFrames;
+      }
     } finally {
       if (initialScene) {
         preparedScenes.delete(initialScene.report);
@@ -5465,6 +5471,7 @@ new MutationObserver(() => { if (document.querySelector('dialog[open]')) hotkeys
   .observe(document.body, {subtree:true, attributes:true, attributeFilter:['open']});
 editor.addEventListener("change", (e) => {
   const kind = e.detail?.kind;
+  if(['edit','history','document','preview','frame-draft'].includes(kind))playback.discardNativeSnapshot();
   const joining = state.figureJoin;
   if (joining && (joining.token !== editor._documentToken || joining.uid !== editor.selectedUid ||
       joining.frameIndex !== editor.frameIndex || joining.tick !== editor.tick ||

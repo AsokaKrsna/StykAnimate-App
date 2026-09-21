@@ -92,6 +92,7 @@ Independent VFX animation and refined editing
 
 ### Changed
 
+- Reduce the delay before first playback of large, freshly imported Pivot animations.
 - Make Build-mode Duplicate and Flip shortcuts respect segment/branch scope, and add configurable S to split and B to toggle Branch.
 - Add a saved Canvas setting for Scroll to zoom or Ctrl + scroll to zoom, keeping Ctrl + scroll as the default.
 - Default previous/next frame shortcuts to comma/period and add configurable Shift+comma/period keyframe jumps, preserving custom assignments.
