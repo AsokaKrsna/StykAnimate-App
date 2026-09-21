@@ -772,7 +772,9 @@ class WebGPURenderer {
       }
       if(rect&&!scratch){level=8;scratch=drawing.scratch?.(rect,{level,maxSide,clamp:true});}
       if(!scratch){
-        if(drawing.owner?.previews&&prior?.drawing===drawing&&prior.texture)return {...prior,...drawingState};
+        // Only a visible, nonempty cover can be waiting for its next preview.
+        // An empty or offscreen store must stop displaying the prior texture.
+        if(rect&&drawing.owner?.previews&&prior?.drawing===drawing&&prior.texture)return {...prior,...drawingState};
         const data=new Float32Array(shapeRecord({mode:SHAPE.DISABLED,transform:index}));
         return {...drawingState,key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:null};
       }

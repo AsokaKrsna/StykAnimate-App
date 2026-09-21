@@ -306,7 +306,10 @@ retain their existing sampling.
 
 The retained WebGPU layout refreshes drawing entries by pixel stamp and view,
 including empty and previously offscreen cels, without rebuilding unrelated
-scene geometry. Effects bypass views are idempotent, so render preparation
+scene geometry. Retaining an earlier texture applies only to pending pixel or
+preview work. A decoded store with no visible pixels draws nothing, including
+while the eraser is still held or when only offscreen paint remains.
+Effects bypass views are idempotent, so render preparation
 does not wrap an already prepared view and invalidate the scene each frame.
 The camera's dotted outline clips its path before Canvas expands the dashes;
 offscreen perimeter length therefore cannot dominate drawing at deep zoom.
