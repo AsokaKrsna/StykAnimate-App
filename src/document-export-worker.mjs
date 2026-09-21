@@ -105,6 +105,13 @@ self.addEventListener('message', async event => {
       if (config.format === 'piv') {
         const composing = performance.now(), originalFrames = document.keyframes.length;
         document = materializePivotDocument(document);
+        // Native source frames acquire editor reference identities on load.
+        // They are not Pivot data and must not force a changed-source rewrite.
+        // This worker owns the snapshot; live document identities stay intact.
+        for (const frame of document.keyframes) if (frame._styk?.frameId !== undefined) {
+          const metadata = {...frame._styk}; delete metadata.frameId;
+          if (Object.keys(metadata).length) frame._styk = metadata; else delete frame._styk;
+        }
         timings.compose_ms = performance.now() - composing;
         timings.source_keyframes = originalFrames; timings.export_keyframes = document.keyframes.length;
       } else if (config.format === 'stk') {

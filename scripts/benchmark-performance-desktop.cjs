@@ -8,7 +8,11 @@ const os = require('node:os');
 const assert = require('node:assert/strict');
 const input = process.env.STYK_BENCH_INPUT, output = process.env.STYK_BENCH_OUTPUT;
 assert.ok(input && output && process.env.STYK_USER_DATA_DIR, 'Run through the benchmark driver');
+const exportFormats = (process.env.STYK_BENCH_EXPORT_FORMATS || 'piv,piv,styk').split(',');
+assert.ok(exportFormats.length <= 3 && exportFormats.every(format => ['piv', 'styk'].includes(format)));
 const started = performance.now(); let running = false;
+// Let the driver stop a timed-out run through normal backend cleanup.
+process.stdin.on('data', () => app.exit(1));
 dialog.showOpenDialog = async () => ({canceled: false, filePaths: [input]});
 app.on('browser-window-created', (_event, window) => {
   if (running) return; running = true;
@@ -53,7 +57,27 @@ async function run(window) {
   })()`);
   const health = await execute("fetch('/api/health').then(r => r.json())");
   await writeFile(path.join(output, 'import.png'), (await window.webContents.capturePage()).toPNG());
+  const exports = process.env.STYK_BENCH_EXPORT === '1' ? await execute(`(async () => {
+    const {DocumentExporter} = await import('/src/document-export.mjs');
+    const exporter = new DocumentExporter(), rows = [];
+    try {
+      for (const format of ${JSON.stringify(exportFormats)}) {
+        const tasks = [], observer = new PerformanceObserver(list => tasks.push(...list.getEntries().map(entry => entry.duration)));
+        observer.observe({type: 'longtask'});
+        let output, timings;
+        try {
+          output = await exporter.export(styk.editor.report, {sourceId: styk.state.sourceId, format, name: 'Benchmark'});
+          timings = {...exporter.lastTimings};
+        } finally {tasks.push(...observer.takeRecords().map(entry => entry.duration)); observer.disconnect();}
+        const bytes = await output.arrayBuffer();
+        const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), v => v.toString(16).padStart(2, '0')).join('');
+        rows.push({format, bytes: output.size, sha256, timings, longTasks: tasks});
+      }
+      return rows;
+    } finally {exporter.dispose();}
+  })()`) : null;
   await writeFile(path.join(output, 'report.json'), JSON.stringify({readyAt, startupMs, baseline, baselineHealth, imported, processes, digest, health,
+    exports,
     environment: {cpu: os.cpus()[0].model, logicalCpus: os.cpus().length, ramBytes: os.totalmem(), os: os.release()}}, null, 2));
   await execute('styk.editor.markSaved()');
   app.quit();

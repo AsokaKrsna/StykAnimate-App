@@ -16,7 +16,10 @@ const output = path.resolve('artifacts/performance-goal', label);
 await mkdir(output, {recursive: true});
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const sourceBytes = await readFile(source);
+const expectedPivSha256 = process.env.STYK_BENCH_EXPECT_PIV_SHA256 || hash(sourceBytes);
+assert.match(expectedPivSha256, /^[a-f0-9]{64}$/, 'An optional control export digest must be a SHA-256');
 const report = {at: new Date().toISOString(), source: {name: path.basename(source), bytes: sourceBytes.length, sha256: hash(sourceBytes)},
+  expectedPivSha256, exportFormats: process.env.STYK_BENCH_EXPORT === '1' ? (process.env.STYK_BENCH_EXPORT_FORMATS || 'piv,piv,styk').split(',') : [],
   sourceHashes: await performanceSourceHashes(), rows: [],
   limitations: ['No attached debugger. Source Electron with fresh profiles; OS caches are not flushed.',
     'Startup includes process launch and a readiness probe. Two rAFs establish submission readiness, not physical scanout.',
@@ -32,21 +35,28 @@ for (let run = 0; run < runs; run++) {
   delete env.ELECTRON_RUN_AS_NODE;
   const launched = Date.now();
   await new Promise((resolve, reject) => {
-    const child = spawn(electron, ['scripts/benchmark-performance-desktop.cjs'], {cwd: process.cwd(), env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe']});
+    const child = spawn(electron, ['scripts/benchmark-performance-desktop.cjs'], {cwd: process.cwd(), env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe']});
     let log = '';
+    child.stdin.on('error', () => {});
     for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => {log = (log + chunk).slice(-20000);});
-    const timeout = setTimeout(() => {child.kill();}, 240000);
-    child.on('error', error => {clearTimeout(timeout); reject(error);});
+    let forced;
+    const timeout = setTimeout(() => {child.stdin.write('abort'); forced = setTimeout(() => child.kill(), 5000);}, 600000);
+    child.on('error', error => {clearTimeout(timeout); clearTimeout(forced); reject(error);});
     child.on('exit', code => {
-      clearTimeout(timeout);
+      clearTimeout(timeout); clearTimeout(forced); child.stdin.destroy();
       writeFile(path.join(directory, 'process.log'), log).then(() => code === 0 ? resolve() : reject(new Error(`Desktop benchmark exited ${code}: ${log.slice(-2000)}`)), reject);
     });
   });
   const row = JSON.parse(await readFile(path.join(directory, 'report.json'), 'utf8'));
   row.launchToReadyMs = row.readyAt - launched;
-  expectedDigest ??= row.digest; assert.equal(row.digest, expectedDigest, 'Every run must produce the same editable scene');
   report.rows.push(row);
+  // Keep failed correctness evidence too, without labeling it a valid baseline.
   await writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2));
+  expectedDigest ??= row.digest; assert.equal(row.digest, expectedDigest, 'Every run must produce the same editable scene');
+  for (const exported of row.exports || []) if (exported.format === 'piv') {
+    assert.equal(exported.sha256, expectedPivSha256, 'Pivot export must match the original or explicitly pinned control digest');
+    if (expectedPivSha256 === report.source.sha256) assert.equal(exported.bytes, report.source.bytes);
+  }
   console.log(JSON.stringify({run, startupMs: row.launchToReadyMs, importMs: row.imported.ms, scene: row.imported.renderer.initialPreparation, output}));
 }
 report.sourceUnchanged = hash(await readFile(source)) === report.source.sha256;

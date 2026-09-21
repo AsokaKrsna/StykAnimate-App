@@ -22,6 +22,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 ### Changed
 
 - Reduce the time needed to prepare images when opening a project.
+- Preserve original Pivot keyframes and avoid slow rebaking when exporting unchanged imported animations.
 - Scale and rotate a multi-figure selection around the dragged figure's pivot like Pivot: Alt-drag now moves every selected figure's position toward or around the shared origin instead of resizing each figure in place, and Ctrl+Alt keeps rotating the group without scaling.
 - Show a ⇔ marker on scrubbable property labels and a hint in Transform sections that dragging a label adjusts its value, with Shift or Alt for finer steps.
 

@@ -37,6 +37,15 @@ merely from normalization. A Blob returns to the renderer without JSON or
 base64 conversion. Use the native Blob streaming helper to save it through
 Electron; browser downloads and IndexedDB can consume the Blob directly.
 
+An imported layer sheet whose tracks still map exactly to the original native
+times does not require Pivot baking. The materializer checks current track
+contents, durations and known controls on every export, including after Undo
+or native-save reopen. Authored or retimed tracks retain the full evaluator.
+The private PIV snapshot omits editor frame-reference IDs while retaining
+unknown frame metadata; the live document and native saves keep their IDs.
+Unchanged imported PIVs can therefore reuse exact source bytes after normal
+editor initialization, preserving original stored and hidden keyframes.
+
 Sectioned containers keep separate limits: 256 MiB for the compressed file and
 each binary section, 384 MiB for the JSON skeleton, and the existing 1 GiB
 combined materialization estimate. Both readers and writers enforce these

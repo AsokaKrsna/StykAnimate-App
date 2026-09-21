@@ -63,10 +63,22 @@ try {
         compare(imported.document, normalized);
         throw new Error(`${original.name} worker no-op export changed bytes (${output.size} vs ${original.bytes}; ${sha256}). Derived differences: ${JSON.stringify(differences)}`);
       }
+      let editorTimings;
+      if (original.format === 'piv') {
+        const {Editor} = await import('/src/editor.mjs');
+        const editor = new Editor({demo: false, layerTimeline: true}).load(imported.document);
+        const identities = editor.report.keyframes.map(frame => frame._styk?.frameId);
+        const exported = await exporter.export(editor.report, {sourceId: imported.sourceId, format: 'piv', name: original.name});
+        editorTimings = {...exporter.lastTimings};
+        if (exported.size !== original.bytes || await hash(exported) !== original.sha256)
+          throw new Error(`${original.name} changed its original bytes after editor initialization.`);
+        if (editor.report.keyframes.some((frame, index) => frame._styk?.frameId !== identities[index]))
+          throw new Error('Pivot export mutated editable frame identities.');
+      }
       const native = await exporter.export(imported.document, {sourceId: imported.sourceId, format: 'styk', name: original.name});
       window.nativeFiles.push({original, blob: native});
       return {name: original.name, bytes: output.size, sha256, nativeBytes: native.size,
-        timings, nativeTimings: {...exporter.lastTimings}, longTasks: tasks, maxAnimationFrameGapMs: maxGap};
+        timings, editorTimings, nativeTimings: {...exporter.lastTimings}, longTasks: tasks, maxAnimationFrameGapMs: maxGap};
     }, fixture);
     checks.push(result); console.log(JSON.stringify(result));
   }
