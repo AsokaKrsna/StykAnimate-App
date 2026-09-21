@@ -6,7 +6,7 @@ import os from 'node:os';
 
 const baseline=process.env.STYK_PUBLICATION_BASELINE,output=process.env.STYK_PUBLICATION_ARTIFACTS||'artifacts/drawing-publication';
 const revisions=[baseline,'working-tree'].filter(Boolean),runs=[];await mkdir(output,{recursive:true});
-const sources=new Map();if(baseline)for(const name of ['drawing-tiles','drawing-resources','drawing-tile-codec','drawing-worker'])sources.set(name,execFileSync('git',['show',`${baseline}:src/${name}.mjs`],{encoding:'utf8'}));
+const sources=new Map();if(baseline)for(const name of ['drawing-tiles','drawing-resources','drawing-tile-codec','drawing-worker','drawing-history','drawing-controller','editor-drawing','editor'])sources.set(name,execFileSync('git',['show',`${baseline}:src/${name}.mjs`],{encoding:'utf8'}));
 for(const kind of ['opaque8k','textured4k'])for(let pass=0;pass<3;pass++)for(const revision of pass%2?[...revisions].reverse():revisions){
   const browser=await chromium.launch({channel:'chrome',headless:true});
   try{
@@ -25,9 +25,9 @@ for(const kind of ['opaque8k','textured4k'])for(let pass=0;pass<3;pass++)for(con
         patterns.push(pixels);
       }
       for(let ty=0;ty<rows;ty++)for(let tx=0;tx<columns;tx++)changes.push({tx,ty,before:null,after:patterns[(ty*columns+tx)%32]});
-      let maxTransferBytes=0,encodeRequests=0,peakWorkingBytes=0;
+      let maxTransferBytes=0,encodeRequests=0,peakWorkingBytes=0,maxPreparationInputBytes=0,prepareRequests=0;
       const request=owner.worker.request.bind(owner.worker),hold=owner.hold.bind(owner);
-      owner.worker.request=(kind,payload,options)=>{if(kind==='encode-tiles'){encodeRequests++;maxTransferBytes=Math.max(maxTransferBytes,(options?.transfer??[]).reduce((n,b)=>n+b.byteLength,0));}return request(kind,payload,options);};
+      owner.worker.request=(kind,payload,options)=>{const bytes=(options?.transfer??[]).reduce((n,b)=>n+b.byteLength,0);if(kind==='encode-tiles'){encodeRequests++;maxTransferBytes=Math.max(maxTransferBytes,bytes);}if(kind==='prepare-tiles'){prepareRequests++;maxPreparationInputBytes=Math.max(maxPreparationInputBytes,bytes);}return request(kind,payload,options);};
       owner.hold=(...args)=>{const result=hold(...args);peakWorkingBytes=Math.max(peakWorkingBytes,owner.workingBytes);return result;};
       const measure=async operation=>{
         const tasks=[],since=performance.now();let last=since,maxGapMs=0,applyMs=0,commitMs=0;
@@ -42,20 +42,25 @@ for(const kind of ['opaque8k','textured4k'])for(let pass=0;pass<3;pass++)for(con
         finally{clearInterval(timer);collect(observer.takeRecords());observer.disconnect();owner.apply=apply;e.commitDrawingPixels=commit;}
         return{elapsedMs,commitMs,applyMs,maxGapMs,maxLongTaskMs:Math.max(0,...tasks),longTasks:tasks.length};
       };
-      const publish=await measure(async()=>{e.commitDrawingPixels(target,changes,'Publication benchmark');await owner.flush();});
+      let editMs;
+      const publish=await measure(async()=>{
+        const start=performance.now();
+        await d.pixelOperation('Applying drawing',async op=>{op.received(changes);if(d.commitPixels)await d.commitPixels(target,changes,'Publication benchmark',op);else e.commitDrawingPixels(target,changes,'Publication benchmark');});
+        editMs=performance.now()-start;await owner.flush();
+      });publish.editMs=editMs;
       const exact=()=>surface.store.size===changes.length&&[...surface.store].every(tile=>{const expected=patterns[(tile.ty*columns+tile.tx)%32];return tile.pixels.every((value,i)=>value===expected[i%expected.length]);});
       const firstExact=exact(),firstBounds={...drawingMetadata(e.drawingTarget().figure).bounds};
       await owner.history?.pumping;
       const undo=await measure(async()=>{await e.undo();await owner.flush();}),undoEmpty=surface.store.size===0;
       const redo=await measure(async()=>{await e.redo();await owner.flush();}),redoExact=exact();
-      const result={kind,publish,undo,redo,tiles:changes.length,pixelBytes:changes.length*16384,firstExact,undoEmpty,redoExact,firstBounds,maxTransferBytes,encodeRequests,peakWorkingBytes,remainingWorkingBytes:owner.workingBytes};
+      const result={kind,publish,undo,redo,tiles:changes.length,pixelBytes:changes.length*16384,firstExact,undoEmpty,redoExact,firstBounds,maxTransferBytes,encodeRequests,prepareRequests,maxPreparationInputBytes,peakWorkingBytes,remainingWorkingBytes:owner.workingBytes};
       styk.fit();return result;
     },kind);
     assert.ok(sample.firstExact&&sample.undoEmpty&&sample.redoExact);assert.deepEqual(errors,[]);
-    if(revision==='working-tree')assert.ok(sample.maxTransferBytes<=1024*1024);
+    if(revision==='working-tree')assert.ok(sample.maxTransferBytes<=1024*1024&&sample.maxPreparationInputBytes<=1024*1024);
     if(revision==='working-tree'&&kind==='opaque8k'&&pass===2){await page.waitForTimeout(300);await page.screenshot({path:output+'/workspace.png'});}
     runs.push({revision,pass,browser:browser.version(),...sample});console.log(revision,kind,pass,JSON.stringify({publish:sample.publish,undo:sample.undo,redo:sample.redo,maxTransferBytes:sample.maxTransferBytes}));
   }finally{await browser.close();}
 }
-const result={date:new Date().toISOString(),platform:os.platform(),cpu:os.cpus()[0]?.model,node:process.version,workload:'Fresh Chrome process per sample; 3 alternating passes per revision; direct edit, complete PNG publication, undo and redo; 32 exact tile patterns, opaque 7680x4352 and noisy/translucent 3840x2176. Setup and byte validation excluded. Includes timer tail observation; synthetic UI stalls, not physical pen latency. Undo/redo elapsed includes any disk-history loading.',runs};
+const result={date:new Date().toISOString(),platform:os.platform(),cpu:os.cpus()[0]?.model,node:process.version,workload:'Fresh Chrome process per sample; 3 alternating passes per revision; controller pixel transaction, complete PNG publication, undo and redo; 32 exact tile patterns, opaque 7680x4352 and noisy/translucent 3840x2176. Setup and byte validation excluded. Includes timer tail observation; synthetic UI stalls, not physical pen latency. Edit time includes preparation; undo/redo elapsed includes any disk-history loading and preparation.',runs};
 await writeFile(output+'/benchmark.json',JSON.stringify(result,null,2));

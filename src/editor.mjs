@@ -318,12 +318,12 @@ export class Editor extends EventTarget {
     for (let i = 0; i < frame.objects.length; i++) if (replacements.has(frame.objects[i].unique_id))
       frame.objects[i] = replacements.get(frame.objects[i].unique_id);
   }
-  _applyCommand(command, direction) {
-    if(applyDrawingCommand(this,command,direction))return;
+  _applyCommand(command, direction, drawingPrepared) {
+    if(applyDrawingCommand(this,command,direction,drawingPrepared))return;
     if(applyAudioCommand(this,command,direction))return;
     if(applyLayerSheetCommand(this,command,direction))return;
     if (command.kind === 'movieclip-batch') {
-      for (const child of direction === 'before' ? [...command.commands].reverse() : command.commands) this._applyCommand(child,direction);
+      for (const child of direction === 'before' ? [...command.commands].reverse() : command.commands) this._applyCommand(child,direction,drawingPrepared);
       if(command.frameDraftJournal){this._prepareFrameDraftHistory(command,direction);this._applyFrameDraftHistory(command,direction);}
       if(command[`${direction}Selection`])this._restoreSelection(command[`${direction}Selection`]);
       this._revision=command[`${direction}Revision`];return;
@@ -442,12 +442,16 @@ export class Editor extends EventTarget {
   _drawingHistoryReplay(command,direction,signal) {
     const resources=drawingResourcesFor(this.report),history=resources?.history,report=this.report,revision=this.revision;
     const source=direction==='before'?this._undo:this._redo,destination=direction==='before'?this._redo:this._undo;
-    const replay=()=>{try{
-      if(signal?.aborted||report!==this.report||revision!==this.revision||source.at(-1)!==command)throw new DOMException('History changed before undo/redo completed.','AbortError');
-      resources?.checkHistory(command,direction);this._applyCommand(command,direction);source.pop();destination.push(command);return true;
-    }finally{history?.release(command);}};
-    const pending=history?.prepare(command,{signal});
-    return pending?pending.then(replay,error=>{history.release(command);throw error;}):replay();
+    const check=()=>{if(signal?.aborted||report!==this.report||revision!==this.revision||source.at(-1)!==command)throw new DOMException('History changed before undo/redo completed.','AbortError');};
+    const replay=prepared=>{try{
+      check();resources?.checkHistory(command,direction,prepared);this._applyCommand(command,direction,prepared);source.pop();destination.push(command);return true;
+    }finally{prepared?.release();}};
+    const prepare=()=>{check();const pending=resources?.prepareChanges(command,direction,{signal,checkCurrent:check});return pending?pending.then(replay):replay();};
+    try{
+      const pending=history?.prepare(command,{signal}),result=pending?pending.then(prepare):prepare();
+      if(result?.then)return result.finally(()=>history?.release(command));
+      history?.release(command);return result;
+    }catch(error){history?.release(command);throw error;}
   }
   markSaved() { this._savedRevision = this._revision; this._emit('saved'); }
 

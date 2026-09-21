@@ -8,7 +8,7 @@ import {TILE_BYTES,TileStore} from '../src/drawing-tiles.mjs';
 
 function fixture(){
   const d=Object.create(DrawingController.prototype),holds=new Map();
-  Object.assign(d,{owner:{busy:false,hold:(k,n)=>n?holds.set(k,n):holds.delete(k)},editor:{revision:1},sequence:0,overlay:{hasPointerCapture:()=>false},onStatus:()=>{},onRender:()=>{},finish:()=>{},applySelection:()=>{},holds});
+  Object.assign(d,{owner:{busy:false,needsPreparation:()=>false,hold:(k,n)=>n?holds.set(k,n):holds.delete(k)},editor:{revision:1},sequence:0,overlay:{hasPointerCapture:()=>false},onStatus:()=>{},onRender:()=>{},finish:()=>{},applySelection:()=>{},holds});
   return d;
 }
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
@@ -20,9 +20,16 @@ test('input tile copying shares one reservation across source and destination',a
   await assert.rejects(d.copyWorkerTiles({store},op),/memory/);assert.equal(op.copiedBytes,TILE_BYTES);assert.equal(store.pixel(0,0)[0],1);
 });
 
-test('warm history keeps synchronous command behavior and avoids a pixel operation',()=>{
+test('small warm history keeps synchronous command behavior and avoids a pixel operation',()=>{
   const d=fixture();d.owner.history={needsLoad:()=>false};d.editor._undo=[{}];d.editor.undo=()=>true;
   assert.equal(d.history('undo'),true);assert.equal(d.operation,undefined);assert.equal(d.owner.busy,false);
+});
+
+test('large warm history owns the pixel-operation gate and accepts Escape cancellation',async()=>{
+  const d=fixture(),gate=deferred();d.owner.needsPreparation=()=>true;d.editor._redo=[{}];
+  d.editor.redo=async({signal})=>{await gate.promise;if(signal.aborted)throw new DOMException('Cancelled','AbortError');return true;};
+  const pending=d.history('redo');await Promise.resolve();assert.ok(d.operation?.history);assert.equal(d.owner.busy,true);
+  d.cancel();gate.resolve();await assert.rejects(pending,{name:'AbortError'});assert.equal(d.owner.busy,false);assert.equal(d.operation,null);
 });
 
 test('save and command barriers wait for pixel transaction publication',async()=>{

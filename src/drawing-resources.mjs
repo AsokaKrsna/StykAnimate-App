@@ -6,6 +6,7 @@ import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from './drawing-tiles
 import {applyTileChanges} from './drawing-pixels.mjs';
 import {tileStoreFromList} from './drawing-tile-codec.mjs';
 import {presenterScratch,levelStore,invalidateLevels} from './drawing-raster.mjs';
+import {prepareDrawingChanges,needsDrawingPreparation,validateDrawingChanges} from './drawing-preparation.mjs';
 
 const owners=new WeakMap(),clipboardPixels=new WeakMap();
 export const drawingClipboardPixels=clipboard=>clipboardPixels.get(clipboard);
@@ -109,7 +110,7 @@ export class DrawingResources {
     for(const e of this.surfaces())if(e!==except){e.levels=null;e.levelKnown=null;}
     for(const e of [...this.entries.values()].sort((a,b)=>a.used-b.used)){
       if(resident()+bytes<=target)break;
-      if(e===except||e.pinned||!e.store||e.published?.revision!==e.revision)continue;e.store=null;e.levels=null;e.levelKnown=null;this.surfaceVersion++;
+      if(e===except||e.pinned||e.preparing||!e.store||e.published?.revision!==e.revision)continue;e.store=null;e.levels=null;e.levelKnown=null;this.surfaceVersion++;
     }
     if(resident()+bytes<=target)return;
     // Everything left is dirty or pinned work that must not be lost. Kick the
@@ -128,10 +129,10 @@ export class DrawingResources {
   /** Move an in-flight or resident entry under a new cel id (lazy migration). */
   retarget(oldCelId,figure){const e=this.entries.get(oldCelId),d=drawingMetadata(figure);if(!e||!d||d.celId===oldCelId)return;this.entries.delete(oldCelId);e.id=d.celId;this.entries.set(e.id,e);}
   /** Install decoded/resampled tiles under a figure's cel (publication follows). */
-  install(figure,tiles){
+  install(figure,tiles,{owned=false}={}){
     this.reserve((tiles?.length??0)*TILE_BYTES,this.entries.get(drawingMetadata(figure).celId));
     const e=this.entry(figure),store=new TileStore();
-    for(const t of tiles??[])store.set(t.tx,t.ty,new Uint8ClampedArray(t.pixels));
+    for(const t of tiles??[]){const pixels=owned&&t.pixels instanceof Uint8ClampedArray?t.pixels:new Uint8ClampedArray(t.pixels);if(owned)store.adopt(t.tx,t.ty,pixels,t.alphaBounds);else store.set(t.tx,t.ty,pixels);}
     e.store=store;e.deferred=[];e.published=null;e.revision=drawingMetadata(figure).revision;e.stamp++;e.decodeError=null;e.levels=null;e.levelKnown=null;this.dropScratch(e);this.surfaceVersion++;this.onChange();this.schedule();return e;
   }
   discard(figure){const id=drawingMetadata(figure)?.celId,e=this.entries.get(id);if(!e||this.report.figure_types.some(f=>drawingMetadata(f)?.celId===id))return;e.disposed=true;this.dropScratch(e);e.store=null;e.levels=null;e.levelKnown=null;this.entries.delete(id);this.surfaceVersion++;this.onChange();}
@@ -230,21 +231,29 @@ export class DrawingResources {
     }
     this.onChange();
   }
-  apply(figure,changes,direction) {
-    const e=this.entry(figure),added=this.replacementBytes(e,changes,direction);
+  needsPreparation(command,direction){return needsDrawingPreparation(command,direction);}
+  prepareChanges(command,direction,options){return prepareDrawingChanges(this,command,direction,options);}
+  apply(figure,changes,direction,prepared) {
+    const e=this.entry(figure),plan=prepared?.plan(changes,direction,e.id),added=plan?0:this.replacementBytes(e,changes,direction);
     // Rebuildable memory yields before an edit is ever rejected.
-    this.reserve(Math.max(0,added),e);e.decodeError=null;
-    if(e.store){applyTileChanges(e.store,changes,direction);e.store.prune();}
+    if(!plan)this.reserve(Math.max(0,added),e);e.decodeError=null;
+    if(e.store){
+      if(plan)for(const t of plan.tiles){if(t.pixels)e.store.adopt(t.tx,t.ty,t.pixels,t.alphaBounds);else e.store.delete(t.tx,t.ty);}
+      else applyTileChanges(e.store,changes,direction);
+      e.store.prune();
+    }
     else e.deferred.push({changes,direction});
+    if(plan)prepared.consume(plan);
     e.revision++;const d=drawingMetadata(figure);d.revision=e.revision;
     if(d.version===2&&e.store)d.bounds=e.store.bounds?{...e.store.bounds}:null;
     let dirty=null;for(const c of changes){const rect={x:c.tx*TILE,y:c.ty*TILE,width:TILE,height:TILE};dirty=dirty?{x:Math.min(dirty.x,rect.x),y:Math.min(dirty.y,rect.y),width:Math.max(dirty.x+dirty.width,rect.x+rect.width)-Math.min(dirty.x,rect.x),height:Math.max(dirty.y+dirty.height,rect.y+rect.height)-Math.min(dirty.y,rect.y)}:rect;}
     this.present(e,dirty);this.schedule();
   }
-  checkHistory(command,direction){
-    const pending=new Map();const visit=c=>{if(c.commands){for(const child of direction==='before'?[...c.commands].reverse():c.commands)visit(child);}else if(c.kind==='drawing-pixels'){let tiles=pending.get(c.celId);if(!tiles)pending.set(c.celId,tiles=new Map());for(const tile of c.tiles)tiles.set(tileKey(tile.tx,tile.ty),sideBytes(tile[direction]));}};visit(command);
+  checkHistory(command,direction,prepared){
+    prepared?.validate(command,direction);
+    const pending=new Map();const visit=c=>{if(c.commands){for(const child of direction==='before'?[...c.commands].reverse():c.commands)visit(child);}else if(c.kind==='drawing-pixels'){validateDrawingChanges(c.tiles);let tiles=pending.get(c.celId);if(!tiles)pending.set(c.celId,tiles=new Map());for(const tile of c.tiles)tiles.set(tileKey(tile.tx,tile.ty),sideBytes(tile[direction]));}};visit(command);
     let added=0;for(const [id,tiles] of pending){const changes=[...tiles].map(([key,bytes])=>{const [tx,ty]=key.split(',').map(Number);return{tx,ty,pixels:bytes?{byteLength:bytes}:null};});added+=this.replacementBytes(this.entries.get(id)??{},changes,'pixels');}
-    this.reserve(Math.max(0,added));
+    this.reserve(Math.max(0,added-(prepared?.bytes??0)));
   }
   captureClipboard(clipboard){
     const snapshots=new Map();for(const figure of clipboard.figures??[]){if(!drawingMetadata(figure))continue;const e=this.entry(figure);snapshots.set(e.id,{published:e.published?{...e.published}:null,revision:e.revision,store:e.store?.fork()??null,deferred:e.deferred.slice()});}clipboardPixels.set(clipboard,snapshots);

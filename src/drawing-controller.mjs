@@ -107,6 +107,16 @@ export class DrawingController {
     }
     return tiles;
   }
+  async commitPixels(target,tiles,label,op){
+    const command={kind:'drawing-pixels',celId:drawingMetadata(target.figure).celId,tiles};
+    const prepared=await op.owner.prepareChanges(command,'after',{signal:op.abort.signal,checkCurrent:op.check});
+    try{
+      op.check();const changed=this.editor.commitDrawingPixels(target,tiles,label,prepared);
+      // History now owns the reply buffers. Release their transaction hold
+      // before background history/publication jobs inspect the budget.
+      op.owner.hold(op,0);return changed;
+    }finally{prepared?.release();}
+  }
   resumeQueuedPointer(){
     const queued=this.loading?.queued?this.loading:null;
     if(queued&&!this.gesture&&!this.operation){this.loading=null;this.run(()=>this.down({...queued.event,samples:queued.samples,released:queued.released}));}
@@ -117,7 +127,8 @@ export class DrawingController {
   }
   history(direction){
     return this.afterGesture(()=>{
-      if(!this.owner?.history?.needsLoad(this.editor[direction==='undo'?'_undo':'_redo'].at(-1)))return this.editor[direction]();
+      const command=this.editor[direction==='undo'?'_undo':'_redo'].at(-1),side=direction==='undo'?'before':'after';
+      if(!this.owner?.history?.needsLoad(command)&&!this.owner?.needsPreparation(command,side))return this.editor[direction]();
       return this.pixelOperation(direction==='undo'?'Restoring undo':'Restoring redo',async op=>{op.history=true;return this.editor[direction]({signal:op.abort.signal});});
     });
   }
@@ -252,24 +263,37 @@ export class DrawingController {
     if(data.kind==='done'){this.sessions.delete(s.id);this.commitStroke(s,data.changes);}
   }
   restoreStroke(s){
-    const store=s.surface.store;
+    const store=s.surface.store;if(!store||s.owner.disposed)return;
     for(const [key,before] of s.before){const [tx,ty]=parseTileKey(key);before?store.set(tx,ty,before):store.delete(tx,ty);}
   }
   commitStroke(s,changes){
     const g=this.gesture,valid=g?.session===s&&!s.cancelled&&s.owner===this.owner&&s.revision===this.editor.revision;
-    if(g?.session===s)this.gesture=null;
-    try{
-      if(valid){try{this.editor.commitDrawingPixels(s.target,changes,s.erase?'Erase stroke':'Brush stroke');}catch(error){this.restoreStroke(s);this.onError(error);}}
-      else this.restoreStroke(s);
-    }finally{
+    const preparing=valid&&s.owner.needsPreparation({kind:'drawing-pixels',tiles:changes},'after');
+    // The closing gesture also owns the live preview of a new cel. Keep it
+    // visible until the prepared replacements are committed or cancelled.
+    if(g?.session===s&&!preparing)this.gesture=null;
+    const finish=()=>{
+      if(this.gesture?.session===s)this.gesture=null;
       s.resolveDone?.();s.owner.hold?.(s,0);
-      s.owner.busy=false;
+      s.owner.busy=this.operation?.owner===s.owner;
       s.surface.pinned=Boolean(this.selection?.surface===s.surface);
-      if(this.selection?.surface===s.surface)this.previewSelection();else{this.owner.present(s.surface);this.owner.discard(s.target.figure);}
+      if(this.selection?.surface===s.surface)this.previewSelection();else if(!s.owner.disposed&&!s.surface.disposed){s.owner.present(s.surface);s.owner.discard(s.target.figure);}
       if(g?.session===s&&this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);
       this.sync();this.onUI();this.onRender();
       this.resumeQueuedPointer();
+    };
+    const label=s.erase?'Erase stroke':'Brush stroke';
+    if(preparing){
+      const pending=this.pixelOperation('Finishing stroke',async op=>{
+        try{op.received(changes);return await this.commitPixels(s.target,changes,label,op);}
+        catch(error){this.restoreStroke(s);if(error.name!=='AbortError')this.onError(error);return false;}
+        finally{finish();}
+      });pending.catch(error=>this.onError(error));return pending;
     }
+    try{
+      if(valid){try{this.editor.commitDrawingPixels(s.target,changes,label);}catch(error){this.restoreStroke(s);this.onError(error);}}
+      else this.restoreStroke(s);
+    }finally{finish();}
   }
   move(event){this.cursor=pointerSample(event);if(this.loading?.id===event.pointerId){if(this.loading.samples.length>=65536)throw new Error('Drawing input exceeded the queue limit.');this.loading.samples.push(pointerSample(event));return;}const g=this.gesture;if(!g||g.id!==event.pointerId){this.onRender();return;}
     if(g.kind==='pan'){const rect=this.viewport.getBoundingClientRect();this.state.view.x=g.view.x+(event.clientX-g.start.clientX)*this.viewport.clientWidth/rect.width;this.state.view.y=g.view.y+(event.clientY-g.start.clientY)*this.viewport.clientHeight/rect.height;}
@@ -313,7 +337,7 @@ export class DrawingController {
       if(this.settings.sampleAll){await this.barrierForComposite();op.check();const c=canvas(bounds.width,bounds.height),ctx=c.getContext('2d'),inverse=new DOMMatrix(this.pixelMatrix(target)).inverse();ctx.setTransform(inverse.a,inverse.b,inverse.c,inverse.d,inverse.e-bounds.x,inverse.f-bounds.y);drawGeometry(ctx,{drawables:this.editor.geometry.drawables.filter(i=>this.editor.getLayer(this.editor.layerForUid(i.obj.unique_id))?.visible!==false)},this.getResources());source=ctx.getImageData(0,0,c.width,c.height).data.buffer;c.width=c.height=1;}
       const tiles=await this.copyWorkerTiles(surface,op,t=>tileIntersects(t,bounds));
       const result=await owner.worker.request('fill',{bounds,tiles,options:{maxBytes:op.maxBytes,...point,color:[...this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16)),Math.round(this.settings.opacity*255)],tolerance:this.settings.tolerance,expansion:this.settings.expansion,gap:this.settings.gap},source},{signal:controller.signal,transfer:[...tiles.map(t=>t.pixels),...(source?[source]:[])]});
-      op.check();op.received(result.tiles);this.editor.commitDrawingPixels(target,result.tiles,'Fill drawing');this.onStatus('Drawing filled.');
+      op.check();op.received(result.tiles);await this.commitPixels(target,result.tiles,'Fill drawing',op);this.onStatus('Drawing filled.');
     }finally{surface.pinned=false;owner.discard(target.figure);if(this.fillAbort===controller)this.fillAbort=null;}
   });}
   async barrierForComposite(){await drawingBarrier(this.editor.report);const assets=this.editor.geometry.drawables.filter(i=>i.type==='image');await Promise.all(assets.map(async i=>{const image=this.getResources().image(this.getResources().url(i.asset));if(image&&!image.complete)await image.decode?.();}));}
@@ -344,7 +368,7 @@ export class DrawingController {
       op.check();if(this.selection!==s)throw new DOMException('Selection changed.','AbortError');op.received(result.tiles);
       // The selection buffers remain live until the cel replacement finishes;
       // keep them in the owner's budget while it reserves the committed tiles.
-      const changed=this.editor.commitDrawingPixels(s.target,result.tiles,label);this.endSelection(false);return changed;
+      const changed=await this.commitPixels(s.target,result.tiles,label,op);this.endSelection(false);return changed;
     };
     s.committing=(operation?commit(operation):this.pixelOperation(label,commit)).finally(()=>{if(this.selection===s)this.endSelection(false);this.onRender();});
     return s.committing;
@@ -392,7 +416,7 @@ export class DrawingController {
         const bounds=coverage?null:transformSupportBounds({x:0,y:0,width:clip.width,height:clip.height},matrix,this.settings.filter);
         const tiles=await this.copyWorkerTiles(surface,op,t=>coverage?coverage.has(tileKey(t.tx,t.ty)):tileIntersects(t,bounds));
         const result=await owner.worker.request('paste',{tiles,clip,matrix,filter:this.settings.filter,maxBytes:op.maxBytes},{signal:op.abort.signal,transfer:tiles.map(t=>t.pixels)});
-        op.check();op.received(result.tiles);return e.commitDrawingPixels(target,result.tiles,'Paste selected pixels');
+        op.check();op.received(result.tiles);return await this.commitPixels(target,result.tiles,'Paste selected pixels',op);
       }finally{if(surface){surface.pinned=false;owner.present(surface);}owner.discard(target.figure);}
     },{signal:op.abort.signal,checkCurrent:op.check}));
     if(action==='resample'){
@@ -405,7 +429,7 @@ export class DrawingController {
         try{
           op.reserve(surface);const tiles=await this.copyWorkerTiles(surface,op);
           const result=await op.owner.worker.request('resample',{tiles,ratio,filter:this.settings.filter,maxBytes:op.maxBytes},{signal:op.abort.signal,transfer:tiles.map(t=>t.pixels)});
-          op.check();op.received(result.tiles);e.resampleDrawing(target,{pixelsPerUnit:resolution,tiles:result.tiles,bounds:result.bounds});
+          op.check();op.owner.hold(op,0);e.resampleDrawing(target,{pixelsPerUnit:resolution,tiles:result.tiles,bounds:result.bounds,owned:true});
           this.onStatus('Drawing resampled. Undo restores its original pixels.');
         }finally{surface.pinned=false;}
       });

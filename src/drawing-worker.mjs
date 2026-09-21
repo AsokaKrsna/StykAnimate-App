@@ -8,6 +8,7 @@ import {levelStore,invalidateLevels} from './drawing-raster.mjs';
 import {transformSelectedPixels} from './drawing-selection.mjs';
 import {captureSelection} from './drawing-lasso.mjs';
 import {transformTiles,TRANSFORM_BYTES} from './drawing-transform.mjs';
+import {materializeDrawingTiles} from './drawing-preparation.mjs';
 
 const storeOf=data=>{const store=new TileStore();for(const t of data.tiles??[])store.tiles.set(tileKey(t.tx,t.ty),{tx:t.tx,ty:t.ty,pixels:new Uint8ClampedArray(t.pixels),alphaBounds:t.alphaBounds,frozen:false,png:t.png?new Uint8Array(t.png):undefined});return store;};
 const changesReply=(id,store,before)=>{const tiles=tileChanges(store,before);self.postMessage({id,tiles},tiles.flatMap(t=>[t.before?.buffer,t.after?.buffer].filter(Boolean)));};
@@ -22,6 +23,10 @@ const thumbnailLevel=bounds=>bounds?Math.max(0,Math.min(4,Math.floor(Math.log2(M
 self.onmessage=async({data})=>{
   const {id,kind}=data;
   try {
+    if(kind==='prepare-tiles'){
+      const tiles=materializeDrawingTiles(data.tiles);
+      self.postMessage({id,tiles},tiles.flatMap(t=>t.pixels?[t.pixels]:[]));return;
+    }
     if(kind==='decode-legacy'){
       const crop=data.crop??{x:0,y:0},image=await decodeDrawingPNG(data.url),tiles=[];
       if(![crop.x,crop.y].every(Number.isInteger))throw new Error('Invalid drawing crop.');
@@ -71,8 +76,8 @@ self.onmessage=async({data})=>{
       const ratio=data.ratio;
       if(!Number.isFinite(ratio)||ratio<=0)throw new Error('Invalid drawing resample.');
       const out=transformTiles(storeOf(data),[ratio,0,0,ratio,0,0],{filter:data.filter,maxBytes:data.maxBytes});
-      const tiles=[...out].map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer}));
-      self.postMessage({id,tiles,bounds:out.bounds},tiles.map(t=>t.pixels));return;
+      const bounds=out.bounds,tiles=[...out].map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,alphaBounds:t.alphaBounds}));
+      self.postMessage({id,tiles,bounds},tiles.map(t=>t.pixels));return;
     }
     if(kind==='preview'){
       const {rect,level}=data;

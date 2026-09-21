@@ -1,7 +1,7 @@
 import {historyChunks,historyPixelBytes} from './drawing-history-codec.mjs';
+import {drawingPixelCommands as pixelCommands} from './drawing-preparation.mjs';
 
 const aborted=()=>new DOMException('Drawing history operation cancelled.','AbortError');
-const pixelCommands=function*(root){if(root.kind==='drawing-pixels')yield root;for(const child of root.commands??[])yield* pixelCommands(child);};
 const yieldToInput=()=>new Promise(resolve=>setTimeout(resolve,0));
 
 /** The lease lives in the editor thread so a worker crash cannot make another
@@ -81,7 +81,7 @@ export class DrawingHistory {
           record.state='memory';record.root.bytes+=record.bytes;record.onSizeChange(record.bytes);
           if(this.enabled){this.enabled=false;this.onWarning(new Error('Drawing undo disk cache is unavailable. Recent undo remains in memory: '+error.message));}
         }
-      }finally{record.writing=false;if(record.retiredBytes){this.residentBytes=Math.max(0,this.residentBytes-record.retiredBytes);delete record.retiredBytes;}if(scratch)this.endScratch();}
+      }finally{record.writing=false;this.releaseRetired(record);if(scratch)this.endScratch();}
     }
   }
   trim(target=this.hotBytes){
@@ -101,7 +101,7 @@ export class DrawingHistory {
       for(const record of cold){
         if(signal?.aborted||this.disposed||record.disposed)throw aborted();
         const reader={signal};(record.readers??=new Set()).add(reader);
-        try{record.loading??=this.load(record).finally(()=>{record.loading=null;});await record.loading;if(signal?.aborted)throw aborted();}
+        try{record.loading??=this.load(record).finally(()=>{record.loading=null;this.releaseRetired(record);});await record.loading;if(signal?.aborted)throw aborted();}
         finally{record.readers.delete(reader);}
       }
     })();
@@ -122,14 +122,15 @@ export class DrawingHistory {
       record.command.tiles=tiles;this.payloads.set(tiles,record);installed=true;
     }finally{if(reserved&&!installed)this.residentBytes=Math.max(0,this.residentBytes-record.bytes);this.endScratch();}
   }
-  release(root){for(const command of pixelCommands(root)){const record=this.commands.get(command);if(record)record.pins=Math.max(0,record.pins-1);}this.trim();}
+  releaseRetired(record){if(record.retiredBytes&&!record.writing&&!record.loading&&!record.pins){this.residentBytes=Math.max(0,this.residentBytes-record.retiredBytes);delete record.retiredBytes;}}
+  release(root){for(const command of pixelCommands(root)){const record=this.commands.get(command);if(record){record.pins=Math.max(0,record.pins-1);this.releaseRetired(record);}}this.trim();}
   retain(roots){
     const keep=new Set(roots.flatMap(root=>[...pixelCommands(root)]));
     for(const [id,record] of this.records)if(!keep.has(record.command)){
       record.disposed=true;
-      // The async writer's iterator still holds the original array until the
-      // current chunk finishes. Retiring the command must not hide those bytes.
-      if(record.command.tiles){if(record.writing)record.retiredBytes=record.bytes;else this.residentBytes-=record.bytes;}
+      // A writer or prepared replay can still hold these arrays after history
+      // eviction. Account for them until every outstanding use releases them.
+      if(record.command.tiles){if(record.writing||record.pins)record.retiredBytes=record.bytes;else this.residentBytes-=record.bytes;}
       record.command.tiles=null;this.records.delete(id);this.diskBytes-=record.diskBytes??0;
       if(record.diskBytes||record.writing)this.disk.request('remove',{record:id}).catch(()=>{});
     }

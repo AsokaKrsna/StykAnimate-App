@@ -206,6 +206,17 @@ Frame and structural commands wait for the closing stroke's pixel commit;
 view-only navigation does not discard its final worker reply. The completed
 stroke still belongs to the exposure where it started.
 
+Pixel transactions with more than 1 MiB of expanded replacement tiles prepare
+those tiles in the pixel worker before committing. The owner reserves the
+complete replacement set plus one 1 MiB input batch, protects its source stores
+from eviction, and validates every returned tile and its alpha bounds. The
+editor then adopts the prepared buffers in one synchronous transaction. History
+keeps separate, unchanged before/after buffers. Cancellation, a newer edit,
+worker failure or document disposal discards the prepared set and releases its
+reservation. A closing stroke retains its visible preview while preparation is
+pending; saving and the next gesture wait for that transaction. Resampling
+adopts the worker's already-complete pixel buffers directly.
+
 Undo belongs to the editor's chronological history. Before/after tile records
 are exact; absent sides are `null` and uniform tiles use a four-byte color
 representation. Where workers and IndexedDB are available, records of at least
@@ -221,12 +232,14 @@ history weight. Subsequent edits use RAM history for that session.
 The shared 48 MiB budget counts command metadata and records without disk
 backing, across undo and redo. The existing 80-command limit still applies. An
 oversized newest command remains undoable; allocation checks reject work before
-changing authoritative pixels. Warm undo stays synchronous. Cold undo/redo
-returns a promise, pins all children of the command, loads and validates their
-complete pixel data, and only then applies it. Cancelled or damaged reads and
+changing authoritative pixels. Small warm undo stays synchronous. Cold or large
+undo/redo returns a promise, pins all children of the command, loads any cold
+pixel data and prepares all large replacements before applying any child.
+Retired history buffers remain accounted while an outstanding replay uses them.
+Cancelled or damaged reads, failed preparation and
 intervening edits leave both pixels and the history cursor unchanged. Canvas,
 timeline and audio shortcuts share the drawing transaction gate so saving and
-the next pen gesture wait for cold replay. Deferred changes on evicted cel stores
+the next pen gesture wait for asynchronous replay. Deferred changes on evicted cel stores
 retain their own accounted pixel bytes until those stores are reconstructed.
 
 Disk history is temporary, not a dependency of saved documents. A main-thread

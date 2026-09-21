@@ -50,7 +50,14 @@ export class TileStore {
     let full;
     if(pixels.byteLength===4){full=new Uint8ClampedArray(TILE_BYTES);const word=new Uint32Array(Uint8Array.from(pixels).buffer)[0];new Uint32Array(full.buffer).fill(word);}
     else{full=new Uint8ClampedArray(pixels);if(full.byteLength!==TILE_BYTES)throw new Error('Tile pixels must be 4 uniform bytes or one full tile.');}
-    this.tiles.set(key,{tx,ty,pixels:full,frozen:false,version:++tileVersion});this._changed();
+    this.adopt(tx,ty,full);
+  }
+  /** Take ownership of a full tile. Callers must stop mutating the buffer;
+   * subsequent writes use writable() so forks remain copy-on-write. */
+  adopt(tx,ty,pixels,alphaBounds){
+    assertTileCoordinates(tx,ty);
+    if(!(pixels instanceof Uint8ClampedArray)||pixels.byteLength!==TILE_BYTES)throw new Error('Owned tile pixels must be one full tile.');
+    this.tiles.set(tileKey(tx,ty),{tx,ty,pixels,alphaBounds,frozen:false,version:++tileVersion});this._changed();
   }
   delete(tx,ty){if(this.tiles.delete(tileKey(tx,ty)))this._changed();}
   fork(){for(const tile of this.tiles.values())tile.frozen=true;return new TileStore(new Map(this.tiles));}

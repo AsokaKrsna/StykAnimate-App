@@ -8,11 +8,11 @@ export function assertDrawingTargets(editor,ids) {
   if(!ids.length)throw new Error('Choose a drawing layer.');
   for(const id of ids){const layer=editor.getLayer(id);if(!isDrawingLayer(layer))throw new Error('Choose a drawing layer or create a new drawing layer.');if(layer.locked||!layer.visible)throw new Error(`Show and unlock ${layer.name} before drawing.`);}
 }
-export function applyDrawingCommand(editor,command,direction) {
+export function applyDrawingCommand(editor,command,direction,prepared) {
   if(command.kind!=='drawing-pixels')return false;
   const figure=editor.report.figure_types.find(f=>drawingMetadata(f)?.celId===command.celId);
   if(!figure)throw new Error('The drawing history references a missing cel.');
-  editor.drawingResources.apply(figure,command.tiles,direction);
+  editor.drawingResources.apply(figure,command.tiles,direction,prepared);
   const d=drawingMetadata(figure);
   if(d.version===2)d.bounds=command[direction==='before'?'beforeBounds':'afterBounds']??null;
   editor._revision=command[`${direction}Revision`];editor._invalidate({timing:false});
@@ -81,7 +81,7 @@ export const editorDrawingMethods={
   },
   /** Publish a resampled cel: the tile list and bounds come from the worker;
    * pixel (0,0) stays fixed so anchors and the segment scale with the ratio. */
-  resampleDrawing(target,{pixelsPerUnit,tiles,bounds}) {
+  resampleDrawing(target,{pixelsPerUnit,tiles,bounds,owned=false}) {
     assertDrawingTargets(this,[target.id]);const current=this.drawingTarget(target.id);
     if(current.key.id!==target.key.id||current.figure!==target.figure)throw new Error('The drawing changed before resampling.');
     const old=drawingMetadata(target.figure),ratio=pixelsPerUnit/old.pixelsPerUnit,typeId=this.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1);
@@ -97,10 +97,10 @@ export const editorDrawingMethods={
     const plan=drawingSheetPlan(this,[target.id]);plan.definitions=[...this.report.figure_types,figure];plan.write(target.id,target.key.tick,createFrame([object]),{easing:{interpolation:'constant'}});
     // Install before publishing so the broadcast's own drawing barrier can
     // encode the resampled tiles instead of serializing an empty cel.
-    this.drawingResources.install(figure,tiles);
+    this.drawingResources.install(figure,tiles,{owned});
     return drawingSheetPublish(this,plan,'Resample drawing',{assets:{figure_types:{added:[figure]}}});
   },
-  commitDrawingPixels(target,tiles,label='Brush stroke') {
+  commitDrawingPixels(target,tiles,label='Brush stroke',prepared) {
     if(!tiles.length)return false;assertDrawingTargets(this,[target.id]);
     const current=this.drawingTarget(target.id,target.key.tick);
     if(current.key.id!==target.key.id||(!target.created&&!target.migratedFrom&&current.figure!==target.figure))throw new Error('The drawing exposure changed before the edit finished.');
@@ -108,7 +108,7 @@ export const editorDrawingMethods={
     // and reserve() bounds resident stores before this point is reached.
     const bytes=pixelChangeBytes(tiles);
     const celId=drawingMetadata(target.figure).celId,beforeBounds=drawingMetadata(target.figure).bounds??null;
-    this.drawingResources.checkHistory({kind:'drawing-pixels',celId,tiles},'after');
+    this.drawingResources.checkHistory({kind:'drawing-pixels',celId,tiles},'after',prepared);
     const commit=()=>{
       if(target.migratedFrom)this.drawingResources.retarget(target.migratedFrom,target.figure);
       // Committing ends the gesture's exclusive hold on the store: publication
@@ -120,7 +120,7 @@ export const editorDrawingMethods={
         drawingSheetPublish(this,plan,target.created?'Create drawing cel':'Migrate drawing',{assets:{figure_types:{added:[target.figure]}},nextUid:Math.max(this._nextUid,(target.object.unique_id??0)+1)});
       }
       const figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===celId);
-      this.drawingResources.apply(figure,tiles,'after');
+      this.drawingResources.apply(figure,tiles,'after',prepared);
       this._record({kind:'drawing-pixels',celId,tiles,label,beforeBounds,afterBounds:drawingMetadata(figure).bounds??null,precomputedBytes:bytes});
       if(this.activeLayerId===target.id&&this.tick>=target.key.tick&&this.tick<target.end)this.selectSheetLayer(target.id);
       this._invalidate({timing:false});this._emit('edit',{label,definition:true,drawing:true,figureIndices:[this.report.figure_types.indexOf(figure)]});return true;
