@@ -119,6 +119,30 @@ test('cancelled or malformed native transfers preserve the last completed copy',
   } finally { native.dispose(); }
 });
 
+test('cancelling a shared write preserves the previous OS copy and releases its transfer',async t=>{
+  const os=systemClipboard(),a=instance(t,os);a.editor.select(1);await a.clipboard.copy('figures',()=>a.editor.copySelection());const original=Buffer.from(os.readBuffer(FORMAT));
+  const abort=new AbortController(),write=a.clipboard.desktop.writeSharedClipboardChunk;
+  a.clipboard.desktop.writeSharedClipboardChunk=async(...args)=>{await write(...args);abort.abort();};
+  await assert.rejects(a.clipboard.copy('sheet',()=>a.editor.sheetCopyFrames(['layer-1'],0,0),{signal:abort.signal}),{name:'AbortError'});
+  assert.deepEqual(os.readBuffer(FORMAT),original);assert.equal(a.native.jobs.size,0);assert.equal(a.clipboard.id,null);
+});
+
+test('document replacement during a shared write cannot publish into the new document',async t=>{
+  const os=systemClipboard(),a=instance(t,os);a.editor.select(1);await a.clipboard.copy('figures',()=>a.editor.copySelection());const original=Buffer.from(os.readBuffer(FORMAT));
+  const write=a.clipboard.desktop.writeSharedClipboardChunk;
+  a.clipboard.desktop.writeSharedClipboardChunk=async(...args)=>{await write(...args);a.editor.load(emptyDocument());};
+  await assert.rejects(a.clipboard.copy('sheet',()=>a.editor.sheetCopyFrames(['layer-1'],0,0)),{name:'AbortError'});
+  assert.deepEqual(os.readBuffer(FORMAT),original);assert.equal(a.native.jobs.size,0);
+});
+
+test('cancelling a shared read preserves local clipboard state and never runs paste',async t=>{
+  const os=systemClipboard(),a=instance(t,os),b=instance(t,os);a.editor.select(1);await a.clipboard.copy('figures',()=>a.editor.copySelection());
+  const abort=new AbortController(),read=b.clipboard.desktop.readSharedClipboardChunk;let pasted=false;
+  b.clipboard.desktop.readSharedClipboardChunk=async(...args)=>{const result=await read(...args);abort.abort();return result;};
+  await assert.rejects(b.clipboard.paste('figures',()=>{pasted=true;},{signal:abort.signal}),{name:'AbortError'});
+  assert.equal(pasted,false);assert.equal(b.editor._selectionClipboard,undefined);assert.equal(b.native.jobs.size,0);
+});
+
 test('document switch during a shared read does not modify the new clipboard or project', async t => {
   const os = systemClipboard(), a = instance(t, os), b = instance(t, os);
   a.editor.select(1); await a.clipboard.copy('figures', () => a.editor.copySelection());

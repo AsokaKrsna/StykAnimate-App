@@ -1,7 +1,8 @@
 import {TILE,TILE_BYTES,tileKey,TileStore,tileTransparent} from './drawing-tiles.mjs';
 import {floodTiles,tileChanges} from './drawing-pixels.mjs';
 import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
-import {decodeDrawingPNG,encodeDrawingPNG} from './drawing-png.mjs';
+import {decodeDrawingPNG} from './drawing-png.mjs';
+import {encodeClipboardTiles,decodePixelClipboard} from './drawing-clipboard.mjs';
 import {decodeTileBlob,tileStoreFromList,TILE_BLOB_PREFIX,TileEncodeCache} from './drawing-tile-codec.mjs';
 import {levelStore,invalidateLevels} from './drawing-raster.mjs';
 import {transformSelectedPixels} from './drawing-selection.mjs';
@@ -52,23 +53,17 @@ self.onmessage=async({data})=>{
       const tiles=result.tiles.map(t=>({...t,pixels:t.full?null:t.pixels.buffer,remaining:t.remaining?.buffer??null}));
       self.postMessage({id,tiles},tiles.flatMap(t=>[t.pixels,t.remaining].filter(Boolean)));return;
     }
-    if(kind==='selection'||kind==='copy-selection'){
+    if(kind==='copy-selection'){
+      const tiles=await encodeClipboardTiles(data.tiles,{maxBytes:data.maxBytes});self.postMessage({id,tiles});return;
+    }
+    if(kind==='selection'){
       const store=storeOf(data),source=storeOf(data.selection),tiles=transformSelectedPixels(store,{...data.selection,source});
-      if(kind==='copy-selection'){
-        const bounds=store.bounds??{x:data.selection.bounds.x,y:data.selection.bounds.y,width:1,height:1};
-        if(!validRect(bounds)||bounds.width>8192||bounds.height>8192)throw new Error('The PNG clipboard is limited to 16 megapixels and 8192 pixels per side. Select a smaller region.');
-        const dataUrl=await encodeDrawingPNG(store.readRect(bounds.x,bounds.y,bounds.width,bounds.height),bounds.width,bounds.height);
-        self.postMessage({id,bounds,dataUrl});return;
-      }
       self.postMessage({id,tiles},tiles.flatMap(t=>[t.before?.buffer,t.after?.buffer].filter(Boolean)));return;
     }
     if(kind==='paste'){
-      const store=storeOf(data),before=new Map(),image=await decodeDrawingPNG(data.clip.dataUrl);
-      if(image.width!==data.clip.width||image.height!==data.clip.height)throw new Error('Invalid drawing paste.');
-      const maxBytes=data.maxBytes??TRANSFORM_BYTES;
-      if(image.pixels.byteLength*2+store.bytes>maxBytes)throw new Error('The paste exceeds the drawing working memory limit.');
-      const source=new TileStore();source.writeRect(0,0,image.width,image.height,image.pixels);source.prune();
-      transformTiles(source,data.matrix,{target:store,before,filter:data.filter,maxBytes:maxBytes-image.pixels.byteLength});
+      const store=storeOf(data),before=new Map(),maxBytes=data.maxBytes??TRANSFORM_BYTES;
+      const {store:source,encodedBytes}=await decodePixelClipboard(data.clip,{maxBytes:maxBytes-store.bytes});
+      transformTiles(source,data.matrix,{target:store,before,filter:data.filter,maxBytes:maxBytes-encodedBytes});
       changesReply(id,store,before);return;
     }
     if(kind==='resample'){

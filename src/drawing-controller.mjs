@@ -9,7 +9,8 @@ import {drawingCelPrefetch} from './onion-skin.mjs';
 import {buildGeometry,drawGeometry} from './pivot/geometry.mjs';
 import {createFrame} from './demo.mjs';
 import {screenToWorld,worldToScreen} from './renderer-geometry.mjs';
-import {TRANSFORM_BYTES,transformSupportBounds,tileIntersects,inverseMatrix,multiplyMatrix} from './drawing-transform.mjs';
+import {TRANSFORM_BYTES,transformSupportBounds,tileIntersects,inverseMatrix,multiplyMatrix,indexedTileCoverage} from './drawing-transform.mjs';
+import {validatePixelClipboard} from './drawing-clipboard.mjs';
 import {selectionMatrix,selectionTiles,selectionPresenter} from './drawing-selection.mjs';
 
 const pointerSample=e=>({clientX:e.clientX,clientY:e.clientY,pressure:e.pressure,pointerType:e.pointerType,timeStamp:e.timeStamp,button:e.button,buttons:e.buttons});
@@ -84,7 +85,7 @@ export class DrawingController {
     if(this.operation)return this.operation.done.then(()=>this.pixelOperation(label,operation,{selection}));
     const owner=this.owner,revision=this.editor.revision,op={owner,selection,abort:new AbortController()};
     op.check=()=>{if(op.abort.signal.aborted||owner!==this.owner||revision!==this.editor.revision)throw new DOMException('Drawing operation superseded.','AbortError');};
-    op.reserve=(surface,requested=TRANSFORM_BYTES)=>{op.check();op.copiedBytes=0;owner.hold(op,0);owner.reserve(0,surface);const s=owner.stats;op.maxBytes=Math.min(requested,Math.max(0,owner.hardBudget-s.bytes-s.historyBytes-s.deferredBytes-s.workingBytes));owner.hold(op,op.maxBytes,surface);};
+    op.reserve=(surface,requested=TRANSFORM_BYTES,headroom=0)=>{op.check();op.copiedBytes=0;owner.hold(op,0);owner.reserve(0,surface);const s=owner.stats;op.maxBytes=Math.min(requested,Math.max(0,owner.hardBudget-s.bytes-s.historyBytes-s.deferredBytes-s.workingBytes-headroom));owner.hold(op,op.maxBytes,surface);};
     op.received=tiles=>owner.hold(op,tiles.reduce((n,t)=>n+(t.pixels?.byteLength??0)+(t.before?.byteLength??0)+(t.after?.byteLength??0)+(t.remaining?.byteLength??0),0));
     this.operation=op;owner.busy=true;this.onStatus(label+'… Escape cancels.');
     op.done=Promise.resolve().then(()=>operation(op)).then(value=>{op.succeeded=true;return value;}).finally(()=>{
@@ -94,13 +95,14 @@ export class DrawingController {
     });
     return op.done;
   }
-  async copyWorkerTiles(surface,op,predicate=()=>true){
+  async copyWorkerTiles(surface,op,predicate=()=>true,{encoded=false}={}){
     const tiles=[];let copied=0;
     for(const tile of surface.store){
       if(!predicate(tile))continue;
-      if((op.copiedBytes??0)+tile.pixels.byteLength>op.maxBytes)throw new Error('The operation exceeds the drawing working memory limit.');
-      op.copiedBytes=(op.copiedBytes??0)+tile.pixels.byteLength;
-      tiles.push({tx:tile.tx,ty:tile.ty,pixels:tile.pixels.slice().buffer,alphaBounds:tile.alphaBounds});
+      const field=encoded&&tile.png?.byteLength<=65536?'png':'pixels',bytes=tile[field];
+      if((op.copiedBytes??0)+bytes.byteLength>op.maxBytes)throw new Error('The operation exceeds the drawing working memory limit.');
+      op.copiedBytes=(op.copiedBytes??0)+bytes.byteLength;
+      tiles.push({tx:tile.tx,ty:tile.ty,[field]:bytes.slice().buffer,alphaBounds:tile.alphaBounds});
       if(++copied%128===0){await yieldToInput();op.check();}
     }
     return tiles;
@@ -360,35 +362,39 @@ export class DrawingController {
     if(action==='reset-rotation'){this.state.view.rotation=0;this.onRender();return;}
     if(action==='delete-pixels'){const s=this.selection;if(!s)return;return this.commitSelection(s,'Delete selected pixels',{remove:true});}
     if(action==='duplicate-layer'){await this.barrier();const source=e.getLayer(e.activeLayerId),end=e.report._styk.layerSheet.tracks[source.id].end;const old=e._sheetClipboard;try{e.sheetCopyFrames([source.id],0,end-1);return e.movieclipBatch('Duplicate drawing layer',()=>{const layer=e.createLayer(source.name+' copy',{drawing:true});e.sheetPasteFrames([layer.id],0);});}finally{e._sheetClipboard=old;}}
-    if(['copy-pixels','cut-pixels'].includes(action))return this.getClipboard().copy('drawing-pixels',async()=>{
+    if(['copy-pixels','cut-pixels'].includes(action))return this.pixelOperation('Copying pixels',async op=>{
       const s=this.selection;if(!s)throw new Error('Select pixels with the lasso first.');
-      await this.pixelOperation('Copying pixels',async op=>{
-        op.reserve(s.surface);
-        const tiles=await this.copyWorkerTiles({store:s.source},op);
-        const result=await op.owner.worker.request('copy-selection',{selection:{tiles,bounds:s.bounds,matrix:selectionMatrix(s),filter:this.settings.filter,maxBytes:op.maxBytes}},{signal:op.abort.signal,transfer:tiles.map(t=>t.pixels)});
+      await this.getClipboard().copy('drawing-pixels',async()=>{
+        op.reserve(s.surface,op.owner.hardBudget,op.owner.scratchBudget);
+        const tiles=await this.copyWorkerTiles({store:s.source},op,()=>true,{encoded:true});
+        const result=await op.owner.worker.request('copy-selection',{tiles,maxBytes:op.maxBytes},{signal:op.abort.signal,transfer:tiles.map(t=>t.png??t.pixels)});
         op.check();if(this.selection!==s)throw new DOMException('The selection changed. Copy it again.','AbortError');
-        const rect=result.bounds,matrix=multiplyMatrix(this.pixelMatrix(s.target),[1,0,0,1,rect.x,rect.y]),world={x:matrix[4],y:matrix[5]};
-        e._drawingPixelClipboard={pixelsPerUnit:drawingMetadata(s.target.figure).pixelsPerUnit,...rect,dataUrl:result.dataUrl,world,matrix};
-        if(action==='cut-pixels')await this.commitSelection(s,'Cut selected pixels',{remove:true,operation:op});
-      });
+        // Encoding is finished; retain only the packet/transfer working set
+        // while the native clipboard acknowledges its bounded chunks.
+        op.owner.hold(op,result.tiles.reduce((n,t)=>n+t.png.length*4+128,0)+128*1024,s.surface);
+        const bounds=s.source.bounds,matrix=multiplyMatrix(this.pixelMatrix(s.target),selectionMatrix(s)),world=transformPoint(matrix,bounds??s.bounds);
+        const clip={version:2,pixelsPerUnit:drawingMetadata(s.target.figure).pixelsPerUnit,bounds,tiles:result.tiles,world,matrix};validatePixelClipboard(clip);e._drawingPixelClipboard=clip;return true;
+      },{signal:op.abort.signal,checkCurrent:op.check});
+      op.check();if(action==='cut-pixels')await this.commitSelection(s,'Cut selected pixels',{remove:true,operation:op});
       return true;
     });
-    if(action==='paste-pixels')return this.getClipboard().paste('drawing-pixels',()=>this.pixelOperation('Pasting pixels',async op=>{
-      const clip=e._drawingPixelClipboard;if(!clip)throw new Error('Copy selected pixels first.');this.cancelSelection();
+    if(action==='paste-pixels')return this.pixelOperation('Pasting pixels',op=>this.getClipboard().paste('drawing-pixels',async()=>{
+      const clip=e._drawingPixelClipboard;if(!clip)throw new Error('Copy selected pixels first.');validatePixelClipboard(clip);this.cancelSelection();if(clip.version===2&&!clip.tiles.length)return false;
       const owner=op.owner;
       let target=e.prepareDrawingCel({pixelsPerUnit:this.settings.resolution,world:clip.world}),surface;
       try{
-        surface=await owner.surface(target.figure);op.check();surface.pinned=true;op.reserve(surface);
+        surface=await owner.surface(target.figure);op.check();surface.pinned=true;op.reserve(surface,owner.hardBudget,owner.scratchBudget);
         const d=drawingMetadata(target.figure);
         if(d.version===1){const figure=migrateDrawingFigure(target.figure,e.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1),{bounds:surface.store.bounds});owner.retarget(d.celId,figure);target={...target,figure,object:{...structuredClone(target.object),figure_type_id:figure.figure_type_id},migratedFrom:d.celId};}
         const sourceMatrix=clip.matrix??[1/clip.pixelsPerUnit,0,0,1/clip.pixelsPerUnit,clip.world?.x??0,clip.world?.y??0];
         const matrix=multiplyMatrix(inverseMatrix(this.pixelMatrix(target)),sourceMatrix).map(n=>Math.abs(n-Math.round(n))<1e-9?Math.round(n):n);
-        const bounds=transformSupportBounds({x:0,y:0,width:clip.width,height:clip.height},matrix,this.settings.filter);
-        const tiles=await this.copyWorkerTiles(surface,op,t=>tileIntersects(t,bounds));
-        const result=await owner.worker.request('paste',{tiles,clip:{width:clip.width,height:clip.height,dataUrl:clip.dataUrl},matrix,filter:this.settings.filter,maxBytes:op.maxBytes},{signal:op.abort.signal,transfer:tiles.map(t=>t.pixels)});
+        const coverage=clip.version===2?indexedTileCoverage(clip.tiles,matrix,this.settings.filter,op.maxBytes):null;
+        const bounds=coverage?null:transformSupportBounds({x:0,y:0,width:clip.width,height:clip.height},matrix,this.settings.filter);
+        const tiles=await this.copyWorkerTiles(surface,op,t=>coverage?coverage.has(tileKey(t.tx,t.ty)):tileIntersects(t,bounds));
+        const result=await owner.worker.request('paste',{tiles,clip,matrix,filter:this.settings.filter,maxBytes:op.maxBytes},{signal:op.abort.signal,transfer:tiles.map(t=>t.pixels)});
         op.check();op.received(result.tiles);return e.commitDrawingPixels(target,result.tiles,'Paste selected pixels');
       }finally{if(surface){surface.pinned=false;owner.present(surface);}owner.discard(target.figure);}
-    }));
+    },{signal:op.abort.signal,checkCurrent:op.check}));
     if(action==='resample'){
       const target=e.drawingTarget();if(!target.figure)throw new Error('Paint a drawing before resampling it.');
       const resolution=this.settings.resolution,d=drawingMetadata(target.figure),ratio=resolution/d.pixelsPerUnit;

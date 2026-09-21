@@ -33,7 +33,7 @@ export async function decodeTileBlob(url,{maxBytes=TILE_BLOB_MAX_PIXELS}={}){
     const tx=view.getInt32(offset,true),ty=view.getInt32(offset+4,true),length=view.getUint32(offset+8,true);offset+=12;
     const key=tileKey(tx,ty);if(seen.has(key))throw new Error('Drawing tile blob contains duplicate tiles.');seen.add(key);
     if(offset+length>bytes.length||length>TILE_BLOB_MAX_BYTES)throw new Error('Truncated drawing tile blob.');
-    const tile=await decodeDrawingPNGBytes(bytes.subarray(offset,offset+length));offset+=length;
+    const tile=await decodeDrawingPNGBytes(bytes.subarray(offset,offset+length),{width:TILE,height:TILE});offset+=length;
     if(tile.width!==TILE||tile.height!==TILE)throw new Error('Drawing tile blob carries a non-tile image.');
     decoded+=tile.pixels.byteLength;if(decoded>TILE_BLOB_MAX_PIXELS)throw new Error('Drawing tile blob expands beyond its pixel bound.');
     tiles.push({tx,ty,pixels:tile.pixels,png:bytes.slice(offset-length,offset)});

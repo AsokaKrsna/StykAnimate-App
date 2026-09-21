@@ -64,7 +64,14 @@ function planTransform(source,matrix,filter,maxBytes,baseBytes,tileCost){
 /** Existing destination tiles must be seeded from the same sparse support
  * used by the transform, including filtering across tile boundaries. */
 export function transformTileCoverage(source,matrix,filter='smooth',maxBytes=TRANSFORM_BYTES){
-  return planTransform(source,matrix,filter,maxBytes,source.bytes,TILE_BYTES*2).candidates;
+  return planTransform(source,matrix,filter,maxBytes,source.bytes,TILE_BYTES).candidates;
+}
+
+/** A serialized tile index can seed destination pixels without decoding PNGs
+ * on the UI thread. Full tile support conservatively includes transparent edges. */
+export function indexedTileCoverage(tiles,matrix,filter='smooth',maxBytes=TRANSFORM_BYTES){
+  const source={bytes:tiles.length*TILE_BYTES,*[Symbol.iterator](){for(const {tx,ty} of tiles)yield{tx,ty,alphaBounds:{x:0,y:0,width:TILE,height:TILE}};}};
+  return transformTileCoverage(source,matrix,filter,maxBytes);
 }
 
 /** Cache the four adjacent tiles used by bilinear interpolation. Sampling
@@ -88,12 +95,32 @@ export function transformTiles(source,matrix,{target=new TileStore(),before,filt
   if(source===target)throw new Error('Transform source must be an immutable snapshot.');
   let historyBytes=0;for(const pixels of before?.values()??[])historyBytes+=pixels?.byteLength??0;
   const baseBytes=source.bytes+target.bytes+historyBytes+256*256*4;
-  const plan=planTransform(source,matrix,filter,maxBytes,baseBytes,TILE_BYTES*(before?2:1));
+  // A private destination allocates one tile per candidate: a new output tile
+  // or the before-side of an existing one. Only shared frozen destinations
+  // also need a writable copy. Source/target/already-captured bytes are above.
+  const tileCost=TILE_BYTES*(before&&[...target].some(t=>t.frozen)?2:1);
+  const plan=planTransform(source,matrix,filter,maxBytes,baseBytes,tileCost);
   const f=2**plan.level,input=levelStore({store:source},plan.level),m=[matrix[0]*f,matrix[1]*f,matrix[2]*f,matrix[3]*f,matrix[4],matrix[5]],inv=inverseMatrix(m);
   // Exact lattice mappings (translations, right-angle rotations, reflections)
   // avoid rounding and preserve every nonzero-alpha source byte.
   const lattice=inv.every(Number.isInteger)&&inv[0]**2+inv[1]**2===1&&inv[2]**2+inv[3]**2===1&&inv[0]*inv[2]+inv[1]*inv[3]===0;
   const nearest=filter==='nearest'||lattice,read=sampler(input),rgba=new Float64Array(4);
+  // Whole-tile translations into empty space need neither sampling nor blending.
+  // Keep the same preflight and undo contract as the general affine path, and
+  // leave overlapping tiles to source-over below. Hidden RGB contributes nothing
+  // under zero alpha, just as in the sampler.
+  if(!plan.level&&matrix[0]===1&&matrix[1]===0&&matrix[2]===0&&matrix[3]===1&&matrix[4]%TILE===0&&matrix[5]%TILE===0){
+    const dx=matrix[4]/TILE,dy=matrix[5]/TILE;
+    for(const tile of source){
+      if(tileTransparent(tile))continue;
+      const tx=tile.tx+dx,ty=tile.ty+dy,key=tileKey(tx,ty);
+      if(target.has(tx,ty))continue;
+      if(before&&!before.has(key))before.set(key,null);
+      const output=target.writable(tx,ty);output.pixels.set(tile.pixels);
+      for(let i=0;i<TILE_BYTES;i+=4)if(!output.pixels[i+3])output.pixels.fill(0,i,i+3);
+      output.alphaBounds=tile.alphaBounds;plan.candidates.delete(key);
+    }
+  }
   for(const [key,{tx,ty}] of plan.candidates){
     // One bounded source window per output tile removes Map lookups from the
     // common sampling loop. Extreme nearest-neighbor reductions still use

@@ -73,9 +73,11 @@ cel also captures its pending undo/redo changes against the published base.
 Clipboard capture
 forks the store at copy time; a subsequent source edit cannot alter the
 captured copy. Runtime values never enter document data. Pixel clipboard data
-includes the selection's full pixel-to-world affine pose, so pastes preserve
-position, rotation and mirroring across different cel poses. Older clipboard
-packets with only a world origin remain supported. Aligned copies and
+includes the source tiles and selection's full pixel-to-world affine pose, so
+pastes preserve position, rotation and mirroring across different cel poses
+without rasterizing the copy and filtering it again on paste. Older dense PNG
+packets, including ones with only a world origin, remain readable. New sparse
+packets require a current StykAnimate version at the destination. Aligned copies and
 right-angle rotations/reflections preserve exact nonzero-alpha RGBA. Scaling
 and transformed selections use a shared worker rasterizer. Paste compositing, fill and tile history run in the
 drawing worker.
@@ -94,15 +96,39 @@ surfaces. Lasso input remains bounded to 8,192 vertices and the working memory
 budget.
 
 `drawing-transform.mjs` is the shared affine kernel for selection commits,
-copy, paste and resolution changes. It plans output tiles from occupied source
+paste and resolution changes. It plans output tiles from occupied source
 tiles, preflights memory and coordinate bounds, and includes filter footprints
 when seeding existing destination tiles. Premultiplied bilinear sampling uses
 box-filtered mip levels for reduction; nearest sampling preserves pixel-art
 edges. Sampling uses a bounded source window per output tile, with sparse
 lookups for extreme reductions. No full drawing rectangle is allocated during
-resampling. Individual jobs are limited by available working memory, with a
-384 MiB transform ceiling. Dense clipboard PNGs remain limited to 16 MP and
-8192 pixels per side; copying/transcoding them runs in the worker.
+resampling. Exact tile-aligned translations into empty destination tiles copy
+bytes directly; overlapping tiles still use the same source-over sampler.
+Individual jobs are limited by available working memory. Selection and resample
+jobs also retain their 384 MiB ceiling; clipboard jobs use the owner's available
+allowance, leaving one scratch budget for previews.
+
+`drawing-clipboard.mjs` owns the version-2 sparse pixel packet. It transports
+64×64 PNG tiles through the existing bounded native clipboard wire protocol,
+reuses published PNG bytes, and encodes partial selections in the pixel worker.
+The index and affine matrix seed only relevant destination tiles, including the
+filter footprint, without decoding PNGs on the UI thread. Decode validates PNG
+dimensions before inflation, limits concurrent streams to eight, preserves index
+order and settles in-flight streams before reporting failure. No sparse-copy
+limit depends on bounding-box area or distance between occupied tiles.
+
+Packet bounds remain explicit: at most 32,768 tiles, 128 MiB of PNG text and
+64 KiB of encoded data per tile. Actual jobs may hit the available pixel working
+budget earlier. Native wire transfers retain their 256 MiB limit and 256 KiB
+chunks; the shared wire decoder has a separate 512 MiB resident allowance.
+These are component allocation bounds, not a whole-process RSS guarantee.
+Legacy dense clipboard PNGs retain their original 16 MP / 8192-pixel limits.
+
+Cut publishes the complete clipboard before removing pixels. Failed writes
+preserve the selection, artwork and undo cursor. Cancellation covers native
+reads/writes, worker work and the final revision check; a cancelled transfer
+cannot commit a cut or paste. If cancellation arrives after native publication,
+the new clipboard may already be visible, but the artwork remains intact.
 
 Fill, copy, paste, resample, selection capture and commits share one pixel transaction
 gate. Save and editing commands await publication; a following pointer gesture
@@ -307,9 +333,9 @@ resolution-independent drawing are outside this implementation. Fill regions
 are bounded to 64 megapixels and follow stage plus artwork bounds, independently
 of zoom. Scanline fill keeps tiled source/output pixels, bounded masks and a
 bounded span stack, with a fast path for uniform regions. Cancellation terminates
-the worker and the next operation starts a fresh worker. PNG clipboard regions
-still have 16-megapixel limits. Sparse lasso capture, resampling and transformed
-paste output are bounded by occupied tiles and available memory instead of a
+the worker and the next operation starts a fresh worker. New clipboard packets,
+sparse lasso capture, resampling and transformed paste output are bounded by
+occupied tiles and available memory instead of a
 dense bounding-box limit. The embedded tile-blob and native-container limits
 remain separate persistence constraints.
 

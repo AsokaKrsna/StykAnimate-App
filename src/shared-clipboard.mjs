@@ -1,7 +1,7 @@
 import {clipboardWireChunks, createClipboardWireDecoder} from './clipboard-wire.mjs';
 import {createFrame} from './demo.mjs';
 import {validateCameraMotion} from './camera-motion.mjs';
-import {inverseMatrix} from './drawing-transform.mjs';
+import {validatePixelClipboard} from './drawing-clipboard.mjs';
 import {drawingBarrier} from './drawing-resources.mjs';
 
 const abort = () => new DOMException('The document changed during the clipboard operation.', 'AbortError');
@@ -35,9 +35,7 @@ export async function restoreClipboard(editor, packet, checkCurrent = () => {}) 
     if (data.version !== 1 || !Array.isArray(data.rows) || !data.rows.length || !Number.isInteger(data.duration) || data.duration < 1 || !Array.isArray(data.figures) || !data.rows.every(row => typeof row.id === 'string' && Array.isArray(row.keys))) throw new Error('Invalid timeline clipboard.');
     editor._sheetClipboard = {...data, document: null};
   } else if (kind === 'drawing-pixels') {
-    if(![data.width,data.height].every(n=>Number.isInteger(n)&&n>0&&n<=8192)||data.width*data.height>16*1024*1024||![1,2,4].includes(data.pixelsPerUnit)||typeof data.dataUrl!=='string'||!data.dataUrl.startsWith('data:image/png;base64,')||data.dataUrl.length>96*1024*1024)throw new Error('Invalid drawing pixel clipboard.');
-    if(!data.world||![data.world.x,data.world.y].every(Number.isFinite))throw new Error('Invalid drawing pixel origin.');
-    if(data.matrix)inverseMatrix(data.matrix);
+    validatePixelClipboard(data);
     editor._drawingPixelClipboard=data;
   } else if (kind === 'camera-motion') {
     validateCameraMotion({version:1,clips:[data]});editor._cameraMotionClipboard=data;
@@ -59,10 +57,12 @@ export class SharedClipboard {
     });
     this.pending = result; return result;
   }
-  copy(kind, operation) {
-    return this.run(async () => {
-      const revision=this.editor.revision;await drawingBarrier(this.editor.report);if(revision!==this.editor.revision)throw abort();
+  copy(kind, operation, {signal,checkCurrent=()=>{}}={}) {
+    return this.run(async checkDocument => {
+      const check=()=>{checkDocument();if(signal?.aborted)throw abort();checkCurrent();};
+      check();const revision=this.editor.revision;await drawingBarrier(this.editor.report);check();if(revision!==this.editor.revision)throw abort();
       const result = await operation();
+      check();
       if (!result) return result;
       const packet = clipboardSnapshot(this.editor, kind);
       if (!packet) return result;
@@ -73,9 +73,12 @@ export class SharedClipboard {
       this.id = null;
       const transfer = await this.desktop.beginSharedClipboardWrite();
       try {
-        for await (const bytes of clipboardWireChunks(packet, {maxResidentBytes: 512 * 1024 * 1024}))
-          await this.desktop.writeSharedClipboardChunk(transfer.token, bytes);
-        const saved = await this.desktop.finishSharedClipboardWrite(transfer.token); this.id = saved.id;
+        check();
+        for await (const bytes of clipboardWireChunks(packet, {maxResidentBytes: 512 * 1024 * 1024,signal,checkCurrent:check})){
+          check();await this.desktop.writeSharedClipboardChunk(transfer.token, bytes);check();
+        }
+        check();
+        const saved = await this.desktop.finishSharedClipboardWrite(transfer.token);check();this.id = saved.id;
       } catch (error) { await this.desktop.cancelSharedClipboardTransfer(transfer.token); throw error; }
       return result;
     });
@@ -96,11 +99,12 @@ export class SharedClipboard {
       return this.kind;
     } finally { decoder.dispose(); await this.desktop.cancelSharedClipboardTransfer(transfer.token); }
   }
-  paste(kind, operation) {
-    return this.run(async checkCurrent => {
-      const current = await this.read(checkCurrent); checkCurrent();
+  paste(kind, operation, {signal,checkCurrent=()=>{}}={}) {
+    return this.run(async checkDocument => {
+      const check=()=>{checkDocument();if(signal?.aborted)throw abort();checkCurrent();};
+      check();const current = await this.read(check);check();
       if (this.desktop?.beginSharedClipboardRead && !current) throw new Error('Copy figures or frames in StykAnimate first.');
-      if (kind && current && current !== kind) throw new Error(current === 'figures' ? 'Paste the copied figures on the canvas.' : 'Paste the copied frames in the timeline.');
+      if (kind && current && current !== kind) throw new Error(current === 'figures' ? 'Paste the copied figures on the canvas.' : current === 'drawing-pixels' ? 'Paste the copied pixels in Draw.' : 'Paste the copied frames in the timeline.');
       return operation(current);
     });
   }
