@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PlaybackCache} from '../src/playback.mjs';
-import {previewMemoryPlan} from '../src/playback-budget.mjs';
+import {previewMemoryPlan, playbackWorkerMemoryPlan} from '../src/playback-budget.mjs';
+import {PlaybackResources} from '../src/playback-resources.mjs';
+import {Worker} from 'node:worker_threads';
 import {createDemo} from '../src/demo.mjs';
 
 test('pixel packet admission follows cache capacity instead of the vector buffer limit',async()=>{
@@ -28,6 +30,90 @@ test('raster retention scales with available memory without exceeding its partit
     assert.ok(plan.workerVectors<=plan.cpuFrames/8);
   }
   assert.equal(previewMemoryPlan(8).workerRasters,128*1024*1024);
+});
+
+test('aggregate retention includes every worker and its encoded sources and drawing caches',()=>{
+  for(const memory of [.5,2,8,32,undefined]){
+    const single=previewMemoryPlan(memory,1), triple=previewMemoryPlan(memory,3);
+    const perWorker=single.workerImages+single.workerSources+single.workerRasters+single.workerVectors+single.workerDrawings+single.workerTints;
+    assert.equal(single.workerRetainedBytes,perWorker);
+    assert.equal(triple.workerPoolBytes,perWorker*3);
+    assert.equal(triple.retainedBytes-single.retainedBytes,perWorker*2);
+  }
+});
+
+test('controller cache limits reach actual worker resource owners and retain exact packets',async t=>{
+  const workerFactory=()=>{
+    const worker=new Worker(new URL('./playback-node-worker.mjs',import.meta.url));
+    return {postMessage:m=>worker.postMessage(m),terminate:()=>worker.terminate(),
+      addEventListener:(type,handler)=>worker.on(type,data=>handler(type==='message'?{data}:data))};
+  };
+  const bytes=64*1024, cache=new PlaybackCache({maxBytes:bytes,workerCount:2,workerFactory});
+  t.after(()=>cache.dispose());
+  cache.load(createDemo());await cache.prepareRange([0,1]);
+  const plan=playbackWorkerMemoryPlan(bytes);
+  assert.equal(cache.stats.workerMemoryPlan.poolRetainedBytes,plan.retainedBytes*2);
+  for(const snapshot of cache.stats.workerCaches){
+    assert.ok(snapshot.vectorBytes>0);
+    assert.ok(snapshot.vectorBytes<=plan.vectors);
+  }
+  assert.equal(cache.stats.workerCacheTotals.vectorBytes,cache.stats.workerCaches.reduce((n,s)=>n+s.vectorBytes,0));
+  assert.ok(cache.stats.documentTransferEstimate>0);
+  const generous=new PlaybackCache({maxBytes:32*1024*1024,workerFactory});t.after(()=>generous.dispose());
+  generous.load(createDemo());await generous.prepareRange([0,1]);
+  for(const tick of [0,1]){
+    assert.deepEqual(cache.get(tick).shapes,generous.get(tick).shapes);
+    assert.deepEqual(cache.get(tick).transforms,generous.get(tick).transforms);
+  }
+});
+
+test('explicit raster retention bounds allocations and releases evicted originals',async()=>{
+  const resources=new PlaybackResources({maxBytes:4096,maxPacketBytes:4096,maxRasterBytes:16,maxVectorBytes:16});
+  const bitmaps=[];
+  const bitmap=()=>{const b={width:2,height:2,closed:false,close(){this.closed=true;}};bitmaps.push(b);return b;};
+  resources.artworkBitmaps.clone=async()=>bitmap();
+  try{
+    const first=await resources.artworkBitmaps.packetBitmap('first',bitmap);first.close();
+    const second=await resources.artworkBitmaps.packetBitmap('second',bitmap);second.close();
+    assert.ok(bitmaps[0].closed,'Prior retained original must be evicted');
+    assert.equal(resources.cacheSnapshot().rasterBytes,16);
+    assert.equal(resources.vectors.maxBytes,16);
+  }finally{resources.dispose();}
+  assert.ok(bitmaps.every(b=>b.closed));
+  assert.equal(resources.cacheSnapshot().rasterBytes,0);
+});
+
+test('worker totals replace per-owner snapshots, reject stale results and follow resource lifetime',()=>{
+  const cache=new PlaybackCache({workerCount:2,workerFactory:()=>({postMessage(){},addEventListener(){},terminate(){}})});
+  const deliver=(index,bytes,revision=cache.revision)=>cache._receive({type:'packet',tick:99,revision,
+    packet:{compatibility:[],workerCache:{rasterBytes:bytes,vectorBytes:10}}},cache.workers[index]);
+  try{
+    deliver(0,100);deliver(1,200);deliver(0,120);
+    assert.equal(cache.stats.workerCacheTotals.rasterBytes,320,'Unrequested packets still report retained worker memory');
+    const revision=cache.revision;cache.invalidate({retainDocument:true});
+    assert.equal(cache.stats.workerCacheTotals.rasterBytes,320);
+    deliver(1,900,revision);assert.equal(cache.stats.workerCacheTotals.rasterBytes,320);
+    deliver(1,0);assert.equal(cache.stats.workerCacheTotals.rasterBytes,120);
+    cache.invalidate();assert.deepEqual(cache.stats.workerCacheTotals,{});
+    deliver(0,10);cache._fail(new Error('Simulated worker failure'));
+    assert.deepEqual(cache.stats.workerCacheTotals,{});
+    deliver(1,100);assert.deepEqual(cache.stats.workerCacheTotals,{},'Late failed-worker messages cannot resurrect released caches');
+  }finally{cache.dispose();}
+});
+
+test('a superseded snapshot cannot charge transfers to the next revision',async()=>{
+  const cache=new PlaybackCache({workerFactory:()=>({postMessage(){},addEventListener(){},terminate(){}})});
+  let entered,release;
+  const waiting=new Promise(resolve=>entered=resolve),acknowledgment=new Promise(resolve=>release=resolve);
+  cache._broadcastLoad=message=>{if(message.chunk?.estimatedBytes){entered();return acknowledgment;}return Promise.resolve();};
+  cache._yieldLoad=async()=>{};
+  try{
+    cache.load(createDemo());const loading=cache._loadPromise;await waiting;
+    cache.invalidate({retainDocument:true});cache.stats.documentTransferEstimate=17;
+    release();await loading.catch(error=>assert.equal(error.name,'AbortError'));
+    assert.equal(cache.stats.documentTransferEstimate,17);
+    assert.equal(cache._mirrorAvailable,false);
+  }finally{release();cache.dispose();}
 });
 
 test('startup buffering respects short ranges, known memory limits, and shared footprints',()=>{

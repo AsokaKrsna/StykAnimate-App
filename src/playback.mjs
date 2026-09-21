@@ -5,7 +5,7 @@ import { playbackProperties, retainedSourceChanges } from './playback-patch.mjs'
 import {PlaybackPlanner} from './playback-planning.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
 import {PlaybackBitmapPool,packetFootprint,closePacketBitmaps} from './playback-bitmap-pool.mjs';
-import {playbackMemoryBudget, previewMemoryPlan, playbackWorkerCount} from './playback-budget.mjs';
+import {playbackMemoryBudget, playbackWorkerMemoryPlan, playbackWorkerCount} from './playback-budget.mjs';
 import {playbackRetentionSnapshot,unchangedPlaybackTicks} from './playback-retention.mjs';
 
 const abortError = message => { const error = new Error(message); error.name = 'AbortError'; return error; };
@@ -51,6 +51,9 @@ export class PlaybackCache {
       this.workers.push(client);
     }
     this.stats.workerCount = count;
+    this.workerMemoryPlan = playbackWorkerMemoryPlan(maxBytes);
+    this.stats.workerMemoryPlan = {...this.workerMemoryPlan, workers: count, poolRetainedBytes: this.workerMemoryPlan.retainedBytes * count};
+    this.stats.workerCaches = Array(count).fill(null); this.stats.workerCacheTotals = {};
     // The primary worker remains the owner endpoint for background planning,
     // which keeps a single job stream instead of duplicating plan requests.
     this.worker = this.workers[0].worker;
@@ -219,6 +222,7 @@ export class PlaybackCache {
     Object.assign(this.stats, { revision: this.revision, bytes: this.bitmapPool.bytes, readyFrames: this.cache.size, retainedFrames: this.cache.size,
       pendingFrames: 0,bitmapResources:this.bitmapPool.resources.size,footprintBytes:this._footprintBytes,workerCache:null,lastSharing:null,reusedGeometryObjects:0 });
     if (!retainDocument) {
+      this.stats.workerCaches.fill(null); this.stats.workerCacheTotals = {};
       this._mirrorAvailable = false; this._frameUpdates.clear(); this._sourceUpdates.clear();
       this._figureUpdates.clear();
       this._mirrorSources.clear(); this._mirrorTables = null; this._patchPending = false;
@@ -242,16 +246,19 @@ export class PlaybackCache {
     // worker checks vector buffers separately instead of capping all pixels.
     const options = { scale: this.scale, cameraEnabled: this.cameraEnabled, storedFrames: this.storedFrames, vfxEnabled:this.vfxEnabled!==false, baseURL: this.baseURL, token: this.token,
       softwareFrames: Boolean(this.softwareFrames), gpuIsolation: this.gpuIsolation, hiddenUids: this.hiddenUids, hiddenKey: this.hiddenKey || '',
-      acknowledgePackets: true, maxPacketBytes: this.maxBytes * .8, maxAssetBytes: Math.min(previewMemoryPlan().workerImages, this.maxBytes / 4) };
+      acknowledgePackets: true, maxPacketBytes: this.maxBytes * .8, maxAssetBytes: this.workerMemoryPlan.images,
+      maxRasterBytes: this.workerMemoryPlan.rasters, maxVectorBytes: this.workerMemoryPlan.vectors };
     this.stats.loadKind = 'document'; this.stats.loadChunks = 0; this.stats.loadSerializationMs = 0; this.stats.loadMaxTaskMs = 0;
     this.stats.maxChunkBytes = 0; this.stats.patchFrames = 0; this.stats.patchFigures = 0;
     this.stats.patchSourceUpserts = 0; this.stats.patchSourceDeletes = 0;
+    this.stats.documentTransferEstimate = 0;
     const task = (async () => {
       await drawingBarrier(this.report);
       let sequence = 0;
       for (const chunk of documentChunks(renderReport,{maxBytes:1024*1024,timeBudgetMs:2,sharedFigures:true})) {
         if (revision !== this.revision || this.disposed) throw abortError('Playback snapshot was superseded.');
         await this._broadcastLoad({ type: 'load-chunk', revision, sequence: sequence++, chunk, options });
+        if (revision === this.revision) this.stats.documentTransferEstimate += (chunk.estimatedBytes || 0) * this.workers.length;
         await this._yieldLoad();
       }
       await this._broadcastLoad({ type: 'load-complete', revision, sequence }, 'loaded');
@@ -419,7 +426,7 @@ export class PlaybackCache {
     }
   }
   _acceptMessage(message, client = this.workers[0]) {
-    if (this.disposed || message.revision !== this.revision) { closePacket(message.packet); return; }
+    if (this.disposed || this.failure || message.revision !== this.revision) { closePacket(message.packet); return; }
     if (client === this.workers[0] && this.planner.receive(message)) return;
     const loading = client.loadAck;
     if (loading && message.type === loading.responseType && message.sequence === loading.sequence) {
@@ -427,6 +434,16 @@ export class PlaybackCache {
     }
     if (message.type === 'load-error') { this._fail(new Error(message.message)); return; }
     if (message.type === 'loaded') return;
+    // Every current packet updates its owner, including packets discarded after
+    // a prefetch trim. These snapshots describe the worker cache, not CPU LRU
+    // residency; retaining a document through a view change retains its caches.
+    if (message.type === 'packet' && message.packet?.workerCache) {
+      this.stats.workerCaches[client.index] = {...message.packet.workerCache};
+      const totals = {};
+      for (const snapshot of this.stats.workerCaches) for (const [key, value] of Object.entries(snapshot || {}))
+        if (Number.isFinite(value) && value >= 0) totals[key] = (totals[key] || 0) + value;
+      this.stats.workerCacheTotals = totals;
+    }
     const pending = this.pending.get(message.tick);
     if (!pending) { closePacket(message.packet); return; }
     clearTimeout(pending.timer); this.pending.delete(message.tick); this.stats.pendingFrames = this.pending.size;
@@ -490,6 +507,7 @@ export class PlaybackCache {
     this.planner.cancel(error);
     this._abortLoad(error);
     for (const client of this.workers) client.worker.terminate();
+    this.stats.workerCaches.fill(null); this.stats.workerCacheTotals = {};
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(error); }
     this.pending.clear(); this.stats.pendingFrames = 0; this.onError?.(error);
   }

@@ -13,16 +13,17 @@ export {assetURL, imageDrawNeed} from './image-resources.mjs';
 export class PlaybackResources extends ImageResources {
   constructor(options = {}) {
     super(options);
-    const {preview = false, maxPacketBytes = 128 * 1024 * 1024} = options;
+    const {preview = false, maxPacketBytes = 128 * 1024 * 1024,
+      maxRasterBytes = previewMemoryPlan().workerRasters, maxVectorBytes = previewMemoryPlan().workerVectors} = options;
     this.rasterSurfaces = new RasterSurfacePool();
     // Isolate path rasterization from WebGPU presentation. Image compositing
     // keeps acceleration to avoid expensive GPU-to-CPU source readbacks.
     this.pathRasterSurfaces = preview ? new RasterSurfacePool({contextOptions:{willReadFrequently:true}}) : this.rasterSurfaces;
     // The hardware plan already reserves retained originals separately from
     // packet uploads. A per-packet limit is a ceiling, not another partition.
-    this.artworkBitmaps = new PlaybackRasterCache({maxBytes: Math.min(previewMemoryPlan().workerRasters, maxPacketBytes)});
+    this.artworkBitmaps = new PlaybackRasterCache({maxBytes: Math.min(maxRasterBytes, maxPacketBytes)});
     this.geometryDescriptors = new WeakMap();
-    this.vectors = new PlaybackVectorCache({maxBytes:Math.min(previewMemoryPlan().workerVectors,maxPacketBytes)});
+    this.vectors = new PlaybackVectorCache({maxBytes:Math.min(maxVectorBytes,maxPacketBytes)});
     this.drawingProvider = new DrawingTileProvider({budgetBytes: Math.min(96 * 1024 * 1024, Math.max(16 * 1024 * 1024, this.maxBytes))});
     // Onion tints over drawing scratch canvases, keyed by color+stamp+anchor.
     const tints = new Map(); let tintBytes = 0;
@@ -40,6 +41,14 @@ export class PlaybackResources extends ImageResources {
   }
   /** drawGeometry reads live drawing tiles through this hook, like the editor. */
   drawing = (figure) => this.drawingProvider.presenter(figure);
+  cacheSnapshot() {
+    let tintBytes = 0;
+    for (const entry of this.tintCanvases.values()) tintBytes += entry.bytes;
+    return {imageBytes: this.bytes, sourceBytes: this.sourceBytes,
+      rasterBytes: this.artworkBitmaps.bytes, rasterEntries: this.artworkBitmaps.entries.size,
+      vectorBytes: this.vectors.bytes, vectorEntries: this.vectors.lru.size,
+      drawingBytes: this.drawingProvider.bytes, tintBytes};
+  }
   rasterSurface(width,height,{hasImages=false}={}) {
     // Small path surfaces avoid GPU-service stalls. Large fills need GPU
     // throughput; image surfaces also avoid reading accelerated sources back.

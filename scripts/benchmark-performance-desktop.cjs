@@ -50,6 +50,42 @@ async function run(window) {
   })()`);
   assert.ok(imported.frames > 1); assert.equal(imported.timings.cache_hit, false); assert.deepEqual(imported.errors, []);
   const processes = app.getAppMetrics();
+  const playback = process.env.STYK_BENCH_PLAYBACK === '1' ? await execute(`(async () => {
+    const renderer = styk.state.renderer, render = renderer.renderPrepared;
+    if (typeof render !== 'function') throw new Error('Playback attribution requires the WebGPU path');
+    const presented = [], tasks = [], errors = [], before = structuredClone(styk.performance());
+    const observer = new PerformanceObserver(list => tasks.push(...list.getEntries().map(e => ({at:e.startTime,ms:e.duration}))));
+    const onError = event => errors.push(event.message); window.addEventListener('error', onError);
+    observer.observe({type:'longtask'});
+    const firstTick = styk.editor.tick >= styk.editor.totalTicks-1 ? 0 : styk.editor.tick;
+    const started = performance.now(), target = Math.min(64, styk.editor.totalTicks-firstTick);
+    renderer.renderPrepared = function(...args) {
+      const at = performance.now(), result = render.apply(this, args), tick = styk.editor.tick;
+      if (result && styk.state.playing && presented.at(-1)?.tick !== tick)
+        presented.push({tick,at:performance.now()-started,submitMs:performance.now()-at});
+      return result;
+    };
+    const priorLoop = styk.state.loop; styk.state.loop = false;
+    try {
+      await styk.actions.play();
+      while (presented.length < target && styk.state.playing) {
+        if (performance.now()-started > 120000) throw new Error('Playback probe timed out');
+        await new Promise(resolve => requestAnimationFrame(resolve));
+      }
+      const after = structuredClone(styk.performance());
+      if (presented.length !== target || presented.some((frame,index) => frame.tick !== firstTick+index))
+        throw new Error('Playback probe did not present every requested consecutive tick: '+JSON.stringify({firstTick,target,presented,
+          playing:styk.state.playing,failure:after.playback.failure,error:document.querySelector('#renderer-error')?.textContent}));
+      return {firstTick,requestedFrames:target,firstFrameMs:presented[0].at,presented,before,after,
+        longTasks:[...tasks,...observer.takeRecords().map(e => ({at:e.startTime,ms:e.duration}))],errors};
+    } finally {
+      if (styk.state.playing) await styk.actions.play();
+      renderer.renderPrepared = render; styk.state.loop = priorLoop;
+      observer.disconnect(); window.removeEventListener('error', onError);
+    }
+  })()`) : null;
+  if (playback) assert.deepEqual(playback.errors, []);
+  const playbackProcesses = playback ? app.getAppMetrics() : null;
   const digest = await execute(`(async () => {
     const r = styk.editor.report;
     const bytes = new TextEncoder().encode(JSON.stringify({figure_types: r.figure_types, keyframes: r.keyframes, backgrounds: r.backgrounds, fps: r.fps, width: r.canvas_width, height: r.canvas_height}));
@@ -77,7 +113,7 @@ async function run(window) {
     } finally {exporter.dispose();}
   })()`) : null;
   await writeFile(path.join(output, 'report.json'), JSON.stringify({readyAt, startupMs, baseline, baselineHealth, imported, processes, digest, health,
-    exports,
+    exports, playback, playbackProcesses,
     environment: {cpu: os.cpus()[0].model, logicalCpus: os.cpus().length, ramBytes: os.totalmem(), os: os.release()}}, null, 2));
   await execute('styk.editor.markSaved()');
   app.quit();

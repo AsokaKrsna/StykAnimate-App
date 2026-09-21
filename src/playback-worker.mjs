@@ -338,8 +338,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     return { key: `${revision}:${tick}`, revision, tick, frameIndex: location.index, frame, shapes, transforms: transformData, uids: uidData, groups, compatibility,
       previewQuality: {reduced: reducedImages},
       connectedVfxUids:geometry.connectedVfxUids, objectCount: geometry.objects.size, shapeCount, warnings: geometry.warnings, scale, resolution, clipping, sharing, reusedGeometryObjects:geometryCache?.reusedObjects||0, cameraEnabled, storedFrames,
-      workerCache: {imageBytes:resources?.bytes||0,sourceBytes:resources?.sourceBytes||0,rasterBytes:resources?.artworkBitmaps?.bytes||0,rasterEntries:resources?.artworkBitmaps?.entries.size||0,
-        vectorBytes:resources?.vectors?.bytes||0,vectorEntries:resources?.vectors?.lru.size||0,
+      workerCache: {...resources?.cacheSnapshot?.(),
         alternateDrawables:geometryCache?.alternateDrawables||0,tweenEntries:tweenCache?.entries.size||0},
       byteLength: shapes.byteLength + transformData.byteLength + uidData.byteLength + bitmapBytes + fallbackBytes + groups.length * 64,
       compileMs: ended - started, timings: { evaluateMs: evaluated - started, geometryMs: geometrized - evaluated, compileMs: ended - geometrized } };
@@ -424,9 +423,7 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
     compatibility: bitmap ? [{ bitmap, uid: 0, software: true }] : [],
     previewQuality: { reduced: reducedImages },
     objectCount: geometry.objects.size, shapeCount: 0, warnings: geometry.warnings, scale, resolution, cameraEnabled, storedFrames,
-    workerCache: { imageBytes: resources?.bytes || 0, sourceBytes: resources?.sourceBytes || 0,
-      rasterBytes: resources?.artworkBitmaps?.bytes || 0, rasterEntries: resources?.artworkBitmaps?.entries.size || 0,
-      vectorBytes: resources?.vectors?.bytes || 0, vectorEntries: resources?.vectors?.lru.size || 0,
+    workerCache: { ...resources?.cacheSnapshot?.(),
       alternateDrawables: geometryCache?.alternateDrawables || 0, tweenEntries: tweenCache?.entries.size || 0 },
     byteLength: bitmapBytes + 128,
     compileMs: ended - started, timings: { evaluateMs: evaluated - started, geometryMs: geometrized - evaluated, compileMs: ended - geometrized } };

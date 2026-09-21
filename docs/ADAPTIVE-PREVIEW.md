@@ -22,6 +22,23 @@ Supported single glyphs share quantized alpha masks across poses and colors. Pla
 
 `previewMemoryPlan()` centralizes hardware-based retention allocations. CPU/GPU frames, decoded images, raster originals, editable textures and thumbnails have separate allocations within that policy. Existing shared artwork and measured prefetch eviction remain active. This is a policy for retained caches, **not** a hard cap on total process memory: the document, temporary transition copies, browser decoding internals, graphics-driver allocations, and export output surfaces also consume memory. Required live resources can temporarily exceed retention targets during atomic scene transitions.
 
+The plan's aggregate counts every playback worker, including encoded image
+sources, decoded drawing tiles and tint targets. Pass the actual worker count
+as the second argument when overriding the hardware default. The controller
+derives per-worker raster/vector limits from its own frame allowance and sends
+them with the snapshot; workers do not substitute a different device-memory
+hint. Standalone export resources retain their existing defaults.
+
+`PlaybackCache.stats.workerCaches` holds one latest cache snapshot per worker;
+`workerCacheTotals` sums those snapshots, including packets discarded after
+prefetch trimming. View invalidation retains these observations when it retains
+the worker documents; full invalidation, failure and disposal clear them. These
+are last-observed values, not synchronized heap samples. Geometry, document
+mirrors, active scratch and driver allocations remain outside these totals.
+`documentTransferEstimate` sums the transport's existing structured-clone size
+estimates across all workers for a full load. It is neither serialized wire
+bytes nor measured resident memory.
+
 Raster export explicitly uses `preview: false`, but its tile plan still bounds each decode to the source region the output samples: an asset placed mostly off-canvas decodes only its visible crop instead of the full source, so oversized embedded bitmaps no longer exhaust the asset allowance merely by existing. Coverage grows across tiles and frames within the allowance, so moving cameras decode shared regions once. SVG and the existing “No smoothing” path still decode original assets at full resolution. Individual source decodes, the final output canvas and those existing export paths still have browser/format limits; this change does not promise arbitrary-size exports within a fixed amount of RAM.
 
 For cropped glyph masks, independent absolute SVG contours outside the sampling bounds are omitted before rasterization. Line endpoints and complete Bezier control hulls supply conservative bounds, including surrounding contours and holes. Analysis is limited to 256 KiB of path text and 1,024 contours per mask. Relative, arc, smooth or unsupported commands fall back to the complete original path. The path geometry and fill rule are unchanged.

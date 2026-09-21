@@ -20,6 +20,7 @@ const expectedPivSha256 = process.env.STYK_BENCH_EXPECT_PIV_SHA256 || hash(sourc
 assert.match(expectedPivSha256, /^[a-f0-9]{64}$/, 'An optional control export digest must be a SHA-256');
 const report = {at: new Date().toISOString(), source: {name: path.basename(source), bytes: sourceBytes.length, sha256: hash(sourceBytes)},
   expectedPivSha256, exportFormats: process.env.STYK_BENCH_EXPORT === '1' ? (process.env.STYK_BENCH_EXPORT_FORMATS || 'piv,piv,styk').split(',') : [],
+  playbackProbe: process.env.STYK_BENCH_PLAYBACK === '1',
   sourceHashes: await performanceSourceHashes(), rows: [],
   limitations: ['No attached debugger. Source Electron with fresh profiles; OS caches are not flushed.',
     'Startup includes process launch and a readiness probe. Two rAFs establish submission readiness, not physical scanout.',
