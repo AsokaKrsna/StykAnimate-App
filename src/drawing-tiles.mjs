@@ -1,5 +1,7 @@
 export const TILE=64;
 export const TILE_BYTES=TILE*TILE*4;
+export const MIN_TILE=-0x80000000,MAX_TILE=0x7fffffff;
+export function assertTileCoordinates(tx,ty){if(!Number.isInteger(tx)||!Number.isInteger(ty)||tx<MIN_TILE||ty<MIN_TILE||tx>MAX_TILE||ty>MAX_TILE)throw new Error('Drawing coordinates exceed the file format range.');}
 export const tileKey=(tx,ty)=>`${tx},${ty}`;
 export const parseTileKey=key=>key.split(',').map(Number);
 
@@ -19,12 +21,14 @@ export class TileStore {
   [Symbol.iterator](){return this.tiles.values();}
   _changed(){this._bounds=undefined;this._tileBounds=undefined;}
   writable(tx,ty,{create=true}={}) {
+    assertTileCoordinates(tx,ty);
     const key=tileKey(tx,ty);let tile=this.tiles.get(key);
     if(!tile){if(!create)return null;tile={tx,ty,pixels:new Uint8ClampedArray(TILE_BYTES),frozen:false};this.tiles.set(key,tile);this._changed();return tile;}
     if(tile.frozen){tile={tx,ty,pixels:tile.pixels.slice(),frozen:false};this.tiles.set(key,tile);}
     tile.png=undefined;tile.alphaBounds=undefined;this._changed();return tile;
   }
   set(tx,ty,pixels) {
+    assertTileCoordinates(tx,ty);
     const key=tileKey(tx,ty);
     if(pixels==null){if(this.tiles.delete(key))this._changed();return;}
     let full;

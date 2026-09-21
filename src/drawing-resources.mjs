@@ -226,9 +226,13 @@ export class DrawingResources {
   }
   fork(old,copy) {
     const source=this.entry(old),target=this.entry(copy);
-    target.published=source.published?{...source.published}:null;target.revision=source.revision;target.deferred=[];
+    target.published=source.published?{...source.published}:null;target.revision=source.revision;
+    // History may have changed an evicted store without decoding it. Fork the
+    // immutable base plus its pending operations, never just the old blob.
+    target.deferred=source.deferred.slice();
     if(source.store){target.store=source.store.fork();target.levels=null;this.dropScratch(target);}
-    else if(source.loading)target.loading=source.loading.then(entry=>{if(!target.store)target.store=entry.store?.fork()??null;return target;});
+    // An in-flight source decode can include later source edits. Decode the
+    // fork's own base and captured operations independently instead.
     this.schedule();
   }
   schedule(){if(this.timer||this.encoding||this.disposed||this._busy)return;this.timer=setTimeout(()=>{this.timer=null;if(this._busy)return;this.flush().catch(this.onError);},80);}

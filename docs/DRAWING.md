@@ -57,6 +57,9 @@ empty}` for unmigrated cels. Version 2 pixels live in a sparse 64×64 tile store
 with unbounded coordinates; the store is the single authoritative raster and
 `bounds` is the occupied-pixel bounding box. Painting allocates only touched
 tiles; strokes may cross the stage edge and negative coordinates freely.
+Sparse bounds are validated against the tile format's signed 32-bit tile
+coordinates, not a dense image's dimensions. Widely separated marks therefore
+remain reopenable without allocating the empty area between them.
 Legacy v1 cels keep their full surface until the first pixel edit migrates
 them; migration and its stroke are one undo command and pixel positions are
 preserved exactly, including rotated and mirrored poses.
@@ -64,7 +67,9 @@ preserved exactly, including rotated and mirrored poses.
 Layer IDs identify tracks, key IDs identify exposure boundaries, cel IDs identify
 editable pixels, figure type IDs identify sprite definitions. Object UIDs stay
 stable within a drawing layer. Copied keys get independent cel/definition IDs.
-Copied cels share frozen tiles until an edit diverges them. Clipboard capture
+Copied cels share frozen tiles until an edit diverges them. Copying an evicted
+cel also captures its pending undo/redo changes against the published base.
+Clipboard capture
 forks the store at copy time; a subsequent source edit cannot alter the
 captured copy. Runtime values never enter document data. Pixel clipboard data
 includes the selection's world origin, so pastes land at the same world
@@ -113,6 +118,8 @@ exact endpoint. Pushed points, raw or smoothed, are joined by quadratic
 midpoint segments sampled by arc length, which keeps corners smooth at zero
 lag. Coalesced events have an ordinary-event
 fallback. Running distance and weighted sums replace repeated tail scans;
+Distance sampling follows the pressure-adjusted tip diameter, including
+pressure ramps, so a light stroke does not become a row of separated dabs.
 the smoothing window retains at most 4,096 samples, including stationary pen
 input, and release drains it in linear time. This limit affects only the
 smoothing history, not the input samples sent for painting. A stroke snapshots
@@ -124,6 +131,9 @@ A gesture queued behind a closing stroke retains every sample;
 canvas publication coalesces into one animation-frame callback. Pointer
 capture, cancellation,
 lost capture, Escape and blur cannot leave a half-committed stroke.
+Frame and structural commands wait for the closing stroke's pixel commit;
+view-only navigation does not discard its final worker reply. The completed
+stroke still belongs to the exposure where it started.
 
 Undo belongs to the editor's chronological history. Before/after tile records
 are exact; absent sides are `null` and uniform tiles use a four-byte color

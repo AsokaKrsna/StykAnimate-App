@@ -4788,6 +4788,8 @@ const polygonSafeActions = new Set([
 ]);
 for (const [name, action] of Object.entries(actions)) {
   actions[name] = (...args) => {
+    if(drawingController?.gesture?.kind==='stroke'||drawingController?.loading)
+      return drawingController.afterGesture(()=>actions[name](...args));
     if (state.polygon) {
       if (["new", "open", "open-recent", "close"].includes(name))
         cancelPolygonDraft();
@@ -5345,6 +5347,8 @@ function cancelKeyboardCommand() {
   $('menu').hidden = true;
 }
 function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
+  if(id!=='cancel'&&id!=='play-pan'&&(drawingController?.gesture?.kind==='stroke'||drawingController?.loading))
+    return drawingController.afterGesture(()=>runKeyboardCommand(id,event,modifiers));
   editablePreparation.cancel();
   if(drawingController?.active){
     if(id==='play-pan')drawingController.finish();
@@ -6020,6 +6024,7 @@ function mountTimeline() {
       queueUI();
     },
     onSeek: () => pause(),
+    beforeCommand: () => drawingController?.settle(),
     // Wait for both preparation and its canvas submission before another seek.
     // The timeline retains only the latest pointer target during this interval.
     canScrub: () => !state.editablePreparing && !state.dirtyRender,

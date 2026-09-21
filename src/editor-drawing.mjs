@@ -102,8 +102,8 @@ export const editorDrawingMethods={
   },
   commitDrawingPixels(target,tiles,label='Brush stroke') {
     if(!tiles.length)return false;assertDrawingTargets(this,[target.id]);
-    const current=this.drawingTarget(target.id);
-    if(current.key.id!==target.key.id)throw new Error('The drawing exposure changed before the edit finished.');
+    const current=this.drawingTarget(target.id,target.key.tick);
+    if(current.key.id!==target.key.id||(!target.created&&!target.migratedFrom&&current.figure!==target.figure))throw new Error('The drawing exposure changed before the edit finished.');
     // The record commits at any size: history eviction retires older entries,
     // and reserve() bounds resident stores before this point is reached.
     const bytes=pixelChangeBytes(tiles);
@@ -122,7 +122,8 @@ export const editorDrawingMethods={
       const figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===celId);
       this.drawingResources.apply(figure,tiles,'after');
       this._record({kind:'drawing-pixels',celId,tiles,label,beforeBounds,afterBounds:drawingMetadata(figure).bounds??null,precomputedBytes:bytes});
-      this.selectSheetLayer(target.id);this._invalidate({timing:false});this._emit('edit',{label,definition:true,drawing:true,figureIndices:[this.report.figure_types.indexOf(figure)]});return true;
+      if(this.activeLayerId===target.id&&this.tick>=target.key.tick&&this.tick<target.end)this.selectSheetLayer(target.id);
+      this._invalidate({timing:false});this._emit('edit',{label,definition:true,drawing:true,figureIndices:[this.report.figure_types.indexOf(figure)]});return true;
     };
     // Cel creation and migration change sheet structure. Subsequent strokes are
     // pixel commands and must not rebuild timing or invalidate timeline rows.

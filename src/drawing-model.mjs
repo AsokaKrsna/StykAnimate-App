@@ -1,5 +1,6 @@
 import {createImageFigure} from './media-authoring.mjs';
-import {TILE_BLOB_PREFIX} from './drawing-tile-codec.mjs';
+import {TILE_BLOB_PREFIX,TILE_BLOB_MAX_CHARACTERS} from './drawing-tile-codec.mjs';
+import {MIN_TILE,MAX_TILE,TILE} from './drawing-tiles.mjs';
 
 export const DRAWING_TILE = 64;
 export const DRAWING_MAX_PIXELS = 16 * 1024 * 1024;
@@ -48,7 +49,10 @@ export function drawingPixelBounds(figure) {
   if(d.version===1)return{x:0,y:0,width:d.width,height:d.height};
   return d.bounds?{...d.bounds}:null;
 }
-const integerRect=r=>r&&[r.x,r.y,r.width,r.height].every(Number.isSafeInteger)&&r.width>0&&r.height>0&&r.width<=16384&&r.height<=16384&&r.width*r.height<=4*DRAWING_MAX_PIXELS;
+// Sparse bounds describe coordinates, not an allocation. Two distant marks
+// must round-trip without allocating the empty rectangle between them.
+const integerRect=r=>r&&[r.x,r.y,r.width,r.height].every(Number.isSafeInteger)&&r.width>0&&r.height>0&&
+  r.x>=MIN_TILE*TILE&&r.y>=MIN_TILE*TILE&&r.x+r.width<=(MAX_TILE+1)*TILE&&r.y+r.height<=(MAX_TILE+1)*TILE;
 export function validateDrawingFigure(figure) {
   const d=drawingMetadata(figure);if(d===undefined)return;
   const point=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y);
@@ -68,7 +72,7 @@ export function validateDrawingFigure(figure) {
     (d.version===2&&!(a.width===1&&a.height===1&&a.display_width===1&&a.display_height===1)))
     throw new Error('A drawing needs one embedded PNG sprite matching its pixel dimensions.');
   if(a.data_url.length>96*1024*1024)throw new Error('Drawing PNG exceeds the asset limit.');
-  if(d.version===2&&a.styk_tiles!==undefined&&(typeof a.styk_tiles!=='string'||!a.styk_tiles.startsWith(TILE_BLOB_PREFIX)||a.styk_tiles.length>TILE_BLOB_PREFIX.length+96*1024*1024))throw new Error('Invalid drawing tile blob.');
+  if(d.version===2&&a.styk_tiles!==undefined&&(typeof a.styk_tiles!=='string'||!a.styk_tiles.startsWith(TILE_BLOB_PREFIX)||a.styk_tiles.length>TILE_BLOB_PREFIX.length+TILE_BLOB_MAX_CHARACTERS))throw new Error('Invalid drawing tile blob.');
   let header;try{header=Uint8Array.from(atob(a.data_url.slice(22,66)),c=>c.charCodeAt(0));}catch{throw new Error('Invalid drawing PNG header.');}
   if(header.length<24||![137,80,78,71,13,10,26,10].every((v,i)=>header[i]===v))throw new Error('Invalid drawing PNG header.');
   const view=new DataView(header.buffer);if(view.getUint32(16)!==a.width||view.getUint32(20)!==a.height)throw new Error('Drawing PNG dimensions do not match its metadata.');

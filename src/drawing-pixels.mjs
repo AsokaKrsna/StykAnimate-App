@@ -115,16 +115,20 @@ export class DrawingStroke {
   /** Dab along the quadratic Bézier a→b with control c, sampled by arc length
    * at the running `spacing`/`remaining` accumulator. */
   curve(a,c,b){
-    const spacing=Math.max(.25,this.size*this.spacingRatio);
+    const spacingAt=pressure=>Math.max(.25,this.size*this.spacingRatio*(this.pressureSize?Math.max(.05,clamp(pressure)**this.sizeCurve):1));
+    const spacing=Math.min(spacingAt(a.pressure),spacingAt(c.pressure),spacingAt(b.pressure));
     const q=t=>{const u=1-t;return{x:u*u*a.x+2*u*t*c.x+t*t*b.x,y:u*u*a.y+2*u*t*c.y+t*t*b.y,pressure:u*u*a.pressure+2*u*t*c.pressure+t*t*b.pressure,time:u*u*a.time+2*u*t*c.time+t*t*b.time};};
     const steps=Math.max(4,Math.min(64,Math.ceil((Math.hypot(c.x-a.x,c.y-a.y)+Math.hypot(b.x-c.x,b.y-c.y))/(spacing/2))));
-    let pos=spacing-this.remaining,prev=a,arc=0;
+    let prev=a;
     for(let i=1;i<=steps;i++){
       const p=q(i/steps),seg=Math.hypot(p.x-prev.x,p.y-prev.y);
-      while(seg>0&&arc+seg>=pos){const t=(pos-arc)/seg;this.dab({x:prev.x+(p.x-prev.x)*t,y:prev.y+(p.y-prev.y)*t,pressure:prev.pressure+(p.pressure-prev.pressure)*t,time:prev.time+(p.time-prev.time)*t});pos+=spacing;}
-      arc+=seg;prev=p;
+      // Carry a fractional dab phase, not a distance at the previous tip size.
+      // The smaller endpoint spacing keeps pressure ramps continuous too.
+      const step= Math.min(spacingAt(prev.pressure),spacingAt(p.pressure));
+      let pos=(1-this.remaining)*step;
+      while(seg>0&&seg>=pos){const t=pos/seg;this.dab({x:prev.x+(p.x-prev.x)*t,y:prev.y+(p.y-prev.y)*t,pressure:prev.pressure+(p.pressure-prev.pressure)*t,time:prev.time+(p.time-prev.time)*t});pos+=step;}
+      this.remaining=(this.remaining+seg/step)%1;prev=p;
     }
-    this.remaining=(this.remaining+arc)%spacing;
   }
   cancel(){if(this.closed)return;for(const tile of this.tiles.values()){if(tile.before)this.store.set(tile.tx,tile.ty,tile.before);else this.store.delete(tile.tx,tile.ty);}this.closed=true;}
   finish(){if(this.closed)return[];this.closed=true;

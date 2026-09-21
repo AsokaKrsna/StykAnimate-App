@@ -36,7 +36,8 @@ export class DrawingController {
     editor.addEventListener('change',event=>{
       const kind=event.detail.kind;
       if(kind==='document'){this.cancel();this.selection=null;this.bind();}
-      if(['seek','history'].includes(kind)){this.cancel();this.cancelSelection();}
+      if(kind==='seek'){this.finish();this.cancelSelection();}
+      if(kind==='history'){this.cancel();this.cancelSelection();}
       if(kind==='document'||kind==='seek')this.prefetchCels();
       if(this.active){this.sync();this.prepareVisible();}
     },opts);
@@ -64,6 +65,16 @@ export class DrawingController {
     if(found.current)owner.surface(found.current).catch(miss);
   }
   run(operation){try{const result=operation();if(result?.catch)result.catch(error=>{this.cancel();if(error.name!=='AbortError')this.onError(error);});return result;}catch(error){this.cancel();this.onError(error);}}
+  /** Commands wait for the pixel transaction, not PNG publication. Seeking
+   * may update the view meanwhile; the stroke still owns its original key. */
+  settle(){
+    if(this.loading?.done){const pending=this.loading;pending.released=true;return pending.done.then(()=>this.settle());}
+    this.finish();return this.gesture?.session?.done??null;
+  }
+  afterGesture(operation){
+    const wait=this.settle(),report=this.editor.report;
+    return wait?wait.then(()=>{if(report!==this.editor.report)throw new DOMException('Drawing document changed.','AbortError');return operation();}):operation();
+  }
   enter(){if(this.active)return;this.beforeEdit();this.prior={handles:this.state.handles,tool:this.state.tool,rotation:this.state.view.rotation??0};this.active=true;this.state.handles=false;this.state.tool='drawing-brush';this.state.drawing=true;this.cursor=null;this.bind();
     const layers=this.editor.layers.filter(layer=>isDrawingLayer(layer)&&!layer.locked&&layer.visible),target=layers.find(l=>l.id===this.editor.activeLayerId)||layers.find(l=>l.id===this.lastLayer)||layers.at(-1);if(target){this.editor.selectSheetLayer(target.id);this.state.selectedTrackId=target.id;}this.sync();this.prepareVisible();this.onUI();this.onRender();}
   exit(){if(!this.active)return;this.finish();this.applySelection();this.active=false;this.state.drawing=false;this.cursor=null;Object.assign(this.state,{handles:this.prior.handles,tool:this.prior.tool});this.state.view.rotation=this.prior.rotation;this.onUI();this.onRender();}
@@ -106,7 +117,7 @@ export class DrawingController {
       return valid;
     };
     try{
-      surface=await owner.surface(target.figure);
+      surface=await (pending.done=owner.surface(target.figure));
       if(!current()){owner.discard(target.figure);return;}
       // v1 cels migrate lazily on the first pixel edit; posing keeps them v1.
       const d=drawingMetadata(target.figure);
@@ -297,7 +308,7 @@ export class DrawingController {
     if(restore)for(const key of s.touched){const o=s.original.get(key),[tx,ty]=key.split(',').map(Number);o?store.set(tx,ty,o):store.delete(tx,ty);}
     this.owner.present(s.surface);s.surface.pinned=false;if(s.cutout)s.cutout.width=s.cutout.height=1;if(s.preview)s.preview.width=s.preview.height=1;}
   cancelSelection(){this.endSelection(true);}
-  async action(action){this.finish();const e=this.editor,ids=[e.activeLayerId];
+  async action(action){const pending=this.settle();if(pending)await pending;const e=this.editor,ids=[e.activeLayerId];
     if(action==='new'){const layer=e.createDrawingLayer();this.state.selectedTrackId=layer.id;this.getTimeline()?.selectTrack?.(layer.id);this.sync();this.onUI();return;}
     if(!['copy-pixels','cut-pixels','delete-pixels','apply-selection','cancel-selection'].includes(action))this.applySelection();
     if(action==='blank')return e.drawingKey(ids,e.tick,{blank:true});if(action==='copy-key'){if(!e.drawingKey(ids))this.onStatus('This cell already starts a drawing. Use Next copy to add time.');return;}

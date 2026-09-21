@@ -97,7 +97,7 @@ export class SheetFilmstrip {
   }
   _on(target, name, fn, options = {}) { target.addEventListener(name, fn, {signal: this.events.signal, ...options}); }
   _run(operation) {
-    try { this.onSeek?.(); const result = operation(); this.update();
+    try { this.onSeek?.(); const wait=this.beforeCommand?.(),result=wait?wait.then(operation):operation(); this.update();
       if (result?.then) return result.catch(error => { this.onError?.(error); return false; }).finally(() => this.update());
       return result; }
     catch (error) { this.onError?.(error); this.update(); return false; }
@@ -127,6 +127,7 @@ export class SheetFilmstrip {
       .map(i => ({index: i, start: this.times[i], end: this.times[i + 1] ?? this.editor.totalTicks}));
   }
   selectFrame(index, {extend = false} = {}) {
+    const wait=this.beforeCommand?.();if(wait)return wait.then(()=>this.selectFrame(index,{extend})).catch(error=>this.onError?.(error));
     index = Math.max(0, Math.min(this.times.length - 1, index));
     if (extend) this.selected = new Set(Array.from({length: Math.abs(index - this.anchor) + 1}, (_, i) => Math.min(index, this.anchor) + i));
     else { this.selected = new Set([index]); this.anchor = index; }

@@ -25,6 +25,8 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Fixed
 
+- Preserve drawing strokes when advancing frames, keep copied drawings consistent after undo under memory pressure, reopen widely spaced artwork reliably, and keep light-pressure ink continuous.
+
 - Keep hidden rig expressions invisible from every angle instead of leaving flattened eyes visible through a turned head.
 
 - Keep drawing responsive at high zoom, with consistent brush smoothing, timely live ink updates, and reliable fast strokes over existing paint.

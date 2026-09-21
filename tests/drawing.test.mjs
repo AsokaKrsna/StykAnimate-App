@@ -240,7 +240,7 @@ test('validateDrawings accepts v1 and v2 figures and rejects malformed tile blob
     const bad=structuredClone(figure);bad._styk.drawing.celId='cel-bad-2';bad.image_assets[0].styk_tiles='data:image/png;base64,AAAA';
     e.report.figure_types.push(bad);assert.throws(()=>validateDrawings(e.report),/tile blob/);e.report.figure_types.pop();
     const dup=structuredClone(figure);e.report.figure_types.push(dup);assert.throws(()=>validateDrawings(e.report),/unique/);e.report.figure_types.pop();
-    drawingMetadata(figure).bounds={x:0,y:0,width:99999,height:1};
+    drawingMetadata(figure).bounds={x:0,y:0,width:Number.MAX_SAFE_INTEGER,height:1};
     assert.throws(()=>validateDrawings(e.report),/metadata/);
   }finally{resources.dispose();}
 });
@@ -865,5 +865,55 @@ test('a gesture commit releases its pin so the broadcast barrier publishes the l
     const figure2=await published,d2=drawingMetadata(figure2);
     assert.equal(d2.revision,entry.revision);assert.ok(d2.revision>1);
     assert.equal((await decodeTileBlob(figure2.image_assets[0].styk_tiles)).length,entry.store.size);
+  }finally{resources.dispose();}
+});
+
+test('sparse distant marks retain valid metadata and exact tiles after publication and reload',async()=>{
+  const {e,resources}=fixture();try{
+    const target=e.prepareDrawingCel({pixelsPerUnit:1});await resources.surface(target.figure);
+    e.commitDrawingPixels(target,[{tx:0,ty:0,before:null,after:new Uint8ClampedArray([255,0,0,255])},{tx:300,ty:300,before:null,after:new Uint8ClampedArray([0,0,255,255])}]);
+    await resources.flush();validateDrawings(e.report);
+    const copy=new Editor({demo:false,layerTimeline:true});copy.load(structuredClone(e.report));
+    const figure=copy.drawingTarget().figure,tiles=await decodeTileBlob(figure.image_assets[0].styk_tiles);
+    assert.equal(tiles.length,2);assert.equal(drawingMetadata(figure).bounds.width,19264);
+  }finally{resources.dispose();}
+});
+
+test('copy after undo of an evicted cel captures pending pixels independently',async()=>{
+  const {e,resources}=fixture();try{
+    const target=e.prepareDrawingCel({pixelsPerUnit:1});await resources.surface(target.figure);
+    const red=new Uint8ClampedArray([255,0,0,255]),blue=new Uint8ClampedArray([0,0,255,255]);
+    e.commitDrawingPixels(target,[{tx:0,ty:0,before:null,after:red}]);await resources.flush();
+    const source=e.drawingTarget().figure;
+    e.commitDrawingPixels(e.drawingTarget(),[{tx:0,ty:0,before:red,after:blue}]);await resources.flush();
+    resources.entry(source).store=null;e.undo();assert.equal(resources.entry(source).deferred.length,1);
+    e.nextDrawing(undefined,{blank:false});const copied=e.drawingTarget().figure;
+    assert.deepEqual((await resources.surface(copied)).store.pixel(0,0),[255,0,0,255]);
+    assert.deepEqual((await resources.surface(source)).store.pixel(0,0),[255,0,0,255]);
+    e.commitDrawingPixels(e.drawingTarget(),[{tx:0,ty:0,before:red,after:blue}]);
+    assert.deepEqual(resources.entry(source).store.pixel(0,0),[255,0,0,255]);
+    await resources.flush();assert.deepEqual([...(await decodeTileBlob(copied.image_assets[0].styk_tiles))[0].pixels.slice(0,4)],[0,0,255,255]);
+  }finally{resources.dispose();}
+});
+
+test('pressure-aware spacing keeps light ink and pressure ramps continuous across batches',()=>{
+  for(const pressure of [.05,.1,.5]){
+    const store=new TileStore(),s=new DrawingStroke(store,{size:200,spacingRatio:.08,pressureSize:true});
+    for(let x=32;x<=512;x++)s.sample({x,y:32,pressure});s.finish();
+    for(let x=48;x<496;x++)assert.ok(store.pixel(x,32)[3]>0,`pressure ${pressure}, x ${x}`);
+  }
+  const points=Array.from({length:100},(_,i)=>({x:32+i*3,y:32,pressure:.05+.9*Math.sin(i/99*Math.PI)**2}));
+  const a=new StrokeEngine(),b=new StrokeEngine(),settings={size:100,spacingRatio:.08};a.begin(1,settings);b.begin(1,settings);
+  a.samples(1,1,points,[]);points.forEach((p,i)=>b.samples(1,i+1,[p],[]));assert.deepEqual(a.end(1),b.end(1));
+});
+
+test('a closing stroke commits to its original exposure after a view-only seek',async()=>{
+  const {e,resources}=fixture();try{
+    const {target}=await stroke(e);e.extendDrawing(undefined,2);e.nextDrawing(undefined,{blank:true});
+    e.seek(0);const old=e.drawingTarget();e.seek(3);
+    e.commitDrawingPixels(old,[{tx:2,ty:0,before:null,after:new Uint8ClampedArray([4,5,6,255])}]);
+    assert.equal(e.tick,3);assert.equal(e.drawingTarget().figure,undefined);
+    assert.deepEqual(resources.entry(target.figure).store.pixel(128,0),[4,5,6,255]);
+    e.undo();assert.equal(resources.entry(target.figure).store.get(2,0),undefined);
   }finally{resources.dispose();}
 });

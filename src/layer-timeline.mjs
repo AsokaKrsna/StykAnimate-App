@@ -76,7 +76,7 @@ export class Timeline{
   }
   _on(target,name,fn,options={}){target.addEventListener(name,fn,{...options,signal:this.events.signal});}
   _button(parent,name,title,action){const button=element('button',parent,'icon-button');button.type='button';button.innerHTML=icon(name);button.title=title;button.setAttribute('aria-label',title);this._on(button,'click',event=>{this._run(()=>action(event));if(!this.menu&&!this.footer?.matches(':popover-open'))this.scroll?.focus({preventScroll:true});});return button;}
-  _run(operation){const fail=error=>{this.live.textContent=error.message;this.onError?.(error);return false;};try{this.onSeek?.();const result=operation();return result?.then?result.catch(fail):result;}catch(error){return fail(error);}}
+  _run(operation){const fail=error=>{this.live.textContent=error.message;this.onError?.(error);return false;};try{this.onSeek?.();const wait=this.beforeCommand?.(),result=wait?wait.then(operation):operation();return result?.then?result.catch(fail):result;}catch(error){return fail(error);}}
   get ids(){return [...this.selectedLayers].filter(id=>this.editor.getLayer(id)&&this.trackById?.has(id));}
   get selectedTicks(){return [...new Set([this.start,...this.ids.flatMap(id=>this.editor.layerFrameKeys(id).filter(k=>k.tick>this.start&&k.tick<=this.end).map(k=>k.tick))])].sort((a,b)=>a-b);}
   get selectedTimeRange(){return {start:this.start,end:this.end+1};}
@@ -236,6 +236,7 @@ export class Timeline{
   _hit(event){const rect=this.scroll.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top;return {tick:clamp(Math.floor((x+this._offsetX())/this.pxPerTick),0,9999999),row:y<HEADER?-1:Math.floor((y-HEADER+this._offsetY())/ROW),x,y};}
   _contains(hit){return hit.row>=0&&this.selectedLayers.has(this.tracks[hit.row]?.id)&&hit.tick>=this.start&&hit.tick<=this.end;}
   _selectCell(hit,{extend=false,notify=true}={}){
+    const wait=this.beforeCommand?.();if(wait)return wait.then(()=>this._selectCell(hit,{extend,notify})).catch(error=>this.onError?.(error));
     const layer=this.tracks[hit.row];if(!layer)return;if(layer.kind.startsWith('vfx'))return this._selectVfxRow(layer);if(layer.kind==='motion')return this._selectMotion(layer.id);this.editor._selectedCameraMotion=null;const changed=this.selectedTrackId!==layer.id,anchor=this.anchor??{tick:this.start,row:this.tracks.findIndex(l=>l.id===this.selectedTrackId)};
     if(extend){this.start=Math.min(anchor.tick,hit.tick);this.end=Math.max(anchor.tick,hit.tick);this.selectedLayers=new Set(this.tracks.slice(Math.min(anchor.row,hit.row),Math.max(anchor.row,hit.row)+1).map(l=>l.id));}
     else{this.start=this.end=hit.tick;this.selectedLayers=new Set([layer.id]);this.anchor={tick:hit.tick,row:hit.row};}
@@ -261,6 +262,8 @@ export class Timeline{
     return Math.abs(hit.x+this._offsetX()-end*this.pxPerTick)<4?{id,start:key.tick,end}:null;
   }
   _flushScrub({force=false}={}){
+    const wait=this.beforeCommand?.();
+    if(wait){if(!this.waitingForEdit)this.waitingForEdit=wait.then(()=>{this.waitingForEdit=null;this._flushScrub({force:true});},error=>{this.waitingForEdit=null;this.onError?.(error);});return;}
     // Keep one editable preparation in flight. Repeated cancellation can starve
     // dense clips of any completed preview; pointer moves only replace the target.
     if(!force&&this.pendingScrub!=null&&this.canScrub?.()===false)return;
