@@ -37,12 +37,13 @@ test('an aborted retained build cannot alter its alternate cache or last publish
 });
 
 test('transition cancellation releases unpublished resources and never activates stale work', async()=>{
-  const e=new Editor({demo:false}).load(createDemo()),events=[];let resolveStage,activations=0,disposals=0;
+  const e=new Editor({demo:false}).load(createDemo()),events=[];let resolveStage,started,activations=0,disposals=0;
   const ready=new Promise(resolve=>{resolveStage=resolve;});
-  const renderer={prepareSceneUpdate:()=>ready};
+  const preparing=new Promise(resolve=>{started=resolve;});
+  const renderer={prepareSceneUpdate:()=>{started();return ready;}};
   const transition=new EditableScenePreparation(e,{onPending:value=>events.push(value)});
   const promise=transition.start(renderer,()=>({frame:e.evaluatedFrame}));
-  await new Promise(resolve=>setTimeout(resolve,10));transition.cancel();
+  await preparing;transition.cancel();
   resolveStage({activate(){activations++;},dispose(){disposals++;},timings:{}});
   assert.equal(await promise,false);assert.equal(activations,0);assert.equal(disposals,1);
   assert.equal(transition.pending,false);assert.deepEqual(events,[true,false]);

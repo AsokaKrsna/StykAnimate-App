@@ -298,7 +298,7 @@ const viewport = $("viewport"),
     requestRender();
   }, onError: error => status(error.message, true)});
 hydrateIcons();
-let timelineUI,
+let drawingController, timelineUI,
   studioShell,
   builderMode,
   propertyControls, cameraMotionControls,
@@ -390,7 +390,7 @@ const editablePreparation = new EditableScenePreparation(editor, {
   onError:fail,
 });
 let lastFpsUI = 0;
-function editingGestureActive(){return Boolean(state.drag||keyboardHandleGesture||editor._drag||editor._authoredPoseEdit||propertyControls?.active||vfxInspector?.active||vfxGizmos?.active);}
+function editingGestureActive(){return Boolean(state.drag||keyboardHandleGesture||editor._drag||editor._authoredPoseEdit||propertyControls?.active||vfxInspector?.active||vfxGizmos?.active||drawingController?.interacting);}
 function queueUI() {
   if(state.editablePreparing)return;
   if (!uiScheduled)
@@ -909,7 +909,6 @@ const assetUrl = (a) =>
 function imageFor(url) {
   return images.image(url);
 }
-let drawingController;
 const resources = { url: assetUrl, image: imageFor, drawing:figure=>drawingController?.resource(figure), drawingLoad:figure=>drawingMetadata(figure)?editor?.drawingResources.surface(figure):null };
 function status(text, error = false, busy = false) {
   $("status").textContent = text;
@@ -959,6 +958,10 @@ function sampleCanvasColor(clientX,clientY,signal,radius=0) {
 }
 function requestRender() {
   state.dirtyRender = true;
+  if (!raf) raf = requestAnimationFrame(loop);
+}
+function requestDrawingOverlay() {
+  state.dirtyDrawingOverlay = true;
   if (!raf) raf = requestAnimationFrame(loop);
 }
 function currentFrame() {
@@ -1550,6 +1553,7 @@ function loop(now) {
   }
   if (state.dirtyRender && state.renderer) {
     state.dirtyRender = false;
+    state.dirtyDrawingOverlay = false;
     const start = performance.now();
     const sampled=telemetry.isForeground&&telemetry.performance.sampleFrame(),stages=sampled?{}:null;
     state.renderer.measureFrame=sampled;state.renderer.telemetryStages=null;
@@ -1640,9 +1644,7 @@ function loop(now) {
     }
     if(sampled){stages.scene=performance.now()-stageStarted;stageStarted=performance.now();Object.assign(stages,state.renderer.telemetryStages);}
     // Final editor overlay pass: keep the actual camera above artwork and tool feedback.
-    ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
-    drawCameraOutline(ctx, cameraViewport(editor.report, currentFrame(), state.view), screenPoint);
-    vfxGizmos?.draw(ctx);
+    drawFinalOverlay();
     if(sampled){stages.overlay=performance.now()-stageStarted;stageStarted=performance.now();}
     if (state.inspectorContext === 'camera') {
       const frame = currentFrame();
@@ -1675,6 +1677,16 @@ function loop(now) {
       lastUI = now;
     }
   }
+  // Hovering a brush changes only tool feedback. Keep the displayed artwork
+  // and its GPU resources intact; drawing pixels still request a scene render.
+  if (state.dirtyDrawingOverlay) {
+    state.dirtyDrawingOverlay = false;
+    if (!state.playing && !state.previewing && !state.editablePreparing) {
+      overlayRender(drawingController?.renderPreview?.geometry ?? editor.geometry);
+      drawingController?.overlayDraw(ctx);
+      drawFinalOverlay();
+    }
+  }
   if (state.playing) {
     const measuredAt = performance.now();
     if(playStarted&&!state.buffering&&state.playbackPacket){
@@ -1698,7 +1710,12 @@ function loop(now) {
   }
   // A seek/edit event can request the next frame while this callback runs.
   // Keep that request instead of starting a second animation loop.
-  if (!raf && (state.playing || state.dirtyRender)) raf = requestAnimationFrame(loop);
+  if (!raf && (state.playing || state.dirtyRender || state.dirtyDrawingOverlay)) raf = requestAnimationFrame(loop);
+}
+function drawFinalOverlay() {
+  ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+  drawCameraOutline(ctx, cameraViewport(editor.report, currentFrame(), state.view), screenPoint);
+  vfxGizmos?.draw(ctx);
 }
 async function play() {
   if(!state.playing){try{await drawingController?.barrier();}catch(error){fail(error);return;}}
@@ -6292,7 +6309,7 @@ async function init() {
   actions['chain-finish'] = () => construction.commit();
   actions['chain-cancel'] = () => construction.cancel();
   window.styk.builder = builderMode;
-  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard});
+  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onOverlayRender:requestDrawingOverlay,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard});
   window.styk.drawing=drawingController;
   studioShell = initStudioShell({editor, state, setTool, renderAssets, renderInspector, showCommandMenu,
     actions, setTimelineMode: mode => editorSettings.commit({timelineMode:mode}), getTimeline: () => timelineUI,

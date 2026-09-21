@@ -8,10 +8,19 @@ import {TILE_BYTES,TileStore} from '../src/drawing-tiles.mjs';
 
 function fixture(){
   const d=Object.create(DrawingController.prototype),holds=new Map();
-  Object.assign(d,{owner:{busy:false,needsPreparation:()=>false,hold:(k,n)=>n?holds.set(k,n):holds.delete(k)},editor:{revision:1},sequence:0,overlay:{hasPointerCapture:()=>false},onStatus:()=>{},onRender:()=>{},finish:()=>{},applySelection:()=>{},holds});
+  Object.assign(d,{owner:{busy:false,needsPreparation:()=>false,hold:(k,n)=>n?holds.set(k,n):holds.delete(k)},editor:{revision:1},sequence:0,overlay:{hasPointerCapture:()=>false},onStatus:()=>{},onRender:()=>{},onOverlayRender:()=>{},finish:()=>{},applySelection:()=>{},holds});
   return d;
 }
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
+
+test('hover requests only feedback while drawing interaction includes pending pixel work',()=>{
+  const d=fixture();let renders=0,overlays=0;d.onRender=()=>renders++;d.onOverlayRender=()=>overlays++;
+  const event={pointerId:7,clientX:30,clientY:50,timeStamp:12};
+  d.move(event);assert.equal(renders,0);assert.equal(overlays,1);assert.equal(d.interacting,false);
+  d.loading={id:7,samples:[]};d.move(event);assert.equal(d.interacting,true);assert.equal(d.loading.samples.length,1);
+  d.up(event,true);assert.equal(d.interacting,false);assert.equal(renders,1,'cancel releases scheduler ownership');
+  for(const key of ['gesture','loading','operation']){d[key]={};assert.equal(d.interacting,true);d[key]=null;}
+});
 
 test('input tile copying shares one reservation across source and destination',async()=>{
   const d=fixture(),store=new TileStore();store.set(0,0,new Uint8ClampedArray([1,2,3,255]));

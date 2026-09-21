@@ -61,6 +61,12 @@ tiles; strokes may cross the stage edge and negative coordinates freely.
 Sparse bounds are validated against the tile format's signed 32-bit tile
 coordinates, not a dense image's dimensions. Widely separated marks therefore
 remain reopenable without allocating the empty area between them.
+Brush hover and pointer-leave repaint only the editor overlay. Pixel changes,
+navigation and other scene changes still invalidate artwork normally. Bounds
+queries never decode a v2 cel's carrier PNG; doing so would repeatedly reload
+and discard that placeholder. Loading a cel, drawing a stroke and running a
+pixel operation suspend speculative playback and timeline-thumbnail work;
+completion or cancellation releases the interaction gate.
 Legacy v1 cels keep their full surface until the first pixel edit migrates
 them; migration and its stroke are one undo command and pixel positions are
 preserved exactly, including rotated and mirrored poses.

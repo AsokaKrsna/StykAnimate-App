@@ -2,7 +2,7 @@ import earcut from '../vendor/earcut.mjs';
 import {hasDrawableVfx,drawableVfxPadding} from './vfx-canvas.mjs';
 import { mixColor } from './pivot/geometry.mjs';
 import { cameraIsIdentity, inverseCameraScale, effectiveCamera } from './pivot/background.mjs';
-import { drawingPixelBounds } from './drawing-model.mjs';
+import { drawingMetadata, drawingPixelBounds } from './drawing-model.mjs';
 
 // Each record is six aligned vec4s, consumed directly by the GPU storage buffer.
 export const SHAPE_FLOATS = 24;
@@ -191,7 +191,7 @@ export function objectBounds(items, resources = {}) {
     if (s.type === 'circle') include((s.start.x + s.end.x) / 2, (s.start.y + s.end.y) / 2, Math.abs(s.length) / 2 + pad);
     else for (const p of s.points || []) include(p.x, p.y, pad);
     if (s.type === 'image' && s.asset) {
-      const a = s.asset, image = resources.image?.(resources.url?.(a));
+      const a = s.asset, image = drawingMetadata(s.fig)?.version===2 ? null : resources.image?.(resources.url?.(a));
       // v2 drawings size from authoritative tile bounds; the 1×1 carrier PNG
       // is never a raster source. A live store covers strokes still in flight.
       const tiles = resources.drawing?.(s.fig)?.store?.bounds ?? drawingPixelBounds(s.fig);

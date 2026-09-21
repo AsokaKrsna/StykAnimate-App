@@ -20,8 +20,9 @@ const yieldToInput=()=>globalThis.scheduler?.yield?globalThis.scheduler.yield():
 const brushKeys=['preset','size','opacity','flow','hardness','pressureSize','pressureOpacity','sizeCurve','opacityCurve','stabilization','spacingRatio','texture'];
 const unionRects=(a,b)=>{if(!a)return b?{...b}:null;if(!b)return{...a};const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);return{x,y,width:Math.max(a.x+a.width,b.x+b.width)-x,height:Math.max(a.y+a.height,b.y+b.height)-y};};
 export class DrawingController {
-  constructor({editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getImageSource=()=>({}),getTimeline,getClipboard}) {
+  constructor({editor,state,overlay,viewport,onRender,onOverlayRender=onRender,onUI,onError,onStatus,beforeEdit,getImageSource=()=>({}),getTimeline,getClipboard}) {
     Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getImageSource,getTimeline,getClipboard,settings:{preset:'ink',size:8,color:'#252525',opacity:1,flow:1,hardness:1,pressureSize:true,pressureOpacity:false,sizeCurve:1,opacityCurve:1,stabilization:0,spacingRatio:.08,texture:0,resolution:2,filter:'smooth',length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
+    this.onOverlayRender=onOverlayRender;
     this.panel=document.getElementById('inspector');
     const events=this.events=new AbortController(),opts={signal:events.signal};
     this.panel.addEventListener('click',event=>{const preset=event.target.closest('[data-draw-preset]'),action=event.target.closest('[data-draw-action]');if(preset){this.finish();Object.assign(this.settings,BRUSH_PRESETS.find(p=>p.id===preset.dataset.drawPreset),{preset:preset.dataset.drawPreset});this.onUI();}if(action)this.run(()=>this.action(action.dataset.drawAction));},opts);
@@ -38,7 +39,7 @@ export class DrawingController {
     },{...opts,capture:true});
     window.addEventListener('blur',()=>this.cancel(),opts);
     // The brush ring tracks the last move; it must not linger once the pointer leaves.
-    overlay.addEventListener('pointerleave',()=>{if(this.cursor){this.cursor=null;this.onRender();}},opts);
+    overlay.addEventListener('pointerleave',()=>{if(this.cursor){this.cursor=null;this.onOverlayRender();}},opts);
     editor.addEventListener('change',event=>{
       const kind=event.detail.kind;
       if(kind==='document'){this.cancel();this.selection=null;this.bind();}
@@ -51,6 +52,7 @@ export class DrawingController {
     document.addEventListener('pointerdown',event=>{if(this.gesture&&!overlay.contains(event.target))this.finish();if(this.selection&&event.target.closest?.('.layer-timeline,.sheet-filmstrip'))this.run(()=>this.applySelection());},{...opts,capture:true});
     this.bind();
   }
+  get interacting(){return Boolean(this.gesture||this.loading||this.operation);}
   bind(){
     // Resources exist only for reports that carry drawings (or while Draw is
     // open and is about to create one); an animation without drawings must
@@ -88,7 +90,7 @@ export class DrawingController {
     op.check=()=>{if(op.abort.signal.aborted||owner!==this.owner||revision!==this.editor.revision)throw new DOMException('Drawing operation superseded.','AbortError');};
     op.reserve=(surface,requested=TRANSFORM_BYTES,headroom=0)=>{op.check();op.copiedBytes=0;owner.hold(op,0);owner.reserve(0,surface);const s=owner.stats;op.maxBytes=Math.min(requested,Math.max(0,owner.hardBudget-s.bytes-s.historyBytes-s.deferredBytes-s.workingBytes-headroom));owner.hold(op,op.maxBytes,surface);};
     op.received=tiles=>owner.hold(op,tiles.reduce((n,t)=>n+(t.pixels?.byteLength??0)+(t.before?.byteLength??0)+(t.after?.byteLength??0)+(t.remaining?.byteLength??0),0));
-    this.operation=op;owner.busy=true;this.onStatus(label+'… Escape cancels.');
+    this.operation=op;owner.busy=true;this.onStatus(label+'… Escape cancels.');this.onRender();
     op.done=Promise.resolve().then(()=>operation(op)).then(value=>{op.succeeded=true;return value;}).finally(()=>{
       owner.hold(op,0);owner.busy=false;if(this.operation===op)this.operation=null;
       if(op.abort.signal.aborted||!op.succeeded)this.loading=null;else this.resumeQueuedPointer();
@@ -170,9 +172,10 @@ export class DrawingController {
     const sequence=++this.sequence,revision=this.editor.revision,owner=this.owner;
     let target=this.editor.prepareDrawingCel({pixelsPerUnit:this.settings.resolution,world:this.point(event)}),surface;
     const pending=this.loading={id:event.pointerId,sequence,released:event.released??false,samples:event.samples??[],event:pointerSample(event)};
+    this.onRender(); // Pause speculative work while the pointer waits for pixels.
     const current=()=>{
       const valid=this.loading===pending&&sequence===this.sequence&&revision===this.editor.revision&&owner===this.owner;
-      if(!valid&&this.loading===pending){this.loading=null;if(this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);}
+      if(!valid&&this.loading===pending){this.loading=null;this.onRender();if(this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);}
       return valid;
     };
     try{
@@ -296,7 +299,7 @@ export class DrawingController {
       else this.restoreStroke(s);
     }finally{finish();}
   }
-  move(event){this.cursor=pointerSample(event);if(this.loading?.id===event.pointerId){if(this.loading.samples.length>=65536)throw new Error('Drawing input exceeded the queue limit.');this.loading.samples.push(pointerSample(event));return;}const g=this.gesture;if(!g||g.id!==event.pointerId){this.onRender();return;}
+  move(event){this.cursor=pointerSample(event);if(this.loading?.id===event.pointerId){if(this.loading.samples.length>=65536)throw new Error('Drawing input exceeded the queue limit.');this.loading.samples.push(pointerSample(event));this.onOverlayRender();return;}const g=this.gesture;if(!g||g.id!==event.pointerId){this.onOverlayRender();return;}
     if(g.kind==='pan'){const rect=this.viewport.getBoundingClientRect();this.state.view.x=g.view.x+(event.clientX-g.start.clientX)*this.viewport.clientWidth/rect.width;this.state.view.y=g.view.y+(event.clientY-g.start.clientY)*this.viewport.clientHeight/rect.height;}
     else if(g.kind==='stroke'){if(!g.session.ended){const samples=event.getCoalescedEvents?.();for(const sample of samples?.length?samples:[event])this.sampleStroke(sample);}}
     else if(g.kind==='pose'){const p=this.point(event);this.editor.moveSelection(p.x-g.start.x,p.y-g.start.y,{fromStart:true});}
@@ -304,7 +307,7 @@ export class DrawingController {
     else if(g.kind==='selection-move'){const p=this.pixel(event,g.target);this.selection.dx=g.dx+p.x-g.start.x;this.selection.dy=g.dy+p.y-g.start.y;this.previewSelection();}
     this.onRender();
   }
-  up(event,cancel=false){if(this.loading?.id===event.pointerId){if(cancel){this.sequence++;this.loading=null;}else this.loading.released=true;return;}const g=this.gesture;if(!g||g.id!==event.pointerId)return;if(g.kind==='stroke'&&g.session.ended)return;return cancel?this.cancel():this.finish();}
+  up(event,cancel=false){if(this.loading?.id===event.pointerId){if(cancel){this.sequence++;this.loading=null;this.onRender();}else this.loading.released=true;return;}const g=this.gesture;if(!g||g.id!==event.pointerId)return;if(g.kind==='stroke'&&g.session.ended)return;return cancel?this.cancel():this.finish();}
   finish(){const g=this.gesture;
     if(g?.kind==='stroke'&&g.session.ended)return; // the done reply completes the commit
     if(this.loading)this.cancel();if(!g)return;
@@ -319,7 +322,7 @@ export class DrawingController {
     if(g.kind==='pose')this.editor.commitDrag();
     else if(g.kind==='lasso')return this.run(()=>this.makeSelection(g));
   }finally{g.surface.pinned=g.kind==='lasso'&&Boolean(this.operation)||Boolean(this.selection?.surface===g.surface);if(this.selection?.surface===g.surface)this.previewSelection();else{this.owner.present(g.surface);if(!g.surface.pinned)this.owner.discard(g.target.figure);}if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.sync();this.onUI();this.onRender();}}
-  cancel(){this.operation?.abort.abort();this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();return;}this.gesture=null;if(g.kind==='pan'){Object.assign(this.state.view,g.view);this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.hold?.(s,0);s.owner.busy=false;this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
+  cancel(){this.operation?.abort.abort();this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();this.onRender();return;}this.gesture=null;if(g.kind==='pan'){Object.assign(this.state.view,g.view);this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.hold?.(s,0);s.owner.busy=false;this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
   async barrier(options){await this.settle({selection:true});if(this.loading)throw new Error('Wait for the drawing to finish loading.');await drawingBarrier(this.editor.report,options);}
   /** Fill bounds follow the document, independent of display zoom. */
   fillBounds(target,store){
