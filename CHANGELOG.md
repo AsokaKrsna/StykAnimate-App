@@ -8,7 +8,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Added
 
-- Try experimental AI-assisted posing in a standalone playground with front, profile and angled views, controlled depth-based limb shortening, stable limb lengths and head controls, supported native vector characters, persistent controls, undo, saved studies and editable StykAnimate export.
+- Try experimental AI-assisted posing in a standalone playground with front, profile and angled views, retrained pelvis and spine guidance, controlled depth-based limb shortening, stable limb lengths and head controls, supported native vector characters, persistent controls, undo, saved studies and editable StykAnimate export.
 - Attach solid meshes to spatial rigs with continuous rotation and named forms, using existing posing controls, undo, native saving and rendered exports without adding a joint for every vertex.
 
 - Attached head drawings can switch in discrete directions as a spatial rig turns or tilts, with one Form selector for transformations and no blending between drawings.
