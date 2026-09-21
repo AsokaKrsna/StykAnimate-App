@@ -38,7 +38,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 - Keep drawing responsive at high zoom, with consistent brush smoothing and reliable fast strokes over existing paint. Live ink keeps advancing when preview rendering trails pointer input, and fully erased artwork disappears immediately.
 
-- Fill enclosed areas even when artwork extends far beyond the stage, with lower memory use and reliable cancellation and undo.
+- Fill enclosed areas even when artwork extends far beyond the stage, with lower memory use and reliable cancellation and undo. Sampling all layers keeps the interface responsive and works immediately after new ink is drawn.
 
 - Reduce lag and memory pressure when posing dense figures: pose input is coalesced to the latest position per frame, unchanged spatial branches, fills, topology plans and drawing order are reused, and dragging releases superseded geometry. Dense 360 surfaces reuse bounded upload buffers during editing, playback preparation and export.
 - Keep projected rig controls usable in edge-on views, combine two joint rotations before projection, and let triangular fills use depth guides to resolve intersecting surfaces as articulated figures turn.

@@ -389,9 +389,21 @@ Source pixels, masks, pending work and prepared output share a memory budget;
 reached empty tiles reserve their future output before traversal continues.
 Output and history are prepared before adoption, so a rejected operation never
 partially edits the drawing. Cancellation terminates the worker and the next
-operation starts a fresh worker. Sample all layers still uses a main-thread
-composited canvas and has a 64-megapixel limit; its canvas/readback allocation
-and source transfer are checked against the available working memory first.
+operation starts a fresh worker. Sample all layers captures visible evaluated
+artwork in a separate, cancellable worker. Publication completes before the
+fill reserves memory, including the destination cel's latest ink. Render
+definitions are shared in a frame-only snapshot sent in acknowledged packets
+of at most 64 KiB; pose arrays and the animation library are excluded.
+Capture uses the existing renderer and full-resolution asset decoding, then
+transfers its RGBA buffer to the pixel worker without cloning it. The capture
+worker terminates after each operation to release renderer/device caches.
+Its full canvas retains the 64-megapixel limit: subdividing native Canvas paths
+can alter antialiased coverage and fill boundaries. Canvas, readback, opacity
+isolation and source snapshot bytes are reserved before capture; decoded images
+and drawing sources receive bounded allowances. Effects retain the renderer's
+separate allocation limits, so the drawing allowance is not a total-process
+memory ceiling. Cold capture has additional worker and snapshot overhead; see
+the audit for the measured responsiveness/throughput tradeoff.
 New clipboard packets,
 sparse lasso capture, resampling and transformed paste output are bounded by
 occupied tiles and available memory instead of a

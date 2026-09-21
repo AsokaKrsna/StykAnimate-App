@@ -2,12 +2,13 @@ import {strokeRegion} from './drawing-stroke-region.mjs';
 import {BRUSH_PRESETS} from './drawing-view.mjs';
 import {DrawingStroke} from './drawing-pixels.mjs';
 import {FILL_SOURCE_MAX_PIXELS} from './drawing-fill.mjs';
+import {sendDrawingComposite} from './drawing-composite-transport.mjs';
 import {lassoBounds,lassoContains,selectionStores} from './drawing-lasso.mjs';
 import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,inversePoint,transformPoint} from './drawing-model.mjs';
 import {TILE,tileKey,parseTileKey,TileStore} from './drawing-tiles.mjs';
 import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
 import {drawingCelPrefetch} from './onion-skin.mjs';
-import {buildGeometry,drawGeometry} from './pivot/geometry.mjs';
+import {buildGeometry} from './pivot/geometry.mjs';
 import {createFrame} from './demo.mjs';
 import {screenToWorld,worldToScreen} from './renderer-geometry.mjs';
 import {TRANSFORM_BYTES,transformSupportBounds,tileIntersects,inverseMatrix,multiplyMatrix,indexedTileCoverage} from './drawing-transform.mjs';
@@ -16,12 +17,11 @@ import {selectionMatrix,selectionTiles,selectionPresenter} from './drawing-selec
 
 const pointerSample=e=>({clientX:e.clientX,clientY:e.clientY,pressure:e.pressure,pointerType:e.pointerType,timeStamp:e.timeStamp,button:e.button,buttons:e.buttons});
 const yieldToInput=()=>globalThis.scheduler?.yield?globalThis.scheduler.yield():new Promise(resolve=>setTimeout(resolve,0));
-const canvas=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c;};
 const brushKeys=['preset','size','opacity','flow','hardness','pressureSize','pressureOpacity','sizeCurve','opacityCurve','stabilization','spacingRatio','texture'];
 const unionRects=(a,b)=>{if(!a)return b?{...b}:null;if(!b)return{...a};const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);return{x,y,width:Math.max(a.x+a.width,b.x+b.width)-x,height:Math.max(a.y+a.height,b.y+b.height)-y};};
 export class DrawingController {
-  constructor({editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getResources,getTimeline,getClipboard}) {
-    Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getResources,getTimeline,getClipboard,settings:{preset:'ink',size:8,color:'#252525',opacity:1,flow:1,hardness:1,pressureSize:true,pressureOpacity:false,sizeCurve:1,opacityCurve:1,stabilization:0,spacingRatio:.08,texture:0,resolution:2,filter:'smooth',length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
+  constructor({editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getImageSource=()=>({}),getTimeline,getClipboard}) {
+    Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getImageSource,getTimeline,getClipboard,settings:{preset:'ink',size:8,color:'#252525',opacity:1,flow:1,hardness:1,pressureSize:true,pressureOpacity:false,sizeCurve:1,opacityCurve:1,stabilization:0,spacingRatio:.08,texture:0,resolution:2,filter:'smooth',length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
     this.panel=document.getElementById('inspector');
     const events=this.events=new AbortController(),opts={signal:events.signal};
     this.panel.addEventListener('click',event=>{const preset=event.target.closest('[data-draw-preset]'),action=event.target.closest('[data-draw-action]');if(preset){this.finish();Object.assign(this.settings,BRUSH_PRESETS.find(p=>p.id===preset.dataset.drawPreset),{preset:preset.dataset.drawPreset});this.onUI();}if(action)this.run(()=>this.action(action.dataset.drawAction));},opts);
@@ -329,27 +329,36 @@ export class DrawingController {
     return unionRects(box(stage),store.bounds);
   }
   fill(target,surface,point){return this.pixelOperation('Filling drawing',async op=>{
-    const controller=this.fillAbort=op.abort,owner=op.owner;surface.pinned=true;
+    const controller=this.fillAbort=op.abort,owner=op.owner,settings={...this.settings},sampleAll=settings.sampleAll;
     try{
-      op.reserve(surface,owner.hardBudget);
       const bounds=this.fillBounds(target,surface.store);
       if(!bounds)return;
       let source;
-      if(this.settings.sampleAll){
+      if(sampleAll){
         if(bounds.width*bounds.height>FILL_SOURCE_MAX_PIXELS)throw new Error('Sample all layers supports fill regions up to 64 megapixels.');
         const sourceBytes=bounds.width*bounds.height*4;
+        if(sourceBytes*2>owner.hardBudget)throw new Error('The fill exceeds the drawing working memory limit.');
+        // Publication needs its own transfer reservation. It must complete
+        // before pinning the destination or reserving the remaining budget.
+        await this.barrierForComposite(controller.signal);op.check();
+        surface=await owner.surface(target.figure);op.check();surface.pinned=true;
+        op.reserve(surface,owner.hardBudget);
         if(sourceBytes*2>op.maxBytes)throw new Error('The fill exceeds the drawing working memory limit.');
-        await this.barrierForComposite();op.check();const c=canvas(bounds.width,bounds.height);
-        try{const ctx=c.getContext('2d'),inverse=new DOMMatrix(this.pixelMatrix(target)).inverse();ctx.setTransform(inverse.a,inverse.b,inverse.c,inverse.d,inverse.e-bounds.x,inverse.f-bounds.y);drawGeometry(ctx,{drawables:this.editor.geometry.drawables.filter(i=>this.editor.getLayer(this.editor.layerForUid(i.obj.unique_id))?.visible!==false)},this.getResources());source=ctx.getImageData(0,0,c.width,c.height).data.buffer;}
-        finally{c.width=c.height=1;}
+        const worker=owner.compositeWorker;
+        try{
+          await sendDrawingComposite(worker,this.editor.geometry.drawables,{maxBytes:op.maxBytes-sourceBytes*2,signal:controller.signal,check:op.check,visible:i=>this.editor.getLayer(this.editor.layerForUid(i.obj.unique_id))?.visible!==false});
+          const matrix=inverseMatrix(this.pixelMatrix(target));
+          const result=await worker.request('composite',{bounds,matrix,maxBytes:op.maxBytes,...this.getImageSource?.()},{signal:controller.signal});
+          op.check();source=result.source;
+        }finally{worker.dispose();}
         op.copiedBytes=source.byteLength;
-      }
+      }else{surface.pinned=true;op.reserve(surface,owner.hardBudget);}
       const tiles=await this.copyWorkerTiles(surface,op,t=>tileIntersects(t,bounds));
-      const result=await owner.worker.request('fill',{bounds,tiles,options:{maxBytes:op.maxBytes,...point,color:[...this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16)),Math.round(this.settings.opacity*255)],tolerance:this.settings.tolerance,expansion:this.settings.expansion,gap:this.settings.gap},source},{signal:controller.signal,transfer:[...tiles.map(t=>t.pixels),...(source?[source]:[])]});
+      const result=await owner.worker.request('fill',{bounds,tiles,options:{maxBytes:op.maxBytes,...point,color:[...settings.color.slice(1).match(/../g).map(n=>parseInt(n,16)),Math.round(settings.opacity*255)],tolerance:settings.tolerance,expansion:settings.expansion,gap:settings.gap},source},{signal:controller.signal,transfer:[...tiles.map(t=>t.pixels),...(source?[source]:[])]});
       op.check();op.received(result.tiles);await this.commitPixels(target,result.tiles,'Fill drawing',op);this.onStatus('Drawing filled.');
     }finally{surface.pinned=false;owner.discard(target.figure);if(this.fillAbort===controller)this.fillAbort=null;}
   });}
-  async barrierForComposite(){await drawingBarrier(this.editor.report);const assets=this.editor.geometry.drawables.filter(i=>i.type==='image');await Promise.all(assets.map(async i=>{const image=this.getResources().image(this.getResources().url(i.asset));if(image&&!image.complete)await image.decode?.();}));}
+  async barrierForComposite(signal){await drawingBarrier(this.editor.report,{signal});}
   makeSelection(g){
     const bounds=lassoBounds(g.points);if(!bounds)return;this.cancelSelection();
     const xs=g.points.map(p=>p.x),ys=g.points.map(p=>p.y),cx=(Math.min(...xs)+Math.max(...xs))/2,cy=(Math.min(...ys)+Math.max(...ys))/2;

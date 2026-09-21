@@ -88,3 +88,13 @@ test('sample-all fill checks dense capture memory before allocating a canvas',as
   await assert.rejects(d.fill({figure},surface,{x:0,y:0}),/working memory/);
   assert.equal(requested,false);assert.equal(surface.pinned,false);assert.equal(d.holds.size,0);assert.equal(d.operation,null);
 });
+
+test('sample-all publication can reserve memory before fill owns the remaining budget',async()=>{
+  const figure=createDrawingFigure(),report={figure_types:[figure]},owner=new DrawingResources(report,{hardBytes:16*TILE_BYTES,history:false}),d=fixture();
+  d.owner=owner;d.editor.report=report;const surface=owner.install(figure,[]),marker={};let entered=false;
+  Object.assign(d,{settings:{sampleAll:true},fillBounds:()=>({x:0,y:0,width:64,height:64}),barrierForComposite:async()=>{
+    assert.equal(surface.pinned,false);owner.hold(marker,TILE_BYTES);entered=true;owner.hold(marker,0);throw Error('Publication completed');
+  }});
+  try{await assert.rejects(d.fill({figure},surface,{x:0,y:0}),/Publication completed/);assert.ok(entered);assert.equal(owner.workingBytes,0);}
+  finally{owner.dispose();}
+});
