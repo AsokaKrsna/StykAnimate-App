@@ -67,7 +67,7 @@ export class Timeline{
       if(d.kind==='vfx-selection'||d.kind==='vfx-target'||d.kind==='selection'&&editor._vfxTimelineVisible||d.kind==='document'||d.structural||d.layers||d.timing||d.layerSheet)this._reindex();
       else if(this.motionState!==editor.report._styk.cameraMotion)this._refreshMotionRows();
       if(d.kind==='selection'&&!d.sheetSelection&&editor.object){this.selectedTrackId=editor.layerForUid(editor.selectedUid);this.selectedLayers=new Set([this.selectedTrackId]);this.revealSelectedLayer();}
-      if(d.kind==='seek'&&!this.gesture&&!this.selecting){this.start=this.end=Math.floor(editor.tick);}this.update(d.kind!=='seek'||!this.paused&&this.gesture?.kind!=='scrub');});
+      if(d.kind==='seek'&&!this.gesture&&!this.selecting){this.start=this.end=Math.floor(editor.tick);}this.update(this._changeNeedsPaint(d));});
     this._on(window,'styk-theme-change',()=>this.resize());
     this.observer=new ResizeObserver(()=>this.resize());this.observer.observe(this.root);this._reindex();this.resize();
     mountTimelineNavigation(this,{input:this.zoomInput,fit:()=>this.fitFrameRange()});
@@ -127,6 +127,14 @@ export class Timeline{
       if(this.pendingScrub!=null)this.update(false);
     });
   }
+  // A pose preview changes the canvas, not exposure cells. Legacy animation
+  // keys and every timeline-bearing change keep their usual redraw path.
+  _changeNeedsPaint(detail){
+    if(detail.kind==='seek')return !this.paused&&this.gesture?.kind!=='scrub';
+    return !(detail.kind==='edit'&&detail.live&&!detail.animation&&!detail.structural&&!detail.timing&&
+      !detail.layers&&!detail.layerSheet&&!detail.definition&&!detail.audio&&!detail.drawing&&!detail.vfxClips&&
+      !detail.camera&&!detail.motionPath);
+  }
   render(){this.update();}
   _syncPlayhead(){
     this.onionRange?.update();
@@ -184,7 +192,14 @@ export class Timeline{
     const interval=step<2?50:step<5?20:step<9?10:5;for(let tick=first;tick<=last;tick++){const x=(tick+.5)*step-sx;if(tick===0||(tick+1)%interval===0){ctx.fillStyle=c.muted;ctx.fillText(String(tick+1),x,14);ctx.fillStyle=c.line;ctx.fillRect(Math.round(x),25,1,4);}}
     this._paintLabels(firstRow,lastRow,sy);
     const active=this.editor.getLayer(this.editor.activeLayerId),drawing=Boolean(active?.drawing),locked=drawing?active.locked||!active.visible:this.ids.some(id=>this.editor.getLayer(id)?.locked),label=drawing?'Blank frame':'Add Frame';
-    this.keyButton.disabled=locked||!this.ids.length;this.keyButton.lastChild.textContent=label;this.keyButton.dataset.hotkeyTitle=label;this.keyButton.setAttribute('aria-label',label);this.keyButton.title=label+(this.shortcut('add-frame')?' \u00b7 '+this.shortcut('add-frame'):'');this.copyDrawingButton.hidden=!drawing;this.copyDrawingButton.disabled=locked;
+    const disabled=locked||!this.ids.length,title=label+(this.shortcut('add-frame')?' \u00b7 '+this.shortcut('add-frame'):'');
+    if(this.keyButton.disabled!==disabled)this.keyButton.disabled=disabled;
+    if(this.keyButton.lastChild.textContent!==label)this.keyButton.lastChild.textContent=label;
+    if(this.keyButton.dataset.hotkeyTitle!==label)this.keyButton.dataset.hotkeyTitle=label;
+    if(this.keyButton.getAttribute('aria-label')!==label)this.keyButton.setAttribute('aria-label',label);
+    if(this.keyButton.title!==title)this.keyButton.title=title;
+    if(this.copyDrawingButton.hidden!==!drawing)this.copyDrawingButton.hidden=!drawing;
+    if(this.copyDrawingButton.disabled!==locked)this.copyDrawingButton.disabled=locked;
   }
   _paintLabels(first,last,sy){
     const signature=[first,last,sy,this.editor.layerRevision,this.editor.activeLayerId,this.editor._selectedCameraMotion,this.editor._selectedVfxClip,vfxChannelRevision(this.editor),...this.ids].join(':');if(signature===this.labelSignature)return;this.labelSignature=signature;

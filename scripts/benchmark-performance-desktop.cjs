@@ -54,6 +54,7 @@ async function run(window) {
   })()`);
   assert.ok(imported.frames > 1); assert.equal(imported.timings.cache_hit, false); assert.deepEqual(imported.errors, []);
   const processes = app.getAppMetrics();
+  const editing = process.env.STYK_BENCH_EDITING === '1' ? await require('./benchmark-editing-desktop.cjs')(window) : null;
   const playback = process.env.STYK_BENCH_PLAYBACK === '1' ? await execute(`(async () => {
     const renderer = styk.state.renderer, render = renderer.renderPrepared;
     if (typeof render !== 'function') throw new Error('Playback attribution requires the WebGPU path');
@@ -117,9 +118,11 @@ async function run(window) {
     } finally {exporter.dispose();}
   })()`) : null;
   await writeFile(path.join(output, 'report.json'), JSON.stringify({readyAt, startupMs, baseline, baselineHealth, imported, processes, digest, health,
-    exports, playback, playbackProcesses,
+    exports, playback, playbackProcesses, editing,
     environment: {cpu: os.cpus()[0].model, logicalCpus: os.cpus().length, ramBytes: os.totalmem(), os: os.release()}}, null, 2));
-  await execute('styk.editor.markSaved()');
+  // Wait for the main-process acknowledgement before asking to close. Merely
+  // marking the renderer saved can race its asynchronous desktop state update.
+  await execute('(async()=>{styk.editor.markSaved();await stykDesktop.setDocumentState({name:styk.editor.name,dirty:false});})()');
   app.quit();
 }
 require('../desktop/main.cjs');

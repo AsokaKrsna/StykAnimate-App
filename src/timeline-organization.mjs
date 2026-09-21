@@ -44,11 +44,14 @@ export const timelineOrganizationMethods = {
   _syncOrganization() {
     const count = this.visibleLayerCount;
     const total = this.editor.report._styk.layers.order.length;
-    this.layerSearch.title = `${count} of ${total} layers`;
-    this.clearSearch.hidden = !this.layerQuery;
-    this.focusLayersButton.setAttribute('aria-pressed', String(Boolean(this.focusedLayerIds)));
-    this.focusLayersButton.title = this.focusedLayerIds ? 'Show all layers' : 'Focus selected layers';
-    this.emptyLayers.hidden = count > 0 || !(this.layerQuery || this.focusedLayerIds);
+    const title=`${count} of ${total} layers`,hidden=!this.layerQuery,focused=String(Boolean(this.focusedLayerIds));
+    if(this.layerSearch.title!==title)this.layerSearch.title=title;
+    if(this.clearSearch.hidden!==hidden)this.clearSearch.hidden=hidden;
+    if(this.focusLayersButton.getAttribute('aria-pressed')!==focused)this.focusLayersButton.setAttribute('aria-pressed',focused);
+    const focusTitle=this.focusedLayerIds?'Show all layers':'Focus selected layers';
+    if(this.focusLayersButton.title!==focusTitle)this.focusLayersButton.title=focusTitle;
+    const emptyHidden=count>0||!(this.layerQuery||this.focusedLayerIds);
+    if(this.emptyLayers.hidden!==emptyHidden)this.emptyLayers.hidden=emptyHidden;
     const frames = this.end - this.start + 1;
     const text = `${this.ids.length} ${this.ids.length === 1 ? 'layer' : 'layers'} · ${frames === 1 ? `Frame ${this.start + 1}` : `${this.start + 1}–${this.end + 1} · ${frames} frames`}`;
     if (this.selectionSummary && this.selectionSummary.textContent !== text) this.selectionSummary.textContent = text;
