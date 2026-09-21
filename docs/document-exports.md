@@ -59,6 +59,11 @@ saving does not depend on the separate 256 MiB JSON response limit or construct
 a second complete normalized pose inventory. Fingerprint version 3 and its
 numeric/opaque-field semantics remain unchanged.
 
+PIV/STK export uses the same frame-at-a-time fingerprint for the submitted
+document. Older fingerprint versions keep their historical encoding. Validation
+and hashing still visit the complete document; streaming bounds the temporary
+normalized graph and JSON string, not the request or decoded document itself.
+
 The native file writer reports success at atomic destination commit. A later
 failure updating optional recent-file or recovery display metadata does not
 turn a saved document into a failed save; it reports an app diagnostic and sets
@@ -79,6 +84,13 @@ main-thread preparation time across all yields, and worker normalization,
 serialization, HTTP, container build, and output sizes. Background completion
 may take seconds for very large scenes; those durations do not represent UI
 blocking.
+
+Successful service exports also expose `service_ms` for request receipt, JSON
+parsing, validation, source fingerprinting, provenance, submitted-document
+fingerprinting and encoding, plus `request_bytes` for the actual HTTP body.
+These come from bounded `Server-Timing` and `X-Styk-Request-Bytes` headers. They
+describe server work before response transmission; `fetch_ms` includes the
+response. Only the latest successful export retains these diagnostics.
 
 Run `node tests/document-export-browser.mjs` for real PIV/STK byte identity,
 native persistence across an actual backend restart, preserved unknown fields,

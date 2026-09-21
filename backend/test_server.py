@@ -390,6 +390,11 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(status, 200, data)
         self.assertEqual(data, source)
         self.assertIn("Content-Disposition", headers)
+        stages = dict(metric.strip().split(";dur=") for metric in headers["Server-Timing"].split(","))
+        self.assertEqual(set(stages), {"receive", "parse", "validate", "source_digest", "provenance", "document_digest", "encode", "total"})
+        self.assertTrue(all(0 <= float(value) <= float(stages["total"]) for value in stages.values()))
+        self.assertIn("Server-Timing", headers["Access-Control-Expose-Headers"])
+        self.assertEqual(int(headers["X-Styk-Request-Bytes"]), len(server.encoded_json({**result, "format": "piv"})))
 
     def test_reject_remote_origin_host_and_private_static_files(self):
         status, _, _ = self.request("GET", "/api/samples", headers={"Origin": "https://attacker.example"})

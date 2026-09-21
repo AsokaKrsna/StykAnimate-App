@@ -48,6 +48,11 @@ try {
       requestAnimationFrame(tick);
       const output = await exporter.export(imported.document, {sourceId: imported.sourceId, format: original.format, name: original.name});
       const timings = {...exporter.lastTimings};
+      const service = timings.service_ms;
+      if (!service || !Number.isSafeInteger(timings.request_bytes) || timings.request_bytes <= 0 ||
+          ['receive', 'parse', 'validate', 'source_digest', 'provenance', 'document_digest', 'encode', 'total'].some(
+            stage => !Number.isFinite(service[stage]) || service[stage] < 0 || service[stage] > service.total))
+        throw new Error('Export service attribution was missing or invalid.');
       active = false; await new Promise(resolve => setTimeout(resolve, 30)); observer.disconnect();
       const sha256 = await hash(output);
       if (output.size !== original.bytes || sha256 !== original.sha256) {

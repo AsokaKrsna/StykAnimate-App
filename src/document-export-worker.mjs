@@ -176,6 +176,14 @@ self.addEventListener('message', async event => {
         }
         blob = await response.blob();
         timings.fetch_ms = performance.now() - sending;
+        const service = {};
+        for (const metric of (response.headers.get('Server-Timing') || '').slice(0, 1024).split(',')) {
+          const match = /^\s*(receive|parse|validate|source_digest|provenance|document_digest|encode|total);dur=(\d+(?:\.\d+)?)\s*$/.exec(metric);
+          if (match && Number.isFinite(Number(match[2]))) service[match[1]] = Number(match[2]);
+        }
+        timings.service_ms = service;
+        const bytes = Number(response.headers.get('X-Styk-Request-Bytes'));
+        if (Number.isSafeInteger(bytes) && bytes > 0) timings.request_bytes = bytes;
       }
       timings.worker_ms = performance.now() - started;
       timings.output_bytes = blob.size;

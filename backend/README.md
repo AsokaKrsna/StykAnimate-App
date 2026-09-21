@@ -56,7 +56,11 @@ geometry, polylines/polygons, sprites, text outlines, and its decoded media.
 Source fingerprints canonicalize numerically integral floats (including negative
 zero) as integers, matching browser JSON number normalization. Nonintegral
 floats, exact integer values, booleans, strings, and unknown fields stay distinct.
-Normalization does not mutate the editable document. New native metadata records
+Normalization does not mutate the editable document. Source and submitted-document
+fingerprints process one frame at a time, avoiding a second complete normalized
+document and JSON buffer during export comparison. Successful exports expose fixed
+`Server-Timing` stages and `X-Styk-Request-Bytes` for local performance diagnosis.
+Native metadata records
 `document_digest_version: 3`; known legacy object `runtime_segments` caches are
 excluded because the authoritative angles/lengths remain. Other unknown fields,
 including identically named fields at other locations, stay distinct. Older

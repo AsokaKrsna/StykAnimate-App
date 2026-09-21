@@ -187,6 +187,10 @@ def _canonical_numbers(value):
 
 
 def document_digest(document: dict, *, canonical: bool = True, runtime_aliases: bool = False) -> str:
+    if canonical and not runtime_aliases and all(isinstance(key, str) for key in document):
+        # The same v3 bytes, without a second complete pose graph or JSON string.
+        # Keep historical encoding for legacy fingerprints and non-JSON keys.
+        return source_document_digest(document)
     # Browser-only properties and lossless source storage are outside the format.
     semantic = {k: v for k, v in document.items() if k not in ("_stykSource", "_styk", "_stykWeb")}
     if canonical:
@@ -203,12 +207,13 @@ def document_digest(document: dict, *, canonical: bool = True, runtime_aliases: 
 
 
 def source_document_digest(document: dict) -> str:
-    """The v3 fingerprint, encoded one frame at a time without a JSON transport.
+    """The v3 fingerprint, encoded one frame at a time.
 
     Native frame imports can legitimately exceed the legacy JSON response limit.
     Saving their original source needs a fingerprint, not a second complete JSON
     buffer or a second normalized pose inventory. Decoder allocation remains
     serialized by ProjectStore.decode_lock; only one frame is normalized here.
+    Exported documents use the same bounded normalization and exact hash bytes.
     """
     digest = hashlib.sha256()
     def emit(value):
@@ -514,7 +519,14 @@ class ProjectStore:
         metadata["timings"]["total_ms"] = round((time.perf_counter() - started) * 1000, 3)
         return metadata
 
-    def export(self, request: dict) -> tuple[bytes, str]:
+    def export(self, request: dict, *, timings: dict | None = None) -> tuple[bytes, str]:
+        checkpoint = time.perf_counter()
+        def mark(stage):
+            nonlocal checkpoint
+            now = time.perf_counter()
+            if timings is not None:
+                timings[stage] = (now - checkpoint) * 1000
+            checkpoint = now
         document = request.get("document")
         if not isinstance(document, dict):
             raise ApiError(400, "invalid_document", "Export requires an editable document.")
@@ -522,6 +534,7 @@ class ProjectStore:
         if format_name not in ("piv", "stk", "styk", "stkz", "stykmov"):
             raise ApiError(415, "unsupported_export", "Export as piv, stk, styk, stkz, or stykmov.")
         bridge.validate_document(document)
+        mark("validate")
         if format_name in ("stkz", "stykmov"):
             validate_native_figure(document, format_name)
             output_doc = dict(document)
@@ -529,6 +542,7 @@ class ProjectStore:
             output_doc["_styk"] = {**document.get("_styk", {}), "format": "StykAnimate", "format_version": 1}
             output = native_format.encode_v2(output_doc, format_name)
             base = re.sub(r'[\x00-\x1f\x7f/\\:*?"<>|]', "_", str(request.get("filename") or "Figure")).strip(" .")[:180] or "Figure"
+            mark("encode")
             return output, f"{base}.{format_name}"
         source_id = request.get("sourceId")
         with self.lock:
@@ -539,6 +553,7 @@ class ProjectStore:
             raise ApiError(410, "source_expired", "The original source expired from memory. Reopen the original file before exporting.")
         if entry and entry.kind in ("piv", "stk") and entry.digest is None:
             self._source_digest(entry)
+        mark("source_digest")
         metadata = document.get("_stykSource", {})
         embedded_source = bridge.source_bytes(document)
         source = entry.data if entry and entry.kind in ("piv", "stk") else embedded_source
@@ -551,6 +566,7 @@ class ProjectStore:
         # Native saves always retain the edited document. Comparing its entire
         # graph against the source only affects binary PIV/STK export decisions.
         compare_binary = format_name != "styk"
+        mark("provenance")
         current_digest = document_digest(document) if compare_binary else None
         unchanged = compare_binary and current_digest == original_digest
         if compare_binary and not unchanged and not (entry and entry.kind in ("piv", "stk")) and metadata.get("document_digest_version", 1) == 1:
@@ -566,6 +582,7 @@ class ProjectStore:
                 original_doc.pop(key, None)
             compact_media_aliases(original_doc)
             unchanged = current_digest == document_digest(original_doc)
+        mark("document_digest")
         if format_name == "styk":
             output_doc = dict(document)
             output_doc["_styk"] = {**document.get("_styk", {}), "format": "StykAnimate", "format_version": 1}
@@ -617,6 +634,7 @@ class ProjectStore:
             output = bridge.encode_piv_project(bridge.scaffold(document), document, force_rebuild=True)
         if len(output) > MAX_DOCUMENT:
             raise ApiError(413, "export_too_large", "The exported project exceeds the transport limit.")
+        mark("encode")
         base = Path(request.get("filename") or (entry.filename if entry else "Untitled")).stem
         base = re.sub(r'[\x00-\x1f\x7f/\\:*?"<>|]', "_", base).strip(" .")[:180] or "Untitled"
         return output, f"{base}.{format_name}"
@@ -655,7 +673,8 @@ class Handler(BaseHTTPRequestHandler):
         return origin
 
     def _send(self, status: int, data: bytes, content_type: str, *, filename: str | None = None,
-              cache_control: str = "no-store", etag: str | None = None, length: int | None = None):
+              cache_control: str = "no-store", etag: str | None = None, length: int | None = None,
+              timings: dict | None = None, request_bytes: int | None = None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data) if length is None else length))
@@ -669,7 +688,11 @@ class Handler(BaseHTTPRequestHandler):
             if parts.scheme == "http" and parts.hostname in ("localhost", "127.0.0.1", "::1"):
                 self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Vary", "Origin")
-        self.send_header("Access-Control-Expose-Headers", "Content-Disposition, Server-Timing")
+        self.send_header("Access-Control-Expose-Headers", "Content-Disposition, Server-Timing, X-Styk-Request-Bytes")
+        if request_bytes is not None:
+            self.send_header("X-Styk-Request-Bytes", str(request_bytes))
+        if timings:
+            self.send_header("Server-Timing", ", ".join(f"{stage};dur={duration:.3f}" for stage, duration in timings.items()))
         if filename:
             self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + quote(filename))
         self.end_headers()
@@ -784,7 +807,13 @@ class Handler(BaseHTTPRequestHandler):
                     prefer_native=import_wire.CONTENT_TYPE in self.headers.get("Accept", ""))
                 self._send(200, result, import_wire.CONTENT_TYPE if result.startswith(import_wire.MAGIC) else "application/json; charset=utf-8")
             elif parsed.path in ("/api/open", "/api/export"):
-                request = decoded_json(self._body(MAX_DOCUMENT))
+                started = time.perf_counter()
+                body = self._body(MAX_DOCUMENT)
+                request_bytes = len(body)
+                received = time.perf_counter()
+                request = decoded_json(body)
+                timings = {"receive": (received - started) * 1000, "parse": (time.perf_counter() - received) * 1000}
+                del body
                 if not isinstance(request, dict):
                     raise ApiError(400, "invalid_request", "The request must be a JSON object.")
                 if parsed.path == "/api/open":
@@ -792,8 +821,9 @@ class Handler(BaseHTTPRequestHandler):
                         prefer_native=import_wire.CONTENT_TYPE in self.headers.get("Accept", ""))
                     self._send(200, result, import_wire.CONTENT_TYPE if result.startswith(import_wire.MAGIC) else "application/json; charset=utf-8")
                 else:
-                    data, name = self.server.store.export(request)
-                    self._send(200, data, "application/octet-stream", filename=name)
+                    data, name = self.server.store.export(request, timings=timings)
+                    timings["total"] = (time.perf_counter() - started) * 1000
+                    self._send(200, data, "application/octet-stream", filename=name, timings=timings, request_bytes=request_bytes)
             else:
                 raise ApiError(404, "route_not_found", "Unknown codec endpoint.")
         except (BrokenPipeError, ConnectionResetError):
