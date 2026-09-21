@@ -379,11 +379,20 @@ fill/selection/resample history, clipboard, both renderer paths and encoders.
 
 Mouse/browser checks and deterministic pressure tests do not certify physical
 pen drivers, input-to-photon latency or every GPU. Tilt, vector strokes and
-resolution-independent drawing are outside this implementation. Fill regions
-are bounded to 64 megapixels and follow stage plus artwork bounds, independently
-of zoom. Scanline fill keeps tiled source/output pixels, bounded masks and a
-bounded span stack, with a fast path for uniform regions. Cancellation terminates
-the worker and the next operation starts a fresh worker. New clipboard packets,
+resolution-independent drawing are outside this implementation. Fill follows
+stage plus artwork bounds, independently of zoom. The `drawing-fill.mjs` worker
+kernel allocates masks only for reached tiles and the gap/expansion halo, so a
+small enclosed fill is independent of distant artwork or total bounds area.
+Tolerance still compares premultiplied RGBA; gap closing and expansion retain
+four-neighbour distances across tile boundaries. Uniform tiles use a fast path.
+Source pixels, masks, pending work and prepared output share a memory budget;
+reached empty tiles reserve their future output before traversal continues.
+Output and history are prepared before adoption, so a rejected operation never
+partially edits the drawing. Cancellation terminates the worker and the next
+operation starts a fresh worker. Sample all layers still uses a main-thread
+composited canvas and has a 64-megapixel limit; its canvas/readback allocation
+and source transfer are checked against the available working memory first.
+New clipboard packets,
 sparse lasso capture, resampling and transformed paste output are bounded by
 occupied tiles and available memory instead of a
 dense bounding-box limit. The embedded tile-blob and native-container limits

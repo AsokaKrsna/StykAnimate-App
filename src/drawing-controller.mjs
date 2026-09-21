@@ -1,6 +1,7 @@
 import {strokeRegion} from './drawing-stroke-region.mjs';
 import {BRUSH_PRESETS} from './drawing-view.mjs';
 import {DrawingStroke} from './drawing-pixels.mjs';
+import {FILL_SOURCE_MAX_PIXELS} from './drawing-fill.mjs';
 import {lassoBounds,lassoContains,selectionStores} from './drawing-lasso.mjs';
 import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,inversePoint,transformPoint} from './drawing-model.mjs';
 import {TILE,tileKey,parseTileKey,TileStore} from './drawing-tiles.mjs';
@@ -332,9 +333,17 @@ export class DrawingController {
     try{
       op.reserve(surface,owner.hardBudget);
       const bounds=this.fillBounds(target,surface.store);
-      if(!bounds)return;if(bounds.width*bounds.height>64*1024*1024)throw new Error('The fill region exceeds 64 megapixels.');
+      if(!bounds)return;
       let source;
-      if(this.settings.sampleAll){await this.barrierForComposite();op.check();const c=canvas(bounds.width,bounds.height),ctx=c.getContext('2d'),inverse=new DOMMatrix(this.pixelMatrix(target)).inverse();ctx.setTransform(inverse.a,inverse.b,inverse.c,inverse.d,inverse.e-bounds.x,inverse.f-bounds.y);drawGeometry(ctx,{drawables:this.editor.geometry.drawables.filter(i=>this.editor.getLayer(this.editor.layerForUid(i.obj.unique_id))?.visible!==false)},this.getResources());source=ctx.getImageData(0,0,c.width,c.height).data.buffer;c.width=c.height=1;}
+      if(this.settings.sampleAll){
+        if(bounds.width*bounds.height>FILL_SOURCE_MAX_PIXELS)throw new Error('Sample all layers supports fill regions up to 64 megapixels.');
+        const sourceBytes=bounds.width*bounds.height*4;
+        if(sourceBytes*2>op.maxBytes)throw new Error('The fill exceeds the drawing working memory limit.');
+        await this.barrierForComposite();op.check();const c=canvas(bounds.width,bounds.height);
+        try{const ctx=c.getContext('2d'),inverse=new DOMMatrix(this.pixelMatrix(target)).inverse();ctx.setTransform(inverse.a,inverse.b,inverse.c,inverse.d,inverse.e-bounds.x,inverse.f-bounds.y);drawGeometry(ctx,{drawables:this.editor.geometry.drawables.filter(i=>this.editor.getLayer(this.editor.layerForUid(i.obj.unique_id))?.visible!==false)},this.getResources());source=ctx.getImageData(0,0,c.width,c.height).data.buffer;}
+        finally{c.width=c.height=1;}
+        op.copiedBytes=source.byteLength;
+      }
       const tiles=await this.copyWorkerTiles(surface,op,t=>tileIntersects(t,bounds));
       const result=await owner.worker.request('fill',{bounds,tiles,options:{maxBytes:op.maxBytes,...point,color:[...this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16)),Math.round(this.settings.opacity*255)],tolerance:this.settings.tolerance,expansion:this.settings.expansion,gap:this.settings.gap},source},{signal:controller.signal,transfer:[...tiles.map(t=>t.pixels),...(source?[source]:[])]});
       op.check();op.received(result.tiles);await this.commitPixels(target,result.tiles,'Fill drawing',op);this.onStatus('Drawing filled.');

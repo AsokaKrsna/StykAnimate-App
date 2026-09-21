@@ -1,5 +1,6 @@
 import {TILE,TILE_BYTES,tileKey,TileStore,tileTransparent} from './drawing-tiles.mjs';
-import {floodTiles,tileChanges} from './drawing-pixels.mjs';
+import {tileChanges} from './drawing-pixels.mjs';
+import {floodTiles} from './drawing-fill.mjs';
 import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {decodeDrawingPNG} from './drawing-png.mjs';
 import {encodeClipboardTiles,decodePixelClipboard} from './drawing-clipboard.mjs';

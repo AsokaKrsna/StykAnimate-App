@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {DrawingResources} from '../src/drawing-resources.mjs';
-import {DrawingStroke,floodTiles,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
+import {DrawingStroke,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
+import {floodTiles} from '../src/drawing-fill.mjs';
 import {drawingMetadata,validateDrawings,drawingMatrix,drawingPixelMatrix,inversePoint,transformPoint,migrateDrawingFigure,EMPTY_PNG} from '../src/drawing-model.mjs';
 import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from '../src/drawing-tiles.mjs';
 import {encodeTileBlob,decodeTileBlob,assembleTileBlobBytes,TILE_BLOB_PREFIX,TileEncodeCache} from '../src/drawing-tile-codec.mjs';
@@ -164,7 +165,8 @@ test('floodTiles stays inside its bounds, closes gaps and allocates only touched
   assert.equal(sealed.pixel(9,5)[3],0);assert.equal(sealed.pixel(9,9)[3],0);
   // A seed outside the bounds rect is rejected silently.
   const empty=new TileStore();floodTiles(empty,{x:500,y:0,color:[1,2,3,255],bounds:{x:0,y:0,width:10,height:10}});assert.equal(empty.size,0);
-  assert.throws(()=>floodTiles(empty,{x:0,y:0,bounds:{x:0,y:0,width:8192,height:8193}}),/bounds/);
+  assert.throws(()=>floodTiles(empty,{x:0,y:0,bounds:{x:0,y:0,width:8192,height:8193},maxBytes:1024*1024}),/memory/);
+  assert.equal(empty.size,0,'An over-budget fill leaves the source untouched.');
 });
 
 test('tile blobs round-trip exact RGBA at negative coordinates and skip transparent tiles',async()=>{

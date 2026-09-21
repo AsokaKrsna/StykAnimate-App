@@ -80,3 +80,11 @@ test('a small operation reserves available memory alongside other unpublished ce
     assert.equal(owner.workingBytes,0);assert.equal(other.store.size,2);
   }finally{owner.dispose();}
 });
+
+test('sample-all fill checks dense capture memory before allocating a canvas',async()=>{
+  const d=fixture(),surface={store:new TileStore()},figure={};let requested=false;
+  Object.assign(d,{settings:{sampleAll:true},fillBounds:()=>({x:0,y:0,width:4096,height:4096})});
+  Object.assign(d.owner,{hardBudget:16*1024*1024,stats:{bytes:0,historyBytes:0,deferredBytes:0,workingBytes:0},reserve:()=>{},discard:()=>{},worker:{request:()=>{requested=true;}}});
+  await assert.rejects(d.fill({figure},surface,{x:0,y:0}),/working memory/);
+  assert.equal(requested,false);assert.equal(surface.pinned,false);assert.equal(d.holds.size,0);assert.equal(d.operation,null);
+});
