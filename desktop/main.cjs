@@ -5,7 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs/promises');
 const { mkdirSync, existsSync } = require('node:fs');
-const { startBackend } = require('./backend.cjs');
+const { startDesktopHost } = require('./web-host.cjs');
 const { RecoveryStore, atomicWrite } = require('./recovery.cjs');
 const { FileStreams } = require('./file-streams.cjs');
 const { SharedClipboard } = require('./shared-clipboard.cjs');
@@ -686,7 +686,7 @@ async function start() {
   library = new LibraryStore(process.env.STYK_LIBRARY_DIR || path.join(app.getPath('documents'), 'StykAnimate', 'library'));
   // A temporarily unavailable Documents volume should not prevent animation work.
   void library.init().catch(error => console.warn('Library initialization:', error.message));
-  backend = await startBackend({
+  backend = await startDesktopHost({
     appRoot: APP_ROOT, resourcesPath: process.resourcesPath, packaged: app.isPackaged,
     log: (message) => { if (process.env.STYK_DEBUG === '1') process.stderr.write(message); },
     onError: (message) => { telemetry?.error('BackendError', 'backend', 'backend_errors'); if (window && !window.isDestroyed()) window.webContents.send('styk:backend-error', message); },

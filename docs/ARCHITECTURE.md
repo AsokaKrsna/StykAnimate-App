@@ -110,6 +110,17 @@ Custom HTML/CSS provides compact editable controls, native keyboard/text behavio
 
 Electron uses context isolation, sandboxed renderer code, and no renderer Node globals. Native IPC exposes specific file/stream/window/preference operations, not arbitrary filesystem commands. Workspace preferences live in a fixed, atomically written user-data JSON file capped at 16 KiB. They and recovery survive a restarted process even though its loopback origin changes.
 
+`desktop/web-host.cjs` owns the desktop's loopback origin. It streams public web
+assets asynchronously while `desktop/backend.cjs` starts the Python codec in
+parallel. `/api/` requests use the same origin and stream through a bounded
+16-request proxy with backpressure; pending requests do not buffer their uploads.
+Closing a client releases its proxy slot, and quitting aborts both pending codec
+startup and the running child. Codec failure leaves WebGPU editing, Undo/Redo,
+native project saving and local native reopening available. Pivot/STK conversion
+still requires the codec. Proxy cancellation closes the upstream connection; it
+does not yet interrupt Python CPU work already in progress. Browser development
+continues to use the Python server's static host.
+
 Windows source execution and packaged snapshots are verified. A distributable includes the frozen codec sidecar, current web assets, source grammar, and licenses. Rebuild and verify the package after source changes; earlier smoke reports do not certify newer bytes. macOS/Linux targets require their own builds and actual platform verification.
 
 ## Canvas guides and grid

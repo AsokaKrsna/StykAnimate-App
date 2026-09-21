@@ -78,6 +78,14 @@ requires `Authorization: Bearer <token>` for codec APIs. Health and static
 resources remain available to the launcher. Host and Origin must be local even
 without a token; remote origins and filesystem traversal are rejected.
 
+Desktop windows use `desktop/web-host.cjs` as their public loopback origin. It
+serves the packaged web assets immediately and streams `/api/` traffic to this
+codec once it is ready, with at most 16 pending/active requests and bounded
+uploads. The editor and worker-native project saving/reopening do not wait for
+Python startup. The launcher cancels a starting or running child on quit. The
+Python static host remains available for browser development and direct codec
+tests. Closing a proxied request does not yet cancel its Python CPU processing.
+
 Run verification with `python -m unittest discover -s backend -p test_server.py`.
 Tests cover the real 37-file PIV corpus, shipped and workspace STKs, edited
 exports, native-save reopening, parser equivalence, bounded invalid input,
