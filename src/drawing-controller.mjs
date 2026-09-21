@@ -1,14 +1,14 @@
 import {strokeRegion} from './drawing-stroke-region.mjs';
 import {BRUSH_PRESETS} from './drawing-view.mjs';
-import {lassoMask,tileAlignedRect,DrawingStroke} from './drawing-pixels.mjs';
-import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,inversePoint,transformPoint,DRAWING_MAX_PIXELS} from './drawing-model.mjs';
+import {lassoMask,DrawingStroke} from './drawing-pixels.mjs';
+import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,inversePoint,transformPoint} from './drawing-model.mjs';
 import {TILE,tileKey,parseTileKey,TileStore} from './drawing-tiles.mjs';
-import {encodeDrawingPNG} from './drawing-png.mjs';
 import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
 import {drawingCelPrefetch} from './onion-skin.mjs';
 import {buildGeometry,drawGeometry} from './pivot/geometry.mjs';
 import {createFrame} from './demo.mjs';
 import {screenToWorld,worldToScreen} from './renderer-geometry.mjs';
+import {TRANSFORM_BYTES,transformSupportBounds,tileIntersects,inverseMatrix,multiplyMatrix} from './drawing-transform.mjs';
 import {selectionMatrix,selectionTiles,selectionPresenter} from './drawing-selection.mjs';
 
 const pointerSample=e=>({clientX:e.clientX,clientY:e.clientY,pressure:e.pressure,pointerType:e.pointerType,timeStamp:e.timeStamp,button:e.button,buttons:e.buttons});
@@ -17,7 +17,7 @@ const brushKeys=['preset','size','opacity','flow','hardness','pressureSize','pre
 const unionRects=(a,b)=>{if(!a)return b?{...b}:null;if(!b)return{...a};const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);return{x,y,width:Math.max(a.x+a.width,b.x+b.width)-x,height:Math.max(a.y+a.height,b.y+b.height)-y};};
 export class DrawingController {
   constructor({editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getResources,getTimeline,getClipboard}) {
-    Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getResources,getTimeline,getClipboard,settings:{preset:'ink',size:8,color:'#252525',opacity:1,flow:1,hardness:1,pressureSize:true,pressureOpacity:false,sizeCurve:1,opacityCurve:1,stabilization:0,spacingRatio:.08,texture:0,resolution:2,length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
+    Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getResources,getTimeline,getClipboard,settings:{preset:'ink',size:8,color:'#252525',opacity:1,flow:1,hardness:1,pressureSize:true,pressureOpacity:false,sizeCurve:1,opacityCurve:1,stabilization:0,spacingRatio:.08,texture:0,resolution:2,filter:'smooth',length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
     this.panel=document.getElementById('inspector');
     const events=this.events=new AbortController(),opts={signal:events.signal};
     this.panel.addEventListener('click',event=>{const preset=event.target.closest('[data-draw-preset]'),action=event.target.closest('[data-draw-action]');if(preset){this.finish();Object.assign(this.settings,BRUSH_PRESETS.find(p=>p.id===preset.dataset.drawPreset),{preset:preset.dataset.drawPreset});this.onUI();}if(action)this.run(()=>this.action(action.dataset.drawAction));},opts);
@@ -70,10 +70,40 @@ export class DrawingController {
   /** Commands wait for the pixel transaction, not PNG publication. Seeking
    * may update the view meanwhile; the stroke still owns its original key. */
   settle({selection=false}={}){
+    if(this.operation)return this.operation.done.then(()=>this.settle({selection}));
     if(this.loading?.done){const pending=this.loading;pending.released=true;return pending.done.then(()=>this.settle({selection}));}
     this.finish();const stroke=this.gesture?.session?.done;
     if(stroke)return stroke.then(()=>this.settle({selection}));
     return this.selection?.committing??(selection?this.applySelection():null);
+  }
+  /** One pixel transaction owns worker work and its target until publication.
+   * Navigation/save barriers await it; Escape terminates it without publishing. */
+  pixelOperation(label,operation){
+    if(this.operation)return this.operation.done.then(()=>this.pixelOperation(label,operation));
+    const owner=this.owner,revision=this.editor.revision,op={owner,abort:new AbortController()};
+    op.check=()=>{if(op.abort.signal.aborted||owner!==this.owner||revision!==this.editor.revision)throw new DOMException('Drawing operation superseded.','AbortError');};
+    op.reserve=(surface,requested=TRANSFORM_BYTES)=>{op.check();owner.hold(op,0);owner.reserve(0,surface);op.maxBytes=Math.min(requested,Math.max(0,owner.hardBudget-owner.stats.bytes-owner.workingBytes));owner.hold(op,op.maxBytes,surface);};
+    op.received=tiles=>owner.hold(op,tiles.reduce((n,t)=>n+(t.pixels?.byteLength??0)+(t.before?.byteLength??0)+(t.after?.byteLength??0),0));
+    this.operation=op;owner.busy=true;this.onStatus(label+'… Escape cancels.');
+    op.done=Promise.resolve().then(()=>operation(op)).then(value=>{op.succeeded=true;return value;}).finally(()=>{
+      owner.hold(op,0);owner.busy=false;if(this.operation===op)this.operation=null;
+      if(op.abort.signal.aborted||!op.succeeded)this.loading=null;else this.resumeQueuedPointer();
+      this.onRender();
+    });
+    return op.done;
+  }
+  async copyWorkerTiles(surface,op,predicate=()=>true){
+    const tiles=[];let copied=0;
+    for(const tile of surface.store){
+      if(!predicate(tile))continue;
+      tiles.push({tx:tile.tx,ty:tile.ty,pixels:tile.pixels.slice().buffer});
+      if(++copied%128===0){await new Promise(resolve=>setTimeout(resolve,0));op.check();}
+    }
+    return tiles;
+  }
+  resumeQueuedPointer(){
+    const queued=this.loading?.queued?this.loading:null;
+    if(queued&&!this.gesture&&!this.operation){this.loading=null;this.run(()=>this.down({...queued.event,samples:queued.samples,released:queued.released}));}
   }
   afterGesture(operation){
     const wait=this.settle({selection:true}),report=this.editor.report;
@@ -105,13 +135,14 @@ export class DrawingController {
   pixelMatrix(target){return this.gesture?.session?.target===target?this.gesture.session.pixelMatrix:drawingPixelMatrix(this.geometryItem(target));}
   pixel(event,target){return inversePoint(this.pixelMatrix(target),this.point(event));}
   async down(event){
+    if(this.operation){if(!this.loading)this.loading={id:event.pointerId,sequence:++this.sequence,released:false,samples:[],event:{...pointerSample(event),pointerId:event.pointerId},queued:true};return;}
     if(this.gesture){
       // A pointer arriving while the previous stroke is closing queues behind its commit.
       if(this.gesture.kind==='stroke'&&this.gesture.session.ended&&!this.loading)this.loading={id:event.pointerId,sequence:++this.sequence,released:false,samples:[],event:{...pointerSample(event),pointerId:event.pointerId},queued:true};
       return;
     }
     if(this.loading)return;if(event.pointerType==='touch'){if(performance.now()-(this.lastPen??-Infinity)<700)return;this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'pan',start:pointerSample(event),view:{...this.state.view}};return;}if(event.pointerType==='pen')this.lastPen=performance.now();
-    this.beforeEdit();this.viewport.focus({preventScroll:true});this.overlay.setPointerCapture(event.pointerId);
+    this.beforeEdit();this.viewport.focus({preventScroll:true});if(!event.released)this.overlay.setPointerCapture(event.pointerId);
     const sequence=++this.sequence,revision=this.editor.revision,owner=this.owner;
     let target=this.editor.prepareDrawingCel({pixelsPerUnit:this.settings.resolution,world:this.point(event)}),surface;
     const pending=this.loading={id:event.pointerId,sequence,released:event.released??false,samples:event.samples??[],event:pointerSample(event)};
@@ -225,8 +256,7 @@ export class DrawingController {
       if(this.selection?.surface===s.surface)this.previewSelection();else{this.owner.present(s.surface);this.owner.discard(s.target.figure);}
       if(g?.session===s&&this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);
       this.sync();this.onUI();this.onRender();
-      const queued=this.loading?.queued?this.loading:null;
-      if(queued&&!this.gesture){this.loading=null;this.run(()=>this.down({...queued.event,samples:queued.samples,released:queued.released}));}
+      this.resumeQueuedPointer();
     }
   }
   move(event){this.cursor=pointerSample(event);if(this.loading?.id===event.pointerId){if(this.loading.samples.length>=65536)throw new Error('Drawing input exceeded the queue limit.');this.loading.samples.push(pointerSample(event));return;}const g=this.gesture;if(!g||g.id!==event.pointerId){this.onRender();return;}
@@ -252,8 +282,8 @@ export class DrawingController {
     if(g.kind==='pose')this.editor.commitDrag();
     else if(g.kind==='lasso')this.makeSelection(g);
   }finally{g.surface.pinned=Boolean(this.selection?.surface===g.surface);if(this.selection?.surface===g.surface)this.previewSelection();else{this.owner.present(g.surface);this.owner.discard(g.target.figure);}if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.sync();this.onUI();this.onRender();}}
-  cancel(){this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();return;}this.gesture=null;if(g.kind==='pan'){Object.assign(this.state.view,g.view);this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.hold?.(s,0);s.owner.busy=false;this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
-  async barrier(options){await this.settle({selection:true});if(this.loading)throw new Error('Wait for the drawing to finish loading.');if(this.fillAbort)throw new Error('Finish or cancel the fill first.');await drawingBarrier(this.editor.report,options);}
+  cancel(){this.operation?.abort.abort();this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();return;}this.gesture=null;if(g.kind==='pan'){Object.assign(this.state.view,g.view);this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.hold?.(s,0);s.owner.busy=false;this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
+  async barrier(options){await this.settle({selection:true});if(this.loading)throw new Error('Wait for the drawing to finish loading.');await drawingBarrier(this.editor.report,options);}
   /** Fill bounds follow the document, independent of display zoom. */
   fillBounds(target,store){
     const matrix=this.pixelMatrix(target),toPixel=p=>inversePoint(matrix,p);
@@ -261,24 +291,24 @@ export class DrawingController {
     const box=points=>({x:Math.floor(Math.min(...points.map(p=>p.x))),y:Math.floor(Math.min(...points.map(p=>p.y))),width:Math.ceil(Math.max(...points.map(p=>p.x)))-Math.floor(Math.min(...points.map(p=>p.x))),height:Math.ceil(Math.max(...points.map(p=>p.y)))-Math.floor(Math.min(...points.map(p=>p.y)))});
     return unionRects(box(stage),store.bounds);
   }
-  async fill(target,surface,point){
-    const controller=this.fillAbort=new AbortController(),revision=this.editor.revision,owner=this.owner;surface.pinned=true;owner.busy=true;this.onStatus('Filling drawing… Escape cancels.');
+  fill(target,surface,point){return this.pixelOperation('Filling drawing',async op=>{
+    const controller=this.fillAbort=op.abort,owner=op.owner;surface.pinned=true;
     try{
+      op.reserve(surface,owner.hardBudget);
       const bounds=this.fillBounds(target,surface.store);
       if(!bounds)return;if(bounds.width*bounds.height>64*1024*1024)throw new Error('The fill region exceeds 64 megapixels.');
       let source;
-      if(this.settings.sampleAll){await this.barrierForComposite();const c=canvas(bounds.width,bounds.height),ctx=c.getContext('2d'),inverse=new DOMMatrix(this.pixelMatrix(target)).inverse();ctx.setTransform(inverse.a,inverse.b,inverse.c,inverse.d,inverse.e-bounds.x,inverse.f-bounds.y);drawGeometry(ctx,{drawables:this.editor.geometry.drawables.filter(i=>this.editor.getLayer(this.editor.layerForUid(i.obj.unique_id))?.visible!==false)},this.getResources());source=ctx.getImageData(0,0,c.width,c.height).data.buffer;}
-      const tiles=[...TileStore.tilesInRect(bounds.x,bounds.y,bounds.width,bounds.height)].map(([tx,ty])=>surface.store.get(tx,ty)).filter(Boolean).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
-      const result=await owner.worker.request('fill',{bounds,tiles,options:{maxBytes:owner.hardBudget,...point,color:[...this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16)),Math.round(this.settings.opacity*255)],tolerance:this.settings.tolerance,expansion:this.settings.expansion,gap:this.settings.gap},source},{signal:controller.signal,transfer:[...tiles.map(t=>t.pixels),...(source?[source]:[])]});
-      if(controller.signal.aborted||owner!==this.owner||revision!==this.editor.revision)throw new DOMException('Fill superseded by another edit.','AbortError');
-      this.editor.commitDrawingPixels(target,result.tiles,'Fill drawing');this.onStatus('Drawing filled.');
-    }finally{surface.pinned=false;owner.busy=false;if(this.fillAbort===controller)this.fillAbort=null;this.onRender();}
-  }
+      if(this.settings.sampleAll){await this.barrierForComposite();op.check();const c=canvas(bounds.width,bounds.height),ctx=c.getContext('2d'),inverse=new DOMMatrix(this.pixelMatrix(target)).inverse();ctx.setTransform(inverse.a,inverse.b,inverse.c,inverse.d,inverse.e-bounds.x,inverse.f-bounds.y);drawGeometry(ctx,{drawables:this.editor.geometry.drawables.filter(i=>this.editor.getLayer(this.editor.layerForUid(i.obj.unique_id))?.visible!==false)},this.getResources());source=ctx.getImageData(0,0,c.width,c.height).data.buffer;c.width=c.height=1;}
+      const tiles=await this.copyWorkerTiles(surface,op,t=>tileIntersects(t,bounds));
+      const result=await owner.worker.request('fill',{bounds,tiles,options:{maxBytes:op.maxBytes,...point,color:[...this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16)),Math.round(this.settings.opacity*255)],tolerance:this.settings.tolerance,expansion:this.settings.expansion,gap:this.settings.gap},source},{signal:controller.signal,transfer:[...tiles.map(t=>t.pixels),...(source?[source]:[])]});
+      op.check();op.received(result.tiles);this.editor.commitDrawingPixels(target,result.tiles,'Fill drawing');this.onStatus('Drawing filled.');
+    }finally{surface.pinned=false;owner.discard(target.figure);if(this.fillAbort===controller)this.fillAbort=null;}
+  });}
   async barrierForComposite(){await drawingBarrier(this.editor.report);const assets=this.editor.geometry.drawables.filter(i=>i.type==='image');await Promise.all(assets.map(async i=>{const image=this.getResources().image(this.getResources().url(i.asset));if(image&&!image.complete)await image.decode?.();}));}
   makeSelection(g){
     const mask=lassoMask(g.points);if(!mask.mask.some(Boolean))return;this.cancelSelection();
     const xs=g.points.map(p=>p.x),ys=g.points.map(p=>p.y),region=g.surface.store.readRect(mask.x,mask.y,mask.width,mask.height);
-    const s=this.selection={cx:(Math.min(...xs)+Math.max(...xs))/2,cy:(Math.min(...ys)+Math.max(...ys))/2,target:g.target,surface:g.surface,mask,points:g.points,originalPixels:region,dx:0,dy:0,scale:1,angle:0};
+    const s=this.selection={cx:(Math.min(...xs)+Math.max(...xs))/2,cy:(Math.min(...ys)+Math.max(...ys))/2,target:g.target,surface:g.surface,mask,points:g.points,originalPixels:region,dx:0,dy:0,scale:1,angle:0,filter:this.settings.filter};
     const cut=region.slice(),coverage=new Uint8ClampedArray(region.length);
     for(let p=0;p<mask.mask.length;p++){if(mask.mask[p])coverage[p*4+3]=255;else cut[p*4+3]=0;}
     s.cutout=canvas(mask.width,mask.height);s.cutout.getContext('2d').putImageData(new ImageData(cut,mask.width,mask.height),0,0);
@@ -286,23 +316,26 @@ export class DrawingController {
     s.presenter=selectionPresenter(s,this.owner.presenter(g.target.figure));g.surface.pinned=true;this.owner.surfaceVersion++;this.owner.onChange();this.previewSelection();
   }
   previewSelection(){const s=this.selection;if(!s||s.committing)return;s.presenter.stamp++;this.onRender();}
-  commitSelection(s,label,{remove=false}={}){
+  commitSelection(s,label,{remove=false,operation}={}){
     if(s.committing)return s.committing;
-    const owner=this.owner,revision=this.editor.revision,abort=s.abort=new AbortController();owner.busy=true;
-    s.committing=(async()=>{
-      const matrix=selectionMatrix(s),tiles=selectionTiles(s.surface.store,s.mask,matrix).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
+    const commit=async op=>{
+      if(this.selection!==s)throw new DOMException('Selection changed.','AbortError');
+      const owner=op.owner,abort=s.abort=op.abort;op.reserve(s.surface);
+      const matrix=selectionMatrix(s),selected=new Set(selectionTiles(s.surface.store,s.mask,matrix,this.settings.filter));
+      const tiles=await this.copyWorkerTiles(s.surface,op,t=>selected.has(t));
       const pixels=s.originalPixels.slice().buffer,mask={...s.mask,mask:s.mask.mask.slice().buffer};
-      const result=await owner.worker.request('selection',{tiles,selection:{matrix,mask,pixels,remove,maxBytes:Math.min(owner.hardBudget,192*1024*1024)}},{signal:abort.signal,transfer:[pixels,mask.mask,...tiles.map(t=>t.pixels)]});
-      if(abort.signal.aborted||this.selection!==s||owner!==this.owner||revision!==this.editor.revision)throw new DOMException('Selection changed.','AbortError');
+      const result=await owner.worker.request('selection',{tiles,selection:{matrix,mask,pixels,remove,filter:this.settings.filter,maxBytes:op.maxBytes}},{signal:abort.signal,transfer:[pixels,mask.mask,...tiles.map(t=>t.pixels)]});
+      op.check();if(this.selection!==s)throw new DOMException('Selection changed.','AbortError');op.received(result.tiles);
       this.endSelection(false);return this.editor.commitDrawingPixels(s.target,result.tiles,label);
-    })().finally(()=>{owner.busy=false;if(this.selection===s)this.endSelection(false);this.onRender();});
+    };
+    s.committing=(operation?commit(operation):this.pixelOperation(label,commit)).finally(()=>{if(this.selection===s)this.endSelection(false);this.onRender();});
     return s.committing;
   }
   selectionContains(point){const s=this.selection;if(!s)return false;const B=s.mask,angle=-s.angle*Math.PI/180,x=point.x-s.cx-s.dx,y=point.y-s.cy-s.dy,px=Math.floor(s.cx+(Math.cos(angle)*x-Math.sin(angle)*y)/s.scale),py=Math.floor(s.cy+(Math.sin(angle)*x+Math.cos(angle)*y)/s.scale);return px>=B.x&&py>=B.y&&px<B.x+B.width&&py<B.y+B.height&&Boolean(B.mask[(py-B.y)*B.width+(px-B.x)]);}
   applySelection(){const s=this.selection;if(!s)return;if(s.committing)return s.committing;if(!s.dx&&!s.dy&&s.scale===1&&!s.angle){this.cancelSelection();return;}return this.commitSelection(s,'Transform selected pixels');}
   endSelection(cancel=true){const s=this.selection;if(!s)return;this.selection=null;if(cancel)s.abort?.abort();s.presenter?.dispose();s.surface.pinned=false;for(const c of [s.cutout,s.maskCanvas])if(c)c.width=c.height=1;this.owner.surfaceVersion++;this.owner.present(s.surface);this.onRender();}
   cancelSelection(){this.endSelection(true);}
-  async action(action){const pending=this.settle();if(pending)await pending;const e=this.editor,ids=[e.activeLayerId];
+  async action(action){if(action==='cancel-selection')return this.cancelSelection();const pending=this.settle();if(pending)await pending;const e=this.editor,ids=[e.activeLayerId];
     if(action==='new'){const layer=e.createDrawingLayer();this.state.selectedTrackId=layer.id;this.getTimeline()?.selectTrack?.(layer.id);this.sync();this.onUI();return;}
     if(!['copy-pixels','cut-pixels','delete-pixels','apply-selection','cancel-selection'].includes(action))await this.applySelection();
     if(action==='blank')return e.drawingKey(ids,e.tick,{blank:true});if(action==='copy-key'){if(!e.drawingKey(ids))this.onStatus('This cell already starts a drawing. Use Next copy to add time.');return;}
@@ -313,61 +346,51 @@ export class DrawingController {
     if(action==='duplicate-layer'){await this.barrier();const source=e.getLayer(e.activeLayerId),end=e.report._styk.layerSheet.tracks[source.id].end;const old=e._sheetClipboard;try{e.sheetCopyFrames([source.id],0,end-1);return e.movieclipBatch('Duplicate drawing layer',()=>{const layer=e.createLayer(source.name+' copy',{drawing:true});e.sheetPasteFrames([layer.id],0);});}finally{e._sheetClipboard=old;}}
     if(['copy-pixels','cut-pixels'].includes(action))return this.getClipboard().copy('drawing-pixels',async()=>{
       const s=this.selection;if(!s)throw new Error('Select pixels with the lasso first.');
-      const revision=e.revision,B=s.mask;let rect,pixels;
-      if(!s.dx&&!s.dy&&!s.angle&&s.scale===1){rect={x:B.x,y:B.y,width:B.width,height:B.height};pixels=new Uint8ClampedArray(s.originalPixels);for(let p=0;p<B.mask.length;p++)if(!B.mask[p])pixels.fill(0,p*4,p*4+4);}
-      else{const angle=s.angle*Math.PI/180,cos=Math.cos(angle),sin=Math.sin(angle),sc=s.scale;
-        const t=p=>({x:s.cx+s.dx+cos*(p.x-s.cx)*sc-sin*(p.y-s.cy)*sc,y:s.cy+s.dy+sin*(p.x-s.cx)*sc+cos*(p.y-s.cy)*sc});
-        const corners=[[B.x,B.y],[B.x+B.width,B.y],[B.x,B.y+B.height],[B.x+B.width,B.y+B.height]].map(([x,y])=>t({x,y}));
-        const dx0=Math.floor(Math.min(...corners.map(p=>p.x))),dy0=Math.floor(Math.min(...corners.map(p=>p.y)));
-        rect={x:dx0,y:dy0,width:Math.ceil(Math.max(...corners.map(p=>p.x)))-dx0,height:Math.ceil(Math.max(...corners.map(p=>p.y)))-dy0};
-        const copy=canvas(rect.width,rect.height),ctx=copy.getContext('2d');ctx.translate(s.cx+s.dx-dx0,s.cy+s.dy-dy0);ctx.rotate(angle);ctx.scale(sc,sc);ctx.drawImage(s.cutout,B.x-s.cx,B.y-s.cy);pixels=ctx.getImageData(0,0,rect.width,rect.height).data;copy.width=copy.height=1;}
-      const dataUrl=await encodeDrawingPNG(pixels,rect.width,rect.height);
-      if(e.revision!==revision||this.selection!==s)throw new DOMException('The selection changed. Copy it again.','AbortError');
-      const metadata=drawingMetadata(s.target.figure),world=transformPoint(this.pixelMatrix(s.target),{x:rect.x,y:rect.y});
-      e._drawingPixelClipboard={pixelsPerUnit:metadata.pixelsPerUnit,x:rect.x,y:rect.y,width:rect.width,height:rect.height,dataUrl,world};
-      if(action==='cut-pixels')await this.commitSelection(s,'Cut selected pixels',{remove:true});return true;
+      await this.pixelOperation('Copying pixels',async op=>{
+        op.reserve(s.surface);
+        const pixels=s.originalPixels.slice().buffer,mask={...s.mask,mask:s.mask.mask.slice().buffer};
+        const result=await op.owner.worker.request('copy-selection',{selection:{pixels,mask,matrix:selectionMatrix(s),filter:this.settings.filter,maxBytes:op.maxBytes}},{signal:op.abort.signal,transfer:[pixels,mask.mask]});
+        op.check();if(this.selection!==s)throw new DOMException('The selection changed. Copy it again.','AbortError');
+        const rect=result.bounds,matrix=multiplyMatrix(this.pixelMatrix(s.target),[1,0,0,1,rect.x,rect.y]),world={x:matrix[4],y:matrix[5]};
+        e._drawingPixelClipboard={pixelsPerUnit:drawingMetadata(s.target.figure).pixelsPerUnit,...rect,dataUrl:result.dataUrl,world,matrix};
+        if(action==='cut-pixels')await this.commitSelection(s,'Cut selected pixels',{remove:true,operation:op});
+      });
+      return true;
     });
-    if(action==='paste-pixels')return this.getClipboard().paste('drawing-pixels',async()=>{
+    if(action==='paste-pixels')return this.getClipboard().paste('drawing-pixels',()=>this.pixelOperation('Pasting pixels',async op=>{
       const clip=e._drawingPixelClipboard;if(!clip)throw new Error('Copy selected pixels first.');this.cancelSelection();
-      const revision=e.revision,owner=this.owner,current=()=>revision===e.revision&&owner===this.owner;
+      const owner=op.owner;
       let target=e.prepareDrawingCel({pixelsPerUnit:this.settings.resolution,world:clip.world}),surface;
       try{
-        surface=await owner.surface(target.figure);
-        if(!current())return;
+        surface=await owner.surface(target.figure);op.check();surface.pinned=true;op.reserve(surface);
         const d=drawingMetadata(target.figure);
-        if(d.version===1){const figure=migrateDrawingFigure(target.figure,this.editor.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1),{bounds:surface.store.bounds});owner.retarget(d.celId,figure);target={...target,figure,object:{...structuredClone(target.object),figure_type_id:figure.figure_type_id},migratedFrom:d.celId};}
-        surface.pinned=true;
-        const matrix=this.pixelMatrix(target),p=inversePoint(matrix,clip.world),ratio=drawingMetadata(target.figure).pixelsPerUnit/clip.pixelsPerUnit;
-        // matrix maps target pixels to world; its scale is world units per
-        // pixel (object scale / ppu), so the clip-pixel to target-pixel factor
-        // is ratio divided by the object's extra scale.
-        const scale=Math.hypot(matrix[0],matrix[1]),det=matrix[0]*matrix[3]-matrix[1]*matrix[2],factor=scale>1e-9?ratio/(scale*drawingMetadata(target.figure).pixelsPerUnit):ratio;
-        const exact=Math.abs(factor-1)<1e-6&&Math.abs(matrix[1])<1e-9&&Math.abs(matrix[2])<1e-9&&det>0;
-        const x=exact?Math.round(p.x):p.x,y=exact?Math.round(p.y):p.y,rr=exact?1:factor;
-        const bounds=tileAlignedRect(Math.floor(x),Math.floor(y),Math.max(1,Math.ceil(x+clip.width*rr)-Math.floor(x)),Math.max(1,Math.ceil(y+clip.height*rr)-Math.floor(y)));
-        if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw new Error('This paste exceeds the pixel limit. Use a smaller selection.');
-        const tiles=[...TileStore.tilesInRect(bounds.x,bounds.y,bounds.width,bounds.height)].map(([tx,ty])=>surface.store.get(tx,ty)).filter(Boolean).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
-        const result=await owner.worker.request('paste',{bounds,tiles,clip:{width:clip.width,height:clip.height,dataUrl:clip.dataUrl},x,y,ratio:rr},{transfer:tiles.map(t=>t.pixels)});
-        if(!current())throw new DOMException('The drawing changed before paste.','AbortError');
-        return e.commitDrawingPixels(target,result.tiles,'Paste selected pixels');
+        if(d.version===1){const figure=migrateDrawingFigure(target.figure,e.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1),{bounds:surface.store.bounds});owner.retarget(d.celId,figure);target={...target,figure,object:{...structuredClone(target.object),figure_type_id:figure.figure_type_id},migratedFrom:d.celId};}
+        const sourceMatrix=clip.matrix??[1/clip.pixelsPerUnit,0,0,1/clip.pixelsPerUnit,clip.world?.x??0,clip.world?.y??0];
+        const matrix=multiplyMatrix(inverseMatrix(this.pixelMatrix(target)),sourceMatrix).map(n=>Math.abs(n-Math.round(n))<1e-9?Math.round(n):n);
+        const bounds=transformSupportBounds({x:0,y:0,width:clip.width,height:clip.height},matrix,this.settings.filter);
+        const tiles=await this.copyWorkerTiles(surface,op,t=>tileIntersects(t,bounds));
+        const result=await owner.worker.request('paste',{tiles,clip:{width:clip.width,height:clip.height,dataUrl:clip.dataUrl},matrix,filter:this.settings.filter,maxBytes:op.maxBytes},{signal:op.abort.signal,transfer:tiles.map(t=>t.pixels)});
+        op.check();op.received(result.tiles);return e.commitDrawingPixels(target,result.tiles,'Paste selected pixels');
       }finally{if(surface){surface.pinned=false;owner.present(surface);}owner.discard(target.figure);}
-    });
+    }));
     if(action==='resample'){
-      await this.applySelection();const target=e.drawingTarget();if(!target.figure)throw new Error('Paint a drawing before resampling it.');
-      const d=drawingMetadata(target.figure),ratio=this.settings.resolution/d.pixelsPerUnit;if(ratio===1){this.onStatus('This drawing already uses the chosen resolution.');return;}
-      await this.barrier();const revision=e.revision,surface=await this.owner.surface(target.figure);
-      const bounds=surface.store.bounds;let tiles=[],outBounds=null;
-      if(bounds){
-        const payload=[...TileStore.tilesInRect(bounds.x,bounds.y,bounds.width,bounds.height)].map(([tx,ty])=>surface.store.get(tx,ty)).filter(Boolean).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
-        const result=await this.owner.worker.request('resample',{bounds,tiles:payload,ratio},{transfer:payload.map(t=>t.pixels)});
-        if(revision!==e.revision)throw new DOMException('The drawing changed during resampling.','AbortError');
-        tiles=result.tiles;outBounds=result.bounds;
-      }
-      e.resampleDrawing(target,{pixelsPerUnit:this.settings.resolution,tiles,bounds:outBounds});this.onStatus('Drawing resampled. Undo restores its original pixels.');
+      const target=e.drawingTarget();if(!target.figure)throw new Error('Paint a drawing before resampling it.');
+      const resolution=this.settings.resolution,d=drawingMetadata(target.figure),ratio=resolution/d.pixelsPerUnit;
+      if(ratio===1){this.onStatus('This drawing already uses the chosen resolution.');return;}
+      await this.barrier();
+      return this.pixelOperation('Resampling drawing',async op=>{
+        const surface=await op.owner.surface(target.figure);op.check();surface.pinned=true;
+        try{
+          op.reserve(surface);const tiles=await this.copyWorkerTiles(surface,op);
+          const result=await op.owner.worker.request('resample',{tiles,ratio,filter:this.settings.filter,maxBytes:op.maxBytes},{signal:op.abort.signal,transfer:tiles.map(t=>t.pixels)});
+          op.check();op.received(result.tiles);e.resampleDrawing(target,{pixelsPerUnit:resolution,tiles:result.tiles,bounds:result.bounds});
+          this.onStatus('Drawing resampled. Undo restores its original pixels.');
+        }finally{surface.pinned=false;}
+      });
     }
   }
 
-  change(event){this.finish();const input=event.target,name=input.dataset.drawSetting;if(!name)return;this.settings[name]=input.type==='checkbox'?input.checked:input.type==='color'?input.value:Number(input.value);this.sync();this.onUI();}
+  change(event){this.finish();const input=event.target,name=input.dataset.drawSetting;if(!name)return;this.settings[name]=input.type==='checkbox'?input.checked:input.type==='color'||name==='filter'?input.value:Number(input.value);if(name==='filter'&&this.selection){this.selection.filter=this.settings.filter;this.previewSelection();}this.sync();this.onUI();}
   /** The inspector's live brush sample, rasterized by the real stroke engine so
    * hardness, flow, opacity, texture and pressure render faithfully. Preview
    * pixels cap the brush at 30 px so the dab stays readable; pixelsPerUnit

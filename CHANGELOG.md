@@ -28,7 +28,9 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 - Keep large drawings responsive with background previews and incremental tile updates, and fill regions up to 64 megapixels without changing behavior when zoomed out.
 
-- Move and transform pixel selections without altering nearby translucent pixels or allocating the empty space between distant positions; applying a selection keeps the canvas responsive.
+- Transform and resample large or widely spaced drawings without allocating empty space, preserve translucent colors and rotated or mirrored pixel pastes, and offer crisp pixel-art filtering.
+
+- Keep resampled artwork intact after undo, redo and saving; pending fills, pastes and transforms finish before saving or accepting a new stroke.
 
 - Preserve drawing strokes when advancing frames, keep copied drawings consistent after undo under memory pressure, reopen widely spaced artwork reliably, and keep light-pressure ink continuous.
 

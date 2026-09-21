@@ -66,7 +66,18 @@ export class DrawingResources {
   get busy(){return Boolean(this._busy);}
   entry(figure) {
     const d=drawingMetadata(figure);let entry=this.entries.get(d.celId);
-    if(!entry){entry={id:d.celId,store:null,revision:d.revision,published:null,loading:null,decodeError:null,pinned:false,used:performance.now(),stamp:0,deferred:[],levels:null,levelsUsed:0,owner:this};this.entries.set(d.celId,entry);}return entry;
+    if(!entry){entry={id:d.celId,store:null,revision:d.revision,published:null,loading:null,decodeError:null,pinned:false,used:performance.now(),stamp:0,deferred:[],levels:null,levelsUsed:0,owner:this};this.entries.set(d.celId,entry);}else this.restorePublication(entry,figure);return entry;
+  }
+  /** History replaces figure snapshots, but a cel's last encoded revision is
+   * owned here. Reattach it to restored definitions before decoding/saving. */
+  restorePublication(entry,figure){
+    const published=entry.published,d=drawingMetadata(figure);
+    if(d?.version!==2||published?.revision!==entry.revision)return;
+    const asset=figure.image_assets[0];
+    if(published.url)asset.styk_tiles=published.url;else delete asset.styk_tiles;
+    asset.data_url=EMPTY_PNG;asset.width=asset.height=asset.display_width=asset.display_height=1;
+    d.revision=entry.revision;
+    const bounds=Object.hasOwn(published,'bounds')?published.bounds:d.bounds;d.bounds=bounds?{...bounds}:null;
   }
   /** Resident tile bytes dedupe by pixel buffer: copy-on-write forks share
    * tiles, so shared tiles count once, not once per entry. */
@@ -126,15 +137,16 @@ export class DrawingResources {
     const generation=this.generation,base=e.revision-(e.deferred?.length??0);
     e.loading=(async()=>{
       const d=drawingMetadata(figure);
-      // History snapshots replace figure objects; the live report figure is
-      // authoritative for the published asset behind this cel id.
+      // Deferred history starts at the owner's published base, even if an
+      // asset-only undo/redo restored an older definition snapshot.
       const live=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===d.celId)??figure,asset=live.image_assets[0];
-      const result=await this.decode(e,()=>d.version===1?this.decodeWorker.request('decode-legacy',{url:asset.data_url,crop:d.crop}):asset.styk_tiles?this.decodeWorker.request('decode-tiles',{url:asset.styk_tiles}):Promise.resolve({tiles:[]}));
+      const url=e.published?e.published.url:asset.styk_tiles;
+      const result=await this.decode(e,()=>d.version===1?this.decodeWorker.request('decode-legacy',{url:asset.data_url,crop:d.crop}):url?this.decodeWorker.request('decode-tiles',{url}):Promise.resolve({tiles:[]}));
       if(this.disposed||generation!==this.generation)throw new DOMException('Drawing changed.','AbortError');
       const store=tileStoreFromList(result.tiles);
       for(const step of e.deferred)applyTileChanges(store,step.changes,step.direction);
       e.deferred=[];this.reserve(store.bytes,e);e.store=store;e.stamp++;e.decodeError=null;e.levels=null;e.levelKnown=null;this.dropScratch(e);this.surfaceVersion++;
-      e.published??={revision:base,url:d.version===2?asset.styk_tiles??null:null};
+      e.published??={revision:base,url:d.version===2?asset.styk_tiles??null:null,bounds:d.bounds?{...d.bounds}:null};
       this.onChange();return e;
     })().finally(()=>{e.loading=null;});return e.loading;
   }
@@ -252,11 +264,12 @@ export class DrawingResources {
     if(this.disposed)throw new DOMException('Drawing document closed.','AbortError');
     if(this.encoding){await this.encoding;return this.flush({signal});}
     clearTimeout(this.timer);this.timer=null;
+    for(const figure of this.report.figure_types){const entry=this.entries.get(drawingMetadata(figure)?.celId);if(entry)this.restorePublication(entry,figure);}
     const e=[...this.entries.values()].find(e=>!e.pinned&&e.published?.revision!==e.revision&&this.report.figure_types.some(f=>drawingMetadata(f)?.celId===e.id));
     if(!e)return;
     if(signal?.aborted)throw new DOMException('Drawing publication cancelled.','AbortError');
     if(!e.store){const figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===e.id);if(!figure)return;await this.surface(figure);return this.flush({signal});}
-    const revision=e.revision,generation=this.generation,figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===e.id);
+    const revision=e.revision,generation=this.generation;
     this.encoding=(async()=>{
       const tiles=[...e.store].filter(t=>!tileTransparent(t));
       // Tiles keep their worker-encoded PNG until a mutation clears it, so a
@@ -273,19 +286,17 @@ export class DrawingResources {
         result=await this.worker.request('encode-tiles',{celId:e.id,keep,tiles:fresh},{signal,transfer:fresh.map(t=>t.pixels)});
         if(result.missing?.length)throw new Error('The drawing encoder lost its tile cache. Try again.');
       }
-      if(this.disposed||generation!==this.generation||revision!==e.revision)return;
+      if(this.disposed||e.disposed||!e.store||generation!==this.generation||revision!==e.revision)return;
       // Tiles replaced since the snapshot carry stale bytes; publish again.
       if(tiles.some(t=>e.store.get(t.tx,t.ty)!==t))return;
       const sent=new Map(tiles.map(t=>[tileKey(t.tx,t.ty),t]));
       for(const t of result.tiles??[]){const tile=sent.get(tileKey(t.tx,t.ty));if(tile&&e.store.get(t.tx,t.ty)===tile)tile.png=new Uint8Array(t.png);}
       this.lastEncode={encoded:result.encoded??0,reused:result.reused??0};
       e.store.freeze();
-      const asset=figure.image_assets[0],d=drawingMetadata(figure);
-      if(tiles.length)asset.styk_tiles=result.blobUrl;else delete asset.styk_tiles;
-      asset.data_url=EMPTY_PNG;asset.width=asset.height=asset.display_width=asset.display_height=1;
       // This is derived publication, never a semantic editor edit.
-      d.bounds=e.store.bounds?{...e.store.bounds}:null;d.revision=revision;
-      e.published={revision,url:asset.styk_tiles??null};e.failed=null;
+      e.published={revision,url:tiles.length?result.blobUrl:null,bounds:e.store.bounds?{...e.store.bounds}:null};e.failed=null;
+      const figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===e.id);
+      if(figure)this.restorePublication(e,figure);
       this.surfaceVersion++;this.onChange();
     })();
     try{await this.encoding;}catch(error){e.failed=error;throw error;}finally{this.encoding=null;}

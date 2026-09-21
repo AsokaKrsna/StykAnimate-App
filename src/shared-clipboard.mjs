@@ -1,6 +1,7 @@
 import {clipboardWireChunks, createClipboardWireDecoder} from './clipboard-wire.mjs';
 import {createFrame} from './demo.mjs';
 import {validateCameraMotion} from './camera-motion.mjs';
+import {inverseMatrix} from './drawing-transform.mjs';
 import {drawingBarrier} from './drawing-resources.mjs';
 
 const abort = () => new DOMException('The document changed during the clipboard operation.', 'AbortError');
@@ -35,7 +36,8 @@ export async function restoreClipboard(editor, packet, checkCurrent = () => {}) 
     editor._sheetClipboard = {...data, document: null};
   } else if (kind === 'drawing-pixels') {
     if(![data.width,data.height].every(n=>Number.isInteger(n)&&n>0&&n<=8192)||data.width*data.height>16*1024*1024||![1,2,4].includes(data.pixelsPerUnit)||typeof data.dataUrl!=='string'||!data.dataUrl.startsWith('data:image/png;base64,')||data.dataUrl.length>96*1024*1024)throw new Error('Invalid drawing pixel clipboard.');
-    if(data.origin&&![data.origin.x,data.origin.y].every(Number.isFinite))throw new Error('Invalid drawing pixel origin.');
+    if(!data.world||![data.world.x,data.world.y].every(Number.isFinite))throw new Error('Invalid drawing pixel origin.');
+    if(data.matrix)inverseMatrix(data.matrix);
     editor._drawingPixelClipboard=data;
   } else if (kind === 'camera-motion') {
     validateCameraMotion({version:1,clips:[data]});editor._cameraMotionClipboard=data;

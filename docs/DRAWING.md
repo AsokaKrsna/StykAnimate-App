@@ -25,7 +25,8 @@ layer; otherwise select an existing visible, unlocked drawing layer.
   controls; timing actions stay in the timeline. Dynamics and Resolution
   are collapsed until needed.
 - New cels default to 2 pixels per scene unit; Resolution offers 1×, 2×
-  and 4× and an explicit undoable resample. View rotation is temporary.
+  and 4× and an explicit undoable resample. Pixel filtering offers Smooth
+  and Nearest (pixel art) for resampling, selections and pixel paste. View rotation is temporary.
   Neither zoom nor stage resizing resamples ink.
 
 All shortcut bindings are configurable in the existing shortcut preferences.
@@ -72,9 +73,11 @@ cel also captures its pending undo/redo changes against the published base.
 Clipboard capture
 forks the store at copy time; a subsequent source edit cannot alter the
 captured copy. Runtime values never enter document data. Pixel clipboard data
-includes the selection's world origin, so pastes land at the same world
-position. Aligned, unscaled copies preserve exact RGBA; scaling and transformed
-selections resample once. Paste compositing, fill and tile history run in the
+includes the selection's full pixel-to-world affine pose, so pastes preserve
+position, rotation and mirroring across different cel poses. Older clipboard
+packets with only a world origin remain supported. Aligned copies and
+right-angle rotations/reflections preserve exact nonzero-alpha RGBA. Scaling
+and transformed selections use a shared worker rasterizer. Paste compositing, fill and tile history run in the
 drawing worker.
 Selection previews composite a masked cutout over the cel without changing its
 tile store. Applying a selection runs in the pixel worker and touches only the
@@ -82,6 +85,23 @@ source and destination tiles; integer translations preserve exact RGBA. Empty
 space between those regions costs no tile storage. Commands that change the
 exposure or document await this transaction. Dense lasso masks are bounded to
 16 megapixels before allocation.
+
+`drawing-transform.mjs` is the shared affine kernel for selection commits,
+copy, paste and resolution changes. It plans output tiles from occupied source
+tiles, preflights memory and coordinate bounds, and includes filter footprints
+when seeding existing destination tiles. Premultiplied bilinear sampling uses
+box-filtered mip levels for reduction; nearest sampling preserves pixel-art
+edges. Sampling uses a bounded source window per output tile, with sparse
+lookups for extreme reductions. No full drawing rectangle is allocated during
+resampling. Individual jobs are limited by available working memory, with a
+384 MiB transform ceiling. Dense clipboard PNGs remain limited to 16 MP and
+8192 pixels per side; copying/transcoding them runs in the worker.
+
+Fill, copy, paste, resample and selection commits share one pixel transaction
+gate. Save and editing commands await publication; a following pointer gesture
+retains its samples until the preceding operation commits. Escape cancels the
+worker, discards its late result and releases reservations. Input copying yields
+every 128 tiles so preparing a large job does not monopolize the UI thread.
 Whole-scene paste matches drawing and figure layer kinds, creates missing layers,
 and shifts surplus destination layers together in the same undo command.
 
@@ -171,6 +191,12 @@ Exact PNG encoding/decoding avoids
 premultiplication rounding in saved pixels. Encoding is derived publication,
 not another edit.
 
+The resource owner retains each cel's published blob and bounds independently
+of figure snapshots. Undo/redo can replace those snapshots while encoding is
+in flight. Publications reconnect to the current definition by cel identity;
+save barriers and cold decode restore the same published base, including after
+resampling and eviction. Uncommitted preview bounds never enter this snapshot.
+
 Live drawing textures participate in the normal scene compositor, including
 ordering, opacity, erasing, camera and clipping. Tiles are painted into
 tile-anchored scratch canvases; each presenter keeps a bounded LRU of them,
@@ -247,8 +273,11 @@ resolution-independent drawing are outside this implementation. Fill regions
 are bounded to 64 megapixels and follow stage plus artwork bounds, independently
 of zoom. Scanline fill keeps tiled source/output pixels, bounded masks and a
 bounded span stack, with a fast path for uniform regions. Cancellation terminates
-the worker and the next operation starts a fresh worker. Dense lasso, pixel
-clipboard and resampling regions still have 16-megapixel limits.
+the worker and the next operation starts a fresh worker. Dense lasso masks and
+PNG clipboard regions still have 16-megapixel limits. Resampling and transformed
+paste output are bounded by occupied tiles and available memory instead of a
+dense bounding-box limit. The embedded tile-blob and native-container limits
+remain separate persistence constraints.
 
 The September implementation audit, measured changes and remaining parity
 gaps are recorded in [the audit follow-up](DRAWING-IMPLEMENTATION-AUDIT.md).

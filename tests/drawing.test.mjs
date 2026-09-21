@@ -62,6 +62,30 @@ async function stroke(e,x=40,y=40){
 }
 const snapshotStore=store=>new Map([...store].map(t=>[tileKey(t.tx,t.ty),t.pixels.slice()]));
 const storePixels=store=>{const b=store.bounds;return b?store.readRect(b.x,b.y,b.width,b.height):new Uint8ClampedArray(0);};
+
+test('resample undo/redo reattaches publication to restored figure snapshots, including after eviction',async()=>{
+  const {e,resources}=fixture();try{
+    await stroke(e);await resources.flush();
+    const pixels=new Uint8ClampedArray(TILE_BYTES);pixels.set([127,5,249,1]);
+    e.resampleDrawing(e.drawingTarget(),{pixelsPerUnit:2,tiles:[{tx:100000,ty:0,pixels:pixels.buffer}],bounds:{x:6400000,y:0,width:1,height:1}});
+    const encoding=resources.flush();e.undo();e.redo();await encoding;await resources.flush();
+    let figure=e.drawingTarget().figure;assert.ok(figure.image_assets[0].styk_tiles);
+    let decoded=await decodeTileBlob(figure.image_assets[0].styk_tiles);assert.deepEqual([...decoded[0].pixels.slice(0,4)],[127,5,249,1]);
+    e.undo();e.redo();figure=e.drawingTarget().figure;
+    const entry=resources.entries.get(drawingMetadata(figure).celId);entry.store=null;
+    const restored=await resources.surface(figure);assert.deepEqual(restored.store.pixel(6400000,0),[127,5,249,1]);
+    await resources.flush();decoded=await decodeTileBlob(figure.image_assets[0].styk_tiles);assert.equal(decoded.length,1);
+    assert.deepEqual(drawingMetadata(figure).bounds,{x:6400000,y:0,width:1,height:1});
+  }finally{resources.dispose();}
+});
+
+test('reconnecting a published cel never puts uncommitted preview bounds into document metadata',async()=>{
+  const {e,resources}=fixture();try{
+    await stroke(e);await resources.flush();const figure=e.drawingTarget().figure,entry=resources.entry(figure),bounds={...drawingMetadata(figure).bounds};
+    entry.pinned=true;entry.store.set(1000,1000,new Uint8ClampedArray([1,2,3,255]));
+    resources.entry(figure);await resources.flush();assert.deepEqual(drawingMetadata(figure).bounds,bounds);
+  }finally{resources.dispose();}
+});
 async function legacyFigure({width=96,height=64,pixelsPerUnit=2,figureTypeId=1}={}){
   const pixels=new Uint8ClampedArray(width*height*4);
   for(let y=0;y<height;y++)for(let x=0;x<width;x++)if((x*7+y*11)%13<3)pixels.set([x%256,y%256,(x+y)%256,255],(y*width+x)*4);
