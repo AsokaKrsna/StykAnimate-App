@@ -38,9 +38,10 @@ self.onmessage=async({data})=>{
       self.postMessage({id,tiles},tiles.flatMap(t=>[t.pixels,t.png]));return;
     }
     if(kind==='encode-tiles'){
-      const result=await encodeCache.encode(data.celId,data.keep??[],data.tiles??[]);
-      if(result.missing){self.postMessage({id,missing:result.missing});return;}
+      const result=await encodeCache.encode(data.celId,data.keep??null,data.tiles??[],{partial:data.partial});
       const out=result.tiles.map(t=>({tx:t.tx,ty:t.ty,png:t.png.slice().buffer}));
+      if(result.missing){self.postMessage({id,missing:result.missing,tiles:out,encoded:result.encoded},out.map(t=>t.png));return;}
+      if(data.partial){self.postMessage({id,tiles:out,encoded:result.encoded},out.map(t=>t.png));return;}
       let text='';for(let i=0;i<result.bytes.length;i+=16384)text+=String.fromCharCode(...result.bytes.subarray(i,i+16384));
       self.postMessage({id,tiles:out,blobUrl:TILE_BLOB_PREFIX+btoa(text),encoded:result.encoded,reused:result.reused},out.map(t=>t.png));return;
     }

@@ -36,9 +36,9 @@ function workerStub(){
     }
     if(kind==='decode-tiles')return {tiles:(await decodeTileBlob(data.url)).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,png:t.png.buffer}))};
     if(kind==='encode-tiles'){
-      const result=await encodeCache.encode(data.celId,data.keep??[],data.tiles??[]);
-      if(result.missing)return{missing:result.missing};
+      const result=await encodeCache.encode(data.celId,data.keep??null,data.tiles??[],{partial:data.partial});
       const out=result.tiles.map(t=>({tx:t.tx,ty:t.ty,png:t.png.slice().buffer}));
+      if(result.missing||data.partial)return{missing:result.missing,tiles:out,encoded:result.encoded};
       let text='';for(let i=0;i<result.bytes.length;i+=16384)text+=String.fromCharCode(...result.bytes.subarray(i,i+16384));
       return {tiles:out,blobUrl:TILE_BLOB_PREFIX+btoa(text),encoded:result.encoded,reused:result.reused};
     }
@@ -394,8 +394,8 @@ test('failed encoders retain dirty pixels and a retry publishes the same committ
   }finally{resources.dispose();}
 });
 test('out-of-order encode results never replace newer committed tiles',async()=>{
-  const {e,resources}=fixture();try{await stroke(e);let release,calls=0;const inner=workerStub();resources.worker={request(){calls++;if(calls===1)return new Promise(resolve=>release=resolve);return inner.request('encode-tiles',arguments[1]);},dispose(){}};
-    const pending=resources.flush();await stroke(e,80);const entry=resources.entry(e.drawingTarget().figure),latest=storePixels(entry.store);release({tiles:[]});await pending;
+  const {e,resources}=fixture();try{await stroke(e);let release,started,calls=0;const ready=new Promise(resolve=>started=resolve),inner=workerStub();resources.worker={request(){calls++;if(calls===1)return new Promise(resolve=>{release=resolve;started();});return inner.request('encode-tiles',arguments[1]);},dispose(){}};
+    const pending=resources.flush();await ready;await stroke(e,80);const entry=resources.entry(e.drawingTarget().figure),latest=storePixels(entry.store);release({tiles:[]});await pending;
     assert.equal(calls,2);assert.equal(entry.published.revision,entry.revision);assert.deepEqual(storePixels(entry.store),latest);
   }finally{resources.dispose();}
 });
@@ -792,7 +792,8 @@ test('publication re-encodes only changed tiles and resends PNGs the worker cach
     resources.worker=workerStub();
     const dab2=new DrawingStroke(entry.store,{size:8,pressureSize:false});dab2.sample({x:30,y:30});e.commitDrawingPixels(e.drawingTarget(),dab2.finish());
     await resources.flush();
-    assert.equal(resources.stats.lastEncode.encoded,size-1,'missing PNGs resent exactly once');
+    assert.equal(resources.stats.lastEncode.encoded,1,'only the changed tile is encoded; missing PNGs are reused');
+    assert.equal(resources.stats.lastEncode.reused,size-1);
     const decoded=await decodeTileBlob(figure.image_assets[0].styk_tiles);
     assert.equal(decoded.length,entry.store.size);
     for(const t of decoded)assert.deepEqual([...t.pixels],[...entry.store.get(t.tx,t.ty).pixels]);

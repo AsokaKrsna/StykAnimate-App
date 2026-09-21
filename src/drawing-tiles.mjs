@@ -6,8 +6,23 @@ export const tileKey=(tx,ty)=>`${tx},${ty}`;
 export const parseTileKey=key=>key.split(',').map(Number);
 let tileVersion=0;
 
-function alphaBounds(pixels){let x0=TILE,y0=TILE,x1=-1,y1=-1;for(let y=0;y<TILE;y++)for(let x=0;x<TILE;x++)if(pixels[(y*TILE+x)*4+3]){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}return x1<0?null:{x:x0,y:y0,width:x1-x0+1,height:y1-y0+1};}
-export function tileTransparent(tile){tile.alphaBounds??=alphaBounds(tile.pixels);return !tile.alphaBounds;}
+function alphaBounds(pixels){
+  let x0=TILE,y0=0,x1=-1,y1=TILE-1;
+  const first=(y,left=0,right=TILE-1)=>{for(let x=left;x<=right;x++)if(pixels[(y*TILE+x)*4+3])return x;return -1;};
+  const last=(y,left=0,right=TILE-1)=>{for(let x=right;x>=left;x--)if(pixels[(y*TILE+x)*4+3])return x;return -1;};
+  // The outside rows establish vertical bounds. Interior rows only need to
+  // extend the horizontal bounds; once both edges are occupied we are done.
+  for(;y0<TILE;y0++){x0=first(y0);if(x0>=0)break;}
+  if(y0===TILE)return null;
+  x1=last(y0,x0);
+  for(;y1>y0;y1--){const x=first(y1);if(x<0)continue;x0=Math.min(x0,x);x1=Math.max(x1,last(y1,x));break;}
+  for(let y=y0+1;y<y1&&(x0>0||x1<TILE-1);y++){
+    const left=first(y,0,x0-1);if(left>=0)x0=left;
+    const right=last(y,x1+1);if(right>=0)x1=right;
+  }
+  return{x:x0,y:y0,width:x1-x0+1,height:y1-y0+1};
+}
+export function tileTransparent(tile){if(tile.alphaBounds===undefined)tile.alphaBounds=alphaBounds(tile.pixels);return !tile.alphaBounds;}
 
 /** Sparse unbounded pixel surface. Tiles are shared by reference until a
  * writable() or fork() call marks them frozen, after which mutation copies. */
@@ -44,7 +59,7 @@ export class TileStore {
     if(this._bounds!==undefined)return this._bounds;
     let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
     for(const tile of this.tiles.values()){
-      tile.alphaBounds??=alphaBounds(tile.pixels);if(!tile.alphaBounds)continue;
+      if(tileTransparent(tile))continue;
       const x=tile.tx*TILE+tile.alphaBounds.x,y=tile.ty*TILE+tile.alphaBounds.y;
       x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x+tile.alphaBounds.width);y1=Math.max(y1,y+tile.alphaBounds.height);
     }

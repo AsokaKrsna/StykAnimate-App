@@ -245,10 +245,17 @@ thumbnails compute in workers over bounded tile regions. Lasso preview always
 uses the original selection, with one resample when applied.
 
 The pixel worker keeps a bounded per-cel cache of encoded tile PNGs. Each
-publication sends pixels only for tiles whose PNG is not already trusted,
-plus the ordered key list the blob must carry; cached PNGs fill the rest, and
-missing cache entries trigger exactly one resend. Blob assembly happens in
-the worker. Generation, cel and revision checks reject stale results. Failed
+publication sends pixels only for tiles whose PNG is not already trusted.
+Transfers run after the synchronous editor commit in batches of at most 1 MiB,
+with one batch in flight and its capacity reserved against working memory.
+Partial worker replies cache exact tile PNGs; the final ordered key list
+assembles the complete blob in the worker. The document's saved asset changes
+only after that complete revision is ready. Missing worker-cache entries
+trigger one bounded resend of retained PNGs. A legacy PNG with ancillary data
+larger than a batch is re-encoded from its exact 64×64 pixels instead.
+Generation, cel, revision and store-mutation checks reject stale results
+between batches. Cancellation, document disposal and worker failure release
+the transfer reservation. Failed
 encoding retains dirty work for retry, and the publication debounce yields to
 active strokes and scrubbing. A gesture's pin on its tile store ends inside
 the commit, before the change broadcast — the playback/export barriers that
@@ -314,7 +321,7 @@ captures committed work; active uncommitted gestures are not recovery entries.
 Nested movieclip scope changes flush before snapshotting and dispose child
 runtime resources on exit. Replacing a document disposes abandoned workers.
 
-STYK keeps editable drawing metadata, layers, timing and exact PNG bytes.
+STYK keeps editable drawing metadata, layers, timing and exact raster pixels.
 PIV/STK provide visual sprite compatibility, not editable drawing-layer semantics.
 SVG embeds raster artwork. Image sequences, GIF, APNG and WebM use the existing
 frame renderer and encoders. External images remain images; there is no implicit

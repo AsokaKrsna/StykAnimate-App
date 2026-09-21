@@ -51,26 +51,27 @@ export function tileStoreFromList(tiles){const store=new TileStore();for(const t
 export class TileEncodeCache {
   constructor({maxBytes=64*1024*1024}={}){this.cels=new Map();this.bytes=0;this.clock=0;this.maxBytes=maxBytes;}
   cel(id){let cel=this.cels.get(id);if(!cel)this.cels.set(id,cel=new Map());else{this.cels.delete(id);this.cels.set(id,cel);}return cel;}
-  /** keep lists every tile key this publication carries, in blob order; tiles
-   * are the changed ones to encode. Returns {missing} when a kept key lacks a
-   * cached PNG so the caller can resend those pixels once. */
-  async encode(celId,keep,tiles){
+  /** Partial requests stage bounded batches without assembling a blob. The
+   * final request's keep list establishes blob order and removes old keys.
+   * Trusted PNGs can restore an evicted cache without decoding or re-encoding. */
+  async encode(celId,keep,tiles,{partial=false}={}){
     const cel=this.cel(celId),wanted=new Set(keep),encoded=[];
-    for(const key of [...cel.keys()])if(!wanted.has(key)){this.bytes-=cel.get(key).png.length;cel.delete(key);}
+    if(!partial||keep!=null)for(const key of [...cel.keys()])if(!wanted.has(key)){this.bytes-=cel.get(key).png.length;cel.delete(key);}
     for(const tile of tiles){
-      const png=new Uint8Array(await encodePNGPortable({width:TILE,height:TILE,channels:4},new Uint8ClampedArray(tile.pixels))),key=tileKey(tile.tx,tile.ty),old=cel.get(key);
-      if(old)this.bytes-=old.png.length;cel.set(key,{png,stamp:++this.clock});this.bytes+=png.length;encoded.push({tx:tile.tx,ty:tile.ty,png});
+      const png=tile.png?new Uint8Array(tile.png):new Uint8Array(await encodePNGPortable({width:TILE,height:TILE,channels:4},new Uint8ClampedArray(tile.pixels))),key=tileKey(tile.tx,tile.ty),old=cel.get(key);
+      if(old)this.bytes-=old.png.length;cel.set(key,{png,stamp:++this.clock});this.bytes+=png.length;if(!tile.png)encoded.push({tx:tile.tx,ty:tile.ty,png});
     }
     // Bound the cache globally, oldest cel entries first, but never drop a key
     // this publication still needs.
     for(const [id,entries] of this.cels){
       if(this.bytes<=this.maxBytes)break;
-      for(const [key,entry] of entries){if(this.bytes<=this.maxBytes)break;if(id===celId&&wanted.has(key))continue;this.bytes-=entry.png.length;entries.delete(key);}
+      for(const [key,entry] of entries){if(this.bytes<=this.maxBytes)break;if(id===celId&&(partial||wanted.has(key)))continue;this.bytes-=entry.png.length;entries.delete(key);}
       if(!entries.size)this.cels.delete(id);
     }
+    if(partial)return{tiles:encoded,encoded:encoded.length};
     const assembly=[],missing=[];
     for(const key of keep){const hit=cel.get(key);if(!hit){missing.push(key);continue;}const [tx,ty]=parseTileKey(key);assembly.push({tx,ty,png:hit.png});}
-    if(missing.length)return{missing};
+    if(missing.length)return{missing,tiles:encoded,encoded:encoded.length};
     return{tiles:encoded,bytes:assembleTileBlobBytes(assembly),encoded:encoded.length,reused:keep.length-encoded.length};
   }
 }

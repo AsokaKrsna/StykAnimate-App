@@ -50,6 +50,7 @@ export class StrokeWorker {
 }
 
 const sideBytes=s=>s==null?0:s.byteLength===4?TILE_BYTES:s.byteLength;
+const PUBLICATION_BATCH_BYTES=1024*1024;
 
 /** The tile store is the single authoritative raster. Publications are derived:
  * the per-tile PNG blob on image_assets[0].styk_tiles plus a bounds-sized
@@ -284,37 +285,67 @@ export class DrawingResources {
     if(!e)return;
     if(signal?.aborted)throw new DOMException('Drawing publication cancelled.','AbortError');
     if(!e.store){const figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===e.id);if(!figure)return;await this.surface(figure);return this.flush({signal});}
-    const revision=e.revision,generation=this.generation;
-    this.encoding=(async()=>{
-      const tiles=[...e.store].filter(t=>!tileTransparent(t));
+    const revision=e.revision,generation=this.generation,reservation={};
+    // Register the job before reserving its transfers: reserve() can itself
+    // request publication. No pixel copying runs inside the editor commit.
+    this.encoding=Promise.resolve().then(async()=>{
+      const active=()=>!this.disposed&&!e.disposed&&e.store&&generation===this.generation&&revision===e.revision;
+      const checkAbort=()=>{if(signal?.aborted)throw new DOMException('Drawing publication cancelled.','AbortError');};
+      checkAbort();if(!active())return;
+      const store=e.store,storeRevision=store.revision,tiles=[...store].filter(t=>!tileTransparent(t));
+      const current=()=>active()&&e.store===store&&store.revision===storeRevision;
+      store.freeze();
       // Tiles keep their worker-encoded PNG until a mutation clears it, so a
       // re-publish ships pixels only for changed tiles; the worker reassembles
       // the whole blob from its per-cel cache plus these fresh encodes.
       const keep=tiles.map(t=>tileKey(t.tx,t.ty));
-      let fresh=tiles.filter(t=>!t.png).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
-      let result=await this.worker.request('encode-tiles',{celId:e.id,keep,tiles:fresh},{signal,transfer:fresh.map(t=>t.pixels)});
+      const sent=new Map(tiles.map(t=>[tileKey(t.tx,t.ty),t]));let encoded=0;
+      let reserved=0;
+      const send=async pending=>{
+        let index=0,result;
+        do{
+          checkAbort();if(!current())return null;
+          const first=index===0,batch=[];let bytes=0;
+          while(index<pending.length){
+            const tile=pending[index];
+            // Older files can carry large ancillary PNG chunks. Re-encode
+            // their tiny pixel tile instead of exceeding the transfer bound.
+            const png=tile.png?.byteLength<=PUBLICATION_BATCH_BYTES?tile.png:null,size=png?.byteLength??tile.pixels.byteLength;
+            if(batch.length&&bytes+size>PUBLICATION_BATCH_BYTES)break;
+            batch.push({tx:tile.tx,ty:tile.ty,png,pixels:tile.pixels});bytes+=size;index++;
+          }
+          // Only one bounded transfer is alive at a time, including while the
+          // worker owns its bytes. Cached PNG recovery obeys the same budget.
+          if(bytes>reserved){this.hold(reservation,bytes,e);reserved=bytes;}
+          const fresh=batch.map(t=>({tx:t.tx,ty:t.ty,...(t.png?{png:t.png.slice().buffer}:{pixels:t.pixels.slice().buffer})}));
+          const partial=index<pending.length;
+          result=await this.worker.request('encode-tiles',{celId:e.id,partial,...(first||!partial?{keep}:{}),tiles:fresh},{signal,transfer:fresh.map(t=>t.pixels??t.png)});
+          checkAbort();if(!current())return null;
+          encoded+=result.encoded??0;
+          for(const t of result.tiles??[]){const tile=sent.get(tileKey(t.tx,t.ty));if(tile&&store.get(t.tx,t.ty)===tile)tile.png=new Uint8Array(t.png);}
+        }while(index<pending.length);
+        return result;
+      };
+      let result=await send(tiles.filter(t=>!t.png));
+      if(!result)return;
       if(result.missing?.length){
-        if(this.disposed||generation!==this.generation||revision!==e.revision)return;
         // The worker cache lost PNGs the store still trusts; resend them once.
         const wanted=new Set(result.missing);
-        fresh=[...e.store].filter(t=>wanted.has(tileKey(t.tx,t.ty))).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
-        result=await this.worker.request('encode-tiles',{celId:e.id,keep,tiles:fresh},{signal,transfer:fresh.map(t=>t.pixels)});
+        result=await send(tiles.filter(t=>wanted.has(tileKey(t.tx,t.ty))));
+        if(!result)return;
         if(result.missing?.length)throw new Error('The drawing encoder lost its tile cache. Try again.');
       }
-      if(this.disposed||e.disposed||!e.store||generation!==this.generation||revision!==e.revision)return;
+      if(!current())return;
       // Tiles replaced since the snapshot carry stale bytes; publish again.
       if(tiles.some(t=>e.store.get(t.tx,t.ty)!==t))return;
-      const sent=new Map(tiles.map(t=>[tileKey(t.tx,t.ty),t]));
-      for(const t of result.tiles??[]){const tile=sent.get(tileKey(t.tx,t.ty));if(tile&&e.store.get(t.tx,t.ty)===tile)tile.png=new Uint8Array(t.png);}
-      this.lastEncode={encoded:result.encoded??0,reused:result.reused??0};
-      e.store.freeze();
+      this.lastEncode={encoded,reused:tiles.length-encoded};
       // This is derived publication, never a semantic editor edit.
       e.published={revision,url:tiles.length?result.blobUrl:null,bounds:e.store.bounds?{...e.store.bounds}:null};e.failed=null;
       const figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===e.id);
       if(figure)this.restorePublication(e,figure);
       this.surfaceVersion++;this.onChange();
-    })();
-    try{await this.encoding;}catch(error){e.failed=error;throw error;}finally{this.encoding=null;}
+    });
+    try{await this.encoding;}catch(error){e.failed=error;throw error;}finally{this.hold(reservation,0);this.encoding=null;}
     return this.flush({signal});
   }
   collectHistory(commands){
