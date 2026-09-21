@@ -18,7 +18,8 @@ for(let batch=0;batch<4;batch++) {
 assert.ok(samples.every(sample=>sample.historyCommands===12&&sample.sources<=14));
 const retainedGrowth=samples.at(-1).heapUsed-samples[1].heapUsed;
 assert.ok(retainedGrowth<8*1024*1024,'Retained memory should plateau once bounded history is full.');
-await mkdir('artifacts/animation-mode-performance',{recursive:true});
+const output=process.env.STYK_BENCH_OUT||'artifacts/animation-mode-performance';
+await mkdir(output,{recursive:true});
 const result={config,propertyChannels,samples,retainedGrowthBytes:retainedGrowth,correct:editor.evaluatedFrame.objects.find(object=>object.unique_id===1).root_y===499};
-assert.equal(result.correct,true);await writeFile(`artifacts/animation-mode-performance/memory${propertyChannels?'-property-channels':''}.json`,JSON.stringify(result,null,2));
+assert.equal(result.correct,true);await writeFile(`${output}/memory${propertyChannels?'-property-channels':''}.json`,JSON.stringify(result,null,2));
 console.log(JSON.stringify(result,null,2));

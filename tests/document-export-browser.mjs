@@ -118,8 +118,9 @@ try {
     return {results, unknownMetadataPreserved: true, editedNativeRestartPreserved: true};
   });
   const report = {checks, behavior, restored, backendRestarted: true, checkedAt: new Date().toISOString()};
-  await mkdir(path.join(appRoot, 'artifacts'), {recursive: true});
+  const output = path.resolve(process.env.STYK_BENCH_OUT || path.join(appRoot, 'artifacts'));
+  await mkdir(output, {recursive: true});
   const tag = fixturePaths.some(value => /Akane/i.test(value)) ? '-akane' : '';
-  await writeFile(path.join(appRoot, 'artifacts', `document-export-browser${tag}.json`), JSON.stringify(report, null, 2) + '\n');
+  await writeFile(path.join(output, `document-export-browser${tag}.json`), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report, null, 2));
 } finally { await browser?.close(); backend.stop(); }

@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const output = path.join(root, 'artifacts'); await mkdir(output, { recursive: true });
+const output = path.resolve(process.env.STYK_BENCH_OUT || path.join(root, 'artifacts')); await mkdir(output, { recursive: true });
 const fps = Number(process.argv.find(arg => arg.startsWith('--fps='))?.slice(6) || 24), suffix = fps === 24 ? '' : `-${fps}fps`;
 const app = await electron.launch({ args: [root], cwd: root, timeout: 45000, env: { ...process.env, STYK_USER_DATA_DIR: path.join(output, 'gpu-ui-profile') } });
 const errors = [];

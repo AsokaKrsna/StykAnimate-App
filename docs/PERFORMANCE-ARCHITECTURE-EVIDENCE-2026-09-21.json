@@ -1,0 +1,2188 @@
+{
+  "date": "2026-09-21",
+  "baseline_head": "6d56c95fba827f9a9b5697b27736290a39fa6b1a",
+  "baseline_is_dirty": true,
+  "production_sources_changed_during_audit": [
+    "src/drawing-controller.mjs",
+    "src/drawing-selection.mjs",
+    "src/drawing-worker.mjs"
+  ],
+  "environment": {
+    "node": "v24.11.0",
+    "cpu": "AMD Ryzen 5 5500",
+    "logicalCpus": 12,
+    "ramBytes": 68582285312,
+    "os": "10.0.26200",
+    "python": "3.12.9",
+    "electron": "39.8.10",
+    "chromium": "142.0.7444.265",
+    "adapter": "nvidia \u00b7 lovelace"
+  },
+  "source_sha256": {
+    "src/app.mjs": "50246c1f3595bdd2f144a98ffc55da03eba29d0c6fb23ebd4551c6d305ee6ed1",
+    "src/audio-engine.mjs": "ea2f822c0b388c25d32224cda54128b307f9717873e32c0ffbc0a4f92d5b010c",
+    "src/document-export-worker.mjs": "551a24a1b107e8f2c6aaf50ab44c43b2452f819216499ab80640c41f4557c7dd",
+    "src/document-export.mjs": "d17749a62522b737319fde70d71d0a17156b9073897d9f06bfb1319741fa1e77",
+    "src/drawing-resources.mjs": "326f6bf35626bcf68eb54e1bc1ab5c3e99d3bbe3955b98ae8e68170923a38be8",
+    "src/editor-load.mjs": "166d04436586bc19def6a006e783ea54722a7d0222bc8a19837f55bab90dcb2f",
+    "src/editor.mjs": "d5c163f4ffac2928b09dbaa93342b1f75b62e0040774a45548372ac7a6bfd2f4",
+    "src/import-client.mjs": "03eddaf1909fc4788974d5cd413c327a90cb1e40f9c9858fa981facc488bef1f",
+    "src/import-worker.mjs": "8d1c3340d6650366a7628cf39143dcd038c9e86fccf98514867d2415e7db8b62",
+    "src/native-container.mjs": "5cec4fbea85d680895703103f98e796427310e5cbbde6e7f237c299fdf46cc9d",
+    "src/pivot/geometry.mjs": "bcd6243f9f065a5e21d4b7d836d8b9168f4509547e52d8559e2bb85f456b4fe9",
+    "src/playback-budget.mjs": "f22a7656d1ba735d525d061b3e07d792e2c8fa0a29acfd84d918c2e313bf2eda",
+    "src/playback-worker.mjs": "9325a2d949d60d7e99a9ec4fbe07e0733ceed47663667373da309672ff3e0377",
+    "src/playback.mjs": "16af6de5c9cb9eb854e5c41997ec8ad2d7293d3b54be121174bc3ee31e0b8603",
+    "src/renderer.mjs": "5c718dc725ca254ece6fc5c0c273f96e3e1a230be4d0429eae13afa236ad906b",
+    "desktop/backend.cjs": "395aadbbae992691a083629d9fdf2c02fcfef74c37113046d636c3f540157376",
+    "desktop/main.cjs": "4dc99de4e2ac7ceca03007c049b7e45884dad35e28250e6c117d414ea6ea7bab",
+    "backend/fast_decode.py": "c7f9d366141d31db5e939f1e1997a0dfe85e0d001147270a85cb1efeef09fabc",
+    "backend/native_scan.py": "5b07c4c7d37f1d2ff74753c2f393b57d7428af72039416d901449d3db13f8e8c",
+    "backend/server.py": "fae78cb3d35174610d5991d2a332bde7b9d7363d60dc0b9bd2044c7c6c9ec730",
+    "native/piv-frame-scan.cpp": "0825b9c12d683bac119e61a1d6bcc848c48164c311e2c090101ca79a93767622"
+  },
+  "desktop": {
+    "shroobs": {
+      "source": {
+        "name": "Shroobs_JJK_Pack.piv",
+        "bytes": 6866794,
+        "sha256": "fb332faf386239303d7be0005bdde2f4b5089873f71f316fd324515d32d09c5e"
+      },
+      "limitations": [
+        "Source Electron, fresh profiles; OS file/shader caches are not flushed.",
+        "Startup includes Playwright launch/connection overhead; readiness is two rAFs after styk.ready.",
+        "Import includes native file IPC, HTTP, worker reconstruction, editor preparation and two rAFs.",
+        "Working-set sums can double-count shared pages; backend is reported separately.",
+        "No physical display, GPU timestamp, OS allocation or long-session leak measurement."
+      ],
+      "sourceUnchanged": true,
+      "rows": [
+        {
+          "mode": "python",
+          "pair": 0,
+          "startup_ms": 7420.6012,
+          "import_ms": 1849.6999999284744,
+          "import_timings": {
+            "decode_ms": 666.504,
+            "cache_hit": false,
+            "total_ms": 672.657,
+            "source_bytes": 6866794,
+            "document_bytes": null,
+            "transport": "native-v5-frames",
+            "worker_fetch_ms": 1026.4,
+            "worker_parse_ms": 91.9,
+            "worker_ms": 1118.3,
+            "wire_bytes": 31959143,
+            "document_chunks": 29,
+            "worker_transfer_ms": 184.8,
+            "native_materialize_ms": 21.2,
+            "native_materialize_max_task_ms": 3.1,
+            "native_materialize_tasks": 7,
+            "native_read_ms": 73.101
+          },
+          "editor_load": null,
+          "initial_electron_working_set_mib": 534.04296875,
+          "loaded_electron_working_set_mib": 1196.50390625,
+          "initial_backend_mib": 34.55859375,
+          "loaded_backend_mib": 87.2578125,
+          "main_timer_max_gap_ms": 60.12029999999959,
+          "renderer_long_tasks_ms": [],
+          "scene_digest": "904d440cb4903976d68061c609f65a894f5bb329ba97f05bb67ebc753890b6f3"
+        },
+        {
+          "mode": "cpp",
+          "pair": 0,
+          "startup_ms": 4718.234799999998,
+          "import_ms": 1715.5,
+          "import_timings": {
+            "decode_ms": 600.605,
+            "cache_hit": false,
+            "total_ms": 606.405,
+            "source_bytes": 6866794,
+            "document_bytes": null,
+            "transport": "native-v5-frames",
+            "worker_fetch_ms": 941,
+            "worker_parse_ms": 106.8,
+            "worker_ms": 1047.8,
+            "wire_bytes": 31959143,
+            "document_chunks": 27,
+            "worker_transfer_ms": 168,
+            "native_materialize_ms": 17.1,
+            "native_materialize_max_task_ms": 3.1,
+            "native_materialize_tasks": 6,
+            "native_read_ms": 61.245
+          },
+          "editor_load": null,
+          "initial_electron_working_set_mib": 534.1875,
+          "loaded_electron_working_set_mib": 1196.828125,
+          "initial_backend_mib": 37.91796875,
+          "loaded_backend_mib": 87.81640625,
+          "main_timer_max_gap_ms": 58.399499999999534,
+          "renderer_long_tasks_ms": [],
+          "scene_digest": "904d440cb4903976d68061c609f65a894f5bb329ba97f05bb67ebc753890b6f3"
+        },
+        {
+          "mode": "cpp",
+          "pair": 1,
+          "startup_ms": 4586.558400000002,
+          "import_ms": 1719.6000000238419,
+          "import_timings": {
+            "decode_ms": 558.405,
+            "cache_hit": false,
+            "total_ms": 564.9,
+            "source_bytes": 6866794,
+            "document_bytes": null,
+            "transport": "native-v5-frames",
+            "worker_fetch_ms": 911.3,
+            "worker_parse_ms": 106.6,
+            "worker_ms": 1017.9,
+            "wire_bytes": 31959141,
+            "document_chunks": 30,
+            "worker_transfer_ms": 190.7,
+            "native_materialize_ms": 17.3,
+            "native_materialize_max_task_ms": 3.1,
+            "native_materialize_tasks": 6,
+            "native_read_ms": 64.877
+          },
+          "editor_load": null,
+          "initial_electron_working_set_mib": 535.73046875,
+          "loaded_electron_working_set_mib": 1218.9296875,
+          "initial_backend_mib": 38.015625,
+          "loaded_backend_mib": 87.8125,
+          "main_timer_max_gap_ms": 59.699900000000525,
+          "renderer_long_tasks_ms": [],
+          "scene_digest": "904d440cb4903976d68061c609f65a894f5bb329ba97f05bb67ebc753890b6f3"
+        },
+        {
+          "mode": "python",
+          "pair": 1,
+          "startup_ms": 4621.895599999996,
+          "import_ms": 1846.6000000238419,
+          "import_timings": {
+            "decode_ms": 670.627,
+            "cache_hit": false,
+            "total_ms": 676.546,
+            "source_bytes": 6866794,
+            "document_bytes": null,
+            "transport": "native-v5-frames",
+            "worker_fetch_ms": 997.8,
+            "worker_parse_ms": 99.5,
+            "worker_ms": 1097.3,
+            "wire_bytes": 31959143,
+            "document_chunks": 30,
+            "worker_transfer_ms": 187.7,
+            "native_materialize_ms": 19,
+            "native_materialize_max_task_ms": 3,
+            "native_materialize_tasks": 6,
+            "native_read_ms": 69.28
+          },
+          "editor_load": null,
+          "initial_electron_working_set_mib": 533.23046875,
+          "loaded_electron_working_set_mib": 1207.78515625,
+          "initial_backend_mib": 34.6015625,
+          "loaded_backend_mib": 87.015625,
+          "main_timer_max_gap_ms": 71.65660000000025,
+          "renderer_long_tasks_ms": [],
+          "scene_digest": "904d440cb4903976d68061c609f65a894f5bb329ba97f05bb67ebc753890b6f3"
+        }
+      ]
+    },
+    "akane": {
+      "source": {
+        "name": "16 Akane vs Akato Segundo round (3).piv",
+        "bytes": 17179483,
+        "sha256": "e24482713308932f4ae7c8dfc4efdf66abfc4dd9b634ede98630302daa958c7d"
+      },
+      "limitations": [
+        "Source Electron, fresh profiles; OS file/shader caches are not flushed.",
+        "Startup includes Playwright launch/connection overhead; readiness is two rAFs after styk.ready.",
+        "Import includes native file IPC, HTTP, worker reconstruction, editor preparation and two rAFs.",
+        "Working-set sums can double-count shared pages; backend is reported separately.",
+        "No physical display, GPU timestamp, OS allocation or long-session leak measurement."
+      ],
+      "sourceUnchanged": true,
+      "rows": [
+        {
+          "mode": "python",
+          "pair": 0,
+          "startup_ms": 3051.8525,
+          "import_ms": 9279.899999976158,
+          "import_timings": {
+            "decode_ms": 1633.427,
+            "cache_hit": false,
+            "total_ms": 1646.324,
+            "source_bytes": 17179483,
+            "document_bytes": null,
+            "transport": "native-v5-frames",
+            "worker_fetch_ms": 2136.8,
+            "worker_parse_ms": 50.5,
+            "worker_ms": 2187.3,
+            "wire_bytes": 53458818,
+            "document_chunks": 18,
+            "worker_transfer_ms": 127.5,
+            "native_materialize_ms": 212,
+            "native_materialize_max_task_ms": 10,
+            "native_materialize_tasks": 62,
+            "native_read_ms": 54.705
+          },
+          "editor_load": {
+            "started": 5154,
+            "slices": 54,
+            "maxSliceMs": 12.599999904632568,
+            "workMs": 303.3999996185303,
+            "phases": {
+              "validation": 265.7999997138977,
+              "animation": 5.399999976158142,
+              "indexing": 28.799999952316284
+            },
+            "preparedMs": 310.6999999284744,
+            "sceneMs": 6163,
+            "publishMs": 4.200000047683716,
+            "listenersMs": 5.799999952316284,
+            "commitMs": 10
+          },
+          "initial_electron_working_set_mib": 529.37109375,
+          "loaded_electron_working_set_mib": 826.5625,
+          "initial_backend_mib": 34.76953125,
+          "loaded_backend_mib": 122.5234375,
+          "main_timer_max_gap_ms": 114.44470000000001,
+          "renderer_long_tasks_ms": [],
+          "scene_digest": "77a6bdce728dec1158be19b6a1364f1771aa0933c6b38dc537d5add90736443f"
+        },
+        {
+          "mode": "cpp",
+          "pair": 0,
+          "startup_ms": 3656.122199999998,
+          "import_ms": 9344.399999976158,
+          "import_timings": {
+            "decode_ms": 946.986,
+            "cache_hit": false,
+            "total_ms": 960.68,
+            "source_bytes": 17179483,
+            "document_bytes": null,
+            "transport": "native-v5-frames",
+            "worker_fetch_ms": 1454.5,
+            "worker_parse_ms": 56.5,
+            "worker_ms": 1511,
+            "wire_bytes": 53458815,
+            "document_chunks": 18,
+            "worker_transfer_ms": 128.8,
+            "native_materialize_ms": 212.8,
+            "native_materialize_max_task_ms": 9.7,
+            "native_materialize_tasks": 62,
+            "native_read_ms": 64.686
+          },
+          "editor_load": {
+            "started": 4910.5,
+            "slices": 58,
+            "maxSliceMs": 12.299999952316284,
+            "workMs": 313.5999995470047,
+            "phases": {
+              "validation": 274.19999969005585,
+              "indexing": 34.89999985694885,
+              "identities": 4
+            },
+            "preparedMs": 320,
+            "sceneMs": 6889.399999976158,
+            "publishMs": 3,
+            "listenersMs": 6.5,
+            "commitMs": 9.5
+          },
+          "initial_electron_working_set_mib": 531.73046875,
+          "loaded_electron_working_set_mib": 832.9140625,
+          "initial_backend_mib": 38.765625,
+          "loaded_backend_mib": 121.640625,
+          "main_timer_max_gap_ms": 102.63510000000042,
+          "renderer_long_tasks_ms": [],
+          "scene_digest": "77a6bdce728dec1158be19b6a1364f1771aa0933c6b38dc537d5add90736443f"
+        },
+        {
+          "mode": "cpp",
+          "pair": 1,
+          "startup_ms": 4114.543900000001,
+          "import_ms": 9556.899999976158,
+          "import_timings": {
+            "decode_ms": 1132.185,
+            "cache_hit": false,
+            "total_ms": 1145.554,
+            "source_bytes": 17179483,
+            "document_bytes": null,
+            "transport": "native-v5-frames",
+            "worker_fetch_ms": 1643.5,
+            "worker_parse_ms": 57,
+            "worker_ms": 1700.5,
+            "wire_bytes": 53458818,
+            "document_chunks": 18,
+            "worker_transfer_ms": 132,
+            "native_materialize_ms": 259.5,
+            "native_materialize_max_task_ms": 9.7,
+            "native_materialize_tasks": 76,
+            "native_read_ms": 70.517
+          },
+          "editor_load": {
+            "started": 5775.899999976158,
+            "slices": 55,
+            "maxSliceMs": 44.39999997615814,
+            "workMs": 337.400000333786,
+            "phases": {
+              "validation": 305.9000004529953,
+              "indexing": 28.199999928474426
+            },
+            "preparedMs": 347.6999999284744,
+            "sceneMs": 6822.899999976158,
+            "publishMs": 2.899999976158142,
+            "listenersMs": 5.899999976158142,
+            "commitMs": 8.799999952316284
+          },
+          "initial_electron_working_set_mib": 530.5703125,
+          "loaded_electron_working_set_mib": 818.7734375,
+          "initial_backend_mib": 38.46875,
+          "loaded_backend_mib": 120.453125,
+          "main_timer_max_gap_ms": 119.1873999999998,
+          "renderer_long_tasks_ms": [],
+          "scene_digest": "77a6bdce728dec1158be19b6a1364f1771aa0933c6b38dc537d5add90736443f"
+        },
+        {
+          "mode": "python",
+          "pair": 1,
+          "startup_ms": 4685.994400000003,
+          "import_ms": 9420.100000023842,
+          "import_timings": {
+            "decode_ms": 1676.724,
+            "cache_hit": false,
+            "total_ms": 1690.022,
+            "source_bytes": 17179483,
+            "document_bytes": null,
+            "transport": "native-v5-frames",
+            "worker_fetch_ms": 2188.9,
+            "worker_parse_ms": 50,
+            "worker_ms": 2238.9,
+            "wire_bytes": 53458818,
+            "document_chunks": 18,
+            "worker_transfer_ms": 134.3,
+            "native_materialize_ms": 228.8,
+            "native_materialize_max_task_ms": 9.7,
+            "native_materialize_tasks": 66,
+            "native_read_ms": 121.994
+          },
+          "editor_load": {
+            "started": 6917.600000023842,
+            "slices": 61,
+            "maxSliceMs": 11.200000047683716,
+            "workMs": 336.60000002384186,
+            "phases": {
+              "validation": 287.10000002384186,
+              "animation": 4.700000047683716,
+              "indexing": 44.09999990463257
+            },
+            "preparedMs": 344.89999997615814,
+            "sceneMs": 6143.799999952316,
+            "publishMs": 3.100000023841858,
+            "listenersMs": 6.799999952316284,
+            "commitMs": 10
+          },
+          "initial_electron_working_set_mib": 536.97265625,
+          "loaded_electron_working_set_mib": 828.2109375,
+          "initial_backend_mib": 34.90625,
+          "loaded_backend_mib": 120.9296875,
+          "main_timer_max_gap_ms": 107.25810000000001,
+          "renderer_long_tasks_ms": [],
+          "scene_digest": "77a6bdce728dec1158be19b6a1364f1771aa0933c6b38dc537d5add90736443f"
+        }
+      ]
+    }
+  },
+  "native_boundary": [
+    {
+      "python": "3.12.9",
+      "platform": "Windows-11-10.0.26200-SP0",
+      "source_name": "Shroobs_JJK_Pack.piv",
+      "source_sha256": "fb332faf386239303d7be0005bdde2f4b5089873f71f316fd324515d32d09c5e",
+      "source_bytes": 6866794,
+      "native": {
+        "available": true,
+        "abi": 1,
+        "sha256": "e2bea776c0d77647fa305003d0b5dbd7ae3c43aecd2f18e045da6b09b12156a2"
+      },
+      "rows": [
+        {
+          "pair": 0,
+          "mode": "python",
+          "decode_ms": 381.22400001157075,
+          "cpu_ms": 359.375,
+          "scan_with_boundary_ms": 36.25370003283024,
+          "memory": {
+            "working_set_bytes": 108863488,
+            "peak_working_set_bytes": 175333376,
+            "private_bytes": 94564352,
+            "peak_private_bytes": 194469888
+          },
+          "header_sha256": "b892ff9a9dd915e0eb2c11af4be395bfb1fd4690412dec496d5cfdeb4ea308e3",
+          "payload_sha256": "0ffb1dae3a9e89953faf5058df46d2128770add6af37efd8c446573e74e79999",
+          "payload_bytes": 8072523,
+          "frames": 29,
+          "figures": 701
+        },
+        {
+          "pair": 0,
+          "mode": "cpp",
+          "decode_ms": 359.70240004826337,
+          "cpu_ms": 359.375,
+          "scan_with_boundary_ms": 8.661900064907968,
+          "memory": {
+            "working_set_bytes": 107606016,
+            "peak_working_set_bytes": 175333376,
+            "private_bytes": 92540928,
+            "peak_private_bytes": 194469888
+          },
+          "header_sha256": "b892ff9a9dd915e0eb2c11af4be395bfb1fd4690412dec496d5cfdeb4ea308e3",
+          "payload_sha256": "0ffb1dae3a9e89953faf5058df46d2128770add6af37efd8c446573e74e79999",
+          "payload_bytes": 8072523,
+          "frames": 29,
+          "figures": 701
+        },
+        {
+          "pair": 1,
+          "mode": "cpp",
+          "decode_ms": 344.3175000138581,
+          "cpu_ms": 359.375,
+          "scan_with_boundary_ms": 10.042999987490475,
+          "memory": {
+            "working_set_bytes": 107745280,
+            "peak_working_set_bytes": 175333376,
+            "private_bytes": 92758016,
+            "peak_private_bytes": 194469888
+          },
+          "header_sha256": "b892ff9a9dd915e0eb2c11af4be395bfb1fd4690412dec496d5cfdeb4ea308e3",
+          "payload_sha256": "0ffb1dae3a9e89953faf5058df46d2128770add6af37efd8c446573e74e79999",
+          "payload_bytes": 8072523,
+          "frames": 29,
+          "figures": 701
+        },
+        {
+          "pair": 1,
+          "mode": "python",
+          "decode_ms": 512.3228000011295,
+          "cpu_ms": 468.75,
+          "scan_with_boundary_ms": 54.15380001068115,
+          "memory": {
+            "working_set_bytes": 108859392,
+            "peak_working_set_bytes": 175333376,
+            "private_bytes": 94486528,
+            "peak_private_bytes": 194469888
+          },
+          "header_sha256": "b892ff9a9dd915e0eb2c11af4be395bfb1fd4690412dec496d5cfdeb4ea308e3",
+          "payload_sha256": "0ffb1dae3a9e89953faf5058df46d2128770add6af37efd8c446573e74e79999",
+          "payload_bytes": 8072523,
+          "frames": 29,
+          "figures": 701
+        },
+        {
+          "pair": 2,
+          "mode": "python",
+          "decode_ms": 445.9629999473691,
+          "cpu_ms": 437.5,
+          "scan_with_boundary_ms": 48.96970000118017,
+          "memory": {
+            "working_set_bytes": 109010944,
+            "peak_working_set_bytes": 175509504,
+            "private_bytes": 94810112,
+            "peak_private_bytes": 194727936
+          },
+          "header_sha256": "b892ff9a9dd915e0eb2c11af4be395bfb1fd4690412dec496d5cfdeb4ea308e3",
+          "payload_sha256": "0ffb1dae3a9e89953faf5058df46d2128770add6af37efd8c446573e74e79999",
+          "payload_bytes": 8072523,
+          "frames": 29,
+          "figures": 701
+        },
+        {
+          "pair": 2,
+          "mode": "cpp",
+          "decode_ms": 415.23959999904037,
+          "cpu_ms": 406.25,
+          "scan_with_boundary_ms": 9.38589998986572,
+          "memory": {
+            "working_set_bytes": 108367872,
+            "peak_working_set_bytes": 175509504,
+            "private_bytes": 94003200,
+            "peak_private_bytes": 194727936
+          },
+          "header_sha256": "b892ff9a9dd915e0eb2c11af4be395bfb1fd4690412dec496d5cfdeb4ea308e3",
+          "payload_sha256": "0ffb1dae3a9e89953faf5058df46d2128770add6af37efd8c446573e74e79999",
+          "payload_bytes": 8072523,
+          "frames": 29,
+          "figures": 701
+        }
+      ],
+      "limitations": [
+        "Same process, alternating order; OS file cache and allocator are warm.",
+        "Peak memory is lifetime high water, not a per-variant delta.",
+        "C++ measured wrapper includes metadata and output conversion, not just the C call.",
+        "No HTTP/browser/GPU work; no full parsed pose materialization."
+      ]
+    },
+    {
+      "python": "3.12.9",
+      "platform": "Windows-11-10.0.26200-SP0",
+      "source_name": "16 Akane vs Akato Segundo round (3).piv",
+      "source_sha256": "e24482713308932f4ae7c8dfc4efdf66abfc4dd9b634ede98630302daa958c7d",
+      "source_bytes": 17179483,
+      "native": {
+        "available": true,
+        "abi": 1,
+        "sha256": "e2bea776c0d77647fa305003d0b5dbd7ae3c43aecd2f18e045da6b09b12156a2"
+      },
+      "rows": [
+        {
+          "pair": 0,
+          "mode": "python",
+          "decode_ms": 1628.8457000628114,
+          "cpu_ms": 1640.625,
+          "scan_with_boundary_ms": 785.573200089857,
+          "memory": {
+            "working_set_bytes": 139370496,
+            "peak_working_set_bytes": 172589056,
+            "private_bytes": 124309504,
+            "peak_private_bytes": 174272512
+          },
+          "header_sha256": "8c96e5d2d3952ada9e74b8e181ff73fe7fcff5b617675c295895228c4f249546",
+          "payload_sha256": "d9dc80f94a1362f7f91a220b8606de61f85916c1d336dcc0f42871fcae286f8d",
+          "payload_bytes": 36570104,
+          "frames": 1479,
+          "figures": 881
+        },
+        {
+          "pair": 0,
+          "mode": "cpp",
+          "decode_ms": 848.1755999382585,
+          "cpu_ms": 859.375,
+          "scan_with_boundary_ms": 21.914799930527806,
+          "memory": {
+            "working_set_bytes": 139681792,
+            "peak_working_set_bytes": 172933120,
+            "private_bytes": 125128704,
+            "peak_private_bytes": 175095808
+          },
+          "header_sha256": "8c96e5d2d3952ada9e74b8e181ff73fe7fcff5b617675c295895228c4f249546",
+          "payload_sha256": "d9dc80f94a1362f7f91a220b8606de61f85916c1d336dcc0f42871fcae286f8d",
+          "payload_bytes": 36570104,
+          "frames": 1479,
+          "figures": 881
+        },
+        {
+          "pair": 1,
+          "mode": "cpp",
+          "decode_ms": 1055.4608999518678,
+          "cpu_ms": 1062.5,
+          "scan_with_boundary_ms": 30.344199971295893,
+          "memory": {
+            "working_set_bytes": 138215424,
+            "peak_working_set_bytes": 172933120,
+            "private_bytes": 123822080,
+            "peak_private_bytes": 175095808
+          },
+          "header_sha256": "8c96e5d2d3952ada9e74b8e181ff73fe7fcff5b617675c295895228c4f249546",
+          "payload_sha256": "d9dc80f94a1362f7f91a220b8606de61f85916c1d336dcc0f42871fcae286f8d",
+          "payload_bytes": 36570104,
+          "frames": 1479,
+          "figures": 881
+        },
+        {
+          "pair": 1,
+          "mode": "python",
+          "decode_ms": 1987.5513000879437,
+          "cpu_ms": 1968.75,
+          "scan_with_boundary_ms": 982.5429000193253,
+          "memory": {
+            "working_set_bytes": 139509760,
+            "peak_working_set_bytes": 172933120,
+            "private_bytes": 125509632,
+            "peak_private_bytes": 175464448
+          },
+          "header_sha256": "8c96e5d2d3952ada9e74b8e181ff73fe7fcff5b617675c295895228c4f249546",
+          "payload_sha256": "d9dc80f94a1362f7f91a220b8606de61f85916c1d336dcc0f42871fcae286f8d",
+          "payload_bytes": 36570104,
+          "frames": 1479,
+          "figures": 881
+        },
+        {
+          "pair": 2,
+          "mode": "python",
+          "decode_ms": 2080.1296000136063,
+          "cpu_ms": 2046.875,
+          "scan_with_boundary_ms": 1028.06529996451,
+          "memory": {
+            "working_set_bytes": 139755520,
+            "peak_working_set_bytes": 173031424,
+            "private_bytes": 124764160,
+            "peak_private_bytes": 175464448
+          },
+          "header_sha256": "8c96e5d2d3952ada9e74b8e181ff73fe7fcff5b617675c295895228c4f249546",
+          "payload_sha256": "d9dc80f94a1362f7f91a220b8606de61f85916c1d336dcc0f42871fcae286f8d",
+          "payload_bytes": 36570104,
+          "frames": 1479,
+          "figures": 881
+        },
+        {
+          "pair": 2,
+          "mode": "cpp",
+          "decode_ms": 1050.9423000039533,
+          "cpu_ms": 1046.875,
+          "scan_with_boundary_ms": 32.73720003198832,
+          "memory": {
+            "working_set_bytes": 139755520,
+            "peak_working_set_bytes": 173031424,
+            "private_bytes": 125362176,
+            "peak_private_bytes": 175464448
+          },
+          "header_sha256": "8c96e5d2d3952ada9e74b8e181ff73fe7fcff5b617675c295895228c4f249546",
+          "payload_sha256": "d9dc80f94a1362f7f91a220b8606de61f85916c1d336dcc0f42871fcae286f8d",
+          "payload_bytes": 36570104,
+          "frames": 1479,
+          "figures": 881
+        }
+      ],
+      "limitations": [
+        "Same process, alternating order; OS file cache and allocator are warm.",
+        "Peak memory is lifetime high water, not a per-variant delta.",
+        "C++ measured wrapper includes metadata and output conversion, not just the C call.",
+        "No HTTP/browser/GPU work; no full parsed pose materialization."
+      ]
+    }
+  ],
+  "model": [
+    {
+      "config": {
+        "name": "small",
+        "frames": 100,
+        "figures": 10,
+        "channels": 10,
+        "keys": 100
+      },
+      "loadMs": 23.99290000000002,
+      "memory": {
+        "processHeapAfterLoadBytes": 10251952,
+        "retainedOperationHeapBytes": 1884384,
+        "rssBytes": 89358336
+      },
+      "timingsMs": {
+        "coldGeometry": {
+          "samples": 1,
+          "p50": 4.806,
+          "p95": 4.806,
+          "max": 4.806,
+          "total": 4.806
+        },
+        "advanced.scalarBegin": {
+          "samples": 7,
+          "p50": 0.077,
+          "p95": 0.816,
+          "max": 0.816,
+          "total": 1.271
+        },
+        "advanced.scalarPreview": {
+          "samples": 56,
+          "p50": 0.057,
+          "p95": 0.197,
+          "max": 1.305,
+          "total": 5.355
+        },
+        "advanced.scalarCommit": {
+          "samples": 7,
+          "p50": 0.21,
+          "p95": 2.146,
+          "max": 2.146,
+          "total": 3.304
+        },
+        "advanced.undo": {
+          "samples": 7,
+          "p50": 0.566,
+          "p95": 2.096,
+          "max": 2.096,
+          "total": 6.355
+        },
+        "advanced.redo": {
+          "samples": 7,
+          "p50": 0.561,
+          "p95": 0.707,
+          "max": 0.707,
+          "total": 3.665
+        },
+        "advanced.poseBegin": {
+          "samples": 7,
+          "p50": 0.265,
+          "p95": 1.951,
+          "max": 1.951,
+          "total": 3.541
+        },
+        "advanced.posePreview": {
+          "samples": 56,
+          "p50": 0.024,
+          "p95": 0.177,
+          "max": 1.45,
+          "total": 3.623
+        },
+        "advanced.poseCommit": {
+          "samples": 7,
+          "p50": 0.505,
+          "p95": 3.736,
+          "max": 3.736,
+          "total": 6.73
+        },
+        "simple.scalarBegin": {
+          "samples": 7,
+          "p50": 0.084,
+          "p95": 0.168,
+          "max": 0.168,
+          "total": 0.639
+        },
+        "simple.scalarPreview": {
+          "samples": 56,
+          "p50": 0.054,
+          "p95": 0.121,
+          "max": 0.156,
+          "total": 3.527
+        },
+        "simple.scalarCommit": {
+          "samples": 7,
+          "p50": 0.174,
+          "p95": 0.459,
+          "max": 0.459,
+          "total": 1.583
+        },
+        "simple.undo": {
+          "samples": 7,
+          "p50": 0.437,
+          "p95": 0.525,
+          "max": 0.525,
+          "total": 2.942
+        },
+        "simple.redo": {
+          "samples": 7,
+          "p50": 0.395,
+          "p95": 0.533,
+          "max": 0.533,
+          "total": 2.676
+        },
+        "simple.poseBegin": {
+          "samples": 7,
+          "p50": 0.326,
+          "p95": 0.466,
+          "max": 0.466,
+          "total": 2.26
+        },
+        "simple.posePreview": {
+          "samples": 56,
+          "p50": 0.02,
+          "p95": 0.072,
+          "max": 0.11,
+          "total": 1.545
+        },
+        "simple.poseCommit": {
+          "samples": 7,
+          "p50": 0.408,
+          "p95": 0.522,
+          "max": 0.522,
+          "total": 3.082
+        },
+        "cleanToAdvanced": {
+          "samples": 7,
+          "p50": 0.009,
+          "p95": 0.114,
+          "max": 0.114,
+          "total": 0.172
+        },
+        "cleanToSimple": {
+          "samples": 7,
+          "p50": 0.011,
+          "p95": 0.054,
+          "max": 0.054,
+          "total": 0.13
+        },
+        "addWorkingFrame": {
+          "samples": 3,
+          "p50": 3.071,
+          "p95": 9.14,
+          "max": 9.14,
+          "total": 14.274
+        },
+        "undoAdd": {
+          "samples": 3,
+          "p50": 0.385,
+          "p95": 1.089,
+          "max": 1.089,
+          "total": 1.854
+        },
+        "discardWorkingFrame": {
+          "samples": 3,
+          "p50": 1.127,
+          "p95": 3.105,
+          "max": 3.105,
+          "total": 4.969
+        }
+      },
+      "history": {
+        "commands": 34,
+        "accountedBytes": 1202626,
+        "sources": 17
+      },
+      "finalFrames": 100
+    },
+    {
+      "config": {
+        "name": "long",
+        "frames": 10000,
+        "figures": 10,
+        "channels": 10,
+        "keys": 1000
+      },
+      "loadMs": 295.6372999999999,
+      "memory": {
+        "processHeapAfterLoadBytes": 54462232,
+        "retainedOperationHeapBytes": 10142296,
+        "rssBytes": 275537920
+      },
+      "timingsMs": {
+        "coldGeometry": {
+          "samples": 1,
+          "p50": 1.466,
+          "p95": 1.466,
+          "max": 1.466,
+          "total": 1.466
+        },
+        "advanced.scalarBegin": {
+          "samples": 7,
+          "p50": 0.671,
+          "p95": 0.714,
+          "max": 0.714,
+          "total": 4.15
+        },
+        "advanced.scalarPreview": {
+          "samples": 56,
+          "p50": 0.199,
+          "p95": 0.711,
+          "max": 1.282,
+          "total": 14.666
+        },
+        "advanced.scalarCommit": {
+          "samples": 7,
+          "p50": 0.886,
+          "p95": 1.459,
+          "max": 1.459,
+          "total": 6.002
+        },
+        "advanced.undo": {
+          "samples": 7,
+          "p50": 10.616,
+          "p95": 17.031,
+          "max": 17.031,
+          "total": 73.818
+        },
+        "advanced.redo": {
+          "samples": 7,
+          "p50": 10.913,
+          "p95": 15.741,
+          "max": 15.741,
+          "total": 69.602
+        },
+        "advanced.poseBegin": {
+          "samples": 7,
+          "p50": 0.167,
+          "p95": 0.42,
+          "max": 0.42,
+          "total": 1.39
+        },
+        "advanced.posePreview": {
+          "samples": 56,
+          "p50": 0.02,
+          "p95": 0.076,
+          "max": 0.178,
+          "total": 1.522
+        },
+        "advanced.poseCommit": {
+          "samples": 7,
+          "p50": 7.278,
+          "p95": 12.955,
+          "max": 12.955,
+          "total": 56.805
+        },
+        "simple.scalarBegin": {
+          "samples": 7,
+          "p50": 0.575,
+          "p95": 1.056,
+          "max": 1.056,
+          "total": 4.655
+        },
+        "simple.scalarPreview": {
+          "samples": 56,
+          "p50": 0.152,
+          "p95": 0.292,
+          "max": 0.362,
+          "total": 9.231
+        },
+        "simple.scalarCommit": {
+          "samples": 7,
+          "p50": 0.789,
+          "p95": 11.722,
+          "max": 11.722,
+          "total": 16.246
+        },
+        "simple.undo": {
+          "samples": 7,
+          "p50": 8.48,
+          "p95": 11.594,
+          "max": 11.594,
+          "total": 63.523
+        },
+        "simple.redo": {
+          "samples": 7,
+          "p50": 9.23,
+          "p95": 10.559,
+          "max": 10.559,
+          "total": 61.743
+        },
+        "simple.poseBegin": {
+          "samples": 7,
+          "p50": 0.275,
+          "p95": 0.334,
+          "max": 0.334,
+          "total": 1.831
+        },
+        "simple.posePreview": {
+          "samples": 56,
+          "p50": 0.023,
+          "p95": 0.07,
+          "max": 0.127,
+          "total": 1.513
+        },
+        "simple.poseCommit": {
+          "samples": 7,
+          "p50": 7.414,
+          "p95": 10.065,
+          "max": 10.065,
+          "total": 49.533
+        },
+        "cleanToAdvanced": {
+          "samples": 7,
+          "p50": 0.008,
+          "p95": 0.086,
+          "max": 0.086,
+          "total": 0.141
+        },
+        "cleanToSimple": {
+          "samples": 7,
+          "p50": 0.005,
+          "p95": 0.031,
+          "max": 0.031,
+          "total": 0.086
+        },
+        "addWorkingFrame": {
+          "samples": 3,
+          "p50": 35.142,
+          "p95": 40.006,
+          "max": 40.006,
+          "total": 105.433
+        },
+        "undoAdd": {
+          "samples": 3,
+          "p50": 9.838,
+          "p95": 10.037,
+          "max": 10.037,
+          "total": 28.765
+        },
+        "discardWorkingFrame": {
+          "samples": 3,
+          "p50": 9.38,
+          "p95": 15.11,
+          "max": 15.11,
+          "total": 32.996
+        }
+      },
+      "history": {
+        "commands": 16,
+        "accountedBytes": 46323146,
+        "sources": 9
+      },
+      "finalFrames": 10000
+    },
+    {
+      "config": {
+        "name": "dense",
+        "frames": 200,
+        "figures": 500,
+        "channels": 500,
+        "keys": 100
+      },
+      "loadMs": 190.23559999999998,
+      "memory": {
+        "processHeapAfterLoadBytes": 53661864,
+        "retainedOperationHeapBytes": 2809768,
+        "rssBytes": 275369984
+      },
+      "timingsMs": {
+        "coldGeometry": {
+          "samples": 1,
+          "p50": 14.105,
+          "p95": 14.105,
+          "max": 14.105,
+          "total": 14.105
+        },
+        "advanced.scalarBegin": {
+          "samples": 7,
+          "p50": 0.314,
+          "p95": 0.483,
+          "max": 0.483,
+          "total": 2.523
+        },
+        "advanced.scalarPreview": {
+          "samples": 56,
+          "p50": 0.102,
+          "p95": 0.202,
+          "max": 0.347,
+          "total": 6.392
+        },
+        "advanced.scalarCommit": {
+          "samples": 7,
+          "p50": 0.418,
+          "p95": 0.628,
+          "max": 0.628,
+          "total": 2.985
+        },
+        "advanced.undo": {
+          "samples": 7,
+          "p50": 2.001,
+          "p95": 3.824,
+          "max": 3.824,
+          "total": 15.031
+        },
+        "advanced.redo": {
+          "samples": 7,
+          "p50": 1.905,
+          "p95": 3.058,
+          "max": 3.058,
+          "total": 13.494
+        },
+        "advanced.poseBegin": {
+          "samples": 7,
+          "p50": 0.152,
+          "p95": 0.41,
+          "max": 0.41,
+          "total": 1.326
+        },
+        "advanced.posePreview": {
+          "samples": 56,
+          "p50": 0.016,
+          "p95": 0.201,
+          "max": 0.295,
+          "total": 2.323
+        },
+        "advanced.poseCommit": {
+          "samples": 7,
+          "p50": 0.723,
+          "p95": 1.738,
+          "max": 1.738,
+          "total": 5.808
+        },
+        "simple.scalarBegin": {
+          "samples": 7,
+          "p50": 0.204,
+          "p95": 0.324,
+          "max": 0.324,
+          "total": 1.507
+        },
+        "simple.scalarPreview": {
+          "samples": 56,
+          "p50": 0.104,
+          "p95": 0.218,
+          "max": 0.233,
+          "total": 6.619
+        },
+        "simple.scalarCommit": {
+          "samples": 7,
+          "p50": 0.376,
+          "p95": 3.254,
+          "max": 3.254,
+          "total": 5.59
+        },
+        "simple.undo": {
+          "samples": 7,
+          "p50": 1.404,
+          "p95": 1.853,
+          "max": 1.853,
+          "total": 9.732
+        },
+        "simple.redo": {
+          "samples": 7,
+          "p50": 1.319,
+          "p95": 1.724,
+          "max": 1.724,
+          "total": 9.548
+        },
+        "simple.poseBegin": {
+          "samples": 7,
+          "p50": 0.93,
+          "p95": 1.083,
+          "max": 1.083,
+          "total": 5.99
+        },
+        "simple.posePreview": {
+          "samples": 56,
+          "p50": 0.018,
+          "p95": 0.098,
+          "max": 0.155,
+          "total": 1.719
+        },
+        "simple.poseCommit": {
+          "samples": 7,
+          "p50": 0.76,
+          "p95": 0.954,
+          "max": 0.954,
+          "total": 5.268
+        },
+        "cleanToAdvanced": {
+          "samples": 7,
+          "p50": 0.016,
+          "p95": 0.327,
+          "max": 0.327,
+          "total": 0.456
+        },
+        "cleanToSimple": {
+          "samples": 7,
+          "p50": 0.009,
+          "p95": 0.062,
+          "max": 0.062,
+          "total": 0.115
+        },
+        "addWorkingFrame": {
+          "samples": 3,
+          "p50": 52.289,
+          "p95": 75.36,
+          "max": 75.36,
+          "total": 173.098
+        },
+        "undoAdd": {
+          "samples": 3,
+          "p50": 6.282,
+          "p95": 7.333,
+          "max": 7.333,
+          "total": 17.154
+        },
+        "discardWorkingFrame": {
+          "samples": 3,
+          "p50": 16.723,
+          "p95": 19.014,
+          "max": 19.014,
+          "total": 47.906
+        }
+      },
+      "history": {
+        "commands": 34,
+        "accountedBytes": 3912934,
+        "sources": 17
+      },
+      "finalFrames": 200
+    },
+    {
+      "config": {
+        "name": "many-keys",
+        "frames": 1000,
+        "figures": 20,
+        "channels": 20,
+        "keys": 10000
+      },
+      "loadMs": 195.17650000000003,
+      "memory": {
+        "processHeapAfterLoadBytes": 39410880,
+        "retainedOperationHeapBytes": 134456,
+        "rssBytes": 276369408
+      },
+      "timingsMs": {
+        "coldGeometry": {
+          "samples": 1,
+          "p50": 1.085,
+          "p95": 1.085,
+          "max": 1.085,
+          "total": 1.085
+        },
+        "advanced.scalarBegin": {
+          "samples": 7,
+          "p50": 0.119,
+          "p95": 0.155,
+          "max": 0.155,
+          "total": 0.837
+        },
+        "advanced.scalarPreview": {
+          "samples": 56,
+          "p50": 1.745,
+          "p95": 2.534,
+          "max": 6.56,
+          "total": 102.107
+        },
+        "advanced.scalarCommit": {
+          "samples": 7,
+          "p50": 7.634,
+          "p95": 10.413,
+          "max": 10.413,
+          "total": 57.501
+        },
+        "advanced.undo": {
+          "samples": 7,
+          "p50": 1.624,
+          "p95": 2.019,
+          "max": 2.019,
+          "total": 10.22
+        },
+        "advanced.redo": {
+          "samples": 7,
+          "p50": 1.39,
+          "p95": 2.257,
+          "max": 2.257,
+          "total": 9.485
+        },
+        "advanced.poseBegin": {
+          "samples": 7,
+          "p50": 0.136,
+          "p95": 0.264,
+          "max": 0.264,
+          "total": 1.065
+        },
+        "advanced.posePreview": {
+          "samples": 56,
+          "p50": 0.016,
+          "p95": 0.072,
+          "max": 0.128,
+          "total": 1.428
+        },
+        "advanced.poseCommit": {
+          "samples": 7,
+          "p50": 0.869,
+          "p95": 1.218,
+          "max": 1.218,
+          "total": 6.375
+        },
+        "simple.scalarBegin": {
+          "samples": 7,
+          "p50": 0.174,
+          "p95": 0.299,
+          "max": 0.299,
+          "total": 1.225
+        },
+        "simple.scalarPreview": {
+          "samples": 56,
+          "p50": 1.606,
+          "p95": 2.194,
+          "max": 2.648,
+          "total": 91.423
+        },
+        "simple.scalarCommit": {
+          "samples": 7,
+          "p50": 6.661,
+          "p95": 8.357,
+          "max": 8.357,
+          "total": 48.388
+        },
+        "simple.undo": {
+          "samples": 7,
+          "p50": 1.246,
+          "p95": 2.237,
+          "max": 2.237,
+          "total": 9.638
+        },
+        "simple.redo": {
+          "samples": 7,
+          "p50": 1.108,
+          "p95": 2.118,
+          "max": 2.118,
+          "total": 8.397
+        },
+        "simple.poseBegin": {
+          "samples": 7,
+          "p50": 0.188,
+          "p95": 0.478,
+          "max": 0.478,
+          "total": 1.691
+        },
+        "simple.posePreview": {
+          "samples": 56,
+          "p50": 0.018,
+          "p95": 0.057,
+          "max": 0.139,
+          "total": 1.4
+        },
+        "simple.poseCommit": {
+          "samples": 7,
+          "p50": 0.82,
+          "p95": 1.684,
+          "max": 1.684,
+          "total": 6.553
+        },
+        "cleanToAdvanced": {
+          "samples": 7,
+          "p50": 0.02,
+          "p95": 0.089,
+          "max": 0.089,
+          "total": 0.233
+        },
+        "cleanToSimple": {
+          "samples": 7,
+          "p50": 0.01,
+          "p95": 0.027,
+          "max": 0.027,
+          "total": 0.083
+        },
+        "addWorkingFrame": {
+          "samples": 3,
+          "p50": 166.363,
+          "p95": 190.021,
+          "max": 190.021,
+          "total": 508.104
+        },
+        "undoAdd": {
+          "samples": 3,
+          "p50": 2.239,
+          "p95": 2.521,
+          "max": 2.521,
+          "total": 6.745
+        },
+        "discardWorkingFrame": {
+          "samples": 3,
+          "p50": 2.886,
+          "p95": 2.901,
+          "max": 2.901,
+          "total": 7.758
+        }
+      },
+      "history": {
+        "commands": 1,
+        "accountedBytes": 422026,
+        "sources": 2
+      },
+      "finalFrames": 1000
+    }
+  ],
+  "renderer": {
+    "backend": "WebGPU",
+    "adapter": "nvidia \u00b7 lovelace",
+    "scene": {
+      "figures": 1000,
+      "keyframes": 24,
+      "fps": 60
+    },
+    "drag": {
+      "rendererCpuMs": {
+        "count": 60,
+        "p50": 0.5,
+        "p95": 1,
+        "max": 1.1999999284744263
+      },
+      "pointerReceiptToSubmitMs": {
+        "count": 60,
+        "p50": 0.8999999761581421,
+        "p95": 1.2999999523162842,
+        "max": 1.7999999523162842
+      },
+      "totalGeometryUploadBytes": 0,
+      "allGeometryReferencesStable": true,
+      "drawCalls": [
+        2
+      ],
+      "finalWorldDelta": {
+        "x": 90.67164179104469,
+        "y": -24.17910447761193
+      },
+      "expectedWorldDelta": {
+        "x": 90.67164179104478,
+        "y": -24.17910447761194
+      }
+    },
+    "playback": {
+      "rendererCpuMs": {
+        "count": 153,
+        "p50": 0.19999992847442627,
+        "p95": 0.2999999523162842,
+        "max": 0.7000000476837158
+      },
+      "editorRenderWorkMs": {
+        "count": 171,
+        "p50": 0.20000004768371582,
+        "p95": 0.3999999761581421,
+        "max": 0.9000000953674316
+      },
+      "renderIntervalMs": {
+        "count": 152,
+        "p50": 14.199999928474426,
+        "p95": 20.899999976158142,
+        "max": 21.800000071525574
+      },
+      "renderedFrames": 153,
+      "totalSubmissions": 153,
+      "skippedTicks": 0,
+      "startToFirstFrameMs": 655.1000000238419,
+      "warmRendererCpuMs": {
+        "count": 120,
+        "p50": 0.10000002384185791,
+        "p95": 0.20000004768371582,
+        "max": 0.30000007152557373
+      },
+      "warmRenderIntervalMs": {
+        "count": 119,
+        "p50": 14.199999928474426,
+        "p95": 20.899999976158142,
+        "max": 21.300000071525574
+      },
+      "warmEffectiveFPS": 60.13137948458817,
+      "worker": {
+        "backend": "Worker prepared playback",
+        "revision": 4,
+        "readyFrames": 24,
+        "pendingFrames": 0,
+        "bytes": 27360480,
+        "bitmapResources": 0,
+        "footprintBytes": 768,
+        "maxBytes": 1073741824,
+        "maxFrames": 120,
+        "hits": 1558,
+        "misses": 46,
+        "evictions": 0,
+        "preparedFrames": 26,
+        "compileMs": 1256.8999998569489,
+        "lastCompileMs": 37.89999997615814,
+        "loadMs": 322.10000002384186,
+        "loadChunks": 105,
+        "loadSerializationMs": 119.10000026226044,
+        "loadMaxTaskMs": 4.600000023841858,
+        "loadKind": "document",
+        "updatedFrames": 0,
+        "droppedPrefetchFrames": 0,
+        "suppressedPrefetchFrames": 0,
+        "failure": null,
+        "workerCount": 3,
+        "retainedFrames": 0,
+        "workerCache": {
+          "imageBytes": 0,
+          "sourceBytes": 0,
+          "rasterBytes": 0,
+          "rasterEntries": 0,
+          "vectorBytes": 4325376,
+          "vectorEntries": 4096,
+          "alternateDrawables": 10000,
+          "tweenEntries": 0
+        },
+        "lastSharing": {
+          "reusedInstances": 0,
+          "savedBitmapBytes": 0,
+          "rasterCacheHits": 0,
+          "rasterCacheMisses": 0,
+          "reusedVectorObjects": 0
+        },
+        "reusedGeometryObjects": 0,
+        "maxChunkBytes": 1048430,
+        "patchFrames": 0,
+        "patchFigures": 0,
+        "patchSourceUpserts": 0,
+        "patchSourceDeletes": 0
+      },
+      "gpuCache": {
+        "frames": 24,
+        "bytes": 25730688,
+        "maxBytes": 1073741824,
+        "maxFrames": 120,
+        "hits": 153,
+        "misses": 0,
+        "evictions": 0,
+        "uploads": 24,
+        "textureUploads": 0,
+        "reusedTextures": 0,
+        "uniqueTextures": 0,
+        "pooledTextures": 0,
+        "warmFrames": 9,
+        "warmSlices": 9,
+        "warmCpuMs": 2.0000001192092896,
+        "warmMaxSliceMs": 0.30000007152557373,
+        "warmFailures": 0,
+        "msaaPoolBytes": 0,
+        "scratchBytes": 0,
+        "texturePoolBytes": 0
+      }
+    },
+    "errors": [],
+    "measuredAt": "2026-09-21T15:41:26.658Z",
+    "limitation": "Browser pointer receipt to GPU submission, not OS input or completed GPU/display latency. editorRenderWorkMs includes evaluation/preparation and overlay work inside the editor render section, excluding DOM/transport work afterward. Warm samples start1.2seconds after Play."
+  },
+  "audio": {
+    "voices": 32,
+    "mixChunkFrames": 12000,
+    "mixChunkMs": 250,
+    "maxOutputBytes": 96000,
+    "mixMaxMs": 68.87729999999999,
+    "mixMedianMs": 25.351499999999987,
+    "assetBytes": 23592960,
+    "edits": 100,
+    "editMaxMs": 1.9150999999999385,
+    "editMedianMs": 0.036100000000033106,
+    "largestMetadataCommand": 1654,
+    "retainedCommands": 80
+  },
+  "memory": [
+    {
+      "config": {
+        "frames": 2000,
+        "figures": 20,
+        "channels": 20,
+        "keys": 2000
+      },
+      "propertyChannels": false,
+      "samples": [
+        {
+          "edits": 50,
+          "heapUsed": 32595288,
+          "historyBytes": 9690192,
+          "historyCommands": 12,
+          "sources": 13
+        },
+        {
+          "edits": 100,
+          "heapUsed": 32676536,
+          "historyBytes": 9690202,
+          "historyCommands": 12,
+          "sources": 13
+        },
+        {
+          "edits": 150,
+          "heapUsed": 32717608,
+          "historyBytes": 9690240,
+          "historyCommands": 12,
+          "sources": 13
+        },
+        {
+          "edits": 200,
+          "heapUsed": 32784304,
+          "historyBytes": 9690240,
+          "historyCommands": 12,
+          "sources": 13
+        }
+      ],
+      "retainedGrowthBytes": 107768,
+      "correct": true
+    },
+    {
+      "config": {
+        "frames": 2000,
+        "figures": 20,
+        "channels": 20,
+        "keys": 2000
+      },
+      "propertyChannels": true,
+      "samples": [
+        {
+          "edits": 50,
+          "heapUsed": 33140792,
+          "historyBytes": 9690816,
+          "historyCommands": 12,
+          "sources": 13
+        },
+        {
+          "edits": 100,
+          "heapUsed": 33248736,
+          "historyBytes": 9690826,
+          "historyCommands": 12,
+          "sources": 13
+        },
+        {
+          "edits": 150,
+          "heapUsed": 33279504,
+          "historyBytes": 9690864,
+          "historyCommands": 12,
+          "sources": 13
+        },
+        {
+          "edits": 200,
+          "heapUsed": 33308976,
+          "historyBytes": 9690864,
+          "historyCommands": 12,
+          "sources": 13
+        }
+      ],
+      "retainedGrowthBytes": 60240,
+      "correct": true
+    }
+  ],
+  "save": {
+    "checks": [
+      {
+        "name": "16 Akane vs Akato Segundo round (3).piv",
+        "bytes": 17179483,
+        "sha256": "e24482713308932f4ae7c8dfc4efdf66abfc4dd9b634ede98630302daa958c7d",
+        "nativeBytes": 36248048,
+        "timings": {
+          "format": "piv",
+          "chunks": 459,
+          "snapshot_ms": 2038.7999999523163,
+          "max_chunk_prepare_ms": 2.799999952316284,
+          "max_chunk_post_ms": 2.4000000953674316,
+          "main_work_ms": 1017.8999996185303,
+          "total_ms": 35499.60000002384,
+          "drawing_flattens": 0,
+          "drawing_flatten_ms": 0.5,
+          "compose_ms": 13.800000071525574,
+          "source_keyframes": 1479,
+          "export_keyframes": 1479,
+          "normalize_ms": 324,
+          "stringify_ms": 744.7000000476837,
+          "json_characters": 185041176,
+          "fetch_ms": 32185.899999976158,
+          "worker_ms": 33254.800000071526,
+          "output_bytes": 17179483
+        },
+        "nativeTimings": {
+          "format": "styk",
+          "chunks": 459,
+          "snapshot_ms": 1945.3999999761581,
+          "max_chunk_prepare_ms": 1.899999976158142,
+          "max_chunk_post_ms": 4.5,
+          "main_work_ms": 987.1000019311905,
+          "total_ms": 4804.300000071526,
+          "normalize_ms": 275.7999999523163,
+          "container_build_ms": 2350.2,
+          "worker_ms": 2626,
+          "output_bytes": 36248048
+        },
+        "longTasks": [],
+        "maxAnimationFrameGapMs": 16.80000000000291
+      }
+    ],
+    "behavior": {
+      "preAborted": true,
+      "midSnapshotAborted": true,
+      "changedRevisionAborted": true,
+      "reusedAfterCancellation": true,
+      "expiredSourceErrorPreserved": true
+    },
+    "restored": {
+      "results": [
+        {
+          "name": "16 Akane vs Akato Segundo round (3).piv",
+          "bytes": 17179483,
+          "sha256": "e24482713308932f4ae7c8dfc4efdf66abfc4dd9b634ede98630302daa958c7d"
+        }
+      ],
+      "unknownMetadataPreserved": true,
+      "editedNativeRestartPreserved": true
+    },
+    "backendRestarted": true,
+    "checkedAt": "2026-09-21T15:44:41.964Z"
+  },
+  "verification": {
+    "javascript_syntax": {
+      "files": 1150,
+      "earlier_run_files": 1145,
+      "scope": "Final syntax run after the harness changes; concurrent drawing development added files between runs.",
+      "errors": 0
+    },
+    "root_unit_tests": {
+      "passed": 2455,
+      "failed": 0,
+      "skipped": 0
+    },
+    "native_differential_tests": {
+      "passed": 6,
+      "required_native": true
+    },
+    "file_stream_recovery_tests": {
+      "passed": 23
+    },
+    "save_cancellation_restart": true,
+    "renderer_screenshot_inspected": true
+  },
+  "final_harness_verification": {
+    "at": "2026-09-21T15:57:13.773Z",
+    "sourceUnchanged": true,
+    "changedSourcePaths": [],
+    "sourceHashes": {
+      "src/animation-channels.mjs": "06f8fbdf4d9fa13179bed64d97f979146b218de1c84dcf697f1aec25d92566d7",
+      "src/animation-history.mjs": "6c297fdd30bb38e9138433ab63bc6399b39117cfe85c374ca27b6a550900031b",
+      "src/animation-origin-support.mjs": "a8c6343c45e90a28b615f2bff6824042feb39b216f924cdbd0f598ba45bef69d",
+      "src/animation-origin-validation.mjs": "3eeb002a5ba3c787a7122ea41911dcfcdbf6328bca9a591962747c02bc930a8d",
+      "src/animation-origin.mjs": "690add00ef9ca8ede994f79cc7aa634422044207e5484b0f94da5c145ed338db",
+      "src/animation-pose.mjs": "bf9eece4e7ef1851295353f1f8a2b920f485591649ad62531849dca63f7407fa",
+      "src/animation-properties.mjs": "776ed91f73c9a5e397388020815cd76f72fa0c4a09200955c3cadbee974449dd",
+      "src/animation-property-state.mjs": "8e336fd9d8a636dcc22ad055ab362f167d70c0657ab988ee79f1768ba511bd43",
+      "src/animation-style.mjs": "ad14fb4cae6647501f62486c02249483afc31df270357923a938652507fb75e5",
+      "src/app.mjs": "50246c1f3595bdd2f144a98ffc55da03eba29d0c6fb23ebd4551c6d305ee6ed1",
+      "src/application-menu.mjs": "d2683e567b4b8e74eca4548c15867c1f6765f4f82c238abf79f1ac2c905fa99b",
+      "src/asset-library.mjs": "3577a38f33c878057dbeed8e5e9a7e2e222f99ef1c4daed7b4ba515bc14bb8fc",
+      "src/audio-engine.mjs": "ea2f822c0b388c25d32224cda54128b307f9717873e32c0ffbc0a4f92d5b010c",
+      "src/audio-model.mjs": "9c1ace864c5f6fe0e87b8833d94ff0215934e27bd8d27cf1deed963f8f08b87d",
+      "src/audio-pcm.mjs": "c7654802ad06b28a1d6308425aa4077f1ee70dbaa80e3b95c1e4f12eea34dc4a",
+      "src/audio-timeline.mjs": "5ad418282958ac089d29f8fd4c6e939cf921856136c986c42cbb54b25f672376",
+      "src/audio-worker.mjs": "163c5cde3c21f7c76f17df0b0b074e6611e725666499394cd856a00d522dce7b",
+      "src/background-dialog.mjs": "bfd7f090616e95e7a0746aab81c665a725e9eae87ee38e2fe98af1b3b363a30b",
+      "src/browser-recovery.mjs": "0e5c3abeac316a25817ec82de1bb237088dacbe8af7852233c64819f08eb12e2",
+      "src/builder-aids.mjs": "943ea5172ea078b672cc0089cf61e72248f908b0e0a7eb73a9437e14620d3fd1",
+      "src/builder-appearance.mjs": "935fe344268e7579d32bdbd0ef486c454f215c0e7f3b90737bc16296303656e9",
+      "src/builder-construction.mjs": "22798120001da65f8bb5e54b14523c21f73827d94b271898dbd9026f23484797",
+      "src/builder-context-menu.mjs": "6fd054d81a9c9eead9bb398aa37346da0e012abf71bce7362d5ad0d546c9a25b",
+      "src/builder-duplicate-preview.mjs": "8bcf309b91b78f241331d0a4b8b62f7619b5935c5438a8d3268cc72ff82f6031",
+      "src/builder-fill.mjs": "abfd566979c0a31c3c9692313bc15e7ce79443b23c907b0de5bf9f4e58c10f92",
+      "src/builder-mode.mjs": "0341a2633cb59a32acd3e8703267891e84c720a2450d0111ba8ff076402c8c3b",
+      "src/builder-outliner.mjs": "88fdb93d583e2522a9435726c59158098b8d90f1be2b48dbf2d93d10565f901c",
+      "src/builder-session.mjs": "72d3fc011cb51e93b81c8d2577519fec0a6107bbd9155a6eaa659f51d64fda38",
+      "src/builder-surface-ui.mjs": "d60ac04d0191ecb51296cacdea755e248de765d32ba3bcc16808af980d8c82d8",
+      "src/builder-toolbar.mjs": "3ea31923f04e94739afebd46a7f3efb370509d3f3dfc44e7a87300d17263ce91",
+      "src/camera-bake-authored.mjs": "a86e08d56170a4afb22a968d79435d5b181459ffc629270af46d770bf2db37ad",
+      "src/camera-monitor.mjs": "1ec31e3e1a3c292b30ebfa4dbfa799a1777eaff4c6a29eda5b4c10bbff6648f5",
+      "src/camera-motion-bake-client.mjs": "71822b2d48ede5d6e3a441eefe7926f94ac3b3062d62dda36035696550680571",
+      "src/camera-motion-bake-worker.mjs": "21b1e981704da355542e488ec143389834faea1b59480ab3343035ec43a7a473",
+      "src/camera-motion-bake.mjs": "55beea3cffa17ba19a8254f9e63d9775b779cbd5450aa197f0b430e19fe1c4fd",
+      "src/camera-motion-graph.mjs": "40ee31ca1def6f862cbcb62761bed521549aa25d17272e6ae2fc09848e7ea62b",
+      "src/camera-motion-timeline.mjs": "65e6aff1f64c1375f77e5cf2f274dadbdd910f293b4b4b150137a67992a6a027",
+      "src/camera-motion-ui.mjs": "b9093a9f563bffcbc00b2fc2d4ce651f61b877e9dfaf84be70cee9f9581c6504",
+      "src/camera-motion.mjs": "0b47b570ee47f753d29ecf49284a81683f6b4282c83ed7cd7ce1cdb8a917cc19",
+      "src/camera-overlay.mjs": "20d0781d3dd552101949673700bfcee9071938331fffbaf4cf720fea1879bc20",
+      "src/camera-view.mjs": "499844f20f47460da8ffd6772820193544902ed86870b02cd0093d3064831969",
+      "src/canvas-color-sample.mjs": "53115999af4f5d3f78befada7c097ad10c7788f13b3472f2d606f755ae05fbae",
+      "src/canvas-guides.mjs": "42556af6a46f5f9360b7e596abee61be3ddec66b3cd5de4273e0f573b67aab22",
+      "src/canvas-interactions.mjs": "8f6f0596721060a4ac8558d411b6ca272937b43830473e42bfe4d15f9d0feef1",
+      "src/clipboard-asset-plan.mjs": "89160fe1b91fe9dd0dd78c5dec0611ffa09bfddd484bed0596eeff18effc91ea",
+      "src/clipboard-assets.mjs": "79253f30fb206945e713f2442939ac23f52689de69fb80bf28c783f360bee0f0",
+      "src/clipboard-legacy-upgrade.mjs": "7b0cd874205c5c8c5a67c75d68aecb8cdf7d312808945daa879e1ee658dcc607",
+      "src/clipboard-wire.mjs": "fe23ca177873213d8e501f0e11232b055215077ec51e5d7ba484e79c9f7695e0",
+      "src/clipboard-worker-client.mjs": "73eca577ab59316b63702a5aecef1d4d24af79fabd3b78e7e957e7d5d038f084",
+      "src/clipboard-worker-plan.mjs": "103675e7ca975b39490eed20341a7a806027fe48542151a76117050c6ae22712",
+      "src/clipboard-worker.mjs": "082a4621a9c100206806e5a078d9e0fe4f6dfbb2794659e7ea991477aae8b65c",
+      "src/color-picker-magnifier.mjs": "81f6bf72b5a656e63372a5f393041408b95578ee81bbd21f13d3ddf40e94bfbb",
+      "src/color-picker.mjs": "18cb2cecce7cb4ca122d020f2da8ed0f737fe982a3d0bc3c3968900433b34f11",
+      "src/connected-timeline.mjs": "795cb0047669f2178ec0a899a220610ce8e0f0587957a5847fb7f33d2c824634",
+      "src/demo.mjs": "a23c4f3a407f023ead67900e362652f067d55dd72f1ed00e52edde42dd86bbf4",
+      "src/document-export-worker.mjs": "551a24a1b107e8f2c6aaf50ab44c43b2452f819216499ab80640c41f4557c7dd",
+      "src/document-export.mjs": "d17749a62522b737319fde70d71d0a17156b9073897d9f06bfb1319741fa1e77",
+      "src/document-normalize.mjs": "d3e66d4ddc4764e15cac3b5e506487c33ab081220d55d750647b22174e0ea155",
+      "src/document-transport.mjs": "c8187fb517f467c97624d41467f28db5e3d6ca98e588f219fb361faa72f0a443",
+      "src/drawing-controller.mjs": "8e3d4b22c9714e0d145f2681f0f4d0519b425b87f00e799e51b621c015397c65",
+      "src/drawing-flatten.mjs": "e67859d8ea914d477af69884b26425d91cf4748c6b0f0ad4c8f0d611641fb66d",
+      "src/drawing-history-codec.mjs": "dbbd03ec230351091ba0257fc448f0b8decc5d160cfbcb9b32fb1becc943dfb8",
+      "src/drawing-history-database.mjs": "57189f88a4553a9097c1fad142ff42abed74d07e334073e8f46a3d3854d77bfc",
+      "src/drawing-history-worker.mjs": "97c3d8fce23137ef2f594a3f941f2669f01506d8e3045aed1a69fe2163fd8a78",
+      "src/drawing-history.mjs": "4fbfee592f08681eb104e3c858d2be1191aa3ae70094d8f5364ed93b3c5761d5",
+      "src/drawing-model.mjs": "ea2dc5c761c14a66c143a28ac68d187fc89c9a3c1586129b4102d97f7fd0de82",
+      "src/drawing-pixels.mjs": "ee03c4f221f67771849124557861920f96ef0fecbc2328e5ff923cc1769c6078",
+      "src/drawing-png.mjs": "d0fd6f88240ba8bfe0e4bca2762221bc4587c821ccd6e88278308bb3a5f1f043",
+      "src/drawing-preview-cache.mjs": "3068ef812d320092bfb2b57b88dc6a2d4af4618ad7faed4bb970ab19bc8915c3",
+      "src/drawing-provider.mjs": "9ada0d3375d4e35bd576a29545fb3f0c764ec12cbd6dd23b17f3cc78ca5dfc19",
+      "src/drawing-raster.mjs": "d5616d6d3ef4249859f28c01f20f5325b983fd16df5febb1fdf772f898a3bec5",
+      "src/drawing-resources.mjs": "326f6bf35626bcf68eb54e1bc1ab5c3e99d3bbe3955b98ae8e68170923a38be8",
+      "src/drawing-selection.mjs": "c6a9416491d6193552fa24c3d331d21507465ea1ddabbd11b20ef27f50003c74",
+      "src/drawing-smoother.mjs": "4f4961d052adabb23ffec7f13ae9c6eb2d90a19b185e31187258b54978d46f77",
+      "src/drawing-stroke-engine.mjs": "e50e928ba0d1d299ea399777f47281862dff6c7dbcf28880d262038923e0817d",
+      "src/drawing-stroke-region.mjs": "ce3793c4dac4674913713851e43a27877a4b314ecf21e0c7b95bb3be22a16e07",
+      "src/drawing-stroke-worker.mjs": "576a9bf0b636d652fe6b9a822482aba917573bf0d5415b6630c28710bbb3a686",
+      "src/drawing-tile-codec.mjs": "6857244e75e6f836c183046beb1094eab0584d333ea766dc0a2addb8f7b4a29e",
+      "src/drawing-tiles.mjs": "ac736b5716d76467dfaef9b5ef43ec07c2de6102f7c73ffc08992c9d64b6b852",
+      "src/drawing-transform.mjs": "2c2ee5102f3a587a8581cf813b15ae9b8723938647cc97c71154a19519e87236",
+      "src/drawing-view.mjs": "bb1e51ac5916d7ce9a6f2a3755f86b26fa4129115d51fce197c6f2c736f4cc78",
+      "src/drawing-worker.mjs": "29355fe2db60dd8754cd47daad905699b9a29a95b6c3ff269dc5ca66c00d7b43",
+      "src/editable-scene-preparation.mjs": "db9e5b9eff45156063a9f4733be5f69674852992efc904dfcc655db73fa0c1db",
+      "src/editor-animation.mjs": "e816e58483a1f52ae2066335ff46de4c1e176140c83711963b0e6dec5fb42d09",
+      "src/editor-audio.mjs": "d41a8101aada2a9505fefc32700e50bf8426469076c66be943d5945462b5a0cf",
+      "src/editor-authored-pose.mjs": "b6160f2ed21e2e44212845c2ac3a0f0eafa6178240ac63015f85548f24b732a8",
+      "src/editor-branch-style.mjs": "84acbbd34a1a26a165b096daf8ddef3d95ab9c6c7e9cd3f20b739569db5582e1",
+      "src/editor-builder-branch.mjs": "cb67c1ba87dcbc358ff49475e71eaa6175ddbf964542d96c06521f2d61be3ddb",
+      "src/editor-builder-style.mjs": "230b9876c57ca2f30de23646b8e4990966482972877f2a4ebc2bb67425dbeaa2",
+      "src/editor-builder-topology.mjs": "8e87dae7c7994b5960e6e673ce6c07af160c4585bde3c018a0cb8e063928c6b2",
+      "src/editor-builder.mjs": "0d750aae5fc33f70fe10ec3592526026d792055f80e230baf0d472c1ceace892",
+      "src/editor-camera-motion.mjs": "635724669d149ecacd93750a377b800c154b0159aa50940c262696561a89713d",
+      "src/editor-camera.mjs": "faeb4d5faff174a0aeff6e3f3ea20e5df771dfc9d5f69b843ab3a41fb2e22140",
+      "src/editor-clipboard-async.mjs": "55de86b6f38ec13df975404720682551e6c54e9ffac4919b520d45089d311412",
+      "src/editor-clipboard-sparse.mjs": "912259b102d0f440111bbf10752adec34fdb7c65b58c76ce7538466133944031",
+      "src/editor-colors.mjs": "4db90eaa57731da0305bfa9513e137187f0aca23fdbf3ac8211ae310048d2cb5",
+      "src/editor-combine.mjs": "d51815407729297a9b404e1385768ab402f4034de78041812d2a73b289158580",
+      "src/editor-drawing.mjs": "bf1541cfd2bec748d8b20406e9c1f8a6febf8d556f256babaa7fdaa332076c12",
+      "src/editor-figure-transform.mjs": "d5b059b11b0061d3fcebcbf424ce9d47888f69cc70523d94d4481a3ca69930da",
+      "src/editor-frame-clipboard.mjs": "0d35a39a3ae27b27eb9b5dcbd6434a645f0abb14f9fec758a9ab8ba728578676",
+      "src/editor-frame-draft.mjs": "acbe97f40287e7e1e6f6d79959919f97e9a1fc204c07ac83927f58d746c9852f",
+      "src/editor-frames.mjs": "a4d311f6530fe9896be5d5b5b897f99da3b7dc6bf8d5961732669b80757cc932",
+      "src/editor-handle-commands.mjs": "c4336859b2361cf9412da6b1f054ef94bbabd3f7d68317b330d174b47d08b16f",
+      "src/editor-handle-edit.mjs": "d9df853884aa224eb3bdeb4d2308d30a0173f3f586ea8e7fc7cc09491dc64418",
+      "src/editor-ik.mjs": "fbc1e755afe044eb5e8b683cf86a56e60a8f18f878f00301c2222dfe939a16f4",
+      "src/editor-inbetween-async.mjs": "cf2e31537bf1b8c09733a4ca8d12e7cb30fed058446d788de454c6a2fefdc962",
+      "src/editor-inbetween.mjs": "29dd2d8a274dfdb7068161363b55e82bf873aa2188aecf05af4db6b3054590b3",
+      "src/editor-layer-async.mjs": "a6860d45b00e2dfb401080576de39fdea8838ebc6d69db2fe4e3b0e3def74866",
+      "src/editor-layer-migration.mjs": "bc4e3d9eaa95ae31308d2dcba16791f22b7630a01ac80dbc6856bd1b7303772b",
+      "src/editor-layer-sheet.mjs": "a2433d5328623e344aa3fdc0dacdaedffa7fd60af6ea96ee601fb4abc7abae14",
+      "src/editor-layers.mjs": "5142a5acf75ec9bcd62ebd10a89dca9adff6451c98d40c7dccbeb4bfb824dd68",
+      "src/editor-load.mjs": "166d04436586bc19def6a006e783ea54722a7d0222bc8a19837f55bab90dcb2f",
+      "src/editor-motion-path.mjs": "a2c1fb15e8849102382e93b9c1674fabf8f2c4f374aec1207494753c5223a06d",
+      "src/editor-movieclips.mjs": "a75a61a572b5bb8cc6983babf0dbd732ae93d88b37578fc67cf3ac5400ab9db8",
+      "src/editor-origin-mutations.mjs": "10c51985f8685a03241efc8edd4cbd7d43757e0f0738f483c27f716c1a3026c2",
+      "src/editor-origin-support.mjs": "e8abd6092c4383596912b44c606338024a8ed7604a57b241484dd25ade1741c7",
+      "src/editor-range-commands.mjs": "72c67b8ab8f22b4dc1284dd16e6a9472598fb96dae567d1ce74293e94f4feceb",
+      "src/editor-ranges.mjs": "1811eeb9c3e819f35b8de0bb116a420f978220ca36aa0baa52f71c49888dfdf8",
+      "src/editor-rig-constraints.mjs": "4813b5b0a2ed95efdfa112bfb795ac38abb07c9410da2bd2eff667dcf9c51726",
+      "src/editor-rig.mjs": "046a6f3b359580117ffee9f55829c3d0ae2c847d843bcf05125c05afcf3422cc",
+      "src/editor-scene.mjs": "a585d801c696059efeacedc5c4c71a98a17a9dff17716a2212097b6dc667899f",
+      "src/editor-selection.mjs": "a403997763749c90c71e8347e80c2b923b5dff4e17beb7e381b20db50cffb897",
+      "src/editor-spatial-shape.mjs": "18764fab1e95d0ab4655e6d1fd843a5e8e4e0041b8b94eb17566358e19558a52",
+      "src/editor-spatial.mjs": "84a0a4af7ce7b7dc729d1aed00f59df201fc8a99f921fb778338c98e396b5463",
+      "src/editor-sprite-segment.mjs": "519d0455c7e87c229808a90fa67a9ae99a529d0f7f31e43b171e782ba1f61df1",
+      "src/editor-style-topology.mjs": "8195194d33a629aa36d63ed25519a9b00b536f0820a384b90e513eb366181245",
+      "src/editor-tweener.mjs": "aa3402cb6677cb7acfc2bea3d6c8322e5c15d9f20786cd301c00c4a77b2cfd27",
+      "src/editor-vfx-clips.mjs": "00376bdc5a7d182a9048ad52ee6761acc733d80fcff67bd383a566f9450a1817",
+      "src/editor-vfx.mjs": "bb9fa67d382ecbfc45998a4051bf1ee6d70c429fe2a6850460576a44ff58c742",
+      "src/editor.mjs": "d5c163f4ffac2928b09dbaa93342b1f75b62e0040774a45548372ac7a6bfd2f4",
+      "src/export-canvas.mjs": "63f990185a5c84c6df1a1b1c1094b868615227b54bff74c6068b0df18d2c0293",
+      "src/export-capabilities.mjs": "f3c64568eb93e697b831a632001a889df0b1c0c146d947ae639dae76bf407cdb",
+      "src/export-crisp.mjs": "cafe7c0d6cef057c761a8ee8ea007b0f5dbd8389e16444ee9a306a1dec652268",
+      "src/export-frame-core.mjs": "8f29efe34ce10c90d370b105e1a406e3568ca6b61d7ed5b2a757b1d3e8fee430",
+      "src/export-frame-renderer.mjs": "1a9ad93173cf839a60fa4391d5972e1f34fbdff88c92fe4be499eb3b9aaddb45",
+      "src/export-frame-worker.mjs": "fbfe6b443c7a9c168a1c4fe30e6b742f22b8d80d31b4901ab7b463be95ea15c6",
+      "src/export-memory.mjs": "f2f75510f8cf4dafce6d906b483e1f992cafe9d8dd908ae2adff026af40175ef",
+      "src/export-panel.mjs": "0c839f44f5c7bda49485ea9ac80c03d7e156a5fbe2a0ee85d8d7c09185d8b313",
+      "src/export-progress.mjs": "ddad1d76f40c4972d1f47ef9c4d374d16f79173020f54b47f67a6174c0896ae4",
+      "src/export-sampling.mjs": "32c76696e2b8c4070fe10a0bdb8006a816936a38fe6fc9199db82aacffb2497e",
+      "src/export-sink.mjs": "b871adac647fc301510522209c52e84b9cab9ed0d35ce88650aed5f7a1df1e94",
+      "src/export-video-quality.mjs": "df3cb9ee2b5851c83c934bf9beffec06f1f6ce88675d5546f662610e832efdcb",
+      "src/feedback-ui.mjs": "447fba05c1b8070ecbf04f62708c667157e2b255f7a16f32c135a824032564b9",
+      "src/figure-colors.mjs": "7d7050945f5d36799ff74e67cbc62c8ecc3773236c6bc1082c52ecaf8dcae151",
+      "src/figure-join-action.mjs": "8bab10dbad1e3ccc9132b0adbf2f9e6db0984e0b3798918bede90c44a1454264",
+      "src/frame-clipboard-authored.mjs": "7cdc0619993c0727334aa529fc3a88e7e0a40bb6ef218bebf5436ed18b5f8db5",
+      "src/frame-clipboard-storage.mjs": "23a609a023d860dae1989c68ea7e9b0243cd92a7763c7379c9e4a8a6c49f12d8",
+      "src/frame-draft-animation.mjs": "d57ef7b47c47357aaeb1fbcf8728458de6cadd0a4f8767d9d9132ce81e135751",
+      "src/frame-ids.mjs": "b865067a905f9f1000677890578b8a6d6a62d0192c9e9085aadf5ffcaf21af48",
+      "src/frame-timing-history.mjs": "35a1b1d50aed10b51a63a6a3ded0abaab5df15893e568a163afacc0ac38cf788",
+      "src/gif-options.mjs": "766e8ab6cb95d546c0ed6a0f6512be574cd4fc6d2a162173b9bde692d581bcc7",
+      "src/gif-quantize.mjs": "c2c7ee6b5c2739cd58fc8729be2a1170ef57affd2aa8a446f751cb4cacacae51",
+      "src/gpu-startup.mjs": "a06388c94074c6ea82df88ad4e222db57ed89af8680fb4a012e4e410b20b17cb",
+      "src/gpu-timing.mjs": "f73d5ae995d71f35e6c94428a8953989b82b2356ed69cdb11974c52da8850d5b",
+      "src/hotkey-hints.mjs": "f1e9a7459ab15e42f573d5977b96a4c77289b1938a46aa9516313c81c3b46f27",
+      "src/hotkey-settings.mjs": "f1369b3d1ab3b8604cd3937e4d0608ec929cdce04dada69d7719612327c5d819",
+      "src/hotkeys.mjs": "34a9ce0dc2f2bd03be826124f71df81730e3be74307d3e7cc88590983c6cf213",
+      "src/icons.mjs": "bcd857dbb02851668a83f14f589dcab81b041e3f3b528d436256a5799d2cd2fa",
+      "src/ik-evaluation.mjs": "95fb638ae3c2da431251f8a5e53b752d5c0e8ad0314b419db5c521334ed33d41",
+      "src/ik-joined.mjs": "7045951a1cd5eb75334b0779943c197cb93d48b9a303e371b0e071624adcb990",
+      "src/ik-rig.mjs": "f7a35989503e1de480e88850caac4528ce8ec50d748a46ade24f14c26a9ec3ad",
+      "src/ik-spatial.mjs": "88ade9913fa489955fb04775e951f02a48b48ebd25ea61acd7c9733b580e54b1",
+      "src/ik-topology.mjs": "688f13ce132885a73e22fb8e8a21f9bc3c78e5297c96ae151d5ef7d1902ebb6f",
+      "src/ik-view.mjs": "a8193458a65d897cf1383724fd9ed1da1ceea8a0b06315878d058b1b89ae687f",
+      "src/ik.mjs": "55a8bf897b2d303be3b055efa54bdd0624bc3ebbddf0e500a90546d270d56ae1",
+      "src/image-codecs.mjs": "a8b935b2c73f0cb9ddf700703666dcc0ef61ce90503e54d1b976ef975164105e",
+      "src/image-export-worker.mjs": "f7887e4e3fbdcd0b4104c5e84d2cf35c151e6f7ca5d55743bbe354d4d6b8d457",
+      "src/image-export.mjs": "57c6bc0d627cbb74d34a896e69a08b79ced388a2839b475f215245b6cabd2a12",
+      "src/import-client.mjs": "03eddaf1909fc4788974d5cd413c327a90cb1e40f9c9858fa981facc488bef1f",
+      "src/import-wire.mjs": "8f7627f445716b25409a0cbe83434a47ebe7d5ad45c0aba59a42708f917346d5",
+      "src/import-worker.mjs": "8d1c3340d6650366a7628cf39143dcd038c9e86fccf98514867d2415e7db8b62",
+      "src/insert-inbetween-dialog.mjs": "f73096da0618f6d4cc10bbd5881bb5ef43c43c30a4cc96fac1a43d956cf004af",
+      "src/inspector-dom.mjs": "584ef0563a62be8ff515b5f457f2705db30791d4d9ecc9887599c0184aed26da",
+      "src/inspector-view.mjs": "e8cfe12d19b195551eeb7d9063391625c55039261991fe8025c07b0f7c18742a",
+      "src/keyframe-easing-popover.mjs": "30d997e1f95bf01ab7d81e329b9be2750b50f9b2ba1db2c834ab6456964fce66",
+      "src/keyframe-easing-view.mjs": "3069366fc8347794f291f03be9f7ab4f81bdd1c899a382ff1177436395bc7b45",
+      "src/keyframe-easing.mjs": "26135b451c0b2485067cbbbc5f7c12527eee20f5cf29c06e2e839be14fefd41f",
+      "src/layer-panel.mjs": "e9ba34ed51cd2ebbac7d5f51c3e4cf2cd3cec098a06fbfd4abd305f53b0ae97c",
+      "src/layer-parallax.mjs": "d5d0467294d4cfbb2aacdc43ac48e08eff156ee2220a081df1e8b5eaef4df475",
+      "src/layer-sheet.mjs": "23d3f8dec681465d7de149b5996f57e483cd1040f6d17344dc0e465e983d0c3a",
+      "src/layer-timeline.mjs": "35745f25b0cf218f3066635a962c7b9d73ca95dadcbc3642c3e514255ac9e09e",
+      "src/layers.mjs": "aad00398483543ca2ef2d7efac3bc60b46fc14ab36fc2ff330c9a346f70b8a40",
+      "src/library-drag.mjs": "6ba151837094227245edd278b088d360aa0885be8f11e9f04b9af77b6df1619f",
+      "src/library-files.mjs": "446ccf60b6d406f32126f6d5500ea0cb8423c21ff3af19ed030aa7ad9472c8e6",
+      "src/library-hover-preview.mjs": "a8872901bc57383e8969f07ced94f9251a224b0f3a322857e66a6b3747a45c18",
+      "src/library-preview-core.mjs": "2ca94e1c7f4bd37ebda0393b423edaf18c598c15dd3a4dc2eac4359ef9a50615",
+      "src/library-preview-worker.mjs": "3927c7359f6f00b5c98fcdd42b94ed677c20a824db01304f45e4e92e00acd21b",
+      "src/localization-bindings.mjs": "4b4cd33a2f262a56fe523a8595fc51005f5a9128bf2674ead68dca5fe82ee489",
+      "src/localization.mjs": "ae693054b799c59c08f8bb776b689492e8959fdf5b23709cd38a606dd0fa2502",
+      "src/media-authoring.mjs": "b83c82b5ef8174cf0fb7d2cbf787451a5354777819913d3aa0bde405e6448ff3",
+      "src/media-image-worker.mjs": "53e1560fef1e3575357dbda0e7a9cc9e84d1414584c96068753ffd9c8ff64f97",
+      "src/motion-path-controls.mjs": "f3d60cf6fe2ded670642f64b8a5a78129756f3ba6b6de77eedaf8cec79f713a7",
+      "src/motion-path.mjs": "9afd39908bdcced18ba090cc46c78b9e963b2806d4347177e8ea39786b43ac8e",
+      "src/movieclip-drawings.mjs": "bcd916b3f439aafe34b32574d0dd6a393a7b2f2f0bcd308ff1b472e1b851ac0a",
+      "src/movieclip-geometry.mjs": "8ef31714ea55c170f0bd2353b6bc413585efb9b018082eeb65c13fd1393da49c",
+      "src/movieclip-materialize.mjs": "c6cc622c691701025833334f95b4843b3d265310716fa9bf2688768474217143",
+      "src/movieclip-membership.mjs": "bb288919c8be8d68ed3511041e0e5f92c65b186bfc08811ecde3524b4e3e1443",
+      "src/movieclip-mesh-materialize.mjs": "543a76d0c43248a377a2c1b19503f69b2841a378607a350a23a1c799d1571a6c",
+      "src/movieclip-mesh.mjs": "f1f4056df4485d08a778f3e3740a8a4c9551ef051819d7bb7eb446973ea7d1bd",
+      "src/movieclip-presence.mjs": "ae09107ccaaf6dc00698217d012ecd03903662d25b3725b8068ad4a4915a4037",
+      "src/movieclip-ui.mjs": "a954c34d593317817fcd756faefbfc695999715f8835a372fc43e9637d4232a5",
+      "src/movieclips.mjs": "28ff534f2e8b9280a291ba8f2a5d20b48c2ce8b9045527cb8170ae508667a053",
+      "src/native-container.mjs": "5cec4fbea85d680895703103f98e796427310e5cbbde6e7f237c299fdf46cc9d",
+      "src/native-figure.mjs": "f4238e1c727dd93d38a5c62ad1fb84d6dcb65a25e1ee98d3e30bd511febf8689",
+      "src/native-files.mjs": "4dccea3b21ca7cf2a361f3773bfd7a7f7b10f65ae7f40adea1c932824645caf6",
+      "src/native-pose-projection.mjs": "aa1aab55a866fb12b43e18edb150d0f83ab60b4c12b2b7a138b87de14239ad86",
+      "src/native-property-curve.mjs": "227dbd97f03a01958b407eb7682023e3f487e9433a64b5dfd8b1b6ded38be5fe",
+      "src/native-property-edit.mjs": "3017fa9c0d5172a98c16c7cbfa3a7049ddc30cfaf83b65bc94326466de04d124",
+      "src/native-property-projection.mjs": "60d2fb410d60b9ffa467c5e353b2364f75646448752dc6fae2982d94ba5aee32",
+      "src/native-property-ranges.mjs": "a95dd8ae22caaf3a98bdf381ce618f896e9bc0195dac81c4a25a8e69a2797b39",
+      "src/native-text-authoring.mjs": "51328974ba9bea08a722d4af30c69ef0f3b89d4ce3ad41c2ba1549a53753402c",
+      "src/native-video-export.mjs": "e2bea1126ae3cbe70b9a08ec128027ed0ac8eebf87ca273ca1312cfa3218e104",
+      "src/native-video-frame-worker.mjs": "5a4338ef22f8c68a08b1ecdeb930a82c2b74a31c6496160dd9598502680c03cd",
+      "src/onion-controller.mjs": "a7c95cb8844fb8fb2a724c4a362de44b2ae898fde3a67398366bf796c992f6ba",
+      "src/onion-controls.mjs": "b6100d2197a81381ad2163923d1c4212973800a44da9fd8846318597821509ca",
+      "src/onion-frame-field.mjs": "b78e91ab86aa48f33d6849201bfb5af3c0ce03ae8762f48d1e4d40043321f221",
+      "src/onion-range-drag.mjs": "b39a3e7ea5824970ee90592583181b4a2c49008613bda7b29878544da31c3653",
+      "src/onion-range.mjs": "e6724e9f55826d02add351c10cf83995d2b7d3db95fca02d159a0d10867b5f19",
+      "src/onion-skin.mjs": "89a70ce58d2ee59ce3bc8e7805e153e7113eb490ddf02498d33807359521b485",
+      "src/onion-timeline-range.mjs": "f82bc51b9c5c8cc9b7ce6166f5e6fd0c5f42f82deb9e78e579524b751321e94c",
+      "src/paint.mjs": "499176f4ba351f28ea6ae692589bf3d5870c6e26125490c37518c4be3b05dcc0",
+      "src/parallax-draw.mjs": "28fb2faee831a0480ed90435a5bafc9045ee40a4c4992148573186a296c72eb4",
+      "src/pivot-export-materialize.mjs": "a6a902997dc4333b4bbb059112a61e50ee095f960a8ade37de8d299a38f7b3fa",
+      "src/pivot-frame-draft.mjs": "0acd97004c027999fe75541b1f5f5b320af96bb5860dacb6128f9f79046e4a61",
+      "src/pivot-style-materialize.mjs": "b6089765e19db21429870ad1050972b1e0ab834d6ed6b4a51d04175b697ff03c",
+      "src/playback-bitmap-pool.mjs": "2f38f82356281db7cac417e5d911d053b09127bd030364d132f3ed26c050a1fa",
+      "src/playback-budget.mjs": "f22a7656d1ba735d525d061b3e07d792e2c8fa0a29acfd84d918c2e313bf2eda",
+      "src/playback-cadence.mjs": "0252274943502e4da644de9d11fd0abda7a70a4d3be2c53124f63e19d528aa21",
+      "src/playback-geometry-cache.mjs": "496cc2249bfad6dddff5fe5504338559565de963e22bfd5892bd91e0ab02cd01",
+      "src/playback-metrics.mjs": "7d57474e65574603769f31e30bf0188c47e77792297a54e33ca01d91dea838b2",
+      "src/playback-patch.mjs": "bbfb6cc08215f18b8b0e395ad86670e346f1258e55ca9a89ee40b9c9358c859e",
+      "src/playback-planning.mjs": "c572ba2d59271c4c04e22b2d5d59a68ec5434b9d9d4c16cdcf8eb337b4ff8cb2",
+      "src/playback-raster-cache.mjs": "94e98784337c0a5c4ba17bd733b6e7cbe1c98a6eeecbd0779475666fed4e0615",
+      "src/playback-resources.mjs": "491578009927e891cf36447157e14ec14bb993773231f08bc7c53dd5ff157a5a",
+      "src/playback-retention.mjs": "260508b190d9d9c9c5db07ceebd9ffedc03377ef85bf070e199354ebbba2414b",
+      "src/playback-tween-cache.mjs": "05d49ee7f4301c57963448d41c15a9254d19aa7d77d192638ab797eb5daf0271",
+      "src/playback-upload.mjs": "636ac523192fe9f700625694d9086d6d830fa8a3c1c183b7e4a3189fa610f2a4",
+      "src/playback-vector-cache.mjs": "8c5bdbe22158f0773ce868f605f010369e110d8a6b86ea796ed2f05b859aac49",
+      "src/playback-window.mjs": "38ec8c3cb8cdb6934914d772204520b3fad1b1fae40984b343883c67e3328770",
+      "src/playback-worker.mjs": "9325a2d949d60d7e99a9ec4fbe07e0733ceed47663667373da309672ff3e0377",
+      "src/playback.mjs": "16af6de5c9cb9eb854e5c41997ec8ad2d7293d3b54be121174bc3ee31e0b8603",
+      "src/polygon-draft.mjs": "04e45546218d7b0aef33029d0c18ba4993387f77483f01924af975d6a279937d",
+      "src/polygon-preview.mjs": "c98fcc243503d3add845535f9c1c9a3ac097178eb69074f39e111eaa619ab185",
+      "src/pose-property-split.mjs": "45ee76a15960f03dea5efbbcab90fa3cdef8a5905bd58f1a02234688886a8426",
+      "src/pose-sequence-storage.mjs": "c24a65ce33305ae0015e0e5e60fff0e7672a74ea1545dc5c4c2bca94697b06f4",
+      "src/pose-sequences.mjs": "daaeb949e43a1305dd97b4110d2ff69782fd67d07b4cf7f525bd3f67796fac66",
+      "src/pose-snapshot.mjs": "7f1c7244117e9a721ca835343e4b432a428c469dd3fd633d2e0d24f47b2e5a3a",
+      "src/prepared-frames.mjs": "97713b6d4cbcbdb975590c9e8848cbd548e25dc8f41cef66a170d80ca418def1",
+      "src/preview-image-worker.mjs": "5ea3d5a9afaf0f7f121e95a94121207cadcd084b65ad32886d2a885b01fc0f32",
+      "src/preview-image.mjs": "fe9b0d2592337a8ec61ed25c098f62c45b05e8f92bc5e3e0f496039b63f176c3",
+      "src/preview-images.mjs": "7ca369566ba839a097ffba9ba1cb568d022367597697a9f9a592978d343f43a8",
+      "src/preview-quality.mjs": "f6576ce91745f38e26a2a060e1f20a13539924aa4608cda0488b6dc9e702b12f",
+      "src/privacy-ui.mjs": "b33092f66cd3b6f46fd22745c938924f50b9a388e31b2caf81f0135a50e10ea1",
+      "src/property-controls.mjs": "4f4008c4c1550a122a8d4d137e74a080e2516c981214b1725956ac10eaf5291a",
+      "src/property-toggle.mjs": "0807d745364b195404cdb16124c3ba13d68086df1c29877f26cdbf68579f5de1",
+      "src/range-figure-operations.mjs": "a372d6a151b31f93313f2706fc737b8dee26d6aa4f6940f08ee4ae13aad64a8f",
+      "src/raster-surfaces.mjs": "66e54b13c4b8b4e42cc63b1d26d8a6ae38c3d99433830ce284a406feae5520a7",
+      "src/release-notes.mjs": "abfcff4fc5bd0695f9880ddd5152832d63de1124a5a4b32cc8dcaf0b957867e6",
+      "src/render-artwork.mjs": "078700a294a152fbd15d7cd4fd7cf4047a752df0c20ad9294ff301a009b4b10d",
+      "src/renderer-geometry.mjs": "210cf280d5c484334700e4b925756e6a70bcc7c7b15ca31acc037e13100eca55",
+      "src/renderer-glyphs.mjs": "9d1c04a1247eb923608f1a100af20b2ee7d350c4999e4b6648c57e1c53038579",
+      "src/renderer-handles.mjs": "689934d0e745c598c775f18daf71aa88f20c750ad45b1feda5321b6220f3df39",
+      "src/renderer-opacity.mjs": "c1ee74f5c7762d0158c4e43bf4b8ff9ec0fd5985ee2b3a6c3f5ed2b4e9225b6c",
+      "src/renderer-raster-cache.mjs": "253e5bb228bbc84f6037b84415419fd58deb3e14f48affd85415849f1c215566",
+      "src/renderer-upload.mjs": "9a5954e8d47fbd0497374b9934661f326ecf0141b70a9140a95d07d3f5338938",
+      "src/renderer-vector-raster.mjs": "880401fdeed8d1adb28d810cd974132899d3cda24cfc5d8943eaf3a74d2c0632",
+      "src/renderer-vfx-vector.mjs": "cd9c69804953e6d05d295319e11cb0b23c460b692c3f4612759075466f9494f5",
+      "src/renderer.mjs": "5c718dc725ca254ece6fc5c0c273f96e3e1a230be4d0429eae13afa236ad906b",
+      "src/rig-angle-path.mjs": "e11cd001ea7a373018c278d0658c34a88f9e2b0933650ae6608f1f17b04fb038",
+      "src/rig-constraints.mjs": "7853bb588de057463e9831ff6d269c2f37392593f4b8503a22a49cbe79411f87",
+      "src/rig-controls.mjs": "674e586398f0805506c39059a14e77d75fc91c8bc727a328e34cd9e02b86303d",
+      "src/rig-examples-3d.mjs": "c535524de577348349f62412e8a59b5b3a534296e0ac9817525f4b8f707a74b0",
+      "src/rig-examples.mjs": "24cca2b660e1d8aeb4abe77e100790b0b6478f7fe912643c0a1dbda63bfc658b",
+      "src/rig-mechanism-examples.mjs": "908c3fd5002fbc7ec4b226a99bb521ef2ce851c23d11ff7665f08431c3d1b59a",
+      "src/rig-pose-choices.mjs": "33b0cf466e90a51beee6d50f2268f54c305b922778c90221b00911aa5b73159f",
+      "src/rig-solids.mjs": "74016254eb5dd32d15760cde692078b9b4744803abe83ca2952840db5196595f",
+      "src/rig-spatial.mjs": "bfb9d809a88f91eb494b3a1cb6a2fbec65291da8a14ae4910e273161d52b3bff",
+      "src/rig-test-ui.mjs": "3d3741a745ac4ec0e43e0b239b596a320be5395e17de586bb1034e7d50d1a39e",
+      "src/rig-weighted.mjs": "8e69e143aeb6226a4424ffc92b242f6d476f5bfdf708489c2be2d5fbce83f66f",
+      "src/scene-order.mjs": "813a01d28803edf62c166ec1c29b82ebcb8581faae243643000034de45c728fd",
+      "src/scene-preparation.mjs": "d98845823485428dc7e0cf709ec03a5f0f1d8a01a20893d25612f9af1b27095d",
+      "src/segment-values-dialog.mjs": "e64196f3180d6c6cc84e61b892a6b4cf4967ee8546d0971b4e603cc51b817dc5",
+      "src/settings.mjs": "f0138b893435e151ffacd75d423968c9532e8344da5633bb11c16c10dd060778",
+      "src/shared-clipboard.mjs": "94dab7f0279ad342b0114581c714efce65d6f980eadb9d8e84edffd6a9ca5db1",
+      "src/sheet-filmstrip.mjs": "d5758c498845f2ad9ac4422dc17dc723f063c4294ae45b2e522d23f6a39ca353",
+      "src/simple-timeline.mjs": "40ad9f44ce690bf56c394a1aa474baa1d0e0afc6e02a5bd7a855c405c9dfb9e3",
+      "src/spatial-controls.mjs": "79b46844380a614fbc8f26d0a8f09d8c782a2e6e576dd29f8ffc6c743ef4ffd0",
+      "src/spatial-gizmo.mjs": "66bf4679c746b9e586442631fbc56560d78be92a5255e0339bcbc1225e10b4dd",
+      "src/spatial-projection.mjs": "7f3326206cd2f76bcb00a114306cae9f0eb7b3f052e549d6657407b379019eb1",
+      "src/sprite-placement-dialog.mjs": "923f27ac370acd4905754900b6c9ea17cef749010b284d13d1cdec333c00a61b",
+      "src/startup-document.mjs": "63346598ecf52da1089296d11fa0150cbf0a57f52b4a0b0240c257ec3024571c",
+      "src/studio-layout.mjs": "ff2b8572535b7b26261d5b797c579f8430fcdf5b56bcb445a516f8a156b92dc8",
+      "src/studio-shell.mjs": "3bdb99a2a6f3872836da0d2d8c8cc0ab44c35093b65f641cebcfc5cf442d2b3e",
+      "src/support-center.mjs": "cc6368eced9dd54cc04ec17c0f757b851ff931005df9ffba502eea68bbcd97f9",
+      "src/support-contract.mjs": "a2057a294190cb0db492d62956006a76c5071066fb90f609c68757287e223c75",
+      "src/support-desktop-ui.mjs": "f16acdcf0b7471883e164012cea57519e265ddd71877d21b7d518ec0b11b7f80",
+      "src/support-live-client.mjs": "f66f85be86f115273c622fd1003338f08894cd0ae05c5ca08aed831bd5fa23b9",
+      "src/support-media.mjs": "e62ebea121a64fe6d764d726a955609e41cb303843fb89e7f080e296ffa489a5",
+      "src/support-ui.mjs": "b6c35fb34010f190210244d5be820c7544c15cc6a8ce16fc0461657b87798a75",
+      "src/surface-raster.mjs": "f212416cad7d996cd2157e284d666ec3e5d7fbb7eef7a02bef83f27291cea41c",
+      "src/svg-export.mjs": "5bbf0bd919754cd749817ad18a767b785c7d2809ea32749a6824d1d92682a933",
+      "src/telemetry-core.mjs": "d643defc4802a1c9feffd3093e3b357b18de5d54bbdb761c0f9ec41ebef0913b",
+      "src/telemetry-measurements.mjs": "f33e610a30b839ea5f8ee9e8698c48c18435a2240dfe4d1211094e1e998f934a",
+      "src/telemetry-performance-schema.mjs": "e5319187dd42d71ab50a0f7ba07ebd0567961cbc559d3599290b19d703df63d7",
+      "src/telemetry-performance.mjs": "2e72de61e67a72c9e42f4aa3d0c7a6be6e7a8c5b31136ed52a16510a9528768f",
+      "src/telemetry-schema.mjs": "2d7a09934405152795465470ea1348a1f921802e91512f9b9f5c97df3c7dd25d",
+      "src/telemetry-workload.mjs": "5b78e647dbf3d0d0f2a12817f9bd9e3fe3fbbd58d47cb5b633c54f7e4a97091a",
+      "src/text-authoring-worker.mjs": "36a6742e461c7846a85ad5154f9a77b63614ffc3856a0f69aff8b9141af76507",
+      "src/text-authoring.mjs": "6d67e710b87e2191a6722a80f8af4a7717f6e714fd481faa1e961eeddfcf34b4",
+      "src/text-dialog.mjs": "0d992d474428689ee20b6205571fb1fd2c964a29ea34b32a1766ff6411f8ffdc",
+      "src/text-font-compat.mjs": "153fdbc32a75dc10d53500702f46bb4ef88709a8eeafec217267f6cb8447d14e",
+      "src/text-preview.mjs": "4b574bd65cef027675a3ffde1e4109023625f46b2c64aa641e66a5740c51f955",
+      "src/theme-bootstrap.js": "a6e5de07575332722e9567b9bfd1b23ca172d73489f57d5b905e1237c8899784",
+      "src/theme.mjs": "97bbd060b54ddd5a2a1adc48008416b58b44c34aaf9d2e14e3d443bd9ec662ba",
+      "src/thumbnail-renderer.mjs": "f2bb5db428b5e9ef5c228efdaf27232ced6a8beb41f5c63727c7dd00295ae03c",
+      "src/thumbnail-validity.mjs": "3288edd9b67f75429b37e8f795775569fe89d8994f2a019d8554c89384d7aed0",
+      "src/thumbnail-worker.mjs": "fa7b21f86fc972a0a3ed5d2f001645142c3fe57c90d8087a2ce9ca4eb1bd8682",
+      "src/timeline-hotkeys.mjs": "2b3d4f215c67634e63703e5a005812a40742679055f5c9016381c4f1f5ac52e7",
+      "src/timeline-menu.mjs": "74133477b42cca118da3eef8212deb44079aaa9de3343d6261caca3268794d78",
+      "src/timeline-navigation.mjs": "0bb40187484432e0d1467cea159c45b2bc500e4b617f563e3af721216a4d6484",
+      "src/timeline-organization.mjs": "957e4cb52e97973d83a870e552269ce470a459d4cf7029dd4b6e2759b67bf1ee",
+      "src/timeline.mjs": "e0751479383dccf5956c0779a6a2d2d7d438271173dfe33b30395bfc8b148fe5",
+      "src/topology-history.mjs": "81017b9564d2fdacd44dadecdfdfd6465b54d8a0c0f4618da26b0ce38e100c1c",
+      "src/tweener-controls.mjs": "1567afc553605e08dc0d0108f4f8a4a89743579811bfc7d9b8b782a257af6079",
+      "src/ui-scale.mjs": "fc3220019d8ef7f737cc0282b0b23b584fecca6e2007b9560c2d75b4639cc991",
+      "src/update-ui.mjs": "c1f94999146f2877b7ea59a46773d6546545f435510afb8c55f3c66ba6a9e994",
+      "src/user-action-error.mjs": "fcdddd1094e249b07c9a1450f452d63b774f81f1fd49ab411f8e320970623222",
+      "src/user-library.mjs": "66a6d972e0e88f8b57805ace69bff4922b1319c08ba8d35b29e972d26544c364",
+      "src/vfw-export-controls.mjs": "43b269dbd7b78c5185d6eaacb2e352cdb365246b268d16995b1fc707ba6dffeb",
+      "src/vfw-frame-worker.mjs": "0c28b123d669479eb23f7fe8592f14280f77e78986dfc7b97ea8318dcb0676a9",
+      "src/vfw-pixels.mjs": "0f3cde9a3bcb0d64cdf6eb05f6537c34d2a8119ab028b1019d488a76cd063c72",
+      "src/vfw-video-export.mjs": "447b54b2db0c2a86bb46861bd4b9eebe62861193595a6db1f966b9512e88569b",
+      "src/vfx-camera-gpu.mjs": "a2b591be04763d947b56fe967f168acf622302638b2404b6907b1d1863ddf7d7",
+      "src/vfx-camera.mjs": "e6ec0bf88345edbfa411d896d6588515864e7bc5a09ca60d8508917b64b26430",
+      "src/vfx-canvas.mjs": "a2a18827762bbf770cb05552557b607f0d565751eb19b4d9774398c88c15429a",
+      "src/vfx-clip-controls.mjs": "a0049edd3a30187f92b3e77e79397840e4ccd01e7cb3a984be2b9bfdf7d808d6",
+      "src/vfx-clip-inspector.mjs": "00252c1207b43bb6265363acf3b28acab2c5bc3e1354b6ec84b5e85bd72f1038",
+      "src/vfx-clip-timeline.mjs": "55d6c0dc6e60af80013aba299b11ac1f962bde6fe75fdfc288a79487b529ca44",
+      "src/vfx-clips.mjs": "78dc618ac307e361df57a68c7e032fe070a8186e9ad98d8ab55a282f951fecd6",
+      "src/vfx-connected.mjs": "1a7a85bfec82807371a63047f832a206821e0aab013585f51360f007afe0a1c1",
+      "src/vfx-cpu.mjs": "7b3f5f728c1432026ad87dd29dece263fb5ed1ccf2b37f457d13dcf7a9b12a5b",
+      "src/vfx-gizmos.mjs": "7b6901d842059ccb5d1937da361d1e544dfe05484332b679ac6e2498ed0ded07",
+      "src/vfx-gpu.mjs": "bbdae2a0b238d4626f98c5f0d90f7e695a9bb5f10946bc663bc80eae8dff20fd",
+      "src/vfx-icons.mjs": "f1e5a0bf3d112059252c33a14aedff9ff48a69a684920f7dc9759c59af4377b3",
+      "src/vfx-inspector.mjs": "f0d58c04f1574fb9b050d5a7c3400f33dd50665db4b111abe6bb35fe355edb2c",
+      "src/vfx-key-channel-menu.mjs": "92dc766862fa2da7341da51888e5acfef61ef4f6254004cd19963f83ef381337",
+      "src/vfx-key-channels.mjs": "098864a7dbe77771be1a1da8267fc938625495a5737e03b9a766608e9656bcf4",
+      "src/vfx-paint.mjs": "10f9feff1700974d16d1cf06b97b154e0bd367f46c472371ffdad5bd5c973bf3",
+      "src/vfx-presets.mjs": "fac8b40b25d21d538e60107956457ffa8660cfa36a1fb5520df0538358f5fb3e",
+      "src/vfx-preview.mjs": "ff00abefa8c267c59f9437a1e630dfc8b69e3844f5cea61e641ed531b7f96c5c",
+      "src/vfx-registry.mjs": "da00de87fc923bc6f220d7dc434e80d6a530cfd3af426829b4dc194b475c04b4",
+      "src/vfx-scene.mjs": "12a0e88d79625f280e21a5b7ea593c05fcdf0e4a59448cd365202a72a4a6d16b",
+      "src/vfx-shaders.mjs": "73abca33f2d1be5bcb6ce886f54385ed6d7015b95676ce86af504f1fdef6e807",
+      "src/vfx-surface.mjs": "8041e5043bb15b3598a11874cca8b770631dd5be99f29eed95dd20c95f89c353",
+      "src/vfx-viewport.mjs": "f0000574f79ba76abe1315c81d97632a9f17e97fd14cc9be0d3b4377d2d3eacd",
+      "src/vfx-webgpu.mjs": "efb51a4306d78056eb483450abc845c7d299364af8b92396d2bd439477226e43",
+      "src/vfx.mjs": "68eb20fa16a93b2fa6b0c622ed52cd6b79573c4c3f469a9815bf7230c246e5af",
+      "src/video-export.mjs": "c57c463a506410051c31373fc99b17ba5cd0278539ee2183fbc9cc0e48d0a1c4",
+      "src/workspace-layout.mjs": "0cdd5d2511d12f0f6fff539d5876e9b90ee1f0caf85140448a55ca23140a79fe",
+      "src/workspace-panels.mjs": "441d46d07fc29154ca08edc1ff6e1012f7d9b039aa668a56b6453bb8b1996941",
+      "src/sticknodes/adapter.mjs": "80700fda6808dd75dd93cb70f22d1968acb148c6ee67f2aefe3c6faec277dbe0",
+      "src/sticknodes/geometry.mjs": "5de0c29ffeef281a9a7e4fbe3c43243fdd463c9de6720d823b5110129811bad3",
+      "src/sticknodes/validation.mjs": "ff1694e25794b2d4366cec53976444f75a67d5ba26d766298b858bc91e5c0256",
+      "src/sticknodes/decoder/archive.mjs": "6a4b917ab05f9201d3f863ff372e64635934bb66bf10503b88cd47727e5197ca",
+      "src/sticknodes/decoder/binary.mjs": "4a946f8dd96f5e25e44557a6da134203fcd54944bf37bfc9728ab860ec5e9e9d",
+      "src/sticknodes/decoder/decoder.mjs": "a7c2a7e1b2a0727ff9bdd9ba5bf6cf1e9e23a6bca3f09f3928c133e273ae8cd7",
+      "src/sticknodes/decoder/geometry.mjs": "c451b2fe86f1906b93f64af5d427aaf9a09e159a5579b588bf8ec5ae807ae613",
+      "src/sticknodes/decoder/png-browser.mjs": "a3a9a7a10cfc6e11342080ba9c43c82b49413a31ba1d0b7b78dba5c7a20cfaf5",
+      "src/sticknodes/decoder/project-layout.mjs": "19e3e1085a6d595f8b2bff1a2ff8a6e07cd7057e79121cd30c532ea656c82812",
+      "src/sticknodes/decoder/project.mjs": "c3e9d1aa79a37046ad2c9be27f032ee297cf57b2c8be160f244ba626aa789a94",
+      "src/sticknodes/decoder/renderer.mjs": "2e75d135e57726d3fee1970651597a5c68b161fa9bde3ebcf0dc4fc525394149",
+      "src/pivot/background.mjs": "3a758d372de70eb780935b1928aa4301be6ed96ca94669ac459e785c10a6d217",
+      "src/pivot/geometry-definition.mjs": "13c2e871b0351c25d73f2b9e2a6d6e6bdd1b46f17f7d9088f95a9c0e964e0725",
+      "src/pivot/geometry-order.mjs": "41257e9c16a408bc9c22d66d7a74ccd7d953232824bffca956efd724ebc707e0",
+      "src/pivot/geometry-pose.mjs": "20f158f8417a59905a7de0b3d8f86bd73abdf47c4c81e2c9edbbbf034625b1f4",
+      "src/pivot/geometry.mjs": "bcd6243f9f065a5e21d4b7d836d8b9168f4509547e52d8559e2bb85f456b4fe9",
+      "src/pivot/model.mjs": "e9b71167781fe5115acaec5361f9e72f0f4c62dd224960a0cbeb1bbca0d8ac19",
+      "src/pivot/raster-clip.mjs": "5690a3a3cecda671920f60f8c5366b87f2be642682089a15f30e72e18d129f3d",
+      "src/pivot/structure.mjs": "4ee0c80a49aa0869608ea5a524577ed79a78f99f27736e7064a5b125fee29726",
+      "src/pivot/surfaces.mjs": "34260f150bf95c1252d04a9e20f3098ab4a4c6f423c0281017bc01c2d97f5cee",
+      "src/locales/en.mjs": "f1b39378dbd5e0b59a5e9695c8237a8cc4f97359a7d8ece60e8effaa6bcff2d1",
+      "src/locales/it.mjs": "59ef39069684a5b55d78b688ba83b6ed9145dd7108f8b3463ed62b4c9d5906b8",
+      "src/locales/native-catalogs.mjs": "eee5301be9fb9176048b5f7a27927139b05b1ff2cb4915ed9191e05608db9c69",
+      "src/locales/pivot-language.mjs": "00969520f2213e1586a17df374f39517d9aec57d0655c96b2d242a172f564b07",
+      "desktop/audio-service.cjs": "342308a37d9ac2ba9e8cc4b982072ff3673e7b5184a7ec302c25f7dcfd2e9939",
+      "desktop/backend.cjs": "395aadbbae992691a083629d9fdf2c02fcfef74c37113046d636c3f540157376",
+      "desktop/file-streams.cjs": "71aafc23ab6e5a7c47625bf0be9127760cbf595a569f5ecc75d5f71b5547638f",
+      "desktop/font-service.cjs": "0e924a345065ececd68186960048cf4cfd236694f12002e9835e877f1a33735c",
+      "desktop/library-store.cjs": "32493920100732fb7c7b8991121f9add5ee479b1212cde4ac008389f33bc9f38",
+      "desktop/main.cjs": "4dc99de4e2ac7ceca03007c049b7e45884dad35e28250e6c117d414ea6ea7bab",
+      "desktop/preferences.cjs": "4e695e0bb77eecc8dc7f63b2f1e05d5fd453126014d904529c6b97668a42620a",
+      "desktop/preload.cjs": "661b25915681d99c681a40a7c871b90f5b66a450ffd4e1635c9f8f15b68d13ac",
+      "desktop/project-files.cjs": "5f04ae58254e41fe81ac788bae328ddef41e48f6c85502d76dba29d33dc270be",
+      "desktop/recent-files.cjs": "e9ef6aaf3d0f2cad355a32b653f000aac657d7b9138660028a0d6805f2f194ca",
+      "desktop/recovery.cjs": "d1a83a6c6fe175d89afbbe6efc7278b46b6625310355b57fd8a3c2dbba1ba95d",
+      "desktop/release-history.cjs": "f810e765713a9cb70b0eec2bae34909980ad5708ab075e1dd391bfdc8aac8c12",
+      "desktop/release-links.cjs": "1abb7e3774e5c302a6feb9ac27f50ee30d4e1c2869edb60f87e4c500cf6fce82",
+      "desktop/shared-clipboard.cjs": "d3d2cae8b7b07f28e23c998088134867f2548de590c21d52486b3fe37daef950",
+      "desktop/support.cjs": "9c97df087c66e82d9d3f9ed8dc65a4c65278f26781cd0df87dba17f77157ae87",
+      "desktop/telemetry.cjs": "3987a2f23047cea82590585a4543ee0a475d9d4cf7feda52e15132fcce5dba53",
+      "desktop/updates.cjs": "243bec373eea087ee7c057142ae576090bd3c08aff1f9c9a71e3e79b95237e02",
+      "desktop/vfw-export-service.cjs": "34587cc50e8c643097f90bab171d57c10a2ddf66fc01c13d8a4ef39adb2412d0",
+      "desktop/video-export-service.cjs": "5763e8920350ff8f9578c64aba7a3d3f39a2b087efc94d2aea483093499a9c21",
+      "desktop/workspace-instance.cjs": "20d87ca65749dd6d0e9dadbb68b1ea53ddcb04f3aeab71a02752d116ed142fe2",
+      "backend/benchmark.py": "1e22c175c63304960acd2052297cd332821685cfd660bef7b4b9b3ef6cbc5f6d",
+      "backend/benchmark_fast_decode.py": "00707706b4a1eb3510b403d12d43b4f4b4522c0c1324670296a11fa7223fca0b",
+      "backend/fast_decode.py": "c7f9d366141d31db5e939f1e1997a0dfe85e0d001147270a85cb1efeef09fabc",
+      "backend/import_wire.py": "a7ed158a3b40ffd469b2153be3341aa11c224810842397dced285a53f89b1191",
+      "backend/native_format.py": "a25444840496c25be14c4210a4399255ccfab11e722522689a32df0185b3c810",
+      "backend/native_scan.py": "5b07c4c7d37f1d2ff74753c2f393b57d7428af72039416d901449d3db13f8e8c",
+      "backend/process_metrics.py": "8a66819a0791a0d6701f183332cad88a39ebf7acc6c31e116753d2ac8a340da7",
+      "backend/profile_import.py": "62e3905de9093fd1820deea5cc82460f13a89769e91015977be21b76797cde1d",
+      "backend/profile_native_save.py": "18811c3b5b0a66c20cd259a18bb123a1e2233d41bfe3e8437fc410170a7810ec",
+      "backend/server.py": "fae78cb3d35174610d5991d2a332bde7b9d7363d60dc0b9bd2044c7c6c9ec730",
+      "backend/test_browser_roundtrip.mjs": "99f0ab31bf6e84bc86aaff7f56612f749ef305d963b85514de518087e06c48b1",
+      "backend/test_fast_decode.py": "48dd6e106cb871cd24ad8407c42b0845dfe9c1215cdcb78961a251048f4e8ccf",
+      "backend/test_import_wire_review.py": "4990e2ecc62578a4c86a4a66943ff12dd4e9ba261b8c6ca781c03c792ac318c1",
+      "backend/test_legacy_upgrade_export.py": "8de381c3de88aef8352c32b78bf2bf7d0ca69fdff8fbebbc259f47d1d52d1f19",
+      "backend/test_library_format.py": "03dd1bb8a237542de56f30e69435c3ba9f79b7283e2ab93da1e139fca107883c",
+      "backend/test_native_format.py": "4f5bdf9bc52219fa6bbc033d1dc0c3c901f14ec57467bf24b06df47f51e637b4",
+      "backend/test_native_scan.py": "635cbbc150be1127c4b85a93f57b39c2bae6286c27cff919e473656bf8b0043b",
+      "backend/test_piv_identities.py": "0354a8f4c36450fdf1d6a1df03c11d74ad09d0b3826d9233e5b7cc06dff09373",
+      "backend/test_piv_media_recovery.py": "dac805e54390f454ed2da12d78d675011ecf3a5fec2e4e33eca320f0edeca521",
+      "backend/test_piv_type_changes.py": "aa8b691083f9a4d230764ccb55faff2f8c7d598ebe706217382d2899d6874965",
+      "backend/test_server.py": "2942f1a2c9862f11ff1728da08547f9198df1325e877b05762263f6982742781",
+      "codecs/codec_bridge.py": "1f0384a543fb4ebe5a8b3ee4a18938128f4f161f71f7293c23decee076d619d2",
+      "codecs/image_stream.py": "a6cd3636af6cba1e97eb54cb7926aa63ef5b4f63d3fe4ac26a0b9e2401b12138",
+      "codecs/pivot_decoder.py": "d2f38fcede65c6c1d642283c19a193e9019a636b4a4dc045649d9d97a37fe8c4",
+      "codecs/piv_asset_writer.py": "ed0d49cf6bf381271e999d064e0ce266ce942867403161e6e5c0383300519469",
+      "codecs/piv_codec.py": "e0b7c7afac4cff4a2708a205577270a53f2f483bcb759de305181fdad6b8eb6a",
+      "codecs/piv_document.py": "67557652493f7c68c0199c0d1ff25ef7c05095935c8fdf0a6344a1ccf850a8f6",
+      "codecs/piv_full_writer.py": "05132457b1fb1b732433dd7423e43cbc946c4dab187b52b9b4697b46cdbac286",
+      "codecs/piv_legacy.py": "b8abffa4c8d19e9a6de9b1f25535998f4971fbcbc558ed6df3ed1c60e92d63e1",
+      "codecs/piv_legacy_v2.py": "e1fa02013c1ff03636796be4570fad323aab681a2f3c8ac66336622a147e8baa",
+      "codecs/piv_legacy_v4.py": "0163d482e30f13c461861162697c3f2ef8fb5dc044d0ee7136daa88559490733",
+      "codecs/piv_migrate.py": "1fe19a3d721e87e46ef01553c0e046ae5e62ded0de0f479dde36f618d2dec62a",
+      "codecs/piv_side_tables.py": "9536dfdc255139ba429cb84ff225f6ef2df5e549fc2b7880600ae2e425d24087",
+      "native/piv-frame-scan.cpp": "0825b9c12d683bac119e61a1d6bcc848c48164c311e2c090101ca79a93767622",
+      "native/vfw-bridge.cpp": "d604ca2bcee24890bfe72bf22064a235153d14f132bcfc3245499cff9256e736"
+    },
+    "rows": [
+      {
+        "mode": "python",
+        "startup_ms": 3015.7102999999997,
+        "import_ms": 1380.3999999761581,
+        "editor_load": {
+          "started": 3475.5,
+          "slices": 9,
+          "maxSliceMs": 8,
+          "workMs": 52.10000014305115,
+          "phases": {
+            "validation": 44.10000014305115,
+            "indexing": 4
+          },
+          "preparedMs": 56.5,
+          "sceneMs": 198.70000004768372,
+          "publishMs": 0.10000002384185791,
+          "listenersMs": 2.799999952316284,
+          "commitMs": 2.899999976158142
+        },
+        "digest": "904d440cb4903976d68061c609f65a894f5bb329ba97f05bb67ebc753890b6f3"
+      },
+      {
+        "mode": "cpp",
+        "startup_ms": 3187.756699999999,
+        "import_ms": 1331.6000000238419,
+        "editor_load": {
+          "started": 3553.2000000476837,
+          "slices": 10,
+          "maxSliceMs": 8.099999904632568,
+          "workMs": 50.59999990463257,
+          "phases": {
+            "validation": 44.799999952316284,
+            "indexing": 4.200000047683716
+          },
+          "preparedMs": 55.199999928474426,
+          "sceneMs": 203.5,
+          "publishMs": 0.30000007152557373,
+          "listenersMs": 2.899999976158142,
+          "commitMs": 3.200000047683716
+        },
+        "digest": "904d440cb4903976d68061c609f65a894f5bb329ba97f05bb67ebc753890b6f3"
+      }
+    ],
+    "scope": "Separate final-harness verification pair, no Playwright debug logging; do not pool with the earlier Shroobs sample."
+  }
+}

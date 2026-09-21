@@ -14,4 +14,5 @@ editor.importAudio(asset,{start:0});const id=audioState(editor.report).tracks[0]
 for(let i=0;i<100;i++){const start=performance.now();editor.setAudioClip(id,{start:i/24,gain:.5+(i%5)*.1});editTimes.push(performance.now()-start);}
 const report={voices:32,mixChunkFrames:12000,mixChunkMs:250,maxOutputBytes:peakBytes,mixMaxMs:Math.max(...times),mixMedianMs:[...times].sort((a,b)=>a-b)[8],assetBytes:asset.size,edits:100,editMaxMs:Math.max(...editTimes),editMedianMs:[...editTimes].sort((a,b)=>a-b)[50],largestMetadataCommand:Math.max(...editor._undo.map(command=>command.bytes)),retainedCommands:editor._undo.length};
 assert.equal(peakBytes,96000);assert.ok(report.mixMaxMs<250,JSON.stringify(report));assert.ok(report.editMaxMs<50,JSON.stringify(report));assert.ok(report.largestMetadataCommand<10000,JSON.stringify(report));
-await mkdir('artifacts/audio',{recursive:true});await writeFile('artifacts/audio/benchmark.json',JSON.stringify(report,null,2));console.log(report);
+const output=process.env.STYK_BENCH_OUT||'artifacts/audio';
+await mkdir(output,{recursive:true});await writeFile(`${output}/benchmark.json`,JSON.stringify(report,null,2));console.log(report);
