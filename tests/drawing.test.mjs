@@ -907,6 +907,20 @@ test('pressure-aware spacing keeps light ink and pressure ramps continuous acros
   a.samples(1,1,points,[]);points.forEach((p,i)=>b.samples(1,i+1,[p],[]));assert.deepEqual(a.end(1),b.end(1));
 });
 
+test('clipboard snapshots preserve deferred undo even when the source changes before paste',async()=>{
+  const {e,resources}=fixture(),{copyDrawingFigure}=await import('../src/drawing-model.mjs');try{
+    const t=e.prepareDrawingCel({pixelsPerUnit:1});await resources.surface(t.figure);
+    const red=new Uint8ClampedArray([255,0,0,255]),blue=new Uint8ClampedArray([0,0,255,255]);
+    e.commitDrawingPixels(t,[{tx:0,ty:0,before:null,after:red}]);
+    e.commitDrawingPixels(e.drawingTarget(),[{tx:0,ty:0,before:red,after:blue}]);await resources.flush();
+    const source=e.drawingTarget().figure;resources.entry(source).store=null;e.undo();
+    const clipboard={figures:[structuredClone(source)]};resources.captureClipboard(clipboard);e.redo();
+    const copy=copyDrawingFigure(clipboard.figures[0],999);e.report.figure_types.push(copy);resources.pasteClipboard([[clipboard.figures[0],copy]],clipboard);
+    assert.deepEqual((await resources.surface(copy)).store.pixel(0,0),[255,0,0,255]);
+    assert.deepEqual((await resources.surface(source)).store.pixel(0,0),[0,0,255,255]);
+  }finally{resources.dispose();}
+});
+
 test('a closing stroke commits to its original exposure after a view-only seek',async()=>{
   const {e,resources}=fixture();try{
     const {target}=await stroke(e);e.extendDrawing(undefined,2);e.nextDrawing(undefined,{blank:true});

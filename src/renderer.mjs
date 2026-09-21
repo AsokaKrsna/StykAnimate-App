@@ -772,6 +772,7 @@ class WebGPURenderer {
       }
       if(rect&&!scratch){level=8;scratch=drawing.scratch?.(rect,{level,maxSide,clamp:true});}
       if(!scratch){
+        if(drawing.owner?.previews&&prior?.drawing===drawing&&prior.texture)return {...prior,...drawingState};
         const data=new Float32Array(shapeRecord({mode:SHAPE.DISABLED,transform:index}));
         return {...drawingState,key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:null};
       }
@@ -790,7 +791,7 @@ class WebGPURenderer {
         // Most-recently-used ordering: the render loop evicts from the front.
         this.drawingTextures.delete(textureKey);this.drawingTextures.set(textureKey,texture);
         texture.drawing=drawing;texture.canvas=scratch.canvas;texture.dirty=scratch.dirty;texture.nextRectKey=rectKey;
-        const q=2**level,ox=matrix[0]*scratch.x*q+matrix[2]*scratch.y*q+matrix[4],oy=matrix[1]*scratch.x*q+matrix[3]*scratch.y*q+matrix[5];
+        const q=scratch.scale,ox=matrix[0]*scratch.x*q+matrix[2]*scratch.y*q+matrix[4],oy=matrix[1]*scratch.x*q+matrix[3]*scratch.y*q+matrix[5];
         data=new Float32Array(shapeRecord({a:[ox-source.root.x,oy-source.root.y,0,0],b:[matrix[0]*scratch.width*q,matrix[1]*scratch.width*q,matrix[2]*scratch.height*q,matrix[3]*scratch.height*q],mode:9,color:[1,1,1,sourceItems[0].alpha],transform:index}));
         return {...drawingState,key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:1,texture};
       }
@@ -1029,7 +1030,7 @@ class WebGPURenderer {
       drawingGpuBytes+=texture.bytes;
       if(!liveTextures.has(texture)||!drawing)continue;
       if(texture.stamp===drawing.stamp&&texture.rectKey===texture.nextRectKey)continue;
-      const canvas=texture.canvas;if(!canvas)continue;
+      const canvas=texture.canvas;if(!canvas?.width||!canvas.height)continue;
       // A re-anchored scratch was repainted wholesale; only same-rect updates
       // can ship the dirty subregion.
       const dirty=texture.stamp<0||texture.rectKey!==texture.nextRectKey?null:texture.dirty;

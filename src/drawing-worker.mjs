@@ -3,7 +3,7 @@ import {floodTiles,tileChanges,tileAlignedRect} from './drawing-pixels.mjs';
 import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {decodeDrawingPNG} from './drawing-png.mjs';
 import {decodeTileBlob,tileStoreFromList,TILE_BLOB_PREFIX,TileEncodeCache} from './drawing-tile-codec.mjs';
-import {levelStore} from './drawing-raster.mjs';
+import {levelStore,invalidateLevels} from './drawing-raster.mjs';
 import {encodePNGPortable} from './sticknodes/decoder/png-browser.mjs';
 import {transformSelectedPixels} from './drawing-selection.mjs';
 
@@ -14,6 +14,7 @@ const validRect=r=>r&&[r.x,r.y].every(Number.isSafeInteger)&&Number.isInteger(r.
 // Encoded tiles persist across publications so a re-publish only encodes
 // tiles the main thread resent; the blob is assembled here, never upstream.
 const encodeCache=new TileEncodeCache();
+let previewStore=null;
 /** The smallest mip level whose bounds still span ~64 output pixels. */
 const thumbnailLevel=bounds=>bounds?Math.max(0,Math.min(4,Math.floor(Math.log2(Math.max(bounds.width,bounds.height)/64)))):0;
 
@@ -43,10 +44,8 @@ self.onmessage=async({data})=>{
       self.postMessage({id,tiles:out,blobUrl:TILE_BLOB_PREFIX+btoa(text),encoded:result.encoded,reused:result.reused},out.map(t=>t.png));return;
     }
     if(kind==='fill'){
-      if(!validRect(data.bounds))throw new Error('Invalid fill bounds.');
-      const store=storeOf(data),before=beforeOf(store,data.bounds);
-      floodTiles(store,{...data.options,bounds:data.bounds,source:data.source?new Uint8ClampedArray(data.source):undefined});
-      changesReply(id,store,before);return;
+      const store=storeOf(data),tiles=floodTiles(store,{...data.options,bounds:data.bounds,source:data.source?new Uint8ClampedArray(data.source):undefined});
+      self.postMessage({id,tiles},tiles.flatMap(t=>[t.before?.buffer,t.after?.buffer].filter(Boolean)));return;
     }
     if(kind==='selection'){
       const store=storeOf(data),tiles=transformSelectedPixels(store,{...data.selection,pixels:new Uint8ClampedArray(data.selection.pixels),mask:{...data.selection.mask,mask:new Uint8Array(data.selection.mask.mask)}});
@@ -96,6 +95,17 @@ self.onmessage=async({data})=>{
       const tiles=[...out].map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer}));
       self.postMessage({id,tiles,bounds:out.bounds},tiles.map(t=>t.pixels));return;
     }
+    if(kind==='preview'){
+      const {rect,level}=data;
+      if(!validRect(rect)||rect.width>4096||rect.height>4096||!Number.isInteger(level)||level<0||level>8)throw new Error('Invalid drawing preview bounds.');
+      if(data.reset||!previewStore)previewStore={store:new TileStore()};
+      const keep=new Set(data.keep),input=previewStore.store;
+      for(const tile of input)if(!keep.has(tileKey(tile.tx,tile.ty))){input.delete(tile.tx,tile.ty);invalidateLevels(previewStore,{x:tile.tx*TILE,y:tile.ty*TILE,width:TILE,height:TILE});}
+      for(const tile of data.tiles){input.tiles.set(tileKey(tile.tx,tile.ty),{tx:tile.tx,ty:tile.ty,pixels:new Uint8ClampedArray(tile.pixels)});input._changed();invalidateLevels(previewStore,{x:tile.tx*TILE,y:tile.ty*TILE,width:TILE,height:TILE});}
+      const store=levelStore(previewStore,level),canvas=new OffscreenCanvas(rect.width,rect.height),ctx=canvas.getContext('2d');
+      for(const tile of store)ctx.putImageData(new ImageData(tile.pixels,TILE,TILE),tile.tx*TILE-rect.x,tile.ty*TILE-rect.y);
+      const bitmap=canvas.transferToImageBitmap();self.postMessage({id,bitmap},[bitmap]);return;
+    }
     if(kind==='thumbnail'){
       let store;
       if(data.legacy){const image=await decodeDrawingPNG(data.legacy.url),crop=data.legacy.crop??{x:0,y:0};store=new TileStore();
@@ -108,7 +118,7 @@ self.onmessage=async({data})=>{
       // Blob and legacy payloads hold full-resolution tiles; rasterize them
       // from the smallest mip still spanning ~64 px instead of reading bounds
       // at source resolution.
-      if((data.url||data.legacy)&&bounds){const k=thumbnailLevel(bounds);if(k)store=levelStore({store,levels:[]},k);bounds=store.bounds;}
+      if(bounds){const k=thumbnailLevel(bounds);if(k)store=levelStore({store,levels:[]},k);bounds=store.bounds;}
       if(!bounds||!validRect(bounds)){self.postMessage({id,width:1,height:1,pixels:new Uint8ClampedArray(4).buffer});return;}
       const source=new OffscreenCanvas(bounds.width,bounds.height);source.getContext('2d').putImageData(new ImageData(store.readRect(bounds.x,bounds.y,bounds.width,bounds.height),bounds.width,bounds.height),0,0);
       const ratio=Math.min(64/bounds.width,32/bounds.height),w=Math.max(1,Math.round(bounds.width*ratio)),h=Math.max(1,Math.round(bounds.height*ratio)),out=new OffscreenCanvas(w,h),ctx=out.getContext('2d');ctx.drawImage(source,0,0,w,h);

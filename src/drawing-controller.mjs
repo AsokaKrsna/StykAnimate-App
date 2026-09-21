@@ -1,5 +1,6 @@
+import {strokeRegion} from './drawing-stroke-region.mjs';
 import {BRUSH_PRESETS} from './drawing-view.mjs';
-import {tileChanges,lassoMask,tileAlignedRect,DrawingStroke} from './drawing-pixels.mjs';
+import {lassoMask,tileAlignedRect,DrawingStroke} from './drawing-pixels.mjs';
 import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,inversePoint,transformPoint,DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {TILE,tileKey,parseTileKey,TileStore} from './drawing-tiles.mjs';
 import {encodeDrawingPNG} from './drawing-png.mjs';
@@ -52,7 +53,7 @@ export class DrawingController {
     // never spawn stores, workers or presenters.
     const report=this.editor.report,owner=drawingResourcesFor(report)??((this.active||report.figure_types?.some(figure=>drawingMetadata(figure)))?this.editor.drawingResources:null);
     if(owner===this.owner)return;this.owner=owner;if(!owner)return;
-    owner.onChange=()=>{if(this.surfaceVersion!==owner.surfaceVersion){this.surfaceVersion=owner.surfaceVersion;if(this.state.renderer){this.state.renderer.lastGeometry=null;this.state.renderer.clearArtwork?.();this.state.renderer.clearOnionArtwork?.();}}this.onRender();};owner.onError=this.onError;owner.strokeWorker.onmessage=data=>this.strokeMessage(data);owner.strokeWorker.onerror=error=>{owner.strokeWorker.dispose();this.cancel();this.onError(error);};
+    owner.onChange=()=>{if(this.selection?.presenter)this.selection.presenter.stamp++;if(this.surfaceVersion!==owner.surfaceVersion){this.surfaceVersion=owner.surfaceVersion;if(this.state.renderer){this.state.renderer.lastGeometry=null;this.state.renderer.clearArtwork?.();this.state.renderer.clearOnionArtwork?.();}}this.onRender();};owner.onError=this.onError;owner.strokeWorker.onmessage=data=>this.strokeMessage(data);owner.strokeWorker.onerror=error=>{owner.strokeWorker.dispose();this.cancel();this.onError(error);};
   }
   /** Decode the cel under the playhead plus its two unique neighbours each way
    * so onion skins and scrubs never wait on the decode queue. Neighbours queue
@@ -151,7 +152,7 @@ export class DrawingController {
       s.owner.busy=true;
       const pixelsPerScreenUnit=1/Math.max(1e-9,Math.hypot(s.pixelMatrix[0],s.pixelMatrix[1])*(this.state.view.scale||1));
       s.margin+=Math.max(0,Math.min(.95,this.settings.stabilization))*48*Math.max(.01,Math.min(64,pixelsPerScreenUnit));
-      this.owner.strokeWorker.post({kind:'begin',stroke:s.id,settings:{size,pixelsPerUnit:pixelsPerScreenUnit,color,opacity:this.settings.opacity,flow:this.settings.flow,hardness:this.settings.hardness,pressureSize:this.settings.pressureSize,pressureOpacity:this.settings.pressureOpacity,sizeCurve:this.settings.sizeCurve,opacityCurve:this.settings.opacityCurve,stabilization:this.settings.stabilization,spacingRatio:this.settings.spacingRatio??.12,texture:this.settings.texture??0,erase:s.erase,seed:s.id}});
+      this.owner.strokeWorker.post({kind:'begin',stroke:s.id,settings:{workingBytes:s.owner.hardBudget,size,pixelsPerUnit:pixelsPerScreenUnit,color,opacity:this.settings.opacity,flow:this.settings.flow,hardness:this.settings.hardness,pressureSize:this.settings.pressureSize,pressureOpacity:this.settings.pressureOpacity,sizeCurve:this.settings.sizeCurve,opacityCurve:this.settings.opacityCurve,stabilization:this.settings.stabilization,spacingRatio:this.settings.spacingRatio??.12,texture:this.settings.texture??0,erase:s.erase,seed:s.id}});
       this.sampleStroke(pending.event);
     }
     for(const sample of pending.samples)this.move({...sample,pointerId:event.pointerId});if(pending.released)this.finish();this.onRender();
@@ -161,33 +162,29 @@ export class DrawingController {
     const g=this.gesture,s=g?.session;
     if(g?.kind!=='stroke'||s.ended||s.cancelled)return;
     const p=inversePoint(s.pixelMatrix,this.point(event));
+    if(s.pending.length>=65536)throw new Error('Drawing input exceeded the queue limit. The stroke was cancelled; try a shorter stroke.');
     s.pending.push({x:p.x,y:p.y,pressure:event.pointerType==='pen'?event.pressure||.05:1,time:event.timeStamp});
     if(!s.raf)s.raf=requestAnimationFrame(()=>{s.raf=null;this.flushStroke(s);});
   }
-  flushStroke(s){
+  flushStroke(s){try{
     if(this.sessions.get(s.id)!==s)return;
     if(!s.pending.length){this.endStrokeWorker(s);return;}
     // Bound posted work. Keep real samples locally until an ACK frees a slot;
     // release queues its end only after the final sample batch was sent.
     if(s.outstanding>=2)return;
-    const samples=s.pending,m=s.margin;s.pending=[];
-    let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
-    // The next quadratic starts behind the previous sample. Seed its bridge,
-    // too, or a fast cross-batch jump can overwrite existing ink with blank.
-    for(const list of [s.seedTail??[],samples])for(const p of list){x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x);y1=Math.max(y1,p.y);}
-    s.seedTail=[...(s.seedTail??[]),...samples.slice(-2)].slice(-2);
-    const x=Math.floor(x0-m),y=Math.floor(y0-m);
-    const rect={x,y,width:Math.ceil(x1+m)-x,height:Math.ceil(y1+m)-y};
-    const tiles=[];
-    for(const [tx,ty] of TileStore.tilesInRect(rect.x,rect.y,rect.width,rect.height)){
-      const key=tileKey(tx,ty);if(s.sent.has(key))continue;s.sent.add(key);
-      const tile=s.surface.store.get(tx,ty);tiles.push({tx,ty,pixels:tile?tile.pixels.slice().buffer:null});
+    const samples=s.pending.splice(0,512),points=[...(s.seedTail??[]),...samples],tiles=[];
+    for(const [tx,ty] of strokeRegion(points,s.margin)){
+      const key=tileKey(tx,ty);if(s.sent.has(key))continue;
+      const tile=s.surface.store.get(tx,ty);if(!tile)continue;
+      if(s.sent.size>=65536)throw new Error('The stroke exceeds the drawing working memory limit.');
+      s.sent.add(key);tiles.push({tx,ty,pixels:tile.pixels.slice().buffer});
     }
+    s.seedTail=points.slice(-2);
     const seq=++s.seq;s.outstanding++;s.posted.set(seq,performance.now());
     this.strokeStats.batches++;this.strokeStats.maxQueueDepth=Math.max(this.strokeStats.maxQueueDepth,s.outstanding);
     s.owner.strokeWorker.post({kind:'samples',stroke:s.id,seq,samples,tiles},tiles.map(t=>t.pixels).filter(Boolean));
     this.endStrokeWorker(s);
-  }
+  }catch(error){this.cancel();this.onError(error);}}
   endStrokeWorker(s){if(s.ended&&!s.pending.length&&!s.endPosted){s.endPosted=true;s.owner.strokeWorker.post({kind:'end',stroke:s.id});}}
   strokeMessage(data){
     const s=this.sessions.get(data.stroke);if(!s)return;
@@ -197,7 +194,13 @@ export class DrawingController {
       if(posted!=null)this.strokeStats.lastRoundTripMs=performance.now()-posted;
       if(s.cancelled)return;
       const store=s.surface.store;
-      for(const t of data.tiles){const key=tileKey(t.tx,t.ty);if(!s.before.has(key))s.before.set(key,store.get(t.tx,t.ty)?.pixels.slice()??null);store.set(t.tx,t.ty,new Uint8ClampedArray(t.pixels));}
+      try{
+        const snapshots=[...s.before.values()].reduce((n,p)=>n+(p?.byteLength??0),0)+data.tiles.reduce((n,t)=>n+(!s.before.has(tileKey(t.tx,t.ty))?(store.get(t.tx,t.ty)?.pixels.byteLength??0):0),0);
+        s.owner.hold?.(s,snapshots+data.tiles.length*TILE*TILE*4,s.surface);
+        s.owner.reserve?.(s.owner.replacementBytes(s.surface,data.tiles,'pixels'),s.surface);
+        for(const t of data.tiles){const key=tileKey(t.tx,t.ty);if(!s.before.has(key))s.before.set(key,store.get(t.tx,t.ty)?.pixels??null);store.set(t.tx,t.ty,new Uint8ClampedArray(t.pixels));}
+        s.owner.hold?.(s,snapshots,s.surface);
+      }catch(error){this.cancel();this.onError(error);return;}
       if(data.tiles.length){this.owner.present(s.surface,data.dirty);this.onRender();}
       if(s.ended)this.flushStroke(s);
       else if(s.pending.length&&!s.raf)s.raf=requestAnimationFrame(()=>{s.raf=null;this.flushStroke(s);});
@@ -216,7 +219,7 @@ export class DrawingController {
       if(valid){try{this.editor.commitDrawingPixels(s.target,changes,s.erase?'Erase stroke':'Brush stroke');}catch(error){this.restoreStroke(s);this.onError(error);}}
       else this.restoreStroke(s);
     }finally{
-      s.resolveDone?.();
+      s.resolveDone?.();s.owner.hold?.(s,0);
       s.owner.busy=false;
       s.surface.pinned=Boolean(this.selection?.surface===s.surface);
       if(this.selection?.surface===s.surface)this.previewSelection();else{this.owner.present(s.surface);this.owner.discard(s.target.figure);}
@@ -226,7 +229,7 @@ export class DrawingController {
       if(queued&&!this.gesture){this.loading=null;this.run(()=>this.down({...queued.event,samples:queued.samples,released:queued.released}));}
     }
   }
-  move(event){this.cursor=pointerSample(event);if(this.loading?.id===event.pointerId){this.loading.samples.push(pointerSample(event));return;}const g=this.gesture;if(!g||g.id!==event.pointerId){this.onRender();return;}
+  move(event){this.cursor=pointerSample(event);if(this.loading?.id===event.pointerId){if(this.loading.samples.length>=65536)throw new Error('Drawing input exceeded the queue limit.');this.loading.samples.push(pointerSample(event));return;}const g=this.gesture;if(!g||g.id!==event.pointerId){this.onRender();return;}
     if(g.kind==='pan'){const rect=this.viewport.getBoundingClientRect();this.state.view.x=g.view.x+(event.clientX-g.start.clientX)*this.viewport.clientWidth/rect.width;this.state.view.y=g.view.y+(event.clientY-g.start.clientY)*this.viewport.clientHeight/rect.height;}
     else if(g.kind==='stroke'){if(!g.session.ended){const samples=event.getCoalescedEvents?.();for(const sample of samples?.length?samples:[event])this.sampleStroke(sample);}}
     else if(g.kind==='pose'){const p=this.point(event);this.editor.moveSelection(p.x-g.start.x,p.y-g.start.y,{fromStart:true});}
@@ -249,25 +252,24 @@ export class DrawingController {
     if(g.kind==='pose')this.editor.commitDrag();
     else if(g.kind==='lasso')this.makeSelection(g);
   }finally{g.surface.pinned=Boolean(this.selection?.surface===g.surface);if(this.selection?.surface===g.surface)this.previewSelection();else{this.owner.present(g.surface);this.owner.discard(g.target.figure);}if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.sync();this.onUI();this.onRender();}}
-  cancel(){this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();return;}this.gesture=null;if(g.kind==='pan'){Object.assign(this.state.view,g.view);this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.busy=false;this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
+  cancel(){this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();return;}this.gesture=null;if(g.kind==='pan'){Object.assign(this.state.view,g.view);this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.hold?.(s,0);s.owner.busy=false;this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
   async barrier(options){await this.settle({selection:true});if(this.loading)throw new Error('Wait for the drawing to finish loading.');if(this.fillAbort)throw new Error('Finish or cancel the fill first.');await drawingBarrier(this.editor.report,options);}
-  /** Fill bounds = stage ∪ artwork ∪ viewport, in the cel's pixel space. */
+  /** Fill bounds follow the document, independent of display zoom. */
   fillBounds(target,store){
     const matrix=this.pixelMatrix(target),toPixel=p=>inversePoint(matrix,p);
     const report=this.editor.report,stage=[[0,0],[report.canvas_width,0],[report.canvas_width,report.canvas_height],[0,report.canvas_height]].map(([x,y])=>toPixel({x,y}));
-    const rect=this.viewport.getBoundingClientRect(),view=[[rect.left,rect.top],[rect.right,rect.top],[rect.right,rect.bottom],[rect.left,rect.bottom]].map(([clientX,clientY])=>toPixel(this.point({clientX,clientY})));
     const box=points=>({x:Math.floor(Math.min(...points.map(p=>p.x))),y:Math.floor(Math.min(...points.map(p=>p.y))),width:Math.ceil(Math.max(...points.map(p=>p.x)))-Math.floor(Math.min(...points.map(p=>p.x))),height:Math.ceil(Math.max(...points.map(p=>p.y)))-Math.floor(Math.min(...points.map(p=>p.y)))});
-    return unionRects(unionRects(box(stage),box(view)),store.bounds);
+    return unionRects(box(stage),store.bounds);
   }
   async fill(target,surface,point){
     const controller=this.fillAbort=new AbortController(),revision=this.editor.revision,owner=this.owner;surface.pinned=true;owner.busy=true;this.onStatus('Filling drawing… Escape cancels.');
     try{
       const bounds=this.fillBounds(target,surface.store);
-      if(!bounds)return;if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw new Error('Zoom in before filling: the fill area exceeds 16 megapixels.');
+      if(!bounds)return;if(bounds.width*bounds.height>64*1024*1024)throw new Error('The fill region exceeds 64 megapixels.');
       let source;
       if(this.settings.sampleAll){await this.barrierForComposite();const c=canvas(bounds.width,bounds.height),ctx=c.getContext('2d'),inverse=new DOMMatrix(this.pixelMatrix(target)).inverse();ctx.setTransform(inverse.a,inverse.b,inverse.c,inverse.d,inverse.e-bounds.x,inverse.f-bounds.y);drawGeometry(ctx,{drawables:this.editor.geometry.drawables.filter(i=>this.editor.getLayer(this.editor.layerForUid(i.obj.unique_id))?.visible!==false)},this.getResources());source=ctx.getImageData(0,0,c.width,c.height).data.buffer;}
       const tiles=[...TileStore.tilesInRect(bounds.x,bounds.y,bounds.width,bounds.height)].map(([tx,ty])=>surface.store.get(tx,ty)).filter(Boolean).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
-      const result=await owner.worker.request('fill',{bounds,tiles,options:{...point,color:[...this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16)),Math.round(this.settings.opacity*255)],tolerance:this.settings.tolerance,expansion:this.settings.expansion,gap:this.settings.gap},source},{transfer:[...tiles.map(t=>t.pixels),...(source?[source]:[])]});
+      const result=await owner.worker.request('fill',{bounds,tiles,options:{maxBytes:owner.hardBudget,...point,color:[...this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16)),Math.round(this.settings.opacity*255)],tolerance:this.settings.tolerance,expansion:this.settings.expansion,gap:this.settings.gap},source},{signal:controller.signal,transfer:[...tiles.map(t=>t.pixels),...(source?[source]:[])]});
       if(controller.signal.aborted||owner!==this.owner||revision!==this.editor.revision)throw new DOMException('Fill superseded by another edit.','AbortError');
       this.editor.commitDrawingPixels(target,result.tiles,'Fill drawing');this.onStatus('Drawing filled.');
     }finally{surface.pinned=false;owner.busy=false;if(this.fillAbort===controller)this.fillAbort=null;this.onRender();}

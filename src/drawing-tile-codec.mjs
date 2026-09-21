@@ -22,10 +22,11 @@ export async function encodeTileBlob(store){
   for(const tile of store){if(tileTransparent(tile))continue;if(!tile.png)tile.png=await encodePNGPortable({width:TILE,height:TILE,channels:4},tile.pixels);tiles.push(tile);}
   const bytes=assembleTileBlobBytes(tiles);let text='';for(let i=0;i<bytes.length;i+=16384)text+=String.fromCharCode(...bytes.subarray(i,i+16384));return TILE_BLOB_PREFIX+btoa(text);
 }
-export async function decodeTileBlob(url){
+export async function decodeTileBlob(url,{maxBytes=TILE_BLOB_MAX_PIXELS}={}){
   const bytes=tileBlobBytes(url),view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
   if(bytes.length<16||view.getUint32(0)!==0x54595453||view.getUint32(4,true)!==1||view.getUint32(8,true)!==TILE)throw new Error('Invalid drawing tile blob.');
   const count=view.getUint32(12,true);if(count>TILE_BLOB_MAX_TILES)throw new Error('Drawing tile blob exceeds its tile bound.');
+  if(count*TILE_BYTES>maxBytes)throw new Error('Drawing tiles exceed the available decode memory.');
   const tiles=[],seen=new Set();let offset=16,decoded=0;
   for(let i=0;i<count;i++){
     if(offset+12>bytes.length)throw new Error('Truncated drawing tile blob.');

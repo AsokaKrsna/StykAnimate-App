@@ -4,6 +4,7 @@ export const MIN_TILE=-0x80000000,MAX_TILE=0x7fffffff;
 export function assertTileCoordinates(tx,ty){if(!Number.isInteger(tx)||!Number.isInteger(ty)||tx<MIN_TILE||ty<MIN_TILE||tx>MAX_TILE||ty>MAX_TILE)throw new Error('Drawing coordinates exceed the file format range.');}
 export const tileKey=(tx,ty)=>`${tx},${ty}`;
 export const parseTileKey=key=>key.split(',').map(Number);
+let tileVersion=0;
 
 function alphaBounds(pixels){let x0=TILE,y0=TILE,x1=-1,y1=-1;for(let y=0;y<TILE;y++)for(let x=0;x<TILE;x++)if(pixels[(y*TILE+x)*4+3]){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}return x1<0?null:{x:x0,y:y0,width:x1-x0+1,height:y1-y0+1};}
 export function tileTransparent(tile){tile.alphaBounds??=alphaBounds(tile.pixels);return !tile.alphaBounds;}
@@ -19,13 +20,13 @@ export class TileStore {
   keys(){return this.tiles.keys();}
   values(){return this.tiles.values();}
   [Symbol.iterator](){return this.tiles.values();}
-  _changed(){this._bounds=undefined;this._tileBounds=undefined;}
+  _changed(){this._bounds=undefined;this._tileBounds=undefined;this.revision=(this.revision??0)+1;}
   writable(tx,ty,{create=true}={}) {
     assertTileCoordinates(tx,ty);
     const key=tileKey(tx,ty);let tile=this.tiles.get(key);
-    if(!tile){if(!create)return null;tile={tx,ty,pixels:new Uint8ClampedArray(TILE_BYTES),frozen:false};this.tiles.set(key,tile);this._changed();return tile;}
+    if(!tile){if(!create)return null;tile={tx,ty,pixels:new Uint8ClampedArray(TILE_BYTES),frozen:false,version:++tileVersion};this.tiles.set(key,tile);this._changed();return tile;}
     if(tile.frozen){tile={tx,ty,pixels:tile.pixels.slice(),frozen:false};this.tiles.set(key,tile);}
-    tile.png=undefined;tile.alphaBounds=undefined;this._changed();return tile;
+    tile.version=++tileVersion;tile.png=undefined;tile.alphaBounds=undefined;this._changed();return tile;
   }
   set(tx,ty,pixels) {
     assertTileCoordinates(tx,ty);
@@ -34,7 +35,7 @@ export class TileStore {
     let full;
     if(pixels.byteLength===4){full=new Uint8ClampedArray(TILE_BYTES);const word=new Uint32Array(Uint8Array.from(pixels).buffer)[0];new Uint32Array(full.buffer).fill(word);}
     else{full=new Uint8ClampedArray(pixels);if(full.byteLength!==TILE_BYTES)throw new Error('Tile pixels must be 4 uniform bytes or one full tile.');}
-    this.tiles.set(key,{tx,ty,pixels:full,frozen:false});this._changed();
+    this.tiles.set(key,{tx,ty,pixels:full,frozen:false,version:++tileVersion});this._changed();
   }
   delete(tx,ty){if(this.tiles.delete(tileKey(tx,ty)))this._changed();}
   fork(){for(const tile of this.tiles.values())tile.frozen=true;return new TileStore(new Map(this.tiles));}

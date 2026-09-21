@@ -13,7 +13,6 @@ export function compactTile(bytes){
 }
 // A uniform fully transparent tile is pruned on apply, so it equals absent.
 const normSide=v=>v&&v.byteLength===4&&v[3]===0?null:v;
-const expandSide=bytes=>{if(bytes==null||bytes.byteLength===TILE_BYTES)return bytes??null;const out=new Uint8ClampedArray(TILE_BYTES);for(let i=0;i<bytes.length;i+=4)out.set(bytes,i);return out;};
 const sideEqual=(a,b)=>a===b||(a&&b&&a.length===b.length&&a.every((n,i)=>n===b[i]));
 /** Tile-oriented undo records: {tx,ty,before,after} with each side null, a
  * 4-byte uniform array, or a full tile. `beforeTiles` maps tile keys to the
@@ -51,16 +50,16 @@ const hashPixel=(x,y,seed)=>{let h=(Math.imul(x,374761393)^Math.imul(y,668265263
  * joined by quadratic midpoint segments, which keeps corners smooth at zero
  * lag, and the stroke still ends exactly on the final input. */
 export class DrawingStroke {
-  constructor(store,{size=8,color=[0,0,0],opacity=1,flow=1,hardness=1,erase=false,pressureSize=true,pressureOpacity=false,sizeCurve=1,opacityCurve=1,stabilization=0,spacingRatio=.12,texture=0,seed=0,pixelsPerUnit=1,maxBytes=48*1024*1024}={}) {
+  constructor(store,{size=8,color=[0,0,0],opacity=1,flow=1,hardness=1,erase=false,pressureSize=true,pressureOpacity=false,sizeCurve=1,opacityCurve=1,stabilization=0,spacingRatio=.12,texture=0,seed=0,pixelsPerUnit=1,maxBytes=48*1024*1024,workingBytes=768*1024*1024}={}) {
     if(!(store instanceof TileStore))throw new Error('Strokes draw into a tile store.');
     if(![size,opacity,flow,hardness,sizeCurve,opacityCurve,stabilization,spacingRatio,texture,pixelsPerUnit].every(Number.isFinite)||!Array.isArray(color)||color.length!==3||!color.every(Number.isFinite))throw new Error('Invalid brush settings.');
-    Object.assign(this,{store,size:clamp(size,.5,8192),color:color.map(n=>clamp(n,0,255)),opacity:clamp(opacity),flow:clamp(flow),hardness:clamp(hardness),erase,pressureSize,pressureOpacity,sizeCurve:clamp(sizeCurve,.1,4),opacityCurve:clamp(opacityCurve,.1,4),stabilization:clamp(stabilization,0,.95),spacingRatio:clamp(spacingRatio,.01,1),texture:clamp(texture),seed:seed>>>0,pixelsPerUnit:clamp(pixelsPerUnit,.01,64),maxBytes,tiles:new Map(),bytes:256,dirty:null,dirtyTiles:new Set(),rand:seed>>>0});
+    Object.assign(this,{store,size:clamp(size,.5,8192),color:color.map(n=>clamp(n,0,255)),opacity:clamp(opacity),flow:clamp(flow),hardness:clamp(hardness),erase,pressureSize,pressureOpacity,sizeCurve:clamp(sizeCurve,.1,4),opacityCurve:clamp(opacityCurve,.1,4),stabilization:clamp(stabilization,0,.95),spacingRatio:clamp(spacingRatio,.01,1),texture:clamp(texture),seed:seed>>>0,pixelsPerUnit:clamp(pixelsPerUnit,.01,64),maxBytes,workingBytes,tiles:new Map(),bytes:256,dirty:null,dirtyTiles:new Set(),rand:seed>>>0});
   }
   nextRand(){let t=this.rand=(this.rand+0x6D2B79F5)>>>0;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;}
   tile(tx,ty) {
     const key=tileKey(tx,ty);let tile=this.tiles.get(key);if(tile)return tile;
-    // A stroke is authored input: tracking its tiles is never refused. The
-    // before/coverage record is what keeps cancel() and undo exact.
+    // Bound pixels, snapshots, coverage and reply copies before allocating.
+    if((this.tiles.size+1)*TILE_BYTES*5>this.workingBytes)throw new Error('The stroke exceeds the drawing working memory limit.');
     this.bytes+=TILE*TILE*8+64;const existing=this.store.get(tx,ty);
     tile={tx,ty,before:existing?existing.pixels.slice():null,coverage:new Float32Array(TILE*TILE),pixels:this.store.writable(tx,ty).pixels};this.tiles.set(key,tile);return tile;
   }
@@ -157,33 +156,52 @@ export class DrawingStroke {
 /** Flood within an explicit pixel-space bounds rect. Transparency ignores RGB
  * of fully transparent pixels. Tolerance compares premultiplied RGBA to avoid
  * invisible RGB halos. */
-export function floodTiles(store,{x,y,color=[0,0,0,255],tolerance=16,expansion=0,gap=0,bounds,source}={}) {
-  if(!bounds||![bounds.x,bounds.y,bounds.width,bounds.height].every(Number.isInteger)||bounds.width<1||bounds.height<1||bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw new Error('Invalid fill bounds.');
+export const FILL_MAX_PIXELS=64*1024*1024;
+export function floodTiles(store,{x,y,color=[0,0,0,255],tolerance=16,expansion=0,gap=0,bounds,source,maxBytes=768*1024*1024}={}) {
+  if(!bounds||![bounds.x,bounds.y,bounds.width,bounds.height].every(Number.isSafeInteger)||bounds.width<1||bounds.height<1||bounds.width*bounds.height>FILL_MAX_PIXELS)throw new Error('Invalid fill bounds: the region must fit within 64 megapixels.');
   const {width,height}=bounds,count=width*height;
-  x=Math.floor(x)-bounds.x;y=Math.floor(y)-bounds.y;if(x<0||y<0||x>=width||y>=height)return;
-  if(![tolerance,expansion,gap].every(Number.isFinite)||color.length!==4||!color.every(Number.isFinite))throw new Error('Invalid fill options.');
+  x=Math.floor(x)-bounds.x;y=Math.floor(y)-bounds.y;if(x<0||y<0||x>=width||y>=height)return [];
+  if(![tolerance,expansion,gap,maxBytes].every(Number.isFinite)||color.length!==4||!color.every(Number.isFinite)||source&&source.length!==count*4)throw new Error('Invalid fill options.');
   tolerance=clamp(tolerance,0,255);expansion=Math.round(clamp(expansion,0,16));gap=Math.round(clamp(gap,0,8));
-  const pixels=store.readRect(bounds.x,bounds.y,width,height),origin=source?new Uint8ClampedArray(source):pixels;
-  const eligible=new Uint8Array(count),mask=new Uint8Array(count),queue=new Uint32Array(count),target=(y*width+x)*4,ta=origin[target+3]/255;
-  const tr=origin[target]*ta,tg=origin[target+1]*ta,tb=origin[target+2]*ta,ta255=origin[target+3];
-  for(let p=0;p<count;p++){const i=p*4,a=origin[i+3]/255;eligible[p]=Math.abs(origin[i]*a-tr)<=tolerance&&Math.abs(origin[i+1]*a-tg)<=tolerance&&Math.abs(origin[i+2]*a-tb)<=tolerance&&Math.abs(origin[i+3]-ta255)<=tolerance?1:0;}
-  // Close gaps by dilating nonmatching boundaries, flood, then restore edges.
+  const tileCount=(Math.floor((bounds.x+width-1)/TILE)-Math.floor(bounds.x/TILE)+1)*(Math.floor((bounds.y+height-1)/TILE)-Math.floor(bounds.y/TILE)+1);
+  // Reserve worst-case masks, output and undo before changing a pixel. The
+  // source stays tiled; the scanline stack grows only when new spans appear.
+  if(count*(gap?5:expansion?4:2)+tileCount*TILE_BYTES*3+16*1024*1024+(source?.byteLength??0)>maxBytes)throw new Error('The fill exceeds the drawing working memory limit.');
+  const rgba=source?source.subarray((y*width+x)*4,(y*width+x)*4+4):store.pixel(x+bounds.x,y+bounds.y),ta=rgba[3]/255,tr=rgba[0]*ta,tg=rgba[1]*ta,tb=rgba[2]*ta;
+  const matches=(r,g,b,a)=>Math.abs(r*a/255-tr)<=tolerance&&Math.abs(g*a/255-tg)<=tolerance&&Math.abs(b*a/255-tb)<=tolerance&&Math.abs(a-rgba[3])<=tolerance;
+  const eligible=new Uint8Array(count);let allEligible=matches(0,0,0,0);
+  if(source){for(let p=0;p<count;p++){const i=p*4;eligible[p]=+matches(source[i],source[i+1],source[i+2],source[i+3]);if(!eligible[p])allEligible=false;}}
+  else{
+    if(matches(0,0,0,0))eligible.fill(1);
+    for(const tile of store){const ox=tile.tx*TILE-bounds.x,oy=tile.ty*TILE-bounds.y,p=tile.pixels;
+      for(let py=Math.max(0,-oy);py<Math.min(TILE,height-oy);py++)for(let px=Math.max(0,-ox);px<Math.min(TILE,width-ox);px++){const i=(py*TILE+px)*4;const match=matches(p[i],p[i+1],p[i+2],p[i+3]);eligible[(oy+py)*width+ox+px]=+match;if(!match)allEligible=false;}}
+  }
+  if(!allEligible)allEligible=eligible.every(Boolean);
   function expand(input,steps){let current=input;for(let step=0;step<steps;step++){const next=current.slice();for(let p=0;p<count;p++)if(current[p]){if(p%width)next[p-1]=1;if(p%width<width-1)next[p+1]=1;if(p>=width)next[p-width]=1;if(p+width<count)next[p+width]=1;}current=next;}return current;}
-  const blocked=gap?expand(eligible.map(n=>1-n),gap):null;
-  let head=0,tail=0;const start=y*width+x;if(blocked?.[start])return;queue[tail++]=start;mask[start]=1;
-  while(head<tail){const p=queue[head++];
-    if(p%width&&!mask[p-1]&&eligible[p-1]&&!blocked?.[p-1]){mask[p-1]=1;queue[tail++]=p-1;}
-    if(p%width<width-1&&!mask[p+1]&&eligible[p+1]&&!blocked?.[p+1]){mask[p+1]=1;queue[tail++]=p+1;}
-    if(p>=width&&!mask[p-width]&&eligible[p-width]&&!blocked?.[p-width]){mask[p-width]=1;queue[tail++]=p-width;}
-    if(p+width<count&&!mask[p+width]&&eligible[p+width]&&!blocked?.[p+width]){mask[p+width]=1;queue[tail++]=p+width;}
+  const mask=allEligible?null:new Uint8Array(count);
+  const blocked=gap&&!allEligible?expand(eligible.map(n=>1-n),gap):null,open=p=>eligible[p]&&!mask[p]&&!blocked?.[p];
+  const start=y*width+x;if(!allEligible&&!open(start))return [];
+  let stack=new Uint32Array(1024),length=0;
+  const push=p=>{if(length===stack.length){if(stack.byteLength>=16*1024*1024)throw new Error('The fill is too fragmented for the drawing working memory limit.');const next=new Uint32Array(stack.length*2);next.set(stack);stack=next;}stack[length++]=p;};
+  if(!allEligible)push(start);
+  while(length){let p=stack[--length];if(!open(p))continue;const row=Math.floor(p/width)*width,end=row+width;while(p>row&&open(p-1))p--;
+    let above=false,below=false;
+    for(;p<end&&open(p);p++){mask[p]=1;const up=p>=width&&open(p-width),down=p+width<count&&open(p+width);if(up&&!above)push(p-width);if(down&&!below)push(p+width);above=up;below=down;}
   }
-  const grown=expand(mask,gap+expansion),out32=new Uint32Array(pixels.buffer),word=(color[3]<<24|color[2]<<16|color[1]<<8|color[0])>>>0,touched=new Set();
-  for(let py=0;py<height;py++){let x0=-1,x1=-1;const row=py*width;
-    for(let px=0;px<width;px++){const p=row+px;if(grown[p]){out32[p]=word;if(x0<0)x0=px;x1=px;}}
-    if(x0>=0)for(let tx=Math.floor((bounds.x+x0)/TILE);tx*TILE<bounds.x+x1+1;tx++)touched.add(tileKey(tx,Math.floor((bounds.y+py)/TILE)));
+  const grown=allEligible?null:expand(mask,gap+expansion),before=new Map(),word=new Uint32Array(Uint8ClampedArray.from(color).buffer)[0];
+  for(const [tx,ty] of TileStore.tilesInRect(bounds.x,bounds.y,width,height)){
+    const ox=tx*TILE-bounds.x,oy=ty*TILE-bounds.y;let output=null;
+    if(allEligible&&ox>=0&&oy>=0&&ox+TILE<=width&&oy+TILE<=height){
+      const old=store.get(tx,ty)?.pixels;if(old&&new Uint32Array(old.buffer,old.byteOffset,old.byteLength/4).every(n=>n===word))continue;
+      before.set(tileKey(tx,ty),old?.slice()??null);new Uint32Array(store.writable(tx,ty).pixels.buffer).fill(word);continue;
+    }
+    for(let py=Math.max(0,-oy);py<Math.min(TILE,height-oy);py++)for(let px=Math.max(0,-ox);px<Math.min(TILE,width-ox);px++)if(allEligible||grown[(oy+py)*width+ox+px]){
+      const i=(py*TILE+px)*4,old=output??store.get(tx,ty)?.pixels;
+      if(color[0]===(old?.[i]??0)&&color[1]===(old?.[i+1]??0)&&color[2]===(old?.[i+2]??0)&&color[3]===(old?.[i+3]??0))continue;
+      if(!output){before.set(tileKey(tx,ty),old?.slice()??null);output=store.writable(tx,ty).pixels;}output.set(color,i);
+    }
   }
-  for(const key of touched){const [tx,ty]=key.split(',').map(Number),tile=store.writable(tx,ty),ox=tx*TILE-bounds.x,oy=ty*TILE-bounds.y;
-    for(let py=Math.max(0,-oy);py<Math.min(TILE,height-oy);py++)tile.pixels.set(pixels.subarray(((py+oy)*width+Math.max(0,ox))*4,((py+oy)*width+Math.min(width,ox+TILE))*4),(py*TILE+Math.max(0,-ox))*4);}
+  return tileChanges(store,before);
 }
 
 /** A lasso mask allocated only around the polygon bounding box. */

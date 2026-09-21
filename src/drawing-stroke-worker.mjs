@@ -15,5 +15,5 @@ self.onmessage=({data})=>{
       self.postMessage({kind:'done',stroke:id,changes:changes??[]},(changes??[]).flatMap(c=>[c.before?.buffer,c.after?.buffer].filter(Boolean)));
     }
     else if(kind==='cancel')engine.cancel(id);
-  }catch(error){self.postMessage({kind:'error',stroke:id,message:error.message});}
+  }catch(error){engine.cancel(id);self.postMessage({kind:'error',stroke:id,message:error.message});}
 };

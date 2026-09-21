@@ -88,8 +88,7 @@ and shifts surplus destination layers together in the same undo command.
 The persistent carrier is an ordinary PNG image figure so pose, anchor and
 transform tooling keep working. Authored v2 cels carry a transparent 1×1 PNG;
 committed pixels publish as a `styk_tiles` data URL holding a bounded blob of
-per-tile PNGs, plus a derived `data_url` PNG over the occupied bounds for
-legacy consumers. Unmigrated v1 cels still publish a full `data_url` PNG.
+per-tile PNGs. Legacy exporters flatten source tiles on demand. Unmigrated v1 cels still publish a full `data_url` PNG.
 Metadata, PNG header sizes, decode bounds and CRCs are validated. Pixel content
 and initial transforms hold between keys; pixel morphs and implicit crossfades
 are not supported.
@@ -97,7 +96,8 @@ are not supported.
 ## Runtime and performance
 
 `drawing-resources.mjs` owns sparse tile stores, worker jobs and disposal for
-one report. Resident tiles are limited to 192 MiB; accounting deduplicates
+one report. Resident tiles have a 192 MiB retention target and a 768 MiB hard
+working ceiling by default; accounting deduplicates
 pixel buffers, so copy-on-write forks share counted bytes until they diverge.
 New work reserves before it is rejected: presenter scratches free first, then
 derived mip levels, then published-clean stores (which re-decode on demand),
@@ -133,7 +133,11 @@ its pixel transform once. At most two sample batches are posted to its worker;
 acknowledgments release pending real samples before the final end message.
 Seed regions include the preceding curve and smoothing margin so inter-batch
 movement preserves existing pixels and exact undo records.
-A gesture queued behind a closing stroke retains every sample;
+Posted batches contain at most 512 samples, with at most two outstanding.
+Input queues retain at most 65,536 samples; exceeding the working limit cancels
+and rolls back the transaction. Stroke seeding follows inflated quadratic
+coverage rather than the batch bounding rectangle.
+A gesture queued behind a closing stroke retains its samples within that bound;
 canvas publication coalesces into one animation-frame callback. Pointer
 capture, cancellation,
 lost capture, Escape and blur cannot leave a half-committed stroke.
@@ -145,7 +149,9 @@ Undo belongs to the editor's chronological history. Before/after tile records
 are exact; absent sides are `null` and uniform tiles use a four-byte color
 representation. The shared 48 MiB budget accounts for both undo and redo. An
 edit larger than the remaining budget evicts the oldest commands until it
-fits; only an edit larger than the whole budget is rejected before mutation.
+fits. An oversized newest command can exceed the history retention target;
+it remains undoable. Separate working-memory checks reject allocations before
+changing authoritative pixels.
 Evicted stores do not require an asynchronous history cursor: records apply
 synchronously to whatever store the cel resolves to. Fill, paste, resample and
 thumbnails compute in workers over bounded tile regions. Lasso preview always
@@ -186,6 +192,25 @@ The camera's dotted outline clips its path before Canvas expands the dashes;
 offscreen perimeter length therefore cannot dominate drawing at deep zoom.
 See [zoom performance verification](DRAWING-PERFORMANCE.md).
 
+Dense live cels (more than 64 tiles) use a separate preview worker. Its source
+cache keeps one viewport's tiles and mip chain; tile versions identify changed
+inputs. The main thread copies source tiles in bounded chunks and submits only
+changed tiles on later revisions. At most three cel requests wait behind the
+active job. Completed ImageBitmaps share the scratch budget; eviction and
+disposal close them. Stale replies are discarded, and a failed source revision
+backs off until pixels change. WebGPU retains an existing texture while its
+replacement is prepared. Small cels use the synchronous dirty-region path.
+Cold previews may take longer in wall time than synchronous rasterization,
+but input is not blocked by their mip calculation. Worker source/preview working
+sets are included in resource reservations. Source tiles, encoded document
+strings, editor history, browser overhead and GPU allocations remain distinct
+memory categories; these budgets are not a process-RSS limit.
+
+Thumbnail mip generation also runs in the worker. Playback/export providers
+count source tiles, mip tiles and scratch canvases in their retained bytes and
+release derived resources on eviction. Decode rejects tile counts beyond the
+available provider memory before allocating pixel buffers.
+
 ## Saving, reuse and exports
 
 Native save, recovery, close/save, shared clipboard, library capture, playback,
@@ -219,8 +244,14 @@ fill/selection/resample history, clipboard, both renderer paths and encoders.
 Mouse/browser checks and deterministic pressure tests do not certify physical
 pen drivers, input-to-photon latency or every GPU. Tilt, vector strokes and
 resolution-independent drawing are outside this implementation. Fill regions
-are bounded to 16 megapixels; history rejects a noncompressible edit that
-exceeds its byte budget.
+are bounded to 64 megapixels and follow stage plus artwork bounds, independently
+of zoom. Scanline fill keeps tiled source/output pixels, bounded masks and a
+bounded span stack, with a fast path for uniform regions. Cancellation terminates
+the worker and the next operation starts a fresh worker. Dense lasso, pixel
+clipboard and resampling regions still have 16-megapixel limits.
+
+The September implementation audit, measured changes and remaining parity
+gaps are recorded in [the audit follow-up](DRAWING-IMPLEMENTATION-AUDIT.md).
 
 ## Camera zoom quality and the road to vector ink
 

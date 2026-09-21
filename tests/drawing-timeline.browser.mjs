@@ -87,15 +87,15 @@ try{
     owner.thumbnailQueue.clear();owner.thumbnailCache.clear();
     owner.busy=true;owner.thumbnail(figure,()=>{});
     const paused=owner.thumbnailQueue.size===1&&!owner.thumbnailActive;
-    let payload=null,original=owner.thumbnailWorker.request.bind(owner.thumbnailWorker);
-    owner.thumbnailWorker.request=(kind,data,opts)=>{if(kind==='thumbnail')payload=data;return original(kind,data,opts);};
+    let sourceTiles=0,original=owner.thumbnailWorker.request.bind(owner.thumbnailWorker);
+    owner.thumbnailWorker.request=(kind,data,opts)=>{if(kind==='thumbnail')sourceTiles=data.tiles?.length??0;return original(kind,data,opts);};
     owner.busy=false;
     const canvas=await new Promise(resolve=>{const poll=()=>{const hit=owner.thumbnailCache.get(figure._styk.drawing.celId);hit?resolve(hit.canvas):setTimeout(poll,30);};poll();});
     owner.thumbnailWorker.request=original;
-    return {paused,sourceWidth,payloadWidth:payload?.bounds?.width,thumbWidth:canvas.width};
+    return {paused,sourceWidth,sourceTiles,thumbWidth:canvas.width,ink:canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data.some((n,i)=>i%4===3&&n)};
   });
   check('the thumbnail pump pauses while the owner is busy and resumes after',thumb.paused&&thumb.thumbWidth>0);
-  check('a large cel thumbnails from a mip level near 64 px across',thumb.sourceWidth>500&&thumb.payloadWidth>=60&&thumb.payloadWidth<130);
+  check('the worker downsamples a large tiled cel to a small thumbnail containing ink',thumb.sourceWidth>500&&thumb.sourceTiles>1&&thumb.thumbWidth<=64&&thumb.ink);
   check('no uncaught browser errors',errors.length===0);
   await writeFile(path.join(output,'timeline.json'),JSON.stringify({checks,errors,scrub,burst,thumb,workers:workerScripts.filter(u=>u.includes('drawing'))},null,2));
 }catch(error){await page.screenshot({path:path.join(output,'failure.png')});await writeFile(path.join(output,'timeline-failure.json'),JSON.stringify({message:error.message,errors,checks},null,2));throw error;}

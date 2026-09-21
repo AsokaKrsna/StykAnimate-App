@@ -32,26 +32,39 @@ function downTile(below,tx,ty){
 /** Derived mip chain on an entry: levels[k-1] is a TileStore of level-k tiles.
  * Missing tiles rebuild lazily from the level below; invalidateLevels drops
  * the covering tile at each level when source pixels change. */
-export function levelStore(entry,k){
-  if(k<=0)return entry.store;
-  const below=levelStore(entry,k-1);if(!below)return null;
-  const levels=entry.levels??=[];let level=levels[k-1];
-  if(!level)level=levels[k-1]=new TileStore();
-  let added=false;
-  for(const t of below){const tx=Math.floor(t.tx/2),ty=Math.floor(t.ty/2);if(level.has(tx,ty))continue;
-    const tile=downTile(below,tx,ty);if(tile&&!tileTransparent(tile)){level.tiles.set(tileKey(tx,ty),tile);added=true;}}
-  if(added)level._changed();
-  entry.owner?.levelsReserved?.(entry);return level;
+export function levelStore(entry,k,rect){
+  if(k<=0)return entry.store;if(!entry.store)return null;
+  if(!entry.levels){entry.levelKnown=null;entry.mipCoverage=null;}
+  const levels=entry.levels??=[],known=entry.levelKnown??=[];
+  let coverage=entry.mipCoverage;
+  if(!coverage||coverage.revision!==entry.store.revision||coverage.levels.length<k){
+    coverage=entry.mipCoverage={revision:entry.store.revision,levels:Array.from({length:k},()=>new Set())};
+    for(const t of entry.store)for(let n=1;n<=k;n++)coverage.levels[n-1].add(tileKey(Math.floor(t.tx/2**n),Math.floor(t.ty/2**n)));
+  }
+  const build=(n,tx,ty)=>{
+    if(!n)return entry.store.get(tx,ty);
+    const level=levels[n-1]??=new TileStore(),seen=known[n-1]??=new Set(),key=tileKey(tx,ty);
+    if(!coverage.levels[n-1].has(key))return;
+    if(level.has(tx,ty)||seen.has(key))return level.get(tx,ty);
+    const tile=downTile({get:(x,y)=>build(n-1,x,y)},tx,ty);seen.add(key);
+    if(tile&&!tileTransparent(tile)){level.tiles.set(key,tile);level._changed();return tile;}
+  };
+  const f=2**k,keys=new Set();
+  for(const tile of entry.store){
+    if(rect&&(tile.tx*TILE>=rect.x+rect.width||(tile.tx+1)*TILE<=rect.x||tile.ty*TILE>=rect.y+rect.height||(tile.ty+1)*TILE<=rect.y))continue;
+    const tx=Math.floor(tile.tx/f),ty=Math.floor(tile.ty/f),key=tileKey(tx,ty);if(keys.has(key))continue;keys.add(key);build(k,tx,ty);
+  }
+  const result=levels[k-1]??=new TileStore();entry.owner?.levelsReserved?.(entry);return result;
 }
 /** Drop derived tiles covering `dirty` (source pixel space) at every level.
  * A null rect clears the whole chain. */
 export function invalidateLevels(entry,dirty){
   const levels=entry.levels;if(!levels?.length)return;
-  if(!dirty){entry.levels=null;return;}
+  if(!dirty){entry.levels=null;entry.levelKnown=null;return;}
   for(let k=1;k<=levels.length;k++){
     const level=levels[k-1];if(!level)continue;const f=TILE<<k;
     const x0=Math.floor(dirty.x/f),y0=Math.floor(dirty.y/f),x1=Math.floor((dirty.x+dirty.width-1)/f),y1=Math.floor((dirty.y+dirty.height-1)/f);
-    for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++)level.delete(tx,ty);
+    for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++){level.delete(tx,ty);entry.levelKnown?.[k-1]?.delete(tileKey(tx,ty));}
   }
 }
 /** Rasterize the level-`level` tiles covering `rect` into a tile-anchored
@@ -68,8 +81,10 @@ export function invalidateLevels(entry,dirty){
  * a guaranteed scratch whenever the wanted rect overlaps coverage; distant
  * coverage outside the window simply waits for a nearer view. */
 export function presenterScratch(presenter,rect,{maxSide=4096,level=0,clamp=false}={}){
-  const scale=1<<level,store=level?presenter.level?.(level):presenter.store,coverage=store?.tileBounds;
-  if(!coverage||!rect||!(rect.width>0&&rect.height>0))return null;
+  if(!rect||!(rect.width>0&&rect.height>0))return null;
+  const scale=1<<level,margin=TILE*scale,region={x:rect.x-margin,y:rect.y-margin,width:rect.width+2*margin,height:rect.height+2*margin};
+  const store=level?presenter.level?.(level,region):presenter.store,coverage=store?.tileBounds;
+  if(!coverage)return null;
   const scratches=presenter._scratches??=new Map();
   const want={x:rect.x/scale,y:rect.y/scale,right:(rect.x+rect.width)/scale,bottom:(rect.y+rect.height)/scale};
   let s=null;
@@ -99,7 +114,7 @@ export function presenterScratch(presenter,rect,{maxSide=4096,level=0,clamp=fals
         for(const [key,c] of scratches)if(c!==s&&(!oldest||c.used<oldest.used)){oldest=c;oldestKey=key;}
         if(oldest){if(oldest.canvas)oldest.canvas.width=oldest.canvas.height=1;scratches.delete(oldestKey);}
       }
-      presenter.owner?.scratchReserved?.(presenter);
+      if(presenter.owner?.scratchReserved?.(presenter,(x1-x)*(y1-y)*4,s)===false){scratches.delete(anchorKey);return null;}
     }
   }
   s.used=presenter._scratchClock=(presenter._scratchClock??0)+1;
@@ -167,6 +182,7 @@ export function paintDrawingTiles(ctx,presenter,{tint,tintFn}={}){
     ctx.drawImage(source,scratch.x*scratch.scale,scratch.y*scratch.scale,scratch.width*scratch.scale,scratch.height*scratch.scale);
     return;
   }
+  if(presenter.owner?.previews&&presenter.store?.size>64)return;
   paintDrawingStrips(ctx,presenter,rect,presenter.level?8:0,{tint,tintFn});
 }
 /** Flatten a tile store (or a {store,level} presenter) into a PNG data URL of

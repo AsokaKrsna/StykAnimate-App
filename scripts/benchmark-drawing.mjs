@@ -66,9 +66,9 @@ try{
   const wallMs=Date.now()-wallStart;
   const pipeline=await page.evaluate(()=>{cancelAnimationFrame(window.__raf);
     const p=(values,q)=>[...values].sort((a,b)=>a-b)[Math.floor((values.length-1)*q)]??0;
-    return {batches:styk.drawing.strokeStats.batches,maxQueueDepth:styk.drawing.strokeStats.maxQueueDepth,wallMs:0,pointerToPresentMs:{samples:__rtt.length,p50:p(__rtt,.5),p95:p(__rtt,.95),max:Math.max(...__rtt,0)},frames:__frames,longTasks:__lt.length,longTaskMs:__lt.reduce((a,b)=>a+b,0)};
+    return {batches:styk.drawing.strokeStats.batches,maxQueueDepth:styk.drawing.strokeStats.maxQueueDepth,wallMs:0,workerRoundTripMs:{samples:__rtt.length,p50:p(__rtt,.5),p95:p(__rtt,.95),max:Math.max(...__rtt,0)},frames:__frames,longTasks:__lt.length,longTaskMs:__lt.reduce((a,b)=>a+b,0)};
   });
-  pipeline.wallMs=wallMs;pipeline.mainThreadMsPerFrame=pipeline.frames?pipeline.longTaskMs/pipeline.frames:0;
+  pipeline.wallMs=wallMs;pipeline.longTaskMsPerAnimationFrame=pipeline.frames?pipeline.longTaskMs/pipeline.frames:0;
   result.pipeline=pipeline;
   result.environment={cpu:os.cpus()[0]?.model,logicalCpus:os.cpus().length,totalMemory:os.totalmem(),platform:os.platform(),node:process.version,chrome:await browser.version(),headless:true,date:new Date().toISOString()};
   await mkdir('artifacts/drawing',{recursive:true});await writeFile('artifacts/drawing/performance.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));

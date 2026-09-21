@@ -15,6 +15,7 @@ export class StrokeEngine {
   samples(id,seq,samples,tiles){
     const s=this.strokes.get(id);if(!s||seq<=s.seq)return null;
     s.seq=seq;
+    if(s.store.bytes+(tiles?.length??0)*TILE*TILE*4>s.brush.workingBytes/2)throw new Error('The stroke exceeds the drawing working memory limit.');
     for(const t of tiles??[])if(!s.store.has(t.tx,t.ty)&&t.pixels)s.store.set(t.tx,t.ty,new Uint8ClampedArray(t.pixels));
     for(const p of samples??[])s.brush.sample(p);
     const changed=[];

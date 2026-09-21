@@ -52,11 +52,11 @@ export function selectionPresenter(selection,base){
     const f=2**level,x=Math.floor(rect.x/f/TILE)*TILE,y=Math.floor(rect.y/f/TILE)*TILE,w=Math.ceil((rect.x+rect.width)/f/TILE)*TILE-x,h=Math.ceil((rect.y+rect.height)/f/TILE)*TILE-y;
     const side=Math.min(maxSide,4096);if((w>side||h>side)&&!clamp)return null;
     const width=Math.max(1,Math.min(side,w)),height=Math.max(1,Math.min(side,h)),key=`selection:${level}:${x},${y},${width},${height}`;
-    if(p.key!==key||p.drawn!==p.stamp){
+    if(p.key!==key||p.drawn!==p.stamp||p.baseStamp!==base.stamp){
       p.canvas??=canvas(width,height);if(p.canvas.width!==width)p.canvas.width=width;if(p.canvas.height!==height)p.canvas.height=height;
       const ctx=p.canvas.getContext('2d');ctx.resetTransform();ctx.clearRect(0,0,width,height);ctx.setTransform(1/f,0,0,1/f,-x,-y);paintDrawingTiles(ctx,base);
       ctx.globalCompositeOperation='destination-out';ctx.drawImage(s.maskCanvas,s.mask.x,s.mask.y);ctx.globalCompositeOperation='source-over';ctx.transform(...selectionMatrix(s));ctx.drawImage(s.cutout,s.mask.x,s.mask.y);
-      p.key=key;p.drawn=p.stamp;
+      p.key=key;p.drawn=p.stamp;p.baseStamp=base.stamp;
     }
     return{canvas:p.canvas,x,y,width,height,scale:f,level,stamp:p.stamp,anchorKey:key,dirty:null};
   };
