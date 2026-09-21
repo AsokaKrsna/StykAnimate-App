@@ -8,7 +8,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Added
 
-- Try experimental AI-assisted 2D humanoid posing in a standalone source playground, with joint pins, undo, saved pose studies, and editable StykAnimate project export.
+- Try experimental AI-assisted 2D humanoid posing in a standalone source playground, with placed controls that stay put during later edits, movable joint pins, undo, saved pose studies, and editable StykAnimate project export.
 - Attach solid meshes to spatial rigs with continuous rotation and named forms, using existing posing controls, undo, native saving and rendered exports without adding a joint for every vertex.
 
 - Attached head drawings can switch in discrete directions as a spatial rig turns or tilts, with one Form selector for transformations and no blending between drawings.
