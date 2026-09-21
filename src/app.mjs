@@ -4788,7 +4788,7 @@ const polygonSafeActions = new Set([
 ]);
 for (const [name, action] of Object.entries(actions)) {
   actions[name] = (...args) => {
-    if(drawingController?.gesture?.kind==='stroke'||drawingController?.loading)
+    if(drawingController?.gesture?.kind==='stroke'||drawingController?.loading||drawingController?.selection)
       return drawingController.afterGesture(()=>actions[name](...args));
     if (state.polygon) {
       if (["new", "open", "open-recent", "close"].includes(name))
@@ -5347,12 +5347,12 @@ function cancelKeyboardCommand() {
   $('menu').hidden = true;
 }
 function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
-  if(id!=='cancel'&&id!=='play-pan'&&(drawingController?.gesture?.kind==='stroke'||drawingController?.loading))
+  if(id!=='cancel'&&id!=='play-pan'&&(drawingController?.gesture?.kind==='stroke'||drawingController?.loading||drawingController?.selection?.committing))
     return drawingController.afterGesture(()=>runKeyboardCommand(id,event,modifiers));
   editablePreparation.cancel();
   if(drawingController?.active){
     if(id==='play-pan')drawingController.finish();
-    if(id.startsWith('drawing-')){drawingController.finish();const tool=id.slice(8);if(['brush','eraser','fill','lasso'].includes(tool))drawingController.tool=tool;else if(tool==='apply')drawingController.applySelection();else{drawingController.settings.size=Math.max(.5,Math.min(2048,drawingController.settings.size*(tool==='smaller'?.8:1.25)));queueUI();}drawingController.sync();return;}
+    if(id.startsWith('drawing-')){drawingController.finish();const tool=id.slice(8);if(['brush','eraser','fill','lasso'].includes(tool))drawingController.tool=tool;else if(tool==='apply')drawingController.run(()=>drawingController.applySelection());else{drawingController.settings.size=Math.max(.5,Math.min(2048,drawingController.settings.size*(tool==='smaller'?.8:1.25)));queueUI();}drawingController.sync();return;}
     if(['copy','cut','paste'].includes(id)&&!event.target.closest?.('.layer-timeline,.sheet-filmstrip')&&(drawingController.selection||id==='paste'&&drawingController.pixelClipboard))return drawingController.action(id+'-pixels');
     // Delete keeps its global binding: the drawing scope deliberately leaves it
     // unbound so the global command always dispatches; only a live pixel
@@ -6024,7 +6024,7 @@ function mountTimeline() {
       queueUI();
     },
     onSeek: () => pause(),
-    beforeCommand: () => drawingController?.settle(),
+    beforeCommand: () => drawingController?.settle({selection:true}),
     // Wait for both preparation and its canvas submission before another seek.
     // The timeline retains only the latest pointer target during this interval.
     canScrub: () => !state.editablePreparing && !state.dirtyRender,

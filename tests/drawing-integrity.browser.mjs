@@ -22,6 +22,22 @@ try{
     check(`${command} preserves the previous cel`,await page.evaluate(()=>styk.drawing.owner.entry(source.figure).store.bounds?.width>0));
     if(command==='copy')check('next copy contains the completed stroke',await page.evaluate(async()=>{const t=styk.editor.drawingTarget(),s=await styk.drawing.owner.surface(t.figure);return s.store.bounds?.width>0;}));
   }
+  const selection=await page.evaluate(async()=>{
+    const d=styk.drawing,e=styk.editor,t=e.drawingTarget(),s=await d.owner.surface(t.figure);
+    e.commitDrawingPixels(t,[{tx:0,ty:0,before:null,after:new Uint8ClampedArray(64*64*4).map((n,i)=>i%4===3?255:120)}]);
+    const original=s.store.get(0,0).pixels.slice();
+    const make=()=>d.makeSelection({target:e.drawingTarget(),surface:s,points:[{x:8,y:8},{x:16,y:8},{x:16,y:16},{x:8,y:16}]});
+    make();d.selection.dx=32;d.previewSelection();
+    const p=d.resource(t.figure),scratch=p.scratch({x:0,y:0,width:64,height:64}),ctx=scratch.canvas.getContext('2d');
+    const preview=ctx.getImageData(10,10,1,1).data[3]===0&&ctx.getImageData(42,10,1,1).data[3]===255;
+    const untouched=s.store.get(0,0).pixels.every((n,i)=>n===original[i]);
+    d.cancelSelection();make();d.selection.dx=640000;d.previewSelection();await d.applySelection();
+    const moved=s.store.pixel(640010,10)[3]===255&&s.store.pixel(10,10)[3]===0;
+    e.undo();const exact=s.store.get(0,0).pixels.every((n,i)=>n===original[i]);
+    make();d.selection.angle=35;d.previewSelection();await d.applySelection();e.undo();
+    return {preview,untouched,moved,exact,rotationUndo:s.store.get(0,0).pixels.every((n,i)=>n===original[i])};
+  });
+  for(const [name,value] of Object.entries(selection))check('selection: '+name,value);
   const saved=await page.evaluate(async()=>{
     const {Editor}=await import('/src/editor.mjs'),{DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{decodeTileBlob}=await import('/src/drawing-tile-codec.mjs');
     const e=new Editor({demo:false,layerTimeline:true});e.createDrawingLayer();const t=e.prepareDrawingCel(),o=e.drawingResources;await o.surface(t.figure);

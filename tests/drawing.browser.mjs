@@ -81,7 +81,7 @@ try{
     d.selection.dx=14;d.previewSelection();const hitTest=d.selectionContains({x:B.x+30,y:B.y+30})&&!d.selectionContains({x:B.x-1,y:B.y+30});
     const preview=pix(surface.store);d.selection.dx=28;d.previewSelection();d.selection.dx=14;d.previewSelection();
     const repeat=pixEq(pix(surface.store),preview);
-    d.applySelection();e.undo();const exact=pixEq(pix(surface.store),before);
+    await d.applySelection();e.undo();const exact=pixEq(pix(surface.store),before);
     d.makeSelection({target:e.drawingTarget(),surface,points:region()});
     await d.action('copy-pixels');d.cancelSelection();await d.action('paste-pixels');e.undo();
     const clipboard=styk.clipboard.kind==='drawing-pixels'&&pixEq(pix(surface.store),before);

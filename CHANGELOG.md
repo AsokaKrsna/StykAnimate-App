@@ -25,6 +25,8 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Fixed
 
+- Move and transform pixel selections without altering nearby translucent pixels or allocating the empty space between distant positions; applying a selection keeps the canvas responsive.
+
 - Preserve drawing strokes when advancing frames, keep copied drawings consistent after undo under memory pressure, reopen widely spaced artwork reliably, and keep light-pressure ink continuous.
 
 - Keep hidden rig expressions invisible from every angle instead of leaving flattened eyes visible through a turned head.

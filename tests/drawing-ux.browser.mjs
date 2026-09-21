@@ -68,7 +68,7 @@ try{
   await page.locator('[data-tool="drawing-lasso"]').click();
   await page.evaluate(async()=>{const d=styk.drawing,t=styk.editor.drawingTarget(),s=await d.owner.surface(t.figure),B=s.store.bounds;window.deleteBefore=pix(s.store);d.makeSelection({target:t,surface:s,points:[{x:B.x,y:B.y},{x:B.x+B.width,y:B.y},{x:B.x+B.width,y:B.y+B.height},{x:B.x,y:B.y+B.height}]});d.onUI();});
   check('a pixel selection exposes copy, cut and delete actions',await page.locator('[data-draw-action="copy-pixels"]').isVisible()&&await page.locator('[data-draw-action="cut-pixels"]').isVisible()&&await page.locator('[data-draw-action="delete-pixels"]').isVisible());
-  await page.locator('#viewport').focus();await page.keyboard.press('Delete');
+  await page.locator('#viewport').focus();await page.keyboard.press('Delete');await page.waitForFunction(()=>!styk.drawing.selection);
   check('Delete removes the selected pixels and consumes the selection',await page.evaluate(()=>{const s=styk.drawing.owner.entry(styk.editor.drawingTarget().figure).store;return !styk.drawing.selection&&s.bounds===null;}));
   await page.keyboard.press('Control+z');
   check('undo restores the deleted pixels',await page.evaluate(()=>pixEq(pix(styk.drawing.owner.entry(styk.editor.drawingTarget().figure).store),deleteBefore)));

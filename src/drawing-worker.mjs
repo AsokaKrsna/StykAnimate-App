@@ -5,6 +5,7 @@ import {decodeDrawingPNG} from './drawing-png.mjs';
 import {decodeTileBlob,tileStoreFromList,TILE_BLOB_PREFIX,TileEncodeCache} from './drawing-tile-codec.mjs';
 import {levelStore} from './drawing-raster.mjs';
 import {encodePNGPortable} from './sticknodes/decoder/png-browser.mjs';
+import {transformSelectedPixels} from './drawing-selection.mjs';
 
 const storeOf=data=>{const store=new TileStore();for(const t of data.tiles??[])store.tiles.set(tileKey(t.tx,t.ty),{tx:t.tx,ty:t.ty,pixels:new Uint8ClampedArray(t.pixels),frozen:false,png:t.png?new Uint8Array(t.png):undefined});return store;};
 const beforeOf=(store,rect)=>{const before=new Map();for(const [tx,ty] of TileStore.tilesInRect(rect.x,rect.y,rect.width,rect.height))before.set(tileKey(tx,ty),store.get(tx,ty)?.pixels.slice()??null);return before;};
@@ -46,6 +47,10 @@ self.onmessage=async({data})=>{
       const store=storeOf(data),before=beforeOf(store,data.bounds);
       floodTiles(store,{...data.options,bounds:data.bounds,source:data.source?new Uint8ClampedArray(data.source):undefined});
       changesReply(id,store,before);return;
+    }
+    if(kind==='selection'){
+      const store=storeOf(data),tiles=transformSelectedPixels(store,{...data.selection,pixels:new Uint8ClampedArray(data.selection.pixels),mask:{...data.selection.mask,mask:new Uint8Array(data.selection.mask.mask)}});
+      self.postMessage({id,tiles},tiles.flatMap(t=>[t.before?.buffer,t.after?.buffer].filter(Boolean)));return;
     }
     if(kind==='paste'){
       if(!validRect(data.bounds))throw new Error('Invalid paste bounds.');

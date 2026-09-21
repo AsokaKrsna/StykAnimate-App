@@ -8,6 +8,7 @@ import {drawingCelPrefetch} from './onion-skin.mjs';
 import {buildGeometry,drawGeometry} from './pivot/geometry.mjs';
 import {createFrame} from './demo.mjs';
 import {screenToWorld,worldToScreen} from './renderer-geometry.mjs';
+import {selectionMatrix,selectionTiles,selectionPresenter} from './drawing-selection.mjs';
 
 const pointerSample=e=>({clientX:e.clientX,clientY:e.clientY,pressure:e.pressure,pointerType:e.pointerType,timeStamp:e.timeStamp,button:e.button,buttons:e.buttons});
 const canvas=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c;};
@@ -67,20 +68,22 @@ export class DrawingController {
   run(operation){try{const result=operation();if(result?.catch)result.catch(error=>{this.cancel();if(error.name!=='AbortError')this.onError(error);});return result;}catch(error){this.cancel();this.onError(error);}}
   /** Commands wait for the pixel transaction, not PNG publication. Seeking
    * may update the view meanwhile; the stroke still owns its original key. */
-  settle(){
-    if(this.loading?.done){const pending=this.loading;pending.released=true;return pending.done.then(()=>this.settle());}
-    this.finish();return this.gesture?.session?.done??null;
+  settle({selection=false}={}){
+    if(this.loading?.done){const pending=this.loading;pending.released=true;return pending.done.then(()=>this.settle({selection}));}
+    this.finish();const stroke=this.gesture?.session?.done;
+    if(stroke)return stroke.then(()=>this.settle({selection}));
+    return this.selection?.committing??(selection?this.applySelection():null);
   }
   afterGesture(operation){
-    const wait=this.settle(),report=this.editor.report;
+    const wait=this.settle({selection:true}),report=this.editor.report;
     return wait?wait.then(()=>{if(report!==this.editor.report)throw new DOMException('Drawing document changed.','AbortError');return operation();}):operation();
   }
   enter(){if(this.active)return;this.beforeEdit();this.prior={handles:this.state.handles,tool:this.state.tool,rotation:this.state.view.rotation??0};this.active=true;this.state.handles=false;this.state.tool='drawing-brush';this.state.drawing=true;this.cursor=null;this.bind();
     const layers=this.editor.layers.filter(layer=>isDrawingLayer(layer)&&!layer.locked&&layer.visible),target=layers.find(l=>l.id===this.editor.activeLayerId)||layers.find(l=>l.id===this.lastLayer)||layers.at(-1);if(target){this.editor.selectSheetLayer(target.id);this.state.selectedTrackId=target.id;}this.sync();this.prepareVisible();this.onUI();this.onRender();}
-  exit(){if(!this.active)return;this.finish();this.applySelection();this.active=false;this.state.drawing=false;this.cursor=null;Object.assign(this.state,{handles:this.prior.handles,tool:this.prior.tool});this.state.view.rotation=this.prior.rotation;this.onUI();this.onRender();}
+  exit(){if(!this.active)return;const wait=this.settle({selection:true});if(wait)return this.run(()=>wait.then(()=>this.exit()));this.active=false;this.state.drawing=false;this.cursor=null;Object.assign(this.state,{handles:this.prior.handles,tool:this.prior.tool});this.state.view.rotation=this.prior.rotation;this.onUI();this.onRender();}
   get tool(){return this.state.tool==='hand'?'pan':this.state.tool.replace('drawing-','');}
   set tool(value){this.setTool(value);}
-  setTool(value){this.finish();if(this.selection&&value!=='lasso')this.applySelection();
+  setTool(value){const wait=this.settle({selection:value!=='lasso'});if(wait)return this.run(()=>wait.then(()=>this.setTool(value)));
     // Brush and eraser remember their own tip, pressure and size settings.
     this.tips??={eraser:{preset:null,size:24,opacity:1,flow:1,hardness:1,pressureSize:true,pressureOpacity:false,sizeCurve:1,opacityCurve:1,stabilization:0}};
     if(['brush','eraser'].includes(this.tool))this.tips[this.tool]=Object.fromEntries(brushKeys.map(key=>[key,this.settings[key]]));
@@ -92,10 +95,10 @@ export class DrawingController {
   propertyValue(key){key=key.slice(5);if(key==='viewAngle')return (this.state.view.rotation??0)*180/Math.PI;if(key==='selectionScale')return (this.selection?.scale??1)*100;if(key==='selectionAngle')return this.selection?.angle??0;return this.settings[key]*(['opacity','flow','hardness','stabilization'].includes(key)?100:1);}
   propertySet(key,value){key=key.slice(5);if(key==='viewAngle')this.state.view.rotation=value*Math.PI/180;else if(key==='selectionScale'||key==='selectionAngle'){if(this.selection){this.selection[key==='selectionScale'?'scale':'angle']=key==='selectionScale'?value/100:value;this.previewSelection();}}else{this.settings[key]=value/(['opacity','flow','hardness','stabilization'].includes(key)?100:1);if(['size','opacity','flow','hardness'].includes(key))this.settings.preset=null;}this.onRender();this.paintPreview(this.panel);}
   async prepareVisible(){const owner=this.owner;if(!owner||!this.active||this.gesture)return;let target;try{target=this.editor.drawingTarget();}catch{return;}if(!target.figure)return;const revision=this.editor.revision;try{await owner.surface(target.figure);if(owner===this.owner&&revision===this.editor.revision){this.onRender();}}catch(error){if(error.name!=='AbortError')this.onError(error);}}
-  get renderPreview(){const g=this.gesture;if(!g?.target?.created&&!g?.target?.migratedFrom)return null;if(!g.preview){const report={...this.editor.report,figure_types:[...this.editor.report.figure_types,g.target.figure],_styk:{...this.editor.report._styk,layers:{...this.editor.report._styk.layers,assignments:{...this.editor.report._styk.layers.assignments,[g.target.object.unique_id]:g.target.id}}}},frame=createFrame([...this.editor.evaluatedFrame.objects.filter(o=>o.unique_id!==g.target.object.unique_id),g.target.object]);Object.assign(frame,{camera:this.editor.evaluatedFrame.camera});for(const key of ['background_id','background_id_b','background_mix','background_color','_stykBackgroundColor'])if(key in this.editor.evaluatedFrame)frame[key]=this.editor.evaluatedFrame[key];g.preview={report,frame,geometry:buildGeometry(report,frame)};}return g.preview;}
+  get renderPreview(){const g=this.gesture??this.selection;if(!g?.target?.created&&!g?.target?.migratedFrom)return null;if(!g.preview){const report={...this.editor.report,figure_types:[...this.editor.report.figure_types,g.target.figure],_styk:{...this.editor.report._styk,layers:{...this.editor.report._styk.layers,assignments:{...this.editor.report._styk.layers.assignments,[g.target.object.unique_id]:g.target.id}}}},frame=createFrame([...this.editor.evaluatedFrame.objects.filter(o=>o.unique_id!==g.target.object.unique_id),g.target.object]);Object.assign(frame,{camera:this.editor.evaluatedFrame.camera});for(const key of ['background_id','background_id_b','background_mix','background_color','_stykBackgroundColor'])if(key in this.editor.evaluatedFrame)frame[key]=this.editor.evaluatedFrame[key];g.preview={report,frame,geometry:buildGeometry(report,frame)};}return g.preview;}
   /** The renderer keeps the presenter even after its store is evicted:
    * presenter() kicks the re-decode, and v2 callers skip the stale data URL. */
-  resource(figure){if(!drawingMetadata(figure))return null;return this.owner?.presenter(figure)??null;}
+  resource(figure){if(!drawingMetadata(figure))return null;const s=this.selection;return s&&drawingMetadata(s.target.figure)?.celId===drawingMetadata(figure).celId?s.presenter:this.owner?.presenter(figure)??null;}
   point(event){const rect=this.viewport.getBoundingClientRect();return screenToWorld({x:(event.clientX-rect.left)*this.viewport.clientWidth/rect.width,y:(event.clientY-rect.top)*this.viewport.clientHeight/rect.height},{report:this.editor.report,frame:this.editor.evaluatedFrame,view:this.state.view,cameraEnabled:false});}
   geometryItem(target){let item;if(target.created||target.migratedFrom)item=buildGeometry({...this.editor.report,figure_types:[...this.editor.report.figure_types,target.figure]},createFrame([target.object])).drawables[0];else item=this.editor.geometry.drawables.find(i=>i.obj.unique_id===target.object.unique_id&&i.type==='image');if(!item)throw new Error('The drawing pose is unavailable.');return item;}
   pixelMatrix(target){return this.gesture?.session?.target===target?this.gesture.session.pixelMatrix:drawingPixelMatrix(this.geometryItem(target));}
@@ -133,7 +136,7 @@ export class DrawingController {
     if(this.tool==='transform'){if(target.created){surface.pinned=false;return;}this.editor.select(target.object.unique_id);this.editor.beginTranslationDrag('Move drawing');this.gesture={id:event.pointerId,target,surface,kind:'pose',start:this.point(event)};}
     else if(this.tool==='lasso'){
       if(this.selection&&this.selection.target.figure!==target.figure)this.cancelSelection();
-      if(this.selection&&!this.selectionContains(point))this.applySelection();
+      if(this.selection&&!this.selectionContains(point))await this.applySelection();
       if(this.selection){this.gesture={id:event.pointerId,target,surface,kind:'selection-move',start:point,dx:this.selection.dx,dy:this.selection.dy};}
       else this.gesture={id:event.pointerId,target,surface,kind:'lasso',points:[point]};
     }else{
@@ -247,7 +250,7 @@ export class DrawingController {
     else if(g.kind==='lasso')this.makeSelection(g);
   }finally{g.surface.pinned=Boolean(this.selection?.surface===g.surface);if(this.selection?.surface===g.surface)this.previewSelection();else{this.owner.present(g.surface);this.owner.discard(g.target.figure);}if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.sync();this.onUI();this.onRender();}}
   cancel(){this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();return;}this.gesture=null;if(g.kind==='pan'){Object.assign(this.state.view,g.view);this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.busy=false;this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
-  async barrier(options){this.finish();this.applySelection();const closing=this.gesture?.session;if(closing?.ended)await closing.done;if(this.loading)throw new Error('Wait for the drawing to finish loading.');if(this.fillAbort)throw new Error('Finish or cancel the fill first.');await drawingBarrier(this.editor.report,options);}
+  async barrier(options){await this.settle({selection:true});if(this.loading)throw new Error('Wait for the drawing to finish loading.');if(this.fillAbort)throw new Error('Finish or cancel the fill first.');await drawingBarrier(this.editor.report,options);}
   /** Fill bounds = stage ∪ artwork ∪ viewport, in the cel's pixel space. */
   fillBounds(target,store){
     const matrix=this.pixelMatrix(target),toPixel=p=>inversePoint(matrix,p);
@@ -272,59 +275,39 @@ export class DrawingController {
   async barrierForComposite(){await drawingBarrier(this.editor.report);const assets=this.editor.geometry.drawables.filter(i=>i.type==='image');await Promise.all(assets.map(async i=>{const image=this.getResources().image(this.getResources().url(i.asset));if(image&&!image.complete)await image.decode?.();}));}
   makeSelection(g){
     const mask=lassoMask(g.points);if(!mask.mask.some(Boolean))return;this.cancelSelection();
-    const store=g.surface.store,xs=g.points.map(p=>p.x),ys=g.points.map(p=>p.y);
-    const s=this.selection={cx:(Math.min(...xs)+Math.max(...xs))/2,cy:(Math.min(...ys)+Math.max(...ys))/2,target:g.target,surface:g.surface,mask,original:new Map(),touched:new Set(),points:g.points,dx:0,dy:0,scale:1,angle:0};
-    // Snapshot the mask region content once: cutout keeps masked pixels, base
-    // keeps the rest. The store snapshot only covers tiles the preview touches.
-    const region=store.readRect(mask.x,mask.y,mask.width,mask.height),cut=new Uint8ClampedArray(region),base=new Uint8ClampedArray(region);
-    for(let p=0;p<mask.width*mask.height;p++){if(mask.mask[p])base[p*4+3]=0;else cut[p*4+3]=0;}
+    const xs=g.points.map(p=>p.x),ys=g.points.map(p=>p.y),region=g.surface.store.readRect(mask.x,mask.y,mask.width,mask.height);
+    const s=this.selection={cx:(Math.min(...xs)+Math.max(...xs))/2,cy:(Math.min(...ys)+Math.max(...ys))/2,target:g.target,surface:g.surface,mask,points:g.points,originalPixels:region,dx:0,dy:0,scale:1,angle:0};
+    const cut=region.slice(),coverage=new Uint8ClampedArray(region.length);
+    for(let p=0;p<mask.mask.length;p++){if(mask.mask[p])coverage[p*4+3]=255;else cut[p*4+3]=0;}
     s.cutout=canvas(mask.width,mask.height);s.cutout.getContext('2d').putImageData(new ImageData(cut,mask.width,mask.height),0,0);
-    // `region` keeps the exact pre-preview bytes: the canvas composite preview
-    // degrades RGB under partial alpha, so copy/cut must not read it back.
-    s.basePixels=base;s.originalPixels=region;g.surface.pinned=true;this.previewSelection();
+    s.maskCanvas=canvas(mask.width,mask.height);s.maskCanvas.getContext('2d').putImageData(new ImageData(coverage,mask.width,mask.height),0,0);
+    s.presenter=selectionPresenter(s,this.owner.presenter(g.target.figure));g.surface.pinned=true;this.owner.surfaceVersion++;this.owner.onChange();this.previewSelection();
   }
-  previewSelection(){
-    const s=this.selection;if(!s)return;const store=s.surface.store,B=s.mask;
-    const angle=s.angle*Math.PI/180,cos=Math.cos(angle),sin=Math.sin(angle),sc=s.scale;
-    const t=p=>({x:s.cx+s.dx+cos*(p.x-s.cx)*sc-sin*(p.y-s.cy)*sc,y:s.cy+s.dy+sin*(p.x-s.cx)*sc+cos*(p.y-s.cy)*sc});
-    const corners=[[B.x,B.y],[B.x+B.width,B.y],[B.x,B.y+B.height],[B.x+B.width,B.y+B.height]].map(([x,y])=>t({x,y}));
-    const dx0=Math.min(B.x,...corners.map(p=>p.x)),dy0=Math.min(B.y,...corners.map(p=>p.y));
-    const R=tileAlignedRect(dx0,dy0,Math.max(B.x+B.width,...corners.map(p=>p.x))-dx0,Math.max(B.y+B.height,...corners.map(p=>p.y))-dy0);
-    for(const key of s.touched){const o=s.original.get(key),[tx,ty]=key.split(',').map(Number);o?store.set(tx,ty,o):store.delete(tx,ty);}
-    s.touched.clear();
-    for(const [tx,ty] of TileStore.tilesInRect(R.x,R.y,R.width,R.height)){const key=tileKey(tx,ty);if(!s.original.has(key))s.original.set(key,store.get(tx,ty)?.pixels.slice()??null);s.touched.add(key);}
-    if(!s.preview||s.preview.width!==R.width||s.preview.height!==R.height)s.preview=canvas(R.width,R.height);
-    const ctx=s.preview.getContext('2d'),tile=canvas(TILE,TILE),tctx=tile.getContext('2d');
-    ctx.clearRect(0,0,R.width,R.height);
-    for(const [tx,ty] of TileStore.tilesInRect(R.x,R.y,R.width,R.height)){const current=store.get(tx,ty);if(!current)continue;tctx.putImageData(new ImageData(current.pixels,TILE,TILE),0,0);ctx.drawImage(tile,tx*TILE-R.x,ty*TILE-R.y);}
-    ctx.putImageData(new ImageData(s.basePixels,B.width,B.height),B.x-R.x,B.y-R.y);
-    ctx.save();ctx.translate(s.cx+s.dx-R.x,s.cy+s.dy-R.y);ctx.rotate(angle);ctx.scale(sc,sc);ctx.drawImage(s.cutout,B.x-s.cx,B.y-s.cy);ctx.restore();
-    store.writeRect(R.x,R.y,R.width,R.height,ctx.getImageData(0,0,R.width,R.height).data);
-    this.owner.present(s.surface,R);this.onRender();
+  previewSelection(){const s=this.selection;if(!s||s.committing)return;s.presenter.stamp++;this.onRender();}
+  commitSelection(s,label,{remove=false}={}){
+    if(s.committing)return s.committing;
+    const owner=this.owner,revision=this.editor.revision,abort=s.abort=new AbortController();owner.busy=true;
+    s.committing=(async()=>{
+      const matrix=selectionMatrix(s),tiles=selectionTiles(s.surface.store,s.mask,matrix).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
+      const pixels=s.originalPixels.slice().buffer,mask={...s.mask,mask:s.mask.mask.slice().buffer};
+      const result=await owner.worker.request('selection',{tiles,selection:{matrix,mask,pixels,remove,maxBytes:Math.min(owner.hardBudget,192*1024*1024)}},{signal:abort.signal,transfer:[pixels,mask.mask,...tiles.map(t=>t.pixels)]});
+      if(abort.signal.aborted||this.selection!==s||owner!==this.owner||revision!==this.editor.revision)throw new DOMException('Selection changed.','AbortError');
+      this.endSelection(false);return this.editor.commitDrawingPixels(s.target,result.tiles,label);
+    })().finally(()=>{owner.busy=false;if(this.selection===s)this.endSelection(false);this.onRender();});
+    return s.committing;
   }
   selectionContains(point){const s=this.selection;if(!s)return false;const B=s.mask,angle=-s.angle*Math.PI/180,x=point.x-s.cx-s.dx,y=point.y-s.cy-s.dy,px=Math.floor(s.cx+(Math.cos(angle)*x-Math.sin(angle)*y)/s.scale),py=Math.floor(s.cy+(Math.sin(angle)*x+Math.cos(angle)*y)/s.scale);return px>=B.x&&py>=B.y&&px<B.x+B.width&&py<B.y+B.height&&Boolean(B.mask[(py-B.y)*B.width+(px-B.x)]);}
-  applySelection(){const s=this.selection;if(!s)return;if(!s.dx&&!s.dy&&s.scale===1&&!s.angle){this.cancelSelection();return;}try{const tiles=tileChanges(s.surface.store,s.original);this.editor.commitDrawingPixels(s.target,tiles,'Transform selected pixels');}finally{this.endSelection(false);this.onRender();}}
-  endSelection(restore=true){const s=this.selection;if(!s)return;this.selection=null;const store=s.surface.store;
-    if(restore)for(const key of s.touched){const o=s.original.get(key),[tx,ty]=key.split(',').map(Number);o?store.set(tx,ty,o):store.delete(tx,ty);}
-    this.owner.present(s.surface);s.surface.pinned=false;if(s.cutout)s.cutout.width=s.cutout.height=1;if(s.preview)s.preview.width=s.preview.height=1;}
+  applySelection(){const s=this.selection;if(!s)return;if(s.committing)return s.committing;if(!s.dx&&!s.dy&&s.scale===1&&!s.angle){this.cancelSelection();return;}return this.commitSelection(s,'Transform selected pixels');}
+  endSelection(cancel=true){const s=this.selection;if(!s)return;this.selection=null;if(cancel)s.abort?.abort();s.presenter?.dispose();s.surface.pinned=false;for(const c of [s.cutout,s.maskCanvas])if(c)c.width=c.height=1;this.owner.surfaceVersion++;this.owner.present(s.surface);this.onRender();}
   cancelSelection(){this.endSelection(true);}
   async action(action){const pending=this.settle();if(pending)await pending;const e=this.editor,ids=[e.activeLayerId];
     if(action==='new'){const layer=e.createDrawingLayer();this.state.selectedTrackId=layer.id;this.getTimeline()?.selectTrack?.(layer.id);this.sync();this.onUI();return;}
-    if(!['copy-pixels','cut-pixels','delete-pixels','apply-selection','cancel-selection'].includes(action))this.applySelection();
+    if(!['copy-pixels','cut-pixels','delete-pixels','apply-selection','cancel-selection'].includes(action))await this.applySelection();
     if(action==='blank')return e.drawingKey(ids,e.tick,{blank:true});if(action==='copy-key'){if(!e.drawingKey(ids))this.onStatus('This cell already starts a drawing. Use Next copy to add time.');return;}
     if(action==='extend')return e.extendDrawing(ids,this.settings.length);if(action==='next-blank'||action==='next-copy')return e.nextDrawing(ids,{blank:action==='next-blank',length:this.settings.length});
     if(action==='apply-selection')return this.applySelection();if(action==='cancel-selection')return this.cancelSelection();if(action==='retry')return this.barrier();
     if(action==='reset-rotation'){this.state.view.rotation=0;this.onRender();return;}
-    if(action==='delete-pixels'){
-      const s=this.selection;if(!s)return;const B=s.mask;
-      // Same removal as cut-pixels, without the clipboard write.
-      try{
-        for(const key of s.touched){const o=s.original.get(key),[tx,ty]=key.split(',').map(Number);o?s.surface.store.set(tx,ty,o):s.surface.store.delete(tx,ty);}
-        s.surface.store.writeRect(B.x,B.y,B.width,B.height,s.basePixels);
-        e.commitDrawingPixels(s.target,tileChanges(s.surface.store,s.original),'Delete selected pixels');
-      }finally{this.endSelection(false);}
-      return;
-    }
+    if(action==='delete-pixels'){const s=this.selection;if(!s)return;return this.commitSelection(s,'Delete selected pixels',{remove:true});}
     if(action==='duplicate-layer'){await this.barrier();const source=e.getLayer(e.activeLayerId),end=e.report._styk.layerSheet.tracks[source.id].end;const old=e._sheetClipboard;try{e.sheetCopyFrames([source.id],0,end-1);return e.movieclipBatch('Duplicate drawing layer',()=>{const layer=e.createLayer(source.name+' copy',{drawing:true});e.sheetPasteFrames([layer.id],0);});}finally{e._sheetClipboard=old;}}
     if(['copy-pixels','cut-pixels'].includes(action))return this.getClipboard().copy('drawing-pixels',async()=>{
       const s=this.selection;if(!s)throw new Error('Select pixels with the lasso first.');
@@ -340,7 +323,7 @@ export class DrawingController {
       if(e.revision!==revision||this.selection!==s)throw new DOMException('The selection changed. Copy it again.','AbortError');
       const metadata=drawingMetadata(s.target.figure),world=transformPoint(this.pixelMatrix(s.target),{x:rect.x,y:rect.y});
       e._drawingPixelClipboard={pixelsPerUnit:metadata.pixelsPerUnit,x:rect.x,y:rect.y,width:rect.width,height:rect.height,dataUrl,world};
-      if(action==='cut-pixels'){try{for(const key of s.touched){const o=s.original.get(key),[tx,ty]=key.split(',').map(Number);o?s.surface.store.set(tx,ty,o):s.surface.store.delete(tx,ty);}s.surface.store.writeRect(B.x,B.y,B.width,B.height,s.basePixels);const tiles=tileChanges(s.surface.store,s.original);e.commitDrawingPixels(s.target,tiles,'Cut selected pixels');}finally{this.endSelection(false);}}return true;
+      if(action==='cut-pixels')await this.commitSelection(s,'Cut selected pixels',{remove:true});return true;
     });
     if(action==='paste-pixels')return this.getClipboard().paste('drawing-pixels',async()=>{
       const clip=e._drawingPixelClipboard;if(!clip)throw new Error('Copy selected pixels first.');this.cancelSelection();
@@ -368,7 +351,7 @@ export class DrawingController {
       }finally{if(surface){surface.pinned=false;owner.present(surface);}owner.discard(target.figure);}
     });
     if(action==='resample'){
-      this.applySelection();const target=e.drawingTarget();if(!target.figure)throw new Error('Paint a drawing before resampling it.');
+      await this.applySelection();const target=e.drawingTarget();if(!target.figure)throw new Error('Paint a drawing before resampling it.');
       const d=drawingMetadata(target.figure),ratio=this.settings.resolution/d.pixelsPerUnit;if(ratio===1){this.onStatus('This drawing already uses the chosen resolution.');return;}
       await this.barrier();const revision=e.revision,surface=await this.owner.surface(target.figure);
       const bounds=surface.store.bounds;let tiles=[],outBounds=null;

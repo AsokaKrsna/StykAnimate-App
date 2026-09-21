@@ -76,6 +76,12 @@ includes the selection's world origin, so pastes land at the same world
 position. Aligned, unscaled copies preserve exact RGBA; scaling and transformed
 selections resample once. Paste compositing, fill and tile history run in the
 drawing worker.
+Selection previews composite a masked cutout over the cel without changing its
+tile store. Applying a selection runs in the pixel worker and touches only the
+source and destination tiles; integer translations preserve exact RGBA. Empty
+space between those regions costs no tile storage. Commands that change the
+exposure or document await this transaction. Dense lasso masks are bounded to
+16 megapixels before allocation.
 Whole-scene paste matches drawing and figure layer kinds, creates missing layers,
 and shifts surplus destination layers together in the same undo command.
 

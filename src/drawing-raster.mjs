@@ -160,7 +160,7 @@ export function paintDrawingTiles(ctx,presenter,{tint,tintFn}={}){
   const m=ctx.getTransform(),rect=visiblePixelRect(ctx);
   const k0=Math.max(0,Math.min(8,Math.floor(-Math.log2(Math.hypot(m.a,m.b)||1))));
   for(let k=k0;k<=8;k++){
-    const scratch=presenterScratch(presenter,rect,{level:k});if(!scratch)continue;
+    const scratch=presenter.scratch?presenter.scratch(rect,{level:k}):presenterScratch(presenter,rect,{level:k});if(!scratch)continue;
     let source=scratch.canvas;
     if(tint&&tintFn)source=tintFn(source,tint,`${scratch.stamp}:${scratch.anchorKey}`)??source;
     ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';

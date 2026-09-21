@@ -262,6 +262,7 @@ export class Timeline{
     return Math.abs(hit.x+this._offsetX()-end*this.pxPerTick)<4?{id,start:key.tick,end}:null;
   }
   _flushScrub({force=false}={}){
+    if(this.pendingScrub==null&&!this.pendingCell)return;
     const wait=this.beforeCommand?.();
     if(wait){if(!this.waitingForEdit)this.waitingForEdit=wait.then(()=>{this.waitingForEdit=null;this._flushScrub({force:true});},error=>{this.waitingForEdit=null;this.onError?.(error);});return;}
     // Keep one editable preparation in flight. Repeated cancellation can starve
