@@ -21,7 +21,7 @@ function reply(id, payload) { self.postMessage({id, ok: true, ...payload}); }
 /** Fetch the retained original binary source for native-save provenance.
  * Returns {meta, bytes} or null when the cache holds no binary source. */
 async function fetchOriginalSource() {
-  const headers = {};
+  const headers = config.jobId ? {'X-Styk-Job-Id': config.jobId} : {};
   if (config.token) headers.Authorization = `Bearer ${config.token}`;
   const response = await fetch(new URL(`/api/source?id=${encodeURIComponent(config.sourceId)}`, config.baseURL), {headers});
   if (response.status === 422 || response.status === 404) return null;
@@ -162,6 +162,7 @@ self.addEventListener('message', async event => {
         // expanded document back to the main thread would recreate the freeze.
         const sending = performance.now();
         const headers = {'Content-Type': 'application/json'};
+        if (config.jobId) headers['X-Styk-Job-Id'] = config.jobId;
         if (config.token) headers.Authorization = `Bearer ${config.token}`;
         stage = 'request';
         const response = await fetch(new URL('/api/export', config.baseURL), {method: 'POST', headers, body});

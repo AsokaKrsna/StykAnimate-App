@@ -15,9 +15,11 @@ import zlib
 from typing import Any
 
 if __package__:
+    from .work_control import checkpoint
     from .piv_codec import PivError,MAX_PAYLOAD_BYTES,MAX_SEGMENTS,_decode,_builtin_man
     from .piv_document import _Writer,encode_piv_document
 else:
+    from work_control import checkpoint
     from piv_codec import PivError,MAX_PAYLOAD_BYTES,MAX_SEGMENTS,_decode,_builtin_man
     from piv_document import _Writer,encode_piv_document
 
@@ -239,6 +241,7 @@ def _same_builtin(a,b):
 
 
 def _encode_project(source,document,workspace_root,force_rebuild):
+    checkpoint()
     original,r,compressed=_decode(source)
     if original['version']!=5 or document.get('version')!=5:raise PivError('Full project serialization supports V5 only')
     # Explicit disk-media mode must resolve files even when only their path or
@@ -247,6 +250,7 @@ def _encode_project(source,document,workspace_root,force_rebuild):
         try:return encode_piv_document(source,document)
         except PivError:pass  # Table modifications use the full serialization path.
     doc=copy.deepcopy(document)
+    checkpoint()
     figures=doc.get('figure_types')
     backgrounds=doc.get('backgrounds')
     if not isinstance(figures,list) or not isinstance(backgrounds,list):raise PivError('Figure/background tables must be lists')
@@ -266,6 +270,7 @@ def _encode_project(source,document,workspace_root,force_rebuild):
     joint_maps={1:{i:i for i in range(len(native['segments'])+1)}}
     pose_orders={}
     for f in custom:
+        checkpoint()
         input_segments=f['segments']
         segment_ids=[s['segment_id'] for s in input_segments]
         if (any(isinstance(sid,bool) or not isinstance(sid,int) or sid<1 for sid in segment_ids)
@@ -333,12 +338,14 @@ def _encode_project(source,document,workspace_root,force_rebuild):
     normalized,_,_=_decode(scaffold)
     frames=copy.deepcopy(doc['keyframes'])
     for frame in frames:
+        checkpoint()
         for key in ('background_id','background_id_b'):
             if frame.get(key) is not None:
                 if frame[key] not in bg_map:raise PivError('Frame references a deleted background')
                 frame[key]=bg_map[frame[key]]
         uid_types={obj['unique_id']:obj['figure_type_id'] for obj in frame['objects']}
         for obj in frame['objects']:
+            checkpoint()
             pose_order=pose_orders.get(obj['figure_type_id'])
             if pose_order is not None:
                 for key in ('angles','lengths','bends'):

@@ -21,6 +21,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Changed
 
+- Reduce delays before the next file operation after cancelling an import or export.
 - Keep the editor and native project saving available while the file conversion service starts, or if it cannot start.
 - Reduce the time needed to prepare images when opening a project.
 - Preserve original Pivot keyframes and avoid slow rebaking when exporting unchanged imported animations.

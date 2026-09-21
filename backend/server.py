@@ -14,12 +14,15 @@ from dataclasses import dataclass
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
+import io
 import json
 import math
 import mimetypes
 import os
 from pathlib import Path, PurePosixPath
 import re
+import select
+import socket
 import struct
 import sys
 import tempfile
@@ -37,6 +40,8 @@ import piv_codec
 import import_wire
 import fast_decode
 import native_format
+import jobs
+from work_control import checkpoint
 
 # Optional compiled serializer. Source checkouts discover the same local wheels
 # used by the desktop build; a plain Python installation remains supported.
@@ -78,6 +83,7 @@ class FastReader(piv_codec.Reader):
         return value
 
     def array(self, fmt: str, count: int, path: str | None = None) -> list:
+        checkpoint()
         size = struct.calcsize("<" + fmt)
         end = self.pos + size * count
         if count < 0 or end > len(self.data):
@@ -180,8 +186,10 @@ def _canonical_numbers(value):
     if isinstance(value, float):
         return int(value) if math.isfinite(value) and value.is_integer() else value
     if isinstance(value, dict):
+        checkpoint()
         return {key: _canonical_numbers(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
+        checkpoint()
         return [_canonical_numbers(item) for item in value]
     return value
 
@@ -222,11 +230,13 @@ def source_document_digest(document: dict) -> str:
     digest.update(b'{')
     keys = sorted(k for k in document if k not in ("_stykSource", "_styk", "_stykWeb"))
     for i, key in enumerate(keys):
+        checkpoint()
         if i: digest.update(b',')
         emit(key); digest.update(b':')
         if key == "keyframes":
             digest.update(b'[')
             for index, frame in enumerate(document[key]):
+                checkpoint()
                 if index: digest.update(b',')
                 normalized = _canonical_numbers(frame)
                 for obj in normalized.get("objects", []):
@@ -324,6 +334,7 @@ class ProjectStore:
         return packed
 
     def _decode_canonical(self, entry: Source) -> dict:
+        checkpoint()
         document = piv_codec.decode_piv_bytes(entry.data, source_path=entry.filename)
         for key in ("editable_paths", "_codec", "_stykWeb"):
             document.pop(key, None)
@@ -332,11 +343,14 @@ class ProjectStore:
 
     def _source_digest(self, entry: Source) -> str:
         with self.decode_lock:
+            checkpoint()
             if entry.digest is None:
                 if entry.document_json is not None:
-                    entry.digest = document_digest(decoded_json(entry.document_json))
+                    digest = document_digest(decoded_json(entry.document_json))
                 else:
-                    entry.digest = source_document_digest(self._decode_canonical(entry))
+                    digest = source_document_digest(self._decode_canonical(entry))
+                with jobs.publication():
+                    entry.digest = digest
             return entry.digest
 
     def samples(self) -> list[dict]:
@@ -388,6 +402,7 @@ class ProjectStore:
         return entry.data, meta
 
     def import_bytes(self, data: bytes, filename: str, *, as_json: bool = False, prefer_native: bool = False) -> dict | bytes:
+        checkpoint()
         started = time.perf_counter()
         name = filename_only(filename)
         kind = Path(name).suffix[1:].lower()
@@ -409,6 +424,7 @@ class ProjectStore:
             # Bounded serialization prevents parallel imports from multiplying
             # decoder peak memory. Editing/playback remains independent in JS.
             with self.decode_lock:
+                checkpoint()
                 with self.lock:
                     entry = self.sources.get(source_id)
                 if entry is None:
@@ -477,7 +493,7 @@ class ProjectStore:
                     entry.native_wire = wire_parts
                     if entry.retained_size > self.max_cache:
                         raise ApiError(413, "cache_limit", "The decoded project exceeds the source cache limit.")
-                    with self.lock:
+                    with self.lock, jobs.publication():
                         self.sources[source_id] = entry
                         self.cache_bytes += entry.retained_size
                         while self.cache_bytes > self.max_cache or len(self.sources) > MAX_CACHE_ENTRIES:
@@ -490,7 +506,7 @@ class ProjectStore:
                 if entry.native_wire is None:
                     parts = import_wire.native_frame_wire(decoded_json(self._canonical_json(entry)), entry.data, piv_codec._unpack_source, encoded_json)
                     if parts and entry.retained_size + len(parts[0]) + len(parts[1]) <= self.max_cache:
-                        with self.lock:
+                        with self.lock, jobs.publication():
                             entry.native_wire = parts
                             self.cache_bytes += len(parts[0]) + len(parts[1])
                             while self.cache_bytes > self.max_cache and len(self.sources) > 1:
@@ -520,13 +536,15 @@ class ProjectStore:
         return metadata
 
     def export(self, request: dict, *, timings: dict | None = None) -> tuple[bytes, str]:
-        checkpoint = time.perf_counter()
+        checkpoint()
+        stage_started = time.perf_counter()
         def mark(stage):
-            nonlocal checkpoint
+            nonlocal stage_started
+            checkpoint()
             now = time.perf_counter()
             if timings is not None:
-                timings[stage] = (now - checkpoint) * 1000
-            checkpoint = now
+                timings[stage] = (now - stage_started) * 1000
+            stage_started = now
         document = request.get("document")
         if not isinstance(document, dict):
             raise ApiError(400, "invalid_document", "Export requires an editable document.")
@@ -645,13 +663,22 @@ class LocalServer(ThreadingHTTPServer):
 
     def __init__(self, address: tuple[str, int], store: ProjectStore, web_root: Path, token: str = ""):
         self.store, self.web_root, self.token = store, web_root.resolve(), token
+        self.jobs = jobs.JobRegistry()
         super().__init__(address, Handler)
+
+    def server_close(self):
+        self.jobs.close()
+        super().server_close()
 
 
 class Handler(BaseHTTPRequestHandler):
     server: LocalServer
     protocol_version = "HTTP/1.1"
     server_version = "StykAnimate/1"
+
+    def _job(self):
+        return self.server.jobs.enter(self.headers.get("X-Styk-Job-Id"),
+            abort_transport=lambda: self.connection.shutdown(socket.SHUT_RDWR))
 
     def log_message(self, fmt, *args):
         # Imported file names are private and not needed in the process log.
@@ -675,6 +702,7 @@ class Handler(BaseHTTPRequestHandler):
     def _send(self, status: int, data: bytes, content_type: str, *, filename: str | None = None,
               cache_control: str = "no-store", etag: str | None = None, length: int | None = None,
               timings: dict | None = None, request_bytes: int | None = None):
+        checkpoint()
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data) if length is None else length))
@@ -714,16 +742,37 @@ class Handler(BaseHTTPRequestHandler):
         if length > limit:
             self.close_connection = True
             raise ApiError(413, "body_too_large", "The request exceeds the configured size limit.")
-        self.connection.settimeout(60)
-        body = self.rfile.read(length)
-        if len(body) != length:
-            raise ApiError(400, "truncated_upload", "The upload ended before the complete file arrived.")
-        return body
+        # Poll without poisoning BufferedReader with socket timeouts. read1 first
+        # consumes any bytes prefetched alongside the headers; select only waits
+        # when that buffer and the socket have no data. BytesIO avoids a retained
+        # list of chunks and its final immutable value becomes the request body.
+        self.connection.setblocking(False)
+        body, remaining, deadline = io.BytesIO(), length, time.monotonic() + 60
+        try:
+            while remaining:
+                checkpoint()
+                chunk = self.rfile.read1(min(256 * 1024, remaining))
+                if not chunk:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("The upload stopped sending data.")
+                    if not select.select([self.connection], [], [], .05)[0]:
+                        continue
+                    checkpoint()
+                    chunk = self.rfile.read1(min(256 * 1024, remaining))
+                    if not chunk:
+                        raise ApiError(400, "truncated_upload", "The upload ended before the complete file arrived.")
+                body.write(chunk)
+                remaining -= len(chunk)
+                deadline = time.monotonic() + 60
+            checkpoint()
+            return body.getvalue()
+        finally:
+            self.connection.settimeout(60)
 
     def _handle_error(self, exc: Exception):
         # Unconsumed bodies must never become a subsequent HTTP request.
         self.close_connection = True
-        if isinstance(exc, ApiError):
+        if isinstance(exc, (ApiError, jobs.JobError)):
             self._json(exc.status, {"ok": False, "error": str(exc), "code": exc.code})
         elif isinstance(exc, (piv_codec.PivError, ValueError, TypeError, KeyError, IndexError, struct.error)):
             self._json(422, {"ok": False, "error": str(exc), "code": "invalid_project"})
@@ -740,7 +789,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get("Origin"):
                 self.send_header("Access-Control-Allow-Origin", self.headers["Origin"])
             self.send_header("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Styk-Job-Id")
             self.send_header("Content-Length", "0")
             self.end_headers()
         except Exception as exc:
@@ -757,6 +806,7 @@ class Handler(BaseHTTPRequestHandler):
                 from process_metrics import memory_mib
                 scanner = fast_decode.native_scan.status()
                 self._json(200, {"ok": True, "name": "StykAnimate-webapp", "schemaVersion": 1,
+                    "jobs": self.server.jobs.snapshot(),
                     "codec": "Pivot verified grammar / bulk reader", "versions": [2, 3, 4, 5],
                     "formats": ["piv", "stk", "styk", "stkz", "stykmov"], "maxImportBytes": MAX_SOURCE,
                     "jsonEncoder": JSON_ENCODER, "processMemoryMiB": memory_mib(),
@@ -765,10 +815,11 @@ class Handler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/samples":
                 self._json(200, {"ok": True, "samples": self.server.store.samples()})
             elif parsed.path == "/api/source":
-                source_id = parse_qs(parsed.query).get("id", [""])[0]
-                source, meta = self.server.store.source_record(source_id)
-                self._send(200, b"STYKSRC1" + struct.pack("<I", len(meta)) + meta + source,
-                    "application/octet-stream")
+                with self._job():
+                    source_id = parse_qs(parsed.query).get("id", [""])[0]
+                    source, meta = self.server.store.source_record(source_id)
+                    self._send(200, b"STYKSRC1" + struct.pack("<I", len(meta)) + meta + source,
+                        "application/octet-stream")
             elif parsed.path.startswith("/api/"):
                 raise ApiError(404, "route_not_found", "Unknown codec endpoint.")
             else:
@@ -792,44 +843,64 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(304, b"", mime, cache_control="no-cache", etag=etag, length=stat.st_size)
                     return
                 self._send(200, target.read_bytes(), mime, cache_control="no-cache", etag=etag)
-        except (BrokenPipeError, ConnectionResetError):
-            pass
+        except ConnectionError:
+            self.close_connection = True
         except Exception as exc:
-            self._handle_error(exc)
+            try:
+                self._handle_error(exc)
+            except ConnectionError:
+                self.close_connection = True
 
     def do_POST(self):
         try:
             self._check_request()
             parsed = urlsplit(self.path)
-            if parsed.path == "/api/import":
-                name = parse_qs(parsed.query).get("filename", ["imported.piv"])[0]
-                result = self.server.store.import_bytes(self._body(MAX_DOCUMENT if name.lower().endswith((".styk", ".stkz", ".stykmov", ".json")) else MAX_SOURCE), name, as_json=True,
+            if parsed.path == "/api/cancel":
+                self._body(0)
+                self.server.jobs.cancel(parse_qs(parsed.query).get("id", [""])[0])
+                self._send(204, b"", "application/json")
+                return
+            if parsed.path not in ("/api/import", "/api/open", "/api/export"):
+                raise ApiError(404, "route_not_found", "Unknown codec endpoint.")
+            with self._job():
+                self._project_post(parsed)
+        except ConnectionError:
+            self.close_connection = True
+        except Exception as exc:
+            try:
+                self._handle_error(exc)
+            except ConnectionError:
+                self.close_connection = True
+
+    def _project_post(self, parsed):
+        # Admission precedes reading/parsing large uploads. The control endpoint
+        # and health remain independent of the single memory-heavy work slot.
+        if parsed.path == "/api/import":
+            name = parse_qs(parsed.query).get("filename", ["imported.piv"])[0]
+            result = self.server.store.import_bytes(self._body(MAX_DOCUMENT if name.lower().endswith((".styk", ".stkz", ".stykmov", ".json")) else MAX_SOURCE), name, as_json=True,
+                prefer_native=import_wire.CONTENT_TYPE in self.headers.get("Accept", ""))
+            self._send(200, result, import_wire.CONTENT_TYPE if result.startswith(import_wire.MAGIC) else "application/json; charset=utf-8")
+        elif parsed.path in ("/api/open", "/api/export"):
+            started = time.perf_counter()
+            body = self._body(MAX_DOCUMENT)
+            checkpoint()
+            request_bytes = len(body)
+            received = time.perf_counter()
+            request = decoded_json(body)
+            timings = {"receive": (received - started) * 1000, "parse": (time.perf_counter() - received) * 1000}
+            del body
+            if not isinstance(request, dict):
+                raise ApiError(400, "invalid_request", "The request must be a JSON object.")
+            if parsed.path == "/api/open":
+                result = self.server.store.open(request.get("path"), as_json=True,
                     prefer_native=import_wire.CONTENT_TYPE in self.headers.get("Accept", ""))
                 self._send(200, result, import_wire.CONTENT_TYPE if result.startswith(import_wire.MAGIC) else "application/json; charset=utf-8")
-            elif parsed.path in ("/api/open", "/api/export"):
-                started = time.perf_counter()
-                body = self._body(MAX_DOCUMENT)
-                request_bytes = len(body)
-                received = time.perf_counter()
-                request = decoded_json(body)
-                timings = {"receive": (received - started) * 1000, "parse": (time.perf_counter() - received) * 1000}
-                del body
-                if not isinstance(request, dict):
-                    raise ApiError(400, "invalid_request", "The request must be a JSON object.")
-                if parsed.path == "/api/open":
-                    result = self.server.store.open(request.get("path"), as_json=True,
-                        prefer_native=import_wire.CONTENT_TYPE in self.headers.get("Accept", ""))
-                    self._send(200, result, import_wire.CONTENT_TYPE if result.startswith(import_wire.MAGIC) else "application/json; charset=utf-8")
-                else:
-                    data, name = self.server.store.export(request, timings=timings)
-                    timings["total"] = (time.perf_counter() - started) * 1000
-                    self._send(200, data, "application/octet-stream", filename=name, timings=timings, request_bytes=request_bytes)
             else:
-                raise ApiError(404, "route_not_found", "Unknown codec endpoint.")
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-        except Exception as exc:
-            self._handle_error(exc)
+                data, name = self.server.store.export(request, timings=timings)
+                timings["total"] = (time.perf_counter() - started) * 1000
+                self._send(200, data, "application/octet-stream", filename=name, timings=timings, request_bytes=request_bytes)
+        else:
+            raise ApiError(404, "route_not_found", "Unknown codec endpoint.")
 
 
 def main() -> int:

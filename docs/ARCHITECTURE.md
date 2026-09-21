@@ -113,12 +113,19 @@ Electron uses context isolation, sandboxed renderer code, and no renderer Node g
 `desktop/web-host.cjs` owns the desktop's loopback origin. It streams public web
 assets asynchronously while `desktop/backend.cjs` starts the Python codec in
 parallel. `/api/` requests use the same origin and stream through a bounded
-16-request proxy with backpressure; pending requests do not buffer their uploads.
+16-request proxy with backpressure and four separate cancellation slots; pending
+requests do not buffer their uploads.
 Closing a client releases its proxy slot, and quitting aborts both pending codec
 startup and the running child. Codec failure leaves WebGPU editing, Undo/Redo,
 native project saving and local native reopening available. Pivot/STK conversion
-still requires the codec. Proxy cancellation closes the upstream connection; it
-does not yet interrupt Python CPU work already in progress. Browser development
+still requires the codec. Import/export controllers own an opaque job identity
+and send cancellation independently of their worker. The proxy also cancels
+disconnected requests over a separate bounded control connection pool. Python
+admits one heavy request at a time before reading its body, with at most 16
+active/queued requests; health and cancellation bypass that queue. Cooperative
+checks in decode, validation, fingerprint and writer loops release cancelled
+work, and source-cache publication is ordered against cancellation. Individual
+native/standard-library operations finish before the next check. Browser development
 continues to use the Python server's static host.
 
 Windows source execution and packaged snapshots are verified. A distributable includes the frozen codec sidecar, current web assets, source grammar, and licenses. Rebuild and verify the package after source changes; earlier smoke reports do not certify newer bytes. macOS/Linux targets require their own builds and actual platform verification.

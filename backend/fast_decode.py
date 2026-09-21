@@ -15,6 +15,7 @@ import threading
 import piv_codec
 import native_scan
 from piv_codec import PivError
+from work_control import checkpoint
 
 
 _COUNT = struct.Struct("<I")
@@ -119,6 +120,7 @@ def scan_keyframes_python(reader, figures: list, bg_slots: int, *, max_pose_byte
         frames = []
         identity_error = None
         for fi in range(count):
+            checkpoint()
             start = pos
             duration, mix, bg = take(_FRAME)
             bg_b = take(_SHORT)[0] if mix else None
@@ -128,6 +130,7 @@ def scan_keyframes_python(reader, figures: list, bg_slots: int, *, max_pose_byte
             reserve_pose(obj_count * 512)
             identities, frame_types, join_slots, join_handles = {}, [], [], []
             for oi in range(obj_count):
+                checkpoint()
                 obj_start = pos
                 uid, tid, scale, _color, _transparency = take(_OBJECT)
                 descriptor = types.get(tid)
@@ -249,6 +252,7 @@ def read_keyframes(reader, figures: list, bg_slots: int) -> list:
             raise PivError(f"Implausible keyframe count {count} at {pos-4:#x}")
         frames = []
         for fi in range(count):
+            checkpoint()
             start = pos
             duration, mix, bg = take(_FRAME)
             bg_b = take(_SHORT)[0] if mix else None
@@ -257,6 +261,7 @@ def read_keyframes(reader, figures: list, bg_slots: int) -> list:
             obj_count, = take(_SHORT)
             objects = []
             for oi in range(obj_count):
+                checkpoint()
                 obj_start = pos
                 uid, tid, scale, color, transparency = take(_OBJECT)
                 descriptor = types.get(tid)

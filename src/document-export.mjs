@@ -1,5 +1,6 @@
 import {documentChunks} from './document-transport.mjs';
 import {drawingBarrier} from './drawing-resources.mjs';
+import {codecJob} from './codec-job.mjs';
 
 function abortError(message = 'Document export cancelled.') { return new DOMException(message, 'AbortError'); }
 async function yieldToInput() {
@@ -35,8 +36,9 @@ export class DocumentExporter {
     await drawingBarrier(report,{signal});
     if(signal?.aborted||getRevision&&getRevision()!==originalRevision)throw abortError('The document changed while preparing drawing pixels.');
     const worker = new Worker(new URL('./document-export-worker.mjs', import.meta.url), {type: 'module', name: 'StykAnimate document export'});
+    const backendJob = codecJob(this.baseURL, this.token);
     let pending, sequence = 0, failure, count = 0, prepMax = 0, postMax = 0, mainWork = 0;
-    const fail = error => { failure = error; pending?.reject(error); pending = null; worker.terminate(); };
+    const fail = error => { failure = error; backendJob.cancel(); pending?.reject(error); pending = null; worker.terminate(); };
     const job = {cancel: () => fail(abortError())};
     this.jobs.add(job);
     worker.addEventListener('error', event => { event.preventDefault(); fail(Object.assign(new Error(event.message || 'The document export worker stopped.'), { telemetryCode: 'worker_failed', telemetryStage: 'serialize' })); });
@@ -74,7 +76,7 @@ export class DocumentExporter {
     signal?.addEventListener('abort', abort, {once: true});
     const timer = this.timeoutMs > 0 ? setTimeout(() => fail(Object.assign(new Error('Document export timed out.'), { telemetryCode: 'timeout', telemetryStage: 'serialize' })), this.timeoutMs) : null;
     try {
-      await request('start', {options: {sourceId, format, name, figureTypeId, figureUid, figureUids, tick, baseURL: this.baseURL, token: this.token}});
+      await request('start', {options: {sourceId, format, name, figureTypeId, figureUid, figureUids, tick, baseURL: this.baseURL, token: this.token, jobId: backendJob.id}});
       const snapshotStarted = performance.now();
       const chunks = documentChunks(report, {maxRecords: this.targetRecords, maxBytes: this.targetBytes,
         timeBudgetMs: 3, omitRuntimeSegments: true});
@@ -97,11 +99,13 @@ export class DocumentExporter {
       if (!(result.blob instanceof Blob)) throw new Error('The file service returned no exported document.');
       this.lastTimings = {format, chunks: count, snapshot_ms: snapshotMs, max_chunk_prepare_ms: prepMax,
         max_chunk_post_ms: postMax, main_work_ms: mainWork, total_ms: performance.now() - started, ...result.timings};
+      backendJob.finish();
       return result.blob;
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);
       this.jobs.delete(job);
+      backendJob.cancel();
       worker.terminate();
     }
   }

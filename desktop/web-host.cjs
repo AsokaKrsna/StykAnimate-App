@@ -3,6 +3,7 @@
 const http = require('node:http');
 const path = require('node:path');
 const fs = require('node:fs/promises');
+const {randomBytes} = require('node:crypto');
 const {pipeline} = require('node:stream/promises');
 const {startBackend} = require('./backend.cjs');
 
@@ -36,8 +37,9 @@ async function startDesktopHost({appRoot, resourcesPath, packaged=false, onError
   startCodec=startBackend, maxApiRequests=16}={}) {
   if (!Number.isInteger(maxApiRequests) || maxApiRequests<1 || maxApiRequests>64) throw new RangeError('Invalid file-operation capacity.');
   const root = await fs.realpath(packaged ? path.join(resourcesPath,'web') : appRoot);
-  const controller = new AbortController(), jobs = new Set();
+  const controller = new AbortController(), jobs = new Set(), controls = new Set(), cancellations = new Set();
   const agent = new http.Agent({keepAlive:true,maxSockets:maxApiRequests,maxFreeSockets:2});
+  const controlAgent = new http.Agent({keepAlive:true,maxSockets:4,maxFreeSockets:1});
   let codec, failure, stopped=false, closing;
   const notify = value => { try { onError(value); } catch { /* Diagnostics cannot stop the editor. */ } };
   const unavailable = () => error(503,'backend_unavailable','The file conversion service is unavailable. Your animation can still be edited and saved as a StykAnimate project. Restart the app to try again.');
@@ -69,25 +71,45 @@ async function startDesktopHost({appRoot, resourcesPath, packaged=false, onError
     } finally { await file.close(); }
   }
 
-  function forward(request,response) {
-    if (jobs.size >= maxApiRequests) { reject(response,error(503,'backend_busy','Too many file operations are pending. Wait for one to finish and try again.')); return; }
+  function cancelCodecJob(id,authorization) {
+    if (!codec || stopped || failure || cancellations.size>=maxApiRequests) return;
+    const control=http.request(new URL(`/api/cancel?id=${encodeURIComponent(id)}`,codec.origin),
+      {method:'POST',agent:controlAgent,timeout:2000,
+        headers:{'Content-Length':0,...(authorization?{Authorization:authorization}:{})}},incoming=>{
+        incoming.resume();incoming.once('end',()=>cancellations.delete(control));
+        incoming.once('error',()=>cancellations.delete(control));
+      });
+    cancellations.add(control);
+    control.once('timeout',()=>control.destroy());
+    control.once('error',()=>cancellations.delete(control));
+    control.once('close',()=>cancellations.delete(control));control.end();
+  }
+
+  function forward(request,response,pathname) {
+    const control=pathname==='/api/cancel', collection=control?controls:jobs;
+    if (control ? controls.size>=4 : jobs.size+cancellations.size>=maxApiRequests) { reject(response,error(503,'backend_busy','Too many file operations are pending. Wait for one to finish and try again.')); return; }
+    const cancellable=['/api/import','/api/open','/api/export','/api/source'].includes(pathname);
+    const identity=cancellable?(request.headers['x-styk-job-id']||randomBytes(16).toString('hex')):null;
     let upstream, done=false;
     const finish = () => {
-      if (done) return; done=true; jobs.delete(job);
+      if (done) return; done=true; collection.delete(job);
       request.removeListener('aborted',cancel); response.removeListener('close',cancel); response.removeListener('finish',finish);
     };
-    const cancel = () => { upstream?.destroy(); finish(); };
+    const cancel = () => {
+      if (!done && upstream && cancellable) cancelCodecJob(identity,request.headers.authorization);
+      upstream?.destroy();finish();
+    };
     const job = {cancel, fail() { cancel(); reject(response,unavailable()); }, start() {
       if (done) return;
-      upstream = http.request(new URL(request.url,codec.origin), {method:request.method,agent,
-        headers:{...headersWithoutHop(request.headers),host:new URL(codec.origin).host}}, incoming => {
+      upstream = http.request(new URL(request.url,codec.origin), {method:request.method,agent:control?controlAgent:agent,
+        headers:{...headersWithoutHop(request.headers),host:new URL(codec.origin).host,...(identity?{'x-styk-job-id':identity}:{})}}, incoming => {
         response.writeHead(incoming.statusCode,headersWithoutHop(incoming.headers));
         void pipeline(incoming,response).catch(()=>cancel());
       });
       upstream.on('error',()=>{if (!done) {finish(); reject(response,unavailable());}});
       request.pipe(upstream);
     }};
-    jobs.add(job); request.once('aborted',cancel); response.once('close',cancel); response.once('finish',finish);
+    collection.add(job); request.once('aborted',cancel); response.once('close',cancel); response.once('finish',finish);
     if (codec) job.start();
   }
 
@@ -114,7 +136,7 @@ async function startDesktopHost({appRoot, resourcesPath, packaged=false, onError
           if (!Number.isSafeInteger(length) || length<0) throw error(411,'length_required','Content-Length is required.');
           if (length>MAX_BODY) throw error(413,'body_too_large','The request exceeds the configured size limit.');
         }
-        forward(request,response);
+        forward(request,response,url.pathname);
       } else {
         if (!['GET','HEAD'].includes(request.method)) throw error(405,'method_not_allowed','Application resources are read-only.');
         await serveStatic(request,response,url.pathname);
@@ -123,18 +145,19 @@ async function startDesktopHost({appRoot, resourcesPath, packaged=false, onError
   });
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const codecFailed = message => { failure = unavailable(); for (const job of [...jobs]) job.fail(); if (!stopped) notify(message); };
+  const codecFailed = message => { failure = unavailable(); for (const job of [...jobs,...controls]) job.fail(); if (!stopped) notify(message); };
   const ready = Promise.resolve().then(()=>startCodec({appRoot,resourcesPath,packaged,log,signal:controller.signal,onError:codecFailed}))
-    .then(value=>{if(stopped){value.stop();throw new DOMException('The editor closed.','AbortError');}codec=value;for(const job of [...jobs])job.start();return value;})
+    .then(value=>{if(stopped){value.stop();throw new DOMException('The editor closed.','AbortError');}codec=value;for(const job of [...controls,...jobs])job.start();return value;})
     .catch(cause=>{if(!stopped)codecFailed(cause.message);throw cause;});
   ready.catch(()=>{}); // Starting the shell does not require a caller awaiting Python.
   return {origin,port:server.address().port,ready,
     get child(){return codec?.child;},
-    get pendingRequests(){return jobs.size;},
+    get pendingRequests(){return jobs.size+controls.size;},
     stop(){
       if (closing) return closing;
-      stopped=true; controller.abort(); codec?.stop(); agent.destroy();
-      for(const job of [...jobs]){job.cancel();}
+      stopped=true; controller.abort(); codec?.stop(); agent.destroy();controlAgent.destroy();
+      for(const pending of cancellations)pending.destroy();cancellations.clear();
+      for(const job of [...jobs,...controls]){job.cancel();}
       closing=new Promise(resolve=>server.close(resolve));server.closeAllConnections();return closing;
     }};
 }

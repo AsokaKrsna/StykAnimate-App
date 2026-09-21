@@ -126,6 +126,28 @@ test('failed startup returns actionable API errors without removing the editor o
   assert.equal(f.host.pendingRequests,0);
 });
 
+test('cancellation has independent capacity and disconnected clients signal the exact codec identity',async t=>{
+  const f=await fixture(t),received=[],cancelled=[];
+  const upstream=await codec(t,(req,res)=>{
+    if(req.url.startsWith('/api/cancel?')){
+      cancelled.push({id:new URL(req.url,'http://localhost').searchParams.get('id'),auth:req.headers.authorization});
+      res.writeHead(204);res.end();return;
+    }
+    received.push(req.headers['x-styk-job-id']);
+  });
+  f.resolve(upstream);await f.host.ready;
+  const first=request(f.host.origin,'/api/source?id=first',{headers:{Authorization:'Bearer local-test'}});
+  const second=request(f.host.origin,'/api/source?id=second');first.result.catch(()=>{});second.result.catch(()=>{});
+  await until(()=>received.length===2);assert.ok(received.every(id=>/^[a-f0-9]{32}$/.test(id)));
+  assert.equal((await request(f.host.origin,'/api/source?id=full').result).status,503);
+  const control=await request(f.host.origin,`/api/cancel?id=${received[1]}`,{method:'POST',headers:{'Content-Length':0}}).result;
+  assert.equal(control.status,204,'A full work queue must not block cancellation');
+  first.cancel();second.cancel();await assert.rejects(first.result);await assert.rejects(second.result);
+  await until(()=>cancelled.some(item=>item.id===received[0]));
+  assert.equal(cancelled.find(item=>item.id===received[0]).auth,'Bearer local-test');
+  await until(()=>f.host.pendingRequests===0);
+});
+
 test('static and proxy paths reject traversal, escaped links, private files and remote origins',async t=>{
   const f=await fixture(t);
   await symlink(f.directory,path.join(f.root,'src','escape'),process.platform==='win32'?'junction':'dir');

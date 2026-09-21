@@ -28,6 +28,7 @@ from piv_codec import PivError, Reader, MAX_SEGMENTS, _builtin_man, _figure, dec
 from piv_full_writer import encode_piv_project
 from piv_migrate import migrate_legacy_bytes
 from pivot_decoder import DecodeOptions, decode_stk_file
+from work_control import checkpoint
 
 MAX_SOURCE = 256 * 1024 * 1024
 MAX_DOCUMENT = 512 * 1024 * 1024
@@ -208,6 +209,7 @@ def stk_document(path: Path, source: bytes) -> dict:
 
 
 def validate_document(document: dict) -> None:
+    checkpoint()
     if not isinstance(document, dict) or document.get("version") not in (2, 3, 4, 5):
         raise PivError("Not a supported StykAnimate/Pivot document")
     native = document.get("_styk", {})
@@ -231,6 +233,7 @@ def validate_document(document: dict) -> None:
             raise PivError(f"Document contains non-finite {label}")
     types = {}
     for figure in figures:
+        checkpoint()
         tid, segments = figure.get("figure_type_id"), figure.get("segments")
         if not isinstance(tid, int) or tid in types or not isinstance(segments, list) or not 0 < len(segments) <= MAX_SEGMENTS:
             raise PivError("Invalid or duplicate figure definition")
@@ -254,6 +257,7 @@ def validate_document(document: dict) -> None:
             seen.update(chain)
         types[tid] = (len(segments), parents)
     for frame in frames:
+        checkpoint()
         objects = frame.get("objects")
         if not isinstance(objects, list) or len(objects) > 65535:
             raise PivError("Invalid frame objects")
@@ -262,6 +266,7 @@ def validate_document(document: dict) -> None:
             raise PivError("Duplicate object identity in frame")
         joined_to = {}
         for obj in objects:
+            checkpoint()
             tid = obj.get("figure_type_id")
             if tid not in types or len(obj.get("angles", [])) != types[tid][0]:
                 raise PivError("Object figure reference or pose length is invalid")
@@ -300,13 +305,16 @@ def validate_document(document: dict) -> None:
     # json.load accepts NaN by default; finite checking protects native code.
     stack = [document]
     while stack:
-        item = stack.pop()
-        if isinstance(item, float) and not math.isfinite(item):
-            raise PivError("Document contains non-finite numbers")
-        if isinstance(item, dict):
-            stack.extend(item.values())
-        elif isinstance(item, list):
-            stack.extend(item)
+        checkpoint()
+        for _ in range(min(1024, len(stack))):
+            item = stack.pop()
+            if isinstance(item, float):
+                if not math.isfinite(item):
+                    raise PivError("Document contains non-finite numbers")
+            elif isinstance(item, dict):
+                stack.extend(item.values())
+            elif isinstance(item, list):
+                stack.extend(item)
 
 
 def load_project(path: Path) -> dict:

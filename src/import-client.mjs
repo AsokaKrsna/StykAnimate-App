@@ -1,6 +1,7 @@
 /** File I/O boundary: bytes transfer to a worker; JSON parsing stays off the UI. */
 import { applyDocumentChunk } from './document-transport.mjs';
 import {materializeNativeFrames} from './import-wire.mjs';
+import {codecJob} from './codec-job.mjs';
 export class ImportClient {
   constructor({baseURL = globalThis.location?.origin, token = '', timeoutMs = 180000,
     workerURL = new URL('./import-worker.mjs', import.meta.url)} = {}) {
@@ -38,10 +39,10 @@ export class ImportClient {
       const result=message.complete?{...message.result,document:request.document}:message.result;
       materializeNativeFrames(result,buffer,offset,{isCancelled:()=>this.pending.get(message.id)!==request}).then(result=>{
         if(this.pending.get(message.id)!==request) return;
-        this.pending.delete(message.id);clearTimeout(request.timer);request.resolve(result);
+        this.pending.delete(message.id);clearTimeout(request.timer);request.backendJob.finish();request.resolve(result);
       },error=>{
         if(this.pending.get(message.id)!==request) return;
-        this.pending.delete(message.id);clearTimeout(request.timer);request.reject(error);
+        this.pending.delete(message.id);clearTimeout(request.timer);request.backendJob.cancel();request.reject(error);
       });
       return;
     }
@@ -50,14 +51,15 @@ export class ImportClient {
         request.document = applyDocumentChunk(request.document, message.chunk);
         this.worker.postMessage({ operation: 'ack', id: message.id, sequence: message.sequence });
       } catch (error) {
-        this.pending.delete(message.id); clearTimeout(request.timer); this.worker.postMessage({ operation: 'cancel', id: message.id }); request.reject(error);
+        this.pending.delete(message.id); clearTimeout(request.timer); request.backendJob.cancel(); this.worker.postMessage({ operation: 'cancel', id: message.id }); request.reject(error);
       }
       return;
     }
     this.pending.delete(message.id);
     clearTimeout(request.timer);
-    if (message.ok) request.resolve(message.complete ? { ...message.result, document: request.document } : message.result);
+    if (message.ok) { request.backendJob.finish(); request.resolve(message.complete ? { ...message.result, document: request.document } : message.result); }
     else {
+      request.backendJob.cancel();
       const error = new Error(message.error?.message || 'This file could not be imported.');
       if (message.error?.code) error.code = message.error.code;
       if (message.error?.status) error.status = message.error.status;
@@ -73,6 +75,7 @@ export class ImportClient {
     this.worker.terminate();
     for (const request of this.pending.values()) {
       clearTimeout(request.timer);
+      request.backendJob.cancel();
       request.reject(error);
     }
     this.pending.clear();
@@ -82,7 +85,7 @@ export class ImportClient {
     if (this.disposed) return Promise.reject(new Error('The file importer has been disposed.'));
     // Retry only the user's next operation; never silently repeat a failed one.
     if(this.failure){try{this._startWorker();}catch(error){this.diagnostics?.recovery('import_worker','failed');return Promise.reject(error);}}
-    const id = ++this.sequence;
+    const id = ++this.sequence, backendJob = codecJob(this.baseURL, this.token);
     return new Promise((resolve, reject) => {
       const timer = this.timeoutMs > 0 ? setTimeout(() => {
         const error = new Error('The file import timed out. Try opening a smaller project.');
@@ -91,12 +94,13 @@ export class ImportClient {
         this._fail(error);
       }, this.timeoutMs) : null;
       const succeeded=value=>{this.diagnostics?.recovery('import_worker','recovered');resolve(value);};
-      this.pending.set(id, {resolve:succeeded, reject, timer, onProgress});
+      this.pending.set(id, {resolve:succeeded, reject, timer, onProgress, backendJob});
       try {
-        this.worker.postMessage({id, operation, baseURL: this.baseURL, token: this.token, ...payload}, transfer);
+        this.worker.postMessage({id, operation, baseURL: this.baseURL, token: this.token, jobId: backendJob.id, ...payload}, transfer);
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(id);
+        backendJob.cancel();
         reject(error);
       }
     });
@@ -118,7 +122,7 @@ export class ImportClient {
 
   cancelPending() {
     this.cancelGeneration++;
-    for(const [id,request] of this.pending){clearTimeout(request.timer);this.worker.postMessage({operation:'cancel',id});request.reject(new DOMException('Import superseded.','AbortError'));}
+    for(const [id,request] of this.pending){clearTimeout(request.timer);request.backendJob.cancel();this.worker.postMessage({operation:'cancel',id});request.reject(new DOMException('Import superseded.','AbortError'));}
     this.pending.clear();
   }
 

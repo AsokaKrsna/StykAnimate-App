@@ -15,11 +15,13 @@ import zlib
 from typing import Any
 
 if __package__:
+    from .work_control import checkpoint
     from .piv_codec import PivError, _builtin_man, decode_piv_bytes
     from .piv_full_writer import encode_piv_project
     from .piv_asset_writer import resolve_image_bytes
     from .piv_legacy import _keyed_bitmap_png
 else:
+    from work_control import checkpoint
     from piv_codec import PivError, _builtin_man, decode_piv_bytes
     from piv_full_writer import encode_piv_project
     from piv_asset_writer import resolve_image_bytes
@@ -189,6 +191,7 @@ def _migrate(document: dict[str, Any]) -> dict[str, Any]:
         raise PivError('Legacy migration requires at least one keyframe')
     frame_map, ticks = [], 0
     for original_index, frame in enumerate(frames):
+        checkpoint()
         # Authored independent tracks can retain hidden source poses while the
         # legacy document is being materialized for its modern PIV export.
         hold = _integer(frame.get('duration_raw'), 'Legacy hold duration', 0, 65535)
@@ -196,6 +199,7 @@ def _migrate(document: dict[str, Any]) -> dict[str, Any]:
                            'object_draw_order', 'object_draw_order_unique_ids'))
         f['objects'] = []
         for obj in frame['objects']:
+            checkpoint()
             o = _fields(obj, ('unique_id', 'figure_type_id', 'scale', 'field28', 'image_text_flags',
                 'angles', 'root_x', 'root_y', 'len_flag', 'lengths', 'bend_flag', 'bends', 'join'))
             if o['figure_type_id'] not in mapping:
@@ -257,6 +261,7 @@ def migrate_legacy_bytes(source: bytes, document: dict[str, Any] | None = None) 
     if document is not None and not isinstance(document, dict):
         raise PivError('Legacy document must be an object')
     edited = copy.deepcopy(original if document is None else document)
+    checkpoint()
     if edited.get('version') != original['version']:
         raise PivError('Edited document version does not match the original legacy source')
     if edited.get('source_sha256', original['source_sha256']) != original['source_sha256']:

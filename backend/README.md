@@ -80,11 +80,31 @@ without a token; remote origins and filesystem traversal are rejected.
 
 Desktop windows use `desktop/web-host.cjs` as their public loopback origin. It
 serves the packaged web assets immediately and streams `/api/` traffic to this
-codec once it is ready, with at most 16 pending/active requests and bounded
-uploads. The editor and worker-native project saving/reopening do not wait for
+codec once it is ready, with at most 16 pending/active file requests, four
+separate cancellation requests and bounded uploads. The editor and worker-native project saving/reopening do not wait for
 Python startup. The launcher cancels a starting or running child on quit. The
 Python static host remains available for browser development and direct codec
-tests. Closing a proxied request does not yet cancel its Python CPU processing.
+tests. Import/export requests carry a random 32-character lowercase hexadecimal
+`X-Styk-Job-Id`. The UI owns that identity even if its worker is terminated;
+`POST /api/cancel?id=<identity>` with an empty body cancels the service job.
+The endpoint uses the same origin/token checks as file operations. The desktop
+proxy supplies identities for other clients and sends cancellation when its
+upstream client disconnects, using a separate bounded control connection pool.
+
+The service admits at most 16 heavy requests, with one active request; queued
+uploads wait before body parsing. Health and cancellation stay outside this
+queue. Cancellation checks occur at existing codec loop/stage boundaries and
+before source-cache publication. Stalled uploads are also cancellable. Native
+calls, JSON parsing/encoding, compression and individual deep copies finish
+before their next checkpoint; this is cooperative cancellation, not thread
+termination. HTTP clients may still half-close their upload and read a valid
+response. Cancelled identities are retained for up to 120 seconds in a bounded
+256-entry race-protection cache. Offline codec APIs have no scheduler dependency.
+
+Regression checks: `python -m unittest discover -s backend -p test_jobs.py`,
+`node --test tests/codec-job.test.mjs tests/import-client-recovery.test.mjs tests/desktop-web-host.test.mjs`,
+and `node tests/codec-cancellation.browser.mjs`. Rebuild and run
+`node scripts/verify-sidecar.mjs` when changing the packaged service.
 
 Run verification with `python -m unittest discover -s backend -p test_server.py`.
 Tests cover the real 37-file PIV corpus, shipped and workspace STKs, edited
