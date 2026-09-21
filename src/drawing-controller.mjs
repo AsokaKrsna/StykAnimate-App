@@ -39,7 +39,7 @@ export class DrawingController {
       const kind=event.detail.kind;
       if(kind==='document'){this.cancel();this.selection=null;this.bind();}
       if(kind==='seek'){this.finish();this.cancelSelection();}
-      if(kind==='history'){this.cancel();this.cancelSelection();}
+      if(kind==='history'){if(!this.operation?.history)this.cancel();this.cancelSelection();}
       if(kind==='document'||kind==='seek')this.prefetchCels();
       if(this.active){this.sync();this.prepareVisible();}
     },opts);
@@ -82,7 +82,7 @@ export class DrawingController {
     if(this.operation)return this.operation.done.then(()=>this.pixelOperation(label,operation));
     const owner=this.owner,revision=this.editor.revision,op={owner,abort:new AbortController()};
     op.check=()=>{if(op.abort.signal.aborted||owner!==this.owner||revision!==this.editor.revision)throw new DOMException('Drawing operation superseded.','AbortError');};
-    op.reserve=(surface,requested=TRANSFORM_BYTES)=>{op.check();owner.hold(op,0);owner.reserve(0,surface);op.maxBytes=Math.min(requested,Math.max(0,owner.hardBudget-owner.stats.bytes-owner.workingBytes));owner.hold(op,op.maxBytes,surface);};
+    op.reserve=(surface,requested=TRANSFORM_BYTES)=>{op.check();owner.hold(op,0);owner.reserve(0,surface);const s=owner.stats;op.maxBytes=Math.min(requested,Math.max(0,owner.hardBudget-s.bytes-s.historyBytes-s.deferredBytes-s.workingBytes));owner.hold(op,op.maxBytes,surface);};
     op.received=tiles=>owner.hold(op,tiles.reduce((n,t)=>n+(t.pixels?.byteLength??0)+(t.before?.byteLength??0)+(t.after?.byteLength??0),0));
     this.operation=op;owner.busy=true;this.onStatus(label+'… Escape cancels.');
     op.done=Promise.resolve().then(()=>operation(op)).then(value=>{op.succeeded=true;return value;}).finally(()=>{
@@ -108,6 +108,12 @@ export class DrawingController {
   afterGesture(operation){
     const wait=this.settle({selection:true}),report=this.editor.report;
     return wait?wait.then(()=>{if(report!==this.editor.report)throw new DOMException('Drawing document changed.','AbortError');return operation();}):operation();
+  }
+  history(direction){
+    return this.afterGesture(()=>{
+      if(!this.owner?.history?.needsLoad(this.editor[direction==='undo'?'_undo':'_redo'].at(-1)))return this.editor[direction]();
+      return this.pixelOperation(direction==='undo'?'Restoring undo':'Restoring redo',async op=>{op.history=true;return this.editor[direction]({signal:op.abort.signal});});
+    });
   }
   enter(){if(this.active)return;this.beforeEdit();this.prior={handles:this.state.handles,tool:this.state.tool,rotation:this.state.view.rotation??0};this.active=true;this.state.handles=false;this.state.tool='drawing-brush';this.state.drawing=true;this.cursor=null;this.bind();
     const layers=this.editor.layers.filter(layer=>isDrawingLayer(layer)&&!layer.locked&&layer.visible),target=layers.find(l=>l.id===this.editor.activeLayerId)||layers.find(l=>l.id===this.lastLayer)||layers.at(-1);if(target){this.editor.selectSheetLayer(target.id);this.state.selectedTrackId=target.id;}this.sync();this.prepareVisible();this.onUI();this.onRender();}

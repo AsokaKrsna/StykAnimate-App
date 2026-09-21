@@ -31,11 +31,12 @@ try {
   assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.report.keyframes)),before.poses);
   await page.locator('.audio-body').press('Control+z'); await settle();
   assert.equal(await page.evaluate(()=>styk.editor.report._styk.audio.tracks[0].clips[0].start),before.start);
+  await page.getByRole('button',{name:'Audio clip controls',exact:true}).click();
   await page.getByRole('button',{name:'Audio clip properties',exact:true}).click();
   await page.getByLabel('Clip volume · %',{exact:true}).fill('65'); await page.getByLabel('Clip volume · %',{exact:true}).press('Tab');
   await page.getByLabel('Fade in · seconds',{exact:true}).fill('0.25'); await page.getByLabel('Fade in · seconds',{exact:true}).press('Tab');
   await page.screenshot({path:`${out}/properties.png`}); await page.getByRole('button',{name:'Close audio properties'}).click();
-  await page.evaluate(()=>styk.editor.seek(24));await page.getByRole('button',{name:'Split audio at playhead (S)'}).click();await settle();
+  await page.evaluate(()=>styk.editor.seek(24));await page.getByRole('button',{name:'Audio clip controls',exact:true}).click();await page.getByRole('button',{name:'Split audio at playhead (S)'}).click();await settle();
   assert.equal(await page.evaluate(()=>styk.editor.report._styk.audio.tracks[0].clips.length),2);
   await page.getByRole('button',{name:'Mute Dialogue'}).click();assert.equal(await page.evaluate(()=>styk.editor.report._styk.audio.tracks[0].mute),true);
   await page.getByRole('button',{name:'Mute Dialogue'}).click();

@@ -106,6 +106,7 @@ try{
   const disposal=await page.evaluate(async()=>{
     const {Editor}=await import('/src/editor.mjs'),e=styk.editor,owner=styk.drawingResourcesFor(e.report),workersBefore=owner.stats.workers;
     e.load(new Editor({demo:false}).report);
+    await owner.dispose(); // Joins the already-started disk cleanup/worker close.
     // Draw mode is still open, so a fresh empty owner exists for the new
     // report — it must spawn no workers and hold no entries.
     const fresh=styk.drawingResourcesFor(e.report);

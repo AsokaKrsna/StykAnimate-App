@@ -8,8 +8,8 @@ const el = (tag, parent, className, text) => { const node = document.createEleme
 
 /** Shared audio lanes aligned to each timeline's actual time-to-pixel mapping. */
 export class AudioTimeline {
-  constructor(container, editor, {host, engine, mode = 'advanced', onError, onSeek, onScrubStart, onScrub, onScrubEnd, onTogglePlay} = {}) {
-    Object.assign(this, {editor, host, engine, mode, onError, onSeek, onScrubStart, onScrub, onScrubEnd, onTogglePlay});
+  constructor(container, editor, {host, engine, mode = 'advanced', onError, onSeek, onScrubStart, onScrub, onScrubEnd, onTogglePlay, onHistory, beforeCommand, onCancel} = {}) {
+    Object.assign(this, {editor, host, engine, mode, onError, onSeek, onScrubStart, onScrub, onScrubEnd, onTogglePlay, onHistory, beforeCommand, onCancel});
     this.events = new AbortController(); this.nodes = new Map(); this.labels = new Map();
     this.integrated = mode === 'advanced'; this.open = Boolean(editor.audioPanelOpen);
     Object.assign(this, editor.audioSelection ?? {});
@@ -100,7 +100,7 @@ export class AudioTimeline {
     this.on(window, 'styk-theme-change', () => this.update()); this.on(window, 'blur', () => this.cancel()); this.update();
   }
   on(target, type, callback, options = {}) { target.addEventListener(type, callback, {...options, signal: target.closest?.('.audio-track,.audio-properties')?.events?.signal ?? this.events.signal}); }
-  _run(action) { try { this.onSeek?.(); const result = action(); if (result?.then) result.catch(error => this.error(error)); this.update(); return result; } catch (error) { this.error(error); } }
+  _run(action) { try { this.onSeek?.(); const wait=this.beforeCommand?.(),result=wait?wait.then(action):action(); if (result?.then) result.then(()=>this.update(),error => {if(error.name!=='AbortError')this.error(error);}); this.update(); return result; } catch (error) { this.error(error); } }
   error(error) { this.live.textContent = error.message; this.onError?.(error); }
   button(parent, title, action, symbol) { const node = el('button', parent, 'audio-button'); node.type = 'button'; node.title = title; node.setAttribute('aria-label', title); node.innerHTML = icon(symbol); this.on(node, 'click', () => node.viewAction ? action() : this._run(action)); return node; }
   get rulerHeight() { return this.integrated ? 0 : RULER; }
@@ -343,9 +343,9 @@ export class AudioTimeline {
     const ctrl = event.ctrlKey || event.metaKey; let action;
     if (event.target.closest('button:not([data-clip])') && ['Enter', ' '].includes(event.key)) { event.stopPropagation(); return; }
     if (event.target.matches('input,select,textarea') && !(event.target.matches('input[type=range]') && ctrl && ['z', 'y'].includes(event.key.toLowerCase()))) { event.stopPropagation(); return; }
-    if (event.key === 'Escape') action = () => { this.cancel(); this.closeProperties(); };
-    else if (ctrl && event.key.toLowerCase() === 'z') action = () => this.editor[event.shiftKey ? 'redo' : 'undo']();
-    else if (ctrl && event.key.toLowerCase() === 'y') action = () => this.editor.redo();
+    if (event.key === 'Escape') { event.preventDefault();event.stopPropagation();this.onCancel?.();this.cancel();this.closeProperties();return; }
+    else if (ctrl && event.key.toLowerCase() === 'z') action = () => this.onHistory?this.onHistory(event.shiftKey?'redo':'undo'):this.editor[event.shiftKey?'redo':'undo']();
+    else if (ctrl && event.key.toLowerCase() === 'y') action = () => this.onHistory?this.onHistory('redo'):this.editor.redo();
     else if (this.selected && ctrl && event.key.toLowerCase() === 'c') action = () => this.editor.copyAudioClip(this.selected);
     else if (this.selected && ctrl && event.key.toLowerCase() === 'x') action = () => { this.editor.cutAudioClip(this.selected); this.selected=null; };
     else if (ctrl && event.key.toLowerCase() === 'v') action = () => { this.selected=this.editor.pasteAudioClip(this.trackId)||null; };

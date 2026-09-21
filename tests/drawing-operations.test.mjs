@@ -13,6 +13,11 @@ function fixture(){
 }
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 
+test('warm history keeps synchronous command behavior and avoids a pixel operation',()=>{
+  const d=fixture();d.owner.history={needsLoad:()=>false};d.editor._undo=[{}];d.editor.undo=()=>true;
+  assert.equal(d.history('undo'),true);assert.equal(d.operation,undefined);assert.equal(d.owner.busy,false);
+});
+
 test('save and command barriers wait for pixel transaction publication',async()=>{
   const d=fixture(),gate=deferred();let published=false,settled=false;
   const work=d.pixelOperation('Paste',async op=>{await gate.promise;op.check();published=true;});

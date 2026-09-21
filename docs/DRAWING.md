@@ -167,13 +167,39 @@ stroke still belongs to the exposure where it started.
 
 Undo belongs to the editor's chronological history. Before/after tile records
 are exact; absent sides are `null` and uniform tiles use a four-byte color
-representation. The shared 48 MiB budget accounts for both undo and redo. An
-edit larger than the remaining budget evicts the oldest commands until it
-fits. An oversized newest command can exceed the history retention target;
-it remains undoable. Separate working-memory checks reject allocations before
-changing authoritative pixels.
-Evicted stores do not require an asynchronous history cursor: records apply
-synchronously to whatever store the cel resolves to. Fill, paste, resample and
+representation. Where workers and IndexedDB are available, records of at least
+64 KiB move to a session-owned disk tier. Its dedicated worker encodes, hashes
+and optionally compresses chunks of at most 1 MiB. Partial manifests and chunks
+commit together; only a completed manifest allows RAM eviction. The hot tier
+retains 16 MiB by default, and disk writes stop at 512 MiB of stored chunks.
+Queued writes and pinned replays can exceed the hot retention target, but their
+resident bytes and worker scratch count against the owner's working-memory
+limit. A failed write preserves the exact RAM records and restores their shared
+history weight. Subsequent edits use RAM history for that session.
+
+The shared 48 MiB budget counts command metadata and records without disk
+backing, across undo and redo. The existing 80-command limit still applies. An
+oversized newest command remains undoable; allocation checks reject work before
+changing authoritative pixels. Warm undo stays synchronous. Cold undo/redo
+returns a promise, pins all children of the command, loads and validates their
+complete pixel data, and only then applies it. Cancelled or damaged reads and
+intervening edits leave both pixels and the history cursor unchanged. Canvas,
+timeline and audio shortcuts share the drawing transaction gate so saving and
+the next pen gesture wait for cold replay. Deferred changes on evicted cel stores
+retain their own accounted pixel bytes until those stores are reconstructed.
+
+Disk history is temporary, not a dependency of saved documents. A main-thread
+Web Lock protects each session across worker restarts; new sessions reclaim
+abandoned sessions only after acquiring their locks. Interrupted writes in the
+same session are reclaimed when its worker reopens the database. Without Web
+Locks, only explicit disposal deletes a session. Closing a document releases
+its cache and worker. Native saving and recovery remain self-contained.
+Desktop startup additionally clears temporary IndexedDB storage in its own
+Chromium workspace session before opening the editor, because its loopback
+origin changes between launches. Desktop preferences, recovery and library
+data use native files; they must not be placed in this temporary database tier.
+
+Fill, paste, resample and
 thumbnails compute in workers over bounded tile regions. Lasso preview always
 uses the original selection, with one resample when applied.
 
@@ -228,9 +254,10 @@ backs off until pixels change. WebGPU retains an existing texture while its
 replacement is prepared. Small cels use the synchronous dirty-region path.
 Cold previews may take longer in wall time than synchronous rasterization,
 but input is not blocked by their mip calculation. Worker source/preview working
-sets are included in resource reservations. Source tiles, encoded document
-strings, editor history, browser overhead and GPU allocations remain distinct
-memory categories; these budgets are not a process-RSS limit.
+sets are included in resource reservations. Source tiles, resident drawing
+history and deferred pixel records share the owner reservation limit. Encoded
+document strings, other editor history, browser overhead and GPU allocations
+remain separate memory categories; these budgets are not a process-RSS limit.
 
 Thumbnail mip generation also runs in the worker. Playback/export providers
 count source tiles, mip tiles and scratch canvases in their retained bytes and

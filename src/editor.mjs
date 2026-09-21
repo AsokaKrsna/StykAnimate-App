@@ -290,10 +290,19 @@ export class Editor extends EventTarget {
           : JSON.stringify(sized).length * 2 + (command.sourceBytes ?? 0)) + (this._pendingSourceBytes ?? 0);
     this._pendingSourceBytes = 0;
     if (this._movieclipBatch) {this._movieclipBatch.push(command); return;}
+    drawingResourcesFor(this.report)?.history?.track(command,delta=>{
+      if(this._undo.includes(command)||this._redo.includes(command)){this._historySize+=delta;this._trimHistory();}
+    });
     this._historySize -= this._redo.reduce((bytes,entry)=>bytes+entry.bytes,0);
     this._historySize += command.bytes; this._undo.push(command); this._redo = [];
-    while (this._undo.length > this.historyLimit || (this._historySize > this.historyBytes && this._undo.length > 1)) {
-      this._historySize -= this._undo.shift().bytes;
+    this._trimHistory(collectSources);
+  }
+  _trimHistory(collectSources=false) {
+    while (this._undo.length > this.historyLimit || (this._historySize > this.historyBytes && this._undo.length + this._redo.length > 1)) {
+      // A failed background archive can restore RAM weight after commands
+      // moved to redo. Retire the farthest future first once one undo remains.
+      const retired=this._undo.length>1?this._undo:this._redo.length?this._redo:this._undo;
+      this._historySize -= retired.shift().bytes;
       collectSources = true;
     }
     if (collectSources){this._pruneFrameSources();drawingResourcesFor(this.report)?.collectHistory([...this._undo,...this._redo]);}
@@ -417,20 +426,28 @@ export class Editor extends EventTarget {
       ...(['objects','frame'].includes(command.kind)&&!command.structural&&!command.frameDraftStored?{frameIndices:[command.index]}:{}),
       ...(localObjects ? {frameIndices: [command.index], changedUids: value.map(o => o.unique_id)} : {})});
   }
-  undo() {
+  undo({signal}={}) {
     this.cancelVfxClipEdit();
     if (this._animationEdit) this.cancelAnimationEdit();
     if (this._drag) this.cancelDrag();
     const command = this._undo.at(-1); if (!command) return false;
-    drawingResourcesFor(this.report)?.checkHistory(command,'before');
-    this._applyCommand(command, 'before'); this._undo.pop(); this._redo.push(command); return true;
+    return this._drawingHistoryReplay(command,'before',signal);
   }
-  redo() {
+  redo({signal}={}) {
     this.cancelVfxClipEdit();
     if (this._animationEdit) this.cancelAnimationEdit();
     const command = this._redo.at(-1); if (!command) return false;
-    drawingResourcesFor(this.report)?.checkHistory(command,'after');
-    this._applyCommand(command, 'after'); this._redo.pop(); this._undo.push(command); return true;
+    return this._drawingHistoryReplay(command,'after',signal);
+  }
+  _drawingHistoryReplay(command,direction,signal) {
+    const resources=drawingResourcesFor(this.report),history=resources?.history,report=this.report,revision=this.revision;
+    const source=direction==='before'?this._undo:this._redo,destination=direction==='before'?this._redo:this._undo;
+    const replay=()=>{try{
+      if(signal?.aborted||report!==this.report||revision!==this.revision||source.at(-1)!==command)throw new DOMException('History changed before undo/redo completed.','AbortError');
+      resources?.checkHistory(command,direction);this._applyCommand(command,direction);source.pop();destination.push(command);return true;
+    }finally{history?.release(command);}};
+    const pending=history?.prepare(command,{signal});
+    return pending?pending.then(replay,error=>{history.release(command);throw error;}):replay();
   }
   markSaved() { this._savedRevision = this._revision; this._emit('saved'); }
 

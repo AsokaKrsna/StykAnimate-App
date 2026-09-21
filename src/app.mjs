@@ -4349,7 +4349,7 @@ const actions = {
     cameraMotionControls?.cancel();
     vfxInspector?.finishForHistory();
     vfxGizmos?.up();
-    editor.undo();
+    return drawingController?drawingController.history('undo'):editor.undo();
   },
   redo: () => {
     pause();
@@ -4362,7 +4362,7 @@ const actions = {
     cameraMotionControls?.cancel();
     vfxInspector?.finishForHistory();
     vfxGizmos?.up();
-    editor.redo();
+    return drawingController?drawingController.history('redo'):editor.redo();
   },
   play: play,
   "first-frame": () => {
@@ -4788,7 +4788,7 @@ const polygonSafeActions = new Set([
 ]);
 for (const [name, action] of Object.entries(actions)) {
   actions[name] = (...args) => {
-    if(drawingController?.gesture?.kind==='stroke'||drawingController?.loading||drawingController?.selection)
+    if(drawingController?.gesture?.kind==='stroke'||drawingController?.loading||drawingController?.selection||drawingController?.operation)
       return drawingController.afterGesture(()=>actions[name](...args));
     if (state.polygon) {
       if (["new", "open", "open-recent", "close"].includes(name))
@@ -5332,7 +5332,7 @@ function hotkeyScopes(event) {
   return scopes;
 }
 function cancelKeyboardCommand() {
-  if(drawingController?.active){drawingController.cancel();drawingController.cancelSelection();}
+  if(drawingController?.active||drawingController?.operation){drawingController.cancel();drawingController.cancelSelection();}
   state.rigAnchorPick = null;
   if (keyboardHandleGesture) {
     if (keyboardHandleGesture.ownsDrag) editor.cancelDrag();
@@ -5347,7 +5347,7 @@ function cancelKeyboardCommand() {
   $('menu').hidden = true;
 }
 function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
-  if(id!=='cancel'&&id!=='play-pan'&&(drawingController?.gesture?.kind==='stroke'||drawingController?.loading||drawingController?.selection?.committing))
+  if(id!=='cancel'&&id!=='play-pan'&&(drawingController?.gesture?.kind==='stroke'||drawingController?.loading||drawingController?.selection?.committing||drawingController?.operation))
     return drawingController.afterGesture(()=>runKeyboardCommand(id,event,modifiers));
   editablePreparation.cancel();
   if(drawingController?.active){
@@ -5968,6 +5968,8 @@ function mountTimeline() {
     audioEngine,
     onCameraMotionPreview: clip => cameraMotionControls?.previewTimeline(clip),
     onTogglePlay: play,
+    onHistory: direction => actions[direction](),
+    onCancel: () => drawingController?.cancel(),
     onionController,
     onAddFrame: () => actions["add-frame"](),
     onDeleteLayer: id => changeFigureLayer('Delete layer',options=>editor.deleteLayerAsync(id,options)),

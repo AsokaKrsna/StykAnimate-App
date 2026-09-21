@@ -693,6 +693,11 @@ async function start() {
   });
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
+  // Each workspace owns a separate Chromium session directory, and each
+  // launch gets a new loopback origin. IndexedDB here is temporary worker
+  // storage only; native recovery, preferences and library data live in files.
+  // Reclaim old-origin undo caches before any editor/worker can use the session.
+  await session.defaultSession.clearStorageData({storages:['indexdb']}).catch(error=>console.warn('Temporary drawing cache cleanup:',error.message));
   nativeMenu();
   registerIpc();
   await createWindow();
