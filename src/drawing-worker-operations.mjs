@@ -81,7 +81,7 @@ export async function drawingWorkerOperation(data){
       const keep=new Set(data.keep),input=previewStore.store;
       for(const tile of input)if(!keep.has(tileKey(tile.tx,tile.ty))){input.delete(tile.tx,tile.ty);invalidateLevels(previewStore,{x:tile.tx*TILE,y:tile.ty*TILE,width:TILE,height:TILE});}
       for(const tile of data.tiles){input.tiles.set(tileKey(tile.tx,tile.ty),{tx:tile.tx,ty:tile.ty,pixels:new Uint8ClampedArray(tile.pixels)});input._changed();invalidateLevels(previewStore,{x:tile.tx*TILE,y:tile.ty*TILE,width:TILE,height:TILE});}
-      const store=levelStore(previewStore,level),canvas=new OffscreenCanvas(rect.width,rect.height),ctx=canvas.getContext('2d');
+      const store=levelStore(previewStore,level),canvas=new OffscreenCanvas(rect.width,rect.height),ctx=canvas.getContext('2d',{willReadFrequently:true});
       for(const tile of store)ctx.putImageData(new ImageData(tile.pixels,TILE,TILE),tile.tx*TILE-rect.x,tile.ty*TILE-rect.y);
       const bitmap=canvas.transferToImageBitmap();self.postMessage({id,bitmap},[bitmap]);return;
     }

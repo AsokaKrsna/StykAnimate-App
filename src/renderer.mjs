@@ -790,7 +790,7 @@ class WebGPURenderer {
         }
         // Most-recently-used ordering: the render loop evicts from the front.
         this.drawingTextures.delete(textureKey);this.drawingTextures.set(textureKey,texture);
-        texture.drawing=drawing;texture.canvas=scratch.canvas;texture.dirty=scratch.dirty;texture.nextRectKey=rectKey;
+        texture.drawing=drawing;texture.canvas=scratch.canvas;texture.dirty=scratch.dirty;texture.nextStamp=scratch.stamp;texture.nextRectKey=rectKey;
         const q=scratch.scale,ox=matrix[0]*scratch.x*q+matrix[2]*scratch.y*q+matrix[4],oy=matrix[1]*scratch.x*q+matrix[3]*scratch.y*q+matrix[5];
         data=new Float32Array(shapeRecord({a:[ox-source.root.x,oy-source.root.y,0,0],b:[matrix[0]*scratch.width*q,matrix[1]*scratch.width*q,matrix[2]*scratch.height*q,matrix[3]*scratch.height*q],mode:9,color:[1,1,1,sourceItems[0].alpha],transform:index}));
         return {...drawingState,key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:1,texture};
@@ -1029,14 +1029,14 @@ class WebGPURenderer {
       const drawing=texture.drawing;
       drawingGpuBytes+=texture.bytes;
       if(!liveTextures.has(texture)||!drawing)continue;
-      if(texture.stamp===drawing.stamp&&texture.rectKey===texture.nextRectKey)continue;
+      if(texture.stamp===texture.nextStamp&&texture.rectKey===texture.nextRectKey)continue;
       const canvas=texture.canvas;if(!canvas?.width||!canvas.height)continue;
       // A re-anchored scratch was repainted wholesale; only same-rect updates
       // can ship the dirty subregion.
       const dirty=texture.stamp<0||texture.rectKey!==texture.nextRectKey?null:texture.dirty;
       const r=dirty?{x:dirty.x,y:dirty.y,width:dirty.width,height:dirty.height}:{x:0,y:0,width:canvas.width,height:canvas.height};
       if(r.width>0&&r.height>0)this.device.queue.copyExternalImageToTexture({source:canvas,origin:[r.x,r.y]},{texture:texture.texture,origin:[r.x,r.y],premultipliedAlpha:true},[r.width,r.height]);
-      texture.stamp=drawing.stamp;texture.rectKey=texture.nextRectKey;
+      texture.stamp=texture.nextStamp;texture.rectKey=texture.nextRectKey;
     }
     // Retain textures past their layout slot; evict least-recently-used only
     // when the drawing texture budget is exceeded (Map order is MRU-last).

@@ -316,10 +316,22 @@ Dense live cels (more than 64 tiles) use a separate preview worker. Its source
 cache keeps one viewport's tiles and mip chain; tile versions identify changed
 inputs. The main thread copies source tiles in bounded chunks and submits only
 changed tiles on later revisions. At most three cel requests wait behind the
-active job. Completed ImageBitmaps share the scratch budget; eviction and
-disposal close them. Stale replies are discarded, and a failed source revision
-backs off until pixels change. WebGPU retains an existing texture while its
+active job. A job captures tile versions and freezes only the changed input
+tiles before copying in yielding batches. Later writes copy on write, so each
+completed image represents one consistent revision even while painting
+continues. Snapshot and transfer buffers reserve working memory before copying
+and release it when the job finishes or is cancelled.
+
+Completed ImageBitmaps share the scratch budget; eviction and disposal close
+them. A completed snapshot may trail newer input and remains visible while the
+next revision is prepared. Growing covers and pans can reuse the newest
+overlapping snapshot from the same surface and mip level. Dropped, replaced or
+disposed surfaces cannot accept old replies or reuse another surface's image.
+A failed source revision backs off until pixels change. WebGPU uploads a
+preview only when that image changes, and retains an existing texture while its
 replacement is prepared. Small cels use the synchronous dirty-region path.
+Preview canvases use CPU-backed storage for tile uploads, avoiding GPU readback
+when the Canvas 2D fallback draws the resulting image.
 Cold previews may take longer in wall time than synchronous rasterization,
 but input is not blocked by their mip calculation. Worker source/preview working
 sets are included in resource reservations. Source tiles, resident drawing
