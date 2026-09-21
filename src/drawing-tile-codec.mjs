@@ -1,11 +1,12 @@
 import {TILE,TILE_BYTES,tileTransparent,TileStore,tileKey,parseTileKey,assertTileCoordinates} from './drawing-tiles.mjs';
 import {encodePNGPortable} from './sticknodes/decoder/png-browser.mjs';
 import {decodeDrawingPNGBytes} from './drawing-png.mjs';
+import {base64ToBytes} from './base64.mjs';
 export const TILE_BLOB_PREFIX='data:application/x-styk-tiles;base64,';
 const TILE_BLOB_MAX_BYTES=96*1024*1024,TILE_BLOB_MAX_PIXELS=512*1024*1024;
 export const TILE_BLOB_MAX_TILES=TILE_BLOB_MAX_PIXELS/TILE_BYTES;
 export const TILE_BLOB_MAX_CHARACTERS=4*Math.ceil(TILE_BLOB_MAX_BYTES/3);
-export function tileBlobBytes(url){if(typeof url!=='string'||!url.startsWith(TILE_BLOB_PREFIX))throw new Error('Drawing tiles need an embedded tile blob.');if(url.length>TILE_BLOB_PREFIX.length+TILE_BLOB_MAX_CHARACTERS)throw new Error('Drawing tile blob exceeds its size bound.');const bytes=Uint8Array.from(atob(url.slice(TILE_BLOB_PREFIX.length)),c=>c.charCodeAt(0));if(bytes.length>TILE_BLOB_MAX_BYTES)throw new Error('Drawing tile blob exceeds its size bound.');return bytes;}
+export function tileBlobBytes(url){if(typeof url!=='string'||!url.startsWith(TILE_BLOB_PREFIX))throw new Error('Drawing tiles need an embedded tile blob.');if(url.length>TILE_BLOB_PREFIX.length+TILE_BLOB_MAX_CHARACTERS)throw new Error('Drawing tile blob exceeds its size bound.');const bytes=base64ToBytes(url.slice(TILE_BLOB_PREFIX.length));if(bytes.length>TILE_BLOB_MAX_BYTES)throw new Error('Drawing tile blob exceeds its size bound.');return bytes;}
 /** Assemble the blob bytes from already-encoded per-tile PNGs. */
 export function assembleTileBlobBytes(tiles){
   if(tiles.length>TILE_BLOB_MAX_TILES)throw new Error('Drawing tile blob exceeds its tile bound.');

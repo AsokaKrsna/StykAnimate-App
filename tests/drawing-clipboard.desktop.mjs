@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 
-const root=path.resolve('.'),out=path.join(root,'artifacts/drawing-clipboard'),profile=path.join(out,`profile-${Date.now()}`),checks=[],errors=[];
+const root=path.resolve('.'),out=path.resolve(process.env.STYK_PIXEL_CLIPBOARD_ARTIFACTS||'artifacts/drawing-clipboard'),profile=path.join(out,`profile-${Date.now()}`),checks=[],errors=[];
 await mkdir(profile,{recursive:true});
 await writeFile(path.join(profile,'telemetry-state.json'),JSON.stringify({decided:true,consent:{analytics:false,diagnostics:false,policyVersion:'2026-09-10',updatedAt:Date.now()}}));
 const env={...process.env,STYK_USER_DATA_DIR:profile,STYK_LIBRARY_DIR:path.join(profile,'library')};delete env.ELECTRON_RUN_AS_NODE;

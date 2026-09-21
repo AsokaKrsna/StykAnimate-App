@@ -1,11 +1,17 @@
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
+import {execFileSync} from 'node:child_process';
 const output=process.env.STYK_PIXEL_CLIPBOARD_ARTIFACTS||'artifacts/drawing-clipboard';await mkdir(output,{recursive:true});
 const browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[],checks=[];
 page.on('pageerror',error=>errors.push(error.message));
 const check=(name,value)=>{assert.ok(value,name);checks.push(name);console.log('PASS',name);};
 try{
+  const baseline=process.env.STYK_PIXEL_CLIPBOARD_BASELINE;
+  if(baseline)for(const name of ['drawing-png','drawing-tile-codec','native-container']){
+    const body=execFileSync('git',['show',`${baseline}:src/${name}.mjs`],{encoding:'utf8'});
+    await page.context().route(`**/src/${name}.mjs`,route=>route.fulfill({contentType:'text/javascript',body}));
+  }
   await page.goto(process.env.STYK_URL||'http://127.0.0.1:47839');await page.waitForFunction(()=>window.styk?.ready);
   await page.locator('[data-workspace-mode="draw"]').click();
   await page.evaluate(async()=>{
@@ -67,11 +73,15 @@ try{
 
   const corrupt=await page.evaluate(async()=>{
     const {e,d,surface}=await fixture();await d.action('copy-pixels');d.cancelSelection();const clip=e._drawingPixelClipboard;
-    await shared.copy('drawing-pixels',()=>{e._drawingPixelClipboard={...clip,bounds:{x:0,y:0,width:128,height:64},tiles:[...clip.tiles,{tx:1,ty:0,png:'data:image/png;base64,AAAA'}]};return true;});
+    const {drawingPNGBytes,drawingPNGDataURL}=await import('/src/drawing-png.mjs'),{crc32}=await import('/src/sticknodes/decoder/archive.mjs'),bytes=drawingPNGBytes(clip.tiles[0].png),view=new DataView(bytes.buffer);
+    for(let pos=8;pos<bytes.length;){const length=view.getUint32(pos),end=pos+length+12;if(String.fromCharCode(...bytes.subarray(pos+4,pos+8))==='IDAT'){bytes[end-5]^=255;view.setUint32(end-4,crc32(bytes.subarray(pos+4,end-4)));break;}pos=end;}
+    // The PNG container and CRC remain valid; its compressed stream must fail
+    // and settle both stream endpoints before the worker reports the error.
+    await shared.copy('drawing-pixels',()=>{e._drawingPixelClipboard={...clip,bounds:{x:0,y:0,width:128,height:64},tiles:[...clip.tiles,{tx:1,ty:0,png:drawingPNGDataURL(bytes)}]};return true;});
     const revision=e.revision,history=e._undo.length;let message;try{await d.action('paste-pixels');}catch(error){message=error.message;}
     return {message,intact:e.revision===revision&&e._undo.length===history&&surface.store.size===1&&surface.store.pixel(0,0).join(',')==='127,5,249,1',busy:!!d.operation};
   });
-  check('a later corrupt tile aborts the whole paste without a partial edit or undo entry',corrupt.message?.includes('PNG')&&corrupt.intact&&!corrupt.busy);
+  check('a later corrupt compressed tile aborts the whole paste without a partial edit or undo entry',!!corrupt.message&&corrupt.intact&&!corrupt.busy);
 
   const dense=await page.evaluate(async()=>{
     const {e,d,target,surface}=await freshClipboard(),tiles=[];for(let ty=0;ty<68;ty++)for(let tx=0;tx<120;tx++)tiles.push({tx,ty,before:null,after:new Uint8ClampedArray([tx,ty,127,255])});
@@ -106,5 +116,5 @@ try{
     return ink>100;
   }));
   await page.screenshot({path:output+'/workspace.png'});check('no uncaught browser errors',errors.length===0);
-  await writeFile(output+'/result.json',JSON.stringify({checks,sparse,dense,errors},null,2));
+  await writeFile(output+'/result.json',JSON.stringify({decoderRevision:baseline??'working-tree',checks,sparse,dense,errors},null,2));
 }finally{await browser.close();}

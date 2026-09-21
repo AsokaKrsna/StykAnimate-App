@@ -26,7 +26,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Fixed
 
-- Keep large drawings responsive with background previews and incremental tile updates, and fill regions up to 64 megapixels without changing behavior when zoomed out.
+- Keep large drawings responsive with background previews, faster loading and pixel pastes, and incremental tile updates. Fill regions up to 64 megapixels without changing behavior when zoomed out.
 
 - Select, copy, paste, transform and resample large or widely spaced drawings without allocating empty space, keep lasso capture responsive in the background, preserve translucent colors and rotated or mirrored pixel pastes, and offer crisp pixel-art filtering. Failed or cancelled clipboard transfers keep cut artwork intact.
 

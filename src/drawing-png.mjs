@@ -1,8 +1,12 @@
 import {encodePNGPortable} from './sticknodes/decoder/png-browser.mjs';
 import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {crc32} from './sticknodes/decoder/archive.mjs';
-export function drawingPNGBytes(url){if(typeof url!=='string'||!url.startsWith('data:image/png;base64,'))throw new Error('Drawing pixels need an embedded PNG.');return Uint8Array.from(atob(url.slice(22)),c=>c.charCodeAt(0));}
-export function drawingPNGDataURL(bytes){let text='';for(let i=0;i<bytes.length;i+=16384)text+=String.fromCharCode(...bytes.subarray(i,i+16384));return 'data:image/png;base64,'+btoa(text);}
+import {base64ToBytes,bytesToBase64} from './base64.mjs';
+export function drawingPNGBytes(url){
+  if(typeof url!=='string'||!url.startsWith('data:image/png;base64,'))throw new Error('Drawing pixels need an embedded PNG.');
+  return base64ToBytes(url.slice(22));
+}
+export function drawingPNGDataURL(bytes){return 'data:image/png;base64,'+bytesToBase64(bytes);}
 export async function encodeDrawingPNG(pixels,width,height){return drawingPNGDataURL(await encodePNGPortable({width,height,channels:4},pixels));}
 export function decodeDrawingPNG(url){return decodeDrawingPNGBytes(drawingPNGBytes(url));}
 /** Decode our portable PNG without premultiplication, including filter modes
@@ -16,11 +20,26 @@ export async function decodeDrawingPNGBytes(bytes,{width:expectedWidth,height:ex
     if(type==='IDAT')parts.push(data);if(type==='IEND')break;pos=end;
   }
   if(!channels||!parts.length)throw new Error('Drawing PNG is missing pixel data.');
-  const stride=width*channels,expected=(stride+1)*height,scan=new Uint8Array(expected),reader=new Blob(parts).stream().pipeThrough(new DecompressionStream('deflate')).getReader();let offset=0;
-  try{for(;;){const {done,value}=await reader.read();if(done)break;if(offset+value.length>expected)throw new Error('Drawing PNG expands beyond its declared dimensions.');scan.set(value,offset);offset+=value.length;}}finally{await reader.cancel();}
+  const stride=width*channels,expected=(stride+1)*height,scan=new Uint8Array(expected),stream=new DecompressionStream('deflate'),reader=stream.readable.getReader(),writer=stream.writable.getWriter();let offset=0,writeError;
+  // IDAT already owns byte views. Feeding them directly avoids a Blob and its
+  // asynchronous read pipeline per tile. Await backpressure and settle the
+  // producer on every exit, including expansion-limit and corrupt-stream errors.
+  const written=(async()=>{try{for(const part of parts)await writer.write(part);await writer.close();}catch(error){writeError=error;await writer.abort(error).catch(()=>{});}finally{writer.releaseLock();}})();
+  try{for(;;){const {done,value}=await reader.read();if(done)break;if(offset+value.length>expected)throw new Error('Drawing PNG expands beyond its declared dimensions.');scan.set(value,offset);offset+=value.length;}await written;if(writeError)throw writeError;}
+  finally{await reader.cancel().catch(()=>{});await written;reader.releaseLock();}
   if(offset!==expected)throw new Error('Drawing PNG has incomplete pixel data.');
-  const output=new Uint8ClampedArray(width*height*4),row=new Uint8Array(stride),previous=new Uint8Array(stride);
+  const output=new Uint8ClampedArray(width*height*4);
   const paeth=(a,b,c)=>{const p=a+b-c,x=Math.abs(p-a),y=Math.abs(p-b),z=Math.abs(p-c);return x<=y&&x<=z?a:y<=z?b:c;};
-  for(let y=0;y<height;y++){const filter=scan[y*(stride+1)];if(filter>4)throw new Error('Invalid drawing PNG filter.');for(let x=0;x<stride;x++){const left=x>=channels?row[x-channels]:0,up=previous[x],corner=x>=channels?previous[x-channels]:0;row[x]=(scan[y*(stride+1)+1+x]+(filter===0?0:filter===1?left:filter===2?up:filter===3?Math.floor((left+up)/2):paeth(left,up,corner)))&255;}for(let x=0;x<width;x++){const a=x*channels,b=(y*width+x)*4;output[b]=row[a];output[b+1]=row[a+1];output[b+2]=row[a+2];output[b+3]=channels===4?row[a+3]:255;}previous.set(row);}
+  for(let y=0;y<height;y++){
+    const start=y*(stride+1)+1,filter=scan[start-1];if(filter>4)throw new Error('Invalid drawing PNG filter.');
+    // Reconstruct filtered rows in the bounded scan buffer. Portable drawing
+    // PNGs use filter zero: those RGBA rows need only a native byte copy.
+    if(filter)for(let x=0;x<stride;x++){
+      const left=x>=channels?scan[start+x-channels]:0,up=y?scan[start+x-stride-1]:0,corner=y&&x>=channels?scan[start+x-stride-1-channels]:0;
+      scan[start+x]=(scan[start+x]+(filter===1?left:filter===2?up:filter===3?Math.floor((left+up)/2):paeth(left,up,corner)))&255;
+    }
+    if(channels===4)output.set(scan.subarray(start,start+stride),y*stride);
+    else for(let x=0;x<width;x++){const a=start+x*3,b=(y*width+x)*4;output[b]=scan[a];output[b+1]=scan[a+1];output[b+2]=scan[a+2];output[b+3]=255;}
+  }
   return {width,height,pixels:output};
 }

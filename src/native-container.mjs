@@ -17,6 +17,8 @@
  * string); markers with identical text resolve to the *same* array instance so
  * shared pose/key sequences keep their identity through a save/load cycle.
  */
+import {base64ToBytes,bytesToBase64} from './base64.mjs';
+export {base64ToBytes,bytesToBase64};
 const HEADER = 56, SECTION = 64, MAX_BYTES = 256 * 1024 * 1024;
 // A sectioned scene's JSON metadata can exceed its compressed-file/section
 // limit. Keep it below the engine string ceiling and retain the 1 GiB combined
@@ -38,20 +40,6 @@ const bytesToHex = bytes => [...bytes].map(b => b.toString(16).padStart(2, '0'))
 export async function sha256(bytes) {
   const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   return new Uint8Array(await crypto.subtle.digest('SHA-256', view));
-}
-
-export function bytesToBase64(bytes) {
-  let out = '';
-  for (let i = 0; i < bytes.length; i += 0x8000)
-    out += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  return btoa(out);
-}
-
-export function base64ToBytes(text) {
-  const binary = atob(text);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
 }
 
 export async function inflate(bytes, limit = MAX_BYTES) {

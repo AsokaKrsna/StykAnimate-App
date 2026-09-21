@@ -117,6 +117,14 @@ dimensions before inflation, limits concurrent streams to eight, preserves index
 order and settles in-flight streams before reporting failure. No sparse-copy
 limit depends on bounding-box area or distance between occupied tiles.
 
+The exact PNG decoder feeds IDAT byte views directly to the decompression
+stream, awaits input backpressure and releases both stream endpoints on failure.
+Reconstruction stays in its bounded scan buffer; unfiltered RGBA rows use byte
+copies and never pass through a premultiplied canvas. All five PNG filters and
+8-bit RGB/RGBA remain supported. Drawing PNGs, tile blobs and native containers
+share byte/base64 helpers with a portable fallback for older runtimes. File
+formats, checksum checks, expected dimensions and allocation limits are unchanged.
+
 Packet bounds remain explicit: at most 32,768 tiles, 128 MiB of PNG text and
 64 KiB of encoded data per tile. Actual jobs may hit the available pixel working
 budget earlier. Native wire transfers retain their 256 MiB limit and 256 KiB
