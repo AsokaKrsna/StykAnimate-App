@@ -282,7 +282,9 @@ let canvas = $("scene"), rendererRecovery, gpuRecoveryTimer, gpuRecoveryAttempts
 const viewport = $("viewport"),
   overlay = $("overlay"),
   ctx = overlay.getContext("2d"),
-  images = new PreviewImages({managedInvalidation:true,priorityURLs:playbackImagePriority,onReady: ({retained=false,resized=false}={}) => {
+  images = new PreviewImages({managedInvalidation:true,priorityURLs:playbackImagePriority,onReady: ({retained=false,resized=false,unchanged=false}={}) => {
+    // A worker-proven identical decode keeps consumer identities and GPU pixels.
+    if(unchanged){requestRender();return;}
     // New lookahead backgrounds cannot change already-complete GPU frames.
     // Keep their uploads resident; live edits/resized variants still invalidate.
     if(state.playing&&retained&&!resized){requestRender();return;}

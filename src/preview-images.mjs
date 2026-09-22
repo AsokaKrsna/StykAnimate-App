@@ -59,6 +59,9 @@ export class PreviewImages extends Map {
     clearTimeout(this.idleTimer); this.idleTimer = null;
     if (!this.worker) {
       const worker = this.worker = new Worker(new URL('./preview-image-worker.mjs', import.meta.url), {type: 'module', name: 'StykAnimate preview images'});
+      // Scoped to this worker: a replacement decoder may reuse its variant IDs.
+      // Weak keys never retain copies evicted from the main-thread image budget.
+      const variants = new WeakMap();
       worker.onmessage = ({data}) => {
         if (this.worker !== worker) {for (const image of data.images || []) image.bitmap.close(); return;}
         this.busy = false;
@@ -69,15 +72,23 @@ export class PreviewImages extends Map {
           this.rejectPendingImages(error); this.onError(error);
         }
         else {
-          const keep = new Set(data.images.map(image => image.url)); let resized = false;
-          if (!pending?.retain) for (const [url, bitmap] of this) if (!keep.has(url) && !this.pendingImages.has(url)) {bitmap.close?.(); super.delete(url);}
-          for (const {url, bitmap, width, height, srcX, srcY, srcW, srcH} of data.images) {
+          const keep = new Set(data.images.map(image => image.url)); let resized = false, unchanged = true;
+          if (!pending?.retain) for (const [url, bitmap] of this) if (!keep.has(url) && !this.pendingImages.has(url)) {bitmap.close?.(); super.delete(url); unchanged = false;}
+          for (const {url, bitmap, variant, width, height, srcX, srcY, srcW, srcH} of data.images) {
             const previous = super.get(url);
-            resized ||= Boolean(previous?.complete && (previous.width !== bitmap.width || previous.height !== bitmap.height ||
-              previous.srcX !== srcX || previous.srcY !== srcY || previous.srcW !== srcW || previous.srcH !== srcH));
-            bitmap.complete = true; bitmap.naturalWidth = width; bitmap.naturalHeight = height;
-            if (srcW !== undefined) {bitmap.srcX = srcX; bitmap.srcY = srcY; bitmap.srcW = srcW; bitmap.srcH = srcH;}
-            this.set(url, bitmap); previous?.dispatchEvent?.(new Event('load'));
+            const sameShape = previous?.complete && previous.width === bitmap.width && previous.height === bitmap.height &&
+              previous.srcX === srcX && previous.srcY === srcY && previous.srcW === srcW && previous.srcH === srcH;
+            resized ||= Boolean(previous?.complete && !sameShape);
+            const knownVariant = Number.isSafeInteger(variant) && variant > 0;
+            if (knownVariant && variants.get(previous) === variant && sameShape && previous.naturalWidth === width && previous.naturalHeight === height) {
+              if (bitmap !== previous) bitmap.close();
+            } else {
+              unchanged = false;
+              bitmap.complete = true; bitmap.naturalWidth = width; bitmap.naturalHeight = height;
+              if (srcW !== undefined) {bitmap.srcX = srcX; bitmap.srcY = srcY; bitmap.srcW = srcW; bitmap.srcH = srcH;}
+              if (knownVariant) variants.set(bitmap, variant);
+              this.set(url, bitmap); previous?.dispatchEvent?.(new Event('load'));
+            }
             this.pendingImages.get(url)?.resolve(); this.pendingImages.delete(url);
           }
           this.bytes = [...this.values()].reduce((sum, item) => sum + (item.complete ? item.width * item.height * 4 : 0), 0);
@@ -90,9 +101,9 @@ export class PreviewImages extends Map {
           if (pending?.retain) for (const [url, bitmap] of this) {
             if (this.bytes <= this.maxBytes / 2) break;
             if (keep.has(url) || this.pendingImages.has(url)) continue;
-            this.bytes -= bitmap.width * bitmap.height * 4; bitmap.close?.(); super.delete(url);
+            this.bytes -= bitmap.width * bitmap.height * 4; bitmap.close?.(); super.delete(url); unchanged = false;
           }
-          this.reduced = data.reduced; pending?.resolve(); this.onReady({retained:Boolean(pending?.retain),resized});
+          this.reduced = data.reduced; pending?.resolve(); this.onReady({retained:Boolean(pending?.retain),resized,...(unchanged ? {unchanged:true} : {})});
         }
         this.drain(); this._scheduleIdle();
       };
