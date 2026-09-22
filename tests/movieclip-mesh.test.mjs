@@ -70,3 +70,33 @@ test('unchanged attachments retain projected arrays while appearance and transfo
  assert.notEqual(changed.drawables[0].points,next.drawables[0].points);assert.deepEqual(changed.drawables,buildGeometry(d,moved).objects.get(1).drawables);
  assert.ok(changed.meshPose.pose.every(v=>v===undefined||typeof v==='number'));assert.equal(changed.meshPose.mesh,d.figure_types[1]._styk.movieclip.spatialMeshes[0]);
 });
+test('view-corrected meshes reproduce each authored heading, blend smoothly and fade near vertical views',async()=>{
+ const {d,h,head}=fixture(),mesh=head._styk.movieclip.spatialMeshes[0],views=Array.from({length:8},(_,k)=>mesh.positions.map((v,i)=>i%3===0?v+k*3:i%3===1?v-k:v));
+ const variant=positions=>{const copy=structuredClone(d);copy.figure_types[1]._styk.movieclip.spatialMeshes=copy.figure_types[1]._styk.movieclip.spatialMeshes.map(m=>({...m,positions}));return copy;};
+ const points=(document,turn,pitch=0)=>{const e=new Editor({demo:false});e.load(document);e.select(1,h-1);e.setSpatialPose({turn:rad(turn),pitch:rad(pitch)});return e.geometry.objects.get(1).drawables.flatMap(x=>x.points.flatMap(p=>[p.x,p.y]));};
+ const close=(a,b)=>{assert.equal(a.length,b.length);a.forEach((v,i)=>assert.ok(Math.abs(v-b[i])<1e-6,`${i}: ${v} vs ${b[i]}`));};
+ const corrected=structuredClone(d);corrected.figure_types[1]._styk.movieclip.spatialMeshes[0].viewPositions=views;
+ for(const change of [m=>m.viewPositions.pop(),m=>m.viewPositions[2].pop(),m=>m.viewPositions[0][0]=NaN,m=>m.viewPositions=[m.positions]]){const a=structuredClone(corrected.figure_types[1]._styk.movieclip);change(a.spatialMeshes[0]);assert.throws(()=>validateMovieclipMeshes(a),/four or eight/);}
+ for(let k=0;k<8;k++)close(points(corrected,k*45),points(variant(views[k]),k*45));
+ close(points(corrected,22.5),points(variant(views[0].map((v,i)=>(v+views[1][i])/2)),22.5));
+ // Looking straight down, heading is undefined: the consensus shape is used.
+ close(points(corrected,0,90),points(d,0,90));
+ const saved=(await decodeDocument(await buildContainerV2(corrected,'styk'),'styk')).document;validateScene(saved);
+ assert.deepEqual(saved.figure_types[1]._styk.movieclip.spatialMeshes[0].viewPositions,views);
+});
+test('per-view turns interpolate as rotations, so shapes keep their size between headings',()=>{
+ const {d,h,head}=fixture(),mesh=head._styk.movieclip.spatialMeshes[0],pivot=[0,-10,0];
+ const rotate=(p,t)=>p.map((v,i,a)=>i%3===0?pivot[0]+(v-pivot[0])*Math.cos(t)+(a[i+2]-pivot[2])*Math.sin(t):i%3===2?pivot[2]-(a[i-2]-pivot[0])*Math.sin(t)+(v-pivot[2])*Math.cos(t):v);
+ const doc=m=>{const copy=structuredClone(d),asset=copy.figure_types[1]._styk.movieclip;asset.spatialMeshes=asset.spatialMeshes.map((x,i)=>i?x:{...x,...m});return copy;};
+ const points=(document,turn)=>{const e=new Editor({demo:false});e.load(document);e.select(1,h-1);e.setSpatialPose({turn:rad(turn)});return e.geometry.objects.get(1).drawables.flatMap(x=>x.points.flatMap(p=>[p.x,p.y]));};
+ const close=(a,b)=>{assert.equal(a.length,b.length);a.forEach((v,i)=>assert.ok(Math.abs(v-b[i])<1e-6,`${i}: ${v} vs ${b[i]}`));};
+ const turns=[0,Math.PI/2,0,0],corrected=doc({viewPositions:[0,1,2,3].map(()=>mesh.positions),viewTurns:turns,viewPivot:pivot});
+ assert.throws(()=>validateMovieclipMeshes({...head._styk.movieclip,spatialMeshes:[{...mesh,viewTurns:turns},mesh]}),/one angle per view/);
+ close(points(corrected,90),points(doc({positions:rotate(mesh.positions,Math.PI/2)}),90));
+ // Halfway between 0 and 90 degrees the shape is turned 45 degrees, not averaged.
+ close(points(corrected,45),points(doc({positions:rotate(mesh.positions,Math.PI/4)}),45));
+ // Weighted vertices take their share of the turn; zero-weight vertices keep the bone's orientation.
+ const weights=[1,0,1,0],weighted=doc({viewPositions:[0,1,2,3].map(()=>mesh.positions),viewTurns:turns,viewPivot:pivot,viewTurnWeights:weights}),turned=rotate(mesh.positions,Math.PI/2);
+ close(points(weighted,90),points(doc({positions:mesh.positions.map((v,i)=>weights[Math.floor(i/3)]?turned[i]:v)}),90));
+ assert.throws(()=>validateMovieclipMeshes({...head._styk.movieclip,spatialMeshes:[{...mesh,viewPositions:[0,1,2,3].map(()=>mesh.positions),viewTurns:turns,viewPivot:pivot,viewTurnWeights:[1,2,0,0]},mesh]}),/0 to 1 per vertex/);
+});

@@ -1,7 +1,7 @@
 /** Immutable, indexed meshes share the movieclip form/timing contract. Only
  * controls belong to the rig graph; vertices never become editable joints. */
 import {animationRotation} from './animation-origin.mjs';
-import {spatialPoint} from './rig-spatial.mjs';
+import {spatialPoint,spatialViewInterpolation} from './rig-spatial.mjs';
 import {projection,projectSpatial,projectSpatialFace} from './spatial-projection.mjs';
 
 export function validateMovieclipMeshes(asset) {
@@ -15,7 +15,15 @@ export function validateMovieclipMeshes(asset) {
       !Array.isArray(m.colors)||!m.colors.length||m.colors.length>256||m.colors.some(c=>!Array.isArray(c)||c.length!==3||c.some(v=>!Number.isInteger(v)||v<0||v>255))||
       !Array.isArray(m.materials)||m.materials.length!==m.indices.length/3||m.materials.some(i=>!Number.isInteger(i)||i<0||i>=m.colors.length))
       throw new Error('Invalid indexed spatial mesh.');
-    total+=m.positions.length+m.indices.length;if(total>6000000)throw new Error('Spatial mesh asset exceeds its geometry budget.');
+    const views=m.viewPositions;
+    if(views!==undefined&&(!Array.isArray(views)||![4,8].includes(views.length)||views.some(v=>!Array.isArray(v)||v.length!==m.positions.length||v.some(x=>!Number.isFinite(x)||Math.abs(x)>1e6))))
+      throw new Error('View-corrected meshes need four or eight complete position sets.');
+    if(m.viewTurns!==undefined&&(!views||!Array.isArray(m.viewTurns)||m.viewTurns.length!==views.length||m.viewTurns.some(t=>!Number.isFinite(t)||Math.abs(t)>Math.PI)||
+      !Array.isArray(m.viewPivot)||m.viewPivot.length!==3||m.viewPivot.some(x=>!Number.isFinite(x)||Math.abs(x)>1e6)))
+      throw new Error('View turns need one angle per view set and a pivot.');
+    if(m.viewTurnWeights!==undefined&&(!m.viewTurns||!Array.isArray(m.viewTurnWeights)||m.viewTurnWeights.length!==m.positions.length/3||m.viewTurnWeights.some(w=>!Number.isFinite(w)||w<0||w>1)))
+      throw new Error('View turn weights need one value from 0 to 1 per vertex.');
+    total+=m.positions.length*(1+(views?.length??0))+m.indices.length;if(total>6000000)throw new Error('Spatial mesh asset exceeds its geometry budget.');
   }
 }
 
@@ -50,8 +58,25 @@ export function* buildMovieclipMeshSteps(fig,obj,root,slot,parent,objectColor,pr
   // allocating quaternion/stretch intermediates for every mesh vertex.
   let affine;
   if(frame&&!frame.shape?.taper){const o=spatialPoint(frame,frame.origin);affine=[o,...[0,1,2].map(i=>{const p=frame.origin.slice();p[i]++;return spatialPoint(frame,p).map((v,j)=>v-o[j]);})];}
+  // Art-directed views: blend the two authored shapes around the attachment's
+  // heading, like view-corrected skin. Topology and draw order never change.
+  const view=frame&&mesh.viewPositions?spatialViewInterpolation(frame):null,span=view&&(mesh.viewPositions.length===8?view.eight:view.four);
+  const from=span&&mesh.viewPositions[span.index],to=span&&mesh.viewPositions[span.next];
+  // A per-view turn about the pivot's vertical axis is interpolated as an
+  // angle; blending two rotated shapes linearly would shrink them in between.
+  // Shortest-arc blending lets opposite headings share a half-turn. Weighted
+  // vertices (e.g. hair over a turning face) receive a fraction of the turn.
+  const wrap=a=>Math.atan2(Math.sin(a),Math.cos(a)),turns=mesh.viewTurns,weights=mesh.viewTurnWeights;
+  const turn=span&&turns?(turns[span.index]+wrap(turns[span.next]-turns[span.index])*span.blend)*view.strength:0,pivot=mesh.viewPivot;
+  let tc=Math.cos(turn),ts=Math.sin(turn),weight=1;
+  const authored=k=>{const base=mesh.positions[k];if(!span)return base;const target=from[k]+(to[k]-from[k])*span.blend;return base+(target-base)*view.strength;};
   for(let i=0;i<points.length;i++){
-    const at=i*3,p=[mesh.positions[at]-asset.pivot.x,(mesh.positions[at+1]-asset.pivot.y)*(obj.image_text_flags?-1:1),mesh.positions[at+2]];
+    const at=i*3,v=[authored(at),authored(at+1),authored(at+2)];
+    if(turn){
+      if(weights&&weights[i]!==weight){weight=weights[i];tc=Math.cos(turn*weight);ts=Math.sin(turn*weight);}
+      const x=v[0]-pivot[0],z=v[2]-pivot[2];v[0]=pivot[0]+x*tc+z*ts;v[2]=pivot[2]-x*ts+z*tc;
+    }
+    const p=[v[0]-asset.pivot.x,(v[1]-asset.pivot.y)*(obj.image_text_flags?-1:1),v[2]];
     if(frame){const x=p[0],y=p[1];p[0]=x*lc-y*ls;p[1]=x*ls+y*lc;}
     let raw;
     if(frame){const v=affine?[0,1,2].map(j=>affine[0][j]+ratio*(p[0]*affine[1][j]+p[1]*affine[2][j]+p[2]*affine[3][j])):spatialPoint(frame,p.map((x,j)=>frame.origin[j]+x*ratio)),flip=parent.obj.image_text_flags?-1:1;

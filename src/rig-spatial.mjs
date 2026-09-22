@@ -74,7 +74,9 @@ function skinPoint(s,get){
 // Evenly spaced turn targets are expressed relative to the binding origin, in the
 // frontal coordinate axes of each view. A pose owns one interpolation frame;
 // skin vertices contain only authored positions, never evaluated scene state.
-function viewCorrectedPoint(s,f){
+/** Heading of a bone frame between evenly spaced views. Near a vertical view,
+ * where heading is undefined, `strength` fades correction out smoothly. */
+export function spatialViewInterpolation(f){
   let v=f.viewInterpolation;
   if(!v){
     const [x,y,z,w]=f.q,fx=2*(w*y-x*z),fz=1-2*(x*x+y*y),horizontal=Math.hypot(fx,fz);
@@ -83,6 +85,10 @@ function viewCorrectedPoint(s,f){
     const confidence=Math.max(0,Math.min(1,(horizontal-.05)/.2));
     v=f.viewInterpolation={four:interval(4),eight:interval(8),cos:Math.cos(yaw),sin:Math.sin(yaw),strength:confidence*confidence*(3-2*confidence)};
   }
+  return v;
+}
+function viewCorrectedPoint(s,f){
+  const v=spatialViewInterpolation(f);
   const interval=s.viewPoints.length===8?v.eight:v.four;
   const a=s.viewPoints[interval.index],b=s.viewPoints[interval.next],t=interval.blend;
   const x=a[0]+(b[0]-a[0])*t,y=a[1]+(b[1]-a[1])*t,z=a[2]+(b[2]-a[2])*t;
