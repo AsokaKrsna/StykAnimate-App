@@ -41,6 +41,18 @@ try{
   await page.waitForFunction(mode=>mode==='gpu'?/webgpu/i.test(styk.state.renderer.stats.backend):/canvas/i.test(styk.state.renderer.stats.backend),mode);
   const point=await page.evaluate(()=>seedDrawing()),painted=await page.evaluate(()=>probeDrawing());observations.push({mode,phase:'painted',...painted});
   check(`${mode}: seeded artwork is visibly painted`,painted.ink>3000);
+  await page.evaluate(()=>{
+   const worker=styk.drawing.owner.previews.worker,request=worker.request.bind(worker);
+   window.releaseStartup=null;window.startupRequested=false;
+   worker.request=async(...args)=>{startupRequested=true;await new Promise(resolve=>releaseStartup=resolve);worker.request=request;return request(...args);};
+   for(let tx=40;tx<104;tx++)lifecycleSurface.store.set(tx,2,new Uint8ClampedArray([32,62,216,255]));
+   styk.drawing.owner.present(lifecycleSurface);
+  });
+  const starting=await page.evaluate(()=>probeDrawing());observations.push({mode,phase:'waiting for first worker preview',...starting});
+  check(`${mode}: entering worker previews retains visible artwork while startup is blocked`,starting.ink===painted.ink&&await page.evaluate(()=>startupRequested));
+  await page.screenshot({path:`${output}/${mode}-preview-startup.png`});
+  await page.evaluate(()=>releaseStartup());await page.waitForFunction(()=>!styk.drawing.owner.previews.active);
+  await page.evaluate(()=>{for(let tx=40;tx<104;tx++)lifecycleSurface.store.delete(tx,2);styk.drawing.owner.present(lifecycleSurface);});
   await page.mouse.move(point.x,point.y);await page.mouse.down();await page.waitForFunction(()=>styk.drawing.gesture?.session&&lifecycleSurface.store.bounds===null);
   const erased=await page.evaluate(()=>probeDrawing());observations.push({mode,phase:'held eraser',...erased});
   await page.screenshot({path:`${output}/${mode}-held-eraser.png`});

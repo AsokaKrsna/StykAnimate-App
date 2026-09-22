@@ -9,7 +9,7 @@ page.on('pageerror',error=>errors.push(error.message));const check=(name,value)=
 try{
  // Apply the same disabled HTTP cache policy to comparison revisions.
  await page.context().route('**/*',route=>route.continue());
- if(baseline)for(const name of ['drawing-preview-cache','drawing-worker-operations','renderer']){const body=execFileSync('git',['show',`${baseline}:src/${name}.mjs`],{encoding:'utf8'});await page.context().route(`**/src/${name}.mjs`,route=>route.fulfill({contentType:'text/javascript',body}));}
+ if(baseline)for(const name of process.env.STYK_LIVE_MODULES?.split(',')??['drawing-preview-cache','drawing-worker-operations','renderer']){const body=execFileSync('git',['show',`${baseline}:src/${name}.mjs`],{encoding:'utf8'});await page.context().route(`**/src/${name}.mjs`,route=>route.fulfill({contentType:'text/javascript',body}));}
  if(software)await page.addInitScript(()=>Object.defineProperty(navigator,'gpu',{value:undefined}));
  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47839');await page.waitForFunction(()=>window.styk?.ready);await page.locator('[data-workspace-mode="draw"]').click();
  await page.evaluate(async()=>{const {emptyDocument}=await import('/src/demo.mjs');styk.editor.load(emptyDocument());styk.editor.createDrawingLayer();styk.state.settings.autosaveSeconds=0;Object.assign(styk.drawing.settings,{size:8,resolution:2,stabilization:0,color:'#203ed8'});});
@@ -18,6 +18,8 @@ try{
  await page.mouse.move(start.x,start.y);await page.mouse.down();await page.waitForFunction(()=>styk.drawing.gesture?.session);
  const measured=await page.evaluate(async({x,y})=>{
   const d=styk.drawing,scene=document.querySelector('#scene'),canvas=new OffscreenCanvas(24,24),ctx=canvas.getContext('2d',{willReadFrequently:true}),points=[],trips=[];
+  const previewWorker=d.owner.previews.worker,previewRequest=previewWorker.request;let firstPreviewMs=null;
+  previewWorker.request=async function(...args){const start=performance.now(),result=await previewRequest.apply(this,args);firstPreviewMs??=performance.now()-start;return result;};
   const started=performance.now(),duration=5500,misses=[];let probes=0,hits=0,missSince=null,maxMissMs=0,maxPending=0,firstVisibleMs=null;
   const input=setInterval(()=>{const elapsed=Math.min(duration,performance.now()-started),t=elapsed/duration,row=Math.min(7,Math.floor(t*8)),u=t*8-row,p={x:x+(row%2?1-u:u)*720,y:y+row*46,time:performance.now()};points.push(p);d.move({pointerId:d.gesture.id,pointerType:'mouse',pressure:.5,clientX:p.x,clientY:p.y,timeStamp:p.time});maxPending=Math.max(maxPending,d.gesture.session.pending.length);},8);
   const observe=()=>{
@@ -36,9 +38,9 @@ try{
   if(copy)queue.copyExternalImageToTexture=function(source,...args){if(source.source instanceof ImageBitmap&&[...renderer.drawingTextures?.values()??[]].some(t=>t.canvas===source.source)){previewUploads++;if(seen.has(source.source))duplicatePreviewUploads++;seen.add(source.source);}return copy.call(this,source,...args);};
   renderer.render=function(...args){const result=render.apply(this,args);observe();peakWorkingBytes=Math.max(peakWorkingBytes,d.owner.workingBytes);return result;};
   try{await new Promise(resolve=>setTimeout(resolve,duration));}
-  finally{clearInterval(input);renderer.render=render;if(copy)queue.copyExternalImageToTexture=copy;}
+  finally{clearInterval(input);renderer.render=render;previewWorker.request=previewRequest;if(copy)queue.copyExternalImageToTexture=copy;}
   trips.sort((a,b)=>a-b);
-  return{samples:points.length,probes,hits,visibleFraction:hits/probes,maxMissMs,firstVisibleMs,maxPending,tiles:d.gesture.surface.store.size,workerMedianMs:trips[Math.floor(trips.length*.5)],workerP95Ms:trips[Math.floor(trips.length*.95)],workerMaxMs:Math.max(...trips),backend:renderer.stats.backend,previewUploads,duplicatePreviewUploads,peakWorkingBytes,misses};
+  return{samples:points.length,probes,hits,visibleFraction:hits/probes,maxMissMs,firstVisibleMs,firstPreviewMs,maxPending,tiles:d.gesture.surface.store.size,workerMedianMs:trips[Math.floor(trips.length*.5)],workerP95Ms:trips[Math.floor(trips.length*.95)],workerMaxMs:Math.max(...trips),backend:renderer.stats.backend,previewUploads,duplicatePreviewUploads,peakWorkingBytes,misses};
  },start);
  console.log(JSON.stringify(measured));await writeFile(output+'/measured.json',JSON.stringify(measured,null,2));
  check('a small 2x brush paints while continuous input crosses the worker-preview threshold',measured.samples>250&&measured.probes>100&&measured.tiles>64);

@@ -331,7 +331,12 @@ See [zoom performance verification](DRAWING-PERFORMANCE.md).
 
 Dense live cels (more than 64 tiles) use a separate preview worker. Its source
 cache keeps one viewport's tiles and mip chain; tile versions identify changed
-inputs. The main thread copies source tiles in bounded chunks and submits only
+inputs. Preview requests load only tile sampling; PNG codecs and general
+editing operations load on their own request paths. During the first preview,
+the presenter can borrow its last completed synchronous scratch without
+allocating or rasterizing another image. Its store, mip level, dimensions and
+visible overlap must still match. Empty or offscreen artwork clears normally.
+The main thread copies source tiles in bounded chunks and submits only
 changed tiles on later revisions. At most three cel requests wait behind the
 active job. A job captures tile versions and freezes only the changed input
 tiles before copying in yielding batches. Later writes copy on write, so each

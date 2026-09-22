@@ -10,6 +10,14 @@ self.onmessage=async({data})=>{
     }catch(error){self.postMessage({id:data.id,error:error.message});}
     return;
   }
+  if(data.kind==='preview'){
+    let preview;
+    try{preview=await import('./drawing-worker-preview.mjs');}
+    catch(error){self.postMessage({id:data.id,error:error.message,fatal:true});return;}
+    try{const bitmap=preview.drawingWorkerPreview(data);self.postMessage({id:data.id,bitmap},[bitmap]);}
+    catch(error){self.postMessage({id:data.id,error:error.message});}
+    return;
+  }
   let operations;
   try{operations=await import('./drawing-worker-operations.mjs');}
   catch(error){self.postMessage({id:data.id,error:error.message,fatal:true});return;}

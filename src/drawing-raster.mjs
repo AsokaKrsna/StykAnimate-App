@@ -1,5 +1,4 @@
 import {TILE,TILE_BYTES,TileStore,tileKey,tileTransparent} from './drawing-tiles.mjs';
-import {encodeDrawingPNG} from './drawing-png.mjs';
 
 const newCanvas=(w,h)=>typeof OffscreenCanvas!=='undefined'?new OffscreenCanvas(w,h):Object.assign(document.createElement('canvas'),{width:w,height:h});
 /** Visible pixel-space rect under the current 2d transform (canvas bounds →
@@ -107,7 +106,7 @@ export function presenterScratch(presenter,rect,{maxSide=4096,level=0,clamp=fals
     const anchorKey=`${level}:${x},${y},${x1-x},${y1-y}`;
     s=scratches.get(anchorKey);
     if(!s){
-      s={anchorKey,level,cover:{x,y,width:x1-x,height:y1-y},canvas:null,ctx:null,stamp:-1,pending:null,blits:0,used:0};
+      s={anchorKey,level,store:presenter.store,cover:{x,y,width:x1-x,height:y1-y},canvas:null,ctx:null,stamp:-1,pending:null,blits:0,used:0};
       scratches.set(anchorKey,s);
       if(scratches.size>4){ // bounded LRU: drop the least-recently-used anchor
         let oldest=null,oldestKey=null;
@@ -137,6 +136,21 @@ export function presenterScratch(presenter,rect,{maxSide=4096,level=0,clamp=fals
     result.dirty=dx1>dx0&&dy1>dy0?{x:dx0-x,y:dy0-y,width:dx1-dx0,height:dy1-dy0}:{x:0,y:0,width:0,height:0};
   }
   return result;
+}
+/** Keep a completed synchronous image visible while the first worker preview
+ * loads. This only borrows an existing scratch; it allocates or paints nothing.
+ * Empty, offscreen and replaced surfaces must not retain obsolete artwork. */
+export function retainedPresenterScratch(presenter,rect,{level=0,maxSide=4096}={}){
+  const b=presenter.store?.tileBounds,f=2**level;
+  if(!b||!rect||rect.width<=0||rect.height<=0||b.x>=rect.x+rect.width||b.y>=rect.y+rect.height||b.x+b.width<=rect.x||b.y+b.height<=rect.y)return null;
+  let hit=null;
+  for(const s of presenter._scratches?.values()??[]){
+    const c=s.cover;
+    if(s.store!==presenter.store||s.level!==level||!c||s.canvas?.width!==c.width||s.canvas?.height!==c.height||c.width>maxSide||c.height>maxSide)continue;
+    if(c.x*f>=rect.x+rect.width||c.y*f>=rect.y+rect.height||(c.x+c.width)*f<=rect.x||(c.y+c.height)*f<=rect.y)continue;
+    if(!hit||s.stamp>hit.stamp)hit=s;
+  }
+  return hit?{canvas:hit.canvas,...hit.cover,level,scale:f,stamp:hit.stamp,anchorKey:hit.anchorKey,dirty:null}:null;
 }
 /** Paint tiles through bounded strip canvases when even the smallest mip's
  * anchored region exceeds the scratch ceiling. Each strip paints a one-tile
@@ -195,5 +209,6 @@ export async function flattenedDrawingPNG(holder,{maxPixels=16*1024*1024}={}){
   while(bounds.width*bounds.height/(1<<(2*k))>maxPixels&&k<4){k++;level=holder.level?holder.level(k):levelStore(entry,k);if(!level)return null;}
   const f=1<<k,x=Math.floor(bounds.x/f),y=Math.floor(bounds.y/f),w=Math.max(1,Math.ceil((bounds.x+bounds.width)/f)-x),h=Math.max(1,Math.ceil((bounds.y+bounds.height)/f)-y);
   const pixels=level.readRect(x,y,w,h);
+  const {encodeDrawingPNG}=await import('./drawing-png.mjs');
   return {dataUrl:await encodeDrawingPNG(pixels,w,h),width:w,height:h,scale:f,x:x*f,y:y*f,level:k};
 }

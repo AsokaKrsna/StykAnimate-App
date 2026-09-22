@@ -6,7 +6,7 @@ import {drawingMetadata,EMPTY_PNG} from './drawing-model.mjs';
 import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from './drawing-tiles.mjs';
 import {applyTileChanges} from './drawing-pixels.mjs';
 import {tileStoreFromList} from './drawing-tile-codec.mjs';
-import {presenterScratch,levelStore,invalidateLevels} from './drawing-raster.mjs';
+import {presenterScratch,retainedPresenterScratch,levelStore,invalidateLevels} from './drawing-raster.mjs';
 import {prepareDrawingChanges,needsDrawingPreparation,validateDrawingChanges} from './drawing-preparation.mjs';
 
 const owners=new WeakMap(),clipboardPixels=new WeakMap();
@@ -208,7 +208,7 @@ export class DrawingResources {
    * rasterizers. Levels are entry-owned caches rebuilt lazily and evicted
    * first under memory pressure. */
   rasterPresenter(e){
-    e.used=performance.now();e.scratch??=(rect,options)=>this.previews&&e.store?.size>64?this.previews.scratch(e,rect,options):presenterScratch(e,rect,options);e.level??=(k,rect)=>{e.levelsUsed=performance.now();return levelStore(e,k,rect);};return e;
+    e.used=performance.now();e.scratch??=(rect,options)=>this.previews&&e.store?.size>64?(this.previews.scratch(e,rect,options)??retainedPresenterScratch(e,rect,options)):presenterScratch(e,rect,options);e.level??=(k,rect)=>{e.levelsUsed=performance.now();return levelStore(e,k,rect);};return e;
   }
   /** Temporary selection surfaces participate in pixel/cache accounting but
    * never enter document publication, decoding, thumbnails or cel eviction. */

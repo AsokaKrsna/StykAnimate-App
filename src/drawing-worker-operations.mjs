@@ -5,7 +5,7 @@ import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {decodeDrawingPNG} from './drawing-png.mjs';
 import {encodeClipboardTiles,decodePixelClipboard} from './drawing-clipboard.mjs';
 import {decodeTileBlob,tileStoreFromList,TILE_BLOB_PREFIX,TileEncodeCache} from './drawing-tile-codec.mjs';
-import {levelStore,invalidateLevels} from './drawing-raster.mjs';
+import {levelStore} from './drawing-raster.mjs';
 import {transformSelectedPixels} from './drawing-selection.mjs';
 import {captureSelection} from './drawing-lasso.mjs';
 import {transformTiles,TRANSFORM_BYTES} from './drawing-transform.mjs';
@@ -16,7 +16,6 @@ const validRect=r=>r&&[r.x,r.y].every(Number.isSafeInteger)&&Number.isInteger(r.
 // Encoded tiles persist across publications so a re-publish only encodes
 // tiles the main thread resent; the blob is assembled here, never upstream.
 const encodeCache=new TileEncodeCache();
-let previewStore=null;
 /** The smallest mip level whose bounds still span ~64 output pixels. */
 const thumbnailLevel=bounds=>bounds?Math.max(0,Math.min(4,Math.floor(Math.log2(Math.max(bounds.width,bounds.height)/64)))):0;
 
@@ -74,17 +73,6 @@ export async function drawingWorkerOperation(data){
       const out=transformTiles(storeOf(data),[ratio,0,0,ratio,0,0],{filter:data.filter,maxBytes:data.maxBytes});
       const bounds=out.bounds,tiles=[...out].map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,alphaBounds:t.alphaBounds}));
       self.postMessage({id,tiles,bounds},tiles.map(t=>t.pixels));return;
-    }
-    if(kind==='preview'){
-      const {rect,level}=data;
-      if(!validRect(rect)||rect.width>4096||rect.height>4096||!Number.isInteger(level)||level<0||level>8)throw new Error('Invalid drawing preview bounds.');
-      if(data.reset||!previewStore)previewStore={store:new TileStore()};
-      const keep=new Set(data.keep),input=previewStore.store;
-      for(const tile of input)if(!keep.has(tileKey(tile.tx,tile.ty))){input.delete(tile.tx,tile.ty);invalidateLevels(previewStore,{x:tile.tx*TILE,y:tile.ty*TILE,width:TILE,height:TILE});}
-      for(const tile of data.tiles){input.tiles.set(tileKey(tile.tx,tile.ty),{tx:tile.tx,ty:tile.ty,pixels:new Uint8ClampedArray(tile.pixels)});input._changed();invalidateLevels(previewStore,{x:tile.tx*TILE,y:tile.ty*TILE,width:TILE,height:TILE});}
-      const store=levelStore(previewStore,level),canvas=new OffscreenCanvas(rect.width,rect.height),ctx=canvas.getContext('2d',{willReadFrequently:true});
-      for(const tile of store)ctx.putImageData(new ImageData(tile.pixels,TILE,TILE),tile.tx*TILE-rect.x,tile.ty*TILE-rect.y);
-      const bitmap=canvas.transferToImageBitmap();self.postMessage({id,bitmap},[bitmap]);return;
     }
     if(kind==='thumbnail'){
       let store;
