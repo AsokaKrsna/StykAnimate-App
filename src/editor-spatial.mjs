@@ -3,7 +3,7 @@ import {unprojectSpatial,unprojectJoint,projectSpatial,projection} from './spati
 import {geometryPlans} from './pivot/geometry-pose.mjs';
 import {animationRotation} from './animation-origin.mjs';
 import {rigConstraintPlan} from './rig-constraints.mjs';
-import {spatialBone,spatialSkin,quatMultiply,quatRotate,spatialPoint,spatialQuaternion,quaternionPose} from './rig-spatial.mjs';
+import {spatialBone,spatialSkin,quatMultiply,quatRotate,spatialPoint,spatialQuaternion,quaternionPose,betweenVectors} from './rig-spatial.mjs';
 import {inverseQuaternion,spatialWorldQuaternion,spatialWorldVector,spatialPoleHandle,captureSpatialIK} from './ik-spatial.mjs';
 import {ikChain,ikLayout,ikFollowerIndices,solveObjectIK} from './ik.mjs';
 import {poseChoiceGroups} from './rig-pose-choices.mjs';
@@ -124,7 +124,49 @@ export const editorSpatialMethods={
    if(o._stykIK)o._stykIK=Object.fromEntries(Object.entries(o._stykIK).map(([id,c])=>[id,{...c,pinned:false}]));
   },{posed:true});
  },
- poseSpatialJoint(x,y,{stretch=false}={}){
+ /** Gesture reference for direct spatial posing. Every sample is solved from
+  * this fixed start, so closed drags return exactly and twist cannot drift. */
+ _spatialGesture(kind){
+  const f=this.figure,o=this.object,i=this.selectedJoint,key=`${kind}:${o.unique_id}:${i}`;
+  if(this._drag)this._drag.spatialGesture??=new Map();
+  let gesture=this._drag?.spatialGesture.get(key);
+  if(gesture)return gesture;
+  const g=this.geometry.objects.get(this.selectedSlot),shape=g.segments[i],frame=shape.spatialFrame,r=f.segments[i]._stykRig.spatial;
+  const world=p=>{const v=spatialWorldVector(p,f,o).map(n=>n*o.scale);return[v[0]+g.root.x,v[1]+g.root.y,v[2]];};
+  const start=unprojectJoint(shape.start),origin=[start.x,start.y,world(spatialPoint(frame,r.origin))[2]],tip=world(spatialPoint(frame,r.tip)),vector=tip.map((v,k)=>v-origin[k]),length=Math.hypot(...vector);
+  const before=this.getSpatialPose(),local=spatialQuaternion(before.bend,before.turn,before.pitch);
+  // Limbs lying in the view plane leave toward the character's front.
+  let root=shape;while(root.seg._stykRig?.spatial?.parent){const parent=g.segments[rigPlan(this).ids.get(root.seg._stykRig.spatial.parent)];if(!parent?.spatialFrame)break;root=parent;}
+  const front=quatRotate(spatialWorldQuaternion(root.spatialFrame.q,f,o),[0,0,1])[2];
+  const depth=length>1e-9?vector[2]/length:0;
+  gesture={origin,tip,length,direction:length>1e-9?vector.map(v=>v/length):[1,0,0],side:Math.abs(depth)>.04?Math.sign(depth):front<-.2?-1:1,
+   world:spatialWorldQuaternion(frame.q,f,o),parent:quatMultiply(frame.q,inverseQuaternion(local)),start:null};
+  this._drag?.spatialGesture.set(key,gesture);
+  return gesture;
+ },
+ /** Write a world orientation for the selected bone into its native channels. */
+ _setSpatialWorldOrientation(world,gesture,label,edit){
+  const f=this.figure,o=this.object,i=this.selectedJoint,r=f.segments[i]._stykRig.spatial,before=this.getSpatialPose(),ids=rigPlan(this).ids;
+  const pose=quaternionPose(quatMultiply(inverseQuaternion(gesture.parent),spatialWorldQuaternion(world,f,o,true)),before);
+  return this._objectEdit(label,target=>{
+   this._releaseSpatialChain(target);
+   const sign=target.image_text_flags?-1:1;this._rotateJoint((pose.bend-before.bend)*sign);
+   for(const key of ['turn','pitch'])target.angles[ids.get(r[key])]+=(pose[key]-before[key])*sign;
+   edit?.(target);
+  },{posed:true});
+ },
+ /** Right-drag: twist the selected part around its own axis (turn a head,
+  * twist a torso or forearm). Horizontal pointer travel sets the angle. */
+ twistSpatialJoint(x,y,{pixel=1}={}){
+  const f=this.figure,o=this.object,s=f?.segments[this.selectedJoint];if(!o||!spatialBone(s)||!this._drag)return false;
+  if(![x,y,pixel].every(Number.isFinite)||pixel<=0)return false;
+  const gesture=this._spatialGesture('twist');gesture.start??={x,y};
+  if(gesture.length<1e-6)return false;
+  // 120 screen pixels turn a quarter; the axis is the bone in world space.
+  const angle=(x-gesture.start.x)/pixel/120*Math.PI/2*(o.image_text_flags?-1:1),d=gesture.direction,h=Math.sin(angle/2);
+  return this._setSpatialWorldOrientation(quatMultiply([d[0]*h,d[1]*h,d[2]*h,Math.cos(angle/2)],gesture.world),gesture,'Twist articulated joint');
+ },
+ poseSpatialJoint(x,y,{stretch=false,flip=false,planar=false,pixel=0,anchor=null}={}){
   const f=this.figure,o=this.object,i=this.selectedJoint,s=f?.segments[i];if(!o||!spatialBone(s))return false;
   if(![x,y].every(Number.isFinite))return false;
   // A planted knee/elbow steers its existing bend plane directly. Its end
@@ -135,23 +177,51 @@ export const editorSpatialMethods={
    try{this.selectedJoint=rigPlan(this).ids.get(Number(id));const pole=this.getSpatialIKPole();return pole?this.setSpatialIKPole(x,y,pole.knee[2]):false;}
    finally{this.selectedJoint=i;}
   }
+  if(!stretch&&!planar)return this._arcSpatialJoint(x,y,flip,pixel,anchor);
   const g=this.geometry.objects.get(this.selectedSlot),shape=g.segments[i],before=this.getSpatialPose(),start=unprojectJoint(shape.start),end=unprojectJoint(shape.end);
   ({x,y}=unprojectSpatial({x,y},shape.end.rawPoint?.[2]??0,o,g.root));
   const span=Math.hypot(end.x-start.x,end.y-start.y),distance=Math.hypot(x-start.x,y-start.y);
   if(span<1e-6||distance<1e-6)return false;
-  // Pose in the view plane without an underdetermined three-axis solve.
-  // This preserves foreshortening and axial twist, including closed drags.
+  // Planar posing (and stretching) rotates in the view plane, preserving depth.
   const angle=Math.atan2(y-start.y,x-start.x)-Math.atan2(end.y-start.y,end.x-start.x);
   const parent=quatMultiply(shape.spatialFrame.q,inverseQuaternion(spatialQuaternion(before.bend,before.turn,before.pitch)));
   const world=quatMultiply(spatialQuaternion(angle,0,0),spatialWorldQuaternion(shape.spatialFrame.q,f,o));
-  const pose=quaternionPose(quatMultiply(inverseQuaternion(parent),spatialWorldQuaternion(world,f,o,true)),before);
-  const ids=rigPlan(this).ids,r=s._stykRig.spatial;
-  return this._objectEdit('Pose articulated joint',target=>{
-   this._releaseSpatialChain(target);
-   const sign=target.image_text_flags?-1:1;this._rotateJoint((pose.bend-before.bend)*sign);
-   for(const key of ['turn','pitch'])target.angles[ids.get(r[key])]+=(pose[key]-before[key])*sign;
+  return this._setSpatialWorldOrientation(world,{parent},'Pose articulated joint',target=>{
    if(stretch){const lengths=target.len_flag?target.lengths.slice():f.segments.map(s=>s.length);lengths[i]*=distance/span;target.lengths=lengths;target.len_flag=1;}
-  },{posed:true});
+  });
+ },
+ /** The bone keeps its length and swings in 3D so its end follows the pointer.
+  * Inside its projected reach it leaves the view plane on the gesture's depth
+  * side; `flip` mirrors that side. One swing from the fixed gesture start
+  * keeps axial twist unchanged. */
+ _arcSpatialJoint(x,y,flip,pixel=0,anchor=null){
+  const o=this.object,g=this.geometry.objects.get(this.selectedSlot),gesture=this._spatialGesture('arc');
+  if(gesture.length<1e-6)return false;
+  const depth=gesture.origin[2]+gesture.direction[2]*gesture.length,p=unprojectSpatial({x,y},depth,o,g.root);
+  // Motion is relative to the grab point, so grabbing beside a marker never
+  // jumps. Short bones (chest, neck) use a longer virtual lever for control.
+  // Without an anchor the bone end tracks the pointer directly.
+  gesture.pointer??=anchor?unprojectSpatial(anchor,depth,o,g.root):{x:gesture.tip[0],y:gesture.tip[1]};
+  const l=Math.max(gesture.length,pixel>0?70*pixel:0),d=gesture.direction;
+  const dx=d[0]*l+p.x-gesture.pointer.x,dy=d[1]*l+p.y-gesture.pointer.y,reach=Math.hypot(dx,dy);
+  let direction;
+  if(reach>=l)direction=[dx/reach,dy/reach,0];
+  else{const side=gesture.side*(flip?-1:1);direction=[dx/l,dy/l,side*Math.sqrt(l*l-reach*reach)/l];}
+  if(reach<1e-9&&Math.abs(direction[2])<1e-9)return false;
+  return this._setSpatialWorldOrientation(quatMultiply(betweenVectors(d,direction),gesture.world),gesture,'Pose articulated joint');
+ },
+ _clearSpatialIKDepth(){
+  const o=this.object,s=this.figure?.segments[this.selectedJoint];if(o&&s)this._drag?.spatialGesture?.delete(`depth:${o.unique_id}:${s.segment_id}`);
+ },
+ /** Shift-drag on a hand or foot target: vertical travel moves it toward the
+  * camera (down) or away (up) while its screen position stays fixed. */
+ poseSpatialIKDepth(x,y,{pixel=1}={}){
+  const f=this.figure,o=this.object,s=f?.segments[this.selectedJoint],c=o?._stykIK?.[s?.segment_id];
+  if(!c?.enabled||!c.spatialTarget||c.bendDirection!==0||!this._drag||![x,y,pixel].every(Number.isFinite)||pixel<=0)return false;
+  const key=`depth:${o.unique_id}:${s.segment_id}`;this._drag.spatialGesture??=new Map();
+  if(!this._drag.spatialGesture.has(key))this._drag.spatialGesture.set(key,{y,depth:c.spatialTarget.depth});
+  const gesture=this._drag.spatialGesture.get(key);
+  this.setSpatialIKTarget({depth:gesture.depth+(y-gesture.y)/pixel*Math.abs(o.scale)*.5});return true;
  },
 };
 export {spatialBone,spatialSkin};

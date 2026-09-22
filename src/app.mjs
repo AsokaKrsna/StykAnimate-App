@@ -2590,6 +2590,7 @@ const moveCanvasPointer = guarded((e) => {
         stretch: e.ctrlKey || e.metaKey,
         isolate: Boolean(state.isolateHeld || state.isolateMode),
         snapTolerance: 6 / state.view.scale,
+        pixel: 1 / state.view.scale,
       });
       requestRender();
       return;
@@ -2660,12 +2661,16 @@ const moveCanvasPointer = guarded((e) => {
         stretch: e.ctrlKey || e.metaKey,
         isolate: Boolean(state.isolateHeld || state.isolateMode),
         snapTolerance: 6 / state.view.scale,
+        pixel: 1 / state.view.scale,
       });
     else
       editor.poseJoint(p.x, p.y, {
         stretch: e.ctrlKey || e.metaKey,
         isolate: Boolean(state.isolateHeld || state.isolateMode),
         snapTolerance: 6 / state.view.scale,
+        alternate: e.shiftKey,
+        pixel: 1 / state.view.scale,
+        anchor: drag.start,
       });
     requestRender();
   });

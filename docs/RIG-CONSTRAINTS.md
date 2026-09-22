@@ -98,12 +98,26 @@ Targets require authoring and visual review at intermediate turns and tilts;
 interpolation alone does not guarantee a nonintersecting or accurate silhouette.
 
 In Animate, **Pose** uses the ordinary joint markers. Hand and foot endpoints
-use the existing IK settings. Dragging a free spatial joint rotates it in the
-view plane, preserving its depth and avoiding arbitrary axial twist. Use
-**Rotate** for turn/tilt and for a joint projected exactly edge-on. Rotate shows
-local X/Y/Z rings, a free trackball and an outer view ring; Shift gives finer
-movement. Whole body, limb, torso and belt-tie shortcuts select native joints.
-Each drag is one undo step; Escape cancels it.
+use the existing IK settings. Dragging a free spatial joint swings the bone in
+3D at constant length: its end follows the pointer, and pulling it inside its
+projected reach brings it toward or away from the camera, so arms reach
+forward, knees lift and the chest leans without switching tools. The depth side
+comes from the bone's current direction, or the character's front when the
+bone lies in the view plane. Holding **Shift** during the drag mirrors it to the
+other side (behind the body). Motion is relative to where the marker was
+grabbed, so grabbing beside it never jumps; bones shorter than 70 screen
+pixels (chest, neck, feet) use a 70-pixel virtual lever for finer control.
+**Right-drag** twists the part about its own axis (turn the head, twist the
+torso or forearm): 120 pixels of horizontal travel give a quarter turn. **Ctrl**
+keeps the previous view-plane rotation with stretching. On a spatial hand or
+foot target, **Shift** pushes the target toward the camera (drag down) or away
+(drag up) while it stays under the pointer. Every sample is solved from the
+gesture's start orientation, so closed drags return exactly without twist drift.
+
+Use **Rotate** for exact turn/tilt values. Rotate shows local X/Y/Z rings, a free
+trackball and an outer view ring; Shift gives finer movement. Whole body, limb,
+torso and belt-tie shortcuts select native joints. Each drag is one undo step;
+Escape cancels it.
 
 **Plant both feet** retains foot position, depth and orientation while the hips
 move; **Release feet** lets the character move. Drag a planted knee or elbow's

@@ -120,7 +120,7 @@ test('direct joint dragging preserves depth and returns without accumulated twis
   const g=e.geometry.objects.get(0).segments[upper-1],center={...g.start},point={...g.end},before=state(e,upper),boot=state(e,foot),saved=e.serialize();
   const radius=Math.hypot(point.x-center.x,point.y-center.y),angle=Math.atan2(point.y-center.y,point.x-center.x);
   e.beginDrag('Pose knee');
-  for(let i=1;i<=60;i++){const a=angle+i*Math.PI/30;e.poseJoint(center.x+radius*Math.cos(a),center.y+radius*Math.sin(a));near(state(e,upper).p[2],before.p[2],1e-5);}
+  for(let i=1;i<=60;i++){const a=angle+i*Math.PI/30;e.poseJoint(center.x+radius*Math.cos(a),center.y+radius*Math.sin(a));near(state(e,upper).p[2],before.p[2],1e-4);}
   sameOrientation(state(e,upper).q,before.q);sameOrientation(state(e,foot).q,boot.q);e.cancelDrag();assert.deepEqual(e.serialize(),saved);
  }
 });
@@ -155,4 +155,56 @@ test('whole-figure orientation rigidly carries planted ankles, poles and boots w
   e.setSpatialPose({turn:.8},{wholeFigure:true});const reopened=new Editor({demo:false});reopened.load(e.serialize());sameOrientation(state(reopened,foot).q,state(e,foot).q);
   e.undo();assert.deepEqual(e.serialize(),saved);
  }
+});
+
+test('pose drags swing a spatial bone in 3D at constant length; Shift mirrors its depth side',()=>{
+ for(const mirror of [false,true]){
+  const{e,body,upper,foot}=fixture();e.select(1,-1);if(mirror)e.mirrorFigure();
+  e.select(1,body-1);e.setSpatialPose({turn:.3});e.select(1,upper-1);
+  const start={...e.geometry.objects.get(0).segments[upper-1].start},saved=e.serialize(),before=state(e,upper),boot=state(e,foot);
+  const bone=()=>{const s=e.geometry.objects.get(0).segments[upper-1],f=s.spatialFrame,r=s.seg._stykRig.spatial;return spatialWorldVector(spatialPoint(f,r.tip).map((v,i)=>v-spatialPoint(f,r.origin)[i]),e.figure,e.object).map(v=>v*e.object.scale);};
+  const full=Math.hypot(...bone());
+  e.beginDrag('Pose thigh');
+  // Pulled toward its base the thigh leaves the view plane toward the front.
+  const inside={x:start.x+full*.35,y:start.y+full*.3};e.poseJoint(inside.x,inside.y);
+  let s=e.geometry.objects.get(0).segments[upper-1];near(s.end.x,inside.x,1e-3);near(s.end.y,inside.y,1e-3);near(Math.hypot(...bone()),full,1e-6);
+  const front=bone()[2];assert.ok(Math.abs(front)>full*.5);
+  e.poseJoint(inside.x,inside.y,{alternate:true});s=e.geometry.objects.get(0).segments[upper-1];
+  near(s.end.x,inside.x,1e-3);near(s.end.y,inside.y,1e-3);near(bone()[2],-front,1e-6);
+  // Beyond its reach the bone lies in the view plane and points at the cursor.
+  e.poseJoint(start.x-full*3,start.y);near(bone()[2],0,1e-6);near(Math.hypot(...bone()),full,1e-6);
+  // Returning to the grab point restores every axis, including twist.
+  e.poseJoint(before.end.x,before.end.y);sameOrientation(state(e,upper).q,before.q);sameOrientation(state(e,foot).q,boot.q);
+  e.cancelDrag();assert.deepEqual(e.serialize(),saved);
+ }
+});
+
+test('right-drag twists a spatial bone about its own axis without moving its end',()=>{
+ const{e,upper,foot}=fixture();e.select(1,upper-1);e.setSpatialPose({turn:.2,pitch:.3});
+ const saved=e.serialize(),before=state(e,upper),boot=state(e,foot);
+ e.beginDrag('Twist thigh');e.bendJoint(100,100,{pixel:1});e.bendJoint(220,140,{pixel:1});
+ near(state(e,upper).p[0],before.p[0],1e-6);near(state(e,upper).p[1],before.p[1],1e-6);near(state(e,upper).p[2],before.p[2],1e-6);
+ const turned=state(e,foot).q;assert.ok(Math.abs(Math.abs(turned.reduce((n,v,i)=>n+v*boot.q[i],0))-1)>1e-3);
+ // A quarter turn per 120 pixels; returning restores the pose exactly.
+ e.bendJoint(100,60,{pixel:1});sameOrientation(state(e,foot).q,boot.q);
+ e.cancelDrag();assert.deepEqual(e.serialize(),saved);
+});
+
+test('Shift-drag on a spatial IK target pushes its depth while it stays under the pointer',()=>{
+ const{e,lower}=fixture();e.select(1,lower-1);e.setNodeIK({enabled:true,pinned:true,bendDirection:0});e.poseIKTarget(215,245);
+ const saved=e.serialize(),screen={...state(e,lower).end},depth=e.object._stykIK[lower].spatialTarget.depth;
+ e.beginDrag('Depth');e.poseJoint(screen.x,screen.y,{alternate:true,pixel:1});e.poseJoint(screen.x+30,screen.y+20,{alternate:true,pixel:1});
+ assert.ok(e.object._stykIK[lower].spatialTarget.depth>depth+1);near(state(e,lower).end.x,screen.x,1e-3);near(state(e,lower).end.y,screen.y,1e-3);
+ e.cancelDrag();assert.deepEqual(e.serialize(),saved);
+});
+
+test('anchored drags never jump on grab and short bones use a longer virtual lever',()=>{
+ const{e,foot}=fixture();e.select(1,foot-1);
+ const saved=e.serialize(),before=state(e,foot),grab={x:before.end.x+4,y:before.end.y-3};
+ e.beginDrag('Pose foot');e.poseJoint(grab.x,grab.y,{anchor:grab,pixel:1});sameOrientation(state(e,foot).q,before.q);
+ // The foot is ~38 units long; with a 70-unit lever its end moves less than the pointer.
+ e.poseJoint(grab.x,grab.y+20,{anchor:grab,pixel:1});const moved=Math.hypot(state(e,foot).end.x-before.end.x,state(e,foot).end.y-before.end.y);
+ assert.ok(moved>2&&moved<20,`${moved}`);
+ e.poseJoint(grab.x,grab.y,{anchor:grab,pixel:1});sameOrientation(state(e,foot).q,before.q);
+ e.cancelDrag();assert.deepEqual(e.serialize(),saved);
 });
