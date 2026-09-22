@@ -12,6 +12,10 @@ assert.ok(!memoryHintGiB||Number.isFinite(memoryHintGiB)&&memoryHintGiB>=.5&&mem
 if(memoryHintGiB)os.totalmem=()=>memoryHintGiB*1073741824;
 const input = process.env.STYK_BENCH_INPUT, output = process.env.STYK_BENCH_OUTPUT;
 assert.ok(input && output && process.env.STYK_USER_DATA_DIR, 'Run through the benchmark driver');
+const sessionCycles=Number(process.env.STYK_BENCH_SESSION_CYCLES||0);
+assert.ok(Number.isInteger(sessionCycles)&&sessionCycles>=0&&sessionCycles<=1000);
+if(sessionCycles)app.commandLine.appendSwitch('enable-precise-memory-info');
+if(sessionCycles&&process.env.STYK_BENCH_SESSION_GC==='1')app.commandLine.appendSwitch('js-flags','--expose-gc');
 const exportFormats = (process.env.STYK_BENCH_EXPORT_FORMATS || 'piv,piv,styk').split(',');
 assert.ok(exportFormats.length <= 3 && exportFormats.every(format => ['piv', 'styk'].includes(format)));
 const playbackFrames=Number(process.env.STYK_BENCH_PLAYBACK_FRAMES||64);
@@ -19,7 +23,8 @@ assert.ok(Number.isInteger(playbackFrames)&&playbackFrames>0&&playbackFrames<=50
 const started = performance.now(); let running = false;
 // Let the driver stop a timed-out run through normal backend cleanup.
 process.stdin.on('data', () => app.exit(1));
-dialog.showOpenDialog = async () => ({canceled: false, filePaths: [input]});
+let selectedInput=input;
+dialog.showOpenDialog = async () => ({canceled: false, filePaths: [selectedInput]});
 app.on('browser-window-created', (_event, window) => {
   if (running) return; running = true;
   window.setIgnoreMouseEvents(true); window.setFocusable(false); window.webContents.setBackgroundThrottling(false);
@@ -129,8 +134,11 @@ async function run(window) {
       return rows;
     } finally {exporter.dispose();}
   })()`) : null;
+  const session=sessionCycles?await require('./benchmark-session-memory.cjs')(window,{cycles:sessionCycles,input,
+    alternate:process.env.STYK_BENCH_ALTERNATE_INPUT,output,forcedGC:process.env.STYK_BENCH_SESSION_GC==='1',
+    choose:file=>{selectedInput=file;},metrics:()=>app.getAppMetrics()}):null;
   await writeFile(path.join(output, 'report.json'), JSON.stringify({readyAt, startupMs, baseline, baselineHealth, imported, processes, digest, health,
-    exports, playback, playbackProcesses, playbackMemorySamples, editing,
+    exports, playback, playbackProcesses, playbackMemorySamples, editing, session,
     environment: {cpu: os.cpus()[0].model, logicalCpus: os.cpus().length, ramBytes: actualMemoryBytes, memoryHintGiB:memoryHintGiB||null, os: os.release()}}, null, 2));
   // Wait for the main-process acknowledgement before asking to close. Merely
   // marking the renderer saved can race its asynchronous desktop state update.
