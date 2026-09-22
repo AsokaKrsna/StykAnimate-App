@@ -58,9 +58,10 @@ export class PlaybackPlanner {
   planInsertInbetweens(request, options) {return this._plan('inbetween', request, options);}
   async _plan(kind, request, {signal, onProgress} = {}) {
     const {message, label} = jobs[kind];
-    const owner = this.owner, revision = owner.revision;
+    const owner = this.owner;
     if (owner.disposed || !owner.report) throw new Error(`Load a document before ${label.toLowerCase()} planning.`);
-    if (owner.failure) throw owner.failure;
+    if (owner.failure && !owner._recover?.()) throw owner.failure;
+    const revision = owner.revision;
     if (signal?.aborted) throw aborted(`${label} was cancelled.`);
     await owner._loadWorker();
     if (owner.disposed || owner.revision !== revision || signal?.aborted) throw aborted(`${label} was superseded.`);

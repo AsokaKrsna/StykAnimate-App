@@ -8,6 +8,7 @@ import {PlaybackBitmapPool,packetFootprint,closePacketBitmaps} from './playback-
 import {playbackMemoryBudget, previewMemoryPlan, playbackWorkerCount} from './playback-budget.mjs';
 import {playbackRetentionSnapshot,unchangedPlaybackTicks} from './playback-retention.mjs';
 
+const MAX_WORKER_RESTARTS = 2;
 const abortError = message => { const error = new Error(message); error.name = 'AbortError'; return error; };
 const closePacket = closePacketBitmaps;
 const yieldToInput = () => globalThis.scheduler?.yield ? scheduler.yield() : new Promise(resolve => {
@@ -40,28 +41,50 @@ export class PlaybackCache {
     // An injected factory is a controlled/test endpoint; it stays single-worker
     // unless the caller opts into pool behavior explicitly.
     const count = Math.max(1, Math.min(4, Math.floor(workerCount ?? (workerFactory ? 1 : playbackWorkerCount())) || 1));
+    this._workerSpec = { count, workerURL, workerFactory }; this._failures = 0;
+    this.stats.workerCount = count; this.stats.workerRestarts = 0;
+    this._startWorkers();
+    this.planner = new PlaybackPlanner(this);
+  }
+  _startWorkers() {
+    const { count, workerURL, workerFactory } = this._workerSpec;
     this.workers = [];
     for (let index = 0; index < count; index++) {
       const worker = workerFactory ? workerFactory(workerURL) : new Worker(workerURL, {
         type: 'module', name: count > 1 ? `StykAnimate playback preparation ${index + 1}` : 'StykAnimate playback preparation' });
-      const client = { worker, index, loadAck: null };
-      worker.addEventListener('message', event => this._receive(event.data, client));
-      worker.addEventListener('error', event => { event.preventDefault?.(); this._fail(new Error(event.message || 'The playback worker stopped unexpectedly.')); });
-      worker.addEventListener('messageerror', () => this._fail(new Error('A prepared playback frame could not be transferred.')));
+      // Events from a terminated pool must never fail or feed its replacement.
+      const client = { worker, index, loadAck: null }, current = () => this.workers.includes(client);
+      worker.addEventListener('message', event => { if (current()) this._receive(event.data, client); });
+      worker.addEventListener('error', event => { event.preventDefault?.(); if (current()) this._fail(new Error(event.message || 'The playback worker stopped unexpectedly.')); });
+      worker.addEventListener('messageerror', () => { if (current()) this._fail(new Error('A prepared playback frame could not be transferred.')); });
       this.workers.push(client);
     }
-    this.stats.workerCount = count;
     // The primary worker remains the owner endpoint for background planning,
     // which keeps a single job stream instead of duplicating plan requests.
     this.worker = this.workers[0].worker;
-    this.planner = new PlaybackPlanner(this);
+    if (this.interactionActive) for (const client of this.workers) client.worker.postMessage({ type: 'interaction', active: true });
+  }
+  /** Replaces a failed worker pool on its next use. Each document revision gets
+   * a bounded number of fresh pools, so a scene that deterministically crashes
+   * the worker cannot spin through idle warm-up; an edit or new document retries. */
+  _recover(revision = this.documentRevision) {
+    if (!this.failure || this.disposed) return true;
+    if (revision === this._failedRevision && this._failures > MAX_WORKER_RESTARTS) return false;
+    if (revision !== this._failedRevision) this._failures = 0;
+    this.failure = null; this.stats.failure = null; this.stats.workerRestarts++;
+    this._startWorkers();
+    // The new pool holds no mirror: send current options and reload the document.
+    this.invalidate();
+    return true;
   }
   load(report, { scale = this.scale, revision, cameraEnabled = true, storedFrames = false, softwareFrames = false, hiddenUids, hiddenKey = '' } = {}) {
     if (this.disposed) throw new Error('The playback cache has been disposed.');
+    const available = this._recover(revision);
     this.invalidate(); this.report = report?.document ?? report?.report ?? report; this.scale = scale; this.cameraEnabled = cameraEnabled;
     this.softwareFrames = softwareFrames; this.hiddenUids = hiddenUids; this.hiddenKey = hiddenKey;
     this.documentRevision = revision; this.storedFrames = storedFrames; this._refreshTimeline();
-    this.needsLoad = true; this._loadWorker(); return this;
+    // A pool that exhausted its restarts stays failed; prepareRange() reports it.
+    this.needsLoad = true; if (available) this._loadWorker(); return this;
   }
   setInteractionActive(active) {
     active=Boolean(active);
@@ -274,6 +297,8 @@ export class PlaybackCache {
     // generation. Its resumed continuation must never replace the new waiter.
     if (this.disposed || message.revision !== this.revision)
       return Promise.reject(abortError('Playback snapshot was superseded.'));
+    // A failed pool never acknowledges; its replacement reloads from scratch.
+    if (this.failure) return Promise.reject(this.failure);
     return new Promise((resolve, reject) => {
       const timer = this.timeoutMs > 0 ? setTimeout(() => this._fail(new Error('Playback snapshot timed out.')), this.timeoutMs) : null;
       client.loadAck = { revision: message.revision, sequence: message.sequence, responseType, resolve, reject, timer };
@@ -367,7 +392,7 @@ export class PlaybackCache {
   }
   async prepareRange(ticks, { replacePending = false } = {}) {
     if (this.disposed) throw new Error('The playback cache has been disposed.');
-    if (this.failure) throw this.failure;
+    if (!this._recover()) throw this.failure;
     if (!this.report) return [];
     const revision = this.revision;
     await this._loadWorker();
@@ -440,6 +465,7 @@ export class PlaybackCache {
       if(Number.isFinite(compute)&&Number.isFinite(queued))this.diagnostics.record('worker_transfer',Math.max(0,roundtrip-compute-queued),pending.context);
     }
     if (!packet) { pending.reject(new Error('The playback worker returned no render packet.')); return; }
+    this._failures = 0;
     this.diagnostics?.recovery('playback_worker','recovered');
     // Packet keys/revisions identify immutable compilation results. An epoch
     // identifies shared pixel ownership across explicitly retained revisions.
@@ -486,6 +512,7 @@ export class PlaybackCache {
     if (this.failure) return;
     this._mirrorAvailable = false;
     this.failure = error; this.stats.failure = error.message;
+    this._failures = this._failedRevision === this.documentRevision ? this._failures + 1 : 1; this._failedRevision = this.documentRevision;
     this.diagnostics?.recovery('playback_worker','started');
     this.planner.cancel(error);
     this._abortLoad(error);
