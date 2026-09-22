@@ -385,8 +385,9 @@ export class DrawingGpu {
   prepare(presenter,view){
     const state=this.state(presenter);state.lastFrame=this.frame;
     if(!presenter.store){
-      // An evicted store re-decodes; keep drawing the last resident tiles.
-      const retained=state.retained;if(!retained)return null;
+      // An evicted store re-decodes; keep drawing its last resident tiles
+      // unless history has changed the cel since they were drawn.
+      const retained=state.retained;if(!retained||retained.revision!==presenter.revision)return null;
       if(retained.records.some(record=>record.slot<0))return null;
       for(const record of retained.records)this.touch(record);
       return this.appendInstances(retained.words);
@@ -426,7 +427,7 @@ export class DrawingGpu {
       for(const slot of slots)if(slot!==GPU_NONE){const record=this.lru.get(slot);if(record)records.add(record);}
     }
     const used=words.subarray(0,n*WORDS);
-    state.retained={words:used,records:[...records]};
+    state.retained={words:used,records:[...records],revision:presenter.revision};
     return this.appendInstances(used);
   }
   appendInstances(words){

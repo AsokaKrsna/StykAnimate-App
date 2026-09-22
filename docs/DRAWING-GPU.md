@@ -105,6 +105,34 @@ variation of the baseline: p50 23 / 36 / 55 ms against 24 / 36 / 50 ms for the
 blank, dense and 500-figure scenarios. Raw results are in
 `artifacts/drawing-latency/final/`.
 
+### Animation workflow
+
+`tests/drawing-workflow-latency.browser.mjs` builds a 24-frame 1080p drawing
+layer at 2× (25 pressure strokes per cel, about 1,000 tiles each) with a
+per-frame marker colour, and times each command until a render shows that
+frame. Both builds ran back to back on a loaded workstation, so absolute times
+are higher than in quieter runs; see `artifacts/drawing-workflow/`.
+
+| WebGPU | Baseline | GPU residency |
+| --- | ---: | ---: |
+| Flip to a resident drawing, p50 / p95 | 249 / 451 ms | 23 / 47 ms |
+| Flip to an evicted drawing, p50 / p95 | 968 / 1,112 ms | 23 / 33 ms |
+| Scrub at 24 fps: frames shown before the next seek | 2% | 100% |
+| Undo / redo of a 300 px stroke | 122 / 163 ms | 75 / 91 ms |
+
+An evicted cel is shown from its still-resident GPU tiles while its CPU store
+decodes; the retained image is discarded if history changes that cel first.
+Editing an evicted cel still waits for the PNG decode (roughly 0.4 s for
+1,000 tiles here). Three alternating 12-frame Canvas 2D runs measured warm
+flips of 224–267 ms against 265–347 ms for the baseline and cold flips of
+820–962 ms against 952–1,178 ms, so the fallback did not regress.
+
+The workflow benchmark also exposed a controller defect present in the
+baseline: a click or tap released while its cel was still loading was
+discarded, because the browser's routine loss of pointer capture after
+release was treated as a cancellation. Fill clicks on evicted cels did
+nothing. Only a cancellation before release now abandons the pending gesture.
+
 Profiling the pen-up window found and removed four costs that would otherwise
 stall after every stroke: re-uploading tiles already on the GPU, rebuilding
 every reduced level after a presentation-only refresh, hashing the published
@@ -119,5 +147,5 @@ addition to the CPU drawing budgets. The GPU brush's pixels can differ from
 the worker brush by one 8-bit step, so the renderer in use can change the
 least significant bit of committed paint; history, saving and reopening
 preserve whichever bytes were committed exactly. Publication, playback
-preparation and cold cel decoding still run through the existing workers and
-are unchanged by this work.
+preparation and cold cel decoding still run through the existing workers;
+editing an evicted cel waits for its decode.

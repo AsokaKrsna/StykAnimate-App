@@ -172,6 +172,20 @@ try{
   const afterDecode=await pixelAt(zoomBox.x-box.x+60,zoomBox.y-box.y+30);
   check('an evicted cel keeps its last GPU image until the decode completes',evicted&&whileEvicted[2]>150&&whileEvicted[0]<170,whileEvicted);
   check('the decoded cel is displayed again',afterDecode[2]>150&&afterDecode[0]<170,afterDecode);
+  // A click released while its cel still loads must still act once the load
+  // completes; pointer capture loss after release is not a cancellation.
+  await page.evaluate(async()=>{
+    const d=styk.drawing,t=styk.editor.drawingTarget(),e=d.owner.entry(t.figure);await d.owner.flush();
+    const request=d.owner.decodeWorker.request.bind(d.owner.decodeWorker);let release;const held=new Promise(resolve=>release=resolve);
+    d.owner.decodeWorker.request=async(...args)=>{await held;return request(...args);};
+    e.store=null;e.levels=null;d.owner.surfaceVersion++;d.setTool('fill');Object.assign(d.settings,{color:'#20c040',tolerance:16,gap:0,expansion:0,sampleAll:false});
+    window.releaseDecode=()=>{d.owner.decodeWorker.request=request;release();};window.undoCount=styk.editor._undo.length;
+  });
+  await page.mouse.click(zoomBox.x+40,zoomBox.y+40);
+  await page.evaluate(()=>window.releaseDecode());
+  const filled=await page.waitForFunction(()=>styk.editor._undo.length===undoCount+1&&styk.editor.undoLabel?.toLowerCase().includes('fill'),null,{timeout:10000}).then(()=>true,()=>false);
+  await page.evaluate(()=>styk.drawing.setTool('brush'));
+  check('a click released while its cel loads still fills after the load',filled);
   // 5. A closing GPU stroke: its read-back keeps the stroke visible, saving
   // waits for it, and Escape or replacing the document discards it cleanly.
   await page.evaluate(async()=>{

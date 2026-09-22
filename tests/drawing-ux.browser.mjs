@@ -9,7 +9,7 @@ page.on('pageerror',e=>errors.push(e.stack));
 const check=(name,value)=>{assert.ok(value,name);checks.push(name);console.log('PASS',name);};
 const stroke=async(x,y,dx=90,dy=35)=>{await page.mouse.move(x,y);await page.mouse.down();await page.waitForFunction(()=>Boolean(styk.drawing.gesture));await page.mouse.move(x+dx,y+dy,{steps:12});await page.mouse.up();await page.waitForFunction(()=>!styk.drawing.gesture);};
 try{
-  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47839');await page.waitForFunction(()=>styk.ready);
+  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47839');await page.waitForFunction(()=>window.styk?.ready);
   // pix: snapshot a tile store's occupied bounds + RGBA; pixEq: exact compare.
   await page.evaluate(()=>{window.pix=store=>{const b=store.bounds;return {bounds:b?{...b}:null,pixels:b?store.readRect(b.x,b.y,b.width,b.height):new Uint8ClampedArray(0)};};window.pixEq=(a,b)=>Boolean(a.bounds&&b.bounds&&a.bounds.x===b.bounds.x&&a.bounds.y===b.bounds.y&&a.bounds.width===b.bounds.width&&a.bounds.height===b.bounds.height&&a.pixels.length===b.pixels.length&&a.pixels.every((n,i)=>n===b.pixels[i]));window.visEq=(a,b)=>a.pixels.length===b.pixels.length&&a.pixels.every((n,i)=>i%4===3?n===b.pixels[i]:(a.pixels[i-i%4+3]===0&&b.pixels[i-i%4+3]===0)||n===b.pixels[i]);});
   await page.evaluate(()=>styk.state.settings.autosaveSeconds=0);await page.locator('[data-workspace-mode="draw"]').click();await page.locator('[data-draw-action="new"]').click();

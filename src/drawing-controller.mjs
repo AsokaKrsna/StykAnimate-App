@@ -354,7 +354,10 @@ export class DrawingController {
     else if(g.kind==='selection-move'){const p=this.pixel(event,g.target);this.selection.dx=g.dx+p.x-g.start.x;this.selection.dy=g.dy+p.y-g.start.y;this.previewSelection();}
     this.onRender();
   }
-  up(event,cancel=false){if(this.loading?.id===event.pointerId){if(cancel){this.sequence++;this.loading=null;this.onRender();}else this.loading.released=true;return;}const g=this.gesture;if(!g||g.id!==event.pointerId)return;if(g.kind==='stroke'&&g.session.ended)return;return cancel?this.cancel():this.finish();}
+  up(event,cancel=false){if(this.loading?.id===event.pointerId){
+    // Capture is lost as a matter of course once the pointer is released;
+    // only a cancellation before release abandons the pending gesture.
+    if(cancel&&!this.loading.released){this.sequence++;this.loading=null;this.onRender();}else this.loading.released=true;return;}const g=this.gesture;if(!g||g.id!==event.pointerId)return;if(g.kind==='stroke'&&g.session.ended)return;return cancel?this.cancel():this.finish();}
   finish(){const g=this.gesture;
     if(g?.kind==='stroke'&&g.session.ended)return; // the done reply completes the commit
     if(this.loading)this.cancel();if(!g)return;
