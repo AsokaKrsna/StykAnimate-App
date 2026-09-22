@@ -117,9 +117,13 @@ export class PlaybackCache {
     this.vfxEnabled=enabled;this.invalidate({retainDocument:this._mirrorAvailable&&!this.needsLoad&&!this._patchPending});
     if(this.needsLoad)this._loadWorker();
   }
-  async _yieldLoad() {
+  async _yieldLoad(revision) {
     await yieldToInput();
+    if(revision!==this.revision||this.disposed)throw abortError('Playback snapshot was superseded.');
+    if(this.failure)throw this.failure;
     if(this.interactionActive&&!this.disposed)await (this._interactionPromise??=new Promise(resolve=>{this._releaseInteraction=resolve;}));
+    if(revision!==this.revision||this.disposed)throw abortError('Playback snapshot was superseded.');
+    if(this.failure)throw this.failure;
   }
   updateView({ scale = this.scale, cameraEnabled = this.cameraEnabled, storedFrames = this.storedFrames,
     softwareFrames = this.softwareFrames, hiddenUids = this.hiddenUids, hiddenKey = this.hiddenKey } = {}) {
@@ -211,7 +215,7 @@ export class PlaybackCache {
         const sent = this._broadcastLoad({type: 'patch-chunk', revision: generation, sequence: sequence++, chunk: next.value});
         this.stats.loadMaxTaskMs = Math.max(this.stats.loadMaxTaskMs, performance.now() - step);
         this.stats.maxChunkBytes = Math.max(this.stats.maxChunkBytes, next.value.estimatedBytes || 0); await sent;
-        await this._yieldLoad();
+        await this._yieldLoad(generation);
       }
       await this._broadcastLoad({type: 'patch-complete', revision: generation, sequence}, 'loaded');
       if (generation === this.revision) {
@@ -306,13 +310,13 @@ export class PlaybackCache {
         this._admitWorkers(documentBytes,nativeBytes);
         await this._broadcastLoad({ type: 'load-chunk', revision, sequence: sequence++, chunk, options });
         if (revision === this.revision) this.stats.documentTransferEstimate += (chunk.estimatedBytes || 0) * this.workers.length;
-        await this._yieldLoad();
+        await this._yieldLoad(revision);
       }
       if(native) for(const chunk of nativePlaybackChunks(native.snapshot)) {
         if(revision !== this.revision || this.disposed) throw abortError('Native playback snapshot was superseded.');
         await this._broadcastLoad({type:'load-native-chunk', revision, sequence:sequence++, ...chunk});
         if(revision === this.revision) this.stats.nativeTransferBytes += chunk.buffer.byteLength * this.workers.length;
-        await this._yieldLoad();
+        await this._yieldLoad(revision);
       }
       await this._broadcastLoad({ type: 'load-complete', revision, sequence }, 'loaded');
       if (revision === this.revision) { this.stats.loadMs = performance.now() - start; this._mirrorAvailable = true; this._mirrorTables = tables; this._mirrorSources = sources; }
@@ -345,6 +349,10 @@ export class PlaybackCache {
     });
   }
   _abortLoad(error) {
+    // Retire suspended generations without ending foreground interaction.
+    // A current replacement creates its own gate; old streams fail their
+    // revision check before advancing or retaining the next snapshot chunk.
+    this._releaseInteraction?.();this._releaseInteraction=null;this._interactionPromise=null;
     for (const client of this.workers)
       if (client.loadAck) { clearTimeout(client.loadAck.timer); client.loadAck.reject(error); client.loadAck = null; }
     this._loadPromise = null;

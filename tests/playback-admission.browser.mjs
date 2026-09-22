@@ -53,8 +53,28 @@ try{
         }
         for(let i=0;i<rows.length;i+=2)check(JSON.stringify(rows[i].packets)===JSON.stringify(rows[i+1].packets),
           `Worker-count change altered GPU input/pixels: stored=${rows[i].storedFrames}, native=${rows[i].native}`);
+        const held=new PlaybackCache({workerCount:3,maxBytes:1024**3,maxWorkerBytes:4*1024**3}),settled=[];
+        try{
+          held.setInteractionActive(true);
+          for(let generation=0;generation<4;generation++){
+            check(held.stageNativeSnapshot(report,imported.playbackFrames,{revision:editor.revision,isCurrent:()=>true}),
+              'Replacement native source could not be staged');
+            held.load(report,{revision:editor.revision});
+            held._loadPromise.then(()=>settled.push('loaded'),error=>settled.push(error.name));
+            const deadline=performance.now()+10000;
+            while(!held._interactionPromise||!held.stats.loadChunks){
+              check(performance.now()<deadline,'Real worker snapshot never reached interaction suspension');
+              await new Promise(resolve=>setTimeout(resolve,10));
+            }
+            if(generation<3)held.invalidate();
+          }
+          check(settled.length===3&&settled.every(value=>value==='AbortError'),'Superseded suspended native snapshots remained pending');
+          check(held.interactionActive&&!held._mirrorAvailable,'Cancellation resumed or published current background work');
+          held.setInteractionActive(false);await held.prepareRange([0]);
+          check(held.get(0)&&held.stats.nativeSourceBytes===0,'Resumed native snapshot failed to publish/release its source');
+        }finally{held.dispose();}
         check(await hash(new TextEncoder().encode(JSON.stringify(report)))===digest,'Admission mutated the editable document');
-        return {frames:report.keyframes.length,digest,rows};
+        return {frames:report.keyframes.length,digest,rows,suspendedNativeResults:settled};
       }finally{importer.dispose();}
     });
     assert.equal(sha(await readFile(filename)),before);results.push({name:path.basename(filename),sha256:before,...result});

@@ -18,7 +18,7 @@ test('cancelling startup terminates a Python child that has not bound its port',
   await writeFile(path.join(directory,'backend','server.py'),
     'import os,time\nprint("started:%s" % os.getpid(), flush=True)\nwhile True: time.sleep(1)\n');
   const controller=new AbortController();
-  t.after(async()=>{controller.abort();await rm(directory,{recursive:true,force:true});});
+  t.after(async()=>{controller.abort();await rm(directory,{recursive:true,force:true,maxRetries:3,retryDelay:100});});
   let pid;
   const running=backend.startBackend({appRoot:directory,signal:controller.signal,
     log:text=>{const match=/started:(\d+)/.exec(text);if(match)pid=Number(match[1]);}});

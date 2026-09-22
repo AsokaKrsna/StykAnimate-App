@@ -64,6 +64,12 @@ growth; admission is reconsidered on the next full load. Decoders, live geometry
 GPU drivers and multi-hour editing growth still need independent measurements.
 See [the performance evidence](PERFORMANCE-IMPROVEMENTS-2026-09-21.md).
 
+Snapshot and patch yields retain their originating revision across foreground
+interaction suspension. Invalidation or worker failure releases those waits;
+obsolete streams reject before advancing their document iterator. The active
+replacement gets a new wait while interaction continues. This releases cancelled
+snapshot data promptly without resuming background preparation during a gesture.
+
 Raster export explicitly uses `preview: false`, but its tile plan still bounds each decode to the source region the output samples: an asset placed mostly off-canvas decodes only its visible crop instead of the full source, so oversized embedded bitmaps no longer exhaust the asset allowance merely by existing. Coverage grows across tiles and frames within the allowance, so moving cameras decode shared regions once. SVG and the existing “No smoothing” path still decode original assets at full resolution. Individual source decodes, the final output canvas and those existing export paths still have browser/format limits; this change does not promise arbitrary-size exports within a fixed amount of RAM.
 
 For cropped glyph masks, independent absolute SVG contours outside the sampling bounds are omitted before rasterization. Line endpoints and complete Bezier control hulls supply conservative bounds, including surrounding contours and holes. Analysis is limited to 256 KiB of path text and 1,024 contours per mask. Relative, arc, smooth or unsupported commands fall back to the complete original path. The path geometry and fill rule are unchanged.
