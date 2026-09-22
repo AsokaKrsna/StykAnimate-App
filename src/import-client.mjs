@@ -41,7 +41,7 @@ export class ImportClient {
       const nativeMeta=result.nativeFrames;
       materializeNativeFrames(result,buffer,offset,{isCancelled:()=>this.pending.get(message.id)!==request}).then(result=>{
         if(this.pending.get(message.id)!==request) return;
-        const snapshot=nativePlaybackSnapshot(result.document,buffer,offset,nativeMeta);
+        const snapshot=nativePlaybackSnapshot(result.document,buffer,offset,nativeMeta,result.timings.native_pose_bytes_estimate);
         if(snapshot)result.playbackFrames=snapshot;
         this.pending.delete(message.id);clearTimeout(request.timer);request.backendJob.finish();request.resolve(result);
       },error=>{

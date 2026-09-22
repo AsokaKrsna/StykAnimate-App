@@ -3,7 +3,7 @@ import {materializeNativeFrames} from './import-wire.mjs';
 export const MAX_NATIVE_PLAYBACK_BYTES = 64 * 1024 * 1024;
 export const NATIVE_PLAYBACK_CHUNK_BYTES = 1024 * 1024;
 
-export function nativePlaybackSnapshot(document, buffer, offset, meta) {
+export function nativePlaybackSnapshot(document, buffer, offset, meta, poseBytesEstimate) {
   if (!(buffer instanceof ArrayBuffer) || buffer.byteLength > MAX_NATIVE_PLAYBACK_BYTES ||
       !Number.isSafeInteger(offset) || offset < 0 || buffer.byteLength - offset < 4 ||
       meta?.version !== 1 || meta.byteLength !== buffer.byteLength - offset ||
@@ -14,7 +14,9 @@ export function nativePlaybackSnapshot(document, buffer, offset, meta) {
   // That normalization cannot be reconstructed from the original frame table.
   if (!Array.isArray(frames) || !frames.length || new DataView(buffer, offset).getUint32(0, true) !== frames.length)
     return null;
-  return {buffer, offset, meta: {...meta}, frames};
+  return {buffer, offset, meta: {...meta}, frames,
+    poseBytesEstimate: Number.isSafeInteger(poseBytesEstimate) && poseBytesEstimate >= 0
+      ? poseBytesEstimate : meta.byteLength * 16 + frames.length * 512};
 }
 
 export function* nativePlaybackChunks(snapshot) {

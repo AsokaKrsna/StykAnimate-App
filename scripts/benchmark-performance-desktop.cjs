@@ -6,10 +6,16 @@ const {writeFile} = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const assert = require('node:assert/strict');
+const actualMemoryBytes=os.totalmem(),memoryHintGiB=Number(process.env.STYK_BENCH_MEMORY_GIB||0);
+assert.ok(!memoryHintGiB||Number.isFinite(memoryHintGiB)&&memoryHintGiB>=.5&&memoryHintGiB<=128);
+// Policy simulation only: this neither limits physical RAM nor emulates a GPU.
+if(memoryHintGiB)os.totalmem=()=>memoryHintGiB*1073741824;
 const input = process.env.STYK_BENCH_INPUT, output = process.env.STYK_BENCH_OUTPUT;
 assert.ok(input && output && process.env.STYK_USER_DATA_DIR, 'Run through the benchmark driver');
 const exportFormats = (process.env.STYK_BENCH_EXPORT_FORMATS || 'piv,piv,styk').split(',');
 assert.ok(exportFormats.length <= 3 && exportFormats.every(format => ['piv', 'styk'].includes(format)));
+const playbackFrames=Number(process.env.STYK_BENCH_PLAYBACK_FRAMES||64);
+assert.ok(Number.isInteger(playbackFrames)&&playbackFrames>0&&playbackFrames<=5000);
 const started = performance.now(); let running = false;
 // Let the driver stop a timed-out run through normal backend cleanup.
 process.stdin.on('data', () => app.exit(1));
@@ -39,6 +45,8 @@ async function run(window) {
   // production bytes. It does not alter document, worker, or rendering settings.
   if(process.env.STYK_BENCH_PLAYBACK_TRANSPORT === 'document')
     await execute("import('/src/playback.mjs').then(({PlaybackCache})=>{PlaybackCache.prototype.stageNativeSnapshot=()=>false;})");
+  if(process.env.STYK_BENCH_WORKER_ADMISSION==='off')
+    await execute("import('/src/playback.mjs').then(({PlaybackCache})=>{PlaybackCache.prototype._admitWorkers=function(){if(this.workers.length!==this.workerLimit)this._resizeWorkers(this.workerLimit);};})");
   const imported = await execute(`(async () => {
     const tasks = [], errors = [], observer = new PerformanceObserver(list => tasks.push(...list.getEntries().map(entry => entry.duration)));
     const onError = event => errors.push(event.message); window.addEventListener('error', onError);
@@ -55,6 +63,9 @@ async function run(window) {
   assert.ok(imported.frames > 1); assert.equal(imported.timings.cache_hit, false); assert.deepEqual(imported.errors, []);
   const processes = app.getAppMetrics();
   const editing = process.env.STYK_BENCH_EDITING === '1' ? await require('./benchmark-editing-desktop.cjs')(window) : null;
+  const playbackMemorySamples=[];
+  const memoryTimer=process.env.STYK_BENCH_PLAYBACK==='1'?setInterval(()=>playbackMemorySamples.push({at:performance.now()-started,
+    processes:app.getAppMetrics().map(({pid,type,memory})=>({pid,type,memory}))}),250):null;
   const playback = process.env.STYK_BENCH_PLAYBACK === '1' ? await execute(`(async () => {
     const renderer = styk.state.renderer, render = renderer.renderPrepared;
     if (typeof render !== 'function') throw new Error('Playback attribution requires the WebGPU path');
@@ -63,7 +74,7 @@ async function run(window) {
     const onError = event => errors.push(event.message); window.addEventListener('error', onError);
     observer.observe({type:'longtask'});
     const firstTick = styk.editor.tick >= styk.editor.totalTicks-1 ? 0 : styk.editor.tick;
-    const started = performance.now(), target = Math.min(64, styk.editor.totalTicks-firstTick);
+    const started = performance.now(), target = Math.min(${playbackFrames}, styk.editor.totalTicks-firstTick);
     renderer.renderPrepared = function(...args) {
       const at = performance.now(), result = render.apply(this, args), tick = styk.editor.tick;
       if (result && styk.state.playing && presented.at(-1)?.tick !== tick)
@@ -74,7 +85,7 @@ async function run(window) {
     try {
       await styk.actions.play();
       while (presented.length < target && styk.state.playing) {
-        if (performance.now()-started > 120000) throw new Error('Playback probe timed out');
+        if (performance.now()-started > Math.max(120000,Math.min(480000,target*250))) throw new Error('Playback probe timed out');
         await new Promise(resolve => requestAnimationFrame(resolve));
       }
       const after = structuredClone(styk.performance());
@@ -89,6 +100,7 @@ async function run(window) {
       observer.disconnect(); window.removeEventListener('error', onError);
     }
   })()`) : null;
+  clearInterval(memoryTimer);
   if (playback) assert.deepEqual(playback.errors, []);
   const playbackProcesses = playback ? app.getAppMetrics() : null;
   const digest = await execute(`(async () => {
@@ -118,8 +130,8 @@ async function run(window) {
     } finally {exporter.dispose();}
   })()`) : null;
   await writeFile(path.join(output, 'report.json'), JSON.stringify({readyAt, startupMs, baseline, baselineHealth, imported, processes, digest, health,
-    exports, playback, playbackProcesses, editing,
-    environment: {cpu: os.cpus()[0].model, logicalCpus: os.cpus().length, ramBytes: os.totalmem(), os: os.release()}}, null, 2));
+    exports, playback, playbackProcesses, playbackMemorySamples, editing,
+    environment: {cpu: os.cpus()[0].model, logicalCpus: os.cpus().length, ramBytes: actualMemoryBytes, memoryHintGiB:memoryHintGiB||null, os: os.release()}}, null, 2));
   // Wait for the main-process acknowledgement before asking to close. Merely
   // marking the renderer saved can race its asynchronous desktop state update.
   await execute('(async()=>{styk.editor.markSaved();await stykDesktop.setDocumentState({name:styk.editor.name,dirty:false});})()');

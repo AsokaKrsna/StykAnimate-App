@@ -39,6 +39,31 @@ mirrors, active scratch and driver allocations remain outside these totals.
 estimates across all workers for a full load. It is neither serialized wire
 bytes nor measured resident memory.
 
+Default playback pools also apply `playbackWorkerAdmissionBudget()` to full
+document loads. The allowance is one third of the available device-memory hint
+(1 GiB when unknown). Each lane reserves its document estimate, retained cache
+targets, one maximum packet, temporary native-frame bytes and a geometry reserve
+of one quarter of the frame allowance. These are conservative planning values,
+not measurements or a hard limit. At least one lane remains; diagnostics expose
+when even that lane exceeds the target.
+
+Admission reuses chunk estimates collected during the existing snapshot walk.
+Native imports reuse the parser's pose estimate instead of walking the scene
+again. Trailing workers may retire only between acknowledged snapshot chunks;
+all surviving lanes receive the same complete document before packet requests
+are partitioned. Their number stays fixed for sparse patches and view changes.
+A replacement full load can restore lanes up to the hardware limit. The primary
+planning endpoint stays stable, and late messages/errors from retired endpoints
+cannot publish results or fail a replacement. Explicit worker-count/factory
+overrides retain their prior behavior unless `maxWorkerBytes` is supplied.
+
+`stats.workerAdmission` reports these reservations separately from observed
+cache bytes. The native byte reservation describes the load's temporary peak,
+even after that storage is released. Sparse edits do not remeasure document
+growth; admission is reconsidered on the next full load. Decoders, live geometry,
+GPU drivers and multi-hour editing growth still need independent measurements.
+See [the performance evidence](PERFORMANCE-IMPROVEMENTS-2026-09-21.md).
+
 Raster export explicitly uses `preview: false`, but its tile plan still bounds each decode to the source region the output samples: an asset placed mostly off-canvas decodes only its visible crop instead of the full source, so oversized embedded bitmaps no longer exhaust the asset allowance merely by existing. Coverage grows across tiles and frames within the allowance, so moving cameras decode shared regions once. SVG and the existing “No smoothing” path still decode original assets at full resolution. Individual source decodes, the final output canvas and those existing export paths still have browser/format limits; this change does not promise arbitrary-size exports within a fixed amount of RAM.
 
 For cropped glyph masks, independent absolute SVG contours outside the sampling bounds are omitted before rasterization. Line endpoints and complete Bezier control hulls supply conservative bounds, including surrounding contours and holes. Analysis is limited to 256 KiB of path text and 1,024 contours per mask. Relative, arc, smooth or unsupported commands fall back to the complete original path. The path geometry and fill rule are unchanged.
