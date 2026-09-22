@@ -68,6 +68,8 @@ async function run(window) {
   assert.ok(imported.frames > 1); assert.equal(imported.timings.cache_hit, false); assert.deepEqual(imported.errors, []);
   const processes = app.getAppMetrics();
   const editing = process.env.STYK_BENCH_EDITING === '1' ? await require('./benchmark-editing-desktop.cjs')(window) : null;
+  const seekGpu=process.env.STYK_BENCH_SEEK_GPU?await require('./benchmark-seek-gpu.cjs')(window,
+    {timestamps:process.env.STYK_BENCH_SEEK_GPU==='timed'}):null;
   const playbackMemorySamples=[];
   const memoryTimer=process.env.STYK_BENCH_PLAYBACK==='1'?setInterval(()=>playbackMemorySamples.push({at:performance.now()-started,
     processes:app.getAppMetrics().map(({pid,type,memory})=>({pid,type,memory}))}),250):null;
@@ -138,7 +140,7 @@ async function run(window) {
     alternate:process.env.STYK_BENCH_ALTERNATE_INPUT,output,forcedGC:process.env.STYK_BENCH_SESSION_GC==='1',
     choose:file=>{selectedInput=file;},metrics:()=>app.getAppMetrics()}):null;
   await writeFile(path.join(output, 'report.json'), JSON.stringify({readyAt, startupMs, baseline, baselineHealth, imported, processes, digest, health,
-    exports, playback, playbackProcesses, playbackMemorySamples, editing, session,
+    exports, playback, playbackProcesses, playbackMemorySamples, editing, session, seekGpu,
     environment: {cpu: os.cpus()[0].model, logicalCpus: os.cpus().length, ramBytes: actualMemoryBytes, memoryHintGiB:memoryHintGiB||null, os: os.release()}}, null, 2));
   // Wait for the main-process acknowledgement before asking to close. Merely
   // marking the renderer saved can race its asynchronous desktop state update.

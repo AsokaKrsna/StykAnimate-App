@@ -16,11 +16,13 @@ const output = path.resolve('artifacts/performance-goal', label);
 await mkdir(output, {recursive: true});
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const harnessFiles=['scripts/benchmark-performance-desktop.mjs','scripts/benchmark-performance-desktop.cjs',
-  'scripts/benchmark-editing-desktop.cjs','scripts/benchmark-session-memory.cjs'];
+  'scripts/benchmark-editing-desktop.cjs','scripts/benchmark-session-memory.cjs','scripts/benchmark-seek-gpu.cjs'];
 const harnessHashes=async()=>Object.fromEntries(await Promise.all(harnessFiles.map(async name=>[name,hash(await readFile(name))])));
 const sourceBytes = await readFile(source);
 const sessionCycles=Number(process.env.STYK_BENCH_SESSION_CYCLES||0);
 assert.ok(Number.isInteger(sessionCycles)&&sessionCycles>=0&&sessionCycles<=1000);
+const seekGpuMode=process.env.STYK_BENCH_SEEK_GPU||'';
+assert.ok(['','timed','untimed'].includes(seekGpuMode));
 const alternate=process.env.STYK_BENCH_ALTERNATE_INPUT?path.resolve(process.env.STYK_BENCH_ALTERNATE_INPUT):null;
 assert.ok(!sessionCycles||alternate,'Session measurement requires STYK_BENCH_ALTERNATE_INPUT');
 const alternateBytes=alternate?await readFile(alternate):null;
@@ -29,6 +31,7 @@ assert.match(expectedPivSha256, /^[a-f0-9]{64}$/, 'An optional control export di
 const report = {at: new Date().toISOString(), source: {name: path.basename(source), bytes: sourceBytes.length, sha256: hash(sourceBytes)},
   expectedPivSha256, exportFormats: process.env.STYK_BENCH_EXPORT === '1' ? (process.env.STYK_BENCH_EXPORT_FORMATS || 'piv,piv,styk').split(',') : [],
   playbackProbe: process.env.STYK_BENCH_PLAYBACK === '1',
+  seekGpuMode:seekGpuMode||null,
   sessionProbe:sessionCycles?{cycles:sessionCycles,forcedGC:process.env.STYK_BENCH_SESSION_GC==='1',
     alternate:{name:path.basename(alternate),bytes:alternateBytes.length,sha256:hash(alternateBytes)}}:null,
   playbackFrames: Number(process.env.STYK_BENCH_PLAYBACK_FRAMES||64),
