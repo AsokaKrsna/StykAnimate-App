@@ -1,0 +1,60 @@
+{
+  "testedCommit": "92f528486512ce16557e4f823a2520d10b1dbff0",
+  "checks": {
+    "cachePressure": {
+      "command": "node tests/playback-cache-pressure.browser.mjs",
+      "environment": "STYK_URL points to a temporary startBackend service; closed in finally",
+      "exitCode": 0,
+      "result": {
+        "channelCount": 1110720,
+        "hits": 6,
+        "cacheBytes": 185120,
+        "maxBytes": 185120,
+        "differingChannels": 0,
+        "definitionEdit": true
+      }
+    },
+    "deviceRecovery": {
+      "command": "node tests/renderer-recovery.desktop.mjs",
+      "exitCode": 0,
+      "result": [
+        {
+          "loss": 1,
+          "elapsedMs": 1086.6000000238419,
+          "backend": "WebGPU",
+          "sameDocument": true,
+          "sameRevision": true,
+          "sameHistory": true
+        },
+        {
+          "loss": 2,
+          "elapsedMs": 5094.900000095367,
+          "backend": "WebGPU",
+          "sameDocument": true,
+          "sameRevision": true,
+          "sameHistory": true
+        },
+        {
+          "loss": 3,
+          "elapsedMs": 33.700000047683716,
+          "backend": "Canvas 2D fallback",
+          "sameDocument": true,
+          "sameRevision": true,
+          "sameHistory": true
+        }
+      ],
+      "screenshotSha256": "681aef5f8602d456e5cb086b53f7e812c19697298ab4651dbb8fa0f48c39ba73",
+      "visuallyInspected": "Fallback screenshot shows the editable figure, joint handles, timeline and inspector; compatibility mode is visible."
+    }
+  },
+  "testHashes": {
+    "tests/playback-cache-pressure.browser.mjs": "7d73f22a3bf9381082385ed1fbf11f63f93f0b0831a290f191b37c5a68e213ad",
+    "tests/renderer-recovery.desktop.mjs": "26fc047ede7a4a8974e1fe332ca728ee631d1edccccdade9adc943f824672bbb"
+  },
+  "limits": [
+    "Existing behavioral tests, no production changes or measured speedup.",
+    "Three intentional device losses on the default scene are not prolonged whole-app memory testing.",
+    "GPU cache pixel checks compare all 1,110,720 channels under a 185,120-byte retained bitmap budget; they do not bound total GPU memory.",
+    "Desktop recovery timings are observations from an attached Playwright test, not debugger-free performance comparisons."
+  ]
+}
