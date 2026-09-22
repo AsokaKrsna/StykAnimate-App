@@ -63,6 +63,10 @@ PIV/STK export uses the same frame-at-a-time fingerprint for the submitted
 document. Older fingerprint versions keep their historical encoding. Validation
 and hashing still visit the complete document; streaming bounds the temporary
 normalized graph and JSON string, not the request or decoded document itself.
+Numeric normalization handles builtin scalars directly, preserving the historical
+path for subclasses. Integer precision, negative zero, nonfinite rejection,
+unknown fields and per-container cancellation checkpoints remain unchanged; the
+JSON encoder and fingerprint bytes are unchanged.
 
 The native file writer reports success at atomic destination commit. A later
 failure updating optional recent-file or recovery display metadata does not

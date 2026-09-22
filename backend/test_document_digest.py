@@ -3,6 +3,8 @@ import copy
 import hashlib
 import json
 import math
+import random
+import struct
 import tracemalloc
 import unittest
 
@@ -31,6 +33,45 @@ def reference_digest(document, *, canonical=True, runtime_aliases=False):
 
 
 class DocumentDigestTests(unittest.TestCase):
+    def test_float_bit_patterns_and_exact_integers_keep_historical_fingerprints(self):
+        rng = random.Random(68423)
+        values = [struct.unpack('>d', rng.getrandbits(64).to_bytes(8, 'big'))[0] for _ in range(4096)]
+        values = [value for value in values if math.isfinite(value)]
+        negative_zero_index = len(values)
+        values += [-0., 0., 1., -1., 5e-324, 1.7976931348623157e308,
+            2**53 - 1, 2**53 + 1, 2**64 - 1, -(2**65), True, False, None, '1.0']
+        document = {'keyframes': [{'objects': [{'angles': values[i:i + 64]}]}
+            for i in range(0, len(values), 64)]}
+        before = copy.deepcopy(document)
+        for options in ({}, {'canonical': False}, {'runtime_aliases': True}):
+            self.assertEqual(server.document_digest(document, **options), reference_digest(document, **options))
+        self.assertEqual(server.source_document_digest(document), reference_digest(document))
+        self.assertEqual(document, before)
+        frame, component = divmod(negative_zero_index, 64)
+        self.assertEqual(math.copysign(1, document['keyframes'][frame]['objects'][0]['angles'][component]), -1)
+
+    def test_normalization_preserves_subclass_and_nonfinite_behavior(self):
+        class Floating(float):
+            def is_integer(self):
+                return True
+        class Mapping(dict):
+            pass
+        class Sequence(list):
+            pass
+        class Integer(int):
+            pass
+        document = Mapping(keyframes=[{'objects': [{'angles': Sequence([Floating(1.25), Integer(2**65)])}]}],
+            unknown=(False, None, -0., '1.0'))
+        self.assertEqual(server.document_digest(document), reference_digest(document))
+        self.assertEqual(server.source_document_digest(document), reference_digest(document))
+        self.assertEqual(document['keyframes'][0]['objects'][0]['angles'][0], 1.25)
+        for kind in (float, Floating):
+            for value in (kind('nan'), kind('inf'), kind('-inf')):
+                self.assertIs(server._canonical_numbers(value), value)
+                for encoder in (reference_digest, server.document_digest, server.source_document_digest):
+                    with self.assertRaises(ValueError):
+                        encoder({'unknown': value})
+
     def test_temporary_fingerprint_memory_does_not_grow_with_timeline_length(self):
         frame = {"objects": [{"angles": [float(i) for i in range(512)], "runtime_segments": [0] * 512}]}
         def peak(document, encode):

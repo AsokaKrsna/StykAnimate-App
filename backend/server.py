@@ -183,6 +183,13 @@ def _canonical_numbers(value):
     strings (even numeric-looking strings), and every unknown field retain their
     values. Do not coerce integers through float: uint64 values may be exact.
     """
+    kind = type(value)
+    if kind is float:
+        # Builtin is_integer is false for NaN/infinities. Keep subclass handling
+        # below: an overridden method may require the historical finite guard.
+        return int(value) if value.is_integer() else value
+    if kind is int or kind is str or kind is bool or value is None:
+        return value
     if isinstance(value, float):
         return int(value) if math.isfinite(value) and value.is_integer() else value
     if isinstance(value, dict):
