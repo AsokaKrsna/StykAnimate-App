@@ -61,6 +61,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Keep prepared playback frames warm through layer-timeline edits and undo/redo: a localized change only rebuilds the spans it actually touches instead of recompiling the whole timeline.
 - Recover playback after a background preparation error instead of leaving playback unavailable until the app restarts.
 - Only StykAnimate itself can now use its built-in file converter; other programs and local web pages on your computer are refused.
+- Closing the "Save your changes?" prompt with its close button now cancels opening or creating a project instead of leaving it stuck.
 
 ## [1.0.6]
 

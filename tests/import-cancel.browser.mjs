@@ -15,4 +15,14 @@ try{
   assert.equal(result.result,false);assert.ok(result.sameDocument&&result.dirty);
   assert.equal(result.counters.import_started,1);assert.equal(result.counters.import_cancelled,1);assert.equal(result.counters.import_succeeded,undefined);assert.equal(result.counters.import_failed,undefined);assert.deepEqual(result.outcomes,['cancelled']);
   console.log('Cancelled native import preserves unsaved document and records exactly one cancellation.');
+  // Dismissing the unsaved-changes prompt without a button also keeps the project;
+  // the dialog close button previously left the import waiting forever.
+  for(const dismiss of [()=>page.locator('#dialog [data-action="close-dialog"]').click(),()=>page.keyboard.press('Escape')]){
+    await page.evaluate(async()=>{const {emptyDocument}=await import('/src/demo.mjs'),{buildContainerV2}=await import('/src/native-container.mjs');
+      window.dismissedImport=styk.importFiles([new File([await buildContainerV2(emptyDocument(),'styk')],'dismissed.styk')]);});
+    await page.locator('#keep-editing').waitFor();await dismiss();
+    const dismissed=await page.evaluate(async()=>({result:await Promise.race([window.dismissedImport,new Promise(r=>setTimeout(()=>r('pending'),5000))]),sameDocument:styk.editor.report===window.beforeImport}));
+    assert.deepEqual(dismissed,{result:false,sameDocument:true});
+  }
+  console.log('Closing or escaping the unsaved-changes prompt cancels the import.');
 }finally{await browser.close();}

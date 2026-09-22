@@ -2860,23 +2860,26 @@ async function confirmReplace() {
       "Save your changes?",
       `<p>Your current project has unsaved changes. Save a StykAnimate project to keep editing it later.</p><div class="dialog-actions"><button class="button" id="keep-editing">Cancel</button><button class="button" id="discard-changes">Discard</button><button class="button primary" id="save-changes">Save project</button></div>`,
     );
-    $("keep-editing").onclick = () => {
-      closeDialog();
-      resolve(false);
-    };
+    // Escape, the close button and Cancel all close the shared dialog; each
+    // settles as "keep editing". The listener is removed once a choice lands.
+    const dialog = $("dialog"),
+      settle = (replace) => {
+        dialog.removeEventListener("close", keep);
+        resolve(replace);
+      },
+      keep = () => settle(false);
+    dialog.addEventListener("close", keep);
+    $("keep-editing").onclick = closeDialog;
     $("discard-changes").onclick = () => {
+      settle(true);
       closeDialog();
-      resolve(true);
     };
     $("save-changes").onclick = guarded(async () => {
       const saved = await saveNative();
       if (saved) {
+        settle(true);
         closeDialog();
-        resolve(true);
       }
-    });
-    $("dialog").addEventListener("cancel", () => resolve(false), {
-      once: true,
     });
   });
 }

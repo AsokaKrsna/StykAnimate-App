@@ -941,10 +941,6 @@ export class Editor extends EventTarget {
     if (result.some(i => !Number.isInteger(i) || i < 0 || i >= this.report.keyframes.length)) throw new Error('Select existing keyframes.');
     return result;
   }
-  copyFrames(indices = [this.frameIndex]) {
-    const selected = this._frameIndices(indices); this._frameClipboard = selected.map(i => clone(this.report.keyframes[i]));
-    return selected.length;
-  }
   _rangesEdit(label, changes, {retainSelection = false, structural = true, timing = true, timingOnly = false, selectIndex, frameEasing = false, animationPlan} = {}) {
     if (!changes.length) return false;
     if (this._drag) this.commitDrag();
@@ -983,11 +979,6 @@ export class Editor extends EventTarget {
     if (selected.length === this.report.keyframes.length) this._frameSplice(label, 0, selected.length, [createFrame()]);
     else this._rangesEdit(label, selected.map(index => ({index, before: [clone(this.report.keyframes[index])], after: []})));
     return selected.length;
-  }
-  pasteFrames(index = this.frameIndex + 1) {
-    if (!this.hasFrameClipboard) return 0;
-    if (!Number.isInteger(index) || index < 0 || index > this.report.keyframes.length) throw new Error('Choose a valid paste position.');
-    const frames = clone(this._frameClipboard); this._frameSplice('Paste keyframes', index, 0, frames); return frames.length;
   }
   reverseFrames(indices = [this.frameIndex]) {
     const selected = this._frameIndices(indices); if (selected.length < 2) return false;
