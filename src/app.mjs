@@ -2835,7 +2835,8 @@ viewport.addEventListener(
 );
 
 async function api(path, options = {}) {
-  const response = await fetch(path, options);
+  const headers = importer.token ? { ...options.headers, Authorization: `Bearer ${importer.token}` } : options.headers;
+  const response = await fetch(path, { ...options, headers });
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
     try {

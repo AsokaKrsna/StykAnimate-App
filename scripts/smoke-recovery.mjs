@@ -21,7 +21,7 @@ try {
   const page = await first.firstWindow();
   await page.waitForFunction(() => window.styk?.ready, undefined, { timeout: 20000 });
   const saved = await page.evaluate(async () => {
-    const response = await fetch('/api/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ document: window.styk.editor.serialize(), format: 'styk', filename: 'Recovery restart.styk' }) });
+    const response = await fetch('/api/export', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${window.stykDesktop.apiToken}` }, body: JSON.stringify({ document: window.styk.editor.serialize(), format: 'styk', filename: 'Recovery restart.styk' }) });
     if (!response.ok) throw new Error('Could not encode recovery fixture.');
     const bytes = new Uint8Array(await response.arrayBuffer());
     let binary = '';

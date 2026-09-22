@@ -12,7 +12,7 @@ async function yieldToInput() {
  * getRevision catches committed edits between chunks and before returning data.
  */
 export class DocumentExporter {
-  constructor({baseURL = globalThis.location?.origin, token = '', targetRecords = 2000,
+  constructor({baseURL = globalThis.location?.origin, token = globalThis.stykDesktop?.apiToken || '', targetRecords = 2000,
     targetBytes = 1024 * 1024, timeoutMs = 300000} = {}) {
     if (!baseURL) throw new Error('Document export requires the local file service URL.');
     this.baseURL = new URL(baseURL, globalThis.location?.href).origin;

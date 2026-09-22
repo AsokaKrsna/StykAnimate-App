@@ -74,6 +74,14 @@ requires `Authorization: Bearer <token>` for codec APIs. Health and static
 resources remain available to the launcher. Host and Origin must be local even
 without a token; remote origins and filesystem traversal are rejected.
 
+The desktop app always sets a random per-launch token, so other local processes
+and localhost pages cannot use the codec. The trusted window receives it through
+the preload bridge (`stykDesktop.apiToken`); import and export clients send it by
+default. With a token, health also returns `session`, a SHA-256 proof of the
+token. The launcher requires it before trusting the port, so a listener that
+bound the port first is never loaded as the workspace. The `npm run serve`
+browser development server remains tokenless.
+
 Run verification with `python -m unittest discover -s backend -p test_server.py`.
 Tests cover the real 37-file PIV corpus, shipped and workspace STKs, edited
 exports, native-save reopening, parser equivalence, bounded invalid input,

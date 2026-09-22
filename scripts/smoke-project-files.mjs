@@ -35,7 +35,7 @@ try {
   const choose = (value) => app.evaluate((_electron, choice) => { globalThis.__saveChoices.push(choice); }, value);
   const count = () => app.evaluate(() => globalThis.__saveDialogCount);
   await page.evaluate(async () => {
-    const response = await fetch('/api/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ document: window.styk.editor.serialize(), format: 'styk' }) });
+    const response = await fetch('/api/export', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${window.stykDesktop.apiToken}` }, body: JSON.stringify({ document: window.styk.editor.serialize(), format: 'styk' }) });
     if (!response.ok) throw new Error('Could not create a valid native project fixture.');
     const {ImportClient} = await import('/src/import-client.mjs');
     const importer = new ImportClient();

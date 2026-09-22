@@ -622,6 +622,12 @@ class ProjectStore:
         return output, f"{base}.{format_name}"
 
 
+def session_proof(token: str) -> str | None:
+    """Lets the launcher confirm it reached its own process, not another listener
+    that took the loopback port first. The digest does not reveal the token."""
+    return hashlib.sha256(("styk-session:" + token).encode()).hexdigest() if token else None
+
+
 class LocalServer(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -738,7 +744,8 @@ class Handler(BaseHTTPRequestHandler):
                     "formats": ["piv", "stk", "styk", "stkz", "stykmov"], "maxImportBytes": MAX_SOURCE,
                     "jsonEncoder": JSON_ENCODER, "processMemoryMiB": memory_mib(),
                     "nativeFrameScanner": "cpp" if scanner["available"] else "python",
-                    "nativeFrameScannerInfo": {"abi": scanner["abi"], "sha256": scanner["sha256"]} if scanner["available"] else None})
+                    "nativeFrameScannerInfo": {"abi": scanner["abi"], "sha256": scanner["sha256"]} if scanner["available"] else None,
+                    "session": session_proof(self.server.token)})
             elif parsed.path == "/api/samples":
                 self._json(200, {"ok": True, "samples": self.server.store.samples()})
             elif parsed.path == "/api/source":

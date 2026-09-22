@@ -2,7 +2,8 @@
 import { applyDocumentChunk } from './document-transport.mjs';
 import {materializeNativeFrames} from './import-wire.mjs';
 export class ImportClient {
-  constructor({baseURL = globalThis.location?.origin, token = '', timeoutMs = 180000,
+  // The desktop codec requires its per-launch token; the browser dev server has none.
+  constructor({baseURL = globalThis.location?.origin, token = globalThis.stykDesktop?.apiToken || '', timeoutMs = 180000,
     workerURL = new URL('./import-worker.mjs', import.meta.url)} = {}) {
     if (!baseURL) throw new Error('The importer requires a local backend URL.');
     this.baseURL = new URL(baseURL, globalThis.location?.href).origin;

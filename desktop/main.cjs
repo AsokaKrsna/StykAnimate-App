@@ -11,6 +11,7 @@ const { FileStreams } = require('./file-streams.cjs');
 const { SharedClipboard } = require('./shared-clipboard.cjs');
 const { workspaceDirectory } = require('./workspace-instance.cjs');
 const { spawn } = require('node:child_process');
+const { randomBytes } = require('node:crypto');
 const { WorkspacePreferences } = require('./preferences.cjs');
 const { SupportService } = require('./support.cjs');
 const { ProjectFiles } = require('./project-files.cjs');
@@ -40,6 +41,8 @@ const FILE_FILTERS = [
 ];
 let window;
 let backend;
+// Per-launch secret required by the loopback codec API; never persisted.
+const apiToken = randomBytes(32).toString('hex');
 let fileStreams;
 let videoExports;
 let audioImports;
@@ -558,6 +561,11 @@ function registerIpc() {
     return windowState();
   });
   ipcMain.handle('styk:window-state', (event) => { trusted(event); return windowState(); });
+  // Only the trusted workspace frame receives the codec session token.
+  ipcMain.on('styk:api-token', (event) => {
+    try { trusted(event); event.returnValue = apiToken; }
+    catch { event.returnValue = ''; }
+  });
   ipcMain.on('styk:memory-bytes', (event) => {
     try { trusted(event); event.returnValue = os.totalmem(); }
     catch { event.returnValue = 0; }
@@ -687,7 +695,7 @@ async function start() {
   // A temporarily unavailable Documents volume should not prevent animation work.
   void library.init().catch(error => console.warn('Library initialization:', error.message));
   backend = await startBackend({
-    appRoot: APP_ROOT, resourcesPath: process.resourcesPath, packaged: app.isPackaged,
+    appRoot: APP_ROOT, resourcesPath: process.resourcesPath, packaged: app.isPackaged, token: apiToken,
     log: (message) => { if (process.env.STYK_DEBUG === '1') process.stderr.write(message); },
     onError: (message) => { telemetry?.error('BackendError', 'backend', 'backend_errors'); if (window && !window.isDestroyed()) window.webContents.send('styk:backend-error', message); },
   });

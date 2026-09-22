@@ -15,10 +15,16 @@ function systemMemoryBytes() {
   try { return ipcRenderer.sendSync('styk:memory-bytes') || 0; } catch { return 0; }
 }
 
+// The loopback codec rejects /api/* requests without this per-launch token.
+function apiToken() {
+  try { return ipcRenderer.sendSync('styk:api-token') || ''; } catch { return ''; }
+}
+
 // Every privileged operation has a narrow handler in main.cjs. No filesystem,
 // Node.js, Electron object, or arbitrary IPC channel crosses this boundary.
 contextBridge.exposeInMainWorld('stykDesktop', Object.freeze({
   isDesktop: true,
+  apiToken: apiToken(),
   // Page zoom keeps CSS layout, pointer coordinates and devicePixelRatio aligned.
   setUIScale: percent => {
     if (!Number.isFinite(percent) || percent < 75 || percent > 200 || percent % 5 !== 0)

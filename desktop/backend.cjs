@@ -5,6 +5,12 @@ const path = require('node:path');
 const net = require('node:net');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
+const crypto = require('node:crypto');
+
+// Must match session_proof() in backend/server.py.
+function sessionProof(token) {
+  return crypto.createHash('sha256').update(`styk-session:${token}`).digest('hex');
+}
 
 function pythonCandidates(env = process.env) {
   const candidates = [];
@@ -40,9 +46,21 @@ async function availablePort() {
   });
 }
 
+// A listener that took the port first cannot produce the proof for our token.
+async function probeBackend(origin, token = '') {
+  const response = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(700) });
+  if (!response.ok) return false;
+  return !token || (await response.json()).session === sessionProof(token);
+}
+
 function wait(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 
-async function startBackend({ appRoot, resourcesPath, packaged = false, onError = () => {}, log = () => {}, port: requestedPort }) {
+/**
+ * A token makes /api/* require `Authorization: Bearer <token>`, so other local
+ * processes and localhost pages cannot use the codec. Readiness then also
+ * requires the health proof, rejecting a listener that took the port first.
+ */
+async function startBackend({ appRoot, resourcesPath, packaged = false, onError = () => {}, log = () => {}, port: requestedPort, token = '' }) {
   const port = requestedPort || await availablePort();
   const origin = `http://127.0.0.1:${port}`;
   const resourceRoot = packaged ? resourcesPath : appRoot;
@@ -64,7 +82,7 @@ async function startBackend({ appRoot, resourcesPath, packaged = false, onError 
       cwd: resourceRoot,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONDONTWRITEBYTECODE: '1', STYK_WEB_ROOT: webRoot, STYK_TOOLS_ROOT: toolsRoot, STYK_BRIDGE_PATH: bridgePath },
+      env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONDONTWRITEBYTECODE: '1', STYK_WEB_ROOT: webRoot, STYK_TOOLS_ROOT: toolsRoot, STYK_BRIDGE_PATH: bridgePath, ...(token ? { STYK_API_TOKEN: token } : {}) },
     });
     child.on('error', (error) => { startupError = error; terminated = true; });
     child.on('exit', (code, signal) => {
@@ -79,8 +97,7 @@ async function startBackend({ appRoot, resourcesPath, packaged = false, onError 
     const deadline = Date.now() + 20000;
     while (!terminated && Date.now() < deadline) {
       try {
-        const response = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(700) });
-        if (response.ok) {
+        if (await probeBackend(origin, token)) {
           child.stykReady = true;
           return {
             origin,
@@ -99,4 +116,4 @@ async function startBackend({ appRoot, resourcesPath, packaged = false, onError 
   throw new Error(`The Pivot codec could not start. Install Python 3.11 or newer, or set STYK_PYTHON to its executable.\n\n${attempts.join('\n\n')}`);
 }
 
-module.exports = { startBackend, pythonCandidates, availablePort };
+module.exports = { startBackend, pythonCandidates, availablePort, probeBackend, sessionProof };

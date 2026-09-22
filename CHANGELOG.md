@@ -58,6 +58,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Keep playback and export in sync with the canvas: the last stroke of a drawing now appears when playing, and an extended final drawing exposure shows its artwork across the whole hold instead of staying blank until another frame follows. Incremental playback updates no longer render stale tile data or clip freshly painted regions into blank rectangles.
 - Keep prepared playback frames warm through layer-timeline edits and undo/redo: a localized change only rebuilds the spans it actually touches instead of recompiling the whole timeline.
 - Recover playback after a background preparation error instead of leaving playback unavailable until the app restarts.
+- Only StykAnimate itself can now use its built-in file converter; other programs and local web pages on your computer are refused.
 
 ## [1.0.6]
 
