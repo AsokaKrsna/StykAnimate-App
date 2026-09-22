@@ -223,7 +223,10 @@ export const editorIKMethods = {
         next.bendDirection = patch.bendDirection;
         if (next.bendDirection === 0) next.bendReference = captureFor(this, geometry, handle, next, graph).bendReference;
       }
-      if (!next.enabled) {
+      // A spatial limb keeps a disabled record so its IK switch stays in the
+      // rig panel; solvers ignore controllers that are not enabled.
+      if (!next.enabled && next.spatialTarget) object._stykIK = {...object._stykIK, [handle]: {...next, pinned: false}};
+      else if (!next.enabled) {
         object._stykIK = {...object._stykIK}; delete object._stykIK[handle];
         if (!Object.keys(object._stykIK).length) delete object._stykIK;
       } else object._stykIK = {...object._stykIK, [handle]: next};

@@ -28,6 +28,8 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Fixed
 
+- Keep attached 3D heads on the neck when the torso or neck bends; they no longer turn twice and drift off the shoulders.
+- Switch IK off and on for each 3D arm and leg from the rig panel. With IK off, dragging a hand or foot swings just the forearm or shin.
 - Reduce drawing lag as artwork and frames accumulate, keep brush-cursor movement responsive, and prevent artwork from disappearing while previews start. Shorten waits after large drawing edits, undo and redo with faster loading and pixel pastes, and smaller background tile updates. Fill regions up to 64 megapixels without changing behavior when zoomed out.
 
 - Select, copy, paste, transform and resample large or widely spaced drawings without allocating empty space, keep lasso capture responsive in the background, preserve translucent colors and rotated or mirrored pixel pastes, and offer crisp pixel-art filtering. Failed or cancelled clipboard transfers keep cut artwork intact.

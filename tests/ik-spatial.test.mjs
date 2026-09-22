@@ -6,6 +6,7 @@ import {Editor} from '../src/editor.mjs';
 import {spatialPoint,quatRotate,quatMultiply} from '../src/rig-spatial.mjs';
 import {spatialWorldQuaternion,spatialWorldVector,inverseQuaternion} from '../src/ik-spatial.mjs';
 import {validateIK,interpolateIK} from '../src/ik.mjs';
+import {spatialControlsView} from '../src/spatial-controls.mjs';
 function fixture(){
  const q=construction();q.add(0,0,0,'Figure rotation');
  const bone=(parent,origin,tip,name)=>{const turn=q.add(0,0,0,name+' turn'),pitch=q.add(0,0,0,name+' tilt'),v=tip.map((n,i)=>n-origin[i]);return q.add(parent,Math.hypot(...v),Math.atan2(v[1],v[0]),name,{control:true,rig:{spatial:{parent,origin,tip,turn,pitch}}});};
@@ -207,4 +208,15 @@ test('anchored drags never jump on grab and short bones use a longer virtual lev
  assert.ok(moved>2&&moved<20,`${moved}`);
  e.poseJoint(grab.x,grab.y,{anchor:grab,pixel:1});sameOrientation(state(e,foot).q,before.q);
  e.cancelDrag();assert.deepEqual(e.serialize(),saved);
+});
+
+test('limb IK can be switched off and on from the rig panel; off, the end drag swings only its bone',()=>{
+ const{e,upper,lower}=fixture();e.select(1,lower-1);e.setNodeIK({enabled:true,pinned:false,bendDirection:0,chainLength:2});
+ assert.match(spatialControlsView(e),/id="spatial-ik"[^>]*checked/);
+ e.setNodeIK({enabled:false});const view=spatialControlsView(e);
+ assert.match(view,/id="spatial-ik"/);assert.doesNotMatch(view,/id="spatial-ik"[^>]*checked/);assert.doesNotMatch(view,/spatial-pin/);
+ const thigh=state(e,upper),shin=e.geometry.objects.get(0).segments[lower-1];
+ e.beginDrag('Pose shin');e.poseJoint(shin.end.x+25,shin.end.y-10);e.commitDrag();
+ sameOrientation(state(e,upper).q,thigh.q);assert.ok(Math.hypot(state(e,lower).end.x-shin.end.x,state(e,lower).end.y-shin.end.y)>5);
+ e.setNodeIK({enabled:true,pinned:false});assert.equal(e.object._stykIK[lower].pinned,false);assert.match(spatialControlsView(e),/id="spatial-ik"[^>]*checked/);
 });

@@ -7,7 +7,9 @@ offset and named drawing groups select forms. `drawingRotation` is mutually
 exclusive: turning a mesh never switches drawings or interpolates silhouettes.
 
 An attachment to a spatial bone evaluates its vertices through that bone's
-existing spatial frame, then applies figure transforms and perspective. Rotation,
+existing spatial frame, then applies figure transforms and perspective. The bone
+alone owns the attachment's orientation: the attached object's own angle, which
+Pivot-style joins rotate along with a bending parent, is not applied again. Rotation,
 tilt, roll, stretch and part proportions stay in the rig's existing pose channels.
 Only the container handle belongs to the editable joint graph. Geometry is authored
 offline; entering an empty movieclip editor is rejected with posing guidance.

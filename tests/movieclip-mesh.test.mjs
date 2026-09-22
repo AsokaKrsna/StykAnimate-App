@@ -65,7 +65,7 @@ test('unchanged attachments retain projected arrays while appearance and transfo
  const incremental=buildGeometry(d,tinted,{previous:first,dirtySlots:new Set([1])}),next=incremental.objects.get(1);
  assert.equal(next.drawables[0].points,old.drawables[0].points);assert.notEqual(next.drawables,old.drawables);
  assert.deepEqual(next.drawables,buildGeometry(d,tinted).objects.get(1).drawables);assert.equal(old.drawables[0].opacity,1);
- const moved=structuredClone(tinted);moved.objects[1].angles[0]=.3;
+ const moved=structuredClone(tinted);moved.objects[1].scale=1.3;
  const changed=buildGeometry(d,moved,{previous:incremental,dirtySlots:new Set([1])}).objects.get(1);
  assert.notEqual(changed.drawables[0].points,next.drawables[0].points);assert.deepEqual(changed.drawables,buildGeometry(d,moved).objects.get(1).drawables);
  assert.ok(changed.meshPose.pose.every(v=>v===undefined||typeof v==='number'));assert.equal(changed.meshPose.mesh,d.figure_types[1]._styk.movieclip.spatialMeshes[0]);
@@ -99,4 +99,15 @@ test('per-view turns interpolate as rotations, so shapes keep their size between
  const weights=[1,0,1,0],weighted=doc({viewPositions:[0,1,2,3].map(()=>mesh.positions),viewTurns:turns,viewPivot:pivot,viewTurnWeights:weights}),turned=rotate(mesh.positions,Math.PI/2);
  close(points(weighted,90),points(doc({positions:mesh.positions.map((v,i)=>weights[Math.floor(i/3)]?turned[i]:v)}),90));
  assert.throws(()=>validateMovieclipMeshes({...head._styk.movieclip,spatialMeshes:[{...mesh,viewPositions:[0,1,2,3].map(()=>mesh.positions),viewTurns:turns,viewPivot:pivot,viewTurnWeights:[1,2,0,0]},mesh]}),/0 to 1 per vertex/);
+});
+test('bending the parent turns a bone-attached mesh once, keeping it on its joint',()=>{
+ const {d,h}=fixture(),e=new Editor({demo:false});e.load(d);e.select(1,h-1);
+ const base=()=>{const g=e.geometry.objects.get(1);return g.drawables.flatMap(x=>x.points.map(p=>[p.x,p.y]));};
+ const joint=()=>e.geometry.objects.get(0).segments[h-1];
+ // Rotating through the native bend also rotates the joined child's own angle (Pivot joins).
+ e.select(1,h-1);e.rotateJoint(.6);assert.notEqual(e.frame.objects[1].angles[0],0);
+ const bent=base(),reference=structuredClone(e.serialize());reference.keyframes[0].objects[1].angles=[0];
+ const f=new Editor({demo:false});f.load(reference);
+ assert.deepEqual(bent,f.geometry.objects.get(1).drawables.flatMap(x=>x.points.map(p=>[p.x,p.y])));
+ assert.ok(Number.isFinite(joint().start.x));
 });

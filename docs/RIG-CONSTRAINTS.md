@@ -119,6 +119,12 @@ trackball and an outer view ring; Shift gives finer movement. Whole body, limb,
 torso and belt-tie shortcuts select native joints. Each drag is one undo step;
 Escape cancels it.
 
+Each hand and foot has an **IK** switch in the rig panel. With IK off the limb
+is posed joint by joint: dragging the hand or foot swings only the forearm or
+shin in 3D. Switching IK back on captures the current pose without pinning it.
+A disabled spatial limb keeps its controller record (with `enabled: false`) so
+the switch stays available; solvers ignore disabled controllers.
+
 **Plant both feet** retains foot position, depth and orientation while the hips
 move; **Release feet** lets the character move. Drag a planted knee or elbow's
 ordinary joint marker to steer its existing bend plane while its endpoint stays

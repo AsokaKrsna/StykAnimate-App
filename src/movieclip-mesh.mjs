@@ -33,7 +33,9 @@ export function validateMovieclipMeshes(asset) {
 export function* buildMovieclipMeshSteps(fig,obj,root,slot,parent,objectColor,previous) {
   const asset=fig._styk.movieclip,local=obj._movieclipSample===null?null:obj._movieclipSample??obj._stykMovieclip?.offset??0;
   const joint=parent?.segments.find(s=>s.seg.segment_id===obj.join?.target_handle_id),frame=joint?.spatialFrame;
-  const localAngle=Number(obj.angles?.[0]??0),lc=Math.cos(localAngle),ls=Math.sin(localAngle),
+  // A spatial bone owns the attachment's orientation. Pivot-style joins also
+  // rotate joined children when the parent bends, which must not apply twice.
+  const localAngle=Number(obj.angles?.[0]??0),
     angle=frame?animationRotation(parent.fig,parent.obj):localAngle,cs=Math.cos(angle),sn=Math.sin(angle),
     scale=Number(obj.scale??1),mirror=(obj.image_text_flags?-1:1)*(frame&&parent.obj.image_text_flags?-1:1),
     camera=frame?projection(parent.obj,parent.root):null;
@@ -43,7 +45,7 @@ export function* buildMovieclipMeshSteps(fig,obj,root,slot,parent,objectColor,pr
   if(local===null)return geometry;
   const mesh=asset.spatialMeshes[Math.max(0,Math.min(asset.spatialMeshes.length-1,Math.floor(local)))];
   const parentScale=Number(parent?.obj.scale??1),ratio=frame&&Math.abs(parentScale)>1e-12?scale/parentScale:0;
-  const pose=[localAngle,angle,scale,mirror,obj.image_text_flags,parent?.obj.image_text_flags,asset.pivot.x,asset.pivot.y,root.x,root.y,parentScale,parent?.root.x,parent?.root.y,camera?.k,camera?.scale,camera?.root.x,camera?.root.y,
+  const pose=[frame?0:localAngle,angle,scale,mirror,obj.image_text_flags,parent?.obj.image_text_flags,asset.pivot.x,asset.pivot.y,root.x,root.y,parentScale,parent?.root.x,parent?.root.y,camera?.k,camera?.scale,camera?.root.x,camera?.root.y,
     ...(frame?[...frame.q,...frame.t,...frame.origin,...frame.axis,frame.stretch,frame.choiceScale,frame.shape?.width,frame.shape?.taper,frame.restLength]:[])];
   const colors=mesh.colors.map(c=>objectColor?objectColor(c,obj):c),opacity=1-Number(obj.field28??0)/255;
   geometry.meshPose={mesh,pose};
@@ -77,7 +79,6 @@ export function* buildMovieclipMeshSteps(fig,obj,root,slot,parent,objectColor,pr
       const x=v[0]-pivot[0],z=v[2]-pivot[2];v[0]=pivot[0]+x*tc+z*ts;v[2]=pivot[2]-x*ts+z*tc;
     }
     const p=[v[0]-asset.pivot.x,(v[1]-asset.pivot.y)*(obj.image_text_flags?-1:1),v[2]];
-    if(frame){const x=p[0],y=p[1];p[0]=x*lc-y*ls;p[1]=x*ls+y*lc;}
     let raw;
     if(frame){const v=affine?[0,1,2].map(j=>affine[0][j]+ratio*(p[0]*affine[1][j]+p[1]*affine[2][j]+p[2]*affine[3][j])):spatialPoint(frame,p.map((x,j)=>frame.origin[j]+x*ratio)),flip=parent.obj.image_text_flags?-1:1;
       raw=[parent.root.x+(v[0]*cs-v[1]*flip*sn)*parentScale,parent.root.y+(v[0]*sn+v[1]*flip*cs)*parentScale,v[2]*parentScale];
