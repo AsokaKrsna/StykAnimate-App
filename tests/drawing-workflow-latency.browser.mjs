@@ -66,9 +66,9 @@ try{
   const all=[...Array(frames).keys()];
   const firstPass=await flip(all.slice(1));
   const warmPass=await flip(all);
-  // Cold: drop every published store, as memory pressure would.
+  // Cold: memory pressure evicts every published store before each flip.
   const cold=await page.evaluate(async frames=>{const d=styk.drawing,times=[];await d.owner.flush();
-    for(let f=0;f<frames;f++){for(const e of d.owner.entries.values())if(e.published?.revision===e.revision&&!e.pinned){e.store=null;e.levels=null;}d.owner.surfaceVersion++;
+    for(let f=0;f<frames;f++){d.owner.reserve(d.owner.tileBudget);
       const start=performance.now();styk.editor.seek(f);times.push(await workflowBench.until(f,start));}return times;},frames);
   // Scrub at 24 fps for two passes; count frames shown before the next seek.
   const scrub=await page.evaluate(async frames=>{const shown=[];for(let pass=0;pass<2;pass++)for(let f=0;f<frames;f++){const start=performance.now();styk.editor.seek(f);const t=await Promise.race([workflowBench.until(f,start),new Promise(r=>setTimeout(()=>r(null),1000/24))]);shown.push(t);if(t!==null)await new Promise(r=>setTimeout(r,Math.max(0,1000/24-t)));}return shown;},frames);
@@ -85,15 +85,23 @@ try{
   const fillStart=Date.now();await page.mouse.click(box.x+box.width*.5,box.y+box.height*.55);
   await page.waitForFunction(()=>!styk.drawing.gesture&&!styk.drawing.operation&&styk.editor.undoLabel?.toLowerCase().includes('fill'),null,{timeout:60000});
   const fillMs=Date.now()-fillStart;
+  // Cold edit: after showing frame 3, memory pressure evicts every published
+  // cel; a fill click there must first reopen the cel for editing.
+  await page.evaluate(async()=>{await styk.drawing.owner.flush();styk.editor.seek(3);});
+  await page.evaluate(()=>workflowBench.until(3));
+  const coldCount=await page.evaluate(()=>{styk.drawing.owner.reserve(styk.drawing.owner.tileBudget);return styk.editor._undo.length;});
+  const coldEditStart=Date.now();await page.mouse.click(box.x+box.width*.5,box.y+box.height*.55);
+  // Builds that drop a click released during loading never commit: null.
+  const coldEditMs=await page.waitForFunction(count=>styk.editor._undo.length===count+1&&!styk.drawing.operation,coldCount,{timeout:15000}).then(()=>Date.now()-coldEditStart,()=>null);
   const clean=v=>v.filter(t=>t!==null);
   result={label,backend:await page.evaluate(()=>styk.state.renderer.stats.backend),setup,
     firstFlipMs:summary(clean(firstPass)),warmFlipMs:summary(clean(warmPass)),coldFlipMs:summary(clean(cold)),coldMissing:cold.filter(t=>t===null).length,
     scrub:{frames:scrub.length,shownInTime:clean(scrub).length/scrub.length,shownMs:summary(clean(scrub))},
-    undoMs:summary(history.undo),redoMs:summary(history.redo),fillMs,errors};
+    undoMs:summary(history.undo),redoMs:summary(history.redo),fillMs,coldEditMs,errors};
   console.log(JSON.stringify({...result,setup:undefined}));
   await page.screenshot({path:`${output}/${label}${software?'-software':''}.png`});
   assert.deepEqual(errors,[]);
 }finally{
-  if(result)await writeFile(`${output}/${label}${software?'-software':''}.json`,JSON.stringify({date:new Date().toISOString(),browser:browser.version(),software,frames,method:'Chrome headless 1440x1000. 24-frame 1920x1080 drawing layer at 2x, twenty-five pressure strokes per cel plus a per-frame marker colour. After each app render one marker pixel is read back; times run from the command to the first render showing that frame. Cold flips first drop every published CPU store. Scrubbing seeks every 1/24 s and counts frames shown before the next seek. Undo/redo time runs from the command through two animation frames. Fill runs from the click until the fill command commits.',result},null,2));
+  if(result)await writeFile(`${output}/${label}${software?'-software':''}.json`,JSON.stringify({date:new Date().toISOString(),browser:browser.version(),software,frames,method:'Chrome headless 1440x1000. 24-frame 1920x1080 drawing layer at 2x, twenty-five pressure strokes per cel plus a per-frame marker colour. After each app render one marker pixel is read back; times run from the command to the first render showing that frame. Cold flips first evict every published CPU store through the memory-pressure path. Scrubbing seeks every 1/24 s and counts frames shown before the next seek. Undo/redo time runs from the command through two animation frames. Fill runs from the click until the fill command commits. Cold edit evicts every published cel through the memory-pressure path, then times a fill click on a frame that was just displayed.',result},null,2));
   await browser.close();
 }

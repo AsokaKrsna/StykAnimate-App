@@ -123,8 +123,14 @@ dimensions before inflation, limits concurrent streams to eight, preserves index
 order and settles in-flight streams before reporting failure. No sparse-copy
 limit depends on bounding-box area or distance between occupied tiles.
 
-The exact PNG decoder feeds IDAT byte views directly to the decompression
-stream, awaits input backpressure and releases both stream endpoints on failure.
+Images whose filtered rows total at most 1 MiB, including every 64×64 tile,
+inflate in place with `drawing-inflate.mjs`, a synchronous zlib decoder that
+rejects malformed codes, distances, truncation, trailing bytes, output beyond
+the declared dimensions and checksum mismatches. A tile's compressed data is a
+few hundred bytes, so stream setup previously cost more than decompression:
+decoding a 1,038-tile line-art cel fell from 294 ms to about 105 ms in Node.
+Larger images feed IDAT byte views directly to the decompression stream,
+await input backpressure and release both stream endpoints on failure.
 Reconstruction stays in its bounded scan buffer; unfiltered RGBA rows use byte
 copies and never pass through a premultiplied canvas. All five PNG filters and
 8-bit RGB/RGBA remain supported. Drawing PNGs, tile blobs and native containers

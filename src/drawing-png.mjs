@@ -1,4 +1,5 @@
 import {encodePNGPortable} from './sticknodes/decoder/png-browser.mjs';
+import {inflateZlib} from './drawing-inflate.mjs';
 import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {crc32} from './sticknodes/decoder/archive.mjs';
 import {base64ToBytes,bytesToBase64} from './base64.mjs';
@@ -11,6 +12,8 @@ export async function encodeDrawingPNG(pixels,width,height){return drawingPNGDat
 export function decodeDrawingPNG(url){return decodeDrawingPNGBytes(drawingPNGBytes(url));}
 /** Decode our portable PNG without premultiplication, including filter modes
  * emitted by other conforming RGBA/RGB encoders. All allocations are bounded. */
+const SYNC_INFLATE_BYTES=1024*1024;
+const concatBytes=parts=>{const out=new Uint8Array(parts.reduce((n,p)=>n+p.length,0));let offset=0;for(const part of parts){out.set(part,offset);offset+=part.length;}return out;};
 export async function decodeDrawingPNGBytes(bytes,{width:expectedWidth,height:expectedHeight}={}){
   const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),signature=[137,80,78,71,13,10,26,10];if(!signature.every((n,i)=>bytes[i]===n))throw new Error('Invalid drawing PNG signature.');
   let width,height,channels;const parts=[];
@@ -20,13 +23,22 @@ export async function decodeDrawingPNGBytes(bytes,{width:expectedWidth,height:ex
     if(type==='IDAT')parts.push(data);if(type==='IEND')break;pos=end;
   }
   if(!channels||!parts.length)throw new Error('Drawing PNG is missing pixel data.');
-  const stride=width*channels,expected=(stride+1)*height,scan=new Uint8Array(expected),stream=new DecompressionStream('deflate'),reader=stream.readable.getReader(),writer=stream.writable.getWriter();let offset=0,writeError;
+  const stride=width*channels,expected=(stride+1)*height;let scan,offset=0;
+  if(expected<=SYNC_INFLATE_BYTES){
+    // Small images such as 64×64 tiles inflate in place: stream setup and
+    // task hops would otherwise cost more than the decompression itself.
+    const data=parts.length===1?parts[0]:concatBytes(parts);
+    try{scan=inflateZlib(data,{maxOutput:expected});}catch(error){if(error.code==='INFLATE_BOUND')throw new Error('Drawing PNG expands beyond its declared dimensions.');throw error;}
+    offset=scan.length;
+  }else{
+  scan=new Uint8Array(expected);const stream=new DecompressionStream('deflate'),reader=stream.readable.getReader(),writer=stream.writable.getWriter();let writeError;
   // IDAT already owns byte views. Feeding them directly avoids a Blob and its
   // asynchronous read pipeline per tile. Await backpressure and settle the
   // producer on every exit, including expansion-limit and corrupt-stream errors.
   const written=(async()=>{try{for(const part of parts)await writer.write(part);await writer.close();}catch(error){writeError=error;await writer.abort(error).catch(()=>{});}finally{writer.releaseLock();}})();
   try{for(;;){const {done,value}=await reader.read();if(done)break;if(offset+value.length>expected)throw new Error('Drawing PNG expands beyond its declared dimensions.');scan.set(value,offset);offset+=value.length;}await written;if(writeError)throw writeError;}
   finally{await reader.cancel().catch(()=>{});await written;reader.releaseLock();}
+  }
   if(offset!==expected)throw new Error('Drawing PNG has incomplete pixel data.');
   const output=new Uint8ClampedArray(width*height*4);
   const paeth=(a,b,c)=>{const p=a+b-c,x=Math.abs(p-a),y=Math.abs(p-b),z=Math.abs(p-c);return x<=y&&x<=z?a:y<=z?b:c;};

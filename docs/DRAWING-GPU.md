@@ -119,11 +119,22 @@ are higher than in quieter runs; see `artifacts/drawing-workflow/`.
 | Flip to an evicted drawing, p50 / p95 | 968 / 1,112 ms | 23 / 33 ms |
 | Scrub at 24 fps: frames shown before the next seek | 2% | 100% |
 | Undo / redo of a 300 px stroke | 122 / 163 ms | 75 / 91 ms |
+| Fill click on a frame evicted by memory pressure | click ignored | 337 ms to commit |
 
 An evicted cel is shown from its still-resident GPU tiles while its CPU store
 decodes; the retained image is discarded if history changes that cel first.
-Editing an evicted cel still waits for the PNG decode (roughly 0.4 s for
-1,000 tiles here). Three alternating 12-frame Canvas 2D runs measured warm
+When memory pressure evicts a published store, the GPU notes the slots that
+hold its exact tiles. Reopening that cel for editing reads them back instead
+of decoding PNGs, keeps each tile's published PNG bytes, and re-adopts the
+slots, provided every slot is still intact and the published base revision
+matches; deferred history then applies as usual. Otherwise the cel decodes,
+now with the in-place tile inflater described in [DRAWING.md](DRAWING.md).
+A load that a pointer is waiting on overtakes queued display and prefetch
+decodes and is never superseded by them; only the decode already running
+finishes first. In the cold-edit measurement this took the fill from 843 ms to
+337 ms after the click (297 ms on Canvas 2D).
+A saturated pool — here 24 dense cels filled the 512 MiB budget — evicts
+full-resolution tiles first, so restores favour recently shown cels. Three alternating 12-frame Canvas 2D runs measured warm
 flips of 224–267 ms against 265–347 ms for the baseline and cold flips of
 820–962 ms against 952–1,178 ms, so the fallback did not regress.
 

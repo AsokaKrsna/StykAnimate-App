@@ -437,6 +437,34 @@ export class DrawingGpu {
     this.words.set(words,first*WORDS);this.instanceCount+=count;return {first,count};
   }
   displayed(presenter){return this.states.get(presenter)?.lastFrame>=this.frame-1;}
+  /** Before a published store is evicted, note which slots hold its exact
+   * tiles. Only a complete set is kept; a partial one could not restore. */
+  remember(presenter,store){
+    const state=this.states.get(presenter);if(!state||!store)return;
+    state.backup=null;const tiles=[];
+    for(const tile of store){const record=this.tiles.get(tile);if(!(record?.slot>=0)||record.version!==tile.version)return;tiles.push({tx:tile.tx,ty:tile.ty,record,slot:record.slot,png:tile.png});}
+    state.backup={revision:presenter.revision,tiles};
+  }
+  /** Read an evicted cel's published tiles back from their slots. Resolves in
+   * the decode result format, or returns null when any slot was reused. */
+  restore(presenter,revision){
+    const state=this.states.get(presenter),backup=state?.backup;
+    if(this.destroyed||!backup||backup.revision!==revision||backup.tiles.some(t=>t.record.slot!==t.slot))return null;
+    const count=backup.tiles.length;if(!count)return Promise.resolve({tiles:[]});
+    const device=this.device,readback=device.createBuffer({label:'Drawing restore read-back',size:count*TILE_BYTES,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST}),encoder=device.createCommandEncoder({label:'Drawing restore'});
+    backup.tiles.forEach((t,i)=>encoder.copyBufferToBuffer(this.pool.buffer,t.slot*TILE_BYTES,readback,i*TILE_BYTES,TILE_BYTES));
+    device.queue.submit([encoder.finish()]);this.stats.restores=(this.stats.restores??0)+1;
+    return readback.mapAsync(GPUMapMode.READ).then(()=>{
+      const mapped=readback.getMappedRange();
+      return {tiles:backup.tiles.map((t,i)=>({tx:t.tx,ty:t.ty,pixels:mapped.slice(i*TILE_BYTES,(i+1)*TILE_BYTES),png:t.png}))};
+    }).finally(()=>readback.destroy());
+  }
+  /** Restored tiles adopt the slots they were read from; no re-upload. */
+  adoptRestored(presenter,store,revision){
+    const state=this.states.get(presenter),backup=state?.backup;if(state)state.backup=null;
+    if(!backup||!store||backup.revision!==revision)return;
+    for(const t of backup.tiles){const tile=store.get(t.tx,t.ty);if(tile&&t.record.slot===t.slot&&!this.tiles.has(tile)){t.record.version=tile.version;this.tiles.set(tile,t.record);}}
+  }
   /** Record all GPU work that must precede this frame's render pass. */
   encode(encoder){
     for(const session of this.sessions)session.encode(encoder);

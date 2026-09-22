@@ -186,6 +186,19 @@ try{
   const filled=await page.waitForFunction(()=>styk.editor._undo.length===undoCount+1&&styk.editor.undoLabel?.toLowerCase().includes('fill'),null,{timeout:10000}).then(()=>true,()=>false);
   await page.evaluate(()=>styk.drawing.setTool('brush'));
   check('a click released while its cel loads still fills after the load',filled);
+  // Memory pressure evicts the published store; reopening it for editing
+  // reads the exact tiles back from GPU slots instead of decoding PNGs.
+  await settle();await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  const restored=await page.evaluate(async()=>{
+    const d=styk.drawing,t=styk.editor.drawingTarget(),e=d.owner.entry(t.figure),gpu=styk.state.renderer.drawingGpu;await d.owner.flush();
+    const hash=store=>[...store].sort((a,b)=>a.ty-b.ty||a.tx-b.tx).reduce((h,tile)=>{h=Math.imul(h^tile.tx,16777619)^tile.ty;for(let i=0;i<tile.pixels.length;i++)h=Math.imul(h^tile.pixels[i],16777619)>>>0;return h;},2166136261);
+    const before=hash(e.store),tiles=e.store.size,restores=gpu.stats.restores??0;let decodes=0;
+    const request=d.owner.decodeWorker.request.bind(d.owner.decodeWorker);d.owner.decodeWorker.request=(...args)=>{decodes++;return request(...args);};
+    d.owner.reserve(d.owner.tileBudget);const evicted=!e.store;
+    const started=performance.now(),surface=await d.owner.surface(t.figure),ms=performance.now()-started;d.owner.decodeWorker.request=request;
+    return {evicted,tiles,decodes,restored:(gpu.stats.restores??0)-restores,exact:hash(surface.store)===before,pngs:[...surface.store].every(tile=>tile.png),ms:Math.round(ms)};
+  });
+  check('an evicted cel restores its exact tiles from GPU memory without decoding',restored.evicted&&restored.tiles>0&&restored.restored===1&&restored.decodes===0&&restored.exact&&restored.pngs,restored);
   // 5. A closing GPU stroke: its read-back keeps the stroke visible, saving
   // waits for it, and Escape or replacing the document discards it cleanly.
   await page.evaluate(async()=>{

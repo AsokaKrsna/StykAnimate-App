@@ -60,7 +60,12 @@ export class DrawingController {
     // never spawn stores, workers or presenters.
     const report=this.editor.report,owner=drawingResourcesFor(report)??((this.active||report.figure_types?.some(figure=>drawingMetadata(figure)))?this.editor.drawingResources:null);
     if(owner===this.owner)return;this.owner=owner;if(!owner)return;
-    owner.onChange=()=>{if(this.selection?.presenter)this.selection.presenter.stamp++;if(this.surfaceVersion!==owner.surfaceVersion){this.surfaceVersion=owner.surfaceVersion;if(this.state.renderer){this.state.renderer.lastGeometry=null;this.state.renderer.clearArtwork?.();this.state.renderer.clearOnionArtwork?.();}}this.onRender();};owner.onError=this.onError;owner.strokeWorker.onmessage=data=>this.strokeMessage(data);owner.strokeWorker.onerror=error=>{owner.strokeWorker.dispose();this.cancel();this.onError(error);};
+    owner.onChange=()=>{if(this.selection?.presenter)this.selection.presenter.stamp++;if(this.surfaceVersion!==owner.surfaceVersion){this.surfaceVersion=owner.surfaceVersion;if(this.state.renderer){this.state.renderer.lastGeometry=null;this.state.renderer.clearArtwork?.();this.state.renderer.clearOnionArtwork?.();}}this.onRender();};owner.onError=this.onError;
+    // Evicted published cels restore from GPU-resident tiles when possible.
+    owner.onEvictStore=(entry,store)=>this.state.renderer?.drawingGpu?.remember(entry,store);
+    owner.restoreStore=(entry,revision)=>this.state.renderer?.drawingGpu?.restore(entry,revision)??null;
+    owner.onStoreRestored=(entry,store,revision)=>this.state.renderer?.drawingGpu?.adoptRestored(entry,store,revision);
+    owner.strokeWorker.onmessage=data=>this.strokeMessage(data);owner.strokeWorker.onerror=error=>{owner.strokeWorker.dispose();this.cancel();this.onError(error);};
   }
   /** Decode the cel under the playhead plus its two unique neighbours each way
    * so onion skins and scrubs never wait on the decode queue. Neighbours queue
@@ -180,7 +185,7 @@ export class DrawingController {
       return valid;
     };
     try{
-      surface=await (pending.done=owner.surface(target.figure));
+      surface=await (pending.done=owner.surface(target.figure,{priority:true}));
       if(!current()){owner.discard(target.figure);return;}
       // v1 cels migrate lazily on the first pixel edit; posing keeps them v1.
       const d=drawingMetadata(target.figure);

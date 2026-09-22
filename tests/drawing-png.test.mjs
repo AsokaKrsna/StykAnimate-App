@@ -47,6 +47,10 @@ test('direct inflation rejects oversized, short and corrupt streams and settles 
       await assert.rejects(decodeDrawingPNGBytes(rawPNG({width:64,height:64,raw:Buffer.alloc(5)})),/incomplete/);
       await assert.rejects(decodeDrawingPNGBytes(splitData(valid.png,{size:7,corrupt:true})));
       await assert.rejects(decodeDrawingPNGBytes(rawPNG({width:1,height:1,raw:Buffer.from([5,1,2,3,4])})),/filter/);
+      // Images above the in-place threshold take the streaming inflater.
+      await assert.rejects(decodeDrawingPNGBytes(rawPNG({width:512,height:512,raw:Buffer.alloc(3*1024*1024)})),/expands beyond/);
+      await assert.rejects(decodeDrawingPNGBytes(rawPNG({width:512,height:512,raw:Buffer.alloc(5)})),/incomplete/);
+      await assert.rejects(decodeDrawingPNGBytes(splitData(rawPNG({width:512,height:512,raw:Buffer.alloc(513*2048)}),{size:4096,corrupt:true})));
     }
     assert.deepEqual((await decodeDrawingPNGBytes(valid.png)).pixels,valid.expected);
     await new Promise(resolve=>setTimeout(resolve,20));assert.deepEqual(errors,[]);
@@ -60,7 +64,9 @@ test('producer errors reject decoding even when the readable stream closes norma
     readable=new ReadableStream({start(controller){controller.close();}});
     writable=new WritableStream({write(){throw expected;}});
   };
-  try{await assert.rejects(decodeDrawingPNGBytes(filteredPNG(4,[0]).png),error=>error===expected);}
+  // Large images stream; small ones inflate in place without a stream.
+  const large=rawPNG({width:512,height:512,raw:Buffer.alloc(513*2048)});
+  try{await assert.rejects(decodeDrawingPNGBytes(large),error=>error===expected);}
   finally{globalThis.DecompressionStream=Native;}
   assert.equal(instance.readable.locked,false);assert.equal(instance.writable.locked,false);
 });
