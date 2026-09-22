@@ -16,14 +16,15 @@ try{
   const rect=await page.locator('#viewport').boundingBox();
   const start={x:rect.x+rect.width*.2,y:rect.y+rect.height*.3},end={x:start.x+560,y:start.y+240};
   await page.mouse.move(start.x,start.y);await page.mouse.down();await page.waitForFunction(()=>Boolean(styk.drawing.gesture));
-  await page.evaluate(()=>window.__longtasks.length=0);
+  await page.evaluate(()=>{window.__longtasks.length=0;window.__gpuDispatches=styk.state.renderer.stats.drawingGpu?.strokeDispatches??0;});
   const strokeStart=Date.now();
   await page.mouse.move(end.x,end.y,{steps:400});await page.mouse.up();
   await page.waitForFunction(()=>!styk.drawing.gesture);
   const wallMs=Date.now()-strokeStart;
   check('fast 400-sample stroke commits as one undo command',await page.evaluate(()=>styk.editor.undoLabel==='Brush stroke'));
-  const stats=await page.evaluate(()=>({...styk.drawing.strokeStats}));
-  check('rasterization ran off-thread in multiple paced batches',stats.batches>1);
+  const stats=await page.evaluate(()=>({...styk.drawing.strokeStats,gpuDispatches:(styk.state.renderer.stats.drawingGpu?.strokeDispatches??0)-window.__gpuDispatches}));
+  // WebGPU rasterizes on the GPU per frame; other renderers use the stroke worker.
+  check('rasterization ran off-thread in multiple paced batches',stats.batches>1||stats.gpuDispatches>1);
   check('the main thread never exceeded a 50 ms long task while drawing',await page.evaluate(()=>window.__longtasks.length===0));
   const continuous=await page.evaluate(({sx,sy,ex,ey})=>{
     const d=styk.drawing,t=styk.editor.drawingTarget(),store=d.owner.entry(t.figure).store;
@@ -38,6 +39,13 @@ try{
   await page.mouse.move(end.x+40,end.y);await page.mouse.down();await page.mouse.up();
   await page.waitForFunction(r=>styk.editor.revision!==r,tapRevision);
   check('a quick tap after the stroke still commits its own dab',await page.evaluate(()=>styk.editor.undoLabel==='Brush stroke'));
+  // The stroke worker remains the Canvas 2D and GPU-failure brush.
+  await page.evaluate(()=>{styk.drawing.gpuBrushDisabled=true;styk.drawing.strokeStats.batches=0;});
+  await page.mouse.move(start.x,start.y+120);await page.mouse.down();await page.mouse.move(end.x,end.y+120,{steps:200});await page.mouse.up();
+  await page.waitForFunction(()=>!styk.drawing.gesture);
+  const cpuStroke=await page.evaluate(()=>({undo:styk.editor.undoLabel,batches:styk.drawing.strokeStats.batches}));
+  check('the stroke worker still rasterizes in paced batches when the GPU brush is unavailable',cpuStroke.undo==='Brush stroke'&&cpuStroke.batches>1);
+  await page.evaluate(()=>{styk.drawing.gpuBrushDisabled=false;});
   // Stroke quality regressions, run against the same in-page stroke engine.
   const quality=await page.evaluate(async()=>{
     const {DrawingStroke}=await import('/src/drawing-pixels.mjs'),{TileStore}=await import('/src/drawing-tiles.mjs');

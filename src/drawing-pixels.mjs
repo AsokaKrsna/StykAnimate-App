@@ -8,6 +8,11 @@ export function assertPixels(pixels,width,height) {
 }
 export function compactTile(bytes){
   if(bytes==null)return null;
+  if(bytes.byteOffset%4===0&&bytes.length%4===0){
+    const words=new Uint32Array(bytes.buffer,bytes.byteOffset,bytes.length>>2),first=words[0];
+    for(let i=1;i<words.length;i++)if(words[i]!==first)return bytes;
+    return bytes.slice(0,4);
+  }
   for(let i=4;i<bytes.length;i++)if(bytes[i]!==bytes[i%4])return bytes;
   return bytes.slice(0,4);
 }
@@ -63,11 +68,16 @@ export class DrawingStroke {
     this.bytes+=TILE*TILE*8+64;const existing=this.store.get(tx,ty);
     tile={tx,ty,before:existing?existing.pixels.slice():null,coverage:new Float32Array(TILE*TILE),pixels:this.store.writable(tx,ty).pixels};this.tiles.set(key,tile);return tile;
   }
-  dab(p) {
+  /** Tip geometry for one dab. Consumes the stroke's jitter sequence, so the
+   * CPU raster and the GPU brush see identical dabs for identical input. */
+  dabShape(p) {
     const pressure=clamp(p.pressure??1);let radius=this.size*(this.pressureSize?Math.max(.05,pressure**this.sizeCurve):1)/2;
     if(this.texture>0)radius*=1+(this.nextRand()*2-1)*.1;
+    return {x:p.x,y:p.y,radius,opacity:this.opacity*(this.pressureOpacity?pressure**this.opacityCurve:1)};
+  }
+  dab(p) {
+    const {radius,opacity}=this.dabShape(p);
     const left=Math.floor(p.x-radius),top=Math.floor(p.y-radius),right=Math.ceil(p.x+radius),bottom=Math.ceil(p.y+radius);
-    const opacity=this.opacity*(this.pressureOpacity?pressure**this.opacityCurve:1);
     // Visit tiles once per dab, not once per pixel. Pressure may add paint,
     // but releasing pressure must never lift paint already laid in this stroke.
     for(let ty=Math.floor(top/TILE);ty*TILE<bottom;ty++)for(let tx=Math.floor(left/TILE);tx*TILE<right;tx++){

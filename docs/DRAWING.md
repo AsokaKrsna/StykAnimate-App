@@ -188,6 +188,13 @@ have one worker, at most 48 queued requests and 256 small cached images;
 their pump pauses while a stroke or a scrub owns the thread. Renderer GPU
 drawing textures follow the current layout and are released with it.
 
+On WebGPU the brush and eraser rasterize on the GPU in the frame that receives
+input, and cels display from GPU-resident tiles; see
+[GPU drawing residency and brush](DRAWING-GPU.md). The GPU brush runs the same
+`DrawingStroke` path code below and commits through the same transaction and
+history. The stroke worker described here remains the Canvas 2D brush and the
+replay path for a failed GPU stroke.
+
 `drawing-pixels.mjs` rasterizes real, distance-resampled samples. Stroke opacity
 caps the whole stroke, while flow accumulates dabs. Pressure release cannot
 remove previously deposited paint. Stabilization is a distance-windowed
@@ -305,7 +312,9 @@ in flight. Publications reconnect to the current definition by cel identity;
 save barriers and cold decode restore the same published base, including after
 resampling and eviction. Uncommitted preview bounds never enter this snapshot.
 
-Live drawing textures participate in the normal scene compositor, including
+The scratch-canvas presenter below serves the Canvas 2D renderer, onion
+skins, selection previews, cels with drawable effects and a WebGPU renderer
+with GPU drawing switched off. Live drawing textures participate in the normal scene compositor, including
 ordering, opacity, erasing, camera and clipping. Tiles are painted into
 tile-anchored scratch canvases; each presenter keeps a bounded LRU of them,
 and a request contained in an already-painted cover reuses it without
@@ -386,6 +395,10 @@ rig conversion or vector tracing.
 Run `node --test tests/drawing.test.mjs`, `node tests/drawing.browser.mjs` and
 `node scripts/benchmark-drawing.mjs` with the local app at port 47839 (or set
 `STYK_URL`). See [verification report](../artifacts/drawing/VERIFICATION.md).
+`tests/drawing-gpu.browser.mjs` checks GPU/CPU brush parity, exact reduced
+levels, GPU alpha bounds, cancellation, failure replay, undo/redo, held
+erasing, zoomed-out strokes and eviction; `tests/drawing-latency.browser.mjs`
+measures input-to-frame latency (see [DRAWING-GPU.md](DRAWING-GPU.md)).
 The pan, expansion and shortcut refinements have a separate regression suite:
 `node tests/drawing-ux.browser.mjs`; see its [report](../artifacts/drawing-ux/VERIFICATION.md).
 `tests/drawing-stroke.browser.mjs` covers the worker stroke pipeline,

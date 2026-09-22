@@ -13,6 +13,7 @@ import {createFrame} from './demo.mjs';
 import {screenToWorld,worldToScreen} from './renderer-geometry.mjs';
 import {TRANSFORM_BYTES,transformSupportBounds,tileIntersects,inverseMatrix,multiplyMatrix,indexedTileCoverage} from './drawing-transform.mjs';
 import {validatePixelClipboard} from './drawing-clipboard.mjs';
+import {DabRecorder,GpuStroke,gpuDrawingEligible} from './drawing-gpu.mjs';
 import {selectionMatrix,selectionTiles,selectionPresenter} from './drawing-selection.mjs';
 
 const pointerSample=e=>({clientX:e.clientX,clientY:e.clientY,pressure:e.pressure,pointerType:e.pointerType,timeStamp:e.timeStamp,button:e.button,buttons:e.buttons});
@@ -210,22 +211,43 @@ export class DrawingController {
       s.owner.busy=true;
       const pixelsPerScreenUnit=1/Math.max(1e-9,Math.hypot(s.pixelMatrix[0],s.pixelMatrix[1])*(this.state.view.scale||1));
       s.margin+=Math.max(0,Math.min(.95,this.settings.stabilization))*48*Math.max(.01,Math.min(64,pixelsPerScreenUnit));
-      this.owner.strokeWorker.post({kind:'begin',stroke:s.id,settings:{workingBytes:s.owner.hardBudget,size,pixelsPerUnit:pixelsPerScreenUnit,color,opacity:this.settings.opacity,flow:this.settings.flow,hardness:this.settings.hardness,pressureSize:this.settings.pressureSize,pressureOpacity:this.settings.pressureOpacity,sizeCurve:this.settings.sizeCurve,opacityCurve:this.settings.opacityCurve,stabilization:this.settings.stabilization,spacingRatio:this.settings.spacingRatio??.12,texture:this.settings.texture??0,erase:s.erase,seed:s.id}});
+      s.settings={workingBytes:s.owner.hardBudget,size,pixelsPerUnit:pixelsPerScreenUnit,color,opacity:this.settings.opacity,flow:this.settings.flow,hardness:this.settings.hardness,pressureSize:this.settings.pressureSize,pressureOpacity:this.settings.pressureOpacity,sizeCurve:this.settings.sizeCurve,opacityCurve:this.settings.opacityCurve,stabilization:this.settings.stabilization,spacingRatio:this.settings.spacingRatio??.12,texture:this.settings.texture??0,erase:s.erase,seed:s.id};
+      // The GPU brush paints in the frame that receives input; the stroke
+      // worker remains the Canvas 2D path and the GPU failure fallback.
+      const gpu=this.gpuBrush(target,surface);
+      if(gpu){s.raw=[];s.recorder=new DabRecorder(s.settings);s.gpu=new GpuStroke(gpu,surface,s.settings);}
+      else this.owner.strokeWorker.post({kind:'begin',stroke:s.id,settings:s.settings});
       this.sampleStroke(pending.event);
     }
     for(const sample of pending.samples)this.move({...sample,pointerId:event.pointerId});if(pending.released)this.finish();this.onRender();
   }
   /** Queue a pixel-space sample; one rAF-paced batch posts to the stroke worker. */
+  gpuBrush(target,surface){
+    const gpu=this.state.renderer?.drawingGpu;
+    if(!gpu||gpu.destroyed||this.gpuBrushDisabled)return null;
+    let item;try{item=this.geometryItem(target);}catch{return null;}
+    return gpuDrawingEligible(surface,item)?gpu:null;
+  }
   sampleStroke(event){
     const g=this.gesture,s=g?.session;
     if(g?.kind!=='stroke'||s.ended||s.cancelled)return;
     const p=inversePoint(s.pixelMatrix,this.point(event));
-    if(s.pending.length>=65536)throw new Error('Drawing input exceeded the queue limit. The stroke was cancelled; try a shorter stroke.');
-    s.pending.push({x:p.x,y:p.y,pressure:event.pointerType==='pen'?event.pressure||.05:1,time:event.timeStamp});
+    if((s.raw??s.pending).length>=65536)throw new Error('Drawing input exceeded the queue limit. The stroke was cancelled; try a shorter stroke.');
+    const sample={x:p.x,y:p.y,pressure:event.pointerType==='pen'?event.pressure||.05:1,time:event.timeStamp};
+    if(s.gpu){
+      // Raw samples stay available so a failed GPU stroke can replay on the CPU.
+      s.raw.push(sample);
+      if(s.gpu.failed){this.replayStroke(s,s.gpu.failed);return;}
+      s.recorder.sample(sample);const dabs=s.recorder.take();
+      if(dabs.length){s.gpu.add(dabs);s.surface.stamp++;}
+      return;
+    }
+    s.pending.push(sample);
     if(!s.raf)s.raf=requestAnimationFrame(()=>{s.raf=null;this.flushStroke(s);});
   }
   flushStroke(s){try{
     if(this.sessions.get(s.id)!==s)return;
+    if(s.gpu){if(s.ended)this.finishGpuStroke(s).catch(error=>{this.cancel();this.onError(error);});return;}
     if(!s.pending.length){this.endStrokeWorker(s);return;}
     // Bound posted work. Keep real samples locally until an ACK frees a slot;
     // release queues its end only after the final sample batch was sent.
@@ -266,17 +288,42 @@ export class DrawingController {
     }
     if(data.kind==='done'){this.sessions.delete(s.id);this.commitStroke(s,data.changes);}
   }
+  /** Drain the smoothing tail, read the stroke back and commit it through the
+   * same transaction as a worker stroke. A GPU failure replays the recorded
+   * samples on the stroke worker instead of losing the stroke. */
+  async finishGpuStroke(s){
+    if(s.gpuFinishing)return;s.gpuFinishing=true;
+    let result;
+    try{s.recorder.finish();const dabs=s.recorder.take();if(dabs.length)s.gpu.add(dabs);result=await s.gpu.finish();}
+    catch(error){if(s.cancelled||this.sessions.get(s.id)!==s)return;this.replayStroke(s,error);return;}
+    if(s.cancelled||this.sessions.get(s.id)!==s)return;
+    this.sessions.delete(s.id);
+    // The read-back already holds detached replacements and alpha bounds, so
+    // the commit adopts them without a worker preparation round trip.
+    let prepared=null;
+    if(result.changes.length){try{prepared=s.owner.adoptPrepared({kind:'drawing-pixels',celId:drawingMetadata(s.target.figure).celId,tiles:result.changes},'after',result.tiles);}catch{prepared=null;}}
+    this.commitStroke(s,result.changes,prepared);
+  }
+  replayStroke(s,error){
+    this.strokeStats.gpuFallbacks=(this.strokeStats.gpuFallbacks??0)+1;this.strokeStats.lastGpuError=error?.message??String(error);
+    s.gpu.release();s.gpu=null;s.recorder=null;
+    s.pending.push(...s.raw);s.raw=null;
+    s.owner.strokeWorker.post({kind:'begin',stroke:s.id,settings:s.settings});
+    this.flushStroke(s);
+  }
   restoreStroke(s){
     const store=s.surface.store;if(!store||s.owner.disposed)return;
     for(const [key,before] of s.before){const [tx,ty]=parseTileKey(key);before?store.set(tx,ty,before):store.delete(tx,ty);}
   }
-  commitStroke(s,changes){
+  commitStroke(s,changes,prepared=null){
     const g=this.gesture,valid=g?.session===s&&!s.cancelled&&s.owner===this.owner&&s.revision===this.editor.revision;
-    const preparing=valid&&s.owner.needsPreparation({kind:'drawing-pixels',tiles:changes},'after');
+    const preparing=valid&&!prepared&&s.owner.needsPreparation({kind:'drawing-pixels',tiles:changes},'after');
     // The closing gesture also owns the live preview of a new cel. Keep it
     // visible until the prepared replacements are committed or cancelled.
     if(g?.session===s&&!preparing)this.gesture=null;
     const finish=()=>{
+      // Committed tiles take over the GPU overlay's slots in the same frame.
+      s.gpu?.release({committed:s.committed});
       if(this.gesture?.session===s)this.gesture=null;
       s.resolveDone?.();s.owner.hold?.(s,0);
       s.owner.busy=this.operation?.owner===s.owner;
@@ -289,15 +336,15 @@ export class DrawingController {
     const label=s.erase?'Erase stroke':'Brush stroke';
     if(preparing){
       const pending=this.pixelOperation('Finishing stroke',async op=>{
-        try{op.received(changes);return await this.commitPixels(s.target,changes,label,op);}
+        try{op.received(changes);const committed=await this.commitPixels(s.target,changes,label,op);s.committed=true;return committed;}
         catch(error){this.restoreStroke(s);if(error.name!=='AbortError')this.onError(error);return false;}
         finally{finish();}
       });pending.catch(error=>this.onError(error));return pending;
     }
     try{
-      if(valid){try{this.editor.commitDrawingPixels(s.target,changes,label);}catch(error){this.restoreStroke(s);this.onError(error);}}
+      if(valid){try{this.editor.commitDrawingPixels(s.target,changes,label,prepared??undefined);s.committed=true;}catch(error){this.restoreStroke(s);this.onError(error);}}
       else this.restoreStroke(s);
-    }finally{finish();}
+    }finally{prepared?.release();finish();}
   }
   move(event){this.cursor=pointerSample(event);if(this.loading?.id===event.pointerId){if(this.loading.samples.length>=65536)throw new Error('Drawing input exceeded the queue limit.');this.loading.samples.push(pointerSample(event));this.onOverlayRender();return;}const g=this.gesture;if(!g||g.id!==event.pointerId){this.onOverlayRender();return;}
     if(g.kind==='pan'){const rect=this.viewport.getBoundingClientRect();this.state.view.x=g.view.x+(event.clientX-g.start.clientX)*this.viewport.clientWidth/rect.width;this.state.view.y=g.view.y+(event.clientY-g.start.clientY)*this.viewport.clientHeight/rect.height;}
@@ -322,7 +369,7 @@ export class DrawingController {
     if(g.kind==='pose')this.editor.commitDrag();
     else if(g.kind==='lasso')return this.run(()=>this.makeSelection(g));
   }finally{g.surface.pinned=g.kind==='lasso'&&Boolean(this.operation)||Boolean(this.selection?.surface===g.surface);if(this.selection?.surface===g.surface)this.previewSelection();else{this.owner.present(g.surface);if(!g.surface.pinned)this.owner.discard(g.target.figure);}if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.sync();this.onUI();this.onRender();}}
-  cancel(){this.operation?.abort.abort();this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();this.onRender();return;}this.gesture=null;if(g.kind==='pan'){Object.assign(this.state.view,g.view);this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.hold?.(s,0);s.owner.busy=false;this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
+  cancel(){this.operation?.abort.abort();this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();this.onRender();return;}this.gesture=null;if(g.kind==='pan'){Object.assign(this.state.view,g.view);this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.hold?.(s,0);s.owner.busy=false;if(s.gpu){s.gpu.fail(new DOMException('Stroke cancelled.','AbortError'));s.gpu.release();s.surface.stamp++;}else this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
   async barrier(options){await this.settle({selection:true});if(this.loading)throw new Error('Wait for the drawing to finish loading.');await drawingBarrier(this.editor.report,options);}
   /** Fill bounds follow the document, independent of display zoom. */
   fillBounds(target,store){
@@ -470,6 +517,10 @@ export class DrawingController {
       if(w<8||h<8)return;
       if(preview.width!==w||preview.height!==h){preview.width=w;preview.height=h;}
       const s=this.settings,erase=this.tool==='eraser',color=s.color.slice(1).match(/../g).map(n=>parseInt(n,16));
+      // The inspector re-renders after every stroke; rasterize the preview
+      // stroke only when its inputs change and re-blit the cached result.
+      const key=JSON.stringify([w,h,erase,s.color,s.size,s.opacity,s.flow,s.hardness,s.pressureSize,s.pressureOpacity,s.sizeCurve,s.opacityCurve,s.stabilization,s.spacingRatio,s.texture]),cached=this.previewCache;
+      if(cached?.key===key){if(preview.dataset.previewKey!==key){const ctx=preview.getContext('2d');ctx.clearRect(0,0,w,h);if(cached.image)ctx.putImageData(cached.image,cached.x,cached.y);preview.dataset.previewKey=key;}return;}
       const px=Math.max(1,Math.min(30,s.size)),ppu=px/Math.max(.5,s.size);
       const pad=Math.ceil(px/2)+3,span=Math.max(1,w-2*pad),mid=h/2,amp=Math.max(0,Math.min(h*.22,mid-pad-2));
       const store=new TileStore();
@@ -483,10 +534,9 @@ export class DrawingController {
       const n=40;
       for(let i=0;i<n;i++){const t=i/(n-1);stroke.sample({x:pad+span*t,y:mid+Math.sin(t*Math.PI*2)*amp,pressure:.15+.85*Math.sin(Math.PI*t),time:i});}
       stroke.finish();
-      const bounds=store.bounds;if(!bounds)return;
-      const ctx=preview.getContext('2d');
-      ctx.clearRect(0,0,w,h);
-      ctx.putImageData(new ImageData(store.readRect(bounds.x,bounds.y,bounds.width,bounds.height),bounds.width,bounds.height),bounds.x,bounds.y);
+      const bounds=store.bounds,ctx=preview.getContext('2d'),image=bounds?new ImageData(store.readRect(bounds.x,bounds.y,bounds.width,bounds.height),bounds.width,bounds.height):null;
+      ctx.clearRect(0,0,w,h);if(image)ctx.putImageData(image,bounds.x,bounds.y);
+      this.previewCache={key,image,x:bounds?.x,y:bounds?.y};preview.dataset.previewKey=key;
     }catch{}
   }
   overlayDraw(ctx){if(!this.active)return;let target;try{target=this.gesture?.target??this.editor.drawingTarget();}catch{return;}if(!target.figure)return;const g=this.gesture,item=this.renderPreview?.geometry.drawables.find(i=>i.obj.unique_id===target.object.unique_id)??this.editor.geometry.drawables.find(i=>i.obj.unique_id===target.object.unique_id&&i.type==='image');if(!item)return;const matrix=drawingPixelMatrix(item),screen=p=>worldToScreen(transformPoint(matrix,p),{report:this.editor.report,frame:this.editor.evaluatedFrame,view:this.state.view,cameraEnabled:false}),d=drawingMetadata(target.figure);ctx.save();ctx.setLineDash([4,4]);ctx.lineWidth=1;const points=g?.kind==='lasso'?g.points:this.selection?.points;if(points?.length){ctx.strokeStyle='#2878ed';ctx.beginPath();points.forEach((p,i)=>{const s=this.selection,angle=(s?.angle??0)*Math.PI/180,x=s?(p.x-s.cx)*s.scale:p.x,y=s?(p.y-s.cy)*s.scale:p.y,q=screen(s?{x:s.cx+s.dx+Math.cos(angle)*x-Math.sin(angle)*y,y:s.cy+s.dy+Math.sin(angle)*x+Math.cos(angle)*y}:p);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});ctx.closePath();ctx.stroke();}if(this.cursor&&this.gesture?.kind!=='pan'&&this.state.drag?.kind!=='pan'&&['brush','eraser'].includes(this.tool)){const p=this.pixel(this.cursor,target),center=screen(p),edge=screen({x:p.x+this.settings.size*d.pixelsPerUnit/2,y:p.y}),radius=Math.hypot(edge.x-center.x,edge.y-center.y);ctx.setLineDash([]);ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.beginPath();ctx.arc(center.x,center.y,Math.max(1,radius),0,Math.PI*2);ctx.stroke();ctx.strokeStyle='#333';ctx.lineWidth=1;ctx.stroke();}ctx.restore();}

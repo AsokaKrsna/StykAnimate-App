@@ -1,8 +1,13 @@
 // One asynchronous readback at a time. Never wait for the GPU on the render path.
+// Drawing tiles live in one storage pool; request the adapter's larger buffer
+// limits (capped) so dense cels are not limited by the 128 MiB default.
+const drawingLimits=adapter=>{const limits=adapter.limits,cap=1024*1024*1024;return limits?{maxStorageBufferBindingSize:Math.min(limits.maxStorageBufferBindingSize,cap),maxBufferSize:Math.min(limits.maxBufferSize,cap)}:undefined;};
 export async function requestInstrumentedDevice(adapter){
+  const requiredLimits=drawingLimits(adapter),limits=requiredLimits?{requiredLimits}:{};
   if(adapter.features?.has('timestamp-query')){
-    try{return await adapter.requestDevice({requiredFeatures:['timestamp-query']});}catch{/* Optional instrumentation must not disable hardware rendering. */}
+    try{return await adapter.requestDevice({requiredFeatures:['timestamp-query'],...limits});}catch{/* Optional instrumentation must not disable hardware rendering. */}
   }
+  if(requiredLimits){try{return await adapter.requestDevice(limits);}catch{/* Default limits still render; the drawing pool stays smaller. */}}
   return adapter.requestDevice();
 }
 export class GpuTiming {

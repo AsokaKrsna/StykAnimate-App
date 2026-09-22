@@ -9,7 +9,9 @@ try{
   await page.evaluate(async()=>{
     const {emptyDocument}=await import('/src/demo.mjs');styk.state.settings.autosaveSeconds=0;
     window.startFixture=()=>{
-      const e=styk.editor,d=styk.drawing;e.load(emptyDocument());e.createDrawingLayer();d.tool='brush';Object.assign(d.settings,{size:700,resolution:1,color:'#203ed8',hardness:1,opacity:1,pressureSize:false,pressureOpacity:false,stabilization:0});
+      // Worker preparation serves the stroke worker and history replay; GPU
+      // strokes prepare during read-back (tests/drawing-gpu.browser.mjs).
+      const e=styk.editor,d=styk.drawing;e.load(emptyDocument());e.createDrawingLayer();d.tool='brush';d.gpuBrushDisabled=true;Object.assign(d.settings,{size:700,resolution:1,color:'#203ed8',hardness:1,opacity:1,pressureSize:false,pressureOpacity:false,stabilization:0});
       window.fixtureRevision=e.revision;window.fixtureUndo=e._undo.length;window.preparationHeld=false;window.barrierSettled=false;
       const request=d.owner.worker.request.bind(d.owner.worker);let held=false;
       d.owner.worker.request=async(kind,payload,options)=>{if(kind==='prepare-tiles'&&!held){held=true;window.preparationHeld=true;await new Promise(resolve=>window.releasePreparation=resolve);}return request(kind,payload,options);};

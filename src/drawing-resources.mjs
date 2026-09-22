@@ -7,7 +7,7 @@ import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from './drawing-tiles
 import {applyTileChanges} from './drawing-pixels.mjs';
 import {tileStoreFromList} from './drawing-tile-codec.mjs';
 import {presenterScratch,retainedPresenterScratch,levelStore,invalidateLevels} from './drawing-raster.mjs';
-import {prepareDrawingChanges,needsDrawingPreparation,validateDrawingChanges} from './drawing-preparation.mjs';
+import {prepareDrawingChanges,needsDrawingPreparation,validateDrawingChanges,adoptDrawingPreparation} from './drawing-preparation.mjs';
 
 const owners=new WeakMap(),clipboardPixels=new WeakMap();
 export const drawingClipboardPixels=clipboard=>clipboardPixels.get(clipboard);
@@ -241,6 +241,7 @@ export class DrawingResources {
   }
   needsPreparation(command,direction){return needsDrawingPreparation(command,direction);}
   prepareChanges(command,direction,options){return prepareDrawingChanges(this,command,direction,options);}
+  adoptPrepared(command,direction,tiles){return adoptDrawingPreparation(this,command,direction,tiles);}
   apply(figure,changes,direction,prepared) {
     const e=this.entry(figure),plan=prepared?.plan(changes,direction,e.id),added=plan?0:this.replacementBytes(e,changes,direction);
     // Rebuildable memory yields before an edit is ever rejected.
