@@ -6,6 +6,7 @@ import {execFileSync} from 'node:child_process';
 import {rgbaToVfwBgr24} from '../src/vfw-pixels.mjs';
 import {getVfwCapabilities, encodeVfwVideo, configureVfwCodec} from '../src/vfw-video-export.mjs';
 import service from '../desktop/vfw-export-service.cjs';
+import {missingFixture} from './helpers/local-fixtures.mjs';
 
 const root = path.resolve(import.meta.dirname, '..'), output = path.join(root, 'artifacts', 'vfw-service');
 const helperPaths = Object.fromEntries(['x86', 'x64'].map(arch => [arch, path.join(root, 'native', 'bin', arch, 'styk-vfw.exe')]));
@@ -58,7 +59,9 @@ test('actual Windows enumeration distinguishes codec architectures and input rej
     await mkdir(output, {recursive: true}); await writeFile(path.join(output, 'capabilities.json'), JSON.stringify(caps, null, 2));
   } finally { await vfw.dispose(); }
 });
-test('every currently installed RGB24 compressor exports an independently decoded six-frame AVI', {skip: process.platform !== 'win32'}, async () => {
+// The independent decoder is the bundled FFmpeg staged by `npm run build:video-encoder`.
+test('every currently installed RGB24 compressor exports an independently decoded six-frame AVI',
+  {skip: process.platform !== 'win32' || missingFixture('build/video-encoder/ffmpeg.exe')}, async () => {
   await mkdir(output, {recursive: true}); const vfw = makeService(), rows = [];
   try {
     const caps = await vfw.capabilities({width: 160, height: 92}), codecs = [...new Map(caps.codecs.filter(codec => codec.supported).map(codec => [codec.id, codec])).values()];

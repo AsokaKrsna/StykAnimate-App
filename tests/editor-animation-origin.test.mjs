@@ -9,6 +9,7 @@ import {animationPropertyValue} from '../src/animation-channels.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {materializePivotDocument,needsPivotMaterialization} from '../src/pivot-export-materialize.mjs';
 import {animationOriginOffset,animationRotation} from '../src/animation-origin.mjs';
+import {missingFixture} from './helpers/local-fixtures.mjs';
 import backend from '../desktop/backend.cjs';
 const clone=structuredClone;
 function fixture({authored=true,easing=false,joined=true}={}){
@@ -144,7 +145,7 @@ test('local pivot offsets survive another reroot, dense interpolation, undo and 
   for(let tick=0;tick<=20;tick++){equalWorld(shape(before,tick),shape(styk,tick));equalWorld(shape(before,tick),shape(native,tick),.00035);}
   editor.undo();assert.deepEqual(editor.serialize(),before);editor.redo();assert.deepEqual(editor.serialize(),after);
 });
-test('native writer changes keep untouched source PIV bytes identical',()=>{
+test('native writer changes keep untouched source PIV bytes identical',{skip:missingFixture('../Pivot Animator v5/Animations/tween_camera.piv')},()=>{
   const script="import sys\nfrom pathlib import Path\nsys.path.insert(0,str(Path('backend').resolve()))\nimport server\nstore=server.ProjectStore(server.WORKSPACE)\npath=server.WORKSPACE/'Pivot Animator v5/Animations/tween_camera.piv'\nsource=path.read_bytes();imported=store.import_bytes(source,path.name)\noutput,_=store.export({**imported,'format':'piv'})\nassert output==source\nprint(len(output))";
   const python=backend.pythonCandidates()[0],result=spawnSync(python.command,[...python.args,'-c',script],{cwd:fileURLToPath(new URL('..',import.meta.url)),encoding:'utf8',windowsHide:true});
   assert.equal(result.status,0,result.stderr||result.error?.message);assert.ok(Number(result.stdout)>0);

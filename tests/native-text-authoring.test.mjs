@@ -1,4 +1,4 @@
-import test from 'node:test';
+import nodeTest from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {compileTextFigure, parseTextFont, pathBounds, svgPath} from '../src/text-authoring.mjs';
@@ -6,9 +6,13 @@ import {
   textAssetFor, canEditTextFigure, readTextFigureOptions,
   compileEmbeddedTextFigure, replaceTextAssetFigure, MissingTextGlyphsError,
 } from '../src/native-text-authoring.mjs';
+import {missingFixture} from './helpers/local-fixtures.mjs';
 
 const fixtureNames = ['text_abc_66903de7', 'text_bike_f18f65c7', 'text_speech_bubble_0f3b81ef'];
-const reports = await Promise.all(fixtureNames.map(async name => JSON.parse(await readFile(
+// Every case reads these imported native text scenes.
+const skip = missingFixture(...fixtureNames.map(name => `../reports/browser_corpus/${name}/scene.json`));
+const test = skip ? (name, fn) => nodeTest(name, {skip}, fn) : nodeTest;
+const reports = skip ? [] : await Promise.all(fixtureNames.map(async name => JSON.parse(await readFile(
   new URL(`../../reports/browser_corpus/${name}/scene.json`, import.meta.url), 'utf8'))));
 const nativeFigures = reports.flatMap(report => report.figure_types.filter(figure => figure.text_assets?.length));
 const arial = nativeFigures.find(figure => figure.text_assets[0].font_name === 'Arial');

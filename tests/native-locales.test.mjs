@@ -6,6 +6,7 @@ import { Localization, normalizeLocale, SUPPORTED_LOCALES } from '../src/localiz
 import catalogs from '../src/locales/native-catalogs.mjs';
 import english from '../src/locales/en.mjs';
 import { parsePivotLanguage, mapPivotCaptions, MAX_LANGUAGE_BYTES } from '../src/locales/pivot-language.mjs';
+import { missingFixture } from './helpers/local-fixtures.mjs';
 
 test('all 27 native languages resolve, are distinct and preserve readable source captions', () => {
   assert.equal(SUPPORTED_LOCALES.length,27);
@@ -72,7 +73,8 @@ test('semantic mapping excludes hints, absent values and app placeholder substit
   assert.ok(!Object.values(mapped).includes('Wrong shortcut'));
 });
 
-test('generated catalogs match the exact supplied bytes, explicit encodings and semantic map', async () => {
+test('generated catalogs match the exact supplied bytes, explicit encodings and semantic map',
+  { skip: missingFixture('artifacts/localization-native-inventory.json', '../Pivot Animator v5/languages/English.ini') }, async () => {
   const inventory = JSON.parse(await readFile(new URL('../artifacts/localization-native-inventory.json',import.meta.url),'utf8'));
   const baseline = parsePivotLanguage(await readFile(new URL('../../Pivot Animator v5/languages/English.ini',import.meta.url)));
   for (const item of inventory.files) {

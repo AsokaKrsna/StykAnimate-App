@@ -1,0 +1,44 @@
+name: Tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  unit:
+    # Windows matches the release runner and exercises Windows-only services.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      # Unit tests need neither the Electron binary nor Playwright browsers.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.0'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.9'
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      # Tests that need the local Pivot corpus, generated inventories or built
+      # encoders skip here and name the missing fixture; they run locally.
+      - name: Syntax and changelog
+        run: |
+          npm run check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run changelog:check
+      - name: Application unit tests
+        run: npm test
+      - name: Codec service tests
+        run: python -m unittest discover -s backend -p "test_*.py"
+      - name: Website and cloud tests
+        run: node --test website/tests/*.test.mjs cloud/tests/*.test.mjs

@@ -6,6 +6,7 @@ import {Editor} from '../src/editor.mjs';
 import {buildGeometry,timeline,evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import backend from '../desktop/backend.cjs';
+import {missingFixture} from './helpers/local-fixtures.mjs';
 
 function api(request) {
   const script=String.raw`
@@ -42,8 +43,9 @@ function compare(actual,expected,label) {
   }
   assert.deepEqual(actual.drawables.map(x=>x.rgb),expected.drawables.map(x=>x.rgb),label);
 }
-const modern=api({path:'Pivot Animator v5/Animations/text_bike.piv'});
-for(const [version,file]of [[2,'walking.piv'],[3,'cursor.piv'],[4,'sprite_demo.piv']])test(`real V${version} destination and native text clipboard preserve all old ticks through PIV/STYK/restart`,()=>{
+const skip=missingFixture(...['text_bike.piv','Legacy/walking.piv','Legacy/cursor.piv','Legacy/sprite_demo.piv'].map(file=>`../Pivot Animator v5/Animations/${file}`));
+const modern=skip?null:api({path:'Pivot Animator v5/Animations/text_bike.piv'});
+for(const [version,file]of [[2,'walking.piv'],[3,'cursor.piv'],[4,'sprite_demo.piv']])test(`real V${version} destination and native text clipboard preserve all old ticks through PIV/STYK/restart`,{skip},()=>{
   const legacy=api({path:`Pivot Animator v5/Animations/Legacy/${file}`});assert.equal(legacy.version,version);
   const e=new Editor({demo:false}).load(structuredClone(modern));e.copyFrames([0]);e.load(legacy);
   const before=structuredClone(e.report),oldTicks=e.totalTicks,history=e._undo.length;

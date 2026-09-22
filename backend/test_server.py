@@ -5,6 +5,7 @@ import copy
 import http.client
 import importlib.util
 import json
+import os
 from pathlib import Path
 import struct
 import tempfile
@@ -15,7 +16,14 @@ import zlib
 
 import server
 
+# The Pivot sample corpus lives beside the repository and is not redistributed.
+# A clean checkout (CI) skips these cases; STYK_REQUIRE_FIXTURES=1 runs them anyway.
+needs_corpus = unittest.skipUnless(
+    os.environ.get("STYK_REQUIRE_FIXTURES") == "1" or (server.WORKSPACE / "docs/piv_corpus_manifest.json").is_file(),
+    "requires the local Pivot corpus beside the repository")
 
+
+@needs_corpus
 class CodecTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -373,6 +381,7 @@ class HttpTests(unittest.TestCase):
         connection.close()
         return result
 
+    @needs_corpus
     def test_health_static_and_binary_upload_export(self):
         status, _, data = self.request("GET", "/api/health")
         self.assertEqual(status, 200)

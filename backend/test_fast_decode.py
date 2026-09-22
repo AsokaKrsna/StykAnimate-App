@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import math
+import os
 import struct
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -11,6 +12,12 @@ from unittest import mock
 
 import server
 import fast_decode
+
+# The Pivot sample corpus lives beside the repository and is not redistributed.
+# A clean checkout (CI) skips these cases; STYK_REQUIRE_FIXTURES=1 runs them anyway.
+needs_corpus = unittest.skipUnless(
+    os.environ.get("STYK_REQUIRE_FIXTURES") == "1" or (server.WORKSPACE / "docs/piv_corpus_manifest.json").is_file(),
+    "requires the local Pivot corpus beside the repository")
 
 
 spec = importlib.util.spec_from_file_location("canonical_piv_for_test", server.TOOLS / "piv_codec.py")
@@ -138,6 +145,7 @@ class FastDecodeTests(unittest.TestCase):
             with self.subTest(index=index):
                 self.compare_frames(data, invalid=True)
 
+    @needs_corpus
     def test_full_corpus_matches_existing_decoder_exactly(self):
         manifest = json.loads((server.WORKSPACE / "docs/piv_corpus_manifest.json").read_text())
         original = canonical._keyframes
@@ -156,6 +164,7 @@ class FastDecodeTests(unittest.TestCase):
         finally:
             canonical._keyframes = original
 
+    @needs_corpus
     def test_scan_corpus_preserves_all_nonframe_metadata_and_legacy_models(self):
         manifest = json.loads((server.WORKSPACE / "docs/piv_corpus_manifest.json").read_text())
         with mock.patch.object(server.piv_codec, "_keyframes", fast_decode.read_keyframes):
@@ -186,6 +195,7 @@ class FastDecodeTests(unittest.TestCase):
                     self.assertEqual([frame['duration_raw'] for frame in frames], [duration, 1])
                     self.assertEqual(reader.pos, len(source))
 
+    @needs_corpus
     def test_scan_context_is_thread_local_and_restored_after_failure(self):
         path = server.WORKSPACE / "Pivot Animator v5/Animations/tween_camera.piv"
         source = path.read_bytes()
@@ -200,6 +210,7 @@ class FastDecodeTests(unittest.TestCase):
             full = server.piv_codec.decode_piv_bytes(source)
             self.assertTrue(any(frame["objects"] for frame in full["keyframes"]))
 
+    @needs_corpus
     def test_scan_payload_is_exact_and_does_not_escape_context(self):
         path = server.WORKSPACE / "Pivot Animator v5/Animations/tween_camera.piv"
         source = path.read_bytes()

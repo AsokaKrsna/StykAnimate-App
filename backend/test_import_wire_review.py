@@ -1,5 +1,6 @@
 """Independent native-wire cache, compatibility and source-export checks."""
 import json
+import os
 import struct
 import threading
 import time
@@ -9,12 +10,19 @@ from unittest import mock
 
 import server
 
+# The Pivot sample corpus lives beside the repository and is not redistributed.
+# A clean checkout (CI) skips these cases; STYK_REQUIRE_FIXTURES=1 runs them anyway.
+needs_corpus = unittest.skipUnless(
+    os.environ.get("STYK_REQUIRE_FIXTURES") == "1" or (server.WORKSPACE / "docs/piv_corpus_manifest.json").is_file(),
+    "requires the local Pivot corpus beside the repository")
+
 
 def metadata(wire):
     assert wire.startswith(b"STYKPIV1")
     return json.loads(wire[12:12 + struct.unpack_from("<I", wire, 8)[0]])
 
 
+@needs_corpus
 class NativeWireCacheReview(unittest.TestCase):
     def setUp(self):
         self.store = server.ProjectStore(server.WORKSPACE)

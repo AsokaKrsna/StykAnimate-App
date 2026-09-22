@@ -8,6 +8,7 @@ import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {evaluatedFrame, timeline, buildGeometry} from '../src/pivot/geometry.mjs';
 import {materializePivotDocument, needsPivotMaterialization} from '../src/pivot-export-materialize.mjs';
 import {synchronizeExistingDerived} from '../src/document-normalize.mjs';
+import {missingFixture} from './helpers/local-fixtures.mjs';
 
 const near = (a, b) => assert.ok(Math.abs(a - b) < .001, `${a} != ${b}`);
 function fixture() {
@@ -133,7 +134,8 @@ test('unsupported baked durations reject before modifying the authoring document
   assert.throws(() => materializePivotDocument(editor.report), /supported limit/); assert.equal(editor.report.keyframes, before);
 });
 
-test('authored legacy export migrates real held poses and preserves new hidden exposure keys', () => {
+test('authored legacy export migrates real held poses and preserves new hidden exposure keys',
+  {skip: missingFixture('../Pivot Animator v5/Animations/Legacy/walking.piv')}, () => {
   const sourcePath = fileURLToPath(new URL('../../Pivot Animator v5/Animations/Legacy/walking.piv', import.meta.url));
   const script = String.raw`
 import json,sys

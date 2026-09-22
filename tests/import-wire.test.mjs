@@ -7,6 +7,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import backend from '../desktop/backend.cjs';
 import {unpackNativeFrameResponse,materializeNativeFrames} from '../src/import-wire.mjs';
+import {missingFixture} from './helpers/local-fixtures.mjs';
 const app=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const py=String.raw`
 import json,sys
@@ -25,7 +26,7 @@ for i,item in enumerate(manifest['fixtures']):
     rows.append({'index':i,'name':source.name})
 print(json.dumps(rows))
 `;
-test('all native v5 corpus wire frames recreate every canonical field exactly',async()=>{
+test('all native v5 corpus wire frames recreate every canonical field exactly',{skip:missingFixture('../docs/piv_corpus_manifest.json')},async()=>{
   const temp=await mkdtemp(path.join(tmpdir(),'styk-wire-'));
   try {
     const candidate=backend.pythonCandidates()[0];
