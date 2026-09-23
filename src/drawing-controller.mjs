@@ -1,4 +1,4 @@
-import {BRUSH_PRESETS,quickBarMarkup} from './drawing-view.mjs';
+import {BRUSH_PRESETS,quickBarMarkup,paletteMarkup} from './drawing-view.mjs';
 import {SLIDERS,installDrawingSliders,refreshSliders,formatSlider,displayValue} from './drawing-sliders.mjs';
 import {WetInk} from './drawing-wet-ink.mjs';
 import {tileChanges,lassoMask,tileAlignedRect,DrawingStroke,StrokePath,normalizeBrush,dabExtent,dabRadius,rectPoints,ellipsePoints,combineMasks,invertMask,rectMask,maskEdges} from './drawing-pixels.mjs';
@@ -24,6 +24,7 @@ const loadLibrary=()=>{try{const v=JSON.parse(globalThis.localStorage?.getItem(B
 const FILTER_LABELS={blur:'Blur drawing',hsl:'Adjust hue and saturation',brightness:'Adjust brightness and contrast',invert:'Invert colours'};
 // Actions that keep (or act on) the pixel selection instead of applying it first.
 const SELECTION_ACTIONS=['filter-blur','filter-hsl','filter-brightness','filter-invert','swap-colors','save-preset','delete-preset','flip-selection-x','flip-selection-y','copy-pixels','cut-pixels','delete-pixels','apply-selection','cancel-selection','select-all','invert-selection','deselect','fill-selection'];
+const PAINT_TOOLS=['brush','eraser','fill','shape','gradient'];
 const unionRects=(a,b)=>{if(!a)return b?{...b}:null;if(!b)return{...a};const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);return{x,y,width:Math.max(a.x+a.width,b.x+b.width)-x,height:Math.max(a.y+a.height,b.y+b.height)-y};};
 export class DrawingController {
   constructor({editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getResources,getTimeline,getClipboard,sampleColor}) {
@@ -50,9 +51,14 @@ export class DrawingController {
       if(state.drag?.kind==='pan')return;
       if(event.type==='pointerdown'&&(event.button===1||state.space||this.tool==='pan')){this.finish();return;}
       if(!this.gesture&&(this.tool==='pan'||state.space||event.button===1||event.buttons&4))return;
+      // Right-click opens the pop-up palette for painting tools, as in Krita.
+      if(event.type==='pointerdown'&&event.button===2&&!this.gesture&&PAINT_TOOLS.includes(this.tool)){event.stopImmediatePropagation();event.preventDefault();this.openPalette(event.clientX,event.clientY);return;}
       if(event.type==='pointerdown'&&(event.button!==0&&event.button!==5||state.playing))return;
       event.stopImmediatePropagation();event.preventDefault();this.run(()=>handler(event));
     },{...opts,capture:true});
+    overlay.addEventListener('contextmenu',event=>{if(this.active&&PAINT_TOOLS.includes(this.tool)){event.preventDefault();event.stopImmediatePropagation();}},{...opts,capture:true});
+    document.addEventListener('pointerdown',event=>{if(this.palette&&!this.palette.hidden&&!this.palette.contains(event.target)&&event.button!==2)this.closePalette();},{...opts,capture:true});
+    document.addEventListener('keydown',event=>{if(event.key==='Escape'&&this.palette&&!this.palette.hidden){event.stopImmediatePropagation();event.preventDefault();this.closePalette();}},{...opts,capture:true});
     // Leaving the window ends the gesture but keeps its ink.
     window.addEventListener('blur',()=>{if(this.gesture)this.finish();},opts);
     // The brush ring tracks the last move; it must not linger once the pointer leaves.
@@ -123,6 +129,27 @@ export class DrawingController {
     if(!el.isConnected)this.viewport.append(el);
     el.textContent=text;el.classList.add('is-visible');clearTimeout(this.hudTimer);this.hudTimer=setTimeout(()=>el.classList.remove('is-visible'),900);
   }
+  /** Krita's pop-up palette at the pointer: presets, recent colours, the
+   * colour pair, size and opacity. A choice or Escape closes it. */
+  openPalette(clientX,clientY){
+    const palette=this.palette??=this.createPalette();
+    palette.innerHTML=paletteMarkup(this);palette.hidden=false;
+    const view=this.viewport.getBoundingClientRect(),w=palette.offsetWidth,h=palette.offsetHeight;
+    palette.style.left=Math.round(Math.max(8,Math.min(view.width-w-8,clientX-view.left-w/2)))+'px';
+    palette.style.top=Math.round(Math.max(8,Math.min(view.height-h-8,clientY-view.top-h/2)))+'px';
+    palette.querySelector('[aria-pressed="true"],.drawing-preset')?.focus({preventScroll:true});
+  }
+  // Emptied when closed so no hidden duplicate controls linger in the page.
+  closePalette(){if(this.palette&&!this.palette.hidden){this.palette.hidden=true;this.palette.replaceChildren();this.viewport.focus({preventScroll:true});}}
+  createPalette(){
+    const palette=document.createElement('div');palette.className='drawing-palette';palette.setAttribute('role','dialog');palette.setAttribute('aria-label','Brush palette');palette.hidden=true;this.viewport.append(palette);
+    const signal=this.events.signal;
+    palette.addEventListener('click',event=>{const chosen=event.target.closest('[data-draw-preset],[data-draw-color]');this.handleClick(event);if(chosen)this.closePalette();else if(!palette.hidden&&event.target.closest('[data-draw-action]'))palette.innerHTML=paletteMarkup(this);},{signal});
+    palette.addEventListener('change',event=>{if(event.target.dataset.drawSetting)this.run(()=>this.change(event));},{signal});
+    palette.addEventListener('contextmenu',event=>event.preventDefault(),{signal});
+    installDrawingSliders(palette,{get:key=>this.settings[key],set:(key,value)=>this.setSetting(key,value),end:()=>this.sliderEnded(),signal,wheel:true});
+    return palette;
+  }
   createQuickBar(){const bar=document.createElement('div');bar.className='drawing-quickbar';bar.setAttribute('role','toolbar');bar.setAttribute('aria-label','Drawing tool options');bar.hidden=true;this.viewport.append(bar);return bar;}
   queueQuickBar(){if(this.quickQueued)return;this.quickQueued=true;requestAnimationFrame(()=>{this.quickQueued=false;this.renderQuickBar();});}
   renderQuickBar(){
@@ -130,11 +157,13 @@ export class DrawingController {
     if(!this.active){bar.hidden=true;return;}
     // Never rebuild under an active slider drag or an open inline edit.
     if(bar.querySelector('.draw-slider.is-dragging,.draw-slider.is-editing'))return;
-    const html=quickBarMarkup(this);if(bar.innerHTML!==html)bar.innerHTML=html;bar.hidden=false;
+    // Compare with the last markup, not innerHTML (browsers normalize it), so
+    // an unchanged bar is never rebuilt under the pointer.
+    const html=quickBarMarkup(this);if(this.quickHTML!==html){bar.innerHTML=html;this.quickHTML=html;}bar.hidden=false;
   }
   enter(){if(this.active)return;this.beforeEdit();this.prior={handles:this.state.handles,tool:this.state.tool,rotation:this.state.view.rotation??0,flip:Boolean(this.state.view.flip)};this.active=true;this.state.handles=false;this.state.tool='drawing-brush';this.state.drawing=true;this.cursor=null;this.bind();
     const layers=this.editor.layers.filter(layer=>isDrawingLayer(layer)&&!layer.locked&&layer.visible),target=layers.find(l=>l.id===this.editor.activeLayerId)||layers.find(l=>l.id===this.lastLayer)||layers.at(-1);if(target){this.editor.selectSheetLayer(target.id);this.state.selectedTrackId=target.id;}this.sync();this.prepareVisible();this.onUI();this.onRender();}
-  exit(){if(!this.active)return;this.finish();this.applySelection();this.active=false;this.state.drawing=false;this.cursor=null;Object.assign(this.state,{handles:this.prior.handles,tool:this.prior.tool});this.state.view.rotation=this.prior.rotation;this.state.view.flip=this.prior.flip;this.onUI();this.onRender();}
+  exit(){if(!this.active)return;this.closePalette();this.finish();this.applySelection();this.active=false;this.state.drawing=false;this.cursor=null;Object.assign(this.state,{handles:this.prior.handles,tool:this.prior.tool});this.state.view.rotation=this.prior.rotation;this.state.view.flip=this.prior.flip;this.onUI();this.onRender();}
   get tool(){return this.state.tool==='hand'?'pan':this.state.tool.replace('drawing-','');}
   set tool(value){this.setTool(value);}
   setTool(value){this.finish();if(this.selection&&value!=='lasso')this.settleFloating();
@@ -779,5 +808,5 @@ export class DrawingController {
     }
     ctx.restore();
   }
-  destroy(){this.cancel();this.cancelSelection();this.events.abort();this.wet?.dispose();this.quickBar?.remove();this.hudElement?.remove();this._viewObserver?.disconnect();this.owner?.dispose();}
+  destroy(){this.cancel();this.cancelSelection();this.events.abort();this.wet?.dispose();this.quickBar?.remove();this.hudElement?.remove();this.palette?.remove();this._viewObserver?.disconnect();this.owner?.dispose();}
 }

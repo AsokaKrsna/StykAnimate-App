@@ -58,6 +58,13 @@ try{
   await page.locator('.drawing-quickbar [data-draw-action="toggle-quick-presets"]').click();
   await page.locator('.drawing-quickbar [data-draw-preset="pencil"]').click();
   check('the quick bar picks presets from thumbnails',await page.evaluate(()=>styk.drawing.settings.preset==='pencil'&&!styk.drawing.quickPresets));
+  // Right-click opens Krita's pop-up palette at the pointer.
+  await page.mouse.click(cx+150,cy+150,{button:'right'});
+  check('right-click opens the pop-up palette',await page.locator('.drawing-palette:not([hidden])').isVisible());
+  await page.locator('.drawing-palette [data-draw-preset="marker"]').click();
+  check('choosing a preset in the palette applies it and closes the palette',await page.evaluate(()=>styk.drawing.settings.preset==='marker'&&document.querySelector('.drawing-palette').hidden));
+  await page.mouse.click(cx+150,cy+150,{button:'right'});await page.keyboard.press('Escape');
+  check('Escape closes the palette without painting',await page.evaluate(()=>document.querySelector('.drawing-palette').hidden&&!styk.drawing.gesture));
   await page.locator('[data-draw-preset="ink"]').first().click();
   await page.evaluate(()=>Object.assign(styk.drawing.settings,{size:10,color:'#202020',opacity:1,flow:1,hardness:1,stabilization:0}));
   // Base artwork: a horizontal band.

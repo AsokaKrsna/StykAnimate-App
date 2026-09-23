@@ -63,6 +63,12 @@
 .drawing-quickbar .draw-color-secondary{width:16px;height:16px}
 .drawing-quickbar .draw-color-swap{width:22px;height:22px}
 .draw-quick-presets{width:min(520px,70vw)}
+/* Right-click pop-up palette. */
+.drawing-palette{position:absolute;z-index:7;width:300px;padding:10px 12px;border:1px solid var(--border,#e2e2e2);border-radius:12px;background:var(--panel,#fff);box-shadow:0 10px 32px rgba(0,0,0,.18)}
+.drawing-palette[hidden]{display:none}
+.drawing-palette .draw-colors{margin-top:0}
+.drawing-palette .drawing-swatches{margin:0 0 10px}
+.drawing-palette .draw-sliders{margin-bottom:0}
 /* Transient readout for size, opacity and hardness changes. */
 .drawing-hud{position:absolute;top:54px;left:50%;z-index:6;padding:6px 12px;transform:translateX(-50%);border-radius:14px;background:rgba(20,20,24,.84);color:#fff;font-size:12px;font-variant-numeric:tabular-nums;pointer-events:none;opacity:0;transition:opacity .15s}
 .drawing-hud.is-visible{opacity:1}

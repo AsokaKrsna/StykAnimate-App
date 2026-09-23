@@ -97,6 +97,13 @@ export function drawingInspector(drawing,{numericField,group,grid,heading,proper
   return html;
 }
 
+/** The pop-up palette (right-click): presets, recent colours, the colour pair
+ * and the two sliders painters reach for most. */
+export function paletteMarkup(drawing){
+  const s=drawing.settings,recent=drawing.library?.recent??[];
+  const swatches=recent.length?`<div class="drawing-swatches" role="group" aria-label="Recent colors">${recent.map(c=>`<button class="drawing-swatch" data-draw-color="${c}" style="background:${c}" title="${c.toUpperCase()}" aria-label="Use ${c.toUpperCase()}" aria-pressed="${c===s.color.toLowerCase()}"></button>`).join('')}</div>`:'';
+  return `${colorPair(s)}${swatches}${drawing.tool==='brush'||drawing.tool==='eraser'?presetGrid(drawing):''}<div class="draw-sliders">${sliderMarkup('size',s.size)}${sliderMarkup('opacity',s.opacity)}</div>`;
+}
 /** The canvas quick bar: the settings a painter changes constantly, next to
  * the work instead of in the inspector. Choice buttons carry
  * data-draw-choice="setting" and data-value. */

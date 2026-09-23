@@ -27,6 +27,11 @@ layer; otherwise select an existing visible, unlocked drawing layer.
   confirms size, opacity and hardness changes. Number keys set opacity
   (1 = 10% … 0 = 100%) and Shift+[ / ] change hardness. Presets show a stroke
   drawn by the real brush engine. In Draw, Fit leaves room for the quick bar.
+- **Pop-up palette:** right-clicking the canvas with a painting tool (Brush,
+  Eraser, Fill, Shape, Gradient) opens Krita's pop-up palette at the pointer:
+  the colour pair, recent colours, brush presets and size and opacity sliders.
+  Choosing a preset or colour, clicking elsewhere or Escape closes it; a
+  closed palette holds no controls, so there is one live copy of each.
 - **Assist:** mirror painting across the stage's vertical and/or horizontal
   centre (Shift+M toggles horizontal). Shift-click draws a straight line from
   the previous stroke's end; Alt-click (Brush, Fill) picks the visible colour;
