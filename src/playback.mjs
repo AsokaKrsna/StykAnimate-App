@@ -1,11 +1,12 @@
 import {drawingBarrier} from './drawing-resources.mjs';
 import { timeline } from './pivot/geometry.mjs';
 import { documentChunks } from './document-transport.mjs';
+import {nativePlaybackChunks, MAX_NATIVE_PLAYBACK_BYTES} from './playback-native.mjs';
 import { playbackProperties, retainedSourceChanges } from './playback-patch.mjs';
 import {PlaybackPlanner} from './playback-planning.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
 import {PlaybackBitmapPool,packetFootprint,closePacketBitmaps} from './playback-bitmap-pool.mjs';
-import {playbackMemoryBudget, previewMemoryPlan, playbackWorkerCount} from './playback-budget.mjs';
+import {playbackMemoryBudget, playbackWorkerMemoryPlan, playbackWorkerCount, playbackWorkerAdmissionBudget, playbackWorkerAdmission} from './playback-budget.mjs';
 import {playbackRetentionSnapshot,unchangedPlaybackTicks} from './playback-retention.mjs';
 
 const MAX_WORKER_RESTARTS = 2;
@@ -26,7 +27,7 @@ const yieldToInput = () => globalThis.scheduler?.yield ? scheduler.yield() : new
 export class PlaybackCache {
   constructor({ maxBytes = playbackMemoryBudget(), maxFrames = 120, maxPending = 120,
     baseURL = globalThis.location?.href, token = '', scale = 1, gpuIsolation = false, onReady, onError, diagnostics, timeoutMs = 120000,
-    workerCount, workerURL = new URL('./playback-worker.mjs', import.meta.url), workerFactory } = {}) {
+    workerCount, maxWorkerBytes, workerURL = new URL('./playback-worker.mjs', import.meta.url), workerFactory } = {}) {
     Object.assign(this, { maxBytes, maxFrames, maxPending, baseURL, token, scale, gpuIsolation, onReady, onError, diagnostics, timeoutMs });
     this.cache = new Map(); this.pending = new Map(); this.revision = 0; this.disposed = false; this.needsLoad = false;
     this.cacheNamespace = globalThis.crypto.randomUUID();
@@ -41,28 +42,16 @@ export class PlaybackCache {
     // An injected factory is a controlled/test endpoint; it stays single-worker
     // unless the caller opts into pool behavior explicitly.
     const count = Math.max(1, Math.min(4, Math.floor(workerCount ?? (workerFactory ? 1 : playbackWorkerCount())) || 1));
-    this._workerSpec = { count, workerURL, workerFactory }; this._failures = 0;
-    this.stats.workerCount = count; this.stats.workerRestarts = 0;
-    this._startWorkers();
+    this._failures = 0; this.stats.workerRestarts = 0;
+    this.workerLimit=count;this.workerURL=workerURL;this.workerFactory=workerFactory;
+    // Explicit pool sizes remain controlled overrides. Tests can opt into
+    // admission with an explicit allowance without faking global hardware.
+    this.maxWorkerBytes=maxWorkerBytes??(workerCount===undefined&&!workerFactory?playbackWorkerAdmissionBudget():Infinity);
+    if(!(this.maxWorkerBytes>0))throw new Error('Playback worker allowance must be positive.');
+    this.workers=[];this.workerMemoryPlan=playbackWorkerMemoryPlan(maxBytes);
+    this.stats.workerCaches=[];this.stats.workerCacheTotals={};this._resizeWorkers(count);
+    // The primary worker owns one background planning stream across resizes.
     this.planner = new PlaybackPlanner(this);
-  }
-  _startWorkers() {
-    const { count, workerURL, workerFactory } = this._workerSpec;
-    this.workers = [];
-    for (let index = 0; index < count; index++) {
-      const worker = workerFactory ? workerFactory(workerURL) : new Worker(workerURL, {
-        type: 'module', name: count > 1 ? `StykAnimate playback preparation ${index + 1}` : 'StykAnimate playback preparation' });
-      // Events from a terminated pool must never fail or feed its replacement.
-      const client = { worker, index, loadAck: null }, current = () => this.workers.includes(client);
-      worker.addEventListener('message', event => { if (current()) this._receive(event.data, client); });
-      worker.addEventListener('error', event => { event.preventDefault?.(); if (current()) this._fail(new Error(event.message || 'The playback worker stopped unexpectedly.')); });
-      worker.addEventListener('messageerror', () => { if (current()) this._fail(new Error('A prepared playback frame could not be transferred.')); });
-      this.workers.push(client);
-    }
-    // The primary worker remains the owner endpoint for background planning,
-    // which keeps a single job stream instead of duplicating plan requests.
-    this.worker = this.workers[0].worker;
-    if (this.interactionActive) for (const client of this.workers) client.worker.postMessage({ type: 'interaction', active: true });
   }
   /** Replaces a failed worker pool on its next use. Each document revision gets
    * a bounded number of fresh pools, so a scene that deterministically crashes
@@ -72,19 +61,62 @@ export class PlaybackCache {
     if (revision === this._failedRevision && this._failures > MAX_WORKER_RESTARTS) return false;
     if (revision !== this._failedRevision) this._failures = 0;
     this.failure = null; this.stats.failure = null; this.stats.workerRestarts++;
-    this._startWorkers();
+    // The failed pool was terminated by _fail(). Recreate its admitted size
+    // through the same owner used for memory-driven resizing.
+    const count = this.workers.length;
+    this.workers = [];
+    this._resizeWorkers(count);
     // The new pool holds no mirror: send current options and reload the document.
     this.invalidate();
     return true;
   }
+  _resizeWorkers(count) {
+    for(const client of this.workers.splice(count))client.worker.terminate();
+    while(this.workers.length<count){
+      const index=this.workers.length;
+      const worker = this.workerFactory ? this.workerFactory(this.workerURL) : new Worker(this.workerURL, {
+        type: 'module', name: `StykAnimate playback preparation ${index + 1}` });
+      const client = { worker, index, loadAck: null };
+      worker.addEventListener('message', event => this._receive(event.data, client));
+      worker.addEventListener('error', event => { event.preventDefault?.(); if(this.workers[index]===client)this._fail(new Error(event.message || 'The playback worker stopped unexpectedly.')); });
+      worker.addEventListener('messageerror', () => {if(this.workers[index]===client)this._fail(new Error('A prepared playback frame could not be transferred.'));});
+      this.workers.push(client);
+      if(this.interactionActive)worker.postMessage({type:'interaction',active:true});
+    }
+    this.stats.workerCount = count;
+    this.worker = this.workers[0].worker;
+    this.stats.workerMemoryPlan = {...this.workerMemoryPlan, workers: count, poolRetainedBytes: this.workerMemoryPlan.retainedBytes * count};
+    this.stats.workerCaches=Array(count).fill(null);this.stats.workerCacheTotals={};
+  }
+  _admitWorkers(documentBytes, nativeBytes, {restore=false}={}) {
+    const plan=playbackWorkerAdmission({maxWorkers:restore?this.workerLimit:this.workers.length,
+      maxBytes:this.maxWorkerBytes,frameBytes:this.maxBytes,documentBytes,nativeBytes});
+    if(plan.workers!==this.workers.length)this._resizeWorkers(plan.workers);
+    this.stats.workerAdmission={...plan,maxWorkers:this.workerLimit,reduced:plan.workers<this.workerLimit};
+  }
   load(report, { scale = this.scale, revision, cameraEnabled = true, storedFrames = false, softwareFrames = false, hiddenUids, hiddenKey = '' } = {}) {
     if (this.disposed) throw new Error('The playback cache has been disposed.');
     const available = this._recover(revision);
-    this.invalidate(); this.report = report?.document ?? report?.report ?? report; this.scale = scale; this.cameraEnabled = cameraEnabled;
+    report = report?.document ?? report?.report ?? report;
+    const staged = this._nativeSnapshot;
+    const native = staged?.report === report && staged.revision === revision && staged.isCurrent() &&
+      staged.snapshot.frames === report.keyframes ? staged : null;
+    this.invalidate(); this.report = report; this.scale = scale; this.cameraEnabled = cameraEnabled;
     this.softwareFrames = softwareFrames; this.hiddenUids = hiddenUids; this.hiddenKey = hiddenKey;
     this.documentRevision = revision; this.storedFrames = storedFrames; this._refreshTimeline();
-    // A pool that exhausted its restarts stays failed; prepareRange() reports it.
-    this.needsLoad = true; if (available) this._loadWorker(); return this;
+    this.needsLoad = true; if (available) this._loadWorker(native); return this;
+  }
+  stageNativeSnapshot(report, snapshot, {revision, isCurrent}) {
+    this.discardNativeSnapshot();
+    if(this.disposed || this.failure || !snapshot || snapshot.frames !== report?.keyframes || typeof isCurrent !== 'function' ||
+      snapshot.buffer.byteLength > Math.min(MAX_NATIVE_PLAYBACK_BYTES, this.maxBytes / 4) ||
+      this.report === report && (this._loadPromise || this._mirrorAvailable) || !isCurrent()) return false;
+    this._nativeSnapshot = {report, snapshot, revision, isCurrent};
+    this.stats.nativeStagedBytes = snapshot.buffer.byteLength;
+    return true;
+  }
+  discardNativeSnapshot() {
+    this._nativeSnapshot = null; this.stats.nativeStagedBytes = 0;
   }
   setInteractionActive(active) {
     active=Boolean(active);
@@ -105,9 +137,13 @@ export class PlaybackCache {
     this.vfxEnabled=enabled;this.invalidate({retainDocument:this._mirrorAvailable&&!this.needsLoad&&!this._patchPending});
     if(this.needsLoad)this._loadWorker();
   }
-  async _yieldLoad() {
+  async _yieldLoad(revision) {
     await yieldToInput();
+    if(revision!==this.revision||this.disposed)throw abortError('Playback snapshot was superseded.');
+    if(this.failure)throw this.failure;
     if(this.interactionActive&&!this.disposed)await (this._interactionPromise??=new Promise(resolve=>{this._releaseInteraction=resolve;}));
+    if(revision!==this.revision||this.disposed)throw abortError('Playback snapshot was superseded.');
+    if(this.failure)throw this.failure;
   }
   updateView({ scale = this.scale, cameraEnabled = this.cameraEnabled, storedFrames = this.storedFrames,
     softwareFrames = this.softwareFrames, hiddenUids = this.hiddenUids, hiddenKey = this.hiddenKey } = {}) {
@@ -199,7 +235,7 @@ export class PlaybackCache {
         const sent = this._broadcastLoad({type: 'patch-chunk', revision: generation, sequence: sequence++, chunk: next.value});
         this.stats.loadMaxTaskMs = Math.max(this.stats.loadMaxTaskMs, performance.now() - step);
         this.stats.maxChunkBytes = Math.max(this.stats.maxChunkBytes, next.value.estimatedBytes || 0); await sent;
-        await this._yieldLoad();
+        await this._yieldLoad(generation);
       }
       await this._broadcastLoad({type: 'patch-complete', revision: generation, sequence}, 'loaded');
       if (generation === this.revision) {
@@ -223,8 +259,10 @@ export class PlaybackCache {
   }
   invalidate({ scale = this.scale, revision = this.documentRevision, cameraEnabled = this.cameraEnabled, storedFrames = this.storedFrames,
     softwareFrames = this.softwareFrames, hiddenUids = this.hiddenUids, hiddenKey = this.hiddenKey, retainDocument = false, retainTicks } = {}) {
+    this.discardNativeSnapshot();
     this.planner.cancel(abortError('Background planning was invalidated by a document or view change.'));
     this._abortLoad(abortError('Playback snapshot was invalidated by a document change.'));
+    this.stats.nativeSourceBytes = 0;
     this.revision++; this.scale = scale; this.documentRevision = revision; this.cameraEnabled = cameraEnabled; this.storedFrames = storedFrames;
     this.softwareFrames = softwareFrames; this.hiddenUids = hiddenUids; this.hiddenKey = hiddenKey;
     for (const [tick, packet] of this.cache) if (!retainTicks?.has(tick)) {this.bitmapPool.release(packet); this.cache.delete(tick);}
@@ -242,6 +280,8 @@ export class PlaybackCache {
     Object.assign(this.stats, { revision: this.revision, bytes: this.bitmapPool.bytes, readyFrames: this.cache.size, retainedFrames: this.cache.size,
       pendingFrames: 0,bitmapResources:this.bitmapPool.resources.size,footprintBytes:this._footprintBytes,workerCache:null,lastSharing:null,reusedGeometryObjects:0 });
     if (!retainDocument) {
+      this.stats.workerCaches.fill(null); this.stats.workerCacheTotals = {};
+      this.stats.workerAdmission=null;
       this._mirrorAvailable = false; this._frameUpdates.clear(); this._sourceUpdates.clear();
       this._figureUpdates.clear();
       this._mirrorSources.clear(); this._mirrorTables = null; this._patchPending = false;
@@ -251,7 +291,7 @@ export class PlaybackCache {
       client.worker.postMessage({ type: 'invalidate', revision: this.revision, retainDocument, options: { scale, cameraEnabled, storedFrames, softwareFrames, gpuIsolation:this.gpuIsolation, hiddenUids, hiddenKey, vfxEnabled:this.vfxEnabled!==false } });
     return this;
   }
-  _loadWorker() {
+  _loadWorker(native = null) {
     if (!this.needsLoad) return this._loadPromise || Promise.resolve();
     this.needsLoad = false;
     this._refreshTimeline();
@@ -265,17 +305,38 @@ export class PlaybackCache {
     // worker checks vector buffers separately instead of capping all pixels.
     const options = { scale: this.scale, cameraEnabled: this.cameraEnabled, storedFrames: this.storedFrames, vfxEnabled:this.vfxEnabled!==false, baseURL: this.baseURL, token: this.token,
       softwareFrames: Boolean(this.softwareFrames), gpuIsolation: this.gpuIsolation, hiddenUids: this.hiddenUids, hiddenKey: this.hiddenKey || '',
-      acknowledgePackets: true, maxPacketBytes: this.maxBytes * .8, maxAssetBytes: Math.min(previewMemoryPlan().workerImages, this.maxBytes / 4) };
+      acknowledgePackets: true, maxPacketBytes: this.maxBytes * .8, maxAssetBytes: this.workerMemoryPlan.images,
+      maxRasterBytes: this.workerMemoryPlan.rasters, maxVectorBytes: this.workerMemoryPlan.vectors };
     this.stats.loadKind = 'document'; this.stats.loadChunks = 0; this.stats.loadSerializationMs = 0; this.stats.loadMaxTaskMs = 0;
     this.stats.maxChunkBytes = 0; this.stats.patchFrames = 0; this.stats.patchFigures = 0;
     this.stats.patchSourceUpserts = 0; this.stats.patchSourceDeletes = 0;
+    this.stats.documentTransferEstimate = 0; this.stats.nativeTransferBytes = 0;
+    this.stats.loadTransport = native ? 'native-frames' : 'document';
+    this.stats.nativeSourceBytes = native?.snapshot.buffer.byteLength || 0;
     const task = (async () => {
       await drawingBarrier(this.report);
+      if(revision!==this.revision||this.disposed)throw abortError('Playback snapshot was superseded.');
+      let documentBytes=native?.snapshot.poseBytesEstimate||0;
+      const nativeBytes=native?.snapshot.meta.byteLength||0;
+      this._admitWorkers(documentBytes,nativeBytes,{restore:true});
       let sequence = 0;
-      for (const chunk of documentChunks(renderReport,{maxBytes:1024*1024,timeBudgetMs:2,sharedFigures:true})) {
+      const snapshotReport = native ? {...renderReport, keyframes: renderReport.keyframes.map(frame =>
+        Object.hasOwn(frame, '_styk') ? {_styk: frame._styk} : {})} : renderReport;
+      for (const chunk of documentChunks(snapshotReport,{maxBytes:1024*1024,timeBudgetMs:2,sharedFigures:true})) {
         if (revision !== this.revision || this.disposed) throw abortError('Playback snapshot was superseded.');
+        documentBytes+=chunk.estimatedBytes||0;
+        // Only resize between fully acknowledged chunks, before any lane can
+        // prepare packets. Tick parity is stable once the mirror is published.
+        this._admitWorkers(documentBytes,nativeBytes);
         await this._broadcastLoad({ type: 'load-chunk', revision, sequence: sequence++, chunk, options });
-        await this._yieldLoad();
+        if (revision === this.revision) this.stats.documentTransferEstimate += (chunk.estimatedBytes || 0) * this.workers.length;
+        await this._yieldLoad(revision);
+      }
+      if(native) for(const chunk of nativePlaybackChunks(native.snapshot)) {
+        if(revision !== this.revision || this.disposed) throw abortError('Native playback snapshot was superseded.');
+        await this._broadcastLoad({type:'load-native-chunk', revision, sequence:sequence++, ...chunk});
+        if(revision === this.revision) this.stats.nativeTransferBytes += chunk.buffer.byteLength * this.workers.length;
+        await this._yieldLoad(revision);
       }
       await this._broadcastLoad({ type: 'load-complete', revision, sequence }, 'loaded');
       if (revision === this.revision) { this.stats.loadMs = performance.now() - start; this._mirrorAvailable = true; this._mirrorTables = tables; this._mirrorSources = sources; }
@@ -283,7 +344,7 @@ export class PlaybackCache {
     this._loadPromise = task;
     // load() deliberately returns immediately; prepareRange() observes failures.
     task.catch(error => { if (revision === this.revision && error.name !== 'AbortError') this._fail(error); })
-      .finally(() => { if (this._loadPromise === task) this._loadPromise = null; });
+      .finally(() => { if (revision === this.revision) this.stats.nativeSourceBytes = 0; if (this._loadPromise === task) this._loadPromise = null; });
     return task;
   }
   // A patch/load stream mirrors the identical document into every worker. Each
@@ -305,11 +366,15 @@ export class PlaybackCache {
       try {
         const start = performance.now(); client.worker.postMessage(message); const elapsed = performance.now() - start;
         this.stats.loadChunks++; this.stats.loadSerializationMs += elapsed; this.stats.loadMaxTaskMs = Math.max(this.stats.loadMaxTaskMs, elapsed);
-        this.stats.maxChunkBytes = Math.max(this.stats.maxChunkBytes || 0, message.chunk?.estimatedBytes || 0);
+        this.stats.maxChunkBytes = Math.max(this.stats.maxChunkBytes || 0, message.chunk?.estimatedBytes || message.buffer?.byteLength || 0);
       } catch (error) { this._abortLoad(error); }
     });
   }
   _abortLoad(error) {
+    // Retire suspended generations without ending foreground interaction.
+    // A current replacement creates its own gate; old streams fail their
+    // revision check before advancing or retaining the next snapshot chunk.
+    this._releaseInteraction?.();this._releaseInteraction=null;this._interactionPromise=null;
     for (const client of this.workers)
       if (client.loadAck) { clearTimeout(client.loadAck.timer); client.loadAck.reject(error); client.loadAck = null; }
     this._loadPromise = null;
@@ -439,12 +504,12 @@ export class PlaybackCache {
     finally {
       // Admission/eviction and any queue trimming must reach the worker before
       // it starts allocating the next packet. Stale/dropped packets also ACK.
-      if (message.type === 'packet' && message.deliveryId && !this.disposed && !this.failure)
+      if (message.type === 'packet' && message.deliveryId && this.workers[client.index]===client && !this.disposed && !this.failure)
         client.worker.postMessage({type:'packet-ack', revision:message.revision, deliveryId:message.deliveryId});
     }
   }
   _acceptMessage(message, client = this.workers[0]) {
-    if (this.disposed || message.revision !== this.revision) { closePacket(message.packet); return; }
+    if (this.disposed || this.failure || this.workers[client.index]!==client || message.revision !== this.revision) { closePacket(message.packet); return; }
     if (client === this.workers[0] && this.planner.receive(message)) return;
     const loading = client.loadAck;
     if (loading && message.type === loading.responseType && message.sequence === loading.sequence) {
@@ -452,6 +517,16 @@ export class PlaybackCache {
     }
     if (message.type === 'load-error') { this._fail(new Error(message.message)); return; }
     if (message.type === 'loaded') return;
+    // Every current packet updates its owner, including packets discarded after
+    // a prefetch trim. These snapshots describe the worker cache, not CPU LRU
+    // residency; retaining a document through a view change retains its caches.
+    if (message.type === 'packet' && message.packet?.workerCache) {
+      this.stats.workerCaches[client.index] = {...message.packet.workerCache};
+      const totals = {};
+      for (const snapshot of this.stats.workerCaches) for (const [key, value] of Object.entries(snapshot || {}))
+        if (Number.isFinite(value) && value >= 0) totals[key] = (totals[key] || 0) + value;
+      this.stats.workerCacheTotals = totals;
+    }
     const pending = this.pending.get(message.tick);
     if (!pending) { closePacket(message.packet); return; }
     clearTimeout(pending.timer); this.pending.delete(message.tick); this.stats.pendingFrames = this.pending.size;
@@ -510,6 +585,7 @@ export class PlaybackCache {
   }
   _fail(error) {
     if (this.failure) return;
+    this.discardNativeSnapshot();
     this._mirrorAvailable = false;
     this.failure = error; this.stats.failure = error.message;
     this._failures = this._failedRevision === this.documentRevision ? this._failures + 1 : 1; this._failedRevision = this.documentRevision;
@@ -517,6 +593,8 @@ export class PlaybackCache {
     this.planner.cancel(error);
     this._abortLoad(error);
     for (const client of this.workers) client.worker.terminate();
+    this.stats.workerCaches.fill(null); this.stats.workerCacheTotals = {};
+    this.stats.workerAdmission=null;
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(error); }
     this.pending.clear(); this.stats.pendingFrames = 0; this.onError?.(error);
   }

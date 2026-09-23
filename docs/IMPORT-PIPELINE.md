@@ -27,3 +27,17 @@ Initial scene preparation now runs before the editor publishes the new document.
 `tests/renderer-initial-scene.browser.mjs` exercises the actual app with a native final stored frame containing an image background, foreground sprite, translucent figure and nonidentity saved camera. All nine checks pass: the first render has complete media, neutral editing coordinates, zero primitive uploads or compilation, and pixels identical to independent fresh rendering and the former upload method. A failed subsequent image decode preserves the prior report, GPU buffers and exact canvas. This small fixture establishes behavior, not large-scene timing; screenshots and machine-readable evidence are in `artifacts/renderer-initial-scene/`.
 
 The subsequent source-stable actual Electron Akane diagnostic measured 2224.2 ms cold and 1640.9 ms warm from file change to the first complete-scene GPU callback. Both first submissions already had decoded media and the required texture-backed background. Initial rendering took 0.6/0.5 ms of CPU wall time with no primitive uploads; scene staging uploaded 1,746,816 bytes in three calls. There were no import main-thread long tasks of 50 ms or more. Retained batch pixels matched the old 615-upload path exactly, and both sets of 23 pointer mutations matched the independent renderer and all 15,697 native pose nodes within 0.000031 world units. This is one diagnostic pair on one Windows machine, with a correctness upload comparison before the gestures. It is not the final three-process timing run, a physical input/display measurement, or a direct speedup comparison with native Present return. Full phase timings, stable runtime hashes, screenshots and qualifications are in `artifacts/matched-app-interaction-atomic-diagnostic-v1/SUMMARY.md` and `report.json`.
+
+A successful nonempty native-v5 import can also hand its validated frame bytes to
+initial playback mirroring. `playback-native.mjs` owns this one-use transport
+representation separately from the editable document. The source response must
+fit 64 MiB and one quarter of the actual playback-cache allowance. Report,
+revision and draft ownership are checked before adoption; pending bytes are
+released on editing, replacement or disposal. Each worker receives acknowledged
+1 MiB frame-table slices and the usual document metadata/identities, reconstructs
+with the same native parser, and publishes only its current incoming generation.
+Cancellation cannot publish a partial mirror. Edited projects, legacy/container
+imports, zero-frame working-pose normalization and rejected admission keep the
+ordinary lossless document transport. Source bytes are released after this first
+mirror and never become saved document/history fields. See
+[measured results and limits](PERFORMANCE-IMPROVEMENTS-2026-09-21.md#verified-native-import-playback-handoff-22-september).

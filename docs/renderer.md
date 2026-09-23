@@ -28,6 +28,15 @@ During prepared playback, overlays use the exact displayed packet's camera/scene
 
 `src/renderer.mjs` creates a WebGPU viewport with a premultiplied transparent canvas and multisample antialiasing. The MSAA level defaults to four samples and adapts at runtime through `setMsaa()`; the vector pipeline, handle pipeline, canvas antialias texture, camera monitor surface, VFX camera source and VFX compositor all derive their sample counts from the same `msaaCount`, so one rebuild keeps every attachment consistent. Adapters reporting `isFallbackAdapter` or a software signature (SwiftShader, llvmpipe, lavapipe, WARP, Basic Render) route to the Canvas compatibility renderer, which is faster than CPU-emulated WebGPU for this workload; the Graphics mode setting can force either backend explicitly. The imported Pivot geometry is compiled into a retained storage buffer of 96-byte shape records. A WGSL shader renders signed-distance capsules, square-ended lines, discs and rings; Earcut triangulates polygon fills. Gradient colors interpolate in the shader. Scene backgrounds and anchored asset images are composited in the decoder's painter order.
 
+Preview image responses carry an identity for the immutable decoded worker
+bitmap. `PreviewImages` preserves its consumer bitmap and closes a duplicate
+transfer only when that worker identity, dimensions, logical dimensions and crop
+metadata all match. Weak identity tables are scoped to one worker lifetime;
+restarting a decoder cannot validate an earlier worker's bitmap. A wholly
+unchanged batch leaves the renderer's resource generation and GPU caches intact.
+New or replaced pixels, unknown identities and evictions retain invalidation.
+This does not skip decoding decisions or remove the worker's transfer copies.
+
 One transform record per figure contains its translation, opacity and visibility. Contiguous vector figures share one draw call. Camera pan, zoom, layer visibility and `dragTranslations` update only small uniform/transform buffers. Geometry edits reuse unchanged figure geometry and GPU draw ranges. A capacity change reallocates the packed layout; ordinary joint edits update only the affected figure's range.
 
 Incremental `buildGeometry()` results carry ordered object groups, changed slots and a previous-generation token. Tokens do not retain previous scenes. The renderer updates only those slots when painter order, background and raster resolution are unchanged; it retains every untouched entry, texture and vector range. The flattened compatibility `drawables` list is lazy, so a joint edit no longer regroups every segment in the scene. Primitive compilation writes typed records directly and computes each segment brush once, including when a polygon produces many triangles. Layout changes safely use full preparation.

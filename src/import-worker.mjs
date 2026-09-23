@@ -45,6 +45,7 @@ async function importRequest(message, signal) {
     return importStickNodes(new Uint8Array(message.bytes),{filename:message.filename,entryIndex:message.entryIndex,signal,onProgress:progress=>self.postMessage({id:message.id,progress})});
   }
   const headers = {Accept: `${NATIVE_FRAME_CONTENT_TYPE}, application/json`};
+  if (message.jobId) headers['X-Styk-Job-Id'] = message.jobId;
   if (message.token) headers.Authorization = `Bearer ${message.token}`;
   let path, body;
   if (message.operation === 'import') {

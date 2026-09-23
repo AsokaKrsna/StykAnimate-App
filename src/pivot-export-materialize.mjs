@@ -22,7 +22,34 @@ const hasIK = report => report.keyframes.some(frame => frame.objects.some(hasPin
 const MAX_FRAMES = 100000, MAX_OBJECTS = 2000000, MAX_BACKGROUNDS = 65534;
 const activeChannels = report => animationChannels(report).filter(channel => channel.property === 'pose' || channel.keys.length);
 
+/** An imported sheet is a view of native time until a track is authored or
+ * retimed. Prove that identity from its current contents on every export; a
+ * cached "unedited" flag would become unsafe after Undo or native-save reopen.
+ * Unknown sheet controls conservatively retain the existing baking path. */
+function withoutNativeSheet(report) {
+  const sheet = report._styk?.layerSheet;
+  if (!sheet || report._styk.animation || report._styk.movieclipSource || movieclipTypes(report).size || sheet.version !== 1 || Object.keys(sheet).some(key => !['version', 'duration', 'nextId', 'tracks'].includes(key))) return report;
+  const rows = nativeTimeline(report), last = rows.at(-1), duration = last ? last.start + last.count : 0;
+  if (sheet.duration !== duration || !duration) return report;
+  const times = [...new Set([0, ...rows.filter(row => row.count > 0).map(row => row.start)])].sort((a, b) => a - b);
+  const ids = ['scene', 'camera', ...(report._styk?.layers?.order ?? [])];
+  if (!sheet.tracks || Object.keys(sheet.tracks).length !== ids.length) return report;
+  const interpolation = report.version < 5 ? 'constant' : report.auto_easing ? 'auto' : 'linear';
+  for (const id of ids) {
+    const track = sheet.tracks[id];
+    if (!track || track.end !== duration || track.keys?.length !== times.length || Object.keys(track).some(key => !['end', 'keys'].includes(key))) return report;
+    for (let index = 0; index < times.length; index++) {
+      const key = track.keys[index];
+      if (!key || key.tick !== times[index] || key.sourceTick !== key.tick || key.interpolation !== interpolation ||
+          Object.keys(key).some(field => !['id', 'tick', 'sourceTick', 'interpolation', 'empty'].includes(field))) return report;
+    }
+  }
+  const metadata = {...report._styk}; delete metadata.layerSheet;
+  return {...report, _styk: metadata};
+}
+
 export function needsPivotMaterialization(report) {
+  report = withoutNativeSheet(report);
   if (cameraFeatures(report)||report._styk?.layerSheet) return true;
   if (movieclipTypes(report).size || report._styk?.movieclipSource) return true;
   if (hasIK(report)) return true;
@@ -85,7 +112,7 @@ function sampleAt(report, rows, tick, hidden) {
 export function materializePivotDocument(report) {
   if(documentHasSurfaces(report))throw new Error('Pivot cannot preserve one-sided fills. Save as .styk or .stkz, or export images/video.');
   if(documentHasRigConstraints(report))throw new Error('Pivot cannot preserve connectors or Smart Stretch. Save as .styk or .stkz, or export images/video.');
-  report = materializeSimpleFrameDraftForPivot(report);
+  report = withoutNativeSheet(materializeSimpleFrameDraftForPivot(report));
   if (report.keyframes.length && movieclipTypes(report).size) {
     const materializer=createMovieclipMaterializer(report),rows=timeline(report),total=rows.at(-1).start+rows.at(-1).count;
     if(total>MAX_FRAMES)throw new Error('Movieclip export exceeds the 100,000-frame limit.');

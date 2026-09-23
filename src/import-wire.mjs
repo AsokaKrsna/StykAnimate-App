@@ -91,6 +91,7 @@ function* frameSteps(report, bytes, byteOffset, sourceOffset, timeBudgetMs, stat
     }
   }
   if(pos!==view.byteLength) throw new Error('Unexpected bytes after the native frame table.');
+  stats.poseBytesEstimate=poseBytes;
   stats.maxTaskMs=Math.max(stats.maxTaskMs,performance.now()-taskStarted);
   return frames;
 }
@@ -111,6 +112,7 @@ export async function materializeNativeFrames(result, buffer, offset, {isCancell
     await yieldControl();
   }
   result.timings={...result.timings,native_materialize_ms:+(performance.now()-started).toFixed(3),
-    native_materialize_max_task_ms:+stats.maxTaskMs.toFixed(3),native_materialize_tasks:stats.tasks};
+    native_materialize_max_task_ms:+stats.maxTaskMs.toFixed(3),native_materialize_tasks:stats.tasks,
+    native_pose_bytes_estimate:stats.poseBytesEstimate};
   delete result.nativeFrames; return result;
 }

@@ -31,6 +31,15 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 ### Changed
 
 - Pose 3D characters without switching to Rotate: dragging a joint now swings it toward or away from the camera at its full length, Shift swings it behind the body, right-drag twists a part such as turning the head, and Shift-drag pushes a hand or foot toward or away from the camera. Grabbing beside a joint no longer makes it jump, and short parts like the chest and neck move with finer control.
+- Avoid rebuilding unchanged image textures when revisiting animation frames.
+- Reduce the delay before first playback of large, freshly imported Pivot animations.
+- Reduce playback memory for large animations by adjusting background preparation to available memory and releasing cancelled work during editing.
+- Avoid repeatedly repainting unchanged Advanced timeline frames while posing figures.
+- Reduce delays before the next file operation after cancelling an import or export.
+- Keep the editor and native project saving available while the file conversion service starts, or if it cannot start.
+- Reduce the time needed to prepare images when opening a project.
+- Preserve original Pivot keyframes and avoid slow rebaking when exporting unchanged imported animations.
+- Reduce time and temporary memory needed to check large animations for Pivot export.
 - Scale and rotate a multi-figure selection around the dragged figure's pivot like Pivot: Alt-drag now moves every selected figure's position toward or around the shared origin instead of resizing each figure in place, and Ctrl+Alt keeps rotating the group without scaling.
 - Show a ⇔ marker on scrubbable property labels and a hint in Transform sections that dragging a label adjusts its value, with Shift or Alt for finer steps.
 

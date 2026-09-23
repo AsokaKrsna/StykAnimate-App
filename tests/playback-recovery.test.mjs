@@ -58,3 +58,24 @@ test('consecutive crashes are bounded per document revision and an edit earns an
     assert.equal(created.length, 4);
   } finally { cache.dispose(); }
 });
+
+test('crash recovery preserves memory admission, interaction priority and replacement-pool ownership', async () => {
+  const {factory}=crashableWorkers(),mib=1024*1024;
+  const cache=new PlaybackCache({workerFactory:factory,workerCount:3,maxBytes:16*mib,maxWorkerBytes:232*mib});
+  try{
+    const report=createDemo();report._styk.admissionFixture='x'.repeat(mib);
+    cache.load(report,{revision:1});await cache.prepareRange([0,1]);
+    assert.equal(cache.workers.length,2);const old=cache.workers.map(client=>client.worker);
+    const expected=structuredClone(cache.get(0));old[0].crash();
+    cache.setInteractionActive(true);const pending=cache.prepareRange([0,1]);
+    assert.equal(cache.stats.workerRestarts,1);assert.equal(cache.workers.length,2);
+    assert.ok(cache.workers.every(client=>!old.includes(client.worker)));
+    old[1].crash();assert.equal(cache.failure,null,'a retired pool cannot fail the replacement');
+    cache.setInteractionActive(false);await pending;
+    assert.equal(cache.workers.length,2);assert.equal(cache.stats.workerAdmission.reduced,true);
+    for(const key of ['shapes','transforms','uids','groups'])assert.deepEqual(cache.get(0)[key],expected[key],key);
+    const primary=cache.worker;assert.equal(primary,cache.workers[0].worker);
+    cache.load(createDemo(),{revision:2});await cache.prepareRange([0]);
+    assert.equal(cache.workers.length,3);assert.equal(cache.worker,primary);
+  }finally{cache.dispose();}
+});

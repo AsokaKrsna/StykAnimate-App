@@ -3,7 +3,7 @@ import { readFile, writeFile, mkdir, access } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -30,6 +30,14 @@ try {
   if (!health) throw new Error(`The frozen codec did not start.\n${output}`);
   assert.equal(health.jsonEncoder, 'orjson', 'A release sidecar must use the compiled JSON encoder.');
   assert.equal(health.nativeFrameScanner, 'cpp', 'A release sidecar must load the bundled C++ PIV scanner.');
+  assert.deepEqual({active: health.jobs?.active, queued: health.jobs?.queued}, {active: 0, queued: 0});
+  const jobId = randomUUID().replaceAll('-', '');
+  assert.equal((await fetch(`${origin}/api/cancel?id=${jobId}`, {method: 'POST', body: ''})).status, 204);
+  const cancelled = await fetch(`${origin}/api/import?filename=cancelled.stk`, {
+    method: 'POST', headers: {'X-Styk-Job-Id': jobId}, body: new Uint8Array(0),
+  });
+  assert.equal(cancelled.status, 499, 'The frozen service must reject cancelled work before parsing it.');
+  await cancelled.arrayBuffer();
   const checks = [];
   for (const filename of ['Samples.stk', 'Goku_Broly_Movie_by_Killer1.piv']) {
     const fixture = path.join(workspace, filename);

@@ -37,6 +37,15 @@ merely from normalization. A Blob returns to the renderer without JSON or
 base64 conversion. Use the native Blob streaming helper to save it through
 Electron; browser downloads and IndexedDB can consume the Blob directly.
 
+An imported layer sheet whose tracks still map exactly to the original native
+times does not require Pivot baking. The materializer checks current track
+contents, durations and known controls on every export, including after Undo
+or native-save reopen. Authored or retimed tracks retain the full evaluator.
+The private PIV snapshot omits editor frame-reference IDs while retaining
+unknown frame metadata; the live document and native saves keep their IDs.
+Unchanged imported PIVs can therefore reuse exact source bytes after normal
+editor initialization, preserving original stored and hidden keyframes.
+
 Sectioned containers keep separate limits: 256 MiB for the compressed file and
 each binary section, 384 MiB for the JSON skeleton, and the existing 1 GiB
 combined materialization estimate. Both readers and writers enforce these
@@ -49,6 +58,15 @@ frame at a time under the decode lock. It retains only the digest, so native
 saving does not depend on the separate 256 MiB JSON response limit or construct
 a second complete normalized pose inventory. Fingerprint version 3 and its
 numeric/opaque-field semantics remain unchanged.
+
+PIV/STK export uses the same frame-at-a-time fingerprint for the submitted
+document. Older fingerprint versions keep their historical encoding. Validation
+and hashing still visit the complete document; streaming bounds the temporary
+normalized graph and JSON string, not the request or decoded document itself.
+Numeric normalization handles builtin scalars directly, preserving the historical
+path for subclasses. Integer precision, negative zero, nonfinite rejection,
+unknown fields and per-container cancellation checkpoints remain unchanged; the
+JSON encoder and fingerprint bytes are unchanged.
 
 The native file writer reports success at atomic destination commit. A later
 failure updating optional recent-file or recovery display metadata does not
@@ -70,6 +88,13 @@ main-thread preparation time across all yields, and worker normalization,
 serialization, HTTP, container build, and output sizes. Background completion
 may take seconds for very large scenes; those durations do not represent UI
 blocking.
+
+Successful service exports also expose `service_ms` for request receipt, JSON
+parsing, validation, source fingerprinting, provenance, submitted-document
+fingerprinting and encoding, plus `request_bytes` for the actual HTTP body.
+These come from bounded `Server-Timing` and `X-Styk-Request-Bytes` headers. They
+describe server work before response transmission; `fetch_ms` includes the
+response. Only the latest successful export retains these diagnostics.
 
 Run `node tests/document-export-browser.mjs` for real PIV/STK byte identity,
 native persistence across an actual backend restart, preserved unknown fields,

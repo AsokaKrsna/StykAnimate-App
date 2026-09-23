@@ -1,0 +1,92 @@
+{
+  "at": "2026-09-22T23:37:46.432Z",
+  "runtimeCommit": "0eef9d1306d5863a58cbcf0a919bb65fd25caa0d",
+  "branch": "codex/performance-improvements",
+  "base": "a937570",
+  "audit": {
+    "runtimeFiles": 459,
+    "unexpectedChanges": [],
+    "changesSinceLastPythonMilestone": [
+      "src/app.mjs",
+      "src/preview-image-worker.mjs",
+      "src/preview-images.mjs"
+    ],
+    "backendAndCodecFiles": 37,
+    "backendAndCodecChanges": [],
+    "snapshotRegressionFiles": 7,
+    "snapshotRegressionChanges": [],
+    "latestVerificationHashesChanged": [],
+    "trackedTreeClean": true
+  },
+  "finalChecks": {
+    "javascript": {
+      "command": "npm.cmd test",
+      "passed": 2524,
+      "failed": 0,
+      "skipped": 0
+    },
+    "syntax": {
+      "command": "npm.cmd run check",
+      "files": 1183,
+      "errors": 0
+    },
+    "focused": {
+      "passed": 13,
+      "failedOnOriginal": 2
+    },
+    "artwork": {
+      "checks": 48,
+      "maxPixelDifference": 0
+    },
+    "cachePressure": {
+      "channels": 1110720,
+      "differingChannels": 0
+    },
+    "imageFormats": true,
+    "initialScene": true,
+    "appImageInvalidation": true,
+    "changelog": true
+  },
+  "carriedForwardChecks": {
+    "backend": {
+      "command": "python -m unittest discover -s backend -v",
+      "passed": 101,
+      "durationSeconds": 100.214,
+      "exitCode": 0
+    },
+    "sidecar": {
+      "command": "node scripts/verify-sidecar.mjs",
+      "exitCode": 0
+    },
+    "scope": "Previously executed for byte-identical backend/codec and native implementations; not rerun after the image-only change.",
+    "endurance": {
+      "runtimeCommit": "826de7d7",
+      "cycles": 300,
+      "durationSeconds": 1952.3490298,
+      "scope": "Passed before the final image-identity optimization; not represented as a final-tree endurance rerun."
+    }
+  },
+  "decisions": {
+    "electron": "Keep",
+    "javascript": "Keep editor/history/UI and WebGPU ownership; reduce duplicate work and use existing worker boundaries.",
+    "python": "Keep compatibility codecs with bounded admission/cooperative cancellation and optimized fingerprints.",
+    "cpp": "Keep existing scanner/media integration; no native source changes.",
+    "wasm": "Keep existing container/compression path.",
+    "rust": "No measured new migration justified in this pass.",
+    "compactExport": "Reject measured prototype: lower byte count did not offset encoding/decoding and peak-memory cost.",
+    "additionalWorkers": "Do not move cold GPU/copy/driver work across an unmeasured scene boundary."
+  },
+  "limits": [
+    "No release or publishing; implementation remains on the isolated local branch.",
+    "Windows/NVIDIA evidence does not certify macOS/Linux, installers, arbitrary projects or every driver.",
+    "Resource allowances are estimates, not whole-process/driver hard limits. Sparse-edit growth is reassessed only at full snapshots.",
+    "Cold tick 1703 and large first-source export validation remain expensive. No blanket responsiveness or zero-regression guarantee.",
+    "Future native/transport/worker changes require new end-to-end evidence and exact semantic compatibility."
+  ],
+  "evidenceHashes": {
+    "docs/PERFORMANCE-IMAGE-VARIANTS-EVIDENCE-2026-09-23.json": "fac52383383b39cae1d86245dfa2064827773ae826235409aab76dca8c24fbf3",
+    "docs/PERFORMANCE-SEEK-GPU-EVIDENCE-2026-09-23.json": "cfd73a5d323ec5b2fc36922e51f46aa782d031f4848d847e0d48d9c7d5a3b9fc",
+    "docs/PERFORMANCE-ENDURANCE-EVIDENCE-2026-09-23.json": "bcce6f87fbf9bee9d249c3b90ffefc42357812ac081f9bea95e1ae1ea56d0dd5",
+    "docs/PERFORMANCE-SCALAR-DIGEST-EVIDENCE-2026-09-22.json": "d0fa4ad9d4511af31a23ba950664270c2d8f04a2456b8f0d6c6b3d3955550193"
+  }
+}

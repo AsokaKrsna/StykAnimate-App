@@ -24,7 +24,7 @@ module.exports = async function beforePack(context) {
     if (manifest.codecSources?.[filename] !== hash(await fs.readFile(path.join(appRoot, 'codecs', filename))))
       throw new Error(`The frozen codec is stale for ${filename}; run npm run build:sidecar.`);
   }
-  for (const filename of ['server.py','fast_decode.py','import_wire.py','native_scan.py','native_format.py']) {
+  for (const filename of ['server.py','fast_decode.py','import_wire.py','native_scan.py','native_format.py','jobs.py']) {
     if (manifest.runtimeSources?.[filename] !== hash(await fs.readFile(path.join(appRoot,'backend',filename))))
       throw new Error(`The frozen codec is stale for ${filename}; run npm run build:sidecar.`);
   }

@@ -1287,7 +1287,13 @@ async function prepareInitialScene(renderer, request) {
       signal, sliceMs, yieldControl, checkCurrent, onProgress, onTiming: value => {timings.geometry = value;},
     });
     await backgroundLoad; checkCurrent();
-    await media.load(frameImageAssets(geometry)); checkCurrent(); timings.mediaReadyMs = performance.now() - started;
+    timings.backgroundImages = media.images.lastPreparation;
+    const imageStart = performance.now();
+    await media.load(frameImageAssets(geometry)); checkCurrent();
+    timings.figureImages = media.images.lastPreparation === timings.backgroundImages
+      ? {reused: true} : media.images.lastPreparation;
+    timings.figureImagesMs = performance.now() - imageStart;
+    timings.mediaReadyMs = performance.now() - started;
     let view = {...(getView?.() || request.view || {})};
     if (renderer instanceof WebGPURenderer) {
       stage = new WebGPURenderer(renderer.canvas, renderer.device, renderer.context, renderer.format, {

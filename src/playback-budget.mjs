@@ -27,12 +27,48 @@ export function playbackReuseMemoryPlan(frameBytes=playbackMemoryBudget()) {
 /** Partition retained pixel caches from one hardware policy. These are app-owned
  * cache targets, not a claim about total process RAM (document data, decoding
  * internals, output canvases and transient GPU uploads also consume memory). */
-export function previewMemoryPlan(deviceMemory = deviceMemoryHint()) {
+export function previewMemoryPlan(deviceMemory = deviceMemoryHint(), workerCount = playbackWorkerCount(undefined, deviceMemory)) {
   const base = playbackMemoryBudget(deviceMemory), mib = 1024 * 1024;
-  const plan = {cpuFrames: base, gpuFrames: base, workerImages: Math.min(64 * mib, base / 4),
-    workerRasters: Math.min(128 * mib, base / 4), workerVectors: Math.min(32 * mib, base / 8), editorImages: Math.min(64 * mib, base / 4),
+  const workers = playbackWorkerMemoryPlan(base), count = Math.max(1, Math.min(4, Math.floor(workerCount) || 1));
+  const plan = {cpuFrames: base, gpuFrames: base, editorImages: Math.min(64 * mib, base / 4),
     editorRasters: Math.min(128 * mib, base / 2), thumbnails: Math.min(24 * mib, base / 8), library: 8 * mib,...playbackReuseMemoryPlan(base)};
+  return {...plan, workerImages: workers.images, workerSources: workers.sources, workerRasters: workers.rasters,
+    workerVectors: workers.vectors, workerDrawings: workers.drawings, workerTints: workers.tints,
+    workerCount: count, workerRetainedBytes: workers.retainedBytes, workerPoolBytes: workers.retainedBytes * count,
+    retainedBytes: Object.values(plan).reduce((sum, bytes) => sum + bytes, 0) + workers.retainedBytes * count};
+}
+
+/** One playback worker's retained allocations, derived by the controller from
+ * its actual frame allowance. Send these to workers rather than recomputing
+ * from their privacy-bucketed RAM hint. Drawing/tint targets can be exceeded by
+ * resources required together for the current draw; documents and geometry are
+ * not measured by these pixel/array cache targets. */
+export function playbackWorkerMemoryPlan(frameBytes = playbackMemoryBudget()) {
+  const mib = 1024 * 1024, base = Math.max(0, Number.isFinite(frameBytes) ? frameBytes : playbackMemoryBudget());
+  const images = Math.min(64 * mib, base / 4);
+  const plan = {images, sources: images / 2, rasters: Math.min(128 * mib, base / 4),
+    vectors: Math.min(32 * mib, base / 8), drawings: Math.min(96 * mib, Math.max(16 * mib, images)), tints: 32 * mib};
   return {...plan, retainedBytes: Object.values(plan).reduce((sum, bytes) => sum + bytes, 0)};
+}
+
+/** Admission target for the worker pool, including its private document copies.
+ * This leaves the majority of RAM for the editor, GPU caches and other apps.
+ * It is an estimate-based policy, never a hard cap on process/driver memory. */
+export function playbackWorkerAdmissionBudget(deviceMemory = deviceMemoryHint()) {
+  return Number.isFinite(deviceMemory) && deviceMemory > 0 ? deviceMemory * 1073741824 / 3 : 1024 * 1024 * 1024;
+}
+
+export function playbackWorkerAdmission({maxWorkers, maxBytes, frameBytes, documentBytes = 0, nativeBytes = 0}) {
+  const retained = playbackWorkerMemoryPlan(frameBytes).retainedBytes;
+  // Reserve one preparing/unacknowledged packet and derived geometry per lane.
+  // Live geometry can exceed this reserve; do not describe it as measured bytes.
+  const packetReserve = frameBytes * .8, geometryReserve = frameBytes / 4;
+  const perWorkerEstimate = documentBytes + nativeBytes + retained + packetReserve + geometryReserve;
+  const workers = Math.max(1, Math.min(maxWorkers, Math.floor(maxBytes / Math.max(1, perWorkerEstimate))));
+  return {maxWorkers, workers, budgetBytes: Number.isFinite(maxBytes) ? maxBytes : null,
+    documentBytesEstimate: documentBytes, nativeBytes, retainedTarget: retained, packetReserve, geometryReserve,
+    perWorkerEstimate, poolEstimate: perWorkerEstimate * workers, reduced: workers < maxWorkers,
+    minimumExceedsTarget: perWorkerEstimate > maxBytes};
 }
 
 /** Parallel packet-preparation workers. Every worker mirrors the document and

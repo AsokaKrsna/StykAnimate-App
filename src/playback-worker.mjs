@@ -10,6 +10,7 @@ export { PlaybackResources } from './playback-resources.mjs';
 import { evaluatedFrame, timeline, buildGeometry, drawGeometry, releaseGeometryResources, invalidateEvaluationCaches } from './pivot/geometry.mjs';
 import { compileVectorObject, requiresCompatibilityTexture, objectBounds, cameraMatrix, shapeRecord, SHAPE, SHAPE_FLOATS } from './renderer-geometry.mjs';
 import { applyDocumentChunk } from './document-transport.mjs';
+import {MAX_NATIVE_PLAYBACK_BYTES, NATIVE_PLAYBACK_CHUNK_BYTES, materializePlaybackSnapshot} from './playback-native.mjs';
 import { applyPlaybackPatch } from './playback-patch.mjs';
 import {PlaybackPlanningService} from './playback-planning.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
@@ -338,8 +339,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     return { key: `${revision}:${tick}`, revision, tick, frameIndex: location.index, frame, shapes, transforms: transformData, uids: uidData, groups, compatibility,
       previewQuality: {reduced: reducedImages},
       connectedVfxUids:geometry.connectedVfxUids, objectCount: geometry.objects.size, shapeCount, warnings: geometry.warnings, scale, resolution, clipping, sharing, reusedGeometryObjects:geometryCache?.reusedObjects||0, cameraEnabled, storedFrames,
-      workerCache: {imageBytes:resources?.bytes||0,sourceBytes:resources?.sourceBytes||0,rasterBytes:resources?.artworkBitmaps?.bytes||0,rasterEntries:resources?.artworkBitmaps?.entries.size||0,
-        vectorBytes:resources?.vectors?.bytes||0,vectorEntries:resources?.vectors?.lru.size||0,
+      workerCache: {...resources?.cacheSnapshot?.(),
         alternateDrawables:geometryCache?.alternateDrawables||0,tweenEntries:tweenCache?.entries.size||0},
       byteLength: shapes.byteLength + transformData.byteLength + uidData.byteLength + bitmapBytes + fallbackBytes + groups.length * 64,
       compileMs: ended - started, timings: { evaluateMs: evaluated - started, geometryMs: geometrized - evaluated, compileMs: ended - geometrized } };
@@ -424,9 +424,7 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
     compatibility: bitmap ? [{ bitmap, uid: 0, software: true }] : [],
     previewQuality: { reduced: reducedImages },
     objectCount: geometry.objects.size, shapeCount: 0, warnings: geometry.warnings, scale, resolution, cameraEnabled, storedFrames,
-    workerCache: { imageBytes: resources?.bytes || 0, sourceBytes: resources?.sourceBytes || 0,
-      rasterBytes: resources?.artworkBitmaps?.bytes || 0, rasterEntries: resources?.artworkBitmaps?.entries.size || 0,
-      vectorBytes: resources?.vectors?.bytes || 0, vectorEntries: resources?.vectors?.lru.size || 0,
+    workerCache: { ...resources?.cacheSnapshot?.(),
       alternateDrawables: geometryCache?.alternateDrawables || 0, tweenEntries: tweenCache?.entries.size || 0 },
     byteLength: bitmapBytes + 128,
     compileMs: ended - started, timings: { evaluateMs: evaluated - started, geometryMs: geometrized - evaluated, compileMs: ended - geometrized } };
@@ -550,10 +548,51 @@ export function createPlaybackWorkerEndpoint(postMessage) {
         }
         postMessage({ type: 'load-ack', revision: message.revision, sequence: message.sequence });
       } catch (error) { postMessage({ type: 'load-error', revision: message.revision, message: error.message }); }
+    } else if (message.type === 'load-native-chunk') {
+      if(message.revision < latestRevision) return;
+      try {
+        if(incoming?.revision !== message.revision || incoming.completing) throw new Error('Native frames require a pending snapshot.');
+        const {buffer,position,meta}=message;
+        if(!(buffer instanceof ArrayBuffer) || !buffer.byteLength || buffer.byteLength>NATIVE_PLAYBACK_CHUNK_BYTES ||
+          !Number.isSafeInteger(position) || position<0) throw new Error('Invalid native snapshot chunk.');
+        if(meta) {
+          if(position!==0 || incoming.native || meta.version!==1 || !Number.isSafeInteger(meta.byteLength) ||
+            meta.byteLength<4 || meta.byteLength>MAX_NATIVE_PLAYBACK_BYTES || !Number.isSafeInteger(meta.sourceOffset) || meta.sourceOffset<0)
+            throw new Error('Invalid native snapshot extent.');
+          incoming.native={bytes:new Uint8Array(meta.byteLength),meta,position:0};
+        }
+        const target=incoming.native;
+        if(!target || position!==target.position || position+buffer.byteLength>target.bytes.byteLength)
+          throw new Error('Native snapshot chunks arrived out of order.');
+        target.bytes.set(new Uint8Array(buffer),position);target.position+=buffer.byteLength;
+        postMessage({type:'load-ack',revision:message.revision,sequence:message.sequence});
+      } catch(error) {
+        incoming=null;
+        postMessage({type:'load-error',revision:message.revision,message:error.message});
+      }
     } else if (message.type === 'load-complete') {
       if (message.revision !== incoming?.revision || message.revision < latestRevision) return;
-      current = refreshSampling({ ...incoming, resources: new PlaybackResources({...incoming, preview: true, maxBytes: incoming.maxAssetBytes || (incoming.maxPacketBytes || 128 * 1024 * 1024) / 4}) }); incoming = null;
-      postMessage({ type: 'loaded', revision: message.revision, sequence: message.sequence });
+      if(incoming.completing) return;
+      const snapshot=incoming,generation=serial; snapshot.completing=true;
+      // Decoding yields cooperatively. Only this exact incoming owner can be
+      // published; invalidation/replacement cancels it before the next slice.
+      void (async()=>{
+        try {
+          if(snapshot.native) {
+            await materializePlaybackSnapshot(snapshot.report,snapshot.native,
+              {isCancelled:()=>incoming!==snapshot || serial!==generation});
+            delete snapshot.native;
+          }
+          if(incoming!==snapshot || serial!==generation) return;
+          delete snapshot.completing;
+          current = refreshSampling({ ...snapshot, resources: new PlaybackResources({...snapshot, preview: true, maxBytes: snapshot.maxAssetBytes || (snapshot.maxPacketBytes || 128 * 1024 * 1024) / 4}) }); incoming = null;
+          postMessage({ type: 'loaded', revision: message.revision, sequence: message.sequence });
+        } catch(error) {
+          if(incoming!==snapshot || serial!==generation) return;
+          incoming=null;
+          postMessage({type:'load-error',revision:message.revision,message:error.message});
+        }
+      })();
     } else if (message.type === 'load') {
       planning.cancel();
       tweenCache.clear();

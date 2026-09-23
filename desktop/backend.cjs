@@ -47,8 +47,9 @@ async function availablePort() {
 }
 
 // A listener that took the port first cannot produce the proof for our token.
-async function probeBackend(origin, token = '') {
-  const response = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(700) });
+async function probeBackend(origin, token = '', signal) {
+  const timeout = AbortSignal.timeout(700);
+  const response = await fetch(`${origin}/api/health`, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
   if (!response.ok) return false;
   return !token || (await response.json()).session === sessionProof(token);
 }
@@ -60,8 +61,10 @@ function wait(milliseconds) { return new Promise((resolve) => setTimeout(resolve
  * processes and localhost pages cannot use the codec. Readiness then also
  * requires the health proof, rejecting a listener that took the port first.
  */
-async function startBackend({ appRoot, resourcesPath, packaged = false, onError = () => {}, log = () => {}, port: requestedPort, token = '' }) {
+async function startBackend({ appRoot, resourcesPath, packaged = false, onError = () => {}, log = () => {}, port: requestedPort, token = '', signal }) {
+  signal?.throwIfAborted();
   const port = requestedPort || await availablePort();
+  signal?.throwIfAborted();
   const origin = `http://127.0.0.1:${port}`;
   const resourceRoot = packaged ? resourcesPath : appRoot;
   const server = path.join(resourceRoot, 'backend', 'server.py');
@@ -74,6 +77,7 @@ async function startBackend({ appRoot, resourcesPath, packaged = false, onError 
     : pythonCandidates().map((candidate) => ({ command: candidate.command, args: [...candidate.args, server] }));
   const attempts = [];
   for (const candidate of commands) {
+    signal?.throwIfAborted();
     let output = '';
     let terminated = false;
     let intentionalStop = false;
@@ -84,6 +88,9 @@ async function startBackend({ appRoot, resourcesPath, packaged = false, onError 
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONDONTWRITEBYTECODE: '1', STYK_WEB_ROOT: webRoot, STYK_TOOLS_ROOT: toolsRoot, STYK_BRIDGE_PATH: bridgePath, ...(token ? { STYK_API_TOKEN: token } : {}) },
     });
+    const stop = () => { intentionalStop = true; if (!terminated) child.kill(); };
+    signal?.addEventListener('abort',stop,{once:true});
+    child.once('close',()=>signal?.removeEventListener('abort',stop));
     child.on('error', (error) => { startupError = error; terminated = true; });
     child.on('exit', (code, signal) => {
       terminated = true;
@@ -97,20 +104,22 @@ async function startBackend({ appRoot, resourcesPath, packaged = false, onError 
     const deadline = Date.now() + 20000;
     while (!terminated && Date.now() < deadline) {
       try {
-        if (await probeBackend(origin, token)) {
+        if (await probeBackend(origin, token, signal)) {
+          signal?.throwIfAborted();
           child.stykReady = true;
           return {
             origin,
             port,
             child,
-            stop() { intentionalStop = true; if (!terminated) child.kill(); },
+            stop,
           };
         }
       } catch { /* The child is still binding its loopback socket. */ }
+      if (signal?.aborted) break;
       await wait(90);
     }
-    intentionalStop = true;
-    if (!terminated) child.kill();
+    stop();
+    signal?.throwIfAborted();
     attempts.push(`${candidate.command}: ${startupError?.message || output.trim() || 'Startup timed out.'}`);
   }
   throw new Error(`The Pivot codec could not start. Install Python 3.11 or newer, or set STYK_PYTHON to its executable.\n\n${attempts.join('\n\n')}`);

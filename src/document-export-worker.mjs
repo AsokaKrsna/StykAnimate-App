@@ -21,7 +21,7 @@ function reply(id, payload) { self.postMessage({id, ok: true, ...payload}); }
 /** Fetch the retained original binary source for native-save provenance.
  * Returns {meta, bytes} or null when the cache holds no binary source. */
 async function fetchOriginalSource() {
-  const headers = {};
+  const headers = config.jobId ? {'X-Styk-Job-Id': config.jobId} : {};
   if (config.token) headers.Authorization = `Bearer ${config.token}`;
   const response = await fetch(new URL(`/api/source?id=${encodeURIComponent(config.sourceId)}`, config.baseURL), {headers});
   if (response.status === 422 || response.status === 404) return null;
@@ -105,6 +105,13 @@ self.addEventListener('message', async event => {
       if (config.format === 'piv') {
         const composing = performance.now(), originalFrames = document.keyframes.length;
         document = materializePivotDocument(document);
+        // Native source frames acquire editor reference identities on load.
+        // They are not Pivot data and must not force a changed-source rewrite.
+        // This worker owns the snapshot; live document identities stay intact.
+        for (const frame of document.keyframes) if (frame._styk?.frameId !== undefined) {
+          const metadata = {...frame._styk}; delete metadata.frameId;
+          if (Object.keys(metadata).length) frame._styk = metadata; else delete frame._styk;
+        }
         timings.compose_ms = performance.now() - composing;
         timings.source_keyframes = originalFrames; timings.export_keyframes = document.keyframes.length;
       } else if (config.format === 'stk') {
@@ -155,6 +162,7 @@ self.addEventListener('message', async event => {
         // expanded document back to the main thread would recreate the freeze.
         const sending = performance.now();
         const headers = {'Content-Type': 'application/json'};
+        if (config.jobId) headers['X-Styk-Job-Id'] = config.jobId;
         if (config.token) headers.Authorization = `Bearer ${config.token}`;
         stage = 'request';
         const response = await fetch(new URL('/api/export', config.baseURL), {method: 'POST', headers, body});
@@ -169,6 +177,14 @@ self.addEventListener('message', async event => {
         }
         blob = await response.blob();
         timings.fetch_ms = performance.now() - sending;
+        const service = {};
+        for (const metric of (response.headers.get('Server-Timing') || '').slice(0, 1024).split(',')) {
+          const match = /^\s*(receive|parse|validate|source_digest|provenance|document_digest|encode|total);dur=(\d+(?:\.\d+)?)\s*$/.exec(metric);
+          if (match && Number.isFinite(Number(match[2]))) service[match[1]] = Number(match[2]);
+        }
+        timings.service_ms = service;
+        const bytes = Number(response.headers.get('X-Styk-Request-Bytes'));
+        if (Number.isSafeInteger(bytes) && bytes > 0) timings.request_bytes = bytes;
       }
       timings.worker_ms = performance.now() - started;
       timings.output_bytes = blob.size;

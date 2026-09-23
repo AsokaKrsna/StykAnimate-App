@@ -28,6 +28,18 @@ test('a queued old-worker response cannot replace the next document or leak its 
   await next; assert.equal(images.get('b'), valid); assert.equal(valid.naturalWidth, 8192); assert.equal(images.bytes, 32);
 });
 
+test('image preparation diagnostics retain only the latest response and clear with its owner', async t => {
+  const {images, workers} = setup(t), first = images.prepare([item('a')]), worker = workers[0];
+  const timings = {moduleReadyMs: 20, preloadMs: 3, bitmapCopyMs: 1, images: 1, decodedBytes: 32};
+  worker.onmessage({data: {id: worker.messages[0].id, images: [{url: 'a', bitmap: bitmap(), width: 4, height: 2}], timings}});
+  await first;
+  assert.equal(images.lastPreparation.preloadMs, 3);
+  assert.ok(images.lastPreparation.roundTripMs >= 0);
+  images.clear();
+  worker.onmessage({data: {id: worker.messages[0].id, images: [], timings}});
+  assert.equal(images.lastPreparation, null, 'an obsolete worker cannot republish diagnostics');
+});
+
 test('lazy background decode waits for its own pixels across coalesced requests', async t => {
   const {images,workers}=setup(t),a=images.image('a'),b=images.image('b'),worker=workers[0];
   let aReady=false,bReady=false;
@@ -117,4 +129,57 @@ test('an idle decoder worker releases and respawns with the decoded map intact',
   const b = bitmap();
   workers[1].onmessage({data: {id: workers[1].messages[0].id, images: [{url: 'a', bitmap: a}, {url: 'b', bitmap: b, width: 4, height: 2}]}});
   await second; assert.equal(images.get('b'), b);
+});
+
+test('the same decoded variant preserves its consumer identity and closes the redundant copy', async t => {
+  const {images,workers}=setup(t),notifications=[];images.onReady=value=>notifications.push(value);
+  const first=images.prepare([item('a')]),original=bitmap(),worker=workers[0];
+  worker.onmessage({data:{id:worker.messages.at(-1).id,images:[{url:'a',bitmap:original,width:4,height:2,variant:1}]}});
+  await first;
+  const next=images.prepare([item('a'),item('a')]),copy=bitmap();
+  worker.onmessage({data:{id:worker.messages.at(-1).id,images:[{url:'a',bitmap:copy,width:4,height:2,variant:1}]}});
+  await next;
+  assert.equal(images.get('a'),original);assert.equal(original.closed,0);assert.equal(copy.closed,1);
+  assert.deepEqual(notifications.at(-1),{retained:false,resized:false,unchanged:true});
+  assert.equal(images.bytes,32);images.clear();assert.equal(original.closed,1);assert.equal(copy.closed,1);
+});
+
+test('variant identity is not a dimensions-only substitute for fresh pixels or crop metadata', async t => {
+  const {images,workers}=setup(t),notifications=[];images.onReady=value=>notifications.push(value);
+  const cases=[{variant:1},{variant:2},{variant:2,srcX:1,srcY:0,srcW:3,srcH:2},
+    {variant:2,width:8},{},{variant:0},{variant:1.5}];
+  let previous;
+  for(const [index,fields] of cases.entries()){
+    const pending=images.prepare([item('a')],{scale:index+1}),worker=workers[0],pixels=bitmap();
+    worker.onmessage({data:{id:worker.messages.at(-1).id,images:[{url:'a',bitmap:pixels,width:4,height:2,...fields}]}});
+    await pending;assert.equal(images.get('a'),pixels);assert.notEqual(notifications.at(-1).unchanged,true);
+    if(previous)assert.equal(previous.closed,1);previous=pixels;
+  }
+});
+
+test('removed URLs and externally replaced images cannot claim an unchanged batch', async t => {
+  const {images,workers}=setup(t),notifications=[];images.onReady=value=>notifications.push(value);
+  let pending=images.prepare([item('a'),item('b')]);const worker=workers[0],a=bitmap(),b=bitmap();
+  worker.onmessage({data:{id:worker.messages.at(-1).id,images:[{url:'a',bitmap:a,width:4,height:2,variant:1},{url:'b',bitmap:b,width:4,height:2,variant:2}]}});
+  await pending;
+  pending=images.prepare([item('a')]);const duplicate=bitmap();
+  worker.onmessage({data:{id:worker.messages.at(-1).id,images:[{url:'a',bitmap:duplicate,width:4,height:2,variant:1}]}});
+  await pending;assert.equal(images.get('a'),a);assert.equal(duplicate.closed,1);assert.equal(b.closed,1);
+  assert.notEqual(notifications.at(-1).unchanged,true,'eviction still invalidates consumers');
+  const external={...bitmap(),complete:true,naturalWidth:4,naturalHeight:2};images.set('a',external);
+  pending=images.prepare([item('a')],{scale:2});const decoded=bitmap();
+  worker.onmessage({data:{id:worker.messages.at(-1).id,images:[{url:'a',bitmap:decoded,width:4,height:2,variant:1}]}});
+  await pending;assert.equal(external.closed,1);assert.equal(images.get('a'),decoded);assert.notEqual(notifications.at(-1).unchanged,true);
+});
+
+test('variant numbers from a released worker cannot match the next worker', async t => {
+  const {images,workers}=setup(t),notifications=[];images.onReady=value=>notifications.push(value);images.idleMs=10;
+  let pending=images.prepare([item('a')]);const old=workers[0],a=bitmap();
+  old.onmessage({data:{id:old.messages.at(-1).id,images:[{url:'a',bitmap:a,width:4,height:2,variant:1}]}});await pending;
+  await new Promise(resolve=>setTimeout(resolve,60));assert.equal(images.worker,null);
+  pending=images.prepare([item('a')],{scale:2});const fresh=workers[1],b=bitmap();
+  fresh.onmessage({data:{id:fresh.messages.at(-1).id,images:[{url:'a',bitmap:b,width:4,height:2,variant:1}]}});await pending;
+  assert.equal(images.get('a'),b);assert.equal(a.closed,1);assert.notEqual(notifications.at(-1).unchanged,true);
+  const stale=bitmap();old.onmessage({data:{id:old.messages.at(-1).id,images:[{url:'a',bitmap:stale,width:4,height:2,variant:1}]}});
+  assert.equal(stale.closed,1);assert.equal(images.get('a'),b);
 });

@@ -13,8 +13,10 @@ import zlib
 from typing import Any
 
 if __package__:
+    from .work_control import checkpoint
     from .piv_codec import PivError, _decode, MAX_PAYLOAD_BYTES
 else:
+    from work_control import checkpoint
     from piv_codec import PivError, _decode, MAX_PAYLOAD_BYTES
 
 
@@ -31,6 +33,7 @@ class _Writer:
         except (OverflowError,struct.error) as exc: raise PivError(f'{label} is out of range') from exc
 
     def array(self,fmt,values,count,label):
+        checkpoint()
         if not isinstance(values,list) or len(values)!=count:
             raise PivError(f'{label} must contain exactly {count} values')
         for value in values:self.put(fmt,value,label)
@@ -83,6 +86,7 @@ def _encode_piv_document(source: bytes, document: dict[str,Any]) -> bytes:
     in native signed-ID order; joins use persistent IDs, and ``object_draw_order_unique_ids``
     preserves layer order across insertions/deletions (new IDs append on top).
     """
+    checkpoint()
     original,r,compressed=_decode(source)
     if original['version']!=5 or document.get('version')!=5:
         raise PivError('Structural document export currently supports PIV version 5 only')
@@ -97,6 +101,7 @@ def _encode_piv_document(source: bytes, document: dict[str,Any]) -> bytes:
     w=_Writer()
     w.put('I',len(frames),'keyframe count')
     for fi,frame in enumerate(frames):
+        checkpoint()
         p=f'keyframe {fi}'
         w.put('H',frame['duration_raw'],p+' duration')
         mix=frame.get('background_mix',0)
@@ -115,6 +120,7 @@ def _encode_piv_document(source: bytes, document: dict[str,Any]) -> bytes:
         uids=[o['unique_id'] for o in objects]
         slots={uid:i for i,uid in enumerate(uids)}
         for oi,obj in enumerate(objects):
+            checkpoint()
             op=f'{p}, object {oi}'
             tid=obj['figure_type_id']
             if tid not in types:raise PivError(op+' has unknown figure type')

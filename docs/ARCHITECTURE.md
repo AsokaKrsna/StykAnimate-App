@@ -49,6 +49,14 @@ The virtualized timeline draws visible exposures and labels, with a separate pla
 
 ## Thumbnail worker synchronization
 
+Image-only preview workers use `image-resources.mjs` for encoded sources, crop
+selection, decoded variants, byte accounting and disposal. Playback extends
+that same image owner with drawing tiles and vector/raster caches in
+`playback-resources.mjs`; image decoding does not import the geometry evaluator
+or create rendering caches. Diagnostics retain one completed image job, not a
+history of requests. `tests/image-resources.browser.mjs` verifies decoding with
+the geometry module unavailable, exact pixels, reuse, cancellation and residency.
+
 `thumbnail-renderer.mjs` and playback share the retained-source comparison and
 validated patch contract in `playback-patch.mjs`. Unchanged historical poses and
 figure definitions remain in the thumbnail worker; edits send source additions,
@@ -101,6 +109,24 @@ returns focus, and pointer-down outside dismisses them before another gesture.
 Custom HTML/CSS provides compact editable controls, native keyboard/text behavior and a consistent neutral palette. The animation scene uses the custom GPU canvas. Layers, Properties and Timeline can float, move, resize and redock without changing the document. `initWorkspaceLayout({preferences,onPersist})` restores normalized geometry; settled changes are debounced and asynchronous writes are ordered. `flushPreferences()` lets close/tests await the last write.
 
 Electron uses context isolation, sandboxed renderer code, and no renderer Node globals. Native IPC exposes specific file/stream/window/preference operations, not arbitrary filesystem commands. Workspace preferences live in a fixed, atomically written user-data JSON file capped at 16 KiB. They and recovery survive a restarted process even though its loopback origin changes.
+
+`desktop/web-host.cjs` owns the desktop's loopback origin. It streams public web
+assets asynchronously while `desktop/backend.cjs` starts the Python codec in
+parallel. `/api/` requests use the same origin and stream through a bounded
+16-request proxy with backpressure and four separate cancellation slots; pending
+requests do not buffer their uploads.
+Closing a client releases its proxy slot, and quitting aborts both pending codec
+startup and the running child. Codec failure leaves WebGPU editing, Undo/Redo,
+native project saving and local native reopening available. Pivot/STK conversion
+still requires the codec. Import/export controllers own an opaque job identity
+and send cancellation independently of their worker. The proxy also cancels
+disconnected requests over a separate bounded control connection pool. Python
+admits one heavy request at a time before reading its body, with at most 16
+active/queued requests; health and cancellation bypass that queue. Cooperative
+checks in decode, validation, fingerprint and writer loops release cancelled
+work, and source-cache publication is ordered against cancellation. Individual
+native/standard-library operations finish before the next check. Browser development
+continues to use the Python server's static host.
 
 Windows source execution and packaged snapshots are verified. A distributable includes the frozen codec sidecar, current web assets, source grammar, and licenses. Rebuild and verify the package after source changes; earlier smoke reports do not certify newer bytes. macOS/Linux targets require their own builds and actual platform verification.
 
