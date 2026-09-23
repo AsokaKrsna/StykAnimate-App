@@ -1,5 +1,5 @@
 import {BRUSH_PRESETS} from './drawing-view.mjs';
-import {tileChanges,lassoMask,tileAlignedRect,DrawingStroke} from './drawing-pixels.mjs';
+import {tileChanges,lassoMask,tileAlignedRect,DrawingStroke,StrokePath,normalizeBrush,dabExtent} from './drawing-pixels.mjs';
 import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,inversePoint,transformPoint,DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {TILE,tileKey,parseTileKey,TileStore} from './drawing-tiles.mjs';
 import {encodeDrawingPNG} from './drawing-png.mjs';
@@ -127,37 +127,47 @@ export class DrawingController {
       else this.gesture={id:event.pointerId,target,surface,kind:'lasso',points:[point]};
     }else{
       this.cancelSelection();const color=this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16));
-      const d=drawingMetadata(target.figure),size=this.settings.size*d.pixelsPerUnit,s={id:++this.strokeId,target,surface,seq:0,sent:new Set(),before:new Map(),pending:[],posted:new Map(),outstanding:0,ended:false,cancelled:false,erase:this.tool==='eraser'||event.button===5||Boolean(event.buttons&32),revision:this.editor.revision,owner:this.owner,margin:size*.55+3};
+      const d=drawingMetadata(target.figure),size=this.settings.size*d.pixelsPerUnit,s={id:++this.strokeId,target,surface,seq:0,sent:new Set(),before:new Map(),pending:[],posted:new Map(),outstanding:0,ended:false,cancelled:false,erase:this.tool==='eraser'||event.button===5||Boolean(event.buttons&32),revision:this.editor.revision,owner:this.owner};
       s.done=new Promise(resolve=>s.resolveDone=resolve);
       this.sessions.set(s.id,s);this.gesture={id:event.pointerId,target,surface,kind:'stroke',session:s};
       // Painting owns the UI thread: publication and thumbnails wait it out.
       s.owner.busy=true;
-      this.owner.strokeWorker.post({kind:'begin',stroke:s.id,settings:{size,pixelsPerUnit:d.pixelsPerUnit,color,opacity:this.settings.opacity,flow:this.settings.flow,hardness:this.settings.hardness,pressureSize:this.settings.pressureSize,pressureOpacity:this.settings.pressureOpacity,sizeCurve:this.settings.sizeCurve,opacityCurve:this.settings.opacityCurve,stabilization:this.settings.stabilization,spacingRatio:this.settings.spacingRatio??.12,texture:this.settings.texture??0,erase:s.erase,seed:s.id}});
+      const settings={size,pixelsPerUnit:d.pixelsPerUnit,color,opacity:this.settings.opacity,flow:this.settings.flow,hardness:this.settings.hardness,pressureSize:this.settings.pressureSize,pressureOpacity:this.settings.pressureOpacity,sizeCurve:this.settings.sizeCurve,opacityCurve:this.settings.opacityCurve,stabilization:this.settings.stabilization,spacingRatio:this.settings.spacingRatio??.12,texture:this.settings.texture??0,erase:s.erase,seed:s.id};
+      // The path runs here so every dab's extent is known before dispatch:
+      // the worker is seeded with exactly the tiles its dabs can reach.
+      s.brush=normalizeBrush(settings);s.path=new StrokePath(s.brush,dab=>s.pending.push(dab));
+      this.owner.strokeWorker.post({kind:'begin',stroke:s.id,settings});
       this.sampleStroke(pending.event);
     }
     for(const sample of pending.samples)this.move({...sample,pointerId:event.pointerId});if(pending.released)this.finish();this.onRender();
   }
-  /** Queue a pixel-space sample; one rAF-paced batch posts to the stroke worker. */
+  /** Feed a pixel-space sample to the stroke path; the dabs it emits post to
+   * the stroke worker in one rAF-paced batch. */
   sampleStroke(event){
     const g=this.gesture,s=g?.session;
     if(g?.kind!=='stroke'||s.ended||s.cancelled)return;
-    const p=this.pixel(event,g.target);
-    s.pending.push({x:p.x,y:p.y,pressure:event.pointerType==='pen'?event.pressure||.05:1,time:event.timeStamp});
+    const p=this.pixel(event,g.target),pen=event.pointerType==='pen';
+    let ax=0,ay=0;
+    // Pen tilt is a screen-space lean; map it through the view and cel pose
+    // so tilt-driven tips point the same way on a rotated canvas.
+    if(pen&&(event.tiltX||event.tiltY)){const lean=this.pixel({clientX:event.clientX+Math.sin(event.tiltX*Math.PI/180)*16,clientY:event.clientY+Math.sin(event.tiltY*Math.PI/180)*16},g.target),n=Math.hypot(lean.x-p.x,lean.y-p.y);if(n>1e-9){ax=(lean.x-p.x)/n;ay=(lean.y-p.y)/n;}}
+    s.path.sample({x:p.x,y:p.y,pressure:pen?event.pressure||.05:1,time:event.timeStamp,ax,ay});
     if(!s.raf)s.raf=requestAnimationFrame(()=>{s.raf=null;this.flushStroke(s);});
   }
   flushStroke(s){
     if(this.sessions.get(s.id)!==s||!s.pending.length)return;
-    const samples=s.pending,m=s.margin;s.pending=[];
-    const x=Math.floor(Math.min(...samples.map(p=>p.x))-m),y=Math.floor(Math.min(...samples.map(p=>p.y))-m);
-    const rect={x,y,width:Math.ceil(Math.max(...samples.map(p=>p.x))+m)-x,height:Math.ceil(Math.max(...samples.map(p=>p.y))+m)-y};
-    const tiles=[];
-    for(const [tx,ty] of TileStore.tilesInRect(rect.x,rect.y,rect.width,rect.height)){
-      const key=tileKey(tx,ty);if(s.sent.has(key))continue;s.sent.add(key);
-      const tile=s.surface.store.get(tx,ty);tiles.push({tx,ty,pixels:tile?tile.pixels.slice().buffer:null});
+    const dabs=s.pending;s.pending=[];
+    const tiles=[],store=s.surface.store;
+    for(const dab of dabs){
+      const [x0,y0,x1,y1]=dabExtent(s.brush,dab);
+      for(let ty=Math.floor(y0/TILE);ty*TILE<y1;ty++)for(let tx=Math.floor(x0/TILE);tx*TILE<x1;tx++){
+        const key=tileKey(tx,ty);if(s.sent.has(key))continue;s.sent.add(key);
+        const tile=store.get(tx,ty);tiles.push({tx,ty,pixels:tile?tile.pixels.slice().buffer:null});
+      }
     }
     const seq=++s.seq;s.outstanding++;s.posted.set(seq,performance.now());
-    this.strokeStats.batches++;this.strokeStats.maxQueueDepth=Math.max(this.strokeStats.maxQueueDepth,s.outstanding);
-    this.owner.strokeWorker.post({kind:'samples',stroke:s.id,seq,samples,tiles},tiles.map(t=>t.pixels).filter(Boolean));
+    this.strokeStats.batches++;this.strokeStats.dabs=(this.strokeStats.dabs??0)+dabs.length;this.strokeStats.maxQueueDepth=Math.max(this.strokeStats.maxQueueDepth,s.outstanding);
+    this.owner.strokeWorker.post({kind:'dabs',stroke:s.id,seq,dabs,tiles},tiles.map(t=>t.pixels).filter(Boolean));
   }
   strokeMessage(data){
     const s=this.sessions.get(data.stroke);if(!s)return;
@@ -167,7 +177,7 @@ export class DrawingController {
       if(posted!=null)this.strokeStats.lastRoundTripMs=performance.now()-posted;
       if(s.cancelled)return;
       const store=s.surface.store;
-      for(const t of data.tiles){const key=tileKey(t.tx,t.ty);if(!s.before.has(key))s.before.set(key,store.get(t.tx,t.ty)?.pixels.slice()??null);store.set(t.tx,t.ty,new Uint8ClampedArray(t.pixels));}
+      for(const t of data.tiles){const key=tileKey(t.tx,t.ty);if(!s.before.has(key))s.before.set(key,store.get(t.tx,t.ty)?.pixels.slice()??null);store.adopt(t.tx,t.ty,new Uint8ClampedArray(t.pixels));}
       if(data.tiles.length){this.owner.present(s.surface,data.dirty);this.onRender();}
       return;
     }
@@ -209,7 +219,7 @@ export class DrawingController {
     if(g.kind==='pan'){this.gesture=null;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);return;}
     if(g.kind==='stroke'){
       const s=g.session;s.ended=true;cancelAnimationFrame(s.raf);s.raf=null;
-      this.flushStroke(s);this.owner.strokeWorker.post({kind:'end',stroke:s.id});
+      s.path.finish();this.flushStroke(s);this.owner.strokeWorker.post({kind:'end',stroke:s.id});
       if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);
       return; // the gesture stays closing until the worker's done arrives
     }

@@ -28,6 +28,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Count shared copy-on-write tiles once in drawing memory accounting, and free rebuildable caches before rejecting edits that exceed the tile budget.
 - Stop zooming and alternating render paths from repainting shared scratch canvases, removing flicker and unnecessary tile redraws while panning.
 - Smooth strokes without dead zones or gaps: stabilized drawing follows the path continuously, and unstabilized strokes curve through sharp corners and always end on the final sample.
+- Stop fast or stabilized brush strokes from erasing square patches of existing artwork. The lost patches could not be restored with undo; strokes now keep every pixel they don't paint, and undo restores the drawing exactly.
 - Render drawings of any span without failing: mip levels now escalate to 256× and the scratch clamps to the texture limit around the visible span instead of throwing and blanking the whole frame.
 - Keep playback and export in sync with the canvas: the last stroke of a drawing now appears when playing, and an extended final drawing exposure shows its artwork across the whole hold instead of staying blank until another frame follows. Incremental playback updates no longer render stale tile data or clip freshly painted regions into blank rectangles.
 - Keep prepared playback frames warm through layer-timeline edits and undo/redo: a localized change only rebuilds the spans it actually touches instead of recompiling the whole timeline.

@@ -32,6 +32,12 @@ export class TileStore {
     else{full=new Uint8ClampedArray(pixels);if(full.byteLength!==TILE_BYTES)throw new Error('Tile pixels must be 4 uniform bytes or one full tile.');}
     this.tiles.set(key,{tx,ty,pixels:full,frozen:false});this._changed();
   }
+  /** Take ownership of a full tile buffer without copying it; the caller must
+   * not retain or mutate `pixels` afterwards. */
+  adopt(tx,ty,pixels){
+    if(!(pixels instanceof Uint8ClampedArray)||pixels.byteLength!==TILE_BYTES)throw new Error('Tile pixels must be one full tile.');
+    this.tiles.set(tileKey(tx,ty),{tx,ty,pixels,frozen:false});this._changed();
+  }
   delete(tx,ty){if(this.tiles.delete(tileKey(tx,ty)))this._changed();}
   fork(){for(const tile of this.tiles.values())tile.frozen=true;return new TileStore(new Map(this.tiles));}
   freeze(){for(const tile of this.tiles.values())tile.frozen=true;}
