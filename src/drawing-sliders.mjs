@@ -44,6 +44,7 @@ export function sliderMarkup(key,value,{label,compact=false,title}={}){
 }
 /** Refresh every slider for `key` to the setting value. */
 export function refreshSliders(key,value,root=document){
+  if(!SLIDERS[key])return; // Colours and toggles have no slider fields.
   const shown=displayValue(key,value),pct=(fraction(key,shown)*100).toFixed(2)+'%',text=formatSlider(key,shown);
   for(const el of root.querySelectorAll(`[data-draw-slider="${key}"]`)){
     const fill=el.querySelector('.draw-slider-fill'),label=el.querySelector('.draw-slider-value');

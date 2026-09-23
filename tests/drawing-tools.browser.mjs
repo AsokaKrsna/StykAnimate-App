@@ -69,7 +69,9 @@ try{
   const liveColor=await page.evaluate(()=>styk.drawing.settings.color);await page.mouse.up();
   await page.mouse.click(sv.x+sv.width*.9,sv.y+sv.height*.9);
   const secondPick=await page.evaluate(()=>styk.drawing.settings.color);
-  check('the colour picker applies live and after the bar re-renders',liveColor!==firstColor&&secondPick!==liveColor);
+  const pickerError=await page.locator('.paint-picker .paint-error').innerText();await page.waitForTimeout(50);
+  const barSwatch=await page.locator('.drawing-quickbar .draw-color-primary').inputValue();
+  check('the colour picker applies live and after the bar re-renders',liveColor!==firstColor&&secondPick!==liveColor&&!pickerError&&barSwatch===secondPick,{pickerError,barSwatch,secondPick});
   await page.keyboard.press('Escape');
   await page.evaluate(()=>{styk.drawing.library.recent=['#10a0e0','#e04010'];styk.drawing.onUI();});
   await page.locator('.drawing-quickbar .draw-quick-swatch[data-draw-color="#e04010"]').click();

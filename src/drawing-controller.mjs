@@ -200,7 +200,7 @@ export class DrawingController {
     const key=input.dataset.drawSetting==='color2'?'color2':'color',value=this.settings[key]??'#ffffff';
     return {anchor:input,title:key==='color2'?'Second color':'Color',live:true,placement:'below',gradients:false,alpha:false,swatches:this.library.recent,
       paint:{type:'solid',stops:[{offset:0,color:value.slice(1).match(/../g).map(n=>parseInt(n,16)),opacity:1}]},
-      onChange:paint=>{const hex=hexColor(paint.stops[0].color);if(hex===this.settings[key])return;this.setSetting(key,hex);this.onUI();}};
+      onChange:paint=>{const hex=hexColor(paint.stops[0].color);if(hex===this.settings[key])return;this.settings[key]=hex;this.paintPreview(this.panel);this.onUI();this.onRender();}};
   }
   /** Keyboard adjustments routed from the hotkey map; true when handled. */
   hotkey(name){
