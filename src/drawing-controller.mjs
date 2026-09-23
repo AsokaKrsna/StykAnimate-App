@@ -24,7 +24,11 @@ export class DrawingController {
     const events=this.events=new AbortController(),opts={signal:events.signal};
     this.panel.addEventListener('click',event=>{const preset=event.target.closest('[data-draw-preset]'),action=event.target.closest('[data-draw-action]');if(preset){this.finish();Object.assign(this.settings,BRUSH_PRESETS.find(p=>p.id===preset.dataset.drawPreset),{preset:preset.dataset.drawPreset});this.onUI();}if(action)this.run(()=>this.action(action.dataset.drawAction));},opts);
     this.panel.addEventListener('change',event=>{if(event.target.dataset.drawSetting)this.run(()=>this.change(event));},opts);
-    for(const [name,handler] of [['pointerdown',e=>this.down(e)],['pointermove',e=>this.move(e)],['pointerup',e=>this.up(e)],['pointercancel',e=>this.up(e,true)],['lostpointercapture',e=>this.up(e,true)]])overlay.addEventListener(name,event=>{
+    // pointerrawupdate delivers pen samples as they arrive instead of aligned
+    // to the next frame; pointermove still drives everything else and remains
+    // the fallback where raw updates are unavailable.
+    const raw=typeof window!=='undefined'&&'onpointerrawupdate' in window?[['pointerrawupdate',e=>this.rawMove(e)]]:[];
+    for(const [name,handler] of [['pointerdown',e=>this.down(e)],['pointermove',e=>this.move(e)],...raw,['pointerup',e=>this.up(e)],['pointercancel',e=>this.up(e,true)],['lostpointercapture',e=>this.up(e,true)]])overlay.addEventListener(name,event=>{
       if(!this.active)return;
       // The shared viewport owns the entire pan gesture, including moves whose
       // button is -1 and release after Space has already been lifted.
@@ -185,7 +189,10 @@ export class DrawingController {
       path.sample({x:p.x,y:p.y,pressure,time:event.timeStamp,ax,ay});
     }
     s.lastWorld=world;
-    if(!s.raf)s.raf=requestAnimationFrame(()=>{s.raf=null;this.flushStroke(s);});
+    // An idle worker takes the batch now, so pixels return before the next
+    // frame; while it is busy, batches coalesce once per frame.
+    if(s.outstanding===0&&!s.soon){s.soon=true;queueMicrotask(()=>{s.soon=false;if(!s.ended)this.flushStroke(s);});}
+    else if(!s.raf)s.raf=requestAnimationFrame(()=>{s.raf=null;this.flushStroke(s);});
   }
   flushStroke(s){
     if(this.sessions.get(s.id)!==s||!s.pending.length)return;
@@ -242,7 +249,7 @@ export class DrawingController {
   }
   move(event){this.cursor=pointerSample(event);if(this.loading?.id===event.pointerId){this.loading.samples.push(pointerSample(event));return;}const g=this.gesture;if(!g||g.id!==event.pointerId){this.onRender();return;}
     if(g.kind==='pan'){const rect=this.viewRect();this.state.view.x=g.view.x+(event.clientX-g.start.clientX)*rect.clientWidth/rect.width;this.state.view.y=g.view.y+(event.clientY-g.start.clientY)*rect.clientHeight/rect.height;}
-    else if(g.kind==='stroke'){if(!g.session.ended){const samples=event.getCoalescedEvents?.();for(const sample of samples?.length?samples:[event])this.sampleStroke(sample);}}
+    else if(g.kind==='stroke'){if(!g.session.ended)this.strokeSamples(event);}
     else if(g.kind==='pose'){const p=this.point(event);this.editor.moveSelection(p.x-g.start.x,p.y-g.start.y,{fromStart:true});}
     else if(g.kind==='lasso'){const p=this.pixel(event,g.target);if(g.shape==='rect')g.points=rectPoints(g.start,p);else if(g.shape==='ellipse')g.points=ellipsePoints(g.start,p);else if(g.points.length<8192&&Math.hypot(p.x-g.points.at(-1).x,p.y-g.points.at(-1).y)>1)g.points.push(p);}
     else if(g.kind==='resize'){this.settings.size=Math.max(.5,Math.min(2048,g.size*2**((event.clientX-g.start.clientX)/120)));this.settings.preset=null;this.cursor=g.start;this.paintPreview(this.panel);}
@@ -250,6 +257,10 @@ export class DrawingController {
     else if(g.kind==='selection-move'){const p=this.pixel(event,g.target);this.selection.dx=g.dx+p.x-g.start.x;this.selection.dy=g.dy+p.y-g.start.y;this.previewSelection();}
     this.onRender();
   }
+  /** Stroke samples from a pointer event, including coalesced ones. Raw and
+   * regular move events report the same samples; timestamps drop repeats. */
+  strokeSamples(event){const s=this.gesture.session,samples=event.getCoalescedEvents?.();for(const sample of samples?.length?samples:[event]){if(sample.timeStamp<=(s.lastTime??-Infinity))continue;s.lastTime=sample.timeStamp;this.sampleStroke(sample);}}
+  rawMove(event){const g=this.gesture;if(g?.kind!=='stroke'||g.id!==event.pointerId||g.session.ended)return;this.strokeSamples(event);}
   up(event,cancel=false){if(this.loading?.id===event.pointerId){if(cancel){this.sequence++;this.loading=null;}else this.loading.released=true;return;}const g=this.gesture;if(!g||g.id!==event.pointerId)return;if(g.kind==='stroke'&&g.session.ended)return;cancel?this.cancel():this.finish();}
   finish(){const g=this.gesture;
     if(g?.kind==='stroke'&&g.session.ended)return; // the done reply completes the commit
