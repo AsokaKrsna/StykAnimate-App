@@ -1916,10 +1916,6 @@ function updateTitle() {
   });
 }
 function syncSelectionControls() {
-  const origins = state.settings.marqueeSelection === 'origins', button = $('selection-origins');
-  button.textContent = origins ? 'Origins' : 'Bounds';
-  button.setAttribute('aria-pressed', String(origins));
-  button.dataset.hotkeyTitle = origins ? 'Rectangle selects figure origins' : 'Rectangle selects figure bounds';
   const indices = rangeFrames(true), count = indices?.sheetTicks?.length ?? indices?.length ?? 0;
   const range = $('range-edit');
   if (count < 2) state.applyRange = false;
@@ -1929,7 +1925,6 @@ function syncSelectionControls() {
   range.dataset.hotkeyTitle = count > 1
     ? 'Move figures and edit their properties across ' + count + ' frames, including the current frame'
     : 'Select multiple frames to edit them together';
-  refreshHotkeyHints(hotkeys, button.parentElement);
   refreshHotkeyHints(hotkeys, range.parentElement);
   if (state.tool === 'select' && !builderMode?.active && !drawingController?.active)
     $('viewport-hint').textContent = editor.object?.join

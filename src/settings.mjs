@@ -20,7 +20,7 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   showUnselectedHandles: true,
   canvasGrid: false,
   canvasZoomGesture: "ctrl-scroll",
-  marqueeSelection: "bounds",
+  marqueeSelection: "origins",
   canvasGuideVertical: false,
   canvasGuideHorizontal: false,
   canvasGuidesLocked: false,

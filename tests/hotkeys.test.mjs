@@ -181,9 +181,10 @@ test('frame and keyframe punctuation defaults work in every editing scope', () =
 });
 
 test('origin selection settings normalize safely and selection commands can be remapped', () => {
-  assert.equal(normalizeEditorSettings({}).marqueeSelection, 'bounds');
+  assert.equal(normalizeEditorSettings({}).marqueeSelection, 'origins');
   assert.equal(normalizeEditorSettings({marqueeSelection:'origins'}).marqueeSelection, 'origins');
-  assert.equal(normalizeEditorSettings({marqueeSelection:'unknown'}).marqueeSelection, 'bounds');
+  assert.equal(normalizeEditorSettings({marqueeSelection:'unknown'}).marqueeSelection, 'origins');
+  assert.equal(normalizeEditorSettings({marqueeSelection:'bounds'}).marqueeSelection, 'bounds');
   const manager = new HotkeyManager({bindings: {'toggle-selection-origins': ['Mod+Shift+KeyB'], 'toggle-range-edit': ['Mod+Shift+KeyR']}});
   manager.setBindings({'toggle-selection-origins': ['Mod+Shift+KeyB'], 'toggle-range-edit': ['Mod+Shift+KeyR']});
   assert.equal(manager.resolve(key('KeyB', {ctrlKey:true,shiftKey:true}))?.id, 'toggle-selection-origins');

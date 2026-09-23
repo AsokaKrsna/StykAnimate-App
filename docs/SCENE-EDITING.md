@@ -90,12 +90,12 @@ the Windows gesture itself needs a physical tablet to verify.
 
 ## Figure selection and frame corrections
 
-The bottom-right canvas control switches rectangle selection between **Bounds**
-(the default overlap behavior) and **Origins**. Origins tests each figure’s
+Settings → Canvas → **Rectangle selects** switches between **Origins** (the
+default) and **Bounds** (overlapping artwork). Origins tests each figure’s
 evaluated root, including attachments, in the displayed canvas projection.
 Coincident roots remain coincident selection targets. Hidden and locked figures
-are excluded. The preference is saved under Settings → Canvas; both this toggle
-and **Edit selected frames** can be assigned shortcuts in Settings → Shortcuts.
+are excluded. The saved selection preference and **Edit selected frames** can
+also be assigned shortcuts in Settings → Shortcuts.
 Builder and Draw retain their own selection behavior.
 
 Ctrl/Cmd-click on a figure handle toggles its membership; Shift-click still does
