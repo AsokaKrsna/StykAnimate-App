@@ -119,6 +119,8 @@ try{
   // Flip view: pointer mapping stays exact while the view is mirrored.
   await page.keyboard.press('m');
   check('M flips the view',await page.evaluate(()=>styk.state.view.flip===true));
+  await page.keyboard.press('Equal');
+  check('zooming keeps the flipped view',await page.evaluate(()=>styk.state.view.flip===true&&styk.state.view.scale>1.01));
   await stroke(line(cx+200,cy-150,cx+260,cy-150,4));
   check('painting in a flipped view lands under the pointer',await page.evaluate(({cx,cy})=>alphaAt(cx+230,cy-150)===255,{cx,cy}));
   await page.screenshot({path:path.join(output,'flipped.png')});

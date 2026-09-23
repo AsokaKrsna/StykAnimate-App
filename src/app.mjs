@@ -1118,7 +1118,8 @@ function zoom(factor, point) {
     v = state.view,
     s = Math.min(100, Math.max(0.001, v.scale * factor)),
     k = s / v.scale;
-  state.view = { x: px - (px - v.x) * k, y: py - (py - v.y) * k, scale: s };
+  // Keep the view's other properties (drawing rotation and flip) when zooming.
+  state.view = { ...v, x: px - (px - v.x) * k, y: py - (py - v.y) * k, scale: s };
   placeArtboard();
   requestRender();
 }
