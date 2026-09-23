@@ -1,5 +1,5 @@
 import {TILE,TILE_BYTES,tileKey,TileStore,tileTransparent} from './drawing-tiles.mjs';
-import {floodTiles as floodMaskTiles,fillMaskTiles,gradientTiles,filterTiles,tileChanges} from './drawing-pixels.mjs';
+import {floodTiles as floodMaskTiles,fillMaskTiles,filterTiles,tileChanges} from './drawing-pixels.mjs';
 import {floodTiles} from './drawing-fill.mjs';
 import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {decodeDrawingPNG} from './drawing-png.mjs';
@@ -76,12 +76,6 @@ export async function drawingWorkerOperation(data){
       filterTiles(store,{...data.options,bounds:data.bounds});
       // Filtering transparent regions writes empty tiles: they equal absent ones.
       store.prune();changesReply(id,store,before);return;
-    }
-    if(kind==='gradient'){
-      if(!validRect(data.bounds))throw new Error('Invalid gradient bounds.');
-      const store=storeOf(data),before=beforeOf(store,data.bounds);
-      gradientTiles(store,{...data.options,bounds:data.bounds});
-      changesReply(id,store,before);return;
     }
     if(kind==='fill-mask'){
       const m=data.mask;if(!m||!validRect(m)||!(m.mask instanceof Uint8Array)||m.mask.length!==m.width*m.height)throw new Error('Invalid selection mask.');

@@ -45,9 +45,6 @@ try{
   await page.keyboard.press('u');await page.evaluate(()=>Object.assign(styk.drawing.settings,{shapeKind:'ellipse',shapeFill:true,color:'#d04020',opacity:1}));
   await stroke([{x:cx+120,y:cy+60},{x:cx+240,y:cy+140}]);await page.waitForFunction(()=>styk.editor.undoLabel==='Fill shape');
   check('a filled ellipse applies',await alphaAt(cx+180,cy+100)===255);
-  await page.keyboard.press('Shift+G');await page.evaluate(()=>Object.assign(styk.drawing.settings,{gradientType:'radial',gradientEnd:'transparent',color:'#2060f0',opacity:1}));
-  await stroke([{x:cx-240,y:cy+110},{x:cx-180,y:cy+110}]);await page.waitForFunction(()=>styk.editor.undoLabel==='Gradient');
-  check('a radial gradient applies',await alphaAt(cx-240,cy+110)>200);
   await page.keyboard.press('l');await page.locator('.drawing-quickbar [data-draw-choice="selectShape"][data-value="rect"]').click();
   await stroke([{x:cx-320,y:cy-30},{x:cx-140,y:cy+30}]);
   await page.locator('details[data-section="Filters"] summary').click();await page.locator('[data-draw-action="filter-blur"]').click();

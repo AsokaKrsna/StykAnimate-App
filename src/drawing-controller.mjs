@@ -31,13 +31,13 @@ const loadLibrary=()=>{try{const v=JSON.parse(globalThis.localStorage?.getItem(B
 const FILTER_LABELS={blur:'Blur drawing',hsl:'Adjust hue and saturation',brightness:'Adjust brightness and contrast',invert:'Invert colours'};
 // Actions that keep (or act on) the pixel selection instead of applying it first.
 const SELECTION_ACTIONS=['filter-blur','filter-hsl','filter-brightness','filter-invert','swap-colors','save-preset','delete-preset','flip-selection-x','flip-selection-y','copy-pixels','cut-pixels','delete-pixels','apply-selection','cancel-selection','select-all','invert-selection','deselect','fill-selection'];
-const PAINT_TOOLS=['brush','eraser','fill','shape','gradient'];
+const PAINT_TOOLS=['brush','eraser','fill','shape'];
 // Input samples one stroke may queue: minutes of 240 Hz pen input.
 const MAX_STROKE_SAMPLES=65536;
 const unionRects=(a,b)=>{if(!a)return b?{...b}:null;if(!b)return{...a};const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);return{x,y,width:Math.max(a.x+a.width,b.x+b.width)-x,height:Math.max(a.y+a.height,b.y+b.height)-y};};
 export class DrawingController {
   constructor({editor,state,overlay,viewport,onRender,onOverlayRender=onRender,onView=()=>{},onUI,onError,onStatus,beforeEdit,getImageSource=()=>({}),getTimeline,getClipboard,sampleColor}) {
-    Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getImageSource,getTimeline,getClipboard,sampleColor,settings:{preset:'ink',size:8,color:'#252525',opacity:1,flow:1,hardness:1,pressureSize:true,pressureOpacity:false,pressureFlow:false,sizeCurve:1,opacityCurve:1,stabilization:0,spacingRatio:.08,texture:0,roundness:1,angle:0,angleMode:'fixed',scatter:0,blend:'normal',alphaLock:false,smudgeLength:.8,colorRate:0,filterRadius:4,hue:0,saturation:0,lightness:0,brightness:0,contrast:0,mirrorX:false,mirrorY:false,selectShape:'lasso',shapeKind:'rect',shapeFill:false,gradientType:'linear',gradientEnd:'transparent',color2:'#ffffff',resolution:2,filter:'smooth',length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
+    Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getImageSource,getTimeline,getClipboard,sampleColor,settings:{preset:'ink',size:8,color:'#252525',opacity:1,flow:1,hardness:1,pressureSize:true,pressureOpacity:false,pressureFlow:false,sizeCurve:1,opacityCurve:1,stabilization:0,spacingRatio:.08,texture:0,roundness:1,angle:0,angleMode:'fixed',scatter:0,blend:'normal',alphaLock:false,smudgeLength:.8,colorRate:0,filterRadius:4,hue:0,saturation:0,lightness:0,brightness:0,contrast:0,mirrorX:false,mirrorY:false,selectShape:'lasso',shapeKind:'rect',shapeFill:false,color2:'#ffffff',resolution:2,filter:'smooth',length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
     this.library=loadLibrary();
     this.onOverlayRender=onOverlayRender;this.onView=onView;
     this.panel=document.getElementById('inspector');
@@ -243,7 +243,7 @@ export class DrawingController {
   /** Painting tools need a drawing layer. Rather than ignoring the first stroke,
    * switch to an editable drawing layer, or create one (its own undo step). */
   ensurePaintLayer(){
-    if(!['brush','fill','shape','gradient'].includes(this.tool))return;
+    if(!['brush','fill','shape'].includes(this.tool))return;
     const active=this.editor.getLayer(this.editor.activeLayerId);
     // A hidden or locked drawing layer is a deliberate state; keep its message.
     if(isDrawingLayer(active))return;
@@ -266,7 +266,7 @@ export class DrawingController {
     this.state.tool=value==='pan'?'hand':'drawing-'+value;if(value==='transform'){try{const t=this.editor.drawingTarget();if(t.object)this.editor.select(t.object.unique_id);}catch{}}this.sync();this.onUI();this.onRender();}
   get pixelClipboard(){return this.editor._drawingPixelClipboard;}
   get exposureLabel(){try{const t=this.editor.drawingTarget();return `${t.figure?'Drawing':'Blank'} · frames ${t.key.tick+1}–${t.end}${this.editor.tick!==t.key.tick?' · editing hold':''}`;}catch{return 'No drawing exposure at this frame';}}
-  sync(){if(!this.active)return;try{const t=this.editor.drawingTarget();this.exposure={layerId:t.id,start:t.key.tick,end:t.end};this.lastLayer=t.id;}catch{this.exposure=null;}this.viewport.setAttribute('aria-label','Drawing canvas. B brush, E eraser, G fill, Shift+G gradient, U shapes, L select pixels, V transform, H pan.');this.overlay.style.cursor=this.tool==='pan'?'grab':this.tool==='transform'?'move':'crosshair';}
+  sync(){if(!this.active)return;try{const t=this.editor.drawingTarget();this.exposure={layerId:t.id,start:t.key.tick,end:t.end};this.lastLayer=t.id;}catch{this.exposure=null;}this.viewport.setAttribute('aria-label','Drawing canvas. B brush, E eraser, G fill, U shapes, L select pixels, V transform, H pan.');this.overlay.style.cursor=this.tool==='pan'?'grab':this.tool==='transform'?'move':'crosshair';}
   propertyValue(key){key=key.slice(5);if(key==='viewAngle')return (this.state.view.rotation??0)*180/Math.PI;if(key==='selectionScale')return (this.selection?.scale??1)*100;if(key==='selectionAngle')return this.selection?.angle??0;return this.settings[key]*(PERCENT_SETTINGS.includes(key)?100:1);}
   propertySet(key,value){key=key.slice(5);if(key==='viewAngle')this.state.view.rotation=value*Math.PI/180;else if(key==='selectionScale'||key==='selectionAngle'){if(this.selection){this.selection[key==='selectionScale'?'scale':'angle']=key==='selectionScale'?value/100:value;this.previewSelection();}}else{this.settings[key]=value/(PERCENT_SETTINGS.includes(key)?100:1);if(['size','opacity','flow','hardness','roundness','angle','scatter','spacingRatio','texture'].includes(key))this.settings.preset=null;}this.onRender();this.paintPreview(this.panel);}
   async prepareVisible(){const owner=this.owner;if(!owner||!this.active||this.gesture)return;let target;try{target=this.editor.drawingTarget();}catch{return;}if(!target.figure)return;const revision=this.editor.revision;try{await owner.surface(target.figure);if(owner===this.owner&&revision===this.editor.revision){this.onRender();}}catch(error){if(error.name!=='AbortError')this.onError(error);}}
@@ -322,7 +322,7 @@ export class DrawingController {
       if(!current()){owner.discard(target.figure);return;}
       // v1 cels migrate lazily on the first pixel edit; posing keeps them v1.
       const d=drawingMetadata(target.figure);
-      if(d?.version===1&&['brush','eraser','fill','lasso','shape','gradient'].includes(this.tool)){
+      if(d?.version===1&&['brush','eraser','fill','lasso','shape'].includes(this.tool)){
         const figure=migrateDrawingFigure(target.figure,this.editor.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1),{bounds:surface.store.bounds});
         owner.retarget(d.celId,figure);
         target={...target,figure,object:{...structuredClone(target.object),figure_type_id:figure.figure_type_id},migratedFrom:d.celId};
@@ -346,8 +346,8 @@ export class DrawingController {
       if(this.selection){this.gesture={id:event.pointerId,target,surface,kind:'selection-move',start:point,dx:this.selection.dx,dy:this.selection.dy};}
       else if(shape==='wand'){surface.pinned=false;await this.wandSelect(target,surface,point,mode);return;}
       else this.gesture={id:event.pointerId,target,surface,kind:'lasso',shape,mode,start:point,points:[point]};
-    }else if(this.tool==='shape'||this.tool==='gradient'){
-      // Drag out a line, rectangle, ellipse or gradient; it applies on release.
+    }else if(this.tool==='shape'){
+      // Drag out a line, rectangle or ellipse; it applies on release.
       await this.settleFloating();const w=this.point(pending.event);this.gesture={id:event.pointerId,target,surface,kind:this.tool,start:w,end:w};
     }else{
       await this.settleFloating();this.beginStroke(target,surface,{id:event.pointerId,erase:this.tool==='eraser'||event.button===5||Boolean(event.buttons&32)});
@@ -449,15 +449,6 @@ export class DrawingController {
     this.beginStroke(g.target,g.surface,{id:g.id});let time=performance.now();
     for(let i=0;i<points.length;i++){const p=points[i],q=points[i+1];this.sampleStroke({world:p,timeStamp:time++,pointerType:'mouse'});if(!q)break;const n=Math.floor(Math.hypot(q.x-p.x,q.y-p.y)/1.5);for(let k=1;k<n;k++)this.sampleStroke({world:{x:p.x+(q.x-p.x)*k/n,y:p.y+(q.y-p.y)*k/n},timeStamp:time++,pointerType:'mouse'});}
     this.finish();
-  }
-  /** Apply a finished gradient drag inside the selection (or the reachable canvas). */
-  async commitGradient(g){
-    g.surface.pinned=false;if(Math.hypot(g.end.x-g.start.x,g.end.y-g.start.y)<.5)return;
-    const matrix=this.pixelMatrix(g.target),a=inversePoint(matrix,g.start),b=inversePoint(matrix,g.end),clip=this.marqueeOn(g.target)?this.marquee.mask:null;
-    const bounds=clip?{x:clip.x,y:clip.y,width:clip.width,height:clip.height}:this.fillBounds(g.target,g.surface.store);if(!bounds)return;
-    if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw new Error('Zoom in or select an area: the gradient exceeds 16 megapixels.');
-    const rgb=hex=>hex.slice(1).match(/../g).map(n=>parseInt(n,16)),alpha=Math.round(this.settings.opacity*255),from=[...rgb(this.settings.color),alpha],to=this.settings.gradientEnd==='color'?[...rgb(this.settings.color2??'#ffffff'),alpha]:[...rgb(this.settings.color),0];
-    await this.pixelTool(g.target,g.surface,'gradient',{bounds,options:{a,b,type:this.settings.gradientType??'linear',from,to,mask:clip}},'Gradient');this.rememberColor();
   }
   /** Feed one input sample to the stroke. A GPU stroke paints its dabs in the
    * next frame; a worker stroke queues the sample for its next batch. */
@@ -662,7 +653,7 @@ export class DrawingController {
     else if(g.kind==='lasso'){const p=this.pixel(event,g.target);if(g.shape==='rect')g.points=rectPoints(g.start,p);else if(g.shape==='ellipse')g.points=ellipsePoints(g.start,p);else if(g.points.length<8192&&Math.hypot(p.x-g.points.at(-1).x,p.y-g.points.at(-1).y)>1)g.points.push(p);}
     else if(g.kind==='resize'){this.setSetting('size',Math.max(.5,Math.min(2048,Math.round(g.size*2**((event.clientX-g.start.clientX)/120)*10)/10)));this.cursor=g.start;}
     else if(g.kind==='pick')this.pickColor(event);
-    else if(g.kind==='shape'||g.kind==='gradient'){g.end=this.point(event);g.constrain=event.shiftKey;}
+    else if(g.kind==='shape'){g.end=this.point(event);g.constrain=event.shiftKey;}
     else if(g.kind==='selection-scale'||g.kind==='selection-rotate'){
       const p=this.pixel(event,g.target),s=this.selection,c=g.center;
       if(g.kind==='selection-scale')s.scale=Math.max(.01,Math.min(10,g.scale*Math.hypot(p.x-c.x,p.y-c.y)/g.startDistance));
@@ -694,7 +685,7 @@ export class DrawingController {
   finish(){const g=this.gesture;
     if(g?.kind==='stroke'&&g.session.ended)return; // the done reply completes the commit
     if(this.loading)this.cancel();if(!g)return;
-    if(g.kind==='shape'||g.kind==='gradient'){this.gesture=null;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.run(()=>g.kind==='shape'?this.commitShape(g):this.commitGradient(g));this.onRender();return;}
+    if(g.kind==='shape'){this.gesture=null;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.run(()=>this.commitShape(g));this.onRender();return;}
     if(['pan','pinch','pick','resize'].includes(g.kind)){this.gesture=null;for(const id of g.touches?.keys()??[g.id])if(this.overlay.hasPointerCapture(id))this.overlay.releasePointerCapture(id);if(g.kind!=='pan'&&g.kind!=='pinch')this.onUI();return;}
     if(g.kind==='stroke'){
       const s=g.session;s.ended=true;cancelAnimationFrame(s.raf);s.raf=null;
@@ -708,7 +699,7 @@ export class DrawingController {
     if(g.kind==='pose')this.editor.commitDrag();
     else if(g.kind==='lasso')return this.run(()=>this.selectShape(g));
   }finally{g.surface.pinned=g.kind==='lasso'&&Boolean(this.operation)||Boolean(this.selection?.surface===g.surface);if(this.selection?.surface===g.surface)this.previewSelection();else{this.owner.present(g.surface);this.owner.discard(g.target.figure);}if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.sync();this.onUI();this.onRender();}}
-  cancel(){this.operation?.abort.abort();this.previewQueued=false;this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();this.onRender();return;}this.gesture=null;if(g.kind==='pan'||g.kind==='pinch'){Object.assign(this.state.view,g.view);for(const id of g.touches?.keys()??[g.id])if(this.overlay.hasPointerCapture(id))this.overlay.releasePointerCapture(id);this.onView();this.onRender();return;}if(g.kind==='pick'){this.pickAbort?.abort();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);return;}if(g.kind==='shape'||g.kind==='gradient'){g.surface.pinned=false;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();return;}if(g.kind==='resize'){this.settings.size=g.size;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onUI();this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;if(this.wetSession===s){this.wetSession=null;this.wet?.clear();}cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.hold?.(s,0);s.owner.busy=false;if(s.gpu){s.gpu.fail(new DOMException('Stroke cancelled.','AbortError'));s.gpu.release();s.surface.stamp++;}else this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();if(g.kind==='selection-scale'||g.kind==='selection-rotate'){const s=this.selection;if(s){s.scale=g.scale;s.angle=g.angle;this.previewSelection();}}g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
+  cancel(){this.operation?.abort.abort();this.previewQueued=false;this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();this.onRender();return;}this.gesture=null;if(g.kind==='pan'||g.kind==='pinch'){Object.assign(this.state.view,g.view);for(const id of g.touches?.keys()??[g.id])if(this.overlay.hasPointerCapture(id))this.overlay.releasePointerCapture(id);this.onView();this.onRender();return;}if(g.kind==='pick'){this.pickAbort?.abort();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);return;}if(g.kind==='shape'){g.surface.pinned=false;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();return;}if(g.kind==='resize'){this.settings.size=g.size;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onUI();this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;if(this.wetSession===s){this.wetSession=null;this.wet?.clear();}cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.hold?.(s,0);s.owner.busy=false;if(s.gpu){s.gpu.fail(new DOMException('Stroke cancelled.','AbortError'));s.gpu.release();s.surface.stamp++;}else this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();if(g.kind==='selection-scale'||g.kind==='selection-rotate'){const s=this.selection;if(s){s.scale=g.scale;s.angle=g.angle;this.previewSelection();}}g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
   async barrier(options){await this.settle({selection:true});if(this.loading)throw new Error('Wait for the drawing to finish loading.');await drawingBarrier(this.editor.report,options);}
   /** Fill bounds follow the document, independent of display zoom. */
   fillBounds(target,store){
@@ -997,13 +988,12 @@ export class DrawingController {
         const width=1/(unit*(s?.scale??1));ctx.lineWidth=width*1.5;ctx.setLineDash([]);ctx.strokeStyle='rgba(255,255,255,.9)';ctx.stroke(path);
         ctx.lineWidth=width;ctx.setLineDash([4*width,4*width]);ctx.strokeStyle='#2878ed';ctx.stroke(path);ctx.restore();
       }
-      // Shape and gradient previews in world space.
-      if(g?.kind==='shape'||g?.kind==='gradient'){
-        const pts=g.kind==='shape'?this.shapePoints(g):[g.start,g.end],d=drawingMetadata(target.figure);ctx.save();ctx.beginPath();
+      // Shape previews in world space.
+      if(g?.kind==='shape'){
+        const pts=this.shapePoints(g),d=drawingMetadata(target.figure);ctx.save();ctx.beginPath();
         pts.forEach((p,i)=>{const q=worldToScreen(p,view);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});
         if(g.kind==='shape'&&!this.settings.shapeFill){ctx.lineCap=ctx.lineJoin='round';ctx.strokeStyle=this.settings.color;ctx.globalAlpha=.6;ctx.lineWidth=Math.max(1,this.settings.size*d.pixelsPerUnit*unit);ctx.stroke();}
-        else if(g.kind==='shape'){ctx.fillStyle=this.settings.color;ctx.globalAlpha=.4;ctx.fill();}
-        else{ctx.setLineDash([6,4]);ctx.strokeStyle='#2878ed';ctx.lineWidth=1.5;ctx.stroke();for(const p of pts){const q=worldToScreen(p,view);ctx.beginPath();ctx.arc(q.x,q.y,4,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle='#2878ed';ctx.stroke();}}
+        else{ctx.fillStyle=this.settings.color;ctx.globalAlpha=.4;ctx.fill();}
         ctx.restore();
       }
       if(this.tool==='lasso'&&this.selection&&outline&&g?.kind!=='lasso'){

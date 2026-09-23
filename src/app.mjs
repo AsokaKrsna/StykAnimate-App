@@ -2002,7 +2002,7 @@ function renderInspector() {
 
 let construction;
 function setTool(tool) {
-  if(drawingController?.active){const name=tool==='hand'?'pan':tool==='select'?'transform':tool.replace('drawing-','');if(['brush','eraser','fill','lasso','shape','gradient','transform','pan'].includes(name))return drawingController.setTool(name);return;}
+  if(drawingController?.active){const name=tool==='hand'?'pan':tool==='select'?'transform':tool.replace('drawing-','');if(['brush','eraser','fill','lasso','shape','transform','pan'].includes(name))return drawingController.setTool(name);return;}
 
   if (tool !== 'attach') state.figureJoin = null;
   if (state.tool !== tool) construction?.cancel();
@@ -5413,7 +5413,7 @@ function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
   editablePreparation.cancel();
   if(drawingController?.active){
     if(id==='play-pan')drawingController.finish();
-    if(id.startsWith('drawing-')){drawingController.finish();const tool=id.slice(8),actions={'select-all':'select-all',deselect:'deselect','invert-selection':'invert-selection','fill-selection':'fill-selection',mirror:'mirror-x','flip-view':'flip-view','swap-colors':'swap-colors'};if(['brush','eraser','fill','lasso','shape','gradient'].includes(tool))drawingController.tool=tool;else if(tool==='apply')drawingController.run(()=>drawingController.applySelection());else if(actions[tool])return drawingController.run(()=>drawingController.action(actions[tool]));else drawingController.hotkey(tool);drawingController.sync();return;}
+    if(id.startsWith('drawing-')){drawingController.finish();const tool=id.slice(8),actions={'select-all':'select-all',deselect:'deselect','invert-selection':'invert-selection','fill-selection':'fill-selection',mirror:'mirror-x','flip-view':'flip-view','swap-colors':'swap-colors'};if(['brush','eraser','fill','lasso','shape'].includes(tool))drawingController.tool=tool;else if(tool==='apply')drawingController.run(()=>drawingController.applySelection());else if(actions[tool])return drawingController.run(()=>drawingController.action(actions[tool]));else drawingController.hotkey(tool);drawingController.sync();return;}
     if(['copy','cut','paste'].includes(id)&&!event.target.closest?.('.layer-timeline,.sheet-filmstrip')&&(drawingController.selection||drawingController.marquee||id==='paste'&&drawingController.pixelClipboard))return drawingController.action(id+'-pixels');
     // Delete keeps its global binding: the drawing scope deliberately leaves it
     // unbound so the global command always dispatches; only a live pixel

@@ -182,14 +182,8 @@ try{
   await stroke([{x:cx+280,y:cy-230},{x:cx+380,y:cy-170}]);
   await page.waitForFunction(()=>styk.editor.undoLabel==='Fill shape');
   check('a filled ellipse fills its interior but not its bounding corners',await page.evaluate(({cx,cy})=>alphaAt(cx+330,cy-200)===255&&alphaAt(cx+282,cy-228)===0,{cx,cy}));
-  // Gradient: color to transparent across a selection.
-  await page.keyboard.press('Shift+G');
-  check('Shift+G selects the gradient tool',await page.evaluate(()=>styk.drawing.tool==='gradient'));
-  await page.evaluate(()=>Object.assign(styk.drawing.settings,{gradientType:'linear',gradientEnd:'transparent',color:'#2040e0',opacity:1}));
-  await stroke([{x:cx-380,y:cy+200},{x:cx-180,y:cy+200}]);
-  await page.waitForFunction(()=>styk.editor.undoLabel==='Gradient');
-  check('the gradient ramps from the colour to transparent',await page.evaluate(({cx,cy})=>alphaAt(cx-379,cy+180)>200&&alphaAt(cx-280,cy+180)>60&&alphaAt(cx-280,cy+180)<200&&alphaAt(cx-150,cy+180)===0,{cx,cy}));
-  await page.keyboard.press('Control+z');
+  // The gradient tool was removed: no rail button, shortcut or quick bar.
+  check('the gradient tool is gone',await page.evaluate(()=>!document.querySelector('[data-tool="drawing-gradient"]')));
   await page.keyboard.press('b');
   // On-canvas handles: drag a corner to scale and the top handle to rotate.
   await page.locator('[data-tool="drawing-lasso"]').click();

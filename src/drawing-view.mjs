@@ -8,7 +8,7 @@ export const DRAWING_TOOLS = [
   ['brush','Brush','brush','Paint · B'], ['eraser','Eraser','eraser','Erase · E'],
   ['fill','Fill','paint-bucket','Fill · G'],
   ['lasso','Lasso','lasso','Select pixels · L'], ['shape','Shape','square','Line, rectangle and ellipse · U'],
-  ['gradient','Gradient','sliders','Gradient · Shift+G'], ['transform','Transform','transform','Transform drawing · V'],
+  ['transform','Transform','transform','Transform drawing · V'],
 ];
 // Every preset defines the whole tip and its blend so switching presets is
 // deterministic; alpha lock is a painting mode and persists.
@@ -83,7 +83,6 @@ export function drawingInspector(drawing,{numericField,group,grid,heading,proper
   }
   if(tool==='fill')html+=group('Fill',swatches+quickHint+`<div class="property-toggle-grid drawing-toggle-grid">${toggle('sampleAll','Sample all layers','layers')}</div><div class="drawing-hint">Alt-click picks a colour. Fills stay inside the selection.</div>`);
   if(tool==='shape')html+=group('Shape',swatches+quickHint+`<div class="drawing-hint">Outlines use the current brush. Shift constrains to 45°, squares and circles.</div>`);
-  if(tool==='gradient')html+=group('Gradient',swatches+quickHint+`<div class="drawing-hint">Drag across the canvas. The gradient stays inside the selection.</div>`);
   if(tool==='lasso'){
     html+=group('Select',(s.selectShape==='wand'?sliders('gap')+`<div class="property-toggle-grid drawing-toggle-grid">${toggle('sampleAll','Sample all layers','layers')}</div>`:'')+`<div class="drawing-hint">Shift adds to the selection, Alt subtracts. Drag inside it to move pixels, a corner to scale or the top handle to rotate (Shift snaps to 15°).</div>`);
     const sel=drawing.selection,selected=Boolean(sel||drawing.marquee),moved=Boolean(sel&&(sel.dx||sel.dy||sel.scale!==1||sel.angle||(sel.fx??1)!==1||(sel.fy??1)!==1));
@@ -124,7 +123,6 @@ export function quickBarMarkup(drawing){
   }else if(tool==='fill')body+=colorPair(s,{hex:false})+divider+slider('tolerance','Tolerance')+slider('gap','Gaps')+slider('expansion','Expand');
   else if(tool==='lasso')body+=choice('selectShape','lasso','Lasso')+choice('selectShape','rect','Rectangle')+choice('selectShape','ellipse','Ellipse')+choice('selectShape','wand','Wand')+(s.selectShape==='wand'?divider+slider('tolerance','Tolerance'):'');
   else if(tool==='shape')body+=choice('shapeKind','line','Line')+choice('shapeKind','rect','Rectangle')+choice('shapeKind','ellipse','Ellipse')+divider+toggleButton('shapeFill','paint-bucket','Fill shape')+colorPair(s,{hex:false})+divider+slider('size','Size')+slider('opacity','Opacity');
-  else if(tool==='gradient')body+=choice('gradientType','linear','Linear')+choice('gradientType','radial','Radial')+divider+choice('gradientEnd','transparent','To transparent')+choice('gradientEnd','color','To second color')+colorPair(s,{hex:false})+divider+slider('opacity','Opacity');
   else body+=`<button type="button" class="draw-quick-choice" data-draw-action="flip-view" aria-pressed="${Boolean(drawing.state.view.flip)}" title="Mirror the view · M">Flip view</button><button type="button" class="draw-quick-choice" data-draw-action="reset-rotation" title="Reset view rotation">Reset rotation</button>`;
   const presets=tool==='brush'&&drawing.quickPresets?`<div class="draw-quick-presets">${presetGrid(drawing)}</div>`:'';
   return `<div class="draw-quick-row">${body}</div>${presets}`;

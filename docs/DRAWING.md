@@ -30,7 +30,7 @@ layer; otherwise select an existing visible, unlocked drawing layer.
   (1 = 10% … 0 = 100%) and Shift+[ / ] change hardness. Presets show a stroke
   drawn by the real brush engine. In Draw, Fit leaves room for the quick bar.
 - **Pop-up palette:** right-clicking the canvas with a painting tool (Brush,
-  Eraser, Fill, Shape, Gradient) opens Krita's pop-up palette at the pointer:
+  Eraser, Fill, Shape) opens Krita's pop-up palette at the pointer:
   the colour pair, recent colours, brush presets and size and opacity sliders.
   Choosing a preset or colour, clicking elsewhere or Escape closes it; a
   closed palette holds no controls, so there is one live copy of each.
@@ -42,9 +42,6 @@ layer; otherwise select an existing visible, unlocked drawing layer.
 - **U:** shapes. Drag a line, rectangle or ellipse; outlines are real brush
   strokes (selection clipping, symmetry and undo included) and Fill shape
   fills the interior. Shift constrains to 45° lines, squares and circles.
-- **Shift+G:** gradient. Drag a linear or radial gradient from the colour to
-  transparent or to a second colour; colours interpolate premultiplied with
-  ordered dither, inside the selection or the reachable canvas.
 - **Colours and brushes:** a second colour sits beside the main one (X
   swaps them); the twelve most recently painted colours appear as swatches.
   Save brush stores the current tip as a custom preset. Both persist in local
@@ -153,7 +150,7 @@ replacing the document discards stale capture replies and releases temporary
 surfaces. Lasso input remains bounded to 8,192 vertices and the working memory
 budget. Rectangles, ellipses and flipped selections use the same sparse
 preview and commit path. Add/subtract/invert masks, magic wand, filled shapes,
-gradients and filters retain a 16-megapixel region limit and share the
+and filters retain a 16-megapixel region limit and share the
 transaction gate; rejected or cancelled operations leave the cel untouched.
 
 `drawing-transform.mjs` is the shared affine kernel for selection commits,
@@ -200,7 +197,7 @@ reads/writes, worker work and the final revision check; a cancelled transfer
 cannot commit a cut or paste. If cancellation arrives after native publication,
 the new clipboard may already be visible, but the artwork remains intact.
 
-Fill, shapes, gradients, filters, copy, paste, resample, selection capture and commits share one pixel transaction
+Fill, shapes, filters, copy, paste, resample, selection capture and commits share one pixel transaction
 gate. Save and editing commands await publication; a following pointer gesture
 retains its samples until the preceding operation commits. Escape cancels the
 worker, discards its late result and releases reservations. Input copying yields

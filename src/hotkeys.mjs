@@ -95,7 +95,7 @@ group('Figure builder', [
 group('Polygon', [['finish-polygon', 'Finish polygon', ['Enter']]], 'polygon');
 group('Drawing', [
   ['drawing-brush','Brush',['KeyB']],['drawing-eraser','Eraser',['KeyE']],['drawing-fill','Fill',['KeyG']],
-  ['drawing-lasso','Select pixels',['KeyL']],['drawing-shape','Shapes',['KeyU']],['drawing-gradient','Gradient',['Shift+KeyG']],
+  ['drawing-lasso','Select pixels',['KeyL']],['drawing-shape','Shapes',['KeyU']],
   ['drawing-smaller','Smaller brush',['BracketLeft'],{repeat:true}],['drawing-larger','Larger brush',['BracketRight'],{repeat:true}],
   ['drawing-softer','Softer brush',['Shift+BracketLeft'],{repeat:true}],['drawing-harder','Harder brush',['Shift+BracketRight'],{repeat:true}],
   // Photoshop's opacity keys: 1 = 10% … 9 = 90%, 0 = 100%.
