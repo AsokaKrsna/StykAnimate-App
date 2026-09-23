@@ -1,0 +1,26 @@
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+// The empty VFX panel offers one-click starting points, and the catalogue
+// switches between effects and presets without closing.
+const browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage({viewport:{width:1440,height:900}});
+const errors=[];page.on('pageerror',e=>errors.push(e.stack));
+const check=(name,value)=>{assert.ok(value,name);console.log('PASS',name);};
+try{
+  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>styk.ready);
+  await page.evaluate(()=>{const e=styk.editor;e.select(e.frame.objects[0].unique_id);});
+  await page.getByRole('tab',{name:'VFX',exact:true}).click();
+  check('an empty panel suggests effects and presets',await page.getByRole('button',{name:'Add Glow',exact:true}).isVisible()&&await page.getByRole('button',{name:'Add Power up',exact:true}).isVisible());
+  const undo=await page.evaluate(()=>styk.editor._undo.length);
+  await page.getByRole('button',{name:'Add Glow',exact:true}).click();
+  check('a suggestion adds one effect clip as one undo step',await page.evaluate(u=>styk.editor.getVfxClips().length===1&&styk.editor._undo.length===u+1,undo));
+  check('the new effect is shown and selected',await page.locator('.vfx-clip.is-selected').count()===1);
+  await page.keyboard.press('Control+z');
+  check('undo removes the suggested effect',await page.evaluate(()=>styk.editor.getVfxClips().length===0));
+  await page.getByRole('button',{name:'Add effect',exact:true}).click();
+  await page.locator('.vfx-catalog [data-catalog-mode="presets"]').click();
+  check('the catalogue switches to presets in place',await page.locator('.vfx-catalog [data-choice="Neon"]').isVisible()&&await page.locator('.vfx-catalog [data-catalog-mode="presets"][aria-selected="true"]').count()===1);
+  await page.locator('.vfx-catalog [data-choice="Neon"]').click();
+  check('choosing a preset adds a grouped clip',await page.evaluate(()=>styk.editor.getVfxClips()[0]?.effects.length===2));
+  check('no uncaught browser errors',!errors.length);
+}finally{await browser.close();}
+if(errors.length)console.error(errors.join('\n'));

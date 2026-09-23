@@ -191,3 +191,30 @@
 .vfx-key-dock{flex-shrink:0;padding:3px 12px;background:var(--theme-panel,#fff);border-top:1px solid var(--theme-border,#e5e7eb)}
 .vfx-key-dock:empty,.vfx-key-dock:has(>.vfx-key-navigation[hidden]){display:none}
 #vfx-panel .vfx-key-dock>.vfx-key-navigation{padding:3px 0;margin:0;border:0}
+
+/* Target, primary actions and a guided empty state. */
+#vfx-panel .vfx-toolbar{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:10px;padding:10px 12px;border-bottom:0}
+.vfx-target-label,.vfx-filter-label{color:var(--theme-muted,#66707e);font-size:11px;white-space:nowrap}
+#vfx-panel .vfx-target{height:30px;padding:0 4px 0 8px;border-radius:6px;background:var(--theme-field,#f1f3f6)}
+#vfx-panel .vfx-target:hover{background:var(--theme-hover,#eaedf1)}
+#vfx-panel .vfx-target select{min-height:28px;font-weight:600;font-size:12px}
+.vfx-actions{display:flex;gap:6px;padding:0 12px 10px;border-bottom:1px solid var(--theme-border,#e2e5ea);flex-shrink:0}
+#vfx-panel .vfx-actions>button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:30px;border-radius:7px;font-size:11px;font-weight:500}
+#vfx-panel .vfx-actions .icon{width:14px;height:14px}
+#vfx-panel .vfx-add-button{flex:1;background:var(--theme-action,#0a73cc);border-color:var(--theme-action,#0a73cc);color:#fff;font-weight:600}
+#vfx-panel .vfx-add-button:hover:not(:disabled){background:var(--theme-action-hover,#0864b4)}
+#vfx-panel .vfx-add-button .icon{color:#fff}
+#vfx-panel .vfx-presets-button{flex:1}
+#vfx-panel .vfx-paste-button{flex:0 0 30px;padding:0}
+#vfx-panel .vfx-stack{padding-top:10px}
+.vfx-clip-filter{gap:8px}
+#vfx-panel .vfx-clip-filter select{border-radius:6px;background:var(--theme-field,#f1f3f6);padding:3px 6px}
+.vfx-empty-state{padding:20px 4px}
+#vfx-panel .vfx-empty-state .ds-empty-actions{max-width:280px}
+#vfx-panel .vfx-empty-state .ds-chip{min-height:28px;padding:0 10px;border-radius:999px;font-size:11px}
+#vfx-panel .vfx-empty-state .ds-chip .icon{width:14px;height:14px;color:var(--theme-accent,#0b72cc)}
+#vfx-panel .vfx-show-all{margin-top:6px;border:0;background:transparent;color:var(--theme-accent,#0b72cc);font-size:11px;min-height:24px}
+#vfx-panel .vfx-show-all:hover{background:var(--theme-selected,#e7f1fc)}
+.vfx-catalog-tabs{margin:12px 12px 0}
+.vfx-catalog .vfx-catalog-tabs>button{font:11px inherit}
+.vfx-catalog-search{margin-top:0}
