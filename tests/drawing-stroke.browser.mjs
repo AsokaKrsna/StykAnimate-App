@@ -33,6 +33,20 @@ try{
     return true;
   },{sx:start.x,sy:start.y,ex:end.x,ey:end.y});
   check('committed cel has continuous ink along the whole path',continuous);
+  // Ink must be ON SCREEN while the pointer is still down, not only after
+  // release: count the stroke colour in real screenshots mid-stroke, on a new
+  // cel and on an existing one. (Store pixels alone once hid a renderer bug.)
+  const inkOnScreen=async(x0,x1,y)=>{const shot=await page.screenshot({clip:{x:x0,y:y-6,width:x1-x0,height:12}});return page.evaluate(async b64=>{const img=new Image();img.src='data:image/png;base64,'+b64;await img.decode();const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const g=c.getContext('2d');g.drawImage(img,0,0);const d=g.getImageData(0,0,c.width,c.height).data;let n=0;for(let i=0;i<d.length;i+=4)if(d[i]>180&&d[i+1]<90&&d[i+2]<90)n++;return n;},shot.toString('base64'));};
+  await page.evaluate(()=>Object.assign(styk.drawing.settings,{size:14,color:'#ff0000',opacity:1}));
+  for(const [label,y] of [['on the existing cel',rect.y+rect.height*.75],['after a blank frame',rect.y+rect.height*.6]]){
+    if(label.startsWith('after'))await page.evaluate(()=>styk.drawing.action('next-blank'));
+    const x0=rect.x+rect.width*.25;await page.mouse.move(x0,y);await page.mouse.down();
+    for(let i=1;i<=24;i++)await page.mouse.move(x0+i*10,y);
+    await page.waitForFunction(()=>styk.drawing.strokeStats.batches>0);await page.waitForTimeout(120);
+    const live=await inkOnScreen(x0,x0+240,y);await page.mouse.up();await page.waitForFunction(()=>!styk.drawing.gesture);
+    check(`the stroke is visible on screen while drawing ${label}`,live>1000);
+  }
+  await page.evaluate(()=>{styk.editor.undo();styk.editor.undo();styk.editor.undo();});
   // A quick tap still lands exactly one dab and commits as its own undo.
   const tapRevision=await page.evaluate(()=>styk.editor.revision);
   await page.mouse.move(end.x+40,end.y);await page.mouse.down();await page.mouse.up();

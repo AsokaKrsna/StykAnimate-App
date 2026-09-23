@@ -736,7 +736,7 @@ class WebGPURenderer {
       // is the real PNG.
       const retained=prior?.texture?.drawing===drawing?prior:null;
       const data=retained?retained.data:new Float32Array(shapeRecord({mode:SHAPE.DISABLED,transform:index}));
-      return {key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:retained?.texture??null};
+      return {key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:retained?.texture??null,drawing,drawingStamp:drawing.stamp,drawingItems:items};
     }
     if(drawing?.store&&!hasDrawableVfx(sourceItems[0])) {
       // Tile coverage widens in O(1) while painting; alpha bounds would rescan.
@@ -768,9 +768,11 @@ class WebGPURenderer {
         if(result){scratch=result;break;}
       }
       if(rect&&!scratch){level=8;scratch=drawing.scratch?.(rect,{level,maxSide,clamp:true});}
-      if(rect&&!scratch){
+      // Nothing visible (an empty cel, or its pixels are off screen): draw nothing,
+      // but stay marked so painting or panning refreshes just this entry.
+      if(!scratch){
         const data=new Float32Array(shapeRecord({mode:SHAPE.DISABLED,transform:index}));
-        return {key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:null};
+        return {key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:null,drawing,drawingStamp:drawing.stamp,drawingItems:items};
       }
       if(scratch){
         // Textures key to the scratch anchor, not just the cel: alternating
@@ -789,7 +791,7 @@ class WebGPURenderer {
         texture.drawing=drawing;texture.canvas=scratch.canvas;texture.dirty=scratch.dirty;texture.nextRectKey=rectKey;
         const q=2**level,ox=matrix[0]*scratch.x*q+matrix[2]*scratch.y*q+matrix[4],oy=matrix[1]*scratch.x*q+matrix[3]*scratch.y*q+matrix[5];
         data=new Float32Array(shapeRecord({a:[ox-source.root.x,oy-source.root.y,0,0],b:[matrix[0]*scratch.width*q,matrix[1]*scratch.width*q,matrix[2]*scratch.height*q,matrix[3]*scratch.height*q],mode:9,color:[1,1,1,sourceItems[0].alpha],transform:index}));
-        return {key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:1,texture};
+        return {key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:1,texture,drawing,drawingStamp:drawing.stamp,drawingItems:items};
       }
     }
     let compatibility = this.compatibilityCache.get(source);
@@ -859,6 +861,30 @@ class WebGPURenderer {
     this.artworkStats();
     Object.assign(this.stats, { uploadBytes, primitiveUploadCalls, updatedObjects: updates.length, cachedObjects: ordered.length - updates.length,
       preparation: 'incremental', warnings: geometry.warnings || [] });
+    return true;
+  }
+  /** Drawing pixels change without a geometry change (a stroke in progress, a
+   * decode landing) and panning moves which of their tiles are visible: re-run
+   * just those drawing entries, so their scratch canvases repaint the changed
+   * tiles and their textures upload only the dirty region, instead of
+   * rebuilding the scene. Returns false when an entry outgrew its slot. */
+  refreshDrawings(options) {
+    if (!this.layout) return true;
+    const matrix = cameraMatrix(options), scale = Math.hypot(matrix[0], matrix[1]) * this.dpr;
+    const viewKey = `${matrix.join()}|${this.width}|${this.height}|${this.dpr}`, moved = viewKey !== this.drawingViewKey;
+    this.drawingViewKey = viewKey;
+    let refreshed = 0, uploadBytes = 0;
+    for (const previous of this.layout) {
+      const drawing = previous.drawing;
+      if (!drawing || !previous.g || (!moved && previous.drawingStamp === drawing.stamp)) continue;
+      this.activeCamera = matrix;
+      const entry = this.objectEntry(previous.g, previous.drawingItems, previous.opacity, previous.key, previous.transform, scale, previous.isOnion);
+      if (entry.count > previous.capacity) return false;
+      entry.capacity = previous.capacity; entry.offset = previous.offset;
+      if (entry.data !== previous.data) uploadBytes += this.uploadEntry(entry);
+      Object.assign(previous, entry); refreshed++;
+    }
+    if (refreshed) { this.stats.updatedObjects = refreshed; this.stats.uploadBytes += uploadBytes; this.stats.preparation = 'drawing'; }
     return true;
   }
   prepare(options, geometry) {
@@ -947,6 +973,7 @@ class WebGPURenderer {
     this.entriesBySlot = new Map(next.filter(e => e.g && e.key === e.uid).map(e => [e.g.slot, e]));
     this.transformData.set([0, 0, 1, 1]);
     this.shapeCount = shapeCount; this.lastGeometry = geometry; this.lastGeneration = this.generation;
+    this.drawingViewKey = `${matrix.join()}|${this.width}|${this.height}|${this.dpr}`;
     this.stats.uploadBytes = uploadBytes; this.stats.primitiveUploadCalls = primitiveUploadCalls; this.stats.primitives = next.reduce((n, e) => n + e.count, 0); this.stats.objects = geometry.objects.size; this.stats.textureObjects = compatibilityCount; this.stats.cachedObjects = cached;
     this.artworkStats();
     this.stats.warnings = geometry.warnings || [];
@@ -1004,7 +1031,15 @@ class WebGPURenderer {
           if (typeof window !== 'undefined') queueMicrotask(() => { throw error; });
         }
       }
-    } else { this.stats.uploadBytes = 0; this.stats.primitiveUploadCalls = 0; this.stats.updatedObjects = 0; this.stats.compiledObjects = 0; this.stats.rasterizedObjects = 0; this.stats.preparation = 'retained'; }
+    } else {
+      this.stats.uploadBytes = 0; this.stats.primitiveUploadCalls = 0; this.stats.updatedObjects = 0; this.stats.compiledObjects = 0; this.stats.rasterizedObjects = 0; this.stats.preparation = 'retained';
+      try { if (!this.refreshDrawings(options)) this.prepare(options, geometry); }
+      catch (error) {
+        if (error?.name === 'AbortError') throw error;
+        this.stats.lastPrepareError = error?.message || String(error);
+        if (typeof window !== 'undefined') queueMicrotask(() => { throw error; });
+      }
+    }
     if (!this.layout) return geometry; // No build has ever succeeded; the canvas keeps its last frame.
     const liveTextures=new Set(this.layout.map(entry=>entry.texture));
     let drawingGpuBytes=0;
