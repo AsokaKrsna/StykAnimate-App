@@ -42,6 +42,16 @@ export function tileStoreFromList(tiles){const store=new TileStore();for(const t
 export class TileEncodeCache {
   constructor({maxBytes=64*1024*1024}={}){this.cels=new Map();this.bytes=0;this.clock=0;this.maxBytes=maxBytes;}
   cel(id){let cel=this.cels.get(id);if(!cel)this.cels.set(id,cel=new Map());else{this.cels.delete(id);this.cels.set(id,cel);}return cel;}
+  /** Encode tiles into a cel's cache without pruning or assembling a blob, so
+   * a large publication can stream its pixels in bounded chunks. */
+  async prime(celId,tiles){
+    const cel=this.cel(celId),encoded=[];
+    for(const tile of tiles){
+      const png=new Uint8Array(await encodePNGPortable({width:TILE,height:TILE,channels:4},new Uint8ClampedArray(tile.pixels))),key=tileKey(tile.tx,tile.ty),old=cel.get(key);
+      if(old)this.bytes-=old.png.length;cel.set(key,{png,stamp:++this.clock});this.bytes+=png.length;encoded.push({tx:tile.tx,ty:tile.ty,png});
+    }
+    return encoded;
+  }
   /** keep lists every tile key this publication carries, in blob order; tiles
    * are the changed ones to encode. Returns {missing} when a kept key lacks a
    * cached PNG so the caller can resend those pixels once. */

@@ -739,7 +739,8 @@ class WebGPURenderer {
       return {key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:retained?.texture??null};
     }
     if(drawing?.store&&!hasDrawableVfx(sourceItems[0])) {
-      const item=sourceItems[0],matrix=drawingPixelMatrix(item),bounds=drawing.store.bounds;
+      // Tile coverage widens in O(1) while painting; alpha bounds would rescan.
+      const item=sourceItems[0],matrix=drawingPixelMatrix(item),bounds=drawing.store.tileBounds;
       // Visible pixel rect: viewport → world → cel pixel space.
       let rect=bounds?{...bounds}:null,cam=this.activeCamera;
       if(cam&&rect){

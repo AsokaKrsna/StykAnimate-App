@@ -35,6 +35,7 @@ function workerStub(){
       return {tiles};
     }
     if(kind==='decode-tiles')return {tiles:(await decodeTileBlob(data.url)).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,png:t.png.buffer}))};
+    if(kind==='prime-tiles')return {tiles:(await encodeCache.prime(data.celId,data.tiles??[])).map(t=>({tx:t.tx,ty:t.ty,png:t.png.slice().buffer}))};
     if(kind==='encode-tiles'){
       const result=await encodeCache.encode(data.celId,data.keep??[],data.tiles??[]);
       if(result.missing)return{missing:result.missing};
@@ -576,6 +577,34 @@ test('an elliptical tip follows its fixed angle and the stroke direction',()=>{
   // A calligraphy nib that follows direction stays thin across a horizontal line.
   const along=spread({angleMode:'direction'},[{x:100,y:100},{x:140,y:100},{x:180,y:100},{x:220,y:100}]);
   assert.ok(along.height<14,'a direction-following nib stays narrow across its path');
+});
+
+test('a large publication streams in bounded chunks and round-trips every tile exactly',async()=>{
+  const report={figure_types:[]},stub=workerStub(),kinds=[],worker={...stub,request:(kind,data,options)=>{kinds.push({kind,count:data.tiles?.length??0});return stub.request(kind,data,options);}};
+  const resources=new DrawingResources(report,{worker});
+  try{
+    const figure=createDrawingFigure({pixelsPerUnit:1,figureTypeId:1});report.figure_types.push(figure);
+    const tiles=[];for(let i=0;i<300;i++){const px=new Uint8ClampedArray(TILE_BYTES);for(let p=0;p<TILE*TILE;p++)px.set([i%256,(i*7)%256,p%256,255],p*4);tiles.push({tx:i%20,ty:Math.floor(i/20),pixels:px.buffer});}
+    resources.install(figure,tiles);await resources.flush();
+    const sends=kinds.filter(k=>k.kind==='prime-tiles'||k.kind==='encode-tiles');
+    assert.ok(sends.length>=3&&sends.every(k=>k.count<=96),'publication was chunked');
+    const decoded=await decodeTileBlob(figure.image_assets[0].styk_tiles),entry=resources.entry(figure);
+    assert.equal(decoded.length,300);
+    for(const t of decoded)assert.deepEqual(t.pixels,entry.store.get(t.tx,t.ty).pixels);
+    assert.ok([...entry.store].every(t=>t.png),'every tile trusts its cached PNG afterwards');
+  }finally{resources.dispose();}
+});
+
+test('incremental tile store bounds always equal a fresh recomputation',()=>{
+  let seed=7;const rnd=()=>(seed=(seed*1103515245+12345)%2147483648)/2147483648;
+  const store=new TileStore();
+  for(let i=0;i<3000;i++){
+    const tx=Math.floor(rnd()*6)-3,ty=Math.floor(rnd()*6)-3,op=rnd();
+    if(op<.15)store.delete(tx,ty);
+    else if(op<.25)store.set(tx,ty,new Uint8ClampedArray([1,2,3,rnd()<.3?0:200]));
+    else{const px=new Uint8ClampedArray(TILE_BYTES);for(let k=Math.floor(rnd()*4);k>0;k--)px[(Math.floor(rnd()*TILE)*TILE+Math.floor(rnd()*TILE))*4+3]=255;op<.6?store.adopt(tx,ty,px):store.set(tx,ty,px);}
+    if(i%3===0){const copy=new TileStore(new Map(store.tiles));assert.deepEqual(store.bounds,copy.bounds);assert.deepEqual(store.tileBounds,copy.tileBounds);}
+  }
 });
 
 // Phase 3: mip levels, tile-anchored scratch, budgets and the shared provider.

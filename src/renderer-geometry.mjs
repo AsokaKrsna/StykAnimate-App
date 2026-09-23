@@ -190,9 +190,11 @@ export function objectBounds(items, resources = {}) {
     if (s.type === 'circle') include((s.start.x + s.end.x) / 2, (s.start.y + s.end.y) / 2, Math.abs(s.length) / 2 + pad);
     else for (const p of s.points || []) include(p.x, p.y, pad);
     if (s.type === 'image' && s.asset) {
-      const a = s.asset, image = resources.image?.(resources.url?.(a));
       // v2 drawings size from authoritative tile bounds; the 1×1 carrier PNG
-      // is never a raster source. A live store covers strokes still in flight.
+      // is never a raster source, so it must not be requested either: a lazy
+      // request the render path never retains re-decodes and invalidates the
+      // renderer every frame. A live store covers strokes still in flight.
+      const a = s.asset, v2 = s.fig?._styk?.drawing?.version === 2, image = v2 ? null : resources.image?.(resources.url?.(a));
       const tiles = resources.drawing?.(s.fig)?.store?.bounds ?? drawingPixelBounds(s.fig);
       const width = tiles?.width ?? a.display_width ?? (image?.naturalWidth || a.width || a.pixel_width || 1), height = tiles?.height ?? a.display_height ?? (image?.naturalHeight || a.height || a.pixel_height || 1);
       const bx = tiles?.x ?? 0, by = tiles?.y ?? 0;

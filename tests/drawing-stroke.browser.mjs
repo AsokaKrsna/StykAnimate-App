@@ -38,6 +38,12 @@ try{
   await page.mouse.move(end.x+40,end.y);await page.mouse.down();await page.mouse.up();
   await page.waitForFunction(r=>styk.editor.revision!==r,tapRevision);
   check('a quick tap after the stroke still commits its own dab',await page.evaluate(()=>styk.editor.undoLabel==='Brush stroke'));
+  // A document with drawings must go idle: the 1×1 v2 carrier image once
+  // ping-ponged through the preview image loader, invalidating the renderer
+  // and re-rendering every frame forever.
+  await page.mouse.move(5,5);await page.waitForTimeout(600);
+  const idle=await page.evaluate(async()=>{const r=styk.state.renderer,g0=r.generation,render=r.render;let n=0;r.render=function(...a){n++;return render.apply(this,a);};await new Promise(res=>setTimeout(res,1200));r.render=render;return {renders:n,bumps:r.generation-g0};});
+  check('an idle document with drawings stops rendering and keeps its prepared scene',idle.renders<=1&&idle.bumps===0);
   // Stroke quality regressions, run against the same in-page stroke engine.
   const quality=await page.evaluate(async()=>{
     const {DrawingStroke}=await import('/src/drawing-pixels.mjs'),{TileStore}=await import('/src/drawing-tiles.mjs');

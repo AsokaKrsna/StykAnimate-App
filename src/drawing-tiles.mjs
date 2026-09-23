@@ -3,7 +3,18 @@ export const TILE_BYTES=TILE*TILE*4;
 export const tileKey=(tx,ty)=>`${tx},${ty}`;
 export const parseTileKey=key=>key.split(',').map(Number);
 
-function alphaBounds(pixels){let x0=TILE,y0=TILE,x1=-1,y1=-1;for(let y=0;y<TILE;y++)for(let x=0;x<TILE;x++)if(pixels[(y*TILE+x)*4+3]){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}return x1<0?null:{x:x0,y:y0,width:x1-x0+1,height:y1-y0+1};}
+/** Occupied-alpha rect of one tile. Scans inward from each edge and stops at
+ * the first opaque sample, so dense tiles cost far less than a full pass. */
+function alphaBounds(p){
+  const R=TILE*4;let y0=-1,y1=-1,x0=TILE,x1=-1;
+  for(let y=0;y<TILE&&y0<0;y++)for(let i=y*R+3,e=i+R;i<e;i+=4)if(p[i]){y0=y;break;}
+  if(y0<0)return null;
+  for(let y=TILE-1;y>=y0&&y1<0;y--)for(let i=y*R+3,e=i+R;i<e;i+=4)if(p[i]){y1=y;break;}
+  for(let y=y0;y<=y1;y++){const row=y*R+3;
+    for(let x=0;x<x0;x++)if(p[row+x*4]){x0=x;break;}
+    for(let x=TILE-1;x>x1;x--)if(p[row+x*4]){x1=x;break;}}
+  return {x:x0,y:y0,width:x1-x0+1,height:y1-y0+1};
+}
 export function tileTransparent(tile){tile.alphaBounds??=alphaBounds(tile.pixels);return !tile.alphaBounds;}
 
 /** Sparse unbounded pixel surface. Tiles are shared by reference until a
@@ -18,27 +29,44 @@ export class TileStore {
   values(){return this.tiles.values();}
   [Symbol.iterator](){return this.tiles.values();}
   _changed(){this._bounds=undefined;this._tileBounds=undefined;}
+  /** Keep cached bounds current when `old` (or nothing) is replaced by
+   * `tile` (or nothing), so painting a large drawing never rescans every tile.
+   * Coverage only grows on insert. Alpha bounds merge the new tile's alpha
+   * rect, and only rescan lazily when the replaced tile touched their edge. */
+  _placed(old,tile){
+    const t=this._tileBounds;
+    if(!old&&tile&&t!==undefined){const x=tile.tx*TILE,y=tile.ty*TILE;if(t===null)this._tileBounds={x,y,width:TILE,height:TILE};else{const x0=Math.min(t.x,x),y0=Math.min(t.y,y);this._tileBounds={x:x0,y:y0,width:Math.max(t.x+t.width,x+TILE)-x0,height:Math.max(t.y+t.height,y+TILE)-y0};}}
+    else if(old&&!tile)this._tileBounds=undefined;
+    const b=this._bounds;if(b===undefined)return;
+    if(old){old.alphaBounds??=alphaBounds(old.pixels);const a=old.alphaBounds;
+      if(a&&b){const x=old.tx*TILE+a.x,y=old.ty*TILE+a.y;if(x<=b.x||y<=b.y||x+a.width>=b.x+b.width||y+a.height>=b.y+b.height){this._bounds=undefined;return;}}}
+    if(!tile)return;
+    tile.alphaBounds??=alphaBounds(tile.pixels);const a=tile.alphaBounds;if(!a)return;
+    const x=tile.tx*TILE+a.x,y=tile.ty*TILE+a.y;
+    if(b===null){this._bounds={x,y,width:a.width,height:a.height};return;}
+    const x0=Math.min(b.x,x),y0=Math.min(b.y,y);this._bounds={x:x0,y:y0,width:Math.max(b.x+b.width,x+a.width)-x0,height:Math.max(b.y+b.height,y+a.height)-y0};
+  }
   writable(tx,ty,{create=true}={}) {
     const key=tileKey(tx,ty);let tile=this.tiles.get(key);
-    if(!tile){if(!create)return null;tile={tx,ty,pixels:new Uint8ClampedArray(TILE_BYTES),frozen:false};this.tiles.set(key,tile);this._changed();return tile;}
+    if(!tile){if(!create)return null;tile={tx,ty,pixels:new Uint8ClampedArray(TILE_BYTES),frozen:false};this.tiles.set(key,tile);this._placed(null,tile);this._bounds=undefined;return tile;}
     if(tile.frozen){tile={tx,ty,pixels:tile.pixels.slice(),frozen:false};this.tiles.set(key,tile);}
-    tile.png=undefined;tile.alphaBounds=undefined;this._changed();return tile;
+    tile.png=undefined;tile.alphaBounds=undefined;this._bounds=undefined;return tile;
   }
   set(tx,ty,pixels) {
     const key=tileKey(tx,ty);
-    if(pixels==null){if(this.tiles.delete(key))this._changed();return;}
+    if(pixels==null){this.delete(tx,ty);return;}
     let full;
     if(pixels.byteLength===4){full=new Uint8ClampedArray(TILE_BYTES);const word=new Uint32Array(Uint8Array.from(pixels).buffer)[0];new Uint32Array(full.buffer).fill(word);}
     else{full=new Uint8ClampedArray(pixels);if(full.byteLength!==TILE_BYTES)throw new Error('Tile pixels must be 4 uniform bytes or one full tile.');}
-    this.tiles.set(key,{tx,ty,pixels:full,frozen:false});this._changed();
+    const old=this.tiles.get(key),tile={tx,ty,pixels:full,frozen:false};this.tiles.set(key,tile);this._placed(old,tile);
   }
   /** Take ownership of a full tile buffer without copying it; the caller must
    * not retain or mutate `pixels` afterwards. */
   adopt(tx,ty,pixels){
     if(!(pixels instanceof Uint8ClampedArray)||pixels.byteLength!==TILE_BYTES)throw new Error('Tile pixels must be one full tile.');
-    this.tiles.set(tileKey(tx,ty),{tx,ty,pixels,frozen:false});this._changed();
+    const key=tileKey(tx,ty),old=this.tiles.get(key),tile={tx,ty,pixels,frozen:false};this.tiles.set(key,tile);this._placed(old,tile);
   }
-  delete(tx,ty){if(this.tiles.delete(tileKey(tx,ty)))this._changed();}
+  delete(tx,ty){const key=tileKey(tx,ty),old=this.tiles.get(key);if(!old)return;this.tiles.delete(key);this._placed(old,null);}
   fork(){for(const tile of this.tiles.values())tile.frozen=true;return new TileStore(new Map(this.tiles));}
   freeze(){for(const tile of this.tiles.values())tile.frozen=true;}
   get bounds() {

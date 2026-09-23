@@ -100,7 +100,9 @@ export const editorDrawingMethods={
     this.drawingResources.install(figure,tiles);
     return drawingSheetPublish(this,plan,'Resample drawing',{assets:{figure_types:{added:[figure]}}});
   },
-  commitDrawingPixels(target,tiles,label='Brush stroke') {
+  /** `resident`: the live store already holds the after pixels (a stroke
+   * adopted them while painting), so publication skips re-applying them. */
+  commitDrawingPixels(target,tiles,label='Brush stroke',{resident=false}={}) {
     if(!tiles.length)return false;assertDrawingTargets(this,[target.id]);
     const current=this.drawingTarget(target.id);
     if(current.key.id!==target.key.id)throw new Error('The drawing exposure changed before the edit finished.');
@@ -120,7 +122,7 @@ export const editorDrawingMethods={
         drawingSheetPublish(this,plan,target.created?'Create drawing cel':'Migrate drawing',{assets:{figure_types:{added:[target.figure]}},nextUid:Math.max(this._nextUid,(target.object.unique_id??0)+1)});
       }
       const figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===celId);
-      this.drawingResources.apply(figure,tiles,'after');
+      this.drawingResources.apply(figure,tiles,'after',{resident});
       this._record({kind:'drawing-pixels',celId,tiles,label,beforeBounds,afterBounds:drawingMetadata(figure).bounds??null,precomputedBytes:bytes});
       this.selectSheetLayer(target.id);this._invalidate({timing:false});this._emit('edit',{label,definition:true,drawing:true,figureIndices:[this.report.figure_types.indexOf(figure)]});return true;
     };

@@ -34,6 +34,10 @@ self.onmessage=async({data})=>{
       const tiles=(await decodeTileBlob(data.url)).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,png:t.png.buffer}));
       self.postMessage({id,tiles},tiles.flatMap(t=>[t.pixels,t.png]));return;
     }
+    if(kind==='prime-tiles'){
+      const out=(await encodeCache.prime(data.celId,data.tiles??[])).map(t=>({tx:t.tx,ty:t.ty,png:t.png.slice().buffer}));
+      self.postMessage({id,tiles:out},out.map(t=>t.png));return;
+    }
     if(kind==='encode-tiles'){
       const result=await encodeCache.encode(data.celId,data.keep??[],data.tiles??[]);
       if(result.missing){self.postMessage({id,missing:result.missing});return;}

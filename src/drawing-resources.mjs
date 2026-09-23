@@ -46,6 +46,7 @@ export class StrokeWorker {
   close(){this.closed=true;this.dispose();}
 }
 
+const PUBLISH_CHUNK=96;
 const sideBytes=s=>s==null?0:s.byteLength===4?TILE_BYTES:s.byteLength;
 const tilePayload=(store,rect)=>{const tiles=[];for(const [tx,ty] of TileStore.tilesInRect(rect.x,rect.y,rect.width,rect.height)){const tile=store.get(tx,ty);if(tile)tiles.push({tx,ty,pixels:tile.pixels.slice().buffer});}return tiles;};
 
@@ -75,7 +76,7 @@ export class DrawingResources {
   /** Rebuildable presenter scratch canvases yield to newer work first. */
   scratchReserved(entry){let bytes=this.stats.scratchBytes;for(const e of [...this.entries.values()].sort((a,b)=>a.used-b.used)){if(bytes<=this.scratchBudget)break;if(e===entry||!e._scratches?.size)continue;for(const s of e._scratches.values())if(s.canvas)bytes-=s.canvas.width*s.canvas.height*4;this.dropScratch(e);}}
   /** Derived mip chains are the cheapest cache: evict least-recently-used first. */
-  levelsReserved(entry){entry.levelsUsed=performance.now();let bytes=this.stats.levelBytes;for(const e of [...this.entries.values()].sort((a,b)=>a.levelsUsed-b.levelsUsed)){if(bytes<=this.levelBudget)break;if(e===entry||!e.levels)continue;bytes-=e.levels.reduce((n,l)=>n+(l?.bytes??0),0);e.levels=null;}}
+  levelsReserved(entry){entry.levelsUsed=performance.now();let bytes=0;for(const e of this.entries.values())for(const level of e.levels??[])bytes+=(level?.size??0)*TILE_BYTES;for(const e of [...this.entries.values()].sort((a,b)=>a.levelsUsed-b.levelsUsed)){if(bytes<=this.levelBudget)break;if(e===entry||!e.levels)continue;bytes-=e.levels.reduce((n,l)=>n+(l?.bytes??0),0);e.levels=null;}}
   reserve(bytes,except) {
     const resident=()=>this.stats.bytes;
     if(resident()+bytes<=this.tileBudget)return;
@@ -188,8 +189,18 @@ export class DrawingResources {
     }
     this.onChange();
   }
-  apply(figure,changes,direction) {
+  apply(figure,changes,direction,{resident=false}={}) {
     const e=this.entry(figure);let added=0;
+    if(resident&&e.store){
+      // The live store already holds this side's pixels (a stroke adopted
+      // them batch by batch and they are on screen): only drop tiles the edit
+      // cleared, then record the revision. No copy, prune walk or repaint.
+      let dirty=null;
+      for(const c of changes)if(c[direction]==null&&e.store.has(c.tx,c.ty)){e.store.delete(c.tx,c.ty);const r={x:c.tx*TILE,y:c.ty*TILE,width:TILE,height:TILE};dirty=dirty?{x:Math.min(dirty.x,r.x),y:Math.min(dirty.y,r.y),width:Math.max(dirty.x+dirty.width,r.x+TILE)-Math.min(dirty.x,r.x),height:Math.max(dirty.y+dirty.height,r.y+TILE)-Math.min(dirty.y,r.y)}:r;}
+      e.decodeError=null;e.revision++;const d=drawingMetadata(figure);d.revision=e.revision;
+      if(d.version===2)d.bounds=e.store.bounds?{...e.store.bounds}:null;
+      if(dirty)this.present(e,dirty);this.schedule();return;
+    }
     for(const c of changes)added+=sideBytes(c[direction])-sideBytes(e.store?.get(c.tx,c.ty)?.pixels??null);
     // Rebuildable memory yields before an edit is ever rejected.
     this.reserve(Math.max(0,added),e);e.decodeError=null;
@@ -247,7 +258,17 @@ export class DrawingResources {
       // re-publish ships pixels only for changed tiles; the worker reassembles
       // the whole blob from its per-cel cache plus these fresh encodes.
       const keep=tiles.map(t=>tileKey(t.tx,t.ty));
-      let fresh=tiles.filter(t=>!t.png).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
+      // Large publications stream through the worker's PNG cache in bounded
+      // chunks, each copied just before it is sent, so no single main-thread
+      // task copies every changed tile. Only the last chunk assembles the blob.
+      const pending=tiles.filter(t=>!t.png),primed=[],copy=list=>list.map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
+      while(pending.length>PUBLISH_CHUNK){
+        const part=copy(pending.splice(0,PUBLISH_CHUNK));
+        const reply=await this.worker.request('prime-tiles',{celId:e.id,tiles:part},{signal,transfer:part.map(t=>t.pixels)});
+        if(this.disposed||generation!==this.generation||revision!==e.revision)return;
+        primed.push(...reply.tiles);
+      }
+      let fresh=copy(pending);
       let result=await this.worker.request('encode-tiles',{celId:e.id,keep,tiles:fresh},{signal,transfer:fresh.map(t=>t.pixels)});
       if(result.missing?.length){
         if(this.disposed||generation!==this.generation||revision!==e.revision)return;
@@ -261,7 +282,7 @@ export class DrawingResources {
       // Tiles replaced since the snapshot carry stale bytes; publish again.
       if(tiles.some(t=>e.store.get(t.tx,t.ty)!==t))return;
       const sent=new Map(tiles.map(t=>[tileKey(t.tx,t.ty),t]));
-      for(const t of result.tiles??[]){const tile=sent.get(tileKey(t.tx,t.ty));if(tile&&e.store.get(t.tx,t.ty)===tile)tile.png=new Uint8Array(t.png);}
+      for(const t of [...primed,...(result.tiles??[])]){const tile=sent.get(tileKey(t.tx,t.ty));if(tile&&e.store.get(t.tx,t.ty)===tile)tile.png=new Uint8Array(t.png);}
       this.lastEncode={encoded:result.encoded??0,reused:result.reused??0};
       e.store.freeze();
       const asset=figure.image_assets[0],d=drawingMetadata(figure);
