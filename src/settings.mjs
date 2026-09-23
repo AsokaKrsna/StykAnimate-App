@@ -20,6 +20,7 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   showUnselectedHandles: true,
   canvasGrid: false,
   canvasZoomGesture: "ctrl-scroll",
+  marqueeSelection: "bounds",
   canvasGuideVertical: false,
   canvasGuideHorizontal: false,
   canvasGuidesLocked: false,
@@ -73,6 +74,8 @@ export function normalizeEditorSettings(value = {}) {
   result.playbackQuality = normalizePlaybackQuality(value?.playbackQuality);
   if (['scroll', 'ctrl-scroll'].includes(value?.canvasZoomGesture))
     result.canvasZoomGesture = value.canvasZoomGesture;
+  if (['bounds', 'origins'].includes(value?.marqueeSelection))
+    result.marqueeSelection = value.marqueeSelection;
   if (value?.timelineMode === "simple" || value?.timelineMode === "advanced")
     result.timelineMode = value.timelineMode;
   for (const key of [
@@ -396,7 +399,7 @@ export class EditorSettings {
         )}</section>${this.onResetWorkspace ? `<section class="styk-settings-group"><h3>${escape(this.t('settings.workspace'))}</h3><button type="button" class="styk-settings-reset" data-settings-reset>${icon("undo")}${escape(this.t('settings.resetPanels'))}</button></section>` : ""}`;
     if (this.tab === "canvas")
       html = `<div class="settings-canvas">
-        <section class="settings-card"><label class="styk-settings-row"><span>Zoom gesture</span><select data-setting="canvasZoomGesture" aria-label="Zoom gesture"><option value="ctrl-scroll" ${value.canvasZoomGesture === 'ctrl-scroll' ? 'selected' : ''}>Ctrl + scroll to zoom</option><option value="scroll" ${value.canvasZoomGesture === 'scroll' ? 'selected' : ''}>Scroll to zoom</option></select></label></section>
+        <section class="settings-card"><label class="styk-settings-row"><span>Zoom gesture</span><select data-setting="canvasZoomGesture" aria-label="Zoom gesture"><option value="ctrl-scroll" ${value.canvasZoomGesture === 'ctrl-scroll' ? 'selected' : ''}>Ctrl + scroll to zoom</option><option value="scroll" ${value.canvasZoomGesture === 'scroll' ? 'selected' : ''}>Scroll to zoom</option></select></label><label class="styk-settings-row"><span>Rectangle selects</span><select data-setting="marqueeSelection" aria-label="Rectangle selects"><option value="bounds" ${value.marqueeSelection === 'bounds' ? 'selected' : ''}>Figure bounds</option><option value="origins" ${value.marqueeSelection === 'origins' ? 'selected' : ''}>Figure origins</option></select></label></section>
         <section class="settings-card"><h3>${icon('nodes')}Joint handles</h3><div class="settings-control-grid">${this.checkbox('Show handles','showHandles')}${this.checkbox('Show unselected figures','showUnselectedHandles')}${this.checkbox('Automatic size','autoSizeHandles')}${this.checkbox('Outline handles','outlineHandles')}</div>
         <div class="settings-handle-size"><label class="styk-settings-row"><span>Handle radius</span><span class="styk-settings-number"><input type="range" data-setting="handleSize" min="3" max="10" step="1" value="${value.handleSize}" aria-label="Handle radius"><small data-handle-value>${value.handleSize}px</small></span></label><div class="styk-settings-preview" aria-label="Joint handle preview" style="--size:${value.handleSize};--node-outline:${value.outlineHandles ? '1px solid #000' : '0px solid transparent'}">${['segment','origin','unselected','joined','static'].map(kind => `<span class="styk-settings-node" title="${{segment:'Selected joint',origin:'Figure origin',unselected:'Unselected joint',joined:'Joined joint',static:'Static joint'}[kind]}" style="--node-color:${PIVOT_HANDLE_COLORS[kind]}"></span>`).join('')}</div></div></section>
         <section class="settings-card"><h3>${icon('eye')}Canvas overlays</h3><div class="settings-control-grid">${this.checkbox('Virtual camera','showCamera')}${this.checkbox('Motion paths','motionPaths')}</div></section>

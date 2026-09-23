@@ -179,3 +179,15 @@ test('frame and keyframe punctuation defaults work in every editing scope', () =
   assert.deepEqual(custom['next-frame'], ['KeyQ']);
   assert.deepEqual(custom['next-exposure'], ['KeyW']);
 });
+
+test('origin selection settings normalize safely and selection commands can be remapped', () => {
+  assert.equal(normalizeEditorSettings({}).marqueeSelection, 'bounds');
+  assert.equal(normalizeEditorSettings({marqueeSelection:'origins'}).marqueeSelection, 'origins');
+  assert.equal(normalizeEditorSettings({marqueeSelection:'unknown'}).marqueeSelection, 'bounds');
+  const manager = new HotkeyManager({bindings: {'toggle-selection-origins': ['Mod+Shift+KeyB'], 'toggle-range-edit': ['Mod+Shift+KeyR']}});
+  manager.setBindings({'toggle-selection-origins': ['Mod+Shift+KeyB'], 'toggle-range-edit': ['Mod+Shift+KeyR']});
+  assert.equal(manager.resolve(key('KeyB', {ctrlKey:true,shiftKey:true}))?.id, 'toggle-selection-origins');
+  assert.equal(manager.resolve(key('KeyR', {ctrlKey:true,shiftKey:true}))?.id, 'toggle-range-edit');
+  assert.deepEqual(DEFAULT_HOTKEYS['toggle-selection-origins'], []);
+  assert.deepEqual(DEFAULT_HOTKEYS['toggle-range-edit'], []);
+});

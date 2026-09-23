@@ -88,6 +88,44 @@ separate background library dialog's UI workflow is complete.
 DevTools protocol. Press-and-hold is simulated with a pen `contextmenu` event;
 the Windows gesture itself needs a physical tablet to verify.
 
+## Figure selection and frame corrections
+
+The bottom-right canvas control switches rectangle selection between **Bounds**
+(the default overlap behavior) and **Origins**. Origins tests each figure’s
+evaluated root, including attachments, in the displayed canvas projection.
+Coincident roots remain coincident selection targets. Hidden and locked figures
+are excluded. The preference is saved under Settings → Canvas; both this toggle
+and **Edit selected frames** can be assigned shortcuts in Settings → Shortcuts.
+Builder and Draw retain their own selection behavior.
+
+Ctrl/Cmd-click on a figure handle toggles its membership; Shift-click still does
+the same. Ctrl/Cmd-drag on empty canvas also toggles rectangle hits. A modified
+handle press defers selection until release, so a stationary click never authors
+a pose or changes undo history. Crossing the 3 px mouse slop (or the existing pen/
+touch slop) starts the existing constrained move/stretch gesture. Escape, lost
+capture, blur, document changes and seeking cancel pending clicks. Ctrl/Cmd
+double-click toggles twice without invoking connected-group selection.
+
+The timeline **Edit selected frames** button shares state.applyRange with the
+Figure Properties checkbox. Its count includes the current playhead, matching
+the existing range commands. It is off initially and resets when selection
+collapses, the timeline mode changes, or a new document opens. Figure translation
+applies a relative displacement to each selected pose through the existing
+atomic range command; supported figure property actions retain their own range
+semantics. This control does not extend joint posing or Alt-drag transforms to a
+frame range.
+
+Hit testing lives in canvas-interactions.mjs; selection membership stays in
+editor-selection.mjs. Origin selection does not measure artwork, clone frames
+or allocate a cache. Bounds selection preserves the four projected-corner test
+without temporary arrays. Pending modified clicks reuse the existing pointer
+gesture owner. Pivot feedback draws a constant number of overlay primitives.
+
+Regression coverage: tests/selection-workflow.browser.mjs,
+tests/canvas-interactions.test.mjs, tests/hotkeys.test.mjs, and the existing
+multi-figure, joining and tablet browser tests. Performance comparison:
+node scripts/benchmark-selection-workflow.mjs <baseline-ref>.
+
 ## Joining and node selection
 
 Joint Properties keeps Static in Transform and gives IK its own section. Enabling
@@ -153,10 +191,14 @@ and connected children follow their parent endpoints. Each command is one undo s
 ## Alt-drag figure transforms
 
 Alt-dragging a figure joint preserves an existing multiple-figure selection and
-applies the same rotation delta and scale factor to every selected figure around
-its own origin. The picked figure supplies the gesture reference. Joined descendants
-follow their parent and transform once even if also selected. Ctrl locks scale;
-Shift locks rotation. Release records one undo step, and Escape cancels the gesture.
+rotates/scales the group around the picked figure's origin. Other independent
+origins orbit and scale toward that shared pivot. Joined descendants follow their
+parent and transform once even if also selected. A selected attached figure wins
+when its handle overlaps another figure's handle during Alt-drag; ordinary handle
+picking retains its existing order. An amber pivot and guide line show the fixed
+center during the gesture. Ctrl locks scale; Shift locks rotation. Release records
+one undo step. The configured Cancel key also works while drag modifiers remain
+held, without overriding a separately assigned modified shortcut.
 
 ## Figure Properties
 

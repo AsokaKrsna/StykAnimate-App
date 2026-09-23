@@ -107,6 +107,7 @@ import {
   getPivotHandles,
   PIVOT_HANDLE_COLORS,
   pickCanvasHandle,
+  figureIntersectsMarquee,
   invalidatePivotHandleTopology,
 } from "./canvas-interactions.mjs";
 import {
@@ -880,10 +881,19 @@ function orderSelection(direction) {
   finishCurrentEdit();
   return editor.orderSelection(direction, {frameIndices: rangeFrames()});
 }
-function rangeFrames() {
-  if(editor.report._styk?.layerSheet){if(!state.applyRange||timelineUI?.selectedTicks?.length<2)return undefined;const indices=[editor.frameIndex];indices.sheetTicks=[...new Set([...timelineUI.selectedTicks,editor.tick])];return indices;}
+function rangeFrames(enabled = state.applyRange) {
+  if (!enabled) return undefined;
+  if (editor.report._styk?.layerSheet) {
+    if (timelineUI?.start !== undefined && timelineUI.start === timelineUI.end) return undefined;
+    if (timelineUI?.selected?.size < 2) return undefined;
+    const ticks = timelineUI?.selectedTicks ?? [];
+    if (ticks.length < 2) return undefined;
+    const indices = [editor.frameIndex];
+    indices.sheetTicks = [...new Set([...ticks, editor.tick])];
+    return indices;
+  }
   if (editor.frameDraft?.mode === "add") return undefined;
-  return state.applyRange && state.rangeIndices.length > 1
+  return state.rangeIndices.length > 1
     ? [...new Set([...state.rangeIndices, editor.frameIndex])]
     : undefined;
 }
@@ -1400,6 +1410,18 @@ function overlayRender(geometry) {
       },
     );
   }
+  const transform = state.drag?.kind === 'figure-transform' && editor._drag?.figureHandle?.transform;
+  if (transform) {
+    const pivot = screenPoint(transform.origin), pointer = screenPoint(state.drag.current ?? state.drag.start);
+    ctx.save();
+    ctx.strokeStyle = '#e79b27'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(pivot.x, pivot.y); ctx.lineTo(pointer.x, pointer.y); ctx.stroke();
+    ctx.setLineDash([]); ctx.lineWidth = 2; ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(pivot.x, pivot.y, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pivot.x - 10, pivot.y); ctx.lineTo(pivot.x + 10, pivot.y);
+    ctx.moveTo(pivot.x, pivot.y - 10); ctx.lineTo(pivot.x, pivot.y + 10); ctx.stroke();
+    ctx.restore();
+  }
   if (state.drag?.kind === "marquee") {
     const a = screenPoint(state.drag.start),
       b = screenPoint(state.drag.current);
@@ -1893,12 +1915,34 @@ function updateTitle() {
     revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}`,
   });
 }
+function syncSelectionControls() {
+  const origins = state.settings.marqueeSelection === 'origins', button = $('selection-origins');
+  button.textContent = origins ? 'Origins' : 'Bounds';
+  button.setAttribute('aria-pressed', String(origins));
+  button.dataset.hotkeyTitle = origins ? 'Rectangle selects figure origins' : 'Rectangle selects figure bounds';
+  const indices = rangeFrames(true), count = indices?.sheetTicks?.length ?? indices?.length ?? 0;
+  const range = $('range-edit');
+  if (count < 2) state.applyRange = false;
+  range.disabled = count < 2 || Boolean(builderMode?.active || drawingController?.active);
+  range.setAttribute('aria-pressed', String(!range.disabled && state.applyRange));
+  range.querySelector('.range-edit-count').textContent = count > 1 ? String(count) : '';
+  range.dataset.hotkeyTitle = count > 1
+    ? 'Move figures and edit their properties across ' + count + ' frames, including the current frame'
+    : 'Select multiple frames to edit them together';
+  refreshHotkeyHints(hotkeys, button.parentElement);
+  refreshHotkeyHints(hotkeys, range.parentElement);
+  if (state.tool === 'select' && !builderMode?.active && !drawingController?.active)
+    $('viewport-hint').textContent = editor.object?.join
+      ? 'Alt-drag a joint around the attachment · Ctrl: rotate only · Shift: scale only'
+      : 'Drag to select · Ctrl / Shift-click to toggle · Alt-drag a joint to transform';
+}
 function updateUI() {
   if(state.editablePreparing)return;
   updateTitle();
   updateTransport();
   renderLayers();
   renderInspector();
+  if (!state.drag) syncSelectionControls();
   $("stage-size").textContent =
     `${editor.report.canvas_width} × ${editor.report.canvas_height}`;
   $("object-count").textContent =
@@ -1953,6 +1997,7 @@ function renderInspector() {
         ...$("inspector").querySelectorAll("details[data-polygon-index][open]"),
       ].map((element) => element.dataset.polygonIndex)
     : [];
+  const range = rangeFrames(true);
   updateInspectorDOM($("inspector"), inspectorView({
     editor,
     tab: state.inspectorTab,
@@ -1966,7 +2011,7 @@ function renderInspector() {
     builder: Boolean(builderMode?.active),
     selectionCount: editor.branchSelected ? 1 : selection().size,
     bounds: selection().size > 1 ? selectionBounds() : null,
-    rangeIndices: editor.frameDraft?.mode === "add" ? [] : state.rangeIndices,
+    rangeIndices: range?.sheetTicks ?? range ?? [],
     applyRange: state.applyRange,
     polygonPage: state.polygonPage || 0,
     palettePage: state.palettePage || 0,
@@ -2035,7 +2080,7 @@ function setTool(tool) {
     ["line", "chain", "circle", "polygon"].includes(tool),
   );
   $("viewport-hint").textContent = {
-    select: "Drag to select · Shift-click to add · Drag a joint to pose",
+    select: "Drag to select · Ctrl / Shift-click to toggle · Alt-drag a joint to transform",
     pose: "Drag to pose · Ctrl-drag to stretch · Shift + right-drag to bend",
     rig: "Edit figure joints · Changes update every instance",
     hand: state.settings.canvasZoomGesture === 'scroll'
@@ -2168,7 +2213,7 @@ function finishPolygon() {
   setTool("select");
   status("Polygon added");
 }
-function pick(p) {
+function pick(p, {preferSelected = false} = {}) {
   if (!state.handles) return null;
   const geometry = editor.geometry;
   const options = {
@@ -2176,6 +2221,7 @@ function pick(p) {
     projectionScale: !state.playing&&!state.previewing?state.view.scale:undefined,
     minRadius: 8,
     nearest: true,
+    preferredUid: preferSelected ? editor.selectedUid : undefined,
   };
   const hit = pickCanvasHandle(geometry, p, {...options, handles: canvasHandles(geometry)});
   // Visible handles keep priority. Hidden static endpoints are selection-only
@@ -2430,21 +2476,23 @@ overlay.addEventListener(
       requestRender();
       return;
     }
-    const hit = pick(p);
+    const hit = pick(p, {preferSelected: e.altKey && !state.handleEditHeld && !builderMode?.active});
     if (!hit && e.button === 0 && builderMode?.active && ['select','rig'].includes(state.tool)) {
       const polygon=pickFigureFill(editor.geometry.objects.get(editor.selectedSlot),p);
       if(polygon){releaseCanvasPointer();editor.selectPolygon(editor.selectedUid,polygon.index);return;}
     }
     if (e.button === 2 && (!hit || hit.joint < 0)) return;
     if (!hit) {
-      const initial = e.shiftKey ? [...selection()] : [];
-      if (!e.shiftKey) editor.select(null);
+      const toggle = e.shiftKey || ((e.ctrlKey || e.metaKey) && !builderMode?.active);
+      const initial = toggle ? [...selection()] : [];
+      if (!toggle) editor.select(null);
       state.drag = {
         kind: "marquee",
         start: p,
         current: p,
         initial,
-        mode: e.shiftKey ? "toggle" : "replace",
+        mode: toggle ? "toggle" : "replace",
+        selectionMode: builderMode?.active ? 'bounds' : state.settings.marqueeSelection,
       };
       requestRender();
       return;
@@ -2453,6 +2501,12 @@ overlay.addEventListener(
       if (builderMode?.active && hit.joint >= 0) editor.toggleSegment(hit.g.obj.unique_id, hit.joint);
       else editor.select(hit.g.obj.unique_id, -1, { toggle: true });
       releaseCanvasPointer();
+      return;
+    }
+    if (e.button === 0 && (e.ctrlKey || e.metaKey) && !e.altKey && !state.handleEditHeld &&
+        !builderMode?.active && ['select', 'pose'].includes(state.tool)) {
+      // Keep selection and history intact until click versus drag is known.
+      state.drag = {kind: 'toggle-selection', hit, start: p, press: e, moved: false};
       return;
     }
     if (e.button === 2 && !e.shiftKey) {
@@ -2471,65 +2525,68 @@ overlay.addEventListener(
       };
       return;
     }
-    if(hit.g.segments[hit.joint]?.connector)editor._connectorInspector=null;
-    const handleEdit = state.handleEditHeld;
-    const figureTransform = e.altKey && hit.joint >= 0 && !handleEdit;
-    editor.select(hit.g.obj.unique_id, hit.joint, {
-      add: (hit.joint < 0 || figureTransform) && isSelected(hit.g.obj.unique_id),
-    });
-    if (
-      hit.action === 'select' && !figureTransform
-    ) {
-      releaseCanvasPointer();
-      return;
-    }
-    if (e.button === 2) state.suppressContext = true;
-    if (handleEdit) editor.beginHandleEditDrag({ bend: e.button === 2 });
-    else if (figureTransform)
-      editor.beginFigureHandleDrag(p.x, p.y, { rotate: true, scale: true, joint: hit.joint });
-    else if (hit.joint >= 0 && state.tool === "rig")
-      editor.beginRigDrag({ reposition: state.rigMode !== "rotate" });
-    else if (hit.joint >= 0) editor.beginDrag("Pose joint");
-    else editor.beginTranslationDrag("Move connected figures");
-    state.drag = {
-      kind: handleEdit
-        ? "handle-edit"
-        : figureTransform
-          ? "figure-transform"
-          : hit.joint >= 0
-            ? state.tool === "rig"
-              ? "rig"
-              : e.button === 2
-                ? "bend"
-                : "pose"
-            : "move",
-      bend: e.button === 2,
-      constrain: e.ctrlKey || e.metaKey,
-      axis: null,
-      start: p,
-      root: { x: hit.g.obj.root_x, y: hit.g.obj.root_y },
-      joint: hit.joint,
-      moved: false,
-    };
-    if (state.drag.kind === "rig" && builderMode?.active) construction.beginRig();
-    if (hit.joint < 0 && !handleEdit) {
-      const uids = editor.resolveTranslationSelection().affectedUids;
-      state.drag.ikLive = editor._drag.before.some(o=>hasPinnedIK(o)||o._stykSpatial?.camera?.strength);
-      if (!state.drag.ikLive) {
-        state.drag.geometry = editor.geometry;
-        state.drag.translations = new Map([...uids].map((uid) => [uid, { x: 0, y: 0 }]));
-      }
-    }
-    requestRender();
+    beginFigurePointerDrag(hit, p, e);
   }),
 );
+function beginFigurePointerDrag(hit, p, e) {
+  if(hit.g.segments[hit.joint]?.connector)editor._connectorInspector=null;
+  const handleEdit = state.handleEditHeld;
+  const figureTransform = e.altKey && hit.joint >= 0 && !handleEdit;
+  editor.select(hit.g.obj.unique_id, hit.joint, {
+    add: (hit.joint < 0 || figureTransform) && isSelected(hit.g.obj.unique_id),
+  });
+  if (
+    hit.action === 'select' && !figureTransform
+  ) {
+    releaseCanvasPointer();
+    return;
+  }
+  if (e.button === 2) state.suppressContext = true;
+  if (handleEdit) editor.beginHandleEditDrag({ bend: e.button === 2 });
+  else if (figureTransform)
+    editor.beginFigureHandleDrag(p.x, p.y, { rotate: true, scale: true, joint: hit.joint });
+  else if (hit.joint >= 0 && state.tool === "rig")
+    editor.beginRigDrag({ reposition: state.rigMode !== "rotate" });
+  else if (hit.joint >= 0) editor.beginDrag("Pose joint");
+  else editor.beginTranslationDrag("Move connected figures");
+  state.drag = {
+    kind: handleEdit
+      ? "handle-edit"
+      : figureTransform
+        ? "figure-transform"
+        : hit.joint >= 0
+          ? state.tool === "rig"
+            ? "rig"
+            : e.button === 2
+              ? "bend"
+              : "pose"
+          : "move",
+    bend: e.button === 2,
+    constrain: e.ctrlKey || e.metaKey,
+    axis: null,
+    start: p,
+    root: { x: hit.g.obj.root_x, y: hit.g.obj.root_y },
+    joint: hit.joint,
+    moved: false,
+  };
+  if (state.drag.kind === "rig" && builderMode?.active) construction.beginRig();
+  if (hit.joint < 0 && !handleEdit) {
+    const uids = editor.resolveTranslationSelection().affectedUids;
+    state.drag.ikLive = editor._drag.before.some(o=>hasPinnedIK(o)||o._stykSpatial?.camera?.strength);
+    if (!state.drag.ikLive) {
+      state.drag.geometry = editor.geometry;
+      state.drag.translations = new Map([...uids].map((uid) => [uid, { x: 0, y: 0 }]));
+    }
+  }
+  requestRender();
+}
 let pendingPoseMove = null;
 function flushPoseMove() {
   const pending=pendingPoseMove;pendingPoseMove=null;
   if(pending&&pending.drag===state.drag&&pending.gesture===editor._drag)moveCanvasPointer(pending.event);
 }
 const moveCanvasPointer = guarded((e) => {
-    const drag = state.drag;
+    let drag = state.drag;
     if (drag?.kind === 'tweener') {
       if (e.buttons & 2) {e.preventDefault();state.suppressContext=true;cancelDrag();}
       else tweenerControls.move(e);
@@ -2627,6 +2684,14 @@ const moveCanvasPointer = guarded((e) => {
       drag.pastSlop = true;
     }
     const p = worldPoint(e);
+    if (drag.kind === 'toggle-selection') {
+      if (!beyondSlop(e, drag.press.clientX, drag.press.clientY, Math.max(3, dragSlop(drag.press)))) return;
+      drag.moved = true;
+      if (drag.hit.action === 'select') return;
+      state.drag = null;
+      beginFigurePointerDrag(drag.hit, drag.start, drag.press);
+      drag = state.drag;
+    }
     if (drag.kind === "maybe-bend") {
       // Crossing a few pixels turns the right press into a bend and suppresses
       // the context menu that a stationary release would open.
@@ -2708,11 +2773,13 @@ const moveCanvasPointer = guarded((e) => {
       else for (const uid of drag.translations.keys()) drag.translations.set(uid, delta);
     } else if (drag.kind === "handle-edit")
       editor.editHandlePosition(p.x, p.y, { bend: drag.bend });
-    else if (drag.kind === "figure-transform")
+    else if (drag.kind === "figure-transform") {
+      drag.current = p;
       editor.transformFigureHandle(p.x, p.y, {
         ctrlKey: e.ctrlKey || e.metaKey,
         shiftKey: e.shiftKey,
       });
+    }
     else if (drag.kind === "rig") {
       const target = builderMode?.active ? construction.rigSnap(p,e) : p;
       editor.editRigJoint(target.x, target.y, {
@@ -2760,7 +2827,9 @@ function endDrag(event) {
   releaseCanvasPointer();
   if (!drag) return;
   viewport.classList.remove("dragging");
-  if (drag.kind === 'tweener') {
+  if (drag.kind === 'toggle-selection') {
+    if (!drag.moved) editor.select(drag.hit.uid, -1, {toggle: true});
+  } else if (drag.kind === 'tweener') {
     tweenerControls.finish(true,event);
   } else if (drag.kind === "draw") {
     const p = drag.start,
@@ -2783,24 +2852,13 @@ function endDrag(event) {
       right = Math.max(a.x, b.x),
       top = Math.min(a.y, b.y),
       bottom = Math.max(a.y, b.y);
-    const uids = new Set();
+    const uids = new Set(), rect = {left, right, top, bottom};
+    const options = {mode: drag.selectionMode, project: screenPoint, boundsOf};
     if (Math.hypot(right - left, bottom - top) > 3)
       for (const g of editor.geometry.objects.values()) {
         if (!g || isHidden(g.obj.unique_id) || isLocked(g.obj.unique_id))
           continue;
-        const box = boundsOf(g),
-          points = [
-            screenPoint({ x: box.minX, y: box.minY }),
-            screenPoint({ x: box.maxX, y: box.minY }),
-            screenPoint({ x: box.maxX, y: box.maxY }),
-            screenPoint({ x: box.minX, y: box.maxY }),
-          ];
-        if (
-          Math.max(...points.map((p) => p.x)) >= left &&
-          Math.min(...points.map((p) => p.x)) <= right &&
-          Math.max(...points.map((p) => p.y)) >= top &&
-          Math.min(...points.map((p) => p.y)) <= bottom
-        )
+        if (figureIntersectsMarquee(g, rect, options))
           uids.add(g.obj.unique_id);
       }
     editor.selectMarquee([...uids], { mode: drag.mode, initial: drag.initial });
@@ -2843,6 +2901,7 @@ function cancelDrag() {
 overlay.addEventListener("pointerup", guarded(endDrag));
 
 overlay.addEventListener("dblclick", guarded((event) => {
+  if (!builderMode?.active && ["select", "pose"].includes(state.tool) && (event.ctrlKey || event.metaKey)) return;
   if (event.button === 0 && state.tool === "chain" && construction?.active) {event.preventDefault();construction.commit();return;}
   if (event.button !== 0 || state.space || state.playing || state.previewing ||
       state.spritePlacement || state.duplicatePlacement ||
@@ -4764,6 +4823,15 @@ const actions = {
     editorSettings.commit({
       showUnselectedHandles: !state.settings.showUnselectedHandles,
     }),
+  "toggle-selection-origins": () => {
+    if (builderMode?.active || drawingController?.active || state.drag) return;
+    editorSettings.commit({marqueeSelection: state.settings.marqueeSelection === 'origins' ? 'bounds' : 'origins'});
+  },
+  "toggle-range-edit": () => {
+    if (builderMode?.active || drawingController?.active || state.drag || !rangeFrames(true)) return;
+    state.applyRange = !state.applyRange;
+    queueUI();
+  },
   "toggle-handles": () => {
     editorSettings.commit({ showHandles: !state.handles });
     $("handles-button").classList.toggle("active", state.handles);
@@ -5018,6 +5086,7 @@ $("inspector").addEventListener(
     if (target.name === 'node-ik-bend') { editor.setNodeIK({bendDirection: Number(target.value)}); return; }
     if (target.id === "apply-range-movement") {
       state.applyRange = target.checked;
+      queueUI();
       return;
     }
     if (target.id === "figure-name") {
@@ -5542,6 +5611,10 @@ document.addEventListener('keydown', guarded(event => {
   const builderCheckbox = command?.scope === 'builder' && command.id.startsWith('builder-') && event.target.matches?.('input[type=checkbox],input[type=radio]');
   const effectHistory = ['undo','redo'].includes(command?.id) && vfxInspector?.ownsHistoryTarget(event.target);
   if (document.querySelector('dialog[open]') || (isHotkeyInput(event.target) && !builderCheckbox && !effectHistory)) return;
+  // Drag modifiers should not swallow the configured unmodified Cancel key.
+  if (state.drag && !command && hotkeys.resolve({code: event.code, key: event.key}, scopes)?.id === 'cancel') {
+    event.preventDefault(); cancelDrag(); return;
+  }
   hotkeys.keydown(event, scopes, command => {
     if (state.polygon && !polygonCommands.has(command.id)) return false;
     if (!$('renderer-error').hidden && !['save','save-as','open','new','cancel','settings','help'].includes(command.id)) return false;
@@ -5580,6 +5653,7 @@ new MutationObserver(() => { if (document.querySelector('dialog[open]')) hotkeys
   .observe(document.body, {subtree:true, attributes:true, attributeFilter:['open']});
 editor.addEventListener("change", (e) => {
   const kind = e.detail?.kind;
+  if (state.drag?.kind === 'toggle-selection' && ['document', 'seek', 'history', 'selection', 'edit'].includes(kind)) cancelDrag();
   if(['edit','history','document','preview','frame-draft'].includes(kind))playback.discardNativeSnapshot();
   const joining = state.figureJoin;
   if (joining && (joining.token !== editor._documentToken || joining.uid !== editor.selectedUid ||
@@ -5652,6 +5726,8 @@ editor.addEventListener("change", (e) => {
     state.selectedTrackId = layerIdForUid(editor.report, editor.selectedUid);
   }
   if (kind === "document") {
+    state.applyRange = false;
+    state.rangeIndices = [];
     state.inspectorContext = editor.selectedUid == null ? "scene" : "figure";
     state.selectedTrackId = editor.activeLayerId;
   }
@@ -6074,6 +6150,7 @@ function mountTimeline() {
   if (editor.dragging) editor.commitDrag();
   if (state.settings.timelineMode === "advanced") editor.disableFrameDrafts();
   state.rangeIndices = [];
+  state.applyRange = false;
   state.loopRange = null;
   timelineUI?.destroy();
   $("timeline").replaceChildren();
@@ -6176,6 +6253,8 @@ function mountTimeline() {
     onError: fail,
     onRangeChange: (indices) => {
       state.rangeIndices = indices;
+      if (!rangeFrames(true)) state.applyRange = false;
+      syncSelectionControls();
       if (!state.scrubbing) renderInspector();
       $("selection-summary").textContent =
         `${indices.length} keyframe${indices.length === 1 ? "" : "s"} selected`;

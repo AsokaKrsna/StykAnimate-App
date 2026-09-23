@@ -8,6 +8,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Added
 
+- Select overlapping figures more precisely with a saved Bounds/Origins rectangle mode, and use Ctrl/Cmd-click to add or remove figures without losing the rest of the selection.
 - Try experimental AI-assisted posing in a standalone playground with front, profile and angled views, trained body and limb guidance, automatic standing-foot support even after releasing pins, chest-led crouches, controlled depth-based limb shortening, stable limb lengths and bounded neck motion, supported native vector characters, persistent controls, undo, saved studies and editable StykAnimate export.
 - Attach solid meshes to spatial rigs with continuous rotation and named forms, using existing posing controls, undo, native saving and rendered exports without adding a joint for every vertex.
 
@@ -30,6 +31,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Changed
 
+- Apply figure moves and property edits across selected frames from a visible timeline toggle that shows the affected count and stays in sync with Figure Properties.
 - Work more naturally with a drawing tablet: tapping a joint or figure with the pen no longer nudges it, holding the pen still no longer pops up the context menu (the barrel button still does), and Ctrl+Space or Shift+Space with a pen drag zooms, or rotates the Draw view, without a scroll wheel. Settings → Shortcuts lists the pen gestures.
 - The Draw colour picker changes the brush colour live as you drag, opens under the colour you clicked, offers your recent colours and keeps working when you pick again. The bar above the canvas names the active tool and keeps your recent colours one click away.
 - Pose 3D characters without switching to Rotate: dragging a joint now swings it toward or away from the camera at its full length, Shift swings it behind the body, right-drag twists a part such as turning the head, and Shift-drag pushes a hand or foot toward or away from the camera. Grabbing beside a joint no longer makes it jump, and short parts like the chest and neck move with finer control.
@@ -42,7 +44,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Reduce the time needed to prepare images when opening a project.
 - Preserve original Pivot keyframes and avoid slow rebaking when exporting unchanged imported animations.
 - Reduce time and temporary memory needed to check large animations for Pivot export.
-- Scale and rotate a multi-figure selection around the dragged figure's pivot like Pivot: Alt-drag now moves every selected figure's position toward or around the shared origin instead of resizing each figure in place, and Ctrl+Alt keeps rotating the group without scaling.
+- Scale and rotate a multi-figure selection around the dragged figure's pivot like Pivot: Alt-drag now moves every selected figure's position toward or around the shared origin instead of resizing each figure in place, and Ctrl+Alt keeps rotating the group without scaling. A visible pivot guide and priority for the selected figure’s overlapping handles make attached figures easier to transform.
 - Make frame counts agree between the Simple timeline, the Advanced timeline and Export: Simple shows "Frame 3 of 24 · plays as 47 frames", and Export explains that it counts every frame including inbetweens. Simple timeline thumbnails now grow to fill the timeline's height, and each frame shows its inbetweens as "+2".
 - Start painting in Draw straight away: the first stroke creates a drawing layer, or switches to your existing one, instead of doing nothing until a layer is chosen.
 - Give each Draw setting one home: colour, size, opacity, flow, smoothing, mirroring and tool modes live in the bar above the canvas, while Properties keeps presets, the stroke preview, recent colours and deeper brush options.

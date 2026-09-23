@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getPivotHandles, getPivotHandleRadius, invalidatePivotHandleTopology, pickCanvasHandle, pivotHandleColor } from '../src/canvas-interactions.mjs';
+import { figureIntersectsMarquee, getPivotHandles, getPivotHandleRadius, invalidatePivotHandleTopology, pickCanvasHandle, pivotHandleColor } from '../src/canvas-interactions.mjs';
 import { Editor } from '../src/editor.mjs';
 import { createDemo } from '../src/demo.mjs';
 
@@ -222,4 +222,32 @@ test('indexed picking preserves native order, ties, zoom, rotation and strict hi
     }
   }
   assert.equal(pickCanvasHandle(null,handles[750].point,{handles,nearest:true,spatial:true}).uid,2000);
+});
+
+test('origin marquee uses evaluated attachment points and skips artwork bounds', () => {
+  const rect = {left: 40, right: 60, top: 40, bottom: 60}, project = p => ({x: p.x * 2 + 10, y: p.y * 2 + 10});
+  const g = {root: {x: 20, y: 20}, obj: {root_x: -999, root_y: -999, join: {target_object_slot: 0}}};
+  const boundsOf = () => {throw Error('Origin selection must not measure artwork');};
+  assert.equal(figureIntersectsMarquee(g, rect, {mode: 'origins', project, boundsOf}), true);
+  assert.equal(figureIntersectsMarquee({...g, root: {x: 100, y: 20}}, rect, {mode: 'origins', project, boundsOf}), false);
+  assert.equal(figureIntersectsMarquee({...g, root: {x: 15, y: 25}}, rect, {mode: 'origins', project, boundsOf}), true);
+});
+
+test('bounds marquee retains overlap behavior through a rotated viewport', () => {
+  const g = {root: {x: 0, y: 0}}, boundsOf = () => ({minX: 0, maxX: 100, minY: 0, maxY: 50});
+  const project = p => ({x: -p.y + 200, y: p.x + 10});
+  const rect = {left: 155, right: 165, top: 80, bottom: 90};
+  assert.equal(figureIntersectsMarquee(g, rect, {project, boundsOf}), true);
+  assert.equal(figureIntersectsMarquee(g, rect, {mode: 'origins', project, boundsOf}), false);
+  assert.equal(figureIntersectsMarquee(g, {...rect, left: 201, right: 220}, {project, boundsOf}), false);
+});
+
+test('Alt handle preference resolves overlapping attached figures without changing ordinary picking', () => {
+  const a = object(1, 0, {x:0,y:0}, {x:20,y:0}, {join: {target_object_slot: 1}});
+  const b = object(2, 1, {x:100,y:0}, {x:20,y:0}), scene = geometry([a,b]);
+  const handles = getPivotHandles(scene), options = {handles, nearest:true, minRadius:8};
+  assert.equal(pickCanvasHandle(scene, {x:20,y:0}, options).uid, 2);
+  assert.equal(pickCanvasHandle(scene, {x:20,y:0}, {...options, preferredUid:1}).uid, 1);
+  assert.equal(pickCanvasHandle(scene, {x:100,y:0}, {...options, preferredUid:1}).uid, 2);
+  assert.equal(pickCanvasHandle(scene, {x:40,y:0}, {...options, preferredUid:1}), null);
 });

@@ -204,7 +204,8 @@ function nearbyHandles(handles,point,options){
   return candidates.sort((a,b)=>b-a);
 }
 
-/** First native open-square hit, without a distance or selected-first pass.
+/** Native hit order, or nearest hit when requested. An optional preferred UID
+ * resolves overlapping handles for explicit figure transforms.
  * point and optional radius override use world coordinates. Reuse descriptors
  * via options.handles for allocation-free scanning of an unchanged scene.
  */
@@ -223,9 +224,26 @@ export function pickCanvasHandle(geometry, point, options = {}) {
     const inside = options.nearest ? distanceSquared < radius * radius : Math.abs(dx) < radius && Math.abs(dy) < radius;
     if (inside) {
       const hit = { ...handle, distanceSquared };
-      if (!options.nearest) return hit;
-      if (!best || distanceSquared < best.distanceSquared) best = hit;
+      if (!options.nearest && options.preferredUid === undefined) return hit;
+      const preferred = options.preferredUid !== undefined && handle.uid === options.preferredUid;
+      const bestPreferred = options.preferredUid !== undefined && best?.uid === options.preferredUid;
+      if (!best || (preferred && !bestPreferred) || (preferred === bestPreferred && options.nearest && distanceSquared < best.distanceSquared)) best = hit;
     }
   }
   return best;
+}
+
+/** Canvas-space selection; origin mode never traverses artwork or its bounds.
+ * Use evaluated roots so attachments and projected figures select where shown.
+ */
+export function figureIntersectsMarquee(figure, rect, {mode = 'bounds', project, boundsOf}) {
+  if (mode === 'origins') {
+    const point = project(figure.root);
+    return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom;
+  }
+  const box = boundsOf(figure);
+  const a = project({x: box.minX, y: box.minY}), b = project({x: box.maxX, y: box.minY});
+  const c = project({x: box.maxX, y: box.maxY}), d = project({x: box.minX, y: box.maxY});
+  return Math.max(a.x, b.x, c.x, d.x) >= rect.left && Math.min(a.x, b.x, c.x, d.x) <= rect.right &&
+    Math.max(a.y, b.y, c.y, d.y) >= rect.top && Math.min(a.y, b.y, c.y, d.y) <= rect.bottom;
 }

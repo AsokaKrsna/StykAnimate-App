@@ -63,7 +63,8 @@ try {
   async function resetRange(file = sourcePath) {
     await page.evaluate(() => {globalThis.previousRangeReport = styk.editor.report;});
     const choosing = page.waitForEvent('filechooser');
-    await page.locator('[data-action="open"]').first().click();
+    await page.locator('#viewport').focus();
+    await page.keyboard.press('Control+o');
     await (await choosing).setFiles(file);
     await page.waitForFunction(() => styk.editor.report !== globalThis.previousRangeReport || document.querySelector('#discard-changes'));
     if (await page.locator('#discard-changes').count()) await page.locator('#discard-changes').click();
@@ -122,7 +123,7 @@ try {
     (after, before) => {const copy = after.objects.find(o => o.unique_id > 3); assert.ok(copy); assert.deepEqual(copy.angles, object(before, 1).angles); assert.equal(copy.scale, object(before, 1).scale);});
   await exercise('Delete removes the selected identity across the selected range', () => menuAction('delete'), after => assert.equal(object(after, 1), undefined));
   await exercise('Figure color applies only to the chosen identity in selected frames', async () => {await page.locator('#figure-color').fill('#123456'); await page.locator('#figure-color').dispatchEvent('change');},
-    (after, before) => {assert.equal(object(after, 1).color_override_raw, 0xff563412); assert.deepEqual(object(after, 2), object(before, 2));});
+    (after, before) => {const g=buildGeometry(report,after).objects.get(object(after,1).object_slot); for(const segment of g.segments)assert.deepEqual(segment.rgb,[18,52,86]); assert.deepEqual(object(after, 2), object(before, 2));});
   await exercise('Opacity numeric input applies to the native range atomically', () => numeric('figure_opacity', 50), after => assert.equal(object(after, 1).field28, 128));
   await exercise('Position numeric input applies the absolute value to each selected frame', () => numeric('root_x', 240), after => assert.equal(object(after, 1).root_x, 240));
   await exercise('Scale numeric input preserves each frame’s pose while changing scale', () => numeric('scale', 80),
@@ -143,7 +144,7 @@ try {
       for (const b of bounds(after)) assert.ok(Math.abs(b.x - expected) < .001);
       assert.deepEqual(object(after, 3), object(before, 3));
     }, {setup: () => selectFigure(2, ['Control'])});
-  await exercise('Bring to front changes painter order in selected frames only', () => menuAction('layer-front'), after => assert.equal(after.object_draw_order_unique_ids.at(-1), 1));
+  await exercise('Bring to front changes painter order in selected frames only', () => page.locator('#inspector [data-action="layer-front"]').click(), after => assert.equal(after.object_draw_order_unique_ids.at(-1), 1));
   await exercise('Copy and Paste inserts the clipboard pose into the selected range', async () => {await menuAction('copy'); await menuAction('paste');},
     (after, before) => {assert.equal(after.objects.length, before.objects.length + 1); assert.ok(after.objects.some(o => o.unique_id > 3));});
   await exercise('Cut copies once and removes figures from the selected range', async () => {
@@ -152,7 +153,7 @@ try {
   await exercise('Canvas attachment joins to the same native handle across selected frames', async () => {
     await page.evaluate(() => styk.actions['attach-figure']()); const p = await point(2, 1); await page.mouse.click(p.x, p.y);
   }, after => {assert.equal(object(after, 1).join.target_unique_id, 2); assert.equal(object(after, 1).join.target_handle_id, 1);});
-  await exercise('Detach preserves world placement and unselected frame attachments', () => page.evaluate(() => styk.actions['detach-figure']()),
+  await exercise('Detach preserves world placement and unselected frame attachments', async () => {await page.locator('#viewport').focus();await page.keyboard.press('j');},
     (after, before) => {const root = buildGeometry(report, before).objects.get(object(before, 1).object_slot).root;
       assert.equal(object(after, 1).join, null); assert.ok(Math.abs(object(after, 1).root_x - root.x) < .001); assert.ok(Math.abs(object(after, 1).root_y - root.y) < .001);}, {file: joinedPath});
   await exercise('Canvas dragging applies a relative translation to every selected pose', async () => {

@@ -55,13 +55,17 @@ try {
     await setup();await page.evaluate(()=>styk.editor.selectMany([1,2,3]));await settle();
     const origin=await worldPoint(2,0),start=await worldPoint(2,1);
     const transformed=await drag(2,1,{x:origin.x,y:origin.y+2*(start.x-origin.x)},{keys,name});
-    check(`${name} preserves selection and transforms all figures once`,transformed.kind==='figure-transform'&&await page.evaluate(({rotates,scales})=>{
+    check(`${name} preserves selection and transforms all figures once`,transformed.kind==='figure-transform'&&await page.evaluate(({rotates,scales,origin})=>{
       const e=styk.editor,before=JSON.parse(__frameBefore);
+      const radians=rotates?Math.PI/2:0, factor=scales?2:1;
+      const position=(o,i)=>{const b=before.objects[i],dx=b.root_x-origin.x,dy=b.root_y-origin.y;
+        return Math.abs(o.root_x-(origin.x+(dx*Math.cos(radians)-dy*Math.sin(radians))*factor))<.1&&
+          Math.abs(o.root_y-(origin.y+(dx*Math.sin(radians)+dy*Math.cos(radians))*factor))<.1;};
       return e.selectedUids.size===3&&e._undo.length===1&&e.selectionFrame.objects.every((o,i)=>
         Math.abs(o.scale-before.objects[i].scale*(scales?2:1))<.03&&
         Math.abs(o.angles[0]-before.objects[i].angles[0]-(rotates?Math.PI/2:0))<.03&&
-        (o.join||(o.root_x===before.objects[i].root_x&&o.root_y===before.objects[i].root_y)));
-    },{rotates,scales}));
+        (o.join||position(o,i)));
+    },{rotates,scales,origin}));
     await page.screenshot({path:path.join(out,`${name}.png`)});
     await page.keyboard.press('Control+z');
     check(`${name} undoes in one step`,await page.evaluate(()=>JSON.stringify(styk.editor.selectionFrame.objects)===JSON.stringify(JSON.parse(__frameBefore).objects)));

@@ -183,6 +183,7 @@
             aria-label="Animation canvas. V to select, H to pan. Drag a figure or joint to pose it."
           >
             <div class="canvas-view-controls" role="toolbar" aria-label="Canvas view">
+              <button type="button" id="selection-origins" class="button subtle small" data-action="toggle-selection-origins" aria-label="Select by origins" aria-pressed="false" title="Rectangle selects figure bounds">Bounds</button>
               <button type="button" id="canvas-guides-button" class="icon-button" data-icon="grid" title="Guides and grid" aria-label="Guides and grid" aria-haspopup="dialog" aria-expanded="false" aria-controls="canvas-guides-panel"></button>
               <button type="button" id="vfx-preview" class="button subtle small" title="Toggle VFX preview" aria-label="VFX preview" aria-pressed="true">VFX</button>
               <button
@@ -296,6 +297,7 @@
                   />fps</label
                 >
               </div>
+              <button type="button" id="range-edit" class="button subtle small" data-action="toggle-range-edit" aria-label="Edit selected frames" aria-pressed="false" title="Select multiple frames to edit them together" disabled><span data-icon="frame"></span><span class="range-edit-label">Edit selected frames</span><span class="range-edit-count"></span></button>
               <div class="timeline-onion-controls"><button class="icon-button" id="onion-button" data-action="toggle-onion" data-icon="onion" title="Onion skin · O" aria-label="Onion skin" aria-pressed="false"></button><button class="icon-button onion-options-button" id="onion-settings-button" title="Onion skin settings" aria-label="Onion skin settings" data-icon="chevron-down"></button></div>
               <button id="timeline-audio" class="icon-button timeline-audio-toggle" title="Show audio" aria-label="Audio" aria-description="Show or hide audio editing. Audio keeps playing when hidden." aria-controls="timeline-audio-panel" aria-expanded="false" aria-pressed="false" data-icon="music"></button>
               <button id="expand-timeline" class="icon-button" title="Expand timeline" aria-label="Expand timeline" aria-pressed="false" data-icon="maximize"></button>
