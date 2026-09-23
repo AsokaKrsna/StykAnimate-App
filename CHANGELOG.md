@@ -30,6 +30,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Changed
 
+- Work more naturally with a drawing tablet: tapping a joint or figure with the pen no longer nudges it, holding the pen still no longer pops up the context menu (the barrel button still does), and Ctrl+Space or Shift+Space with a pen drag zooms, or rotates the Draw view, without a scroll wheel. Settings → Shortcuts lists the pen gestures.
 - The Draw colour picker changes the brush colour live as you drag, opens under the colour you clicked, offers your recent colours and keeps working when you pick again. The bar above the canvas names the active tool and keeps your recent colours one click away.
 - Pose 3D characters without switching to Rotate: dragging a joint now swings it toward or away from the camera at its full length, Shift swings it behind the body, right-drag twists a part such as turning the head, and Shift-drag pushes a hand or foot toward or away from the camera. Grabbing beside a joint no longer makes it jump, and short parts like the chest and neck move with finer control.
 - Avoid rebuilding unchanged image textures when revisiting animation frames.

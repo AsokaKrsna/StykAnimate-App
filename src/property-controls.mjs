@@ -1,4 +1,5 @@
 /** Delegated numeric/property controls. Model transactions are supplied by the owner. */
+import {dragSlop} from "./pen-input.mjs";
 export const propertyStep = (
   step = 1,
   { shiftKey = false, altKey = false } = {},
@@ -303,6 +304,8 @@ export class PropertyControls {
     g.pointerId = event.pointerId;
     g.lastX = event.clientX;
     g.startX = event.clientX;
+    // A pen tap on a label focuses its field; only a real drag scrubs.
+    g.slop = dragSlop(event, 2);
     g.accumulator = g.value;
     g.moved = false;
     this.container.setPointerCapture(event.pointerId);
@@ -314,7 +317,7 @@ export class PropertyControls {
     if (!g || g.source !== "scrub" || g.pointerId !== event.pointerId) return;
     this._consume(event);
     const dx = event.clientX - g.lastX;
-    if (!g.moved && Math.abs(event.clientX - g.startX) < 2) return;
+    if (!g.moved && Math.abs(event.clientX - g.startX) < g.slop) return;
     g.lastX = event.clientX;
     g.moved = true;
     g.accumulator = this._limit(

@@ -92,3 +92,9 @@
 @container settings-content (max-width:380px){.settings-control-grid{grid-template-columns:minmax(0,1fr)}.settings-handle-size{flex-wrap:wrap}.hotkey-row{grid-template-columns:minmax(0,1fr)}.hotkey-bindings{justify-content:flex-start}.hotkey-toolbar{flex-wrap:wrap}.hotkey-search{min-width:140px}}
 
 @media(max-width:620px){.styk-settings-sidebar{overflow:hidden}.styk-settings-tabs{min-width:0;overflow-x:auto}.styk-settings-actions{flex-shrink:0}.styk-settings-actions [data-settings-privacy] span{display:none}.styk-settings-actions [data-settings-donate]>.icon:last-child{display:none}}
+.settings-pen-gestures dl{display:grid;gap:2px;margin:0}
+.settings-pen-gestures dl>div{display:flex;justify-content:space-between;gap:16px;padding:5px 0;border-bottom:1px solid var(--theme-border,#e2e5ea);font-size:12px}
+.settings-pen-gestures dl>div:last-child{border-bottom:0}
+.settings-pen-gestures dt{font-weight:600;white-space:nowrap}
+.settings-pen-gestures dd{margin:0;color:var(--theme-muted,#66707e);text-align:right}
+.settings-pen-gestures{margin-bottom:14px}

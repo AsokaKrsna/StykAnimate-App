@@ -83,6 +83,7 @@ import {
 } from "./export-sampling.mjs";
 import { initWorkspaceLayout } from "./studio-layout.mjs";
 import { initStudioShell, mountExportFlow } from "./studio-shell.mjs";
+import { dragSlop, beyondSlop, installPenMenuGuard } from "./pen-input.mjs";
 import { initBuilderMode } from "./builder-mode.mjs";
 import { inspectorView } from "./inspector-view.mjs";
 import { updateInspectorDOM } from "./inspector-dom.mjs";
@@ -2207,6 +2208,20 @@ overlay.addEventListener(
     editablePreparation.cancel();
     overlay.setPointerCapture(e.pointerId);
     canvasPointerId = e.pointerId;
+    // Where the press began, and how far a pen may wobble before it drags.
+    state.press = { x: e.clientX, y: e.clientY, slop: dragSlop(e) };
+    // Wheel-free navigation for tablets: Ctrl+Space drag zooms around the
+    // press (drag right or up to zoom in); Shift+Space drag rotates the Draw view.
+    if (state.spaceHeld && e.button === 0 && (e.ctrlKey || e.metaKey || e.shiftKey && drawingController?.active)) {
+      const r = viewport.getBoundingClientRect(), rotate = !(e.ctrlKey || e.metaKey), report = editor.report;
+      const center = { x: r.left + state.view.x + report.canvas_width * state.view.scale / 2, y: r.top + state.view.y + report.canvas_height * state.view.scale / 2 };
+      state.spacePanned = true;
+      state.drag = rotate
+        ? { kind: "rotate", center, angle: Math.atan2(e.clientY - center.y, e.clientX - center.x), rotation: state.view.rotation ?? 0 }
+        : { kind: "zoom", x: e.clientX, y: e.clientY, scale: state.view.scale, anchor: { x: e.clientX - r.left, y: e.clientY - r.top } };
+      viewport.classList.add("dragging");
+      return;
+    }
     if (e.button === 1 || state.space || state.tool === "hand") {
       if (state.space) state.spacePanned = true;
       state.drag = {
@@ -2591,6 +2606,26 @@ const moveCanvasPointer = guarded((e) => {
       requestRender();
       return;
     }
+    if (drag.kind === "zoom") {
+      const target = drag.scale * Math.exp((e.clientX - drag.x - (e.clientY - drag.y)) * 0.01);
+      zoom(target / state.view.scale, drag.anchor);
+      return;
+    }
+    if (drag.kind === "rotate") {
+      let angle = drag.rotation + Math.atan2(e.clientY - drag.center.y, e.clientX - drag.center.x) - drag.angle;
+      angle = Math.atan2(Math.sin(angle), Math.cos(angle));
+      // Settle on upright within 3 degrees so the view is easy to straighten.
+      state.view.rotation = Math.abs(angle) < Math.PI / 60 ? 0 : angle;
+      placeArtboard();
+      requestRender();
+      drawingController?.onUI?.();
+      return;
+    }
+    // A pen tap wobbles; editing starts only once the press leaves its slop.
+    if (!drag.moved && !drag.pastSlop && drag.kind !== "maybe-bend" && state.press) {
+      if (!beyondSlop(e, state.press.x, state.press.y, state.press.slop)) return;
+      drag.pastSlop = true;
+    }
     const p = worldPoint(e);
     if (drag.kind === "maybe-bend") {
       // Crossing a few pixels turns the right press into a bend and suppresses
@@ -2773,7 +2808,7 @@ function endDrag(event) {
     if (drag.moved) editor.commitMotionPathEdit();
     else editor.cancelMotionPathEdit();
   } else if (drag.kind === "camera") editor.commitCameraDrag();
-  else if (drag.kind !== "pan" && drag.kind !== "maybe-bend") {
+  else if (!["pan", "maybe-bend", "zoom", "rotate"].includes(drag.kind)) {
     if (drag.kind === "move" && drag.moved) {
       const delta = drag.ikLive ? drag.delta : drag.translations.get(editor.selectedUid);
       if (rangeFrames()) {
@@ -5480,6 +5515,25 @@ function releaseKeyboardCommand(id, event) {
   }
 }
 const hotkeys = new HotkeyManager({run: guarded(runKeyboardCommand), release: guarded(releaseKeyboardCommand)});
+// Tablet navigation chords (Ctrl+Space zoom, Shift+Space rotate) are not
+// hotkeys: track the Space key itself so a pen press can read it.
+window.addEventListener('keydown', (event) => {
+  if (event.code !== 'Space' || isHotkeyInput(event.target)) return;
+  state.spaceHeld = true;
+  if (event.ctrlKey || event.metaKey || event.shiftKey) {
+    event.preventDefault();
+    state.spaceChord = true; state.space = true; viewport.classList.add('panning');
+  }
+}, true);
+const releaseSpaceChord = () => {
+  state.spaceHeld = false;
+  if (!state.spaceChord) return;
+  state.spaceChord = false; state.space = false; state.spacePanned = false;
+  viewport.classList.toggle('panning', state.tool === 'hand');
+};
+window.addEventListener('keyup', (event) => { if (event.code === 'Space') releaseSpaceChord(); }, true);
+window.addEventListener('blur', releaseSpaceChord);
+installPenMenuGuard(window);
 const polygonCommands = new Set(['undo','redo','open','new','save','save-as','settings','help','cancel','finish-polygon','play-pan',
   'tool-select','tool-pose','tool-hand','tool-line','tool-circle','tool-polygon','zoom-in','zoom-out','zoom-reset','zoom-selection','toggle-onion','toggle-handles','isolate-hold']);
 document.addEventListener('keydown', guarded(event => {

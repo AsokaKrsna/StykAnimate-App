@@ -69,6 +69,25 @@ changes. The pixel report is in
 These checks cover the engine and rendering contracts; they do not claim the
 separate background library dialog's UI workflow is complete.
 
+### Pen and tablet input
+
+`src/pen-input.mjs` holds the shared tablet rules:
+
+- Pen and touch drags start only after the press leaves a small slop (5 px for a
+  pen, 10 px for touch), so a tap selects a joint or figure without nudging it or
+  adding an undo step. Mouse drags keep pixel precision. Property scrub labels
+  use the same slop, so a pen tap focuses the field.
+- Windows turns a stationary pen press into a right click. The editor ignores
+  that synthesized menu, as Krita and Photoshop do; the barrel button (a real
+  right press) still opens menus and bends joints. Keyboard menus are unaffected.
+- Wheel-free navigation: Space+drag pans, Ctrl+Space+drag zooms around the press
+  (right or up zooms in), and Shift+Space+drag rotates the Draw view, settling on
+  upright within 3°. Releasing Space after these gestures never starts playback.
+
+`tests/pen-input.browser.mjs` drives real pen pointer events through the
+DevTools protocol. Press-and-hold is simulated with a pen `contextmenu` event;
+the Windows gesture itself needs a physical tablet to verify.
+
 ## Joining and node selection
 
 Joint Properties keeps Static in Transform and gives IK its own section. Enabling
