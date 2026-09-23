@@ -19,6 +19,8 @@ layer; otherwise select an existing visible, unlocked drawing layer.
   existing paint without covering empty pixels. Smudge carries the colour under the tip along the
   stroke (Smudge length) and can mix in the brush colour (Color mix); it
   composites each dab immediately, since every dab reads the previous result.
+  The colour under the tip is averaged on a grid of at most 64×64 samples, so
+  large smudge tips cost the same pickup as a 64-pixel one.
 - **Quick bar and sliders:** a toolbar floats above the canvas with the active
   tool's everyday settings (brush: preset, colours, size, opacity, flow,
   smoothing, mirror). Drawing settings use Krita-style slider fields shared by
@@ -68,8 +70,9 @@ layer; otherwise select an existing visible, unlocked drawing layer.
   without touching the clipboard. Timeline focus retains frame clipboard and
   frame deletion routing.
 - **V:** transform the whole cel using the existing pose controls. Pixel
-  selection and cel pose are distinct. **H / middle mouse / held Space:** pan. Touch pans;
-  a recent pen gesture suppresses touch painting/navigation from a palm.
+  selection and cel pose are distinct. **H / middle mouse / held Space:** pan. Touch pans and
+  two fingers pinch to zoom around their midpoint; a recent pen gesture
+  suppresses touch painting/navigation from a palm.
 - Brush and Eraser retain independent tip settings. Properties contains tool
   controls; timing actions stay in the timeline. Dynamics and Resolution
   are collapsed until needed.
@@ -257,21 +260,36 @@ committed as one undo step. An untransformed float shows the exact stored
 pixels. Sparse worker previews preserve translucent colors and avoid allocating
 the empty space between distant selected tiles.
 
+On WebGPU every brush and the eraser — including tip shape, grain, scatter,
+pressure flow, every blend mode, alpha lock, selection clipping and smudge —
+rasterize on the GPU in the frame that receives input, and cels display from
+GPU-resident tiles; see [GPU drawing residency and brush](DRAWING-GPU.md).
+The stroke worker described below remains the Canvas 2D brush, the brush for
+selections too large for a pixel mask, and the replay path for a failed GPU
+stroke. Both commit through the same transaction and history.
+
 The stroke path (stabilization, curve joining and dab spacing) runs on the
 main thread in `StrokePath`, so every dab's extent is known before dispatch:
 each batch seeds the stroke worker with exactly the tiles its dabs reach, and
 the worker refuses a dab outside its seeded tiles rather than painting over a
-blank guess. Symmetry feeds each mirrored sample into its own path so mirrored
+blank guess. `dabShape()` turns each path dab into its final tip (pressure
+size, grain jitter, scatter, per-dab opacity and flow, tip angle) from the
+stroke's seeded jitter sequence, so the worker and the GPU brush see identical
+dabs. Symmetry feeds each mirrored sample into its own path so mirrored
 strokes keep even spacing while sharing one coverage buffer and undo step.
 Wet ink (`drawing-wet-ink.mjs`) draws the part of a stroke that is not yet
 on screen — the last presented dab, dabs in flight or pending, the raw
 pointer and its predicted position — on a desynchronized canvas between the
-scene and the overlay, on every pointer event. The renderer records each
+scene and the overlay, at most every 8 ms (pens can report several hundred
+samples a second). Points closer than a CSS pixel merge and consecutive
+segments of one width share a path: a canvas call per dab once flooded the
+compositor with fine brushes and stalled every frame. The renderer records each
 presenter's `presentedStamp` when it uploads (or paints) a stamp, and a batch's
 wet segments retire one frame after their stamp is presented, so the exact
 stroke is always on screen before its preview leaves. Only brushes the preview
 matches closely use it (normal blend, firm round tips, flow ≥ 50%, no
 selection clip); erasing, smudging and special blends show exact pixels only.
+GPU strokes paint in the frame itself and use no wet ink.
 
 The WebGPU renderer refreshes drawing entries without re-preparing the scene:
 each entry carries its presenter and stamp, and frames without a geometry
@@ -280,14 +298,15 @@ moved), repainting the scratch's dirty tiles and uploading that region.
 A pointer interrupted mid-gesture (lost capture, `pointercancel`, window
 blur) finishes the gesture and keeps its ink; only Escape discards it.
 
-At most one dab batch is in flight: while the stroke worker is busy, dabs
-accumulate and leave with its reply, so a brush slower than the pointer never
-queues stale work. Samples arrive through `pointerrawupdate` where available,
+At most one dab batch is in flight: while the stroke worker is busy, input
+samples accumulate and become dabs only as the next batch leaves, so a brush
+slower than the pointer never queues stale work or an unbounded dab list. Samples arrive through `pointerrawupdate` where available,
 and an idle worker takes a batch immediately instead of at the next frame.
 Dabs accumulate stroke coverage only; colour is composited once per batch over
 each tile's dirty span, since it depends only on final coverage, the pixels
 the stroke first saw and the blend mode. Soft falloff uses a per-stroke
 lookup table indexed by squared distance.
+
 `drawing-pixels.mjs` rasterizes real, distance-resampled samples. Stroke opacity
 caps the whole stroke, while flow accumulates dabs. Pressure release cannot
 remove previously deposited paint. Stabilization is a distance-windowed
@@ -305,10 +324,13 @@ the smoothing window retains at most 4,096 samples, including stationary pen
 input, and release drains it in linear time. This limit affects only the
 smoothing history, not the input samples sent for painting. A stroke snapshots
 its pixel transform once. The main thread generates the final dabs and posts
-at most 512 per batch, with one batch outstanding. Acknowledgments release
-pending dabs before the final end message. Seed regions cover the actual dab
-extents, preserving existing pixels and exact undo records across batches.
-The pending queue retains at most 65,536 dabs; exceeding the working limit
+512 per batch, or up to 8,192 for tips small enough that 512 would make
+round trips the bottleneck (their batch covers about the same pixel area),
+with one batch outstanding. Acknowledgments release pending dabs before the
+final end message. Seed regions cover the actual dab extents, preserving
+existing pixels and exact undo records across batches. A stroke retains at
+most 65,536 input samples (minutes of 240 Hz pen input); a fine brush's dab
+count no longer limits stroke length. Exceeding the working memory limit
 cancels and rolls back the transaction.
 A gesture queued behind a closing stroke retains its samples within that bound;
 canvas publication coalesces into one animation-frame callback. Pointer
@@ -409,7 +431,9 @@ in flight. Publications reconnect to the current definition by cel identity;
 save barriers and cold decode restore the same published base, including after
 resampling and eviction. Uncommitted preview bounds never enter this snapshot.
 
-Live drawing textures participate in the normal scene compositor, including
+The scratch-canvas presenter below serves the Canvas 2D renderer, onion
+skins, selection previews, cels with drawable effects and a WebGPU renderer
+with GPU drawing switched off. Live drawing textures participate in the normal scene compositor, including
 ordering, opacity, erasing, camera and clipping. Tiles are painted into
 tile-anchored scratch canvases; each presenter keeps a bounded LRU of them,
 and a request contained in an already-painted cover reuses it without
@@ -490,6 +514,10 @@ rig conversion or vector tracing.
 Run `node --test tests/drawing.test.mjs`, `node tests/drawing.browser.mjs` and
 `node scripts/benchmark-drawing.mjs` with the local app at port 47839 (or set
 `STYK_URL`). See [verification report](../artifacts/drawing/VERIFICATION.md).
+`tests/drawing-gpu.browser.mjs` checks GPU/CPU brush parity, exact reduced
+levels, GPU alpha bounds, cancellation, failure replay, undo/redo, held
+erasing, zoomed-out strokes and eviction; `tests/drawing-latency.browser.mjs`
+measures input-to-frame latency (see [DRAWING-GPU.md](DRAWING-GPU.md)).
 The pan, expansion and shortcut refinements have a separate regression suite:
 `node tests/drawing-ux.browser.mjs`; see its [report](../artifacts/drawing-ux/VERIFICATION.md).
 `npm run test:drawing:desktop` paints through real input in the Electron app,

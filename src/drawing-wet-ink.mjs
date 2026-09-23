@@ -35,13 +35,25 @@ export class WetInk {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.strokeStyle = ctx.fillStyle = color; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     for (const path of paths) {
-      for (let i = 0; i < path.length; i++) {
-        const p = path[i], q = path[i + 1] ?? null;
+      // Fine brushes emit dabs a fraction of a pixel apart. Points closer than
+      // a CSS pixel add nothing to the preview, and consecutive segments of
+      // one (half-pixel) width share a single path: a stroke call per dab
+      // floods the compositor and stalls every frame.
+      const points = [];
+      for (const p of path) {
+        const last = points.at(-1);
         x0 = Math.min(x0, p.x - p.r); y0 = Math.min(y0, p.y - p.r); x1 = Math.max(x1, p.x + p.r); y1 = Math.max(y1, p.y + p.r);
-        if (!q) { if (path.length === 1) { ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(.5, p.r), 0, Math.PI * 2); ctx.fill(); } break; }
-        ctx.lineWidth = Math.max(1, p.r + q.r);
-        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+        if (last && Math.abs(p.x - last.x) < 1 && Math.abs(p.y - last.y) < 1 && Math.abs(p.r - last.r) < .5) { points[points.length - 1] = {x: p.x, y: p.y, r: Math.max(p.r, last.r)}; continue; }
+        points.push(p);
       }
+      if (points.length === 1) { const p = points[0]; ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(.5, p.r), 0, Math.PI * 2); ctx.fill(); continue; }
+      let width = 0;
+      for (let i = 0; i + 1 < points.length; i++) {
+        const p = points[i], q = points[i + 1], w = Math.max(1, Math.round((p.r + q.r) * 2) / 2);
+        if (w !== width) { if (width) ctx.stroke(); ctx.beginPath(); ctx.lineWidth = width = w; ctx.moveTo(p.x, p.y); }
+        ctx.lineTo(q.x, q.y);
+      }
+      if (width) ctx.stroke();
     }
     const style = this.canvas.style, filter = blur > .3 ? `blur(${blur.toFixed(1)}px)` : '';
     if (style.opacity !== String(opacity)) style.opacity = String(opacity);

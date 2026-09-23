@@ -9,6 +9,11 @@ export function assertPixels(pixels,width,height) {
 }
 export function compactTile(bytes){
   if(bytes==null)return null;
+  if(bytes.byteOffset%4===0&&bytes.length%4===0){
+    const words=new Uint32Array(bytes.buffer,bytes.byteOffset,bytes.length>>2),first=words[0];
+    for(let i=1;i<words.length;i++)if(words[i]!==first)return bytes;
+    return bytes.slice(0,4);
+  }
   for(let i=4;i<bytes.length;i++)if(bytes[i]!==bytes[i%4])return bytes;
   return bytes.slice(0,4);
 }
@@ -64,6 +69,30 @@ export function dabRadius(brush,pressure=1){return brush.size*(brush.pressureSiz
 /** Conservative pixel bounds [x0,y0,x1,y1) of a dab, including jitter and
  * scatter. Callers seed exactly the tiles these bounds touch. */
 export function dabExtent(brush,dab){const r=dabRadius(brush,dab.pressure??1)*(brush.texture>0?1.1:1)+1+brush.scatter*brush.size/2;return [Math.floor(dab.x-r),Math.floor(dab.y-r),Math.ceil(dab.x+r),Math.ceil(dab.y+r)];}
+/** Smudge samples the colour under its tip every `stride` pixels, bounding
+ * the pickup to a 64×64 grid however large the tip is. */
+export const smudgeStride=(width,height)=>Math.max(1,Math.ceil(Math.max(width,height)/64));
+/** A stroke's deterministic jitter sequence (mulberry32), seeded per stroke. */
+export function jitterSequence(seed){let state=seed>>>0;return()=>{let t=state=(state+0x6D2B79F5)>>>0;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;};}
+/** Final tip geometry of one path dab: pressure size, grain size jitter,
+ * scatter, per-dab opacity/flow and tip angle, with its pixel bounds
+ * [left,top,right,bottom). `rand` is the stroke's jitter sequence and is
+ * consumed identically whether the dab paints or not, so the worker raster
+ * and the GPU brush see the same dabs. Returns null for a dab that deposits
+ * nothing. */
+export function dabShape(brush,p,rand){
+  const pressure=clamp(p.pressure??1);let radius=dabRadius(brush,pressure);
+  if(brush.texture>0)radius*=1+(rand()*2-1)*.1;
+  let x=p.x,y=p.y;
+  if(brush.scatter>0){const a=rand()*Math.PI*2,d=rand()*brush.scatter*brush.size/2;x+=Math.cos(a)*d;y+=Math.sin(a)*d;}
+  const opacity=brush.opacity*(brush.pressureOpacity?pressure**brush.opacityCurve:1),flow=brush.flow*(brush.pressureFlow?pressure:1);
+  if(opacity<=0||flow<=0||radius<=0)return null;
+  const theta=(brush.angle*Math.PI/180)+(brush.angleMode==='direction'?p.dir??0:brush.angleMode==='tilt'&&(p.ax||p.ay)?Math.atan2(p.ay,p.ax):0);
+  const cos=Math.cos(theta),sin=Math.sin(theta);
+  let hx=radius,hy=radius;
+  if(brush.roundness<.999){const rb=radius*brush.roundness;hx=Math.sqrt((radius*cos)**2+(rb*sin)**2);hy=Math.sqrt((radius*sin)**2+(rb*cos)**2);}
+  return {x,y,radius,opacity,flow,cos,sin,left:Math.floor(x-hx),top:Math.floor(y-hy),right:Math.ceil(x+hx),bottom:Math.ceil(y+hy)};
+}
 const lerp=(a,b,t)=>({x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t,pressure:a.pressure+(b.pressure-a.pressure)*t,time:a.time+(b.time-a.time)*t,ax:a.ax+(b.ax-a.ax)*t,ay:a.ay+(b.ay-a.ay)*t});
 const tileId=tileKey;
 
@@ -145,7 +174,7 @@ export class DrawingStroke {
     Object.assign(this,brush,{store,brush,requireTile,mask:mask??settings.mask??null,workingBytes:settings.workingBytes??768*1024*1024,maxBytes:settings.maxBytes??48*1024*1024,tiles:new Map(),bytes:256,dirty:null,dirtyTiles:new Set(),uncomposited:new Set(),rand:brush.seed,dabs:0});
     this.path=new StrokePath(brush,p=>this.addDab(p));
   }
-  nextRand(){let t=this.rand=(this.rand+0x6D2B79F5)>>>0;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;}
+  nextRand(){return (this.random??=jitterSequence(this.rand))();}
   tile(tx,ty) {
     const key=tileId(tx,ty);let tile=this.tiles.get(key);if(tile)return tile;
     this.requireTile?.(tx,ty);
@@ -161,18 +190,10 @@ export class DrawingStroke {
    * instead of once per overlapping dab. */
   addDab(p) {
     this.dabs++;
-    const pressure=clamp(p.pressure??1);let radius=dabRadius(this,pressure);
-    if(this.texture>0)radius*=1+(this.nextRand()*2-1)*.1;
-    let cx=p.x,cy=p.y;
-    if(this.scatter>0){const a=this.nextRand()*Math.PI*2,d=this.nextRand()*this.scatter*this.size/2;cx+=Math.cos(a)*d;cy+=Math.sin(a)*d;}
-    const opacity=this.opacity*(this.pressureOpacity?pressure**this.opacityCurve:1),flow=this.flow*(this.pressureFlow?pressure:1);
+    const shape=dabShape(this,p,()=>this.nextRand());
     this.lastDab={x:p.x,y:p.y};
-    if(opacity<=0||flow<=0||radius<=0)return;
-    const round=this.roundness<.999,theta=(this.angle*Math.PI/180)+(this.angleMode==='direction'?p.dir??0:this.angleMode==='tilt'&&(p.ax||p.ay)?Math.atan2(p.ay,p.ax):0);
-    const cos=Math.cos(theta),sin=Math.sin(theta),inv=1/this.roundness;
-    let hx=radius,hy=radius;
-    if(round){const rb=radius*this.roundness;hx=Math.sqrt((radius*cos)**2+(rb*sin)**2);hy=Math.sqrt((radius*sin)**2+(rb*cos)**2);}
-    const left=Math.floor(cx-hx),top=Math.floor(cy-hy),right=Math.ceil(cx+hx),bottom=Math.ceil(cy+hy);
+    if(!shape)return;
+    const {x:cx,y:cy,radius,opacity,flow,cos,sin,left,top,right,bottom}=shape,round=this.roundness<.999,inv=1/this.roundness;
     const r2=radius*radius,hard=this.hardness>=.999,inner=radius>=1?(radius-1)*(radius-1):-1;
     if(this.blend==='smudge'&&!this.erase){this.smudgeDab(cx,cy,radius,left,top,right,bottom,round,cos,sin,inv,opacity*flow);return;}
     // Soft falloff by squared distance: a per-stroke table replaces a square
@@ -225,9 +246,15 @@ export class DrawingStroke {
     const weight=(x,y)=>{let dx=x+.5-cx,dy=y+.5-cy;if(round){const u=dx*cos+dy*sin;dy=(dy*cos-dx*sin)*inv;dx=u;}const d2=dx*dx+dy*dy;if(d2>=r2)return 0;
       let e=hard?(d2<=(radius-1)*(radius-1)?1:clamp(radius-Math.sqrt(d2))):lut[(d2*scale)|0];
       if(mask){e*=maskValue(mask,x,y);}return e;};
-    // Average the premultiplied colour under the tip.
-    let sr=0,sg=0,sb=0,sa=0,sw=0;
-    for(let y=top;y<bottom;y++)for(let x=left;x<right;x++){const e=weight(x,y);if(!e)continue;sw+=e;const t=this.tiles.get(tileId(Math.floor(x/TILE),Math.floor(y/TILE)))?.pixels??this.store.get(Math.floor(x/TILE),Math.floor(y/TILE))?.pixels;if(!t)continue;const j=((y-Math.floor(y/TILE)*TILE)*TILE+x-Math.floor(x/TILE)*TILE)*4,a=t[j+3]/255;sr+=t[j]*a*e;sg+=t[j+1]*a*e;sb+=t[j+2]*a*e;sa+=a*e;}
+    // Average the premultiplied colour under the tip on a grid of at most
+    // 64×64 samples (the GPU brush samples the same grid), reading each
+    // tile's pixels once instead of looking the tile up per pixel.
+    const stride=smudgeStride(right-left,bottom-top);let sr=0,sg=0,sb=0,sa=0,sw=0;
+    for(let ty=Math.floor(top/TILE);ty*TILE<bottom;ty++)for(let tx=Math.floor(left/TILE);tx*TILE<right;tx++){
+      const ox=tx*TILE,oy=ty*TILE,t=this.tiles.get(tileId(tx,ty))?.pixels??this.store.get(tx,ty)?.pixels;
+      const x0=left+Math.ceil((Math.max(left,ox)-left)/stride)*stride,y0=top+Math.ceil((Math.max(top,oy)-top)/stride)*stride,x1=Math.min(right,ox+TILE),y1=Math.min(bottom,oy+TILE);
+      for(let y=y0;y<y1;y+=stride)for(let x=x0;x<x1;x+=stride){const e=weight(x,y);if(!e)continue;sw+=e;if(!t)continue;const j=((y-oy)*TILE+x-ox)*4,a=t[j+3]/255;sr+=t[j]*a*e;sg+=t[j+1]*a*e;sb+=t[j+2]*a*e;sa+=a*e;}
+    }
     if(!sw)return;
     const sample=[sr/sw,sg/sw,sb/sw,sa/sw],length=this.smudgeLength,rate=this.colorRate;
     // The carried paint keeps `length` of itself and picks up the rest from the canvas.

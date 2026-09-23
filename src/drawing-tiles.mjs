@@ -31,16 +31,29 @@ class TileMap extends Map {
     if(tile?.pixels?.byteLength!==TILE_BYTES)throw new Error('Tile pixels must be one full tile.');
     const old=super.get(key);super.set(key,tile);
     if(old?.pixels!==tile.pixels)this.onPixels?.(old?.pixels,tile.pixels);
+    this.onKey?.(key);
     return this;
   }
-  delete(key){const old=super.get(key);if(!super.delete(key))return false;this.onPixels?.(old.pixels,null);return true;}
-  clear(){if(this.onPixels)for(const tile of this.values())this.onPixels(tile.pixels,null);super.clear();}
+  delete(key){const old=super.get(key);if(!super.delete(key))return false;this.onPixels?.(old.pixels,null);this.onKey?.(key);return true;}
+  clear(){if(this.onPixels)for(const tile of this.values())this.onPixels(tile.pixels,null);this.onKey?.(null);super.clear();}
 }
+const CHANGE_LOG_KEYS=8192;
 
 /** Sparse unbounded pixel surface. Tiles are shared by reference until a
  * writable() or fork() call marks them frozen, after which mutation copies. */
 export class TileStore {
-  constructor(tiles){this.tiles=new TileMap(tiles);this._bounds=undefined;this._tileBounds=undefined;}
+  constructor(tiles){this.tiles=new TileMap(tiles);this.tiles.onKey=key=>this.logChange(key);this._bounds=undefined;this._tileBounds=undefined;}
+  /** Bounded log of changed tile keys for one consumer (GPU residency). An
+   * overflow or clear() reports that everything must be treated as changed. */
+  changes(consumer){
+    this._logs??=new Map();let log=this._logs.get(consumer);
+    if(!log){log={keys:new Set(),overflow:false};this._logs.set(consumer,log);}
+    return log;
+  }
+  logChange(key){
+    if(!this._logs)return;
+    for(const log of this._logs.values()){if(log.overflow)continue;if(key===null||log.keys.size>=CHANGE_LOG_KEYS){log.overflow=true;log.keys.clear();}else log.keys.add(key);}
+  }
   get(tx,ty){return this.tiles.get(tileKey(tx,ty));}
   has(tx,ty){return this.tiles.has(tileKey(tx,ty));}
   get size(){return this.tiles.size;}
@@ -76,7 +89,7 @@ export class TileStore {
     const key=tileKey(tx,ty);let tile=this.tiles.get(key);
     if(!tile){if(!create)return null;tile={tx,ty,pixels:new Uint8ClampedArray(TILE_BYTES),frozen:false,version:++tileVersion};this.tiles.set(key,tile);this._changed();return tile;}
     if(tile.frozen){tile={tx,ty,pixels:tile.pixels.slice(),frozen:false};this.tiles.set(key,tile);}
-    tile.version=++tileVersion;tile.png=undefined;tile.alphaBounds=undefined;this._changed();return tile;
+    tile.version=++tileVersion;tile.png=undefined;tile.alphaBounds=undefined;this._changed();this.logChange(key);return tile;
   }
   set(tx,ty,pixels) {
     assertTileCoordinates(tx,ty);

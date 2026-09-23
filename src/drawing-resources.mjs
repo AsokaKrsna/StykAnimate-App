@@ -7,7 +7,7 @@ import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from './drawing-tiles
 import {applyTileChanges} from './drawing-pixels.mjs';
 import {tileStoreFromList} from './drawing-tile-codec.mjs';
 import {presenterScratch,retainedPresenterScratch,levelStore,invalidateLevels} from './drawing-raster.mjs';
-import {prepareDrawingChanges,needsDrawingPreparation,validateDrawingChanges} from './drawing-preparation.mjs';
+import {prepareDrawingChanges,needsDrawingPreparation,validateDrawingChanges,adoptDrawingPreparation} from './drawing-preparation.mjs';
 
 const owners=new WeakMap(),clipboardPixels=new WeakMap();
 export const drawingClipboardPixels=clipboard=>clipboardPixels.get(clipboard);
@@ -127,7 +127,7 @@ export class DrawingResources {
     for(const e of this.surfaces())if(e!==except){e.levels=null;e.levelKnown=null;}
     for(const e of this.evictionOrder()){
       if(resident()+bytes<=target)break;
-      if(e===except||e.pinned||e.preparing||!e.store||e.published?.revision!==e.revision)continue;e.store=null;e.levels=null;e.levelKnown=null;this.surfaceVersion++;
+      if(e===except||e.pinned||e.preparing||!e.store||e.published?.revision!==e.revision)continue;this.onEvictStore?.(e,e.store);e.store=null;e.levels=null;e.levelKnown=null;this.surfaceVersion++;
     }
     if(resident()+bytes<=target)return;
     // Everything left is dirty or pinned work that must not be lost. Kick the
@@ -172,7 +172,7 @@ export class DrawingResources {
     for(const e of stores){
       if(bytes<=this.tileBudget)break;
       if(e===current||e.pinned||e.preparing||e.published?.revision!==e.revision)continue;
-      e.store=null;e.levels=null;e.levelKnown=null;this.dropScratch(e);this.surfaceVersion++;bytes=this.stats.bytes;evicted=true;
+      this.onEvictStore?.(e,e.store);e.store=null;e.levels=null;e.levelKnown=null;this.dropScratch(e);this.surfaceVersion++;bytes=this.stats.bytes;evicted=true;
     }
     if(evicted)this.onChange();
   }
@@ -186,11 +186,13 @@ export class DrawingResources {
     e.store=store;e.deferred=[];e.published=null;e.revision=drawingMetadata(figure).revision;e.stamp++;e.decodeError=null;e.levels=null;e.levelKnown=null;this.dropScratch(e);this.surfaceVersion++;this.residentMemory();this.onChange();this.schedule();return e;
   }
   discard(figure){const id=drawingMetadata(figure)?.celId,e=this.entries.get(id);if(!e||this.report.figure_types.some(f=>drawingMetadata(f)?.celId===id))return;e.disposed=true;this.dropScratch(e);e.store=null;e.levels=null;e.levelKnown=null;this.entries.delete(id);this.residentMemory();this.surfaceVersion++;this.onChange();}
-  async surface(figure) {
+  /** `priority` marks a load a pointer is waiting on: it overtakes queued
+   * display and prefetch decodes and is never superseded by them. */
+  async surface(figure,{priority=false}={}) {
     if(this.disposed)throw new DOMException('Drawing document closed.','AbortError');
     const e=this.entry(figure);e.used=performance.now();
     if(e.store)return e;
-    if(e.loading)return e.loading;
+    if(e.loading){if(priority)this.prioritize(e);return e.loading;}
     const generation=this.generation,base=e.revision-(e.deferred?.length??0);
     e.loading=(async()=>{
       const d=drawingMetadata(figure);
@@ -198,10 +200,14 @@ export class DrawingResources {
       // asset-only undo/redo restored an older definition snapshot.
       const live=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===d.celId)??figure,asset=live.image_assets[0];
       const url=e.published?e.published.url:asset.styk_tiles;
-      const result=await this.decode(e,()=>d.version===1?this.decodeWorker.request('decode-legacy',{url:asset.data_url,crop:d.crop}):url?this.decodeTiles(url):Promise.resolve({tiles:[]}));
+      // A GPU-resident copy of the published base restores without decoding.
+      const result=await this.decode(e,()=>(d.version===2&&this.restoreStore?.(e,base))||(d.version===1?this.decodeWorker.request('decode-legacy',{url:asset.data_url,crop:d.crop}):url?this.decodeTiles(url):Promise.resolve({tiles:[]})),priority);
       if(this.disposed||generation!==this.generation)throw new DOMException('Drawing changed.','AbortError');
       const store=tileStoreFromList(result.tiles);
       const exact=!e.deferred.length;
+      // Intact GPU slots of this published base stay valid for its tiles;
+      // deferred history below then replaces the tiles it changes.
+      this.onStoreRestored?.(e,store,base);
       for(const step of e.deferred)applyTileChanges(store,step.changes,step.direction);
       e.deferred=[];this.reserve(store.bytes,e);e.store=store;e.stamp++;e.decodeError=null;e.levels=null;e.levelKnown=null;this.dropScratch(e);this.surfaceVersion++;
       if(exact&&result.levels?.length){e.levels=result.levels.map(list=>tileStoreFromList(list));this.levelsReserved(e);}
@@ -209,12 +215,18 @@ export class DrawingResources {
       this.residentMemory();this.onChange();return e;
     })().finally(()=>{e.loading=null;});return e.loading;
   }
-  decode(e,request){
+  decode(e,request,priority=false){
     return new Promise((resolve,reject)=>{
       if(this.disposed){reject(new DOMException('Drawing document closed.','AbortError'));return;}
-      if(this.decodeQueue.length>=2)this.decodeQueue.shift().reject(new DOMException('A newer drawing was requested.','AbortError'));
-      this.decodeQueue.push({e,request,resolve,reject});this.pumpDecode();
+      // A newer request supersedes the oldest background job, never a priority one.
+      if(this.decodeQueue.length>=2){const index=this.decodeQueue.findIndex(job=>!job.priority);if(index>=0)this.decodeQueue.splice(index,1)[0].reject(new DOMException('A newer drawing was requested.','AbortError'));}
+      const job={e,request,resolve,reject,priority};
+      if(priority)this.decodeQueue.unshift(job);else this.decodeQueue.push(job);this.pumpDecode();
     });
+  }
+  prioritize(e){
+    const index=this.decodeQueue.findIndex(job=>job.e===e);if(index<0)return;
+    const [job]=this.decodeQueue.splice(index,1);job.priority=true;this.decodeQueue.unshift(job);
   }
   pumpDecode(){
     if(this.decoding||this.disposed||!this.decodeQueue.length)return;
@@ -285,6 +297,7 @@ export class DrawingResources {
   }
   needsPreparation(command,direction){return needsDrawingPreparation(command,direction);}
   prepareChanges(command,direction,options){return prepareDrawingChanges(this,command,direction,options);}
+  adoptPrepared(command,direction,tiles){return adoptDrawingPreparation(this,command,direction,tiles);}
   apply(figure,changes,direction,prepared,{resident=false}={}) {
     const e=this.entry(figure);
     if(resident&&e.store){

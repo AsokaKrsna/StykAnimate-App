@@ -6321,7 +6321,7 @@ async function init() {
   actions['chain-finish'] = () => construction.commit();
   actions['chain-cancel'] = () => construction.cancel();
   window.styk.builder = builderMode;
-  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onOverlayRender:requestDrawingOverlay,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard});
+  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onOverlayRender:requestDrawingOverlay,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard});
   window.styk.drawing=drawingController;
   studioShell = initStudioShell({editor, state, setTool, renderAssets, renderInspector, showCommandMenu,
     actions, setTimelineMode: mode => editorSettings.commit({timelineMode:mode}), getTimeline: () => timelineUI,

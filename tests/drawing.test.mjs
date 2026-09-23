@@ -1050,6 +1050,27 @@ test('undo after a published clean store is evicted by reserve() rebuilds exact 
   }finally{resources.dispose();}
 });
 
+test('a load a pointer waits on overtakes queued background decodes and survives newer ones',async()=>{
+  const {e,resources}=fixture();try{
+    const figures=[];
+    for(let i=0;i<6;i++){
+      const figure=createDrawingFigure({pixelsPerUnit:1,figureTypeId:200+i});figure._styk.drawing.celId=`cel-priority-${i}`;e.report.figure_types.push(figure);figures.push(figure);
+      const pixels=new Uint8ClampedArray(TILE_BYTES);pixels.set([i,0,0,255],0);resources.install(figure,[{tx:0,ty:0,pixels}]);
+    }
+    await resources.flush();for(const figure of figures)resources.entry(figure).store=null;
+    const order=[],request=resources.decodeWorker.request.bind(resources.decodeWorker);
+    resources.decodeWorker.request=(kind,payload,options)=>{order.push(payload.url);return request(kind,payload,options);};
+    const urls=figures.map(figure=>resources.entry(figure).published.url);
+    const background=[0,1,2].map(i=>resources.surface(figures[i]).catch(error=>error));
+    const edit=resources.surface(figures[2],{priority:true});
+    const later=[3,4,5].map(i=>resources.surface(figures[i]).catch(error=>error));
+    const edited=await edit;await Promise.all([...background,...later]);
+    assert.equal(edited.store.pixel(0,0)[0],2,'the prioritized cel decodes');
+    assert.equal(order.indexOf(urls[2]),1,'it decodes right after the job already in flight');
+    assert.ok(resources.decodeQueue.length===0);
+  }finally{resources.dispose();}
+});
+
 test('a burst of surface requests keeps at most two decodes queued and decodes the newest',async()=>{
   const {e,resources}=fixture();try{
     const figures=[];

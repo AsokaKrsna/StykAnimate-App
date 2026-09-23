@@ -26,6 +26,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Keep a second colour (X swaps), pick from recently used colour swatches, and save your own brushes; saved brushes and recent colours are remembered between sessions.
 - Change brush size, opacity, flow and smoothing from a quick bar above the canvas, or right-click the canvas while painting for a pop-up palette of brushes, recent colours, size and opacity. Sliders can be dragged, scrolled or typed into, presets show a sample stroke, a readout confirms each change on the canvas, number keys set opacity (1 = 10%, 0 = 100%) and Shift+[ / ] soften or harden the brush.
 - Draw faster with mirror painting, Shift-click straight lines from the last stroke, Alt-click colour picking, Ctrl-drag brush resizing, and M to flip the view while checking proportions.
+- Pinch with two fingers on a touch-enabled pen display or tablet to zoom the drawing canvas.
 
 ### Changed
 
@@ -37,7 +38,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 - Keep attached 3D heads on the neck when the torso or neck bends; they no longer turn twice and drift off the shoulders.
 - Switch IK off and on for each 3D arm and leg from the rig panel. With IK off, dragging a hand or foot swings just the forearm or shin.
-- Reduce drawing lag as artwork and frames accumulate, keep brush-cursor movement responsive, and prevent artwork from disappearing while previews start. Shorten waits after large drawing edits, undo and redo with faster loading and pixel pastes, and smaller background tile updates. Fill regions up to 64 megapixels without changing behavior when zoomed out.
+- Every brush paints under the pen as you draw and finishes almost immediately when you lift it, including smudge, textured, angled and blend-mode brushes and large brushes on detailed 4K drawings. Long strokes with fine brushes such as Pencil are no longer lost, and stabilized and smudge brushes such as Liner and Oil no longer freeze the canvas. Flipping and scrubbing between drawing frames shows each drawing without waiting for it to reload, and drawing on a frame that was unloaded to save memory starts sooner. Drawing lag no longer grows as artwork and frames accumulate, brush-cursor movement stays responsive, and artwork no longer disappears while previews start. Large drawing edits, undo, redo, loading and pixel pastes wait less, with smaller background tile updates. Fill regions up to 64 megapixels without changing behavior when zoomed out.
 
 - Select, copy, paste, transform and resample large or widely spaced drawings without allocating empty space, keep lasso capture responsive in the background, preserve translucent colors and rotated or mirrored pixel pastes, and offer crisp pixel-art filtering. Failed or cancelled clipboard transfers keep cut artwork intact.
 

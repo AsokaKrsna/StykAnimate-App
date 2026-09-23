@@ -26,6 +26,7 @@ import {glyphTextureDescriptor,drawGlyphMask,glyphTextureShape} from './renderer
 import { uploadShapeLayoutSteps, SHAPE_UPLOAD_RECORDS } from './renderer-upload.mjs';
 import { backgroundImageAssets, frameImageAssets, createSceneImages, consumeSceneSteps } from './scene-preparation.mjs';
 import {drawingMatrix,drawingPixelMatrix,drawingMetadata} from './drawing-model.mjs';
+import {DrawingGpu,gpuDrawingEligible} from './drawing-gpu.mjs';
 export { cameraMatrix, worldToScreen, screenToWorld } from './renderer-geometry.mjs';
 function renderPreviewVfx(renderer,field,create,render) {
   if(performance.now()<renderer.vfxRetryAt)return false;
@@ -465,6 +466,24 @@ class WebGPURenderer {
     this.device.lost.then(info => { if (!this.destroyed) { this.deviceLost = true; this.last = null; this.stats.reason = info.reason; this.stats.message = `Graphics device disconnected: ${info.message || info.reason}. Reinitialize the renderer to continue.`; this.stats.backend = 'WebGPU device lost'; this.options.onStatus?.(this.stats); } });
     this.device.addEventListener('uncapturederror', event => { if (this.destroyed || this.deviceLost) return; this.stats.warnings.push(event.error.message); this.options.onStatus?.(this.stats); });
     initVfxDevice(this.device);
+    // Drawing cels display from GPU-resident tiles. Failure keeps the canvas
+    // scratch path, which remains the Canvas 2D and fallback presenter.
+    if (this.options.gpuDrawing !== false) this.enableGpuDrawing();
+  }
+  /** GPU drawing compiles in the background; until it is ready, cels use the
+   * scratch presenter and the stroke worker. `gpuDrawingReady` settles with
+   * whether it became active. */
+  enableGpuDrawing() {
+    if (this.drawingGpu || this.gpuDrawingPending) return this.gpuDrawingReady;
+    const pending = this.gpuDrawingPending = DrawingGpu.create(this);
+    this.gpuDrawingReady = pending.then(gpu => {
+      if (this.gpuDrawingPending !== pending || this.destroyed || this.deviceLost) { gpu.destroy(); return false; }
+      this.gpuDrawingPending = null; this.drawingGpu = gpu; this.lastGeometry = null; this.options.onInvalidate?.(); return true;
+    }, error => {
+      if (this.gpuDrawingPending === pending) this.gpuDrawingPending = null;
+      this.stats.warnings.push(`GPU drawing unavailable: ${error.message}`); return false;
+    });
+    return this.gpuDrawingReady;
   }
   createVectorPipeline(count = this.msaaCount) {
     return this.device.createRenderPipelineAsync({ label: 'StykAnimate vector + asset compositor', layout: this.pipelineLayout,
@@ -497,6 +516,7 @@ class WebGPURenderer {
     this.msaa?.destroy(); this.msaa = msaa;
     // The VFX compositor pipeline bakes its own sample count; rebuild lazily.
     this.vfxViewport?.destroy(); this.vfxViewport = null;
+    this.drawingGpu?.compileDisplay(count).then(() => this.options.onInvalidate?.(), () => {});
     this.options.onInvalidate?.();
     return true;
   }
@@ -733,6 +753,12 @@ class WebGPURenderer {
     const drawingMeta=sourceItems.length===1&&!isOnion?drawingMetadata(sourceItems[0].fig):null;
     const drawing=drawingMeta&&this.resources.drawing?.(sourceItems[0].fig);
     const drawingState=drawing?{drawing,drawingItems:items,drawingStamp:drawing.stamp,drawingCamera:this.activeCamera,drawingWidth:this.width,drawingHeight:this.height}:{};
+    if(drawing&&this.drawingGpu&&!this.drawingGpu.destroyed&&(drawing.store||drawingMeta.version===2)&&gpuDrawingEligible(drawing,sourceItems[0])){
+      // Tiles are resolved per frame in render(); the retained shape slot stays disabled.
+      const item=sourceItems[0],matrix=drawingPixelMatrix(item),data=prior?.gpuDrawing&&prior.transform===index?prior.data:new Float32Array(shapeRecord({mode:SHAPE.DISABLED,transform:index}));
+      return {...drawingState,key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:null,
+        gpuDrawing:{absolute:matrix,matrix:[matrix[0],matrix[1],matrix[2],matrix[3],matrix[4]-source.root.x,matrix[5]-source.root.y],alpha:item.alpha}};
+    }
     if(drawing&&!drawing.store&&drawingMeta.version===2&&!hasDrawableVfx(sourceItems[0])){
       // An evicted v2 store re-decodes via the presenter; keep the last
       // retained texture until then and never fall back to the stale
@@ -915,11 +941,14 @@ class WebGPURenderer {
     // artwork once; lower raster detail leaves editable vector geometry intact.
     const uniqueArtwork = new Set(), texturePlans = [];
     const desiredResolution = Math.max(.5, Math.min(8, 2 ** Math.ceil(Math.log2(scale || 1))));
-    for (const {g, items} of groups) {
+    for (const {g, items, isOnion} of groups) {
       const artworkView = opacityArtwork(g,items), {source,items:sourceItems} = artworkView;
       let compatibility = this.compatibilityCache.get(source);
       if (compatibility === undefined) {compatibility = artworkView.isolated || requiresCompatibilityTexture(sourceItems); this.compatibilityCache.set(source, compatibility);}
       if (!compatibility) continue;
+      // Live drawing cels present through their tile presenter. Hashing their
+      // published tile blob as shared artwork would stall every relayout.
+      if (this.liveDrawing(sourceItems, isOnion)) continue;
       const glyph=this.options.sharedArtwork!==false && glyphTextureDescriptor(sourceItems,desiredResolution);
       if(glyph){texturePlans.push({items:sourceItems});yield {phase:'Preview memory',completed:texturePlans.length,total:groups.length};continue;}
       const artwork = this.artworkAliases.get(source) ?? (this.options.sharedArtwork === false || this.liveEditing ? source : yield* this.artworks.getSteps(source, sourceItems));
@@ -1071,6 +1100,12 @@ class WebGPURenderer {
         texture.texture.destroy();this.drawingTextures.delete(id);drawingGpuBytes-=texture.bytes;
       }
     }
+    const drawingGpu=this.drawingGpu;
+    if(drawingGpu&&!drawingGpu.destroyed){
+      drawingGpu.beginFrame();
+      for(const entry of this.layout)entry.gpuDraw=entry.gpuDrawing?drawingGpu.prepare(entry.drawing,this.gpuDrawingView(entry,camera)):null;
+      drawingGpuBytes+=drawingGpu.bytes;this.stats.drawingGpu={...drawingGpu.stats};
+    }
     this.stats.drawingGpuBytes=drawingGpuBytes;
     if(this.measureFrame){this.telemetryStages.prepare=performance.now()-measureAt;measureAt=performance.now();}
     const matrix = cameraMatrix(options), zoom = Number(view.scale ?? 1), x = Number(view.x ?? 0), y = Number(view.y ?? 0);
@@ -1085,6 +1120,7 @@ class WebGPURenderer {
     }
     this.device.queue.writeBuffer(this.transformBuffer, 0, this.transformData);
     const encoder = this.device.createCommandEncoder({ label: 'StykAnimate viewport frame' });
+    if(drawingGpu&&!drawingGpu.destroyed)drawingGpu.encode(encoder);
     const timestampWrites=this.gpuTiming?.begin(this.measureFrame);
     const pass = encoder.beginRenderPass({ colorAttachments: [this.colorAttachment(this.context.getCurrentTexture().createView())], ...(timestampWrites?{timestampWrites}:{}) });
     pass.setPipeline(this.pipeline); pass.setBindGroup(0, this.globalBindGroup);
@@ -1092,7 +1128,8 @@ class WebGPURenderer {
     const flush = () => { if (!count) return; pass.setBindGroup(1, this.blankBindGroup); pass.draw(6, count, 0, begin); calls++; begin = -1; count = 0; };
     for (const entry of this.layout) {
       if(entry.isOnion&&hasSceneVfx(frame)){flush();continue;}
-      if (entry.texture) { flush(); pass.setBindGroup(1, entry.texture.bindGroup); pass.draw(6, entry.count, 0, entry.offset); calls++; }
+      if (entry.gpuDraw) { flush(); drawingGpu.draw(pass, entry.gpuDraw); pass.setPipeline(this.pipeline); pass.setBindGroup(0, this.globalBindGroup); calls++; }
+      else if (entry.texture) { flush(); pass.setBindGroup(1, entry.texture.bindGroup); pass.draw(6, entry.count, 0, entry.offset); calls++; }
       else { if (begin < 0) begin = entry.offset; count += entry.capacity; }
     }
     flush();
@@ -1108,8 +1145,40 @@ class WebGPURenderer {
     return geometry;
   }
   finishSceneVfx(options){return renderPreviewVfx(this,'vfxViewport',()=>new ViewportVfx(this),viewport=>viewport.render(options));}
+  /** Drawing cels that objectEntry presents from their tile presenter rather
+   * than from a compatibility raster of the published image. */
+  liveDrawing(items, isOnion) {
+    const figure = items.length === 1 && !isOnion ? items[0].fig : null, meta = figure && drawingMetadata(figure);
+    if (!meta || hasDrawableVfx(items[0])) return false;
+    const drawing = this.resources.drawing?.(figure);
+    return Boolean(drawing && (drawing.store || meta.version === 2));
+  }
+  /** Switch drawing cels between GPU-resident tiles and the canvas scratch
+   * presenter (the Canvas 2D path). Used by diagnostics and fallback tests. */
+  setGpuDrawing(enabled) {
+    if (!enabled) { this.gpuDrawingPending = null; this.drawingGpu?.destroy(); this.drawingGpu = null; this.gpuDrawingReady = Promise.resolve(false); }
+    else if (!this.destroyed && !this.deviceLost) this.enableGpuDrawing();
+    this.lastGeometry = null; this.options.onInvalidate?.();
+    return this.gpuDrawingReady;
+  }
+  /** Visible level-0 pixel rect and display level for a GPU drawing entry,
+   * matching the scratch path's mip choice. */
+  gpuDrawingView(entry,camera){
+    const {absolute:m,matrix,alpha}=entry.gpuDrawing,cd=camera[0]*camera[3]-camera[1]*camera[2],md=m[0]*m[3]-m[1]*m[2];
+    let rect=null;
+    if(Math.abs(cd)>1e-12&&Math.abs(md)>1e-12){
+      const toWorld=p=>({x:(camera[3]*(p.x-camera[4])-camera[2]*(p.y-camera[5]))/cd,y:(camera[0]*(p.y-camera[5])-camera[1]*(p.x-camera[4]))/cd});
+      const toPixel=p=>({x:(m[3]*(p.x-m[4])-m[2]*(p.y-m[5]))/md,y:(m[0]*(p.y-m[5])-m[1]*(p.x-m[4]))/md});
+      const ps=[[0,0],[this.width,0],[this.width,this.height],[0,this.height]].map(([x,y])=>toPixel(toWorld({x,y})));
+      const x=Math.min(...ps.map(p=>p.x)),y=Math.min(...ps.map(p=>p.y));
+      rect={x,y,width:Math.max(...ps.map(p=>p.x))-x,height:Math.max(...ps.map(p=>p.y))-y};
+    }
+    const deviceScale=Math.max(1e-9,Math.hypot(camera[0],camera[1])*this.dpr*Math.hypot(m[0],m[1]));
+    return {matrix,alpha,rect,transform:entry.transform,level:Math.max(0,Math.min(8,Math.floor(-Math.log2(deviceScale))))};
+  }
   destroy() {
     this.gpuTiming?.destroy();
+    this.drawingGpu?.destroy();
     for(const texture of this.drawingTextures?.values()??[])texture.texture.destroy();this.drawingTextures?.clear();
     this.vfxViewport?.destroy();
     this.artworks.clear();
