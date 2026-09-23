@@ -1244,13 +1244,16 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null
         const anchor=a.drawing_anchor??a.anchor_start;
         ctx.translate(-anchor.x,-anchor.y);
         paintDrawingTiles(ctx,live,{tint:s.onionTint,tintFn:resources.tint});
+        if(!s.onionTint)live.presentedStamp=Math.max(live.presentedStamp??-1,live.stamp);
         ctx.restore();
         continue;
       }
       // A v2 cel whose live store was evicted is mid re-decode: its published
       // blob is only a placeholder, so drawing it would flash stale pixels.
       // v1 data URLs are real PNGs and remain the fallback.
-      if (live && s.fig?._styk?.drawing?.version === 2){ctx.restore();continue;}
+      // Without a live store a v2 carrier is a transparent 1×1 placeholder, so
+      // it is never decoded either.
+      if (s.fig?._styk?.drawing?.version === 2){ctx.restore();continue;}
       ctx.translate(-a.anchor_start.x, -a.anchor_start.y);
       let img = resources.image?.(resources.url?.(a));
       if(s.onionTint&&img?.complete&&img.naturalWidth&&resources.tint)img=resources.tint(img,s.onionTint,live?.stamp??0);

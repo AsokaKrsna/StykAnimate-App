@@ -7,7 +7,37 @@ export function drawingPNGBytes(url){
   return base64ToBytes(url.slice(22));
 }
 export function drawingPNGDataURL(bytes){return 'data:image/png;base64,'+bytesToBase64(bytes);}
-export async function encodeDrawingPNG(pixels,width,height){return drawingPNGDataURL(await encodePNGPortable({width,height,channels:4},pixels));}
+export async function encodeDrawingPNG(pixels,width,height){return drawingPNGDataURL(width*height*4<=SYNC_BYTES?encodeRGBAPNG(pixels,width,height):await encodePNGPortable({width,height,channels:4},pixels));}
+import {deflateZlib,inflateZlib} from './zlib-sync.mjs';
+// Small images (every 64×64 tile) inflate/deflate synchronously: stream setup
+// costs more than the work. Larger ones keep the native streams off-thread.
+const SYNC_BYTES=1024*1024;
+const chunk=(type,data)=>{const out=new Uint8Array(data.length+12),view=new DataView(out.buffer);view.setUint32(0,data.length);for(let i=0;i<4;i++)out[4+i]=type.charCodeAt(i);out.set(data,8);view.setUint32(out.length-4,crc32(out.subarray(4,-4)));return out;};
+/** Filtered PNG scanlines: mode 0 keeps rows unfiltered; 'adaptive' picks
+ * None, Sub or Up per row by the smallest absolute residual. */
+function scanlines(pixels,width,height,mode){
+  const stride=width*4,scan=new Uint8Array((stride+1)*height);
+  for(let y=0;y<height;y++){
+    const row=y*stride,o=y*(stride+1);let filter=0;
+    if(mode==='adaptive'){let none=0,sub=0,up=0;for(let x=0;x<stride;x++){const v=pixels[row+x],a=x>=4?pixels[row+x-4]:0,b=y?pixels[row+x-stride]:0;none+=v<128?v:256-v;const s=(v-a)&255;sub+=s<128?s:256-s;const u=(v-b)&255;up+=u<128?u:256-u;}filter=sub<none&&sub<=up?1:up<none?2:0;}
+    scan[o]=filter;
+    if(!filter)scan.set(pixels.subarray(row,row+stride),o+1);
+    else for(let x=0;x<stride;x++){const v=pixels[row+x];scan[o+1+x]=filter===1?(v-(x>=4?pixels[row+x-4]:0))&255:(v-(y?pixels[row+x-stride]:0))&255;}
+  }
+  return scan;
+}
+/** Bytes that differ from the byte one pixel earlier: positions LZ77 cannot
+ * reuse, a cheap predictor of compressed size. */
+const breaks=scan=>{let n=0;for(let i=4;i<scan.length;i++)if(scan[i]!==scan[i-4])n++;return n;};
+/** Synchronous lossless RGBA PNG for small images. Line art compresses best
+ * unfiltered and soft gradients with row filters; the scan LZ77 can reuse
+ * more of is deflated (within a few percent of trying both). */
+export function encodeRGBAPNG(pixels,width,height){
+  const plain=scanlines(pixels,width,height,0),adaptive=scanlines(pixels,width,height,'adaptive'),data=deflateZlib(breaks(adaptive)<breaks(plain)?adaptive:plain);
+  const header=new Uint8Array(13),view=new DataView(header.buffer);view.setUint32(0,width);view.setUint32(4,height);header[8]=8;header[9]=6;
+  const parts=[new Uint8Array([137,80,78,71,13,10,26,10]),chunk('IHDR',header),chunk('IDAT',data),chunk('IEND',new Uint8Array())];
+  const out=new Uint8Array(parts.reduce((n,p)=>n+p.length,0));let offset=0;for(const p of parts){out.set(p,offset);offset+=p.length;}return out;
+}
 export function decodeDrawingPNG(url){return decodeDrawingPNGBytes(drawingPNGBytes(url));}
 /** Decode our portable PNG without premultiplication, including filter modes
  * emitted by other conforming RGBA/RGB encoders. All allocations are bounded. */
@@ -20,7 +50,12 @@ export async function decodeDrawingPNGBytes(bytes,{width:expectedWidth,height:ex
     if(type==='IDAT')parts.push(data);if(type==='IEND')break;pos=end;
   }
   if(!channels||!parts.length)throw new Error('Drawing PNG is missing pixel data.');
-  const stride=width*channels,expected=(stride+1)*height,scan=new Uint8Array(expected),stream=new DecompressionStream('deflate'),reader=stream.readable.getReader(),writer=stream.writable.getWriter();let offset=0,writeError;
+  const stride=width*channels,expected=(stride+1)*height;let scan;
+  if(expected<=SYNC_BYTES){
+    const joined=parts.length===1?parts[0]:new Uint8Array(parts.reduce((n,p)=>n+p.length,0));if(parts.length>1){let o=0;for(const p of parts){joined.set(p,o);o+=p.length;}}
+    try{scan=inflateZlib(joined,{expected});}catch(error){throw new Error(/expands/.test(error.message)?'Drawing PNG expands beyond its declared dimensions.':/size mismatch|Truncated/.test(error.message)?'Drawing PNG has incomplete pixel data.':'Drawing PNG pixel data is corrupt.');}
+  }else{
+  scan=new Uint8Array(expected);const stream=new DecompressionStream('deflate'),reader=stream.readable.getReader(),writer=stream.writable.getWriter();let offset=0,writeError;
   // IDAT already owns byte views. Feeding them directly avoids a Blob and its
   // asynchronous read pipeline per tile. Await backpressure and settle the
   // producer on every exit, including expansion-limit and corrupt-stream errors.
@@ -28,6 +63,7 @@ export async function decodeDrawingPNGBytes(bytes,{width:expectedWidth,height:ex
   try{for(;;){const {done,value}=await reader.read();if(done)break;if(offset+value.length>expected)throw new Error('Drawing PNG expands beyond its declared dimensions.');scan.set(value,offset);offset+=value.length;}await written;if(writeError)throw writeError;}
   finally{await reader.cancel().catch(()=>{});await written;reader.releaseLock();}
   if(offset!==expected)throw new Error('Drawing PNG has incomplete pixel data.');
+  }
   const output=new Uint8ClampedArray(width*height*4);
   const paeth=(a,b,c)=>{const p=a+b-c,x=Math.abs(p-a),y=Math.abs(p-b),z=Math.abs(p-c);return x<=y&&x<=z?a:y<=z?b:c;};
   for(let y=0;y<height;y++){

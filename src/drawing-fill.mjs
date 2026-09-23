@@ -1,5 +1,5 @@
 import {TILE,TILE_BYTES,TileStore,tileKey,assertTileCoordinates} from './drawing-tiles.mjs';
-import {tileChanges} from './drawing-pixels.mjs';
+import {tileChanges,maskValue} from './drawing-pixels.mjs';
 
 const AREA=TILE*TILE,clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 // This limit belongs to the optional dense composited source, not tile fills.
@@ -8,7 +8,7 @@ export const FILL_SOURCE_MAX_PIXELS=64*1024*1024;
 /** Prepare a four-connected flood without changing its source. Masks are
  * allocated only for tiles reached by the flood and its morphology halo.
  * Budget failure therefore leaves even direct callers' artwork untouched. */
-function prepareFloodTiles(store,{x,y,color=[0,0,0,255],tolerance=16,expansion=0,gap=0,bounds,source,maxBytes=768*1024*1024}={}){
+function prepareFloodTiles(store,{x,y,color=[0,0,0,255],tolerance=16,expansion=0,gap=0,bounds,source,clip=null,maxBytes=768*1024*1024}={}){
   if(!bounds||![bounds.x,bounds.y,bounds.width,bounds.height].every(Number.isSafeInteger)||bounds.width<1||bounds.height<1||!Number.isSafeInteger(bounds.x+bounds.width-1)||!Number.isSafeInteger(bounds.y+bounds.height-1))throw new Error('Invalid fill bounds.');
   const left=bounds.x,top=bounds.y,right=left+bounds.width,bottom=top+bounds.height;
   const tx0=Math.floor(left/TILE),ty0=Math.floor(top/TILE),tx1=Math.floor((right-1)/TILE),ty1=Math.floor((bottom-1)/TILE);
@@ -138,11 +138,12 @@ function prepareFloodTiles(store,{x,y,color=[0,0,0,255],tolerance=16,expansion=0
       if(!t.outputReserved)reserve(TILE_BYTES+256);pixels=old?.slice()??new Uint8ClampedArray(TILE_BYTES);
       before.set(t.key,old??null);return pixels;
     };
-    if(t.full&&t.x0===0&&t.y0===0&&t.x1===TILE&&t.y1===TILE){
+    if(!clip&&t.full&&t.x0===0&&t.y0===0&&t.x1===TILE&&t.y1===TILE){
       if(old&&new Uint32Array(old.buffer,old.byteOffset,AREA).every(n=>n===word)||!old&&word===0)continue;
       new Uint32Array(writable().buffer).fill(word);
     }else for(let py=t.y0;py<t.y1;py++)for(let px=t.x0;px<t.x1;px++){
       if(!t.full&&!(radius?distance[(py+radius)*width+px+radius]<=radius:t.visited?.[py*TILE+px]===2))continue;
+      if(clip&&!maskValue(clip,t.tx*TILE+px,t.ty*TILE+py))continue;
       const i=(py*TILE+px)*4;
       if(color[0]===(old?.[i]??0)&&color[1]===(old?.[i+1]??0)&&color[2]===(old?.[i+2]??0)&&color[3]===(old?.[i+3]??0))continue;
       (pixels??writable()).set(color,i);

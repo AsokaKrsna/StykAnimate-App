@@ -3,7 +3,7 @@ import {tileChanges} from './drawing-pixels.mjs';
 import {transformTiles,transformBounds,transformTileCoverage,inverseMatrix,TRANSFORM_BYTES} from './drawing-transform.mjs';
 import {paintDrawingTiles} from './drawing-raster.mjs';
 
-export function selectionMatrix(s){const a=s.angle*Math.PI/180,c=Math.cos(a)*s.scale,n=Math.sin(a)*s.scale;return[c,n,-n,c,s.cx+s.dx-c*s.cx+n*s.cy,s.cy+s.dy-n*s.cx-c*s.cy];}
+export function selectionMatrix(s){const a=s.angle*Math.PI/180,c=Math.cos(a)*s.scale,n=Math.sin(a)*s.scale;const fx=s.fx??1,fy=s.fy??1;return[c*fx,n*fx,-n*fy,c*fy,s.cx+s.dx-c*fx*s.cx+n*fy*s.cy,s.cy+s.dy-n*fx*s.cx-c*fy*s.cy];}
 export const selectionBounds=transformBounds;
 export function selectionTiles(store,source,m,filter,{remove=false,maxBytes}={}){
   const destination=remove?new Map():transformTileCoverage(source,m,filter,maxBytes);

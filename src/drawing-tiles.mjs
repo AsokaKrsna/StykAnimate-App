@@ -54,6 +54,23 @@ export class TileStore {
   values(){return this.tiles.values();}
   [Symbol.iterator](){return this.tiles.values();}
   _changed(){this._bounds=undefined;this._tileBounds=undefined;this.revision=(this.revision??0)+1;}
+  /** Keep cached bounds current when `old` (or nothing) is replaced by
+   * `tile` (or nothing), so painting a large drawing never rescans every tile.
+   * Coverage only grows on insert. Alpha bounds merge the new tile's alpha
+   * rect, and only rescan lazily when the replaced tile touched their edge. */
+  _placed(old,tile){
+    const t=this._tileBounds;
+    if(!old&&tile&&t!==undefined){const x=tile.tx*TILE,y=tile.ty*TILE;if(t===null)this._tileBounds={x,y,width:TILE,height:TILE};else{const x0=Math.min(t.x,x),y0=Math.min(t.y,y);this._tileBounds={x:x0,y:y0,width:Math.max(t.x+t.width,x+TILE)-x0,height:Math.max(t.y+t.height,y+TILE)-y0};}}
+    else if(old&&!tile)this._tileBounds=undefined;
+    const b=this._bounds;if(b===undefined)return;
+    if(old){old.alphaBounds??=alphaBounds(old.pixels);const a=old.alphaBounds;
+      if(a&&b){const x=old.tx*TILE+a.x,y=old.ty*TILE+a.y;if(x<=b.x||y<=b.y||x+a.width>=b.x+b.width||y+a.height>=b.y+b.height){this._bounds=undefined;return;}}}
+    if(!tile)return;
+    tile.alphaBounds??=alphaBounds(tile.pixels);const a=tile.alphaBounds;if(!a)return;
+    const x=tile.tx*TILE+a.x,y=tile.ty*TILE+a.y;
+    if(b===null){this._bounds={x,y,width:a.width,height:a.height};return;}
+    const x0=Math.min(b.x,x),y0=Math.min(b.y,y);this._bounds={x:x0,y:y0,width:Math.max(b.x+b.width,x+a.width)-x0,height:Math.max(b.y+b.height,y+a.height)-y0};
+  }
   writable(tx,ty,{create=true}={}) {
     assertTileCoordinates(tx,ty);
     const key=tileKey(tx,ty);let tile=this.tiles.get(key);
@@ -64,7 +81,7 @@ export class TileStore {
   set(tx,ty,pixels) {
     assertTileCoordinates(tx,ty);
     const key=tileKey(tx,ty);
-    if(pixels==null){if(this.tiles.delete(key))this._changed();return;}
+    if(pixels==null){this.delete(tx,ty);return;}
     let full;
     if(pixels.byteLength===4){full=new Uint8ClampedArray(TILE_BYTES);const word=new Uint32Array(Uint8Array.from(pixels).buffer)[0];new Uint32Array(full.buffer).fill(word);}
     else{full=new Uint8ClampedArray(pixels);if(full.byteLength!==TILE_BYTES)throw new Error('Tile pixels must be 4 uniform bytes or one full tile.');}
@@ -75,9 +92,9 @@ export class TileStore {
   adopt(tx,ty,pixels,alphaBounds){
     assertTileCoordinates(tx,ty);
     if(!(pixels instanceof Uint8ClampedArray)||pixels.byteLength!==TILE_BYTES)throw new Error('Owned tile pixels must be one full tile.');
-    this.tiles.set(tileKey(tx,ty),{tx,ty,pixels,alphaBounds,frozen:false,version:++tileVersion});this._changed();
+    const key=tileKey(tx,ty),old=this.tiles.get(key),tile={tx,ty,pixels,alphaBounds,frozen:false,version:++tileVersion};this.tiles.set(key,tile);this._placed(old,tile);this.revision=(this.revision??0)+1;
   }
-  delete(tx,ty){if(this.tiles.delete(tileKey(tx,ty)))this._changed();}
+  delete(tx,ty){const key=tileKey(tx,ty),old=this.tiles.get(key);if(this.tiles.delete(key)){this._placed(old,null);this.revision=(this.revision??0)+1;}}
   fork(){for(const tile of this.tiles.values())tile.frozen=true;return new TileStore(this.tiles);}
   freeze(){for(const tile of this.tiles.values())tile.frozen=true;}
   get bounds() {

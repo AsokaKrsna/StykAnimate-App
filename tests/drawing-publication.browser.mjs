@@ -25,8 +25,8 @@ try{
         owner.worker.request=(kind,data,options)=>{calls++;maxTransfer=Math.max(maxTransfer,options.transfer.reduce((n,b)=>n+b.byteLength,0));const job=request(kind,data,options);if(calls===2)controller.abort();return job;};
         const error=await owner.flush({signal:controller.signal}).then(()=>null,e=>e.name);
         result.cancelled=error==='AbortError'&&!figure.image_assets[0].styk_tiles&&owner.workingBytes===0&&entry.store.size===130&&owner.worker.pending.size===0&&!owner.worker.worker;
-        await owner.flush();result.recovered=await exact(f)&&owner.workingBytes===0&&maxTransfer<=1024*1024;
-        result.cacheRecovery=owner.lastEncode.encoded===66&&owner.lastEncode.reused===64;
+        const cached=[...entry.store].filter(t=>t.png).length;await owner.flush();result.recovered=await exact(f)&&owner.workingBytes===0&&maxTransfer<=1024*1024;
+        result.cacheRecovery=owner.lastEncode.encoded===130-cached&&owner.lastEncode.reused===cached;
       }finally{owner.dispose();}
     }
     {

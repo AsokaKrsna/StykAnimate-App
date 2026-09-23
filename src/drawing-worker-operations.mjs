@@ -1,16 +1,17 @@
 import {TILE,TILE_BYTES,tileKey,TileStore,tileTransparent} from './drawing-tiles.mjs';
-import {tileChanges} from './drawing-pixels.mjs';
+import {floodTiles as floodMaskTiles,fillMaskTiles,gradientTiles,filterTiles,tileChanges} from './drawing-pixels.mjs';
 import {floodTiles} from './drawing-fill.mjs';
 import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {decodeDrawingPNG} from './drawing-png.mjs';
 import {encodeClipboardTiles,decodePixelClipboard} from './drawing-clipboard.mjs';
-import {decodeTileBlob,tileStoreFromList,TILE_BLOB_PREFIX,TileEncodeCache} from './drawing-tile-codec.mjs';
+import {decodeTileBlob,tileStoreFromList,TILE_BLOB_PREFIX,TileEncodeCache,encodeTile} from './drawing-tile-codec.mjs';
 import {levelStore} from './drawing-raster.mjs';
 import {transformSelectedPixels} from './drawing-selection.mjs';
-import {captureSelection} from './drawing-lasso.mjs';
+import {captureSelection,captureMaskSelection} from './drawing-lasso.mjs';
 import {transformTiles,TRANSFORM_BYTES} from './drawing-transform.mjs';
 
 const storeOf=data=>{const store=new TileStore();for(const t of data.tiles??[])store.tiles.set(tileKey(t.tx,t.ty),{tx:t.tx,ty:t.ty,pixels:new Uint8ClampedArray(t.pixels),alphaBounds:t.alphaBounds,frozen:false,png:t.png?new Uint8Array(t.png):undefined});return store;};
+const beforeOf=(store,rect)=>{const before=new Map();for(const [tx,ty] of TileStore.tilesInRect(rect.x,rect.y,rect.width,rect.height))before.set(tileKey(tx,ty),store.get(tx,ty)?.pixels.slice()??null);return before;};
 const changesReply=(id,store,before)=>{const tiles=tileChanges(store,before);self.postMessage({id,tiles},tiles.flatMap(t=>[t.before?.buffer,t.after?.buffer].filter(Boolean)));};
 const validRect=r=>r&&[r.x,r.y].every(Number.isSafeInteger)&&Number.isInteger(r.width)&&Number.isInteger(r.height)&&r.width>0&&r.height>0&&r.width*r.height<=DRAWING_MAX_PIXELS;
 // Encoded tiles persist across publications so a re-publish only encodes
@@ -33,11 +34,26 @@ export async function drawingWorkerOperation(data){
       }
       self.postMessage({id,tiles},tiles.map(t=>t.pixels));return;
     }
+    if(kind==='encode-pngs'){
+      // Stateless encoding for the parallel pool; the owning worker's cache adopts the results.
+      const out=(data.tiles??[]).map(t=>({tx:t.tx,ty:t.ty,png:encodeTile(t.pixels).buffer}));
+      self.postMessage({id,tiles:out},out.map(t=>t.png));return;
+    }
     if(kind==='decode-tiles'){
-      const tiles=(await decodeTileBlob(data.url)).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,png:t.png.buffer}));
-      self.postMessage({id,tiles},tiles.flatMap(t=>[t.pixels,t.png]));return;
+      const decoded=await decodeTileBlob(data.url,{shard:data.shard}),levels=[];
+      // Build the mip chain here while the pixels are already in this worker,
+      // so a (re)decoded cel is display-ready at any zoom without main-thread
+      // reduction work. Coarse levels stop once they fit in a few tiles.
+      if(data.levels>0&&decoded.length){
+        const entry={store:tileStoreFromList(decoded),levels:[]};
+        // A shard stops at the same depth as every other shard: its size alone must not decide.
+        for(let k=1;k<=data.levels;k++){const level=levelStore(entry,k);levels.push([...level].map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer})));if(!data.shard&&level.size<=4)break;}
+      }
+      const tiles=decoded.map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,png:t.png.buffer}));
+      self.postMessage({id,tiles,levels},[...tiles.flatMap(t=>[t.pixels,t.png]),...levels.flat().map(t=>t.pixels)]);return;
     }
     if(kind==='encode-tiles'){
+      if(data.pngs?.length)encodeCache.adopt(data.celId,data.pngs);
       const result=await encodeCache.encode(data.celId,data.keep??null,data.tiles??[],{partial:data.partial});
       const out=result.tiles.map(t=>({tx:t.tx,ty:t.ty,png:t.png.slice().buffer}));
       if(result.missing){self.postMessage({id,missing:result.missing,tiles:out,encoded:result.encoded},out.map(t=>t.png));return;}
@@ -49,8 +65,32 @@ export async function drawingWorkerOperation(data){
       const store=storeOf(data),tiles=floodTiles(store,{...data.options,bounds:data.bounds,source:data.source?new Uint8ClampedArray(data.source):undefined});
       self.postMessage({id,tiles},tiles.flatMap(t=>[t.before?.buffer,t.after?.buffer].filter(Boolean)));return;
     }
+    if(kind==='flood-mask'){
+      if(!validRect(data.bounds))throw new Error('Invalid selection bounds.');
+      const mask=floodMaskTiles(storeOf(data),{...data.options,bounds:data.bounds,select:true,source:data.source?new Uint8ClampedArray(data.source):undefined});
+      self.postMessage({id,mask},mask?[mask.mask.buffer]:[]);return;
+    }
+    if(kind==='filter'){
+      if(!validRect(data.bounds))throw new Error('Invalid filter bounds.');
+      const store=storeOf(data),before=beforeOf(store,data.bounds);
+      filterTiles(store,{...data.options,bounds:data.bounds});
+      // Filtering transparent regions writes empty tiles: they equal absent ones.
+      store.prune();changesReply(id,store,before);return;
+    }
+    if(kind==='gradient'){
+      if(!validRect(data.bounds))throw new Error('Invalid gradient bounds.');
+      const store=storeOf(data),before=beforeOf(store,data.bounds);
+      gradientTiles(store,{...data.options,bounds:data.bounds});
+      changesReply(id,store,before);return;
+    }
+    if(kind==='fill-mask'){
+      const m=data.mask;if(!m||!validRect(m)||!(m.mask instanceof Uint8Array)||m.mask.length!==m.width*m.height)throw new Error('Invalid selection mask.');
+      const store=storeOf(data),before=beforeOf(store,m);
+      fillMaskTiles(store,{mask:m,color:data.color});
+      changesReply(id,store,before);return;
+    }
     if(kind==='select'){
-      const result=captureSelection(storeOf(data),data.points,{maxBytes:data.maxBytes});
+      const result=data.mask?captureMaskSelection(storeOf(data),data.mask,{maxBytes:data.maxBytes}):captureSelection(storeOf(data),data.points,{maxBytes:data.maxBytes});
       const tiles=result.tiles.map(t=>({...t,pixels:t.full?null:t.pixels.buffer,remaining:t.remaining?.buffer??null}));
       self.postMessage({id,tiles},tiles.flatMap(t=>[t.pixels,t.remaining].filter(Boolean)));return;
     }

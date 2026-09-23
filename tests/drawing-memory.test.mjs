@@ -41,7 +41,7 @@ test('4K diagonal seeding follows the stroke rather than its bounding rectangle'
   for(let i=0;i<=100;i++){const tx=Math.floor(7680*i/100/64),ty=Math.floor(4320*i/100/64);assert.ok(tiles.some(t=>t[0]===tx&&t[1]===ty));}
 });
 test('an oversized stroke seed cancels at the animation-frame boundary',()=>{
-  const c=Object.create(DrawingController.prototype),s={id:1,pending:[{x:0,y:0},{x:1e12,y:1e12}],margin:10,outstanding:0,sent:new Set(),surface:{store:new TileStore()}};let cancelled=false,error;
+  const c=Object.create(DrawingController.prototype),s={id:1,pending:[{x:0,y:0},{x:1e12,y:1e12}],brush:{size:4,pressureSize:false,texture:0,scatter:0},outstanding:0,sent:new Set(),surface:{store:new TileStore()}};let cancelled=false,error;
   Object.assign(c,{sessions:new Map([[1,s]]),cancel(){cancelled=true;},onError:e=>error=e});c.flushStroke(s);assert.ok(cancelled);assert.match(error.message,/working memory/);
 });
 test('fill masks can exceed the old 16MP limit and remain exactly undoable',()=>{

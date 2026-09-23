@@ -1,3 +1,4 @@
+import {encodePNGPortable} from '../src/sticknodes/decoder/png-browser.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {rawPNG} from './preview-png-fixture.mjs';
@@ -60,7 +61,8 @@ test('producer errors reject decoding even when the readable stream closes norma
     readable=new ReadableStream({start(controller){controller.close();}});
     writable=new WritableStream({write(){throw expected;}});
   };
-  try{await assert.rejects(decodeDrawingPNGBytes(filteredPNG(4,[0]).png),error=>error===expected);}
+  const large=await encodePNGPortable({width:1024,height:512,channels:4},new Uint8ClampedArray(1024*512*4));
+  try{await assert.rejects(decodeDrawingPNGBytes(large),error=>error===expected);}
   finally{globalThis.DecompressionStream=Native;}
   assert.equal(instance.readable.locked,false);assert.equal(instance.writable.locked,false);
 });

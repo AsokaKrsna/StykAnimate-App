@@ -18,13 +18,22 @@ const paintTile=(c,store,tx,ty,x,y)=>{const tile=store.get(tx,ty);if(tile)c.putI
 function downTile(below,tx,ty){
   const subs=[below.get(2*tx,2*ty),below.get(2*tx+1,2*ty),below.get(2*tx,2*ty+1),below.get(2*tx+1,2*ty+1)];
   if(!subs.some(Boolean))return null;
-  const pixels=subs.map(t=>t?.pixels),out=new Uint8ClampedArray(TILE_BYTES);
-  for(let py=0;py<TILE;py++)for(let px=0;px<TILE;px++){
-    const sub=pixels[(py>>5)*2+(px>>5)];if(!sub)continue;
-    let pr=0,pg=0,pb=0,pa=0;
-    for(let v=0;v<2;v++)for(let u=0;u<2;u++){const i=((2*(py&31)+v)*TILE+2*(px&31)+u)*4,a=sub[i+3];pa+=a;pr+=sub[i]*a;pg+=sub[i+1]*a;pb+=sub[i+2]*a;}
-    const o=(py*TILE+px)*4;if(!pa)continue;
-    out[o]=Math.round(pr/pa);out[o+1]=Math.round(pg/pa);out[o+2]=Math.round(pb/pa);out[o+3]=Math.round(pa/4);
+  const out=new Uint8ClampedArray(TILE_BYTES),H=TILE>>1;
+  // One quadrant per source tile; each output pixel averages a 2x2 block.
+  for(let q=0;q<4;q++){
+    const sub=subs[q]?.pixels;if(!sub)continue;
+    const ox=(q&1)*H,oy=(q>>1)*H;
+    for(let py=0;py<H;py++){
+      let i=(2*py*TILE)*4,o=((oy+py)*TILE+ox)*4;
+      for(let px=0;px<H;px++,i+=8,o+=4){
+        const j=i+TILE*4,a0=sub[i+3],a1=sub[i+7],a2=sub[j+3],a3=sub[j+7],pa=a0+a1+a2+a3;
+        if(!pa)continue;
+        out[o]=Math.round((sub[i]*a0+sub[i+4]*a1+sub[j]*a2+sub[j+4]*a3)/pa);
+        out[o+1]=Math.round((sub[i+1]*a0+sub[i+5]*a1+sub[j+1]*a2+sub[j+5]*a3)/pa);
+        out[o+2]=Math.round((sub[i+2]*a0+sub[i+6]*a1+sub[j+2]*a2+sub[j+6]*a3)/pa);
+        out[o+3]=Math.round(pa/4);
+      }
+    }
   }
   return {tx,ty,pixels:out,frozen:false};
 }
@@ -55,14 +64,15 @@ export function levelStore(entry,k,rect){
   }
   const result=levels[k-1]??=new TileStore();entry.owner?.levelsReserved?.(entry);return result;
 }
-/** Drop derived tiles covering `dirty` (source pixel space) at every level.
- * A null rect clears the whole chain. */
+/** Queue the derived tiles covering `dirty` (source pixel space) at every
+ * level for rebuild on next use. A null rect clears the whole chain. */
 export function invalidateLevels(entry,dirty){
   const levels=entry.levels;if(!levels?.length)return;
   if(!dirty){entry.levels=null;entry.levelKnown=null;return;}
   for(let k=1;k<=levels.length;k++){
     const level=levels[k-1];if(!level)continue;const f=TILE<<k;
     const x0=Math.floor(dirty.x/f),y0=Math.floor(dirty.y/f),x1=Math.floor((dirty.x+dirty.width-1)/f),y1=Math.floor((dirty.y+dirty.height-1)/f);
+    if((x1-x0+1)*(y1-y0+1)>4096){levels[k-1]=null;if(entry.levelKnown)entry.levelKnown[k-1]=null;continue;}
     for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++){level.delete(tx,ty);entry.levelKnown?.[k-1]?.delete(tileKey(tx,ty));}
   }
 }

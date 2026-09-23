@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {DrawingResources} from '../src/drawing-resources.mjs';
-import {DrawingStroke,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
+import {DrawingResources,defaultTileBudget} from '../src/drawing-resources.mjs';
+import {DrawingStroke,StrokePath,normalizeBrush,dabExtent,gradientTiles,filterTiles,lassoMask,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
 import {floodTiles} from '../src/drawing-fill.mjs';
 import {drawingMetadata,validateDrawings,drawingMatrix,drawingPixelMatrix,inversePoint,transformPoint,migrateDrawingFigure,EMPTY_PNG} from '../src/drawing-model.mjs';
 import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from '../src/drawing-tiles.mjs';
-import {encodeTileBlob,decodeTileBlob,assembleTileBlobBytes,TILE_BLOB_PREFIX,TileEncodeCache} from '../src/drawing-tile-codec.mjs';
+import {encodeTileBlob,decodeTileBlob,tileStoreFromList,encodeTile,assembleTileBlobBytes,TILE_BLOB_PREFIX,TileEncodeCache} from '../src/drawing-tile-codec.mjs';
 import {encodeDrawingPNG,decodeDrawingPNG} from '../src/drawing-png.mjs';
 import {encodePNGPortable} from '../src/sticknodes/decoder/png-browser.mjs';
 import {StrokeEngine} from '../src/drawing-stroke-engine.mjs';
@@ -35,8 +35,14 @@ function workerStub(){
       }
       return {tiles};
     }
-    if(kind==='decode-tiles')return {tiles:(await decodeTileBlob(data.url)).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,png:t.png.buffer}))};
+    if(kind==='decode-tiles'){
+      const decoded=await decodeTileBlob(data.url,{shard:data.shard}),levels=[];
+      if(data.levels>0&&decoded.length){const entry={store:tileStoreFromList(decoded),levels:[]};for(let k=1;k<=data.levels;k++){const level=levelStore(entry,k);levels.push([...level].map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer})));if(!data.shard&&level.size<=4)break;}}
+      return {tiles:decoded.map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,png:t.png.buffer})),levels};
+    }
+    if(kind==='encode-pngs')return {tiles:(data.tiles??[]).map(t=>({tx:t.tx,ty:t.ty,png:encodeTile(t.pixels).buffer}))};
     if(kind==='encode-tiles'){
+      if(data.pngs?.length)encodeCache.adopt(data.celId,data.pngs);
       const result=await encodeCache.encode(data.celId,data.keep??null,data.tiles??[],{partial:data.partial});
       const out=result.tiles.map(t=>({tx:t.tx,ty:t.ty,png:t.png.slice().buffer}));
       if(result.missing||data.partial)return{missing:result.missing,tiles:out,encoded:result.encoded};
@@ -437,21 +443,26 @@ test('v2 cels place pixel (0,0) at the pointer world position independently of s
 });
 
 // The stroke worker's engine runs in-process here; the browser tests exercise
-// the real worker. The driver mirrors the controller: each batch carries the
-// store tiles in its sample bounding box (expanded by the dab radius) that the
-// worker has not seen for this stroke yet.
-function strokeDrive(engine,id,settings,chunks,{store=new TileStore()}={}){
-  const sent=new Set(),replies=[],margin=(settings.size??8)*.55+3;
+// the real worker. The driver mirrors the controller: the stroke path runs on
+// the caller's side, and each batch carries its dabs plus every store tile
+// those dabs can reach that the worker has not seen for this stroke yet. The
+// final batch carries the dabs the path emits when it finishes.
+function strokeDrive(engine,id,settings,chunks,{store=new TileStore(),apply=false}={}){
+  const sent=new Set(),replies=[],brush=normalizeBrush(settings);let pending=[];
+  const path=new StrokePath(brush,dab=>pending.push(dab));
   engine.begin(id,settings);let seq=0;
-  for(const samples of chunks){
-    const x=Math.floor(Math.min(...samples.map(p=>p.x))-margin),y=Math.floor(Math.min(...samples.map(p=>p.y))-margin);
-    const width=Math.ceil(Math.max(...samples.map(p=>p.x))+margin)-x,height=Math.ceil(Math.max(...samples.map(p=>p.y))+margin)-y,tiles=[];
-    for(const [tx,ty] of TileStore.tilesInRect(x,y,width,height)){
+  const flush=()=>{
+    const dabs=pending,tiles=[];pending=[];
+    for(const dab of dabs){const [x0,y0,x1,y1]=dabExtent(brush,dab);for(let ty=Math.floor(y0/TILE);ty*TILE<y1;ty++)for(let tx=Math.floor(x0/TILE);tx*TILE<x1;tx++){
       const key=tileKey(tx,ty);if(sent.has(key))continue;sent.add(key);
       const tile=store.get(tx,ty);tiles.push({tx,ty,pixels:tile?tile.pixels.slice().buffer:null});
-    }
-    replies.push(engine.samples(id,++seq,samples,tiles));
-  }
+    }}
+    const reply=engine.dabs(id,++seq,dabs,tiles);replies.push(reply);
+    // Like the controller, the live store adopts every returned tile.
+    if(apply&&reply)for(const t of reply.tiles)store.set(t.tx,t.ty,new Uint8ClampedArray(t.pixels));
+  };
+  for(const samples of chunks){for(const p of samples)path.sample(p);flush();}
+  path.finish();flush();
   return {replies,changes:engine.end(id)};
 }
 const replayFinal=(initial,changes)=>{const store=new TileStore();for(const [key,pixels] of initial){const [tx,ty]=key.split(',').map(Number);store.set(tx,ty,pixels);}applyTileChanges(store,changes,'after');return store;};
@@ -502,10 +513,10 @@ test('stroke engine replies carry only tiles changed by that batch and cancel re
   // 1,0/2,0/2,1: tile 0,0 is untouched by this batch.
   assert.ok(keys(replies[1]).has('2,1')&&!keys(replies[1]).has('0,0'));
   assert.ok(replies[0].dirty.width%64===0&&replies[0].dirty.x%64===0);
-  engine.begin('x',{size:8,pressureSize:false});engine.samples('x',1,[{x:5,y:5}],[{tx:0,ty:0,pixels:null}]);
-  engine.cancel('x');assert.equal(engine.end('x'),null);assert.equal(engine.samples('x',2,[{x:9,y:9}],[]),null);
+  engine.begin('x',{size:8,pressureSize:false});engine.dabs('x',1,[{x:5,y:5}],[{tx:0,ty:0,pixels:null}]);
+  engine.cancel('x');assert.equal(engine.end('x'),null);assert.equal(engine.dabs('x',2,[{x:9,y:9}],[]),null);
   engine.begin('y',{size:8,pressureSize:false});
-  assert.ok(engine.samples('y',2,[{x:5,y:5}],[]));assert.equal(engine.samples('y',1,[{x:9,y:9}],[]),null,'out-of-order batches are ignored');
+  assert.ok(engine.dabs('y',2,[{x:5,y:5}],[{tx:0,ty:0,pixels:null}]));assert.equal(engine.dabs('y',1,[{x:9,y:9}],[]),null,'out-of-order batches are ignored');
 });
 
 test('stroke engine end records equal the diff between initial and final tiles',()=>{
@@ -519,6 +530,211 @@ test('stroke engine end records equal the diff between initial and final tiles',
   assert.deepEqual(result.readRect(-64,-64,384,384),control.readRect(-64,-64,384,384));
   applyTileChanges(result,changes,'before');
   assert.deepEqual(result.readRect(0,0,64,64),initialStore.readRect(0,0,64,64));
+});
+
+test('fast strokes over existing artwork never wipe tiles between batches, and undo restores them',()=>{
+  // One sample per animation frame, far apart: each segment's curve crosses
+  // tiles outside both batches' sample boxes. Those tiles must be seeded.
+  for(const stabilization of [0,.6,.95]){
+    const store=new TileStore(),red=new Uint8ClampedArray([255,0,0,255]);
+    for(let ty=-1;ty<6;ty++)for(let tx=-1;tx<6;tx++)store.set(tx,ty,red);
+    const initial=snapshotStore(store),before=store.readRect(-64,-64,448,448);
+    const chunks=[[{x:10,y:10}],[{x:210,y:210}],[{x:300,y:300}],[{x:20,y:330}],[{x:330,y:15}]].map(c=>c.map((p,i)=>({...p,pressure:1,time:i})));
+    const {changes}=strokeDrive(new StrokeEngine(),'fast',{size:8,color:[0,0,0],pressureSize:false,stabilization},chunks,{store,apply:true});
+    const after=replayFinal(initial,changes),pixels=after.readRect(-64,-64,448,448);
+    // Every pixel is either untouched red or blended toward the black ink:
+    // no pixel may lose alpha, which is what a wiped tile looks like.
+    let lost=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i+3]<255||(pixels[i]>0&&pixels[i]<255&&pixels[i+1]!==0))lost++;
+    assert.equal(lost,0,`stabilization ${stabilization}: ${lost} pixels lost their artwork`);
+    let inked=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]<40)inked++;
+    assert.ok(inked>1500,'the stroke itself painted');
+    applyTileChanges(after,changes,'before');
+    assert.deepEqual(after.readRect(-64,-64,448,448),before,'undo restores the exact artwork');
+  }
+});
+
+test('the stroke engine refuses a dab that reaches a tile it was never given',()=>{
+  const engine=new StrokeEngine();engine.begin('s',{size:8,pressureSize:false});
+  assert.throws(()=>engine.dabs('s',1,[{x:100,y:100,pressure:1}],[{tx:0,ty:0,pixels:null}]),/not loaded/);
+  engine.begin('t',{size:8,pressureSize:false});
+  assert.ok(engine.dabs('t',1,[{x:100,y:100,pressure:1}],[{tx:1,ty:1,pixels:null}]).tiles.length===1);
+});
+
+test('dab extents bound every painted pixel for jittered, scattered and elliptical tips',()=>{
+  for(const settings of [{size:30,texture:1,seed:7},{size:20,scatter:2,seed:3},{size:40,roundness:.2,angle:35},{size:3,hardness:.2}]){
+    const store=new TileStore(),brush=normalizeBrush({pressureSize:false,...settings}),stroke=new DrawingStroke(store,brush);
+    const dabs=[];const path=new StrokePath(brush,d=>dabs.push(d));
+    for(let i=0;i<40;i++)path.sample({x:100+i*7,y:100+Math.sin(i)*30});path.finish();
+    let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+    for(const d of dabs){const e=dabExtent(brush,d);x0=Math.min(x0,e[0]);y0=Math.min(y0,e[1]);x1=Math.max(x1,e[2]);y1=Math.max(y1,e[3]);}
+    stroke.dabList(dabs);const b=store.bounds;
+    assert.ok(b.x>=x0&&b.y>=y0&&b.x+b.width<=x1&&b.y+b.height<=y1,JSON.stringify(settings));
+  }
+});
+
+test('brush blend modes, alpha lock and selection masks composite like Krita',()=>{
+  const paint=(settings,backdrop,{mask}={})=>{const store=new TileStore();if(backdrop)store.set(0,0,new Uint8ClampedArray(backdrop));const s=new DrawingStroke(store,{size:12,pressureSize:false,...settings},{mask});s.sample({x:32,y:32});s.finish();return store;};
+  // Normal paint over opaque grey replaces it at full opacity.
+  assert.deepEqual(paint({color:[200,0,0]},[128,128,128,255]).pixel(32,32),[200,0,0,255]);
+  // Multiply darkens by the backdrop: 200*128/255 ≈ 100.
+  assert.deepEqual(paint({color:[200,255,0],blend:'multiply'},[128,128,128,255]).pixel(32,32),[100,128,0,255]);
+  // Screen lightens.
+  assert.ok(paint({color:[200,0,0],blend:'screen'},[128,128,128,255]).pixel(32,32)[0]>200);
+  // Behind never covers opaque artwork but fills transparent pixels.
+  assert.deepEqual(paint({color:[0,0,255],blend:'behind'},[128,128,128,255]).pixel(32,32),[128,128,128,255]);
+  assert.deepEqual(paint({color:[0,0,255],blend:'behind'},null).pixel(32,32),[0,0,255,255]);
+  // Color keeps the backdrop's luminosity with the brush's hue.
+  const colored=paint({color:[255,0,0],blend:'color'},[128,128,128,255]).pixel(32,32);assert.ok(colored[0]>colored[1]&&Math.abs(.3*colored[0]+.59*colored[1]+.11*colored[2]-128)<2);
+  // Alpha lock preserves alpha, recolours only existing pixels, skips empty tiles.
+  assert.deepEqual(paint({color:[0,255,0],alphaLock:true},[10,10,10,100]).pixel(32,32),[0,255,0,100]);
+  assert.equal(paint({color:[0,255,0],alphaLock:true},null).size,0);
+  // A selection mask clips coverage to the selected pixels only.
+  const mask={x:0,y:0,width:32,height:64,mask:new Uint8Array(32*64).fill(1)};
+  const masked=paint({color:[0,0,0]},null,{mask});
+  assert.equal(masked.pixel(34,32)[3],0);assert.equal(masked.pixel(30,32)[3],255);
+});
+
+test('an elliptical tip follows its fixed angle and the stroke direction',()=>{
+  const spread=(settings,samples)=>{const store=new TileStore(),s=new DrawingStroke(store,{size:40,pressureSize:false,roundness:.15,...settings});for(const p of samples)s.sample(p);s.finish();return store.bounds;};
+  const flat=spread({angle:0},[{x:100,y:100}]),tall=spread({angle:90},[{x:100,y:100}]);
+  assert.ok(flat.width>flat.height*3&&tall.height>tall.width*3);
+  // A calligraphy nib that follows direction stays thin across a horizontal line.
+  const along=spread({angleMode:'direction'},[{x:100,y:100},{x:140,y:100},{x:180,y:100},{x:220,y:100}]);
+  assert.ok(along.height<14,'a direction-following nib stays narrow across its path');
+});
+
+test('a large publication streams in bounded chunks and round-trips every tile exactly',async()=>{
+  const report={figure_types:[]},stub=workerStub(),kinds=[],worker={...stub,request:(kind,data,options)=>{kinds.push({kind,count:data.tiles?.length??0});return stub.request(kind,data,options);}};
+  const resources=new DrawingResources(report,{worker});
+  try{
+    const figure=createDrawingFigure({pixelsPerUnit:1,figureTypeId:1});report.figure_types.push(figure);
+    const tiles=[];for(let i=0;i<300;i++){const px=new Uint8ClampedArray(TILE_BYTES);for(let p=0;p<TILE*TILE;p++)px.set([i%256,(i*7)%256,p%256,255],p*4);tiles.push({tx:i%20,ty:Math.floor(i/20),pixels:px.buffer});}
+    resources.install(figure,tiles);await resources.flush();
+    const sends2=kinds.filter(k=>['encode-pngs','encode-tiles'].includes(k.kind));
+    assert.ok(sends2.length>=3&&sends2.every(k=>k.count<=96),'publication was chunked');
+    const decoded=await decodeTileBlob(figure.image_assets[0].styk_tiles),entry=resources.entry(figure);
+    assert.equal(decoded.length,300);
+    for(const t of decoded)assert.deepEqual(t.pixels,entry.store.get(t.tx,t.ty).pixels);
+    assert.ok([...entry.store].every(t=>t.png),'every tile trusts its cached PNG afterwards');
+  }finally{resources.dispose();}
+});
+
+test('incremental tile store bounds always equal a fresh recomputation',()=>{
+  let seed=7;const rnd=()=>(seed=(seed*1103515245+12345)%2147483648)/2147483648;
+  const store=new TileStore();
+  for(let i=0;i<3000;i++){
+    const tx=Math.floor(rnd()*6)-3,ty=Math.floor(rnd()*6)-3,op=rnd();
+    if(op<.15)store.delete(tx,ty);
+    else if(op<.25)store.set(tx,ty,new Uint8ClampedArray([1,2,3,rnd()<.3?0:200]));
+    else{const px=new Uint8ClampedArray(TILE_BYTES);for(let k=Math.floor(rnd()*4);k>0;k--)px[(Math.floor(rnd()*TILE)*TILE+Math.floor(rnd()*TILE))*4+3]=255;op<.6?store.adopt(tx,ty,px):store.set(tx,ty,px);}
+    if(i%3===0){const copy=new TileStore(new Map(store.tiles));assert.deepEqual(store.bounds,copy.bounds);assert.deepEqual(store.tileBounds,copy.tileBounds);}
+  }
+});
+
+test('publishing trims clean stores back under the tile budget, keeping the current cel',async()=>{
+  const report={figure_types:[]},resources=new DrawingResources(report,{worker:workerStub(),tileBytes:6*TILE_BYTES});
+  try{
+    const figures=[1,2,3].map(id=>{const f=createDrawingFigure({pixelsPerUnit:1,figureTypeId:id});report.figure_types.push(f);return f;});
+    const tiles=n=>Array.from({length:n},(_,i)=>({tx:i,ty:0,pixels:new Uint8ClampedArray(TILE_BYTES).fill(200).buffer}));
+    // Strokes adopt tiles without reserving: three 4-tile cels exceed the 6-tile budget.
+    figures.forEach((f,i)=>{const e=resources.install(f,tiles(4));e.used=i;});
+    await resources.flush();
+    const stats=resources.stats;
+    assert.ok(stats.bytes<=6*TILE_BYTES,'resident tiles fit the budget after publication');
+    assert.ok(resources.entry(figures[2]).store,'the most recently used cel stays resident');
+    assert.equal(resources.entry(figures[0]).store,null,'the least recently used clean cel was evicted');
+  }finally{resources.dispose();}
+});
+
+test('a decoded cel arrives with worker-built mip levels equal to a fresh reduction',async()=>{
+  const report={figure_types:[]},resources=new DrawingResources(report,{worker:workerStub()});
+  try{
+    const figure=createDrawingFigure({pixelsPerUnit:1,figureTypeId:1});report.figure_types.push(figure);
+    const tiles=[];for(let i=0;i<40;i++){const px=new Uint8ClampedArray(TILE_BYTES);for(let p=0;p<TILE*TILE;p++)px.set([(i*37+p)%256,(i*11)%256,p%199,(p*7)%256],p*4);tiles.push({tx:i%8,ty:Math.floor(i/8),pixels:px.buffer});}
+    resources.install(figure,tiles);await resources.flush();
+    const entry=resources.entry(figure);entry.store=null;entry.levels=null;
+    await resources.surface(figure);
+    assert.ok(entry.levels?.length>=2,'levels arrive with the decoded tiles');
+    const fresh={store:entry.store,levels:[]};
+    for(let k=1;k<=entry.levels.length;k++){const got=entry.levels[k-1],want=levelStore(fresh,k);assert.equal(got.size,want.size);for(const t of want)assert.deepEqual(got.get(t.tx,t.ty).pixels,t.pixels);}
+    // Using a level does not rebuild tiles the worker already produced.
+    const before=entry.levels[0].get(0,0);assert.equal(levelStore(entry,1).get(0,0),before);
+  }finally{resources.dispose();}
+});
+
+test('a sharded parallel decode merges into the same tiles and mip levels',async()=>{
+  const report={figure_types:[]},resources=new DrawingResources(report,{worker:workerStub()});
+  try{
+    const figure=createDrawingFigure({pixelsPerUnit:1,figureTypeId:1});report.figure_types.push(figure);
+    const tiles=[];for(let i=0;i<300;i++){const px=new Uint8ClampedArray(TILE_BYTES);for(let p=0;p<TILE*TILE;p++)px.set([(i*13+p)%256,(p>>6)*4,i%256,(i+p)%256],p*4);tiles.push({tx:(i%30)-12,ty:Math.floor(i/30)-4,pixels:px.buffer});}
+    resources.install(figure,tiles);await resources.flush();
+    const url=figure.image_assets[0].styk_tiles;
+    const single=await resources.decodeWorker.request('decode-tiles',{url,levels:3});
+    resources._encoders=[workerStub(),workerStub(),workerStub()];
+    const merged=await resources.decodeTiles(url);
+    const key=t=>t.tx+','+t.ty,map=list=>new Map(list.map(t=>[key(t),new Uint8Array(t.pixels)]));
+    assert.deepEqual(map(merged.tiles),map(single.tiles));
+    assert.equal(merged.levels.length,single.levels.length);
+    merged.levels.forEach((list,k)=>assert.deepEqual(map(list),map(single.levels[k])));
+  }finally{resources.dispose();}
+});
+
+test('the resident tile budget scales with device memory within bounds',()=>{
+  assert.equal(defaultTileBudget(undefined),384*1024*1024);assert.equal(defaultTileBudget(2),192*1024*1024);assert.equal(defaultTileBudget(8),768*1024*1024);assert.equal(defaultTileBudget(64),768*1024*1024);
+});
+
+test('memory pressure evicts the cels farthest from the playhead before recently used ones',async()=>{
+  const report={figure_types:[]},resources=new DrawingResources(report,{worker:workerStub(),tileBytes:9*TILE_BYTES});
+  try{
+    const figures=[1,2,3,4].map(id=>{const f=createDrawingFigure({pixelsPerUnit:1,figureTypeId:id});report.figure_types.push(f);return f;});
+    const tiles=()=>Array.from({length:3},(_,i)=>({tx:i,ty:0,pixels:new Uint8ClampedArray(TILE_BYTES).fill(90).buffer}));
+    // The far cel was used most recently; LRU alone would keep it.
+    const ids=figures.map(f=>drawingMetadata(f).celId);
+    figures.forEach((f,i)=>{const e=resources.install(f,tiles());e.used=[10,20,30,40][i];});
+    resources.distances=()=>new Map([[ids[0],1],[ids[1],0],[ids[2],2],[ids[3],50]]);
+    await resources.flush();
+    assert.equal(resources.entry(figures[3]).store,null,'the far cel is evicted first');
+    assert.ok(resources.entry(figures[1]).store&&resources.entry(figures[0]).store,'cels beside the playhead stay resident');
+  }finally{resources.dispose();}
+});
+
+test('the smudge brush drags colour, batches deterministically and undoes exactly',()=>{
+  const seed=()=>{const store=new TileStore();for(let ty=0;ty<2;ty++){store.set(0,ty,new Uint8ClampedArray([255,0,0,255]));store.set(1,ty,new Uint8ClampedArray([0,0,255,255]));}return store;};
+  const samples=Array.from({length:24},(_,i)=>({x:20+i*4,y:64,pressure:1,time:i}));
+  const settings={size:20,hardness:.5,blend:'smudge',smudgeLength:.9,pressureSize:false,spacingRatio:.1,color:[0,0,0]};
+  const runs=[1,5,24].map(n=>{const store=seed(),initial=snapshotStore(store),chunks=[];for(let i=0;i<samples.length;i+=n)chunks.push(samples.slice(i,i+n));const {changes}=strokeDrive(new StrokeEngine(),'s',settings,chunks,{store});return {result:replayFinal(initial,changes),changes,initial};});
+  for(const r of runs.slice(1))assert.deepEqual(r.result.readRect(0,0,128,128),runs[0].result.readRect(0,0,128,128));
+  const pulled=runs[0].result.pixel(80,64);assert.ok(pulled[0]>100&&pulled[2]<200,'red is dragged into the blue half');
+  assert.deepEqual(runs[0].result.pixel(120,10),[0,0,255,255],'untouched paint stays');
+  applyTileChanges(runs[0].result,runs[0].changes,'before');assert.deepEqual(runs[0].result.readRect(0,0,128,128),seed().readRect(0,0,128,128));
+  // Colour rate mixes the brush colour into the carried paint.
+  const mix=seed(),s=new DrawingStroke(mix,{...settings,colorRate:.6,color:[0,255,0]});for(const p of samples)s.sample(p);s.finish();
+  assert.ok(mix.pixel(80,64)[1]>80,'colour rate adds the brush colour');
+});
+
+test('gradients interpolate premultiplied, respect the selection and stay dither-bounded',()=>{
+  const store=new TileStore(),bounds={x:0,y:0,width:128,height:64};
+  gradientTiles(store,{bounds,a:{x:0,y:32},b:{x:128,y:32},from:[255,0,0,255],to:[255,0,0,0]});
+  const left=store.pixel(2,10),mid=store.pixel(64,10),right=store.pixel(126,10);
+  assert.ok(left[3]>245&&Math.abs(mid[3]-128)<=3&&right[3]<8,'alpha ramps across the gradient');
+  assert.ok(mid[0]>=253&&mid[1]<=1,'a colour-to-transparent ramp keeps its hue (premultiplied)');
+  const radial=new TileStore();gradientTiles(radial,{bounds,a:{x:64,y:32},b:{x:64,y:0},type:'radial',from:[0,0,255,255],to:[0,255,0,255]});
+  assert.ok(radial.pixel(64,32)[2]>240&&radial.pixel(64,1)[1]>230,'radial runs centre to edge');
+  const mask={x:0,y:0,width:64,height:64,mask:new Uint8Array(64*64).fill(1)},clipped=new TileStore();
+  gradientTiles(clipped,{bounds,a:{x:0,y:0},b:{x:128,y:0},from:[9,9,9,255],to:[9,9,9,255],mask});
+  assert.equal(clipped.pixel(100,10)[3],0);assert.equal(clipped.pixel(10,10)[3],255);
+});
+
+test('drawing filters blur premultiplied, adjust colour and respect the selection',()=>{
+  const make=()=>{const store=new TileStore(),px=new Uint8ClampedArray(TILE_BYTES);for(let y=0;y<64;y++)for(let x=0;x<32;x++)px.set([200,40,40,255],(y*64+x)*4);store.set(0,0,px);return store;};
+  const bounds={x:-16,y:-16,width:96,height:96};
+  const blurred=make();filterTiles(blurred,{bounds,kind:'blur',radius:6});
+  const edge=blurred.pixel(33,32);assert.ok(edge[3]>20&&edge[3]<200,'blur softens the edge');assert.deepEqual(edge.slice(0,3),[200,40,40],'transparent pixels never darken the colour');
+  const hue=make();filterTiles(hue,{bounds,kind:'hsl',hue:120});assert.deepEqual(hue.pixel(5,5),[40,200,40,255]);assert.equal(hue.pixel(50,5)[3],0);
+  const inv=make();filterTiles(inv,{bounds,kind:'invert'});assert.deepEqual(inv.pixel(5,5),[55,215,215,255]);
+  const masked=make(),mask={x:0,y:0,width:16,height:64,mask:new Uint8Array(16*64).fill(1)};filterTiles(masked,{bounds,kind:'invert',mask});
+  assert.deepEqual(masked.pixel(5,5),[55,215,215,255]);assert.deepEqual(masked.pixel(20,5),[200,40,40,255],'pixels outside the selection keep their exact bytes');
+  const tone=make();filterTiles(tone,{bounds,kind:'brightness',brightness:20,contrast:0});assert.equal(tone.pixel(5,5)[0],251);
 });
 
 // Phase 3: mip levels, tile-anchored scratch, budgets and the shared provider.
@@ -924,7 +1140,9 @@ test('pressure-aware spacing keeps light ink and pressure ramps continuous acros
   }
   const points=Array.from({length:100},(_,i)=>({x:32+i*3,y:32,pressure:.05+.9*Math.sin(i/99*Math.PI)**2}));
   const a=new StrokeEngine(),b=new StrokeEngine(),settings={size:100,spacingRatio:.08};a.begin(1,settings);b.begin(1,settings);
-  a.samples(1,1,points,[]);points.forEach((p,i)=>b.samples(1,i+1,[p],[]));assert.deepEqual(a.end(1),b.end(1));
+  const dabs=[],path=new StrokePath(settings,p=>dabs.push(p));points.forEach(p=>path.sample(p));path.finish();
+  const tiles=new Map();for(const p of dabs){const [x0,y0,x1,y1]=dabExtent(normalizeBrush(settings),p);for(const [tx,ty] of TileStore.tilesInRect(x0,y0,x1-x0,y1-y0))tiles.set(tx+','+ty,{tx,ty,pixels:null});}
+  a.dabs(1,1,dabs,[...tiles.values()]);dabs.forEach((p,i)=>b.dabs(1,i+1,[p],i?[]:[...tiles.values()]));assert.deepEqual(a.end(1),b.end(1));
 });
 
 test('clipboard snapshots preserve deferred undo even when the source changes before paste',async()=>{

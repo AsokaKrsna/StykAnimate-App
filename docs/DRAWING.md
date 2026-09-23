@@ -7,17 +7,66 @@ layer; otherwise select an existing visible, unlocked drawing layer.
 
 ## Workflow
 
-- **B / E:** Brush / Eraser. Ink, Pencil, Soft and Marker presets are starting
-  points; a live preview stroke in Properties reflects the current tip. Size,
+- **B / E:** Brush / Eraser. Ink, Pencil, Soft, Marker, Nib, Airbrush,
+  Charcoal, Liner, Blender and Oil presets are starting points; each defines the whole tip and blend.
+  A live preview stroke in Properties reflects the current tip. Size,
   opacity, flow, hardness, pressure curves and smoothing remain editable with
-  the same numeric fields and scrubbing used elsewhere.
+  the same numeric fields and scrubbing used elsewhere. **Tip** sets
+  roundness, angle (fixed, following the stroke direction, or following pen
+  tilt), spacing, scatter and grain; **Dynamics** maps pressure to size,
+  opacity and flow. **Painting** chooses the blend mode (Normal, Behind,
+  Multiply, Screen, Overlay, Color, Smudge) and **Lock alpha**, which recolours
+  existing paint without covering empty pixels. Smudge carries the colour under the tip along the
+  stroke (Smudge length) and can mix in the brush colour (Color mix); it
+  composites each dab immediately, since every dab reads the previous result.
+- **Quick bar and sliders:** a toolbar floats above the canvas with the active
+  tool's everyday settings (brush: preset, colours, size, opacity, flow,
+  smoothing, mirror). Drawing settings use Krita-style slider fields shared by
+  the quick bar and Properties: press or drag to set, arrow keys and the wheel
+  (quick bar) step, double-click types a value. A readout on the canvas
+  confirms size, opacity and hardness changes. Number keys set opacity
+  (1 = 10% … 0 = 100%) and Shift+[ / ] change hardness. Presets show a stroke
+  drawn by the real brush engine. In Draw, Fit leaves room for the quick bar.
+- **Pop-up palette:** right-clicking the canvas with a painting tool (Brush,
+  Eraser, Fill, Shape, Gradient) opens Krita's pop-up palette at the pointer:
+  the colour pair, recent colours, brush presets and size and opacity sliders.
+  Choosing a preset or colour, clicking elsewhere or Escape closes it; a
+  closed palette holds no controls, so there is one live copy of each.
+- **Assist:** mirror painting across the stage's vertical and/or horizontal
+  centre (Shift+M toggles horizontal). Shift-click draws a straight line from
+  the previous stroke's end; Alt-click (Brush, Fill) picks the visible colour;
+  Ctrl-drag resizes the brush. **M** flips the view horizontally to check
+  proportions; like view rotation it is temporary and never changes pixels.
+- **U:** shapes. Drag a line, rectangle or ellipse; outlines are real brush
+  strokes (selection clipping, symmetry and undo included) and Fill shape
+  fills the interior. Shift constrains to 45° lines, squares and circles.
+- **Shift+G:** gradient. Drag a linear or radial gradient from the colour to
+  transparent or to a second colour; colours interpolate premultiplied with
+  ordered dither, inside the selection or the reachable canvas.
+- **Colours and brushes:** a second colour sits beside the main one (X
+  swaps them); the twelve most recently painted colours appear as swatches.
+  Save brush stores the current tip as a custom preset. Both persist in local
+  storage (optional; the app works without it).
+- **Filters** (Select and Transform tools): blur, hue/saturation/lightness,
+  brightness/contrast and invert apply to the selection, or to the whole
+  drawing when nothing is selected, as one undoable step. Blur works on
+  premultiplied colour so transparent pixels never darken edges; pixels
+  outside the selection keep their exact bytes.
 - **[ / ]:** change brush size. **G:** fill with tolerance, expansion and gap
   closing; optionally sample visible artwork while writing only to this
   drawing.
-- **L:** lasso pixels, drag to move, set scale/angle in Properties, Enter to
-  apply or Escape to cancel. Copy/cut/paste uses the shared clipboard and
-  Delete removes selected pixels without touching the clipboard. Timeline
-  focus retains frame clipboard and frame deletion routing.
+- **L:** select pixels by lasso, rectangle, ellipse or magic wand (tolerance,
+  gap closing and optional all-layer sampling). Shift adds to the selection,
+  Alt subtracts; a click without dragging deselects. Brush strokes and fills
+  stay inside the selection outline. Ctrl+A selects everything reachable,
+  Ctrl+Shift+I inverts, Ctrl+Shift+A deselects and Shift+Backspace fills the
+  selection with the current colour. Corner handles scale and the top handle rotates the floating selection
+  (Shift snaps to 15°; a modifier at press chooses a selection mode instead).
+  Drag inside the selection to move its
+  pixels, set scale/angle in Properties, Enter to apply or Escape to cancel.
+  Copy/cut/paste uses the shared clipboard and Delete removes selected pixels
+  without touching the clipboard. Timeline focus retains frame clipboard and
+  frame deletion routing.
 - **V:** transform the whole cel using the existing pose controls. Pixel
   selection and cel pose are distinct. **H / middle mouse / held Space:** pan. Touch pans;
   a recent pen gesture suppresses touch painting/navigation from a palm.
@@ -99,7 +148,10 @@ translations preserve exact RGBA. Empty distance and polygon area impose no
 pixel-allocation limit. Commands await the transaction, and Escape, seeking or
 replacing the document discards stale capture replies and releases temporary
 surfaces. Lasso input remains bounded to 8,192 vertices and the working memory
-budget.
+budget. Rectangles, ellipses and flipped selections use the same sparse
+preview and commit path. Add/subtract/invert masks, magic wand, filled shapes,
+gradients and filters retain a 16-megapixel region limit and share the
+transaction gate; rejected or cancelled operations leave the cel untouched.
 
 `drawing-transform.mjs` is the shared affine kernel for selection commits,
 paste and resolution changes. It plans output tiles from occupied source
@@ -123,7 +175,8 @@ dimensions before inflation, limits concurrent streams to eight, preserves index
 order and settles in-flight streams before reporting failure. No sparse-copy
 limit depends on bounding-box area or distance between occupied tiles.
 
-The exact PNG decoder feeds IDAT byte views directly to the decompression
+Small PNG tiles use bounded synchronous zlib in codec workers. For larger
+images, the exact PNG decoder feeds IDAT byte views directly to the decompression
 stream, awaits input backpressure and releases both stream endpoints on failure.
 Reconstruction stays in its bounded scan buffer; unfiltered RGBA rows use byte
 copies and never pass through a premultiplied canvas. All five PNG filters and
@@ -144,7 +197,7 @@ reads/writes, worker work and the final revision check; a cancelled transfer
 cannot commit a cut or paste. If cancellation arrives after native publication,
 the new clipboard may already be visible, but the artwork remains intact.
 
-Fill, copy, paste, resample, selection capture and commits share one pixel transaction
+Fill, shapes, gradients, filters, copy, paste, resample, selection capture and commits share one pixel transaction
 gate. Save and editing commands await publication; a following pointer gesture
 retains its samples until the preceding operation commits. Escape cancels the
 worker, discards its late result and releases reservations. Input copying yields
@@ -163,8 +216,9 @@ are not supported.
 ## Runtime and performance
 
 `drawing-resources.mjs` owns sparse tile stores, worker jobs and disposal for
-one report. Resident tiles have a 192 MiB retention target and a 768 MiB hard
-working ceiling by default; accounting deduplicates
+one report. Resident tiles are limited by a budget scaled from device memory
+(192–768 MiB; the hard ceiling for unpublished work is at least 768 MiB);
+accounting deduplicates
 pixel buffers, so copy-on-write forks share counted bytes until they diverge.
 The owner indexes resident pixel references. Enrolling or removing a store
 visits its tiles once; subsequent tile-map writes update reference counts
@@ -181,13 +235,59 @@ kicks its re-decode itself — real failures back off behind `decodeError`
 instead of retrying every frame — and v2 renderers keep their last texture or
 draw nothing rather than flashing the stale 1×1 placeholder. Cold requests
 coalesce into a bounded queue: at most two decodes wait, and a newer seek
-supersedes the oldest.
+supersedes the oldest. Once publication finishes, clean stores above the
+budget are trimmed farthest from the playhead first — distance over every
+drawing layer, measured circularly because playback and scrubbing loop — then
+least recently used, keeping the cel at the playhead. Reserving room for new
+work evicts in the same order. Strokes
+adopt tiles without reserving, so this is what bounds memory after painting.
+A cold decode is split across a small pool of codec workers by 8×8-tile blocks;
+each block owns its mip tiles up to level 3, so every shard also builds its
+mip levels and the cel arrives display-ready at any zoom.
 Seeking prefetches the two unique neighbouring cels on each side of the
 playhead plus the current one, queued last so it wins eviction. Thumbnails
 have one worker, at most 48 queued requests and 256 small cached images;
 their pump pauses while a stroke or a scrub owns the thread. Renderer GPU
 drawing textures follow the current layout and are released with it.
 
+The selection is a polygon or bounded pixel mask on one cel (the outline). It clips stroke
+coverage in the worker and confines fills; moving, scaling or rotating
+selected pixels floats them into a separate preview derived from the outline,
+committed as one undo step. An untransformed float shows the exact stored
+pixels. Sparse worker previews preserve translucent colors and avoid allocating
+the empty space between distant selected tiles.
+
+The stroke path (stabilization, curve joining and dab spacing) runs on the
+main thread in `StrokePath`, so every dab's extent is known before dispatch:
+each batch seeds the stroke worker with exactly the tiles its dabs reach, and
+the worker refuses a dab outside its seeded tiles rather than painting over a
+blank guess. Symmetry feeds each mirrored sample into its own path so mirrored
+strokes keep even spacing while sharing one coverage buffer and undo step.
+Wet ink (`drawing-wet-ink.mjs`) draws the part of a stroke that is not yet
+on screen — the last presented dab, dabs in flight or pending, the raw
+pointer and its predicted position — on a desynchronized canvas between the
+scene and the overlay, on every pointer event. The renderer records each
+presenter's `presentedStamp` when it uploads (or paints) a stamp, and a batch's
+wet segments retire one frame after their stamp is presented, so the exact
+stroke is always on screen before its preview leaves. Only brushes the preview
+matches closely use it (normal blend, firm round tips, flow ≥ 50%, no
+selection clip); erasing, smudging and special blends show exact pixels only.
+
+The WebGPU renderer refreshes drawing entries without re-preparing the scene:
+each entry carries its presenter and stamp, and frames without a geometry
+change re-run only entries whose pixels changed (or all of them when the view
+moved), repainting the scratch's dirty tiles and uploading that region.
+A pointer interrupted mid-gesture (lost capture, `pointercancel`, window
+blur) finishes the gesture and keeps its ink; only Escape discards it.
+
+At most one dab batch is in flight: while the stroke worker is busy, dabs
+accumulate and leave with its reply, so a brush slower than the pointer never
+queues stale work. Samples arrive through `pointerrawupdate` where available,
+and an idle worker takes a batch immediately instead of at the next frame.
+Dabs accumulate stroke coverage only; colour is composited once per batch over
+each tile's dirty span, since it depends only on final coverage, the pixels
+the stroke first saw and the blend mode. Soft falloff uses a per-stroke
+lookup table indexed by squared distance.
 `drawing-pixels.mjs` rasterizes real, distance-resampled samples. Stroke opacity
 caps the whole stroke, while flow accumulates dabs. Pressure release cannot
 remove previously deposited paint. Stabilization is a distance-windowed
@@ -204,14 +304,12 @@ pressure ramps, so a light stroke does not become a row of separated dabs.
 the smoothing window retains at most 4,096 samples, including stationary pen
 input, and release drains it in linear time. This limit affects only the
 smoothing history, not the input samples sent for painting. A stroke snapshots
-its pixel transform once. At most two sample batches are posted to its worker;
-acknowledgments release pending real samples before the final end message.
-Seed regions include the preceding curve and smoothing margin so inter-batch
-movement preserves existing pixels and exact undo records.
-Posted batches contain at most 512 samples, with at most two outstanding.
-Input queues retain at most 65,536 samples; exceeding the working limit cancels
-and rolls back the transaction. Stroke seeding follows inflated quadratic
-coverage rather than the batch bounding rectangle.
+its pixel transform once. The main thread generates the final dabs and posts
+at most 512 per batch, with one batch outstanding. Acknowledgments release
+pending dabs before the final end message. Seed regions cover the actual dab
+extents, preserving existing pixels and exact undo records across batches.
+The pending queue retains at most 65,536 dabs; exceeding the working limit
+cancels and rolls back the transaction.
 A gesture queued behind a closing stroke retains its samples within that bound;
 canvas publication coalesces into one animation-frame callback. Pointer
 capture, cancellation,
@@ -281,7 +379,9 @@ uses the original selection, with one resample when applied.
 The pixel worker keeps a bounded per-cel cache of encoded tile PNGs. Each
 publication sends pixels only for tiles whose PNG is not already trusted.
 Transfers run after the synchronous editor commit in batches of at most 1 MiB,
-with one batch in flight and its capacity reserved against working memory.
+with one publication batch in flight and its capacity reserved against working memory.
+Large batches split across up to four codec workers; their raw and encoded
+buffers are reserved before dispatch, then adopted into the publication cache.
 Partial worker replies cache exact tile PNGs; the final ordered key list
 assembles the complete blob in the worker. The document's saved asset changes
 only after that complete revision is ready. Missing worker-cache entries
@@ -289,8 +389,12 @@ trigger one bounded resend of retained PNGs. A legacy PNG with ancillary data
 larger than a batch is re-encoded from its exact 64×64 pixels instead.
 Generation, cel, revision and store-mutation checks reject stale results
 between batches. Cancellation, document disposal and worker failure release
-the transfer reservation. Failed
-encoding retains dirty work for retry, and the publication debounce yields to
+the transfer reservation. Tiles are PNG-encoded synchronously by
+`zlib-sync.mjs` (greedy LZ77 with one dynamic-Huffman block; plain or
+adaptively filtered rows, whichever LZ77 can reuse more of), and decoded with
+its table-driven inflate; per-tile compression streams cost more in setup than
+the work itself. Larger images keep the native streams. The blob format and
+PNG bytes stay standard, so older files and other readers are unaffected. encoding retains dirty work for retry, and the publication debounce yields to
 active strokes and scrubbing. A gesture's pin on its tile store ends inside
 the commit, before the change broadcast — the playback/export barriers that
 broadcast triggers always see the committed tiles, and pixel commits reach
@@ -388,6 +492,14 @@ Run `node --test tests/drawing.test.mjs`, `node tests/drawing.browser.mjs` and
 `STYK_URL`). See [verification report](../artifacts/drawing/VERIFICATION.md).
 The pan, expansion and shortcut refinements have a separate regression suite:
 `node tests/drawing-ux.browser.mjs`; see its [report](../artifacts/drawing-ux/VERIFICATION.md).
+`npm run test:drawing:desktop` paints through real input in the Electron app,
+saves natively, restarts the process and verifies every cel reopens
+pixel-identical. `npm run benchmark:drawing-load` measures a heavy workload (24
+dense 4× cels beyond the tile budget: scrubbing, playback, a large soft stroke
+and saving) against a running local app.
+`tests/drawing-tools.browser.mjs` covers selection shapes and modes, clipped
+painting and fills, the magic wand, symmetry, straight lines, colour picking,
+brush resizing, view flipping and alpha lock through real input,
 `tests/drawing-stroke.browser.mjs` covers the worker stroke pipeline,
 `tests/drawing-render.browser.mjs` covers visible-tile rendering and seams,
 `tests/drawing-save.browser.mjs` covers save/reload/recovery fidelity and
@@ -397,7 +509,7 @@ Browser tests exercise native codec reopening, pixel fidelity, nested scopes,
 fill/selection/resample history, clipboard, both renderer paths and encoders.
 
 Mouse/browser checks and deterministic pressure tests do not certify physical
-pen drivers, input-to-photon latency or every GPU. Tilt, vector strokes and
+pen drivers, input-to-photon latency or every GPU. Pen tilt steers tilt-mode tips; vector strokes and
 resolution-independent drawing are outside this implementation. Fill follows
 stage plus artwork bounds, independently of zoom. The `drawing-fill.mjs` worker
 kernel allocates masks only for reached tiles and the gap/expansion halo, so a

@@ -732,7 +732,7 @@ class WebGPURenderer {
     const uid = uidOf(g), prior = this.entries.get(key); let data, texture;
     const drawingMeta=sourceItems.length===1&&!isOnion?drawingMetadata(sourceItems[0].fig):null;
     const drawing=drawingMeta&&this.resources.drawing?.(sourceItems[0].fig);
-    const drawingState=drawing?{drawing,drawingStamp:drawing.stamp,drawingCamera:this.activeCamera,drawingWidth:this.width,drawingHeight:this.height}:{};
+    const drawingState=drawing?{drawing,drawingItems:items,drawingStamp:drawing.stamp,drawingCamera:this.activeCamera,drawingWidth:this.width,drawingHeight:this.height}:{};
     if(drawing&&!drawing.store&&drawingMeta.version===2&&!hasDrawableVfx(sourceItems[0])){
       // An evicted v2 store re-decodes via the presenter; keep the last
       // retained texture until then and never fall back to the stale
@@ -743,7 +743,8 @@ class WebGPURenderer {
       return {...drawingState,key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:retained?.texture??null};
     }
     if(drawing?.store&&!hasDrawableVfx(sourceItems[0])) {
-      const item=sourceItems[0],matrix=drawingPixelMatrix(item),bounds=drawing.store.bounds;
+      // Tile coverage widens in O(1) while painting; alpha bounds would rescan.
+      const item=sourceItems[0],matrix=drawingPixelMatrix(item),bounds=drawing.store.tileBounds;
       // Visible pixel rect: viewport → world → cel pixel space.
       let rect=bounds?{...bounds}:null,cam=this.activeCamera;
       if(cam&&rect){
@@ -867,6 +868,30 @@ class WebGPURenderer {
       preparation: 'incremental', warnings: geometry.warnings || [] });
     return true;
   }
+  /** Drawing pixels change without a geometry change (a stroke in progress, a
+   * decode landing) and panning moves which of their tiles are visible: re-run
+   * just those drawing entries, so their scratch canvases repaint the changed
+   * tiles and their textures upload only the dirty region, instead of
+   * rebuilding the scene. Returns false when an entry outgrew its slot. */
+  refreshDrawings(options) {
+    if (!this.layout) return true;
+    const matrix = cameraMatrix(options), scale = Math.hypot(matrix[0], matrix[1]) * this.dpr;
+    const viewKey = `${matrix.join()}|${this.width}|${this.height}|${this.dpr}`, moved = viewKey !== this.drawingViewKey;
+    this.drawingViewKey = viewKey;
+    let refreshed = 0, uploadBytes = 0;
+    for (const previous of this.layout) {
+      const drawing = previous.drawing;
+      if (!drawing || !previous.g || (!moved && previous.drawingStamp === drawing.stamp)) continue;
+      this.activeCamera = matrix;
+      const entry = this.objectEntry(previous.g, previous.drawingItems, previous.opacity, previous.key, previous.transform, scale, previous.isOnion);
+      if (entry.count > previous.capacity) return false;
+      entry.capacity = previous.capacity; entry.offset = previous.offset;
+      if (entry.data !== previous.data) uploadBytes += this.uploadEntry(entry);
+      Object.assign(previous, entry); refreshed++;
+    }
+    if (refreshed) { this.stats.updatedObjects = refreshed; this.stats.uploadBytes += uploadBytes; this.stats.preparation = 'drawing'; }
+    return true;
+  }
   prepare(options, geometry) {
     const steps = this.prepareSteps(options, geometry);
     for (;;) { const step = steps.next(); if (step.done) return step.value; }
@@ -953,6 +978,7 @@ class WebGPURenderer {
     this.entriesBySlot = new Map(next.filter(e => e.g && e.key === e.uid).map(e => [e.g.slot, e]));
     this.transformData.set([0, 0, 1, 1]);
     this.shapeCount = shapeCount; this.lastGeometry = geometry; this.lastGeneration = this.generation;
+    this.drawingViewKey = `${matrix.join()}|${this.width}|${this.height}|${this.dpr}`;
     this.stats.uploadBytes = uploadBytes; this.stats.primitiveUploadCalls = primitiveUploadCalls; this.stats.primitives = next.reduce((n, e) => n + e.count, 0); this.stats.objects = geometry.objects.size; this.stats.textureObjects = compatibilityCount; this.stats.cachedObjects = cached;
     this.artworkStats();
     this.stats.warnings = geometry.warnings || [];
@@ -1010,21 +1036,16 @@ class WebGPURenderer {
           if (typeof window !== 'undefined') queueMicrotask(() => { throw error; });
         }
       }
-    } else { this.stats.uploadBytes = 0; this.stats.primitiveUploadCalls = 0; this.stats.updatedObjects = 0; this.stats.compiledObjects = 0; this.stats.rasterizedObjects = 0; this.stats.preparation = 'retained'; }
-    if (!this.layout) return geometry; // No build has ever succeeded; the canvas keeps its last frame.
-    // Pixel edits and panning do not change document geometry. Refresh only
-    // live drawing entries; a stamp must never upload an unpainted scratch.
-    // This also wakes entries that were empty or outside the previous view.
-    this.activeCamera=camera;
-    for(const entry of this.layout){
-      if(!entry.drawing)continue;
-      if(entry.drawingStamp===entry.drawing.stamp&&entry.drawingWidth===this.width&&entry.drawingHeight===this.height&&entry.drawingCamera?.every((v,i)=>v===camera[i]))continue;
-      const next=this.objectEntry(entry.g,entry.g.drawables,entry.opacity,entry.key,entry.transform,Math.hypot(camera[0],camera[1])*this.dpr);
-      this.stats.textureObjects+=Number(!!next.texture)-Number(!!entry.texture);
-      this.stats.uploadBytes+=this.uploadEntry({...next,offset:entry.offset,capacity:entry.capacity});
-      this.stats.primitiveUploadCalls++;this.stats.updatedObjects++;
-      Object.assign(entry,next);
+    } else {
+      this.stats.uploadBytes = 0; this.stats.primitiveUploadCalls = 0; this.stats.updatedObjects = 0; this.stats.compiledObjects = 0; this.stats.rasterizedObjects = 0; this.stats.preparation = 'retained';
+      try { if (!this.refreshDrawings(options)) this.prepare(options, geometry); }
+      catch (error) {
+        if (error?.name === 'AbortError') throw error;
+        this.stats.lastPrepareError = error?.message || String(error);
+        if (typeof window !== 'undefined') queueMicrotask(() => { throw error; });
+      }
     }
+    if (!this.layout) return geometry; // No build has ever succeeded; the canvas keeps its last frame.
     const liveTextures=new Set(this.layout.map(entry=>entry.texture));
     let drawingGpuBytes=0;
     for(const [id,texture] of this.drawingTextures??[]){
@@ -1039,6 +1060,7 @@ class WebGPURenderer {
       const r=dirty?{x:dirty.x,y:dirty.y,width:dirty.width,height:dirty.height}:{x:0,y:0,width:canvas.width,height:canvas.height};
       if(r.width>0&&r.height>0)this.device.queue.copyExternalImageToTexture({source:canvas,origin:[r.x,r.y]},{texture:texture.texture,origin:[r.x,r.y],premultipliedAlpha:true},[r.width,r.height]);
       texture.stamp=texture.nextStamp;texture.rectKey=texture.nextRectKey;
+      drawing.presentedStamp=Math.max(drawing.presentedStamp??-1,texture.stamp);
     }
     // Retain textures past their layout slot; evict least-recently-used only
     // when the drawing texture budget is exceeded (Map order is MRU-last).
@@ -1052,7 +1074,7 @@ class WebGPURenderer {
     this.stats.drawingGpuBytes=drawingGpuBytes;
     if(this.measureFrame){this.telemetryStages.prepare=performance.now()-measureAt;measureAt=performance.now();}
     const matrix = cameraMatrix(options), zoom = Number(view.scale ?? 1), x = Number(view.x ?? 0), y = Number(view.y ?? 0);
-    const uniform = new Float32Array([matrix[0], matrix[2], matrix[4], Math.hypot(matrix[0], matrix[1]), matrix[1], matrix[3], matrix[5], view.rotation??0, this.width, this.height, this.dpr, options.clipToCanvas === false ? 0 : 1, x, y, x + report.canvas_width * zoom, y + report.canvas_height * zoom]);
+    const uniform = new Float32Array([matrix[0], matrix[2], matrix[4], Math.hypot(matrix[0], matrix[1]), matrix[1], matrix[3], matrix[5], (view.flip ? -1 : 1) * (view.rotation??0), this.width, this.height, this.dpr, options.clipToCanvas === false ? 0 : 1, x, y, x + report.canvas_width * zoom, y + report.canvas_height * zoom]);
     this.device.queue.writeBuffer(this.uniform, 0, uniform);
     const parallax=parallaxResolver(report,frame,options.cameraEnabled!==false);
     for (const entry of this.layout) {

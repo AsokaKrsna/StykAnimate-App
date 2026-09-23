@@ -18,7 +18,7 @@ test('hover requests only feedback while drawing interaction includes pending pi
   const event={pointerId:7,clientX:30,clientY:50,timeStamp:12};
   d.move(event);assert.equal(renders,0);assert.equal(overlays,1);assert.equal(d.interacting,false);
   d.loading={id:7,samples:[]};d.move(event);assert.equal(d.interacting,true);assert.equal(d.loading.samples.length,1);
-  d.up(event,true);assert.equal(d.interacting,false);assert.equal(renders,1,'cancel releases scheduler ownership');
+  d.up(event,true);assert.equal(d.loading.released,true,'pointer interruption finishes queued ink');d.loading=null;
   for(const key of ['gesture','loading','operation']){d[key]={};assert.equal(d.interacting,true);d[key]=null;}
 });
 

@@ -19,6 +19,13 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Blend multiple rig anchors with editable weighted joints, so connected surfaces can share articulation controls and projected axes.
 - Draw and animate on dedicated drawing layers backed by a sparse tiled raster engine: brush presets with pressure and textured pencil, erasing, fill, onion skin and pixel selection you can copy, cut and delete. Unchanged cels share tiles copy-on-write, strokes rasterize in workers, only visible tiles render with mip-level filtering, changed tiles publish incrementally, and older PNG drawings migrate on first edit. Pan while painting, create blank drawing frames with A, paint beyond the stage, and choose higher-resolution strokes using the shared timeline, undo, saving and export tools.
 - Attached 3D heads and other solid meshes can keep a hand-tuned shape for each viewing direction, blending smoothly as the character turns, so a head holds its drawn look from the side and back as well as the front.
+- Shape brushes like a real painting app: flat and angled tips that can follow the stroke or your pen's tilt, scatter and grain, pressure-controlled flow, blend modes (Behind, Multiply, Screen, Overlay, Color), a smudge brush that drags and mixes wet paint, and Lock alpha for recolouring line art. New Nib, Airbrush, Charcoal, Liner, Blender and Oil presets join Ink, Pencil, Soft and Marker.
+- Select pixels with rectangles, ellipses and a magic wand as well as the lasso, add with Shift or subtract with Alt, and paint or fill only inside the selection. Drag selected pixels to move them, or drag the on-canvas corner and rotate handles to scale and turn them (Shift snaps to 15°). Select all, invert, deselect and fill the selection with Ctrl+A, Ctrl+Shift+I, Ctrl+Shift+A and Shift+Backspace.
+- Draw lines, rectangles and ellipses outlined with the current brush or filled (U, Shift for 45° lines, squares and circles), and paint linear or radial gradients from a colour to transparent or to a second colour (Shift+G); both stay inside the selection.
+- Blur, recolour (hue, saturation, lightness), adjust brightness and contrast, or invert a selection or a whole drawing, and flip selected pixels horizontally or vertically.
+- Keep a second colour (X swaps), pick from recently used colour swatches, and save your own brushes; saved brushes and recent colours are remembered between sessions.
+- Change brush size, opacity, flow and smoothing from a quick bar above the canvas, or right-click the canvas while painting for a pop-up palette of brushes, recent colours, size and opacity. Sliders can be dragged, scrolled or typed into, presets show a sample stroke, a readout confirms each change on the canvas, number keys set opacity (1 = 10%, 0 = 100%) and Shift+[ / ] soften or harden the brush.
+- Draw faster with mirror painting, Shift-click straight lines from the last stroke, Alt-click colour picking, Ctrl-drag brush resizing, and M to flip the view while checking proportions.
 
 ### Changed
 
@@ -34,7 +41,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 - Select, copy, paste, transform and resample large or widely spaced drawings without allocating empty space, keep lasso capture responsive in the background, preserve translucent colors and rotated or mirrored pixel pastes, and offer crisp pixel-art filtering. Failed or cancelled clipboard transfers keep cut artwork intact.
 
-- Keep resampled artwork intact after undo, redo and saving; pending fills, pastes and transforms finish before saving or accepting a new stroke.
+- Keep resampled artwork intact after undo, redo and saving; pending fills, shapes, gradients, filters, pastes and transforms finish before saving or accepting a new stroke.
 
 - Preserve drawing strokes when advancing frames, keep copied drawings consistent after undo under memory pressure, reopen widely spaced artwork reliably, and keep light-pressure ink continuous.
 
@@ -58,6 +65,12 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Count shared copy-on-write tiles once in drawing memory accounting, and free rebuildable caches before rejecting edits that exceed the tile budget.
 - Stop zooming and alternating render paths from repainting shared scratch canvases, removing flicker and unnecessary tile redraws while panning.
 - Smooth strokes without dead zones or gaps: stabilized drawing follows the path continuously, and unstabilized strokes curve through sharp corners and always end on the final sample.
+- Stop animations that contain drawings from redrawing continuously while nothing changes, which kept the processor and graphics card busy and drained battery even when idle.
+- Fill large areas and close gaps in line art several times faster.
+- Save and reopen large drawings much faster, flip through heavy drawing frames with less waiting, and keep huge soft brushes responsive instead of lagging seconds behind the pen. Drawing memory now adapts to the computer and is released after saving.
+- Ink appears under the pen the moment you draw: strokes show instantly while the exact brush pixels land a moment later, and the finished stroke reaches the canvas about twice as fast as before.
+- Paint large and soft brushes without hitches: big drawings no longer slow down each stroke frame, and finishing a stroke no longer pauses the app while it is saved into the drawing.
+- Stop fast or stabilized brush strokes from erasing square patches of existing artwork. The lost patches could not be restored with undo; strokes now keep every pixel they don't paint, and undo restores the drawing exactly.
 - Render drawings of any span without failing: mip levels now escalate to 256× and the scratch clamps to the texture limit around the visible span instead of throwing and blanking the whole frame.
 - Keep playback and export in sync with the canvas: the last stroke of a drawing now appears when playing, and an extended final drawing exposure shows its artwork across the whole hold instead of staying blank until another frame follows. Incremental playback updates no longer render stale tile data or clip freshly painted regions into blank rectangles.
 - Keep prepared playback frames warm through layer-timeline edits and undo/redo: a localized change only rebuilds the spans it actually touches instead of recompiling the whole timeline.

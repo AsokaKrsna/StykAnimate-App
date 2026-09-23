@@ -53,6 +53,6 @@ try{
   await writeFile(`${output}/live-render${process.env.STYK_BASELINE?'-baseline':''}.json`,JSON.stringify({result,errors},null,2));
   console.log(JSON.stringify({result,errors},null,2));
   assert.deepEqual(errors,[]);
-  for(const r of result.results){assert.deepEqual(r.live,[30,60,220,255],`${r.backend} live pixels with retained geometry`);assert.deepEqual(r.pan,[220,30,60,255],`${r.backend} pan to previously offscreen ink`);assert.notDeepEqual(r.erased,r.pan);assert.deepEqual(r.back,r.live);if(r.backend==='WebGPU')assert.ok(r.preparation.slice(1).every(p=>p==='retained'),'pixel edits and pan retain scene layout');}
+  for(const r of result.results){assert.deepEqual(r.live,[30,60,220,255],`${r.backend} live pixels with retained geometry`);assert.deepEqual(r.pan,[220,30,60,255],`${r.backend} pan to previously offscreen ink`);assert.notDeepEqual(r.erased,r.pan);assert.deepEqual(r.back,r.live);if(r.backend==='WebGPU')assert.ok(r.preparation.slice(1).every(p=>p==='retained'||p==='drawing'),'pixel edits and pan retain scene layout');}
   for(const r of result.outline){assert.equal(r.missingCore,0,'visible dot centers and gaps remain aligned');assert.ok(r.meanAlphaError<16,'outline alpha differs only within edge antialiasing tolerance');}
 }finally{await browser.close();}

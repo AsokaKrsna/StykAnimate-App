@@ -33,11 +33,52 @@ try{
     return true;
   },{sx:start.x,sy:start.y,ex:end.x,ey:end.y});
   check('committed cel has continuous ink along the whole path',continuous);
+  // Ink must be ON SCREEN while the pointer is still down, not only after
+  // release: count the stroke colour in real screenshots mid-stroke, on a new
+  // cel and on an existing one. (Store pixels alone once hid a renderer bug.)
+  const inkOnScreen=async(x0,x1,y)=>{const shot=await page.screenshot({clip:{x:x0,y:y-6,width:x1-x0,height:12}});return page.evaluate(async b64=>{const img=new Image();img.src='data:image/png;base64,'+b64;await img.decode();const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const g=c.getContext('2d');g.drawImage(img,0,0);const d=g.getImageData(0,0,c.width,c.height).data;let n=0;for(let i=0;i<d.length;i+=4)if(d[i]>180&&d[i+1]<90&&d[i+2]<90)n++;return n;},shot.toString('base64'));};
+  await page.evaluate(()=>Object.assign(styk.drawing.settings,{size:14,color:'#ff0000',opacity:1}));
+  for(const [label,y] of [['on the existing cel',rect.y+rect.height*.75],['after a blank frame',rect.y+rect.height*.6]]){
+    if(label.startsWith('after'))await page.evaluate(()=>styk.drawing.action('next-blank'));
+    const x0=rect.x+rect.width*.25;await page.mouse.move(x0,y);await page.mouse.down();
+    for(let i=1;i<=24;i++)await page.mouse.move(x0+i*10,y);
+    await page.waitForFunction(()=>styk.drawing.strokeStats.batches>0);await page.waitForTimeout(120);
+    const live=await inkOnScreen(x0,x0+240,y);await page.mouse.up();await page.waitForFunction(()=>!styk.drawing.gesture);
+    check(`the stroke is visible on screen while drawing ${label}`,live>1000);
+  }
+  await page.evaluate(()=>{styk.editor.undo();styk.editor.undo();styk.editor.undo();});
+  // Wet ink: the unrasterized part of a stroke is drawn on every pointer move
+  // (before any worker round trip) and fully retired once the stroke lands.
+  {
+    const y=rect.y+rect.height*.45,x0=rect.x+rect.width*.3,wet=[];
+    await page.mouse.move(x0,y);await page.mouse.down();
+    for(let i=1;i<=16;i++){await page.mouse.move(x0+i*10,y+(i%2)*6);wet.push(await page.evaluate(()=>Boolean(styk.drawing.wet?.box)));}
+    await page.mouse.up();await page.waitForFunction(()=>!styk.drawing.gesture&&!styk.drawing.wetSession);
+    check('wet ink shows the stroke on every pointer move',wet.every(Boolean));
+    check('wet ink is retired once the stroke is presented',await page.evaluate(()=>!styk.drawing.wet.box));
+    await page.evaluate(()=>styk.editor.undo());
+  }
+  // An interrupted pointer (lost capture from a notification, the pen leaving
+  // range, a window switch) keeps the ink instead of discarding the stroke.
+  {
+    const y=rect.y+rect.height*.85,x0=rect.x+rect.width*.3,before=await page.evaluate(()=>styk.editor.revision);
+    await page.mouse.move(x0,y);await page.mouse.down();for(let i=1;i<=12;i++)await page.mouse.move(x0+i*12,y);
+    await page.evaluate(()=>{const o=document.getElementById('overlay'),id=styk.drawing.gesture.id;o.dispatchEvent(new PointerEvent('lostpointercapture',{pointerId:id,bubbles:true}));});
+    await page.waitForFunction(r=>styk.editor.revision!==r&&!styk.drawing.gesture,before);await page.mouse.up();
+    check('a stroke interrupted by lost pointer capture commits its ink',await page.evaluate(()=>styk.editor.undoLabel==='Brush stroke'));
+    await page.evaluate(()=>styk.editor.undo());
+  }
   // A quick tap still lands exactly one dab and commits as its own undo.
   const tapRevision=await page.evaluate(()=>styk.editor.revision);
   await page.mouse.move(end.x+40,end.y);await page.mouse.down();await page.mouse.up();
   await page.waitForFunction(r=>styk.editor.revision!==r,tapRevision);
   check('a quick tap after the stroke still commits its own dab',await page.evaluate(()=>styk.editor.undoLabel==='Brush stroke'));
+  // A document with drawings must go idle: the 1×1 v2 carrier image once
+  // ping-ponged through the preview image loader, invalidating the renderer
+  // and re-rendering every frame forever.
+  await page.mouse.move(5,5);await page.waitForTimeout(600);
+  const idle=await page.evaluate(async()=>{const r=styk.state.renderer,g0=r.generation,render=r.render;let n=0;r.render=function(...a){n++;return render.apply(this,a);};await new Promise(res=>setTimeout(res,1200));r.render=render;return {renders:n,bumps:r.generation-g0};});
+  check('an idle document with drawings stops rendering and keeps its prepared scene',idle.renders<=1&&idle.bumps===0);
   // Stroke quality regressions, run against the same in-page stroke engine.
   const quality=await page.evaluate(async()=>{
     const {DrawingStroke}=await import('/src/drawing-pixels.mjs'),{TileStore}=await import('/src/drawing-tiles.mjs');
