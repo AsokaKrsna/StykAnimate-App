@@ -439,6 +439,28 @@ export function maskEdges(m,limit=250000){
   for(let px=0;px<=w;px++){let start=-1;for(let py=0;py<=h;py++){const edge=py<h&&at(px,py)!==at(px-1,py);if(edge&&start<0)start=py;else if(!edge&&start>=0){out.push(m.x+px,m.y+start,m.x+px,m.y+py);start=-1;if(out.length>limit*4)return null;}}}
   return out;
 }
+/** Linear or radial gradient from `from` to `to` (RGBA, 0..255) composited
+ * source-over within `bounds`, optionally clipped by a selection mask.
+ * Colours interpolate premultiplied; ±½ LSB ordered dither avoids banding. */
+export function gradientTiles(store,{bounds,a,b,type='linear',from,to,mask=null}){
+  if(!bounds||!(bounds.width>0&&bounds.height>0)||bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw new Error('Invalid gradient bounds.');
+  const dx=b.x-a.x,dy=b.y-a.y,len2=dx*dx+dy*dy||1,len=Math.sqrt(len2);
+  const pf=[from[0]*from[3]/255,from[1]*from[3]/255,from[2]*from[3]/255,from[3]],pt=[to[0]*to[3]/255,to[1]*to[3]/255,to[2]*to[3]/255,to[3]];
+  const bayer=[0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5];
+  for(const [tx,ty] of TileStore.tilesInRect(bounds.x,bounds.y,bounds.width,bounds.height)){
+    const ox=tx*TILE,oy=ty*TILE;let tile=null;
+    for(let y=Math.max(bounds.y,oy);y<Math.min(bounds.y+bounds.height,oy+TILE);y++)for(let x=Math.max(bounds.x,ox);x<Math.min(bounds.x+bounds.width,ox+TILE);x++){
+      let w=1;if(mask){const mx=x-mask.x,my=y-mask.y;w=mx>=0&&my>=0&&mx<mask.width&&my<mask.height?mask.mask[my*mask.width+mx]/(mask.max??1):0;if(!w)continue;}
+      const px=x+.5-a.x,py=y+.5-a.y,t=clamp(type==='radial'?Math.sqrt(px*px+py*py)/len:(px*dx+py*dy)/len2);
+      const noise=(bayer[(y&3)*4+(x&3)]+.5)/16-.5;
+      const sa=(pf[3]+(pt[3]-pf[3])*t)*w,alpha=Math.max(0,Math.min(255,sa+noise))/255;if(alpha<=0)continue;
+      const sr=pf[0]+(pt[0]-pf[0])*t,sg=pf[1]+(pt[1]-pf[1])*t,sb=pf[2]+(pt[2]-pf[2])*t,unp=(pf[3]+(pt[3]-pf[3])*t)||1;
+      const cr=sr*255/unp,cg=sg*255/unp,cb=sb*255/unp;
+      tile??=store.writable(tx,ty);const j=((y-oy)*TILE+x-ox)*4,p=tile.pixels,ba=p[j+3]/255,out=alpha+ba*(1-alpha),k=ba*(1-alpha);
+      p[j]=Math.round((cr*alpha+p[j]*k)/out+noise);p[j+1]=Math.round((cg*alpha+p[j+1]*k)/out+noise);p[j+2]=Math.round((cb*alpha+p[j+2]*k)/out+noise);p[j+3]=Math.round(out*255);
+    }
+  }
+}
 /** Paint `color` [r,g,b,a] over every selected pixel (source-over). */
 export function fillMaskTiles(store,{mask,color}){
   const [r,g,b,a]=color.map(n=>clamp(n,0,255)),alpha=a/255;if(!mask||!alpha)return;

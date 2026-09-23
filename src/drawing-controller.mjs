@@ -19,7 +19,7 @@ const SELECTION_ACTIONS=['copy-pixels','cut-pixels','delete-pixels','apply-selec
 const unionRects=(a,b)=>{if(!a)return b?{...b}:null;if(!b)return{...a};const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);return{x,y,width:Math.max(a.x+a.width,b.x+b.width)-x,height:Math.max(a.y+a.height,b.y+b.height)-y};};
 export class DrawingController {
   constructor({editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getResources,getTimeline,getClipboard,sampleColor}) {
-    Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getResources,getTimeline,getClipboard,sampleColor,settings:{preset:'ink',size:8,color:'#252525',opacity:1,flow:1,hardness:1,pressureSize:true,pressureOpacity:false,pressureFlow:false,sizeCurve:1,opacityCurve:1,stabilization:0,spacingRatio:.08,texture:0,roundness:1,angle:0,angleMode:'fixed',scatter:0,blend:'normal',alphaLock:false,smudgeLength:.8,colorRate:0,mirrorX:false,mirrorY:false,selectShape:'lasso',resolution:2,length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
+    Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getResources,getTimeline,getClipboard,sampleColor,settings:{preset:'ink',size:8,color:'#252525',opacity:1,flow:1,hardness:1,pressureSize:true,pressureOpacity:false,pressureFlow:false,sizeCurve:1,opacityCurve:1,stabilization:0,spacingRatio:.08,texture:0,roundness:1,angle:0,angleMode:'fixed',scatter:0,blend:'normal',alphaLock:false,smudgeLength:.8,colorRate:0,mirrorX:false,mirrorY:false,selectShape:'lasso',shapeKind:'rect',shapeFill:false,gradientType:'linear',gradientEnd:'transparent',color2:'#ffffff',resolution:2,length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
     this.panel=document.getElementById('inspector');
     const events=this.events=new AbortController(),opts={signal:events.signal};
     this.panel.addEventListener('click',event=>{const preset=event.target.closest('[data-draw-preset]'),action=event.target.closest('[data-draw-action]');if(preset){this.finish();Object.assign(this.settings,BRUSH_PRESETS.find(p=>p.id===preset.dataset.drawPreset),{preset:preset.dataset.drawPreset});this.onUI();}if(action)this.run(()=>this.action(action.dataset.drawAction));},opts);
@@ -87,7 +87,7 @@ export class DrawingController {
     this.state.tool=value==='pan'?'hand':'drawing-'+value;if(value==='transform'){try{const t=this.editor.drawingTarget();if(t.object)this.editor.select(t.object.unique_id);}catch{}}this.sync();this.onUI();this.onRender();}
   get pixelClipboard(){return this.editor._drawingPixelClipboard;}
   get exposureLabel(){try{const t=this.editor.drawingTarget();return `${t.figure?'Drawing':'Blank'} · frames ${t.key.tick+1}–${t.end}${this.editor.tick!==t.key.tick?' · editing hold':''}`;}catch{return 'No drawing exposure at this frame';}}
-  sync(){if(!this.active)return;try{const t=this.editor.drawingTarget();this.exposure={layerId:t.id,start:t.key.tick,end:t.end};this.lastLayer=t.id;}catch{this.exposure=null;}this.viewport.setAttribute('aria-label','Drawing canvas. B brush, E eraser, G fill, L select pixels, V transform, H pan.');this.overlay.style.cursor=this.tool==='pan'?'grab':this.tool==='transform'?'move':'crosshair';}
+  sync(){if(!this.active)return;try{const t=this.editor.drawingTarget();this.exposure={layerId:t.id,start:t.key.tick,end:t.end};this.lastLayer=t.id;}catch{this.exposure=null;}this.viewport.setAttribute('aria-label','Drawing canvas. B brush, E eraser, G fill, Shift+G gradient, U shapes, L select pixels, V transform, H pan.');this.overlay.style.cursor=this.tool==='pan'?'grab':this.tool==='transform'?'move':'crosshair';}
   propertyValue(key){key=key.slice(5);if(key==='viewAngle')return (this.state.view.rotation??0)*180/Math.PI;if(key==='selectionScale')return (this.selection?.scale??1)*100;if(key==='selectionAngle')return this.selection?.angle??0;return this.settings[key]*(PERCENT_SETTINGS.includes(key)?100:1);}
   propertySet(key,value){key=key.slice(5);if(key==='viewAngle')this.state.view.rotation=value*Math.PI/180;else if(key==='selectionScale'||key==='selectionAngle'){if(this.ensureFloating()){this.selection[key==='selectionScale'?'scale':'angle']=key==='selectionScale'?value/100:value;this.previewSelection();}}else{this.settings[key]=value/(PERCENT_SETTINGS.includes(key)?100:1);if(['size','opacity','flow','hardness','roundness','angle','scatter','spacingRatio','texture'].includes(key))this.settings.preset=null;}this.onRender();this.paintPreview(this.panel);}
   async prepareVisible(){const owner=this.owner;if(!owner||!this.active||this.gesture)return;let target;try{target=this.editor.drawingTarget();}catch{return;}if(!target.figure)return;const revision=this.editor.revision;try{await owner.surface(target.figure);if(owner===this.owner&&revision===this.editor.revision){this.onRender();}}catch(error){if(error.name!=='AbortError')this.onError(error);}}
@@ -131,7 +131,7 @@ export class DrawingController {
       if(!current()){owner.discard(target.figure);return;}
       // v1 cels migrate lazily on the first pixel edit; posing keeps them v1.
       const d=drawingMetadata(target.figure);
-      if(d?.version===1&&['brush','eraser','fill','lasso'].includes(this.tool)){
+      if(d?.version===1&&['brush','eraser','fill','lasso','shape','gradient'].includes(this.tool)){
         const figure=migrateDrawingFigure(target.figure,this.editor.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1),{bounds:surface.store.bounds});
         owner.retarget(d.celId,figure);
         target={...target,figure,object:{...structuredClone(target.object),figure_type_id:figure.figure_type_id},migratedFrom:d.celId};
@@ -150,13 +150,25 @@ export class DrawingController {
       if(this.selection){this.gesture={id:event.pointerId,target,surface,kind:'selection-move',start:point,dx:this.selection.dx,dy:this.selection.dy};}
       else if(shape==='wand'){surface.pinned=false;await this.wandSelect(target,surface,point,mode);return;}
       else this.gesture={id:event.pointerId,target,surface,kind:'lasso',shape,mode,start:point,points:[point]};
+    }else if(this.tool==='shape'||this.tool==='gradient'){
+      // Drag out a line, rectangle, ellipse or gradient; it applies on release.
+      this.settleFloating();const w=this.point(pending.event);this.gesture={id:event.pointerId,target,surface,kind:this.tool,start:w,end:w};
     }else{
+      this.beginStroke(target,surface,{id:event.pointerId,erase:this.tool==='eraser'||event.button===5||Boolean(event.buttons&32)});
+      // Shift continues from the previous stroke's end in a straight line.
+      const last=this.lastStroke;if(event.shiftKey&&last&&last.layerId===target.id&&last.celId===drawingMetadata(target.figure).celId)this.sampleStroke({...pending.event,world:last.world});
+      this.sampleStroke(pending.event);
+    }
+    for(const sample of pending.samples)this.move({...sample,pointerId:event.pointerId});if(pending.released)this.finish();this.onRender();
+  }
+  /** Open a stroke session on a loaded surface and make it the gesture. */
+  beginStroke(target,surface,{id,erase=false}){
       // Painting keeps the selection outline as a clip mask; a moved or
       // resized floating selection is committed first.
       this.settleFloating();const color=this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16));
-      const d=drawingMetadata(target.figure),size=this.settings.size*d.pixelsPerUnit,s={id:++this.strokeId,target,surface,seq:0,sent:new Set(),before:new Map(),pending:[],posted:new Map(),outstanding:0,ended:false,cancelled:false,erase:this.tool==='eraser'||event.button===5||Boolean(event.buttons&32),revision:this.editor.revision,owner:this.owner};
+      const d=drawingMetadata(target.figure),size=this.settings.size*d.pixelsPerUnit,s={id:++this.strokeId,target,surface,seq:0,sent:new Set(),before:new Map(),pending:[],posted:new Map(),outstanding:0,ended:false,cancelled:false,erase,revision:this.editor.revision,owner:this.owner};
       s.done=new Promise(resolve=>s.resolveDone=resolve);
-      this.sessions.set(s.id,s);this.gesture={id:event.pointerId,target,surface,kind:'stroke',session:s};
+      this.sessions.set(s.id,s);this.gesture={id,target,surface,kind:'stroke',session:s};
       // Painting owns the UI thread: publication and thumbnails wait it out.
       s.owner.busy=true;
       const b=this.settings,settings={size,pixelsPerUnit:d.pixelsPerUnit,color,opacity:b.opacity,flow:b.flow,hardness:b.hardness,pressureSize:b.pressureSize,pressureOpacity:b.pressureOpacity,pressureFlow:b.pressureFlow,sizeCurve:b.sizeCurve,opacityCurve:b.opacityCurve,stabilization:b.stabilization,spacingRatio:b.spacingRatio??.12,texture:b.texture??0,roundness:b.roundness??1,angle:b.angle??0,angleMode:b.angleMode??'fixed',scatter:b.scatter??0,blend:b.blend??'normal',alphaLock:Boolean(b.alphaLock),smudgeLength:b.smudgeLength??.8,colorRate:b.colorRate??0,erase:s.erase,seed:s.id,mask:this.marqueeOn(target)?this.marquee.mask:null};
@@ -169,11 +181,44 @@ export class DrawingController {
       if(b.mirrorX)mirrors.push(p=>({x:2*axisX-p.x,y:p.y}));if(b.mirrorY)mirrors.push(p=>({x:p.x,y:2*axisY-p.y}));if(b.mirrorX&&b.mirrorY)mirrors.push(p=>({x:2*axisX-p.x,y:2*axisY-p.y}));
       s.paths=mirrors.map(map=>({map,path:new StrokePath(s.brush,dab=>s.pending.push(dab))}));s.path=s.paths[0].path;
       this.owner.strokeWorker.post({kind:'begin',stroke:s.id,settings});
-      // Shift continues from the previous stroke's end in a straight line.
-      const last=this.lastStroke;if(event.shiftKey&&last&&last.layerId===target.id&&last.celId===drawingMetadata(target.figure).celId)this.sampleStroke({...pending.event,world:last.world});
-      this.sampleStroke(pending.event);
+      return s;
+  }
+  /** World-space outline of the dragged shape. Shift constrains lines to 45°
+   * and rectangles/ellipses to squares/circles. */
+  shapePoints(g){
+    let {start:a,end:b}=g;const kind=this.settings.shapeKind??'rect';
+    if(g.constrain){const dx=b.x-a.x,dy=b.y-a.y;if(kind==='line'){const angle=Math.round(Math.atan2(dy,dx)/(Math.PI/4))*Math.PI/4,r=Math.hypot(dx,dy);b={x:a.x+Math.cos(angle)*r,y:a.y+Math.sin(angle)*r};}else{const m=Math.max(Math.abs(dx),Math.abs(dy));b={x:a.x+Math.sign(dx||1)*m,y:a.y+Math.sign(dy||1)*m};}}
+    if(kind==='line')return [a,b];
+    const pts=kind==='ellipse'?ellipsePoints(a,b,128):rectPoints(a,b);return [...pts,pts[0]];
+  }
+  /** Apply a finished shape: fill its interior or stroke its outline with the brush. */
+  async commitShape(g){
+    const points=this.shapePoints(g);if(Math.hypot(g.end.x-g.start.x,g.end.y-g.start.y)<.5){g.surface.pinned=false;return;}
+    if(this.settings.shapeFill&&this.settings.shapeKind!=='line'){
+      const matrix=this.pixelMatrix(g.target),mask=lassoMask(points.map(p=>inversePoint(matrix,p)));
+      const clip=this.marqueeOn(g.target)?combineMasks(this.marquee.mask,mask,'intersect'):mask;g.surface.pinned=false;
+      if(!clip||!clip.mask.some(Boolean))return;
+      const owner=this.owner,revision=this.editor.revision,tiles=[...TileStore.tilesInRect(clip.x,clip.y,clip.width,clip.height)].map(([tx,ty])=>g.surface.store.get(tx,ty)).filter(Boolean).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
+      const result=await owner.worker.request('fill-mask',{tiles,mask:clip,color:[...this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16)),Math.round(this.settings.opacity*255)]},{transfer:tiles.map(t=>t.pixels)});
+      if(owner!==this.owner||revision!==this.editor.revision)throw new DOMException('The drawing changed before the shape was filled.','AbortError');
+      return this.editor.commitDrawingPixels(g.target,result.tiles,'Fill shape');
     }
-    for(const sample of pending.samples)this.move({...sample,pointerId:event.pointerId});if(pending.released)this.finish();this.onRender();
+    // Dense collinear samples keep edges straight through the curve smoothing.
+    this.beginStroke(g.target,g.surface,{id:g.id});let time=performance.now();
+    for(let i=0;i<points.length;i++){const p=points[i],q=points[i+1];this.sampleStroke({world:p,timeStamp:time++,pointerType:'mouse'});if(!q)break;const n=Math.floor(Math.hypot(q.x-p.x,q.y-p.y)/1.5);for(let k=1;k<n;k++)this.sampleStroke({world:{x:p.x+(q.x-p.x)*k/n,y:p.y+(q.y-p.y)*k/n},timeStamp:time++,pointerType:'mouse'});}
+    this.finish();
+  }
+  /** Apply a finished gradient drag inside the selection (or the reachable canvas). */
+  async commitGradient(g){
+    g.surface.pinned=false;if(Math.hypot(g.end.x-g.start.x,g.end.y-g.start.y)<.5)return;
+    const matrix=this.pixelMatrix(g.target),a=inversePoint(matrix,g.start),b=inversePoint(matrix,g.end),clip=this.marqueeOn(g.target)?this.marquee.mask:null;
+    const bounds=clip?{x:clip.x,y:clip.y,width:clip.width,height:clip.height}:this.fillBounds(g.target,g.surface.store);if(!bounds)return;
+    if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw new Error('Zoom in or select an area: the gradient exceeds 16 megapixels.');
+    const rgb=hex=>hex.slice(1).match(/../g).map(n=>parseInt(n,16)),alpha=Math.round(this.settings.opacity*255),from=[...rgb(this.settings.color),alpha],to=this.settings.gradientEnd==='color'?[...rgb(this.settings.color2??'#ffffff'),alpha]:[...rgb(this.settings.color),0];
+    const owner=this.owner,revision=this.editor.revision,tiles=[...TileStore.tilesInRect(bounds.x,bounds.y,bounds.width,bounds.height)].map(([tx,ty])=>g.surface.store.get(tx,ty)).filter(Boolean).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
+    const result=await owner.worker.request('gradient',{bounds,tiles,options:{a,b,type:this.settings.gradientType??'linear',from,to,mask:clip}},{transfer:tiles.map(t=>t.pixels)});
+    if(owner!==this.owner||revision!==this.editor.revision)throw new DOMException('The drawing changed before the gradient applied.','AbortError');
+    return this.editor.commitDrawingPixels(g.target,result.tiles,'Gradient');
   }
   /** Feed a pixel-space sample to the stroke path; the dabs it emits post to
    * the stroke worker in one rAF-paced batch. */
@@ -260,6 +305,7 @@ export class DrawingController {
     else if(g.kind==='lasso'){const p=this.pixel(event,g.target);if(g.shape==='rect')g.points=rectPoints(g.start,p);else if(g.shape==='ellipse')g.points=ellipsePoints(g.start,p);else if(g.points.length<8192&&Math.hypot(p.x-g.points.at(-1).x,p.y-g.points.at(-1).y)>1)g.points.push(p);}
     else if(g.kind==='resize'){this.settings.size=Math.max(.5,Math.min(2048,g.size*2**((event.clientX-g.start.clientX)/120)));this.settings.preset=null;this.cursor=g.start;this.paintPreview(this.panel);}
     else if(g.kind==='pick')this.pickColor(event);
+    else if(g.kind==='shape'||g.kind==='gradient'){g.end=this.point(event);g.constrain=event.shiftKey;}
     else if(g.kind==='selection-move'){const p=this.pixel(event,g.target);this.selection.dx=g.dx+p.x-g.start.x;this.selection.dy=g.dy+p.y-g.start.y;this.previewSelection();}
     this.onRender();
   }
@@ -271,6 +317,7 @@ export class DrawingController {
   finish(){const g=this.gesture;
     if(g?.kind==='stroke'&&g.session.ended)return; // the done reply completes the commit
     if(this.loading)this.cancel();if(!g)return;
+    if(g.kind==='shape'||g.kind==='gradient'){this.gesture=null;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.run(()=>g.kind==='shape'?this.commitShape(g):this.commitGradient(g));this.onRender();return;}
     if(['pan','pick','resize'].includes(g.kind)){this.gesture=null;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);if(g.kind!=='pan')this.onUI();return;}
     if(g.kind==='stroke'){
       const s=g.session;s.ended=true;cancelAnimationFrame(s.raf);s.raf=null;
@@ -283,7 +330,7 @@ export class DrawingController {
     if(g.kind==='pose')this.editor.commitDrag();
     else if(g.kind==='lasso')this.selectShape(g);
   }finally{g.surface.pinned=Boolean(this.selection?.surface===g.surface);if(this.selection?.surface===g.surface)this.previewSelection();else{this.owner.present(g.surface);this.owner.discard(g.target.figure);}if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.sync();this.onUI();this.onRender();}}
-  cancel(){this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();return;}this.gesture=null;if(g.kind==='pan'){Object.assign(this.state.view,g.view);this.onRender();return;}if(g.kind==='pick'){this.pickAbort?.abort();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);return;}if(g.kind==='resize'){this.settings.size=g.size;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onUI();this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.busy=false;this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
+  cancel(){this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();return;}this.gesture=null;if(g.kind==='pan'){Object.assign(this.state.view,g.view);this.onRender();return;}if(g.kind==='pick'){this.pickAbort?.abort();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);return;}if(g.kind==='shape'||g.kind==='gradient'){g.surface.pinned=false;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();return;}if(g.kind==='resize'){this.settings.size=g.size;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onUI();this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.busy=false;this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
   async barrier(options){this.finish();this.applySelection();const closing=this.gesture?.session;if(closing?.ended)await closing.done;if(this.loading)throw new Error('Wait for the drawing to finish loading.');if(this.fillAbort)throw new Error('Finish or cancel the fill first.');await drawingBarrier(this.editor.report,options);}
   /** Fill bounds = stage ∪ artwork ∪ viewport, in the cel's pixel space. */
   fillBounds(target,store){
@@ -543,6 +590,15 @@ export class DrawingController {
         const path=outline.path??=(()=>{const p=new Path2D(),e=outline.edges,m=outline.mask;if(!e){p.rect(m.x,m.y,m.width,m.height);return p;}for(let i=0;i<e.length;i+=4){p.moveTo(e[i],e[i+1]);p.lineTo(e[i+2],e[i+3]);}return p;})();
         const width=1/(unit*(s?.scale??1));ctx.lineWidth=width*1.5;ctx.setLineDash([]);ctx.strokeStyle='rgba(255,255,255,.9)';ctx.stroke(path);
         ctx.lineWidth=width;ctx.setLineDash([4*width,4*width]);ctx.strokeStyle='#2878ed';ctx.stroke(path);ctx.restore();
+      }
+      // Shape and gradient previews in world space.
+      if(g?.kind==='shape'||g?.kind==='gradient'){
+        const pts=g.kind==='shape'?this.shapePoints(g):[g.start,g.end],d=drawingMetadata(target.figure);ctx.save();ctx.beginPath();
+        pts.forEach((p,i)=>{const q=worldToScreen(p,view);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});
+        if(g.kind==='shape'&&!this.settings.shapeFill){ctx.lineCap=ctx.lineJoin='round';ctx.strokeStyle=this.settings.color;ctx.globalAlpha=.6;ctx.lineWidth=Math.max(1,this.settings.size*d.pixelsPerUnit*unit);ctx.stroke();}
+        else if(g.kind==='shape'){ctx.fillStyle=this.settings.color;ctx.globalAlpha=.4;ctx.fill();}
+        else{ctx.setLineDash([6,4]);ctx.strokeStyle='#2878ed';ctx.lineWidth=1.5;ctx.stroke();for(const p of pts){const q=worldToScreen(p,view);ctx.beginPath();ctx.arc(q.x,q.y,4,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle='#2878ed';ctx.stroke();}}
+        ctx.restore();
       }
       const points=g?.kind==='lasso'?g.points:null;
       if(points?.length){ctx.setLineDash([4,4]);ctx.lineWidth=1;ctx.strokeStyle='#2878ed';ctx.beginPath();points.forEach((p,i)=>{const q=screen(p);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});ctx.closePath();ctx.stroke();}

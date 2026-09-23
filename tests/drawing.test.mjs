@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {DrawingResources,defaultTileBudget} from '../src/drawing-resources.mjs';
-import {DrawingStroke,StrokePath,normalizeBrush,dabExtent,floodTiles,lassoMask,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
+import {DrawingStroke,StrokePath,normalizeBrush,dabExtent,gradientTiles,floodTiles,lassoMask,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
 import {drawingMetadata,validateDrawings,drawingMatrix,drawingPixelMatrix,inversePoint,transformPoint,migrateDrawingFigure,EMPTY_PNG} from '../src/drawing-model.mjs';
 import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from '../src/drawing-tiles.mjs';
 import {encodeTileBlob,decodeTileBlob,tileStoreFromList,encodeTile,assembleTileBlobBytes,TILE_BLOB_PREFIX,TileEncodeCache} from '../src/drawing-tile-codec.mjs';
@@ -691,6 +691,19 @@ test('the smudge brush drags colour, batches deterministically and undoes exactl
   // Colour rate mixes the brush colour into the carried paint.
   const mix=seed(),s=new DrawingStroke(mix,{...settings,colorRate:.6,color:[0,255,0]});for(const p of samples)s.sample(p);s.finish();
   assert.ok(mix.pixel(80,64)[1]>80,'colour rate adds the brush colour');
+});
+
+test('gradients interpolate premultiplied, respect the selection and stay dither-bounded',()=>{
+  const store=new TileStore(),bounds={x:0,y:0,width:128,height:64};
+  gradientTiles(store,{bounds,a:{x:0,y:32},b:{x:128,y:32},from:[255,0,0,255],to:[255,0,0,0]});
+  const left=store.pixel(2,10),mid=store.pixel(64,10),right=store.pixel(126,10);
+  assert.ok(left[3]>245&&Math.abs(mid[3]-128)<=3&&right[3]<8,'alpha ramps across the gradient');
+  assert.ok(mid[0]>=253&&mid[1]<=1,'a colour-to-transparent ramp keeps its hue (premultiplied)');
+  const radial=new TileStore();gradientTiles(radial,{bounds,a:{x:64,y:32},b:{x:64,y:0},type:'radial',from:[0,0,255,255],to:[0,255,0,255]});
+  assert.ok(radial.pixel(64,32)[2]>240&&radial.pixel(64,1)[1]>230,'radial runs centre to edge');
+  const mask={x:0,y:0,width:64,height:64,mask:new Uint8Array(64*64).fill(1)},clipped=new TileStore();
+  gradientTiles(clipped,{bounds,a:{x:0,y:0},b:{x:128,y:0},from:[9,9,9,255],to:[9,9,9,255],mask});
+  assert.equal(clipped.pixel(100,10)[3],0);assert.equal(clipped.pixel(10,10)[3],255);
 });
 
 // Phase 3: mip levels, tile-anchored scratch, budgets and the shared provider.

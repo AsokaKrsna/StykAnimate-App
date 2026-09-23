@@ -95,7 +95,7 @@ group('Figure builder', [
 group('Polygon', [['finish-polygon', 'Finish polygon', ['Enter']]], 'polygon');
 group('Drawing', [
   ['drawing-brush','Brush',['KeyB']],['drawing-eraser','Eraser',['KeyE']],['drawing-fill','Fill',['KeyG']],
-  ['drawing-lasso','Select pixels',['KeyL']],
+  ['drawing-lasso','Select pixels',['KeyL']],['drawing-shape','Shapes',['KeyU']],['drawing-gradient','Gradient',['Shift+KeyG']],
   ['drawing-smaller','Smaller brush',['BracketLeft'],{repeat:true}],['drawing-larger','Larger brush',['BracketRight'],{repeat:true}],
   ['drawing-apply','Apply pixel selection',['Enter']],
   // Krita's selection shortcuts; the drawing scope takes precedence while painting.

@@ -137,6 +137,25 @@ try{
   await stroke(line(cx+10,cy,cx+10,cy+60,10));
   check('smudging drags paint into empty pixels',await page.evaluate(({cx,cy})=>alphaAt(cx+10,cy+45),{cx,cy})>beforeSmudge+20);
   await page.locator('[data-draw-preset="ink"]').click();
+  // Shapes: a rectangle outline uses the brush; a filled ellipse fills its interior.
+  await page.keyboard.press('u');
+  check('U selects the shape tool',await page.evaluate(()=>styk.drawing.tool==='shape'));
+  await page.evaluate(()=>Object.assign(styk.drawing.settings,{shapeKind:'rect',shapeFill:false,size:6,color:'#108040',opacity:1}));
+  await stroke([{x:cx-380,y:cy-230},{x:cx-280,y:cy-170}]);
+  check('a rectangle outline is stroked with the brush and leaves its interior empty',await page.evaluate(({cx,cy})=>alphaAt(cx-380,cy-200)===255&&alphaAt(cx-280,cy-200)===255&&alphaAt(cx-330,cy-230)===255&&alphaAt(cx-330,cy-200)===0&&styk.editor.undoLabel==='Brush stroke',{cx,cy}));
+  await page.evaluate(()=>Object.assign(styk.drawing.settings,{shapeKind:'ellipse',shapeFill:true}));
+  await stroke([{x:cx+280,y:cy-230},{x:cx+380,y:cy-170}]);
+  await page.waitForFunction(()=>styk.editor.undoLabel==='Fill shape');
+  check('a filled ellipse fills its interior but not its bounding corners',await page.evaluate(({cx,cy})=>alphaAt(cx+330,cy-200)===255&&alphaAt(cx+282,cy-228)===0,{cx,cy}));
+  // Gradient: color to transparent across a selection.
+  await page.keyboard.press('Shift+G');
+  check('Shift+G selects the gradient tool',await page.evaluate(()=>styk.drawing.tool==='gradient'));
+  await page.evaluate(()=>Object.assign(styk.drawing.settings,{gradientType:'linear',gradientEnd:'transparent',color:'#2040e0',opacity:1}));
+  await stroke([{x:cx-380,y:cy+200},{x:cx-180,y:cy+200}]);
+  await page.waitForFunction(()=>styk.editor.undoLabel==='Gradient');
+  check('the gradient ramps from the colour to transparent',await page.evaluate(({cx,cy})=>alphaAt(cx-379,cy+180)>200&&alphaAt(cx-280,cy+180)>60&&alphaAt(cx-280,cy+180)<200&&alphaAt(cx-150,cy+180)===0,{cx,cy}));
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('b');
   await page.screenshot({path:path.join(output,'tools.png')});
   check('no uncaught browser errors',errors.length===0);
   await writeFile(path.join(output,'tools.json'),JSON.stringify({checks,errors,browser:await browser.version()},null,2));

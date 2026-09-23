@@ -24,6 +24,12 @@ layer; otherwise select an existing visible, unlocked drawing layer.
   the previous stroke's end; Alt-click (Brush, Fill) picks the visible colour;
   Ctrl-drag resizes the brush. **M** flips the view horizontally to check
   proportions; like view rotation it is temporary and never changes pixels.
+- **U:** shapes. Drag a line, rectangle or ellipse; outlines are real brush
+  strokes (selection clipping, symmetry and undo included) and Fill shape
+  fills the interior. Shift constrains to 45° lines, squares and circles.
+- **Shift+G:** gradient. Drag a linear or radial gradient from the colour to
+  transparent or to a second colour; colours interpolate premultiplied with
+  ordered dither, inside the selection or the reachable canvas.
 - **[ / ]:** change brush size. **G:** fill with tolerance, expansion and gap
   closing; optionally sample visible artwork while writing only to this
   drawing.

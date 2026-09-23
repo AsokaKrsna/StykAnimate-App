@@ -4,7 +4,8 @@ import {drawingMetadata,isDrawingLayer} from './drawing-model.mjs';
 export const DRAWING_TOOLS = [
   ['brush','Brush','brush','Paint · B'], ['eraser','Eraser','eraser','Erase · E'],
   ['fill','Fill','paint-bucket','Fill · G'],
-  ['lasso','Lasso','lasso','Select pixels · L'], ['transform','Transform','transform','Transform drawing · V'],
+  ['lasso','Lasso','lasso','Select pixels · L'], ['shape','Shape','square','Line, rectangle and ellipse · U'],
+  ['gradient','Gradient','sliders','Gradient · Shift+G'], ['transform','Transform','transform','Transform drawing · V'],
 ];
 // Every preset defines the whole tip and its blend so switching presets is
 // deterministic; alpha lock is a painting mode and persists.
@@ -48,6 +49,11 @@ export function drawingInspector(drawing,{numericField,group,grid,heading,proper
     html+=group('Assist',`<div class="property-toggle-grid drawing-toggle-grid">${toggle('mirrorX','Mirror horizontally','flip')}${toggle('mirrorY','Mirror vertically','flip')}</div><div class="drawing-hint">Shift-click draws a straight line from the last stroke. ${tool==='brush'?'Alt-click picks a colour. ':''}Ctrl-drag resizes the brush.</div>`);
   }
   if(tool==='fill')html+=group('Fill',color+`<div class="drawing-hint">Alt-click picks a colour. Fills stay inside the selection.</div>`+grid(field('Tolerance','tolerance',s.tolerance,'','min="0" max="255"')+field('Expand','expansion',s.expansion,'px','min="0" max="16"')+field('Close gaps','gap',s.gap,'px','min="0" max="8"'))+`<div class="property-toggle-grid drawing-toggle-grid">${toggle('sampleAll','Sample all layers','layers')}</div>`);
+  if(tool==='shape')html+=group('Shape',select('shapeKind','Shape',[['line','Line'],['rect','Rectangle'],['ellipse','Ellipse']])+color+`<div class="property-toggle-grid drawing-toggle-grid">${toggle('shapeFill','Fill shape','paint-bucket')}</div>`+grid(field('Size','size',s.size,'px','min="0.5" max="2048"')+field('Opacity','opacity',s.opacity*100,'%','min="0" max="100"'))+`<div class="drawing-hint">Outlines use the current brush. Shift constrains to 45°, squares and circles.</div>`);
+  if(tool==='gradient'){
+    const second=`<div class="color-row"><input type="color" data-draw-setting="color2" value="${s.color2??'#ffffff'}" aria-label="Second gradient color"><span class="hex-label">${(s.color2??'#ffffff').toUpperCase()}</span></div>`;
+    html+=group('Gradient',select('gradientType','Type',[['linear','Linear'],['radial','Radial']])+select('gradientEnd','Ends',[['transparent','Color to transparent'],['color','Color to second color']])+color+(s.gradientEnd==='color'?second:'')+grid(field('Opacity','opacity',s.opacity*100,'%','min="0" max="100"'))+`<div class="drawing-hint">Drag across the canvas. The gradient stays inside the selection.</div>`);
+  }
   if(tool==='lasso'){
     html+=group('Select',select('selectShape','Shape',SELECT_SHAPES)+(s.selectShape==='wand'?grid(field('Tolerance','tolerance',s.tolerance,'','min="0" max="255"')+field('Close gaps','gap',s.gap,'px','min="0" max="8"'))+`<div class="property-toggle-grid drawing-toggle-grid">${toggle('sampleAll','Sample all layers','layers')}</div>`:'')+`<div class="drawing-hint">Shift adds to the selection, Alt subtracts. Drag inside it to move pixels.</div>`);
     const selected=Boolean(drawing.selection||drawing.marquee),moved=Boolean(drawing.selection&&(drawing.selection.dx||drawing.selection.dy||drawing.selection.scale!==1||drawing.selection.angle));
