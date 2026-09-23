@@ -6,6 +6,7 @@ import {decodeDocument} from '../src/native-container.mjs';
 
 const dir=process.argv[2]??'artifacts/scythe-360';
 const manifest=JSON.parse(await readFile(dir+'/manifest.json'));
+assert.equal(manifest.chain.controls.length,4);
 const browser=await chromium.launch({channel:'chrome',headless:true});
 const errors=[],checks=[];
 try{
@@ -55,10 +56,12 @@ try{
    const after=await snapshot();
    assert.equal(after.undo,before.undo+1,`${kind} ${name}: one pose undo step`);
    assert.ok(after.vertices.some((v,i)=>v.binding===bone.id&&Math.hypot(v.x-before.vertices[i].x,v.y-before.vertices[i].y)>1),`${kind} ${name}: artwork moves`);
-   if(name==='Chain swing'){
-    for(let i=0;i<after.vertices.length;i++)if(after.vertices[i].binding===manifest.controls['Asset rotation'].id)
-     assert.deepEqual(after.vertices[i],before.vertices[i],'Chain mouse posing leaves the blade and shaft fixed');
-    await page.screenshot({path:`${dir}/Review/chain-pose-${kind}.png`});
+   if(name.startsWith('Chain ')){
+    const controls=Object.values(manifest.controls),index=controls.indexOf(bone),upstream=new Set(controls.slice(0,index).map(b=>b.id));
+    for(let i=0;i<after.vertices.length;i++)if(upstream.has(after.vertices[i].binding))
+     assert.deepEqual(after.vertices[i],before.vertices[i],'Chain mouse posing leaves earlier links, the blade and shaft fixed');
+    for(const next of controls.slice(index+1))assert.ok(after.vertices.some((v,i)=>v.binding===next.id&&Math.hypot(v.x-before.vertices[i].x,v.y-before.vertices[i].y)>1),'Later links must follow the dragged control');
+    await page.screenshot({path:`${dir}/Review/chain-${index}-pose-${kind}.png`});
    }
    await page.evaluate(()=>styk.editor.undo());assert.deepEqual((await snapshot()).doc,before.doc);
    await drag(await point(bone.id-1),-23,16,true);
@@ -67,6 +70,17 @@ try{
   }
   await page.evaluate(()=>styk.editor.select(1,-1));
   await page.screenshot({path:`${dir}/Review/controls-${kind}.png`});
+  // Pose the four controls consecutively, without undoing the earlier bends.
+  for(const [i,name]of manifest.chain.controls.entries()){
+   const bone=manifest.controls[name];
+   await page.getByRole('combobox',{name:'Articulation',exact:true}).selectOption(String(bone.id-1));
+   await drag(await point(bone.id-1),-12,-24+i*3);
+  }
+  await page.screenshot({path:`${dir}/Review/chain-compound-${kind}.png`});
+  const posed=await snapshot();
+  await page.evaluate(d=>styk.editor.load(d),posed.doc);
+  assert.deepEqual((await snapshot()).vertices,posed.vertices,`${kind}: combined chain pose survives reloading`);
+  checks.push(`${kind}: four consecutive mouse bends and pose reload`);
  }
  assert.deepEqual(errors,[]);
  await writeFile(dir+'/Review/mouse-controls.json',JSON.stringify({passed:true,checks,errors},null,2));
