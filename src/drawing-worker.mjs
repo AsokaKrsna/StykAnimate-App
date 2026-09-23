@@ -1,5 +1,5 @@
 import {TILE,TILE_BYTES,tileKey,TileStore,tileTransparent} from './drawing-tiles.mjs';
-import {floodTiles,tileChanges,tileAlignedRect} from './drawing-pixels.mjs';
+import {floodTiles,fillMaskTiles,tileChanges,tileAlignedRect} from './drawing-pixels.mjs';
 import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {decodeDrawingPNG} from './drawing-png.mjs';
 import {decodeTileBlob,tileStoreFromList,TILE_BLOB_PREFIX,TileEncodeCache} from './drawing-tile-codec.mjs';
@@ -49,6 +49,17 @@ self.onmessage=async({data})=>{
       if(!validRect(data.bounds))throw new Error('Invalid fill bounds.');
       const store=storeOf(data),before=beforeOf(store,data.bounds);
       floodTiles(store,{...data.options,bounds:data.bounds,source:data.source?new Uint8ClampedArray(data.source):undefined});
+      changesReply(id,store,before);return;
+    }
+    if(kind==='flood-mask'){
+      if(!validRect(data.bounds))throw new Error('Invalid selection bounds.');
+      const mask=floodTiles(storeOf(data),{...data.options,bounds:data.bounds,select:true,source:data.source?new Uint8ClampedArray(data.source):undefined});
+      self.postMessage({id,mask},mask?[mask.mask.buffer]:[]);return;
+    }
+    if(kind==='fill-mask'){
+      const m=data.mask;if(!m||!validRect(m)||!(m.mask instanceof Uint8Array)||m.mask.length!==m.width*m.height)throw new Error('Invalid selection mask.');
+      const store=storeOf(data),before=beforeOf(store,m);
+      fillMaskTiles(store,{mask:m,color:data.color});
       changesReply(id,store,before);return;
     }
     if(kind==='paste'){

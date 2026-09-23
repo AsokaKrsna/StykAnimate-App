@@ -5323,7 +5323,7 @@ function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
   editablePreparation.cancel();
   if(drawingController?.active){
     if(id==='play-pan')drawingController.finish();
-    if(id.startsWith('drawing-')){drawingController.finish();const tool=id.slice(8);if(['brush','eraser','fill','lasso'].includes(tool))drawingController.tool=tool;else if(tool==='apply')drawingController.applySelection();else{drawingController.settings.size=Math.max(.5,Math.min(2048,drawingController.settings.size*(tool==='smaller'?.8:1.25)));queueUI();}drawingController.sync();return;}
+    if(id.startsWith('drawing-')){drawingController.finish();const tool=id.slice(8),actions={'select-all':'select-all',deselect:'deselect','invert-selection':'invert-selection','fill-selection':'fill-selection',mirror:'mirror-x','flip-view':'flip-view'};if(['brush','eraser','fill','lasso'].includes(tool))drawingController.tool=tool;else if(tool==='apply')drawingController.applySelection();else if(actions[tool])return drawingController.run(()=>drawingController.action(actions[tool]));else{drawingController.settings.size=Math.max(.5,Math.min(2048,drawingController.settings.size*(tool==='smaller'?.8:1.25)));queueUI();}drawingController.sync();return;}
     if(['copy','cut','paste'].includes(id)&&!event.target.closest?.('.layer-timeline,.sheet-filmstrip')&&(drawingController.selection||id==='paste'&&drawingController.pixelClipboard))return drawingController.action(id+'-pixels');
     // Delete keeps its global binding: the drawing scope deliberately leaves it
     // unbound so the global command always dispatches; only a live pixel
@@ -6260,7 +6260,7 @@ async function init() {
   actions['chain-finish'] = () => construction.commit();
   actions['chain-cancel'] = () => construction.cancel();
   window.styk.builder = builderMode;
-  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getResources:()=>resources,getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard});
+  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getResources:()=>resources,getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard,sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal)});
   window.styk.drawing=drawingController;
   studioShell = initStudioShell({editor, state, setTool, renderAssets, renderInspector, showCommandMenu,
     actions, setTimelineMode: mode => editorSettings.commit({timelineMode:mode}), getTimeline: () => timelineUI,

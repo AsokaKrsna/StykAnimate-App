@@ -7,17 +7,34 @@ layer; otherwise select an existing visible, unlocked drawing layer.
 
 ## Workflow
 
-- **B / E:** Brush / Eraser. Ink, Pencil, Soft and Marker presets are starting
-  points; a live preview stroke in Properties reflects the current tip. Size,
+- **B / E:** Brush / Eraser. Ink, Pencil, Soft, Marker, Nib, Airbrush,
+  Charcoal and Liner presets are starting points; each defines the whole tip.
+  A live preview stroke in Properties reflects the current tip. Size,
   opacity, flow, hardness, pressure curves and smoothing remain editable with
-  the same numeric fields and scrubbing used elsewhere.
+  the same numeric fields and scrubbing used elsewhere. **Tip** sets
+  roundness, angle (fixed, following the stroke direction, or following pen
+  tilt), spacing, scatter and grain; **Dynamics** maps pressure to size,
+  opacity and flow. **Painting** chooses the blend mode (Normal, Behind,
+  Multiply, Screen, Overlay, Color) and **Lock alpha**, which recolours
+  existing paint without covering empty pixels.
+- **Assist:** mirror painting across the stage's vertical and/or horizontal
+  centre (Shift+M toggles horizontal). Shift-click draws a straight line from
+  the previous stroke's end; Alt-click (Brush, Fill) picks the visible colour;
+  Ctrl-drag resizes the brush. **M** flips the view horizontally to check
+  proportions; like view rotation it is temporary and never changes pixels.
 - **[ / ]:** change brush size. **G:** fill with tolerance, expansion and gap
   closing; optionally sample visible artwork while writing only to this
   drawing.
-- **L:** lasso pixels, drag to move, set scale/angle in Properties, Enter to
-  apply or Escape to cancel. Copy/cut/paste uses the shared clipboard and
-  Delete removes selected pixels without touching the clipboard. Timeline
-  focus retains frame clipboard and frame deletion routing.
+- **L:** select pixels by lasso, rectangle, ellipse or magic wand (tolerance,
+  gap closing and optional all-layer sampling). Shift adds to the selection,
+  Alt subtracts; a click without dragging deselects. Brush strokes and fills
+  stay inside the selection outline. Ctrl+A selects everything reachable,
+  Ctrl+Shift+I inverts, Ctrl+Shift+A deselects and Shift+Backspace fills the
+  selection with the current colour. Drag inside the selection to move its
+  pixels, set scale/angle in Properties, Enter to apply or Escape to cancel.
+  Copy/cut/paste uses the shared clipboard and Delete removes selected pixels
+  without touching the clipboard. Timeline focus retains frame clipboard and
+  frame deletion routing.
 - **V:** transform the whole cel using the existing pose controls. Pixel
   selection and cel pose are distinct. **H / middle mouse / held Space:** pan. Touch pans;
   a recent pen gesture suppresses touch painting/navigation from a palm.
@@ -102,6 +119,19 @@ have one worker, at most 48 queued requests and 256 small cached images;
 their pump pauses while a stroke or a scrub owns the thread. Renderer GPU
 drawing textures follow the current layout and are released with it.
 
+The selection is a pixel mask on one cel (the outline). It clips stroke
+coverage in the worker and confines fills; moving, scaling or rotating
+selected pixels floats them into a separate preview derived from the outline,
+committed as one undo step. An untransformed float shows the exact stored
+pixels, and the transformed preview composites on a CPU-backed canvas so
+repeated previews are byte-identical.
+
+The stroke path (stabilization, curve joining and dab spacing) runs on the
+main thread in `StrokePath`, so every dab's extent is known before dispatch:
+each batch seeds the stroke worker with exactly the tiles its dabs reach, and
+the worker refuses a dab outside its seeded tiles rather than painting over a
+blank guess. Symmetry feeds each mirrored sample into its own path so mirrored
+strokes keep even spacing while sharing one coverage buffer and undo step.
 `drawing-pixels.mjs` rasterizes real, distance-resampled samples. Stroke opacity
 caps the whole stroke, while flow accumulates dabs. Pressure release cannot
 remove previously deposited paint. Stabilization is a distance-windowed
@@ -175,6 +205,9 @@ Run `node --test tests/drawing.test.mjs`, `node tests/drawing.browser.mjs` and
 `STYK_URL`). See [verification report](../artifacts/drawing/VERIFICATION.md).
 The pan, expansion and shortcut refinements have a separate regression suite:
 `node tests/drawing-ux.browser.mjs`; see its [report](../artifacts/drawing-ux/VERIFICATION.md).
+`tests/drawing-tools.browser.mjs` covers selection shapes and modes, clipped
+painting and fills, the magic wand, symmetry, straight lines, colour picking,
+brush resizing, view flipping and alpha lock through real input,
 `tests/drawing-stroke.browser.mjs` covers the worker stroke pipeline,
 `tests/drawing-render.browser.mjs` covers visible-tile rendering and seams,
 `tests/drawing-save.browser.mjs` covers save/reload/recovery fidelity and
@@ -184,8 +217,9 @@ Browser tests exercise native codec reopening, pixel fidelity, nested scopes,
 fill/selection/resample history, clipboard, both renderer paths and encoders.
 
 Mouse/browser checks and deterministic pressure tests do not certify physical
-pen drivers, input-to-photon latency or every GPU. Tilt, vector strokes and
-resolution-independent drawing are outside this implementation. Fill regions
+pen drivers, input-to-photon latency or every GPU. Pen tilt steers tilt-mode
+tips only; vector strokes and resolution-independent drawing are outside this
+implementation. Fill regions
 are bounded to 16 megapixels; history rejects a noncompressible edit that
 exceeds its byte budget.
 

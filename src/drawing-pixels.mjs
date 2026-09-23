@@ -258,8 +258,10 @@ function dilateL1(src,width,height,k,box){
  * invisible RGB halos. Gap closing blocks pixels within `gap` of a boundary,
  * floods by scanline spans, then grows the region back by gap + expansion.
  * Work runs per tile: absent tiles classify in one step, and fully covered
- * tiles are written as compact uniform tiles. */
-export function floodTiles(store,{x,y,color=[0,0,0,255],tolerance=16,expansion=0,gap=0,bounds,source}={}) {
+ * tiles are written as compact uniform tiles. `clip` (a selection mask)
+ * confines both the flood and its growth; `select` returns the region as a
+ * mask instead of painting it (the magic wand). */
+export function floodTiles(store,{x,y,color=[0,0,0,255],tolerance=16,expansion=0,gap=0,bounds,source,clip=null,select=false}={}) {
   if(!bounds||![bounds.x,bounds.y,bounds.width,bounds.height].every(Number.isInteger)||bounds.width<1||bounds.height<1||bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw new Error('Invalid fill bounds.');
   const {width,height}=bounds,count=width*height;
   x=Math.floor(x)-bounds.x;y=Math.floor(y)-bounds.y;if(x<0||y<0||x>=width||y>=height)return;
@@ -289,7 +291,9 @@ export function floodTiles(store,{x,y,color=[0,0,0,255],tolerance=16,expansion=0
       for(let p=0;p<count;p++)if(blocked[p])open[p]=0;
     }else{const closed=new Uint8Array(count);for(let p=0;p<count;p++)closed[p]=1-open[p];const blocked=dilateL1(closed,width,height,gap,{x0:0,y0:0,x1:width-1,y1:height-1});for(let p=0;p<count;p++)if(blocked[p])open[p]=0;}
   }
-  const start=y*width+x;if(!open[start])return;
+  const clipAt=clip?(p=>{const cx=p%width+bounds.x-clip.x,cy=(p-p%width)/width+bounds.y-clip.y;return cx>=0&&cy>=0&&cx<clip.width&&cy<clip.height?clip.mask[cy*clip.width+cx]:0;}):null;
+  if(clipAt)for(let p=0;p<count;p++)if(open[p]&&!clipAt(p))open[p]=0;
+  const start=y*width+x;if(!open[start])return select?null:undefined;
   const mask=new Uint8Array(count),stack=[start],box={x0:x,y0:y,x1:x,y1:y};
   while(stack.length){
     const p=stack.pop();if(mask[p]||!open[p])continue;
@@ -306,6 +310,8 @@ export function floodTiles(store,{x,y,color=[0,0,0,255],tolerance=16,expansion=0
   }
   const k=gap+expansion,grown=dilateL1(mask,width,height,k,box),word=(color[3]<<24|color[2]<<16|color[1]<<8|color[0])>>>0;
   const gx0=Math.max(0,box.x0-k),gy0=Math.max(0,box.y0-k),gx1=Math.min(width-1,box.x1+k),gy1=Math.min(height-1,box.y1+k);
+  if(clipAt)for(let py=gy0;py<=gy1;py++)for(let px=gx0;px<=gx1;px++){const p=py*width+px;if(grown[p]&&!clipAt(p))grown[p]=0;}
+  if(select){const w=gx1-gx0+1,h=gy1-gy0+1,out=new Uint8Array(w*h);for(let py=0;py<h;py++)out.set(grown.subarray((py+gy0)*width+gx0,(py+gy0)*width+gx0+w),py*w);return cropMask({x:bounds.x+gx0,y:bounds.y+gy0,width:w,height:h,mask:out});}
   const uniform=new Uint8ClampedArray([color[0],color[1],color[2],color[3]]);
   for(const [tx,ty] of TileStore.tilesInRect(bounds.x+gx0,bounds.y+gy0,gx1-gx0+1,gy1-gy0+1)){
     const ox=tx*TILE-bounds.x,oy=ty*TILE-bounds.y,sx=Math.max(0,-ox),ex=Math.min(TILE,width-ox),sy=Math.max(0,-oy),ey=Math.min(TILE,height-oy);
@@ -327,4 +333,57 @@ export function lassoMask(points) {
   if(points.length<3||width<1||height<1)return{x:x0,y:y0,width:Math.max(0,width),height:Math.max(0,height),mask};
   for(let y=0;y<height;y++){const crosses=[],wy=y0+y+.5;for(let i=0,j=points.length-1;i<points.length;j=i++){const a=points[i],b=points[j];if((a.y>wy)!==(b.y>wy))crosses.push(a.x+(wy-a.y)*(b.x-a.x)/(b.y-a.y));}crosses.sort((a,b)=>a-b);for(let i=0;i+1<crosses.length;i+=2)for(let x=Math.max(0,Math.ceil(crosses[i]-.5-x0));x<Math.min(width,Math.ceil(crosses[i+1]-.5-x0));x++)mask[y*width+x]=1;}
   return{x:x0,y:y0,width,height,mask};
+}
+
+/** Selection masks are {x,y,width,height,mask:Uint8Array} in cel pixel space,
+ * one byte per pixel (0 or 1). */
+export const rectPoints=(a,b)=>{const x0=Math.min(a.x,b.x),y0=Math.min(a.y,b.y),x1=Math.max(a.x,b.x),y1=Math.max(a.y,b.y);return [{x:x0,y:y0},{x:x1,y:y0},{x:x1,y:y1},{x:x0,y:y1}];};
+export const ellipsePoints=(a,b,n=96)=>{const cx=(a.x+b.x)/2,cy=(a.y+b.y)/2,rx=Math.abs(b.x-a.x)/2,ry=Math.abs(b.y-a.y)/2;return Array.from({length:n},(_,i)=>({x:cx+Math.cos(i/n*Math.PI*2)*rx,y:cy+Math.sin(i/n*Math.PI*2)*ry}));};
+export const maskCount=m=>{let n=0;if(m)for(let i=0;i<m.mask.length;i++)n+=m.mask[i];return n;};
+/** Rectangle mask covering `rect` entirely. */
+export function rectMask(rect){return {x:rect.x,y:rect.y,width:rect.width,height:rect.height,mask:new Uint8Array(rect.width*rect.height).fill(1)};}
+/** Combine two masks: replace, add (union), subtract (a minus b) or intersect.
+ * The result is cropped to its occupied bounding box, or null when empty. */
+export function combineMasks(a,b,mode='replace'){
+  if(mode==='replace'||!a)return mode==='subtract'||mode==='intersect'?null:cropMask(b);
+  if(!b)return mode==='intersect'?null:cropMask(a);
+  const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),width=Math.max(a.x+a.width,b.x+b.width)-x,height=Math.max(a.y+a.height,b.y+b.height)-y;
+  const out=new Uint8Array(width*height),at=(m,px,py)=>{const mx=px-m.x,my=py-m.y;return mx>=0&&my>=0&&mx<m.width&&my<m.height?m.mask[my*m.width+mx]:0;};
+  for(let py=0;py<height;py++)for(let px=0;px<width;px++){const u=at(a,px+x,py+y),v=at(b,px+x,py+y);out[py*width+px]=mode==='add'?(u|v):mode==='subtract'?(u&&!v?1:0):(u&v);}
+  return cropMask({x,y,width,height,mask:out});
+}
+/** Invert a mask within `bounds` (the canvas region selections can reach). */
+export function invertMask(m,bounds){
+  const out=new Uint8Array(bounds.width*bounds.height).fill(1);
+  if(m)for(let py=0;py<m.height;py++)for(let px=0;px<m.width;px++){if(!m.mask[py*m.width+px])continue;const x=px+m.x-bounds.x,y=py+m.y-bounds.y;if(x>=0&&y>=0&&x<bounds.width&&y<bounds.height)out[y*bounds.width+x]=0;}
+  return cropMask({...bounds,mask:out});
+}
+export function cropMask(m){
+  if(!m)return null;let x0=m.width,y0=m.height,x1=-1,y1=-1;
+  for(let py=0;py<m.height;py++){const row=py*m.width;for(let px=0;px<m.width;px++)if(m.mask[row+px]){if(px<x0)x0=px;if(px>x1)x1=px;if(py<y0)y0=py;y1=py;}}
+  if(x1<0)return null;if(x0===0&&y0===0&&x1===m.width-1&&y1===m.height-1)return m;
+  const width=x1-x0+1,height=y1-y0+1,mask=new Uint8Array(width*height);
+  for(let py=0;py<height;py++)mask.set(m.mask.subarray((py+y0)*m.width+x0,(py+y0)*m.width+x0+width),py*width);
+  return {x:m.x+x0,y:m.y+y0,width,height,mask};
+}
+/** Boundary segments between selected and unselected pixels as flat
+ * [x0,y0,x1,y1,…] runs in pixel space, merged along rows and columns, or null
+ * when the outline exceeds `limit` segments (callers draw the bounds instead). */
+export function maskEdges(m,limit=250000){
+  if(!m)return null;const {width:w,height:h}=m,at=(px,py)=>px>=0&&py>=0&&px<w&&py<h?m.mask[py*w+px]:0,out=[];
+  for(let py=0;py<=h;py++){let start=-1;for(let px=0;px<=w;px++){const edge=px<w&&at(px,py)!==at(px,py-1);if(edge&&start<0)start=px;else if(!edge&&start>=0){out.push(m.x+start,m.y+py,m.x+px,m.y+py);start=-1;if(out.length>limit*4)return null;}}}
+  for(let px=0;px<=w;px++){let start=-1;for(let py=0;py<=h;py++){const edge=py<h&&at(px,py)!==at(px-1,py);if(edge&&start<0)start=py;else if(!edge&&start>=0){out.push(m.x+px,m.y+start,m.x+px,m.y+py);start=-1;if(out.length>limit*4)return null;}}}
+  return out;
+}
+/** Paint `color` [r,g,b,a] over every selected pixel (source-over). */
+export function fillMaskTiles(store,{mask,color}){
+  const [r,g,b,a]=color.map(n=>clamp(n,0,255)),alpha=a/255;if(!mask||!alpha)return;
+  for(const [tx,ty] of TileStore.tilesInRect(mask.x,mask.y,mask.width,mask.height)){
+    const ox=tx*TILE,oy=ty*TILE;let tile=null;
+    for(let py=Math.max(0,mask.y-oy);py<Math.min(TILE,mask.y+mask.height-oy);py++)for(let px=Math.max(0,mask.x-ox);px<Math.min(TILE,mask.x+mask.width-ox);px++){
+      if(!mask.mask[(py+oy-mask.y)*mask.width+px+ox-mask.x])continue;
+      tile??=store.writable(tx,ty);const j=(py*TILE+px)*4,p=tile.pixels,ba=p[j+3]/255,out=alpha+ba*(1-alpha),k=ba*(1-alpha);
+      p[j]=Math.round((r*alpha+p[j]*k)/out);p[j+1]=Math.round((g*alpha+p[j+1]*k)/out);p[j+2]=Math.round((b*alpha+p[j+2]*k)/out);p[j+3]=Math.round(out*255);
+    }
+  }
 }

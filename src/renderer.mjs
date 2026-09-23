@@ -1033,7 +1033,7 @@ class WebGPURenderer {
     this.stats.drawingGpuBytes=drawingGpuBytes;
     if(this.measureFrame){this.telemetryStages.prepare=performance.now()-measureAt;measureAt=performance.now();}
     const matrix = cameraMatrix(options), zoom = Number(view.scale ?? 1), x = Number(view.x ?? 0), y = Number(view.y ?? 0);
-    const uniform = new Float32Array([matrix[0], matrix[2], matrix[4], Math.hypot(matrix[0], matrix[1]), matrix[1], matrix[3], matrix[5], view.rotation??0, this.width, this.height, this.dpr, options.clipToCanvas === false ? 0 : 1, x, y, x + report.canvas_width * zoom, y + report.canvas_height * zoom]);
+    const uniform = new Float32Array([matrix[0], matrix[2], matrix[4], Math.hypot(matrix[0], matrix[1]), matrix[1], matrix[3], matrix[5], (view.flip ? -1 : 1) * (view.rotation??0), this.width, this.height, this.dpr, options.clipToCanvas === false ? 0 : 1, x, y, x + report.canvas_width * zoom, y + report.canvas_height * zoom]);
     this.device.queue.writeBuffer(this.uniform, 0, uniform);
     const parallax=parallaxResolver(report,frame,options.cameraEnabled!==false);
     for (const entry of this.layout) {

@@ -7,6 +7,7 @@
 .drawing-preview{display:block;width:100%;height:40px;margin:8px 0 12px;border:1px solid var(--border);border-radius:6px;background:repeating-conic-gradient(#eee 0 25%,#fff 0 50%) 0 0/12px 12px}
 .drawing-toggle-grid{margin:8px 0}
 .drawing-resolution{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px}
+.drawing-resolution+.drawing-resolution,.inspector-grid+.drawing-resolution{margin-top:8px}
 .drawing-pose>.property-context-heading{display:none}
 .sheet-layer[data-drawing=true] .sheet-layer-name>.icon{color:var(--theme-accent,#0d99ff)}
 .sheet-layer[data-drawing=true] .sheet-layer-name>span::after{content:'DRAW';font-size:8px;font-weight:600;letter-spacing:.4px;color:var(--muted);margin-left:8px}
@@ -17,5 +18,5 @@
 .workspace[data-mode=draw] #inspector .inspector-title{margin-bottom:8px}
 .workspace[data-mode=draw] #inspector .property-context-caption{margin-bottom:0}
 .workspace[data-mode=draw] #inspector .color-row{margin-bottom:12px}
-.drawing-resolution-info,.drawing-empty{font-size:11px;color:var(--muted);line-height:1.5;margin-top:10px}
+.drawing-resolution-info,.drawing-empty,.drawing-hint{font-size:11px;color:var(--muted);line-height:1.5;margin-top:10px}
 .workspace[data-mode=draw] .properties-library-save{display:none}

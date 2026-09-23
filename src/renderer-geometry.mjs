@@ -12,13 +12,16 @@ export const SHAPE = Object.freeze({ LINE: 0, CIRCLE: 1, SQUARE_LINE: 2, TRIANGL
 export function cameraMatrix({ report, frame, view = {}, cameraEnabled = true }) {
   const zoom = Number(view.scale ?? 1), x = Number(view.x ?? 0), y = Number(view.y ?? 0);
   const rotate=matrix=>{if(!view.rotation)return matrix;const [a,b,c,d,e,f]=matrix,r=Math.cos(view.rotation),s=Math.sin(view.rotation),cx=x+(report?.canvas_width??640)*zoom/2,cy=y+(report?.canvas_height??480)*zoom/2;return [r*a-s*b,s*a+r*b,r*c-s*d,s*c+r*d,cx+r*(e-cx)-s*(f-cy),cy+s*(e-cx)+r*(f-cy)];};
+  // A flipped view mirrors the screen horizontally about the stage centre,
+  // after rotation, so painting can check proportions like Krita's mirror view.
+  const place = matrix => {const m = rotate(matrix); if (!view.flip) return m; const cx = x + (report?.canvas_width ?? 640) * zoom / 2; return [-m[0], m[1], -m[2], m[3], 2 * cx - m[4], m[5]];};
   const camera = effectiveCamera(report, frame, cameraEnabled);
-  if (cameraIsIdentity(camera)) return rotate([zoom, 0, 0, zoom, x, y]);
+  if (cameraIsIdentity(camera)) return place([zoom, 0, 0, zoom, x, y]);
   const scale = inverseCameraScale(camera) * zoom;
   const angle = -Number(camera.angle_rad ?? 0), a = Math.cos(angle) * scale, b = Math.sin(angle) * scale;
   const cx = Number(report?.canvas_width ?? 640) / 2, cy = Number(report?.canvas_height ?? 480) / 2;
   const px = cx + Number(camera.x ?? 0), py = cy + Number(camera.y ?? 0);
-  return rotate([a, b, -b, a, x + cx * zoom - a * px + b * py, y + cy * zoom - b * px - a * py]);
+  return place([a, b, -b, a, x + cx * zoom - a * px + b * py, y + cy * zoom - b * px - a * py]);
 }
 export function worldToScreen(point, options) {
   const [a, b, c, d, e, f] = cameraMatrix(options);
