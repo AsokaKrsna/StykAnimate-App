@@ -201,8 +201,8 @@
 .vfx-actions{display:flex;gap:6px;padding:0 12px 10px;border-bottom:1px solid var(--theme-border,#e2e5ea);flex-shrink:0}
 #vfx-panel .vfx-actions>button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:30px;border-radius:7px;font-size:11px;font-weight:500}
 #vfx-panel .vfx-actions .icon{width:14px;height:14px}
-#vfx-panel .vfx-add-button{flex:1;background:var(--theme-action,#0a73cc);border-color:var(--theme-action,#0a73cc);color:#fff;font-weight:600}
-#vfx-panel .vfx-add-button:hover:not(:disabled){background:var(--theme-action-hover,#0864b4)}
+#vfx-panel .vfx-add-button{flex:1;background:var(--theme-action,#0d99ff);border-color:var(--theme-action,#0d99ff);color:#fff;font-weight:600}
+#vfx-panel .vfx-add-button:hover:not(:disabled){background:var(--theme-action-hover,#0086e6)}
 #vfx-panel .vfx-add-button .icon{color:#fff}
 #vfx-panel .vfx-presets-button{flex:1}
 #vfx-panel .vfx-paste-button{flex:0 0 30px;padding:0}
@@ -212,9 +212,77 @@
 .vfx-empty-state{padding:20px 4px}
 #vfx-panel .vfx-empty-state .ds-empty-actions{max-width:280px}
 #vfx-panel .vfx-empty-state .ds-chip{min-height:28px;padding:0 10px;border-radius:999px;font-size:11px}
-#vfx-panel .vfx-empty-state .ds-chip .icon{width:14px;height:14px;color:var(--theme-accent,#0b72cc)}
-#vfx-panel .vfx-show-all{margin-top:6px;border:0;background:transparent;color:var(--theme-accent,#0b72cc);font-size:11px;min-height:24px}
-#vfx-panel .vfx-show-all:hover{background:var(--theme-selected,#e7f1fc)}
+#vfx-panel .vfx-empty-state .ds-chip .icon{width:14px;height:14px;color:var(--theme-accent,#0d99ff)}
+#vfx-panel .vfx-show-all{margin-top:6px;border:0;background:transparent;color:var(--theme-accent,#0d99ff);font-size:11px;min-height:24px}
+#vfx-panel .vfx-show-all:hover{background:var(--theme-selected,#e5f4ff)}
 .vfx-catalog-tabs{margin:12px 12px 0}
 .vfx-catalog .vfx-catalog-tabs>button{font:11px inherit}
 .vfx-catalog-search{margin-top:0}
+
+/* ---- Effect editing, v2: calm cards, always-visible sliders, one row per value ---- */
+#vfx-panel .vfx-stack{padding:8px 12px 12px}
+.vfx-clip-filter{margin:0 0 8px}
+#vfx-panel .vfx-clip-filter select{flex:0 0 auto;min-height:24px;padding:0 4px;background:transparent;color:var(--theme-muted,#66707e);font-size:11px;font-weight:600}
+#vfx-panel .vfx-clip-filter select:hover{color:var(--theme-text,#1f2328)}
+/* Clip cards */
+.vfx-clip{margin:0 0 6px;border:1px solid var(--theme-border,#e2e5ea);border-radius:10px;background:var(--theme-panel,#fff)}
+.vfx-clip.is-selected{background:var(--theme-panel,#fff);border-color:var(--theme-border-strong,#c8cdd5);box-shadow:var(--ds-shadow-1)}
+.vfx-clip-header{min-height:36px;padding:3px 4px 3px 6px;border-radius:9px}
+.vfx-clip.is-selected>.vfx-clip-header{background:transparent;border-bottom:1px solid var(--theme-border,#e2e5ea);border-radius:9px 9px 0 0}
+.vfx-clip:not(.is-selected)>.vfx-clip-header:hover{background:var(--theme-subtle,#f8f9fb)}
+#vfx-panel .vfx-clip-header>button:first-child{font-size:12px;font-weight:600;gap:8px}
+#vfx-panel .vfx-clip-header>button:first-child>.icon:nth-child(2){width:16px;height:16px;color:var(--theme-accent,#0d99ff)}
+.vfx-clip-range{margin-right:2px;padding:2px 6px;border-radius:999px;background:var(--theme-field,#f1f3f6);color:var(--theme-secondary,#4a5361);font-size:10px}
+.vfx-clip-body{padding:6px 10px 8px}
+/* Labelled rows */
+.vfx-clip-row{display:flex;align-items:center;gap:8px;min-height:32px}
+.vfx-clip-row>span{flex:0 0 72px;color:var(--theme-secondary,#4a5361);font-size:11px}
+#vfx-panel .vfx-clip-row>select{flex:1;min-width:0;min-height:26px;height:26px;padding:0 6px;border:0;border-radius:6px;background:var(--theme-field,#f1f3f6);font-size:11px}
+.vfx-clip-timing{margin:2px 0 6px 80px}
+.vfx-clip-envelope{margin:0 0 4px}
+/* Parameters: label · slider · value · key */
+#vfx-panel .vfx-key-field{grid-template-columns:minmax(0,1fr) 20px;gap:2px;min-height:32px;border-radius:6px}
+.vfx-key-field>.vfx-parameter,.vfx-key-field>.vfx-field{padding-left:0}
+#vfx-panel .vfx-parameter{grid-template-columns:72px minmax(40px,1fr) 56px;gap:8px;padding:3px 0}
+#vfx-panel .vfx-parameter>.vfx-field>label{color:var(--theme-secondary,#4a5361);font-size:11px}
+#vfx-panel .vfx-parameter .vfx-value{width:56px;height:26px;border-radius:6px}
+#vfx-panel .vfx-key-field .vfx-slider{opacity:1;pointer-events:auto;height:3px}
+#vfx-panel .vfx-slider::-webkit-slider-thumb{width:12px;height:12px;border-width:2px;border-color:var(--theme-accent,#0d99ff);background:var(--theme-panel,#fff);box-shadow:0 1px 2px #0002}
+#vfx-panel .vfx-key-field>.vfx-field{min-height:32px;padding:3px 0}
+#vfx-panel .vfx-key-field>.vfx-field>label{flex:0 0 72px;color:var(--theme-secondary,#4a5361)}
+#vfx-panel .vfx-key-field .vfx-paint,#vfx-panel .vfx-key-field .vfx-field>select{flex:1;width:auto;max-width:none;height:26px;border-radius:6px}
+#vfx-panel .vfx-key-field>.vfx-key{width:20px;height:24px;min-height:24px}
+.vfx-key-field.is-channel-selected{background:var(--theme-selected,#e5f4ff)}
+/* Grouped effects inside a clip */
+.vfx-clip-effect{border-top:1px solid var(--theme-border,#e2e5ea);padding:2px 0}
+.vfx-clip-effect>summary{min-height:34px;font-size:12px;font-weight:500;color:var(--theme-text,#1f2328)}
+.vfx-clip-effect>summary>.icon:nth-child(2){color:var(--theme-accent,#0d99ff)}
+.vfx-advanced{margin-top:2px;padding-top:4px}
+.vfx-advanced>summary{font-size:11px;color:var(--theme-muted,#66707e)}
+#vfx-panel .vfx-group-add{margin-top:6px;justify-content:stretch}
+#vfx-panel .vfx-group-add>button{flex:1;justify-content:center;min-height:30px;border:1px dashed var(--theme-border-strong,#c8cdd5);border-radius:7px;color:var(--theme-secondary,#4a5361);font-size:11px}
+#vfx-panel .vfx-group-add>button:hover:not(:disabled){border-style:solid;border-color:var(--theme-accent,#0d99ff);color:var(--theme-accent,#0d99ff);background:var(--theme-selected,#e5f4ff)}
+/* Catalogue: compact two-column list */
+.vfx-catalog{max-height:min(420px,calc(100vh - 16px));font:12px var(--ds-font,"Segoe UI",sans-serif)}
+.vfx-catalog-tabs{margin:10px 10px 0}
+.vfx-catalog-search{padding:8px 12px;border-bottom:1px solid var(--theme-border,#e2e5ea)}
+.vfx-catalog-results{padding:0 8px 8px}
+.vfx-catalog-results h3{margin:10px 4px 4px;font-size:10px}
+.vfx-catalog-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:2px}
+.vfx-catalog-card{min-height:34px;gap:8px;padding:4px 6px;border:0;border-radius:7px;font-size:12px;background:transparent}
+.vfx-catalog-card>span:nth-child(2){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vfx-catalog-card>small{color:var(--theme-muted,#66707e);font-size:10px}
+.vfx-catalog-card:hover,.vfx-catalog-card:focus-visible{background:var(--theme-hover,#eaedf1)}
+.vfx-catalog-art{flex:0 0 24px;height:24px;border-radius:6px}
+.vfx-catalog-art>.icon{width:15px;height:15px}
+/* Empty state: title and suggestions only */
+.vfx-empty-state{gap:12px;padding:28px 4px}
+/* Clip-level numbers (strength, start, duration) follow the same label · value rhythm. */
+.vfx-clip-envelope>label,.vfx-clip-timing>label{height:32px;padding:0;border:0;background:transparent;color:var(--theme-secondary,#4a5361);font-size:11px;gap:8px}
+.vfx-clip-envelope>label>span{flex:0 0 72px}
+.vfx-clip-timing{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 4px}
+.vfx-clip-timing>label>span{flex:none}
+#vfx-panel :is(.vfx-clip-envelope,.vfx-clip-timing) input{flex:1;height:26px;padding:0 8px;border-radius:6px;background:var(--theme-field,#f1f3f6);text-align:right}
+#vfx-panel .vfx-clip-envelope input{flex:0 0 56px;margin-left:auto}
+#vfx-panel :is(.vfx-clip-envelope,.vfx-clip-timing) input:focus{outline:1px solid var(--theme-accent,#0d99ff)}
+.vfx-clip-row+.vfx-clip-effect,.vfx-clip-envelope+.vfx-clip-effect{margin-top:4px}

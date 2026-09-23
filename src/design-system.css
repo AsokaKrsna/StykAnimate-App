@@ -18,12 +18,12 @@
   --theme-text: #1f2328;
   --theme-secondary: #4a5361;
   --theme-muted: #66707e;
-  /* Colour · interaction. Action is the primary-button fill (4.8:1 with white). */
-  --theme-accent: #0b72cc;
-  --theme-action: #0a73cc;
-  --theme-action-hover: #0864b4;
-  --theme-selected: #e7f1fc;
-  --theme-selected-hover: #d6e8fa;
+  /* Colour · interaction. The StykAnimate brand blue. */
+  --theme-accent: #0d99ff;
+  --theme-action: #0d99ff;
+  --theme-action-hover: #0086e6;
+  --theme-selected: #e5f4ff;
+  --theme-selected-hover: #d2ebff;
   /* Colour · status */
   --theme-danger: #c2352c;
   --theme-danger-bg: #fdecea;

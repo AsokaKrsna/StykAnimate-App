@@ -135,7 +135,7 @@ try {
   check('Disabling Show on top restores behind-scene composition',await page.evaluate(()=>styk.onionCache.last.frames.every(s=>!s.showOnTop)));
   await onion.getByLabel('Show on top',{exact:true}).check();await settle();
   await onion.locator('summary').click();await settle();
-  await onion.locator('[data-onion=onionScope]').selectOption('selected');await settle();
+  await onion.locator('[data-onion-scope=selected]').click();await settle();
   check('Onion scope applies immediately',await page.evaluate(()=>styk.state.settings.onionScope==='selected'));
   await page.screenshot({path:'artifacts/onion-skin-redesign.png'});
   await page.keyboard.press('Escape');await settle();

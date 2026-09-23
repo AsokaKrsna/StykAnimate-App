@@ -15,7 +15,7 @@ export const filterVfxClips=(clips,{view='playhead',tick=0,selected=null,query='
  (view==='all'||(view==='selected'?c.id===selected:vfxClipActiveAt(c,tick)))&&(!query||view!=='all'||clipName(c).toLowerCase().includes(query.toLowerCase())));
 
 function effectFields(host,clip,effect,locked,picked){
- const fields=Object.entries(VFX_REGISTRY[effect.type].params).filter(([,d])=>!d.when||Object.entries(d.when).every(([key,values])=>values.includes(effect.params[key]))).map(([param,d])=>[param,param==='effectStrength'&&clip.effects.length>1?{...d,advanced:true}:d]);
+ const fields=Object.entries(VFX_REGISTRY[effect.type].params).filter(([,d])=>!d.when||Object.entries(d.when).every(([key,values])=>values.includes(effect.params[key]))).map(([param,d])=>[param,param==='effectStrength'&&clip.effects.length>1?{...d,advanced:true}:d]).sort(([a],[b])=>(a==='effectStrength')-(b==='effectStrength'));
  const render=entries=>entries.map(([param,d])=>{
   const field=host.field(clip.target,effect,param,d,`clip-${clip.id}`,locked),key=`clip-${clip.id}-${effect.id}-${param}`,b=host.bindings.get(key),keys=clip.keys[b.property]??[];
   const on=currentKey(clip,keys,host.editor.tick)?.tick===Math.floor(clipTime(clip,host.editor.tick));
@@ -37,7 +37,7 @@ export function clipKeyControls(host){const clip=host.renderedVfxClip;if(!clip)r
 function clipBody(host,c,locked){
  const e=host.editor;
  const number=(key,label,value,min=0,max=10000000)=>clipNumber(host,c,key,label,value,min,max,locked);
- let body=`<div class="vfx-clip-timing"><select data-clip-field="mode" aria-label="Effect duration" ${locked?'disabled':''}><option value="always" ${c.duration===null?'selected':''}>Always</option><option value="timed" ${c.duration!==null?'selected':''}>Timed</option></select>${c.duration===null?'':number('start','Start',c.start+1,1,10000001-c.duration)+number('duration','Duration',c.duration,1,10000000-c.start)}</div>`;
+ let body=`<div class="vfx-clip-row"><span>Plays</span><select data-clip-field="mode" aria-label="Effect duration" ${locked?'disabled':''}><option value="always" ${c.duration===null?'selected':''}>Whole animation</option><option value="timed" ${c.duration!==null?'selected':''}>Frame range</option></select></div>${c.duration===null?'':`<div class="vfx-clip-timing">${number('start','Start',c.start+1,1,10000001-c.duration)+number('duration','Duration',c.duration,1,10000000-c.start)}</div>`}`;
  body+=`<div class="vfx-clip-envelope">${c.effects.length>1||c.strength!==1?number('strength','Strength',c.strength*100,0,100):''}</div>`;
  const effects=e.sampleVfxClip(c.id),picked=vfxSelectedChannels(e,c),expanded=new Set([...host.root.querySelectorAll('.vfx-clip-effect[open]')].map(node=>node.dataset.groupEffect));host.renderingClip=c.id;
  try{
@@ -48,21 +48,21 @@ function clipBody(host,c,locked){
   }).join('');
  }finally{host.renderingClip=null;}
 
- body+=`<div class="vfx-clip-footer vfx-group-add">${action('group-add','Add to group',icon('plus')+'<span>Add to group</span>',locked)}</div>`;
+ body+=`<div class="vfx-clip-footer vfx-group-add">${action('group-add','Add to group',icon('plus')+`<span>${c.effects.length>1?'Add to group':'Combine with another effect'}</span>`,locked)}</div>`;
  return body;
 }
 export function clipInspectorHTML(host,targets,{legacyCount=0,legacyVisible=false}={}){
  host.renderedVfxClip=null;
- if(!targets.length)return '<div class="ds-empty vfx-empty-state"><strong>Nothing selected</strong><p>Select a figure or joint on the canvas, or choose Scene under Apply to, to add effects.</p></div>';
+ if(!targets.length)return '<div class="ds-empty vfx-empty-state"><strong>Select a figure to add effects</strong></div>';
  const e=host.editor,clips=targets.flatMap(t=>e.getVfxClips(t)),view=host.clipView??'playhead',query=(host.clipQuery??'').toLowerCase();
  const visible=filterVfxClips(clips,{view,tick:e.tick,selected:host.selectedClip,query});
  host.renderedVfxClip=visible.find(c=>c.id===host.selectedClip)??null;
  const rows=visible.map(c=>{
   const locked=e.getLayer(c.target.kind==='scene'?'scene':e.layerForUid(c.target.uid))?.locked,selected=c.id===host.selectedClip;
-  return `<section class="vfx-clip${selected?' is-selected':''}${c.enabled?'':' is-disabled'}" data-section="clip-${c.id}" data-clip-id="${c.id}"><div class="vfx-clip-header">${action('select',clipName(c),`${icon(selected?'chevron-down':'chevron-right')}${vfxIcon(c.effects.length>1?'effects':c.effects[0]?.type)}<span>${esc(clipName(c))}</span>`)}<span class="vfx-clip-range">${c.duration===null?'∞':`${c.start+1}–${c.start+c.duration}`}</span>${action('enabled',c.enabled?'Disable clip':'Enable clip',icon(c.enabled?'eye':'eye-off'),locked)}<details class="vfx-menu"><summary aria-label="Effect clip actions">${icon('more')}</summary><div>${action('rename','Rename',undefined,locked)}${action('up','Move up',undefined,locked)}${action('down','Move down',undefined,locked)}${action('copy','Copy animation')}${action('duplicate','Duplicate',undefined,locked)}${action('delete','Delete',undefined,locked)}</div></details></div>${selected?`<div class="vfx-clip-body">${clipBody(host,c,locked)}</div>`:''}</section>`;
+  return `<section class="vfx-clip${selected?' is-selected':''}${c.enabled?'':' is-disabled'}" data-section="clip-${c.id}" data-clip-id="${c.id}"><div class="vfx-clip-header">${action('select',clipName(c),`${icon(selected?'chevron-down':'chevron-right')}${vfxIcon(c.effects.length>1?'effects':c.effects[0]?.type)}<span>${esc(clipName(c))}</span>`)}${c.duration===null?'':`<span class="vfx-clip-range" title="Plays on frames ${c.start+1}–${c.start+c.duration}">${c.start+1}–${c.start+c.duration}</span>`}${action('enabled',c.enabled?'Disable clip':'Enable clip',icon(c.enabled?'eye':'eye-off'),locked)}<details class="vfx-menu"><summary aria-label="Effect clip actions">${icon('more')}</summary><div>${action('rename','Rename',undefined,locked)}${action('up','Move up',undefined,locked)}${action('down','Move down',undefined,locked)}${action('copy','Copy animation')}${action('duplicate','Duplicate',undefined,locked)}${action('delete','Delete',undefined,locked)}</div></details></div>${selected?`<div class="vfx-clip-body">${clipBody(host,c,locked)}</div>`:''}</section>`;
  }).join('');
  const locked=targets.some(t=>e.getLayer(t.kind==='scene'?'scene':e.layerForUid(t.uid))?.locked);
- return `<div class="vfx-clip-filter"><label class="vfx-filter-label">Show</label><select data-clip-view aria-label="Show effects"><option value="playhead" ${view==='playhead'?'selected':''}>Effects at this frame</option><option value="selected" ${view==='selected'?'selected':''}>Selected effect</option><option value="all" ${view==='all'?'selected':''}>All (${clips.length+legacyCount})</option></select>${e._vfxClipClipboard?action('paste','Paste animation',icon('duplicate')):''}</div>${view==='all'?`<input class="vfx-clip-search" type="search" data-clip-search placeholder="Search effects" aria-label="Search effect clips" value="${esc(host.clipQuery??'')}">`:''}${rows||(legacyVisible?'':host.emptyHTML(clips.length+legacyCount,view,locked))}`;
+ return `<div class="vfx-clip-filter"><select data-clip-view aria-label="Show effects"><option value="playhead" ${view==='playhead'?'selected':''}>At this frame</option><option value="selected" ${view==='selected'?'selected':''}>Selected</option><option value="all" ${view==='all'?'selected':''}>All (${clips.length+legacyCount})</option></select>${e._vfxClipClipboard?action('paste','Paste animation',icon('duplicate')):''}</div>${view==='all'?`<input class="vfx-clip-search" type="search" data-clip-search placeholder="Search effects" aria-label="Search effect clips" value="${esc(host.clipQuery??'')}">`:''}${rows||(legacyVisible?'':host.emptyHTML(clips.length+legacyCount,view,locked))}`;
 }
 export function selectClip(host,id){
  host.commit();host.selectedClip=id;host.selected=null;host.selectedClipEffect=host.editor.getVfxClips().find(c=>c.id===id)?.effects[0]?.id??null;host.editor._selectedVfxClip=id;host.editor._selectedVfxKey=null;

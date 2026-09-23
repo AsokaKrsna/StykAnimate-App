@@ -48,19 +48,19 @@
 .library-grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px}
 .library-card{border-radius:10px;border-color:var(--theme-border,#e2e5ea)}
 .library-card:hover{border-color:var(--theme-border-strong,#c8cdd5);box-shadow:var(--ds-shadow-2)}
-.library-card.selected{border-color:var(--theme-accent,#0b72cc);box-shadow:0 0 0 1px var(--theme-accent,#0b72cc)}
+.library-card.selected{border-color:var(--theme-accent,#0d99ff);box-shadow:0 0 0 1px var(--theme-accent,#0d99ff)}
 .library-card-info{padding:8px 9px}
 .library-empty.ds-empty{padding:28px 8px}
 .library-empty .ds-empty-actions .button{box-shadow:none}
 .library-item-actions{padding:8px 12px;gap:6px}
-.library-item-actions button:first-child{flex:1.4;background:var(--theme-action,#0a73cc);border-color:var(--theme-action,#0a73cc);color:#fff;font-weight:600}
-.library-item-actions button:first-child:hover{background:var(--theme-action-hover,#0864b4)}
+.library-item-actions button:first-child{flex:1.4;background:var(--theme-action,#0d99ff);border-color:var(--theme-action,#0d99ff);color:#fff;font-weight:600}
+.library-item-actions button:first-child:hover{background:var(--theme-action-hover,#0086e6)}
 .library-save{padding:10px 12px 8px;gap:6px}
 .library-save>.button{height:32px}
 .library-footer-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .library-link{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 6px;border-radius:6px;color:var(--theme-secondary,#4a5361);font-size:11px}
 .library-link .icon{width:14px;height:14px}
-.library-link:hover{color:var(--theme-accent,#0b72cc)}
+.library-link:hover{color:var(--theme-accent,#0d99ff)}
 .library-footer-row .library-preview-controls{display:flex;align-items:center;gap:6px;padding:0;font-size:11px;color:var(--theme-muted,#66707e)}
 .library-footer-row .library-preview-controls select{height:26px;padding:0 6px;border:0;border-radius:6px;background:var(--theme-field,#f1f3f6);font-size:11px}
 #user-library[data-unavailable=true] :is(.library-tools,.library-location,.library-filter,.library-item-actions,.library-save>.button){display:none!important}

@@ -12,7 +12,7 @@ colours and export previews keep their own colours.
 | Surfaces | `--theme-workspace`, `--theme-field`, `--theme-subtle`, `--theme-panel`, `--theme-hover` | Back to front: stage surround, input fields, quiet bars, panels, hover. |
 | Lines | `--theme-border`, `--theme-border-strong` | Strong borders mark hover on bordered controls and slider tracks. |
 | Text | `--theme-text`, `--theme-secondary`, `--theme-muted` | Muted text keeps at least 4.5:1 on every light surface. |
-| Interaction | `--theme-accent`, `--theme-action`, `--theme-action-hover`, `--theme-selected`, `--theme-selected-hover` | `--theme-action` fills primary buttons (4.8:1 with white text). Accent marks focus, selection and active icons. |
+| Interaction | `--theme-accent`, `--theme-action`, `--theme-action-hover`, `--theme-selected`, `--theme-selected-hover` | Both use the StykAnimate brand blue (#0d99ff); `--theme-action` fills primary buttons, accent marks focus, selection and active icons. |
 | Status | `--theme-danger*`, `--theme-warning*`, `--theme-success*`, `--theme-violet*` | Each has a matching `-bg` tint. |
 | Type | `--ds-text-xs` … `--ds-text-lg`, `--ds-weight-strong` | 10.5 / 11 / 12 / 13 / 15 px. |
 | Space | `--ds-space-1` … `--ds-space-6` | 4 px grid. |

@@ -112,11 +112,11 @@ export class UserLibrary {
   /** Empty grid: explain the library and offer the next action for this situation. */
   renderEmpty(filtered) {
     const empty = this.container.querySelector('.library-empty'), selection = this.editor.selectedObjects.length, desktop = Boolean(this.desktop?.listLibrary);
-    const card = (title, text, actions = '') => `<span class="ds-empty-icon">${icon('layers')}</span><strong>${title}</strong><p>${text}</p>${actions ? `<div class="ds-empty-actions">${actions}</div>` : ''}`;
-    const examples = '<button type="button" class="button small" data-action="rig-examples">Browse rig examples</button>';
-    if (!desktop) empty.innerHTML = card('Your library lives in the desktop app', 'Save figures and movieclips once and reuse them in every project. The desktop app keeps them in your Documents folder.', examples);
-    else if (filtered) empty.innerHTML = card('No matching assets', 'Try another name or show all asset types.', '<button type="button" class="button small" data-library-clear>Clear search and filter</button>');
-    else empty.innerHTML = card(this.folder ? 'This folder is empty' : 'Your library is empty', 'Select figures or a movieclip on the canvas, then add them here to reuse in any project. Drag an asset onto the canvas to insert it.', `${selection ? `<button type="button" class="button primary small" data-library-action="save">${selection > 1 ? `Add ${selection} figures` : 'Add selection'}</button>` : ''}${examples}`);
+    const card = (title, actions = '') => `<strong>${title}</strong>${actions ? `<div class="ds-empty-actions">${actions}</div>` : ''}`;
+    const examples = '<button type="button" class="button small" data-action="rig-examples">Rig examples</button>';
+    if (!desktop) empty.innerHTML = card('Library is available in the desktop app', examples);
+    else if (filtered) empty.innerHTML = card('No matches', '<button type="button" class="button small" data-library-clear>Clear search</button>');
+    else empty.innerHTML = card(this.folder ? 'Empty folder' : 'No saved assets', `${selection ? `<button type="button" class="button primary small" data-library-action="save">${selection > 1 ? `Add ${selection} figures` : 'Add selection'}</button>` : ''}${examples}`);
   }
   async run(operation) { try { await operation(); } catch (error) { this.message.textContent = error.message; this.message.dataset.error = 'true'; } }
   show(visible = true) {
