@@ -10,6 +10,7 @@ import {showTimelineMenu} from './timeline-menu.mjs';
 import {AudioTimeline} from './audio-timeline.mjs';
 
 
+const MIN_CARD = 72, MAX_CARD = 240;
 const el = (tag, parent, className, text) => {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -27,6 +28,8 @@ export class SheetFilmstrip {
     attachTimelineHotkeys(this);
     this.events = new AbortController();
     this.cardWidth=112;
+    // Cards follow the panel height (larger thumbnails) until the user zooms.
+    this.autoCardWidth=true;
     this.cards = new Map();
     this.previews = new Map();
     this.bitmapCache=new Map();this.thumbnailStats={renders:0,hits:0,retries:0,invalidations:0};this.layerAppearance=layerAppearance(editor.report._styk?.layers);
@@ -39,6 +42,9 @@ export class SheetFilmstrip {
     this.root = el('div', container, 'sheet-filmstrip');
     this.controls = el('div', this.root, 'sheet-filmstrip-controls');
     this.counter = el('div', this.controls, 'sheet-filmstrip-counter');
+    this.counterFrame = el('strong', this.counter);
+    this.counterPlayback = el('span', this.counter, 'sheet-filmstrip-playback');
+    this.counterPlayback.title = 'Inbetweens add frames between your timeline frames. Playback, the Advanced ruler and export count every frame.';
     const label = el('label', this.controls, 'sheet-filmstrip-field', 'Inbetweens');
     this.duration = el('input', label);
     Object.assign(this.duration, {type: 'number', min: '0', max: '65534', step: '1'});
@@ -62,7 +68,7 @@ export class SheetFilmstrip {
     this.spacer = el('div', this.strip, 'sheet-filmstrip-spacer');
     this._on(this.strip, 'scroll', () => this.update());
     this._on(this.strip, 'wheel', event => {
-      if (event.ctrlKey || event.metaKey) {event.preventDefault();this.setZoom(this.cardWidth*(event.deltaY<0?1.12:.89),event.clientX-this.strip.getBoundingClientRect().left);return;}
+      if (event.ctrlKey || event.metaKey) {event.preventDefault();this.setZoom(this.cardWidth*(event.deltaY<0?1.12:.89),event.clientX-this.strip.getBoundingClientRect().left,true);return;}
       event.preventDefault();
       this.strip.scrollLeft += Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
     }, {passive: false});
@@ -88,11 +94,11 @@ export class SheetFilmstrip {
       }
       this.update();
     });
-    this.observer = new ResizeObserver(() => {const x=this.selectedIndex*this.cardWidth,left=this.strip.scrollLeft;if(this.lastViewportWidth&&x+this.cardWidth>left&&x<left+this.lastViewportWidth)this.revealPending=true;this.lastViewportWidth=this.strip.clientWidth;this.update();});
+    this.observer = new ResizeObserver(() => {this.fitCardsToHeight();const x=this.selectedIndex*this.cardWidth,left=this.strip.scrollLeft;if(this.lastViewportWidth&&x+this.cardWidth>left&&x<left+this.lastViewportWidth)this.revealPending=true;this.lastViewportWidth=this.strip.clientWidth;this.update();});
     this.observer.observe(this.root);
     this.render();
-    const zoom=document.createElement('input');Object.assign(zoom,{type:'range',min:'72',max:'176',value:'112',className:'sheet-zoom'});zoom.setAttribute('aria-label','Timeline zoom');this.zoomInput=zoom;this._on(zoom,'input',()=>this.setZoom(Number(zoom.value)));
-    mountTimelineNavigation(this,{input:zoom,fit:()=>{this.setZoom(Math.max(72,Math.min(176,this.strip.clientWidth/Math.max(1,this.times.length))));this.strip.scrollLeft=0;}});
+    const zoom=document.createElement('input');Object.assign(zoom,{type:'range',min:String(MIN_CARD),max:String(MAX_CARD),value:'112',className:'sheet-zoom'});zoom.setAttribute('aria-label','Timeline zoom');this.zoomInput=zoom;this._on(zoom,'input',()=>this.setZoom(Number(zoom.value),undefined,true));
+    mountTimelineNavigation(this,{input:zoom,fit:()=>{this.setZoom(this.strip.clientWidth/Math.max(1,this.times.length),undefined,true);this.strip.scrollLeft=0;}});
     this.audio = new AudioTimeline(container, editor, {...options, host:this, engine:options.audioEngine, mode:'simple'});
   }
   _on(target, name, fn, options = {}) { target.addEventListener(name, fn, {signal: this.events.signal, ...options}); }
@@ -201,7 +207,11 @@ export class SheetFilmstrip {
     const last = Math.min(this.times.length, first + Math.ceil(this.strip.clientWidth / this.cardWidth) + 3);
     const active = this.selectedIndex, locked = this.locked;
     const easing=this.easingSettings(),mode=easing[0]?.interpolation;this.easingButton.textContent=easing.every(value=>JSON.stringify(value)===JSON.stringify(easing[0]))?(EASING_MODES.find(item=>item.id===mode)?.label??'Hold'):'Mixed';this.easingButton.disabled=locked;
-    this.counter.textContent = `Frame ${active + 1} / ${this.times.length}`;
+    const total = this.editor.totalTicks, fps = this.editor.report.frame_delay_ms ? 1000 / this.editor.report.frame_delay_ms : this.editor.report.fps || 24;
+    this.counterFrame.textContent = `Frame ${active + 1} of ${this.times.length}`;
+    this.counterPlayback.textContent = total === this.times.length
+      ? `${(total / fps).toFixed(2)}s at ${Number(fps.toFixed(2))} fps`
+      : `Plays as ${total} frames · ${(total / fps).toFixed(2)}s`;
     const amounts = this.ranges().map(({start, end}) => end - start - 1);
     if (document.activeElement !== this.duration) this.duration.value = amounts.every(n => n === amounts[0]) ? String(amounts[0] ?? 0) : '';
     this.duration.placeholder = 'Mixed';
@@ -228,12 +238,12 @@ export class SheetFilmstrip {
         const canvas = el('canvas', preview);
         canvas.width = 320; canvas.height = 192;
         const amount = el('label', card, 'sheet-inbetweens');
-        amount.title = 'Inbetweens after this frame';
+        amount.title = `Inbetweens after frame ${index + 1} · drag to add frames between this pose and the next`;
         const slider = el('input', amount);
         Object.assign(slider, {type: 'range', min: '0', step: '1'});
         slider.setAttribute('aria-label', `Frame ${index + 1} inbetweens`);
         const value = el('span', amount);
-        listen(slider, 'input', () => { value.textContent = slider.value; slider.setAttribute('aria-valuetext', `${slider.value} inbetweens`); });
+        listen(slider, 'input', () => { value.textContent = Number(slider.value) ? `+${slider.value}` : '0'; slider.setAttribute('aria-valuetext', `${slider.value} inbetweens`); });
         listen(slider, 'change', () => this._run(() => this.setDuration([index], Number(slider.value))));
         listen(preview, 'click', event => this.selectFrame(index, {extend: event.shiftKey}));
         listen(preview, 'dblclick', () => this._run(() => this.showEasingPopover()));
@@ -248,7 +258,7 @@ export class SheetFilmstrip {
       if (document.activeElement !== card._slider) {
         card._slider.max = String(Math.max(20, amount));
         card._slider.value = String(amount);
-        card._amount.textContent = String(amount);
+        card._amount.textContent = amount ? `+${amount}` : '0';
         card._slider.setAttribute('aria-valuetext', `${amount} inbetweens`);
       }
       card._slider.disabled = locked;
@@ -334,7 +344,16 @@ export class SheetFilmstrip {
   setPaused(value) { this.paused = value; if (!value) this._drain(); }
   update() { if (this.disposed || this.raf) return; this.raf = requestAnimationFrame(() => { this.raf = null; this.render(); }); }
   resize() { this.update(); }
-  setZoom(value,anchor=this.strip.clientWidth/2){const position=(this.strip.scrollLeft+anchor)/this.cardWidth;this.cardWidth=Math.max(72,Math.min(176,Number(value)||112));this.zoomInput.value=String(this.cardWidth);this.root.style.setProperty('--filmstrip-card',`${this.cardWidth}px`);this.spacer.style.width=`${this.times.length*this.cardWidth}px`;for(const [index,card] of this.cards)card.style.left=`${index*this.cardWidth}px`;this.strip.scrollLeft=position*this.cardWidth-anchor;this.update();this.audio?.update();}
+  fitCardsToHeight(){
+    if(!this.autoCardWidth||!this.strip.clientHeight)return;
+    // Number row, inbetween slider, padding and gaps take ~62px; thumbnails are 5:3.
+    // Cap automatic growth so a tall panel still shows a useful run of frames.
+    const width=Math.round(Math.max(MIN_CARD,Math.min(176,(this.strip.clientHeight-62)*5/3+12)));
+    if(Math.abs(width-this.cardWidth)<2)return;
+    this.setZoom(width,0);
+    this.revealPending=true;
+  }
+  setZoom(value,anchor=this.strip.clientWidth/2,user=false){if(user)this.autoCardWidth=false;const position=(this.strip.scrollLeft+anchor)/this.cardWidth;this.cardWidth=Math.max(MIN_CARD,Math.min(MAX_CARD,Number(value)||112));this.zoomInput.value=String(this.cardWidth);this.root.style.setProperty('--filmstrip-card',`${this.cardWidth}px`);this.spacer.style.width=`${this.times.length*this.cardWidth}px`;for(const [index,card] of this.cards)card.style.left=`${index*this.cardWidth}px`;this.strip.scrollLeft=position*this.cardWidth-anchor;this.update();this.audio?.update();}
   revealPlayhead() { this.ensureVisible(this.selectedIndex); this.update(); }
   destroy() {
     this.audio?.destroy();this.inflight?.abort();clearTimeout(this.retryTimer);this.clearThumbnailCache();

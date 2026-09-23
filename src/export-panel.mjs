@@ -12,7 +12,7 @@ const categories = [
 
 /** Rearrange the existing command controls; capability and export logic remain
  * with their owners. No duplicate settings or independent export state. */
-export function mountExportFlow(content, {width, height, totalFrames, currentFrame, fps, audioClips = [], audioSupported = false}) {
+export function mountExportFlow(content, {width, height, totalFrames, storedFrames = null, currentFrame, fps, audioClips = [], audioSupported = false}) {
   const grid = content.querySelector('.export-grid'), settings = content.querySelector('.export-settings');
   if (!grid || !settings) return;
   const dialog = content.closest('dialog'), buttons = [...grid.querySelectorAll('[data-action]')];
@@ -34,6 +34,11 @@ export function mountExportFlow(content, {width, height, totalFrames, currentFra
   };
   section('Output size', ['width', 'height', 'aspect'], `<label class="export-preset-label">Resolution<select id="export-resolution" aria-label="Resolution preset"><option value="original">Original · ${width} × ${height}</option><option value="720">HD · 720p</option><option value="1080">Full HD · 1080p</option><option value="2160">4K · 2160p</option><option value="custom">Custom size</option></select></label>`);
   const range = section('Frames', ['start', 'end'], '<button class="export-text-button" type="button" id="export-all-frames">Use entire animation</button>');
+  if (Number.isInteger(storedFrames) && storedFrames !== totalFrames) {
+    const note = document.createElement('p'); note.className = 'property-note export-frames-note';
+    note.textContent = `Export counts every frame that plays. Your ${storedFrames} timeline ${storedFrames === 1 ? 'frame plays' : 'frames play'} as ${totalFrames} with inbetweens.`;
+    range.append(note);
+  }
   const encoding = section('Quality', ['smoothing', 'quality', 'gif-dither']);
   const audio = document.createElement('section'); audio.className = 'export-section';
   audio.innerHTML = '<h3>Audio</h3><label class="check-row"><input type="checkbox" id="export-audio" checked>Include audio</label><p class="property-note">Mixes audible tracks, volume and fades. Sound requires a desktop FFmpeg video format. GIF, image and Pivot exports are silent.</p>';

@@ -31,6 +31,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 - Pose 3D characters without switching to Rotate: dragging a joint now swings it toward or away from the camera at its full length, Shift swings it behind the body, right-drag twists a part such as turning the head, and Shift-drag pushes a hand or foot toward or away from the camera. Grabbing beside a joint no longer makes it jump, and short parts like the chest and neck move with finer control.
 - Scale and rotate a multi-figure selection around the dragged figure's pivot like Pivot: Alt-drag now moves every selected figure's position toward or around the shared origin instead of resizing each figure in place, and Ctrl+Alt keeps rotating the group without scaling.
+- Make frame counts agree between the Simple timeline, the Advanced timeline and Export: Simple shows "Frame 3 of 24 · plays as 47 frames", and Export explains that it counts every frame including inbetweens. Simple timeline thumbnails now grow to fill the timeline's height, and each frame shows its inbetweens as "+2".
 - Show a ⇔ marker on scrubbable property labels and a hint in Transform sections that dragging a label adjusts its value, with Shift or Alt for finer steps.
 
 ### Fixed

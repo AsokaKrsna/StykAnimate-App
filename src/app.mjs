@@ -1045,6 +1045,13 @@ function placeArtboard() {
   });
   $("zoom-label").textContent = `${Number((v.scale * 100).toFixed(v.scale < 0.01 ? 2 : v.scale < 0.1 ? 1 : 0))}% ⌄`;
 }
+/** Timeline frames shown by the Simple (Pivot-style) timeline, or null in Advanced. */
+function simpleFrameCount() {
+  if (state.settings.timelineMode !== "simple") return null;
+  return editor.report._styk?.layerSheet
+    ? timelineUI?.frameCount ?? 0
+    : editor.frameDraft?.storedCount ?? editor.report.keyframes.length;
+}
 function fittedView(r = editor.report) {
   // In Draw, fitting keeps the stage clear of the canvas quick bar.
   const rect = viewport.getBoundingClientRect(),
@@ -1861,12 +1868,13 @@ function updateTransport() {
   $("time-display").textContent =
     `${String(Math.floor(tick / fps / 60)).padStart(2, "0")}:${String(Math.floor(tick / fps) % 60).padStart(2, "0")}:${String(tick % fps).padStart(2, "0")}`;
   $("frame-badge").textContent = `FRAME ${String(tick + 1).padStart(2, "0")}`;
-  const storedSummary =
-    state.settings.timelineMode === "simple"
-      ? `${editor.report._styk?.layerSheet ? timelineUI?.frameCount ?? 0 : editor.frameDraft?.storedCount ?? editor.report.keyframes.length} keys · `
-      : "";
-  $("timeline-summary").textContent =
-    `${storedSummary}${editor.totalTicks} frames · ${(editor.totalTicks / fps).toFixed(2)}s`;
+  // Simple mode counts Pivot-style timeline frames; playback, the ruler and
+  // export count every frame including inbetweens. Name both explicitly.
+  const stored = simpleFrameCount(), total = editor.totalTicks,
+    seconds = `${(total / fps).toFixed(2)}s`;
+  $("timeline-summary").textContent = stored !== null && stored !== total
+    ? `${stored} ${stored === 1 ? "frame" : "frames"} · plays as ${total} with inbetweens · ${seconds}`
+    : `${total} ${total === 1 ? "frame" : "frames"} · ${seconds}`;
   $("fps").value = fps;
   timelineUI?.update(state.settings.timelineMode !== 'advanced');
 }
@@ -3987,7 +3995,7 @@ function showExport() {
     $(id).onchange = () => void refreshCapabilities();
   void refreshCapabilities();
   mountExportFlow($("dialog-content"), {audioClips:audibleClips(audioState(editor.report)),audioSupported:typeof desktop?.writeVideoAudioChunk==='function',width: editor.report.canvas_width, height: editor.report.canvas_height,
-    totalFrames: editor.totalTicks, currentFrame: editor.tick + 1,
+    totalFrames: editor.totalTicks, storedFrames: simpleFrameCount(), currentFrame: editor.tick + 1,
     fps: editor.report.frame_delay_ms ? 1000 / editor.report.frame_delay_ms : editor.report.fps});
 }
 
@@ -5175,7 +5183,7 @@ $("fps").addEventListener(
   guarded((e) => editor.setFPS(Number(e.target.value))),
 );
 $("timeline-zoom").addEventListener("input", (e) =>
-  timelineUI?.setZoom?.(Number(e.target.value)),
+  timelineUI?.setZoom?.(Number(e.target.value), undefined, true),
 );
 $("file-input").addEventListener(
   "change",
