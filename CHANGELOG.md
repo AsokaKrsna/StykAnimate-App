@@ -21,7 +21,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Attached 3D heads and other solid meshes can keep a hand-tuned shape for each viewing direction, blending smoothly as the character turns, so a head holds its drawn look from the side and back as well as the front.
 - Shape brushes like a real painting app: flat and angled tips that can follow the stroke or your pen's tilt, scatter and grain, pressure-controlled flow, blend modes (Behind, Multiply, Screen, Overlay, Color), a smudge brush that drags and mixes wet paint, and Lock alpha for recolouring line art. New Nib, Airbrush, Charcoal, Liner, Blender and Oil presets join Ink, Pencil, Soft and Marker.
 - Select pixels with rectangles, ellipses and a magic wand as well as the lasso, add with Shift or subtract with Alt, and paint or fill only inside the selection. Drag selected pixels to move them, or drag the on-canvas corner and rotate handles to scale and turn them (Shift snaps to 15°). Select all, invert, deselect and fill the selection with Ctrl+A, Ctrl+Shift+I, Ctrl+Shift+A and Shift+Backspace.
-- Draw lines, rectangles and ellipses outlined with the current brush or filled (U, Shift for 45° lines, squares and circles), and paint linear or radial gradients from a colour to transparent or to a second colour (Shift+G); both stay inside the selection.
+- Draw lines, rectangles and ellipses outlined with the current brush or filled (U, Shift for 45° lines, squares and circles); shapes stay inside the selection.
 - Blur, recolour (hue, saturation, lightness), adjust brightness and contrast, or invert a selection or a whole drawing, and flip selected pixels horizontally or vertically.
 - Keep a second colour (X swaps), pick from recently used colour swatches, and save your own brushes; saved brushes and recent colours are remembered between sessions.
 - Change brush size, opacity, flow and smoothing from a quick bar above the canvas, or right-click the canvas while painting for a pop-up palette of brushes, recent colours, size and opacity. Sliders can be dragged, scrolled or typed into, presets show a sample stroke, a readout confirms each change on the canvas, number keys set opacity (1 = 10%, 0 = 100%) and Shift+[ / ] soften or harden the brush.
@@ -61,7 +61,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 - Select, copy, paste, transform and resample large or widely spaced drawings without allocating empty space, keep lasso capture responsive in the background, preserve translucent colors and rotated or mirrored pixel pastes, and offer crisp pixel-art filtering. Failed or cancelled clipboard transfers keep cut artwork intact.
 
-- Keep resampled artwork intact after undo, redo and saving; pending fills, shapes, gradients, filters, pastes and transforms finish before saving or accepting a new stroke.
+- Keep resampled artwork intact after undo, redo and saving; pending fills, shapes, filters, pastes and transforms finish before saving or accepting a new stroke.
 
 - Preserve drawing strokes when advancing frames, keep copied drawings consistent after undo under memory pressure, reopen widely spaced artwork reliably, and keep light-pressure ink continuous.
 
