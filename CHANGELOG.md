@@ -9,7 +9,6 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 ### Added
 
 - Draw and animate on dedicated drawing layers backed by a sparse tiled raster engine: brush presets with pressure and textured pencil, erasing, fill, onion skin and pixel selection you can copy, cut and delete. Unchanged cels share tiles copy-on-write, strokes rasterize in workers, only visible tiles render with mip-level filtering, changed tiles publish incrementally, and older PNG drawings migrate on first edit. Pan while painting, create blank drawing frames with A, paint beyond the stage, and choose higher-resolution strokes using the shared timeline, undo, saving and export tools.
-
 - Shape brushes like a real painting app: flat and angled tips that can follow the stroke or your pen's tilt, scatter and grain, pressure-controlled flow, blend modes (Behind, Multiply, Screen, Overlay, Color), a smudge brush that drags and mixes wet paint, and Lock alpha for recolouring line art. New Nib, Airbrush, Charcoal, Liner, Blender and Oil presets join Ink, Pencil, Soft and Marker.
 - Select pixels with rectangles, ellipses and a magic wand as well as the lasso, add with Shift or subtract with Alt, and paint or fill only inside the selection. Drag selected pixels to move them, or drag the on-canvas corner and rotate handles to scale and turn them (Shift snaps to 15°). Select all, invert, deselect and fill the selection with Ctrl+A, Ctrl+Shift+I, Ctrl+Shift+A and Shift+Backspace.
 - Draw lines, rectangles and ellipses outlined with the current brush or filled (U, Shift for 45° lines, squares and circles), and paint linear or radial gradients from a colour to transparent or to a second colour (Shift+G); both stay inside the selection.
@@ -38,7 +37,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Stop animations that contain drawings from redrawing continuously while nothing changes, which kept the processor and graphics card busy and drained battery even when idle.
 - Fill large areas and close gaps in line art several times faster.
 - Save and reopen large drawings much faster, flip through heavy drawing frames with less waiting, and keep huge soft brushes responsive instead of lagging seconds behind the pen. Drawing memory now adapts to the computer and is released after saving.
-- Show brush strokes about twice as soon after the pen moves, so painting feels more directly connected to the cursor.
+- Ink appears under the pen the moment you draw: strokes show instantly while the exact brush pixels land a moment later, and the finished stroke reaches the canvas about twice as fast as before.
 - Paint large and soft brushes without hitches: big drawings no longer slow down each stroke frame, and finishing a stroke no longer pauses the app while it is saved into the drawing.
 - Stop fast or stabilized brush strokes from erasing square patches of existing artwork. The lost patches could not be restored with undo; strokes now keep every pixel they don't paint, and undo restores the drawing exactly.
 - Render drawings of any span without failing: mip levels now escalate to 256× and the scratch clamps to the texture limit around the visible span instead of throwing and blanking the whole frame.

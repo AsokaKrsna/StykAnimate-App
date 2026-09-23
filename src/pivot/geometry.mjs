@@ -1176,6 +1176,7 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null
         const anchor=a.drawing_anchor??a.anchor_start;
         ctx.translate(-anchor.x,-anchor.y);
         paintDrawingTiles(ctx,live,{tint:s.onionTint,tintFn:resources.tint});
+        if(!s.onionTint)live.presentedStamp=Math.max(live.presentedStamp??-1,live.stamp);
         ctx.restore();
         continue;
       }

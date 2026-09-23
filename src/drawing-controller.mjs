@@ -1,5 +1,6 @@
 import {BRUSH_PRESETS} from './drawing-view.mjs';
-import {tileChanges,lassoMask,tileAlignedRect,DrawingStroke,StrokePath,normalizeBrush,dabExtent,rectPoints,ellipsePoints,combineMasks,invertMask,rectMask,maskEdges} from './drawing-pixels.mjs';
+import {WetInk} from './drawing-wet-ink.mjs';
+import {tileChanges,lassoMask,tileAlignedRect,DrawingStroke,StrokePath,normalizeBrush,dabExtent,dabRadius,rectPoints,ellipsePoints,combineMasks,invertMask,rectMask,maskEdges} from './drawing-pixels.mjs';
 import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,inversePoint,transformPoint,DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {TILE,tileKey,parseTileKey,TileStore} from './drawing-tiles.mjs';
 import {encodeDrawingPNG} from './drawing-png.mjs';
@@ -196,7 +197,10 @@ export class DrawingController {
       s.brush=normalizeBrush(settings);s.matrix=this.pixelMatrix(target);
       const report=this.editor.report,axisX=report.canvas_width/2,axisY=report.canvas_height/2,mirrors=[p=>p];
       if(b.mirrorX)mirrors.push(p=>({x:2*axisX-p.x,y:p.y}));if(b.mirrorY)mirrors.push(p=>({x:p.x,y:2*axisY-p.y}));if(b.mirrorX&&b.mirrorY)mirrors.push(p=>({x:2*axisX-p.x,y:2*axisY-p.y}));
-      s.paths=mirrors.map(map=>({map,path:new StrokePath(s.brush,dab=>s.pending.push(dab))}));s.path=s.paths[0].path;
+      s.paths=mirrors.map((map,index)=>({map,path:new StrokePath(s.brush,dab=>{dab.pi=index;s.pending.push(dab);})}));s.path=s.paths[0].path;
+      // Wet ink previews brushes it can match closely; exact-only modes skip it.
+      const br=s.brush;s.inflight=[];s.wetStyle=!s.erase&&br.blend==='normal'&&!br.alphaLock&&!settings.mask&&br.flow>=.5&&br.hardness>=.5&&br.roundness>=.9&&br.scatter<=.2?{color:this.settings.color,opacity:br.opacity*(br.texture>.3?.85:1)}:null;
+      if(s.wetStyle){this.wet??=new WetInk(this.viewport,this.overlay);this.wetSession=s;}
       this.owner.strokeWorker.post({kind:'begin',stroke:s.id,settings});
       return s;
   }
@@ -252,7 +256,7 @@ export class DrawingController {
       if(lean){const q=inversePoint(s.matrix,map(lean)),n=Math.hypot(q.x-p.x,q.y-p.y);if(n>1e-9){ax=(q.x-p.x)/n;ay=(q.y-p.y)/n;}}
       path.sample({x:p.x,y:p.y,pressure,time:event.timeStamp,ax,ay});
     }
-    s.lastWorld=world;
+    s.lastWorld=world;s.lastPressure=pressure;
     // An idle worker takes the batch now, so pixels return before the next
     // frame; while it is busy, batches coalesce once per frame.
     if(s.outstanding===0&&!s.soon){s.soon=true;queueMicrotask(()=>{s.soon=false;if(!s.ended)this.flushStroke(s);});}
@@ -275,6 +279,46 @@ export class DrawingController {
     const seq=++s.seq;s.outstanding++;s.posted.set(seq,performance.now());
     this.strokeStats.batches++;this.strokeStats.dabs=(this.strokeStats.dabs??0)+dabs.length;this.strokeStats.maxQueueDepth=Math.max(this.strokeStats.maxQueueDepth,s.outstanding);
     this.owner.strokeWorker.post({kind:'dabs',stroke:s.id,seq,dabs,tiles},tiles.map(t=>t.pixels).filter(Boolean));
+    s.inflight?.push({seq,dabs,stamp:null,shownFrame:null,age:0});
+  }
+  /** Draw the stroke's unpresented part as wet ink: the last presented dab of
+   * each (mirrored) path, the dabs in flight or still pending, then the raw
+   * pointer and its predicted position, which the curve smoothing trails. */
+  drawWet(){
+    const s=this.wetSession,wet=this.wet;if(!s||!wet)return;
+    if(!s.wetStyle){wet.clear();return;}
+    const view={report:this.editor.report,frame:this.editor.evaluatedFrame,view:this.state.view,cameraEnabled:false},w0=worldToScreen({x:0,y:0},view),wx=worldToScreen({x:1,y:0},view),wy=worldToScreen({x:0,y:1},view);
+    const toScreen=p=>({x:w0.x+(wx.x-w0.x)*p.x+(wy.x-w0.x)*p.y,y:w0.y+(wx.y-w0.y)*p.x+(wy.y-w0.y)*p.y});
+    const m=s.matrix,pixelToWorld=p=>transformPoint(m,p),a=toScreen(pixelToWorld({x:0,y:0})),b=toScreen(pixelToWorld({x:1,y:0})),unit=Math.hypot(b.x-a.x,b.y-a.y)||1;
+    const paths=s.paths.map(()=>[]),add=(i,world,pressure)=>{const q=toScreen(world);paths[i].push({x:q.x,y:q.y,r:dabRadius(s.brush,pressure)*unit});};
+    s.wetAnchor?.forEach((d,i)=>d&&add(i,pixelToWorld(d),d.pressure??1));
+    for(const batch of s.inflight)for(const d of batch.dabs)add(d.pi??0,pixelToWorld(d),d.pressure??1);
+    for(const d of s.pending)add(d.pi??0,pixelToWorld(d),d.pressure??1);
+    if(!s.ended&&s.brush.stabilization===0&&s.lastWorld){
+      const pressure=s.lastPressure??1;
+      s.paths.forEach(({map},i)=>{add(i,map(s.lastWorld),pressure);if(s.predicted)add(i,map(s.predicted),pressure);});
+    }
+    const radius=paths.flat().reduce((n,p)=>Math.max(n,p.r),0);
+    wet.draw(paths.filter(p=>p.length),{color:s.wetStyle.color,opacity:s.wetStyle.opacity,blur:s.brush.hardness<.9?(1-s.brush.hardness)*radius*.5:0});
+  }
+  /** Retire wet ink once the renderer has presented the matching pixels, one
+   * frame late so the exact stroke is always on screen before the preview
+   * leaves. Batches the renderer never shows (the cel is off screen) expire. */
+  settleWet(){
+    const s=this.wetSession;if(!s)return;
+    this.wetFrame=(this.wetFrame??0)+1;
+    const shown=s.surface.presentedStamp??-1;let changed=false;
+    s.inflight=s.inflight.filter(batch=>{
+      if(batch.stamp!=null)batch.age++;
+      const presented=batch.stamp!=null&&shown>=batch.stamp;
+      if(presented&&batch.shownFrame==null)batch.shownFrame=this.wetFrame;
+      if(!(presented&&this.wetFrame>batch.shownFrame)&&batch.age<30)return true;
+      for(const d of batch.dabs)(s.wetAnchor??=[])[d.pi??0]=d;changed=true;return false;
+    });
+    if(s.ended&&!s.inflight.length&&!s.pending.length){this.wet?.clear();this.wetSession=null;return;}
+    if(changed)this.drawWet();
+    // Keep frames coming until every wet segment has been replaced.
+    if(s.inflight.length)this.onRender();
   }
   strokeMessage(data){
     const s=this.sessions.get(data.stroke);if(!s)return;
@@ -286,6 +330,7 @@ export class DrawingController {
       const store=s.surface.store;
       for(const t of data.tiles){const key=tileKey(t.tx,t.ty);if(!s.before.has(key))s.before.set(key,store.get(t.tx,t.ty)?.pixels.slice()??null);store.adopt(t.tx,t.ty,new Uint8ClampedArray(t.pixels));}
       if(data.tiles.length){this.owner.present(s.surface,data.dirty);this.onRender();}
+      const batch=s.inflight?.find(b=>b.seq===data.seq);if(batch)batch.stamp=s.surface.stamp;
       if(!s.ended&&s.pending.length&&s.outstanding===0)this.flushStroke(s);
       return;
     }
@@ -335,7 +380,9 @@ export class DrawingController {
   }
   /** Stroke samples from a pointer event, including coalesced ones. Raw and
    * regular move events report the same samples; timestamps drop repeats. */
-  strokeSamples(event){const s=this.gesture.session,samples=event.getCoalescedEvents?.();for(const sample of samples?.length?samples:[event]){if(sample.timeStamp<=(s.lastTime??-Infinity))continue;s.lastTime=sample.timeStamp;this.sampleStroke(sample);}}
+  strokeSamples(event){const s=this.gesture.session,samples=event.getCoalescedEvents?.();for(const sample of samples?.length?samples:[event]){if(sample.timeStamp<=(s.lastTime??-Infinity))continue;s.lastTime=sample.timeStamp;this.sampleStroke(sample);}
+    // Predicted input extends the wet ink toward where the pen is heading.
+    if(s.wetStyle){const predicted=event.getPredictedEvents?.();s.predicted=predicted?.length?this.point(predicted.at(-1)):null;this.drawWet();}}
   rawMove(event){const g=this.gesture;if(g?.kind!=='stroke'||g.id!==event.pointerId||g.session.ended)return;this.strokeSamples(event);}
   /** Pointer release. An interrupted pointer (pointercancel, lost capture: a
    * notification stealing focus, the pen leaving range) keeps what was drawn,
@@ -357,7 +404,7 @@ export class DrawingController {
     if(g.kind==='pose')this.editor.commitDrag();
     else if(g.kind==='lasso')this.selectShape(g);
   }finally{g.surface.pinned=Boolean(this.selection?.surface===g.surface);if(this.selection?.surface===g.surface)this.previewSelection();else{this.owner.present(g.surface);this.owner.discard(g.target.figure);}if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.sync();this.onUI();this.onRender();}}
-  cancel(){this.previewQueued=false;this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();return;}this.gesture=null;if(g.kind==='pan'){Object.assign(this.state.view,g.view);this.onRender();return;}if(g.kind==='pick'){this.pickAbort?.abort();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);return;}if(g.kind==='shape'||g.kind==='gradient'){g.surface.pinned=false;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();return;}if(g.kind==='resize'){this.settings.size=g.size;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onUI();this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.busy=false;this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();if(g.kind==='selection-scale'||g.kind==='selection-rotate'){const s=this.selection;if(s){s.scale=g.scale;s.angle=g.angle;this.previewSelection();}}g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
+  cancel(){this.previewQueued=false;this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();return;}this.gesture=null;if(g.kind==='pan'){Object.assign(this.state.view,g.view);this.onRender();return;}if(g.kind==='pick'){this.pickAbort?.abort();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);return;}if(g.kind==='shape'||g.kind==='gradient'){g.surface.pinned=false;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();return;}if(g.kind==='resize'){this.settings.size=g.size;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onUI();this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;if(this.wetSession===s){this.wetSession=null;this.wet?.clear();}cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.busy=false;this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();if(g.kind==='selection-scale'||g.kind==='selection-rotate'){const s=this.selection;if(s){s.scale=g.scale;s.angle=g.angle;this.previewSelection();}}g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
   async barrier(options){this.finish();this.applySelection();const closing=this.gesture?.session;if(closing?.ended)await closing.done;if(this.loading)throw new Error('Wait for the drawing to finish loading.');if(this.fillAbort)throw new Error('Finish or cancel the fill first.');await drawingBarrier(this.editor.report,options);}
   /** Fill bounds = stage ∪ artwork ∪ viewport, in the cel's pixel space. */
   fillBounds(target,store){
@@ -634,6 +681,7 @@ export class DrawingController {
     }catch{}
   }
   overlayDraw(ctx){
+    this.settleWet();
     if(!this.active)return;let target;try{target=this.gesture?.target??this.editor.drawingTarget();}catch{target=null;}
     const view={report:this.editor.report,frame:this.editor.evaluatedFrame,view:this.state.view,cameraEnabled:false};
     ctx.save();
@@ -682,5 +730,5 @@ export class DrawingController {
     }
     ctx.restore();
   }
-  destroy(){this.cancel();this.cancelSelection();this.events.abort();this._viewObserver?.disconnect();this.owner?.dispose();}
+  destroy(){this.cancel();this.cancelSelection();this.events.abort();this.wet?.dispose();this._viewObserver?.disconnect();this.owner?.dispose();}
 }

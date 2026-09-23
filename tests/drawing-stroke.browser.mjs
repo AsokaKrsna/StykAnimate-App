@@ -47,6 +47,17 @@ try{
     check(`the stroke is visible on screen while drawing ${label}`,live>1000);
   }
   await page.evaluate(()=>{styk.editor.undo();styk.editor.undo();styk.editor.undo();});
+  // Wet ink: the unrasterized part of a stroke is drawn on every pointer move
+  // (before any worker round trip) and fully retired once the stroke lands.
+  {
+    const y=rect.y+rect.height*.45,x0=rect.x+rect.width*.3,wet=[];
+    await page.mouse.move(x0,y);await page.mouse.down();
+    for(let i=1;i<=16;i++){await page.mouse.move(x0+i*10,y+(i%2)*6);wet.push(await page.evaluate(()=>Boolean(styk.drawing.wet?.box)));}
+    await page.mouse.up();await page.waitForFunction(()=>!styk.drawing.gesture&&!styk.drawing.wetSession);
+    check('wet ink shows the stroke on every pointer move',wet.every(Boolean));
+    check('wet ink is retired once the stroke is presented',await page.evaluate(()=>!styk.drawing.wet.box));
+    await page.evaluate(()=>styk.editor.undo());
+  }
   // An interrupted pointer (lost capture from a notification, the pen leaving
   // range, a window switch) keeps the ink instead of discarding the stroke.
   {

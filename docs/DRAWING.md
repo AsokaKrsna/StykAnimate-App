@@ -161,6 +161,23 @@ each batch seeds the stroke worker with exactly the tiles its dabs reach, and
 the worker refuses a dab outside its seeded tiles rather than painting over a
 blank guess. Symmetry feeds each mirrored sample into its own path so mirrored
 strokes keep even spacing while sharing one coverage buffer and undo step.
+Wet ink (`drawing-wet-ink.mjs`) draws the part of a stroke that is not yet
+on screen — the last presented dab, dabs in flight or pending, the raw
+pointer and its predicted position — on a desynchronized canvas between the
+scene and the overlay, on every pointer event. The renderer records each
+presenter's `presentedStamp` when it uploads (or paints) a stamp, and a batch's
+wet segments retire one frame after their stamp is presented, so the exact
+stroke is always on screen before its preview leaves. Only brushes the preview
+matches closely use it (normal blend, firm round tips, flow ≥ 50%, no
+selection clip); erasing, smudging and special blends show exact pixels only.
+
+The WebGPU renderer refreshes drawing entries without re-preparing the scene:
+each entry carries its presenter and stamp, and frames without a geometry
+change re-run only entries whose pixels changed (or all of them when the view
+moved), repainting the scratch's dirty tiles and uploading that region.
+A pointer interrupted mid-gesture (lost capture, `pointercancel`, window
+blur) finishes the gesture and keeps its ink; only Escape discards it.
+
 At most one dab batch is in flight: while the stroke worker is busy, dabs
 accumulate and leave with its reply, so a brush slower than the pointer never
 queues stale work. Samples arrive through `pointerrawupdate` where available,

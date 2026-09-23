@@ -1055,6 +1055,8 @@ class WebGPURenderer {
       const r=dirty?{x:dirty.x,y:dirty.y,width:dirty.width,height:dirty.height}:{x:0,y:0,width:canvas.width,height:canvas.height};
       if(r.width>0&&r.height>0)this.device.queue.copyExternalImageToTexture({source:canvas,origin:[r.x,r.y]},{texture:texture.texture,origin:[r.x,r.y],premultipliedAlpha:true},[r.width,r.height]);
       texture.stamp=drawing.stamp;texture.rectKey=texture.nextRectKey;
+      // Wet-ink previews retire once the pixels of this stamp are on screen.
+      drawing.presentedStamp=Math.max(drawing.presentedStamp??-1,drawing.stamp);
     }
     // Retain textures past their layout slot; evict least-recently-used only
     // when the drawing texture budget is exceeded (Map order is MRU-last).
