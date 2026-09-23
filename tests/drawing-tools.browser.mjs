@@ -156,7 +156,24 @@ try{
   check('the gradient ramps from the colour to transparent',await page.evaluate(({cx,cy})=>alphaAt(cx-379,cy+180)>200&&alphaAt(cx-280,cy+180)>60&&alphaAt(cx-280,cy+180)<200&&alphaAt(cx-150,cy+180)===0,{cx,cy}));
   await page.keyboard.press('Control+z');
   await page.keyboard.press('b');
+  // On-canvas handles: drag a corner to scale and the top handle to rotate.
+  await page.locator('[data-tool="drawing-lasso"]').click();
+  await page.locator('select[data-draw-setting="selectShape"]').selectOption('rect');
+  await stroke([{x:cx-320,y:cy-30},{x:cx-120,y:cy+30}]);
+  const handleClient=async which=>page.evaluate(async which=>{const {worldToScreen}=await import('/src/renderer-geometry.mjs'),{transformPoint}=await import('/src/drawing-model.mjs');
+    const d=styk.drawing,t=styk.editor.drawingTarget(),f=d.selectionFrame(t),p=which==='rotate'?f.rotate:f.corners[2],w=transformPoint(d.pixelMatrix(t),p),r=d.viewRect(),s=worldToScreen(w,{report:styk.editor.report,frame:styk.editor.evaluatedFrame,view:styk.state.view,cameraEnabled:false});
+    return {x:r.left+s.x*r.width/r.clientWidth,y:r.top+s.y*r.height/r.clientHeight};},which);
+  const corner=await handleClient('corner');
+  await stroke([corner,{x:corner.x+50,y:corner.y+15}]);
+  check('dragging a corner handle scales the floating selection',await page.evaluate(()=>styk.drawing.selection?.scale>1.1&&styk.drawing.selection.angle===0));
+  const rot=await handleClient('rotate');
+  await page.mouse.move(rot.x,rot.y);await page.mouse.down();await page.mouse.move(rot.x+40,rot.y+20,{steps:3});await page.keyboard.down('Shift');await page.mouse.move(rot.x+120,rot.y+60,{steps:4});await page.mouse.up();await page.keyboard.up('Shift');await settle();
+  check('dragging the rotate handle turns the selection, snapping with Shift',await page.evaluate(()=>{const a=styk.drawing.selection?.angle;return a!==0&&Math.abs(a%15)<1e-9;}));
+  await page.keyboard.press('Enter');
+  check('Enter commits the scaled and rotated pixels as one step',await page.evaluate(()=>styk.editor.undoLabel==='Transform selected pixels'&&!styk.drawing.selection));
+  await page.keyboard.press('Control+z');
   // Recent colours, swapping and saved brushes.
+  await page.locator('[data-tool="drawing-brush"]').click();await page.waitForSelector('.drawing-swatch');
   check('recently used colours appear as swatches',await page.locator('.drawing-swatch').count()>=3);
   await page.evaluate(()=>{styk.drawing.settings.color='#112233';styk.drawing.settings.color2='#445566';});
   await page.locator('#viewport').focus();await page.keyboard.press('x');

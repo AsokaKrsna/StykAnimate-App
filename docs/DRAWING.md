@@ -47,7 +47,9 @@ layer; otherwise select an existing visible, unlocked drawing layer.
   Alt subtracts; a click without dragging deselects. Brush strokes and fills
   stay inside the selection outline. Ctrl+A selects everything reachable,
   Ctrl+Shift+I inverts, Ctrl+Shift+A deselects and Shift+Backspace fills the
-  selection with the current colour. Drag inside the selection to move its
+  selection with the current colour. Corner handles scale and the top handle rotates the floating selection
+  (Shift snaps to 15°; a modifier at press chooses a selection mode instead).
+  Drag inside the selection to move its
   pixels, set scale/angle in Properties, Enter to apply or Escape to cancel.
   Copy/cut/paste uses the shared clipboard and Delete removes selected pixels
   without touching the clipboard. Timeline focus retains frame clipboard and
