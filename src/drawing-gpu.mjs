@@ -738,8 +738,9 @@ export class GpuStroke {
         if(beforeSide===null&&afterSide===null)continue;
         const b=bounds.subarray(i*4,i*4+4),visible=b[0]!==GPU_NONE;
         changes.push({tx:tile.tx,ty:tile.ty,before:beforeSide,after:afterSide});
-        // History and the committed store never share a mutable buffer.
-        prepared.push({tx:tile.tx,ty:tile.ty,pixels:visible?(afterSide===after?after.slice():after):null,alphaBounds:visible?{x:b[0],y:b[1],width:b[2]-b[0]+1,height:b[3]-b[1]+1}:null});
+        // The committed tile shares the history buffer: it is adopted frozen,
+        // so any later edit copies it before writing and history stays exact.
+        prepared.push({tx:tile.tx,ty:tile.ty,pixels:visible?after:null,shared:afterSide===after,alphaBounds:visible?{x:b[0],y:b[1],width:b[2]-b[0]+1,height:b[3]-b[1]+1}:null});
       }
       readback.unmap();this.readBack=true;return {changes,tiles:prepared};
     }finally{readback.destroy();slotBuffer.destroy();boundsBuffer.destroy();params.destroy();}

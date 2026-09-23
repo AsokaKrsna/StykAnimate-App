@@ -37,6 +37,15 @@ frame and invalidates only the reduced ancestors of changed tiles; an
 overflow or replaced store rebuilds that cel's levels. Presentation refreshes
 without pixel changes therefore cost nothing on the GPU path.
 
+A cel's tile instances are reused on the next frame when its store revision,
+view, display level, tile window and level/overlay versions are unchanged, and
+every slot they reference still belongs to the same record (an evicted slot
+handed to another tile forces a rebuild). Reduced tiles a stroke invalidates
+keep their slots, so a reused frame only re-reduces the stale ones in view;
+new overlay tiles bump only the levels whose occupancy they extend. On a dense
+4K cel this took idle frames from 1.0 to 0.4 ms of render time, panning from
+1.2 to 0.5 ms, and strokes at 100% from 1.1 to 0.7 ms (headless Chrome).
+
 The brush, reduction, alpha-bounds and display pipelines compile
 asynchronously after the renderer starts, and again ahead of an antialiasing
 change; drawing uses the scratch presenter and stroke worker until
@@ -82,8 +91,10 @@ megapixels) keep the stroke worker on WebGPU.
 At pen-up the remaining dabs are dispatched, a second compute pass finds each
 touched tile's nonzero-alpha bounds, and the tiles are read back. Read-back
 processing yields to input every 8 ms. It produces the same exact
-before/after history records as a worker stroke plus detached replacement
-tiles; `adoptDrawingPreparation()` wraps them in the existing validated,
+before/after history records as a worker stroke. The committed tile shares
+the history record's buffer and is adopted frozen, so any later edit copies it
+before writing and history stays exact; this saves a full copy of every
+touched tile at pen-up. `adoptDrawingPreparation()` wraps the tiles in the existing validated,
 pinned and memory-accounted preparation, so the commit adopts them without a
 worker round trip. Committed tiles then take over the overlay slots that
 already hold their bytes, so nothing is uploaded again.

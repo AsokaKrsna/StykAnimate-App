@@ -129,6 +129,15 @@ try{
   await page.evaluate(()=>styk.drawing.history('redo'));await settle();await page.waitForTimeout(100);
   const redone=await page.evaluate(()=>{const t=styk.editor.drawingTarget(),e=styk.drawing.owner.entry(t.figure);return [...e.store].reduce((h,t)=>{for(let i=0;i<t.pixels.length;i+=97)h=Math.imul(h^t.pixels[i],16777619)>>>0;return h;},2166136261);});
   check('redo restores the exact committed pixels',redone===first.hash,{redone,expected:first.hash});
+  // Committed GPU tiles share their history buffer, adopted frozen: a later
+  // CPU edit over them must copy first, so undoing it restores exact bytes.
+  const shared=await page.evaluate(()=>{const t=styk.editor.drawingTarget(),store=styk.drawing.owner.entry(t.figure).store;return [...store].every(tile=>tile.frozen);});
+  check('committed GPU tiles are adopted copy-on-write',shared);
+  await page.evaluate(()=>{styk.drawing.gpuBrushDisabled=true;});await stroke(300,300);await page.evaluate(()=>{styk.drawing.gpuBrushDisabled=false;});
+  const overpainted=await page.evaluate(()=>styk.editor.undoLabel);
+  await page.evaluate(()=>styk.drawing.history('undo'));await settle();
+  const undoneOver=await page.evaluate(()=>{const t=styk.editor.drawingTarget(),e=styk.drawing.owner.entry(t.figure);return [...e.store].reduce((h,t)=>{for(let i=0;i<t.pixels.length;i+=97)h=Math.imul(h^t.pixels[i],16777619)>>>0;return h;},2166136261);});
+  check('a worker stroke over shared tiles undoes to the exact GPU stroke',overpainted==='Brush stroke'&&undoneOver===first.hash,{undoneOver,expected:first.hash});
   // Escape during a stroke discards it and restores the display.
   await stroke(300,500,{release:false});
   const during=await pixelAt(300,500);

@@ -78,7 +78,7 @@ export function adoptDrawingPreparation(owner,root,direction,tiles){
     for(let i=0;i<tiles.length;i++){
       const t=tiles[i],c=plan.changes[i],b=t.alphaBounds;
       if(t.tx!==c.tx||t.ty!==c.ty||t.pixels!=null&&(!(t.pixels instanceof Uint8ClampedArray)||t.pixels.byteLength!==TILE_BYTES||!b||![b.x,b.y,b.width,b.height].every(Number.isInteger)||b.x<0||b.y<0||b.width<1||b.height<1||b.x+b.width>TILE||b.y+b.height>TILE))throw new Error('Invalid prepared drawing tile.');
-      plan.tiles.push({tx:t.tx,ty:t.ty,pixels:t.pixels??null,alphaBounds:t.pixels?b:null});
+      plan.tiles.push({tx:t.tx,ty:t.ty,pixels:t.pixels??null,alphaBounds:t.pixels?b:null,shared:Boolean(t.pixels&&t.shared)});
     }
     plan.bytes=prepared.bytes=plan.tiles.reduce((n,t)=>n+(t.pixels?.byteLength??0),0);
     prepared.checkSources();for(const entry of prepared.entries.keys())entry.preparing=(entry.preparing??0)+1;prepared.pinned=true;

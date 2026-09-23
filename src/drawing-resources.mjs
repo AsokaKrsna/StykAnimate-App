@@ -313,7 +313,8 @@ export class DrawingResources {
     // Rebuildable memory yields before an edit is ever rejected.
     if(!plan)this.reserve(Math.max(0,added),e);e.decodeError=null;
     if(e.store){
-      if(plan)for(const t of plan.tiles){if(t.pixels)e.store.adopt(t.tx,t.ty,t.pixels,t.alphaBounds);else e.store.delete(t.tx,t.ty);}
+      // Pixels shared with a history record are adopted frozen (copy on write).
+      if(plan)for(const t of plan.tiles){if(t.pixels){e.store.adopt(t.tx,t.ty,t.pixels,t.alphaBounds);if(t.shared)e.store.get(t.tx,t.ty).frozen=true;}else e.store.delete(t.tx,t.ty);}
       else applyTileChanges(e.store,changes,direction);
       e.store.prune();
     }
