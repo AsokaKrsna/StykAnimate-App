@@ -15,6 +15,7 @@ const settle=()=>page.waitForFunction(()=>!styk.drawing.gesture&&!styk.drawing.o
 try{
   await page.goto(process.env.STYK_URL||'http://127.0.0.1:47839');await page.waitForFunction(()=>window.styk?.ready);
   await page.locator('[data-workspace-mode="draw"]').click();
+  await page.evaluate(()=>styk.state.renderer.gpuDrawingReady);
   check('the WebGPU renderer owns GPU drawing residency',await page.evaluate(()=>Boolean(styk.state.renderer.drawingGpu)));
 
   // 1. Brush parity: identical samples through DrawingStroke and the GPU brush.

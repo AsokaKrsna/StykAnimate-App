@@ -257,9 +257,25 @@ export class DrawingGpu {
     this.displayGlobals=device.createBindGroupLayout({entries:[{binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:'uniform'}},{binding:1,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:'read-only-storage'}}]});
     this.displayTiles=device.createBindGroupLayout({entries:[{binding:0,visibility:GPUShaderStage.FRAGMENT,buffer:{type:'read-only-storage'}},{binding:1,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:'read-only-storage'}}]});
     this.displayModule=display;this.displayLayout=device.createPipelineLayout({bindGroupLayouts:[this.displayGlobals,this.displayTiles]});this.displayPipelines=new Map();
-    this.reducePipeline=device.createComputePipeline({label:'Drawing level reduction',layout:'auto',compute:{module:device.createShaderModule({code:REDUCE_SHADER,label:'Drawing level reduction'}),entryPoint:'reduce'}});
-    this.boundsPipeline=device.createComputePipeline({label:'Drawing alpha bounds',layout:'auto',compute:{module:device.createShaderModule({code:BOUNDS_SHADER,label:'Drawing alpha bounds'}),entryPoint:'alpha'}});
-    this.strokePipeline=device.createComputePipeline({label:'Drawing brush',layout:'auto',compute:{module:device.createShaderModule({code:STROKE_SHADER,label:'Drawing brush'}),entryPoint:'paint'}});
+  }
+  /** Construct and compile every pipeline off the frame path; drivers can
+   * take tens of milliseconds per pipeline, which would otherwise stall the
+   * first stroke and the first drawn cel. */
+  static async create(renderer,options){
+    const gpu=new DrawingGpu(renderer,options),device=gpu.device;
+    try{
+      const compute=(label,code,entryPoint)=>device.createComputePipelineAsync({label,layout:'auto',compute:{module:device.createShaderModule({code,label}),entryPoint}});
+      [gpu.reducePipeline,gpu.boundsPipeline,gpu.strokePipeline]=await Promise.all([compute('Drawing level reduction',REDUCE_SHADER,'reduce'),compute('Drawing alpha bounds',BOUNDS_SHADER,'alpha'),compute('Drawing brush',STROKE_SHADER,'paint'),gpu.compileDisplay(renderer.msaaCount)]);
+      return gpu;
+    }catch(error){gpu.destroy();throw error;}
+  }
+  displayDescriptor(count){
+    const blend={color:{srcFactor:'one',dstFactor:'one-minus-src-alpha',operation:'add'},alpha:{srcFactor:'one',dstFactor:'one-minus-src-alpha',operation:'add'}};
+    return {label:'Drawing tiles',layout:this.displayLayout,vertex:{module:this.displayModule,entryPoint:'vs'},fragment:{module:this.displayModule,entryPoint:'fs',targets:[{format:this.renderer.format,blend}]},primitive:{topology:'triangle-list'},multisample:{count}};
+  }
+  /** Compile the display pipeline for an antialiasing level ahead of use. */
+  async compileDisplay(count){
+    if(!this.displayPipelines.has(count))this.displayPipelines.set(count,await this.device.createRenderPipelineAsync(this.displayDescriptor(count)));
   }
   get enabled(){return !this.destroyed;}
   grow(slots){
@@ -271,12 +287,9 @@ export class DrawingGpu {
     this.capacity=usable;this.stats.capacity=usable;return true;
   }
   displayPipeline(count){
+    // An antialiasing change not yet compiled asynchronously compiles here once.
     let pipeline=this.displayPipelines.get(count);
-    if(!pipeline){
-      const blend={color:{srcFactor:'one',dstFactor:'one-minus-src-alpha',operation:'add'},alpha:{srcFactor:'one',dstFactor:'one-minus-src-alpha',operation:'add'}};
-      pipeline=this.device.createRenderPipeline({label:'Drawing tiles',layout:this.displayLayout,vertex:{module:this.displayModule,entryPoint:'vs'},fragment:{module:this.displayModule,entryPoint:'fs',targets:[{format:this.renderer.format,blend}]},primitive:{topology:'triangle-list'},multisample:{count}});
-      this.displayPipelines.set(count,pipeline);
-    }
+    if(!pipeline){pipeline=this.device.createRenderPipeline(this.displayDescriptor(count));this.displayPipelines.set(count,pipeline);}
     return pipeline;
   }
   /** Take a slot for `record`, reusing the least recently used slot that no

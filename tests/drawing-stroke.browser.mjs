@@ -11,7 +11,7 @@ const check=(name,value)=>{assert.ok(value,name);checks.push(name);console.log('
 try{
   await page.goto(url);await page.waitForFunction(()=>window.styk?.ready);
   await page.evaluate(()=>{styk.state.settings.autosaveSeconds=0;window.__longtasks=[];new PerformanceObserver(list=>{for(const e of list.getEntries())window.__longtasks.push(e.duration)}).observe({entryTypes:['longtask']});});
-  await page.locator('[data-workspace-mode="draw"]').click();
+  await page.locator('[data-workspace-mode="draw"]').click();await page.evaluate(()=>styk.state.renderer.gpuDrawingReady);
   await page.locator('[data-draw-action="new"]').first().click();
   const rect=await page.locator('#viewport').boundingBox();
   const start={x:rect.x+rect.width*.2,y:rect.y+rect.height*.3},end={x:start.x+560,y:start.y+240};

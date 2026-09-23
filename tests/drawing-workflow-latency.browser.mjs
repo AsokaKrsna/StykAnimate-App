@@ -22,6 +22,7 @@ try{
   if(software)await page.addInitScript(()=>Object.defineProperty(navigator,'gpu',{value:undefined}));
   await page.goto(url);await page.waitForFunction(()=>window.styk?.ready);
   await page.locator('[data-workspace-mode="draw"]').click();
+  await page.evaluate(()=>styk.state.renderer.gpuDrawingReady);
   const setup=await page.evaluate(async frames=>{
     const {emptyDocument}=await import('/src/demo.mjs'),{DrawingStroke}=await import('/src/drawing-pixels.mjs'),{TileStore}=await import('/src/drawing-tiles.mjs');
     const e=styk.editor,d=styk.drawing,report=emptyDocument();report.canvas_width=1920;report.canvas_height=1080;

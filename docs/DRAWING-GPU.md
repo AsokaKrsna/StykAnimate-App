@@ -37,6 +37,12 @@ frame and invalidates only the reduced ancestors of changed tiles; an
 overflow or replaced store rebuilds that cel's levels. Presentation refreshes
 without pixel changes therefore cost nothing on the GPU path.
 
+The brush, reduction, alpha-bounds and display pipelines compile
+asynchronously after the renderer starts, and again ahead of an antialiasing
+change; drawing uses the scratch presenter and stroke worker until
+`renderer.gpuDrawingReady` settles. Compiling on first use stalled the first
+stroke after launch by over 100 ms in Electron.
+
 Onion skins, selection previews, cels with drawable effects and the Canvas 2D
 renderer keep the scratch-canvas and worker-preview presenter described in
 [DRAWING.md](DRAWING.md). `renderer.setGpuDrawing(false)` switches a WebGPU
@@ -99,6 +105,13 @@ baseline recorded none. They coincide with the benchmark's per-frame canvas
 read-back, which waits for the GPU. Two immediate repeats of both scenarios,
 and CPU profiles of the same strokes without read-back, recorded no task over
 50 ms (p50 6.2–8.3 ms, p99 11–22 ms). Their cause is not otherwise confirmed.
+
+`tests/drawing-gpu.desktop.mjs` repeats the latency method in the Electron
+39.8.10 runtime (Chromium 142) from a clean profile, after one warm-up stroke:
+all 602 samples of a 2.5-second, 240 Hz stroke appeared, at p50 7.7 ms, p95
+12.7 ms and p99 15.5 ms, with frames paced at about 8 ms; the stroke committed
+through the GPU brush without the worker fallback
+(`artifacts/drawing-gpu/desktop-result.json`).
 
 The Canvas 2D fallback keeps the worker brush and measured within run-to-run
 variation of the baseline: p50 23 / 36 / 55 ms against 24 / 36 / 50 ms for the

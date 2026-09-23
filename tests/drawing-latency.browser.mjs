@@ -38,6 +38,7 @@ try{
     if(software)await page.addInitScript(()=>Object.defineProperty(navigator,'gpu',{value:undefined}));
     await page.goto(url);await page.waitForFunction(()=>window.styk?.ready);
     await page.locator('[data-workspace-mode="draw"]').click();
+    await page.evaluate(()=>styk.state.renderer.gpuDrawingReady);
     await page.evaluate(async scenario=>{
       const {emptyDocument,createObject,createFrame}=await import('/src/demo.mjs');
       const e=styk.editor,d=styk.drawing,report=emptyDocument();

@@ -468,7 +468,22 @@ class WebGPURenderer {
     initVfxDevice(this.device);
     // Drawing cels display from GPU-resident tiles. Failure keeps the canvas
     // scratch path, which remains the Canvas 2D and fallback presenter.
-    if (this.options.gpuDrawing !== false) { try { this.drawingGpu = new DrawingGpu(this); } catch (error) { this.drawingGpu = null; this.stats.warnings.push(`GPU drawing unavailable: ${error.message}`); } }
+    if (this.options.gpuDrawing !== false) this.enableGpuDrawing();
+  }
+  /** GPU drawing compiles in the background; until it is ready, cels use the
+   * scratch presenter and the stroke worker. `gpuDrawingReady` settles with
+   * whether it became active. */
+  enableGpuDrawing() {
+    if (this.drawingGpu || this.gpuDrawingPending) return this.gpuDrawingReady;
+    const pending = this.gpuDrawingPending = DrawingGpu.create(this);
+    this.gpuDrawingReady = pending.then(gpu => {
+      if (this.gpuDrawingPending !== pending || this.destroyed || this.deviceLost) { gpu.destroy(); return false; }
+      this.gpuDrawingPending = null; this.drawingGpu = gpu; this.lastGeometry = null; this.options.onInvalidate?.(); return true;
+    }, error => {
+      if (this.gpuDrawingPending === pending) this.gpuDrawingPending = null;
+      this.stats.warnings.push(`GPU drawing unavailable: ${error.message}`); return false;
+    });
+    return this.gpuDrawingReady;
   }
   createVectorPipeline(count = this.msaaCount) {
     return this.device.createRenderPipelineAsync({ label: 'StykAnimate vector + asset compositor', layout: this.pipelineLayout,
@@ -501,6 +516,7 @@ class WebGPURenderer {
     this.msaa?.destroy(); this.msaa = msaa;
     // The VFX compositor pipeline bakes its own sample count; rebuild lazily.
     this.vfxViewport?.destroy(); this.vfxViewport = null;
+    this.drawingGpu?.compileDisplay(count).then(() => this.options.onInvalidate?.(), () => {});
     this.options.onInvalidate?.();
     return true;
   }
@@ -1118,10 +1134,10 @@ class WebGPURenderer {
   /** Switch drawing cels between GPU-resident tiles and the canvas scratch
    * presenter (the Canvas 2D path). Used by diagnostics and fallback tests. */
   setGpuDrawing(enabled) {
-    if (!enabled) { this.drawingGpu?.destroy(); this.drawingGpu = null; }
-    else if (!this.drawingGpu && !this.destroyed && !this.deviceLost) { try { this.drawingGpu = new DrawingGpu(this); } catch { this.drawingGpu = null; } }
+    if (!enabled) { this.gpuDrawingPending = null; this.drawingGpu?.destroy(); this.drawingGpu = null; this.gpuDrawingReady = Promise.resolve(false); }
+    else if (!this.destroyed && !this.deviceLost) this.enableGpuDrawing();
     this.lastGeometry = null; this.options.onInvalidate?.();
-    return Boolean(this.drawingGpu);
+    return this.gpuDrawingReady;
   }
   /** Visible level-0 pixel rect and display level for a GPU drawing entry,
    * matching the scratch path's mip choice. */

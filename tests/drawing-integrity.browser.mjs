@@ -9,7 +9,7 @@ page.on('pageerror',e=>errors.push(e.message));
 const check=(name,value)=>{assert.ok(value,name);checks.push(name);console.log('PASS',name);};
 try{
   await page.goto(process.env.STYK_URL||'http://127.0.0.1:47839');await page.waitForFunction(()=>window.styk?.ready);
-  await page.locator('[data-workspace-mode="draw"]').click();await page.locator('[data-draw-action="new"]').first().click();
+  await page.locator('[data-workspace-mode="draw"]').click();await page.evaluate(()=>styk.state.renderer.gpuDrawingReady);await page.locator('[data-draw-action="new"]').first().click();
   await page.evaluate(()=>{styk.state.settings.autosaveSeconds=0;});
   const rect=await page.locator('#viewport').boundingBox(),x=rect.x+rect.width*.25,y=rect.y+rect.height*.4;
   // Hold each brush's completion: the stroke worker's done reply, or the GPU
