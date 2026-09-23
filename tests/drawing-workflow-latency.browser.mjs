@@ -84,8 +84,8 @@ try{
   await page.evaluate(()=>{styk.editor.seek(1);styk.drawing.setTool('fill');Object.assign(styk.drawing.settings,{color:'#f0e0a0',tolerance:16,gap:0,expansion:1,sampleAll:false});});
   await page.waitForTimeout(500);
   const fillStart=Date.now();await page.mouse.click(box.x+box.width*.5,box.y+box.height*.55);
-  await page.waitForFunction(()=>!styk.drawing.gesture&&!styk.drawing.operation&&styk.editor.undoLabel?.toLowerCase().includes('fill'),null,{timeout:60000});
-  const fillMs=Date.now()-fillStart;
+  // A build that drops a click released while its cel loads never fills: null.
+  const fillMs=await page.waitForFunction(()=>!styk.drawing.gesture&&!styk.drawing.operation&&styk.editor.undoLabel?.toLowerCase().includes('fill'),null,{timeout:20000}).then(()=>Date.now()-fillStart,()=>null);
   // Cold edit: after showing frame 3, memory pressure evicts every published
   // cel; a fill click there must first reopen the cel for editing.
   await page.evaluate(async()=>{await styk.drawing.owner.flush();styk.editor.seek(3);});

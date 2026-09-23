@@ -157,6 +157,21 @@ discarded, because the browser's routine loss of pointer capture after
 release was treated as a cancellation. Fill clicks on evicted cels did
 nothing. Only a cancellation before release now abandons the pending gesture.
 
+### Repeat under heavy background load
+
+A later matched session of the final code ran while unrelated processes held
+the CPU near 96%, so both builds are slower in absolute terms; the comparison
+still uses identical conditions (`artifacts/drawing-latency/final-2/`,
+`artifacts/drawing-workflow/final-2/`). On WebGPU, stroke latency p50 was
+12–17 ms against 66–2,262 ms for the baseline, and p99 39–138 ms against
+186–3,269 ms; the 300 px dense brush recorded one 175 ms main-thread task in
+the GPU build. Resident and evicted flips took 34 and 26 ms against 360 and
+1,471 ms, every scrubbed frame was shown in time against 8%, fill took 1.6 s
+against 3.9 s, and the cold-edit fill committed in 0.55 s where the baseline
+ignored the click. The Canvas 2D fallback was also faster than its baseline
+(stroke p50 44–74 ms against 59–98 ms; flips 217 and 595 ms against 279 and
+1,023 ms).
+
 Profiling the pen-up window found and removed four costs that would otherwise
 stall after every stroke: re-uploading tiles already on the GPU, rebuilding
 every reduced level after a presentation-only refresh, hashing the published
