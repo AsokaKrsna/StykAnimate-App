@@ -69,7 +69,7 @@ export function drawingInspector(drawing,{numericField,group,grid,heading,proper
   let target;try{target=editor.drawingTarget();}catch{}
   const layer=editor.getLayer(editor.activeLayerId),eligible=isDrawingLayer(layer)&&!layer.locked&&layer.visible;
   let html=heading(DRAWING_TOOLS.find(t=>t[0]===tool)?.[1]??'Hand',DRAWING_TOOLS.find(t=>t[0]===tool)?.[2]??'hand');
-  if(!eligible)html+=group('',`<div class="drawing-empty">${isDrawingLayer(layer)?'Show and unlock this drawing layer.':'Select a drawing layer to paint.'}</div><div class="property-context-actions">${button('new','New drawing layer','brush')}</div>`);
+  if(!eligible)html+=group('',`<div class="drawing-empty">${isDrawingLayer(layer)?'Show and unlock this drawing layer.':'Paint on the canvas to start — a drawing layer is created for you, or choose one in the timeline.'}</div><div class="property-context-actions">${button('new','New drawing layer','brush')}</div>`);
   if(tool==='brush'||tool==='eraser') {
     const custom=drawing.library?.presets??[],isCustom=custom.some(p=>p.id===s.preset);
     if(tool==='brush')html+=group('Preset',presetGrid(drawing)+`<div class="property-context-actions">${button('save-preset','Save brush','plus')}${isCustom?button('delete-preset','Delete brush','trash'):''}</div>`);

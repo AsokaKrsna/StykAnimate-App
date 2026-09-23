@@ -232,6 +232,19 @@ export class DrawingController {
     // an unchanged bar is never rebuilt under the pointer.
     const html=quickBarMarkup(this);if(this.quickHTML!==html){bar.innerHTML=html;this.quickHTML=html;}bar.hidden=false;
   }
+  /** Painting tools need a drawing layer. Rather than ignoring the first stroke,
+   * switch to an editable drawing layer, or create one (its own undo step). */
+  ensurePaintLayer(){
+    if(!['brush','fill','shape','gradient'].includes(this.tool))return;
+    const active=this.editor.getLayer(this.editor.activeLayerId);
+    // A hidden or locked drawing layer is a deliberate state; keep its message.
+    if(isDrawingLayer(active))return;
+    const layers=this.editor.layers.filter(layer=>isDrawingLayer(layer)&&!layer.locked&&layer.visible);
+    let layer=layers.find(l=>l.id===this.lastLayer)||layers.at(-1);
+    if(layer)this.onStatus(`Painting on ${layer.name}.`);
+    else{layer=this.editor.createDrawingLayer();this.onStatus(`Created ${layer.name} for your painting.`);}
+    this.editor.selectSheetLayer(layer.id);this.state.selectedTrackId=layer.id;this.getTimeline()?.selectTrack?.(layer.id);this.sync();this.onUI();
+  }
   enter(){if(this.active)return;this.beforeEdit();this.prior={handles:this.state.handles,tool:this.state.tool,rotation:this.state.view.rotation??0,flip:Boolean(this.state.view.flip)};this.active=true;this.state.handles=false;this.state.tool='drawing-brush';this.state.drawing=true;this.cursor=null;this.bind();
     const layers=this.editor.layers.filter(layer=>isDrawingLayer(layer)&&!layer.locked&&layer.visible),target=layers.find(l=>l.id===this.editor.activeLayerId)||layers.find(l=>l.id===this.lastLayer)||layers.at(-1);if(target){this.editor.selectSheetLayer(target.id);this.state.selectedTrackId=target.id;}this.sync();this.prepareVisible();this.onUI();this.onRender();}
   exit(){if(!this.active)return;const wait=this.settle({selection:true});if(wait)return this.run(()=>wait.then(()=>this.exit()));this.closePalette();this.active=false;this.state.drawing=false;this.cursor=null;Object.assign(this.state,{handles:this.prior.handles,tool:this.prior.tool});this.state.view.rotation=this.prior.rotation;this.state.view.flip=this.prior.flip;this.onUI();this.onRender();}
@@ -276,7 +289,7 @@ export class DrawingController {
     if(this.loading)return;if(event.pointerType==='touch'){if(performance.now()-(this.lastPen??-Infinity)<700)return;this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'pan',start:pointerSample(event),view:{...this.state.view}};return;}if(event.pointerType==='pen')this.lastPen=performance.now();
     if(event.altKey&&this.sampleColor&&['brush','fill'].includes(this.tool)){this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'pick'};this.pickColor(event);return;}
     if((event.ctrlKey||event.metaKey)&&['brush','eraser'].includes(this.tool)){this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'resize',start:pointerSample(event),size:this.settings.size};return;}
-    this._viewRect=null;this.beforeEdit();this.viewport.focus({preventScroll:true});if(!event.released)this.overlay.setPointerCapture(event.pointerId);
+    this._viewRect=null;this.beforeEdit();this.ensurePaintLayer();this.viewport.focus({preventScroll:true});if(!event.released)this.overlay.setPointerCapture(event.pointerId);
     const sequence=++this.sequence,revision=this.editor.revision,owner=this.owner;
     let target=this.editor.prepareDrawingCel({pixelsPerUnit:this.settings.resolution,world:this.point(event)}),surface;
     const pending=this.loading={id:event.pointerId,sequence,released:event.released??false,samples:event.samples??[],event:pointerSample(event)};
