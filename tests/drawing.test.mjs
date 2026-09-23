@@ -661,7 +661,22 @@ test('a sharded parallel decode merges into the same tiles and mip levels',async
 });
 
 test('the resident tile budget scales with device memory within bounds',()=>{
-  assert.equal(defaultTileBudget(undefined),256*1024*1024);assert.equal(defaultTileBudget(2),192*1024*1024);assert.equal(defaultTileBudget(8),512*1024*1024);assert.equal(defaultTileBudget(64),512*1024*1024);
+  assert.equal(defaultTileBudget(undefined),384*1024*1024);assert.equal(defaultTileBudget(2),192*1024*1024);assert.equal(defaultTileBudget(8),768*1024*1024);assert.equal(defaultTileBudget(64),768*1024*1024);
+});
+
+test('memory pressure evicts the cels farthest from the playhead before recently used ones',async()=>{
+  const report={figure_types:[]},resources=new DrawingResources(report,{worker:workerStub(),tileBytes:9*TILE_BYTES});
+  try{
+    const figures=[1,2,3,4].map(id=>{const f=createDrawingFigure({pixelsPerUnit:1,figureTypeId:id});report.figure_types.push(f);return f;});
+    const tiles=()=>Array.from({length:3},(_,i)=>({tx:i,ty:0,pixels:new Uint8ClampedArray(TILE_BYTES).fill(90).buffer}));
+    // The far cel was used most recently; LRU alone would keep it.
+    const ids=figures.map(f=>drawingMetadata(f).celId);
+    figures.forEach((f,i)=>{const e=resources.install(f,tiles());e.used=[10,20,30,40][i];});
+    resources.distances=()=>new Map([[ids[0],1],[ids[1],0],[ids[2],2],[ids[3],50]]);
+    await resources.flush();
+    assert.equal(resources.entry(figures[3]).store,null,'the far cel is evicted first');
+    assert.ok(resources.entry(figures[1]).store&&resources.entry(figures[0]).store,'cels beside the playhead stay resident');
+  }finally{resources.dispose();}
 });
 
 // Phase 3: mip levels, tile-anchored scratch, budgets and the shared provider.

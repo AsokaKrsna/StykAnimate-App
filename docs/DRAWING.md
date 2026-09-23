@@ -104,7 +104,7 @@ are not supported.
 
 `drawing-resources.mjs` owns sparse tile stores, worker jobs and disposal for
 one report. Resident tiles are limited by a budget scaled from device memory
-(192–512 MiB; the hard ceiling for unpublished work is at least 768 MiB);
+(192–768 MiB; the hard ceiling for unpublished work is at least 768 MiB);
 accounting deduplicates
 pixel buffers, so copy-on-write forks share counted bytes until they diverge.
 New work reserves before it is rejected: presenter scratches free first, then
@@ -115,7 +115,10 @@ instead of retrying every frame — and v2 renderers keep their last texture or
 draw nothing rather than flashing the stale 1×1 placeholder. Cold requests
 coalesce into a bounded queue: at most two decodes wait, and a newer seek
 supersedes the oldest. Once publication finishes, clean stores above the
-budget are trimmed least-recently-used first, keeping the current cel; strokes
+budget are trimmed farthest from the playhead first — distance over every
+drawing layer, measured circularly because playback and scrubbing loop — then
+least recently used, keeping the cel at the playhead. Reserving room for new
+work evicts in the same order. Strokes
 adopt tiles without reserving, so this is what bounds memory after painting.
 A cold decode is split across a small pool of codec workers by 8×8-tile blocks;
 each block owns its mip tiles up to level 3, so every shard also builds its

@@ -4,7 +4,7 @@ import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,i
 import {TILE,tileKey,parseTileKey,TileStore} from './drawing-tiles.mjs';
 import {encodeDrawingPNG} from './drawing-png.mjs';
 import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
-import {drawingCelPrefetch} from './onion-skin.mjs';
+import {drawingCelPrefetch,drawingCelDistances} from './onion-skin.mjs';
 import {buildGeometry,drawGeometry} from './pivot/geometry.mjs';
 import {createFrame} from './demo.mjs';
 import {screenToWorld,worldToScreen} from './renderer-geometry.mjs';
@@ -66,6 +66,8 @@ export class DrawingController {
    * the current cel always survives a burst of seeks. */
   prefetchCels(){
     const owner=this.owner;if(!owner||owner.disposed)return;
+    // Eviction keeps cels near the playhead; computed lazily when memory is tight.
+    owner.distances=()=>drawingCelDistances(this.editor);
     const found=drawingCelPrefetch(this.editor,this.editor.activeLayerId);if(!found)return;
     const miss=error=>{if(error.name!=='AbortError')this.onError(error);};
     for(const figure of found.neighbors)owner.surface(figure).catch(miss);

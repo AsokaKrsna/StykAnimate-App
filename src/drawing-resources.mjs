@@ -49,7 +49,7 @@ export class StrokeWorker {
 const PUBLISH_CHUNK=96;
 /** Resident tile budget from device memory: animation scrubbing wants many
  * cels resident. navigator.deviceMemory reports up to 8 (GiB). */
-export function defaultTileBudget(memory=globalThis.navigator?.deviceMemory){const gib=Number.isFinite(memory)&&memory>0?memory:4;return Math.max(192,Math.min(512,gib*64))*1024*1024;}
+export function defaultTileBudget(memory=globalThis.navigator?.deviceMemory){const gib=Number.isFinite(memory)&&memory>0?memory:4;return Math.max(192,Math.min(768,gib*96))*1024*1024;}
 // Mip levels the decode worker prepares: 4× drawings viewed at 100% use level 2.
 const DECODE_LEVELS=3;
 const sideBytes=s=>s==null?0:s.byteLength===4?TILE_BYTES:s.byteLength;
@@ -59,7 +59,7 @@ const tilePayload=(store,rect)=>{const tiles=[];for(const [tx,ty] of TileStore.t
  * the per-tile PNG blob on image_assets[0].styk_tiles plus a bounds-sized
  * preview PNG on data_url keep legacy asset consumers working. */
 export class DrawingResources {
-  constructor(report,{tileBytes=defaultTileBudget(),levelBytes=64*1024*1024,scratchBytes=64*1024*1024,hardBytes,onChange=()=>{},onError=()=>{},worker,strokeWorker}={}) {
+  constructor(report,{tileBytes=defaultTileBudget(),levelBytes=Math.round(tileBytes/3),scratchBytes=64*1024*1024,hardBytes,onChange=()=>{},onError=()=>{},worker,strokeWorker}={}) {
     // tileBudget is the retention target; hardBudget is the only point a
     // required working set is refused (at least 768 MiB). Between them, required dirty/pinned
     // tiles stay resident while publication frees them in the background.
@@ -82,6 +82,12 @@ export class DrawingResources {
   scratchReserved(entry){let bytes=this.stats.scratchBytes;for(const e of [...this.entries.values()].sort((a,b)=>a.used-b.used)){if(bytes<=this.scratchBudget)break;if(e===entry||!e._scratches?.size)continue;for(const s of e._scratches.values())if(s.canvas)bytes-=s.canvas.width*s.canvas.height*4;this.dropScratch(e);}}
   /** Derived mip chains are the cheapest cache: evict least-recently-used first. */
   levelsReserved(entry){entry.levelsUsed=performance.now();let bytes=0;for(const e of this.entries.values())for(const level of e.levels??[])bytes+=(level?.size??0)*TILE_BYTES;for(const e of [...this.entries.values()].sort((a,b)=>a.levelsUsed-b.levelsUsed)){if(bytes<=this.levelBudget)break;if(e===entry||!e.levels)continue;bytes-=e.levels.reduce((n,l)=>n+(l?.bytes??0),0);e.levels=null;}}
+  /** Stores in eviction order: farthest from the playhead first (when the
+   * timeline supplies distances), then least recently used. */
+  evictionOrder(){
+    const distance=this.distances?.()??null,far=e=>distance?.get(e.id)??Infinity;
+    return [...this.entries.values()].sort((a,b)=>distance?(far(b)-far(a))||(a.used-b.used):a.used-b.used);
+  }
   reserve(bytes,except) {
     const resident=()=>this.stats.bytes;
     if(resident()+bytes<=this.tileBudget)return;
@@ -89,7 +95,7 @@ export class DrawingResources {
     // scratches, then derived mip levels, then published-and-clean stores.
     for(const e of this.entries.values())if(e!==except)this.dropScratch(e);
     for(const e of this.entries.values())if(e!==except)e.levels=null;
-    for(const e of [...this.entries.values()].sort((a,b)=>a.used-b.used)){
+    for(const e of this.evictionOrder()){
       if(resident()+bytes<=this.tileBudget)break;
       if(e===except||e.pinned||!e.store||e.published?.revision!==e.revision)continue;e.store=null;e.levels=null;this.surfaceVersion++;
     }
@@ -122,7 +128,8 @@ export class DrawingResources {
    * stores back under the budget, keeping the most recently used cel. */
   trim(){
     if(this.disposed)return;let bytes=this.stats.bytes;if(bytes<=this.tileBudget)return;
-    const stores=[...this.entries.values()].filter(e=>e.store).sort((a,b)=>a.used-b.used),current=stores.at(-1);let evicted=false;
+    // Keep the cel at the playhead (or, without timeline distances, the most recently used).
+    const stores=this.evictionOrder().filter(e=>e.store),current=stores.at(-1);let evicted=false;
     for(const e of stores){
       if(bytes<=this.tileBudget)break;
       if(e===current||e.pinned||e.published?.revision!==e.revision)continue;
