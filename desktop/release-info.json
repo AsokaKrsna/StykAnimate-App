@@ -1,39 +1,60 @@
 {
-  "version": "1.0.6",
-  "title": "Private feedback conversations and playback refinements",
+  "version": "1.1.0",
+  "title": "Drawing layers and animation editing improvements",
   "notes": [
-    "Add saved Normal, Medium, Low, Draft and Automatic playback quality options in Animation settings, with Normal as the default and full-resolution editing restored on pause.",
-    "Add private bug-report and feedback conversations in the app and on the website, with attachments and developer replies.",
-    "Add a saved Animation setting to fit the view when playback starts, enabled by default; turn it off to preserve zoom and pan.",
-    "Add Ctrl+Shift+V to paste figures in their original position, alongside Ctrl+V with its existing offset.",
-    "Preserve the edited pose and appearance when importing builder changes as a new figure, keeping original instances unchanged after deleting parts.",
-    "Reduce dense-animation stalls and image allocations.",
-    "Retain the selected VFX clip when using frame-navigation shortcuts in the timeline.",
-    "Reduce long-project editing overhead by transferring only changed thumbnail poses, retaining unchanged inspector icons, and avoiding redundant timeline layout work.",
-    "Render the artwork surrounding the camera before applying scene VFX, preventing black shockwave bands and clipped filter edges in exports, playback, and thumbnails; preserve bounded sampling surfaces and tiny-blur guards.",
-    "Preserve original sprite image colors and transparency on import instead of automatically erasing pixels matching the bottom-left corner.",
-    "Show a checkerboard behind transparent scene areas during editing and playback."
+    "Draw and animate on dedicated drawing layers backed by a sparse tiled raster engine timeline",
+    "Work more naturally with a drawing tablet: tapping a joint or figure with the pen no longer nudges it, holding the pen still no longer pops up the context menu (the barrel button still does), and Ctrl+Space or Shift+Space with a pen drag zooms, or rotates the Draw view, without a scroll wheel. Settings → Shortcuts lists the pen gestures.",
+    "Avoid rebuilding unchanged image textures when revisiting animation frames.",
+    "Reduce the delay before first playback of large, freshly imported Pivot animations.",
+    "Reduce playback memory for large animations by adjusting background preparation to available memory and releasing cancelled work during editing.",
+    "Avoid repeatedly repainting unchanged Advanced timeline frames while posing figures.",
+    "Reduce delays before the next file operation after cancelling an import or export.",
+    "Reduce the time needed to prepare images when opening a project.",
+    "Scale and rotate a multi-figure selection around the dragged figure's pivot like Pivot: Alt-drag now moves every selected figure's position toward or around the shared origin instead of resizing each figure in place, and Ctrl+Alt keeps rotating the group without scaling.",
+    "Make frame counts agree between the Simple timeline, the Advanced timeline and Export",
+    "Make onion skin settings compact",
+    "Make the audio timeline clearer",
+    "Add and edit effects more easily in the VFX panel",
+    "Show a ⇔ marker on scrubbable property labels and a hint in Transform sections that dragging a label adjusts its value, with Shift or Alt for finer steps.",
+    "Reduce lag and memory pressure when posing dense figures",
+    "Offer recovery and reopening when the desktop editor stops unexpectedly, instead of leaving a black window that cannot save or close normally.",
+    "Restore right-click bending on the canvas",
+    "Keep connected figures joined when using Break apart frame or Bake animation on a movieclip, so expanded figures stay attached to their parents instead of separating.",
+    "Apply movieclip Transform edits from the inspector: Scale, Angle, Opacity and Z-index fields now update the placed instance instead of leaving it unchanged."
   ],
   "groups": [
     {
       "name": "Added",
       "notes": [
-        "Add saved Normal, Medium, Low, Draft and Automatic playback quality options in Animation settings, with Normal as the default and full-resolution editing restored on pause.",
-        "Add private bug-report and feedback conversations in the app and on the website, with attachments and developer replies.",
-        "Add a saved Animation setting to fit the view when playback starts, enabled by default; turn it off to preserve zoom and pan.",
-        "Add Ctrl+Shift+V to paste figures in their original position, alongside Ctrl+V with its existing offset."
+        "Draw and animate on dedicated drawing layers backed by a sparse tiled raster engine timeline"
+      ]
+    },
+    {
+      "name": "Changed",
+      "notes": [
+        "Work more naturally with a drawing tablet: tapping a joint or figure with the pen no longer nudges it, holding the pen still no longer pops up the context menu (the barrel button still does), and Ctrl+Space or Shift+Space with a pen drag zooms, or rotates the Draw view, without a scroll wheel. Settings → Shortcuts lists the pen gestures.",
+        "Avoid rebuilding unchanged image textures when revisiting animation frames.",
+        "Reduce the delay before first playback of large, freshly imported Pivot animations.",
+        "Reduce playback memory for large animations by adjusting background preparation to available memory and releasing cancelled work during editing.",
+        "Avoid repeatedly repainting unchanged Advanced timeline frames while posing figures.",
+        "Reduce delays before the next file operation after cancelling an import or export.",
+        "Reduce the time needed to prepare images when opening a project.",
+        "Scale and rotate a multi-figure selection around the dragged figure's pivot like Pivot: Alt-drag now moves every selected figure's position toward or around the shared origin instead of resizing each figure in place, and Ctrl+Alt keeps rotating the group without scaling.",
+        "Make frame counts agree between the Simple timeline, the Advanced timeline and Export",
+        "Make onion skin settings compact",
+        "Make the audio timeline clearer",
+        "Add and edit effects more easily in the VFX panel",
+        "Show a ⇔ marker on scrubbable property labels and a hint in Transform sections that dragging a label adjusts its value, with Shift or Alt for finer steps."
       ]
     },
     {
       "name": "Fixed",
       "notes": [
-        "Preserve the edited pose and appearance when importing builder changes as a new figure, keeping original instances unchanged after deleting parts.",
-        "Reduce dense-animation stalls and image allocations.",
-        "Retain the selected VFX clip when using frame-navigation shortcuts in the timeline.",
-        "Reduce long-project editing overhead by transferring only changed thumbnail poses, retaining unchanged inspector icons, and avoiding redundant timeline layout work.",
-        "Render the artwork surrounding the camera before applying scene VFX, preventing black shockwave bands and clipped filter edges in exports, playback, and thumbnails; preserve bounded sampling surfaces and tiny-blur guards.",
-        "Preserve original sprite image colors and transparency on import instead of automatically erasing pixels matching the bottom-left corner.",
-        "Show a checkerboard behind transparent scene areas during editing and playback."
+        "Reduce lag and memory pressure when posing dense figures",
+        "Offer recovery and reopening when the desktop editor stops unexpectedly, instead of leaving a black window that cannot save or close normally.",
+        "Restore right-click bending on the canvas",
+        "Keep connected figures joined when using Break apart frame or Bake animation on a movieclip, so expanded figures stay attached to their parents instead of separating.",
+        "Apply movieclip Transform edits from the inspector: Scale, Angle, Opacity and Z-index fields now update the placed instance instead of leaving it unchanged."
       ]
     }
   ]
