@@ -14,10 +14,10 @@ export async function drawingBarrier(report,options={}) {
   if(report._styk?.movieclipSource?.document)await drawingBarrier(report._styk.movieclipSource.document,{...options,seen});
 }
 class DrawingWorker {
-  constructor(){this.next=1;this.pending=new Map();}
+  constructor({maxPending=2}={}){this.next=1;this.pending=new Map();this.maxPending=maxPending;}
   request(kind,payload,{signal,transfer}={}) {
     if(signal?.aborted)return Promise.reject(new DOMException('Drawing operation cancelled.','AbortError'));
-    if(this.pending.size>=2)return Promise.reject(new Error('Drawing worker is busy. Wait for the current operation.'));
+    if(this.pending.size>=this.maxPending)return Promise.reject(new Error('Drawing worker is busy. Wait for the current operation.'));
     if(!this.worker){
       this.worker=new Worker(new URL('./drawing-worker.mjs',import.meta.url),{type:'module',name:'StykAnimate drawing pixels'});
       this.worker.onmessage=({data})=>{const pending=this.pending.get(data.id);if(!pending)return;this.pending.delete(data.id);pending.finish(data.error?new Error(data.error):null,data);};
@@ -47,6 +47,11 @@ export class StrokeWorker {
 }
 
 const PUBLISH_CHUNK=96;
+/** Resident tile budget from device memory: animation scrubbing wants many
+ * cels resident. navigator.deviceMemory reports up to 8 (GiB). */
+export function defaultTileBudget(memory=globalThis.navigator?.deviceMemory){const gib=Number.isFinite(memory)&&memory>0?memory:4;return Math.max(192,Math.min(512,gib*64))*1024*1024;}
+// Mip levels the decode worker prepares: 4× drawings viewed at 100% use level 2.
+const DECODE_LEVELS=3;
 const sideBytes=s=>s==null?0:s.byteLength===4?TILE_BYTES:s.byteLength;
 const tilePayload=(store,rect)=>{const tiles=[];for(const [tx,ty] of TileStore.tilesInRect(rect.x,rect.y,rect.width,rect.height)){const tile=store.get(tx,ty);if(tile)tiles.push({tx,ty,pixels:tile.pixels.slice().buffer});}return tiles;};
 
@@ -54,11 +59,11 @@ const tilePayload=(store,rect)=>{const tiles=[];for(const [tx,ty] of TileStore.t
  * the per-tile PNG blob on image_assets[0].styk_tiles plus a bounds-sized
  * preview PNG on data_url keep legacy asset consumers working. */
 export class DrawingResources {
-  constructor(report,{tileBytes=192*1024*1024,levelBytes=64*1024*1024,scratchBytes=64*1024*1024,hardBytes,onChange=()=>{},onError=()=>{},worker,strokeWorker}={}) {
+  constructor(report,{tileBytes=defaultTileBudget(),levelBytes=64*1024*1024,scratchBytes=64*1024*1024,hardBytes,onChange=()=>{},onError=()=>{},worker,strokeWorker}={}) {
     // tileBudget is the retention target; hardBudget is the only point a
-    // required working set is refused. Between them, required dirty/pinned
+    // required working set is refused (at least 768 MiB). Between them, required dirty/pinned
     // tiles stay resident while publication frees them in the background.
-    Object.assign(this,{report,tileBudget:tileBytes,hardBudget:hardBytes??tileBytes*4,levelBudget:levelBytes,scratchBudget:scratchBytes,onChange,onError,entries:new Map(),worker:worker??new DrawingWorker(),decodeWorker:worker??new DrawingWorker(),strokeWorker:strokeWorker??new StrokeWorker(),generation:1,surfaceVersion:0,decodeQueue:[],thumbnailQueue:new Map(),thumbnailCache:new Map(),thumbnailWorker:worker??new DrawingWorker(),decodes:0,lastEncode:null});owners.set(report,this);
+    Object.assign(this,{report,tileBudget:tileBytes,hardBudget:hardBytes??Math.max(tileBytes*2,Math.min(tileBytes*4,768*1024*1024)),levelBudget:levelBytes,scratchBudget:scratchBytes,onChange,onError,entries:new Map(),worker:worker??new DrawingWorker(),decodeWorker:worker??new DrawingWorker(),strokeWorker:strokeWorker??new StrokeWorker(),generation:1,surfaceVersion:0,decodeQueue:[],thumbnailQueue:new Map(),thumbnailCache:new Map(),thumbnailWorker:worker??new DrawingWorker(),decodes:0,lastEncode:null,injectedWorker:Boolean(worker)});owners.set(report,this);
   }
   /** While a stroke session or scrub owns the UI thread, the publication
    * debounce and the thumbnail pump wait; clearing busy re-arms both. */
@@ -95,6 +100,36 @@ export class DrawingResources {
     this.flush().catch(this.onError);
     if(resident()+bytes>this.hardBudget)throw new Error('Drawing memory is full. Choose 1× resolution or finish the current edit.');
   }
+  /** Parallel PNG codec workers for large publications and cold decodes,
+   * spawned on first use. */
+  encoders(){
+    if(!this._encoders){const count=this.injectedWorker?1:Math.max(1,Math.min(4,(globalThis.navigator?.hardwareConcurrency??4)-2));this._encoders=Array.from({length:count},(_,i)=>i===0&&this.injectedWorker?this.worker:new DrawingWorker({maxPending:8}));}
+    return this._encoders;
+  }
+  /** Decode a published blob across the pool, one spatial shard per worker,
+   * and merge tiles and mip levels. */
+  async decodeTiles(url){
+    const pool=this.encoders(),count=pool.length;
+    if(count===1||url.length<256*1024)return this.decodeWorker.request('decode-tiles',{url,levels:DECODE_LEVELS});
+    const parts=await Promise.all(pool.map((worker,index)=>worker.request('decode-tiles',{url,levels:DECODE_LEVELS,shard:[index,count]})));
+    const levels=[];for(const part of parts)part.levels?.forEach((list,k)=>{(levels[k]??=[]).push(...list);});
+    // Trim empty trailing levels (shards report every depth).
+    while(levels.length&&!levels.at(-1).length)levels.pop();
+    return {tiles:parts.flatMap(p=>p.tiles),levels};
+  }
+  /** Strokes adopt tiles without reserving, and dirty work may exceed the
+   * budget until it publishes; once everything is published, evict clean
+   * stores back under the budget, keeping the most recently used cel. */
+  trim(){
+    if(this.disposed)return;let bytes=this.stats.bytes;if(bytes<=this.tileBudget)return;
+    const stores=[...this.entries.values()].filter(e=>e.store).sort((a,b)=>a.used-b.used),current=stores.at(-1);let evicted=false;
+    for(const e of stores){
+      if(bytes<=this.tileBudget)break;
+      if(e===current||e.pinned||e.published?.revision!==e.revision)continue;
+      e.store=null;e.levels=null;this.dropScratch(e);this.surfaceVersion++;bytes=this.stats.bytes;evicted=true;
+    }
+    if(evicted)this.onChange();
+  }
   /** Move an in-flight or resident entry under a new cel id (lazy migration). */
   retarget(oldCelId,figure){const e=this.entries.get(oldCelId),d=drawingMetadata(figure);if(!e||!d||d.celId===oldCelId)return;this.entries.delete(oldCelId);e.id=d.celId;this.entries.set(e.id,e);}
   /** Install decoded/resampled tiles under a figure's cel (publication follows). */
@@ -115,11 +150,14 @@ export class DrawingResources {
       // History snapshots replace figure objects; the live report figure is
       // authoritative for the published asset behind this cel id.
       const live=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===d.celId)??figure,asset=live.image_assets[0];
-      const result=await this.decode(e,()=>d.version===1?this.decodeWorker.request('decode-legacy',{url:asset.data_url,crop:d.crop}):asset.styk_tiles?this.decodeWorker.request('decode-tiles',{url:asset.styk_tiles}):Promise.resolve({tiles:[]}));
+      const result=await this.decode(e,()=>d.version===1?this.decodeWorker.request('decode-legacy',{url:asset.data_url,crop:d.crop}):asset.styk_tiles?this.decodeTiles(asset.styk_tiles):Promise.resolve({tiles:[]}));
       if(this.disposed||generation!==this.generation)throw new DOMException('Drawing changed.','AbortError');
       const store=tileStoreFromList(result.tiles);
+      const exact=!e.deferred.length;
       for(const step of e.deferred)applyTileChanges(store,step.changes,step.direction);
       e.deferred=[];this.reserve(store.bytes,e);e.store=store;e.stamp++;e.decodeError=null;e.levels=null;this.dropScratch(e);this.surfaceVersion++;
+      // Worker-built mip levels are valid only when no deferred edit changed the pixels.
+      if(exact&&result.levels?.length){let below=store;e.levels=result.levels.map(list=>{const level=tileStoreFromList(list);level.scanned=below.size;below=level;return level;});this.levelsReserved(e);}
       e.published??={revision:base,url:d.version===2?asset.styk_tiles??null:null};
       this.onChange();return e;
     })().finally(()=>{e.loading=null;});return e.loading;
@@ -248,7 +286,7 @@ export class DrawingResources {
     if(this.encoding){await this.encoding;return this.flush({signal});}
     clearTimeout(this.timer);this.timer=null;
     const e=[...this.entries.values()].find(e=>!e.pinned&&e.published?.revision!==e.revision&&this.report.figure_types.some(f=>drawingMetadata(f)?.celId===e.id));
-    if(!e)return;
+    if(!e){this.trim();return;}
     if(signal?.aborted)throw new DOMException('Drawing publication cancelled.','AbortError');
     if(!e.store){const figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===e.id);if(!figure)return;await this.surface(figure);return this.flush({signal});}
     const revision=e.revision,generation=this.generation,figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===e.id);
@@ -261,15 +299,19 @@ export class DrawingResources {
       // Large publications stream through the worker's PNG cache in bounded
       // chunks, each copied just before it is sent, so no single main-thread
       // task copies every changed tile. Only the last chunk assembles the blob.
+      // The encoder pool compresses them in parallel; the owning worker adopts
+      // those PNGs into its cache and only assembles the blob.
       const pending=tiles.filter(t=>!t.png),primed=[],copy=list=>list.map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
-      while(pending.length>PUBLISH_CHUNK){
-        const part=copy(pending.splice(0,PUBLISH_CHUNK));
-        const reply=await this.worker.request('prime-tiles',{celId:e.id,tiles:part},{signal,transfer:part.map(t=>t.pixels)});
-        if(this.disposed||generation!==this.generation||revision!==e.revision)return;
-        primed.push(...reply.tiles);
+      const stale=()=>this.disposed||generation!==this.generation||revision!==e.revision;
+      if(pending.length>PUBLISH_CHUNK){
+        const chunks=[];while(pending.length>PUBLISH_CHUNK)chunks.push(pending.splice(0,PUBLISH_CHUNK));
+        let next=0;
+        await Promise.all(this.encoders().map(async worker=>{while(next<chunks.length&&!stale()){const part=copy(chunks[next++]);const reply=await worker.request('encode-pngs',{tiles:part},{signal,transfer:part.map(t=>t.pixels)});primed.push(...reply.tiles);}}));
+        if(stale())return;
       }
       let fresh=copy(pending);
-      let result=await this.worker.request('encode-tiles',{celId:e.id,keep,tiles:fresh},{signal,transfer:fresh.map(t=>t.pixels)});
+      const pngs=primed.map(t=>({tx:t.tx,ty:t.ty,png:t.png.slice(0)}));
+      let result=await this.worker.request('encode-tiles',{celId:e.id,keep,tiles:fresh,pngs},{signal,transfer:[...fresh.map(t=>t.pixels),...pngs.map(t=>t.png)]});
       if(result.missing?.length){
         if(this.disposed||generation!==this.generation||revision!==e.revision)return;
         // The worker cache lost PNGs the store still trusts; resend them once.
@@ -304,5 +346,5 @@ export class DrawingResources {
     const reachable=new Set(this.report.figure_types.map(f=>drawingMetadata(f)?.celId));
     for(const [id,e] of this.entries)if(!reachable.has(id)&&!retained.has(id)&&!e.pinned)this.entries.delete(id);
   }
-  dispose(){this.disposed=true;this.generation++;clearTimeout(this.timer);this.worker.dispose();this.decodeWorker.dispose();this.thumbnailWorker.dispose();if(this.strokeWorker.close)this.strokeWorker.close();else this.strokeWorker.dispose();this.thumbnailQueue.clear();for(const t of this.thumbnailCache.values())t.canvas.width=t.canvas.height=1;this.thumbnailCache.clear();for(const job of this.decodeQueue)job.reject(new DOMException('Drawing document closed.','AbortError'));this.decodeQueue=[];this.entries.clear();owners.delete(this.report);}
+  dispose(){this.disposed=true;this.generation++;clearTimeout(this.timer);this.worker.dispose();for(const w of this._encoders??[])if(w!==this.worker)w.dispose();this.decodeWorker.dispose();this.thumbnailWorker.dispose();if(this.strokeWorker.close)this.strokeWorker.close();else this.strokeWorker.dispose();this.thumbnailQueue.clear();for(const t of this.thumbnailCache.values())t.canvas.width=t.canvas.height=1;this.thumbnailCache.clear();for(const job of this.decodeQueue)job.reject(new DOMException('Drawing document closed.','AbortError'));this.decodeQueue=[];this.entries.clear();owners.delete(this.report);}
 }

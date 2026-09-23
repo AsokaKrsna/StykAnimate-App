@@ -2,7 +2,7 @@ import {TILE,TILE_BYTES,tileKey,TileStore,tileTransparent} from './drawing-tiles
 import {floodTiles,fillMaskTiles,tileChanges,tileAlignedRect} from './drawing-pixels.mjs';
 import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {decodeDrawingPNG} from './drawing-png.mjs';
-import {decodeTileBlob,tileStoreFromList,TILE_BLOB_PREFIX,TileEncodeCache} from './drawing-tile-codec.mjs';
+import {decodeTileBlob,tileStoreFromList,TILE_BLOB_PREFIX,TileEncodeCache,encodeTile} from './drawing-tile-codec.mjs';
 import {levelStore} from './drawing-raster.mjs';
 import {encodePNGPortable} from './sticknodes/decoder/png-browser.mjs';
 
@@ -31,14 +31,25 @@ self.onmessage=async({data})=>{
       self.postMessage({id,tiles},tiles.map(t=>t.pixels));return;
     }
     if(kind==='decode-tiles'){
-      const tiles=(await decodeTileBlob(data.url)).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,png:t.png.buffer}));
-      self.postMessage({id,tiles},tiles.flatMap(t=>[t.pixels,t.png]));return;
+      const decoded=await decodeTileBlob(data.url,{shard:data.shard}),levels=[];
+      // Build the mip chain here while the pixels are already in this worker,
+      // so a (re)decoded cel is display-ready at any zoom without main-thread
+      // reduction work. Coarse levels stop once they fit in a few tiles.
+      if(data.levels>0&&decoded.length){
+        const entry={store:tileStoreFromList(decoded),levels:[]};
+        // A shard stops at the same depth as every other shard: its size alone must not decide.
+        for(let k=1;k<=data.levels;k++){const level=levelStore(entry,k);levels.push([...level].map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer})));if(!data.shard&&level.size<=4)break;}
+      }
+      const tiles=decoded.map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,png:t.png.buffer}));
+      self.postMessage({id,tiles,levels},[...tiles.flatMap(t=>[t.pixels,t.png]),...levels.flat().map(t=>t.pixels)]);return;
     }
-    if(kind==='prime-tiles'){
-      const out=(await encodeCache.prime(data.celId,data.tiles??[])).map(t=>({tx:t.tx,ty:t.ty,png:t.png.slice().buffer}));
+    if(kind==='encode-pngs'){
+      // Stateless encoding for the parallel pool; the owning worker's cache adopts the results.
+      const out=(data.tiles??[]).map(t=>({tx:t.tx,ty:t.ty,png:encodeTile(t.pixels).buffer}));
       self.postMessage({id,tiles:out},out.map(t=>t.png));return;
     }
     if(kind==='encode-tiles'){
+      if(data.pngs?.length)encodeCache.adopt(data.celId,data.pngs);
       const result=await encodeCache.encode(data.celId,data.keep??[],data.tiles??[]);
       if(result.missing){self.postMessage({id,missing:result.missing});return;}
       const out=result.tiles.map(t=>({tx:t.tx,ty:t.ty,png:t.png.slice().buffer}));

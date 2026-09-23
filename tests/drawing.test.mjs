@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {DrawingResources} from '../src/drawing-resources.mjs';
+import {DrawingResources,defaultTileBudget} from '../src/drawing-resources.mjs';
 import {DrawingStroke,StrokePath,normalizeBrush,dabExtent,floodTiles,lassoMask,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
 import {drawingMetadata,validateDrawings,drawingMatrix,drawingPixelMatrix,inversePoint,transformPoint,migrateDrawingFigure,EMPTY_PNG} from '../src/drawing-model.mjs';
 import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from '../src/drawing-tiles.mjs';
-import {encodeTileBlob,decodeTileBlob,assembleTileBlobBytes,TILE_BLOB_PREFIX,TileEncodeCache} from '../src/drawing-tile-codec.mjs';
+import {encodeTileBlob,decodeTileBlob,tileStoreFromList,encodeTile,assembleTileBlobBytes,TILE_BLOB_PREFIX,TileEncodeCache} from '../src/drawing-tile-codec.mjs';
 import {encodeDrawingPNG,decodeDrawingPNG} from '../src/drawing-png.mjs';
 import {encodePNGPortable} from '../src/sticknodes/decoder/png-browser.mjs';
 import {StrokeEngine} from '../src/drawing-stroke-engine.mjs';
@@ -34,9 +34,14 @@ function workerStub(){
       }
       return {tiles};
     }
-    if(kind==='decode-tiles')return {tiles:(await decodeTileBlob(data.url)).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,png:t.png.buffer}))};
-    if(kind==='prime-tiles')return {tiles:(await encodeCache.prime(data.celId,data.tiles??[])).map(t=>({tx:t.tx,ty:t.ty,png:t.png.slice().buffer}))};
+    if(kind==='decode-tiles'){
+      const decoded=await decodeTileBlob(data.url,{shard:data.shard}),levels=[];
+      if(data.levels>0&&decoded.length){const entry={store:tileStoreFromList(decoded),levels:[]};for(let k=1;k<=data.levels;k++){const level=levelStore(entry,k);levels.push([...level].map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer})));if(!data.shard&&level.size<=4)break;}}
+      return {tiles:decoded.map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.buffer,png:t.png.buffer})),levels};
+    }
+    if(kind==='encode-pngs')return {tiles:(data.tiles??[]).map(t=>({tx:t.tx,ty:t.ty,png:encodeTile(t.pixels).buffer}))};
     if(kind==='encode-tiles'){
+      if(data.pngs?.length)encodeCache.adopt(data.celId,data.pngs);
       const result=await encodeCache.encode(data.celId,data.keep??[],data.tiles??[]);
       if(result.missing)return{missing:result.missing};
       const out=result.tiles.map(t=>({tx:t.tx,ty:t.ty,png:t.png.slice().buffer}));
@@ -586,8 +591,8 @@ test('a large publication streams in bounded chunks and round-trips every tile e
     const figure=createDrawingFigure({pixelsPerUnit:1,figureTypeId:1});report.figure_types.push(figure);
     const tiles=[];for(let i=0;i<300;i++){const px=new Uint8ClampedArray(TILE_BYTES);for(let p=0;p<TILE*TILE;p++)px.set([i%256,(i*7)%256,p%256,255],p*4);tiles.push({tx:i%20,ty:Math.floor(i/20),pixels:px.buffer});}
     resources.install(figure,tiles);await resources.flush();
-    const sends=kinds.filter(k=>k.kind==='prime-tiles'||k.kind==='encode-tiles');
-    assert.ok(sends.length>=3&&sends.every(k=>k.count<=96),'publication was chunked');
+    const sends2=kinds.filter(k=>['encode-pngs','encode-tiles'].includes(k.kind));
+    assert.ok(sends2.length>=3&&sends2.every(k=>k.count<=96),'publication was chunked');
     const decoded=await decodeTileBlob(figure.image_assets[0].styk_tiles),entry=resources.entry(figure);
     assert.equal(decoded.length,300);
     for(const t of decoded)assert.deepEqual(t.pixels,entry.store.get(t.tx,t.ty).pixels);
@@ -605,6 +610,58 @@ test('incremental tile store bounds always equal a fresh recomputation',()=>{
     else{const px=new Uint8ClampedArray(TILE_BYTES);for(let k=Math.floor(rnd()*4);k>0;k--)px[(Math.floor(rnd()*TILE)*TILE+Math.floor(rnd()*TILE))*4+3]=255;op<.6?store.adopt(tx,ty,px):store.set(tx,ty,px);}
     if(i%3===0){const copy=new TileStore(new Map(store.tiles));assert.deepEqual(store.bounds,copy.bounds);assert.deepEqual(store.tileBounds,copy.tileBounds);}
   }
+});
+
+test('publishing trims clean stores back under the tile budget, keeping the current cel',async()=>{
+  const report={figure_types:[]},resources=new DrawingResources(report,{worker:workerStub(),tileBytes:6*TILE_BYTES});
+  try{
+    const figures=[1,2,3].map(id=>{const f=createDrawingFigure({pixelsPerUnit:1,figureTypeId:id});report.figure_types.push(f);return f;});
+    const tiles=n=>Array.from({length:n},(_,i)=>({tx:i,ty:0,pixels:new Uint8ClampedArray(TILE_BYTES).fill(200).buffer}));
+    // Strokes adopt tiles without reserving: three 4-tile cels exceed the 6-tile budget.
+    figures.forEach((f,i)=>{const e=resources.install(f,tiles(4));e.used=i;});
+    await resources.flush();
+    const stats=resources.stats;
+    assert.ok(stats.bytes<=6*TILE_BYTES,'resident tiles fit the budget after publication');
+    assert.ok(resources.entry(figures[2]).store,'the most recently used cel stays resident');
+    assert.equal(resources.entry(figures[0]).store,null,'the least recently used clean cel was evicted');
+  }finally{resources.dispose();}
+});
+
+test('a decoded cel arrives with worker-built mip levels equal to a fresh reduction',async()=>{
+  const report={figure_types:[]},resources=new DrawingResources(report,{worker:workerStub()});
+  try{
+    const figure=createDrawingFigure({pixelsPerUnit:1,figureTypeId:1});report.figure_types.push(figure);
+    const tiles=[];for(let i=0;i<40;i++){const px=new Uint8ClampedArray(TILE_BYTES);for(let p=0;p<TILE*TILE;p++)px.set([(i*37+p)%256,(i*11)%256,p%199,(p*7)%256],p*4);tiles.push({tx:i%8,ty:Math.floor(i/8),pixels:px.buffer});}
+    resources.install(figure,tiles);await resources.flush();
+    const entry=resources.entry(figure);entry.store=null;entry.levels=null;
+    await resources.surface(figure);
+    assert.ok(entry.levels?.length>=2,'levels arrive with the decoded tiles');
+    const fresh={store:entry.store,levels:[]};
+    for(let k=1;k<=entry.levels.length;k++){const got=entry.levels[k-1],want=levelStore(fresh,k);assert.equal(got.size,want.size);for(const t of want)assert.deepEqual(got.get(t.tx,t.ty).pixels,t.pixels);}
+    // Using a level does not rebuild tiles the worker already produced.
+    const before=entry.levels[0].get(0,0);assert.equal(levelStore(entry,1).get(0,0),before);
+  }finally{resources.dispose();}
+});
+
+test('a sharded parallel decode merges into the same tiles and mip levels',async()=>{
+  const report={figure_types:[]},resources=new DrawingResources(report,{worker:workerStub()});
+  try{
+    const figure=createDrawingFigure({pixelsPerUnit:1,figureTypeId:1});report.figure_types.push(figure);
+    const tiles=[];for(let i=0;i<300;i++){const px=new Uint8ClampedArray(TILE_BYTES);for(let p=0;p<TILE*TILE;p++)px.set([(i*13+p)%256,(p>>6)*4,i%256,(i+p)%256],p*4);tiles.push({tx:(i%30)-12,ty:Math.floor(i/30)-4,pixels:px.buffer});}
+    resources.install(figure,tiles);await resources.flush();
+    const url=figure.image_assets[0].styk_tiles;
+    const single=await resources.decodeWorker.request('decode-tiles',{url,levels:3});
+    resources._encoders=[workerStub(),workerStub(),workerStub()];
+    const merged=await resources.decodeTiles(url);
+    const key=t=>t.tx+','+t.ty,map=list=>new Map(list.map(t=>[key(t),new Uint8Array(t.pixels)]));
+    assert.deepEqual(map(merged.tiles),map(single.tiles));
+    assert.equal(merged.levels.length,single.levels.length);
+    merged.levels.forEach((list,k)=>assert.deepEqual(map(list),map(single.levels[k])));
+  }finally{resources.dispose();}
+});
+
+test('the resident tile budget scales with device memory within bounds',()=>{
+  assert.equal(defaultTileBudget(undefined),256*1024*1024);assert.equal(defaultTileBudget(2),192*1024*1024);assert.equal(defaultTileBudget(8),512*1024*1024);assert.equal(defaultTileBudget(64),512*1024*1024);
 });
 
 // Phase 3: mip levels, tile-anchored scratch, budgets and the shared provider.

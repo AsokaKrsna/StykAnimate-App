@@ -103,7 +103,9 @@ are not supported.
 ## Runtime and performance
 
 `drawing-resources.mjs` owns sparse tile stores, worker jobs and disposal for
-one report. Resident tiles are limited to 192 MiB; accounting deduplicates
+one report. Resident tiles are limited by a budget scaled from device memory
+(192–512 MiB; the hard ceiling for unpublished work is at least 768 MiB);
+accounting deduplicates
 pixel buffers, so copy-on-write forks share counted bytes until they diverge.
 New work reserves before it is rejected: presenter scratches free first, then
 derived mip levels, then published-clean stores (which re-decode on demand),
@@ -112,7 +114,12 @@ kicks its re-decode itself — real failures back off behind `decodeError`
 instead of retrying every frame — and v2 renderers keep their last texture or
 draw nothing rather than flashing the stale 1×1 placeholder. Cold requests
 coalesce into a bounded queue: at most two decodes wait, and a newer seek
-supersedes the oldest.
+supersedes the oldest. Once publication finishes, clean stores above the
+budget are trimmed least-recently-used first, keeping the current cel; strokes
+adopt tiles without reserving, so this is what bounds memory after painting.
+A cold decode is split across a small pool of codec workers by 8×8-tile blocks;
+each block owns its mip tiles up to level 3, so every shard also builds its
+mip levels and the cel arrives display-ready at any zoom.
 Seeking prefetches the two unique neighbouring cels on each side of the
 playhead plus the current one, queued last so it wins eviction. Thumbnails
 have one worker, at most 48 queued requests and 256 small cached images;
@@ -132,6 +139,14 @@ each batch seeds the stroke worker with exactly the tiles its dabs reach, and
 the worker refuses a dab outside its seeded tiles rather than painting over a
 blank guess. Symmetry feeds each mirrored sample into its own path so mirrored
 strokes keep even spacing while sharing one coverage buffer and undo step.
+At most one dab batch is in flight: while the stroke worker is busy, dabs
+accumulate and leave with its reply, so a brush slower than the pointer never
+queues stale work. Samples arrive through `pointerrawupdate` where available,
+and an idle worker takes a batch immediately instead of at the next frame.
+Dabs accumulate stroke coverage only; colour is composited once per batch over
+each tile's dirty span, since it depends only on final coverage, the pixels
+the stroke first saw and the blend mode. Soft falloff uses a per-stroke
+lookup table indexed by squared distance.
 `drawing-pixels.mjs` rasterizes real, distance-resampled samples. Stroke opacity
 caps the whole stroke, while flow accumulates dabs. Pressure release cannot
 remove previously deposited paint. Stabilization is a distance-windowed
@@ -160,7 +175,13 @@ The pixel worker keeps a bounded per-cel cache of encoded tile PNGs. Each
 publication sends pixels only for tiles whose PNG is not already trusted,
 plus the ordered key list the blob must carry; cached PNGs fill the rest, and
 missing cache entries trigger exactly one resend. Blob assembly happens in
-the worker. Generation, cel and revision checks reject stale results. Failed
+the worker; large publications are encoded in parallel by the codec pool and
+adopted into that cache. Tiles are PNG-encoded synchronously by
+`zlib-sync.mjs` (greedy LZ77 with one dynamic-Huffman block; plain or
+adaptively filtered rows, whichever LZ77 can reuse more of), and decoded with
+its table-driven inflate; per-tile compression streams cost more in setup than
+the work itself. Larger images keep the native streams. The blob format and
+PNG bytes stay standard, so older files and other readers are unaffected. Generation, cel and revision checks reject stale results. Failed
 encoding retains dirty work for retry, and the publication debounce yields to
 active strokes and scrubbing. A gesture's pin on its tile store ends inside
 the commit, before the change broadcast — the playback/export barriers that

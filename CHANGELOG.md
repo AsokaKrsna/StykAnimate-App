@@ -34,6 +34,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Smooth strokes without dead zones or gaps: stabilized drawing follows the path continuously, and unstabilized strokes curve through sharp corners and always end on the final sample.
 - Stop animations that contain drawings from redrawing continuously while nothing changes, which kept the processor and graphics card busy and drained battery even when idle.
 - Fill large areas and close gaps in line art several times faster.
+- Save and reopen large drawings much faster, flip through heavy drawing frames with less waiting, and keep huge soft brushes responsive instead of lagging seconds behind the pen. Drawing memory now adapts to the computer and is released after saving.
 - Show brush strokes about twice as soon after the pen moves, so painting feels more directly connected to the cursor.
 - Paint large and soft brushes without hitches: big drawings no longer slow down each stroke frame, and finishing a stroke no longer pauses the app while it is saved into the drawing.
 - Stop fast or stabilized brush strokes from erasing square patches of existing artwork. The lost patches could not be restored with undo; strokes now keep every pixel they don't paint, and undo restores the drawing exactly.

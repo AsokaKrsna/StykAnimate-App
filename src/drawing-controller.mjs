@@ -194,8 +194,11 @@ export class DrawingController {
     if(s.outstanding===0&&!s.soon){s.soon=true;queueMicrotask(()=>{s.soon=false;if(!s.ended)this.flushStroke(s);});}
     else if(!s.raf)s.raf=requestAnimationFrame(()=>{s.raf=null;this.flushStroke(s);});
   }
-  flushStroke(s){
-    if(this.sessions.get(s.id)!==s||!s.pending.length)return;
+  /** Post pending dabs. One batch is in flight at a time: while the worker
+   * is busy, dabs accumulate and leave with its reply, so a brush slower than
+   * the pointer never builds an unbounded queue of stale work. */
+  flushStroke(s,force=false){
+    if(this.sessions.get(s.id)!==s||!s.pending.length||(!force&&s.outstanding>0))return;
     const dabs=s.pending;s.pending=[];
     const tiles=[],store=s.surface.store;
     for(const dab of dabs){
@@ -219,6 +222,7 @@ export class DrawingController {
       const store=s.surface.store;
       for(const t of data.tiles){const key=tileKey(t.tx,t.ty);if(!s.before.has(key))s.before.set(key,store.get(t.tx,t.ty)?.pixels.slice()??null);store.adopt(t.tx,t.ty,new Uint8ClampedArray(t.pixels));}
       if(data.tiles.length){this.owner.present(s.surface,data.dirty);this.onRender();}
+      if(!s.ended&&s.pending.length&&s.outstanding===0)this.flushStroke(s);
       return;
     }
     if(data.kind==='done'){this.sessions.delete(s.id);this.commitStroke(s,data.changes);}
@@ -269,7 +273,7 @@ export class DrawingController {
     if(g.kind==='stroke'){
       const s=g.session;s.ended=true;cancelAnimationFrame(s.raf);s.raf=null;
       if(s.lastWorld)this.lastStroke={layerId:s.target.id,celId:drawingMetadata(s.target.figure).celId,world:s.lastWorld};
-      for(const {path} of s.paths)path.finish();this.flushStroke(s);this.owner.strokeWorker.post({kind:'end',stroke:s.id});
+      for(const {path} of s.paths)path.finish();this.flushStroke(s,true);this.owner.strokeWorker.post({kind:'end',stroke:s.id});
       if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);
       return; // the gesture stays closing until the worker's done arrives
     }
