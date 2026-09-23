@@ -205,3 +205,9 @@ dialog::backdrop, .library-dialog::backdrop { background: var(--theme-backdrop);
 @media (prefers-reduced-motion: reduce) {
   :where(button, [role="button"], a, summary, select), .ds-switch > input, .ds-switch > input::after { transition: none; }
 }
+
+/* Onion skin toggle + settings split button in the timeline toolbar. */
+.timeline-onion-controls { gap: 1px; padding: 2px; border-color: var(--theme-border); border-radius: var(--ds-radius); }
+.timeline-onion-controls .icon-button { height: 26px; border-radius: var(--ds-radius-sm); }
+.timeline-onion-controls .onion-options-button { width: 22px; border-left: 0; }
+.timeline-onion-controls .onion-options-button .icon { width: 13px; height: 13px; }

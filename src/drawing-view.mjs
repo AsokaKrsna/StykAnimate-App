@@ -66,7 +66,7 @@ export function drawingInspector(drawing,{numericField,group,grid,heading,proper
   const details=(label,body)=>`<details class="inspector-section inspector-disclosure" data-section="${label}"><summary class="inspector-title">${label}</summary><div class="inspector-disclosure-body">${body}</div></details>`;
   const recent=drawing.library?.recent??[];
   const swatches=recent.length?`<div class="drawing-swatches" role="group" aria-label="Recent colors">${recent.map(c=>`<button class="drawing-swatch" data-draw-color="${c}" style="background:${c}" title="${c.toUpperCase()}" aria-label="Use ${c.toUpperCase()}" aria-pressed="${c===s.color.toLowerCase()}"></button>`).join('')}</div>`:'';
-  const quickHint=`<p class="drawing-hint drawing-quick-note">${icon('sliders')}Colour, size and opacity are in the bar above the canvas.</p>`;
+  const quickHint=`<p class="drawing-hint drawing-quick-note">${icon('sliders')}Color, size and opacity are in the bar above the canvas.</p>`;
   const preview=`<canvas class="drawing-preview" data-inspector-owned data-section="brush-preview" data-brush-preview aria-label="Brush stroke preview"></canvas>`;
   let target;try{target=editor.drawingTarget();}catch{}
   const layer=editor.getLayer(editor.activeLayerId),eligible=isDrawingLayer(layer)&&!layer.locked&&layer.visible;
