@@ -56,7 +56,9 @@ export async function decodeTileBlob(url,{shard,maxBytes=TILE_BLOB_MAX_PIXELS}={
   if(offset!==bytes.length)throw new Error('Drawing tile blob has trailing bytes.');
   return tiles;
 }
-export function tileStoreFromList(tiles){const store=new TileStore();for(const tile of tiles)store.tiles.set(`${tile.tx},${tile.ty}`,{tx:tile.tx,ty:tile.ty,pixels:new Uint8ClampedArray(tile.pixels),frozen:false,png:tile.png});return store;}
+/** Decoded tiles keep their published PNG as bytes: workers reply with
+ * ArrayBuffers, and publication slices and transfers a byte view. */
+export function tileStoreFromList(tiles){const store=new TileStore();for(const tile of tiles)store.tiles.set(`${tile.tx},${tile.ty}`,{tx:tile.tx,ty:tile.ty,pixels:new Uint8ClampedArray(tile.pixels),frozen:false,png:tile.png instanceof ArrayBuffer?new Uint8Array(tile.png):tile.png});return store;}
 
 /** Per-cel encoded-tile cache owned by the pixel worker. Publication sends
  * only tiles whose PNG the main thread no longer trusts plus the ordered key

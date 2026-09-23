@@ -1211,3 +1211,27 @@ test('a closing stroke commits to its original exposure after a view-only seek',
     e.undo();assert.equal(resources.entry(target.figure).store.get(2,0),undefined);
   }finally{resources.dispose();}
 });
+
+test('a movieclip of drawings gets its own figure layer, drawing keys and cels',async()=>{
+  const {e,resources}=fixture();try{
+    const layer=e.activeLayerId;await stroke(e,20,20);e.drawingKey([layer],1,{blank:true});e.seek(1);await stroke(e,44,44);await resources.flush();
+    const parentCels=new Set(e.report.figure_types.map(f=>drawingMetadata(f)?.celId).filter(Boolean)),shownOn=(id,tick)=>{e.seek(tick);return e.evaluatedFrame.objects.filter(o=>e.layerForUid(o.unique_id)===id).length;};
+    e.seek(0);const clip=e.createMovieclip({name:'Ink',start:0,end:2,uids:[]});
+    // Inside the clip the drawings are ordinary drawing keys with their own cels.
+    const doc=clip._styk.movieclip.document,keys=doc._styk.layerSheet.tracks[layer].keys;
+    assert.equal(keys.length,2);
+    for(const key of keys){
+      const frame=doc._styk.frameSources[key.value.frameId],figure=doc.figure_types.find(f=>f.figure_type_id===frame.objects[0].figure_type_id);
+      assert.equal(frame.objects.length,1);assert.ok(drawingMetadata(figure),'each key holds a drawing cel');assert.ok(!parentCels.has(drawingMetadata(figure).celId),'the clip owns fresh cel identities');
+    }
+    // The instance sits on a new figure layer; the drawing layer keeps only drawings.
+    const owner=e.getLayer(e.layerForUid(e.selectedUid));
+    assert.ok(owner&&!owner.drawing,'the clip is on a figure layer');assert.equal(owner.name,'Ink');
+    assert.deepEqual([shownOn(layer,0),shownOn(layer,1)],[0,0],'the captured drawings leave the drawing layer');
+    e.undo();assert.ok(!e.getLayer(owner.id),'undo removes the clip layer');assert.deepEqual([shownOn(layer,0),shownOn(layer,1)],[1,1],'undo restores the drawings');
+  }finally{resources.dispose();}
+});
+test('decoded tiles keep their published PNG as bytes for republication',()=>{
+  const store=tileStoreFromList([{tx:0,ty:0,pixels:new ArrayBuffer(TILE_BYTES),png:new Uint8Array([1,2,3]).buffer}]);
+  const png=store.get(0,0).png;assert.ok(png instanceof Uint8Array);assert.deepEqual([...png.slice()],[1,2,3]);
+});

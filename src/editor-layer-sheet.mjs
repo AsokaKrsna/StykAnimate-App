@@ -388,9 +388,22 @@ export const editorLayerSheetMethods={
   },
   /** Replace only the captured membership. Existing pose keys remain the exact
    * interpolation baseline, including curves crossing either range boundary. */
-  sheetCreateMovieclip({selected,start,end,instance,anchor}){
-    const owner=this.layerForUid(anchor),ids=[...new Set([...selected].map(uid=>this.layerForUid(uid)))],plan=planner(this,ids);
+  sheetCreateMovieclip({selected,start,end,instance,anchor,layerName='Movieclip'}){
+    const ids=[...new Set([...selected].map(uid=>this.layerForUid(uid)))],plan=planner(this,ids);
+    let owner=this.layerForUid(anchor);
+    // Drawing layers hold only drawing cels: a clip made of drawings alone
+    // gets its own figure layer directly above the anchor drawing layer.
+    const ownLayer=isDrawingLayer(plan.layers.byId[owner]);
+    if(ownLayer){
+      const id=`layer-${plan.layers.nextId}`,order=plan.layers.order.slice();order.splice(order.indexOf(owner)+1,0,id);
+      plan.layers.byId[id]={name:String(layerName).slice(0,120)||'Movieclip',visible:true,locked:false};plan.layers.order=order;plan.layers.nextId++;owner=id;
+    }
     plan.layers.assignments[instance.unique_id]=owner;
+    if(ownLayer){
+      if(start>0)plan.write(owner,0,createFrame(),{blank:true});
+      plan.write(owner,start,createFrame([instance]));
+      if(end<plan.state.duration)plan.write(owner,end,createFrame(),{blank:true});
+    }
     const captured=new Map();
     for(const id of ids){
       const track=plan.get(id),uids=[...selected].filter(uid=>this.layerForUid(uid)===id);
@@ -403,7 +416,7 @@ export const editorLayerSheetMethods={
         const tick=times[i];if(tick>=track.end)continue;
         const source=at(this.report,tick),objects=new Map(source.objects.map(object=>[object.unique_id,object]));
         for(const uid of uids){
-          const frame=createFrame(uid===anchor?[instance]:[]),object=objects.get(uid);
+          const frame=createFrame(uid===anchor&&!ownLayer?[instance]:[]),object=objects.get(uid);
           // Consumed source frames must still advance a replaced presence clip
           // when that same instance reappears after the converted range.
           const step=usesPresence(object)?{uid,typeId:object.figure_type_id,playback:object._stykMovieclip}:continuations(source).find(value=>value.uid===uid);

@@ -4,11 +4,13 @@ import {evaluatedFrame,timeline,buildGeometry,movieclipPresenceIndex} from './pi
 import {createFrame,createObject,emptyDocument} from './demo.mjs';
 import {frameOrder,setOrder,normalizeFrame} from './pivot/structure.mjs';
 import {layerLocked,layerIdForUid} from './layers.mjs';
+import {drawingMetadata,drawingId,isDrawingLayer} from './drawing-model.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
 import {createMovieclipMaterializer} from './movieclip-materialize.mjs';
 import {animationChannelId,validateAnimationDocument,sampleAnimationChannel} from './animation-channels.mjs';
 import {snapshotPoseFrame} from './pose-snapshot.mjs';
 import {presencePlayback,usesPresence,continuations,setContinuations,presenceElapsed} from './movieclip-presence.mjs';
+import {initializeLayerSheet} from './editor-layer-sheet.mjs';
 
 const clone=value=>structuredClone(value);
 const allocateType=editor=>editor.report.figure_types.reduce((id,f)=>Math.max(id,f.figure_type_id+1),1);
@@ -32,7 +34,9 @@ function filteredFrame(frame,selected){
 export function captureMovieclip(editor,{start=editor.tick,end=start+1,uids=[...editor.selectedUids],name='Movieclip'}={}){
   if(!Number.isInteger(start)||!Number.isInteger(end)||start<0||end<=start||end>Math.max(editor.totalTicks,start+1))throw new Error('Choose a valid movieclip range.');
   const report=editor.report,selected=new Set(uids);
-  if(!selected.size)for(const frame of report.keyframes)for(const obj of frame.objects)selected.add(obj.unique_id);
+  // All contents: everything shown in the range, including drawing layers,
+  // whose cels live in layer keys rather than the native frames.
+  if(!selected.size){for(const frame of report.keyframes)for(const obj of frame.objects)selected.add(obj.unique_id);for(let tick=start;tick<end;tick++)for(const obj of at(report,tick).objects)selected.add(obj.unique_id);}
   if(!selected.size)throw new Error('Select figures to create a movieclip.');
   // Include the connected assembly across its complete animation.
   const neighbors=new Map();
@@ -63,6 +67,9 @@ export function captureMovieclip(editor,{start=editor.tick,end=start+1,uids=[...
     prune(retained);metadata.movieclipSource={...metadata.movieclipSource,document:retained};
   }
   const source={...report,figure_types:clone(report.figure_types.filter(f=>usedTypes.has(f.figure_type_id))),keyframes:frames,backgrounds:[],_styk:metadata};
+  // Captured drawings become the clip's own cels, as copied keys do: sharing
+  // the project's cel identities would show and edit the project's pixels.
+  for(const figure of source.figure_types){const d=drawingMetadata(figure);if(d)figure._styk.drawing={...d,celId:drawingId()};}
   // Layer membership is needed by retained layer Pose channels; outside members
   // are harmless but removed from the portable source.
   if(metadata.layers){metadata.layers=clone(metadata.layers);metadata.layers.assignments=Object.fromEntries(Object.entries(metadata.layers.assignments??{}).filter(([uid])=>selected.has(Number(uid))));}
@@ -84,7 +91,31 @@ export function captureMovieclip(editor,{start=editor.tick,end=start+1,uids=[...
   const root=rootObject&&buildGeometry(report,first).objects.get(rootObject.object_slot)?.root;
   const document={...source,keyframes:localFrames,_styk:{format:'StykAnimate',format_version:1,name,
     layers:metadata.layers,movieclipSource:{document:{...source,figure_types:[]},inheritFigures:true}}};
+  if(Object.values(metadata.layers?.byId??{}).some(layer=>isDrawingLayer(layer)))clipDrawingKeys(document,localFrames);
   return {figure:movieclipFigure(allocateType(editor),name,document,{duration:end-start,pivot:root??{x:0,y:0}}),selected,start,end};
+}
+/** Give a captured clip its layer sheet with ordinary drawing keys. Without
+ * one, loading derives imported-timing keys, which draw the cels but cannot
+ * be painted, copied or re-timed like drawing keys. Each exposure gets its own
+ * pose frame; consecutive keys showing the same cel become one hold. */
+function clipDrawingKeys(document,localFrames){
+  initializeLayerSheet(document);
+  const {layers,layerSheet}=document._styk,sources=document._styk.frameSources??={},starts=[];let next=1,elapsed=0;
+  for(const frame of localFrames){starts.push(elapsed);elapsed+=frame.duration_raw;}
+  const frameAt=tick=>{let i=starts.length-1;while(i>0&&starts[i]>tick)i--;return localFrames[i];};
+  for(const id of layers.order){
+    if(!isDrawingLayer(layers.byId[id]))continue;
+    let previous=null;const keys=[];
+    for(const key of layerSheet.tracks[id].keys){
+      const frame=frameAt(key.sourceTick??key.tick),owned=frame.objects.filter(o=>layers.assignments[o.unique_id]===id),cel=owned[0]?.figure_type_id??null;
+      if(keys.length&&cel===previous)continue;previous=cel;
+      if(cel===null){keys.push({id:key.id,tick:key.tick,interpolation:'constant',value:{frameId:null},empty:true});continue;}
+      while(sources[`frame-${next}`])next++;
+      const frameId=`frame-${next++}`,pose=snapshotPoseFrame(frame,owned.map(o=>o.unique_id));pose._styk={...pose._styk,frameId};sources[frameId]=pose;
+      keys.push({id:key.id,tick:key.tick,interpolation:'constant',value:{frameId}});
+    }
+    layerSheet.tracks[id]={...layerSheet.tracks[id],keys};
+  }
 }
 export function applyMovieclipCommand(editor,command,direction){
   if(command.kind==='movieclip-poses'){
@@ -242,9 +273,12 @@ export const editorMovieclipMethods={
         if(positions.length&&positions.at(-1)-positions[0]+1!==positions.length)throw new Error('Select adjacent figures in the stacking order.');
         const uid=this._identity(),pivot=movieclipAsset(figure).pivot,instance=createObject(figure,uid,pivot.x,pivot.y,
           {_stykMovieclip:this.report._styk?.layerSheet?presencePlayback():{start,end,offset:0,speed:1,mode:movieclipAsset(figure).duration===1?'single':'loop'}});
-        const frame=createFrame([instance]),anchor=order[positions[0]]??[...selected][0];
+        // The clip belongs on a figure layer. Drawing layers hold only drawing
+        // cels, so a clip of drawings alone gets a new layer above them.
+        const onDrawing=uid=>isDrawingLayer(this.getLayer(this.layerForUid(uid)));
+        const frame=createFrame([instance]),anchor=order.filter((uid,i)=>positions.includes(i)).find(uid=>!onDrawing(uid))??order[positions.at(-1)]??[...selected][0];
         if(this.report._styk?.layerSheet){
-          this.sheetCreateMovieclip({selected,start,end,instance,anchor});
+          this.sheetCreateMovieclip({selected,start,end,instance,anchor,layerName:figure.name});
           this.seek(start);this.select(uid);return figure;
         }
         const channels=[...selected].map(id=>maskedPose(this,id,start,end));

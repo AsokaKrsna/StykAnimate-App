@@ -450,7 +450,9 @@ export class DrawingResources {
     for(const command of commands)visit(command);this.collect(retained);
   }
   collect(retained=new Set()) {
-    const reachable=new Set(this.report.figure_types.map(f=>drawingMetadata(f)?.celId));
+    // Cels drawn inside movieclip definitions render in this document too.
+    const reachable=new Set(),visit=(figures,seen)=>{for(const f of figures??[]){reachable.add(drawingMetadata(f)?.celId);const doc=f._styk?.movieclip?.document;if(doc&&!seen.has(doc)){seen.add(doc);visit(doc.figure_types,seen);}}};
+    visit(this.report.figure_types,new Set());
     for(const [id,e] of this.entries)if(!reachable.has(id)&&!retained.has(id)&&!e.pinned){e.disposed=true;this.dropScratch(e);e.store=null;e.levels=null;e.levelKnown=null;this.entries.delete(id);}
     this.residentMemory();
   }
