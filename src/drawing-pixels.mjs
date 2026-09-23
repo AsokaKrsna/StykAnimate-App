@@ -237,36 +237,86 @@ export class DrawingStroke {
   }
 }
 
+/** Mark every pixel within Manhattan distance `k` of a set pixel — exactly `k`
+ * steps of 4-neighbour dilation — restricted to `box` grown by k. One pass
+ * suffices for k=1; larger k use a two-pass distance transform. */
+function dilateL1(src,width,height,k,box){
+  if(k<=0)return src;
+  const x0=Math.max(0,box.x0-k),y0=Math.max(0,box.y0-k),x1=Math.min(width-1,box.x1+k),y1=Math.min(height-1,box.y1+k),out=new Uint8Array(width*height);
+  if(k===1){
+    for(let y=y0;y<=y1;y++){const row=y*width;for(let x=x0;x<=x1;x++){const p=row+x;if(src[p]||(x>0&&src[p-1])||(x<width-1&&src[p+1])||(y>0&&src[p-width])||(y<height-1&&src[p+width]))out[p]=1;}}
+    return out;
+  }
+  const cap=k+1,d=out;
+  for(let y=y0;y<=y1;y++){const row=y*width;for(let x=x0;x<=x1;x++){const p=row+x;let v=src[p]?0:cap;if(v){if(x>x0&&d[p-1]+1<v)v=d[p-1]+1;if(y>y0&&d[p-width]+1<v)v=d[p-width]+1;}d[p]=v;}}
+  for(let y=y1;y>=y0;y--){const row=y*width;for(let x=x1;x>=x0;x--){const p=row+x;let v=d[p];if(!v)continue;if(x<x1&&d[p+1]+1<v)v=d[p+1]+1;if(y<y1&&d[p+width]+1<v)v=d[p+width]+1;d[p]=v;}}
+  for(let y=y0;y<=y1;y++){const row=y*width;for(let x=x0;x<=x1;x++){const p=row+x;d[p]=d[p]<=k?1:0;}}
+  return d;
+}
 /** Flood within an explicit pixel-space bounds rect. Transparency ignores RGB
  * of fully transparent pixels. Tolerance compares premultiplied RGBA to avoid
- * invisible RGB halos. */
+ * invisible RGB halos. Gap closing blocks pixels within `gap` of a boundary,
+ * floods by scanline spans, then grows the region back by gap + expansion.
+ * Work runs per tile: absent tiles classify in one step, and fully covered
+ * tiles are written as compact uniform tiles. */
 export function floodTiles(store,{x,y,color=[0,0,0,255],tolerance=16,expansion=0,gap=0,bounds,source}={}) {
   if(!bounds||![bounds.x,bounds.y,bounds.width,bounds.height].every(Number.isInteger)||bounds.width<1||bounds.height<1||bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw new Error('Invalid fill bounds.');
   const {width,height}=bounds,count=width*height;
   x=Math.floor(x)-bounds.x;y=Math.floor(y)-bounds.y;if(x<0||y<0||x>=width||y>=height)return;
   if(![tolerance,expansion,gap].every(Number.isFinite)||color.length!==4||!color.every(Number.isFinite))throw new Error('Invalid fill options.');
   tolerance=clamp(tolerance,0,255);expansion=Math.round(clamp(expansion,0,16));gap=Math.round(clamp(gap,0,8));
-  const pixels=store.readRect(bounds.x,bounds.y,width,height),origin=source?new Uint8ClampedArray(source):pixels;
-  const eligible=new Uint8Array(count),mask=new Uint8Array(count),queue=new Uint32Array(count),target=(y*width+x)*4,ta=origin[target+3]/255;
-  const tr=origin[target]*ta,tg=origin[target+1]*ta,tb=origin[target+2]*ta,ta255=origin[target+3];
-  for(let p=0;p<count;p++){const i=p*4,a=origin[i+3]/255;eligible[p]=Math.abs(origin[i]*a-tr)<=tolerance&&Math.abs(origin[i+1]*a-tg)<=tolerance&&Math.abs(origin[i+2]*a-tb)<=tolerance&&Math.abs(origin[i+3]-ta255)<=tolerance?1:0;}
-  // Close gaps by dilating nonmatching boundaries, flood, then restore edges.
-  function expand(input,steps){let current=input;for(let step=0;step<steps;step++){const next=current.slice();for(let p=0;p<count;p++)if(current[p]){if(p%width)next[p-1]=1;if(p%width<width-1)next[p+1]=1;if(p>=width)next[p-width]=1;if(p+width<count)next[p+width]=1;}current=next;}return current;}
-  const blocked=gap?expand(eligible.map(n=>1-n),gap):null;
-  let head=0,tail=0;const start=y*width+x;if(blocked?.[start])return;queue[tail++]=start;mask[start]=1;
-  while(head<tail){const p=queue[head++];
-    if(p%width&&!mask[p-1]&&eligible[p-1]&&!blocked?.[p-1]){mask[p-1]=1;queue[tail++]=p-1;}
-    if(p%width<width-1&&!mask[p+1]&&eligible[p+1]&&!blocked?.[p+1]){mask[p+1]=1;queue[tail++]=p+1;}
-    if(p>=width&&!mask[p-width]&&eligible[p-width]&&!blocked?.[p-width]){mask[p-width]=1;queue[tail++]=p-width;}
-    if(p+width<count&&!mask[p+width]&&eligible[p+width]&&!blocked?.[p+width]){mask[p+width]=1;queue[tail++]=p+width;}
+  const origin=source?new Uint8ClampedArray(source):null;
+  const sample=(px,py)=>{if(origin)return origin.subarray((py*width+px)*4,(py*width+px)*4+4);return store.pixel(bounds.x+px,bounds.y+py);};
+  // Premultiplied comparison in integers: |c·a/255 − t| ≤ tol ⇔ |c·a − t·255| ≤ tol·255.
+  const t=sample(x,y),ta=t[3],tr=t[0]*ta,tg=t[1]*ta,tb=t[2]*ta,tol=tolerance*255;
+  const eligible=(r,g,b,a)=>{if(Math.abs(a-ta)>tolerance)return 0;const dr=r*a-tr,dg=g*a-tg,db=b*a-tb;return dr<=tol&&dr>=-tol&&dg<=tol&&dg>=-tol&&db<=tol&&db>=-tol?1:0;};
+  const open=new Uint8Array(count),empty=eligible(0,0,0,0);
+  if(origin){for(let p=0,i=0;p<count;p++,i+=4)open[p]=eligible(origin[i],origin[i+1],origin[i+2],origin[i+3]);}
+  else for(const [tx,ty] of TileStore.tilesInRect(bounds.x,bounds.y,width,height)){
+    const tile=store.get(tx,ty),ox=tx*TILE-bounds.x,oy=ty*TILE-bounds.y,sx=Math.max(0,-ox),ex=Math.min(TILE,width-ox),sy=Math.max(0,-oy),ey=Math.min(TILE,height-oy);
+    if(!tile){if(empty)for(let py=sy;py<ey;py++){const row=(py+oy)*width+ox;open.fill(1,row+sx,row+ex);}continue;}
+    const src=tile.pixels;
+    for(let py=sy;py<ey;py++){const row=(py+oy)*width+ox;for(let px=sx,i=(py*TILE+sx)*4;px<ex;px++,i+=4)open[row+px]=eligible(src[i],src[i+1],src[i+2],src[i+3]);}
   }
-  const grown=expand(mask,gap+expansion),out32=new Uint32Array(pixels.buffer),word=(color[3]<<24|color[2]<<16|color[1]<<8|color[0])>>>0,touched=new Set();
-  for(let py=0;py<height;py++){let x0=-1,x1=-1;const row=py*width;
-    for(let px=0;px<width;px++){const p=row+px;if(grown[p]){out32[p]=word;if(x0<0)x0=px;x1=px;}}
-    if(x0>=0)for(let tx=Math.floor((bounds.x+x0)/TILE);tx*TILE<bounds.x+x1+1;tx++)touched.add(tileKey(tx,Math.floor((bounds.y+py)/TILE)));
+  // Close gaps by blocking pixels near nonmatching boundaries.
+  if(gap){
+    let closedCount=0;for(let p=0;p<count;p++)closedCount+=1-open[p];
+    if(closedCount*(2*gap*gap+2*gap+1)<4*count){
+      // Sparse boundaries (typical line art): stamp a diamond around each one.
+      const blocked=new Uint8Array(count);
+      for(let p=0;p<count;p++){if(open[p])continue;const px=p%width,py=(p-px)/width;
+        for(let dy=-gap;dy<=gap;dy++){const yy=py+dy;if(yy<0||yy>=height)continue;const w=gap-Math.abs(dy),row=yy*width;blocked.fill(1,row+Math.max(0,px-w),row+Math.min(width-1,px+w)+1);}}
+      for(let p=0;p<count;p++)if(blocked[p])open[p]=0;
+    }else{const closed=new Uint8Array(count);for(let p=0;p<count;p++)closed[p]=1-open[p];const blocked=dilateL1(closed,width,height,gap,{x0:0,y0:0,x1:width-1,y1:height-1});for(let p=0;p<count;p++)if(blocked[p])open[p]=0;}
   }
-  for(const key of touched){const [tx,ty]=key.split(',').map(Number),tile=store.writable(tx,ty),ox=tx*TILE-bounds.x,oy=ty*TILE-bounds.y;
-    for(let py=Math.max(0,-oy);py<Math.min(TILE,height-oy);py++)tile.pixels.set(pixels.subarray(((py+oy)*width+Math.max(0,ox))*4,((py+oy)*width+Math.min(width,ox+TILE))*4),(py*TILE+Math.max(0,-ox))*4);}
+  const start=y*width+x;if(!open[start])return;
+  const mask=new Uint8Array(count),stack=[start],box={x0:x,y0:y,x1:x,y1:y};
+  while(stack.length){
+    const p=stack.pop();if(mask[p]||!open[p])continue;
+    const row=p-p%width,ry=row/width;let l=p,r=p;
+    while(l>row&&open[l-1]&&!mask[l-1])l--;
+    while(r<row+width-1&&open[r+1]&&!mask[r+1])r++;
+    mask.fill(1,l,r+1);
+    if(l-row<box.x0)box.x0=l-row;if(r-row>box.x1)box.x1=r-row;if(ry<box.y0)box.y0=ry;if(ry>box.y1)box.y1=ry;
+    for(const next of [row-width,row+width]){
+      if(next<0||next>=count)continue;
+      const off=next-row;let inRun=false;
+      for(let q=l+off;q<=r+off;q++){if(open[q]&&!mask[q]){if(!inRun){stack.push(q);inRun=true;}}else inRun=false;}
+    }
+  }
+  const k=gap+expansion,grown=dilateL1(mask,width,height,k,box),word=(color[3]<<24|color[2]<<16|color[1]<<8|color[0])>>>0;
+  const gx0=Math.max(0,box.x0-k),gy0=Math.max(0,box.y0-k),gx1=Math.min(width-1,box.x1+k),gy1=Math.min(height-1,box.y1+k);
+  const uniform=new Uint8ClampedArray([color[0],color[1],color[2],color[3]]);
+  for(const [tx,ty] of TileStore.tilesInRect(bounds.x+gx0,bounds.y+gy0,gx1-gx0+1,gy1-gy0+1)){
+    const ox=tx*TILE-bounds.x,oy=ty*TILE-bounds.y,sx=Math.max(0,-ox),ex=Math.min(TILE,width-ox),sy=Math.max(0,-oy),ey=Math.min(TILE,height-oy);
+    let filled=0;
+    for(let py=sy;py<ey;py++){const row=(py+oy)*width+ox;for(let px=sx;px<ex;px++)filled+=grown[row+px];}
+    if(!filled)continue;
+    // A tile the fill covers completely becomes one uniform colour.
+    if(filled===TILE*TILE){store.set(tx,ty,uniform);continue;}
+    const tile=store.writable(tx,ty),out32=new Uint32Array(tile.pixels.buffer,tile.pixels.byteOffset,TILE*TILE);
+    for(let py=sy;py<ey;py++){const row=(py+oy)*width+ox;for(let px=sx;px<ex;px++)if(grown[row+px])out32[py*TILE+px]=word;}
+  }
 }
 
 /** A lasso mask allocated only around the polygon bounding box. */
