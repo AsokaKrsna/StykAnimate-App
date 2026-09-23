@@ -23,18 +23,17 @@ export class UserLibrary {
     this.panel.prepend(tabs);
     this.container = document.createElement('section'); this.container.id = 'user-library'; this.container.hidden = true; this.container.setAttribute('role','tabpanel'); this.container.setAttribute('aria-labelledby','library-tab');
     this.container.innerHTML = `<div class="library-tools"><label class="library-search">${icon('search')}<input type="search" aria-label="Search library" placeholder="Search" spellcheck="false"></label><button type="button" class="icon-button" data-library-action="refresh" aria-label="Refresh library" title="Refresh">${icon('rotate')}</button><button type="button" class="icon-button" data-library-action="folder" aria-label="New library folder" title="New folder">${icon('plus')}</button><button type="button" class="icon-button" data-library-action="reveal" aria-label="Open library folder" title="Open folder in Explorer">${folderIcon}</button></div>
-      <nav class="library-breadcrumbs" aria-label="Library folders"></nav><div class="library-filter"><select aria-label="Filter library assets"><option value="all">All assets</option><option value="figure">Figures & sets</option><option value="movieclip">Movieclips</option></select><span class="library-count"></span></div>
-      <div class="library-preview-controls"><label>Preview background<select aria-label="Preview background"><option value="auto">Auto contrast</option><option value="light">Light</option><option value="dark">Dark</option></select></label></div>
-      <div class="library-content"><div class="library-grid" role="list" aria-label="Saved assets"></div><div class="library-empty">No assets in this folder</div></div>
+      <div class="library-location"><nav class="library-breadcrumbs" aria-label="Library folders"></nav><span class="library-count"></span></div><div class="library-filter ds-segmented" role="group" aria-label="Filter library assets"><button type="button" data-library-filter="all" aria-pressed="true">All</button><button type="button" data-library-filter="figure" aria-pressed="false">Figures</button><button type="button" data-library-filter="movieclip" aria-pressed="false">Movieclips</button></div>
+      <div class="library-content"><div class="library-grid" role="list" aria-label="Saved assets"></div><div class="library-empty ds-empty"></div></div>
       <div class="library-item-actions" hidden><button type="button" data-library-action="insert">Insert</button><button type="button" data-library-action="rename">Rename</button><button type="button" data-library-action="move">Move to…</button><button type="button" class="library-trash" data-library-action="trash" aria-label="Remove library item" title="Move to Recycle Bin">${icon('trash')}</button></div>
-      <div class="library-message" role="status" aria-live="polite"></div><div class="library-save"><button type="button" class="button primary" data-library-action="save">${icon('plus')}<span>Add to library</span></button></div>`;
-    this.container.querySelector('.library-filter').insertAdjacentHTML('afterend','<button class="button rig-library-examples" data-action="rig-examples">Rig examples</button>');
+      <div class="library-message" role="status" aria-live="polite"></div><div class="library-save"><button type="button" class="button primary" data-library-action="save">${icon('plus')}<span>Add to library</span></button><div class="library-footer-row"><button type="button" class="library-link rig-library-examples" data-action="rig-examples">${icon('person')}Rig examples</button><label class="library-preview-controls" title="Background behind asset previews">Preview<select aria-label="Preview background"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></label></div></div>`;
     this.panel.append(this.container);
     this.propertySave = document.createElement('div'); this.propertySave.className = 'properties-library-save';
     this.propertySave.innerHTML = `<button type="button" class="button" data-library-action="save">${icon('plus')} Add to library</button>`; this.panel.append(this.propertySave);
     this.dialog = document.createElement('dialog'); this.dialog.className = 'library-dialog'; document.body.append(this.dialog);
     this.grid = this.container.querySelector('.library-grid'); this.message = this.container.querySelector('.library-message');
-    this.input = this.container.querySelector('input'); this.filter = this.container.querySelector('select');
+    this.input = this.container.querySelector('input'); this.filterValue = 'all';
+    this.container.querySelector('.library-filter').onclick = event => { const button = event.target.closest('[data-library-filter]'); if (button) this.setFilter(button.dataset.libraryFilter); };
     this.container.querySelector('[aria-label="Preview background"]').onchange = event => { this.container.dataset.background = event.target.value; };
     this.menu = document.createElement('div'); this.menu.className = 'library-context-menu'; this.menu.hidden = true;
     this.menu.setAttribute('role', 'menu'); this.menu.setAttribute('aria-label', 'Library actions'); document.body.append(this.menu);
@@ -74,7 +73,8 @@ export class UserLibrary {
       const action = event.target.closest('[data-library-action]')?.dataset.libraryAction; if (!action) return;
       event.stopPropagation(); this.run(() => this.action(action));
     });
-    this.input.oninput = () => this.render(); this.filter.onchange = () => this.render();
+    this.input.oninput = () => this.render();
+    this.container.querySelector('.library-empty').onclick = event => { if (event.target.closest('[data-library-clear]')) { this.input.value = ''; this.setFilter('all'); this.input.focus(); } };
     this.grid.onclick = event => {
       const card = event.target.closest('[data-library-path]'); if (!card || event.target.matches('input')) return;
       this.select(card.dataset.libraryPath);
@@ -108,6 +108,16 @@ export class UserLibrary {
     window.addEventListener('focus', () => { if (this.visible && !this.busy && !this.grid.querySelector('input')) this.run(() => this.refresh()); });
     editor.addEventListener('change', () => this.syncSelection()); this.syncSelection();
   }
+  setFilter(value) { this.filterValue = value; for (const button of this.container.querySelectorAll('[data-library-filter]')) button.setAttribute('aria-pressed', String(button.dataset.libraryFilter === value)); this.render(); }
+  /** Empty grid: explain the library and offer the next action for this situation. */
+  renderEmpty(filtered) {
+    const empty = this.container.querySelector('.library-empty'), selection = this.editor.selectedObjects.length, desktop = Boolean(this.desktop?.listLibrary);
+    const card = (title, text, actions = '') => `<span class="ds-empty-icon">${icon('layers')}</span><strong>${title}</strong><p>${text}</p>${actions ? `<div class="ds-empty-actions">${actions}</div>` : ''}`;
+    const examples = '<button type="button" class="button small" data-action="rig-examples">Browse rig examples</button>';
+    if (!desktop) empty.innerHTML = card('Your library lives in the desktop app', 'Save figures and movieclips once and reuse them in every project. The desktop app keeps them in your Documents folder.', examples);
+    else if (filtered) empty.innerHTML = card('No matching assets', 'Try another name or show all asset types.', '<button type="button" class="button small" data-library-clear>Clear search and filter</button>');
+    else empty.innerHTML = card(this.folder ? 'This folder is empty' : 'Your library is empty', 'Select figures or a movieclip on the canvas, then add them here to reuse in any project. Drag an asset onto the canvas to insert it.', `${selection ? `<button type="button" class="button primary small" data-library-action="save">${selection > 1 ? `Add ${selection} figures` : 'Add selection'}</button>` : ''}${examples}`);
+  }
   async run(operation) { try { await operation(); } catch (error) { this.message.textContent = error.message; this.message.dataset.error = 'true'; } }
   show(visible = true) {
     this.showView(visible?'library':'properties');
@@ -127,7 +137,7 @@ export class UserLibrary {
     for (const button of this.panel.querySelectorAll('[data-library-action="save"]')) button.title = count ? `Save selection in ${this.folder || 'Library'}` : 'Select figures or a movieclip';
   }
   async refresh(folder = this.folder) {
-    if (!this.desktop?.listLibrary) { this.message.textContent = 'Open the desktop app to use your Documents library.'; return; }
+    if (!this.desktop?.listLibrary) { this.container.dataset.unavailable = 'true'; this.container.querySelector('.library-empty').hidden = false; this.renderEmpty(false); return; }
     const generation = ++this.generation;
     this.closeMenu(); this.hoverPreview.stop();
     let result;
@@ -148,10 +158,10 @@ export class UserLibrary {
   render() {
     this.closeMenu(); this.hoverPreview.stop();
     this.observer.disconnect(); this.grid.replaceChildren();
-    const query = this.input.value.trim().toLocaleLowerCase(), items = this.entries.filter(item => item.name.toLocaleLowerCase().includes(query) && (this.filter.value === 'all' || item.kind === 'folder' || item.kind === this.filter.value || this.filter.value === 'figure' && item.kind === 'set'));
+    const filter = this.filterValue, query = this.input.value.trim().toLocaleLowerCase(), items = this.entries.filter(item => item.name.toLocaleLowerCase().includes(query) && (filter === 'all' || item.kind === 'folder' || item.kind === filter || filter === 'figure' && item.kind === 'set'));
     this.container.querySelector('.library-count').textContent = `${items.length} ${items.length === 1 ? 'item' : 'items'}`;
     const empty = this.container.querySelector('.library-empty'); empty.hidden = items.length > 0;
-    empty.textContent = query || this.filter.value !== 'all' ? 'No matching assets' : 'No assets in this folder';
+    if (!empty.hidden) this.renderEmpty(Boolean(query || filter !== 'all'));
     for (const item of items) {
       const card = document.createElement('div'); card.className = `library-card ${item.kind}`; card.dataset.libraryPath = item.path; card.tabIndex = 0; card.setAttribute('role','listitem'); card.setAttribute('aria-label',`${item.name}, ${label(item)}`); card.title = `Double-click to ${item.kind === 'folder' ? 'open' : 'insert'} ${item.name}`;
       card.draggable = false;
@@ -198,7 +208,7 @@ export class UserLibrary {
   select(path) {
     this.selected = path; for (const card of this.grid.children) card.classList.toggle('selected', card.dataset.libraryPath === path);
     const item = this.entries.find(item => item.path === path); this.container.querySelector('.library-item-actions').hidden = !item;
-    this.container.querySelector('[data-library-action="insert"]').textContent = item?.kind === 'folder' ? 'Open' : 'Insert';
+    this.container.querySelector('[data-library-action="insert"]').textContent = item?.kind === 'folder' ? 'Open folder' : 'Insert into scene';
   }
   async action(action) {
     if (this.busy) return;
@@ -253,7 +263,7 @@ export class UserLibrary {
       let name = report._styk.name.replace(/[<>:"/\\|?*\x00-\x1f]/g,'-').replace(/^\.+|[. ]+$/g,'').slice(0,110).trim() || 'Untitled asset';
       if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(name)) name = `Asset ${name}`;
       const result = await saveLibraryFile(this.desktop, blob, {folder, name, kind:report._styk.libraryKind, extension:`.${format}`, thumbnail});
-      this.input.value = ''; this.filter.value = 'all'; await this.refresh(folder); this.select(result.path); this.message.textContent = `Saved to ${folder || 'Library'}`;
+      this.input.value = ''; this.setFilter('all'); await this.refresh(folder); this.select(result.path); this.message.textContent = `Saved to ${folder || 'Library'}`;
       [...this.grid.children].find(card => card.dataset.libraryPath === result.path)?.scrollIntoView({block:'nearest'});
     } finally { this.busy = false; this.syncSelection(); }
   }

@@ -37,6 +37,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Make onion skin settings easier to read: a clear On/Off switch, colour-coded Before and After ranges, a plain summary of how many poses are shown, opacity in percent, labelled colours, and rarer sampling and drawing-order options under More options.
 - Make the audio timeline clearer: scrubbing sound and keeping audio in sync with frame edits are explained switches under Options, the clip tools and Add track buttons say what they do, and an empty audio panel offers Import audio and Add empty track directly.
 - Find effects faster in the VFX panel: Add effect and Presets sit at the top beside a labelled "Apply to" target, the catalogue switches between effects and presets in place, and an empty panel suggests one-click effects such as Glow, Outline or Neon and points to effects on other frames.
+- Tidy the Library: filter with All, Figures and Movieclips buttons, see the folder path and item count together, insert the selected asset with a clear Insert into scene button, and get guidance with next steps when the library, a folder or a search is empty. The web version explains that the library lives in the desktop app.
 - Show a ⇔ marker on scrubbable property labels and a hint in Transform sections that dragging a label adjusts its value, with Shift or Alt for finer steps.
 
 ### Fixed
