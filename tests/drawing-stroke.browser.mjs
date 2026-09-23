@@ -47,6 +47,16 @@ try{
     check(`the stroke is visible on screen while drawing ${label}`,live>1000);
   }
   await page.evaluate(()=>{styk.editor.undo();styk.editor.undo();styk.editor.undo();});
+  // An interrupted pointer (lost capture from a notification, the pen leaving
+  // range, a window switch) keeps the ink instead of discarding the stroke.
+  {
+    const y=rect.y+rect.height*.85,x0=rect.x+rect.width*.3,before=await page.evaluate(()=>styk.editor.revision);
+    await page.mouse.move(x0,y);await page.mouse.down();for(let i=1;i<=12;i++)await page.mouse.move(x0+i*12,y);
+    await page.evaluate(()=>{const o=document.getElementById('overlay'),id=styk.drawing.gesture.id;o.dispatchEvent(new PointerEvent('lostpointercapture',{pointerId:id,bubbles:true}));});
+    await page.waitForFunction(r=>styk.editor.revision!==r&&!styk.drawing.gesture,before);await page.mouse.up();
+    check('a stroke interrupted by lost pointer capture commits its ink',await page.evaluate(()=>styk.editor.undoLabel==='Brush stroke'));
+    await page.evaluate(()=>styk.editor.undo());
+  }
   // A quick tap still lands exactly one dab and commits as its own undo.
   const tapRevision=await page.evaluate(()=>styk.editor.revision);
   await page.mouse.move(end.x+40,end.y);await page.mouse.down();await page.mouse.up();

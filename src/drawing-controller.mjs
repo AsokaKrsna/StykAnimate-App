@@ -35,7 +35,7 @@ export class DrawingController {
     // to the next frame; pointermove still drives everything else and remains
     // the fallback where raw updates are unavailable.
     const raw=typeof window!=='undefined'&&'onpointerrawupdate' in window?[['pointerrawupdate',e=>this.rawMove(e)]]:[];
-    for(const [name,handler] of [['pointerdown',e=>this.down(e)],['pointermove',e=>this.move(e)],...raw,['pointerup',e=>this.up(e)],['pointercancel',e=>this.up(e,true)],['lostpointercapture',e=>this.up(e,true)]])overlay.addEventListener(name,event=>{
+    for(const [name,handler] of [['pointerdown',e=>this.down(e)],['pointermove',e=>this.move(e)],...raw,['pointerup',e=>this.up(e)],['pointercancel',e=>this.up(e)],['lostpointercapture',e=>this.up(e)]])overlay.addEventListener(name,event=>{
       if(!this.active)return;
       // The shared viewport owns the entire pan gesture, including moves whose
       // button is -1 and release after Space has already been lifted.
@@ -45,7 +45,8 @@ export class DrawingController {
       if(event.type==='pointerdown'&&(event.button!==0&&event.button!==5||state.playing))return;
       event.stopImmediatePropagation();event.preventDefault();this.run(()=>handler(event));
     },{...opts,capture:true});
-    window.addEventListener('blur',()=>this.cancel(),opts);
+    // Leaving the window ends the gesture but keeps its ink.
+    window.addEventListener('blur',()=>{if(this.gesture)this.finish();},opts);
     // The brush ring tracks the last move; it must not linger once the pointer leaves.
     overlay.addEventListener('pointerleave',()=>{if(this.cursor){this.cursor=null;this.onRender();}},opts);
     editor.addEventListener('change',event=>{
@@ -336,7 +337,10 @@ export class DrawingController {
    * regular move events report the same samples; timestamps drop repeats. */
   strokeSamples(event){const s=this.gesture.session,samples=event.getCoalescedEvents?.();for(const sample of samples?.length?samples:[event]){if(sample.timeStamp<=(s.lastTime??-Infinity))continue;s.lastTime=sample.timeStamp;this.sampleStroke(sample);}}
   rawMove(event){const g=this.gesture;if(g?.kind!=='stroke'||g.id!==event.pointerId||g.session.ended)return;this.strokeSamples(event);}
-  up(event,cancel=false){if(this.loading?.id===event.pointerId){if(cancel){this.sequence++;this.loading=null;}else this.loading.released=true;return;}const g=this.gesture;if(!g||g.id!==event.pointerId)return;if(g.kind==='stroke'&&g.session.ended)return;cancel?this.cancel():this.finish();}
+  /** Pointer release. An interrupted pointer (pointercancel, lost capture: a
+   * notification stealing focus, the pen leaving range) keeps what was drawn,
+   * as in Krita; only Escape discards a gesture. */
+  up(event){if(this.loading?.id===event.pointerId){this.loading.released=true;return;}const g=this.gesture;if(!g||g.id!==event.pointerId)return;if(g.kind==='stroke'&&g.session.ended)return;this.finish();}
   finish(){const g=this.gesture;
     if(g?.kind==='stroke'&&g.session.ended)return; // the done reply completes the commit
     if(this.loading)this.cancel();if(!g)return;
