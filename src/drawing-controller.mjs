@@ -15,14 +15,21 @@ const brushKeys=['preset','size','opacity','flow','hardness','pressureSize','pre
 // Settings edited as percentages in the inspector.
 const PERCENT_SETTINGS=['opacity','flow','hardness','stabilization','roundness','scatter','spacingRatio','texture','smudgeLength','colorRate'];
 const hexColor=rgb=>'#'+rgb.slice(0,3).map(n=>Math.round(n).toString(16).padStart(2,'0')).join('');
-const SELECTION_ACTIONS=['copy-pixels','cut-pixels','delete-pixels','apply-selection','cancel-selection','select-all','invert-selection','deselect','fill-selection'];
+/** A floating selection that moved, scaled, rotated or flipped. */
+export const moved=s=>Boolean(s&&(s.dx||s.dy||s.scale!==1||s.angle||(s.fx??1)!==1||(s.fy??1)!==1));
+const BRUSH_LIBRARY_KEY='stykanimate.drawing-brushes.v1';
+const loadLibrary=()=>{try{const v=JSON.parse(globalThis.localStorage?.getItem(BRUSH_LIBRARY_KEY)||'{}');return {recent:Array.isArray(v.recent)?v.recent.filter(c=>/^#[0-9a-f]{6}$/i.test(c)).slice(0,12):[],presets:Array.isArray(v.presets)?v.presets.filter(p=>p&&typeof p.id==='string'&&typeof p.name==='string').slice(0,48):[]};}catch{return {recent:[],presets:[]};}};
+const FILTER_LABELS={blur:'Blur drawing',hsl:'Adjust hue and saturation',brightness:'Adjust brightness and contrast',invert:'Invert colours'};
+// Actions that keep (or act on) the pixel selection instead of applying it first.
+const SELECTION_ACTIONS=['filter-blur','filter-hsl','filter-brightness','filter-invert','swap-colors','save-preset','delete-preset','flip-selection-x','flip-selection-y','copy-pixels','cut-pixels','delete-pixels','apply-selection','cancel-selection','select-all','invert-selection','deselect','fill-selection'];
 const unionRects=(a,b)=>{if(!a)return b?{...b}:null;if(!b)return{...a};const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);return{x,y,width:Math.max(a.x+a.width,b.x+b.width)-x,height:Math.max(a.y+a.height,b.y+b.height)-y};};
 export class DrawingController {
   constructor({editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getResources,getTimeline,getClipboard,sampleColor}) {
-    Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getResources,getTimeline,getClipboard,sampleColor,settings:{preset:'ink',size:8,color:'#252525',opacity:1,flow:1,hardness:1,pressureSize:true,pressureOpacity:false,pressureFlow:false,sizeCurve:1,opacityCurve:1,stabilization:0,spacingRatio:.08,texture:0,roundness:1,angle:0,angleMode:'fixed',scatter:0,blend:'normal',alphaLock:false,smudgeLength:.8,colorRate:0,mirrorX:false,mirrorY:false,selectShape:'lasso',shapeKind:'rect',shapeFill:false,gradientType:'linear',gradientEnd:'transparent',color2:'#ffffff',resolution:2,length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
+    Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getResources,getTimeline,getClipboard,sampleColor,settings:{preset:'ink',size:8,color:'#252525',opacity:1,flow:1,hardness:1,pressureSize:true,pressureOpacity:false,pressureFlow:false,sizeCurve:1,opacityCurve:1,stabilization:0,spacingRatio:.08,texture:0,roundness:1,angle:0,angleMode:'fixed',scatter:0,blend:'normal',alphaLock:false,smudgeLength:.8,colorRate:0,filterRadius:4,hue:0,saturation:0,lightness:0,brightness:0,contrast:0,mirrorX:false,mirrorY:false,selectShape:'lasso',shapeKind:'rect',shapeFill:false,gradientType:'linear',gradientEnd:'transparent',color2:'#ffffff',resolution:2,length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
+    this.library=loadLibrary();
     this.panel=document.getElementById('inspector');
     const events=this.events=new AbortController(),opts={signal:events.signal};
-    this.panel.addEventListener('click',event=>{const preset=event.target.closest('[data-draw-preset]'),action=event.target.closest('[data-draw-action]');if(preset){this.finish();Object.assign(this.settings,BRUSH_PRESETS.find(p=>p.id===preset.dataset.drawPreset),{preset:preset.dataset.drawPreset});this.onUI();}if(action)this.run(()=>this.action(action.dataset.drawAction));},opts);
+    this.panel.addEventListener('click',event=>{const preset=event.target.closest('[data-draw-preset]'),action=event.target.closest('[data-draw-action]'),swatch=event.target.closest('[data-draw-color]');if(preset){this.finish();const id=preset.dataset.drawPreset,found=BRUSH_PRESETS.find(p=>p.id===id)??this.library.presets.find(p=>p.id===id);if(found){const {name,description,...tip}=found;Object.assign(this.settings,tip,{preset:id});}this.onUI();}if(swatch){this.settings.color=swatch.dataset.drawColor;this.onUI();this.paintPreview(this.panel);}if(action)this.run(()=>this.action(action.dataset.drawAction));},opts);
     this.panel.addEventListener('change',event=>{if(event.target.dataset.drawSetting)this.run(()=>this.change(event));},opts);
     // pointerrawupdate delivers pen samples as they arrive instead of aligned
     // to the next frame; pointermove still drives everything else and remains
@@ -161,8 +168,12 @@ export class DrawingController {
     }
     for(const sample of pending.samples)this.move({...sample,pointerId:event.pointerId});if(pending.released)this.finish();this.onRender();
   }
+  /** Remember the colour that just painted, most recent first. */
+  rememberColor(){const c=this.settings.color?.toLowerCase();if(!/^#[0-9a-f]{6}$/.test(c??''))return;const recent=[c,...this.library.recent.filter(x=>x!==c)].slice(0,12);if(recent.join()===this.library.recent.join())return;this.library.recent=recent;this.saveLibrary();}
+  saveLibrary(){try{globalThis.localStorage?.setItem(BRUSH_LIBRARY_KEY,JSON.stringify(this.library));}catch{/* Brush library storage is optional. */}}
   /** Open a stroke session on a loaded surface and make it the gesture. */
   beginStroke(target,surface,{id,erase=false}){
+      if(!erase)this.rememberColor();
       // Painting keeps the selection outline as a clip mask; a moved or
       // resized floating selection is committed first.
       this.settleFloating();const color=this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16));
@@ -218,7 +229,7 @@ export class DrawingController {
     const owner=this.owner,revision=this.editor.revision,tiles=[...TileStore.tilesInRect(bounds.x,bounds.y,bounds.width,bounds.height)].map(([tx,ty])=>g.surface.store.get(tx,ty)).filter(Boolean).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
     const result=await owner.worker.request('gradient',{bounds,tiles,options:{a,b,type:this.settings.gradientType??'linear',from,to,mask:clip}},{transfer:tiles.map(t=>t.pixels)});
     if(owner!==this.owner||revision!==this.editor.revision)throw new DOMException('The drawing changed before the gradient applied.','AbortError');
-    return this.editor.commitDrawingPixels(g.target,result.tiles,'Gradient');
+    this.rememberColor();return this.editor.commitDrawingPixels(g.target,result.tiles,'Gradient');
   }
   /** Feed a pixel-space sample to the stroke path; the dabs it emits post to
    * the stroke worker in one rAF-paced batch. */
@@ -350,11 +361,25 @@ export class DrawingController {
       const tiles=[...TileStore.tilesInRect(bounds.x,bounds.y,bounds.width,bounds.height)].map(([tx,ty])=>surface.store.get(tx,ty)).filter(Boolean).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
       const result=await owner.worker.request('fill',{bounds,tiles,options:{...point,color:[...this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16)),Math.round(this.settings.opacity*255)],tolerance:this.settings.tolerance,expansion:this.settings.expansion,gap:this.settings.gap,clip:this.marqueeOn(target)?this.marquee.mask:null},source},{transfer:[...tiles.map(t=>t.pixels),...(source?[source]:[])]});
       if(controller.signal.aborted||owner!==this.owner||revision!==this.editor.revision)throw new DOMException('Fill superseded by another edit.','AbortError');
-      this.editor.commitDrawingPixels(target,result.tiles,'Fill drawing');this.onStatus('Drawing filled.');
+      this.editor.commitDrawingPixels(target,result.tiles,'Fill drawing');this.rememberColor();this.onStatus('Drawing filled.');
     }finally{surface.pinned=false;owner.busy=false;if(this.fillAbort===controller)this.fillAbort=null;this.onRender();}
   }
   /** Visible artwork of every layer rasterized into the cel's pixel space. */
   async compositeSource(target,bounds){await this.barrierForComposite();const c=canvas(bounds.width,bounds.height),ctx=c.getContext('2d'),inverse=new DOMMatrix(this.pixelMatrix(target)).inverse();ctx.setTransform(inverse.a,inverse.b,inverse.c,inverse.d,inverse.e-bounds.x,inverse.f-bounds.y);drawGeometry(ctx,{drawables:this.editor.geometry.drawables.filter(i=>this.editor.getLayer(this.editor.layerForUid(i.obj.unique_id))?.visible!==false)},this.getResources());const data=ctx.getImageData(0,0,c.width,c.height).data.buffer;c.width=c.height=1;return data;}
+  /** Apply a filter to the selection, or to the whole drawing when nothing is selected. */
+  async applyFilter(kind){
+    if(!FILTER_LABELS[kind])throw new Error('Unknown drawing filter.');this.settleFloating();
+    const e=this.editor,target=e.drawingTarget();if(!target.figure)throw new Error('Paint a drawing before filtering it.');
+    const owner=this.owner,revision=e.revision,surface=await owner.surface(target.figure),clip=this.marqueeOn(target)?this.marquee.mask:null,st=this.settings;
+    const base=clip?{x:clip.x,y:clip.y,width:clip.width,height:clip.height}:surface.store.bounds;if(!base)return;
+    // Blur spreads paint: read and write a margin around the content.
+    const pad=kind==='blur'?Math.ceil(st.filterRadius*2)+2:0,bounds={x:base.x-pad,y:base.y-pad,width:base.width+2*pad,height:base.height+2*pad};
+    if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw new Error('Select a smaller area: the filter exceeds 16 megapixels.');
+    const tiles=[...TileStore.tilesInRect(bounds.x,bounds.y,bounds.width,bounds.height)].map(([tx,ty])=>surface.store.get(tx,ty)).filter(Boolean).map(t=>({tx:t.tx,ty:t.ty,pixels:t.pixels.slice().buffer}));
+    const result=await owner.worker.request('filter',{bounds,tiles,options:{kind,mask:clip,radius:st.filterRadius,hue:st.hue,saturation:st.saturation,lightness:st.lightness,brightness:st.brightness,contrast:st.contrast}},{transfer:tiles.map(t=>t.pixels)});
+    if(owner!==this.owner||revision!==e.revision)throw new DOMException('The drawing changed before the filter applied.','AbortError');
+    return e.commitDrawingPixels(target,result.tiles,FILTER_LABELS[kind]);
+  }
   async barrierForComposite(){await drawingBarrier(this.editor.report);const assets=this.editor.geometry.drawables.filter(i=>i.type==='image');await Promise.all(assets.map(async i=>{const image=this.getResources().image(this.getResources().url(i.asset));if(image&&!image.complete)await image.decode?.();}));}
   /** The selection outline is the canonical selection: a pixel mask on one
    * cel that clips painting and fills. Moving, scaling or rotating selected
@@ -406,14 +431,14 @@ export class DrawingController {
   /** Legacy entry point: select a lasso polygon and float it immediately. */
   makeSelection(g){this.selectShape({...g,mode:'replace',shape:'lasso'});}
   /** Commit a moved floating selection; an untouched one just lands back. */
-  settleFloating(){const s=this.selection;if(!s)return;if(s.dx||s.dy||s.scale!==1||s.angle)this.applySelection();else this.endSelection(true);}
+  settleFloating(){const s=this.selection;if(!s)return;if(moved(s))this.applySelection();else this.endSelection(true);}
   previewSelection(){
     const s=this.selection;if(!s)return;const store=s.surface.store,B=s.mask;
     // An untransformed float shows the exact stored pixels; compositing them
     // through a canvas would only round partially transparent colours.
-    if(!s.dx&&!s.dy&&s.scale===1&&!s.angle){for(const key of s.touched){const o=s.original.get(key),[tx,ty]=key.split(',').map(Number);o?store.set(tx,ty,o):store.delete(tx,ty);}s.touched.clear();this.owner.present(s.surface,{x:B.x,y:B.y,width:B.width,height:B.height});this.onRender();return;}
+    if(!moved(s)){for(const key of s.touched){const o=s.original.get(key),[tx,ty]=key.split(',').map(Number);o?store.set(tx,ty,o):store.delete(tx,ty);}s.touched.clear();this.owner.present(s.surface,{x:B.x,y:B.y,width:B.width,height:B.height});this.onRender();return;}
     const angle=s.angle*Math.PI/180,cos=Math.cos(angle),sin=Math.sin(angle),sc=s.scale;
-    const t=p=>({x:s.cx+s.dx+cos*(p.x-s.cx)*sc-sin*(p.y-s.cy)*sc,y:s.cy+s.dy+sin*(p.x-s.cx)*sc+cos*(p.y-s.cy)*sc});
+    const fx=s.fx??1,fy=s.fy??1,t=p=>{const u=(p.x-s.cx)*sc*fx,v=(p.y-s.cy)*sc*fy;return{x:s.cx+s.dx+cos*u-sin*v,y:s.cy+s.dy+sin*u+cos*v};};
     const corners=[[B.x,B.y],[B.x+B.width,B.y],[B.x,B.y+B.height],[B.x+B.width,B.y+B.height]].map(([x,y])=>t({x,y}));
     const dx0=Math.min(B.x,...corners.map(p=>p.x)),dy0=Math.min(B.y,...corners.map(p=>p.y));
     const R=tileAlignedRect(dx0,dy0,Math.max(B.x+B.width,...corners.map(p=>p.x))-dx0,Math.max(B.y+B.height,...corners.map(p=>p.y))-dy0);
@@ -427,12 +452,12 @@ export class DrawingController {
     ctx.clearRect(0,0,R.width,R.height);
     for(const [tx,ty] of TileStore.tilesInRect(R.x,R.y,R.width,R.height)){const current=store.get(tx,ty);if(!current)continue;tctx.putImageData(new ImageData(current.pixels,TILE,TILE),0,0);ctx.drawImage(tile,tx*TILE-R.x,ty*TILE-R.y);}
     ctx.putImageData(new ImageData(s.basePixels,B.width,B.height),B.x-R.x,B.y-R.y);
-    ctx.save();ctx.translate(s.cx+s.dx-R.x,s.cy+s.dy-R.y);ctx.rotate(angle);ctx.scale(sc,sc);ctx.drawImage(s.cutout,B.x-s.cx,B.y-s.cy);ctx.restore();
+    ctx.save();ctx.translate(s.cx+s.dx-R.x,s.cy+s.dy-R.y);ctx.rotate(angle);ctx.scale(sc*fx,sc*fy);ctx.drawImage(s.cutout,B.x-s.cx,B.y-s.cy);ctx.restore();
     store.writeRect(R.x,R.y,R.width,R.height,ctx.getImageData(0,0,R.width,R.height).data);
     this.owner.present(s.surface,R);this.onRender();
   }
-  selectionContains(point){const s=this.selection;if(!s)return false;const B=s.mask,angle=-s.angle*Math.PI/180,x=point.x-s.cx-s.dx,y=point.y-s.cy-s.dy,px=Math.floor(s.cx+(Math.cos(angle)*x-Math.sin(angle)*y)/s.scale),py=Math.floor(s.cy+(Math.sin(angle)*x+Math.cos(angle)*y)/s.scale);return px>=B.x&&py>=B.y&&px<B.x+B.width&&py<B.y+B.height&&Boolean(B.mask[(py-B.y)*B.width+(px-B.x)]);}
-  applySelection(){const s=this.selection;if(!s)return;if(!s.dx&&!s.dy&&s.scale===1&&!s.angle){this.cancelSelection();return;}try{const tiles=tileChanges(s.surface.store,s.original);this.editor.commitDrawingPixels(s.target,tiles,'Transform selected pixels');}finally{this.endSelection(false);this.marquee=null;this.onUI();this.onRender();}}
+  selectionContains(point){const s=this.selection;if(!s)return false;const B=s.mask,angle=-s.angle*Math.PI/180,x=point.x-s.cx-s.dx,y=point.y-s.cy-s.dy,px=Math.floor(s.cx+(Math.cos(angle)*x-Math.sin(angle)*y)/(s.scale*(s.fx??1))),py=Math.floor(s.cy+(Math.sin(angle)*x+Math.cos(angle)*y)/(s.scale*(s.fy??1)));return px>=B.x&&py>=B.y&&px<B.x+B.width&&py<B.y+B.height&&Boolean(B.mask[(py-B.y)*B.width+(px-B.x)]);}
+  applySelection(){const s=this.selection;if(!s)return;if(!moved(s)){this.cancelSelection();return;}try{const tiles=tileChanges(s.surface.store,s.original);this.editor.commitDrawingPixels(s.target,tiles,'Transform selected pixels');}finally{this.endSelection(false);this.marquee=null;this.onUI();this.onRender();}}
   endSelection(restore=true){const s=this.selection;if(!s)return;this.selection=null;const store=s.surface.store;
     if(restore)for(const key of s.touched){const o=s.original.get(key),[tx,ty]=key.split(',').map(Number);o?store.set(tx,ty,o):store.delete(tx,ty);}
     this.owner.present(s.surface);s.surface.pinned=false;if(s.cutout)s.cutout.width=s.cutout.height=1;if(s.preview)s.preview.width=s.preview.height=1;}
@@ -456,6 +481,14 @@ export class DrawingController {
       if(owner!==this.owner||revision!==e.revision)throw new DOMException('The drawing changed before the fill.','AbortError');
       return e.commitDrawingPixels(target,result.tiles,'Fill selection');
     }
+    if(action==='flip-selection-x'||action==='flip-selection-y'){const s=this.ensureFloating();if(!s)throw new Error('Select pixels to flip.');const key=action==='flip-selection-x'?'fx':'fy';s[key]=-(s[key]??1);this.previewSelection();this.onUI();return;}
+    if(action.startsWith('filter-'))return this.applyFilter(action.slice(7));
+    if(action==='swap-colors'){[this.settings.color,this.settings.color2]=[this.settings.color2??'#ffffff',this.settings.color];this.onUI();this.paintPreview(this.panel);return;}
+    if(action==='save-preset'){
+      const base=BRUSH_PRESETS.find(p=>p.id===this.settings.preset)?.name??'Custom',n=this.library.presets.length+1,tip=Object.fromEntries(brushKeys.filter(k=>k!=='preset').map(k=>[k,this.settings[k]]));
+      const preset={id:'custom-'+Date.now().toString(36)+n,name:base+' '+n,description:'Saved brush',...tip};this.library.presets=[...this.library.presets,preset].slice(-48);this.settings.preset=preset.id;this.saveLibrary();this.onUI();this.onStatus('Brush saved as '+preset.name+'.');return;
+    }
+    if(action==='delete-preset'){const id=this.settings.preset;if(!this.library.presets.some(p=>p.id===id))return;this.library.presets=this.library.presets.filter(p=>p.id!==id);this.settings.preset=null;this.saveLibrary();this.onUI();return;}
     if(action==='mirror-x'||action==='mirror-y'){const key=action==='mirror-x'?'mirrorX':'mirrorY';this.settings[key]=!this.settings[key];this.onUI();this.onRender();return;}
     if(action==='flip-view'){this.state.view.flip=!this.state.view.flip;this.onUI();this.onRender();return;}
     if(action==='blank')return e.drawingKey(ids,e.tick,{blank:true});if(action==='copy-key'){if(!e.drawingKey(ids))this.onStatus('This cell already starts a drawing. Use Next copy to add time.');return;}
@@ -476,13 +509,13 @@ export class DrawingController {
     if(['copy-pixels','cut-pixels'].includes(action))return this.getClipboard().copy('drawing-pixels',async()=>{
       const s=this.ensureFloating();if(!s)throw new Error('Select pixels with the lasso first.');
       const revision=e.revision,B=s.mask;let rect,pixels;
-      if(!s.dx&&!s.dy&&!s.angle&&s.scale===1){rect={x:B.x,y:B.y,width:B.width,height:B.height};pixels=new Uint8ClampedArray(s.originalPixels);for(let p=0;p<B.mask.length;p++)if(!B.mask[p])pixels.fill(0,p*4,p*4+4);}
+      if(!moved(s)){rect={x:B.x,y:B.y,width:B.width,height:B.height};pixels=new Uint8ClampedArray(s.originalPixels);for(let p=0;p<B.mask.length;p++)if(!B.mask[p])pixels.fill(0,p*4,p*4+4);}
       else{const angle=s.angle*Math.PI/180,cos=Math.cos(angle),sin=Math.sin(angle),sc=s.scale;
-        const t=p=>({x:s.cx+s.dx+cos*(p.x-s.cx)*sc-sin*(p.y-s.cy)*sc,y:s.cy+s.dy+sin*(p.x-s.cx)*sc+cos*(p.y-s.cy)*sc});
+        const fx=s.fx??1,fy=s.fy??1,t=p=>{const u=(p.x-s.cx)*sc*fx,v=(p.y-s.cy)*sc*fy;return{x:s.cx+s.dx+cos*u-sin*v,y:s.cy+s.dy+sin*u+cos*v};};
         const corners=[[B.x,B.y],[B.x+B.width,B.y],[B.x,B.y+B.height],[B.x+B.width,B.y+B.height]].map(([x,y])=>t({x,y}));
         const dx0=Math.floor(Math.min(...corners.map(p=>p.x))),dy0=Math.floor(Math.min(...corners.map(p=>p.y)));
         rect={x:dx0,y:dy0,width:Math.ceil(Math.max(...corners.map(p=>p.x)))-dx0,height:Math.ceil(Math.max(...corners.map(p=>p.y)))-dy0};
-        const copy=canvas(rect.width,rect.height),ctx=copy.getContext('2d');ctx.translate(s.cx+s.dx-dx0,s.cy+s.dy-dy0);ctx.rotate(angle);ctx.scale(sc,sc);ctx.drawImage(s.cutout,B.x-s.cx,B.y-s.cy);pixels=ctx.getImageData(0,0,rect.width,rect.height).data;copy.width=copy.height=1;}
+        const copy=canvas(rect.width,rect.height),ctx=copy.getContext('2d');ctx.translate(s.cx+s.dx-dx0,s.cy+s.dy-dy0);ctx.rotate(angle);ctx.scale(sc*fx,sc*fy);ctx.drawImage(s.cutout,B.x-s.cx,B.y-s.cy);pixels=ctx.getImageData(0,0,rect.width,rect.height).data;copy.width=copy.height=1;}
       const dataUrl=await encodeDrawingPNG(pixels,rect.width,rect.height);
       if(e.revision!==revision||this.selection!==s)throw new DOMException('The selection changed. Copy it again.','AbortError');
       const metadata=drawingMetadata(s.target.figure),world=transformPoint(this.pixelMatrix(s.target),{x:rect.x,y:rect.y});
@@ -586,7 +619,7 @@ export class DrawingController {
       const o=screen({x:0,y:0}),ux=screen({x:1,y:0}),uy=screen({x:0,y:1}),unit=Math.hypot(ux.x-o.x,ux.y-o.y)||1;
       if(outline){
         const s=this.selection;ctx.save();ctx.transform(ux.x-o.x,ux.y-o.y,uy.x-o.x,uy.y-o.y,o.x,o.y);
-        if(s){ctx.translate(s.cx+s.dx,s.cy+s.dy);ctx.rotate(s.angle*Math.PI/180);ctx.scale(s.scale,s.scale);ctx.translate(-s.cx,-s.cy);}
+        if(s){ctx.translate(s.cx+s.dx,s.cy+s.dy);ctx.rotate(s.angle*Math.PI/180);ctx.scale(s.scale*(s.fx??1),s.scale*(s.fy??1));ctx.translate(-s.cx,-s.cy);}
         const path=outline.path??=(()=>{const p=new Path2D(),e=outline.edges,m=outline.mask;if(!e){p.rect(m.x,m.y,m.width,m.height);return p;}for(let i=0;i<e.length;i+=4){p.moveTo(e[i],e[i+1]);p.lineTo(e[i+2],e[i+3]);}return p;})();
         const width=1/(unit*(s?.scale??1));ctx.lineWidth=width*1.5;ctx.setLineDash([]);ctx.strokeStyle='rgba(255,255,255,.9)';ctx.stroke(path);
         ctx.lineWidth=width;ctx.setLineDash([4*width,4*width]);ctx.strokeStyle='#2878ed';ctx.stroke(path);ctx.restore();

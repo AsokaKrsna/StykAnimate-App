@@ -13,6 +13,8 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Shape brushes like a real painting app: flat and angled tips that can follow the stroke or your pen's tilt, scatter and grain, pressure-controlled flow, blend modes (Behind, Multiply, Screen, Overlay, Color), a smudge brush that drags and mixes wet paint, and Lock alpha for recolouring line art. New Nib, Airbrush, Charcoal, Liner, Blender and Oil presets join Ink, Pencil, Soft and Marker.
 - Select pixels with rectangles, ellipses and a magic wand as well as the lasso, add with Shift or subtract with Alt, and paint or fill only inside the selection. Select all, invert, deselect and fill the selection with Ctrl+A, Ctrl+Shift+I, Ctrl+Shift+A and Shift+Backspace.
 - Draw lines, rectangles and ellipses outlined with the current brush or filled (U, Shift for 45° lines, squares and circles), and paint linear or radial gradients from a colour to transparent or to a second colour (Shift+G); both stay inside the selection.
+- Blur, recolour (hue, saturation, lightness), adjust brightness and contrast, or invert a selection or a whole drawing, and flip selected pixels horizontally or vertically.
+- Keep a second colour (X swaps), pick from recently used colour swatches, and save your own brushes; saved brushes and recent colours are remembered between sessions.
 - Draw faster with mirror painting, Shift-click straight lines from the last stroke, Alt-click colour picking, Ctrl-drag brush resizing, and M to flip the view while checking proportions.
 
 ### Changed

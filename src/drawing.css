@@ -6,6 +6,10 @@
 .drawing-preset:focus-visible{outline:2px solid var(--theme-accent,#0d99ff);outline-offset:2px}
 .drawing-preview{display:block;width:100%;height:40px;margin:8px 0 12px;border:1px solid var(--border);border-radius:6px;background:repeating-conic-gradient(#eee 0 25%,#fff 0 50%) 0 0/12px 12px}
 .drawing-toggle-grid{margin:8px 0}
+.drawing-second-color{margin-left:auto}
+.drawing-swatches{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:3px;margin:-4px 0 12px}
+.drawing-swatch{aspect-ratio:1;border:1px solid var(--border);border-radius:4px;padding:0;cursor:pointer}
+.drawing-swatch[aria-pressed=true]{outline:2px solid var(--theme-accent,#0d99ff);outline-offset:1px}
 .drawing-resolution{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px}
 .drawing-resolution+.drawing-resolution,.inspector-grid+.drawing-resolution{margin-top:8px}
 .drawing-pose>.property-context-heading{display:none}

@@ -473,3 +473,37 @@ export function fillMaskTiles(store,{mask,color}){
     }
   }
 }
+
+const rgbToHsl=(r,g,b)=>{r/=255;g/=255;b/=255;const max=Math.max(r,g,b),min=Math.min(r,g,b),l=(max+min)/2;if(max===min)return [0,0,l];const d=max-min,s=l>.5?d/(2-max-min):d/(max+min);let h=max===r?(g-b)/d+(g<b?6:0):max===g?(b-r)/d+2:(r-g)/d+4;return [h/6,s,l];};
+const hue2rgb=(p,q,t)=>{if(t<0)t+=1;if(t>1)t-=1;return t<1/6?p+(q-p)*6*t:t<.5?q:t<2/3?p+(q-p)*(2/3-t)*6:p;};
+const hslToRgb=(h,s,l)=>{if(!s)return [l*255,l*255,l*255];const q=l<.5?l*(1+s):l+s-l*s,p=2*l-q;return [hue2rgb(p,q,h+1/3)*255,hue2rgb(p,q,h)*255,hue2rgb(p,q,h-1/3)*255];};
+/** One horizontal-then-vertical box blur pass over premultiplied RGBA floats. */
+function boxBlur(src,dst,width,height,r){
+  const tmp=new Float32Array(src.length),w=2*r+1;
+  for(let y=0;y<height;y++)for(let c=0;c<4;c++){let sum=0;const row=y*width;for(let x=-r;x<=r;x++)sum+=src[(row+Math.min(width-1,Math.max(0,x)))*4+c];for(let x=0;x<width;x++){tmp[(row+x)*4+c]=sum/w;sum+=src[(row+Math.min(width-1,x+r+1))*4+c]-src[(row+Math.max(0,x-r))*4+c];}}
+  for(let x=0;x<width;x++)for(let c=0;c<4;c++){let sum=0;for(let y=-r;y<=r;y++)sum+=tmp[(Math.min(height-1,Math.max(0,y))*width+x)*4+c];for(let y=0;y<height;y++){dst[(y*width+x)*4+c]=sum/w;sum+=tmp[(Math.min(height-1,y+r+1)*width+x)*4+c]-tmp[(Math.max(0,y-r)*width+x)*4+c];}}
+}
+/** Drawing filters over `bounds`, weighted by an optional selection mask:
+ * blur (three box passes ≈ Gaussian, premultiplied so transparent pixels
+ * never darken edges), hue/saturation/lightness, brightness/contrast and
+ * invert. Pixels outside the mask keep their exact bytes. */
+export function filterTiles(store,{bounds,kind,mask=null,radius=4,hue=0,saturation=0,lightness=0,brightness=0,contrast=0}){
+  if(!bounds||!(bounds.width>0&&bounds.height>0)||bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw new Error('Invalid filter bounds.');
+  if(!['blur','hsl','brightness','invert'].includes(kind))throw new Error('Unknown drawing filter.');
+  const {x:bx,y:by,width,height}=bounds,source=store.readRect(bx,by,width,height),out=new Uint8ClampedArray(source);
+  const weight=(x,y)=>{if(!mask)return 1;const mx=x+bx-mask.x,my=y+by-mask.y;return mx>=0&&my>=0&&mx<mask.width&&my<mask.height?mask.mask[my*mask.width+mx]/(mask.max??1):0;};
+  if(kind==='blur'){
+    const r=Math.max(1,Math.round(clamp(radius,1,64)/Math.sqrt(3))),pre=new Float32Array(source.length),next=new Float32Array(source.length);
+    for(let i=0;i<source.length;i+=4){const a=source[i+3]/255;pre[i]=source[i]*a;pre[i+1]=source[i+1]*a;pre[i+2]=source[i+2]*a;pre[i+3]=source[i+3];}
+    boxBlur(pre,next,width,height,r);boxBlur(next,pre,width,height,r);boxBlur(pre,next,width,height,r);
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++){const w=weight(x,y);if(!w)continue;const i=(y*width+x)*4,a=next[i+3];
+      const b=a>0?[next[i]*255/a,next[i+1]*255/a,next[i+2]*255/a,a]:[0,0,0,0];for(let c=0;c<4;c++)out[i+c]=Math.round(source[i+c]+(b[c]-source[i+c])*w);}
+  }else for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+    const w=weight(x,y),i=(y*width+x)*4;if(!w||!source[i+3])continue;let r=source[i],g=source[i+1],b=source[i+2];
+    if(kind==='invert'){r=255-r;g=255-g;b=255-b;}
+    else if(kind==='hsl'){const [h,s,l]=rgbToHsl(r,g,b);[r,g,b]=hslToRgb(((h+hue/360)%1+1)%1,clamp(s*(1+saturation/100)),clamp(lightness>=0?l+(1-l)*lightness/100:l*(1+lightness/100)));}
+    else{const k=clamp(1+contrast/100,0,4),o=brightness*2.55;r=(r-128)*k+128+o;g=(g-128)*k+128+o;b=(b-128)*k+128+o;}
+    out[i]=Math.round(source[i]+(clamp(r,0,255)-source[i])*w);out[i+1]=Math.round(source[i+1]+(clamp(g,0,255)-source[i+1])*w);out[i+2]=Math.round(source[i+2]+(clamp(b,0,255)-source[i+2])*w);
+  }
+  store.writeRect(bx,by,width,height,out);
+}

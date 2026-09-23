@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {DrawingResources,defaultTileBudget} from '../src/drawing-resources.mjs';
-import {DrawingStroke,StrokePath,normalizeBrush,dabExtent,gradientTiles,floodTiles,lassoMask,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
+import {DrawingStroke,StrokePath,normalizeBrush,dabExtent,gradientTiles,filterTiles,floodTiles,lassoMask,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
 import {drawingMetadata,validateDrawings,drawingMatrix,drawingPixelMatrix,inversePoint,transformPoint,migrateDrawingFigure,EMPTY_PNG} from '../src/drawing-model.mjs';
 import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from '../src/drawing-tiles.mjs';
 import {encodeTileBlob,decodeTileBlob,tileStoreFromList,encodeTile,assembleTileBlobBytes,TILE_BLOB_PREFIX,TileEncodeCache} from '../src/drawing-tile-codec.mjs';
@@ -704,6 +704,18 @@ test('gradients interpolate premultiplied, respect the selection and stay dither
   const mask={x:0,y:0,width:64,height:64,mask:new Uint8Array(64*64).fill(1)},clipped=new TileStore();
   gradientTiles(clipped,{bounds,a:{x:0,y:0},b:{x:128,y:0},from:[9,9,9,255],to:[9,9,9,255],mask});
   assert.equal(clipped.pixel(100,10)[3],0);assert.equal(clipped.pixel(10,10)[3],255);
+});
+
+test('drawing filters blur premultiplied, adjust colour and respect the selection',()=>{
+  const make=()=>{const store=new TileStore(),px=new Uint8ClampedArray(TILE_BYTES);for(let y=0;y<64;y++)for(let x=0;x<32;x++)px.set([200,40,40,255],(y*64+x)*4);store.set(0,0,px);return store;};
+  const bounds={x:-16,y:-16,width:96,height:96};
+  const blurred=make();filterTiles(blurred,{bounds,kind:'blur',radius:6});
+  const edge=blurred.pixel(33,32);assert.ok(edge[3]>20&&edge[3]<200,'blur softens the edge');assert.deepEqual(edge.slice(0,3),[200,40,40],'transparent pixels never darken the colour');
+  const hue=make();filterTiles(hue,{bounds,kind:'hsl',hue:120});assert.deepEqual(hue.pixel(5,5),[40,200,40,255]);assert.equal(hue.pixel(50,5)[3],0);
+  const inv=make();filterTiles(inv,{bounds,kind:'invert'});assert.deepEqual(inv.pixel(5,5),[55,215,215,255]);
+  const masked=make(),mask={x:0,y:0,width:16,height:64,mask:new Uint8Array(16*64).fill(1)};filterTiles(masked,{bounds,kind:'invert',mask});
+  assert.deepEqual(masked.pixel(5,5),[55,215,215,255]);assert.deepEqual(masked.pixel(20,5),[200,40,40,255],'pixels outside the selection keep their exact bytes');
+  const tone=make();filterTiles(tone,{bounds,kind:'brightness',brightness:20,contrast:0});assert.equal(tone.pixel(5,5)[0],251);
 });
 
 // Phase 3: mip levels, tile-anchored scratch, budgets and the shared provider.

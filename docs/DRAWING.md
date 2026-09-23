@@ -30,6 +30,15 @@ layer; otherwise select an existing visible, unlocked drawing layer.
 - **Shift+G:** gradient. Drag a linear or radial gradient from the colour to
   transparent or to a second colour; colours interpolate premultiplied with
   ordered dither, inside the selection or the reachable canvas.
+- **Colours and brushes:** a second colour sits beside the main one (X
+  swaps them); the twelve most recently painted colours appear as swatches.
+  Save brush stores the current tip as a custom preset. Both persist in local
+  storage (optional; the app works without it).
+- **Filters** (Select and Transform tools): blur, hue/saturation/lightness,
+  brightness/contrast and invert apply to the selection, or to the whole
+  drawing when nothing is selected, as one undoable step. Blur works on
+  premultiplied colour so transparent pixels never darken edges; pixels
+  outside the selection keep their exact bytes.
 - **[ / ]:** change brush size. **G:** fill with tolerance, expansion and gap
   closing; optionally sample visible artwork while writing only to this
   drawing.

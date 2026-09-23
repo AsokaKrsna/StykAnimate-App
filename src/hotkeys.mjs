@@ -101,7 +101,7 @@ group('Drawing', [
   // Krita's selection shortcuts; the drawing scope takes precedence while painting.
   ['drawing-select-all','Select all pixels',['Mod+KeyA']],['drawing-deselect','Deselect pixels',['Mod+Shift+KeyA']],
   ['drawing-invert-selection','Invert pixel selection',['Mod+Shift+KeyI']],['drawing-fill-selection','Fill pixel selection',['Shift+Backspace']],
-  ['drawing-mirror','Toggle mirror painting',['Shift+KeyM']],['drawing-flip-view','Flip view horizontally',['KeyM']],
+  ['drawing-mirror','Toggle mirror painting',['Shift+KeyM']],['drawing-swap-colors','Swap drawing colors',['KeyX']],['drawing-flip-view','Flip view horizontally',['KeyM']],
 ], 'drawing');
 group('Library', [['library-open', 'Open / insert library item', ['Enter']], ['library-rename', 'Rename library item', ['F2']]], 'library');
 
