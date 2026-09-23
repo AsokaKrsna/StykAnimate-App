@@ -1,5 +1,5 @@
 import {TILE,TILE_BYTES,TileStore,tileKey} from './drawing-tiles.mjs';
-import {tileChanges} from './drawing-pixels.mjs';
+import {tileChanges,tileAlignedRect} from './drawing-pixels.mjs';
 import {transformTiles,transformBounds,transformTileCoverage,inverseMatrix,TRANSFORM_BYTES} from './drawing-transform.mjs';
 import {paintDrawingTiles} from './drawing-raster.mjs';
 
@@ -39,10 +39,15 @@ export function selectionPresenter(s,owner){
   // budget, child previews would evict it and each other indefinitely.
   const sideLimit=Math.min(4096,Math.floor(Math.sqrt(owner.scratchBudget/12)/TILE)*TILE);
   for(const entry of [remainder,selected]){const scratch=entry.scratch;entry.scratch=(rect,options={})=>scratch(rect,{...options,maxSide:Math.min(options.maxSide??4096,sideLimit)});}
-  Object.defineProperty(p.store,'bounds',{get(){
-    const a=s.remainder.bounds,b=s.source.bounds?selectionBounds(s.source.bounds,selectionMatrix(s)):null;
-    if(!a||!b)return a??b;const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);
-    return {x,y,width:Math.max(a.x+a.width,b.x+b.width)-x,height:Math.max(a.y+a.height,b.y+b.height)-y};
+  const union=(a,b)=>{if(!a||!b)return a??b;const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);return {x,y,width:Math.max(a.x+a.width,b.x+b.width)-x,height:Math.max(a.y+a.height,b.y+b.height)-y};};
+  // The composite has no tiles of its own: its extent is the remainder plus
+  // the transformed selection. The renderer sizes drawings by tileBounds, so
+  // it needs the tile-aligned extent too, or the whole cel draws nothing
+  // while a selection floats.
+  Object.defineProperty(p.store,'bounds',{get(){return union(s.remainder.bounds,s.source.bounds?selectionBounds(s.source.bounds,selectionMatrix(s)):null);}});
+  Object.defineProperty(p.store,'tileBounds',{get(){
+    const moved=s.source.tileBounds?selectionBounds(s.source.tileBounds,selectionMatrix(s)):null;
+    return union(s.remainder.tileBounds,moved?tileAlignedRect(moved.x,moved.y,moved.width,moved.height):null);
   }});
   p.dispose=()=>{for(const entry of [p,selected,remainder])owner.releaseTransient(entry);};
   p.scratch=(rect,{level=0,maxSide=4096,clamp=false}={})=>{

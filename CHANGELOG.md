@@ -53,6 +53,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Fixed
 
+- The lasso and other pixel selections no longer make the drawing disappear until you press Enter: the rest of the drawing stays on screen and selected pixels move, scale and rotate live.
 - Keep the stage fully visible and centred when opening Build figure or resizing panels, show position, angle and scale fields with readable precision (full precision appears while editing), fix garbled text in rig controls, tidy the movieclip options in the Add dialog, and say "1 figure" or "1 frame" instead of "1 figures".
 - Keep attached 3D heads on the neck when the torso or neck bends; they no longer turn twice and drift off the shoulders.
 - Switch IK off and on for each 3D arm and leg from the rig panel. With IK off, dragging a hand or foot swings just the forearm or shin.

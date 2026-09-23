@@ -76,6 +76,11 @@ try{
   await page.locator('.drawing-quickbar [data-draw-choice="selectShape"][data-value="rect"]').click();
   await stroke([{x:cx-100,y:cy-120},{x:cx+100,y:cy+120}]);
   check('a rectangle selection creates an outline',await page.evaluate(()=>Boolean(styk.drawing.marquee)&&styk.drawing.marquee.mask.width>100));
+  // The artwork stays on screen while a selection exists: the selection
+  // preview once reported no extent, and the whole cel vanished until Enter.
+  const onScreen=await page.evaluate(({x,y})=>new Promise(resolve=>{const r=styk.state.renderer,scene=document.querySelector('#scene'),render=r.render;
+    r.render=function(...a){const v=render.apply(this,a);r.render=render;const b=scene.getBoundingClientRect(),c=new OffscreenCanvas(1,1),g=c.getContext('2d');g.drawImage(scene,Math.round((x-b.left)*scene.width/b.width),Math.round((y-b.top)*scene.height/b.height),1,1,0,0,1,1);resolve([...g.getImageData(0,0,1,1).data]);return v;};styk.drawing.onRender();}),{x:cx,y:cy});
+  check('the selected artwork stays on screen while the selection is active',onScreen[0]<90&&onScreen[3]>200);
   await page.locator('[data-tool="drawing-brush"]').click();
   check('switching tools keeps the untouched selection outline',await page.evaluate(()=>Boolean(styk.drawing.marquee)&&!styk.drawing.selection));
   await stroke(line(cx-250,cy-60,cx+250,cy-60));
