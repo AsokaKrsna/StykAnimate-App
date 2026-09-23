@@ -377,7 +377,7 @@ export class DrawingGpu {
   tileRecord(tile){return this.tiles.get(tile);}
   state(presenter){
     let state=this.states.get(presenter);
-    if(!state){state={store:undefined,levels:new Map(),occupancy:[],overlay:null,overlayOccupancy:[],lastFrame:-1,retained:null};this.states.set(presenter,state);}
+    if(!state){state={store:undefined,levels:new Map(),occupancy:[],overlay:null,overlayOccupancy:[],lastFrame:-1,retained:null,version:0,levelVersions:new Uint32Array(MAX_LEVEL+1),stale:new Set()};this.states.set(presenter,state);}
     const store=presenter.store;
     if(state.store!==store&&store){this.clearLevels(state);state.store=store;state.occupancy=[];store.changes(this.token).keys.clear();}
     else if(store){
@@ -388,7 +388,7 @@ export class DrawingGpu {
     }
     return state;
   }
-  clearLevels(state){for(const record of state.levels.values()){record.onEvict=null;if(record.slot>=0)this.evict(record);}state.levels.clear();}
+  clearLevels(state){if(state.levels.size)state.version++;state.stale.clear();for(const record of state.levels.values()){record.onEvict=null;if(record.slot>=0)this.evict(record);}state.levels.clear();}
   /** Mark the reduced ancestors of changed level-0 tile keys as stale. */
   invalidateKeys(state,keys){
     if(!state.levels.size)return;
@@ -396,7 +396,9 @@ export class DrawingGpu {
     let parents=new Set();for(const key of keys){const [tx,ty]=key.split(',').map(Number);parents.add(tileKey(tx>>1,ty>>1));}
     for(let k=1;k<=MAX_LEVEL&&parents.size;k++){
       const next=new Set();
-      for(const key of parents){const record=state.levels.get(`${k}|${key}`);if(record)record.valid=false;const [tx,ty]=key.split(',').map(Number);next.add(tileKey(tx>>1,ty>>1));}
+      // A stale reduction keeps its slot; prepare() re-reduces the stale ones
+      // it displays without rebuilding the cel's other instances.
+      for(const key of parents){const record=state.levels.get(`${k}|${key}`);if(record?.valid){record.valid=false;state.stale.add(`${k}|${key}`);}const [tx,ty]=key.split(',').map(Number);next.add(tileKey(tx>>1,ty>>1));}
       parents=next;
     }
   }
@@ -458,14 +460,23 @@ export class DrawingGpu {
     if(!presenter.store){
       // An evicted store re-decodes; keep drawing its last resident tiles
       // unless history has changed the cel since they were drawn.
-      const retained=state.retained;if(!retained||retained.revision!==presenter.revision)return null;
-      if(retained.records.some(record=>record.slot<0))return null;
+      const retained=state.retained;if(!retained||retained.revision!==presenter.revision||!this.intact(retained))return null;
       for(const record of retained.records)this.touch(record);
       return this.appendInstances(retained.words);
     }
     const {matrix,level,transform,alpha}=view,rect=intersect(view.rect,unionRect(presenter.store.bounds,state.overlay?state.overlayRect:null));
     if(!rect){state.retained=null;return null;}
     const span=TILE<<level,tx0=Math.floor(rect.x/span)-1,ty0=Math.floor(rect.y/span)-1,tx1=Math.floor((rect.x+rect.width-1)/span)+1,ty1=Math.floor((rect.y+rect.height-1)/span)+1;
+    // A frame that changes nothing about this cel — same pixels, stroke
+    // overlay, levels, view and tile window — reuses last frame's instances
+    // instead of resolving every visible tile again.
+    const cached=state.retained;
+    if(cached?.complete&&cached.store===presenter.store&&cached.storeRevision===presenter.store.revision&&cached.version===state.version&&cached.levelVersion===state.levelVersions[level]&&cached.level===level&&cached.tx0===tx0&&cached.ty0===ty0&&cached.tx1===tx1&&cached.ty1===ty1&&cached.alpha===alpha&&cached.transform===transform&&cached.matrix.every((v,i)=>v===matrix[i])&&this.intact(cached)&&this.refreshStale(state,level,tx0,ty0,tx1,ty1)){
+      for(const record of cached.records)this.touch(record);
+      this.stats.reusedInstances=(this.stats.reusedInstances??0)+1;
+      return this.appendInstances(cached.words);
+    }
+    const missing=this.missing;
     // Tile coordinates relative to the first visible tile keep f32 small.
     const baseX=tx0*span,baseY=ty0*span,m=[matrix[0],matrix[1],matrix[2],matrix[3],matrix[4]+matrix[0]*baseX+matrix[2]*baseY,matrix[5]+matrix[1]*baseX+matrix[3]*baseY];
     const candidates=[],width=tx1-tx0+1,height=ty1-ty0+1;
@@ -497,10 +508,31 @@ export class DrawingGpu {
       words.set(slots,o+12);words[o+21]=words[o+22]=words[o+23]=0;
       for(const slot of slots)if(slot!==GPU_NONE){const record=this.lru.get(slot);if(record)records.add(record);}
     }
-    const used=words.subarray(0,n*WORDS);
-    state.retained={words:used,records:[...records],revision:presenter.revision};
+    // Reductions this rebuild resolved (or that no longer exist) are not stale.
+    for(const key of state.stale){const record=state.levels.get(key);if(!record||record.valid)state.stale.delete(key);}
+    const used=words.subarray(0,n*WORDS),kept=[...records];
+    state.retained={words:used,records:kept,slots:kept.map(record=>record.slot),revision:presenter.revision,complete:this.missing===missing,
+      store:presenter.store,storeRevision:presenter.store.revision,version:state.version,levelVersion:state.levelVersions[level],level,tx0,ty0,tx1,ty1,alpha,transform,matrix:[...matrix]};
     return this.appendInstances(used);
   }
+  /** Re-reduce the stale level-`level` tiles inside the window into the slots
+   * they already own. Returns false when one could not keep its slot, so the
+   * caller rebuilds the cel's instances. */
+  refreshStale(state,level,tx0,ty0,tx1,ty1){
+    if(!state.stale.size)return true;
+    const memo=new Map();
+    for(const key of state.stale){
+      const bar=key.indexOf('|'),k=Number(key.slice(0,bar));if(k!==level)continue;
+      const [tx,ty]=key.slice(bar+1).split(',').map(Number);if(tx<tx0||tx>tx1||ty<ty0||ty>ty1)continue;
+      const record=state.levels.get(key),slot=record?.slot;
+      if(!(slot>=0)||this.resolve(state,k,tx,ty,memo)!==slot)return false;
+      if(record.valid)state.stale.delete(key);
+    }
+    return true;
+  }
+  /** Whether every slot retained instances reference still holds the tile it
+   * held: an evicted record gets -1, and a re-allocated one a different slot. */
+  intact(retained){const {records,slots}=retained;for(let i=0;i<records.length;i++)if(records[i].slot!==slots[i])return false;return true;}
   appendInstances(words){
     if(!words.length)return null;
     const first=this.instanceCount,count=words.length/WORDS;
@@ -645,8 +677,12 @@ export class GpuStroke {
     if(!gpu.allocate(after)){if(before)gpu.unpin(before);throw new Error('Drawing graphics memory is full. Finish the stroke or reduce the drawing size.');}
     tile={tx,ty,before,after,source,coverage:this.usesCoverage?this.coverageCount++:-1,initialized:false};this.tiles.set(key,tile);
     if(this.usesCoverage)this.coverage.ensure(this.coverageCount*TILE_BYTES,{preserve:true});
-    this.state.overlay.set(key,after);this.state.overlayRect=unionRect(this.state.overlayRect,{x:tx*TILE,y:ty*TILE,width:TILE,height:TILE});
-    for(let k=1;k<=MAX_LEVEL;k++)(this.state.overlayOccupancy[k]??=new Set()).add(tileKey(tx>>k,ty>>k));
+    const state=this.state,levels=state.levelVersions;
+    // The overlay slot replaces the committed tile at level 0; a reduced level
+    // only shows a new instance where neither the store nor the overlay
+    // occupied that tile before.
+    state.overlay.set(key,after);levels[0]++;state.overlayRect=unionRect(state.overlayRect,{x:tx*TILE,y:ty*TILE,width:TILE,height:TILE});
+    for(let k=1;k<=MAX_LEVEL;k++){const set=state.overlayOccupancy[k]??=new Set(),parent=tileKey(tx>>k,ty>>k);if(set.has(parent))continue;set.add(parent);if(!this.gpu.occupied(state,k).keys.has(parent))levels[k]++;}
     return tile;
   }
   encode(encoder){
@@ -722,7 +758,7 @@ export class GpuStroke {
       else if(tile.after.slot>=0)gpu.evict(tile.after);
       if(tile.before)gpu.unpin(tile.before);
     }
-    if(this.state.overlay){this.state.overlay=null;this.state.overlayOccupancy=[];}
+    if(this.state.overlay){this.state.overlay=null;this.state.overlayOccupancy=[];this.state.version++;}
     // Every tile's reduced ancestors must rebuild from committed pixels.
     gpu.invalidateKeys(this.state,this.tiles.keys());
     this.coverage.destroy();this.dabBuffer.destroy();this.jobBuffer.destroy();this.orderBuffer.destroy();this.paramBuffer.destroy();this.maskBuffer.destroy();this.tiles.clear();

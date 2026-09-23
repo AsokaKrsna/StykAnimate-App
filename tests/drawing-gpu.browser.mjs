@@ -250,6 +250,22 @@ try{
   await page.evaluate(()=>restoreFinishHold());
   check('replacing the document during GPU read-back discards the stroke',replaced.disposed&&replaced.clean,replaced);
   await page.screenshot({path:`${output}/workspace.png`});
+  // Unchanged frames reuse the cel's tile instances; an instance whose slot was
+  // evicted and handed to another tile is never drawn again.
+  const reuse=await page.evaluate(async()=>{
+    const {emptyDocument}=await import('/src/demo.mjs'),{TileStore}=await import('/src/drawing-tiles.mjs'),e=styk.editor,d=styk.drawing,gpu=styk.state.renderer.drawingGpu;
+    e.load(emptyDocument());d.bind();e.createDrawingLayer();const target=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:0,y:0}});await d.owner.surface(target.figure);
+    const tiles=[];for(let ty=0;ty<6;ty++)for(let tx=0;tx<8;tx++)tiles.push({tx,ty,before:null,after:new Uint8ClampedArray(64*64*4).fill(200)});
+    e.commitDrawingPixels(target,tiles,'Fixture');styk.fit();
+    const frame=()=>new Promise(resolve=>{const r=styk.state.renderer,render=r.render;r.render=function(...a){const v=render.apply(this,a);r.render=render;resolve();return v;};d.onRender();});
+    await frame();await frame();const before=gpu.stats.reusedInstances??0;await frame();await frame();
+    const reused=(gpu.stats.reusedInstances??0)-before;
+    const presenter=d.owner.entry(e.drawingTarget().figure),state=gpu.states.get(presenter),retained=state.retained,record=retained.records[0];
+    const intactBefore=gpu.intact(retained);gpu.evict(record);const other={slot:-1,kind:'tile'};gpu.allocate(other);record.slot=other.slot===retained.slots[0]?other.slot+1:other.slot;
+    const intactAfter=gpu.intact(retained);gpu.evict(other);return {reused,intactBefore,intactAfter};
+  });
+  check('unchanged frames reuse the cel tile instances',reuse.reused>=2,reuse);
+  check('instances whose slot was evicted and reassigned are rebuilt',reuse.intactBefore&&!reuse.intactAfter,reuse);
   check('no uncaught browser errors',errors.length===0,errors);
   await writeFile(`${output}/result.json`,JSON.stringify({checks,parity,levels,browser:browser.version(),date:new Date().toISOString()},null,2));
 }catch(error){await page.screenshot({path:`${output}/failure.png`});console.error(errors);throw error;}finally{await browser.close();}
