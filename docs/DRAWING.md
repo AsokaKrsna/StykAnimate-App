@@ -19,6 +19,14 @@ layer; otherwise select an existing visible, unlocked drawing layer.
   existing paint without covering empty pixels. Smudge carries the colour under the tip along the
   stroke (Smudge length) and can mix in the brush colour (Color mix); it
   composites each dab immediately, since every dab reads the previous result.
+- **Quick bar and sliders:** a toolbar floats above the canvas with the active
+  tool's everyday settings (brush: preset, colours, size, opacity, flow,
+  smoothing, mirror). Drawing settings use Krita-style slider fields shared by
+  the quick bar and Properties: press or drag to set, arrow keys and the wheel
+  (quick bar) step, double-click types a value. A readout on the canvas
+  confirms size, opacity and hardness changes. Number keys set opacity
+  (1 = 10% … 0 = 100%) and Shift+[ / ] change hardness. Presets show a stroke
+  drawn by the real brush engine. In Draw, Fit leaves room for the quick bar.
 - **Assist:** mirror painting across the stage's vertical and/or horizontal
   centre (Shift+M toggles horizontal). Shift-click draws a straight line from
   the previous stroke's end; Alt-click (Brush, Fill) picks the visible colour;

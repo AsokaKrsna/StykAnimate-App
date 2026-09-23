@@ -14,6 +14,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Draw lines, rectangles and ellipses outlined with the current brush or filled (U, Shift for 45° lines, squares and circles), and paint linear or radial gradients from a colour to transparent or to a second colour (Shift+G); both stay inside the selection.
 - Blur, recolour (hue, saturation, lightness), adjust brightness and contrast, or invert a selection or a whole drawing, and flip selected pixels horizontally or vertically.
 - Keep a second colour (X swaps), pick from recently used colour swatches, and save your own brushes; saved brushes and recent colours are remembered between sessions.
+- Change brush size, opacity, flow and smoothing from a quick bar above the canvas, with slider controls you can drag, scroll or type into; presets show a sample stroke, a readout confirms each change on the canvas, number keys set opacity (1 = 10%, 0 = 100%) and Shift+[ / ] soften or harden the brush.
 - Draw faster with mirror painting, Shift-click straight lines from the last stroke, Alt-click colour picking, Ctrl-drag brush resizing, and M to flip the view while checking proportions.
 
 ### Changed

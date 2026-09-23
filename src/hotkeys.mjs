@@ -97,6 +97,9 @@ group('Drawing', [
   ['drawing-brush','Brush',['KeyB']],['drawing-eraser','Eraser',['KeyE']],['drawing-fill','Fill',['KeyG']],
   ['drawing-lasso','Select pixels',['KeyL']],['drawing-shape','Shapes',['KeyU']],['drawing-gradient','Gradient',['Shift+KeyG']],
   ['drawing-smaller','Smaller brush',['BracketLeft'],{repeat:true}],['drawing-larger','Larger brush',['BracketRight'],{repeat:true}],
+  ['drawing-softer','Softer brush',['Shift+BracketLeft'],{repeat:true}],['drawing-harder','Harder brush',['Shift+BracketRight'],{repeat:true}],
+  // Photoshop's opacity keys: 1 = 10% … 9 = 90%, 0 = 100%.
+  ...[1,2,3,4,5,6,7,8,9,10].map(n=>[`drawing-opacity-${n*10}`,`Brush opacity ${n*10}%`,[`Digit${n%10}`]]),
   ['drawing-apply','Apply pixel selection',['Enter']],
   // Krita's selection shortcuts; the drawing scope takes precedence while painting.
   ['drawing-select-all','Select all pixels',['Mod+KeyA']],['drawing-deselect','Deselect pixels',['Mod+Shift+KeyA']],

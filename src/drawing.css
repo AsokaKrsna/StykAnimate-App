@@ -25,3 +25,44 @@
 .workspace[data-mode=draw] #inspector .color-row{margin-bottom:12px}
 .drawing-resolution-info,.drawing-empty,.drawing-hint{font-size:11px;color:var(--muted);line-height:1.5;margin-top:10px}
 .workspace[data-mode=draw] .properties-library-save{display:none}
+
+/* Krita-style slider fields: the fill shows the value; label and value sit inside. */
+.draw-sliders{display:grid;gap:5px;margin:8px 0}
+.draw-slider{position:relative;display:flex;align-items:center;justify-content:space-between;gap:8px;height:26px;padding:0 9px;border-radius:6px;background:var(--theme-field,#f2f2f2);color:var(--text,#222);font-size:11px;overflow:hidden;cursor:ew-resize;touch-action:none;user-select:none;outline:none}
+.draw-slider:focus-visible{box-shadow:0 0 0 2px var(--theme-accent,#0d99ff)}
+.draw-slider-fill{position:absolute;inset:0 auto 0 0;background:color-mix(in srgb,var(--theme-accent,#0d99ff) 20%,transparent);border-right:2px solid var(--theme-accent,#0d99ff);pointer-events:none}
+.draw-slider.is-dragging .draw-slider-fill{background:color-mix(in srgb,var(--theme-accent,#0d99ff) 30%,transparent)}
+.draw-slider-label,.draw-slider-value{position:relative;white-space:nowrap;pointer-events:none}
+.draw-slider-label{color:var(--theme-secondary,#555)}
+.draw-slider-value{font-weight:600;font-variant-numeric:tabular-nums}
+.draw-slider-input{width:64px;border:0;background:transparent;font:inherit;font-weight:600;text-align:right;pointer-events:auto}
+.draw-slider.is-compact{height:24px;min-width:104px;padding:0 7px;font-size:10.5px;border-radius:5px}
+/* Presets show a stroke drawn by the real brush engine. */
+.drawing-preset{display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px 3px}
+.drawing-preset-thumb{display:block;width:100%;height:18px;object-fit:contain;pointer-events:none}
+/* Main and second colour as an overlapping pair. */
+.draw-colors{display:flex;align-items:center;gap:8px;margin:8px 0}
+.draw-color-pair{position:relative;flex:none;width:38px;height:34px}
+.draw-color-pair>input{position:absolute;padding:0;border:1px solid var(--border,#ddd);border-radius:5px;background:none;cursor:pointer}
+.draw-color-pair>input::-webkit-color-swatch-wrapper{padding:0}
+.draw-color-pair>input::-webkit-color-swatch{border:0;border-radius:4px}
+.draw-color-primary{left:0;top:0;z-index:1;width:26px;height:26px;box-shadow:0 0 0 2px var(--panel,#fff)}
+.draw-color-secondary{right:0;bottom:0;width:20px;height:20px;border-color:var(--theme-muted,#999)!important}
+.draw-color-swap{width:24px;height:24px}
+/* Canvas quick bar: the settings a painter changes constantly. */
+.drawing-quickbar{position:absolute;top:4px;left:50%;z-index:5;display:flex;flex-direction:column;gap:5px;max-width:calc(100% - 24px);padding:4px 6px;transform:translateX(-50%);border:1px solid var(--border,#e2e2e2);border-radius:10px;background:var(--panel,#fff);box-shadow:0 4px 18px rgba(0,0,0,.08)}
+.drawing-quickbar[hidden]{display:none}
+.draw-quick-row{display:flex;align-items:center;gap:6px;overflow-x:auto;scrollbar-width:none}
+.draw-quick-divider{flex:none;width:1px;height:20px;background:var(--border,#e2e2e2)}
+.draw-quick-preset,.draw-quick-choice{display:flex;align-items:center;gap:6px;flex:none;height:24px;padding:0 9px;border:1px solid var(--border,#e2e2e2);border-radius:6px;background:var(--panel,#fff);color:var(--text,#222);font:inherit;font-size:11px;white-space:nowrap;cursor:pointer}
+.draw-quick-preset img{width:44px;height:14px;object-fit:contain}
+.draw-quick-choice[aria-pressed=true],.draw-quick-toggle[aria-pressed=true],.draw-quick-preset[aria-expanded=true]{border-color:var(--theme-accent,#0d99ff);background:var(--theme-selection,#e5f3ff);color:var(--theme-accent,#0d99ff)}
+.drawing-quickbar .draw-colors{margin:0;gap:4px}
+.drawing-quickbar .draw-color-pair{width:32px;height:28px}
+.drawing-quickbar .draw-color-primary{width:21px;height:21px}
+.drawing-quickbar .draw-color-secondary{width:16px;height:16px}
+.drawing-quickbar .draw-color-swap{width:22px;height:22px}
+.draw-quick-presets{width:min(520px,70vw)}
+/* Transient readout for size, opacity and hardness changes. */
+.drawing-hud{position:absolute;top:54px;left:50%;z-index:6;padding:6px 12px;transform:translateX(-50%);border-radius:14px;background:rgba(20,20,24,.84);color:#fff;font-size:12px;font-variant-numeric:tabular-nums;pointer-events:none;opacity:0;transition:opacity .15s}
+.drawing-hud.is-visible{opacity:1}

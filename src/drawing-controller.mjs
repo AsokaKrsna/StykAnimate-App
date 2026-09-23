@@ -1,4 +1,5 @@
-import {BRUSH_PRESETS} from './drawing-view.mjs';
+import {BRUSH_PRESETS,quickBarMarkup} from './drawing-view.mjs';
+import {SLIDERS,installDrawingSliders,refreshSliders,formatSlider,displayValue} from './drawing-sliders.mjs';
 import {WetInk} from './drawing-wet-ink.mjs';
 import {tileChanges,lassoMask,tileAlignedRect,DrawingStroke,StrokePath,normalizeBrush,dabExtent,dabRadius,rectPoints,ellipsePoints,combineMasks,invertMask,rectMask,maskEdges} from './drawing-pixels.mjs';
 import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,inversePoint,transformPoint,DRAWING_MAX_PIXELS} from './drawing-model.mjs';
@@ -30,8 +31,14 @@ export class DrawingController {
     this.library=loadLibrary();
     this.panel=document.getElementById('inspector');
     const events=this.events=new AbortController(),opts={signal:events.signal};
-    this.panel.addEventListener('click',event=>{const preset=event.target.closest('[data-draw-preset]'),action=event.target.closest('[data-draw-action]'),swatch=event.target.closest('[data-draw-color]');if(preset){this.finish();const id=preset.dataset.drawPreset,found=BRUSH_PRESETS.find(p=>p.id===id)??this.library.presets.find(p=>p.id===id);if(found){const {name,description,...tip}=found;Object.assign(this.settings,tip,{preset:id});}this.onUI();}if(swatch){this.settings.color=swatch.dataset.drawColor;this.onUI();this.paintPreview(this.panel);}if(action)this.run(()=>this.action(action.dataset.drawAction));},opts);
-    this.panel.addEventListener('change',event=>{if(event.target.dataset.drawSetting)this.run(()=>this.change(event));},opts);
+    // The inspector and the canvas quick bar share click, change and slider handling.
+    for(const root of [this.panel,this.quickBar=this.createQuickBar()]){
+      root.addEventListener('click',event=>this.handleClick(event),opts);
+      root.addEventListener('change',event=>{if(event.target.dataset.drawSetting)this.run(()=>this.change(event));},opts);
+      installDrawingSliders(root,{get:key=>this.settings[key],set:(key,value)=>this.setSetting(key,value),end:()=>{this.sliderEnded();},signal:events.signal,wheel:root===this.quickBar});
+    }
+    // Every UI refresh also refreshes the quick bar, coalesced per frame.
+    const ui=this.onUI;this.onUI=()=>{ui();this.queueQuickBar();};
     // pointerrawupdate delivers pen samples as they arrive instead of aligned
     // to the next frame; pointermove still drives everything else and remains
     // the fallback where raw updates are unavailable.
@@ -83,6 +90,48 @@ export class DrawingController {
     if(found.current)owner.surface(found.current).catch(miss);
   }
   run(operation){try{const result=operation();if(result?.catch)result.catch(error=>{this.cancel();if(error.name!=='AbortError')this.onError(error);});return result;}catch(error){this.cancel();this.onError(error);}}
+  /** Clicks on presets, swatches, choices and actions (inspector or quick bar). */
+  handleClick(event){
+    const preset=event.target.closest('[data-draw-preset]'),action=event.target.closest('[data-draw-action]'),swatch=event.target.closest('[data-draw-color]'),choice=event.target.closest('[data-draw-choice]');
+    if(preset){this.finish();const id=preset.dataset.drawPreset,found=BRUSH_PRESETS.find(p=>p.id===id)??this.library.presets.find(p=>p.id===id);if(found){const {name,description,...tip}=found;Object.assign(this.settings,tip,{preset:id});}this.quickPresets=false;this.onUI();this.paintPreview(this.panel);}
+    if(swatch){this.settings.color=swatch.dataset.drawColor;this.onUI();this.paintPreview(this.panel);}
+    if(choice){const key=choice.dataset.drawChoice,value=choice.dataset.value;this.settings[key]=value==='toggle'?!this.settings[key]:value;this.onUI();this.onRender();}
+    if(action?.dataset.drawAction==='toggle-quick-presets'){this.quickPresets=!this.quickPresets;this.queueQuickBar();return;}
+    if(action)this.run(()=>this.action(action.dataset.drawAction));
+  }
+  /** Set one drawing setting live (sliders, keys, Ctrl-drag). */
+  setSetting(key,value){
+    this.settings[key]=value;
+    if(['size','opacity','flow','hardness','roundness','angle','scatter','spacingRatio','texture','smudgeLength','colorRate','sizeCurve','opacityCurve','stabilization'].includes(key))this.settings.preset=null;
+    refreshSliders(key,value);this.paintPreview(this.panel);
+    if(SLIDERS[key]&&['size','opacity','flow','hardness','stabilization'].includes(key))this.hud(`${SLIDERS[key].label} ${formatSlider(key,displayValue(key,value))}`);
+    this.onRender();
+  }
+  sliderEnded(){this.onUI();}
+  /** Keyboard adjustments routed from the hotkey map; true when handled. */
+  hotkey(name){
+    const s=this.settings;
+    if(name==='smaller'||name==='larger'){this.setSetting('size',Math.max(.5,Math.min(2048,s.size*(name==='smaller'?.8:1.25))));this.onUI();return true;}
+    if(name==='softer'||name==='harder'){this.setSetting('hardness',Math.max(0,Math.min(1,Math.round((s.hardness+(name==='softer'?-.1:.1))*10)/10)));this.onUI();return true;}
+    const opacity=/^opacity-(\d+)$/.exec(name);if(opacity){this.setSetting('opacity',Number(opacity[1])/100);this.onUI();return true;}
+    return false;
+  }
+  /** A transient readout on the canvas for size, opacity and similar changes. */
+  hud(text){
+    if(!this.active)return;
+    const el=this.hudElement??=Object.assign(document.createElement('div'),{className:'drawing-hud',role:'status'});
+    if(!el.isConnected)this.viewport.append(el);
+    el.textContent=text;el.classList.add('is-visible');clearTimeout(this.hudTimer);this.hudTimer=setTimeout(()=>el.classList.remove('is-visible'),900);
+  }
+  createQuickBar(){const bar=document.createElement('div');bar.className='drawing-quickbar';bar.setAttribute('role','toolbar');bar.setAttribute('aria-label','Drawing tool options');bar.hidden=true;this.viewport.append(bar);return bar;}
+  queueQuickBar(){if(this.quickQueued)return;this.quickQueued=true;requestAnimationFrame(()=>{this.quickQueued=false;this.renderQuickBar();});}
+  renderQuickBar(){
+    const bar=this.quickBar;if(!bar)return;
+    if(!this.active){bar.hidden=true;return;}
+    // Never rebuild under an active slider drag or an open inline edit.
+    if(bar.querySelector('.draw-slider.is-dragging,.draw-slider.is-editing'))return;
+    const html=quickBarMarkup(this);if(bar.innerHTML!==html)bar.innerHTML=html;bar.hidden=false;
+  }
   enter(){if(this.active)return;this.beforeEdit();this.prior={handles:this.state.handles,tool:this.state.tool,rotation:this.state.view.rotation??0,flip:Boolean(this.state.view.flip)};this.active=true;this.state.handles=false;this.state.tool='drawing-brush';this.state.drawing=true;this.cursor=null;this.bind();
     const layers=this.editor.layers.filter(layer=>isDrawingLayer(layer)&&!layer.locked&&layer.visible),target=layers.find(l=>l.id===this.editor.activeLayerId)||layers.find(l=>l.id===this.lastLayer)||layers.at(-1);if(target){this.editor.selectSheetLayer(target.id);this.state.selectedTrackId=target.id;}this.sync();this.prepareVisible();this.onUI();this.onRender();}
   exit(){if(!this.active)return;this.finish();this.applySelection();this.active=false;this.state.drawing=false;this.cursor=null;Object.assign(this.state,{handles:this.prior.handles,tool:this.prior.tool});this.state.view.rotation=this.prior.rotation;this.state.view.flip=this.prior.flip;this.onUI();this.onRender();}
@@ -365,7 +414,7 @@ export class DrawingController {
     else if(g.kind==='stroke'){if(!g.session.ended)this.strokeSamples(event);}
     else if(g.kind==='pose'){const p=this.point(event);this.editor.moveSelection(p.x-g.start.x,p.y-g.start.y,{fromStart:true});}
     else if(g.kind==='lasso'){const p=this.pixel(event,g.target);if(g.shape==='rect')g.points=rectPoints(g.start,p);else if(g.shape==='ellipse')g.points=ellipsePoints(g.start,p);else if(g.points.length<8192&&Math.hypot(p.x-g.points.at(-1).x,p.y-g.points.at(-1).y)>1)g.points.push(p);}
-    else if(g.kind==='resize'){this.settings.size=Math.max(.5,Math.min(2048,g.size*2**((event.clientX-g.start.clientX)/120)));this.settings.preset=null;this.cursor=g.start;this.paintPreview(this.panel);}
+    else if(g.kind==='resize'){this.setSetting('size',Math.max(.5,Math.min(2048,Math.round(g.size*2**((event.clientX-g.start.clientX)/120)*10)/10)));this.cursor=g.start;}
     else if(g.kind==='pick')this.pickColor(event);
     else if(g.kind==='shape'||g.kind==='gradient'){g.end=this.point(event);g.constrain=event.shiftKey;}
     else if(g.kind==='selection-scale'||g.kind==='selection-rotate'){
@@ -730,5 +779,5 @@ export class DrawingController {
     }
     ctx.restore();
   }
-  destroy(){this.cancel();this.cancelSelection();this.events.abort();this.wet?.dispose();this._viewObserver?.disconnect();this.owner?.dispose();}
+  destroy(){this.cancel();this.cancelSelection();this.events.abort();this.wet?.dispose();this.quickBar?.remove();this.hudElement?.remove();this._viewObserver?.disconnect();this.owner?.dispose();}
 }

@@ -39,6 +39,27 @@ try{
   await page.locator('select[data-draw-setting="blend"]').selectOption('normal');
   await page.evaluate(()=>Object.assign(styk.drawing.settings,{size:10,color:'#202020',opacity:1,flow:1,hardness:1,stabilization:0}));
 
+  // The canvas quick bar and Krita-style sliders.
+  const quickSize=page.locator('.drawing-quickbar [data-draw-slider="size"]');
+  await page.waitForSelector('.drawing-quickbar:not([hidden]) [data-draw-slider="size"]');
+  const qb=await quickSize.boundingBox();
+  await page.mouse.move(qb.x+4,qb.y+qb.height/2);await page.mouse.down();await page.mouse.move(qb.x+qb.width*.62,qb.y+qb.height/2,{steps:6});
+  check('dragging the quick bar size slider resizes the brush live with a readout',await page.evaluate(()=>styk.drawing.settings.size>40&&document.querySelector('.drawing-hud.is-visible')?.textContent.startsWith('Size')));
+  await page.mouse.up();
+  check('the inspector slider follows the quick bar',await page.evaluate(()=>{const s=styk.drawing.settings.size,t=document.querySelector('#inspector [data-draw-slider="size"] .draw-slider-value')?.textContent;return t===(s<10?String(s):String(Math.round(s)))+' px';}));
+  await page.locator('#inspector [data-draw-slider="size"]').dblclick();await page.keyboard.type('12');await page.keyboard.press('Enter');
+  check('double-clicking a slider types an exact value',await page.evaluate(()=>styk.drawing.settings.size===12));
+  await quickSize.hover();await page.mouse.wheel(0,-100);
+  check('the wheel steps a quick bar slider',await page.evaluate(()=>styk.drawing.settings.size>12));
+  await page.locator('#viewport').focus();await page.keyboard.press('5');
+  check('number keys set brush opacity like Photoshop',await page.evaluate(()=>styk.drawing.settings.opacity===.5));
+  await page.keyboard.press('0');await page.keyboard.press('Shift+BracketLeft');
+  check('Shift+[ softens the brush',await page.evaluate(()=>styk.drawing.settings.opacity===1&&Math.abs(styk.drawing.settings.hardness-.9)<1e-9));
+  await page.locator('.drawing-quickbar [data-draw-action="toggle-quick-presets"]').click();
+  await page.locator('.drawing-quickbar [data-draw-preset="pencil"]').click();
+  check('the quick bar picks presets from thumbnails',await page.evaluate(()=>styk.drawing.settings.preset==='pencil'&&!styk.drawing.quickPresets));
+  await page.locator('[data-draw-preset="ink"]').first().click();
+  await page.evaluate(()=>Object.assign(styk.drawing.settings,{size:10,color:'#202020',opacity:1,flow:1,hardness:1,stabilization:0}));
   // Base artwork: a horizontal band.
   await stroke(line(cx-300,cy,cx+300,cy));
   check('the base stroke painted',await page.evaluate(({x,y})=>alphaAt(x,y)===255,{x:cx,y:cy}));

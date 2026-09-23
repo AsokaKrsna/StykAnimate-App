@@ -1042,19 +1042,21 @@ function placeArtboard() {
   $("zoom-label").textContent = `${Number((v.scale * 100).toFixed(v.scale < 0.01 ? 2 : v.scale < 0.1 ? 1 : 0))}% ⌄`;
 }
 function fittedView(r = editor.report) {
+  // In Draw, fitting keeps the stage clear of the canvas quick bar.
   const rect = viewport.getBoundingClientRect(),
+    bar = drawingController?.active && drawingController.quickBar && !drawingController.quickBar.hidden ? drawingController.quickBar.offsetHeight + 8 : 0,
     s = Math.max(
       0.01,
       Math.min(
         (rect.width - 64) / r.canvas_width,
-        (rect.height - 72) / r.canvas_height,
+        (rect.height - 72 - bar) / r.canvas_height,
         2,
       ),
     );
   return {
     scale: s,
     x: (rect.width - r.canvas_width * s) / 2,
-    y: (rect.height - r.canvas_height * s) / 2 - 3,
+    y: bar + (rect.height - bar - r.canvas_height * s) / 2 - 3,
   };
 }
 function fit() {
@@ -5324,7 +5326,7 @@ function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
   editablePreparation.cancel();
   if(drawingController?.active){
     if(id==='play-pan')drawingController.finish();
-    if(id.startsWith('drawing-')){drawingController.finish();const tool=id.slice(8),actions={'select-all':'select-all',deselect:'deselect','invert-selection':'invert-selection','fill-selection':'fill-selection',mirror:'mirror-x','flip-view':'flip-view','swap-colors':'swap-colors'};if(['brush','eraser','fill','lasso','shape','gradient'].includes(tool))drawingController.tool=tool;else if(tool==='apply')drawingController.applySelection();else if(actions[tool])return drawingController.run(()=>drawingController.action(actions[tool]));else{drawingController.settings.size=Math.max(.5,Math.min(2048,drawingController.settings.size*(tool==='smaller'?.8:1.25)));queueUI();}drawingController.sync();return;}
+    if(id.startsWith('drawing-')){drawingController.finish();const tool=id.slice(8),actions={'select-all':'select-all',deselect:'deselect','invert-selection':'invert-selection','fill-selection':'fill-selection',mirror:'mirror-x','flip-view':'flip-view','swap-colors':'swap-colors'};if(['brush','eraser','fill','lasso','shape','gradient'].includes(tool))drawingController.tool=tool;else if(tool==='apply')drawingController.applySelection();else if(actions[tool])return drawingController.run(()=>drawingController.action(actions[tool]));else drawingController.hotkey(tool);drawingController.sync();return;}
     if(['copy','cut','paste'].includes(id)&&!event.target.closest?.('.layer-timeline,.sheet-filmstrip')&&(drawingController.selection||id==='paste'&&drawingController.pixelClipboard))return drawingController.action(id+'-pixels');
     // Delete keeps its global binding: the drawing scope deliberately leaves it
     // unbound so the global command always dispatches; only a live pixel

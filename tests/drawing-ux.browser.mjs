@@ -109,7 +109,7 @@ try{
   await page.locator('[data-workspace-mode="animate"]').first().click();await page.locator('#viewport').focus();await page.keyboard.press('a');
   check('A uses drawing-layer semantics in Animate too',await page.evaluate(()=>!styk.editor.drawingTarget().figure));await page.keyboard.press('Control+z');await page.locator('[data-workspace-mode="draw"]').click();
   await page.locator('[data-timeline-mode="advanced"]').click();await page.setViewportSize({width:1024,height:768});await page.evaluate(()=>styk.fit());await page.screenshot({path:path.join(output,'workspace-compact.png')});
-  check('compact inspector keeps size and opacity visible',await page.locator('[data-property="draw:size"]').isVisible()&&await page.locator('[data-property="draw:opacity"]').isVisible());
+  check('compact inspector keeps size and opacity visible',await page.locator('#inspector [data-draw-slider="size"]').isVisible()&&await page.locator('#inspector [data-draw-slider="opacity"]').isVisible()&&await page.locator('.drawing-quickbar [data-draw-slider="size"]').isVisible());
   check('changing timeline layout keeps figure handles hidden in Draw',await page.evaluate(()=>!styk.state.handles));
 
   // Budget regressions: a resident-store overflow must evict rebuildable work
