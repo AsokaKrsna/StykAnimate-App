@@ -35,6 +35,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Start painting in Draw straight away: the first stroke creates a drawing layer, or switches to your existing one, instead of doing nothing until a layer is chosen.
 - Give each Draw setting one home: colour, size, opacity, flow, smoothing, mirroring and tool modes live in the bar above the canvas, while Properties keeps presets, the stroke preview, recent colours and deeper brush options.
 - Make onion skin settings easier to read: a clear On/Off switch, colour-coded Before and After ranges, a plain summary of how many poses are shown, opacity in percent, labelled colours, and rarer sampling and drawing-order options under More options.
+- Make the audio timeline clearer: scrubbing sound and keeping audio in sync with frame edits are explained switches under Options, the clip tools and Add track buttons say what they do, and an empty audio panel offers Import audio and Add empty track directly.
 - Show a ⇔ marker on scrubbable property labels and a hint in Transform sections that dragging a label adjusts its value, with Shift or Alt for finer steps.
 
 ### Fixed

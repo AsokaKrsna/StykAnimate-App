@@ -24,13 +24,22 @@ export class AudioTimeline {
     this.importButton = this.button(this.toolbar, 'Import audio', () => this.file.click(), 'plus'); el('span', this.importButton, '', 'Import audio');
     this.cancelImportButton=this.button(this.toolbar,'Cancel audio import',()=>this.importController?.abort(),'close');this.cancelImportButton.hidden=true;
     el('span', this.cancelImportButton, '', 'Cancel');
-    this.newTrackButton = this.button(this.toolbar, 'New audio track', () => this.addTrack(), 'plus'); el('span', this.newTrackButton, '', 'Track');
+    this.newTrackButton = this.button(this.toolbar, 'New audio track', () => this.addTrack(), 'plus'); el('span', this.newTrackButton, '', 'Add track');
     this.extendButton = this.button(this.toolbar, 'Extend animation to audio', () => this.extend(), 'chevron-right');
     el('span',this.extendButton,'','Fit animation');
     this.hint = el('span', this.toolbar, 'audio-hint', 'Drop music, dialogue or sound effects');
-    this.scrubLabel = el('label', this.toolbar, 'audio-check', 'Scrub sound'); this.scrub = el('input', this.scrubLabel); this.scrub.type = 'checkbox'; this.scrub.setAttribute('aria-label', 'Hear audio while scrubbing');
+    // Behaviour switches are explained in an Options popover instead of two
+    // bare checkboxes ("Scrub sound", "Ripple") in the toolbar.
+    this.optionsButton = this.button(this.toolbar, 'Audio options', () => { if (this.options.matches(':popover-open')) this.options.hidePopover(); else { this.options.showPopover(); this.positionPopover(this.options, this.optionsButton); } }, 'settings');
+    this.optionsButton.viewAction = true; el('span', this.optionsButton, '', 'Options'); this.optionsButton.setAttribute('aria-haspopup', 'dialog'); this.optionsButton.classList.add('audio-options-button');
+    this.options = el('div', this.root, 'audio-options'); this.options.setAttribute('popover', 'auto'); this.options.setAttribute('role', 'dialog'); this.options.setAttribute('aria-label', 'Audio options');
+    const option = (label, hint, name) => { const row = el('label', this.options, 'ds-switch'), input = el('input', row), text = el('span', row, '', label); input.type = 'checkbox'; input.setAttribute('aria-label', name); el('small', text, '', hint); return input; };
+    this.scrub = option('Hear audio while scrubbing', 'Play short snippets as you drag the playhead.', 'Hear audio while scrubbing');
     this.scrub.checked = Boolean(editor.audioScrub); this.on(this.scrub, 'change', () => { editor.audioScrub = this.scrub.checked; });
-    this.rippleLabel = el('label', this.toolbar, 'audio-check', 'Ripple'); this.ripple = el('input', this.rippleLabel); this.ripple.type = 'checkbox'; this.ripple.checked = Boolean(editor.audioRipple); this.ripple.title = 'Move or split audio when time is inserted or removed across every animation layer'; this.ripple.setAttribute('aria-label', 'Ripple audio with scene frames'); this.on(this.ripple, 'change', () => { editor.audioRipple = this.ripple.checked; });
+    this.ripple = option('Keep audio in sync with frame edits', 'When frames are inserted or removed on every layer, audio after that point moves (or splits) with them.', 'Ripple audio with scene frames');
+    this.ripple.checked = Boolean(editor.audioRipple); this.on(this.ripple, 'change', () => { editor.audioRipple = this.ripple.checked; });
+    this.on(this.options, 'toggle', () => this.optionsButton.setAttribute('aria-expanded', String(this.options.matches(':popover-open'))));
+    this.on(this.options, 'keydown', event => { event.stopPropagation(); if (event.key === 'Escape') { event.preventDefault(); this.options.hidePopover(); this.optionsButton.focus(); } });
     this.closeButton = this.button(this.toolbar, 'Close audio', () => this.setOpen(false, {focus:true}), 'close');
     this.closeButton.viewAction = true;
     this.file = el('input', this.root); this.file.type = 'file'; this.file.accept = '.wav,.mp3,.m4a,.aac,.flac,.ogg,.opus,.aif,.aiff,audio/*'; this.file.hidden = true; this.file.setAttribute('aria-label', 'Choose audio recording');
@@ -44,7 +53,10 @@ export class AudioTimeline {
     this.dropRow = el('div', this.lanes, 'audio-new-lane', '+ Drop a clip here to create a track');
     this.on(this.dropRow, 'dblclick', () => this.addTrack());
     this.empty = el('div', this.body, 'audio-empty'); el('span', this.empty, 'audio-empty-icon').innerHTML = icon('music');
-    const emptyText = el('div', this.empty); el('strong', emptyText, '', 'Add music, dialogue or sound effects'); el('p', emptyText, '', 'Drop an audio file here, or choose Import audio.');
+    const emptyText = el('div', this.empty); el('strong', emptyText, '', 'Add music, dialogue or sound effects'); el('p', emptyText, '', 'Drop an audio file here, or import one. Clips line up with your frames and play with the animation.');
+    const emptyActions = el('div', emptyText, 'audio-empty-actions');
+    const emptyImport = el('button', emptyActions, 'button primary small', 'Import audio…'); emptyImport.type = 'button'; this.on(emptyImport, 'click', () => this.file.click());
+    const emptyTrack = el('button', emptyActions, 'button small', 'Add empty track'); emptyTrack.type = 'button'; this.on(emptyTrack, 'click', () => this._run(() => this.addTrack()));
     if (!this.integrated) {
       this.horizontal = el('div', this.root, 'audio-horizontal'); this.horizontal.tabIndex = 0; this.horizontal.setAttribute('role', 'region'); this.horizontal.setAttribute('aria-label', 'Audio timeline position');
       this.horizontalSpacer = el('div', this.horizontal);
@@ -63,7 +75,7 @@ export class AudioTimeline {
     this.deleteButton = this.button(this.clipControls, 'Delete audio clip', () => { editor.deleteAudioClip(this.selected); this.selected = null; }, 'trash');
     this.propertiesButton = this.button(this.clipControls, 'Audio clip properties', () => this.properties(), 'sliders'); el('span', this.propertiesButton, '', 'Details');
     this.footer.classList.add('audio-clip-popover');this.footer.setAttribute('popover','auto');this.footer.setAttribute('role','dialog');this.footer.setAttribute('aria-label','Audio clip controls');
-    this.clipToolsButton=this.button(this.toolbar,'Audio clip controls',()=>{if(this.footer.matches(':popover-open'))this.footer.hidePopover();else{this.footer.showPopover();this.positionClipTools();}},'sliders');this.clipToolsButton.viewAction=true;this.closeButton.before(this.clipToolsButton);this.clipToolsButton.setAttribute('aria-haspopup','dialog');
+    this.clipToolsButton=this.button(this.toolbar,'Audio clip controls',()=>{if(this.footer.matches(':popover-open'))this.footer.hidePopover();else{this.footer.showPopover();this.positionClipTools();}},'sliders');this.clipToolsButton.viewAction=true;el('span',this.clipToolsButton,'','Clip');this.clipToolsButton.title='Selected clip: volume, split, duplicate and details';this.optionsButton.before(this.clipToolsButton);this.clipToolsButton.setAttribute('aria-haspopup','dialog');
     this.on(this.footer,'toggle',()=>{this.clipToolsButton.setAttribute('aria-expanded',String(this.footer.matches(':popover-open')));});
     this.on(this.footer,'keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();this.footer.hidePopover();this.clipToolsButton.focus();}else this.keydown(event);});
     this.on(window,'resize',()=>{if(this.footer.matches(':popover-open'))this.positionClipTools();});
@@ -142,6 +154,7 @@ export class AudioTimeline {
     const position = (x + this.host.strip.scrollLeft) / this.host.cardWidth, index = clamp(Math.floor(position), 0, this.host.times.length - 1), start = this.host.times[index] ?? 0, end = this.host.times[index + 1] ?? this.editor.totalTicks;
     return start + (position - index) * Math.max(1, end - start);
   }
+  positionPopover(panel,anchor){const rect=anchor.getBoundingClientRect();panel.style.left=`${Math.max(8,Math.min(innerWidth-panel.offsetWidth-8,rect.right-panel.offsetWidth))}px`;panel.style.top=`${Math.max(8,Math.min(innerHeight-panel.offsetHeight-8,rect.top-panel.offsetHeight-6))}px`;}
   positionClipTools(){const rect=this.clipToolsButton.getBoundingClientRect(),panel=this.footer;panel.style.left=`${Math.max(8,Math.min(innerWidth-panel.offsetWidth-8,rect.right-panel.offsetWidth))}px`;panel.style.top=`${Math.max(8,Math.min(innerHeight-panel.offsetHeight-8,rect.top-panel.offsetHeight-6))}px`;}
   found() { const state = audioState(this.editor.report); for (const track of state.tracks) { const clip = track.clips.find(clip => clip.id === this.selected); if (clip) return {track, clip, asset: state.assets[clip.assetId]}; } return {}; }
   update(dirty = true) { this.dirty ||= dirty; if (this.disposed || this.raf || !this.open && !this.dirty) return; this.raf = requestAnimationFrame(() => { this.raf = null; if (this.dirty) { this.dirty = false; this.paint(); } if (!this.open) return; if (!this.integrated) this.playhead.style.transform = `translateX(${this.tickX(this.editor.tick)}px)`; const {clip} = this.found(), time = this.editor.tick / this.fps; this.splitButton.disabled = !clip || time <= clip.start || time >= clip.start + clip.duration; }); }
@@ -401,5 +414,5 @@ export class AudioTimeline {
     el('p', popover, '', 'Drag between tracks to move. Shift keeps timing; Alt turns off snapping. Drag the top clip handles to fade.'); this.on(popover, 'keydown', event => { if (event.key === 'Escape') this.closeProperties(); event.stopPropagation(); });
     popover.showPopover();
   }
-  destroy() { this.disposed = true; this.editor.audioSelection = {selected:this.selected, trackId:this.trackId}; this.container.classList.remove('audio-tab-open'); this.importController?.abort(); this.cancel(); this.events.abort(); for(const label of this.labels.values())label.events.abort(); this.menuEvents?.abort(); this.menu?.remove(); this.observer.disconnect(); if (this.raf) cancelAnimationFrame(this.raf); this.closeProperties(); this.footer.hidePopover();this.footer.remove(); this.root.remove(); }
+  destroy() { this.disposed = true; this.editor.audioSelection = {selected:this.selected, trackId:this.trackId}; this.container.classList.remove('audio-tab-open'); this.importController?.abort(); this.cancel(); this.events.abort(); for(const label of this.labels.values())label.events.abort(); this.menuEvents?.abort(); this.menu?.remove(); this.observer.disconnect(); if (this.raf) cancelAnimationFrame(this.raf); this.closeProperties(); this.footer.hidePopover();this.footer.remove(); if (this.options.matches(':popover-open')) this.options.hidePopover(); this.root.remove(); }
 }
