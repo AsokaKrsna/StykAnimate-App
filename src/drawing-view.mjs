@@ -115,14 +115,19 @@ export function quickBarMarkup(drawing){
   const toggleButton=(key,symbol,title)=>`<button type="button" class="icon-button draw-quick-toggle" data-draw-choice="${key}" data-value="toggle" aria-pressed="${Boolean(s[key])}" title="${title}" aria-label="${title}">${icon(symbol)}</button>`;
   const slider=(key,label)=>sliderMarkup(key,s[key],{compact:true,label});
   const divider='<span class="draw-quick-divider" aria-hidden="true"></span>';
-  let body='';
+  // The bar names its tool, and painting tools keep the last colours used one
+  // click away next to the colour pair.
+  const [,toolName,toolIcon]=DRAWING_TOOLS.find(t=>t[0]===tool)??['pan','Hand','hand'];
+  const recent=(drawing.library?.recent??[]).slice(0,6),current=s.color.toLowerCase();
+  const colors=()=>colorPair(s,{hex:false})+(recent.length?`<div class="draw-quick-swatches" role="group" aria-label="Recent colors">${recent.map(c=>`<button type="button" class="draw-quick-swatch" data-draw-color="${c}" style="background:${c}" title="${c.toUpperCase()}" aria-label="Use ${c.toUpperCase()}" aria-pressed="${c===current}"></button>`).join('')}</div>`:'');
+  let body=`<span class="draw-quick-tool" title="${escape(toolName)}">${icon(toolIcon)}<span>${escape(toolName)}</span></span>`+divider;
   if(tool==='brush'||tool==='eraser'){
     const preset=[...BRUSH_PRESETS,...(drawing.library?.presets??[])].find(p=>p.id===s.preset);
-    if(tool==='brush')body+=`<button type="button" class="draw-quick-preset" data-draw-action="toggle-quick-presets" aria-expanded="${Boolean(drawing.quickPresets)}" title="Brush presets">${preset?`<img src="${presetThumbnail(preset)}" alt="">`:icon('brush')}<span>${escape(preset?.name??'Custom')}</span></button>`+colorPair(s,{hex:false})+divider;
+    if(tool==='brush')body+=`<button type="button" class="draw-quick-preset" data-draw-action="toggle-quick-presets" aria-expanded="${Boolean(drawing.quickPresets)}" title="Brush presets">${preset?`<img src="${presetThumbnail(preset)}" alt="">`:icon('brush')}<span>${escape(preset?.name??'Custom')}</span></button>`+colors()+divider;
     body+=slider('size','Size')+slider('opacity','Opacity')+slider('flow','Flow')+slider('stabilization','Smooth')+divider+toggleButton('mirrorX','flip','Mirror painting · Shift+M');
-  }else if(tool==='fill')body+=colorPair(s,{hex:false})+divider+slider('tolerance','Tolerance')+slider('gap','Gaps')+slider('expansion','Expand');
+  }else if(tool==='fill')body+=colors()+divider+slider('tolerance','Tolerance')+slider('gap','Gaps')+slider('expansion','Expand');
   else if(tool==='lasso')body+=choice('selectShape','lasso','Lasso')+choice('selectShape','rect','Rectangle')+choice('selectShape','ellipse','Ellipse')+choice('selectShape','wand','Wand')+(s.selectShape==='wand'?divider+slider('tolerance','Tolerance'):'');
-  else if(tool==='shape')body+=choice('shapeKind','line','Line')+choice('shapeKind','rect','Rectangle')+choice('shapeKind','ellipse','Ellipse')+divider+toggleButton('shapeFill','paint-bucket','Fill shape')+colorPair(s,{hex:false})+divider+slider('size','Size')+slider('opacity','Opacity');
+  else if(tool==='shape')body+=choice('shapeKind','line','Line')+choice('shapeKind','rect','Rectangle')+choice('shapeKind','ellipse','Ellipse')+divider+`<button type="button" class="draw-quick-choice" data-draw-choice="shapeFill" data-value="toggle" aria-pressed="${Boolean(s.shapeFill)}" title="Fill the shape instead of outlining it">${icon('paint-bucket')}Fill</button>`+colors()+divider+slider('size','Size')+slider('opacity','Opacity');
   else body+=`<button type="button" class="draw-quick-choice" data-draw-action="flip-view" aria-pressed="${Boolean(drawing.state.view.flip)}" title="Mirror the view · M">Flip view</button><button type="button" class="draw-quick-choice" data-draw-action="reset-rotation" title="Reset view rotation">Reset rotation</button>`;
   const presets=tool==='brush'&&drawing.quickPresets?`<div class="draw-quick-presets">${presetGrid(drawing)}</div>`:'';
   return `<div class="draw-quick-row">${body}</div>${presets}`;

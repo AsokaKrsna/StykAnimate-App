@@ -193,6 +193,15 @@ export class DrawingController {
     this.onRender();
   }
   sliderEnded(){this.onUI();}
+  /** The shared colour picker for the main or second colour. It writes the
+   * setting on every drag step and never keeps the input it opened from, so
+   * the quick bar, Properties or palette can re-render under it. */
+  colorPicker(input){
+    const key=input.dataset.drawSetting==='color2'?'color2':'color',value=this.settings[key]??'#ffffff';
+    return {anchor:input,title:key==='color2'?'Second color':'Color',live:true,placement:'below',gradients:false,alpha:false,swatches:this.library.recent,
+      paint:{type:'solid',stops:[{offset:0,color:value.slice(1).match(/../g).map(n=>parseInt(n,16)),opacity:1}]},
+      onChange:paint=>{const hex=hexColor(paint.stops[0].color);if(hex===this.settings[key])return;this.setSetting(key,hex);this.onUI();}};
+  }
   /** Keyboard adjustments routed from the hotkey map; true when handled. */
   hotkey(name){
     const s=this.settings;

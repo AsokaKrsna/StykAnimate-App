@@ -6512,6 +6512,7 @@ init().catch((error) => {
 });
 
 installColorPickers((input, event) => {
+  if(input.dataset.drawSetting==='color'||input.dataset.drawSetting==='color2')return drawingController?.colorPicker(input);
   if(input.dataset.paletteColor!==undefined){
     const uid=editor.selectedUid,figure=editor.figure,report=editor.report,tick=editor.tick;
     const entry=editor.figurePalette().find(entry=>entry.color===input.dataset.paletteColor);

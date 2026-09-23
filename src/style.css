@@ -2073,3 +2073,4 @@ dialog.styk-settings .styk-settings-row select[data-setting="locale"] {
 .paint-magnifier-label code{font:11px/1.2 Consolas,monospace;letter-spacing:.3px}
 .paint-picker [data-eyedropper]{display:inline-flex;align-items:center;gap:6px;margin-left:auto;border:1px solid var(--theme-border, #ddd);font:inherit}
 .paint-picker [data-eyedropper][aria-pressed=true]{background:var(--theme-accent, #0d99ff);color:#fff;border-color:transparent}
+.paint-picker .paint-swatches{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:4px;margin:12px 0 0}.paint-picker .paint-swatches button{aspect-ratio:1;min-width:0;height:auto;padding:0;border:1px solid var(--theme-border,#e2e2e2);border-radius:4px}.paint-picker .paint-swatches button:hover{outline:2px solid var(--theme-accent,#0d99ff);outline-offset:1px}

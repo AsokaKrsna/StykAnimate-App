@@ -58,6 +58,22 @@ try{
   await page.locator('.drawing-quickbar [data-draw-action="toggle-quick-presets"]').click();
   await page.locator('.drawing-quickbar [data-draw-preset="pencil"]').click();
   check('the quick bar picks presets from thumbnails',await page.evaluate(()=>styk.drawing.settings.preset==='pencil'&&!styk.drawing.quickPresets));
+  check('the quick bar names its tool',await page.locator('.drawing-quickbar .draw-quick-tool').innerText()==='Brush');
+  // The colour picker applies live while dragging and keeps working after the
+  // bar re-renders under it; recent colours in the bar apply in one click.
+  await page.locator('.drawing-quickbar .draw-color-primary').click();
+  const sv=await page.locator('.paint-picker .paint-sv').boundingBox(),swatch=await page.locator('.drawing-quickbar .draw-color-primary').boundingBox();
+  check('the drawing colour picker opens below the bar',sv.y>swatch.y+swatch.height&&await page.locator('.paint-picker header strong').innerText()==='Color');
+  const firstColor=await page.evaluate(()=>styk.drawing.settings.color);
+  await page.mouse.move(sv.x+sv.width*.2,sv.y+sv.height*.2);await page.mouse.down();await page.mouse.move(sv.x+sv.width*.8,sv.y+sv.height*.3,{steps:5});
+  const liveColor=await page.evaluate(()=>styk.drawing.settings.color);await page.mouse.up();
+  await page.mouse.click(sv.x+sv.width*.9,sv.y+sv.height*.9);
+  const secondPick=await page.evaluate(()=>styk.drawing.settings.color);
+  check('the colour picker applies live and after the bar re-renders',liveColor!==firstColor&&secondPick!==liveColor);
+  await page.keyboard.press('Escape');
+  await page.evaluate(()=>{styk.drawing.library.recent=['#10a0e0','#e04010'];styk.drawing.onUI();});
+  await page.locator('.drawing-quickbar .draw-quick-swatch[data-draw-color="#e04010"]').click();
+  check('recent colours in the bar apply in one click',await page.evaluate(()=>styk.drawing.settings.color==='#e04010'));
   // Right-click opens Krita's pop-up palette at the pointer.
   await page.mouse.click(cx+150,cy+150,{button:'right'});
   check('right-click opens the pop-up palette',await page.locator('.drawing-palette:not([hidden])').isVisible());

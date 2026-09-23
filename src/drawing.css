@@ -59,10 +59,18 @@
 .draw-quick-preset img{width:44px;height:14px;object-fit:contain}
 .draw-quick-choice[aria-pressed=true],.draw-quick-toggle[aria-pressed=true],.draw-quick-preset[aria-expanded=true]{border-color:var(--theme-accent,#0d99ff);background:var(--theme-selection,#e5f3ff);color:var(--theme-accent,#0d99ff)}
 .drawing-quickbar .draw-colors{margin:0;gap:4px}
-.drawing-quickbar .draw-color-pair{width:32px;height:28px}
-.drawing-quickbar .draw-color-primary{width:21px;height:21px}
-.drawing-quickbar .draw-color-secondary{width:16px;height:16px}
+/* Quick bar: the main colour sits over the second so both stay readable. */
+.drawing-quickbar .draw-color-pair{width:36px;height:30px}
+.drawing-quickbar .draw-color-primary{width:24px;height:24px}
+.drawing-quickbar .draw-color-secondary{width:20px;height:20px}
 .drawing-quickbar .draw-color-swap{width:22px;height:22px}
+.draw-quick-tool{display:flex;align-items:center;gap:5px;flex:none;padding:0 4px 0 2px;color:var(--theme-text,#222);font-size:var(--ds-text-sm,11px);font-weight:var(--ds-weight-strong,600);white-space:nowrap}
+.draw-quick-tool svg{width:15px;height:15px;color:var(--theme-accent,#0d99ff)}
+.draw-quick-swatches{display:flex;align-items:center;gap:3px;flex:none}
+.draw-quick-swatch{width:16px;height:16px;min-width:0;padding:0;border:1px solid var(--theme-border-strong,rgba(0,0,0,.2));border-radius:4px;cursor:pointer}
+.draw-quick-swatch:hover{outline:2px solid var(--theme-border-strong,#bbb);outline-offset:1px}
+.draw-quick-swatch[aria-pressed=true]{outline:2px solid var(--theme-accent,#0d99ff);outline-offset:1px}
+.draw-quick-choice svg{width:13px;height:13px}
 .draw-quick-presets{width:min(520px,70vw)}
 /* Right-click pop-up palette. */
 .drawing-palette{position:absolute;z-index:7;width:300px;padding:10px 12px;border:1px solid var(--border,#e2e2e2);border-radius:12px;background:var(--panel,#fff);box-shadow:0 10px 32px rgba(0,0,0,.18)}
