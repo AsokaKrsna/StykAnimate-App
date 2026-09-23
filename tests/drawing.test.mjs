@@ -108,7 +108,12 @@ test('Add Frame makes a blank only on the active drawing at a key, inside a hold
     const unrelated=structuredClone(Object.fromEntries(Object.entries(e.report._styk.layerSheet.tracks).filter(([key])=>key!==id)));
     e.addDrawingFrame();assert.equal(e.tick,8);assert.equal(e.drawingTarget().figure,undefined);e.undo();e.seek(3);
     e.addDrawingFrame();assert.equal(e.tick,3);assert.equal(e.drawingTarget().figure,undefined);assert.equal(e.drawingTarget().end,8);e.undo();
+    const original=e.drawingTarget().figure, before=structuredClone(e.report._styk.layerSheet.tracks[id]);
     e.seek(12,{allowBeyondEnd:true});e.addDrawingFrame();assert.equal(e.drawingTarget().figure,undefined);assert.equal(e.drawingTarget().key.tick,12);
+    assert.deepEqual(e.report._styk.layerSheet.tracks[id].keys.map(k=>k.tick),[0,12]);
+    for(const tick of [0,7,8,11])assert.equal(e.drawingTarget(id,tick).figure,original,'previous cel holds through the gap');
+    e.undo();assert.deepEqual(e.report._styk.layerSheet.tracks[id],before);
+    e.redo();assert.equal(e.drawingTarget(id,11).figure,original);assert.equal(e.drawingTarget(id,12).figure,undefined);
     for(const [key,value] of Object.entries(unrelated))assert.deepEqual(e.report._styk.layerSheet.tracks[key],value);
   }finally{resources.dispose();}
 });
@@ -1234,4 +1239,44 @@ test('a movieclip of drawings gets its own figure layer, drawing keys and cels',
 test('decoded tiles keep their published PNG as bytes for republication',()=>{
   const store=tileStoreFromList([{tx:0,ty:0,pixels:new ArrayBuffer(TILE_BYTES),png:new Uint8Array([1,2,3]).buffer}]);
   const png=store.get(0,0).png;assert.ok(png instanceof Uint8Array);assert.deepEqual([...png.slice()],[1,2,3]);
+});
+
+test('distant copied drawings extend the preceding hold and remain independent',async()=>{
+  const {e,resources}=fixture();try{
+    const {target}=await stroke(e);e.drawingKey(undefined,12);
+    assert.deepEqual(e.layerFrameKeys().map(k=>k.tick),[0,12]);
+    assert.equal(drawingMetadata(e.drawingTarget(e.activeLayerId,11).figure).celId,drawingMetadata(target.figure).celId);
+    const copy=e.drawingTarget(e.activeLayerId,12).figure;
+    assert.notEqual(drawingMetadata(copy).celId,drawingMetadata(target.figure).celId);
+    assert.deepEqual(storePixels(resources.entry(copy).store),storePixels(resources.entry(target.figure).store));
+    e.drawingKey(undefined,15,{blank:true});e.drawingKey(undefined,20,{blank:true});
+    assert.equal(e.drawingTarget(e.activeLayerId,19).figure,undefined,'an intentional last blank stays blank');
+    assert.deepEqual(e.layerFrameKeys().map(k=>k.tick),[0,12,15,20]);
+  }finally{resources.dispose();}
+});
+
+test('nested drawing caches accept changed publications and undo without modifying definitions',async()=>{
+  const {resources}=fixture();try{
+    const old=createDrawingFigure({figureTypeId:500}),store=new TileStore();store.set(0,0,new Uint8ClampedArray([200,1,2,255]));
+    old.image_assets[0].styk_tiles=await encodeTileBlob(store);old._styk.drawing.bounds=store.bounds;
+    const updated=structuredClone(old);updated._styk.drawing.revision++;store.set(0,0,new Uint8ClampedArray([3,4,200,255]));
+    updated.image_assets[0].styk_tiles=await encodeTileBlob(store);
+    for(const [figure,color] of [[old,[200,1,2,255]],[updated,[3,4,200,255]],[old,[200,1,2,255]]]){
+      const original=JSON.stringify(figure),entry=resources.presenter(figure);await entry.loading;
+      assert.deepEqual(entry.store.pixel(0,0),color);assert.equal(JSON.stringify(figure),original);assert.equal(resources.entries.size,1);
+    }
+  }finally{resources.dispose();}
+});
+
+test('a superseded nested decode cannot restore stale pixels or allocate a store',async()=>{
+  const {resources}=fixture();try{
+    const figure=createDrawingFigure({figureTypeId:500}),store=new TileStore();store.set(0,0,new Uint8ClampedArray([1,2,3,255]));
+    figure.image_assets[0].styk_tiles=await encodeTileBlob(store);figure._styk.drawing.bounds=store.bounds;
+    let release;const request=resources.decodeWorker.request.bind(resources.decodeWorker);
+    resources.decodeWorker.request=async(kind,data)=>{await new Promise(r=>release=r);return request(kind,data);};
+    const entry=resources.presenter(figure),pending=entry.loading;const rejected=assert.rejects(pending,{name:'AbortError'});
+    const changed=structuredClone(figure);changed._styk.drawing.revision++;
+    const next=resources.entry(changed,{presentation:true});release();await rejected;
+    assert.equal(entry.disposed,true);assert.equal(entry.store,null);assert.equal(next.store,null);assert.equal(resources.stats.bytes,0);
+  }finally{resources.dispose();}
 });

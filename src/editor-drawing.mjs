@@ -46,7 +46,7 @@ export const editorDrawingMethods={
       if(!blank)for(const object of frame.objects){const old=this.report.figure_types.find(f=>f.figure_type_id===object.figure_type_id),copy=copyDrawingFigure(old,type++);object.figure_type_id=copy.figure_type_id;added.push(copy);forks.push([old,copy]);}
       plan.definitions=[...this.report.figure_types,...added];
       if(!track.keys.length&&tick>0)plan.write(id,0,createFrame(),{blank:true,easing:{interpolation:'constant'}});
-      plan.write(id,tick,frame,{blank,easing:{interpolation:'constant'}});changed=true;
+      plan.write(id,tick,frame,{blank,easing:{interpolation:'constant'},extend:true});changed=true;
     }
     if(!changed)return false;
     if(forks.length){this.drawingResources.checkForks(forks.map(([old])=>old));}

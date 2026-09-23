@@ -922,7 +922,7 @@ const assetUrl = (a) =>
 function imageFor(url) {
   return images.image(url);
 }
-const resources = { url: assetUrl, image: imageFor, drawing:figure=>drawingController?.resource(figure), drawingLoad:figure=>drawingMetadata(figure)?editor?.drawingResources.surface(figure):null };
+const resources = { url: assetUrl, image: imageFor, drawing:figure=>drawingController?.resource(figure), drawingLoad:figure=>{if(!drawingMetadata(figure))return null;drawingController?.resource(figure);return editor?.drawingResources.surface(figure);} };
 function status(text, error = false, busy = false) {
   $("status").textContent = text;
   $("status-dot").className =

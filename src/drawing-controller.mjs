@@ -86,11 +86,11 @@ export class DrawingController {
     this.bind();
   }
   get interacting(){return Boolean(this.gesture||this.loading||this.operation);}
-  bind(){
+  bind({required=false}={}){
     // Resources exist only for reports that carry drawings (or while Draw is
     // open and is about to create one); an animation without drawings must
     // never spawn stores, workers or presenters.
-    const report=this.editor.report,owner=drawingResourcesFor(report)??((this.active||report.figure_types?.some(figure=>drawingMetadata(figure)))?this.editor.drawingResources:null);
+    const report=this.editor.report,owner=drawingResourcesFor(report)??((required||this.active||report.figure_types?.some(figure=>drawingMetadata(figure)))?this.editor.drawingResources:null);
     if(owner===this.owner)return;this.owner=owner;if(!owner)return;
     owner.onChange=()=>{if(this.selection?.presenter)this.selection.presenter.stamp++;if(this.surfaceVersion!==owner.surfaceVersion){this.surfaceVersion=owner.surfaceVersion;if(this.state.renderer){this.state.renderer.lastGeometry=null;this.state.renderer.clearArtwork?.();this.state.renderer.clearOnionArtwork?.();}}this.onRender();};owner.onError=this.onError;
     // Evicted published cels restore from GPU-resident tiles when possible.
@@ -282,7 +282,7 @@ export class DrawingController {
   get renderPreview(){const g=this.gesture??this.selection;if(!g?.target?.created&&!g?.target?.migratedFrom)return null;if(!g.preview){const report={...this.editor.report,figure_types:[...this.editor.report.figure_types,g.target.figure],_styk:{...this.editor.report._styk,layers:{...this.editor.report._styk.layers,assignments:{...this.editor.report._styk.layers.assignments,[g.target.object.unique_id]:g.target.id}}}},frame=createFrame([...this.editor.evaluatedFrame.objects.filter(o=>o.unique_id!==g.target.object.unique_id),g.target.object]);Object.assign(frame,{camera:this.editor.evaluatedFrame.camera});for(const key of ['background_id','background_id_b','background_mix','background_color','_stykBackgroundColor'])if(key in this.editor.evaluatedFrame)frame[key]=this.editor.evaluatedFrame[key];g.preview={report,frame,geometry:buildGeometry(report,frame)};}return g.preview;}
   /** The renderer keeps the presenter even after its store is evicted:
    * presenter() kicks the re-decode, and v2 callers skip the stale data URL. */
-  resource(figure){if(!drawingMetadata(figure))return null;const s=this.selection;return s&&drawingMetadata(s.target.figure)?.celId===drawingMetadata(figure).celId?s.presenter:this.owner?.presenter(figure)??null;}
+  resource(figure){if(!drawingMetadata(figure))return null;if(!this.owner)this.bind({required:true});const s=this.selection;return s&&drawingMetadata(s.target.figure)?.celId===drawingMetadata(figure).celId?s.presenter:this.owner?.presenter(figure)??null;}
   /** Viewport geometry cached between layout changes: reading it per pointer
    * sample and per overlay frame would force a synchronous layout each time. */
   /** Two-finger touch: zoom by the change in finger distance around their

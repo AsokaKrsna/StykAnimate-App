@@ -66,3 +66,11 @@ test('preparation leases protect both layouts until publication or cancellation'
   assert.equal(first.destroyed,true);assert.equal(next.destroyed,undefined);
   cache.clear();assert.equal(next.texture.destroyed,1);assert.equal(cache.leases.size,0);
 });
+
+test('drawing content variants preserve leased rasters until the new scene is published',()=>{
+  const cache=new EditorRasterCache({maxEntries:1}),artwork={},cold={...resource(),contentKey:'cold'},decoded={...resource(),contentKey:'decoded'};
+  cache.set(artwork,cold);const lease=cache.lease([cold]);cache.set(artwork,decoded);
+  assert.equal(cache.get(artwork,1,0,'decoded'),decoded);assert.equal(cache.get(artwork,1,0,'cold'),cold);
+  cache.retain(new Set([decoded]),0);assert.equal(cold.destroyed,undefined);lease.release();
+  cache.retain(new Set([decoded]),0);assert.equal(cold.destroyed,true);assert.equal(decoded.destroyed,undefined);cache.clear();
+});

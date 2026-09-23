@@ -94,6 +94,10 @@ menu offers Blank here and Copy here. Next actions insert one frame by default
 and shift later keys on targeted layers. Copy here and Blank preserve later timing. Multi-layer commands validate
 all targets before publication. Unrelated layers keep their timing.
 
+Adding a blank or copied key beyond the last exposure extends that exposure up
+to the requested frame; only the requested new key changes its content. An
+explicit blank exposure stays blank when extended.
+
 Painting anywhere in a hold edits its owning cel. Painting a blank exposure
 creates a cel; its creation and first stroke undo together. Painting beyond a
 layer end requires an explicit key first. Erasing everything retains the key.
@@ -432,6 +436,15 @@ of figure snapshots. Undo/redo can replace those snapshots while encoding is
 in flight. Publications reconnect to the current definition by cel identity;
 save barriers and cold decode restore the same published base, including after
 resampling and eviction. Uncommitted preview bounds never enter this snapshot.
+
+Paused playback and scrubbing use the same lazy drawing resource owner, including
+drawings contained only in nested movieclips. Cooperative scene preparation carries
+the viewport dimensions and the live tile backend; it plans without taking ownership
+of shared GPU resources. Composite raster variants track drawing presenter stamps
+and decoded stores, so completion of a decode or preview invalidates an empty raster.
+Existing cache budgets and preparation leases retain their lifetime guarantees.
+A parent caches a nested cel publication without writing back into the child definition;
+changed revisions, undo and superseded decodes replace only that cached cel.
 
 The scratch-canvas presenter below serves the Canvas 2D renderer, onion
 skins, selection previews, cels with drawable effects and a WebGPU renderer

@@ -77,15 +77,28 @@ export class DrawingResources {
    * debounce and the thumbnail pump wait; clearing busy re-arms both. */
   set busy(value){value=Boolean(value);if(this._busy===value)return;this._busy=value;if(!value){this.schedule();this.pumpThumbnail();}}
   get busy(){return Boolean(this._busy);}
-  entry(figure) {
-    const d=drawingMetadata(figure);let entry=this.entries.get(d.celId);
-    if(!entry){entry={id:d.celId,store:null,revision:d.revision,published:null,loading:null,decodeError:null,pinned:false,used:performance.now(),stamp:0,deferred:[],levels:null,levelsUsed:0,owner:this};this.entries.set(d.celId,entry);}else this.restorePublication(entry,figure);return entry;
+  entry(figure,{presentation=false}={}) {
+    const d=drawingMetadata(figure),asset=figure.image_assets[0],url=d.version===2?asset.styk_tiles:asset.data_url;
+    let entry=this.entries.get(d.celId),external=entry?.external;
+    // A nested clip owns its publications. A parent only caches them, and
+    // must accept a changed child revision (including undo) without writing
+    // its old publication back into the newly authored clip definition.
+    if(external&&(entry.sourceRevision!==d.revision||entry.sourceUrl!==url)){
+      entry.disposed=true;this.dropScratch(entry);entry.store=null;entry.levels=null;entry.levelKnown=null;
+      this.entries.delete(d.celId);this.surfaceVersion++;entry=null;
+    }
+    if(!entry){
+      external??=presentation&&!this.report.figure_types.some(f=>drawingMetadata(f)?.celId===d.celId);
+      entry={id:d.celId,store:null,revision:d.revision,published:null,loading:null,decodeError:null,pinned:false,used:performance.now(),stamp:0,deferred:[],levels:null,levelsUsed:0,owner:this,
+        ...(external?{external:true,sourceRevision:d.revision,sourceUrl:url}:{})};
+      this.entries.set(d.celId,entry);
+    }else this.restorePublication(entry,figure);return entry;
   }
   /** History replaces figure snapshots, but a cel's last encoded revision is
    * owned here. Reattach it to restored definitions before decoding/saving. */
   restorePublication(entry,figure){
     const published=entry.published,d=drawingMetadata(figure);
-    if(d?.version!==2||published?.revision!==entry.revision)return;
+    if(entry.external||d?.version!==2||published?.revision!==entry.revision)return;
     const asset=figure.image_assets[0];
     if(published.url)asset.styk_tiles=published.url;else delete asset.styk_tiles;
     asset.data_url=EMPTY_PNG;asset.width=asset.height=asset.display_width=asset.display_height=1;
@@ -202,7 +215,7 @@ export class DrawingResources {
       const url=e.published?e.published.url:asset.styk_tiles;
       // A GPU-resident copy of the published base restores without decoding.
       const result=await this.decode(e,()=>(d.version===2&&this.restoreStore?.(e,base))||(d.version===1?this.decodeWorker.request('decode-legacy',{url:asset.data_url,crop:d.crop}):url?this.decodeTiles(url):Promise.resolve({tiles:[]})),priority);
-      if(this.disposed||generation!==this.generation)throw new DOMException('Drawing changed.','AbortError');
+      if(this.disposed||e.disposed||generation!==this.generation)throw new DOMException('Drawing changed.','AbortError');
       const store=tileStoreFromList(result.tiles);
       const exact=!e.deferred.length;
       // Intact GPU slots of this published base stay valid for its tiles;
@@ -274,7 +287,7 @@ export class DrawingResources {
   }
   releaseTransient(e){if(!this.transients.delete(e))return;e.disposed=true;this.dropScratch(e);e.store=null;e.levels=null;e.levelKnown=null;this.residentMemory();}
   presenter(figure){
-    const e=this.rasterPresenter(this.entry(figure));
+    const e=this.rasterPresenter(this.entry(figure,{presentation:true}));
     // An evicted store re-decodes here, not on the next stroke. A decode that
     // a newer request superseded asks for another frame, so a cel still on
     // screen requests itself again instead of staying blank until something

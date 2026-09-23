@@ -12,8 +12,8 @@ export class EditorRasterCache {
     this.evictions = 0;
     this.leases = new Set();
   }
-  get(artwork, resolution, generation) {
-    const resource = this.variants.get(artwork)?.get(`${generation}:${resolution}`);
+  get(artwork, resolution, generation, contentKey = '') {
+    const resource = this.variants.get(artwork)?.get(`${generation}:${resolution}:${contentKey}`);
     if (!resource || resource.destroyed) return undefined;
     const entry = this.lru.get(resource);
     this.lru.delete(resource); this.lru.set(resource, entry);
@@ -26,7 +26,7 @@ export class EditorRasterCache {
   set(artwork, resource) {
     let variants = this.variants.get(artwork);
     if (!variants) this.variants.set(artwork, variants = new Map());
-    const key = `${resource.generation}:${resource.resolution}`;
+    const key = `${resource.generation}:${resource.resolution}:${resource.contentKey??''}`;
     if (variants.has(key)) throw new Error('An editor raster variant already exists.');
     variants.set(key, resource);
     // Keep only diagnostic scalars after eviction, never a destroyed GPU handle.
