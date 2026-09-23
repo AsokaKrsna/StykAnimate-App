@@ -36,8 +36,9 @@ export class OnionTimelineRange {
       band.style.left=`${Math.min(x,center)}px`;band.style.width=`${Math.abs(x-center)}px`;
       end.style.left=`${x}px`;
       end.setAttribute('aria-valuemin','0');end.setAttribute('aria-valuemax',String(value.max));end.setAttribute('aria-valuenow',String(value.span));
-      end.setAttribute('aria-valuetext',`${value.span} frames ${direction}`);
-      end.title=`${value.span} frames ${direction} · Drag to adjust · Shift for precision`;
+      const spanLabel=`${value.span} ${value.span===1?'frame':'frames'} ${direction}`;
+      end.setAttribute('aria-valuetext',spanLabel);
+      end.title=`${spanLabel} · Drag to adjust · Shift for precision`;
       this.overlay.style.setProperty(`--onion-${direction}`,range.settings[direction==='before'?'onionBeforeColor':'onionAfterColor']);
     }
   }

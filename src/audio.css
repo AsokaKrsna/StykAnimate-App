@@ -62,3 +62,17 @@
 .audio-new-lane{opacity:.65}.audio-new-lane:hover,.audio-new-lane[data-active=true]{opacity:1}
 @container(max-width:850px){.audio-toolbar>.audio-button>span{display:none}.audio-toolbar>.audio-button[aria-label="Import audio"]>span{display:inline}.audio-toolbar .audio-check{font-size:10px}.audio-toolbar strong{display:none}}
 @container(max-width:480px){.audio-toolbar>.audio-button[aria-label="Import audio"]>span{display:none}.audio-toolbar{gap:2px;padding:0 4px}.audio-toolbar .audio-button{padding:0 4px}.audio-check{gap:2px}}
+
+/* Options popover, labelled clip tools and an actionable empty state. */
+.audio-toolbar>.audio-button[aria-label="Audio clip controls"]{margin-left:auto}
+.audio-toolbar>.audio-button[aria-label="Audio clip controls"]:disabled{display:none}
+.audio-toolbar>.audio-options-button{margin-left:auto}
+.audio-toolbar>.audio-button[aria-label="Audio clip controls"]:not(:disabled)~.audio-options-button{margin-left:0}
+.audio-options:not(:popover-open){display:none}
+.audio-options{position:fixed;inset:auto;margin:0;width:300px;max-width:calc(100vw - 16px);padding:6px 14px;color:var(--text,#1f2328);font-size:11px}
+.audio-options .ds-switch>input{accent-color:var(--audio-ink)}
+.audio-options .ds-switch>input:checked{background:var(--audio-ink)}
+.audio-empty-actions{display:flex;gap:8px;margin-top:10px}
+.audio-empty-actions .button.primary{background:var(--audio-ink);border-color:var(--audio-ink)}
+.audio-empty-actions .button.primary:hover:not(:disabled){background:color-mix(in srgb,var(--audio-ink) 85%,#000);border-color:transparent}
+[data-theme=dark] .audio-empty-actions .button.primary{color:#0e1f1c}

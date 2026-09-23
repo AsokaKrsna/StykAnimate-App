@@ -24,6 +24,7 @@
 .workspace[data-mode=draw] #inspector .property-context-caption{margin-bottom:0}
 .workspace[data-mode=draw] #inspector .color-row{margin-bottom:12px}
 .drawing-resolution-info,.drawing-empty,.drawing-hint{font-size:11px;color:var(--muted);line-height:1.5;margin-top:10px}
+.drawing-quick-note{display:flex;align-items:center;gap:6px;margin-bottom:0}.drawing-quick-note .icon{width:13px;height:13px;flex-shrink:0}
 .workspace[data-mode=draw] .properties-library-save{display:none}
 
 /* Krita-style slider fields: the fill shows the value; label and value sit inside. */

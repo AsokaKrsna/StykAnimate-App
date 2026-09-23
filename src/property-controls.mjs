@@ -10,6 +10,18 @@ export const formatPropertyValue = (value, precision = 2) => {
   );
 };
 
+// Inputs may show fewer decimals at rest (data-property-display-precision)
+// than they edit with; focus reveals the edit precision, blur restores it.
+const displayPrecision = (input) => {
+  const value = input.dataset.propertyDisplayPrecision;
+  return value === undefined ? null : Number(value);
+};
+const showAtRest = (input) => {
+  const precision = displayPrecision(input);
+  if (precision === null || input.ownerDocument.activeElement === input) return;
+  input.value = formatPropertyValue(input.dataset.propertyValue, precision);
+};
+
 const STYLES = `
 .property-row {display:flex;align-items:center;gap:4px;min-width:0;}
 .property-row.is-animatable {grid-column:1/-1;}
@@ -246,6 +258,7 @@ export class PropertyControls {
     }
     g.element.setCustomValidity("");
     g.element.removeAttribute("aria-invalid");
+    showAtRest(g.element);
     this.container.dispatchEvent(
       new this.win.CustomEvent("property-edit-end", {
         detail: {
@@ -325,14 +338,19 @@ export class PropertyControls {
   }
   _focusIn(event) {
     const input = this._inputFor(event.target);
-    if (input === event.target) this._begin(input, "input");
+    if (input !== event.target) return;
+    if (displayPrecision(input) !== null && !this.gesture) {
+      input.value = formatPropertyValue(this._value(input), Number(input.dataset.propertyPrecision || 2));
+      input.select();
+    }
+    this._begin(input, "input");
   }
   _focusOut(event) {
-    if (
-      this.gesture?.element === event.target &&
-      this.gesture.source !== "scrub"
-    )
+    const input = event.target;
+    if (this.gesture?.element === input && this.gesture.source !== "scrub")
       this._finish(true);
+    if (input?.matches?.("input[data-property-display-precision]"))
+      this.win.queueMicrotask(() => showAtRest(input));
   }
   _typed(input) {
     const g =

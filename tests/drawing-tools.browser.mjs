@@ -46,8 +46,8 @@ try{
   await page.mouse.move(qb.x+4,qb.y+qb.height/2);await page.mouse.down();await page.mouse.move(qb.x+qb.width*.62,qb.y+qb.height/2,{steps:6});
   check('dragging the quick bar size slider resizes the brush live with a readout',await page.evaluate(()=>styk.drawing.settings.size>40&&document.querySelector('.drawing-hud.is-visible')?.textContent.startsWith('Size')));
   await page.mouse.up();
-  check('the inspector slider follows the quick bar',await page.evaluate(()=>{const s=styk.drawing.settings.size,t=document.querySelector('#inspector [data-draw-slider="size"] .draw-slider-value')?.textContent;return t===(s<10?String(s):String(Math.round(s)))+' px';}));
-  await page.locator('#inspector [data-draw-slider="size"]').dblclick();await page.keyboard.type('12');await page.keyboard.press('Enter');await settle();
+  check('Properties does not duplicate the quick bar size slider',await page.locator('#inspector [data-draw-slider="size"]').count()===0);
+  await quickSize.dblclick();await page.keyboard.type('12');await page.keyboard.press('Enter');await settle();
   check('double-clicking a slider types an exact value',await page.evaluate(()=>styk.drawing.settings.size===12));
   await quickSize.hover();await page.mouse.wheel(0,-100);
   check('the wheel steps a quick bar slider',await page.evaluate(()=>styk.drawing.settings.size>12));
@@ -73,7 +73,7 @@ try{
 
   // Rectangle selection clips painting.
   await page.locator('[data-tool="drawing-lasso"]').click();
-  await page.locator('select[data-draw-setting="selectShape"]').selectOption('rect');
+  await page.locator('.drawing-quickbar [data-draw-choice="selectShape"][data-value="rect"]').click();
   await stroke([{x:cx-100,y:cy-120},{x:cx+100,y:cy+120}]);
   check('a rectangle selection creates an outline',await page.evaluate(()=>Boolean(styk.drawing.marquee)&&styk.drawing.marquee.mask.width>100));
   await page.locator('[data-tool="drawing-brush"]').click();
@@ -107,7 +107,7 @@ try{
   await page.keyboard.press('Control+Shift+A');
 
   // Magic wand selects the painted band.
-  await page.locator('select[data-draw-setting="selectShape"]').selectOption('wand');
+  await page.locator('.drawing-quickbar [data-draw-choice="selectShape"][data-value="wand"]').click();
   await page.mouse.click(cx-280,cy);
   await page.waitForFunction(()=>Boolean(styk.drawing.marquee),null,{timeout:10000});await settle();
   const wand=await page.evaluate(({cx,cy})=>{const d=styk.drawing,t=styk.editor.drawingTarget(),inside=d.marqueeContains(d.pixel({clientX:cx,clientY:cy},t)),outside=d.marqueeContains(d.pixel({clientX:cx,clientY:cy-100},t));return {inside,outside};},{cx,cy});
@@ -188,7 +188,7 @@ try{
   await page.keyboard.press('b');
   // On-canvas handles: drag a corner to scale and the top handle to rotate.
   await page.locator('[data-tool="drawing-lasso"]').click();
-  await page.locator('select[data-draw-setting="selectShape"]').selectOption('rect');
+  await page.locator('.drawing-quickbar [data-draw-choice="selectShape"][data-value="rect"]').click();
   await stroke([{x:cx-320,y:cy-30},{x:cx-120,y:cy+30}]);
   const handleClient=async which=>page.evaluate(async which=>{const {worldToScreen}=await import('/src/renderer-geometry.mjs'),{transformPoint}=await import('/src/drawing-model.mjs');
     const d=styk.drawing,t=styk.editor.drawingTarget(),f=d.selectionFrame(t),p=which==='rotate'?f.rotate:f.corners[2],w=transformPoint(d.pixelMatrix(t),p),r=d.viewRect(),s=worldToScreen(w,{report:styk.editor.report,frame:styk.editor.evaluatedFrame,view:styk.state.view,cameraEnabled:false});
@@ -215,7 +215,7 @@ try{
   check('Save brush adds a custom preset',saved.startsWith('custom-'));
   // Flip and filters on a selection.
   await page.locator('[data-tool="drawing-lasso"]').click();
-  await page.locator('select[data-draw-setting="selectShape"]').selectOption('rect');
+  await page.locator('.drawing-quickbar [data-draw-choice="selectShape"][data-value="rect"]').click();
   await stroke([{x:cx-320,y:cy-20},{x:cx-120,y:cy+20}]);
   const flipBefore=await page.evaluate(({cx,cy})=>[alphaAt(cx-300,cy),alphaAt(cx-140,cy)],{cx,cy});
   await page.locator('[data-draw-action="flip-selection-x"]').click();await page.keyboard.press('Enter');await settle();

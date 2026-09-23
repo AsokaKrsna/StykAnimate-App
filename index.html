@@ -28,6 +28,7 @@
     <link rel="stylesheet" href="./src/ik.css" />
     <link rel="stylesheet" href="./src/update-ui.css" />
     <link rel="stylesheet" href="./src/support-ui.css" />
+    <link rel="stylesheet" href="./src/design-system.css" />
     <link rel="stylesheet" href="./src/theme.css" />
   </head>
   <body>
@@ -296,7 +297,7 @@
                   />fps</label
                 >
               </div>
-              <div class="timeline-onion-controls"><button class="icon-button" id="onion-button" data-action="toggle-onion" data-icon="onion" title="Onion skin · O" aria-label="Onion skin" aria-pressed="false"></button><button class="icon-button onion-options-button" id="onion-settings-button" title="Onion skin settings" aria-label="Onion skin settings">⌄</button></div>
+              <div class="timeline-onion-controls"><button class="icon-button" id="onion-button" data-action="toggle-onion" data-icon="onion" title="Onion skin · O" aria-label="Onion skin" aria-pressed="false"></button><button class="icon-button onion-options-button" id="onion-settings-button" title="Onion skin settings" aria-label="Onion skin settings" data-icon="chevron-down"></button></div>
               <button id="timeline-audio" class="icon-button timeline-audio-toggle" title="Show audio" aria-label="Audio" aria-description="Show or hide audio editing. Audio keeps playing when hidden." aria-controls="timeline-audio-panel" aria-expanded="false" aria-pressed="false" data-icon="music"></button>
               <button id="expand-timeline" class="icon-button" title="Expand timeline" aria-label="Expand timeline" aria-pressed="false" data-icon="maximize"></button>
               <div class="timeline-actions">
@@ -365,7 +366,7 @@
         <button data-action="import-sprite" data-icon="image"><strong>Image</strong><small>Place an image</small></button>
         <button data-action="import" data-icon="import"><strong>Import figure</strong><small>Open a figure or movie clip</small></button>
       </div>
-      <div class="movieclip-actions"><button class="button" data-action="movieclip-new">New movieclip</button><button class="button" data-action="movieclip-create">From selection</button><button class="button" data-action="movieclip-range">From frame range</button></div>
+      <section class="insert-movieclip" aria-labelledby="insert-movieclip-title"><h3 id="insert-movieclip-title">Movieclip <span>A reusable animated group that plays inside your scene</span></h3><div class="movieclip-actions"><button class="button" data-action="movieclip-new" data-icon="plus">Empty movieclip</button><button class="button" data-action="movieclip-create" data-icon="frame" title="Turn the selected figures into a movieclip">From selection</button><button class="button" data-action="movieclip-range" data-icon="frame" title="Turn a range of frames into a movieclip">From frame range</button></div></section>
       <div class="insert-library"><h3>Project library</h3><div id="asset-list"></div></div>
       <details class="insert-examples"><summary>Example animations</summary><div id="sample-list"></div></details>
     </dialog>

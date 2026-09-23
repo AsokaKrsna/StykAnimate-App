@@ -6,7 +6,7 @@ export class OnionFrameField {
     this.controller=controller;this.direction=direction;this.key=direction==='before'?'onionRangeBefore':'onionRangeAfter';
     this.events=new AbortController();
     const label=direction==='before'?'Before':'After';
-    this.root=document.createElement('div');this.root.className='onion-frame-field';
+    this.root=document.createElement('div');this.root.className='onion-frame-field';this.root.dataset.direction=direction;
     this.root.innerHTML=`<button type="button" class="onion-scrub" aria-label="Drag frames ${direction}" title="Drag to adjust · 8 pixels per frame · Shift for precision">${label}</button><div class="onion-stepper"><button type="button" data-step="-1" aria-label="Decrease frames ${direction}">−</button><input type="number" min="0" step="1" aria-label="Frames ${direction}"><button type="button" data-step="1" aria-label="Increase frames ${direction}">+</button></div>`;
     this.input=this.root.querySelector('input');this.scrub=this.root.querySelector('.onion-scrub');
     const on=(target,type,fn,options={})=>target.addEventListener(type,fn,{...options,signal:this.events.signal});

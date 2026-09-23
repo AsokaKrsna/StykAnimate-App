@@ -78,7 +78,7 @@ try {
   const loopSync=await page.evaluate(()=>({tick:styk.editor.tick,time:styk.audioEngine.position}));
   await page.evaluate(()=>{styk.actions.play();styk.state.loopRange=null;styk.editor.removeEventListener('change',window.audioLoopListener);});
   await page.getByRole('button',{name:'Audio',exact:true}).click();
-  await page.getByLabel('Hear audio while scrubbing').check();
+  await page.getByRole('button', {name:'Audio options', exact:true}).click(); await page.getByLabel('Hear audio while scrubbing').check(); await page.keyboard.press('Escape');
   const scrub=await page.locator('.audio-lanes').boundingBox();await page.mouse.move(scrub.x+40,scrub.y+10);await page.mouse.down();
   await page.waitForFunction(()=>styk.audioEngine.running);await page.mouse.up();assert.equal(await page.evaluate(()=>styk.audioEngine.running),false);
   await page.evaluate(()=>styk.settingsUI.commit({theme:'dark'}));await settle();await page.screenshot({path:`${out}/dark.png`});

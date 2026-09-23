@@ -1047,26 +1047,45 @@ function placeArtboard() {
   });
   $("zoom-label").textContent = `${Number((v.scale * 100).toFixed(v.scale < 0.01 ? 2 : v.scale < 0.1 ? 1 : 0))}% ⌄`;
 }
+/** Timeline frames shown by the Simple (Pivot-style) timeline, or null in Advanced. */
+function simpleFrameCount() {
+  if (state.settings.timelineMode !== "simple") return null;
+  return editor.report._styk?.layerSheet
+    ? timelineUI?.frameCount ?? 0
+    : editor.frameDraft?.storedCount ?? editor.report.keyframes.length;
+}
 function fittedView(r = editor.report) {
   // In Draw, fitting keeps the stage clear of the canvas quick bar.
   const rect = viewport.getBoundingClientRect(),
     bar = drawingController?.active && drawingController.quickBar && !drawingController.quickBar.hidden ? drawingController.quickBar.offsetHeight + 8 : 0,
+    // The floating tool rail overlays the viewport's left edge; keep the stage clear of it.
+    railRect = document.querySelector(".studio-rail")?.getBoundingClientRect(),
+    rail = railRect?.width && railRect.right > rect.left && railRect.left < rect.left + rect.width / 3
+      ? Math.max(0, railRect.right - rect.left - 20) : 0,
     s = Math.max(
       0.01,
       Math.min(
-        (rect.width - 64) / r.canvas_width,
+        (rect.width - 64 - rail) / r.canvas_width,
         (rect.height - 72 - bar) / r.canvas_height,
         2,
       ),
     );
   return {
     scale: s,
-    x: (rect.width - r.canvas_width * s) / 2,
+    x: rail + (rect.width - rail - r.canvas_width * s) / 2,
     y: bar + (rect.height - bar - r.canvas_height * s) / 2 - 3,
   };
 }
+// A fitted view follows viewport size changes (panel toggles, Build figure's
+// outliner, window resizes) until the user zooms or pans it.
+let fittedSnapshot = null;
+const isFittedView = (v = state.view) =>
+  !!fittedSnapshot && !v.rotation && !v.flip &&
+  v.scale === fittedSnapshot.scale &&
+  Math.abs(v.x - fittedSnapshot.x) < 0.5 && Math.abs(v.y - fittedSnapshot.y) < 0.5;
 function fit() {
   state.view = fittedView();
+  fittedSnapshot = { ...state.view };
   placeArtboard();
   requestRender();
 }
@@ -1116,6 +1135,10 @@ function resize() {
   overlay.height = Math.round(r.height * d);
   state.renderer?.resize(r.width, r.height, d * previewRenderScale());
   timelineUI?.resize();
+  if (isFittedView()) {
+    state.view = fittedView();
+    fittedSnapshot = { ...state.view };
+  }
   placeArtboard();
   requestRender();
 }
@@ -1847,12 +1870,13 @@ function updateTransport() {
   $("time-display").textContent =
     `${String(Math.floor(tick / fps / 60)).padStart(2, "0")}:${String(Math.floor(tick / fps) % 60).padStart(2, "0")}:${String(tick % fps).padStart(2, "0")}`;
   $("frame-badge").textContent = `FRAME ${String(tick + 1).padStart(2, "0")}`;
-  const storedSummary =
-    state.settings.timelineMode === "simple"
-      ? `${editor.report._styk?.layerSheet ? timelineUI?.frameCount ?? 0 : editor.frameDraft?.storedCount ?? editor.report.keyframes.length} keys · `
-      : "";
-  $("timeline-summary").textContent =
-    `${storedSummary}${editor.totalTicks} frames · ${(editor.totalTicks / fps).toFixed(2)}s`;
+  // Simple mode counts Pivot-style timeline frames; playback, the ruler and
+  // export count every frame including inbetweens. Name both explicitly.
+  const stored = simpleFrameCount(), total = editor.totalTicks,
+    seconds = `${(total / fps).toFixed(2)}s`;
+  $("timeline-summary").textContent = stored !== null && stored !== total
+    ? `${stored} ${stored === 1 ? "frame" : "frames"} · plays as ${total} with inbetweens · ${seconds}`
+    : `${total} ${total === 1 ? "frame" : "frames"} · ${seconds}`;
   $("fps").value = fps;
   timelineUI?.update(state.settings.timelineMode !== 'advanced');
 }
@@ -1877,7 +1901,7 @@ function updateUI() {
   $("stage-size").textContent =
     `${editor.report.canvas_width} × ${editor.report.canvas_height}`;
   $("object-count").textContent =
-    `${editor.frame.objects.length.toLocaleString()} figures`;
+    `${editor.frame.objects.length.toLocaleString()} ${editor.frame.objects.length === 1 ? "figure" : "figures"}`;
   $("selection-summary").textContent =
     selection().size > 1
       ? `${selection().size} figures selected`
@@ -3979,7 +4003,7 @@ function showExport() {
     $(id).onchange = () => void refreshCapabilities();
   void refreshCapabilities();
   mountExportFlow($("dialog-content"), {audioClips:audibleClips(audioState(editor.report)),audioSupported:typeof desktop?.writeVideoAudioChunk==='function',width: editor.report.canvas_width, height: editor.report.canvas_height,
-    totalFrames: editor.totalTicks, currentFrame: editor.tick + 1,
+    totalFrames: editor.totalTicks, storedFrames: simpleFrameCount(), currentFrame: editor.tick + 1,
     fps: editor.report.frame_delay_ms ? 1000 / editor.report.frame_delay_ms : editor.report.fps});
 }
 
@@ -5167,7 +5191,7 @@ $("fps").addEventListener(
   guarded((e) => editor.setFPS(Number(e.target.value))),
 );
 $("timeline-zoom").addEventListener("input", (e) =>
-  timelineUI?.setZoom?.(Number(e.target.value)),
+  timelineUI?.setZoom?.(Number(e.target.value), undefined, true),
 );
 $("file-input").addEventListener(
   "change",
