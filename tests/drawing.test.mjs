@@ -679,6 +679,20 @@ test('memory pressure evicts the cels farthest from the playhead before recently
   }finally{resources.dispose();}
 });
 
+test('the smudge brush drags colour, batches deterministically and undoes exactly',()=>{
+  const seed=()=>{const store=new TileStore();for(let ty=0;ty<2;ty++){store.set(0,ty,new Uint8ClampedArray([255,0,0,255]));store.set(1,ty,new Uint8ClampedArray([0,0,255,255]));}return store;};
+  const samples=Array.from({length:24},(_,i)=>({x:20+i*4,y:64,pressure:1,time:i}));
+  const settings={size:20,hardness:.5,blend:'smudge',smudgeLength:.9,pressureSize:false,spacingRatio:.1,color:[0,0,0]};
+  const runs=[1,5,24].map(n=>{const store=seed(),initial=snapshotStore(store),chunks=[];for(let i=0;i<samples.length;i+=n)chunks.push(samples.slice(i,i+n));const {changes}=strokeDrive(new StrokeEngine(),'s',settings,chunks,{store});return {result:replayFinal(initial,changes),changes,initial};});
+  for(const r of runs.slice(1))assert.deepEqual(r.result.readRect(0,0,128,128),runs[0].result.readRect(0,0,128,128));
+  const pulled=runs[0].result.pixel(80,64);assert.ok(pulled[0]>100&&pulled[2]<200,'red is dragged into the blue half');
+  assert.deepEqual(runs[0].result.pixel(120,10),[0,0,255,255],'untouched paint stays');
+  applyTileChanges(runs[0].result,runs[0].changes,'before');assert.deepEqual(runs[0].result.readRect(0,0,128,128),seed().readRect(0,0,128,128));
+  // Colour rate mixes the brush colour into the carried paint.
+  const mix=seed(),s=new DrawingStroke(mix,{...settings,colorRate:.6,color:[0,255,0]});for(const p of samples)s.sample(p);s.finish();
+  assert.ok(mix.pixel(80,64)[1]>80,'colour rate adds the brush colour');
+});
+
 // Phase 3: mip levels, tile-anchored scratch, budgets and the shared provider.
 // TileStore.set accepts a 4-byte colour as a uniform tile fill.
 const px=(tile,x,y)=>[...tile.pixels.slice((y*TILE+x)*4,(y*TILE+x)*4+4)];

@@ -49,14 +49,14 @@ const blendChannel={multiply:(b,s)=>b*s/255,screen:(b,s)=>b+s-b*s/255,overlay:(b
 /** Deterministic pixel grain: pure function of integer pixel coords + seed. */
 const hashPixel=(x,y,seed)=>{let h=(Math.imul(x,374761393)^Math.imul(y,668265263)^Math.imul(seed,974711))>>>0;h=Math.imul(h^(h>>>13),1274126177)>>>0;return ((h^(h>>>16))>>>0)/4294967296;};
 const ZERO_TILE=new Uint8ClampedArray(TILE_BYTES);
-export const BRUSH_BLENDS=['normal','behind','multiply','screen','overlay','color'];
+export const BRUSH_BLENDS=['normal','behind','multiply','screen','overlay','color','smudge'];
 export const BRUSH_ANGLE_MODES=['fixed','direction','tilt'];
 
 /** Clamped, validated brush settings shared by the stroke path (main thread)
  * and the dab rasterizer (stroke worker), so both agree on every extent. */
-export function normalizeBrush({size=8,color=[0,0,0],opacity=1,flow=1,hardness=1,erase=false,pressureSize=true,pressureOpacity=false,pressureFlow=false,sizeCurve=1,opacityCurve=1,stabilization=0,spacingRatio=.12,texture=0,seed=0,pixelsPerUnit=1,roundness=1,angle=0,angleMode='fixed',blend='normal',alphaLock=false,scatter=0}={}){
-  if(![size,opacity,flow,hardness,sizeCurve,opacityCurve,stabilization,spacingRatio,texture,pixelsPerUnit,roundness,angle,scatter].every(Number.isFinite)||!Array.isArray(color)||color.length!==3||!color.every(Number.isFinite))throw new Error('Invalid brush settings.');
-  return {size:clamp(size,.5,8192),color:color.map(n=>clamp(n,0,255)),opacity:clamp(opacity),flow:clamp(flow),hardness:clamp(hardness),erase:Boolean(erase),pressureSize:Boolean(pressureSize),pressureOpacity:Boolean(pressureOpacity),pressureFlow:Boolean(pressureFlow),sizeCurve:clamp(sizeCurve,.1,4),opacityCurve:clamp(opacityCurve,.1,4),stabilization:clamp(stabilization,0,.95),spacingRatio:clamp(spacingRatio,.01,1),texture:clamp(texture),seed:seed>>>0,pixelsPerUnit:clamp(pixelsPerUnit,.01,64),roundness:clamp(roundness,.05,1),angle:((angle%360)+360)%360,angleMode:BRUSH_ANGLE_MODES.includes(angleMode)?angleMode:'fixed',blend:BRUSH_BLENDS.includes(blend)?blend:'normal',alphaLock:Boolean(alphaLock),scatter:clamp(scatter,0,4)};
+export function normalizeBrush({size=8,color=[0,0,0],opacity=1,flow=1,hardness=1,erase=false,pressureSize=true,pressureOpacity=false,pressureFlow=false,sizeCurve=1,opacityCurve=1,stabilization=0,spacingRatio=.12,texture=0,seed=0,pixelsPerUnit=1,roundness=1,angle=0,angleMode='fixed',blend='normal',alphaLock=false,scatter=0,smudgeLength=.8,colorRate=0}={}){
+  if(![size,opacity,flow,hardness,sizeCurve,opacityCurve,stabilization,spacingRatio,texture,pixelsPerUnit,roundness,angle,scatter,smudgeLength,colorRate].every(Number.isFinite)||!Array.isArray(color)||color.length!==3||!color.every(Number.isFinite))throw new Error('Invalid brush settings.');
+  return {size:clamp(size,.5,8192),color:color.map(n=>clamp(n,0,255)),opacity:clamp(opacity),flow:clamp(flow),hardness:clamp(hardness),erase:Boolean(erase),pressureSize:Boolean(pressureSize),pressureOpacity:Boolean(pressureOpacity),pressureFlow:Boolean(pressureFlow),sizeCurve:clamp(sizeCurve,.1,4),opacityCurve:clamp(opacityCurve,.1,4),stabilization:clamp(stabilization,0,.95),spacingRatio:clamp(spacingRatio,.01,1),texture:clamp(texture),seed:seed>>>0,pixelsPerUnit:clamp(pixelsPerUnit,.01,64),roundness:clamp(roundness,.05,1),angle:((angle%360)+360)%360,angleMode:BRUSH_ANGLE_MODES.includes(angleMode)?angleMode:'fixed',blend:BRUSH_BLENDS.includes(blend)?blend:'normal',alphaLock:Boolean(alphaLock),scatter:clamp(scatter,0,4),smudgeLength:clamp(smudgeLength),colorRate:clamp(colorRate)};
 }
 /** Radius of a dab at this pressure before texture jitter. */
 export function dabRadius(brush,pressure=1){return brush.size*(brush.pressureSize?Math.max(.05,clamp(pressure)**brush.sizeCurve):1)/2;}
@@ -177,6 +177,7 @@ export class DrawingStroke {
     if(round){const rb=radius*this.roundness;hx=Math.sqrt((radius*cos)**2+(rb*sin)**2);hy=Math.sqrt((radius*sin)**2+(rb*cos)**2);}
     const left=Math.floor(cx-hx),top=Math.floor(cy-hy),right=Math.ceil(cx+hx),bottom=Math.ceil(cy+hy);
     const r2=radius*radius,hard=this.hardness>=.999,inner=radius>=1?(radius-1)*(radius-1):-1;
+    if(this.blend==='smudge'&&!this.erase){this.smudgeDab(cx,cy,radius,left,top,right,bottom,round,cos,sin,inv,opacity*flow);return;}
     // Soft falloff by squared distance: a per-stroke table replaces a square
     // root and smoothstep per pixel.
     const lut=hard?null:this.softLUT(),scale=lut?(lut.length-1)/r2:0;
@@ -215,6 +216,38 @@ export class DrawingStroke {
         if(d){if(x0d<d.x0)d.x0=x0d;if(y0d<d.y0)d.y0=y0d;if(x1d>d.x1)d.x1=x1d;if(y1d>d.y1)d.y1=y1d;}else tile.pending={x0:x0d,y0:y0d,x1:x1d,y1:y1d};
         this.dirtyTiles.add(tile);this.uncomposited.add(tile);
       }
+    }
+    if(right>left&&bottom>top)this.dirty=this.dirty?{x:Math.min(this.dirty.x,left),y:Math.min(this.dirty.y,top),right:Math.max(this.dirty.right,right),bottom:Math.max(this.dirty.bottom,bottom)}:{x:left,y:top,right,bottom};
+  }
+  /** Smudge: carry the colour under the tip along the stroke. Each dab reads
+   * the current pixels, so it composites immediately instead of through
+   * deferred coverage; dab order is fixed, so batching stays deterministic.
+   * Colours average premultiplied, so transparent pixels never tint. */
+  smudgeDab(cx,cy,radius,left,top,right,bottom,round,cos,sin,inv,strength){
+    const r2=radius*radius,hard=this.hardness>=.999,lut=hard?null:this.softLUT(),scale=lut?(lut.length-1)/r2:0,mask=this.mask;
+    const weight=(x,y)=>{let dx=x+.5-cx,dy=y+.5-cy;if(round){const u=dx*cos+dy*sin;dy=(dy*cos-dx*sin)*inv;dx=u;}const d2=dx*dx+dy*dy;if(d2>=r2)return 0;
+      let e=hard?(d2<=(radius-1)*(radius-1)?1:clamp(radius-Math.sqrt(d2))):lut[(d2*scale)|0];
+      if(mask){const mx=x-mask.x,my=y-mask.y;e*=mx>=0&&my>=0&&mx<mask.width&&my<mask.height?mask.mask[my*mask.width+mx]/(mask.max??1):0;}return e;};
+    // Average the premultiplied colour under the tip.
+    let sr=0,sg=0,sb=0,sa=0,sw=0;
+    for(let y=top;y<bottom;y++)for(let x=left;x<right;x++){const e=weight(x,y);if(!e)continue;sw+=e;const t=this.tiles.get(tileId(Math.floor(x/TILE),Math.floor(y/TILE)))?.pixels??this.store.get(Math.floor(x/TILE),Math.floor(y/TILE))?.pixels;if(!t)continue;const j=((y-Math.floor(y/TILE)*TILE)*TILE+x-Math.floor(x/TILE)*TILE)*4,a=t[j+3]/255;sr+=t[j]*a*e;sg+=t[j+1]*a*e;sb+=t[j+2]*a*e;sa+=a*e;}
+    if(!sw)return;
+    const sample=[sr/sw,sg/sw,sb/sw,sa/sw],length=this.smudgeLength,rate=this.colorRate;
+    // The carried paint keeps `length` of itself and picks up the rest from the canvas.
+    const carry=this.carry?this.carry.map((v,i)=>v*length+sample[i]*(1-length)):sample;
+    if(rate>0){const [br,bg,bb]=this.color;const brush=[br,bg,bb,1];for(let i=0;i<4;i++)carry[i]=carry[i]*(1-rate)+(i<3?brush[i]:1)*rate;}
+    this.carry=carry;
+    for(let ty=Math.floor(top/TILE);ty*TILE<bottom;ty++)for(let tx=Math.floor(left/TILE);tx*TILE<right;tx++){
+      let tile=this.tiles.get(tileId(tx,ty)),changed=false;
+      for(let y=Math.max(top,ty*TILE);y<Math.min(bottom,ty*TILE+TILE);y++)for(let x=Math.max(left,tx*TILE);x<Math.min(right,tx*TILE+TILE);x++){
+        const e=weight(x,y)*strength;if(e<=0)continue;
+        if(!tile){if(!carry[3]&&!this.store.has(tx,ty))continue;tile=this.tile(tx,ty);}
+        const px=tile.pixels,j=((y-ty*TILE)*TILE+x-tx*TILE)*4,a=px[j+3]/255;
+        const pa=a*(1-e)+carry[3]*e;
+        if(pa<=0){px[j]=px[j+1]=px[j+2]=px[j+3]=0;changed=true;continue;}
+        px[j]=Math.round((px[j]*a*(1-e)+carry[0]*e)/pa);px[j+1]=Math.round((px[j+1]*a*(1-e)+carry[1]*e)/pa);px[j+2]=Math.round((px[j+2]*a*(1-e)+carry[2]*e)/pa);px[j+3]=Math.round(pa*255);changed=true;
+      }
+      if(changed)this.dirtyTiles.add(tile);
     }
     if(right>left&&bottom>top)this.dirty=this.dirty?{x:Math.min(this.dirty.x,left),y:Math.min(this.dirty.y,top),right:Math.max(this.dirty.right,right),bottom:Math.max(this.dirty.bottom,bottom)}:{x:left,y:top,right,bottom};
   }

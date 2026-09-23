@@ -1,5 +1,5 @@
 /* Drawing extends the studio's rail and inspector, using shared theme tokens. */
-.drawing-presets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.drawing-presets{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
 .drawing-preset{border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--text);font:inherit;font-size:11px;padding:6px 4px;cursor:pointer}
 .drawing-preset:hover{background:var(--theme-hover,#f0f0f0)}
 .drawing-preset[aria-pressed=true]{border-color:var(--theme-accent,#0d99ff);background:var(--theme-selection,#e5f3ff);color:var(--theme-accent,#0d99ff)}

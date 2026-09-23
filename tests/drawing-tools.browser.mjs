@@ -30,7 +30,7 @@ try{
 
   // Presets and painting modes.
   await page.locator('[data-tool="drawing-brush"]').click();
-  check('eight brush presets are offered',await page.locator('[data-draw-preset]').count()===8);
+  check('ten brush presets are offered',await page.locator('[data-draw-preset]').count()===10);
   await page.locator('[data-draw-preset="calligraphy"]').click();
   check('the nib preset sets a flat, angled tip',await page.evaluate(()=>styk.drawing.settings.roundness===.2&&styk.drawing.settings.angle===40));
   await page.locator('[data-draw-preset="ink"]').click();
@@ -130,6 +130,13 @@ try{
   check('alpha lock recolours paint without covering empty pixels',await page.evaluate(({cx,cy})=>rgbAt(cx,cy)[0]>150&&alphaAt(cx,cy-15)===0,{cx,cy}));
   await page.evaluate(()=>{styk.drawing.settings.alphaLock=false;});
 
+  // The Blender preset smudges existing paint across empty canvas.
+  await page.locator('[data-draw-preset="blender"]').click();
+  check('the Blender preset selects the smudge blend',await page.evaluate(()=>styk.drawing.settings.blend==='smudge'));
+  const beforeSmudge=await page.evaluate(({cx,cy})=>alphaAt(cx+10,cy+45),{cx,cy});
+  await stroke(line(cx+10,cy,cx+10,cy+60,10));
+  check('smudging drags paint into empty pixels',await page.evaluate(({cx,cy})=>alphaAt(cx+10,cy+45),{cx,cy})>beforeSmudge+20);
+  await page.locator('[data-draw-preset="ink"]').click();
   await page.screenshot({path:path.join(output,'tools.png')});
   check('no uncaught browser errors',errors.length===0);
   await writeFile(path.join(output,'tools.json'),JSON.stringify({checks,errors,browser:await browser.version()},null,2));

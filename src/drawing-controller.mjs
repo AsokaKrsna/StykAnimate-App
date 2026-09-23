@@ -11,15 +11,15 @@ import {screenToWorld,worldToScreen} from './renderer-geometry.mjs';
 
 const pointerSample=e=>({clientX:e.clientX,clientY:e.clientY,pressure:e.pressure,pointerType:e.pointerType,timeStamp:e.timeStamp,button:e.button,buttons:e.buttons});
 const canvas=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c;};
-const brushKeys=['preset','size','opacity','flow','hardness','pressureSize','pressureOpacity','pressureFlow','sizeCurve','opacityCurve','stabilization','spacingRatio','texture','roundness','angle','angleMode','scatter','blend','alphaLock'];
+const brushKeys=['preset','size','opacity','flow','hardness','pressureSize','pressureOpacity','pressureFlow','sizeCurve','opacityCurve','stabilization','spacingRatio','texture','roundness','angle','angleMode','scatter','blend','alphaLock','smudgeLength','colorRate'];
 // Settings edited as percentages in the inspector.
-const PERCENT_SETTINGS=['opacity','flow','hardness','stabilization','roundness','scatter','spacingRatio','texture'];
+const PERCENT_SETTINGS=['opacity','flow','hardness','stabilization','roundness','scatter','spacingRatio','texture','smudgeLength','colorRate'];
 const hexColor=rgb=>'#'+rgb.slice(0,3).map(n=>Math.round(n).toString(16).padStart(2,'0')).join('');
 const SELECTION_ACTIONS=['copy-pixels','cut-pixels','delete-pixels','apply-selection','cancel-selection','select-all','invert-selection','deselect','fill-selection'];
 const unionRects=(a,b)=>{if(!a)return b?{...b}:null;if(!b)return{...a};const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);return{x,y,width:Math.max(a.x+a.width,b.x+b.width)-x,height:Math.max(a.y+a.height,b.y+b.height)-y};};
 export class DrawingController {
   constructor({editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getResources,getTimeline,getClipboard,sampleColor}) {
-    Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getResources,getTimeline,getClipboard,sampleColor,settings:{preset:'ink',size:8,color:'#252525',opacity:1,flow:1,hardness:1,pressureSize:true,pressureOpacity:false,pressureFlow:false,sizeCurve:1,opacityCurve:1,stabilization:0,spacingRatio:.08,texture:0,roundness:1,angle:0,angleMode:'fixed',scatter:0,blend:'normal',alphaLock:false,mirrorX:false,mirrorY:false,selectShape:'lasso',resolution:2,length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
+    Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getResources,getTimeline,getClipboard,sampleColor,settings:{preset:'ink',size:8,color:'#252525',opacity:1,flow:1,hardness:1,pressureSize:true,pressureOpacity:false,pressureFlow:false,sizeCurve:1,opacityCurve:1,stabilization:0,spacingRatio:.08,texture:0,roundness:1,angle:0,angleMode:'fixed',scatter:0,blend:'normal',alphaLock:false,smudgeLength:.8,colorRate:0,mirrorX:false,mirrorY:false,selectShape:'lasso',resolution:2,length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
     this.panel=document.getElementById('inspector');
     const events=this.events=new AbortController(),opts={signal:events.signal};
     this.panel.addEventListener('click',event=>{const preset=event.target.closest('[data-draw-preset]'),action=event.target.closest('[data-draw-action]');if(preset){this.finish();Object.assign(this.settings,BRUSH_PRESETS.find(p=>p.id===preset.dataset.drawPreset),{preset:preset.dataset.drawPreset});this.onUI();}if(action)this.run(()=>this.action(action.dataset.drawAction));},opts);
@@ -159,7 +159,7 @@ export class DrawingController {
       this.sessions.set(s.id,s);this.gesture={id:event.pointerId,target,surface,kind:'stroke',session:s};
       // Painting owns the UI thread: publication and thumbnails wait it out.
       s.owner.busy=true;
-      const b=this.settings,settings={size,pixelsPerUnit:d.pixelsPerUnit,color,opacity:b.opacity,flow:b.flow,hardness:b.hardness,pressureSize:b.pressureSize,pressureOpacity:b.pressureOpacity,pressureFlow:b.pressureFlow,sizeCurve:b.sizeCurve,opacityCurve:b.opacityCurve,stabilization:b.stabilization,spacingRatio:b.spacingRatio??.12,texture:b.texture??0,roundness:b.roundness??1,angle:b.angle??0,angleMode:b.angleMode??'fixed',scatter:b.scatter??0,blend:b.blend??'normal',alphaLock:Boolean(b.alphaLock),erase:s.erase,seed:s.id,mask:this.marqueeOn(target)?this.marquee.mask:null};
+      const b=this.settings,settings={size,pixelsPerUnit:d.pixelsPerUnit,color,opacity:b.opacity,flow:b.flow,hardness:b.hardness,pressureSize:b.pressureSize,pressureOpacity:b.pressureOpacity,pressureFlow:b.pressureFlow,sizeCurve:b.sizeCurve,opacityCurve:b.opacityCurve,stabilization:b.stabilization,spacingRatio:b.spacingRatio??.12,texture:b.texture??0,roundness:b.roundness??1,angle:b.angle??0,angleMode:b.angleMode??'fixed',scatter:b.scatter??0,blend:b.blend??'normal',alphaLock:Boolean(b.alphaLock),smudgeLength:b.smudgeLength??.8,colorRate:b.colorRate??0,erase:s.erase,seed:s.id,mask:this.marqueeOn(target)?this.marquee.mask:null};
       // The path runs here so every dab's extent is known before dispatch:
       // the worker is seeded with exactly the tiles its dabs can reach.
       // Symmetry mirrors each input sample into its own path so mirrored
@@ -509,7 +509,7 @@ export class DrawingController {
         const band={x:pad,y:Math.floor(mid-amp-px*.6),width:span,height:Math.max(1,Math.ceil(2*(amp+px*.6)))};
         for(const [tx,ty] of TileStore.tilesInRect(band.x,band.y,band.width,band.height))store.set(tx,ty,new Uint8ClampedArray([136,136,136,255]));
       }
-      const stroke=new DrawingStroke(store,{size:px,color,opacity:s.opacity,flow:s.flow,hardness:s.hardness,pressureSize:s.pressureSize,pressureOpacity:s.pressureOpacity,pressureFlow:s.pressureFlow,sizeCurve:s.sizeCurve,opacityCurve:s.opacityCurve,stabilization:s.stabilization,spacingRatio:s.spacingRatio??.12,texture:s.texture??0,roundness:s.roundness??1,angle:s.angle??0,angleMode:s.angleMode??'fixed',scatter:s.scatter??0,erase,seed:1,pixelsPerUnit:ppu});
+      const stroke=new DrawingStroke(store,{size:px,color,opacity:s.opacity,flow:s.flow,hardness:s.hardness,pressureSize:s.pressureSize,pressureOpacity:s.pressureOpacity,pressureFlow:s.pressureFlow,sizeCurve:s.sizeCurve,opacityCurve:s.opacityCurve,stabilization:s.stabilization,spacingRatio:s.spacingRatio??.12,texture:s.texture??0,roundness:s.roundness??1,angle:s.angle??0,angleMode:s.angleMode??'fixed',scatter:s.scatter??0,blend:s.blend==='smudge'?'normal':s.blend??'normal',erase,seed:1,pixelsPerUnit:ppu});
       const n=40;
       for(let i=0;i<n;i++){const t=i/(n-1);stroke.sample({x:pad+span*t,y:mid+Math.sin(t*Math.PI*2)*amp,pressure:.15+.85*Math.sin(Math.PI*t),time:i});}
       stroke.finish();

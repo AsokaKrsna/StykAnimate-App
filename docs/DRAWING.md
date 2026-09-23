@@ -8,15 +8,17 @@ layer; otherwise select an existing visible, unlocked drawing layer.
 ## Workflow
 
 - **B / E:** Brush / Eraser. Ink, Pencil, Soft, Marker, Nib, Airbrush,
-  Charcoal and Liner presets are starting points; each defines the whole tip.
+  Charcoal, Liner, Blender and Oil presets are starting points; each defines the whole tip and blend.
   A live preview stroke in Properties reflects the current tip. Size,
   opacity, flow, hardness, pressure curves and smoothing remain editable with
   the same numeric fields and scrubbing used elsewhere. **Tip** sets
   roundness, angle (fixed, following the stroke direction, or following pen
   tilt), spacing, scatter and grain; **Dynamics** maps pressure to size,
   opacity and flow. **Painting** chooses the blend mode (Normal, Behind,
-  Multiply, Screen, Overlay, Color) and **Lock alpha**, which recolours
-  existing paint without covering empty pixels.
+  Multiply, Screen, Overlay, Color, Smudge) and **Lock alpha**, which recolours
+  existing paint without covering empty pixels. Smudge carries the colour under the tip along the
+  stroke (Smudge length) and can mix in the brush colour (Color mix); it
+  composites each dab immediately, since every dab reads the previous result.
 - **Assist:** mirror painting across the stage's vertical and/or horizontal
   centre (Shift+M toggles horizontal). Shift-click draws a straight line from
   the previous stroke's end; Alt-click (Brush, Fill) picks the visible colour;
