@@ -1049,22 +1049,34 @@ function fittedView(r = editor.report) {
   // In Draw, fitting keeps the stage clear of the canvas quick bar.
   const rect = viewport.getBoundingClientRect(),
     bar = drawingController?.active && drawingController.quickBar && !drawingController.quickBar.hidden ? drawingController.quickBar.offsetHeight + 8 : 0,
+    // The floating tool rail overlays the viewport's left edge; keep the stage clear of it.
+    railRect = document.querySelector(".studio-rail")?.getBoundingClientRect(),
+    rail = railRect?.width && railRect.right > rect.left && railRect.left < rect.left + rect.width / 3
+      ? Math.max(0, railRect.right - rect.left - 20) : 0,
     s = Math.max(
       0.01,
       Math.min(
-        (rect.width - 64) / r.canvas_width,
+        (rect.width - 64 - rail) / r.canvas_width,
         (rect.height - 72 - bar) / r.canvas_height,
         2,
       ),
     );
   return {
     scale: s,
-    x: (rect.width - r.canvas_width * s) / 2,
+    x: rail + (rect.width - rail - r.canvas_width * s) / 2,
     y: bar + (rect.height - bar - r.canvas_height * s) / 2 - 3,
   };
 }
+// A fitted view follows viewport size changes (panel toggles, Build figure's
+// outliner, window resizes) until the user zooms or pans it.
+let fittedSnapshot = null;
+const isFittedView = (v = state.view) =>
+  !!fittedSnapshot && !v.rotation && !v.flip &&
+  v.scale === fittedSnapshot.scale &&
+  Math.abs(v.x - fittedSnapshot.x) < 0.5 && Math.abs(v.y - fittedSnapshot.y) < 0.5;
 function fit() {
   state.view = fittedView();
+  fittedSnapshot = { ...state.view };
   placeArtboard();
   requestRender();
 }
@@ -1114,6 +1126,10 @@ function resize() {
   overlay.height = Math.round(r.height * d);
   state.renderer?.resize(r.width, r.height, d * previewRenderScale());
   timelineUI?.resize();
+  if (isFittedView()) {
+    state.view = fittedView();
+    fittedSnapshot = { ...state.view };
+  }
   placeArtboard();
   requestRender();
 }
@@ -1875,7 +1891,7 @@ function updateUI() {
   $("stage-size").textContent =
     `${editor.report.canvas_width} × ${editor.report.canvas_height}`;
   $("object-count").textContent =
-    `${editor.frame.objects.length.toLocaleString()} figures`;
+    `${editor.frame.objects.length.toLocaleString()} ${editor.frame.objects.length === 1 ? "figure" : "figures"}`;
   $("selection-summary").textContent =
     selection().size > 1
       ? `${selection().size} figures selected`

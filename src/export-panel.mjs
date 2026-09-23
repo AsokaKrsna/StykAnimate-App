@@ -110,7 +110,7 @@ export function mountExportFlow(content, {width, height, totalFrames, currentFra
     footer.querySelector('.export-summary').hidden = editable;
     input('summary-size').textContent = editable ? '' : `${Number.isFinite(w) ? w.toLocaleString() : '—'} × ${Number.isFinite(h) ? h.toLocaleString() : '—'} px`;
     input('summary-time').textContent = editable ? '' : single ? `Current frame · ${currentFrame}`
-      : `${Number.isInteger(count) && count > 0 ? count.toLocaleString() : '—'} frames · ${count > 0 && count / fps < 10 ? `${Number((count / fps).toFixed(2))}s` : exportTime(count > 0 ? count / fps : NaN)} at ${Number(fps.toFixed(2))} fps`;
+      : `${Number.isInteger(count) && count > 0 ? count.toLocaleString() : '—'} ${count === 1 ? 'frame' : 'frames'} · ${count > 0 && count / fps < 10 ? `${Number((count / fps).toFixed(2))}s` : exportTime(count > 0 ? count / fps : NaN)} at ${Number(fps.toFixed(2))} fps`;
   }
   function renderFormats() {
     const old = select.value, actions = categories.find(([id]) => id === category)[2]; select.replaceChildren();

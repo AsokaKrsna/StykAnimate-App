@@ -60,7 +60,9 @@ test("composed property values preserve exact baselines without key controls", (
       key === "camera_x" ? { value: 12.123456789 } : {},
   });
   assert.ok(html.includes('data-property-value="12.123456789"'));
-  assert.ok(html.includes('value="12.123"'));
+  // Readable at rest; the input still edits with three decimals.
+  assert.ok(html.includes('value="12.1"'));
+  assert.ok(html.includes('data-property-precision="3" data-property-display-precision="1"'));
   assert.ok(!html.includes("data-property-key"));
   assert.ok(!html.includes("data-property-nav"));
   assert.ok(!html.includes("property-key-controls"));

@@ -70,7 +70,7 @@ export function syncCameraControls(root, frame, {activeKey=null, guides=true}={}
   for(const [key,value] of Object.entries(values)) {
     const input=root.querySelector(`[data-property="${key}"]`);
     if(!input || key===activeKey) continue;
-    input.value=formatPropertyValue(value,2);
+    input.value=formatPropertyValue(value,Number(input.dataset.propertyDisplayPrecision??2));
     input.dataset.propertyValue=String(value);
   }
   const scale=root.querySelector('[data-camera-magnification]');

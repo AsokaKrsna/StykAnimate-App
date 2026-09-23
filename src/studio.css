@@ -140,8 +140,14 @@ dialog::backdrop { background: var(--theme-backdrop, #18273c55); backdrop-filter
 .insert-actions .icon { width: 23px; height: 23px; color: var(--theme-accent, #0d99ff); margin-bottom: 4px; }
 .insert-actions strong { font-size: 12px; font-weight: 600; }
 .insert-actions small { font-size: 10px; line-height: 1.4; color: var(--theme-muted, #7a8799); }
+.insert-movieclip { padding: 0 24px 20px; }
+.insert-movieclip h3,
+.insert-library h3 { font-size: 12px; margin: 0 0 10px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.insert-movieclip h3 span { font-weight: 400; font-size: 11px; color: var(--theme-muted, #6b7585); }
+#insert-dialog .movieclip-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+#insert-dialog .movieclip-actions .button { height: 32px; justify-content: flex-start; }
+#insert-dialog .movieclip-actions .icon { width: 14px; height: 14px; color: var(--theme-accent, #0d99ff); }
 .insert-library { padding: 0 24px 18px; }
-.insert-library h3 { font-size: 12px; margin: 0 0 15px; display: flex; justify-content: space-between; }
 .insert-library h3 span { font-weight: 400; font-size: 10px; color: var(--theme-muted, #8791a0); }
 .insert-library .styk-asset-library { height: 245px; min-height: 160px; border: 1px solid var(--theme-border, #e4e9ef); border-radius: 8px; padding-top: 12px; }
 .insert-library .styk-asset-row { width: 100%; }

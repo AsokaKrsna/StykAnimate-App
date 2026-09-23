@@ -61,7 +61,7 @@ export function mountExportProgress(content, options, cancel) {
     if (field('stage').textContent !== title) field('stage').textContent = title;
     if (preparing) field('progress').removeAttribute('value'); else field('progress').value = s.percent;
     field('percent').textContent = preparing ? '—' : `${s.percent}%`;
-    field('frame-detail').textContent = preparing ? `${s.frames.toLocaleString()} frames to export`
+    field('frame-detail').textContent = preparing ? `${s.frames.toLocaleString()} ${s.frames === 1 ? 'frame' : 'frames'} to export`
       : s.phase === 'saving' ? 'Choose where to save.'
       : s.phase === 'encoding' ? 'All frames rendered.'
       : `${s.phase === 'processing' ? 'Processing' : 'Rendering'} frame ${s.frame.toLocaleString()} of ${s.frames.toLocaleString()} · Animation frame ${s.sourceFrame.toLocaleString()}`;

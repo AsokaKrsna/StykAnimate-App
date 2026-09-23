@@ -35,6 +35,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Fixed
 
+- Keep the stage fully visible and centred when opening Build figure or resizing panels, show position, angle and scale fields with readable precision (full precision appears while editing), fix garbled text in rig controls, tidy the movieclip options in the Add dialog, and say "1 figure" or "1 frame" instead of "1 figures".
 - Keep attached 3D heads on the neck when the torso or neck bends; they no longer turn twice and drift off the shoulders.
 - Switch IK off and on for each 3D arm and leg from the rig panel. With IK off, dragging a hand or foot swings just the forearm or shin.
 - Reduce drawing lag as artwork and frames accumulate, keep brush-cursor movement responsive, and prevent artwork from disappearing while previews start. Shorten waits after large drawing edits, undo and redo with faster loading and pixel pastes, and smaller background tile updates. Fill regions up to 64 megapixels without changing behavior when zoomed out.

@@ -220,7 +220,7 @@ export class AssetLibrary {
     this.empty.hidden = this.filtered.length > 0;
     this.count.textContent = this.query
       ? `${this.filtered.length.toLocaleString()} of ${this.records.length.toLocaleString()}`
-      : `${this.records.length.toLocaleString()} figures`;
+      : `${this.records.length.toLocaleString()} ${this.records.length === 1 ? "figure" : "figures"}`;
     this.render();
   }
 
