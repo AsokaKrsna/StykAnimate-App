@@ -20,7 +20,7 @@ try{
 
   // 1. Brush parity: identical samples through DrawingStroke and the GPU brush.
   const parity=await page.evaluate(async()=>{
-    const {DrawingStroke,StrokePath,normalizeBrush,dabShape,jitterSequence}=await import('/src/drawing-pixels.mjs'),{TileStore,TILE}=await import('/src/drawing-tiles.mjs'),{createGpuStroke}=await import('/src/drawing-gpu.mjs');
+    const {DrawingStroke}=await import('/src/drawing-pixels.mjs'),{BrushStroke,normalizeBrush}=await import('/src/drawing-brush.mjs'),{TileStore,TILE}=await import('/src/drawing-tiles.mjs'),{createGpuStroke}=await import('/src/drawing-gpu.mjs');
     const gpu=styk.state.renderer.drawingGpu,device=gpu.device;
     let seed=12345;const random=()=>((seed=Math.imul(seed^seed>>>15,2246822519)+0x6D2B79F5>>>0)/4294967296);
     const base=()=>{const store=new TileStore();for(let ty=-2;ty<3;ty++)for(let tx=-2;tx<3;tx++){if((tx+ty)%2)continue;const pixels=new Uint8ClampedArray(64*64*4);for(let i=0;i<pixels.length;i+=4){pixels[i]=(tx*40+i)&255;pixels[i+1]=(ty*70+(i>>6))&255;pixels[i+2]=90;pixels[i+3]=(i>>2)%7?255:(i>>4)&255;}store.set(tx,ty,pixels);}return store;};
@@ -44,6 +44,14 @@ try{
       {name:'behind',size:30,hardness:.8,flow:1,opacity:.8,blend:'behind'},
       {name:'alpha lock',size:30,hardness:.6,flow:1,opacity:1,alphaLock:true},
       {name:'selection clip',size:36,hardness:.5,flow:1,opacity:1,masked:true},
+      // Tapers repaint a provisional tail every frame; the final stroke must not keep any of it.
+      {name:'tapered ink',size:14,hardness:1,flow:1,opacity:1,taperIn:40,taperOut:80},
+      {name:'tapered eraser',size:24,hardness:.8,flow:1,opacity:1,erase:true,taperOut:60},
+      {name:'string stabilizer',size:10,hardness:.9,flow:1,opacity:1,stabilization:.5,stabilizerMode:'string',pixelsPerUnit:1,pressureCurve:[.1,.6,.4,.95]},
+      // Image tips and paper grains sample the shared texture atlas.
+      {name:'chalk on paper',size:28,hardness:.8,flow:.8,opacity:1,tip:'chalk',texture:.7,grain:'paper',grainScale:1.5,sizeJitter:.2},
+      {name:'bristle on canvas',size:34,hardness:.9,flow:.9,opacity:1,tip:'bristle',angleMode:'direction',texture:.4,grain:'canvas',angleJitter:.05,roundness:.7},
+      {name:'sponge jitter',size:40,hardness:.6,flow:.5,opacity:.9,tip:'sponge',opacityJitter:.5,angleJitter:1,scatter:.3},
       // Smudge runs dab by dab and carries colour, so rounding can compound.
       {name:'blender',start:[0,0],size:36,hardness:.4,flow:1,opacity:.8,pressureOpacity:true,blend:'smudge',smudgeLength:.85,colorRate:0,spacingRatio:.06,tolerance:{maxDiff:4,share:.03,tiles:'faint smudged pixels round to zero alpha differently'}},
       {name:'oil',size:28,hardness:.75,flow:1,opacity:1,blend:'smudge',smudgeLength:.6,colorRate:.35,spacingRatio:.05,texture:.2,tolerance:{maxDiff:4,share:.03,tiles:'faint smudged pixels round to zero alpha differently'}},
@@ -57,14 +65,15 @@ try{
       for(let i=0;i<220;i++){angle+=(random()-.5)*.6;x+=Math.cos(angle)*(2+random()*5);y+=Math.sin(angle)*(2+random()*5);samples.push({x,y,pressure:.15+.85*Math.abs(Math.sin(i/17)),time:i*4});}
       const cpuStore=base(),cpu=new DrawingStroke(cpuStore,settings);for(const s of samples)cpu.sample(s);const cpuChanges=cpu.finish();
       const presenter={store:base(),owner:{},stamp:0};
-      const brush=normalizeBrush(settings),jitter=jitterSequence(brush.seed),session=createGpuStroke(gpu,presenter,brush,{mask});
-      const path=new StrokePath(brush,dab=>{const shape=dabShape(brush,dab,jitter);if(shape)session.add(shape);});
+      const brush=normalizeBrush(settings),session=createGpuStroke(gpu,presenter,brush,{mask});
+      const pipeline=new BrushStroke(brush,shape=>session.add(shape));
+      if(pipeline.hasTail)session.tail=()=>pipeline.tailShapes();
       for(let i=0;i<samples.length;i++){
-        path.sample(samples[i]);
+        pipeline.sample(samples[i]);
         // Several frames per stroke: batches must preserve cross-batch coverage.
         if(i%23===22){session.plan();const encoder=device.createCommandEncoder();session.encode(encoder);device.queue.submit([encoder.finish()]);}
       }
-      path.finish();
+      pipeline.finish();
       const {changes:gpuChanges}=await session.finish();session.release();
       const expand=side=>{if(!side)return new Uint8ClampedArray(64*64*4);if(side.length===4){const full=new Uint8ClampedArray(64*64*4);for(let i=0;i<full.length;i+=4)full.set(side,i);return full;}return side;};
       const cpuMap=new Map(cpuChanges.map(t=>[`${t.tx},${t.ty}`,t])),gpuMap=new Map(gpuChanges.map(t=>[`${t.tx},${t.ty}`,t]));

@@ -1,6 +1,8 @@
 import {TILE,TILE_BYTES,tileKey} from './drawing-tiles.mjs';
 import {hasDrawableVfx} from './vfx-canvas.mjs';
-import {compactTile,smudgeStride} from './drawing-pixels.mjs';
+import {compactTile} from './drawing-pixels.mjs';
+import {smudgeStride} from './drawing-brush.mjs';
+import {ATLAS_BYTES,TIP_SIZE,GRAIN_SIZE,brushAtlas,ensureTexture,tipBase} from './drawing-brush-textures.mjs';
 
 /** WebGPU residency for sparse drawing cels and the GPU brush.
  *
@@ -12,7 +14,7 @@ import {compactTile,smudgeStride} from './drawing-pixels.mjs';
  * computes CPU mips. Slots are an LRU cache bounded by the pool size; a slot
  * used by the frame being encoded or pinned by a stroke is never reused.
  *
- * A GPU stroke rasterizes dabs from the shared CPU path code into private
+ * A GPU stroke rasterizes dab shapes from the shared brush model into private
  * overlay slots, which the display reads instead of the committed tiles until
  * the stroke's read-back pixels are committed through the normal editor
  * transaction. */
@@ -149,8 +151,10 @@ var<workgroup> found: atomic<u32>;
 // composite(), evaluated per pixel over the ordered dabs touching each tile.
 // Coverage accumulates in dab order exactly as the CPU loop does; the colour
 // is then composited from final coverage and the pixels the stroke first saw,
-// with the same blend modes and alpha lock. Only floating point width and the
-// CPU's soft-falloff lookup table differ.
+// with the same blend modes, alpha lock, image tips and grain. Only floating
+// point width and the CPU's soft-falloff lookup table differ. An ephemeral
+// pass paints a stroke's provisional tail over its final coverage without
+// storing it, and recomposites every tile the previous tail covered.
 const STROKE_SHADER=/* wgsl */`
 struct Params {
   color: vec4f,
@@ -158,6 +162,7 @@ struct Params {
   seed: u32, originX: i32, originY: i32, count: u32,
   lock: u32, maskX: i32, maskY: i32, maskW: u32,
   maskH: u32, maskMax: f32, hasMask: u32, round: u32,
+  ephemeral: u32, tip: i32, grain: i32, grainScale: f32,
 }
 struct Job { tx: i32, ty: i32, before: u32, after: u32, coverage: u32, start: u32, count: u32, init: u32 }
 @group(0) @binding(0) var<storage, read_write> pool: array<u32>;
@@ -167,6 +172,37 @@ struct Job { tx: i32, ty: i32, before: u32, after: u32, coverage: u32, start: u3
 @group(0) @binding(4) var<storage, read> order: array<u32>;
 @group(0) @binding(5) var<uniform> params: Params;
 @group(0) @binding(6) var<storage, read> mask: array<u32>;
+@group(0) @binding(7) var<storage, read> textures: array<u32>;
+fn atlasByte(i: u32) -> f32 { return f32((textures[i >> 2u] >> ((i & 3u) * 8u)) & 255u); }
+fn bilinear(a: f32, b: f32, c: f32, d: f32, fx: f32, fy: f32) -> f32 {
+  let top = a + (b - a) * fx;
+  return (top + ((c + (d - c) * fx) - top) * fy) / 255.0;
+}
+// drawing-brush-textures.mjs sampleTip and sampleGrain.
+fn tipAt(u: f32, v: f32) -> f32 {
+  let n = ${TIP_SIZE}.0;
+  let px = clamp((u * 0.5 + 0.5) * n - 0.5, 0.0, n - 1.0);
+  let py = clamp((v * 0.5 + 0.5) * n - 0.5, 0.0, n - 1.0);
+  let x0 = u32(floor(px));
+  let y0 = u32(floor(py));
+  let x1 = min(x0 + 1u, ${TIP_SIZE-1}u);
+  let y1 = min(y0 + 1u, ${TIP_SIZE-1}u);
+  let base = u32(params.tip);
+  return bilinear(atlasByte(base + y0 * ${TIP_SIZE}u + x0), atlasByte(base + y0 * ${TIP_SIZE}u + x1), atlasByte(base + y1 * ${TIP_SIZE}u + x0), atlasByte(base + y1 * ${TIP_SIZE}u + x1), px - floor(px), py - floor(py));
+}
+fn grainAt(ax: i32, ay: i32) -> f32 {
+  let px = (f32(ax) + 0.5) / params.grainScale - 0.5;
+  let py = (f32(ay) + 0.5) / params.grainScale - 0.5;
+  let ix = i32(floor(px));
+  let iy = i32(floor(py));
+  let m = ${GRAIN_SIZE-1};
+  let x0 = u32(ix & m);
+  let x1 = u32((ix + 1) & m);
+  let y0 = u32(iy & m);
+  let y1 = u32((iy + 1) & m);
+  let base = u32(params.grain);
+  return bilinear(atlasByte(base + y0 * ${GRAIN_SIZE}u + x0), atlasByte(base + y0 * ${GRAIN_SIZE}u + x1), atlasByte(base + y1 * ${GRAIN_SIZE}u + x0), atlasByte(base + y1 * ${GRAIN_SIZE}u + x1), px - floor(px), py - floor(py));
+}
 fn hashPixel(x: i32, y: i32, seed: u32) -> f32 {
   var h = (bitcast<u32>(x) * 374761393u) ^ (bitcast<u32>(y) * 668265263u) ^ (seed * 974711u);
   h = (h ^ (h >> 13u)) * 1274126177u;
@@ -214,7 +250,11 @@ fn pack(c: vec3f, a: f32) -> u32 { return channel(c.x) | (channel(c.y) << 8u) | 
     var cov = 0.0;
     if (job.init == 0u) { cov = coverage[ci]; }
     var grain = 1.0;
-    if (params.texture > 0.0) { grain = 1.0 - params.texture * (1.0 - hashPixel(ax, ay, params.seed)); }
+    if (params.texture > 0.0) {
+      var g = 0.0;
+      if (params.grain >= 0) { g = grainAt(ax, ay); } else { g = hashPixel(ax, ay, params.seed); }
+      grain = 1.0 - params.texture * (1.0 - g);
+    }
     var clip = 1.0;
     if (params.hasMask == 1u) { clip = maskAt(ax, ay); }
     var touched = false;
@@ -222,8 +262,10 @@ fn pack(c: vec3f, a: f32) -> u32 { return channel(c.x) | (channel(c.y) << 8u) | 
       let d = order[n] * 2u;
       let dab = dabs[d];
       let tip = dabs[d + 1u];
-      // Saturated coverage cannot change.
-      if (cov >= dab.w) { continue; }
+      // Saturated coverage cannot change. Grain caps the coverage a pixel
+      // can reach, so paper pits stay lighter however many dabs overlap.
+      let cap = dab.w * grain;
+      if (cov >= cap) { continue; }
       var dx = fx - dab.x;
       var dy = fy - dab.y;
       if (params.round == 1u) { let u = dx * tip.y + dy * tip.z; dy = (dy * tip.y - dx * tip.z) * params.invRound; dx = u; }
@@ -237,13 +279,17 @@ fn pack(c: vec3f, a: f32) -> u32 { return channel(c.x) | (channel(c.y) << 8u) | 
         let t = clamp((1.0 - sqrt(d2) / r) * soft, 0.0, 1.0);
         e = t * t * (3.0 - 2.0 * t);
       }
-      e = e * tip.x * grain * clip;
+      if (params.tip >= 0) { e = e * tipAt(dx / r, dy / r); }
+      e = e * tip.x * clip;
       if (e <= 0.0) { continue; }
       touched = true;
-      cov = cov + (dab.w - cov) * e;
+      cov = cov + (cap - cov) * e;
     }
-    if (!touched && job.init == 0u) { continue; }
-    coverage[ci] = cov;
+    // A tail pass recomposites whole tiles and never stores its coverage.
+    if (params.ephemeral == 0u) {
+      if (!touched && job.init == 0u) { continue; }
+      coverage[ci] = cov;
+    }
     var before = 0u;
     if (job.before != 0xffffffffu) { before = pool[job.before * 4096u + q]; }
     let dst = job.after * 4096u + q;
@@ -569,6 +615,18 @@ export class DrawingGpu {
     for(const t of backup.tiles){const tile=store.get(t.tx,t.ty);if(tile&&t.record.slot===t.slot&&!this.tiles.has(tile)){t.record.version=tile.version;this.tiles.set(tile,t.record);}}
   }
   /** Record all GPU work that must precede this frame's render pass. */
+  /** The brush texture atlas buffer, created on first use. */
+  textureBuffer(){
+    this.textures??=this.device.createBuffer({label:'Drawing brush textures',size:ATLAS_BYTES,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
+    return this.textures;
+  }
+  /** Upload one tip or grain to the atlas on first use; returns its offset. */
+  brushTexture(name){
+    const offset=ensureTexture(name);if(offset<0)return -1;
+    this.uploadedTextures??=new Set();
+    if(!this.uploadedTextures.has(name)){const size=tipBase(name)>=0?TIP_SIZE*TIP_SIZE:GRAIN_SIZE*GRAIN_SIZE;this.device.queue.writeBuffer(this.textureBuffer(),offset,brushAtlas(),offset,size);this.uploadedTextures.add(name);}
+    return offset;
+  }
   encode(encoder){
     for(const session of this.sessions)session.encode(encoder);
     const levels=[];for(let k=1;k<=MAX_LEVEL;k++)if(this.reduce[k].length)levels.push(k);
@@ -600,7 +658,7 @@ export class DrawingGpu {
   get bytes(){return this.pool.size+this.instances.size;}
   destroy(){
     this.destroyed=true;for(const session of this.sessions)session.fail(new Error('The graphics device closed during the stroke.'));this.sessions.clear();
-    this.pool.destroy();this.instances.destroy();for(const buffer of this.jobBuffers)buffer.destroy();for(const buffer of this.reduceParams)buffer.destroy();
+    this.pool.destroy();this.instances.destroy();for(const buffer of this.jobBuffers)buffer.destroy();for(const buffer of this.reduceParams)buffer.destroy();this.textures?.destroy();this.textures=null;this.uploadedTextures=null;
     this.lru.clear();this.free=[];
   }
 }
@@ -609,12 +667,18 @@ const BLEND_MODES={normal:0,erase:1,behind:2,multiply:3,screen:4,overlay:5,color
 /** Whether the GPU brush can paint these normalized brush settings. Polygon
  * selections (larger than a pixel mask allows) keep the stroke worker. */
 export function gpuBrushSupports(brush,mask){return !(mask?.points)&&(brush.erase||brush.blend==='smudge'||brush.blend in BLEND_MODES);}
+const PARAM_BYTES=96;
+/** The dab, job, order and parameter buffers of one brush dispatch. */
+class BrushPass {
+  constructor(device,label){Object.assign(this,{device,dabs:new GrowableBuffer(device,label+' dabs',GPUBufferUsage.STORAGE),jobs:new GrowableBuffer(device,label+' jobs',GPUBufferUsage.STORAGE),order:new GrowableBuffer(device,label+' order',GPUBufferUsage.STORAGE),params:device.createBuffer({label:label+' parameters',size:PARAM_BYTES,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),bindGroup:null,key:null});}
+  destroy(){this.dabs.destroy();this.jobs.destroy();this.order.destroy();this.params.destroy();}
+}
 /** The GPU stroke for a brush: smudge runs dab by dab, everything else in parallel. */
 export function createGpuStroke(gpu,presenter,brush,options){return brush.blend==='smudge'&&!brush.erase?new GpuSmudgeStroke(gpu,presenter,brush,options):new GpuStroke(gpu,presenter,brush,options);}
 
-/** Paints one stroke on the GPU. Dab shapes come from the shared CPU path and
- * tip code (drawing-pixels.mjs StrokePath and dabShape), so spacing,
- * smoothing, pressure, jitter, scatter and tip angle match the worker brush. */
+/** Paints one stroke on the GPU. Dab shapes come from the shared brush model
+ * (drawing-brush.mjs), so spacing, smoothing, pressure, tapers, jitter,
+ * scatter and tip angle match the worker brush. */
 export class GpuStroke {
   constructor(gpu,presenter,brush,{mask=null,workingBytes=768*1024*1024,coverage=true}={}){
     const mode=brush.erase?'erase':brush.blend;
@@ -622,13 +686,15 @@ export class GpuStroke {
       mode:BLEND_MODES[mode]??0,lock:brush.alphaLock&&mode!=='erase'&&mode!=='behind',
       // Nothing to erase or recolour where the stroke found no pixels.
       skipEmpty:mode==='erase'||(brush.alphaLock&&mode!=='behind'),
-      tiles:new Map(),pending:[],origin:null,coverageCount:0,closed:false,failed:null,planned:null});
+      tiles:new Map(),pending:[],origin:null,coverageCount:0,closed:false,failed:null,planned:null,
+      // tail() returns the provisional tail's shapes; a new array means it moved.
+      tail:null,tailShapes:null,tailKeys:new Set(),
+      tipOffset:brush.tip==='round'?-1:gpu.brushTexture(brush.tip),grainOffset:brush.texture>0?gpu.brushTexture(brush.grain):-1});
     this.state.overlay=new Map();this.state.overlayOccupancy=[];this.state.overlayRect=null;
     this.coverage=new GrowableBuffer(this.device,'Drawing brush coverage',GPUBufferUsage.STORAGE);
     this.dabBuffer=new GrowableBuffer(this.device,'Drawing brush dabs',GPUBufferUsage.STORAGE);
-    this.jobBuffer=new GrowableBuffer(this.device,'Drawing brush jobs',GPUBufferUsage.STORAGE);
-    this.orderBuffer=new GrowableBuffer(this.device,'Drawing brush order',GPUBufferUsage.STORAGE);
-    this.paramBuffer=this.device.createBuffer({label:'Drawing brush parameters',size:80,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+    this.paramBuffer=this.device.createBuffer({label:'Drawing brush parameters',size:PARAM_BYTES,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+    this.passes=coverage?{main:new BrushPass(this.device,'Drawing brush'),tail:new BrushPass(this.device,'Drawing brush tail')}:null;
     // The selection clip, packed four mask bytes per word.
     const bytes=mask?.mask,padded=new Uint8Array(Math.max(4,Math.ceil((bytes?.length??0)/4)*4));if(bytes)padded.set(bytes);
     this.maskBuffer=this.device.createBuffer({label:'Drawing brush selection',size:padded.byteLength,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
@@ -637,35 +703,48 @@ export class GpuStroke {
   }
   /** Queue one dabShape() result in cel pixel space. */
   add(shape){if(this.closed)throw new Error('The stroke has already ended.');if(this.failed)throw this.failed;this.pending.push(shape);}
-  /** Convert queued dabs into per-tile jobs and claim their slots. Runs on
-   * the UI thread per frame; the work is proportional to touched tiles. */
+  /** Whether planning would produce work: queued dabs or a moved tail. */
+  get dirty(){return this.pending.length>0||Boolean(this.tail&&this.tail()!==this.tailShapes);}
+  /** Convert queued dabs, and a moved provisional tail, into per-tile jobs
+   * and claim their slots. Runs on the UI thread per frame; the work is
+   * proportional to touched tiles. */
   plan(){
-    if(!this.pending.length||this.failed||this.planned)return;
-    const dabs=this.pending;this.pending=[];
-    this.origin??={x:Math.floor(dabs[0].x),y:Math.floor(dabs[0].y)};
-    const lists=new Map(),order=[],store=this.presenter.store;
+    if(this.failed||this.planned)return;
+    const shapes=this.tail?.(),tailMoved=shapes&&shapes!==this.tailShapes;
+    if(!this.pending.length&&!tailMoved)return;
+    const first=this.pending[0]??shapes?.[0];if(first)this.origin??={x:Math.floor(first.x),y:Math.floor(first.y)};
     try{
-      dabs.forEach((dab,index)=>{
-        for(let ty=Math.floor(dab.top/TILE);ty*TILE<dab.bottom;ty++)for(let tx=Math.floor(dab.left/TILE);tx*TILE<dab.right;tx++){
-          const key=tileKey(tx,ty);let list=lists.get(key);
-          if(!list){if(this.skipEmpty&&!this.tiles.has(key)&&!store?.has(tx,ty))continue;list=[];lists.set(key,list);this.tile(tx,ty,key);}
-          list.push(index);
-        }
-      });
-    }catch(error){this.fail(error);return;}
-    if(!lists.size)return;
+      const main=this.pending.length?this.planDabs(this.pending,false):null;this.pending=[];
+      const tail=tailMoved?this.planDabs(shapes,true):null;
+      if(tailMoved)this.tailShapes=shapes;
+      if(main||tail)this.planned={main,tail};
+    }catch(error){this.fail(error);}
+  }
+  /** Per-tile jobs for final dabs, or for the ephemeral tail pass, which also
+   * restores every tile the previous tail covered. */
+  planDabs(dabs,ephemeral){
+    const lists=new Map(),order=[],store=this.presenter.store;
+    dabs.forEach((dab,index)=>{
+      for(let ty=Math.floor(dab.top/TILE);ty*TILE<dab.bottom;ty++)for(let tx=Math.floor(dab.left/TILE);tx*TILE<dab.right;tx++){
+        const key=tileKey(tx,ty);let list=lists.get(key);
+        if(!list){if(this.skipEmpty&&!this.tiles.has(key)&&!store?.has(tx,ty))continue;list=[];lists.set(key,list);this.tile(tx,ty,key);}
+        list.push(index);
+      }
+    });
+    if(ephemeral){const covered=new Set(lists.keys());for(const key of this.tailKeys)if(!lists.has(key))lists.set(key,[]);this.tailKeys=covered;}
+    if(!lists.size)return null;
     const jobs=new Int32Array(lists.size*8),words=new Uint32Array(jobs.buffer);let i=0;
     for(const [key,list] of lists){
       const tile=this.tiles.get(key),o=i*8;
       jobs[o]=tile.tx;jobs[o+1]=tile.ty;words[o+2]=tile.before?.slot>=0?tile.before.slot:GPU_NONE;words[o+3]=tile.after.slot;words[o+4]=tile.coverage;
-      words[o+5]=order.length;words[o+6]=list.length;words[o+7]=tile.initialized?0:1;tile.initialized=true;
+      words[o+5]=order.length;words[o+6]=list.length;words[o+7]=tile.initialized?0:1;if(!ephemeral)tile.initialized=true;
       for(const index of list)order.push(index);i++;
     }
-    const dabData=new Float32Array(dabs.length*8),ox=this.origin.x,oy=this.origin.y;
+    const dabData=new Float32Array(Math.max(1,dabs.length)*8),ox=this.origin.x,oy=this.origin.y;
     dabs.forEach((dab,index)=>{const o=index*8;dabData[o]=dab.x-ox;dabData[o+1]=dab.y-oy;dabData[o+2]=dab.radius;dabData[o+3]=dab.opacity;dabData[o+4]=dab.flow;dabData[o+5]=dab.cos;dabData[o+6]=dab.sin;});
-    this.planned={count:lists.size,jobs,dabData,order:new Uint32Array(order)};
     // Reduced display levels over the touched tiles are now stale.
     this.gpu.invalidateKeys(this.state,lists.keys());
+    return {count:lists.size,jobs,dabData,order:new Uint32Array(order)};
   }
   tile(tx,ty,key){
     let tile=this.tiles.get(key);if(tile)return tile;
@@ -687,28 +766,34 @@ export class GpuStroke {
   }
   encode(encoder){
     const planned=this.planned;if(!planned)return;this.planned=null;
-    const {count,jobs,dabData,order}=planned,queue=this.device.queue;
-    const growth=[this.dabBuffer.ensure(dabData.byteLength),this.jobBuffer.ensure(jobs.byteLength),this.orderBuffer.ensure(Math.max(4,order.byteLength))];
-    if(growth.some(Boolean))this.bindGroup=null;
-    queue.writeBuffer(this.dabBuffer.buffer,0,dabData);queue.writeBuffer(this.jobBuffer.buffer,0,jobs);if(order.length)queue.writeBuffer(this.orderBuffer.buffer,0,order);
-    const b=this.brush,m=this.mask,params=new ArrayBuffer(80),f=new Float32Array(params),u=new Uint32Array(params),s=new Int32Array(params);
+    if(planned.main)this.dispatch(encoder,this.passes.main,planned.main,false);
+    if(planned.tail)this.dispatch(encoder,this.passes.tail,planned.tail,true);
+  }
+  dispatch(encoder,pass,{count,jobs,dabData,order},ephemeral){
+    const queue=this.device.queue;
+    pass.dabs.ensure(dabData.byteLength);pass.jobs.ensure(jobs.byteLength);pass.order.ensure(Math.max(4,order.byteLength));
+    queue.writeBuffer(pass.dabs.buffer,0,dabData);queue.writeBuffer(pass.jobs.buffer,0,jobs);if(order.length)queue.writeBuffer(pass.order.buffer,0,order);
+    const b=this.brush,m=this.mask,params=new ArrayBuffer(PARAM_BYTES),f=new Float32Array(params),u=new Uint32Array(params),s=new Int32Array(params);
     f[0]=b.color[0];f[1]=b.color[1];f[2]=b.color[2];f[4]=b.hardness;f[5]=b.texture;f[6]=1/b.roundness;u[7]=this.mode;
     u[8]=b.seed>>>0;s[9]=this.origin.x;s[10]=this.origin.y;u[11]=count;
-    u[12]=this.lock?1:0;s[13]=m?.x??0;s[14]=m?.y??0;u[15]=m?.width??0;u[16]=m?.height??0;f[17]=m?.max??1;u[18]=m?1:0;u[19]=b.roundness<.999?1:0;
-    queue.writeBuffer(this.paramBuffer,0,params);
-    const key=`${this.gpu.pool.generation}|${this.coverage.generation}|${this.dabBuffer.generation}|${this.jobBuffer.generation}|${this.orderBuffer.generation}`;
-    if(!this.bindGroup||this.bindGroupKey!==key){this.bindGroupKey=key;this.bindGroup=this.device.createBindGroup({layout:this.gpu.strokePipeline.getBindGroupLayout(0),entries:[
-      {binding:0,resource:{buffer:this.gpu.pool.buffer}},{binding:1,resource:{buffer:this.coverage.buffer}},{binding:2,resource:{buffer:this.dabBuffer.buffer}},
-      {binding:3,resource:{buffer:this.jobBuffer.buffer}},{binding:4,resource:{buffer:this.orderBuffer.buffer}},{binding:5,resource:{buffer:this.paramBuffer}},{binding:6,resource:{buffer:this.maskBuffer}}]});}
-    const pass=encoder.beginComputePass({label:'Drawing brush dabs'});pass.setPipeline(this.gpu.strokePipeline);pass.setBindGroup(0,this.bindGroup);pass.dispatchWorkgroups(...workgroups(count));pass.end();
-    this.gpu.stats.strokeDispatches++;
+    u[12]=this.lock?1:0;s[13]=m?.x??0;s[14]=m?.y??0;u[15]=m?.width??0;u[16]=m?.height??0;f[17]=m?.max??1;u[18]=m?1:0;
+    // Image tips sample in the tip's rotated frame even when it is round.
+    u[19]=b.roundness<.999||this.tipOffset>=0?1:0;
+    u[20]=ephemeral?1:0;s[21]=this.tipOffset;s[22]=this.grainOffset;f[23]=b.grainScale;
+    queue.writeBuffer(pass.params,0,params);
+    const gpu=this.gpu,key=`${gpu.pool.generation}|${this.coverage.generation}|${pass.dabs.generation}|${pass.jobs.generation}|${pass.order.generation}`;
+    if(pass.key!==key){pass.key=key;pass.bindGroup=this.device.createBindGroup({layout:gpu.strokePipeline.getBindGroupLayout(0),entries:[
+      {binding:0,resource:{buffer:gpu.pool.buffer}},{binding:1,resource:{buffer:this.coverage.buffer}},{binding:2,resource:{buffer:pass.dabs.buffer}},
+      {binding:3,resource:{buffer:pass.jobs.buffer}},{binding:4,resource:{buffer:pass.order.buffer}},{binding:5,resource:{buffer:pass.params}},{binding:6,resource:{buffer:this.maskBuffer}},{binding:7,resource:{buffer:gpu.textureBuffer()}}]});}
+    const compute=encoder.beginComputePass({label:ephemeral?'Drawing brush tail':'Drawing brush dabs'});compute.setPipeline(gpu.strokePipeline);compute.setBindGroup(0,pass.bindGroup);compute.dispatchWorkgroups(...workgroups(count));compute.end();
+    gpu.stats.strokeDispatches++;
   }
   /** Flush remaining dabs and read back every touched tile. Resolves to
    * tile-change records in the DrawingStroke.finish() format. */
   async finish(){
     if(this.failed)throw this.failed;
     this.closed=true;
-    do{this.plan();if(this.failed)throw this.failed;if(!this.planned)break;const batch=this.device.createCommandEncoder({label:'Drawing brush dabs'});this.encode(batch);this.device.queue.submit([batch.finish()]);}while(this.pending.length);
+    do{this.plan();if(this.failed)throw this.failed;if(!this.planned)break;const batch=this.device.createCommandEncoder({label:'Drawing brush dabs'});this.encode(batch);this.device.queue.submit([batch.finish()]);}while(this.dirty);
     const tiles=[...this.tiles.values()],count=tiles.length,device=this.device;
     if(!count){this.readBack=true;return {changes:[],tiles:[]};}
     const pixelBytes=count*TILE_BYTES,slots=new Uint32Array(tiles.map(tile=>tile.after.slot));
@@ -750,7 +835,7 @@ export class GpuStroke {
    * commit replaced adopt the overlay slot that already holds their bytes;
    * every other overlay slot returns to the pool. */
   release({committed=false}={}){
-    if(this.released)return;this.released=true;this.closed=true;this.pending=[];this.planned=null;
+    if(this.released)return;this.released=true;this.closed=true;this.pending=[];this.planned=null;this.tail=null;
     const gpu=this.gpu,store=this.presenter.store;gpu.sessions.delete(this);
     for(const tile of this.tiles.values()){
       const current=committed&&this.readBack?store?.get(tile.tx,tile.ty):null;
@@ -762,7 +847,7 @@ export class GpuStroke {
     if(this.state.overlay){this.state.overlay=null;this.state.overlayOccupancy=[];this.state.version++;}
     // Every tile's reduced ancestors must rebuild from committed pixels.
     gpu.invalidateKeys(this.state,this.tiles.keys());
-    this.coverage.destroy();this.dabBuffer.destroy();this.jobBuffer.destroy();this.orderBuffer.destroy();this.paramBuffer.destroy();this.maskBuffer.destroy();this.tiles.clear();
+    this.coverage.destroy();this.dabBuffer.destroy();this.paramBuffer.destroy();this.maskBuffer.destroy();this.passes?.main.destroy();this.passes?.tail.destroy();this.tiles.clear();
   }
 }
 // Smudge on the GPU: DrawingStroke.smudgeDab(), one dab at a time because
@@ -911,6 +996,7 @@ export class GpuSmudgeStroke extends GpuStroke {
     this.stateBuffer=this.device.createBuffer({label:'Drawing smudge state',size:32,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
     this.device.queue.writeBuffer(this.stateBuffer,0,new Uint32Array(8));
   }
+  get dirty(){return this.pending.length>0;}
   plan(){
     if(!this.pending.length||this.failed||this.planned)return;
     const dabs=this.pending.splice(0,SMUDGE_DABS_PER_FRAME);
@@ -937,12 +1023,11 @@ export class GpuSmudgeStroke extends GpuStroke {
   encode(encoder){
     const planned=this.planned;if(!planned)return;this.planned=null;
     const {dabData,refs,dispatch}=planned,queue=this.device.queue,gpu=this.gpu;
-    const growth=[this.dabBuffer.ensure(dabData.byteLength),this.refBuffer.ensure(Math.max(16,refs.byteLength))];
-    if(growth.some(Boolean))this.bindGroup=null;
+    this.dabBuffer.ensure(dabData.byteLength);this.refBuffer.ensure(Math.max(16,refs.byteLength));
     queue.writeBuffer(this.dabBuffer.buffer,0,dabData);queue.writeBuffer(this.refBuffer.buffer,0,refs);
     // Dab indices restart with each frame's dab list; the carried paint stays.
     queue.writeBuffer(this.stateBuffer,20,new Uint32Array([0]));
-    const b=this.brush,m=this.mask,params=new ArrayBuffer(80),f=new Float32Array(params),u=new Uint32Array(params),s=new Int32Array(params);
+    const b=this.brush,m=this.mask,params=new ArrayBuffer(PARAM_BYTES),f=new Float32Array(params),u=new Uint32Array(params),s=new Int32Array(params);
     f[0]=b.color[0];f[1]=b.color[1];f[2]=b.color[2];f[4]=b.hardness;f[5]=1/b.roundness;u[6]=b.roundness<.999?1:0;u[7]=m?1:0;
     f[8]=b.smudgeLength;f[9]=b.colorRate;s[10]=this.origin.x;s[11]=this.origin.y;s[12]=m?.x??0;s[13]=m?.y??0;u[14]=m?.width??0;u[15]=m?.height??0;f[16]=m?.max??1;
     queue.writeBuffer(this.paramBuffer,0,params);

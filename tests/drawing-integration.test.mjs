@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {TileStore} from '../src/drawing-tiles.mjs';
-import {DrawingStroke,StrokePath,lassoMask,maskValue,rectMask,combineMasks} from '../src/drawing-pixels.mjs';
+import {DrawingStroke,lassoMask,maskValue,rectMask,combineMasks} from '../src/drawing-pixels.mjs';
+import {StrokePath} from '../src/drawing-brush.mjs';
 import {captureMaskSelection,selectionStores} from '../src/drawing-lasso.mjs';
 import {selectionMatrix,transformSelectedPixels} from '../src/drawing-selection.mjs';
 

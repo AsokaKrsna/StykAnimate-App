@@ -3,6 +3,8 @@ import {drawingMetadata,isDrawingLayer} from './drawing-model.mjs';
 import {DrawingStroke} from './drawing-pixels.mjs';
 import {TileStore} from './drawing-tiles.mjs';
 import {sliderMarkup} from './drawing-sliders.mjs';
+import {BRUSH_DEFAULTS,BRUSH_KEYS,BRUSH_LENGTHS,LINEAR_PRESSURE} from './drawing-brush.mjs';
+import {pressureCurveMarkup} from './drawing-pressure-curve.mjs';
 
 export const DRAWING_TOOLS = [
   ['brush','Brush','brush','Paint · B'], ['eraser','Eraser','eraser','Erase · E'],
@@ -10,21 +12,28 @@ export const DRAWING_TOOLS = [
   ['lasso','Lasso','lasso','Select pixels · L'], ['shape','Shape','square','Line, rectangle and ellipse · U'],
   ['transform','Transform','transform','Transform drawing · V'],
 ];
-// Every preset defines the whole tip and its blend so switching presets is
-// deterministic; alpha lock is a painting mode and persists.
-const TIP={pressureFlow:false,roundness:1,angle:0,angleMode:'fixed',scatter:0,blend:'normal',smudgeLength:.8,colorRate:0,stabilization:0};
+// Every preset defines the whole tip, dynamics and blend (starting from the
+// brush defaults) so switching presets is deterministic; alpha lock is a
+// painting mode and persists.
+const TIP=Object.fromEntries(Object.entries(BRUSH_DEFAULTS).filter(([key])=>key!=='alphaLock'));
 export const BRUSH_PRESETS = [
-  {id:'ink',name:'Ink',description:'Crisp, pressure-sensitive lines',...TIP,size:8,hardness:1,flow:1,opacity:1,pressureSize:true,pressureOpacity:false,spacingRatio:.08,texture:0},
-  {id:'pencil',name:'Pencil',description:'Fine lines for rough animation',...TIP,size:2,hardness:.85,flow:.7,opacity:1,pressureSize:true,pressureOpacity:true,spacingRatio:.05,texture:.6},
-  {id:'soft',name:'Soft',description:'Soft edges for shading',...TIP,size:32,hardness:0,flow:.25,opacity:1,pressureSize:true,pressureOpacity:false,spacingRatio:.1,texture:0},
-  {id:'marker',name:'Marker',description:'Even translucent strokes',...TIP,size:24,hardness:.95,flow:1,opacity:.35,pressureSize:false,pressureOpacity:false,spacingRatio:.12,texture:0},
-  {id:'calligraphy',name:'Nib',description:'Flat calligraphy nib: thick and thin by stroke direction',...TIP,size:16,hardness:1,flow:1,opacity:1,pressureSize:true,pressureOpacity:false,spacingRatio:.03,texture:0,roundness:.2,angle:40},
-  {id:'airbrush',name:'Airbrush',description:'Builds up soft paint with pen pressure',...TIP,size:72,hardness:0,flow:.06,opacity:1,pressureSize:false,pressureOpacity:false,pressureFlow:true,spacingRatio:.05,texture:0},
-  {id:'charcoal',name:'Charcoal',description:'Grainy, scattered texture that follows the stroke',...TIP,size:20,hardness:.7,flow:.55,opacity:.9,pressureSize:true,pressureOpacity:true,spacingRatio:.06,texture:.85,scatter:.08,roundness:.6,angleMode:'direction'},
-  {id:'liner',name:'Liner',description:'Smooth, stabilized clean-up lines',...TIP,size:5,hardness:1,flow:1,opacity:1,pressureSize:true,pressureOpacity:false,spacingRatio:.05,texture:0,stabilization:.45},
-  {id:'blender',name:'Blender',description:'Smudges and blends existing paint',...TIP,blend:'smudge',size:36,hardness:.4,flow:1,opacity:.8,pressureSize:true,pressureOpacity:true,spacingRatio:.06,texture:0,smudgeLength:.85,colorRate:0},
-  {id:'oil',name:'Oil',description:'Mixes the brush colour into wet paint',...TIP,blend:'smudge',size:28,hardness:.75,flow:1,opacity:1,pressureSize:true,pressureOpacity:false,spacingRatio:.05,texture:.2,smudgeLength:.6,colorRate:.35},
+  {id:'ink',name:'Ink',description:'Crisp, pressure-sensitive lines',...TIP,size:8,spacingRatio:.08},
+  {id:'brushpen',name:'Brush pen',description:'Tapered ink strokes, even with a mouse',...TIP,size:12,spacingRatio:.05,taperIn:24,taperOut:48},
+  {id:'pencil',name:'Pencil',description:'Fine grainy lines for rough animation',...TIP,size:2,hardness:.85,flow:.7,pressureOpacity:true,spacingRatio:.05,texture:.5,grain:'paper',sizeJitter:.1},
+  {id:'liner',name:'Liner',description:'Smooth, stabilized clean-up lines',...TIP,size:5,spacingRatio:.05,stabilization:.45,taperOut:12},
+  {id:'calligraphy',name:'Nib',description:'Flat calligraphy nib: thick and thin by stroke direction',...TIP,size:16,spacingRatio:.03,roundness:.2,angle:40},
+  {id:'marker',name:'Marker',description:'Even translucent strokes',...TIP,size:24,hardness:.95,opacity:.35,pressureSize:false,spacingRatio:.12},
+  {id:'soft',name:'Soft',description:'Soft edges for shading',...TIP,size:32,hardness:0,flow:.25,spacingRatio:.1},
+  {id:'airbrush',name:'Airbrush',description:'Builds up soft paint with pen pressure',...TIP,size:72,hardness:0,flow:.06,pressureSize:false,pressureFlow:true,spacingRatio:.05},
+  {id:'charcoal',name:'Charcoal',description:'Rough chalky tip that catches the paper grain',...TIP,size:20,hardness:.8,flow:.6,opacity:.9,pressureOpacity:true,spacingRatio:.06,tip:'chalk',roundness:.75,angleMode:'direction',texture:.6,grain:'paper',scatter:.05,sizeJitter:.15},
+  {id:'chalk',name:'Chalk',description:'Broad pastel strokes with a broken edge',...TIP,size:30,hardness:.8,flow:.8,pressureOpacity:true,spacingRatio:.08,tip:'chalk',angleJitter:1,sizeJitter:.2,texture:.5,grain:'paper'},
+  {id:'drybrush',name:'Dry brush',description:'Bristle streaks that follow the stroke on canvas grain',...TIP,size:36,flow:.9,spacingRatio:.03,tip:'bristle',angleMode:'direction',texture:.3,grain:'canvas',taperOut:30},
+  {id:'sponge',name:'Sponge',description:'Porous, broken texture for foliage and clouds',...TIP,size:44,hardness:.6,flow:.5,pressureSize:false,spacingRatio:.25,tip:'sponge',opacityJitter:.5,angleJitter:1,scatter:.25},
+  {id:'blender',name:'Blender',description:'Smudges and blends existing paint',...TIP,blend:'smudge',size:36,hardness:.4,opacity:.8,pressureOpacity:true,spacingRatio:.06,smudgeLength:.85},
+  {id:'oil',name:'Oil',description:'Mixes the brush colour into wet paint',...TIP,blend:'smudge',size:28,hardness:.75,spacingRatio:.05,smudgeLength:.6,colorRate:.35},
 ];
+export const BRUSH_TIP_LABELS=[['round','Round'],['chalk','Chalk'],['bristle','Bristle'],['sponge','Sponge']];
+export const BRUSH_GRAIN_LABELS=[['noise','Noise'],['paper','Paper'],['canvas','Canvas']];
 export const BRUSH_BLEND_LABELS=[['normal','Normal'],['behind','Behind'],['multiply','Multiply'],['screen','Screen'],['overlay','Overlay'],['color','Color'],['smudge','Smudge']];
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 
@@ -33,12 +42,14 @@ const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&
 const thumbnails=new Map();
 export function presetThumbnail(p){
   if(typeof document==='undefined')return '';
-  const key=p.id+':'+JSON.stringify([p.size,p.hardness,p.flow,p.opacity,p.texture,p.roundness,p.angle,p.angleMode,p.scatter,p.blend,p.smudgeLength,p.colorRate,p.spacingRatio,p.pressureSize,p.pressureOpacity,p.pressureFlow,p.stabilization]);
+  const key=p.id+':'+JSON.stringify(BRUSH_KEYS.map(k=>p[k]));
   const hit=thumbnails.get(key);if(hit)return hit;
   const W=120,H=36,store=new TileStore(),size=Math.max(2.5,Math.min(10,p.size*.5))*2;
   if(p.blend==='smudge'){const band=new Uint8ClampedArray(W*H*4);for(let y=6;y<H-6;y++)for(let x=0;x<W;x++)band.set(x<W/2?[222,78,78,255]:[64,96,208,255],(y*W+x)*4);store.writeRect(0,0,W,H,band);}
   try{
-    const stroke=new DrawingStroke(store,{...p,size,color:[42,42,48],seed:11,pixelsPerUnit:size/Math.max(.5,p.size)});
+    // Lengths scale with the thumbnail's capped tip size.
+    const scale=size/Math.max(.5,p.size??BRUSH_DEFAULTS.size),tip={...BRUSH_DEFAULTS,...p};for(const k of BRUSH_LENGTHS)tip[k]*=scale;
+    const stroke=new DrawingStroke(store,{...tip,color:[42,42,48],seed:11,pixelsPerUnit:scale});
     for(let i=0;i<=28;i++){const t=i/28;stroke.sample({x:10+t*(W-20),y:H/2+Math.sin(t*Math.PI*2)*H*.2,pressure:.25+.75*Math.sin(Math.PI*t),time:i*16});}
     stroke.finish();
     const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;canvas.getContext('2d').putImageData(new ImageData(store.readRect(0,0,W,H),W,H),0,0);
@@ -77,8 +88,12 @@ export function drawingInspector(drawing,{numericField,group,grid,heading,proper
     if(tool==='brush')html+=group('Preset',presetGrid(drawing)+`<div class="property-context-actions">${button('save-preset','Save brush','plus')}${isCustom?button('delete-preset','Delete brush','trash'):''}</div>`);
     html+=group('',preview+(tool==='brush'?swatches:'')+sliders('hardness')+quickHint);
     if(tool==='brush')html+=group('Painting',select('blend','Blend',BRUSH_BLEND_LABELS)+(s.blend==='smudge'?sliders('smudgeLength','colorRate'):'')+`<div class="property-toggle-grid drawing-toggle-grid">${toggle('alphaLock','Lock alpha','lock')}</div>`);
-    html+=details('Tip',sliders('roundness','angle','spacingRatio','scatter','texture')+select('angleMode','Tip follows',[['fixed','Fixed angle'],['direction','Stroke direction'],['tilt','Pen tilt']]));
-    html+=details('Dynamics',`<div class="property-toggle-grid drawing-toggle-grid">${toggle('pressureSize','Size pressure','scale')}${toggle('pressureOpacity','Opacity pressure','circle')}${toggle('pressureFlow','Flow pressure','activity')}</div>`+sliders('sizeCurve','opacityCurve'));
+    const smudge=s.blend==='smudge'&&tool==='brush';
+    html+=details('Tip',(smudge?'':select('tip','Shape',BRUSH_TIP_LABELS))+sliders('roundness','angle','spacingRatio')+select('angleMode','Tip follows',[['fixed','Fixed angle'],['direction','Stroke direction'],['tilt','Pen tilt']]));
+    html+=details('Stroke',sliders('taperIn',...(smudge?[]:['taperOut']))+select('stabilizerMode','Smoothing',[['average','Average'],['string','Pulled string']])+`<div class="drawing-hint">Tapers thin the start and end of every stroke. A pulled string moves the tip only once the pointer pulls it; smoothing strength is in the bar above the canvas.</div>`);
+    if(!smudge)html+=details('Texture',select('grain','Grain',BRUSH_GRAIN_LABELS)+sliders('texture','grainScale'));
+    html+=details('Dynamics',`<div class="property-toggle-grid drawing-toggle-grid">${toggle('pressureSize','Size pressure','scale')}${toggle('pressureOpacity','Opacity pressure','circle')}${toggle('pressureFlow','Flow pressure','activity')}</div>`+sliders('sizeCurve','opacityCurve','sizeJitter','opacityJitter','angleJitter','scatter'));
+    html+=details('Pen pressure',pressureCurveMarkup(drawing.library?.pressureCurve??LINEAR_PRESSURE)+`<div class="drawing-hint">Applies to every brush. Drag the handles: above the diagonal, light pressure paints heavier.</div>`);
     html+=group('Assist',`<div class="property-toggle-grid drawing-toggle-grid">${toggle('mirrorY','Mirror vertically','flip','Mirror painting across the horizontal centre. Horizontal mirroring is in the canvas bar · Shift+M')}</div><div class="drawing-hint">Shift-click: straight line · ${tool==='brush'?'Alt-click: pick colour · ':''}Ctrl-drag: size · [ ]: size · 1–0: opacity</div>`);
   }
   if(tool==='fill')html+=group('Fill',swatches+quickHint+`<div class="property-toggle-grid drawing-toggle-grid">${toggle('sampleAll','Sample all layers','layers')}</div><div class="drawing-hint">Alt-click picks a colour. Fills stay inside the selection.</div>`);

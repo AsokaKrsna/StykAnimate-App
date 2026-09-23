@@ -30,7 +30,7 @@ try{
 
   // Presets and painting modes.
   await page.locator('[data-tool="drawing-brush"]').click();
-  check('ten brush presets are offered',await page.locator('[data-draw-preset]').count()===10);
+  check('fourteen brush presets are offered',await page.locator('[data-draw-preset]').count()===14);
   await page.locator('[data-draw-preset="calligraphy"]').click();
   check('the nib preset sets a flat, angled tip',await page.evaluate(()=>styk.drawing.settings.roundness===.2&&styk.drawing.settings.angle===40));
   await page.locator('[data-draw-preset="ink"]').click();

@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DrawingSmoother,MAX_SMOOTHING_SAMPLES} from '../src/drawing-smoother.mjs';
-import {DrawingStroke,StrokePath,normalizeBrush} from '../src/drawing-pixels.mjs';
+import {DrawingStroke} from '../src/drawing-pixels.mjs';
+import {BrushStroke,normalizeBrush,dabShape} from '../src/drawing-brush.mjs';
 import {TileStore} from '../src/drawing-tiles.mjs';
 import {DrawingController} from '../src/drawing-controller.mjs';
 import {StrokeEngine} from '../src/drawing-stroke-engine.mjs';
@@ -42,18 +43,18 @@ test('worker batches seed existing pixels along cross-batch bridges',()=>{
   const {c,s,messages}=controller(),engine=new StrokeEngine();
   for(let x=0;x<8;x++)s.surface.store.set(x,0,new Uint8ClampedArray([10,20,30,255]));
   const expected=s.surface.store.fork(),settings={size:4,color:[200,40,60],opacity:.5,pressureSize:false};
-  const reference=new DrawingStroke(expected,settings),path=new StrokePath(settings,p=>s.pending.push(p));engine.begin(1,settings);
+  const reference=new DrawingStroke(expected,settings),pipeline=new BrushStroke(settings,p=>s.pending.push(p));engine.begin(1,settings);
   for(const x of [10,230,450]){
-    const point={x,y:30,pressure:1,time:x};reference.sample(point);path.sample(point);s.outstanding=0;c.flushStroke(s);
+    const point={x,y:30,pressure:1,time:x};reference.sample(point);pipeline.sample(point);s.outstanding=0;c.flushStroke(s);
     const m=messages.at(-1);engine.dabs(1,m.seq,m.dabs,m.tiles);
   }
-  path.finish();s.outstanding=0;c.flushStroke(s);const last=messages.at(-1);engine.dabs(1,last.seq,last.dabs,last.tiles);assert.deepEqual(engine.end(1),reference.finish());
+  pipeline.finish();s.outstanding=0;c.flushStroke(s);const last=messages.at(-1);engine.dabs(1,last.seq,last.dabs,last.tiles);assert.deepEqual(engine.end(1),reference.finish());
 });
 test('backpressure keeps one bounded dab batch in flight and ends after its acknowledgement',()=>{
   const {c,s,messages}=controller();
   // A tip this size batches 512 dabs; smaller tips batch more per round trip.
   s.brush=normalizeBrush({size:40,color:[200,40,60],pressureSize:false});
-  for(let i=0;i<1200;i++)s.pending.push({x:i,y:20,pressure:1});c.flushStroke(s);
+  for(let i=0;i<1200;i++)s.pending.push(dabShape(s.brush,{x:i,y:20,pressure:1}));c.flushStroke(s);
   assert.equal(s.outstanding,1);assert.equal(messages[0].dabs.length,512);assert.equal(s.pending.length,688);
   s.ended=true;c.flushStroke(s);assert.equal(messages.length,1);
   for(let seq=1;seq<=3;seq++)c.strokeMessage({kind:'tiles',stroke:1,seq,tiles:[]});

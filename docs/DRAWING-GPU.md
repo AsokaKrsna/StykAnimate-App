@@ -59,22 +59,28 @@ renderer to that presenter for diagnostics and fallback tests.
 
 ## Brush
 
-The controller runs the shared `StrokePath` (smoothing, quadratic curve
-sampling, spacing and pressure) per mirror and turns every emitted dab into
-its final tip with `dabShape()` from the stroke's seeded jitter sequence: the
-same code and sequence the stroke worker uses, so pressure size, grain size
-jitter, scatter, per-dab opacity and flow, and fixed, direction or tilt tip
-angles match exactly. `GpuStroke` groups each frame's dabs by touched tile in
-order. A compute shader evaluates the CPU brush per pixel over those ordered
-dabs — elliptical tips, hard and soft falloff, grain, and a dense selection
-mask uploaded once per stroke — carrying coverage between frames, then
+The controller runs the shared brush model (`drawing-brush.mjs`
+`BrushStroke`: pressure curve, smoothing, quadratic curve sampling, spacing,
+tapers and `dabShape()`) per mirror, so the GPU receives exactly the dab
+shapes the stroke worker would. `GpuStroke` groups each frame's dabs by
+touched tile in order. A compute shader evaluates the CPU brush per pixel over
+those ordered dabs — elliptical and image tips, hard and soft falloff, grain,
+and a dense selection mask uploaded once per stroke — carrying coverage
+between frames, then
 composites the colour from final coverage and the pixels the stroke first saw:
 Normal, Behind, Multiply, Screen, Overlay and Color blends, alpha lock and
 erasing, exactly as `DrawingStroke.composite()` does. Erasing and alpha lock
 skip tiles the stroke found empty. It writes into private overlay slots that
 the display reads instead of the committed tiles. Positions are relative to a
 stroke origin so single precision stays exact across unbounded cel
-coordinates.
+coordinates. Image tips and grains are read from one texture atlas buffer
+on the device (180 KB), each texture uploaded once on first use.
+
+A brush with an end taper keeps its last dabs provisional until pen-up. A
+second, ephemeral dispatch per frame paints that tail over the final coverage
+without storing it, recompositing every tile the previous tail covered, so
+the tail follows the pen and leaves nothing behind when it moves or is
+finally tapered. It runs only when the tail moved and covers a few tiles.
 
 Smudge picks up the paint the previous dab left, so `GpuSmudgeStroke` runs
 two dispatches per dab: a single workgroup averages the premultiplied colour
@@ -107,11 +113,32 @@ stroke worker also remains the brush for the Canvas 2D renderer.
 
 GPU and CPU brushes differ only in floating-point width and the CPU's soft
 falloff lookup table: across ink, soft, textured pencil, marker, eraser,
-hairline, stabilized, nib, charcoal, airbrush, every blend mode, alpha lock
-and selection clipping, every channel matches within one 8-bit step and at
+hairline, stabilized, nib, charcoal, airbrush, every blend mode, alpha lock,
+selection clipping, tapered ink and eraser, the pulled string with a custom
+pressure curve, and the chalk, bristle and sponge tips on paper, canvas and
+noise grain with jitter, every channel matches within one 8-bit step and at
 most 1% of touched pixels differ; smudge, whose carried colour compounds
 rounding from dab to dab, stays within four steps on at most 3% of pixels
 (`tests/drawing-gpu.browser.mjs`).
+
+## Measurements — 24 September 2026 (brush engine overhaul)
+
+Same machine and method as below, dense 1080p cel at 2×. The overhaul moves
+dab shapes, tapers and texture sampling into the shared model without
+changing hot-path cost. Matched runs of the committed build (715de266) and
+the overhaul, two runs each, p50 / p95: Pencil 7.8–11.5 / 21–23 ms against
+9.5–10.4 / 22–23 ms; Charcoal 6.2–6.3 / 14–15 ms against 5.9–6.1 / 15 ms;
+Ink 6.0–6.2 / 15 ms against 6.0 / 15 ms. The Canvas 2D fallback (stroke
+worker): Pencil 53 / 72 against 53 / 78 ms, Charcoal 30 / 40 against
+29 / 41 ms, Liner 51 / 70 against 48 / 63 ms. No scenario recorded a long
+task. The new presets on WebGPU: Brush pen 6.1–6.6 / 14–15 ms, Chalk
+5.7–5.9 / 14 ms, Dry brush 6.2 / 15 ms (160 px: 7.3–7.6 / 23 ms), all at
+frame p95 7.1 ms. Pencil's share of samples whose dab centre shows the brush
+colour fell from 86% to 65–69% because paper grain pits now lighten some
+centres; that is the intended texture, not delay. Sponge (82–88% shown, p95
+up to 250 ms at 160 px) and Airbrush are likewise limited by what the probe
+can detect: porous and slowly building dabs, with frame p95 7.1 ms and no
+long tasks.
 
 ## Measurements — 23 September 2026 (every preset)
 

@@ -7,14 +7,25 @@ layer; otherwise select an existing visible, unlocked drawing layer.
 
 ## Workflow
 
-- **B / E:** Brush / Eraser. Ink, Pencil, Soft, Marker, Nib, Airbrush,
-  Charcoal, Liner, Blender and Oil presets are starting points; each defines the whole tip and blend.
+- **B / E:** Brush / Eraser. Ink, Brush pen, Pencil, Liner, Nib, Marker,
+  Soft, Airbrush, Charcoal, Chalk, Dry brush, Sponge, Blender and Oil presets
+  are starting points; each defines the whole tip, dynamics and blend.
   A live preview stroke in Properties reflects the current tip. Size,
   opacity, flow, hardness, pressure curves and smoothing remain editable with
-  the same numeric fields and scrubbing used elsewhere. **Tip** sets
-  roundness, angle (fixed, following the stroke direction, or following pen
-  tilt), spacing, scatter and grain; **Dynamics** maps pressure to size,
-  opacity and flow. **Painting** chooses the blend mode (Normal, Behind,
+  the same numeric fields and scrubbing used elsewhere. **Tip** sets the
+  shape (Round, or the Chalk, Bristle and Sponge image tips), roundness,
+  angle (fixed, following the stroke direction, or following pen tilt) and
+  spacing. **Stroke** sets the start and end tapers and the smoothing mode:
+  Average (a trailing average) or Pulled string (the tip moves only once the
+  pointer pulls it past the string length, and the stroke ends at the tip).
+  **Texture** chooses the grain (Noise, Paper, Canvas), its strength and
+  scale; grain is anchored to the drawing, so overlapping strokes reveal the
+  same paper, and it caps how much paint a pixel can hold, so pits stay light
+  however often they are painted. **Dynamics** maps pressure to size, opacity
+  and flow and adds size, opacity and angle jitter and scatter. **Pen
+  pressure** is a global tablet curve (a Bézier with Soft, Linear and Firm
+  presets) that applies to every brush and persists with the brush library.
+  **Painting** chooses the blend mode (Normal, Behind,
   Multiply, Screen, Overlay, Color, Smudge) and **Lock alpha**, which recolours
   existing paint without covering empty pixels. Smudge carries the colour under the tip along the
   stroke (Smudge length) and can mix in the brush colour (Color mix); it
@@ -274,15 +285,30 @@ The stroke worker described below remains the Canvas 2D brush, the brush for
 selections too large for a pixel mask, and the replay path for a failed GPU
 stroke. Both commit through the same transaction and history.
 
-The stroke path (stabilization, curve joining and dab spacing) runs on the
-main thread in `StrokePath`, so every dab's extent is known before dispatch:
-each batch seeds the stroke worker with exactly the tiles its dabs reach, and
-the worker refuses a dab outside its seeded tiles rather than painting over a
-blank guess. `dabShape()` turns each path dab into its final tip (pressure
-size, grain jitter, scatter, per-dab opacity and flow, tip angle) from the
-stroke's seeded jitter sequence, so the worker and the GPU brush see identical
-dabs. Symmetry feeds each mirrored sample into its own path so mirrored
-strokes keep even spacing while sharing one coverage buffer and undo step.
+The brush model (`drawing-brush.mjs`) runs on the main thread and is pure
+geometry. `BrushStroke` maps input through the pen pressure curve into
+`StrokePath` (stabilization, curve joining, dab spacing and arc length), then
+`dabShape()` turns each path dab into its final tip — pressure size, tapers,
+size/opacity/angle jitter, scatter, per-dab opacity and flow, tip angle — with
+exact pixel bounds. Jitter is a hash of the stroke seed and the dab index, so a
+dab's shape never depends on painting order and the worker and the GPU brush
+receive identical shapes. Each batch seeds the stroke worker with exactly the
+tiles its shapes reach, and the worker refuses a dab outside its seeded tiles
+rather than painting over a blank guess. A start taper shrinks the tip and its
+spacing over the first pixels. An end taper cannot be known until pen-up, so
+dabs within the taper length of the pen stay a provisional tail: both
+rasterizers paint it at full size into scratch coverage over the final
+coverage every update and replace it the next, and at pen-up the tail is
+re-spaced along its path and tapered to a point. Final pixels are identical to
+painting the finished shapes once (`tests/drawing-brush.test.mjs`). A tap
+paints a full dot whatever the tapers. Smudge keeps the round tip and has no
+end taper, because every smudge dab reads the previous one. Image tips and
+grains (`drawing-brush-textures.mjs`) are generated procedurally and
+deterministically on first use into one atlas the CPU raster and the GPU brush
+sample with the same bilinear formulas; the CPU computes grain once per tile.
+Symmetry feeds each mirrored sample into its own pipeline (with its own jitter
+seed) so mirrored strokes keep even spacing while sharing one coverage buffer
+and undo step.
 Wet ink (`drawing-wet-ink.mjs`) draws the part of a stroke that is not yet
 on screen — the last presented dab, dabs in flight or pending, the raw
 pointer and its predicted position — on a desynchronized canvas between the
@@ -293,7 +319,7 @@ compositor with fine brushes and stalled every frame. The renderer records each
 presenter's `presentedStamp` when it uploads (or paints) a stamp, and a batch's
 wet segments retire one frame after their stamp is presented, so the exact
 stroke is always on screen before its preview leaves. Only brushes the preview
-matches closely use it (normal blend, firm round tips, flow ≥ 50%, no
+matches closely use it (normal blend, firm round analytic tips, flow ≥ 50%, no
 selection clip); erasing, smudging and special blends show exact pixels only.
 GPU strokes paint in the frame itself and use no wet ink.
 

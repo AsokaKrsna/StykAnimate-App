@@ -4,7 +4,9 @@ import {lassoBounds,lassoContains,selectionStores} from './drawing-lasso.mjs';
 import {BRUSH_PRESETS,quickBarMarkup,paletteMarkup} from './drawing-view.mjs';
 import {SLIDERS,installDrawingSliders,refreshSliders,formatSlider,displayValue} from './drawing-sliders.mjs';
 import {WetInk} from './drawing-wet-ink.mjs';
-import {dabShape,jitterSequence,tileChanges,maskValue,lassoMask,tileAlignedRect,DrawingStroke,StrokePath,normalizeBrush,dabExtent,dabRadius,rectPoints,ellipsePoints,combineMasks,invertMask,rectMask,maskEdges} from './drawing-pixels.mjs';
+import {installPressureCurve} from './drawing-pressure-curve.mjs';
+import {tileChanges,maskValue,lassoMask,tileAlignedRect,DrawingStroke,rectPoints,ellipsePoints,combineMasks,invertMask,rectMask,maskEdges} from './drawing-pixels.mjs';
+import {BrushStroke,normalizeBrush,dabRadius,BRUSH_DEFAULTS,BRUSH_KEYS,BRUSH_LENGTHS,LINEAR_PRESSURE} from './drawing-brush.mjs';
 import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,inversePoint,transformPoint,DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {TILE,tileKey,parseTileKey,TileStore} from './drawing-tiles.mjs';
 import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
@@ -20,14 +22,14 @@ import {selectionMatrix,selectionTiles,selectionPresenter} from './drawing-selec
 const pointerSample=e=>({clientX:e.clientX,clientY:e.clientY,pressure:e.pressure,pointerType:e.pointerType,timeStamp:e.timeStamp,button:e.button,buttons:e.buttons,shiftKey:e.shiftKey,altKey:e.altKey,ctrlKey:e.ctrlKey,metaKey:e.metaKey,tiltX:e.tiltX,tiltY:e.tiltY});
 const yieldToInput=()=>globalThis.scheduler?.yield?globalThis.scheduler.yield():new Promise(resolve=>setTimeout(resolve,0));
 const canvas=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c;};
-const brushKeys=['preset','size','opacity','flow','hardness','pressureSize','pressureOpacity','pressureFlow','sizeCurve','opacityCurve','stabilization','spacingRatio','texture','roundness','angle','angleMode','scatter','blend','alphaLock','smudgeLength','colorRate'];
+const brushKeys=['preset',...BRUSH_KEYS];
 // Settings edited as percentages in the inspector.
 const PERCENT_SETTINGS=['opacity','flow','hardness','stabilization','roundness','scatter','spacingRatio','texture','smudgeLength','colorRate'];
 const hexColor=rgb=>'#'+rgb.slice(0,3).map(n=>Math.round(n).toString(16).padStart(2,'0')).join('');
 /** A floating selection that moved, scaled, rotated or flipped. */
 export const moved=s=>Boolean(s&&(s.dx||s.dy||s.scale!==1||s.angle||(s.fx??1)!==1||(s.fy??1)!==1));
 const BRUSH_LIBRARY_KEY='stykanimate.drawing-brushes.v1';
-const loadLibrary=()=>{try{const v=JSON.parse(globalThis.localStorage?.getItem(BRUSH_LIBRARY_KEY)||'{}');return {recent:Array.isArray(v.recent)?v.recent.filter(c=>/^#[0-9a-f]{6}$/i.test(c)).slice(0,12):[],presets:Array.isArray(v.presets)?v.presets.filter(p=>p&&typeof p.id==='string'&&typeof p.name==='string').slice(0,48):[]};}catch{return {recent:[],presets:[]};}};
+const loadLibrary=()=>{try{const v=JSON.parse(globalThis.localStorage?.getItem(BRUSH_LIBRARY_KEY)||'{}');return {recent:Array.isArray(v.recent)?v.recent.filter(c=>/^#[0-9a-f]{6}$/i.test(c)).slice(0,12):[],presets:Array.isArray(v.presets)?v.presets.filter(p=>p&&typeof p.id==='string'&&typeof p.name==='string').slice(0,48):[],pressureCurve:Array.isArray(v.pressureCurve)&&v.pressureCurve.length===4&&v.pressureCurve.every(n=>Number.isFinite(n)&&n>=0&&n<=1)?v.pressureCurve:[...LINEAR_PRESSURE]};}catch{return {recent:[],presets:[],pressureCurve:[...LINEAR_PRESSURE]};}};
 const FILTER_LABELS={blur:'Blur drawing',hsl:'Adjust hue and saturation',brightness:'Adjust brightness and contrast',invert:'Invert colours'};
 // Actions that keep (or act on) the pixel selection instead of applying it first.
 const SELECTION_ACTIONS=['filter-blur','filter-hsl','filter-brightness','filter-invert','swap-colors','save-preset','delete-preset','flip-selection-x','flip-selection-y','copy-pixels','cut-pixels','delete-pixels','apply-selection','cancel-selection','select-all','invert-selection','deselect','fill-selection'];
@@ -37,7 +39,7 @@ const MAX_STROKE_SAMPLES=65536;
 const unionRects=(a,b)=>{if(!a)return b?{...b}:null;if(!b)return{...a};const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);return{x,y,width:Math.max(a.x+a.width,b.x+b.width)-x,height:Math.max(a.y+a.height,b.y+b.height)-y};};
 export class DrawingController {
   constructor({editor,state,overlay,viewport,onRender,onOverlayRender=onRender,onView=()=>{},onUI,onError,onStatus,beforeEdit,getImageSource=()=>({}),getTimeline,getClipboard,sampleColor}) {
-    Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getImageSource,getTimeline,getClipboard,sampleColor,settings:{preset:'ink',size:8,color:'#252525',opacity:1,flow:1,hardness:1,pressureSize:true,pressureOpacity:false,pressureFlow:false,sizeCurve:1,opacityCurve:1,stabilization:0,spacingRatio:.08,texture:0,roundness:1,angle:0,angleMode:'fixed',scatter:0,blend:'normal',alphaLock:false,smudgeLength:.8,colorRate:0,filterRadius:4,hue:0,saturation:0,lightness:0,brightness:0,contrast:0,mirrorX:false,mirrorY:false,selectShape:'lasso',shapeKind:'rect',shapeFill:false,color2:'#ffffff',resolution:2,filter:'smooth',length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
+    Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getImageSource,getTimeline,getClipboard,sampleColor,settings:{preset:'ink',...BRUSH_DEFAULTS,spacingRatio:.08,color:'#252525',filterRadius:4,hue:0,saturation:0,lightness:0,brightness:0,contrast:0,mirrorX:false,mirrorY:false,selectShape:'lasso',shapeKind:'rect',shapeFill:false,color2:'#ffffff',resolution:2,filter:'smooth',length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
     this.library=loadLibrary();
     this.onOverlayRender=onOverlayRender;this.onView=onView;
     this.panel=document.getElementById('inspector');
@@ -48,6 +50,8 @@ export class DrawingController {
       root.addEventListener('change',event=>{if(event.target.dataset.drawSetting)this.run(()=>this.change(event));},opts);
       installDrawingSliders(root,{get:key=>this.settings[key],set:(key,value)=>this.setSetting(key,value),end:()=>{this.sliderEnded();},signal:events.signal,wheel:root===this.quickBar});
     }
+    // The pen pressure curve is global and persists with the brush library.
+    installPressureCurve(this.panel,{get:()=>this.library.pressureCurve,set:curve=>{this.library.pressureCurve=curve;this.paintPreview(this.panel);},end:()=>this.saveLibrary(),signal:events.signal});
     // Every UI refresh also refreshes the quick bar, coalesced per frame.
     const ui=this.onUI;this.onUI=()=>{ui();this.queueQuickBar();};
     // pointerrawupdate delivers pen samples as they arrive instead of aligned
@@ -187,7 +191,7 @@ export class DrawingController {
   /** Set one drawing setting live (sliders, keys, Ctrl-drag). */
   setSetting(key,value){
     this.settings[key]=value;
-    if(['size','opacity','flow','hardness','roundness','angle','scatter','spacingRatio','texture','smudgeLength','colorRate','sizeCurve','opacityCurve','stabilization'].includes(key))this.settings.preset=null;
+    if(BRUSH_KEYS.includes(key)&&key!=='alphaLock')this.settings.preset=null;
     refreshSliders(key,value);this.paintPreview(this.panel);
     if(SLIDERS[key]&&['size','opacity','flow','hardness','stabilization'].includes(key))this.hud(`${SLIDERS[key].label} ${formatSlider(key,displayValue(key,value))}`);
     this.onRender();
@@ -375,12 +379,12 @@ export class DrawingController {
       // Painting keeps the selection outline as a clip mask; a moved or
       // resized floating selection is committed first.
       this.settleFloating();const color=this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16));
-      const d=drawingMetadata(target.figure),size=this.settings.size*d.pixelsPerUnit,s={id:++this.strokeId,target,surface,seq:0,sent:new Set(),before:new Map(),pending:[],posted:new Map(),outstanding:0,ended:false,cancelled:false,erase,revision:this.editor.revision,owner:this.owner};
+      const d=drawingMetadata(target.figure),s={id:++this.strokeId,target,surface,seq:0,sent:new Set(),before:new Map(),pending:[],posted:new Map(),outstanding:0,ended:false,cancelled:false,erase,revision:this.editor.revision,owner:this.owner};
       s.done=new Promise(resolve=>s.resolveDone=resolve);
       this.sessions.set(s.id,s);this.gesture={id,target,surface,kind:'stroke',session:s};
       // Painting owns the UI thread: publication and thumbnails wait it out.
       s.owner.busy=true;
-      const b=this.settings,settings={workingBytes:s.owner.hardBudget,size,pixelsPerUnit:1/Math.max(1e-9,Math.hypot(...this.pixelMatrix(target).slice(0,2))*(this.state.view.scale||1)),color,opacity:b.opacity,flow:b.flow,hardness:b.hardness,pressureSize:b.pressureSize,pressureOpacity:b.pressureOpacity,pressureFlow:b.pressureFlow,sizeCurve:b.sizeCurve,opacityCurve:b.opacityCurve,stabilization:b.stabilization,spacingRatio:b.spacingRatio??.12,texture:b.texture??0,roundness:b.roundness??1,angle:b.angle??0,angleMode:b.angleMode??'fixed',scatter:b.scatter??0,blend:b.blend??'normal',alphaLock:Boolean(b.alphaLock),smudgeLength:b.smudgeLength??.8,colorRate:b.colorRate??0,erase:s.erase,seed:s.id,mask:this.marqueeOn(target)?this.marquee.mask:null};
+      const b=this.settings,settings={...this.brushSettings(d.pixelsPerUnit),workingBytes:s.owner.hardBudget,pixelsPerUnit:1/Math.max(1e-9,Math.hypot(...this.pixelMatrix(target).slice(0,2))*(this.state.view.scale||1)),color,erase:s.erase,seed:s.id,mask:this.marqueeOn(target)?this.marquee.mask:null};
       // The path runs here so every dab's extent is known before dispatch:
       // the worker is seeded with exactly the tiles its dabs can reach.
       // Symmetry mirrors each input sample into its own path so mirrored
@@ -391,23 +395,35 @@ export class DrawingController {
       // The GPU brush paints in the frame that receives input. The stroke
       // worker remains the Canvas 2D path and the GPU failure fallback.
       const gpu=gpuBrushSupports(s.brush,settings.mask)?this.gpuBrush(target,surface):null;
-      if(gpu){s.samples=[];s.random=jitterSequence(s.brush.seed);s.gpu=createGpuStroke(gpu,surface,s.brush,{mask:settings.mask,workingBytes:s.owner.hardBudget});}
+      if(gpu){s.samples=[];s.gpu=createGpuStroke(gpu,surface,s.brush,{mask:settings.mask,workingBytes:s.owner.hardBudget});}
       else{s.queue=[];s.qi=0;this.owner.strokeWorker.post({kind:'begin',stroke:s.id,settings});}
       this.strokePaths(s);
       // Wet ink previews worker brushes it can match closely; exact-only modes skip it.
-      const br=s.brush;s.inflight=[];s.wetStyle=!s.gpu&&!s.erase&&br.blend==='normal'&&!br.alphaLock&&!settings.mask&&br.flow>=.5&&br.hardness>=.5&&br.roundness>=.9&&br.scatter<=.2?{color:this.settings.color,opacity:br.opacity*(br.texture>.3?.85:1)}:null;
+      const br=s.brush;s.inflight=[];s.wetStyle=!s.gpu&&!s.erase&&br.blend==='normal'&&br.tip==='round'&&!br.alphaLock&&!settings.mask&&br.flow>=.5&&br.hardness>=.5&&br.roundness>=.9&&br.scatter<=.2?{color:this.settings.color,opacity:br.opacity*(br.texture>.3?.85:1)}:null;
       if(s.wetStyle){this.wet??=new WetInk(this.viewport,this.overlay);this.wetSession=s;}
       return s;
   }
-  /** One StrokePath per mirror. A GPU stroke turns every emitted dab into its
-   * final tip shape at once; a worker stroke queues dabs for its next batch. */
+  /** The current brush settings for a stroke, with lengths scaled from
+   * document units to cel pixels. The tablet pressure curve is global. */
+  brushSettings(scale){
+    const b=this.settings,settings={pressureCurve:this.library.pressureCurve};
+    for(const key of BRUSH_KEYS)settings[key]=b[key]??BRUSH_DEFAULTS[key];
+    for(const key of BRUSH_LENGTHS)settings[key]*=scale;
+    return settings;
+  }
+  /** One dab pipeline per mirror. Its final dab shapes go straight to the GPU
+   * stroke or queue for the worker's next batch; a taper-out's provisional
+   * tail is read by either when it paints. */
   strokePaths(s){
-    s.paths=s.mirrors.map((map,index)=>({map,path:new StrokePath(s.brush,dab=>{
-      dab.pi=index;
-      if(!s.gpu){s.pending.push(dab);return;}
-      const shape=dabShape(s.brush,dab,s.random);if(shape)s.gpu.add(shape);
-    })}));
-    s.path=s.paths[0].path;
+    s.paths=s.mirrors.map((map,index)=>({map,stroke:new BrushStroke(s.brush,shape=>{shape.pi=index;if(s.gpu)s.gpu.add(shape);else s.pending.push(shape);},{seed:s.brush.seed+index*7919})}));
+    s.tailCache=null;
+    if(s.gpu&&s.brush.taperOut>0)s.gpu.tail=()=>this.strokeTail(s);
+  }
+  /** Every path's provisional tail, one array per change. */
+  strokeTail(s){
+    const version=s.paths.reduce((n,{stroke})=>n+stroke.tailVersion,0);
+    if(s.tailCache?.version!==version){const [only]=s.paths;s.tailCache={version,shapes:s.paths.length===1?only.stroke.tailShapes():s.paths.flatMap(({stroke})=>stroke.tailShapes())};}
+    return s.tailCache.shapes;
   }
   /** The renderer's GPU drawing state when it can paint and display this cel. */
   gpuBrush(target,surface){
@@ -418,10 +434,10 @@ export class DrawingController {
   }
   /** Map one input sample through the stroke's pose and mirrors into its paths. */
   feedStroke(s,{world,lean,pressure,time}){
-    for(const {map,path} of s.paths){
+    for(const {map,stroke} of s.paths){
       const p=inversePoint(s.matrix,map(world));let ax=0,ay=0;
       if(lean){const q=inversePoint(s.matrix,map(lean)),n=Math.hypot(q.x-p.x,q.y-p.y);if(n>1e-9){ax=(q.x-p.x)/n;ay=(q.y-p.y)/n;}}
-      path.sample({x:p.x,y:p.y,pressure,time,ax,ay});
+      stroke.sample({x:p.x,y:p.y,pressure,time,ax,ay});
     }
   }
   /** World-space outline of the dragged shape. Shift constrains lines to 45°
@@ -477,7 +493,7 @@ export class DrawingController {
       s.samples.push(sample);
       if(s.gpu.failed){this.replayStroke(s,s.gpu.failed);return;}
       this.feedStroke(s,sample);
-      if(s.gpu.pending.length){s.surface.stamp++;this.onRender();}
+      if(s.gpu.pending.length||s.gpu.tail){s.surface.stamp++;this.onRender();}
       return;
     }
     // Samples become dabs only as batches leave, so a brush slower than the
@@ -502,12 +518,15 @@ export class DrawingController {
     const batch=s.batch??=Math.max(512,Math.min(8192,Math.floor(262144/(dabRadius(s.brush)*2.2+2)**2)));
     while(s.pending.length<batch&&s.qi<s.queue.length){this.feedStroke(s,s.queue[s.qi]);s.queue[s.qi++]=null;}
     if(s.qi>1024&&s.qi*2>s.queue.length){s.queue=s.queue.slice(s.qi);s.qi=0;}
-    if(s.ended&&s.qi>=s.queue.length&&!s.drained){s.drained=true;for(const {path} of s.paths)path.finish();}
-    if(!s.pending.length){this.endStrokeWorker(s);return;}
+    if(s.ended&&s.qi>=s.queue.length&&!s.drained){s.drained=true;for(const {stroke} of s.paths)stroke.finish();}
+    // A taper-out repaints its provisional tail whenever it moves, once the
+    // final dabs ahead of it have all left.
+    const tail=s.brush.taperOut>0&&s.pending.length<=batch?this.strokeTail(s):null,sendTail=tail&&tail!==s.sentTail?tail:undefined;
+    if(!s.pending.length&&!sendTail){this.endStrokeWorker(s);return;}
     const dabs=s.pending.splice(0,batch);
     const tiles=[],store=s.surface.store;
-    for(const dab of dabs){
-      const [x0,y0,x1,y1]=dabExtent(s.brush,dab);
+    for(const dab of sendTail?[...dabs,...sendTail]:dabs){
+      const x0=dab.left,y0=dab.top,x1=dab.right,y1=dab.bottom;
       if(![x0,y0,x1,y1].every(Number.isFinite)||Math.max(Math.abs(x0),Math.abs(y0),Math.abs(x1),Math.abs(y1))>2147483647*TILE||(Math.ceil((x1-x0)/TILE)+1)*(Math.ceil((y1-y0)/TILE)+1)*TILE*TILE*4>(s.owner?.hardBudget??768*1024*1024))throw new Error('The stroke exceeds the drawing working memory limit.');
       for(let ty=Math.floor(y0/TILE);ty*TILE<y1;ty++)for(let tx=Math.floor(x0/TILE);tx*TILE<x1;tx++){
         const key=tileKey(tx,ty);if(s.sent.has(key))continue;if((s.sent.size+1)*TILE*TILE*4>(s.owner?.hardBudget??768*1024*1024)/2)throw new Error('The stroke exceeds the drawing working memory limit.');s.sent.add(key);
@@ -516,8 +535,9 @@ export class DrawingController {
     }
     const seq=++s.seq;s.outstanding++;s.posted.set(seq,performance.now());
     this.strokeStats.batches++;this.strokeStats.dabs=(this.strokeStats.dabs??0)+dabs.length;this.strokeStats.maxQueueDepth=Math.max(this.strokeStats.maxQueueDepth,s.outstanding);
-    s.owner.strokeWorker.post({kind:'dabs',stroke:s.id,seq,dabs,tiles},tiles.map(t=>t.pixels).filter(Boolean));
-    s.inflight?.push({seq,dabs,stamp:null,shownFrame:null,age:0});
+    s.owner.strokeWorker.post({kind:'dabs',stroke:s.id,seq,dabs,tiles,tail:sendTail},tiles.map(t=>t.pixels).filter(Boolean));
+    if(sendTail)s.sentTail=sendTail;
+    s.inflight?.push({seq,dabs:sendTail?[...dabs,...sendTail]:dabs,stamp:null,shownFrame:null,age:0});
     this.endStrokeWorker(s);
   }catch(error){this.cancel();this.onError(error);}}
   endStrokeWorker(s){if(s.ended&&s.drained&&!s.pending.length&&!s.outstanding&&!s.endPosted){s.endPosted=true;s.owner.strokeWorker.post({kind:'end',stroke:s.id});}}
@@ -530,15 +550,16 @@ export class DrawingController {
     const view={report:this.editor.report,frame:this.editor.evaluatedFrame,view:this.state.view,cameraEnabled:false},w0=worldToScreen({x:0,y:0},view),wx=worldToScreen({x:1,y:0},view),wy=worldToScreen({x:0,y:1},view);
     const toScreen=p=>({x:w0.x+(wx.x-w0.x)*p.x+(wy.x-w0.x)*p.y,y:w0.y+(wx.y-w0.y)*p.x+(wy.y-w0.y)*p.y});
     const m=s.matrix,pixelToWorld=p=>transformPoint(m,p),a=toScreen(pixelToWorld({x:0,y:0})),b=toScreen(pixelToWorld({x:1,y:0})),unit=Math.hypot(b.x-a.x,b.y-a.y)||1;
-    const paths=s.paths.map(()=>[]),add=(i,world,pressure)=>{const q=toScreen(world);paths[i].push({x:q.x,y:q.y,r:dabRadius(s.brush,pressure)*unit});};
-    s.wetAnchor?.forEach((d,i)=>d&&add(i,pixelToWorld(d),d.pressure??1));
-    for(const batch of s.inflight)for(const d of batch.dabs)add(d.pi??0,pixelToWorld(d),d.pressure??1);
-    for(const d of s.pending)add(d.pi??0,pixelToWorld(d),d.pressure??1);
+    const paths=s.paths.map(()=>[]),add=(i,world,radius)=>{const q=toScreen(world);paths[i].push({x:q.x,y:q.y,r:radius*unit});};
+    const pressure=s.paths[0].stroke.pressure,radiusAt=p=>dabRadius(s.brush,pressure?pressure(p??1):p??1);
+    s.wetAnchor?.forEach((d,i)=>d&&add(i,pixelToWorld(d),d.radius));
+    for(const batch of s.inflight)for(const d of batch.dabs)add(d.pi??0,pixelToWorld(d),d.radius);
+    for(const d of s.pending)add(d.pi??0,pixelToWorld(d),d.radius);
     // Queued input not yet turned into dabs; a far-behind worker draws only the newest.
-    for(let i=Math.max(s.qi,s.queue.length-2048);i<s.queue.length;i++){const q=s.queue[i];s.paths.forEach(({map},pi)=>add(pi,map(q.world),q.pressure));}
+    for(let i=Math.max(s.qi,s.queue.length-2048);i<s.queue.length;i++){const q=s.queue[i];s.paths.forEach(({map},pi)=>add(pi,map(q.world),radiusAt(q.pressure)));}
     if(!s.ended&&s.brush.stabilization===0&&s.lastWorld){
-      const pressure=s.lastPressure??1;
-      s.paths.forEach(({map},i)=>{add(i,map(s.lastWorld),pressure);if(s.predicted)add(i,map(s.predicted),pressure);});
+      const radius=radiusAt(s.lastPressure);
+      s.paths.forEach(({map},i)=>{add(i,map(s.lastWorld),radius);if(s.predicted)add(i,map(s.predicted),radius);});
     }
     const radius=paths.flat().reduce((n,p)=>Math.max(n,p.r),0);
     wet.draw(paths.filter(p=>p.length),{color:s.wetStyle.color,opacity:s.wetStyle.opacity,blur:s.brush.hardness<.9?(1-s.brush.hardness)*radius*.5:0});
@@ -605,7 +626,7 @@ export class DrawingController {
    * or graphics memory ran out) on the stroke worker from its input samples. */
   replayStroke(s,error){
     this.strokeStats.gpuFallbacks=(this.strokeStats.gpuFallbacks??0)+1;this.strokeStats.lastGpuError=error?.message??String(error);
-    s.gpu.release();s.gpu=null;s.random=null;s.surface.stamp++;
+    s.gpu.release();s.gpu=null;s.sentTail=null;s.surface.stamp++;
     s.queue=s.samples;s.qi=0;s.samples=null;s.pending=[];s.drained=false;
     this.strokePaths(s);
     s.owner.strokeWorker.post({kind:'begin',stroke:s.id,settings:s.settings});
@@ -699,7 +720,7 @@ export class DrawingController {
     if(g.kind==='stroke'){
       const s=g.session;s.ended=true;cancelAnimationFrame(s.raf);s.raf=null;
       if(s.lastWorld)this.lastStroke={layerId:s.target.id,celId:drawingMetadata(s.target.figure).celId,world:s.lastWorld};
-      if(s.gpu)for(const {path} of s.paths)path.finish();
+      if(s.gpu)for(const {stroke} of s.paths)stroke.finish();
       this.flushStroke(s);
       if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);
       return; // the gesture stays closing until the worker's done arrives
@@ -931,7 +952,7 @@ export class DrawingController {
     }
   }
 
-  change(event){this.finish();const input=event.target,name=input.dataset.drawSetting;if(!name)return;this.settings[name]=input.type==='checkbox'?input.checked:input.type==='color'||name==='filter'||input.dataset.drawText!==undefined?input.value:Number(input.value);if(name==='filter'&&this.selection){this.selection.filter=this.settings.filter;this.previewSelection();}this.sync();this.onUI();}
+  change(event){this.finish();const input=event.target,name=input.dataset.drawSetting;if(!name)return;this.settings[name]=input.type==='checkbox'?input.checked:input.type==='color'||name==='filter'||input.dataset.drawText!==undefined?input.value:Number(input.value);if(BRUSH_KEYS.includes(name)&&name!=='alphaLock')this.settings.preset=null;if(name==='filter'&&this.selection){this.selection.filter=this.settings.filter;this.previewSelection();}this.sync();this.onUI();}
   /** Alt-click/drag with the brush or fill picks the visible colour. */
   pickColor(event){
     if(!this.sampleColor||this.picking)return;this.pickAbort?.abort();const abort=this.pickAbort=new AbortController();this.picking=true;
@@ -951,7 +972,7 @@ export class DrawingController {
       const s=this.settings,erase=this.tool==='eraser',color=s.color.slice(1).match(/../g).map(n=>parseInt(n,16));
       // The inspector re-renders after every stroke; rasterize the preview
       // stroke only when its inputs change and re-blit the cached result.
-      const key=JSON.stringify([w,h,erase,s.color,...brushKeys.map(k=>s[k])]),cached=this.previewCache;
+      const key=JSON.stringify([w,h,erase,s.color,this.library.pressureCurve,...brushKeys.map(k=>s[k])]),cached=this.previewCache;
       if(cached?.key===key){if(preview.dataset.previewKey!==key){const ctx=preview.getContext('2d');ctx.clearRect(0,0,w,h);if(cached.image)ctx.putImageData(cached.image,cached.x,cached.y);preview.dataset.previewKey=key;}return;}
       const px=Math.max(1,Math.min(30,s.size)),ppu=px/Math.max(.5,s.size);
       const pad=Math.ceil(px/2)+3,span=Math.max(1,w-2*pad),mid=h/2,amp=Math.max(0,Math.min(h*.22,mid-pad-2));
@@ -962,7 +983,7 @@ export class DrawingController {
         const band={x:pad,y:Math.floor(mid-amp-px*.6),width:span,height:Math.max(1,Math.ceil(2*(amp+px*.6)))};
         for(const [tx,ty] of TileStore.tilesInRect(band.x,band.y,band.width,band.height))store.set(tx,ty,new Uint8ClampedArray([136,136,136,255]));
       }
-      const stroke=new DrawingStroke(store,{size:px,color,opacity:s.opacity,flow:s.flow,hardness:s.hardness,pressureSize:s.pressureSize,pressureOpacity:s.pressureOpacity,pressureFlow:s.pressureFlow,sizeCurve:s.sizeCurve,opacityCurve:s.opacityCurve,stabilization:s.stabilization,spacingRatio:s.spacingRatio??.12,texture:s.texture??0,roundness:s.roundness??1,angle:s.angle??0,angleMode:s.angleMode??'fixed',scatter:s.scatter??0,blend:s.blend==='smudge'?'normal':s.blend??'normal',erase,seed:1,pixelsPerUnit:ppu});
+      const stroke=new DrawingStroke(store,{...this.brushSettings(ppu),color,blend:s.blend==='smudge'?'normal':s.blend,alphaLock:false,erase,seed:1,pixelsPerUnit:ppu});
       const n=40;
       for(let i=0;i<n;i++){const t=i/(n-1);stroke.sample({x:pad+span*t,y:mid+Math.sin(t*Math.PI*2)*amp,pressure:.15+.85*Math.sin(Math.PI*t),time:i});}
       stroke.finish();

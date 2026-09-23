@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {DrawingResources,defaultTileBudget} from '../src/drawing-resources.mjs';
-import {DrawingStroke,StrokePath,normalizeBrush,dabExtent,filterTiles,lassoMask,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
+import {DrawingStroke,filterTiles,lassoMask,tileChanges,applyTileChanges,pixelChangeBytes} from '../src/drawing-pixels.mjs';
+import {BrushStroke,normalizeBrush,dabShape} from '../src/drawing-brush.mjs';
 import {floodTiles} from '../src/drawing-fill.mjs';
 import {drawingMetadata,validateDrawings,drawingMatrix,drawingPixelMatrix,inversePoint,transformPoint,migrateDrawingFigure,EMPTY_PNG} from '../src/drawing-model.mjs';
 import {TileStore,TILE,TILE_BYTES,tileKey,tileTransparent} from '../src/drawing-tiles.mjs';
@@ -462,28 +463,31 @@ test('v2 cels place pixel (0,0) at the pointer world position independently of s
 });
 
 // The stroke worker's engine runs in-process here; the browser tests exercise
-// the real worker. The driver mirrors the controller: the stroke path runs on
-// the caller's side, and each batch carries its dabs plus every store tile
-// those dabs can reach that the worker has not seen for this stroke yet. The
-// final batch carries the dabs the path emits when it finishes.
+// the real worker. The driver mirrors the controller: the dab pipeline runs on
+// the caller's side, and each batch carries its dab shapes, a moved
+// provisional tail, and every store tile they reach that the worker has not
+// seen for this stroke yet. The final batch carries the dabs the pipeline
+// emits when it finishes.
 function strokeDrive(engine,id,settings,chunks,{store=new TileStore(),apply=false}={}){
-  const sent=new Set(),replies=[],brush=normalizeBrush(settings);let pending=[];
-  const path=new StrokePath(brush,dab=>pending.push(dab));
+  const sent=new Set(),replies=[];let pending=[],sentTail=null;
+  const stroke=new BrushStroke(settings,shape=>pending.push(shape));
   engine.begin(id,settings);let seq=0;
   const flush=()=>{
-    const dabs=pending,tiles=[];pending=[];
-    for(const dab of dabs){const [x0,y0,x1,y1]=dabExtent(brush,dab);for(let ty=Math.floor(y0/TILE);ty*TILE<y1;ty++)for(let tx=Math.floor(x0/TILE);tx*TILE<x1;tx++){
+    const dabs=pending,tiles=[],tail=stroke.hasTail?stroke.tailShapes():null,sendTail=tail&&tail!==sentTail?tail:undefined;pending=[];if(tail)sentTail=tail;
+    for(const dab of [...dabs,...sendTail??[]])for(let ty=Math.floor(dab.top/TILE);ty*TILE<dab.bottom;ty++)for(let tx=Math.floor(dab.left/TILE);tx*TILE<dab.right;tx++){
       const key=tileKey(tx,ty);if(sent.has(key))continue;sent.add(key);
       const tile=store.get(tx,ty);tiles.push({tx,ty,pixels:tile?tile.pixels.slice().buffer:null});
-    }}
-    const reply=engine.dabs(id,++seq,dabs,tiles);replies.push(reply);
+    }
+    const reply=engine.dabs(id,++seq,dabs,tiles,sendTail);replies.push(reply);
     // Like the controller, the live store adopts every returned tile.
     if(apply&&reply)for(const t of reply.tiles)store.set(t.tx,t.ty,new Uint8ClampedArray(t.pixels));
   };
-  for(const samples of chunks){for(const p of samples)path.sample(p);flush();}
-  path.finish();flush();
+  for(const samples of chunks){for(const p of samples)stroke.sample(p);flush();}
+  stroke.finish();flush();
   return {replies,changes:engine.end(id)};
 }
+/** One dab shape at (x,y) for driving the engine directly. */
+const dabAt=(settings,x,y)=>dabShape(normalizeBrush(settings),{x,y,pressure:1});
 const replayFinal=(initial,changes)=>{const store=new TileStore();for(const [key,pixels] of initial){const [tx,ty]=key.split(',').map(Number);store.set(tx,ty,pixels);}applyTileChanges(store,changes,'after');return store;};
 const pathPoints=n=>Array.from({length:n},(_,i)=>({x:10+i*2.4,y:10+Math.sin(i/9)*40+i*1.3,pressure:.4+.6*(i%7)/6,time:i*8}));
 
@@ -532,10 +536,11 @@ test('stroke engine replies carry only tiles changed by that batch and cancel re
   // 1,0/2,0/2,1: tile 0,0 is untouched by this batch.
   assert.ok(keys(replies[1]).has('2,1')&&!keys(replies[1]).has('0,0'));
   assert.ok(replies[0].dirty.width%64===0&&replies[0].dirty.x%64===0);
-  engine.begin('x',{size:8,pressureSize:false});engine.dabs('x',1,[{x:5,y:5}],[{tx:0,ty:0,pixels:null}]);
-  engine.cancel('x');assert.equal(engine.end('x'),null);assert.equal(engine.dabs('x',2,[{x:9,y:9}],[]),null);
-  engine.begin('y',{size:8,pressureSize:false});
-  assert.ok(engine.dabs('y',2,[{x:5,y:5}],[{tx:0,ty:0,pixels:null}]));assert.equal(engine.dabs('y',1,[{x:9,y:9}],[]),null,'out-of-order batches are ignored');
+  const small={size:8,pressureSize:false};
+  engine.begin('x',small);engine.dabs('x',1,[dabAt(small,5,5)],[{tx:0,ty:0,pixels:null}]);
+  engine.cancel('x');assert.equal(engine.end('x'),null);assert.equal(engine.dabs('x',2,[dabAt(small,9,9)],[]),null);
+  engine.begin('y',small);
+  assert.ok(engine.dabs('y',2,[dabAt(small,5,5)],[{tx:0,ty:0,pixels:null}]));assert.equal(engine.dabs('y',1,[dabAt(small,9,9)],[]),null,'out-of-order batches are ignored');
 });
 
 test('stroke engine end records equal the diff between initial and final tiles',()=>{
@@ -573,21 +578,21 @@ test('fast strokes over existing artwork never wipe tiles between batches, and u
 });
 
 test('the stroke engine refuses a dab that reaches a tile it was never given',()=>{
-  const engine=new StrokeEngine();engine.begin('s',{size:8,pressureSize:false});
-  assert.throws(()=>engine.dabs('s',1,[{x:100,y:100,pressure:1}],[{tx:0,ty:0,pixels:null}]),/not loaded/);
-  engine.begin('t',{size:8,pressureSize:false});
-  assert.ok(engine.dabs('t',1,[{x:100,y:100,pressure:1}],[{tx:1,ty:1,pixels:null}]).tiles.length===1);
+  const engine=new StrokeEngine(),small={size:8,pressureSize:false};engine.begin('s',small);
+  assert.throws(()=>engine.dabs('s',1,[dabAt(small,100,100)],[{tx:0,ty:0,pixels:null}]),/not loaded/);
+  engine.begin('t',small);
+  assert.ok(engine.dabs('t',1,[dabAt(small,100,100)],[{tx:1,ty:1,pixels:null}]).tiles.length===1);
 });
 
-test('dab extents bound every painted pixel for jittered, scattered and elliptical tips',()=>{
-  for(const settings of [{size:30,texture:1,seed:7},{size:20,scatter:2,seed:3},{size:40,roundness:.2,angle:35},{size:3,hardness:.2}]){
+test('dab shape bounds hold every painted pixel for jittered, scattered, elliptical, tapered and image tips',()=>{
+  for(const settings of [{size:30,texture:1,sizeJitter:.3,seed:7},{size:20,scatter:2,seed:3},{size:40,roundness:.2,angle:35,angleJitter:.5},{size:3,hardness:.2},{size:24,taperIn:40,taperOut:60},{size:36,tip:'chalk',texture:.8,grain:'paper'},{size:30,tip:'bristle',angleMode:'direction',roundness:.5}]){
     const store=new TileStore(),brush=normalizeBrush({pressureSize:false,...settings}),stroke=new DrawingStroke(store,brush);
-    const dabs=[];const path=new StrokePath(brush,d=>dabs.push(d));
-    for(let i=0;i<40;i++)path.sample({x:100+i*7,y:100+Math.sin(i)*30});path.finish();
+    const dabs=[],pipeline=new BrushStroke(brush,d=>dabs.push(d));
+    for(let i=0;i<40;i++)pipeline.sample({x:100+i*7,y:100+Math.sin(i)*30});pipeline.finish();
     let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
-    for(const d of dabs){const e=dabExtent(brush,d);x0=Math.min(x0,e[0]);y0=Math.min(y0,e[1]);x1=Math.max(x1,e[2]);y1=Math.max(y1,e[3]);}
-    stroke.dabList(dabs);const b=store.bounds;
-    assert.ok(b.x>=x0&&b.y>=y0&&b.x+b.width<=x1&&b.y+b.height<=y1,JSON.stringify(settings));
+    for(const d of dabs){x0=Math.min(x0,d.left);y0=Math.min(y0,d.top);x1=Math.max(x1,d.right);y1=Math.max(y1,d.bottom);}
+    stroke.paint(dabs);const b=store.bounds;
+    assert.ok(b&&b.x>=x0&&b.y>=y0&&b.x+b.width<=x1&&b.y+b.height<=y1,JSON.stringify(settings));
   }
 });
 
@@ -1187,8 +1192,8 @@ test('pressure-aware spacing keeps light ink and pressure ramps continuous acros
   }
   const points=Array.from({length:100},(_,i)=>({x:32+i*3,y:32,pressure:.05+.9*Math.sin(i/99*Math.PI)**2}));
   const a=new StrokeEngine(),b=new StrokeEngine(),settings={size:100,spacingRatio:.08};a.begin(1,settings);b.begin(1,settings);
-  const dabs=[],path=new StrokePath(settings,p=>dabs.push(p));points.forEach(p=>path.sample(p));path.finish();
-  const tiles=new Map();for(const p of dabs){const [x0,y0,x1,y1]=dabExtent(normalizeBrush(settings),p);for(const [tx,ty] of TileStore.tilesInRect(x0,y0,x1-x0,y1-y0))tiles.set(tx+','+ty,{tx,ty,pixels:null});}
+  const dabs=[],pipeline=new BrushStroke(settings,p=>dabs.push(p));points.forEach(p=>pipeline.sample(p));pipeline.finish();
+  const tiles=new Map();for(const p of dabs)for(const [tx,ty] of TileStore.tilesInRect(p.left,p.top,p.right-p.left,p.bottom-p.top))tiles.set(tx+','+ty,{tx,ty,pixels:null});
   a.dabs(1,1,dabs,[...tiles.values()]);dabs.forEach((p,i)=>b.dabs(1,i+1,[p],i?[]:[...tiles.values()]));assert.deepEqual(a.end(1),b.end(1));
 });
 

@@ -7,7 +7,7 @@ self.onmessage=({data})=>{
   try{
     if(kind==='begin')engine.begin(id,data.settings);
     else if(kind==='dabs'){
-      const result=engine.dabs(id,data.seq,data.dabs,data.tiles);
+      const result=engine.dabs(id,data.seq,data.dabs,data.tiles,data.tail);
       if(result)self.postMessage({kind:'tiles',stroke:id,seq:data.seq,tiles:result.tiles,dirty:result.dirty},result.tiles.map(t=>t.pixels));
     }
     else if(kind==='end'){

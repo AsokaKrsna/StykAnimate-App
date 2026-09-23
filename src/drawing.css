@@ -81,3 +81,14 @@
 /* Transient readout for size, opacity and hardness changes. */
 .drawing-hud{position:absolute;top:54px;left:50%;z-index:6;padding:6px 12px;transform:translateX(-50%);border-radius:14px;background:rgba(20,20,24,.84);color:#fff;font-size:12px;font-variant-numeric:tabular-nums;pointer-events:none;opacity:0;transition:opacity .15s}
 .drawing-hud.is-visible{opacity:1}
+/* Pen pressure curve: a square graph with two Bézier handles and presets. */
+.draw-pressure{display:grid;gap:8px;margin:8px 0}
+.draw-pressure-graph{display:block;width:100%;max-width:170px;aspect-ratio:1;margin:0 auto;overflow:visible;touch-action:none}
+.draw-pressure-frame{fill:var(--theme-field,#f2f2f2);stroke:var(--theme-border,#e2e2e2);stroke-width:1;rx:4px}
+.draw-pressure-grid{fill:none;stroke:var(--theme-border,#e2e2e2);stroke-width:.6}
+.draw-pressure-diagonal{fill:none;stroke:var(--theme-muted,#999);stroke-width:.8;stroke-dasharray:3 3}
+.draw-pressure-arms{fill:none;stroke:var(--theme-accent,#0d99ff);stroke-width:.9;opacity:.55}
+.draw-pressure-line{fill:none;stroke:var(--theme-accent,#0d99ff);stroke-width:2.4;stroke-linecap:round}
+.draw-pressure-handle{fill:var(--theme-panel,#fff);stroke:var(--theme-accent,#0d99ff);stroke-width:2;cursor:grab}
+.draw-pressure-handle:hover,.draw-pressure-handle:focus-visible{fill:var(--theme-accent,#0d99ff);outline:none}
+.draw-pressure.is-dragging .draw-pressure-handle{cursor:grabbing}

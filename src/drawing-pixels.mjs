@@ -1,7 +1,8 @@
 import {DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {TILE,TILE_BYTES,tileKey,TileStore} from './drawing-tiles.mjs';
 import {lassoContains} from './drawing-lasso.mjs';
-import {DrawingSmoother} from './drawing-smoother.mjs';
+import {BrushStroke,dabShape,normalizeBrush,smudgeStride} from './drawing-brush.mjs';
+import {brushAtlas,ensureTexture,sampleGrain,sampleTip} from './drawing-brush-textures.mjs';
 const clamp=(n,a=0,b=1)=>Math.max(a,Math.min(b,n));
 export function assertPixels(pixels,width,height) {
   if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width*height>DRAWING_MAX_PIXELS||
@@ -55,195 +56,124 @@ const blendChannel={multiply:(b,s)=>b*s/255,screen:(b,s)=>b+s-b*s/255,overlay:(b
 /** Deterministic pixel grain: pure function of integer pixel coords + seed. */
 const hashPixel=(x,y,seed)=>{let h=(Math.imul(x,374761393)^Math.imul(y,668265263)^Math.imul(seed,974711))>>>0;h=Math.imul(h^(h>>>13),1274126177)>>>0;return ((h^(h>>>16))>>>0)/4294967296;};
 const ZERO_TILE=new Uint8ClampedArray(TILE_BYTES);
-export const BRUSH_BLENDS=['normal','behind','multiply','screen','overlay','color','smudge'];
-export const BRUSH_ANGLE_MODES=['fixed','direction','tilt'];
-
-/** Clamped, validated brush settings shared by the stroke path (main thread)
- * and the dab rasterizer (stroke worker), so both agree on every extent. */
-export function normalizeBrush({size=8,color=[0,0,0],opacity=1,flow=1,hardness=1,erase=false,pressureSize=true,pressureOpacity=false,pressureFlow=false,sizeCurve=1,opacityCurve=1,stabilization=0,spacingRatio=.12,texture=0,seed=0,pixelsPerUnit=1,roundness=1,angle=0,angleMode='fixed',blend='normal',alphaLock=false,scatter=0,smudgeLength=.8,colorRate=0}={}){
-  if(![size,opacity,flow,hardness,sizeCurve,opacityCurve,stabilization,spacingRatio,texture,pixelsPerUnit,roundness,angle,scatter,smudgeLength,colorRate].every(Number.isFinite)||!Array.isArray(color)||color.length!==3||!color.every(Number.isFinite))throw new Error('Invalid brush settings.');
-  return {size:clamp(size,.5,8192),color:color.map(n=>clamp(n,0,255)),opacity:clamp(opacity),flow:clamp(flow),hardness:clamp(hardness),erase:Boolean(erase),pressureSize:Boolean(pressureSize),pressureOpacity:Boolean(pressureOpacity),pressureFlow:Boolean(pressureFlow),sizeCurve:clamp(sizeCurve,.1,4),opacityCurve:clamp(opacityCurve,.1,4),stabilization:clamp(stabilization,0,.95),spacingRatio:clamp(spacingRatio,.01,1),texture:clamp(texture),seed:seed>>>0,pixelsPerUnit:clamp(pixelsPerUnit,.01,64),roundness:clamp(roundness,.05,1),angle:((angle%360)+360)%360,angleMode:BRUSH_ANGLE_MODES.includes(angleMode)?angleMode:'fixed',blend:BRUSH_BLENDS.includes(blend)?blend:'normal',alphaLock:Boolean(alphaLock),scatter:clamp(scatter,0,4),smudgeLength:clamp(smudgeLength),colorRate:clamp(colorRate)};
-}
-/** Radius of a dab at this pressure before texture jitter. */
-export function dabRadius(brush,pressure=1){return brush.size*(brush.pressureSize?Math.max(.05,clamp(pressure)**brush.sizeCurve):1)/2;}
-/** Conservative pixel bounds [x0,y0,x1,y1) of a dab, including jitter and
- * scatter. Callers seed exactly the tiles these bounds touch. */
-export function dabExtent(brush,dab){const r=dabRadius(brush,dab.pressure??1)*(brush.texture>0?1.1:1)+1+brush.scatter*brush.size/2;return [Math.floor(dab.x-r),Math.floor(dab.y-r),Math.ceil(dab.x+r),Math.ceil(dab.y+r)];}
-/** Smudge samples the colour under its tip every `stride` pixels, bounding
- * the pickup to a 64×64 grid however large the tip is. */
-export const smudgeStride=(width,height)=>Math.max(1,Math.ceil(Math.max(width,height)/64));
-/** A stroke's deterministic jitter sequence (mulberry32), seeded per stroke. */
-export function jitterSequence(seed){let state=seed>>>0;return()=>{let t=state=(state+0x6D2B79F5)>>>0;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;};}
-/** Final tip geometry of one path dab: pressure size, grain size jitter,
- * scatter, per-dab opacity/flow and tip angle, with its pixel bounds
- * [left,top,right,bottom). `rand` is the stroke's jitter sequence and is
- * consumed identically whether the dab paints or not, so the worker raster
- * and the GPU brush see the same dabs. Returns null for a dab that deposits
- * nothing. */
-export function dabShape(brush,p,rand){
-  const pressure=clamp(p.pressure??1);let radius=dabRadius(brush,pressure);
-  if(brush.texture>0)radius*=1+(rand()*2-1)*.1;
-  let x=p.x,y=p.y;
-  if(brush.scatter>0){const a=rand()*Math.PI*2,d=rand()*brush.scatter*brush.size/2;x+=Math.cos(a)*d;y+=Math.sin(a)*d;}
-  const opacity=brush.opacity*(brush.pressureOpacity?pressure**brush.opacityCurve:1),flow=brush.flow*(brush.pressureFlow?pressure:1);
-  if(opacity<=0||flow<=0||radius<=0)return null;
-  const theta=(brush.angle*Math.PI/180)+(brush.angleMode==='direction'?p.dir??0:brush.angleMode==='tilt'&&(p.ax||p.ay)?Math.atan2(p.ay,p.ax):0);
-  const cos=Math.cos(theta),sin=Math.sin(theta);
-  let hx=radius,hy=radius;
-  if(brush.roundness<.999){const rb=radius*brush.roundness;hx=Math.sqrt((radius*cos)**2+(rb*sin)**2);hy=Math.sqrt((radius*sin)**2+(rb*cos)**2);}
-  return {x,y,radius,opacity,flow,cos,sin,left:Math.floor(x-hx),top:Math.floor(y-hy),right:Math.ceil(x+hx),bottom:Math.ceil(y+hy)};
-}
-const lerp=(a,b,t)=>({x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t,pressure:a.pressure+(b.pressure-a.pressure)*t,time:a.time+(b.time-a.time)*t,ax:a.ax+(b.ax-a.ax)*t,ay:a.ay+(b.ay-a.ay)*t});
 const tileId=tileKey;
 
-/** Input path → evenly spaced dabs. Stabilization is a distance-windowed
- * trailing average over the raw path, so every sample yields output with no
- * dead zone; consecutive pushed points are joined by quadratic midpoint
- * segments, which keeps corners smooth at zero lag, and the stroke still ends
- * exactly on the final input. It runs on the main thread so the caller knows
- * every dab's extent before any pixel work is dispatched. */
-export class StrokePath {
-  constructor(settings,emit){const b=normalizeBrush(settings);Object.assign(this,{size:b.size,pressureSize:b.pressureSize,sizeCurve:b.sizeCurve,spacingRatio:b.spacingRatio,stabilization:b.stabilization,pixelsPerUnit:b.pixelsPerUnit,emit,count:0});}
-  out(p){this.lastDab=p;this.count++;p=lerp(p,p,0);p.dir=this.dir??0;this.emit(p);}
-  /** Smoothed point: weighted centroid of the distance-windowed raw tail.
-   * Linear-ramp weights (newest heaviest) keep the average trailing the input
-   * by roughly half the window while staying responsive at every speed. */
-  smoothed(){
-    return this.smoother.value();
-  }
-  sample(input) {
-    if(this.closed)throw new Error('The stroke has already ended.');
-    if(![input.x,input.y,input.pressure??1,input.time??0].every(Number.isFinite))return;
-    const p={x:input.x,y:input.y,pressure:input.pressure??1,time:input.time??0,ax:Number.isFinite(input.ax)?input.ax:0,ay:Number.isFinite(input.ay)?input.ay:0};
-    this.rawLast=p;
-    if(this.stabilization<=0){this.push(p);return;}
-    this.smoother??=new DrawingSmoother(this.stabilization*48*this.pixelsPerUnit);
-    this.push(this.smoother.add(p));
-  }
-  /** Push a path point: join it to the previous one with a quadratic midpoint
-   * segment so every sample — smoothed or raw — produces a smooth curve. */
-  push(p){
-    if(!this.prevRaw){this.out(p);this.prevRaw=p;this.prevMid=null;this.remaining=0;return;}
-    const prev=this.prevRaw,mid=lerp(prev,p,.5);
-    this.curve(this.prevMid??prev,prev,mid);
-    this.prevRaw=p;this.prevMid=mid;
-  }
-  /** Dab along the quadratic Bézier a→b with control c, sampled by arc length
-   * at the running `spacing`/`remaining` accumulator. */
-  curve(a,c,b){
-    const spacingAt=pressure=>Math.max(.25,this.size*this.spacingRatio*(this.pressureSize?Math.max(.05,clamp(pressure)**this.sizeCurve):1));
-    const spacing=Math.min(spacingAt(a.pressure),spacingAt(c.pressure),spacingAt(b.pressure));
-    const q=t=>{const u=1-t,w0=u*u,w1=2*u*t,w2=t*t;return{x:w0*a.x+w1*c.x+w2*b.x,y:w0*a.y+w1*c.y+w2*b.y,pressure:w0*a.pressure+w1*c.pressure+w2*b.pressure,time:w0*a.time+w1*c.time+w2*b.time,ax:w0*a.ax+w1*c.ax+w2*b.ax,ay:w0*a.ay+w1*c.ay+w2*b.ay};};
-    const steps=Math.max(4,Math.min(64,Math.ceil((Math.hypot(c.x-a.x,c.y-a.y)+Math.hypot(b.x-c.x,b.y-c.y))/(spacing/2))));
-    let prev=a;
-    for(let i=1;i<=steps;i++){
-      const p=q(i/steps),seg=Math.hypot(p.x-prev.x,p.y-prev.y);
-      // Carry a fractional dab phase, not a distance at the previous tip size.
-      // The smaller endpoint spacing keeps pressure ramps continuous too.
-      if(seg>0)this.dir=Math.atan2(p.y-prev.y,p.x-prev.x);
-      const step= Math.min(spacingAt(prev.pressure),spacingAt(p.pressure));
-      let pos=(1-this.remaining)*step;
-      while(seg>0&&seg>=pos){const t=pos/seg;this.out(lerp(prev,p,t));pos+=step;}
-      this.remaining=(this.remaining+seg/step)%1;prev=p;
-    }
-  }
-  finish(){if(this.closed)return;this.closed=true;
-    // Drain the averaging tail: the smoothed point converges to the last
-    // input, so the curve catches up smoothly instead of jumping.
-    const smoother=this.smoother;
-    if(smoother)while(smoother.size>1){smoother.shift();this.push(this.smoothed());}
-    if(this.prevRaw&&this.rawLast){
-      // Close the final half-segment, then land the exact endpoint dab.
-      if(this.rawLast.x!==this.prevRaw.x||this.rawLast.y!==this.prevRaw.y)this.push(this.rawLast);
-      this.push(this.prevRaw);
-      if(this.lastDab?.x!==this.rawLast.x||this.lastDab?.y!==this.rawLast.y)this.out(this.rawLast);
-    }
-  }
-}
-
-/** Exact CPU raster with tile-local stroke coverage on an unbounded TileStore.
- * Opacity caps an entire stroke (indirect painting); flow accumulates dabs
- * without multiplying it. Blend modes composite the stroke's source colour
- * against the pixels the stroke first saw, alpha lock preserves their alpha,
- * and an optional selection mask clips coverage. `requireTile` lets a caller
- * refuse tiles it never supplied instead of painting over a blank guess. */
+/** Exact CPU raster of dab shapes (drawing-brush.mjs) with tile-local stroke
+ * coverage on an unbounded TileStore. Opacity caps an entire stroke
+ * (indirect painting); flow accumulates dabs without multiplying it. Blend
+ * modes composite the stroke's source colour against the pixels the stroke
+ * first saw, alpha lock preserves their alpha, and an optional selection mask
+ * clips coverage. A provisional tail (the untapered end of a stroke with a
+ * taper-out) is rasterized into scratch coverage and replaced on every
+ * update. `requireTile` lets a caller refuse tiles it never supplied instead
+ * of painting over a blank guess. `sample()` drives the whole dab pipeline
+ * for callers that paint from input points (tests, previews). */
 export class DrawingStroke {
   constructor(store,settings={},{requireTile,mask}={}) {
     if(!(store instanceof TileStore))throw new Error('Strokes draw into a tile store.');
-    const brush=normalizeBrush(settings);
-    Object.assign(this,brush,{store,brush,requireTile,mask:mask??settings.mask??null,workingBytes:settings.workingBytes??768*1024*1024,maxBytes:settings.maxBytes??48*1024*1024,tiles:new Map(),bytes:256,dirty:null,dirtyTiles:new Set(),uncomposited:new Set(),rand:brush.seed,dabs:0});
-    this.path=new StrokePath(brush,p=>this.addDab(p));
+    const brush=normalizeBrush(settings),mode=brush.erase?'erase':brush.blend;
+    Object.assign(this,brush,{store,brush,requireTile,mask:mask??settings.mask??null,workingBytes:settings.workingBytes??768*1024*1024,maxBytes:settings.maxBytes??48*1024*1024,tiles:new Map(),bytes:256,dirtyTiles:new Set(),uncomposited:new Set(),tailTiles:new Set(),tailShapes:[],tailVersion:-1,dabs:0,
+      mode,smudge:mode==='smudge',lock:brush.alphaLock&&mode!=='erase'&&mode!=='behind',
+      // Nothing to erase or recolour where the stroke found no pixels.
+      skipEmpty:mode==='erase'||(brush.alphaLock&&mode!=='behind'),
+      tipOffset:brush.tip==='round'?-1:ensureTexture(brush.tip),grainOffset:brush.texture>0?ensureTexture(brush.grain):-1});
+    this.pipeline=new BrushStroke(brush,shape=>this.addShape(shape));
+    this.path=this.pipeline.path;
   }
-  nextRand(){return (this.random??=jitterSequence(this.rand))();}
   tile(tx,ty) {
     const key=tileId(tx,ty);let tile=this.tiles.get(key);if(tile)return tile;
     this.requireTile?.(tx,ty);
-    if((this.tiles.size+1)*TILE_BYTES*5>this.workingBytes)throw new Error('The stroke exceeds the drawing working memory limit.');
-    this.bytes+=TILE*TILE*8+64;const existing=this.store.get(tx,ty);
-    tile={tx,ty,before:existing?existing.pixels.slice():null,coverage:new Float32Array(TILE*TILE),pixels:this.store.writable(tx,ty).pixels};tile.src=tile.before??ZERO_TILE;this.tiles.set(key,tile);return tile;
+    const grain=this.texture>0;
+    if((this.tiles.size+1)*TILE_BYTES*(grain?6:5)>this.workingBytes)throw new Error('The stroke exceeds the drawing working memory limit.');
+    this.bytes+=TILE*TILE*(grain?12:8)+64;const existing=this.store.get(tx,ty);
+    tile={tx,ty,before:existing?existing.pixels.slice():null,coverage:new Float32Array(TILE*TILE),pixels:this.store.writable(tx,ty).pixels,grain:grain?this.grainTile(tx,ty):null};tile.src=tile.before??ZERO_TILE;this.tiles.set(key,tile);return tile;
   }
-  /** Rasterize dabs precomputed by a StrokePath (the stroke worker's input). */
-  dabList(list){if(this.closed)throw new Error('The stroke has already ended.');for(const p of list)this.addDab(p);this.composite();}
-  /** Accumulate one dab into stroke coverage. Colour depends only on final
-   * coverage and the pixels the stroke first saw, so compositing is deferred
-   * to composite(), which runs once per batch over each tile's dirty span
-   * instead of once per overlapping dab. */
-  addDab(p) {
-    this.dabs++;
-    const shape=dabShape(this,p,()=>this.nextRand());
-    this.lastDab={x:p.x,y:p.y};
-    if(!shape)return;
-    const {x:cx,y:cy,radius,opacity,flow,cos,sin,left,top,right,bottom}=shape,round=this.roundness<.999,inv=1/this.roundness;
-    const r2=radius*radius,hard=this.hardness>=.999,inner=radius>=1?(radius-1)*(radius-1):-1;
-    if(this.blend==='smudge'&&!this.erase){this.smudgeDab(cx,cy,radius,left,top,right,bottom,round,cos,sin,inv,opacity*flow);return;}
+  /** Per-pixel coverage cap 1 − texture·(1 − g) over one tile: grain is
+   * anchored to the cel, so it is computed once per tile, not per dab. */
+  grainTile(tx,ty){
+    const out=new Float32Array(TILE*TILE),k=this.texture,ox=tx*TILE,oy=ty*TILE,offset=this.grainOffset,atlas=offset>=0?brushAtlas():null,scale=this.grainScale;
+    for(let y=0;y<TILE;y++)for(let x=0;x<TILE;x++)out[y*TILE+x]=1-k*(1-(atlas?sampleGrain(atlas,offset,ox+x,oy+y,scale):hashPixel(ox+x,oy+y,this.seed)));
+    return out;
+  }
+  /** Rasterize final dab shapes, then optionally replace the provisional tail. */
+  paint(shapes,tail){
+    if(this.closed)throw new Error('The stroke has already ended.');
+    for(const shape of shapes)this.addShape(shape);
+    this.composite();
+    // Final dabs composite over tail tiles from final coverage alone.
+    if(tail!==undefined)this.setTail(tail);else if(shapes.length&&this.tailTiles.size)this.setTail(this.tailShapes);
+  }
+  /** Paint one path point as a single dab and write its pixels at once. */
+  dab(p){const shape=dabShape(this.brush,p);this.paint(shape?[shape]:[]);}
+  /** Accumulate one final dab. Colour depends only on final coverage and the
+   * pixels the stroke first saw, so compositing is deferred to composite(),
+   * which runs once per batch over each tile's dirty span instead of once
+   * per overlapping dab. */
+  addShape(shape){this.dabs++;if(this.smudge)this.smudgeDab(shape);else this.accumulate(shape,null);}
+  /** Coverage of one dab into each tile's final coverage, or into `scratch`
+   * (tile → coverage copy) for the provisional tail. */
+  accumulate(shape,scratch){
+    const {x:cx,y:cy,radius,opacity,flow,cos,sin,left,top,right,bottom}=shape,ellipse=this.roundness<.999,inv=1/this.roundness;
+    const r2=radius*radius,hard=this.hardness>=.999,inner=radius>=1?(radius-1)*(radius-1):-1,invR=1/radius;
+    const tipAt=this.tipOffset,atlas=tipAt>=0?brushAtlas():null,rotate=ellipse||atlas;
     // Soft falloff by squared distance: a per-stroke table replaces a square
     // root and smoothstep per pixel.
-    const lut=hard?null:this.softLUT(),scale=lut?(lut.length-1)/r2:0;
-    const texture=this.texture,seed=this.seed,mask=this.mask,skipEmpty=this.erase||(this.alphaLock&&this.blend!=='behind');
+    const lut=hard?null:this.softLUT(),scale=lut?(lut.length-1)/r2:0,mask=this.mask;
+    const coverageOf=tile=>{if(!scratch)return tile.coverage;let c=scratch.get(tile);if(!c){c=tile.coverage.slice();scratch.set(tile,c);}return c;};
     // Visit tiles once per dab, not once per pixel. Pressure may add paint,
     // but releasing pressure must never lift paint already laid in this stroke.
     for(let ty=Math.floor(top/TILE);ty*TILE<bottom;ty++)for(let tx=Math.floor(left/TILE);tx*TILE<right;tx++){
       let tile=this.tiles.get(tileId(tx,ty));
-      // Nothing to erase or recolour where the stroke found no pixels.
-      if(!tile&&skipEmpty&&!this.store.has(tx,ty))continue;
-      let cov=tile?.coverage,x0d=TILE,y0d=TILE,x1d=-1,y1d=-1;
+      if(!tile&&this.skipEmpty&&!this.store.has(tx,ty))continue;
+      let cov=tile?coverageOf(tile):null,x0d=TILE,y0d=TILE,x1d=-1,y1d=-1;
       const ox=tx*TILE,oy=ty*TILE,y0=Math.max(top,oy),y1=Math.min(bottom,oy+TILE);
       for(let y=y0;y<y1;y++){
         const dy=y+.5-cy;let x0=Math.max(left,ox),x1=Math.min(right,ox+TILE);
-        if(!round){const span=r2-dy*dy;if(span<=0)continue;const w=Math.sqrt(span);x0=Math.max(x0,Math.floor(cx-w-.5));x1=Math.min(x1,Math.ceil(cx+w+.5));}
+        if(!ellipse){const span=r2-dy*dy;if(span<=0)continue;const w=Math.sqrt(span);x0=Math.max(x0,Math.floor(cx-w-.5));x1=Math.min(x1,Math.ceil(cx+w+.5));}
         const row=(y-oy)*TILE-ox;let rowHit=false;
         for(let x=x0;x<x1;x++){
           const q=row+x,previous=cov?cov[q]:0;
           // Saturated coverage cannot change: the common case under dense spacing.
           if(previous>=opacity)continue;
           let dx=x+.5-cx,ddy=dy;
-          if(round){const u=dx*cos+ddy*sin;ddy=(ddy*cos-dx*sin)*inv;dx=u;}
+          if(rotate){const u=dx*cos+ddy*sin;ddy=(ddy*cos-dx*sin)*inv;dx=u;}
           const d2=dx*dx+ddy*ddy;if(d2>=r2)continue;
           let e=(hard?(d2<=inner?1:clamp(radius-Math.sqrt(d2))):lut[(d2*scale)|0])*flow;
-          if(texture>0)e*=1-texture*(1-hashPixel(x,y,seed));
-          if(mask){e*=maskValue(mask,x,y);}
+          if(atlas)e*=sampleTip(atlas,tipAt,dx*invR,ddy*invR);
+          if(mask)e*=maskValue(mask,x,y);
           if(e<=0)continue;
-          if(!tile){tile=this.tile(tx,ty);cov=tile.coverage;}
-          cov[q]=previous+(opacity-previous)*e;rowHit=true;
+          if(!tile){tile=this.tile(tx,ty);cov=coverageOf(tile);}
+          // Grain caps the coverage a pixel can reach, so paper pits stay
+          // lighter however many dabs overlap them.
+          const cap=tile.grain?opacity*tile.grain[q]:opacity;if(previous>=cap)continue;
+          cov[q]=previous+(cap-previous)*e;rowHit=true;
           const lx=x-ox;if(lx<x0d)x0d=lx;if(lx>x1d)x1d=lx;
         }
         if(rowHit){const ly=y-oy;if(ly<y0d)y0d=ly;y1d=ly;}
       }
-      if(x1d>=0){
+      if(x1d>=0&&!scratch){
         const d=tile.pending;
         if(d){if(x0d<d.x0)d.x0=x0d;if(y0d<d.y0)d.y0=y0d;if(x1d>d.x1)d.x1=x1d;if(y1d>d.y1)d.y1=y1d;}else tile.pending={x0:x0d,y0:y0d,x1:x1d,y1:y1d};
         this.dirtyTiles.add(tile);this.uncomposited.add(tile);
       }
     }
-    if(right>left&&bottom>top)this.dirty=this.dirty?{x:Math.min(this.dirty.x,left),y:Math.min(this.dirty.y,top),right:Math.max(this.dirty.right,right),bottom:Math.max(this.dirty.bottom,bottom)}:{x:left,y:top,right,bottom};
+  }
+  /** Replace the provisional tail: tiles it covers composite final coverage
+   * plus the tail, and tiles it left return to final coverage alone. */
+  setTail(shapes){
+    const scratch=new Map();
+    for(const shape of shapes)this.accumulate(shape,scratch);
+    for(const tile of new Set([...this.tailTiles,...scratch.keys()])){this.compositeTile(tile,scratch.get(tile)??tile.coverage,0,0,TILE-1,TILE-1);this.dirtyTiles.add(tile);}
+    this.tailTiles=new Set(scratch.keys());this.tailShapes=shapes;
   }
   /** Smudge: carry the colour under the tip along the stroke. Each dab reads
    * the current pixels, so it composites immediately instead of through
    * deferred coverage; dab order is fixed, so batching stays deterministic.
    * Colours average premultiplied, so transparent pixels never tint. */
-  smudgeDab(cx,cy,radius,left,top,right,bottom,round,cos,sin,inv,strength){
+  smudgeDab({x:cx,y:cy,radius,opacity,flow,cos,sin,left,top,right,bottom}){
+    const strength=opacity*flow,ellipse=this.roundness<.999,inv=1/this.roundness;
     const r2=radius*radius,hard=this.hardness>=.999,lut=hard?null:this.softLUT(),scale=lut?(lut.length-1)/r2:0,mask=this.mask;
-    const weight=(x,y)=>{let dx=x+.5-cx,dy=y+.5-cy;if(round){const u=dx*cos+dy*sin;dy=(dy*cos-dx*sin)*inv;dx=u;}const d2=dx*dx+dy*dy;if(d2>=r2)return 0;
+    const weight=(x,y)=>{let dx=x+.5-cx,dy=y+.5-cy;if(ellipse){const u=dx*cos+dy*sin;dy=(dy*cos-dx*sin)*inv;dx=u;}const d2=dx*dx+dy*dy;if(d2>=r2)return 0;
       let e=hard?(d2<=(radius-1)*(radius-1)?1:clamp(radius-Math.sqrt(d2))):lut[(d2*scale)|0];
       if(mask){e*=maskValue(mask,x,y);}return e;};
     // Average the premultiplied colour under the tip on a grid of at most
@@ -273,46 +203,49 @@ export class DrawingStroke {
       }
       if(changed)this.dirtyTiles.add(tile);
     }
-    if(right>left&&bottom>top)this.dirty=this.dirty?{x:Math.min(this.dirty.x,left),y:Math.min(this.dirty.y,top),right:Math.max(this.dirty.right,right),bottom:Math.max(this.dirty.bottom,bottom)}:{x:left,y:top,right,bottom};
   }
-  /** Apply one dab and write its pixels immediately. */
-  dab(p){this.addDab(p);this.composite();}
   softLUT(){
     if(this._softLUT)return this._softLUT;
     const n=4096,lut=new Float32Array(n+1),soft=1/Math.max(1e-6,1-this.hardness);
     for(let i=0;i<=n;i++){const t=clamp((1-Math.sqrt(i/n))*soft);lut[i]=t*t*(3-2*t);}
     return this._softLUT=lut;
   }
-  /** Write each pending tile span's colour from its coverage: a pure function
-   * of coverage, the pixels the stroke first saw, and the blend mode. */
+  /** Write each pending tile span's colour from its final coverage. */
   composite(){
-    const mode=this.erase?'erase':this.blend,lock=this.alphaLock&&mode!=='erase'&&mode!=='behind';
-    const blend=mode==='normal'||mode==='erase'||mode==='behind'?null:blendChannel[mode],[sr,sg,sb]=this.color;
-    for(const tile of this.uncomposited){
-      const d=tile.pending;if(!d)continue;tile.pending=null;
-      const cov=tile.coverage,src=tile.src,px=tile.pixels;
-      for(let y=d.y0;y<=d.y1;y++)for(let q=y*TILE+d.x0,end=y*TILE+d.x1;q<=end;q++){
-        const c=cov[q];if(!c)continue;
-        const j=q*4,ba=src[j+3]/255,br=src[j],bg=src[j+1],bb=src[j+2];
-        if(mode==='erase'){px[j+3]=Math.round(ba*(1-c)*255);px[j]=br;px[j+1]=bg;px[j+2]=bb;continue;}
-        if(mode==='behind'){const out=ba+c*(1-ba),k=c*(1-ba);px[j+3]=Math.round(out*255);px[j]=Math.round((br*ba+sr*k)/out);px[j+1]=Math.round((bg*ba+sg*k)/out);px[j+2]=Math.round((bb*ba+sb*k)/out);continue;}
-        // Separable blend against the backdrop, weighted by backdrop alpha
-        // (W3C compositing): Cs' = (1-ab)·Cs + ab·B(Cb,Cs).
-        let r=sr,g=sg,b=sb;
-        if(blend&&ba>0){
-          let mr,mg,mb;
-          if(mode==='color')[mr,mg,mb]=setLum(sr,sg,sb,lum(br,bg,bb));else{mr=blend(br,sr);mg=blend(bg,sg);mb=blend(bb,sb);}
-          r=(1-ba)*sr+ba*mr;g=(1-ba)*sg+ba*mg;b=(1-ba)*sb+ba*mb;
-        }
-        if(lock){px[j+3]=src[j+3];px[j]=Math.round(br+(r-br)*c);px[j+1]=Math.round(bg+(g-bg)*c);px[j+2]=Math.round(bb+(b-bb)*c);continue;}
-        const out=c+ba*(1-c),k=ba*(1-c);px[j+3]=Math.round(out*255);px[j]=Math.round((r*c+br*k)/out);px[j+1]=Math.round((g*c+bg*k)/out);px[j+2]=Math.round((b*c+bb*k)/out);
-      }
-    }
+    for(const tile of this.uncomposited){const d=tile.pending;if(!d)continue;tile.pending=null;this.compositeTile(tile,tile.coverage,d.x0,d.y0,d.x1,d.y1);}
     this.uncomposited.clear();
   }
-  sample(input){if(this.closed)throw new Error('The stroke has already ended.');this.path.sample(input);this.composite();}
+  /** Colour of a tile span from `cov`: a pure function of coverage, the
+   * pixels the stroke first saw, and the blend mode. */
+  compositeTile(tile,cov,x0,y0,x1,y1){
+    const mode=this.mode,lock=this.lock,blend=mode==='normal'||mode==='erase'||mode==='behind'?null:blendChannel[mode],[sr,sg,sb]=this.color;
+    const src=tile.src,px=tile.pixels;
+    for(let y=y0;y<=y1;y++)for(let q=y*TILE+x0,end=y*TILE+x1;q<=end;q++){
+      const c=cov[q],j=q*4;
+      if(!c){px[j]=src[j];px[j+1]=src[j+1];px[j+2]=src[j+2];px[j+3]=src[j+3];continue;}
+      const ba=src[j+3]/255,br=src[j],bg=src[j+1],bb=src[j+2];
+      if(mode==='erase'){px[j+3]=Math.round(ba*(1-c)*255);px[j]=br;px[j+1]=bg;px[j+2]=bb;continue;}
+      if(mode==='behind'){const out=ba+c*(1-ba),k=c*(1-ba);px[j+3]=Math.round(out*255);px[j]=Math.round((br*ba+sr*k)/out);px[j+1]=Math.round((bg*ba+sg*k)/out);px[j+2]=Math.round((bb*ba+sb*k)/out);continue;}
+      // Separable blend against the backdrop, weighted by backdrop alpha
+      // (W3C compositing): Cs' = (1-ab)·Cs + ab·B(Cb,Cs).
+      let r=sr,g=sg,b=sb;
+      if(blend&&ba>0){
+        let mr,mg,mb;
+        if(mode==='color')[mr,mg,mb]=setLum(sr,sg,sb,lum(br,bg,bb));else{mr=blend(br,sr);mg=blend(bg,sg);mb=blend(bb,sb);}
+        r=(1-ba)*sr+ba*mr;g=(1-ba)*sg+ba*mg;b=(1-ba)*sb+ba*mb;
+      }
+      if(lock){px[j+3]=src[j+3];px[j]=Math.round(br+(r-br)*c);px[j+1]=Math.round(bg+(g-bg)*c);px[j+2]=Math.round(bb+(b-bb)*c);continue;}
+      const out=c+ba*(1-c),k=ba*(1-c);px[j+3]=Math.round(out*255);px[j]=Math.round((r*c+br*k)/out);px[j+1]=Math.round((g*c+bg*k)/out);px[j+2]=Math.round((b*c+bb*k)/out);
+    }
+  }
+  /** Paint from one input point through the brush pipeline. */
+  sample(input){
+    if(this.closed)throw new Error('The stroke has already ended.');
+    this.pipeline.sample(input);this.composite();
+    if(this.pipeline.hasTail&&this.pipeline.tailVersion!==this.tailVersion){this.tailVersion=this.pipeline.tailVersion;this.setTail(this.pipeline.tailShapes());}
+  }
   cancel(){if(this.closed)return;for(const tile of this.tiles.values()){if(tile.before)this.store.set(tile.tx,tile.ty,tile.before);else this.store.delete(tile.tx,tile.ty);}this.closed=true;}
-  finish(){if(this.closed)return[];this.path.finish();this.composite();this.closed=true;
+  finish(){if(this.closed)return[];this.pipeline.finish();this.composite();if(this.tailTiles.size)this.setTail([]);this.closed=true;
     const changes=[];for(const tile of this.tiles.values()){
       const after=this.store.get(tile.tx,tile.ty)?.pixels??null;
       if(tile.before&&after&&sideEqual(tile.before,after))continue;

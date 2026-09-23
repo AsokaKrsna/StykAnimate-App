@@ -22,7 +22,7 @@ export const SCENARIOS=[
   {id:'dense-zoomed-out',brush:{size:48,hardness:1},stage:[3840,2160],resolution:2,dense:true,zoom:.25},
   {id:'scene-500',brush:{size:8,hardness:1},stage:[1920,1080],resolution:2,figures:500},
   // Every preset at its own tip on the dense cel, and again at a large size.
-  ...['ink','pencil','soft','marker','calligraphy','airbrush','charcoal','liner','oil'].flatMap(preset=>[
+  ...['ink','brushpen','pencil','soft','marker','calligraphy','airbrush','charcoal','chalk','drybrush','sponge','liner','oil'].flatMap(preset=>[
     {id:`preset-${preset}`,preset,brush:{},stage:[1920,1080],resolution:2,dense:true},
     {id:`preset-${preset}-large`,preset,brush:{size:160},stage:[1920,1080],resolution:2,dense:true}]),
   // Extra scenarios as JSON, e.g. STYK_LATENCY_EXTRA='[{"id":"hard-400","brush":{"size":400,"hardness":1},"stage":[1920,1080],"resolution":2,"dense":true}]'
