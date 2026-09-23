@@ -33,6 +33,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Scale and rotate a multi-figure selection around the dragged figure's pivot like Pivot: Alt-drag now moves every selected figure's position toward or around the shared origin instead of resizing each figure in place, and Ctrl+Alt keeps rotating the group without scaling.
 - Make frame counts agree between the Simple timeline, the Advanced timeline and Export: Simple shows "Frame 3 of 24 · plays as 47 frames", and Export explains that it counts every frame including inbetweens. Simple timeline thumbnails now grow to fill the timeline's height, and each frame shows its inbetweens as "+2".
 - Start painting in Draw straight away: the first stroke creates a drawing layer, or switches to your existing one, instead of doing nothing until a layer is chosen.
+- Give each Draw setting one home: colour, size, opacity, flow, smoothing, mirroring and tool modes live in the bar above the canvas, while Properties keeps presets, the stroke preview, recent colours and deeper brush options.
 - Show a ⇔ marker on scrubbable property labels and a hint in Transform sections that dragging a label adjusts its value, with Shift or Alt for finer steps.
 
 ### Fixed

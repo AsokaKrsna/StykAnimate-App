@@ -26,7 +26,6 @@ export const BRUSH_PRESETS = [
   {id:'oil',name:'Oil',description:'Mixes the brush colour into wet paint',...TIP,blend:'smudge',size:28,hardness:.75,flow:1,opacity:1,pressureSize:true,pressureOpacity:false,spacingRatio:.05,texture:.2,smudgeLength:.6,colorRate:.35},
 ];
 export const BRUSH_BLEND_LABELS=[['normal','Normal'],['behind','Behind'],['multiply','Multiply'],['screen','Screen'],['overlay','Overlay'],['color','Color'],['smudge','Smudge']];
-const SELECT_SHAPES=[['lasso','Lasso'],['rect','Rectangle'],['ellipse','Ellipse'],['wand','Magic wand']];
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 
 /** A small stroke drawn by the real brush engine, cached per preset tip. Smudge
@@ -52,7 +51,10 @@ export const presetGrid=(drawing)=>{const s=drawing.settings,custom=drawing.libr
 /** Main and second colour as an overlapping pair (X swaps), with the hex. */
 export const colorPair=(s,{hex=true}={})=>`<div class="draw-colors"><div class="draw-color-pair"><input type="color" class="draw-color-primary" data-draw-setting="color" value="${s.color}" aria-label="Drawing color" title="Main color · Alt-click the canvas to pick"><input type="color" class="draw-color-secondary" data-draw-setting="color2" value="${s.color2??'#ffffff'}" aria-label="Second color" title="Second color"></div><button class="icon-button draw-color-swap" data-draw-action="swap-colors" title="Swap colors · X" aria-label="Swap colors">${icon('loop')}</button>${hex?`<span class="hex-label">${s.color.toUpperCase()}</span>`:''}</div>`;
 
-/** Tool properties use the shared inspector sections; timing stays in the timeline. */
+/** Tool properties use the shared inspector sections; timing stays in the timeline.
+ * The canvas quick bar owns everyday settings (colour, size, opacity, flow,
+ * smoothing, mirror and tool modes); Properties holds only what it lacks, so
+ * each control has exactly one home. */
 export function drawingInspector(drawing,{numericField,group,grid,heading,propertyToggle},poseView='') {
   const {editor,settings:s,tool}=drawing;
   const field=(label,key,value,unit='',limits='')=>numericField(label,'draw:'+key,value,unit,limits,{}, {legacyField:false});
@@ -64,7 +66,7 @@ export function drawingInspector(drawing,{numericField,group,grid,heading,proper
   const details=(label,body)=>`<details class="inspector-section inspector-disclosure" data-section="${label}"><summary class="inspector-title">${label}</summary><div class="inspector-disclosure-body">${body}</div></details>`;
   const recent=drawing.library?.recent??[];
   const swatches=recent.length?`<div class="drawing-swatches" role="group" aria-label="Recent colors">${recent.map(c=>`<button class="drawing-swatch" data-draw-color="${c}" style="background:${c}" title="${c.toUpperCase()}" aria-label="Use ${c.toUpperCase()}" aria-pressed="${c===s.color.toLowerCase()}"></button>`).join('')}</div>`:'';
-  const color=colorPair(s)+swatches;
+  const quickHint=`<p class="drawing-hint drawing-quick-note">${icon('sliders')}Colour, size and opacity are in the bar above the canvas.</p>`;
   const preview=`<canvas class="drawing-preview" data-inspector-owned data-section="brush-preview" data-brush-preview aria-label="Brush stroke preview"></canvas>`;
   let target;try{target=editor.drawingTarget();}catch{}
   const layer=editor.getLayer(editor.activeLayerId),eligible=isDrawingLayer(layer)&&!layer.locked&&layer.visible;
@@ -73,17 +75,17 @@ export function drawingInspector(drawing,{numericField,group,grid,heading,proper
   if(tool==='brush'||tool==='eraser') {
     const custom=drawing.library?.presets??[],isCustom=custom.some(p=>p.id===s.preset);
     if(tool==='brush')html+=group('Preset',presetGrid(drawing)+`<div class="property-context-actions">${button('save-preset','Save brush','plus')}${isCustom?button('delete-preset','Delete brush','trash'):''}</div>`);
-    html+=group('',preview+(tool==='brush'?color:'')+sliders('size','opacity','flow','hardness','stabilization'));
+    html+=group('',preview+(tool==='brush'?swatches:'')+sliders('hardness')+quickHint);
     if(tool==='brush')html+=group('Painting',select('blend','Blend',BRUSH_BLEND_LABELS)+(s.blend==='smudge'?sliders('smudgeLength','colorRate'):'')+`<div class="property-toggle-grid drawing-toggle-grid">${toggle('alphaLock','Lock alpha','lock')}</div>`);
     html+=details('Tip',sliders('roundness','angle','spacingRatio','scatter','texture')+select('angleMode','Tip follows',[['fixed','Fixed angle'],['direction','Stroke direction'],['tilt','Pen tilt']]));
     html+=details('Dynamics',`<div class="property-toggle-grid drawing-toggle-grid">${toggle('pressureSize','Size pressure','scale')}${toggle('pressureOpacity','Opacity pressure','circle')}${toggle('pressureFlow','Flow pressure','activity')}</div>`+sliders('sizeCurve','opacityCurve'));
-    html+=group('Assist',`<div class="property-toggle-grid drawing-toggle-grid">${toggle('mirrorX','Mirror X','flip','Mirror painting across the vertical centre · Shift+M')}${toggle('mirrorY','Mirror Y','flip','Mirror painting across the horizontal centre')}</div><div class="drawing-hint">Shift-click: straight line · ${tool==='brush'?'Alt-click: pick colour · ':''}Ctrl-drag: size · [ ]: size · 1–0: opacity</div>`);
+    html+=group('Assist',`<div class="property-toggle-grid drawing-toggle-grid">${toggle('mirrorY','Mirror vertically','flip','Mirror painting across the horizontal centre. Horizontal mirroring is in the canvas bar · Shift+M')}</div><div class="drawing-hint">Shift-click: straight line · ${tool==='brush'?'Alt-click: pick colour · ':''}Ctrl-drag: size · [ ]: size · 1–0: opacity</div>`);
   }
-  if(tool==='fill')html+=group('Fill',color+sliders('tolerance','expansion','gap')+`<div class="property-toggle-grid drawing-toggle-grid">${toggle('sampleAll','Sample all layers','layers')}</div><div class="drawing-hint">Alt-click picks a colour. Fills stay inside the selection.</div>`);
-  if(tool==='shape')html+=group('Shape',select('shapeKind','Shape',[['line','Line'],['rect','Rectangle'],['ellipse','Ellipse']])+color+`<div class="property-toggle-grid drawing-toggle-grid">${toggle('shapeFill','Fill shape','paint-bucket')}</div>`+sliders('size','opacity')+`<div class="drawing-hint">Outlines use the current brush. Shift constrains to 45°, squares and circles.</div>`);
-  if(tool==='gradient')html+=group('Gradient',select('gradientType','Type',[['linear','Linear'],['radial','Radial']])+select('gradientEnd','Ends',[['transparent','Color to transparent'],['color','Color to second color']])+color+sliders('opacity')+`<div class="drawing-hint">Drag across the canvas. The gradient stays inside the selection.</div>`);
+  if(tool==='fill')html+=group('Fill',swatches+quickHint+`<div class="property-toggle-grid drawing-toggle-grid">${toggle('sampleAll','Sample all layers','layers')}</div><div class="drawing-hint">Alt-click picks a colour. Fills stay inside the selection.</div>`);
+  if(tool==='shape')html+=group('Shape',swatches+quickHint+`<div class="drawing-hint">Outlines use the current brush. Shift constrains to 45°, squares and circles.</div>`);
+  if(tool==='gradient')html+=group('Gradient',swatches+quickHint+`<div class="drawing-hint">Drag across the canvas. The gradient stays inside the selection.</div>`);
   if(tool==='lasso'){
-    html+=group('Select',select('selectShape','Shape',SELECT_SHAPES)+(s.selectShape==='wand'?sliders('tolerance','gap')+`<div class="property-toggle-grid drawing-toggle-grid">${toggle('sampleAll','Sample all layers','layers')}</div>`:'')+`<div class="drawing-hint">Shift adds to the selection, Alt subtracts. Drag inside it to move pixels, a corner to scale or the top handle to rotate (Shift snaps to 15°).</div>`);
+    html+=group('Select',(s.selectShape==='wand'?sliders('gap')+`<div class="property-toggle-grid drawing-toggle-grid">${toggle('sampleAll','Sample all layers','layers')}</div>`:'')+`<div class="drawing-hint">Shift adds to the selection, Alt subtracts. Drag inside it to move pixels, a corner to scale or the top handle to rotate (Shift snaps to 15°).</div>`);
     const sel=drawing.selection,selected=Boolean(sel||drawing.marquee),moved=Boolean(sel&&(sel.dx||sel.dy||sel.scale!==1||sel.angle||(sel.fx??1)!==1||(sel.fy??1)!==1));
     html+=selected
       ?group('Selection',grid(field('Scale','selectionScale',(drawing.selection?.scale??1)*100,'%','min="1" max="1000"')+field('Angle','selectionAngle',drawing.selection?.angle??0,'°'))+`<div class="property-context-actions">${moved?button('apply-selection','Apply','check'):''}${button('cancel-selection','Deselect','close')}${button('invert-selection','Invert','flip')}${button('fill-selection','Fill','paint-bucket')}</div><div class="property-context-actions">${iconButton('flip-selection-x','flip','Flip selected pixels horizontally')}${iconButton('flip-selection-y','rotate','Flip selected pixels vertically')}${iconButton('copy-pixels','duplicate','Copy selected pixels · Ctrl+C')}${iconButton('cut-pixels','cut','Cut selected pixels · Ctrl+X')}${iconButton('delete-pixels','trash','Delete selected pixels · Delete')}</div>`)

@@ -25,7 +25,7 @@ try{
   check('pointer stroke creates one cel and one undo command',await page.evaluate(()=>styk.editor.undoLabel==='Brush stroke'&&styk.editor.drawingTarget().figure._styk.drawing.version===2));
   check('stroke stores nontransparent tiles',await page.evaluate(()=>{const e=styk.drawing.owner.entry(styk.editor.drawingTarget().figure);window.initialPixels=pix(e.store);return initialPixels.pixels.some((n,i)=>i%4===3&&n);}));
   await page.screenshot({path:path.join(output,'draw-workspace.png')});
-  await page.setViewportSize({width:1024,height:768});await page.screenshot({path:path.join(output,'draw-workspace-compact.png')});check('compact workspace keeps the brush rail and property controls accessible',await page.locator('.tool-dock [data-tool="drawing-brush"]').isVisible()&&await page.locator('#inspector [data-draw-slider="size"]').count()===1);await page.setViewportSize({width:1440,height:1000});
+  await page.setViewportSize({width:1024,height:768});await page.screenshot({path:path.join(output,'draw-workspace-compact.png')});check('compact workspace keeps the brush rail and property controls accessible',await page.locator('.tool-dock [data-tool="drawing-brush"]').isVisible()&&await page.locator('.drawing-quickbar [data-draw-slider="size"]').count()===1&&await page.locator('#inspector [data-draw-slider="hardness"]').count()===1);await page.setViewportSize({width:1440,height:1000});
   await page.keyboard.press('Control+z');check('first stroke and cel creation undo together',await page.evaluate(()=>!styk.editor.drawingTarget().figure));
   await page.keyboard.press('Control+Shift+z');
   check('redo restores exact RGBA',await page.evaluate(()=>pixEq(pix(styk.drawing.owner.entry(styk.editor.drawingTarget().figure).store),initialPixels)));
@@ -68,7 +68,7 @@ try{
   check('cross-project timeline paste preserves independent exact pixels',reused.foreign);
   check('Duplicate drawing layer preserves independent exact pixels',reused.independent);
 
-  check('drawing tools are in the studio rail and use the native property inspector',await page.locator('.tool-dock [data-tool="drawing-eraser"]').isVisible()&&await page.locator('#inspector [data-draw-slider="size"]').isVisible()&&await page.locator('.drawing-panel').count()===0);
+  check('drawing tools are in the studio rail and use the native property inspector',await page.locator('.tool-dock [data-tool="drawing-eraser"]').isVisible()&&await page.locator('#inspector [data-draw-slider="hardness"]').isVisible()&&await page.locator('.drawing-panel').count()===0);
   check('drawing layer has a distinct icon and selected row',await page.locator('.sheet-layer[data-drawing="true"][data-selected="true"]').count()===1);
   await page.locator('[data-tool="drawing-brush"]').click();await page.locator('[data-draw-preset="soft"]').click();
   check('soft preset updates the shared brush controls',await page.evaluate(()=>styk.drawing.settings.hardness===0&&styk.drawing.settings.flow===.25));
