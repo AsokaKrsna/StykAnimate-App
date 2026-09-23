@@ -25,6 +25,8 @@ export const SCENARIOS=[
   ...['ink','pencil','soft','marker','calligraphy','airbrush','charcoal','liner','oil'].flatMap(preset=>[
     {id:`preset-${preset}`,preset,brush:{},stage:[1920,1080],resolution:2,dense:true},
     {id:`preset-${preset}-large`,preset,brush:{size:160},stage:[1920,1080],resolution:2,dense:true}]),
+  // Extra scenarios as JSON, e.g. STYK_LATENCY_EXTRA='[{"id":"hard-400","brush":{"size":400,"hardness":1},"stage":[1920,1080],"resolution":2,"dense":true}]'
+  ...JSON.parse(process.env.STYK_LATENCY_EXTRA||'[]'),
 ].filter(s=>!only||only.includes(s.id));
 
 const percentile=(values,p)=>{if(!values.length)return null;const sorted=[...values].sort((a,b)=>a-b);return sorted[Math.min(sorted.length-1,Math.floor(p*sorted.length))];};

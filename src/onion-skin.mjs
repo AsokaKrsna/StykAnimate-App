@@ -6,15 +6,22 @@ import {easingMode} from './keyframe-easing.mjs';
 import {onionRangeLimit,onionRangeSnapshot,sceneKeyTicks} from './onion-range.mjs';
 import {RetainedGeometryCache} from './playback-geometry-cache.mjs';
 
-/** One neighboring authored exposure per layer; never repeat the current hold. */
+/** The nearest drawings before and after the playhead on each drawing layer,
+ * never repeating the drawing on screen. Blank exposures are skipped rather
+ * than counted, and past a layer's end its last drawing is the first one
+ * before, so a frame without its own ink still shows its neighbours. */
 export function drawingOnionSamples(editor,settings){
   if(settings.onionMode==='frames')return [];
   const samples=[];
   for(const layer of editor.layers??[]){if(!layer.drawing||!layer.visible)continue;const track=editor.report._styk?.layerSheet?.tracks[layer.id];if(!track)continue;
-    const current=sheetKeyAt(track,editor.tick).index;
-    for(const direction of [-1,1])for(let distance=1;distance<=(direction<0?settings.onionBefore:settings.onionAfter);distance++){
-      const key=track.keys[current+direction*distance*settings.onionStep];if(!key)break;if(key.value?.frameId===null)continue;
-      samples.push({tick:key.tick,direction,distance,drawingLayer:layer.id});
+    const found=sheetKeyAt(track,editor.tick),current=found.index+(editor.tick>=track.end?1:0),step=Math.max(1,settings.onionStep??1);
+    for(const direction of [-1,1]){
+      const wanted=direction<0?settings.onionBefore:settings.onionAfter;let distance=0,seen=0;
+      for(let index=current+direction;index>=0&&index<track.keys.length&&distance<wanted;index+=direction){
+        const key=track.keys[index];if(key.value?.frameId==null)continue;
+        if(seen++%step)continue;
+        samples.push({tick:key.tick,direction,distance:++distance,drawingLayer:layer.id});
+      }
     }
   }
   return samples;

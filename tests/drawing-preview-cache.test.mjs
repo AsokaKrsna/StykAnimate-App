@@ -92,3 +92,18 @@ test('a failed update retains its last completed image without retrying the fail
   assert.equal(cache.scratch(entry,rect).canvas,first);assert.equal(jobs.length,2);
   entry.pixelStamp++;cache.scratch(entry,rect);assert.equal(jobs.length,3);assert.equal(jobs[2].data.reset,true);finish(2);await idle();cache.dispose();
 });
+
+test('zooming to a new mip level shows the nearest level until its own snapshot is ready',async()=>{
+  const {jobs,cache,entry,finish}=fixture({budgetBytes:1024*1024});try{
+    cache.scratch(entry,rect);const level0=finish(0);await idle();
+    // Nothing exists at level 1 yet: the level 0 snapshot stands in, scaled,
+    // instead of a blank frame, and level 1 is requested.
+    const stand=cache.scratch(entry,rect,{level:1});
+    assert.equal(stand.canvas,level0);assert.equal(stand.level,0);assert.equal(jobs.at(-1).data.level,1);
+    const level1=finish(jobs.length-1);await idle();
+    assert.equal(cache.scratch(entry,rect,{level:1}).canvas,level1,'the right level replaces the stand-in');
+    // A snapshot of a replaced store never stands in.
+    entry.store=new TileStore();entry.store.set(0,0,new Uint8ClampedArray([1,1,1,255]));
+    assert.equal(cache.scratch(entry,rect,{level:2}),null);
+  }finally{cache.dispose();}
+});

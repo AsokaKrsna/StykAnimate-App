@@ -275,9 +275,11 @@ export class DrawingResources {
   releaseTransient(e){if(!this.transients.delete(e))return;e.disposed=true;this.dropScratch(e);e.store=null;e.levels=null;e.levelKnown=null;this.residentMemory();}
   presenter(figure){
     const e=this.rasterPresenter(this.entry(figure));
-    // An evicted store re-decodes here, not on the next stroke: superseded
-    // decodes retry freely, real failures back off behind decodeError.
-    if(!e.store&&!e.loading&&!e.decodeError)this.surface(figure).catch(error=>{if(error.name==='AbortError')return;e.decodeError=error;this.onError(error);});
+    // An evicted store re-decodes here, not on the next stroke. A decode that
+    // a newer request superseded asks for another frame, so a cel still on
+    // screen requests itself again instead of staying blank until something
+    // else redraws it; real failures back off behind decodeError.
+    if(!e.store&&!e.loading&&!e.decodeError)this.surface(figure).catch(error=>{if(error.name==='AbortError'){if(!this.disposed&&!e.disposed&&!e.store){e.stamp++;this.onChange();}return;}e.decodeError=error;this.onError(error);});
     if(!e.store&&!e.loading)this.schedule();
     return e;
   }

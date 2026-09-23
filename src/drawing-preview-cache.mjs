@@ -24,6 +24,15 @@ export class DrawingPreviewCache {
     }
     const failed=entry.previewError?.store===entry.store&&entry.previewError.version===version;
     if(hit){this.cache.delete(hit.key);this.cache.set(hit.key,hit);}
+    // Zooming across a mip level has nothing at the new level yet: show the
+    // overlapping snapshot of the nearest level, scaled, rather than a blank
+    // frame. The request below still prepares the right density.
+    let stand=null;
+    if(!hit)for(const value of this.cache.values()){
+      if(value.entry!==entry||value.store!==entry.store)continue;const s=value.scale;
+      if(value.x*s>=rect.x+rect.width||(value.x+value.width)*s<=rect.x||value.y*s>=rect.y+rect.height||(value.y+value.height)*s<=rect.y)continue;
+      if(!stand||Math.abs(value.level-level)<Math.abs(stand.level-level)||value.level===stand.level&&value.version>stand.version)stand=value;
+    }
     if(!failed&&(hit?.version!==version||hit?.anchorKey!==anchorKey)){
       // One request per cel per render: the renderer's higher-level retries
       // must not replace the desired sampling density with level eight.
@@ -32,7 +41,7 @@ export class DrawingPreviewCache {
         this.queue.set(entry.id,{entry,store:entry.store,version,key,anchorKey,x,y,width,height,level,scale:f});this.pump();
       }
     }
-    return hit?{...hit,dirty:null}:null;
+    return hit?{...hit,dirty:null}:stand?{...stand,dirty:null}:null;
   }
   async pump(){
     if(this.active||this.disposed||!this.queue.size)return;

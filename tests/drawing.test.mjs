@@ -390,6 +390,20 @@ test('drawing onion samples skip the current held cel and retain frame-mode samp
     const settings={onionMode:'keys',onionBefore:2,onionAfter:2,onionStep:1};assert.deepEqual(drawingOnionSamples(e,settings).map(s=>s.tick),[0]);assert.deepEqual(drawingOnionSamples(e,{...settings,onionMode:'frames'}),[]);
   }finally{resources.dispose();}
 });
+test('drawing onion samples show the nearest drawings from blank frames and past the layer end',async()=>{
+  const {drawingOnionSamples}=await import('../src/onion-skin.mjs'),{sheetKeyAt}=await import('../src/layer-sheet.mjs');
+  const e={tick:0,layers:[{id:'d',drawing:{version:1},visible:true}],report:{_styk:{layerSheet:{tracks:{d:{end:6,keys:[{tick:0,value:{frameId:'a'}},{tick:1,value:{frameId:null}},{tick:2,value:{frameId:'b'}},{tick:3,value:{frameId:null}},{tick:4,value:{frameId:null}}]}}}}}};
+  const ticks=(tick,settings={})=>{e.tick=tick;return drawingOnionSamples(e,{onionMode:'keyframes',onionBefore:2,onionAfter:2,onionStep:1,...settings}).map(s=>[s.direction,s.tick,s.distance]);};
+  assert.equal(sheetKeyAt(e.report._styk.layerSheet.tracks.d,4).index,4);
+  // Blank keys are skipped instead of using up the onion range.
+  assert.deepEqual(ticks(4),[[-1,2,1],[-1,0,2]]);
+  assert.deepEqual(ticks(1),[[-1,0,1],[1,2,1]]);
+  // Past the layer end, the last drawing is the nearest one before.
+  e.report._styk.layerSheet.tracks.d.keys.splice(3);e.report._styk.layerSheet.tracks.d.end=3;
+  assert.deepEqual(ticks(5),[[-1,2,1],[-1,0,2]]);
+  assert.deepEqual(ticks(2),[[-1,0,1]]);
+  assert.deepEqual(ticks(5,{onionStep:2}),[[-1,2,1]]);
+});
 test('a replacement document disposes drawing workers and their pending state',async()=>{
   const {e,resources}=fixture();await stroke(e);e.load(new Editor({demo:false}).report);assert.equal(resources.disposed,true);assert.equal(resources.entries.size,0);
 });
@@ -1071,6 +1085,26 @@ test('a load a pointer waits on overtakes queued background decodes and survives
   }finally{resources.dispose();}
 });
 
+test('a displayed cel whose decode was superseded asks to be drawn again',async()=>{
+  const {e,resources}=fixture();try{
+    const figures=[];
+    for(let i=0;i<5;i++){
+      const figure=createDrawingFigure({pixelsPerUnit:1,figureTypeId:200+i});figure._styk.drawing.celId=`cel-shown-${i}`;e.report.figure_types.push(figure);figures.push(figure);
+      const pixels=new Uint8ClampedArray(TILE_BYTES);pixels.set([i,0,0,255],0);resources.install(figure,[{tx:0,ty:0,pixels}]);
+    }
+    await resources.flush();for(const figure of figures)resources.entry(figure).store=null;
+    // Five evicted cels presented in one frame (playback stopping on onion
+    // neighbours) overflow the two-job queue; superseded ones must not stay blank.
+    let changes=0;const onChange=resources.onChange;resources.onChange=()=>{changes++;onChange?.();};
+    const stamps=figures.map(figure=>resources.entry(figure).stamp);
+    for(const figure of figures)resources.presenter(figure);
+    await new Promise(resolve=>setTimeout(resolve,50));
+    for(let round=0;round<20&&figures.some(figure=>!resources.entry(figure).store);round++){for(const figure of figures)resources.presenter(figure);await new Promise(resolve=>setTimeout(resolve,20));}
+    assert.ok(changes>0,'a superseded decode requested another frame');
+    assert.ok(figures.some((figure,i)=>resources.entry(figure).stamp>stamps[i]),'its presenter stamp changed so retained layouts re-read it');
+    assert.ok(figures.every(figure=>resources.entry(figure).store?.size===1),'every displayed cel decodes');
+  }finally{resources.dispose();}
+});
 test('a burst of surface requests keeps at most two decodes queued and decodes the newest',async()=>{
   const {e,resources}=fixture();try{
     const figures=[];
