@@ -248,6 +248,11 @@ Run `node --test tests/drawing.test.mjs`, `node tests/drawing.browser.mjs` and
 `STYK_URL`). See [verification report](../artifacts/drawing/VERIFICATION.md).
 The pan, expansion and shortcut refinements have a separate regression suite:
 `node tests/drawing-ux.browser.mjs`; see its [report](../artifacts/drawing-ux/VERIFICATION.md).
+`npm run test:drawing:desktop` paints through real input in the Electron app,
+saves natively, restarts the process and verifies every cel reopens
+pixel-identical. `npm run benchmark:drawing-load` measures a heavy workload (24
+dense 4× cels beyond the tile budget: scrubbing, playback, a large soft stroke
+and saving) against a running local app.
 `tests/drawing-tools.browser.mjs` covers selection shapes and modes, clipped
 painting and fills, the magic wand, symmetry, straight lines, colour picking,
 brush resizing, view flipping and alpha lock through real input,
