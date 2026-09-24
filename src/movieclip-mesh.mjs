@@ -2,7 +2,10 @@
  * controls belong to the rig graph; vertices never become editable joints. */
 import {animationRotation} from './animation-origin.mjs';
 import {spatialPoint,spatialViewInterpolation} from './rig-spatial.mjs';
-import {projection,projectSpatial,projectSpatialFace} from './spatial-projection.mjs';
+import {projection} from './spatial-projection.mjs';
+import {spatialMeshDrawables} from './spatial-mesh.mjs';
+
+const NEAR=.05,ROOT_INDICES=Object.freeze({x:[8,11,15],y:[9,12,16]});
 
 export function validateMovieclipMeshes(asset) {
   const meshes=asset.spatialMeshes;if(meshes===undefined)return;
@@ -47,15 +50,19 @@ export function* buildMovieclipMeshSteps(fig,obj,root,slot,parent,objectColor,pr
   const parentScale=Number(parent?.obj.scale??1),ratio=frame&&Math.abs(parentScale)>1e-12?scale/parentScale:0;
   const pose=[frame?0:localAngle,angle,scale,mirror,obj.image_text_flags,parent?.obj.image_text_flags,asset.pivot.x,asset.pivot.y,root.x,root.y,parentScale,parent?.root.x,parent?.root.y,camera?.k,camera?.scale,camera?.root.x,camera?.root.y,
     ...(frame?[...frame.q,...frame.t,...frame.origin,...frame.axis,frame.stretch,frame.choiceScale,frame.shape?.width,frame.shape?.taper,frame.restLength]:[])];
-  const colors=mesh.colors.map(c=>objectColor?objectColor(c,obj):c),opacity=1-Number(obj.field28??0)/255;
+  const colors=mesh.colors.map(c=>objectColor?objectColor(c,obj):c),opacity=1-Number(obj.field28??0)/255,owner={obj,fig,slot,opacity};
   geometry.meshPose={mesh,pose};
   const old=previous?.meshPose;
-  if(old?.mesh===mesh&&previous.fig===fig&&old.pose.length===pose.length&&pose.every((v,i)=>v===old.pose[i])){
+  if(old?.mesh===mesh&&previous.fig===fig&&old.pose.length===pose.length&&pose.every((v,i)=>v===old.pose[i])&&previous.spatialMesh){
     // Retain only arrays from this pose, never a link to an earlier geometry.
-    geometry.drawables=previous.drawables.map(item=>{const rgb=colors[mesh.materials[item.index]];return {...item,obj,fig,slot,opacity,rgb,poly:rgb===item.rgb?item.poly:{...item.poly,color_rgb:rgb}};});
+    const prior=previous.spatialMesh,same=prior.colors.every((c,i)=>c.every((v,j)=>v===colors[i][j]));
+    geometry.spatialMesh=same?prior:{...prior,colors};
+    geometry.drawables=geometry.meshDrawables=spatialMeshDrawables(geometry.spatialMesh,owner,[]);
     return geometry;
   }
-  const points=new Array(mesh.positions.length/3),depth=new Float64Array(points.length);
+  const n=mesh.positions.length/3,flipY=obj.image_text_flags?-1:1,parentFlip=parent?.obj.image_text_flags?-1:1;
+  let positions=new Float32Array(n*2),depth=new Float32Array(n),extra=0;
+  const raw=new Float64Array(n*3);
   // Most attachments are affine. Evaluate the bone four times instead of
   // allocating quaternion/stretch intermediates for every mesh vertex.
   let affine;
@@ -72,31 +79,66 @@ export function* buildMovieclipMeshSteps(fig,obj,root,slot,parent,objectColor,pr
   const turn=span&&turns?(turns[span.index]+wrap(turns[span.next]-turns[span.index])*span.blend)*view.strength:0,pivot=mesh.viewPivot;
   let tc=Math.cos(turn),ts=Math.sin(turn),weight=1;
   const authored=k=>{const base=mesh.positions[k];if(!span)return base;const target=from[k]+(to[k]-from[k])*span.blend;return base+(target-base)*view.strength;};
-  for(let i=0;i<points.length;i++){
-    const at=i*3,v=[authored(at),authored(at+1),authored(at+2)];
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity,zMin=Infinity,zMax=-Infinity;
+  const include=i=>{const px=positions[i*2],py=positions[i*2+1],q=depth[i];if(px<x0)x0=px;if(px>x1)x1=px;if(py<y0)y0=py;if(py>y1)y1=py;if(q<zMin)zMin=q;if(q>zMax)zMax=q;};
+  const nearZ=camera?(1-NEAR)/camera.k:Infinity;
+  for(let i=0;i<n;i++){
+    const at=i*3;let vx=authored(at),vy=authored(at+1),vz=authored(at+2);
     if(turn){
       if(weights&&weights[i]!==weight){weight=weights[i];tc=Math.cos(turn*weight);ts=Math.sin(turn*weight);}
-      const x=v[0]-pivot[0],z=v[2]-pivot[2];v[0]=pivot[0]+x*tc+z*ts;v[2]=pivot[2]-x*ts+z*tc;
+      const x=vx-pivot[0],z=vz-pivot[2];vx=pivot[0]+x*tc+z*ts;vz=pivot[2]-x*ts+z*tc;
     }
-    const p=[v[0]-asset.pivot.x,(v[1]-asset.pivot.y)*(obj.image_text_flags?-1:1),v[2]];
-    let raw;
-    if(frame){const v=affine?[0,1,2].map(j=>affine[0][j]+ratio*(p[0]*affine[1][j]+p[1]*affine[2][j]+p[2]*affine[3][j])):spatialPoint(frame,p.map((x,j)=>frame.origin[j]+x*ratio)),flip=parent.obj.image_text_flags?-1:1;
-      raw=[parent.root.x+(v[0]*cs-v[1]*flip*sn)*parentScale,parent.root.y+(v[0]*sn+v[1]*flip*cs)*parentScale,v[2]*parentScale];
-    }else raw=[root.x+(p[0]*cs-p[1]*sn)*scale,root.y+(p[0]*sn+p[1]*cs)*scale,p[2]*scale];
-    points[i]=projectSpatial(raw,camera);points[i].rawPoint=raw;
-    depth[i]=raw[2]/(camera?Math.max(.05,1-camera.k*raw[2])*camera.scale:Math.max(1e-12,Math.abs(scale)));
-    if((i&255)===255)yield {phase:'geometry',stage:'mesh vertices',slot,completed:i+1,total:points.length};
+    const px=vx-asset.pivot.x,py=(vy-asset.pivot.y)*flipY,pz=vz;
+    let X,Y,Z;
+    if(frame){
+      let bx,by,bz;
+      if(affine){bx=affine[0][0]+ratio*(px*affine[1][0]+py*affine[2][0]+pz*affine[3][0]);by=affine[0][1]+ratio*(px*affine[1][1]+py*affine[2][1]+pz*affine[3][1]);bz=affine[0][2]+ratio*(px*affine[1][2]+py*affine[2][2]+pz*affine[3][2]);}
+      else [bx,by,bz]=spatialPoint(frame,[frame.origin[0]+px*ratio,frame.origin[1]+py*ratio,frame.origin[2]+pz*ratio]);
+      X=parent.root.x+(bx*cs-by*parentFlip*sn)*parentScale;Y=parent.root.y+(bx*sn+by*parentFlip*cs)*parentScale;Z=bz*parentScale;
+    }else{X=root.x+(px*cs-py*sn)*scale;Y=root.y+(px*sn+py*cs)*scale;Z=pz*scale;}
+    raw[at]=X;raw[at+1]=Y;raw[at+2]=Z;
+    if(camera){const d=Math.max(NEAR,1-camera.k*Z);positions[i*2]=camera.root.x+(X-camera.root.x)/d;positions[i*2+1]=camera.root.y+(Y-camera.root.y)/d;depth[i]=Z/(d*camera.scale);}
+    else{positions[i*2]=X;positions[i*2+1]=Y;depth[i]=Z/Math.max(1e-12,Math.abs(scale));}
+    if((i&8191)===8191)yield {phase:'geometry',stage:'mesh vertices',slot,completed:i+1,total:n};
   }
-  for(let i=0;i<mesh.indices.length;i+=3){
-    const ids=mesh.indices.slice(i,i+3),triangle=ids.map(id=>points[id]),projected=projectSpatialFace(triangle,camera),ps=projected?.points??triangle;
-    if(ps.length<3)continue;
-    // Closed meshes use outward winding. Screen coordinates have Y down.
-    const a=ps[0],b=ps[1],c=ps[2],area=(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
-    if(area*mirror<=1e-10)continue;
-    const values=projected?.depthValues??ids.map(id=>depth[id]),rgb=colors[mesh.materials[i/3]],poly={color_rgb:rgb,color_alpha:1,_stykSurface:{depthTest:true}};
-    geometry.drawables.push({type:'poly',poly,obj,fig,slot,index:i/3,points:ps,depthValues:values,z:values.reduce((s,z)=>s+z,0)/values.length,rgb,alpha:1,opacity});
-    if((i&255)===0)yield {phase:'geometry',stage:'mesh faces',slot,completed:i/3,total:mesh.materials.length};
+  const I=mesh.indices,T=mesh.materials.length;
+  let triangles=new Uint32Array(T*3),materials=new Uint16Array(T),z=new Float32Array(T),count=0;
+  const push=(a,b,c,material,value)=>{
+    if(count===materials.length){const size=Math.max(16,count*2);let t=new Uint32Array(size*3);t.set(triangles);triangles=t;t=new Uint16Array(size);t.set(materials);materials=t;t=new Float32Array(size);t.set(z);z=t;}
+    triangles[count*3]=a;triangles[count*3+1]=b;triangles[count*3+2]=c;materials[count]=material;z[count]=value;count++;
+    // Bounds and depth range follow visible faces, as native surfaces do.
+    include(a);include(b);include(c);
+  };
+  for(let t=0;t<T;t++){
+    const a=I[t*3],b=I[t*3+1],c=I[t*3+2];
+    if(raw[a*3+2]<=nearZ&&raw[b*3+2]<=nearZ&&raw[c*3+2]<=nearZ){
+      // Closed meshes use outward winding. Screen coordinates have Y down.
+      const ax=positions[a*2],ay=positions[a*2+1],area=(positions[b*2]-ax)*(positions[c*2+1]-ay)-(positions[b*2+1]-ay)*(positions[c*2]-ax);
+      if(area*mirror>1e-10)push(a,b,c,mesh.materials[t],(depth[a]+depth[b]+depth[c])/3);
+    }else{
+      // Clip against the near plane before projection, as native surfaces do.
+      const clipped=[];
+      for(const [p,q] of [[a,b],[b,c],[c,a]]){
+        const pz=raw[p*3+2],qz=raw[q*3+2],inside=pz<=nearZ,next=qz<=nearZ;
+        if(inside)clipped.push([raw[p*3],raw[p*3+1],pz]);
+        if(inside!==next){const s=(nearZ-pz)/(qz-pz);clipped.push([raw[p*3]+(raw[q*3]-raw[p*3])*s,raw[p*3+1]+(raw[q*3+1]-raw[p*3+1])*s,nearZ]);}
+      }
+      if(clipped.length<3)continue;
+      const projected=clipped.map(([X,Y,Z])=>{const d=Math.max(NEAR,1-camera.k*Z);return [camera.root.x+(X-camera.root.x)/d,camera.root.y+(Y-camera.root.y)/d,Z/d/camera.scale];});
+      const [p0,p1,p2]=projected;
+      if(((p1[0]-p0[0])*(p2[1]-p0[1])-(p1[1]-p0[1])*(p2[0]-p0[0]))*mirror<=1e-10)continue;
+      const ids=projected.map(([x,y,d])=>{
+        const at=n+extra;
+        if(at>=depth.length){const size=Math.max(64,depth.length*2);const p=new Float32Array(size*2);p.set(positions);positions=p;const q=new Float32Array(size);q.set(depth);depth=q;}
+        positions[at*2]=x;positions[at*2+1]=y;depth[at]=d;extra++;include(at);return at;
+      }),value=projected.reduce((s,p)=>s+p[2],0)/projected.length;
+      for(let i=1;i+1<ids.length;i++)push(ids[0],ids[i],ids[i+1],mesh.materials[t],value);
+    }
+    if((t&16383)===16383)yield {phase:'geometry',stage:'mesh faces',slot,completed:t+1,total:T};
   }
-  geometry.drawables.sort((a,b)=>a.z-b.z||a.index-b.index);
+  // Root-relative artwork identity: attachment, parent and camera centres.
+  geometry.spatialMesh={key:Float64Array.from(pose,v=>v===undefined?NaN:Number(v)),rootIndices:ROOT_INDICES,vertexCount:n+extra,positions,depth,triangles,materials,z,count,colors,
+    bounds:count&&x0<=x1?{x0,y0,x1,y1}:null,zMin,zMax};
+  geometry.drawables=geometry.meshDrawables=spatialMeshDrawables(geometry.spatialMesh,owner,[]);
   return geometry;
 }

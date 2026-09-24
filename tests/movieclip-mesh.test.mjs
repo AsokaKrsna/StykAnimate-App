@@ -10,6 +10,9 @@ import {buildContainerV2,decodeDocument} from '../src/native-container.mjs';
 import {createMovieclipMaterializer} from '../src/movieclip-materialize.mjs';
 import {documentHasSurfaces} from '../src/pivot/surfaces.mjs';
 const rad=d=>d*Math.PI/180;
+// Visible faces of an evaluated mesh, in drawable order, as native-like records.
+const faces=g=>g.drawables.flatMap(d=>d.type!=='mesh'?[d]:Array.from({length:d.count},(_,t)=>{const m=d.spatialMesh,ids=[0,1,2].map(k=>d.triangles[t*3+k]);
+ return {rgb:m.colors[d.materials[t]],points:ids.map(v=>({x:m.positions[v*2],y:m.positions[v*2+1]})),depthValues:ids.map(v=>m.depth[v])};}));
 function fixture(){
  const q=construction();q.add(0,0,0,'Figure');const turn=q.add(0,0,0,'Turn'),pitch=q.add(0,0,0,'Tilt'),h=q.add(0,30,-Math.PI/2,'Head',{control:true,rig:{spatial:{parent:0,origin:[0,0,0],tip:[0,-30,0],turn,pitch}}});
  const f={figure_type_id:1,segments:q.segments,segment_count:q.segments.length,polyfills:[]};
@@ -32,27 +35,28 @@ for(const layerTimeline of [false,true])test('meshes use parent spatial controls
  assert.ok(documentHasSurfaces(d));assert.throws(()=>e.enterMovieclip(2),/attached mesh/);assert.equal(e.report.figure_types.length,2);
  for(const pitch of [-90,-45,0,45,90])for(let yaw=0;yaw<=360;yaw+=15){
   e.setSpatialPose({turn:rad(yaw),pitch:rad(pitch),bend:.2});const g=e.geometry.objects.get(1);
-  assert.ok(g.meshAttachment);assert.ok(g.drawables.length>0);assert.equal(g.segments.length,1);
-  assert.deepEqual(g.drawables,buildGeometry(e.report,e.evaluatedFrame).objects.get(1).drawables);
-  for(const p of g.drawables.flatMap(d=>d.points))assert.ok(Number.isFinite(p.x)&&Number.isFinite(p.y));
+  assert.ok(g.meshAttachment);assert.ok(faces(g).length>0);assert.equal(g.segments.length,1);
+  assert.deepEqual(faces(g),faces(buildGeometry(e.report,e.evaluatedFrame).objects.get(1)));
+  for(const p of faces(g).flatMap(d=>d.points))assert.ok(Number.isFinite(p.x)&&Number.isFinite(p.y));
  }
- e.setMovieclipDrawing(2,1,0);assert.deepEqual(e.geometry.objects.get(1).drawables[0].rgb,[0,80,240]);e.undo();assert.deepEqual(e.geometry.objects.get(1).drawables[0].rgb,[240,80,0]);e.redo();
+ e.setMovieclipDrawing(2,1,0);assert.deepEqual(faces(e.geometry.objects.get(1))[0].rgb,[0,80,240]);e.undo();assert.deepEqual(faces(e.geometry.objects.get(1))[0].rgb,[240,80,0]);e.redo();
  const saved=(await decodeDocument(await buildContainerV2(e.serialize(),'styk'),'styk')).document;validateScene(saved);
- const actual=buildGeometry(saved,evaluatedFrame(saved,0,0,0)).objects.get(1);assert.deepEqual(actual.drawables[0].rgb,[0,80,240]);
+ const actual=buildGeometry(saved,evaluatedFrame(saved,0,0,0)).objects.get(1);assert.deepEqual(faces(actual)[0].rgb,[0,80,240]);
  assert.equal(actual.segments.length,1);assert.equal(saved.figure_types[1]._styk.movieclip.spatialMeshes[0].positions.length,12);
 });
 test('reflection, perspective and flattening retain visible triangles and their depth',()=>{
  for(const flip of [0,1]){const {d,h}=fixture();d.keyframes[0].objects[0].image_text_flags=flip;
  const e=new Editor({demo:false});e.load(d);e.select(1,h-1);e.setSpatialPose({turn:.7,pitch:.3,bend:.2});e.setSpatialCamera({strength:1,distance:100});validateScene(e.serialize());
  const before=e.geometry.objects.get(1),m=createMovieclipMaterializer(e.report),frame=m.frame(e.evaluatedFrame),doc={...e.report,figure_types:m.figures,keyframes:[frame]};validateScene(doc);
- const after=buildGeometry(doc,frame).orderedObjects.at(-1);assert.equal(after.drawables.length,before.drawables.length);
- const packed=g=>g.drawables.map(d=>[d.rgb,...d.points.flatMap(p=>[p.x,p.y]),...d.depthValues]);
+ const after=buildGeometry(doc,frame).orderedObjects.at(-1);assert.equal(after.drawables.length,faces(before).length);
+ // Flattened fills are painter-sorted; the mesh keeps definition order.
+ const packed=g=>faces(g).map(d=>[d.rgb,...d.points.flatMap(p=>[p.x,p.y]),...d.depthValues]).sort((x,y)=>{for(let i=1;i<x.length;i++){const d=Math.round((x[i]-y[i])*100);if(d)return d;}return 0;});
  const a=packed(before),b=packed(after);for(let i=0;i<a.length;i++){assert.deepEqual(a[i][0],b[i][0]);for(let j=1;j<a[i].length;j++)assert.ok(Math.abs(a[i][j]-b[i][j])<.001,`${i}/${j}: ${a[i][j]} vs ${b[i][j]}`);}
  }
 });
 test('near-plane clipping and full turns are deterministic, with no retained pose history',()=>{
  const{d,h}=fixture(),e=new Editor({demo:false});e.load(d);e.select(1,h-1);e.setSpatialCamera({strength:1,distance:10});
- const sample=yaw=>{e.setSpatialPose({turn:rad(yaw)});return e.geometry.objects.get(1).drawables.map(d=>({points:d.points,depth:d.depthValues}));};
+ const sample=yaw=>{e.setSpatialPose({turn:rad(yaw)});return faces(e.geometry.objects.get(1)).map(d=>({points:d.points,depth:d.depthValues}));};
  const a=sample(25);sample(170);const b=sample(25);
  // Editor angle normalization can differ at machine epsilon after a roundtrip.
  const rounded=v=>JSON.parse(JSON.stringify(v,(_k,x)=>typeof x==='number'?Math.round(x*1e8)/1e8:x));
@@ -63,17 +67,18 @@ test('unchanged attachments retain projected arrays while appearance and transfo
  const {d,h}=fixture(),frame=d.keyframes[0],first=buildGeometry(d,frame),old=first.objects.get(1);
  const tinted={...frame,objects:frame.objects.map(o=>({...o}))};tinted.objects[1].color_override_raw=0xff00ff00;tinted.objects[1].field28=90;
  const incremental=buildGeometry(d,tinted,{previous:first,dirtySlots:new Set([1])}),next=incremental.objects.get(1);
- assert.equal(next.drawables[0].points,old.drawables[0].points);assert.notEqual(next.drawables,old.drawables);
- assert.deepEqual(next.drawables,buildGeometry(d,tinted).objects.get(1).drawables);assert.equal(old.drawables[0].opacity,1);
+ assert.equal(next.spatialMesh.positions,old.spatialMesh.positions);assert.notEqual(next.drawables,old.drawables);
+ const fresh=buildGeometry(d,tinted).objects.get(1);assert.deepEqual(faces(next),faces(fresh));assert.equal(next.drawables[0].opacity,fresh.drawables[0].opacity);
+ assert.notEqual(next.drawables[0].opacity,1);assert.equal(old.drawables[0].opacity,1);
  const moved=structuredClone(tinted);moved.objects[1].scale=1.3;
  const changed=buildGeometry(d,moved,{previous:incremental,dirtySlots:new Set([1])}).objects.get(1);
- assert.notEqual(changed.drawables[0].points,next.drawables[0].points);assert.deepEqual(changed.drawables,buildGeometry(d,moved).objects.get(1).drawables);
+ assert.notEqual(changed.spatialMesh.positions,next.spatialMesh.positions);assert.deepEqual(faces(changed),faces(buildGeometry(d,moved).objects.get(1)));
  assert.ok(changed.meshPose.pose.every(v=>v===undefined||typeof v==='number'));assert.equal(changed.meshPose.mesh,d.figure_types[1]._styk.movieclip.spatialMeshes[0]);
 });
 test('view-corrected meshes reproduce each authored heading, blend smoothly and fade near vertical views',async()=>{
  const {d,h,head}=fixture(),mesh=head._styk.movieclip.spatialMeshes[0],views=Array.from({length:8},(_,k)=>mesh.positions.map((v,i)=>i%3===0?v+k*3:i%3===1?v-k:v));
  const variant=positions=>{const copy=structuredClone(d);copy.figure_types[1]._styk.movieclip.spatialMeshes=copy.figure_types[1]._styk.movieclip.spatialMeshes.map(m=>({...m,positions}));return copy;};
- const points=(document,turn,pitch=0)=>{const e=new Editor({demo:false});e.load(document);e.select(1,h-1);e.setSpatialPose({turn:rad(turn),pitch:rad(pitch)});return e.geometry.objects.get(1).drawables.flatMap(x=>x.points.flatMap(p=>[p.x,p.y]));};
+ const points=(document,turn,pitch=0)=>{const e=new Editor({demo:false});e.load(document);e.select(1,h-1);e.setSpatialPose({turn:rad(turn),pitch:rad(pitch)});return faces(e.geometry.objects.get(1)).flatMap(x=>x.points.flatMap(p=>[p.x,p.y]));};
  const close=(a,b)=>{assert.equal(a.length,b.length);a.forEach((v,i)=>assert.ok(Math.abs(v-b[i])<1e-6,`${i}: ${v} vs ${b[i]}`));};
  const corrected=structuredClone(d);corrected.figure_types[1]._styk.movieclip.spatialMeshes[0].viewPositions=views;
  for(const change of [m=>m.viewPositions.pop(),m=>m.viewPositions[2].pop(),m=>m.viewPositions[0][0]=NaN,m=>m.viewPositions=[m.positions]]){const a=structuredClone(corrected.figure_types[1]._styk.movieclip);change(a.spatialMeshes[0]);assert.throws(()=>validateMovieclipMeshes(a),/four or eight/);}
@@ -88,7 +93,7 @@ test('per-view turns interpolate as rotations, so shapes keep their size between
  const {d,h,head}=fixture(),mesh=head._styk.movieclip.spatialMeshes[0],pivot=[0,-10,0];
  const rotate=(p,t)=>p.map((v,i,a)=>i%3===0?pivot[0]+(v-pivot[0])*Math.cos(t)+(a[i+2]-pivot[2])*Math.sin(t):i%3===2?pivot[2]-(a[i-2]-pivot[0])*Math.sin(t)+(v-pivot[2])*Math.cos(t):v);
  const doc=m=>{const copy=structuredClone(d),asset=copy.figure_types[1]._styk.movieclip;asset.spatialMeshes=asset.spatialMeshes.map((x,i)=>i?x:{...x,...m});return copy;};
- const points=(document,turn)=>{const e=new Editor({demo:false});e.load(document);e.select(1,h-1);e.setSpatialPose({turn:rad(turn)});return e.geometry.objects.get(1).drawables.flatMap(x=>x.points.flatMap(p=>[p.x,p.y]));};
+ const points=(document,turn)=>{const e=new Editor({demo:false});e.load(document);e.select(1,h-1);e.setSpatialPose({turn:rad(turn)});return faces(e.geometry.objects.get(1)).flatMap(x=>x.points.flatMap(p=>[p.x,p.y]));};
  const close=(a,b)=>{assert.equal(a.length,b.length);a.forEach((v,i)=>assert.ok(Math.abs(v-b[i])<1e-6,`${i}: ${v} vs ${b[i]}`));};
  const turns=[0,Math.PI/2,0,0],corrected=doc({viewPositions:[0,1,2,3].map(()=>mesh.positions),viewTurns:turns,viewPivot:pivot});
  assert.throws(()=>validateMovieclipMeshes({...head._styk.movieclip,spatialMeshes:[{...mesh,viewTurns:turns},mesh]}),/one angle per view/);
@@ -102,12 +107,12 @@ test('per-view turns interpolate as rotations, so shapes keep their size between
 });
 test('bending the parent turns a bone-attached mesh once, keeping it on its joint',()=>{
  const {d,h}=fixture(),e=new Editor({demo:false});e.load(d);e.select(1,h-1);
- const base=()=>{const g=e.geometry.objects.get(1);return g.drawables.flatMap(x=>x.points.map(p=>[p.x,p.y]));};
+ const base=()=>faces(e.geometry.objects.get(1)).flatMap(x=>x.points.map(p=>[p.x,p.y]));
  const joint=()=>e.geometry.objects.get(0).segments[h-1];
  // Rotating through the native bend also rotates the joined child's own angle (Pivot joins).
  e.select(1,h-1);e.rotateJoint(.6);assert.notEqual(e.frame.objects[1].angles[0],0);
  const bent=base(),reference=structuredClone(e.serialize());reference.keyframes[0].objects[1].angles=[0];
  const f=new Editor({demo:false});f.load(reference);
- assert.deepEqual(bent,f.geometry.objects.get(1).drawables.flatMap(x=>x.points.map(p=>[p.x,p.y])));
+ assert.deepEqual(bent,faces(f.geometry.objects.get(1)).flatMap(x=>x.points.map(p=>[p.x,p.y])));
  assert.ok(Number.isFinite(joint().start.x));
 });

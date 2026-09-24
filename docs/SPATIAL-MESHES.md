@@ -83,12 +83,13 @@ tilt, roll, stretch and part proportions stay in the rig's existing pose channel
 Only the container handle belongs to the editable joint graph. Geometry is authored
 offline; entering an empty movieclip editor is rejected with posing guidance.
 
-The geometry evaluator emits the same depth-tested triangles used by native
-surfaces. Near clipping, Canvas/WebGPU presentation, worker preparation and rendered
-exports use the existing rendering path. Evaluation yields within dense meshes.
-Incremental geometry retains projected arrays when the attachment transform is
-unchanged, and rebinds appearance without retaining the previous geometry. A small
-numeric transform key belongs to that pose; there is no second render cache.
+The geometry evaluator produces the same typed record as a figure mesh: visible
+triangles with depth, drawn as one depth-tested mesh drawable by the same GPU
+raster and compositor. Near clipping, worker preparation and rendered exports use
+that path. Evaluation yields within dense meshes. Incremental geometry retains the
+typed arrays when the attachment transform is unchanged, and rebinds colours
+without retaining the previous geometry. The numeric transform key of that pose
+is also its root-relative artwork identity; there is no second render cache.
 Affine bone transforms are evaluated four times per mesh rather than once per
 vertex; non-linear taper keeps the existing point evaluator. Palette colors
 use the normal object color override. Immutable mesh arrays are shared by definition
