@@ -1,1 +1,5 @@
 videos/powerlevel/out/*.mp4 filter=lfs diff=lfs merge=lfs -text
+videos/tutorials/ep*/**/*.mp4 filter=lfs diff=lfs merge=lfs -text
+videos/tutorials/ep*/**/*.wav filter=lfs diff=lfs merge=lfs -text
+videos/tutorials/ep*/**/*.mp3 filter=lfs diff=lfs merge=lfs -text
+videos/tutorials/ep*/**/*.webm filter=lfs diff=lfs merge=lfs -text
