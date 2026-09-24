@@ -49,6 +49,26 @@ test('large layouts have bounded staging and submission count independent of obj
   assert.equal(stats.calls, 2, '1,000 objects require two bounded uploads instead of 1,000.');
   assert.ok(SHAPE_UPLOAD_RECORDS * SHAPE_BYTES < 1024 * 1024);
 });
+test('skipped entries keep their existing buffer bytes while the rest upload exactly', () => {
+  let offset = 0;
+  const entries = [[3, 4], [5, 8], [1, 1], [2, 2], [6, 8]].map(([count, capacity], index) => {
+    const entry = {key: index, offset, count, capacity, data: Float32Array.from({length: count * SHAPE_FLOATS}, (_, i) => i + index * 1000)};
+    offset += capacity; return entry;
+  });
+  const actual = new Float32Array(offset * SHAPE_FLOATS).fill(-7), queue = {writeBuffer(buffer, byteOffset, data, start, byteLength) {
+    actual.set(new Float32Array(data, start, byteLength / 4), byteOffset / 4);
+  }};
+  const skipped = new Set([1, 3]), steps = uploadShapeLayoutSteps(queue, actual, entries, new Float32Array(3 * SHAPE_FLOATS), entry => skipped.has(entry.key));
+  let step; do step = steps.next(); while (!step.done);
+  for (const entry of entries) {
+    const range = actual.subarray(entry.offset * SHAPE_FLOATS, (entry.offset + entry.capacity) * SHAPE_FLOATS);
+    if (skipped.has(entry.key)) { assert.ok(range.every(value => value === -7), `entry ${entry.key} was written`); continue; }
+    const expected = new Float32Array(entry.capacity * SHAPE_FLOATS); expected.set(entry.data);
+    for (let i = entry.count; i < entry.capacity; i++) expected[i * SHAPE_FLOATS + 20] = SHAPE.DISABLED;
+    assert.deepEqual(range, expected);
+  }
+  assert.equal(step.value.bytes, (4 + 1 + 8) * SHAPE_BYTES);
+});
 test('empty layouts upload nothing and invalid noncontiguous layouts are rejected', () => {
   assert.deepEqual(uploadShapeLayoutSteps({}, {}, [], new Float32Array(SHAPE_FLOATS)).next().value, {bytes: 0, calls: 0});
   assert.throws(() => uploadShapeLayoutSteps({}, {}, [], new Float32Array(0)).next(), /at least one record/);

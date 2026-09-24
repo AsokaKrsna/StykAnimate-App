@@ -4,8 +4,9 @@ import { SHAPE, SHAPE_BYTES, SHAPE_FLOATS } from './renderer-geometry.mjs';
 // snapshots each range before the next batch reuses the same backing store.
 export const SHAPE_UPLOAD_RECORDS = 8192;
 
-/** Upload an ordered, contiguous retained layout without per-object buffers. */
-export function* uploadShapeLayoutSteps(queue, buffer, entries, staging) {
+/** Upload an ordered, contiguous retained layout without per-object buffers.
+ * Entries matching `skip` are left unwritten for the caller to fill. */
+export function* uploadShapeLayoutSteps(queue, buffer, entries, staging, skip = null) {
   const records = Math.floor(staging.length / SHAPE_FLOATS);
   if (!records) throw new RangeError('Shape upload staging must hold at least one record.');
   let batchStart = 0, used = 0, bytes = 0, calls = 0;
@@ -18,6 +19,7 @@ export function* uploadShapeLayoutSteps(queue, buffer, entries, staging) {
   for (const entry of entries) {
     if (entry.offset !== batchStart + used || entry.count > entry.capacity || entry.data.length !== entry.count * SHAPE_FLOATS)
       throw new RangeError('Shape upload layout must be contiguous and match its primitive data.');
+    if (skip?.(entry)) {flush(); batchStart += entry.capacity; continue;}
     let local = 0;
     while (local < entry.capacity) {
       const count = Math.min(records - used, entry.capacity - local), begin = used * SHAPE_FLOATS;

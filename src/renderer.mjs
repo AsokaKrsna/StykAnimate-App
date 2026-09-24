@@ -611,7 +611,7 @@ class WebGPURenderer {
   ensureBuffers(shapeCount, transformCount) {
     const shapeSize = pow2(shapeCount) * SHAPE_BYTES, transformSize = pow2(transformCount) * 16;
     let changed = false;
-    if (!this.shapeBuffer || this.shapeBuffer.size < shapeSize) { this.shapeBuffer?.destroy(); this.shapeBuffer = this.device.createBuffer({ label: 'Retained figure primitives', size: shapeSize, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }); changed = true; }
+    if (!this.shapeBuffer || this.shapeBuffer.size < shapeSize) { this.shapeBuffer?.destroy(); this.shapeBuffer = this.device.createBuffer({ label: 'Retained figure primitives', size: shapeSize, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC }); changed = true; }
     if (!this.transformBuffer || this.transformBuffer.size < transformSize) { this.transformBuffer?.destroy(); this.transformBuffer = this.device.createBuffer({ label: 'Figure translations + visibility', size: transformSize, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }); changed = true; }
     if (changed) this.globalBindGroup = this.device.createBindGroup({ layout: this.globalLayout, entries: [{ binding: 0, resource: { buffer: this.uniform } }, { binding: 1, resource: { buffer: this.shapeBuffer } }, { binding: 2, resource: { buffer: this.transformBuffer } }] });
     return changed;
@@ -880,11 +880,30 @@ class WebGPURenderer {
       let compiled = this.vectorCache.get(source);
       if (!compiled) { compiled = yield* compileVectorObjectSteps(sourceItems, source.root); this.vectorCache.set(source, compiled); this.stats.compiledObjects++; }
       // A textured prior's data is a TEXTURE shape; it is only reusable while the
-      // entry still presents that texture.
-      if (prior?.source === source && prior.transform === index && (!prior.texture || prior.texture === texture)) data = prior.data;
+      // entry still presents that texture. A staged layout also shares the data
+      // of the layout it will replace; publication copies it on the GPU.
+      const reusable = prior ?? this.predecessor?.entries.get(key);
+      if (reusable?.source === source && reusable.transform === index && !reusable.drawing && !reusable.gpuDrawing && (!reusable.texture || reusable.texture === texture)) data = reusable.data;
       else { data = compiled.slice(); for (let j = 21; j < data.length; j += SHAPE_FLOATS) data[j] = index; }
     }
     return { key, uid, g, source, opacity, artworkOpacity:artworkView.opacity, isOnion, root: g.root, transform: index, data, count: data.length / SHAPE_FLOATS, texture };
+  }
+  /** Fill the entries a staged layout shares with `from`, the layout it
+   * replaces: a GPU copy of the published primitives, or an upload when that
+   * entry has changed since. Runs before `from` releases its buffer. */
+  copySharedEntries(from) {
+    const shared = this.sharedEntries; this.sharedEntries = null; this.stats.copiedBytes = 0;
+    if (!shared) return;
+    const published = new Map(from.layout?.map(entry => [entry.data, entry])); let encoder = null;
+    for (const entry of shared) {
+      const source = published.get(entry.data);
+      if (from.shapeBuffer && source?.capacity >= entry.capacity) {
+        // The published range holds the same data padded with disabled records.
+        (encoder ??= this.device.createCommandEncoder()).copyBufferToBuffer(from.shapeBuffer, source.offset * SHAPE_BYTES, this.shapeBuffer, entry.offset * SHAPE_BYTES, entry.capacity * SHAPE_BYTES);
+        this.stats.copiedBytes += entry.capacity * SHAPE_BYTES;
+      } else { this.stats.uploadBytes += this.uploadEntry(entry); this.stats.primitiveUploadCalls++; }
+    }
+    if (encoder) this.device.queue.submit([encoder.finish()]);
   }
   uploadEntry(entry) {
     const padded = new Float32Array(entry.capacity * SHAPE_FLOATS); padded.set(entry.data);
@@ -1028,16 +1047,22 @@ class WebGPURenderer {
     }
     if (this.ensureBuffers(shapeCount, index)) relayout = true;
     let uploadBytes = 0, primitiveUploadCalls = 0;
+    // Entries unchanged from the predecessor's layout are copied from its
+    // buffer when this stage is published instead of uploaded again.
+    const shared = new Set(), predecessor = this.predecessor;
     if (relayout) {
       this.uploadStaging ??= new Float32Array(SHAPE_UPLOAD_RECORDS * SHAPE_FLOATS);
-      const uploaded = yield* uploadShapeLayoutSteps(this.device.queue, this.shapeBuffer, next, this.uploadStaging);
+      const skip = predecessor && (entry => predecessor.entries.get(entry.key)?.data === entry.data && Boolean(shared.add(entry)));
+      const uploaded = yield* uploadShapeLayoutSteps(this.device.queue, this.shapeBuffer, next, this.uploadStaging, skip);
       uploadBytes = uploaded.bytes; primitiveUploadCalls = uploaded.calls;
     } else {
       for (let i = 0; i < next.length; i++) {
         const entry = next[i], previous = this.layout?.[i];
         if (previous?.data !== entry.data) { uploadBytes += this.uploadEntry(entry); primitiveUploadCalls++; yield {phase: 'GPU upload', completed: i + 1, total: next.length}; }
+        else if (this.sharedEntries?.has(previous)) shared.add(entry);
       }
     }
+    this.sharedEntries = shared.size ? shared : null;
     this.layout = next; this.entries = new Map(next.filter(e => e.g).map(e => [e.key, e])); this.transformData = new Float32Array(index * 4);
     this.entriesBySlot = new Map(next.filter(e => e.g && e.key === e.uid).map(e => [e.g.slot, e]));
     this.transformData.set([0, 0, 1, 1]);
@@ -1276,7 +1301,7 @@ async function prepareSceneUpdate(renderer, request) {
     // Keep the live tile backend and viewport so held cels never prepare an
     // empty scratch against an undefined viewport.
     stage.drawingGpu=renderer.drawingGpu;
-    stage.activeReport=report;stage.generation=generation;stage.rasterLease=lease;
+    stage.activeReport=report;stage.generation=generation;stage.rasterLease=lease;stage.predecessor=renderer;
     const timings={};let view={...(getView?.()||request.view||{})}, keys;
     for(;;){
       check();stage.dpr=renderer.dpr;stage.width=renderer.width;stage.height=renderer.height;
@@ -1300,6 +1325,7 @@ async function prepareSceneUpdate(renderer, request) {
         const fresh=preparedSceneKeys({...request,view:getView?.()||view},renderer.dpr);
         if(fresh.backgroundKey!==keys.backgroundKey||(stage.stats.textureObjects&&fresh.rasterResolution!==stage.lastRasterResolution))
           throw new DOMException('The editable scene view changed before publication.', 'AbortError');
+        stage.copySharedEntries(renderer);
         renderer.shapeBuffer?.destroy();renderer.transformBuffer?.destroy();renderer.rasterSurfaces.dispose();
         for(const entry of renderer.backgroundImages?.values()||[])entry.texture.destroy();
         for(const texture of renderer.drawingTextures?.values()??[])texture.texture.destroy();

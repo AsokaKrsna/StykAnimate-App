@@ -221,6 +221,13 @@ A newer edit, seek, document or graphics lifetime cancels obsolete staging.
 This preserves the exact native scene and export quality; it does not make the
 required instance reconstruction free or promise a maximum task duration.
 
+A staged layout shares the primitive arrays of vector objects that are
+unchanged from the live layout (same retained source and transform slot)
+instead of copying and uploading them again. Activation copies those ranges
+from the live buffer on the GPU, before the live buffer is released; an entry
+that changed in the live layout during staging is uploaded instead. A seek in
+a dense scene therefore uploads only the objects it re-posed.
+
 Image preparation reads cached image subsets of immutable object drawing lists,
 including nested clip instances, without flattening every line and polygon on
 each pointer frame. The original image records retain their anchor geometry for

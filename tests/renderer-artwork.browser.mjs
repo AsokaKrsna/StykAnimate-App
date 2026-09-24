@@ -212,6 +212,21 @@ try{
     const editDifference=difference(editPixels,read(b));
     if(editDifference||a.r.stats.rasterizedObjects||a.r.rasterCache.leases.size)throw new Error('Published cooperative editor layout differed, rebuilt artwork or leaked a lease.');
     observations.push({name:'cooperative editable layout cancels safely and publishes exact pixels',maxPixelDifference:editDifference});
+    // A seek that poses one figure republishes the others by copying their
+    // primitives from the live buffer; the result must match a full upload.
+    const seekReport=emptyDocument();seekReport.canvas_width=256;seekReport.canvas_height=128;
+    const seekFrame=createFrame([1,2,3,4].map(uid=>createObject(seekReport.figure_types[0],uid,30+uid*40,70))),posedFrame=structuredClone(seekFrame);
+    posedFrame.objects[1].angles=posedFrame.objects[1].angles.map(angle=>angle+.5);seekReport.keyframes=[seekFrame,posedFrame];
+    const seekCache=new PlaybackGeometryCache(),seekOptions={report:seekReport,view:editView,cameraEnabled:false};
+    a.r.render({...seekOptions,frame:seekFrame,geometry:seekCache.get(seekReport,seekFrame,1)});
+    const seekGeometry=seekCache.get(seekReport,posedFrame,1),preparedSeek=await a.r.prepareSceneUpdate({...seekOptions,frame:posedFrame,geometry:seekGeometry});
+    preparedSeek.activate();preparedSeek.dispose();
+    const seekCopied=a.r.stats.copiedBytes,seekUploaded=a.r.stats.uploadBytes;
+    a.r.render({...seekOptions,frame:posedFrame,geometry:seekGeometry});const seekPixels=read(a);
+    b.r.render({...seekOptions,frame:posedFrame,geometry:buildGeometry(seekReport,posedFrame)});
+    const seekDifference=difference(seekPixels,read(b));
+    if(seekDifference||!seekCopied||seekUploaded>=seekCopied)throw new Error(`Staged seek did not copy unchanged figures exactly: ${JSON.stringify({seekDifference,seekCopied,seekUploaded})}`);
+    observations.push({name:'staged seek copies unchanged figures and publishes exact pixels',maxPixelDifference:seekDifference,copiedBytes:seekCopied,uploadBytes:seekUploaded});
     a.r.rasterCache.maxBytes=128*1024*1024;
     const stageReport=structuredClone(native),stageFrame=stageReport.keyframes[0],liveResources=[...a.r.rasterCache.lru.keys()];
     let viewReads=0;

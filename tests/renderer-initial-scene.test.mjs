@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {createRenderer} from '../src/renderer.mjs';
 import {createFrame, createObject, defaultFigure} from '../src/demo.mjs';
 import {backgroundImageAssets, createSceneImages, frameImageAssets} from '../src/scene-preparation.mjs';
+import {RetainedGeometryCache} from '../src/playback-geometry-cache.mjs';
+import {SHAPE, SHAPE_BYTES, SHAPE_FLOATS} from '../src/renderer-geometry.mjs';
 
 function fixture(count = 1, image = false) {
   const figure = defaultFigure(), frame = createFrame(Array.from({length: count}, (_, i) => createObject(figure, i + 1, 20 + i, 40)));
@@ -14,7 +16,7 @@ async function graphics() {
   const buffers = [], textures = [], context = {configure() {}, unconfigure() {}, getCurrentTexture: () => ({createView: () => ({})})};
   const resource = () => ({destroyed: false, destroy() {this.destroyed = true;}, createView() {return {};}});
   const queue = {submissions: 0, writeTexture() {}, copyExternalImageToTexture() {}, onSubmittedWorkDone: () => Promise.resolve(),
-    submit() {this.submissions++;}, writeBuffer(buffer, offset, data, start = 0, size) {
+    submit(commands) {this.submissions++; for (const command of commands) command.run?.();}, writeBuffer(buffer, offset, data, start = 0, size) {
       const bytes = ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data, start, size);
       buffer.bytes.set(bytes, offset);
     }};
@@ -23,7 +25,11 @@ async function graphics() {
     createRenderPipelineAsync: async () => ({}), createSampler: () => ({}), createBindGroup: () => ({}),
     createBuffer({size}) {const buffer = {...resource(), size, bytes: new Uint8Array(size)}; buffers.push(buffer); return buffer;},
     createTexture() {const texture = resource(); textures.push(texture); return texture;},
-    createCommandEncoder: () => ({finish: () => ({}), beginRenderPass: () => ({setPipeline() {}, setBindGroup() {}, draw() {}, end() {}})}),
+    createCommandEncoder: () => {
+      const copies = [];
+      return {finish: () => ({run: () => copies.forEach(copy => copy())}), beginRenderPass: () => ({setPipeline() {}, setBindGroup() {}, draw() {}, end() {}}),
+        copyBufferToBuffer(source, from, target, to, size) {copies.push(() => target.bytes.set(source.bytes.subarray(from, from + size), to));}};
+    },
   };
   const originals = new Map(['navigator', 'GPUShaderStage', 'GPUBufferUsage', 'GPUTextureUsage'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   Object.defineProperty(globalThis, 'navigator', {configurable: true, value: {gpu: {requestAdapter: async () => ({requestDevice: async () => device, info: {}}), getPreferredCanvasFormat: () => 'bgra8unorm'}}});
@@ -61,6 +67,45 @@ test('initial scene stages complete media and GPU data without changing or submi
     assert.equal(renderer.stats.preparation, 'retained'); assert.equal(renderer.stats.uploadBytes, 0); assert.equal(renderer.stats.compiledObjects, 0);
     assert.deepEqual(stagedBuffer.bytes, stagedBytes); assert.equal(renderer.backgroundsReady(incoming, incoming.keyframes[0]), true);
   } finally {app.close();}
+});
+
+// Every published entry's range holds its data followed by disabled records.
+function assertPublishedLayout(renderer) {
+  const shapes = new Float32Array(renderer.shapeBuffer.bytes.buffer);
+  for (const entry of renderer.layout) {
+    const expected = new Float32Array(entry.capacity * SHAPE_FLOATS); expected.set(entry.data);
+    for (let i = entry.count; i < entry.capacity; i++) expected[i * SHAPE_FLOATS + 20] = SHAPE.DISABLED;
+    assert.deepEqual(shapes.subarray(entry.offset * SHAPE_FLOATS, (entry.offset + entry.capacity) * SHAPE_FLOATS), expected, entry.key);
+  }
+}
+
+test('a staged editor update copies unchanged primitives on the GPU and uploads only changed objects', async () => {
+  for (const changedMeanwhile of [false, true]) {
+    const app = await graphics();
+    try {
+      const {renderer} = app, report = fixture(6), cache = new RetainedGeometryCache(), frame = report.keyframes[0];
+      const moved = structuredClone(frame); moved.objects[2].angles = moved.objects[2].angles.map(angle => angle + .4);
+      report.keyframes.push(moved);
+      const geometry = cache.get(report, frame, 1);
+      renderer.render({report, frame, geometry, cameraEnabled: false});
+      const live = new Map(renderer.layout.map(entry => [entry.key, entry.data]));
+      const next = cache.get(report, moved, 1), prepared = await renderer.prepareSceneUpdate({report, frame: moved, geometry: next, view: {}, cameraEnabled: false});
+      const changed = [...next.objects.values()].filter(g => g !== geometry.objects.get(g.slot)).map(g => g.obj.unique_id);
+      assert.deepEqual(changed, [3]);
+      // A live-only update between preparation and publication must not be copied.
+      const other = renderer.layout.find(entry => entry.key === 5);
+      if (changedMeanwhile) {other.data = other.data.slice(); renderer.uploadEntry(other);}
+      const uploads = [], writeBuffer = app.queue.writeBuffer;
+      app.queue.writeBuffer = function (buffer, offset, data, start, size) {uploads.push(offset); return writeBuffer.call(this, buffer, offset, data, start, size);};
+      prepared.activate();
+      assert.equal(renderer.lastGeometry, next);
+      for (const entry of renderer.layout.filter(entry => entry.g)) assert.equal(entry.data === live.get(entry.key), entry.key !== 3, entry.key);
+      assertPublishedLayout(renderer);
+      const unchanged = renderer.layout.filter(entry => entry.g && entry.key !== 3 && !(changedMeanwhile && entry.key === 5));
+      assert.equal(renderer.stats.copiedBytes, unchanged.reduce((bytes, entry) => bytes + entry.capacity * SHAPE_BYTES, 0));
+      assert.deepEqual(uploads, changedMeanwhile ? [renderer.layout.find(entry => entry.key === 5).offset * SHAPE_BYTES] : []);
+    } finally {app.close();}
+  }
 });
 
 test('a failed background upload destroys its allocation without replacing the live texture', async () => {
