@@ -230,11 +230,24 @@ function tweenRecords(frames, matching) {
     return item;
   };
 }
+/** The native-easing run of keyframes that contain the object, and its times. */
+function presenceRun(frames, index, record) {
+  let run;
+  return () => {
+    if (run) return run;
+    let left = index, right = index + 1;
+    while (left > 0 && frameTicks(frames[left - 1]) > 1 && record(left - 1) !== undefined) left--;
+    while (right < frames.length - 1 && frameTicks(frames[right]) > 1 && record(right + 1) !== undefined) right++;
+    const times = [0];
+    for (let i = left + 1; i <= right; i++) times.push(times[times.length - 1] + frameTicks(frames[i - 1]));
+    return run = {left, right, times};
+  };
+}
 const recordValue = (record, read, k, x, y) => { const item = record(k); return item === undefined ? undefined : read(item, x, y); };
 const runTimes = [], runValues = [];
 /** parameter() for a channel of one object: `read(item, x, y)` reads it from a
  * matched record. Same arithmetic and order, without per-sample lookups or arrays. */
-function sampleRecords(report, index, t, record, read, angular, x, y) {
+function sampleRecords(report, index, t, record, read, angular, x, y, presence) {
   const frames = report.keyframes;
   const a = recordValue(record, read, index, x, y), b = recordValue(record, read, index + 1, x, y);
   if (a === undefined || b === undefined) return a ?? 0;
@@ -252,6 +265,21 @@ function sampleRecords(report, index, t, record, read, angular, x, y) {
       easingMode(frames[index + 1]?._styk?.easing) === 'auto' ? neighbour(index + 2, frameTicks(frames[index + 1]), false) : undefined);
   }
   if (!usesLegacyNativeEasing(report, index)) return a + (angular ? shortest(b - a) : b - a) * t;
+  // The native run spans the object's records; a channel defined in all of them
+  // has exactly that run, so its bounds and times are shared by every joint.
+  const run = presence?.();
+  if (run) {
+    const values = runValues;
+    values.length = 0;
+    let complete = true;
+    for (let i = run.left; i <= run.right; i++) {
+      const value = recordValue(record, read, i, x, y);
+      if (value === undefined) { complete = false; break; }
+      if (i === run.left || !angular) values.push(value);
+      else { const previous = values[values.length - 1]; values.push(previous + shortest(value - previous)); }
+    }
+    if (complete) return pchipAt(run.times, values, index - run.left, t);
+  }
   let left = index, right = index + 1;
   while (left > 0 && frameTicks(frames[left - 1]) > 1 && recordValue(record, read, left - 1, x, y) !== undefined) left--;
   while (right < frames.length - 1 && frameTicks(frames[right]) > 1 && recordValue(record, read, right + 1, x, y) !== undefined) right++;
@@ -348,7 +376,7 @@ export function evaluatedNativeFrame(report, index, t = 0, tweenCache, requested
           const controller = matching(f)?._stykIK?.[id];
           return controller?.enabled && controller.pinned === o._stykIK[id].pinned ? controller[section]?.[key] : undefined;
         }, angular));
-      const record = tweenRecords(report.keyframes, matching);
+      const record = tweenRecords(report.keyframes, matching), presence = presenceRun(report.keyframes, index, record);
       for (const k of ["root_x", "root_y", "scale"])
         out[k] = sampleRecords(report, index, t, record, readField, false, k);
       if (fig._styk?.animationOrigin && o._stykAnimationOrigin && next._stykAnimationOrigin) {
@@ -370,7 +398,7 @@ export function evaluatedNativeFrame(report, index, t = 0, tweenCache, requested
         if (o[flag] || next[flag] || legacyEasing) {
           out[flag] = 1;
           const read = (item, i, fallback) => item[flag] ? item[field][i] : fallback;
-          out[field] = fig.segments.map((s, i) => sampleRecords(report, index, t, record, read, false, i, s[base] ?? 0));
+          out[field] = fig.segments.map((s, i) => sampleRecords(report, index, t, record, read, false, i, s[base] ?? 0, presence));
         }
       }
       const originLayout = animationOriginLayout(fig);
@@ -418,7 +446,7 @@ export function evaluatedNativeFrame(report, index, t = 0, tweenCache, requested
         const s = fig.segments[i],
           parent = ids.get(s.parent_id);
         relativeTo.parent = parent;
-        const relative = sampleRecords(report, index, t, record, readRelativeAngle, true, i, relativeTo);
+        const relative = sampleRecords(report, index, t, record, readRelativeAngle, true, i, relativeTo, presence);
         angles[i] =
           parent === undefined
             ? relative
