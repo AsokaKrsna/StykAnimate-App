@@ -77,7 +77,7 @@ try{
  await page.locator('.vfx-catalog [data-choice="explosion"]').click();
  let clip=await page.evaluate(()=>styk.editor.getVfxClips()[0]);assert.deepEqual([clip.start,clip.duration],[6,36]);
  await page.evaluate(()=>styk.editor.deleteVfxClip(styk.editor.getVfxClips()[0].id));
- await page.locator('[data-vfx-action="presets"]').click();await page.locator('.vfx-catalog [data-choice="Energy blast"]').click();
+ await page.locator('[data-vfx-action="add"]').click();await page.locator('.vfx-catalog [data-choice="beam"]').click();
  await page.getByRole('button',{name:'Pick',exact:true}).click();
  const node=await page.evaluate(()=>{const g=[...styk.editor.geometry.objects.values()].find(g=>g.obj.unique_id===2),[id,p]=[...g.joints.entries()].sort((a,b)=>a[1].y-b[1].y)[0],r=document.getElementById('overlay').getBoundingClientRect(),v=styk.state.view;return {id,x:r.left+v.x+p.x*v.scale,y:r.top+v.y+p.y*v.scale};});
  await page.mouse.click(node.x,node.y);
@@ -94,10 +94,10 @@ try{
  assert.equal(await page.evaluate(()=>styk.editor._undo.length),undo+1);
  const seed=clip.effects[0].params.seed;await page.getByRole('button',{name:'Shuffle',exact:true}).click();
  assert.notEqual(await page.evaluate(()=>styk.editor.getVfxClips()[0].effects[0].params.seed),seed);
- // Generated presets show rendered previews in the catalogue.
- await page.locator('[data-vfx-action="presets"]').click();
- await page.waitForFunction(()=>document.querySelectorAll('.vfx-catalog [data-preview]').length>20&&!document.querySelector('.vfx-catalog [data-preview]:not(.has-preview)'),null,{timeout:30000});
- assert.equal(await page.locator('.vfx-catalog .vfx-catalog-results h3').first().textContent(),'Explosions & impacts');
+ // Generated effects show rendered previews in the catalogue; presets hold looks only.
+ await page.locator('[data-vfx-action="add"]').click();
+ await page.waitForFunction(()=>document.querySelectorAll('.vfx-catalog [data-preview]').length>=5&&!document.querySelector('.vfx-catalog [data-preview]:not(.has-preview)'),null,{timeout:30000});
+ assert.equal(await page.locator('.vfx-catalog .vfx-catalog-results h3').first().textContent(),'Generate');
  await page.screenshot({path:`${out}/catalogue.png`});await page.keyboard.press('Escape');
  assert.deepEqual(errors,[]);
  await fs.writeFile(`${out}/browser.json`,JSON.stringify({date:new Date().toISOString(),rows:report,errors},null,2));

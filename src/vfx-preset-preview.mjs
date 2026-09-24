@@ -7,18 +7,12 @@ import {createVfx} from './vfx.mjs';
 import {createVfxClip,frameWithVfxTime} from './vfx-clips.mjs';
 import {buildGeneratorBatch,generatorSchedule,scheduleWalker} from './vfx-generators.mjs';
 import {drawGeneratorDraws} from './vfx-generator-canvas.mjs';
-import {VFX_PRESETS} from './vfx-presets.mjs';
 import {isGeneratorType} from './vfx-registry.mjs';
 
 const STAGE={width:240,height:160},WIDTH=120,HEIGHT=80,cache=new Map(),queue=[];let scheduled=false;
-// Stage presets without a target restriction that read best placed on the ground.
-const GROUNDED=new Set(['Campfire','Smoking wreck']);
 
-/** Whether a catalogue entry has a generated preview: generator types and generated presets. */
-export function hasEffectPreview(mode,key){
- if(mode==='add')return isGeneratorType(key);
- return Boolean(VFX_PRESETS[key]?.effects.some(([type])=>isGeneratorType(type)));
-}
+/** Whether a catalogue entry has a generated preview: the generated effect types. */
+export const hasEffectPreview=(mode,key)=>mode==='add'&&isGeneratorType(key);
 /** A cached preview image URL, or null while it renders. */
 export const cachedEffectPreview=(mode,key)=>cache.get(`${mode}:${key}`)??null;
 /** Render the preview for `key` in idle time and hand it to `done(url)`. */
@@ -47,12 +41,11 @@ function previewTick(effects,duration){
  return Math.floor(duration===null?Math.max(tick,80):Math.min(tick,Math.max(1,duration-1)));
 }
 function renderPreview(mode,key){
- const preset=mode==='presets'?VFX_PRESETS[key]:null,effects=preset?preset.effects:[[key,{}]],duration=preset?('duration' in preset?preset.duration:48):48;
- const scene=preset?.target==='scene'||GROUNDED.has(key),beam=effects.some(([type])=>type==='beam');
+ const effects=[[key,{}]],duration=48,scene=false,beam=key==='beam';
  const report=emptyDocument(),figure=report.figure_types[0];Object.assign(report,{canvas_width:STAGE.width,canvas_height:STAGE.height});
  const frame={...createFrame([createObject(figure,1,beam?48:STAGE.width/2,STAGE.height*.62,{scale:.42})],20),_stykBackgroundColor:0xff15131d};report.keyframes=[frame];
  const target=scene?{kind:'scene'}:{kind:'figure',uid:1},clip=createVfxClip(target,effects[0][0],'preview','effect0',{start:0,duration});
- clip.effects=effects.map(([type,params],i)=>{const effect=createVfx(type,`effect${i}`);return {...effect,params:{...effect.params,...params,seed:7,...(type==='beam'?{aimX:.9,aimY:.52}:{}),...(GROUNDED.has(key)?{y:.9}:{})}};});
+ clip.effects=effects.map(([type,params],i)=>{const effect=createVfx(type,`effect${i}`);return {...effect,params:{...effect.params,...params,seed:7,...(type==='beam'?{aimX:.9,aimY:.52}:{})}};});
  report._styk.vfxClips={version:1,clips:[clip]};
  const timed=frameWithVfxTime(report,frame,previewTick(effects,duration)),geometry=buildGeometry(report,timed),batch=buildGeneratorBatch(report,timed,geometry);
  const dpr=Math.min(2,globalThis.devicePixelRatio||1),canvas=document.createElement('canvas');canvas.width=Math.round(WIDTH*dpr);canvas.height=Math.round(HEIGHT*dpr);

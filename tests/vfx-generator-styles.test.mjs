@@ -8,7 +8,6 @@ import {initializeLayerSheet} from '../src/editor-layer-sheet.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {vfxProperty,validateVfxValue} from '../src/vfx.mjs';
 import {VFX_REGISTRY,isGeneratorType} from '../src/vfx-registry.mjs';
-import {VFX_PRESETS} from '../src/vfx-presets.mjs';
 import {buildGeneratorBatch,evaluateParticle,BLEND,SHAPE,RECORD_FLOATS} from '../src/vfx-generators.mjs';
 import {PARTICLE_LOOKS} from '../src/vfx-generator-styles.mjs';
 import {atlasRow,ATLAS_ROWS,ATLAS_LEVELS,CELL,COLUMNS,MATERIALS} from '../src/vfx-generator-atlas.mjs';
@@ -73,16 +72,6 @@ test('style choices suggest valid values for every option',()=>{
  assert.deepEqual(VFX_REGISTRY.particles.params.look.options,PARTICLE_LOOKS.map(l=>l.name),'saved look indices match the renderer');
 });
 
-test('every generated preset installs editable effects that draw immediately',()=>{
- for(const [name,preset] of Object.entries(VFX_PRESETS)){
-  if(!preset.effects.some(([type])=>isGeneratorType(type)))continue;
-  const e=fixture(),scene=preset.target==='scene',id=e.addVfxGroup(scene?{kind:'scene'}:{kind:'figure',uid:1},name);
-  const clip=e.getVfxClips().find(c=>c.id===id);assert.equal(clip.name,name);assert.equal(clip.effects.length,preset.effects.length);
-  const burst=preset.effects.some(([,p])=>p.emission===1),tick=burst?4:preset.duration===null?60:Math.min(preset.duration-1,14);
-  assert.ok(particles(batchAt(e,tick)).length>0,`${name} shows particles on frame ${tick}`);
- }
-});
-
 test('echoes, halos and outlines redraw the same particles beneath them',()=>{
  const e=fixture();addEffect(e,'particles',{look:MATERIAL_LOOK('Cartoon star'),rate:6,life:30,speed:3,trail:2,glow:1,outline:1,outlineWidth:2,outlineColor:0x201020});
  const batch=batchAt(e,20),[echo2,echo1,halo,outline,fill]=batch.draws,o=d=>d.record*RECORD_FLOATS;
@@ -125,15 +114,12 @@ test('smoke rises and drifts with the wind',()=>{
  assert.ok(live.every(p=>p.draw.material===MATERIALS.smoke.row));
 });
 
-test('generated presets combine several effects; single effects live in Add effect',()=>{
- for(const [name,preset] of Object.entries(VFX_PRESETS))if(preset.effects.some(([type])=>isGeneratorType(type)))assert.ok(preset.effects.length>=2,`${name} combines effects`);
-});
-
 test('a start delay holds one effect of a group back',()=>{
- const e=fixture(),id=e.addVfxGroup({kind:'figure',uid:1},'Magic spell'),burst=e.getVfxClips().find(c=>c.id===id).effects.find(x=>x.type==='explosion');
- assert.equal(burst.params.delay,20);
- assert.equal(particles(batchAt(e,10)).filter(p=>p.draw.material===MATERIALS.bokeh.row).length,0,'the delayed burst has not started');
- assert.ok(particles(batchAt(e,26)).some(p=>p.draw.material===MATERIALS.bokeh.row),'it bursts after its delay');
+ const e=fixture(),id=e.addVfxClip({kind:'figure',uid:1},'particles',{start:0,duration:48}),burst=e.addVfxGroupEffect(id,'explosion');
+ e.setVfxClipParameters(id,burst,{style:7,delay:20});
+ const magic=b=>particles(b).filter(p=>p.draw.material===MATERIALS.bokeh.row).length;
+ assert.equal(magic(batchAt(e,10)),0,'the delayed burst has not started');
+ assert.ok(magic(batchAt(e,26))>0,'it bursts after its delay');
 });
 
 test('aura ground effects are optional and off by default',()=>{
