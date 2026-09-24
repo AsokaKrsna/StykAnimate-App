@@ -78,5 +78,17 @@ test('isolated transparency and media use bounded compatibility textures', () =>
   assert.ok(bounds.width > 0 && bounds.height > 0 && bounds.width < report.canvas_width);
   assert.equal(requiresCompatibilityTexture(geometry.drawables.map(s => ({ ...s, opacity: .4 }))), true);
   assert.equal(requiresCompatibilityTexture([{ type: 'text' }]), true);
-  assert.equal(requiresCompatibilityTexture([{ type: 'poly', points: [{ x: 0, y: 0 }, { x: 8, y: 8 }, { x: 0, y: 8 }, { x: 8, y: 0 }] }]), true, 'self-crossing polygons preserve native even-odd fill');
+  // Self-crossing fills keep native even-odd fill on the vector path: the
+  // bow-tie covers its two wedges (area 32) and leaves its sides empty.
+  const bowTie = { type: 'poly', points: [{ x: 0, y: 0 }, { x: 8, y: 8 }, { x: 0, y: 8 }, { x: 8, y: 0 }], rgb: [0, 0, 0], alpha: 1, opacity: 1 };
+  assert.equal(requiresCompatibilityTexture([bowTie]), false, 'self-crossing polygons draw as vectors');
+  const records = compileVectorObject([bowTie]), triangles = [];
+  for (let i = 0; i < records.length; i += SHAPE_FLOATS) { assert.equal(records[i + 20], SHAPE.TRIANGLE); triangles.push([...records.slice(i, i + 6)]); }
+  const area = t => Math.abs((t[2] - t[0]) * (t[5] - t[1]) - (t[4] - t[0]) * (t[3] - t[1])) / 2;
+  const covers = (x, y) => triangles.some(t => { const s = [[0, 1, 2, 3], [2, 3, 4, 5], [4, 5, 0, 1]].map(([a, b, c, d]) => (t[c] - t[a]) * (y - t[b]) - (t[d] - t[b]) * (x - t[a])); return s.every(v => v >= 0) || s.every(v => v <= 0); });
+  assert.equal(triangles.reduce((sum, t) => sum + area(t), 0), 32);
+  assert.deepEqual([covers(4, 1), covers(4, 7), covers(1, 4), covers(7, 4)], [true, true, false, false], 'even-odd wedges only');
+  // Outlines beyond the vector budget keep the raster fallback.
+  const zigzag = Array.from({ length: 260 }, (_, i) => ({ x: i % 2 ? 24 : 0, y: i / 10 }));
+  assert.equal(requiresCompatibilityTexture([{ ...bowTie, points: zigzag }]), true);
 });

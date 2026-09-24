@@ -15,6 +15,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 ### Changed
 
 - Pose, scrub and play 3D figures far more smoothly, even on slower computers, with much less memory in long animations and smaller saved files.
+- Seek, scrub and zoom large Pivot animations more smoothly. Frames are prepared faster, and detailed figures with overlapping fill shapes now draw as sharp vectors instead of textures, so zooming no longer pauses and uses far less graphics memory.
 
 ## [1.1.0]
 

@@ -11,7 +11,10 @@ try{
     const make=async sharedArtwork=>{const c=document.createElement('canvas');c.width=256;c.height=128;document.body.append(c);const r=await createRenderer(c,{sharedArtwork});r.resize(256,128,1);return{r,c};};
     const a=await make(true),b=await make(false),surface=document.createElement('canvas');surface.width=256;surface.height=128;
     const context=surface.getContext('2d',{willReadFrequently:true}),poly={color_rgb:[240,40,20],alpha_raw:0},fig={figure_type_id:1,segments:[],polyfills:[poly]};
-    const object=(uid,slot,x,y)=>{const obj={unique_id:uid,object_slot:slot,figure_type_id:1,root_x:x,root_y:y,scale:1,field28:0},root={x,y};return{obj,fig,slot,root,segments:[],polys:[],drawables:[{type:'poly',obj,fig,slot,index:0,poly,points:[[0,0],[24,24],[0,24],[24,0]].map(([dx,dy])=>({x:x+dx,y:y+dy})),z:0,rgb:[240,40,20],alpha:1,opacity:1}]};};
+    // Self-crossing fills draw as vectors up to 256 corners; this 260-corner
+    // outline keeps exercising compatibility textures.
+    const zigzag=Array.from({length:260},(_,i)=>[i%2?24:0,i*24/260]);
+    const object=(uid,slot,x,y)=>{const obj={unique_id:uid,object_slot:slot,figure_type_id:1,root_x:x,root_y:y,scale:1,field28:0},root={x,y};return{obj,fig,slot,root,segments:[],polys:[],drawables:[{type:'poly',obj,fig,slot,index:0,poly,points:zigzag.map(([dx,dy])=>({x:x+dx,y:y+dy})),z:0,rgb:[240,40,20],alpha:1,opacity:1}]};};
     const first=object(1,0,20,20),second=object(2,1,80,20);
     const scene=(items,previous)=>({objects:new Map(items.map(g=>[g.slot,g])),orderedObjects:items,token:{},previousToken:previous?.token,changedSlots:new Set(items.map(g=>g.slot)),warnings:[]});
     const report={version:5,canvas_width:256,canvas_height:128,figure_types:[fig],backgrounds:[]},observations=[];
@@ -24,7 +27,7 @@ try{
       if(max>1||a.r.stats.warnings.length||b.r.stats.warnings.length)throw new Error(JSON.stringify({name,max,changed,warnings:[...a.r.stats.warnings,...b.r.stats.warnings]}));
       observations.push({name,maxPixelDifference:max,sharedTextures:a.r.stats.uniqueTextures,referenceTextures:b.r.stats.uniqueTextures,rasterized:a.r.stats.rasterizedObjects});
     };
-    await check('two identical translated bow-tie polygons');
+    await check('two identical translated self-crossing polygons');
     if(a.r.stats.uniqueTextures!==1||b.r.stats.uniqueTextures!==2)throw new Error('Equivalent artwork did not share exactly one texture.');
     const changed={...first,drawables:first.drawables.map(item=>({...item,rgb:[20,220,40]}))};
     geometry=scene([changed,second],geometry);await check('change one instance without destroying its sibling resource');
@@ -43,8 +46,10 @@ try{
     const {compilePlaybackPacket,packetTransferables}=await import('/src/playback-worker.mjs');
     const native=emptyDocument();native.canvas_width=256;native.canvas_height=128;
     const nativeFigure=native.figure_types[0];
-    nativeFigure.segments=nativeFigure.segments.slice(0,3).map((s,i)=>({...s,segment_id:i+1,parent_id:0,segment_type:'line',segment_kind:'line',primitive_code:0,flags:0,thickness:1,length:i?24:Math.sqrt(2)*24,angle_rad:[Math.PI/4,Math.PI/2,0][i]}));
-    nativeFigure.segment_count=3;nativeFigure.polyfills=[{segment_ids:[0,1,2,3],color_rgb:[240,40,20],alpha_raw:0}];
+    const template=nativeFigure.segments[0];
+    // Hidden corner joints, as in a traced fill: one drawable per instance.
+    nativeFigure.segments=zigzag.map(([x,y],i)=>({...template,segment_id:i+1,parent_id:0,segment_type:'line',segment_kind:'line',primitive_code:0,flags:0,thickness:0,visible:false,length:Math.hypot(x,y),angle_rad:Math.atan2(y,x)}));
+    nativeFigure.segment_count=zigzag.length;nativeFigure.polyfills=[{segment_ids:zigzag.map((_,i)=>i+1),color_rgb:[240,40,20],alpha_raw:0}];
     const nativeObject=createObject(nativeFigure,1,20,20);
     native.keyframes=[createFrame([nativeObject,{...structuredClone(nativeObject),unique_id:2,root_x:80}])];
     const e=new Editor({demo:false});e.load(structuredClone(native));e.select(1);
@@ -53,7 +58,7 @@ try{
     const nativeDraw=(geometry,extra={})=>{a.r.render({report:e.report,frame:e.frame,geometry,view:{scale:1,x:0,y:0},cameraEnabled:false,...extra});return read(a);};
     let current=e.geometry;nativeDraw(current);
     const texture=a.r.entries.get(1).texture;
-    if(!texture)throw new Error('Native bow-tie fixture did not exercise compatibility rendering.');
+    if(!texture)throw new Error('Native self-crossing fixture did not exercise compatibility rendering.');
     const preview=nativeDraw(current,{dragTranslations:new Map([[1,{x:12.37,y:8.11}]])});
     e.moveSelection(12.37,8.11);current=e.geometry;
     const committed=nativeDraw(current),continuity=difference(preview,committed);

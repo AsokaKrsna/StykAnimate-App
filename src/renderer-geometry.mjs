@@ -1,4 +1,5 @@
 import earcut from '../vendor/earcut.mjs';
+import {evenOddTriangles} from './even-odd-fill.mjs';
 import {hasDrawableVfx,drawableVfxPadding} from './vfx-canvas.mjs';
 import { mixColor } from './pivot/geometry.mjs';
 import { cameraIsIdentity, inverseCameraScale, effectiveCamera } from './pivot/background.mjs';
@@ -96,10 +97,28 @@ function needsEvenOddRaster(points) {
   }
   return false;
 }
+// A self-crossing or self-touching outline needs the even-odd rule, which a
+// simple triangulation cannot express. Such fills get exact even-odd triangles
+// instead of turning their whole figure into a texture; beyond 256 corners or
+// the triangle budget they keep the raster path. Plans follow the immutable
+// points array of retained geometry.
+const fillPlans = new WeakMap(), SIMPLE_FILL = {kind: 'simple'}, RASTER_FILL = {kind: 'raster'};
+function polygonFill(points) {
+  let plan = fillPlans.get(points);
+  if (!plan) {
+    if (!needsEvenOddRaster(points)) plan = SIMPLE_FILL;
+    else {
+      const triangles = points.length <= 256 && evenOddTriangles(points.flatMap(p => [p.x, p.y]));
+      plan = triangles ? {kind: 'even-odd', triangles} : RASTER_FILL;
+    }
+    fillPlans.set(points, plan);
+  }
+  return plan;
+}
 export function requiresCompatibilityTexture(items) {
   if(items.some(s=>s.type==='mesh'||s.poly?._stykSurface?.depthTest))return true;
   const single = singleVectorPrimitive(items);
-  return items.some(s => hasDrawableVfx(s) || movieclipTransparency(s) || (s.seg?.paint && s.seg.paint.type !== 'solid') || s.type === 'text' || s.type === 'image' || (s.opacity < .999999 && !single) || s.fig?.segment_decode?.global_style?.u28 || ((s.alpha < .999999 || s.seg?.secondary?.a > 0) && Math.abs(s.bend) > 1e-7) || (s.type === 'poly' && needsEvenOddRaster(s.points)));
+  return items.some(s => hasDrawableVfx(s) || movieclipTransparency(s) || (s.seg?.paint && s.seg.paint.type !== 'solid') || s.type === 'text' || s.type === 'image' || (s.opacity < .999999 && !single) || s.fig?.segment_decode?.global_style?.u28 || ((s.alpha < .999999 || s.seg?.secondary?.a > 0) && Math.abs(s.bend) > 1e-7) || (s.type === 'poly' && polygonFill(s.points) === RASTER_FILL));
 }
 /** One GPU primitive has no internal overlap, so its figure opacity can be
  * applied directly. Bent strokes and white-backed rings need isolation. */
@@ -169,7 +188,13 @@ export function* compileVectorObjectSteps(items, root = { x: 0, y: 0 }, transfor
     if ((++completed & 127) === 0) yield {phase:'GPU vectors',completed,total:items.length};
     if (!drawsVector(s)) continue;
     paint = paintFor(s, root, opacity);
-    if (s.type === 'poly') {
+    if (s.type === 'poly' && polygonFill(s.points).kind === 'even-odd') {
+      const triangles = polygonFill(s.points).triangles;
+      for (let i = 0; i < triangles.length; i += 6) {
+        add(SHAPE.TRIANGLE, triangles[i] - root.x, triangles[i + 1] - root.y, triangles[i + 2] - root.x, triangles[i + 3] - root.y, triangles[i + 4] - root.x, triangles[i + 5] - root.y);
+        if (i && i % 9216 === 0) yield {phase:'GPU polygon',completed:i / 2,total:triangles.length / 2};
+      }
+    } else if (s.type === 'poly') {
       const points = new Float64Array(s.points.length * 2);
       for (let i = 0; i < s.points.length; i++) { points[i * 2] = s.points[i].x - root.x; points[i * 2 + 1] = s.points[i].y - root.y; }
       const indices = earcut(points);

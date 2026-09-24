@@ -149,7 +149,9 @@ test('a failing compatibility raster degrades its object without aborting the sc
     const poly = { color_rgb: [240, 40, 20], alpha_raw: 0 }, fig = { figure_type_id: 1, segments: [], polyfills: [poly] };
     const object = (uid, slot, x, y) => {
       const obj = { unique_id: uid, object_slot: slot, figure_type_id: 1, root_x: x, root_y: y, scale: 1 }, root = { x, y };
-      return { obj, fig, slot, root, segments: [], polys: [], drawables: [{ type: 'poly', obj, fig, slot, index: 0, poly, points: [[0, 0], [24, 24], [0, 24], [24, 0]].map(([dx, dy]) => ({ x: x + dx, y: y + dy })), z: 0, rgb: [240, 40, 20], alpha: 1, opacity: 1 }] };
+      // A self-crossing outline beyond the vector budget needs a compatibility texture.
+      const outline = Array.from({ length: 260 }, (_, i) => ({ x: x + (i % 2 ? 24 : 0), y: y + i * 24 / 260 }));
+      return { obj, fig, slot, root, segments: [], polys: [], drawables: [{ type: 'poly', obj, fig, slot, index: 0, poly, points: outline, z: 0, rgb: [240, 40, 20], alpha: 1, opacity: 1 }] };
     };
     const scene = (items, previous, changed) => ({ objects: new Map(items.map(g => [g.slot, g])), orderedObjects: items, token: {}, previousToken: previous?.token, changedSlots: new Set(changed ?? items.map(g => g.slot)), warnings: [] });
     const frame = items => ({ objects: items.map(g => g.obj), background_id: 0 });
