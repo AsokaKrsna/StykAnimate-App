@@ -60,6 +60,25 @@ function brush(s, root) {
   const gx = end.x - s.start.x, gy = end.y - s.start.y, norm = gx * gx + gy * gy || 1;
   return { color, color2: rgbaFloats(objectColor(secondary.rgb, s.obj), 1 - secondary.a / 255), gradient: [s.start.x - root.x, s.start.y - root.y, gx / norm, gy / norm] };
 }
+// Most strokes and fills have one colour. Their paint is written from a reused
+// record: the same values brush() + opacity would produce, without allocations.
+const solidPaint = {color: [0, 0, 0, 0], color2: null, gradient: [0, 0, 0, 0]};
+solidPaint.color2 = solidPaint.color;
+function paintFor(s, root, opacity) {
+  const rgb = s.rgb === undefined ? [0, 0, 0] : s.rgb;
+  if (!s.seg?.secondary && Array.isArray(rgb) && rgb.length === 3 && 0 in rgb && 1 in rgb && 2 in rgb) {
+    const color = solidPaint.color;
+    color[0] = clamp(rgb[0] / 255); color[1] = clamp(rgb[1] / 255); color[2] = clamp(rgb[2] / 255);
+    color[3] = clamp(s.alpha === undefined ? 1 : s.alpha) * opacity;
+    return solidPaint;
+  }
+  const paint = brush(s, root);
+  paint.color[3] *= opacity;
+  if (paint.color2 !== paint.color) paint.color2[3] *= opacity;
+  return paint;
+}
+// Only these produce primitives; other drawables need no paint.
+const drawsVector = s => s.type === 'poly' ? s.points.length >= 3 : s.type === 'circle' || (s.type === 'line' && s.thickness > 0);
 export function shapeRecord({ a = [0, 0, 0, 0], b = [0, 0, 0, 0], color = [0, 0, 0, 1], color2 = color, gradient = [0, 0, 0, 0], mode = SHAPE.LINE, transform = 0, extra = 0, clipToCanvas = false }) {
   return [...a, ...b, ...color, ...color2, ...gradient, mode, transform, extra, clipToCanvas ? 1 : 0];
 }
@@ -148,11 +167,9 @@ export function* compileVectorObjectSteps(items, root = { x: 0, y: 0 }, transfor
   let completed = 0;
   for (const s of items) {
     if ((++completed & 127) === 0) yield {phase:'GPU vectors',completed,total:items.length};
-    paint = brush(s, root);
-    paint.color[3] *= opacity;
-    if (paint.color2 !== paint.color) paint.color2[3] *= opacity;
+    if (!drawsVector(s)) continue;
+    paint = paintFor(s, root, opacity);
     if (s.type === 'poly') {
-      if (s.points.length < 3) continue;
       const points = new Float64Array(s.points.length * 2);
       for (let i = 0; i < s.points.length; i++) { points[i * 2] = s.points[i].x - root.x; points[i * 2 + 1] = s.points[i].y - root.y; }
       const indices = earcut(points);

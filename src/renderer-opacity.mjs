@@ -3,12 +3,20 @@ import {singleVectorPrimitive} from './renderer-geometry.mjs';
 
 // Weak ownership follows retained geometry. A fade shares the opaque artwork,
 // while the existing packet/texture owners still bound pixel allocations.
-const opaqueSources = new WeakMap();
+const opaqueSources = new WeakMap(), views = new WeakMap();
 
 /** Lift an ordinary figure's isolation alpha onto its final textured quad.
  * Overlapping primitives still paint together before opacity is applied.
  * Nested clips and effects keep their complete established painter. */
 export function opacityArtwork(g, items = g.drawables) {
+  // Retained geometry is immutable, so its view is computed once per object.
+  const retained = items === g.drawables && items ? views.get(g) : undefined;
+  if (retained?.drawables === items) return retained.view;
+  const view = artworkView(g, items);
+  if (items && items === g.drawables) views.set(g, {drawables: items, view});
+  return view;
+}
+function artworkView(g, items) {
   const source = g.renderSource || g;
   items = g.renderSource ? source.drawables : items;
   const opacity = items[0]?.opacity;

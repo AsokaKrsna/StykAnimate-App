@@ -152,6 +152,31 @@ export function pchip(times, values, index, t) {
     (t3 - t2) * h[index] * slope(index + 1)
   );
 }
+// pchip() at one interval without building the tangent arrays: identical
+// arithmetic, evaluated only for the two slopes the interval uses.
+const intervalWidth = (times, i) => times[i + 1] - times[i];
+const secant = (times, values, i) => (values[i + 1] - values[i]) / intervalWidth(times, i);
+function pchipAt(times, values, index, t) {
+  const n = values.length;
+  if (n < 3) return lerp(values[index], values[index + 1], t);
+  const slope = i => {
+    if (i === 0) return endpointSlope(intervalWidth(times, 0), intervalWidth(times, 1), secant(times, values, 0), secant(times, values, 1));
+    if (i === n - 1) return endpointSlope(intervalWidth(times, n - 2), intervalWidth(times, n - 3), secant(times, values, n - 2), secant(times, values, n - 3));
+    const before = secant(times, values, i - 1), after = secant(times, values, i);
+    if (!before || !after || !sameSign(before, after)) return 0;
+    const h0 = intervalWidth(times, i - 1), h1 = intervalWidth(times, i), w = (2 * h0 + h1) / (3 * (h0 + h1));
+    return (before * after) / (w * before + (1 - w) * after);
+  };
+  const t2 = t * t,
+    t3 = t2 * t,
+    h = intervalWidth(times, index);
+  return (
+    (2 * t3 - 3 * t2 + 1) * values[index] +
+    (t3 - 2 * t2 + t) * h * slope(index) +
+    (3 * t2 - 2 * t3) * values[index + 1] +
+    (t3 - t2) * h * slope(index + 1)
+  );
+}
 function parameter(report, index, t, get, angular = false) {
   let left = index,
     right = index + 1;
@@ -194,8 +219,62 @@ function parameter(report, index, t, get, angular = false) {
       angular ? values.at(-1) + shortest(value - values.at(-1)) : value,
     );
   }
-  return pchip(times, values, index - left, t);
+  return pchipAt(times, values, index - left, t);
 }
+/** One object's records in the keyframes around a tween, matched once. */
+function tweenRecords(frames, matching) {
+  const records = new Map();
+  return k => {
+    let item = records.get(k);
+    if (item === undefined && !records.has(k)) { item = matching(frames[k]); records.set(k, item); }
+    return item;
+  };
+}
+const recordValue = (record, read, k, x, y) => { const item = record(k); return item === undefined ? undefined : read(item, x, y); };
+const runTimes = [], runValues = [];
+/** parameter() for a channel of one object: `read(item, x, y)` reads it from a
+ * matched record. Same arithmetic and order, without per-sample lookups or arrays. */
+function sampleRecords(report, index, t, record, read, angular, x, y) {
+  const frames = report.keyframes;
+  const a = recordValue(record, read, index, x, y), b = recordValue(record, read, index + 1, x, y);
+  if (a === undefined || b === undefined) return a ?? 0;
+  if (easingMode(frames[index]._styk?.easing) === 'auto') {
+    const end = angular ? a + shortest(b - a) : b;
+    const neighbour = (k, duration, before) => {
+      if (!frames[k]) return undefined;
+      let value = recordValue(record, read, k, x, y);
+      if (value === undefined) return undefined;
+      if (angular) value = before ? a - shortest(a - value) : end + shortest(value - b);
+      return {value, duration};
+    };
+    return autoValue(a, end, t, frameTicks(frames[index]),
+      easingMode(frames[index - 1]?._styk?.easing) === 'auto' ? neighbour(index - 1, frameTicks(frames[index - 1]), true) : undefined,
+      easingMode(frames[index + 1]?._styk?.easing) === 'auto' ? neighbour(index + 2, frameTicks(frames[index + 1]), false) : undefined);
+  }
+  if (!usesLegacyNativeEasing(report, index)) return a + (angular ? shortest(b - a) : b - a) * t;
+  let left = index, right = index + 1;
+  while (left > 0 && frameTicks(frames[left - 1]) > 1 && recordValue(record, read, left - 1, x, y) !== undefined) left--;
+  while (right < frames.length - 1 && frameTicks(frames[right]) > 1 && recordValue(record, read, right + 1, x, y) !== undefined) right++;
+  const times = runTimes, values = runValues;
+  times.length = 0; values.length = 0;
+  times.push(0); values.push(recordValue(record, read, left, x, y));
+  for (let i = left + 1; i <= right; i++) {
+    times.push(times[times.length - 1] + frameTicks(frames[i - 1]));
+    const value = recordValue(record, read, i, x, y), previous = values[values.length - 1];
+    values.push(angular ? previous + shortest(value - previous) : value);
+  }
+  return pchipAt(times, values, index - left, t);
+}
+const readField = (item, key) => item[key];
+const readRelativeAngle = (item, i, context) => {
+  const {segments, parent} = context, s = segments[i];
+  let value = Number(item.angles?.[i] ?? s.angle_rad ?? 0);
+  if (parent !== undefined) {
+    const ps = segments[parent];
+    value -= Number(item.angles?.[parent] ?? ps.angle_rad ?? 0) + Number(item.bend_flag ? item.bends[parent] : (ps.bend_rad ?? 0));
+  }
+  return value;
+};
 function colorTween(a, b, t) {
   a = Number(a) >>> 0;
   b = Number(b) >>> 0;
@@ -269,8 +348,9 @@ export function evaluatedNativeFrame(report, index, t = 0, tweenCache, requested
           const controller = matching(f)?._stykIK?.[id];
           return controller?.enabled && controller.pinned === o._stykIK[id].pinned ? controller[section]?.[key] : undefined;
         }, angular));
+      const record = tweenRecords(report.keyframes, matching);
       for (const k of ["root_x", "root_y", "scale"])
-        out[k] = parameter(report, index, t, (f) => matching(f)?.[k]);
+        out[k] = sampleRecords(report, index, t, record, readField, false, k);
       if (fig._styk?.animationOrigin && o._stykAnimationOrigin && next._stykAnimationOrigin) {
         out._stykAnimationOrigin = {};
         for (const k of ['x', 'y']) out._stykAnimationOrigin[k] = parameter(report, index, t,
@@ -289,16 +369,8 @@ export function evaluatedNativeFrame(report, index, t = 0, tweenCache, requested
       ]) {
         if (o[flag] || next[flag] || legacyEasing) {
           out[flag] = 1;
-          out[field] = fig.segments.map((s, i) =>
-            parameter(report, index, t, (f) => {
-              const item = matching(f);
-              return item
-                ? item[flag]
-                  ? item[field][i]
-                  : (s[base] ?? 0)
-                : undefined;
-            }),
-          );
+          const read = (item, i, fallback) => item[flag] ? item[field][i] : fallback;
+          out[field] = fig.segments.map((s, i) => sampleRecords(report, index, t, record, read, false, i, s[base] ?? 0));
         }
       }
       const originLayout = animationOriginLayout(fig);
@@ -340,31 +412,13 @@ export function evaluatedNativeFrame(report, index, t = 0, tweenCache, requested
       for (let q = 0; q < ready.length; q++) ready.push(...(children.get(ready[q]) || []));
       layout = {ids, ready}; layouts.set(fig, layout);
       }
-      const {ids, ready} = layout, angles = new Array(fig.segments.length);
+      const {ids, ready} = layout, angles = new Array(fig.segments.length), relativeTo = {segments: fig.segments, parent: undefined};
       for (let q = 0; q < ready.length; q++) {
         const i = ready[q];
         const s = fig.segments[i],
           parent = ids.get(s.parent_id);
-        const relative = parameter(
-          report,
-          index,
-          t,
-          (f) => {
-            const item = matching(f);
-            if (!item) return undefined;
-            let value = Number(item.angles?.[i] ?? s.angle_rad ?? 0);
-            if (parent !== undefined) {
-              const ps = fig.segments[parent];
-              value -=
-                Number(item.angles?.[parent] ?? ps.angle_rad ?? 0) +
-                Number(
-                  item.bend_flag ? item.bends[parent] : (ps.bend_rad ?? 0),
-                );
-            }
-            return value;
-          },
-          true,
-        );
+        relativeTo.parent = parent;
+        const relative = sampleRecords(report, index, t, record, readRelativeAngle, true, i, relativeTo);
         angles[i] =
           parent === undefined
             ? relative

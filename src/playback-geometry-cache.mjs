@@ -1,24 +1,27 @@
 import {vfxRenderFrame} from './vfx-clips.mjs';
 import {buildGeometry, buildGeometryAsync} from './pivot/geometry.mjs';
+import {sameData,sameRecord} from './structural-equality.mjs';
 
 const wireOnly=new Set(['record_offset','record_end','object_slot','join']);
+// Native tween evaluation explicitly clears this optional override. An absent
+// field and an undefined override both use the figure's normal geometry.
+const skipWire=(key,owner)=>wireOnly.has(key)||(key==='runtime_segments'&&owner[key]===undefined);
+const skipOpacity=key=>key==='field28'||key==='transparency';
+const skipWireAndOpacity=(key,owner)=>skipOpacity(key)||skipWire(key,owner);
 function equal(a,b,ignoreWire=false,ignoreOpacity=false){
+  if(!ignoreWire&&!ignoreOpacity)return sameData(a,b);
   if(Object.is(a,b))return true;
   if(!a||!b||typeof a!=='object'||typeof b!=='object'||Array.isArray(a)!==Array.isArray(b))return false;
-  if(Array.isArray(a))return a.length===b.length&&a.every((value,index)=>equal(value,b[index]));
-  // Native tween evaluation explicitly clears this optional override. An absent
-  // field and an undefined override both use the figure's normal geometry.
-  const relevant=(value,key)=>(!ignoreOpacity||!['field28','transparency'].includes(key))&&(!ignoreWire||(!wireOnly.has(key)&&!(key==='runtime_segments'&&value[key]===undefined)));
-  const keys=Object.keys(a).filter(key=>relevant(a,key)),other=Object.keys(b).filter(key=>relevant(b,key));
-  return keys.length===other.length&&keys.every(key=>Object.hasOwn(b,key)&&equal(a[key],b[key]));
+  if(Array.isArray(a))return sameData(a,b);
+  return sameRecord(a,b,ignoreWire&&ignoreOpacity?skipWireAndOpacity:ignoreWire?skipWire:skipOpacity);
 }
 
+const joinTarget = key => key === 'target_object_slot' || key === 'target_unique_id';
 const parentUid = (object, frame) => object.join ? frame.objects[Number(object.join.target_object_slot)]?.unique_id : null;
 function sameJoin(a, b, aParent, bParent) {
   if (Boolean(a) !== Boolean(b) || aParent !== bParent) return false;
   if (!a) return true;
-  const fields = value => Object.fromEntries(Object.entries(value).filter(([key]) => !['target_object_slot','target_unique_id'].includes(key)));
-  return equal(fields(a), fields(b));
+  return sameRecord(a, b, joinTarget);
 }
 /** Rebind slot metadata without recalculating points or tessellation. The old
  * object-local artwork remains valid and can be adopted by the renderer. */

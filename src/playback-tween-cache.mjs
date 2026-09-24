@@ -1,10 +1,8 @@
-const wireOnly=new Set(['record_offset','record_end']);
+import {sameData,sameRecord} from './structural-equality.mjs';
+const wireOnly=new Set(['record_offset','record_end']),skipWire=key=>wireOnly.has(key);
 function equal(a,b,top=false){
-  if(Object.is(a,b))return true;
-  if(!a||!b||typeof a!=='object'||typeof b!=='object'||Array.isArray(a)!==Array.isArray(b))return false;
-  if(Array.isArray(a))return a.length===b.length&&a.every((v,i)=>equal(v,b[i]));
-  const keys=Object.keys(a).filter(k=>!top||!wireOnly.has(k)),other=Object.keys(b).filter(k=>!top||!wireOnly.has(k));
-  return keys.length===other.length&&keys.every(k=>Object.hasOwn(b,k)&&equal(a[k],b[k]));
+  if(!top||Object.is(a,b)||!a||!b||typeof a!=='object'||typeof b!=='object'||Array.isArray(a))return sameData(a,b);
+  return !Array.isArray(b)&&sameRecord(a,b,skipWire);
 }
 /** Optional worker-only cache for immutable native snapshots. With linear
  * interpolation and exactly equal endpoint objects, the computed tween is
