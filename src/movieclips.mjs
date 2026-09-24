@@ -9,7 +9,9 @@ export const movieclipAsset = figure => figure?._styk?.movieclip;
  * leaving publishes a replacement. Clipboard/history need their own editable
  * figure shell, but can retain the captured animation without copying it. */
 export function snapshotFigureDefinition(figure) {
-  const asset = movieclipAsset(figure);
+  const asset = movieclipAsset(figure), mesh = figure?._styk?.spatialMesh;
+  // Immutable meshes are shared by every snapshot, like clip meshes below.
+  if (mesh) {const {spatialMesh, ...rest} = figure._styk, copy = snapshotFigureDefinition({...figure, _styk: rest}); copy._styk.spatialMesh = mesh; return copy;}
   if (!asset) return structuredClone(figure);
   const {document, spatialMeshes, ...settings} = asset;
   const copy = structuredClone({...figure, _styk: {...figure._styk, movieclip: settings}});

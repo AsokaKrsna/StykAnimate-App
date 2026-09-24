@@ -1202,6 +1202,7 @@ function boundsOf(g) {
           type: s.seg.segment_type || "line",
         })),
         ...g.polys,
+        ...(g.meshDrawables ?? []),
       ],
       r = objectBounds(items, resources);
     b = { minX: r.x, minY: r.y, maxX: r.x + r.width, maxY: r.y + r.height };

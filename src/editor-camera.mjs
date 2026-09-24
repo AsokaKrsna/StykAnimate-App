@@ -146,6 +146,7 @@ function boundsOfGeometry(entry) {
   return objectBounds([
     ...entry.segments.filter(segment => segment.seg.visible !== false).map(segment => ({...segment, type: segment.seg.segment_type || 'line'})),
     ...entry.polys,
+    ...(entry.meshDrawables ?? []),
   ]);
 }
 

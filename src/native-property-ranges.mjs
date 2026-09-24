@@ -87,6 +87,7 @@ function selectionBounds(geometry, selected) {
           .filter((s) => s.seg.visible !== false)
           .map((s) => ({ ...s, type: s.seg.segment_type || "line" })),
         ...entry.polys,
+        ...(entry.meshDrawables ?? []),
       ]);
       bounds.minX = Math.min(bounds.minX, b.x);
       bounds.minY = Math.min(bounds.minY, b.y);

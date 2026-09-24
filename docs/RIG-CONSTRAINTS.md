@@ -72,8 +72,10 @@ preserves the live definition, animation and undo history.
 
 A native spatial construction uses ordinary angle channels for three-axis joint
 rotation. Parent transforms, rest origins, rest tips and up to four skin weights
-are definition data in `_stykRig.spatial`. Skin vertices remain native joints
-used by editable fills. Dual-quaternion blending preserves volume through twists;
+are definition data in `_stykRig.spatial`. Individual skin vertices are native
+joints; a dense surface is a figure mesh bound to the same bones, whose vertices
+are definition data rather than joints (docs/SPATIAL-MESHES.md). Dual-quaternion
+blending preserves volume through twists;
 axial stretching uses weighted transformed positions. Derived depth participates
 in the existing surface evaluator and renderer. There is no additional animation
 clock, pose store or renderer scene graph.
@@ -179,8 +181,9 @@ twist drift on closed drag paths without adding a second animated skeleton.
 Spatial bindings are currently authored in native definition data. Build Figure
 cannot reposition their rest joints, reparent bound bones, mirror an individual
 bound branch or combine the spatial assembly into a flat definition: those actions
-would require rebinding the skin. Whole-figure reflection, posing, native saving,
-undo, playback and joined assemblies remain supported.
+would require rebinding the skin. Figure-mesh bones and reference joints cannot
+be deleted. Whole-figure reflection, posing, native saving, undo, playback and
+joined assemblies remain supported.
 
 Attached movieclips may expose named drawing sets. Form and view selectors choose
 existing single-frame playback offsets, including through the Advanced timeline.

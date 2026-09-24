@@ -10,6 +10,10 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 - Paint with richer brushes: strokes can taper to a point at the start and end (even with a mouse), brushes can use Chalk, Bristle and Sponge tips, paper or canvas grain, and size, opacity and angle jitter, a Pulled string smoothing mode keeps lines steady, a pen pressure curve tunes how your tablet responds, and new Brush pen, Chalk, Dry brush and Sponge presets show them off.
 
+### Changed
+
+- Pose, scrub and play 3D figures far more smoothly, even on slower computers, with much less memory in long animations and smaller saved files.
+
 ## [1.1.0]
 
 Drawing layers and animation editing improvements

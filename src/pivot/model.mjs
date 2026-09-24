@@ -4,6 +4,7 @@ import {hasRigConstraints, rigConstraintPlanSteps, rigIKAllowed} from '../rig-co
 import {validateSticknodesShape,validateSticknodesObject} from '../sticknodes/validation.mjs';
 import {normalizePaint} from '../paint.mjs';
 import {validatePlayback} from '../movieclips.mjs';
+import {validateSpatialMesh} from '../spatial-mesh.mjs';
 import {validateContinuations,continuations} from '../movieclip-presence.mjs';
 import {validateIK} from '../ik.mjs';
 import {validatePoseChoice} from '../rig-pose-choices.mjs';
@@ -215,6 +216,7 @@ export function* validateSceneSteps(report, {sliceMs=4} = {}) {
       for (const p of seen) done.add(p);
     }
     if (hasRigConstraints(fig)) yield* rigConstraintPlanSteps(fig);
+    if (fig._styk?.spatialMesh !== undefined) validateSpatialMesh(fig);
     typeHandles.set(fig.figure_type_id, new Set([0, ...parents.keys()]));
     if(fig._styk?.animationOrigin!==undefined)yield* validateOriginSupportSteps(fig,fig._styk.animationOrigin,{sliceMs});
   }

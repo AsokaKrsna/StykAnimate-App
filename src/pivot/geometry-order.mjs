@@ -2,7 +2,8 @@
 // order with the changed records instead of sorting every face again. Ties use
 // native insertion order, not the order of the preceding pose.
 export function orderPoseDrawables(current, previous) {
-  if (!previous?.drawables) return;
+  // Mesh drawables are regrouped from the evaluated faces on every pose.
+  if (!previous?.drawables || current.spatialMesh || previous.spatialMesh) return;
   const raw = (g, s) => s.type === 'poly' ? g.polys[s.index] : g.segments[s.index];
   // Expanded sprites and imported compound shapes have their own ordering.
   if (current.obj?._sticknodesShapes || current.segments.some(s => s.seg._sticknodes) ||

@@ -65,7 +65,7 @@ export function createSurfaceEvaluation(joints){
 export function surfaceHandles(poly) {return [...(poly.segment_ids??[]),...(poly._stykSurface?.basis??[]),...(poly._stykSurface?.depth??[])];}
 export function documentHasSurfaces(document,seen=new Set()) {
   if(seen.has(document))return false;seen.add(document);
-  return document.figure_types.some(f=>f.polyfills?.some(p=>p._stykSurface)||f._styk?.movieclip?.spatialMeshes||(f._styk?.movieclip&&documentHasSurfaces(f._styk.movieclip.document,seen)));
+  return document.figure_types.some(f=>f.polyfills?.some(p=>p._stykSurface)||f._styk?.spatialMesh||f._styk?.movieclip?.spatialMeshes||(f._styk?.movieclip&&documentHasSurfaces(f._styk.movieclip.document,seen)));
 }
 export function remapSurface(poly, remap) {
   if(poly._stykSurface)poly._stykSurface={...poly._stykSurface,basis:poly._stykSurface.basis.map(remap),...(poly._stykSurface.depth?{depth:poly._stykSurface.depth.map(remap)}:{})};
@@ -93,4 +93,7 @@ export function editableSurface(surface, figure, joints, handleIds) {
 export function protectSurfaceReferences(figure, removed) {
   if((figure.polyfills??[]).some(p=>!p.segment_ids.some(id=>removed.has(id))&&[...(p._stykSurface?.basis??[]),...(p._stykSurface?.depth??[])].some(id=>removed.has(id))))
     throw new Error('This joint controls face visibility. Change the fill reference joints before deleting it.');
+  const mesh=figure._styk?.spatialMesh;
+  if(mesh&&[...removed].some(id=>mesh.basis.includes(id)||mesh.bones.includes(id)))
+    throw new Error('This joint moves or orients the 3D mesh. Keep it to preserve the mesh.');
 }

@@ -62,6 +62,7 @@ function defaultBounds(geometry) {
       ...segment, type: segment.seg.segment_type || 'line',
     })),
     ...geometry.polys,
+    ...(geometry.meshDrawables ?? []),
   ]);
 }
 
@@ -146,6 +147,7 @@ export const editorSelectionMethods = {
   copyBranchSelection() {
     const figure = this.figure, joint = this.selectedJoint;
     if (!figure?.segments[joint]) return 0;
+    if (figure._styk?.spatialMesh) throw new Error('Copy the whole figure to include its 3D mesh.');
     const indices = segmentBranchIndices(figure.segments, figure.segments[joint].segment_id);
     const handles = new Set(indices.map(i => figure.segments[i].segment_id));
     const boundary = figure.segments[joint].parent_id, geometry = this.geometry.objects.get(this.selectedSlot);

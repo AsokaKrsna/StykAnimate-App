@@ -111,6 +111,7 @@ function boundsOfSelection(editor, supplied) {
           .filter((s) => s.seg.visible !== false)
           .map((s) => ({ ...s, type: s.seg.segment_type || "line" })),
         ...geometry.polys,
+        ...(geometry.meshDrawables ?? []),
       ]),
       b = {
         minX: raw.x,

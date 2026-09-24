@@ -1,10 +1,11 @@
 /** Content identity for reusable object-local artwork. Native world geometry is
  * untouched. Coordinates must match exactly after subtracting each root; no
  * quantization or fast-hash-only equality can merge distinct poses or styles. */
+import {spatialMeshSignature} from './spatial-mesh.mjs';
 const ignoredObjectKeys=new Set(['unique_id','object_slot','root_x','root_y','join','record_offset','record_end','runtime_segments']);
 const numericFields=['index','version','angle','bend','length','z','thickness','alpha','opacity'];
-const knownFields=new Set(['obj','fig','slot','start','end','points','seg','poly','asset','type','rgb','static','depthValues','culled',...numericFields]);
-const types=['line','circle','image','text','poly'];
+const knownFields=new Set(['obj','fig','slot','start','end','points','seg','poly','asset','type','rgb','static','depthValues','culled','spatialMesh','triangles','materials','count',...numericFields]);
+const types=['line','circle','image','text','poly','mesh'];
 const hash=values=>{let n=2166136261;for(let i=0;i<values.length;i++)n=Math.imul(n^values[i],16777619);return n>>>0;};
 const textHash=value=>{let n=2166136261;for(let i=0;i<value.length;i++)n=Math.imul(n^value.charCodeAt(i),16777619);return n>>>0;};
 const equal=(a,b)=>{if(a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(!Object.is(a[i],b[i]))return false;return true;};
@@ -100,8 +101,12 @@ export class ArtworkRegistry {
     // The exact geometry signature already contains the evaluated runtime
     // segments. Write it once into its final buffer, avoiding a large growing
     // JS array plus a second copy on every dense-scene frame change.
+    // A mesh contributes its pose inputs, not its evaluated faces: the
+    // definition identity plus those inputs determine every triangle.
+    const meshes=new Map();
+    for(const item of items)if(item.type==='mesh'&&!meshes.has(item.spatialMesh))meshes.set(item.spatialMesh,spatialMeshSignature(item.spatialMesh,g.root));
     let count=0;
-    for(const item of items)count+=8+numericFields.length+(item.rgb?.length??0)+(item.depthValues?.length??0)+
+    for(const item of items)count+=9+numericFields.length+(item.rgb?.length??0)+(item.depthValues?.length??0)+(item.type==='mesh'?meshes.get(item.spatialMesh).length:0)+
       2*(Number(Boolean(item.start))+Number(Boolean(item.end))+(item.points?.length??0));
     const data=new Float64Array(count),extra=[],payloads=[],childFigures=new Map(),childDefinitions=[],effectOwners=new Set();let cursor=0;
     const point=p=>{data[cursor++]=p.x-g.root.x;data[cursor++]=p.y-g.root.y;};
@@ -122,6 +127,8 @@ export class ArtworkRegistry {
       if(item.culled!==undefined&&typeof item.culled!=='boolean')extra.push([i,'culled',item.culled]);
       if(depth!==undefined&&(!Array.isArray(depth)||depth.some(n=>typeof n!=='number'||!Number.isFinite(n))))extra.push([i,'depthValues',depth]);
       if(start)point(start);if(end)point(end);if(points)for(const p of points)point(p);
+      if(item.type==='mesh'){const signature=meshes.get(item.spatialMesh);data[cursor++]=item.count;data.set(signature,cursor);cursor+=signature.length;}
+      else data[cursor++]=-1;
       // Most records reference the definition directly. Styled/generated
       // records and future drawing attributes remain part of exact identity.
       if(type<0)extra.push([i,'type',item.type]);

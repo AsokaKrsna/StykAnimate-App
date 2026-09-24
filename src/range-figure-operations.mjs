@@ -365,7 +365,7 @@ export function planFigureFrameOperation(report, frame, uids, input) {
     } else {
       const [lo, hi, position] = operation.axis === 'x' ? ['minX', 'maxX', 'root_x'] : ['minY', 'maxY', 'root_y'];
       const boundsOf = operation.boundsOf ?? (g => objectBounds([...g.segments.filter(segment => segment.seg.visible !== false)
-        .map(segment => ({...segment, type: segment.seg.segment_type || 'line'})), ...g.polys]));
+        .map(segment => ({...segment, type: segment.seg.segment_type || 'line'})), ...g.polys, ...(g.meshDrawables ?? [])]));
       let start = Infinity, end = -Infinity; const extents = new Map();
       for (const [root, members] of groups) {
         let min = Infinity, max = -Infinity;

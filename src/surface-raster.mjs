@@ -1,8 +1,9 @@
-/** Small, bounded depth compositor for native projected solid fills. The rig
- * still supplies ordinary editable joints. Every rendering path paints the same
- * depth-tested triangles through drawGeometry, including worker/export canvases. */
+/** Small, bounded depth compositor for native projected solid fills and figure
+ * meshes. Every rendering path paints the same depth-tested triangles through
+ * drawGeometry, including worker/export canvases. */
 const caches=new WeakMap(),TILE=1024,MAX_RETAINED_FLOATS=2*1024*1024;
-export const depthSurface=s=>s?.type==='poly'&&s.poly?._stykSurface?.depthTest&&s.depthValues?.length===s.points.length&&s.points.length>=3&&s.points.length<=4&&s.alpha===1&&!s.outline;
+export const depthSurface=s=>s?.type==='mesh'?!s.outline&&s.count>0:
+  s?.type==='poly'&&s.poly?._stykSurface?.depthTest&&s.depthValues?.length===s.points.length&&s.points.length>=3&&s.points.length<=4&&s.alpha===1&&!s.outline;
 const makeCanvas=(ctx,w,h)=>typeof OffscreenCanvas!=='undefined'?new OffscreenCanvas(w,h):Object.assign(ctx.canvas.ownerDocument.createElement('canvas'),{width:w,height:h});
 function create(ctx){
   const canvas=makeCanvas(ctx,1,1),gl=canvas.getContext('webgl2',{alpha:true,antialias:true,premultipliedAlpha:true,preserveDrawingBuffer:true});
@@ -44,7 +45,7 @@ function software(r,data,box,w,h){
 export function paintDepthSurfaces(ctx,items){
   let r=caches.get(ctx);if(r?.gl?.isContextLost()){releaseSurfaceRaster(ctx);r={canvas:makeCanvas(ctx,1,1)};}
   if(!r)r=create(ctx);caches.set(ctx,r);
-  const vertexCount=items.reduce((sum,s)=>sum+(s.points.length-2)*3,0),length=vertexCount*6;
+  const vertexCount=items.reduce((sum,s)=>sum+(s.type==='mesh'?s.count:s.points.length-2)*3,0),length=vertexCount*6;
   let data;
   if(length<=MAX_RETAINED_FLOATS){
     if(!r.data || r.data.length<length || r.data.length>Math.max(1024,length*4))
@@ -52,7 +53,18 @@ export function paintDepthSurfaces(ctx,items){
     data=r.data.subarray(0,length);
   }else{r.data=undefined;data=new Float32Array(length);}
   let at=0,minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
-  for(const s of items){const red=s.rgb[0]/255,green=s.rgb[1]/255,blue=s.rgb[2]/255;
+  for(const s of items){
+    if(s.type==='mesh'){
+      // Onion skins tint every face with one colour.
+      const mesh=s.spatialMesh,p=mesh.positions,d=mesh.depth,T=s.triangles,colors=mesh.colors.map(c=>(c=s.onionTint??c,[c[0]/255,c[1]/255,c[2]/255]));
+      if(mesh.bounds){minX=Math.min(minX,mesh.bounds.x0);maxX=Math.max(maxX,mesh.bounds.x1);minY=Math.min(minY,mesh.bounds.y0);maxY=Math.max(maxY,mesh.bounds.y1);minZ=Math.min(minZ,mesh.zMin);maxZ=Math.max(maxZ,mesh.zMax);}
+      for(let t=0;t<s.count;t++){
+        const [red,green,blue]=colors[s.materials[t]];
+        for(let k=0;k<3;k++){const v=T[t*3+k];data[at++]=p[v*2];data[at++]=p[v*2+1];data[at++]=d[v];data[at++]=red;data[at++]=green;data[at++]=blue;}
+      }
+      continue;
+    }
+    const red=s.rgb[0]/255,green=s.rgb[1]/255,blue=s.rgb[2]/255;
     for(let i=0;i<s.points.length;i++){
       const p=s.points[i],z=s.depthValues[i];
       minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);minZ=Math.min(minZ,z);maxZ=Math.max(maxZ,z);

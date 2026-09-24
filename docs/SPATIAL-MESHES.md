@@ -1,4 +1,70 @@
-# Attached spatial meshes
+# Spatial meshes
+
+## Figure meshes
+
+A figure can store one immutable indexed mesh in `_styk.spatialMesh`, bound to
+its own articulated spatial bones (docs/RIG-CONSTRAINTS.md). Vertices are
+definition data: they are not joints, fills or per-frame pose channels. A 3D
+character therefore keeps tens of bones in its joint graph and pose records,
+whatever the density of its surface.
+
+| Field | Contents |
+| --- | --- |
+| `positions` | Bind-space XYZ per vertex, in the coordinates of native skin points. |
+| `bones`, `weights` | Four slots per vertex: spatial bone IDs (0 = unused) and weights that sum to one. |
+| `indices` | Three vertex indices per triangle, front-facing with the reference parity. |
+| `colors`, `materials` | An RGB palette (up to 1,024 entries) and one palette index per triangle. |
+| `basis` | Origin, X and Y reference joints, as for one-sided native fills. |
+| `z` | Optional depth-order offset of every face. |
+| `views`, `viewVertices`, `viewPoints` | Optional four- or eight-view targets for single-bone vertices, with the semantics of view-corrected skin. |
+| `groups` | Optional named, ordered triangle ranges, such as "Mask" or "Left boot". |
+
+Validation bounds vertices (200,000), triangles (400,000), palette size and
+coordinates, requires every binding to name an articulated spatial bone and
+rejects degenerate or out-of-range triangles. Native STYK/STKZ containers store
+the flat numeric arrays in their binary sections.
+
+A pose evaluates the mesh once, after its bones, in `src/spatial-mesh.mjs`.
+Skinning follows rig-spatial skin points operation for operation: single-bone
+vertices use the bone frame, including stretch, part proportions and pose
+choices; several bones use dual-quaternion blending, or a linear blend while any
+bone stretches; view targets blend around the bone heading. Vertices then take
+the figure rotation, scale, reflection and optional perspective. Faces are
+culled by the reference parity with the native edge-on tolerance and clipped
+against the perspective near plane. Positions and depth are typed arrays with
+native Float32 rounding. An unchanged pose, including colours, returns the
+previous evaluation. Translation alone re-evaluates positions, but the artwork
+signature is root-relative, so rendered artwork is reused.
+
+The evaluated mesh is drawn as depth-tested triangles in one pass of the shared
+WebGL2 depth compositor (software without WebGL2), in every rendering path.
+Other visible primitives of the figure split its faces only where native per-face
+painter order would; zero-width construction lines do not. Onion tints recolour
+every face.
+
+Build Figure keeps mesh bones and reference joints: deleting one is rejected, as
+are branch copies, figure combination and origin changes, which would require
+rebinding. Definition snapshots and history share the immutable mesh. Pivot
+.stk/.piv export rejects meshes, like other one-sided fills; images and video
+preserve their appearance.
+
+`src/spatial-mesh-legacy.mjs` converts native skin joints used only as vertices
+of opaque, front-facing depth-tested triangles into a figure mesh. Every other
+joint keeps its ID; objects lose only the removed joints' pose channels.
+Figures whose skin joints are also parents, rig anchors, join or IK targets, or
+vertices of other fills keep the native representation, which remains
+supported. `node scripts/convert-spatial-meshes.mjs <input> <output>` converts a
+STYK or STKZ file without modifying the input.
+
+`tests/spatial-mesh.test.mjs` compares converted Spider-Man meshes with the
+native skin surfaces in plain, reflected, perspective and near-clipped views
+(identical positions and visible faces). It also covers validation, conversion
+refusals, live posing against fresh evaluation, snapshot sharing, Builder
+protection, bounds, painter-order splitting and artwork identity.
+`tests/spider-man-rig.test.mjs` checks the generated mesh asset.
+docs/SPATIAL-FIGURE-PERFORMANCE.md records the measurements.
+
+## Attached movieclip meshes
 
 A movieclip definition can store immutable indexed `spatialMeshes`, one per local
 frame. Each mesh has flat XYZ `positions`, triangular `indices`, RGB `colors`, and

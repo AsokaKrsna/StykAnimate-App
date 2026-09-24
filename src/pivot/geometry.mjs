@@ -1,6 +1,7 @@
 import {projection,projectSpatialFace,interpolateSpatialPose} from '../spatial-projection.mjs';
 import {createSurfaceEvaluation} from './surfaces.mjs';
 import {depthSurface,paintDepthSurfaces,releaseSurfaceRaster} from '../surface-raster.mjs';
+import {spatialMeshPlan,evaluateSpatialMeshSteps,spatialMeshDrawables} from '../spatial-mesh.mjs';
 import {orderPoseDrawables} from './geometry-order.mjs';
 import {primitiveOutsideRasterClip} from './raster-clip.mjs';
 import {paintDrawingTiles} from '../drawing-raster.mjs';
@@ -13,7 +14,7 @@ import { composePoseChannels, invalidatePoseCache } from '../animation-pose.mjs'
 import { composeAnimationChannels, animationEndTick } from '../animation-channels.mjs';
 import { applyLayerOrder } from '../layers.mjs';
 import { resolveInstanceFigure } from '../animation-style.mjs';
-import {animationOriginLayout, animationOriginAngle, animationOriginBend, correctAnimationOrigins} from '../animation-origin.mjs';
+import {animationOriginLayout, animationOriginAngle, animationOriginBend, correctAnimationOrigins, animationRotation} from '../animation-origin.mjs';
 import {interpolateOriginSupport} from '../animation-origin-support.mjs';
 import {easedProgress, usesLegacyNativeEasing, easingMode, autoValue} from '../keyframe-easing.mjs';
 import {geometryDefinition} from './geometry-definition.mjs';
@@ -765,6 +766,21 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       polys.push(render);
       if ((i & 31) === 31) yield {phase:'geometry',stage:'polygons',slot,completed:i+1,total:fig.polyfills.length};
     }
+    // Mesh vertices are definition data evaluated in one typed pass after
+    // their bones; they never enter joints, segments or polygons.
+    const meshPlan = rig ? spatialMeshPlan(fig, rig.plan.ids) : null;
+    let spatialMesh = null, meshDrawables = null;
+    if (meshPlan) {
+      const frames = new Array(segments.length);
+      for (const i of meshPlan.bones) frames[i] = renders[i]?.spatialFrame;
+      spatialMesh = yield* evaluateSpatialMeshSteps(meshPlan, frames, {root, scale, figureAngle: animationRotation(fig, obj),
+        mirror: Boolean(obj.image_text_flags), camera, joints, colorOf: c => objectColor(c, obj), slot}, previous?.spatialMesh);
+      const levels = [];
+      for (const p of polys) if (!p.culled) levels.push(p.z);
+      // Zero-width lines paint nothing and must not split the depth-tested faces.
+      for (const s of renders) if (s && s.seg.visible !== false && !(s.type === 'line' && !(s.thickness > 0))) levels.push(s.z);
+      meshDrawables = spatialMeshDrawables(spatialMesh, {obj, fig, slot, opacity}, levels);
+    }
     const geometry = {
       slot,
       ...(ik ? {ik: ik.results, solvedAngles: ik.angles, solvedLengths: ik.lengths} : {}),
@@ -774,6 +790,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
       joints,
       segments: renders.filter(Boolean),
       polys,
+      ...(spatialMesh ? {spatialMesh, meshDrawables} : {}),
     };
     const renderSource=incremental?.renderSources?.get(slot);
     if (pose && poseAllowed) geometry.drawables = orderPoseDrawables(geometry, previous);
@@ -841,6 +858,7 @@ export function* buildGeometrySteps(report, frame, incremental = null) {
     }
     const local = g.drawables ?? [
       ...g.polys.filter(p=>!p.culled),
+      ...(g.meshDrawables ?? []),
       ...g.segments
         .filter((s) => s.seg.visible !== false)
         .flatMap((s) => sticknodesDrawables(s) ?? [s]),
@@ -1121,6 +1139,8 @@ function drawPrimitives(ctx, items, resources, stroke, paint = true, clip = null
       let end=itemIndex+1;while(end<items.length&&depthSurface(items[end]))end++;
       paintDepthSurfaces(ctx,items.slice(itemIndex,end));itemIndex=end-1;continue;
     }
+    // Outline and brush-only passes have nothing to paint for a solid mesh.
+    if(s.type==='mesh')continue;
     // Adjacent opaque triangles of a projected solid share coverage. Filling
     // each separately antialiases the internal edges against the background.
     // Union consecutive, equally wound faces without crossing painter layers.

@@ -78,7 +78,7 @@ function needsEvenOddRaster(points) {
   return false;
 }
 export function requiresCompatibilityTexture(items) {
-  if(items.some(s=>s.poly?._stykSurface?.depthTest))return true;
+  if(items.some(s=>s.type==='mesh'||s.poly?._stykSurface?.depthTest))return true;
   const single = singleVectorPrimitive(items);
   return items.some(s => hasDrawableVfx(s) || movieclipTransparency(s) || (s.seg?.paint && s.seg.paint.type !== 'solid') || s.type === 'text' || s.type === 'image' || (s.opacity < .999999 && !single) || s.fig?.segment_decode?.global_style?.u28 || ((s.alpha < .999999 || s.seg?.secondary?.a > 0) && Math.abs(s.bend) > 1e-7) || (s.type === 'poly' && needsEvenOddRaster(s.points)));
 }
@@ -191,6 +191,7 @@ export function objectBounds(items, resources = {}) {
     // to a handful of pixels at the texture-size limit. Outlines still paint.
     if (s.type === 'line' && (s.baseThickness ?? s.thickness) === 0 && !outline && !s.outline) continue;
     const pad = Math.max(0, s.thickness ?? 0) / 2 + (Number.isFinite(outline) ? outline : 0) + 3 + (resources.vfxBounds===false?0:drawableVfxPadding(s));
+    if (s.type === 'mesh') { const b = s.spatialMesh.bounds; if (b) { include(b.x0, b.y0, pad); include(b.x1, b.y1, pad); } continue; }
     if (s.type === 'circle') include((s.start.x + s.end.x) / 2, (s.start.y + s.end.y) / 2, Math.abs(s.length) / 2 + pad);
     else for (const p of s.points || []) include(p.x, p.y, pad);
     if (s.type === 'image' && s.asset) {

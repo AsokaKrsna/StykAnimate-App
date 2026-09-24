@@ -1,5 +1,6 @@
 /** Native builder Delete / Ctrl+Delete and segment / branch mirror commands. */
 import {buildGeometry} from './pivot/geometry.mjs';
+import {protectSurfaceReferences} from './pivot/surfaces.mjs';
 
 const EPS = 1e-9;
 function topology(segments) {
@@ -93,6 +94,7 @@ export const editorBuilderTopologyMethods = {
     if (!segment) return false;
     if((figure.polyfills??[]).some(p=>p._stykSurface?.basis.includes(segment.segment_id)))
       throw new Error('This joint controls face visibility. Change the fill reference joints before deleting it.');
+    protectSurfaceReferences(figure, new Set([segment.segment_id]));
     if (typeof preserveEndpoints !== 'boolean') throw new Error('Choose whether to preserve the other joints.');
     if (figure.segments.length === 1) throw new Error('A figure needs at least one segment. Delete the figure to remove it completely.');
     const tree = topology(figure.segments), children = tree.children.get(segment.segment_id) ?? [];
