@@ -51,21 +51,45 @@ def _keyed_bitmap_png(asset: dict[str, Any]) -> None:
             blue, green, red = blob[palette_start + index * 4:palette_start + index * 4 + 3]
             palette.append((red, green, blue))
     key_rgb = (key & 255, key >> 8 & 255, key >> 16 & 255)
+    # Whole rows are converted with byte-level operations (slices, translate
+    # tables and integer masks) rather than one Python step per pixel; a large
+    # sprite pack otherwise spends most of its import here. Output is unchanged.
+    if bits <= 8:
+        tables = [bytearray(256) for _ in range(4)]
+        for index, rgb in enumerate(palette):
+            tables[0][index], tables[1][index], tables[2][index] = rgb
+            tables[3][index] = 0 if rgb == key_rgb else 255
+        per_byte = 8 // bits
+        unpack = [bytes((value >> (8 - bits * (k + 1))) & ((1 << bits) - 1) for value in range(256)) for k in range(per_byte)]
+    else:
+        step = bits // 8
+        equal = [bytes(1 if value == channel else 0 for value in range(256)) for channel in key_rgb]
+    transparent = bytes([255, 0] + [255] * 254)
     rows = bytearray()
     for y in range(height):
         row = pixel_offset + (height - 1 - y if signed_height > 0 else y) * stride
-        rows.append(0)  # PNG filter: none.
-        for x in range(width):
-            if bits <= 8:
-                index = (blob[row + x * bits // 8] >> (8 - bits - (x * bits % 8))) & ((1 << bits) - 1)
-                if index >= len(palette):
-                    raise ValueError("Legacy sprite bitmap references an absent palette color")
-                rgb = palette[index]
+        if bits <= 8:
+            source = blob[row:row + (width + per_byte - 1) // per_byte]
+            if per_byte == 1:
+                indices = source
             else:
-                pos = row + x * (bits // 8)
-                blue, green, red = blob[pos:pos + 3]
-                rgb = (red, green, blue)
-            rows.extend((*rgb, 0 if rgb == key_rgb else 255))
+                indices = bytearray(len(source) * per_byte)
+                for k in range(per_byte):
+                    indices[k::per_byte] = source.translate(unpack[k])
+                indices = indices[:width]
+            if max(indices) >= len(palette):
+                raise ValueError("Legacy sprite bitmap references an absent palette color")
+            red, green, blue, alpha = (indices.translate(table) for table in tables)
+        else:
+            source = blob[row:row + width * step]
+            blue, green, red = source[0::step], source[1::step], source[2::step]
+            keyed = (int.from_bytes(red.translate(equal[0]), "little") & int.from_bytes(green.translate(equal[1]), "little")
+                     & int.from_bytes(blue.translate(equal[2]), "little"))
+            alpha = keyed.to_bytes(width, "little").translate(transparent)
+        pixels = bytearray(width * 4)
+        pixels[0::4], pixels[1::4], pixels[2::4], pixels[3::4] = red, green, blue, alpha
+        rows.append(0)  # PNG filter: none.
+        rows += pixels
     def chunk(kind: bytes, data: bytes) -> bytes:
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
     png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))

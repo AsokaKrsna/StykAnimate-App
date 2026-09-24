@@ -58,6 +58,24 @@ class Reader:
             self.bindings[path] = {'offset': start, 'format': fmt}
         return value
 
+    def values(self, fmt: str, count: int, prefix: str) -> list:
+        """``count`` consecutive values as value(fmt, f'{prefix}/{i}') would read
+        them, with the same bindings and errors, in one unpack."""
+        size = struct.calcsize('<' + fmt)
+        if count <= 0 or self.pos + size * count > len(self.data):
+            # The per-value path reports exactly where a truncated list ends.
+            return [self.value(fmt, f'{prefix}/{i}') for i in range(count)]
+        start = self.pos
+        result = list(struct.unpack_from(f'<{count}{fmt}', self.data, start))
+        self.pos += size * count
+        if fmt in ('f', 'd'):
+            for i, value in enumerate(result):
+                if not math.isfinite(value):
+                    raise ValueError(f"Non-finite {prefix}/{i} at byte {start + i * size}")
+        for i in range(count):
+            self.bindings[f'{prefix}/{i}'] = {'offset': start + i * size, 'format': fmt}
+        return result
+
     def string(self) -> str:
         return self.read(self.value('B')).decode('latin-1')
 
@@ -242,7 +260,7 @@ def decode_v4(data: bytes, source_path: str = '', assets_root: Path | None = Non
             transparency = reader.value('B', op + '/field28')
             image_text_flags = reader.value('B', op + '/image_text_flags') if figure['image_assets'] else 0
             count = figure['segment_count']
-            angles = [reader.value('d', op + f'/angles/{si}') for si in range(count)]
+            angles = reader.values('d', count, op + '/angles')
             if any(abs(angle) > 100 for angle in angles):
                 # Native 941612..941654 interprets this as a reset sentinel and
                 # derives the pose through B009FC/943650, rather than sin/cos.
@@ -251,7 +269,7 @@ def decode_v4(data: bytes, source_path: str = '', assets_root: Path | None = Non
             root_x = reader.value('f', op + '/root_x')
             root_y = reader.value('f', op + '/root_y')
             length_flag = reader.value('B')
-            lengths = [reader.value('f', op + f'/lengths/{si}') for si in range(count)] if length_flag else []
+            lengths = reader.values('f', count, op + '/lengths') if length_flag else []
             join_flag = reader.value('B')
             join = None
             if join_flag:
