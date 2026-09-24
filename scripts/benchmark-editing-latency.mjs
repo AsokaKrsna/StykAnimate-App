@@ -1,6 +1,7 @@
 /** Real Electron input, cold/warm seeks and GPU completion. Input files are read-only. */
 import {_electron as electron} from 'playwright';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
@@ -12,11 +13,25 @@ try {
   await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];w.webContents.setBackgroundThrottling(false);w.setIgnoreMouseEvents(true);w.setFocusable(false);w.showInactive();});
   await page.waitForFunction(()=>window.styk?.ready);
   if(process.env.STYK_BASELINE_REF){
-    const files=new Map(),ref=process.env.STYK_BASELINE_REF;
+    // Extract the ref's sources once; one git process per request can exceed
+    // the reload timeout on a busy machine.
+    const ref=execFileSync('git',['rev-parse','--short',process.env.STYK_BASELINE_REF]).toString().trim(),tree=path.resolve('artifacts/editing-latency',`.source-${ref}`);
+    if(!existsSync(path.join(tree,'complete'))){
+      const names=execFileSync('git',['ls-tree','-r','--name-only',ref,'src'],{maxBuffer:64*1024*1024}).toString().split('\n').filter(Boolean);
+      const batch=execFileSync('git',['cat-file','--batch'],{input:names.map(name=>`${ref}:${name}`).join('\n')+'\n',maxBuffer:1024*1024*1024});
+      let at=0;
+      for(const name of names){
+        const header=batch.indexOf(10,at),size=Number(batch.subarray(at,header).toString().split(' ')[2]);
+        await mkdir(path.dirname(path.join(tree,name)),{recursive:true});await writeFile(path.join(tree,name),batch.subarray(header+1,header+1+size));at=header+1+size+1;
+      }
+      await writeFile(path.join(tree,'complete'),ref);
+    }
     await page.context().route('**/src/**',async route=>{
-      const file=new URL(route.request().url()).pathname.slice(1);
-      if(!files.has(file))files.set(file,execFileSync('git',['show',`${ref}:${file}`],{maxBuffer:16*1024*1024}));
-      await route.fulfill({body:files.get(file),contentType:file.endsWith('.css')?'text/css':'text/javascript'});
+      const file=new URL(route.request().url()).pathname.slice(1),body=await readFile(path.join(tree,file)).catch(()=>null);
+      // A worker started before the reload can still request a file that the
+      // baseline does not contain; the baseline code never imports it.
+      if(body===null)return route.fulfill({status:404,body:''});
+      await route.fulfill({body,contentType:file.endsWith('.css')?'text/css':'text/javascript'});
     });
     await page.reload();await page.waitForFunction(()=>window.styk?.ready);
   }

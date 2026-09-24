@@ -123,7 +123,7 @@ export class Timeline{
   setPaused(value){const resumed=this.paused&&!value;this.paused=value;this.update(Boolean(resumed));}
   update(dirty=true){
     this.dirty||=dirty;if(this.disposed||this.raf)return;
-    this.raf=requestAnimationFrame(()=>{this._flushScrub();if(this.dirty){this.dirty=false;this._paint();}this._syncPlayhead();this.raf=null;
+    this.raf=requestAnimationFrame(()=>{this._flushScrub();this._paintedOffsetX=undefined;if(this.dirty){this.dirty=false;this._paint();}this._syncPlayhead();this._paintedOffsetX=undefined;this.raf=null;
       if(this.pendingScrub!=null)this.update(false);
     });
   }
@@ -139,7 +139,9 @@ export class Timeline{
   _syncPlayhead(){
     this.onionRange?.update();
     this.audio?.update(false);
-    const tick=Math.floor(this.pendingScrub??this.editor.tick),x=(tick+.5)*this.pxPerTick-this._offsetX();this.playhead.style.transform=`translateX(${x}px)`;
+    // Reuse the offset this frame's paint just read: other widgets have written
+    // to the DOM since, so reading it again would force another layout.
+    const tick=Math.floor(this.pendingScrub??this.editor.tick),x=(tick+.5)*this.pxPerTick-(this._paintedOffsetX??this._offsetX());this.playhead.style.transform=`translateX(${x}px)`;
     if(this.playheadLabel.textContent!==String(tick+1))this.playheadLabel.textContent=String(tick+1);
 
   }
@@ -147,6 +149,7 @@ export class Timeline{
     this._syncOrganization();
     this.audio?.update();
     this._extent();const ctx=this.canvas.getContext('2d'),dpr=window.devicePixelRatio||1,step=this.pxPerTick,sx=this._offsetX(),sy=this._offsetY(),w=this.width,h=this.height,c=this.colors;
+    this._paintedOffsetX=sx;
     if(!c)return;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);ctx.fillStyle=c.surface;ctx.fillRect(0,0,w,h);
     const durationX=this.editor.totalTicks*step-sx;if(durationX<w){ctx.fillStyle=c.hover;ctx.fillRect(Math.max(0,durationX),HEADER,w-Math.max(0,durationX),h-HEADER);}
     const first=Math.floor(sx/step),last=Math.ceil((sx+w)/step),firstRow=clamp(Math.floor(sy/ROW),0,this.tracks.length),lastRow=clamp(Math.ceil((sy+h-HEADER)/ROW),firstRow,this.tracks.length),state=this.editor.report._styk.layerSheet;
@@ -245,7 +248,10 @@ export class Timeline{
     else this.selectedLayers=new Set([id]);
     this.selectedTrackId=id;this.editor.selectSheetLayer(id,{contents:id!=='camera'});this.onTrackSelect?.(this.trackById.get(id));this.update();
   }
-  selectTrack(id){if(id?.startsWith('figure:'))id=this.editor.layerForUid(Number(id.slice(7)));if(this.editor.getLayer(id)){this.selectedTrackId=id;this.selectedLayers=new Set([id]);this.revealSelectedLayer();this.update();}}
+  // The app re-applies its selected track on every interface update. When that
+  // track is already the only selection there is nothing to reveal or repaint;
+  // reading the scroll position then would force layout mid-update.
+  selectTrack(id){if(id?.startsWith('figure:'))id=this.editor.layerForUid(Number(id.slice(7)));if(this.editor.getLayer(id)){if(this.selectedTrackId===id&&this.selectedLayers.size===1&&this.selectedLayers.has(id))return;this.selectedTrackId=id;this.selectedLayers=new Set([id]);this.revealSelectedLayer();this.update();}}
   _renameLayer(node){const layer=this.editor.getLayer(node._id);if(layer?.kind!=='layer')return;const input=element('input',node,'sheet-layer-rename');input.value=layer.name;node._name.hidden=true;input.focus();input.select();let done=false;
     const finish=save=>{if(done)return;done=true;if(save&&input.value!==layer.name)this._run(()=>this.editor.renameLayer(layer.id,input.value));input.remove();node._name.hidden=false;this.update();};input.addEventListener('blur',()=>finish(true),{once:true});input.addEventListener('keydown',event=>{event.stopPropagation();if(event.key==='Enter')finish(true);if(event.key==='Escape')finish(false);});}
   _hit(event){const rect=this.scroll.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top;return {tick:clamp(Math.floor((x+this._offsetX())/this.pxPerTick),0,9999999),row:y<HEADER?-1:Math.floor((y-HEADER+this._offsetY())/ROW),x,y};}
