@@ -21,6 +21,7 @@ import { composeSceneGroups } from './scene-order.mjs';
 import { HandleRenderer } from './renderer-handles.mjs';
 import {opacityArtwork} from './renderer-opacity.mjs';
 import {rasterizeVectorGroup, supportsVectorIsolation} from './renderer-vector-raster.mjs';
+import {meshOnlyItems, meshRasterSource, rasterizeMeshGroup} from './renderer-mesh-raster.mjs';
 import { ArtworkRegistry } from './render-artwork.mjs';
 import {glyphTextureDescriptor,drawGlyphMask,glyphTextureShape} from './renderer-glyphs.mjs';
 import { uploadShapeLayoutSteps, SHAPE_UPLOAD_RECORDS } from './renderer-upload.mjs';
@@ -642,6 +643,11 @@ class WebGPURenderer {
       const result = {...rasterizeVectorGroup(this, {data, width, height, pixelScale, bounds, root: g.root}),
         bounds: {...bounds, width: width / pixelScale, height: height / pixelScale}, origin: {...g.root}, generation: this.generation, resolution};
       cache.set(artwork, result); return result;
+    }
+    if (meshOnlyItems(items) && !items.some(hasDrawableVfx)) {
+      const {cleanup, ...raster} = rasterizeMeshGroup(this, {source: meshRasterSource(items), width, height, pixelScale, bounds, label: `Mesh object ${uidOf(g)}`});
+      const result = {...raster, bounds: {...bounds, width: width / pixelScale, height: height / pixelScale}, origin: {...g.root}, generation: this.generation, resolution, contentKey, drawingInputs};
+      this.stats.meshObjects = (this.stats.meshObjects ?? 0) + 1; cache.set(artwork, result); return result;
     }
     const {surface, context: ctx} = this.rasterSurfaces.acquire(width, height); let texture;
     try {

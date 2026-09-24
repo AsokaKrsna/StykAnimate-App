@@ -1,10 +1,11 @@
 import { cameraMatrix, SHAPE_BYTES, SHAPE_FLOATS, SHAPE, shapeRecord } from './renderer-geometry.mjs';
-import {bitmapKey,bitmapBytes} from './playback-bitmap-pool.mjs';
+import {bitmapKey,bitmapBytes,entryImage} from './playback-bitmap-pool.mjs';
 import {playbackMemoryBudget,playbackReuseMemoryPlan} from './playback-budget.mjs';
 import {EditorRasterCache} from './renderer-raster-cache.mjs';
 import {hasSceneVfx} from './vfx-viewport.mjs';
 import {rasterizeVectorVfx} from './renderer-vfx-vector.mjs';
 import {encodeVectorRaster} from './renderer-vector-raster.mjs';
+import {encodeMeshRaster,meshRasterBytes} from './renderer-mesh-raster.mjs';
 
 export function preparedCameraMode(packet, requested) {
   const mode = packet.cameraEnabled === undefined ? true : packet.cameraEnabled;
@@ -36,7 +37,7 @@ export function combinePreparedCommands(backgrounds, groups, textures) {
 
 /** Recycle exact-sized allocations only. Changing the physical texture size
  * changes filtering/coverage rounding even when the UV rectangle is corrected. */
-const poolableEntry = entry => { const image = entry.bitmap || entry.vectorRaster;
+const poolableEntry = entry => { const image = entryImage(entry);
   return Boolean(image?.width) && !entry.glyphMask && !entry.vfx && Math.max(image.width, image.height) >= 64; };
 const preparedEntryBytes = bitmapBytes;
 
@@ -158,7 +159,7 @@ export class PreparedFrameCache {
     }
     for(const entry of packet.compatibility||[]){
       // Legacy fallback dimensions are unknown until Canvas rasterization.
-      if(!entry.bitmap&&!entry.vectorRaster)return false;
+      if(!entryImage(entry))return false;
       const key=bitmapKey(packet,entry);
       if(!seen.has(key)){seen.add(key);if(!this.textures.has(key))bytes+=preparedEntryBytes(entry);}
     }
@@ -183,7 +184,7 @@ export class PreparedFrameCache {
     const required=new Map();
     for(const b of backgrounds)if(b.texture)required.set(b.texture.cacheKey,b.texture.bytes);
     for(const entry of packet.compatibility||[]){
-      if(!entry.bitmap&&!entry.vectorRaster)return null;
+      if(!entryImage(entry))return null;
       required.set(bitmapKey(packet,entry),preparedEntryBytes(entry));
     }
     const buffers=Math.max(SHAPE_BYTES,packet.shapes.byteLength+backgrounds.reduce((n,b)=>n+b.data.byteLength,0))+packet.transforms.byteLength;
@@ -262,9 +263,9 @@ export class PreparedFrameCache {
       }
       for (const entry of backgrounds) if (entry.texture) entry.texture = this.textures.get(entry.texture.cacheKey);
       for (const [i,compatibility] of (packet.compatibility || []).entries()) {
-        if (compatibility.bitmap || compatibility.vectorRaster) {
+        if (entryImage(compatibility)) {
           const uploadMark=this.stats.textureUploads;
-          const source = compatibility.bitmap || compatibility.vectorRaster;
+          const source = entryImage(compatibility);
           const resourceKey=bitmapKey(packet,compatibility);
           let resource=this.textures.get(resourceKey);
           if(!resource){
@@ -276,11 +277,18 @@ export class PreparedFrameCache {
             // Dimensions alone do not establish texture compatibility. Vector
             // targets use the renderer format; external uploads require COPY_DST
             // and RGBA. Keep both allocation contracts distinct during reuse.
-            const poolClass=compatibility.vectorRaster?`vector:${renderer.format}`:'bitmap:rgba8unorm';
+            const poolClass=compatibility.vectorRaster||compatibility.meshRaster?`vector:${renderer.format}`:'bitmap:rgba8unorm';
             const poolW=source.width,poolH=source.height,poolKey=`${poolClass}:${poolW}x${poolH}`;
             const pooled=poolable?this._pooledTexture(poolKey):null;
             if(pooled)this.stats.pooledTextures++;
-            if (compatibility.vectorRaster) {this.stats[compatibility.vfx?'vfxRasters':'vectorRasters']=(this.stats[compatibility.vfx?'vfxRasters':'vectorRasters']||0)+1;
+            if (compatibility.meshRaster) {this.stats.meshRasters=(this.stats.meshRasters||0)+1;
+              rasterBatch.encoder??=device.createCommandEncoder({label:`Prepared ${key} vector rasters`});
+              let raster;
+              try{raster=encodeMeshRaster(renderer,rasterBatch.encoder,{...compatibility,source,width:poolW,height:poolH,target:pooled?{texture:pooled.texture,bindGroup:pooled.bindGroup}:undefined,label:`Prepared ${key} mesh ${compatibility.uid}`});}
+              catch(error){pooled?.texture.destroy();throw error;}
+              rasterBatch.cleanups.push(raster.cleanup);rasterBatch.bytes+=poolW*poolH*4*Math.max(1,renderer.isolationSamples)+meshRasterBytes(source);
+              resource={key:resourceKey,refs:0,texture:raster.texture,bindGroup:raster.bindGroup,width:raster.width,height:raster.height,bytes:raster.bytes,poolable,poolClass,poolKey,poolW,poolH};}
+            else if (compatibility.vectorRaster) {this.stats[compatibility.vfx?'vfxRasters':'vectorRasters']=(this.stats[compatibility.vfx?'vfxRasters':'vectorRasters']||0)+1;
               if(compatibility.vfx)resource={...rasterizeVectorVfx(renderer,{...compatibility.vfx,data:source.data},{...compatibility,...source}),key:resourceKey,refs:0};
               else{rasterBatch.encoder??=device.createCommandEncoder({label:`Prepared ${key} vector rasters`});
                 let raster;

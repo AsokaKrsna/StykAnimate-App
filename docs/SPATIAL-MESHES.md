@@ -36,11 +36,14 @@ native Float32 rounding. An unchanged pose, including colours, returns the
 previous evaluation. Translation alone re-evaluates positions, but the artwork
 signature is root-relative, so rendered artwork is reused.
 
-The evaluated mesh is drawn as depth-tested triangles in one pass of the shared
-WebGL2 depth compositor (software without WebGL2), in every rendering path.
-Other visible primitives of the figure split its faces only where native per-face
-painter order would; zero-width construction lines do not. Onion tints recolour
-every face.
+The evaluated mesh is drawn as depth-tested triangles in one pass. Other visible
+primitives of the figure split its faces only where native per-face painter
+order would; zero-width construction lines do not. WebGPU renders mesh-only
+objects directly into their object texture with a depth buffer, both while
+editing and when a playback packet is prepared: workers send the evaluated
+arrays instead of pixels. Canvas rendering, exports, figures with effects and
+nested or partly transparent clips use the shared WebGL2 depth compositor
+(software without WebGL2). Onion tints recolour every face.
 
 Build Figure keeps mesh bones and reference joints: deleting one is rejected, as
 are branch copies, figure combination and origin changes, which would require

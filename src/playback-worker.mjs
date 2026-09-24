@@ -1,8 +1,9 @@
 import {vectorVfxSource} from './renderer-vfx-vector.mjs';
-import {vfxRasterScale} from './vfx-canvas.mjs';
+import {vfxRasterScale,hasDrawableVfx} from './vfx-canvas.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {cameraAtTime} from './camera-motion.mjs';
 import {supportsVectorIsolation} from './renderer-vector-raster.mjs';
+import {meshOnlyItems,meshRasterSource,meshRasterBytes,meshRasterBuffers} from './renderer-mesh-raster.mjs';
 import {drawParallaxGeometry} from './parallax-draw.mjs';
 import {parallaxResolver} from './layer-parallax.mjs';
 import { PlaybackResources } from './playback-resources.mjs';
@@ -249,15 +250,21 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
           group.compatibilityIndex=shared;sharing.reusedInstances++;sharing.savedBitmapBytes+=width*height*4;
         }else{
         requireBudget(bitmapBytes + width * height * 4 + (shapeCount + 1) * SHAPE_FLOATS * 4 + (groups.length + 1) * 84);
+        // A depth-tested mesh can ship its evaluated faces instead of pixels.
+        const meshRaster=gpuIsolation&&!vectorVfx&&!vectorIsolation&&meshOnlyItems(items)&&!items.some(hasDrawableVfx);
         // Content digests run on the crypto thread; start them eagerly and
         // resolve every key together after traversal instead of serializing a
         // worker event-loop hop for every compatibility object.
-        const keyJob=artwork?{promise:artworks.contentKey(artwork).then(key=>`${vectorVfx?'vfx-vector:':vectorIsolation?'vector:':''}${key}:${cropKey}`),key:undefined,entry:null}:null;
+        const keyJob=artwork?{promise:artworks.contentKey(artwork).then(key=>`${vectorVfx?'vfx-vector:':vectorIsolation?'vector:':meshRaster?'mesh:':''}${key}:${cropKey}`),key:undefined,entry:null}:null;
         if(keyJob)keyJobs.push(keyJob);
         const pendingKey=async()=>keyJob?(keyJob.key??await keyJob.promise):undefined;
         const actualBounds = { x: bounds.x, y: bounds.y, width: width / pixelScale, height: height / pixelScale };
         if(vectorVfx){const data=compileVectorObject(vectorVfx.items,source.root,0);bitmapBytes+=width*height*4+data.byteLength;
           const entry={vectorRaster:{data,width,height},vfx:{stack:vectorVfx.stack,scale:vectorVfx.scale,domain:vectorVfx.domain??objectBounds(vectorVfx.items,{...resources,vfxBounds:false})},bounds:actualBounds,root:source.root,resolution,pixelScale,uid};
+          compatibility.push(entry);if(keyJob)keyJob.entry=entry;
+        }else if (meshRaster) {
+          const mesh=meshRasterSource(items);bitmapBytes+=width*height*4+meshRasterBytes(mesh);
+          const entry={meshRaster:{...mesh,width,height},bounds:actualBounds,root:source.root,resolution,pixelScale,uid};
           compatibility.push(entry);if(keyJob)keyJob.entry=entry;
         }else if (vectorIsolation) {
           // The transfer owns a copy; retained vector cache buffers stay attached.
@@ -431,7 +438,7 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
 }
 
 export function packetTransferables(packet) {
-  return [packet.shapes.buffer, packet.transforms.buffer, packet.uids.buffer, ...packet.compatibility.map(entry => entry.bitmap || entry.vectorRaster?.data.buffer).filter(Boolean)];
+  return [packet.shapes.buffer, packet.transforms.buffer, packet.uids.buffer, ...packet.compatibility.flatMap(entry => entry.meshRaster ? meshRasterBuffers(entry.meshRaster) : [entry.bitmap || entry.vectorRaster?.data.buffer]).filter(Boolean)];
 }
 
 /** Shared endpoint is also exercised with a real Node worker in regression tests. */
