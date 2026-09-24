@@ -57,6 +57,8 @@ function clipBody(host,c,locked){
  let body=`<div class="vfx-clip-row"><span>Plays</span><select data-clip-field="mode" aria-label="Effect duration" ${locked?'disabled':''}><option value="always" ${c.duration===null?'selected':''}>Whole animation</option><option value="timed" ${c.duration!==null?'selected':''}>Frame range</option></select></div>${c.duration===null?'':`<div class="vfx-clip-timing">${number('start','Start',c.start+1,1,10000001-c.duration)+number('duration','Duration',c.duration,1,10000000-c.start)}</div>`}`;
  body+=`<div class="vfx-clip-envelope">${c.effects.length>1||c.strength!==1?number('strength','Strength',c.strength*100,0,100):''}</div>`;
  const effects=e.sampleVfxClip(c.id),picked=vfxSelectedChannels(e,c),expanded=new Set([...host.root.querySelectorAll('.vfx-clip-effect[open]')].map(node=>node.dataset.groupEffect));host.renderingClip=c.id;
+ // A group shows its selected effect open the first time it is displayed.
+ host.shownGroups??=new Set();if(!host.shownGroups.has(c.id)){host.shownGroups.add(c.id);expanded.add(host.selectedClipEffect??effects[0]?.id);}
  try{
   body+=effects.map((effect,index)=>{
    const fields=effectFields(host,c,effect,locked,picked);

@@ -343,9 +343,12 @@ fn beamColor(i: VO) -> vec4f {
   switch i.kind {
     case 0u: { cov = soft(length(i.uv), i.prm.x, min(i.prm.y * 1.5, 1.0)); }
     case 1u: {
-      let hl = i.prm.x;
-      let d = length(vec2f(max(abs(i.uv.x) - hl, 0.0), i.uv.y)) / i.prm.y;
-      let tail = select(1.0, mix(0.25, 1.0, clamp(i.uv.x / max(hl, 1e-3) * 0.5 + 0.5, 0.0, 1.0)), hl > 0.5);
+      // A tapered streak: full width and brightness at the head, thinning and
+      // fading toward the tail.
+      let hl = i.prm.x; let t = clamp(i.uv.x / max(hl, 1e-3) * 0.5 + 0.5, 0.0, 1.0);
+      let w = select(1.0, mix(0.3, 1.0, t), hl > 0.5);
+      let d = length(vec2f(max(abs(i.uv.x) - hl, 0.0), i.uv.y / w)) / i.prm.y;
+      let tail = select(1.0, t * t * (3.0 - 2.0 * t) * 0.9 + 0.1, hl > 0.5);
       cov = soft(d, i.prm.z, min(i.prm.w / i.prm.y * 1.5, 1.0)) * tail;
     }
     case 2u: {

@@ -29,7 +29,7 @@ function paintSprite(key,width,height,alphaAt){
 const softKey=s=>Math.round(s*20)/20;
 const discSprite=s=>paintSprite(`disc:${softKey(s)}`,SPRITE,SPRITE,(x,y)=>discAlpha(Math.hypot(x*2-1,y*2-1),softKey(s)));
 // Streak body: soft vertical profile with the shader's tail-to-head fade.
-const bodySprite=s=>paintSprite(`body:${softKey(s)}`,SPRITE,SPRITE/2,(x,y)=>discAlpha(Math.abs(y*2-1),softKey(s))*(.25+.75*x));
+const bodySprite=s=>paintSprite(`taper:${softKey(s)}`,SPRITE,SPRITE/2,(x,y)=>discAlpha(Math.abs(y*2-1)/(.3+.7*x),softKey(s))*(smooth(0,1,x)*.9+.1));
 const ringSprite=th=>{const k=Math.round(th*100)/100,grow=1+k*2;return paintSprite(`ring:${k}`,SPRITE*2,SPRITE*2,(x,y)=>{const d=Math.hypot(x*2-1,y*2-1)*grow,rd=Math.abs(d-1)/Math.max(k,.01);return Math.pow(Math.max(1-rd,0),1.6)+.18*(1-smooth(0,1,d))*(d<=1?1:0);});};
 const tints=new WeakMap();
 /** A white sprite multiplied by one colour; cached by sprite and quantized colour. */
@@ -100,10 +100,9 @@ export function drawGeneratorDraws(ctx,batch,draws){
      if(hl<=.5){ctx.drawImage(tinted(cap,...rgb),p.x-r,p.y-r,2*r,2*r);}
      else{
       const ang=Math.atan2(p.vy,p.vx);ctx.setTransform(m);ctx.translate(p.x,p.y);ctx.rotate(ang);
-      // Tail cap, faded body, head cap: the shader's capsule with its tail fade.
+      // Tapered, fading body and a round head: the shader's streak.
       const c=tinted(cap,...rgb),b=tinted(base,...rgb);
-      ctx.globalAlpha=Math.min(1,alpha*.25);ctx.drawImage(c,0,0,SPRITE/2,SPRITE,-2*hl-r,-r,r,2*r);
-      ctx.globalAlpha=Math.min(1,alpha);ctx.drawImage(b,-2*hl,-r,2*hl,2*r);ctx.drawImage(c,SPRITE/2,0,SPRITE/2,SPRITE,0,-r,r,2*r);ctx.setTransform(m);
+      ctx.drawImage(b,-2*hl,-r,2*hl,2*r);ctx.drawImage(c,SPRITE/2,0,SPRITE/2,SPRITE,0,-r,r,2*r);ctx.setTransform(m);
      }
     }else if(draw.shape===SHAPE.ring){const e=r*(1+softness*2);ctx.drawImage(tinted(base,...rgb),p.x-e,p.y-e,2*e,2*e);}
     else{const ry=r*aspect;ctx.drawImage(tinted(base,...rgb),p.x-r,p.y-ry,2*r,2*ry);}

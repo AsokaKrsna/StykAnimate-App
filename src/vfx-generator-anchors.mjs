@@ -21,10 +21,10 @@ const FRAME_CACHE=48;
 const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
 
 export class GeneratorAnchors{
- constructor({maxEntries=4096}={}){this.max=maxEntries;this.stores=new WeakMap();this.size=0;this.documents=0;this.order=new Map();this.deadline=Infinity;this.pending=0;this.stats={samples:0,hits:0,ms:0};}
+ constructor({maxEntries=4096}={}){this.max=maxEntries;this.stores=new WeakMap();this.size=0;this.documents=0;this.order=new Map();this.deadline=Infinity;this.pending=0;this.frame=0;this.stats={samples:0,hits:0,ms:0};}
  reset(){this.stores=new WeakMap();this.order.clear();this.size=0;}
  /** Limit uncached sampling for one frame; Infinity samples everything. */
- begin(budgetMs=Infinity){this.deadline=budgetMs===Infinity?Infinity:performance.now()+budgetMs;this.pending=0;}
+ begin(budgetMs=Infinity){this.deadline=budgetMs===Infinity?Infinity:performance.now()+budgetMs;this.pending=0;this.frame++;}
  get entries(){return {size:this.size};}
  #store(report){
   const generation=evaluationGeneration(report),prior=this.stores.get(report);
@@ -38,11 +38,13 @@ export class GeneratorAnchors{
  sample(report,target,tick,{includeAttached=false}={}){
   const store=this.#store(report);tick=Math.round(tick);
   const key=`${target.kind}:${target.uid}:${target.handleId??''}:${target.figureTypeId??''}:${tick}:${includeAttached?1:0}`;
-  if(store.entries.has(key)){this.stats.hits++;const id=store.prefix+key;this.order.delete(id);this.order.set(id,store);return store.entries.get(key);}
+  const hit=store.entries.get(key);
+  // Recency moves at most once per frame, keeping repeated hits cheap.
+  if(hit){this.stats.hits++;if(hit.frame!==this.frame){hit.frame=this.frame;const id=store.prefix+key;this.order.delete(id);this.order.set(id,store);}return hit.value;}
   if(performance.now()>this.deadline){this.pending++;return PENDING;}
   const started=performance.now(),value=this.#evaluate(report,store,target,tick,includeAttached);
   this.stats.ms+=performance.now()-started;this.stats.samples++;
-  store.entries.set(key,value);this.order.set(store.prefix+key,store);this.size++;
+  store.entries.set(key,{value,frame:this.frame});this.order.set(store.prefix+key,store);this.size++;
   // Evict least recently used entries across every document.
   while(this.size>this.max){const [id,owner]=this.order.entries().next().value;this.order.delete(id);if(owner.entries.delete(id.slice(owner.prefix.length)))this.size--;}
   return value;

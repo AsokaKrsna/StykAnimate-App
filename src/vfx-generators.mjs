@@ -46,8 +46,8 @@ export function generatorClipTail(clip){
  let tail=tails.get(clip);if(tail!==undefined)return tail;tail=0;
  if(clip.duration!==null)for(const effect of clip.effects){
   if(!isGeneratorType(effect.type))continue;
-  const end=clip.start+clip.duration,params=resolvedParams(effect);
-  for(const l of compileEffect(effect.type,params,{start:clip.start,end,window:clip.duration,timed:true,anchor:null,startPoint:[0,0],scene:false}))
+  const end=clip.start+clip.duration,params=resolvedParams(effect);if(params.delay>=clip.duration)continue;
+  for(const l of compileEffect(effect.type,params,{start:clip.start+params.delay,end,window:clip.duration-params.delay,timed:true,bodyHeight:null,startPoint:[0,0],scene:false}))
    if(l.shape!==SHAPE.beam&&l.shape!==SHAPE.arc)tail=Math.max(tail,l.start+(l.emitDur>0?l.emitDur:l.burstJitter)+l.lifeMax+echoSpan(l)-end);
  }
  tail=Math.max(0,Math.ceil(tail));tails.set(clip,tail);return tail;
@@ -57,7 +57,15 @@ export function generatorClipActiveAt(clip,tick){
  if(!clip.enabled||!clip.strength||!hasGenerators(clip)||tick<clip.start)return false;
  return clip.duration===null||tick<clip.start+clip.duration+generatorClipTail(clip);
 }
-function resolvedParams(effect){const d=VFX_REGISTRY[effect.type].params,p={};for(const [k,v] of Object.entries(d))p[k]=effect.params[k]??v.default;return p;}
+// Effect objects are immutable, so their resolved parameters and compiled
+// layers are reused across frames while the clip timing and anchor inputs match.
+const resolved=new WeakMap(),compiled=new WeakMap();
+function resolvedParams(effect){let p=resolved.get(effect);if(!p){const d=VFX_REGISTRY[effect.type].params;p={};for(const [k,v] of Object.entries(d))p[k]=effect.params[k]??v.default;resolved.set(effect,p);}return p;}
+function compiledLayers(effect,params,ctx){
+ const key=`${ctx.start}|${ctx.end}|${ctx.window}|${ctx.fadeOut}|${ctx.scene}|${ctx.bodyHeight}|${ctx.startPoint[0].toFixed(1)},${ctx.startPoint[1].toFixed(1)}`;
+ let hit=compiled.get(effect);if(hit?.key!==key){hit={key,layers:compileEffect(effect.type,params,ctx)};compiled.set(effect,hit);}
+ return hit.layers;
+}
 const echoSpan=l=>l.echoes?l.echoes.count*l.echoes.lag:0;
 function compileEffect(type,params,ctx){return COMPILERS[type](params,ctx).filter(Boolean).filter(l=>l.shape===SHAPE.beam||l.shape===SHAPE.arc||l.count>0||l.rate>0||l.rateParam);}
 
@@ -89,8 +97,14 @@ const childMaps=new WeakMap();
 function subtree(frame,slot){let children=childMaps.get(frame);if(!children){children=new Map();frame.objects.forEach((o,i)=>{const p=o?.join?.target_object_slot;if(p!==undefined){const list=children.get(p)??[];list.push(i);children.set(p,list);}});childMaps.set(frame,children);}const out=[slot];for(let i=0;i<out.length;i++)for(const c of children.get(out[i])??EMPTY)if(!out.includes(c))out.push(c);return out;}
 
 /** The largest value a keyed parameter reaches, which sizes emission capacity. */
-function keyMax(clip,effect,param){let max=effect.params[param]??VFX_REGISTRY[effect.type].params[param].default;for(const k of clip.keys[vfxProperty(effect.type,effect.id,param)]??EMPTY)max=Math.max(max,k.value);return max;}
-const keyedAt=(clip,effect,param,tick)=>{const property=vfxProperty(effect.type,effect.id,param);return sampleVfxKeys(clip.keys[property],Math.max(0,tick-clip.start+clip.offset),effect.params[param]??VFX_REGISTRY[effect.type].params[param].default,property);};
+/** A keyed parameter as a function of tick, plus the largest value it reaches
+ * (which sizes emission capacity). Unkeyed parameters are constants. */
+function keyedChannel(clip,effect,param){
+ const property=vfxProperty(effect.type,effect.id,param),keys=clip.keys[property],fallback=effect.params[param]??VFX_REGISTRY[effect.type].params[param].default;
+ if(!keys?.length)return {max:fallback,at:()=>fallback};
+ let max=fallback;for(const k of keys)max=Math.max(max,k.value);
+ return {max,at:tick=>sampleVfxKeys(keys,Math.max(0,tick-clip.start+clip.offset),fallback,property)};
+}
 
 /** Solid-colour scenes decide how Auto layers blend; images count as dark. */
 export function backgroundIsLight(report,frame){
@@ -132,17 +146,20 @@ function collectLayers(report,frame,geometry,{sampler,matrix=IDENTITY,container=
    const wantsBody=effect.type==='aura'||effect.type==='particles'&&p.shape===2,attached=clip.includeAttached||effect.type==='aura';
    const current=scene?null:anchorFromGeometry(geometry,frame,clip.target,{body:wantsBody,includeAttached:attached});
    if(!scene&&!current)continue;
-   const stagePoint=[p.x*width,p.y*height],start=clip.start;
+   if(timed&&p.delay>=clip.duration)continue;
+   const stagePoint=[p.x*width,p.y*height],start=clip.start+p.delay;if(tick<start)continue;
    const startAnchor=scene?null:(tick<=start+.5||!sampler?current:(pendingSample(sampler,report,clip.target,start,{includeAttached:clip.includeAttached},current,state)??current));
-   const ctx={start,end,window:timed?clip.duration:FAR,timed,fadeOut:clip.fadeOut,scene,anchor:current,
+   // Auras scale with the target's height, in steps so compiled layers can be reused.
+   const ctx={start,end,window:timed?clip.duration-p.delay:FAR,timed,fadeOut:clip.fadeOut,scene,bodyHeight:current?Math.round(current.height/4)*4:null,
     startPoint:scene?stagePoint:(effect.type==='explosion'&&clip.target.kind==='figure'?startAnchor.center:startAnchor.point)};
    let aim=null;
    if(effect.type==='beam'){aim=[p.aimX*width,p.aimY*height];if(p.aimUid){const a=anchorFromGeometry(geometry,frame,p.aimHandle?{kind:'segment',uid:p.aimUid,handleId:p.aimHandle}:{kind:'figure',uid:p.aimUid});if(a)aim=a.point;}}
    const seedBase=(Math.imul(p.seed+1,2654435761)+Math.imul(index+1,40503))>>>0;
-   for(const [li,spec] of compileEffect(effect.type,p,ctx).entries())
+   for(const [li,spec] of compiledLayers(effect,p,ctx).entries())
     layers.push({report,tick,clip,effect,spec,alpha,matrix,seed:((seedBase+Math.imul(li+1,97531))>>>0)&0xffffff,
      uid:container??(scene?null:clip.target.uid),scene:container===null&&scene,current,point:scene?stagePoint:current.point,aim,
-     ground:scene?height:(startAnchor?.bottom??height),step:p.step+1,attached});
+     // Scene explosions stand on the ground at their own position.
+     ground:scene?(effect.type==='explosion'?stagePoint[1]+40*p.size:height):(startAnchor?.bottom??height),step:p.step+1,attached});
   }
  }
  if(depth>=MAX_NESTING)return;
@@ -168,13 +185,20 @@ export function buildGeneratorBatch(report,frame,geometry,{sampler=null,density=
  * Echoes, halos and outlines are extra draws of the same particles. */
 function packBatch(layers,sampler,density,light,state={}){
  const plans=[],blocks=new Map();let particles=0,rowCount=0,drawCount=0;
+ // Layers of one target share their earlier-tick samples within this batch.
+ const memo=new Map(),sampleAt=(l,tau,fallback)=>{
+  let byTick=memo.get(l.clip.target);if(!byTick)memo.set(l.clip.target,byTick=new Map());
+  const key=l.attached?-1-tau:tau;if(byTick.has(key))return byTick.get(key)??fallback;
+  const a=sampler.sample(l.report,l.clip.target,tau,{includeAttached:l.attached});
+  if(typeof a==='symbol'){state.incomplete=true;return fallback;}
+  byTick.set(key,a);return a??fallback;};
  for(const l of layers){
   if(plans.length>=LIMITS.batchLayers)break;
   const s=l.spec,tick=l.tick,cs=l.clip.start,te=l.step>1?cs+Math.floor((tick-cs)/l.step)*l.step:tick;
   const beam=s.shape===SHAPE.beam||s.shape===SHAPE.arc,burst=s.emitDur<=0&&!beam,start=s.prewarm?s.start-s.lifeMax:s.start,echo=echoSpan(s);
   let count=beam?s.count:0,rate=0,rateMax=1;
   if(!beam){
-   if(s.rateParam){rateMax=Math.max(1e-6,keyMax(l.clip,l.effect,s.rateParam));rate=s.rate*rateMax;}
+   if(s.rateParam){rateMax=Math.max(1e-6,keyedChannel(l.clip,l.effect,s.rateParam).max);rate=s.rate*rateMax;}
    else rate=s.rate;
    if(s.emitDur>0){const window=s.prewarm?s.emitDur+s.lifeMax:s.emitDur;count=Math.min(Math.ceil(rate*s.lifeMax)+2,Math.ceil(rate*Math.min(window,FAR))+2);}
    else count=Math.round(s.count);
@@ -204,23 +228,23 @@ function packBatch(layers,sampler,density,light,state={}){
   const {l,segCount}=block,size=segCount*4;block.start=at/4;
   for(let k=0;k<block.rows;k++){
    const tau=block.first+k;let data=l.current.segments;
-   if(block.world&&Math.abs(tau-l.tick)>.5){const a=pendingSample(sampler,l.report,l.clip.target,tau,{includeAttached:l.attached},null,state);if(a?.segments)data=fitSegments(a.segments,segCount);}
+   if(block.world&&Math.abs(tau-l.tick)>.5){const a=sampleAt(l,tau,null);if(a?.segments)data=fitSegments(a.segments,segCount);}
    table.set(data.length===size?data:data.subarray(0,size),at);at+=size;
   }
  }
  for(const plan of plans){
   const {l,count,rate,rateMax,tick0,ticks,block,burst}=plan,s=l.spec,report=l.report,tick=l.tick;
-  const tableStart=at/4,keyed=s.keyed?l.effect:null;
+  const tableStart=at/4,rateAt=s.rateParam?keyedChannel(l.clip,l.effect,s.rateParam).at:null;
+  const [dirAt,speedAt,sizeAt]=s.keyed?['direction','speed','size'].map(param=>keyedChannel(l.clip,l.effect,param).at):[null,null,null];
   for(let k=0;k<ticks;k++){
    const tau=tick0+k;let anchor=l.point;
    if(s.fixed)anchor=s.fixed;
-   else if(l.clip.target.kind!=='scene'&&s.world&&sampler&&Math.abs(tau-tick)>.5){const a=pendingSample(sampler,report,l.clip.target,tau,{includeAttached:l.attached},undefined,state);anchor=a===undefined?l.point:a?.point??null;}
+   else if(l.clip.target.kind!=='scene'&&s.world&&sampler&&Math.abs(tau-tick)>.5){const a=sampleAt(l,tau,undefined);anchor=a===undefined?l.point:a?.point??null;}
    const inWindow=s.prewarm||tau>=Math.floor(l.clip.start)&&(l.clip.duration===null||tau<l.clip.start+l.clip.duration);
    let emit=anchor?(burst?1:inWindow?1:0):0;
-   if(emit&&s.rateParam&&rateMax>0)emit=keyedAt(l.clip,l.effect,s.rateParam,tau)/rateMax;
+   if(emit&&rateAt&&rateMax>0)emit=rateAt(tau)/rateMax;
    table[at]=anchor?.[0]??0;table[at+1]=anchor?.[1]??0;table[at+2]=clamp(emit*density,0,1);
-   table[at+3]=keyed?keyedAt(l.clip,keyed,'direction',tau)*Math.PI/180:0;
-   table[at+4]=keyed?keyedAt(l.clip,keyed,'speed',tau):1;table[at+5]=keyed?keyedAt(l.clip,keyed,'size',tau):1;
+   table[at+3]=dirAt?dirAt(tau)*Math.PI/180:0;table[at+4]=speedAt?speedAt(tau):1;table[at+5]=sizeAt?sizeAt(tau):1;
    // Aimed streams leave toward the beam's aim; their speed scales with its distance.
    if(s.aimed&&anchor&&l.aim){const dx=l.aim[0]-anchor[0],dy=l.aim[1]-anchor[1];table[at+3]=Math.atan2(dy,dx);table[at+4]=Math.max(.15,Math.hypot(dx,dy)/100);}
    at+=8;

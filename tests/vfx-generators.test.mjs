@@ -102,7 +102,7 @@ test('new generated effects start at the playhead with their own seed and undo a
  const a=e.addVfxClip({kind:'figure',uid:1},'explosion'),b=e.addVfxClip({kind:'figure',uid:1},'explosion'),[ca,cb]=e.getVfxClips();
  assert.deepEqual([ca.start,ca.duration],[17,36]);assert.notEqual(ca.effects[0].params.seed,cb.effects[0].params.seed);
  const rain=e.addVfxGroup({kind:'scene'},'Rain');assert.equal(e.getVfxClips().find(c=>c.id===rain).duration,null);
- assert.equal(presetAvailable(VFX_PRESETS.Rain,false,effectAvailable),false);assert.equal(presetAvailable(VFX_PRESETS.Aura,true,effectAvailable),false);
+ assert.equal(presetAvailable(VFX_PRESETS.Rain,false,effectAvailable),false);assert.equal(presetAvailable(VFX_PRESETS.Heal,true,effectAvailable),false);
  assert.equal(effectAvailable('aura',true),false);assert.equal(effectAvailable('explosion',true),true);
  assert.equal(e._undo.length,n+3);e.undo();e.undo();e.undo();assert.equal(e.getVfxClips().length,0);assert.ok(a&&b);
 });

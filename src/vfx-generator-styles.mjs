@@ -8,7 +8,7 @@ const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 /** Glow layers: Auto adds light on dark scenes and paints solid colour on light ones. */
 const glowBlend=p=>p.blend===1?BLEND.add:p.blend===2?BLEND.normal:BLEND.auto;
 /** Figures are authored at many scales; auras follow the target's height. */
-const bodyScale=anchor=>clamp((anchor?.height||200)/200,.25,4);
+const bodyScale=height=>clamp((height||200)/200,.25,4);
 const DUST=[.54,.58,.65],ROCK=[.42,.38,.36],SMOKE=[rgb(0x4a3b35),rgb(0x3a3436),rgb(0x2e2c31)];
 
 // ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ const AURAS=[
     layer({...base,placement:'behind',rate:9,lifeMin:3,lifeMax:6,emitShape:EMIT.body,emitRadius:10*sc,speedMin:0,speedMax:.4*sc,spread:TAU,curl:4*T*sc,material:'bolt',frameRate:1,size0:20*S*sc,size1:16*S*sc,sizeJitter:.45,flicker:.55,fadeIn:0,fadeOut:.35,...stops([WHITE,2.6*I],[hot,2.2*I],[col,1.6*I],[col,1*I])}),
     layer({...base,rate:4,lifeMin:2,lifeMax:4,emitShape:EMIT.body,emitRadius:6*sc,speedMin:0,speedMax:.3*sc,spread:TAU,material:'bolt',frameRate:1,size0:13*S*sc,size1:11*S*sc,sizeJitter:.4,flicker:.6,fadeIn:0,fadeOut:.3,...stops([WHITE,2.8*I],[hot,2.2*I],[col,1.6*I])}),
    ],
-   particles:layer({...base,rate:5,lifeMin:5,lifeMax:11,emitShape:EMIT.body,emitRadius:12*sc,speedMin:3*sc,speedMax:8*sc,spread:TAU,gravity:.18*sc,drag:.05,shape:SHAPE.streak,stretch:1.8,size0:1.6*sc,size1:.6*sc,softness:.7,fadeOut:.5,...stops([WHITE,2.6*I],[hot,2*I],[col,1.4*I])}),
+   particles:layer({...base,rate:5,lifeMin:5,lifeMax:11,emitShape:EMIT.body,emitRadius:12*sc,speedMin:3*sc,speedMax:8*sc,spread:TAU,gravity:.18*sc,drag:.05,shape:SHAPE.streak,stretch:1.1,size0:1.6*sc,size1:.6*sc,softness:.7,fadeOut:.5,...stops([WHITE,2.6*I],[hot,2*I],[col,1.4*I])}),
   };
  },
  function shadow({col,I,S,T,sc,base}){
@@ -114,7 +114,7 @@ const AURAS=[
  },
 ];
 function compileAura(p,ctx){
- const style=AURAS[p.style]??AURAS[0],sc=bodyScale(ctx.anchor);
+ const style=AURAS[p.style]??AURAS[0],sc=bodyScale(ctx.bodyHeight);
  const base={start:ctx.start,emitDur:ctx.window,clipFadeIn:ctx.timed?14:0,clipFadeOut:ctx.timed?16:0,world:Boolean(p.trail),body:true,rateParam:'density',blend:glowBlend(p)};
  const parts=style({col:paintColor(p.color),I:p.intensity,S:p.height,T:p.turbulence,sc,base});
  return [p.dust&&parts.ground,p.glow&&parts.glow,p.flames&&parts.main,p.embers&&parts.particles].flat();
@@ -131,8 +131,8 @@ function compileBeam(p,ctx){
  const chargeIn=p.chargeParticles&&charge>0&&layer({...beam,start:ctx.start,emitDur:charge+2,rate:style===1?8:14,lifeMin:9,lifeMax:13,emitShape:EMIT.ring,emitRadius:72*Math.sqrt(wr),radial:-1,speedMin:6*Math.sqrt(wr),speedMax:6*Math.sqrt(wr),shape:SHAPE.streak,stretch:2.6,size0:2.6,size1:1.2,softness:toon?.05:.9,fadeIn:.25,fadeOut:.3,...stops([tone(col,.5,WHITE),2.2*I],[col,2.6*I],[WHITE,4*I],[WHITE,4*I])});
  const orb=p.orb&&layer({...beam,start:ctx.start,emitDur:Math.max(1,fireEnd-ctx.start),rate:1.5,lifeMin:6,lifeMax:8,emitRadius:2,size0:(style===1?12:18)*wr,size1:(style===1?15:22)*wr,softness:toon?.05:1.6,alpha:.9,fadeIn:toon?0:.2,fadeOut:toon?0:.6,clipFadeIn:Math.max(1,charge),clipFadeOut:ctx.timed?8:0,sizeJitter:.15,sizeMode:toon?GROW.flicker:GROW.curve,outline:toon?{width:3,color:line}:null,...stops([WHITE,3*I],[tone(col,.3,WHITE),2.2*I],[col,2*I],[col,1*I])});
  const flare=layer({...beam,start:fireStart+grow,emitDur:Math.max(1,firing-grow),rate:toon?.8:1.6,lifeMin:5,lifeMax:7,emitShape:EMIT.beamTip,emitRadius:2,material:toon?'burst':'star',sizeMode:toon?GROW.pop:GROW.curve,size0:24*Math.sqrt(wr),size1:34*Math.sqrt(wr),sizeJitter:.3,fadeIn:toon?0:.1,fadeOut:toon?0:.6,outline:toon?{width:3,color:line}:null,...stops([WHITE,2.6*I],[hot,2*I],[col,1.4*I])});
- const sparks=p.sparks>0&&layer({...beam,start:fireStart,emitDur:firing,rate:16*p.sparks,lifeMin:7,lifeMax:15,emitShape:EMIT.beamLine,emitRadius:10*wr,spread:.35,speedMin:7,speedMax:14,shape:SHAPE.streak,stretch:2.2,size0:2.2,size1:.8,softness:toon?.05:.8,fadeIn:.1,fadeOut:.5,...stops([tone(col,.6,WHITE),2.4*I],[col,1.8*I],[col,1.2*I],[col,.6*I])});
- const splash=p.splash&&p.sparks>0&&layer({...beam,start:fireStart+grow,emitDur:Math.max(1,firing-grow-4),rate:(style===1?18:12)*p.sparks,lifeMin:8,lifeMax:18,emitShape:EMIT.beamTip,emitRadius:8*wr,angle:Math.PI,spread:2.4,speedMin:4,speedMax:11,gravity:.28,drag:.04,shape:SHAPE.streak,stretch:1.8,size0:2.6,size1:1,softness:toon?.05:.7,fadeOut:.4,...stops([WHITE,4*I],[tone(col,.5,WHITE),3*I],[col,2*I],[col,.8*I])});
+ const sparks=p.sparks>0&&layer({...beam,start:fireStart,emitDur:firing,rate:7*p.sparks,lifeMin:7,lifeMax:15,emitShape:EMIT.beamLine,emitRadius:10*wr,spread:.35,speedMin:7,speedMax:14,shape:SHAPE.streak,stretch:1.2,size0:2.2,size1:.8,softness:toon?.05:.8,fadeIn:.1,fadeOut:.5,...stops([tone(col,.6,WHITE),2.4*I],[col,1.8*I],[col,1.2*I],[col,.6*I])});
+ const splash=p.splash&&p.sparks>0&&layer({...beam,start:fireStart+grow,emitDur:Math.max(1,firing-grow-4),rate:(style===1?10:7)*p.sparks,lifeMin:8,lifeMax:18,emitShape:EMIT.beamTip,emitRadius:8*wr,angle:Math.PI,spread:2.4,speedMin:4,speedMax:11,gravity:.28,drag:.04,shape:SHAPE.streak,stretch:1.1,size0:2.6,size1:1,softness:toon?.05:.7,fadeOut:.4,...stops([WHITE,4*I],[tone(col,.5,WHITE),3*I],[col,2*I],[col,.8*I])});
  const arcs=(n,{width=1,spread=1,glow=2.6}={})=>n>0&&layer({...beam,shape:SHAPE.arc,count:n*14,start:fireStart,arcAmp:beam.arcAmp*spread,size0:1.6*width*Math.max(1,wr*.6),...stops([tone(col,.35,WHITE),glow*I])});
  const core=beamStyle=>layer({...beam,shape:SHAPE.beam,count:1,start:fireStart,beamStyle,outline:toon?{width:3,color:line}:null,...stops([WHITE,3.2*I],[col,1.5*I])});
  if(style===4){
@@ -167,7 +167,7 @@ const EXPLOSIONS=[
    p.debris>0&&layer({...base,start:s0,count:22*p.debris,burstJitter:1,lifeMin:34,lifeMax:56,emitRadius:12*S,angle:UP,spread:3.6,speedMin:5*S,speedMax:13*S,gravity:.45,drag:.012,collide:1,spin:.3,spinJitter:1,material:'rock',size0:4.5*S,size1:4.5*S,sizeJitter:.6,blend:BLEND.normal,fadeIn:0,fadeOut:.15,...stops([tone(col,.4,[.35,.2,.12]),1.4],[rgb(0x4a3a30),1],[rgb(0x2a2422),1],[rgb(0x2a2422),1])}),
    p.fireball&&layer({...base,start:s0,count:34*D,burstJitter:3,lifeMin:18,lifeMax:34,emitRadius:14*S,spread:TAU,speedMin:1.5*S,speedMax:6*S,drag:.11,gravity:-.06*S,curl:14*S,curlScale:.012/S,material:'smoke',spin:.03,spinJitter:1,sizeMode:GROW.puff,size0:14*S,size1:46*S,sizeJitter:.35,shade:.8,alpha:.6,fadeIn:.03,fadeOut:.5,...stops([hot,1.3*I],[col,1.3*I],[col,1.1*I],[low,.9*I],[rgb(0x2a1a16),.4])}),
    p.fireball&&layer({...base,start:s0,count:16*D,burstJitter:1,lifeMin:8,lifeMax:14,emitRadius:8*S,spread:TAU,speedMin:4*S,speedMax:9*S,drag:.12,material:'flame',rotate:ROTATE.motion,aspect:1.4,size0:22*S,size1:8*S,alpha:.6,fadeIn:0,fadeOut:.5,...stops([WHITE,2*I],[hot,1.6*I],[col,1.2*I])}),
-   p.sparks&&layer({...base,start:s0,count:80*D,burstJitter:2,lifeMin:14,lifeMax:32,emitRadius:10*S,angle:UP,spread:TAU,speedMin:6*S,speedMax:19*S,gravity:.36,drag:.03,collide:1,shape:SHAPE.streak,stretch:2.4,size0:2.4,size1:.9,softness:.6,fadeOut:.4,...stops([WHITE,1.3*I],[hot,1.3*I],[col,1.3*I],[low,1.1*I])}),
+   p.sparks&&layer({...base,start:s0,count:36*D,burstJitter:2,lifeMin:14,lifeMax:32,emitRadius:10*S,angle:UP,spread:TAU,speedMin:6*S,speedMax:19*S,gravity:.36,drag:.03,collide:1,shape:SHAPE.streak,stretch:1.3,halo:{scale:2.4,alpha:.35},size0:2.4,size1:.9,softness:.6,fadeOut:.4,...stops([WHITE,1.3*I],[hot,1.3*I],[col,1.3*I],[low,1.1*I])}),
    p.sparks&&layer({...base,start:s0+2,count:30*D,burstJitter:8,lifeMin:30,lifeMax:60,emitRadius:30*S,spread:TAU,speedMin:.5*S,speedMax:2*S,gravity:-.03*S,drag:.03,curl:20*S,curlScale:.015/S,size0:2*S,size1:.8*S,softness:.4,flicker:.5,...stops([WHITE,2.5*I],[hot,2*I],[col,1.5*I],[col,.6*I])}),
    p.ring&&layer({...base,start:s0+1,count:1,lifeMin:14,lifeMax:14,shape:SHAPE.ring,size0:24*S,size1:260*S,sizeCurve:.45,softness:.08,sizeJitter:0,alpha:.8,fadeIn:0,fadeOut:.75,...stops([hot,.8*I],[col,.6*I],[col,.4*I],[col,.15*I])}),
    p.flash&&layer({...base,start:s0,count:1,lifeMin:6,lifeMax:6,size0:80*S,size1:170*S,sizeCurve:.5,softness:2.4,sizeJitter:0,fadeIn:0,fadeOut:.85,...stops([WHITE,1*I],[hot,.9*I],[col,.7*I],[col,.25*I])}),
@@ -196,7 +196,7 @@ const EXPLOSIONS=[
    p.debris>0&&layer({...base,start:b,emitDur:14,rate:1.6*p.debris,lifeMin:3,lifeMax:6,emitRadius:50*S,material:'bolt',frameRate:1,size0:40*S,size1:30*S,sizeJitter:.4,flicker:.5,fadeIn:0,fadeOut:.4,...stops([WHITE,2.6*I],[hot,2*I],[col,1.4*I])}),
    p.fireball&&layer({...base,start:b,count:3,burstJitter:2,lifeMin:14,lifeMax:20,emitRadius:6*S,size0:40*S,size1:110*S,sizeMode:GROW.puff,softness:1.8,sizeJitter:.2,alpha:.45,fadeIn:0,fadeOut:.7,...stops([WHITE,2*I],[pale,1.6*I],[col,1.2*I],[col,.4*I])}),
    p.sparks&&layer({...base,start:b,count:50*D,burstJitter:2,lifeMin:18,lifeMax:30,emitRadius:10*S,spread:TAU,speedMin:8*S,speedMax:12*S,drag:.08,material:'star',spin:.1,spinJitter:1,size0:7*S,size1:2*S,flicker:.3,echoes:{count:3,lag:2,alpha:.5,size:.8},...stops([WHITE,2.4*I],[pale,2*I],[col,1.5*I])}),
-   p.sparks&&layer({...base,start:b,count:60*D,burstJitter:1,lifeMin:10,lifeMax:20,emitRadius:8*S,spread:TAU,speedMin:10*S,speedMax:22*S,drag:.05,shape:SHAPE.streak,stretch:2.4,size0:2,size1:.8,softness:.7,fadeOut:.4,...stops([WHITE,2.4*I],[pale,2*I],[col,1.4*I])}),
+   p.sparks&&layer({...base,start:b,count:28*D,burstJitter:1,lifeMin:10,lifeMax:20,emitRadius:8*S,spread:TAU,speedMin:10*S,speedMax:22*S,drag:.05,shape:SHAPE.streak,stretch:1.3,size0:2,size1:.8,softness:.7,fadeOut:.4,...stops([WHITE,2.4*I],[pale,2*I],[col,1.4*I])}),
    p.ring&&layer({...base,start:b,count:1,lifeMin:14,lifeMax:14,shape:SHAPE.ring,size0:20*S,size1:240*S,sizeCurve:.4,softness:.12,sizeJitter:0,fadeIn:0,fadeOut:.7,...stops([WHITE,1.4*I],[pale,1.2*I],[col,.8*I])}),
    p.ring&&layer({...base,start:b+4,count:1,lifeMin:16,lifeMax:16,shape:SHAPE.ring,size0:10*S,size1:170*S,sizeCurve:.5,softness:.2,sizeJitter:0,alpha:.6,fadeIn:0,fadeOut:.7,...stops([pale,1.2*I],[col,.8*I])}),
    p.flash&&layer({...base,start:b,count:1,lifeMin:7,lifeMax:7,size0:90*S,size1:180*S,sizeCurve:.5,softness:2.2,sizeJitter:0,fadeIn:0,fadeOut:.85,...stops([WHITE,1.2*I],[pale,1*I],[col,.6*I])}),
@@ -209,7 +209,7 @@ const EXPLOSIONS=[
    p.fireball&&layer({...flat,start:s0,count:30*D,burstJitter:3,lifeMin:60,lifeMax:110,emitRadius:20*S,spread:TAU,speedMin:2*S,speedMax:7*S,drag:.08,gravity:-.01*S,curl:20*S,curlScale:.01/S,material:'smoke',rotate:ROTATE.upright,sizeMode:GROW.puff,size0:16*S,size1:70*S,sizeJitter:.3,alpha:.85,fadeIn:.03,fadeOut:.5,...stops([light,1],[col,1],[deep,1])}),
    p.smoke>0&&layer({...flat,start:s0+6,emitDur:Math.max(4,Math.min(24,window)),rate:1.5*p.smoke*D,lifeMin:50,lifeMax:80,emitRadius:50*S,spread:1,angle:UP,speedMin:.4*S,speedMax:1.2*S,gravity:-.02*S,drag:.03,curl:24*S,curlScale:.009/S,material:'smoke',rotate:ROTATE.upright,sizeMode:GROW.puff,size0:20*S,size1:60*S,alpha:.6,fadeIn:.2,fadeOut:.6,...stops([col,1],[light,1,.7])}),
    p.debris>0&&layer({...flat,start:s0,count:6*p.debris,burstJitter:1,lifeMin:20,lifeMax:30,emitRadius:8*S,angle:UP,spread:3.4,speedMin:8*S,speedMax:14*S,gravity:.18,drag:.05,material:'smoke',rotate:ROTATE.upright,size0:9*S,size1:5*S,echoes:{count:5,lag:2,alpha:.85,size:.92},alpha:.8,fadeIn:0,fadeOut:.5,...stops([col,1],[light,1])}),
-   p.sparks&&layer({...base,start:s0,count:20*D,burstJitter:1,lifeMin:8,lifeMax:16,emitRadius:6*S,spread:TAU,speedMin:6*S,speedMax:12*S,gravity:.3,drag:.05,shape:SHAPE.streak,stretch:2,size0:2,size1:.8,softness:.6,fadeOut:.4,...stops([WHITE,2*I],[[1,.8,.4],1.6*I],[[1,.5,.2],1*I])}),
+   p.sparks&&layer({...base,start:s0,count:20*D,burstJitter:1,lifeMin:8,lifeMax:16,emitRadius:6*S,spread:TAU,speedMin:6*S,speedMax:12*S,gravity:.3,drag:.05,shape:SHAPE.streak,stretch:1.2,size0:2,size1:.8,softness:.6,fadeOut:.4,...stops([WHITE,2*I],[[1,.8,.4],1.6*I],[[1,.5,.2],1*I])}),
    p.ring&&layer({...flat,start:s0+1,count:1,lifeMin:12,lifeMax:12,shape:SHAPE.ring,size0:20*S,size1:170*S,sizeCurve:.45,softness:.2,sizeJitter:0,alpha:.4,fadeIn:0,fadeOut:.7,...stops([light,1])}),
    p.flash&&layer({...base,start:s0,count:1,lifeMin:4,lifeMax:4,size0:40*S,size1:70*S,softness:2,sizeJitter:0,fadeIn:0,fadeOut:.85,...stops([WHITE,1*I],[[1,.85,.6],.8*I])}),
   ];
@@ -232,7 +232,7 @@ const EXPLOSIONS=[
   return [
    p.fireball&&layer({...base,start:s0,count:70*D,burstJitter:1,lifeMin:30,lifeMax:44,emitRadius:3*S,spread:TAU,speedMin:7*S,speedMax:8.5*S,drag:.06,gravity:.05,material:'star',spin:.08,spinJitter:1,size0:11*S,size1:3*S,flicker:.35,colorMode:mode,halo:{scale:2.2,alpha:.3},echoes:{count:4,lag:2,alpha:.6,size:.8},fadeIn:0,fadeOut:.4,...colors}),
    p.sparks&&layer({...base,start:s0+14,count:40*D,burstJitter:10,lifeMin:8,lifeMax:18,emitRadius:100*S,material:'star',size0:4*S,size1:2*S,flicker:.9,colorMode:mode,fadeIn:.2,fadeOut:.4,...colors}),
-   p.sparks&&layer({...base,start:s0,count:40*D,burstJitter:1,lifeMin:20,lifeMax:34,emitRadius:3*S,spread:TAU,speedMin:4*S,speedMax:7*S,drag:.05,gravity:.06,shape:SHAPE.streak,stretch:3,size0:1.6,size1:.6,softness:.7,colorMode:mode,fadeOut:.5,...colors}),
+   p.sparks&&layer({...base,start:s0,count:40*D,burstJitter:1,lifeMin:20,lifeMax:34,emitRadius:3*S,spread:TAU,speedMin:4*S,speedMax:7*S,drag:.05,gravity:.06,shape:SHAPE.streak,stretch:1.6,size0:1.6,size1:.6,softness:.7,colorMode:mode,fadeOut:.5,...colors}),
    p.smoke>0&&layer({...base,blend:BLEND.normal,start:s0+4,count:8*p.smoke*D,burstJitter:4,lifeMin:40,lifeMax:70,emitRadius:60*S,speedMin:.2,speedMax:.6,gravity:-.01,curl:16*S,curlScale:.01/S,material:'smoke',rotate:ROTATE.upright,sizeMode:GROW.puff,size0:20*S,size1:50*S,alpha:.09,fadeIn:.3,fadeOut:.6,...stops([[.6,.6,.64],1])}),
    p.ring&&layer({...base,start:s0,count:1,lifeMin:12,lifeMax:12,shape:SHAPE.ring,size0:10*S,size1:140*S,sizeCurve:.5,softness:.15,sizeJitter:0,alpha:.45,fadeIn:0,fadeOut:.7,...stops([hot,1*I],[col,.6*I])}),
    p.flash&&layer({...base,start:s0,count:1,lifeMin:5,lifeMax:5,size0:30*S,size1:60*S,softness:2,sizeJitter:0,fadeIn:0,fadeOut:.8,...stops([WHITE,1.4*I],[hot,1*I])}),
@@ -246,7 +246,7 @@ const EXPLOSIONS=[
    p.fireball&&layer({...base,start:s0,count:12*D,burstJitter:4,lifeMin:3,lifeMax:7,emitRadius:26*S,speedMin:0,speedMax:1*S,spread:TAU,material:'bolt',frameRate:1,size0:44*S,size1:60*S,sizeJitter:.3,flicker:.5,fadeIn:0,fadeOut:.4,...stops([WHITE,2.8*I],[pale,2.2*I],[col,1.6*I])}),
    p.debris>0&&layer({...base,start:s0+2,emitDur:16,rate:2*p.debris*D,lifeMin:3,lifeMax:6,emitRadius:70*S,material:'bolt',frameRate:1,size0:26*S,size1:20*S,sizeJitter:.4,flicker:.6,fadeIn:0,fadeOut:.35,...stops([WHITE,2.4*I],[pale,2*I],[col,1.2*I])}),
    p.fireball&&layer({...base,start:s0,count:2,lifeMin:10,lifeMax:14,emitRadius:4*S,size0:40*S,size1:80*S,softness:1.8,sizeJitter:.2,flicker:.4,alpha:.8,fadeIn:0,fadeOut:.7,...stops([WHITE,2*I],[pale,1.4*I],[col,.8*I])}),
-   p.sparks&&layer({...base,start:s0,count:70*D,burstJitter:3,lifeMin:8,lifeMax:18,emitRadius:10*S,spread:TAU,speedMin:8*S,speedMax:20*S,gravity:.2,drag:.05,collide:1,shape:SHAPE.streak,stretch:2.2,size0:2,size1:.7,softness:.6,fadeOut:.4,...stops([WHITE,2.4*I],[pale,2*I],[col,1.4*I])}),
+   p.sparks&&layer({...base,start:s0,count:32*D,burstJitter:3,lifeMin:8,lifeMax:18,emitRadius:10*S,spread:TAU,speedMin:8*S,speedMax:20*S,gravity:.2,drag:.05,collide:1,shape:SHAPE.streak,stretch:1.2,size0:2,size1:.7,softness:.6,fadeOut:.4,...stops([WHITE,2.4*I],[pale,2*I],[col,1.4*I])}),
    p.ring&&layer({...base,start:s0+1,count:1,lifeMin:12,lifeMax:12,shape:SHAPE.ring,size0:20*S,size1:220*S,sizeCurve:.45,softness:.1,sizeJitter:0,flicker:.4,fadeIn:0,fadeOut:.7,...stops([WHITE,1.2*I],[pale,1*I],[col,.6*I])}),
    p.flash&&layer({...base,start:s0,count:1,lifeMin:6,lifeMax:6,size0:80*S,size1:160*S,softness:2.4,sizeJitter:0,fadeIn:0,fadeOut:.85,...stops([WHITE,1.2*I],[pale,1*I],[col,.5*I])}),
   ];

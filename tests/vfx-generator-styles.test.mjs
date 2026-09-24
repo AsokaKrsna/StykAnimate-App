@@ -124,3 +124,23 @@ test('smoke rises and drifts with the wind',()=>{
  assert.ok(live.length>50);assert.ok(mean('x')-ax>20,'wind carries smoke sideways');assert.ok(ay-mean('y')>20,'smoke rises');
  assert.ok(live.every(p=>p.draw.material===MATERIALS.smoke.row));
 });
+
+test('generated presets combine several effects; single effects live in Add effect',()=>{
+ for(const [name,preset] of Object.entries(VFX_PRESETS))if(preset.effects.some(([type])=>isGeneratorType(type)))assert.ok(preset.effects.length>=2,`${name} combines effects`);
+});
+
+test('a start delay holds one effect of a group back',()=>{
+ const e=fixture(),id=e.addVfxGroup({kind:'figure',uid:1},'Magic spell'),burst=e.getVfxClips().find(c=>c.id===id).effects.find(x=>x.type==='explosion');
+ assert.equal(burst.params.delay,20);
+ assert.equal(particles(batchAt(e,10)).filter(p=>p.draw.material===MATERIALS.bokeh.row).length,0,'the delayed burst has not started');
+ assert.ok(particles(batchAt(e,26)).some(p=>p.draw.material===MATERIALS.bokeh.row),'it bursts after its delay');
+});
+
+test('aura ground effects are optional and off by default',()=>{
+ const grounded=b=>b.draws.some(d=>b.records[d.record*RECORD_FLOATS+28]===5);
+ for(let style=0;style<8;style++){
+  const e=fixture();addEffect(e,'aura',{style});assert.equal(grounded(batchAt(e,30)),false,`style ${style} keeps off the ground`);
+  const f=fixture();addEffect(f,'aura',{style,dust:1});assert.ok(grounded(batchAt(f,30)),`style ${style} has a ground effect when enabled`);
+ }
+});
+

@@ -97,7 +97,7 @@ try{
  // Generated presets show rendered previews in the catalogue.
  await page.locator('[data-vfx-action="presets"]').click();
  await page.waitForFunction(()=>document.querySelectorAll('.vfx-catalog [data-preview]').length>20&&!document.querySelector('.vfx-catalog [data-preview]:not(.has-preview)'),null,{timeout:30000});
- assert.equal(await page.locator('.vfx-catalog .vfx-catalog-results h3').first().textContent(),'Explosions');
+ assert.equal(await page.locator('.vfx-catalog .vfx-catalog-results h3').first().textContent(),'Explosions & impacts');
  await page.screenshot({path:`${out}/catalogue.png`});await page.keyboard.press('Escape');
  assert.deepEqual(errors,[]);
  await fs.writeFile(`${out}/browser.json`,JSON.stringify({date:new Date().toISOString(),rows:report,errors},null,2));

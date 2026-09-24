@@ -12,7 +12,7 @@ import {isGeneratorType} from './vfx-registry.mjs';
 
 const STAGE={width:240,height:160},WIDTH=120,HEIGHT=80,cache=new Map(),queue=[];let scheduled=false;
 // Stage presets without a target restriction that read best placed on the ground.
-const GROUNDED=new Set(['Campfire']);
+const GROUNDED=new Set(['Campfire','Smoking wreck']);
 
 /** Whether a catalogue entry has a generated preview: generator types and generated presets. */
 export function hasEffectPreview(mode,key){
@@ -42,7 +42,7 @@ function previewTick(effects,duration){
  let tick=0;
  for(const [type,p={}] of effects){
   const t=type==='explosion'?[10,10,12,22,40,20,10,14,16,10][p.style??0]:type==='beam'?(p.charge??12)+(p.travel??6)+6:type==='aura'?40:type==='smoke'?(p.emission===1?16:46):p.emission===1?Math.min(10,(p.life??30)*.4):30;
-  tick=Math.max(tick,t);
+  tick=Math.max(tick,t+(p.delay??0));
  }
  return Math.floor(duration===null?Math.max(tick,80):Math.min(tick,Math.max(1,duration-1)));
 }
