@@ -50,7 +50,7 @@ export class Timeline{
     this.copyDrawingButton=this._button(frameTools,'duplicate','Next copied drawing',()=>this._run(()=>editor.nextDrawing([editor.activeLayerId],{blank:false})));this.copyDrawingButton.hidden=true;
     this.zoomInput=element('input',null,'sheet-zoom');Object.assign(this.zoomInput,{type:'range',min:'1',max:'36',value:'14'});this.zoomInput.setAttribute('aria-label','Timeline zoom');this._on(this.zoomInput,'input',()=>this.setZoom(Number(this.zoomInput.value)));
     this.live=element('div',this.root,'sheet-live');this.live.setAttribute('role','status');this.live.setAttribute('aria-live','polite');
-    this._on(this.scroll,'scroll',()=>this.update());this._on(this.scroll,'pointerdown',event=>this._pointerDown(event));this._on(this.scroll,'pointermove',event=>this._pointerMove(event));this._on(this.scroll,'pointerup',event=>this._pointerUp(event));this._on(this.scroll,'pointercancel',()=>this._cancelGesture());this._on(this.scroll,'lostpointercapture',()=>this._cancelGesture());
+    this._on(this.scroll,'scroll',()=>{this._cachedOffsetX=undefined;this.update();});this._on(this.scroll,'pointerdown',event=>this._pointerDown(event));this._on(this.scroll,'pointermove',event=>this._pointerMove(event));this._on(this.scroll,'pointerup',event=>this._pointerUp(event));this._on(this.scroll,'pointercancel',()=>this._cancelGesture());this._on(this.scroll,'lostpointercapture',()=>this._cancelGesture());
     this._on(this.scroll,'contextmenu',event=>{event.preventDefault();const hit=this._hit(event);if(hit.row<0||!this.tracks[hit.row])return this._menu(event,{view:true});if(this.tracks[hit.row]?.kind.startsWith('vfx')){this._selectVfxRow(this.tracks[hit.row]);return;}if(!this._contains(hit))this._selectCell(hit);this._menu(event);});
     this._on(this.scroll,'dblclick',event=>this._doubleClick(event));
     this._on(this.main,'pointerleave',()=>{if(!this.gesture){this.hover=null;this.update();}});
@@ -95,6 +95,7 @@ export class Timeline{
     this.scroll.setAttribute('aria-rowcount',String(this.tracks.length));this.scroll.setAttribute('aria-colcount',String(this.editor.report._styk.layerSheet.duration));this._extent();
   }
   _extent(){
+    this._cachedOffsetX=undefined;
     if(!this.main)return;
     // Read geometry together before changing inherited CSS. A write between
     // these reads forces another layout for every timeline paint.
@@ -123,7 +124,7 @@ export class Timeline{
   setPaused(value){const resumed=this.paused&&!value;this.paused=value;this.update(Boolean(resumed));}
   update(dirty=true){
     this.dirty||=dirty;if(this.disposed||this.raf)return;
-    this.raf=requestAnimationFrame(()=>{this._flushScrub();this._paintedOffsetX=undefined;if(this.dirty){this.dirty=false;this._paint();}this._syncPlayhead();this._paintedOffsetX=undefined;this.raf=null;
+    this.raf=requestAnimationFrame(()=>{this._flushScrub();if(this.dirty){this.dirty=false;this._paint();}this._syncPlayhead();this.raf=null;
       if(this.pendingScrub!=null)this.update(false);
     });
   }
@@ -139,9 +140,11 @@ export class Timeline{
   _syncPlayhead(){
     this.onionRange?.update();
     this.audio?.update(false);
-    // Reuse the offset this frame's paint just read: other widgets have written
-    // to the DOM since, so reading it again would force another layout.
-    const tick=Math.floor(this.pendingScrub??this.editor.tick),x=(tick+.5)*this.pxPerTick-(this._paintedOffsetX??this._offsetX());this.playhead.style.transform=`translateX(${x}px)`;
+    // The offset changes only on scroll or when _extent resizes the content;
+    // both clear this cache. Reading it after other widgets wrote to the DOM
+    // would force a layout on every seek.
+    this._cachedOffsetX??=this._offsetX();
+    const tick=Math.floor(this.pendingScrub??this.editor.tick),x=(tick+.5)*this.pxPerTick-this._cachedOffsetX;this.playhead.style.transform=`translateX(${x}px)`;
     if(this.playheadLabel.textContent!==String(tick+1))this.playheadLabel.textContent=String(tick+1);
 
   }
@@ -149,7 +152,7 @@ export class Timeline{
     this._syncOrganization();
     this.audio?.update();
     this._extent();const ctx=this.canvas.getContext('2d'),dpr=window.devicePixelRatio||1,step=this.pxPerTick,sx=this._offsetX(),sy=this._offsetY(),w=this.width,h=this.height,c=this.colors;
-    this._paintedOffsetX=sx;
+    this._cachedOffsetX=sx;
     if(!c)return;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);ctx.fillStyle=c.surface;ctx.fillRect(0,0,w,h);
     const durationX=this.editor.totalTicks*step-sx;if(durationX<w){ctx.fillStyle=c.hover;ctx.fillRect(Math.max(0,durationX),HEADER,w-Math.max(0,durationX),h-HEADER);}
     const first=Math.floor(sx/step),last=Math.ceil((sx+w)/step),firstRow=clamp(Math.floor(sy/ROW),0,this.tracks.length),lastRow=clamp(Math.ceil((sy+h-HEADER)/ROW),firstRow,this.tracks.length),state=this.editor.report._styk.layerSheet;
