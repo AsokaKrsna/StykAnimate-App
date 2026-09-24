@@ -3,18 +3,26 @@
  * The vertex shader evaluates each particle from its layer record, birth table
  * and frame, mirroring evaluateParticle() in vfx-generators.mjs. Only the
  * compact records and table upload per frame; particles never exist on the
- * CPU. Draws share the viewport's globals, attachments and sample count, so
- * they interleave with figure artwork inside the existing render passes. */
+ * CPU. Material rows of the procedural atlas upload once, when first drawn.
+ * Draws share the viewport's globals, attachments and sample count, so they
+ * interleave with figure artwork inside the existing render passes. */
 import {RECORD_BYTES,RECORD_FLOATS,BLEND} from './vfx-generators.mjs';
+import {atlasRow,prewarmAtlas,CELL,COLUMNS,ATLAS_ROWS,ATLAS_LEVELS} from './vfx-generator-atlas.mjs';
 
 const SHADER=/* wgsl */`
 struct Globals { row0: vec4f, row1: vec4f, viewport: vec4f, clip: vec4f };
-struct Layer { v: array<vec4f, 28> };
+struct Layer { v: array<vec4f, 32> };
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var<storage, read> tbl: array<vec4f>;
+@group(0) @binding(2) var atlas: texture_2d<f32>;
+@group(0) @binding(3) var atlasSampler: sampler;
 @group(1) @binding(0) var<uniform> L: Layer;
 
 const TAU = 6.28318530718;
+const ROWS = ${ATLAS_ROWS}.0;
+const COLUMNS = ${COLUMNS}.0;
+const CELL = ${CELL}.0;
+const MAX_LOD = ${ATLAS_LEVELS - 1}.0;
 const Q = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0), vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0));
 
 fn pcg(v: u32) -> u32 {
@@ -49,6 +57,11 @@ fn ramp(x: f32) -> vec4f {
   let rgb = c.rgb * c.a;
   return vec4f(min(vec3f(1.0), rgb / max(1.0, max(rgb.r, max(rgb.g, rgb.b)))), op);
 }
+// Material shading: 0.5 keeps the colour, lower darkens, higher lightens.
+fn shadeRgb(c: vec3f, s: f32) -> vec3f {
+  if (s < 0.5) { return c * (0.25 + 1.5 * s); }
+  return mix(c, vec3f(1.0), (s - 0.5) * 1.4);
+}
 fn row(k: i32) -> vec4f { return tbl[u32(i32(L.v[7].z) + k * 2)]; }
 fn row2(k: i32) -> vec4f { return tbl[u32(i32(L.v[7].z) + k * 2 + 1)]; }
 fn beamTip(te: f32) -> vec2f {
@@ -56,6 +69,7 @@ fn beamTip(te: f32) -> vec2f {
   return mix(L.v[9].xy, L.v[9].zw, 1.0 - (1.0 - k) * (1.0 - k));
 }
 fn beamWidth(te: f32) -> f32 { return smooth01(L.v[14].w - 1.0, L.v[14].w + 2.0, te) * (1.0 - smooth01(L.v[15].x - L.v[15].y, L.v[15].x, te)); }
+fn curlPotential(q: vec2f, tt: f32) -> f32 { return vnoise(q + vec2f(tt, 0.0)) + 0.5 * vnoise(q * 2.03 + vec2f(13.7, -tt)); }
 
 struct VO {
   @builtin(position) pos: vec4f,
@@ -87,11 +101,12 @@ fn capsule(p0: vec2f, p1: vec2f, r: f32, margin: f32, c: vec2f) -> VO {
     if (te < L.v[14].w - 1.0 || te > L.v[15].x) { return dead(); }
     let a = L.v[9].xy; let b = beamTip(te);
     let d = b - a; let len = max(length(d), 1.0); let dn = d / len; let nn = vec2f(-dn.y, dn.x);
-    let w = L.v[14].x * beamWidth(te); let halo = w * 3.5 + 8.0;
+    var w = L.v[14].x * beamWidth(te); if (w > 0.05) { w = w * L.v[30].y + L.v[30].z; }
+    let halo = w * 3.5 + 8.0;
     let lx = mix(-halo, len + halo, c.x * 0.5 + 0.5); let ly = c.y * halo;
     var o = dead();
     o.pos = toClip(a + dn * lx + nn * ly); o.uv = vec2f(lx, ly);
-    o.prm = vec4f(len, w, L.v[14].y, f32(seed % 997u)); o.kind = 4u; o.color = vec4f(te, 0.0, 0.0, L.v[6].z);
+    o.prm = vec4f(len, w, L.v[14].y, f32(seed % 997u)); o.kind = 4u; o.color = vec4f(te, pixel(), 0.0, L.v[6].z);
     return o;
   }
   if (shape == 5u) {
@@ -136,8 +151,9 @@ fn capsule(p0: vec2f, p1: vec2f, r: f32, margin: f32, c: vec2f) -> VO {
   if (fade <= 0.001) { return dead(); }
   let anchor = mix(rk.xy, rk1.xy, fr);
   var p = anchor; var base = L.v[2].z + rk.w;
+  let sq = L.v[30].w;
   let r1 = hsh(n, 3u, seed); let r2 = hsh(n, 4u, seed); let da = hsh(n, 10u, seed) * TAU; let dr = sqrt(hsh(n, 9u, seed));
-  let disc = vec2f(cos(da), sin(da)) * dr;
+  let disc = vec2f(cos(da) * dr, sin(da) * dr * sq);
   let es = u32(L.v[7].x); let er = L.v[7].y;
   if (es == 1u && L.v[8].z > 0.0) {
     let count = L.v[8].z; let si = min(floor(r1 * count), count - 1.0);
@@ -149,7 +165,7 @@ fn capsule(p0: vec2f, p1: vec2f, r: f32, margin: f32, c: vec2f) -> VO {
     base += atan2(e.y, e.x);
     if (es == 2u) { p = mix(L.v[9].xy, b, r2) + vec2f(-e.y, e.x) / len * (r1 - 0.5) * 2.0 * er; }
     else { p = b + disc * er; }
-  } else if (es == 3u) { p = anchor + vec2f(cos(r1 * TAU), sin(r1 * TAU)) * er; }
+  } else if (es == 3u) { p = anchor + vec2f(cos(r1 * TAU), sin(r1 * TAU) * sq) * er; }
   else if (es == 5u) { p = vec2f(anchor.x + (r1 - 0.5) * 2.0 * er, L.v[11].y - 3.0); }
   else if (es == 6u) { p = anchor + vec2f(-sin(base), cos(base)) * (r1 - 0.5) * 2.0 * er; }
   else if (es == 7u) {
@@ -168,27 +184,64 @@ fn capsule(p0: vec2f, p1: vec2f, r: f32, margin: f32, c: vec2f) -> VO {
   }
   var vel = dir * mix(L.v[2].x, L.v[2].y, hsh(n, 6u, seed)) * rs.x;
   if (L.v[10].x != 0.0) { let kp = max(k - 1, 0); vel += L.v[10].x * (rk.xy - row(kp).xy); }
-  let p0 = p; let g = L.v[3].x; let kd = L.v[3].y;
+  // Launch velocity with drag, plus constant gravity and wind accelerations.
+  let p0 = p; let g = vec2f(L.v[31].w, L.v[3].x); let kd = L.v[3].y;
+  var gd: vec2f; var gv: vec2f;
   if (kd > 1e-4) {
-    let e = exp(-kd * age); let ty = vel.y - g / kd;
-    p += vec2f(vel.x * (1.0 - e) / kd, ty * (1.0 - e) / kd + g * age / kd);
-    vel = vec2f(vel.x * e, ty * e + g / kd);
+    let e = exp(-kd * age); let qd = (1.0 - e) / kd; let w = (age - qd) / kd;
+    p += vel * qd; vel *= e; gd = g * w; gv = g * qd;
   } else {
-    p += vec2f(vel.x * age, vel.y * age + 0.5 * g * age * age); vel.y += g * age;
+    p += vel * age; gd = g * (0.5 * age * age); gv = g * age;
   }
+  let orb = L.v[29].y;
+  if (orb != 0.0) {
+    let a = orb * age; let co = cos(a); let si = sin(a); let rx = p.x - anchor.x; let wx = vel.x;
+    if (es == 1u || es == 6u || es == 5u) {
+      p = vec2f(anchor.x + rx * co, p.y + rx * si * sq);
+      vel = vec2f(wx * co - orb * rx * si, vel.y + (wx * si + orb * rx * co) * sq);
+    } else {
+      let ry = (p.y - anchor.y) / sq; let wy = vel.y / sq; let nx = rx * co - ry * si; let ny = rx * si + ry * co;
+      p = anchor + vec2f(nx, ny * sq);
+      vel = vec2f(wx * co - wy * si - orb * ny, (wx * si + wy * co + orb * nx) * sq);
+    }
+  }
+  p += gd; vel += gv;
   let turb = L.v[3].w;
   if (turb > 0.0) {
     let tq = p0 * L.v[4].x + vec2f(hsh(n, 7u, seed) * 37.0, 0.0); let tt = te * 0.035;
     let dsp = vec2f(vnoise(tq + vec2f(tt, 0.0)), vnoise(tq + vec2f(19.1, tt))) * 2.0 - 1.0;
     p += dsp * turb * an; vel += dsp * turb / life;
   }
+  if (L.v[29].z > 0.0) {
+    // Curl noise: a divergence-free flow sampled where the particle is.
+    let qn = p * L.v[29].w; let tt = te * 0.02; let e = 0.35;
+    let c0 = curlPotential(qn, tt); let gx = curlPotential(qn + vec2f(e, 0.0), tt) - c0; let gy = curlPotential(qn + vec2f(0.0, e), tt) - c0;
+    let amount = L.v[29].z * an / e; p += vec2f(gy, -gx) * amount;
+  }
   if (L.v[11].x > 0.5 && p.y > L.v[11].y - 1.5) { p.y = L.v[11].y - 1.5; vel.y = 0.0; }
-  let sz = max(0.0, rs.y * mix(L.v[5].x, L.v[5].y, pow(max(an, 1e-6), L.v[10].w)) * (1.0 + (hsh(n, 8u, seed) - 0.5) * 2.0 * L.v[10].z) * mix(0.3, 1.0, fade));
+  let sm = u32(L.v[30].x);
+  var growth: f32;
+  if (sm == 1u) { let qa = 1.0 - an; growth = 1.0 - qa * qa * qa; }
+  else if (sm == 2u) { let qa = 1.0 - min(an * 4.0, 1.0); growth = 1.0 - qa * qa; }
+  else { growth = pow(max(an, 1e-6), L.v[10].w); }
+  var sz = rs.y * mix(L.v[5].x, L.v[5].y, growth) * (1.0 + (hsh(n, 8u, seed) - 0.5) * 2.0 * L.v[10].z) * mix(0.3, 1.0, fade);
+  if (sm == 2u) { sz *= 1.0 - smooth01(0.6, 1.0, an); }
+  else if (sm == 3u) { let h = hsh(n, 21u, seed); sz *= 0.55 + 0.9 * vnoise(vec2f(te * 0.45 + h * 61.7, h * 17.3)); }
+  // Echo, halo and outline draws scale or widen the same particle.
+  if (sz > 0.0) { sz = sz * L.v[30].y + L.v[30].z; } else { sz = 0.0; }
   let fi = select(smooth01(0.0, L.v[6].x, an), 1.0, L.v[6].x <= 0.0);
   let fo = select(1.0 - smooth01(1.0 - L.v[6].y, 1.0, an), 1.0, L.v[6].y <= 0.0);
   let col = ramp(select(an, hsh(n, 16u, seed), L.v[6].w > 0.5));
-  let alpha = L.v[6].z * fi * fo * fade * col.a;
+  var alpha = L.v[6].z * fi * fo * fade * col.a;
+  if (L.v[31].x > 0.0) { let h = hsh(n, 22u, seed); alpha *= 1.0 - L.v[31].x * vnoise(vec2f(te * 0.8 + h * 53.1, h * 29.7)); }
   if (alpha <= 0.0 || sz <= 0.0) { return dead(); }
+  let rm = u32(L.v[28].w);
+  var rot: f32;
+  if (rm == 1u) { rot = select(0.0, atan2(vel.y, vel.x) + 1.57079632679, dot(vel, vel) > 1e-6); }
+  else if (rm == 2u) { rot = (hsh(n, 13u, seed) - 0.5) * 0.35; }
+  else if (rm == 3u) { rot = 0.0; }
+  else { rot = hsh(n, 13u, seed) * TAU + L.v[4].y * age * (1.0 + L.v[29].x * ((hsh(n, 19u, seed) * 2.0 - 1.0) * 1.5 - 1.0)); }
+  let cr = vec2f(cos(rot), sin(rot));
 
   var o = dead();
   o.color = vec4f(col.rgb, alpha); o.kind = shape;
@@ -202,14 +255,36 @@ fn capsule(p0: vec2f, p1: vec2f, r: f32, margin: f32, c: vec2f) -> VO {
     return o;
   }
   if (shape == 3u) {
-    let rot = hsh(n, 13u, seed) * TAU + L.v[4].y * age; let cr = vec2f(cos(rot), sin(rot)); let e = c * (sz * 1.3 + px);
+    let e = c * (sz * 1.3 + px);
     o.pos = toClip(p + vec2f(e.x * cr.x - e.y * cr.y, e.x * cr.y + e.y * cr.x));
     o.uv = c * (1.3 + px / max(sz, 1e-3)); o.prm = vec4f(hsh(n, 14u, seed), px / max(sz, 1e-3), 0.0, 0.0);
     return o;
   }
+  if (shape == 6u) {
+    // Textured sprite: one atlas cell, scaled along its up axis by aspect and speed.
+    let hx = max(sz, px * 0.5); let hy = hx * L.v[31].y + 0.5 * length(vel) * L.v[5].z;
+    let e = vec2f(c.x * hx, c.y * hy);
+    o.pos = toClip(p + vec2f(e.x * cr.x - e.y * cr.y, e.x * cr.y + e.y * cr.x));
+    let code = u32(L.v[28].y); let cells = max(code % 16u, 1u);
+    var vi = min(u32(floor(hsh(n, 20u, seed) * f32(cells))), cells - 1u);
+    if (L.v[31].z > 0.0) { vi = (vi + u32(floor(age / L.v[31].z))) % cells; }
+    let cell = vec2f(f32(code / 16u + vi), L.v[28].x - 1.0);
+    o.uv = vec2f((cell.x + c.x * 0.5 + 0.5) / COLUMNS, (cell.y + c.y * 0.5 + 0.5) / ROWS);
+    // Level of detail from the cell's size on screen.
+    o.prm = vec4f(L.v[28].z, clamp(log2(CELL * px / (2.0 * max(hx, hy))), 0.0, MAX_LOD), 0.0, 0.0);
+    return o;
+  }
+  if (shape == 7u) {
+    let rr = max(sz, px * 0.5); let e = c * (rr + px);
+    o.pos = toClip(p + vec2f(e.x * cr.x - e.y * cr.y, e.x * cr.y + e.y * cr.x));
+    o.uv = c * (1.0 + px / rr); o.prm = vec4f(px / rr, 0.0, 0.0, 0.0);
+    return o;
+  }
   let grow = select(1.0, 1.0 + L.v[5].w * 2.0, shape == 2u);
   let rr = max(sz, px * 0.5);
-  o.pos = toClip(p + c * (rr * grow + px)); o.uv = c * (grow + px / rr);
+  // Soft discs may be flattened into ellipses, such as glows on the ground.
+  let squash = select(1.0, L.v[31].y, shape == 0u);
+  o.pos = toClip(p + c * (rr * grow + px) * vec2f(1.0, squash)); o.uv = c * (grow + px / rr);
   o.prm = vec4f(L.v[5].w, px / rr, 0.0, 0.0);
   return o;
 }
@@ -223,6 +298,44 @@ fn outside(pos: vec4f) -> bool {
 fn soft(d: f32, s: f32, aa: f32) -> f32 {
   let edge = 1.0 - smooth01(1.0 - aa, 1.0, d);
   return pow(max(1.0 - d, 1e-5), s) * edge;
+}
+fn beamColor(i: VO) -> vec4f {
+  let len = i.prm.x; let w = i.prm.y;
+  if (w <= 0.05) { discard; }
+  let t = i.color.x; let x = i.uv.x; let aa = i.color.y; let style = u32(L.v[28].x);
+  let wob = (vnoise(vec2f(x * 0.018 - t * 0.55, i.prm.w)) - 0.5) * 2.0 * i.prm.z * w * smooth01(0.0, 80.0, x);
+  let y = i.uv.y - wob;
+  let ww = w * mix(0.55, 1.0, smooth01(0.0, 70.0, x));
+  let d = length(vec2f(max(max(-x, x - len), 0.0), abs(y)));
+  let c0 = ramp(0.0); let c1 = ramp(1.0);
+  if (style == 2u) {
+    // Cartoon: a flat body with a lighter core band and crisp edges.
+    let body = 1.0 - smooth01(ww - aa, ww + aa, d); let core = 1.0 - smooth01(ww * 0.45 - aa, ww * 0.45 + aa, d);
+    let a = body * i.color.w;
+    return vec4f(mix(c1.rgb, c0.rgb, core) * a, a);
+  }
+  var core: f32; var body: f32; var glow: f32;
+  let pulse = 0.8 + 0.4 * vnoise(vec2f(x * 0.035 - t * 1.7, 3.0 + i.prm.w));
+  if (style == 1u) {
+    // Laser: a hard, steady core with a tight glow.
+    core = 1.0 - smooth01(ww * 0.2 - aa, ww * 0.2 + aa, d); body = 1.0 - smooth01(ww * 0.5 - aa, ww * 0.5 + aa, d); glow = exp(-d / (ww * 1.1 + 1.0)) * 0.5;
+  } else {
+    core = 1.0 - smooth01(ww * 0.26, ww * 0.42, d); body = 1.0 - smooth01(ww * 0.45, ww, d); glow = exp(-d / (ww * 0.9 + 1.0)) * 0.45;
+  }
+  var rgb = c0.rgb * core + c1.rgb * (body * 0.8 + glow) * select(pulse, 1.0, style == 1u);
+  var a = core + body * 0.7 + glow * 0.5;
+  if (style == 3u) {
+    // Spiral: two strands winding around the beam.
+    let period = max(24.0, w * 3.2); let inside = step(0.0, x) * step(x, len);
+    for (var s = 0u; s < 2u; s++) {
+      let phase = x / period * TAU - t * 0.35 + f32(s) * 3.14159265;
+      let sy = sin(phase) * ww * 0.95; let depth = 0.55 + 0.45 * cos(phase);
+      let strand = exp(-abs(y - sy) / (ww * 0.1 + 0.6)) * depth * inside;
+      rgb += c0.rgb * strand; a += strand * 0.8;
+    }
+  }
+  let alpha = clamp(a, 0.0, 1.0) * i.color.w;
+  return vec4f(min(vec3f(1.0), rgb) * alpha, alpha);
 }
 @fragment fn fs(i: VO) -> @location(0) vec4f {
   if (outside(i.pos)) { discard; }
@@ -243,26 +356,21 @@ fn soft(d: f32, s: f32, aa: f32) -> f32 {
       let q = abs(i.uv); let d = max(q.x, q.y * (0.55 + 0.6 * i.prm.x) + q.x * 0.25);
       cov = 1.0 - smooth01(1.0 - min(i.prm.y * 1.5, 1.0), 1.0, d);
     }
-    case 4u: {
-      let len = i.prm.x; let w = i.prm.y;
-      if (w <= 0.05) { discard; }
-      let t = i.color.x; let x = i.uv.x;
-      let wob = (vnoise(vec2f(x * 0.018 - t * 0.55, i.prm.w)) - 0.5) * 2.0 * i.prm.z * w * smooth01(0.0, 80.0, x);
-      let y = abs(i.uv.y - wob);
-      let ww = w * mix(0.55, 1.0, smooth01(0.0, 70.0, x));
-      let d = length(vec2f(max(max(-x, x - len), 0.0), y));
-      let pulse = 0.8 + 0.4 * vnoise(vec2f(x * 0.035 - t * 1.7, 3.0 + i.prm.w));
-      let core = 1.0 - smooth01(ww * 0.26, ww * 0.42, d);
-      let body = 1.0 - smooth01(ww * 0.45, ww, d);
-      let glow = exp(-d / (ww * 0.9 + 1.0)) * 0.45;
-      let c0 = ramp(0.0); let c1 = ramp(1.0);
-      let rgb = min(vec3f(1.0), c0.rgb * core + c1.rgb * (body * 0.8 + glow) * pulse);
-      let a = clamp(core + body * 0.7 + glow * 0.5, 0.0, 1.0) * i.color.w;
-      return vec4f(rgb * a, a);
-    }
+    case 4u: { return beamColor(i); }
     case 5u: {
       let d = length(vec2f(max(abs(i.uv.x) - i.prm.x, 0.0), i.uv.y)); let r = i.prm.y;
       cov = min(clamp(1.0 - (d - r) / i.prm.z, 0.0, 1.0) + exp(-d / (r * 2.5)) * 0.55, 1.0);
+    }
+    case 6u: {
+      let tex = textureSampleLevel(atlas, atlasSampler, i.uv, i.prm.y);
+      if (tex.g <= 0.002) { discard; }
+      let rgb = shadeRgb(i.color.rgb, mix(0.5, clamp(tex.r / tex.g, 0.0, 1.0), i.prm.x));
+      let k = tex.g * i.color.a;
+      return vec4f(rgb * k, k);
+    }
+    case 7u: {
+      let q = max(abs(i.uv.x), abs(i.uv.y)); let aa = min(i.prm.x * 1.5, 1.0);
+      cov = 1.0 - smooth01(1.0 - aa, 1.0, q);
     }
     default: { discard; }
   }
@@ -275,35 +383,46 @@ const BLENDS={
  [BLEND.add]:{color:{srcFactor:'one',dstFactor:'one',operation:'add'},alpha:{srcFactor:'one',dstFactor:'one',operation:'add'}},
 };
 
-/** Owns generator pipelines and per-frame buffers on the viewport's device. */
+/** Owns generator pipelines, per-frame buffers and the material atlas on the viewport's device. */
 export class GeneratorGpu{
  constructor(device,format,globals){
-  this.device=device;this.format=format;this.globals=globals;this.pipelines=new Map();this.recordCapacity=0;this.tableCapacity=0;
+  this.device=device;this.format=format;this.globals=globals;this.pipelines=new Map();this.recordCapacity=0;this.tableCapacity=0;this.atlasRows=new Set();
   this.module=device.createShaderModule({label:'Generated effects',code:SHADER});
-  this.layout0=device.createBindGroupLayout({label:'Generated effects globals',entries:[{binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:'uniform'}},{binding:1,visibility:GPUShaderStage.VERTEX,buffer:{type:'read-only-storage'}}]});
+  this.layout0=device.createBindGroupLayout({label:'Generated effects globals',entries:[{binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:'uniform'}},{binding:1,visibility:GPUShaderStage.VERTEX,buffer:{type:'read-only-storage'}},{binding:2,visibility:GPUShaderStage.FRAGMENT,texture:{sampleType:'float'}},{binding:3,visibility:GPUShaderStage.FRAGMENT,sampler:{type:'filtering'}}]});
   this.layout1=device.createBindGroupLayout({label:'Generated effects layer',entries:[{binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:'uniform',hasDynamicOffset:true,minBindingSize:RECORD_FLOATS*4}}]});
   this.pipelineLayout=device.createPipelineLayout({bindGroupLayouts:[this.layout0,this.layout1]});
-  this.stats={draws:0,particles:0,uploadBytes:0};
+  // Rows fill in on first use; untouched rows are never sampled.
+  this.atlas=device.createTexture({label:'Generated effect materials',size:[CELL*COLUMNS,CELL*ATLAS_ROWS],format:'rg8unorm',mipLevelCount:ATLAS_LEVELS,usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST});
+  this.sampler=device.createSampler({label:'Generated effect materials',magFilter:'linear',minFilter:'linear',mipmapFilter:'linear',addressModeU:'clamp-to-edge',addressModeV:'clamp-to-edge'});
+  this.stats={draws:0,particles:0,uploadBytes:0};prewarmAtlas();
  }
  pipeline(blend,samples){
   const key=`${blend}:${samples}`;let pipeline=this.pipelines.get(key);
   if(!pipeline){pipeline=this.device.createRenderPipeline({label:`Generated effects ${blend?'additive':'normal'} ${samples}×`,layout:this.pipelineLayout,vertex:{module:this.module,entryPoint:'vs'},fragment:{module:this.module,entryPoint:'fs',targets:[{format:this.format,blend:BLENDS[blend]}]},primitive:{topology:'triangle-list'},multisample:{count:samples}});this.pipelines.set(key,pipeline);}
   return pipeline;
  }
+ /** Upload a material row and its reduced levels once. */
+ ensureRow(row){
+  if(row<0||this.atlasRows.has(row))return;
+  const strip=atlasRow(row);
+  strip.levels.forEach((level,mip)=>this.device.queue.writeTexture({texture:this.atlas,mipLevel:mip,origin:[0,row*level.height,0]},level.data,{bytesPerRow:level.width*2,rowsPerImage:level.height},[level.width,level.height,1]));
+  this.atlasRows.add(row);this.stats.uploadBytes+=strip.levels.reduce((n,l)=>n+l.data.byteLength,0);
+ }
  /** Upload one batch. Queue order lets later passes upload their own batch. */
  upload(batch){
   const {device}=this,layers=batch.draws.length,recordBytes=layers*RECORD_BYTES,tableBytes=Math.max(16,batch.table.byteLength);
-  let rebind=false;
+  let rebind=false;this.stats.uploadBytes=0;
   if(recordBytes>this.recordCapacity){this.records?.destroy();this.recordCapacity=Math.max(RECORD_BYTES*16,2**Math.ceil(Math.log2(recordBytes)));this.records=device.createBuffer({label:'Generated effect layers',size:this.recordCapacity,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});this.staging=new Float32Array(this.recordCapacity/4);rebind=true;}
   if(tableBytes>this.tableCapacity){this.table?.destroy();this.tableCapacity=Math.max(4096,2**Math.ceil(Math.log2(tableBytes)));this.table=device.createBuffer({label:'Generated effect birth table',size:this.tableCapacity,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});rebind=true;}
   if(rebind||this.boundGlobals!==this.globals){
-   this.group0=device.createBindGroup({layout:this.layout0,entries:[{binding:0,resource:{buffer:this.globals}},{binding:1,resource:{buffer:this.table}}]});
+   this.group0=device.createBindGroup({layout:this.layout0,entries:[{binding:0,resource:{buffer:this.globals}},{binding:1,resource:{buffer:this.table}},{binding:2,resource:this.atlas.createView()},{binding:3,resource:this.sampler}]});
    this.group1=device.createBindGroup({layout:this.layout1,entries:[{binding:0,resource:{buffer:this.records,size:RECORD_FLOATS*4}}]});this.boundGlobals=this.globals;
   }
+  for(const draw of batch.draws)this.ensureRow(draw.material??-1);
   for(let i=0;i<layers;i++)this.staging.set(batch.records.subarray(i*RECORD_FLOATS,(i+1)*RECORD_FLOATS),i*RECORD_BYTES/4);
   device.queue.writeBuffer(this.records,0,this.staging,0,recordBytes/4);
   if(batch.table.byteLength)device.queue.writeBuffer(this.table,0,batch.table);
-  this.stats.uploadBytes=recordBytes+batch.table.byteLength;
+  this.stats.uploadBytes+=recordBytes+batch.table.byteLength;
  }
  /** Encode draws into an open pass; restores the caller's pipeline afterwards. */
  draw(pass,draws,samples,restore){
@@ -315,5 +434,5 @@ export class GeneratorGpu{
   }
   if(current>=0)restore?.(pass);
  }
- destroy(){this.records?.destroy();this.table?.destroy();this.records=this.table=null;this.pipelines.clear();}
+ destroy(){this.records?.destroy();this.table?.destroy();this.atlas?.destroy();this.records=this.table=this.atlas=null;this.atlasRows.clear();this.pipelines.clear();}
 }

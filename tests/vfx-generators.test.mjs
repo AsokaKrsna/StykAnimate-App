@@ -10,6 +10,7 @@ import {VFX_PRESETS,presetAvailable} from '../src/vfx-presets.mjs';
 import {effectAvailable,isGeneratorType} from '../src/vfx-registry.mjs';
 import {buildGeneratorBatch,evaluateParticle,generatorClipTail,generatorClipActiveAt,generatorSchedule,scheduleWalker,backgroundIsLight,rampColor,generatorBatchBounds,BLEND,RECORD_FLOATS} from '../src/vfx-generators.mjs';
 import {GeneratorAnchors} from '../src/vfx-generator-anchors.mjs';
+import {MATERIALS} from '../src/vfx-generator-atlas.mjs';
 import {filterVfxClips} from '../src/vfx-clip-inspector.mjs';
 
 /** Figure 1 walks right 40px per 20-frame key; figure 2 stands still. */
@@ -24,7 +25,7 @@ function particles(batch){const out=[],p={};for(const draw of batch?.draws??[])f
 const setParams=(e,id,values)=>{const c=e.getVfxClips().find(c=>c.id===id);e.setVfxClipParameters(id,c.effects[0].id,values);};
 
 test('generators are timeline-only and never reach filter executors',()=>{
- for(const type of ['particles','aura','beam','explosion'])assert.equal(isGeneratorType(type),true);
+ for(const type of ['particles','aura','beam','explosion','smoke'])assert.equal(isGeneratorType(type),true);
  assert.throws(()=>validateVfxOwner({_stykVfx:{figure:[createVfx('explosion','fx')]}}),/effects timeline/);
  assert.deepEqual(activeVfx([createVfx('explosion','a'),createVfx('glow','b')]).map(e=>e.type),['glow']);
  const e=fixture();e.addVfxClip({kind:'figure',uid:1},'aura',{start:0,duration:20});e.addVfxClip({kind:'figure',uid:1},'glow',{start:0,duration:20});
@@ -90,7 +91,7 @@ test('Auto blending glows on dark scenes and keeps colours solid on light ones',
  const light=fixture(),dark=fixture({dark:true});
  for(const e of [light,dark])e.addVfxClip({kind:'figure',uid:1},'aura',{start:0,duration:40});
  assert.equal(backgroundIsLight(light.report,frameAt(light,5).frame),true);assert.equal(backgroundIsLight(dark.report,frameAt(dark,5).frame),false);
- const flames=b=>b.draws.find(d=>d.shape===1);
+ const flames=b=>b.draws.find(d=>d.material===MATERIALS.flame.row);
  assert.equal(flames(batchAt(light,10)).blend,BLEND.normal);assert.equal(flames(batchAt(dark,10)).blend,BLEND.add);
  const b=batchAt(light,10),c=rampColor(b,flames(b),.5,[0,0,0,0]);
  assert.ok(Math.max(c[0],c[1],c[2])>.99&&Math.min(c[0],c[1],c[2])<.6,'solid colours stay saturated');

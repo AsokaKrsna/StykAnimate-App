@@ -1,4 +1,4 @@
-/** Generated effects: particles, auras, energy beams and explosions.
+/** Generated effects: particles, auras, beams, explosions and smoke.
  *
  * A particle is a pure function of its layer record, instance index, seed and
  * frame. Nothing is simulated or retained between frames, so seeking, reverse
@@ -7,22 +7,23 @@
  * amount, direction, speed, size) are read at each particle's birth tick from
  * a small per-layer table that covers only the ticks of still-visible births.
  *
- * `evaluateParticle` is the reference implementation used by the Canvas
- * renderer; the WGSL in vfx-generator-gpu.mjs mirrors it line for line. */
+ * Effect styles compile into layers (vfx-generator-styles.mjs); this module
+ * packs them into records and holds `evaluateParticle`, the reference
+ * implementation used by the Canvas renderer. The WGSL in
+ * vfx-generator-gpu.mjs mirrors it line for line. */
 import {VFX_REGISTRY,isGeneratorType} from './vfx-registry.mjs';
 import {vfxClips,sampleVfxClip,sampleVfxKeys,vfxFadeAt} from './vfx-clips.mjs';
 import {vfxProperty} from './vfx.mjs';
-import {vfxPaint} from './vfx-paint.mjs';
-import {samplePaint} from './paint.mjs';
+import {SHAPE,EMIT,BLEND,COLOR_STOPS,FAR,MATERIALS} from './vfx-generator-layers.mjs';
+import {COMPILERS} from './vfx-generator-styles.mjs';
 
-export const SHAPE=Object.freeze({disc:0,streak:1,ring:2,chunk:3,beam:4,arc:5});
-export const EMIT=Object.freeze({point:0,body:1,beamLine:2,ring:3,beamTip:4,ground:5,line:6,stage:7});
-export const BLEND=Object.freeze({normal:0,add:1,auto:2});
-/** 28 vec4 per layer record (the last two hold its movieclip transform); GPU
- * records sit on 512-byte uniform offsets. */
-export const RECORD_FLOATS=112,RECORD_BYTES=512,COLOR_STOPS=8;
+export {SHAPE,EMIT,BLEND,COLOR_STOPS};
+/** 32 vec4 per layer record: emission, motion and colour, the movieclip
+ * transform (vec4 26–27) and materials with extended motion (vec4 28–31).
+ * GPU records sit on 512-byte uniform offsets. */
+export const RECORD_FLOATS=128,RECORD_BYTES=512;
 export const LIMITS=Object.freeze({layerParticles:65536,batchParticles:262144,batchLayers:256,tableTicks:420,segments:192});
-const TAU=Math.PI*2,EMPTY=Object.freeze([]),FAR=1e7;
+const TAU=Math.PI*2,EMPTY=Object.freeze([]);
 const clamp=(v,a,b)=>v<a?a:v>b?b:v,mix=(a,b,t)=>a+(b-a)*t;
 const smoothstep=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 
@@ -37,80 +38,6 @@ export function vnoise(x,y){
 }
 
 // ---------------------------------------------------------------------------
-// Layer specifications. Each generator effect compiles into sub-emitters.
-// Sizes and speeds are stage pixels and pixels per frame; lives are frames.
-// ---------------------------------------------------------------------------
-const LAYER={placement:'front',start:0,emitDur:0,count:0,rate:0,lifeMin:10,lifeMax:10,step:1,speedMin:1,speedMax:1,angle:0,spread:0,gravity:0,drag:0,radial:0,turb:0,turbScale:.01,spin:0,shape:SHAPE.disc,blend:BLEND.auto,
- size0:4,size1:4,stretch:1,softness:1,fadeIn:.1,fadeOut:.3,alpha:1,colorMode:0,emitShape:EMIT.point,emitRadius:0,inherit:0,burstJitter:0,sizeJitter:.3,sizeCurve:1,collide:0,clipFadeIn:0,clipFadeOut:0,prewarm:0,
- beamW:0,wobble:0,grow:1,fireStart:0,fireEnd:FAR,fadeFrames:1,arcSegs:14,arcAmp:0,colors:null,world:false,fixed:null,body:false};
-const layer=(options)=>({...LAYER,...options});
-const rgb=hex=>[(hex>>>16&255)/255,(hex>>>8&255)/255,(hex&255)/255];
-const tone=(c,t,to)=>c.map((v,i)=>v+(to[i]-v)*t),WHITE=[1,1,1],BLACK=[0,0,0];
-function paintColor(value,at=.5){const p=vfxPaint(value),s=samplePaint(p,at);return s.color.map(v=>v/255);}
-/** Eight evenly spaced stops: [r,g,b,intensity] plus stop opacity. */
-function ramp(stops){const colors=[],opacity=[];for(let i=0;i<COLOR_STOPS;i++){const x=i/(COLOR_STOPS-1)*(stops.length-1),j=Math.min(stops.length-2,Math.floor(x)),f=stops.length>1?x-j:0,a=stops[stops.length>1?j:0],b=stops[stops.length>1?j+1:0];
- colors.push([mix(a[0][0],b[0][0],f),mix(a[0][1],b[0][1],f),mix(a[0][2],b[0][2],f),mix(a[1],b[1],f)]);opacity.push(mix(a[2]??1,b[2]??1,f));}return {colors,opacity};}
-function paintRamp(value,intensity=1){
- const p=vfxPaint(value),colors=[],opacity=[];
- for(let i=0;i<COLOR_STOPS;i++){const s=samplePaint(p,i/(COLOR_STOPS-1));colors.push([s.color[0]/255,s.color[1]/255,s.color[2]/255,intensity]);opacity.push(s.opacity);}
- return {colors,opacity};
-}
-const stops=(...entries)=>ramp(entries.map(([c,i,o=1])=>[c,i,o]));
-
-/** Glow layers: Auto adds light on dark scenes and paints solid colour on light ones. */
-const glowBlend=p=>p.blend===1?BLEND.add:p.blend===2?BLEND.normal:BLEND.auto;
-/** Figures are authored at many scales; auras follow the target's height. */
-const bodyScale=anchor=>clamp((anchor?.height||200)/200,.25,4);
-
-function compileAura(p,ctx){
- const col=paintColor(p.color),hot=tone(col,.6,WHITE),I=p.intensity,S=p.height,T=p.turbulence,sc=bodyScale(ctx.anchor),dust=tone([.54,.58,.65],.25,col);
- const base={start:ctx.start,emitDur:ctx.window,clipFadeIn:ctx.timed?14:0,clipFadeOut:ctx.timed?16:0,world:Boolean(p.trail),body:true,rateParam:'density',blend:glowBlend(p)};
- return [
-  p.dust&&layer({...base,placement:'behind',rate:2.5,lifeMin:22,lifeMax:40,emitShape:EMIT.ground,emitRadius:40*sc,speedMin:1.5*sc,speedMax:3.5*S*sc,drag:.06,gravity:.01,collide:1,size0:10*sc,size1:26*S*sc,softness:2,alpha:.28,blend:BLEND.normal,fadeIn:.2,fadeOut:.6,...stops([tone(dust,.2,col),1],[dust,1])}),
-  p.glow&&layer({...base,placement:'behind',rate:5,lifeMin:10,lifeMax:16,emitShape:EMIT.body,emitRadius:8*sc,speedMin:.2*sc,speedMax:.7*sc,angle:-Math.PI/2,spread:1,gravity:-.02*sc,size0:24*S*sc,size1:36*S*sc,softness:2.2,alpha:.22,fadeIn:.3,fadeOut:.5,...stops([col,1.3*I],[col,1*I],[col,.5*I])}),
-  p.flames&&layer({...base,placement:'behind',rate:26,lifeMin:14,lifeMax:26,emitShape:EMIT.body,emitRadius:5*sc,speedMin:1.4*S*sc,speedMax:3.4*S*sc,angle:-Math.PI/2,spread:.7,gravity:-.1*S*sc,drag:.05,turb:16*T*sc,turbScale:.014/sc,shape:SHAPE.streak,stretch:3.4,size0:7*(.7+.3*S)*sc,size1:2*sc,softness:1.2,alpha:.6,inherit:.6,fadeIn:.12,fadeOut:.55,...stops([hot,2.4*I],[col,1.7*I],[col,1*I],[col,.4*I])}),
-  p.embers&&layer({...base,rate:3,lifeMin:25,lifeMax:45,emitShape:EMIT.body,emitRadius:22*sc,speedMin:1*sc,speedMax:2.6*S*sc,angle:-Math.PI/2,spread:1.2,gravity:-.035*sc,drag:.02,turb:22*T*sc,turbScale:.02/sc,size0:2.4*sc,size1:.8*sc,softness:.35,sizeJitter:.5,...stops([WHITE,3.5*I],[tone(col,.4,WHITE),3*I],[col,2.2*I],[col,1*I])}),
- ];
-}
-function compileBeam(p,ctx){
- const col=paintColor(p.color),I=p.intensity,W=p.width,wr=W/16,charge=Math.round(p.charge),placement=p.layer?'behind':'front';
- const fireStart=ctx.start+charge,fireEnd=ctx.end,grow=Math.max(1,p.travel),beam={blend:glowBlend(p),beamW:W,wobble:.35*p.wobble,grow,fireStart,fireEnd,fadeFrames:ctx.timed?Math.max(4,Math.min(12,ctx.fadeOut||8)):1,arcAmp:(14*p.wobble+6)*Math.max(.6,Math.sqrt(wr)),placement};
- return [
-  p.chargeParticles&&charge>0&&layer({...beam,start:ctx.start,emitDur:charge+2,rate:14,lifeMin:9,lifeMax:13,emitShape:EMIT.ring,emitRadius:72*Math.sqrt(wr),radial:-1,speedMin:6*Math.sqrt(wr),speedMax:6*Math.sqrt(wr),shape:SHAPE.streak,stretch:2.6,size0:2.6,size1:1.2,softness:.9,fadeIn:.25,fadeOut:.3,...stops([tone(col,.5,WHITE),2.2*I],[col,2.6*I],[WHITE,4*I],[WHITE,4*I])}),
-  p.orb&&layer({...beam,start:ctx.start,emitDur:Math.max(1,fireEnd-ctx.start),rate:1.5,lifeMin:6,lifeMax:8,emitRadius:2,size0:18*wr,size1:22*wr,softness:1.6,alpha:.9,fadeIn:.2,fadeOut:.6,clipFadeIn:Math.max(1,charge),clipFadeOut:ctx.timed?8:0,sizeJitter:.15,...stops([WHITE,3*I],[tone(col,.3,WHITE),2.2*I],[col,2*I],[col,1*I])}),
-  layer({...beam,shape:SHAPE.beam,count:1,start:fireStart,...stops([WHITE,3.2*I],[col,1.5*I])}),
-  p.sparks>0&&layer({...beam,start:fireStart,emitDur:Math.max(1,fireEnd-fireStart),rate:16*p.sparks,lifeMin:7,lifeMax:15,emitShape:EMIT.beamLine,emitRadius:10*wr,spread:.35,speedMin:7,speedMax:14,shape:SHAPE.streak,stretch:2.2,size0:2.2,size1:.8,softness:.8,fadeIn:.1,fadeOut:.5,...stops([tone(col,.6,WHITE),2.4*I],[col,1.8*I],[col,1.2*I],[col,.6*I])}),
-  p.arcs>0&&layer({...beam,shape:SHAPE.arc,count:p.arcs*14,start:fireStart,size0:1.6*Math.max(1,wr*.6),...stops([tone(col,.35,WHITE),2.6*I])}),
-  p.splash&&p.sparks>0&&layer({...beam,start:fireStart+grow,emitDur:Math.max(1,fireEnd-fireStart-grow-4),rate:12*p.sparks,lifeMin:8,lifeMax:18,emitShape:EMIT.beamTip,emitRadius:8*wr,angle:Math.PI,spread:2.4,speedMin:4,speedMax:11,gravity:.28,drag:.04,shape:SHAPE.streak,stretch:1.8,size0:2.6,size1:1,softness:.7,fadeOut:.4,...stops([WHITE,4*I],[tone(col,.5,WHITE),3*I],[col,2*I],[col,.8*I])}),
- ];
-}
-function compileExplosion(p,ctx){
- const col=paintColor(p.color),hot=tone(col,.7,WHITE),low=tone(col,.45,BLACK),I=p.intensity,S=p.size,D=p.density,s0=ctx.start;
- // Every layer bursts from where the target was when the clip began.
- const base={fixed:ctx.startPoint,blend:glowBlend(p)},dust=rgb(0x8b7d73);
- return [
-  p.dust&&layer({...base,placement:'behind',start:s0+3,count:36*D,burstJitter:4,lifeMin:30,lifeMax:56,emitShape:EMIT.ground,emitRadius:90*S,speedMin:3*S,speedMax:9*S,drag:.07,gravity:.01,collide:1,size0:12*S,size1:44*S,softness:1.8,alpha:.35,blend:BLEND.normal,fadeIn:.1,fadeOut:.6,...stops([dust,1])}),
-  p.smoke>0&&layer({...base,start:s0+3,emitDur:Math.max(2,Math.min(10,ctx.window)),rate:7*p.smoke*D,lifeMin:40,lifeMax:72,emitRadius:30*S,angle:-Math.PI/2,spread:TAU,speedMin:.6*S,speedMax:2.4*S,gravity:-.03*S,drag:.035,turb:28*S,turbScale:.008/S,size0:20*S,size1:74*S,sizeCurve:.7,softness:1.8,alpha:.5*Math.min(1,p.smoke),blend:BLEND.normal,fadeIn:.12,fadeOut:.6,...stops([rgb(0x3a2f2c),1],[rgb(0x2b2729),1],[rgb(0x222126),1])}),
-  p.debris>0&&layer({...base,start:s0,count:26*p.debris,burstJitter:1,lifeMin:34,lifeMax:56,emitRadius:12*S,angle:-Math.PI/2,spread:3.6,speedMin:5*S,speedMax:13*S,gravity:.45,drag:.012,collide:1,spin:.3,shape:SHAPE.chunk,size0:5*S,size1:5*S,sizeJitter:.6,blend:BLEND.normal,fadeIn:0,fadeOut:.15,...stops([col,1.6*I],[rgb(0x3a1d12),1],[rgb(0x141112),1],[rgb(0x141112),1])}),
-  p.fireball&&layer({...base,start:s0,count:70*D,burstJitter:3,lifeMin:16,lifeMax:34,emitRadius:18*S,angle:-Math.PI/2,spread:TAU,speedMin:1.2*S,speedMax:6.5*S,drag:.1,gravity:-.07*S,turb:18*S,turbScale:.012/S,size0:15*S,size1:46*S,sizeCurve:.55,softness:1.3,sizeJitter:.35,alpha:.85,fadeIn:.04,fadeOut:.5,...stops([hot,1.25*I],[col,1.3*I],[low,1.1*I],[rgb(0x2a1a16),.5])}),
-  p.sparks&&layer({...base,start:s0,count:90*D,burstJitter:2,lifeMin:14,lifeMax:32,emitRadius:10*S,angle:-Math.PI/2,spread:TAU,speedMin:6*S,speedMax:19*S,gravity:.36,drag:.03,collide:1,shape:SHAPE.streak,stretch:2.4,size0:2.4,size1:.9,softness:.6,fadeOut:.4,...stops([WHITE,1.3*I],[hot,1.3*I],[col,1.3*I],[low,1.1*I])}),
-  p.ring&&layer({...base,start:s0+1,count:1,lifeMin:16,lifeMax:16,shape:SHAPE.ring,size0:24*S,size1:280*S,sizeCurve:.45,softness:.08,sizeJitter:0,alpha:.9,fadeIn:0,fadeOut:.75,...stops([hot,.8*I],[col,.7*I],[col,.5*I],[col,.2*I])}),
-  p.flash&&layer({...base,start:s0,count:1,lifeMin:7,lifeMax:7,size0:70*S,size1:150*S,sizeCurve:.5,softness:2.6,sizeJitter:0,fadeIn:0,fadeOut:.85,...stops([WHITE,1*I],[hot,.9*I],[col,.7*I],[col,.25*I])}),
- ];
-}
-const LOOKS=[{shape:SHAPE.disc,softness:1.4},{shape:SHAPE.streak,softness:.6},{shape:SHAPE.disc,softness:.12},{shape:SHAPE.ring,softness:.12},{shape:SHAPE.chunk,softness:0},{shape:SHAPE.disc,softness:2.2}];
-const SHAPES=[EMIT.point,EMIT.ring,EMIT.body,EMIT.line];
-function compileParticles(p,ctx){
- const look=LOOKS[p.look]??LOOKS[0],v=p.variation,burst=p.emission===1,stage=ctx.scene&&p.shape===3&&p.radius===0;
- const emitShape=stage?EMIT.stage:SHAPES[p.shape]??EMIT.point;
- return [layer({placement:p.layer?'behind':'front',start:ctx.start,emitDur:burst?0:ctx.window,count:burst?p.count:0,rate:burst?0:1,rateParam:burst?null:'rate',
-  lifeMin:Math.max(1,p.life*(1-v*.5)),lifeMax:Math.max(1,p.life*(1+v*.5)),speedMin:1-v*.6,speedMax:1+v*.6,spread:p.spread*Math.PI/180,gravity:p.gravity,drag:p.drag,turb:p.turbulence,turbScale:.015,
-  shape:look.shape,softness:look.softness,stretch:p.stretch,blend:p.blend===1?BLEND.add:p.blend===2?BLEND.normal:look.shape===SHAPE.chunk||p.look===5?BLEND.normal:BLEND.auto,size0:1,size1:p.endSize,sizeJitter:v*.5,fadeIn:.08,fadeOut:p.fade,colorMode:p.colorMode,spin:look.shape===SHAPE.chunk?.25:0,
-  emitShape,emitRadius:p.radius,collide:p.ground,world:!p.space,body:emitShape===EMIT.body,burstJitter:burst?2:0,prewarm:stage&&!burst?1:0,keyed:true,...paintRamp(p.color)})];
-}
-const COMPILERS={aura:compileAura,beam:compileBeam,explosion:compileExplosion,particles:compileParticles};
-
-// ---------------------------------------------------------------------------
 // Clip activity: particles outlive their clip by their longest lifetime.
 // ---------------------------------------------------------------------------
 const tails=new WeakMap();
@@ -121,7 +48,7 @@ export function generatorClipTail(clip){
   if(!isGeneratorType(effect.type))continue;
   const end=clip.start+clip.duration,params=resolvedParams(effect);
   for(const l of compileEffect(effect.type,params,{start:clip.start,end,window:clip.duration,timed:true,anchor:null,startPoint:[0,0],scene:false}))
-   if(l.shape!==SHAPE.beam&&l.shape!==SHAPE.arc)tail=Math.max(tail,l.start+(l.emitDur>0?l.emitDur:l.burstJitter)+l.lifeMax-end);
+   if(l.shape!==SHAPE.beam&&l.shape!==SHAPE.arc)tail=Math.max(tail,l.start+(l.emitDur>0?l.emitDur:l.burstJitter)+l.lifeMax+echoSpan(l)-end);
  }
  tail=Math.max(0,Math.ceil(tail));tails.set(clip,tail);return tail;
 }
@@ -131,6 +58,7 @@ export function generatorClipActiveAt(clip,tick){
  return clip.duration===null||tick<clip.start+clip.duration+generatorClipTail(clip);
 }
 function resolvedParams(effect){const d=VFX_REGISTRY[effect.type].params,p={};for(const [k,v] of Object.entries(d))p[k]=effect.params[k]??v.default;return p;}
+const echoSpan=l=>l.echoes?l.echoes.count*l.echoes.lag:0;
 function compileEffect(type,params,ctx){return COMPILERS[type](params,ctx).filter(Boolean).filter(l=>l.shape===SHAPE.beam||l.shape===SHAPE.arc||l.count>0||l.rate>0||l.rateParam);}
 
 // ---------------------------------------------------------------------------
@@ -236,13 +164,14 @@ export function buildGeneratorBatch(report,frame,geometry,{sampler=null,density=
 
 /** Two passes: plan every layer's capacity and birth rows, then fill one typed
  * table. Body outlines are shared by all layers of one effect: world-space
- * trails keep one outline per birth tick, attached effects one current outline. */
+ * trails keep one outline per birth tick, attached effects one current outline.
+ * Echoes, halos and outlines are extra draws of the same particles. */
 function packBatch(layers,sampler,density,light,state={}){
- const plans=[],blocks=new Map();let particles=0,rowCount=0;
+ const plans=[],blocks=new Map();let particles=0,rowCount=0,drawCount=0;
  for(const l of layers){
   if(plans.length>=LIMITS.batchLayers)break;
   const s=l.spec,tick=l.tick,cs=l.clip.start,te=l.step>1?cs+Math.floor((tick-cs)/l.step)*l.step:tick;
-  const beam=s.shape===SHAPE.beam||s.shape===SHAPE.arc,burst=s.emitDur<=0&&!beam,start=s.prewarm?s.start-s.lifeMax:s.start;
+  const beam=s.shape===SHAPE.beam||s.shape===SHAPE.arc,burst=s.emitDur<=0&&!beam,start=s.prewarm?s.start-s.lifeMax:s.start,echo=echoSpan(s);
   let count=beam?s.count:0,rate=0,rateMax=1;
   if(!beam){
    if(s.rateParam){rateMax=Math.max(1e-6,keyMax(l.clip,l.effect,s.rateParam));rate=s.rate*rateMax;}
@@ -252,9 +181,9 @@ function packBatch(layers,sampler,density,light,state={}){
   }
   count=Math.max(0,Math.min(LIMITS.layerParticles,count,LIMITS.batchParticles-particles));
   if(!count)continue;
-  const first=burst?Math.floor(start):Math.max(Math.floor(start),Math.floor(te-s.lifeMax)-1);
+  const first=burst?Math.floor(start):Math.max(Math.floor(start),Math.floor(te-s.lifeMax-echo)-1);
   const last=burst?Math.ceil(start+s.burstJitter)+1:Math.min(Math.ceil(te)+1,Math.floor(start+(s.prewarm?s.emitDur+s.lifeMax:s.emitDur))+1);
-  if(!beam&&(last<first||te<start||burst&&te>start+s.burstJitter+s.lifeMax))continue;
+  if(!beam&&(last<first||te<start||burst&&te>start+s.burstJitter+s.lifeMax+echo))continue;
   const tick0=beam?Math.floor(te):first,ticks=Math.max(1,Math.min(LIMITS.tableTicks,(beam?0:last-first)+1));
   let block=null;
   if(s.body&&l.current?.segments?.length){
@@ -263,12 +192,13 @@ function packBatch(layers,sampler,density,light,state={}){
    block=byEffect[world?'world':'fixed']??={l,world,first:Infinity,last:-Infinity,segCount:l.current.segments.length/4};
    if(world){block.first=Math.min(block.first,tick0);block.last=Math.max(block.last,tick0+ticks-1);}
   }
-  plans.push({l,te,beam,burst,start,count,rate,rateMax,tick0,ticks,block});particles+=count;rowCount+=ticks;
+  const copies=beam?(s.outline?1:0):(s.echoes?.count??0)+(s.halo?1:0)+(s.outline?1:0);
+  plans.push({l,te,beam,burst,start,count,rate,rateMax,tick0,ticks,block});particles+=count;rowCount+=ticks;drawCount+=1+copies;
  }
  if(!plans.length)return null;
  let floats=rowCount*8;
  for(const byEffect of blocks.values())for(const block of Object.values(byEffect)){block.rows=block.world?Math.min(LIMITS.tableTicks,block.last-block.first+1):1;if(!block.world)block.first=0;floats+=block.rows*block.segCount*4;}
- const table=new Float32Array(floats),records=new Float32Array(plans.length*RECORD_FLOATS),draws=[];let at=0;
+ const table=new Float32Array(floats),records=new Float32Array(drawCount*RECORD_FLOATS),draws=[];let at=0,drawn=0;
  // Shared outlines first: one sampled body per birth tick of the union window.
  for(const byEffect of blocks.values())for(const block of Object.values(byEffect)){
   const {l,segCount}=block,size=segCount*4;block.start=at/4;
@@ -279,7 +209,7 @@ function packBatch(layers,sampler,density,light,state={}){
   }
  }
  for(const plan of plans){
-  const {l,te,burst,count,rate,rateMax,tick0,ticks,block}=plan,s=l.spec,report=l.report,tick=l.tick;
+  const {l,count,rate,rateMax,tick0,ticks,block,burst}=plan,s=l.spec,report=l.report,tick=l.tick;
   const tableStart=at/4,keyed=s.keyed?l.effect:null;
   for(let k=0;k<ticks;k++){
    const tau=tick0+k;let anchor=l.point;
@@ -290,13 +220,16 @@ function packBatch(layers,sampler,density,light,state={}){
    if(emit&&s.rateParam&&rateMax>0)emit=keyedAt(l.clip,l.effect,s.rateParam,tau)/rateMax;
    table[at]=anchor?.[0]??0;table[at+1]=anchor?.[1]??0;table[at+2]=clamp(emit*density,0,1);
    table[at+3]=keyed?keyedAt(l.clip,keyed,'direction',tau)*Math.PI/180:0;
-   table[at+4]=keyed?keyedAt(l.clip,keyed,'speed',tau):1;table[at+5]=keyed?keyedAt(l.clip,keyed,'size',tau):1;at+=8;
+   table[at+4]=keyed?keyedAt(l.clip,keyed,'speed',tau):1;table[at+5]=keyed?keyedAt(l.clip,keyed,'size',tau):1;
+   // Aimed streams leave toward the beam's aim; their speed scales with its distance.
+   if(s.aimed&&anchor&&l.aim){const dx=l.aim[0]-anchor[0],dy=l.aim[1]-anchor[1];table[at+3]=Math.atan2(dy,dx);table[at+4]=Math.max(.15,Math.hypot(dx,dy)/100);}
+   at+=8;
   }
   let c=s.colors??[[1,1,1,1]];const op=s.opacity??[1],blend=s.blend===BLEND.auto?(light?BLEND.normal:BLEND.add):s.blend;
   // Auto layers painted solid on a light stage borrow their nearest saturated
   // colour for white-hot stops, which would otherwise vanish against it.
   if(light&&s.blend===BLEND.auto&&!plan.beam)c=inkStops(c);
-  const aim=l.aim??l.point,m=l.matrix,o=draws.length*RECORD_FLOATS,rec=[
+  const aim=l.aim??l.point,m=l.matrix,material=s.material?MATERIALS[s.material]:null,rec=[
    plan.start,s.emitDur>0?(s.prewarm?s.emitDur+s.lifeMax:s.emitDur):0,count,rate,
    s.lifeMin,s.lifeMax,l.step,l.seed,
    s.speedMin,s.speedMax,s.angle,s.spread,
@@ -316,10 +249,18 @@ function packBatch(layers,sampler,density,light,state={}){
   for(let j=0;j<COLOR_STOPS;j++){const x=c[Math.min(c.length-1,j)];rec.push(x[0],x[1],x[2],x[3]);}
   for(let j=0;j<COLOR_STOPS;j++)rec.push(op[Math.min(op.length-1,j)]);
   rec.push(m[0],m[1],m[2],m[3],m[4],m[5],Math.sqrt(Math.abs(m[0]*m[3]-m[1]*m[2]))||1,block?.world?block.first:0);
-  records.set(rec,o);
-  draws.push({record:draws.length,count,shape:s.shape,blend,uid:l.uid,placement:s.placement,scene:l.scene});
+  rec.push(plan.beam?s.beamStyle:material?material.row+1:0,material?material.col*16+material.count:0,s.shade,s.rotate,
+   s.spinJitter,s.orbit,s.curl,s.curlScale,
+   s.sizeMode,1,0,Math.max(.05,s.squash),
+   s.flicker,s.aspect,s.frameRate,s.wind);
+  const row=material?material.row:-1,push=(r,shape,drawBlend,drawRow)=>{records.set(r,draws.length*RECORD_FLOATS);draws.push({record:draws.length,count,shape,blend:drawBlend,uid:l.uid,placement:s.placement,scene:l.scene,material:drawRow});drawn+=count;};
+  // Older echoes first, then the halo and outline beneath the particles themselves.
+  if(s.echoes&&!plan.beam)for(let k=s.echoes.count;k>=1;k--){const r=rec.slice();r[54]=tick-k*s.echoes.lag;r[26]*=s.echoes.alpha**k;r[121]=s.echoes.size**k;push(r,s.shape,blend,row);}
+  if(s.halo&&!plan.beam){const r=rec.slice();r[18]=SHAPE.disc;r[23]=2.2;r[112]=0;r[121]=s.halo.scale;r[125]=1;r[26]*=s.halo.alpha;push(r,SHAPE.disc,blend,-1);}
+  if(s.outline){const r=rec.slice(),o=s.outline.color;for(let j=0;j<COLOR_STOPS;j++)r.splice(64+j*4,4,o[0],o[1],o[2],1);r[19]=BLEND.normal;r[114]=0;r[122]=s.outline.width;push(r,s.shape,BLEND.normal,row);}
+  push(rec,s.shape,blend,row);
  }
- return {tick:plans[0].l.tick,records,table,draws,particles};
+ return {tick:plans[0].l.tick,records,table,draws,particles:drawn};
 }
 const nearWhite=c=>Math.min(c[0],c[1],c[2])>.82;
 function inkStops(colors){
@@ -382,7 +323,8 @@ export function evaluateParticle(batch,draw,ii,out){
  if(fade<=.001)return false;
  const ax=mix(row(k,0),row(k1,0),fr),ay=mix(row(k,1),row(k1,1),fr);
  let px=ax,py=ay,base=v(10)+row(k,3);
- const r1=hash(n,3,seed),r2=hash(n,4,seed),da=hash(n,10,seed)*TAU,dr=Math.sqrt(hash(n,9,seed)),dx=Math.cos(da)*dr,dy=Math.sin(da)*dr;
+ // Squash flattens point and ring emitters into the plane an orbit turns in.
+ const sq=v(123),r1=hash(n,3,seed),r2=hash(n,4,seed),da=hash(n,10,seed)*TAU,dr=Math.sqrt(hash(n,9,seed)),dx=Math.cos(da)*dr,dy=Math.sin(da)*dr*sq;
  const es=v(28),er=v(29);
  if(es===EMIT.body&&v(34)>0){
   // Shared outline block: one row per birth tick, or one fixed outline.
@@ -393,7 +335,7 @@ export function evaluateParticle(batch,draw,ii,out){
   base+=Math.atan2(ey,ex);
   if(es===EMIT.beamLine){px=mix(v(36),bx,r2)-ey/len*(r1-.5)*2*er;py=mix(v(37),by,r2)+ex/len*(r1-.5)*2*er;}
   else{px=bx+dx*er;py=by+dy*er;}
- }else if(es===EMIT.ring){px=ax+Math.cos(r1*TAU)*er;py=ay+Math.sin(r1*TAU)*er;}
+ }else if(es===EMIT.ring){px=ax+Math.cos(r1*TAU)*er;py=ay+Math.sin(r1*TAU)*er*sq;}
  else if(es===EMIT.ground){px=ax+(r1-.5)*2*er;py=v(45)-3;}
  else if(es===EMIT.line){px=ax-Math.sin(base)*(r1-.5)*2*er;py=ay+Math.cos(base)*(r1-.5)*2*er;}
  else if(es===EMIT.stage){
@@ -407,15 +349,53 @@ export function evaluateParticle(batch,draw,ii,out){
  if(v(14)!==0){const rx=px-ax,ry=py-ay,rl=Math.hypot(rx,ry);if(rl>1e-3){const sg=Math.sign(v(14)),w=Math.abs(v(14));let mx=vx+(rx/rl*sg-vx)*w+1e-5,my=vy+(ry/rl*sg-vy)*w;const ml=Math.hypot(mx,my);vx=mx/ml;vy=my/ml;}}
  const spd=mix(v(8),v(9),hash(n,6,seed))*row2(k,0);vx*=spd;vy*=spd;
  if(v(40)!==0){const kp=Math.max(k-1,0);vx+=v(40)*(row(k,0)-row(kp,0));vy+=v(40)*(row(k,1)-row(kp,1));}
- const p0x=px,p0y=py,g=v(12),kd=v(13);
- if(kd>1e-4){const e=Math.exp(-kd*age),ty=vy-g/kd;px+=vx*(1-e)/kd;py+=ty*(1-e)/kd+g*age/kd;vx*=e;vy=ty*e+g/kd;}
- else{px+=vx*age;py+=vy*age+.5*g*age*age;vy+=g*age;}
+ // Launch velocity with drag, plus constant gravity and wind accelerations.
+ const p0x=px,p0y=py,g=v(12),gx=v(127),kd=v(13);let gdx,gdy,gvx,gvy;
+ if(kd>1e-4){const e=Math.exp(-kd*age),q=(1-e)/kd,w=(age-q)/kd;px+=vx*q;py+=vy*q;vx*=e;vy*=e;gdx=gx*w;gdy=g*w;gvx=gx*q;gvy=g*q;}
+ else{const h=.5*age*age;px+=vx*age;py+=vy*age;gdx=gx*h;gdy=g*h;gvx=gx*age;gvy=g*age;}
+ // Orbit around the emission anchor: a flattened ring around the vertical axis
+ // at each particle's own height for body, line and ground emitters, otherwise
+ // a turn of the whole offset in the squashed plane.
+ const orb=v(117);
+ if(orb!==0){
+  const a=orb*age,c=Math.cos(a),s=Math.sin(a),rx=px-ax,wx=vx;
+  if(es===EMIT.body||es===EMIT.line||es===EMIT.ground){px=ax+rx*c;py+=rx*s*sq;vx=wx*c-orb*rx*s;vy+=(wx*s+orb*rx*c)*sq;}
+  else{const ry=(py-ay)/sq,wy=vy/sq,nx=rx*c-ry*s,ny=rx*s+ry*c;px=ax+nx;py=ay+ny*sq;vx=wx*c-wy*s-orb*ny;vy=(wx*s+wy*c+orb*nx)*sq;}
+ }
+ px+=gdx;py+=gdy;vx+=gvx;vy+=gvy;
  if(v(15)>0){const qx=p0x*v(16)+hash(n,7,seed)*37,qy=p0y*v(16),tt=te*.035,nx=vnoise(qx+tt,qy)*2-1,ny=vnoise(qx+19.1,qy+tt)*2-1;px+=nx*v(15)*an;py+=ny*v(15)*an;vx+=nx*v(15)/life;vy+=ny*v(15)/life;}
+ // Curl noise: a divergence-free flow sampled where the particle is, so
+ // neighbours swirl together like smoke.
+ if(v(118)>0){
+  const sc=v(119),qx=px*sc,qy=py*sc,tt=te*.02,e=.35;
+  const psi=(x,y)=>vnoise(x+tt,y)+.5*vnoise(x*2.03+13.7,y*2.03-tt);
+  const p0=psi(qx,qy),gxn=psi(qx+e,qy)-p0,gyn=psi(qx,qy+e)-p0,amount=v(118)*an/e;px+=gyn*amount;py-=gxn*amount;
+ }
  if(v(44)>.5&&py>v(45)-1.5){py=v(45)-1.5;vy=0;}
- const size=row2(k,1)*mix(v(20),v(21),Math.pow(Math.max(an,1e-6),v(43)))*(1+(hash(n,8,seed)-.5)*2*v(42))*mix(.3,1,fade);
+ const sm=v(120);let grow;
+ if(sm===1){const q=1-an;grow=1-q*q*q;}
+ else if(sm===2){const q=1-Math.min(an*4,1);grow=1-q*q;}
+ else grow=Math.pow(Math.max(an,1e-6),v(43));
+ let size=row2(k,1)*mix(v(20),v(21),grow)*(1+(hash(n,8,seed)-.5)*2*v(42))*mix(.3,1,fade);
+ if(sm===2)size*=1-smoothstep(.6,1,an);
+ else if(sm===3){const h=hash(n,21,seed);size*=.55+.9*vnoise(te*.45+h*61.7,h*17.3);}
+ // Echo, halo and outline draws scale or widen the same particle.
+ size=size>0?size*v(121)+v(122):0;
  const fi=v(24)<=0?1:smoothstep(0,v(24),an),fo=v(25)<=0?1:1-smoothstep(1-v(25),1,an);
- out.x=px;out.y=py;out.vx=vx;out.vy=vy;out.size=Math.max(0,size);out.alpha=v(26)*fi*fo*fade;
- out.color=v(27)>.5?hash(n,16,seed):an;out.rotation=hash(n,13,seed)*TAU+v(17)*age;out.n=n;
+ let alpha=v(26)*fi*fo*fade;
+ if(v(124)>0){const h=hash(n,22,seed);alpha*=1-v(124)*vnoise(te*.8+h*53.1,h*29.7);}
+ const rm=v(115);let rotation;
+ if(rm===1)rotation=vx*vx+vy*vy>1e-6?Math.atan2(vy,vx)+Math.PI/2:0;
+ else if(rm===2)rotation=(hash(n,13,seed)-.5)*.35;
+ else if(rm===3)rotation=0;
+ else rotation=hash(n,13,seed)*TAU+v(17)*age*(1+v(116)*((hash(n,19,seed)*2-1)*1.5-1));
+ let variant=0;
+ if(v(112)>0&&v(18)===SHAPE.sprite){
+  const code=v(113),cells=Math.max(1,code%16),fr=v(126);let vi=Math.min(cells-1,Math.floor(hash(n,20,seed)*cells));
+  if(fr>0)vi=(vi+Math.floor(age/fr))%cells;variant=Math.floor(code/16)+vi;
+ }
+ out.x=px;out.y=py;out.vx=vx;out.vy=vy;out.size=Math.max(0,size);out.alpha=alpha;
+ out.color=v(27)>.5?hash(n,16,seed):an;out.rotation=rotation;out.variant=variant;out.n=n;
  return out.alpha>0&&out.size>0;
 }
 /** Color at ramp position x and stop opacity. Additive layers clip bright
@@ -430,14 +410,22 @@ export function rampColor(batch,draw,x,out){
 export function beamTip(R,o,te){const k=clamp((te-R[o+59])/Math.max(R[o+58],1),0,1),e=1-(1-k)*(1-k);return [mix(R[o+36],R[o+38],e),mix(R[o+37],R[o+39],e)];}
 export function beamWidth(R,o,te){return smoothstep(R[o+59]-1,R[o+59]+2,te)*(1-smoothstep(R[o+60]-R[o+61],R[o+60],te));}
 export function steppedTime(R,o){const t=R[o+54],cs=R[o+50],step=R[o+6];return step>1?cs+Math.floor((t-cs)/step)*step:t;}
+/** Farthest reach of a drawn particle from its centre. */
+export function particleExtent(R,o,shape,p){
+ if(shape===SHAPE.ring)return p.size*(1+R[o+23]*2);
+ if(shape===SHAPE.streak)return p.size+Math.hypot(p.vx,p.vy)*R[o+22];
+ if(shape===SHAPE.sprite)return Math.max(p.size,p.size*R[o+125]+.5*Math.hypot(p.vx,p.vy)*R[o+22]);
+ if(shape===SHAPE.square||shape===SHAPE.chunk)return p.size*1.42;
+ return p.size*Math.max(1,R[o+125]);
+}
 /** Visible bounds of a batch in stage coordinates, for culling and tiles. */
 export function generatorBatchBounds(batch){
  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;const p={};
  for(const draw of batch?.draws??EMPTY){
   const o=draw.record*RECORD_FLOATS,R=batch.records;let lx0=Infinity,ly0=Infinity,lx1=-Infinity,ly1=-Infinity;
   const grow=(x,y,r)=>{lx0=Math.min(lx0,x-r);ly0=Math.min(ly0,y-r);lx1=Math.max(lx1,x+r);ly1=Math.max(ly1,y+r);};
-  if(draw.shape===SHAPE.beam||draw.shape===SHAPE.arc){const [bx,by]=beamTip(R,o,steppedTime(R,o)),pad=R[o+56]*4+R[o+63]+16;grow(R[o+36],R[o+37],pad);grow(bx,by,pad);}
-  else for(let i=0;i<draw.count;i++)if(evaluateParticle(batch,draw,i,p))grow(p.x,p.y,p.size*(1+(draw.shape===SHAPE.ring?R[o+23]*2:0))+(draw.shape===SHAPE.streak?Math.hypot(p.vx,p.vy)*R[o+22]:0));
+  if(draw.shape===SHAPE.beam||draw.shape===SHAPE.arc){const [bx,by]=beamTip(R,o,steppedTime(R,o)),pad=(R[o+56]+R[o+122])*4+R[o+63]+16;grow(R[o+36],R[o+37],pad);grow(bx,by,pad);}
+  else for(let i=0;i<draw.count;i++)if(evaluateParticle(batch,draw,i,p))grow(p.x,p.y,particleExtent(R,o,draw.shape,p));
   if(lx0>lx1)continue;
   const [a,b,c,d,e,f]=drawMatrix(batch,draw);
   for(const [x,y] of [[lx0,ly0],[lx1,ly0],[lx0,ly1],[lx1,ly1]]){const X=a*x+c*y+e,Y=b*x+d*y+f;x0=Math.min(x0,X);y0=Math.min(y0,Y);x1=Math.max(x1,X);y1=Math.max(y1,Y);}
