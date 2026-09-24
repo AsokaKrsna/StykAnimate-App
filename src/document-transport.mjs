@@ -7,6 +7,7 @@ const ownSet = (object, key, value) => {
 const keysOf = value => Array.isArray(value) ? null : value.property === 'pose' && Array.isArray(value.keys)
   ? ['property',...Object.keys(value).filter(key=>key!=='property'&&key!=='keys'),'keys'] : Object.keys(value);
 const countOf = (value, keys) => keys ? keys.length : value.length;
+const numericArray = value => Array.isArray(value) && value.length > 0 && value.every(item => typeof item === 'number');
 
 /** Stops scanning as soon as a subtree would exceed a single bounded packet. */
 function boundedSize(value, limit) {
@@ -103,6 +104,16 @@ export function* documentChunks(report, options = 1000) {
         yield { operations: [{ path, [offset ? 'append' : 'value']: part }], estimatedBytes: part.length * 2 + pathBytes + 64 };
       }
       started = performance.now();
+    } else if (numericArray(value)) {
+      // Long numeric arrays (mesh positions, pose channels) travel in bounded
+      // slices rather than as one operation per element.
+      const per = Math.max(1, Math.floor(atomicLimit / 24));
+      for (let offset = 0; offset < value.length; offset += per) {
+        const part = value.slice(offset, offset + per), size = part.length * 24 + pathBytes;
+        if (operations.length && bytes + size > maxBytes) { yield { operations, estimatedBytes: bytes }; operations = []; bytes = 64; }
+        operations.push(offset ? { path, extend: part } : { path, value: part }); bytes += size;
+      }
+      started = performance.now();
     } else {
       if (operations.length && bytes + pathBytes + 32 > maxBytes) {
         yield { operations, estimatedBytes: bytes }; operations = []; bytes = 64; started = performance.now();
@@ -145,6 +156,10 @@ export function applyDocumentChunk(report, chunk) {
         }
         if(!Array.isArray(value)||key!=='keys'||parent.property!=='pose')throw new Error('Document references require a pose key sequence.');
         ownSet(parent,key,value);
+      } else if (Object.hasOwn(operation, 'extend')) {
+        if (!Array.isArray(parent[key]) || !Array.isArray(operation.extend)) throw new Error('Document array fragments arrived out of order.');
+        const target = parent[key];
+        for (const item of operation.extend) target.push(item);
       } else if (Object.hasOwn(operation, 'append')) {
         if (!Object.hasOwn(parent, key) || typeof parent[key] !== 'string' || typeof operation.append !== 'string') throw new Error('Document string fragments arrived out of order.');
         ownSet(parent, key, parent[key] + operation.append);

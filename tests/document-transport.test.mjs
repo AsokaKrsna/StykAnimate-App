@@ -44,3 +44,17 @@ test('optional native fields stay absent and malformed/out-of-order batches fail
   assert.throws(() => applyDocumentChunk(result, { table: 'keyframes', values: [], offset: 1 }), /out of order/);
   assert.throws(() => [...documentChunks(original, 0)], /positive integer/);
 });
+
+test('long numeric arrays travel in bounded slices instead of one operation per value', () => {
+  const original = createDemo(), positions = Array.from({length: 60000}, (_, i) => i / 7 - 3000);
+  original.figure_types[0]._styk = {spatialMesh: {positions, weights: positions.map(v => v > 0 ? 1 : 0)}};
+  let result, operations = 0;
+  for (const chunk of documentChunks(original, {maxBytes: 64 * 1024})) {
+    operations += chunk.operations?.length ?? 0;
+    assert.ok((chunk.estimatedBytes ?? 0) <= 64 * 1024);
+    result = applyDocumentChunk(result, structuredClone(chunk));
+  }
+  assert.deepEqual(result, original);
+  assert.ok(operations < 200, `${operations} operations`);
+  assert.throws(() => applyDocumentChunk({}, {operations: [{path: ['missing'], extend: [1]}]}), /out of order/);
+});
