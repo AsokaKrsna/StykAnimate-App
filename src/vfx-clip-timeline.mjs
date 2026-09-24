@@ -2,6 +2,7 @@ import {clipContains,vfxFadeAt} from './vfx-clips.mjs';
 import {VFX_REGISTRY,vfxPropertyLabel} from './vfx.mjs';
 import {vfxVisibleKeys,vfxChannelLabel} from './vfx-key-channels.mjs';
 import {openVfxChannelMenu} from './vfx-key-channel-menu.mjs';
+import {generatorClipTail} from './vfx-generators.mjs';
 
 const ROW=32,HEADER=32,KEY_Y=23;
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
@@ -48,9 +49,16 @@ export function paintVfxRow(host,ctx,row,y){
  ctx.fillStyle=c.line;ctx.fillRect(0,y+ROW-1,host.width,1);
  for(const source of row.clips){
   const clip=previewClip(host,source),duration=clip.duration??host.editor.totalTicks,left=clip.start*step-sx,right=left+duration*step,selected=host.editor._selectedVfxClip===clip.id;
-  if(left>host.width||right<0)continue;
+  // Hatched tail: particles emitted inside the clip stay visible after it.
+  const tail=clip.duration===null?0:generatorClipTail(clip);
+  if(left>host.width||right+tail*step<0)continue;
+  if(tail>0){const ta=Math.max(-5,right),tb=Math.min(host.width+5,right+tail*step);if(tb>ta+1){ctx.save();ctx.globalAlpha=clip.enabled?.6:.25;ctx.beginPath();ctx.rect(ta,y+9,tb-ta,14);ctx.clip();ctx.strokeStyle=selected?c.accent:c.muted??c.line;ctx.lineWidth=1;ctx.beginPath();for(let x=ta-14;x<tb;x+=5){ctx.moveTo(x,y+23);ctx.lineTo(x+14,y+9);}ctx.stroke();ctx.restore();}}
+  if(right<0)continue;
   const a=Math.max(-5,left+1),b=Math.min(host.width+5,right-1),width=Math.max(2,b-a);
   ctx.save();ctx.globalAlpha=clip.enabled?1:.4;ctx.beginPath();ctx.roundRect(a,y+3,width,26,5);ctx.fillStyle=selected?c.selected:c.span;ctx.fill();ctx.strokeStyle=selected?c.accent:c.line;ctx.stroke();ctx.clip();
+  // A beam's charge-up is shaded before it fires.
+  const charge=clip.effects.find(e=>e.type==='beam'&&e.enabled)?.params.charge??0;
+  if(charge>0&&clip.duration!==null){ctx.save();ctx.globalAlpha*=.14;ctx.fillStyle=c.accent;ctx.fillRect(left,y+3,Math.min(charge,duration)*step,26);ctx.restore();}
   if(clip.duration!==null&&(clip.fadeIn||clip.fadeOut)){
    const points=[0,duration,Math.min(duration,clip.fadeIn),Math.max(0,duration-clip.fadeOut)];if(clip.fadeIn+clip.fadeOut>duration)points.push(duration*clip.fadeIn/(clip.fadeIn+clip.fadeOut));points.sort((a,b)=>a-b);
    ctx.strokeStyle=c.accent;ctx.globalAlpha*=.45;ctx.beginPath();for(const [i,time] of points.entries())ctx[i?'lineTo':'moveTo'](left+time*step,y+28-vfxFadeAt(clip,time)*23);ctx.stroke();ctx.globalAlpha=clip.enabled?1:.4;

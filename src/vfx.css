@@ -286,3 +286,17 @@
 #vfx-panel .vfx-clip-envelope input{flex:0 0 56px;margin-left:auto}
 #vfx-panel :is(.vfx-clip-envelope,.vfx-clip-timing) input:focus{outline:1px solid var(--theme-accent,#0d99ff)}
 .vfx-clip-row+.vfx-clip-effect,.vfx-clip-envelope+.vfx-clip-effect{margin-top:4px}
+/* Generated effects: catalogue art, beam aiming and on-stage picking. */
+.vfx-art-particles,.vfx-art-sparkle,.vfx-art-confetti{color:#ffe08a;background:linear-gradient(135deg,#3a2446,#5a3a1c)}
+.vfx-art-aura,.vfx-art-fire,.vfx-art-explosion,.vfx-art-sparks{color:#ffc36b;background:linear-gradient(135deg,#4a1f14,#5e3a10)}
+.vfx-art-beam,.vfx-art-lightning{color:#8fe6ff;background:linear-gradient(135deg,#0f2e48,#23356a)}
+.vfx-art-smoke,.vfx-art-rain,.vfx-art-snow,.vfx-art-speed{color:#d6e2f2;background:linear-gradient(135deg,#27313f,#3b4656)}
+.vfx-aim{gap:6px}.vfx-aim>label{flex:0 0 auto}
+.vfx-aim-target{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--theme-text,#1f2328)}
+.vfx-aim>button{height:24px;padding:0 9px;border:1px solid var(--theme-border,#e2e5ea);border-radius:6px;background:var(--theme-field,#f1f3f6);color:inherit;font:inherit;font-size:11px;cursor:pointer}
+.vfx-aim>button:hover{background:var(--theme-hover,#eaedf1)}
+.vfx-aim>.vfx-aim-pick[aria-pressed=true]{border-color:var(--theme-accent,#0d99ff);background:var(--theme-selected,#e5f4ff);color:var(--theme-accent,#0d99ff)}
+.vfx-aim>button:disabled{opacity:.5;cursor:default}
+.vfx-aim>button>.icon{width:12px;height:12px;vertical-align:-2px}
+.vfx-aim-picking{cursor:crosshair!important}
+.vfx-aim-hint{margin:2px 0 4px;color:var(--theme-muted,#66707e);font-size:10.5px;line-height:1.4}

@@ -1,6 +1,7 @@
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {parallaxResolver,translatedPlan} from './layer-parallax.mjs';
 import {drawParallaxGeometry} from './parallax-draw.mjs';
+import {canvasGenerators,canvasGeneratorWalker} from './vfx-generator-frame.mjs';
 import { buildGeometry, drawGeometry, releaseGeometryResources } from "./pivot/geometry.mjs";
 import { drawBackground, backgroundBounds } from "./pivot/background.mjs";
 import { cameraMatrix, objectBounds } from "./renderer-geometry.mjs";
@@ -76,6 +77,7 @@ export function drawExportScene(context, report, frame, geometry, resources) {
   const width = report.canvas_width,
     height = report.canvas_height;
   const scene=prepareSceneVfx(context,frame,undefined,context.canvas.width/width);
+  const generators=canvasGenerators(report,frame,geometry,parallaxResolver(report,frame));
   // Parts repaint one strip each when the padded source exceeds a canvas.
   for (const part of scene.parts) {
     const pctx=part.context;
@@ -91,7 +93,7 @@ export function drawExportScene(context, report, frame, geometry, resources) {
         bounds: backgroundBounds(frame, width, height, true, report,sceneVfxBounds(report,{viewport:{x:part.origin.x,y:part.origin.y,width:scene.outputSize.width,height:scene.outputSize.height},width:pctx.canvas.width,height:pctx.canvas.height})),
         paintBounds: backgroundBounds(frame, width, height, true, report),
       });
-      drawParallaxGeometry(pctx, geometry, resources,parallaxResolver(report,frame),{x:-part.origin.x-(scene.pad??0),y:-part.origin.y-(scene.pad??0),width:scene.outputSize.width+2*(scene.pad??0),height:scene.outputSize.height+2*(scene.pad??0)});
+      drawParallaxGeometry(pctx, geometry, resources,parallaxResolver(report,frame),{x:-part.origin.x-(scene.pad??0),y:-part.origin.y-(scene.pad??0),width:scene.outputSize.width+2*(scene.pad??0),height:scene.outputSize.height+2*(scene.pad??0)},canvasGeneratorWalker(generators,pctx));
     } finally {
       pctx.restore();
     }
@@ -108,6 +110,7 @@ export async function drawExportSceneSequential(context, report, frame, geometry
   checkExportContext(context);
   const width = report.canvas_width, height = report.canvas_height;
   const scene=prepareSceneVfx(context,frame,viewport,(viewport?.width||context.canvas.width)/width);
+  const generators=canvasGenerators(report,frame,geometry,parallaxResolver(report,frame));
   const camera = cameraMatrix({report, frame}),
     sx = scene.outputSize.width / width,
     sy = scene.outputSize.height / height;
@@ -132,8 +135,10 @@ export async function drawExportSceneSequential(context, report, frame, geometry
         ![2,3,4].includes(asset.kind) && asset.color === undefined).map(asset => ({type: 'image', asset})), {plan});
       checkExportContext(context);
       drawBackground(context, report, frame, width, height, {...resources, bounds: backgroundBounds(frame, width, height, true, report,sceneVfxBounds(report,{viewport:{x:part.origin.x,y:part.origin.y,width:scene.outputSize.width,height:scene.outputSize.height},width:context.canvas.width,height:context.canvas.height})),paintBounds:backgroundBounds(frame,width,height,true,report)});
-      const strokeState = {width: 1},parallax=parallaxResolver(report,frame);
+      const strokeState = {width: 1},parallax=parallaxResolver(report,frame),walker=canvasGeneratorWalker(generators,context);
+      walker?.begin();
       for (const {items,bounds} of groups) {
+        walker?.object(items[0].obj.unique_id);
         const depth=parallax(items[0].obj.unique_id);
         const itemPlan = translatedPlan(plan,depth);
         const skipPaint = exportGroupOutside(bounds, itemPlan);
@@ -148,6 +153,7 @@ export async function drawExportSceneSequential(context, report, frame, geometry
         checkExportContext(context);
         await yieldWork();
       }
+      walker?.end();
     } finally {context.restore(); releaseGeometryResources(context, {retainCanvases: true});}
     part.done();
   }

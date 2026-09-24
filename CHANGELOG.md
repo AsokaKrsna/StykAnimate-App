@@ -8,6 +8,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Added
 
+- Add particle effects from the VFX panel: auras, energy beams with lightning, explosions, sparks, dust, smoke, fire, confetti, rain, snow and speed lines, or build your own with Particles. They start at the playhead, follow the figure or node they are attached to, leave trails behind moving figures, suit both light and dark scenes, work inside movieclips, and look the same in preview, playback and export. Aim a beam by picking any node on the stage.
 - Paint with richer brushes: strokes can taper to a point at the start and end (even with a mouse), brushes can use Chalk, Bristle and Sponge tips, paper or canvas grain, and size, opacity and angle jitter, a Pulled string smoothing mode keeps lines steady, a pen pressure curve tunes how your tablet responds, and new Brush pen, Chalk, Dry brush and Sponge presets show them off.
 
 ### Changed

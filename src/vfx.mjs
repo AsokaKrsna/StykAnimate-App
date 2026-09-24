@@ -1,4 +1,4 @@
-import {VFX_REGISTRY} from './vfx-registry.mjs';
+import {VFX_REGISTRY,isGeneratorType} from './vfx-registry.mjs';
 export {VFX_REGISTRY} from './vfx-registry.mjs';
 import {vfxPaint,interpolateVfxColor} from './vfx-paint.mjs';
 export const VFX_LIMIT=16;
@@ -46,7 +46,7 @@ export function validateVfxOwner(owner){
   if(owner?._stykVfxScope!==undefined&&![0,1].includes(owner._stykVfxScope))throw new Error('Invalid connected VFX scope.');
   const value=owner?._stykVfx;if(value===undefined)return;
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length>65536)throw new Error('Invalid VFX owner.');
-  for(const [key,stack] of Object.entries(value)){if(key!=='figure'&&!/^(\*|[1-9]\d*)\/[1-9]\d*$/.test(key))throw new Error('Invalid VFX segment identity.');validateVfxStack(stack);}
+  for(const [key,stack] of Object.entries(value)){if(key!=='figure'&&!/^(\*|[1-9]\d*)\/[1-9]\d*$/.test(key))throw new Error('Invalid VFX segment identity.');if(Array.isArray(stack)&&stack.some(e=>isGeneratorType(e?.type)))throw new Error('Generated effects belong on the effects timeline.');validateVfxStack(stack);}
 }
 /** Preserve instance-local node ownership when definitions/physical handles change. */
 export function remapVfxOwner(owner,typeId=owner.figure_type_id,handles,sourceType=owner.figure_type_id){
@@ -75,7 +75,8 @@ export function interpolateVfx(a,b,t){
 }
 const resolved=new WeakMap();
 export function resolvedVfx(effect){let value=resolved.get(effect);if(!value){value=validateVfxStack([effect])[0];resolved.set(effect,value);resolved.set(value,value);}return value;}
-export function activeVfx(stack){return stack?.length?stack.filter(e=>e.enabled).map(resolvedVfx).filter(e=>!neutralVfx(e)):empty;}
+/** Filters only: generators draw through vfx-generators.mjs, never a filter executor. */
+export function activeVfx(stack){return stack?.length?stack.filter(e=>e.enabled&&!isGeneratorType(e.type)).map(resolvedVfx).filter(e=>!neutralVfx(e)):empty;}
 export function neutralVfx({type,params:p}){return p.effectStrength===0?true:type==='turbulence'?p.amount===0:type==='tint'?p.mix===0:type==='glow'?p.intensity===0&&p.coreMix===0:type==='outline'?(p.width===0||p.opacity===0)&&!p.only:type==='blur'?p.radius===0:type==='shadow'?p.opacity===0:type==='grade'?p.exposure===0&&p.contrast===1&&p.saturation===1&&p.temperature===0&&!p.tint&&!p.shadows&&!p.highlights&&p.gamma===1:type==='pixelate'?p.size<=1&&(p.linked||p.sizeY<=1):type==='noise'||type==='vignette'?p.amount===0:type==='dissolve'?p.progress===0:type==='rgbSplit'?p.amount===0:type==='wave'||type==='shockwave'?p.strength===0:type==='bloom'||type==='lightSweep'?p.intensity===0:type==='crt'?!p.amount&&!p.curvature&&!p.chromatic:false;}
 function blurPadding(radius){
  if(radius<=0)return 0;

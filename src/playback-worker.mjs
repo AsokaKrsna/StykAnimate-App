@@ -29,6 +29,13 @@ import { CameraVfx } from './vfx-camera.mjs';
 import {sceneVfxPlan} from './vfx-scene.mjs';
 import {opacityArtwork} from './renderer-opacity.mjs';
 import { backgroundImageAssets } from './scene-preparation.mjs';
+import {generatorBatchFor,offsetGeneratorBatch,canvasGenerators,canvasGeneratorWalker,SOFTWARE_PARTICLE_BUDGET} from './vfx-generator-frame.mjs';
+
+/** A transferable copy of a frame's generator batch with layer parallax applied. */
+function packetGenerators(report, native, geometry, parallax, vfxEnabled) {
+  const batch = vfxEnabled ? offsetGeneratorBatch(generatorBatchFor(report, native, geometry), parallax) : null;
+  return batch ? {...batch, records: batch.records.slice(), table: batch.table.slice()} : null;
+}
 const fallbackRasterSurfaces = new RasterSurfacePool();
 const yieldPlaybackTask = () => globalThis.scheduler?.yield ? scheduler.yield() : new Promise(resolve => {
   const channel = new MessageChannel();
@@ -343,12 +350,13 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     sharing.rasterCacheHits=(resources?.artworkBitmaps?.hits||0)-initialRasterHits;
     sharing.rasterCacheMisses=(resources?.artworkBitmaps?.misses||0)-initialRasterMisses;
     sharing.reusedVectorObjects=(resources?.vectors?.hits||0)-initialVectorHits;
-    return { key: `${revision}:${tick}`, revision, tick, frameIndex: location.index, frame, shapes, transforms: transformData, uids: uidData, groups, compatibility,
+    const generators = packetGenerators(report, native, geometry, parallax, vfxEnabled);
+    return { key: `${revision}:${tick}`, revision, tick, frameIndex: location.index, frame, shapes, transforms: transformData, uids: uidData, groups, compatibility, generators,
       previewQuality: {reduced: reducedImages},
       connectedVfxUids:geometry.connectedVfxUids, objectCount: geometry.objects.size, shapeCount, warnings: geometry.warnings, scale, resolution, clipping, sharing, reusedGeometryObjects:geometryCache?.reusedObjects||0, cameraEnabled, storedFrames,
       workerCache: {...resources?.cacheSnapshot?.(),
         alternateDrawables:geometryCache?.alternateDrawables||0,tweenEntries:tweenCache?.entries.size||0},
-      byteLength: shapes.byteLength + transformData.byteLength + uidData.byteLength + bitmapBytes + fallbackBytes + groups.length * 64,
+      byteLength: shapes.byteLength + transformData.byteLength + uidData.byteLength + bitmapBytes + fallbackBytes + groups.length * 64 + (generators ? generators.records.byteLength + generators.table.byteLength : 0),
       compileMs: ended - started, timings: { evaluateMs: evaluated - started, geometryMs: geometrized - evaluated, compileMs: ended - geometrized } };
   } catch (error) { for (const entry of compatibility) entry.bitmap?.close(); throw error; }
 }
@@ -412,7 +420,9 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
         matrix[4] * resolution / hypot, matrix[5] * resolution / hypot);
       drawBackground(ctx, report, frame, report.canvas_width, report.canvas_height,
         { ...resources, bounds: backgroundBounds(frame, report.canvas_width, report.canvas_height, cameraEnabled, report) });
-      drawParallaxGeometry(ctx, { drawables }, resources,parallaxResolver(report,native,cameraEnabled));
+      const depth = parallaxResolver(report,native,cameraEnabled);
+      const generators = vfxEnabled ? canvasGenerators(report, native, geometry, depth, {hidden: {has: uid => hiddenSet.has(uid) || !layerVisible(report, uid)}, budget: SOFTWARE_PARTICLE_BUDGET}) : null;
+      drawParallaxGeometry(ctx, { drawables }, resources, depth, undefined, canvasGeneratorWalker(generators, ctx));
     } finally { releaseGeometryResources(ctx); }
     if (activeVfx(vfxStack(frame)).length) {
       // Mirror the live pass: camera-space scene, effects, then projection.
@@ -438,7 +448,7 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
 }
 
 export function packetTransferables(packet) {
-  return [packet.shapes.buffer, packet.transforms.buffer, packet.uids.buffer, ...packet.compatibility.flatMap(entry => entry.meshRaster ? meshRasterBuffers(entry.meshRaster) : [entry.bitmap || entry.vectorRaster?.data.buffer]).filter(Boolean)];
+  return [packet.shapes.buffer, packet.transforms.buffer, packet.uids.buffer, ...(packet.generators ? [packet.generators.records.buffer, packet.generators.table.buffer] : []), ...packet.compatibility.flatMap(entry => entry.meshRaster ? meshRasterBuffers(entry.meshRaster) : [entry.bitmap || entry.vectorRaster?.data.buffer]).filter(Boolean)];
 }
 
 /** Shared endpoint is also exercised with a real Node worker in regression tests. */

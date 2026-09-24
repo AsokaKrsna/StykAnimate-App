@@ -32,11 +32,13 @@ export function libraryPreviewTimeline(report) {
     const clip = types.get(object.figure_type_id)?._styk?.movieclip;
     if (clip) duration = Math.max(duration, clip.duration * fps / clip.document.fps);
   }
-  return {fps, duration, geometry(tick) {
+  return {fps, duration, report, geometry(tick) {
     tick = ((tick % duration) + duration) % duration;
     let low = 0, high = rows.length - 1;
     while (low < high) { const mid = (low + high + 1) >>> 1; if (rows[mid].start <= tick) low = mid; else high = mid - 1; }
     const row = rows[low];
-    return buildGeometry(report, evaluatedFrame(report, low, (tick - row.start) / Math.max(1, row.count), tick));
+    // The evaluated frame travels with its geometry for generated effects.
+    const frame = evaluatedFrame(report, low, (tick - row.start) / Math.max(1, row.count), tick);
+    return Object.assign(buildGeometry(report, frame), {sourceFrame: frame});
   }};
 }

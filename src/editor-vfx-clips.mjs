@@ -1,6 +1,7 @@
 import {createVfxClip,validateVfxClips,vfxClips,sampleVfxClip,clipTime,sameVfxTarget} from './vfx-clips.mjs';
 import {createVfx,vfxProperty,vfxDescriptor,validateVfxValue} from './vfx.mjs';
-import {VFX_PRESETS} from './vfx-presets.mjs';
+import {VFX_PRESETS,GENERATOR_DURATIONS} from './vfx-presets.mjs';
+import {isGeneratorType} from './vfx-registry.mjs';
 import {normalizeAnimationTarget} from './animation-channels.mjs';
 import {connectedVfxConflict} from './vfx-connected.mjs';
 const id=()=>crypto.randomUUID(),bytes=new WeakMap();
@@ -19,6 +20,13 @@ function publish(editor,clips,label){
  editor._record({kind:'vfx-clips',label,before,after,beforeSelection,afterSelection:editor._selectionState(),timing:true,layerSheetPatch,precomputedBytes:changed.reduce((n,c)=>n+size(c),512)+(old.size+next.size)*8+(layerSheetPatch?Object.keys(sheet.tracks).length*160:0)});
  editor._emit('edit',{label,vfxClips:true,timing:true,frameIndices:[]});return true;
 }
+/** Generated effects start at the playhead for a useful length; each gets its
+ * own random seed so repeated effects never look identical. */
+function generatorTiming(editor,effects,duration,options){
+ if(!effects.some(e=>isGeneratorType(e.type))||'start' in options||'duration' in options)return options;
+ return duration===null?{...options,start:0,duration:null}:{...options,start:Math.max(0,Math.floor(editor.tick)),duration};
+}
+const seeded=effect=>isGeneratorType(effect.type)&&effect.params.seed===1?{...effect,params:{...effect.params,seed:1+Math.floor(Math.random()*65534)}}:effect;
 function find(editor,id){const c=vfxClips(editor.report).find(c=>c.id===id);if(!c)throw new Error('Select an effect clip.');return c;}
 function checkScope(editor,clip){if(clip.includeAttached&&clip.target.kind==='figure'){const conflict=connectedVfxConflict(editor.evaluatedFrame,clip.target.uid);if(conflict)throw new Error(conflict);}}
 export const editorVfxClipMethods={
@@ -27,8 +35,8 @@ export const editorVfxClipMethods={
  cancelVfxClipEdit(){const edit=this._vfxClipEdit;if(!edit)return false;this._vfxClipEdit=null;this.report._styk.vfxClips=edit.before;this._invalidate({timing:true});this._emit('preview',{vfxClips:true});return true;},
  getVfxClips(target){return vfxClips(this.report).filter(c=>!target||sameVfxTarget(c.target,target));},
  sampleVfxClip(id,tick=this.tick){return sampleVfxClip(find(this,id),tick);},
- addVfxClip(target,type,options={}){target=normalizeAnimationTarget(target);const clip=createVfxClip(target,type,id(),id(),options);checkScope(this,clip);publish(this,[...vfxClips(this.report),clip],'Add effect clip');return clip.id;},
- addVfxGroup(target,preset,options={}){const p=VFX_PRESETS[preset];if(!p)throw new Error('Choose an effect preset.');const clip=createVfxClip(normalizeAnimationTarget(target),p.effects[0][0],id(),id(),options);checkScope(this,clip);clip.name=preset;clip.effects=p.effects.map(([type,params])=>{const effect=createVfx(type,id());return {...effect,params:{...effect.params,...params}};});publish(this,[...vfxClips(this.report),clip],'Add effect group');return clip.id;},
+ addVfxClip(target,type,options={}){target=normalizeAnimationTarget(target);const clip=createVfxClip(target,type,id(),id(),generatorTiming(this,[{type}],GENERATOR_DURATIONS[type]??48,options));clip.effects=clip.effects.map(seeded);checkScope(this,clip);publish(this,[...vfxClips(this.report),clip],'Add effect clip');return clip.id;},
+ addVfxGroup(target,preset,options={}){const p=VFX_PRESETS[preset];if(!p)throw new Error('Choose an effect preset.');const effects=p.effects.map(([type,params])=>{const effect=createVfx(type,id());return seeded({...effect,params:{...effect.params,...params}});});const clip=createVfxClip(normalizeAnimationTarget(target),p.effects[0][0],id(),id(),generatorTiming(this,effects,'duration' in p?p.duration:48,options));checkScope(this,clip);clip.name=preset;clip.effects=effects;publish(this,[...vfxClips(this.report),clip],'Add effect group');return clip.id;},
  setVfxClip(id,patch){const c=find(this,id);if(Object.keys(patch).some(k=>!['name','start','duration','offset','enabled','strength','fadeIn','fadeOut','includeAttached','effects','keys'].includes(k)))throw new Error('Unsupported effect clip property.');
   if(patch.includeAttached){const conflict=connectedVfxConflict(this.evaluatedFrame,c.target.uid);if(conflict)throw new Error(conflict);}
   const next={...c,...patch};if(Object.keys(patch).every(key=>Object.is(c[key],next[key])))return false;
@@ -46,7 +54,7 @@ export const editorVfxClipMethods={
   if(animation)for(const [property,keys] of Object.entries(source.keys)){const d=vfxDescriptor(property);clip.keys[vfxProperty(d.effectType,map.get(d.id),d.param)]=structuredClone(keys);}
   if(clip.duration!==null)clip.start=start;publish(this,[...vfxClips(this.report),clip],animation?'Paste effect animation':'Paste effect values');return clip.id;},
  duplicateVfxClip(id){this.copyVfxClip(id);const c=find(this,id);return this.pasteVfxClip(c.target,{start:c.duration===null?0:c.start+c.duration});},
- addVfxGroupEffect(id,type){const c=find(this,id),effect=createVfx(type,crypto.randomUUID());this.setVfxClip(id,{effects:[...c.effects,effect]});return effect.id;},
+ addVfxGroupEffect(id,type){const c=find(this,id),effect=seeded(createVfx(type,crypto.randomUUID()));this.setVfxClip(id,{effects:[...c.effects,effect]});return effect.id;},
  reorderVfxGroupEffect(id,effectId,index){const c=find(this,id),from=c.effects.findIndex(e=>e.id===effectId);if(from<0||!Number.isInteger(index)||index<0||index>=c.effects.length)throw new Error('Choose an effect order.');if(from===index)return false;const effects=[...c.effects];effects.splice(index,0,effects.splice(from,1)[0]);return this.setVfxClip(id,{effects});},
  setVfxClipParameter(id,effectId,param,value,options){return this.setVfxClipParameters(id,effectId,{[param]:value},options);},
  // Spatial handles can edit several values. Validate and publish one record,

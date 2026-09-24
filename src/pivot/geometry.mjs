@@ -30,7 +30,11 @@ import {presenceIndex,presenceElapsed,invalidateMovieclipPresence,cachedPresence
 import {createSheetMembershipSampler} from '../movieclip-membership.mjs';
 import {sticknodesShape,sticknodesCurve,sticknodesDrawables,sticknodesSpriteAsset} from '../sticknodes/geometry.mjs';
 const authoredTimelines = new WeakMap();
+const evaluationGenerations = new WeakMap();
+/** Changes whenever a document's evaluation caches are invalidated. */
+export const evaluationGeneration = report => evaluationGenerations.get(report) ?? 0;
 export function invalidateEvaluationCaches(report) {
+  evaluationGenerations.set(report, evaluationGeneration(report) + 1);
   invalidateMovieclipPresence(report);
   invalidateLayerSheet(report);
   authoredTimelines.delete(report);

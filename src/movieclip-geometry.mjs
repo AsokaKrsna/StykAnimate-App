@@ -6,6 +6,20 @@ import {rotatedDrawing,drawingRotationReference} from './movieclip-drawings.mjs'
 import {animationRotation} from './animation-origin.mjs';
 import {projection} from './spatial-projection.mjs';
 import {buildMovieclipMeshSteps} from './movieclip-mesh.mjs';
+import {isGeneratorType} from './vfx-registry.mjs';
+
+/** Whether a movieclip document, or one nested in it, has generated effects.
+ * Published movieclip documents are immutable, so the answer is cached. */
+const generatorDocuments=new WeakMap();
+function hasGeneratedEffects(document,depth=0){
+  if(!document||depth>8)return false;
+  let known=generatorDocuments.get(document);
+  if(known===undefined){
+    known=Boolean(document._styk?.vfxClips?.clips.some(c=>c.effects.some(e=>isGeneratorType(e.type))))||(document.figure_types??[]).some(f=>hasGeneratedEffects(f._styk?.movieclip?.document,depth+1));
+    generatorDocuments.set(document,known);
+  }
+  return known;
+}
 
 const caches = new WeakMap();
 const MAX_FRAMES = 48, MAX_POINTS = 250000;
@@ -36,6 +50,7 @@ function* sampleSteps(asset, local, api) {
   const row=rows[low], frame=api.evaluatedFrame(asset.document,low,row.count?(tick-row.start)/row.count:0,tick);
   const geometry=connectedVfxGeometry(api.buildGeometrySteps ? yield* api.buildGeometrySteps(asset.document,frame) : api.buildGeometry(asset.document,frame),frame,asset.document);
   if(vfxStack(frame).length)geometry.sceneEffects=vfxStack(frame);
+  geometry.sourceFrame=frame;
   const points=geometry.drawables.reduce((n,s)=>n+(s.points?.length??1),0);
   cache.misses++;
   if(points<=MAX_POINTS){
@@ -70,6 +85,9 @@ export function* buildMovieclipGeometrySteps(fig,obj,root,slot,api) {
   if(drawing){geometry.drawingView=drawing;geometry.drawingTransform={angle,scale,flip};}
   if(local===null)return geometry;
   const source=yield* sampleSteps(asset,local,api), owner={opacity:1-Number(obj.field28??0)/255,effects:source.sceneEffects?.length?[...source.sceneEffects,...(obj._stykVfx?.figure??[])]:obj._stykVfx?.figure,scale:Math.abs(scale)};
+  // Generated effects inside the clip draw beside it, in its local transform.
+  if(source.sourceFrame&&hasGeneratedEffects(asset.document))geometry.nestedGenerators={report:asset.document,frame:source.sourceFrame,geometry:source,opacity:owner.opacity,
+    matrix:[a,b,-b*flip,a*flip,root.x-a*asset.pivot.x+b*flip*asset.pivot.y,root.y-b*asset.pivot.x-a*flip*asset.pivot.y]};
   const objects=new Map(),owners=new Map();
   const transformOwner=owner=>{let result=owners.get(owner);if(!result){result=scaledOwner(owner,scale,point);owners.set(owner,result);}return result;};
   let completed=0;

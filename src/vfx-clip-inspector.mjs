@@ -5,23 +5,37 @@ import {vfxIcon} from './vfx-icons.mjs';
 import {vfxVisibleKeys,vfxSelectedChannels,vfxChannelLabel,setVfxVisibleChannels,vfxGroupEffectName} from './vfx-key-channels.mjs';
 import {openVfxChannelMenu} from './vfx-key-channel-menu.mjs';
 import {clipNumber,editGroupEffect,openGroupMenu} from './vfx-clip-controls.mjs';
+import {generatorClipActiveAt} from './vfx-generators.mjs';
 
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const clipName=c=>c.name||VFX_REGISTRY[c.effects[0]?.type]?.name||'Effects';
 const action=(name,label,content=label,disabled=false)=>`<button type="button" data-clip-action="${name}" aria-label="${esc(label)}" title="${esc(label)}" ${disabled?'disabled':''}>${content}</button>`;
 const keyIndex=(clip,keys,tick)=>{let low=0,high=keys.length-1,time=clipTime(clip,tick);while(low<high){const mid=(low+high+1)>>>1;if(keys[mid].tick<=time)low=mid;else high=mid-1;}return low;};
 const currentKey=(clip,keys,tick)=>keys[keyIndex(clip,keys,tick)];
+// Generated clips stay listed while their particles are still visible.
 export const filterVfxClips=(clips,{view='playhead',tick=0,selected=null,query=''}={})=>clips.filter(c=>
- (view==='all'||(view==='selected'?c.id===selected:vfxClipActiveAt(c,tick)))&&(!query||view!=='all'||clipName(c).toLowerCase().includes(query.toLowerCase())));
+ (view==='all'||(view==='selected'?c.id===selected:vfxClipActiveAt(c,tick)||generatorClipActiveAt(c,tick)))&&(!query||view!=='all'||clipName(c).toLowerCase().includes(query.toLowerCase())));
 
+/** A beam aims at a stage point or locks onto a node picked on the stage. */
+function aimLabel(editor,p){
+ const object=editor.evaluatedFrame?.objects.find(o=>o.unique_id===p.aimUid),figure=object&&editor.report.figure_types?.find(f=>f.figure_type_id===object.figure_type_id);
+ return `${figure?.name||`Figure ${p.aimUid}`} · ${p.aimHandle?`node ${p.aimHandle}`:'origin'}`;
+}
+function aimRow(host,clip,effect,locked){
+ if(effect.type!=='beam')return '';
+ const e=host.editor,p=effect.params,picking=e._vfxAimPick?.clip===clip.id&&e._vfxAimPick.effect===effect.id,label=p.aimUid?aimLabel(e,p):'Point on stage';
+ const hint=clip.target.kind==='figure'?'<p class="vfx-aim-hint">Fires from the figure’s origin. To fire from a hand, select that node before adding the beam.</p>':'';
+ return hint+`<div class="vfx-field vfx-aim"><label>Aim at</label><span class="vfx-aim-target" title="${esc(label)}">${esc(label)}</span><button type="button" class="vfx-aim-pick" data-clip-action="aim-pick" data-effect-id="${effect.id}" aria-pressed="${picking}" title="Click a node, a figure origin or any point on the stage" ${locked?'disabled':''}>${picking?'Click the stage…':'Pick'}</button>${p.aimUid?`<button type="button" data-clip-action="aim-clear" data-effect-id="${effect.id}" aria-label="Aim at a stage point instead" title="Aim at a stage point instead" ${locked?'disabled':''}>${icon('close')}</button>`:''}</div>`;
+}
 function effectFields(host,clip,effect,locked,picked){
- const fields=Object.entries(VFX_REGISTRY[effect.type].params).filter(([,d])=>!d.when||Object.entries(d.when).every(([key,values])=>values.includes(effect.params[key]))).map(([param,d])=>[param,param==='effectStrength'&&clip.effects.length>1?{...d,advanced:true}:d]).sort(([a],[b])=>(a==='effectStrength')-(b==='effectStrength'));
+ const scene=clip.target.kind==='scene';
+ const fields=Object.entries(VFX_REGISTRY[effect.type].params).filter(([,d])=>!d.hidden&&(!d.sceneOnly||scene)&&(!d.when||Object.entries(d.when).every(([key,values])=>values.includes(effect.params[key])))).map(([param,d])=>[param,param==='effectStrength'&&clip.effects.length>1?{...d,advanced:true}:d]).sort(([a],[b])=>(a==='effectStrength')-(b==='effectStrength'));
  const render=entries=>entries.map(([param,d])=>{
   const field=host.field(clip.target,effect,param,d,`clip-${clip.id}`,locked),key=`clip-${clip.id}-${effect.id}-${param}`,b=host.bindings.get(key),keys=clip.keys[b.property]??[];
   const on=currentKey(clip,keys,host.editor.tick)?.tick===Math.floor(clipTime(clip,host.editor.tick));
   return `<div class="vfx-key-field${picked.length===1&&picked[0]===b.property?' is-channel-selected':''}" data-vfx-binding="${esc(key)}">${field}<button class="vfx-key${keys.length?' is-animated':''}${on?' is-keyed':''}" type="button" data-clip-key="${esc(key)}" aria-label="${on?'Remove':'Add'} ${esc(d.label)} key" title="${on?'Remove key':'Add key'}" ${locked?'disabled':''}>${icon('diamond')}</button></div>`;
  }).join('');
- const normal=render(fields.filter(([,d])=>!d.advanced)),advanced=render(fields.filter(([,d])=>d.advanced));
+ const normal=aimRow(host,clip,effect,locked)+render(fields.filter(([,d])=>!d.advanced)),advanced=render(fields.filter(([,d])=>d.advanced));
  return normal+(advanced?`<details class="vfx-advanced"><summary>More</summary>${advanced}</details>`:'');
 }
 function keyNavigation(host,c,locked){
@@ -85,6 +99,12 @@ export function clipClick(host,event){
  const operation=button.dataset.clipAction;if(!operation)return false;
  host.commit();host.beforeEdit();const c=id&&e.getVfxClips().find(c=>c.id===id);
  if(operation==='channels'){openVfxChannelMenu(e,c,button,{signal:host.abort.signal});return true;}
+ if(operation==='aim-pick'){const effect=button.dataset.effectId,active=e._vfxAimPick?.clip===id&&e._vfxAimPick.effect===effect;e._vfxAimPick=active?null:{clip:id,effect};host.sync();host.onChange();return true;}
+ if(operation==='aim-clear'){
+  // Unlock in place: the stage point starts where the locked node is now.
+  e._vfxAimPick=null;const p=c.effects.find(x=>x.id===button.dataset.effectId)?.params??{},g=[...(e.geometry?.objects?.values()??[])].find(g=>g?.obj?.unique_id===p.aimUid),at=g&&(p.aimHandle?g.joints?.get(p.aimHandle):g.root);
+  e.setVfxClipParameters(id,button.dataset.effectId,{aimUid:0,aimHandle:0,...(at?{aimX:Math.max(-1,Math.min(2,at.x/e.report.canvas_width)),aimY:Math.max(-1,Math.min(2,at.y/e.report.canvas_height))}:{})});host.sync();host.onChange();return true;
+ }
  if(operation==='select'){selectClip(host,host.selectedClip===id?null:id);return true;}
  if(operation.startsWith('effect-')){
   event.preventDefault();const effectId=button.closest('[data-group-effect]').dataset.groupEffect;

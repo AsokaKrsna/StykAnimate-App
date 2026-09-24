@@ -2,6 +2,8 @@ import {parallaxResolver} from './layer-parallax.mjs';
 import {cameraMatrix} from './renderer-geometry.mjs';
 import {drawBackground,backgroundBounds} from './pivot/background.mjs';
 import {sceneVfxBounds} from './vfx-scene.mjs';
+import {encodePreparedCommands} from './prepared-frames.mjs';
+import {offsetGeneratorBatch,generatorSchedule,scheduleWalker} from './vfx-generator-frame.mjs';
 
 /** Re-render retained GPU artwork into camera coordinates. Share the device,
  * primitive buffers and textures; own only one camera surface and MSAA target. */
@@ -31,16 +33,23 @@ export class CameraGpuSource {
   const prepared=options.preparedFrame;
   pass.setPipeline(r.pipeline);pass.setBindGroup(0,prepared?.bindGroup??r.globalBindGroup);
   if(prepared){
-   for(const command of prepared.commands){const first=Math.max(command.firstInstance,prepared.backgroundCount),count=command.firstInstance+command.instanceCount-first;if(count<=0)continue;pass.setBindGroup(1,command.texture?.bindGroup||r.blankBindGroup);pass.draw(6,count,0,first);}
+   encodePreparedCommands(r,pass,prepared,{hiddenUids:options.hiddenUids,dragTranslations:options.dragTranslations,skipBackground:true});
   }else{
   let begin=-1,count=0;
   const flush=()=>{if(count){pass.setBindGroup(1,r.blankBindGroup);pass.draw(6,count,0,begin);count=0;begin=-1;}};
+  // Generated effects: the editor pass's batch, plus camera parallax in world view.
+  const depth=options.cameraEnabled===false?parallaxResolver(report,frame):null,batch=depth?offsetGeneratorBatch(r.lastGeneratorBatch,depth):r.lastGeneratorBatch;
+  const plan=batch&&generatorSchedule(batch,options.hiddenUids),gpu=plan&&!plan.empty?r.generatorGpu():null;
+  if(gpu)gpu.upload(batch);
+  const walker=gpu?scheduleWalker(plan,draws=>{flush();gpu.draw(pass,draws,r.msaaCount,p=>{p.setPipeline(r.pipeline);p.setBindGroup(0,r.globalBindGroup);});}):null;
+  walker?.begin();
   for(const entry of r.layout){
    if(!entry.g||entry.isOnion){flush();continue;}
+   walker?.object(entry.uid);
    if(entry.texture){flush();pass.setBindGroup(1,entry.texture.bindGroup);pass.draw(6,entry.count,0,entry.offset);}
    else {if(count&&begin+count!==entry.offset)flush();if(begin<0)begin=entry.offset;count+=entry.capacity;}
   }
-  flush();}
+  flush();walker?.end();}
   pass.end();r.device.queue.submit([encoder.finish()]);
   // Queue order makes the camera submission see its own uniforms, then restores
   // the editor state before subsequent work on the shared device.

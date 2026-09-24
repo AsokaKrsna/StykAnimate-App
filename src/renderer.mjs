@@ -28,6 +28,9 @@ import { uploadShapeLayoutSteps, SHAPE_UPLOAD_RECORDS } from './renderer-upload.
 import { backgroundImageAssets, frameImageAssets, createSceneImages, consumeSceneSteps } from './scene-preparation.mjs';
 import {drawingMatrix,drawingPixelMatrix,drawingMetadata} from './drawing-model.mjs';
 import {DrawingGpu,gpuDrawingEligible} from './drawing-gpu.mjs';
+import {GeneratorGpu} from './vfx-generator-gpu.mjs';
+import {drawGeneratorDraws} from './vfx-generator-canvas.mjs';
+import {generatorBatchFor,budgetedGeneratorBatch,offsetGeneratorBatch,generatorSchedule,scheduleWalker,SOFTWARE_PARTICLE_BUDGET,INTERACTIVE_SAMPLING_MS} from './vfx-generator-frame.mjs';
 export { cameraMatrix, worldToScreen, screenToWorld } from './renderer-geometry.mjs';
 // Compatibility rasters can contain several drawing cels or drawing effects.
 // Track decoded/preview inputs, never hash tile blobs or invalidate unrelated artwork.
@@ -398,9 +401,15 @@ class CanvasFallback {
     const onions = (options.onionFrames || []).map(onion => ({geometry: options.vfxEnabled===false?vfxPreviewGeometry(onion.geometry||buildGeometry(report,onion.frame||onion)):connectedVfxGeometry(onion.geometry||buildGeometry(report,onion.frame||onion),onion.frame||onion,report,hiddenUids), opacity: onion.opacity, beforeUid: onion.beforeUid, showOnTop: onion.showOnTop}));
     const matrix = cameraMatrix(options), scale = Math.hypot(matrix[0], matrix[1]) * this.dpr;
     let primitives = 0; const parallax=parallaxResolver(report,frame,options.cameraEnabled!==false);
+    // Software drawing thins dense effects to a preview budget; export does not.
+    const generatorBatch=offsetGeneratorBatch(budgetedGeneratorBatch(report,frame,geometry,{enabled:options.vfxEnabled!==false,budget:SOFTWARE_PARTICLE_BUDGET,budgetMs:INTERACTIVE_SAMPLING_MS}),uid=>{const depth=parallax(uid),move=dragTranslations?.get?.(uid);return {x:depth.x+(move?.x||0),y:depth.y+(move?.y||0)};});
+    const generatorPlan=generatorBatch&&generatorSchedule(generatorBatch,hiddenUids);
+    const walker=generatorPlan&&!generatorPlan.empty?scheduleWalker(generatorPlan,draws=>{drawGeneratorDraws(ctx,generatorBatch,draws);}):null;
+    walker?.begin();
     for (const group of composeSceneGroups(geometry, onions, frame)) {
       if(group.isOnion&&hasSceneVfx(frame))continue;
       const uid = group.g.obj.unique_id; if (hiddenUids?.has(uid)) continue;
+      if(!group.isOnion)walker?.object(uid);
       const move = !group.isOnion && dragTranslations?.get(uid);
       ctx.save(); ctx.globalAlpha = group.opacity; if (move) ctx.translate(move.x, move.y);
       const depth=parallax(uid);ctx.translate(depth.x,depth.y);
@@ -408,6 +417,8 @@ class CanvasFallback {
       else this.drawObject(ctx, group, scale);
       ctx.restore(); primitives += group.items.length;
     }
+    walker?.end();
+    if(generatorBatch?.incomplete)queueMicrotask(()=>this.options.onInvalidate?.());
     ctx.restore();
     if(hasSceneVfx(frame)){
       renderPreviewVfx(this,'vfxCamera',()=>new CameraVfx(),camera=>camera.render(ctx,{...options,geometry},this.dpr,this.resources));
@@ -1143,6 +1154,11 @@ class WebGPURenderer {
       this.transformData.set([entry.root.x + (delta?.x || 0)+depth.x, entry.root.y + (delta?.y || 0)+depth.y, entry.opacity * (entry.artworkOpacity ?? 1), hiddenUids?.has(entry.uid) ? 0 : 1], entry.transform * 4);
     }
     this.device.queue.writeBuffer(this.transformBuffer, 0, this.transformData);
+    // Generated effects follow their target's parallax and live drag offsets.
+    const generatorBatch=offsetGeneratorBatch(generatorBatchFor(report,frame,geometry,{enabled:options.vfxEnabled!==false,budgetMs:INTERACTIVE_SAMPLING_MS}),uid=>{const depth=parallax(uid),delta=dragTranslations?.get?.(uid)||dragTranslations?.[uid];return {x:depth.x+(delta?.x||0),y:depth.y+(delta?.y||0)};});
+    this.lastGeneratorBatch=generatorBatch;
+    const generatorPlan=generatorBatch&&generatorSchedule(generatorBatch,hiddenUids);
+    if(generatorPlan&&!generatorPlan.empty)this.generatorGpu().upload(generatorBatch);
     const encoder = this.device.createCommandEncoder({ label: 'StykAnimate viewport frame' });
     if(drawingGpu&&!drawingGpu.destroyed)drawingGpu.encode(encoder);
     const timestampWrites=this.gpuTiming?.begin(this.measureFrame);
@@ -1150,13 +1166,20 @@ class WebGPURenderer {
     pass.setPipeline(this.pipeline); pass.setBindGroup(0, this.globalBindGroup);
     let calls = 0, begin = -1, count = 0;
     const flush = () => { if (!count) return; pass.setBindGroup(1, this.blankBindGroup); pass.draw(6, count, 0, begin); calls++; begin = -1; count = 0; };
+    const walker=generatorPlan&&!generatorPlan.empty?scheduleWalker(generatorPlan,draws=>{flush();this.generators.draw(pass,draws,this.msaaCount,p=>{p.setPipeline(this.pipeline);p.setBindGroup(0,this.globalBindGroup);});calls+=draws.length;}):null;
+    let generatorsBegun=false;
     for (const entry of this.layout) {
       if(entry.isOnion&&hasSceneVfx(frame)){flush();continue;}
+      if(walker&&entry.g&&!entry.isOnion){if(!generatorsBegun){walker.begin();generatorsBegun=true;}walker.object(entry.uid);}
       if (entry.gpuDraw) { flush(); drawingGpu.draw(pass, entry.gpuDraw); pass.setPipeline(this.pipeline); pass.setBindGroup(0, this.globalBindGroup); calls++; }
       else if (entry.texture) { flush(); pass.setBindGroup(1, entry.texture.bindGroup); pass.draw(6, entry.count, 0, entry.offset); calls++; }
       else { if (begin < 0) begin = entry.offset; count += entry.capacity; }
     }
     flush();
+    if(walker){if(!generatorsBegun)walker.begin();walker.end();}
+    // Trails still being sampled refine on the next frame.
+    if(generatorBatch?.incomplete)queueMicrotask(()=>this.options.onInvalidate?.());
+    this.stats.generatedParticles=generatorBatch?.particles??0;
     this.stats.handleCount=options.canvasHandles?.length||0;
     this.stats.handleUploadBytes=options.canvasHandles ? this.handleRenderer.update(options.canvasHandles,dragTranslations,options.outlineHandles) : 0;
     this.stats.handleDrawCalls=options.canvasHandles&&!hasSceneVfx(frame) ? this.handleRenderer.draw(pass) : 0;
@@ -1169,6 +1192,8 @@ class WebGPURenderer {
     return geometry;
   }
   finishSceneVfx(options){return renderPreviewVfx(this,'vfxViewport',()=>new ViewportVfx(this),viewport=>viewport.render(options));}
+  /** Generated-effect pipelines share this device and the viewport globals. */
+  generatorGpu(){return this.generators??=new GeneratorGpu(this.device,this.format,this.uniform);}
   /** Drawing cels that objectEntry presents from their tile presenter rather
    * than from a compatibility raster of the published image. */
   liveDrawing(items, isOnion) {
@@ -1205,6 +1230,7 @@ class WebGPURenderer {
     this.drawingGpu?.destroy();
     for(const texture of this.drawingTextures?.values()??[])texture.texture.destroy();this.drawingTextures?.clear();
     this.vfxViewport?.destroy();
+    this.generators?.destroy(); this.generators = null;
     this.artworks.clear();
     this.destroyed = true; this.last = null; this.uploadStaging = null; this.onionScenes = []; this.preparedFrames.clear(); this.handleRenderer?.destroy(); this.msaa?.destroy(); this.shapeBuffer?.destroy(); this.transformBuffer?.destroy(); this.uniform?.destroy(); this.blankTexture?.destroy();
     this.rasterCache.clear();

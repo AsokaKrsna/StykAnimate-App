@@ -1,5 +1,6 @@
 import {createVfx,validateVfxStack,validateVfxValue,vfxDescriptor,vfxOwnerKey,vfxProperty} from './vfx.mjs';
 import {interpolateVfxColor} from './vfx-paint.mjs';
+import {isGeneratorType} from './vfx-registry.mjs';
 import {easedProgress,validateKeyEasing} from './keyframe-easing.mjs';
 
 export const VFX_CLIP_LIMIT=4096;
@@ -72,7 +73,9 @@ export function renderVfxOwner(owner,clips,tick){
  let result=owner;
  for(const clip of clips??empty){
   if(!clip.enabled||!clipContains(clip,tick)||!clip.strength||clip.target.kind==='segment'&&clip.target.figureTypeId!==undefined&&clip.target.figureTypeId!==owner.figure_type_id)continue;
-  const effects=sampleVfxClip(clip,tick,{envelope:true}),key=vfxOwnerKey(clip.target);
+  // Generators draw their own artwork (vfx-generators.mjs); only filters compose here.
+  if(!clip.effects.some(e=>!isGeneratorType(e.type)))continue;
+  const effects=sampleVfxClip(clip,tick,{envelope:true}).filter(e=>!isGeneratorType(e.type)),key=vfxOwnerKey(clip.target);
   const connected=result._vfxConnectedEffects??(owner._stykVfxScope===1?owner._stykVfx?.figure??empty:empty);
   result={...result,_stykVfx:{...result._stykVfx,[key]:[...(result._stykVfx?.[key]??empty),...effects]},
    _vfxConnectedEffects:clip.includeAttached&&clip.target.kind==='figure'?[...connected,...effects]:connected};

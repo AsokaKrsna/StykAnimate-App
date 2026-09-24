@@ -8,6 +8,7 @@ import {cameraMatrix} from './renderer-geometry.mjs';
 import {drawBackground, backgroundBounds} from './pivot/background.mjs';
 import {buildGeometry,drawGeometry} from './pivot/geometry.mjs';
 import {composeSceneGroups} from './scene-order.mjs';
+import {canvasGenerators,canvasGeneratorWalker} from './vfx-generator-frame.mjs';
 import {formatPropertyValue} from './property-controls.mjs';
 const playbackGeometry=new WeakMap();
 const monitorSurfaces=new WeakMap();
@@ -121,10 +122,14 @@ export function drawCameraMonitor(canvas, options) {
   drawBackground(ctx,report,frame,report.canvas_width,report.canvas_height,
     {...resources,bounds:backgroundBounds(frame,report.canvas_width,report.canvas_height,true,report)});
   const parallax=parallaxResolver(report,frame);
+  const walker=canvasGeneratorWalker(canvasGenerators(report,frame,geometry,parallax,{hidden:{has:uid=>hiddenUids?.has(uid)||!layerVisible(report,uid)}}),ctx);
+  walker?.begin();
   for(const group of composeSceneGroups(geometry,[],frame)) {
     if(hiddenUids?.has(group.g.obj.unique_id)||!layerVisible(report,group.g.obj.unique_id)) continue;
+    walker?.object(group.g.obj.unique_id);
     ctx.save();try {ctx.globalAlpha=group.opacity;const depth=parallax(group.g.obj.unique_id);ctx.translate(depth.x,depth.y);drawGeometry(ctx,{drawables:group.items},resources);}finally{ctx.restore();}
   }
+  walker?.end();
   } finally {ctx.restore();}
   if(state.retryAt)options.onRecovery?.('camera','recovered');state.retryAt=0;return true;
   } catch(error) {

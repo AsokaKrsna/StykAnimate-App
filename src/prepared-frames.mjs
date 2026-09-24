@@ -6,6 +6,7 @@ import {hasSceneVfx} from './vfx-viewport.mjs';
 import {rasterizeVectorVfx} from './renderer-vfx-vector.mjs';
 import {encodeVectorRaster} from './renderer-vector-raster.mjs';
 import {encodeMeshRaster,meshRasterBytes} from './renderer-mesh-raster.mjs';
+import {offsetGeneratorBatch,generatorSchedule,scheduleWalker} from './vfx-generator-frame.mjs';
 
 export function preparedCameraMode(packet, requested) {
   const mode = packet.cameraEnabled === undefined ? true : packet.cameraEnabled;
@@ -22,17 +23,36 @@ const colorAttachment = (msaa, resolveView) => msaa
   ? { view: msaa.createView(), resolveTarget: resolveView, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'discard' }
   : { view: resolveView, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' };
 
-export function combinePreparedCommands(backgrounds, groups, textures) {
+/** Commands tagged for generated effects: backgrounds, one run per effect
+ * target, and merged runs of everything else between them. */
+export const PREPARED_BACKGROUND = -1, PREPARED_OTHER = -2;
+export function combinePreparedCommands(backgrounds, groups, textures, uids = null, targets = null) {
   const commands = []; let base = 0;
-  const append = (firstInstance, instanceCount, texture = null) => {
+  const append = (firstInstance, instanceCount, texture = null, uid = null) => {
     if (!instanceCount) return;
     const previous = commands.at(-1);
-    if (!texture && previous && !previous.texture && previous.firstInstance + previous.instanceCount === firstInstance) previous.instanceCount += instanceCount;
-    else commands.push({ firstInstance, instanceCount, texture });
+    if (!texture && previous && !previous.texture && previous.firstInstance + previous.instanceCount === firstInstance && previous.uid === uid) previous.instanceCount += instanceCount;
+    else commands.push({ firstInstance, instanceCount, texture, uid });
   };
-  for (const background of backgrounds) { const count = background.data.length / SHAPE_FLOATS; append(base, count, background.texture); base += count; }
-  for (const group of groups) append(base + group.firstInstance, group.instanceCount, group.compatibilityIndex === undefined ? null : textures[group.compatibilityIndex]);
+  const tag = group => targets ? (targets.has(uids?.[group.transformIndex]) ? uids[group.transformIndex] : PREPARED_OTHER) : null;
+  for (const background of backgrounds) { const count = background.data.length / SHAPE_FLOATS; append(base, count, background.texture, targets ? PREPARED_BACKGROUND : null); base += count; }
+  for (const group of groups) append(base + group.firstInstance, group.instanceCount, group.compatibilityIndex === undefined ? null : textures[group.compatibilityIndex], tag(group));
   return { commands, backgroundCount: base };
+}
+/** Encode prepared artwork, drawing generated effects beside their targets. */
+export function encodePreparedCommands(renderer, pass, frame, {hiddenUids, dragTranslations, skipBackground = false} = {}) {
+  const batch = frame.generators && offsetGeneratorBatch(frame.generators, uid => dragTranslations?.get?.(uid));
+  const plan = batch && generatorSchedule(batch, hiddenUids), gpu = plan && !plan.empty ? renderer.generatorGpu?.() : null;
+  if (gpu) gpu.upload(batch);
+  const walker = gpu ? scheduleWalker(plan, draws => gpu.draw(pass, draws, renderer.msaaCount, p => { p.setPipeline(renderer.pipeline); p.setBindGroup(0, frame.bindGroup); })) : null;
+  let begun = false;
+  for (const command of frame.commands) {
+    if (walker && command.uid !== null && command.uid !== PREPARED_BACKGROUND) { if (!begun) { walker.begin(); begun = true; } walker.object(command.uid); }
+    let first = command.firstInstance, count = command.instanceCount;
+    if (skipBackground) { first = Math.max(first, frame.backgroundCount); count = command.firstInstance + command.instanceCount - first; if (count <= 0) continue; }
+    pass.setBindGroup(1, command.texture?.bindGroup || renderer.blankBindGroup); pass.draw(6, count, 0, first);
+  }
+  if (walker) { if (!begun) walker.begin(); walker.end(); }
 }
 
 /** Recycle exact-sized allocations only. Changing the physical texture size
@@ -347,7 +367,8 @@ export class PreparedFrameCache {
         }
       }
       flushRasterBatch();
-      const { commands, backgroundCount } = combinePreparedCommands(backgrounds, packet.groups, textures);
+      const generatorTargets = packet.generators ? new Set(packet.generators.draws.filter(draw => draw.uid !== null).map(draw => draw.uid)) : null;
+      const { commands, backgroundCount } = combinePreparedCommands(backgrounds, packet.groups, textures, packet.uids, generatorTargets);
       const shapeBytes = Math.max(SHAPE_BYTES, shapeData.byteLength + backgroundCount * SHAPE_BYTES), transformBytes = packet.transforms.byteLength, bytes = shapeBytes + transformBytes + textureBytes;
       // Fallback raster dimensions are known only after object rasterization.
       // References acquired above protect shared textures during this eviction.
@@ -360,7 +381,7 @@ export class PreparedFrameCache {
       if (shapeData.byteLength) device.queue.writeBuffer(shapeBuffer, offset, shapeData);
       device.queue.writeBuffer(transformBuffer, 0, packet.transforms);
       const bindGroup = device.createBindGroup({ layout: renderer.globalLayout, entries: [{ binding: 0, resource: { buffer: renderer.uniform } }, { binding: 1, resource: { buffer: shapeBuffer } }, { binding: 2, resource: { buffer: transformBuffer } }] });
-      const frame = { key, cameraEnabled, nativeFrame: packet.frame, connectedVfxUids:packet.connectedVfxUids, shapeBuffer, transformBuffer, bindGroup, commands, backgroundCount, ownedTextures,
+      const frame = { key, cameraEnabled, nativeFrame: packet.frame, connectedVfxUids:packet.connectedVfxUids, shapeBuffer, transformBuffer, bindGroup, commands, backgroundCount, ownedTextures, generators: packet.generators ?? null,
         transforms: packet.transforms.slice(), liveTransforms: null, transformed: false, uids: packet.uids.slice(), bytes,bufferBytes:shapeBytes+transformBytes,
         objectCount: packet.objectCount, shapeCount: shapeData.length / SHAPE_FLOATS + backgroundCount,
         textureObjects: packet.compatibility?.length || 0, warnings: packet.warnings || [], generation: renderer.generation,
@@ -387,7 +408,7 @@ export class PreparedFrameCache {
     const timestampWrites=renderer.gpuTiming?.begin(renderer.measureFrame);
     const pass = encoder.beginRenderPass({ colorAttachments: [colorAttachment(renderer.msaa, renderer.context.getCurrentTexture().createView())],...(timestampWrites?{timestampWrites}:{}) });
     pass.setPipeline(renderer.pipeline); pass.setBindGroup(0, frame.bindGroup);
-    for (const command of frame.commands) { pass.setBindGroup(1, command.texture?.bindGroup || renderer.blankBindGroup); pass.draw(6, command.instanceCount, 0, command.firstInstance); }
+    encodePreparedCommands(renderer, pass, frame, {hiddenUids, dragTranslations});
     pass.end();renderer.gpuTiming?.resolveInto(encoder,timestampWrites);renderer.device.queue.submit([encoder.finish()]);renderer.gpuTiming?.submitted(timestampWrites);
     if(hasSceneVfx(frame.nativeFrame))renderer.finishSceneVfx({report,frame:frame.nativeFrame,view,cameraEnabled,preparedFrame:frame,viewportUniforms:uniform,hiddenUids,dragTranslations});
     Object.assign(renderer.stats, { mode: 'prepared playback', preparation: 'prepared', compiledObjects: 0, rasterizedObjects: 0, updatedObjects: 0, frameMs: performance.now() - start, drawCalls: frame.commands.length, primitives: frame.shapeCount, objects: frame.objectCount,
@@ -425,7 +446,7 @@ export class PreparedFrameCache {
     const encoder = renderer.device.createCommandEncoder({ label: `Prepared surface ${frame.key}` });
     const pass = encoder.beginRenderPass({ colorAttachments: [colorAttachment(target.msaa, target.context.getCurrentTexture().createView())] });
     pass.setPipeline(renderer.pipeline); pass.setBindGroup(0, frame.bindGroup);
-    for (const command of frame.commands) { pass.setBindGroup(1, command.texture?.bindGroup || renderer.blankBindGroup); pass.draw(6, command.instanceCount, 0, command.firstInstance); }
+    encodePreparedCommands(renderer, pass, frame, {hiddenUids, dragTranslations});
     pass.end(); renderer.device.queue.submit([encoder.finish()]);
     this.frames.delete(frame.key); this.frames.set(frame.key, frame); this.stats.hits++;
     return true;

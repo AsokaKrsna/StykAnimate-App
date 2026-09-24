@@ -25,6 +25,8 @@ import {activeVfx,vfxStack} from './vfx.mjs';
 import {drawExportScene} from './export-frame-core.mjs';
 import {sceneVfxPlan,sceneVfxBounds} from './vfx-scene.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
+import {drawParallaxGeometry} from './parallax-draw.mjs';
+import {canvasGenerators,canvasGeneratorWalker} from './vfx-generator-frame.mjs';
 
 let report,
   storedReport,
@@ -204,7 +206,9 @@ async function receive(message) {
         bounds: backgroundBounds(frame, width, height, true, frameReport),
       });
       for (const onion of onions) drawGeometry(context, onion, resources);
-      drawGeometry(context, { drawables }, resources);
+      const generators = canvasGenerators(frameReport, frame, geometry, null);
+      if (generators) drawParallaxGeometry(context, { drawables }, resources, () => ({x: 0, y: 0}), undefined, canvasGeneratorWalker(generators, context));
+      else drawGeometry(context, { drawables }, resources);
       context.restore();
       }
       check();
