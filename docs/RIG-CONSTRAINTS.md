@@ -163,6 +163,23 @@ Choices whose hidden length is zero scale bound geometry in all three axes, so
 hidden expressions have no visible area at any viewing angle. Ordinary spatial
 bones continue to stretch only along their axis.
 
+Mechanical joints keep a part on a fixed track, such as a pistol's slide and
+trigger. A spatial bone with `motion: {type: 'slide' | 'hinge', min, max}` is
+rigid. A slide moves along its rest origin-to-tip direction, carried by its
+parent; its native length channel stores rest length plus travel, clamped to
+`min`–`max` figure units. A hinge turns only about the rest depth axis through
+its origin, from its ordinary angle channel relative to its parent, clamped to
+`min`–`max` radians. Their turn and tilt channels are ignored, and neither their
+skin nor their children stretch. In Pose, dragging a mechanical joint moves it
+to the point of its track nearest the pointer, relative to where it was grabbed,
+stopping exactly at either end. Rotate and Turn/tilt change only a hinge's angle
+and leave a slide unchanged. The rig panel shows a Slide or Hinge field as a
+percentage of travel; Reset returns it to rest. No channels or evaluator state
+are added: figure meshes, playback, undo and native saving use the same
+channels. Mechanical joints are authored in definition data (see
+`scripts/pistol/build-3d.mjs`); Build Figure cannot create them yet, and earlier
+versions reject files that contain them.
+
 Spatial IK evaluates only the driving dependency closure, excluding skin vertices
 from solver iterations. Two-bone spatial chains in one figure use an analytic
 3D solver with persistent target depth and a knee/elbow pole when bend direction

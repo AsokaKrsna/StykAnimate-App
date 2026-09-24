@@ -3,7 +3,7 @@ import {unprojectSpatial,unprojectJoint,projectSpatial,projection} from './spati
 import {geometryPlans} from './pivot/geometry-pose.mjs';
 import {animationRotation} from './animation-origin.mjs';
 import {rigConstraintPlan} from './rig-constraints.mjs';
-import {spatialBone,spatialSkin,quatMultiply,quatRotate,spatialPoint,spatialQuaternion,quaternionPose,betweenVectors} from './rig-spatial.mjs';
+import {spatialBone,spatialSkin,spatialMotionValue,quatMultiply,quatRotate,spatialPoint,spatialQuaternion,quaternionPose,betweenVectors} from './rig-spatial.mjs';
 import {inverseQuaternion,spatialWorldQuaternion,spatialWorldVector,spatialPoleHandle,captureSpatialIK} from './ik-spatial.mjs';
 import {ikChain,ikLayout,ikFollowerIndices,solveObjectIK} from './ik.mjs';
 import {poseChoiceGroups} from './rig-pose-choices.mjs';
@@ -87,6 +87,8 @@ export const editorSpatialMethods={
  setSpatialPose(patch,{wholeFigure=false}={}){
   const before=this.getSpatialPose();if(!before)return false;
   for(const[k,v]of Object.entries(patch))if(!['bend','turn','pitch'].includes(k)||!Number.isFinite(v)||Math.abs(v)>1e6)throw new Error('Choose a finite joint rotation.');
+  // A hinge accepts only its own rotation; a slide does not rotate.
+  const motion=this.getSpatialMotion();if(motion)return motion.type==='hinge'&&patch.bend!==undefined?this.setSpatialMotion(patch.bend):false;
   if(Object.entries(patch).every(([k,v])=>Math.abs(v-before[k])<1e-12))return false;
   const f=this.figure,r=f.segments[this.selectedJoint]._stykRig.spatial,ids=rigPlan(this).ids;
   const frame=this.geometry.objects.get(this.selectedSlot).segments[this.selectedJoint].spatialFrame;
@@ -115,11 +117,15 @@ export const editorSpatialMethods={
   },{posed:true});
  },
  resetSpatialPose(all=false){
-  if(!all)return this.setSpatialPose({bend:0,turn:0,pitch:0});
+  if(!all)return this.getSpatialMotion()?this.setSpatialMotion(0):this.setSpatialPose({bend:0,turn:0,pitch:0});
   const f=this.figure,o=this.object;if(!f||!o)return false;
   return this._objectEdit('Reset articulated rig',o=>{
    const delta=animationRotation(f,o),ids=rigPlan(this).ids;
    for(const s of f.segments)if(spatialBone(s))for(const id of [s.segment_id,s._stykRig.spatial.turn,s._stykRig.spatial.pitch]){const i=ids.get(id);o.angles[i]=f.segments[i].angle_rad*(o.image_text_flags?-1:1)+delta;}
+   // Slides return to their rest position (or the nearest end of their range).
+   const slides=f.segments.flatMap((s,i)=>s._stykRig?.spatial?.motion?.type==='slide'?[i]:[]);
+   if(slides.length){o.lengths=o.len_flag?o.lengths.slice():f.segments.map(s=>s.length);o.len_flag=1;
+    for(const i of slides){const r=f.segments[i]._stykRig.spatial,rest=Math.hypot(...r.tip.map((n,k)=>n-r.origin[k]));o.lengths[i]=rest+Math.min(r.motion.max,Math.max(r.motion.min,0));}}
    // Targets must release when the animator explicitly restores the rest pose.
    if(o._stykIK)o._stykIK=Object.fromEntries(Object.entries(o._stykIK).map(([id,c])=>[id,{...c,pinned:false}]));
   },{posed:true});
@@ -158,7 +164,7 @@ export const editorSpatialMethods={
  /** Right-drag: twist the selected part around its own axis (turn a head,
   * twist a torso or forearm). Horizontal pointer travel sets the angle. */
  twistSpatialJoint(x,y,{pixel=1}={}){
-  const f=this.figure,o=this.object,s=f?.segments[this.selectedJoint];if(!o||!spatialBone(s)||!this._drag)return false;
+  const f=this.figure,o=this.object,s=f?.segments[this.selectedJoint];if(!o||!spatialBone(s)||!this._drag||s._stykRig.spatial.motion)return false;
   if(![x,y,pixel].every(Number.isFinite)||pixel<=0)return false;
   const gesture=this._spatialGesture('twist');gesture.start??={x,y};
   if(gesture.length<1e-6)return false;
@@ -169,6 +175,7 @@ export const editorSpatialMethods={
  poseSpatialJoint(x,y,{stretch=false,flip=false,planar=false,pixel=0,anchor=null}={}){
   const f=this.figure,o=this.object,i=this.selectedJoint,s=f?.segments[i];if(!o||!spatialBone(s))return false;
   if(![x,y].every(Number.isFinite))return false;
+  if(s._stykRig.spatial.motion)return this._moveMechanicalJoint(x,y,anchor);
   // A planted knee/elbow steers its existing bend plane directly. Its end
   // target stays planted; no separate canvas pole is needed.
   if(!stretch)for(const[id,c]of Object.entries(o._stykIK??{})){
@@ -209,6 +216,55 @@ export const editorSpatialMethods={
   else{const side=gesture.side*(flip?-1:1);direction=[dx/l,dy/l,side*Math.sqrt(l*l-reach*reach)/l];}
   if(reach<1e-9&&Math.abs(direction[2])<1e-9)return false;
   return this._setSpatialWorldOrientation(quatMultiply(betweenVectors(d,direction),gesture.world),gesture,'Pose articulated joint');
+ },
+ /** Travel of the selected slide (figure units from rest) or hinge (radians). */
+ getSpatialMotion(index=this.selectedJoint){
+  const f=this.figure,o=this.object,s=f?.segments[index],r=s?._stykRig?.spatial,m=r?.motion;if(!o||!m||!spatialBone(s))return null;
+  const value=spatialMotionValue(r,{length:o.len_flag?o.lengths[index]:s.length,bend:m.type==='hinge'?this.getSpatialPose(index).bend:0});
+  return{type:m.type,min:m.min,max:m.max,value,fraction:m.max>m.min?(value-m.min)/(m.max-m.min):0};
+ },
+ /** Set a mechanical joint's travel, clamped to its range; `fraction` maps 0–1 onto it. */
+ setSpatialMotion(value,{fraction=false}={}){
+  const m=this.getSpatialMotion();if(!m)return false;
+  if(!Number.isFinite(value))throw new Error('Choose a finite position.');
+  const target=Math.min(m.max,Math.max(m.min,fraction?m.min+value*(m.max-m.min):value)),i=this.selectedJoint,s=this.figure.segments[i],r=s._stykRig.spatial;
+  const current=m.type==='slide'?(this.object.len_flag?this.object.lengths[i]:s.length):this.getSpatialPose().bend;
+  const next=m.type==='slide'?Math.hypot(...r.tip.map((n,k)=>n-r.origin[k]))+target:target;
+  if(Math.abs(next-current)<1e-12)return false;
+  return this._objectEdit(m.type==='slide'?'Slide mechanical joint':'Turn hinge',o=>{
+   if(m.type==='hinge')this._rotateJoint((next-current)*(o.image_text_flags?-1:1));
+   else{o.lengths=o.len_flag?o.lengths.slice():this.figure.segments.map(s=>s.length);o.len_flag=1;o.lengths[i]=next;}
+   delete o.runtime_segments;
+  },{posed:true});
+ },
+ /** Pose drag on a slide or hinge: move to the point of its track nearest the
+  * pointer, relative to where the handle was grabbed. The track is captured at
+  * the gesture start, so a drag that returns to its start restores the pose. */
+ _moveMechanicalJoint(x,y,anchor){
+  const m=this.getSpatialMotion();if(!m||m.max<=m.min)return false;
+  const f=this.figure,o=this.object,i=this.selectedJoint,key=`mechanism:${o.unique_id}:${i}`;
+  let gesture=this._drag?.spatialGesture?.get(key);
+  const g=this.geometry.objects.get(this.selectedSlot);
+  if(!gesture){
+   const frame=g.segments[i].spatialFrame,r=f.segments[i]._stykRig.spatial,tip=spatialPoint(frame,r.tip),pivot=spatialPoint(frame,r.origin);
+   const axis=quatRotate(frame.q,m.type==='slide'?frame.axis:[0,0,1]);
+   const world=p=>{const v=spatialWorldVector(p,f,o).map(n=>n*o.scale);return[v[0]+g.root.x,v[1]+g.root.y,v[2]];};
+   const along=p=>{const d=p-m.value;if(m.type==='slide')return world(tip.map((n,k)=>n+axis[k]*d));
+    const h=Math.sin(d/2),turned=quatRotate([axis[0]*h,axis[1]*h,axis[2]*h,Math.cos(d/2)],tip.map((n,k)=>n-pivot[k]));return world(turned.map((n,k)=>n+pivot[k]));};
+   const start=along(m.value);
+   gesture={along,start,grab:anchor?unprojectSpatial(anchor,start[2],o,g.root):{x:start[0],y:start[1]}};
+   if(this._drag){this._drag.spatialGesture??=new Map();this._drag.spatialGesture.set(key,gesture);}
+  }
+  const pointer=unprojectSpatial({x,y},gesture.start[2],o,g.root),target=[gesture.start[0]+pointer.x-gesture.grab.x,gesture.start[1]+pointer.y-gesture.grab.y];
+  const distance=p=>{const q=gesture.along(p);return(q[0]-target[0])**2+(q[1]-target[1])**2;};
+  // Sample the track, then refine between the neighbours of the nearest sample.
+  const steps=96,at=k=>m.min+(m.max-m.min)*k/steps;
+  let best=0;for(let k=1;k<=steps;k++)if(distance(at(k))<distance(at(best)))best=k;
+  let lo=at(Math.max(0,best-1)),hi=at(Math.min(steps,best+1));
+  for(let n=0;n<40;n++){const a=lo+(hi-lo)/3,b=hi-(hi-lo)/3;if(distance(a)<=distance(b))hi=b;else lo=a;}
+  // Past either end the pointer lands exactly on that stop.
+  const value=[m.min,m.max].reduce((v,end)=>distance(end)<=distance(v)?end:v,(lo+hi)/2);
+  return this.setSpatialMotion(value)||true;
  },
  _clearSpatialIKDepth(){
   const o=this.object,s=this.figure?.segments[this.selectedJoint];if(o&&s)this._drag?.spatialGesture?.delete(`depth:${o.unique_id}:${s.segment_id}`);

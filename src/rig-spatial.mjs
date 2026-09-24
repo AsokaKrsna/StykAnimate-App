@@ -6,11 +6,12 @@ export const spatialBone=s=>Boolean(s?._stykRig?.spatial?.origin);
 export const spatialSkin=s=>Boolean(s?._stykRig?.spatial?.bindings);
 export const hasSpatialRig=figure=>Boolean(figure?.segments.some(s=>s._stykRig?.spatial));
 const sameVector=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&a.length===3&&b.length===3&&a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2];
+const sameMotion=(a,b)=>a===b||Boolean(a&&b&&a.type===b.type&&a.min===b.min&&a.max===b.max);
 export function sameSpatial(a,b){
   if(a===b)return true;if(!a||!b)return false;
   if(a.bindings||b.bindings)return Boolean(Array.isArray(a.bindings)&&Array.isArray(b.bindings)&&a.bindings.length===b.bindings.length&&sameVector(a.point,b.point)&&a.bindings.every((v,i)=>v?.joint===b.bindings[i]?.joint&&v?.weight===b.bindings[i]?.weight)&&
     (a.viewPoints===b.viewPoints||Array.isArray(a.viewPoints)&&Array.isArray(b.viewPoints)&&a.viewPoints.length===b.viewPoints.length&&a.viewPoints.every((p,i)=>sameVector(p,b.viewPoints[i]))));
-  return a.parent===b.parent&&a.turn===b.turn&&a.pitch===b.pitch&&sameVector(a.origin,b.origin)&&sameVector(a.tip,b.tip);
+  return a.parent===b.parent&&a.turn===b.turn&&a.pitch===b.pitch&&sameVector(a.origin,b.origin)&&sameVector(a.tip,b.tip)&&sameMotion(a.motion,b.motion);
 }
 export function validateSpatial(s,reference,dependencies,segments,ids){
   const vector=v=>Array.isArray(v)&&v.length===3&&[0,1,2].every(i=>Number.isFinite(v[i])&&Math.abs(v[i])<=1e6);
@@ -23,12 +24,25 @@ export function validateSpatial(s,reference,dependencies,segments,ids){
     for(const b of s.bindings){if(!b||Object.keys(b).some(k=>!['joint','weight'].includes(k))||!Number.isFinite(b.weight)||b.weight<=0||b.weight>1||seen.has(b.joint))throw new Error('Skin weights must use distinct joints and positive weights.');ref(b.joint,'Skin binding',true);if(!b.joint)throw new Error('Bind skin to an articulated joint.');seen.add(b.joint);sum+=b.weight;}
     if(Math.abs(sum-1)>1e-6)throw new Error('Skin weights must add up to one.');
   }else{
-    if(Object.keys(s).some(k=>!['parent','turn','pitch','origin','tip'].includes(k))||!vector(s.origin)||!vector(s.tip))throw new Error('An articulated joint needs a rest origin and tip.');
+    if(Object.keys(s).some(k=>!['parent','turn','pitch','origin','tip','motion'].includes(k))||!vector(s.origin)||!vector(s.tip))throw new Error('An articulated joint needs a rest origin and tip.');
+    if(s.motion!==undefined){
+      const m=s.motion,limit=m?.type==='hinge'?2*Math.PI:1e6;
+      if(!m||typeof m!=='object'||Array.isArray(m)||Object.keys(m).some(k=>!['type','min','max'].includes(k))||!['slide','hinge'].includes(m.type)||![m.min,m.max].every(v=>Number.isFinite(v)&&Math.abs(v)<=limit)||m.min>m.max)
+        throw new Error('A mechanical joint needs a slide or hinge type and a finite range from min to max.');
+      if(m.type==='slide'&&Math.hypot(...s.tip.map((n,i)=>n-s.origin[i]))<=EPS)throw new Error('A sliding joint slides from its origin toward its tip. Give it a tip.');
+    }
     ref(s.parent,'Spatial parent',true);ref(s.turn,'Turn control');ref(s.pitch,'Tilt control');
     if(!s.turn||!s.pitch||s.turn===s.pitch)throw new Error('Choose separate turn and tilt controls.');
   }
 }
-export function remapSpatial(s,map){return s.bindings?{point:[...s.point],bindings:s.bindings.map(b=>({...b,joint:map.get(b.joint)??b.joint})),...(s.viewPoints?{viewPoints:s.viewPoints.map(p=>[...p])}:{})}:{...s,origin:[...s.origin],tip:[...s.tip],...Object.fromEntries(['parent','turn','pitch'].map(k=>[k,map.get(s[k])??s[k]]))};}
+export function remapSpatial(s,map){return s.bindings?{point:[...s.point],bindings:s.bindings.map(b=>({...b,joint:map.get(b.joint)??b.joint})),...(s.viewPoints?{viewPoints:s.viewPoints.map(p=>[...p])}:{})}:{...s,origin:[...s.origin],tip:[...s.tip],...(s.motion?{motion:{...s.motion}}:{}),...Object.fromEntries(['parent','turn','pitch'].map(k=>[k,map.get(s[k])??s[k]]))};}
+/** Current travel of a mechanical joint from its native channels, within its range.
+ * Slides store rest length plus travel in the length channel; hinges use the
+ * ordinary bend relative to the parent, like a Pivot angle. */
+export function spatialMotionValue(s,{length,bend}){
+  const m=s.motion,raw=m.type==='slide'?length-Math.hypot(...s.tip.map((n,i)=>n-s.origin[i])):wrap(bend);
+  return Math.min(m.max,Math.max(m.min,raw));
+}
 export function quatMultiply(a,b){return[a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]];}
 export function quatRotate(q,p){const[x,y,z,w]=q,[a,b,c]=p,tx=2*(y*c-z*b),ty=2*(z*a-x*c),tz=2*(x*b-y*a);return[a+w*tx+y*tz-z*ty,b+w*ty+z*tx-x*tz,c+w*tz+x*ty-y*tx];}
 export function spatialQuaternion(bend,turn,pitch){
@@ -101,11 +115,22 @@ export function evaluateSpatial(s,{segment,input,get,root,scale,figureAngle,rest
   let point,start=input.start,spatial;
   if(s.bindings)point=skinPoint(s,get);
   else{
-    const parent=s.parent?get(s.parent).spatial:null,nativeBend=(input.angle-figureAngle)*sign-restAngle;
-    const turn=(get(s.turn).authoredAngle-figureAngle)*sign-referenceRest(s.turn),pitch=(get(s.pitch).authoredAngle-figureAngle)*sign-referenceRest(s.pitch);
-    const local=spatialQuaternion(nativeBend-(parent?.nativeBend??0),turn,pitch),q=parent?quatMultiply(parent.q,local):local;
-    const origin=parent?spatialPoint(parent,s.origin):s.origin,v=s.tip.map((n,i)=>n-s.origin[i]),length=Math.hypot(...v),rotatedOrigin=quatRotate(q,s.origin),t=origin.map((n,i)=>n-rotatedOrigin[i]);
-    const stretch=length>EPS&&Math.abs(scale)>EPS?input.length/scale/length:1,axis=length>EPS?v.map(n=>n/length):[0,1,0];
+    const parent=s.parent?get(s.parent).spatial:null,parentBend=parent?.nativeBend??0,motion=s.motion;
+    const v=s.tip.map((n,i)=>n-s.origin[i]),length=Math.hypot(...v),axis=length>EPS?v.map(n=>n/length):[0,1,0];
+    let nativeBend=(input.angle-figureAngle)*sign-restAngle,local,travel=0;
+    // Mechanical joints stay rigid on their track: a hinge turns only about the
+    // rest depth axis, a slide moves only along its rest axis, both within range.
+    if(motion?.type==='hinge'){const bend=spatialMotionValue(s,{bend:nativeBend-parentBend});local=spatialQuaternion(bend,0,0);nativeBend=parentBend+bend;}
+    else if(motion){local=[0,0,0,1];nativeBend=parentBend;travel=Math.abs(scale)>EPS?spatialMotionValue(s,{length:input.length/scale}):0;}
+    else{
+      const turn=(get(s.turn).authoredAngle-figureAngle)*sign-referenceRest(s.turn),pitch=(get(s.pitch).authoredAngle-figureAngle)*sign-referenceRest(s.pitch);
+      local=spatialQuaternion(nativeBend-parentBend,turn,pitch);
+    }
+    const q=parent?quatMultiply(parent.q,local):local;
+    let origin=parent?spatialPoint(parent,s.origin):s.origin;
+    if(travel){const direction=quatRotate(q,axis);origin=origin.map((n,i)=>n+direction[i]*travel);}
+    const rotatedOrigin=quatRotate(q,s.origin),t=origin.map((n,i)=>n-rotatedOrigin[i]);
+    const stretch=!motion&&length>EPS&&Math.abs(scale)>EPS?input.length/scale/length:1;
     spatial={q,t,dual:quatMultiply([...t,0],q).map(n=>n*.5),nativeBend,origin:s.origin,axis,stretch};
     // A hidden expression must lose its area, not flatten into a visible card.
     // Ordinary bones retain axial stretching and their existing radial width.
