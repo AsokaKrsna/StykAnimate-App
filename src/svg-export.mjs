@@ -77,7 +77,7 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
   width = dimension(width ?? sceneWidth, 'SVG width'); height = dimension(height ?? sceneHeight, 'SVG height');
   geometry ??= buildGeometry(report, frame);
   const {hasDrawableVfx}=await import('./vfx-canvas.mjs');
-  if(activeVfx(vfxStack(frame)).length||geometry.drawables.some(item=>hasDrawableVfx(item)||item.poly?._stykSurface?.depthTest)){
+  if(activeVfx(vfxStack(frame)).length||geometry.drawables.some(item=>hasDrawableVfx(item)||item.type==='mesh'||item.poly?._stykSurface?.depthTest)){
     if(!cameraEnabled)frame={...frame,camera:null};
     geometry={...geometry,drawables:geometry.drawables.filter(item=>layerVisible(report,item.obj.unique_id))};
     const {drawExportSceneTiled}=await import('./export-frame-core.mjs'),canvas=new OffscreenCanvas(width,height),context=canvas.getContext('2d');
