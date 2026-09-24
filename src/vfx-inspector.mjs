@@ -4,10 +4,13 @@ import {vfxClipActiveAt} from './vfx-clips.mjs';
 import {connectedVfxConflict} from './vfx-connected.mjs';
 import {VFX_REGISTRY,VFX_LIMIT,vfxProperty,resolvedVfx} from './vfx.mjs';
 import {effectAvailable} from './vfx-registry.mjs';
-import {VFX_PRESETS,presetAvailable} from './vfx-presets.mjs';
+import {VFX_PRESETS,PRESET_CATEGORIES,presetAvailable} from './vfx-presets.mjs';
+import {prewarmAtlas} from './vfx-generator-atlas.mjs';
+import {hasEffectPreview,cachedEffectPreview,requestEffectPreview} from './vfx-preset-preview.mjs';
 // Generated effects lead the catalogue; other categories keep registry order.
-const FIRST_CATEGORIES=['Generate','Particles & energy','Stage'],categoryRank=name=>{const i=FIRST_CATEGORIES.indexOf(name);return i<0?FIRST_CATEGORIES.length:i;};
+const FIRST_CATEGORIES=['Generate',...PRESET_CATEGORIES],categoryRank=name=>{const i=FIRST_CATEGORIES.indexOf(name);return i<0?FIRST_CATEGORIES.length:i;};
 import {vfxPaint} from './vfx-paint.mjs';
+import {vfxDescriptor} from './vfx.mjs';
 import {paintCSS} from './paint.mjs';
 import {openColorPicker} from './color-picker.mjs';
 import {PropertyControls} from './property-controls.mjs';
@@ -41,7 +44,7 @@ export class VfxInspector {
  }
  bindingEffects(b){return b.clip?this.editor.sampleVfxClip(b.clip):this.editor.vfxEffects(b.target);}
  readBinding(b){if(b.clipField)return (this.editor.getVfxClips().find(c=>c.id===b.clip)[b.clipField]+b.offset)*b.factor;const p=resolvedVfx(this.bindingEffects(b).find(e=>e.id===b.id)).params;return b.derived?(b.param==='angle'?Math.atan2(p.offsetY,p.offsetX)*180/Math.PI:Math.hypot(p.offsetX,p.offsetY)):p[b.param]*b.factor;}
- setVisible(visible){this.commit();this.visible=visible;this.editor._vfxTimelineVisible=visible;this.editor._emit('vfx-selection');this.root.hidden=!visible;this.properties.hidden=visible;if(!visible)this.closePopup();this.sync();this.onChange();}
+ setVisible(visible){this.commit();this.visible=visible;if(visible)prewarmAtlas();this.editor._vfxTimelineVisible=visible;this.editor._emit('vfx-selection');this.root.hidden=!visible;this.properties.hidden=visible;if(!visible)this.closePopup();this.sync();this.onChange();}
  get active(){return this.controls.active;}
  commit(){this.controls.commit();}
  cancel(){this.controls.cancel();}
@@ -117,7 +120,10 @@ export class VfxInspector {
    else if(!clip)this.editor.movieclipBatch('Change effect target',()=>{for(const object of this.editor.selectedObjects){const target={kind:'figure',uid:object.unique_id};if(this.editor.vfxEffects(target).length)this.editor.setVfxScope(target,scope==='connected');}});
   }
   this.scope=scope;this.selected=null;this.closePopup();this.sync();this.onChange();
- }else if(input.dataset.vfxChoice){const b=this.bindings.get(input.dataset.vfxChoice);this.commit();this.beforeEdit();this.setBinding(b,Number(input.value));this.sync();this.onChange();}}
+ }else if(input.dataset.vfxChoice){
+  // A style choice brings its own suggested colours and settings in the same undo step.
+  const b=this.bindings.get(input.dataset.vfxChoice),value=Number(input.value),applies=b.clip&&vfxDescriptor(b.property)?.applies?.[value];this.commit();this.beforeEdit();
+  if(applies)this.editor.setVfxClipParameters(b.clip,b.id,{[b.param]:value,...applies});else this.setBinding(b,value);this.sync();this.onChange();}}
  keydown(event){if(groupKeydown(this,event))return;if(event.key==='Escape'){this.closePopup();this.selected=null;for(const menu of this.root.querySelectorAll('.vfx-menu'))menu.open=false;this.sync();this.onChange();}if(event.altKey&&['ArrowUp','ArrowDown'].includes(event.key)&&event.target.closest('[data-vfx-drag]')){event.preventDefault();const row=event.target.closest('[data-vfx-id]');this.commit();this.beforeEdit();this.editor.moveVfx(JSON.parse(row.dataset.vfxTarget),row.dataset.vfxId,event.key==='ArrowUp'?-1:1);this.sync();this.onChange();}}
  dragstart(event){if(groupDragStart(this,event))return;const grip=event.target.closest('[data-vfx-drag]');if(!grip){event.preventDefault();return;}const row=grip.closest('[data-vfx-id]');this.dragged={target:row.dataset.vfxTarget,id:row.dataset.vfxId};event.dataTransfer.setData('application/x-styk-vfx',JSON.stringify(this.dragged));event.dataTransfer.effectAllowed='move';row.classList.add('is-dragging');}
  dragover(event){if(groupDragOver(this,event))return;const row=event.target.closest('[data-vfx-id]');if(!this.dragged||row?.dataset.vfxTarget!==this.dragged.target)return;event.preventDefault();event.dataTransfer.dropEffect='move';for(const item of this.root.querySelectorAll('.is-drop-target'))item.classList.remove('is-drop-target');row.classList.add('is-drop-target');}
@@ -135,7 +141,7 @@ export class VfxInspector {
   const scene=this.targets()[0]?.kind==='scene';
   const effects=(scene?['grade','vignette','bloom','crt']:['glow','outline','shadow','blur']).filter(type=>effectAvailable(type,scene));
   const presets=(scene?['Golden hour','Retro screen']:['Power up','Neon','Hit flash']).filter(name=>VFX_PRESETS[name]&&presetAvailable(VFX_PRESETS[name],scene,effectAvailable));
-  const generated=(scene?['Rain','Snow','Speed lines']:['Aura','Energy blast','Explosion','Impact sparks']).filter(name=>VFX_PRESETS[name]&&presetAvailable(VFX_PRESETS[name],scene,effectAvailable));
+  const generated=(scene?['Rain','Snow','Fog','Speed lines']:['Explosion','Aura','Energy blast','Smoke','Hit spark']).filter(name=>VFX_PRESETS[name]&&presetAvailable(VFX_PRESETS[name],scene,effectAvailable));
   const chip=(mode,key,label,art)=>`<button type="button" class="ds-chip" data-vfx-action="quick" data-vfx-quick="${mode}:${esc(key)}" aria-label="Add ${esc(label)}" ${locked?'disabled':''}>${vfxIcon(art)}${esc(label)}</button>`;
   const elsewhere=view==='playhead'&&total?`<button type="button" class="vfx-show-all" data-vfx-action="show-all">${total} on other frames · Show all</button>`:'';
   return `<div class="ds-empty vfx-empty-state"><strong>${view==='playhead'&&total?'No effects at this frame':'No effects yet'}</strong><div class="ds-empty-actions">${effects.map(type=>chip('add',type,VFX_REGISTRY[type].name,VFX_REGISTRY[type].icon)).join('')}</div><div class="ds-empty-actions vfx-empty-generated" aria-label="Particles and energy">${generated.map(name=>chip('presets',name,name,VFX_PRESETS[name].icon)).join('')}</div><div class="ds-empty-actions">${presets.map(name=>chip('presets',name,name,VFX_PRESETS[name].icon)).join('')}</div>${elsewhere}</div>`;
@@ -144,8 +150,11 @@ export class VfxInspector {
   this.closePopup();const scene=this.targets()[0]?.kind==='scene',popup=this.popup=document.createElement('div');popup.className='vfx-catalog';popup.setAttribute('popover','auto');popup.setAttribute('role','dialog');popup.setAttribute('aria-label',mode==='presets'?'VFX presets':'Add effect');
   const tabs=this.addToGroup?'':`<div class="ds-segmented vfx-catalog-tabs" role="tablist" aria-label="Catalogue">${[['add','Effects'],['presets','Presets']].map(([id,label])=>`<button type="button" role="tab" data-catalog-mode="${id}" aria-selected="${mode===id}">${label}</button>`).join('')}</div>`;
   popup.innerHTML=tabs+`<div class="vfx-catalog-search">${icon('search')}<input type="search" placeholder="${mode==='presets'?'Search presets':'Search effects'}" aria-label="Search ${mode==='presets'?'presets':'effects'}"></div><div class="vfx-catalog-results"></div>`;document.body.append(popup);popup.showPopover();
-  const available=mode==='presets'?Object.entries(VFX_PRESETS).filter(([,p])=>presetAvailable(p,scene,effectAvailable)).map(([name,p])=>({key:name,name,icon:p.icon,category:p.category??'Presets',count:p.effects.length})):Object.entries(VFX_REGISTRY).filter(([type])=>effectAvailable(type,scene)).map(([key,d])=>({key,...d,count:1}));
-  const draw=()=>{const query=popup.querySelector('input').value.toLowerCase(),items=available.filter(item=>(item.name+' '+item.category).toLowerCase().includes(query));popup.querySelector('.vfx-catalog-results').innerHTML=[...new Set(items.map(i=>i.category))].sort((a,b)=>categoryRank(a)-categoryRank(b)).map(category=>`<section><h3>${esc(category)}</h3><div class="vfx-catalog-grid">${items.filter(i=>i.category===category).map(item=>`<button type="button" class="vfx-catalog-card" data-choice="${esc(item.key)}" ${this.addToGroup&&this.editor.getVfxClips().find(c=>c.id===this.addToGroup)?.effects.length+item.count>VFX_LIMIT?'disabled':''}><span class="vfx-catalog-art vfx-art-${item.icon}">${vfxIcon(item.icon)}</span><span>${esc(item.name)}</span>${item.count>1?`<small>${item.count}</small>`:''}</button>`).join('')}</div></section>`).join('')||'<div class="vfx-empty">No results</div>';};
+  const available=mode==='presets'?Object.entries(VFX_PRESETS).filter(([,p])=>presetAvailable(p,scene,effectAvailable)).map(([name,p])=>({key:name,name,icon:p.icon,category:p.category??'Presets',count:p.effects.length,preview:hasEffectPreview(mode,name)})):Object.entries(VFX_REGISTRY).filter(([type])=>effectAvailable(type,scene)).map(([key,d])=>({key,...d,count:1,preview:hasEffectPreview(mode,key)}));
+  // Generated effects show a rendered still, filled in as previews finish.
+  const art=item=>{if(!item.preview)return `<span class="vfx-catalog-art vfx-art-${item.icon}">${vfxIcon(item.icon)}</span>`;const url=cachedEffectPreview(mode,item.key);return `<span class="vfx-catalog-art vfx-art-${item.icon}${url?' has-preview':''}" data-preview="${esc(item.key)}">${url?`<img alt="" src="${url}">`:vfxIcon(item.icon)}</span>`;};
+  const draw=()=>{const query=popup.querySelector('input').value.toLowerCase(),items=available.filter(item=>(item.name+' '+item.category).toLowerCase().includes(query));popup.querySelector('.vfx-catalog-results').innerHTML=[...new Set(items.map(i=>i.category))].sort((a,b)=>categoryRank(a)-categoryRank(b)).map(category=>{const list=items.filter(i=>i.category===category);return `<section><h3>${esc(category)}</h3><div class="vfx-catalog-grid${list.every(i=>i.preview)?' is-previews':''}">${list.map(item=>`<button type="button" class="vfx-catalog-card" data-choice="${esc(item.key)}" title="${esc(item.name)}" ${this.addToGroup&&this.editor.getVfxClips().find(c=>c.id===this.addToGroup)?.effects.length+item.count>VFX_LIMIT?'disabled':''}>${art(item)}<span>${esc(item.name)}</span>${item.count>1?`<small>${item.count}</small>`:''}</button>`).join('')}</div></section>`;}).join('')||'<div class="vfx-empty">No results</div>';
+   for(const node of popup.querySelectorAll('[data-preview]:not(.has-preview)'))requestEffectPreview(mode,node.dataset.preview,url=>{if(!node.isConnected)return;node.classList.add('has-preview');node.innerHTML=`<img alt="" src="${url}">`;});};
   popup.querySelector('input').addEventListener('input',draw);popup.addEventListener('click',event=>{const tab=event.target.closest('[data-catalog-mode]');if(tab){if(tab.dataset.catalogMode!==mode)this.openPopup(anchor,tab.dataset.catalogMode);return;}const button=event.target.closest('[data-choice]');if(!button||button.disabled)return;this.run(()=>this.addChoice(mode,button.dataset.choice));});
   popup.addEventListener('keydown',event=>{event.stopPropagation();if(event.key==='Escape'){this.closePopup();anchor.focus();}if(event.key==='ArrowDown'&&event.target.tagName==='INPUT'){event.preventDefault();popup.querySelector('button:not(:disabled)')?.focus();}});draw();
   // Measure the populated catalogue once so searching keeps the input stationary.

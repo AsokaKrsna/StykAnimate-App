@@ -1,5 +1,6 @@
 // Generated effects in the real app: live WebGPU and Canvas rendering, prepared
-// GPU and software playback packets, export, determinism and the editing UI.
+// GPU and software playback packets, export, determinism and the editing UI
+// (catalogue previews, style suggestions, Shuffle and beam picking).
 // Requires `npm run serve` (STYK_TEST_URL overrides http://127.0.0.1:47832).
 import {chromium} from 'playwright';
 import fs from 'node:fs/promises';
@@ -20,6 +21,8 @@ try{
   e.addVfxClip({kind:'figure',uid:1},'aura',{start:0,duration:60});
   const beam=e.addVfxClip({kind:'figure',uid:1},'beam',{start:4,duration:36});e.setVfxClipParameters(beam,e.getVfxClips().find(c=>c.id===beam).effects[0].id,{aimUid:2,aimHandle:0,seed:7});
   e.addVfxClip({kind:'figure',uid:2},'explosion',{start:14,duration:30});
+  // Cartoon smoke adds outlined sprite draws beneath its puffs.
+  const smoke=e.addVfxClip({kind:'figure',uid:2},'smoke',{start:0,duration:60});e.setVfxClipParameters(smoke,e.getVfxClips().find(c=>c.id===smoke).effects[0].id,{style:3,seed:3});
   const size={width:640,height:460},view={x:0,y:0,scale:1};
   const gpu=await createRenderer(document.createElement('canvas')),soft=await createRenderer(document.createElement('canvas'),{forceCanvas2D:true});
   gpu.resize(size.width,size.height,1);soft.resize(size.width,size.height,1);
@@ -84,6 +87,18 @@ try{
  await page.evaluate(()=>styk.editor.seek(24));await page.waitForTimeout(300);
  await page.screenshot({path:`${out}/editor-beam.png`});
  await page.keyboard.press('Control+z');clip=await page.evaluate(()=>styk.editor.getVfxClips()[0]);assert.equal(clip.effects[0].params.aimUid,0,'picking is one undo step');
+ // A style brings its suggested colour and settings in one undo step; Shuffle draws a new pattern.
+ const undo=await page.evaluate(()=>styk.editor._undo.length);
+ await page.locator('select[data-vfx-choice]').first().selectOption('1');
+ clip=await page.evaluate(()=>styk.editor.getVfxClips()[0]);assert.deepEqual([clip.effects[0].params.style,clip.effects[0].params.color,clip.effects[0].params.width],[1,0xff3148,6]);
+ assert.equal(await page.evaluate(()=>styk.editor._undo.length),undo+1);
+ const seed=clip.effects[0].params.seed;await page.getByRole('button',{name:'Shuffle',exact:true}).click();
+ assert.notEqual(await page.evaluate(()=>styk.editor.getVfxClips()[0].effects[0].params.seed),seed);
+ // Generated presets show rendered previews in the catalogue.
+ await page.locator('[data-vfx-action="presets"]').click();
+ await page.waitForFunction(()=>document.querySelectorAll('.vfx-catalog [data-preview]').length>20&&!document.querySelector('.vfx-catalog [data-preview]:not(.has-preview)'),null,{timeout:30000});
+ assert.equal(await page.locator('.vfx-catalog .vfx-catalog-results h3').first().textContent(),'Explosions');
+ await page.screenshot({path:`${out}/catalogue.png`});await page.keyboard.press('Escape');
  assert.deepEqual(errors,[]);
  await fs.writeFile(`${out}/browser.json`,JSON.stringify({date:new Date().toISOString(),rows:report,errors},null,2));
  console.log('vfx-generators.browser: ok');

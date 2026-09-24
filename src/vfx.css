@@ -300,3 +300,16 @@
 .vfx-aim>button>.icon{width:12px;height:12px;vertical-align:-2px}
 .vfx-aim-picking{cursor:crosshair!important}
 .vfx-aim-hint{margin:2px 0 4px;color:var(--theme-muted,#66707e);font-size:10.5px;line-height:1.4}
+/* Generated effects in the catalogue: rendered stills in a three-column grid. */
+.vfx-catalog-grid.is-previews{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.vfx-catalog-grid.is-previews .vfx-catalog-card{flex-direction:column;align-items:stretch;gap:4px;min-height:0;padding:4px}
+.vfx-catalog-grid.is-previews .vfx-catalog-art{flex:none;width:100%;height:auto;aspect-ratio:3/2;border-radius:6px;overflow:hidden}
+.vfx-catalog-grid.is-previews .vfx-catalog-art>.icon{width:20px;height:20px}
+.vfx-catalog-grid.is-previews .vfx-catalog-card>span:nth-child(2){display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;text-align:center;font-size:11px;line-height:1.25}
+.vfx-catalog-art.has-preview{background:#15131d}
+.vfx-catalog-art>img{display:block;width:100%;height:100%;object-fit:cover}
+.vfx-catalog-grid.is-previews .vfx-catalog-card:hover .vfx-catalog-art,.vfx-catalog-grid.is-previews .vfx-catalog-card:focus-visible .vfx-catalog-art{box-shadow:0 0 0 2px var(--theme-accent,#0d99ff)}
+.vfx-variation>button{display:inline-flex;align-items:center;gap:5px;height:24px;margin-left:auto;padding:0 9px;border:1px solid var(--theme-border,#e2e5ea);border-radius:6px;background:var(--theme-field,#f1f3f6);color:inherit;font:inherit;font-size:11px;cursor:pointer}
+.vfx-variation>button:hover:not(:disabled){background:var(--theme-hover,#eaedf1)}
+.vfx-variation>button:disabled{opacity:.5;cursor:default}
+.vfx-variation>button>.icon{width:13px;height:13px}

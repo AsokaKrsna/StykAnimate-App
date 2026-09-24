@@ -6,6 +6,7 @@ import {vfxVisibleKeys,vfxSelectedChannels,vfxChannelLabel,setVfxVisibleChannels
 import {openVfxChannelMenu} from './vfx-key-channel-menu.mjs';
 import {clipNumber,editGroupEffect,openGroupMenu} from './vfx-clip-controls.mjs';
 import {generatorClipActiveAt} from './vfx-generators.mjs';
+import {isGeneratorType} from './vfx-registry.mjs';
 
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const clipName=c=>c.name||VFX_REGISTRY[c.effects[0]?.type]?.name||'Effects';
@@ -35,7 +36,9 @@ function effectFields(host,clip,effect,locked,picked){
   const on=currentKey(clip,keys,host.editor.tick)?.tick===Math.floor(clipTime(clip,host.editor.tick));
   return `<div class="vfx-key-field${picked.length===1&&picked[0]===b.property?' is-channel-selected':''}" data-vfx-binding="${esc(key)}">${field}<button class="vfx-key${keys.length?' is-animated':''}${on?' is-keyed':''}" type="button" data-clip-key="${esc(key)}" aria-label="${on?'Remove':'Add'} ${esc(d.label)} key" title="${on?'Remove key':'Add key'}" ${locked?'disabled':''}>${icon('diamond')}</button></div>`;
  }).join('');
- const normal=aimRow(host,clip,effect,locked)+render(fields.filter(([,d])=>!d.advanced)),advanced=render(fields.filter(([,d])=>d.advanced));
+ // Generated effects can draw a new random pattern with the same settings.
+ const shuffle=isGeneratorType(effect.type)?`<div class="vfx-field vfx-variation"><label>Variation</label><button type="button" data-clip-action="shuffle" data-effect-id="${effect.id}" title="Same settings, new random pattern" ${locked?'disabled':''}>${vfxIcon('dice')}<span>Shuffle</span></button></div>`:'';
+ const normal=aimRow(host,clip,effect,locked)+render(fields.filter(([,d])=>!d.advanced))+shuffle,advanced=render(fields.filter(([,d])=>d.advanced));
  return normal+(advanced?`<details class="vfx-advanced"><summary>More</summary>${advanced}</details>`:'');
 }
 function keyNavigation(host,c,locked){
@@ -99,6 +102,7 @@ export function clipClick(host,event){
  const operation=button.dataset.clipAction;if(!operation)return false;
  host.commit();host.beforeEdit();const c=id&&e.getVfxClips().find(c=>c.id===id);
  if(operation==='channels'){openVfxChannelMenu(e,c,button,{signal:host.abort.signal});return true;}
+ if(operation==='shuffle'){const effect=c.effects.find(x=>x.id===button.dataset.effectId),seed=effect?.params.seed??1;e.setVfxClipParameters(id,button.dataset.effectId,{seed:1+(seed+Math.floor(Math.random()*65533))%65535});host.sync();host.onChange();return true;}
  if(operation==='aim-pick'){const effect=button.dataset.effectId,active=e._vfxAimPick?.clip===id&&e._vfxAimPick.effect===effect;e._vfxAimPick=active?null:{clip:id,effect};host.sync();host.onChange();return true;}
  if(operation==='aim-clear'){
   // Unlock in place: the stage point starts where the locked node is now.

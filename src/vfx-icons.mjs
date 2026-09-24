@@ -31,6 +31,7 @@ const shapes={
  confetti:'<path d="m4 20 6-14 8 8-14 6Z"/><path d="M14 4h.1M19 6h.1M20 11h.1M17 2l1 2" stroke-width="2.2"/>',
  speed:'<path d="M3 7h12M7 12h14M3 17h10"/>',
  lightning:'<path d="M13 2 5 13h6l-1 9 8-11h-6Z"/>',
+ dice:'<rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="M8.6 8.6h.1M15.4 8.6h.1M12 12h.1M8.6 15.4h.1M15.4 15.4h.1" stroke-width="2.6"/>',
  grip:'<path d="M9 5h.1m5 0h.1M9 12h.1m5 0h.1M9 19h.1m5 0h.1" stroke-width="3"/>',
  camera:'<rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="12" cy="12" r="4"/>',
  movieclip:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4m10 0h4M3 16h4m10 0h4m-10-8 5 4-5 4Z"/>',
