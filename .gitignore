@@ -18,10 +18,10 @@ __pycache__/
 # Generated per-package source identity (contains no user information).
 desktop/telemetry-build.json
 
-# Local media artifacts over GitHub's 100 MB file limit.
-design/higgsfield-launch/StykAnimate-Reborn-Editable.zip
-launchvideo/tools/ffprobe.exe
+# Local scratch output, Cloudflare dry-run builds, and sample projects.
+tmp/
+.wrangler/
+samples/
 
-# Local Python environments and downloaded tutorial voice models.
+# Local Python environments.
 .venv/
-videos/ik-tutorial/.models/
