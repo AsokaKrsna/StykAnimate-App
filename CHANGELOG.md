@@ -2,7 +2,7 @@
 
 The source of truth for release notes. Add completed work to Unreleased; move it into a new highest version when preparing a release. See docs/RELEASING.md for the format and checks.
 
-History starts with existing 0.5.5 metadata, with overlapping feedback instructions consolidated. Earlier evidence remains in docs/RELEASE-0.2.0.md and docs/RELEASE-0.3.0.md; this file does not infer missing release history or publication dates.
+History starts with existing 0.5.5 metadata, with overlapping feedback instructions consolidated. Earlier evidence remains in docs/releases/RELEASE-0.2.0.md and docs/releases/RELEASE-0.3.0.md; this file does not infer missing release history or publication dates.
 
 ## [Unreleased]
 

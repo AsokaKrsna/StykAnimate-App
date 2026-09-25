@@ -62,7 +62,7 @@ cache bytes. The native byte reservation describes the load's temporary peak,
 even after that storage is released. Sparse edits do not remeasure document
 growth; admission is reconsidered on the next full load. Decoders, live geometry,
 GPU drivers and multi-hour editing growth still need independent measurements.
-See [the performance evidence](PERFORMANCE-IMPROVEMENTS-2026-09-21.md).
+See [the performance evidence](performance/PERFORMANCE-IMPROVEMENTS-2026-09-21.md).
 
 Snapshot and patch yields retain their originating revision across foreground
 interaction suspension. Invalidation or worker failure releases those waits;
@@ -112,16 +112,16 @@ arrive; document, visibility and camera changes still reject incompatible poses.
 frame colors, sequential ticks and the absence of synchronous live fallback
 through quality reduction and restoration.
 
-- Regression details and current limits: [playback integrity review](PLAYBACK-INTEGRITY-2026-09-16.md).
+- Regression details and current limits: [playback integrity review](audits/PLAYBACK-INTEGRITY-2026-09-16.md).
 
-- The supplied 594-frame project, allocation findings, full-animation comparisons, 30/60 fps stress tests and their remaining limits are in [the Uriel performance report](URIEL-PERFORMANCE-2026-09-16.md).
+- The supplied 594-frame project, allocation findings, full-animation comparisons, 30/60 fps stress tests and their remaining limits are in [the Uriel performance report](performance/URIEL-PERFORMANCE-2026-09-16.md).
 - `node tests/raster-clip.browser.mjs`: CPU/GPU pixel equality and native brush state at three scales, removed drawing calls and byte-identical native/fallback embedded-image decoding. Unit image-resource checks cover shared crop budgets, covered-source reuse, thin/odd-sized images, export crop replacement and disposal during decode.
 - `node --test tests/playback-delivery.test.mjs`: bounded delivery, retention-before-next-allocation, stale acknowledgement rejection, replacement loads/invalidation, interaction suspension and bitmap disposal.
 - `node tests/playback-upload.browser.mjs`: exact staged/synchronous pixels, unchanged displayed pixels between upload slices, cancellation, protected cache eviction and bounded GPU ownership.
 - `node tests/playback-glyph-crop.browser.mjs`: contour/hole coverage and unsupported-path fallback, mirrored/rotated masks, signed scales, GPU edge/interior comparisons, duplicate-definition admission, allocation-free rejected glyph plans, partial-packet cancellation, and gradual quality recovery.
 - `node scripts/benchmark-project-playback.mjs <project.piv> <label>` records full-animation desktop timing, exact tick order, quality, allocation metrics and source hashes without saving the input. `STYK_BASELINE_SOURCES` can select a captured source snapshot; `STYK_PROBE_DPR` and `STYK_PROBE_MEMORY_GIB` record explicit diagnostic display/cache settings.
-- Full-animation regression measurements and the 0.5.5 client comparison are in [the September 11 performance report](PERFORMANCE-REGRESSION-2026-09-11.md).
-- Subsequent general renderer/cache/scheduling changes and their measured limits are in [the optimization report](PERFORMANCE-OPTIMIZATION-2026-09-11.md).
+- Full-animation regression measurements and the 0.5.5 client comparison are in [the September 11 performance report](performance/PERFORMANCE-REGRESSION-2026-09-11.md).
+- Subsequent general renderer/cache/scheduling changes and their measured limits are in [the optimization report](performance/PERFORMANCE-OPTIMIZATION-2026-09-11.md).
 - `node --test tests/preview-image.test.mjs tests/playback-resources.test.mjs tests/playback-raster-cache.test.mjs tests/playback.test.mjs tests/renderer-initial-scene.test.mjs tests/renderer-raster-cache.test.mjs tests/prepared-frames.test.mjs tests/editable-scene-preparation.test.mjs`
 - `node tests/adaptive-preview.browser.mjs`: generated 8192 × 4096 source (128 MiB decoded), zoom detail, simultaneous assets, cache reuse, budget recovery, real worker playback, unchanged original document, sequential/tiled export pixel comparisons, editing and undo, and editable texture budgeting with visible handles and quality status. Results and screenshots go to `artifacts/adaptive-preview/`.
 - `node --test tests/playback-software.test.mjs`: software packet contract, hidden/layer visibility baking, camera-baked mode semantics, cache format switching and bitmap release.

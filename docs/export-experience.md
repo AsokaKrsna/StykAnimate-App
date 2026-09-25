@@ -2,7 +2,7 @@
 
 For the September 13 direct-worker export optimization, Akane benchmark,
 compression comparisons and current validation, see
-[Export performance verification](EXPORT-PERFORMANCE.md).
+[Export performance verification](performance/EXPORT-PERFORMANCE.md).
 
 The export panel groups existing commands into Video, Animated image, Frames &
 sequences, and Editable file. `src/export-panel.mjs` owns presentation; capability

@@ -49,7 +49,7 @@ One straight stroke or single-pass circle can apply figure opacity directly in i
 
 `playback-window.mjs` plans lookahead within the selected half-open range. Non-looping playback stops preparation at its end; looping playback wraps within that range. Reverse seek neighbors remain bounded. This prevents speculative compilation of the opening from competing with presentation of the ending.
 
-The [dense playback and editing verification report](dense-playback-performance.md) records the September 13 before/after measurements, full-scene and corpus checks, and remaining pacing limits.
+The [dense playback and editing verification report](performance/dense-playback-performance.md) records the September 13 before/after measurements, full-scene and corpus checks, and remaining pacing limits.
 
 Compatibility features reuse the existing Pivot Canvas implementation at the **object** boundary: isolated object opacity, global outlines, text glyph paths, embedded sprite segments, translucent bent strokes, and self-crossing or very dense polygon fills. These objects are rasterized into bounded, cached textures, then composited by WebGPU in the same layer order. The complete scene is never rasterized into one texture. Object textures have a 4,096-pixel dimension cap and are regenerated at a zoom-dependent resolution; extreme magnification of these compatibility objects therefore has a finite detail limit. Obsolete textures are destroyed when figure geometry is replaced. Missing WebGPU adapters select an explicitly labeled Canvas 2D fallback.
 
@@ -57,11 +57,11 @@ Single solid text glyphs use reusable alpha masks from `renderer-glyphs.mjs`. An
 
 Playback caches immutable vector commands by geometry identity, retaining at most 32 MiB and 4,096 entries, further limited by the hardware plan. A changed painter slot patches a private copy of the transform indices; it never mutates an already published packet. Geometry keys are weak and the LRU owns only arrays, avoiding retention of obsolete scene graphs. Document/resource disposal clears the cache.
 
-Playback shares identical glyph content across definitions and can crop large masks to the camera's sampling bounds on their original pixel grid. Independent off-crop contours are culled using conservative control-point bounds; unsupported paths use the original painter. Allocation planning precedes bitmap captures. Up to three ready successors can upload into the existing GPU cache in cancellable slices, protecting the displayed frame and publishing only complete frames. See [adaptive preview](ADAPTIVE-PREVIEW.md) for admission, cancellation and quality-recovery rules, and [the Uriel report](URIEL-PERFORMANCE-2026-09-16.md) for measured results and remaining stalls.
+Playback shares identical glyph content across definitions and can crop large masks to the camera's sampling bounds on their original pixel grid. Independent off-crop contours are culled using conservative control-point bounds; unsupported paths use the original painter. Allocation planning precedes bitmap captures. Up to three ready successors can upload into the existing GPU cache in cancellable slices, protecting the displayed frame and publishing only complete frames. See [adaptive preview](ADAPTIVE-PREVIEW.md) for admission, cancellation and quality-recovery rules, and [the Uriel report](performance/URIEL-PERFORMANCE-2026-09-16.md) for measured results and remaining stalls.
 
 Preview workers rasterize path-only scratch surfaces of at most 262,144 pixels on a software-oriented Canvas context. Larger fills and image compositing retain acceleration. This keeps small Canvas jobs from blocking WebGPU presentation without moving large raster workloads onto the CPU. Two reusable scratch contexts own no retained packet pixels, release storage between captures, and are disposed with the worker resources. Export keeps its existing accelerated/original-resolution policy.
 
-Foreground editing, scrubbing and editable-frame preparation suspend queued playback compilation and its request timeouts; work resumes afterward. Superseded revisions still cancel and close partial packets. Cooperative scheduling between frames uses scheduler/MessageChannel tasks rather than clamped timers. Playback starts with about 100 ms of nearby packets (2–12 ticks), restricted to the active range and the measured cache capacity, so a one-frame cache cannot deadlock waiting for two frames. No ticks are skipped to improve measured FPS. See [the general optimization measurements](PERFORMANCE-OPTIMIZATION-2026-09-11.md) for full-animation, generated-scene, editing and pixel checks and their limits.
+Foreground editing, scrubbing and editable-frame preparation suspend queued playback compilation and its request timeouts; work resumes afterward. Superseded revisions still cancel and close partial packets. Cooperative scheduling between frames uses scheduler/MessageChannel tasks rather than clamped timers. Playback starts with about 100 ms of nearby packets (2–12 ticks), restricted to the active range and the measured cache capacity, so a one-frame cache cannot deadlock waiting for two frames. No ticks are skipped to improve measured FPS. See [the general optimization measurements](performance/PERFORMANCE-OPTIMIZATION-2026-09-11.md) for full-animation, generated-scene, editing and pixel checks and their limits.
 
 The Canvas 2D fallback requests a software-oriented surface (`willReadFrequently: true`) so it does not depend on the same accelerated drawing path that failed WebGPU initialization. Context loss suspends drawing and clears the onion, live-artwork and prepared-surface caches; restoration repaints the latest scene and invalidates the editor even when idle. Destroying the renderer removes these listeners. `tests/compatibility-canvas.browser.mjs` checks visible pixels after import, saved-file reopening, seeking, playback, pause, and simulated context restoration, with both missing WebGPU and a rejected `requestDevice()`.
 
@@ -209,7 +209,7 @@ Ordinary PNG crops use the browser decoder when the possible full RGBA source fi
 
 `PreviewImages` resolves lazy decode waits by URL, preserves pending backgrounds across coalesced batches, and rejects waits on disposal or decoding failure. Lazy lookahead requests only missing URLs and retains recent decoded images within its half of the image allowance. Its optional `priorityURLs` callback refreshes the bounded upcoming playback window before eviction: plain LRU otherwise discards the next prefetched image before recently displayed past frames. Priority never expands the byte cap. The application owns image invalidation through `managedInvalidation`; adding new lookahead URLs preserves complete GPU packets, while live edits and resized variants invalidate their consumers. Standalone image owners retain normal load events. Hidden camera/parallax monitors skip geometry evaluation and painting.
 
-See [the collection benchmark](animation-corpus-performance.md) for coverage, before/after results, remaining stalls and reproduction commands.
+See [the collection benchmark](performance/animation-corpus-performance.md) for coverage, before/after results, remaining stalls and reproduction commands.
 
 ## Shared definition redraws
 
@@ -237,7 +237,7 @@ Shared-rig history copies native numeric pose vectors directly and retains all
 other saved fields, including imported runtime lengths/bends. Its memory charge
 uses a conservative constant per numeric element instead of formatting whole
 pose arrays as JSON to measure them. Validation and independent undo ownership
-remain intact. See [shared-rig verification](SHARED-RIG-PERFORMANCE-2026-09-16.md).
+remain intact. See [shared-rig verification](performance/SHARED-RIG-PERFORMANCE-2026-09-16.md).
 
 ## Preview failure recovery
 

@@ -65,7 +65,7 @@ native skin surfaces in plain, reflected, perspective and near-clipped views
 refusals, live posing against fresh evaluation, snapshot sharing, Builder
 protection, bounds, painter-order splitting and artwork identity.
 `tests/spider-man-rig.test.mjs` checks the generated mesh asset.
-docs/SPATIAL-FIGURE-PERFORMANCE.md records the measurements.
+docs/performance/SPATIAL-FIGURE-PERFORMANCE.md records the measurements.
 
 ## Attached movieclip meshes
 

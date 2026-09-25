@@ -545,7 +545,7 @@ are reported as diagnostics, not a proof of leak absence. Reproduce with
 
 ## Reference behavior
 
-See [the guide/video/APK study](STICK-NODES-RIGGING-RESEARCH.md) for the inspected
+See [the guide/video/APK study](research/STICK-NODES-RIGGING-RESEARCH.md) for the inspected
 Stick Nodes formulas, behavioral differences, setup recipes and the latest
 Smart Stretch/angle-lock verification, including 69 focused tests and 14 rendered
 comparisons. Measurements above record the earlier connector work.

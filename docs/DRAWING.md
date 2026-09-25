@@ -496,7 +496,7 @@ Effects bypass views are idempotent, so render preparation
 does not wrap an already prepared view and invalidate the scene each frame.
 The camera's dotted outline clips its path before Canvas expands the dashes;
 offscreen perimeter length therefore cannot dominate drawing at deep zoom.
-See [zoom performance verification](DRAWING-PERFORMANCE.md).
+See [zoom performance verification](performance/DRAWING-PERFORMANCE.md).
 
 Dense live cels (more than 64 tiles) use a separate preview worker. Its source
 cache keeps one viewport's tiles and mip chain; tile versions identify changed
@@ -611,7 +611,7 @@ dense bounding-box limit. The embedded tile-blob and native-container limits
 remain separate persistence constraints.
 
 The September implementation audit, measured changes and remaining parity
-gaps are recorded in [the audit follow-up](DRAWING-IMPLEMENTATION-AUDIT.md).
+gaps are recorded in [the audit follow-up](audits/DRAWING-IMPLEMENTATION-AUDIT.md).
 
 ## Camera zoom quality and the road to vector ink
 

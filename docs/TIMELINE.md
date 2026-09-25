@@ -28,7 +28,7 @@ Remove Frames remains a separate command that removes time.
 
 The ruler coalesces pending pointer positions while an editable preview is being
 prepared and submitted. Release requests the exact final tick. See
-[editable scrubbing measurements](SCRUB-PERFORMANCE.md) for the scheduling
+[editable scrubbing measurements](performance/SCRUB-PERFORMANCE.md) for the scheduling
 contract, correctness checks, and remaining performance limits.
 
 With a VFX clip selected, previous/next frame shortcuts move the playhead without
