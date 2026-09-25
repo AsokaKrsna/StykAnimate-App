@@ -5,6 +5,7 @@
  */
 import {animationRotation} from './animation-origin.mjs';
 import {projection} from './spatial-projection.mjs';
+import {sameAnglePath,validateAnglePath,sampleAnglePath} from './rig-angle-path.mjs';
 import {sameWeightedJoint,validateWeightedJoint,remapWeightedJoint,weightedJoint} from './rig-weighted.mjs';
 import {sameSpatial,validateSpatial,remapSpatial,evaluateSpatial,spatialSkin} from './rig-spatial.mjs';
 const plans = new WeakMap();
@@ -34,12 +35,13 @@ export function* rigConstraintPlanSteps(figure) {
       p.branch===d?.branch&&p.source===d?.source&&p.restPosition===d?.restPosition&&p.automatic===f?.automatic&&
       p.responseMode===r?.response?.mode&&p.multiplier===r?.response?.multiplier&&p.reset===r?.response?.reset&&
       p.lockMode===r?.angleLock?.mode&&p.lockSpace===r?.angleLock?.space&&p.lockReference===r?.angleLock?.reference&&p.lockAngle===r?.angleLock?.angle&&p.lockRest===r?.angleLock?.restAngle&&p.lockFigureRest===r?.angleLock?.figureRestAngle&&p.lockMultiplier===r?.angleLock?.multiplier&&
-      p.secondaryReference===r?.angleLock?.secondary?.reference&&p.secondaryRest===r?.angleLock?.secondary?.restAngle&&p.secondaryMultiplier===r?.angleLock?.secondary?.multiplier&&sameWeightedJoint(p.weighted,r?.weighted)&&sameSpatial(p.spatial,r?.spatial);
+      p.secondaryReference===r?.angleLock?.secondary?.reference&&p.secondaryRest===r?.angleLock?.secondary?.restAngle&&p.secondaryMultiplier===r?.angleLock?.secondary?.multiplier&&sameAnglePath(p.anglePath,r?.anglePath)&&sameWeightedJoint(p.weighted,r?.weighted)&&sameSpatial(p.spatial,r?.spatial);
   })) return previous;
   const signature=new Array(segments.length),ids=new Map(),outgoing=new Array(segments.length),dependenciesByIndex=new Array(segments.length),indegree=new Uint32Array(segments.length);
   for(let i=0;i<segments.length;i++){
     const s=segments[i],r=s._stykRig,c=r?.connector,d=r?.stretch,f=r?.follow;
     signature[i]={id:s.segment_id,parent:s.parent_id,start:c?.start,end:c?.end,span:c?.restLength,rest:d?.restLength,min:d?.min,max:d?.max,width:d?.width,driver:f?.driver,mode:f?.mode,influence:f?.influence,orientation:r?.orientation};
+    if(r?.anglePath)signature[i].anglePath=structuredClone(r.anglePath);
     if(r?.weighted)signature[i].weighted=structuredClone(r.weighted);
     if(r?.spatial)signature[i].spatial=structuredClone(r.spatial);
     Object.assign(signature[i],{branch:d?.branch,source:d?.source,restPosition:d?.restPosition,automatic:f?.automatic,
@@ -55,16 +57,21 @@ export function* rigConstraintPlanSteps(figure) {
   for(let i=0;i<segments.length;i++) {
     const s=segments[i];
     const r=s._stykRig, c=r?.connector, d=r?.stretch, f=r?.follow;
-    if(r && (typeof r !== 'object' || Array.isArray(r) || Object.keys(r).some(k=>!['connector','stretch','follow','orientation','response','angleLock','weighted','spatial'].includes(k)))) throw new Error('Invalid rig behavior.');
+    if(r && (typeof r !== 'object' || Array.isArray(r) || Object.keys(r).some(k=>!['connector','stretch','follow','orientation','response','angleLock','anglePath','weighted','spatial'].includes(k)))) throw new Error('Invalid rig behavior.');
     if(r?.orientation!==undefined&&!['inherit','world'].includes(r.orientation))throw new Error('Choose a valid attachment orientation.');
     const dependencies = new Set([s.parent_id]);
     if(r?.spatial){
-      if(c||d||f||r.response||r.angleLock||r.weighted)throw new Error('Spatial articulation owns its transform; apply other relationships to its controls.');
+      if(c||d||f||r.response||r.angleLock||r.anglePath||r.weighted)throw new Error('Spatial articulation owns its transform; apply other relationships to its controls.');
       validateSpatial(r.spatial,reference,dependencies,segments,ids);
     }
     if(r?.weighted){
-      if(c||d||f||r.response||r.angleLock)throw new Error('A weighted joint follows its anchors; apply other behaviors to those anchors.');
+      if(c||d||f||r.response||r.angleLock||r.anglePath)throw new Error('A weighted joint follows its anchors; apply other behaviors to those anchors.');
       validateWeightedJoint(r.weighted,reference,dependencies);
+    }
+    if(r?.anglePath){
+      if(c||d||f||r.response||r.angleLock)throw new Error('An angle-path joint is positioned by its references; apply other rig behaviors to its anchors.');
+      validateAnglePath(r.anglePath,reference,dependencies);
+      if(r.anglePath.source!==undefined&&!segments[ids.get(r.anglePath.source)]._stykRig?.anglePath?.keys)throw new Error('Choose an angle-path joint as the depth source.');
     }
     if(c) {
       reference(c.start,'Connector start',true); reference(c.end,'Connector end',true);
@@ -142,6 +149,7 @@ export function remapRigReferences(segment, remap) {
   segment._stykRig={...r,
     ...(r.spatial?{spatial:remapSpatial(r.spatial,remap)}:{}),
     ...(r.weighted?{weighted:remapWeightedJoint(r.weighted,remap)}:{}),
+    ...(r.anglePath?{anglePath:{...r.anglePath,...Object.fromEntries(['driver','pitch','origin','source'].filter(k=>r.anglePath[k]!==undefined).map(k=>[k,remap.get(r.anglePath[k])??r.anglePath[k]]))}}:{}),
     ...(r.connector?{connector:{...r.connector,start:remap.get(r.connector.start)??r.connector.start,end:remap.get(r.connector.end)??r.connector.end}}:{}),
     ...(r.follow?{follow:{...r.follow,driver:remap.get(r.follow.driver)??r.follow.driver}}:{}),
     ...(r.angleLock?.reference!==undefined?{angleLock:{...r.angleLock,reference:remap.get(r.angleLock.reference)??r.angleLock.reference,
@@ -150,7 +158,7 @@ export function remapRigReferences(segment, remap) {
 export function rigWidth(ratio, response) {
   return response==='inverse'?1/Math.max(.01,ratio):response==='scale'?ratio:1;
 }
-export const derivedRigJoint=segment=>Boolean(spatialSkin(segment)||segment?._stykRig?.connector||segment?._stykRig?.angleLock||segment?._stykRig?.weighted);
+export const derivedRigJoint=segment=>Boolean(spatialSkin(segment)||segment?._stykRig?.connector||segment?._stykRig?.angleLock||segment?._stykRig?.anglePath||segment?._stykRig?.weighted);
 export function rigIKAllowed(figure,index) {
   return Boolean(figure.segments[index])&&!derivedRigJoint(figure.segments[index]);
 }
@@ -165,6 +173,20 @@ export function createRigEvaluation(figure, object, root, plan=rigConstraintPlan
     let {start,angle,length,bend}=input, width=1, inheritedRotation=rotation, ratio=1, handle, followAxis, followScale, position,span;
     if(r?.spatial)return states[i]=evaluateSpatial(r.spatial,{segment:seg,input,get:id=>states[plan.ids.get(id)],referenceRest:id=>figure.segments[plan.ids.get(id)].angle_rad??0,root,scale,figureAngle,mirror:Boolean(object.image_text_flags),restAngle:seg.angle_rad??0,camera,shape:object._stykSpatial?.shape?.[seg.segment_id]});
     if(r?.weighted)return states[i]=weightedJoint(r.weighted,joints,root,angle);
+    if(r?.anglePath){
+      const path=r.anglePath;let x,y,z,delta,origin;
+      if(path.source!==undefined){const source=states[plan.ids.get(path.source)];({pathOrigin:origin,pathRotation:delta,pathDepth:z}=source);x=z;y=0;}
+      else{
+        delta=figureAngle-path.figureRestAngle;origin=joints.get(path.origin)??root;
+        const turn=states[plan.ids.get(path.driver)].authoredAngle-path.restAngle-delta;
+        [x,y,z]=sampleAnglePath(path.keys,turn);
+        if(path.pitch!==undefined){const pitch=states[plan.ids.get(path.pitch)].authoredAngle-path.pitchRestAngle-delta,c=Math.cos(pitch),s=Math.sin(pitch),oldY=y;y=oldY*c-z*s;z=oldY*s+z*c;}
+      }
+      const c=Math.cos(delta),s=Math.sin(delta),dx=(x*c-y*s)*scale,dy=(x*s+y*c)*scale;
+      start=origin;angle=Math.atan2(dy,dx);length=Math.hypot(dx,dy);handle={x:origin.x+dx,y:origin.y+dy};
+      return states[i]={start,angle,authoredAngle:angle,length,bend:0,width:1,handle,rotation:angle-input.angle,ratio:1,impulseAngle:angle,
+        space:{rotation:delta,locked:true},pathOrigin:origin,pathRotation:delta,pathDepth:z};
+    }
     angle+=rotation;
     const source=plan.inputs[i],driver=source&&states[source.driver];
     let lockedAngle;

@@ -14,6 +14,13 @@ export function rigControlsView(editor,{builder=false}={}) {
       (w.depth?`<details class="rig-advanced"><summary>Depth anchors</summary>${fields(w.depth,'rig-weighted-depth-')}</details>`:'');
     return `<section class="inspector-section rig-properties"><div class="inspector-title">Weighted joint</div>${body}<p class="field-hint">Offsets from the origin are multiplied by their weights and added. Pose the anchors to move this joint.</p></section>`;
   }
+  if(r.anglePath){
+    const path=r.anglePath;
+    const body=path.source!==undefined?field('rig-path-source','Depth source joint',path.source,1,65535):
+      field('rig-path-driver','Turn joint',path.driver,1,65535)+field('rig-path-pitch','Nod joint (0 = off)',path.pitch??0,0,65535)+
+      `<details class="rig-advanced"><summary>Reference positions</summary>${path.keys.map((key,i)=>`<div class="rig-path-sample"><strong>${Math.round(key[0]*180/Math.PI*100)/100}°</strong>${['X','Y','Depth'].map((name,j)=>field(`rig-path-key-${i}-${j+1}`,name,key[j+1],-1e6,1e6,'px')).join('')}</div>`).join('')}</details>`;
+    return `<section class="inspector-section rig-properties"><div class="inspector-title">Angle-driven path</div>${body}</section>`;
+  }
   const plan=rigConstraintPlan(editor.figure),source=plan.inputs[editor.selectedJoint];
   const option=(v,label,current)=>`<option value="${v}" ${v===current?'selected':''}>${label}</option>`;
   const select=(id,label,items,current)=>`<label class="rig-select"><span>${label}</span><select id="${id}" class="inline-select" aria-label="${label}">${items.map(([v,l])=>option(v,l,current)).join('')}</select></label>`;
@@ -70,6 +77,15 @@ export function rigControlChange(editor,target) {
       }else return false;
     }
     editor.setRigBehavior({weighted});
+  }
+  else if(id.startsWith('rig-path-')){
+    const path=structuredClone(editor.figure.segments[editor.selectedJoint]._stykRig.anglePath),match=/^rig-path-key-(\d+)-([123])$/.exec(id);
+    if(match)path.keys[Number(match[1])][Number(match[2])]=value;
+    else if(id==='rig-path-pitch')path.pitch=value||undefined;
+    else if(id==='rig-path-driver')path.driver=value;
+    else if(id==='rig-path-source')path.source=value;
+    else return false;
+    editor.setRigBehavior({anglePath:path});
   }
   else if(id==='rig-position')editor.setConnectorPosition(value/100);
   else if(id==='rig-stretch-enabled')editor.enableSmartStretch(target.checked);

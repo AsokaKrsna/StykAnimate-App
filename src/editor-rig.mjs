@@ -36,7 +36,7 @@ export const editorRigMethods = {
   /** In reposition mode only the dragged joint moves; connected endpoints stay fixed. */
   beginRigDrag({reposition = true, label = 'Edit rig'} = {}) {
     if(this.figure?.segments[this.selectedJoint]?._stykRig?.spatial)throw new Error('Use Pose or Rotate to articulate this joint. Its rest position belongs to the spatial skin binding.');
-    if(this.figure?.segments[this.selectedJoint]?._stykRig?.weighted)return false;
+    if(this.figure?.segments[this.selectedJoint]?._stykRig?.anglePath||this.figure?.segments[this.selectedJoint]?._stykRig?.weighted)return false;
     if (this.figure?.segments[this.selectedJoint]?._stykRig?.connector) return this.beginDrag('Slide connector');
     if (!this.figure?.segments[this.selectedJoint]) return false;
     if (Math.abs(this.object.scale) < EPS) throw new Error('Increase figure scale before editing its rig.');
@@ -59,7 +59,7 @@ export const editorRigMethods = {
     if (this.frameIndex !== drag.index || this.selectedUid !== rig.uid || this.figure !== rig.figure) { this.cancelRigDrag(); throw new Error('The edited figure changed during the rig gesture.'); }
     try {
       const object = this.object, selected = rig.geometry.segments[rig.index], point = {x, y}, changes = new Map();
-      if(selected.seg._stykRig?.weighted)return false;
+      if(selected.seg._stykRig?.anglePath||selected.seg._stykRig?.weighted)return false;
       const movePoint = reposition ?? rig.reposition;
       if(selected.seg._stykRig?.angleLock){
         const current=rig.object.len_flag?rig.object.lengths[rig.index]:rig.figure.segments[rig.index].length;

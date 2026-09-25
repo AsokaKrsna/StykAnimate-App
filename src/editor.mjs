@@ -1089,7 +1089,7 @@ export class Editor extends EventTarget {
     return state;
   }
   poseJoint(x, y, {stretch = false, isolate = false, snap = true, snapTolerance = 6, alternate = false, pixel = 0, anchor = null} = {}) {
-    if(spatialSkin(this.figure?.segments[this.selectedJoint])||this.figure?.segments[this.selectedJoint]?._stykRig?.weighted)return false;
+    if(spatialSkin(this.figure?.segments[this.selectedJoint])||this.figure?.segments[this.selectedJoint]?._stykRig?.anglePath||this.figure?.segments[this.selectedJoint]?._stykRig?.weighted)return false;
     finite(x, 'Joint X'); finite(y, 'Joint Y');
     finite(snapTolerance, 'Snap tolerance'); if (snapTolerance < 0) throw new Error('Snap tolerance cannot be negative.');
     if (!this.object || this.selectedJoint < 0) return false;
