@@ -7,9 +7,9 @@ export function paintMotionRow(host,ctx,layer,y){
   const left=start*host.pxPerTick-host._offsetX(),width=duration*host.pxPerTick;
   ctx.fillStyle=host.colors.line;ctx.fillRect(0,y+31,host.width,1);
   ctx.globalAlpha=clip.enabled?1:.4;ctx.beginPath();ctx.roundRect(left+1,y+6,Math.max(2,width-2),20,5);
-  ctx.fillStyle=selected?host.colors.accent:host.colors['camera-tint'];ctx.fill();ctx.strokeStyle=host.colors.accent;ctx.stroke();
-  ctx.save();ctx.beginPath();ctx.rect(left+5,y+6,Math.max(0,width-10),20);ctx.clip();ctx.font=`11px ${host.font}`;ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.fillStyle=selected?'#fff':host.colors.ink;ctx.fillText(CAMERA_MOTION_TYPES[clip.type],left+9,y+20);ctx.restore();ctx.globalAlpha=1;
-  if(selected){ctx.fillStyle='#fff';ctx.fillRect(left+3,y+12,2,8);ctx.fillRect(left+width-5,y+12,2,8);}
+  ctx.fillStyle=selected?host.colors.selected:host.colors['camera-tint'];ctx.fill();ctx.strokeStyle=host.colors.accent;ctx.stroke();
+  ctx.save();ctx.beginPath();ctx.rect(left+5,y+6,Math.max(0,width-10),20);ctx.clip();ctx.font=`11px ${host.font}`;ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.fillStyle=host.colors.ink;ctx.fillText(CAMERA_MOTION_TYPES[clip.type],left+9,y+20);ctx.restore();ctx.globalAlpha=1;
+  if(selected){ctx.fillStyle=host.colors.accent;ctx.fillRect(left+3,y+12,2,8);ctx.fillRect(left+width-5,y+12,2,8);}
 }
 export const cameraMotionTimelineMethods={
   _refreshMotionRows(){

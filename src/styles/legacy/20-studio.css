@@ -357,7 +357,7 @@ dialog::backdrop { background: var(--theme-backdrop, #18273c55); backdrop-filter
 .workspace-switch { padding: 0; gap: 16px; background: none; border-radius: 0; align-self: stretch; }
 .workspace-switch button { height: 100%; padding: 0 2px; border-radius: 0; border-bottom: 2px solid transparent; color: var(--muted); }
 .workspace-switch button[aria-pressed=true] { box-shadow: none; background: none; border-bottom-color: var(--theme-accent, #2385cd); }
-.canvas-toolbar .crumb { margin-left: 8px; opacity: .8; }
+.canvas-toolbar .crumb { margin-left: 8px; }
 .canvas-options { gap: 6px; }
 .canvas-options .button { width: 30px; height: 30px; }
 #viewport { background: var(--theme-workspace, #ededf0); }

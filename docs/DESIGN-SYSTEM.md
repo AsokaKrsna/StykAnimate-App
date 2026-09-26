@@ -7,7 +7,8 @@ older token names at it, so every surface uses the brand palette before it is
 rebuilt. The shared legacy components (buttons, segmented controls, switches,
 empty states) are still styled by `src/styles/legacy/45-design-system.css`.
 Artwork, paint swatches, joint colours and export previews keep their own
-colours.
+colours. Brush preset thumbnails show a stroke's shape, not its colour, so dark
+mode inverts them to light strokes.
 
 ## Stylesheets and cascade layers
 

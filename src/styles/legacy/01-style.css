@@ -1246,9 +1246,10 @@ input[type="checkbox"] {
   width: 13px;
   height: 13px;
 }
+/* The Windows close button: a fixed red with a white glyph in both themes. */
 #window-controls button:last-child:hover {
-  background: var(--theme-danger-action, #e5484d);
-  color: var(--on-danger);
+  background: #c42b1c;
+  color: #fff;
 }
 #menu {
   position: fixed;
