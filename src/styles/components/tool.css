@@ -1,0 +1,43 @@
+/* Tool button (components.md "Tool button and Rail"): a 36px square, radius
+ * 10, glyph 20, --text-2 on the rail's field. The active tool
+ * [aria-pressed="true"] is a white tile with the one rest shadow and a blue
+ * glyph. A tool with variants (the Tweener, Select pixels, Shapes) keeps
+ * today's corner tick, .ui-tool-tick: a decorative 5px triangle (aria-hidden)
+ * in --text-3, blue while the tool is active; the rail's owner lists the
+ * variants on a click on the tick, a right-click or a long press, and while
+ * the tool is active they are a segmented control in its tool options. Keeps
+ * data-tool and the tools' ids on the same element. Inert until markup
+ * carries .ui-tool-button. */
+@layer components {
+  .ui-tool-button {
+    --icon-size: var(--icon-xl);
+    position: relative;
+    display: inline-grid; place-items: center; flex: none;
+    inline-size: var(--control-xl); block-size: var(--control-xl); padding: 0;
+    border: 1px solid transparent; border-radius: var(--radius-lg);
+    background: transparent; color: var(--text-2);
+    transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+    -webkit-app-region: no-drag;
+  }
+  .ui-tool-button > svg { inline-size: var(--icon-size); block-size: var(--icon-size); }
+  .ui-tool-button:where(:hover):not(:disabled) { background: var(--surface-hover); color: var(--text-1); }
+  .ui-tool-button:where(:active):not(:disabled) { background: var(--surface-pressed); }
+  .ui-tool-button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset); }
+  /* After hover and press: the active tool keeps its white tile under the pointer. */
+  .ui-tool-button[aria-pressed="true"] { background: var(--control-thumb); color: var(--accent-text); box-shadow: var(--elevation-1); }
+  .ui-tool-button:disabled { opacity: 0.42; }
+
+  .ui-tool-tick {
+    position: absolute; inset-block-end: 4px; inset-inline-end: 4px;
+    inline-size: 5px; block-size: 5px;
+    background: var(--text-3); clip-path: polygon(100% 0, 100% 100%, 0 100%);
+    pointer-events: none;
+  }
+  .ui-tool-button:where([aria-pressed="true"]) > .ui-tool-tick { background: var(--accent-text); }
+  .ui-tool-tick:where(:dir(rtl)) { clip-path: polygon(0 0, 100% 100%, 0 100%); }
+
+  @media (forced-colors: active) {
+    .ui-tool-button[aria-pressed="true"] { border-color: Highlight; color: Highlight; }
+    .ui-tool-tick { background: CanvasText; }
+  }
+}
