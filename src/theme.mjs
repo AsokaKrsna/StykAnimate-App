@@ -19,7 +19,7 @@ export function applyEditorTheme(value) {
   const theme = preference === 'system' ? (systemTheme?.matches ? 'dark' : 'light') : preference;
   const changed = document.documentElement.dataset.theme !== theme;
   document.documentElement.dataset.theme = theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#202227' : '#f8f8fa');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0a0b0f' : '#f5f6f9');
   // A small, best-effort cache lets the blocking bootstrap restore desktop
   // appearance before the authoritative preferences arrive over IPC.
   try { localStorage.setItem(THEME_CACHE_KEY, preference); } catch { /* Storage can be unavailable. */ }

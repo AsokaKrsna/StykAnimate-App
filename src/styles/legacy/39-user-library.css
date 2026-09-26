@@ -53,8 +53,8 @@
 .library-empty.ds-empty{padding:28px 8px}
 .library-empty .ds-empty-actions .button{box-shadow:none}
 .library-item-actions{padding:8px 12px;gap:6px}
-.library-item-actions button:first-child{flex:1.4;background:var(--theme-action,#0d99ff);border-color:var(--theme-action,#0d99ff);color:#fff;font-weight:600}
-.library-item-actions button:first-child:hover{background:var(--theme-action-hover,#0086e6)}
+.library-item-actions button:first-child{flex:1.4;background:var(--primary);border-color:var(--primary);color:var(--on-primary);font-weight:600}
+.library-item-actions button:first-child:hover{background:var(--primary-hover)}
 .library-save{padding:10px 12px 8px;gap:6px}
 .library-save>.button{height:32px}
 .library-footer-row{display:flex;align-items:center;justify-content:space-between;gap:8px}

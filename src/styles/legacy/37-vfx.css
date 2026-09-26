@@ -39,7 +39,7 @@
 .vfx-paint>span{height:19px;flex:1;background:var(--paint);border-radius:3px}.vfx-paint>.icon{width:12px}
 #vfx-panel .vfx-toggle{width:28px;min-height:16px;height:16px;border:0;border-radius:20px;padding:2px;background:var(--theme-border)}
 .vfx-toggle>i{display:block;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 2px #0002;transition:transform .12s}
-#vfx-panel .vfx-toggle[aria-pressed=true]{background:var(--theme-action,#0d99ff)}.vfx-toggle[aria-pressed=true]>i{transform:translateX(12px)}
+#vfx-panel .vfx-toggle[aria-pressed=true]{background:var(--theme-action,#0d99ff)}.vfx-toggle[aria-pressed=true]>i{transform:translateX(12px);background:var(--switch-knob-on)}
 .vfx-advanced{margin-top:5px;border-top:1px solid var(--theme-border);padding-top:6px}.vfx-advanced>summary{cursor:pointer;font-size:10px;color:var(--theme-muted);padding:3px 0;user-select:none}
 .vfx-quick{display:flex;justify-content:flex-end;gap:3px;margin-top:5px}#vfx-panel .vfx-quick>button{min-height:23px;height:23px;padding:3px;border:0;background:transparent;color:var(--theme-muted)}
 .vfx-quick button>span{display:none}.vfx-quick .icon{width:14px;height:14px}.vfx-quick button[data-vfx-action=remove]:hover{color:var(--theme-danger,#d24646)!important}
@@ -201,9 +201,9 @@
 .vfx-actions{display:flex;gap:6px;padding:0 12px 10px;border-bottom:1px solid var(--theme-border,#e2e5ea);flex-shrink:0}
 #vfx-panel .vfx-actions>button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:30px;border-radius:7px;font-size:11px;font-weight:500}
 #vfx-panel .vfx-actions .icon{width:14px;height:14px}
-#vfx-panel .vfx-add-button{flex:1;background:var(--theme-action,#0d99ff);border-color:var(--theme-action,#0d99ff);color:#fff;font-weight:600}
-#vfx-panel .vfx-add-button:hover:not(:disabled){background:var(--theme-action-hover,#0086e6)}
-#vfx-panel .vfx-add-button .icon{color:#fff}
+#vfx-panel .vfx-add-button{flex:1;background:var(--primary);border-color:var(--primary);color:var(--on-primary);font-weight:600}
+#vfx-panel .vfx-add-button:hover:not(:disabled){background:var(--primary-hover)}
+#vfx-panel .vfx-add-button .icon{color:var(--on-primary)}
 #vfx-panel .vfx-presets-button{flex:1}
 #vfx-panel .vfx-paste-button{flex:0 0 30px;padding:0}
 #vfx-panel .vfx-stack{padding-top:10px}

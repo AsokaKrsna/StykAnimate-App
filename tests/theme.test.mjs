@@ -41,7 +41,7 @@ test('Browser bootstrap restores the saved appearance without waiting for module
   ]) {
     const {dataset,meta}=boot(values);
     assert.equal(dataset.theme,'dark');
-    assert.equal(meta.content,'#202227');
+    assert.equal(meta.content,'#0a0b0f');
   }
   for (const values of [{},new Error('Storage denied'),{'stykanimate.editor.settings.v1':'invalid'}])
     assert.equal(boot(values).dataset.theme,'light');
@@ -56,7 +56,7 @@ test('Native preferences win on a new backend origin before revealing the worksp
   const settings=await result.window.stykInitialEditorSettings;
   assert.equal(settings.theme,'dark');
   assert.equal(result.dataset.theme,'dark');
-  assert.equal(result.meta.content,'#202227');
+  assert.equal(result.meta.content,'#0a0b0f');
   assert.ok(!('themePending' in result.dataset));
   const light=boot({'stykanimate.theme.v1':'dark'}, () => ({theme:'light'}));
   await light.window.stykInitialEditorSettings;
@@ -68,4 +68,43 @@ test('A native preference read failure cannot leave the workspace hidden', async
   assert.equal(await result.window.stykInitialEditorSettings,undefined);
   assert.equal(result.dataset.theme,'light');
   assert.ok(!('themePending' in result.dataset));
+});
+
+const source = file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+const tokens = source('src/styles/tokens.css');
+/** Declarations (name → value) of the first rule with this selector, or of every one. */
+function block(selector, every = false) {
+  const declarations = new Map();
+  for (let start = tokens.indexOf(`${selector} {`); start >= 0; start = every ? tokens.indexOf(`${selector} {`, start + 1) : -1) {
+    const body = tokens.slice(start, tokens.indexOf('}', start)).replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const [, name, value] of body.matchAll(/(--[\w-]+):\s*([^;]+);/g)) declarations.set(name, value.trim());
+  }
+  assert.ok(declarations.size, `tokens.css has ${selector}`);
+  return declarations;
+}
+const primitives = block(':root', true);
+const resolve = (theme, name) => {
+  const value = theme.get(name) ?? primitives.get(name);
+  const reference = /^var\((--[\w-]+)\)$/.exec(value ?? '');
+  return reference ? resolve(theme, reference[1]) : value;
+};
+
+test('Colours painted before the stylesheets load match the brand window colour', () => {
+  const light = block(':root[data-theme="light"]'), dark = block(':root[data-theme="dark"]');
+  const [lightField, darkField] = [resolve(light, '--surface-field'), resolve(dark, '--surface-field')];
+  assert.deepEqual([lightField, darkField], ['#f5f6f9', '#0a0b0f']);
+  assert.equal(resolve(new Map(), '--surface-prepaint'), darkField, 'the desktop editor is hidden on the dark window colour');
+  for (const file of ['src/theme-bootstrap.js', 'src/theme.mjs'])
+    assert.ok(source(file).includes(`'${darkField}' : '${lightField}'`), `${file} uses the brand theme colours`);
+  assert.ok(source('index.html').includes(`<meta name="theme-color" content="${lightField}"`), 'index.html starts light');
+  assert.ok(source('desktop/main.cjs').includes(`backgroundColor: '${darkField}'`), 'the desktop window stays dark until settings load');
+});
+
+test('Every legacy token name resolves to a brand token in both themes', () => {
+  const bridge = source('src/styles/legacy-bridge.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const declared = new Set([...tokens.matchAll(/(--[\w-]+):/g)].map(match => match[1]));
+  const references = [...bridge.matchAll(/var\((--[\w-]+)\)/g)].map(match => match[1]);
+  assert.ok(references.length > 40);
+  for (const name of references) assert.ok(declared.has(name), `${name} is defined in tokens.css`);
+  assert.doesNotMatch(bridge, /#[0-9a-f]{3,8}\b|rgba?\(/i, 'the bridge holds no colour literals');
 });

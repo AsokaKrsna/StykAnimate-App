@@ -104,8 +104,8 @@
 .button:active:not(:disabled) { box-shadow: none; }
 .button.subtle { box-shadow: none; }
 .button.subtle:hover:not(:disabled) { border-color: transparent; }
-.button.primary { background: var(--theme-action); border-color: var(--theme-action); color: #fff; font-weight: var(--ds-weight-strong); }
-.button.primary:hover:not(:disabled) { background: var(--theme-action-hover); border-color: var(--theme-action-hover); }
+.button.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: var(--ds-weight-strong); }
+.button.primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
 .button.primary:disabled { opacity: 1; background: var(--theme-field); border-color: var(--theme-border); color: var(--theme-muted); box-shadow: none; }
 .button.small { height: var(--ds-control-sm); padding: 0 10px; border-radius: var(--ds-radius-sm); }
 .button.danger { color: var(--theme-danger); }
@@ -194,7 +194,7 @@ dialog::backdrop, .library-dialog::backdrop { background: var(--theme-backdrop);
 .ds-switch > input { position: relative; flex: none; appearance: none; width: 28px; height: 16px; margin: 1px 0 0; border-radius: 999px; background: var(--theme-border-strong); cursor: pointer; transition: background-color var(--ds-fast) var(--ds-ease); }
 .ds-switch > input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px #0003; transition: transform var(--ds-fast) var(--ds-ease); }
 .ds-switch > input:checked { background: var(--theme-action); }
-.ds-switch > input:checked::after { transform: translateX(12px); }
+.ds-switch > input:checked::after { transform: translateX(12px); background: var(--switch-knob-on); }
 .ds-switch > input:focus-visible { outline: 2px solid var(--theme-accent); outline-offset: 2px; }
 .ds-switch > span { display: grid; gap: 2px; min-width: 0; }
 .ds-switch small { color: var(--theme-muted); font-size: var(--ds-text-xs); line-height: 1.4; }

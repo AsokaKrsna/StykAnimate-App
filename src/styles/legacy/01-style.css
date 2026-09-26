@@ -683,11 +683,11 @@ input[type="checkbox"] {
   height: 27px;
   margin: 0 3px;
   border-radius: 4px;
-  background: var(--theme-action, #0d99ff);
-  color: #fff;
+  background: var(--primary);
+  color: var(--on-primary);
 }
 .play-button:hover {
-  background: var(--theme-action-hover, #0086e6) !important;
+  background: var(--primary-hover) !important;
 }
 .play-button .icon {
   width: 15px;
@@ -1056,7 +1056,7 @@ input[type="checkbox"] {
   background: var(--theme-action, #0d99ff);
   border-color: var(--theme-action, #0d99ff);
 }
-.property-toggle > input:checked ~ .property-toggle-track::after { transform: translateX(10px); }
+.property-toggle > input:checked ~ .property-toggle-track::after { transform: translateX(10px); background: var(--switch-knob-on); }
 .property-toggle:has(> input:focus-visible) { outline: 2px solid var(--theme-accent, #0d99ff); outline-offset: 2px; }
 .property-toggle:has(> input:disabled) { opacity: .45; cursor: default; }
 .joint-settings, .secondary-color-settings { margin-top: 12px; }
@@ -1237,7 +1237,7 @@ input[type="checkbox"] {
 }
 #window-controls button:last-child:hover {
   background: var(--theme-danger-action, #e5484d);
-  color: #fff;
+  color: var(--on-danger);
 }
 #menu {
   position: fixed;
@@ -2071,5 +2071,5 @@ dialog.styk-settings .styk-settings-row select[data-setting="locale"] {
 .paint-magnifier-label span{width:12px;height:12px;border:1px solid #fff8;border-radius:3px}
 .paint-magnifier-label code{font:11px/1.2 Consolas,monospace;letter-spacing:.3px}
 .paint-picker [data-eyedropper]{display:inline-flex;align-items:center;gap:6px;margin-left:auto;border:1px solid var(--theme-border, #ddd);font:inherit}
-.paint-picker [data-eyedropper][aria-pressed=true]{background:var(--theme-accent, #0d99ff);color:#fff;border-color:transparent}
+.paint-picker [data-eyedropper][aria-pressed=true]{background:var(--accent-strong);color:var(--text-on-strong);border-color:transparent}
 .paint-picker .paint-swatches{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:4px;margin:12px 0 0}.paint-picker .paint-swatches button{aspect-ratio:1;min-width:0;height:auto;padding:0;border:1px solid var(--theme-border,#e2e2e2);border-radius:4px}.paint-picker .paint-swatches button:hover{outline:2px solid var(--theme-accent,#0d99ff);outline-offset:1px}

@@ -20,8 +20,8 @@
 .styk-settings-row>span:first-child{min-width:0}
 .styk-settings-row input[type=checkbox]{appearance:none;width:30px;height:18px;flex-shrink:0;margin:0;border:1px solid var(--theme-border,#bbb);border-radius:20px;background:var(--theme-field,#e7e7e7);position:relative;cursor:pointer}
 .styk-settings-row input[type=checkbox]::before{content:'';position:absolute;width:12px;height:12px;left:2px;top:2px;border-radius:50%;background:var(--theme-secondary,#777)}
-.styk-settings-row input[type=checkbox]:checked{background:var(--theme-accent,#007be5);border-color:var(--theme-accent,#007be5)}
-.styk-settings-row input[type=checkbox]:checked::before{left:14px;background:white}
+.styk-settings-row input[type=checkbox]:checked{background:var(--accent-strong);border-color:var(--accent-strong)}
+.styk-settings-row input[type=checkbox]:checked::before{left:14px;background:var(--switch-knob-on)}
 .styk-settings-row input[type=number],.styk-settings-row select{width:90px;height:34px;padding:0 9px;border:1px solid var(--theme-border,#ddd);border-radius:6px;background:var(--theme-field,#f2f2f2);font-size:12px}
 .styk-settings-row select{width:160px;max-width:60%;text-overflow:ellipsis}
 .styk-settings-row input[type=range]{width:150px;accent-color:var(--theme-accent,#007be5)}

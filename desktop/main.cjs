@@ -581,7 +581,7 @@ function registerIpc() {
 async function createWindow() {
   window = new BrowserWindow({
     width: 1560, height: 1000, minWidth: 1000, minHeight: 680,
-    backgroundColor: '#191a1d', show: false,
+    backgroundColor: '#0a0b0f', show: false,
     title: 'StykAnimate',
     icon: path.join(__dirname, 'assets', 'stykanimate.png'),
     frame: process.platform === 'darwin',

@@ -1,5 +1,5 @@
-.support-donate { display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 11px 18px; border-radius: 8px; background: var(--theme-danger-action, #e45d42); color: #fff; font-size: 12px; font-weight: 650; text-decoration: none; box-shadow: 0 2px 3px var(--theme-shadow, #974e2918); }
-.support-donate:hover { background: var(--theme-danger-action, #ce4d34); color: #fff; }
+.support-donate { display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 11px 18px; border-radius: 8px; background: var(--theme-danger-action, #e45d42); color: var(--on-danger); font-size: 12px; font-weight: 650; text-decoration: none; box-shadow: 0 2px 3px var(--theme-shadow, #974e2918); }
+.support-donate:hover { background: var(--theme-danger-action, #ce4d34); color: var(--on-danger); }
 .support-donate:focus-visible, .splash-close:focus-visible { outline: 3px solid var(--theme-accent, #1789d4); outline-offset: 3px; }
 dialog.release-splash { width: min(680px, calc(100vw - 32px)); max-width: 680px; height: auto; max-height: min(680px, calc(100dvh - 32px)); padding: 0; overflow: hidden; border: 1px solid var(--theme-border, #dce5ed); border-radius: 16px; background: var(--theme-panel, #fff); color: var(--theme-text, #242c36); box-shadow: 0 22px 80px var(--theme-shadow, #1b2b4838); }
 dialog.release-splash[open] { display: flex; flex-direction: column; }

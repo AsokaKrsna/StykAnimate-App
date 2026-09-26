@@ -19,7 +19,7 @@ const STYLES = `
 .styk-easing-points label{font-size:9px;color:var(--theme-muted, #7c8693)}
 .styk-easing-points input{width:100%;height:25px;margin-top:3px;border:1px solid var(--theme-border, #dce1e7);border-radius:4px;padding:0 4px;font:10px inherit;background:var(--theme-panel, #fff);color:var(--theme-secondary, #454b55);appearance:textfield}
 .styk-easing-points input:focus{outline:1px solid var(--theme-accent, #0d99ff)}
-.styk-easing-apply{display:block;width:100%;height:27px;border:0;border-radius:4px;background:var(--theme-action, #0d99ff);color:#fff;font:inherit;cursor:pointer}
+.styk-easing-apply{display:block;width:100%;height:27px;border:0;border-radius:4px;background:var(--primary);color:var(--on-primary);font:inherit;cursor:pointer}
 .styk-easing-apply:disabled{opacity:.4;cursor:default}
 .styk-easing-error{color:var(--theme-danger, #c43d3d);font-size:10px;line-height:1.4}
 .styk-easing-error:empty{display:none}

@@ -68,11 +68,11 @@ try {
     await page.locator(`.styk-settings [data-tab=${tab}]`).click();await shot('settings-'+tab+'-dark');
   }
   await closeSettings();await page.mouse.move(1,1);await settle();
-  check('Canvas timeline repaints its cached palette',await page.evaluate(()=>styk.timeline.colors.surface==='#24272d' && styk.timeline.colors['scene-tint']==='#382e4b'));
+  check('Canvas timeline repaints its cached palette',await page.evaluate(()=>styk.timeline.colors.surface==='#15161c' && styk.timeline.colors['scene-tint']==='#231f3d'));
   check('Animation data and dirty state are unchanged',await page.evaluate(({model,dirty})=>JSON.stringify(styk.editor.report)===model && styk.editor.dirty===dirty,{model,dirty}));
   check('Rendered artwork is pixel-identical in both themes',lightArtwork.equals(await page.screenshot({clip:stage})));
   for(const selector of ['.titlebar','.right-panel','.studio-rail','.layer-timeline'])
-    check(selector+' uses the dark palette',await background(selector)==='rgb(36, 39, 45)');
+    check(selector+' uses the dark palette',await background(selector)==='rgb(21, 22, 28)');
   await shot('editor-dark');
   await page.evaluate(()=>styk.settingsUI.flush());
   check('Dark mode is stored with editor preferences',await page.evaluate(()=>JSON.parse(localStorage.getItem('stykanimate.editor.settings.v1')).theme==='dark'));
@@ -89,21 +89,21 @@ try {
   release();await ready();await page.unroute('**/src/app.mjs');
 
   await page.getByRole('tab',{name:'Library',exact:true}).click();
-  check('Library surface follows dark mode',await background('#user-library')==='rgb(36, 39, 45)');
+  check('Library surface follows dark mode',await background('#user-library')==='rgb(21, 22, 28)');
   await shot('library-dark');
   await page.getByRole('tab',{name:'Properties',exact:true}).click();
   await page.locator('#onion-settings-button').click();
-  check('Onion popover follows dark mode',await background('.onion-popover')==='rgb(36, 39, 45)');
+  check('Onion popover follows dark mode',await background('.onion-popover')==='rgb(21, 22, 28)');
   await shot('onion-dark');await page.keyboard.press('Escape');
   await page.locator('[data-action=export]').first().click();
-  check('Export dialog follows dark mode',await background('#dialog')==='rgb(36, 39, 45)');
+  check('Export dialog follows dark mode',await background('#dialog')==='rgb(21, 22, 28)');
   await shot('export-dark');await page.keyboard.press('Escape');
 
   await page.evaluate(async()=>{
     const {openColorPicker}=await import('/src/color-picker.mjs');
     openColorPicker({anchor:document.querySelector('.titlebar'),paint:{type:'solid',stops:[{offset:0,color:[43,43,43],opacity:1}]},onChange:()=>{}});
   });
-  check('Color picker chrome follows dark mode',await background('.paint-picker')==='rgb(36, 39, 45)');
+  check('Color picker chrome follows dark mode',await background('.paint-picker')==='rgb(21, 22, 28)');
   const darkGradients=await page.locator('.paint-sv, .paint-sliders [data-hue]').evaluateAll(nodes=>nodes.map(el=>getComputedStyle(el).backgroundImage));
   await shot('paint-dark');
   await page.evaluate(()=>styk.settingsUI.commit({theme:'light'}));
@@ -115,7 +115,7 @@ try {
   await openSettings();
   await page.locator('[data-setting=timelineMode][value=simple]').check();
   await closeSettings();await settle();
-  check('Simple timeline uses the dark palette',await background('.sheet-filmstrip')==='rgb(36, 39, 45)');
+  check('Simple timeline uses the dark palette',await background('.sheet-filmstrip')==='rgb(21, 22, 28)');
   await shot('simple-timeline-dark');
   await openSettings();
   await page.setViewportSize({width:1000,height:680});

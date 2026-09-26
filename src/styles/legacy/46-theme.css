@@ -3,8 +3,6 @@
 :root {
   color-scheme: light;
 }
-:root[data-theme-pending] { background: #202227; }
-:root[data-theme-pending] #app { visibility: hidden; }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -48,7 +46,6 @@
 :root[data-theme="dark"] :is(input, select, textarea) { color-scheme: dark; }
 :root[data-theme="dark"] option { background: var(--theme-field); color: var(--theme-text); }
 :root[data-theme="dark"] ::selection { background: var(--theme-selected-hover); color: var(--theme-text); }
-:root[data-theme="dark"] .sheet-add-frame { background: var(--theme-action); }
 :root[data-theme="dark"] .sheet-playhead > span { background: var(--theme-action); }
 :root[data-theme="dark"] .sheet-scroll::-webkit-scrollbar-thumb,
 :root[data-theme="dark"] .sheet-filmstrip-scroll::-webkit-scrollbar-thumb { background: var(--theme-border-strong); }

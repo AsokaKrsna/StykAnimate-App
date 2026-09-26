@@ -10,7 +10,7 @@
     theme = resolveTheme(value);
   } catch { /* Follow the system when stored preferences cannot be read. */ }
   document.documentElement.dataset.theme = theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#202227' : '#f8f8fa');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0a0b0f' : '#f5f6f9');
   // Desktop backend ports change between runs. Read the native preference now,
   // before the large app module graph loads, rather than relying on origin storage.
   if (window.stykDesktop?.getEditorSettings) {
@@ -20,7 +20,7 @@
       .then(settings => {
         const nativeTheme = resolveTheme(settings?.theme);
         document.documentElement.dataset.theme = nativeTheme;
-        document.querySelector('meta[name="theme-color"]')?.setAttribute('content', nativeTheme === 'dark' ? '#202227' : '#f8f8fa');
+        document.querySelector('meta[name="theme-color"]')?.setAttribute('content', nativeTheme === 'dark' ? '#0a0b0f' : '#f5f6f9');
         return settings;
       })
       .catch(() => undefined)

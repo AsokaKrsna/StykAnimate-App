@@ -1,9 +1,13 @@
 # Design system
 
-`src/styles/legacy/45-design-system.css` defines the editor chrome's visual
-language once. It loads after every component stylesheet and before
-`legacy/46-theme.css`, which overrides the colour tokens for dark mode. Artwork,
-paint swatches, joint colours and export previews keep their own colours.
+`src/styles/tokens.css` defines the editor chrome's visual language once: the
+StykAnimate brand colours for the light and dark themes, type, spacing, radius,
+control sizes, elevation and motion. `src/styles/legacy-bridge.css` points the
+older token names at it, so every surface uses the brand palette before it is
+rebuilt. The shared legacy components (buttons, segmented controls, switches,
+empty states) are still styled by `src/styles/legacy/45-design-system.css`.
+Artwork, paint swatches, joint colours and export previews keep their own
+colours.
 
 ## Stylesheets and cascade layers
 
@@ -52,10 +56,10 @@ size axis) for UI text and Inter Tight for display text. Nothing uses Inter
 Tight yet. `src/styles/base/fonts.css` declares one face per subset: latin,
 latin-ext, Vietnamese, Cyrillic, Cyrillic extended, Greek and Greek extended.
 `unicode-range` makes each language load only the files its glyphs need;
-Arabic, Hebrew and Chinese use the system fonts that follow Inter in the
-document stack, which `base/document.css` sets:
-`"Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif`. Legacy
-rules that name their own font family keep it until their surface is rebuilt.
+Arabic, Hebrew and Chinese use the system fonts that follow Inter in
+`--font-ui` (`tokens.css`), which `base/document.css` sets on the document;
+`--font-display` starts with Inter Tight. Legacy rules that name their own
+font family keep it until their surface is rebuilt.
 
 `index.html` preloads the two latin files, which use `font-display: block`;
 every other subset uses `swap`, so text in those scripts shows in a system font
@@ -101,27 +105,75 @@ stylesheet at runtime (JS02).
 
 ## Tokens
 
+`src/styles/tokens.css` is the `tokens` layer, in three tiers:
+
+- **Primitives**: the brand ramps (mist, slate, ink, blue, violet, mint,
+  orange, gold, rose, red, lime, teal). Raw colour values appear only in this
+  file, and only the semantic tier reads the primitives.
+- **Semantic tokens**: roles for `:root` (light, the default) and
+  `:root[data-theme="dark"]`. Styles read these and the scale, never primitives
+  or literals.
+- **Scale**: type (`--font-ui`, `--font-display`, `--font-mono`, `--text-11` …
+  `--text-28`; 11 px is the floor), space (`--space-*`, a 4 px grid), radius,
+  control and icon sizes, elevation, motion (zeroed under
+  `prefers-reduced-motion`) and the in-flow stacking scale `--z-*`.
+
 | Group | Tokens | Notes |
 | --- | --- | --- |
-| Surfaces | `--theme-workspace`, `--theme-field`, `--theme-subtle`, `--theme-panel`, `--theme-hover` | Back to front: stage surround, input fields, quiet bars, panels, hover. |
-| Lines | `--theme-border`, `--theme-border-strong` | Strong borders mark hover on bordered controls and slider tracks. |
-| Text | `--theme-text`, `--theme-secondary`, `--theme-muted` | Muted text keeps at least 4.5:1 on every light surface. |
-| Interaction | `--theme-accent`, `--theme-action`, `--theme-action-hover`, `--theme-selected`, `--theme-selected-hover` | Both use the StykAnimate brand blue (#0d99ff); `--theme-action` fills primary buttons, accent marks focus, selection and active icons. |
-| Status | `--theme-danger*`, `--theme-warning*`, `--theme-success*`, `--theme-violet*` | Each has a matching `-bg` tint. |
-| Type | `--ds-text-xs` … `--ds-text-lg`, `--ds-weight-strong` | 10.5 / 11 / 12 / 13 / 15 px. |
-| Space | `--ds-space-1` … `--ds-space-6` | 4 px grid. |
-| Shape | `--ds-radius-sm`, `--ds-radius`, `--ds-radius-lg`, `--ds-radius-xl`, `--ds-control-sm`, `--ds-control`, `--ds-control-lg` | Controls are 26 / 30 / 34 px tall. |
-| Elevation | `--ds-shadow-1` (resting), `--ds-shadow-2` (floating bars), `--ds-shadow-3` (menus, popovers, dialogs), `--ds-focus-ring` | Dark mode uses deeper shadows. |
-| Motion | `--ds-fast`, `--ds-ease` | Disabled under `prefers-reduced-motion`. |
+| Surfaces | `--surface-field`, `--surface`, `--surface-raised`, `--surface-sunken`, `--surface-well`, `--surface-hover`, `--surface-pressed`, `--surface-selected`, `--surface-inverse`, `--surface-stage`, `--surface-backdrop` | Back to front: the window, panels, menus and dialogs, fields, tracks, states, toasts, the desk around the artboard, the modal backdrop. |
+| Text | `--text-1`, `--text-2`, `--text-3`, `--text-disabled`, `--text-inverse`, `--text-on-accent`, `--text-on-strong`, `--text-link` | `--text-3` keeps 4.5:1 on every resting surface. |
+| Lines | `--line-1` … `--line-3`, `--line-control` | The first three are decorative; `--line-control` meets 3:1 for control boundaries. |
+| Blue | `--accent`, `--accent-strong`, `--accent-line`, `--accent-text`, `--accent-soft` | One blue, four jobs: brand fills that carry an ink label, fills behind glyphs (switches, checkboxes, sliders), focus rings and thin marks, and small blue text. The brand blue `#0d99ff` is 2.99:1 on white, so never put white text or icons on `--accent`. |
+| Primary | `--primary`, `--primary-hover`, `--on-primary` | The main action on a surface: an ink pill in light, a light pill in dark. |
+| Controls | `--control-soft`, `--switch-knob-on`, `--switch-knob-off`, `--slider-*`, `--swatch-ring`, `--scrollbar-thumb` | |
+| Status | `--danger-*`, `--warning-*`, `--success-*`, `--neutral-dot` | Each has `-text` and `-soft`; danger also `-strong` with `--on-danger`. |
+| Concepts | `--tint-select`, `-time`, `-library`, `-draw`, `-fx`, `-camera`, `-export` | One meaning per hue. `-soft` is a background; `-ink` is for small text and icons. |
 
-New component styles should use these tokens rather than literal colours. Older
-stylesheets still carry literal fallbacks in `var(--token, #fallback)`; the
-fallback is never used once this file loads.
+Canvas painters read `--sheet-*`, `--audio-*`, `--layer-*` and `--canvas-*` as
+plain colour strings, so those never use `light-dark()` or `color-mix()`. Until
+the timelines are rebuilt, legacy rules on `.layer-timeline` and
+`.audio-timeline` still set the values the timeline painters read. Under
+`forced-colors: active` every role maps to a system colour.
+
+### Legacy names
+
+`src/styles/legacy-bridge.css`, also in the `tokens` layer, redefines the older
+names on `:root`: the `--theme-*` colours, the `--text`, `--muted`, `--border`,
+`--panel` and `--purple` aliases, names that legacy rules read but nothing
+defined (`--theme-selection`, `--input`, `--font` …), `--ds-font` and
+`--ds-focus-ring`. The `tokens` layer beats `legacy`, so these win over the
+legacy `:root` definitions in both themes.
+
+- `--theme-accent` is `--accent-text`: legacy rules use it for small text,
+  active icons and focus marks.
+- `--theme-action` is `--accent-strong`, the fill of switches, sliders,
+  progress bars and toggles. Glyphs and knobs on it use `--text-on-strong` or
+  `--switch-knob-on` (white in light, ink in dark). Primary buttons use
+  `--primary` and `--on-primary` instead.
+- `--purple` (timeline keys and playheads) is `--accent-line`; blue text in
+  the timeline uses `--accent-text`.
+- `--theme-shadow`, `--ds-shadow-*` and the `--ds-*` sizes, radii, spacing and
+  motion keep their legacy values until their surface is rebuilt.
+
+Legacy rules still carry literal fallbacks in `var(--token, #fallback)`; they
+never render. When you change a legacy rule, use semantic tokens rather than
+the bridged names, and delete a bridged name once nothing reads it.
+
+### Colours before the stylesheets load
+
+Four places paint before the styles load and must match `--surface-field`:
+`backgroundColor` in `desktop/main.cjs` (`#0a0b0f`: the desktop window stays
+dark until settings load), and the `theme-color` meta in `index.html`,
+`src/theme-bootstrap.js` and `src/theme.mjs` (`#f5f6f9` light, `#0a0b0f`
+dark; `tests/theme.test.mjs` checks them). While the desktop app reads its
+settings, `base/document.css` hides `#app` on `--surface-prepaint`, the same
+dark colour.
 
 ## Shared components
 
 - **Buttons**: `.button`, `.button.primary`, `.button.subtle`, `.button.small`,
-  `.button.danger`, `.icon-button`. A disabled primary button renders neutral.
+  `.button.danger`, `.icon-button`. The primary button is the ink pill (a light
+  pill in dark); a disabled one renders neutral.
 - **Segmented controls**: `.ds-segmented` (also applied to the inspector
   Properties/VFX/Library switch, the timeline Simple/Advanced switch, export
   categories and camera tabs). Mark the chosen button with `aria-pressed` or

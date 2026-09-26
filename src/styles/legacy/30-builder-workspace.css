@@ -62,6 +62,6 @@
 }
 
 #builder-snap {flex:0 0 30px;}
-#builder-snap[aria-pressed="true"] {color:var(--accent, #0d99ff);background:color-mix(in srgb,var(--accent, #0d99ff) 12%,transparent);}
+#builder-snap[aria-pressed="true"] {color:var(--accent-text);background:var(--accent-soft);}
 #chain-controls {gap:10px;}
 #chain-controls button {border:0;border-radius:5px;padding:5px 9px;cursor:pointer;}

@@ -38,5 +38,7 @@
 @import url("./legacy/99-settings.css") layer(legacy);
 
 /* Layered files wrap themselves in their @layer block: import them without layer(). */
+@import url("./tokens.css");
+@import url("./legacy-bridge.css");  /* legacy token names -> tokens.css */
 @import url("./base/fonts.css");
 @import url("./base/document.css");

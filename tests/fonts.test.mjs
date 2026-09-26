@@ -67,7 +67,9 @@ test('each family declares every subset once, as a bundled variable font', () =>
   }
   const bundled = readdirSync(path.join(root, 'assets/fonts')).filter(name => name.endsWith('.woff2'));
   assert.deepEqual(bundled.map(name => `assets/fonts/${name}`).sort(), faces.map(face => face.file).sort(), 'no unused font files ship');
-  assert.match(read('src/styles/base/document.css'), /html\s*\{\s*font-family:\s*"Inter",/, 'the document font starts with Inter');
+  assert.match(read('src/styles/base/document.css'), /html\s*\{\s*font-family:\s*var\(--font-ui\);/, 'the document uses the UI font');
+  assert.match(read('src/styles/tokens.css'), /--font-ui:\s*"Inter",/, 'the UI font starts with Inter');
+  assert.match(read('src/styles/tokens.css'), /--font-display:\s*"Inter Tight",/, 'the display font starts with Inter Tight');
 });
 
 test('index.html preloads the two latin faces', () => {
