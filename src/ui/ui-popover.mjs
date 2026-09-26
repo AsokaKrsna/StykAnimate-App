@@ -1,0 +1,135 @@
+/**
+ * Anchored, non-modal panels (onion settings, Go to frame, the Document
+ * popover, brush presets, …): a [popover] in the top layer with an optional
+ * head (title and close), a scrolling body and an optional foot.
+ *
+ * The popover owns chrome, placement and dismissal only; the feature owns its
+ * controls and what they commit. Opened from inside a modal it mounts inside
+ * that dialog; opened from a popover or sheet it joins that host's popover
+ * ancestry (showPopover with a source), so the host stays open.
+ */
+import {anchorWith, placeFloating} from './anchor-position.mjs';
+import {overlayMount, showPopoverFrom} from './overlay-manager.mjs';
+
+let popoverCount = 0;
+const FOCUSABLE = 'input:not([type=hidden]):not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
+const content = (doc, value) => (value === null || value === undefined ? null : typeof value === 'string' ? doc.createTextNode(value) : value);
+
+/**
+ * createPopover({anchor, placement, title, closeLabel, body, foot, dismiss,
+ * returnFocus, mount, overlays, keyboardScope, label, className, cssAnchor,
+ * topInset, onOpen, onClose, icon})
+ *   body, foot   Nodes (or text); the feature keeps building them
+ *   dismiss      'auto': light dismiss (outside click, Escape, another popover);
+ *                'manual': only the close button, Escape or hide()
+ *   cssAnchor    tether with CSS anchor positioning when available (follows the
+ *                anchor while it scrolls); the default places it once, in JS
+ *   keyboardScope  typing belongs to the popover (hotkeys stay off while open)
+ * Returns {element, body, show(), hide(reason), toggle(), update(), isOpen, signal}.
+ */
+export function createPopover({anchor, placement = 'bottom-start', title = '', closeLabel = 'Close', body = null, foot = null, dismiss = 'auto',
+  returnFocus = true, mount = 'auto', overlays = null, keyboardScope = false, label = '', className = '', cssAnchor = false, topInset = 0,
+  onOpen = null, onClose = null, icon = null, document: doc = anchor?.ownerDocument ?? globalThis.document} = {}) {
+  const id = `ui-popover-${++popoverCount}`;
+  const element = doc.createElement('div');
+  element.id = id;
+  element.className = ['ui-popover', className].filter(Boolean).join(' ');
+  element.popover = dismiss === 'manual' ? 'manual' : 'auto';
+  element.setAttribute('role', 'dialog');
+  element.setAttribute('aria-modal', 'false');
+  if (title) {
+    const head = doc.createElement('div'), heading = doc.createElement('span');
+    head.className = 'ui-popover-head';
+    heading.className = 'ui-popover-title';
+    heading.id = `${id}-title`;
+    heading.textContent = title;
+    head.append(heading);
+    const close = doc.createElement('button');
+    close.type = 'button';
+    close.className = 'ui-icon-button ui-popover-close';
+    close.dataset.size = 'sm';
+    close.setAttribute('aria-label', closeLabel);
+    if (icon) { const glyph = icon('close'); if (typeof glyph === 'string') close.innerHTML = glyph; else if (glyph) close.append(glyph); }
+    else close.textContent = '×';
+    close.addEventListener('click', () => hide('close-button'));
+    head.append(close);
+    element.append(head);
+    element.setAttribute('aria-labelledby', heading.id);
+  } else if (label) element.setAttribute('aria-label', label);
+  const bodyElement = doc.createElement('div');
+  bodyElement.className = 'ui-popover-body';
+  const bodyNode = content(doc, body);
+  if (bodyNode) bodyElement.append(bodyNode);
+  element.append(bodyElement);
+  const footNode = content(doc, foot);
+  if (footNode) {
+    const footElement = doc.createElement('div');
+    footElement.className = 'ui-popover-foot';
+    footElement.append(footNode);
+    element.append(footElement);
+  }
+
+  let open = false, controller = null, handle = null, untether = null, invoker = null;
+  const anchorElement = anchor?.nodeType === 1 ? anchor : null;
+
+  function update() {
+    if (!open || untether) return;
+    placeFloating(element, anchor, {placement, topInset, overlap: false});
+  }
+
+  function show() {
+    if (open) return;
+    const host = mount === 'auto' ? overlayMount(anchorElement, doc) : mount;
+    if (host && element.parentElement !== host) host.append(element);
+    invoker = doc.activeElement;
+    showPopoverFrom(element, anchorElement);
+    open = true;
+    controller = new AbortController();
+    const {signal} = controller;
+    untether = cssAnchor && anchorElement ? anchorWith(anchorElement, element, {placement}) : null;
+    update();
+    anchorElement?.setAttribute('aria-expanded', 'true');
+    element.addEventListener('toggle', event => { if (event.newState === 'closed' && open) finish('dismiss'); }, {signal});
+    element.addEventListener('keydown', event => {
+      if (keyboardScope) event.stopPropagation();
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      event.stopPropagation();
+      hide('escape');
+    }, {signal});
+    if (!untether) (doc.defaultView ?? globalThis).addEventListener('resize', update, {signal});
+    handle = overlays?.register(element, {kind: 'popover', keyboardScope, invoker: anchorElement ?? invoker, returnFocus: false, closeOnEscape: false,
+      onClose: (value, reason) => finish(reason)}) ?? null;
+    // Focus the first control, never the close button when there is anything else.
+    const controls = [...bodyElement.querySelectorAll(FOCUSABLE), ...element.querySelectorAll(`.ui-popover-foot :is(${FOCUSABLE})`)];
+    (controls[0] ?? element.querySelector('.ui-popover-close'))?.focus({preventScroll: true});
+    onOpen?.();
+  }
+
+  function finish(reason) {
+    if (!open) return;
+    open = false;
+    const hadFocus = element.contains(doc.activeElement);
+    controller.abort();
+    untether?.();
+    untether = null;
+    try { if (element.matches(':popover-open')) element.hidePopover(); } catch { /* already hidden */ }
+    anchorElement?.setAttribute('aria-expanded', 'false');
+    handle?.close(undefined, reason);
+    handle = null;
+    // Escape and the close button hand focus back; a click elsewhere keeps its own focus.
+    if (returnFocus && (reason !== 'dismiss' || hadFocus && (doc.activeElement === doc.body || !doc.activeElement)))
+      [anchorElement, invoker].find(node => node?.isConnected && typeof node.focus === 'function')?.focus({preventScroll: true});
+    onClose?.(reason);
+  }
+
+  function hide(reason = 'hide') { finish(reason); }
+
+  return {
+    element, body: bodyElement, show, hide, update,
+    toggle() { if (open) hide('toggle'); else show(); },
+    get isOpen() { return open; },
+    get signal() { return controller?.signal ?? null; },
+  };
+}

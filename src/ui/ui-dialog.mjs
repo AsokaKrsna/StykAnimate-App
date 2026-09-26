@@ -1,0 +1,306 @@
+/**
+ * Modal dialogs: a native <dialog> opened with showModal() around a
+ * <form method="dialog">, so Enter submits the primary action and Escape asks
+ * to cancel. Every dialog is its own element, so a confirm can open over
+ * Settings or Export without either losing its content.
+ *
+ *   - Initial focus: [autofocus], else the first field, else the primary
+ *     action; never the close button. A dialog opened by a pointer focuses it
+ *     without the ring (data-pointer-open until the first key press).
+ *   - Close guards: Escape and × go through requestClose(reason), which asks
+ *     beforeClose(reason); returning false keeps the dialog open.
+ *   - Sizes: sm 420, md 640, lg 880 (components/dialog.css); a dialog never
+ *     changes size while it is open.
+ *
+ * createDialog() is the shell; confirm(), prompt() and choose() are the
+ * promise helpers. Texts are set as text, never parsed as HTML.
+ */
+let dialogCount = 0;
+const FIELDS = 'input:not([type=hidden]):not([type=button]):not([type=submit]):not([type=reset]):not(:disabled), select:not(:disabled), textarea:not(:disabled)';
+
+/** Where focus goes when `dialog` opens: [autofocus], the first field, the primary action; never the close button. */
+export function initialFocusTarget(dialog) {
+  const close = dialog.querySelector('.ui-dialog-close');
+  const explicit = [...dialog.querySelectorAll('[autofocus]')].find(node => node !== close && !node.disabled);
+  return explicit ?? dialog.querySelector(`.ui-dialog-body :is(${FIELDS})`) ?? dialog.querySelector('.ui-dialog-foot [data-primary]:not(:disabled)')
+    ?? dialog.querySelector('.ui-dialog-foot button:not(:disabled)') ?? dialog.querySelector(`:is(${FIELDS}), button:not(.ui-dialog-close):not(:disabled)`) ?? null;
+}
+
+const nodeFrom = (doc, value, argument) => {
+  const resolved = typeof value === 'function' ? value(argument) : value;
+  if (resolved === null || resolved === undefined || resolved === '') return null;
+  if (typeof resolved === 'string') { const paragraph = doc.createElement('p'); paragraph.className = 'ui-dialog-desc'; paragraph.textContent = resolved; return paragraph; }
+  return resolved;
+};
+
+/**
+ * createDialog({size, variant, title, description, body, actions, beforeClose,
+ * onSubmit, className, closeLabel, overlays, mount, icon, pointer, id})
+ *   body      a Node, text, or (form) => Node
+ *   actions   [{label, value, variant: 'primary' | 'danger' | 'ghost' | 'outline',
+ *              tone, id, autofocus, cancel}] in visual order (Cancel before the
+ *              primary). `cancel: true` closes with null; the others submit
+ *              their value. The primary is the first with variant primary or
+ *              danger, else the last submitting action; Enter in a field runs it.
+ *   onSubmit  (value, form, submitter) runs before closing: return false or
+ *             {error: 'message'} to keep the dialog open, {value} to resolve
+ *             with another value, anything else to resolve with the action's value
+ *   pointer   true when a pointer opened it (default: the overlay manager's last input)
+ * Returns {element, form, body, showModal(), close(value), requestClose(reason),
+ * setBusy(busy), setError(message), setMeta(text), result}. showModal()
+ * resolves with the submitted value, or null when cancelled.
+ */
+export function createDialog({size = 'sm', variant = null, title = '', description = '', body = null, actions = [], beforeClose = null, onSubmit = null,
+  className = '', closeLabel = 'Close', overlays = null, mount = null, icon = null, pointer = null, id = null,
+  document: doc = globalThis.document} = {}) {
+  const dialogId = id ?? `ui-dialog-${++dialogCount}`;
+  const element = doc.createElement('dialog');
+  element.id = dialogId;
+  element.className = ['ui-dialog', className].filter(Boolean).join(' ');
+  element.dataset.size = size;
+  if (variant) element.dataset.variant = variant;
+  if ('closedBy' in element) element.closedBy = 'closerequest';
+  const form = doc.createElement('form');
+  form.method = 'dialog';
+  form.className = 'ui-dialog-form';
+  form.noValidate = true;
+
+  const head = doc.createElement('header');
+  head.className = 'ui-dialog-head';
+  const heading = doc.createElement('div');
+  heading.className = 'ui-dialog-heading';
+  const titleNode = doc.createElement('h2');
+  titleNode.className = 'ui-dialog-title';
+  titleNode.id = `${dialogId}-title`;
+  titleNode.textContent = title;
+  heading.append(titleNode);
+  element.setAttribute('aria-labelledby', titleNode.id);
+  if (description) {
+    const text = doc.createElement('p');
+    text.className = 'ui-dialog-desc';
+    text.id = `${dialogId}-desc`;
+    text.textContent = description;
+    heading.append(text);
+    element.setAttribute('aria-describedby', text.id);
+  }
+  const closeButton = doc.createElement('button');
+  closeButton.type = 'button';
+  closeButton.className = 'ui-icon-button ui-dialog-close';
+  closeButton.setAttribute('aria-label', closeLabel);
+  const glyph = icon?.('close');
+  if (typeof glyph === 'string') closeButton.insertAdjacentHTML('beforeend', glyph); else if (glyph) closeButton.append(glyph); else closeButton.textContent = '×';
+  head.append(heading, closeButton);
+
+  const bodyNode = doc.createElement('div');
+  bodyNode.className = 'ui-dialog-body';
+  const content = nodeFrom(doc, body, form);
+  if (content) bodyNode.append(content);
+  const error = doc.createElement('div');
+  error.className = 'ui-dialog-error';
+  error.setAttribute('role', 'alert');
+  error.hidden = true;
+  bodyNode.append(error);
+
+  const foot = doc.createElement('footer');
+  foot.className = 'ui-dialog-foot';
+  const meta = doc.createElement('span');
+  meta.className = 'ui-dialog-meta';
+  foot.append(meta);
+  const values = new Map();
+  const submitting = actions.filter(action => !action.cancel);
+  const primaryAction = submitting.find(action => action.variant === 'primary' || action.variant === 'danger') ?? submitting.at(-1) ?? null;
+  let primary = null;
+  for (const action of actions) {
+    const button = doc.createElement('button');
+    button.type = action.cancel ? 'button' : 'submit';
+    button.className = 'ui-button';
+    button.dataset.variant = action.variant ?? 'ghost';
+    if (action.tone) button.dataset.tone = action.tone;
+    if (action.id) button.id = action.id;
+    button.textContent = action.label;
+    if (action.cancel) button.addEventListener('click', () => requestClose('cancel'));
+    else values.set(button, action.value === undefined ? action.label : action.value);
+    if (action === primaryAction) { button.dataset.primary = ''; primary = button; }
+    if (action.autofocus) button.autofocus = true;
+    foot.append(button);
+  }
+  form.append(head, bodyNode, foot);
+  element.append(form);
+
+  let resolve, open = false, settled = false, handle = null, submitted, busy = false;
+  const result = new Promise(done => { resolve = done; });
+
+  const finish = value => {
+    if (settled) return;
+    settled = true;
+    open = false;
+    if (element.open) element.close();
+    handle?.close(value, 'close');
+    element.remove();
+    resolve(value);
+  };
+  const guard = async reason => {
+    if (!beforeClose) return true;
+    try { return (await beforeClose(reason)) !== false; } catch (failure) { globalThis.reportError?.(failure); return false; }
+  };
+  async function requestClose(reason = 'request') {
+    if (!open) return true;
+    if (handle) return handle.requestClose(reason);
+    if (!(await guard(reason))) return false;
+    finish(null);
+    return true;
+  }
+
+  closeButton.addEventListener('click', () => requestClose('close-button'));
+  element.addEventListener('cancel', event => { event.preventDefault(); requestClose('escape'); });
+  element.addEventListener('close', () => finish(submitted === undefined ? null : submitted));
+  element.addEventListener('keydown', () => element.removeAttribute('data-pointer-open'));
+  // Enter in a one-line field submits the primary action, even when another
+  // submitting action (Don't save) comes first in the foot.
+  form.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || event.isComposing || event.defaultPrevented || !primary) return;
+    const target = event.target;
+    if (!target.matches?.('input') || ['button', 'submit', 'checkbox', 'radio', 'reset', 'file'].includes(target.type)) return;
+    event.preventDefault();
+    if (!primary.disabled) form.requestSubmit(primary);
+  });
+  form.addEventListener('submit', event => {
+    if (busy) { event.preventDefault(); return; }
+    let value = values.has(event.submitter) ? values.get(event.submitter) : primary ? values.get(primary) : true;
+    if (onSubmit) {
+      const outcome = onSubmit(value, form, event.submitter);
+      if (outcome === false || outcome?.error) {
+        event.preventDefault();
+        if (outcome?.error) setError(String(outcome.error));
+        return;
+      }
+      if (outcome && typeof outcome === 'object' && 'value' in outcome) value = outcome.value;
+    }
+    submitted = value;
+  });
+
+  function setError(message = '') {
+    error.textContent = message;
+    error.hidden = !message;
+  }
+
+  return {
+    element, form, body: bodyNode, result,
+    /** Opens the dialog; resolves with the submitted value or null. */
+    showModal() {
+      if (open || settled) return result;
+      const invoker = doc.activeElement;
+      const host = mount ?? doc.body;
+      host.append(element);
+      const target = initialFocusTarget(element);
+      const byPointer = Boolean(target) && (pointer ?? overlays?.openedByPointer?.() ?? false);
+      // The dialog's focusing steps pick [autofocus]. A pointer open focuses the
+      // dialog first, then the target without the ring (focusVisible: false).
+      if (byPointer || !target) { element.tabIndex = -1; element.autofocus = true; } else target.autofocus = true;
+      element.showModal();
+      open = true;
+      handle = overlays?.register(element, {kind: 'dialog', modal: true, invoker, beforeClose: guard, closeOnEscape: false,
+        onClose: (value, reason) => { if (reason !== 'close') { submitted = undefined; finish(null); } }}) ?? null;
+      if (byPointer) {
+        element.dataset.pointerOpen = '';
+        target.focus({preventScroll: true, focusVisible: false});
+      }
+      return result;
+    },
+    close(value = null) { submitted = value; finish(value); },
+    requestClose,
+    setBusy(next) {
+      busy = Boolean(next);
+      if (busy) element.setAttribute('aria-busy', 'true'); else element.removeAttribute('aria-busy');
+      for (const button of foot.querySelectorAll('button[type=submit]')) button.disabled = busy;
+    },
+    setError,
+    setMeta(text = '') { meta.textContent = text; },
+    get open() { return open; },
+  };
+}
+
+/**
+ * Asks a yes/no question. `alternatives` adds actions before Cancel
+ * ([{label, value, danger}], e.g. "Don't save"). Resolves true for the
+ * confirm action, an alternative's value, or false when cancelled.
+ */
+export async function confirm({title, body = '', description = '', confirmLabel = 'OK', cancelLabel = 'Cancel', danger = false, alternatives = [], size = 'sm', ...options} = {}) {
+  const dialog = createDialog({size, title, description, body, ...options, actions: [
+    ...alternatives.map(action => ({label: action.label, value: action.value, id: action.id, variant: 'ghost', tone: action.danger ? 'danger' : undefined})),
+    {label: cancelLabel, cancel: true, variant: 'ghost'},
+    {label: confirmLabel, value: true, variant: danger ? 'danger' : 'primary', autofocus: true, id: options.confirmId},
+  ]});
+  const value = await dialog.showModal();
+  return value === null ? false : value;
+}
+
+/**
+ * Asks for one line of text (rename). `validate(text)` returns an error
+ * message to keep the dialog open. Resolves with the text, or null.
+ */
+export async function prompt({title, label = '', value = '', placeholder = '', validate = null, confirmLabel = 'OK', cancelLabel = 'Cancel',
+  maxLength = null, inputId = null, size = 'sm', ...options} = {}) {
+  const doc = options.document ?? globalThis.document;
+  const row = doc.createElement('div'), caption = doc.createElement('label'), input = doc.createElement('input');
+  row.className = 'ui-form-row';
+  input.className = 'ui-field-input';
+  input.id = inputId ?? `ui-prompt-${++dialogCount}`;
+  input.type = 'text';
+  input.value = value;
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  input.autofocus = true;
+  if (placeholder) input.placeholder = placeholder;
+  if (maxLength) input.maxLength = maxLength;
+  caption.htmlFor = input.id;
+  caption.className = 'ui-field-label';
+  caption.textContent = label;
+  if (label) row.append(caption); else input.setAttribute('aria-label', title);
+  row.append(input);
+  input.addEventListener('input', () => input.removeAttribute('aria-invalid'));
+  const dialog = createDialog({size, title, body: row, ...options, actions: [
+    {label: cancelLabel, cancel: true, variant: 'ghost'},
+    {label: confirmLabel, value: true, variant: 'primary'},
+  ], onSubmit: () => {
+    const problem = validate?.(input.value);
+    if (problem) { input.setAttribute('aria-invalid', 'true'); input.focus(); return {error: problem}; }
+    return {value: input.value};
+  }});
+  input.addEventListener('focus', () => input.select(), {once: true});
+  return dialog.showModal();
+}
+
+/**
+ * Asks to pick one of several options, each a full-width action with an
+ * optional description ([{value, id, label, description, icon}]; ids keep test
+ * hooks such as #builder-exit-update). Resolves with the value, or null.
+ */
+export async function choose({title, description = '', options: choices = [], cancelLabel = 'Cancel', icon = null, size = 'sm', ...options} = {}) {
+  const doc = options.document ?? globalThis.document;
+  const list = doc.createElement('div');
+  list.className = 'ui-dialog-choices';
+  list.setAttribute('role', 'group');
+  list.setAttribute('aria-label', title);
+  const values = new Map();
+  for (const choice of choices) {
+    const button = doc.createElement('button');
+    button.type = 'submit';
+    button.className = 'ui-dialog-choice';
+    if (choice.id) button.id = choice.id;
+    if (choice.icon && icon) { const glyph = icon(choice.icon); if (typeof glyph === 'string') button.insertAdjacentHTML('beforeend', glyph); else if (glyph) button.append(glyph); }
+    const text = doc.createElement('span'), name = doc.createElement('b');
+    text.className = 'ui-dialog-choice-text';
+    name.textContent = choice.label;
+    text.append(name);
+    if (choice.description) { const detail = doc.createElement('small'); detail.textContent = choice.description; text.append(detail); }
+    button.append(text);
+    if (choice.danger) button.dataset.tone = 'danger';
+    values.set(button, choice.value);
+    list.append(button);
+  }
+  const dialog = createDialog({size, title, description, body: list, icon, ...options,
+    actions: [{label: cancelLabel, cancel: true, variant: 'ghost'}],
+    onSubmit: (value, form, submitter) => (values.has(submitter) ? {value: values.get(submitter)} : false)});
+  return dialog.showModal();
+}

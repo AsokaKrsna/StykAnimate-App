@@ -42,3 +42,11 @@
 @import url("./legacy-bridge.css");  /* legacy token names -> tokens.css */
 @import url("./base/fonts.css");
 @import url("./base/document.css");
+/* Overlay kit (src/ui/ui-menu, ui-popover, ui-tooltip, ui-toast, ui-dialog, command-palette) */
+@import url("./components/menu.css");
+@import url("./components/popover.css");
+@import url("./components/tooltip.css");
+@import url("./components/toast.css");
+@import url("./components/dialog.css");
+@import url("./components/palette.css");
+@import url("./components/kbd.css");

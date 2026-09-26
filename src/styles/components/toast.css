@@ -1,0 +1,71 @@
+/* Message (src/ui/ui-toast.mjs; components.md "Message"): the stage's one
+ * message slot. The host is a manual popover in the top layer, bottom centre
+ * of the stage (--toast-x and --toast-bottom come from the stage's box). It
+ * keeps the #toast id; the properties below override the legacy #toast box. */
+@layer components {
+  .ui-toast-host {
+    position: fixed; inset: auto auto var(--toast-bottom, var(--space-6)) var(--toast-x, 50%); translate: -50% 0;
+    max-inline-size: min(560px, calc(100vw - var(--space-4)));
+    margin: 0; padding: 0; border: 0; border-radius: 0;
+    background: transparent; color: var(--text-2); box-shadow: none; transform: none;
+    font: var(--type-ui); white-space: nowrap; overflow: visible;
+    -webkit-app-region: no-drag;
+  }
+
+  /* A white pill with the one rest shadow; the verb or subject in bold. */
+  .ui-toast {
+    --icon-size: var(--icon-md);
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    min-block-size: var(--control-lg); max-inline-size: 100%; padding: 0 var(--space-1) 0 var(--space-3);
+    border: 1px solid transparent; border-radius: var(--radius-pill);
+    background: var(--surface-raised); color: var(--text-2);
+    box-shadow: var(--elevation-1);
+    font: var(--type-ui); white-space: nowrap;
+  }
+  .ui-toast:where(:not(:has(> button))) { padding-inline-end: var(--space-3); }
+  .ui-toast-text { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
+  .ui-toast-text > b { font-weight: var(--weight-semibold); color: var(--text-1); }
+  .ui-toast-icon { flex: none; inline-size: var(--icon-size); block-size: var(--icon-size); color: var(--accent-text); }
+  .ui-toast:where([data-tone="success"]) .ui-toast-icon { color: var(--success-text); }
+  .ui-toast:where([data-tone="warning"]) .ui-toast-icon { color: var(--warning-text); }
+  .ui-toast:where([data-tone="danger"]) .ui-toast-icon { color: var(--danger-text); }
+  /* The first-run hint's dot: the colour of the joint it asks you to drag. */
+  .ui-toast-dot { flex: none; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--danger-dot); }
+
+  .ui-toast-action {
+    flex: none; block-size: var(--control-sm); padding: 0 var(--space-2-5);
+    border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--accent-text);
+    font: var(--type-small-strong);
+  }
+  .ui-toast-action:where(:hover) { background: var(--surface-hover); }
+  .ui-toast-close {
+    display: inline-grid; place-items: center; flex: none;
+    inline-size: var(--control-sm); block-size: var(--control-sm); padding: 0;
+    border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-3);
+  }
+  .ui-toast-close:where(:hover) { background: var(--surface-hover); color: var(--text-1); }
+  .ui-toast-close > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); }
+
+  /* Task: a small progress bar; indeterminate while the amount is unknown. */
+  .ui-toast[data-variant="task"] { gap: var(--space-2-5); }
+  .ui-toast-progress {
+    --_p: 0%;
+    position: relative; flex: none; inline-size: 96px; block-size: 6px; overflow: hidden;
+    border-radius: var(--radius-pill); background: var(--surface-well);
+  }
+  .ui-toast-progress::before {
+    content: ""; position: absolute; inset-block: 0; inset-inline-start: 0;
+    inline-size: var(--_p); border-radius: inherit; background: var(--accent-strong);
+    transition: inline-size var(--dur-base) linear;
+  }
+  .ui-toast-progress[data-indeterminate]::before { inline-size: 32%; animation: ui-toast-indeterminate 1.3s var(--ease-in-out) infinite; }
+  @keyframes ui-toast-indeterminate { from { translate: -100% 0; } to { translate: 320% 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .ui-toast-progress[data-indeterminate]::before { animation: none; inline-size: 100%; opacity: 0.45; }
+  }
+
+  @media (forced-colors: active) {
+    .ui-toast { border-color: CanvasText; }
+    .ui-toast-progress::before { background: Highlight; }
+  }
+}
