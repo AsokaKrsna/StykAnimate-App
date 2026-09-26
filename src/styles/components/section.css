@@ -1,0 +1,60 @@
+/* Section (components.md "Section"): a quiet title and a grid of controls;
+ * whitespace separates sections, never dividers. Core sections are always
+ * open, with at most two title actions on the right (a 24px icon, a small text
+ * action or a switch). Titled sections ([data-collapsible]) fold behind their
+ * own title, which says what is inside: a closed one is one 28px line with a
+ * chevron at its end, opened in place with one click and remembered per
+ * context kind (src/inspector-kit.mjs SectionMemory). A titled section whose
+ * feature can be off carries its switch right after the title
+ * (.ui-section-head[data-switch], revision 4.3); the whole row still opens the
+ * section and only the switch switches. Never a generic "More", a summary, a
+ * key state or a divider. data-section is inspector-dom.mjs's identity key. */
+@layer components {
+  .ui-section { min-inline-size: 0; padding-block: var(--space-3-5, 14px) var(--space-0-5); }
+  .ui-section-head { display: flex; align-items: center; gap: var(--space-1); min-block-size: var(--control-sm); margin-block-end: var(--space-2); }
+  .ui-section-title {
+    flex: 1; min-inline-size: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: var(--type-small-strong); color: var(--text-3);
+  }
+  .ui-section-body { display: grid; gap: var(--space-2); min-inline-size: 0; }
+  .ui-section-body[hidden] { display: none; }
+  .ui-section-action { margin-block: calc(-1 * var(--space-0-5)); }
+  .ui-section-actions { display: flex; flex: none; gap: var(--space-0-5); }
+
+  .ui-section[data-collapsible] { padding-block: var(--space-1) 0; }
+  .ui-section:where([data-collapsible])[data-open] { padding-block-end: var(--space-1); }
+  .ui-section:where([data-collapsible]) > .ui-section-head { margin-block-end: 0; }
+  .ui-section:where([data-collapsible][data-open]) > .ui-section-head { margin-block-end: var(--space-2); }
+  .ui-section-toggle {
+    flex: 1; display: flex; align-items: center; gap: var(--space-1-5); min-inline-size: 0;
+    block-size: var(--control-md); margin: 0 calc(-1 * var(--space-2)); padding: 0 var(--space-2);
+    border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-2);
+    font: inherit; text-align: start; cursor: default;
+    transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  }
+  .ui-section-toggle > .ui-section-title { color: inherit; }
+  .ui-section-toggle:hover { background: var(--surface-hover); color: var(--text-1); }
+  .ui-section-toggle:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+  .ui-section-chev {
+    flex: none; inline-size: var(--icon-sm); block-size: var(--icon-sm); stroke-width: 2; color: var(--text-3);
+    transition: rotate var(--dur-base) var(--ease-out);
+  }
+  .ui-section-chev:dir(rtl) { scale: -1 1; }
+  .ui-section-toggle:where([aria-expanded="true"]) .ui-section-chev { rotate: 90deg; }
+
+  /* The title switch: the toggle spans the row; a hidden copy of the title sizes the first column so the switch follows the words. */
+  .ui-section-head:where([data-switch]) { display: grid; grid-template-columns: max-content auto minmax(0, 1fr); }
+  .ui-section-head:where([data-switch]) > .ui-section-toggle { grid-column: 1 / -1; grid-row: 1; }
+  .ui-section-sizer {
+    grid-column: 1; grid-row: 1; visibility: hidden; pointer-events: none;
+    white-space: nowrap; font: var(--type-small-strong);
+  }
+  .ui-section-switch {
+    grid-column: 2; grid-row: 1; z-index: 1;
+    display: inline-grid; place-items: center; block-size: var(--control-md); padding-inline: var(--space-2) var(--space-1);
+  }
+  .ui-section-head:where([data-switch]) > :is(.ui-section-action, .ui-section-actions) {
+    grid-column: 3; grid-row: 1; justify-self: end; z-index: 1;
+    margin-inline-end: calc(var(--icon-sm) + var(--space-2));
+  }
+}

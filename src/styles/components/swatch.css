@@ -1,0 +1,48 @@
+/* Swatch (components.md "Swatch"): 20px (16 sm, 28 lg, 24 in a
+ * .ui-swatch-grid), radius 6, always --swatch-ring. The colour comes from
+ * --swatch (a colour) or --swatch-paint (a gradient paint), written inline by
+ * the inspector kit; the checkerboard shows through transparency.
+ * data-mixed splits it ("Mixed"), data-swatch="none" crosses it out. A
+ * swatch is a paint-picker button ([data-paint-picker], #segment-color's
+ * pattern), a plain button (a recent colour) or a native <input type=color>
+ * (#figure-color, #background-color), all opened by color-picker.mjs. */
+@layer components {
+  .ui-swatch {
+    --swatch: var(--surface);
+    --swatch-paint: initial;
+    --_s: 20px;
+    position: relative; flex: none; display: inline-block;
+    inline-size: var(--_s); block-size: var(--_s); margin: 0; padding: 0;
+    border: 0; border-radius: var(--radius-sm); appearance: none; cursor: default;
+    background: var(--swatch-paint, linear-gradient(var(--swatch), var(--swatch))),
+      repeating-conic-gradient(var(--checker-a) 0 25%, var(--checker-b) 0 50%) 0 0 / 8px 8px;
+    box-shadow: inset 0 0 0 1px var(--swatch-ring);
+  }
+  .ui-swatch[data-size="sm"] { --_s: 16px; border-radius: var(--radius-2xs); }
+  .ui-swatch[data-size="lg"] { --_s: 28px; border-radius: var(--radius-md); }
+  .ui-swatch[data-mixed] {
+    background: linear-gradient(135deg, var(--swatch) 0 50%, transparent 50%),
+      repeating-conic-gradient(var(--checker-a) 0 25%, var(--checker-b) 0 50%) 0 0 / 8px 8px;
+  }
+  .ui-swatch[data-swatch="none"] {
+    background: linear-gradient(to top right, transparent calc(50% - 1px), var(--danger-dot) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)), var(--surface);
+  }
+  /* A native colour input draws its value itself; the ring sits on its swatch. */
+  .ui-swatch::-webkit-color-swatch-wrapper { padding: 0; }
+  .ui-swatch::-webkit-color-swatch { border: 1px solid var(--swatch-ring); border-radius: inherit; }
+  .ui-swatch::-moz-color-swatch { border: 1px solid var(--swatch-ring); border-radius: inherit; }
+  :is(button, input).ui-swatch:where(:hover):not(:disabled) { box-shadow: inset 0 0 0 1px var(--swatch-ring), 0 0 0 2px var(--surface), 0 0 0 3px var(--line-3); }
+  :is(button, input).ui-swatch:is([aria-pressed="true"], [aria-checked="true"]) { box-shadow: inset 0 0 0 1px var(--swatch-ring), 0 0 0 2px var(--surface), 0 0 0 4px var(--accent-line); }
+  .ui-swatch:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .ui-swatch:disabled { opacity: 0.42; }
+
+  /* A collection of swatches (the figure's colours, recent colours): one group of 24px targets. */
+  .ui-swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, 24px); gap: var(--space-1-5); }
+  .ui-swatch-grid > .ui-swatch { --_s: 24px; }
+
+  @media (forced-colors: active) {
+    /* Swatches are artwork: they keep their colour and gain a real border. */
+    .ui-swatch { forced-color-adjust: none; outline: 1px solid CanvasText; }
+    .ui-swatch:focus-visible { outline: 2px solid Highlight; }
+  }
+}

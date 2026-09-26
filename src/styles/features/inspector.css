@@ -1,0 +1,35 @@
+/* Inspector (feature, track D): what the inspector composes from the .ui-*
+ * components and no component owns. Scoped to #inspector through :where(),
+ * so rules stay at feature specificity. A skeleton: it grows as contexts
+ * move to descriptors (src/inspector-kit.mjs) and their legacy rules
+ * (legacy/07, 22, 25b, 36, 42) are deleted. No key state, no dividers. */
+@layer features {
+  /* Sections follow each other on whitespace; the first sits under the header. */
+  :where(#inspector) > .ui-section:first-child { padding-block-start: var(--space-2); }
+
+  /* A segmented control that keeps native radios (IK's bend direction keeps
+     its change handler): the label is the item and draws the thumb while its
+     radio is checked; the radio stays focusable but invisible. */
+  :where(#inspector) .ui-segmented-item:has(> .ui-segmented-input) { position: relative; }
+  :where(#inspector) .ui-segmented-input {
+    position: absolute; inset: 0; inline-size: 100%; block-size: 100%;
+    margin: 0; opacity: 0; appearance: none; cursor: default;
+  }
+  :where(#inspector) .ui-segmented-item:has(> .ui-segmented-input:checked) {
+    background: var(--control-thumb); color: var(--text-1);
+    box-shadow: inset 0 0 0 1px var(--thumb-line, var(--line-control)), var(--elevation-1);
+  }
+  :where(#inspector) .ui-segmented-item:has(> .ui-segmented-input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 0; }
+  :where(#inspector) .ui-segmented-item:has(> .ui-segmented-input:disabled) { opacity: 0.42; }
+
+  /* A quiet line of facts (the Scene's size and rate). */
+  .inspector-meta { margin: 0; font: var(--type-small); color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+  /* The foot: one quiet row of commands for the whole context ("Add to library"), over a hairline. */
+  .inspector-foot {
+    display: flex; align-items: center; gap: var(--space-1); flex: none;
+    padding: var(--space-1-5) var(--space-2) var(--space-2);
+    box-shadow: inset 0 1px 0 var(--line-1);
+  }
+  .inspector-foot > .ui-button { justify-content: flex-start; color: var(--text-2); }
+}

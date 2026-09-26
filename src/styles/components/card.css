@@ -1,0 +1,22 @@
+/* Preview well (.ui-card): an owned canvas or widget (the camera monitor,
+ * the brush preview, a motion graph) in a flat sunken frame with an optional
+ * one-line caption ("960 × 540 · 100% zoom"). Never raised, never a summary
+ * or a container for controls: decorative cards stay retired
+ * (visual-system.md §2.2). The media is a data-inspector-owned host, so an
+ * inspector refresh never touches what its owner draws. */
+@layer components {
+  .ui-card { display: grid; gap: var(--space-1-5); min-inline-size: 0; }
+  .ui-card-media {
+    display: block; inline-size: 100%; min-block-size: 48px;
+    border-radius: var(--radius-md); background: var(--surface-sunken); overflow: hidden;
+  }
+  .ui-card-caption {
+    display: flex; justify-content: space-between; gap: var(--space-2); min-inline-size: 0;
+    font: var(--type-small); color: var(--text-3); font-variant-numeric: tabular-nums;
+  }
+  .ui-card-caption > span { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  @media (forced-colors: active) {
+    .ui-card-media { outline: 1px solid CanvasText; }
+  }
+}
