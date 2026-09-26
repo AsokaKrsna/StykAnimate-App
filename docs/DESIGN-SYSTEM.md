@@ -181,7 +181,9 @@ dark colour.
 
 - **Buttons**: `.button`, `.button.primary`, `.button.subtle`, `.button.small`,
   `.button.danger`, `.icon-button`. The primary button is the ink pill (a light
-  pill in dark); a disabled one renders neutral.
+  pill in dark); a disabled one renders neutral. Keep one primary per surface:
+  in Build, Done is the primary and Export becomes a soft secondary
+  (`--control-soft`), as does Add Frame beside Play in the Simple timeline.
 - **Segmented controls**: `.ds-segmented` (also applied to the inspector
   Properties/VFX/Library switch, the timeline Simple/Advanced switch, export
   categories and camera tabs). Mark the chosen button with `aria-pressed` or

@@ -115,6 +115,9 @@
 .icon-button.active, .icon-button[aria-pressed="true"] { background: var(--theme-selected); color: var(--theme-accent); }
 .titlebar .button { border-radius: var(--ds-radius); }
 .titlebar .button.subtle { color: var(--theme-secondary); }
+/* One ink primary per surface: in Build it is Done, so Export steps down. */
+:root:has(.workspace[data-mode="rig"]) .titlebar [data-action="export"] { background: var(--control-soft); border-color: transparent; color: var(--text-1); box-shadow: none; }
+:root:has(.workspace[data-mode="rig"]) .titlebar [data-action="export"]:hover:not(:disabled) { background: var(--control-soft-hover); border-color: transparent; }
 
 /* ---------- Segmented controls and tabs ----------
    One look for every "pick one of a few" control. */

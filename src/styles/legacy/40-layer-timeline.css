@@ -73,8 +73,8 @@
 .sheet-filmstrip-field>input{font-variant-numeric:tabular-nums}
 .sheet-easing-button{justify-content:space-between;gap:4px}
 .sheet-easing-button .icon{width:12px;height:12px;color:var(--muted,#767676)}
-.sheet-add-frame{height:28px;border-radius:5px;background:var(--primary);color:var(--on-primary);font-size:11px;gap:5px}
-.sheet-add-frame:hover{background:var(--primary-hover)!important}
+.sheet-add-frame{height:28px;border-radius:5px;background:var(--control-soft);color:var(--text-1);font-size:11px;gap:5px}
+.sheet-add-frame:hover{background:var(--control-soft-hover)!important}
 .sheet-add-frame .icon{width:14px;height:14px}
 .sheet-filmstrip-actions{display:flex;justify-content:space-between;gap:4px}
 .sheet-filmstrip-actions .icon-button{height:25px;width:28px;border-radius:4px;color:var(--muted,#767676)}

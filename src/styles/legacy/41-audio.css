@@ -73,6 +73,3 @@
 .audio-options .ds-switch>input{accent-color:var(--audio-ink)}
 .audio-options .ds-switch>input:checked{background:var(--audio-ink)}
 .audio-empty-actions{display:flex;gap:8px;margin-top:10px}
-.audio-empty-actions .button.primary{background:var(--audio-ink);border-color:var(--audio-ink)}
-.audio-empty-actions .button.primary:hover:not(:disabled){background:color-mix(in srgb,var(--audio-ink) 85%,#000);border-color:transparent}
-[data-theme=dark] .audio-empty-actions .button.primary{color:#0e1f1c}
