@@ -10,6 +10,30 @@ Artwork, paint swatches, joint colours and export previews keep their own
 colours. Brush preset thumbnails show a stroke's shape, not its colour, so dark
 mode inverts them to light strokes.
 
+## The redesign spec
+
+The editor is being rebuilt to the design in `docs/design/` (revision 4.3,
+"Simple at a glance, powerful underneath"). This file describes what the code
+does today; the spec describes where it is going, and each milestone updates
+this file as its surfaces land.
+
+| Document | What it owns |
+| --- | --- |
+| `docs/design/README.md` | Index, the owner's standard, what each revision changed, the measured results, and how the spec maps onto this repository |
+| `docs/design/DECISIONS.md` | The sign-off of revision 4.3: approved and deferred behaviours; it overrides `experience.md` §11 where they differ |
+| `docs/design/experience.md` | Every surface and interaction, the balanced budget and first-glance rule, the layout model and tiers, and where every command lives |
+| `docs/design/visual-system.md` | Calm through structure, colour and the contrast matrix, type, spacing, depth, motion, icons |
+| `docs/design/components.md` | The `.ui-*` component vocabulary |
+| `docs/design/function-ledger.md` | Every function of the editor as measured at `c82312fb`, with its clicks then and in the redesign (generated) |
+| `docs/design/ui-architecture.md` | The build plan: layers and lint, the UI kit, the shell and layout model, contracts, milestones M0–M9, and their status |
+
+The reference editor is in `design/app-ui/reference/`, with the spec's
+`tokens.css` and `components.css` it renders with in `design/app-ui/`. Run
+`node design/app-ui/reference/tools/build.mjs` to regenerate `editor.html` and
+`node design/app-ui/reference/tools/shoot.mjs` to render and audit its states
+into `artifacts/ui-redesign/reference/`. The research behind the spec is not in
+the repository.
+
 ## Stylesheets and cascade layers
 
 `index.html` links one stylesheet, `src/styles/app.css`. It declares the cascade
