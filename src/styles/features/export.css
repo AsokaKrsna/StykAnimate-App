@@ -1,0 +1,59 @@
+/* The export sheet (export-sheet.mjs, M6; experience.md §5.14): the form
+ * column of the export dialog variant (components/dialog-variants.css). It
+ * composes the kit (.ui-dialog-row, .ui-field, .ui-select, .ui-segmented,
+ * .ui-switch, .ui-section) and only lays those out. Calm: the foot's primary
+ * names the format and is the one ink button; no lime, no badges and no
+ * helper sentences. The rows follow src/export-request.mjs
+ * exportFieldVisibility(); the sheet hides a row with [hidden]. */
+@layer features {
+  /* The form: label column and rhythm. It scrolls under a fade while rows wait below (data-more-below, set by the sheet).
+   * max-content rows: in a body of fixed height whose rows overflow, auto rows would shrink to a row's min-block-size and overlap. */
+  .export-body { --_label: 72px; grid-auto-rows: max-content; gap: var(--space-2-5); }
+  .export-body[data-more-below] { mask-image: linear-gradient(to bottom, var(--text-1) calc(100% - 28px), transparent); } /* only the stops' alpha counts */
+
+  /* Name: the extension after the typed name, in the field. */
+  .export-extension { flex: none; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+  /* Size › Custom…: Width, Lock ratio, Height on the row under Size. */
+  .export-size-custom { display: flex; align-items: center; gap: var(--space-1-5); min-inline-size: 0; }
+  .export-size-custom > :not(button) { flex: 1 1 0; min-inline-size: 0; }
+
+  /* Picture: Edges and Transparent; Sound; GIF's Colours: one line each. */
+  .export-inline { display: flex; align-items: center; gap: var(--space-2); min-inline-size: 0; }
+  .export-inline > .ui-select { flex: 1 1 auto; min-inline-size: 0; }
+  .export-toggle {
+    display: flex; flex: 1 1 auto; align-items: center; justify-content: space-between; gap: var(--space-2);
+    min-inline-size: 0; min-block-size: var(--control-lg); padding: 0 var(--space-2-5);
+    border-radius: var(--radius-md); background: var(--surface-sunken); font: var(--type-ui);
+  }
+  .export-toggle > span { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Disabled means explained: the reason under a switch that cannot act (Transparent in MP4). */
+  .export-reason { grid-column: 2; margin: 0; font: var(--type-small); color: var(--text-3); }
+
+  /* Project: its four types as a visible list, one click each. */
+  .export-types { display: grid; gap: var(--space-0-5); }
+  .export-type {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+    min-block-size: var(--control-lg); padding: 0 var(--space-2-5);
+    border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-1); font: var(--type-ui); text-align: start;
+  }
+  .export-type:where(:hover) { background: var(--surface-hover); }
+  .export-type[aria-checked="true"] { background: var(--surface-selected); box-shadow: inset 0 0 0 1.5px var(--accent-line); }
+  .export-type:disabled { color: var(--text-disabled); }
+  .export-type:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset); }
+  .export-type-extension { color: var(--text-3); font: var(--type-small); font-variant-numeric: tabular-nums; }
+
+  /* Encoding: a titled section, closed at rest; its title carries the summary ("H.264 · automatic bitrate"). */
+  .export-encoding > .ui-section-body { gap: var(--space-3); }
+  .export-encoding-summary { flex: 1 1 auto; min-inline-size: 0; overflow: hidden; font: var(--type-small); color: var(--text-3); text-align: end; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* The preview's caption: typed From and To beside "Frames". */
+  .export-frame-field { flex: none; inline-size: 88px; }
+
+  /* The foot: the summary (.ui-dialog-meta) and the validation line before Cancel and the primary. */
+  .export-validation { margin: 0; font: var(--type-small); color: var(--text-2); }
+  .export-validation[data-error="true"] { color: var(--danger-text); }
+
+  /* Progress stays inside the sheet (#export-progress, #cancel-export). */
+  .export-progress { display: grid; gap: var(--space-3); align-content: center; min-block-size: 0; padding: var(--space-6); }
+}
