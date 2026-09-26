@@ -7,6 +7,7 @@ import {icon} from '/src/icons.mjs';
 import {HotkeyManager} from '/src/hotkeys.mjs';
 import {createOverlayManager} from '/src/ui/overlay-manager.mjs';
 import {createCommandRegistry} from '/src/ui/command-registry.mjs';
+import {CATALOG_REQUIREMENTS} from '/src/ui/command-catalog.mjs';
 import {installMenuBar, openMenu} from '/src/ui/ui-menu.mjs';
 import {createPopover} from '/src/ui/ui-popover.mjs';
 import {installTooltips} from '/src/ui/ui-tooltip.mjs';
@@ -30,7 +31,8 @@ const overlays = createOverlayManager({hotkeys, fallbackFocus: () => $('fixture-
 overlays.install();
 const commands = createCommandRegistry({
   actions, hotkeys, context: () => state, runHotkey: id => log.push(`hotkey:${id}`),
-  requirements: {figure: context => context.figure || 'Select a figure first'},
+  // Every requirement the catalog uses gets an answer; this page is the web build, so desktop-only commands are off.
+  requirements: {...Object.fromEntries(CATALOG_REQUIREMENTS.map(name => [name, () => false])), figure: context => context.figure || 'Select a figure first'},
   checked: (id, context) => ({'toggle-handles': context.handles, 'toggle-motion-paths': context.paths, 'toggle-onion': context.onion})[id],
 });
 const band = document.querySelector('.fixture-band');
@@ -81,8 +83,17 @@ for (const [name, value] of [['Frames before', 2], ['Frames after', 1]]) {
   label.append(`${name} `, input);
   onionBody.append(label);
 }
-const popover = createPopover({anchor: $('open-popover'), title: 'Onion skin', closeLabel: 'Close onion settings', body: onionBody, overlays, icon, topInset,
-  keyboardScope: true});
+// A button in the popover that opens a dialog, like Rename in the Document popover: showModal hides the popover.
+const renameFromPopover = document.createElement('button');
+renameFromPopover.type = 'button';
+renameFromPopover.id = 'popover-rename';
+renameFromPopover.textContent = 'Rename…';
+renameFromPopover.addEventListener('click', async () => {
+  const name = await prompt({title: 'Rename layer', label: 'Name', value: 'Onion', overlays, icon});
+  log.push(`popover-prompt:${name}`);
+});
+const popover = createPopover({anchor: $('open-popover'), title: 'Onion skin', closeLabel: 'Close onion settings', body: onionBody, foot: renameFromPopover,
+  overlays, icon, topInset, keyboardScope: true});
 $('open-popover').addEventListener('click', () => popover.toggle());
 
 const tooltips = installTooltips(document, {shortcut: element => (element.dataset.command ? commands.shortcut(element.dataset.command) : element.dataset.hotkeyHint), topInset});
@@ -135,9 +146,20 @@ $('open-modal').addEventListener('click', () => {
   opener.id = 'modal-menu-button';
   opener.textContent = 'Arrange';
   opener.addEventListener('click', () => openMenu({...menuOptions, anchor: opener, items: MENUS.view(), label: 'Arrange'}));
-  body.append(field, opener);
+  // A manual, keyboard-scoped popover inside the dialog (Go to frame style): it only closes itself.
+  const pinned = document.createElement('button');
+  pinned.type = 'button';
+  pinned.id = 'modal-popover-button';
+  pinned.textContent = 'Frame';
+  const frameField = document.createElement('input');
+  frameField.type = 'number';
+  frameField.setAttribute('aria-label', 'Frame number');
+  const inner = createPopover({anchor: pinned, title: 'Go to frame', body: frameField, dismiss: 'manual', keyboardScope: true, overlays, icon, topInset});
+  pinned.addEventListener('click', () => inner.toggle());
+  body.append(field, opener, pinned);
   const dialog = createDialog({title: 'Figure', size: 'md', body, overlays, icon, actions: [{label: 'Cancel', cancel: true}, {label: 'Done', value: 'done', variant: 'primary'}]});
   dialog.showModal().then(value => log.push(`modal:${value}`));
+  window.fixture.modal = dialog;
 });
 
 // Toolbar overflow with a More menu of the controls that did not fit.

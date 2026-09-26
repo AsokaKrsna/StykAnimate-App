@@ -1,20 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync, readdirSync} from 'node:fs';
-import {COMMAND_BY_ID, COMMAND_CATALOG, COMMAND_CATEGORIES} from '../src/ui/command-catalog.mjs';
-import {CommandRegistry, fuzzyMatch, humanizeId} from '../src/ui/command-registry.mjs';
-import {DEFAULT_HOTKEYS, HOTKEY_BY_ID, HOTKEY_COMMANDS, findHotkeyConflicts, formatBinding} from '../src/hotkeys.mjs';
+import {CATALOG_REQUIREMENTS, COMMAND_BY_ID, COMMAND_CATALOG, COMMAND_CATEGORIES} from '../src/ui/command-catalog.mjs';
+import {CommandRegistry, ariaKeyShortcut, fuzzyMatch, humanizeId} from '../src/ui/command-registry.mjs';
+import {DEFAULT_HOTKEYS, HOTKEY_BY_ID, findHotkeyConflicts, formatBinding} from '../src/hotkeys.mjs';
 import {iconNames} from '../src/icons.mjs';
 import english from '../src/locales/en.mjs';
-// The shell contract's scanner for the actions map (app.mjs and the modules it passes the map to). Importing
-// the module also registers its tests in this run; they are fast, and one parser beats two.
-import {actionKeys} from './shell-contract.test.mjs';
+import overlayStrings from '../src/locales/en-overlays.mjs';
+// The shell contract's scanner for the actions map (app.mjs and the modules it passes the map to).
+import {actionKeys, readActionSources} from './helpers/source-scan.mjs';
 
-const actionSources = readdirSync(new URL('../src/', import.meta.url), {recursive: true})
-  .filter(file => file.endsWith('.mjs'))
-  .map(file => readFileSync(new URL(`../src/${file.replaceAll('\\', '/')}`, import.meta.url), 'utf8'))
-  .filter(source => /const actions = \{|Object\.assign\(actions,/.test(source));
-const ACTIONS = actionKeys(actionSources);
+const ACTIONS = actionKeys(readActionSources());
+const catalogText = {...english, ...overlayStrings};
+const everyRequirement = (answer = () => true) => Object.fromEntries(CATALOG_REQUIREMENTS.map(name => [name, answer]));
 const hotkeyOf = entry => entry.hotkey ?? (HOTKEY_BY_ID.has(entry.id) ? entry.id : null);
 
 test('every catalog id is an existing action or hotkey command, listed once', t => {
@@ -38,7 +35,14 @@ test('catalog metadata is well formed', () => {
     for (const mode of entry.modes ?? []) assert.ok(['animate', 'draw', 'rig'].includes(mode), `${entry.id}: mode ${mode}`);
     assert.ok(Object.isFrozen(entry), `${entry.id} is frozen`);
   }
-  for (const category of COMMAND_CATEGORIES) if (category.labelKey) assert.equal(english[category.labelKey], category.label);
+  for (const category of COMMAND_CATEGORIES) assert.equal(catalogText[category.labelKey], category.label, `${category.id}: ${category.labelKey}`);
+  for (const key of Object.keys(overlayStrings)) assert.ok(!Object.hasOwn(english, key), `${key} is defined once, in en-overlays.mjs`);
+});
+
+test('CATALOG_REQUIREMENTS lists every requirement name the catalog uses', () => {
+  const used = new Set(COMMAND_CATALOG.flatMap(entry => entry.requires ?? []));
+  assert.deepEqual(CATALOG_REQUIREMENTS, [...used].sort());
+  assert.ok(CATALOG_REQUIREMENTS.includes('desktop:updates') && CATALOG_REQUIREMENTS.includes('figure'));
 });
 
 test('no two commands claim the same shortcut', () => {
@@ -55,6 +59,46 @@ test('no two commands claim the same shortcut', () => {
     assert.ok(!owners.has(hotkey), `${hotkey} is shown by ${owners.get(hotkey)} and ${entry.id}`);
     owners.set(hotkey, entry.id);
   }
+  // Across scopes, in each workspace: a shortcut is shown on the command it runs there, never on two.
+  const registry = new CommandRegistry({actions: Object.fromEntries([...ACTIONS].map(id => [id, () => {}])), runHotkey: () => {},
+    requirements: everyRequirement(), formatBinding: binding => formatBinding(binding, false), hotkeys: {mac: false}});
+  const transient = new Set(['canvas', 'hover', 'polygon', 'timeline', 'simple', 'library']);   // focus- and pointer-dependent scopes
+  for (const mode of ['animate', 'draw', 'rig']) {
+    const shownBy = new Map();
+    for (const entry of COMMAND_CATALOG) {
+      const hotkey = hotkeyOf(entry), command = registry.get(entry.id, {mode});
+      if (!hotkey || entry.hotkey || command.hidden || transient.has(HOTKEY_BY_ID.get(hotkey).scope)) continue;
+      for (const part of command.shortcutParts) {
+        assert.ok(!shownBy.has(part), `${mode}: ${part} is shown on ${shownBy.get(part)} and ${entry.id}`);
+        shownBy.set(part, entry.id);
+      }
+    }
+  }
+});
+
+test('a workspace scope that claims a key takes its shortcut off the general command', () => {
+  const registry = new CommandRegistry({actions: actions(), formatBinding: binding => formatBinding(binding, false), hotkeys: {mac: false}});
+  assert.equal(registry.shortcut('camera-align-view', {mode: 'animate'}), 'F10');
+  assert.equal(registry.shortcut('camera-align-view', {mode: 'rig'}), '', 'F10 shows Static handles in Build');
+  assert.equal(registry.shortcut('builder-static-handles', {mode: 'rig'}), 'F10');
+  assert.equal(registry.shortcut('camera-paste', {mode: 'rig'}), '', 'F12 highlights the part in Build');
+  assert.deepEqual(['toggle-motion-paths', 'select-all'].map(id => registry.shortcut(id, {mode: 'draw'})), ['', ''], 'M and Ctrl+A belong to painting in Draw');
+  assert.equal(registry.shortcut('drawing-select-all', {mode: 'draw'}), 'Ctrl+A');
+  assert.equal(registry.shortcut('select-all', {mode: 'animate'}), 'Ctrl+A');
+  assert.equal(registry.shortcut('camera-align-view', {mode: 'animate', hotkeyScopes: ['builder']}), '', 'an explicit scope list wins over the mode');
+  const user = new CommandRegistry({actions: actions(), hotkeys: {mac: false, bindings: {'camera-align-view': ['F10', 'Shift+F10'], 'builder-static-handles': ['F10']}},
+    formatBinding: binding => formatBinding(binding, false)});
+  assert.deepEqual(user.get('camera-align-view', {mode: 'rig'}).shortcutParts, ['Shift+F10'], 'only the claimed binding is dropped');
+});
+
+test('shortcuts reach assistive tech as aria-keyshortcuts', () => {
+  assert.equal(ariaKeyShortcut('Mod+Shift+KeyZ', false), 'Control+Shift+Z');
+  assert.equal(ariaKeyShortcut('Mod+KeyZ', true), 'Meta+Z');
+  assert.deepEqual(['Equal', 'Shift+Digit1', 'F10', 'Space', 'ArrowLeft'].map(binding => ariaKeyShortcut(binding, false)), ['=', 'Shift+1', 'F10', 'Space', 'ArrowLeft']);
+  const registry = new CommandRegistry({actions: actions(), hotkeys: {mac: false}});
+  assert.equal(registry.get('redo').keyshortcuts, 'Control+Shift+Z Control+Y');
+  assert.equal(registry.get('export', {mode: 'animate'}).keyshortcuts, 'Control+Shift+E');
+  assert.equal(registry.items(['undo'])[0].keyshortcuts, 'Control+Z');
 });
 
 const actions = () => Object.fromEntries(['undo', 'redo', 'mirror', 'mirror-vertical', 'toggle-handles', 'delete-single-segment', 'save', 'export', 'zoom-25', 'play']
@@ -98,10 +142,30 @@ test('availability: requirements, modes, hooks and toggles', () => {
   assert.equal(registry.get('export').hidden, true, 'define() adds a per-command hook');
 });
 
-test('labels translate through existing catalog keys', () => {
-  const registry = new CommandRegistry({actions: actions(), localization: {t: key => (key === 'common.undo' ? 'Annulla' : key)}});
+test('a requirement the app does not answer makes the command unavailable and is reported once', () => {
+  const errors = [];
+  const registry = new CommandRegistry({actions: {...actions(), 'check-updates': () => {}}, requirements: {figure: () => true}, onError: error => errors.push(error.message)});
+  assert.deepEqual([registry.get('check-updates').enabled, registry.get('check-updates').reason], [false, ''], 'desktop-only commands stay off on the web');
+  registry.get('check-updates');
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /desktop:updates/);
+  assert.equal(registry.get('mirror').enabled, true, 'answered requirements still count');
+  const failing = new CommandRegistry({actions: actions(), requirements: {figure: () => { throw new Error('no editor'); }}, onError: error => errors.push(error.message)});
+  assert.equal(failing.get('mirror').enabled, false, 'a failing test reads as unavailable');
+  assert.equal(errors.at(-1), 'no editor');
+});
+
+test('labels, category names and reasons translate through catalog keys', () => {
+  const italian = {'common.undo': 'Annulla', 'menu.file': 'File', 'overlays.category.camera': 'Fotocamera', 'overlays.inMode': 'In {mode}',
+    'overlays.mode.rig': 'Costruzione'};
+  const registry = new CommandRegistry({actions: actions(), onError: () => {},
+    localization: {t: (key, params = {}) => (italian[key] ?? key).replace(/\{(\w+)\}/g, (token, name) => params[name] ?? token)}});
   assert.equal(registry.label('undo'), 'Annulla');
   assert.equal(registry.label('redo'), 'Redo', 'an untranslated key falls back to the English label');
+  assert.equal(registry.categoryLabel('camera'), 'Fotocamera');
+  assert.equal(registry.categoryLabel('drawing'), 'Drawing', 'an untranslated category keeps its English name');
+  assert.equal(registry.get('delete-single-segment', {mode: 'animate'}).reason, 'In Costruzione');
+  assert.equal(new CommandRegistry({actions: actions()}).modeReason('draw'), 'In Draw');
 });
 
 test('run() goes through the app dispatch wrapper and records recents', () => {
@@ -126,7 +190,7 @@ test('run() goes through the app dispatch wrapper and records recents', () => {
 
 test('list() ranks palette rows: matches first, recents early, internal and alias ids left out', () => {
   const all = Object.fromEntries([...ACTIONS, 'zoom-25'].map(id => [id, () => {}]));   // zoom-25 is built at run time
-  const registry = new CommandRegistry({actions: all, runHotkey: () => {}, context: () => ({mode: 'animate'})});
+  const registry = new CommandRegistry({actions: all, runHotkey: () => {}, context: () => ({mode: 'animate'}), requirements: everyRequirement()});
   const flip = registry.list({query: 'flip vert'});
   assert.equal(flip[0].id, 'mirror-vertical');
   assert.deepEqual(flip[0].match.ranges, [[0, 4], [5, 9]]);
@@ -148,7 +212,7 @@ test('items() turns a menu model into resolved menu items', () => {
   const items = registry.items(['undo', null, {label: 'Canvas'}, 'toggle-handles', 'delete-single-segment', {command: 'save', label: 'Save now'},
     {label: 'More', submenu: ['redo']}]);
   assert.equal(items.length, 6, 'the Build-only command is left out');
-  assert.deepEqual(items[0], {command: 'undo', label: 'Undo', icon: 'undo', shortcut: 'Ctrl+Z', danger: false, disabled: false, reason: ''});
+  assert.deepEqual(items[0], {command: 'undo', label: 'Undo', icon: 'undo', shortcut: 'Ctrl+Z', keyshortcuts: 'Control+Z', danger: false, disabled: false, reason: ''});
   assert.equal(items[1], null);
   assert.deepEqual(items[2], {label: 'Canvas'});
   assert.equal(items[3].checked, true);

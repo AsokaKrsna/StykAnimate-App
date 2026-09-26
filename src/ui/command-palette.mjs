@@ -2,33 +2,40 @@
  * The command palette: type to find any command (or anything a feature
  * provides: figures, layers, tutorials, settings) and run it with Enter. It is
  * an index of the registry, never a home of its own. Keyboard first: a
- * combobox with a listbox driven by aria-activedescendant. It opens as a
- * manual [popover] in the top layer (non-modal), registered as a palette, so
- * the editor's hotkeys stay off while it is open.
+ * combobox with a listbox driven by aria-activedescendant.
+ *
+ * It is a modal dialog (a .ui-dialog, md, anchored near the top; the whole
+ * window at the compact and minimal tiers), registered as the palette: the
+ * rest of the window is inert behind the veil, the editor's hotkeys are off,
+ * messages stay above it, and Escape, a press outside it or leaving the
+ * window closes it. Tab is not trapped beyond what a modal dialog does.
  *
  * paletteGroups() is the pure part: the rows for a query. Recent commands come
  * first when the query is empty; typing a number offers "Go to frame N".
  */
-import {showPopoverFrom} from './overlay-manager.mjs';
+import {focusFirst} from './overlay-manager.mjs';
+import {kitText} from './ui-strings.mjs';
 
 /** Metadata for the action that opens the palette; the app registers it with commands.define(). */
-export const PALETTE_COMMAND = Object.freeze({id: 'command-palette', label: 'Search commands…', icon: 'search', category: 'app',
-  keywords: Object.freeze(['command palette', 'find', 'run']), palette: false});
+export const PALETTE_COMMAND = Object.freeze({id: 'command-palette', label: 'Search commands…', labelKey: 'overlays.palette.open', icon: 'search',
+  category: 'app', keywords: Object.freeze(['command palette', 'find', 'run']), palette: false});
 
 /**
  * The palette's groups for `query`: [{id, label, rows}] where a row is
  * {key, id, label, icon, meta, enabled, reason, ranges, run}. Providers are
  * {id, label, search(query, context) => rows}; `frameJump(n)` enables
- * "Go to frame N" for numeric queries.
+ * "Go to frame N" for numeric queries. `t` translates the palette's own words.
  */
-export function paletteGroups({commands, query = '', context, providers = [], frameJump = null, limit = 60, recentLabel = 'Recent',
-  commandsLabel = 'Commands'} = {}) {
+export function paletteGroups({commands, query = '', context, providers = [], frameJump = null, limit = 60, recentLabel = null,
+  commandsLabel = null, t = null} = {}) {
   const text = String(query).trim(), groups = [];
   if (frameJump && /^\d{1,6}$/.test(text)) {
     const frame = Number(text);
-    groups.push({id: 'goto', label: 'Go to', rows: [{key: `frame:${frame}`, id: null, label: `Go to frame ${frame}`, icon: 'frame', meta: '', enabled: true,
-      reason: '', ranges: [], run: () => frameJump(frame)}]});
+    groups.push({id: 'goto', label: kitText(t, 'overlays.palette.goTo'), rows: [{key: `frame:${frame}`, id: null,
+      label: kitText(t, 'overlays.palette.goToFrame', {frame}), icon: 'frame', meta: '', enabled: true, reason: '', ranges: [], run: () => frameJump(frame)}]});
   }
+  recentLabel ??= kitText(t, 'overlays.palette.recent');
+  commandsLabel ??= kitText(t, 'overlays.palette.commands');
   const toRow = command => ({key: `command:${command.id}`, id: command.id, label: command.label, icon: command.icon,
     meta: command.enabled ? command.shortcut : command.reason, enabled: command.enabled, reason: command.reason, ranges: command.match?.ranges ?? [], run: null});
   if (!text) {
@@ -54,19 +61,21 @@ let paletteCount = 0;
 
 /**
  * createCommandPalette({commands, overlays, providers, frameJump, icon,
- * context, topInset, placeholder, label, document})
- * Returns {element, open({invoker}), close(), toggle(), isOpen, addProvider, removeProvider, refresh}.
+ * context, topInset, placeholder, label, emptyLabel, t, document})
+ * Returns {element, input, open({invoker}), close(), toggle(), isOpen, addProvider, removeProvider, refresh}.
  */
 export function createCommandPalette({commands, overlays = null, providers = [], frameJump = null, icon = null, context = null, topInset = 0,
-  placeholder = 'Search commands', label = 'Command palette', emptyLabel = 'No results', document: doc = globalThis.document} = {}) {
+  placeholder = null, label = null, emptyLabel = null, t = null, document: doc = globalThis.document} = {}) {
+  placeholder ??= kitText(t, 'overlays.palette.placeholder');
+  label ??= kitText(t, 'overlays.palette.label');
+  emptyLabel ??= kitText(t, 'overlays.palette.empty');
   const id = `ui-palette-${++paletteCount}`;
-  const element = doc.createElement('div');
+  const element = doc.createElement('dialog');
   element.id = id;
-  element.className = 'ui-palette';
-  element.popover = 'manual';
-  element.setAttribute('role', 'dialog');
-  element.setAttribute('aria-modal', 'false');
+  element.className = 'ui-dialog ui-palette';
+  element.dataset.size = 'md';
   element.setAttribute('aria-label', label);
+  if ('closedBy' in element) element.closedBy = 'any';   // a press outside closes it (Chromium 134+; a pointerdown check below otherwise)
   const search = doc.createElement('div');
   search.className = 'ui-palette-search';
   const glyph = icon?.('search');
@@ -108,7 +117,7 @@ export function createCommandPalette({commands, overlays = null, providers = [],
   };
 
   function render() {
-    const groups = paletteGroups({commands, query: input.value, context: currentContext(), providers: sources, frameJump});
+    const groups = paletteGroups({commands, query: input.value, context: currentContext(), providers: sources, frameJump, t});
     rows = [];
     list.replaceChildren();
     groups.forEach((group, groupIndex) => {
@@ -186,8 +195,14 @@ export function createCommandPalette({commands, overlays = null, providers = [],
       if (count) setActive(Math.min(count - 1, Math.max(0, (active < 0 ? (move > 0 ? -1 : count) : active) + move)));
     } else if (event.key === 'Enter') { event.preventDefault(); runActive(); }
     else if (event.key === 'Escape') { event.preventDefault(); close({restore: true}); }
-    else if (event.key === 'Tab') event.preventDefault();
   }
+
+  // A press on the veil: the event targets the dialog itself, outside its box.
+  const outside = event => {
+    if (event.target !== element) return false;
+    const box = element.getBoundingClientRect();
+    return event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
+  };
 
   function show({invoker: from = doc.activeElement} = {}) {
     if (open) { input.select(); return; }
@@ -196,18 +211,21 @@ export function createCommandPalette({commands, overlays = null, providers = [],
     const view = doc.defaultView ?? globalThis;
     const inset = typeof topInset === 'function' ? topInset() : topInset;
     element.style.setProperty('--palette-top', `${Math.round(Math.max(inset + 8, view.innerHeight * 0.12))}px`);
-    showPopoverFrom(element, null);
+    input.value = '';
+    render();
+    input.autofocus = true;
+    element.showModal();
     open = true;
     controller = new AbortController();
     const {signal} = controller;
     input.addEventListener('input', render, {signal});
     element.addEventListener('keydown', onKeydown, {signal});
-    doc.addEventListener('pointerdown', event => { if (!element.contains(event.target)) close({restore: false}); }, {capture: true, signal});
+    element.addEventListener('cancel', event => { event.preventDefault(); close({restore: true}); }, {signal});
+    element.addEventListener('close', () => close({restore: false}), {signal});
+    element.addEventListener('pointerdown', event => { if (outside(event)) close({restore: false}); }, {signal});
     view.addEventListener('blur', () => close({restore: false}), {signal});
-    handle = overlays?.register(element, {kind: 'palette', keyboardScope: true, invoker, returnFocus: false, closeOnEscape: false,
+    handle = overlays?.register(element, {kind: 'palette', modal: true, keyboardScope: true, invoker, returnFocus: false, closeOnEscape: false,
       onClose: () => close({restore: false})}) ?? null;
-    input.value = '';
-    render();
     input.focus({preventScroll: true});
   }
 
@@ -215,11 +233,11 @@ export function createCommandPalette({commands, overlays = null, providers = [],
     if (!open) return;
     open = false;
     controller.abort();
-    try { if (element.matches(':popover-open')) element.hidePopover(); } catch { /* already hidden */ }
+    if (element.open) element.close();
+    const returnTo = handle?.returnTo ?? [invoker];
     handle?.close(undefined, 'close');
     handle = null;
-    const target = [invoker, overlays?.fallbackFocus?.()].find(node => node?.isConnected && typeof node.focus === 'function');
-    if (restore || doc.activeElement === doc.body || !doc.activeElement) target?.focus({preventScroll: true});
+    if (restore || doc.activeElement === doc.body || !doc.activeElement) focusFirst([...returnTo, overlays?.fallbackFocus?.()], {document: doc});
   }
 
   return {

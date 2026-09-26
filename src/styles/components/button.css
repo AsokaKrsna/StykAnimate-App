@@ -1,0 +1,70 @@
+/* Button (components.md "Button"): a pill with an optional leading glyph and
+ * chevron. Sizes sm 24, regular 28, lg 32. Variants: (secondary, the default)
+ * soft, primary (the one ink button per surface: a dialog's confirm, Export, a
+ * session's Done), ghost, outline and danger; ghost with data-tone="danger"
+ * for "Don't save". Toggled [aria-pressed="true"], disabled at .42 opacity.
+ * Used by the overlay kit's dialog, toast and popover actions; inert until
+ * markup carries .ui-button. */
+@layer components {
+  .ui-button {
+    --_h: var(--control-md);
+    --_px: 12px;
+    --_bg: var(--control-soft);
+    --_bg-hover: var(--control-soft-hover);
+    --_bg-active: var(--control-soft-pressed);
+    --_fg: var(--text-1);
+    --_shadow: none;
+    --icon-size: var(--icon-md);
+    position: relative;
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1-5);
+    min-inline-size: var(--_h); block-size: var(--_h);
+    padding: 0 var(--_px);
+    border: 1px solid transparent; border-radius: var(--radius-pill);
+    background: var(--_bg); color: var(--_fg); box-shadow: var(--_shadow);
+    font: var(--type-ui-strong); line-height: 1; white-space: nowrap;
+    user-select: none; text-decoration: none;
+    transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+      transform var(--dur-fast) var(--ease-out);
+    -webkit-app-region: no-drag;
+  }
+  .ui-button > svg { flex: none; inline-size: var(--icon-size); block-size: var(--icon-size); }
+  .ui-button > .ui-icon:where(:first-child:not(:only-child)) { margin-inline-start: calc(-1 * var(--space-0-5)); }
+  .ui-button:where(:hover):not(:disabled, [aria-disabled="true"]) { background: var(--_bg-hover); }
+  .ui-button:where(:active):not(:disabled, [aria-disabled="true"]) { background: var(--_bg-active); transform: scale(var(--press-scale)); }
+  .ui-button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset); }
+
+  /* The ink primary: at most one per surface. Flat: no shadow. */
+  .ui-button[data-variant="primary"] {
+    --_bg: var(--primary); --_bg-hover: var(--primary-hover); --_bg-active: var(--primary-pressed);
+    --_fg: var(--on-primary); --_shadow: var(--primary-shadow);
+    font: var(--type-button-prominent);
+  }
+  .ui-button[data-variant="ghost"] { --_bg: transparent; --_bg-hover: var(--surface-hover); --_bg-active: var(--surface-pressed); }
+  .ui-button[data-variant="outline"] {
+    --_bg: var(--surface); --_bg-hover: var(--surface-hover); --_bg-active: var(--surface-pressed);
+    --_shadow: inset 0 0 0 1px var(--line-2);
+  }
+  .ui-button[data-variant="danger"] {
+    --_bg: var(--danger-strong); --_fg: var(--on-danger);
+    --_bg-hover: color-mix(in srgb, var(--danger-strong) 88%, var(--text-1));
+    --_bg-active: color-mix(in srgb, var(--danger-strong) 80%, var(--text-1));
+  }
+  .ui-button[data-tone="danger"]:where([data-variant="ghost"]) { --_fg: var(--danger-text); --_bg-hover: var(--danger-soft); --_bg-active: var(--danger-soft); }
+  .ui-button[aria-pressed="true"] {
+    --_bg: var(--accent-soft); --_bg-hover: var(--accent-soft-hover); --_bg-active: var(--accent-soft-hover);
+    --_fg: var(--accent-text);
+  }
+  .ui-button[aria-pressed="true"]:where(:hover, :active) { --_fg: var(--accent-text-strong); }
+
+  .ui-button[data-size="sm"] { --_h: var(--control-sm); --_px: 10px; --icon-size: var(--icon-sm); gap: var(--space-1); font: var(--type-small-strong); line-height: 1; }
+  .ui-button[data-size="lg"] { --_h: var(--control-lg); --_px: 16px; gap: var(--space-2); }
+  .ui-button[data-size="lg"]:where(:not([data-variant]), [data-variant="ghost"]) { font: var(--type-ui-strong); line-height: 1; }
+  .ui-button:is(:disabled, [aria-disabled="true"]) { opacity: 0.42; }
+  .ui-button[aria-busy="true"] { pointer-events: none; }
+  .ui-button-chev { --icon-size: 12px; color: var(--text-3); margin-inline-start: calc(-1 * var(--space-0-5)); }
+
+  @media (forced-colors: active) {
+    .ui-button { border-color: ButtonText; }
+    .ui-button:focus-visible { outline-color: Highlight; }
+  }
+}

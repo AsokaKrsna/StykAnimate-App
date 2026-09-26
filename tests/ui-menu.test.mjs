@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {createTypeahead, findTypeahead, menuKeyAction, normalizeMenu} from '../src/ui/ui-menu.mjs';
 import {nextRovingIndex} from '../src/ui/roving-focus.mjs';
 import {CommandRegistry} from '../src/ui/command-registry.mjs';
+import {kitText, translator} from '../src/ui/ui-strings.mjs';
 
 const registryItems = {
   undo: {label: 'Undo', icon: 'undo', shortcut: 'Ctrl+Z', enabled: true},
@@ -118,4 +119,25 @@ test('roving focus: arrows by orientation, skipping disabled items, looping or n
   assert.equal(nextRovingIndex('End', 0, 4, {skip: index => index === 3}), 2);
   assert.equal(nextRovingIndex('ArrowRight', 0, 1), 0, 'a single item keeps focus');
   assert.equal(nextRovingIndex('ArrowRight', 0, 0), null);
+});
+
+test('labelKeys translate items, submenus and group labels; shortcuts carry aria-keyshortcuts', () => {
+  const t = key => ({'menu.arrange': 'Disponi', 'menu.canvas': 'Tela'})[key] ?? key;
+  const entries = normalizeMenu([{label: 'Canvas', labelKey: 'menu.canvas'}, 'undo', {label: 'Arrange', labelKey: 'menu.arrange', submenu: ['undo']},
+    {label: 'Keep', labelKey: 'menu.unknown', run() {}}], {resolve: id => ({...registryItems[id], keyshortcuts: 'Control+Z'}), t});
+  assert.deepEqual(entries.map(entry => entry.label), ['Tela', 'Undo', 'Disponi', 'Keep'], 'an unknown key keeps the English label');
+  assert.equal(entries[1].keyshortcuts, 'Control+Z');
+  assert.equal(entries[2].keyshortcuts, '', 'a submenu row has no shortcut');
+  const explicit = normalizeMenu([{command: 'undo', shortcut: 'F2'}], {resolve: id => ({...registryItems[id], keyshortcuts: 'Control+Z'})});
+  assert.equal(explicit[0].keyshortcuts, '', "a hand-written shortcut does not borrow the command's keys");
+});
+
+test("the kit's own words come from t, else from the English fragments", () => {
+  assert.equal(kitText(null, 'overlays.palette.goToFrame', {frame: 12}), 'Go to frame 12');
+  assert.equal(kitText(null, 'common.close'), 'Close', 'reused keys fall back to en.mjs');
+  assert.equal(kitText(key => (key === 'common.close' ? 'Chiudi' : key), 'common.close'), 'Chiudi');
+  assert.equal(kitText(() => { throw new Error('bad catalog'); }, 'overlays.dismiss'), 'Dismiss');
+  assert.equal(kitText(null, 'overlays.not-a-key'), 'overlays.not-a-key');
+  assert.equal(translator({t: key => `t:${key}`})('x'), 't:x');
+  assert.equal(translator(null), null);
 });

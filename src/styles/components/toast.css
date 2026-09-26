@@ -12,6 +12,12 @@
     -webkit-app-region: no-drag;
   }
 
+  /* The announcement regions: always rendered, never seen (inside a modal too). */
+  .ui-toast-live {
+    position: fixed; inset-block-start: 0; inset-inline-start: 0; inline-size: 1px; block-size: 1px;
+    margin: 0; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+
   /* A white pill with the one rest shadow; the verb or subject in bold. */
   .ui-toast {
     --icon-size: var(--icon-md);

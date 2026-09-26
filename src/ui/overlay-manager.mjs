@@ -9,18 +9,26 @@
  *     that flips, and the hotkeys' held keys are released when it turns on;
  *   - close guards: requestClose(reason) asks the overlay's beforeClose(),
  *     which may veto (export progress asks "Stop exporting?");
- *   - focus return: on close, focus goes back to the invoker, or to
- *     fallbackFocus() (the stage), unless the user already moved it elsewhere;
+ *   - focus return: on close, focus goes back to the invoker; when that is
+ *     gone or hidden (a button inside a popover that closed), to what opened
+ *     the overlay holding it, and finally to fallbackFocus() (the stage),
+ *     unless the user already moved focus elsewhere;
  *   - the startup prompt queue: prompts (release notes, the privacy first run,
  *     …) open one at a time, highest priority first, only after markReady()
- *     and only while nothing blocking is open.
+ *     and only while nothing blocking is open. A prompt whose ready() turns
+ *     true later needs a pumpPrompts() call.
  *
  * It owns no document state and never runs commands. Components register
  * their element and hide it themselves in onClose; the manager decides when.
  * Modals stay native <dialog>s (showModal); menus, popovers, sheets and toasts
  * are [popover] elements in the top layer. A menu or popover opened from inside
  * an open modal mounts inside that dialog (overlayMount), or everything outside
- * the dialog would be inert.
+ * the dialog would be inert. An overlay whose element left the document (its
+ * dialog was removed) is closed the next time the manager looks at the stack.
+ *
+ * Key listeners registered on window in the capture phase before an overlay
+ * opens (the app's Space pan chord tracker) run before any overlay's handler:
+ * gate them on blocksHotkeys().
  */
 export const OVERLAY_KINDS = Object.freeze(['dialog', 'menu', 'popover', 'palette', 'sheet', 'toast', 'tooltip']);
 const BLOCKING_KINDS = new Set(['menu', 'palette']);
@@ -58,8 +66,30 @@ export function hideOverlayElement(element) {
   if (element.matches?.(':popover-open')) element.hidePopover();
 }
 
-const focusable = element => Boolean(element && typeof element.focus === 'function' && element.isConnected !== false &&
-  !element.disabled && !element.closest?.('[inert]'));
+/**
+ * True when `element` can take focus now: connected, enabled, not inert and
+ * rendered. A button inside a closed popover, a hidden panel or an overflowed
+ * toolbar is none of those, and focus() on it would silently do nothing.
+ */
+export function canTakeFocus(element) {
+  return Boolean(element && typeof element.focus === 'function' && element.isConnected !== false && !element.disabled &&
+    !element.closest?.('[inert]') && element.checkVisibility?.() !== false);
+}
+
+/**
+ * Focuses the first candidate that takes focus and returns it (null when
+ * none does). A candidate counts only if focus really landed on it, so an
+ * element made inert by a modal falls through to the next one.
+ */
+export function focusFirst(candidates, {preventScroll = true, focusVisible, document: doc = null} = {}) {
+  for (const node of candidates) {
+    if (!canTakeFocus(node)) continue;
+    try { node.focus(focusVisible === undefined ? {preventScroll} : {preventScroll, focusVisible}); } catch { continue; }
+    const active = (node.ownerDocument ?? doc)?.activeElement;
+    if (active === undefined || active === node || node.contains?.(active)) return node;
+  }
+  return null;
+}
 
 export class OverlayManager extends EventTarget {
   #entries = [];
@@ -70,6 +100,7 @@ export class OverlayManager extends EventTarget {
   #activePrompt = null;
   #ready = false;
   #pumpQueued = false;
+  #pruning = false;
 
   /**
    * hotkeys        anything with releaseAll() (the HotkeyManager)
@@ -95,14 +126,16 @@ export class OverlayManager extends EventTarget {
    *   kind           one of OVERLAY_KINDS
    *   modal          a modal dialog (always blocks hotkeys)
    *   keyboardScope  the overlay takes all typing (popovers and sheets opt in)
-   *   invoker        the element focus returns to (default: the focused element)
+   *   invoker        the element focus returns to (default: the focused element);
+   *                  when it sits in another open overlay, that overlay's own
+   *                  return targets follow it (handle.returnTo)
    *   returnFocus    false leaves focus alone on close
    *   beforeClose    (reason) => false | Promise<false> vetoes requestClose()
    *   onClose        (value, reason) hides the element; runs once
    *   closeOnEscape  false keeps the global Escape fallback away (default true)
    *   signal         closes the overlay when it aborts
    *
-   * handle: {id, kind, element, signal, result, open, close(value, reason), requestClose(reason)}.
+   * handle: {id, kind, element, signal, result, invoker, returnTo, open, close(value, reason), requestClose(reason)}.
    * `signal` aborts on close: give it to listeners, observers and timers.
    */
   register(element, {kind = 'popover', modal = false, keyboardScope = false, invoker, returnFocus = true, beforeClose = null,
@@ -117,8 +150,9 @@ export class OverlayManager extends EventTarget {
       result: new Promise(done => { resolve = done; }),
     };
     entry.resolve = resolve;
+    entry.returnTo = Object.freeze(this.#returnChain(entry.invoker));
     const handle = entry.handle = Object.freeze({
-      id: entry.id, kind, element, signal: controller.signal, result: entry.result, invoker: entry.invoker,
+      id: entry.id, kind, element, signal: controller.signal, result: entry.result, invoker: entry.invoker, returnTo: entry.returnTo,
       get open() { return entry.open; },
       close: (value, reason = 'close') => this.#finish(entry, value, reason),
       requestClose: reason => this.#requestClose(entry, reason),
@@ -135,6 +169,7 @@ export class OverlayManager extends EventTarget {
 
   /** True while typing belongs to an overlay rather than the editor's hotkeys. */
   blocksHotkeys() {
+    this.#prune();
     return this.#entries.some(entry => entry.modal || entry.keyboardScope || BLOCKING_KINDS.has(entry.kind)) ||
       Boolean(this.document?.querySelector?.('dialog[open]'));
   }
@@ -144,6 +179,7 @@ export class OverlayManager extends EventTarget {
 
   /** The topmost open handle, optionally of the given kinds; passive toasts and tooltips are skipped by default. */
   top(kinds = null) {
+    this.#prune();
     for (let index = this.#entries.length - 1; index >= 0; index--) {
       const entry = this.#entries[index];
       if (kinds ? kinds.includes(entry.kind) : !PASSIVE_KINDS.has(entry.kind)) return entry.handle;
@@ -155,6 +191,7 @@ export class OverlayManager extends EventTarget {
 
   /** Asks every overlay to close, top first; stops at the first veto. Resolves true when all closed. */
   async closeAll(reason = 'close-all', {kinds = null} = {}) {
+    this.#prune();
     for (const entry of [...this.#entries].reverse()) {
       if (kinds && !kinds.includes(entry.kind)) continue;
       if (!(await this.#requestClose(entry, reason))) return false;
@@ -166,13 +203,22 @@ export class OverlayManager extends EventTarget {
   openedByPointer() { return this.lastInput === 'pointer'; }
 
   /**
-   * Document listeners: input modality for the focus rule, and Escape for the
+   * Document listeners: input modality for the focus rule, Escape for the
    * topmost overlay that has no Escape handling of its own (manual popovers,
-   * sheets). Modal dialogs handle Escape through their `cancel` event.
+   * sheets), and dialogs the manager does not know (the legacy #dialog)
+   * opening or closing, which changes the gate and may free the prompt queue.
+   * Modal dialogs handle Escape through their `cancel` event.
    */
   install({signal} = {}) {
     const doc = this.document;
     if (!doc?.addEventListener) return;
+    const dialogChanged = event => {
+      if (event.target?.localName !== 'dialog') return;
+      this.#updateBlocking();
+      this.#queuePump();
+    };
+    doc.addEventListener('close', dialogChanged, {capture: true, signal});
+    doc.addEventListener('toggle', dialogChanged, {capture: true, signal});
     doc.addEventListener('pointerdown', () => { this.lastInput = 'pointer'; }, {capture: true, signal});
     doc.addEventListener('keydown', event => {
       if (!['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) this.lastInput = 'keyboard';
@@ -218,7 +264,11 @@ export class OverlayManager extends EventTarget {
   /** Call once the first frame has rendered: prompts may open from now on. */
   markReady() { this.#ready = true; this.#queuePump(); }
 
-  /** Opens the next ready prompt if nothing blocks; returns its id or null. Safe to call at any time. */
+  /**
+   * Opens the next ready prompt if nothing blocks; returns its id or null.
+   * Safe to call at any time; call it when a waiting prompt's ready() may have
+   * turned true (the release notes finished loading).
+   */
   pumpPrompts() {
     this.#pumpQueued = false;
     if (!this.#ready || this.#activePrompt || this.blocksHotkeys()) return null;
@@ -280,8 +330,25 @@ export class OverlayManager extends EventTarget {
     // Leave focus alone when the user moved it somewhere else (a click on another control).
     const lost = !active || active === doc.body || active === entry.element || entry.element?.contains?.(active) || active.isConnected === false;
     if (!lost) return;
-    const target = [entry.invoker, this.fallbackFocus?.()].find(focusable);
-    try { target?.focus({preventScroll: true}); } catch (error) { this.onError(error); }
+    let fallback = null;
+    try { fallback = this.fallbackFocus?.() ?? null; } catch (error) { this.onError(error); }
+    focusFirst([...entry.returnTo, fallback], {document: doc});
+  }
+
+  /** The invoker, then the return targets of the open overlay that holds it (a button in the Document popover → the popover's anchor). */
+  #returnChain(invoker) {
+    if (!invoker) return [];
+    const owner = this.#entries.findLast(entry => entry.element && entry.element !== invoker && entry.element.contains?.(invoker));
+    return [invoker, ...(owner?.returnTo ?? []).filter(node => node !== invoker)];
+  }
+
+  /** Closes overlays whose element left the document (removed with their dialog): removal fires no close or toggle event. */
+  #prune() {
+    if (this.#pruning) return;
+    const gone = this.#entries.filter(entry => entry.element?.isConnected === false);
+    if (!gone.length) return;
+    this.#pruning = true;
+    try { for (const entry of gone.reverse()) this.#finish(entry, undefined, 'disconnected'); } finally { this.#pruning = false; }
   }
 
   #updateBlocking() {

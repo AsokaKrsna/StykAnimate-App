@@ -13,20 +13,24 @@
  * Model items:
  *   null or '-'                          a separator
  *   'command-id'                         a command, described by `resolve`
- *   {label: 'Canvas'}                    a group label (only a label, or type: 'label')
- *   {command, label, icon, shortcut,     an item; `shortcut` is text, false for
- *    checked, radio, group, danger,      none, or 'auto' (default: the provided
- *    disabled, reason, hidden, keepOpen,  formatter); `run(event, entry)` handles
- *    submenu, run}                       it here, otherwise the click bubbles with
- *                                         its data-action to the app's delegation
+ *   {label: 'Canvas', labelKey}          a group label (only a label, or type: 'label')
+ *   {command, label, labelKey, icon,     an item; `shortcut` is text, false for
+ *    shortcut, keyshortcuts, checked,    none, or 'auto' (default: the provided
+ *    radio, group, danger, disabled,     formatter); `run(event, entry)` handles
+ *    reason, hidden, keepOpen,           it here, otherwise the click bubbles with
+ *    submenu, run}                       its data-action to the app's delegation
+ * `labelKey` goes through `t` (localization.t); the label is the fallback.
  *
  * Rendering keeps today's hooks: items are `button.menu-item.ui-menu-item
  * [role][data-action]`, the first <span> is the label and the shortcut is a
  * <kbd>, so `#menu [data-action=…]` selectors and the localization of menu
- * labels keep working when a menu renders into the #menu host.
+ * labels keep working when a menu renders into the #menu host. An item's
+ * accessible name is its label alone (aria-labelledby); the shortcut is
+ * aria-keyshortcuts and a disabled item's reason its description. Items under
+ * a group label sit in a role=group named by it.
  */
 import {placeFloating} from './anchor-position.mjs';
-import {overlayMount, showPopoverFrom} from './overlay-manager.mjs';
+import {focusFirst, overlayMount, showPopoverFrom} from './overlay-manager.mjs';
 import {installRovingFocus, nextRovingIndex} from './roving-focus.mjs';
 
 // ---------------------------------------------------------------------------
@@ -34,33 +38,44 @@ import {installRovingFocus, nextRovingIndex} from './roving-focus.mjs';
 
 /**
  * Resolves a model into render entries:
- *   {type: 'item', command, label, icon, shortcut, role, checked, disabled,
- *    reason, danger, submenu, run, keepOpen, group, id}
+ *   {type: 'item', command, label, icon, shortcut, keyshortcuts, role, checked,
+ *    disabled, reason, danger, submenu, run, keepOpen, group, id}
  *   {type: 'separator'} and {type: 'label', label}
  * `resolve(command)` returns the registry's description ({label, icon,
- * shortcut, enabled, reason, hidden, checked, danger}); `shortcut(command)`
- * returns the display text of its shortcut. Hidden items and empty submenus
- * are left out; separators and group labels never lead, trail or double.
+ * shortcut, keyshortcuts, enabled, reason, hidden, checked, danger});
+ * `shortcut(command)` returns the display text of its shortcut; `t(key)`
+ * translates `labelKey`s. Hidden items and empty submenus are left out;
+ * separators and group labels never lead, trail or double.
  */
-export function normalizeMenu(items = [], {resolve = null, shortcut = null} = {}) {
+export function normalizeMenu(items = [], {resolve = null, shortcut = null, t = null} = {}) {
   const list = typeof items === 'function' ? items() : items;
   const entries = [];
+  const text = item => {
+    if (item.labelKey && typeof t === 'function') {
+      try { const translated = t(item.labelKey); if (typeof translated === 'string' && translated && translated !== item.labelKey) return translated; } catch { /* the label is the fallback */ }
+    }
+    return item.label;
+  };
   for (const raw of list ?? []) {
     if (raw === null || raw === undefined || raw === '-' || raw?.type === 'separator') { entries.push({type: 'separator'}); continue; }
     const item = typeof raw === 'string' ? {command: raw} : raw;
-    if (item.type === 'label' || (item.type === undefined && Object.keys(item).every(key => key === 'label'))) { entries.push({type: 'label', label: String(item.label ?? '')}); continue; }
+    if (item.type === 'label' || (item.type === undefined && Object.keys(item).every(key => key === 'label' || key === 'labelKey'))) {
+      entries.push({type: 'label', label: String(text(item) ?? '')});
+      continue;
+    }
     const meta = item.command && resolve ? resolve(item.command) ?? null : null;
     if (item.hidden ?? meta?.hidden) continue;
     const submenu = item.submenu ?? null;
-    if (Array.isArray(submenu) && !normalizeMenu(submenu, {resolve, shortcut}).some(entry => entry.type === 'item')) continue;
+    if (Array.isArray(submenu) && !normalizeMenu(submenu, {resolve, shortcut, t}).some(entry => entry.type === 'item')) continue;
     const checked = item.checked ?? meta?.checked;
     const role = item.radio ? 'menuitemradio' : typeof checked === 'boolean' ? 'menuitemcheckbox' : 'menuitem';
     const disabled = Boolean(item.disabled ?? (meta ? meta.enabled === false : false));
     const automatic = item.shortcut === undefined || item.shortcut === 'auto';
+    const shown = submenu || item.shortcut === false ? '' : automatic ? (item.command ? shortcut?.(item.command) ?? meta?.shortcut ?? '' : '') : String(item.shortcut);
     entries.push({
-      type: 'item', command: item.command ?? null, label: String(item.label ?? meta?.label ?? item.command ?? ''),
+      type: 'item', command: item.command ?? null, label: String(text(item) ?? meta?.label ?? item.command ?? ''),
       icon: item.icon ?? meta?.icon ?? null,
-      shortcut: submenu || item.shortcut === false ? '' : automatic ? (item.command ? shortcut?.(item.command) ?? meta?.shortcut ?? '' : '') : String(item.shortcut),
+      shortcut: shown, keyshortcuts: shown && automatic ? String(item.keyshortcuts ?? meta?.keyshortcuts ?? '') : String(item.keyshortcuts ?? ''),
       role, checked: role === 'menuitem' ? undefined : Boolean(checked), disabled,
       reason: disabled ? String(item.reason ?? meta?.reason ?? '') : '', danger: Boolean(item.danger ?? meta?.danger),
       submenu, run: typeof item.run === 'function' ? item.run : null, keepOpen: Boolean(item.keepOpen), group: item.group ?? null, id: item.id ?? null,
@@ -173,11 +188,13 @@ export function menuFor(anchor) {
  *   anchor       the invoking element or a DOMRect; `point` {x, y} for context menus
  *   placement    'bottom-start' (menus), 'right-start' (submenus)
  *   host         render into an existing element (the #menu compatibility host);
- *                its `hidden` attribute mirrors the open state
+ *                its `hidden` attribute mirrors the open state, and the class,
+ *                name and side a menu adds are taken off again when it closes
  *   mount        'auto' (inside the anchor's open <dialog>, else the body) or an element
  *   overlays     the OverlayManager: registers the menu as a hotkey-blocking overlay
  *   resolve      (commandId) => description (the registry's get)
  *   shortcut     (commandId) => display text for its shortcut
+ *   t            (key) => text: translates the model's labelKeys (localization.t)
  *   icon         (name) => SVG string or Node (icons.mjs icon)
  *   onSelect     (entry, event) handles items without their own run(); without
  *                it the click bubbles to the app's data-action delegation
@@ -214,22 +231,28 @@ class Menu {
     this.created = !options.host;
     if (!this.parent && !this.created) openMenus.get(element)?.close('replace', {restore: false});
     if (!element.id) element.id = `ui-menu-${++menuCount}`;
-    element.classList.add('ui-menu');
-    for (const name of String(options.className ?? '').split(/\s+/).filter(Boolean)) element.classList.add(name);
+    // A reused host (#menu) gets back its own classes and name when this menu closes.
+    const classes = ['ui-menu', ...String(options.className ?? '').split(/\s+/).filter(Boolean)];
+    this.addedClasses = this.created ? [] : classes.filter(name => !element.classList.contains(name));
+    this.hostLabel = this.created ? null : element.getAttribute('aria-label');
+    element.classList.add(...classes);
     element.setAttribute('role', 'menu');
     element.popover = 'manual';
-    if (options.label) element.setAttribute('aria-label', options.label);
+    if (options.label) element.setAttribute('aria-label', options.label); else element.removeAttribute('aria-label');
     this.render();
   }
 
   render() {
     const {element} = this, doc = this.document, root = this.root.options;
     const focused = this.buttons.indexOf(doc.activeElement);
-    this.entries = normalizeMenu(this.options.items, {resolve: root.resolve, shortcut: root.shortcut});
+    this.entries = normalizeMenu(this.options.items, {resolve: root.resolve, shortcut: root.shortcut, t: root.t});
     this.buttons = [];
     element.replaceChildren();
+    // Items under a group label go into a role=group the label names, until the next separator or label.
+    let parent = element;
     this.entries.forEach((entry, index) => {
       if (entry.type === 'separator') {
+        parent = element;
         const separator = doc.createElement('div');
         separator.className = 'menu-separator ui-menu-sep';
         separator.setAttribute('role', 'separator');
@@ -237,11 +260,17 @@ class Menu {
         return;
       }
       if (entry.type === 'label') {
-        const label = doc.createElement('div');
+        const group = doc.createElement('div'), label = doc.createElement('div');
+        group.className = 'ui-menu-group';
+        group.setAttribute('role', 'group');
         label.className = 'ui-menu-label';
-        label.setAttribute('role', 'presentation');
+        label.id = `${element.id}-group-${index}`;
+        label.setAttribute('aria-hidden', 'true');
         label.textContent = entry.label;
-        element.append(label);
+        group.setAttribute('aria-labelledby', label.id);
+        group.append(label);
+        element.append(group);
+        parent = group;
         return;
       }
       const button = doc.createElement('button');
@@ -269,13 +298,17 @@ class Menu {
         button.append(pad);
       }
       const label = doc.createElement('span');
+      label.id = `${button.id}-label`;
       label.textContent = entry.label;
       button.append(label);
+      button.setAttribute('aria-labelledby', label.id);
       if (entry.shortcut) {
         const key = doc.createElement('kbd');
         key.className = 'ui-menu-shortcut';
         key.textContent = entry.shortcut;
         button.append(key);
+        // Announced once, as the item's shortcut, rather than read out as text.
+        if (entry.keyshortcuts) { button.setAttribute('aria-keyshortcuts', entry.keyshortcuts); key.setAttribute('aria-hidden', 'true'); }
       }
       if (entry.submenu) {
         const chevron = appendGlyph(button, root.icon?.('chevron-right'), 'ui-icon ui-menu-sub');
@@ -291,7 +324,7 @@ class Menu {
       }
       this.entryByButton.set(button, entry);
       this.buttons.push(button);
-      element.append(button);
+      parent.append(button);
     });
     if (focused >= 0 && this.isOpen) this.focusIndex(Math.min(focused, this.buttons.length - 1));
   }
@@ -318,7 +351,11 @@ class Menu {
     element.addEventListener('keydown', event => { if (isEditable(event.target)) event.stopPropagation(); }, {signal});
     element.addEventListener('toggle', event => { if (event.newState === 'closed' && this.isOpen) this.close('dismiss', {restore: false}); }, {signal});
     if (!this.parent) {
-      if (this.anchorElement) openMenus.set(this.anchorElement, this);
+      if (this.anchorElement) {
+        openMenus.set(this.anchorElement, this);
+        this.anchorElement.setAttribute('aria-expanded', 'true');
+        this.anchorElement.setAttribute('aria-controls', element.id);
+      }
       if (!this.created) openMenus.set(element, this);
       doc.addEventListener('keydown', event => this.#onKeydown(event), {capture: true, signal});
       doc.addEventListener('pointerdown', event => {
@@ -378,6 +415,8 @@ class Menu {
 
   #onKeydown(event) {
     if (!this.isOpen) return;
+    // Removed with the dialog it was mounted in: nothing fired a close, so close now and let the key through.
+    if (!this.element.isConnected) { this.close('disconnected', {restore: false}); return; }
     const menu = this.#activeMenu(event.target), doc = this.document;
     if (menu.element.contains(event.target) && isEditable(event.target)) {
       if (event.key !== 'Escape') return;
@@ -471,7 +510,13 @@ class Menu {
     const hadFocus = element.contains(this.document.activeElement);
     this.controller.abort();
     try { if (element.matches?.(':popover-open')) element.hidePopover(); } catch { /* already hidden */ }
-    if (this.created) element.remove(); else element.setAttribute('hidden', '');
+    if (this.created) element.remove();
+    else {
+      element.setAttribute('hidden', '');
+      if (this.addedClasses.length) element.classList.remove(...this.addedClasses);
+      if (this.hostLabel === null) element.removeAttribute('aria-label'); else element.setAttribute('aria-label', this.hostLabel);
+      element.removeAttribute('data-side');
+    }
     if (this.parent) {
       const row = this.options.anchor;
       row.setAttribute('aria-expanded', 'false');
@@ -481,13 +526,17 @@ class Menu {
       return;
     }
     for (const key of [this.anchorElement, element]) if (key && openMenus.get(key) === this) openMenus.delete(key);
-    this.handle?.close(undefined, reason);
-    // Focus goes back to the invoker when asked, or when it was inside the menu and is now lost.
-    const active = this.document.activeElement;
-    if (restore || hadFocus || !active || active === this.document.body) {
-      const target = [this.invoker, this.options.overlays?.fallbackFocus?.()].find(node => node?.isConnected && typeof node.focus === 'function' && !node.disabled);
-      target?.focus({preventScroll: true});
+    if (this.anchorElement && !openMenus.has(this.anchorElement)) {
+      this.anchorElement.setAttribute('aria-expanded', 'false');
+      if (this.anchorElement.getAttribute('aria-controls') === element.id) this.anchorElement.removeAttribute('aria-controls');
     }
+    const returnTo = this.handle?.returnTo ?? [this.invoker];
+    this.handle?.close(undefined, reason);
+    // Focus goes back to the invoker when asked, or when it was inside the menu and is now lost;
+    // an invoker that is hidden or gone hands over to what opened its own overlay, then the stage.
+    const active = this.document.activeElement;
+    if (restore || hadFocus || !active || active === this.document.body)
+      focusFirst([...returnTo, this.anchorElement, this.options.overlays?.fallbackFocus?.()], {document: this.document});
     this.options.onClose?.(reason);
   }
 }

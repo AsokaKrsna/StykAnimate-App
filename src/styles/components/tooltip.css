@@ -14,6 +14,8 @@
   }
   .ui-tooltip:where([popover]:not(:popover-open)) { display: none; }
   .ui-tooltip[popover] { position: fixed; margin: 0; inset: auto; overflow: visible; }
+  /* Label, dot and shortcut are separate items, so the gap spaces both sides of the dot. */
+  .ui-tooltip-sep { color: var(--text-inverse-2); }
   .ui-tooltip-key { color: var(--text-inverse-2); font-variant-numeric: tabular-nums; }
   .ui-tooltip:popover-open { transition: opacity var(--dur-base) var(--ease-out); }
   @starting-style { .ui-tooltip:popover-open { opacity: 0; } }

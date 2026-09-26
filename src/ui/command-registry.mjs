@@ -12,11 +12,29 @@
  * `availability` hooks for the current context, and the checked state of
  * toggles. The registry holds no editor state and runs commands only through
  * the app's own dispatch wrapper, so telemetry and gesture guards are unchanged.
+ *
+ * Shortcuts are shown the way HotkeyManager.match resolves them: in a
+ * workspace whose own hotkey scope claims a key (F10 in Build, M in Draw),
+ * the general command bound to the same key shows no shortcut there.
  */
-import {HOTKEY_COMMANDS, formatBinding} from '../hotkeys.mjs';
+import {HOTKEY_COMMANDS, formatBinding, isMacPlatform} from '../hotkeys.mjs';
 import {COMMAND_CATALOG, COMMAND_CATEGORIES} from './command-catalog.mjs';
+import {kitText, translator} from './ui-strings.mjs';
 
-const MODE_LABELS = Object.freeze({animate: 'Animate', draw: 'Draw', rig: 'Build'});
+// The scopes app.mjs (hotkeyScopes) hands to HotkeyManager.match, in its order; 'global' is tried last.
+const SCOPE_ORDER = Object.freeze(['drawing', 'polygon', 'hover', 'canvas', 'builder', 'timeline', 'simple', 'library', 'global']);
+// The scopes a workspace keeps active whatever has focus: painting in Draw, the figure builder in Build.
+export const MODE_SCOPES = Object.freeze({draw: Object.freeze(['drawing']), rig: Object.freeze(['builder'])});
+const ARIA_KEYS = Object.freeze({Comma: ',', Period: '.', Slash: '/', Backslash: '\\', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']',
+  Minus: '-', Equal: '=', Backquote: '`'});
+const physical = (binding, mac) => binding.replace('Mod', mac ? 'Meta' : 'Ctrl').split('+').sort().join('+');
+
+/** A binding ('Mod+Shift+KeyZ') in aria-keyshortcuts form ('Control+Shift+Z'). */
+export function ariaKeyShortcut(binding, mac = isMacPlatform()) {
+  return String(binding).split('+').map(part => (part === 'Mod' ? (mac ? 'Meta' : 'Control') : part === 'Ctrl' ? 'Control'
+    : ARIA_KEYS[part] ?? part.replace(/^Key|^Digit|^Numpad/, ''))).join('+');
+}
+
 const HOTKEY_CATEGORY = Object.freeze({
   'Project & editing': 'edit', Tools: 'tools', Animation: 'animation', Timeline: 'animation', Filmstrip: 'animation',
   'View & camera': 'view', Canvas: 'canvas', 'Hovered handle': 'figure', 'Figure builder': 'build', Polygon: 'figure',
@@ -85,15 +103,19 @@ export class CommandRegistry extends EventTarget {
   #meta = new Map();
   #runners = new Map();
   #recent = [];
+  #missing = new Set();
 
   /**
    * actions        the app's actions map (read at run time)
    * dispatch       (id, element, event) => result: the app's guarded wrapper; default calls actions[id]
    * runHotkey      (id, event) => result: runs hotkey-only commands (tools, holds, nudges)
    * hotkeys        the HotkeyManager (its bindings are the user's shortcuts)
-   * localization   anything with t(key)
-   * context        () => the UI context (mode, selection, …) that requirements read
+   * localization   anything with t(key, params): labels, reasons and category names
+   * context        () => the UI context (mode, selection, …) that requirements read;
+   *                `hotkeyScopes` in it overrides the scopes derived from the mode
    * requirements   {name: context => true | false | 'reason'}: evaluates catalog `requires`
+   *                (CATALOG_REQUIREMENTS); a name it lacks makes the command unavailable
+   *                and is reported once through onError
    * availability   (id, context) => boolean | {enabled, reason, hidden, label}: a final say per command
    * checked        (id, context) => boolean | undefined: the state of toggle commands
    * formatBinding  shortcut text for one binding (hotkeys.mjs formatBinding)
@@ -104,6 +126,7 @@ export class CommandRegistry extends EventTarget {
     super();
     Object.assign(this, {actions, dispatch, runHotkey, hotkeys, localization, context, requirements, availability, checkedState: checked,
       format, maxRecent, onError});
+    this.t = translator(localization);
     this.hotkeyCommands = new Map(hotkeyCommands.map(command => [command.id, command]));
     // The catalog sets the index order; hotkey metadata only fills what it leaves out.
     for (const entry of catalog) this.#merge(entry.id, entry);
@@ -136,24 +159,63 @@ export class CommandRegistry extends EventTarget {
     return this.hotkeyCommands.has(hotkey) ? hotkey : null;
   }
 
-  /** The user's bindings for a command, formatted: ['Ctrl+Shift+Z', 'Ctrl+Y']. */
-  shortcutParts(id) {
+  #bindings(hotkey) { return this.hotkeys?.bindings?.[hotkey] ?? this.hotkeyCommands.get(hotkey)?.defaults ?? []; }
+
+  /**
+   * The bindings that run the command in `context`: the user's, less those a
+   * scope the workspace keeps active claims first (HotkeyManager.match tries
+   * the active scopes in order, then 'global').
+   */
+  bindings(id, context = this.#context()) {
     const hotkey = this.hotkeyId(id);
     if (!hotkey) return [];
-    const bindings = this.hotkeys?.bindings?.[hotkey] ?? this.hotkeyCommands.get(hotkey).defaults ?? [];
-    return bindings.map(binding => this.format(binding));
+    const own = this.hotkeyCommands.get(hotkey), mac = this.hotkeys?.mac ?? isMacPlatform();
+    const active = context?.hotkeyScopes ?? MODE_SCOPES[context?.mode] ?? [];
+    const rank = scope => { const index = SCOPE_ORDER.indexOf(scope); return index < 0 ? SCOPE_ORDER.length : index; };
+    const rivals = [...this.hotkeyCommands.values()].filter(other => other.id !== hotkey && other.scope !== own.scope && active.includes(other.scope)
+      && rank(other.scope) < rank(own.scope));
+    if (!rivals.length) return [...this.#bindings(hotkey)];
+    const claimed = new Set();
+    for (const other of rivals)
+      for (const binding of this.#bindings(other.id)) {
+        claimed.add(physical(binding, mac));
+        if (other.extraShift && !binding.includes('Shift+')) claimed.add(physical(`Shift+${binding}`, mac));
+      }
+    return this.#bindings(hotkey).filter(binding => !claimed.has(physical(binding, mac)));
   }
 
-  /** The first binding as display text, '' when the command has none. */
-  shortcut(id) { return this.shortcutParts(id)[0] ?? ''; }
+  /** The command's shortcuts in `context`, formatted: ['Ctrl+Shift+Z', 'Ctrl+Y']. */
+  shortcutParts(id, context = this.#context()) { return this.bindings(id, context).map(binding => this.format(binding)); }
+
+  /** The first shortcut as display text, '' when the command has none in `context`. */
+  shortcut(id, context = this.#context()) { return this.shortcutParts(id, context)[0] ?? ''; }
+
+  /** The shortcuts for aria-keyshortcuts ('Control+Shift+Z Control+Y'). */
+  keyShortcuts(id, context = this.#context()) {
+    const mac = this.hotkeys?.mac ?? isMacPlatform();
+    return this.bindings(id, context).map(binding => ariaKeyShortcut(binding, mac)).join(' ');
+  }
 
   label(id) {
     const meta = this.#meta.get(id);
-    if (meta?.labelKey && this.localization) {
-      const text = this.localization.t(meta.labelKey);
+    if (meta?.labelKey && this.t) {
+      const text = this.t(meta.labelKey);
       if (text && text !== meta.labelKey) return text;
     }
     return meta?.label ?? humanizeId(id);
+  }
+
+  /** A category's name (COMMAND_CATEGORIES), translated when the localization knows its key. */
+  categoryLabel(category) {
+    const entry = COMMAND_CATEGORIES.find(item => item.id === category);
+    if (!entry) return humanizeId(category);
+    return entry.labelKey ? kitText(this.t, entry.labelKey) : entry.label;
+  }
+
+  /** "In Build": why a command of another workspace is not available here. */
+  modeReason(mode) {
+    const key = `overlays.mode.${mode}`, name = kitText(this.t, key);
+    return kitText(this.t, 'overlays.inMode', {mode: name === key ? humanizeId(mode) : name});
   }
 
   /** True when running the command would reach an implementation. */
@@ -164,15 +226,17 @@ export class CommandRegistry extends EventTarget {
   /**
    * Everything a surface needs to show a command in `context` (default: the
    * registry's context()): {id, label, icon, category, keywords, shortcut,
-   * shortcutParts, enabled, reason, hidden, mode, checked, toggle, danger,
-   * palette, aliasOf}. `hidden` means it makes no sense here (menus leave it
+   * shortcutParts, keyshortcuts, enabled, reason, hidden, mode, checked,
+   * toggle, danger, palette, aliasOf}. `hidden` means it makes no sense here (menus leave it
    * out); a disabled command keeps a reason.
    */
   get(id, context = this.#context()) {
     const meta = this.#meta.get(id) ?? {id};
+    const parts = this.shortcutParts(id, context);
     const result = {
       id, label: this.label(id), icon: meta.icon ?? null, category: meta.category ?? 'app', keywords: meta.keywords ?? [],
-      shortcut: this.shortcut(id), shortcutParts: this.shortcutParts(id), enabled: true, reason: '', hidden: false, mode: null,
+      shortcut: parts[0] ?? '', shortcutParts: parts, keyshortcuts: parts.length ? this.keyShortcuts(id, context) : '',
+      enabled: true, reason: '', hidden: false, mode: null,
       checked: undefined, toggle: Boolean(meta.toggle), danger: Boolean(meta.danger), palette: meta.palette !== false,
       aliasOf: meta.aliasOf ?? null,
     };
@@ -181,13 +245,14 @@ export class CommandRegistry extends EventTarget {
     if (meta.modes?.length && context?.mode && !meta.modes.includes(context.mode)) {
       result.hidden = true;
       result.mode = meta.modes[0];
-      disable(`In ${MODE_LABELS[result.mode] ?? humanizeId(result.mode)}`);
+      disable(this.modeReason(result.mode));
     }
     for (const name of meta.requires ?? []) {
-      const test = this.requirements[name];
-      if (typeof test !== 'function') continue;
-      let outcome;
-      try { outcome = test(context); } catch (error) { this.onError(error); outcome = true; }
+      const test = this.requirements?.[name];
+      let outcome = false;
+      // A requirement the app does not answer (or that fails) reads as unavailable: never offer a desktop-only command on the web.
+      if (typeof test !== 'function') this.#reportMissing(name);
+      else try { outcome = test(context); } catch (error) { this.onError(error); outcome = false; }
       if (outcome === false || typeof outcome === 'string') { disable(typeof outcome === 'string' ? outcome : ''); break; }
     }
     for (const hook of [this.availability ? () => this.availability(id, context) : null, meta.when ? () => meta.when(context) : null]) {
@@ -289,6 +354,7 @@ export class CommandRegistry extends EventTarget {
       if (command.hidden && spec.hidden !== false) continue;
       items.push({
         command: command.id, label: command.label, icon: command.icon, shortcut: command.shortcut, danger: command.danger,
+        ...(command.keyshortcuts ? {keyshortcuts: command.keyshortcuts} : {}),
         disabled: !command.enabled, reason: command.reason,
         ...(command.toggle ? {checked: Boolean(command.checked)} : {}),
         ...spec,
@@ -310,6 +376,12 @@ export class CommandRegistry extends EventTarget {
 
   #context() {
     try { return this.context?.() ?? {}; } catch (error) { this.onError(error); return {}; }
+  }
+
+  #reportMissing(name) {
+    if (this.#missing.has(name)) return;
+    this.#missing.add(name);
+    this.onError(new Error(`The command requirement "${name}" has no test in the registry's requirements`));
   }
 }
 

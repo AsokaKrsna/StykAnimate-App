@@ -14,7 +14,12 @@
  *
  * createDialog() is the shell; confirm(), prompt() and choose() are the
  * promise helpers. Texts are set as text, never parsed as HTML.
+ * showLegacyDialog() is the #dialog compatibility instance for callers that
+ * still build HTML. Every helper takes `t` (localization.t) for its own words.
  */
+import {focusFirst} from './overlay-manager.mjs';
+import {kitText} from './ui-strings.mjs';
+
 let dialogCount = 0;
 const FIELDS = 'input:not([type=hidden]):not([type=button]):not([type=submit]):not([type=reset]):not(:disabled), select:not(:disabled), textarea:not(:disabled)';
 
@@ -35,7 +40,7 @@ const nodeFrom = (doc, value, argument) => {
 
 /**
  * createDialog({size, variant, title, description, body, actions, beforeClose,
- * onSubmit, className, closeLabel, overlays, mount, icon, pointer, id})
+ * onSubmit, className, closeLabel, overlays, mount, icon, pointer, id, t})
  *   body      a Node, text, or (form) => Node
  *   actions   [{label, value, variant: 'primary' | 'danger' | 'ghost' | 'outline',
  *              tone, id, autofocus, cancel}] in visual order (Cancel before the
@@ -48,10 +53,11 @@ const nodeFrom = (doc, value, argument) => {
  *   pointer   true when a pointer opened it (default: the overlay manager's last input)
  * Returns {element, form, body, showModal(), close(value), requestClose(reason),
  * setBusy(busy), setError(message), setMeta(text), result}. showModal()
- * resolves with the submitted value, or null when cancelled.
+ * resolves with the submitted value, or null when cancelled. Menus and
+ * popovers opened inside the dialog close with it.
  */
 export function createDialog({size = 'sm', variant = null, title = '', description = '', body = null, actions = [], beforeClose = null, onSubmit = null,
-  className = '', closeLabel = 'Close', overlays = null, mount = null, icon = null, pointer = null, id = null,
+  className = '', closeLabel = null, overlays = null, mount = null, icon = null, pointer = null, id = null, t = null,
   document: doc = globalThis.document} = {}) {
   const dialogId = id ?? `ui-dialog-${++dialogCount}`;
   const element = doc.createElement('dialog');
@@ -86,7 +92,7 @@ export function createDialog({size = 'sm', variant = null, title = '', descripti
   const closeButton = doc.createElement('button');
   closeButton.type = 'button';
   closeButton.className = 'ui-icon-button ui-dialog-close';
-  closeButton.setAttribute('aria-label', closeLabel);
+  closeButton.setAttribute('aria-label', closeLabel ?? kitText(t, 'common.close'));
   const glyph = icon?.('close');
   if (typeof glyph === 'string') closeButton.insertAdjacentHTML('beforeend', glyph); else if (glyph) closeButton.append(glyph); else closeButton.textContent = '×';
   head.append(heading, closeButton);
@@ -134,6 +140,10 @@ export function createDialog({size = 'sm', variant = null, title = '', descripti
     if (settled) return;
     settled = true;
     open = false;
+    // Menus and popovers mounted inside go first: removing a showing popover
+    // fires no toggle event, so they would stay in the stack and keep the hotkeys off.
+    const inside = overlays?.list?.().filter(other => other.element !== element && element.contains(other.element)) ?? [];
+    for (const child of inside.reverse()) child.close(undefined, 'parent-closed');
     if (element.open) element.close();
     handle?.close(value, 'close');
     element.remove();
@@ -225,11 +235,11 @@ export function createDialog({size = 'sm', variant = null, title = '', descripti
  * ([{label, value, danger}], e.g. "Don't save"). Resolves true for the
  * confirm action, an alternative's value, or false when cancelled.
  */
-export async function confirm({title, body = '', description = '', confirmLabel = 'OK', cancelLabel = 'Cancel', danger = false, alternatives = [], size = 'sm', ...options} = {}) {
+export async function confirm({title, body = '', description = '', confirmLabel = null, cancelLabel = null, danger = false, alternatives = [], size = 'sm', ...options} = {}) {
   const dialog = createDialog({size, title, description, body, ...options, actions: [
     ...alternatives.map(action => ({label: action.label, value: action.value, id: action.id, variant: 'ghost', tone: action.danger ? 'danger' : undefined})),
-    {label: cancelLabel, cancel: true, variant: 'ghost'},
-    {label: confirmLabel, value: true, variant: danger ? 'danger' : 'primary', autofocus: true, id: options.confirmId},
+    {label: cancelLabel ?? kitText(options.t, 'common.cancel'), cancel: true, variant: 'ghost'},
+    {label: confirmLabel ?? kitText(options.t, 'overlays.ok'), value: true, variant: danger ? 'danger' : 'primary', autofocus: true, id: options.confirmId},
   ]});
   const value = await dialog.showModal();
   return value === null ? false : value;
@@ -239,7 +249,7 @@ export async function confirm({title, body = '', description = '', confirmLabel 
  * Asks for one line of text (rename). `validate(text)` returns an error
  * message to keep the dialog open. Resolves with the text, or null.
  */
-export async function prompt({title, label = '', value = '', placeholder = '', validate = null, confirmLabel = 'OK', cancelLabel = 'Cancel',
+export async function prompt({title, label = '', value = '', placeholder = '', validate = null, confirmLabel = null, cancelLabel = null,
   maxLength = null, inputId = null, size = 'sm', ...options} = {}) {
   const doc = options.document ?? globalThis.document;
   const row = doc.createElement('div'), caption = doc.createElement('label'), input = doc.createElement('input');
@@ -260,8 +270,8 @@ export async function prompt({title, label = '', value = '', placeholder = '', v
   row.append(input);
   input.addEventListener('input', () => input.removeAttribute('aria-invalid'));
   const dialog = createDialog({size, title, body: row, ...options, actions: [
-    {label: cancelLabel, cancel: true, variant: 'ghost'},
-    {label: confirmLabel, value: true, variant: 'primary'},
+    {label: cancelLabel ?? kitText(options.t, 'common.cancel'), cancel: true, variant: 'ghost'},
+    {label: confirmLabel ?? kitText(options.t, 'overlays.ok'), value: true, variant: 'primary'},
   ], onSubmit: () => {
     const problem = validate?.(input.value);
     if (problem) { input.setAttribute('aria-invalid', 'true'); input.focus(); return {error: problem}; }
@@ -276,7 +286,7 @@ export async function prompt({title, label = '', value = '', placeholder = '', v
  * optional description ([{value, id, label, description, icon}]; ids keep test
  * hooks such as #builder-exit-update). Resolves with the value, or null.
  */
-export async function choose({title, description = '', options: choices = [], cancelLabel = 'Cancel', icon = null, size = 'sm', ...options} = {}) {
+export async function choose({title, description = '', options: choices = [], cancelLabel = null, icon = null, size = 'sm', ...options} = {}) {
   const doc = options.document ?? globalThis.document;
   const list = doc.createElement('div');
   list.className = 'ui-dialog-choices';
@@ -300,7 +310,73 @@ export async function choose({title, description = '', options: choices = [], ca
     list.append(button);
   }
   const dialog = createDialog({size, title, description, body: list, icon, ...options,
-    actions: [{label: cancelLabel, cancel: true, variant: 'ghost'}],
+    actions: [{label: cancelLabel ?? kitText(options.t, 'common.cancel'), cancel: true, variant: 'ghost'}],
     onSubmit: (value, form, submitter) => (values.has(submitter) ? {value: values.get(submitter)} : false)});
   return dialog.showModal();
+}
+
+const legacyHandles = new WeakMap();
+const LEGACY_PRIMARY = '[data-primary]:not(:disabled), button.primary:not(:disabled)';
+
+/**
+ * The #dialog compatibility instance: what showDialog(title, body) in app.mjs
+ * does today, with the kit's rules, until every caller has its own dialog.
+ * The markup and hooks are unchanged (.dialog-head with the title and the
+ * [data-action=close-dialog] button, .dialog-body with the caller's HTML), now
+ * inside a <form method="dialog"> (display: contents), so Enter in a field
+ * runs the body's primary button ([data-primary] or button.primary). Buttons
+ * without a type stay plain buttons, so the body's data-action buttons act as
+ * before. Focus goes to [autofocus], the first field, the primary or the first
+ * control, never the close button; the dialog joins the overlay stack while it
+ * is open. Calling it while the dialog is open swaps the content and keeps the
+ * registration. `bodyHTML` is trusted markup built by the app, as before.
+ *
+ * Returns {dialog, form, body, handle}.
+ */
+export function showLegacyDialog(title, bodyHTML, {dialog, content = null, overlays = null, icon = null, closeLabel = null, pointer = null, t = null} = {}) {
+  const doc = dialog.ownerDocument, host = content ?? dialog.querySelector('#dialog-content') ?? dialog;
+  const form = doc.createElement('form');
+  form.method = 'dialog';
+  form.className = 'ui-legacy-dialog-form';
+  form.noValidate = true;
+  const head = doc.createElement('div'), heading = doc.createElement('h2'), close = doc.createElement('button');
+  head.className = 'dialog-head';
+  heading.textContent = title;
+  close.type = 'button';
+  close.className = 'icon-button';
+  close.dataset.action = 'close-dialog';
+  close.setAttribute('aria-label', closeLabel ?? kitText(t, 'overlays.closeDialog'));
+  const glyph = icon?.('close');
+  if (typeof glyph === 'string') close.insertAdjacentHTML('beforeend', glyph); else if (glyph) close.append(glyph); else close.textContent = '×';
+  head.append(heading, close);
+  const body = doc.createElement('div');
+  body.className = 'dialog-body';
+  body.innerHTML = bodyHTML;
+  for (const button of body.querySelectorAll('button:not([type])')) button.type = 'button';
+  form.append(head, body);
+  // The body's own buttons act on click; the form only turns Enter in a field into the primary.
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    const primary = body.querySelector(LEGACY_PRIMARY);
+    if (primary && event.submitter !== primary) primary.click();
+  });
+  host.replaceChildren(form);
+
+  let handle = legacyHandles.get(dialog) ?? null;
+  const byPointer = pointer ?? overlays?.openedByPointer?.() ?? false;
+  if (!dialog.open) {
+    const invoker = doc.activeElement;
+    dialog.showModal();
+    handle = overlays?.register(dialog, {kind: 'dialog', modal: true, invoker, closeOnEscape: false,
+      onClose: () => { legacyHandles.delete(dialog); if (dialog.open) dialog.close(); }}) ?? null;
+    if (handle) {
+      legacyHandles.set(dialog, handle);
+      dialog.addEventListener('close', () => handle.close(undefined, 'close'), {once: true, signal: handle.signal});
+    }
+  }
+  const target = [...body.querySelectorAll('[autofocus]')].find(node => !node.disabled) ?? body.querySelector(FIELDS) ?? body.querySelector(LEGACY_PRIMARY)
+    ?? body.querySelector('button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])');
+  if (target) focusFirst([target], {focusVisible: byPointer ? false : undefined});
+  else { dialog.tabIndex = -1; dialog.focus({preventScroll: true}); }
+  return {dialog, form, body, handle};
 }

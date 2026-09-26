@@ -50,7 +50,7 @@ export function installTooltips(root = globalThis.document, {selector = TOOLTIP_
 
   const unlink = () => {
     if (!target) return;
-    if (describedBy === null) target.removeAttribute('aria-describedby'); else target.setAttribute('aria-describedby', describedBy);
+    if (describedBy) target.setAttribute('aria-describedby', describedBy); else target.removeAttribute('aria-describedby');
     describedBy = null;
   };
   const hide = () => {
@@ -62,22 +62,32 @@ export function installTooltips(root = globalThis.document, {selector = TOOLTIP_
     lastHiddenAt = now();
     try { if (element.matches(':popover-open')) element.hidePopover(); } catch { /* already hidden */ }
   };
+  const part = (className, text) => {
+    const span = doc.createElement('span');
+    span.className = className;
+    span.textContent = text;
+    return span;
+  };
   const show = next => {
     const text = tooltipContent(next, {shortcut});
     if (!text || !next.isConnected) { hide(); return; }
-    if (target && target !== next) { unlink(); }
-    target = next;
-    element.replaceChildren(doc.createTextNode(text.label || text.shortcut));
-    if (text.label && text.shortcut) {
-      const key = doc.createElement('span');
-      key.className = 'ui-tooltip-key';
-      key.textContent = text.shortcut;
-      element.append(doc.createTextNode('·'), key);
+    if (next === target && element.matches(':popover-open')) return;   // already showing for it (hover, then focus)
+    if (next !== target) {
+      unlink();
+      target = next;
+      // The target's own descriptions, without ours: they come back when the tooltip hides.
+      describedBy = (next.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(id => id && id !== element.id).join(' ');
+      next.setAttribute('aria-describedby', [describedBy, element.id].filter(Boolean).join(' '));
     }
-    try { if (!element.matches(':popover-open')) element.showPopover(); } catch { return; }
+    // Separate parts, so the pill's gap spaces both sides of the dot: "Undo · Ctrl+Z".
+    element.replaceChildren(part('ui-tooltip-label', text.label || text.shortcut));
+    if (text.label && text.shortcut) {
+      const dot = part('ui-tooltip-sep', '·');
+      dot.setAttribute('aria-hidden', 'true');
+      element.append(dot, part('ui-tooltip-key', text.shortcut));
+    }
+    try { if (!element.matches(':popover-open')) element.showPopover(); } catch { hide(); return; }
     placeFloating(element, next, {placement: 'top', offset: 6, fit: false, overlap: false, topInset});
-    describedBy = next.getAttribute('aria-describedby');
-    next.setAttribute('aria-describedby', [describedBy, element.id].filter(Boolean).join(' '));
   };
   const schedule = next => {
     clearTimeout(timer);

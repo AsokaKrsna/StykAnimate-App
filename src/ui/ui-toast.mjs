@@ -10,8 +10,14 @@
  * message. The host is a manual [popover] in the top layer, re-raised whenever
  * a modal opens, so a message is never hidden under a dialog (it is inert
  * while the modal is open). createMessageQueue() is the pure part.
+ *
+ * Screen readers hear each message once, from a visually hidden live region
+ * that is always rendered (the pill itself is not a live region: it appears
+ * already filled, and under a modal it is inert). While a modal dialog is open
+ * the message is announced from a region inside that dialog instead.
  */
 import {UserActionError} from '../user-action-error.mjs';
+import {kitText} from './ui-strings.mjs';
 
 export const MESSAGE_PRIORITY = Object.freeze({hint: 0, toast: 1, update: 2, recovery: 3, error: 4});
 
@@ -58,6 +64,8 @@ export function createMessageQueue({max = 3} = {}) {
 }
 
 const TIMEOUTS = Object.freeze({info: 4000, success: 4000, warning: 6000, error: 0});
+// A region filled in the same task it was created or emptied in is often not read; write a moment later.
+const ANNOUNCE_DELAY = 60;
 let toastCount = 0;
 
 /**
@@ -68,19 +76,50 @@ let toastCount = 0;
  *   icon      (name) => SVG string or Node, for the dismiss and tone glyphs
  *   area      () => DOMRect of the stage: the message sits bottom-centre in it
  *   feedback  {label, run(error)}: the extra action on unexpected errors (desktop)
- * Returns {host, show(options), task(options), fail(error), dismiss(id), clear(), raise()}.
+ *   t         (key, params) => text for the kit's own words (localization.t)
+ * Returns {host, live, show(options), task(options), fail(error), dismiss(id),
+ * clear({tones}), raise(), announce(text, {assertive})}.
  */
-export function createToasts({host = null, overlays = null, icon = null, area = null, feedback = null, max = 3,
+export function createToasts({host = null, overlays = null, icon = null, area = null, feedback = null, max = 3, t = null,
   document: doc = host?.ownerDocument ?? globalThis.document, setTimer = setTimeout, clearTimer = clearTimeout,
   now = () => globalThis.performance?.now() ?? Date.now()} = {}) {
   const element = host ?? doc.createElement('div');
   if (!host) doc.body.append(element);
   element.classList.add('ui-toast-host');
   if (!element.hasAttribute('popover')) element.popover = 'manual';
-  element.setAttribute('aria-live', 'polite');
+  element.removeAttribute('aria-live');
   const queue = createMessageQueue({max});
   const records = new Map();
-  let visible = null;
+  let visible = null, announceTimer = 0;
+
+  // Visually hidden live regions, rendered from the start so that later text is read.
+  const liveRegion = (parent, assertive) => {
+    const region = doc.createElement('div');
+    region.className = 'ui-toast-live';
+    region.setAttribute('role', assertive ? 'alert' : 'status');
+    region.setAttribute('aria-live', assertive ? 'assertive' : 'polite');
+    region.setAttribute('aria-atomic', 'true');
+    parent.append(region);
+    return region;
+  };
+  const live = {polite: liveRegion(doc.body, false), assertive: liveRegion(doc.body, true)};
+  const topModal = () => {
+    const known = overlays?.top?.(['dialog'])?.element;
+    if (known?.open) return known;
+    const open = [...(doc.querySelectorAll?.('dialog[open]') ?? [])];
+    return open.findLast(dialog => { try { return dialog.matches(':modal'); } catch { return true; } }) ?? null;
+  };
+  /** Reads `text` to screen readers once; from inside the top modal dialog while one is open (the rest of the page is inert). */
+  const announce = (text, {assertive = false} = {}) => {
+    if (!text) return;
+    const modal = topModal();
+    const selector = `:scope > .ui-toast-live[aria-live="${assertive ? 'assertive' : 'polite'}"]`;
+    const region = modal ? modal.querySelector(selector) ?? liveRegion(modal, assertive) : assertive ? live.assertive : live.polite;
+    for (const other of [live.polite, live.assertive]) if (other !== region) other.textContent = '';
+    region.textContent = '';
+    clearTimer(announceTimer);
+    announceTimer = setTimer(() => { announceTimer = 0; region.textContent = text; }, ANNOUNCE_DELAY);
+  };
 
   const glyph = (parent, name, className) => {
     const value = icon?.(name);
@@ -121,7 +160,6 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
   const render = record => {
     const node = doc.createElement('div');
     node.className = 'ui-toast';
-    node.setAttribute('role', record.tone === 'error' ? 'alert' : 'status');
     if (record.tone === 'success') node.dataset.tone = 'success';
     if (record.tone === 'error') node.dataset.tone = 'danger';
     if (record.tone === 'warning') node.dataset.tone = 'warning';
@@ -192,6 +230,10 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
     element.replaceChildren(render(record));
     openHost();
     arm(record, record.remaining ?? record.timeout);
+    if (!record.announced) {
+      record.announced = true;
+      announce([record.title, record.message].filter(Boolean).join(' '), {assertive: record.tone === 'error'});
+    }
   };
   const dismiss = id => {
     const record = records.get(id);
@@ -207,10 +249,11 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
   };
 
   function show({message = '', title = '', tone = 'info', slot = null, action = null, actions = null, timeout = null, dismissible = null,
-    icon: iconName = null, key = null, dismissLabel = 'Dismiss', onDismiss = null, task = false} = {}) {
+    icon: iconName = null, key = null, dismissLabel = null, onDismiss = null, task = false} = {}) {
     const list = actions ?? (action ? [action] : []);
     const record = {
-      id: `toast-${++toastCount}`, message: String(message), title: String(title), tone, task, actions: list, onDismiss, dismissLabel,
+      id: `toast-${++toastCount}`, message: String(message), title: String(title), tone, task, actions: list, onDismiss,
+      dismissLabel: dismissLabel ?? kitText(t, 'overlays.dismiss'),
       slot: slot ?? (tone === 'error' ? 'error' : 'toast'),
       // Errors and tasks stay until dismissed or done; an action earns a message more time to be read.
       timeout: timeout ?? (task || tone === 'error' ? 0 : Math.max(list.length ? 8000 : 0, TIMEOUTS[tone] ?? 4000)),
@@ -254,34 +297,37 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
    * A task message that appears only if the work is still running after
    * `delay` ms. Returns {signal, progress(0..1 | null), update({title, meta}),
    * done({message, tone}), fail(error), cancel()}; `signal` aborts on cancel.
-   * `confirmCancel()` may return false (or a promise of it) to keep going.
+   * `confirmCancel()` may return false (or a promise of it) to keep going. The
+   * caller's `signal` ends the task quietly when it aborts (at once if it already has).
    */
-  function task({title = '', meta = '', cancellable = true, cancelLabel = 'Cancel', confirmCancel = null, onCancel = null, signal = null, delay = 150} = {}) {
-    const controller = new AbortController();
-    let record = null, progress = null, finished = false, text = {title, meta};
+  function task({title = '', meta = '', cancellable = true, cancelLabel = null, confirmCancel = null, onCancel = null, signal = null, delay = 150} = {}) {
+    const controller = new AbortController(), lifetime = new AbortController();
+    let record = null, progress = null, finished = false, text = {title, meta}, timer = 0;
+    const end = () => {
+      finished = true;
+      clearTimer(timer);
+      lifetime.abort();   // drops the listener on the caller's signal
+      if (record) dismiss(record.id);
+    };
     const cancel = async () => {
       if (finished) return;
       if (confirmCancel && (await confirmCancel()) === false) return;
       if (finished) return;
-      finished = true;
-      clearTimer(timer);
-      if (record) dismiss(record.id);
+      end();
       controller.abort(new DOMException('Cancelled', 'AbortError'));
       onCancel?.();
     };
-    const timer = setTimer(() => {
-      if (finished) return;
-      const handle = show({title: text.title, message: text.meta, task: true, key: `task-${++toastCount}`,
-        actions: cancellable ? [{label: cancelLabel, run: () => { cancel(); }, dismiss: false}] : []});
-      record = records.get(handle.id);
-      if (record) { record.progress = progress; paintProgress(record); }
-    }, delay);
-    signal?.addEventListener('abort', () => { finished = true; clearTimer(timer); if (record) dismiss(record.id); }, {once: true, signal: controller.signal});
-    const end = () => {
-      finished = true;
-      clearTimer(timer);
-      if (record) dismiss(record.id);
-    };
+    if (signal?.aborted) finished = true;
+    else {
+      signal?.addEventListener('abort', end, {once: true, signal: lifetime.signal});
+      timer = setTimer(() => {
+        if (finished) return;
+        const handle = show({title: text.title, message: text.meta, task: true, key: `task-${++toastCount}`,
+          actions: cancellable ? [{label: cancelLabel ?? kitText(t, 'common.cancel'), run: () => { cancel(); }, dismiss: false}] : []});
+        record = records.get(handle.id);
+        if (record) { record.progress = progress; paintProgress(record); }
+      }, delay);
+    }
     return {
       signal: controller.signal,
       progress(value) {
@@ -290,8 +336,13 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
       },
       update({title: nextTitle = text.title, meta: nextMeta = text.meta} = {}) {
         text = {title: nextTitle, meta: nextMeta};
-        const node = record?.node?.querySelector('.ui-toast-text');
+        if (!record) return;
+        // Kept on the record too: when a message that displaced the task goes, the task re-renders from it.
+        record.title = String(nextTitle);
+        record.message = String(nextMeta);
+        const node = record.node?.querySelector('.ui-toast-text');
         if (node) writeText(node, nextTitle, nextMeta);
+        record.bar?.setAttribute('aria-label', record.title || record.message);
       },
       done({message = '', tone = 'success', ...rest} = {}) { if (finished) return; end(); if (message) show({message, tone, ...rest}); },
       fail(error) { if (finished) return; end(); fail(error); },
@@ -309,8 +360,11 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
   }
 
   return {
-    host: element, show, task, fail, raise, dismiss,
-    clear() { for (const id of [...records.keys()]) dismiss(id); },
+    host: element, live, show, task, fail, raise, dismiss, announce,
+    /** Dismisses every message, or only those of the given tones (a press on the canvas clears info messages: clear({tones: ['info']})). */
+    clear({tones = null} = {}) {
+      for (const [id, record] of [...records]) if (!tones || tones.includes(record.tone)) dismiss(id);
+    },
     get current() { return visible ? handleFor(visible) : null; },
   };
 }

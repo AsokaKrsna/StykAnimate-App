@@ -1,25 +1,14 @@
 /* Command palette (src/ui/command-palette.mjs; components.md "Command
- * palette"): a top-anchored, non-modal panel in the top layer. A 52px search
- * row, group labels and 36px rows (glyph, label with the match in bold,
- * shortcut or reason as text). Full window at the compact and minimal tiers. */
+ * palette"): a modal .ui-dialog (md) anchored near the top, so it shares the
+ * dialog's surface, veil and compact-tier full-window rule (dialog.css). A
+ * 52px search row, group labels and 36px rows (glyph, label with the match in
+ * bold, shortcut or reason as text). --palette-top comes from the band. */
 @layer components {
   .ui-palette {
-    --_w: 580px;
     --icon-size: var(--icon-md);
-    display: flex; flex-direction: column;
-    inline-size: min(var(--_w), calc(100vw - var(--space-4)));
+    margin-block: var(--palette-top, 72px) auto;
     max-block-size: min(520px, calc(100dvh - var(--palette-top, 72px) - var(--space-4)));
-    border: 1px solid transparent; border-radius: var(--radius-2xl);
-    background: var(--surface-raised); color: var(--text-1);
-    box-shadow: var(--elevation-4);
-    font: var(--type-ui);
-    overflow: hidden;
-    -webkit-app-region: no-drag;
   }
-  .ui-palette:where([popover]:not(:popover-open)) { display: none; }
-  .ui-palette[popover] { position: fixed; inset: var(--palette-top, 72px) auto auto 50%; translate: -50% 0; margin: 0; padding: 0; }
-  .ui-palette:popover-open { transition: opacity var(--dur-base) var(--ease-out); }
-  @starting-style { .ui-palette:popover-open { opacity: 0; } }
 
   .ui-palette-search {
     display: flex; flex: none; align-items: center; gap: var(--space-2-5);
@@ -35,7 +24,7 @@
   }
   .ui-palette-search > input::placeholder { color: var(--text-placeholder); }
 
-  .ui-palette-list { display: grid; gap: 1px; align-content: start; min-block-size: 0; overflow: auto; overscroll-behavior: contain; padding: var(--space-1) var(--space-1-5) var(--space-2); }
+  .ui-palette-list { display: grid; flex: 1 1 auto; gap: 1px; align-content: start; min-block-size: 0; overflow: auto; overscroll-behavior: contain; padding: var(--space-1) var(--space-1-5) var(--space-2); }
   .ui-palette-group { padding: var(--space-2-5) var(--space-2-5) var(--space-1); font: var(--type-small-strong); color: var(--text-3); }
   .ui-palette-row {
     display: flex; align-items: center; gap: var(--space-2-5);
@@ -56,12 +45,7 @@
   }
   .ui-palette-empty { padding: var(--space-4) var(--space-3); color: var(--text-3); text-align: center; }
 
-  :where(:root[data-tier="compact"], :root[data-tier="minimal"]) .ui-palette {
-    inset: 0; translate: none; inline-size: 100vw; block-size: 100dvh; max-block-size: 100dvh; border-radius: 0;
-  }
-
   @media (forced-colors: active) {
-    .ui-palette { border-color: CanvasText; }
     .ui-palette-row[aria-selected="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
   }
 }

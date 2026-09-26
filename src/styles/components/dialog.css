@@ -46,6 +46,10 @@
     display: flex; gap: var(--space-2); align-items: flex-start; padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-md); background: var(--danger-soft); color: var(--danger-text); font: var(--type-small);
   }
+  /* The display above would otherwise win over [hidden] once the legacy [hidden] rule is gone. */
+  .ui-dialog-error[hidden] { display: none; }
+  /* showLegacyDialog(): the form around #dialog-content's head and body adds no box of its own. */
+  .ui-legacy-dialog-form { display: contents; }
   /* Form rows inside dialogs: a fixed label column and the control */
   .ui-dialog-row { display: grid; grid-template-columns: var(--_label, 80px) minmax(0, 1fr); align-items: center; gap: var(--space-3); min-block-size: var(--control-lg); }
 

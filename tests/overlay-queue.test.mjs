@@ -181,3 +181,63 @@ test('overlays opened from inside a modal dialog or an open popover mount in it'
   const older = {closest: selector => { if (selector.includes(':popover-open')) throw new SyntaxError('unknown pseudo-class'); return host; }, ownerDocument: {body}};
   assert.equal(overlayMount(older), host, 'without :popover-open support the dialog rule still holds');
 });
+
+test('focus skips an invoker that is hidden or inert: what opened its overlay, then the stage', () => {
+  const {doc, manager, stage} = setup();
+  const documentButton = doc.element('document-button'), rename = doc.element('rename');
+  const popoverElement = doc.element('document-popover', {children: [rename]});
+  documentButton.focus();
+  const popover = manager.register(popoverElement, {kind: 'popover', invoker: documentButton, returnFocus: false});
+  rename.focus();
+  const prompt = manager.register(doc.element('rename-prompt'), {kind: 'dialog', modal: true});
+  assert.deepEqual(prompt.returnTo.map(node => node.name), ['rename', 'document-button'], 'the popover that holds the invoker adds its own anchor');
+  // showModal hid the popover, so its Rename button is no longer rendered; the native focus restore failed.
+  popover.close();
+  rename.checkVisibility = () => false;
+  doc.activeElement = doc.body;
+  prompt.close();
+  assert.equal(doc.activeElement, documentButton, 'Escape in Rename returns to the Document button');
+
+  const behind = doc.element('behind-a-modal');
+  behind.focus = () => {};   // inert: focus() does nothing
+  const item = doc.element('item'), menu = manager.register(doc.element('menu', {children: [item]}), {kind: 'menu', invoker: behind});
+  item.focus();
+  menu.close();
+  assert.equal(doc.activeElement, stage, 'focus that did not land falls through to the stage');
+});
+
+test('overlays removed with their dialog are closed when the stack is next read', () => {
+  const {doc, manager} = setup(), closed = [], changes = [];
+  manager.addEventListener('blocking-change', event => changes.push(event.detail.blocking));
+  const menu = doc.element('menu'), popover = doc.element('manual-popover');
+  manager.register(menu, {kind: 'menu', onClose: (value, reason) => closed.push(['menu', reason])});
+  manager.register(popover, {kind: 'popover', keyboardScope: true, onClose: (value, reason) => closed.push(['popover', reason])});
+  assert.equal(manager.blocksHotkeys(), true);
+  menu.isConnected = false;
+  popover.isConnected = false;   // removing a showing popover fires no toggle event
+  assert.equal(manager.blocksHotkeys(), false, 'the hotkeys come back');
+  assert.deepEqual(closed, [['popover', 'disconnected'], ['menu', 'disconnected']], 'top first, each onClose once');
+  assert.deepEqual([manager.list().length, manager.top()], [0, null]);
+  assert.deepEqual(changes, [true, false]);
+});
+
+test('a dialog the manager does not know closing re-pumps the prompt queue and updates the gate', async () => {
+  const {doc, manager} = setup(), opened = [], listeners = {}, changes = [];
+  doc.addEventListener = (type, listener) => { (listeners[type] ??= []).push(listener); };
+  manager.install();
+  manager.addEventListener('blocking-change', event => changes.push(event.detail.blocking));
+  doc.openDialogs = 1;   // the legacy #dialog, opened without the manager
+  for (const listener of listeners.toggle) listener({target: {localName: 'dialog'}});
+  manager.markReady();
+  manager.enqueuePrompt({id: 'release-notes', open: () => { opened.push('release-notes'); return new Promise(() => {}); }});
+  await settle();
+  assert.deepEqual(opened, [], 'an open dialog holds the queue');
+  doc.openDialogs = 0;
+  for (const listener of listeners.close) listener({target: {localName: 'details'}});
+  await settle();
+  assert.deepEqual(opened, [], 'only dialogs count');
+  for (const listener of listeners.close) listener({target: {localName: 'dialog'}});
+  await settle();
+  assert.deepEqual(opened, ['release-notes']);
+  assert.deepEqual(changes, [true, false]);
+});

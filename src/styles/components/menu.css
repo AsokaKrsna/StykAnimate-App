@@ -67,6 +67,8 @@
   .ui-menu-item:where([data-tone="danger"]) > svg { color: var(--danger-text); }
   .ui-menu-item[data-tone="danger"]:where(:hover, :focus-visible) { background: var(--danger-soft); }
 
+  /* The items under a group label (role=group, named by the label) */
+  .ui-menu-group { display: flex; flex-direction: column; }
   .ui-menu-label { padding: var(--space-2) var(--space-2) var(--space-1); font: var(--type-micro); color: var(--text-3); }
   .ui-menu-sep { flex: none; block-size: 1px; margin: var(--space-1) calc(-1 * var(--space-1)); border: 0; background: var(--line-1); }
   /* An inline control in a menu (the timeline zoom slider) */

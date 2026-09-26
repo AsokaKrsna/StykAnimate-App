@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {computePosition, parsePlacement, positionArea, supportsAnchorPositioning, toRect, viewportBounds} from '../src/ui/anchor-position.mjs';
+import {computePosition, parsePlacement, placeFloating, positionArea, supportsAnchorPositioning, toRect, viewportBounds} from '../src/ui/anchor-position.mjs';
 
 const WINDOW = {width: 1280, height: 720};
 const button = (left, top, width = 80, height = 28) => ({left, top, width, height, right: left + width, bottom: top + height});
@@ -79,4 +79,17 @@ test('CSS anchor positioning maps placements to position-area', () => {
   assert.equal(positionArea('left-end'), 'inline-start span-block-start');
   assert.equal(supportsAnchorPositioning(undefined), false);
   assert.equal(supportsAnchorPositioning({supports: () => true}), true);
+});
+
+test('placeFloating measures the box at the window corner, not where it was last placed', () => {
+  // A shrink-to-fit box (the one tooltip) left near the right edge wraps and measures narrow and tall there.
+  const style = {left: '1180px', top: '200px', maxWidth: '', maxHeight: ''};
+  const element = {
+    style, dataset: {}, ownerDocument: {defaultView: {innerWidth: 1280, innerHeight: 720}},
+    getBoundingClientRect: () => (Number.parseFloat(style.left) > 1100 ? {width: 92, height: 48} : {width: 180, height: 24}),
+  };
+  const result = placeFloating(element, button(100, 300, 28, 28), {placement: 'top', offset: 6, fit: false});
+  assert.deepEqual([result.width, result.height], [180, 24], 'measured at its natural size');
+  assert.deepEqual([style.left, style.top], ['24px', '270px'], 'centred on the button, 6px above it');
+  assert.equal(element.dataset.side, 'top');
 });

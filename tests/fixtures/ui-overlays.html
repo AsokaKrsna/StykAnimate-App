@@ -16,6 +16,7 @@
     body { margin: 0; min-block-size: 100dvh; display: grid; grid-template-rows: auto 1fr; background: var(--surface-field); }
     .fixture-band { display: flex; align-items: center; gap: var(--space-3); block-size: var(--topbar-h); padding: 0 var(--space-3); background: var(--surface); border-block-end: 1px solid var(--line-1); }
     .fixture-band nav { display: flex; gap: var(--space-1); }
+    .fixture-band #edge-tip { margin-inline-start: auto; }
     .fixture-band button, .fixture-stage button { block-size: var(--control-md); padding: 0 var(--space-2-5); border-radius: var(--radius-sm); }
     .fixture-stage { display: grid; align-content: start; gap: var(--space-4); padding: var(--space-4); outline: none; }
     .fixture-stage section { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-lg); background: var(--surface); }
@@ -34,6 +35,7 @@
       <button type="button" data-app-menu="view">View</button>
     </nav>
     <button type="button" id="open-palette" data-tooltip="Search commands" data-hotkey-hint="Ctrl+P">Search commands</button>
+    <button type="button" id="edge-tip" data-tooltip="A longer tooltip for the control at the right edge of the window" data-hotkey-hint="F1">?</button>
   </header>
   <main class="fixture-stage" id="fixture-stage" tabindex="-1">
     <section aria-label="Menus">

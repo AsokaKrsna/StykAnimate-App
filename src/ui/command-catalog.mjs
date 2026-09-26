@@ -20,7 +20,8 @@
  *   hotkey    the HOTKEY_COMMANDS id whose binding this command shows, when it
  *             differs from the id (a declared alias: Play shows Space)
  *   modes     workspace modes (data-workspace-mode) where it applies; absent = all
- *   requires  availability conditions the app evaluates (command-registry `requirements`)
+ *   requires  availability conditions the app evaluates (command-registry `requirements`;
+ *             CATALOG_REQUIREMENTS lists every name the app must supply)
  *   toggle    the command flips a state, shown as a checked menu item
  *   danger    destructive
  *   aliasOf   the same command under another id; the palette lists the target only
@@ -30,16 +31,16 @@ export const COMMAND_CATEGORIES = Object.freeze([
   {id: 'file', label: 'File', labelKey: 'menu.file'},
   {id: 'edit', label: 'Edit', labelKey: 'menu.edit'},
   {id: 'view', label: 'View', labelKey: 'menu.view'},
-  {id: 'animation', label: 'Animation'},
-  {id: 'figure', label: 'Figure'},
-  {id: 'build', label: 'Build'},
-  {id: 'camera', label: 'Camera'},
-  {id: 'tools', label: 'Tools'},
-  {id: 'drawing', label: 'Drawing'},
-  {id: 'canvas', label: 'Canvas'},
-  {id: 'export', label: 'Export'},
+  {id: 'animation', label: 'Animation', labelKey: 'overlays.category.animation'},
+  {id: 'figure', label: 'Figure', labelKey: 'overlays.category.figure'},
+  {id: 'build', label: 'Build', labelKey: 'overlays.category.build'},
+  {id: 'camera', label: 'Camera', labelKey: 'overlays.category.camera'},
+  {id: 'tools', label: 'Tools', labelKey: 'overlays.category.tools'},
+  {id: 'drawing', label: 'Drawing', labelKey: 'overlays.category.drawing'},
+  {id: 'canvas', label: 'Canvas', labelKey: 'overlays.category.canvas'},
+  {id: 'export', label: 'Export', labelKey: 'overlays.category.export'},
   {id: 'help', label: 'Help', labelKey: 'menu.help'},
-  {id: 'app', label: 'Application'},
+  {id: 'app', label: 'Application', labelKey: 'overlays.category.app'},
 ].map(category => Object.freeze(category)));
 
 const entries = [];
@@ -118,7 +119,7 @@ group('view', [
   ['scene-settings', 'Scene properties…', 'scene', {keywords: ['canvas size', 'background', 'frame rate']}],
   ['builder-highlight', 'Highlight part', 'eye', {...build, toggle: true}],
   ['builder-static-handles', 'Static handles', 'nodes', {...build, toggle: true}],
-  ['builder-canvas-color', 'Construction colour…', 'settings', {...build, keywords: ['background', 'color']}],
+  ['builder-canvas-color', 'Construction background color…', 'settings', {...build, keywords: ['colour']}],
 ]);
 group('animation', [
   ['play', 'Play / pause', 'play', {hotkey: 'play-pan', keywords: ['preview', 'stop']}],
@@ -162,9 +163,9 @@ group('figure', [
   ['mirror', 'Flip horizontally', 'flip', {requires: ['figure'], keywords: ['mirror']}],
   ['mirror-vertical', 'Flip vertically', 'flip-vertical', {requires: ['figure'], keywords: ['mirror']}],
   ['rotate', 'Rotate 15°', 'rotate', {requires: ['figure']}],
-  ['center', 'Centre', 'center', {requires: ['figure'], keywords: ['center', 'middle']}],
+  ['center', 'Center selection', 'center', {requires: ['figure'], keywords: ['centre', 'middle']}],
   ['reset-pose', 'Reset pose', 'reset', {requires: ['figure']}],
-  ['reset-color', 'Reset colours', 'reset', {requires: ['figure'], keywords: ['colors']}],
+  ['reset-color', 'Reset colors', 'reset', {requires: ['figure'], keywords: ['colours']}],
   ['layer-front', 'Bring to front', 'bring-to-front', {requires: ['figure'], keywords: ['arrange', 'order']}],
   ['layer-up', 'Bring forward', 'up', {requires: ['figure'], keywords: ['arrange', 'order']}],
   ['layer-down', 'Send backward', 'down', {requires: ['figure'], keywords: ['arrange', 'order']}],
@@ -174,7 +175,7 @@ group('figure', [
   ['selection-down', 'Send part backward', 'down', {requires: ['joint'], keywords: ['arrange', 'segment']}],
   ['selection-back', 'Send part to back', 'send-to-back', {requires: ['joint'], keywords: ['arrange', 'segment']}],
   ['align-left', 'Align left', 'align-left', {requires: ['figures']}],
-  ['align-center-x', 'Align centre', 'align-horizontal-center', {requires: ['figures'], keywords: ['center']}],
+  ['align-center-x', 'Align center', 'align-horizontal-center', {requires: ['figures'], keywords: ['centre']}],
   ['align-right', 'Align right', 'align-right', {requires: ['figures']}],
   ['align-top', 'Align top', 'align-top', {requires: ['figures']}],
   ['align-center-y', 'Align middle', 'align-vertical-center', {requires: ['figures']}],
@@ -192,11 +193,11 @@ group('figure', [
   ['toggle-isolate', 'Isolate joint', 'eye', {toggle: true, keywords: ['solo', 'focus']}],
   ['previous-figure', 'Select previous figure', 'previous', internal],
   ['next-figure', 'Select next figure', 'next', internal],
-  ['palette-previous', 'Previous colours', 'chevron-left', internal],
-  ['palette-next', 'Next colours', 'chevron-right', internal],
+  ['palette-previous', 'Previous colors', 'chevron-left', internal],
+  ['palette-next', 'Next colors', 'chevron-right', internal],
   ['polygons-previous', 'Previous fills', 'chevron-left', internal],
   ['polygons-next', 'Next fills', 'chevron-right', internal],
-  ['background-style', 'Background…', 'image', {keywords: ['backdrop', 'colour', 'color']}],
+  ['background-style', 'Background…', 'image', {keywords: ['backdrop', 'color', 'colour']}],
   ['finish-polygon', 'Finish polygon', 'check', internal],
   ['cancel-polygon', 'Cancel polygon', 'close', internal],
   ['chain-finish', 'Finish chain', 'check', internal],
@@ -219,8 +220,8 @@ group('build', [
   ['segment-order-down', 'Send part backward', 'down', {...build, requires: ['joint'], keywords: ['arrange', 'order']}],
   ['segment-order-back', 'Send part to back', 'send-to-back', {...build, requires: ['joint'], keywords: ['arrange', 'order']}],
   ['builder-order', 'Arrange part', 'layers', internal],
-  ['copy-builder-appearance', 'Copy appearance', 'duplicate', {...build, requires: ['joint'], keywords: ['style', 'colour']}],
-  ['paste-builder-appearance', 'Paste appearance', 'clipboard', {...build, requires: ['joint'], keywords: ['style', 'colour']}],
+  ['copy-builder-appearance', 'Copy appearance', 'duplicate', {...build, requires: ['joint'], keywords: ['style', 'color', 'colour']}],
+  ['paste-builder-appearance', 'Paste appearance', 'clipboard', {...build, requires: ['joint'], keywords: ['style', 'color', 'colour']}],
   ['toggle-builder-branch', 'Edit whole branch', 'builder-branch', {...build, toggle: true}],
   ['add-sprite-segment', 'Attach image…', 'image', {...build, keywords: ['sprite', 'picture']}],
   ['rig-connect', 'Connect joints…', 'link', {...build, requires: ['joint'], keywords: ['rig', 'anchor']}],
@@ -236,9 +237,9 @@ group('camera', [
   ['camera-copy', 'Copy camera', 'duplicate'],
   ['camera-paste', 'Paste camera', 'clipboard'],
   ['camera-reset', 'Reset camera', 'reset'],
-  ['camera-center', 'Centre camera', 'center', {keywords: ['center', 'frame figures']}],
-  ['camera-center-x', 'Centre camera horizontally', 'align-horizontal-center', {keywords: ['center']}],
-  ['camera-center-y', 'Centre camera vertically', 'align-vertical-center', {keywords: ['center']}],
+  ['camera-center', 'Center camera', 'center', {keywords: ['centre', 'frame figures']}],
+  ['camera-center-x', 'Center camera horizontally', 'align-horizontal-center', {keywords: ['centre']}],
+  ['camera-center-y', 'Center camera vertically', 'align-vertical-center', {keywords: ['centre']}],
   ['camera-align-view', 'Fit camera to view', 'fit', {keywords: ['align', 'match view']}],
   ['camera-level', 'Level camera', 'rotate', {keywords: ['straighten', 'angle']}],
   ['camera-locate-previous', 'Match previous camera', 'chevron-left'],
@@ -274,7 +275,7 @@ group('drawing', [
   ['drawing-invert-selection', 'Invert pixel selection', 'lasso', {...draw, requires: ['pixels']}],
   ['drawing-fill-selection', 'Fill pixel selection', 'paint-bucket', {...draw, requires: ['pixels']}],
   ['drawing-mirror', 'Mirror painting', 'flip', {...draw, toggle: true, keywords: ['symmetry']}],
-  ['drawing-swap-colors', 'Swap colours', 'reset', {...draw, keywords: ['colors', 'foreground', 'background']}],
+  ['drawing-swap-colors', 'Swap colors', 'reset', {...draw, keywords: ['colours', 'foreground', 'background']}],
   ['drawing-flip-view', 'Flip view', 'flip', {...draw, toggle: true, keywords: ['mirror canvas']}],
 ]);
 group('canvas', [
@@ -307,3 +308,5 @@ group('app', [
 /** Every entry, in declaration order; indexes order them by COMMAND_CATEGORIES, then by this order. */
 export const COMMAND_CATALOG = Object.freeze(entries);
 export const COMMAND_BY_ID = new Map(entries.map(entry => [entry.id, entry]));
+/** Every `requires` name the catalog uses: the app's `requirements` must answer each (a missing one reads as unavailable). */
+export const CATALOG_REQUIREMENTS = Object.freeze([...new Set(entries.flatMap(entry => entry.requires ?? []))].sort());

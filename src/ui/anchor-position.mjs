@@ -101,12 +101,16 @@ function clamp(value, low, high) { return high < low ? low : Math.min(Math.max(v
  * Measures `element` (already shown, for example with showPopover()) and places
  * it next to `anchor`, an element, a DOMRect or a point. Writes left, top and
  * the size limits inline; `topInset` may be a number or a function read now.
+ * The box is measured at the window's top-left corner: left where it was last
+ * placed (near the right edge), a shrink-to-fit box would measure narrow and
+ * tall, and the position would be computed for the wrong size.
  */
 export function placeFloating(element, anchor, options = {}) {
   const view = element.ownerDocument?.defaultView ?? globalThis;
   const anchorRect = typeof anchor?.getBoundingClientRect === 'function' ? anchor.getBoundingClientRect() : anchor;
   const {style} = element;
   style.maxWidth = ''; style.maxHeight = '';
+  style.left = '0px'; style.top = '0px';
   const box = element.getBoundingClientRect();
   const topInset = typeof options.topInset === 'function' ? options.topInset() : options.topInset;
   const result = computePosition({...options, topInset: topInset ?? 0, anchor: anchorRect, size: {width: box.width, height: box.height},
