@@ -1,6 +1,7 @@
 import {audioState, audioFps, audioEnd} from './audio-model.mjs';
 import {icon} from './icons.mjs';
 import {showTimelineMenu} from './timeline-menu.mjs';
+import {onFontsReady} from './ui/font-loading.mjs';
 const ROW = 64, RULER = 22, DROP = 38, TOOLBAR = 36;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const afterTime = (times, time) => { let low = 0, high = times.length; while (low < high) { const mid = (low + high) >>> 1; if (times[mid] <= time) low = mid + 1; else high = mid; } return low; };
@@ -109,7 +110,8 @@ export class AudioTimeline {
     }, {passive: false});
     this.on(editor, 'change', event => { const d = event.detail; if (d.kind === 'document') { this.importController?.abort(); this.selected = null; this.trackId = null; this.closeProperties(); this.setOpen(false); } if (d.kind === 'history' || d.kind === 'document') this.resetVolumes = true; if (d.audio || d.kind === 'document') this.cancel(); if (!this.found().clip) this.selected = null; this.update(d.kind !== 'seek'); });
     this.observer = new ResizeObserver(() => this.update()); this.observer.observe(container); this.observer.observe(this.body);
-    this.on(window, 'styk-theme-change', () => this.update()); this.on(window, 'blur', () => this.cancel()); this.update();
+    this.on(window, 'styk-theme-change', () => this.update()); onFontsReady(() => this.update(), {signal: this.events.signal});
+    this.on(window, 'blur', () => this.cancel()); this.update();
   }
   on(target, type, callback, options = {}) { target.addEventListener(type, callback, {...options, signal: target.closest?.('.audio-track,.audio-properties')?.events?.signal ?? this.events.signal}); }
   _run(action) { try { this.onSeek?.(); const wait=this.beforeCommand?.(),result=wait?wait.then(action):action(); if (result?.then) result.then(()=>this.update(),error => {if(error.name!=='AbortError')this.error(error);}); this.update(); return result; } catch (error) { this.error(error); } }

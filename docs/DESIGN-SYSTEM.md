@@ -44,6 +44,27 @@ layers once, lowest priority first, and then imports every sheet:
   fragments delayed first paint by 45–100 ms, while the 21 whole sheets load
   within 2 ms of the old links. Measure startup before adding many files.
 
+## Fonts
+
+The editor bundles two variable fonts in `assets/fonts/`, with their SIL Open
+Font License texts (`OFL-Inter.txt`, `OFL-InterTight.txt`): Inter (optical
+size axis) for UI text and Inter Tight for display text. Nothing uses Inter
+Tight yet. `src/styles/base/fonts.css` declares one face per subset: latin,
+latin-ext, Vietnamese, Cyrillic, Cyrillic extended, Greek and Greek extended.
+`unicode-range` makes each language load only the files its glyphs need;
+Arabic, Hebrew and Chinese use the system fonts that follow Inter in the
+document stack, which `base/document.css` sets:
+`"Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif`. Legacy
+rules that name their own font family keep it until their surface is rebuilt.
+
+`index.html` preloads the two latin files, which use `font-display: block`;
+every other subset uses `swap`, so text in those scripts shows in a system font
+while its file loads. Nothing waits for fonts. A canvas that draws text keeps
+the fallback glyphs until it repaints, so canvas text painters register a
+repaint with `onFontsReady()` from `src/ui/font-loading.mjs`.
+`tests/fonts.test.mjs` checks the files, subsets, preloads, language coverage,
+licences and that the packaged app serves them.
+
 ## Stylesheet lint
 
 `npm run check` runs `scripts/check-css.mjs`. The rule ids appear in its

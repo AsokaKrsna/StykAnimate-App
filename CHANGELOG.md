@@ -17,6 +17,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Pose, scrub and play 3D figures far more smoothly, even on slower computers, with much less memory in long animations and smaller saved files.
 - Open older Pivot animations much faster, especially ones with many sprite images: a large Pivot 4 race animation now opens in about 8 seconds instead of 30.
 - Seek, scrub and zoom large Pivot animations more smoothly. Frames are prepared faster, and detailed figures with overlapping fill shapes now draw as sharp vectors instead of textures, so zooming no longer pauses and uses far less graphics memory.
+- Refresh the editor with the StykAnimate typeface, which now ships with the app, so text looks the same on every computer, including Greek, Cyrillic and Vietnamese.
 
 ## [1.1.0]
 

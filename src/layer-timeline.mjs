@@ -15,6 +15,7 @@ import {drawingMetadata} from './drawing-model.mjs';
 import {icon} from './icons.mjs';
 import {showTimelineMenu} from './timeline-menu.mjs';
 import {AudioTimeline} from './audio-timeline.mjs';
+import {onFontsReady} from './ui/font-loading.mjs';
 
 export const ROW=32,HEADER=32;
 const MAX_SCROLL=8000000;
@@ -68,7 +69,7 @@ export class Timeline{
       else if(this.motionState!==editor.report._styk.cameraMotion)this._refreshMotionRows();
       if(d.kind==='selection'&&!d.sheetSelection&&editor.object){this.selectedTrackId=editor.layerForUid(editor.selectedUid);this.selectedLayers=new Set([this.selectedTrackId]);this.revealSelectedLayer();}
       if(d.kind==='seek'&&!this.gesture&&!this.selecting){this.start=this.end=Math.floor(editor.tick);}this.update(this._changeNeedsPaint(d));});
-    this._on(window,'styk-theme-change',()=>this.resize());
+    this._on(window,'styk-theme-change',()=>this.resize());onFontsReady(()=>this.update(),{signal:this.events.signal});
     this.observer=new ResizeObserver(()=>this.resize());this.observer.observe(this.root);this._reindex();this.resize();
     mountTimelineNavigation(this,{input:this.zoomInput,fit:()=>this.fitFrameRange()});
     this.audio=new AudioTimeline(container,editor,{...options,host:this,engine:options.audioEngine,mode:'advanced'});

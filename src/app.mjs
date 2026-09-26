@@ -137,6 +137,7 @@ import { MotionPathCache, motionPathTargets, motionPathTargetKey, pickMotionPath
 import { CanvasGuides } from "./canvas-guides.mjs";
 import { MotionPathControls } from "./motion-path-controls.mjs";
 import { TweenerControls } from "./tweener-controls.mjs";
+import { onFontsReady } from "./ui/font-loading.mjs";
 import { buildGeometry, evaluatedFrame, shortest } from "./pivot/geometry.mjs";
 import {
   cameraIsIdentity,
@@ -1342,6 +1343,8 @@ const onionController = new OnionController({editor,
 let pathControls;
 let tweenerControls;
 let canvasGuides;
+// Motion path badges on the overlay draw text in the bundled UI font.
+onFontsReady(requestRender);
 function onionSkins() {
   if (!state.onion || state.playing || state.previewing) return [];
   return onionCache.get(editor, onionController.settings, {selected: selection(), hidden: effectiveHidden(), visibilityKey:[...state.hidden]});

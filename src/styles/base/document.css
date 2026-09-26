@@ -1,0 +1,10 @@
+/* Document-wide base rules. A rule in this layer beats every legacy rule for
+ * the same element, so while the legacy layer exists only rules meant for the
+ * whole document belong here unscoped (docs/DESIGN-SYSTEM.md). */
+@layer base {
+  /* Inter (base/fonts.css) first; the system fonts cover the scripts it lacks,
+   * such as Arabic, Hebrew and Chinese. This replaces the legacy :root font. */
+  html {
+    font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  }
+}

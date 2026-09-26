@@ -36,3 +36,7 @@
 @import url("./legacy/46-theme.css") layer(legacy);
 /* settings.mjs used to link this at startup, after every other sheet */
 @import url("./legacy/99-settings.css") layer(legacy);
+
+/* Layered files wrap themselves in their @layer block: import them without layer(). */
+@import url("./base/fonts.css");
+@import url("./base/document.css");
