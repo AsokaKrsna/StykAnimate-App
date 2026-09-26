@@ -45,9 +45,10 @@ layers once, lowest priority first, and then imports every sheet:
   `tests/shell-contract.test.mjs` checks the single link and that every import
   resolves, with the legacy imports in `layer(legacy)`.
 - **Keep the import count low.** Every import is a request that first paint
-  waits for. In local measurements, splitting the legacy sheets into 48
-  fragments delayed first paint by 45–100 ms, while the 21 whole sheets load
-  within 2 ms of the old links. Measure startup before adding many files.
+  waits for. In local measurements, splitting `style.css` and `studio.css` into
+  29 fragments (54 stylesheet requests in all) delayed first paint by
+  45–100 ms, while the 21 whole sheets load within 2 ms of the old links.
+  Measure startup before adding many files.
 
 ## Fonts
 
@@ -85,7 +86,8 @@ messages. Layered files, meaning everything under `src/styles/` except
   `base/` in `base` (except `base/reset.css`, in `reset`), `layout/`,
   `components/`, `features/`, `tokens.css` and `legacy-bridge.css` in
   `tokens`, `states.css` and `utilities.css`. `app.css` imports each file
-  once, without `layer()`, and is the only file with `@import` (CSS01, CSS16).
+  once, without `layer()`. Only `app.css` and `support-bridge.css` (the lazy
+  feedback styles) may use `@import` (CSS01, CSS16).
 - take colours from tokens. Hex, `rgb()`, `hsl()` and named colours appear only
   in `tokens.css`; system colours only inside `@media (forced-colors: active)`.
   Comment a declaration `/* artwork */` for checkerboards and other artwork

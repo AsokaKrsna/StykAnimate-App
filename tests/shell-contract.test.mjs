@@ -43,7 +43,7 @@ export const SHELL_CONTRACT = Object.freeze({
     stage: ['viewport-hint', 'canvas-empty', 'renderer-error', 'playback-fps', 'preview-quality',
       'preview-badge', 'chain-controls', 'chain-count', 'chain-finish', 'chain-cancel',
       'polygon-controls', 'polygon-count', 'finish-polygon'],
-    // app.mjs and localization-bindings (#window-controls); legacy/46-theme.css hides #app
+    // app.mjs and localization-bindings (#window-controls); base/document.css hides #app
     // while the theme is pending.
     status: ['app', 'project-name', 'dirty-dot', 'save-state', 'stage-size', 'status', 'status-dot',
       'renderer-label', 'render-time', 'object-count', 'window-controls'],

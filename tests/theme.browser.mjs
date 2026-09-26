@@ -19,6 +19,8 @@ const settle=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()
 const openSettings=()=>page.keyboard.press('Control+,');
 const closeSettings=()=>page.locator('.styk-settings-head button').click();
 const theme=()=>page.locator('html').getAttribute('data-theme');
+// The artboard with only the canvases: the chrome floating over it (view controls, badges) follows the theme.
+const artwork=clip=>page.screenshot({clip,style:'#viewport>:not(#artboard,canvas),.artboard-name{visibility:hidden!important}'});
 const background=selector=>page.locator(selector).evaluate(el=>getComputedStyle(el).backgroundColor);
 
 async function readable(selector) {
@@ -48,7 +50,7 @@ try {
   const model=await page.evaluate(()=>JSON.stringify(styk.editor.report));
   const dirty=await page.evaluate(()=>styk.editor.dirty);
   const stage=await page.locator('#artboard').boundingBox();
-  const lightArtwork=await page.screenshot({clip:stage});
+  const lightArtwork=await artwork(stage);
   await shot('editor-light');
   await openSettings();
   await page.getByRole('radio',{name:'Dark',exact:true}).check();
@@ -57,7 +59,7 @@ try {
   await page.emulateMedia({colorScheme:'light'});
   check('Explicit dark choice overrides the OS',await theme()==='dark');
   check('Native form controls use the selected scheme',await page.locator('html').evaluate(el=>getComputedStyle(el).colorScheme)==='dark');
-  check('Settings and helper text have readable contrast',await readable('.styk-settings-head h2') && await readable('.styk-settings-mode small'));
+  check('Settings and helper text have readable contrast',await readable('.styk-settings-head h2') && await readable('.styk-settings-note'));
   await shot('settings-dark');
   await page.getByRole('radio',{name:'Dark',exact:true}).press('ArrowLeft');
   check('Theme control supports the keyboard',await theme()==='light');
@@ -70,7 +72,7 @@ try {
   await closeSettings();await page.mouse.move(1,1);await settle();
   check('Canvas timeline repaints its cached palette',await page.evaluate(()=>styk.timeline.colors.surface==='#15161c' && styk.timeline.colors['scene-tint']==='#231f3d'));
   check('Animation data and dirty state are unchanged',await page.evaluate(({model,dirty})=>JSON.stringify(styk.editor.report)===model && styk.editor.dirty===dirty,{model,dirty}));
-  check('Rendered artwork is pixel-identical in both themes',lightArtwork.equals(await page.screenshot({clip:stage})));
+  check('Rendered artwork is pixel-identical in both themes',lightArtwork.equals(await artwork(stage)));
   for(const selector of ['.titlebar','.right-panel','.studio-rail','.layer-timeline'])
     check(selector+' uses the dark palette',await background(selector)==='rgb(21, 22, 28)');
   await shot('editor-dark');
