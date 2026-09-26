@@ -11,8 +11,9 @@ import {
 } from '../src/shell/layout-store.mjs';
 import {
   LAYOUT_FILE_LIMIT_BYTES, applyPreset, defaultLayout, deletePreset, layoutBytes, migrateLayout, movePanel,
-  normalizeLayout, savePreset, serializeLayout, setSharedSize,
+  normalizeLayout, savePreset, serializeLayout, setSharedSize, toggleFocus,
 } from '../src/shell/layout-schema.mjs';
+import {PANEL_CATALOG, normalizePanelDescriptor} from '../src/shell/panel-registry.mjs';
 
 const START = 1_700_000_000_000;
 
@@ -160,6 +161,61 @@ test('the newest change to a workspace wins a merge; the other workspaces are ke
   assert.equal(mergeLayouts(disk2, {...local, modes: {...local.modes, draw: {...local.modes.draw, stamp: 8}}}).modes.draw.rail, 'right');
 });
 
+test('a save never rearranges this window with another window\'s arrangement', async () => {
+  const disk = createDisk();
+  const a = openWindow(disk);
+  const b = openWindow(disk);
+  await a.store.load();
+  await b.store.load();
+  a.clock.time += 5;
+  a.store.update(layout => withLibraryLeft(layout));
+  await a.store.flush();
+  const origins = [];
+  b.store.on('change', event => origins.push(event.origin));
+  b.clock.time += 10;
+  b.store.update(layout => setSharedSize(layout, 'bottom', 300));
+  await b.store.flush();
+  assert.deepEqual(origins, ['local'], 'only B\'s own change');
+  assert.equal(b.store.layout.modes.animate.panels.find(record => record.id === 'library').dock, 'right', 'B\'s Library stays where B has it');
+  // The disk keeps the newest of each: A's arrangement and B's timeline height.
+  const {layout} = migrateLayout(disk.value);
+  assert.equal(layout.modes.animate.panels.find(record => record.id === 'library').dock, 'left');
+  assert.equal(layout.shared.sizes.bottom, 300);
+  // B's next arrangement change is newer and wins on disk.
+  b.clock.time += 10;
+  b.store.update(current => applyPreset(current, 'animate', 'timing', {workspaceHeight: 800}));
+  await b.store.flush();
+  assert.equal(migrateLayout(disk.value).layout.modes.animate.preset, 'timing');
+});
+
+test('updates made before load() resolves are applied to the loaded layout', async () => {
+  const disk = createDisk({studioVersion: 1, right: 330});
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const clock = createClock();
+  const store = createLayoutStore({read: async () => { await gate; return disk.read(); }, write: disk.write, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer});
+  const loading = store.load();
+  assert.equal(store.update(layout => setSharedSize(layout, 'bottom', 400)).shared.sizes.bottom, undefined, 'queued until the layout is known');
+  release();
+  const layout = await loading;
+  assert.deepEqual(layout.shared.sizes, {right: 330, bottom: 400}, 'the loaded layout with the change');
+  await store.flush();
+  assert.deepEqual([disk.value.right, disk.value.timeline], [330, 400]);
+});
+
+test('a panel catalogue given as a function follows panels defined later', async () => {
+  let catalog = PANEL_CATALOG;
+  const disk = createDisk();
+  const {store} = openWindow(disk, createClock(), {catalog: () => catalog});
+  await store.load();
+  catalog = [...PANEL_CATALOG, normalizePanelDescriptor({id: 'notes', docks: ['left'], min: 200, pref: 240, max: 300, defaultDock: 'strip'})];
+  store.update(layout => setSharedSize(layout, 'right', 300));
+  assert.deepEqual(store.layout.modes.animate.panels.find(record => record.id === 'notes'), {id: 'notes', dock: 'strip', side: 'left', order: 0});
+  await store.flush();
+  assert.deepEqual(Object.keys(disk.value.modes.animate), ['stamp', 'preset'], 'still the preset: the new panel waits at its default dock');
+  assert.equal(store.layout.modes.animate.panels.find(record => record.id === 'notes').dock, 'strip');
+});
+
 test('a change on disk between the reads is merged again before writing', async () => {
   const disk = createDisk();
   const other = normalizeLayout(null);
@@ -276,6 +332,79 @@ test('unknown keys on disk survive a save, and the file stays under its limit', 
   assert.equal('bulk' in disk.value, false);
   assert.deepEqual(trims, ['key:bulk']);
   assert.ok(layoutBytes(disk.value) <= LAYOUT_FILE_LIMIT_BYTES);
+  // What went is gone from the window too: the next save trims nothing.
+  assert.equal('bulk' in store.layout, false);
+  store.update(layout => setSharedSize(layout, 'right', 310));
+  await store.flush();
+  assert.deepEqual(trims, ['key:bulk']);
+});
+
+test('large unknown data inside a workspace is trimmed once and saving goes on', async () => {
+  const disk = createDisk({layoutVersion: 2, studioVersion: 1, modes: {animate: {stamp: 1, preset: 'animate', blob: 'z'.repeat(17 * 1024)}}});
+  const {store, clock} = openWindow(disk);
+  const trims = [];
+  store.on('trim', event => trims.push(event.trimmed));
+  await store.load();
+  store.update(layout => setSharedSize(layout, 'right', 300));
+  assert.equal(await store.flush(), true);
+  assert.equal(disk.value.right, 300);
+  assert.equal('blob' in disk.value.modes.animate, false);
+  assert.equal('blob' in store.layout.modes.animate, false);
+  clock.time += 10;
+  store.update(layout => setSharedSize(layout, 'right', 320));
+  assert.equal(await store.flush(), true);
+  assert.equal(disk.value.right, 320);
+  assert.deepEqual(trims, [['key:modes.animate.blob']], 'one message, one save');
+});
+
+test('saved layouts and Focus the file cannot hold leave the window as well', async () => {
+  const disk = createDisk();
+  const {store, clock} = openWindow(disk);
+  const trims = [];
+  store.on('trim', event => trims.push(...event.trimmed));
+  await store.load();
+  clock.time += 1;
+  store.update(layout => toggleFocus(savePreset(layout, {name: 'Old', mode: 'draw', now: clock.now()}).layout, 'animate'));
+  await store.flush();
+  const {id} = store.layout.saved[0];
+  // A newer version leaves 15,400 bytes it needs: only without Focus and the saved layout does the file fit.
+  disk.value = {...disk.value, fromNewer: 'q'.repeat(15_400)};
+  clock.time += 1;
+  store.update(layout => setSharedSize(layout, 'right', 300));
+  assert.equal(await store.flush(), true);
+  assert.deepEqual(trims, ['focus', `saved:${id}`]);
+  assert.deepEqual([store.layout.saved.length, store.layout.modes.animate.focus], [0, null]);
+  assert.equal(disk.value.fromNewer.length, 15_400);
+  clock.time += 1;
+  store.update(layout => setSharedSize(layout, 'right', 310));
+  await store.flush();
+  assert.equal(trims.length, 2, 'nothing comes back to be trimmed again');
+});
+
+test('a saved layout that two windows push past eight is reported', async () => {
+  const disk = createDisk();
+  const a = openWindow(disk);
+  const b = openWindow(disk);
+  await a.store.load();
+  await b.store.load();
+  a.clock.time += 1;
+  a.store.update(layout => {
+    for (let index = 0; index < 5; index++) layout = savePreset(layout, {name: `A${index}`, mode: 'animate', now: a.clock.now() + index}).layout;
+    return layout;
+  });
+  await a.store.flush();
+  const trims = [];
+  b.store.on('trim', event => trims.push(...event.trimmed));
+  b.clock.time += 100;
+  b.store.update(layout => {
+    for (let index = 0; index < 4; index++) layout = savePreset(layout, {name: `B${index}`, mode: 'draw', now: b.clock.now() + index}).layout;
+    return layout;
+  });
+  await b.store.flush();
+  assert.equal(disk.value.saved.length, 8);
+  const oldest = a.store.layout.saved.reduce((x, y) => (y.stamp < x.stamp ? y : x));
+  assert.deepEqual(trims, [`saved:${oldest.id}`]);
+  assert.ok(!disk.value.saved.some(item => item.id === oldest.id));
 });
 
 test('stamps mark only what changed, and a deleted layout gets a tombstone', async () => {

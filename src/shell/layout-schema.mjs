@@ -24,22 +24,30 @@
  * - Sizes are CSS px shared by every workspace (one timeline height, one
  *   inspector width); an absent size means the default, which the solver
  *   derives from the window and never stores.
- * - Arrangements are per workspace: one record per panel, `{id, dock, side,
- *   order, group?, size?, active?, rect?}`. `dock` is where the panel is now:
- *   `left`, `right`, `bottom`, `float`, `strip` or `hidden`; `side` is the
- *   dock side it belongs to (where a strip sits and where a hidden or floating
- *   panel returns); `order` is its tab order on that side; docked records of
- *   one side and `group` are one island's tabs, `active` marks the shown tab
- *   and `size` is the group's share (0–1) when a side stacks two islands;
- *   `rect` ({x, y, w, h}, relative to the stage) is where it floats.
+ * - Arrangements are per workspace: `{rail, bottomSpan, panels, weights}`
+ *   with one record per panel, `{id, dock, side, order, group?, active?,
+ *   rect?}`. `dock` is where the panel is now: `left`, `right`, `bottom`,
+ *   `float`, `strip` or `hidden`; `side` is the dock side it belongs to
+ *   (where a strip sits and where a hidden or floating panel returns); `order`
+ *   is its tab order on that side; docked records of one side and `group` are
+ *   one island's tabs and `active` marks the shown tab; `rect` ({x, y, w, h},
+ *   relative to the stage) is where it floats. `weights` holds each side's
+ *   island shares when it stacks two islands (`{right: [0.75, 0.25]}`, summing
+ *   to 1), so a share stays with its island when tabs move between islands.
  * - Downgrade safety: 1.1 reads the file as v1 and writes back
  *   `{...loaded, studioVersion: 1}`, so every v2 key survives, and a size it
  *   changed in the mirror is adopted on the next read (reconcileMirror).
  * - A newer layoutVersion is never rewritten: migrateLayout returns presets
  *   with `readOnly: true`.
- * - Unknown keys (at the top, in `shared`, `shared.sizes`, mode entries, saved
- *   layouts and records of unknown panels) survive normalization, so a newer
- *   2.x file keeps its data through an older 2.x app.
+ * - Forward compatibility within v2: data this version does not read survives
+ *   normalization, so a newer 2.x file keeps it through an older 2.x app:
+ *   unknown keys at the top, in `shared`, `shared.sizes`, mode entries,
+ *   arrangements (saved and Focus ones too), saved layouts and records;
+ *   records of unknown panels; records of known panels outside the workspaces
+ *   this version gives them; records on a dock this version does not know
+ *   (solved at the panel's home until the user moves it, never rewritten
+ *   otherwise); and a compact entry naming a preset this version does not
+ *   know (solved as the workspace default, written back compact).
  */
 import {DOCK_SIDES, PANEL_CATALOG, WORKSPACES, panelCanHide, panelInMode} from './panel-registry.mjs';
 
@@ -71,8 +79,11 @@ const SIZE_KEY = /^[a-zA-Z][a-zA-Z0-9-]{0,39}$/;
 const TOP_KEYS = new Set(['studioVersion', 'right', 'timeline', 'left', 'floating', 'layoutVersion', 'shared', 'modes', 'saved', 'tombstones']);
 const V2_KEYS = new Set(['layoutVersion', 'shared', 'modes', 'saved', 'tombstones']);
 const SHARED_KEYS = new Set(['stamp', 'sizes']);
-const ENTRY_KEYS = new Set(['stamp', 'preset', 'rail', 'bottomSpan', 'panels', 'focus']);
+const ARRANGEMENT_KEYS = new Set(['rail', 'bottomSpan', 'panels', 'weights']);
+const ENTRY_KEYS = new Set(['stamp', 'preset', 'focus', ...ARRANGEMENT_KEYS]);
 const SAVED_KEYS = new Set(['id', 'name', 'mode', 'stamp', 'arrangement']);
+const RECORD_KEYS = new Set(['id', 'dock', 'side', 'order', 'group', 'active', 'rect']);
+const MIRROR_KEYS = new Set(['studioVersion', 'right', 'timeline']);
 
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const safeKey = key => key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
@@ -234,7 +245,16 @@ function normalizeRect(rect) {
   return x === null || y === null || w === null || h === null ? null : {x, y, w, h};
 }
 
-/** One stored record, placed where its descriptor allows in this workspace. */
+/**
+ * A dock name this version does not know (a newer 2.x dock type): the record
+ * is kept as it is and solved at the panel's home (solvableArrangement).
+ */
+const isForeignDock = dock => typeof dock === 'string' && !DOCKS.includes(dock) && ID_PATTERN.test(dock);
+
+/**
+ * One stored record, placed where its descriptor allows in this workspace;
+ * its unknown fields are kept.
+ */
 function placeRecord(raw, descriptor, mode) {
   const home = descriptor.docks[0];
   let dock = DOCKS.includes(raw.dock) ? raw.dock : home;
@@ -250,37 +270,54 @@ function placeRecord(raw, descriptor, mode) {
     dock = fallback === 'strip' ? 'strip' : descriptor.docks.includes(fallback) ? fallback : side;
     if (DOCK_SIDES.includes(dock)) side = dock;
   }
-  const record = {id: descriptor.id, dock, side, order: int(raw.order, 0, 999) ?? 999};
+  const record = {...unknownKeys(raw, RECORD_KEYS, 5), id: descriptor.id, dock, side, order: int(raw.order, 0, 999) ?? 999};
   const group = int(raw.group, 0, 1);
   if (group) record.group = group;
-  if (positive(raw.size)) record.size = Math.min(1, Math.max(0.001, Math.round(raw.size * 1000) / 1000));
   if (raw.active === true) record.active = true;
   const rect = normalizeRect(raw.rect);
   if (rect) record.rect = rect;
   return record;
 }
 
-function normalizePanels(list, mode, catalog, fallback, keepUnknown) {
+/** A side's island shares: one per island, summing to 1 (equal when absent or invalid). */
+function normalizeWeights(raw, count) {
+  const values = Array.from({length: count}, (_, index) => (Array.isArray(raw) && positive(raw[index]) ? raw[index] : 0));
+  const total = values.reduce((sum, value) => sum + value, 0);
+  const shares = values.every(value => value > 0) ? values.map(value => value / total) : values.map(() => 1 / count);
+  let rest = 1;
+  return shares.map((share, index) => {
+    const value = index === count - 1 ? rest : Math.min(0.95, Math.max(0.05, Math.round(share * 1000) / 1000));
+    rest = Math.round((rest - value) * 1000) / 1000;
+    return value;
+  });
+}
+
+function normalizePanels(list, rawWeights, mode, catalog, fallback, keepUnknown) {
   const {byId} = catalogInfo(catalog);
-  const seen = new Set(), records = [], unknown = [];
+  const seen = new Set(), records = [], kept = [], unknown = [];
   for (const raw of Array.isArray(list) ? list : []) {
     if (!isObject(raw) || typeof raw.id !== 'string' || seen.has(raw.id)) continue;
     const descriptor = byId.get(raw.id);
     if (!descriptor) {
       // A panel this version does not know (a newer 2.x file): kept, never solved.
-      if (!keepUnknown || unknown.length >= MAX_UNKNOWN_RECORDS || !ID_PATTERN.test(raw.id) || !DOCKS.includes(raw.dock)) continue;
+      if (!keepUnknown || unknown.length >= MAX_UNKNOWN_RECORDS || !ID_PATTERN.test(raw.id) || !(DOCKS.includes(raw.dock) || isForeignDock(raw.dock))) continue;
       seen.add(raw.id);
-      unknown.push(cloneJSON(raw, 3));
+      unknown.push(cloneJSON(raw, 4));
       continue;
     }
     seen.add(raw.id);
-    if (panelInMode(descriptor, mode)) records.push(placeRecord(raw, descriptor, mode));
+    // A known panel outside its workspaces here, or on a dock this version does
+    // not know: kept as it is (a newer 2.x file may allow it), never placed.
+    const inMode = panelInMode(descriptor, mode);
+    if (keepUnknown && (!inMode || isForeignDock(raw.dock))) kept.push(cloneJSON(raw, 4));
+    else if (inMode) records.push(placeRecord(raw, descriptor, mode));
   }
   // Every panel of the workspace has a record: missing ones (a file from before
-  // the panel existed, or a damaged one) take the default preset's place.
+  // the panel existed, or a damaged one) take the default preset's place, or
+  // the panel's own default dock.
   for (const descriptor of catalog) {
     if (seen.has(descriptor.id) || !panelInMode(descriptor, mode)) continue;
-    const template = fallback?.find(record => record.id === descriptor.id) ?? {dock: descriptor.docks[0]};
+    const template = fallback?.find(record => record.id === descriptor.id) ?? {dock: descriptor.defaultDock ?? descriptor.docks[0]};
     records.push(placeRecord(template, descriptor, mode));
   }
   let floating = 0;
@@ -289,7 +326,9 @@ function normalizePanels(list, mode, catalog, fallback, keepUnknown) {
   const position = new Map(records.map((record, index) => [record, index]));
   const byOrder = (a, b) => a.order - b.order || position.get(a) - position.get(b);
   for (const side of DOCK_SIDES) records.filter(record => record.side === side).sort(byOrder).forEach((record, index) => { record.order = index; });
-  // Islands: docked groups renumbered 0.. per side; one active tab each.
+  // Islands: docked groups renumbered 0.. per side; one active tab each; the
+  // shares of a side with two islands follow the islands, not their tabs.
+  const weights = {};
   for (const side of DOCK_SIDES) {
     const docked = records.filter(record => record.dock === side).sort(byOrder);
     const groups = [...new Set(docked.map(record => record.group ?? 0))].sort((a, b) => a - b);
@@ -302,46 +341,79 @@ function normalizePanels(list, mode, catalog, fallback, keepUnknown) {
       const active = members.find(record => record.active) ?? members[0];
       for (const record of members) if (record === active) record.active = true; else delete record.active;
     }
+    if (groups.length > 1) weights[side] = normalizeWeights(groups.map(group => rawWeights?.[side]?.[group]), groups.length);
   }
   for (const record of records) {
     if (record.dock !== record.side) { delete record.active; delete record.group; }
   }
   records.sort((a, b) => sideIndex(a.side) - sideIndex(b.side) || (a.group ?? 0) - (b.group ?? 0) || a.order - b.order);
-  return [...records, ...unknown];
+  return {panels: [...records, ...kept, ...unknown], weights};
+}
+
+/** The arrangement keys of `source`, normalized (no unknown keys). */
+function arrangementParts(source, mode, catalog, keepUnknown) {
+  const {panels, weights} = normalizePanels(source.panels, isObject(source.weights) ? source.weights : null, mode, catalog, defaultRecords(mode), keepUnknown);
+  return {
+    rail: source.rail === 'right' ? 'right' : 'left',
+    bottomSpan: source.bottomSpan === 'stage' ? 'stage' : 'full',
+    panels,
+    weights,
+  };
 }
 
 /**
- * Normalizes an arrangement `{rail, bottomSpan, panels}` for a workspace:
- * one record per panel of the workspace, each in a place its descriptor
- * allows (a timeline Hidden outside Build becomes a strip, a non-floatable
- * float docks, a third floating panel docks), tab orders consecutive and one
- * active tab per island. Missing panels take the default preset's place.
+ * Normalizes an arrangement `{rail, bottomSpan, panels, weights}` for a
+ * workspace: one record per panel of the workspace, each in a place its
+ * descriptor allows (a timeline Hidden outside Build becomes a strip, a
+ * non-floatable float docks, a third floating panel docks), tab orders
+ * consecutive, one active tab per island and island shares summing to 1.
+ * Missing panels take the default preset's place. With `keepUnknown` (the
+ * default) data this version does not read is kept (see the file comment).
  */
 export function normalizeArrangement(input, mode, {catalog = PANEL_CATALOG, keepUnknown = true} = {}) {
   mode = normalizeMode(mode);
   const source = isObject(input) ? input : {};
-  return {
-    rail: source.rail === 'right' ? 'right' : 'left',
-    bottomSpan: source.bottomSpan === 'stage' ? 'stage' : 'full',
-    panels: normalizePanels(source.panels, mode, catalog, defaultRecords(mode), keepUnknown),
-  };
+  return {...(keepUnknown ? unknownKeys(source, ARRANGEMENT_KEYS) : {}), ...arrangementParts(source, mode, catalog, keepUnknown)};
 }
 
-const arrangementKey = arrangement => JSON.stringify([arrangement.rail, arrangement.bottomSpan, arrangement.panels]);
+/** Only the arrangement keys of a mode entry or arrangement. */
+const pickArrangement = entry => ({rail: entry.rail, bottomSpan: entry.bottomSpan, panels: entry.panels, weights: entry.weights ?? {}});
+const arrangementKey = arrangement => JSON.stringify([arrangement.rail, arrangement.bottomSpan, arrangement.panels, arrangement.weights ?? {}]);
 /** True when two normalized arrangements place every panel alike. */
 export const sameArrangement = (a, b) => Boolean(a && b) && arrangementKey(a) === arrangementKey(b);
+
+/**
+ * A preset id this version cannot resolve for the workspace (a newer
+ * version's preset): a compact entry naming it is solved as the workspace
+ * default and written back compact, so the newer version gets its preset back.
+ */
+const isForeignPreset = (preset, mode) => !preset.startsWith('user:') && !builtInPreset(preset, mode);
+
+/**
+ * The arrangement to solve: records on a dock this version does not know are
+ * placed at their panel's home (as the last tab there), without changing the
+ * stored arrangement. Returns `arrangement` itself when there are none.
+ */
+export function solvableArrangement(arrangement, mode, {catalog = PANEL_CATALOG} = {}) {
+  mode = normalizeMode(mode);
+  const {byId} = catalogInfo(catalog);
+  const foreign = record => isForeignDock(record.dock) && byId.has(record.id) && panelInMode(byId.get(record.id), mode);
+  if (!arrangement.panels.some(foreign)) return arrangement;
+  const panels = arrangement.panels.map(record => (foreign(record) ? {id: record.id, order: 999} : record));
+  return normalizeArrangement({...arrangement, panels}, mode, {catalog});
+}
 
 function normalizeModeEntry(input, mode, catalog) {
   const source = isObject(input) ? input : {};
   const preset = typeof source.preset === 'string' && PRESET_REF.test(source.preset) ? source.preset : DEFAULT_PRESETS[mode];
-  // A compact entry is its built-in preset's arrangement.
+  // A compact entry is its built-in preset's arrangement (the default's for a preset this version does not know).
   const base = Array.isArray(source.panels) ? source
     : (builtInPreset(preset, mode)?.arrangement ?? builtInPreset(DEFAULT_PRESETS[mode], mode).arrangement);
   return {
     ...unknownKeys(source, ENTRY_KEYS),
     stamp: stampOf(source.stamp),
     preset,
-    ...normalizeArrangement(base, mode, {catalog}),
+    ...arrangementParts(base, mode, catalog, true),
     focus: isObject(source.focus) ? normalizeArrangement(source.focus, mode, {catalog}) : null,
   };
 }
@@ -349,11 +421,30 @@ function normalizeModeEntry(input, mode, catalog) {
 // ---------------------------------------------------------------------------
 // The layout
 
-/** Letters, digits, spaces and punctuation, at most 48 characters. */
+const graphemes = typeof Intl?.Segmenter === 'function' ? new Intl.Segmenter(undefined, {granularity: 'grapheme'}) : null;
+const splitGraphemes = text => (graphemes ? [...graphemes.segment(text)].map(part => part.segment) : [...text]);
+const EMOJI = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
+
+/**
+ * A layout name: one line of text, at most 48 code points, never cut inside
+ * a character (an emoji sequence or a letter with its marks). Invisible
+ * format characters (bidi overrides, zero-width spaces) are removed, except
+ * the joiners inside an emoji or between letters (ZWJ, ZWNJ); a name with
+ * nothing visible is empty.
+ */
 export function cleanLayoutName(value) {
   if (typeof value !== 'string') return '';
-  const text = value.replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, ' ').replace(/\s+/g, ' ').trim();
-  return [...text].slice(0, MAX_LAYOUT_NAME).join('').trim();
+  const line = value.replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, ' ').replace(/\p{Cs}/gu, '');
+  const parts = splitGraphemes(line).map(part => (EMOJI.test(part) ? part : part.replace(/[^\P{Cf}\u200C\u200D]/gu, '')));
+  const text = parts.join('').replace(/\s+/g, ' ').trim();
+  if (!/[^\p{Cf}\p{M}\p{Z}\s]/u.test(text)) return '';
+  let kept = '', length = 0;
+  for (const part of splitGraphemes(text)) {
+    length += [...part].length;
+    if (length > MAX_LAYOUT_NAME) break;
+    kept += part;
+  }
+  return kept.trim();
 }
 
 function normalizeShared(input, catalog) {
@@ -494,16 +585,22 @@ function fromOlder(raw, options, legacy) {
 export const isFutureLayout = raw => isObject(raw) && Number.isSafeInteger(raw.layoutVersion) && raw.layoutVersion > LAYOUT_VERSION;
 
 const compactRecord = record => {
-  if (record.dock !== record.side) return record;
+  if (record.dock !== record.side || !DOCKS.includes(record.dock)) return record;
   const {side, ...rest} = record;
   return rest;
 };
-const compactArrangement = arrangement => ({rail: arrangement.rail, bottomSpan: arrangement.bottomSpan, panels: arrangement.panels.map(compactRecord)});
+/** An arrangement to store: records without a redundant `side`, shares only where a side stacks islands, unknown keys kept. */
+function compactArrangement(arrangement) {
+  const stored = {...unknownKeys(arrangement, ARRANGEMENT_KEYS), rail: arrangement.rail, bottomSpan: arrangement.bottomSpan, panels: arrangement.panels.map(compactRecord)};
+  if (Object.keys(arrangement.weights ?? {}).length) stored.weights = arrangement.weights;
+  return stored;
+}
 
 function compactModeEntry(entry, mode, catalog) {
   const kept = {...unknownKeys(entry, ENTRY_KEYS), stamp: entry.stamp, preset: entry.preset};
-  if (!entry.focus && sameArrangement(entry, presetArrangement(entry.preset, mode, {catalog}))) return kept;
-  const full = {...kept, ...compactArrangement(entry)};
+  const preset = presetArrangement(entry.preset, mode, {catalog}) ?? (isForeignPreset(entry.preset, mode) ? defaultArrangement(mode, {catalog}) : null);
+  if (!entry.focus && sameArrangement(entry, preset)) return kept;
+  const full = {...kept, ...compactArrangement(pickArrangement(entry))};
   if (entry.focus) full.focus = compactArrangement(entry.focus);
   return full;
 }
@@ -530,61 +627,124 @@ export function serializeLayout(layout, {catalog = PANEL_CATALOG, now = Date.now
 }
 
 /**
+ * Removes the value at `path` from a layout (stored or in memory) and returns
+ * a copy; `value` is not changed. Array items (saved layouts, records,
+ * tombstones) are addressed by their `id`. A missing path changes nothing.
+ */
+function removePath(value, [head, ...rest]) {
+  if (Array.isArray(value)) {
+    const index = value.findIndex(item => isObject(item) && item.id === head);
+    if (index < 0) return value;
+    if (!rest.length) return value.filter((_, at) => at !== index);
+    const item = removePath(value[index], rest);
+    return item === value[index] ? value : value.map((other, at) => (at === index ? item : other));
+  }
+  if (!isObject(value) || !Object.hasOwn(value, head)) return value;
+  if (!rest.length) return Object.fromEntries(Object.entries(value).filter(([key]) => key !== head));
+  const item = removePath(value[head], rest);
+  return item === value[head] ? value : {...value, [head]: item};
+}
+
+/** Every part of a stored layout this version does not read, as `{path, bytes}`. */
+function unknownParts(value, catalog) {
+  const {byId} = catalogInfo(catalog);
+  const parts = [];
+  const add = (path, item) => { parts.push({path, bytes: layoutBytes(item ?? null)}); };
+  const extras = (path, object, known) => {
+    if (isObject(object)) for (const [key, item] of Object.entries(object)) if (!known.has(key)) add([...path, key], item);
+  };
+  const arrangement = (path, source, known) => {
+    if (!isObject(source)) return;
+    extras(path, source, known);
+    for (const record of Array.isArray(source.panels) ? source.panels : []) {
+      if (!isObject(record) || typeof record.id !== 'string') continue;
+      if (byId.has(record.id)) extras([...path, 'panels', record.id], record, RECORD_KEYS);
+      else add([...path, 'panels', record.id], record);
+    }
+  };
+  extras([], value, new Set([...V2_KEYS, ...MIRROR_KEYS]));
+  extras(['shared'], value.shared, SHARED_KEYS);
+  if (isObject(value.modes)) {
+    for (const [mode, entry] of Object.entries(value.modes)) {
+      if (!MODES.includes(mode)) { add(['modes', mode], entry); continue; }
+      arrangement(['modes', mode], entry, ENTRY_KEYS);
+      if (isObject(entry)) arrangement(['modes', mode, 'focus'], entry.focus, ARRANGEMENT_KEYS);
+    }
+  }
+  for (const item of Array.isArray(value.saved) ? value.saved : []) {
+    if (!isObject(item)) continue;
+    extras(['saved', item.id], item, SAVED_KEYS);
+    arrangement(['saved', item.id, 'arrangement'], item.arrangement, ARRANGEMENT_KEYS);
+  }
+  return parts;
+}
+
+/**
  * Keeps a serialized layout within the budget. Over the 12 KiB soft budget
  * only the oldest tombstones go (they only guard merges). Over the 16 KiB
  * file limit, which the preferences store would reject outright, focus
- * snapshots, then the oldest saved layouts, then the largest unknown keys go.
- * Returns `{value, bytes, trimmed, ok}`; `ok` is false if it still does not fit.
+ * snapshots, then the oldest saved layouts, then the largest data this
+ * version does not read (unknown keys at any level, records of unknown
+ * panels, unknown workspaces) go.
+ * Returns `{value, bytes, trimmed, removed, ok}`: `trimmed` names what went
+ * (`tombstones`, `focus`, `saved:<id>`, `key:<path>`), `removed` lists the
+ * paths for trimLayout, and `ok` is false if it still does not fit.
  */
-export function fitBudget(value, {budget = LAYOUT_BUDGET_BYTES, limit = LAYOUT_FILE_LIMIT_BYTES} = {}) {
+export function fitBudget(value, {budget = LAYOUT_BUDGET_BYTES, limit = LAYOUT_FILE_LIMIT_BYTES, catalog = PANEL_CATALOG} = {}) {
   let current = value, bytes = layoutBytes(current);
-  const trimmed = [];
-  const note = item => { if (!trimmed.includes(item)) trimmed.push(item); };
-  while (bytes > budget && current.tombstones?.length) {
-    current = {...current, tombstones: current.tombstones.slice(0, -1)};
-    note('tombstones');
-    bytes = layoutBytes(current);
-  }
+  const trimmed = [], removed = [];
+  /** Removes one part; false when nothing was left to remove there. */
+  const drop = (path, label) => {
+    const next = removePath(current, path);
+    if (next === current) return false;
+    current = next;
+    removed.push(path);
+    if (!trimmed.includes(label)) trimmed.push(label);
+    return true;
+  };
+  while (bytes > budget && Array.isArray(current.tombstones) && drop(['tombstones', current.tombstones.at(-1)?.id], 'tombstones')) bytes = layoutBytes(current);
   const steps = [
+    () => Object.entries(isObject(current.modes) ? current.modes : {})
+      .filter(([, entry]) => isObject(entry) && 'focus' in entry)
+      .map(([mode]) => drop(['modes', mode, 'focus'], 'focus'))
+      .includes(true),
     () => {
-      const modes = current.modes ?? {};
-      if (!Object.values(modes).some(entry => isObject(entry) && 'focus' in entry)) return false;
-      current = {...current, modes: Object.fromEntries(Object.entries(modes).map(([mode, entry]) => {
-        if (!isObject(entry)) return [mode, entry];
-        const {focus, ...rest} = entry;
-        return [mode, rest];
-      }))};
-      note('focus');
-      return true;
+      const saved = Array.isArray(current.saved) ? current.saved.filter(isObject) : [];
+      if (!saved.length) return false;
+      const oldest = saved.reduce((a, b) => (b.stamp < a.stamp ? b : a));
+      return drop(['saved', oldest.id], `saved:${oldest.id}`);
     },
     () => {
-      if (!current.saved?.length) return false;
-      const oldest = current.saved.reduce((a, b) => (b.stamp < a.stamp ? b : a));
-      current = {...current, saved: current.saved.filter(item => item !== oldest)};
-      note(`saved:${oldest.id}`);
-      return true;
-    },
-    () => {
-      const extra = Object.keys(current).filter(key => !V2_KEYS.has(key) && !['studioVersion', 'right', 'timeline'].includes(key));
-      if (!extra.length) return false;
-      const largest = extra.reduce((a, b) => (JSON.stringify(current[b]).length > JSON.stringify(current[a]).length ? b : a));
-      const {[largest]: removed, ...rest} = current;
-      current = rest;
-      note(`key:${largest}`);
-      return true;
+      const parts = unknownParts(current, catalog);
+      if (!parts.length) return false;
+      const largest = parts.reduce((a, b) => (b.bytes > a.bytes ? b : a));
+      return drop(largest.path, `key:${largest.path.join('.')}`);
     },
   ];
   for (const step of steps) {
     while (bytes > limit && step()) bytes = layoutBytes(current);
   }
-  return {value: current, bytes, trimmed, ok: bytes <= limit};
+  return {value: current, bytes, trimmed, removed, ok: bytes <= limit};
+}
+
+/**
+ * Applies fitBudget's `removed` paths to an in-memory layout, so what was
+ * trimmed from the file is not merged back and trimmed again on every save.
+ */
+export function trimLayout(layout, removed, {catalog = PANEL_CATALOG, now = Date.now()} = {}) {
+  if (!removed?.length) return layout;
+  return normalizeLayout(removed.reduce(removePath, layout), {catalog, now});
 }
 
 // ---------------------------------------------------------------------------
 // Operations (pure; the store stamps what changed)
 
 const withMode = (layout, mode, entry, {catalog, now}) => normalizeLayout({...layout, modes: {...layout.modes, [mode]: entry}}, {catalog, now});
-const pickArrangement = entry => ({rail: entry.rail, bottomSpan: entry.bottomSpan, panels: entry.panels});
+/** A record this version places in the workspace (not one it only keeps). */
+const placedIn = (catalog, mode) => {
+  const {byId} = catalogInfo(catalog);
+  return record => byId.has(record.id) && panelInMode(byId.get(record.id), mode) && DOCKS.includes(record.dock);
+};
 
 /** Applies a built-in (`animate`, `timing`, …), `focus` or saved (`user:<id>`) preset to a workspace. */
 export function applyPreset(layout, mode, presetId, {catalog = PANEL_CATALOG, now = Date.now(), workspaceHeight} = {}) {
@@ -613,8 +773,13 @@ export function toggleFocus(layout, mode, {on, catalog = PANEL_CATALOG, now = Da
   const active = Boolean(entry.focus);
   if ((on ?? !active) === active) return layout;
   if (active) return withMode(layout, mode, {...entry, ...entry.focus, focus: null}, {catalog, now});
+  const placed = placedIn(catalog, mode);
   const {byId} = catalogInfo(catalog);
-  const panels = entry.panels.map(record => byId.has(record.id) && (record.dock === record.side || record.dock === 'float') ? {...record, dock: 'strip'} : record);
+  // Docked and floating panels fold, and so do records on a dock this version
+  // does not know (solved docked at home); the snapshot keeps them as they were.
+  const folds = record => (placed(record) && (record.dock === record.side || record.dock === 'float'))
+    || (isForeignDock(record.dock) && byId.has(record.id) && panelInMode(byId.get(record.id), mode));
+  const panels = entry.panels.map(record => (folds(record) ? {...record, dock: 'strip'} : record));
   return withMode(layout, mode, {...entry, panels, focus: pickArrangement(entry)}, {catalog, now});
 }
 
@@ -663,20 +828,22 @@ export function canPlacePanel(id, target, {mode, catalog = PANEL_CATALOG} = {}) 
 export function movePanel(arrangement, id, target, {mode, catalog = PANEL_CATALOG, index, group, rect} = {}) {
   mode = requireMode(mode);
   if (!canPlacePanel(id, target, {mode, catalog})) return arrangement;
+  const placed = placedIn(catalog, mode);
   const panels = arrangement.panels.map(record => ({...record}));
   const record = panels.find(item => item.id === id);
   if (!record) return arrangement;
   if (target === 'docked' || DOCK_SIDES.includes(target)) {
-    const side = target === 'docked' ? record.side : target;
+    const {docks} = catalogInfo(catalog).byId.get(id);
+    const side = target !== 'docked' ? target : docks.includes(record.side) ? record.side : docks[0];
     const island = Number.isInteger(group) ? group : target === 'docked' ? record.group ?? 0 : 0;
-    const siblings = panels.filter(item => item !== record && item.side === side).sort((a, b) => a.order - b.order);
+    const siblings = panels.filter(item => item !== record && placed(item) && item.side === side).sort((a, b) => a.order - b.order);
     siblings.splice(Math.max(0, Math.min(siblings.length, Number.isInteger(index) ? index : siblings.length)), 0, record);
     siblings.forEach((item, order) => { item.order = order; });
-    for (const item of panels) if (item.dock === side && (item.group ?? 0) === island) delete item.active;
+    for (const item of panels) if (placed(item) && item.dock === side && (item.group ?? 0) === island) delete item.active;
     Object.assign(record, {dock: side, side, group: island, active: true});
   } else {
     if (target === 'float') {
-      const others = panels.filter(item => item !== record && item.dock === 'float');
+      const others = panels.filter(item => item !== record && placed(item) && item.dock === 'float');
       for (const item of others.slice(0, Math.max(0, others.length - MAX_FLOATING + 1))) item.dock = item.side;
       const kept = normalizeRect(rect);
       if (kept) record.rect = kept;
@@ -686,13 +853,18 @@ export function movePanel(arrangement, id, target, {mode, catalog = PANEL_CATALO
   return normalizeArrangement({...arrangement, panels}, mode, {catalog});
 }
 
-/** Makes a docked panel its island's shown tab. */
+/**
+ * Makes a docked panel its island's shown tab. A panel on a dock this version
+ * does not know (shown at its home) is docked there for good.
+ */
 export function activatePanel(arrangement, id, {mode, catalog = PANEL_CATALOG} = {}) {
   mode = requireMode(mode);
+  const placed = placedIn(catalog, mode);
   const record = arrangement.panels.find(item => item.id === id);
-  if (!record || record.dock !== record.side) return arrangement;
+  if (record && isForeignDock(record.dock)) return movePanel(arrangement, id, 'docked', {mode, catalog});
+  if (!record || !placed(record) || record.dock !== record.side) return arrangement;
   const panels = arrangement.panels.map(item => {
-    if (item.dock !== record.side || (item.group ?? 0) !== (record.group ?? 0)) return item;
+    if (!placed(item) || item.dock !== record.side || (item.group ?? 0) !== (record.group ?? 0)) return item;
     const {active, ...rest} = item;
     return item.id === id ? {...rest, active: true} : rest;
   });

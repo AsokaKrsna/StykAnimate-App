@@ -15,7 +15,7 @@ test('the catalogue describes today\'s panels with their limits and places', () 
     ['vfx', ['right', 'left'], true, 256, 288, 360],
     ['library', ['right', 'left'], true, 256, 288, 420],
     ['structure', ['left', 'right'], false, 200, 232, 360],
-    ['timeline', ['bottom'], false, 120, null, null],
+    ['timeline', ['bottom'], false, 200, null, null],
   ]);
   const byId = Object.fromEntries(PANEL_CATALOG.map(panel => [panel.id, panel]));
   assert.equal(panelInMode(byId.structure, 'rig'), true);
@@ -33,7 +33,21 @@ test('descriptors are validated', () => {
     assert.throws(() => normalizePanelDescriptor(bad), TypeError, JSON.stringify(bad));
   }
   const panel = normalizePanelDescriptor({id: 'notes', regions: ['left', 'left'], min: 300, pref: 100, max: 200, canHide: ['draw', 'nope']});
-  assert.deepEqual([panel.docks, panel.min, panel.pref, panel.max, panel.canHide, panel.floatable], [['left'], 300, 300, 300, ['draw'], false]);
+  assert.deepEqual([panel.docks, panel.min, panel.pref, panel.max, panel.canHide, panel.floatable, panel.defaultDock], [['left'], 300, 300, 300, ['draw'], false, null]);
+  // A default dock must be a fold or one of the panel's docks.
+  assert.equal(normalizePanelDescriptor({id: 'notes', docks: ['left'], defaultDock: 'strip'}).defaultDock, 'strip');
+  assert.equal(normalizePanelDescriptor({id: 'notes', docks: ['left'], defaultDock: 'right'}).defaultDock, null);
+});
+
+test('Build is named build or rig alike', () => {
+  const panel = normalizePanelDescriptor({id: 'rigging', docks: ['left'], modes: ['build'], canHide: ['build']});
+  assert.deepEqual([panel.modes, panel.canHide], [['rig'], ['rig']]);
+  const byId = Object.fromEntries(PANEL_CATALOG.map(item => [item.id, item]));
+  assert.equal(panelInMode(byId.structure, 'build'), true);
+  assert.equal(panelCanHide(byId.timeline, 'build'), true);
+  const registry = createPanelRegistry();
+  assert.deepEqual(registry.list({mode: 'build'}).map(item => item.id), registry.list({mode: 'rig'}).map(item => item.id));
+  assert.ok(registry.list({mode: 'build'}).some(item => item.id === 'structure'));
 });
 
 test('late roots complete a catalogue panel and re-announce it', () => {
@@ -89,11 +103,42 @@ test('visibility changes call onVisibility once per change', () => {
   assert.deepEqual(calls.at(-1), ['after', true]);
 });
 
+test('a callback that arrives while its panel is visible hears it at once', () => {
+  const registry = createPanelRegistry();
+  const layout = defaultLayout();
+  const toLibrary = {...layout, modes: {...layout.modes, animate: {...layout.modes.animate,
+    panels: layout.modes.animate.panels.map(record => (record.side !== 'right' ? record : record.id === 'library' ? {...record, active: true} : {...record, active: false}))}}};
+  const solution = solveLayout(toLibrary, {width: 1440, height: 900, mode: 'animate'});
+  assert.equal(solution.panels.library.visible, true);
+  registry.applySolution(solution);
+  // The Library root is defined late, while its tab is already the shown one.
+  const calls = [];
+  const onVisibility = (visible, id) => calls.push([id, visible]);
+  registry.define({id: 'library', root: () => ({}), onVisibility});
+  assert.deepEqual(calls, [['library', true]]);
+  registry.applySolution(solution);
+  registry.define({id: 'library', title: 'Library'});
+  assert.deepEqual(calls, [['library', true]], 'a re-define keeping the callback does not repeat it');
+  // A hidden panel's late callback waits for a change.
+  registry.define({id: 'vfx', onVisibility});
+  assert.deepEqual(calls, [['library', true]]);
+  // Watchers can ask for the current state.
+  const watched = [];
+  registry.onVisibility('library', visible => watched.push(visible), {immediate: true});
+  registry.onVisibility('vfx', visible => watched.push(visible), {immediate: true});
+  registry.onVisibility('library', visible => watched.push(`later ${visible}`));
+  assert.deepEqual(watched, [true, false]);
+});
+
 test('a solution drives visibility; activate asks the dock host', () => {
   const registry = createPanelRegistry();
   const solution = solveLayout(defaultLayout(), {width: 1440, height: 900, mode: 'animate'});
   assert.deepEqual(registry.applySolution(solution).sort(), ['properties', 'timeline']);
   assert.equal(registry.isVisible('vfx'), false);
+  // A panel open as a sheet stays visible through a re-solve.
+  assert.deepEqual(registry.applySolution(solution, {open: ['vfx']}), ['vfx']);
+  assert.deepEqual(registry.applySolution(solution, {open: ['vfx']}), []);
+  assert.deepEqual(registry.applySolution(solution), ['vfx']);
   const low = solveLayout(defaultLayout(), {width: 1440, height: 500, mode: 'animate'});
   assert.deepEqual(registry.applySolution(low), ['timeline']);
   const activated = [];

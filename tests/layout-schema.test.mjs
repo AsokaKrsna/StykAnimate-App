@@ -12,10 +12,21 @@ import {
   activatePanel, applyPreset, canPlacePanel, canSavePreset, cleanLayoutName, defaultArrangement, defaultLayout,
   deletePreset, fitBudget, isFutureLayout, layoutBytes, migrateLayout, movePanel, normalizeArrangement,
   normalizeLayout, presetArrangement, presetsFor, renamePreset, resetLayout, resetMode, sameArrangement,
-  savePreset, serializeLayout, setSharedSize, toggleFocus, updatePreset,
+  savePreset, serializeLayout, setSharedSize, solvableArrangement, toggleFocus, trimLayout, updatePreset,
 } from '../src/shell/layout-schema.mjs';
-import {constrainStudioLayout} from '../src/studio-layout.mjs';
 import {PANEL_CATALOG, normalizePanelDescriptor} from '../src/shell/panel-registry.mjs';
+
+// StykAnimate 1.1's studio layout reader and writer (src/studio-layout.mjs at
+// 1.1), frozen here so the downgrade contract outlives that module.
+function constrainStudioLayout(preferences = {}, width = 1280, height = 640) {
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  preferences = preferences && typeof preferences === 'object' ? preferences : {};
+  const right = clamp(Number(preferences.right) || 292, 230, Math.max(230, Math.min(390, width - 460)));
+  const timeline = clamp(Number(preferences.timeline) || 280, 200, Math.max(200, height - 210));
+  return {right, timeline};
+}
+/** 1.1's persist(): `preferences` is `{...loaded}` with the sizes the user dragged. */
+const persist11 = preferences => ({...preferences, studioVersion: 1});
 
 const NOW = 1_700_000_100_000;
 const at = {now: NOW};
@@ -100,7 +111,7 @@ test('v2 keys survive 1.1 reading the file and writing {...loaded, studioVersion
   assert.equal(written.studioVersion, 1);
   assert.deepEqual(constrainStudioLayout(written, 1440, 900), {right: 300, timeline: 260});
   // 1.1's persist() after the user drags its inspector and timeline.
-  const replayed = {...written, right: 344, timeline: 300, studioVersion: 1};
+  const replayed = persist11({...written, right: 344, timeline: 300});
   for (const key of ['layoutVersion', 'shared', 'modes', 'saved', 'tombstones', 'futureKey']) assert.deepEqual(replayed[key], written[key], key);
   const {layout, source} = migrateLayout(replayed, at);
   assert.equal(source, 'v2');
@@ -161,7 +172,7 @@ test('normalization keeps every panel in a place it allows', () => {
   assert.equal(place(arrangement, 'properties'), 'right', 'Properties never floats');
   assert.equal(place(arrangement, 'vfx'), 'float@left', 'the first record of an id wins');
   assert.equal(place(arrangement, 'library'), 'float@right');
-  assert.equal(records(arrangement).structure, undefined, 'Structure exists only in Build');
+  assert.deepEqual(records(arrangement).structure, {id: 'structure', dock: 'left'}, 'Structure is placed only in Build; its record is kept as it is');
   // A third floating panel docks back on its side.
   const catalog = [...PANEL_CATALOG, normalizePanelDescriptor({id: 'notes', docks: ['right'], floatable: true, min: 200, pref: 240, max: 300})];
   const three = normalizeArrangement({panels: ['vfx', 'library', 'notes'].map(id => ({id, dock: 'float'}))}, 'animate', {catalog});
@@ -184,16 +195,128 @@ test('records of panels this version does not know are kept but bounded', () => 
   const arrangement = normalizeArrangement({panels: [
     {id: 'audio-mixer', dock: 'left', order: 1, extra: {deep: true}},
     {id: 'Bad Id', dock: 'left'},
-    {id: 'notes', dock: 'nowhere'},
+    {id: 'broken', dock: 7},
+    {id: 'notes', dock: 'drawer', side: 'drawer'},
     ...Array.from({length: 12}, (_, index) => ({id: `extra-${index}`, dock: 'right'})),
   ]}, 'animate');
   const unknown = arrangement.panels.filter(record => !['properties', 'vfx', 'library', 'timeline'].includes(record.id));
   assert.equal(unknown[0].id, 'audio-mixer');
   assert.deepEqual(unknown[0].extra, {deep: true});
+  assert.deepEqual(unknown[1], {id: 'notes', dock: 'drawer', side: 'drawer'}, 'a dock type from a newer version is kept');
   assert.equal(unknown.length, 8);
-  assert.ok(!unknown.some(record => record.id === 'Bad Id' || record.id === 'notes'));
+  assert.ok(!unknown.some(record => record.id === 'Bad Id' || record.id === 'broken'));
   // Built-in presets never carry them.
   assert.equal(presetArrangement('animate', 'animate').panels.length, 4);
+});
+
+// A 2.x file from a newer version: data this version does not read (all reported lost in review).
+const NEWER_RECORDS = [
+  {id: 'properties', dock: 'right', order: 0, pinned: true, collapsedSections: ['motion']},
+  {id: 'vfx', dock: 'top', side: 'top', order: 0, height: 180},
+  {id: 'library', dock: 'right', order: 1},
+  {id: 'timeline', dock: 'bottom', order: 0},
+  {id: 'structure', dock: 'left', order: 0, pinned: true},
+];
+const NEWER = deepFreeze({
+  layoutVersion: 2, studioVersion: 1,
+  shared: {stamp: 3, sizes: {}},
+  modes: {
+    animate: {stamp: 4, preset: 'animate', rail: 'left', bottomSpan: 'full', panels: NEWER_RECORDS, splitRatio: 0.4,
+      focus: {rail: 'left', bottomSpan: 'full', panels: NEWER_RECORDS, splitRatio: 0.3}},
+    draw: {stamp: 5, preset: 'storyboard'},
+    rig: {stamp: 6, preset: 'build'},
+  },
+  saved: [{id: 'u1', name: 'Wide', mode: 'animate', stamp: 7, arrangement: {rail: 'left', bottomSpan: 'full', panels: NEWER_RECORDS, splitRatio: 0.6}}],
+  tombstones: [],
+});
+
+test('a newer 2.x file keeps what this version does not read through a save', () => {
+  const layout = normalizeLayout(NEWER, at);
+  const written = serializeLayout(layout, at);
+  const again = serializeLayout(migrateLayout(written, at).layout, at);
+  assert.deepEqual(again, written, 'a second round trip changes nothing');
+  const animate = written.modes.animate;
+  // (a) Extra fields on a known panel's record.
+  assert.deepEqual(animate.panels.find(record => record.id === 'properties'), {id: 'properties', dock: 'right', order: 0, active: true, pinned: true, collapsedSections: ['motion']});
+  // (b) Unknown arrangement keys in the entry, its Focus snapshot and a saved layout.
+  assert.equal(animate.splitRatio, 0.4);
+  assert.equal(animate.focus.splitRatio, 0.3);
+  assert.equal(written.saved[0].arrangement.splitRatio, 0.6);
+  // (c) A known panel's record in a workspace this version keeps it out of.
+  assert.deepEqual(animate.panels.find(record => record.id === 'structure'), {id: 'structure', dock: 'left', order: 0, pinned: true});
+  // (d) A known panel on a dock this version does not know: kept as it is.
+  assert.deepEqual(animate.panels.find(record => record.id === 'vfx'), {id: 'vfx', dock: 'top', side: 'top', order: 0, height: 180});
+  assert.deepEqual(written.saved[0].arrangement.panels.find(record => record.id === 'vfx'), {id: 'vfx', dock: 'top', side: 'top', order: 0, height: 180});
+  // Each panel still has exactly one record.
+  assert.deepEqual(animate.panels.map(record => record.id).sort(), ['library', 'properties', 'structure', 'timeline', 'vfx']);
+});
+
+test('records this version only keeps are solved at home or not at all, until the user moves them', () => {
+  const entry = normalizeLayout(NEWER, at).modes.animate;
+  // VFX on the unknown dock is solved as the last tab of its home island; Structure is not placed.
+  const solvable = solvableArrangement(entry, 'animate');
+  assert.equal(place(solvable, 'vfx'), 'right');
+  assert.deepEqual(solvable.panels.filter(record => record.dock === 'right').map(record => [record.id, record.active ?? false]),
+    [['properties', true], ['library', false], ['vfx', false]]);
+  assert.equal(solvableArrangement(defaultArrangement('animate'), 'animate'), defaultArrangement('animate'), 'nothing to re-home: the same object');
+  // Showing or moving it places it for good; moves of other panels leave it alone.
+  assert.equal(place(activatePanel(entry, 'vfx', {mode: 'animate'}), 'vfx'), 'right');
+  assert.equal(records(activatePanel(entry, 'vfx', {mode: 'animate'})).vfx.active, true);
+  assert.equal(place(movePanel(entry, 'vfx', 'docked', {mode: 'animate'}), 'vfx'), 'right');
+  assert.equal(place(movePanel(entry, 'vfx', 'left', {mode: 'animate'}), 'vfx'), 'left');
+  const moved = movePanel(entry, 'library', 'left', {mode: 'animate'});
+  assert.deepEqual(records(moved).vfx, records(entry).vfx);
+  assert.deepEqual(records(moved).structure, records(entry).structure);
+  assert.equal(activatePanel(entry, 'structure', {mode: 'animate'}), entry, 'a kept record of another workspace is never activated');
+  // Focus folds it (it is shown docked) and restores it as it was.
+  const layout = normalizeLayout(NEWER, at);
+  const focused = toggleFocus({...layout, modes: {...layout.modes, animate: {...entry, focus: null}}}, 'animate', at);
+  assert.equal(place(focused.modes.animate, 'vfx'), 'strip@right');
+  assert.deepEqual(records(focused.modes.animate).structure, records(entry).structure);
+  assert.deepEqual(records(toggleFocus(focused, 'animate', at).modes.animate).vfx, records(entry).vfx);
+});
+
+test('a compact entry naming a preset this version does not know stays compact', () => {
+  const layout = normalizeLayout(NEWER, at);
+  assert.equal(layout.modes.draw.preset, 'storyboard');
+  assert.ok(sameArrangement(layout.modes.draw, defaultArrangement('draw')), 'solved as the workspace default');
+  assert.deepEqual(serializeLayout(layout, at).modes.draw, {stamp: 5, preset: 'storyboard'});
+  // A preset another workspace owns here counts as unknown too.
+  assert.deepEqual(serializeLayout(normalizeLayout({modes: {draw: {stamp: 1, preset: 'timing'}}}, at), at).modes.draw, {stamp: 1, preset: 'timing'});
+  // Once the user arranges the workspace, the arrangement is written.
+  const moved = {...layout, modes: {...layout.modes, draw: {...layout.modes.draw, ...movePanel(layout.modes.draw, 'library', 'left', {mode: 'draw'})}}};
+  assert.equal(serializeLayout(moved, at).modes.draw.panels[0].id, 'library');
+});
+
+test('a panel without a record takes its default dock', () => {
+  const add = (fields) => [...PANEL_CATALOG, normalizePanelDescriptor({id: 'notes', docks: ['right'], min: 200, pref: 240, max: 300, ...fields})];
+  assert.equal(place(normalizeArrangement(defaultArrangement('animate'), 'animate', {catalog: add({})}), 'notes'), 'right');
+  assert.equal(place(normalizeArrangement(defaultArrangement('animate'), 'animate', {catalog: add({defaultDock: 'strip'})}), 'notes'), 'strip@right');
+  assert.equal(place(normalizeArrangement(defaultArrangement('animate'), 'animate', {catalog: add({defaultDock: 'hidden'})}), 'notes'), 'hidden@right');
+  // A stored record wins over the default dock.
+  assert.equal(place(normalizeArrangement({panels: [{id: 'notes', dock: 'right'}]}, 'animate', {catalog: add({defaultDock: 'strip'})}), 'notes'), 'right');
+});
+
+test('island shares belong to the islands, not to the tabs that move between them', () => {
+  const stacked = normalizeArrangement({panels: [
+    {id: 'properties', dock: 'right', order: 0},
+    {id: 'vfx', dock: 'right', order: 1},
+    {id: 'library', dock: 'right', order: 2, group: 1},
+  ], weights: {right: [3, 1]}}, 'animate');
+  assert.deepEqual(stacked.weights, {right: [0.75, 0.25]}, 'shares are normalized to sum to 1');
+  // Swapping Library and VFX between the islands keeps each island's share.
+  const swapped = movePanel(movePanel(stacked, 'vfx', 'right', {mode: 'animate', group: 1}), 'library', 'right', {mode: 'animate', group: 0});
+  assert.deepEqual(swapped.panels.filter(record => record.dock === 'right').map(record => [record.id, record.group ?? 0]),
+    [['properties', 0], ['library', 0], ['vfx', 1]]);
+  assert.deepEqual(swapped.weights, {right: [0.75, 0.25]});
+  // One island left: no shares; invalid shares are equal; shares are stored only where islands stack.
+  assert.deepEqual(movePanel(stacked, 'library', 'right', {mode: 'animate', group: 0}).weights, {});
+  assert.deepEqual(normalizeArrangement({...stacked, weights: {right: [1, -1], left: [1, 1]}}, 'animate').weights, {right: [0.5, 0.5]});
+  assert.deepEqual(normalizeArrangement({...stacked, weights: {right: [1, 999]}}, 'animate').weights, {right: [0.05, 0.95]});
+  const layout = normalizeLayout({modes: {animate: {preset: 'animate', ...stacked}}}, at);
+  assert.deepEqual(serializeLayout(layout, at).modes.animate.weights, {right: [0.75, 0.25]});
+  assert.equal('weights' in serializeLayout(defaultLayout(at), at).modes.animate, false);
+  assert.ok(!sameArrangement(stacked, {...stacked, weights: {right: [0.5, 0.5]}}));
 });
 
 test('shared sizes are clamped integers; non-finite values fall back to the default', () => {
@@ -296,6 +419,16 @@ test('saved layouts: eight at most, clean names, rename, update and delete with 
   assert.equal(layout.saved[0].mode, 'animate');
   assert.equal(layout.modes.animate.preset, `user:${first.id}`);
   assert.equal(cleanLayoutName('x'.repeat(80)).length, 48);
+  // Invisible format characters go (bidi overrides, zero-width spaces); joiners in emoji and scripts stay.
+  assert.equal(cleanLayoutName('a\u202Eb\u200Bc\u2066d\uFEFF'), 'abcd');
+  assert.equal(cleanLayoutName('\u202E\u200B \u200D'), '', 'nothing visible is no name');
+  const family = '\u{1F469}\u200D\u{1F469}\u200D\u{1F467}';
+  assert.equal(cleanLayoutName(`Team ${family}`), `Team ${family}`);
+  assert.equal(cleanLayoutName('\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645'), '\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645', 'Persian keeps its ZWNJ');
+  // Never cut inside an emoji sequence: the one that would pass 48 code points is left out.
+  const cut = cleanLayoutName(`${'x'.repeat(45)}${family}`);
+  assert.equal(cut, 'x'.repeat(45));
+  assert.equal(cleanLayoutName(`${'x'.repeat(43)}${family}`), `${'x'.repeat(43)}${family}`);
   for (let index = 1; index < MAX_SAVED_LAYOUTS; index++) layout = savePreset(layout, {name: `Layout ${index}`, mode: 'draw', now: NOW + index}).layout;
   assert.equal(layout.saved.length, 8);
   assert.deepEqual(canSavePreset(layout, 'animate', at), {ok: false, reason: 'limit'});
@@ -361,6 +494,29 @@ test('trimming keeps a stored layout under the file limit, losing the least firs
   assert.equal(hard.value.small, 1);
   assert.equal(hard.value.layoutVersion, 2);
   assert.equal(hard.value.studioVersion, 1);
+  // What went can be taken out of the in-memory layout too, so it is not merged back.
+  const trimmedLayout = trimLayout(normalizeLayout({...focused, huge: 'y'}, at), hard.removed, at);
+  assert.deepEqual([trimmedLayout.saved.length, trimmedLayout.modes.animate.focus, 'huge' in trimmedLayout, trimmedLayout.tombstones.length],
+    [0, null, false, hard.value.tombstones.length]);
+});
+
+test('trimming reaches unknown data at any depth before giving up', () => {
+  const blob = 'z'.repeat(LAYOUT_FILE_LIMIT_BYTES / 4);
+  const records = [{id: 'properties', dock: 'right', memo: blob}, {id: 'mixer', dock: 'left', data: blob}];
+  const layout = normalizeLayout({
+    shared: {sizes: {}, later: blob},
+    modes: {animate: {preset: 'animate', rail: 'left', panels: records, blob, keep: 1}, camera: {blob}},
+    saved: [{id: 'u1', name: 'One', mode: 'draw', stamp: 1, notes: blob, arrangement: {panels: records}}],
+  }, at);
+  const fitted = fitBudget(serializeLayout(layout, at), {budget: Infinity, limit: 2048});
+  assert.equal(fitted.ok, true, 'the layout is still saved');
+  assert.equal(fitted.trimmed[0], 'saved:u1', 'the oldest saved layout goes first, as before');
+  assert.deepEqual(fitted.trimmed.slice(1).sort(), ['key:modes.animate.blob', 'key:modes.animate.panels.mixer', 'key:modes.animate.panels.properties.memo', 'key:modes.camera', 'key:shared.later']);
+  assert.equal(fitted.value.modes.animate.keep, 1, 'small unknown keys stay');
+  assert.deepEqual(Object.keys(fitted.value.modes.animate.panels.find(record => record.id === 'properties')), ['id', 'dock', 'order']);
+  // A 17 KiB blob in a mode entry no longer blocks every save.
+  const single = fitBudget(serializeLayout(normalizeLayout({modes: {animate: {preset: 'animate', blob: 'z'.repeat(17 * 1024)}}}, at), at));
+  assert.deepEqual([single.ok, single.trimmed, single.removed], [true, ['key:modes.animate.blob'], [['modes', 'animate', 'blob']]]);
 });
 
 test('moving panels follows each panel\'s allowed places', () => {

@@ -17,9 +17,13 @@
  *   floatable   may float over the stage
  *   min, pref, max, maxFraction (of the window height, for the bottom dock)
  *   sizeKey     shared size the panel owns instead of its side's (Structure)
- *   modes       workspaces the panel exists in (null: every workspace)
+ *   modes       workspaces the panel exists in (null: every workspace; 'build' means 'rig')
  *   canHide     true, false or the workspaces where it may be Hidden
  *   hiddenFallback  the dock used where Hidden is not allowed (the timeline: strip)
+ *   defaultDock where the panel goes in a workspace whose stored arrangement and
+ *               default preset have no record of it: 'strip', 'hidden' or one of
+ *               its docks (null: its home). A panel added later can then arrive
+ *               folded instead of changing every user's layout.
  *   stageMin    the stage width below which the panel's side folds to a strip
  *   root        () => element, supplied at runtime
  *   onVisibility (visible, id) => void, supplied at runtime
@@ -30,7 +34,9 @@ export const DOCK_SIDES = Object.freeze(['left', 'right', 'bottom']);
 
 const ID_PATTERN = /^[a-z][a-z0-9-]{0,39}$/;
 const DATA_FIELDS = ['id', 'title', 'titleKey', 'icon', 'docks', 'floatable', 'min', 'pref', 'max', 'maxFraction',
-  'sizeKey', 'modes', 'canHide', 'hiddenFallback', 'stageMin'];
+  'sizeKey', 'modes', 'canHide', 'hiddenFallback', 'defaultDock', 'stageMin'];
+/** 'build' is Build's user-facing name; the workspace id is 'rig'. */
+const workspaceId = mode => (mode === 'build' ? 'rig' : mode);
 
 function freezeDescriptor(descriptor) {
   for (const key of ['docks', 'modes', 'canHide']) if (Array.isArray(descriptor[key])) Object.freeze(descriptor[key]);
@@ -48,13 +54,13 @@ export function normalizePanelDescriptor(input) {
   if (typeof id !== 'string' || !ID_PATTERN.test(id)) throw new TypeError(`Invalid panel id: ${String(id)}`);
   const docks = [...new Set(input.docks ?? input.regions ?? [])];
   if (!docks.length || docks.some(side => !DOCK_SIDES.includes(side))) throw new TypeError(`Panel ${id} needs docks from ${DOCK_SIDES.join(', ')}.`);
-  const modes = input.modes == null ? null : [...new Set(input.modes)];
+  const modes = input.modes == null ? null : [...new Set([...input.modes].map(workspaceId))];
   if (modes && (!modes.length || modes.some(mode => !WORKSPACES.includes(mode)))) throw new TypeError(`Panel ${id} has unknown workspaces.`);
   const number = (value, fallback) => Number.isFinite(value) && value >= 0 ? Math.round(value) : fallback;
   const min = number(input.min, 0);
   const max = input.max == null ? null : Math.max(min, number(input.max, min));
   const pref = input.pref == null ? null : Math.min(max ?? Infinity, Math.max(min, number(input.pref, min)));
-  const canHide = Array.isArray(input.canHide) ? input.canHide.filter(mode => WORKSPACES.includes(mode)) : input.canHide !== false;
+  const canHide = Array.isArray(input.canHide) ? [...new Set(input.canHide.map(workspaceId))].filter(mode => WORKSPACES.includes(mode)) : input.canHide !== false;
   const descriptor = {
     id,
     title: typeof input.title === 'string' ? input.title : id,
@@ -68,6 +74,7 @@ export function normalizePanelDescriptor(input) {
     modes,
     canHide,
     hiddenFallback: ['strip', ...DOCK_SIDES].includes(input.hiddenFallback) ? input.hiddenFallback : null,
+    defaultDock: input.defaultDock === 'strip' || input.defaultDock === 'hidden' || docks.includes(input.defaultDock) ? input.defaultDock : null,
     stageMin: Number.isFinite(input.stageMin) && input.stageMin > 0 ? Math.round(input.stageMin) : null,
   };
   return descriptor;
@@ -83,21 +90,26 @@ export const PANEL_CATALOG = Object.freeze([
     docks: ['right', 'left'], floatable: true, min: 256, pref: 288, max: 420},
   {id: 'structure', title: 'Structure', titleKey: 'shell.panel.structure', icon: 'structure',
     docks: ['left', 'right'], floatable: false, min: 200, pref: 232, max: 360, sizeKey: 'structure', modes: ['rig'], stageMin: 400},
+  // min 200: the header, the ruler, Camera, Scene and two content rows (1.1's
+  // minimum too); the solver adds the tall tier's bottom padding.
   {id: 'timeline', title: 'Timeline', titleKey: 'shell.panel.timeline', icon: 'timeline',
-    docks: ['bottom'], floatable: false, min: 120, maxFraction: 0.6, canHide: ['rig'], hiddenFallback: 'strip'},
+    docks: ['bottom'], floatable: false, min: 200, maxFraction: 0.6, canHide: ['rig'], hiddenFallback: 'strip'},
 ].map(descriptor => freezeDescriptor(normalizePanelDescriptor(descriptor))));
 
-/** True when the panel exists in the workspace. */
-export const panelInMode = (descriptor, mode) => !descriptor.modes || descriptor.modes.includes(mode);
+/** True when the panel exists in the workspace ('build' or 'rig' for Build). */
+export const panelInMode = (descriptor, mode) => !descriptor.modes || descriptor.modes.includes(workspaceId(mode));
 
-/** True when the panel may be Hidden in the workspace. */
-export const panelCanHide = (descriptor, mode) => Array.isArray(descriptor.canHide) ? descriptor.canHide.includes(mode) : descriptor.canHide !== false;
+/** True when the panel may be Hidden in the workspace ('build' or 'rig' for Build). */
+export const panelCanHide = (descriptor, mode) => Array.isArray(descriptor.canHide) ? descriptor.canHide.includes(workspaceId(mode)) : descriptor.canHide !== false;
 
 /**
  * Creates the runtime registry. `catalog` supplies constraint data that a
  * later define() with the same id completes with its root and callbacks
  * (late roots such as the library's are supported; each define emits
- * 'define' so the dock host re-applies the solution).
+ * 'define' so the dock host re-applies the solution). Callbacks hear
+ * changes, so an onVisibility that arrives while its panel is already
+ * visible is called once at once with `(true, id)`: a late root never stays
+ * paused.
  */
 export function createPanelRegistry({catalog = PANEL_CATALOG} = {}) {
   const panels = new Map(catalog.map(descriptor => [descriptor.id, {data: freezeDescriptor(normalizePanelDescriptor(descriptor)), root: null, onVisibility: null}]));
@@ -107,6 +119,9 @@ export function createPanelRegistry({catalog = PANEL_CATALOG} = {}) {
   let snapshot = null;
 
   const report = error => { globalThis.reportError?.(error); };
+  const call = (callback, value, id) => {
+    try { callback(value, id); } catch (error) { report(error); }
+  };
   const emit = (type, detail) => {
     for (const listener of [...listeners[type]]) {
       try { listener(detail); } catch (error) { report(error); }
@@ -133,6 +148,7 @@ export function createPanelRegistry({catalog = PANEL_CATALOG} = {}) {
     };
     panels.set(data.id, entry);
     snapshot = null;
+    if (entry.onVisibility && entry.onVisibility !== known?.onVisibility && visible.get(data.id)) call(entry.onVisibility, true, data.id);
     emit('define', {id: data.id, descriptor: data});
     return data;
   }
@@ -143,10 +159,7 @@ export function createPanelRegistry({catalog = PANEL_CATALOG} = {}) {
     const next = Boolean(value);
     if ((visible.get(id) ?? false) === next) return false;
     visible.set(id, next);
-    for (const callback of [entry.onVisibility, ...(watchers.get(id) ?? [])]) {
-      if (!callback) continue;
-      try { callback(next, id); } catch (error) { report(error); }
-    }
+    for (const callback of [entry.onVisibility, ...(watchers.get(id) ?? [])]) if (callback) call(callback, next, id);
     return true;
   }
 
@@ -154,7 +167,7 @@ export function createPanelRegistry({catalog = PANEL_CATALOG} = {}) {
     define,
     has: id => panels.has(id),
     get: id => panels.get(id)?.data ?? null,
-    /** The panels of a workspace (every panel without one), in definition order. */
+    /** The panels of a workspace ('build' or 'rig' for Build; every panel without one), in definition order. */
     list: ({mode} = {}) => [...panels.values()].map(entry => entry.data).filter(data => !mode || panelInMode(data, mode)),
     /** Plain constraint data for layout-schema and layout-solver; stable until the next define(). */
     constraints() {
@@ -173,15 +186,26 @@ export function createPanelRegistry({catalog = PANEL_CATALOG} = {}) {
       if (changed.length) emit('visibility', {changed, visible: Object.fromEntries(changed.map(id => [id, visible.get(id)]))});
       return changed;
     },
-    /** Applies a layout-solver solution's `panels[id].visible`. */
-    applySolution(solution) {
+    /**
+     * Applies a layout-solver solution's `panels[id].visible`. `open` lists the
+     * panels the dock host shows outside the solution (an open strip or tier
+     * sheet), which are visible too, so a re-solve never pauses them.
+     */
+    applySolution(solution, {open = []} = {}) {
+      const shown = new Set(open);
       const changes = {};
-      for (const id of panels.keys()) changes[id] = Boolean(solution?.panels?.[id]?.visible);
+      for (const id of panels.keys()) changes[id] = Boolean(solution?.panels?.[id]?.visible) || shown.has(id);
       return this.setVisibility(changes);
     },
-    onVisibility: (id, callback, {signal} = {}) => {
+    /**
+     * Calls `callback(visible, id)` on every change of the panel's visibility;
+     * with `immediate` also once now with the current state.
+     */
+    onVisibility: (id, callback, {signal, immediate = false} = {}) => {
       if (!watchers.has(id)) watchers.set(id, new Set());
-      return subscribe(watchers.get(id), callback, signal);
+      const remove = subscribe(watchers.get(id), callback, signal);
+      if (immediate && typeof callback === 'function' && !signal?.aborted) call(callback, visible.get(id) ?? false, id);
+      return remove;
     },
     /** Asks the dock host to show and focus a panel; returns false for an unknown id. */
     activate(id) {

@@ -15,6 +15,7 @@ import {
 import {
   applyPreset, defaultLayout, migrateLayout, movePanel, normalizeLayout, setSharedSize, toggleFocus,
 } from '../src/shell/layout-schema.mjs';
+import {PANEL_CATALOG, normalizePanelDescriptor} from '../src/shell/panel-registry.mjs';
 
 const NOW = 1_700_000_100_000;
 const ARTBOARD = {width: 960, height: 540};
@@ -100,6 +101,11 @@ test('the band\'s measured width moves the minimal step so the window controls n
   assert.deepEqual(resolveTiers(1010, 800, {bandMin: measured}), {tier: 'compact', height: 'tall', bandStep: true});
   assert.deepEqual(resolveTiers(1030, 800, {bandMin: measured}), {tier: 'narrow', height: 'tall', bandStep: false});
   assert.equal(resolveTiers(1200, 800, {bandMin: measured}).tier, 'regular');
+  // The map must hold every tier (one measuring pass); a partial one never lets the band
+  // overflow, because a tier it lacks needs the widest width it holds.
+  assert.equal(resolveTiers(1010, 800, {bandMin: {narrow: 1000}}).tier, 'minimal');
+  assert.equal(resolveTiers(1010, 800, {bandMin: {compact: 700}}).tier, 'narrow');
+  assert.equal(resolveTiers(1010, 800, {bandMin: {minimal: 400}}).tier, 'narrow', 'minimal needs nothing');
   // The band never changes the height tier, and the step reaches the solution.
   const stepped = solve(700, 900, {bandMin: 700});
   assert.deepEqual([stepped.tier, stepped.height, stepped.rail.width], ['minimal', 'tall', 40]);
@@ -140,11 +146,12 @@ test('heights between 441 and 640 compress the timeline rows before folding it',
   assert.equal(solve(1440, 568, {layout: tall}).regions.bottom.state, 'strip');
   // Where even the minimum body would leave the stage under 200px, it folds; otherwise it is compressed.
   const lowThresholds = {width: {regular: 1366, narrow: 1180, compact: 900, minimal: 660}, height: {short: 300, low: 200}};
-  const compressed = solveLayout(tall, {width: 1440, height: 460, mode: 'animate', tiers: lowThresholds});
+  const compressed = solveLayout(tall, {width: 1440, height: 470, mode: 'animate', tiers: lowThresholds});
   assert.equal(compressed.height, 'tall');
   assert.equal(compressed.regions.bottom.state, 'docked');
   assert.equal(compressed.regions.bottom.reason, 'stage');
   assert.equal(compressed.stage.height, 200);
+  assert.equal(solveLayout(tall, {width: 1440, height: 460, mode: 'animate', tiers: lowThresholds}).regions.bottom.state, 'strip', 'under its row minimum it folds');
   const folded = solveLayout(tall, {width: 1440, height: 360, mode: 'animate', tiers: lowThresholds});
   assert.equal(folded.regions.bottom.state, 'strip');
   assert.equal(folded.regions.bottom.reason, 'stage');
@@ -173,6 +180,25 @@ test('the artboard never drops under its floor at any swept size, and #viewport 
   }
   assert.equal(STAGE_FLOORS.length, 6);
   assert.equal(stageFloor(601, 569), 45);
+});
+
+test('floors hold for the default layout; the user\'s own sizes and docks may trade them, never #viewport 360x200', () => {
+  // The default layout keeps every floor (swept above). A wide inspector, a tall timeline
+  // (Tall timeline and Timing do so by design) or an extra dock is the user's trade.
+  const cases = [
+    ['right 360', setSharedSize(DEFAULT, 'right', 360, {now: NOW}), 906, 606],
+    ['right 360', setSharedSize(DEFAULT, 'right', 360, {now: NOW}), 901, 700],
+    ['timeline 400', setSharedSize(DEFAULT, 'bottom', 400, {now: NOW}), 1284, 725],
+    ['Tall timeline', setSharedSize(DEFAULT, 'bottom', 432, {now: NOW}), 1280, 720],
+    ['Library docked left', arranged('animate', entry => movePanel(entry, 'library', 'left', {mode: 'animate'})), 901, 700],
+  ];
+  for (const [name, layout, width, height] of cases) {
+    const solution = solve(width, height, {layout});
+    const label = `${name} at ${width}x${height}`;
+    assert.ok(zoom(solve(width, height)) >= stageFloor(width, height), `${label}: the default layout`);
+    assert.ok(zoom(solution) < stageFloor(width, height), label);
+    assert.ok(solution.stage.width >= 360 && solution.stage.height >= 200, label);
+  }
 });
 
 test('#viewport keeps 360x200 in every preset and user arrangement', () => {
@@ -327,16 +353,24 @@ test('the default timeline height depends on the window only', () => {
   assert.deepEqual(variants[2].stage, reference.stage, 'a tab switch never moves the stage');
 });
 
-test('a stored timeline height is the user\'s, within 120px and 60% of the window', () => {
-  const at = value => solve(1440, 900, {layout: setSharedSize(DEFAULT, 'bottom', value, {now: NOW})});
+test('a stored timeline height is the user\'s, from its row minimum to 60% of the window', () => {
+  const at = (value, width = 1440, height = 900) => solve(width, height, {layout: setSharedSize(DEFAULT, 'bottom', value, {now: NOW})});
   assert.equal(at(300).regions.bottom.size, 300);
-  assert.equal(at(120).regions.bottom.size, 120);
   assert.equal(at(1000).regions.bottom.size, 540, '60% of 900');
-  assert.deepEqual(at(300).aria.bottom, {min: 120, max: 540, now: 300});
+  assert.deepEqual(at(300).aria.bottom, {min: 208, max: 540, now: 300});
   assert.deepEqual(at(300).timelineRows, {pinned: 2, content: 4});
-  assert.deepEqual(solve(1440, 900).aria.bottom, {min: 120, max: 540, now: 240});
-  assert.deepEqual(solve(1440, 600).aria.bottom, {min: 120, max: 200, now: 200});
+  assert.deepEqual(solve(1440, 900).aria.bottom, {min: 208, max: 540, now: 240});
+  assert.deepEqual(solve(1440, 600).aria.bottom, {min: 200, max: 200, now: 200});
   assert.equal(solve(1440, 520).aria.bottom, null, 'no splitter while the timeline is its header');
+  // The rule: a docked timeline always shows Camera, Scene and two content rows (the
+  // tall tier adds its 8px padding), so no height hides the pinned rows or every layer.
+  assert.equal(normalizeLayout({shared: {sizes: {bottom: 120}}}, {now: NOW}).shared.sizes.bottom, 200, 'stored sizes start at 200');
+  for (const [height, size] of [[900, 208], [1080, 208], [640, 200], [600, 200]]) {
+    const solution = at(200, 1440, height);
+    assert.equal(solution.regions.bottom.size, size, `${height}`);
+    assert.deepEqual(solution.timelineRows, {pinned: 2, content: 2}, `${height}`);
+    assert.equal(solution.aria.bottom.min, size);
+  }
 });
 
 test('stage insets follow the width tier across and the height tier down', () => {
@@ -421,7 +455,7 @@ test('splitter bounds stay ordered and keep the stage minimum', () => {
         for (const [name, bounds] of Object.entries(solution.aria)) {
           if (!bounds) continue;
           assert.ok(bounds.min <= bounds.now && bounds.now <= bounds.max, `${width}x${height} ${name} ${JSON.stringify(bounds)}`);
-          if (name !== 'bottom') assert.ok(solution.stage.width + bounds.now - bounds.max >= 360 || bounds.max === bounds.min, `${width}x${height} ${name}`);
+          if (name === 'left' || name === 'right') assert.ok(solution.stage.width + bounds.now - bounds.max >= 360 || bounds.max === bounds.min, `${width}x${height} ${name}`);
         }
       }
     }
@@ -439,12 +473,68 @@ test('panels report their presentation and visibility for the registry', () => {
   assert.deepEqual(animate.regions.right.groups[0].rect, animate.regions.right.rect);
   const low = solve(1440, 520);
   assert.deepEqual([low.panels.timeline.presentation, low.panels.timeline.visible], ['strip', false]);
-  // Two islands stacked on one side share its height by weight.
-  const stacked = arranged('animate', entry => ({...entry, panels: entry.panels.map(record => record.id === 'library' ? {...record, group: 1, size: 0.25} : record.id === 'properties' ? {...record, size: 0.75} : record)}));
-  const islands = solve(1440, 900, {layout: stacked}).regions.right.groups;
+});
+
+test('two islands on a side share its height by their weights, each at least islandMin', () => {
+  const stack = weights => arranged('animate', entry => ({...entry, weights: {right: weights},
+    panels: entry.panels.map(record => (record.id === 'library' ? {...record, group: 1} : record))}));
+  const solution = solve(1440, 900, {layout: stack([0.75, 0.25])});
+  const islands = solution.regions.right.groups;
   assert.deepEqual(islands.map(island => island.tabs), [['properties', 'vfx'], ['library']]);
   assert.equal(islands[0].rect.height + 6 + islands[1].rect.height, 602);
   assert.equal(islands[0].rect.height, Math.round(596 * 0.75));
+  assert.deepEqual(solution.aria['right-islands'], {min: 120, max: 476, now: 447});
+  assert.equal(solution.aria['left-islands'], null);
+  // Swapping VFX and Library between the islands keeps the islands' heights.
+  const swapped = arranged('animate', entry => movePanel(movePanel(entry, 'vfx', 'right', {mode: 'animate', group: 1}), 'library', 'right', {mode: 'animate', group: 0}), stack([0.75, 0.25]));
+  assert.deepEqual(solve(1440, 900, {layout: swapped}).regions.right.groups.map(island => [island.tabs, island.rect.height]), [[['properties', 'library'], 447], [['vfx'], 149]]);
+  // No island is squeezed under islandMin; in a tiny region they share it equally.
+  assert.deepEqual(solve(1440, 900, {layout: stack([0.95, 0.05])}).regions.right.groups.map(island => island.rect.height), [476, 120]);
+  const short = solve(1440, 380, {layout: stack([0.95, 0.05])});
+  const heights = short.regions.right.groups.map(island => island.rect.height);
+  assert.equal(heights[0] + 6 + heights[1], short.regions.right.rect.height);
+  assert.ok(Math.min(...heights) >= Math.min(120, Math.floor((short.regions.right.rect.height - 6) / 2)));
+});
+
+test('the bottom region hosts islands and tabs like the sides', () => {
+  const catalog = [...PANEL_CATALOG, normalizePanelDescriptor({id: 'audio', docks: ['bottom'], min: 120})];
+  const layout = normalizeLayout({modes: {animate: {preset: 'animate', panels: [...DEFAULT.modes.animate.panels, {id: 'audio', dock: 'bottom', order: 1}]}}}, {catalog, now: NOW});
+  const tabs = solveLayout(layout, {width: 1440, height: 900, mode: 'animate', panels: catalog});
+  assert.deepEqual(tabs.regions.bottom.groups.map(group => [group.tabs, group.active]), [[['timeline', 'audio'], 'timeline']]);
+  assert.deepEqual(tabs.regions.bottom.groups[0].rect, tabs.regions.bottom.rect);
+  assert.deepEqual(tabs.regions.bottom.panels, {docked: ['timeline', 'audio'], strip: [], sheet: []});
+  assert.deepEqual([tabs.panels.timeline.visible, tabs.panels.audio.visible, tabs.panels.audio.presentation], [true, false, 'docked']);
+  // Two islands sit side by side.
+  const split = normalizeLayout({...layout, modes: {animate: {...layout.modes.animate, weights: {bottom: [0.6, 0.4]},
+    panels: layout.modes.animate.panels.map(record => (record.id === 'audio' ? {...record, group: 1} : record))}}}, {catalog, now: NOW});
+  const side = solveLayout(split, {width: 1440, height: 900, mode: 'animate', panels: catalog});
+  const [left, right] = side.regions.bottom.groups;
+  assert.deepEqual([left.tabs, right.tabs], [['timeline'], ['audio']]);
+  assert.equal(left.rect.y, right.rect.y);
+  assert.equal(left.rect.width + 6 + right.rect.width, side.regions.bottom.rect.width);
+  assert.equal(right.rect.x, left.rect.x + left.rect.width + 6);
+  assert.equal(left.rect.width, Math.round((side.regions.bottom.rect.width - 6) * 0.6));
+  assert.equal(side.aria['bottom-islands'].now, left.rect.width);
+  assert.deepEqual([side.panels.timeline.visible, side.panels.audio.visible], [true, true]);
+  // Folded at the low tier, every bottom panel waits in the header strip.
+  const low = solveLayout(split, {width: 1440, height: 500, mode: 'animate', panels: catalog});
+  assert.deepEqual(low.regions.bottom.panels, {docked: [], strip: ['timeline', 'audio'], sheet: []});
+  assert.deepEqual(low.regions.bottom.groups, []);
+});
+
+test('records this version only keeps never reach the solution', () => {
+  const layout = normalizeLayout({modes: {animate: {preset: 'animate', panels: [
+    {id: 'properties', dock: 'right', order: 0},
+    {id: 'vfx', dock: 'top', side: 'top', order: 0},
+    {id: 'structure', dock: 'left', order: 0},
+    {id: 'mixer', dock: 'left', order: 0},
+  ]}}}, {now: NOW});
+  const solution = solve(1440, 900, {layout});
+  assert.equal(solution.regions.left.state, 'hidden', 'Structure outside Build and an unknown panel dock nothing');
+  assert.deepEqual(solution.regions.right.groups.map(group => group.tabs), [['properties', 'library', 'vfx']]);
+  assert.deepEqual([solution.panels.vfx.presentation, solution.panels.vfx.side], ['docked', 'right']);
+  assert.equal(solution.panels.structure.presentation, 'unavailable');
+  assert.equal('mixer' in solution.panels, false);
 });
 
 // Ported from tests/studio-layout.test.mjs and tests/workspace-layout.test.mjs.

@@ -6,9 +6,10 @@
  * Input: the layout, the `#app` content box in CSS px after the UI scale
  * (the window, which nothing the solution changes can resize, so tiers never
  * oscillate), the workspace, and `bandMin`: the top band's measured
- * min-content width (a number for the compact band, or `{tier: px}` per
- * band layout), so a longer language steps the width tier down before the
- * window controls could overflow.
+ * min-content width (a number for the compact band, or `{tier: px}` for
+ * every band layout above minimal, measured in one pass), so a longer
+ * language steps the width tier down before the window controls could
+ * overflow.
  *
  * Two independent tiers: the width tier folds horizontal chrome only (the
  * docks, the rail's size at minimal), the height tier vertical chrome only
@@ -26,9 +27,13 @@
  *           first and folded to its header only when even its minimum does not fit.
  * Geometry, tiers and folds are data (SHELL_METRICS, TIER_THRESHOLDS), so the
  * visual design can change them without touching the algorithm.
+ *
+ * The bottom dock is the timeline's region: its default height, its row
+ * minimum and `timelineRows` follow SHELL_METRICS.timeline whichever panels
+ * are docked there.
  */
 import {PANEL_CATALOG, panelInMode} from './panel-registry.mjs';
-import {normalizeLayout, normalizeMode} from './layout-schema.mjs';
+import {normalizeLayout, normalizeMode, solvableArrangement} from './layout-schema.mjs';
 
 export const WIDTH_TIERS = Object.freeze(['wide', 'regular', 'narrow', 'compact', 'minimal']);
 export const HEIGHT_TIERS = Object.freeze(['tall', 'short', 'low']);
@@ -56,6 +61,8 @@ export const SHELL_METRICS = deepFreeze({
   bandMargin: 24,
   gutter: 6,
   strip: 40,
+  // The smallest island of a side (or of the bottom) that stacks two islands, along the split.
+  islandMin: 120,
   stageMin: {width: 360, height: 200},
   rail: {width: 48, compact: 40},
   width: {
@@ -84,8 +91,12 @@ export const SHELL_METRICS = deepFreeze({
 
 /**
  * Artboard-zoom floors (experience §1.11): a window at least W×H never gets
- * less than Z% at fit with the default layout. They never decrease as a
- * window grows, so no larger window gets a smaller artboard than a smaller one.
+ * less than Z% at fit with the default layout (each workspace's default
+ * preset at default sizes). They never decrease as a window grows, so no
+ * larger window gets a smaller artboard than a smaller one. What the user
+ * chooses is theirs to trade: a stored size (a splitter, Tall timeline,
+ * Timing) or an extra dock may take the artboard below its floor, while
+ * #viewport keeps its 360×200 minimum in every layout.
  */
 export const STAGE_FLOORS = deepFreeze([[500, 340, 35], [600, 441, 45], [800, 600, 50], [1024, 700, 60], [1280, 720, 65], [1440, 900, 90]]);
 export const stageFloor = (width, height) => STAGE_FLOORS.reduce((floor, [w, h, zoom]) => (width >= w && height >= h ? Math.max(floor, zoom) : floor), 0);
@@ -110,12 +121,20 @@ export function heightTierFor(height, thresholds = TIER_THRESHOLDS) {
  * The width and height tiers. The width tier steps down while the band laid
  * out for it (`bandMin`, plus the 24px margin) is wider than the window; a
  * number is the compact band's width and bounds every tier above minimal.
+ * A `{tier: px}` map must come from one pass that measures every band
+ * layout above minimal: measuring only the current tier's band and
+ * replacing the map would flip the tier near a threshold. A tier the map
+ * lacks needs the widest width it holds, so a partial map can only step
+ * the tier down, never let the band overflow.
  */
 export function resolveTiers(width, height, {bandMin = 0, thresholds = TIER_THRESHOLDS, bandMargin = SHELL_METRICS.bandMargin} = {}) {
   const sized = widthTierFor(width, thresholds);
+  const valid = value => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0);
+  const widest = typeof bandMin === 'number' ? 0 : Math.max(0, ...WIDTH_TIERS.slice(0, -1).map(tier => valid(bandMin?.[tier])));
   const need = tier => {
-    const value = typeof bandMin === 'number' ? (tier === 'minimal' ? 0 : bandMin) : bandMin?.[tier];
-    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
+    if (tier === 'minimal') return 0;
+    if (typeof bandMin === 'number') return valid(bandMin);
+    return valid(bandMin?.[tier]) || widest;
   };
   let index = WIDTH_TIERS.indexOf(sized);
   while (index < WIDTH_TIERS.length - 1 && need(WIDTH_TIERS[index]) > 0 && need(WIDTH_TIERS[index]) + bandMargin > width) index++;
@@ -131,8 +150,10 @@ export function timelineHeightFor(content, heightTier = 'tall', metrics = SHELL_
 /**
  * The default timeline height: a function of the window height only (never
  * of the document, the workspace or the timeline mode), so a tab switch, a
- * mode switch or a new layer never moves the stage. 240 at 900, 208 at 720,
- * 200 at the short tier, the 40px header at the low tier.
+ * mode switch or a new layer never moves the stage. It is derived again on
+ * every solve and never stored, so it follows the window (240 at 900, 208 at
+ * 720, 200 at the short tier, the 40px header at the low tier) until the user
+ * stores a height.
  */
 export function timelineDefaultHeight(height, heightTier = heightTierFor(height), metrics = SHELL_METRICS) {
   const t = metrics.timeline, row = metrics.height[heightTier] ?? {};
@@ -167,13 +188,17 @@ function clampFloating(stored, descriptor, stage, metrics, index) {
  *   tier, height            width and height tiers (data-tier, data-height)
  *   rail                    {side, orientation: 'vertical', compact, width, rect}
  *   regions.left|right      {state: docked|strip|sheet|hidden, size, strip, sizeKey, reason, rect, stripRect, groups, panels}
- *   regions.bottom          {state: docked|strip|hidden, size, span, body: docked|sheet|null, reason, rect}
+ *   regions.bottom          {state: docked|strip|hidden, size, span, body: docked|sheet|null, reason, rect, groups, panels}
+ *                           groups: the docked islands, [{tabs, active, rect}], stacked on a side and
+ *                           side by side at the bottom; panels: {docked, strip, sheet} ids
  *   floating                [{panel, x, y, w, h}] relative to the stage
  *   stage                   the stage island's rect (#viewport is its content box)
  *   stageInsets             {top, right, bottom, left} for the artboard fit
- *   timelineRows            {pinned, content} visible before the rows scroll
+ *   timelineRows            {pinned, content} visible before the rows scroll (content >= 2 when docked)
  *   messageSlot             {width}
- *   aria                    splitters' {min, max, now} (null where there is none)
+ *   aria                    splitters' {min, max, now} (null where there is none): the docks'
+ *                           `left`, `right`, `bottom`, and `left-islands`, `right-islands`,
+ *                           `bottom-islands` between two islands (now: the first island's extent)
  *   panels                  {[id]: {presentation, side, dock, group, active, visible}}
  *   rects                   {band, workspace, rail, stage}
  *   zoom                    the artboard zoom at fit when `artboard` is given
@@ -185,7 +210,7 @@ export function solveLayout(layout, env = {}) {
   const width = dimension(env.width), height = dimension(env.height);
   const mode = normalizeMode(env.mode);
   const model = normalizeLayout({shared: layout?.shared, modes: {[mode]: layout?.modes?.[mode]}}, {catalog, now: 0});
-  const entry = model.modes[mode], sizes = model.shared.sizes;
+  const entry = solvableArrangement(model.modes[mode], mode, {catalog}), sizes = model.shared.sizes;
   const byId = new Map(catalog.map(descriptor => [descriptor.id, descriptor]));
   const records = entry.panels.filter(record => byId.has(record.id) && panelInMode(byId.get(record.id), mode));
   const describe = record => byId.get(record.id);
@@ -253,7 +278,8 @@ export function solveLayout(layout, env = {}) {
   let bottomLimits = null;
   if (bottom.state === 'docked' && down.fold?.bottom === 'strip') Object.assign(bottom, {state: 'strip', reason: 'tier'});
   if (bottom.state === 'docked') {
-    const min = Math.max(...bottomDocked.map(record => describe(record).min ?? 0));
+    // Never shorter than the pinned rows plus the minimum content rows at this tier.
+    const min = Math.max(timelineHeightFor(t.minSlots, heightTier, metrics), ...bottomDocked.map(record => describe(record).min ?? 0));
     const fraction = Math.min(...bottomDocked.map(record => describe(record).maxFraction ?? 1));
     const cap = down.timeline?.maxContent != null ? timelineHeightFor(down.timeline.maxContent, heightTier, metrics) : Infinity;
     const room = workspaceHeight - padBottom - rowGap - metrics.stageMin.height;
@@ -297,28 +323,45 @@ export function solveLayout(layout, env = {}) {
     bottom.rect = rect(left, band + mainHeight + rowGap, right - left, bottom.size);
   } else bottom.rect = null;
 
-  // Islands of each docked side, stacked by group with their weights.
-  const groupsOf = (docked, area) => {
+  // A docked region's islands by group: stacked on a side, side by side at the
+  // bottom, sharing its extent by the arrangement's weights, none under islandMin.
+  const islandsOf = (docked, area, weights, across) => {
     const groups = [];
     for (const record of docked) (groups[record.group ?? 0] ??= []).push(record);
     const list = groups.filter(Boolean);
-    const weights = list.map(group => group.find(record => record.size)?.size ?? 1);
-    const total = weights.reduce((sum, weight) => sum + weight, 0);
-    const available = Math.max(0, area.height - (list.length - 1) * metrics.gutter);
-    let y = area.y;
-    return list.map((group, index) => {
-      const size = index === list.length - 1 ? area.y + area.height - y : Math.round(available * weights[index] / total);
-      const island = {tabs: group.map(record => record.id), active: (group.find(record => record.active) ?? group[0]).id, rect: rect(area.x, y, area.width, size)};
-      y += size + metrics.gutter;
-      return island;
+    const available = Math.max(0, (across ? area.width : area.height) - (list.length - 1) * metrics.gutter);
+    const shares = Array.isArray(weights) && weights.length === list.length ? weights : list.map(() => 1 / list.length);
+    const least = Math.min(metrics.islandMin, Math.floor(available / list.length));
+    let start = across ? area.x : area.y, used = 0;
+    const islands = list.map((group, index) => {
+      const later = list.length - 1 - index;
+      const size = later ? Math.round(clamp(available * shares[index], least, available - used - later * least)) : available - used;
+      const box = across ? rect(start, area.y, size, area.height) : rect(area.x, start, area.width, size);
+      used += size;
+      start += size + metrics.gutter;
+      return {tabs: group.map(record => record.id), active: (group.find(record => record.active) ?? group[0]).id, rect: box};
     });
+    const split = list.length === 2 ? {min: least, max: available - least, now: across ? islands[0].rect.width : islands[0].rect.height} : null;
+    return {islands, split};
   };
   const requirementNow = requirement();
+  const aria = {left: null, right: null, bottom: null, 'left-islands': null, 'right-islands': null, 'bottom-islands': null};
+  const byOrder = (a, b) => a.order - b.order;
+  const bottomIslands = bottom.state === 'docked' ? islandsOf(bottomDocked, bottom.rect, entry.weights?.bottom, true) : null;
+  Object.assign(bottom, {
+    groups: bottomIslands?.islands ?? [],
+    panels: {
+      docked: bottom.state === 'docked' ? bottomDocked.map(record => record.id) : [],
+      strip: (bottom.state === 'strip' ? [...bottomDocked, ...bottomStrip].sort(byOrder) : bottomStrip).map(record => record.id),
+      sheet: [],
+    },
+  });
+  aria['bottom-islands'] = bottomIslands?.split ?? null;
   const regions = {bottom};
-  const aria = {left: null, right: null, bottom: null};
   for (const side of ['left', 'right']) {
     const s = sides[side];
     const docked = s.state === 'docked';
+    const islands = docked ? islandsOf(s.docked, rects[side], entry.weights?.[side], false) : null;
     regions[side] = {
       state: s.state,
       size: docked ? s.size : 0,
@@ -327,10 +370,11 @@ export function solveLayout(layout, env = {}) {
       reason: s.reason,
       rect: rects[side] ?? null,
       stripRect: rects[`${side}-strip`] ?? null,
-      groups: docked ? groupsOf(s.docked, rects[side]) : [],
+      groups: islands?.islands ?? [],
       panels: {docked: s.docked.map(record => record.id), strip: s.strip.map(record => record.id), sheet: s.sheet.map(record => record.id)},
     };
     if (docked) aria[side] = {min: s.min, max: Math.round(clamp(s.size + stage.width - requirementNow, s.min, s.max)), now: s.size};
+    aria[`${side}-islands`] = islands?.split ?? null;
   }
   if (bottomLimits) aria.bottom = {min: bottomLimits.min, max: bottomLimits.max, now: bottom.size};
 
