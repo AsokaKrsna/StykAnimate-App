@@ -1,6 +1,7 @@
 /** Rig UI uses the existing inspector fields, buttons and delegated commands. */
 import {icon} from './icons.mjs';
 import {rigConstraintPlan} from './rig-constraints.mjs';
+import {canvasFont} from './ui/font-loading.mjs';
 const esc = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const field=(id,label,value,min,max,unit='')=>`<label class="field"><span>${label}</span><input id="${id}" type="number" value="${value}" min="${min}" max="${max}" step="any" aria-label="${label}"><small>${unit}</small></label>`;
 export function rigControlsView(editor,{builder=false}={}) {
@@ -129,7 +130,7 @@ export function drawConnectorGuides(ctx,geometry,editor,project) {
   const h=project(s.handle),a=project(s.start),b=project(s.end);
   ctx.save();ctx.lineWidth=1;ctx.strokeStyle='#808080';ctx.setLineDash([2,4]);
   ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(h.x,h.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.setLineDash([]);
-  ctx.font='10px sans-serif';ctx.fillStyle='#808080';
+  ctx.font=canvasFont('10px');ctx.fillStyle='#808080';
   ctx.fillText('A',a.x+9,a.y-9);ctx.fillText('B',b.x+9,b.y-9);ctx.restore();
 }
 export function drawRigGuides(ctx,geometry,editor,project) {

@@ -1023,8 +1023,19 @@ input[type="checkbox"] {
   gap: 6px;
   flex: 1;
   min-width: 0;
+  overflow: hidden;
   white-space: nowrap;
   pointer-events: none;
+}
+/* A label wider than its tile wraps to a second line; the tile's title has the full name. */
+.property-toggle-label > span:not([class]) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  min-width: 0;
+  overflow: hidden;
+  white-space: normal;
+  line-height: 1.15;
 }
 .property-toggle-label .icon { width: 14px; height: 14px; flex: none; }
 .property-toggle-disclosure { display: flex; color: var(--theme-muted, #737373); }

@@ -58,15 +58,20 @@ latin-ext, Vietnamese, Cyrillic, Cyrillic extended, Greek and Greek extended.
 `unicode-range` makes each language load only the files its glyphs need;
 Arabic, Hebrew and Chinese use the system fonts that follow Inter in
 `--font-ui` (`tokens.css`), which `base/document.css` sets on the document;
-`--font-display` starts with Inter Tight. Legacy rules that name their own
-font family keep it until their surface is rebuilt.
+`--font-display` starts with Inter Tight. Stylesheets name the family only
+through `var(--font-ui)`; canvas text takes the same stack from
+`canvasFont(size)` in `src/ui/font-loading.mjs`. The subsets hold letters,
+punctuation and currency but no arrows or symbols (⇔, ✓, ▸), which render in
+a fallback font: draw such marks as icons.
 
-`index.html` preloads the two latin files, which use `font-display: block`;
-every other subset uses `swap`, so text in those scripts shows in a system font
-while its file loads. Nothing waits for fonts. A canvas that draws text keeps
-the fallback glyphs until it repaints, so canvas text painters register a
-repaint with `onFontsReady()` from `src/ui/font-loading.mjs`.
-`tests/fonts.test.mjs` checks the files, subsets, preloads, language coverage,
+`index.html` preloads the Inter latin file, which uses `font-display: block`;
+every other face uses `swap`, so text in other scripts shows in a system font
+while its file loads. The first surface that uses Inter Tight adds its latin
+preload and makes that face `block`; until then, preloading it would fetch a
+file nothing draws with. Nothing waits for fonts. A canvas that draws text
+keeps the fallback glyphs until it repaints, so canvas text painters register
+a repaint with `onFontsReady()` (the stage repaints through `app.mjs`).
+`tests/fonts.test.mjs` checks the files, subsets, preload, language coverage,
 licences and that the packaged app serves them.
 
 ## Stylesheet lint

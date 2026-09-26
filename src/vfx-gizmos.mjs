@@ -3,6 +3,7 @@ import {VFX_REGISTRY} from './vfx.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {vfxRenderFrame} from './vfx-clips.mjs';
 import {isGeneratorType} from './vfx-registry.mjs';
+import {canvasFont} from './ui/font-loading.mjs';
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 /** Ephemeral canvas controls. A drag edits one stack through the normal history transaction. */
 export class VfxGizmos {
@@ -64,7 +65,7 @@ export class VfxGizmos {
   if(!this.handles.length)return;const base=project(center);context.save();context.lineWidth=1;context.setLineDash([4,4]);context.strokeStyle='#4eb8ff';
   for(const h of this.handles){context.beginPath();context.moveTo(base.x,base.y);context.lineTo(h.screen.x,h.screen.y);context.stroke();}
   context.setLineDash([]);for(const h of this.handles){const active=this.drag?.handle.kind===h.kind;context.beginPath();context.arc(h.screen.x,h.screen.y,active?7:5.5,0,Math.PI*2);context.fillStyle=active?'#109fff':'#fff';context.fill();context.strokeStyle='#087fcc';context.lineWidth=2;context.stroke();}
-  if(this.drag){const h=this.handles.find(h=>h.kind===this.drag.handle.kind);if(h){context.font='11px Segoe UI';const width=context.measureText(h.label).width+14;context.fillStyle='#173349';context.fillRect(h.screen.x+12,h.screen.y-13,width,22);context.fillStyle='#fff';context.fillText(h.label,h.screen.x+19,h.screen.y+2);}}
+  if(this.drag){const h=this.handles.find(h=>h.kind===this.drag.handle.kind);if(h){context.font=canvasFont('11px');const width=context.measureText(h.label).width+14;context.fillStyle='#173349';context.fillRect(h.screen.x+12,h.screen.y-13,width,22);context.fillStyle='#fff';context.fillText(h.label,h.screen.x+19,h.screen.y+2);}}
   context.restore();
  }
  point(event){const rect=this.canvas.getBoundingClientRect();return {x:event.clientX-rect.left,y:event.clientY-rect.top};}

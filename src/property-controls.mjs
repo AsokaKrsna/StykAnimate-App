@@ -30,7 +30,8 @@ const STYLES = `
 .property-row>.field {flex:1;min-width:0;}
 .property-row.is-animatable>.field>.property-scrub {min-width:42px;}
 .property-row .property-scrub {cursor:ew-resize;touch-action:none;user-select:none;border-radius:2px;outline-offset:2px;}
-.property-row .property-scrub::after {content:"⇔";margin-inline-start:2px;opacity:.35;font-size:.85em;}
+/* A mask rather than a glyph: the bundled Inter subsets have no arrows. */
+.property-row .property-scrub::after {content:"";display:inline-block;width:1em;height:.6em;margin-inline-start:3px;vertical-align:.05em;background:currentColor;opacity:.35;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 12' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 6h16M6 2 2 6l4 4M14 2l4 4-4 4'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 12' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 6h16M6 2 2 6l4 4M14 2l4 4-4 4'/%3E%3C/svg%3E") center/contain no-repeat;forced-color-adjust:none;}
 .property-row .property-scrub:hover {color:var(--theme-accent, #0d99ff);}
 .property-row .property-scrub:hover::after,.property-row .property-scrub:focus-visible::after {opacity:1;color:var(--theme-accent, #0d99ff);}
 .property-row .property-scrub:focus-visible {outline:2px solid var(--theme-accent, #80caff);}

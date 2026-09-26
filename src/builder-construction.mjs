@@ -1,5 +1,6 @@
 import {builderStrokeAppearance, setBuilderStroke} from './builder-appearance.mjs';
 import {segmentBranchIndices} from './editor-builder.mjs';
+import {canvasFont} from './ui/font-loading.mjs';
 /** Gesture-local spatial index. Construction never scans unrelated scene objects. */
 export class ConstructionIndex {
   constructor(geometry, excluded = new Set()) {
@@ -195,7 +196,7 @@ export function createConstruction({editor, state, active, render, project,
         const point = project(feedback);
         ctx.save(); ctx.strokeStyle = '#ee8a23'; ctx.lineWidth = 2;
         ctx.strokeRect(point.x - 5, point.y - 5, 10, 10);
-        ctx.font = '11px system-ui'; ctx.lineWidth = 4; ctx.strokeStyle = '#fff';
+        ctx.font = canvasFont('11px'); ctx.lineWidth = 4; ctx.strokeStyle = '#fff';
         ctx.strokeText(feedback.kind, point.x + 10, point.y - 10);
         ctx.fillStyle = '#91500e'; ctx.fillText(feedback.kind, point.x + 10, point.y - 10); ctx.restore();
       }

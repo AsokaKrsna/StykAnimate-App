@@ -12,10 +12,12 @@
  * Arabic, Hebrew and Simplified Chinese fall back to the system fonts in the
  * html font stack (base/document.css).
  *
- * index.html preloads the two latin files, which use font-display: block; the
+ * index.html preloads the Inter latin file, which uses font-display: block; the
  * desktop app hides the window content until settings load, so that short
- * block period is not seen. Every other subset uses swap, so a Greek,
- * Cyrillic or Vietnamese label is never invisible while its file loads.
+ * block period is not seen. Every other face uses swap, so a Greek, Cyrillic
+ * or Vietnamese label is never invisible while its file loads. Nothing uses
+ * Inter Tight yet: the first surface that does preloads its latin file and
+ * switches that face to block, as for Inter.
  * Nothing waits for fonts: canvas painters repaint when they finish loading
  * (src/ui/font-loading.mjs). */
 @layer base {
@@ -58,7 +60,7 @@
 
   /* Inter Tight (display, headings, numerals, prominent buttons) ---------- */
   @font-face {
-    font-family: "Inter Tight"; font-style: normal; font-weight: 100 900; font-display: block;
+    font-family: "Inter Tight"; font-style: normal; font-weight: 100 900; font-display: swap;
     src: url("../../../assets/fonts/inter-tight-latin-wght-normal.woff2") format("woff2");
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
   }

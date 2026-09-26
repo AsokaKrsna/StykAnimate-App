@@ -6,7 +6,20 @@
  * text painters repaint through onFontsReady.
  */
 const callbacks = new Set();
-let listening = false, frame = 0;
+let listening = false, frame = 0, uiFamily = '';
+
+/**
+ * A canvas font in the UI font stack, e.g. `canvasFont('11px')`. The family is
+ * the document font (`--font-ui`, base/document.css), read once the stylesheets
+ * apply; without a document it is sans-serif.
+ */
+export function canvasFont(size) {
+  if (!uiFamily && typeof getComputedStyle === 'function' && globalThis.document?.documentElement) {
+    const style = getComputedStyle(document.documentElement);
+    if (style.getPropertyValue('--font-ui').trim()) uiFamily = style.fontFamily;
+  }
+  return `${size} ${uiFamily || 'sans-serif'}`;
+}
 
 function notify() {
   frame = 0;

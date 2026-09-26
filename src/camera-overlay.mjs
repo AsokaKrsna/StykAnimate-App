@@ -1,4 +1,5 @@
 import { cameraValues } from './editor-camera.mjs';
+import { canvasFont } from './ui/font-loading.mjs';
 
 /** Document-space geometry with controls sized in screen pixels. */
 export function cameraViewport(report, frame, view = {}) {
@@ -140,7 +141,7 @@ export function drawCameraViewport(context, viewport, project, {active=true,onio
   if (grip) {
     const p=project(viewport.handles[grip.index].point),c=viewport.camera;
     const label=grip.kind==='position'?`Move · ${c.x.toFixed(1)}, ${c.y.toFixed(1)} px`:grip.kind==='rotation'?`Rotate · ${(c.angle_rad*180/Math.PI).toFixed(1)}°`:`Scale · ${(c.scale*100).toFixed(1)}%`;
-    context.font='12px "Segoe UI", sans-serif';
+    context.font=canvasFont('12px');
     const width=context.measureText(label).width+20;
     const canvasWidth=context.canvas?.clientWidth || context.canvas?.width || Infinity;
     const x=Math.max(4,Math.min(p.x-width/2,canvasWidth-width-4)),y=Math.max(4,p.y+20);

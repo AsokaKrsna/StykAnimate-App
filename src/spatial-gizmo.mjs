@@ -1,5 +1,6 @@
 import {animationRotation} from './animation-origin.mjs';
 import {quatMultiply,quatRotate,spatialQuaternion,quaternionPose,betweenVectors} from './rig-spatial.mjs';
+import {canvasFont} from './ui/font-loading.mjs';
 
 const TAU=Math.PI*2,RADIUS=50,IDENTITY=[0,0,0,1];
 const axes=[[1,0,0],[0,1,0],[0,0,1]];
@@ -33,7 +34,7 @@ export function drawRotationGizmo(ctx,gizmo){
  }
  ctx.globalAlpha=.85;ctx.strokeStyle='#dde5f1';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,radius+9,0,TAU);ctx.stroke();
  ctx.globalAlpha=1;ctx.fillStyle='#192234';ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,4,0,TAU);ctx.fill();ctx.stroke();
- ctx.font='10px system-ui';ctx.textAlign='center';ctx.fillStyle='#192234';const label=gizmo.label??'Joint rotation',width=Math.min(220,Math.max(96,ctx.measureText(label).width+16));ctx.fillRect(-width/2,-radius-31,width,17);ctx.fillStyle='#fff';ctx.fillText(label,0,-radius-19,width-12);ctx.restore();
+ ctx.font=canvasFont('10px');ctx.textAlign='center';ctx.fillStyle='#192234';const label=gizmo.label??'Joint rotation',width=Math.min(220,Math.max(96,ctx.measureText(label).width+16));ctx.fillRect(-width/2,-radius-31,width,17);ctx.fillStyle='#fff';ctx.fillText(label,0,-radius-19,width-12);ctx.restore();
 }
 function sphere(point,g){
  const x=(point.x-g.center.x)/g.radius,y=(point.y-g.center.y)/g.radius,r2=x*x+y*y;

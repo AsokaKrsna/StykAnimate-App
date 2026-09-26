@@ -1,6 +1,6 @@
 /**
- * The bundled UI fonts: src/styles/base/fonts.css, assets/fonts/ and the two
- * preloads in index.html. Missing or unserved files fail silently in the app
+ * The bundled UI fonts: src/styles/base/fonts.css, assets/fonts/ and the
+ * preload in index.html. Missing or unserved files fail silently in the app
  * (text falls back to system fonts), so this test is the guard.
  */
 import test from 'node:test';
@@ -16,7 +16,7 @@ import english from '../src/locales/en.mjs';
 import italian from '../src/locales/it.mjs';
 import nativeCatalogs, {NATIVE_LOCALES} from '../src/locales/native-catalogs.mjs';
 import {parseCss} from '../scripts/check-css.mjs';
-import {onFontsReady} from '../src/ui/font-loading.mjs';
+import {canvasFont, onFontsReady} from '../src/ui/font-loading.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = file => readFileSync(path.join(root, file), 'utf8');
@@ -46,8 +46,9 @@ function fontFaces() {
   return faces;
 }
 const faces = fontFaces();
-// The latin faces are preloaded and may block briefly; every other subset swaps in.
-const latin = face => /-latin-(?:opsz|wght)-/.test(face.file);
+// Only the Inter latin face is preloaded and may block briefly; every other face swaps in.
+// Inter Tight is not used yet, so preloading it would fetch a file nothing draws with.
+const preloaded = face => face.family === 'Inter' && /-latin-opsz-/.test(face.file);
 const covers = (family, character) => faces.some(face => face.family === family &&
   face.ranges.some(([low, high = low]) => character.codePointAt(0) >= low && character.codePointAt(0) <= high));
 const preloads = [...read('index.html').matchAll(/<link\s[^>]*rel="preload"[^>]*>/g)].map(([tag]) => ({
@@ -63,7 +64,7 @@ test('each family declares every subset once, as a bundled variable font', () =>
     assert.ok(existsSync(path.join(root, face.file)), `${face.file} exists`);
     assert.equal(face.style, 'normal');
     assert.equal(face.weight, '100 900', `${face.file} spans the weight axis`);
-    assert.equal(face.display, latin(face) ? 'block' : 'swap', `${face.file} font-display`);
+    assert.equal(face.display, preloaded(face) ? 'block' : 'swap', `${face.file} font-display`);
   }
   const bundled = readdirSync(path.join(root, 'assets/fonts')).filter(name => name.endsWith('.woff2'));
   assert.deepEqual(bundled.map(name => `assets/fonts/${name}`).sort(), faces.map(face => face.file).sort(), 'no unused font files ship');
@@ -72,10 +73,9 @@ test('each family declares every subset once, as a bundled variable font', () =>
   assert.match(read('src/styles/tokens.css'), /--font-display:\s*"Inter Tight",/, 'the display font starts with Inter Tight');
 });
 
-test('index.html preloads the two latin faces', () => {
-  const preloaded = faces.filter(latin).map(face => `./${face.file}`);
-  assert.equal(preloaded.length, 2);
-  assert.deepEqual(preloads.map(preload => preload.href).sort(), preloaded.sort());
+test('index.html preloads the Inter latin face and nothing else', () => {
+  assert.deepEqual(preloads.map(preload => preload.href), faces.filter(preloaded).map(face => `./${face.file}`));
+  assert.equal(preloads.length, 1);
   for (const preload of preloads) assert.deepEqual({...preload, href: undefined}, {href: undefined, as: 'font', type: 'font/woff2', crossorigin: true});
 });
 
@@ -147,4 +147,22 @@ test('canvas painters repaint once per frame when fonts finish loading', async (
   flush();
   assert.deepEqual(calls, {timeline: 1, audio: 2, closed: 1}, 'removed and aborted painters stop repainting');
   assert.equal(frames.length, 0);
+});
+
+test('canvas text uses the document UI font once the stylesheets apply', () => {
+  const saved = {document: globalThis.document, getComputedStyle: globalThis.getComputedStyle};
+  let token = '', reads = 0;
+  Object.assign(globalThis, {document: {documentElement: {}}, getComputedStyle: () => {
+    reads++;
+    return {getPropertyValue: () => token, fontFamily: token ? 'Inter, "Segoe UI", sans-serif' : '"Times New Roman"'};
+  }});
+  try {
+    assert.equal(canvasFont('11px'), '11px sans-serif', 'no UI font before the stylesheets apply');
+    token = ' "Inter", "Segoe UI", sans-serif';
+    assert.equal(canvasFont('11px'), '11px Inter, "Segoe UI", sans-serif');
+    assert.equal(canvasFont('600 10px'), '600 10px Inter, "Segoe UI", sans-serif');
+    assert.equal(reads, 2, 'the family is read once after the stylesheets apply');
+  } finally {
+    Object.assign(globalThis, saved);
+  }
 });
