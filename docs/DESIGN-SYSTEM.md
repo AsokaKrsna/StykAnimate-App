@@ -139,9 +139,11 @@ the timelines are rebuilt, legacy rules on `.layer-timeline` and
 
 `src/styles/legacy-bridge.css`, also in the `tokens` layer, redefines the older
 names on `:root`: the `--theme-*` colours, the `--text`, `--muted`, `--border`,
-`--panel` and `--purple` aliases, names that legacy rules read but nothing
-defined (`--theme-selection`, `--input`, `--font` …), `--ds-font` and
-`--ds-focus-ring`. The `tokens` layer beats `legacy`, so these win over the
+`--panel` and `--purple` aliases, colour names that legacy rules read but
+nothing defined (`--theme-selection`, `--input`, `--field` …), `--ds-font` and
+`--ds-focus-ring`. Defining a name that used to be undefined changes every rule
+that relied on its fallback, so point such a rule at a token instead (the
+timeline's navigation popover uses `--font-ui` rather than a bridged `--font`). The `tokens` layer beats `legacy`, so these win over the
 legacy `:root` definitions in both themes.
 
 - `--theme-accent` is `--accent-text`: legacy rules use it for small text,

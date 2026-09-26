@@ -71,7 +71,6 @@
     --input: var(--surface-sunken);
     --field: var(--surface-sunken);
     --input-bg: var(--surface-sunken);
-    --font: var(--font-ui);
 
     /* Scale. Only the font and the focus ring move to the brand; legacy sizes,
        radii, spacing and motion keep their values until their surface is

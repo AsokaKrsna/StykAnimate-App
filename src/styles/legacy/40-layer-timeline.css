@@ -135,6 +135,7 @@
 .sheet-layer:hover .sheet-layer-state,.sheet-layer:focus-within .sheet-layer-state,.sheet-layer-state[data-on=true]{opacity:1}
 .sheet-footer{gap:6px}
 :where(.layer-timeline) .sheet-frame-tools .sheet-add-button{color:var(--sheet-accent);background:var(--sheet-selected)}
+.timeline-toolbar .sheet-add-button{color:inherit}
 .sheet-resize:focus-visible{outline:2px solid var(--sheet-accent);outline-offset:-2px;background:var(--sheet-selected)}
 @container(max-width:1050px){.sheet-selection-summary{display:none}}
 @container(max-width:650px){.sheet-layer-tools .sheet-layer-reorder{display:none}.sheet-frame-tools .sheet-add-button{padding:0 6px}.sheet-frame-tools .sheet-add-button>span{display:none}}
@@ -149,7 +150,7 @@
 .sheet-header-tools .inline-select{width:103px;min-height:26px;height:26px;padding:0 5px;border:0;border-radius:4px;background:transparent;font:11px inherit;color:var(--theme-text,#333)}
 .sheet-header-tools .divider{display:none}
 .sheet-header-tools .inline-select:hover{background:var(--theme-field,#f3f3f3)}
-.sheet-navigation-popover{position:fixed;inset:auto;margin:0;width:268px;padding:10px;border:1px solid var(--border,#ddd);border-radius:9px;background:var(--panel,#fff);color:var(--text,#333);box-shadow:0 8px 28px #0002;font:11px var(--font, sans-serif)}
+.sheet-navigation-popover{position:fixed;inset:auto;margin:0;width:268px;padding:10px;border:1px solid var(--border,#ddd);border-radius:9px;background:var(--panel,#fff);color:var(--text,#333);box-shadow:0 8px 28px #0002;font:11px var(--font-ui)}
 .sheet-navigation-popover:popover-open{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .sheet-navigation-popover .sheet-layer-tools{width:auto;flex:1}
 .sheet-navigation-popover .sheet-position{order:2;width:100%;margin:0;justify-content:space-between}

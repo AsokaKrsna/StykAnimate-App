@@ -104,7 +104,8 @@ test('Every legacy token name resolves to a brand token in both themes', () => {
   const bridge = source('src/styles/legacy-bridge.css').replace(/\/\*[\s\S]*?\*\//g, '');
   const declared = new Set([...tokens.matchAll(/(--[\w-]+):/g)].map(match => match[1]));
   const references = [...bridge.matchAll(/var\((--[\w-]+)\)/g)].map(match => match[1]);
-  assert.ok(references.length > 40);
+  const bridged = [...bridge.matchAll(/^\s*(--[\w-]+):/gm)].map(match => match[1]);
+  assert.ok(bridged.length > 30 && references.length >= bridged.length, 'every bridged name reads a token');
   for (const name of references) assert.ok(declared.has(name), `${name} is defined in tokens.css`);
   assert.doesNotMatch(bridge, /#[0-9a-f]{3,8}\b|rgba?\(/i, 'the bridge holds no colour literals');
 });

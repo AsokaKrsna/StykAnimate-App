@@ -17,8 +17,9 @@
  *   --only <text,…>      capture only shots whose name contains one of these
  *   --out <dir>          default artifacts/ui-redesign/snapshots
  *
- * The matrix is theme × state × size. States are Animate and Draw with the
- * Advanced and Simple timeline, Build (which hides the timeline), and overlays
+ * The matrix is theme × state × size. States are Animate, Draw and the open
+ * Audio panel with the Advanced and Simple timeline, Build (which hides the
+ * timeline), and overlays
  * on the Advanced default: figure, joint and polygon inspector, File menu,
  * Insert, onion settings, every Settings tab, Export, the text dialog and the
  * feedback shell (mock desktop bridge).
@@ -83,6 +84,8 @@ const steps = (...actions) => async page => { for (const action of actions) awai
 const STATES = [
   {name: 'animate', timelines: ['advanced', 'simple'], enter: workspace('animate')},
   {name: 'draw', timelines: ['advanced', 'simple'], enter: workspace('draw')},
+  // The audio panel below the timeline, empty (no clips in the fixture).
+  {name: 'audio', timelines: ['advanced', 'simple'], enter: steps(click('#timeline-audio'), waitFor('#timeline-audio-panel'))},
   {name: 'build', enter: steps(select(WALKER), workspace('rig'))},
   {name: 'figure-selected', enter: select(WALKER)},
   {name: 'joint-selected', enter: select(WALKER, WALKER_JOINT)},
