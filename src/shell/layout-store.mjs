@@ -1,0 +1,272 @@
+/**
+ * Layout persistence: load once, then debounced, ordered, merge-on-write
+ * saves over an injected `{read, write}` pair. On desktop that pair is the
+ * existing workspace preferences IPC (`getWorkspacePreferences()` and
+ * `setWorkspacePreferences()`; localStorage does not survive a restart there
+ * because the origin changes per launch); in the browser it is localStorage.
+ *
+ * - Nothing is written on load or when a layout is fitted to a small window;
+ *   only update() schedules a save.
+ * - Saves are debounced (200 ms) into one promise chain, so writes land in
+ *   order; flush() returns that chain (await it before closing).
+ * - Merge-on-write: each save re-reads the stored layout and merges it with
+ *   this window's (shared sizes and each workspace by newest stamp, saved
+ *   layouts as a union minus tombstones), re-reads once more just before
+ *   writing and merges again if it changed meanwhile. Two windows then keep
+ *   each other's saved layouts; two saves interleaving within the same few
+ *   milliseconds can still lose one change (an atomic merge would need the
+ *   main process).
+ * - A layout written by a newer version is never overwritten (readOnly).
+ * - The written object keeps the v1 mirror and every unknown key, so 1.1's
+ *   `{...loaded, studioVersion: 1}` round trip keeps the v2 data.
+ */
+import {PANEL_CATALOG} from './panel-registry.mjs';
+import {MODES, fitBudget, migrateLayout, normalizeLayout, serializeLayout} from './layout-schema.mjs';
+
+export const BROWSER_LAYOUT_KEY = 'stykanimate.workspace-layout.v2';
+/** Older browser keys, read once when the v2 key is absent: 1.1's studio layout and the earlier splitter layout. */
+export const LEGACY_LAYOUT_KEYS = Object.freeze(['stykanimate.studio-layout.v1', 'stykanimate.workspace.v1']);
+
+const KNOWN_TOP = new Set(['layoutVersion', 'shared', 'modes', 'saved', 'tombstones']);
+const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const withoutStamp = value => {
+  if (!isObject(value)) return JSON.stringify(value);
+  const {stamp, ...rest} = value;
+  return JSON.stringify(rest);
+};
+const newer = (disk, local) => ((local?.stamp ?? 0) >= (disk?.stamp ?? 0) ? local : disk);
+
+/** The desktop pair: the workspace preferences IPC, unchanged. */
+export function desktopLayoutBackend(desktop) {
+  return {
+    read: () => desktop.getWorkspacePreferences(),
+    write: value => desktop.setWorkspacePreferences(value),
+  };
+}
+
+/**
+ * The browser pair over a Storage. A blocked storage reads as empty; a
+ * failing write rejects, so the store reports it.
+ */
+export function storageLayoutBackend(storage, {key = BROWSER_LAYOUT_KEY, legacyKeys = LEGACY_LAYOUT_KEYS} = {}) {
+  return {
+    async read() {
+      for (const name of [key, ...legacyKeys]) {
+        let text;
+        try { text = storage?.getItem(name); } catch { return null; }
+        if (text == null) continue;
+        try { return JSON.parse(text); } catch { return name === key ? text : null; }   // unreadable v2: 'invalid'
+      }
+      return null;
+    },
+    async write(value) {
+      if (!storage) throw new Error('Layout storage is unavailable.');
+      storage.setItem(key, JSON.stringify(value));
+    },
+  };
+}
+
+/**
+ * Merges two normalized layouts: shared sizes and each workspace by newest
+ * stamp (ties keep `local`), saved layouts as a union by id (the newer copy
+ * of each), minus any with a tombstone at or after its stamp. Unknown keys
+ * come from `disk`, which a newer version may have written. Pure.
+ */
+export function mergeLayouts(disk, local, {catalog = PANEL_CATALOG, now = Date.now()} = {}) {
+  const merged = {};
+  for (const source of [local, disk]) {
+    for (const [key, value] of Object.entries(source)) if (!KNOWN_TOP.has(key)) merged[key] = value;
+  }
+  merged.shared = newer(disk.shared, local.shared);
+  merged.modes = {...local.modes, ...disk.modes};
+  for (const mode of MODES) merged.modes[mode] = newer(disk.modes[mode], local.modes[mode]);
+  const tombstones = new Map();
+  for (const tombstone of [...disk.tombstones, ...local.tombstones]) tombstones.set(tombstone.id, Math.max(tombstones.get(tombstone.id) ?? 0, tombstone.stamp));
+  merged.tombstones = [...tombstones].map(([id, stamp]) => ({id, stamp}));
+  const byId = new Map();
+  for (const item of [...disk.saved, ...local.saved]) {
+    const known = byId.get(item.id);
+    byId.set(item.id, known ? newer(known, item) : item);
+  }
+  let saved = [...byId.values()].filter(item => !(tombstones.get(item.id) >= item.stamp));
+  // More than eight after a union: the newest eight stay, in their order.
+  if (saved.length > 8) {
+    const keep = new Set([...saved].sort((a, b) => b.stamp - a.stamp).slice(0, 8));
+    saved = saved.filter(item => keep.has(item));
+  }
+  merged.saved = saved;
+  return normalizeLayout(merged, {catalog, now});
+}
+
+/**
+ * Stamps what changed between two normalized layouts with `tick()`: the
+ * shared section, each workspace and each saved layout; a saved layout that
+ * disappeared gets a tombstone.
+ */
+function stampChanges(previous, next, tick) {
+  const stamped = {...next, modes: {...next.modes}};
+  stamped.shared = withoutStamp(previous.shared) === withoutStamp(next.shared) ? {...next.shared, stamp: previous.shared.stamp} : {...next.shared, stamp: tick()};
+  for (const mode of MODES) {
+    const before = previous.modes[mode], after = next.modes[mode];
+    stamped.modes[mode] = withoutStamp(before) === withoutStamp(after) ? {...after, stamp: before.stamp} : {...after, stamp: tick()};
+  }
+  const earlier = new Map(previous.saved.map(item => [item.id, item]));
+  stamped.saved = next.saved.map(item => {
+    const before = earlier.get(item.id);
+    return before && withoutStamp(before) === withoutStamp(item) ? {...item, stamp: before.stamp} : {...item, stamp: tick()};
+  });
+  const kept = new Set(next.saved.map(item => item.id));
+  const tombstones = [...next.tombstones];
+  for (const item of previous.saved) {
+    if (!kept.has(item.id) && !tombstones.some(tombstone => tombstone.id === item.id)) tombstones.push({id: item.id, stamp: tick()});
+  }
+  stamped.tombstones = tombstones;
+  return stamped;
+}
+
+function deepFreeze(value) {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const item of Object.values(value)) deepFreeze(item);
+  }
+  return value;
+}
+
+/**
+ * Creates the store. `read()` returns the stored object (or null); `write(value)`
+ * stores it. `legacy` passes the editor settings the first migration reads
+ * (builderOutlinerWidth). Timers and the clock are injectable for tests.
+ *
+ * Events (on(type, listener)): 'change' {layout, origin: 'local'|'merge'},
+ * 'error' {error}, 'readonly' {source}, 'trim' {trimmed}.
+ */
+export function createLayoutStore({
+  read, write, catalog = PANEL_CATALOG, delay = 200, legacy,
+  now = Date.now, setTimer = globalThis.setTimeout, clearTimer = globalThis.clearTimeout,
+  onError,
+} = {}) {
+  if (typeof read !== 'function' || typeof write !== 'function') throw new TypeError('A layout store needs read() and write().');
+  let layout = deepFreeze(normalizeLayout(null, {catalog, now: now()}));
+  let readOnly = false, source = 'empty', error = null, timer = null, dirty = false, last = 0, destroyed = false;
+  let chain = Promise.resolve(true);
+  const listeners = new Map();
+  const emit = (type, detail) => {
+    for (const listener of [...(listeners.get(type) ?? [])]) {
+      try { listener(detail); } catch (failure) { globalThis.reportError?.(failure); }
+    }
+  };
+  const tick = () => (last = Math.max(Math.floor(now()), last + 1));
+  const highestStamp = value => Math.max(value.shared.stamp, ...MODES.map(mode => value.modes[mode].stamp), ...value.saved.map(item => item.stamp), ...value.tombstones.map(item => item.stamp));
+
+  function adopt(next, origin) {
+    const frozen = deepFreeze(next);
+    const changed = JSON.stringify(frozen) !== JSON.stringify(layout);
+    layout = frozen;
+    last = Math.max(last, highestStamp(layout));
+    if (changed) emit('change', {layout, origin});
+  }
+
+  function fail(failure) {
+    error = failure;
+    try { onError?.(failure); } catch (reporting) { globalThis.reportError?.(reporting); }
+    emit('error', {error: failure});
+  }
+
+  function becomeReadOnly(reason) {
+    if (readOnly) return;
+    readOnly = true;
+    dirty = false;
+    if (timer !== null) { clearTimer(timer); timer = null; }
+    emit('readonly', {source: reason});
+  }
+
+  async function save() {
+    if (readOnly) return true;
+    try {
+      let raw = await read();
+      let value;
+      for (let attempt = 0; ; attempt++) {
+        const disk = migrateLayout(raw, {catalog, now: now(), legacy});
+        if (disk.readOnly) { becomeReadOnly('future'); return true; }
+        const merged = mergeLayouts(disk.layout, layout, {catalog, now: now()});
+        const fitted = fitBudget(serializeLayout(merged, {catalog, now: now()}));
+        if (fitted.trimmed.length) emit('trim', {trimmed: fitted.trimmed});
+        if (!fitted.ok) throw new Error('The workspace layout does not fit in the preferences file.');
+        value = fitted.value;
+        if (attempt === 1) break;
+        // Another window may have written since the first read: merge again once.
+        const check = await read();
+        if (JSON.stringify(check) === JSON.stringify(raw)) break;
+        raw = check;
+      }
+      await write(value);
+      error = null;
+      // Take in what other windows saved, keeping edits made while this save ran.
+      adopt(mergeLayouts(migrateLayout(value, {catalog, now: now()}).layout, layout, {catalog, now: now()}), 'merge');
+      return true;
+    } catch (failure) {
+      dirty = true;   // the next update or flush tries again
+      fail(failure);
+      return false;
+    }
+  }
+
+  function flush() {
+    if (timer !== null) { clearTimer(timer); timer = null; }
+    if (dirty && !readOnly) {
+      dirty = false;
+      chain = chain.then(save);
+    }
+    return chain;
+  }
+
+  return {
+    /** Reads and migrates the stored layout. Never writes. */
+    async load() {
+      let raw;
+      try { raw = await read(); } catch (failure) { fail(failure); raw = null; }
+      const result = migrateLayout(raw, {catalog, now: now(), legacy});
+      source = error && raw === null ? 'error' : result.source;
+      layout = deepFreeze(result.layout);
+      last = Math.max(last, highestStamp(layout));
+      if (result.readOnly) becomeReadOnly('future');
+      return layout;
+    },
+    get layout() { return layout; },
+    /** True when the stored layout came from a newer version: changes stay in this session. */
+    get readOnly() { return readOnly; },
+    /** Where the loaded layout came from: v2, v1, legacy, empty, invalid, future or error. */
+    get source() { return source; },
+    get error() { return error; },
+    /**
+     * Replaces the layout with `change(layout)` (or `change`), normalized and
+     * stamped, and schedules a save. Returns the new layout.
+     */
+    update(change) {
+      if (destroyed) return layout;
+      const next = normalizeLayout(typeof change === 'function' ? change(layout) : change, {catalog, now: now()});
+      const stamped = stampChanges(layout, next, tick);
+      if (JSON.stringify(stamped) === JSON.stringify(layout)) return layout;
+      adopt(stamped, 'local');
+      if (!readOnly) {
+        dirty = true;
+        if (timer !== null) clearTimer(timer);
+        timer = setTimer(() => { timer = null; void flush(); }, delay);
+      }
+      return layout;
+    },
+    flush,
+    on(type, listener) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type).add(listener);
+      return () => listeners.get(type)?.delete(listener);
+    },
+    /** Saves anything pending and stops accepting updates. */
+    destroy() {
+      const pending = flush();
+      destroyed = true;
+      listeners.clear();
+      return pending;
+    },
+  };
+}
