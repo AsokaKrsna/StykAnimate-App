@@ -22,4 +22,8 @@ for (const source of sources) {
   if (result.status !== 0) { failures++; console.error(result.stderr || result.error?.message || `${source}: check failed.`); }
 }
 console.log(`${sources.length} JavaScript files checked; ${failures} syntax errors.`);
-process.exitCode = failures ? 1 : 0;
+// Stylesheet lint (layers, tokens, specificity) and its legacy ratchet: scripts/check-css.mjs.
+const css = spawnSync(process.execPath, ['scripts/check-css.mjs'], { cwd: appRoot, encoding: 'utf8', windowsHide: true });
+process.stdout.write(css.stdout ?? '');
+process.stderr.write(css.stderr || (css.error ? `${css.error.message}\n` : ''));
+process.exitCode = failures || css.status !== 0 ? 1 : 0;

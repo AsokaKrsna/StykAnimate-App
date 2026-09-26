@@ -80,7 +80,7 @@ python -m unittest discover -s backend -p "test_*.py"
 node scripts/test-reference.mjs
 ```
 
-`.github/workflows/ci.yml` runs the syntax, changelog, unit, codec and website tests on every push to `main` and every pull request; the release workflow runs the same unit and codec tests before building. Cases that read the Pivot corpus beside the repository, generated `artifacts/` inventories or built encoders skip in a clean checkout and name the missing file. Set `STYK_REQUIRE_FIXTURES=1` locally to make a missing fixture fail instead.
+`.github/workflows/ci.yml` runs the syntax, stylesheet lint, changelog, unit, codec and website tests on every push to `main` and every pull request; the release workflow runs the same unit and codec tests before building. Cases that read the Pivot corpus beside the repository, generated `artifacts/` inventories or built encoders skip in a clean checkout and name the missing file. Set `STYK_REQUIRE_FIXTURES=1` locally to make a missing fixture fail instead.
 
 Start `npm run serve` for UI tests. The following groups reproduce the main acceptance paths; they use installed Chrome or Playwright Chromium:
 

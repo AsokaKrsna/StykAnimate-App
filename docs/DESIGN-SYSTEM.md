@@ -44,6 +44,40 @@ layers once, lowest priority first, and then imports every sheet:
   fragments delayed first paint by 45–100 ms, while the 21 whole sheets load
   within 2 ms of the old links. Measure startup before adding many files.
 
+## Stylesheet lint
+
+`npm run check` runs `scripts/check-css.mjs`. The rule ids appear in its
+messages. Layered files, meaning everything under `src/styles/` except
+`app.css`, `support-bridge.css` and `legacy/`, must:
+
+- wrap all their rules in one `@layer` block named after their place:
+  `base/` in `base` (except `base/reset.css`, in `reset`), `layout/`,
+  `components/`, `features/`, `tokens.css` and `legacy-bridge.css` in
+  `tokens`, `states.css` and `utilities.css`. `app.css` imports each file
+  once, without `layer()`, and is the only file with `@import` (CSS01, CSS16).
+- take colours from tokens. Hex, `rgb()`, `hsl()` and named colours appear only
+  in `tokens.css`; system colours only inside `@media (forced-colors: active)`.
+  Comment a declaration `/* artwork */` for checkerboards and other artwork
+  (CSS02).
+- use `!important` only in `base/reset.css`, `states.css` and `utilities.css`
+  (CSS06).
+- use no id selectors outside `:where()` (CSS07), and stay within the
+  specificity budget, counted in classes, attributes and pseudo-classes: base 0
+  (a lone `.ui-*` helper class 1), layout and components 2, features 3. Put
+  state qualifiers inside `:where()` (CSS09).
+- take `z-index` from `var(--z-*)` or a local 0–3 (CSS11).
+- query the viewport size only in `layout/shell.css`; everything else follows
+  the layout tier or a container query (CSS14).
+
+The legacy layer is emptied and deleted rather than fixed, so the lint keeps a
+ratchet instead. `scripts/check-css-baseline.json` lists the modules that still
+create stylesheets at runtime (JS01) and every `!important` declaration in the
+legacy layer, including the injected CSS text (`legacyImportant`). Both lists
+may only shrink: a new entry fails the check, and so does an entry whose code
+is gone until you run `node scripts/check-css.mjs --update-baseline`, which
+refuses to record new entries. Only `support-desktop-ui.mjs` may link a
+stylesheet at runtime (JS02).
+
 ## Tokens
 
 | Group | Tokens | Notes |
