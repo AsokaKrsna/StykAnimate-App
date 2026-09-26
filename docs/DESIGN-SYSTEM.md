@@ -51,3 +51,17 @@ result of a setting, not its mechanism ("Keep audio in sync with frame edits"
 rather than "Ripple"). Count words must agree with their numbers ("1 figure").
 In the Simple timeline, a *frame* is a Pivot-style timeline frame; wherever
 playback frames differ, say so ("plays as 47 frames").
+
+## Changing the editor markup
+
+Restyle and restructure freely, but keep the hooks that code and tests use:
+static ids, `data-action`, `data-tool`, `data-workspace-mode` and the other
+values listed in `tests/shell-contract.test.mjs`, which runs with `npm test`.
+Remove a hook only in the commit that changes its last reader, and update the
+list there.
+
+Review visual changes with `node scripts/ui-snapshots.mjs --url <server> --label
+<name>`. It captures Animate, Draw and Build, both timeline modes, the inspector,
+menus and dialogs in light and dark at four window sizes. Add `--compare
+<earlier label>` to count changed pixels and write diff images; a refactor that
+should not change the look must report 0 changed images.

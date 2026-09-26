@@ -161,6 +161,7 @@ See `tests/canvas-guides.browser.mjs` for UI verification.
 | Exact native file streaming | `npm run test:streams:desktop` | `artifacts/native-streams-smoke.json` |
 | Workspace process restart | `npm run test:preferences:desktop` | `artifacts/desktop-preferences-smoke.json` |
 | Sampled prepared raster corpus | `node tests/renderer-corpus.mjs --prepared` | `artifacts/renderer-corpus-prepared/summary.json` |
+| Editor UI screenshots and pixel diffs | `node scripts/ui-snapshots.mjs --url <server> --label <name> [--compare <label>]` | `artifacts/ui-redesign/snapshots/<name>/` |
 
 The UI tests use the local development server; profile scripts accept `STYK_URL`. Artifacts name the fixture, phase, timing scope, and observed limitations. Long-task absence, total job duration, CPU submission, GPU completion, and display latency are separate measurements.
 
