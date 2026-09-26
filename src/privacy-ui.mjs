@@ -15,7 +15,7 @@ export class PrivacyUI {
     this.dialog.querySelector('h2').focus();
   }
   create() {
-    const style = document.createElement('style'); style.textContent = css; document.head.append(style);
+    const style = document.createElement('style'); style.textContent = `@layer legacy{${css}}`; document.head.append(style);
     this.dialog = document.createElement('dialog'); this.dialog.className = 'styk-privacy'; this.dialog.setAttribute('aria-labelledby', 'privacy-title'); this.dialog.setAttribute('aria-describedby', 'privacy-purpose');
     this.dialog.innerHTML = `<header><div class="privacy-brand" aria-hidden="true"><img src="symbol.svg" alt=""></div><h2 id="privacy-title" tabindex="-1">Help shape StykAnimate</h2><span id="privacy-purpose" data-intro></span><button class="privacy-close" type="button" aria-label="Close privacy settings">×</button></header><div class="styk-privacy-body">
       <p class="privacy-assurance"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7V5a4 4 0 0 1 8 0v2M3 7h10v7H3z"/></svg><span>Your animations, filenames and text stay out of reports.</span></p>

@@ -29,7 +29,7 @@ export class BackgroundDialog {
       const style = document.createElement("style");
       style.id = "background-dialog-style";
       style.textContent =
-        ".background-dialog input:not([type=color]),.background-dialog select{box-sizing:border-box;font:inherit;font-size:11px;min-width:0;border:1px solid transparent;border-radius:4px;background:var(--theme-field, #f2f2f2);padding:7px 9px;color:var(--theme-text, #2c2c2c);height:32px}.background-dialog input:focus,.background-dialog select:focus{outline:1px solid var(--theme-accent, #0d99ff)}.background-dialog .text-options label{min-width:0}.background-dialog .text-options input{width:100%}.background-dialog input[type=color]{height:32px;border:0;border-radius:4px;background:var(--theme-field, #f2f2f2);padding:5px}.background-dialog .text-options{gap:10px}.background-dialog [hidden]{display:none!important}";
+        "@layer legacy{.background-dialog input:not([type=color]),.background-dialog select{box-sizing:border-box;font:inherit;font-size:11px;min-width:0;border:1px solid transparent;border-radius:4px;background:var(--theme-field, #f2f2f2);padding:7px 9px;color:var(--theme-text, #2c2c2c);height:32px}.background-dialog input:focus,.background-dialog select:focus{outline:1px solid var(--theme-accent, #0d99ff)}.background-dialog .text-options label{min-width:0}.background-dialog .text-options input{width:100%}.background-dialog input[type=color]{height:32px;border:0;border-radius:4px;background:var(--theme-field, #f2f2f2);padding:5px}.background-dialog .text-options{gap:10px}.background-dialog [hidden]{display:none!important}}";
       document.head.append(style);
     }
   }

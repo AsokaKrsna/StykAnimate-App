@@ -62,7 +62,7 @@ export class SegmentValuesDialog {
     if (!document.getElementById("segment-values-style")) {
       const style = document.createElement("style");
       style.id = "segment-values-style";
-      style.textContent = CSS;
+      style.textContent = `@layer legacy{${CSS}}`;
       document.head.append(style);
     }
   }

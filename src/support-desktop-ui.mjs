@@ -14,8 +14,8 @@ export class SupportDesktopUI {
   }
   create() {
     if (!document.querySelector('[data-support-styles]')) {
-      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = new URL('./support-center.css', import.meta.url).href; link.dataset.supportStyles = ''; document.head.append(link);
-      const desktopStyle = document.createElement('link'); desktopStyle.rel = 'stylesheet'; desktopStyle.href = new URL('./support-desktop.css', import.meta.url).href; document.head.append(desktopStyle);
+      // The shared support-center.css and its desktop remap, in the legacy cascade layer.
+      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = new URL('./styles/support-bridge.css', import.meta.url).href; link.dataset.supportStyles = ''; document.head.append(link);
     }
     this.dialog = document.createElement('dialog'); this.dialog.className = 'styk-feedback'; this.dialog.setAttribute('aria-label', 'Bug reports and feedback');
     this.dialog.innerHTML = '<header><h2>Feedback</h2><button type="button" aria-label="Close feedback">×</button></header><div><p>Opening your private inbox…</p></div>';

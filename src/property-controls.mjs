@@ -64,7 +64,7 @@ function installStyles(doc) {
   if (!shared) {
     const element = doc.createElement("style");
     element.dataset.stykPropertyStyles = "";
-    element.textContent = STYLES;
+    element.textContent = `@layer legacy{${STYLES}}`;
     doc.head.append(element);
     shared = { element, count: 0 };
     styles.set(doc, shared);

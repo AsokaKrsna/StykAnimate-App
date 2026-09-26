@@ -15,7 +15,7 @@ const executablePath = packaged
   : undefined;
 const sourceFiles = [
   "index.html",
-  "src/style.css",
+  "src/styles/app.css",
   "src/app.mjs",
   "src/workspace-layout.mjs",
   "src/workspace-panels.mjs",

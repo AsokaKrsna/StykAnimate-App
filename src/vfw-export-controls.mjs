@@ -18,7 +18,7 @@ export class VfwExportControls {
     this.element = document.createElement('section'); this.element.className = 'vfw-export-controls'; container.append(this.element);
     this.button.hidden = !globalThis.stykDesktop?.getVfwCapabilities; this.element.hidden = this.button.hidden;
     if (this.button.hidden) return;
-    if (!document.getElementById('vfw-export-controls-style')) { const style = document.createElement('style'); style.id = 'vfw-export-controls-style'; style.textContent = css; document.head.append(style); }
+    if (!document.getElementById('vfw-export-controls-style')) { const style = document.createElement('style'); style.id = 'vfw-export-controls-style'; style.textContent = `@layer legacy{${css}}`; document.head.append(style); }
     this.element.innerHTML = markup;
     this.select = this.element.querySelector('#export-vfw-codec'); this.quality = this.element.querySelector('#export-vfw-quality'); this.keyframes = this.element.querySelector('#export-vfw-keyframes'); this.bitrate = this.element.querySelector('#export-vfw-bitrate'); this.configureButton = this.element.querySelector('#export-vfw-configure'); this.status = this.element.querySelector('.vfw-status'); this.configStatus = this.element.querySelector('.vfw-config-state');
     this.onChange = () => this._selection(); this.onConfigure = () => this.configure().catch(error => { if (!this.disposed) this.onError(error); });

@@ -64,7 +64,7 @@ export class FigureOutliner {
     this.session = null;
     this.style = document.createElement('style');
     this.style.dataset.builderOutliner = '';
-    this.style.textContent = STYLE;
+    this.style.textContent = `@layer legacy{${STYLE}}`;
     document.head.append(this.style);
     container.innerHTML = `
       <div class="builder-outliner-head">

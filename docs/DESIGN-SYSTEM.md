@@ -1,9 +1,48 @@
 # Design system
 
-`src/design-system.css` defines the editor chrome's visual language once. It
-loads after every component stylesheet and before `src/theme.css`, which
-overrides the colour tokens for dark mode. Artwork, paint swatches, joint
-colours and export previews keep their own colours.
+`src/styles/legacy/45-design-system.css` defines the editor chrome's visual
+language once. It loads after every component stylesheet and before
+`legacy/46-theme.css`, which overrides the colour tokens for dark mode. Artwork,
+paint swatches, joint colours and export previews keep their own colours.
+
+## Stylesheets and cascade layers
+
+`index.html` links one stylesheet, `src/styles/app.css`. It declares the cascade
+layers once, lowest priority first, and then imports every sheet:
+
+```css
+@layer legacy, reset, tokens, base, layout, components, features, states, utilities;
+```
+
+- **`legacy`** holds the stylesheets that predate the layers, moved unchanged
+  into `src/styles/legacy/`. Their number prefixes follow their previous
+  cascade order, which is also their import order: `00-drawing.css` (formerly
+  imported by the first line of `style.css`), `01-style.css`, `20-studio.css`,
+  the other sheets `index.html` linked, and `99-settings.css`, which
+  `settings.mjs` used to link at startup after all of them. Modules that inject
+  a `<style>` block wrap its text in `@layer legacy { … }`, and the desktop
+  feedback shell links `src/styles/support-bridge.css`, which imports
+  `src/support-center.css` and `src/support-desktop.css` into `legacy`. Both are
+  appended after `app.css`, so they still win on order as before.
+  `src/support-center.css` is copied byte for byte to the website; never move or
+  edit it for the editor.
+- **Every later layer beats `legacy`** for normal declarations, whatever the
+  specificity, so a rebuilt surface does not need heavier selectors. For
+  `!important` the order inverts: a legacy `!important` rule beats every later
+  layer, so delete the ones that touch a surface when you rebuild it.
+- **New files** wrap themselves in one `@layer` block named after their folder
+  (`base/*.css` in `base`, `components/*.css` in `components`, …). While the
+  legacy layer exists, an unscoped rule in a later layer overrides every legacy
+  rule, so scope new rules to the rebuilt region; only document-wide rules such
+  as the `html` font may be unscoped.
+- **Add styles by adding a file** and importing it from `app.css`, not with a
+  new `<link>` or an unlayered `<style>` element, which would beat every layer.
+  `tests/shell-contract.test.mjs` checks the single link and that every import
+  resolves, with the legacy imports in `layer(legacy)`.
+- **Keep the import count low.** Every import is a request that first paint
+  waits for. In local measurements, splitting the legacy sheets into 48
+  fragments delayed first paint by 45–100 ms, while the 21 whole sheets load
+  within 2 ms of the old links. Measure startup before adding many files.
 
 ## Tokens
 
@@ -62,6 +101,6 @@ list there.
 
 Review visual changes with `node scripts/ui-snapshots.mjs --url <server> --label
 <name>`. It captures Animate, Draw and Build, both timeline modes, the inspector,
-menus and dialogs in light and dark at four window sizes. Add `--compare
-<earlier label>` to count changed pixels and write diff images; a refactor that
-should not change the look must report 0 changed images.
+menus, dialogs and the feedback shell in light and dark at four window sizes.
+Add `--compare <earlier label>` to count changed pixels and write diff images; a
+refactor that should not change the look must report 0 changed images.

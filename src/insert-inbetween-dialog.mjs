@@ -27,7 +27,7 @@ export class InsertInbetweenDialog {
     if (this.ownsDialog) document.body.append(this.dialog);
     this.ratio = .5; this.onionMode = 'adjacent'; this.sequence = 0;
     if (!document.querySelector('[data-styk-inbetween-style]')) {
-      const style = document.createElement('style'); style.dataset.stykInbetweenStyle = ''; style.textContent = STYLE; document.head.append(style);
+      const style = document.createElement('style'); style.dataset.stykInbetweenStyle = ''; style.textContent = `@layer legacy{${STYLE}}`; document.head.append(style);
     }
   }
   open(indices = [this.editor.frameIndex]) {

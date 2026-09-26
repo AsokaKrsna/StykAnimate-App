@@ -44,7 +44,7 @@ export function placedSpriteFigure(figure,{start,end}) {
 export class SpritePlacementDialog {
   constructor({dialog,content,onClose=()=>{}}) {
     Object.assign(this,{dialog,content,onClose});
-    if(!document.getElementById('sprite-placement-style')){const style=document.createElement('style');style.id='sprite-placement-style';style.textContent=CSS;document.head.append(style);}
+    if(!document.getElementById('sprite-placement-style')){const style=document.createElement('style');style.id='sprite-placement-style';style.textContent=`@layer legacy{${CSS}}`;document.head.append(style);}
   }
   open(figure) {
     this.cancel();

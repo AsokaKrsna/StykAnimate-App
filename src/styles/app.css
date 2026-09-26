@@ -1,0 +1,38 @@
+/* StykAnimate editor styles: the only stylesheet index.html links.
+ *
+ * Cascade layers, lowest priority first. For normal declarations every layer
+ * after `legacy` beats it whatever the specificity; for !important the order
+ * inverts, so a legacy !important rule beats every later layer.
+ *
+ * legacy  The stylesheets that predate the layers, moved unchanged into
+ *         legacy/ and imported below in their previous cascade order. The
+ *         <style> blocks that modules inject and the lazy support sheets
+ *         (support-bridge.css) join this layer after them, so they still win
+ *         on order exactly as before. See docs/DESIGN-SYSTEM.md.
+ *
+ * Every import is a request before first paint: add files sparingly.
+ */
+@layer legacy, reset, tokens, base, layout, components, features, states, utilities;
+
+@import url("./legacy/00-drawing.css") layer(legacy);  /* was the first line of style.css */
+@import url("./legacy/01-style.css") layer(legacy);
+@import url("./legacy/20-studio.css") layer(legacy);
+@import url("./legacy/30-builder-workspace.css") layer(legacy);
+@import url("./legacy/31-rig-controls.css") layer(legacy);
+@import url("./legacy/32-motion-path.css") layer(legacy);
+@import url("./legacy/33-tweener.css") layer(legacy);
+@import url("./legacy/34-canvas-guides.css") layer(legacy);
+@import url("./legacy/35-onion-controls.css") layer(legacy);
+@import url("./legacy/36-movieclip-ui.css") layer(legacy);
+@import url("./legacy/37-vfx.css") layer(legacy);
+@import url("./legacy/38-camera-motion.css") layer(legacy);
+@import url("./legacy/39-user-library.css") layer(legacy);
+@import url("./legacy/40-layer-timeline.css") layer(legacy);
+@import url("./legacy/41-audio.css") layer(legacy);
+@import url("./legacy/42-ik.css") layer(legacy);
+@import url("./legacy/43-update-ui.css") layer(legacy);
+@import url("./legacy/44-support-ui.css") layer(legacy);
+@import url("./legacy/45-design-system.css") layer(legacy);
+@import url("./legacy/46-theme.css") layer(legacy);
+/* settings.mjs used to link this at startup, after every other sheet */
+@import url("./legacy/99-settings.css") layer(legacy);

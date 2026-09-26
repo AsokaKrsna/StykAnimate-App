@@ -11,7 +11,7 @@ const context = await browser.newContext({viewport:{width:1000,height:740},local
 const page = await context.newPage(), checks = [], errors = [];
 page.on('pageerror',error => errors.push(error.message));
 const check = (name, condition) => { assert.ok(condition,name); checks.push(name); console.log('PASS',name); };
-const fixture = `<!doctype html><html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="/src/style.css"><style>#app{display:block}#app>.titlebar{height:48px}#app>input{display:block;margin:12px}</style></head><body>
+const fixture = `<!doctype html><html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="/src/styles/app.css"><style>#app{display:block}#app>.titlebar{height:48px}#app>input{display:block;margin:12px}</style></head><body>
 <div id="app"><header class="titlebar"><button data-action="open"><svg id="open-icon"></svg>Open</button><button data-action="save"><svg></svg>Save</button><button data-action="export">Export<span class="chevron">⌄</span></button></header>
 <input id="project-name" value="My animation"><input id="draft-value" value="12.375"><input id="layer-search" placeholder="Search layers"><div class="timeline-title">Timeline</div>
 <button id="play-button" aria-label="Play"></button><div id="menu"></div><div id="explicit"><button data-i18n="common.cancel">Cancel</button></div></div></body></html>`;

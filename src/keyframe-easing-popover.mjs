@@ -42,7 +42,7 @@ export function showKeyframeEasingPopover() {
   if (this.menu) this.menu.hidden = true;
   this.onSeek?.(this.editor.tick, this.editor.frameIndex);
   if (!document.querySelector('[data-styk-easing-style]')) {
-    const style = document.createElement('style'); style.dataset.stykEasingStyle = ''; style.textContent = STYLES; document.head.append(style);
+    const style = document.createElement('style'); style.dataset.stykEasingStyle = ''; style.textContent = `@layer legacy{${STYLES}}`; document.head.append(style);
   }
   const anchor = keyAnchor(this, indices), popover = document.createElement('div');
   popover.className = 'styk-easing-popover'; popover.popover = 'auto';

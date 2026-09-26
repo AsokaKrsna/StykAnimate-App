@@ -9,7 +9,7 @@ const checks=[],errors=[],check=name=>{checks.push(name);console.log(`PASS ${nam
 try {
   browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage({viewport:{width:1100,height:780}});page.on('pageerror',error=>errors.push(error.message));
   await page.goto(`${backend.origin}/api/health`);
-  await page.setContent(`<link rel="stylesheet" href="${backend.origin}/src/style.css"><dialog id="dialog"><div id="content"></div></dialog>`);
+  await page.setContent(`<link rel="stylesheet" href="${backend.origin}/src/styles/app.css"><dialog id="dialog"><div id="content"></div></dialog>`);
   await page.evaluate(async()=>{
     const {imageFileToFigure}=await import('/src/media-authoring.mjs'),{SpritePlacementDialog}=await import('/src/sprite-placement-dialog.mjs');
     const canvas=new OffscreenCanvas(120,180),ctx=canvas.getContext('2d');ctx.fillStyle='#385a74';ctx.beginPath();ctx.roundRect(38,15,44,150,20);ctx.fill();ctx.fillStyle='#c6d6e2';ctx.fillRect(41,58,38,13);ctx.fillRect(41,121,38,13);

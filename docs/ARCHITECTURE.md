@@ -8,7 +8,7 @@ StykAnimate separates the editable Pivot document, background work, and presenta
 
 `editor.mjs` and its builder/range extensions operate on native figure IDs, object UIDs, segment record order, joins, media tables, and keyframes. History records affected state. Selection, editor visibility/locks, viewport transforms, and renderer caches are distinct from animation data. Shared definition edits propagate through instances and remain undoable. Rig topology traversals avoid recursive stack growth and repeated full-tree scans.
 
-Build Figure presentation lives in `builder-mode.mjs`, `builder-outliner.mjs`, and `builder-workspace.css`. The side toolbar retains its layout, with Chain pen beside Line; commands use the existing dispatcher. `builder-toolbar.mjs` owns the top bar’s native popover menus: bounded viewport placement, focus return, arrow navigation, type-ahead, and dismissal. Its session-scoped listeners are released on exit; commands continue through the existing delegated dispatcher. The bar exposes nine controls, including two direct flip buttons, and adapts labels to its available width. Selection gating and checked menu states remain in the builder controller. `builder-context-menu.mjs` supplies joint, branch, fill and empty-canvas menus shared by canvas and hierarchy right-clicks; the controller bounds targets to the current session and routes fill/branch commands through existing editor methods. Context-menu pages reuse the app menu and restore focus to their source. Builder entry hides the timeline until its footer toggle is expanded; leaving restores the animation layout without overwriting saved panel sizes. The outliner uses iterative hierarchy traversal and fixed 30 px virtual rows, observes viewport resizing, and only replaces row markup when it changes. Canvas selection reveals collapsed ancestors; keyboard navigation, accessible tree state, and keyboard resizing share the same row model. Drag exclusion covers the full descendant set, including malformed cycles.
+Build Figure presentation lives in `builder-mode.mjs`, `builder-outliner.mjs`, and `styles/legacy/30-builder-workspace.css`. The side toolbar retains its layout, with Chain pen beside Line; commands use the existing dispatcher. `builder-toolbar.mjs` owns the top bar’s native popover menus: bounded viewport placement, focus return, arrow navigation, type-ahead, and dismissal. Its session-scoped listeners are released on exit; commands continue through the existing delegated dispatcher. The bar exposes nine controls, including two direct flip buttons, and adapts labels to its available width. Selection gating and checked menu states remain in the builder controller. `builder-context-menu.mjs` supplies joint, branch, fill and empty-canvas menus shared by canvas and hierarchy right-clicks; the controller bounds targets to the current session and routes fill/branch commands through existing editor methods. Context-menu pages reuse the app menu and restore focus to their source. Builder entry hides the timeline until its footer toggle is expanded; leaving restores the animation layout without overwriting saved panel sizes. The outliner uses iterative hierarchy traversal and fixed 30 px virtual rows, observes viewport resizing, and only replaces row markup when it changes. Canvas selection reveals collapsed ancestors; keyboard navigation, accessible tree state, and keyboard resizing share the same row model. Drag exclusion covers the full descendant set, including malformed cycles.
 
 `src/pivot/` holds the established evaluation, validation, background and geometry semantics. Incremental geometry carries changed object slots without retaining a chain of prior scenes. A live whole-figure drag retains its geometry and changes only per-object GPU translations; the model commits the final coordinates once. Joint/rig edits update affected objects and joined descendants.
 
@@ -108,6 +108,8 @@ returns focus, and pointer-down outside dismisses them before another gesture.
 
 Custom HTML/CSS provides compact editable controls, native keyboard/text behavior and a consistent neutral palette. The animation scene uses the custom GPU canvas. Layers, Properties and Timeline can float, move, resize and redock without changing the document. `initWorkspaceLayout({preferences,onPersist})` restores normalized geometry; settled changes are debounced and asynchronous writes are ordered. `flushPreferences()` lets close/tests await the last write.
 
+Editor styles load through `src/styles/app.css`, the only stylesheet `index.html` links. It declares the cascade layers and imports every sheet in cascade order; see [Design system](DESIGN-SYSTEM.md). Modules do not link stylesheets at runtime, except that the desktop feedback shell links `src/styles/support-bridge.css` when Feedback first opens, so the website's shared `src/support-center.css` loads only when needed.
+
 Electron uses context isolation, sandboxed renderer code, and no renderer Node globals. Native IPC exposes specific file/stream/window/preference operations, not arbitrary filesystem commands. Workspace preferences live in a fixed, atomically written user-data JSON file capped at 16 KiB. They and recovery survive a restarted process even though its loopback origin changes.
 
 `desktop/web-host.cjs` owns the desktop's loopback origin. It streams public web
@@ -181,15 +183,16 @@ canvas view scale, undo history, or export dimensions are changed.
 
 The browser preview keeps browser-native zoom controls; it does not substitute
 CSS transforms that would desynchronize interactive editor coordinates.
-`src/settings.css` owns the panel presentation, including scrollable content and
+`src/styles/legacy/99-settings.css` owns the panel presentation, including scrollable content and
 compact navigation at narrow logical viewport widths. Native slider keyboard
 behavior, labeled outputs, tab navigation, and Escape dismissal are preserved.
 Verify with `node --test tests/ui-scale.test.mjs` and
 `node tests/settings-scale.desktop.mjs` (isolated profile, process restart,
 canvas pointer alignment, light/dark and compact screenshots).
 
-`settings.css` also owns shortcut-editor styles; `HotkeySettings` must not inject
-CSS into the settings stylesheet link. Shortcut state and binding validation stay
+That sheet also owns shortcut-editor styles; `app.css` imports it after the
+other legacy sheets, and neither `EditorSettings` nor `HotkeySettings` injects
+CSS. Shortcut state and binding validation stay
 in `hotkey-settings.mjs` / `hotkeys.mjs`, with persistence owned by `EditorSettings`.
 Settings feedback actions forward their category to the shared `FeedbackUI` draft;
 the sidebar Donate action uses the existing `openDonate` desktop bridge. Neither

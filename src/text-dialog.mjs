@@ -70,7 +70,7 @@ export class TextDialog {
     if (!document.getElementById("text-authoring-style")) {
       const style = document.createElement("style");
       style.id = "text-authoring-style";
-      style.textContent = CSS;
+      style.textContent = `@layer legacy{${CSS}}`;
       document.head.append(style);
     }
     this.sequence = 0;

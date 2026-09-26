@@ -183,11 +183,6 @@ export class EditorSettings {
     this.pending = null;
     this.timer = null;
     this.error = null;
-    this.style = document.createElement("link");
-    this.style.rel = "stylesheet";
-    this.style.href = new URL("./settings.css", import.meta.url).href;
-    this.style.dataset.stykSettings = "";
-    document.head.append(this.style);
     this.dialog = document.createElement("dialog");
     this.dialog.className = "styk-settings";
     this.dialog.setAttribute("aria-label", this.t("settings.editorLabel"));
@@ -496,6 +491,5 @@ export class EditorSettings {
     this.unsubscribeLocale?.();
     this.compactLayout.removeEventListener('change', this.syncTabOrientation);
     this.dialog.remove();
-    this.style.remove();
   }
 }

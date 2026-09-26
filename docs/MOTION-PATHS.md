@@ -10,7 +10,7 @@ Drag a trail point to edit its pose without seeking. The grab offset is preserve
 
 ## Ownership and limits
 
-- `motion-path-controls.mjs` writes normalized editor preferences; `motion-path.css` owns its presentation.
+- `motion-path-controls.mjs` writes normalized editor preferences; `styles/legacy/32-motion-path.css` owns its presentation.
 - `motion-path.mjs` owns tick planning, revision-aware sample caches, hit testing, and screen-space layout. `editor-motion-path.mjs` owns editable pose semantics and history.
 - Only overlay rendering advances sampling. Pointer hover and pointer-down read prepared cache entries, never evaluate animation.
 - Up to 24 targets share a 6 ms cooperative sampling deadline and a 6,400-point allowance, with at most 1,600 samples per target. Dense plans preserve endpoints and the current tick, prioritize authored times, and subsample the remainder. Short windows include every tick. A single evaluator call cannot be preempted by this deadline.
