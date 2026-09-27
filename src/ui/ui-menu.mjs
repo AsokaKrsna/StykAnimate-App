@@ -79,6 +79,7 @@ export function normalizeMenu(items = [], {resolve = null, shortcut = null, t = 
       role, checked: role === 'menuitem' ? undefined : Boolean(checked), disabled,
       reason: disabled ? String(item.reason ?? meta?.reason ?? '') : '', danger: Boolean(item.danger ?? meta?.danger),
       submenu, run: typeof item.run === 'function' ? item.run : null, keepOpen: Boolean(item.keepOpen), group: item.group ?? null, id: item.id ?? null,
+      swatch: typeof item.swatch === 'string' ? item.swatch : null,
     });
   }
   const tidy = [];
@@ -300,6 +301,14 @@ class Menu {
       const label = doc.createElement('span');
       label.id = `${button.id}-label`;
       label.textContent = entry.label;
+      // A colour the row stands for (a layer colour): a dot before its name, outside its accessible name.
+      if (entry.swatch) {
+        const dot = doc.createElement('i');
+        dot.className = 'ui-menu-swatch';
+        dot.setAttribute('aria-hidden', 'true');
+        dot.style.setProperty('--swatch', entry.swatch);
+        label.prepend(dot);
+      }
       button.append(label);
       button.setAttribute('aria-labelledby', label.id);
       if (entry.shortcut) {

@@ -45,6 +45,10 @@
   .ui-menu-item > svg { inline-size: var(--icon-size); block-size: var(--icon-size); color: var(--text-2); }
   .ui-menu-item > span { grid-column: 2; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
   .ui-menu-pad { inline-size: var(--icon-size); }
+  .ui-menu-swatch {
+    display: inline-block; inline-size: 10px; block-size: 10px; margin-inline-end: var(--space-2); vertical-align: -1px;
+    border-radius: 50%; background: var(--swatch, transparent); box-shadow: inset 0 0 0 1px var(--line-2);
+  }
   .ui-menu-item:where(:hover, [aria-expanded="true"]):not([aria-disabled="true"]) { background: var(--surface-hover); }
   .ui-menu-item:where(:hover, [aria-expanded="true"]):not([aria-disabled="true"]) > svg { color: var(--text-1); }
   .ui-menu-item:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset-inset); background: var(--surface-hover); }

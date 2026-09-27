@@ -559,11 +559,15 @@ export class Timeline{
   _keyDown(event){if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='f'){event.preventDefault();event.stopPropagation();this.openLayerSearch();return;}if(event.key==='F2'){event.preventDefault();const node=this.labels.find(node=>!node.hidden&&node._id===this.selectedTrackId);if(node)this._renameLayer(node);return;}if(this._motionKey(event))return;if(this.ownsHotkeys&&this.hotkeys.keydown(event,['timeline']))event.stopPropagation();}
   _menu(event,{layer=false,view=false}={}){
     const editor=this.editor,selected=editor.getLayer(this.selectedTrackId),locked=this.ids.some(id=>editor.getLayer(id)?.locked);
+    // The grid's own menu (the ruler, the empty rows): the view, then the layers, then Camera and Scene.
     if(view)return showTimelineMenu(this,event,[[
-      {label:'Fit animation',symbol:'maximize',action:()=>this.fitFrameRange()},
+      {heading:'View'},
+      {label:'Fit animation',symbol:'fit',action:()=>this.fitFrameRange()},
       {label:'Fit selected frames',symbol:'maximize',action:()=>this.fitFrameRange(true)},
       {label:'Reveal playhead',symbol:'chevron-right',action:()=>this.revealPlayhead()},
-      {label:'Find layers',symbol:'search',action:()=>this.openLayerSearch()},
+    ],[
+      {heading:'Layers'},
+      {label:'Find layers',symbol:'search',shortcut:'Ctrl+F',action:()=>this.openLayerSearch()},
       {label:this.focusedLayerIds?'Show all layers':'Focus selected layers',symbol:'layers',action:()=>this.focusSelectedLayers()},
       {label:'Show all layers on canvas',symbol:'eye',action:()=>editor.movieclipBatch('Show all layers',()=>{for(const layer of editor.layers)if(layer.kind==='layer')editor.setLayerVisible(layer.id,true);})},
       {label:'Unlock all layers',symbol:'unlock',action:()=>editor.movieclipBatch('Unlock all layers',()=>{for(const layer of editor.layers)if(layer.kind==='layer')editor.setLayerLocked(layer.id,false);})},
@@ -578,24 +582,34 @@ export class Timeline{
       !locked&&motion.enabled&&{label:'Bake clip range',symbol:'diamond',action:()=>editor.bakeCameraMotion({start:motion.start,end:motion.start+motion.duration})},
       locked&&{label:'Unlock Camera',symbol:'unlock',action:()=>editor.setLayerLocked('camera',false)},
     ],[!locked&&{label:'Delete motion',symbol:'trash',danger:true,action:()=>editor.deleteCameraMotion(motion.id)}]]);
+    // A layer's menu: named after the layer; its colour a submenu; New layer; Delete last.
+    const own=selected?.kind==='layer',several=this.ids.filter(id=>editor.getLayer(id)?.kind==='layer').length>1;
     if(layer)return showTimelineMenu(this,event,[
-      [selected?.kind==='layer'&&{label:'Focus this layer',symbol:'layers',action:()=>this.setLayerFilter('',new Set([selected.id]))},
-       selected?.kind==='layer'&&{label:'Layer color',symbol:'layers',action:()=>showTimelineMenu(this,event,[[{label:'No color',symbol:'layers',checked:!selected.color,action:()=>editor.setLayerColor([selected.id],null)},...Object.keys(LAYER_COLORS).map(color=>({label:color[0].toUpperCase()+color.slice(1),symbol:'layers',checked:selected.color===color,action:()=>editor.setLayerColor([selected.id],color)}))]])},
-       selected?.kind==='layer'&&{label:'Rename layer',symbol:'text',action:()=>{const node=this.labels.find(node=>node._id===selected.id);if(node)this._renameLayer(node);}},
+      [selected&&{heading:selected.name},
+       own&&{label:'Rename layer',symbol:'text',shortcut:'F2',action:()=>{const node=this.labels.find(node=>node._id===selected.id);if(node)this._renameLayer(node);}},
+       own&&{label:'Layer color',symbol:'palette',submenu:[[{label:'No color',swatch:'var(--sheet-layer)',checked:!selected.color,action:()=>editor.setLayerColor([selected.id],null)},...Object.keys(LAYER_COLORS).map(color=>({label:color[0].toUpperCase()+color.slice(1),swatch:LAYER_COLORS[color],checked:selected.color===color,action:()=>editor.setLayerColor([selected.id],color)}))]]},
        {label:selected?.visible===false?'Show layer':'Hide layer',symbol:selected?.visible===false?'eye':'eye-off',action:()=>editor.setLayerVisible(selected.id,selected.visible===false)},
-       {label:selected?.locked?'Unlock layer':'Lock layer',symbol:selected?.locked?'unlock':'lock',action:()=>editor.setLayerLocked(selected.id,!selected.locked)}],
+       {label:selected?.locked?'Unlock layer':'Lock layer',symbol:selected?.locked?'unlock':'lock',action:()=>editor.setLayerLocked(selected.id,!selected.locked)},
+       own&&{label:several?'Focus selected layers':'Focus this layer',symbol:'layers',action:()=>several?this.focusSelectedLayers():this.setLayerFilter('',new Set([selected.id]))}],
       [{label:'New layer',symbol:'plus',action:()=>this.newLayer()},
-       {label:'New drawing layer',symbol:'brush',action:()=>this.newLayer('drawing')},
-       selected?.kind==='layer'&&!selected.locked&&editor.report._styk.layers.order.length>1&&{label:'Delete layer',symbol:'trash',danger:true,action:()=>this.deleteLayer()}],
+       {label:'New drawing layer',symbol:'brush',action:()=>this.newLayer('drawing')}],
+      [own&&!selected.locked&&editor.report._styk.layers.order.length>1&&{label:'Delete layer',symbol:'trash',danger:true,action:()=>this.deleteLayer()}],
     ]);
     const hasKey=this.ids.some(id=>editor.layerFrameKeys(id).some(k=>k.tick>0&&k.tick>=this.start&&k.tick<=this.end)),
       hasFrames=this.ids.some(id=>this.start<(editor.report._styk.layerSheet.tracks[id]?.end??0)),
       clipboard=editor._sheetClipboard,order=editor.getLayers().filter(l=>l.kind==='layer').map(l=>l.id).reverse(),
       destinations=clipboard&&(this.ids.length===clipboard.rows.length?this.ids:this.ids.length===1?order.slice(order.indexOf(this.ids[0]),order.indexOf(this.ids[0])+clipboard.rows.length):[]),
       canPaste=this.sharedClipboard || destinations?.length===clipboard?.rows.length&&destinations?.every(id=>!editor.getLayer(id)?.locked);
+    // A cell's menu: named after the frames it acts on; frames, a drawing's cels, the clipboard, then what removes something.
+    const frames=this.end-this.start+1;
     showTimelineMenu(this,event,[
-      [!selected?.drawing&&!locked&&this.ids.length>0&&{label:'Change easing…',symbol:'sliders',action:()=>this.showEasingPopover(event)},!locked&&{label:'Add Frame',shortcut:this.shortcut('add-frame'),symbol:'plus',action:()=>this.addFrame()}],
-      [selected?.drawing&&!locked&&{label:'Blank drawing here',shortcut:this.shortcut('insert-blank-key'),symbol:'frame',action:()=>this.drawingKeyHere(true)},selected?.drawing&&!locked&&{label:'Copy drawing here',shortcut:this.shortcut('insert-copied-key'),symbol:'duplicate',action:()=>this.drawingKeyHere(false)},hasFrames&&!locked&&{label:'Extend exposure',shortcut:this.shortcut('extend-keyframe'),symbol:'plus',action:()=>this.extendKeyframe()}],
+      [{heading:frames>1?`Frames ${this.start+1}–${this.end+1}`:`Frame ${this.start+1}`},
+       !locked&&{label:'Add Frame',shortcut:this.shortcut('add-frame'),symbol:'plus',action:()=>this.addFrame()},
+       !selected?.drawing&&!locked&&this.ids.length>0&&{label:'Change easing…',symbol:'sliders',action:()=>this.showEasingPopover(event)},
+       hasFrames&&!locked&&{label:'Extend exposure',shortcut:this.shortcut('extend-keyframe'),symbol:'stretch-horizontal',action:()=>this.extendKeyframe()}],
+      [selected?.drawing&&!locked&&{heading:'Drawing'},
+       selected?.drawing&&!locked&&{label:'Blank drawing here',shortcut:this.shortcut('insert-blank-key'),symbol:'frame',action:()=>this.drawingKeyHere(true)},
+       selected?.drawing&&!locked&&{label:'Copy drawing here',shortcut:this.shortcut('insert-copied-key'),symbol:'duplicate',action:()=>this.drawingKeyHere(false)}],
       [hasFrames&&!locked&&{label:'Copy frames',shortcut:this.shortcut('copy'),symbol:'duplicate',action:()=>this.copySelection()},
        hasFrames&&!locked&&{label:'Cut frames',shortcut:this.shortcut('cut'),symbol:'cut',action:()=>this.cutSelection()},
        canPaste&&!locked&&{label:'Paste frames',shortcut:this.shortcut('paste'),symbol:'clipboard',action:()=>this.pasteSelection()}],

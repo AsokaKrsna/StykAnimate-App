@@ -3676,7 +3676,9 @@ const menuOptions = {
  * Animation menu lists them there.
  */
 function appMenuItems(name) {
-  const items = menuItems(applicationMenuItems(name, editor, desktop));
+  // A view toggle shows a check while it is on (the registry's toggle states).
+  const items = menuItems(applicationMenuItems(name, editor, desktop)).map((item) =>
+    item?.command && TOGGLE_STATES[item.command] ? { ...item, checked: TOGGLE_STATES[item.command]() } : item);
   if (name === "view" && shell) items.splice(items.findIndex((item) => item?.command === "layout-focus"), 0, panelsMenu());
   if (name !== "animation" || workspaceLayout?.tier !== "minimal") return items;
   const audio = $("timeline-audio"), range = $("range-edit");
@@ -3872,34 +3874,40 @@ overlay.addEventListener(
       editor.select(hit.g.obj.unique_id, hit.joint);
     if (hit && selection().size <= 1)
       editor.select(hit.g.obj.unique_id, hit.joint);
-    const items = !hit ? [
-      ["paste", "clipboard", "Paste", "Ctrl V"],
+    // The canvas's menus (revision 5): named groups, the rarer paste kinds in a submenu, and Delete last.
+    const pasteKinds = [
       ["paste-in-place", "clipboard", "Paste in place", "Ctrl Shift V"],
       ["paste-instance", "clipboard", "Paste instance"],
       ["paste-unique", "duplicate", "Paste unique copy"],
+    ];
+    const joint = hit && hit.joint >= 0 && !editor.figure?._styk?.movieclip && selection().size <= 1;
+    const items = !hit ? [
+      { label: "Paste" },
+      ["paste", "clipboard", "Paste", "Ctrl V"],
+      ...pasteKinds,
+      null,
       ["select-all", "cursor", "Select all", "Ctrl A"],
       null,
-      ["scene-settings", "frame", "Scene properties…"],
-      ["zoom-reset", "frame", "Fit canvas", "Shift 1"],
+      ["scene-settings", "scene", "Scene properties…"],
+      ["zoom-reset", "fit", "Fit canvas", "Shift 1"],
     ] : [
+      { label: selection().size > 1 ? `${selection().size} figures` : editor.figure?.name || "Figure" },
       ["copy", "duplicate", "Copy", "Ctrl C"],
       ["paste", "clipboard", "Paste", "Ctrl V"],
-      ["paste-in-place", "clipboard", "Paste in place", "Ctrl Shift V"],
-      ["paste-instance", "clipboard", "Paste instance"],
-      ["paste-unique", "duplicate", "Paste unique copy"],
+      { label: "Paste as", icon: "clipboard", submenu: pasteKinds },
       ["duplicate", "duplicate", "Duplicate", "Ctrl D"],
       null,
-      ["mirror", "flip", "Flip horizontal", "Shift H"],
-      ["mirror-vertical", "flip-vertical", "Flip vertical", "Shift V"],
+      ["mirror", "flip", "Flip horizontally", "Shift H"],
+      ["mirror-vertical", "flip-vertical", "Flip vertically", "Shift V"],
       joinMenuItem(),
-      null,
-      ...(hit.joint >= 0 && !editor.figure?._styk?.movieclip && selection().size <= 1 ? [["segment-values", "sliders", "Segment values…", "I"]] : []),
-      ["selection-more", "sliders", "More figure actions…"],
-      ["delete", "trash", "Delete", "Delete"],
+      ...(joint ? [["segment-values", "sliders", "Exact values…", "I"]] : []),
+      ["selection-more", "more", "More figure actions…"],
       ...(!builderMode?.active && !editor.figure?._styk?.movieclip ? [
         null,
-        ["edit-in-build-mode", "nodes", "Edit in build mode", "", selection().size !== 1],
+        ["edit-in-build-mode", "nodes", "Edit in Build", "", selection().size !== 1],
       ] : []),
+      null,
+      ["delete", "trash", "Delete", "Delete"],
     ];
     showCommandMenu(items, { left: e.clientX, bottom: e.clientY });
   }),
@@ -3982,16 +3990,18 @@ const actions = {
       builderMode?.enter();
   },
   "selection-more": () => showCommandMenu([
-    ["add-to-library", "plus", "Add to library"],
+    { label: "Select" },
     ["select-same", "person", "Select same figure"],
     ["select-invert", "cursor", "Invert selection"],
     null,
+    { label: "Pose" },
+    ["locate-previous", "match-prev", "Match previous pose", "L"],
+    ["locate-next", "match-next", "Match next pose", "Shift L"],
     joinMenuItem(),
     null,
-    ["locate-previous", "chevron-left", "Match previous pose", "L"],
-    ["locate-next", "chevron-right", "Match next pose", "Shift L"],
+    ["add-to-library", "plus", "Add to library"],
     ["zoom-selection", "center", "Fit selection", "Shift 2"],
-  ], lastMenuAnchor || viewport),
+  ], lastMenuAnchor || viewport, { label: "More figure actions" }),
   "segment-values": () => showSegmentValues(),
   menu: (e) =>
     showMenu(e?.closest?.("button") || document.querySelector(".brand")),
@@ -4924,6 +4934,11 @@ const commandRequirements = {
 };
 /** The on/off state of the toggle commands the stage header and the menus show as pressed or checked. */
 const TOGGLE_STATES = {
+  "toggle-handles": () => Boolean(state.handles),
+  "toggle-motion-paths": () => Boolean(state.motionPaths),
+  "toggle-grid": () => Boolean(state.settings.canvasGrid),
+  "toggle-onion": () => Boolean(state.onion),
+  "toggle-loop": () => Boolean(state.loop),
   "toggle-builder-branch": () => Boolean(state.builderBranch || state.builderShiftHeld),
   "toggle-isolate": () => Boolean(state.isolateMode),
   "builder-static-handles": () => state.settings.builderShowStaticHandles !== false,

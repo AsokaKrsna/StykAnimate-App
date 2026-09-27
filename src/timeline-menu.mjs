@@ -1,63 +1,59 @@
 import {icon} from './icons.mjs';
+import {openMenu} from './ui/ui-menu.mjs';
 
-/** Small, keyboard-accessible context menu used by the two timeline views. */
+/**
+ * The timelines' right-click and ⋯ menus (the Advanced sheet, Simple's cards, audio clips, effect clips) on the
+ * shared menu kit (ui/ui-menu.mjs), so they look and work like every other menu: named groups, submenus, checks,
+ * red rows for what removes something, type-ahead and the arrow keys.
+ *
+ * `groups` is a list of groups (separators between them); a group is a list of rows, false and null skipped:
+ *   {label, symbol, shortcut, action, checked, danger, disabled}   a command (`action` runs through host._run)
+ *   {heading: 'Frames'}                                             the group's name
+ *   {label, symbol, submenu: groups}                                a family in a submenu
+ * The menu opens at the pointer (or under `event.currentTarget` from a button), closes on a document change or a
+ * scroll of the timeline, and gives the focus back to the timeline.
+ */
 export function showTimelineMenu(host, event, groups) {
   host.menuEvents?.abort();
   host.menu?.remove();
   const events = host.menuEvents = new AbortController();
-  const menu = host.menu = document.createElement('div');
-  const focusTarget = host.scroll ?? host.strip;
-  menu.className = 'sheet-menu';
-  menu.setAttribute('role', 'menu');
-  const close = (focus = false) => {
-    events.abort();
-    menu.remove();
-    if (host.menu === menu) host.menu = null;
-    if (focus) focusTarget.focus({preventScroll: true});
-  };
-  for (const group of groups.map(items => items.filter(Boolean)).filter(items => items.length)) {
-    if (menu.childElementCount) {
-      const separator = document.createElement('div');
-      separator.className = 'menu-separator';
-      separator.setAttribute('role', 'separator');
-      menu.append(separator);
-    }
-    for (const {label, symbol, shortcut = '', action, checked, danger} of group) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'menu-item';
-      button.setAttribute('role', checked === undefined ? 'menuitem' : 'menuitemcheckbox');
-      if (checked !== undefined) button.setAttribute('aria-checked', String(checked));
-      if (danger) button.dataset.danger = 'true';
-      button.innerHTML = icon(symbol);
-      const name = document.createElement('span'), key = document.createElement('kbd');
-      name.textContent = label;
-      key.textContent = shortcut;
-      button.append(name, key);
-      button.addEventListener('click', () => { close(true); host._run(action); }, {signal: events.signal});
-      menu.append(button);
+  const focusTarget = host.scroll ?? host.strip ?? host.lanes ?? null;
+  const items = toItems(host, groups);
+  if (!items.some(item => item && (item.run || item.submenu))) { events.abort(); return; }
+  const anchor = event?.currentTarget?.nodeType === 1 && !event.clientX && !event.clientY ? event.currentTarget : null;
+  const menu = openMenu({
+    items,
+    ...(anchor ? {anchor} : {point: {x: event?.clientX ?? 0, y: event?.clientY ?? 0}}),
+    overlays: host.overlays ?? null,
+    icon: name => icon(name),
+    label: 'Timeline',
+    invoker: focusTarget ?? document.activeElement,
+    onClose: () => {
+      events.abort();
+      if (host.menu === handle) host.menu = null;
+    },
+  });
+  const handle = host.menu = {element: menu.element, remove: () => menu.close('api', {restore: false}), close: reason => menu.close(reason)};
+  focusTarget?.addEventListener('scroll', () => handle.remove(), {signal: events.signal});
+  host.editor?.addEventListener('change', () => handle.remove(), {signal: events.signal});
+  return handle;
+}
+
+/** Groups of timeline rows → the kit's menu items (separators between groups, submenus converted). */
+function toItems(host, groups) {
+  const items = [];
+  for (const group of (groups ?? []).map(rows => (rows ?? []).filter(Boolean)).filter(rows => rows.length)) {
+    if (items.length) items.push(null);
+    for (const row of group) {
+      if (row.heading) { items.push({label: row.heading}); continue; }
+      // A menu shows one key per row (the first binding); Settings lists them all.
+      const item = {label: row.label, icon: row.symbol ?? row.icon ?? null, shortcut: String(row.shortcut || '').split(' / ')[0] || false,
+        danger: Boolean(row.danger), disabled: Boolean(row.disabled), swatch: row.swatch};
+      if (row.checked !== undefined) item.checked = Boolean(row.checked);
+      if (row.submenu) item.submenu = toItems(host, row.submenu);
+      else item.run = () => host._run(row.action);
+      items.push(item);
     }
   }
-  if (!menu.childElementCount) { close(); return; }
-  document.body.append(menu);
-  const anchor = event?.currentTarget?.getBoundingClientRect?.() ?? focusTarget.getBoundingClientRect();
-  const x = event?.clientX || anchor.left, y = event?.clientY || anchor.bottom;
-  menu.style.left = `${Math.max(8, Math.min(x, innerWidth - menu.offsetWidth - 8))}px`;
-  menu.style.top = `${Math.max(8, Math.min(y, innerHeight - menu.offsetHeight - 8))}px`;
-  document.addEventListener('pointerdown', e => { if (!menu.contains(e.target)) close(); }, {capture: true, signal: events.signal});
-  window.addEventListener('resize', () => close(), {signal: events.signal});
-  focusTarget.addEventListener('scroll', () => close(), {signal: events.signal});
-  host.editor.addEventListener('change', () => close(), {signal: events.signal});
-  menu.addEventListener('keydown', e => {
-    e.stopPropagation();
-    const buttons = [...menu.querySelectorAll('button')], index = buttons.indexOf(document.activeElement);
-    if (e.key === 'Escape' || e.key === 'Tab') { close(true); if (e.key === 'Escape') e.preventDefault(); }
-    else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
-      e.preventDefault();
-      const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 :
-        (index + (e.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length;
-      buttons[next]?.focus();
-    }
-  }, {signal: events.signal});
-  menu.querySelector('button')?.focus();
+  return items;
 }
