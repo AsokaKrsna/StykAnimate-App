@@ -326,8 +326,11 @@ const LEGACY_PRIMARY = '[data-primary]:not(:disabled), button.primary:not(:disab
  * inside a <form method="dialog"> (display: contents), so Enter in a field
  * runs the body's primary button ([data-primary] or button.primary). Buttons
  * without a type stay plain buttons, so the body's data-action buttons act as
- * before. Focus goes to [autofocus], the first field, the primary or the first
- * control, never the close button; the dialog joins the overlay stack while it
+ * before. The form's first element is a hidden submit button, so Enter always
+ * lands on it (never on a button the caller appends later without a type) and
+ * runs the primary once. Focus goes to [autofocus], the first field, the
+ * primary or the first control, never the close button; the dialog joins the
+ * overlay stack while it
  * is open. Calling it while the dialog is open swaps the content and keeps the
  * registration. `bodyHTML` is trusted markup built by the app, as before.
  *
@@ -353,14 +356,21 @@ export function showLegacyDialog(title, bodyHTML, {dialog, content = null, overl
   body.className = 'dialog-body';
   body.innerHTML = bodyHTML;
   for (const button of body.querySelectorAll('button:not([type])')) button.type = 'button';
-  form.append(head, body);
+  // The form's default button (the first submit button in tree order): Enter in a field clicks it.
+  const enter = doc.createElement('button');
+  enter.type = 'submit';
+  enter.hidden = true;
+  enter.tabIndex = -1;
+  enter.setAttribute('aria-hidden', 'true');
+  form.append(enter, head, body);
   // The body's own buttons act on click; the form only turns Enter in a field into the primary.
   form.addEventListener('submit', event => {
     // A form of the body's own (Reference joints) submits by itself; its event only bubbles through here.
     if (event.target !== form) return;
     event.preventDefault();
-    const primary = body.querySelector(LEGACY_PRIMARY);
-    if (primary && event.submitter !== primary) primary.click();
+    // Any other submitter already ran its own click.
+    if (event.submitter && event.submitter !== enter) return;
+    body.querySelector(LEGACY_PRIMARY)?.click();
   });
   host.replaceChildren(form);
 

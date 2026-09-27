@@ -481,6 +481,35 @@ try {
       [0, 'Kick combo', false]);
   });
 
+  await step('app: Enter in an export field runs the chosen format once, even with Windows AVI available', async () => {
+    await page.click('.titlebar [data-action="export"]');
+    await page.locator('#dialog[open] #export-width').waitFor();
+    await settle(300);   // the capability refresh settles the formats
+    const chosen = await page.evaluate(() => {
+      // A Video for Windows codec is installed (desktop Windows): its format button is enabled.
+      document.querySelector('#dialog .export-grid [data-action="export-vfw"]').disabled = false;
+      window.exportRuns = [];
+      window.exportTrap = event => {
+        const option = event.target.closest?.('#dialog .export-grid [data-action]');
+        if (!option) return;
+        window.exportRuns.push(option.dataset.action);
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      };
+      document.addEventListener('click', window.exportTrap, true);
+      return document.getElementById('output-format').value;
+    });
+    assert.ok(chosen && chosen !== 'export-vfw', `a format is chosen (${chosen})`);
+    await page.locator('#export-width').focus();
+    await page.keyboard.press('Enter');
+    await settle(150);
+    assert.deepEqual(await page.evaluate(() => window.exportRuns), [chosen], 'one export, of the chosen format');
+    await page.evaluate(() => document.removeEventListener('click', window.exportTrap, true));
+    await page.keyboard.press('Escape');
+    await settle();
+    assert.equal(await page.evaluate(() => document.querySelectorAll('dialog[open]').length), 0);
+  });
+
   await step('app: a tooltip names the control and shows its shortcut from the registry, with no native title beside it', async () => {
     const tip = () => page.evaluate(() => {
       const element = document.getElementById('ui-tooltip');

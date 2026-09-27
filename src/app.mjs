@@ -3973,7 +3973,7 @@ function showExport() {
   const grid = $("dialog-content").querySelector(".export-grid");
   grid.insertAdjacentHTML(
     "beforeend",
-    `<button class="export-option" data-action="export-vfw" disabled>${icon("play")}<span><strong>Windows AVI</strong><small>Installed video codecs</small></span></button>`,
+    `<button type="button" class="export-option" data-action="export-vfw" disabled>${icon("play")}<span><strong>Windows AVI</strong><small>Installed video codecs</small></span></button>`,
   );
   vfwExportControls = new VfwExportControls({
     container: $("dialog-content").querySelector(".export-settings"),
@@ -4010,7 +4010,7 @@ function showExport() {
   ])
     grid.insertAdjacentHTML(
       "beforeend",
-      `<button class="export-option" data-action="export-${id}" ${id.endsWith("sequence") ? "" : "disabled"}>${icon(id.endsWith("sequence") ? "duplicate" : "play")}<span><strong>${label}</strong><small>${note}</small></span></button>`,
+      `<button type="button" class="export-option" data-action="export-${id}" ${id.endsWith("sequence") ? "" : "disabled"}>${icon(id.endsWith("sequence") ? "duplicate" : "play")}<span><strong>${label}</strong><small>${note}</small></span></button>`,
     );
   const singleFrameActions = new Set([
     "export-piv",
