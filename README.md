@@ -89,8 +89,7 @@ node tests/creation.browser.mjs
 node tests/builder.browser.mjs
 node tests/rig.browser.mjs
 node tests/timeline.browser.mjs
-node tests/workspace-panels.browser.mjs
-node tests/workspace-persistence.browser.mjs
+node tests/shell-layout.browser.mjs
 node tests/document-export-browser.mjs
 node tests/image-export-browser.mjs
 node tests/svg-export.browser.mjs

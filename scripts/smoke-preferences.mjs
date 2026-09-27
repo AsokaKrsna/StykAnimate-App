@@ -20,10 +20,13 @@ try {
   await page.reload();
   await page.waitForFunction(() => window.styk?.ready && window.styk.workspace, undefined, { timeout: 20000 });
   // A 1.1 blob migrates to the v2 layout; `float('right')` floats the right dock's floatable panel (VFX).
+  // A saved layout and the timeline's width (under the stage) must survive the restart too.
   const migrated = await page.evaluate(() => ({sizes: window.styk.workspace.layout.shared.sizes, right: window.styk.workspace.sizes.right}));
   assert.deepEqual([migrated.sizes.right, migrated.sizes.bottom, migrated.right], [310, 240, 310]);
   const saved = await page.evaluate(async () => {
+    window.styk.workspace.saveLayout('Smoke layout');
     window.styk.workspace.float('right');
+    window.styk.workspace.setTimelineSpan('stage');
     await window.styk.workspace.flushPreferences();
     window.styk.settingsUI.commit({locale:'it',theme:'dark'});
     await window.styk.settingsUI.flush();
@@ -40,6 +43,8 @@ try {
   assert.equal(saved.snapshot.studioVersion, 1, 'the v1 mirror a 1.1 app reads');
   assert.equal(saved.snapshot.right, 310);
   assert.ok(saved.snapshot.modes.animate.panels.some(record => record.id === 'vfx' && record.dock === 'float'));
+  assert.equal(saved.snapshot.modes.animate.bottomSpan, 'stage');
+  assert.deepEqual(saved.snapshot.saved.map(item => item.name), ['Smoke layout']);
   assert.equal(saved.invalidRejected, true);
   assert.equal(saved.oversizedRejected, true);
   assert.equal(saved.editorSettings.locale,'it');
@@ -50,16 +55,22 @@ try {
   const second = await launch(); applications.push(second);
   const restoredPage = await second.firstWindow();
   await restoredPage.waitForFunction(() => window.styk?.ready && window.styk.workspace, undefined, { timeout: 20000 });
-  const restored = await restoredPage.evaluate(async () => ({ origin: location.origin, snapshot: window.styk.workspace.preferences, disk: await window.stykDesktop.getWorkspacePreferences(), floating: window.styk.workspace.floating, locale:window.styk.settingsUI.value.locale, documentLocale:document.documentElement.lang, editorSettings:await window.stykDesktop.getEditorSettings() }));
+  const restored = await restoredPage.evaluate(async () => ({ origin: location.origin, snapshot: window.styk.workspace.preferences, disk: await window.stykDesktop.getWorkspacePreferences(), floating: window.styk.workspace.floating, layouts: window.styk.workspace.layouts.map(item => item.name), span: document.querySelector('.workspace').dataset.bottomSpan, locale:window.styk.settingsUI.value.locale, documentLocale:document.documentElement.lang, editorSettings:await window.stykDesktop.getEditorSettings() }));
   assert.notEqual(restored.origin, saved.origin);
   assert.deepEqual(restored.snapshot, saved.snapshot);
   assert.deepEqual(restored.disk, saved.snapshot);
   assert.deepEqual(restored.floating.map(item => item.panel), ['vfx']);
+  assert.deepEqual(restored.layouts, ['Smoke layout']);
+  assert.equal(restored.span, 'stage');
   assert.equal(await restoredPage.locator('html').getAttribute('data-theme'),'dark');
   assert.equal(restored.editorSettings.theme,'dark');
   assert.equal(restored.locale,'it');assert.equal(restored.documentLocale,'it');assert.deepEqual(restored.editorSettings,saved.editorSettings);
-  await restoredPage.evaluate(async () => { window.styk.workspace.reset(); await window.styk.workspace.flushPreferences(); });
-  const evidence = { passed: true, packaged, survivesProcessRestart: true, survivesOriginChange: true, firstOrigin: saved.origin, secondOrigin: restored.origin, snapshot: saved.snapshot, invalidRejected: saved.invalidRejected, oversizedRejected: saved.oversizedRejected, restoredFloatingPanel: true, restoredLocale:restored.locale, renderedDocumentLocale:restored.documentLocale, restoredEditorSettings:true, checkedAt: new Date().toISOString() };
+  await restoredPage.evaluate(async () => {
+    for (const item of window.styk.workspace.layouts) window.styk.workspace.deleteLayout(item.id);
+    window.styk.workspace.reset();
+    await window.styk.workspace.flushPreferences();
+  });
+  const evidence = { passed: true, packaged, survivesProcessRestart: true, survivesOriginChange: true, firstOrigin: saved.origin, secondOrigin: restored.origin, snapshot: saved.snapshot, invalidRejected: saved.invalidRejected, oversizedRejected: saved.oversizedRejected, restoredFloatingPanel: true, restoredSavedLayout: true, restoredTimelineSpan: true, restoredLocale:restored.locale, renderedDocumentLocale:restored.documentLocale, restoredEditorSettings:true, checkedAt: new Date().toISOString() };
   await writeFile(path.join(output, packaged ? 'desktop-packaged-preferences-smoke.json' : 'desktop-preferences-smoke.json'), JSON.stringify(evidence, null, 2));
   console.log(JSON.stringify(evidence, null, 2));
 } finally {

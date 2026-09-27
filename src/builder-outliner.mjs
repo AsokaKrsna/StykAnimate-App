@@ -4,7 +4,7 @@
  * parent chain), then the polygon fills. Selection stays two-way with the
  * canvas — clicking a row selects the joint; selecting a joint highlights and
  * reveals the row. Rows render in a fixed-height virtual window so large
- * figures stay cheap, matching the LayerPanel pattern.
+ * figures stay cheap.
  */
 import {icon} from './icons.mjs';
 

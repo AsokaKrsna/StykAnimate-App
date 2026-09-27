@@ -4,16 +4,13 @@
     "src/builder-outliner.mjs": 1,
     "src/insert-inbetween-dialog.mjs": 1,
     "src/keyframe-easing-popover.mjs": 1,
-    "src/layer-panel.mjs": 1,
     "src/movieclip-ui.mjs": 1,
     "src/privacy-ui.mjs": 1,
     "src/property-controls.mjs": 1,
     "src/segment-values-dialog.mjs": 1,
     "src/sprite-placement-dialog.mjs": 1,
     "src/text-dialog.mjs": 1,
-    "src/vfw-export-controls.mjs": 1,
-    "src/workspace-layout.mjs": 1,
-    "src/workspace-panels.mjs": 1
+    "src/vfw-export-controls.mjs": 1
   },
   "legacyImportant": [
     {"file":"src/background-dialog.mjs","line":32,"selector":".background-dialog [hidden]","property":"display"},
@@ -21,9 +18,6 @@
     {"file":"src/insert-inbetween-dialog.mjs","line":9,"selector":".styk-inbetween-onions","property":"font-size"},
     {"file":"src/insert-inbetween-dialog.mjs","line":10,"selector":".styk-inbetween-dialog [hidden]","property":"display"},
     {"file":"src/keyframe-easing-popover.mjs","line":6,"selector":".styk-easing-popover [hidden]","property":"display"},
-    {"file":"src/layer-panel.mjs","line":5,"selector":".styk-layer-panel","property":"overflow"},
-    {"file":"src/layer-panel.mjs","line":12,"selector":".styk-tree-disclosure","property":"width"},
-    {"file":"src/layer-panel.mjs","line":13,"selector":".styk-layer-rename","property":"outline"},
     {"file":"src/privacy-ui.mjs","line":3,"selector":".styk-privacy [hidden]","property":"display"},
     {"file":"src/privacy-ui.mjs","line":3,"selector":".styk-privacy *","property":"transition"},
     {"file":"src/property-controls.mjs","line":60,"selector":"body.styk-property-scrubbing,body.styk-property-scrubbing *","property":"cursor"},
@@ -83,12 +77,6 @@
     {"file":"src/support-center.css","line":2,"selector":".support-center [hidden]","property":"display"},
     {"file":"src/support-center.css","line":16,"selector":".support-center *","property":"scroll-behavior"},
     {"file":"src/support-center.css","line":16,"selector":".support-center *","property":"transition"},
-    {"file":"src/text-dialog.mjs","line":62,"selector":".text-authoring-dialog [hidden]","property":"display"},
-    {"file":"src/workspace-layout.mjs","line":132,"selector":"body.styk-resizing-x,body.styk-resizing-x *","property":"cursor"},
-    {"file":"src/workspace-layout.mjs","line":132,"selector":"body.styk-resizing-x,body.styk-resizing-x *","property":"user-select"},
-    {"file":"src/workspace-layout.mjs","line":133,"selector":"body.styk-resizing-y,body.styk-resizing-y *","property":"cursor"},
-    {"file":"src/workspace-layout.mjs","line":133,"selector":"body.styk-resizing-y,body.styk-resizing-y *","property":"user-select"},
-    {"file":"src/workspace-panels.mjs","line":78,"selector":"body.styk-moving-panel,body.styk-moving-panel *","property":"cursor"},
-    {"file":"src/workspace-panels.mjs","line":78,"selector":"body.styk-moving-panel,body.styk-moving-panel *","property":"user-select"}
+    {"file":"src/text-dialog.mjs","line":62,"selector":".text-authoring-dialog [hidden]","property":"display"}
   ]
 }
