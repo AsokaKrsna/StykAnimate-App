@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync, readFileSync} from 'node:fs';
 import {
-  EXPORT_CATEGORIES, EXPORT_DEFAULT_QUALITY, EXPORT_FORMATS, buildExportRequest, defaultExportFormat, exportFieldVisibility,
-  exportFileName, exportFormatStates, exportJob, exportOptionsFromRequest, exportPreferencesFromRequest, exportPrimaryLabel,
-  exportSummary, exportTransparency, formatChoices, formatForAction, frameExportArguments, imageExportArguments,
-  initialExportRequest, legacyExportFields, lockedSide, normalizeExportPreferences, presetSize, resolveExportCodec,
-  resolveFormatChoice, updateExportRequest, validateExportRequest, vfwEncodeOptions, videoExportArguments,
+  EXPORT_CATEGORIES, EXPORT_DEFAULT_QUALITY, EXPORT_ELEMENT_IDS, EXPORT_FIELD_IDS, EXPORT_FORMATS, buildExportRequest, defaultExportFormat,
+  entireAnimationPatch, exportCodecChoices, exportEncodingSummary, exportFieldVisibility, exportFileName, exportFormatStates, exportJob,
+  exportNameError, exportOptionsFromRequest, exportPlayedFramesNote, exportPreferencesFromRequest, exportPrimaryLabel, exportSummary,
+  exportTransparency, exportWorkingPoseNote, formatChoices, formatForAction, frameExportArguments, imageExportArguments,
+  initialExportRequest, legacyExportFields, lockedSide, normalizeExportPreferences, presetSize, reconcileExportCodecs, resolveExportCodec,
+  resolveFormatChoice, sameShape, sizePresetChoices, updateExportRequest, validateExportRequest, vfwEncodeOptions, videoExportArguments,
 } from '../src/export-request.mjs';
 import {legacyExport} from './fixtures/export-legacy.mjs';
 import {EXPORT_MAX_PIXELS, normalizeExportSmoothing} from '../src/export-sampling.mjs';
@@ -58,27 +59,47 @@ test('the legacy fixture is still verbatim app.mjs export code', t => {
       exportImages: images && between(images, 'const options = exportOptions(),', 'if (format === "svg-sequence") options.smoothing = "edges";'),
       exportVideo: video && between(video, 'const vfw = format === "vfw"', 'if (includeAudio && encode !== encodeNativeVideo)'),
     };
-    for (const [name, block] of Object.entries(blocks)) if (block) {found.push(name); assert.equal(lines(block), lines(fixtureBlock(name)), `${name} changed: update tests/fixtures/export-legacy.mjs`);}
-    if (blocks.exportOptions) {
-      // Transcribed below: the frame and project file names, and the lock-ratio input handler.
-      for (const snippet of ['filename = `${editor.name}-frame-${editor.tick + 1}.png`', 'filename = `${editor.name}-frame-${editor.tick + 1}.svg`',
-        '...exportOptions({ animation: false }),', 'const filename = `${["stk", "stkz", "stykmov"].includes(format) ? nameOf(editor.object) : editor.name || "Untitled"}.${format}`;',
-        'Math.round(id === "export-width" ? value / ratio : value * ratio),', '"export-stkz": () => exportPivot(isMovieclip(editor.figure)?"stykmov":"stkz"),'])
-        assert.ok(text.includes(snippet), `app.mjs no longer has: ${snippet}`);
-    }
+    const present = Object.keys(blocks).filter(name => blocks[name]);
+    if (!present.length) continue;
+    // All or nothing: a reworded signature or anchor must not silently stop one block's comparison.
+    assert.deepEqual(present, Object.keys(blocks), 'some legacy export blocks were not found: update tests/fixtures/export-legacy.mjs or the anchors above');
+    for (const [name, block] of Object.entries(blocks)) {found.push(name); assert.equal(lines(block), lines(fixtureBlock(name)), `${name} changed: update tests/fixtures/export-legacy.mjs`);}
+    // Transcribed below: the file names, the lock-ratio input handler, the codec options and the dialog's notes.
+    for (const snippet of ['filename = `${editor.name}-frame-${editor.tick + 1}.png`', 'filename = `${editor.name}-frame-${editor.tick + 1}.svg`',
+      '...exportOptions({ animation: false }),', 'const filename = `${["stk", "stkz", "stykmov"].includes(format) ? nameOf(editor.object) : editor.name || "Untitled"}.${format}`;',
+      'Math.round(id === "export-width" ? value / ratio : value * ratio),', '"export-stkz": () => exportPivot(isMovieclip(editor.figure)?"stykmov":"stkz"),',
+      '`<option value="${esc(codec.id)}" ${codec.supported ? "" : "disabled"}>${esc(codec.label)}${codec.lossless && !/lossless|uncompressed/i.test(codec.label) ? " · Lossless" : ""}</option>`,',
+      'select.disabled = !(format.codecs || []).some(', 'const selected = select.value || format.defaultCodec;',
+      '<p class="property-note">Add the working pose as a frame to include it in animation exports. Your .styk project keeps the working pose.</p>',
+      'editor.frameDraft?.mode === "add" &&', '? `.${format.extension} · ${selectedCodec?.label || format.codec || format.label}${encodedWidth && (encodedWidth !== width || encodedHeight !== height) ? ` · ${encodedWidth} × ${encodedHeight} (padded)` : ""}`'])
+      assert.ok(text.includes(snippet), `app.mjs no longer has: ${snippet}`);
   }
   const panel = source('src/export-panel.mjs');
   if (panel) for (const snippet of ["visibility = {start: !single, end: !single, quality: action === 'export-jpeg-sequence',",
-    "const shortSide = preset === 'original' ? Math.min(width, height) : Number(preset);", "input('width').dispatchEvent(new Event('input', {bubbles: true}));"])
+    "const shortSide = preset === 'original' ? Math.min(width, height) : Number(preset);", "input('width').dispatchEvent(new Event('input', {bubbles: true}));",
+    "note.textContent = `Export counts every frame that plays. Your ${storedFrames} timeline ${storedFrames === 1 ? 'frame plays' : 'frames play'} as ${totalFrames} with inbetweens.`;",
+    "if (Number.isInteger(storedFrames) && storedFrames !== totalFrames) {", "input('all-frames').onclick = () => {input('start').value = 1; input('end').value = totalFrames; updateSettings();};"])
     assert.ok(panel.includes(snippet), `export-panel.mjs no longer has: ${snippet}`);
   if (!found.length) t.skip('the export actions read an ExportRequest now; the fixture keeps the last legacy code');
 });
 
+test('the dialog ids the browser tests query stay in one map', t => {
+  if (!source('src/export-panel.mjs')) return t.skip('the legacy dialog is gone; the sheet takes its ids from EXPORT_FIELD_IDS and EXPORT_ELEMENT_IDS');
+  const homes = ['src/app.mjs', 'src/export-panel.mjs', 'src/vfw-export-controls.mjs', 'src/export-progress.mjs'].map(source).join('\n');
+  for (const id of [...Object.values(EXPORT_FIELD_IDS), ...Object.values(EXPORT_ELEMENT_IDS)]) assert.ok(homes.includes(`id="${id}"`), `${id} is a dialog id`);
+});
+
 test('the catalogue matches today\'s categories, commands and encoder descriptions', t => {
   const panel = source('src/export-panel.mjs');
+  const actions = category => category.formats.map(id => EXPORT_FORMATS.find(format => format.id === id).action);
+  // The one deliberate difference: Project lists revision 4's four types in its order, .stykmov included.
+  assert.deepEqual(actions(EXPORT_CATEGORIES.find(category => category.id === 'editable')), ['export-piv', 'export-stkz', 'export-stk', 'export-stykmov']);
   if (panel) {
-    const today = [...panel.matchAll(/\['(\w+)', '([^']+)', \[([^\]]+)\]\]/g)].map(([, id, label, actions]) => ({id, label, actions: actions.match(/export-[\w-]+/g)}));
-    assert.deepEqual(EXPORT_CATEGORIES.map(category => ({id: category.id, label: category.label, actions: category.formats.map(id => EXPORT_FORMATS.find(format => format.id === id).action)})), today);
+    const today = [...panel.matchAll(/\['(\w+)', '([^']+)', \[([^\]]+)\]\]/g)].map(([, id, label, list]) => ({id, label, actions: list.match(/export-[\w-]+/g)}));
+    const editable = today.find(category => category.id === 'editable');
+    assert.deepEqual(editable.actions, ['export-stkz', 'export-piv', 'export-stk'], 'today\'s dialog: update the deviation above if this changes');
+    editable.actions = ['export-piv', 'export-stkz', 'export-stk', 'export-stykmov'];
+    assert.deepEqual(EXPORT_CATEGORIES.map(category => ({id: category.id, label: category.label, actions: actions(category)})), today);
   } else t.diagnostic('export-panel.mjs is gone; categories are checked against the command catalogue only');
   for (const format of EXPORT_FORMATS) {
     assert.ok(COMMAND_BY_ID.has(format.action), `${format.action} is a command`);
@@ -321,8 +342,9 @@ test('updateExportRequest applies today\'s linked-field rules', () => {
 test('preferences remember the type and size, start on Original and drop what they cannot use', () => {
   const ctx = context();
   assert.deepEqual(normalizeExportPreferences(undefined).sizePreset, 'original');
-  assert.deepEqual(normalizeExportPreferences({format: 'stykmov', sizePreset: 'huge', jpegQuality: 0, bitrateMbps: 900, codecs: {mp4: '<b>'}, smoothing: 'blur'}),
+  assert.deepEqual(normalizeExportPreferences({format: 'mov', sizePreset: 'huge', jpegQuality: 0, bitrateMbps: 900, codecs: {mp4: '<b>'}, smoothing: 'blur'}),
     normalizeExportPreferences({}));
+  assert.equal(normalizeExportPreferences({format: 'stykmov'}).format, 'stykmov', 'Project lists the movieclip type');
   const states = exportFormatStates({totalFrames: 48});
   const first = initialExportRequest({states, context: ctx});
   assert.deepEqual([first.format, first.sizePreset, first.width, first.height, first.from, first.to, first.dither, first.audio],
@@ -342,10 +364,11 @@ test('preferences remember the type and size, start on Original and drop what th
 // ---------------------------------------------------------------------------
 // Availability, validation and the words the sheet shows.
 
-const CAPABILITIES = {formats: [
-  {id: 'webm', supported: true, provider: 'FFmpeg'},
-  {id: 'mp4', supported: true, provider: 'FFmpeg', defaultCodec: 'h264', codecs: [{id: 'h264', supported: true}, {id: 'mpeg4', supported: true, notice: 'Pivot compatible'}]},
-  {id: 'avi', supported: true, provider: 'FFmpeg', defaultCodec: 'mpeg4', codecs: [{id: 'mpeg4', supported: true}, {id: 'ffv1', supported: true, lossless: true}, {id: 'rawvideo', supported: false}]},
+const CAPABILITIES = {width: 960, height: 540, fps: 24, formats: [
+  {id: 'webm', supported: true, provider: 'FFmpeg', codec: 'VP9 with transparency'},
+  {id: 'mp4', supported: true, provider: 'FFmpeg', defaultCodec: 'h264', codecs: [{id: 'h264', label: 'H.264', supported: true}, {id: 'mpeg4', label: 'MPEG-4 Part 2', supported: true, notice: 'Pivot compatible'}]},
+  {id: 'avi', supported: true, provider: 'FFmpeg', defaultCodec: 'mpeg4', codecs: [{id: 'mpeg4', label: 'MPEG-4 Part 2', supported: true},
+    {id: 'ffv1', label: 'FFV1 (lossless)', supported: true, lossless: true}, {id: 'rawvideo', label: 'Uncompressed RGB', supported: false, lossless: true}]},
   {id: 'wmv', supported: false, reason: 'This native video encoder is unavailable.'},
   {id: 'gif', supported: false, reason: 'Animated GIF supports 1–50 fps. Choose APNG or video for this frame rate.'},
   {id: 'apng', supported: true, provider: 'Portable worker'},
@@ -356,12 +379,17 @@ test('format states follow today\'s buttons before and after the capability prob
   const opening = exportFormatStates({totalFrames: 48, vfw: {listed: false}});
   assert.deepEqual(formatChoices('video', opening).map(choice => [choice.id, choice.disabled]), [['mp4', true], ['webm', false], ['avi', true], ['wmv', true]]);
   assert.equal(defaultExportFormat(opening), 'webm');
-  assert.deepEqual(formatChoices('editable', opening).map(choice => choice.label), ['StykAnimate figure · Unavailable', 'Pivot animation', 'Pivot figure · Unavailable']);
+  assert.deepEqual(formatChoices('editable', opening).map(choice => [choice.type, choice.reason]), [['Pivot animation (.piv)', ''],
+    ['StykAnimate figure (.stkz) · Unavailable', 'Select a figure to export it.'], ['Pivot figure (.stk) · Unavailable', 'Select a figure to export it.'],
+    ['StykAnimate movieclip (.stykmov) · Unavailable', 'Select a figure to export it.']]);
   const probed = exportFormatStates({capabilities: CAPABILITIES, totalFrames: 48, hasObject: true, movieclip: true, vfw: {listed: true, ready: true}, codecs: {avi: 'rawvideo'}});
-  assert.deepEqual(probed.get('mp4'), {id: 'mp4', label: 'MP4 video', listed: true, disabled: false, reason: '', provider: 'FFmpeg', codec: 'h264'});
+  assert.deepEqual(probed.get('mp4'), {id: 'mp4', label: 'MP4 video', listed: true, disabled: false, reason: '', provider: 'FFmpeg', codec: 'h264', codecLabel: 'H.264', padded: null});
   assert.equal(probed.get('avi').codec, 'mpeg4', 'an unsupported codec falls back to the first supported one');
   assert.deepEqual([probed.get('wmv').disabled, probed.get('wmv').reason], [true, 'This native video encoder is unavailable.']);
-  assert.equal(probed.get('stkz').label, 'StykAnimate movieclip');
+  assert.deepEqual(formatChoices('editable', probed).map(choice => [choice.id, choice.disabled, choice.reason]),
+    [['piv', false, ''], ['stkz', true, 'A movieclip exports as .stykmov.'], ['stk', false, ''], ['stykmov', false, '']], 'a movieclip is its own type');
+  const figure = exportFormatStates({capabilities: CAPABILITIES, totalFrames: 48, hasObject: true, vfw: {listed: false}});
+  assert.deepEqual(['stkz', 'stykmov'].map(id => [figure.get(id).disabled, figure.get(id).reason]), [[false, ''], [true, 'Select a movieclip to export it.']]);
   assert.equal(resolveFormatChoice('webm', 'video', probed), 'webm', 'the chosen type is kept');
   assert.equal(resolveFormatChoice('wmv', 'video', probed), 'wmv', 'even while unavailable: Export says why instead');
   assert.equal(resolveFormatChoice('gif', 'video', probed), 'mp4');
@@ -423,4 +451,163 @@ test('visibility, transparency, summary and the primary follow the chosen type',
     ['Export MP4', 'Export WebM', 'Export AVI', 'Export GIF', 'Export PNG sequence', 'Export PIV']);
   assert.equal(exportPrimaryLabel({format: 'stkz'}, {movieclip: true}), 'Export STYKMOV');
   assert.throws(() => buildExportRequest({format: 'mov'}), /Unknown export format/);
+});
+
+// ---------------------------------------------------------------------------
+// What the sheet relies on: shown codecs, names, remembered sizes, request
+// shape, required context, reasons and the words it shows.
+
+const OPEN = {totalFrames: 48, hasObject: true, vfw: {listed: false}};
+const withCodecs = (id, codecs) => ({...CAPABILITIES, formats: CAPABILITIES.formats.map(format => (format.id === id ? {...format, codecs} : format))});
+
+test('the request exports the codec its select shows, not an unsupported default or remembered one', () => {
+  const ctx = context({provider: 'FFmpeg'}), opening = exportFormatStates(OPEN);
+  // MP4's default (H.264) is unsupported here: the select shows MPEG-4.
+  const noH264 = withCodecs('mp4', [{id: 'h264', label: 'H.264', supported: false}, {id: 'mpeg4', label: 'MPEG-4 Part 2', supported: true}]);
+  let request = initialExportRequest({preferences: {format: 'mp4'}, states: opening, context: ctx});
+  assert.equal(request.codecs.mp4, '', 'nothing is shown before the probe');
+  let states = exportFormatStates({...OPEN, capabilities: noH264, codecs: request.codecs});
+  assert.equal(states.get('mp4').codec, 'mpeg4');
+  assert.equal(exportJob(request, ctx).encode.codec, undefined, 'unreconciled: the native service would fall back to H.264');
+  request = reconcileExportCodecs(request, states);
+  assert.equal(exportJob(request, ctx).encode.codec, 'mpeg4');
+  // FFV1 is remembered but unsupported now: the select shows MPEG-4, so the export is lossy and shows its bitrate row.
+  const noFfv1 = withCodecs('avi', CAPABILITIES.formats[2].codecs.map(codec => ({...codec, supported: codec.id === 'mpeg4'})));
+  request = initialExportRequest({preferences: {format: 'avi', codecs: {avi: 'ffv1'}}, states: opening, context: ctx});
+  assert.equal(request.codecs.avi, 'ffv1', 'kept until a probe describes AVI');
+  states = exportFormatStates({...OPEN, capabilities: noFfv1, codecs: request.codecs});
+  request = reconcileExportCodecs(request, states);
+  const job = exportJob(request, ctx);
+  assert.deepEqual([request.codecs.avi, job.codec, job.videoQuality, exportFieldVisibility(request).bitrateMode], ['mpeg4', 'mpeg4', {quality: 0.8}, true], 'not lossless {quality: 1}');
+  assert.equal(reconcileExportCodecs(request, states), request, 'the same request when nothing changes');
+  assert.equal(initialExportRequest({preferences: {format: 'avi', codecs: {avi: 'ffv1'}}, states, context: ctx}).codecs.avi, 'mpeg4', 'opening after a probe reconciles at once');
+  const failed = exportFormatStates({...OPEN, capabilityError: new Error('Probe failed.')});
+  assert.equal(reconcileExportCodecs(request, failed), request, 'a failed probe describes no codec');
+});
+
+test('the typed name is trimmed, a blank one means the default, and unsavable names are refused', () => {
+  const ctx = context(), start = buildExportRequest({format: 'mp4'}, ctx);
+  const states = exportFormatStates({...OPEN, capabilities: CAPABILITIES});
+  assert.equal(updateExportRequest(start, {name: '  take 2 '}, ctx).name, 'take 2');
+  for (const blank of ['', '   ', null]) {
+    const request = updateExportRequest(updateExportRequest(start, {name: 'x'}, ctx), {name: blank}, ctx);
+    assert.deepEqual([request.name, exportFileName(request, ctx)], [null, 'Kick combo.mp4'], JSON.stringify(blank));
+  }
+  for (const [name, message] of [['a/b', /cannot contain/], ['CON', /reserves/], ['nul', /reserves/], ['com1.backup', /reserves/], ['LPT9', /reserves/], ['take.', /end with a dot/]]) {
+    const request = updateExportRequest(start, {name}, ctx);
+    assert.match(exportNameError(request.name), message, name);
+    assert.deepEqual(validateExportRequest(request, {states, totalFrames: 48, fps: 24, deviceMemory: 8}).invalid, ['name'], name);
+    assert.throws(() => exportFileName(request, ctx), message, name);
+    assert.throws(() => exportJob(request, ctx), message, name);
+  }
+  for (const name of ['console', 'con-take', 'Kick combo v2', 'comet', 'take 2.final']) assert.equal(exportNameError(name), '', name);
+  assert.throws(() => exportFileName({...start, name: ''}, ctx), /Enter a file name/, 'a hand-built blank name');
+  assert.throws(() => exportFileName({...start, name: 'take '}, ctx), /end with a dot or a space/);
+});
+
+test('a remembered Custom size opens as Original on an artboard of another shape', () => {
+  const states = exportFormatStates({totalFrames: 48}), landscape = context();
+  const stored = exportPreferencesFromRequest(updateExportRequest(buildExportRequest({format: 'mp4'}, landscape), {width: 640}, landscape));
+  assert.deepEqual([stored.sizePreset, stored.width, stored.height, stored.lockRatio], ['custom', 640, 360, true]);
+  const portrait = initialExportRequest({preferences: stored, states, context: {canvasWidth: 1080, canvasHeight: 1920, totalFrames: 48}});
+  assert.deepEqual([portrait.sizePreset, portrait.width, portrait.height], ['original', 1080, 1920], 'never 640 × 360 squashed onto a portrait artboard');
+  const wide = initialExportRequest({preferences: stored, states, context: {canvasWidth: 1920, canvasHeight: 1080, totalFrames: 48}});
+  assert.deepEqual([wide.sizePreset, wide.width, wide.height], ['custom', 640, 360], 'an artboard of the same shape keeps it');
+  assert.equal(initialExportRequest({preferences: {...stored, width: null}, states, context: landscape}).sizePreset, 'original');
+  // Every size Lock ratio writes counts as the artboard's shape.
+  for (let w = 100; w <= 2000; w += 53) for (let h = Math.ceil(w / 10); h <= Math.min(2000, w * 10); h += 59) for (const typed of [100, 333, 1280]) {
+    const board = {canvasWidth: w, canvasHeight: h};
+    assert.ok(sameShape({width: typed, height: lockedSide('width', typed, board)}, board), `${w}×${h} width ${typed}`);
+    assert.ok(sameShape({width: lockedSide('height', typed, board), height: typed}, board), `${w}×${h} height ${typed}`);
+  }
+});
+
+test('updateExportRequest keeps the request in shape and needs the artboard for size changes', () => {
+  const ctx = context(), start = buildExportRequest({format: 'gif'}, ctx);
+  const odd = updateExportRequest(start, {dither: 'yes', audio: 'no', repeat: 'twice', category: 'video', lockRatio: 'on', from: '3', extra: 1}, ctx);
+  assert.deepEqual([odd.dither, odd.audio, odd.repeat, odd.category, odd.lockRatio, odd.from], [null, true, null, 'animated', true, 3]);
+  assert.deepEqual(Object.keys(odd), Object.keys(start), 'no stray fields');
+  assert.equal(exportOptionsFromRequest(odd, ctx).dither, ctx.defaultDither, 'an unusable dither means the content-based default');
+  assert.equal(updateExportRequest(start, {format: 'mp4', category: 'editable'}, ctx).category, 'video', 'the category follows the format');
+  assert.throws(() => updateExportRequest(start, {sizePreset: '1080'}), TypeError);
+  assert.throws(() => updateExportRequest(start, {width: 1280}), TypeError);
+  assert.equal(updateExportRequest({...start, lockRatio: false}, {width: 1280}).width, 1280, 'an unlocked side needs no artboard');
+  assert.equal(updateExportRequest(start, {format: 'png'}).format, 'png');
+});
+
+test('exports refuse a context without the frame count or the frame rate', () => {
+  const ctx = context(), without = key => Object.fromEntries(Object.entries(ctx).filter(([name]) => name !== key));
+  const video = buildExportRequest({format: 'mp4'}, ctx), gif = buildExportRequest({format: 'gif'}, ctx);
+  assert.throws(() => exportOptionsFromRequest(video, without('totalFrames')), TypeError);
+  assert.throws(() => exportJob(video, without('totalFrames')), TypeError);
+  assert.throws(() => exportJob(video, without('fps')), TypeError);
+  assert.throws(() => exportJob(gif, without('fps')), TypeError);
+  assert.doesNotThrow(() => exportJob(buildExportRequest({format: 'png'}, ctx), without('totalFrames')), 'a single frame has no range');
+  assert.doesNotThrow(() => exportJob(buildExportRequest({format: 'piv'}, ctx), {name: 'Kick combo'}));
+});
+
+test('a disabled type always says why', () => {
+  const opening = exportFormatStates({totalFrames: 48, vfw: {listed: true, ready: false}});
+  for (const [id, reason] of [['mp4', 'Checking video encoders…'], ['avi', 'Checking video encoders…'], ['wmv', 'Checking video encoders…'],
+    ['vfw', 'Checking installed codecs…'], ['stkz', 'Select a figure to export it.'], ['stk', 'Select a figure to export it.'], ['stykmov', 'Select a figure to export it.']])
+    assert.deepEqual([opening.get(id).disabled, opening.get(id).reason], [true, reason], id);
+  assert.equal(exportFormatStates({totalFrames: 48, vfw: {listed: true, ready: false, reason: 'No installed codec accepts this canvas size.'}}).get('vfw').reason,
+    'No installed codec accepts this canvas size.');
+  const check = validateExportRequest(buildExportRequest({format: 'mp4'}, context()), {states: opening, totalFrames: 48, fps: 24, deviceMemory: 8});
+  assert.deepEqual([check.notice, check.canExport], ['Checking video encoders…', false]);
+  for (const states of [opening, exportFormatStates({capabilities: CAPABILITIES, totalFrames: 48, hasObject: true, vfw: {listed: true, ready: true}}),
+    exportFormatStates({capabilities: CAPABILITIES, totalFrames: 0, vfw: {listed: true}})])
+    for (const state of states.values()) if (state.disabled) assert.ok(state.reason, state.id);
+});
+
+test('codec choices, the encoding summary and size presets give the sheet its words', () => {
+  // Today's refreshCapabilities() option markup, transcribed (its lines are checked against app.mjs above).
+  const today = format => ({disabled: !(format.codecs || []).some(codec => codec.supported), options: (format.codecs || []).map(codec => ({id: codec.id,
+    label: `${codec.label}${codec.lossless && !/lossless|uncompressed/i.test(codec.label) ? ' · Lossless' : ''}`, disabled: !codec.supported}))});
+  const installed = {codecs: [{id: 'x', label: 'Lagarith', supported: true, lossless: true}, {id: 'y', label: 'Old', supported: false}]};
+  for (const format of [...CAPABILITIES.formats, installed, {codecs: [{id: 'z', label: 'Z', supported: false}]}, {}]) assert.deepEqual(exportCodecChoices(format), today(format));
+  assert.deepEqual(exportCodecChoices(CAPABILITIES.formats[2]).options.map(option => option.label), ['MPEG-4 Part 2', 'FFV1 (lossless)', 'Uncompressed RGB']);
+  assert.equal(exportCodecChoices(installed).options[0].label, 'Lagarith · Lossless');
+
+  const ctx = context(), states = exportFormatStates({capabilities: CAPABILITIES, totalFrames: 48, vfw: {listed: false}});
+  const summary = fields => {
+    const request = buildExportRequest(fields, ctx), shown = exportFormatStates({capabilities: CAPABILITIES, totalFrames: 48, vfw: {listed: false}, codecs: request.codecs});
+    return exportEncodingSummary(reconcileExportCodecs(request, shown), shown);
+  };
+  assert.equal(summary({format: 'mp4'}), 'H.264 · automatic bitrate');
+  assert.equal(summary({format: 'mp4', bitrateMode: 'manual', bitrateMbps: '4.5'}), `H.264 · ${(4.5).toLocaleString()} Mbit/s`);
+  assert.equal(summary({format: 'avi', codecs: {avi: 'ffv1'}}), 'FFV1 (lossless)');
+  assert.equal(summary({format: 'webm'}), 'VP9 with transparency · automatic bitrate');
+  assert.equal(summary({format: 'gif'}), '');
+  assert.equal(exportEncodingSummary(buildExportRequest({format: 'vfw'}, ctx), states, {vfwCodec: {label: 'Cinepak'}}), 'Cinepak');
+  const padded = exportFormatStates({totalFrames: 48, capabilities: {width: 961, height: 541, formats: [{id: 'mp4', supported: true, provider: 'FFmpeg',
+    encodedWidth: 962, encodedHeight: 542, defaultCodec: 'h264', codecs: [{id: 'h264', label: 'H.264', supported: true}]}]}});
+  assert.equal(exportEncodingSummary(buildExportRequest({format: 'mp4'}, ctx), padded), 'H.264 · automatic bitrate · 962 × 542 (padded)', 'today\'s padding note');
+
+  assert.deepEqual(sizePresetChoices({canvasWidth: 960, canvasHeight: 540}).map(choice => [choice.label, choice.disabled]),
+    [['Original · 960 × 540', false], ['1080p · 1920 × 1080', false], ['720p · 1280 × 720', false], ['4K · 3840 × 2160', false], ['Custom…', false]]);
+  const board = {canvasWidth: 100, canvasHeight: 1000, totalFrames: 48}, tall = sizePresetChoices(board);
+  const uhd = tall.find(choice => choice.id === '2160');
+  assert.deepEqual([uhd.width, uhd.height, uhd.disabled], [2160, 21600, true]);
+  assert.match(uhd.reason, /larger than an export allows/);
+  // Disabled exactly when choosing it would fail the size check.
+  for (const choice of tall.filter(option => option.id !== 'custom')) {
+    const request = updateExportRequest(buildExportRequest({format: 'svg'}, board), {sizePreset: choice.id}, board);
+    assert.equal(validateExportRequest(request, {states: exportFormatStates(OPEN), totalFrames: 48, fps: 24}).invalid.includes('width'), choice.disabled, choice.id);
+  }
+  assert.throws(() => sizePresetChoices({}), TypeError);
+  assert.deepEqual(formatChoices('video', states).map(choice => choice.type), ['MP4 (.mp4)', 'WebM (.webm)', 'AVI (.avi)', 'WMV (.wmv) · Unavailable']);
+  assert.deepEqual(formatChoices('frames', states).map(choice => choice.type).slice(0, 3), ['PNG frame (.png)', 'SVG frame (.svg)', 'PNG sequence (.zip)']);
+});
+
+test('the dialog\'s notes and Use entire animation keep today\'s words', () => {
+  assert.equal(exportPlayedFramesNote(8, 48), 'Export counts every frame that plays. Your 8 timeline frames play as 48 with inbetweens.');
+  assert.equal(exportPlayedFramesNote(1, 6), 'Export counts every frame that plays. Your 1 timeline frame plays as 6 with inbetweens.');
+  for (const stored of [48, null, undefined]) assert.equal(exportPlayedFramesNote(stored, 48), '');
+  assert.equal(exportWorkingPoseNote({mode: 'add', dirty: true}, 4), 'Add the working pose as a frame to include it in animation exports. Your .styk project keeps the working pose.');
+  for (const [draft, total] of [[{mode: 'add', dirty: false}, 4], [{mode: 'edit', dirty: true}, 4], [{mode: 'add', dirty: true}, 0], [null, 4]])
+    assert.equal(exportWorkingPoseNote(draft, total), '', JSON.stringify({draft, total}));
+  const ctx = context(), narrowed = updateExportRequest(buildExportRequest({format: 'gif'}, ctx), {from: 5, to: 9}, ctx);
+  const whole = updateExportRequest(narrowed, entireAnimationPatch(48), ctx);
+  assert.deepEqual([whole.from, whole.to], [1, 48]);
 });

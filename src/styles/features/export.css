@@ -30,7 +30,8 @@
   /* Disabled means explained: the reason under a switch that cannot act (Transparent in MP4). */
   .export-reason { grid-column: 2; margin: 0; font: var(--type-small); color: var(--text-3); }
 
-  /* Project: its four types as a visible list, one click each. */
+  /* Project: its four types (.piv, .stkz, .stk, .stykmov) as a visible list, one click each. The list is
+   * role="radiogroup" and each .export-type role="radio" with aria-checked; arrow keys move the choice. */
   .export-types { display: grid; gap: var(--space-0-5); }
   .export-type {
     display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
@@ -56,4 +57,9 @@
 
   /* Progress stays inside the sheet (#export-progress, #cancel-export). */
   .export-progress { display: grid; gap: var(--space-3); align-content: center; min-block-size: 0; padding: var(--space-6); }
+
+  /* Forced colours drop the box-shadow and flatten the selected surface: outline the chosen type instead. */
+  @media (forced-colors: active) {
+    .export-type[aria-checked="true"] { outline: 2px solid Highlight; outline-offset: var(--focus-offset-inset); }
+  }
 }
