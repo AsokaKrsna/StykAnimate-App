@@ -30,7 +30,7 @@ export function motionGraphScale(peak){
   return [1,2,2.5,5,10].find(n=>n>=fraction)*base;
 }
 export function motionGraphView(){
-  return `<div class="motion-graph" data-motion-graph data-inspector-owned="camera-motion-graph"><div class="motion-graph-toolbar"><div class="motion-graph-tabs" role="group" aria-label="Motion curve channel">${Object.entries(VIEWS).map(([key,v])=>`<button type="button" data-motion-graph-channel="${key}" aria-pressed="false">${v.label}</button>`).join('')}</div><button type="button" class="icon-button" data-motion-graph-fit title="Fit curve" aria-label="Fit curve">${icon('center')}</button></div><svg class="motion-graph-plot" viewBox="0 0 260 124" role="img" aria-label="Camera motion by frame"></svg><div class="motion-graph-readout"></div></div>`;
+  return `<div class="motion-graph" data-motion-graph data-inspector-owned="camera-motion-graph"><div class="motion-graph-toolbar"><div class="motion-graph-tabs ui-segmented" data-size="sm" role="group" aria-label="Motion curve channel">${Object.entries(VIEWS).map(([key,v])=>`<button type="button" class="ui-segmented-item" data-motion-graph-channel="${key}" aria-pressed="false">${v.label}</button>`).join('')}</div><button type="button" class="ui-icon-button" data-size="sm" data-motion-graph-fit title="Fit curve" aria-label="Fit curve">${icon('center')}</button></div><svg class="motion-graph-plot" viewBox="0 0 260 124" role="img" aria-label="Camera motion by frame"></svg><div class="motion-graph-readout"></div></div>`;
 }
 
 /** The graph patches its own SVG; inspector inputs and their pointer capture stay

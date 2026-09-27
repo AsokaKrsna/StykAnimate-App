@@ -147,6 +147,8 @@ export class UserLibrary {
     const saves = this.roots.flatMap(root => [...root.querySelectorAll('[data-library-action="save"]')]);
     // Runs on every editor change (each frame while playing): write only what changed.
     for (const button of saves) setProp(button, 'disabled', this.busy || !count || !available);
+    // Properties' foot shows only when there is something to save (a figure or movieclip, in the desktop app).
+    setProp(this.propertySave, 'hidden', !count || !available);
     setText(this.container.querySelector('.library-save > [data-library-action="save"] span'), count > 1 ? `Add ${count} figures to library` : 'Add to library');
     for (const button of saves) setAttr(button, 'title', count ? `Save selection in ${this.folder || 'Library'}` : 'Select figures or a movieclip');
   }

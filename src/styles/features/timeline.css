@@ -302,6 +302,10 @@
   .sheet-layer > .sheet-layer-state:where(:hover, :focus-visible, [data-on="true"]) { color: var(--text-1); }
   /* The playhead: a 1.5px line under the keys and a white-on-blue tab inside the ruler. */
   .layer-timeline .sheet-playhead { inline-size: 1.5px; margin-inline-start: -0.75px; background: var(--sheet-playhead); }
+  /* With the audio lanes open the line breaks over the audio bar (audio-timeline.mjs writes its top and bottom). */
+  .layer-timeline:where(.audio-visible) .sheet-playhead {
+    background: linear-gradient(to bottom, var(--sheet-playhead) 0 var(--audio-toolbar-top), transparent var(--audio-toolbar-top) var(--audio-toolbar-bottom), var(--sheet-playhead) var(--audio-toolbar-bottom));
+  }
   .layer-timeline .sheet-playhead > span {
     inset-block-start: calc((var(--sheet-ruler, var(--timeline-header)) - 20px) / 2); min-inline-size: 30px; block-size: 20px;
     padding: 0 var(--space-1); border-radius: 6px; background: var(--sheet-playhead-tab); color: var(--sheet-playhead-ink);

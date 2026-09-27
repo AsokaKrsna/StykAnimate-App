@@ -25,6 +25,10 @@
     outline: none; box-shadow: inset 0 0 0 1.5px var(--accent-line), 0 0 0 3px var(--focus-halo);
   }
 
+  /* ---- The camera's motion (camera-motion-ui.mjs, camera-motion-graph.mjs) ---- */
+  /* The curve's channels on the kit's segmented control, Fit at the toolbar's end. */
+  .motion-graph-toolbar { justify-content: space-between; padding: var(--space-1-5); }
+
   /* ---- VFX ---- */
   /* The effect card: an island inside the panel with the kit's radius and hairline. */
   :where(#vfx-panel) .vfx-clip, :where(#vfx-panel) .vfx-effect-card { border-radius: var(--radius-lg); }
