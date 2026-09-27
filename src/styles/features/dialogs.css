@@ -1,5 +1,35 @@
-/* The app's own dialogs (src/app-dialogs.mjs) inside the kit's .ui-dialog. */
+/* The app's own dialogs (src/app-dialogs.mjs) inside the kit's .ui-dialog, and the older dialogs (the #dialog
+ * showLegacyDialog fills, and the module dialogs that reuse its .dialog-head and .dialog-body: Segment values,
+ * Text, Background, Sprite placement, Insert inbetweens, Movieclip) drawn like them: the kit's radius and
+ * shadow, a title in the title type, the round close button, quiet body text, sunken fields and kit buttons. */
 @layer features {
+  /* ---- The older dialogs ---- */
+  :where(dialog):not(.ui-dialog) { border: 0; border-radius: var(--radius-2xl); background: var(--surface-raised); color: var(--text-1); box-shadow: var(--elevation-4); }
+  :where(dialog) .dialog-head { gap: var(--space-3); padding: var(--space-5) var(--space-4) var(--space-3) var(--space-6); border-block-end: 0; }
+  :where(dialog) .dialog-head > h2 { margin: 0; font: var(--type-title); letter-spacing: var(--tracking-title); color: var(--text-1); }
+  :where(dialog) .dialog-head > .icon-button {
+    display: inline-grid; place-items: center; inline-size: var(--control-md); block-size: var(--control-md);
+    border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-2);
+  }
+  :where(dialog) .dialog-head > .icon-button:where(:hover) { background: var(--surface-hover); color: var(--text-1); }
+  :where(dialog) .dialog-body { padding: 0 var(--space-6) var(--space-5); font: var(--type-ui); color: var(--text-1); }
+  :where(dialog) .dialog-body p { font: var(--type-small); color: var(--text-3); }
+  :where(dialog) .dialog-actions { gap: var(--space-2); padding-block-start: var(--space-5); }
+  :where(dialog) :is(.dialog-body, .dialog-actions) .button {
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1-5);
+    block-size: var(--control-lg); padding: 0 var(--space-4); border: 0; border-radius: var(--radius-pill);
+    background: var(--surface-well); color: var(--text-1); font: var(--type-button); box-shadow: none;
+  }
+  :where(dialog) :is(.dialog-body, .dialog-actions) .button:where(:hover:not(:disabled)) { background: var(--surface-pressed); }
+  :where(dialog) :is(.dialog-body, .dialog-actions) .button.primary { background: var(--primary); color: var(--on-primary); box-shadow: var(--primary-shadow); }
+  :where(dialog) :is(.dialog-body, .dialog-actions) .button.primary:where(:hover:not(:disabled)) { background: var(--primary-hover); }
+  :where(dialog) :is(.dialog-body, .dialog-actions) .button:disabled { opacity: 0.42; }
+  :where(dialog) .dialog-body :is(input:where([type="text"], [type="number"], [type="search"], :not([type])), textarea, select) {
+    border: 0; border-radius: var(--radius-md); background-color: var(--surface-sunken); color: var(--text-1); font: var(--type-ui); box-shadow: none;
+  }
+  :where(dialog) .dialog-body :is(input, textarea, select):focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--accent-line), 0 0 0 3px var(--focus-halo); }
+  :where(dialog) .dialog-body input:where([type="checkbox"], [type="radio"]) { accent-color: var(--accent-strong); }
+
   /* A titled group inside a dialog's body. */
   .ui-dialog-section-title { margin: var(--space-4) 0 var(--space-2); color: var(--text-1); font: var(--type-ui-strong); }
 
