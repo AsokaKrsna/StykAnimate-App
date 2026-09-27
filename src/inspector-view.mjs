@@ -20,7 +20,7 @@
  */
 import {joinedDrawingSetsView} from './movieclip-drawings.mjs';
 import {spatialSections} from './spatial-controls.mjs';
-import {drawingInspector} from './drawing-view.mjs';
+import {drawingInspector, DRAWING_TOOLS} from './drawing-view.mjs';
 import {rigControlsView} from './rig-controls.mjs';
 import {figureJoinAction} from './figure-join-action.mjs';
 import {polygonSurfaceView} from './builder-surface-ui.mjs';
@@ -207,7 +207,9 @@ function drawingDescriptor(editor, drawing, number, hotkeyLabel) {
     field('Angle', 'rotation', ((o.angles[0] ?? 0) - (f.segments[0]?.angle_rad ?? 0)) * 180 / Math.PI, '°') +
     field('Opacity', 'figure_opacity', (1 - (o.field28 ?? 0) / 255) * 100, '%', 'min="0" max="100"'))}</section>` : '';
   const html = drawingInspector(drawing, {numericField, group, grid, heading, hotkeyLabel, esc, propertyToggle}, pose);
-  return {kind: 'drawing', target: {name: 'Drawing'}, sections: [{id: 'drawing', bare: true, rows: [{kind: 'markup', html}]}]};
+  // The panel's title names the tool ("Brush", "Fill"), with its glyph; drawing-view's own heading row steps aside.
+  const [, name = 'Drawing', glyph = 'brush'] = DRAWING_TOOLS.find(entry => entry[0] === drawing.tool) ?? [];
+  return {kind: 'drawing', target: {name, glyph}, sections: [{id: 'drawing', bare: true, rows: [{kind: 'markup', html}]}]};
 }
 
 function sceneDescriptor(editor, number, propertyState) {

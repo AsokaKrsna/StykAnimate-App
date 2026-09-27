@@ -202,6 +202,8 @@ The owner reviewed revision 4.3 in the app and asked for more: colours as vibran
 
 - **Menus.** Every menu is the kit's (ui/ui-menu.mjs): the timelines' menus too (timeline-menu.mjs keeps its call shape and adds `heading`, `submenu` and `swatch` rows). Menus name their groups and their target ("Walker", "Frames 3–7", the layer's name), keep families in submenus, list what removes something last, show one key per row, and check the view toggles (app.mjs TOGGLE_STATES, also the registry's `checked`). The menubar's Editor menu is labelled Joint (its data-app-menu stays `editor`).
 
+- **Draw and the panels' native controls.** Until Draw's tools move to descriptors, features/draw.css gives drawing-view's markup the kit's look: the brush bar's scrub fields (a well with an accent-soft fill up to an accent line), soft choice buttons and the tool chip in Draw's orange; the panel's sections with an orange badge and ink titles, preset tiles, switch rows and select fields, titled by the tool ("Brush"). In Draw the view toggles show glyphs only (the bar takes the start). features/panels.css restyles native selects, disclosures, catalogue headings and sliders inside the VFX, Library, camera-motion and audio surfaces.
+
 Superseded: experience.md §5.7 and visual-system.md's "ruler tools' own column" (`--ruler-tools-w`), the rail's own column in experience.md §1.2 and §3.2, the 24/10/8 vertical insets, and Build's bar (experience.md §3.4, ui-architecture.md M7a).
 
 ## Needs sign-off

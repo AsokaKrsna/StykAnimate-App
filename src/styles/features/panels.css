@@ -1,0 +1,49 @@
+/* Panels' own controls on the kit's look (experience.md revision 5), for the
+ * modules that still render native markup inside a panel or popover: the VFX
+ * panel (vfx-*.mjs), Library (asset-library.mjs), the camera's motion and the
+ * audio controls. Their ids, data hooks and events stay; only the look joins
+ * the kit, so a select, a disclosure or a group heading reads the same in
+ * every panel.
+ *
+ *   a native select      the kit's field: a quiet well, no border, a caret
+ *   a disclosure         a row whose chevron turns when it opens
+ *   a group heading      sentence case in the eyebrow type (never capitals)
+ *   a range slider       the kit's slider colours */
+@layer features {
+  /* ---- Native selects outside the kit's own .ui-select ---- */
+  :where(#vfx-panel, #library-panel, .camera-motion-panel, .audio-properties, .audio-clip-popover) select:not(:where(.ui-select *, .ui-field *)) {
+    appearance: none; min-inline-size: 0; block-size: var(--control-md); padding: 0 var(--space-6) 0 var(--space-2-5);
+    border: 0; border-radius: var(--radius-md); background-color: var(--surface-sunken); color: var(--text-1); font: var(--type-ui);
+    background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%), linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+    background-position: calc(100% - 15px) 55%, calc(100% - 11px) 55%; background-size: 4px 4px; background-repeat: no-repeat;
+    box-shadow: none; cursor: default;
+  }
+  :where(#vfx-panel, #library-panel, .camera-motion-panel, .audio-properties, .audio-clip-popover) select:not(:where(.ui-select *, .ui-field *)):where(:hover) {
+    box-shadow: inset 0 0 0 1px var(--line-3);
+  }
+  :where(#vfx-panel, #library-panel, .camera-motion-panel, .audio-properties, .audio-clip-popover) select:not(:where(.ui-select *, .ui-field *)):focus-visible {
+    outline: none; box-shadow: inset 0 0 0 1.5px var(--accent-line), 0 0 0 3px var(--focus-halo);
+  }
+
+  /* ---- VFX ---- */
+  /* The effect card: an island inside the panel with the kit's radius and hairline. */
+  :where(#vfx-panel) .vfx-clip, :where(#vfx-panel) .vfx-effect-card { border-radius: var(--radius-lg); }
+  /* More (an effect's advanced settings): a disclosure row with a chevron. */
+  :where(#vfx-panel) .vfx-advanced { border-block-start: 0; box-shadow: inset 0 1px 0 var(--line-1); }
+  :where(#vfx-panel) .vfx-advanced > summary {
+    display: flex; align-items: center; gap: var(--space-1-5); min-block-size: var(--control-sm); list-style: none;
+    font: var(--type-small-strong); color: var(--text-2); cursor: default;
+  }
+  :where(#vfx-panel) .vfx-advanced > summary::-webkit-details-marker { display: none; }
+  :where(#vfx-panel) .vfx-advanced > summary::before {
+    content: ""; inline-size: 12px; block-size: 12px; background: var(--text-3);
+    mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M6 4l4 4-4 4' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/></svg>") center / contain no-repeat;
+    transition: rotate var(--dur-fast) var(--ease-out);
+  }
+  :where(#vfx-panel) .vfx-advanced:where([open]) > summary::before { rotate: 90deg; }
+  :where(#vfx-panel) .vfx-advanced > summary:where(:hover) { color: var(--text-1); }
+  /* The effects catalogue's groups: sentence case in the eyebrow type, like every menu's group names. */
+  .vfx-catalog-results h3 { font: var(--type-eyebrow); letter-spacing: 0; text-transform: none; color: var(--text-3); }
+  /* Range sliders: the kit's colours. */
+  :where(#vfx-panel) input:where([type="range"]) { accent-color: var(--slider-fill); }
+}

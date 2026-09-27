@@ -68,6 +68,9 @@
     .ui-button.stage-toggle { --_px: 0; inline-size: var(--control-md); }
     .stage-toggle > .ui-label { display: none; }
   }
+  /* In Draw the brush bar takes the start: the view toggles show their glyphs (their tooltips keep the names). */
+  :where(.stage-head[data-workspace="draw"]) .ui-button.stage-toggle { --_px: 0; inline-size: var(--control-md); }
+  :where(.stage-head[data-workspace="draw"]) .stage-toggle > .ui-label { display: none; }
   .stage-head-cluster[hidden], .stage-head-cluster > [hidden] { display: none; }
   /* A quiet state beside zoom while it applies ("Reduced preview"): words, no chip or accent. */
   .stage-head-note { color: var(--text-3); font: var(--type-small); white-space: nowrap; }
