@@ -141,6 +141,7 @@ import { onFontsReady } from "./ui/font-loading.mjs";
 import { createOverlayManager } from "./ui/overlay-manager.mjs";
 import { installMenuBar, menuFor, openMenu } from "./ui/ui-menu.mjs";
 import { createToasts } from "./ui/ui-toast.mjs";
+import { prompt as promptText, showLegacyDialog } from "./ui/ui-dialog.mjs";
 import { buildGeometry, evaluatedFrame, shortest } from "./pivot/geometry.mjs";
 import {
   cameraIsIdentity,
@@ -3838,10 +3839,20 @@ async function exportVideo(format = "webm") {
     throw error;
   }
 }
+/**
+ * Shows `body` (trusted markup built here) in the shared #dialog under a
+ * `title` (text). The kit's compatibility instance keeps today's markup and
+ * hooks inside a form: Enter in a field runs the body's primary button, and
+ * focus starts on the first field or the primary, never on Close.
+ */
 function showDialog(title, body) {
-  $("dialog-content").innerHTML =
-    `<div class="dialog-head"><h2>${esc(title)}</h2><button class="icon-button" data-action="close-dialog" aria-label="Close dialog">${icon("close")}</button></div><div class="dialog-body">${body}</div>`;
-  if (!$("dialog").open) $("dialog").showModal();
+  showLegacyDialog(title, body, {
+    dialog: $("dialog"),
+    content: $("dialog-content"),
+    overlays,
+    icon: (name) => icon(name),
+    t: (key, params) => appLocalization?.t(key, params),
+  });
 }
 let textDialog;
 let segmentValuesDialog;
@@ -4494,17 +4505,21 @@ const actions = {
       fit();
     }
   },
-  rename: () => {
-    showDialog(
-      "Name your project",
-      `<input id="rename-input" aria-label="Project name" value="${esc(editor.name)}" maxlength="120"><div class="dialog-actions"><button class="button primary" id="rename-submit">Save name</button></div>`,
-    );
-    $("rename-submit").onclick = () => {
-      editor.name = $("rename-input").value.trim() || "Untitled";
-      editor.dirty = true;
-      updateTitle();
-      closeDialog();
-    };
+  rename: async () => {
+    const name = await promptText({
+      title: "Name your project",
+      value: editor.name,
+      confirmLabel: "Save name",
+      maxLength: 120,
+      inputId: "rename-input",
+      overlays,
+      icon: (glyph) => icon(glyph),
+      t: (key, params) => appLocalization?.t(key, params),
+    });
+    if (name === null) return;
+    editor.name = name.trim() || "Untitled";
+    editor.dirty = true;
+    updateTitle();
   },
   undo: () => {
     pause();
@@ -4990,7 +5005,9 @@ for (const id of ["timeline", "fps"]) {
 document.addEventListener(
   "click",
   guarded((e) => {
-    // The menubar opens its own menus (installMenuBar).
+    // The menubar opens its own menus (installMenuBar). Menus close themselves
+    // on a press outside them, so a click that opens one (the Properties ⋯)
+    // leaves it open.
     if (e.target.closest('[data-app-menu]')) return;
     const action = e.target.closest("[data-action]");
     if (action) {
@@ -4998,12 +5015,10 @@ document.addEventListener(
         if (state.previewing) return pause();
         if (e.ctrlKey || e.metaKey) return previewFrame();
       }
-      if (action.dataset.action !== "menu") closeMenu();
       const name = e.shiftKey ? action.dataset.shiftAction ?? action.dataset.action : action.dataset.action;
       if (name.startsWith('builder-context-')) return builderMode?.runContextCommand(name);
       return actions[name]?.(action, e);
     }
-    if (!menuHost.contains(e.target)) closeMenu();
     const tool = e.target.closest("[data-tool]");
     if (tool) setTool(tool.dataset.tool);
     const asset = e.target.closest("[data-figure]");

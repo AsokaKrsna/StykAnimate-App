@@ -356,6 +356,8 @@ export function showLegacyDialog(title, bodyHTML, {dialog, content = null, overl
   form.append(head, body);
   // The body's own buttons act on click; the form only turns Enter in a field into the primary.
   form.addEventListener('submit', event => {
+    // A form of the body's own (Reference joints) submits by itself; its event only bubbles through here.
+    if (event.target !== form) return;
     event.preventDefault();
     const primary = body.querySelector(LEGACY_PRIMARY);
     if (primary && event.submitter !== primary) primary.click();

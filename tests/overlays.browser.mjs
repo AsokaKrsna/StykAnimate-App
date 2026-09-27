@@ -419,6 +419,68 @@ try {
     assert.equal(await page.evaluate(() => styk.ui.overlays.blocksHotkeys()), false);
   });
 
+  await step('app: the Properties ⋯ button opens the selection menu; a second press closes it; Escape returns focus to it', async () => {
+    await page.click('#object-actions');
+    assert.equal(await menuOpen(), true, 'the click that opens the menu no longer closes it');
+    assert.equal(await page.locator('#object-actions').getAttribute('aria-expanded'), 'true');
+    const placed = await page.evaluate(() => ({menu: document.getElementById('menu').getBoundingClientRect().toJSON(),
+      button: document.getElementById('object-actions').getBoundingClientRect().toJSON(), width: innerWidth}));
+    assert.ok(placed.menu.top >= placed.button.bottom && placed.menu.right <= placed.width - 8 + 0.5, JSON.stringify(placed));
+    await page.click('#object-actions');
+    assert.equal(await menuOpen(), false, 'a second press closes it');
+    assert.equal(await page.locator('#object-actions').getAttribute('aria-expanded'), 'false');
+    await page.locator('#object-actions').focus();
+    await page.keyboard.press('Enter');
+    assert.equal(await menuOpen(), true);
+    assert.equal(await focusedLabel(), 'Duplicate', 'the keyboard lands on the first row');
+    await page.keyboard.press('Escape');
+    assert.deepEqual(await page.evaluate(() => [document.getElementById('menu').hidden, document.activeElement.id]), [true, 'object-actions']);
+    const selected = () => page.evaluate(() => styk.editor.selectedUid);
+    const before = await selected();
+    await page.click('#object-actions');
+    await page.click('#menu [data-action=duplicate]');
+    const copy = await selected();
+    assert.ok(copy !== null && copy !== before, 'its rows run their commands: the duplicate is selected');
+    await page.locator('#viewport').focus();
+    await page.keyboard.press('Control+z');
+    await page.waitForFunction(uid => !styk.editor.geometry.objects.has(uid) || styk.editor.selectedUid !== uid, copy, {timeout: 5000});
+  });
+
+  await step('app: the project name dialog starts in its field, Enter saves the name and Escape cancels', async () => {
+    await page.click('.titlebar [data-action=rename]');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'rename-input', 'focus starts in the field, not on Close');
+    await page.keyboard.type('Kick combo');   // the name is selected, so typing replaces it
+    await page.keyboard.press('Enter');
+    await settle();
+    assert.deepEqual(await page.evaluate(() => [styk.editor.name, document.getElementById('project-name').textContent,
+      document.querySelectorAll('dialog[open]').length, document.activeElement.dataset.action ?? null]), ['Kick combo', 'Kick combo', 0, 'rename']);
+    await page.click('.titlebar [data-action=rename]');
+    await page.keyboard.type('Something else');
+    await page.keyboard.press('Escape');
+    await settle();
+    assert.deepEqual(await page.evaluate(() => [styk.editor.name, document.querySelectorAll('dialog[open]').length]), ['Kick combo', 0]);
+  });
+
+  await step('app: "Save your changes?" starts on Save project, without a ring after a pointer and with one after a key; Escape keeps editing', async () => {
+    await page.evaluate(() => { styk.editor.dirty = true; });
+    const focus = () => page.evaluate(() => [document.activeElement.id, document.activeElement.matches(':focus-visible')]);
+    await page.click('[data-app-menu=file]');
+    await page.click('#menu [data-action=new]');
+    await page.locator('#save-changes').waitFor();
+    assert.deepEqual(await focus(), ['save-changes', false], 'opened by a pointer: focused without the ring');
+    await page.keyboard.press('Escape');
+    await settle();
+    assert.deepEqual(await page.evaluate(() => [document.querySelectorAll('dialog[open]').length, styk.editor.dirty, styk.editor.name]), [0, true, 'Kick combo']);
+    await page.locator('#viewport').focus();
+    await page.keyboard.press('Control+n');
+    await page.locator('#save-changes').waitFor();
+    assert.deepEqual(await focus(), ['save-changes', true], 'opened from the keyboard: the ring shows');
+    await page.keyboard.press('Escape');
+    await settle();
+    assert.deepEqual(await page.evaluate(() => [document.querySelectorAll('dialog[open]').length, styk.editor.name, styk.ui.overlays.blocksHotkeys()]),
+      [0, 'Kick combo', false]);
+  });
+
   assert.deepEqual(errors, [], 'no page errors');
   console.log('overlays browser test passed');
 } finally {
