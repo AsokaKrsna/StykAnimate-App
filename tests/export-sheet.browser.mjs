@@ -264,6 +264,38 @@ try {
     await exportDialogClosed(page);
   });
 
+  await step('with installed Windows codecs, Windows AVI stays chosen, shows its codec rows, and typing is never undone', async () => {
+    // A stand-in for the Windows app's codec check: its controls follow every input event in the dialog.
+    const windows = await browser.newPage({viewport: {width: 1440, height: 900}});
+    windows.on('pageerror', error => errors.push(error.message));
+    await windows.addInitScript(() => {
+      window.stykDesktop = {getVfwCapabilities: async () => ({platform: 'win32', codecs: [{id: 'vfw:x86:63766964', label: 'Cinepak', fourcc: 'cvid',
+        provider: 'Radius', arch: 'x86', kind: 'installed', supported: true, quality: true, keyframes: true, dataRate: true, configure: true}]})};
+    });
+    await windows.goto(base);
+    await windows.waitForFunction(() => window.styk?.ready, null, {timeout: 60000});
+    await windows.locator('.titlebar [data-action="export"]').click();
+    await windows.locator('#export-dialog[open]').waitFor();
+    await chooseExport(windows, 'export-vfw');
+    assert.equal(await windows.locator('#output-format').inputValue(), 'export-vfw');
+    await openEncoding(windows);
+    await windows.waitForFunction(() => !document.querySelector('#export-vfw-codec')?.disabled);
+    assert.ok(await windows.locator('#export-vfw-configure').isEnabled());
+    assert.match(await windows.locator('.export-encoding-summary').textContent(), /^Cinepak/);
+    assert.deepEqual([await windows.locator('#export-submit').textContent(), await windows.locator('#export-submit').isEnabled()], ['Export AVI', true]);
+    await windows.locator('#export-vfw-quality').fill('75');
+    assert.equal(await windows.locator('#output-format').inputValue(), 'export-vfw');
+    await chooseExport(windows, 'export-video');
+    await windows.locator('#export-bitrate-mode').selectOption('manual');
+    await windows.locator('#export-video-bitrate').fill('');
+    await windows.locator('#export-video-bitrate').pressSequentially('0.25');
+    assert.equal(await windows.locator('#export-video-bitrate').inputValue(), '0.25');
+    await windows.locator('#export-resolution').selectOption('custom');
+    await windows.locator('#export-aspect').uncheck();
+    assert.equal(await windows.locator('#export-aspect').isChecked(), false);
+    await windows.close();
+  });
+
   assert.deepEqual(errors, []);
   console.log('export sheet browser test passed');
 } finally {

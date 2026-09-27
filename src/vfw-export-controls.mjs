@@ -48,12 +48,14 @@ export class VfwExportControls {
     if (key === this.requestedKey) { this._selection(); return; }
     this._setReady(false, 'Checking installed Windows codecs…'); this.configureButton.disabled = true; this.timer = setTimeout(() => this.refresh(), 150);
   }
-  _setReady(ready, reason = this.reason) {
-    this.ready = ready; this.reason = ready ? '' : reason;
+  _setReady(ready, reason) {
+    const next = ready ? '' : reason, changed = ready !== this.ready || next !== this.reason || this.select?.value !== this.notifiedCodec;
+    this.ready = ready; this.reason = next; this.notifiedCodec = this.select?.value;
     if (this.button) this.button.disabled = !ready || !this.canExport();
-    this.onChangeCallback();
+    // Only a change in what an export needs (ready, why not, the codec) is news; typing in a field is not.
+    if (changed) this.onChangeCallback();
   }
-  _setStatus(text) { this.status.textContent = text; this.reason = text; }
+  _setStatus(text) { this.status.textContent = text; }
   _size() {
     const size = this.getDimensions();
     if (!Number.isInteger(size.width) || !Number.isInteger(size.height) || size.width < 1 || size.height < 1 || size.width > 16384 || size.height > 16384 || size.width * size.height > EXPORT_MAX_PIXELS) throw new Error(`Choose valid video dimensions up to ${Math.round(EXPORT_MAX_PIXELS / 1e6)} million pixels.`);
@@ -64,7 +66,7 @@ export class VfwExportControls {
   async refresh() {
     if (this.disposed || this.element.hidden) return;
     clearTimeout(this.timer); const generation = ++this.generation; let size;
-    this.select.disabled = true; this.configureButton.disabled = true; this._setStatus('Checking installed Windows codecs…'); this._setReady(false);
+    this.select.disabled = true; this.configureButton.disabled = true; this._setStatus('Checking installed Windows codecs…'); this._setReady(false, 'Checking installed Windows codecs…');
     try {
       size = this._size(); this.requestedKey = `${size.width}:${size.height}`;
       const key = this.requestedKey, previous = this.select.value, result = await getVfwCapabilities(size);
@@ -73,9 +75,9 @@ export class VfwExportControls {
       this.loadedKey = key; this.codecs = result.codecs ?? []; this.select.replaceChildren();
       for (const codec of this.codecs) { const option = document.createElement('option'); option.value = codec.id; option.textContent = codec.label; option.disabled = !codec.supported; option.title = codec.reason || `${codec.fourcc} · ${codec.provider}`; this.select.append(option); }
       const selected = this.codecs.find(codec => codec.id === previous && codec.supported) ?? this.codecs.find(codec => codec.supported && codec.kind === 'installed') ?? this.codecs.find(codec => codec.supported);
-      if (!selected) { const option = document.createElement('option'); option.value = ''; option.textContent = 'No compatible codec'; this.select.append(option); this.select.value = ''; this._setStatus(result.reason || 'No installed codec accepts this canvas size.'); this._setReady(false); return; }
+      if (!selected) { const option = document.createElement('option'); option.value = ''; option.textContent = 'No compatible codec'; this.select.append(option); this.select.value = ''; const reason = result.reason || 'No installed codec accepts this canvas size.'; this._setStatus(reason); this._setReady(false, reason); return; }
       this.select.value = selected.id; this.select.disabled = false; this._selection();
-    } catch (error) { if (!this.disposed && generation === this.generation) { this.loadedKey = null; this._setStatus(error.message); this._setReady(false); } }
+    } catch (error) { if (!this.disposed && generation === this.generation) { this.loadedKey = null; this._setStatus(error.message); this._setReady(false, error.message); } }
   }
   _selection() {
     if (this.disposed) return; const codec = this.codecs.find(codec => codec.id === this.select.value), ready = Boolean(codec?.supported && this.loadedKey === this._currentKey());

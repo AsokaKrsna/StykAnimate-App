@@ -32,6 +32,12 @@ try {
     null,
     { timeout: 30000 },
   );
+  await page.evaluate(() => {
+    // Dismiss first-run overlays in this isolated test profile.
+    const dismiss = () => document.querySelectorAll("dialog.release-splash[open], dialog.styk-privacy[open]").forEach((dialog) => dialog.close());
+    dismiss();
+    new MutationObserver(dismiss).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["open"] });
+  });
   for (const [width, height] of [
     [1280, 800],
     [1100, 740],

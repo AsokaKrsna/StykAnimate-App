@@ -299,7 +299,11 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
 
   // ---- Rendering: every row from the request.
   const show = (node, visible) => { if (node.hidden === visible) node.hidden = !visible; };
-  const setValue = (input, value, source) => { const text = value === null || value === undefined || Number.isNaN(value) ? '' : String(value); if (input !== source && input.value !== text) input.value = text; };
+  // A field being typed in keeps what was typed ("0." on the way to "0.25"); only the fields it derives are written.
+  const setValue = (input, value, source) => {
+    const text = value === null || value === undefined || Number.isNaN(value) ? '' : String(value);
+    if (input !== source && input !== document.activeElement && input.value !== text) input.value = text;
+  };
   const setChecked = (items, checked) => { for (const item of items) item.setAttribute('aria-checked', String(checked(item))); };
   const fieldInputs = {name, width: widthField.input, height: heightField.input, from: fromField.input, to: toField.input, jpegQuality: jpeg, bitrateMbps: bitrate};
 
@@ -391,7 +395,8 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
     }
   }
   function renderEncoding(visible, source) {
-    show(encoding, visible.encoding);
+    // Encoding holds the video codecs and bitrate, and the installed Windows codecs (the Windows AVI type).
+    show(encoding, visible.encoding || (visible.vfw && Boolean(vfw?.listed)));
     encodingToggle.setAttribute('aria-expanded', String(encodingOpen));
     encoding.toggleAttribute('data-open', encodingOpen);
     show(encodingBody, encodingOpen);
@@ -511,7 +516,8 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
     preview?.dispose();
   }
 
-  // ---- Edits.
+  // ---- Edits. Every control edits on `input`, which comes before `change`: a render the same input causes further up
+  // (the Windows codec controls follow the dialog's input events) must not reset a select or a switch before it is read.
   categories.addEventListener('click', event => {
     const item = event.target.closest('[data-category]');
     if (!item || item.dataset.category === request.category) return;
@@ -528,22 +534,22 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
     edit({format: item.dataset.format});
   }
   projectList.addEventListener('click', event => chooseProject(event.target.closest('.export-type')));
-  type.node.addEventListener('change', () => edit({format: formatForAction(type.node.value)}));
-  size.node.addEventListener('change', () => edit({sizePreset: size.node.value}));
+  type.node.addEventListener('input', () => edit({format: formatForAction(type.node.value)}));
+  size.node.addEventListener('input', () => edit({sizePreset: size.node.value}));
   for (const [key, input] of [['width', widthField.input], ['height', heightField.input]]) input.addEventListener('input', () => edit({[key]: input.value}, input));
-  lock.addEventListener('change', () => edit({lockRatio: lock.checked}));
+  lock.addEventListener('input', () => edit({lockRatio: lock.checked}));
   for (const [key, input] of [['from', fromField.input], ['to', toField.input]]) input.addEventListener('input', () => edit({[key]: input.value}, input));
   allFrames.addEventListener('click', () => edit(entireAnimationPatch(totalFrames)));
   quality.addEventListener('click', event => { const item = event.target.closest('[data-value]'); if (item) edit({videoQuality: item.dataset.value}); });
   installRovingFocus(quality, {items: '[data-value]', onMove: item => edit({videoQuality: item.dataset.value})});
   jpeg.addEventListener('input', () => edit({jpegQuality: jpeg.value}, jpeg));
-  dither.input.addEventListener('change', () => edit({dither: dither.input.checked}));
-  sound.input.addEventListener('change', () => edit({audio: sound.input.checked}));
-  smoothing.node.addEventListener('change', () => edit({smoothing: smoothing.node.value}));
+  dither.input.addEventListener('input', () => edit({dither: dither.input.checked}));
+  sound.input.addEventListener('input', () => edit({audio: sound.input.checked}));
+  smoothing.node.addEventListener('input', () => edit({smoothing: smoothing.node.value}));
   name.addEventListener('input', () => { nameEdited = true; edit({name: name.value}, name); });
-  mp4Codec.node.addEventListener('change', () => { edit({codecs: {mp4: mp4Codec.node.value}}); scheduleProbe(0); });
-  aviCodec.node.addEventListener('change', () => { edit({codecs: {avi: aviCodec.node.value}}); scheduleProbe(0); });
-  bitrateMode.node.addEventListener('change', () => edit({bitrateMode: bitrateMode.node.value}));
+  mp4Codec.node.addEventListener('input', () => { edit({codecs: {mp4: mp4Codec.node.value}}); scheduleProbe(0); });
+  aviCodec.node.addEventListener('input', () => { edit({codecs: {avi: aviCodec.node.value}}); scheduleProbe(0); });
+  bitrateMode.node.addEventListener('input', () => edit({bitrateMode: bitrateMode.node.value}));
   bitrate.addEventListener('input', () => edit({bitrateMbps: bitrate.value}, bitrate));
   encodingToggle.addEventListener('click', () => {
     encodingOpen = !encodingOpen;
