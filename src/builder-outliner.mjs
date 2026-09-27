@@ -71,9 +71,9 @@ export class FigureOutliner {
       </div>
       <div class="builder-tree" role="tree" aria-multiselectable="true" aria-label="Figure hierarchy" tabindex="0"><div class="builder-tree-spacer"></div><div class="builder-drop" hidden></div><div class="builder-outliner-empty" hidden></div></div>
       <div class="builder-footer">
-        <button id="builder-snap" aria-pressed="true" aria-label="Smart snapping" title="Smart snapping · Alt to bypass">${icon('builder-snap')}</button>
-        <button id="builder-timeline-toggle" aria-expanded="false" aria-controls="animation-timeline" title="Show animation timeline">${icon('frame')}<span>Timeline</span></button>
-        <button data-action="zoom-selection" title="Fit figure · Shift 2" aria-label="Fit figure">${icon('center')}</button>
+        <button id="builder-snap" aria-pressed="true" aria-label="Smart snapping" title="Smart snapping · Alt to bypass" data-strip-action="3">${icon('builder-snap')}</button>
+        <button id="builder-timeline-toggle" aria-expanded="false" aria-controls="animation-timeline" title="Show animation timeline" data-strip-action="2">${icon('frame')}<span>Timeline</span></button>
+        <button data-action="zoom-selection" title="Fit figure · Shift 2" aria-label="Fit figure" data-strip-action="1">${icon('center')}</button>
       </div>
       `;
     this.tree = container.querySelector('.builder-tree');

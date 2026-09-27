@@ -320,7 +320,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
   }
 
   function syncStrip(strip, ids) {
-    const buttons = ids.map(id => {
+    const buttons = ids.flatMap(id => {
       let button = strip.querySelector(`:scope > [data-panel="${id}"]`);
       if (!button) {
         button = doc.createElement('button');
@@ -332,10 +332,47 @@ export function createDockHost({document: doc = globalThis.document, window: win
       }
       button.setAttribute('aria-label', title(id));
       button.dataset.tip = title(id);
-      return button;
+      return [button, ...stripActions(id)];
     });
     order(strip, buttons);
     for (const button of [...strip.children]) if (!buttons.includes(button)) button.remove();
+  }
+
+  // A folded panel's own one-click actions ([data-strip-action="order"] in its root: Structure's Fit figure,
+  // Timeline and Snapping) stay one click away as strip buttons under its icon. Each one clicks its source,
+  // so the source's handlers stay the one path, and mirrors the source's name, glyph and state.
+  const stripMirrors = new Map();
+  const MIRRORED = ['aria-pressed', 'aria-expanded', 'aria-controls', 'disabled'];
+  function stripActions(id) {
+    const sources = [...(rootOf(id)?.querySelectorAll('[data-strip-action]') ?? [])]
+      .sort((a, b) => Number(a.dataset.stripAction) - Number(b.dataset.stripAction));
+    return sources.map(source => {
+      let mirror = stripMirrors.get(source);
+      if (!mirror) {
+        mirror = doc.createElement('button');
+        mirror.type = 'button';
+        mirror.className = 'ui-icon-button shell-strip-action';
+        mirror.dataset.stripFor = id;
+        mirror.addEventListener('click', () => source.click(), {signal});
+        const copy = () => {
+          const name = source.getAttribute('aria-label') || source.textContent.trim();
+          mirror.setAttribute('aria-label', name);
+          mirror.dataset.tooltip = name;
+          for (const attribute of MIRRORED) {
+            if (source.hasAttribute(attribute)) mirror.setAttribute(attribute, source.getAttribute(attribute));
+            else mirror.removeAttribute(attribute);
+          }
+          const glyph = source.querySelector('svg')?.outerHTML ?? '';
+          if (mirror.innerHTML !== glyph) mirror.innerHTML = glyph;
+        };
+        copy();
+        const watch = new win.MutationObserver(copy);
+        watch.observe(source, {attributes: true, attributeFilter: [...MIRRORED, 'aria-label'], childList: true});
+        signal.addEventListener('abort', () => watch.disconnect(), {once: true});
+        stripMirrors.set(source, mirror);
+      }
+      return mirror;
+    });
   }
 
   /** Puts `nodes` into `parent` in order from `start`, moving only what is out of place. */
@@ -468,9 +505,16 @@ export function createDockHost({document: doc = globalThis.document, window: win
     const area = workspace.getBoundingClientRect();
     const rail = solution?.rail.width ?? SHELL_METRICS.rail.width;
     const strip = side === 'left' && solution?.regions.left.strip ? solution.regions.left.strip : 0;
+    // Down to the stage island's bottom (the timeline's header stays in view), or the workspace's when the stage spans it.
+    const floor = Math.min(area.bottom - 8, stage.getBoundingClientRect().bottom);
     sheet.style.setProperty('--sheet-top', px(area.top));
     sheet.style.setProperty('--sheet-start', px((solution?.rail.side === 'left' ? rail : 0) + strip + SHELL_METRICS.width.wide.columnGap));
-    sheet.style.setProperty('--sheet-max-block', px(Math.max(120, area.bottom - area.top - 8)));
+    // Inline: the sheet component's own cap (the window) would beat the layout layer's. The right sheet
+    // (Properties at compact width) is as tall as its content; a strip's sheet keeps that whole height for
+    // its lists (Structure's tree is virtual, so it has no content height of its own).
+    const cap = px(Math.max(120, floor - area.top));
+    sheet.style.setProperty('max-block-size', cap);
+    if (side === 'left') sheet.style.setProperty('block-size', cap); else sheet.style.removeProperty('block-size');
   }
 
   function openSheet(side, id, {invoker = doc.activeElement, focus = true} = {}) {

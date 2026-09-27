@@ -526,6 +526,19 @@ try {
     await page.mouse.click(before.x + 40, before.y + 40);
     await settle();
     assert.equal(await page.locator('#right-sheet').evaluate(sheet => sheet.matches(':popover-open')), false, 'a press outside closes it');
+    // The sheet ends above the timeline's header, so Play, Add frame and Onion stay in reach while it is open.
+    await page.evaluate(() => styk.editor.select([...styk.editor.geometry.objects.keys()][0]));
+    for (const [width, height] of [[800, 600], [500, 340]]) {
+      await resize(width, height);
+      await button.click();
+      await settle();
+      const sheet = await rect('#right-sheet'), header = await rect('.timeline-toolbar');
+      assert.ok(sheet.y + sheet.height <= header.y, `${width}x${height}: the sheet (${JSON.stringify(sheet)}) ends above the timeline header (${header.y})`);
+      for (const selector of ['#play-button', '#onion-button']) assert.equal(await reachable(selector), true, `${width}x${height}`);
+      assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.properties-library-save')).position), 'static', 'the foot is not pinned in the sheet');
+      await page.keyboard.press('Escape');
+      await settle();
+    }
     await resize(1440, 900);
     assert.equal(await page.locator('#properties-panel').isVisible(), true, 'docked again from 801px, on its stored tab');
     assert.equal(await page.locator('.shell-sheet-button').isVisible(), false);
@@ -544,8 +557,28 @@ try {
     await page.keyboard.press('ArrowRight');
     assert.equal(await page.evaluate(() => styk.workspace.sizes.left), 244);
     await page.keyboard.press('Home');
+    const head = await rect('.shell-stage > .canvas-toolbar'), structure = await rect('.builder-outliner-head');
+    assert.ok(Math.abs(head.y - structure.y) <= 1 && Math.abs(head.y + head.height - structure.y - structure.height) <= 1,
+      `Structure's head shares the stage's 40px header line: ${JSON.stringify({head, structure})}`);
     await resize(800, 600);
     assert.equal(await page.evaluate(() => document.documentElement.dataset.left), 'strip');
+    // Structure's own actions stay one click away on the strip, under its icon.
+    const actions = await page.evaluate(() => [...document.querySelectorAll('.shell-left .shell-strip > .shell-strip-action')].map(button => button.getAttribute('aria-label')));
+    assert.deepEqual(actions, ['Fit figure', 'Timeline', 'Smart snapping']);
+    for (const name of actions) assert.equal(await reachable(`.shell-left .shell-strip-action[aria-label="${name}"]`), true, name);
+    const timelineAction = page.locator('.shell-left .shell-strip-action[aria-label="Timeline"]');
+    await timelineAction.click();
+    await settle();
+    assert.deepEqual([await page.locator('.timeline-panel').isVisible(), await timelineAction.getAttribute('aria-expanded')], [true, 'true'], 'the strip’s Timeline shows the timeline');
+    await timelineAction.click();
+    await settle();
+    assert.deepEqual([await page.locator('.timeline-panel').isVisible(), await timelineAction.getAttribute('aria-expanded')], [false, 'false']);
+    const snapping = page.locator('.shell-left .shell-strip-action[aria-label="Smart snapping"]');
+    const snapped = await page.locator('#builder-snap').getAttribute('aria-pressed');
+    await snapping.click();
+    assert.notEqual(await page.locator('#builder-snap').getAttribute('aria-pressed'), snapped, 'Snapping toggles from the strip');
+    assert.equal(await snapping.getAttribute('aria-pressed'), await page.locator('#builder-snap').getAttribute('aria-pressed'));
+    await snapping.click();
     const strip = page.locator('.shell-left .shell-strip-button');
     await strip.click();
     await settle();

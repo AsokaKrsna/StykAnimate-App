@@ -35,12 +35,21 @@
   .shell-left[data-strip] > :where(.shell-island:not(.shell-sheet)) { margin-inline-start: calc(40px + var(--shell-gap, var(--gutter))); }
   .shell-right[data-strip] > :where(.shell-island:not(.shell-sheet)) { margin-inline-end: calc(40px + var(--shell-gap, var(--gutter))); }
 
-  /* Sheets: raised islands over the stage, placed by the dock host. */
+  /* Sheets: raised islands over the stage, placed by the dock host: as tall as
+   * their content, down to the stage island's bottom at most (the dock host
+   * writes that cap inline), so the timeline's header (Play, Add frame, Onion)
+   * stays in view. */
   .shell-sheet:where([popover]) {
     inset: var(--sheet-top, var(--topbar-h)) var(--space-2) auto auto;
-    block-size: var(--sheet-max-block, calc(100dvh - var(--topbar-h) - 16px));
-    max-block-size: var(--sheet-max-block, calc(100dvh - var(--topbar-h) - 16px)); overflow: hidden;
+    block-size: auto; overflow: hidden;
   }
+  /* In a sheet, Properties scrolls as one column: its "Add to library" foot follows the content instead of
+   * holding the sheet's last rows. */
+  .shell-sheet :where(#properties-panel) { overflow-y: auto; }
+  .shell-sheet > .shell-panel > :where(#inspector) { flex: none; overflow: visible; }
+
+  /* Structure's head is an island head: one 40px line with the stage's and the inspector's heads. */
+  .shell-island .builder-outliner-head { block-size: var(--control-2xl); min-block-size: var(--control-2xl); box-sizing: border-box; }
   .shell-sheet[data-side="left"]:where([popover]) { inset: var(--sheet-top, var(--topbar-h)) auto auto var(--sheet-start, calc(var(--rail-w) + 8px)); }
 
   /* Floating islands: inside the stage island, over #viewport; the transform is on the island only. */
