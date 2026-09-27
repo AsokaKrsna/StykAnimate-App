@@ -70,7 +70,7 @@ try {
   await page.locator('#inspector [data-action="join-figure"]').click();
   check('Inspector connection button starts the shared action', await page.evaluate(() => styk.state.tool === 'attach'));
   await click(101, 3);
-  check('Inspector button changes to Unjoin', /Unjoin/.test(await page.locator('#inspector [data-action="join-figure"]').getAttribute('title')));
+  check('Inspector button changes to Unjoin', /Unjoin/.test(await page.locator('#inspector [data-action="join-figure"]').getAttribute('data-hotkey-title')));
   await page.screenshot({path: path.join(out, 'inspector-connection.png')});
   await page.locator('#inspector [data-action="join-figure"]').click();
   check('Inspector button unjoins the same figure', !(await joined()));

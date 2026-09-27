@@ -40,11 +40,16 @@ function translateElement(element, localization) {
   for (const [attribute, binding] of Object.entries(ATTRIBUTES)) {
     const key = element.getAttribute(binding);
     if (key) {
-      let text = localization.t(key);
+      const text = localization.t(key);
       if (attribute === 'title' && element.dataset.hotkeyHint !== undefined) {
-        const base = text.replace(/\s*·.*$/, '');
+        // A shortcut control (hotkey-hints.mjs): the tooltip shows this name and
+        // the shortcut, so no native title. A name derived from it follows it.
+        const base = text.replace(/\s*·.*$/, ''), previous = element.dataset.hotkeyTitle;
         element.dataset.hotkeyTitle = base;
-        text = base + (element.dataset.hotkeyHint ? ` · ${element.dataset.hotkeyHint}` : '');
+        element.removeAttribute('title');
+        if (!element.hasAttribute('data-i18n-aria-label') && previous !== undefined && element.getAttribute('aria-label') === previous)
+          element.setAttribute('aria-label', base);
+        continue;
       }
       if (element.getAttribute(attribute) !== text) element.setAttribute(attribute, text);
     }

@@ -481,6 +481,54 @@ try {
       [0, 'Kick combo', false]);
   });
 
+  await step('app: a tooltip names the control and shows its shortcut from the registry, with no native title beside it', async () => {
+    const tip = () => page.evaluate(() => {
+      const element = document.getElementById('ui-tooltip');
+      return element.matches(':popover-open') ? element.textContent : null;
+    });
+    const undo = page.locator('[data-action=undo]:visible').first();
+    assert.deepEqual(await undo.evaluate(button => [button.getAttribute('title'), button.dataset.hotkeyTitle, button.dataset.hotkeyHint,
+      button.getAttribute('aria-keyshortcuts')]), [null, 'Undo', 'Ctrl+Z', 'Control+Z']);
+    assert.ok(await page.getByRole('button', {name: 'Undo', exact: true}).count() >= 1, 'the accessible name has no shortcut');
+    await undo.hover();
+    await page.waitForFunction(() => document.getElementById('ui-tooltip').matches(':popover-open'));
+    assert.equal(await tip(), 'Undo·Ctrl+Z');
+    assert.equal(await undo.getAttribute('aria-describedby'), 'ui-tooltip');
+    // A control that took its name from its old title keeps that name, without the shortcut.
+    assert.equal(await page.locator('[data-action=previous-frame]:visible').first().getAttribute('aria-label'), 'Previous frame');
+    await page.mouse.move(700, 450);
+    await settle(100);
+    assert.equal(await tip(), null, 'it hides when the pointer leaves');
+
+    // A rebinding shows at once; the tooltip reads the user's bindings, not text.
+    await page.evaluate(() => styk.settingsUI.commit({hotkeys: {...styk.hotkeys.bindings, undo: ['Mod+KeyU']}}));
+    assert.equal(await undo.getAttribute('data-hotkey-hint'), 'Ctrl+U');
+    await page.evaluate(() => styk.ui.tooltips.show(document.querySelector('[data-action=undo]')));
+    assert.equal(await tip(), 'Undo·Ctrl+U');
+    await page.evaluate(() => { styk.ui.tooltips.hide(); styk.settingsUI.commit({hotkeys: undefined}); });
+    assert.equal(await undo.getAttribute('data-hotkey-hint'), 'Ctrl+Z');
+
+    // A workspace that claims a key takes it off the general command: M flips the view in Draw.
+    await page.evaluate(() => styk.ui.tooltips.show(document.getElementById('paths-button')));
+    assert.equal(await tip(), 'Motion paths·M');
+    await page.click('[data-workspace-mode=draw]');
+    await page.waitForFunction(() => document.querySelector('.workspace').dataset.mode === 'draw');
+    await page.evaluate(() => styk.ui.tooltips.show(document.getElementById('paths-button')));
+    assert.equal(await tip(), 'Motion paths');
+    await page.evaluate(() => styk.ui.tooltips.show(document.querySelector('[data-tool=drawing-brush]')));
+    assert.equal(await tip(), 'Brush·B', 'drawing tools show their shortcut from the bindings, not from their markup');
+    await page.evaluate(() => styk.ui.tooltips.hide());
+    await page.click('[data-workspace-mode=animate]');
+    await page.waitForFunction(() => document.querySelector('.workspace').dataset.mode === 'animate');
+
+    // Markup that still carries a native title keeps it, and gets no second tooltip.
+    assert.equal(await page.evaluate(() => {
+      const legacy = document.querySelector('[data-action=scene-settings][title]');
+      styk.ui.tooltips.show(legacy);
+      return [legacy.title, document.getElementById('ui-tooltip').matches(':popover-open')].join('|');
+    }), 'Scene properties|false');
+  });
+
   assert.deepEqual(errors, [], 'no page errors');
   console.log('overlays browser test passed');
 } finally {

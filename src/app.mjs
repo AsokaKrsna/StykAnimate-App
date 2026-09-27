@@ -121,7 +121,7 @@ import {
 } from "./camera-overlay.mjs";
 import { EditorSettings, normalizeEditorSettings } from "./settings.mjs";
 import { HotkeyManager, HOTKEY_BY_ID, isHotkeyInput } from "./hotkeys.mjs";
-import { refreshHotkeyHints } from "./hotkey-hints.mjs";
+import { hotkeyCommandId, refreshHotkeyHints } from "./hotkey-hints.mjs";
 import { runTimelineHotkey } from "./timeline-hotkeys.mjs";
 import { AppLocalization, menuLabelKey } from "./localization-bindings.mjs";
 import { layerIdForUid, layerVisible, layerLocked } from "./layers.mjs";
@@ -142,6 +142,9 @@ import { createOverlayManager } from "./ui/overlay-manager.mjs";
 import { installMenuBar, menuFor, openMenu } from "./ui/ui-menu.mjs";
 import { createToasts } from "./ui/ui-toast.mjs";
 import { prompt as promptText, showLegacyDialog } from "./ui/ui-dialog.mjs";
+import { createCommandRegistry } from "./ui/command-registry.mjs";
+import { installTooltips } from "./ui/ui-tooltip.mjs";
+import { withShiftHint } from "./ui/quick-actions.mjs";
 import { buildGeometry, evaluatedFrame, shortest } from "./pivot/geometry.mjs";
 import {
   cameraIsIdentity,
@@ -5609,6 +5612,27 @@ function releaseKeyboardCommand(id, event) {
 }
 const hotkeys = new HotkeyManager({run: guarded(runKeyboardCommand), release: guarded(releaseKeyboardCommand)});
 overlays.hotkeys = hotkeys;
+/** What the command registry reads about the editor: the workspace, which decides the scoped shortcuts. */
+function commandContext() {
+  return { mode: drawingController?.active ? "draw" : builderMode?.active ? "rig" : "animate" };
+}
+// One view of every command (src/ui/command-registry.mjs): labels, glyphs and
+// the user's shortcuts as they resolve in the current workspace.
+const commands = createCommandRegistry({
+  actions,
+  hotkeys,
+  localization: { t: (key, params) => appLocalization?.t(key, params) },
+  context: commandContext,
+});
+// The one tooltip: the control's name and, after a middle dot, its shortcut
+// from the registry (so a rebinding or a workspace that claims the key shows).
+const tooltips = installTooltips(document, {
+  topInset: menuTopInset,
+  shortcut: (element) => {
+    const id = hotkeyCommandId(element, hotkeys);
+    return withShiftHint(element, id ? commands.shortcut(id) : undefined);
+  },
+});
 // Tablet navigation chords (Ctrl+Space zoom, Shift+Space rotate) are not
 // hotkeys: track the Space key itself so a pen press can read it.
 // It runs before any open menu or dialog sees the key, so it asks the overlay gate itself.
@@ -6004,8 +6028,9 @@ window.styk = {
   acceptImport,
   fit,
   drawingResourcesFor,
-  // The overlay kit: the open overlays and the hotkey gate, and the message slot.
-  ui: { overlays, toasts },
+  // The overlay kit: the open overlays and the hotkey gate, the message slot,
+  // the command registry and the tooltip.
+  ui: { overlays, toasts, commands, tooltips, context: commandContext },
   performance: () => ({
     editingPresentation:state.lastEditingPresentation,
     editablePreparation:{pending:editablePreparation.pending,...editablePreparation.stats},

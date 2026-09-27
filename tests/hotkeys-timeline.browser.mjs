@@ -46,7 +46,7 @@ try {
   await page.keyboard.press('b');
   const rebound = await snapshot();
   check('New binding dispatches from focused timeline', rebound.keys.includes(1) && rebound.keys.length === original.keys.length + 1);
-  check('Timeline tooltip reflects custom binding',(await page.locator('.sheet-frame-tools [data-hotkey-command="add-frame"]').getAttribute('title')).endsWith('B'));
+  check('Timeline tooltip reflects custom binding',await page.locator('.sheet-frame-tools [data-hotkey-command="add-frame"]').evaluate(button=>button.dataset.hotkeyHint==='B'&&button.getAttribute('aria-keyshortcuts')==='B'&&!button.hasAttribute('title')));
   await page.locator('[data-app-menu="animation"]').click();
   check('Application menu reflects custom binding',await page.locator('#menu [data-action="add-frame"] kbd').textContent()==='B');
   await page.keyboard.press('Escape');
@@ -79,7 +79,7 @@ try {
   await page.evaluate(()=>styk.settingsUI.flush());
   await page.reload(); await page.waitForFunction(()=>styk?.ready);
   check('Bindings survive reload',await page.evaluate(()=>styk.hotkeys.label('add-frame')==='B / Ctrl+Alt+Q'&&styk.hotkeys.label('handle-edit-hold')==='Q'&&styk.hotkeys.label('play-pan')==='F4'));
-  check('Playback hint reflects remapped held shortcut',(await page.locator('#play-button').getAttribute('title')).includes('F4'));
+  check('Playback hint reflects remapped held shortcut',(await page.locator('#play-button').getAttribute('data-hotkey-hint')).includes('F4'));
   await page.evaluate(()=>document.querySelector('#overlay').focus());
   await page.keyboard.down('q');check('Remapped held handle editing activates',await page.evaluate(()=>styk.state.handleEditHeld));
   await openSettings();await page.keyboard.up('q');check('Opening a modal releases held keys',await page.evaluate(()=>!styk.state.handleEditHeld&&!styk.hotkeys.held.size));await closeSettings();

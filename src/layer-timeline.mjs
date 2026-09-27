@@ -199,12 +199,12 @@ export class Timeline{
     const interval=step<2?50:step<5?20:step<9?10:5;for(let tick=first;tick<=last;tick++){const x=(tick+.5)*step-sx;if(tick===0||(tick+1)%interval===0){ctx.fillStyle=c.muted;ctx.fillText(String(tick+1),x,14);ctx.fillStyle=c.line;ctx.fillRect(Math.round(x),25,1,4);}}
     this._paintLabels(firstRow,lastRow,sy);
     const active=this.editor.getLayer(this.editor.activeLayerId),drawing=Boolean(active?.drawing),locked=drawing?active.locked||!active.visible:this.ids.some(id=>this.editor.getLayer(id)?.locked),label=drawing?'Blank frame':'Add Frame';
-    const disabled=locked||!this.ids.length,title=label+(this.shortcut('add-frame')?' \u00b7 '+this.shortcut('add-frame'):'');
+    // The name only: the tooltip adds the shortcut (hotkey-hints.mjs), so no title.
+    const disabled=locked||!this.ids.length;
     if(this.keyButton.disabled!==disabled)this.keyButton.disabled=disabled;
     if(this.keyButton.lastChild.textContent!==label)this.keyButton.lastChild.textContent=label;
     if(this.keyButton.dataset.hotkeyTitle!==label)this.keyButton.dataset.hotkeyTitle=label;
     if(this.keyButton.getAttribute('aria-label')!==label)this.keyButton.setAttribute('aria-label',label);
-    if(this.keyButton.title!==title)this.keyButton.title=title;
     if(this.copyDrawingButton.hidden!==!drawing)this.copyDrawingButton.hidden=!drawing;
     if(this.copyDrawingButton.disabled!==locked)this.copyDrawingButton.disabled=locked;
   }

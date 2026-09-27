@@ -1,21 +1,55 @@
 import { HOTKEY_BY_ID } from './hotkeys.mjs';
+import { ariaKeyShortcut } from './ui/command-registry.mjs';
 
-/** Derive hints from command IDs, never from a second list of bindings. */
+/**
+ * The HOTKEY_COMMANDS id whose shortcut a control shows, or null. Derived from
+ * the control's command (data-hotkey-command, data-tool, data-action), never
+ * from a second list of bindings.
+ */
+export function hotkeyCommandId(node, hotkeys = null) {
+  const data = node?.dataset;
+  if (!data) return null;
+  let id = data.hotkeyCommand || (node.id === 'play-button' ? 'play-pan' : data.tool
+    ? (HOTKEY_BY_ID.has(`tool-${data.tool}`) || !HOTKEY_BY_ID.has(data.tool) ? `tool-${data.tool}` : data.tool) : data.action);
+  if (id === 'delete-single-segment') id = 'delete';
+  if (node.closest?.('#builder-bar')) {
+    if (id === 'duplicate-segment') id = 'duplicate';
+    if (id === 'mirror-segment') id = 'mirror';
+    if (id === 'mirror-segment-vertical') id = 'mirror-vertical';
+  }
+  if (id === 'play' && hotkeys && !hotkeys.label('play')) id = 'play-pan';
+  return id && HOTKEY_BY_ID.has(id) ? id : null;
+}
+
+/**
+ * Writes each shortcut control's hints from the user's bindings: the name
+ * (data-hotkey-title, without the shortcut), the shortcut text
+ * (data-hotkey-hint) and aria-keyshortcuts. Menu rows get their <kbd>.
+ *
+ * The tooltip (ui/ui-tooltip.mjs) shows "name · shortcut", so a `title` would
+ * show a second, native tooltip: it is moved into data-hotkey-title (an
+ * explicit data-hotkey-title wins) and removed. A control that took its
+ * accessible name from that title keeps it as aria-label; accessible names
+ * never include the shortcut.
+ */
 export function refreshHotkeyHints(hotkeys, root = document) {
   for (const node of root.querySelectorAll('[data-action],[data-tool],[data-hotkey-command]')) {
-    let id = node.dataset.hotkeyCommand || (node.id === 'play-button' ? 'play-pan' : node.dataset.tool ? `tool-${node.dataset.tool}` : node.dataset.action);
-    if (id === 'delete-single-segment') id = 'delete';
-    if (node.closest('#builder-bar')) {
-      if (id === 'duplicate-segment') id = 'duplicate';
-      if (id === 'mirror-segment') id = 'mirror';
-      if (id === 'mirror-segment-vertical') id = 'mirror-vertical';
-    }
-    if (id === 'play' && !hotkeys.label('play')) id = 'play-pan';
-    if (!HOTKEY_BY_ID.has(id)) continue;
+    const id = hotkeyCommandId(node, hotkeys);
+    if (!id) continue;
     const label = hotkeys.label(id), kbd = node.querySelector('kbd');
     if (kbd) { kbd.textContent = label; continue; }
-    if (!node.dataset.hotkeyTitle) node.dataset.hotkeyTitle = (node.title || node.getAttribute('aria-label') || HOTKEY_BY_ID.get(id).label).replace(/\s*(?:·.*|\([^)]*\))$/, '');
-    node.title = node.dataset.hotkeyTitle + (label ? ` · ${label}` : '');
-    node.dataset.hotkeyHint = label;
+    const title = node.getAttribute('title');
+    if (!node.dataset.hotkeyTitle)
+      node.dataset.hotkeyTitle = (title || node.getAttribute('aria-label') || HOTKEY_BY_ID.get(id).label).replace(/\s*(?:·.*|\([^)]*\))$/, '');
+    if (title !== null) node.removeAttribute('title');
+    if (!node.hasAttribute('aria-label') && !node.hasAttribute('aria-labelledby') && !node.textContent.trim())
+      node.setAttribute('aria-label', node.dataset.hotkeyTitle);
+    if (node.dataset.hotkeyHint !== label) node.dataset.hotkeyHint = label;
+    const bindings = hotkeys.bindings?.[id];
+    if (bindings) {
+      const keys = bindings.map(binding => ariaKeyShortcut(binding, hotkeys.mac)).join(' ');
+      if (!keys) node.removeAttribute('aria-keyshortcuts');
+      else if (node.getAttribute('aria-keyshortcuts') !== keys) node.setAttribute('aria-keyshortcuts', keys);
+    }
   }
 }

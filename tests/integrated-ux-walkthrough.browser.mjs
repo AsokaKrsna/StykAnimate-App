@@ -180,8 +180,9 @@ try {
     );
     await field.press("Tab");
     const tooltips = await page.locator("[data-tool]").evaluateAll((nodes) =>
+      // The name a tool's tooltip shows (shortcut tools: data-hotkey-title; the tooltip adds the key).
       nodes.map((e) => ({
-        title: e.title,
+        title: e.dataset.tooltip || e.dataset.hotkeyTitle || e.title,
         aria: e.getAttribute("aria-label"),
         icon: !!e.querySelector("svg"),
       })),

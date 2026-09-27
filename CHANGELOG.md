@@ -18,6 +18,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Open older Pivot animations much faster, especially ones with many sprite images: a large Pivot 4 race animation now opens in about 8 seconds instead of 30.
 - Seek, scrub and zoom large Pivot animations more smoothly. Frames are prepared faster, and detailed figures with overlapping fill shapes now draw as sharp vectors instead of textures, so zooming no longer pauses and uses far less graphics memory.
 - Refresh the editor with the StykAnimate typeface and colours. The typeface now ships with the app, so text looks the same on every computer, including Greek, Cyrillic and Vietnamese, and main buttons, highlighted tools, small blue labels and brush preset previews are easier to see in both light and dark mode.
+- Hover or focus a button to see its name and keyboard shortcut in one quick tooltip. It shows the shortcuts you set in Settings.
 
 ### Fixed
 

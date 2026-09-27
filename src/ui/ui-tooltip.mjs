@@ -8,7 +8,8 @@
  * the shortcut from the provided `shortcut(element)` (the command registry),
  * else data-hotkey-hint. Accessible names never include the shortcut; the
  * tooltip is linked with aria-describedby only while it is shown. On devices
- * without hover (touch) it appears for keyboard focus only.
+ * without hover (touch) it appears for keyboard focus only. A control with a
+ * native `title` and no data-tooltip keeps its native tip instead.
  */
 import {placeFloating} from './anchor-position.mjs';
 
@@ -17,6 +18,9 @@ export const TOOLTIP_SELECTOR = '[data-tooltip], [data-hotkey-title], button[ari
 /** The text a tooltip shows for `element`, or null when it would add nothing. */
 export function tooltipContent(element, {shortcut = null} = {}) {
   if (!element || element.dataset?.tooltip === '') return null;
+  // Markup whose native title still carries its tip (until that surface moves
+  // to data-tooltip) keeps it: one tooltip, never two.
+  if (!element.dataset?.tooltip && element.getAttribute?.('title')) return null;
   const label = (element.dataset?.tooltip || element.dataset?.hotkeyTitle || element.getAttribute?.('aria-label') || '').trim();
   const keys = String(shortcut?.(element) ?? element.dataset?.hotkeyHint ?? '').trim();
   if (!label && !keys) return null;
