@@ -81,6 +81,8 @@
 @import url("./components/progress.css");
 @import url("./components/empty.css");
 @import url("./components/badge.css");
+@import url("./components/dot.css");
+@import url("./components/doc.css");
 /* Inspector kit (src/inspector-kit) */
 @import url("./components/field.css");
 @import url("./components/select.css");
@@ -95,3 +97,4 @@
 /* Features */
 @import url("./features/inspector.css");
 @import url("./features/export.css");
+@import url("./features/band.css");

@@ -12,7 +12,9 @@ try {
  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47841');await page.waitForFunction(()=>window.styk?.ready);
  await page.locator('[data-workspace-mode="rig"]').click();await settle();
  assert.equal(await page.locator('#builder-bar [data-action=mirror-segment]').isDisabled(),true);
- assert.equal(await page.locator('#builder-bar button:visible').count(),10);
+ // The bar's part commands; Test rig and Done sit in the top band, beside a quiet Export (experience.md §2).
+ assert.equal(await page.locator('#builder-bar button:visible').count(),8);
+ for(const selector of ['.titlebar [data-action="rig-test"]','#builder-done','.titlebar [data-action="export"]'])assert.equal(await page.locator(selector).isVisible(),true,selector);
  await trigger('edit').click();await settle();
  assert.equal(await menu('edit').isVisible(),true);
  assert.equal(await menu('edit').locator('[data-action="unsplit-segment"]').isDisabled(),true);
@@ -67,6 +69,6 @@ try {
  await page.locator('[data-workspace-mode="rig"]').click();await trigger('view').click();await settle();
  assert.equal(await menu('view').isVisible(),true);await page.keyboard.press('Escape');
  assert.deepEqual(errors,[]);
- console.log('PASS: 10 top-level controls; menu gating, keyboard flip/undo, exact values dialog, arrow navigation, type-ahead, view toggle state, menu exclusivity, outside/Escape dismissal, focus return, one row at 900/1100/1440, viewport containment, light/dark and repeated sessions; no page errors.');
+ console.log('PASS: 8 top-level controls, Test rig and Done in the band; menu gating, keyboard flip/undo, exact values dialog, arrow navigation, type-ahead, view toggle state, menu exclusivity, outside/Escape dismissal, focus return, one row at 900/1100/1440, viewport containment, light/dark and repeated sessions; no page errors.');
 } finally {await browser.close();}
 

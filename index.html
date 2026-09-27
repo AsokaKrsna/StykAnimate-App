@@ -16,61 +16,96 @@
   </head>
   <body>
     <div id="app" class="shell">
-      <header class="titlebar">
-        <button class="brand" data-action="menu" aria-label="Main menu">
-          <img src="./symbol.svg" alt="" /><span>StykAnimate</span
-          ><span class="chevron" data-icon="chevronDown"></span>
-        </button>
-        <nav class="app-menubar" role="menubar" aria-label="Application menu">
-          <button role="menuitem" data-app-menu="file" aria-haspopup="menu" aria-expanded="false">File</button>
-          <button role="menuitem" data-app-menu="edit" aria-haspopup="menu" aria-expanded="false">Edit</button>
-          <button role="menuitem" data-app-menu="view" aria-haspopup="menu" aria-expanded="false">View</button>
-          <button role="menuitem" data-app-menu="editor" aria-haspopup="menu" aria-expanded="false">Editor</button>
-          <button role="menuitem" data-app-menu="animation" aria-haspopup="menu" aria-expanded="false">Animation</button>
-          <button role="menuitem" data-app-menu="help" aria-haspopup="menu" aria-expanded="false">Help</button>
-        </nav>
-        <div class="title-divider"></div>
-        <button class="document-tab" data-action="rename">
-          <span class="file-symbol" data-icon="file"></span
-          ><span id="project-name">First steps</span><span id="dirty-dot" data-band-reserve=""></span>
-        </button>
-        <span id="save-state" class="save-state" data-band-reserve="Unsaved changes">Saved</span>
-        <div class="title-spacer"></div>
-        <button
-          type="button"
-          class="icon-button shell-sheet-button"
-          data-action="panel-toggle-properties"
-          aria-label="Properties"
-          aria-haspopup="dialog"
-          aria-expanded="false"
-          data-icon="inspector"
-          hidden
-        ></button>
-        <button
-          class="button subtle"
-          data-action="save"
-          title="Save project · Ctrl+S"
-          data-icon="save"
-        ><span class="band-label" data-i18n-slot>Save</span></button>
-        <button class="button primary" data-action="export" data-icon="export"
-          ><span class="band-label" data-i18n-slot>Export</span><span class="chevron" data-icon="chevronDown"></span
-        ></button>
-        <div id="window-controls" hidden>
-          <button
-            data-action="minimize"
-            aria-label="Minimize"
-            data-icon="window-minimize"
-          ></button
-          ><button
-            data-action="maximize"
-            aria-label="Maximize"
-            data-icon="window-maximize"
-          ></button
-          ><button
-            data-action="close"
-            aria-label="Close"
-            data-icon="x"
+      <!-- The top band (experience.md §2): who and where (the mark, the menubar, the
+           document) │ the workspaces │ the actions (history, Save, Export, or a
+           session's Export, Cancel, Test rig and Done) and the window controls.
+           src/shell/topbar.mjs measures its folds and shows a session's buttons. -->
+      <header class="titlebar shell-top">
+        <div class="band-cluster band-start">
+          <button class="brand shell-mark" data-action="menu" aria-label="Main menu" aria-haspopup="menu" aria-expanded="false">
+            <img src="./symbol.svg" alt="" /><span>StykAnimate</span
+            ><span class="chevron" data-icon="chevronDown"></span>
+          </button>
+          <nav class="app-menubar ui-menubar" role="menubar" aria-label="Application menu">
+            <button class="ui-menubar-item" role="menuitem" data-app-menu="file" aria-haspopup="menu" aria-expanded="false">File</button>
+            <button class="ui-menubar-item" role="menuitem" data-app-menu="edit" aria-haspopup="menu" aria-expanded="false">Edit</button>
+            <button class="ui-menubar-item" role="menuitem" data-app-menu="view" aria-haspopup="menu" aria-expanded="false">View</button>
+            <button class="ui-menubar-item" role="menuitem" data-app-menu="editor" aria-haspopup="menu" aria-expanded="false">Editor</button>
+            <button class="ui-menubar-item" role="menuitem" data-app-menu="animation" aria-haspopup="menu" aria-expanded="false">Animation</button>
+            <button class="ui-menubar-item" role="menuitem" data-app-menu="help" aria-haspopup="menu" aria-expanded="false">Help</button>
+          </nav>
+          <button class="document-tab ui-doc" data-action="rename" title="Rename project"
+            ><span id="project-name" class="ui-doc-name">First steps</span
+            ><span class="ui-doc-state"
+              ><span id="dirty-dot" class="ui-dot" data-tone="success" data-band-reserve="" aria-hidden="true"></span
+              ><span id="save-state" data-band-reserve="Saved 00:00 PM">Saved</span></span
           ></button>
+        </div>
+        <div class="band-cluster band-center">
+          <div class="workspace-switch ui-segmented" role="group" aria-label="Editing workspace" data-size="lg">
+            <button type="button" class="ui-segmented-item" data-workspace-mode="animate" aria-pressed="true" title="Animate"
+              ><span class="ui-dot" data-tint="select" aria-hidden="true"></span><span class="band-ws-icon" data-icon="ws-animate"></span
+              ><span class="band-label">Animate</span></button>
+            <button type="button" class="ui-segmented-item" data-workspace-mode="draw" aria-pressed="false" title="Draw"
+              ><span class="ui-dot" data-tint="draw" aria-hidden="true"></span><span class="band-ws-icon" data-icon="ws-draw"></span
+              ><span class="band-label">Draw</span></button>
+            <button type="button" class="ui-segmented-item" data-workspace-mode="rig" aria-pressed="false" title="Build a figure"
+              ><span class="ui-dot" data-tint="library" aria-hidden="true"></span><span class="band-ws-icon" data-icon="ws-build"></span
+              ><span class="band-label">Build</span></button>
+          </div>
+        </div>
+        <div class="band-cluster band-end">
+          <div class="band-history" role="toolbar" aria-label="Edit history">
+            <button class="ui-icon-button" data-action="undo" title="Undo · Ctrl+Z" aria-label="Undo" data-icon="undo"></button>
+            <button class="ui-icon-button band-redo" data-action="redo" title="Redo · Ctrl+Shift+Z" aria-label="Redo" data-icon="redo"></button>
+          </div>
+          <button
+            class="ui-button band-save"
+            data-variant="ghost"
+            data-action="save"
+            title="Save project · Ctrl+S"
+            data-icon="save"
+          ><span class="band-label" data-i18n-slot>Save</span></button>
+          <button
+            type="button"
+            class="ui-icon-button shell-sheet-button"
+            data-action="panel-toggle-properties"
+            aria-label="Properties"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            data-icon="inspector"
+            hidden
+          ></button>
+          <!-- The one Export: the ink primary at rest, a quiet button beside a session's Done. -->
+          <button class="ui-button band-export" data-variant="primary" data-action="export" title="Export" data-icon="export"
+            ><span class="band-label" data-i18n-slot>Export</span></button>
+          <button type="button" class="ui-button band-cancel" data-variant="ghost" data-action="movieclip-cancel" data-band-session="movieclip"
+            title="Discard the changes to this movieclip" hidden><span class="band-label">Cancel</span></button>
+          <button type="button" class="ui-button band-testrig" data-variant="ghost" data-action="rig-test" data-band-session="build"
+            title="Test rig: pose the figure in a preview" data-icon="test-rig" hidden><span class="band-label">Test rig</span></button>
+          <button type="button" class="ui-button band-done" data-variant="primary" data-action="movieclip-done" data-band-session="movieclip"
+            title="Finish editing the movieclip" data-icon="check" hidden><span class="band-label">Done</span></button>
+          <button type="button" class="ui-button band-done" data-variant="primary" data-action="camera-done" data-band-session="camera"
+            title="Finish editing the camera" data-icon="check" hidden><span class="band-label">Done</span></button>
+          <button type="button" class="ui-button band-done" id="builder-done" data-variant="primary" data-workspace-mode="animate" data-band-session="build"
+            title="Finish building the figure" data-icon="check" hidden><span class="band-label">Done</span></button>
+          <div id="window-controls" hidden>
+            <button
+              data-action="minimize"
+              aria-label="Minimize"
+              data-icon="window-minimize"
+            ></button
+            ><button
+              data-action="maximize"
+              aria-label="Maximize"
+              data-icon="window-maximize"
+            ></button
+            ><button
+              data-action="close"
+              aria-label="Close"
+              data-icon="x"
+            ></button>
+          </div>
         </div>
       </header>
       <section class="workspace shell-work" data-mode="animate">
@@ -111,18 +146,9 @@
         </aside>
         <main class="center shell-stage" aria-label="Stage">
           <div class="canvas-toolbar">
-            <div class="workspace-switch" role="group" aria-label="Editing workspace">
-              <button type="button" data-workspace-mode="animate" aria-pressed="true">Animate</button>
-              <button type="button" data-workspace-mode="draw" aria-pressed="false">Draw</button>
-              <button type="button" data-workspace-mode="rig" aria-pressed="false">Build figure</button>
-            </div>
             <div class="crumb">
               <button class="scene-control" data-action="scene-settings" title="Scene properties" data-icon="frame">Scene</button><span>/</span
               ><span id="stage-size">960 × 540</span>
-            </div>
-            <div class="canvas-options" role="toolbar" aria-label="Edit history">
-              <button class="button subtle small" data-action="undo" title="Undo · Ctrl+Z" aria-label="Undo" data-icon="undo"></button>
-              <button class="button subtle small" data-action="redo" title="Redo · Ctrl+Shift+Z" aria-label="Redo" data-icon="redo"></button>
             </div>
           </div>
           <div class="context-strip"><strong id="tool-context">Select</strong><span id="edit-scope">Current frame</span><button id="leave-rig" hidden>Return to animation →</button></div>
@@ -169,9 +195,6 @@
             </div>
             </div>
             <button class="builder-btn builder-toggle" data-action="toggle-builder-branch" data-icon="builder-branch" title="Apply edits to the whole branch · or hold Shift" aria-label="Apply to branch" aria-pressed="false"><span class="builder-action-label">Branch</span></button>
-            <span class="builder-bar-end">
-              <button class="builder-btn" data-action="rig-test" data-icon="play" aria-label="Test rig" title="Test a temporary pose without changing the figure"><span class="builder-action-label">Test rig</span></button>
-              <button class="button primary small" id="builder-done" data-workspace-mode="animate">Done</button></span>
           </div>
           <div class="stage-head" role="toolbar" aria-label="Stage" hidden>
             <div class="stage-head-start" data-slot="stage-start"></div>

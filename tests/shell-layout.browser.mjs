@@ -281,7 +281,10 @@ try {
     await resize(1440, 900);
     assert.deepEqual(await read(), {steps: [], menubar: true, save: true, tier: 'wide'}, 'a wide band folds nothing: Save stays beside Export');
     let previous = [];
-    for (const width of [1280, 1100, 1024, 900, 801, 720, 661]) {
+    // With the desktop window controls (the step above shows them), Animate keeps the menubar down to 700px
+    // (experience.md §1.8, reference/158); at 661px the band holds the workspace switch and history too, so it
+    // folds the menubar into the mark and keeps Export's word instead (reference/104).
+    for (const width of [1280, 1100, 1024, 900, 801, 720, 700]) {
       await resize(width, 700);
       const band = await read();
       assert.equal(band.menubar, true, `${width}: the menubar stays docked while the band fits`);
@@ -291,6 +294,10 @@ try {
       assert.ok(previous.every(item => band.steps.includes(item)), `${width}: folds only accumulate (${previous} then ${band.steps})`);
       previous = band.steps;
     }
+    await resize(661, 700);
+    const narrow = await read();
+    assert.ok(narrow.menubar ? !narrow.steps.includes('menus') : narrow.steps[0] === 'menus' && narrow.tier === 'minimal', `661: ${narrow.steps}`);
+    if (!narrow.menubar) assert.ok(!narrow.steps.includes('primary'), '661: where the menubar folds, Export keeps its word');
     await resize(640, 480);
     const minimal = await read();
     assert.equal(minimal.tier, 'minimal');
@@ -322,7 +329,7 @@ try {
       return {text: state.textContent, width: state.getBoundingClientRect().width, color: getComputedStyle(state).color,
         red: getComputedStyle(document.documentElement).getPropertyValue('--danger-text').trim()};
     });
-    assert.equal(dirty.text, 'Unsaved changes');
+    assert.equal(dirty.text, 'Edited');
     assert.equal(dirty.width, width, 'the state keeps the width of its widest words');
     assert.equal(await page.evaluate(() => window.bandMeasures), 0, 'no measuring pass ran');
     assert.notEqual(dirty.color, 'rgb(179, 38, 30)', 'unsaved changes are neutral');

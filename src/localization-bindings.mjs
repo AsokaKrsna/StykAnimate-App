@@ -57,9 +57,9 @@ function translateElement(element, localization) {
 }
 
 export const APP_CHROME_BINDINGS = Object.freeze([
-  ['.titlebar > [data-action="open"]', { text: 'chrome.open', title: 'chrome.openHint' }],
-  ['.titlebar > [data-action="save"]', { text: 'common.save', title: 'chrome.saveHint' }],
-  ['.titlebar > [data-action="export"]', { text: 'chrome.export' }],
+  ['.titlebar [data-action="open"]', { text: 'chrome.open', title: 'chrome.openHint' }],
+  ['.titlebar [data-action="save"]', { text: 'common.save', title: 'chrome.saveHint' }],
+  ['.titlebar [data-action="export"]', { text: 'chrome.export' }],
   ['.brand[data-action="menu"]', { 'aria-label': 'chrome.mainMenu' }],
   ['#window-controls [data-action="minimize"]', { 'aria-label': 'chrome.minimize' }],
   ['#window-controls [data-action="maximize"]', { 'aria-label': 'chrome.maximize' }],

@@ -16,7 +16,7 @@ try{
     assert.ok(await page.locator('.rig-properties').count());
     await page.screenshot({path:`${output}/${r.id}.png`});
     const before=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));
-    await page.locator('#builder-bar [data-action="rig-test"]').click();await page.locator('#rig-test-canvas').waitFor();
+    await page.locator('.titlebar [data-action="rig-test"]').click();await page.locator('#rig-test-canvas').waitFor();
     assert.equal(await page.locator('#rig-test-asset, #rig-test-solid').count(),0);
     const pose=await page.locator('#rig-test-angle').isEnabled()?page.locator('#rig-test-angle'):page.locator('#rig-test-value');
     await pose.fill('80');await pose.press('Tab');await settle();

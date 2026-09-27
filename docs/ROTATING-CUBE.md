@@ -4,7 +4,7 @@ This creates a 160 × 160 × 160 cube as a projected 2D rig. It turns through 36
 
 ## 1. Start the controls
 
-Start an empty animation (delete the initial figure if present), then choose **Build figure**. Draw with **Line**. After drawing each segment, use Properties to enter its **Joint name**, **Angle**, **Length** and **Width**. Use width **0** for all construction lines. Their joints remain available in the Builder.
+Start an empty animation (delete the initial figure if present), then choose **Build** in the top bar. Draw with **Line**. After drawing each segment, use Properties to enter its **Joint name**, **Angle**, **Length** and **Width**. Use width **0** for all construction lines. Their joints remain available in the Builder.
 
 Draw these four independent lines from the same figure origin, in this order:
 

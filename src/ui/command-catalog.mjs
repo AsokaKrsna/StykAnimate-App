@@ -256,6 +256,7 @@ group('build', [
   ['rig-examples', 'Rig examples', 'layers', {keywords: ['samples', 'library']}],
 ]);
 group('camera', [
+  ['camera-done', 'Finish camera editing', 'check', {requires: ['camera-session']}],
   ['camera-copy', 'Copy camera', 'duplicate'],
   ['camera-paste', 'Paste camera', 'clipboard'],
   ['camera-reset', 'Reset camera', 'reset'],

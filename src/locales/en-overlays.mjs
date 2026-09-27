@@ -51,6 +51,7 @@ export default Object.freeze({
   'overlays.requires.text': 'Select a text figure',
   'overlays.requires.movieclip': 'Select a movieclip',
   'overlays.requires.movieclipSession': 'Edit a movieclip first',
+  'overlays.requires.cameraSession': 'Select the Camera first',
   'overlays.requires.pixels': 'Select pixels first',
   'overlays.requires.updateReady': 'No update is ready',
 });

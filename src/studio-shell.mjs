@@ -66,7 +66,8 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
     setAttr(workspace, 'data-mode', drawingActive ? 'draw' : current);
     const insert = document.getElementById('open-insert'), insertLabel = current==='draw'?'New drawing layer':'Add to scene';
     setAttr(insert, 'aria-label', insertLabel);setAttr(insert, 'title', insertLabel);
-    document.querySelectorAll('[data-workspace-mode]').forEach(button => setAttr(button, 'aria-pressed', String(button.dataset.workspaceMode === current)));
+    // The band's switch shows the current workspace; Build's Done (#builder-done) also names a workspace but is no toggle.
+    document.querySelectorAll('.workspace-switch [data-workspace-mode]').forEach(button => setAttr(button, 'aria-pressed', String(button.dataset.workspaceMode === current)));
     document.querySelectorAll('.tool-dock [data-tool]').forEach(button => {
       const tool = button.dataset.tool;
       setHidden(button, current === 'draw' ? !['hand',...DRAWING_TOOLS.map(t=>'drawing-'+t[0])].includes(tool) : current === 'rig'

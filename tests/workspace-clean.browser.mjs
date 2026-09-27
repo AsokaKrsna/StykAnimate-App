@@ -9,7 +9,7 @@ const check=(name,result)=>{assert.ok(result,name);checks.push(name);console.log
 try {
  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
  await page.screenshot({path:`${out}/light.png`});
- check('Header contains only history quick actions',await page.locator('.canvas-options button').count()===2);
+ check('History quick actions live in the band, not the stage header',await page.locator('.titlebar [aria-label="Edit history"] button').count()===2&&await page.locator('.canvas-toolbar [data-action="undo"], .canvas-toolbar [data-action="redo"]').count()===0);
  check('Canvas view controls remain accessible',await page.locator('.canvas-view-controls #zoom-label').isVisible());
  await page.locator('#zoom-label').click();check('Zoom menu opens',await page.locator('#menu [data-action="zoom-reset"]').isVisible());
  await page.keyboard.press('Escape');check('Escape restores trigger focus',await page.locator('#zoom-label').evaluate(e=>document.activeElement===e));

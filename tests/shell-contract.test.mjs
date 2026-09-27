@@ -61,16 +61,18 @@ export const SHELL_CONTRACT = Object.freeze({
   // commands (desktop/main.cjs), telemetry buckets (telemetry-core.mjs),
   // localization menu keys and hotkey hints. Never rename one.
   actions: {
-    titlebar: ['menu', 'rename', 'save', 'export', 'minimize', 'maximize', 'close'],
+    // The band: its history, Save and Export, and a session's Cancel, Test rig and Done (camera-done, movieclip-*).
+    titlebar: ['menu', 'rename', 'undo', 'redo', 'save', 'export', 'movieclip-cancel', 'rig-test', 'movieclip-done',
+      'camera-done', 'minimize', 'maximize', 'close'],
     rail: ['toggle-isolate', 'selection-front', 'selection-back', 'help', 'settings'],
-    canvas: ['scene-settings', 'undo', 'redo', 'toggle-handles', 'toggle-motion-paths', 'zoom-menu',
+    canvas: ['scene-settings', 'toggle-handles', 'toggle-motion-paths', 'zoom-menu',
       'finish-polygon', 'cancel-polygon'],
     builder: ['split-segment', 'duplicate-segment', 'mirror-segment', 'mirror-segment-vertical',
       'copy-builder-appearance', 'paste-builder-appearance', 'rig-connect', 'rig-examples',
       'unsplit-segment', 'origin-segment', 'segment-values', 'add-sprite-segment', 'edit-text',
       'delete-single-segment', 'delete-segment', 'segment-order-front', 'segment-order-up',
       'segment-order-down', 'segment-order-back', 'builder-static-handles', 'builder-highlight',
-      'builder-canvas-color', 'toggle-builder-branch', 'rig-test'],
+      'builder-canvas-color', 'toggle-builder-branch'],
     transport: ['first-frame', 'previous-frame', 'play', 'next-frame', 'toggle-loop',
       'toggle-range-edit', 'toggle-onion'],
     insert: ['add-figure', 'add-text', 'import-sprite', 'import', 'movieclip-new', 'movieclip-create',
@@ -162,9 +164,27 @@ test('Structural hooks that modules dereference without null checks are intact',
     assert.equal(byId.get(id)[0].parent, viewport, `#${id} is a direct child of #viewport`);
     assert.equal(byId.get(id)[0].tag, 'canvas', `#${id} is a canvas`);
   }
-  // localization-bindings binds `.titlebar > [data-action=save|export]` and the window controls.
+  // The band (experience.md §2): three clusters, who and where (the mark, the menubar, the document), the
+  // workspace switch, and the actions. localization-bindings binds `.titlebar [data-action=save|export]` and the
+  // window controls; tests click `.titlebar [data-action=export]`, so the band keeps one Export (quiet in a
+  // session) and one Save. topbar.mjs shows a session's buttons ([data-band-session]) and hides the rest.
   const titlebar = one('.titlebar');
-  for (const action of ['save', 'export']) assert.ok(titlebar.children.some(child => child.attrs['data-action'] === action), `.titlebar > [data-action="${action}"]`);
+  const clusters = titlebar.children.map(child => classes(child).find(name => /^band-(start|center|end)$/.test(name)));
+  assert.deepEqual(clusters, ['band-start', 'band-center', 'band-end'], 'the band is three clusters');
+  const [start, center, end] = titlebar.children;
+  for (const selector of ['[data-action="menu"]', '.app-menubar', '[data-action="rename"]', '#project-name', '#dirty-dot', '#save-state']) one(selector, start);
+  one('.workspace-switch', center);
+  for (const mode of SHELL_CONTRACT.workspaceModes) one(`[data-workspace-mode="${mode}"]`, one('.workspace-switch'));
+  for (const action of ['save', 'export']) assert.equal(find(`[data-action="${action}"]`, titlebar).length, 1, `one .titlebar [data-action="${action}"]`);
+  const history = one('[aria-label="Edit history"]', end);
+  assert.equal(history.attrs.role, 'toolbar', 'Undo and Redo are the band Edit history toolbar');
+  for (const action of ['undo', 'redo']) one(`[data-action="${action}"]`, history);
+  for (const [selector, session] of [['[data-action="movieclip-cancel"]', 'movieclip'], ['[data-action="rig-test"]', 'build'],
+    ['[data-action="movieclip-done"]', 'movieclip'], ['[data-action="camera-done"]', 'camera'], ['#builder-done', 'build']]) {
+    const button = one(selector, end);
+    assert.equal(button.attrs['data-band-session'], session, `${selector} shows in the ${session} session`);
+    assert.ok('hidden' in button.attrs, `${selector} is hidden at rest`);
+  }
   const controls = one('#window-controls', titlebar);
   for (const action of ['minimize', 'maximize', 'close']) one(`[data-action="${action}"]`, controls);
   assert.ok(classes(one('[data-action="menu"]')).includes('brand'), '.brand[data-action="menu"] anchors the main menu');
@@ -236,7 +256,7 @@ test('Structural hooks that modules dereference without null checks are intact',
   assert.equal(find('[data-action="selection-front"]')[0].attrs['data-selection-order'], '');
   assert.equal(find('[data-action="selection-back"]')[0].attrs['data-selection-order'], '');
   // Tests still select these toolbar containers; they change together with those tests.
-  for (const selector of ['.canvas-toolbar', '.canvas-options', '.canvas-view-controls', '.workspace-switch']) one(selector);
+  for (const selector of ['.canvas-toolbar', '.canvas-view-controls']) one(selector);
   one('#zoom-label', one('.canvas-view-controls'));
   // builder-mode disables [popovertarget="builder-menu-arrange"]; the menus use the popover API.
   for (const id of ['builder-menu-edit', 'builder-menu-arrange', 'builder-menu-view']) {

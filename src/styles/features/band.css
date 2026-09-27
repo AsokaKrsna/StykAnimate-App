@@ -1,0 +1,62 @@
+/* The band's components (experience.md §2): the menubar, the document button,
+ * the workspace switch and the band's buttons, sized for the band, and the
+ * steps of the band's fold order that fold them or their words
+ * (layout/topbar.css has the band's layout, its spacing and the document
+ * name's truncation). A folded word stays the control's accessible name.
+ *
+ *   state        the document state's words fold to its dot
+ *   tight        the menubar's items tighten
+ *   savelabel    Save shows its glyph; save: it folds into File (Ctrl+S)
+ *   testrig      Build's Test rig shows its glyph
+ *   export2      a session's quiet Export shows its glyph; export2out: it folds into File
+ *   switchtight  the workspace switch drops its dots and some padding
+ *   icons        the workspace switch shows its three glyphs (never a pill)
+ *   dot          the document name folds to its dot
+ *   redo         Redo folds into Edit
+ *   primary      the ink primary's word (Export at rest, a session's Done), last of all
+ *   menus        the menubar folds into the mark (the minimal tier) */
+@layer features {
+  .shell-top .app-menubar { margin-inline-end: var(--space-1); }
+  .shell-top .band-export, .shell-top .band-done { --_h: var(--control-lg); --_px: 16px; }
+  .shell-top .band-cancel, .shell-top .band-testrig { --_h: var(--control-lg); }
+  .shell-top :where(.band-export, .band-done, .band-testrig) > svg { --icon-size: 15px; }
+  .shell-top .band-save { margin-inline-end: var(--space-0-5); }
+
+  /* The workspace switch: each workspace's dot (full while it is the current one) and its name. */
+  .workspace-switch .ui-segmented-item { gap: var(--space-2); padding: 0 14px 0 var(--space-3); }
+  .workspace-switch .ui-dot { --_s: 6px; opacity: 0.55; }
+  .workspace-switch :where([aria-pressed="true"]) > .ui-dot { opacity: 1; }
+
+  /* Words that fold keep their node as the accessible name. */
+  .shell-top[data-band~="state"] :where(#save-state),
+  .shell-top[data-band~="savelabel"] :where(.band-save > .band-label),
+  .shell-top[data-band~="testrig"] :where(.band-testrig > .band-label),
+  .shell-top[data-session][data-band~="export2"] :where(.band-export > .band-label),
+  .shell-top[data-band~="icons"] :where(.workspace-switch .band-label),
+  .shell-top[data-band~="dot"] :where(#project-name),
+  .shell-top:not([data-session])[data-band~="primary"] :where(.band-export > .band-label),
+  .shell-top[data-band~="primary"] :where(.band-done > .band-label) {
+    position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .shell-top[data-band~="tight"] .app-menubar { margin-inline-end: 0; }
+  .shell-top[data-band~="tight"] .ui-menubar-item { padding-inline: 5px; }
+  /* A glyph-only button keeps the band's 32px square. */
+  .shell-top[data-band~="savelabel"] .band-save,
+  .shell-top[data-band~="testrig"] .band-testrig,
+  .shell-top[data-session][data-band~="export2"] :where(.band-export),
+  .shell-top:not([data-session])[data-band~="primary"] :where(.band-export),
+  .shell-top[data-band~="primary"] .band-done { --_px: 0px; inline-size: var(--control-lg); }
+  .shell-top[data-band~="save"] .band-save { display: none; }
+  .shell-top[data-band~="switchtight"] .ui-segmented-item { gap: 0; padding-inline: var(--space-2-5); }
+  .shell-top[data-band~="switchtight"] :where(.workspace-switch) .ui-dot { display: none; }
+  .shell-top[data-band~="icons"] .ui-segmented-item { padding-inline: var(--space-1-5); }
+  .shell-top[data-band~="icons"] .ui-menubar-item { padding-inline: var(--space-1); }
+  .shell-top[data-band~="icons"] .shell-mark { padding-inline: var(--space-1) var(--space-0-5); }
+  .shell-top[data-band~="icons"] :where(.workspace-switch) .band-ws-icon { display: inline-flex; }
+  .shell-top[data-band~="icons"] :where(.workspace-switch [aria-pressed="true"]) .band-ws-icon { color: var(--accent-text); }
+  /* The document folded to its dot keeps a 28px target. */
+  .shell-top[data-band~="dot"] .ui-doc { min-inline-size: var(--control-md); justify-content: center; padding-inline: var(--space-2); }
+  .shell-top[data-band~="redo"] .band-redo { display: none; }
+  .shell-top[data-session][data-band~="export2out"] :where(.band-export) { display: none; }
+  .shell-top[data-band~="menus"] .app-menubar { display: none; }
+}

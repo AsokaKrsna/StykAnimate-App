@@ -60,6 +60,12 @@ const shapes = Object.freeze({
   "builder-front": '<rect x="3" y="8" width="11" height="11" rx="2"/><path d="M8 5V3h11a2 2 0 0 1 2 2v11h-2M8.5 16v-5m-2 2 2-2 2 2"/>',
   "builder-back": '<rect x="10" y="3" width="11" height="11" rx="2"/><path d="M6 8H3v11a2 2 0 0 0 2 2h11v-3M15.5 6v5m-2-2 2 2 2-2"/>',
   "builder-delete-joint": '<path d="M5 17h3m8 0h3M9 3l6 6m0-6L9 9"/><circle cx="3" cy="17" r="2"/><circle cx="12" cy="17" r="2" stroke-dasharray="1 3"/><circle cx="21" cy="17" r="2"/>',
+  // The workspaces, where the band folds the switch's names (visual-system §10): a figure in motion, a pen line,
+  // a bone. Test rig: a figure with a play mark, so it never reads as the transport's Play.
+  "ws-animate": '<circle cx="14.5" cy="4.5" r="2.1"/><path d="M14 7l-1.6 5.8 3.6 2.8.9 4.9M12.4 12.8l-3.8 1.9-1.4 4.8M13.2 8.8l4.2 1.8M13.2 8.8 9 8"/><path d="M2.5 10.5h3.5M3 14.5h2.5"/>',
+  "ws-draw": '<path d="M3 19.5c2.7-3.4 4.6 1.3 7.4-2.3 2.2-2.8 3.6-.6 5.4-2.2"/><path d="m14.6 4.2 5.2 5.2-6.7 6.7-5.9 1.3 1.3-5.9z"/><path d="m12.5 6.3 5.2 5.2"/>',
+  "ws-build": '<path d="M7.6 13.8 13.8 7.6M10.2 16.4l6.2-6.2"/><circle cx="5.6" cy="15.6" r="2.4"/><circle cx="8.4" cy="18.4" r="2.4"/><circle cx="15.6" cy="5.6" r="2.4"/><circle cx="18.4" cy="8.4" r="2.4"/>',
+  "test-rig": '<circle cx="9" cy="5" r="2.2"/><path d="M9 7.5v5.5M9 13l-3 6M9 13l3 6M5.5 10l3.5-1 3.5 1"/><path d="M15 9.5v7l5-3.5z"/>',
   brush: '<path d="m14 6 4-4 4 4-4 4-4-4Zm0 0-5 8 2 2 7-6M9 14c-6-1-2 6-7 6 7 3 10-1 9-4"/>',
   eraser: '<path d="m4 14 9-11a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3L11 21H8l-4-4a2 2 0 0 1 0-3ZM9 9l8 8M11 21h11"/>',
   'paint-bucket': '<path d="m4 10 7-7 10 10-8 8-9-9v-2ZM4 12h15M6 2l7 7M21 17s-3 3-1 5c3 1 3-2 1-5Z"/>',

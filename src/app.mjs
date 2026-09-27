@@ -67,6 +67,7 @@ import { createDockKeyboard } from "./shell/dock-keyboard.mjs";
 import { installDockTabs } from "./shell/dock-tabs.mjs";
 import { createLayoutPopover } from "./shell/layout-popover.mjs";
 import { installShellCommands } from "./shell/shell-commands.mjs";
+import { syncBandSession } from "./shell/topbar.mjs";
 import { initStudioShell } from "./studio-shell.mjs";
 import { createExportFlow } from "./export-flow.mjs";
 import { createAppDialogs } from "./app-dialogs.mjs";
@@ -425,10 +426,22 @@ ui.surface("inspector", { on: ["selection", "revision", "context", "tick"], quie
 ui.surface("selection", { on: ["selection", "range", "drag"], quiet: true, update: () => { if (!state.drag) syncSelectionControls(); } });
 ui.surface("status", { on: ["objects", "document", "selection"], quiet: true, update: () => updateStatus() });
 ui.surface("assets", { on: ["document", "revision"], quiet: true, update: () => { if (state.activeTab === "assets") renderAssets(); } });
-ui.surface("shell", { on: ["mode", "settings", "selection", "context"], quiet: true, update: () => studioShell?.sync() });
+ui.surface("shell", { on: ["mode", "settings", "selection", "context"], quiet: true, update: () => syncShell() });
 function queueUI() {
   if(state.editablePreparing)return;
   ui.invalidate("all");
+}
+/** The band's session (experience.md §2): Build, a movieclip being edited, or the camera (outside Draw and Build). */
+function bandSession() {
+  if (builderMode?.active) return "build";
+  if (editor._movieclipScopes?.length) return "movieclip";
+  if (!drawingController?.active && cameraSelected()) return "camera";
+  return "";
+}
+/** The workspace chrome: the rail, the stage's context, and the band's session buttons. */
+function syncShell() {
+  studioShell?.sync();
+  syncBandSession(document.querySelector(".titlebar"), bandSession());
 }
 const playback = new PlaybackCache({
   gpuIsolation: true,
@@ -1939,20 +1952,32 @@ function previewFrame() {
   requestRender();
 }
 // What updateTitle last wrote: the title surface runs in every pass (playback too), so it writes only what changed.
-let shownTitle = { name: null, dirty: null, revision: null };
+let shownTitle = { name: null, dirty: null, revision: null, words: null };
+// A save in progress, and the last save of this document ("Saved 12:04", formatted once when it lands).
+let savingDocument = false, lastSave = null;
+/** The document's state in the band (experience.md §2): Saving…, Edited, Saved 12:04 after a save, else Saved. */
+function saveStateWords(dirty) {
+  if (savingDocument) return "Saving…";
+  if (dirty) return "Edited";
+  return lastSave?.report === editor.report ? lastSave.words : "Saved";
+}
 function updateTitle() {
-  const name = editor.name || "Untitled", dirty = editor.dirty,
+  const name = editor.name || "Untitled", dirty = editor.dirty, words = saveStateWords(dirty),
     revision = `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}`;
-  if (name === shownTitle.name && dirty === shownTitle.dirty && revision === shownTitle.revision) return;
-  if (name !== shownTitle.name || dirty !== shownTitle.dirty) {
+  if (name === shownTitle.name && dirty === shownTitle.dirty && revision === shownTitle.revision && words === shownTitle.words) return;
+  if (name !== shownTitle.name || dirty !== shownTitle.dirty || words !== shownTitle.words) {
     document.title = `${dirty ? "• " : ""}${name} — StykAnimate`;
     if ($("project-name").textContent !== name) $("project-name").textContent = name;
+    // One dot: neutral while there are unsaved changes (never red), the success tone once saved.
     $("dirty-dot").classList.toggle("dirty", dirty);
-    $("save-state").textContent = dirty ? "Unsaved changes" : "Saved";
+    $("dirty-dot").dataset.tone = dirty || savingDocument ? "neutral" : "success";
+    $("save-state").textContent = words;
     $("save-state").dataset.dirty = String(dirty);
+    $("project-name").closest("button")?.setAttribute("title", `${name} · Rename`);
   }
-  shownTitle = { name, dirty, revision };
-  desktop?.setDocumentState?.({ name, dirty, revision });
+  const documentChanged = name !== shownTitle.name || dirty !== shownTitle.dirty || revision !== shownTitle.revision;
+  shownTitle = { name, dirty, revision, words };
+  if (documentChanged) desktop?.setDocumentState?.({ name, dirty, revision });
 }
 function syncSelectionControls() {
   timelineHost.syncRangeEdit();
@@ -3351,6 +3376,8 @@ async function saveNative({ saveAs = false } = {}) {
     documentToken = state.documentToken,
     name = editor.name;
   let saved;
+  savingDocument = true;
+  updateTitle();
   try {
     saved = await runDocumentExport("styk", (blob, signal) =>
       desktop?.beginProjectWrite
@@ -3369,6 +3396,9 @@ async function saveNative({ saveAs = false } = {}) {
       return false;
     }
     throw error;
+  } finally {
+    savingDocument = false;
+    updateTitle();
   }
   if (saved) {
     if (editor.report === report && state.documentToken === documentToken) {
@@ -3377,6 +3407,8 @@ async function saveNative({ saveAs = false } = {}) {
         editor.frameDraftRevision === draftRevision
       ) {
         editor.markSaved();
+        const time = new Intl.DateTimeFormat(document.documentElement.lang || undefined, { hour: "numeric", minute: "2-digit" });
+        lastSave = { report, words: `Saved ${time.format(new Date())}` };
         if (desktop?.deleteRecovery) await desktop.deleteRecovery();
       }
     }
@@ -4237,6 +4269,17 @@ const actions = {
     if(!cameraSelected())selectTrack({id:'camera',kind:'camera'});
     else editorSettings?.commit({showCamera:!state.settings.showCamera});
   },
+  // The band's Done in a camera session: back to the figure the camera session kept selected, or the Scene.
+  "camera-done": () => {
+    if (!cameraSelected()) return;
+    finishCurrentEdit();
+    const uid = editor.selectedUid;
+    state.inspectorContext = uid == null ? "scene" : "figure";
+    state.inspectorTab = "design";
+    state.selectedTrackId = uid == null ? editor.activeLayerId : layerIdForUid(editor.report, uid);
+    queueUI();
+    requestRender();
+  },
   "camera-paste": () => editor.pasteCamera(rangeFrames()),
   "camera-guides": () => {state.cameraGuides=!state.cameraGuides;$('inspector').querySelector('[data-action="camera-guides"]')?.setAttribute('aria-pressed',String(state.cameraGuides));requestRender();},
   "camera-level": () => editor.setCameraValues({angle_rad:0},rangeFrames()),
@@ -4705,6 +4748,7 @@ const commandRequirements = {
     || requirementReason("text"),
   movieclip: () => (Boolean(editor.object) && isMovieclip(editor.figure)) || requirementReason("movieclip"),
   "movieclip-session": () => Boolean(editor._movieclipScopes?.length) || requirementReason("movieclipSession"),
+  "camera-session": () => cameraSelected() || requirementReason("cameraSession"),
   pixels: () => Boolean(drawingController?.selection || drawingController?.marquee) || requirementReason("pixels"),
 };
 // One view of every command (src/ui/command-registry.mjs): labels, glyphs,
@@ -5622,7 +5666,7 @@ async function init() {
       showDialog, closeDialog, toast, status, fail, queueUI, requestRender,
       showCommandMenu,
       commitSettings: patch => editorSettings.commit(patch),
-      onModeChange: () => studioShell?.sync(),
+      onModeChange: () => syncShell(),
       toggleTimeline: () => shell.togglePanel('timeline'),
     },
   });

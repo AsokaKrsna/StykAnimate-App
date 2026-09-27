@@ -1,56 +1,81 @@
-/* The top band's folds (architecture §3.11.4, experience §1.8). The dock
- * host writes the solver's fold steps to the band's own `data-band`, in the
- * band's fold order; src/shell/topbar.mjs measures the band's width after
- * each step, so the rules here must not depend on the window's size. Words
- * fold before controls and the menubar folds into the mark last (`menus`,
- * the minimal tier). A folded word stays the control's accessible name.
- * M3b rebuilds the band's content on these steps. */
+/* The top band (experience.md §2, §1.8; architecture §3.11.4): one 44px row on
+ * the mist field in three clusters, who and where (the mark, the menubar, the
+ * document) │ the workspaces │ the actions (history, Save, Export, or in a
+ * session its quiet Export, Cancel or Test rig and the ink Done) and the window
+ * controls. The side clusters take equal room while the window allows, so the
+ * workspace switch sits in the middle, and never less than their content, so
+ * the band never wraps or clips: the dock host folds it first. `.shell-top`
+ * is the band's visual class beside the `.titlebar` hook; features/band.css
+ * sizes the components inside it and folds their words.
+ *
+ * Folds: the dock host writes the solver's fold steps to the band's own
+ * `data-band`, in the band's fold order (BAND_FOLDS); src/shell/topbar.mjs
+ * measures the band's width after each step, so no rule here may depend on the
+ * window's size. Words and spacing fold before controls, the ink primary's word
+ * last, and the menubar folds into the mark only at the minimal tier (`menus`).
+ * Sessions: topbar.mjs writes `data-session` (build, movieclip, camera) and
+ * shows the buttons marked `data-band-session` for it. */
 @layer layout {
-  .titlebar {
-    --band-pad: 14px;
-    min-inline-size: 0; column-gap: var(--space-2); padding-inline: var(--band-pad); overflow: hidden;
+  .shell-top {
+    --band-pad: var(--space-2);
+    display: grid; grid-template-columns: minmax(max-content, 1fr) max-content minmax(max-content, 1fr);
+    align-items: center; column-gap: var(--space-3);
+    block-size: var(--topbar-h); min-inline-size: 0; padding: 0 var(--band-pad) 0 var(--space-1-5);
+    overflow: hidden; border: 0; background: var(--surface-field);
+    -webkit-app-region: drag;
   }
-  /* The window controls sit flush with the window's edge and fill the band's height above its hairline. */
-  .titlebar > :where(#window-controls) { align-self: stretch; margin-inline-end: calc(-1 * var(--band-pad)); }
-  .titlebar > :where(#window-controls) > button { block-size: auto; }
-  .titlebar :where(.band-label) { white-space: nowrap; }
-  .titlebar :where(#project-name) { max-inline-size: 220px; }
-  /* The save state keeps the width of its widest words (data-band-reserve, after the 5px dot and its 6px gap),
-   * so editing and saving never move the band or measure it again. Unsaved work is neutral, never red. */
-  .titlebar :where(#save-state)[data-band-reserve] { display: inline-block; }
-  .titlebar :where(#save-state)[data-band-reserve]::after {
-    content: attr(data-band-reserve); display: block; block-size: 0; overflow: hidden; visibility: hidden; padding-inline-start: 11px;
-  }
-  /* The document's dot keeps its place too, shown only while there are unsaved changes. */
-  .titlebar :where(#dirty-dot)[data-band-reserve] { display: block; visibility: hidden; }
-  .titlebar :where(#dirty-dot)[data-band-reserve]:where(.dirty) { visibility: visible; }
-  .titlebar :where(#save-state)[data-dirty="true"] { color: var(--text-3); }
-  .titlebar :where(#save-state)[data-dirty="true"]::before { background: var(--neutral-dot); }
+  .shell-top :where(button, input, nav, [role="toolbar"], [role="group"]) { -webkit-app-region: no-drag; }
+  .band-cluster { display: flex; align-items: center; gap: var(--space-1); min-inline-size: 0; }
+  .band-center { justify-self: center; }
+  .band-end { justify-self: end; gap: var(--space-2); }
+  .band-history { display: flex; align-items: center; gap: 0; }
+  .shell-top :where(.band-label) { white-space: nowrap; }
 
-  /* The document state's words fold to the document's dot. */
-  .titlebar[data-band~="state"] > :where(#save-state),
-  .titlebar[data-band~="savelabel"] > :where([data-action="save"]) > :where(.band-label),
-  .titlebar[data-band~="dot"] :where(#project-name),
-  .titlebar[data-band~="primary"] > :where([data-action="export"]) > :where(.band-label) {
-    position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  /* The mark: the StykAnimate symbol in brand blue and the StykAnimate menu's chevron. */
+  .shell-mark {
+    display: inline-flex; align-items: center; gap: var(--space-0-5); flex: none;
+    block-size: var(--control-lg); padding: 0 var(--space-1) 0 var(--space-1-5);
+    border: 0; border-radius: var(--radius-md); background: transparent; color: var(--accent);
   }
-  /* Tighter spacing: the band's gaps and the menubar's items. */
-  .titlebar[data-band~="tight"] { --band-pad: var(--space-2); column-gap: var(--space-1); }
-  .titlebar[data-band~="tight"] > :where(.app-menubar) > button { padding-inline: 5px; }
-  .titlebar[data-band~="tight"] > :where(.title-divider) { margin-inline: var(--space-1); }
-  /* The document name truncates to 12, then 8 characters (with its ellipsis; Rename… shows the whole name). */
-  .titlebar[data-band~="name"] :where(#project-name) { max-inline-size: 12ch; }
-  .titlebar[data-band~="name8"] :where(#project-name) { max-inline-size: 8ch; }
-  /* Save shows its glyph, then folds into File (Ctrl+S). */
-  .titlebar[data-band~="savelabel"] > :where([data-action="save"]) { padding-inline: 0; inline-size: var(--control-lg); justify-content: center; }
-  .titlebar[data-band~="save"] > :where([data-action="save"]) { display: none; }
-  .titlebar[data-band~="winctl"] > :where(#window-controls) > button { inline-size: 36px; }
-  .titlebar[data-band~="dot"] > :where(.title-divider) { display: none; }
-  .titlebar[data-band~="dot"] > :where(.document-tab) { min-inline-size: 0; }
-  /* Only where nothing else is left: Export's word. */
-  .titlebar[data-band~="primary"] > :where([data-action="export"]) { padding-inline: var(--space-2); }
-  .titlebar[data-band~="primary"] > :where([data-action="export"]) > :where(.chevron) { display: none; }
-  /* Minimal: the menubar folds into the mark, whose menu lists File, Edit, View, Editor, Animation and Help. */
-  .titlebar[data-band~="menus"] > :where(.app-menubar, .title-divider) { display: none; }
-  .titlebar[data-band~="menus"] > :where(.brand) > :where(.chevron) { display: inline-flex; }
+  .shell-mark:where(:hover, [aria-expanded="true"]) { background: var(--surface-hover); }
+  .shell-mark:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset); }
+  .shell-mark > img { inline-size: 22px; block-size: 22px; }
+  .shell-mark > :where(span:not(.chevron)) { display: none; }
+  .shell-mark > :where(.chevron) { display: inline-flex; margin: 0; color: var(--text-3); }
+  .shell-mark > :where(.chevron) > svg { inline-size: 12px; block-size: 12px; stroke-width: 2; }
+
+  /* The document's name; its state keeps the width of its widest words (data-band-reserve), so editing and
+   * saving never move the band or measure it again. */
+  .shell-top :where(#project-name) { max-inline-size: 220px; }
+  .shell-top :where(#save-state)[data-band-reserve] { display: inline-block; }
+  .shell-top :where(#save-state)[data-band-reserve]::after {
+    content: attr(data-band-reserve); display: block; block-size: 0; overflow: hidden; visibility: hidden;
+  }
+  /* The workspace glyphs show only when the band folds the switch's names (features/band.css). */
+  .band-ws-icon { display: none; }
+  .band-ws-icon > svg { inline-size: 17px; block-size: 17px; }
+
+  /* The window controls sit flush with the window's edge and fill the band's height; close hovers danger-soft. */
+  .shell-top :where(#window-controls) { align-self: stretch; display: flex; margin-inline-end: calc(-1 * var(--band-pad)); }
+  .shell-top :where(#window-controls)[hidden] { display: none; }
+  .shell-top :where(#window-controls) > button {
+    display: inline-grid; place-items: center; inline-size: 44px; block-size: auto; padding: 0;
+    border: 0; border-radius: 0; background: transparent; color: var(--text-2);
+  }
+  .shell-top :where(#window-controls) > button:hover { background: var(--surface-hover); color: var(--text-1); }
+  .shell-top :where(#window-controls > [data-action="close"]):hover { background: var(--danger-soft); color: var(--danger-text); }
+  .shell-top :where(#window-controls) > button > svg { inline-size: 16px; block-size: 16px; }
+
+  /* ---- The fold order (BAND_FOLDS); features/band.css folds the components (Save, Redo, a session's Export, the
+   * menubar) and their words ---- */
+  .shell-top[data-band~="tight"] { column-gap: var(--space-2); }
+  .shell-top[data-band~="tight"] :where(.band-cluster) { gap: var(--space-0-5); }
+  .shell-top[data-band~="tight"] :where(.band-end) { gap: var(--space-1); }
+  /* The document name truncates to 12, then 8 characters (with its ellipsis; the tooltip and Rename show it whole). */
+  .shell-top[data-band~="name"] :where(#project-name) { max-inline-size: 12ch; }
+  .shell-top[data-band~="name8"] :where(#project-name) { max-inline-size: 8ch; }
+  .shell-top[data-band~="winctl"] :where(#window-controls) > button { inline-size: 36px; }
+  /* Once the switch shows its glyphs, the band's last spacing tightens too (the menubar stays docked down to 661px). */
+  .shell-top[data-band~="icons"] { column-gap: var(--space-1); padding-inline-start: var(--space-1); }
+  .shell-top[data-band~="icons"] :where(.band-end) { gap: var(--space-0-5); }
 }

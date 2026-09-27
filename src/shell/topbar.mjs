@@ -1,5 +1,6 @@
 /**
- * The top band's measurement for the layout solver (architecture §3.11.4).
+ * The top band (experience.md §2): its measurement for the layout solver
+ * (architecture §3.11.4) and its sessions (syncBandSession, at the end).
  *
  * The band folds its labels and spacing in a fixed order (the solver's
  * BAND_FOLDS) before the menubar folds into the mark, and the menubar folds
@@ -7,12 +8,16 @@
  * is a token of the band's `data-band` attribute that the band's stylesheet
  * (styles/layout/topbar.css) turns into a fold; `menus` folds the menubar.
  *
- * measureBand() reads the band's max-content width with no step, then after
- * each step that makes it narrower (a step the band has no rule for, or one
- * that frees nothing, such as the window controls in a browser, is left
- * out), with the menubar docked and, when asked, folded. It changes only the
- * band's own attribute and inline size and restores both before it returns,
- * so the page never paints a measuring state. The widths do not depend on
+ * measureBand() reads the band's narrowest unwrapped width with no step,
+ * then after each step that makes it narrower (a step the band has no rule
+ * for, or one that frees nothing, such as the window controls in a browser,
+ * is left out), with the menubar docked and, when asked, folded. The band is
+ * a grid of three clusters whose side columns share the room left of and
+ * right of the workspace switch but never take less than their content, so
+ * its min-content width is its clusters side by side (its max-content width
+ * would count the wider side twice). It changes only the band's own
+ * attribute and inline size and restores both before it returns, so the page
+ * never paints a measuring state. The widths do not depend on
  * the window, so the band is measured again only when its content changes
  * (a name, a language, a session's buttons, the window controls), never on
  * a resize. A part that reserves the width of its widest text
@@ -66,7 +71,7 @@ export function measureBand(band, {steps = BAND_FOLDS, docked = true, folded = t
     else band.removeAttribute('data-band');
     return Math.ceil(band.getBoundingClientRect().width);
   };
-  band.style.inlineSize = 'max-content';
+  band.style.inlineSize = 'min-content';
   try {
     return collectBandWidths(width, steps, {docked, folded});
   } finally {
@@ -176,4 +181,31 @@ export function watchBand(band, {window: win = globalThis.window, document: doc 
       if (idle) (win.cancelIdleCallback && win.requestIdleCallback ? win.cancelIdleCallback(idle) : win.clearTimeout(idle));
     },
   };
+}
+
+/** The sessions the band shows (experience.md §2): Build, a movieclip and the camera; '' at rest. */
+export const BAND_SESSIONS = Object.freeze(['build', 'movieclip', 'camera']);
+
+/**
+ * Shows the band's buttons for `session` (a BAND_SESSIONS name, or '' at
+ * rest): the buttons marked `data-band-session` with that name show (Build's
+ * Test rig and Done, a movieclip's Cancel and Done, the camera's Done), and
+ * the one Export turns from the ink primary into a quiet button beside the
+ * session's Done, so every session keeps Export in one click. Writes only
+ * when the session changes; showing or hiding a button re-measures the band
+ * (watchBand sees `hidden` change), so its folds follow the session's buttons.
+ */
+export function syncBandSession(band, session = '') {
+  if (!band) return false;
+  const next = BAND_SESSIONS.includes(session) ? session : '';
+  if ((band.getAttribute('data-session') ?? '') === next) return false;
+  if (next) band.setAttribute('data-session', next);
+  else band.removeAttribute('data-session');
+  for (const button of band.querySelectorAll('[data-band-session]')) {
+    const shown = button.dataset.bandSession.split(' ').includes(next);
+    if (button.hidden === shown) button.hidden = !shown;
+  }
+  const exportButton = band.querySelector('.band-export');
+  if (exportButton) exportButton.dataset.variant = next ? 'ghost' : 'primary';
+  return true;
 }
