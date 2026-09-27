@@ -13,6 +13,7 @@ group('Project & editing', [
   ['save', 'Save project', ['Mod+KeyS']], ['save-as', 'Save project as', ['Mod+Shift+KeyS']],
   ['export', 'Export', ['Mod+Shift+KeyE']], ['import', 'Import figures'],
   ['settings', 'Settings', ['Mod+Comma']], ['help', 'Keyboard shortcuts', ['Shift+Slash']],
+  ['command-palette', 'Search commands', ['Mod+KeyP', 'Mod+Shift+KeyP', 'F1']],
   ['undo', 'Undo', ['Mod+KeyZ']], ['redo', 'Redo', ['Mod+Shift+KeyZ', 'Mod+KeyY']],
   ['copy', 'Copy selection / frames', ['Mod+KeyC']], ['cut', 'Cut selection / frames', ['Mod+KeyX']],
   ['paste', 'Paste selection / frames', ['Mod+KeyV']],

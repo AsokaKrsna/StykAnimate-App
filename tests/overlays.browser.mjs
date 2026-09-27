@@ -529,6 +529,124 @@ try {
     }), 'Scene properties|false');
   });
 
+  const paletteRows = () => page.evaluate(() => [...document.querySelectorAll('.ui-palette [role=group]')].map(group => [
+    group.querySelector('.ui-palette-group').textContent,
+    [...group.querySelectorAll('[role=option]')].map(option => [option.querySelector('.ui-palette-label').textContent,
+      option.querySelector('.ui-palette-meta')?.textContent ?? '', option.getAttribute('aria-disabled') === 'true']),
+  ]));
+  const paletteQuery = async text => { await page.fill('.ui-palette input', text); await settle(80); return paletteRows(); };
+
+  await step('app: Ctrl+P, Ctrl+Shift+P, F1 and Search commands… open the command palette; the browser never prints', async () => {
+    await page.evaluate(() => {
+      window.paletteKeys = [];
+      window.addEventListener('keydown', event => { if (['KeyP', 'F1'].includes(event.code)) paletteKeys.push(event.defaultPrevented); });
+    });
+    for (const key of ['Control+p', 'Control+Shift+P', 'F1']) {
+      await page.locator('#viewport').focus();
+      await page.keyboard.press(key);
+      assert.deepEqual(await page.evaluate(() => [styk.ui.palette.isOpen, styk.ui.palette.element.matches(':modal'), document.activeElement.getAttribute('role'),
+        styk.ui.overlays.blocksHotkeys()]), [true, true, 'combobox', true], `${key} opens the palette`);
+      assert.equal(await page.evaluate(() => {
+        const again = new KeyboardEvent('keydown', {code: 'KeyP', key: 'p', ctrlKey: true, bubbles: true, cancelable: true});
+        styk.ui.palette.input.dispatchEvent(again);
+        return again.defaultPrevented && styk.ui.palette.isOpen;
+      }), true, 'Ctrl+P inside the palette keeps it open and never prints');
+      await page.keyboard.press('Escape');
+      assert.deepEqual(await page.evaluate(() => [styk.ui.palette.isOpen, document.activeElement.id, styk.ui.overlays.blocksHotkeys()]),
+        [false, 'viewport', false], 'Escape closes it and returns focus');
+    }
+    await page.locator('#fps').focus();
+    await page.keyboard.press('Control+p');
+    assert.equal(await page.evaluate(() => styk.ui.palette.isOpen), false, 'typing in a field never opens it');
+    assert.deepEqual(await page.evaluate(() => paletteKeys), [true, true, true, true], 'the browser never sees the keys (print, help)');
+
+    await page.click('.brand[data-action=menu]');
+    const row = page.locator('#menu [data-action=command-palette]');
+    assert.deepEqual(await row.evaluate(item => [item.querySelector(':scope > span').textContent, item.querySelector('kbd').textContent,
+      item.getAttribute('aria-keyshortcuts'), item === item.parentElement.querySelector('[data-action]')]),
+    ['Search commands…', 'Ctrl+P', 'Control+P Control+Shift+P F1', true], 'the first row of the StykAnimate menu');
+    await row.click();
+    assert.deepEqual(await page.evaluate(() => [styk.ui.palette.isOpen, document.getElementById('menu').hidden]), [true, true]);
+    await page.keyboard.press('Escape');
+  });
+
+  await step('app: the palette runs a command, explains one it cannot run, remembers recent ones and goes to a frame', async () => {
+    await page.evaluate(async () => {
+      const {emptyDocument, createFrame, createObject} = await import('/src/demo.mjs');
+      const report = emptyDocument();
+      report.keyframes = [0, 40].map(x => createFrame([createObject(report.figure_types[0], 1, 200 + x, 250)], 12));
+      styk.editor.load(report);
+      styk.editor.select(1);
+      styk.fit();
+    });
+    const before = await page.evaluate(() => ({undo: styk.editor._undo.length, revision: styk.editor.revision}));
+    await page.locator('#viewport').focus();
+    await page.keyboard.press('Control+p');
+    const flips = await paletteQuery('flip hor');
+    assert.deepEqual(flips[0][1][0], ['Flip horizontally', 'Shift+H', false], JSON.stringify(flips));
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(undo => styk.editor._undo.length === undo + 1, before.undo);
+    assert.deepEqual(await page.evaluate(() => [styk.ui.palette.isOpen, document.activeElement.id]), [false, 'viewport'], 'it closes, then runs');
+    await page.keyboard.press('Control+z');
+    await page.waitForFunction(undo => styk.editor._undo.length === undo, before.undo);
+
+    await page.keyboard.press('Control+p');
+    const recent = await paletteRows();
+    assert.deepEqual(recent[0], ['Recent', [['Flip horizontally', 'Shift+H', false]]], 'recent commands lead the empty query');
+    const split = (await paletteQuery('split'))[0][1].find(([label]) => label === 'Split');
+    assert.deepEqual(split, ['Split', 'In Build', true], 'a Build command stays findable, with the reason it cannot run here');
+    await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(() => styk.ui.palette.isOpen), true, 'Enter on an unavailable row does nothing');
+    const web = (await paletteQuery('new window'))[0][1][0];
+    assert.deepEqual(web, ['New window', 'In the desktop app', true]);
+
+    assert.deepEqual(await paletteQuery('12'), [['Go to', [['Go to frame 12', '', false]]]]);
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => styk.editor.tick === 11);
+    await page.keyboard.press('Control+p');
+    await paletteQuery('100000');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => styk.editor.tick === styk.editor.totalTicks - 1);
+  });
+
+  await step('app: the palette finds layers, figures and settings by name', async () => {
+    await page.locator('#viewport').focus();
+    await page.evaluate(() => styk.editor.select(null));
+    await page.keyboard.press('Control+p');
+    const figure = await paletteQuery('walker');
+    const project = figure.find(([group]) => group === 'In this project');
+    assert.ok(project && project[1][0][1] === 'Figure · Layer 1', JSON.stringify(figure));
+    await page.evaluate(() => { const options = [...document.querySelectorAll('.ui-palette [role=option]')];
+      options.find(option => option.querySelector('.ui-palette-meta')?.textContent === 'Figure · Layer 1').click(); });
+    await page.waitForFunction(() => styk.editor.selectedUid === 1);
+
+    await page.keyboard.press('Control+p');
+    const layers = await paletteQuery('layer 1');
+    assert.deepEqual(layers.find(([group]) => group === 'In this project')?.[1][0], ['Layer 1', 'Layer', false]);
+    await page.evaluate(() => [...document.querySelectorAll('.ui-palette [role=option]')].find(option => option.querySelector('.ui-palette-meta')?.textContent === 'Layer').click());
+    await page.waitForFunction(() => styk.state.selectedTrackId === 'layer-1' && styk.state.inspectorContext === 'layer' && styk.timeline.selectedTrackId === 'layer-1');
+
+    await page.keyboard.press('Control+p');
+    const theme = await paletteQuery('theme');
+    assert.deepEqual(theme.find(([group]) => group === 'Settings')?.[1][0], ['Theme', 'Settings › Interface', false]);
+    await page.evaluate(() => [...document.querySelectorAll('.ui-palette [role=option]')].find(option => option.querySelector('.ui-palette-meta')?.textContent === 'Settings › Interface').click());
+    await page.waitForFunction(() => document.querySelector('.styk-settings')?.open);
+    assert.deepEqual(await page.evaluate(() => [document.activeElement.dataset.setting, document.activeElement.checked, styk.settingsUI.tab]), ['theme', true, 'interface'],
+      'Settings opens on the tab with the field focused');
+    await page.getByRole('button', {name: 'Close settings', exact: true}).click();
+  });
+
+  await step('app: every action the app registers has catalog metadata and every catalog requirement an answer', async () => {
+    const coverage = await page.evaluate(async () => {
+      const {COMMAND_BY_ID, CATALOG_REQUIREMENTS} = await import('/src/ui/command-catalog.mjs');
+      return {unlabelled: Object.keys(styk.actions).filter(id => !COMMAND_BY_ID.has(id)),
+        unanswered: CATALOG_REQUIREMENTS.filter(name => typeof styk.ui.commands.requirements[name] !== 'function'),
+        listed: styk.ui.commands.list().length};
+    });
+    assert.deepEqual([coverage.unlabelled, coverage.unanswered], [[], []]);
+    assert.ok(coverage.listed > 150, `${coverage.listed} palette rows`);
+  });
+
   assert.deepEqual(errors, [], 'no page errors');
   console.log('overlays browser test passed');
 } finally {

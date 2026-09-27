@@ -10,6 +10,9 @@ import overlayStrings from '../src/locales/en-overlays.mjs';
 import {actionKeys, readActionSources} from './helpers/source-scan.mjs';
 
 const ACTIONS = actionKeys(readActionSources());
+// The zoom menu's presets, which app.mjs builds at run time (the scanner cannot see them;
+// tests/overlays.browser.mjs checks the running app's actions against the catalog).
+for (const n of [25, 50, 100, 200]) ACTIONS.add(`zoom-${n}`);
 const catalogText = {...english, ...overlayStrings};
 const everyRequirement = (answer = () => true) => Object.fromEntries(CATALOG_REQUIREMENTS.map(name => [name, answer]));
 const hotkeyOf = entry => entry.hotkey ?? (HOTKEY_BY_ID.has(entry.id) ? entry.id : null);
@@ -29,7 +32,7 @@ test('catalog metadata is well formed', () => {
     assert.ok(categories.has(entry.category), `${entry.id}: category ${entry.category}`);
     assert.ok(entry.label && entry.label === entry.label.trim(), `${entry.id}: label`);
     if (entry.icon) assert.ok(icons.has(entry.icon), `${entry.id}: glyph ${entry.icon} exists in icons.mjs`);
-    if (entry.labelKey) assert.equal(english[entry.labelKey], entry.label, `${entry.id}: ${entry.labelKey} is the English label`);
+    if (entry.labelKey) assert.equal(catalogText[entry.labelKey], entry.label, `${entry.id}: ${entry.labelKey} is the English label`);
     if (entry.hotkey) assert.ok(HOTKEY_BY_ID.has(entry.hotkey), `${entry.id}: hotkey alias ${entry.hotkey} exists`);
     if (entry.aliasOf) assert.ok(COMMAND_BY_ID.has(entry.aliasOf) && !COMMAND_BY_ID.get(entry.aliasOf).aliasOf, `${entry.id}: aliasOf ${entry.aliasOf}`);
     for (const mode of entry.modes ?? []) assert.ok(['animate', 'draw', 'rig'].includes(mode), `${entry.id}: mode ${mode}`);
@@ -101,7 +104,7 @@ test('shortcuts reach assistive tech as aria-keyshortcuts', () => {
   assert.equal(registry.items(['undo'])[0].keyshortcuts, 'Control+Z');
 });
 
-const actions = () => Object.fromEntries(['undo', 'redo', 'mirror', 'mirror-vertical', 'toggle-handles', 'delete-single-segment', 'save', 'export', 'zoom-25', 'play']
+const actions = () => Object.fromEntries(['undo', 'redo', 'mirror', 'mirror-vertical', 'toggle-handles', 'delete-single-segment', 'save', 'export', 'zoom-25', 'zoom-400', 'play']
   .map(id => [id, () => id]));
 
 test('get() describes a command from the catalog, the bindings and the context', () => {
@@ -114,7 +117,8 @@ test('get() describes a command from the catalog, the bindings and the context',
   assert.deepEqual(registry.get('redo').shortcutParts, [], 'an unbound command shows no shortcut');
   assert.equal(registry.get('mirror').shortcut, 'Shift+H', 'default bindings when the user has none');
   assert.equal(registry.get('play').shortcut, 'Space', 'the declared hotkey alias');
-  assert.equal(registry.get('zoom-25').label, 'Zoom 25', 'runtime ids without metadata still get a label');
+  assert.equal(registry.get('zoom-25').label, 'Zoom to 25%', 'the zoom presets built at run time have catalog labels');
+  assert.equal(registry.get('zoom-400').label, 'Zoom 400', 'runtime ids without metadata still get a label');
   assert.equal(registry.get('new').enabled, false, 'a command without an implementation is not available');
   assert.equal(humanizeId('export-png-sequence'), 'Export png sequence');
 });
@@ -189,7 +193,7 @@ test('run() goes through the app dispatch wrapper and records recents', () => {
 });
 
 test('list() ranks palette rows: matches first, recents early, internal and alias ids left out', () => {
-  const all = Object.fromEntries([...ACTIONS, 'zoom-25'].map(id => [id, () => {}]));   // zoom-25 is built at run time
+  const all = Object.fromEntries([...ACTIONS].map(id => [id, () => {}]));   // with zoom-25, which app.mjs builds at run time
   const registry = new CommandRegistry({actions: all, runHotkey: () => {}, context: () => ({mode: 'animate'}), requirements: everyRequirement()});
   const flip = registry.list({query: 'flip vert'});
   assert.equal(flip[0].id, 'mirror-vertical');

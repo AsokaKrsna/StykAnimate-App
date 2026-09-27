@@ -329,7 +329,8 @@ export class EditorSettings {
     const changed = this.localization.setLocale(this.value.locale);
     if (!changed && this.dialog.open) this.render();
   }
-  open(tab = this.tab) {
+  /** Opens Settings on `tab`; with `setting`, focused on that field (the command palette's Settings rows). */
+  open(tab = this.tab, {setting} = {}) {
     if (this.getValue) this.value = normalizeEditorSettings(this.getValue());
     applyEditorTheme(this.value.theme);
     applyUIScale(this.value.uiScale);
@@ -337,7 +338,9 @@ export class EditorSettings {
     this.dialog.lang = this.localization.locale;
     this.selectTab(tab);
     if (!this.dialog.open) this.dialog.showModal();
-    this.dialog.querySelector(`[data-tab="${this.tab}"]`).focus();
+    const field = setting && (this.content.querySelector(`[data-setting="${setting}"]:checked`) ?? this.content.querySelector(`[data-setting="${setting}"]`));
+    if (field) { field.focus(); field.scrollIntoView?.({block: 'nearest'}); }
+    else this.dialog.querySelector(`[data-tab="${this.tab}"]`).focus();
   }
   close() {
     this.dialog.close();
@@ -378,9 +381,15 @@ export class EditorSettings {
     return `<div class="styk-settings-scale"><div class="styk-settings-row"><label for="styk-ui-scale">${escape(this.t('settings.uiScale'))}</label><div class="styk-settings-scale-value"><output for="styk-ui-scale" data-scale-value>${this.value.uiScale}%</output><button type="button" class="styk-settings-reset" data-scale-reset title="${escape(this.t('settings.resetScale'))}" aria-label="${escape(this.t('settings.resetScale'))}" ${this.value.uiScale === 100 || !available ? 'disabled' : ''}>${icon('undo')}</button></div></div><input id="styk-ui-scale" type="range" data-setting="uiScale" min="${UI_SCALE.min}" max="${UI_SCALE.max}" step="${UI_SCALE.step}" value="${this.value.uiScale}" aria-valuetext="${this.value.uiScale}%" ${available ? '' : 'disabled'}><div class="styk-settings-scale-limits"><span>${UI_SCALE.min}%</span><span>${UI_SCALE.max}%</span></div>${available ? '' : `<p class="styk-settings-note">${escape(this.t('settings.browserScale'))}</p>`}</div>`;
   }
   render() {
+    const html = this.tabHTML(this.tab);
+    this.content.innerHTML = `${this.error ? `<div class="styk-settings-error" role="alert">${escape(this.error)}</div>` : ""}${html}`;
+    if (this.tab === 'shortcuts') this.hotkeySettings.filter();
+  }
+  /** The markup of one tab's fields (render() shows the current tab's). */
+  tabHTML(tab) {
     const value = this.value;
     let html = "";
-    if (this.tab === "interface")
+    if (tab === "interface")
       html = `<section class="styk-settings-group"><h3>${icon("sliders")}${escape(this.t("settings.appearance"))}</h3><div class="styk-settings-row"><span>${escape(this.t('settings.theme'))}</span><div class="styk-settings-theme" role="radiogroup" aria-label="${escape(this.t('settings.theme'))}">${['system', 'light', 'dark'].map(theme => `<label><input type="radio" name="editor-theme" data-setting="theme" value="${theme}" ${value.theme === theme ? 'checked' : ''}><span>${escape(this.t('settings.' + theme))}</span></label>`).join('')}</div></div><label class="styk-settings-row"><span>${escape(this.t('settings.language'))}</span><select data-setting="locale" aria-label="${escape(this.t('settings.language'))}">${SUPPORTED_LOCALES.map(locale => `<option value="${locale.id}" ${value.locale === locale.id ? 'selected' : ''}>${escape(locale.nativeName)}</option>`).join('')}</select></label>${value.locale !== 'en' ? `<p class="styk-settings-note" data-locale-coverage>${escape(this.t('settings.partialLanguage'))}</p>` : ''}${this.scaleControl()}</section><section class="styk-settings-group"><h3>${icon('layers')}${escape(this.t('timeline.title'))}</h3>${[
         ["advanced", this.t("timeline.advanced")],
         ["simple", this.t("timeline.simple")],
@@ -392,7 +401,7 @@ export class EditorSettings {
         .join(
           "",
         )}</section>${this.onResetWorkspace ? `<section class="styk-settings-group"><h3>${escape(this.t('settings.workspace'))}</h3><button type="button" class="styk-settings-reset" data-settings-reset>${icon("undo")}${escape(this.t('settings.resetPanels'))}</button></section>` : ""}`;
-    if (this.tab === "canvas")
+    if (tab === "canvas")
       html = `<div class="settings-canvas">
         <section class="settings-card"><label class="styk-settings-row"><span>Zoom gesture</span><select data-setting="canvasZoomGesture" aria-label="Zoom gesture"><option value="ctrl-scroll" ${value.canvasZoomGesture === 'ctrl-scroll' ? 'selected' : ''}>Ctrl + scroll to zoom</option><option value="scroll" ${value.canvasZoomGesture === 'scroll' ? 'selected' : ''}>Scroll to zoom</option></select></label><label class="styk-settings-row"><span>Rectangle selects</span><select data-setting="marqueeSelection" aria-label="Rectangle selects"><option value="bounds" ${value.marqueeSelection === 'bounds' ? 'selected' : ''}>Figure bounds</option><option value="origins" ${value.marqueeSelection === 'origins' ? 'selected' : ''}>Figure origins</option></select></label></section>
         <section class="settings-card"><h3>${icon('nodes')}Joint handles</h3><div class="settings-control-grid">${this.checkbox('Show handles','showHandles')}${this.checkbox('Show unselected figures','showUnselectedHandles')}${this.checkbox('Automatic size','autoSizeHandles')}${this.checkbox('Outline handles','outlineHandles')}</div>
@@ -401,9 +410,9 @@ export class EditorSettings {
         <section class="settings-card"><h3>${icon('person')}Figure builder</h3><div class="settings-control-grid">${this.checkbox('Static handles','builderShowStaticHandles')}${this.checkbox('Highlight segment','builderHighlightSegment')}${this.checkbox('Construction background','useBuilderCanvasColor')}<label class="styk-settings-row"><span>Background color</span><input type="color" data-setting="builderCanvasColor" value="${value.builderCanvasColor}" aria-label="Construction background color"></label></div></section>
         <section class="settings-card settings-renderer"><label for="settings-renderer">${icon('activity')}Graphics mode</label><select id="settings-renderer" data-setting="rendererMode" aria-label="Graphics mode">${[['auto','Automatic'],['canvas','Canvas 2D'],['gpu','WebGPU']].map(([id,label])=>`<option value="${id}" ${value.rendererMode===id?'selected':''}>${label}</option>`).join('')}</select></section>
       </div>`;
-    if (this.tab === "animation")
+    if (tab === "animation")
       html = `<section class="styk-settings-group"><h3>${icon("frame")}Timeline</h3>${this.checkbox("Replace keyframes on drop", "replaceKeyframesOnDrop")}<p class="styk-settings-note">Dragging or Alt-dragging selected keys onto existing keys on the same layer replaces them. Turn off to block occupied destinations.</p></section><section class="styk-settings-group"><h3>${icon("play")}Playback</h3><label class="styk-settings-row"><span>Playback quality</span><select data-setting="playbackQuality" aria-label="Playback quality" aria-describedby="playback-quality-note">${playbackQualityOptions.map(option=>`<option value="${option.id}" ${value.playbackQuality===option.id?'selected':''}>${option.label}</option>`).join('')}</select></label><p id="playback-quality-note" class="styk-settings-note">Lower quality reduces preview resolution for smoother playback. Automatic adjusts it while playing. Editing and exports are unaffected.</p>${this.checkbox("Loop animation", "loopPlayback")}${this.checkbox("Fit view when playback starts", "fitViewOnPlayback")}<p class="styk-settings-note">Turn off to keep your current zoom and pan when starting playback.</p></section><section class="styk-settings-group"><h3>${icon("save")}Recovery</h3><label class="styk-settings-row"><span>Autosave interval</span><select data-setting="autosaveSeconds" aria-label="Autosave interval">${[[0, "Off"], [2.5, "2.5 seconds"], [5, "5 seconds"], [10, "10 seconds"], [30, "30 seconds"], [60, "1 minute"], ...([0, 2.5, 5, 10, 30, 60].includes(value.autosaveSeconds) ? [] : [[value.autosaveSeconds, `${value.autosaveSeconds} seconds`]])].map(([seconds, label]) => `<option value="${seconds}" ${value.autosaveSeconds === seconds ? "selected" : ""}>${label}</option>`).join("")}</select></label></section>`;
-    if (this.tab === "shortcuts")
+    if (tab === "shortcuts")
       html = `<section class="styk-settings-group settings-pen-gestures"><h3>${icon("brush")}Pen and tablet</h3><dl>${[
         ["Barrel button", "Context menu · drag a joint to bend"],
         ["Eraser end", "Erase in Draw"],
@@ -411,10 +420,31 @@ export class EditorSettings {
         ["Ctrl + Space + drag", "Zoom"],
         ["Shift + Space + drag", "Rotate the Draw view"],
       ].map(([gesture, result]) => `<div><dt>${gesture}</dt><dd>${result}</dd></div>`).join("")}</dl></section>` + this.hotkeySettings.html();
-    if (this.tab === 'feedback')
+    if (tab === 'feedback')
       html = `<div class="settings-feedback-actions">${[['bug','bug','Report a bug'],['idea','lightbulb','Share an idea'],['other','message','Other feedback']].map(([category,symbol,label])=>`<button type="button" data-settings-feedback="${category}"><span class="settings-feedback-icon">${icon(symbol)}</span><span>${label}</span>${icon('chevronRight')}</button>`).join('')}</div>`;
-    this.content.innerHTML = `${this.error ? `<div class="styk-settings-error" role="alert">${escape(this.error)}</div>` : ""}${html}`;
-    if (this.tab === 'shortcuts') this.hotkeySettings.filter();
+    return html;
+  }
+  /**
+   * Every setting's name and tab, for the command palette:
+   * [{tab, tabLabel, setting, label}], one per data-setting (a radio group is one).
+   */
+  searchIndex() {
+    const entries = [], seen = new Set(), template = document.createElement('template');
+    const text = node => node?.textContent?.replace(/\s+/g, ' ').trim() || '';
+    for (const tab of ['interface', 'canvas', 'animation']) {
+      template.innerHTML = this.tabHTML(tab);
+      for (const field of template.content.querySelectorAll('[data-setting]')) {
+        const setting = field.dataset.setting;
+        if (seen.has(setting)) continue;
+        seen.add(setting);
+        const label = field.getAttribute('aria-label') || field.closest('[role=radiogroup]')?.getAttribute('aria-label')
+          || (field.id && text(template.content.querySelector(`label[for="${field.id}"]`)))
+          || (field.type === 'radio' && text(field.closest('section')?.querySelector('h3')))
+          || text(field.closest('label, .styk-settings-row')?.querySelector('span, strong'));
+        if (label) entries.push({tab, tabLabel: this.t('settings.' + tab), setting, label});
+      }
+    }
+    return entries;
   }
   commit(patch) {
     if (patch.builderCanvasColor !== undefined) patch = {...patch,useBuilderCanvasColor:true};

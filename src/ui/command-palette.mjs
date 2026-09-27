@@ -13,12 +13,12 @@
  * paletteGroups() is the pure part: the rows for a query. Recent commands come
  * first when the query is empty; typing a number offers "Go to frame N".
  */
+import {COMMAND_BY_ID} from './command-catalog.mjs';
 import {focusFirst} from './overlay-manager.mjs';
 import {kitText} from './ui-strings.mjs';
 
-/** Metadata for the action that opens the palette; the app registers it with commands.define(). */
-export const PALETTE_COMMAND = Object.freeze({id: 'command-palette', label: 'Search commands…', labelKey: 'overlays.palette.open', icon: 'search',
-  category: 'app', keywords: Object.freeze(['command palette', 'find', 'run']), palette: false});
+/** The catalog entry of the action that opens the palette (a page without the app's action registers it with commands.define()). */
+export const PALETTE_COMMAND = COMMAND_BY_ID.get('command-palette');
 
 /**
  * The palette's groups for `query`: [{id, label, rows}] where a row is
@@ -61,11 +61,13 @@ let paletteCount = 0;
 
 /**
  * createCommandPalette({commands, overlays, providers, frameJump, icon,
- * context, topInset, placeholder, label, emptyLabel, t, document})
+ * context, topInset, openKeys, placeholder, label, emptyLabel, t, document})
  * Returns {element, input, open({invoker}), close(), toggle(), isOpen, addProvider, removeProvider, refresh}.
+ * `openKeys(event)` is true for the keys that open the palette: pressed inside
+ * it they select the query instead of reaching the browser (Ctrl+P prints).
  */
 export function createCommandPalette({commands, overlays = null, providers = [], frameJump = null, icon = null, context = null, topInset = 0,
-  placeholder = null, label = null, emptyLabel = null, t = null, document: doc = globalThis.document} = {}) {
+  openKeys = null, placeholder = null, label = null, emptyLabel = null, t = null, document: doc = globalThis.document} = {}) {
   placeholder ??= kitText(t, 'overlays.palette.placeholder');
   label ??= kitText(t, 'overlays.palette.label');
   emptyLabel ??= kitText(t, 'overlays.palette.empty');
@@ -188,6 +190,7 @@ export function createCommandPalette({commands, overlays = null, providers = [],
   function onKeydown(event) {
     event.stopPropagation();
     if (event.isComposing) return;
+    if (openKeys?.(event)) { event.preventDefault(); input.select(); return; }
     const count = rows.length;
     const move = {ArrowDown: 1, ArrowUp: -1, PageDown: 8, PageUp: -8}[event.key];
     if (move !== undefined) {

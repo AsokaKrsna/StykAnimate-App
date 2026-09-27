@@ -142,7 +142,9 @@ import { createOverlayManager } from "./ui/overlay-manager.mjs";
 import { installMenuBar, menuFor, openMenu } from "./ui/ui-menu.mjs";
 import { createToasts } from "./ui/ui-toast.mjs";
 import { prompt as promptText, showLegacyDialog } from "./ui/ui-dialog.mjs";
-import { createCommandRegistry } from "./ui/command-registry.mjs";
+import { createCommandRegistry, fuzzyMatch } from "./ui/command-registry.mjs";
+import { createCommandPalette } from "./ui/command-palette.mjs";
+import { kitText } from "./ui/ui-strings.mjs";
 import { installTooltips } from "./ui/ui-tooltip.mjs";
 import { withShiftHint } from "./ui/quick-actions.mjs";
 import { buildGeometry, evaluatedFrame, shortest } from "./pivot/geometry.mjs";
@@ -4223,6 +4225,10 @@ function closeMenu(reason = "close") {
 }
 function showMenu(anchor) {
   const items = [
+    // The palette's row shows its first key only (Ctrl+P), from the registry.
+    { command: "command-palette", icon: "search", label: commands.label("command-palette"), labelKey: "overlays.palette.open",
+      shortcut: commands.shortcut("command-palette"), keyshortcuts: commands.keyShortcuts("command-palette") },
+    null,
     ["new", "plus", "New animation", "Ctrl N"],
     ["open", "folder", "Open project…", "Ctrl O"],
     ["open-recent", "clock", "Open recent…", "", !desktop?.listRecentFiles],
@@ -4939,6 +4945,7 @@ const actions = {
     editor.locateCamera(-1, "pose", rangeFrames()),
   "camera-locate-next": () => editor.locateCamera(1, "pose", rangeFrames()),
   "close-dialog": closeDialog,
+  "command-palette": () => palette.open(),
   help: showHelp,
   about: showHelp,
   performance: showPerformance,
@@ -4953,6 +4960,7 @@ const actions = {
 };
 const polygonSafeActions = new Set([
   "menu",
+  "command-palette",
   "settings",
   "privacy",
   "feedback",
@@ -4981,9 +4989,11 @@ const polygonSafeActions = new Set([
   "builder-highlight",
   "builder-canvas-color",
 ]);
+/** True while a drawing stroke, load, pixel selection or operation must finish before a command runs. */
+const drawingBusy = () => Boolean(drawingController?.gesture?.kind==='stroke'||drawingController?.loading||drawingController?.selection||drawingController?.operation);
 for (const [name, action] of Object.entries(actions)) {
   actions[name] = (...args) => {
-    if(drawingController?.gesture?.kind==='stroke'||drawingController?.loading||drawingController?.selection||drawingController?.operation)
+    if(drawingBusy())
       return drawingController.afterGesture(()=>actions[name](...args));
     if (state.polygon) {
       if (["new", "open", "open-recent", "close"].includes(name))
@@ -5616,13 +5626,105 @@ overlays.hotkeys = hotkeys;
 function commandContext() {
   return { mode: drawingController?.active ? "draw" : builderMode?.active ? "rig" : "animate" };
 }
-// One view of every command (src/ui/command-registry.mjs): labels, glyphs and
-// the user's shortcuts as they resolve in the current workspace.
+const kitT = (key, params) => appLocalization?.t(key, params);
+const requirementReason = (key) => kitText(kitT, `overlays.requires.${key}`);
+const onDesktop = (available) => Boolean(available) || requirementReason("desktop");
+/** When each catalog `requires` name holds (CATALOG_REQUIREMENTS); a string is the reason it does not. */
+const commandRequirements = {
+  desktop: () => onDesktop(desktop),
+  "desktop:newWindow": () => onDesktop(desktop?.newWindow),
+  "desktop:recentFiles": () => onDesktop(desktop?.listRecentFiles),
+  "desktop:updates": () => onDesktop(desktop?.getUpdateState),
+  "desktop:feedback": () => onDesktop(desktop?.sendTelemetryFeedback),
+  "desktop:telemetry": () => onDesktop(desktop?.getTelemetryState),
+  "update-ready": () => updateNotice?.state?.status === "ready" || (desktop?.getUpdateState ? requirementReason("updateReady") : requirementReason("desktop")),
+  figure: () => Boolean(editor.object) || requirementReason("figure"),
+  figures: () => selection().size > 1 || requirementReason("figures"),
+  joint: () => (Boolean(editor.object) && editor.selectedJoint >= 0 && selection().size <= 1 && !isMovieclip(editor.figure)) || requirementReason("joint"),
+  text: () => (Boolean(editor.object) && Boolean(editor.figure?.segments?.length) && editor.figure.segments.every((segment) => segment.primitive_code === 5))
+    || requirementReason("text"),
+  movieclip: () => (Boolean(editor.object) && isMovieclip(editor.figure)) || requirementReason("movieclip"),
+  "movieclip-session": () => Boolean(editor._movieclipScopes?.length) || requirementReason("movieclipSession"),
+  pixels: () => Boolean(drawingController?.selection || drawingController?.marquee) || requirementReason("pixels"),
+};
+// One view of every command (src/ui/command-registry.mjs): labels, glyphs,
+// availability and the user's shortcuts as they resolve in the current workspace.
+// It runs actions through the same wrapped `actions` map as a click, and
+// hotkey-only commands (tools, drawing keys) the way their key would.
 const commands = createCommandRegistry({
   actions,
   hotkeys,
-  localization: { t: (key, params) => appLocalization?.t(key, params) },
+  localization: { t: kitT },
   context: commandContext,
+  requirements: commandRequirements,
+  runHotkey: (id) => {
+    if (state.polygon && !polygonCommands.has(id)) { toast("Finish or cancel the polygon first."); return false; }
+    return runKeyboardCommand(id, { target: viewport, shiftKey: false }, { shift: false });
+  },
+  onError: fail,
+});
+/** Goes to frame `number` (1-based) in the timeline's numbering: frames in Simple, the ruler's frames in Advanced. */
+function goToFrame(number) {
+  if (drawingBusy()) return drawingController.afterGesture(() => goToFrame(number));
+  pause();
+  if (state.settings.timelineMode === "simple")
+    return timelineUI.selectFrame(Math.min(Math.max(1, number), timelineUI.frameCount) - 1);
+  editor.seek(Math.min(Math.max(1, number), editor.totalTicks) - 1);
+}
+const byScore = (a, b) => b.match.score - a.match.score;
+/** The palette's "In this project" rows: the layers, and the figures on this frame (not in Draw). */
+const projectProvider = {
+  id: "project",
+  get label() { return kitText(kitT, "overlays.palette.project"); },
+  search(query, context) {
+    const rows = [];
+    for (const layer of editor.layers ?? []) {
+      if (layer.kind !== "layer") continue;
+      const match = fuzzyMatch(query, layer.name);
+      if (match) rows.push({ id: `layer:${layer.id}`, label: layer.name, icon: "layers", meta: kitText(kitT, "overlays.palette.layer"), match,
+        ranges: match.ranges, run: () => { selectTrack({ id: layer.id, target: { kind: "layer", id: layer.id } }); timelineUI?.selectTrack?.(layer.id); } });
+    }
+    if (context?.mode !== "draw") {
+      const figures = new Map(editor.report.figure_types.map((figure) => [figure.figure_type_id, figure]));
+      for (const object of editor.selectionFrame?.objects ?? []) {
+        const figure = figures.get(object.figure_type_id), name = figure?.name;
+        const match = name && fuzzyMatch(query, name);
+        if (!match) continue;
+        const layer = editor.getLayer(editor.layerForUid(object.unique_id))?.name ?? "";
+        rows.push({ id: `figure:${object.unique_id}`, label: name, icon: isMovieclip(figure) ? "frame" : "person",
+          meta: kitText(kitT, isMovieclip(figure) ? "overlays.palette.movieclipIn" : "overlays.palette.figureIn", { layer }), match, ranges: match.ranges,
+          run: () => selectTrack({ uid: object.unique_id, target: { kind: "figure", uid: object.unique_id } }) });
+      }
+    }
+    return rows.sort(byScore);
+  },
+};
+let settingsIndex = null;
+/** The palette's Settings rows: every setting by its name, opened on its tab with the field focused. */
+const settingsProvider = {
+  id: "settings",
+  get label() { return kitText(kitT, "overlays.palette.settings"); },
+  search(query) {
+    if (!editorSettings) return [];
+    const locale = appLocalization?.localization.locale;
+    if (settingsIndex?.locale !== locale) settingsIndex = { locale, entries: editorSettings.searchIndex() };
+    return settingsIndex.entries.map((entry) => ({ entry, match: fuzzyMatch(query, entry.label) })).filter((row) => row.match).sort(byScore)
+      .map(({ entry, match }) => ({ id: entry.setting, label: entry.label, icon: "settings", meta: kitText(kitT, "overlays.palette.settingIn", { tab: entry.tabLabel }),
+        ranges: match.ranges, run: () => editorSettings.open(entry.tab, { setting: entry.setting }) }));
+  },
+};
+// The command palette (Ctrl+P, Ctrl+Shift+P, F1, or Search commands… in the
+// StykAnimate menu): an index of the registry, never a home of its own.
+const palette = createCommandPalette({
+  commands,
+  overlays,
+  icon: (name) => icon(name),
+  context: commandContext,
+  topInset: menuTopInset,
+  openKeys: (event) => hotkeys.resolve(event)?.id === "command-palette",
+  frameJump: (frame) => goToFrame(frame),
+  providers: [projectProvider, settingsProvider],
+  t: kitT,
 });
 // The one tooltip: the control's name and, after a middle dot, its shortcut
 // from the registry (so a rebinding or a workspace that claims the key shows).
@@ -5653,14 +5755,18 @@ const releaseSpaceChord = () => {
 window.addEventListener('keyup', (event) => { if (event.code === 'Space') releaseSpaceChord(); }, true);
 window.addEventListener('blur', releaseSpaceChord);
 installPenMenuGuard(window);
-const polygonCommands = new Set(['undo','redo','open','new','save','save-as','settings','help','cancel','finish-polygon','play-pan',
+const polygonCommands = new Set(['undo','redo','open','new','save','save-as','settings','help','command-palette','cancel','finish-polygon','play-pan',
   'tool-select','tool-pose','tool-hand','tool-line','tool-circle','tool-polygon','zoom-in','zoom-out','zoom-reset','zoom-selection','toggle-onion','toggle-handles','isolate-hold']);
 document.addEventListener('keydown', guarded(event => {
   state.builderShiftHeld = event.shiftKey;
   const scopes = hotkeyScopes(event), command = hotkeys.resolve(event, scopes);
   const builderCheckbox = command?.scope === 'builder' && command.id.startsWith('builder-') && event.target.matches?.('input[type=checkbox],input[type=radio]');
   const effectHistory = ['undo','redo'].includes(command?.id) && vfxInspector?.ownsHistoryTarget(event.target);
-  if (overlays.blocksHotkeys() || (isHotkeyInput(event.target) && !builderCheckbox && !effectHistory)) return;
+  if (overlays.blocksHotkeys() || (isHotkeyInput(event.target) && !builderCheckbox && !effectHistory)) {
+    // Where hotkeys are off, the palette's keys still never print (Ctrl+P) or open the browser's help (F1).
+    if (command?.id === 'command-palette') event.preventDefault();
+    return;
+  }
   // Drag modifiers should not swallow the configured unmodified Cancel key.
   if (state.drag && !command && hotkeys.resolve({code: event.code, key: event.key}, scopes)?.id === 'cancel') {
     event.preventDefault(); cancelDrag(); return;
@@ -6030,7 +6136,7 @@ window.styk = {
   drawingResourcesFor,
   // The overlay kit: the open overlays and the hotkey gate, the message slot,
   // the command registry and the tooltip.
-  ui: { overlays, toasts, commands, tooltips, context: commandContext },
+  ui: { overlays, toasts, commands, palette, tooltips, context: commandContext },
   performance: () => ({
     editingPresentation:state.lastEditingPresentation,
     editablePreparation:{pending:editablePreparation.pending,...editablePreparation.stats},

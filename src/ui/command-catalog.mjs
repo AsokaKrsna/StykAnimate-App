@@ -111,6 +111,8 @@ group('view', [
   ['zoom-reset', 'Fit canvas', 'fit', {keywords: ['zoom', 'reset view']}],
   ['zoom-selection', 'Fit selection', 'center', {requires: ['figure'], keywords: ['zoom']}],
   ['zoom-menu', 'Zoom options', 'zoom', internal],
+  // The zoom menu's presets (app.mjs builds these actions at run time).
+  ...[25, 50, 100, 200].map(n => [`zoom-${n}`, `Zoom to ${n}%`, 'zoom', {keywords: ['zoom', 'percent', 'magnify']}]),
   ['toggle-handles', 'Joints', 'nodes', {toggle: true, keywords: ['handles', 'show', 'hide']}],
   ['toggle-unselected-handles', 'Other figures’ joints', 'nodes', {toggle: true, keywords: ['handles', 'unselected']}],
   ['toggle-motion-paths', 'Motion paths', 'route', {toggle: true, keywords: ['trajectory', 'path']}],
@@ -298,6 +300,8 @@ group('help', [
 ]);
 group('app', [
   ['menu', 'Main menu', 'more', internal],
+  // Opens the palette; the palette does not list itself.
+  ['command-palette', 'Search commands…', 'search', {labelKey: 'overlays.palette.open', keywords: ['command palette', 'find', 'run'], palette: false}],
   ['settings', 'Settings…', 'settings', {labelKey: 'menu.settings', keywords: ['preferences', 'options', 'theme', 'language']}],
   ['minimize', 'Minimize window', 'minimize', {requires: ['desktop']}],
   ['maximize', 'Maximize window', 'maximize', {requires: ['desktop']}],

@@ -192,3 +192,18 @@ test('origin selection settings normalize safely and selection commands can be r
   assert.deepEqual(DEFAULT_HOTKEYS['toggle-selection-origins'], []);
   assert.deepEqual(DEFAULT_HOTKEYS['toggle-range-edit'], []);
 });
+
+test('Ctrl+P, Ctrl+Shift+P and F1 open the command palette without taking a key from another command', () => {
+  assert.deepEqual(DEFAULT_HOTKEYS['command-palette'], ['Mod+KeyP', 'Mod+Shift+KeyP', 'F1']);
+  const manager = new HotkeyManager({mac: false});
+  for (const scopes of [[], ['canvas', 'hover'], ['timeline'], ['simple'], ['builder'], ['drawing'], ['polygon'], ['library']]) {
+    assert.equal(manager.resolve(key('KeyP', {ctrlKey: true}), scopes)?.id, 'command-palette', `Ctrl+P in ${scopes}`);
+    assert.equal(manager.resolve(key('KeyP', {ctrlKey: true, shiftKey: true}), scopes)?.id, 'command-palette', `Ctrl+Shift+P in ${scopes}`);
+    assert.equal(manager.resolve(key('F1'), scopes)?.id, 'command-palette', `F1 in ${scopes}`);
+    assert.equal(manager.resolve(key('KeyP'), scopes)?.id, 'tool-pose', `P alone is still the Pose tool in ${scopes}`);
+  }
+  assert.equal(new HotkeyManager({mac: true}).resolve(key('KeyP', {metaKey: true}))?.id, 'command-palette', 'Command+P on macOS');
+  // A person's own binding wins: the palette keeps its other keys.
+  const custom = normalizeHotkeys({save: ['Mod+KeyP']}, false);
+  assert.deepEqual([custom.save, custom['command-palette']], [['Mod+KeyP'], ['Mod+Shift+KeyP', 'F1']]);
+});
