@@ -76,7 +76,7 @@ export function applicationMenuItems(name, editor, desktop) {
       ['play', 'play', 'Play / pause', 'Space'], ['toggle-loop', 'loop', 'Loop'], null,
       ['first-frame', 'first', 'First frame', 'Home'], ['previous-frame', 'previous', 'Previous frame', '←'],
       ['next-frame', 'next', 'Next frame', '→'], ['last-frame', 'last', 'Last frame', 'End'], null,
-      ['add-frame', 'plus', 'Add Frame', 'A'], null,
+      ['add-frame', 'plus', 'Add frame', 'A'], null,
       {label: 'Movieclip', icon: 'frame', submenu: [
         ['movieclip-new', 'frame', 'New movieclip…'],
         ['movieclip-create', 'frame', 'Movieclip from selection…', '', noFigure],

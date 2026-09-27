@@ -54,7 +54,7 @@ try{
   await grid.press('Control+z');assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),replaceBefore);
   await grid.press('Control+Shift+z');assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),replaceAfter);
   await grid.press('Control+z');
-  await click(7);const menuPoint=await cell(7);await page.mouse.click(menuPoint.x,menuPoint.y,{button:'right'});assert.equal(await page.getByRole('menuitem',{name:/Create tween|layer/i}).count(),0);assert.equal(await page.getByRole('menuitem',{name:/Add Frame/}).count(),1);await page.getByRole('menuitem',{name:'Change easing…',exact:true}).click();await page.getByRole('radio',{name:'Ease in',exact:true}).click();await grid.press('Control+z');
+  await click(7);const menuPoint=await cell(7);await page.mouse.click(menuPoint.x,menuPoint.y,{button:'right'});assert.equal(await page.getByRole('menuitem',{name:/Create tween|layer/i}).count(),0);assert.equal(await page.getByRole('menuitem',{name:/Add frame/i}).count(),1);await page.getByRole('menuitem',{name:'Change easing…',exact:true}).click();await page.getByRole('radio',{name:'Ease in',exact:true}).click();await grid.press('Control+z');
   // High-polling pointers may report hundreds of positions between displays.
   // Only the latest position should evaluate, and layer DOM must stay intact.
   const fixture=await readFile(new URL('../artifacts/timeline-source.json',import.meta.url),'utf8').then(JSON.parse).catch(async error=>{

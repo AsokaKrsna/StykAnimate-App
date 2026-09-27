@@ -604,7 +604,7 @@ export class Timeline{
     const frames=this.end-this.start+1;
     showTimelineMenu(this,event,[
       [{heading:frames>1?`Frames ${this.start+1}–${this.end+1}`:`Frame ${this.start+1}`},
-       !locked&&{label:'Add Frame',shortcut:this.shortcut('add-frame'),symbol:'plus',action:()=>this.addFrame()},
+       !locked&&{label:'Add frame',shortcut:this.shortcut('add-frame'),symbol:'plus',action:()=>this.addFrame()},
        !selected?.drawing&&!locked&&this.ids.length>0&&{label:'Change easing…',symbol:'sliders',action:()=>this.showEasingPopover(event)},
        hasFrames&&!locked&&{label:'Extend exposure',shortcut:this.shortcut('extend-keyframe'),symbol:'stretch-horizontal',action:()=>this.extendKeyframe()}],
       [selected?.drawing&&!locked&&{heading:'Drawing'},
