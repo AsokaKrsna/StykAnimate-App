@@ -73,10 +73,12 @@ function dockMap(doc, arrangement, {focus = false} = {}) {
  * `host` is the dock host; `openMenu(items, anchor)` shows a menu (the app's
  * command menu); `prompt(options)` asks for a name (the kit's prompt);
  * `anchor()` returns the element the popover opens under; `notify(text)`
- * tells a person why something did not happen.
+ * tells a person why something did not happen; `isToggleKey(event)` says
+ * whether a key is the Layout… shortcut, which closes the popover from
+ * inside it (its typing never reaches the editor's shortcuts).
  */
 export function createLayoutPopover({host, document: doc = globalThis.document, window: win = globalThis.window, overlays = null, icon = null, t = null, prompt, openMenu,
-  anchor = () => null, notify = () => {}, onError = error => globalThis.reportError?.(error)} = {}) {
+  anchor = () => null, notify = () => {}, isToggleKey = () => false, onError = error => globalThis.reportError?.(error)} = {}) {
   const workspace = host.workspace;
   const presets = doc.createElement('div');
   presets.className = 'shell-layout-presets';
@@ -110,11 +112,19 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
   spacer.className = 'shell-layout-spacer';
   foot.append(reset, spacer, save);
 
-  const target = {getBoundingClientRect: () => (anchor() ?? doc.body).getBoundingClientRect()};
+  // Under the band, not under the menu button inside it: the anchor's box reaches down to the band's bottom.
+  const target = {getBoundingClientRect: () => {
+    const box = (anchor() ?? doc.body).getBoundingClientRect(), edge = doc.querySelector('.titlebar')?.getBoundingClientRect().bottom ?? box.bottom;
+    return new DOMRect(box.left, box.top, box.width, Math.max(box.bottom, edge) - box.top);
+  }};
   const popover = createPopover({anchor: target, title: 'Layout', closeLabel: 'Close layout', body, foot, overlays, icon, t,
-    className: 'shell-layout', placement: 'bottom-start', topInset: () => doc.querySelector('.titlebar')?.getBoundingClientRect().bottom ?? 0,
+    // Typing belongs to the popover (a preset card's "h" never picks the Hand tool); it opens 6px under the band, as menus do.
+    className: 'shell-layout', placement: 'bottom-start', keyboardScope: true, topInset: () => (doc.querySelector('.titlebar')?.getBoundingClientRect().bottom ?? 0) + 6,
     onOpen: () => { render(); (presets.querySelector('[aria-checked="true"]') ?? presets.firstElementChild)?.focus({preventScroll: true}); }, onClose: () => { unsubscribe?.(); unsubscribe = null; }, document: doc});
   popover.element.id = 'layout-popover';
+  popover.element.addEventListener('keydown', event => {
+    if (!event.defaultPrevented && isToggleKey(event)) { event.preventDefault(); popover.hide('toggle'); }
+  });
   let unsubscribe = null;
   installRovingFocus(presets, {items: () => presets.querySelectorAll('[role="radio"]'), orientation: 'horizontal'});
 

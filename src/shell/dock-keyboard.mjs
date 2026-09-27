@@ -8,11 +8,14 @@
  * - Ctrl+Alt+M (`layout-arrange`) moves the focused panel: the arrow keys
  *   step through the places it may go (Dock left, Dock right, Float), one
  *   calm drop target previews the place and says its name, Enter commits and
- *   Escape (or Tab, or a click) cancels. The instruction is announced, never
- *   shown as a sentence.
+ *   Escape (or Tab, or a click) cancels. The instruction is announced with the
+ *   first place, never shown as a sentence. While it moves, no other key
+ *   reaches the editor.
  */
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 const PLACES = Object.freeze({left: 'Dock left', right: 'Dock right', float: 'Float here'});
+/** A region's main collection, where focus lands before its first control. */
+export const COLLECTIONS = '[role="tree"][aria-label], [role="grid"][aria-label], [role="listbox"][aria-label]';
 
 const shown = element => Boolean(element?.isConnected && element.getClientRects().length && !element.closest('[hidden], [inert]'));
 
@@ -27,13 +30,17 @@ export function createDockKeyboard({document: doc = globalThis.document, window:
     return [band, rail, hosts.left, head, viewport, hosts.right, bottom, ...floats].filter(element => shown(element));
   };
 
-  /** The element a region takes focus at: its selected tab, its first control, or itself. */
+  /**
+   * The element a region takes focus at: its selected tab, the stage itself,
+   * the timeline's named collection (the "Layer frames" grid, or Simple's
+   * frame list), else its first control. Never an unnamed container.
+   */
   function entry(region) {
     const tab = [...region.querySelectorAll('[role="tab"][aria-selected="true"]')].find(shown);
     if (tab) return tab;
     if (region.matches('#viewport')) return region;
-    const timeline = [...region.querySelectorAll('.layer-timeline, .sheet-filmstrip-scroll')].find(shown);
-    if (timeline) return timeline;
+    const collection = [...region.querySelectorAll(COLLECTIONS)].find(element => shown(element) && element.tabIndex >= 0);
+    if (collection) return collection;
     return [...region.querySelectorAll(FOCUSABLE)].find(element => shown(element) && !element.disabled && element.tabIndex >= 0) ?? null;
   }
 
@@ -47,7 +54,6 @@ export function createDockKeyboard({document: doc = globalThis.document, window:
       index = index < 0 ? (step > 0 ? 0 : regions.length - 1) : (index + step + regions.length) % regions.length;
       const target = entry(regions[index]);
       if (target) {
-        if (!target.hasAttribute('tabindex') && !target.matches(FOCUSABLE)) target.tabIndex = -1;
         target.focus({preventScroll: true});
         return true;
       }
@@ -73,14 +79,14 @@ export function createDockKeyboard({document: doc = globalThis.document, window:
     return id && id !== 'timeline' && host.registry.has(id) ? id : null;
   };
 
-  function preview() {
+  function preview({announce: speak = true} = {}) {
     const target = move.targets[move.index];
     const workspace = doc.querySelector('.workspace');
     if (zone.parentElement !== workspace) workspace.append(zone);
     zone.dataset.target = target;
     zone.hidden = false;
     zoneLabel.textContent = PLACES[target];
-    announce(PLACES[target]);
+    if (speak) announce(PLACES[target]);
   }
 
   function finish(commit) {
@@ -107,7 +113,11 @@ export function createDockKeyboard({document: doc = globalThis.document, window:
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); }
       finish(false);
       return;
-    } else return;
+    } else {
+      // Any other key belongs to the move: it never reaches the editor's shortcuts (H would pick the Hand tool).
+      if (!['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) { event.preventDefault(); event.stopPropagation(); }
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     preview();
@@ -126,8 +136,9 @@ export function createDockKeyboard({document: doc = globalThis.document, window:
     move = {id, targets, index: (start + 1) % targets.length, restore: doc.activeElement};
     win.addEventListener('keydown', onKey, true);
     win.addEventListener('pointerdown', onPointer, true);
-    announce(`Move ${host.registry.get(id)?.title ?? id}: arrow keys choose a place, Enter moves it, Escape cancels`);
-    preview();
+    // One message, so the instructions are not overwritten by the first place in the same task.
+    preview({announce: false});
+    announce(`Move ${host.registry.get(id)?.title ?? id}: ${PLACES[move.targets[move.index]]}. Arrow keys choose a place, Enter moves it, Escape cancels`);
     return true;
   }
 

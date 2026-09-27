@@ -463,7 +463,13 @@ try {
   });
 
   await step('app: a context menu opens above the pointer when there is more room there, and never under the band', async () => {
-    await page.evaluate(() => { styk.state.view.y += 130; });   // bring the figure's feet near the bottom of the stage
+    // Bring the figure's feet 24px above the bottom of the stage, wherever the fit put them.
+    await page.evaluate(() => {
+      const g = [...styk.editor.geometry.objects.values()][0], r = document.getElementById('viewport').getBoundingClientRect(), v = styk.state.view;
+      const lowest = Math.max(...[...g.joints.values()].map(p => r.y + v.y + p.y * v.scale));
+      styk.state.view.y += r.bottom - 24 - lowest;
+    });
+    await settle();
     const joint = await page.evaluate(() => {
       const g = [...styk.editor.geometry.objects.values()][0], r = document.getElementById('viewport').getBoundingClientRect(), v = styk.state.view;
       return [...g.joints.values()].map(p => ({x: r.x + v.x + p.x * v.scale, y: r.y + v.y + p.y * v.scale})).sort((a, b) => b.y - a.y)[0];

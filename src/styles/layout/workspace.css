@@ -46,6 +46,11 @@
   /* The view controls sit 8px from #viewport's corner (the artboard keeps 8px above them where it would reach them). */
   :where(.shell-stage) .canvas-view-controls { inset: auto var(--space-2) var(--space-2) auto; }
 
+  /* The stage's keyboard focus (F6, Tab): a focus ring inside its edge, never a selection ring. */
+  :where(#viewport):focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: calc(-1 * var(--focus-width)); }
+  /* The timeline's frame grid, where F6 lands in the timeline, shows its focus too. */
+  .shell-bottom :where([role="grid"][aria-label]):focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: calc(-1 * var(--focus-width)); }
+
   .shell-left { grid-area: left; }
   .shell-right { grid-area: right; }
 

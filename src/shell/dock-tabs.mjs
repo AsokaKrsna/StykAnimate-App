@@ -22,9 +22,9 @@ const inside = (rect, x, y) => rect && rect.width > 0 && rect.height > 0 && x >=
 const box = (left, top, width, height) => ({left, top, width, height, right: left + width, bottom: top + height});
 
 /**
- * `host` is the dock host; `openMenu(items, anchor)` shows a menu (anchor:
- * an element, or {left, bottom, invoker} for a point); `announce(text)`
- * speaks a short status.
+ * `host` is the dock host; `openMenu(items, anchor, {label})` shows a menu
+ * (anchor: an element, or {left, bottom, invoker} for a point) named
+ * `label`; `announce(text)` speaks a short status.
  */
 export function installDockTabs({host, document: doc = globalThis.document, window: win = globalThis.window, openMenu, announce = () => {}} = {}) {
   const workspaceElement = doc.querySelector('.workspace');
@@ -61,10 +61,18 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
     if (target !== 'strip' && target !== 'hidden') host.showPanel(id, {focus: false});
   }
 
+  /**
+   * Opens a tab's (or strip icon's) menu at a point under it, with the handle
+   * as its invoker: the menu never writes its own aria-expanded or
+   * aria-controls onto a tab (whose aria-controls names its panel) or a strip
+   * icon (whose aria-expanded is its sheet's).
+   */
   function showMenu(handle, at) {
     const id = handle.dataset.panel;
     if (!host.registry.has(id)) return;
-    openMenu(menuItems(id), at ?? handle);
+    const box = handle.getBoundingClientRect();
+    const point = at && at.nodeType !== 1 ? at : {left: box.left, bottom: box.bottom, invoker: handle};
+    openMenu(menuItems(id), point, {label: `${title(id)} panel`});
   }
 
   workspaceElement.addEventListener('contextmenu', event => {
@@ -73,14 +81,14 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
     event.preventDefault();
     event.stopPropagation();
     const keyboard = !event.clientX && !event.clientY;
-    showMenu(handle, keyboard ? handle : {left: event.clientX, bottom: event.clientY, invoker: handle});
+    showMenu(handle, keyboard ? null : {left: event.clientX, bottom: event.clientY, invoker: handle});
   }, {signal});
   workspaceElement.addEventListener('keydown', event => {
     const handle = event.target.closest?.(HANDLE);
     if (!handle || !((event.key === 'F10' && event.shiftKey) || event.key === 'ContextMenu')) return;
     event.preventDefault();
     event.stopPropagation();
-    showMenu(handle, handle);
+    showMenu(handle);
   }, {signal, capture: true});
 
   // -------------------------------------------------------------------

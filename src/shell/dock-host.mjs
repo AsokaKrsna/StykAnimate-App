@@ -43,6 +43,7 @@ import {
 } from './layout-schema.mjs';
 import {SHELL_METRICS, solveLayout} from './layout-solver.mjs';
 import {MENUBAR_FOLD, watchBand} from './topbar.mjs';
+import {COLLECTIONS} from './dock-keyboard.mjs';
 
 const SIDES = Object.freeze(['left', 'right']);
 /** Panels with their own head (Structure's name and count): no tab row while alone in an island. */
@@ -157,13 +158,38 @@ export function createDockHost({document: doc = globalThis.document, window: win
     if (destroyed) return solution;
     try {
       const layout = override ? override(store.layout) : store.layout;
+      const focused = doc.activeElement;
       solution = solveLayout(layout, env());
       apply(solution);
+      keepFocus(focused);
       for (const listener of [...listeners.solve]) {
         try { listener(solution); } catch (error) { report(error); }
       }
     } catch (error) { report(error); }
     return solution;
+  }
+  /**
+   * A commit that moves or hides the focused tab, panel or strip button (a
+   * tab menu's Dock left, Hide or Fold, Focus mode) must not drop focus to
+   * the page (WCAG 2.4.3): focus goes to the panel's tab where it is docked
+   * or floating, its strip button where it is folded, the band's Properties
+   * button where it is a sheet, else the stage. No layout is read.
+   */
+  function keepFocus(focused) {
+    if (!focused || focused === doc.body || focused === doc.documentElement) return;
+    const lost = !focused.isConnected || doc.activeElement === doc.body || !doc.activeElement
+      || Boolean(focused.closest('[hidden], .shell-sheet[popover]:not(:popover-open), .shell-timeline-body[popover]:not(:popover-open)'));
+    if (!lost) return;
+    const id = focused.closest?.('[data-panel]')?.dataset.panel ?? focused.dataset?.stripFor ?? null;
+    const shown = element => element?.isConnected && !element.hidden && !element.closest('[hidden]');
+    const where = id ? presentation(id) : null;
+    let target = null;
+    if (where === 'docked' || where === 'float') {
+      const tab = tabOf(id);
+      target = shown(tab) && !tab.parentElement?.hidden ? tab : [...(rootOf(id)?.querySelectorAll(COLLECTIONS) ?? [])].find(shown) ?? null;
+    } else if (where === 'strip') target = [...SIDES.map(side => strips[side]?.querySelector(`:scope > [data-panel="${id}"]`))].find(shown) ?? null;
+    else if (where === 'sheet' && sideOf(id) === 'right') target = shown(sheetButton) ? sheetButton : null;
+    (target ?? viewport)?.focus({preventScroll: true});
   }
   /** Coalesces continuous changes (a resize, a drag) into one commit per frame. */
   function schedule() {
@@ -301,6 +327,9 @@ export function createDockHost({document: doc = globalThis.document, window: win
       sheet.id = `${side}-sheet`;
       hosts[side].append(sheet);
       sheetIslands[side] = sheet;
+      sheet.addEventListener('focusout', event => {
+        if (sheets[side].open && leaves(event, [sheet, sheets[side].invoker])) closeSheet(side, {restoreFocus: false});
+      }, {signal});
     }
     return sheetIslands[side];
   }
@@ -553,7 +582,8 @@ export function createDockHost({document: doc = globalThis.document, window: win
     body.style.setProperty('--sheet-block', px(Math.min(room, 360)));
   }
 
-  function openBody({invoker = doc.activeElement} = {}) {
+  /** Opens the timeline body as a sheet (the low height tier) and, like the side sheets, moves focus into it. */
+  function openBody({invoker = doc.activeElement, focus = true} = {}) {
     if (solution?.regions.bottom.state !== 'strip') return false;
     onBeforeChange?.();
     bodyOpen = true;
@@ -564,6 +594,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
       try { body.showPopover(); } catch (error) { report(error); }
     }
     commit();
+    if (focus) focusPanel('timeline');
     return true;
   }
 
@@ -598,8 +629,18 @@ export function createDockHost({document: doc = globalThis.document, window: win
       const state = sheets[side];
       if (state.open && (sheetIslands[side]?.contains(event.target) || event.target === state.invoker)) { event.preventDefault(); closeSheet(side); return; }
     }
-    if (bodyOpen && (body.contains(event.target) || event.target === bodyInvoker)) { event.preventDefault(); closeBody(); }
+    // The timeline body's sheet closes from anywhere in the timeline (its header too).
+    if (bodyOpen && (bottom.contains(event.target) || event.target === bodyInvoker)) { event.preventDefault(); closeBody(); }
   }, {capture: true, signal});
+  // A sheet closes when focus leaves it for something it could cover (WCAG 2.4.11), as a press outside does:
+  // not for its invoker, another overlay, or (the timeline's) its own header.
+  const leaves = (event, keep) => {
+    const next = event.relatedTarget;
+    return next instanceof win.Element && !keep.some(element => element?.contains?.(next)) && !insideOverlay(next);
+  };
+  body.addEventListener('focusout', event => {
+    if (bodyOpen && leaves(event, [bottom, bodyInvoker])) closeBody({restoreFocus: false});
+  }, {signal});
 
   // ---------------------------------------------------------------------
   // Tabs, strips and the timeline's own controls
@@ -641,8 +682,10 @@ export function createDockHost({document: doc = globalThis.document, window: win
     el.setAttribute('role', 'separator');
     const vertical = name !== 'bottom';
     el.setAttribute('aria-orientation', vertical ? 'vertical' : 'horizontal');
-    el.setAttribute('aria-keyshortcuts', vertical ? 'ArrowLeft ArrowRight Home Enter' : 'ArrowUp ArrowDown Home Enter');
-    workspace.append(el);
+    // In the tab order beside the region it resizes (the grid places it; dock.css).
+    if (name === 'right') hosts.right.before(el);
+    else if (name === 'left') hosts.left.after(el);
+    else bottom.before(el);
     const sign = name === 'left' ? 1 : -1;
     const coordinate = event => (vertical ? event.clientX : event.clientY);
     let drag = null;
@@ -682,9 +725,10 @@ export function createDockHost({document: doc = globalThis.document, window: win
       if (event.key === 'Escape' && drag) { event.preventDefault(); event.stopPropagation(); finish(true); return; }
       const grow = name === 'right' ? {ArrowLeft: 1, ArrowRight: -1} : name === 'left' ? {ArrowRight: 1, ArrowLeft: -1} : {ArrowUp: 1, ArrowDown: -1};
       if (event.key === 'Home' || event.key === 'Enter') resetSize(name);
-      else if (grow[event.key] && solution?.aria[name]) {
+      else if ((grow[event.key] || event.key === 'End') && solution?.aria[name]) {
         const bounds = solution.aria[name];
-        const size = Math.round(clamp(sizeOf(name) + grow[event.key] * (event.shiftKey ? BIG_STEP : STEP), bounds.min, bounds.max));
+        const size = event.key === 'End' ? bounds.max
+          : Math.round(clamp(sizeOf(name) + grow[event.key] * (event.shiftKey ? BIG_STEP : STEP), bounds.min, bounds.max));
         store.update(layout => setSharedSize(layout, keyOf(name), size));
         commit();
       } else return;
@@ -760,13 +804,14 @@ export function createDockHost({document: doc = globalThis.document, window: win
     return true;
   }
 
-  /** Focuses a panel: its tab, else its main collection (a tree, a grid), else its first control. */
+  /** Focuses a panel: its tab, else its main collection (a tree, the timeline's grid or frame list), else its first control. */
   function focusPanel(id) {
     const tab = tabOf(id);
     if (id !== 'timeline' && tab.isConnected && !tab.hidden && !tab.parentElement?.hidden) { tab.focus({preventScroll: true}); return; }
     const panel = id === 'timeline' ? bottom : rootOf(id);
-    const target = [...(panel?.querySelectorAll('[role="tree"], [role="grid"], .layer-timeline, .sheet-filmstrip-scroll, [tabindex="0"], button, input, select, textarea') ?? [])]
-      .find(element => element.getClientRects().length && !element.disabled);
+    const usable = element => element.getClientRects().length && !element.disabled && element.tabIndex >= 0;
+    const target = [...(panel?.querySelectorAll(COLLECTIONS) ?? [])].find(usable)
+      ?? [...(panel?.querySelectorAll('[tabindex="0"], button, input, select, textarea') ?? [])].find(usable);
     target?.focus({preventScroll: true});
   }
 

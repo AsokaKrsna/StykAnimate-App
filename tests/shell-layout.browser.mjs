@@ -526,6 +526,14 @@ try {
     await page.mouse.click(before.x + 40, before.y + 40);
     await settle();
     assert.equal(await page.locator('#right-sheet').evaluate(sheet => sheet.matches(':popover-open')), false, 'a press outside closes it');
+    // Focus leaving the sheet for what it covers closes it too (Shift+Tab from its first tab).
+    await button.focus();
+    await page.keyboard.press('Enter');
+    await settle();
+    assert.equal(await page.evaluate(() => document.getElementById('right-sheet').contains(document.activeElement)), true);
+    await page.keyboard.press('Shift+Tab');
+    await settle();
+    assert.equal(await page.locator('#right-sheet').evaluate(sheet => sheet.matches(':popover-open')), false, 'focus leaving closes the sheet');
     // The sheet ends above the timeline's header, so Play, Add frame and Onion stay in reach while it is open.
     await page.evaluate(() => styk.editor.select([...styk.editor.geometry.objects.keys()][0]));
     for (const [width, height] of [[800, 600], [500, 340]]) {
@@ -628,6 +636,25 @@ try {
     await page.keyboard.press('Escape');
     await settle();
     assert.equal(await page.locator('#timeline').evaluate(body => body.matches(':popover-open')), false);
+    // From the keyboard: Enter takes focus into the rows, Escape brings it back; Escape from the header closes it too.
+    await opener.focus();
+    await page.keyboard.press('Enter');
+    await settle();
+    assert.equal(await page.evaluate(() => document.getElementById('timeline').contains(document.activeElement)), true, 'focus is in the sheet');
+    await page.keyboard.press('Escape');
+    await settle();
+    assert.equal(await page.evaluate(() => [document.getElementById('timeline').matches(':popover-open'), document.activeElement.getAttribute('aria-label')].join()), 'false,Timeline…');
+    await page.keyboard.press('Enter');
+    await settle();
+    await page.locator('#play-button').focus();
+    await page.keyboard.press('Escape');
+    await settle();
+    assert.equal(await page.locator('#timeline').evaluate(body => body.matches(':popover-open')), false, 'Escape from the header closes it');
+    await opener.click();
+    await settle();
+    await page.locator('#viewport').focus();
+    await settle();
+    assert.equal(await page.locator('#timeline').evaluate(body => body.matches(':popover-open')), false, 'focus leaving for the stage closes it');
     await resize(1440, 900);
     assert.equal((await rect('.timeline-panel')).height, 280);
   });
@@ -641,6 +668,106 @@ try {
     assert.equal(await page.evaluate(() => Boolean(document.activeElement.closest('.timeline-panel'))), true);
     await page.keyboard.press('Control+F6');
     assert.equal(await page.evaluate(() => Boolean(document.activeElement.closest('.shell-right'))), true);
+  });
+
+  await step('F6 lands on a named place that shows its focus, and works from fields', async () => {
+    const focused = () => page.evaluate(() => {
+      const element = document.activeElement;
+      return {id: element.id || element.getAttribute('aria-label') || element.className, visible: element.matches(':focus-visible'),
+        ring: getComputedStyle(element).outlineStyle !== 'none', role: element.getAttribute('role'), tag: element.localName};
+    });
+    await page.locator('.shell-right [role="tab"][aria-selected="true"]').focus();
+    await page.keyboard.press('F6');
+    const timeline = await focused();
+    assert.deepEqual([timeline.id, timeline.role, timeline.visible, timeline.ring], ['Layer frames', 'grid', true, true], 'the timeline takes focus at its named grid, with a ring');
+    await page.keyboard.press('Control+F6');
+    await page.keyboard.press('Control+F6');
+    const stage = await focused();
+    assert.deepEqual([stage.id, stage.role, stage.visible, stage.ring], ['viewport', 'application', true, true], '#viewport shows its focus');
+    // From a field: the frame rate in the timeline header, the layer search, and an inspector field.
+    for (const selector of ['#fps', '[aria-label="Find layers"]', '#inspector input']) {
+      await page.locator(selector).first().focus();
+      await page.keyboard.press('F6');
+      assert.equal(await page.evaluate(selector => !document.activeElement.matches(selector) && document.activeElement !== document.body, selector), true, `F6 leaves ${selector}`);
+    }
+    await page.locator('#inspector input').first().focus();
+    await page.keyboard.press('Control+F6');
+    assert.equal(await page.evaluate(() => !document.activeElement.closest('.shell-right')), true, 'Ctrl+F6 leaves the inspector from its field');
+  });
+
+  await step('the keyboard move says how it works once, takes every key and starts from a field', async () => {
+    await page.evaluate(() => styk.workspace.reset());
+    await settle();
+    const said = [];
+    await page.exposeFunction('shellSaid', text => said.push(text)).catch(() => {});
+    await page.evaluate(() => {
+      const region = [...document.querySelectorAll('.ui-visually-hidden[role="status"]')].at(-1);
+      new MutationObserver(() => { if (region.textContent) window.shellSaid(region.textContent); }).observe(region, {childList: true, characterData: true, subtree: true});
+    });
+    const tool = await page.evaluate(() => styk.state.tool);
+    await page.locator('#inspector input').first().focus();
+    await page.keyboard.press('Control+Alt+KeyM');
+    await settle();
+    assert.equal(await page.locator('.shell-drop').isVisible(), true, 'Ctrl+Alt+M works from a Properties field');
+    assert.match(said.at(-1) ?? '', /^Move Properties: Dock left. Arrow keys choose a place, Enter moves it, Escape cancels$/);
+    await page.keyboard.press('h');
+    assert.equal(await page.evaluate(() => styk.state.tool), tool, 'H does not pick the Hand tool while moving');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.shell-drop').isVisible(), false);
+  });
+
+  await step('focus stays on the panel after a tab menu docks, hides or folds it and after Focus mode', async () => {
+    await page.evaluate(() => styk.workspace.reset());
+    await settle();
+    const active = () => page.evaluate(() => {
+      const element = document.activeElement;
+      return element === document.body ? 'BODY' : element.id || `${element.className}:${element.dataset.panel ?? ''}`;
+    });
+    const tabMenu = async (tab, row) => {
+      await page.locator(tab).focus();
+      await page.keyboard.press('Shift+F10');
+      await page.waitForFunction(() => document.getElementById('menu').matches(':popover-open'));
+      const aria = await page.evaluate(tab => {
+        const element = document.querySelector(tab);
+        return {controls: element.getAttribute('aria-controls'), expanded: element.getAttribute('aria-expanded'), label: document.getElementById('menu').getAttribute('aria-label')};
+      }, tab);
+      await page.getByRole('menuitem', {name: row, exact: true}).focus();
+      await page.keyboard.press('Enter');
+      await settle();
+      return aria;
+    };
+    const aria = await tabMenu('#vfx-tab', 'Dock left');
+    assert.deepEqual(aria, {controls: 'vfx-panel', expanded: null, label: 'VFX panel'}, 'the menu writes no ARIA on the tab and is named');
+    assert.equal(await active(), 'vfx-tab', 'Dock left: focus stays on the moved tab');
+    assert.deepEqual(await page.evaluate(() => [document.getElementById('vfx-tab').getAttribute('aria-controls'), document.getElementById('vfx-tab').hasAttribute('aria-expanded')]), ['vfx-panel', false]);
+    await tabMenu('#vfx-tab', 'Fold to strip');
+    assert.equal(await active(), 'ui-icon-button shell-strip-button:vfx', 'Fold: its strip button');
+    await tabMenu('#library-tab', 'Hide');
+    assert.equal(await active(), 'viewport', 'Hide: the stage');
+    await page.evaluate(() => styk.workspace.reset());
+    await settle();
+    await page.locator('#properties-tab').focus();
+    await page.keyboard.press('Control+Backslash');
+    await settle();
+    assert.equal(await active(), 'ui-icon-button shell-strip-button:properties', 'Focus mode: the strip button');
+    await page.keyboard.press('Control+Backslash');
+    await settle();
+    assert.equal(await active(), 'properties-tab', 'and back: the tab');
+    await page.evaluate(() => styk.workspace.reset());
+    await settle();
+  });
+
+  await step('splitters sit beside what they resize in the tab order, and End takes the largest size', async () => {
+    const right = page.getByRole('separator', {name: 'Resize properties panel'});
+    assert.deepEqual(await page.evaluate(() => {
+      const splitter = document.querySelector('.shell-splitter[data-splitter="right"]'), timeline = document.querySelector('.shell-splitter[data-splitter="bottom"]');
+      return [splitter.nextElementSibling?.id, timeline.nextElementSibling?.id, splitter.hasAttribute('aria-keyshortcuts')];
+    }), ['right-dock', 'animation-timeline', false]);
+    await right.focus();
+    await page.keyboard.press('End');
+    assert.equal(await right.getAttribute('aria-valuenow'), await right.getAttribute('aria-valuemax'));
+    await page.keyboard.press('Home');
+    assert.equal(await right.getAttribute('aria-valuenow'), '288');
   });
 
   await step('Ctrl+Alt+M moves the focused panel with the arrow keys; Enter moves it and Escape cancels', async () => {
@@ -682,6 +809,11 @@ try {
     await openLayout();
     assert.deepEqual(await cards(), ['animate*', 'timing', 'focus', 'review']);
     assert.equal(await page.evaluate(() => document.activeElement.dataset.preset), 'animate', 'focus starts on the shown preset');
+    const tool = await page.evaluate(() => styk.state.tool);
+    await page.keyboard.press('h');
+    assert.equal(await page.evaluate(() => styk.state.tool), tool, 'typing in the popover never reaches the editor (H is not the Hand tool)');
+    const gap = await page.evaluate(() => parseFloat(getComputedStyle(document.getElementById('layout-popover')).top) - document.querySelector('.titlebar').getBoundingClientRect().bottom);
+    assert.ok(Math.abs(gap - 6) < 1, `it opens 6px under the band, as menus do (${gap})`);
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Enter');
     await settle();

@@ -4328,7 +4328,7 @@ function showMenu(anchor) {
  * it again) or at a point ({left, bottom}, a context menu; `invoker` is where
  * focus returns). Returns the menu, or null when the press closed it.
  */
-function showCommandMenu(items, anchor) {
+function showCommandMenu(items, anchor, { label } = {}) {
   const element = anchor?.nodeType === 1 ? anchor : null;
   const open = element && menuFor(element);
   if (open) {
@@ -4345,6 +4345,7 @@ function showCommandMenu(items, anchor) {
     ...(inPopover ? { host: undefined } : {}),
     items: menuItems(items),
     ...(element ? { anchor: element } : { point: { x: anchor.left ?? anchor.x ?? 0, y: anchor.bottom ?? anchor.y ?? 0 } }),
+    ...(label ? { label } : {}),
     invoker,
   });
 }
@@ -5835,6 +5836,18 @@ const releaseSpaceChord = () => {
 window.addEventListener('keyup', (event) => { if (event.code === 'Space') releaseSpaceChord(); }, true);
 window.addEventListener('blur', releaseSpaceChord);
 installPenMenuGuard(window);
+// The region and layout keys type nothing, and F6 is how a keyboard user leaves a field, so they work from
+// fields too (in the browser F6 would otherwise go to the address bar). Captured, before fields that keep
+// their own keys (the layer search) stop them.
+const SHELL_FIELD_KEYS = new Set(['focus-next-region', 'focus-previous-region', 'layout-arrange', 'layout-menu']);
+document.addEventListener('keydown', guarded(event => {
+  if (overlays.blocksHotkeys() || !isHotkeyInput(event.target)) return;
+  const command = hotkeys.resolve(event, hotkeyScopes(event));
+  if (!SHELL_FIELD_KEYS.has(command?.id) || !actions[command.id]) return;
+  event.preventDefault();
+  event.stopPropagation();
+  actions[command.id]();
+}), true);
 const polygonCommands = new Set(['undo','redo','open','new','save','save-as','settings','help','command-palette','cancel','finish-polygon','play-pan',
   'tool-select','tool-pose','tool-hand','tool-line','tool-circle','tool-polygon','zoom-in','zoom-out','zoom-reset','zoom-selection','toggle-onion','toggle-handles','isolate-hold']);
 document.addEventListener('keydown', guarded(event => {
@@ -6601,7 +6614,7 @@ async function init() {
   document.body.append(shellAnnouncer);
   const announceShell = (text) => { shellAnnouncer.textContent = text; };
   const shellKeyboard = createDockKeyboard({ host: shell, announce: announceShell });
-  installDockTabs({ host: shell, openMenu: (items, at) => showCommandMenu(items, at), announce: announceShell });
+  installDockTabs({ host: shell, openMenu: (items, at, options) => showCommandMenu(items, at, options), announce: announceShell });
   // View › Layout… and Ctrl+Alt+L: under the View menu, or the mark where the menubar folds into it.
   const layoutPopover = createLayoutPopover({
     host: shell, overlays, icon: (name) => icon(name), t: kitT,
@@ -6609,6 +6622,7 @@ async function init() {
     openMenu: (items, at) => showCommandMenu(items, at),
     anchor: () => [document.querySelector('.app-menubar [data-app-menu="view"]'), document.querySelector('.titlebar .brand')].find((element) => element?.getClientRects().length),
     notify: (text) => toast(text),
+    isToggleKey: (event) => hotkeys.resolve(event, [])?.id === 'layout-menu',
   });
   installShellCommands(actions, { shell, keyboard: shellKeyboard, layout: layoutPopover });
   shell.define({
