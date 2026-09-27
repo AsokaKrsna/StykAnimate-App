@@ -302,6 +302,10 @@ test('vfwEncodeOptions equals VfwExportControls.getOptions', () => {
     assert.deepEqual(outcome(() => vfwEncodeOptions(request.vfw, {codec: controls.codecs.find(item => item.id === selected) ?? null,
       ready: !state.stale && !state.configuring, available: !state.disposed && !state.hidden})),
     outcome(() => getOptions.call(controls)), JSON.stringify({flags, state, quality, keyframes, bitrate}));
+    // What the export flow passes: the controls' own requestContext(), with its configuration in the request.
+    const vfwContext = VfwExportControls.prototype.requestContext.call(controls);
+    const flowRequest = buildExportRequest({format: 'vfw', vfw: {codecId: selected, quality, keyframes, bitrateMbps: bitrate, configurationId: vfwContext.configurationId}}, context());
+    assert.deepEqual(outcome(() => vfwEncodeOptions(flowRequest.vfw, vfwContext)), outcome(() => getOptions.call(controls)), `requestContext ${JSON.stringify({flags, state})}`);
   }
 });
 

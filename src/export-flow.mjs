@@ -1,14 +1,18 @@
 /**
  * Exporting (architecture.md §3.15): the export dialog (showExport, with
- * export-panel.mjs's mountExportFlow arranging its controls), the options it
- * reads (exportOptions), every export command, the export renderer's job and
- * its progress dialog, and writing the result (saveBlob, finishExport).
+ * export-panel.mjs's mountExportFlow arranging its controls), every export
+ * command, the export renderer's job and its progress dialog, and writing the
+ * result (saveBlob, finishExport).
  *
  * The export commands register themselves in the app's `actions` map, before
  * app.mjs wraps every action (drawing barrier, polygon guard, telemetry).
- * Export reads the dialog's fields until ExportRequest replaces DOM-as-state
- * (M6, export-request.mjs); the equivalence tests compare these blocks with
- * tests/fixtures/export-legacy.mjs line for line.
+ * Every export runs from an explicit ExportRequest (export-request.mjs): the
+ * request holds the choices, and exportJob() derives the options, file name
+ * and encoder arguments from it and the editor's state. Until the export sheet
+ * holds the request, the request is read from the open dialog's fields
+ * (legacyExportFields); a command run without the dialog exports today's
+ * defaults. tests/export-request.test.mjs proves the derivation equals the
+ * dialog-field code it replaced (tests/fixtures/export-legacy.mjs).
  *
  * DOM-free at import. ctx (from app.mjs): {editor, state, $, esc, actions,
  * desktop, importer, telemetry, audioEngine, exportJobs, playback,
@@ -22,7 +26,6 @@ import { encodeNativeVideo } from "./native-video-export.mjs";
 import { encodeVfwVideo } from "./vfw-video-export.mjs";
 import { VfwExportControls } from "./vfw-export-controls.mjs";
 import { getExportCapabilities, exportFormat } from "./export-capabilities.mjs";
-import { videoQualityOptions } from "./export-video-quality.mjs";
 import { audioState, audibleClips } from "./audio-model.mjs";
 import { workload } from "./telemetry-workload.mjs";
 import { sizeBucket } from "./telemetry-schema.mjs";
@@ -33,11 +36,8 @@ import { defaultGIFDither } from "./gif-options.mjs";
 import { ExportFrameRenderer } from "./export-frame-renderer.mjs";
 import { exportProgressMarkup, mountExportProgress } from "./export-progress.mjs";
 import { checkExportContext } from "./export-canvas.mjs";
-import {
-  EXPORT_MAX_PIXELS,
-  EXPORT_SMOOTHING,
-  normalizeExportSmoothing,
-} from "./export-sampling.mjs";
+import { EXPORT_SMOOTHING } from "./export-sampling.mjs";
+import { buildExportRequest, exportJob, legacyExportFields } from "./export-request.mjs";
 import { mountExportFlow } from "./export-panel.mjs";
 import { isMovieclip } from "./movieclips.mjs";
 import { icon } from "./icons.mjs";
@@ -108,11 +108,50 @@ export function createExportFlow(ctx) {
     }
     return Boolean(output?.saved);
   }
-  async function exportPivot(format = "piv") {
+  /**
+   * The choices of an export of `format` (an EXPORT_FORMATS id) as an
+   * ExportRequest: the open export dialog's fields, until the export sheet
+   * holds the request; with no dialog open, today's defaults (the artboard
+   * size, the whole animation, 94% quality), as a palette command exports.
+   */
+  function currentRequest(format) {
+    const fields = legacyExportFields($, format);
+    // The codec settings chosen with Configure codec… belong to this choice.
+    if (fields.vfw) fields.vfw.configurationId = vfwExportControls?.requestContext().configurationId;
+    return buildExportRequest(fields, {
+      canvasWidth: editor.report.canvas_width,
+      canvasHeight: editor.report.canvas_height,
+      totalFrames: editor.totalTicks,
+    });
+  }
+  /** What exportJob() reads from the editor. `report` is the one played: in Simple mode, with its working frame materialized. */
+  function jobContext(request, report = editor.report) {
+    return {
+      totalFrames: editor.totalTicks,
+      fps: report.frame_delay_ms ? 1000 / report.frame_delay_ms : report.fps,
+      defaultDither: defaultGIFDither(editor.report),
+      // Browser WebM uses WebCodecs unless the capability probe chose FFmpeg for it.
+      provider: document.querySelector('[data-action="export-video"]')?.dataset.provider,
+      audioClips: audibleClips(audioState(report)),
+      loop: state.loop,
+      name: editor.name,
+      objectName: nameOf(editor.object),
+      tick: editor.tick,
+      movieclip: isMovieclip(editor.figure),
+      vfw: request.format === "vfw" ? (vfwExportControls?.requestContext() ?? { available: false }) : undefined,
+    };
+  }
+  const playedReport = () =>
+    state.settings.timelineMode === "simple"
+      ? materializeSimpleFrameDraftForPivot(editor.report)
+      : editor.report;
+  /** An editable file: .piv, .stk, .stkz, or .stykmov (the figure type of a selected movieclip). */
+  async function exportPivot(type = "piv") {
     finishCurrentEdit();
     interruptRecovery();
+    const request = currentRequest(type),
+      { format, filename } = exportJob(request, jobContext(request));
     status(`Writing .${format}…`, false, true);
-    const filename = `${["stk", "stkz", "stykmov"].includes(format) ? nameOf(editor.object) : editor.name || "Untitled"}.${format}`;
     let saved;
     try {
       saved = await runDocumentExport(format, (blob, signal) =>
@@ -132,48 +171,6 @@ export function createExportFlow(ctx) {
       );
     }
     closeDialog();
-  }
-  function exportOptions({ animation = true } = {}) {
-    const number = (id, fallback) => ($(id) ? Number($(id).value) : fallback);
-    const options = {
-      width: number("export-width", editor.report.canvas_width),
-      height: number("export-height", editor.report.canvas_height),
-      start: number("export-start", 1) - 1,
-      end: number("export-end", editor.totalTicks),
-      quality: $("export-quality")?.closest('label').hidden ? 0.94 : number("export-quality", 94) / 100,
-      dither: $("export-gif-dither")?.checked ?? defaultGIFDither(editor.report),
-      smoothing: normalizeExportSmoothing(
-        $("export-smoothing")?.value || "edges",
-      ),
-    };
-    if (
-      !Number.isInteger(options.width) ||
-      !Number.isInteger(options.height) ||
-      options.width < 1 ||
-      options.height < 1 ||
-      options.width > 16384 ||
-      options.height > 16384 ||
-      options.width * options.height > EXPORT_MAX_PIXELS
-    )
-      throw new Error(
-        `Export size must be whole pixels, up to ${Math.round(EXPORT_MAX_PIXELS / 1e6)} million pixels per frame.`,
-      );
-    if (
-      animation &&
-      (!Number.isInteger(options.start) ||
-        !Number.isInteger(options.end) ||
-        options.start < 0 ||
-        options.start >= options.end ||
-        options.end > editor.totalTicks)
-    )
-      throw new Error("Choose a valid export frame range.");
-    if (
-      !Number.isFinite(options.quality) ||
-      options.quality < 0.01 ||
-      options.quality > 1
-    )
-      throw new Error("Quality must be between 1 and 100 percent.");
-    return options;
   }
   /** Keep rendering off the UI thread and cancel the whole job if its document changes. */
   async function withExportRenderer(
@@ -263,9 +260,9 @@ export function createExportFlow(ctx) {
   async function exportPNG() {
     telemetry.count('export_png');
     finishCurrentEdit();
-    const options = exportOptions({ animation: false }),
-      frame = currentFrame(),
-      filename = `${editor.name}-frame-${editor.tick + 1}.png`;
+    const request = currentRequest("png"),
+      { options, filename } = exportJob(request, jobContext(request)),
+      frame = currentFrame();
     await withExportRenderer(
       options,
       editor.report,
@@ -288,12 +285,10 @@ export function createExportFlow(ctx) {
   async function exportSVGFrame() {
     telemetry.count('export_svg');
     finishCurrentEdit();
-    const options = {
-        ...exportOptions({ animation: false }),
-        smoothing: "edges",
-      },
-      frame = currentFrame(),
-      filename = `${editor.name}-frame-${editor.tick + 1}.svg`;
+    // SVG keeps vector paths: its options say "edges" whatever the request's smoothing.
+    const request = currentRequest("svg"),
+      { options, filename } = exportJob(request, jobContext(request)),
+      frame = currentFrame();
     await withExportRenderer(
       options,
       editor.report,
@@ -309,21 +304,10 @@ export function createExportFlow(ctx) {
   async function exportImages(format) {
     telemetry.count(format.startsWith('svg') ? 'export_svg' : format.startsWith('gif') ? 'export_gif' : format.startsWith('jpeg') ? 'export_jpeg' : 'export_png');
     finishCurrentEdit();
-    const options = exportOptions(),
-      report =
-        state.settings.timelineMode === "simple"
-          ? materializeSimpleFrameDraftForPivot(editor.report)
-          : editor.report,
-      ticks = options.end - options.start,
-      fps = report.frame_delay_ms ? 1000 / report.frame_delay_ms : report.fps,
-      extension = format.endsWith("sequence")
-        ? "zip"
-        : format === "apng"
-          ? "png"
-          : "gif",
-      filename = `${editor.name}${format.endsWith("sequence") ? "-" + format : ""}.${extension}`,
-      loop = state.loop;
-    if (format === "svg-sequence") options.smoothing = "edges";
+    // The options, frame count, rate, name and GIF repeat (the Loop setting) come from the request.
+    const request = currentRequest(format),
+      report = playedReport(),
+      { options, ticks, fps, filename, animation } = exportJob(request, jobContext(request, report));
     if ([...exportJobs].some(job => job.raster)) throw new Error('An export is already running. Wait for it to finish or cancel it.');
     // Streamed exports pick their destination up front, then write while encoding.
     const sink = await openExportSink({
@@ -342,14 +326,7 @@ export function createExportFlow(ctx) {
         async (renderer, signal, onProgress) => {
           sink.signal = signal;
           const output = await exportAnimation({
-            format,
-            width: options.width,
-            height: options.height,
-            quality: options.quality,
-            dither: options.dither,
-            fps,
-            totalFrames: ticks,
-            loop,
+            ...animation,
             signal,
             onProgress,
             sink,
@@ -371,37 +348,15 @@ export function createExportFlow(ctx) {
   async function exportVideo(format = "webm") {
     telemetry.count('export_video');
     finishCurrentEdit();
-    const vfw = format === "vfw" ? vfwExportControls.getOptions() : null;
-    const codec = $(`export-${format}-codec`)?.value || undefined;
-    const nativeWebm =
-      format === "webm" &&
-      document.querySelector('[data-action="export-video"]')?.dataset.provider ===
-        "FFmpeg";
-    const options = exportOptions(),
-      report =
-        state.settings.timelineMode === "simple"
-          ? materializeSimpleFrameDraftForPivot(editor.report)
-          : editor.report,
-      ticks = options.end - options.start,
-      fps = report.frame_delay_ms ? 1000 / report.frame_delay_ms : report.fps,
-      extension = format === "vfw" ? "avi" : format,
-      filename = `${editor.name}.${extension}`;
-    const videoQuality = format === 'vfw' ? {} : videoQualityOptions({
-      width: options.width, height: options.height, fps,
-      preset: $('export-video-quality')?.value || 'recommended',
-      provider: format === 'webm' && !nativeWebm ? 'WebCodecs' : 'FFmpeg',
-      mode: $('export-bitrate-mode')?.value || 'auto',
-      manualMbps: $('export-video-bitrate')?.value,
-      lossless: format === 'avi' && ['ffv1', 'rawvideo'].includes(codec),
-    });
-    const encode =
-      format === "vfw"
-        ? encodeVfwVideo
-        : format === "webm" && !nativeWebm
-          ? encodeWebM
-          : encodeNativeVideo;
-    const includeAudio = ($('export-audio')?.checked ?? true) && audibleClips(audioState(report)).some(clip => clip.start < options.end / fps && clip.start + clip.duration > options.start / fps);
-    if (includeAudio && encode !== encodeNativeVideo) throw new Error('Audio export requires a desktop FFmpeg video format. Choose MP4, WebM, AVI or WMV with FFmpeg, or turn off Include audio for a silent export.');
+    // The request gives the encoder, codec, quality or bitrate, Windows codec
+    // options, size, range and whether sound goes in; a request that cannot be
+    // encoded (sound with a browser encoder, a VFW codec still being checked)
+    // throws here with the reason, before a file is chosen.
+    const request = currentRequest(format),
+      report = playedReport(),
+      plan = exportJob(request, jobContext(request, report)),
+      { options, ticks, fps, extension, filename, includeAudio } = plan;
+    const encode = { vfw: encodeVfwVideo, webcodecs: encodeWebM, native: encodeNativeVideo }[plan.encoder];
     // Native exports keep the encoded file on disk in the desktop process; a
     // direct save moves it without piping bytes through the renderer. Every
     // other path streams encoder output into the chosen file as it is produced.
@@ -433,15 +388,8 @@ export function createExportFlow(ctx) {
           if (sink) sink.signal = signal;
           const output = await encode({
             audioChunks: includeAudio ? audioEngine.exportChunks(report, {start:options.start / fps,duration:ticks / fps,signal}) : undefined,
-            format,
-            codec,
+            ...plan.encode,
             desktop,
-            ...videoQuality,
-            ...vfw,
-            width: options.width,
-            height: options.height,
-            fps,
-            totalFrames: ticks,
             signal,
             onProgress,
             sink,
@@ -644,7 +592,8 @@ export function createExportFlow(ctx) {
     export: showExport,
     "export-piv": () => exportPivot(),
     "export-stk": () => exportPivot("stk"),
-    "export-stkz": () => exportPivot(isMovieclip(editor.figure)?"stykmov":"stkz"),
+    // A selected movieclip writes .stykmov (exportJob decides, as the figure type says).
+    "export-stkz": () => exportPivot("stkz"),
     "export-stykmov": () => exportPivot("stykmov"),
     "export-png": exportPNG,
     "export-video": () => exportVideo(),
@@ -660,5 +609,5 @@ export function createExportFlow(ctx) {
     "export-png-sequence": () => exportImages("png-sequence"),
     "export-jpeg-sequence": () => exportImages("jpeg-sequence"),
   });
-  return { showExport, exportOptions, exportPivot, saveBlob, finishExport };
+  return { showExport, exportPivot, saveBlob, finishExport };
 }

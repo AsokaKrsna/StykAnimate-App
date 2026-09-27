@@ -66,6 +66,18 @@ export class VfwExportControls {
       bitrate: codec.dataRate ? Math.round(numeric(this.bitrate, 0, 200, 'Bitrate') * 1000000) : 0,
       configurationId: this.configurations.get(this._configurationKey())};
   }
+  /**
+   * What an ExportRequest's Windows AVI export needs (export-request.mjs
+   * vfwEncodeOptions, which derives exactly what getOptions returns): whether
+   * installed codecs are available here, the chosen codec's capability,
+   * whether it is ready (checked for the current size, no codec settings
+   * dialog open) and the settings chosen with Configure codec… for this size.
+   */
+  requestContext() {
+    if (this.disposed || this.element.hidden) return {available: false};
+    return {available: true, codec: this.codecs.find(codec => codec.id === this.select.value) ?? null,
+      ready: this.loadedKey === this._currentKey() && !this.configuring, configurationId: this.configurations.get(this._configurationKey())};
+  }
   async configure() {
     const options = this.getOptions(), size = this._size(), key = this._configurationKey(), codec = this.codecs.find(codec => codec.id === options.codecId);
     if (!codec?.configure) return;

@@ -20,6 +20,19 @@ calculates a target from the final dimensions and frame rate. Manual bitrate and
 codec selectors are available under Advanced video settings. See the
 [quality-control contract](EXPORT-FORMATS.md) for mappings and verification.
 
+Every export runs from one explicit export request (`src/export-request.mjs`):
+the format and the choices that apply to it. `exportJob()` derives from it and
+the editor's state everything the encoders receive: size, frame range,
+quality, smoothing, dither, codec, bitrate or quality preset, sound, the
+Windows codec options and the file name. `src/export-flow.mjs` reads the
+request from the open dialog's fields (`legacyExportFields()`) until the export
+sheet holds it; a command run without the dialog exports today's defaults
+(the artboard size, the whole animation, 94% quality). The derivation keeps
+the dialog's quirks, for example a hidden quality field never reaches a format
+other than the JPEG sequence. `tests/export-request.test.mjs` compares it with
+the dialog-field code it replaced (kept verbatim in
+`tests/fixtures/export-legacy.mjs`) over about 47,000 combinations.
+
 `src/export-progress.mjs` owns transient progress only, with no document or pixel
 cache. Rendering notifications advance the rendered/remaining counters after
 validated frame delivery. Encoder acknowledgments advance the bar. Source frame
@@ -36,6 +49,22 @@ GPU-loss recovery are described in [export sampling](export-sampling.md). RAM
 tiers are conservative allowances, not measurements of free memory. Driver/OS
 termination, arbitrary document complexity and process-wide exhaustion cannot
 be guaranteed away. These changes do not silently reduce output resolution.
+
+## September 27, 2026: exports from an explicit request
+
+Before and after `src/export-flow.mjs` moved to the export request, 33 exports
+of one three-frame document ran in headless Chrome through the dialog and
+through commands without it: WebM (default, a custom size and range, manual
+bitrate, Smaller file, 720p), GIF (default, dither, a range with no
+smoothing, Simple mode), APNG (Smooth sprites, unlocked size), PNG and SVG
+frames, PNG, JPEG (50%), GIF and SVG sequences (including a PNG sequence
+chosen after typing 50% for JPEG, and an SVG sequence after choosing no
+smoothing), .piv, .stk and .stkz, and one command run after the dialog closed.
+Every saved file had the same name, size and SHA-256, and the options that
+reached the export workers and the WebCodecs encoder hashed the same (the
+document exports, whose worker receives the live document, were compared by
+their saved bytes). Desktop-only encoders (MP4, AVI, WMV and Windows AVI) are
+covered by the unit comparison, not by this run.
 
 ## September 10, 2026 source verification
 
