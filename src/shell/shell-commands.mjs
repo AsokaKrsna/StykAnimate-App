@@ -5,10 +5,10 @@
  * the timeline header's Timeline…) all run the same code. Labels and glyphs
  * are in command-catalog.mjs; ids are never renamed.
  *
- * `shell` is the dock host (dock-host.mjs) and `keyboard` its keyboard
- * paths (dock-keyboard.mjs).
+ * `shell` is the dock host (dock-host.mjs), `keyboard` its keyboard paths
+ * (dock-keyboard.mjs) and `layout` the Layout popover (layout-popover.mjs).
  */
-export function installShellCommands(actions, {shell, keyboard}) {
+export function installShellCommands(actions, {shell, keyboard, layout}) {
   Object.assign(actions, {
     'panel-toggle-properties': () => shell.togglePanel('properties'),
     'panel-toggle-vfx': () => shell.togglePanel('vfx'),
@@ -23,6 +23,7 @@ export function installShellCommands(actions, {shell, keyboard}) {
     'layout-focus': () => shell.workspace.focus(),
     'layout-reset': () => shell.workspace.resetWorkspace(),
     'layout-arrange': () => keyboard.startMove(),
+    'layout-menu': () => layout?.toggle(),
     'focus-next-region': () => keyboard.focusRegion(1),
     'focus-previous-region': () => keyboard.focusRegion(-1),
   });

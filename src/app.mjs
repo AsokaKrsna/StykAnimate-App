@@ -83,6 +83,8 @@ import {
 } from "./export-sampling.mjs";
 import { installShell } from "./shell/dock-host.mjs";
 import { createDockKeyboard } from "./shell/dock-keyboard.mjs";
+import { installDockTabs } from "./shell/dock-tabs.mjs";
+import { createLayoutPopover } from "./shell/layout-popover.mjs";
 import { installShellCommands } from "./shell/shell-commands.mjs";
 import { initStudioShell, mountExportFlow } from "./studio-shell.mjs";
 import { dragSlop, beyondSlop, installPenMenuGuard } from "./pen-input.mjs";
@@ -4216,6 +4218,7 @@ const menuOptions = {
  */
 function appMenuItems(name) {
   const items = menuItems(applicationMenuItems(name, editor, desktop));
+  if (name === "view" && shell) items.splice(items.findIndex((item) => item?.command === "layout-focus"), 0, panelsMenu());
   if (name !== "animation" || workspaceLayout?.tier !== "minimal") return items;
   const audio = $("timeline-audio"), range = $("range-edit");
   const folded = [
@@ -4225,6 +4228,16 @@ function appMenuItems(name) {
   ];
   items.splice(items.findIndex((item) => item?.command === "toggle-loop") + 1, 0, ...folded);
   return items;
+}
+/** View › Panels: each panel checked while it shows; choosing it shows or folds it (the timeline: Full or Strip; Build: shown or hidden). */
+function panelsMenu() {
+  const row = (id, label, glyph) => {
+    const shown = id === "timeline" ? shell.presentation(id) === "docked" : shell.registry.isVisible(id);
+    return { label, icon: glyph, checked: shown, hidden: shell.presentation(id) === "unavailable", shortcut: menuShortcut(`panel-toggle-${id}`),
+      run: () => (id === "timeline" ? shell.togglePanel(id) : shown ? shell.workspace.fold(id) : shell.showPanel(id)) };
+  };
+  return { label: "Panels", icon: "layout", submenu: [row("properties", "Properties", "inspector"), row("vfx", "VFX", "fx"),
+    row("library", "Library", "library"), row("structure", "Structure", "structure"), row("timeline", "Timeline", "timeline")] };
 }
 installMenuBar(document.querySelector(".app-menubar"), {
   ...menuOptions,
@@ -4286,11 +4299,16 @@ function showCommandMenu(items, anchor) {
     return null;
   }
   lastMenuAnchor = anchor;
+  const invoker = element ?? anchor?.invoker ?? document.activeElement;
+  // Opened from inside a kit popover (a saved layout's card), the menu mounts inside that popover
+  // instead of the #menu host, so choosing a row does not light-dismiss the popover.
+  const inPopover = Boolean(invoker?.closest?.(".ui-popover:popover-open"));
   return openMenu({
     ...menuOptions,
+    ...(inPopover ? { host: undefined } : {}),
     items: menuItems(items),
     ...(element ? { anchor: element } : { point: { x: anchor.left ?? anchor.x ?? 0, y: anchor.bottom ?? anchor.y ?? 0 } }),
-    invoker: element ?? anchor?.invoker ?? document.activeElement,
+    invoker,
   });
 }
 function showZoomMenu(anchor) {
@@ -6542,8 +6560,18 @@ async function init() {
   shellAnnouncer.className = "ui-visually-hidden";
   shellAnnouncer.setAttribute("role", "status");
   document.body.append(shellAnnouncer);
-  const shellKeyboard = createDockKeyboard({ host: shell, announce: (text) => { shellAnnouncer.textContent = text; } });
-  installShellCommands(actions, { shell, keyboard: shellKeyboard });
+  const announceShell = (text) => { shellAnnouncer.textContent = text; };
+  const shellKeyboard = createDockKeyboard({ host: shell, announce: announceShell });
+  installDockTabs({ host: shell, openMenu: (items, at) => showCommandMenu(items, at), announce: announceShell });
+  // View › Layout… and Ctrl+Alt+L: under the View menu, or the mark where the menubar folds into it.
+  const layoutPopover = createLayoutPopover({
+    host: shell, overlays, icon: (name) => icon(name), t: kitT,
+    prompt: (options) => promptText({ ...options, overlays, t: kitT }),
+    openMenu: (items, at) => showCommandMenu(items, at),
+    anchor: () => [document.querySelector('.app-menubar [data-app-menu="view"]'), document.querySelector('.titlebar .brand')].find((element) => element?.getClientRects().length),
+    notify: (text) => toast(text),
+  });
+  installShellCommands(actions, { shell, keyboard: shellKeyboard, layout: layoutPopover });
   shell.define({
     id: "timeline",
     root: () => $("animation-timeline"),

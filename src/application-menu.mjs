@@ -36,7 +36,9 @@ export function applicationMenuItems(name, editor, desktop) {
       ['toggle-handles', 'nodes', 'Show / hide joints', 'Shift J'],
       ['toggle-motion-paths', 'route', 'Show / hide motion paths', 'M'],
       ['toggle-onion', 'onion', 'Toggle onion skin', 'O'],
-      ['scene-settings', 'frame', 'Scene properties'],
+      ['scene-settings', 'frame', 'Scene properties'], null,
+      ['layout-focus', 'maximize', 'Focus mode'],
+      ['layout-menu', 'layout', 'Layout…'],
     ],
     editor: [
       segment('segment-values', 'sliders', 'Segment editor…', 'I'), null,

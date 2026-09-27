@@ -53,6 +53,7 @@
 @import url("./components/sheet.css");
 @import url("./components/splitter.css");
 @import url("./components/drop-zone.css");
+@import url("./components/choice.css");
 /* Overlay kit (src/ui/ui-menu, ui-popover, ui-tooltip, ui-toast, ui-dialog, command-palette) */
 @import url("./components/button.css");
 @import url("./components/icon-button.css");

@@ -53,6 +53,24 @@
   .shell-splitter[data-splitter="left"] { grid-area: left; justify-self: end; margin-inline: 0 calc(-4px - var(--shell-gap, var(--gutter)) / 2); }
   .shell-splitter[data-splitter="bottom"] { grid-area: bottom; align-self: start; margin-block: calc(-4px - var(--shell-row-gap, var(--gutter)) / 2) 0; }
 
+  /* A dragged tab: its origin dims, a small pill follows the pointer, and one
+   * target shows where the release puts the panel (placed by dock-tabs.mjs). */
+  :where(.shell-tabs [role="tab"], .shell-strip-button)[data-dragging] { opacity: 0.4; }
+  .shell-drag-zone { position: fixed; inset: auto; z-index: var(--z-floating); border-radius: var(--radius-xl); }
+  .shell-drag-ghost {
+    position: fixed; inset-block-start: 0; inset-inline-start: 0; z-index: var(--z-floating); pointer-events: none;
+    padding: var(--space-1) var(--space-2-5); border-radius: var(--radius-pill);
+    background: var(--surface-raised); color: var(--text-1); box-shadow: var(--elevation-2); font: var(--type-small-strong);
+  }
+
+  /* The Layout popover: preset cards in a row of four, the position rows, the foot. */
+  .shell-layout { inline-size: min(340px, calc(100vw - var(--space-4))); }
+  .shell-layout-presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-1-5); margin-block-end: var(--space-2); }
+  .shell-layout-rows { display: grid; gap: var(--space-1); }
+  .shell-layout-note { margin: 0; font: var(--type-small); color: var(--text-2); }
+  .shell-layout-spacer { flex: 1; }
+  .shell-layout :where(.ui-button[aria-disabled="true"]) { opacity: 0.5; }
+
   /* The keyboard move's one drop target. */
   .shell-drop { position: relative; inset: auto; z-index: 3; grid-area: stage; border-radius: var(--radius-xl); }
   .shell-drop[data-target="left"] { justify-self: start; inline-size: min(232px, 40%); }

@@ -138,6 +138,7 @@ group('view', [
   ['layout-focus', 'Focus mode', null, {keywords: ['hide panels', 'distraction', 'stage only']}],
   ['layout-reset', 'Reset layout', 'reset', {keywords: ['panels', 'default', 'workspace']}],
   ['layout-arrange', 'Move panel…', 'layout', {keywords: ['dock', 'arrange', 'float', 'keyboard']}],
+  ['layout-menu', 'Layout…', 'layout', {keywords: ['panels', 'preset', 'dock', 'arrange', 'workspace']}],
   ['focus-next-region', 'Next region', null, {keywords: ['focus', 'keyboard', 'panel']}],
   ['focus-previous-region', 'Previous region', null, {keywords: ['focus', 'keyboard', 'panel']}],
 ]);

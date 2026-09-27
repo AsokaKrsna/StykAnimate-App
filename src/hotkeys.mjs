@@ -123,6 +123,7 @@ group('Panels & layout', [
   ['panel-toggle-timeline', 'Show or fold the timeline', panelKeys('panel-toggle-timeline')],
   ['layout-focus', 'Focus mode', ['Mod+Backslash']],
   ['layout-arrange', 'Move the focused panel', ['Mod+Alt+KeyM']],
+  ['layout-menu', 'Layout…', ['Mod+Alt+KeyL']],
   ['focus-next-region', 'Next region', ['F6']],
   ['focus-previous-region', 'Previous region', ['Mod+F6']],
 ]);

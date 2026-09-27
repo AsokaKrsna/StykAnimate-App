@@ -1,11 +1,12 @@
 /**
  * The editor shell laid out by the layout solver (src/shell/dock-host.mjs):
- * the width and height tiers, #viewport's minimum and ancestry, the
- * controls that are never hidden, the rail's constant place, the splitters'
- * keyboard, tabs, sheets and strips, the timeline's one default height,
- * floating and docked panels that keep Properties visible, Build's
- * Structure and timeline, F6 and the keyboard move, and persistence
- * (architecture §3.11, M1).
+ * the width and height tiers, the band's folds, #viewport's minimum and
+ * ancestry, the stage floors, the controls that are never hidden, the rail's
+ * constant place, the splitters' keyboard, tabs, sheets and strips, the
+ * timeline's one default height, floating and docked panels that keep
+ * Properties visible, Build's Structure and timeline, F6 and the keyboard
+ * move, the Layout popover and saved presets, tab menus and drag to dock,
+ * and persistence (architecture §3.11, M1).
  *
  * Serve the repository (STYK_PYTHON=py node scripts/serve.mjs --port 47911)
  * and run `node tests/shell-layout.browser.mjs`; STYK_URL overrides the
@@ -552,6 +553,205 @@ try {
     await settle();
   });
 
+  const panelsOf = () => page.evaluate(() => Object.fromEntries(styk.workspace.layout.modes[styk.shell.mode].panels.map(record => [record.id, `${record.dock}/${record.side}`])));
+  const cards = () => page.locator('#layout-popover [role="radio"]').evaluateAll(list => list.map(card => `${card.dataset.preset}${card.getAttribute('aria-checked') === 'true' ? '*' : ''}`));
+  const layoutOpen = () => page.locator('#layout-popover').evaluate(element => element.matches(':popover-open'));
+  const openLayout = async () => {
+    await page.click('[data-app-menu="view"]');
+    await page.getByRole('menuitem', {name: /^Layout…/}).click();
+    await page.waitForFunction(() => document.getElementById('layout-popover')?.matches(':popover-open'));
+    await settle();
+  };
+
+  await step('the Layout popover opens from View and Ctrl+Alt+L and applies presets, positions and Reset', async () => {
+    await page.evaluate(() => styk.workspace.reset());
+    await settle();
+    await openLayout();
+    assert.deepEqual(await cards(), ['animate*', 'timing', 'focus', 'review']);
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.preset), 'animate', 'focus starts on the shown preset');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Enter');
+    await settle();
+    assert.deepEqual(await cards(), ['animate', 'timing*', 'focus', 'review'], 'arrow keys and Enter pick a preset');
+    assert.deepEqual([(await panelsOf()).vfx, (await panelsOf()).library], ['strip/right', 'strip/right'], 'Timing shows Properties only');
+    await page.click('#layout-popover [data-preset="review"]');
+    await settle();
+    assert.equal((await panelsOf()).properties, 'hidden/right');
+    assert.equal(await page.evaluate(() => document.getElementById('animation-timeline').dataset.state), 'strip');
+    await page.click('#layout-popover [data-preset="focus"]');
+    await settle();
+    assert.deepEqual(await cards(), ['animate', 'timing', 'focus*', 'review']);
+    await page.click('#layout-popover [data-preset="focus"]');
+    await settle();
+    assert.deepEqual(await cards(), ['animate', 'timing', 'focus', 'review*'], 'Focus restores what it folded');
+    await page.click('#layout-popover .ui-popover-foot .ui-button[data-variant="ghost"]');
+    await settle();
+    assert.deepEqual(await cards(), ['animate*', 'timing', 'focus', 'review'], 'Reset');
+    const choose = async (name, value) => { await page.selectOption(`#layout-popover select[aria-label="${name}"]`, value); await settle(); };
+    await choose('Properties position', 'left');
+    assert.equal(await page.evaluate(() => Boolean(document.getElementById('properties-panel').closest('.shell-left'))), true, 'Properties docks left');
+    assert.ok((await rect('#viewport')).width >= 360);
+    await choose('Properties position', 'right');
+    await choose('VFX position', 'float');
+    assert.deepEqual(await page.evaluate(() => styk.workspace.floating.map(item => item.panel)), ['vfx']);
+    assert.equal(await page.locator('#properties-panel').isVisible(), true, 'Properties stays visible');
+    await choose('Library position', 'left');
+    assert.equal(await page.evaluate(() => Boolean(document.getElementById('user-library').closest('.shell-left'))), true);
+    await choose('Timeline width', 'stage');
+    await choose('Tools side', 'right');
+    const placed = await page.evaluate(() => {
+      const box = selector => document.querySelector(selector).getBoundingClientRect();
+      return {span: document.querySelector('.workspace').dataset.bottomSpan, rail: document.querySelector('.workspace').dataset.rail,
+        railRight: box('.shell-rail').right > box('.shell-stage').right, timeline: box('.timeline-panel').right <= box('.shell-stage').right + 1};
+    });
+    assert.deepEqual(placed, {span: 'stage', rail: 'right', railRight: true, timeline: true});
+    assert.deepEqual(await page.locator('#layout-popover select').evaluateAll(list => list.map(select => select.value)), ['right', 'float', 'left', 'stage', 'right'],
+      'the selects show where each panel is');
+    await page.keyboard.press('Escape');
+    await settle();
+    assert.equal(await layoutOpen(), false);
+    await page.locator('#viewport').focus();
+    await page.keyboard.press('Control+Alt+KeyL');
+    await settle();
+    assert.equal(await layoutOpen(), true, 'Ctrl+Alt+L opens it');
+    await page.click('#layout-popover .ui-popover-foot .ui-button[data-variant="ghost"]');
+    await settle();
+    assert.deepEqual(await cards(), ['animate*', 'timing', 'focus', 'review']);
+    await page.keyboard.press('Control+Alt+KeyL');
+    await settle();
+    assert.equal(await layoutOpen(), false, 'and closes it');
+  });
+
+  await step('a layout saved as a preset can be applied, renamed, updated and deleted', async () => {
+    await openLayout();
+    await page.click('#layout-popover [data-preset="timing"]');
+    await page.getByRole('button', {name: 'Save as preset…'}).click();
+    await page.getByRole('textbox', {name: 'Name'}).fill('Fight setup');
+    await page.getByRole('button', {name: 'Save preset'}).click();
+    await page.waitForFunction(() => document.getElementById('layout-popover')?.matches(':popover-open'));
+    await settle();
+    const savedId = await page.evaluate(() => `user:${styk.workspace.layouts[0].id}`);
+    assert.deepEqual(await cards(), ['animate', 'timing*', 'focus', 'review', `${savedId}*`]);
+    const saved = page.locator('#layout-popover [data-preset^="user:"]');
+    assert.equal(await saved.textContent(), 'Fight setup');
+    await page.click('#layout-popover [data-preset="animate"]');
+    await saved.click();
+    await settle();
+    assert.equal((await panelsOf()).vfx, 'strip/right', 'the saved preset applies its arrangement');
+    await saved.focus();
+    await page.keyboard.press('Shift+F10');
+    await page.getByRole('menuitem', {name: 'Rename…'}).click();
+    await page.getByRole('textbox', {name: 'Name'}).fill('Fight 2');
+    await page.getByRole('button', {name: 'Rename'}).click();
+    await settle();
+    assert.deepEqual(await page.evaluate(() => styk.workspace.layouts.map(item => item.name)), ['Fight 2']);
+    if (!await layoutOpen()) await openLayout();
+    await page.click('#layout-popover [data-preset="animate"]');
+    await settle();
+    await page.locator('#layout-popover [data-preset^="user:"]').click({button: 'right'});
+    await page.getByRole('menuitem', {name: 'Update'}).click();
+    await settle();
+    assert.deepEqual(await cards(), ['animate*', 'timing', 'focus', 'review', `${savedId}*`], 'Update takes the current arrangement');
+    await page.locator('#layout-popover [data-preset^="user:"]').click({button: 'right'});
+    await page.getByRole('menuitem', {name: 'Delete'}).click();
+    await settle();
+    assert.deepEqual(await page.evaluate(() => styk.workspace.layouts), []);
+    assert.equal(await page.locator('#layout-popover [data-preset^="user:"]').count(), 0);
+    await page.keyboard.press('Escape');
+    // Build offers its own presets.
+    await workspace('rig');
+    await openLayout();
+    assert.deepEqual(await cards(), ['build*', 'build-timeline', 'focus'], 'the default preset leads');
+    await page.click('#layout-popover [data-preset="build-timeline"]');
+    await settle();
+    assert.equal(await page.locator('.timeline-panel').isVisible(), true, 'Build + timeline shows the timeline');
+    await page.click('#layout-popover [data-preset="build"]');
+    await page.keyboard.press('Escape');
+    await leaveBuild();
+    await page.evaluate(() => styk.workspace.reset());
+    await settle();
+  });
+
+  await step('a tab menu and a dragged tab dock, float and fold panels where they may go', async () => {
+    await page.click('#vfx-tab', {button: 'right'});
+    assert.deepEqual((await page.locator('#menu [role^="menuitem"]').allTextContents()).map(text => text.trim()),
+      ['Dock left', 'Float', 'Fold to strip', 'Hide']);
+    await page.getByRole('menuitem', {name: 'Dock left'}).click();
+    await settle();
+    const viaMenu = (await panelsOf()).vfx;
+    assert.equal(viaMenu, 'left/left');
+    await page.evaluate(() => styk.workspace.reset());
+    await openLayout();
+    await page.selectOption('#layout-popover select[aria-label="VFX position"]', 'left');
+    await settle();
+    assert.equal((await panelsOf()).vfx, viaMenu, 'the tab menu and the Layout popover agree');
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => styk.workspace.reset());
+    await settle();
+    await page.locator('#library-tab').focus();
+    await page.keyboard.press('Shift+F10');
+    assert.equal(await page.getByRole('menuitem', {name: 'Fold to strip'}).isVisible(), true, 'Shift+F10 opens the tab menu');
+    await page.getByRole('menuitem', {name: 'Fold to strip'}).click();
+    await settle();
+    assert.equal((await panelsOf()).library, 'strip/right');
+    await page.evaluate(() => styk.workspace.reset());
+    await settle();
+    const zone = () => page.evaluate(() => { const element = document.querySelector('.shell-drag-zone'); return element && !element.hidden ? element.textContent : null; });
+    const center = async selector => { const box = await page.locator(selector).boundingBox(); return [box.x + box.width / 2, box.y + box.height / 2]; };
+    const stage = await rect('#viewport');
+    // Drag Library to the stage's left edge.
+    await page.mouse.move(...await center('#library-tab'));
+    await page.mouse.down();
+    await page.mouse.move(stage.x + 40, stage.y + stage.height / 2, {steps: 10});
+    assert.equal(await zone(), 'Dock left', 'one target names the place');
+    assert.equal(await page.locator('#library-tab').getAttribute('data-dragging'), 'true', 'the origin tab dims');
+    await page.mouse.up();
+    await settle();
+    assert.equal((await panelsOf()).library, 'left/left');
+    assert.equal(await zone(), null);
+    // Back into the right island as a tab.
+    const head = await rect('.shell-right .shell-tabs');
+    await page.mouse.move(...await center('#library-tab'));
+    await page.mouse.down();
+    await page.mouse.move(head.x + head.width - 24, head.y + head.height / 2, {steps: 10});
+    assert.equal(await zone(), 'Add as a tab');
+    await page.mouse.up();
+    await settle();
+    assert.equal((await panelsOf()).library, 'right/right');
+    // Shift floats; dragging a floating panel's tab moves it; Escape cancels.
+    await page.mouse.move(...await center('#vfx-tab'));
+    await page.mouse.down();
+    await page.keyboard.down('Shift');
+    await page.mouse.move(stage.x + stage.width / 2, stage.y + stage.height / 2, {steps: 10});
+    assert.equal(await zone(), 'Float here');
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+    await settle();
+    const first = await page.evaluate(() => styk.workspace.floating);
+    assert.deepEqual(first.map(item => item.panel), ['vfx']);
+    await page.mouse.move(...await center('#vfx-tab'));
+    await page.mouse.down();
+    await page.mouse.move(stage.x + stage.width / 2 - 120, stage.y + stage.height / 2, {steps: 10});
+    assert.equal(await zone(), 'Float here', 'a floating panel moves by its tab');
+    await page.mouse.up();
+    await settle();
+    const moved = await page.evaluate(() => styk.workspace.floating);
+    assert.ok(moved[0].x < first[0].x, 'it moved');
+    await page.mouse.move(...await center('#vfx-tab'));
+    await page.mouse.down();
+    await page.mouse.move(stage.x + 30, stage.y + 60, {steps: 10});
+    await page.keyboard.press('Escape');
+    await page.mouse.up();
+    await settle();
+    assert.deepEqual(await page.evaluate(() => styk.workspace.floating), moved, 'Escape cancels a drag');
+    assert.equal(await zone(), null);
+    // A click on a tab still shows it.
+    await page.click('#library-tab');
+    assert.equal(await page.locator('#user-library').isVisible(), true);
+    await page.evaluate(() => styk.workspace.reset());
+    await settle();
+  });
+
   await step('the layout persists across a reload and never rewrites itself when fitted', async () => {
     const right = page.getByRole('separator', {name: 'Resize properties panel'});
     await right.focus();
@@ -577,7 +777,7 @@ try {
     await page.screenshot({path: `${out}/animate-${width}x${height}.png`});
   }
   assert.deepEqual(errors, [], 'no page errors');
-  console.log('PASS shell layout: tiers, #viewport minimum and ancestry, never-hidden controls, the header line, the rail, splitters, the default timeline, Tall timeline, floating and docked panels, compact sheet, Build Structure and timeline, the low-tier timeline sheet, F6, the keyboard move and persistence.');
+  console.log('PASS shell layout: tiers, the band, #viewport minimum and ancestry, floors, never-hidden controls, the header line, the rail, splitters, the default timeline, Tall timeline, floating and docked panels, compact sheet, Build Structure and timeline, the low-tier timeline sheet, F6, the keyboard move, the Layout popover, saved presets, tab menus, drag to dock and persistence.');
 } finally {
   await browser.close();
 }

@@ -35,8 +35,8 @@ import {icon} from '../icons.mjs';
 import {PANEL_CATALOG, createPanelRegistry} from './panel-registry.mjs';
 import {createLayoutStore, desktopLayoutBackend, storageLayoutBackend} from './layout-store.mjs';
 import {
-  activatePanel, applyPreset, canPlacePanel, deletePreset, movePanel, normalizeMode, resetLayout, resetMode,
-  savePreset, setSharedSize, toggleFocus,
+  activatePanel, applyPreset, canPlacePanel, canSavePreset, deletePreset, movePanel, normalizeMode, renamePreset, resetLayout,
+  resetMode, savePreset, setSharedSize, toggleFocus, updatePreset,
 } from './layout-schema.mjs';
 import {SHELL_METRICS, solveLayout} from './layout-solver.mjs';
 import {MENUBAR_FOLD, watchBand} from './topbar.mjs';
@@ -857,6 +857,36 @@ export function createDockHost({document: doc = globalThis.document, window: win
       store.update(layout => deletePreset(layout, id));
       commit();
     },
+    renameLayout(id, name) {
+      let result;
+      store.update(layout => {
+        result = renamePreset(layout, id, name);
+        return result.layout;
+      });
+      commit();
+      if (result?.error) throw new Error(result.error === 'name' ? 'Name the preset first.' : 'This preset no longer exists.');
+    },
+    /** Replaces a saved preset with its workspace's current arrangement. */
+    updateLayout(id) {
+      store.update(layout => updatePreset(layout, id).layout);
+      commit();
+    },
+    /** Whether the workspace can be saved as a new preset: {ok} or {ok: false, reason: 'limit' | 'budget'}. */
+    canSaveLayout: () => canSavePreset(store.layout, mode()),
+    /** The tools' rail on the stage's `left` or `right`. */
+    setRail(side) {
+      if (side !== 'left' && side !== 'right') return false;
+      onBeforeChange?.();
+      arrange(arrangement => ({...arrangement, rail: side}));
+      return true;
+    },
+    /** The timeline under the whole workspace (`full`, the default) or under the stage only (`stage`). */
+    setTimelineSpan(span) {
+      if (span !== 'full' && span !== 'stage') return false;
+      onBeforeChange?.();
+      arrange(arrangement => ({...arrangement, bottomSpan: span}));
+      return true;
+    },
     toggleTall,
     get tall() { return isTall(); },
     timelineSheet: toggleTimelineSheet,
@@ -919,6 +949,8 @@ export function createDockHost({document: doc = globalThis.document, window: win
     toggleTall,
     canPlace: (id, target) => canPlacePanel(id, target, {mode: mode(), catalog: registry.constraints()}),
     presentation,
+    /** The current workspace (animate, draw or rig). */
+    get mode() { return mode(); },
     place,
     commit,
     /** Calls `listener(solution)` after every commit; returns the unsubscribe function. */
