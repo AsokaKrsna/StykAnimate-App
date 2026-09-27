@@ -15,7 +15,7 @@ test('the catalogue describes today\'s panels with their limits and places', () 
     ['vfx', ['right', 'left'], true, 256, 288, 360],
     ['library', ['right', 'left'], true, 256, 288, 420],
     ['structure', ['left', 'right'], false, 200, 232, 360],
-    ['timeline', ['bottom'], false, 200, null, null],
+    ['timeline', ['bottom'], false, 168, null, null],
   ]);
   const byId = Object.fromEntries(PANEL_CATALOG.map(panel => [panel.id, panel]));
   assert.equal(panelInMode(byId.structure, 'rig'), true);
@@ -24,7 +24,7 @@ test('the catalogue describes today\'s panels with their limits and places', () 
   assert.equal(panelCanHide(byId.timeline, 'draw'), false);
   assert.equal(panelCanHide(byId.properties, 'animate'), true);
   assert.equal(byId.timeline.maxFraction, 0.6);
-  assert.equal(byId.structure.stageMin, 400);
+  assert.equal(byId.structure.stageMin, null, 'Structure narrows to 200 and folds only under the 360px #viewport floor');
   assert.ok(Object.isFrozen(PANEL_CATALOG) && PANEL_CATALOG.every(Object.isFrozen));
 });
 

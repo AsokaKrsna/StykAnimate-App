@@ -6,31 +6,38 @@
  * Input: the layout, the `#app` content box in CSS px after the UI scale
  * (the window, which nothing the solution changes can resize, so tiers never
  * oscillate), the workspace, and `bandMin`: the top band's measured
- * min-content width (a number for the compact band, or `{tier: px}` for
- * every band layout above minimal, measured in one pass), so a longer
- * language steps the width tier down before the window controls could
- * overflow.
+ * min-content width after each step of its fold order (BAND_FOLDS), so a
+ * longer language or a session's extra buttons fold the band's labels and
+ * spacing first and fold the menubar into the mark (the minimal tier) only
+ * where even the last step does not fit.
  *
  * Two independent tiers: the width tier folds horizontal chrome only (the
  * docks, the rail's size at minimal), the height tier vertical chrome only
  * (the timeline body, the stage insets), so a short window keeps its docked
  * inspector and a narrow one keeps its timeline body.
  *
- * Collapse order, applied until the stage holds its minimum (360×200, or a
- * docked panel's own `stageMin`, such as Structure's 400):
+ * Collapse order, applied until #viewport (the stage island below its 40px
+ * header) holds its minimum of 360×200:
  *   width:  the tier's folds (compact and minimal: the left dock becomes a
  *           strip, the right dock a sheet, floating panels sheets), then the
- *           left dock to a strip, the right dock to a strip, then to a sheet;
- *   height: the short tier caps the timeline at two content rows, the low tier
- *           folds it to its header (the body opens as a sheet); a timeline that
- *           would still leave the stage under its minimum height is compressed
- *           first and folded to its header only when even its minimum does not fit.
- * Geometry, tiers and folds are data (SHELL_METRICS, TIER_THRESHOLDS), so the
- * visual design can change them without touching the algorithm.
+ *           left dock narrows to its panels' minimum (Structure: 232, then
+ *           200), then it becomes a strip, then the right dock a strip, then
+ *           a sheet;
+ *   height: the vertical insets give way first (24, 10, then 8), then the
+ *           short tier's timeline (three or four content rows under a 24px
+ *           ruler), then the low tier folds it to its header (the body opens
+ *           as a sheet); a stored height that would still leave #viewport
+ *           under 200 is compressed first and folded to the header only when
+ *           even its row minimum does not fit.
+ * Geometry, tiers and folds are data (SHELL_METRICS, TIER_THRESHOLDS,
+ * STAGE_FLOORS, BAND_FOLDS), so the visual design can change them without
+ * touching the algorithm.
  *
  * The bottom dock is the timeline's region: its default height, its row
  * minimum and `timelineRows` follow SHELL_METRICS.timeline whichever panels
- * are docked there.
+ * are docked there. The default gives at least today's layer capacity:
+ * Camera and Scene as two 24px pinned rows, then 4½ content slots in windows
+ * taller than 800px, 4 from 600px and 3 below (experience §1.9).
  */
 import {PANEL_CATALOG, panelInMode} from './panel-registry.mjs';
 import {normalizeLayout, normalizeMode, solvableArrangement} from './layout-schema.mjs';
@@ -46,14 +53,27 @@ function deepFreeze(value) {
   return value;
 }
 
-/** A window at or below each value takes that tier (visual-system §11). */
+/**
+ * A window at or below each value takes that tier (visual-system §11).
+ * Compact starts at 800 (revision 4.1): from 801px everything stays docked,
+ * as today's app keeps it.
+ */
 export const TIER_THRESHOLDS = deepFreeze({
-  width: {regular: 1366, narrow: 1180, compact: 900, minimal: 660},
+  width: {regular: 1366, narrow: 1180, compact: 800, minimal: 660},
   height: {short: 640, low: 568},
 });
 
 /**
- * Shell geometry in CSS px (visual-system §5, experience §1.1 and §1.11).
+ * The band's fold order (experience §1.8): each step applies only while the
+ * band still overflows, and the primary's word folds last. Only where even
+ * the last step does not fit does the menubar fold into the mark (the
+ * minimal tier). The names are the values `data-band` lists.
+ */
+export const BAND_FOLDS = Object.freeze(['state', 'tight', 'name', 'name8', 'savelabel', 'testrig', 'save', 'winctl',
+  'export2', 'switchtight', 'icons', 'dot', 'redo', 'export2out', 'primary']);
+
+/**
+ * Shell geometry in CSS px (visual-system §5, experience §1.1, §1.2 and §1.9).
  * `width` rows are keyed by width tier, `height` rows by height tier.
  */
 export const SHELL_METRICS = deepFreeze({
@@ -63,47 +83,60 @@ export const SHELL_METRICS = deepFreeze({
   strip: 40,
   // The smallest island of a side (or of the bottom) that stacks two islands, along the split.
   islandMin: 120,
+  // #viewport: the stage island below its header row.
   stageMin: {width: 360, height: 200},
+  stageHead: 40,
   rail: {width: 48, compact: 40},
   width: {
     wide: {padEnd: 8, columnGap: 6, inset: 28, dock: {left: 232, right: 288}},
     regular: {padEnd: 8, columnGap: 6, inset: 28, dock: {left: 232, right: 272}},
-    narrow: {padEnd: 8, columnGap: 6, inset: 28, dock: {left: 232, right: 256}},
+    narrow: {padEnd: 8, columnGap: 6, inset: 20, dock: {left: 232, right: 256}},
     compact: {padEnd: 8, columnGap: 0, inset: 20, dock: {left: 232, right: 256}, message: 'inset',
       fold: {left: 'strip', right: 'sheet', float: 'sheet'}},
     minimal: {padEnd: 4, columnGap: 0, inset: 10, dock: {left: 232, right: 256}, message: 'inset', compactRail: true,
       fold: {left: 'strip', right: 'sheet', float: 'sheet'}},
   },
+  // The timeline's ruler and content rows per height tier. The short tier caps a
+  // stored height at the default (the "short timeline").
   height: {
-    tall: {padBottom: 8, rowGap: 6, insetTop: 40, insetBottom: 52, timeline: {pad: 8}},
-    short: {padBottom: 8, rowGap: 6, insetTop: 20, insetBottom: 48, timeline: {pad: 0, maxContent: 2}},
-    low: {padBottom: 4, rowGap: 4, insetTop: 8, insetBottom: 46, timeline: {pad: 0}, compactRail: true, fold: {bottom: 'strip'}},
+    tall: {padBottom: 8, rowGap: 6, timeline: {ruler: 32, row: 32}},
+    short: {padBottom: 8, rowGap: 6, timeline: {ruler: 24, row: 28, capAtDefault: true}},
+    low: {padBottom: 4, rowGap: 4, timeline: {ruler: 24, row: 28}, compactRail: true, fold: {bottom: 'strip'}},
   },
-  // Timeline rows: its header, the label header (ruler), Camera and Scene pinned,
-  // then content rows. The default is three content slots capped at 32% of the
-  // window in whole rows, never fewer than two.
-  timeline: {header: 40, labelHeader: 32, row: 32, pinned: 2, slots: 3, minSlots: 2, cap: 0.32},
+  // #viewport's vertical insets by window height, [at least H, inset]: they give
+  // way before the timeline's rows do. The horizontal inset is the width tier's.
+  insets: [[801, 24], [641, 10], [0, 8]],
+  // Timeline rows: its header, the ruler, Camera and Scene pinned, then content
+  // rows. The default content slots by window height, [at least H, slots]; a
+  // half slot shows that more rows scroll below. Never fewer than two.
+  timeline: {header: 40, pinnedRow: 24, pinned: 2, minSlots: 2, slots: [[801, 4.5], [600, 4], [0, 3]]},
   floating: {margin: 8, width: 288, height: 520, minHeight: 240, offset: 16, cascade: 24},
-  // The zoom corner and the message slot share the stage's bottom inset.
-  corner: {width: 96, inset: 10, gap: 16, messageInset: 8},
-  collapse: {width: [['left', 'strip'], ['right', 'strip'], ['right', 'sheet'], ['left', 'sheet']]},
+  // The stage header's message slot: centred between the start and the end
+  // cluster (view toggles, zoom, Fit), keeping `gap` from the end cluster on
+  // both sides; at compact and minimal width it may cover them (inset only).
+  message: {end: 200, gap: 12, inset: 8},
+  collapse: {width: [['left', 'narrow'], ['left', 'strip'], ['right', 'strip'], ['right', 'sheet'], ['left', 'sheet']]},
 });
 
 /**
- * Artboard-zoom floors (experience §1.11): a window at least W×H never gets
+ * Artboard-zoom floors (experience §1.9): a window at least W×H never gets
  * less than Z% at fit with the default layout (each workspace's default
  * preset at default sizes). They never decrease as a window grows, so no
  * larger window gets a smaller artboard than a smaller one. What the user
  * chooses is theirs to trade: a stored size (a splitter, Tall timeline,
  * Timing) or an extra dock may take the artboard below its floor, while
- * #viewport keeps its 360×200 minimum in every layout.
+ * #viewport keeps its 360×200 minimum in every layout. Revision 4.1 dropped
+ * the 800×600 row: from 801px the inspector stays docked, as today.
  */
-export const STAGE_FLOORS = deepFreeze([[500, 340, 35], [600, 441, 45], [800, 600, 50], [1024, 700, 60], [1280, 720, 65], [1440, 900, 90]]);
+export const STAGE_FLOORS = deepFreeze([[500, 340, 35], [600, 441, 45], [1024, 700, 60], [1280, 720, 65], [1440, 900, 90]]);
 export const stageFloor = (width, height) => STAGE_FLOORS.reduce((floor, [w, h, zoom]) => (width >= w && height >= h ? Math.max(floor, zoom) : floor), 0);
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), Math.max(min, max));
 const dimension = value => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0);
+const measured = value => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0);
 const rect = (x, y, width, height) => ({x, y, width: Math.max(0, width), height: Math.max(0, height)});
+/** The value of the first `[at least, value]` row the input reaches. */
+const byThreshold = (rows, input, fallback) => rows.find(([at]) => input >= at)?.[1] ?? fallback;
 
 export function widthTierFor(width, thresholds = TIER_THRESHOLDS) {
   let tier = WIDTH_TIERS[0];
@@ -118,50 +151,83 @@ export function heightTierFor(height, thresholds = TIER_THRESHOLDS) {
 }
 
 /**
- * The width and height tiers. The width tier steps down while the band laid
- * out for it (`bandMin`, plus the 24px margin) is wider than the window; a
- * number is the compact band's width and bounds every tier above minimal.
- * A `{tier: px}` map must come from one pass that measures every band
- * layout above minimal: measuring only the current tier's band and
- * replacing the map would flip the tier near a threshold. A tier the map
- * lacks needs the widest width it holds, so a partial map can only step
- * the tier down, never let the band overflow.
+ * The fewest fold steps whose measured band fits the window. `widths` maps
+ * `none` (the unfolded band) and each BAND_FOLDS step to the band's width
+ * after it; a step a session does not have is absent and skipped.
+ */
+function foldBand(width, widths, margin) {
+  if (!widths || typeof widths !== 'object') return {fits: true, band: []};
+  const band = [];
+  const none = measured(widths.none);
+  if (!none || none + margin <= width) return {fits: true, band};
+  for (const step of BAND_FOLDS) {
+    const after = measured(widths[step]);
+    if (!after) continue;
+    band.push(step);
+    if (after + margin <= width) return {fits: true, band};
+  }
+  return {fits: false, band};
+}
+
+/**
+ * The width and height tiers and the band's fold steps.
+ *
+ * `bandMin` is the band's measured min-content width (the 24px margin is
+ * added here):
+ * - a number: the band with every fold step applied and the menubar docked;
+ *   a window it does not fit is minimal;
+ * - `{none, state, tight, …}`: after each BAND_FOLDS step with the menubar
+ *   docked, plus `minimal: {none, …}` with the menubar folded into the mark.
+ *   The solver applies the fewest steps that fit (`band`); where even the
+ *   last does not, the tier is minimal and the minimal band folds likewise
+ *   (every step, if nothing fits).
+ * Width thresholds set the tier first; the band can only step it down to
+ * minimal, never up.
  */
 export function resolveTiers(width, height, {bandMin = 0, thresholds = TIER_THRESHOLDS, bandMargin = SHELL_METRICS.bandMargin} = {}) {
   const sized = widthTierFor(width, thresholds);
-  const valid = value => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0);
-  const widest = typeof bandMin === 'number' ? 0 : Math.max(0, ...WIDTH_TIERS.slice(0, -1).map(tier => valid(bandMin?.[tier])));
-  const need = tier => {
-    if (tier === 'minimal') return 0;
-    if (typeof bandMin === 'number') return valid(bandMin);
-    return valid(bandMin?.[tier]) || widest;
-  };
-  let index = WIDTH_TIERS.indexOf(sized);
-  while (index < WIDTH_TIERS.length - 1 && need(WIDTH_TIERS[index]) > 0 && need(WIDTH_TIERS[index]) + bandMargin > width) index++;
-  return {tier: WIDTH_TIERS[index], height: heightTierFor(height, thresholds), bandStep: index > WIDTH_TIERS.indexOf(sized)};
+  let tier = sized, band = [];
+  if (typeof bandMin === 'number') {
+    if (sized !== 'minimal' && measured(bandMin) && measured(bandMin) + bandMargin > width) tier = 'minimal';
+  } else if (bandMin && typeof bandMin === 'object') {
+    if (sized !== 'minimal') {
+      const docked = foldBand(width, bandMin, bandMargin);
+      if (docked.fits) band = docked.band;
+      else tier = 'minimal';
+    }
+    if (tier === 'minimal') band = foldBand(width, bandMin.minimal, bandMargin).band;
+  }
+  return {tier, height: heightTierFor(height, thresholds), band, bandStep: tier !== sized};
 }
 
 /** A docked timeline's height with `content` rows visible under the pinned ones. */
 export function timelineHeightFor(content, heightTier = 'tall', metrics = SHELL_METRICS) {
-  const t = metrics.timeline;
-  return t.header + t.labelHeader + (t.pinned + content) * t.row + (metrics.height[heightTier]?.timeline?.pad ?? 0);
+  const t = metrics.timeline, rows = metrics.height[heightTier]?.timeline ?? metrics.height.tall.timeline;
+  return Math.round(t.header + rows.ruler + t.pinned * t.pinnedRow + content * rows.row);
 }
+
+/** The default number of content slots for a window height. */
+export const timelineSlotsFor = (height, metrics = SHELL_METRICS) =>
+  Math.max(metrics.timeline.minSlots, byThreshold(metrics.timeline.slots, height, metrics.timeline.minSlots));
 
 /**
  * The default timeline height: a function of the window height only (never
  * of the document, the workspace or the timeline mode), so a tab switch, a
  * mode switch or a new layer never moves the stage. It is derived again on
- * every solve and never stored, so it follows the window (240 at 900, 208 at
- * 720, 200 at the short tier, the 40px header at the low tier) until the user
- * stores a height.
+ * every solve and never stored, so it follows the window (264 above 800px,
+ * 248 from 641, 224 at 600–640, 196 below 600, the 40px header at the low
+ * tier) until the user stores a height.
  */
 export function timelineDefaultHeight(height, heightTier = heightTierFor(height), metrics = SHELL_METRICS) {
-  const t = metrics.timeline, row = metrics.height[heightTier] ?? {};
-  if (row.fold?.bottom === 'strip') return t.header;
-  const pad = row.timeline?.pad ?? 0;
-  const fit = Math.floor((t.cap * height - t.header - t.labelHeader - pad) / t.row) - t.pinned;
-  const slots = Math.max(t.minSlots, Math.min(t.slots, fit, row.timeline?.maxContent ?? Infinity));
-  return timelineHeightFor(slots, heightTier, metrics);
+  if (metrics.height[heightTier]?.fold?.bottom === 'strip') return metrics.timeline.header;
+  return timelineHeightFor(timelineSlotsFor(height, metrics), heightTier, metrics);
+}
+
+/** #viewport's insets at fit: across by the width tier, down by the window height. */
+export function stageInsetsFor(width, height, {tier = widthTierFor(width), metrics = SHELL_METRICS} = {}) {
+  const across = metrics.width[tier]?.inset ?? metrics.width.wide.inset;
+  const down = byThreshold(metrics.insets, height, 0);
+  return {top: down, right: across, bottom: down, left: across};
 }
 
 /** The artboard zoom at fit (architecture §3.11.8), capped at `max`. */
@@ -171,36 +237,41 @@ export function fitZoom(viewport, insets, artboard = {width: 960, height: 540}, 
   return Math.max(0, Math.min(width / artboard.width, height / artboard.height, max));
 }
 
-function clampFloating(stored, descriptor, stage, metrics, index) {
+/** A floating panel's rect, relative to the stage island, kept inside #viewport. */
+function clampFloating(stored, descriptor, stage, head, metrics, index) {
   const f = metrics.floating;
-  const margin = Math.min(f.margin, stage.width / 2, stage.height / 2);
-  const maxWidth = Math.max(0, stage.width - margin * 2), maxHeight = Math.max(0, stage.height - margin * 2);
+  const area = {width: stage.width, height: Math.max(0, stage.height - head)};
+  const margin = Math.min(f.margin, area.width / 2, area.height / 2);
+  const maxWidth = Math.max(0, area.width - margin * 2), maxHeight = Math.max(0, area.height - margin * 2);
   const width = Math.round(clamp(stored?.w ?? descriptor.pref ?? f.width, Math.min(descriptor.min ?? 0, maxWidth), maxWidth));
   const height = Math.round(clamp(stored?.h ?? f.height, Math.min(f.minHeight, maxHeight), maxHeight));
   const cascade = index * f.cascade;
-  const x = Math.round(clamp(stored?.x ?? stage.width - width - f.offset - cascade, margin, stage.width - width - margin));
-  const y = Math.round(clamp(stored?.y ?? f.offset + cascade, margin, stage.height - height - margin));
+  const x = Math.round(clamp(stored?.x ?? area.width - width - f.offset - cascade, margin, area.width - width - margin));
+  const y = Math.round(clamp(stored?.y ?? head + f.offset + cascade, head + margin, head + area.height - height - margin));
   return {x, y, w: width, h: height};
 }
 
 /**
  * Solves the layout for a window. Returns:
  *   tier, height            width and height tiers (data-tier, data-height)
+ *   band                    the band's fold steps (data-band), BAND_FOLDS order
  *   rail                    {side, orientation: 'vertical', compact, width, rect}
  *   regions.left|right      {state: docked|strip|sheet|hidden, size, strip, sizeKey, reason, rect, stripRect, groups, panels}
  *   regions.bottom          {state: docked|strip|hidden, size, span, body: docked|sheet|null, reason, rect, groups, panels}
  *                           groups: the docked islands, [{tabs, active, rect}], stacked on a side and
  *                           side by side at the bottom; panels: {docked, strip, sheet} ids
- *   floating                [{panel, x, y, w, h}] relative to the stage
- *   stage                   the stage island's rect (#viewport is its content box)
- *   stageInsets             {top, right, bottom, left} for the artboard fit
- *   timelineRows            {pinned, content} visible before the rows scroll (content >= 2 when docked)
+ *   floating                [{panel, x, y, w, h}] relative to the stage island, inside #viewport
+ *   stage                   the stage island's rect (its header row, then #viewport)
+ *   stageHead               the header row's height above #viewport
+ *   viewport                #viewport's rect
+ *   stageInsets             {top, right, bottom, left} inside #viewport for the artboard fit
+ *   timelineRows            {pinned, content} visible before the rows scroll (content in half slots, >= 2 when docked)
  *   messageSlot             {width}
  *   aria                    splitters' {min, max, now} (null where there is none): the docks'
  *                           `left`, `right`, `bottom`, and `left-islands`, `right-islands`,
  *                           `bottom-islands` between two islands (now: the first island's extent)
  *   panels                  {[id]: {presentation, side, dock, group, active, visible}}
- *   rects                   {band, workspace, rail, stage}
+ *   rects                   {band, workspace, rail, stage, viewport}
  *   zoom                    the artboard zoom at fit when `artboard` is given
  * Every rect is in the #app box's coordinates.
  */
@@ -215,11 +286,12 @@ export function solveLayout(layout, env = {}) {
   const records = entry.panels.filter(record => byId.has(record.id) && panelInMode(byId.get(record.id), mode));
   const describe = record => byId.get(record.id);
 
-  const {tier, height: heightTier} = resolveTiers(width, height, {bandMin: env.bandMin, thresholds: env.tiers ?? TIER_THRESHOLDS, bandMargin: metrics.bandMargin});
+  const {tier, height: heightTier, band: bandFolds} = resolveTiers(width, height, {bandMin: env.bandMin, thresholds: env.tiers ?? TIER_THRESHOLDS, bandMargin: metrics.bandMargin});
   const across = metrics.width[tier], down = metrics.height[heightTier];
   const gap = across.columnGap, padEnd = across.padEnd, padBottom = down.padBottom, rowGap = down.rowGap;
   const railCompact = Boolean(across.compactRail || down.compactRail);
   const railWidth = Math.min(railCompact ? metrics.rail.compact : metrics.rail.width, width);
+  const head = metrics.stageHead ?? 0;
 
   // Side docks.
   const sides = {};
@@ -228,8 +300,14 @@ export function solveLayout(layout, env = {}) {
     const strip = records.filter(record => record.dock === 'strip' && record.side === side);
     sides[side] = {docked, strip, sheet: [], state: docked.length ? 'docked' : strip.length ? 'strip' : 'hidden', reason: null};
   }
+  const requirement = () => Math.max(metrics.stageMin.width,
+    ...['left', 'right'].flatMap(side => sides[side].state === 'docked' ? sides[side].docked.map(record => describe(record).stageMin ?? 0) : []));
   const fold = (side, to, reason) => {
     const s = sides[side];
+    if (to === 'narrow' && s.state === 'docked' && s.size > s.min) {
+      s.size = Math.max(s.min, s.size - (requirement() - stageWidth()));
+      return true;
+    }
     if (to === 'strip' && s.state === 'docked') {
       Object.assign(s, {strip: [...s.docked, ...s.strip].sort((a, b) => a.order - b.order), docked: [], state: 'strip', reason});
       return true;
@@ -257,12 +335,10 @@ export function solveLayout(layout, env = {}) {
     if (s.state === 'docked') return s.size + (s.strip.length ? gap + metrics.strip : 0);
     return s.state === 'strip' ? metrics.strip : 0;
   };
-  const stageWidth = () => {
+  function stageWidth() {
     const parts = [railWidth, extent('left'), extent('right')].filter(part => part > 0);
     return Math.max(0, width - padEnd - parts.reduce((sum, part) => sum + part, 0) - parts.length * gap);
-  };
-  const requirement = () => Math.max(metrics.stageMin.width,
-    ...['left', 'right'].flatMap(side => sides[side].state === 'docked' ? sides[side].docked.map(record => describe(record).stageMin ?? 0) : []));
+  }
   for (const [side, to] of metrics.collapse?.width ?? []) {
     if (stageWidth() >= requirement()) break;
     fold(side, to, 'stage');
@@ -281,10 +357,11 @@ export function solveLayout(layout, env = {}) {
     // Never shorter than the pinned rows plus the minimum content rows at this tier.
     const min = Math.max(timelineHeightFor(t.minSlots, heightTier, metrics), ...bottomDocked.map(record => describe(record).min ?? 0));
     const fraction = Math.min(...bottomDocked.map(record => describe(record).maxFraction ?? 1));
-    const cap = down.timeline?.maxContent != null ? timelineHeightFor(down.timeline.maxContent, heightTier, metrics) : Infinity;
-    const room = workspaceHeight - padBottom - rowGap - metrics.stageMin.height;
+    const fallback = timelineDefaultHeight(height, heightTier, metrics);
+    const cap = down.timeline?.capAtDefault ? fallback : Infinity;
+    const room = workspaceHeight - padBottom - rowGap - head - metrics.stageMin.height;
     const max = Math.min(Math.floor(fraction * height), cap, room);
-    let size = sizes.bottom ?? timelineDefaultHeight(height, heightTier, metrics);
+    let size = sizes.bottom ?? fallback;
     if (size > cap) { size = cap; bottom.reason = 'tier'; }
     if (size > room) { size = room; bottom.reason = 'stage'; }
     if (max < min) Object.assign(bottom, {state: 'strip', reason: 'stage'});
@@ -317,6 +394,7 @@ export function solveLayout(layout, env = {}) {
     x += column.width + gap;
   }
   const stage = rects.stage;
+  const viewport = rect(stage.x, stage.y + Math.min(head, stage.height), stage.width, stage.height - head);
   if (bottom.state !== 'hidden') {
     const spanned = bottom.span === 'stage' ? [stage] : columns.filter(column => column.key !== 'rail').map(column => rects[column.key]);
     const left = Math.min(...spanned.map(item => item.x)), right = Math.max(...spanned.map(item => item.x + item.width));
@@ -378,10 +456,10 @@ export function solveLayout(layout, env = {}) {
   }
   if (bottomLimits) aria.bottom = {min: bottomLimits.min, max: bottomLimits.max, now: bottom.size};
 
-  // Floating panels: kept inside the stage (never over the band or the transport).
+  // Floating panels: kept inside #viewport (never over the band, the stage header or the transport).
   const floatSheet = across.fold?.float === 'sheet';
   const floating = floatSheet ? [] : records.filter(record => record.dock === 'float')
-    .map((record, index) => ({panel: record.id, ...clampFloating(record.rect, describe(record), stage, metrics, index)}));
+    .map((record, index) => ({panel: record.id, ...clampFloating(record.rect, describe(record), stage, Math.min(head, stage.height), metrics, index)}));
 
   const panels = {};
   for (const descriptor of catalog) {
@@ -396,25 +474,25 @@ export function solveLayout(layout, env = {}) {
     panels[descriptor.id] = {presentation, side: record.side, dock: record.dock, group: record.group ?? 0, active, visible: active || presentation === 'float'};
   }
 
-  const stageInsets = {top: down.insetTop, right: across.inset, bottom: down.insetBottom, left: across.inset};
-  const corner = metrics.corner, cornerWidth = env.cornerWidth ?? corner.width;
+  const stageInsets = stageInsetsFor(width, height, {tier, metrics});
+  const message = metrics.message, endWidth = env.endWidth ?? message.end;
   const messageSlot = {width: Math.max(0, across.message === 'inset'
-    ? stage.width - 2 * corner.messageInset
-    : stage.width - 2 * (cornerWidth + corner.inset + corner.gap))};
+    ? stage.width - 2 * message.inset
+    : stage.width - 2 * (endWidth + message.gap))};
   const bodyRows = size => {
-    const body = size - t.header - t.labelHeader - (down.timeline?.pad ?? 0);
-    const pinned = clamp(Math.floor(body / t.row), 0, t.pinned);
-    return {pinned, content: Math.max(0, Math.floor((body - pinned * t.row) / t.row))};
+    const rows = down.timeline ?? metrics.height.tall.timeline;
+    const body = size - t.header - rows.ruler;
+    const pinned = clamp(Math.floor(body / t.pinnedRow), 0, t.pinned);
+    return {pinned, content: Math.max(0, Math.floor((body - pinned * t.pinnedRow) / rows.row * 2) / 2)};
   };
   const solution = {
-    mode, tier, height: heightTier,
+    mode, tier, height: heightTier, band: bandFolds,
     rail: {side: railLeft ? 'left' : 'right', orientation: 'vertical', compact: railCompact, width: railWidth, rect: rects.rail},
-    regions, floating, stage, stageInsets,
+    regions, floating, stage, stageHead: Math.min(head, stage.height), viewport, stageInsets,
     timelineRows: bottom.state === 'docked' ? bodyRows(bottom.size) : {pinned: 0, content: 0},
     messageSlot, aria, panels,
-    rects: {band: rects.band, workspace: rects.workspace, rail: rects.rail, stage},
+    rects: {band: rects.band, workspace: rects.workspace, rail: rects.rail, stage, viewport},
   };
-  if (env.artboard) solution.zoom = fitZoom(stage, stageInsets, env.artboard);
+  if (env.artboard) solution.zoom = fitZoom(viewport, stageInsets, env.artboard);
   return solution;
 }
-

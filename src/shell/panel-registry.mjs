@@ -88,12 +88,15 @@ export const PANEL_CATALOG = Object.freeze([
     docks: ['right', 'left'], floatable: true, min: 256, pref: 288, max: 360},
   {id: 'library', title: 'Library', titleKey: 'shell.panel.library', icon: 'library',
     docks: ['right', 'left'], floatable: true, min: 256, pref: 288, max: 420},
+  // Structure docks at 232 and narrows to 200 before its side folds to a strip
+  // (wherever docking it would leave #viewport under its 360px floor).
   {id: 'structure', title: 'Structure', titleKey: 'shell.panel.structure', icon: 'structure',
-    docks: ['left', 'right'], floatable: false, min: 200, pref: 232, max: 360, sizeKey: 'structure', modes: ['rig'], stageMin: 400},
-  // min 200: the header, the ruler, Camera, Scene and two content rows (1.1's
-  // minimum too); the solver adds the tall tier's bottom padding.
+    docks: ['left', 'right'], floatable: false, min: 200, pref: 232, max: 360, sizeKey: 'structure', modes: ['rig']},
+  // min 168: the header, the short tier's 24px ruler, Camera and Scene (24px
+  // each) and two 28px content rows; the solver raises it to the tall tier's
+  // rows (184).
   {id: 'timeline', title: 'Timeline', titleKey: 'shell.panel.timeline', icon: 'timeline',
-    docks: ['bottom'], floatable: false, min: 200, maxFraction: 0.6, canHide: ['rig'], hiddenFallback: 'strip'},
+    docks: ['bottom'], floatable: false, min: 168, maxFraction: 0.6, canHide: ['rig'], hiddenFallback: 'strip'},
 ].map(descriptor => freezeDescriptor(normalizePanelDescriptor(descriptor))));
 
 /** True when the panel exists in the workspace ('build' or 'rig' for Build). */
