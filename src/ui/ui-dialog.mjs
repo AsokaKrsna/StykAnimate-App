@@ -330,9 +330,8 @@ const LEGACY_PRIMARY = '[data-primary]:not(:disabled), button.primary:not(:disab
  * lands on it (never on a button the caller appends later without a type) and
  * runs the primary once. Focus goes to [autofocus], the first field, the
  * primary or the first control, never the close button; the dialog joins the
- * overlay stack while it
- * is open. Calling it while the dialog is open swaps the content and keeps the
- * registration. `bodyHTML` is trusted markup built by the app, as before.
+ * overlay stack while it is open. Calling it while the dialog is open swaps
+ * the content and keeps the registration. `bodyHTML` is trusted markup built by the app, as before.
  *
  * Returns {dialog, form, body, handle}.
  */

@@ -232,3 +232,11 @@ test('fuzzyMatch() is case and accent insensitive and reports ranges', () => {
   assert.equal(fuzzyMatch('ud', 'Send backward'), null, 'scattered letters do not match');
   assert.ok(fuzzyMatch('undo', 'Undo').score > fuzzyMatch('undo', 'Undo history').score, 'an exact label wins');
 });
+
+test('fuzzyMatch() takes a short query as an abbreviation only of word starts and runs', () => {
+  assert.equal(fuzzyMatch('flip', 'Make movieclip from frames fill layers'), null, 'letters scattered over words');
+  assert.ok(fuzzyMatch('flip', 'Flip view'), 'a substring');
+  assert.ok(fuzzyMatch('fl', 'Fit layers'), 'word starts');
+  assert.ok(fuzzyMatch('mcf', 'Make clip frames'), 'word starts');
+  assert.ok(fuzzyMatch('mkclp', 'Make clip'), 'longer queries keep the looser abbreviation');
+});

@@ -94,6 +94,15 @@ export function createCommandPalette({commands, overlays = null, providers = [],
   input.setAttribute('aria-expanded', 'true');
   input.setAttribute('aria-controls', `${id}-list`);
   search.append(input);
+  // Where the palette fills the window (compact and minimal width) it has a close button, for pointer and pen.
+  const closeButton = doc.createElement('button');
+  closeButton.type = 'button';
+  closeButton.className = 'ui-icon-button ui-palette-close';
+  closeButton.setAttribute('aria-label', kitText(t, 'common.close'));
+  const closeGlyph = icon?.('close');
+  if (typeof closeGlyph === 'string') closeButton.insertAdjacentHTML('beforeend', closeGlyph); else if (closeGlyph) closeButton.append(closeGlyph); else closeButton.textContent = '×';
+  closeButton.addEventListener('click', () => close({restore: true}));
+  search.append(closeButton);
   const list = doc.createElement('div');
   list.className = 'ui-palette-list';
   list.id = `${id}-list`;
@@ -166,7 +175,9 @@ export function createCommandPalette({commands, overlays = null, providers = [],
       empty.textContent = emptyLabel;
       list.append(empty);
     }
-    setActive(rows.length ? 0 : -1);
+    // The first row Enter can run (a disabled row still explains itself when chosen).
+    const runnable = rows.findIndex(row => row.enabled);
+    setActive(runnable >= 0 ? runnable : rows.length ? 0 : -1);
   }
 
   function setActive(index, scroll = true) {
@@ -190,6 +201,7 @@ export function createCommandPalette({commands, overlays = null, providers = [],
   function onKeydown(event) {
     event.stopPropagation();
     if (event.isComposing) return;
+    if (event.target === closeButton && (event.key === 'Enter' || event.key === ' ')) return;   // the button's own click
     if (openKeys?.(event)) { event.preventDefault(); input.select(); return; }
     const count = rows.length;
     const move = {ArrowDown: 1, ArrowUp: -1, PageDown: 8, PageUp: -8}[event.key];

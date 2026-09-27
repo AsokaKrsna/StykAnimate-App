@@ -93,6 +93,10 @@ export function createPopover({anchor, placement = 'bottom-start', title = '', c
     const {signal} = controller;
     untether = cssAnchor && anchorElement ? anchorWith(anchorElement, element, {placement}) : null;
     update();
+    // A body taller than its room scrolls, and says so (the "more below" fade; popover.css draws the scrollbar).
+    const more = () => bodyElement.toggleAttribute('data-more-below', bodyElement.scrollHeight - bodyElement.scrollTop - bodyElement.clientHeight > 1);
+    more();
+    bodyElement.addEventListener('scroll', more, {passive: true, signal});
     anchorElement?.setAttribute('aria-expanded', 'true');
     element.addEventListener('toggle', event => { if (event.newState === 'closed' && open) finish('dismiss'); }, {signal});
     element.addEventListener('keydown', event => {

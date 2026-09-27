@@ -9,7 +9,12 @@
  * else data-hotkey-hint. Accessible names never include the shortcut; the
  * tooltip is linked with aria-describedby only while it is shown. On devices
  * without hover (touch) it appears for keyboard focus only. A control with a
- * native `title` and no data-tooltip keeps its native tip instead.
+ * native `title` and no data-tooltip keeps its native tip instead, except
+ * inside `adopt` (the chrome): there its title becomes its data-tooltip the
+ * first time it is pointed at or focused (and its name, when it had none), so
+ * neighbours never show two tooltip styles. Beside a vertical toolbar (the
+ * rail, a strip) the tooltip opens on the stage's side instead of above,
+ * where it would cover the neighbouring tool.
  */
 import {placeFloating} from './anchor-position.mjs';
 
@@ -40,7 +45,7 @@ export function tooltipDelay({now, lastHiddenAt = -Infinity, delay = 500, skipDe
  * the element.
  */
 export function installTooltips(root = globalThis.document, {selector = TOOLTIP_SELECTOR, delay = 500, skipDelay = 300, shortcut = null,
-  topInset = 0, signal, now = () => globalThis.performance?.now() ?? Date.now(), hoverless = null} = {}) {
+  topInset = 0, adopt = null, signal, now = () => globalThis.performance?.now() ?? Date.now(), hoverless = null} = {}) {
   const doc = root.ownerDocument ?? root, view = doc.defaultView ?? globalThis;
   const element = doc.createElement('div');
   element.id = 'ui-tooltip';
@@ -91,7 +96,23 @@ export function installTooltips(root = globalThis.document, {selector = TOOLTIP_
       element.append(dot, part('ui-tooltip-key', text.shortcut));
     }
     try { if (!element.matches(':popover-open')) element.showPopover(); } catch { hide(); return; }
-    placeFloating(element, next, {placement: 'top', offset: 6, fit: false, overlap: false, topInset});
+    placeFloating(element, next, {placement: placementFor(next), offset: 6, fit: false, overlap: false, topInset});
+  };
+  /** Above the control; beside a vertical toolbar, on the side facing the middle of the window. */
+  const placementFor = next => {
+    if (!next.closest('[aria-orientation="vertical"], .shell-rail')) return 'top';
+    const box = next.getBoundingClientRect();
+    return box.left + box.width / 2 > (view.innerWidth || 0) / 2 ? 'left' : 'right';
+  };
+  /** A chrome control's native title becomes its data-tooltip (see the module comment). */
+  const adoptTitle = node => {
+    if (!adopt) return;
+    const titled = node?.closest?.('[title]');
+    if (!titled || !titled.closest(adopt) || titled.closest('#ui-tooltip')) return;
+    const text = titled.getAttribute('title').trim();
+    if (text && !titled.hasAttribute('aria-label') && !titled.hasAttribute('aria-labelledby') && !titled.textContent.trim()) titled.setAttribute('aria-label', text);
+    if (text) titled.dataset.tooltip = text;
+    titled.removeAttribute('title');
   };
   const schedule = next => {
     clearTimeout(timer);
@@ -103,6 +124,7 @@ export function installTooltips(root = globalThis.document, {selector = TOOLTIP_
 
   root.addEventListener('pointerover', event => {
     if (event.pointerType === 'touch' || noHover?.matches) return;
+    adoptTitle(event.target);
     const next = matching(event.target);
     if (!next || next === target) return;
     if (!tooltipContent(next, {shortcut})) { hide(); return; }
@@ -115,6 +137,7 @@ export function installTooltips(root = globalThis.document, {selector = TOOLTIP_
     }
   }, {signal});
   root.addEventListener('focusin', event => {
+    adoptTitle(event.target);
     const next = matching(event.target);
     if (!next || !next.matches?.(':focus-visible')) return;
     schedule(next);

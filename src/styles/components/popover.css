@@ -35,6 +35,10 @@
     overflow-y: auto; overscroll-behavior: contain;
   }
   .ui-popover-body:first-child { padding-block-start: var(--space-4); }
+  /* A body that scrolls says so: a 12px fade while more is below and a drawn 6px scrollbar. */
+  .ui-popover-body[data-more-below] { mask-image: linear-gradient(to bottom, black calc(100% - 12px), transparent); }
+  .ui-popover-body::-webkit-scrollbar { width: 6px; }
+  .ui-popover-body::-webkit-scrollbar-thumb { border-radius: 3px; background: var(--scrollbar-thumb-hover); }
   .ui-popover-foot {
     display: flex; flex: none; justify-content: flex-end; gap: var(--space-2);
     padding: var(--space-2-5) var(--space-3) var(--space-3);

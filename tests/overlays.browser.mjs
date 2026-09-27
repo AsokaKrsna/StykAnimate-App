@@ -505,6 +505,25 @@ try {
     await settle(200);
   });
 
+  await step('app: at 500 × 340 a long menu says more is below, and a submenu overlaps its parent rather than cut its labels', async () => {
+    await page.setViewportSize({width: 500, height: 340});
+    await settle(200);
+    await page.click('.brand');
+    await settle();
+    assert.equal(await page.evaluate(() => document.getElementById('menu').hasAttribute('data-more-below')), true, 'the mark menu fades while rows wait below');
+    await page.getByRole('menuitem', {name: 'View', exact: true}).click();
+    await settle();
+    const view = await page.evaluate(() => {
+      const menu = document.querySelector('.ui-menu[aria-label="View"]'), box = menu.getBoundingClientRect();
+      return {inside: box.left >= 0 && box.right <= innerWidth, cut: [...menu.querySelectorAll('.ui-menu-item > span')].filter(span => span.scrollWidth > span.clientWidth + 1).map(span => span.textContent)};
+    });
+    assert.deepEqual(view, {inside: true, cut: []});
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    await page.setViewportSize({width: 1440, height: 900});
+    await settle(200);
+  });
+
   await step('app: a menu opened from inside a dialog lives in it, and its rows can be clicked', async () => {
     await page.evaluate(() => styk.actions.performance());
     await page.evaluate(async () => {
@@ -664,6 +683,28 @@ try {
       styk.ui.tooltips.show(legacy);
       return [legacy.title, document.getElementById('ui-tooltip').matches(':popover-open')].join('|');
     }), 'Scene properties|false');
+    // In the chrome that native title becomes the ink tooltip the first time it is pointed at: one style for neighbours.
+    await page.hover('[data-action=scene-settings]');
+    await page.waitForFunction(() => document.getElementById('ui-tooltip').matches(':popover-open'));
+    assert.deepEqual(await page.evaluate(() => {
+      const button = document.querySelector('[data-action=scene-settings]');
+      return [button.hasAttribute('title'), button.dataset.tooltip, document.querySelector('#ui-tooltip .ui-tooltip-label').textContent];
+    }), [false, 'Scene properties', 'Scene properties']);
+    // Beside the rail the tooltip opens on the stage's side, never over the neighbouring tools.
+    await page.mouse.move(700, 500);
+    await page.evaluate(() => styk.ui.tooltips.hide());
+    await page.hover('[data-tool=select]');
+    await page.waitForFunction(() => document.getElementById('ui-tooltip').matches(':popover-open'));
+    const beside = await page.evaluate(() => {
+      const tool = document.querySelector('[data-tool=select]').getBoundingClientRect(), tip = document.getElementById('ui-tooltip').getBoundingClientRect();
+      return {right: tip.left >= tool.right, clear: tip.bottom <= tool.top || tip.top >= tool.bottom || tip.left >= tool.right, add: (() => {
+        const add = document.getElementById('open-insert').getBoundingClientRect();
+        return tip.right <= add.left || tip.left >= add.right || tip.bottom <= add.top || tip.top >= add.bottom;
+      })()};
+    });
+    assert.deepEqual(beside, {right: true, clear: true, add: true});
+    await page.mouse.move(700, 500);
+    await page.evaluate(() => styk.ui.tooltips.hide());
   });
 
   const paletteRows = () => page.evaluate(() => [...document.querySelectorAll('.ui-palette [role=group]')].map(group => [
@@ -737,6 +778,14 @@ try {
     const web = (await paletteQuery('new window'))[0][1][0];
     assert.deepEqual(web, ['New window', 'In the desktop app', true]);
 
+    // The active row is the first one Enter can run, and a short query matches no letters scattered over a label.
+    await paletteQuery('flip');
+    assert.deepEqual(await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('.ui-palette [role=option]')];
+      const active = document.querySelector('.ui-palette [role=option][aria-selected=true]');
+      return {activeEnabled: active?.getAttribute('aria-disabled') !== 'true', anyEnabled: rows.some(row => row.getAttribute('aria-disabled') !== 'true'),
+        scattered: rows.map(row => row.querySelector('.ui-palette-label').textContent).filter(label => /movieclip|Save figure|Timeline panel/.test(label))};
+    }), {activeEnabled: true, anyEnabled: true, scattered: []});
     assert.deepEqual(await paletteQuery('12'), [['Go to', [['Go to frame 12', '', false]]]]);
     await page.keyboard.press('Enter');
     await page.waitForFunction(() => styk.editor.tick === 11);

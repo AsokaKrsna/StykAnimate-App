@@ -87,6 +87,9 @@ export function fuzzyMatch(query, text) {
     index = at + 1;
   }
   if (bonus < compact.length * 3) return null;
+  // A short query (four letters or fewer) is an abbreviation only of word starts and runs from them:
+  // "fl" finds "Flip layer", never letters scattered over "Make movieclip from frames".
+  if (compact.length <= 4 && !found.every((at, index) => isWordStart(haystack, at) || (index > 0 && found[index - 1] === at - 1))) return null;
   return {score: bonus - haystack.length * 0.05, ranges: mergeRanges(found.map(at => [at, at + 1]))};
 }
 

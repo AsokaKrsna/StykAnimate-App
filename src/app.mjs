@@ -5818,6 +5818,8 @@ const palette = createCommandPalette({
 // from the registry (so a rebinding or a workspace that claims the key shows).
 const tooltips = installTooltips(document, {
   topInset: menuTopInset,
+  // The chrome's remaining native titles show as the one ink tooltip.
+  adopt: ".titlebar, .shell-rail, .canvas-toolbar, .canvas-view-controls, .timeline-toolbar, .shell-strip, .shell-tabs",
   shortcut: (element) => {
     const id = hotkeyCommandId(element, hotkeys);
     return withShiftHint(element, id ? commands.shortcut(id) : undefined);

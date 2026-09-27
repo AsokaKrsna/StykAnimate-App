@@ -344,6 +344,10 @@ class Menu {
     this.isOpen = true;
     this.#place();
     const signal = this.signal, view = doc.defaultView ?? globalThis;
+    // A menu taller than its room scrolls, and says so (the "more below" fade; menu.css draws the scrollbar).
+    const more = () => element.toggleAttribute('data-more-below', element.scrollHeight - element.scrollTop - element.clientHeight > 1);
+    more();
+    element.addEventListener('scroll', more, {passive: true, signal});
     element.addEventListener('click', event => this.#onClick(event), {signal});
     element.addEventListener('pointermove', event => this.#onPointerMove(event), {signal});
     element.addEventListener('pointerleave', () => this.root.#cancelIntent(), {signal});
@@ -384,10 +388,16 @@ class Menu {
   #place() {
     const root = this.root.options;
     if (this.parent) {
-      const rect = this.options.anchor.getBoundingClientRect();
+      const rect = this.options.anchor.getBoundingClientRect(), view = this.document.defaultView ?? globalThis;
+      // Where neither side has room for the submenu's labels, it overlaps its parent rather than cut them.
+      // Measured at the window's corner, where it takes its natural width (placeFloating does the same).
+      Object.assign(this.element.style, {maxWidth: '', left: '0px', top: '0px'});
+      const width = this.element.getBoundingClientRect().width, margin = 8, gap = 2;
+      const cramped = width > view.innerWidth - margin - rect.right - gap && width > rect.left - margin - gap;
+      const right = cramped ? Math.max(margin, Math.min(rect.right, view.innerWidth - margin - width - gap)) : rect.right;
       // Line the submenu's first item up with its row (the menu has a 4px padding).
-      placeFloating(this.element, {left: rect.left, right: rect.right, top: rect.top - 4, bottom: rect.bottom + 4, width: rect.width, height: rect.height + 8},
-        {placement: 'right-start', offset: 2, topInset: root.topInset, overlap: true});
+      placeFloating(this.element, {left: cramped ? right : rect.left, right, top: rect.top - 4, bottom: rect.bottom + 4, width: right - (cramped ? right : rect.left), height: rect.height + 8},
+        {placement: 'right-start', offset: gap, topInset: root.topInset, overlap: true, flip: !cramped});
       return;
     }
     const anchor = this.options.point ?? this.options.anchor ?? this.invoker;

@@ -18,6 +18,10 @@
     font: var(--type-ui);
     -webkit-app-region: no-drag;
   }
+  /* A menu that scrolls says so: a 12px fade while more is below and a drawn 6px scrollbar. */
+  .ui-menu[data-more-below] { mask-image: linear-gradient(to bottom, black calc(100% - 12px), transparent); }
+  .ui-menu::-webkit-scrollbar { width: 6px; }
+  .ui-menu::-webkit-scrollbar-thumb { border-radius: 3px; background: var(--scrollbar-thumb-hover); }
   /* The popover's UA rule hides it while closed; `display: flex` above would otherwise win. */
   .ui-menu:where([popover]:not(:popover-open)) { display: none; }
   .ui-menu[popover] { position: fixed; margin: 0; inset: auto; }

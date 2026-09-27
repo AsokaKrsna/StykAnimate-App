@@ -23,6 +23,9 @@
     font: var(--type-emphasis); font-weight: var(--weight-medium); color: var(--text-1);
   }
   .ui-palette-search > input::placeholder { color: var(--text-placeholder); }
+  /* The close button shows only where the palette fills the window (compact and minimal width). */
+  .ui-palette-close { display: none; flex: none; }
+  :where(:root[data-tier="compact"], :root[data-tier="minimal"]) .ui-palette-close { display: inline-grid; place-items: center; }
 
   .ui-palette-list { display: grid; flex: 1 1 auto; gap: 1px; align-content: start; min-block-size: 0; overflow: auto; overscroll-behavior: contain; padding: var(--space-1) var(--space-1-5) var(--space-2); }
   .ui-palette-group { padding: var(--space-2-5) var(--space-2-5) var(--space-1); font: var(--type-small-strong); color: var(--text-3); }

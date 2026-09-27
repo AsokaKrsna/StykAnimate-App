@@ -79,6 +79,11 @@
     overflow: hidden; border: 0; box-shadow: none;
   }
   .shell-bottom > .timeline-toolbar { block-size: var(--control-2xl); min-block-size: var(--control-2xl); flex: none; }
+  /* The island is named "Timeline"; its header carries no title of its own, so Simple and Advanced keep
+   * the mode switch and Play in the same place, and the frame rate folds at compact width in both. */
+  .shell-bottom > .timeline-toolbar > :where(.timeline-title) { display: none; }
+  .shell-bottom > .timeline-toolbar { padding-inline: var(--space-2-5); }
+  :where(:root[data-tier="compact"], :root[data-tier="minimal"]) .shell-bottom :where(.fps-control) { display: none; }
   :where(.shell-bottom[data-state="strip"]) > :not(.timeline-toolbar, .shell-timeline-body) { display: none; }
   /* The folded body takes no room and no focus until Timeline… opens it. */
   .shell-timeline-body:where([popover]:not(:popover-open)) { display: none; }
