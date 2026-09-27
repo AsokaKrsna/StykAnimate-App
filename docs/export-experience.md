@@ -62,8 +62,10 @@ completed work and elapsed time, appears after three acknowledged frames, and
 does not estimate final encoding or file-system latency. The last 5% is reserved
 for finalization and saving; the UI never reports 100% before saving succeeds.
 The progress replaces the export dialog's settings in place (or opens a dialog
-of its own for an export run without it); closing the dialog cancels the
-export. Cancellation, closing and failure dispose progress timers, the preview
+of its own for an export run without it). While it runs, Escape and × ask
+"Stop exporting?" first: Keep exporting (focused, so a second Enter or Escape
+goes on) or Stop exporting; the question leaves by itself if the export
+finishes meanwhile. Cancel export stops at once. Cancellation, closing and failure dispose progress timers, the preview
 worker and the codec controls. The existing save layer still stages and
 atomically replaces files.
 

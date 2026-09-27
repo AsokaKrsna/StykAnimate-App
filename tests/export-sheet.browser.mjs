@@ -2,7 +2,8 @@
  * Browser test of the export dialog (src/export-sheet.mjs): what it shows at
  * rest, Format and Type from the pointer and the keyboard, Size presets and
  * Custom…, the trim strip and its From and To fields, Quality, Encoding
- * (remembered open), the preview, remembered choices, the Project list, and a
+ * (remembered open), the preview, remembered choices, the Project list,
+ * "Stop exporting?" while an export runs, and a
  * palette command that exports today's defaults with its progress in its own
  * dialog. Serve the repository (node scripts/serve.mjs --port 47832) and run
  * `node tests/export-sheet.browser.mjs`; STYK_URL overrides the address.
@@ -198,6 +199,59 @@ try {
     assert.deepEqual([await value('#export-start'), await value('#export-end'), await value('#export-name')], ['1', String(total), 'Kick combo']);
     await page.keyboard.press('Escape');
     await exportDialogClosed(page);
+  });
+
+  await step('while exporting, Escape and × ask "Stop exporting?"; Keep exporting goes on and the question leaves when the file is saved', async () => {
+    // Slow the render worker's frames so the export is still running while the question is asked.
+    await page.evaluate(() => {
+      window.slowRenders = true;
+      const post = Worker.prototype.postMessage;
+      Worker.prototype.postMessage = function(message, ...rest) {
+        if (window.slowRenders && message?.operation === 'render') setTimeout(() => post.call(this, message, ...rest), 300);
+        else post.call(this, message, ...rest);
+      };
+    });
+    await open();
+    await chooseExport(page, 'export-apng');
+    await page.locator('#export-start').fill('1'); await page.locator('#export-end').fill('6');
+    let downloads = 0;
+    const count = () => downloads++;
+    page.on('download', count);
+    const saved = page.waitForEvent('download', {timeout: 30000});
+    await page.locator('#export-submit').click();
+    await page.locator('#cancel-export').waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('#export-stop[open]').waitFor();
+    assert.equal(await page.locator('#export-stop .ui-dialog-title').textContent(), 'Stop exporting?');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'keep-exporting', 'the safe choice starts focused');
+    await page.locator('#keep-exporting').click();
+    assert.equal(await page.locator('#export-stop').count(), 0);
+    assert.ok(await page.locator('#export-dialog[open] #export-progress').isVisible(), 'the export goes on');
+    await page.locator('#export-dialog .ui-dialog-close').click();
+    await page.locator('#export-stop[open]').waitFor();
+    await saved;
+    await exportDialogClosed(page);
+    assert.equal(await page.locator('#export-stop').count(), 0, 'the question leaves with the finished export');
+    page.off('download', count);
+    assert.equal(downloads, 1);
+  });
+
+  await step('Stop exporting stops the export and saves nothing', async () => {
+    await open();
+    assert.equal(await value('#output-format'), 'export-apng');
+    let downloads = 0;
+    const count = () => downloads++;
+    page.on('download', count);
+    await page.locator('#export-submit').click();
+    await page.locator('#cancel-export').waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('#stop-export').click();
+    await exportDialogClosed(page);
+    await page.waitForFunction(() => /cancelled/i.test(document.querySelector('#status')?.textContent ?? ''));
+    await page.waitForTimeout(1500);
+    page.off('download', count);
+    assert.equal(downloads, 0);
+    await page.evaluate(() => { window.slowRenders = false; });
   });
 
   await step('a palette command exports today\'s defaults, with its progress in a dialog of its own', async () => {

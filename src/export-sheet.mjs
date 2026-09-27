@@ -18,6 +18,10 @@
  * probing, the installed Windows codecs and the preview's frames come from
  * the caller too, so this module owns no export, codec or render state.
  *
+ * While an export runs, Escape and × ask "Stop exporting?" first (#export-stop:
+ * Keep exporting, the focused default, or Stop exporting); Cancel export in
+ * the progress stops at once.
+ *
  * Test hooks are today's ids (export-request.mjs EXPORT_FIELD_IDS and
  * EXPORT_ELEMENT_IDS), `[data-category]` on the Format items, option values
  * that are today's export actions in #output-format, and #export-dialog.
@@ -83,6 +87,29 @@ function fitCanvas(canvas, {canvasWidth, canvasHeight}, maxWidth, maxHeight) {
   canvas.height = Math.max(1, Math.min(512, Math.round(canvasHeight * scale)));
 }
 const clampFrame = (value, total) => Math.max(1, Math.min(total, Math.round(value)));
+
+/**
+ * "Stop exporting?": the question Escape and × ask while an export runs.
+ * ask(running) resolves true when the dialog may close (nothing is running, or
+ * the person chose Stop exporting); dismiss() withdraws an open question when
+ * the export ends by itself.
+ */
+function stopQuestion({overlays, icon, t}) {
+  let prompt = null;
+  return {
+    async ask(running) {
+      if (!running()) return true;
+      if (prompt) return false;
+      prompt = createDialog({size: 'sm', id: 'export-stop', title: 'Stop exporting?', description: 'The file will not be saved.', overlays, icon, t,
+        actions: [{label: 'Keep exporting', cancel: true, variant: 'ghost', id: 'keep-exporting', autofocus: true},
+          {label: 'Stop exporting', value: true, variant: 'danger', id: 'stop-export'}]});
+      const answer = await prompt.showModal();
+      prompt = null;
+      return answer === true && running();
+    },
+    dismiss() { prompt?.close(null); prompt = null; },
+  };
+}
 
 /**
  * Opens the export dialog. options:
@@ -204,8 +231,10 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   const validation = element('p', {className: 'export-validation', id: ELEMENT.validation, role: 'status', 'aria-live': 'polite', hidden: true});
   const summarySize = element('span', {id: ELEMENT.summarySize}), summaryTime = element('span', {id: ELEMENT.summaryTime});
 
+  const stop = stopQuestion({overlays, icon, t});
   const dialog = createDialog({size: 'lg', variant: 'export', id: EXPORT_DIALOG_ID, title: 'Export', overlays, icon, t, closeLabel: 'Close export',
     actions: [{label: kitText(t, 'common.cancel'), cancel: true, variant: 'ghost'}, {label: 'Export', id: ELEMENT.submit, variant: 'primary', value: 'export'}],
+    beforeClose: () => stop.ask(() => Boolean(exporting) && !closed),
     onSubmit: () => { void start(); return false; }});
   const {element: root, form, body} = dialog;
   const foot = form.querySelector('.ui-dialog-foot'), meta = foot.querySelector('.ui-dialog-meta'), submit = foot.querySelector(`#${ELEMENT.submit}`);
@@ -547,6 +576,7 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   /** Settles once the dialog has closed and let go of its previews, probes and codec controls. */
   const closedPromise = dialog.result.then(() => {
     closed = true;
+    stop.dismiss();
     bodySize?.disconnect();
     clearTimeout(probeTimer);
     probeSequence++;
@@ -598,9 +628,11 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
  */
 export function openExportProgress({title = PROGRESS_TITLE, overlays = null, icon = null, t = null} = {}) {
   const content = element('div', {className: 'export-progress-host'});
-  const dialog = createDialog({size: 'md', variant: 'export-progress', id: EXPORT_DIALOG_ID, title, body: content, overlays, icon, t, closeLabel: 'Close export'});
-  let onClosed = null;
-  dialog.result.then(() => { const callback = onClosed; onClosed = null; callback?.(); });
+  let onClosed = null, done = false;
+  const stop = stopQuestion({overlays, icon, t});
+  const dialog = createDialog({size: 'md', variant: 'export-progress', id: EXPORT_DIALOG_ID, title, body: content, overlays, icon, t, closeLabel: 'Close export',
+    beforeClose: () => stop.ask(() => !done)});
+  dialog.result.then(() => { done = true; stop.dismiss(); const callback = onClosed; onClosed = null; callback?.(); });
   dialog.element.querySelector('.ui-dialog-foot').hidden = true;
   dialog.element.dataset.exporting = '';
   dialog.showModal();
