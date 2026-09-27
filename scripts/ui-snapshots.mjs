@@ -93,7 +93,10 @@ const STATES = [
   {name: 'polygon-rows', enter: steps(select(WALKER), click('#inspector details[data-section="Polygons"] > summary'), frames,
     page => page.evaluate(() => document.querySelector('#inspector details[data-section="Polygons"]').scrollIntoView({block: 'start'})), frames)},
   {name: 'file-menu', enter: steps(click('[data-app-menu="file"]'), waitFor('#menu'))},
-  {name: 'insert-dialog', enter: steps(click('#open-insert'), waitFor('#insert-dialog'))},
+  // The rail's Add menu, and today's Insert dialog (its All in this project…).
+  {name: 'add-menu', enter: steps(click('#open-insert'), waitFor('[role=menu][aria-label=Add]'))},
+  {name: 'insert-dialog', enter: steps(click('#open-insert'), waitFor('[role=menu][aria-label=Add]'),
+    page => page.getByRole('menuitem', {name: /^All .*in this project/}).click(), waitFor('#insert-dialog'))},
   {name: 'onion-popover', enter: steps(click('#onion-settings-button'), waitFor('#onion-popover'))},
   ...SETTINGS_TABS.map(tab => ({name: `settings-${tab}`, enter: steps(
     page => page.evaluate(tab => window.styk.settingsUI.open(tab), tab), waitFor('.styk-settings[open]'))})),

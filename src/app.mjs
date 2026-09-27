@@ -68,6 +68,7 @@ import { installDockTabs } from "./shell/dock-tabs.mjs";
 import { createLayoutPopover } from "./shell/layout-popover.mjs";
 import { installShellCommands } from "./shell/shell-commands.mjs";
 import { syncBandSession } from "./shell/topbar.mjs";
+import { installRail } from "./shell/rail.mjs";
 import { initStudioShell } from "./studio-shell.mjs";
 import { createExportFlow } from "./export-flow.mjs";
 import { createAppDialogs } from "./app-dialogs.mjs";
@@ -3652,7 +3653,7 @@ function showMenu(anchor) {
  * it again) or at a point ({left, bottom}, a context menu; `invoker` is where
  * focus returns). Returns the menu, or null when the press closed it.
  */
-function showCommandMenu(items, anchor, { label } = {}) {
+function showCommandMenu(items, anchor, { label, placement } = {}) {
   const element = anchor?.nodeType === 1 ? anchor : null;
   const open = element && menuFor(element);
   if (open) {
@@ -3670,8 +3671,74 @@ function showCommandMenu(items, anchor, { label } = {}) {
     items: menuItems(items),
     ...(element ? { anchor: element } : { point: { x: anchor.left ?? anchor.x ?? 0, y: anchor.bottom ?? anchor.y ?? 0 } }),
     ...(label ? { label } : {}),
+    ...(placement ? { placement } : {}),
     invoker,
   });
+}
+/** Adds another copy of a figure or clip already in the project (the Add menu's In this project, the Insert dialog). */
+function addProjectFigure(id) {
+  pause();
+  if (builderMode?.active) return toast("Finish the figure or return to Animate to insert figures.");
+  if (rangeFrames()) editor.addFigureInFrames(id, rangeFrames());
+  else editor.addFigure(id);
+  if ($("insert-dialog").open) $("insert-dialog").close();
+  setTool("select");
+}
+// The Add menu lists at most this many of the project's figures; All in this project… shows every one, with search.
+const ADD_MENU_PROJECT_ROWS = 10;
+/**
+ * The Add menu (experience.md §3.3): the rail's + in Animate, and in Draw the +'s corner tick, led there by New
+ * drawing layer. What today's Insert dialog added, one list: a stick figure, text, an image, figures from a file,
+ * a movieclip; another copy of a figure already in the project; the examples.
+ */
+function addMenuItems({ draw = false } = {}) {
+  const figureIcon = (figure) => (isMovieclip(figure) ? "frame" : figure.text_assets?.length ? "text" : figure.image_assets?.length ? "image" : "person");
+  const figures = editor.report.figure_types ?? [];
+  const project = figures.slice(0, ADD_MENU_PROJECT_ROWS).map((figure) => ({
+    label: String(figure.name || `Figure ${figure.figure_type_id}`), icon: figureIcon(figure), run: () => addProjectFigure(figure.figure_type_id),
+  }));
+  const samples = (state.samples ?? []).map((sample) => ({ label: sample.name, icon: sample.kind === "stk" ? "person" : "file",
+    run: () => { if (builderMode?.active) return toast("Finish the figure or return to Animate to open samples."); openSample(sample.path).catch(fail); } }));
+  return [
+    ...(draw ? [{ label: "New drawing layer", icon: "brush", run: () => drawingController?.run(() => drawingController.action("new")) }, null] : []),
+    ["add-figure", "person", "Stick figure"],
+    // The Add menu's own short names (today's Insert dialog: Text, Image), not the File menu's longer ones.
+    { command: "add-text", icon: "text", label: "Text…", shortcut: menuShortcut("add-text", "T") },
+    { command: "import-sprite", icon: "image", label: "Image…", shortcut: "" },
+    ["import", "import", "Import figures…"],
+    ["movieclip-new", "frame", "Movieclip…"],
+    ["movieclip-create", "frame", "Movieclip from selection…", "", !editor.object],
+    ["movieclip-range", "frame", "Movieclip from frames…"],
+    null,
+    ...(project.length ? [{ label: "In this project" }, ...project] : []),
+    { label: figures.length > ADD_MENU_PROJECT_ROWS ? `All ${figures.length} in this project…` : "All in this project…", icon: "layers",
+      run: () => studioShell?.showInsertDialog() },
+    null,
+    { label: "Examples", icon: "layers", submenu: [{ command: "rig-examples", icon: "person", label: "Rig examples…" }, ...(samples.length ? [{ label: "Animations" }, ...samples] : [])] },
+  ];
+}
+/** Opens the Add menu beside the rail's +. */
+function showAddMenu(anchor) {
+  if (builderMode?.active) return;
+  return showCommandMenu(addMenuItems({ draw: Boolean(drawingController?.active) }), anchor, { label: "Add", placement: "right-start" });
+}
+/** The variants a rail tool's corner tick lists (experience.md §3.2): Select pixels' shapes, and Shapes' kinds. */
+const RAIL_VARIANTS = {
+  lasso: { tool: "drawing-lasso", setting: "selectShape", label: "Selection shape",
+    items: [["lasso", "lasso", "Lasso"], ["rect", "sel-rect", "Rectangle"], ["ellipse", "sel-ellipse", "Ellipse"], ["wand", "wand", "Wand"]] },
+  shape: { tool: "drawing-shape", setting: "shapeKind", label: "Shape",
+    items: [["line", "line", "Line"], ["rect", "shape-rect", "Rectangle"], ["ellipse", "shape-ellipse", "Ellipse"]] },
+};
+/** Lists a rail tool's variants (or the Add menu for the +); choosing one switches to the tool with that variant. */
+function showRailMenu(kind, anchor) {
+  if (kind === "add") return showAddMenu(anchor);
+  const variants = RAIL_VARIANTS[kind], drawing = drawingController;
+  if (!variants || !drawing) return;
+  const current = drawing.settings[variants.setting];
+  return showCommandMenu(variants.items.map(([value, glyph, label]) => ({
+    label, icon: glyph, radio: true, checked: current === value,
+    run: () => { drawing.settings[variants.setting] = value; setTool(variants.tool); drawing.onUI(); drawing.onRender(); },
+  })), anchor, { label: variants.label, placement: "right-start" });
 }
 function showZoomMenu(anchor) {
   showCommandMenu(
@@ -5680,6 +5747,13 @@ async function init() {
     actions, getTimeline: () => timelineUI,
     builder: builderMode, drawing:drawingController, toast});
   window.styk.studio = studioShell;
+  // The rail's + adds (Animate: the Add menu; Draw: a new drawing layer, its corner tick the Add menu), and a tool with
+  // variants lists them from its corner tick, a right-click or a long press (src/shell/rail.mjs).
+  installRail(document.querySelector(".studio-rail"), { openMenu: (kind, anchor) => showRailMenu(kind, anchor) });
+  $("open-insert").addEventListener("click", guarded((event) => {
+    if (drawingController?.active) return drawingController.run(() => drawingController.action("new"));
+    showAddMenu(event.currentTarget);
+  }));
   if (desktop?.beginClipboardRead)
     nativeFrameClipboard = installNativeFrameClipboard(editor, desktop, {
       onError: fail,

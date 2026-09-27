@@ -66,6 +66,16 @@ const shapes = Object.freeze({
   "ws-draw": '<path d="M3 19.5c2.7-3.4 4.6 1.3 7.4-2.3 2.2-2.8 3.6-.6 5.4-2.2"/><path d="m14.6 4.2 5.2 5.2-6.7 6.7-5.9 1.3 1.3-5.9z"/><path d="m12.5 6.3 5.2 5.2"/>',
   "ws-build": '<path d="M7.6 13.8 13.8 7.6M10.2 16.4l6.2-6.2"/><circle cx="5.6" cy="15.6" r="2.4"/><circle cx="8.4" cy="18.4" r="2.4"/><circle cx="15.6" cy="5.6" r="2.4"/><circle cx="18.4" cy="8.4" r="2.4"/>',
   "test-rig": '<circle cx="9" cy="5" r="2.2"/><path d="M9 7.5v5.5M9 13l-3 6M9 13l3 6M5.5 10l3.5-1 3.5 1"/><path d="M15 9.5v7l5-3.5z"/>',
+  // The rail (experience §3.2): the Tweener is an in-between (two key nodes and the blended node on a dashed arc),
+  // never a key diamond; Shapes is a triangle, a square and a circle. Their variants, listed by the corner tick:
+  // the pixel selection's rectangle, ellipse and wand, and the shape tool's rectangle and ellipse.
+  tween: '<path d="M5.5 17.5C8 9 16 9 18.5 17.5" stroke-dasharray="2.2 2.6"/><circle cx="4.5" cy="18" r="2.2"/><circle cx="19.5" cy="18" r="2.2"/><circle cx="12" cy="10.6" r="2.6"/>',
+  shapes: '<path d="M8.3 10a.7.7 0 0 1-.63-1.08L11.4 3a.7.7 0 0 1 1.2-.04L16.3 8.9a.7.7 0 0 1-.57 1.1Z"/><rect x="3" y="14" width="7" height="7" rx="1"/><circle cx="17.5" cy="17.5" r="3.5"/>',
+  "sel-rect": '<rect x="4" y="5" width="16" height="14" rx="1" stroke-dasharray="3 2.4"/>',
+  "sel-ellipse": '<ellipse cx="12" cy="12" rx="8.5" ry="7" stroke-dasharray="3 2.4"/>',
+  wand: '<path d="m4 20 11-11M15 4v3M19 8h-3M18.5 4.5l-2 2M11.5 4.5l1 1.5M19.5 11.5 18 12.5"/>',
+  "shape-rect": '<rect x="4" y="6" width="16" height="12" rx="1.5"/>',
+  "shape-ellipse": '<ellipse cx="12" cy="12" rx="8.5" ry="6.5"/>',
   brush: '<path d="m14 6 4-4 4 4-4 4-4-4Zm0 0-5 8 2 2 7-6M9 14c-6-1-2 6-7 6 7 3 10-1 9-4"/>',
   eraser: '<path d="m4 14 9-11a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3L11 21H8l-4-4a2 2 0 0 1 0-3ZM9 9l8 8M11 21h11"/>',
   'paint-bucket': '<path d="m4 10 7-7 10 10-8 8-9-9v-2ZM4 12h15M6 2l7 7M21 17s-3 3-1 5c3 1 3-2 1-5Z"/>',

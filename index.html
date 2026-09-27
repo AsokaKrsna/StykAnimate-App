@@ -109,29 +109,31 @@
         </div>
       </header>
       <section class="workspace shell-work" data-mode="animate">
+        <!-- The tool rail (experience.md §3.2): only the current workspace's tools, anchored to the top of its column.
+             The order reads right in each workspace; src/shell/rail.mjs shows the current workspace's tools, names them
+             and adds the corner tick of a tool with variants ([data-rail-menu]). -->
         <nav class="studio-rail shell-rail" aria-label="Editor tools">
-          <button class="rail-add" id="open-insert" title="Add to scene" aria-label="Add to scene" data-icon="plus"></button>
-          <span class="rail-divider"></span>
-<div class="tool-dock" role="toolbar" aria-label="Contextual tools" aria-orientation="vertical">
-<button class="tool" data-tool="select" data-icon="cursor" aria-label="Select and move" title="Select and move · V"><span class="tool-label">Select</span></button>
-<button class="tool" data-tool="rig" data-icon="sliders" aria-label="Edit rig" title="Edit rig"><span class="tool-label">Joints</span></button>
-<button class="tool" id="tweener-button" data-tool="tweener" aria-label="Breakdown tweener" title="Tweener · Drag selected poses"></button>
-<button class="tool" data-tool="line" data-icon="line" aria-label="Add line segment" title="Add line segment · L"><span class="tool-label">Line</span></button>
-<button class="tool" data-tool="chain" data-icon="builder-chain" aria-label="Chain pen" title="Chain pen · Click to extend, Enter to finish"><span class="tool-label">Chain</span></button>
-<button class="tool" data-tool="circle" data-icon="circle" aria-label="Add circle segment" title="Add circle segment · C"><span class="tool-label">Circle</span></button>
-<button class="tool" data-tool="polygon" data-icon="polygon" aria-label="Create polygon" title="Create polygon · Shift-click: fill enclosed area"><span class="tool-label">Polygon</span></button>
-<button class="tool" data-tool="drawing-brush" data-icon="brush" aria-label="Brush" title="Brush · B" hidden><span class="tool-label">Brush</span></button>
-<button class="tool" data-tool="drawing-eraser" data-icon="eraser" aria-label="Eraser" title="Eraser · E" hidden><span class="tool-label">Eraser</span></button>
-<button class="tool" data-tool="drawing-fill" data-icon="paint-bucket" aria-label="Fill" title="Fill · G" hidden><span class="tool-label">Fill</span></button>
-<button class="tool" data-tool="drawing-lasso" data-icon="lasso" aria-label="Lasso" title="Lasso · L" hidden><span class="tool-label">Lasso</span></button>
-<button class="tool" data-tool="drawing-shape" data-icon="square" aria-label="Shape" title="Line, rectangle and ellipse · U" hidden><span class="tool-label">Shape</span></button>
-<button class="tool" data-tool="drawing-transform" data-icon="transform" aria-label="Transform" title="Transform · V" hidden><span class="tool-label">Transform</span></button>
-<button class="tool" data-tool="hand" data-icon="hand" aria-label="Pan canvas" title="Pan canvas · H"><span class="tool-label">Pan</span></button>
-<button class="tool" data-action="toggle-isolate" data-icon="detach" title="Isolate joint · Hold Caps Lock" aria-label="Isolate joint" aria-pressed="false"><span class="tool-label">Isolate</span></button>
-</div>
-          <div class="rail-order" role="group" aria-label="Selection stacking">
-            <button type="button" class="tool" data-selection-order data-action="selection-front" data-shift-action="selection-up" title="Bring to front · Shift-click: forward one step" aria-label="Bring to front; Shift-click for one step" data-icon="bring-to-front" disabled></button>
-            <button type="button" class="tool" data-selection-order data-action="selection-back" data-shift-action="selection-down" title="Send to back · Shift-click: backward one step" aria-label="Send to back; Shift-click for one step" data-icon="send-to-back" disabled></button>
+          <div class="tool-dock ui-rail" role="toolbar" aria-label="Tools" aria-orientation="vertical">
+            <button type="button" class="ui-tool-button rail-add" id="open-insert" aria-label="Add" aria-haspopup="menu" data-rail-menu="add" data-icon="plus"></button>
+            <button type="button" class="tool ui-tool-button" data-tool="rig" data-icon="nodes" aria-label="Edit joints"></button>
+            <button type="button" class="tool ui-tool-button" data-tool="select" data-icon="cursor" aria-label="Select and pose"></button>
+            <button type="button" class="tool ui-tool-button" id="tweener-button" data-tool="tweener" aria-label="Tweener"></button>
+            <button type="button" class="tool ui-tool-button" data-tool="line" data-icon="line" aria-label="Line"></button>
+            <button type="button" class="tool ui-tool-button" data-tool="chain" data-icon="builder-chain" aria-label="Chain pen"></button>
+            <button type="button" class="tool ui-tool-button" data-tool="circle" data-icon="circle" aria-label="Circle"></button>
+            <button type="button" class="tool ui-tool-button" data-tool="polygon" data-icon="polygon" aria-label="Polygon"></button>
+            <button type="button" class="tool ui-tool-button" data-tool="drawing-brush" data-icon="brush" aria-label="Brush" hidden></button>
+            <button type="button" class="tool ui-tool-button" data-tool="drawing-eraser" data-icon="eraser" aria-label="Eraser" hidden></button>
+            <button type="button" class="tool ui-tool-button" data-tool="drawing-fill" data-icon="paint-bucket" aria-label="Fill" hidden></button>
+            <button type="button" class="tool ui-tool-button" data-tool="drawing-lasso" data-icon="lasso" aria-label="Select pixels" data-rail-menu="lasso" hidden></button>
+            <button type="button" class="tool ui-tool-button" data-tool="drawing-shape" data-icon="shapes" aria-label="Shapes" data-rail-menu="shape" hidden></button>
+            <button type="button" class="tool ui-tool-button" data-tool="drawing-transform" data-icon="transform" aria-label="Transform" hidden></button>
+            <button type="button" class="tool ui-tool-button" data-tool="hand" data-icon="hand" aria-label="Pan canvas"></button>
+          </div>
+          <!-- Today's stacking buttons stay in Animate until the figure's quick actions (To front, To back) land (M4). -->
+          <div class="rail-order ui-rail" role="group" aria-label="Selection stacking">
+            <button type="button" class="tool ui-tool-button" data-selection-order data-action="selection-front" data-shift-action="selection-up" title="Bring to front · Shift-click: forward one step" aria-label="Bring to front; Shift-click for one step" data-icon="bring-to-front" disabled></button>
+            <button type="button" class="tool ui-tool-button" data-selection-order data-action="selection-back" data-shift-action="selection-down" title="Send to back · Shift-click: backward one step" aria-label="Send to back; Shift-click for one step" data-icon="send-to-back" disabled></button>
           </div>
           <div class="rail-bottom">
             <button class="tool" data-action="help" title="Keyboard shortcuts" aria-label="Keyboard shortcuts" data-icon="help"></button>

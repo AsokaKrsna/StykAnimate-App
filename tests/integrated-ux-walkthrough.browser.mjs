@@ -284,6 +284,7 @@ try {
       ),
     );
     await page.locator('#open-insert').click();
+    await page.getByRole('menuitem', { name: /^All .*in this project/ }).click();
     await page.waitForTimeout(150);
     details.assets = await page.evaluate(() => ({ ...styk.assets.stats }));
     check(

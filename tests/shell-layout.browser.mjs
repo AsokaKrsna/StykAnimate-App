@@ -377,21 +377,28 @@ try {
     await resize(1440, 900);
   });
 
-  await step('a rail that does not fit says more tools are below: a fade and a drawn scrollbar', async () => {
+  await step('the rail keeps the tools of each workspace at 500×340, and a rail that does not fit says more tools are below', async () => {
     await resize(500, 340);
-    for (const [mode, more] of [['animate', false], ['rig', true]]) {
+    const read = () => page.evaluate(() => {
+      const rail = document.querySelector('.shell-rail');
+      return {more: rail.hasAttribute('data-more-below'), overflows: rail.scrollHeight > rail.clientHeight + 1,
+        scrollbar: getComputedStyle(rail).scrollbarWidth, mask: getComputedStyle(rail).maskImage !== 'none'};
+    });
+    // Only the workspace's own tools (M3b): Animate's and Build's fit the 40px rail's 32px tools; Draw's eight say
+    // whether one waits below (its Pan, a few pixels, at this size).
+    for (const mode of ['animate', 'draw', 'rig']) {
       await workspace(mode);
-      const rail = await page.evaluate(() => {
-        const rail = document.querySelector('.shell-rail');
-        return {more: rail.hasAttribute('data-more-below'), overflows: rail.scrollHeight > rail.clientHeight + 1,
-          scrollbar: getComputedStyle(rail).scrollbarWidth, mask: getComputedStyle(rail).maskImage !== 'none'};
-      });
-      assert.deepEqual(rail, {more, overflows: more, scrollbar: 'auto', mask: more}, mode);
-      if (more) {
-        await page.evaluate(() => { const rail = document.querySelector('.shell-rail'); rail.scrollTop = rail.scrollHeight; });
-        await page.waitForFunction(() => !document.querySelector('.shell-rail').hasAttribute('data-more-below'));
-      }
+      const rail = await read();
+      assert.deepEqual(rail, {more: rail.overflows, overflows: rail.overflows, scrollbar: 'auto', mask: rail.overflows}, mode);
+      if (mode !== 'draw') assert.equal(rail.overflows, false, `${mode}: every tool fits`);
     }
+    // A rail shorter than its tools (a shorter column, forced here) fades its foot and shows its scrollbar until scrolled.
+    await page.evaluate(() => { document.querySelector('.shell-rail').style.maxBlockSize = '120px'; });
+    await page.waitForFunction(() => document.querySelector('.shell-rail').hasAttribute('data-more-below'));
+    assert.deepEqual(await read(), {more: true, overflows: true, scrollbar: 'auto', mask: true}, 'a rail that does not fit');
+    await page.evaluate(() => { const rail = document.querySelector('.shell-rail'); rail.scrollTop = rail.scrollHeight; });
+    await page.waitForFunction(() => !document.querySelector('.shell-rail').hasAttribute('data-more-below'));
+    await page.evaluate(() => { const rail = document.querySelector('.shell-rail'); rail.style.maxBlockSize = ''; rail.scrollTop = 0; });
     await leaveBuild();
     await workspace('animate');
     await resize(1440, 900);

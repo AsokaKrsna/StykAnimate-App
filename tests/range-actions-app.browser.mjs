@@ -114,10 +114,10 @@ try {
   }
   await exercise('Insert dialog adds one common identity only in selected native frames', async () => {
       await page.locator('#open-insert').click();
-      await page.locator('#insert-dialog [data-action="add-figure"]').click();
+      await page.getByRole('menuitem', {name: 'Stick figure', exact: true}).click();
     },
     (after, before) => {assert.equal(after.objects.length, before.objects.length + 1); assert.ok(after.objects.some(o => o.unique_id > 3));});
-  await exercise('Asset library insertion honors the selected frame range', async () => {await page.locator('#open-insert').click(); await page.locator('#asset-list .styk-asset-row').first().click();},
+  await exercise('Asset library insertion honors the selected frame range', async () => {await page.locator('#open-insert').click(); await page.getByRole('menuitem', {name: /^All .*in this project/}).click(); await page.locator('#asset-list .styk-asset-row').first().click();},
     (after, before) => assert.equal(after.objects.length, before.objects.length + 1));
   await exercise('Duplicate preserves each selected frame’s distinct source pose', () => page.evaluate(() => styk.actions.duplicate()),
     (after, before) => {const copy = after.objects.find(o => o.unique_id > 3); assert.ok(copy); assert.deepEqual(copy.angles, object(before, 1).angles); assert.equal(copy.scale, object(before, 1).scale);});
@@ -144,7 +144,7 @@ try {
       for (const b of bounds(after)) assert.ok(Math.abs(b.x - expected) < .001);
       assert.deepEqual(object(after, 3), object(before, 3));
     }, {setup: () => selectFigure(2, ['Control'])});
-  await exercise('Bring to front changes painter order in selected frames only', () => page.locator('#inspector [data-action="layer-front"]').click(), after => assert.equal(after.object_draw_order_unique_ids.at(-1), 1));
+  await exercise('Bring to front changes painter order in selected frames only', () => page.locator('#properties-panel [data-action="layer-front"]').click(), after => assert.equal(after.object_draw_order_unique_ids.at(-1), 1));
   await exercise('Copy and Paste inserts the clipboard pose into the selected range', async () => {await menuAction('copy'); await menuAction('paste');},
     (after, before) => {assert.equal(after.objects.length, before.objects.length + 1); assert.ok(after.objects.some(o => o.unique_id > 3));});
   await exercise('Cut copies once and removes figures from the selected range', async () => {

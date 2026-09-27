@@ -64,6 +64,8 @@ export const SHELL_CONTRACT = Object.freeze({
     // The band: its history, Save and Export, and a session's Cancel, Test rig and Done (camera-done, movieclip-*).
     titlebar: ['menu', 'rename', 'undo', 'redo', 'save', 'export', 'movieclip-cancel', 'rig-test', 'movieclip-done',
       'camera-done', 'minimize', 'maximize', 'close'],
+    // The rail's stacking buttons (Animate, until the figure's quick actions) and its hidden help and settings;
+    // toggle-isolate is the builder View menu's (it left the rail in M3b).
     rail: ['toggle-isolate', 'selection-front', 'selection-back', 'help', 'settings'],
     canvas: ['scene-settings', 'toggle-handles', 'toggle-motion-paths', 'zoom-menu',
       'finish-polygon', 'cancel-polygon'],
@@ -252,7 +254,13 @@ test('Structural hooks that modules dereference without null checks are intact',
     'the head host sits between the target and #inspector');
   one('[data-action="panel-toggle-properties"]', one('.titlebar'));
   one('[data-action="timeline-sheet"]', one('.timeline-toolbar'));
-  one('[data-action="toggle-isolate"]', one('.tool-dock'));
+  // The rail (src/shell/rail.mjs): the + (#open-insert) and every tool in .tool-dock; the tools with variants and the +
+  // declare the list their corner tick opens. Isolate is no rail tool (Caps Lock, the selection and Build menus).
+  const dock = one('.tool-dock');
+  one('#open-insert', dock);
+  for (const [selector, menu] of [['#open-insert', 'add'], ['[data-tool="drawing-lasso"]', 'lasso'], ['[data-tool="drawing-shape"]', 'shape']])
+    assert.equal(one(selector, dock).attrs['data-rail-menu'], menu, `${selector} lists ${menu}`);
+  assert.equal(find('[data-action="toggle-isolate"]', dock).length, 0);
   assert.equal(find('[data-action="selection-front"]')[0].attrs['data-selection-order'], '');
   assert.equal(find('[data-action="selection-back"]')[0].attrs['data-selection-order'], '');
   // Tests still select these toolbar containers; they change together with those tests.

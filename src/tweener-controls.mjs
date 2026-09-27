@@ -1,3 +1,4 @@
+import {icon} from './icons.mjs';
 const TYPES = {
   breakdown: {label:'Breakdown', color:'#8b5cf6', path:'M12 3 20 12 12 21 4 12Z'},
   neighbor: {label:'Blend to Neighbor', color:'#168aad', path:'M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4'},
@@ -49,7 +50,8 @@ export class TweenerControls {
     this.tool.classList.toggle('active',active);this.button.setAttribute('aria-pressed',String(active));
     this.button.setAttribute('aria-label',`${type.label} tweener`);
     this.button.title=`${type.label} · Drag horizontally on canvas · Arrow for tween types`;
-    this.button.innerHTML=glyph(this.mode);
+    // The rail shows one in-between glyph (never a key diamond); the type's own glyph and colour are in its menu and HUD.
+    if(!this.button.querySelector('svg'))this.button.innerHTML=icon('tween');
     this.viewport.classList.toggle('tweener-active',active);
     this.hud.style.setProperty('--tween-color',type.color);
     for(const choice of this.menu.querySelectorAll('[data-tween-type]'))choice.setAttribute('aria-checked',String(choice.dataset.tweenType===this.mode));

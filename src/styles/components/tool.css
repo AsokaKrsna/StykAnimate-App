@@ -6,8 +6,7 @@
  * in --text-3, blue while the tool is active; the rail's owner lists the
  * variants on a click on the tick, a right-click or a long press, and while
  * the tool is active they are a segmented control in its tool options. Keeps
- * data-tool and the tools' ids on the same element. Inert until markup
- * carries .ui-tool-button. */
+ * data-tool and the tools' ids on the same element. */
 @layer components {
   .ui-tool-button {
     --icon-size: var(--icon-xl);
@@ -35,6 +34,17 @@
   }
   .ui-tool-button:where([aria-pressed="true"]) > .ui-tool-tick { background: var(--accent-text); }
   .ui-tool-tick:where(:dir(rtl)) { clip-path: polygon(0 0, 100% 100%, 0 100%); }
+  /* A tick that lists the variants itself (the rail, src/shell/rail.mjs): a 14px button over the tool's lower corner,
+   * drawing the same 5px tick, beside the tool in its slot ([data-active] while the tool is). */
+  .ui-tool-tick-button {
+    position: absolute; inset: auto 0 0 auto; inline-size: 14px; block-size: 14px; padding: 0;
+    border: 0; border-end-end-radius: var(--radius-lg); background: transparent; cursor: pointer;
+    -webkit-app-region: no-drag;
+  }
+  .ui-tool-tick-button:where(:hover, [aria-expanded="true"]) > .ui-tool-tick { background: var(--text-1); }
+  :where([data-active]) > .ui-tool-tick-button > .ui-tool-tick { background: var(--accent-text); }
+  /* At the minimal width and the low height tier the rail's tools are 32px (a 40px rail). */
+  :where(:root[data-tier="minimal"], :root[data-height="low"]) .ui-tool-button { inline-size: var(--control-lg); block-size: var(--control-lg); }
 
   @media (forced-colors: active) {
     .ui-tool-button[aria-pressed="true"] { border-color: Highlight; color: Highlight; }

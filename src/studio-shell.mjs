@@ -1,7 +1,6 @@
-import {DRAWING_TOOLS} from './drawing-view.mjs';
-import {setAttr, setFlag, setHidden, setProp, setText} from './ui/dom-write.mjs';
+import {setAttr, setHidden, setProp, setText} from './ui/dom-write.mjs';
+import {syncRail} from './shell/rail.mjs';
 const names = {select: 'Select', pose: 'Pose joints', tweener: 'Tweener', rig: 'Edit shared rig', line: 'Draw a line', chain: 'Chain pen', circle: 'Draw a circle', polygon: 'Draw a polygon', hand: 'Pan canvas', attach: 'Attach figure'};
-const builderTools = new Set(['select', 'rig', 'line', 'chain', 'circle', 'polygon', 'hand']);
 
 /** Presentation only: all editing still uses the existing document commands.
  * `builder` is the bounded builder-session controller from builder-mode.mjs;
@@ -23,13 +22,13 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
   }
   document.querySelectorAll('[data-workspace-mode]').forEach(button => button.addEventListener('click', () => changeMode(button.dataset.workspaceMode), options));
   document.getElementById('leave-rig').addEventListener('click', () => changeMode('animate'), options);
-  document.getElementById('open-insert').addEventListener('click', () => {
-    if(drawing?.active){drawing.run(()=>drawing.action('new'));return;}
+  /** Today's Insert dialog, now the Add menu's "All in this project…": the project's figures with search and previews. */
+  function showInsertDialog() {
     if (builder?.active) { toast?.('Finish the figure or return to Animate to insert figures.'); return; }
     state.activeTab = 'assets';
     dialog.showModal();
     renderAssets();
-  }, options);
+  }
   document.getElementById('close-insert').addEventListener('click', () => dialog.close(), options);
   dialog.addEventListener('close', () => { state.activeTab = 'layers'; renderAssets(); }, options);
   // Close before the existing delegated action opens a native file or authoring dialog.
@@ -64,26 +63,10 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
     if(pendingDraw&&!builder?.active){pendingDraw=false;drawing?.enter();}
     const current = mode(), drawingActive = Boolean(drawing?.active);
     setAttr(workspace, 'data-mode', drawingActive ? 'draw' : current);
-    const insert = document.getElementById('open-insert'), insertLabel = current==='draw'?'New drawing layer':'Add to scene';
-    setAttr(insert, 'aria-label', insertLabel);setAttr(insert, 'title', insertLabel);
     // The band's switch shows the current workspace; Build's Done (#builder-done) also names a workspace but is no toggle.
     document.querySelectorAll('.workspace-switch [data-workspace-mode]').forEach(button => setAttr(button, 'aria-pressed', String(button.dataset.workspaceMode === current)));
-    document.querySelectorAll('.tool-dock [data-tool]').forEach(button => {
-      const tool = button.dataset.tool;
-      setHidden(button, current === 'draw' ? !['hand',...DRAWING_TOOLS.map(t=>'drawing-'+t[0])].includes(tool) : current === 'rig'
-        ? !builderTools.has(tool)
-        : !['select', 'pose', 'hand', 'tweener'].includes(tool));
-      setAttr(button, 'aria-pressed', String(tool === state.tool));
-      setFlag(button, 'active', tool === state.tool);
-      if (!button.querySelector('.tool-label')) {
-        const label = document.createElement('span');
-        label.className = 'tool-label';
-        label.textContent = {select:'Select', pose:'Pose', tweener:'Tween', rig:'Joints', line:'Line', chain:'Chain', circle:'Circle', polygon:'Polygon', hand:'Pan'}[tool];
-        button.append(label);
-      }
-    });
-    const isolate = document.querySelector('.tool-dock [data-action="toggle-isolate"]');
-    if (isolate) setHidden(isolate, !['pose', 'rig'].includes(state.tool));
+    // The rail: this workspace's tools, their names and the active one (src/shell/rail.mjs).
+    syncRail(document.querySelector('.studio-rail'), {mode: drawingActive ? 'draw' : current, tool: state.tool});
     setText(document.getElementById('tool-context'), drawingActive ? 'Draw · '+drawing.tool : names[state.tool] || 'Select');
     const context = state.inspectorContext;
     const figureName = editor.figure?.name || builder?.session?.figure?.name || 'Figure';
@@ -107,5 +90,5 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
     if(drawingActive)drawing.sync();
   }
   sync();
-  return {sync, destroy: () => controller.abort()};
+  return {sync, showInsertDialog, destroy: () => controller.abort()};
 }

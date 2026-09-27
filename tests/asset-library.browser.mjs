@@ -21,7 +21,12 @@ try {
     const {createDemo} = await import('/src/demo.mjs');
     styk.editor.load(createDemo(), 'Asset library fixture');
   });
-  await page.locator('#open-insert').click();
+  // The project library (today's Insert dialog) opens from the rail's Add menu.
+  const openLibrary = async () => {
+    await page.locator('#open-insert').click();
+    await page.getByRole('menuitem', { name: /^All .*in this project/ }).click();
+  };
+  await openLibrary();
   await page.waitForFunction(
     () => window.styk.assets.stats.cachedPreviews === 3,
   );
@@ -51,7 +56,7 @@ try {
     (await page.evaluate(() => window.styk.editor.selectionFrame.objects.length)) ===
       before + 1,
   );
-  await page.locator("#open-insert").click();
+  await openLibrary();
   await page.waitForFunction(
     () => window.styk.assets.stats.cachedPreviews === 3,
   );
@@ -84,7 +89,7 @@ try {
     (await page.evaluate(() => window.styk.editor.selectionFrame.objects.length)) ===
       keyboardBefore + 1,
   );
-  await page.locator("#open-insert").click();
+  await openLibrary();
   await page
     .locator(".styk-assets-search input")
     .fill("no figure has this name");
