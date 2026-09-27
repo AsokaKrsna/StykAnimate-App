@@ -317,7 +317,8 @@ overlays.install();
 const stageHead = createStageHead({
   root: document.querySelector(".stage-head"),
   toasts: () => toasts,
-  toolOptions: () => ({ registry: commands, context: commandContext, icon: (name, className) => icon(name, className), t: kitT, overlays }),
+  toolOptions: () => ({ registry: commands, context: commandContext, icon: (name, className) => icon(name, className), t: kitT, overlays,
+    onChange: ({ id, value }) => { if (id === "rig-mode") { state.rigMode = value; queueUI(); } } }),
 });
 const toasts = createToasts({
   host: $("toast"),
@@ -466,8 +467,26 @@ function syncStageHead() {
       : session === "camera" ? { done: "camera-done", name: "Camera" } : null,
     handles: state.handles, motionPaths: state.motionPaths, grid: Boolean(state.settings.canvasGrid), vfx: state.vfxEnabled,
     staticHandles: state.settings.builderShowStaticHandles !== false, highlight: Boolean(state.settings.builderHighlightSegment),
+    isolate: Boolean(state.isolateMode),
   });
+  // The tool's options are written when the tool or its values change (the bar syncs its own pressed states).
+  const optionsKey = `${drawingController?.active ? "draw" : state.tool}|${state.rigMode}`;
+  if (optionsKey !== shownToolOptions) { shownToolOptions = optionsKey; stageHead.setToolOptions(toolOptionDescriptors(), { tool: state.tool, label: "Tool options" }); }
   syncModeMessage();
+}
+let shownToolOptions = "";
+/**
+ * The active tool's options in the stage header (ui/tool-options.mjs): Build's Edit joints tool drags joints or
+ * turns branches, and edits one part or its whole branch. Other tools show where you are (the crumb).
+ */
+function toolOptionDescriptors() {
+  if (state.tool !== "rig" || drawingController?.active) return [];
+  return [
+    { id: "rig-mode", kind: "select", label: "Drag", showLabel: true, description: "Rig edit mode", elementId: "rig-mode", value: state.rigMode,
+      options: [{ value: "move", label: "Move joint" }, { value: "rotate", label: "Rotate branch" }] },
+    { id: "builder-branch-option", kind: "toggle", command: "toggle-builder-branch", label: "Whole branch", showLabel: true, accent: true,
+      icon: "builder-branch", tip: "Edits reach the part and every part attached below it · or hold Shift" },
+  ];
 }
 /**
  * The pick mode that is active, as the stage header's mode message (experience.md §4.3): its instruction
@@ -484,6 +503,12 @@ function modeMessage() {
   if (drawingController?.active) return null;
   if (state.tool === "attach" && state.figureJoin) return { key: "join", icon: "join-figure", title: "Click the joint", message: "to join to", cancel: () => setTool("select") };
   if (state.tool === "chain") return { key: "chain", icon: "builder-chain", title: "Click to add points", message: "· Enter finishes · Backspace removes the last" };
+  // Build's drawing tools say what a drag does, so a new figure never starts from a blank guess.
+  const started = Boolean(builderMode?.session?.figure);
+  if (builderMode?.active && state.tool === "line")
+    return { key: `build-line-${started}`, icon: "line", title: started ? "Drag from a joint" : "Drag on the canvas", message: started ? "to add a line" : "to draw the figure's first line" };
+  if (builderMode?.active && state.tool === "circle")
+    return { key: `build-circle-${started}`, icon: "circle", title: started ? "Drag from a joint" : "Drag on the canvas", message: started ? "to add a circle" : "to draw the figure's first circle" };
   if (state.tool === "polygon") return { key: "polygon", icon: "polygon", title: "Click joints to trace", message: "· Shift-click an area to fill · Enter finishes" };
   if (state.tool === "tweener" && !builderMode?.active) {
     const type = tweenerControls?.button?.getAttribute("aria-label")?.replace(/ tweener$/, "") ?? "Breakdown";
@@ -3618,19 +3643,23 @@ const menuHost = $("menu");
 const menuTopInset = () => document.querySelector(".titlebar").getBoundingClientRect().bottom + 6;
 let lastMenuAnchor = null;
 /** The shortcut a menu row shows: the user's binding for commands with a hotkey, else the row's own text. */
+/** A menu row's shortcut: the command's first key (a menu shows one; Settings and the tooltips list them all). */
+const MENU_KEY_ALIASES = { "delete-single-segment": "delete", "duplicate-segment": "duplicate", "mirror-segment": "mirror", "mirror-segment-vertical": "mirror-vertical" };
 function menuShortcut(command, text = "") {
-  let id = command === "delete-single-segment" ? "delete" : command;
+  let id = MENU_KEY_ALIASES[command] ?? command;
   if (id === "play" && !hotkeys.label("play")) id = "play-pan";
-  return HOTKEY_BY_ID.has(id) ? hotkeys.label(id) : text;
+  return HOTKEY_BY_ID.has(id) ? hotkeys.label(id).split(" / ")[0] : text;
 }
-/** Today's menu rows ([action, icon, label, shortcut, disabled] or null) as menu items. */
+/** Commands that remove something: their menu rows are red (and menus list them last). */
+const DANGER_COMMANDS = new Set(["delete", "delete-segment", "delete-single-segment", "delete-frame", "clear-keys", "builder-context-delete-fill"]);
+/** Today's menu rows ([action, icon, label, shortcut, disabled] or null) as menu items; a submenu's rows convert too. */
 function menuItems(rows) {
   return rows.map((row) => {
-    if (!Array.isArray(row)) return row ?? null;
+    if (!Array.isArray(row)) return row && Array.isArray(row.submenu) ? { ...row, submenu: menuItems(row.submenu) } : row ?? null;
     const [command, glyph, label, shortcut = "", disabled = false] = row;
     return {
       command, icon: glyph, label, labelKey: menuLabelKey(command),
-      shortcut: menuShortcut(command, shortcut), disabled: Boolean(disabled), danger: command === "delete",
+      shortcut: menuShortcut(command, shortcut), disabled: Boolean(disabled), danger: DANGER_COMMANDS.has(command),
     };
   });
 }
@@ -4891,6 +4920,14 @@ const commandRequirements = {
   "movieclip-session": () => Boolean(editor._movieclipScopes?.length) || requirementReason("movieclipSession"),
   "camera-session": () => cameraSelected() || requirementReason("cameraSession"),
   pixels: () => Boolean(drawingController?.selection || drawingController?.marquee) || requirementReason("pixels"),
+  appearance: () => Boolean(state.builderAppearance) || "Copy an appearance first",
+};
+/** The on/off state of the toggle commands the stage header and the menus show as pressed or checked. */
+const TOGGLE_STATES = {
+  "toggle-builder-branch": () => Boolean(state.builderBranch || state.builderShiftHeld),
+  "toggle-isolate": () => Boolean(state.isolateMode),
+  "builder-static-handles": () => state.settings.builderShowStaticHandles !== false,
+  "builder-highlight": () => Boolean(state.settings.builderHighlightSegment),
 };
 // One view of every command (src/ui/command-registry.mjs): labels, glyphs,
 // availability and the user's shortcuts as they resolve in the current workspace.
@@ -4902,6 +4939,7 @@ const commands = createCommandRegistry({
   localization: { t: kitT },
   context: commandContext,
   requirements: commandRequirements,
+  checked: (id) => TOGGLE_STATES[id]?.(),
   runHotkey: (id) => {
     if (state.polygon && !polygonCommands.has(id)) { toast("Finish or cancel the polygon first."); return false; }
     return runKeyboardCommand(id, { target: viewport, shiftKey: false }, { shift: false });

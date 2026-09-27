@@ -43,6 +43,10 @@ const segmentKind = segment => {
   const kind = segment.segment_kind ?? segment.segment_type ?? SEGMENT_KIND[segment.primitive_code] ?? 'line';
   return KIND_LABEL[kind] ? kind : 'line';
 };
+/** A part's name as Structure and Properties show it in Build: its own name, else its kind and id ("Line 4"). */
+export const partName = segment => segment.name || `${KIND_LABEL[segmentKind(segment)] ?? 'Segment'} ${segment.segment_id}`;
+/** A part's glyph in Structure and Properties (line, circle, image, text, square). */
+export const partGlyph = segment => KIND_ICON[segmentKind(segment)] ?? 'line';
 
 export class FigureOutliner {
   /** `container` is the Structure panel's root; the shell docks and sizes it (its width is the dock's). */
@@ -71,9 +75,9 @@ export class FigureOutliner {
       </div>
       <div class="builder-tree" role="tree" aria-multiselectable="true" aria-label="Figure hierarchy" tabindex="0"><div class="builder-tree-spacer"></div><div class="builder-drop" hidden></div><div class="builder-outliner-empty" hidden></div></div>
       <div class="builder-footer">
-        <button id="builder-snap" aria-pressed="true" aria-label="Smart snapping" title="Smart snapping · Alt to bypass" data-strip-action="3">${icon('builder-snap')}</button>
+        <button id="builder-snap" aria-pressed="true" aria-label="Smart snapping" title="Smart snapping · Alt to bypass" data-strip-action="3">${icon('builder-snap')}<span>Snap</span></button>
         <button id="builder-timeline-toggle" aria-expanded="false" aria-controls="animation-timeline" title="Show animation timeline" data-strip-action="2">${icon('frame')}<span>Timeline</span></button>
-        <button data-action="zoom-selection" title="Fit figure · Shift 2" aria-label="Fit figure" data-strip-action="1">${icon('center')}</button>
+        <button data-action="zoom-selection" title="Fit figure · Shift 2" aria-label="Fit figure" data-strip-action="1">${icon('center')}<span>Fit</span></button>
       </div>
       `;
     this.tree = container.querySelector('.builder-tree');
@@ -218,10 +222,10 @@ export class FigureOutliner {
       empty.hidden = Boolean(figure);
       if (!figure)
         empty.textContent = session?.mode === 'create'
-          ? 'Draw a line or circle to start.'
+          ? 'Pick Line or Circle in the tool bar and drag on the canvas to draw the first part.'
           : 'No instance in this frame.';
       this.container.querySelector('.builder-outliner-count').textContent =
-        figure ? `${figure.segments.length} segment${figure.segments.length === 1 ? '' : 's'}` : '';
+        figure ? `${figure.segments.length} part${figure.segments.length === 1 ? '' : 's'}` : '';
       if (document.activeElement !== this.nameInput) this.nameInput.value = figure?.name ?? '';
       this.nameInput.disabled = !figure;
       this.nameInput.placeholder = session?.mode === 'create' ? 'New figure' : 'Figure name';
@@ -261,7 +265,7 @@ export class FigureOutliner {
     const editor = this.editor;
     const selected = entry.kind === 'segment' && editor.selectedSegmentIds.has(entry.id) &&
       this.session?.boundUids.has(editor.selectedUid);
-    const style = `top:${index * ROW_HEIGHT}px;height:${ROW_HEIGHT}px`;
+    const style = `top:${index * ROW_HEIGHT}px;height:${ROW_HEIGHT}px;--depth:${entry.depth ?? 0}`;
     if (entry.kind === 'header')
       return `<div class="builder-tree-header" style="${style}" role="presentation">${esc(entry.label)}<span>${entry.count}</span></div>`;
     if (entry.kind === 'polygon') {
@@ -280,7 +284,7 @@ export class FigureOutliner {
       <span class="builder-indent" style="width:${entry.depth * 14}px"></span>
       <span class="builder-twisty${entry.hasChildren ? (entry.collapsed ? ' collapsed' : ' open') : ''}"></span>
       <span class="builder-row-icon">${icon(KIND_ICON[kind] ?? 'line')}</span>
-      <span class="builder-row-label">${esc(segment.name || `${KIND_LABEL[kind] ?? 'Segment'} ${entry.id}`)}</span>
+      <span class="builder-row-label">${esc(partName(segment))}</span>
       ${badges}
     </div>`;
   }

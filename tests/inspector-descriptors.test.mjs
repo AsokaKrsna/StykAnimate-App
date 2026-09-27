@@ -64,6 +64,12 @@ const MOVED = [
     (descriptor.target.rename?.id === where.id && where.id) || 'movieclip-name' in (descriptor.target.rename?.data ?? {}), 'the header renames it in place'],
   [where => ['inspector-layer-visible', 'inspector-layer-locked'].includes(where.id), () => true, 'the layer row\'s eye and lock (timeline, Layers popover)'],
   [where => where['data-action'] === 'combine-figures', (descriptor, where, now, state) => !state.connected, 'shown while the selection has a connection to combine'],
+  // Revision 5: the rig tool's Drag mode is its option in the stage header (app.mjs toolOptionDescriptors), and
+  // Attach image… is Build's figure tile (Image), the part's ⋯ menu and the right-click menu.
+  [where => where.id === 'rig-mode', () => true, "the stage header's tool options"],
+  [where => where['data-action'] === 'add-sprite-segment', () => true, "Build's Image tile and its menus"],
+  // While it is being built, the figure's place among the scene's figures is Animate's (its Front and Back tiles).
+  [where => ['layer-front', 'layer-back'].includes(where['data-action']), descriptor => descriptor.quick?.context === 'build', 'Animate’s figure tiles'],
 ];
 function quickIds(descriptor) {
   const context = descriptor.quick?.context;
@@ -435,9 +441,12 @@ test('a joint: Joint, IK, Style and its figure\'s Layer are open; the second col
   assert.equal(inspectorDescriptor(options).target.name, 'Knee');
   editor.selectBranch(1, 2);
   assert.equal(inspectorDescriptor({editor, context: 'figure', tool: 'rig'}).target.name, 'Branch from Knee');
-  // In Build the part's commands stay on its builder bar until the part's quick actions land (M7a).
+  // In Build a joint is a part: named as Structure names it, with its own tiles (Split, Duplicate, Flip, Delete).
   editor.select(1, 2);
-  assert.equal(inspectorDescriptor({editor, builder: true}).quick, null);
+  assert.deepEqual(inspectorDescriptor({editor, builder: true}).quick, {context: 'part'});
+  assert.match(inspectorDescriptor({editor, builder: true}).target.name, /Knee$/);
+  editor.figure.segments[2].name = '';
+  assert.match(inspectorDescriptor({editor, builder: true}).target.name, /(Line|Circle|Square line|Image|Text) \d+$/);
 });
 
 test('IK keeps its ids, the chain stepper and the native bend radios', () => {
@@ -572,8 +581,6 @@ test('fills and used colours live in the titled Colours section, paged as today'
   editor.select(1);
   const options = {editor, tool: 'rig', rigMode: 'rotate', polygonPage: 1, palettePage: 1};
   const today = legacyInspectorView(options), now = inspectorView(options);
-  assertParity(today, now, {id: 'rig-mode'}, ['aria-label']);
-  assertOptions(today, now, {id: 'rig-mode'});
   for (const index of [12, 23]) {
     for (const html of [today, now]) tag(html, {'data-polygon-index': index});
     assertParity(today, now, {'data-polygon-color': index}, ['type', 'value', 'aria-label']);

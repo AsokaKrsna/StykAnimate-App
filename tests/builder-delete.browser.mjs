@@ -23,7 +23,7 @@ try {
   const posed=await page.evaluate(()=>{const {editor:e}=styk;const s=e.geometry.objects.get(e.selectedSlot).segments[5];return {uid:e.selectedUid,end:s.end};});
   const branch=mode!=='single-select';
   await page.evaluate(branch=>styk.editor.select(1,branch?2:3),branch);
-  if(mode.startsWith('toggle'))await page.locator('#builder-bar [data-action=toggle-builder-branch]').click();
+  if(mode.startsWith('toggle')){await settle();await page.locator('#builder-branch').click();}
   if(mode==='selection-select')await page.evaluate(()=>styk.editor.selectBranch(1,2));
   if(mode.endsWith('rig'))await page.locator('[data-tool=rig]').click();
   await page.locator('#viewport').focus();await settle();

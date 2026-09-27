@@ -1,0 +1,180 @@
+/* Build (experience.md revision 5): the figure builder on the kit.
+ *
+ * Structure (builder-outliner.mjs): the figure's name as the island's title
+ * with its part count, the parts as a tree whose indent guides show what hangs
+ * from what, each row led by its kind's glyph (line, circle, image, text), the
+ * selected part in Styk blue, and a foot of labelled buttons (Fit figure,
+ * Timeline, Snapping). The part commands live in Properties (quick tiles and
+ * ⋯), the right-click menu and the stage header, never in a second toolbar.
+ *
+ * The rig controls (rig-controls.mjs, today's markup and ids) take the kit's
+ * look: a titled section with a mint badge, outline buttons, switches for its
+ * checkboxes, fields for its numbers and selects, and titled details.
+ *
+ * The exit choices ("Keep changes to Walker?") are choice cards. */
+@layer features {
+  /* ==== Structure ==== */
+  .builder-outliner { background: var(--surface); color: var(--text-1); font: var(--type-ui); }
+  .shell-island .builder-outliner-head {
+    gap: var(--space-2); padding: 0 var(--space-2) 0 var(--island-pad);
+    border-block-end: 0; box-shadow: inset 0 -1px 0 var(--line-1);
+  }
+  :where(:root[data-chrome="compact"]) .shell-island .builder-outliner-head { block-size: var(--control-xl); min-block-size: var(--control-xl); }
+  .builder-outliner-head > .builder-outliner-icon {
+    display: inline-grid; place-items: center; inline-size: 22px; block-size: 22px; border-radius: var(--radius-xs);
+    background: var(--tint-library-soft); color: var(--tint-library-ink);
+  }
+  .builder-outliner-icon > svg { inline-size: 14px; block-size: 14px; }
+  .builder-outliner-head > .builder-name {
+    flex: 1; min-inline-size: 0; block-size: var(--control-md); padding: 0 var(--space-1-5);
+    border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-1);
+    font: var(--type-section); letter-spacing: -0.005em;
+  }
+  .builder-name:where(:hover:not(:disabled)) { background: var(--surface-hover); }
+  .builder-name:focus { outline: none; background: var(--surface-sunken); box-shadow: inset 0 0 0 1.5px var(--accent-line); }
+  .builder-outliner-head > .builder-outliner-count { flex: none; font: var(--type-small); color: var(--text-3); }
+
+  .builder-outliner > .builder-tree { padding-block: var(--space-1); scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+  .builder-tree > .builder-tree-spacer > :is(.builder-tree-row, .builder-tree-header) { inset-inline: var(--space-2); }
+  .builder-tree-row {
+    gap: var(--space-1-5); padding: 0 var(--space-2);
+    border: 0; border-radius: var(--radius-sm); color: var(--text-1); font: var(--type-ui);
+  }
+  /* The indent guides: a hairline for each level the row hangs under. */
+  .builder-tree-row::before {
+    content: ""; position: absolute; inset-block: 0; inset-inline-start: var(--space-2); pointer-events: none;
+    inline-size: calc(var(--depth, 0) * 14px);
+    background: linear-gradient(to right, transparent 7px, var(--line-2) 7px 8px, transparent 8px) 0 0 / 14px 100% repeat-x;
+  }
+  .builder-tree-row:where(:hover) { background: var(--surface-hover); }
+  .builder-tree-row[aria-selected="true"] { background: var(--accent-soft); color: var(--accent-text-strong); }
+  .builder-tree-row[aria-selected="true"] .builder-row-label { font-weight: var(--weight-semibold); }
+  .builder-tree-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+  .builder-tree-row > .builder-twisty { inline-size: 16px; block-size: 16px; color: var(--text-3); border-radius: var(--radius-2xs); }
+  .builder-twisty:where(.open, .collapsed)::before { content: none; }
+  .builder-twisty:where(.open, .collapsed) {
+    background: currentColor;
+    mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M6 4l4 4-4 4' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/></svg>") center / 12px no-repeat;
+    transition: rotate var(--dur-fast) var(--ease-out);
+  }
+  .builder-twisty.open { rotate: 90deg; }
+  .builder-tree-row > .builder-row-icon { color: var(--text-3); }
+  .builder-row-icon > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); }
+  .builder-tree-row[aria-selected="true"] > .builder-row-icon { color: var(--accent); }
+  .builder-tree-row > .builder-badge {
+    padding: 0 var(--space-1); border: 0; border-radius: var(--radius-2xs); background: var(--surface-well);
+    font: var(--weight-semibold) 10px/16px var(--font-ui); color: var(--text-3);
+  }
+  .builder-tree-header {
+    inset-inline: var(--space-2); padding-inline: var(--space-2); border: 0; border-block-start: 1px solid var(--line-1);
+    background: transparent; font: var(--type-eyebrow); letter-spacing: 0; text-transform: none; color: var(--text-3);
+  }
+  .builder-poly-swatch { inline-size: 12px; block-size: 12px; border: 0; border-radius: var(--radius-2xs); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .builder-outliner-empty { inset: var(--space-4) var(--island-pad) auto; font: var(--type-ui); color: var(--text-3); text-align: start; line-height: 1.5; }
+  .builder-drop { background: var(--accent-line); }
+  .builder-drop.child { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent-line); border-radius: var(--radius-sm); }
+
+  /* The foot: Fit figure, Timeline and Snapping, each with its word. */
+  .builder-outliner > .builder-footer {
+    display: flex; align-items: center; gap: var(--space-1); padding: var(--space-2);
+    border-block-start: 0; box-shadow: inset 0 1px 0 var(--line-1); flex-direction: row-reverse; justify-content: flex-end;
+  }
+  .builder-footer > button {
+    display: inline-flex; align-items: center; gap: var(--space-1-5); flex: 1 1 auto; min-inline-size: 0; justify-content: center;
+    block-size: var(--control-md); padding: 0 var(--space-2); border: 0; border-radius: var(--radius-md);
+    background: var(--surface-sunken); color: var(--text-2); font: var(--type-button); white-space: nowrap;
+  }
+  .builder-footer > button > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); flex: none; }
+  .builder-footer > button > span { overflow: hidden; text-overflow: ellipsis; }
+  .builder-footer > button:where(:hover) { background: var(--surface-hover); color: var(--text-1); }
+  .builder-footer > button:where([aria-pressed="true"], [aria-expanded="true"]) { background: var(--accent-soft); color: var(--accent-text-strong); }
+  .builder-footer > button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset); }
+
+  /* ==== The rig controls in Properties ==== */
+  /* A bare section (edge to edge): the rig controls take the sections' padding and hairline back. */
+  :where(#inspector) .rig-properties {
+    display: grid; gap: var(--space-2); margin: 0; padding: var(--space-4) var(--island-pad); border: 0; background: none;
+    box-shadow: inset 0 1px 0 var(--line-1);
+  }
+  :where(#inspector) .rig-properties > .inspector-title {
+    display: flex; align-items: center; gap: var(--space-2); min-block-size: var(--control-sm); margin: 0 0 var(--space-1);
+    padding: 0; border: 0; font: var(--type-section); letter-spacing: -0.005em; color: var(--text-1); text-transform: none;
+  }
+  .rig-properties > .inspector-title > span { flex: 1; gap: var(--space-2); }
+  .rig-properties > .inspector-title > span > svg {
+    box-sizing: content-box; inline-size: 14px; block-size: 14px; padding: 4px; border-radius: var(--radius-xs);
+    background: var(--tint-library-soft); color: var(--tint-library-ink); stroke-width: 2;
+  }
+  .rig-properties > .inspector-title > .icon-button {
+    display: inline-grid; place-items: center; inline-size: var(--control-sm); block-size: var(--control-sm); padding: 0;
+    border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-2);
+  }
+  .rig-properties > .inspector-title > .icon-button:where(:hover) { background: var(--surface-hover); color: var(--text-1); }
+  .rig-properties .button.rig-connect {
+    display: inline-flex; align-items: center; justify-content: flex-start; gap: var(--space-2); inline-size: 100%;
+    block-size: var(--control-md); padding: 0 var(--space-3); border: 0; border-radius: var(--radius-md);
+    background: var(--surface-sunken); color: var(--text-1); font: var(--type-button); box-shadow: none;
+  }
+  .rig-properties .button.rig-connect:where(:hover) { background: var(--surface-hover); }
+  .rig-properties .button.rig-connect > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); color: var(--text-2); }
+  /* A checkbox row reads as a switch row. */
+  .rig-properties .rig-toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-block-size: var(--control-md); font: var(--type-ui); color: var(--text-1); }
+  .rig-properties .rig-toggle > span { gap: var(--space-2); }
+  .rig-properties .rig-toggle > span > svg { color: var(--text-3); }
+  .rig-properties .rig-toggle > input:where([type="checkbox"]) {
+    appearance: none; position: relative; flex: none; margin: 0; inline-size: 32px; block-size: 18px; border-radius: var(--radius-pill);
+    background: var(--surface-sunken); box-shadow: inset 0 0 0 1.5px var(--line-control); accent-color: auto;
+  }
+  .rig-properties .rig-toggle > input:where([type="checkbox"])::before {
+    content: ""; position: absolute; inset-block-start: 4px; inset-inline-start: 4px; inline-size: 10px; block-size: 10px;
+    border-radius: 50%; background: var(--switch-knob-off); transition: translate var(--dur-base) var(--ease-out);
+  }
+  .rig-properties .rig-toggle > input:where([type="checkbox"]):checked { background: var(--accent-strong); box-shadow: none; }
+  .rig-properties .rig-toggle > input:where([type="checkbox"]):checked::before {
+    inset-block-start: 2px; inset-inline-start: 2px; inline-size: 14px; block-size: 14px; translate: 14px 0; background: var(--switch-knob-on);
+  }
+  .rig-properties .rig-toggle > input:where([type="checkbox"]):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  /* Selects and number fields: the kit's sunken field. */
+  .rig-properties .rig-select { display: grid; gap: var(--space-1); font: var(--type-small); color: var(--text-3); }
+  .rig-properties :is(.rig-select select, .field input) {
+    inline-size: 100%; min-inline-size: 0; block-size: var(--control-md); padding: 0 var(--space-2-5);
+    border: 0; border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--text-1); font: var(--type-ui);
+  }
+  .rig-properties :is(.rig-select select, .field input):hover { box-shadow: inset 0 0 0 1px var(--line-3); }
+  .rig-properties :is(.rig-select select, .field input):focus { outline: none; background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--accent-line), 0 0 0 3px var(--focus-halo); }
+  .rig-properties .field { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-1) var(--space-1-5); font: var(--type-small); color: var(--text-3); }
+  .rig-properties .field > span { grid-column: 1 / -1; }
+  .rig-properties .field > small { color: var(--text-3); }
+  /* The details (Attachment settings, Stretch settings): a quiet titled row with a chevron. */
+  .rig-properties .rig-advanced > summary {
+    display: flex; align-items: center; gap: var(--space-2); min-block-size: var(--control-md); padding: 0 var(--space-1);
+    border-radius: var(--radius-sm); list-style: none; font: var(--type-ui); color: var(--text-2); cursor: default;
+  }
+  .rig-properties .rig-advanced > summary::-webkit-details-marker { display: none; }
+  .rig-properties .rig-advanced > summary::after {
+    content: ""; margin-inline-start: auto; inline-size: 12px; block-size: 12px; background: var(--text-3);
+    mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M6 4l4 4-4 4' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/></svg>") center / contain no-repeat;
+    transition: rotate var(--dur-fast) var(--ease-out);
+  }
+  .rig-properties .rig-advanced[open] > summary::after { rotate: 90deg; }
+  .rig-properties .rig-advanced > summary:hover { background: var(--surface-hover); color: var(--text-1); }
+  .rig-properties .rig-anchor-letter { border: 0; background: var(--surface-well); font: var(--type-small-strong); color: var(--text-2); }
+  .rig-properties :is(.rig-response) { border-block-color: var(--line-1); }
+  :where(#inspector) .rig-properties .field-hint, :where(#inspector) .rig-properties .property-note { font: var(--type-small); color: var(--text-3); }
+
+  /* ==== Leaving Build: the choices as cards ==== */
+  .builder-exit-options { display: grid; gap: var(--space-2); }
+  .builder-exit-option {
+    display: flex; align-items: flex-start; justify-content: flex-start; gap: var(--space-3); inline-size: 100%; min-inline-size: 0; box-sizing: border-box;
+    padding: var(--space-3) var(--space-3-5); white-space: normal;
+    border: 0; border-radius: var(--radius-lg); background: var(--surface-sunken); color: var(--text-1); text-align: start;
+    box-shadow: inset 0 0 0 1px transparent; transition: background-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast);
+  }
+  .builder-exit-option:hover { background: var(--surface-hover); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .builder-exit-option:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .builder-exit-option.primary { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent-line); }
+  .builder-exit-option > svg { inline-size: 20px; block-size: 20px; flex: none; margin-block-start: 1px; color: var(--accent); }
+  .builder-exit-option > span { display: grid; gap: var(--space-0-5); min-inline-size: 0; }
+  .builder-exit-option strong { font: var(--type-ui-strong); }
+  .builder-exit-option small { font: var(--type-small); color: var(--text-3); }
+}

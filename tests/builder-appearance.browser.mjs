@@ -32,13 +32,14 @@ try {
  const chain=await page.evaluate(()=>styk.editor.figure.segments.slice(-2).map(s=>({width:s.thickness,color:s.color_rgb})));
  assert.deepEqual(chain,[line,line]);assert.deepEqual(errors,[]);
  await mkdir('artifacts/builder-inheritance',{recursive:true});await page.screenshot({path:'artifacts/builder-inheritance/result.png'});
- const edit=page.locator('[popovertarget="builder-menu-edit"]');
- await edit.click();assert.equal(await page.locator('#builder-menu-edit [data-action="paste-builder-appearance"]').isDisabled(),true);
- await page.locator('#builder-menu-edit [data-action="copy-builder-appearance"]').click();
+ // Copy and Paste appearance are the part's ⋯ menu's (Properties), under Appearance.
+ const edit=page.locator('#object-actions'),row=name=>page.getByRole('menuitem',{name,exact:true});
+ await edit.click();assert.equal(await row('Paste appearance').isDisabled(),true);
+ await row('Copy appearance').click();
  await page.evaluate(()=>{styk.state.builderBranch=false;styk.editor.select(styk.editor.selectedUid,4);});await settle();
  const before=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));
- await edit.click();assert.equal(await page.locator('#builder-menu-edit [data-action="paste-builder-appearance"]').isDisabled(),false);
- await page.locator('#builder-menu-edit [data-action="paste-builder-appearance"]').click();await settle();
+ await edit.click();assert.equal(await row('Paste appearance').isDisabled(),false);
+ await row('Paste appearance').click();await settle();
  assert.deepEqual(await page.evaluate(async()=>{const {copyBuilderAppearance}=await import('/src/builder-appearance.mjs');return copyBuilderAppearance(styk.editor);}),await page.evaluate(()=>styk.state.builderAppearance));
  await page.keyboard.press('Control+z');await settle();assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),before);
  await page.keyboard.press('Control+Shift+z');await settle();

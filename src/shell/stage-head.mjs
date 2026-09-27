@@ -24,12 +24,13 @@
  *           takes a line of its own just under the header (data-msg-drop). A
  *           message that would cover the start while focus is in it (an option
  *           being typed in) takes its own line instead.
- *   end     the view cluster: today's view pill re-parented with its ids
- *           (#handles-button, #paths-button and its settings chevron,
- *           #canvas-guides-button and #guides-options-button as the Grid split,
- *           #vfx-preview; Build's Static handles and Highlight part), each shown
- *           in the workspaces its [data-workspaces] names, then #zoom-label and
- *           Fit. One tab stop: the arrow keys move inside it.
+ *   end     the view cluster: labelled toggles, whose words fold to their
+ *           glyphs in a stage narrower than 820px (#handles-button "Joints",
+ *           #paths-button "Paths", the Grid split with #canvas-guides-button
+ *           and #guides-options-button, #vfx-preview "Effects"; Build's
+ *           "Handles", "Highlight", "Isolate" and the construction background),
+ *           each shown in the workspaces its [data-workspaces] names, then
+ *           #zoom-label and Fit. One tab stop: the arrow keys move inside it.
  *
  * showMode() and showSlow() keep the message slot's two revision 4 variants:
  * the instruction of a pick mode while it lasts ("Click the joint to join to ·
@@ -152,6 +153,7 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, Ob
     toggle('#vfx-preview', state.vfx);
     toggle('[data-action="builder-static-handles"]', state.staticHandles);
     toggle('[data-action="builder-highlight"]', state.highlight);
+    toggle('[data-action="toggle-isolate"]', state.isolate);
     focus.refresh();
   }
   function toggle(selector, pressed) {

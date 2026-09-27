@@ -15,17 +15,20 @@ try {
   await page.locator('#builder-timeline-toggle').click();await settle();
   assert.equal(await page.locator('.timeline-panel').isVisible(),true);
   await page.locator('#builder-timeline-toggle').click();await settle();
-  assert.equal(await page.locator('#builder-bar [data-action="split-segment"]').isDisabled(),true);
+  // The part's commands are its tiles in Properties: none while the figure itself is selected.
+  assert.equal(await page.locator('.ui-quick [data-action="split-segment"]').count(),0);
   await page.locator('.builder-tree-row').first().click();await settle();
-  assert.equal(await page.locator('#builder-bar [data-action="split-segment"]').isEnabled(),true);
+  assert.equal(await page.locator('.ui-quick [data-action="split-segment"]').isEnabled(),true);
   const before=await page.evaluate(()=>styk.editor.figure.segments.length);
-  await page.locator('#builder-bar [data-action="split-segment"]').click();await settle();
+  await page.locator('.ui-quick [data-action="split-segment"]').click();await settle();
   assert.equal(await page.evaluate(()=>styk.editor.figure.segments.length),before+1);
   await page.keyboard.press('Control+z');await settle();
   assert.equal(await page.evaluate(()=>styk.editor.figure.segments.length),before);
-  await page.locator('#builder-bar [data-action="toggle-builder-branch"]').click();await settle();
-  assert.equal(await page.locator('#builder-bar [data-action="toggle-builder-branch"]').getAttribute('aria-pressed'),'true');
-  await page.locator('#builder-bar [data-action="toggle-builder-branch"]').click();
+  // Whole branch is the Edit joints tool's option in the stage header.
+  const whole=page.locator('.stage-head [data-action="toggle-builder-branch"]');
+  await whole.click();await settle();
+  assert.equal(await whole.getAttribute('aria-pressed'),'true');
+  await whole.click();
   await page.locator('.builder-footer [data-action="zoom-selection"]').click();await settle();
   await page.screenshot({path:`${output}/desktop.png`});
   // Structure's width is the left dock's: its splitter steps 12px from the 232px default.

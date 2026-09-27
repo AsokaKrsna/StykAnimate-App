@@ -1,29 +1,21 @@
 /** Builder mode controller: owns the bounded figure session and its chrome —
- * the outliner, the builder toolbar, selection bounding, and the exit flow.
+ * the outliner (Structure), selection bounding, the context menu and the exit
+ * flow. The part commands live where the selection is: Properties' quick tiles
+ * and ⋯ menu, the right-click menu and the stage header (tool options and the
+ * view toggles); they run through the app's shared [data-action] dispatcher.
  * Document work lives in BuilderSession; this module only coordinates UI. */
 import {icon} from './icons.mjs';
 import {BuilderSession} from './builder-session.mjs';
-import {FigureOutliner} from './builder-outliner.mjs';
-import {bindBuilderToolbar} from './builder-toolbar.mjs';
+import {FigureOutliner, partName} from './builder-outliner.mjs';
 import {builderContextItems} from './builder-context-menu.mjs';
 
 const esc = value => String(value).replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
-const JOINT_COMMANDS = new Set(['copy-builder-appearance', 'paste-builder-appearance', 'split-segment', 'unsplit-segment', 'origin-segment', 'duplicate-segment',
-  'duplicate-branch', 'mirror-segment', 'mirror-segment-vertical', 'mirror-branch', 'mirror-branch-vertical',
-  'segment-order-front', 'segment-order-up', 'segment-order-down', 'segment-order-back',
-  'delete-single-segment', 'delete-segment', 'segment-values']);
-const FIGURE_COMMANDS = new Set(['add-sprite-segment']);
-const TOGGLES = {'toggle-builder-branch': s => s.builderBranch || s.builderShiftHeld,
-  'toggle-isolate': s => s.isolateMode,
-  'builder-static-handles': s => s.settings.builderShowStaticHandles !== false,
-  'builder-highlight': s => s.settings.builderHighlightSegment};
 const ENTRY_TOOLS = new Set(['rig', 'line', 'chain', 'circle', 'polygon', 'attach']);
 
 export function initBuilderMode({editor, state, host}) {
   const workspace = document.querySelector('.workspace');
-  const bar = document.getElementById('builder-bar');
   const outlinerHost = document.getElementById('builder-outliner');
-  if (!bar || !outlinerHost)
+  if (!outlinerHost)
     return {enter: () => false, requestExit: () => {}, leave: () => {}, sync: () => {},
       get active() { return false; }, get session() { return null; }, get boundUids() { return null; },
       get mode() { return 'animate'; }};
@@ -86,12 +78,12 @@ export function initBuilderMode({editor, state, host}) {
       polygon: kind === 'polygon' ? session.figure?.polyfills?.[entry.index] : null,
       // Focus returns to the invoker when the menu closes.
       anchor: {left: x, bottom: y, invoker: tree ? outliner.tree : document.getElementById('viewport')}};
-    for (const panel of bar.querySelectorAll(':popover-open')) panel.hidePopover();
     showContextPage('main');
   }
   function showContextPage(page) {
     if (!session || !context) return;
-    host.showCommandMenu?.(builderContextItems({kind: context.kind, page,
+    const part = context.kind === 'joint' ? session.figure?.segments.find(segment => segment.segment_id === context.jointId) : null;
+    host.showCommandMenu?.(builderContextItems({kind: context.kind, page, name: part ? partName(part) : '',
       hasFigure: Boolean(session.figure), state: {...state, builderBranchSelected: editor.branchSelected, builderTimelineVisible: timelineVisible()}}), context.anchor);
   }
   function runContextCommand(name) {
@@ -147,32 +139,10 @@ export function initBuilderMode({editor, state, host}) {
     }
     sync();
   }
-  /** Toolbar and outliner refresh: joint-gated commands, toggles, title. */
+  /** Structure's Timeline toggle follows the shell (the part commands' states come from the command registry). */
   function sync() {
     if (!session) return;
     syncTimelineToggle();
-    const figure = session.figure;
-    const boundSelected = editor.selectedUid !== null && session.boundUids.has(editor.selectedUid);
-    const hasJoint = Boolean(figure) && boundSelected && editor.selectedJoint >= 0;
-    bar.querySelectorAll('[data-action]').forEach(button => {
-      const name = button.dataset.action;
-      if (JOINT_COMMANDS.has(name)) button.disabled = !hasJoint || (name === 'paste-builder-appearance' && !state.builderAppearance);
-      else if (FIGURE_COMMANDS.has(name)) button.disabled = !figure || !session.boundUids.size;
-      else if (name === 'edit-text') button.disabled = !(hasJoint && figure.segments[editor.selectedJoint]?.primitive_code === 5);
-    });
-    bar.querySelectorAll('[data-tool]').forEach(button =>
-      button.classList.toggle('active', button.dataset.tool === state.tool));
-    for (const [name, get] of Object.entries(TOGGLES)) {
-      const pressed = Boolean(get(state));
-      bar.querySelectorAll(`[data-action="${name}"]`).forEach(button => {
-        button.setAttribute('aria-pressed', String(pressed));
-        if (button.getAttribute('role') === 'menuitemcheckbox') button.setAttribute('aria-checked', String(pressed));
-        button.classList.toggle('active', pressed);
-      });
-    }
-    bar.querySelectorAll('[popovertarget="builder-menu-arrange"]').forEach(button => { button.disabled = !hasJoint; });
-    const title = bar.querySelector('#builder-title');
-    if (title) title.textContent = session.mode === 'edit' ? (figure?.name || 'Figure') : 'New figure';
   }
   function enter() {
     if (session) return true;
@@ -182,14 +152,12 @@ export function initBuilderMode({editor, state, host}) {
     session = new BuilderSession(editor).begin();
     session.entryTool = state.tool;
     events = new AbortController();
-    bindBuilderToolbar(bar, {signal: events.signal});
     timelineToggle?.addEventListener('click', () => {
       host.toggleTimeline?.();
       syncTimelineToggle();
     }, {signal: events.signal});
     editor.addEventListener('change', onEditorChange, {signal: events.signal});
     workspace.dataset.mode = 'rig';
-    bar.hidden = false;
     state.builderActive = true;
     state.inspectorContext = session.mode === 'edit' ? 'figure' : 'scene';
     state.inspectorTab = 'design';
@@ -212,7 +180,6 @@ export function initBuilderMode({editor, state, host}) {
     state.spritePlacement = null;
     state.duplicatePlacement = null;
     outliner.update(null);
-    bar.hidden = true;
     workspace.dataset.mode = 'animate';
     host.setTool(entryTool && !ENTRY_TOOLS.has(entryTool) ? entryTool : 'select');
     host.onModeChange?.();
@@ -241,7 +208,7 @@ export function initBuilderMode({editor, state, host}) {
         <button class="builder-exit-option" id="builder-exit-import-new">${icon('duplicate')}<span><strong>Import as new figure</strong><small>Keep ${esc(name)} unchanged and add the edited figure to the scene.</small></span></button>`
         : `<button class="builder-exit-option primary" id="builder-exit-import">${icon('check')}<span><strong>Import into scene</strong><small>Add the figure to the current frame.</small></span></button>`}
         <button class="builder-exit-option" id="builder-exit-discard">${icon('reset')}<span><strong>Discard changes</strong><small>Undo everything done in the builder.</small></span></button>
-      </div><div class="dialog-actions"><button class="button" id="builder-exit-cancel">Keep editing</button></div>`);
+      </div><div class="dialog-actions"><button type="button" class="ui-button" data-variant="ghost" id="builder-exit-cancel">Keep editing</button></div>`);
     const choose = choice => {
       let imported;
       try {

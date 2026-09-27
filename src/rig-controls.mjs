@@ -56,7 +56,8 @@ export function rigControlsView(editor,{builder=false}={}) {
       ${f&&!f.automatic&&response.multiplier===undefined?field('rig-influence','Legacy influence',f.influence,-4,4,'×'):''}
       </div></details>`;
   }
-  return `<section class="inspector-section rig-properties"><div class="inspector-title"><span>${icon('nodes')}Rig</span><button class="icon-button" data-action="rig-test" aria-label="Test rig" title="Test rig">${icon('play')}</button></div>${body}</section>`;
+  // Test rig is the band's (beside Done) and the figure's ⋯ menu's, so the section's title carries no second play button.
+  return `<section class="inspector-section rig-properties"><div class="inspector-title"><span>${icon('nodes')}Rig</span></div>${body}</section>`;
 }
 export function rigControlChange(editor,target) {
   const id=target.id;if(!id.startsWith('rig-')||id==='rig-mode')return false;

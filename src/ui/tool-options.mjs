@@ -927,7 +927,8 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
    */
   function update(next = [], {label: name = null, tool: toolName = null, force = false} = {}) {
     if (name !== null) setAttribute(element, 'aria-label', name || null);
-    if (toolName !== null) setAttribute(element, 'data-tool', toolName || null);
+    // data-options-for, never data-tool: [data-tool] is the rail's tools (app.mjs, the hotkey hints and the tests find them by it).
+    if (toolName !== null) setAttribute(element, 'data-options-for', toolName || null);
     items = normalizeToolOptions(next);
     const nextKey = structureKey(items);
     if (force || nextKey !== key) { key = nextKey; render(); return; }

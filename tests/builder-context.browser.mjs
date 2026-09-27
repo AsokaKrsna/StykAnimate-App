@@ -5,7 +5,9 @@ const browser=await chromium.launch({channel:'chrome',headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
 const out='artifacts/builder-context';await mkdir(out,{recursive:true});
 const settle=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
-const action=name=>page.locator(`#menu [data-action="${name}"]`);
+const action=name=>page.locator(`[role="menu"] [data-action="${name}"]:visible`);
+// The families are submenus (revision 5): Branch ▸, Arrange ▸, Rig ▸ and View ▸ open beside their row.
+const submenu=name=>page.getByRole('menuitem',{name,exact:true});
 page.on('pageerror',e=>errors.push(e.message));
 try {
  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47841');await page.waitForFunction(()=>window.styk?.ready);
@@ -23,7 +25,7 @@ try {
  assert.equal(await action('paste').count(),0);assert.equal(await action('delete').count(),0);
  await page.screenshot({path:`${out}/joint.png`});
  const baseline=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));
- await action('builder-context-branch').click();await settle();
+ await submenu('Branch').click();await settle();
  assert.equal(await action('mirror-branch-vertical').isVisible(),true);
  await page.screenshot({path:`${out}/branch.png`});
  const before=await page.evaluate(()=>styk.editor.figure.segments.length);
@@ -31,8 +33,8 @@ try {
  assert.ok(await page.evaluate(()=>styk.editor.figure.segments.length)>before);
  await page.keyboard.press('Control+z');await settle();assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),baseline);
  await page.locator('.builder-tree-row').first().click({button:'right'});await settle();
- await action('builder-context-arrange').click();assert.equal(await action('segment-order-front').isVisible(),true);
- await action('builder-context-main').click();assert.equal(await action('unsplit-segment').isVisible(),true);
+ await submenu('Arrange').click();await settle();assert.equal(await action('segment-order-front').isVisible(),true);
+ await page.keyboard.press('ArrowLeft');await settle();assert.equal(await action('unsplit-segment').isVisible(),true);
  await page.keyboard.press('Escape');
  assert.equal(await page.evaluate(()=>document.activeElement.classList.contains('builder-tree')),true);
  // Fill actions preserve all joints and use normal undo.
@@ -55,6 +57,6 @@ try {
  const canvas=await page.locator('#overlay').boundingBox();await page.mouse.click(canvas.x+70,canvas.y+40,{button:'right'});
  await action('builder-context-tool-circle').click();await settle();assert.equal(await page.evaluate(()=>styk.state.tool),'circle');
  assert.deepEqual(errors,[]);
- console.log('PASS: canvas joint targeting, safe builder-only menus, branch split/undo, hierarchy actions/back/Escape focus, fill ordering/deletion/undo, empty canvas tools and timeline toggle; no page errors.');
+ console.log('PASS: canvas joint targeting, safe builder-only menus, branch split/undo, submenus and Escape focus, fill ordering/deletion/undo, empty canvas tools and timeline toggle; no page errors.');
 } finally {await browser.close();}
 

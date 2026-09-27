@@ -268,11 +268,11 @@ try {
     assert.equal(await page.getAttribute('#vfx-preview', 'aria-pressed'), 'false');
     await page.click('#vfx-preview');
     assert.equal(await page.getAttribute('#vfx-preview', 'aria-pressed'), 'true');
-    // Build: Static handles and Highlight part; Animate's Joints and Motion paths step aside.
+    // Build: Static handles, Highlight part, Isolate joint and the construction background; Animate's Joints and Motion paths step aside.
     await page.evaluate(() => styk.editor.select(1, -1));
     await workspace('rig');
     assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.stage-head [data-view] button')].filter(button => button.checkVisibility()).map(button => button.getAttribute('aria-label'))),
-      ['Grid', 'Grid and guides settings', 'Static handles', 'Highlight part']);
+      ['Grid', 'Grid and guides settings', 'Static handles', 'Highlight part', 'Isolate joint', 'Construction background']);
     const highlight = await page.evaluate(() => styk.state.settings.builderHighlightSegment);
     await page.click('.stage-head [data-action="builder-highlight"]');
     assert.equal(await page.evaluate(() => styk.state.settings.builderHighlightSegment), !highlight);

@@ -57,21 +57,6 @@
 /* Builder mode: its grid (Structure docked left) is retired in M1 (layout/workspace.css, dock.css). */
 .workspace[data-mode=rig] .context-strip { display: none; }
 .workspace[data-mode=rig] .studio-rail .rail-add, .workspace[data-mode=rig] .studio-rail .rail-divider { display: none; }
-.builder-bar { display: flex; align-items: center; gap: 4px; min-height: 42px; padding: 5px 12px; background: var(--theme-subtle, #fafafa); border-bottom: 1px solid var(--theme-border, #e0e5ec); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; flex-shrink: 0; }
-.builder-bar[hidden] { display: none; }
-.builder-crumb { display: flex; flex-direction: column; justify-content: center; min-width: 0; max-width: 200px; margin-right: 10px; line-height: 1.2; flex-shrink: 0; }
-.builder-crumb strong { font-size: 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.builder-group { display: flex; align-items: center; gap: 1px; padding: 0 7px; border-left: 1px solid var(--theme-border, #e5e5e5); flex-shrink: 0; }
-.builder-btn { display: flex; align-items: center; justify-content: center; gap: 4px; min-width: 28px; height: 28px; padding: 0 4px; border-radius: 5px; color: var(--theme-text, #444); font-size: 10.5px; }
-.builder-btn .icon { width: 16px; height: 16px; }
-.builder-btn:hover:not(:disabled):not(.active):not([aria-pressed=true]) { background: var(--theme-hover, #f0f0f0); }
-.builder-btn.active, .builder-btn[aria-pressed=true] { color: var(--theme-accent, #007be5); background: var(--theme-selected, #e5f4ff); }
-.builder-btn:disabled { opacity: .38; }
-.builder-btn.danger:hover:not(:disabled) { color: var(--theme-danger-action, #c5462c); background: var(--theme-danger-bg, #fdeceb); }
-.builder-btn.builder-toggle span { font-weight: 600; }
-.builder-btn:focus-visible { outline: 2px solid var(--theme-accent, #0d99ff); outline-offset: -2px; }
-.builder-bar-end { margin-left: auto; padding-left: 10px; flex-shrink: 0; position: sticky; right: 0; background: var(--theme-subtle, #fafafa); }
-.builder-bar-end .button { height: 28px; }
 .builder-exit-options { display: flex; flex-direction: column; gap: 8px; }
 .builder-exit-option { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--theme-border, #e1e7ef); border-radius: 8px; background: var(--theme-subtle, #fafbfd); text-align: left; }
 .builder-exit-option:hover { border-color: var(--theme-accent, #8fc5f4); background: var(--theme-hover, #f1f8ff); }

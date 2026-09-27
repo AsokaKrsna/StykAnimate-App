@@ -16,46 +16,8 @@
 .builder-footer button:hover { background: var(--theme-hover, #f5f5f5); color: var(--text); }
 .builder-footer button[aria-expanded=true] { background: var(--theme-selected, #e5f4ff); color: var(--theme-accent, #0d99ff); }
 .builder-footer button:focus-visible { outline: 2px solid var(--theme-accent, #0d99ff); outline-offset: -2px; }
-/* The strip stays one row. Popovers use the browser top layer, so they cannot
-   be clipped by the canvas, a narrow inspector or the old overflow toolbar. */
+/* Build's stage is an inline-size container. */
 .workspace[data-mode=rig] .center { container-type: inline-size; }
-.builder-bar { position: relative; overflow: visible; flex-wrap: nowrap; background: var(--panel); min-height: 46px; padding: 6px 12px; gap: 8px; }
-.builder-primary-actions, .builder-secondary-actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
-.builder-secondary-actions { border-left: 1px solid var(--border); padding-left: 8px; }
-.builder-btn { height: 32px; min-width: 32px; padding: 0 8px; gap: 6px; border-radius: 6px; font-size: 11px; white-space: nowrap; }
-.builder-btn:disabled { cursor: default; }
-.builder-chevron { display: flex; }
-.builder-chevron .icon { width: 11px; height: 11px; }
-.builder-icon-trigger .builder-action-label { display: none; }
-.builder-bar > .builder-toggle { margin-left: auto; border: 1px solid var(--border); }
-.builder-bar .builder-btn[aria-pressed=true] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-accent, #0d99ff) 30%, transparent); }
-.builder-menu-trigger[aria-expanded=true] { color: var(--theme-accent, #007be5); background: var(--theme-selected, #e5f4ff); }
-.builder-bar-end { position: static; display:flex; align-items:center; gap:6px; flex-shrink:0; margin-left: 0; padding-left: 4px; background: var(--panel); }
-.builder-bar-end .button { height: 32px; padding: 0 13px; border-radius: 6px; }
-.builder-popover { position: fixed; inset: auto; margin: 0; padding: 6px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel); color: var(--text); box-shadow: 0 8px 28px var(--theme-shadow, #0002); overflow-y: auto; overscroll-behavior: contain; }
-.builder-popover::backdrop { background: transparent; }
-.builder-popover .builder-menu-item { display: flex; width: 100%; justify-content: flex-start; height: 34px; padding: 0 9px; font-size: 12px; text-align: left; gap: 9px; }
-.builder-menu-item .icon { flex-shrink: 0; width: 17px; height: 17px; }
-.builder-menu-item[aria-checked=true]::after { content: '\2713'; margin-left: auto; color: var(--theme-accent, #007be5); font-weight: 650; }
-.builder-menu-item:focus-visible { background: var(--theme-selected, #e5f4ff); outline: 2px solid var(--theme-accent, #007be5); outline-offset: -2px; }
-.builder-menu-separator { height: 1px; margin: 5px 7px; background: var(--border); }
-@container (max-width: 650px) {
-  .builder-bar { gap: 4px; padding: 6px 8px; }
-  .builder-primary-actions > .builder-btn > .builder-action-label { display: none; }
-  .builder-secondary-actions { padding-left: 4px; }
-}
-@container (max-width: 520px) {
-  .builder-bar { gap: 2px; }
-  .builder-btn { padding: 0 5px; gap: 3px; }
-  .builder-secondary-actions .builder-action-label { display: none; }
-  .builder-secondary-actions .builder-chevron { display: none; }
-  .builder-secondary-actions { padding-left: 2px; }
-  .builder-bar-end { gap: 4px; padding-left: 0; }
-  .builder-bar-end .builder-action-label { display: none; }
-  .builder-bar > .builder-toggle .builder-action-label { display: none; }
-  .builder-bar-end .button { padding: 0 8px; }
-  .builder-primary-actions, .builder-secondary-actions { gap: 1px; }
-}
 
 #builder-snap {flex:0 0 30px;}
 #builder-snap[aria-pressed="true"] {color:var(--accent-text);background:var(--accent-soft);}

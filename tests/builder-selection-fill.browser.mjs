@@ -18,7 +18,7 @@ try {
  const a=await screen(joints[0]),b=await screen(joints[2]);
  await page.mouse.click(a.x,a.y);await page.keyboard.down('Shift');await page.mouse.click(b.x,b.y);await page.keyboard.up('Shift');await settle();
  assert.deepEqual(await page.evaluate(()=>[...styk.editor.selectedSegmentIds]),[1,3]);assert.equal(await page.locator('.builder-tree-row[aria-selected=true]').count(),2);
- assert.ok(await page.locator('#properties-panel').innerText().then(s=>s.includes('2 segments')));
+ assert.ok(await page.locator('#properties-panel').innerText().then(s=>s.includes('2 parts')));
  // Repeated Shift-click removes one node, then restore it.
  await page.keyboard.down('Shift');await page.mouse.click(b.x,b.y);await page.keyboard.up('Shift');assert.equal(await page.evaluate(()=>styk.editor.selectedSegmentIds.size),1);
  await page.keyboard.down('Shift');await page.locator('#builder-joint-3').click();await page.keyboard.up('Shift');await settle();assert.equal(await page.evaluate(()=>styk.editor.selectedSegmentIds.size),2);

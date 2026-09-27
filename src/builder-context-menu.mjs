@@ -1,54 +1,66 @@
-/** Builder context menus contain only commands applicable to the clicked part.
- * Page changes use the same app menu; no nested floating panels or duplicate
- * document implementations are needed. */
-export function builderContextItems({kind, page = 'main', hasFigure, state}) {
+/** Build's right-click menus: only the commands that apply to what was clicked, grouped under names, the
+ * families (Arrange, Branch, Rig, View) in submenus, and what removes something last. Rows are the app's menu
+ * tuples ([command, glyph, label, shortcut, disabled]), group names ({label}) and submenus ({label, icon,
+ * submenu}); every command runs through the app's one dispatcher. `page` keeps the old flat pages reachable
+ * ('branch', 'arrange', 'view') for a caller that still asks for one. */
+export function builderContextItems({kind, page = 'main', hasFigure, state, name = ''}) {
   const branch = state.builderBranch || state.builderShiftHeld || state.builderBranchSelected;
-  const back = ['builder-context-main', 'chevron-left', 'Back', ''];
-  if (page === 'branch') return [back, null,
+  const arrange = [
+    ['segment-order-front', 'bring-to-front', 'Bring to front', ''],
+    ['segment-order-up', 'up', 'Bring forward', ''],
+    ['segment-order-down', 'down', 'Send backward', ''],
+    ['segment-order-back', 'send-to-back', 'Send to back', '']];
+  const branchRows = [
     ['builder-context-select-branch', 'builder-branch', 'Select branch', ''],
     ['duplicate-branch', 'duplicate', 'Duplicate branch', ''],
-    ['builder-context-split-branch', 'builder-split', 'Split branch segments', ''], null,
+    ['builder-context-split-branch', 'builder-split', 'Split branch parts', ''], null,
     ['mirror-branch', 'flip', 'Flip branch horizontally', ''],
     ['mirror-branch-vertical', 'flip-vertical', 'Flip branch vertically', ''], null,
     ['delete-segment', 'trash', 'Delete branch', 'Shift Del']];
-  if (page === 'arrange') return [back, null,
-    ['segment-order-front', 'builder-front', 'Bring to front', ''],
-    ['segment-order-up', 'arrow-up', 'Bring forward', ''],
-    ['segment-order-down', 'arrow-down', 'Send backward', ''],
-    ['segment-order-back', 'builder-back', 'Send to back', '']];
-  if (page === 'view') return [back, null,
-    ['builder-static-handles', 'diamond', state.settings.builderShowStaticHandles !== false ? 'Hide static handles' : 'Show static handles', 'F10'],
-    ['builder-highlight', 'eye', state.settings.builderHighlightSegment ? 'Stop highlighting segment' : 'Highlight segment', 'F12'],
-    ['toggle-isolate', 'detach', state.isolateMode ? 'Stop isolating joint' : 'Isolate joint', ''],
-    ['builder-canvas-color', 'grid', 'Background color…', 'F9']];
+  const view = [
+    {command: 'builder-static-handles', icon: 'pin', label: 'Static handles', shortcut: 'F10', checked: state.settings.builderShowStaticHandles !== false},
+    {command: 'builder-highlight', icon: 'highlight', label: 'Highlight part', shortcut: 'F12', checked: Boolean(state.settings.builderHighlightSegment)},
+    {command: 'toggle-isolate', icon: 'detach', label: 'Isolate joint', shortcut: 'Caps Lock', checked: Boolean(state.isolateMode)}, null,
+    ['builder-canvas-color', 'palette', 'Construction background…', 'F9']];
+  if (page === 'branch') return branchRows;
+  if (page === 'arrange') return arrange;
+  if (page === 'view') return view;
   if (kind === 'joint') return [
-    ['rig-connect', 'link', 'Connect to another joint…', ''],
-    ['rig-test', 'play', 'Test rig…', ''],
-    [branch ? 'builder-context-split-branch' : 'split-segment', 'builder-split', branch ? 'Split branch segments' : 'Split segment', ''],
-    [branch ? 'duplicate-branch' : 'duplicate-segment', 'duplicate', branch ? 'Duplicate branch' : 'Duplicate segment', ''],
-    ['segment-values', 'sliders', 'Exact values…', 'I'], null,
+    ...(name ? [{label: name}] : []),
+    [branch ? 'builder-context-split-branch' : 'split-segment', 'builder-split', branch ? 'Split branch parts' : 'Split', ''],
+    [branch ? 'duplicate-branch' : 'duplicate-segment', 'duplicate', branch ? 'Duplicate branch' : 'Duplicate', ''],
+    [branch ? 'mirror-branch' : 'mirror-segment', 'flip', 'Flip horizontally', ''],
+    [branch ? 'mirror-branch-vertical' : 'mirror-segment-vertical', 'flip-vertical', 'Flip vertically', ''],
+    ['segment-values', 'sliders', 'Exact values…', 'I'],
+    null,
     ['copy-builder-appearance', 'duplicate', 'Copy appearance', ''],
-    ['paste-builder-appearance', 'clipboard', branch ? 'Paste appearance to branch' : 'Paste appearance', '', !state.builderAppearance], null,
-    ['mirror-segment', 'flip', 'Flip horizontally', ''],
-    ['mirror-segment-vertical', 'flip-vertical', 'Flip vertically', ''],
-    ['builder-context-branch', 'builder-branch', 'Branch…', ''],
-    ['builder-context-arrange', 'layers', 'Arrange…', ''], null,
-    ['origin-segment', 'origin', 'Set origin here', ''],
-    ['unsplit-segment', 'builder-unsplit', 'Remove joint, keep endpoints', 'Ctrl Del'],
-    ['delete-single-segment', 'builder-delete-joint', 'Delete joint only', '']];
+    ['paste-builder-appearance', 'clipboard', branch ? 'Paste appearance to branch' : 'Paste appearance', '', !state.builderAppearance],
+    null,
+    {label: 'Arrange', icon: 'layers', submenu: arrange},
+    {label: 'Branch', icon: 'builder-branch', submenu: branchRows},
+    {label: 'Rig', icon: 'link', submenu: [
+      ['rig-connect', 'link', 'Connect to another joint…', ''],
+      ['rig-weighted', 'nodes', 'Add weighted joint', ''],
+      ['rig-test', 'play', 'Test rig…', '']]},
+    ['origin-segment', 'origin', 'Set as origin', ''],
+    null,
+    ['unsplit-segment', 'builder-unsplit', 'Remove joint, keep ends', ''],
+    ['delete-single-segment', 'trash', 'Delete part', '']];
   if (kind === 'polygon') return [
-    ['builder-context-fill-front', 'builder-front', 'Bring fill to front', ''],
-    ['builder-context-fill-back', 'builder-back', 'Send fill to back', ''], null,
+    ['builder-context-fill-front', 'bring-to-front', 'Bring fill to front', ''],
+    ['builder-context-fill-back', 'send-to-back', 'Send fill to back', ''], null,
     ['builder-context-delete-fill', 'trash', 'Delete fill', '']];
   return [
-    ['builder-context-tool-rig', 'sliders', 'Edit joints', '', !hasFigure],
-    ['builder-context-tool-line', 'line', 'Draw line', 'L'],
-    ['builder-context-tool-chain', 'builder-chain', 'Chain pen', ''],
-    ['builder-context-tool-circle', 'circle', 'Draw circle', 'C'],
-    ['builder-context-tool-polygon', 'polygon', 'Create polygon', '', !hasFigure],
-    ...(kind === 'figure' ? [['add-sprite-segment', 'image', 'Attach image…', '']] : []), null,
+    {label: 'Draw'},
+    ['builder-context-tool-line', 'line', 'Line', 'L'],
+    ['builder-context-tool-chain', 'builder-chain', 'Chain of lines', ''],
+    ['builder-context-tool-circle', 'circle', 'Circle', 'C'],
+    ['builder-context-tool-polygon', 'polygon', 'Fill shape', '', !hasFigure],
+    ...(kind === 'figure' ? [['add-sprite-segment', 'image', 'Attach image…', '']] : []),
+    ['builder-context-tool-rig', 'nodes', 'Edit joints', '', !hasFigure],
+    null,
     ['zoom-selection', 'center', 'Fit figure', 'Shift 2', !hasFigure],
-    ['zoom-reset', 'frame', 'Fit canvas', 'Shift 1'], null,
-    ['builder-context-view', 'eye', 'Builder view…', ''],
+    ['zoom-reset', 'fit', 'Fit canvas', 'Shift 1'],
+    {label: 'View', icon: 'eye', submenu: view},
     ['builder-context-timeline', 'panel-bottom', state.builderTimelineVisible ? 'Hide timeline' : 'Show timeline', '']];
 }

@@ -42,9 +42,9 @@ export const SHELL_CONTRACT = Object.freeze({
     // (#zoom-label); the crumb's background chip (the colour picker's resolver in app.mjs).
     canvasView: ['zoom-label', 'handles-button', 'paths-button', 'canvas-guides-button', 'guides-options-button',
       'vfx-preview', 'tweener-button', 'open-insert', 'crumb-background'],
-    // builder-mode and hotkey-hints (#builder-bar); popovertarget ids of the builder menus.
-    builder: ['builder-bar', 'builder-title', 'builder-done', 'builder-menu-edit',
-      'builder-menu-arrange', 'builder-menu-view'],
+    // The band's Done in Build (studio-shell binds its data-workspace-mode). Build's part commands left the second
+    // toolbar row for Properties, the menus and the stage header (revision 5): see builderCommands.
+    builder: ['builder-done'],
     // app.mjs; builder-construction (#chain-*); studio-shell and tweener-controls (#viewport-hint).
     stage: ['viewport-hint', 'canvas-empty', 'renderer-error', 'playback-fps', 'preview-quality',
       'preview-badge', 'chain-controls', 'chain-count', 'chain-finish', 'chain-cancel',
@@ -65,18 +65,10 @@ export const SHELL_CONTRACT = Object.freeze({
     // The band: its history, Save and Export, and a session's Cancel, Test rig and Done (camera-done, movieclip-*).
     titlebar: ['menu', 'rename', 'undo', 'redo', 'save', 'export', 'movieclip-cancel', 'rig-test', 'movieclip-done',
       'camera-done', 'minimize', 'maximize', 'close'],
-    // toggle-isolate is the builder View menu's (it left the rail in M3b). The rail holds tools only: stacking is the
-    // figure's quick actions (To front, To back) and the selection menus; help and settings are the menus'.
-    rail: ['toggle-isolate'],
-    // The stage header: the crumb, the view cluster, zoom and Fit, and the polygon's own controls.
+    // The stage header: the crumb, the view cluster (Build's Handles, Highlight, Isolate and construction
+    // background too), zoom and Fit, and the polygon's own controls. The rail holds tools only.
     canvas: ['scene-settings', 'toggle-handles', 'toggle-motion-paths', 'toggle-grid', 'zoom-menu', 'zoom-reset',
-      'finish-polygon', 'cancel-polygon'],
-    builder: ['split-segment', 'duplicate-segment', 'mirror-segment', 'mirror-segment-vertical',
-      'copy-builder-appearance', 'paste-builder-appearance', 'rig-connect', 'rig-examples',
-      'unsplit-segment', 'origin-segment', 'segment-values', 'add-sprite-segment', 'edit-text',
-      'delete-single-segment', 'delete-segment', 'segment-order-front', 'segment-order-up',
-      'segment-order-down', 'segment-order-back', 'builder-static-handles', 'builder-highlight',
-      'builder-canvas-color', 'toggle-builder-branch'],
+      'finish-polygon', 'cancel-polygon', 'builder-static-handles', 'builder-highlight', 'toggle-isolate', 'builder-canvas-color'],
     transport: ['first-frame', 'previous-frame', 'play', 'next-frame', 'toggle-loop',
       'toggle-range-edit', 'toggle-onion'],
     insert: ['add-figure', 'add-text', 'import-sprite', 'import', 'movieclip-new', 'movieclip-create',
@@ -85,8 +77,16 @@ export const SHELL_CONTRACT = Object.freeze({
     // src/shell/shell-commands.mjs: the band's Properties button (compact width) and Timeline… (a folded timeline).
     shell: ['panel-toggle-properties', 'timeline-sheet'],
   },
-  // Shift-click routes to data-shift-action (app.mjs click delegation).
-  shiftActions: ['duplicate-branch', 'mirror-branch', 'mirror-branch-vertical'],
+  // Shift-click routes to data-shift-action (app.mjs click delegation). None is static any more: Build's
+  // shift commands ride on its quick tiles (Delete part, Shift: Delete branch).
+  shiftActions: [],
+  // Build's part commands: Properties' quick tiles and ⋯ menu, the right-click menu and the stage header's tool
+  // options render them (revision 5 removed the second toolbar row). Each stays an actions entry in app.mjs.
+  builderCommands: ['split-segment', 'duplicate-segment', 'mirror-segment', 'mirror-segment-vertical',
+    'copy-builder-appearance', 'paste-builder-appearance', 'rig-connect', 'rig-examples',
+    'unsplit-segment', 'origin-segment', 'segment-values', 'add-sprite-segment', 'edit-text',
+    'delete-single-segment', 'delete-segment', 'segment-order-front', 'segment-order-up',
+    'segment-order-down', 'segment-order-back', 'toggle-builder-branch', 'duplicate-branch', 'mirror-branch', 'mirror-branch-vertical'],
   // app.mjs setTool, studio-shell (.tool-dock [data-tool]), builder-mode, drawing-view, hotkey-hints.
   tools: ['select', 'rig', 'tweener', 'line', 'chain', 'circle', 'polygon', 'hand', 'drawing-brush',
     'drawing-eraser', 'drawing-fill', 'drawing-lasso', 'drawing-shape', 'drawing-transform'],
@@ -145,6 +145,7 @@ test('Every data-action in the shell is a registered action and none disappeared
   for (const action of flat(SHELL_CONTRACT.actions)) assert.ok(present.has(action), `[data-action="${action}"] is still in index.html`);
   for (const action of present) assert.ok(keys.has(action), `[data-action="${action}"] has an actions entry in app.mjs`);
   for (const action of new Set(values('data-shift-action'))) assert.ok(keys.has(action), `[data-shift-action="${action}"] has an actions entry in app.mjs`);
+  for (const action of SHELL_CONTRACT.builderCommands) assert.ok(keys.has(action), `Build's "${action}" keeps its actions entry in app.mjs`);
 });
 
 test('Tool, mode, menu and timeline values are unchanged', () => {
@@ -201,13 +202,13 @@ test('Structural hooks that modules dereference without null checks are intact',
     assert.equal(one(selector, workspace).parent, workspace, `${selector} is a direct child of .workspace`);
   one('#viewport', one('.center'));
   // The stage header (§3.12, stage-head.mjs): the stage island's first row, above #viewport and never inside
-  // it (only Build's bar and the hidden context strip sit between them until M7a), with the start (crumb, or
+  // it (only the hidden context strip sits between them), with the start (crumb, or
   // the tool's options), message and end (view cluster, zoom) slots. Nothing interactive is left in #viewport.
   const stageHead = one('.stage-head', one('.center'));
   const stageChildren = one('.center').children;
   assert.equal(stageChildren[0], stageHead, ".stage-head is the stage island's first row");
   assert.deepEqual(stageChildren.slice(stageChildren.indexOf(stageHead) + 1, stageChildren.indexOf(byId.get('viewport')[0])).map(child => child.attrs.id ?? classes(child)[0]),
-    ['context-strip', 'builder-bar'], "only the context strip and Build's bar sit between the stage header and #viewport");
+    ['context-strip'], 'only the context strip sits between the stage header and #viewport');
   assert.equal(stageHead.attrs.role, 'toolbar');
   assert.ok(!('hidden' in stageHead.attrs), 'the stage header shows');
   for (const [name, className] of [['stage-start', 'stage-head-start'], ['stage-message', 'stage-head-msg'], ['stage-end', 'stage-head-end']])
@@ -278,11 +279,6 @@ test('Structural hooks that modules dereference without null checks are intact',
   assert.equal(find('.rail-order').length, 0, 'no stacking buttons in the tool bar');
   // The canvas toolbar and the floating view pill are gone: the stage header holds their controls.
   for (const selector of ['.canvas-toolbar', '.canvas-view-controls']) assert.equal(find(selector).length, 0, `no ${selector}`);
-  // builder-mode disables [popovertarget="builder-menu-arrange"]; the menus use the popover API.
-  for (const id of ['builder-menu-edit', 'builder-menu-arrange', 'builder-menu-view']) {
-    one(`[popovertarget="${id}"]`, one('#builder-bar'));
-    assert.ok('popover' in byId.get(id)[0].attrs, `#${id} is a popover`);
-  }
   // Modals are native dialogs: hotkeys and startup prompts key off dialog[open].
   for (const id of ['dialog', 'insert-dialog']) assert.equal(byId.get(id)[0].tag, 'dialog', `#${id} is a <dialog>`);
   assert.equal(byId.get('dialog-content')[0].parent, byId.get('dialog')[0]);

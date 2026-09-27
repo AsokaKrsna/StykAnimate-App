@@ -120,8 +120,8 @@ group('view', [
   ['toggle-camera', 'Camera frame', 'camera', {toggle: true, keywords: ['virtual camera', 'show', 'hide']}],
   ['toggle-selection-origins', 'Box selects figure origins', 'cursor', {toggle: true, keywords: ['marquee', 'rectangle']}],
   ['scene-settings', 'Scene properties…', 'scene', {keywords: ['canvas size', 'background', 'frame rate']}],
-  ['builder-highlight', 'Highlight part', 'eye', {...build, toggle: true}],
-  ['builder-static-handles', 'Static handles', 'nodes', {...build, toggle: true}],
+  ['builder-highlight', 'Highlight part', 'highlight', {...build, toggle: true}],
+  ['builder-static-handles', 'Static handles', 'pin', {...build, toggle: true}],
   ['builder-canvas-color', 'Construction background color…', 'settings', {...build, keywords: ['colour']}],
 ]);
 // The shell's panels and layout (src/shell/shell-commands.mjs).
@@ -244,10 +244,10 @@ group('build', [
   ['segment-order-back', 'Send part to back', 'send-to-back', {...build, requires: ['joint'], keywords: ['arrange', 'order']}],
   ['builder-order', 'Arrange part', 'layers', internal],
   ['copy-builder-appearance', 'Copy appearance', 'duplicate', {...build, requires: ['joint'], keywords: ['style', 'color', 'colour']}],
-  ['paste-builder-appearance', 'Paste appearance', 'clipboard', {...build, requires: ['joint'], keywords: ['style', 'color', 'colour']}],
+  ['paste-builder-appearance', 'Paste appearance', 'clipboard', {...build, requires: ['joint', 'appearance'], keywords: ['style', 'color', 'colour']}],
   ['toggle-builder-branch', 'Edit whole branch', 'builder-branch', {...build, toggle: true}],
   ['add-sprite-segment', 'Attach image…', 'image', {...build, keywords: ['sprite', 'picture']}],
-  ['rig-connect', 'Connect joints…', 'link', {...build, requires: ['joint'], keywords: ['rig', 'anchor']}],
+  ['rig-connect', 'Connect joints…', 'link', {...build, requires: ['figure'], keywords: ['rig', 'anchor']}],
   ['rig-weighted', 'Add weighted joint', 'nodes', {...build, requires: ['joint'], keywords: ['rig']}],
   ['rig-pick-start', 'Pick start joint', 'cursor', {...build, palette: false}],
   ['rig-pick-end', 'Pick end joint', 'cursor', {...build, palette: false}],

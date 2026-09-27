@@ -8,7 +8,7 @@ const click=async id=>{const p=await point(id);await page.mouse.click(p.x,p.y);a
 try{
   await page.goto(process.env.STYK_URL??'http://127.0.0.1:47851');await page.waitForFunction(()=>window.styk?.ready);
   await page.evaluate(async()=>{const {Editor}=await import('/src/editor.mjs');const e=new Editor({demo:false});e.addSegment({length:180,angle:0,thickness:0});styk.editor.load(e.serialize());styk.editor.select(styk.editor.frame.objects[0].unique_id,-1);styk.builder.enter();styk.fit();});await settle();
-  await click(0);await page.locator('[popovertarget="builder-menu-edit"]').click();await page.locator('#builder-menu-edit [data-action="rig-connect"]').click();await click(1);
+  await click(0);await settle();await page.locator('.ui-quick [data-action="rig-connect"]').click();await click(1);
   assert.deepEqual(await page.evaluate(()=>styk.editor.figure.segments.at(-1)._stykRig.connector),{start:0,end:1,restLength:180});
   await page.locator('#rig-position').fill('0');await page.locator('#rig-position').press('Tab');await settle();
   // A line must attach to the selected slider when its point overlaps Origin.

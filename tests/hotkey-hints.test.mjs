@@ -20,19 +20,19 @@ class Node {
   removeAttribute(name) { this.attributes.delete(name); }
   hasAttribute(name) { return this.attributes.has(name); }
   querySelector(selector) { return selector === 'kbd' ? this.kbd : null; }
-  closest(selector) { return selector === '#builder-bar' && this.parent === 'builder-bar' ? {} : null; }
 }
 const root = nodes => ({querySelectorAll: () => nodes});
 const hotkeys = bindings => new HotkeyManager({bindings, mac: false});
 
-test('a control shows the shortcut of its own command, including the aliases the builder bar and drawing tools use', () => {
+test('a control shows the shortcut of its own command, including the aliases of the Build part commands and drawing tools', () => {
   const keys = hotkeys();
   assert.equal(hotkeyCommandId(new Node({'data-action': 'undo'}), keys), 'undo');
   assert.equal(hotkeyCommandId(new Node({'data-tool': 'select'}), keys), 'tool-select');
   assert.equal(hotkeyCommandId(new Node({'data-tool': 'drawing-brush'}), keys), 'drawing-brush', 'Draw tools are their own hotkey ids');
   assert.equal(hotkeyCommandId(new Node({'data-tool': 'tweener'}), keys), null, 'no shortcut command, no hint');
   assert.equal(hotkeyCommandId(new Node({'data-action': 'play'}, {id: 'play-button'}), keys), 'play-pan');
-  assert.equal(hotkeyCommandId(new Node({'data-action': 'duplicate-segment'}, {parent: 'builder-bar'}), keys), 'duplicate');
+  assert.equal(hotkeyCommandId(new Node({'data-action': 'duplicate-segment'}), keys), 'duplicate');
+  assert.equal(hotkeyCommandId(new Node({'data-action': 'mirror-segment-vertical'}), keys), 'mirror-vertical');
   assert.equal(hotkeyCommandId(new Node({'data-action': 'delete-single-segment'}), keys), 'delete');
   assert.equal(hotkeyCommandId(new Node({'data-hotkey-command': 'add-frame', 'data-action': 'other'}), keys), 'add-frame');
   assert.equal(hotkeyCommandId(new Node({'data-action': 'scene-settings'}), keys), null);

@@ -12,11 +12,10 @@ export function hotkeyCommandId(node, hotkeys = null) {
   let id = data.hotkeyCommand || (node.id === 'play-button' ? 'play-pan' : data.tool
     ? (HOTKEY_BY_ID.has(`tool-${data.tool}`) || !HOTKEY_BY_ID.has(data.tool) ? `tool-${data.tool}` : data.tool) : data.action);
   if (id === 'delete-single-segment') id = 'delete';
-  if (node.closest?.('#builder-bar')) {
-    if (id === 'duplicate-segment') id = 'duplicate';
-    if (id === 'mirror-segment') id = 'mirror';
-    if (id === 'mirror-segment-vertical') id = 'mirror-vertical';
-  }
+  // Build's part commands answer the everyday keys (Ctrl+D duplicates the part, the flip keys flip it).
+  if (id === 'duplicate-segment') id = 'duplicate';
+  if (id === 'mirror-segment') id = 'mirror';
+  if (id === 'mirror-segment-vertical') id = 'mirror-vertical';
   if (id === 'play' && hotkeys && !hotkeys.label('play')) id = 'play-pan';
   return id && HOTKEY_BY_ID.has(id) ? id : null;
 }

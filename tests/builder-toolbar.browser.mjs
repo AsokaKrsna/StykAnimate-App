@@ -1,3 +1,7 @@
+// Build's commands where the selection is (revision 5: no second toolbar row). A part's tiles in Properties
+// (Split, Duplicate, Flip H, Flip V, Delete; Shift reaches the branch), its ⋯ menu (Exact values, Set as origin,
+// Appearance, Arrange ▸, Branch ▸, Rig ▸, Attach image, Remove joint, Delete part), the Edit joints tool's options
+// in the stage header (Drag, Whole branch) and Build's labelled view toggles (Handles, Highlight, Isolate).
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
@@ -5,70 +9,59 @@ const browser=await chromium.launch({channel:'chrome',headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
 const out='artifacts/builder-toolbar';await mkdir(out,{recursive:true});
 const settle=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
-const menu=name=>page.locator(`#builder-menu-${name}`);
-const trigger=name=>page.locator(`[popovertarget="builder-menu-${name}"]`);
+const serialize=()=>page.evaluate(()=>JSON.stringify(styk.editor.serialize()));
+const row=name=>page.getByRole('menuitem',{name,exact:true});
 page.on('pageerror',e=>errors.push(e.message));
 try {
  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47841');await page.waitForFunction(()=>window.styk?.ready);
  await page.locator('[data-workspace-mode="rig"]').click();await settle();
- assert.equal(await page.locator('#builder-bar [data-action=mirror-segment]').isDisabled(),true);
- // The bar's part commands; Test rig and Done sit in the top band, beside a quiet Export (experience.md §2).
- assert.equal(await page.locator('#builder-bar button:visible').count(),8);
+ // No second row: nothing sits between the stage header and the canvas; Test rig and Done sit in the band.
+ assert.equal(await page.locator('#builder-bar').count(),0);
  for(const selector of ['.titlebar [data-action="rig-test"]','#builder-done','.titlebar [data-action="export"]'])assert.equal(await page.locator(selector).isVisible(),true,selector);
- await trigger('edit').click();await settle();
- assert.equal(await menu('edit').isVisible(),true);
- assert.equal(await menu('edit').locator('[data-action="unsplit-segment"]').isDisabled(),true);
- assert.equal(await menu('edit').locator('[data-action="edit-text"]').isDisabled(),true);
- await page.keyboard.press('Escape');await settle();assert.equal(await trigger('edit').getAttribute('aria-expanded'),'false');
+ // The figure itself: its tiles add an image part, open the examples and fit it.
+ assert.deepEqual(await page.locator('.ui-quick button').evaluateAll(list=>list.map(b=>b.dataset.action)),['add-sprite-segment','rig-examples','rig-connect','zoom-selection']);
+ // The Edit joints tool's options: Drag and Whole branch.
+ assert.equal(await page.locator('.stage-head #rig-mode').inputValue(),'move');
+ assert.equal(await page.locator('.stage-head [data-action="toggle-builder-branch"]').getAttribute('aria-pressed'),'false');
+ // Build's view toggles have words.
+ for(const [action,word] of [['builder-static-handles','Handles'],['builder-highlight','Highlight'],['toggle-isolate','Isolate']])
+  assert.equal((await page.locator(`.stage-head [data-action="${action}"]`).textContent()).trim(),word);
+ // A part: its name as Structure shows it, and its tiles.
  await page.locator('.builder-tree-row').first().click();await settle();
- const baseline=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));
- await page.locator('#builder-bar [data-action=mirror-segment-vertical]').click();await settle();
- assert.notEqual(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),baseline);
- await page.keyboard.press('Control+z');await settle();
- assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),baseline);
- await trigger('edit').click();await settle();await page.keyboard.press('e');
- assert.equal(await page.evaluate(()=>document.activeElement.dataset.action),'segment-values');
- await page.keyboard.press('Enter');await settle();
+ assert.equal((await page.locator('#inspector-name .ui-target-text').textContent()).trim(),(await page.locator('.builder-tree-row[aria-selected="true"] .builder-row-label').textContent()).trim());
+ assert.deepEqual(await page.locator('.ui-quick button').evaluateAll(list=>list.map(b=>b.dataset.action)),
+  ['split-segment','duplicate-segment','mirror-segment','mirror-segment-vertical','delete-single-segment']);
+ assert.deepEqual(await page.locator('.ui-quick button').evaluateAll(list=>list.map(b=>b.dataset.shiftAction??'')),
+  ['','duplicate-branch','mirror-branch','mirror-branch-vertical','delete-segment']);
+ const baseline=await serialize();
+ await page.locator('.ui-quick [data-action="mirror-segment-vertical"]').click();await settle();
+ assert.notEqual(await serialize(),baseline);
+ await page.keyboard.press('Control+z');await settle();assert.equal(await serialize(),baseline);
+ // The ⋯ menu: groups, submenus, and what removes something last.
+ await page.locator('#object-actions').click();await settle();
+ const items=await page.locator('.ui-menu:visible [role^="menuitem"]').evaluateAll(list=>list.map(b=>b.querySelector('span')?.textContent.trim()));
+ assert.deepEqual(items,['Exact values…','Set as origin','Copy appearance','Paste appearance','Arrange','Branch','Rig','Attach image…','Remove joint, keep ends','Delete part']);
+ assert.equal(await row('Paste appearance').isDisabled(),true);
+ await row('Arrange').click();await settle();
+ assert.equal(await row('Send to back').isVisible(),true);
+ await page.keyboard.press('Escape');await page.keyboard.press('Escape');await settle();
+ assert.equal(await serialize(),baseline);
+ await page.locator('#object-actions').click();await settle();await row('Exact values…').click();await settle();
  assert.equal(await page.locator('#dialog').evaluate(e=>e.open),true);
- assert.equal(await menu('edit').isVisible(),false);
  await page.keyboard.press('Escape');await settle();
- await trigger('arrange').click();await settle();await page.keyboard.press('End');
- assert.equal(await page.evaluate(()=>document.activeElement.dataset.action),'segment-order-back');
- await page.keyboard.press('ArrowDown');
- assert.equal(await page.evaluate(()=>document.activeElement.dataset.action),'segment-order-front');
- await page.keyboard.press('Escape');
- assert.equal(await page.evaluate(()=>document.activeElement.getAttribute('popovertarget')),'builder-menu-arrange');
- assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),baseline);
- await trigger('view').click();await settle();
- const staticItem=menu('view').locator('[data-action="builder-static-handles"]');
- const checked=await staticItem.getAttribute('aria-checked');await staticItem.focus();await page.keyboard.press('Space');await settle();
- assert.equal(await menu('view').isVisible(),true);assert.notEqual(await staticItem.getAttribute('aria-checked'),checked);
- assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),baseline);
- await staticItem.click();await settle();assert.equal(await staticItem.getAttribute('aria-checked'),checked);
- await page.screenshot({path:`${out}/view.png`});
- await trigger('edit').click();await settle();
- assert.equal(await menu('view').isVisible(),false);assert.equal(await trigger('view').getAttribute('aria-expanded'),'false');
- await page.screenshot({path:`${out}/edit.png`});
- await page.locator('.builder-name').click();await settle();assert.equal(await menu('edit').isVisible(),false);
- await page.locator('.builder-footer [data-action="zoom-selection"]').click();await settle();
+ // A view toggle changes the view, not the figure.
+ const handles=page.locator('.stage-head [data-action="builder-static-handles"]'),before=await handles.getAttribute('aria-pressed');
+ await handles.click();await settle();assert.notEqual(await handles.getAttribute('aria-pressed'),before);
+ await handles.click();await settle();assert.equal(await handles.getAttribute('aria-pressed'),before);
+ assert.equal(await serialize(),baseline);
  await page.screenshot({path:`${out}/desktop.png`});
- for(const width of [1100,900]) {
-  await page.setViewportSize({width,height:760});await settle();
-  await page.locator('.builder-footer [data-action="zoom-selection"]').click();await settle();
-  const bounds=await page.locator('#builder-bar').boundingBox();
-  const controls=await page.locator('#builder-bar button:visible').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};}));
-  assert.ok(controls.every(r=>r.left>=bounds.x&&r.right<=bounds.x+bounds.width+1));
-  assert.ok(controls.every(r=>Math.abs(r.top-controls[0].top)<3),'single row');
-  await trigger('edit').click();await settle();const box=await menu('edit').boundingBox();
-  assert.ok(box.x>=0&&box.x+box.width<=width&&box.y+box.height<=760);
-  await page.screenshot({path:`${out}/compact-${width}.png`});await page.keyboard.press('Escape');
- }
- await page.evaluate(()=>document.documentElement.dataset.theme='dark');await trigger('view').click();await settle();await page.screenshot({path:`${out}/dark.png`});
- await page.locator('#builder-done').click();await settle();assert.equal(await menu('view').isVisible(),false);
+ // A narrow stage keeps every toggle, folding the words to glyphs.
+ await page.setViewportSize({width:1000,height:760});await settle();await settle();
+ assert.equal(await page.locator('.stage-head [data-action="toggle-isolate"] .ui-label').isVisible(),false);
+ assert.equal(await page.locator('.stage-head [data-action="toggle-isolate"]').isVisible(),true);
+ await page.screenshot({path:`${out}/compact-1000.png`});
+ await page.locator('#builder-done').click();await settle();
  assert.equal(await page.evaluate(()=>styk.builder.active),false);
- await page.locator('[data-workspace-mode="rig"]').click();await trigger('view').click();await settle();
- assert.equal(await menu('view').isVisible(),true);await page.keyboard.press('Escape');
  assert.deepEqual(errors,[]);
- console.log('PASS: 8 top-level controls, Test rig and Done in the band; menu gating, keyboard flip/undo, exact values dialog, arrow navigation, type-ahead, view toggle state, menu exclusivity, outside/Escape dismissal, focus return, one row at 900/1100/1440, viewport containment, light/dark and repeated sessions; no page errors.');
+ console.log('PASS: no second row; the figure\'s and a part\'s tiles (Shift reaches the branch), the grouped ⋯ menu with submenus, Exact values, the Edit joints options and Build\'s labelled view toggles, words folding in a narrow stage; no page errors.');
 } finally {await browser.close();}
-

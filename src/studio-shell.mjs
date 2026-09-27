@@ -36,27 +36,81 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
     if (event.target.closest('[data-action],[data-sample]')) dialog.close();
   }, options);
   document.getElementById('object-actions').addEventListener('click', event => {
-    showCommandMenu([
-      ['duplicate', 'duplicate', 'Duplicate selection', 'Ctrl D', !editor.object],
-      ['add-to-library', 'plus', 'Add to library', '', !editor.object],
-      ['mirror', 'flip', 'Flip horizontally', '', !editor.object],
-      ['rotate', 'rotate', 'Rotate 15°', '', !editor.object],
-      ['center', 'center', 'Center selection', '', !editor.object],
-      ['reset-pose', 'undo', 'Reset pose', '', !editor.object],
-      ['movieclip-create', 'frame', 'Create movieclip', '', !editor.object],
-      ['movieclip-edit', 'frame', 'Edit movieclip', '', !editor.figure?._styk?.movieclip],
-      ['movieclip-range', 'frame', 'Movieclip from frame range', ''],
-      ['toggle-isolate', 'detach', state.isolateMode ? 'Disable joint isolation' : 'Isolate joint', 'Caps Lock', !editor.object],
-      ['selection-up', 'bring-to-front', 'Bring forward', '', !editor.object],
-      ['selection-down', 'send-to-back', 'Send backward', '', !editor.object],
-      null,
-      ['delete', 'trash', 'Delete selection', 'Delete', !editor.object],
-      null,
-      ['scene-settings', 'frame', 'Scene properties', ''],
-      ...(!builder?.active && editor.object && !editor.figure?._styk?.movieclip ? [null,
-        ['edit-in-build-mode', 'nodes', 'Edit in build mode', '', editor.selectedUids.size !== 1]] : []),
-    ], event.currentTarget);
+    showCommandMenu(objectMenuItems(), event.currentTarget, {label: 'More actions'});
   }, options);
+  /**
+   * Properties ⋯ (experience.md §5.1): the selection's less frequent commands, grouped under names, families in
+   * submenus, and whatever removes something last. The quick tiles above keep the everyday ones one click away.
+   */
+  function objectMenuItems() {
+    const object = editor.object, none = !object;
+    const segment = editor.figure?.segments?.[editor.selectedJoint];
+    if (builder?.active && segment) return [
+      ['segment-values', 'sliders', 'Exact values…', 'I'],
+      ['origin-segment', 'origin', 'Set as origin'],
+      null,
+      {label: 'Appearance'},
+      ['copy-builder-appearance', 'duplicate', 'Copy appearance'],
+      ['paste-builder-appearance', 'clipboard', 'Paste appearance', '', !state.builderAppearance],
+      null,
+      {label: 'Arrange', icon: 'layers', submenu: [
+        ['segment-order-front', 'bring-to-front', 'Bring to front'],
+        ['segment-order-up', 'up', 'Bring forward'],
+        ['segment-order-down', 'down', 'Send backward'],
+        ['segment-order-back', 'send-to-back', 'Send to back'],
+      ]},
+      {label: 'Branch', icon: 'builder-branch', submenu: [
+        ['duplicate-branch', 'duplicate', 'Duplicate branch'],
+        ['mirror-branch', 'flip', 'Flip branch horizontally'],
+        ['mirror-branch-vertical', 'flip-vertical', 'Flip branch vertically'],
+        null,
+        ['delete-segment', 'trash', 'Delete branch', 'Shift Del'],
+      ]},
+      {label: 'Rig', icon: 'link', submenu: [
+        ['rig-connect', 'link', 'Connect joints…'],
+        ['rig-weighted', 'nodes', 'Add weighted joint'],
+        ['rig-bind-branch', 'stretch-horizontal', 'Bind branch to stretch'],
+      ]},
+      null,
+      ['add-sprite-segment', 'image', 'Attach image…'],
+      ...(segment.primitive_code === 5 ? [['edit-text', 'text', 'Edit text…']] : []),
+      null,
+      ['unsplit-segment', 'builder-unsplit', 'Remove joint, keep ends', 'Ctrl Del'],
+      ['delete-single-segment', 'trash', 'Delete part', 'Del'],
+    ];
+    if (builder?.active) return [
+      ['add-sprite-segment', 'image', 'Attach image…', '', none],
+      ['rig-connect', 'link', 'Connect joints…', '', none],
+      ['rig-examples', 'layers', 'Rig examples…'],
+      null,
+      ['zoom-selection', 'center', 'Fit figure', 'Shift 2', none],
+      ['rig-test', 'play', 'Test rig'],
+    ];
+    const clip = Boolean(editor.figure?._styk?.movieclip);
+    return [
+      {label: 'Edit'},
+      ['duplicate', 'duplicate', 'Duplicate', 'Ctrl D', none],
+      ['mirror', 'flip', 'Flip horizontally', '', none],
+      ['rotate', 'rotate', 'Rotate 15°', '', none],
+      ['center', 'center', 'Center', '', none],
+      ['reset-pose', 'undo', 'Reset pose', '', none],
+      ['toggle-isolate', 'detach', state.isolateMode ? 'Stop isolating joint' : 'Isolate joint', 'Caps Lock', none],
+      null,
+      {label: 'Arrange'},
+      ['selection-up', 'bring-to-front', 'Bring forward', '', none],
+      ['selection-down', 'send-to-back', 'Send backward', '', none],
+      null,
+      {label: 'Movieclip', icon: 'frame', submenu: [
+        ['movieclip-create', 'frame', 'Create movieclip', '', none],
+        ['movieclip-edit', 'frame', 'Edit movieclip', '', !clip],
+        ['movieclip-range', 'frame', 'Movieclip from frames…'],
+      ]},
+      ['add-to-library', 'plus', 'Add to library', '', none],
+      ...(object && !clip ? [['edit-in-build-mode', 'nodes', 'Edit in Build', '', editor.selectedUids.size !== 1]] : []),
+      null,
+      ['delete', 'trash', 'Delete', 'Delete', none],
+    ];
+  }
   // Every write compares first (ui/dom-write.mjs): sync runs on every chrome pass, so an unchanged
   // shell writes nothing. Values the drawing workspace overrides are decided before they are written.
   function sync() {
