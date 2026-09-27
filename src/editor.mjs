@@ -1088,21 +1088,21 @@ export class Editor extends EventTarget {
     }
     return state;
   }
-  poseJoint(x, y, {stretch = false, isolate = false, snap = true, snapTolerance = 6, alternate = false, pixel = 0, anchor = null} = {}) {
+  poseJoint(x, y, {stretch = false, isolate = false, snap = true, snapTolerance = 6, alternate = false, depth = false, pixel = 0, anchor = null} = {}) {
     if(spatialSkin(this.figure?.segments[this.selectedJoint])||this.figure?.segments[this.selectedJoint]?._stykRig?.anglePath||this.figure?.segments[this.selectedJoint]?._stykRig?.weighted)return false;
     finite(x, 'Joint X'); finite(y, 'Joint Y');
     finite(snapTolerance, 'Snap tolerance'); if (snapTolerance < 0) throw new Error('Snap tolerance cannot be negative.');
     if (!this.object || this.selectedJoint < 0) return false;
     if (this.figure?.segments[this.selectedJoint]?._stykRig?.connector) return this.slideConnector(x,y);
     if (this.object._stykIK?.[this.figure?.segments[this.selectedJoint]?.segment_id]?.enabled) {
-      // Shift pushes a spatial hand/foot target in depth; releasing it resumes
-      // ordinary target dragging from the current pointer.
-      if (alternate && this.poseSpatialIKDepth(x, y, {pixel: pixel || 1})) return true;
+      // Shift or the depth key pushes a spatial hand/foot target in depth;
+      // releasing it resumes ordinary target dragging from the current pointer.
+      if ((alternate || depth) && this.poseSpatialIKDepth(x, y, {pixel: pixel || 1})) return true;
       this._clearSpatialIKDepth();
       return this.poseIKTarget(x, y);
     }
     const seg = this.figure?.segments[this.selectedJoint]; if (!seg || isStatic(seg)) return false;
-    if(spatialBone(seg))return this.poseSpatialJoint(x,y,{stretch,flip:alternate,pixel,anchor});
+    if(spatialBone(seg))return this.poseSpatialJoint(x,y,{stretch,depth,flip:alternate,pixel,anchor});
     const shape = this.geometry.objects.get(this.selectedSlot)?.segments[this.selectedJoint]; if (!shape) return false;
     if(seg._stykRig?.angleLock){
       if(!stretch||Math.abs(this.object.scale)<1e-8)return false;

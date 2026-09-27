@@ -164,7 +164,7 @@ function contextDescriptor({
   const drawingSets = drawingSetsSection(builder ? '' : joinedDrawingSetsView(editor));
   if (!builder && figure.segments.some(segment => segment._stykRig?.spatial?.origin)) {
     return {kind: 'spatial-rig', target: {name: figure.name || 'Figure', rename: figureRename}, quick: {context: 'figure'}, scope, sections: [
-      range, drawingSets, ...spatialSections(editor),
+      range, drawingSets, ...spatialSections(editor, {hotkeyLabel}),
       {id: 'placement', title: 'Placement', place: 'titled', open: true, hidden: joint >= 0, rows: [{kind: 'grid', rows: [
         number('X', 'root_x', object.root_x, 'px'), number('Y', 'root_y', object.root_y, 'px'), number('Scale', 'scale', object.scale * 100, '%', {min: 0.01}),
       ]}]},
@@ -173,7 +173,7 @@ function contextDescriptor({
   if (builder && editor.selectedPolygonIndex >= 0) return fillDescriptor(editor, figure, number);
   const segment = figure.segments[joint];
   const order = new Map(builderDrawables(figure).map((item, index) => [`${item.kind}:${item.index}`, index + 1]));
-  const shared = {range, scope, drawingSets, spatial: builder ? [] : spatialSections(editor), order, tool, builder, builderBranch};
+  const shared = {range, scope, drawingSets, spatial: builder ? [] : spatialSections(editor, {hotkeyLabel}), order, tool, builder, builderBranch};
   // Pivot origins use -1; segment endpoint indices start at zero.
   return joint >= 0 && segment
     ? jointDescriptor(editor, figure, segment, number, shared)

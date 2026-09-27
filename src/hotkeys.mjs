@@ -28,6 +28,7 @@ group('Tools', [
   ['add-text', 'Create text', ['KeyT']],
   ['handle-edit-hold', 'Hold to edit handles', ['KeyR'], {hold: true}],
   ['isolate-hold', 'Hold to isolate joint', ['CapsLock'], {hold: true, extraShift: true}],
+  ['depth-hold', 'Hold to pose 3D parts in depth', ['KeyD'], {hold: true, extraShift: true}],
   ['toggle-isolate', 'Toggle joint isolation'],
   ['toggle-selection-origins', 'Rectangle selects figure origins'],
   ['toggle-range-edit', 'Edit together'],

@@ -100,21 +100,32 @@ Targets require authoring and visual review at intermediate turns and tilts;
 interpolation alone does not guarantee a nonintersecting or accurate silhouette.
 
 In Animate, **Pose** uses the ordinary joint markers. Hand and foot endpoints
-use the existing IK settings. Dragging a free spatial joint swings the bone in
-3D at constant length: its end follows the pointer, and pulling it inside its
-projected reach brings it toward or away from the camera, so arms reach
-forward, knees lift and the chest leans without switching tools. The depth side
-comes from the bone's current direction, or the character's front when the
-bone lies in the view plane. Holding **Shift** during the drag mirrors it to the
-other side (behind the body). Motion is relative to where the marker was
-grabbed, so grabbing beside it never jumps; bones shorter than 70 screen
-pixels (chest, neck, feet) use a 70-pixel virtual lever for finer control.
-**Right-drag** twists the part about its own axis (turn the head, twist the
-torso or forearm): 120 pixels of horizontal travel give a quarter turn. **Ctrl**
-keeps the previous view-plane rotation with stretching. On a spatial hand or
-foot target, **Shift** pushes the target toward the camera (drag down) or away
-(drag up) while it stays under the pointer. Every sample is solved from the
-gesture's start orientation, so closed drags return exactly without twist drift.
+use the existing IK settings. Dragging a free spatial joint turns the bone flat
+on screen, as on an ordinary figure: it rotates about the view axis through its
+base by the pointer's angle around that base, keeping its lean toward or away
+from the camera, its projected length and its twist. Children turn rigidly with
+it. Under perspective the pointer is unprojected at the tip's depth, which this
+rotation preserves, so the end stays under the pointer. **Ctrl** also scales the
+bone's length by the pointer's distance from the base.
+
+Holding **Hold to pose 3D parts in depth** (D by default, rebindable in Keyboard
+shortcuts) swings the bone in 3D at constant length instead: its end follows the
+pointer, and pulling it inside its projected reach brings it toward or away from
+the camera, so arms reach forward, knees lift and the chest leans. The depth
+side comes from the bone's current direction, or the character's front when the
+bone lies in the view plane. Holding **Shift** as well mirrors it to the other
+side (behind the body). Bones shorter than 70 screen pixels (chest, neck, feet)
+use a 70-pixel virtual lever for finer control. Pressing or releasing the key
+mid-drag restarts the other gesture from the current pose and pointer, so the
+bone never jumps; the drag remains one undo step.
+
+Both gestures are relative to where the marker was grabbed, so grabbing beside
+it never jumps. **Right-drag** twists the part about its own axis (turn the head,
+twist the torso or forearm): 120 pixels of horizontal travel give a quarter
+turn. On a spatial hand or foot target, **Shift** or the depth key pushes the
+target toward the camera (drag down) or away (drag up) while it stays under the
+pointer. Every sample is solved from the gesture's start orientation, so closed
+drags return exactly without twist drift.
 
 Use **Rotate** for exact turn/tilt values. Rotate shows local X/Y/Z rings, a free
 trackball and an outer view ring; Shift gives finer movement. Whole body, limb,

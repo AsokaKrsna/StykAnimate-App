@@ -172,7 +172,10 @@ export const editorSpatialMethods={
   const angle=(x-gesture.start.x)/pixel/120*Math.PI/2*(o.image_text_flags?-1:1),d=gesture.direction,h=Math.sin(angle/2);
   return this._setSpatialWorldOrientation(quatMultiply([d[0]*h,d[1]*h,d[2]*h,Math.cos(angle/2)],gesture.world),gesture,'Twist articulated joint');
  },
- poseSpatialJoint(x,y,{stretch=false,flip=false,planar=false,pixel=0,anchor=null}={}){
+ /** Pose drag on a spatial bone. It turns flat on screen like an ordinary
+  * figure; `depth` (the held depth key) swings it toward or away from the
+  * camera instead, `flip` choosing the side, and `stretch` also scales it. */
+ poseSpatialJoint(x,y,{stretch=false,depth=false,flip=false,pixel=0,anchor=null}={}){
   const f=this.figure,o=this.object,i=this.selectedJoint,s=f?.segments[i];if(!o||!spatialBone(s))return false;
   if(![x,y].every(Number.isFinite))return false;
   if(s._stykRig.spatial.motion)return this._moveMechanicalJoint(x,y,anchor);
@@ -184,18 +187,32 @@ export const editorSpatialMethods={
    try{this.selectedJoint=rigPlan(this).ids.get(Number(id));const pole=this.getSpatialIKPole();return pole?this.setSpatialIKPole(x,y,pole.knee[2]):false;}
    finally{this.selectedJoint=i;}
   }
-  if(!stretch&&!planar)return this._arcSpatialJoint(x,y,flip,pixel,anchor);
-  const g=this.geometry.objects.get(this.selectedSlot),shape=g.segments[i],before=this.getSpatialPose(),start=unprojectJoint(shape.start),end=unprojectJoint(shape.end);
-  ({x,y}=unprojectSpatial({x,y},shape.end.rawPoint?.[2]??0,o,g.root));
-  const span=Math.hypot(end.x-start.x,end.y-start.y),distance=Math.hypot(x-start.x,y-start.y);
-  if(span<1e-6||distance<1e-6)return false;
-  // Planar posing (and stretching) rotates in the view plane, preserving depth.
-  const angle=Math.atan2(y-start.y,x-start.x)-Math.atan2(end.y-start.y,end.x-start.x);
-  const parent=quatMultiply(shape.spatialFrame.q,inverseQuaternion(spatialQuaternion(before.bend,before.turn,before.pitch)));
-  const world=quatMultiply(spatialQuaternion(angle,0,0),spatialWorldQuaternion(shape.spatialFrame.q,f,o));
-  return this._setSpatialWorldOrientation(world,{parent},'Pose articulated joint',target=>{
-   if(stretch){const lengths=target.len_flag?target.lengths.slice():f.segments.map(s=>s.length);lengths[i]*=distance/span;target.lengths=lengths;target.len_flag=1;}
-  });
+  const kind=depth&&!stretch?'arc':'flat';
+  if(this._drag){
+   // Pressing or releasing the depth key mid-drag starts the other gesture
+   // from the current pose and pointer, so the bone never jumps.
+   const key=`${o.unique_id}:${i}`,kinds=this._drag.spatialKinds??=new Map(),last=kinds.get(key);
+   if(last&&last!==kind){for(const k of ['arc','flat'])this._drag.spatialGesture?.delete(`${k}:${key}`);anchor={x,y};}
+   kinds.set(key,kind);
+  }
+  return kind==='arc'?this._arcSpatialJoint(x,y,flip,pixel,anchor):this._flatSpatialJoint(x,y,stretch,anchor);
+ },
+ /** The bone turns about the view axis through its base, as on a flat figure,
+  * keeping its lean toward or away from the camera and its twist. The angle
+  * is measured from the grab point against the fixed gesture start, so the
+  * grab never jumps and a closed drag returns exactly. */
+ _flatSpatialJoint(x,y,stretch,anchor){
+  const f=this.figure,o=this.object,i=this.selectedJoint,g=this.geometry.objects.get(this.selectedSlot),gesture=this._spatialGesture('flat');
+  // The tip keeps its depth while turning, so the pointer is unprojected there.
+  const depth=gesture.tip[2],p=unprojectSpatial({x,y},depth,o,g.root);
+  gesture.grab??=anchor?unprojectSpatial(anchor,depth,o,g.root):{x:gesture.tip[0],y:gesture.tip[1]};
+  gesture.nativeLength??=o.len_flag?o.lengths[i]:f.segments[i].length;
+  const c=gesture.origin,gx=gesture.grab.x-c[0],gy=gesture.grab.y-c[1],px=p.x-c[0],py=p.y-c[1],from=Math.hypot(gx,gy),to=Math.hypot(px,py);
+  if(from<1e-6||to<1e-6)return false;
+  const world=quatMultiply(spatialQuaternion(Math.atan2(py,px)-Math.atan2(gy,gx),0,0),gesture.world);
+  return this._setSpatialWorldOrientation(world,gesture,'Pose articulated joint',stretch?target=>{
+   const lengths=target.len_flag?target.lengths.slice():f.segments.map(s=>s.length);lengths[i]=gesture.nativeLength*to/from;target.lengths=lengths;target.len_flag=1;
+  }:undefined);
  },
  /** The bone keeps its length and swings in 3D so its end follows the pointer.
   * Inside its projected reach it leaves the view plane on the gesture's depth

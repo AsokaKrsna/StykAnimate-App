@@ -281,6 +281,7 @@ group('tools', [
   ['tool-rig', 'Edit shared rig', 'nodes', {...build}],
   ['handle-edit-hold', 'Hold to edit handles', 'nodes', internal],
   ['isolate-hold', 'Hold to isolate joint', 'eye', {aliasOf: 'toggle-isolate', palette: false}],
+  ['depth-hold', 'Hold to pose 3D parts in depth', 'rotate', internal],
 ]);
 group('drawing', [
   ['drawing-brush', 'Brush', 'brush', draw],

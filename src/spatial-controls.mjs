@@ -30,7 +30,7 @@ function limbControl(editor){
  * data-spatial-* hooks, which installSpatialControls() handles. [] for a
  * figure without 3D bones.
  */
-export function spatialSections(editor){
+export function spatialSections(editor,{hotkeyLabel}={}){
  const bones=editor.figure?.segments.flatMap((s,i)=>spatialBone(s)&&!s._stykPoseChoice?[{s,i}]:[])??[];if(!bones.length)return[];
  const mode=spatialControlMode(editor),pose=editor.getSpatialPose(),selected=editor.selectedJoint,limb=limbControl(editor),ik=limb?.controller;
  // Limbs keep their shortcuts and IK switch while IK is off.
@@ -69,7 +69,7 @@ export function spatialSections(editor){
  return[
   {id:'rig-pose',title:'Pose',actions:[{icon:'reset',label:'Reset pose',data:{'spatial-reset':'all'}}],rows:[
    rig(`<div class="spatial-modes" role="group" aria-label="Rig tools">${modes}</div>${pad}`),
-   {kind:'meta',text:mode==='pose'?'Drag joints to swing them in 3D; hold Shift to swing behind. Right-drag twists a part. Drag a planted knee or elbow to aim its bend.':'Rotate a limb to release its pin; its hand or foot follows. Torso turns keep planted targets; Rotate figure carries the whole pose.'},
+   {kind:'meta',text:mode==='pose'?`Drag joints to pose them flat on screen. ${depthHint(hotkeyLabel?.('depth-hold'))} Right-drag twists a part. Drag a planted knee or elbow to aim its bend.`:'Rotate a limb to release its pin; its hand or foot follows. Torso turns keep planted targets; Rotate figure carries the whole pose.'},
   ]},
   {id:'rig-body',title:'Body',rows:[
    rig(`${shortcuts}${trunk?`<div class="spatial-trunk" role="group" aria-label="Torso controls">${trunk}</div>`:''}${ties.length?`<div class="spatial-part-actions" role="group" aria-label="Belt ties">${ties.map(b=>choose(b.i,b.s.name.replace('sash upper','tie'))).join('')}</div>`:''}${feet.length?`<button type="button" class="spatial-plant" data-spatial-feet="${planted?'release':'plant'}">${icon('pin')}${planted?'Release feet':'Plant both feet'}</button>`:''}`),
@@ -84,6 +84,7 @@ export function spatialSections(editor){
   {id:'spatial-choices',title:'Choices',place:'titled',open:true,hidden:!groups.length,rows:[groups.length&&rig(choices)]},
  ];
 }
+const depthHint=key=>key?`Hold ${key.split(' / ')[0]} while dragging to move a part toward or away from you (add Shift to go behind).`:'Assign “Hold to pose 3D parts in depth” in Keyboard shortcuts to move parts toward or away from you.';
 /** The 3D rig's sections as the inspector renders them. */
 export const spatialControlsView=editor=>{const sections=spatialSections(editor);return sections.length?renderInspector({kind:'spatial-rig',sections}):'';};
 export function spatialGizmo(editor,project){return spatialControlMode(editor)!=='pose'?createSpatialGizmo(editor,project):null;}

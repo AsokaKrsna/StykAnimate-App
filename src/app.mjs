@@ -241,6 +241,7 @@ const state = {
   rigMode: "move",
   builderBranch: false,
   builderShiftHeld: false,
+  depthHeld: false,
   locked: new Set(),
   hidden: new Set(),
   sourceId: null,
@@ -2934,6 +2935,7 @@ const moveCanvasPointer = guarded((e) => {
         isolate: Boolean(state.isolateHeld || state.isolateMode),
         snapTolerance: 6 / state.view.scale,
         alternate: e.shiftKey,
+        depth: state.depthHeld,
         pixel: 1 / state.view.scale,
         anchor: drag.start,
       });
@@ -4856,6 +4858,7 @@ function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
   if (id === 'cancel') return cancelKeyboardCommand();
   if (id === 'handle-edit-hold') { state.handleEditHeld = true; requestRender(); return; }
   if (id === 'isolate-hold') { state.isolateHeld = true; return; }
+  if (id === 'depth-hold') { state.depthHeld = true; return; }
   if (id === 'play-pan') {
     state.space = true; state.spacePanned = false; viewport.classList.add('panning'); return;
   }
@@ -4880,6 +4883,7 @@ function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
 function releaseKeyboardCommand(id, event) {
   if (id === 'handle-edit-hold') { state.handleEditHeld = false; requestRender(); }
   else if (id === 'isolate-hold') state.isolateHeld = false;
+  else if (id === 'depth-hold') state.depthHeld = false;
   else if (id.startsWith('handle-')) {
     heldArrows.delete('arrow' + id.slice(7));
     if (!heldArrows.size) finishKeyboardHandle();
@@ -6065,6 +6069,7 @@ function rendererOptions() {
         state.space = false;
         state.spacePanned = false;
         state.isolateHeld = false;
+        state.depthHeld = false;
         state.hoverHandle = null;
         state.hoverCameraHandle = null;
         viewport.classList.toggle("panning", state.tool === "hand");
