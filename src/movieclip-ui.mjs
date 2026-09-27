@@ -91,7 +91,7 @@ export function installMovieclipUI({editor,actions,pause,finishEdit,getTimeline,
     }catch(error){onError(error);queueUI();}
   });
   function sync(){
-    const scopes=editor._movieclipScopes??[];breadcrumb.hidden=!scopes.length;
+    const scopes=editor._movieclipScopes??[];if(breadcrumb.hidden!==!scopes.length)breadcrumb.hidden=!scopes.length;
     if(scopes.length)breadcrumb.innerHTML=`<button class="button" data-action="movieclip-done">← Scene</button><strong>${scopes.map(s=>esc(s.name)).join(' / ')}</strong><button class="button" data-action="movieclip-cancel">Cancel</button><button class="button primary" data-action="movieclip-done">Done</button>`;
   }
   editor.addEventListener('change',sync);sync();

@@ -5,6 +5,7 @@ import {librarySnapshot, libraryPreview, saveLibraryFile, readLibraryFile} from 
 import {LibraryHoverPreview} from './library-hover-preview.mjs';
 import {libraryPreviewMatte, LIBRARY_MATTES} from './library-preview-core.mjs';
 import {canMoveLibraryItem} from './library-drag.mjs';
+import {setAttr, setProp, setText} from './ui/dom-write.mjs';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const folderIcon = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
@@ -139,9 +140,10 @@ export class UserLibrary {
   syncSelection() {
     const count = this.editor.selectedObjects.length, available = Boolean(this.desktop?.listLibrary);
     const saves = this.roots.flatMap(root => [...root.querySelectorAll('[data-library-action="save"]')]);
-    for (const button of saves) button.disabled = this.busy || !count || !available;
-    this.container.querySelector('[data-library-action="save"] span').textContent = count > 1 ? `Add ${count} figures to library` : 'Add to library';
-    for (const button of saves) button.title = count ? `Save selection in ${this.folder || 'Library'}` : 'Select figures or a movieclip';
+    // Runs on every editor change (each frame while playing): write only what changed.
+    for (const button of saves) setProp(button, 'disabled', this.busy || !count || !available);
+    setText(this.container.querySelector('[data-library-action="save"] span'), count > 1 ? `Add ${count} figures to library` : 'Add to library');
+    for (const button of saves) setAttr(button, 'title', count ? `Save selection in ${this.folder || 'Library'}` : 'Select figures or a movieclip');
   }
   async refresh(folder = this.folder) {
     if (!this.desktop?.listLibrary) { this.container.dataset.unavailable = 'true'; this.container.querySelector('.library-empty').hidden = false; this.renderEmpty(false); return; }

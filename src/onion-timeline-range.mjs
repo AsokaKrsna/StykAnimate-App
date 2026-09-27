@@ -27,7 +27,7 @@ export class OnionTimelineRange {
   }
   x(tick){return this.host.labelWidth+(tick+.5)*this.host.pxPerTick-this.host._offsetX();}
   update(){
-    const enabled=Boolean(this.controller?.getEnabled());this.overlay.hidden=!enabled;
+    const enabled=Boolean(this.controller?.getEnabled());if(this.overlay.hidden!==!enabled)this.overlay.hidden=!enabled;
     if(!enabled){for(const part of this.parts)part.gesture?.finish(false);return;}
     const range=this.controller.snapshot(this.host.pendingScrub??undefined),center=this.x(range.tick);
     this.overlay.style.clipPath=`inset(0 16px 0 ${this.host.labelWidth}px)`;

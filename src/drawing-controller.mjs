@@ -254,7 +254,7 @@ export class DrawingController {
   queueQuickBar(){if(this.quickQueued)return;this.quickQueued=true;requestAnimationFrame(()=>{this.quickQueued=false;this.renderQuickBar();});}
   renderQuickBar(){
     const bar=this.quickBar;if(!bar)return;
-    if(!this.active){bar.hidden=true;return;}
+    if(!this.active){if(!bar.hidden)bar.hidden=true;return;}
     // Never rebuild under an active slider drag or an open inline edit.
     if(bar.querySelector('.draw-slider.is-dragging,.draw-slider.is-editing'))return;
     // Compare with the last markup, not innerHTML (browsers normalize it), so

@@ -127,6 +127,8 @@ import { MotionPathControls } from "./motion-path-controls.mjs";
 import { TweenerControls } from "./tweener-controls.mjs";
 import { onFontsReady } from "./ui/font-loading.mjs";
 import { createOverlayManager } from "./ui/overlay-manager.mjs";
+import { createInvalidator } from "./ui/ui-invalidation.mjs";
+import { setAttr, setHidden, setMarkup, setText } from "./ui/dom-write.mjs";
 import { installMenuBar, menuFor, openMenu } from "./ui/ui-menu.mjs";
 import { createToasts } from "./ui/ui-toast.mjs";
 import { UserActionError } from "./user-action-error.mjs";
@@ -346,8 +348,7 @@ const editorReady = new Promise((resolve) => { markEditorReady = resolve; });
 let warmTimer = null,
   playDeadline = 0,
   playStarted = false,
-  playStartupFrames = 2,
-  uiScheduled = 0;
+  playStartupFrames = 2;
 const playbackMetrics = new PlaybackMetrics();
 const playbackCadence = new PlaybackCadence();
 let presentationDeadline = null;
@@ -407,13 +408,27 @@ const editablePreparation = new EditableScenePreparation(editor, {
 });
 let lastFpsUI = 0;
 function editingGestureActive(){return Boolean(state.drag||keyboardHandleGesture||editor._drag||editor._authoredPoseEdit||propertyControls?.active||vfxInspector?.active||vfxGizmos?.active||drawingController?.interacting);}
+// The editor chrome as surfaces (src/ui/ui-invalidation.mjs), in today's update order. queueUI()
+// marks them all; one pass a frame updates what is marked. While playing, only the transport updates
+// (at most every 200 ms); the quiet surfaces wait and update in the first pass after playback stops
+// (pause() queues one). Surfaces write through dom-write.mjs, so an unchanged value writes nothing.
+const ui = createInvalidator({
+  isPlaying: () => state.playing,
+  isBlocked: () => Boolean(state.editablePreparing),
+  afterPass: () => requestRender(),
+});
+ui.surface("title", { on: ["document", "save", "revision"], update: () => updateTitle() });
+ui.surface("transport", { on: ["tick", "document", "settings"], playbackInterval: 200, update: () => timelineHost?.updateTransport() });
+ui.surface("layers", { on: ["selection", "document", "revision"], quiet: true, update: () => renderLayers() });
+ui.surface("vfx", { on: ["selection", "revision", "context", "tick"], quiet: true, update: () => vfxInspector?.sync() });
+ui.surface("inspector", { on: ["selection", "revision", "context", "tick"], quiet: true, update: () => renderProperties() });
+ui.surface("selection", { on: ["selection", "range", "drag"], quiet: true, update: () => { if (!state.drag) syncSelectionControls(); } });
+ui.surface("status", { on: ["objects", "document", "selection"], quiet: true, update: () => updateStatus() });
+ui.surface("assets", { on: ["document", "revision"], quiet: true, update: () => { if (state.activeTab === "assets") renderAssets(); } });
+ui.surface("shell", { on: ["mode", "settings", "selection", "context"], quiet: true, update: () => studioShell?.sync() });
 function queueUI() {
   if(state.editablePreparing)return;
-  if (!uiScheduled)
-    uiScheduled = requestAnimationFrame(() => {
-      uiScheduled = 0;
-      updateUI();
-    });
+  ui.invalidate("all");
 }
 const playback = new PlaybackCache({
   gpuIsolation: true,
@@ -936,9 +951,8 @@ function imageFor(url) {
 }
 const resources = { url: assetUrl, image: imageFor, drawing:figure=>drawingController?.resource(figure), drawingLoad:figure=>{if(!drawingMetadata(figure))return null;drawingController?.resource(figure);return editor?.drawingResources.surface(figure);} };
 function status(text, error = false, busy = false) {
-  $("status").textContent = text;
-  $("status-dot").className =
-    `status-dot${error ? " error" : busy ? " busy" : ""}`;
+  setText($("status"), text);
+  setAttr($("status-dot"), "class", `status-dot${error ? " error" : busy ? " busy" : ""}`);
 }
 /** A short message in the stage's message slot, above any open dialog. */
 function toast(text) {
@@ -1078,7 +1092,7 @@ function placeArtboard() {
     width: `${r.canvas_width * v.scale}px`,
     height: `${r.canvas_height * v.scale}px`,
   });
-  $("zoom-label").textContent = `${Number((v.scale * 100).toFixed(v.scale < 0.01 ? 2 : v.scale < 0.1 ? 1 : 0))}% ⌄`;
+  setText($("zoom-label"), `${Number((v.scale * 100).toFixed(v.scale < 0.01 ? 2 : v.scale < 0.1 ? 1 : 0))}% ⌄`);
 }
 /** Timeline frames shown by the Simple (Pivot-style) timeline, or null in Advanced. */
 function simpleFrameCount() {
@@ -1614,14 +1628,14 @@ function loop(now) {
           if (state.buffering) {
             state.buffering = false;
             status("Playing");
-            $("preview-badge").textContent = "PLAYING";
+            setText($("preview-badge"), "PLAYING");
           }
           prepareAhead(next + 1, 48);
           state.dirtyRender = true;
         } else {
           audioEngine.stop();
           state.buffering = true;
-          $("preview-badge").textContent = "PREPARING";
+          setText($("preview-badge"), "PREPARING");
           if (
             packet &&
             !backgroundsReady &&
@@ -1726,7 +1740,7 @@ function loop(now) {
       if (advancedPlayback) recordPlaybackPresentation();
       overlayRender(geometry);
       drawingController?.overlayDraw(ctx);
-      $('preview-quality').hidden = !(images.reduced || state.renderer.stats?.previewReduced || state.previewGovernor?.index);
+      setHidden($('preview-quality'), !(images.reduced || state.renderer.stats?.previewReduced || state.previewGovernor?.index));
     }
     if(pendingColorSample && !state.editablePreparing && (!state.playing || !state.buffering || preparedPresented)){
       const sample=pendingColorSample;
@@ -1762,12 +1776,12 @@ function loop(now) {
     state.lastPresent = elapsed;
     state.drawCalls++;
     if (now - lastUI > 200) {
-      timelineHost.updateTransport();
-      $("render-time").textContent = `${elapsed.toFixed(1)} ms`;
-      $("renderer-label").textContent =
+      ui.update("transport");
+      setText($("render-time"), `${elapsed.toFixed(1)} ms`);
+      setText($("renderer-label"),
         state.renderer.stats?.backend === "Canvas 2D fallback"
           ? "Compatibility mode"
-          : state.renderer.stats?.backend || "WebGPU";
+          : state.renderer.stats?.backend || "WebGPU");
       lastUI = now;
     }
   }
@@ -1794,10 +1808,10 @@ function loop(now) {
     playbackMetrics.buffering(state.buffering, measuredAt);
     if (measuredAt - lastFpsUI >= 250) {
       const sample = playbackMetrics.snapshot(measuredAt), badge = $("playback-fps");
-      badge.textContent = sample.fps === null ? "— fps" : `${sample.fps.toFixed(1)} fps`;
-      badge.dataset.health = sample.coherent === null ? "pending" : sample.coherent ? "good" : "low";
-      badge.title = `Scene target: ${sample.targetFps.toFixed(1)} fps`;
-      $('preview-quality').hidden = !(state.playbackPacket?.previewQuality?.reduced || state.previewGovernor?.index);
+      setText(badge, sample.fps === null ? "— fps" : `${sample.fps.toFixed(1)} fps`);
+      setAttr(badge, "data-health", sample.coherent === null ? "pending" : sample.coherent ? "good" : "low");
+      setAttr(badge, "title", `Scene target: ${sample.targetFps.toFixed(1)} fps`);
+      setHidden($('preview-quality'), !(state.playbackPacket?.previewQuality?.reduced || state.previewGovernor?.index));
       adaptPreviewQuality(sample, measuredAt);
       lastFpsUI = measuredAt;
     }
@@ -1835,9 +1849,9 @@ async function play() {
     ? 1000 / editor.report.frame_delay_ms : editor.report.fps);
   telemetry.playbackStart(telemetry.consent.diagnostics ? workload({ report: editor.report, fps: playbackMetrics.targetFps }) : {});
   lastFpsUI = playStart;
-  $("playback-fps").textContent = "— fps";
-  $("playback-fps").dataset.health = "pending";
-  $("playback-fps").hidden = false;
+  setText($("playback-fps"), "— fps");
+  setAttr($("playback-fps"), "data-health", "pending");
+  setHidden($("playback-fps"), false);
   playStarted = false;
   playStartupFrames = 2;
   playbackUploadWarmup.reset();
@@ -1859,7 +1873,7 @@ async function play() {
   }
   thumbnailRenderer?.setPaused(true);
   timelineUI?.setPaused?.(true);
-  $("preview-badge").hidden = false;
+  setHidden($("preview-badge"), false);
   timelineHost?.syncPlayButton();
   requestRender();
 }
@@ -1880,8 +1894,8 @@ function pause() {
     telemetry.timing('playback_buffering_ms', summary.bufferingMs);
     telemetry.playbackStop();
   }
-  $("playback-fps").hidden = true;
-  $('preview-quality').hidden = true;
+  setHidden($("playback-fps"), true);
+  setHidden($('preview-quality'), true);
   if (wasPlaying && state.playbackPacket)
     state.editingPacket = {
       packet: state.playbackPacket,
@@ -1898,7 +1912,7 @@ function pause() {
   timelineUI?.setPaused?.(prepareEditable||document.hidden);
   state.buffering = false;
   state.playbackPacket = null;
-  $("preview-badge").hidden = true;
+  setHidden($("preview-badge"), true);
   timelineHost?.syncPlayButton();
   if(prepareEditable){
     editablePreparation.start(state.renderer,geometry=>({
@@ -1919,12 +1933,12 @@ function previewFrame() {
   editablePreparation.cancel();
   cancelDrag();
   state.previewing = true;
-  $("preview-badge").textContent = "PREVIEW";
-  $("preview-badge").hidden = false;
+  setText($("preview-badge"), "PREVIEW");
+  setHidden($("preview-badge"), false);
   timelineHost?.syncPlayButton();
   requestRender();
 }
-// What updateTitle last wrote: it runs on every updateUI (playback too), so it writes only what changed.
+// What updateTitle last wrote: the title surface runs in every pass (playback too), so it writes only what changed.
 let shownTitle = { name: null, dirty: null, revision: null };
 function updateTitle() {
   const name = editor.name || "Untitled", dirty = editor.dirty,
@@ -1943,30 +1957,19 @@ function updateTitle() {
 function syncSelectionControls() {
   timelineHost.syncRangeEdit();
   if (state.tool === 'select' && !builderMode?.active && !drawingController?.active)
-    $('viewport-hint').textContent = editor.object?.join
+    setText($('viewport-hint'), editor.object?.join
       ? 'Alt-drag a joint around the attachment · Ctrl: rotate only · Shift: scale only'
-      : 'Drag to select · Ctrl / Shift-click to toggle · Alt-drag a joint to transform';
+      : 'Drag to select · Ctrl / Shift-click to toggle · Alt-drag a joint to transform');
 }
+/** Every chrome surface now (startup, a restored document); queueUI() marks them for the next frame instead. */
 function updateUI() {
-  if(state.editablePreparing)return;
-  updateTitle();
-  timelineHost.updateTransport();
-  renderLayers();
-  renderInspector();
-  if (!state.drag) syncSelectionControls();
-  $("stage-size").textContent =
-    `${editor.report.canvas_width} × ${editor.report.canvas_height}`;
-  $("object-count").textContent =
-    `${editor.frame.objects.length.toLocaleString()} ${editor.frame.objects.length === 1 ? "figure" : "figures"}`;
-  $("selection-summary").textContent =
-    selection().size > 1
-      ? `${selection().size} figures selected`
-      : editor.object
-        ? nameOf(editor.object)
-        : "No figure selected";
-  if (state.activeTab === "assets") renderAssets();
-  studioShell?.sync();
-  requestRender();
+  ui.flushAll();
+}
+/** The scene's size and the figure count. (#selection-summary is the shell's: studio-shell writes the scope there.) */
+function updateStatus() {
+  setText($("stage-size"), `${editor.report.canvas_width} × ${editor.report.canvas_height}`);
+  setText($("object-count"),
+    `${editor.frame.objects.length.toLocaleString()} ${editor.frame.objects.length === 1 ? "figure" : "figures"}`);
 }
 function renderLayers() {
   if ($("layer-count"))
@@ -1979,17 +1982,21 @@ function renderAssets() {
   const figures = editor.report.figure_types;
   assetLibrary?.setVisible(state.activeTab === "assets");
   assetLibrary?.update(figures, { selectedId: editor.object?.figure_type_id });
-  $("sample-list").innerHTML = '<button class="sample-item" data-action="rig-examples"><span>Rig examples</span></button>' + (state.samples.length
+  setMarkup($("sample-list"), '<button class="sample-item" data-action="rig-examples"><span>Rig examples</span></button>' + (state.samples.length
     ? state.samples
         .map(
           (s) =>
             `<button class="sample-item" data-sample="${esc(s.path)}">${icon(s.kind === "stk" ? "person" : "file")}<span>${esc(s.name)}</span><small>${esc(s.kind?.toUpperCase() || "PIV")}</small></button>`,
         )
         .join("")
-    : '<p class="property-note" style="padding:0 15px">Open StykAnimate, Pivot or Stick Nodes projects, figures and movie clips.</p>');
+    : '<p class="property-note" style="padding:0 15px">Open StykAnimate, Pivot or Stick Nodes projects, figures and movie clips.</p>'));
 }
 function renderInspector() {
   vfxInspector?.sync();
+  renderProperties();
+}
+/** The Properties panel: the inspector's sections for the current context (not while a property or gesture is live). */
+function renderProperties() {
   if (cameraMotionControls?.active || propertyControls?.active || (state.drag && state.drag.kind !== "pan"))
     return;
   const disclosureOwner = {

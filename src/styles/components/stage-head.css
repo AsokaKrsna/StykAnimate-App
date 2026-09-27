@@ -35,6 +35,8 @@
     background: var(--surface); box-shadow: inset 0 -1px 0 var(--line-1);
     -webkit-app-region: no-drag;
   }
+  /* The static header in index.html stays hidden until stage-head.mjs fills its slots (M3b). */
+  .stage-head[hidden] { display: none; }
   /* Clipped with room for the focus rings and field halos drawn outside the bar's controls. */
   .stage-head-start { display: flex; align-items: center; min-inline-size: 0; overflow: clip; overflow-clip-margin: var(--space-1); }
   .stage-head-start > :is(.ui-optbar, .ui-crumb) { flex: 1 1 0; min-inline-size: 0; }

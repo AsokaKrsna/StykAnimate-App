@@ -1,5 +1,6 @@
 import {icon} from './icons.mjs';
 import {OnionFrameField} from './onion-frame-field.mjs';
+import {setAttr, setFlag, setProp, setVar} from './ui/dom-write.mjs';
 
 /** Settings view. All previews and commits go through the shared controller. */
 export class OnionControls {
@@ -62,18 +63,20 @@ export class OnionControls {
   position(){const r=this.button.getBoundingClientRect(),panel=this.panel;panel.style.left=`${Math.max(8,Math.min(innerWidth-panel.offsetWidth-8,r.right-panel.offsetWidth))}px`;panel.style.top=`${Math.max(8,Math.min(innerHeight-panel.offsetHeight-8,r.top-panel.offsetHeight-8))}px`;}
   sync(force=false){
     const settings=this.controller.settings,enabled=this.controller.getEnabled(),range=this.controller.snapshot();
-    this.toggleButton.setAttribute('aria-pressed',String(enabled));this.toggleButton.classList.toggle('active',enabled);
+    // Runs on every editor change (each frame while playing): write only what changed.
+    setAttr(this.toggleButton,'aria-pressed',String(enabled));setFlag(this.toggleButton,'active',enabled);
     for(const input of this.panel.querySelectorAll('[data-onion]')){
-      const value=settings[input.dataset.onion];if(input.type==='checkbox')input.checked=value;
-      else if(force||document.activeElement!==input)input.value=input.dataset.onion==='onionOpacity'?Math.round(value*100):value;
+      const value=settings[input.dataset.onion];if(input.type==='checkbox')setProp(input,'checked',value);
+      else if(force||document.activeElement!==input)setProp(input,'value',String(input.dataset.onion==='onionOpacity'?Math.round(value*100):value));
     }
-    this.panel.querySelector('.onion-slider').style.setProperty('--onion-progress',`${Math.round(settings.onionOpacity*100)}%`);
+    setVar(this.panel.querySelector('.onion-slider'),'--onion-progress',`${Math.round(settings.onionOpacity*100)}%`);
     const unit=settings.onionMode==='frames'?'frames':'poses';
-    this.panel.title=`${range.before.count} earlier and ${range.after.count} later ${unit} shown at this frame`;
-    for(const button of this.panel.querySelectorAll('[data-onion-scope]'))button.setAttribute('aria-pressed',String(button.dataset.onionScope===settings.onionScope));
-    this.panel.style.setProperty('--onion-before',settings.onionBeforeColor);this.panel.style.setProperty('--onion-after',settings.onionAfterColor);
-    this.panel.dataset.enabled=String(enabled);
-    const toggle=this.panel.querySelector('[data-onion-toggle]');toggle.setAttribute('aria-checked',String(enabled));toggle.title=enabled?'Hide onion skin · O':'Show onion skin · O';
+    // The count follows the playhead; it is read only while the popover shows, and opening it syncs first.
+    if(force||this.panel.matches(':popover-open'))setAttr(this.panel,'title',`${range.before.count} earlier and ${range.after.count} later ${unit} shown at this frame`);
+    for(const button of this.panel.querySelectorAll('[data-onion-scope]'))setAttr(button,'aria-pressed',String(button.dataset.onionScope===settings.onionScope));
+    setVar(this.panel,'--onion-before',settings.onionBeforeColor);setVar(this.panel,'--onion-after',settings.onionAfterColor);
+    setAttr(this.panel,'data-enabled',String(enabled));
+    const toggle=this.panel.querySelector('[data-onion-toggle]');setAttr(toggle,'aria-checked',String(enabled));setAttr(toggle,'title',enabled?'Hide onion skin · O':'Show onion skin · O');
   }
   destroy(){this.controller.cancel(this);for(const field of this.fields)field.destroy();this.unsubscribe();this.events.abort();this.panel.remove();}
 }

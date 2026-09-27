@@ -1,0 +1,150 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createInvalidator, UI_REASONS} from '../src/ui/ui-invalidation.mjs';
+import {setAttr, setFlag, setHidden, setMarkup, setProp, setText, setVar} from '../src/ui/dom-write.mjs';
+
+function harness({playing = false, blocked = false} = {}) {
+  const frames = [], log = [];
+  const clock = {time: 0, playing, blocked};
+  const ui = createInvalidator({
+    schedule: callback => frames.push(callback), now: () => clock.time,
+    isPlaying: () => clock.playing, isBlocked: () => clock.blocked, afterPass: () => log.push('render'),
+  });
+  const frame = () => { const pending = frames.splice(0); for (const callback of pending) callback(); };
+  const surface = (name, options = {}) => ui.surface(name, {on: ['all-of-them'].includes(name) ? [] : ['selection'], ...options, update: () => log.push(name)});
+  return {ui, frames, log, clock, frame, surface};
+}
+
+test('an invalidation schedules one pass that updates the marked surfaces in declaration order', () => {
+  const {ui, frames, log, frame, surface} = harness();
+  surface('title', {on: ['document']});
+  surface('inspector', {on: ['selection', 'revision']});
+  surface('shell', {on: ['mode', 'selection']});
+  ui.invalidate('selection');
+  ui.invalidate('selection', 'revision');
+  assert.equal(frames.length, 1, 'one pass per frame');
+  frame();
+  assert.deepEqual(log, ['inspector', 'shell', 'render']);
+  ui.invalidate('all');
+  frame();
+  assert.deepEqual(log.slice(3), ['title', 'inspector', 'shell', 'render']);
+  assert.equal(ui.invalidate('playback'), false, 'a reason no surface listens for schedules nothing');
+  assert.equal(frames.length, 0);
+});
+
+test('quiet surfaces wait for playback to stop, and the transport updates at most every 200 ms while playing', () => {
+  const {ui, log, clock, frame, surface} = harness({playing: true});
+  surface('transport', {on: ['tick'], playbackInterval: 200});
+  surface('inspector', {on: ['selection'], quiet: true});
+  for (let t = 0; t <= 1000; t += 1000 / 24) { clock.time = t; ui.invalidate('all'); frame(); }
+  const updates = log.filter(entry => entry === 'transport').length;
+  assert.ok(updates >= 5 && updates <= 6, `transport updated ${updates} times in one second`);
+  assert.equal(log.includes('inspector'), false, 'quiet while playing');
+  assert.equal(ui.isDirty('inspector'), true);
+  clock.playing = false;
+  ui.invalidate('all');
+  frame();
+  assert.equal(log.filter(entry => entry === 'inspector').length, 1, 'updated once playback stopped');
+  assert.equal(ui.isDirty('inspector'), false);
+});
+
+test('a throttled surface keeps its mark and runs when its time comes', () => {
+  const {ui, frames, log, clock, frame, surface} = harness({playing: true});
+  surface('transport', {on: ['tick'], playbackInterval: 200});
+  ui.update('transport');
+  clock.time = 50;
+  assert.equal(ui.update('transport'), false, 'too soon while playing');
+  assert.equal(frames.length, 1);
+  frame();
+  assert.equal(log.filter(entry => entry === 'transport').length, 1);
+  clock.time = 210;
+  frame();
+  assert.equal(log.filter(entry => entry === 'transport').length, 2, 'the waiting update ran once due');
+  clock.playing = false;
+  clock.time = 215;
+  assert.equal(ui.update('transport'), true, 'no interval outside playback');
+});
+
+test('hidden surfaces stay marked and update when shown', () => {
+  const {ui, log, frame, surface} = harness();
+  let visible = false;
+  surface('vfx', {on: ['selection'], visible: () => visible});
+  ui.invalidate('selection');
+  frame();
+  assert.deepEqual(log, ['render']);
+  visible = true;
+  ui.show('vfx');
+  assert.deepEqual(log, ['render', 'vfx']);
+  ui.show('vfx');
+  assert.deepEqual(log, ['render', 'vfx'], 'nothing to do once clean');
+});
+
+test('a blocked pass keeps every mark, and a full refresh updates every surface', () => {
+  const {ui, log, clock, frame, surface} = harness({blocked: true});
+  surface('title', {on: ['document']});
+  surface('inspector', {on: ['selection'], quiet: true});
+  ui.invalidate('all');
+  frame();
+  assert.equal(ui.flushAll(), false);
+  assert.deepEqual(log, []);
+  clock.blocked = false;
+  clock.playing = true;
+  assert.equal(ui.flushAll(), true);
+  assert.deepEqual(log, ['title', 'inspector', 'render'], 'a full refresh ignores quiet');
+  assert.deepEqual(ui.stats(), {title: 1, inspector: 1});
+  clock.blocked = true;
+  clock.playing = false;
+  assert.equal(ui.update('title'), true, 'a direct update keeps its own timing while passes are blocked');
+  assert.deepEqual(ui.stats(), {title: 2, inspector: 1});
+});
+
+test('surfaces are declared once with known reasons', () => {
+  const {ui} = harness();
+  ui.surface('title', {on: ['document'], update() {}});
+  assert.throws(() => ui.surface('title', {on: [], update() {}}), /already declared/);
+  assert.throws(() => ui.surface('other', {on: ['nonsense'], update() {}}), /Unknown invalidation reason/);
+  assert.ok(UI_REASONS.includes('tick') && UI_REASONS.includes('selection'));
+});
+
+// dom-write: a minimal element that records writes.
+function element() {
+  const writes = [];
+  const attributes = new Map(), classes = new Set(), style = new Map();
+  let text = '', hidden = false, html = '';
+  return {
+    writes,
+    get textContent() { return text; }, set textContent(value) { writes.push('text'); text = value; },
+    get hidden() { return hidden; }, set hidden(value) { writes.push('hidden'); hidden = value; },
+    get innerHTML() { return html; }, set innerHTML(value) { writes.push('html'); html = value; },
+    value: '24',
+    hasAttribute: name => attributes.has(name), getAttribute: name => attributes.get(name) ?? null,
+    setAttribute(name, value) { writes.push(`@${name}`); attributes.set(name, value); },
+    removeAttribute(name) { writes.push(`-@${name}`); attributes.delete(name); },
+    classList: {contains: name => classes.has(name), toggle(name, on) { writes.push(`.${name}`); if (on) classes.add(name); else classes.delete(name); }},
+    style: {getPropertyValue: name => style.get(name) ?? '', setProperty(name, value) { writes.push(`style ${name}`); style.set(name, value); }, removeProperty(name) { writes.push(`unstyle ${name}`); style.delete(name); }},
+  };
+}
+
+test('dom-write writes only what differs', () => {
+  const node = element();
+  assert.equal(setText(node, '00:01'), true);
+  assert.equal(setText(node, '00:01'), false);
+  assert.equal(setAttr(node, 'aria-pressed', 'true'), true);
+  assert.equal(setAttr(node, 'aria-pressed', 'true'), false);
+  assert.equal(setAttr(node, 'disabled', true), true);
+  assert.equal(setAttr(node, 'disabled', false), true);
+  assert.equal(setAttr(node, 'disabled', null), false);
+  assert.equal(setFlag(node, 'active', true), true);
+  assert.equal(setFlag(node, 'active', 1), false);
+  assert.equal(setHidden(node, false), false);
+  assert.equal(setHidden(node, true), true);
+  assert.equal(setProp(node, 'value', '24'), false);
+  assert.equal(setProp(node, 'value', '30'), true);
+  assert.equal(setVar(node, '--x', '4px'), true);
+  assert.equal(setVar(node, '--x', '4px'), false);
+  assert.equal(setVar(node, '--x', null), true);
+  assert.equal(setMarkup(node, '<svg></svg>'), true);
+  assert.equal(setMarkup(node, '<svg></svg>'), false);
+  assert.equal(setText(null, 'x'), false);
+  assert.deepEqual(node.writes, ['text', '@aria-pressed', '@disabled', '-@disabled', '.active', 'hidden', 'style --x', 'unstyle --x', 'html']);
+});

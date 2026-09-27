@@ -5,7 +5,9 @@
  * #fps and the zoom #timeline-zoom), and writes what the header shows: the
  * transport's readouts (#time-display, the hidden #timeline-summary and
  * #frame-badge, #fps), the play button's state, Edit selected frames
- * (#range-edit) and which mode is pressed.
+ * (#range-edit) and which mode is pressed. Those writes go through
+ * ui/dom-write.mjs: during playback the readout changes (5 Hz, through the
+ * app's transport surface) and nothing else in the header does.
  *
  * The timeline components (layer-timeline.mjs, sheet-filmstrip.mjs) stay the
  * engines; this module is the one place that constructs them. DOM-free at
@@ -28,10 +30,11 @@ import {InsertInbetweenDialog} from './insert-inbetween-dialog.mjs';
 import {drawingResourcesFor} from './drawing-resources.mjs';
 import {refreshHotkeyHints} from './hotkey-hints.mjs';
 import {icon} from './icons.mjs';
+import {setAttr, setMarkup, setProp, setText} from './ui/dom-write.mjs';
 
 export function createTimelineHost(ctx) {
   const {editor, state, $, actions} = ctx;
-  let timeline = null, inbetweenDialog;
+  let timeline = null, inbetweenDialog, shownPlayback = null;
 
   // The header's own controls.
   $("fps").addEventListener(
@@ -178,25 +181,27 @@ export function createTimelineHost(ctx) {
   function updateTransport() {
     const fps = editor.report.fps,
       tick = editor.tick;
-    $("time-display").textContent =
-      `${String(Math.floor(tick / fps / 60)).padStart(2, "0")}:${String(Math.floor(tick / fps) % 60).padStart(2, "0")}:${String(tick % fps).padStart(2, "0")}`;
-    $("frame-badge").textContent = `FRAME ${String(tick + 1).padStart(2, "0")}`;
+    setText($("time-display"),
+      `${String(Math.floor(tick / fps / 60)).padStart(2, "0")}:${String(Math.floor(tick / fps) % 60).padStart(2, "0")}:${String(tick % fps).padStart(2, "0")}`);
+    setText($("frame-badge"), `FRAME ${String(tick + 1).padStart(2, "0")}`);
     // Simple mode counts Pivot-style timeline frames; playback, the ruler and
     // export count every frame including inbetweens. Name both explicitly.
     const stored = ctx.simpleFrameCount(), total = editor.totalTicks,
       seconds = `${(total / fps).toFixed(2)}s`;
-    $("timeline-summary").textContent = stored !== null && stored !== total
+    setText($("timeline-summary"), stored !== null && stored !== total
       ? `${stored} ${stored === 1 ? "frame" : "frames"} · plays as ${total} with inbetweens · ${seconds}`
-      : `${total} ${total === 1 ? "frame" : "frames"} · ${seconds}`;
-    $("fps").value = fps;
+      : `${total} ${total === 1 ? "frame" : "frames"} · ${seconds}`);
+    setProp($("fps"), "value", String(fps));
     timeline?.update(state.settings.timelineMode !== 'advanced');
   }
 
-  /** Play, Pause while playing, Stop while previewing one frame. */
+  /** Play, Pause while playing, Stop while previewing one frame; written only when that changes (playback starts or stops). */
   function syncPlayButton() {
     const [glyph, label] = state.previewing ? ["stop", "Stop preview"] : state.playing ? ["pause", "Pause"] : ["play", "Play"];
-    $("play-button").innerHTML = icon(glyph);
-    $("play-button").setAttribute("aria-label", label);
+    if (glyph === shownPlayback) return;
+    shownPlayback = glyph;
+    setMarkup($("play-button"), icon(glyph));
+    setAttr($("play-button"), "aria-label", label);
     ctx.localization()?.updatePlayback($("play-button"), state);
   }
 
@@ -205,18 +210,18 @@ export function createTimelineHost(ctx) {
     const indices = ctx.rangeFrames(true), count = indices?.sheetTicks?.length ?? indices?.length ?? 0;
     const range = $('range-edit');
     if (count < 2) state.applyRange = false;
-    range.disabled = count < 2 || Boolean(ctx.builder()?.active || ctx.drawing()?.active);
-    range.setAttribute('aria-pressed', String(!range.disabled && state.applyRange));
-    range.querySelector('.range-edit-count').textContent = count > 1 ? String(count) : '';
-    range.dataset.hotkeyTitle = count > 1
+    setProp(range, 'disabled', count < 2 || Boolean(ctx.builder()?.active || ctx.drawing()?.active));
+    setAttr(range, 'aria-pressed', String(!range.disabled && state.applyRange));
+    setText(range.querySelector('.range-edit-count'), count > 1 ? String(count) : '');
+    setAttr(range, 'data-hotkey-title', count > 1
       ? 'Move figures and edit their properties across ' + count + ' frames, including the current frame'
-      : 'Select multiple frames to edit them together';
-    refreshHotkeyHints(ctx.hotkeys, range.parentElement);
+      : 'Select multiple frames to edit them together');
+    refreshHotkeyHints(ctx.hotkeys, range.closest('.timeline-toolbar') ?? range.parentElement);
   }
 
   /** Which of Simple and Advanced is pressed. */
   function syncMode() {
-    document.querySelectorAll('[data-timeline-mode]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.timelineMode===state.settings.timelineMode)));
+    document.querySelectorAll('[data-timeline-mode]').forEach(button=>setAttr(button,'aria-pressed',String(button.dataset.timelineMode===state.settings.timelineMode)));
   }
 
   return {

@@ -151,7 +151,7 @@ export class CanvasGuides {
     const s = this.valuePreview ? {...settings, ...this.valuePreview} : settings;
     if (this.drag && (hidden || s.canvasGuidesLocked || this.drag.report !== r)) this.finishDrag(false);
     const inactive = hidden || !(s.canvasGrid || s.canvasGuideVertical || s.canvasGuideHorizontal);
-    this.overlay.hidden = Boolean(inactive);
+    if (this.overlay.hidden !== Boolean(inactive)) this.overlay.hidden = Boolean(inactive);
     if (inactive) return;
     const w = this.viewport.clientWidth, h = this.viewport.clientHeight;
     const x = this.drag?.axis === 'X' ? this.preview : s.canvasGuideX, y = this.drag?.axis === 'Y' ? this.preview : s.canvasGuideY;

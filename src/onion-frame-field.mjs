@@ -1,4 +1,5 @@
 import {OnionRangeDrag} from './onion-range-drag.mjs';
+import {setAttr, setProp} from './ui/dom-write.mjs';
 
 /** A reusable frame-span editor: explicit typing, single-frame steps and scrub. */
 export class OnionFrameField {
@@ -34,11 +35,12 @@ export class OnionFrameField {
   finish(commit){this.gesture.finish(commit);this.sync(true);}
   sync(force=false){
     const range=this.controller.snapshot()[this.direction];
-    this.input.max=String(range.max);
-    if(force||document.activeElement!==this.input)this.input.value=String(range.span);
-    this.root.querySelector('[data-step="-1"]').disabled=range.span===0;
-    this.root.querySelector('[data-step="1"]').disabled=range.span===range.max;
-    this.scrub.disabled=range.max===0;
+    // Runs on every editor change (each frame while playing): write only what changed.
+    setAttr(this.input,'max',String(range.max));
+    if(force||document.activeElement!==this.input)setProp(this.input,'value',String(range.span));
+    setProp(this.root.querySelector('[data-step="-1"]'),'disabled',range.span===0);
+    setProp(this.root.querySelector('[data-step="1"]'),'disabled',range.span===range.max);
+    setProp(this.scrub,'disabled',range.max===0);
   }
   destroy(){this.gesture.destroy();this.unsubscribe();this.events.abort();this.root.remove();}
 }

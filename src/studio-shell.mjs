@@ -1,4 +1,5 @@
 import {DRAWING_TOOLS} from './drawing-view.mjs';
+import {setAttr, setFlag, setHidden, setProp, setText} from './ui/dom-write.mjs';
 const names = {select: 'Select', pose: 'Pose joints', tweener: 'Tweener', rig: 'Edit shared rig', line: 'Draw a line', chain: 'Chain pen', circle: 'Draw a circle', polygon: 'Draw a polygon', hand: 'Pan canvas', attach: 'Attach figure'};
 const builderTools = new Set(['select', 'rig', 'line', 'chain', 'circle', 'polygon', 'hand']);
 
@@ -57,18 +58,22 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
         ['edit-in-build-mode', 'nodes', 'Edit in build mode', '', editor.selectedUids.size !== 1]] : []),
     ], event.currentTarget);
   }, options);
+  // Every write compares first (ui/dom-write.mjs): sync runs on every chrome pass, so an unchanged
+  // shell writes nothing. Values the drawing workspace overrides are decided before they are written.
   function sync() {
     if(pendingDraw&&!builder?.active){pendingDraw=false;drawing?.enter();}
-    const current = mode();
-    workspace.dataset.mode = current;document.getElementById('open-insert').setAttribute('aria-label',current==='draw'?'New drawing layer':'Add to scene');document.getElementById('open-insert').title=current==='draw'?'New drawing layer':'Add to scene';
-    document.querySelectorAll('[data-workspace-mode]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.workspaceMode === current)));
+    const current = mode(), drawingActive = Boolean(drawing?.active);
+    setAttr(workspace, 'data-mode', drawingActive ? 'draw' : current);
+    const insert = document.getElementById('open-insert'), insertLabel = current==='draw'?'New drawing layer':'Add to scene';
+    setAttr(insert, 'aria-label', insertLabel);setAttr(insert, 'title', insertLabel);
+    document.querySelectorAll('[data-workspace-mode]').forEach(button => setAttr(button, 'aria-pressed', String(button.dataset.workspaceMode === current)));
     document.querySelectorAll('.tool-dock [data-tool]').forEach(button => {
       const tool = button.dataset.tool;
-      button.hidden = current === 'draw' ? !['hand',...DRAWING_TOOLS.map(t=>'drawing-'+t[0])].includes(tool) : current === 'rig'
+      setHidden(button, current === 'draw' ? !['hand',...DRAWING_TOOLS.map(t=>'drawing-'+t[0])].includes(tool) : current === 'rig'
         ? !builderTools.has(tool)
-        : !['select', 'pose', 'hand', 'tweener'].includes(tool);
-      button.setAttribute('aria-pressed', String(tool === state.tool));
-      button.classList.toggle('active', tool === state.tool);
+        : !['select', 'pose', 'hand', 'tweener'].includes(tool));
+      setAttr(button, 'aria-pressed', String(tool === state.tool));
+      setFlag(button, 'active', tool === state.tool);
       if (!button.querySelector('.tool-label')) {
         const label = document.createElement('span');
         label.className = 'tool-label';
@@ -77,28 +82,28 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
       }
     });
     const isolate = document.querySelector('.tool-dock [data-action="toggle-isolate"]');
-    if (isolate) isolate.hidden = !['pose', 'rig'].includes(state.tool);
-    document.getElementById('tool-context').textContent = names[state.tool] || 'Select';
+    if (isolate) setHidden(isolate, !['pose', 'rig'].includes(state.tool));
+    setText(document.getElementById('tool-context'), drawingActive ? 'Draw · '+drawing.tool : names[state.tool] || 'Select');
     const context = state.inspectorContext;
     const figureName = editor.figure?.name || builder?.session?.figure?.name || 'Figure';
     const count = editor.selectedUids?.size || 0;
-    document.querySelectorAll('[data-selection-order]').forEach(button => { button.disabled = !editor.selectedObjects.length; });
+    document.querySelectorAll('[data-selection-order]').forEach(button => { setProp(button, 'disabled', !editor.selectedObjects.length); });
     let scope = context === 'camera' ? 'Camera' : context === 'scene' ? 'Scene' : context === 'layer' ? 'Layer' : context === 'frame' ? 'Timing' : count > 1 ? `${count} figures` : editor.object ? figureName : 'Scene';
     const joint = editor.figure?.segments?.[editor.selectedJoint];
     const inspectingFigure = !['camera', 'scene', 'layer', 'frame'].includes(context) && editor.object;
-    document.getElementById('inspector-context').textContent = inspectingFigure ? count > 1 ? 'Figures' : joint ? 'Joint' : 'Figure' : scope;
-    document.getElementById('inspector').dataset.selectionKind = inspectingFigure ? count > 1 ? 'figures' : joint ? 'joint' : 'figure' : context;
+    setText(document.getElementById('inspector-context'), drawingActive ? 'Drawing' : inspectingFigure ? count > 1 ? 'Figures' : joint ? 'Joint' : 'Figure' : scope);
+    setAttr(document.getElementById('inspector'), 'data-selection-kind', inspectingFigure ? count > 1 ? 'figures' : joint ? 'joint' : 'figure' : context);
     const scopeText = state.tool === 'hand' ? 'View only · Your animation stays unchanged' : current === 'rig' ? (editor.object ? `${figureName} · Shared definition — changes affect every instance` : 'Draw a line or circle to create a figure')
       : state.applyRange && state.rangeIndices?.length > 1 ? `${scope} · ${state.rangeIndices.length} selected frames`
       : `${scope} · Frame ${editor.tick + 1}${editor.frameDraft?.dirty ? ' · Working pose' : ''}`;
-    document.getElementById('edit-scope').textContent = scopeText;
-    document.getElementById('leave-rig').hidden = current !== 'rig';
-    document.getElementById('selection-summary').textContent = scopeText;
+    setText(document.getElementById('edit-scope'), drawingActive ? drawing.exposureLabel : scopeText);
+    setHidden(document.getElementById('leave-rig'), current !== 'rig');
+    setText(document.getElementById('selection-summary'), scopeText);
     const hint = document.getElementById('viewport-hint');
     if (!hint.textContent) hint.textContent = 'Drag to select · Shift-click to add · Drag a joint to pose';
-    hint.hidden = Boolean(state.playing || state.previewing || ['select', 'pose', 'hand'].includes(state.tool));
+    setHidden(hint, drawingActive || Boolean(state.playing || state.previewing || ['select', 'pose', 'hand'].includes(state.tool)));
     builder?.sync();
-    if(drawing?.active){hint.hidden=true;workspace.dataset.mode='draw';document.getElementById('tool-context').textContent='Draw · '+drawing.tool;document.getElementById('edit-scope').textContent=drawing.exposureLabel;document.getElementById('inspector-context').textContent='Drawing';drawing.sync();}
+    if(drawingActive)drawing.sync();
   }
   sync();
   return {sync, destroy: () => controller.abort()};

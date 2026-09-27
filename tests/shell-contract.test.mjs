@@ -177,6 +177,15 @@ test('Structural hooks that modules dereference without null checks are intact',
   for (const selector of ['.studio-rail', '.shell-left', '.center', '.right-panel', '.timeline-panel'])
     assert.equal(one(selector, workspace).parent, workspace, `${selector} is a direct child of .workspace`);
   one('#viewport', one('.center'));
+  // The stage header (§3.12; stage-head.mjs fills it in M3b): a sibling of #viewport directly above it,
+  // never inside it, with the start (crumb or tool options), message and end (view cluster, zoom) slots.
+  const stageHead = one('.stage-head', one('.center'));
+  const stageChildren = one('.center').children;
+  assert.equal(stageChildren[stageChildren.indexOf(byId.get('viewport')[0]) - 1], stageHead, '.stage-head sits directly above #viewport');
+  assert.equal(stageHead.attrs.role, 'toolbar');
+  for (const [name, className] of [['stage-start', 'stage-head-start'], ['stage-message', 'stage-head-msg'], ['stage-end', 'stage-head-end']])
+    assert.equal(one(`[data-slot="${name}"]`, stageHead).parent, stageHead, `.stage-head has its ${className} slot`);
+  assert.ok('hidden' in stageHead.attrs, 'the stage header stays hidden until M3b fills it');
   assert.equal(find('#viewport', one('.timeline-panel')).length, 0, 'the timeline is its own island, outside the stage');
   one('#builder-outliner', one('.shell-left'));
   const panel = one('.timeline-panel', workspace);
