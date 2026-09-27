@@ -4,7 +4,7 @@ import {COMMAND_BY_ID, CATALOG_REQUIREMENTS} from '../src/ui/command-catalog.mjs
 import {createCommandRegistry} from '../src/ui/command-registry.mjs';
 import {icon} from '../src/icons.mjs';
 import {PIN_GROUP, QUICK_ACTIONS, QUICK_CONTEXTS, QUICK_LIMITS, pinQuickAction, quickBudgetProblems, quickDefaults, quickLabel, quickPlacements,
-  quickText, resolveQuickActions, unpinQuickAction} from '../src/ui/quick-actions.mjs';
+  quickText, resolveQuickActions, unpinQuickAction, withShiftHint} from '../src/ui/quick-actions.mjs';
 
 // A registry over stand-in actions, as the app builds it: labels, glyphs and shortcuts come from the catalog and
 // HOTKEY_COMMANDS; every requirement holds unless the context says otherwise.
@@ -68,6 +68,23 @@ test('Build\'s part row carries words for Split and Duplicate, and Shift deletes
   assert.deepEqual(shape(resolved), [['word:Split', 'word:Duplicate'], ['glyph:Flip part horizontally', 'glyph:Flip part vertically'], ['glyph:Delete part']]);
   assert.deepEqual([resolved.items[4].shift, resolved.items[4].shiftHint], ['delete-segment', 'the branch']);
   assert.deepEqual(row('part', {state: {mode: 'animate'}}).items, [], 'Build\'s commands are hidden outside Build, so the row is empty');
+});
+
+test('the camera row: Level and Center · Reset; the frame range: Copy frames, Paste frames · Remove keys, Delete frames', () => {
+  assert.deepEqual(shape(row('camera')), [['word:Level', 'word:Center'], ['glyph:Reset camera']]);
+  const range = row('range');
+  assert.deepEqual(shape(range), [['glyph:Copy frames', 'glyph:Paste frames'], ['word:Remove keys', 'glyph:Delete frames']]);
+  assert.equal(range.items[2].label, 'Remove keyframes', 'the tooltip names the whole command');
+  assert.equal(range.items[0].shortcut, 'Ctrl+C');
+  assert.equal(quickLabel('range'), 'Frame actions');
+});
+
+test('a tooltip\'s keys carry what Shift does beside the shortcut', () => {
+  const element = {dataset: {hotkeyHint: 'Delete', shiftHint: 'Shift: the branch'}};
+  assert.equal(withShiftHint(element), 'Delete · Shift: the branch');
+  assert.equal(withShiftHint(element, 'Del'), 'Del · Shift: the branch', 'the registry\'s shortcut, when the app passes it');
+  assert.equal(withShiftHint({dataset: {shiftHint: 'Shift: one step'}}), 'Shift: one step');
+  assert.equal(withShiftHint({dataset: {}}), '');
 });
 
 test('one pin takes the free slot; a second takes the last default\'s place, which stays in the menu', () => {

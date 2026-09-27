@@ -112,7 +112,37 @@ try {
     assert.equal(await page.locator('[data-tool="brush-narrow"] [data-option="flow"]').count(), 1);
   });
 
+  await step('a scrub field in More options commits through the header\'s PropertyControls', async () => {
+    await page.evaluate(() => { fixture.properties.length = 0; fixture.changes.length = 0; });
+    const more = page.locator('[data-tool="brush-narrow"] .ui-optbar-more');
+    const popover = page.locator('.ui-optbar-popover');
+    await more.click();
+    await popover.waitFor();
+    assert.equal(await popover.evaluate(element => element.parentElement === fixture.bars['brush-narrow'].element.closest('.stage-head')), true,
+      'the popover mounts in the header PropertyControls watches');
+    await popover.locator('[data-property="brushFlow"]').fill('50');
+    await page.keyboard.press('Enter');
+    assert.deepEqual(await page.evaluate(() => fixture.properties), ['commit brushFlow 50']);
+    assert.deepEqual(await page.evaluate(() => fixture.changes), [], 'a property field reports through PropertyControls only');
+    await more.click();
+    await popover.waitFor({state: 'hidden'});
+
+    // Escape first rolls back what was typed, then closes More options.
+    await more.click();
+    await popover.waitFor();
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.property), 'brushFlow');
+    await page.keyboard.type('7');
+    await page.keyboard.press('Escape');
+    assert.equal(await popover.isVisible(), true);
+    assert.equal(await popover.locator('[data-property="brushFlow"]').inputValue(), '50', 'the typed 7 is rolled back');
+    await page.keyboard.press('Escape');
+    await popover.waitFor({state: 'hidden'});
+    assert.equal(await page.evaluate(() => document.activeElement.classList.contains('ui-optbar-more')), true);
+    assert.deepEqual(await page.evaluate(() => fixture.properties), ['commit brushFlow 50']);
+  });
+
   await step('the bar is one tab stop; arrows move along it and a field is entered by typing', async () => {
+    await page.evaluate(() => { fixture.properties.length = 0; });
     const bar = page.locator('[data-tool="brush-wide"]');
     assert.equal(await bar.locator('[tabindex="0"]').count(), 1, 'one control is in the tab order');
     await bar.locator('.ui-optbar-pair').focus();
@@ -124,12 +154,83 @@ try {
     assert.equal(await page.evaluate(() => document.activeElement.dataset.property), 'brushOpacity', 'an untouched field passes the arrows on');
     await page.keyboard.type('9');
     await page.keyboard.press('ArrowLeft');
-    assert.equal(await page.evaluate(() => document.activeElement.dataset.property), 'brushOpacity', 'typing enters the field: the arrows move the caret');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.property), 'brushOpacity',
+      'typing enters the field under PropertyControls (which takes its input events): the arrows move the caret');
     await page.keyboard.press('Escape');
     await page.keyboard.press('ArrowLeft');
     assert.equal(await page.evaluate(() => document.activeElement.dataset.property), 'brushSize', 'Escape hands the arrows back to the bar');
+    assert.deepEqual(await page.evaluate(() => fixture.properties), [], 'and the typed 9 was rolled back, never committed');
     await page.keyboard.press('End');
     assert.match(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), /^Color #F5B400$/, 'End reaches the last control');
+  });
+
+  await step('focus rings and field halos are drawn whole, and every bar keeps its 28px row', async () => {
+    await page.locator('[data-tool="edit-joints"] #rig-mode').focus();
+    await page.keyboard.press('ArrowRight');
+    const ring = await page.evaluate(() => {
+      const style = getComputedStyle(document.activeElement);
+      return document.activeElement.id === 'builder-branch' && style.outlineStyle !== 'none' ? Number.parseFloat(style.outlineWidth) + Number.parseFloat(style.outlineOffset) : 0;
+    });
+    assert.ok(ring >= 4, `Whole branch, reached by keyboard, draws its ring ${ring}px outside its box`);
+    await page.locator('[data-tool="brush-wide"] [data-property="brushSize"]').focus();
+    await page.evaluate(() => { for (const animation of document.activeElement.closest('.ui-field').getAnimations()) animation.finish(); });   // the halo's transition
+    const halo = await page.evaluate(() => Math.max(0, ...getComputedStyle(document.activeElement.closest('.ui-field')).boxShadow.split(/,(?![^(]*\))/)
+      .filter(shadow => !shadow.includes('inset')).map(shadow => Number.parseFloat([...shadow.matchAll(/(-?[\d.]+)px/g)][3]?.[1]) || 0)));
+    assert.ok(halo >= 3, `a focused field draws a ${halo}px halo`);
+    const cut = await page.evaluate(([ring, halo]) => {
+      // The rectangle an element's overflow clips its content to (its box, plus overflow-clip-margin under `clip`).
+      const clipOf = element => {
+        const style = getComputedStyle(element), box = element.getBoundingClientRect();
+        if (style.overflowX === 'visible' && style.overflowY === 'visible') return null;
+        const margin = style.overflowX === 'clip' && style.overflowY === 'clip' ? Number.parseFloat(style.overflowClipMargin) || 0 : 0;
+        return {left: box.left - margin, right: box.right + margin, top: box.top - margin, bottom: box.bottom + margin};
+      };
+      const problems = [];
+      for (const [name, bar] of Object.entries(fixture.bars)) {
+        const height = bar.element.getBoundingClientRect().height;
+        if (Math.abs(height - 28) > 0.5) problems.push(`${name}: the row is ${height}px tall`);
+        const clips = [bar.element, bar.element.closest('.stage-head-start')].map(clipOf).filter(Boolean);
+        const drawn = [...[...bar.element.querySelectorAll('.ui-field')].map(field => [field, halo]),
+          ...[...bar.element.querySelectorAll('button, select')].map(control => [control, ring])];
+        for (const [control, extent] of drawn) {
+          if (!control.getClientRects().length || control.closest('[data-overflowed]')) continue;
+          const box = control.getBoundingClientRect();
+          if (clips.some(clip => box.left - extent < clip.left - 0.5 || box.right + extent > clip.right + 0.5
+            || box.top - extent < clip.top - 0.5 || box.bottom + extent > clip.bottom + 0.5))
+            problems.push(`${name}: ${control.getAttribute('aria-label') || control.textContent.trim() || control.className}`);
+        }
+      }
+      return problems;
+    }, [ring, halo]);
+    assert.deepEqual(cut, []);
+  });
+
+  await step('a message over the start slot takes its own line while a tool option holds focus', async () => {
+    await page.locator('[data-tool="brush-wide"] [data-property="brushSize"]').focus();
+    await page.keyboard.type('1');
+    await page.evaluate(() => {
+      const head = fixture.bars['brush-wide'].element.closest('.stage-head');
+      const message = Object.assign(document.createElement('div'), {className: 'stage-head-msg', id: 'test-message'});
+      message.innerHTML = '<div class="ui-toast" role="status"><span class="ui-toast-text">Saved</span></div>';
+      head.append(message);
+      head.dataset.msgOver = '';
+    });
+    await settle(page);
+    const where = () => page.evaluate(() => {
+      const head = fixture.bars['brush-wide'].element.closest('.stage-head'), message = document.getElementById('test-message');
+      return {focused: document.activeElement.dataset.property ?? null, start: getComputedStyle(head.querySelector('.stage-head-start')).visibility,
+        ownLine: message.getBoundingClientRect().top >= head.getBoundingClientRect().bottom};
+    });
+    assert.deepEqual(await where(), {focused: 'brushSize', start: 'visible', ownLine: true}, 'the field keeps its focus and what was typed');
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => document.activeElement.blur());
+    await settle(page);
+    assert.deepEqual(await where(), {focused: null, start: 'hidden', ownLine: false}, 'without focus there, the message covers the start slot');
+    await page.evaluate(() => {
+      delete fixture.bars['brush-wide'].element.closest('.stage-head').dataset.msgOver;
+      document.getElementById('test-message').remove();
+    });
+    assert.deepEqual(await page.evaluate(() => fixture.properties), []);
   });
 
   await step('controls with a command run through the app\'s delegation; the others report their value', async () => {
@@ -153,7 +254,7 @@ try {
     const same = await page.evaluate(() => {
       const bar = fixture.bars['edit-joints'], before = bar.element.querySelector('#builder-snap');
       const descriptors = [
-        {id: 'mode', kind: 'select', label: 'Drag', showLabel: true, labelFold: 3, elementId: 'rig-mode', value: 'branch',
+        {id: 'mode', kind: 'select', label: 'Drag', description: 'Rig edit mode', showLabel: true, labelFold: 3, elementId: 'rig-mode', value: 'branch',
           options: [{value: 'joint', label: 'Move joint'}, {value: 'branch', label: 'Rotate branch'}]},
         [{id: 'branch', kind: 'toggle', label: 'Whole branch', showLabel: true, accent: true, icon: 'builder-branch', pressed: false, labelFold: 1,
           elementId: 'builder-branch', command: 'toggle-builder-branch'},
@@ -168,14 +269,75 @@ try {
     assert.equal(await page.locator('[data-tool="edit-joints"] #rig-mode').inputValue(), 'branch');
   });
 
+  await step('switching tools reports the new folds, also while the bar is hidden', async () => {
+    const reported = () => page.evaluate(() => fixture.folds['brush-medium'].twins);
+    assert.deepEqual(await reported(), ['mirror-twin-brush']);
+    await page.evaluate(() => fixture.bars['brush-medium'].update(fixture.descriptors.editJoints));
+    await settle(page);
+    const [last, current] = await page.evaluate(() => [fixture.folds['brush-medium'], fixture.bars['brush-medium'].state]);
+    assert.deepEqual(last, current);
+    assert.deepEqual(last.twins, [], 'Edit joints fits: Brush\'s Mirror twin is not left in the inspector');
+    await page.evaluate(() => fixture.bars['brush-medium'].update(fixture.descriptors.brush()));
+    await settle(page);
+    assert.deepEqual(await reported(), ['mirror-twin-brush']);
+    // Hidden, the bar cannot measure the new tool; the previous tool's twin still goes.
+    await page.evaluate(() => {
+      const bar = fixture.bars['brush-medium'];
+      bar.element.closest('.stage-head').style.display = 'none';
+      bar.update(fixture.descriptors.editJoints);
+    });
+    await settle(page);
+    assert.deepEqual(await reported(), []);
+    await page.evaluate(() => {
+      const bar = fixture.bars['brush-medium'];
+      bar.element.closest('.stage-head').style.display = '';
+      bar.update(fixture.descriptors.brush());
+    });
+    await settle(page);
+    assert.deepEqual(await reported(), ['mirror-twin-brush']);
+  });
+
+  await step('an update that changes only the fold order folds again', async () => {
+    const folded = () => page.evaluate(() => fixture.bars.folds.state.folded);
+    await page.evaluate(() => {
+      const buttons = order => [Array.from({length: 9}, (_, index) => ({id: `b${index}`, kind: 'button', label: `Button ${index}`, icon: 'plus', fold: order(index)}))];
+      fixture.foldOrders = {rising: buttons(index => index + 1), falling: buttons(index => 9 - index)};
+      fixture.addBar('folds', fixture.foldOrders.rising, '200px', 'Fold orders');
+    });
+    await settle(page);
+    const before = await folded();
+    assert.ok(before.includes('b0') && !before.includes('b8'), `the lowest folds go first: ${before}`);
+    await page.evaluate(() => fixture.bars.folds.update(fixture.foldOrders.falling));
+    await settle(page);
+    const after = await folded();
+    assert.ok(after.includes('b8') && !after.includes('b0'), `the new order folds the other end: ${after}`);
+    assert.deepEqual(await clipped(page, 'folds'), []);
+    await page.evaluate(() => {
+      fixture.bars.folds.element.closest('.stage-head').remove();
+      fixture.bars.folds.destroy();
+      delete fixture.bars.folds;
+    });
+  });
+
   await step('quick actions: words where glyphs are ambiguous, Shift variants, pins and one tab stop', async () => {
     const row = page.getByRole('toolbar', {name: 'Figure actions'}).first();
     assert.deepEqual(await row.locator('button').evaluateAll(buttons => buttons.map(button => button.dataset.action)),
       ['mirror', 'layer-front', 'layer-back', 'duplicate', 'delete']);
     assert.deepEqual(await row.locator('button').evaluateAll(buttons => buttons.map(button => button.textContent.trim() || button.getAttribute('aria-label'))),
       ['Flip horizontally', 'To front', 'To back', 'Duplicate', 'Delete']);
-    assert.equal(await row.locator('[data-action="layer-front"]').getAttribute('data-hotkey-hint'), 'Shift: one step');
+    assert.equal(await row.locator('[data-action="layer-front"]').getAttribute('data-shift-hint'), 'Shift: one step');
     assert.equal(await row.locator('[data-action="mirror"]').getAttribute('aria-keyshortcuts'), 'Shift+H');
+    const tips = await page.evaluate(async () => {
+      const {tooltipContent} = await import('/src/ui/ui-tooltip.mjs');
+      const {withShiftHint} = await import('/src/ui/quick-actions.mjs');
+      const {refreshHotkeyHints} = await import('/src/hotkey-hints.mjs');
+      const front = fixture.rows.figure.element.querySelector('[data-action="layer-front"]');
+      // The app rewrites data-hotkey-hint in the inspector on every render; the Shift hint lives beside it.
+      const part = fixture.rows.part.element;
+      refreshHotkeyHints({label: id => ({delete: 'Delete'})[id] ?? ''}, part);
+      return [tooltipContent(front, {shortcut: withShiftHint}), tooltipContent(part.querySelector('[data-action="delete-single-segment"]'), {shortcut: withShiftHint})];
+    });
+    assert.deepEqual(tips, [{label: 'Bring to front', shortcut: 'Shift: one step'}, {label: 'Delete part', shortcut: 'Delete · Shift: the branch'}]);
     await page.evaluate(() => { fixture.log.length = 0; });
     await row.locator('[data-action="layer-front"]').click({modifiers: ['Shift']});
     await row.locator('[data-action="layer-back"]').click();
@@ -204,6 +366,31 @@ try {
     await settle(page);
     assert.deepEqual(await page.evaluate(() => fixture.rows.pinned.resolved.displaced), ['delete'], 'with room, only the second pin takes a default\'s place');
     for (const row of await rows()) assert.deepEqual(row, [28, true]);
+  });
+
+  await step('quick actions: the frame range row, pins per context and a disabled button\'s reason', async () => {
+    const range = page.getByRole('toolbar', {name: 'Frame actions'});
+    assert.deepEqual(await range.locator('button').evaluateAll(buttons => buttons.map(button => button.textContent.trim() || button.getAttribute('aria-label'))),
+      ['Copy frames', 'Paste frames', 'Remove keys', 'Delete frames']);
+    const moved = await page.evaluate(() => {
+      const row = fixture.rows.pinned;
+      row.update({context: 'joint'});
+      const ids = row.resolved.items.map(item => item.id);
+      row.update({context: 'figure', pins: ['reset-pose', 'rotate']});
+      return ids;
+    });
+    assert.deepEqual(moved, ['toggle-isolate', 'segment-values', 'locate-previous', 'locate-next', 'mirror'], 'the figure\'s pins stay with the figure');
+    const disabled = await page.evaluate(async () => {
+      const {createQuickActions} = await import('/src/ui/quick-actions.mjs');
+      const registry = {has: () => true, get: id => ({label: id === 'delete' ? 'Delete' : id, enabled: id !== 'delete', reason: id === 'delete' ? 'Nothing is selected' : ''})};
+      const row = createQuickActions({context: 'figure', registry});
+      document.body.append(row.element);
+      const button = row.element.querySelector('[data-action="delete"]');
+      const result = [button.disabled, button.dataset.tooltip];
+      row.destroy();
+      return result;
+    });
+    assert.deepEqual(disabled, [true, 'Delete (Nothing is selected)']);
   });
 
   await page.close();

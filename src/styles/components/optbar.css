@@ -17,11 +17,17 @@
  * with a 20px colour). The shared inputs keep their own sheets: the inline
  * field (field.css, .ui-field[data-inline]: 28px, sized to its label and its
  * longest value plus one spare character), .ui-select, .ui-stepper and
- * .ui-swatch. */
+ * .ui-swatch. Import field.css, select.css, stepper.css and swatch.css before
+ * this sheet: the bar's adjustments to them rely on coming later where their
+ * specificity ties.
+ *
+ * The row clips with a margin: focus rings and field halos are drawn outside
+ * its 24-28px controls in a 28px row, and the fold model keeps the items
+ * themselves inside it. */
 @layer components {
   .ui-optbar {
     display: flex; align-items: center; gap: var(--space-3);
-    flex: 1 1 0; min-inline-size: 0; overflow: hidden;
+    flex: 1 1 0; min-inline-size: 0; overflow: clip; overflow-clip-margin: var(--space-1);
   }
   .ui-optbar-group { display: flex; align-items: center; gap: var(--space-1); flex: none; }
   /* Items keep their measured size: they never grow or shrink (the fold model moves them instead). */
@@ -30,6 +36,8 @@
   .ui-optbar-set { display: flex; align-items: center; gap: var(--space-0-5); flex: none; }
   .ui-optbar-set > .ui-optbar-label { padding-inline-end: var(--space-1); }
   .ui-optbar-select, .ui-optbar-stepper, .ui-optbar-colors { display: flex; align-items: center; gap: var(--space-1-5); flex: none; }
+  /* 28px in the bar (the inspector's stepper is 32px), so the row keeps its height. */
+  .ui-optbar-stepper > .ui-stepper { block-size: var(--control-md); }
   .ui-optbar-more { flex: none; }
 
   /* Labels dropped: the word leaves the row, the name stays for assistive technology. */
@@ -68,8 +76,10 @@
     box-shadow: inset 0 0 0 3px var(--surface), inset 0 0 0 4px var(--line-control);
     -webkit-app-region: no-drag;
   }
-  .ui-optbar-recent > .ui-swatch:where(:hover) { box-shadow: inset 0 0 0 1px var(--line-3), inset 0 0 0 3px var(--surface), inset 0 0 0 4px var(--line-control); }
-  .ui-optbar-recent > .ui-swatch:where(:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 0; }
+  /* Hover and focus stay inside the 24px target. The element selectors outrank swatch.css's outer hover ring
+   * (:is(button, input).ui-swatch:hover) in any import order, within the two-class budget. */
+  div.ui-optbar-recent > button.ui-swatch:where(:hover:not(:disabled)) { box-shadow: inset 0 0 0 1px var(--line-3), inset 0 0 0 3px var(--surface), inset 0 0 0 4px var(--line-control); }
+  div.ui-optbar-recent > button.ui-swatch:where(:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 0; }
 
   /* More options: the folded controls themselves, one per row, in a popover. */
   .ui-optbar-more-body { display: grid; gap: var(--space-2); min-inline-size: 200px; }

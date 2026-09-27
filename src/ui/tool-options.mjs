@@ -234,18 +234,23 @@ export function planToolOptions({items = [], available = Infinity, gap = 4, grou
   };
 }
 
+// The state a same-structure update() writes in place. Every other field is structure: it is built into the
+// controls (tip, attributes, accent, limits, property hooks) or decides the fold (fold, labelFold, twin, home).
+const STATE_FIELDS = new Set(['value', 'pressed', 'disabled', 'stroke', 'fill', 'colors']);
+const stable = value => (Array.isArray(value) ? value.map(stable)
+  : value && typeof value === 'object' ? Object.keys(value).sort().map(name => [name, stable(value[name])]) : value);
+const structureOf = item => Object.keys(item).sort().filter(name => !STATE_FIELDS.has(name))
+  .map(name => [name, name === 'items' && Array.isArray(item.items) ? item.items.map(structureOf) : stable(item[name])]);
 /** The structure that decides whether update() re-renders or only writes state. */
-function structureKey(items) {
-  return JSON.stringify(items.map(item => [item.id, item.kind, item.cluster, item.label ?? '', item.icon ?? '', item.command ?? '',
-    item.showLabel ?? false, item.elementId ?? '', item.unit ?? '', (item.options ?? []).map(option => [option.value, option.label ?? '', option.icon ?? '']),
-    (item.items ?? []).map(sub => [sub.id, sub.kind, sub.label ?? '', sub.icon ?? '', sub.command ?? '', sub.showLabel ?? false]),
-    item.swap ? [item.swap.command ?? '', item.swap.label ?? ''] : '', item.more ? [item.more.label ?? '', item.more.command ?? ''] : '']));
+export function structureKey(items) {
+  return JSON.stringify(items.map(structureOf));
 }
 
 // ---------------------------------------------------------------------------
 // DOM
 
 const EDIT_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Home', 'End']);
+const DELETE_KEYS = new Set(['Backspace', 'Delete']);
 const GLUED_UNITS = new Set(['%', '°', '×']);
 const CONTROLS = 'button, input, select';
 
@@ -271,8 +276,8 @@ function reveal(element) {
 
 /**
  * createToolOptions({descriptors, label, role, tool, registry, context, icon,
- * t, onChange, onFold, overlays, document}) → {element, update(descriptors,
- * {label, tool}), invalidate(), state, destroy()}.
+ * t, onChange, onFold, overlays, popoverMount, document}) → {element,
+ * update(descriptors, {label, tool}), invalidate(), state, destroy()}.
  *
  *   registry   the command registry: labels, glyphs, shortcuts and checked
  *              states of descriptors with a `command`
@@ -283,8 +288,17 @@ function reveal(element) {
  *              colour's or stepper's value, a field's committed value (fields
  *              with a `property` belong to PropertyControls and do not report),
  *              part 'colors' for the colour pair and 'more' for a split's chevron
- *   onFold     ({dropped, folded, more, twins, homes, forced}) after every change: the
- *              owner shows the twins in the tool's inspector section
+ *   onFold     ({dropped, folded, more, twins, homes, forced}) whenever it differs
+ *              from the last report (a new tool reports its own, or an empty one
+ *              while the bar is hidden): the owner shows the twins in the tool's
+ *              inspector section
+ *   popoverMount  the element More options mounts its popover in: the container
+ *              the owner attached PropertyControls to (the stage header), so a
+ *              folded scrub field still scrubs and commits there. The default
+ *              ('auto': the overlay kit's choice, document.body) leaves property
+ *              fields in More options without PropertyControls; never attach
+ *              PropertyControls to the body instead (it would handle the
+ *              inspector's fields a second time).
  *
  * The owner places `element` where it gets its width from layout (the stage
  * header's start, flex 1); it never sizes itself to its content. The bar
@@ -292,7 +306,7 @@ function reveal(element) {
  * translated); invalidate() forces it.
  */
 export function createToolOptions({descriptors = [], label = '', role = 'group', tool = '', registry = null, context = null, icon = null, t = null,
-  onChange = null, onFold = null, overlays = null, document: doc = globalThis.document, Observer = globalThis.ResizeObserver,
+  onChange = null, onFold = null, overlays = null, popoverMount = 'auto', document: doc = globalThis.document, Observer = globalThis.ResizeObserver,
   requestFrame = callback => globalThis.requestAnimationFrame(callback), cancelFrame = id => globalThis.cancelAnimationFrame(id)} = {}) {
   const view = doc.defaultView ?? globalThis;
   const controller = new AbortController(), {signal} = controller;
@@ -310,11 +324,13 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
   more.hidden = true;
   appendGlyph(more, 'chevron-down');
 
-  let items = [], key = '', roots = new Map(), groups = [], byId = new Map(), measured = null, frame = 0;
+  let items = [], key = '', roots = new Map(), groups = [], byId = new Map(), measured = null, frame = 0, labelDrops = new Set();
   let gaps = {gap: 4, groupGap: 12, moreWidth: 24}, plan = emptyPlan(), popover = null, pressOpen = false;
-  const placeholders = new Map(), editing = new WeakSet();
+  const placeholders = new Map(), editing = new WeakSet(), glyphless = new WeakSet();
+  let reported = foldKey(plan);
 
   function emptyPlan() { return {dropped: [], folded: [], more: [], twins: [], homes: [], forced: [], width: 0, fits: true}; }
+  function foldKey(value) { return JSON.stringify([value.dropped, value.folded, value.more, value.twins, value.homes, value.forced]); }
   function say(textKey, params) { return toolOptionsText(t, textKey, params); }
   function appendGlyph(parent, name, className = 'ui-icon') {
     if (!name || typeof icon !== 'function') return false;
@@ -349,9 +365,13 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
 
   function buildButton(item, {toggle = false, part = toggle ? 'toggle' : 'button'} = {}) {
     const command = describe(item.command);
-    const name = nameOf(item, command), glyph = item.icon ?? command?.icon ?? null;
-    const labelled = Boolean(item.showLabel) || !glyph || typeof icon !== 'function';
-    const button = node('button', labelled ? 'ui-button' : 'ui-icon-button');
+    const name = nameOf(item, command);
+    const button = node('button');
+    // A button whose glyph did not render shows its word, and that word never drops (it would leave an empty square).
+    const drawn = appendGlyph(button, item.icon ?? command?.icon ?? null);
+    if (!drawn) glyphless.add(button);
+    const labelled = Boolean(item.showLabel) || !drawn;
+    button.className = labelled ? 'ui-button' : 'ui-icon-button';
     button.type = 'button';
     if (labelled) { button.dataset.size = 'sm'; button.dataset.variant = 'ghost'; }
     if (toggle && !item.accent) button.dataset.quiet = '';
@@ -359,7 +379,6 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     button.dataset.optionPart = part;
     if (item.command) button.dataset.action = item.command;
     if (item.shiftCommand) button.dataset.shiftAction = item.shiftCommand;
-    appendGlyph(button, glyph);
     if (labelled) button.append(node('span', 'ui-label', name));
     else button.setAttribute('aria-label', name);
     decorate(button, item, command);
@@ -655,6 +674,7 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     roots = new Map();
     groups = [];
     byId = new Map();
+    labelDrops = new Set();
     const children = [];
     let group = null, cluster = -1;
     for (const item of items) {
@@ -669,6 +689,8 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
       const root = BUILD[item.kind](item);
       root.dataset.option = item.id;
       root.classList.add('ui-optbar-item');
+      // Dropping a label hides every word in the item: only items whose buttons all drew their glyph may drop it.
+      if (item.droppable && ![root, ...root.querySelectorAll('button')].some(button => glyphless.has(button))) labelDrops.add(item.id);
       roots.set(item.id, root);
       group.append(root);
       groups.at(-1).ids.push(item.id);
@@ -676,6 +698,8 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     element.replaceChildren(...children, more);
     for (const root of roots.values()) resize?.observe(root);
     measured = null;
+    // Nothing is folded until the new items are measured; the owner hears about it with the next plan (or, while
+    // the bar is hidden, with this empty one), never keeping the previous tool's twins.
     plan = emptyPlan();
     roving?.refresh();
     if (focused) element.querySelector(`[data-option-id="${focused}"]`)?.focus({preventScroll: true});
@@ -689,7 +713,7 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     more.hidden = false;
     const full = new Map([...roots].map(([id, root]) => [id, root.getBoundingClientRect().width]));
     const moreWidth = more.getBoundingClientRect().width || gaps.moreWidth;
-    const droppable = items.filter(item => item.droppable);
+    const droppable = items.filter(item => labelDrops.has(item.id));
     for (const item of droppable) roots.get(item.id).setAttribute('data-label-dropped', '');
     const saved = new Map(droppable.map(item => [item.id, Math.max(0, full.get(item.id) - roots.get(item.id).getBoundingClientRect().width)]));
     for (const item of droppable) roots.get(item.id).removeAttribute('data-label-dropped');
@@ -702,11 +726,21 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
 
   function layout() {
     frame = 0;
-    if (!element.isConnected || !element.getClientRects().length || placeholders.size) return;
+    // Hidden, it cannot measure: the owner still hears when a new tool left nothing folded to show.
+    if (!element.isConnected || !element.getClientRects().length || placeholders.size) { report(); return; }
     if (!measured) measure();
     const style = view.getComputedStyle?.(element);
     const padding = (Number.parseFloat(style?.paddingLeft) || 0) + (Number.parseFloat(style?.paddingRight) || 0);
     apply(planToolOptions({items: measured, available: element.clientWidth - padding, ...gaps}));
+  }
+
+  // onFold compares with what the owner was last told, not with the previous plan (render() resets that).
+  function report() {
+    const next = foldKey(plan);
+    if (next === reported) return false;
+    reported = next;
+    try { onFold?.(state()); } catch (error) { globalThis.reportError?.(error); }
+    return true;
   }
 
   function apply(next, {force = false} = {}) {
@@ -718,11 +752,10 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     for (const group of groups) if (group.ids.every(id => folded.has(id))) conceal(group.element); else reveal(group.element);
     const moreHidden = next.more.length === 0;
     if (more.hidden !== moreHidden) more.hidden = moreHidden;
-    const changed = ['dropped', 'folded', 'more', 'twins'].some(name => next[name].join(' ') !== plan[name].join(' '));
+    const moved = foldKey(next) !== foldKey(plan);
     plan = next;
-    if (!changed && !force) return;
-    roving?.refresh();
-    if (changed) onFold?.(state());
+    if (moved || force) roving?.refresh();
+    report();
   }
 
   function schedule() { if (!frame) frame = requestFrame(layout); }
@@ -734,7 +767,8 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
 
   // More options: the folded controls themselves move into a popover while it is open, then back.
   function openMore() {
-    popover ??= createPopover({anchor: more, label: say('toolOptions.more'), overlays, t, className: 'ui-optbar-popover', onClose: restoreMore});
+    popover ??= createPopover({anchor: more, label: say('toolOptions.more'), overlays, t, className: 'ui-optbar-popover', mount: popoverMount ?? 'auto',
+      onClose: restoreMore});
     const rows = plan.more.map(id => {
       const item = byId.get(id), root = roots.get(id);
       const row = node('div', 'ui-optbar-more-row');
@@ -770,11 +804,24 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     try { onChange?.(change); } catch (error) { globalThis.reportError?.(error); }
   }
   // A field is entered by typing or clicking in it; until then the arrow keys move along the bar. Enter and
-  // Escape hand the arrows back.
+  // Escape hand the arrows back (editKeys). Typing is read from keydown and beforeinput: PropertyControls takes a
+  // property field's `input` events in its capture phase, and it leaves both of these alone.
   function fieldKey(event) {
     const input = event.currentTarget;
-    if (event.key === 'Enter' || event.key === 'Escape') { editing.delete(input); return; }
+    if (DELETE_KEYS.has(event.key) || (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey)) editing.add(input);
     if (EDIT_KEYS.has(event.key) && editing.has(input)) event.stopPropagation();
+  }
+  // Before PropertyControls, which consumes Enter (commit) and Escape (roll back) in its capture phase. Escape in
+  // More options on a control that is not being edited closes the popover at once, rather than rolling back an
+  // edit that never happened.
+  function editKeys(event) {
+    if ((event.key !== 'Enter' && event.key !== 'Escape') || event.isComposing) return;
+    if (editing.has(event.target)) { editing.delete(event.target); return; }
+    if (event.key === 'Escape' && popover?.isOpen && popover.element.contains(event.target) && !event.defaultPrevented) {
+      event.preventDefault();
+      event.stopPropagation();
+      popover.hide('escape');
+    }
   }
 
   function clamp(item, value) {
@@ -835,11 +882,12 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     listening.add(target);
     target.addEventListener('click', onClick, {signal});
     target.addEventListener('change', onChangeEvent, {signal});
-    target.addEventListener('input', event => { if (event.target.matches?.('input')) editing.add(event.target); }, {signal});
+    target.addEventListener('beforeinput', event => { if (event.target.matches?.('input')) editing.add(event.target); }, {signal});
     target.addEventListener('pointerdown', event => { if (event.target.matches?.('input')) editing.add(event.target); }, {signal});
     target.addEventListener('focusout', event => { if (event.target.matches?.('input')) editing.delete(event.target); }, {signal});
   }
   listen(element);
+  view.addEventListener('keydown', editKeys, {capture: true, signal});
   more.addEventListener('pointerdown', () => { pressOpen = Boolean(popover?.isOpen); }, {signal});
   more.addEventListener('click', () => {
     const wasOpen = pressOpen || popover?.isOpen;
@@ -872,7 +920,11 @@ export function createToolOptions({descriptors = [], label = '', role = 'group',
     popover?.element.remove();
   }, {once: true});
 
-  /** New descriptors: state is written in place when the structure is the same, else the bar is rebuilt (force: always). */
+  /**
+   * New descriptors: when only state changed (value, pressed, disabled, stroke, fill, colors) it is written in
+   * place, keeping focus and a value being typed; any other change (a fold order, a tip, a limit) rebuilds the
+   * bar and folds it again (force: always rebuild).
+   */
   function update(next = [], {label: name = null, tool: toolName = null, force = false} = {}) {
     if (name !== null) setAttribute(element, 'aria-label', name || null);
     if (toolName !== null) setAttribute(element, 'data-tool', toolName || null);

@@ -4,13 +4,16 @@
  * in that theme, with live tool options bars (tool-options.mjs) and quick
  * action rows (quick-actions.mjs) over a command registry whose commands only
  * log their id to fixture.log, through the same [data-action] click
- * delegation the app uses.
+ * delegation the app uses. Each stage header carries PropertyControls, as the
+ * app's will, and hosts its bar's More options popover (popoverMount), so the
+ * scrub fields commit there too: fixture.properties logs "commit <key> <value>".
  */
 import {icon, hydrateIcons} from '/src/icons.mjs';
 import {createCommandRegistry} from '/src/ui/command-registry.mjs';
 import {CATALOG_REQUIREMENTS, COMMAND_BY_ID} from '/src/ui/command-catalog.mjs';
 import {createToolOptions} from '/src/ui/tool-options.mjs';
 import {createQuickActions} from '/src/ui/quick-actions.mjs';
+import {PropertyControls} from '/src/property-controls.mjs';
 
 const params = new URLSearchParams(location.search);
 const theme = params.get('theme');
@@ -87,7 +90,7 @@ if (theme !== 'light' && theme !== 'dark') {
     {id: 'onion', kind: 'split', label: 'Onion skin', icon: 'onion', command: 'toggle-onion', more: {label: 'Onion skin settings'}},
   ];
 
-  const changes = [], folds = {};
+  const changes = [], folds = {}, properties = [];
   const host = document.getElementById('optbars');
   const bars = {};
   // Each bar belongs to its tool's workspace, as in the app: Draw's and Build's commands are live there.
@@ -104,11 +107,13 @@ if (theme !== 'light' && theme !== 'dark') {
     end.innerHTML = '<div class="stage-head-cluster"><button type="button" class="ui-icon-button" aria-label="Fit canvas" data-action="zoom-reset"></button></div>';
     end.querySelector('button').insertAdjacentHTML('beforeend', icon('fit'));
     const local = {...state, mode};
-    bars[name] = createToolOptions({descriptors, label, tool: name, registry: commands, context: () => local, icon, onChange: change => changes.push({bar: name, ...change,
-      element: undefined, event: undefined}), onFold: state => { folds[name] = state; }});
+    new PropertyControls(head, {commit: ({key, value}) => { properties.push(`commit ${key} ${value}`); }});
+    bars[name] = createToolOptions({descriptors, label, tool: name, registry: commands, context: () => local, icon, popoverMount: head,
+      onChange: change => changes.push({bar: name, ...change, element: undefined, event: undefined}), onFold: state => { folds[name] = state; }});
     start.append(bars[name].element);
     head.append(start, end);
     host.append(head);
+    return bars[name];
   };
   bar('brush-wide', brush(), '900px', 'Brush options', 'draw');
   bar('brush-medium', brush(), '560px', 'Brush options', 'draw');
@@ -134,7 +139,9 @@ if (theme !== 'light' && theme !== 'dark') {
   quick('movieclip', 'movieclip', {title: 'Punch'});
   quick('part', 'part', {title: 'Line 4', mode: 'rig'});
   quick('camera', 'camera', {title: 'Camera'});
+  quick('range', 'range', {title: 'Frames 22–28'});
 
   document.getElementById('fixture').hidden = false;
-  window.fixture = {ready: true, theme, log, changes, folds, bars, rows, commands, state};
+  window.fixture = {ready: true, theme, log, changes, folds, properties, bars, rows, commands, state, addBar: bar,
+    descriptors: {brush, editJoints, selectPixels, tweener}};
 }

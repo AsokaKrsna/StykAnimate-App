@@ -13,12 +13,17 @@
  *   .stage-head-end    the view cluster, zoom and Fit, as .stage-head-cluster
  *                      groups (the view toggles marked data-view)
  *
- * States written by stage-head.mjs:
+ * States written by stage-head.mjs (the Integrator's module, not written yet;
+ * until it sets --msg-start and --msg-end, their 0 lets a long message reach
+ * across the view cluster):
  *   data-msg-over       the message covers the start slot while it shows
  *   data-msg-over-view  (compact and minimal) it may cover the view toggles too
  *   data-msg-drop       the whole message does not fit: it takes a line of its
  *                       own just under the header, over the stage's top margin,
- *                       for its moment. A message is never cut. */
+ *                       for its moment. A message is never cut.
+ * While focus is in the start slot (a tool option being typed in), a message
+ * that would cover it takes its own line instead: hiding the slot would drop
+ * the focus and, under PropertyControls, commit a half-typed value. */
 @layer components {
   .stage-head {
     --_h: var(--control-2xl);
@@ -30,7 +35,8 @@
     background: var(--surface); box-shadow: inset 0 -1px 0 var(--line-1);
     -webkit-app-region: no-drag;
   }
-  .stage-head-start { display: flex; align-items: center; min-inline-size: 0; overflow: hidden; }
+  /* Clipped with room for the focus rings and field halos drawn outside the bar's controls. */
+  .stage-head-start { display: flex; align-items: center; min-inline-size: 0; overflow: clip; overflow-clip-margin: var(--space-1); }
   .stage-head-start > :is(.ui-optbar, .ui-crumb) { flex: 1 1 0; min-inline-size: 0; }
   .stage-head-end { display: flex; align-items: center; gap: var(--space-3); justify-self: end; }
   /* A cluster inside the end: the view toggles, then zoom and Fit. */
@@ -43,9 +49,9 @@
   }
   .stage-head-msg > * { max-inline-size: 100%; pointer-events: auto; }
 
-  .stage-head:where([data-msg-over]) > .stage-head-start { visibility: hidden; }
-  .stage-head:where([data-msg-over-view]) .stage-head-cluster:where([data-view]) { visibility: hidden; }
-  .stage-head:where([data-msg-drop]) > .stage-head-msg {
+  :where(.stage-head[data-msg-over]) > .stage-head-start:not(:focus-within) { visibility: hidden; }
+  .stage-head:where([data-msg-over-view]:not([data-msg-over]:has(> .stage-head-start:focus-within))) .stage-head-cluster:where([data-view]) { visibility: hidden; }
+  .stage-head:where([data-msg-drop], [data-msg-over]:has(> .stage-head-start:focus-within)) > .stage-head-msg {
     inset-block: calc(100% + var(--space-1-5)) auto; inset-inline: var(--space-2);
     block-size: var(--control-lg);
   }

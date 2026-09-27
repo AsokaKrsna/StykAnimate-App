@@ -5,7 +5,7 @@
  * (.ui-quick-sep), never dividers. The row never wraps or scrolls.
  *
  * One grammar: glyph buttons (.ui-icon-button) and word buttons
- * (.ui-button.ui-quick-word: 12/600 --text-2, 7px padding) share their gap and
+ * (.ui-button.ui-quick-word: 12/600 --text-2, 8px padding) share their gap and
  * hover tile; a label that belongs to glyphs shares one sunken tile with them
  * (.ui-quick-tile with .ui-quick-label, 12 --text-3: "Match ◀ ▶"), like a
  * stepper, so it never reads as a word button. A toggle that changes what
@@ -19,7 +19,7 @@
   .ui-quick-sep { flex: none; inline-size: var(--space-2-5); }
   .ui-quick > .ui-icon-button { flex: none; }
 
-  .ui-button.ui-quick-word { --_px: 7px; flex: none; color: var(--text-2); font: var(--type-small-strong); }
+  .ui-button.ui-quick-word { --_px: var(--space-2); flex: none; color: var(--text-2); font: var(--type-small-strong); }
   .ui-quick-word:where(:hover):not(:disabled) { color: var(--text-1); }
   .ui-quick-word[aria-pressed="true"] { color: var(--accent-text); }
 

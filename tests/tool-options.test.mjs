@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {OPTION_KINDS, hasDroppableLabel, normalizeToolOptions, optionColor, planToolOptions, toolOptionsText} from '../src/ui/tool-options.mjs';
+import {OPTION_KINDS, hasDroppableLabel, normalizeToolOptions, optionColor, planToolOptions, structureKey, toolOptionsText} from '../src/ui/tool-options.mjs';
 
 // Brush (experience.md §4.2): the colour pair and swap · Size, Opacity, Flow, Smooth · Mirror (a labelled pair,
 // twin in the Brush section) · Pen pressure (home: Brush details › Dynamics). Fold order: Mirror → Pen pressure →
@@ -189,6 +189,26 @@ test('across every width the plan is exact, nested and drops every label before 
     for (const id of previous) assert.ok(folded.has(id), `${id} stays folded as the row narrows (${available})`);
     previous = folded;
   }
+});
+
+test('update() writes only state in place: fold orders, tips, limits and hooks are structure', () => {
+  const key = descriptors => structureKey(normalizeToolOptions(descriptors));
+  const size = {id: 'size', kind: 'field', label: 'Size', property: 'brushSize', value: 8, fold: 1, min: 0};
+  const snap = {id: 'snap', kind: 'toggle', label: 'Snapping', icon: 'builder-snap', pressed: false, disabled: false, twin: 'snap-twin'};
+  const base = key([size, snap]);
+  assert.equal(key([{...size, value: 12}, {...snap, pressed: true, disabled: true}]), base, 'values, pressed and disabled are written in place');
+  assert.equal(key([{min: 0, fold: 1, value: 3, property: 'brushSize', label: 'Size', kind: 'field', id: 'size'}, snap]), base, 'key order does not matter');
+  for (const change of [{fold: 2}, {labelFold: 1}, {tip: 'Brush size'}, {min: 1}, {max: 9}, {step: 2}, {precision: 1}, {property: 'brushFlow'},
+    {description: 'Size in pixels'}, {attributes: {'data-draw-setting': 'size'}}])
+    assert.notEqual(key([{...size, ...change}, snap]), base, JSON.stringify(change));
+  for (const change of [{twin: 'other'}, {home: 'View › Build'}, {accent: true}, {shiftCommand: 'layer-up'}])
+    assert.notEqual(key([size, {...snap, ...change}]), base, JSON.stringify(change));
+  const select = options => key([{id: 'mode', kind: 'select', value: 'joint', options}]);
+  assert.notEqual(select([{value: 'joint'}, {value: 'branch'}]), select([{value: 'joint'}, {value: 'part'}]), 'an option\'s value is structure');
+  const pair = pressed => key([{id: 'mirror', kind: 'toggles', label: 'Mirror', items: [{id: 'mirror-x', kind: 'toggle', icon: 'flip', pressed}]}]);
+  assert.equal(pair(true), pair(false), 'a nested toggle\'s state is state too');
+  const colors = (stroke, recent) => key([{id: 'colors', kind: 'colors', stroke, fill: '#ffffff'}, {id: 'recent', kind: 'recent', colors: recent}]);
+  assert.equal(colors('#000000', ['#e8553a']), colors('#0c0d12', ['#0d99ff', '#18a058']));
 });
 
 test('colours are validated before they reach a swatch; strings fall back to English', () => {

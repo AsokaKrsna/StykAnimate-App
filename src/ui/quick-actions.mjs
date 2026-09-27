@@ -53,6 +53,10 @@ const TEXT = Object.freeze({
   'quick.duplicatePart': 'Duplicate',
   'quick.level': 'Level',
   'quick.center': 'Center',
+  'quick.copyFrames': 'Copy frames',
+  'quick.pasteFrames': 'Paste frames',
+  'quick.removeKeys': 'Remove keys',
+  'quick.unavailable': '{label} ({reason})',
   'quick.figure': 'Figure actions',
   'quick.text': 'Text actions',
   'quick.image': 'Image actions',
@@ -60,6 +64,7 @@ const TEXT = Object.freeze({
   'quick.movieclip': 'Movieclip actions',
   'quick.part': 'Part actions',
   'quick.camera': 'Camera actions',
+  'quick.range': 'Frame actions',
 });
 
 const fill = (text, params) => text.replace(/\{([A-Za-z]\w*)\}/g, (token, name) => (Object.hasOwn(params, name) ? String(params[name]) : token));
@@ -86,7 +91,10 @@ export const QUICK_CONTEXTS = Object.freeze({
   joint: Object.freeze({labelKey: 'quick.joint', groups: Object.freeze(['joint', 'match', 'flip'])}),
   movieclip: Object.freeze({labelKey: 'quick.movieclip', groups: Object.freeze(['clip', 'edit'])}),
   part: Object.freeze({labelKey: 'quick.part', groups: Object.freeze(['make', 'flip', 'delete'])}),
-  camera: Object.freeze({labelKey: 'quick.camera', groups: Object.freeze(['frame'])}),
+  // Level and Centre · Reset · Motion ▾ (the Motion menu joins when it is a registry entry).
+  camera: Object.freeze({labelKey: 'quick.camera', groups: Object.freeze(['frame', 'reset', 'motion'])}),
+  // The Advanced timeline's frame range: Copy frames, Paste frames · Remove keys, Delete frames.
+  range: Object.freeze({labelKey: 'quick.range', groups: Object.freeze(['clipboard', 'remove'])}),
 });
 
 const FIGURES = ['figure', 'figures', 'text', 'image'];
@@ -95,9 +103,15 @@ const entry = (id, quick) => Object.freeze({id, quick: Object.freeze(Array.isArr
 
 /**
  * Today's quick actions per context (experience.md §5.1), keyed by the
- * existing command ids. Contexts whose commands are not registry entries yet
- * (the frame range, layers, drawing layers, the camera's Motion menu, motion
- * clips, Build fills) add theirs when their owners register them.
+ * existing command ids. Commands that are not registry entries yet (the
+ * layer row's moves and Delete layer, the camera's Motion menu, motion clips,
+ * Build fills) join when their owners register them.
+ *
+ * Glyphs the icon set still owes (icons.mjs; experience.md §5.1 and §5.12):
+ * Exact values uses `sliders`, which draws as `settings` (revision 4.3 asks
+ * for a ruler with a typed angle), and Copy shares Duplicate's drawing
+ * (Duplicate is to be the copy with a plus). Each row here still has distinct
+ * drawings, which the budget test checks.
  */
 export const QUICK_ACTIONS = Object.freeze([
   entry('mirror', [...place(FIGURES, {group: 'flip'}), Object.freeze({context: 'joint', group: 'flip', label: 'Flip limb', labelKey: 'quick.flipLimb'})]),
@@ -118,7 +132,12 @@ export const QUICK_ACTIONS = Object.freeze([
   entry('delete-single-segment', {context: 'part', group: 'delete', shift: 'delete-segment', shiftHint: 'the branch', shiftHintKey: 'quick.theBranch'}),
   entry('camera-level', {context: 'camera', group: 'frame', word: 'Level', wordKey: 'quick.level'}),
   entry('camera-center', {context: 'camera', group: 'frame', word: 'Center', wordKey: 'quick.center'}),
-  entry('camera-reset', {context: 'camera', group: 'frame'}),
+  entry('camera-reset', {context: 'camera', group: 'reset'}),
+  entry('copy', {context: 'range', group: 'clipboard', label: 'Copy frames', labelKey: 'quick.copyFrames'}),
+  entry('paste', {context: 'range', group: 'clipboard', label: 'Paste frames', labelKey: 'quick.pasteFrames'}),
+  // Labelled: the poses go and the time stays; Delete frames (the trash) takes the time too.
+  entry('clear-keys', {context: 'range', group: 'remove', word: 'Remove keys', wordKey: 'quick.removeKeys'}),
+  entry('delete-frame', {context: 'range', group: 'remove'}),
 ]);
 
 /** An entry's quick placements as a list (a command may sit in several contexts). */
@@ -267,18 +286,34 @@ const rowKey = resolved => JSON.stringify(resolved.items.map(item => [item.id, i
   item.pinned, item.menu, item.shift]));
 
 /**
+ * The tooltip's key text for a control: `keys` (the registry's shortcut; default
+ * data-hotkey-hint) and what Shift does (data-shift-hint: "Delete · Shift: the
+ * branch"). The app's tooltip `shortcut` callback wraps its own lookup with it:
+ * the Shift hint lives in its own attribute because refreshHotkeyHints()
+ * rewrites data-hotkey-hint in the inspector on every render.
+ */
+export function withShiftHint(element, keys = element?.dataset?.hotkeyHint) {
+  return [keys, element?.dataset?.shiftHint].filter(Boolean).join(' · ');
+}
+
+/**
  * createQuickActions({host, context, label, entries, pins, registry,
  * commandContext, icon, t, document}) → {element, update({context, label,
  * pins, entries}), refresh(), resolved, destroy()}.
  *
  *   host            an existing `.ui-quick` element (the inspector kit's slot,
- *                   data-quick-context); otherwise a row is created
+ *                   data-quick-context); otherwise a row is created. The kit
+ *                   renders one slot per context (data-inspector-owned=
+ *                   quick-<context>), so the owner creates one instance per
+ *                   slot element and destroys it with that slot; update({context})
+ *                   is for a row the instance created itself
  *   registry        the command registry: labels, glyphs, shortcuts, enabled
  *                   and checked states in `commandContext()`
  *   pins            this context's pinned ids (the layout store's `pins`)
  *
- * The buttons carry data-action (and data-shift-action), so the app's click
- * delegation runs them. refresh() writes enabled and checked states without
+ * The buttons carry data-action (and data-shift-action, with data-shift-hint
+ * for the tooltip: withShiftHint), so the app's click delegation runs them; a
+ * disabled button's tooltip says why. refresh() writes enabled and checked states without
  * rebuilding the row; a different set of buttons rebuilds it. The row is one
  * tab stop; the arrow keys move between its buttons. It never wraps or cuts a
  * button: when pinned words leave too little room at the inspector's width,
@@ -313,8 +348,6 @@ export function createQuickActions({host = null, context = null, label = null, e
     const glyph = icon(name, '');
     return typeof glyph === 'string' ? glyph : glyph?.outerHTML ?? name;
   };
-  const hint = item => [item.shortcut, item.shift ? quickText(t, 'quick.shift', null, {action: item.shiftHint}) : ''].filter(Boolean).join(' · ');
-
   function button(item, {small = false} = {}) {
     const word = item.kind === 'word';
     const control = doc.createElement('button');
@@ -331,8 +364,6 @@ export function createQuickActions({host = null, context = null, label = null, e
       text.className = 'ui-label';
       text.textContent = item.word;
       control.append(text);
-      // The visible word names the button; the tooltip says the whole command when the word is shorter.
-      if (item.word !== item.label) control.dataset.tooltip = item.label;
       if (item.menu) { control.setAttribute('aria-haspopup', 'menu'); appendGlyph(control, 'chevron-down', 'ui-icon ui-button-chev'); }
     } else {
       if (!appendGlyph(control, item.icon)) control.textContent = item.label;
@@ -342,11 +373,16 @@ export function createQuickActions({host = null, context = null, label = null, e
     return control;
   }
   function sync(control, item) {
-    setAttribute(control, 'data-hotkey-hint', hint(item));
+    setAttribute(control, 'data-hotkey-hint', item.shortcut);
+    setAttribute(control, 'data-shift-hint', item.shift ? quickText(t, 'quick.shift', null, {action: item.shiftHint}) : null);
     setAttribute(control, 'aria-keyshortcuts', item.keyshortcuts);
     if (item.toggle) setAttribute(control, 'aria-pressed', String(Boolean(item.checked))); else setAttribute(control, 'aria-pressed', null);
     const disabled = !item.enabled;
     if (control.disabled !== disabled) control.disabled = disabled;
+    // The tooltip names the whole command (a word may be shorter) and, while it is unavailable, why.
+    const tip = disabled && item.reason ? quickText(t, 'quick.unavailable', null, {label: item.label, reason: item.reason})
+      : item.kind === 'word' ? item.label : null;
+    setAttribute(control, 'data-tooltip', tip);
   }
 
   function render() {
@@ -419,10 +455,12 @@ export function createQuickActions({host = null, context = null, label = null, e
   resolve();
   return {
     element,
-    /** A new context, label, pins or entries (only the fields given change). */
+    /** A new context, label, pins or entries (only the fields given change; pins are per context, so a new context without them has none). */
     update(next = {}) {
+      const moved = next.context !== undefined && next.context !== current.context;
       current = {...current, ...Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined))};
       if (next.pins) current.pins = [...next.pins];
+      else if (moved) current.pins = [];
       slots = QUICK_LIMITS.slots;
       resolve();
     },
