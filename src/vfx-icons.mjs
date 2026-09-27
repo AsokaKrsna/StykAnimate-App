@@ -37,3 +37,7 @@ const shapes={
  movieclip:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4m10 0h4M3 16h4m10 0h4m-10-8 5 4-5 4Z"/>',
 };
 export const vfxIcon=name=>`<svg class="icon vfx-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shapes[name]??shapes.effects}</svg>`;
+/** Each catalogue category's tint (the design system's concept hues), so an effect's tile says what kind it is. */
+const TINTS={Generate:'fx',Looks:'fx',Light:'camera',Color:'draw',Distort:'time',Blur:'select',Texture:'library'};
+/** An effect's glyph on a small tile in its category's tint. */
+export const vfxTile=(name,category,cls='')=>`<span class="vfx-tile${cls?` ${cls}`:''}" data-tint="${TINTS[category]??'fx'}" aria-hidden="true">${vfxIcon(name)}</span>`;

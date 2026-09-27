@@ -71,7 +71,7 @@ try{
  await page.getByLabel('Strength',{exact:true}).fill('65');await page.getByLabel('Strength',{exact:true}).press('Tab');
  const group=await page.evaluate(()=>styk.editor.getVfxClips().at(-1));assert.equal(group.effects.length,2);assert.equal(group.strength,.65);
  await page.getByRole('button',{name:'Add to group',exact:true}).click();await page.locator('.vfx-catalog [data-choice="blur"]').click();assert.equal(await page.evaluate(()=>styk.editor.getVfxClips().at(-1).effects.length),3);
- await page.locator('.vfx-clip.is-selected .vfx-clip-effect>summary').last().click();await page.locator('.vfx-clip.is-selected .vfx-clip-effect').last().getByRole('button',{name:'Effect actions',exact:true}).click();await page.getByRole('menuitem',{name:'Remove',exact:true}).click();assert.equal(await page.evaluate(()=>styk.editor.getVfxClips().at(-1).effects.length),2);
+ await page.locator('.vfx-detail .vfx-clip-effect>summary').last().click();await page.locator('.vfx-detail .vfx-clip-effect').last().getByRole('button',{name:'Effect actions',exact:true}).click();await page.getByRole('menuitem',{name:'Remove',exact:true}).click();assert.equal(await page.evaluate(()=>styk.editor.getVfxClips().at(-1).effects.length),2);
  await page.evaluate(()=>{document.documentElement.dataset.theme='dark';window.dispatchEvent(new Event('styk-theme-change'));});await page.mouse.move(500,100);await page.waitForTimeout(300);await page.screenshot({path:'artifacts/vfx/clips-groups-dark.png'});
  // Figure focus is independent of layer membership, including scene effects.
  await page.evaluate(async()=>{const {emptyDocument,createObject,createFrame}=await import('/src/demo.mjs'),{initializeLayerSheet}=await import('/src/editor-layer-sheet.mjs');const e=styk.editor,doc=emptyDocument();doc.keyframes=[createFrame([createObject(doc.figure_types[0],1,300,300),createObject(doc.figure_types[0],2,650,300)],60)];e.load(doc);initializeLayerSheet(e.report);e._invalidate({timing:true});e.addVfxClip({kind:'figure',uid:1},'glow',{start:5,duration:20});e.addVfxClip({kind:'figure',uid:2},'tint');e.addVfxClip({kind:'scene'},'blur');e.select(1);e.seek(10);});
@@ -88,7 +88,7 @@ try{
  assert.equal(await page.locator('.vfx-timeline-overlay [role=slider]').count(),2);
  // The same filter covers pose effects from existing projects.
  await page.evaluate(()=>{const e=styk.editor,target={kind:'figure',uid:1},[id]=e.addVfx(target,'tint');window.legacyVfxId=id;e.setVfxParameter(target,id,'enabled',0);});
- await page.waitForFunction(()=>document.querySelectorAll('.vfx-effect').length===0);
+ await page.waitForFunction(()=>document.querySelectorAll('.vfx-effect').length===1);
  await page.getByLabel('Show effects',{exact:true}).selectOption('all');await page.getByLabel('Search effect clips',{exact:true}).fill('');assert.equal(await page.locator('.vfx-effect').count(),1);
  await page.evaluate(()=>{const e=styk.editor,target={kind:'figure',uid:1};e.setVfxParameter(target,legacyVfxId,'enabled',1);e.setVfxParameter(target,legacyVfxId,'effectStrength',0);});
  await page.getByLabel('Show effects',{exact:true}).selectOption('playhead');assert.equal(await page.locator('.vfx-effect').count(),0);

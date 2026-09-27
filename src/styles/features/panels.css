@@ -1,7 +1,7 @@
 /* Panels' own controls on the kit's look (experience.md revision 5), for the
  * modules that still render native markup inside a panel or popover: the VFX
- * panel (vfx-*.mjs), Library (asset-library.mjs), the camera's motion and the
- * audio controls. Their ids, data hooks and events stay; only the look joins
+ * panel's selects (vfx-*.mjs; the rest of it is features/vfx.css), Library
+ * (asset-library.mjs), the camera's motion and the audio controls. Their ids, data hooks and events stay; only the look joins
  * the kit, so a select, a disclosure or a group heading reads the same in
  * every panel.
  *
@@ -28,32 +28,4 @@
   /* ---- The camera's motion (camera-motion-ui.mjs, camera-motion-graph.mjs) ---- */
   /* The curve's channels on the kit's segmented control, Fit at the toolbar's end. */
   .motion-graph-toolbar { justify-content: space-between; padding: var(--space-1-5); }
-
-  /* ---- VFX ---- */
-  /* The effect card: an island inside the panel with the kit's radius and hairline. */
-  :where(#vfx-panel) .vfx-clip, :where(#vfx-panel) .vfx-effect-card { border-radius: var(--radius-lg); }
-  /* More (an effect's advanced settings): a disclosure row with a chevron. */
-  :where(#vfx-panel) .vfx-advanced { border-block-start: 0; box-shadow: inset 0 1px 0 var(--line-1); }
-  :where(#vfx-panel) .vfx-advanced > summary {
-    display: flex; align-items: center; gap: var(--space-1-5); min-block-size: var(--control-sm); list-style: none;
-    font: var(--type-small-strong); color: var(--text-2); cursor: default;
-  }
-  :where(#vfx-panel) .vfx-advanced > summary::-webkit-details-marker { display: none; }
-  :where(#vfx-panel) .vfx-advanced > summary::before {
-    content: ""; inline-size: 12px; block-size: 12px; background: var(--text-3);
-    mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M6 4l4 4-4 4' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/></svg>") center / contain no-repeat;
-    transition: rotate var(--dur-fast) var(--ease-out);
-  }
-  :where(#vfx-panel) .vfx-advanced:where([open]) > summary::before { rotate: 90deg; }
-  :where(#vfx-panel) .vfx-advanced > summary:where(:hover) { color: var(--text-1); }
-  /* The effects catalogue's groups: sentence case in the eyebrow type, like every menu's group names. */
-  .vfx-catalog-results h3 { font: var(--type-eyebrow); letter-spacing: 0; text-transform: none; color: var(--text-3); }
-  /* A parameter row: its label column fits "Effect strength" whole, the same width in every row so the sliders line up. */
-  :where(#vfx-panel) .vfx-parameter { grid-template-columns: 96px minmax(40px, 1fr) 56px; }
-  /* A select or colour row: the same label column, the control filling the rest, so every control starts at one edge. */
-  :where(#vfx-panel) .vfx-field:not(:where(.vfx-parameter > *)) { gap: var(--space-2); }
-  :where(#vfx-panel) .vfx-field:not(:where(.vfx-parameter > *)) > label { flex: 0 0 96px; }
-  :where(#vfx-panel) .vfx-field:not(:where(.vfx-parameter > *)) > :where(select, .vfx-color, .ui-select) { flex: 1 1 auto; max-inline-size: none; }
-  /* Range sliders: the kit's colours. */
-  :where(#vfx-panel) input:where([type="range"]) { accent-color: var(--slider-fill); }
 }

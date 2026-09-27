@@ -69,8 +69,8 @@ try{
   const target={kind:'figure',uid:1};e.sheetSetEasing([e.layerForUid(1)],0,0,{interpolation:'linear'});const [id]=e.addVfx(target,'tint');e.setVfxParameter(target,id,'mix',.2);e.setVfxScope(target,true);
   styk.vfx.setVisible(true);styk.vfx.scope='figure';styk.vfx.sync();
  });
- await page.getByLabel('Tint actions',{exact:true}).click();await page.getByRole('button',{name:'Tint copy',exact:true}).click();
- await page.evaluate(()=>{styk.editor.seek(10);styk.vfx.sync();});await page.getByRole('button',{name:'Paste effect',exact:true}).click();
+ await page.getByLabel('Tint actions',{exact:true}).click();await page.getByRole('menuitem',{name:'Copy effect',exact:true}).click();
+ await page.evaluate(()=>{styk.editor.seek(10);styk.vfx.sync();});await page.getByRole('button',{name:'Paste effect',exact:true}).click();await page.getByRole('button',{name:'Tint',exact:true}).click();
  assert.equal(await page.evaluate(()=>styk.editor.animationValue({kind:'figure',uid:1},'vfxScope')),1);
  const mix=page.getByRole('spinbutton',{name:'Tint Mix',exact:true});await mix.fill('100');await mix.press('Enter');
  assert.ok(Math.abs(await page.evaluate(()=>{styk.editor.seek(5);return styk.editor.vfxEffects({kind:'figure',uid:1})[0].params.mix;})-.6)<1e-12);

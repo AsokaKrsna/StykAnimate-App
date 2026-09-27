@@ -169,14 +169,11 @@
 /* ---------- Overlays: menus, popovers, dialogs, toasts ---------- */
 #menu,
 .library-context-menu,
-.vfx-catalog,
-.vfx-channel-menu,
 .audio-clip-popover,
 .audio-properties,
 .audio-options,
 .builder-popover,
 .timeline-menu { border: 1px solid var(--theme-border); border-radius: var(--ds-radius-lg); background: var(--theme-panel); box-shadow: var(--ds-shadow-3); }
-.vfx-menu > div { border-radius: var(--ds-radius); box-shadow: var(--ds-shadow-3); }
 #menu .menu-item, .library-context-menu button { border-radius: var(--ds-radius-sm); }
 #menu .menu-item:hover, .library-context-menu button:hover { background: var(--theme-hover); }
 dialog, .library-dialog { border-radius: var(--ds-radius-xl); border-color: var(--theme-border); box-shadow: var(--ds-shadow-3); }

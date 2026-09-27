@@ -5,7 +5,7 @@ const browser=await chromium.launch({channel:'chrome',headless:true}),page=await
 page.on('pageerror',error=>errors.push(error.message));
 const snapshot=()=>page.evaluate(()=>JSON.stringify(styk.editor.report._styk.vfxClips));
 const history=()=>page.evaluate(()=>styk.editor._undo.length);
-const drag=async(locator,dx,{cancel=false}={})=>{const b=await locator.boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width/2+dx,b.y+b.height/2,{steps:8});if(cancel)await page.keyboard.press('Escape');await page.mouse.up();};
+const drag=async(locator,dx,{cancel=false}={})=>{await locator.scrollIntoViewIfNeeded();const b=await locator.boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width/2+dx,b.y+b.height/2,{steps:8});if(cancel)await page.keyboard.press('Escape');await page.mouse.up();};
 try{
  await page.goto(process.env.STYK_TEST_URL||'http://127.0.0.1:47832');await page.waitForFunction(()=>window.styk?.ready);
  await page.evaluate(async()=>{
@@ -17,7 +17,7 @@ try{
  });
  await page.getByRole('tab',{name:'VFX',exact:true}).click();
  const panel=page.locator('#vfx-panel'),glowRow=panel.locator('[data-group-effect]').filter({has:page.getByRole('button',{name:'Reorder Glow',exact:true})}),shadowRow=panel.locator('[data-group-effect]').filter({has:page.getByRole('button',{name:'Reorder Shadow',exact:true})});
- await glowRow.locator(':scope > summary').click();const radius=page.getByRole('spinbutton',{name:'Glow Radius',exact:true});await radius.click();
+ await glowRow.locator(':scope > summary').evaluate(n=>{if(!n.parentElement.open)n.click();});const radius=page.getByRole('spinbutton',{name:'Glow Radius',exact:true});await radius.click();
  assert.match(await panel.getByRole('button',{name:'Visible effect keys',exact:true}).innerText(),/Glow · Radius/);
  let before=await snapshot(),n=await history();await drag(radius,15);let after=await snapshot();assert.notEqual(after,before);assert.equal(await history(),n+1);
  await page.keyboard.press('Control+z');assert.equal(await snapshot(),before);await page.keyboard.press('Control+Shift+z');assert.equal(await snapshot(),after);await page.keyboard.press('Control+z');

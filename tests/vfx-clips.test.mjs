@@ -78,6 +78,8 @@ test('At playhead filters inactive persistent effects by keyed strength and enab
  assert.equal(count(0),0);assert.equal(count(5),1);assert.equal(count(0,'selected'),1);
  e.setVfxClipParameter(id,fx.id,'enabled',0,{key:true,tick:20});assert.equal(count(25),0);
  e.setVfxClip(id,{enabled:false});assert.equal(count(25,'all'),1);assert.equal(count(25),0);
+ // Switched off with its eye, a clip stays listed where it would play, so its eye can switch it back on.
+ e.setVfxClip(id,{enabled:true});e.setVfxClipParameter(id,fx.id,'enabled',1,{key:true,tick:20});e.setVfxClip(id,{enabled:false});assert.equal(count(25),1);assert.equal(count(0),0);
 });
 test('inline diamonds move coincident keys atomically, preserve easing and undo together',()=>{
  const e=fixture(),id=e.addVfxClip(target,'glow'),fx=e.getVfxClips()[0].effects[0];
