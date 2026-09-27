@@ -274,4 +274,76 @@
   .tl-layers-pick[aria-pressed="true"] > .ui-list-row-label { font-weight: var(--weight-semibold); }
   .tl-layers-pick > .tl-layers-kind { inline-size: var(--icon-sm); block-size: var(--icon-sm); flex: none; color: var(--text-3); }
   .tl-layers-popover .ui-popover-foot { justify-content: flex-start; gap: var(--space-1); }
+
+  /* ==== The Advanced sheet (layer-timeline.mjs, timeline-rows.mjs) ==== */
+  /* The ruler is 32px (24 at the short tier) and Camera and Scene are 24px rows pinned under it: the painter writes
+   * --sheet-ruler and each row's height, which the label column follows. */
+  .layer-timeline .sheet-label-head { block-size: var(--sheet-ruler, var(--timeline-header)); }
+  .layer-timeline .sheet-labels { inset-block-start: var(--sheet-ruler, var(--timeline-header)); }
+  .layer-timeline .vfx-timeline-overlay { inset-block-start: var(--sheet-ruler, var(--timeline-header)); }
+  /* Rows: no separators; one marker each (a type glyph, a colour dot, a drawing's brush after its name). */
+  .sheet-labels > .sheet-layer { border-block-end: 0; box-shadow: none; font: var(--type-ui); }
+  .sheet-labels > .sheet-layer[data-pinned] { z-index: 1; }
+  .sheet-labels > .sheet-layer:where([data-kind="camera"], [data-kind="scene"]) { background: var(--sheet-surface); }
+  .sheet-labels > .sheet-layer:where([data-kind="camera"]) { --track-accent: var(--sheet-camera-accent); --track-tint: var(--sheet-camera-tint); }
+  .sheet-labels > .sheet-layer:where([data-kind="scene"]) { --track-accent: var(--sheet-scene-accent); --track-tint: var(--sheet-scene-tint); }
+  .sheet-labels > .sheet-layer[data-selected="true"] { background: var(--sheet-selected); }
+  .sheet-labels > .sheet-layer:where([data-kind="camera"], [data-kind="scene"])[data-selected="true"] { background: var(--track-tint); }
+  /* The name fills its row (24px pinned rows, 28 or 32 content rows) without ever overflowing it. */
+  .sheet-layer > .sheet-layer-name { block-size: min(var(--control-md), 100%); gap: var(--space-2); color: var(--text-1); font: var(--type-ui); }
+  .sheet-layer:where([data-active="true"]) > .sheet-layer-name { font-weight: var(--weight-semibold); }
+  .sheet-layer > .sheet-layer-name > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); flex: none; color: var(--text-3); }
+  .sheet-layer-name > .sheet-layer-dot { --_s: 8px; margin-inline: 3px; }
+  .sheet-layer-name > .sheet-layer-kind { inline-size: 12px; block-size: 12px; margin-inline-start: calc(-1 * var(--space-1)); color: var(--text-3); }
+  /* The dot is a layer's one colour mark: no colour bar at the row's edge, and a drawing layer's brush replaces its badge. */
+  .sheet-labels > .sheet-layer:where([data-color]:not([data-color=""])) { border-inline-start: 0; padding-inline-start: var(--space-2); }
+  .sheet-layer-name > .sheet-layer-text::after { content: none; }
+  .sheet-layer:where([data-hidden="true"]) > .sheet-layer-name { color: var(--text-3); opacity: 1; }
+  /* Eye and lock at rest on every row: quiet glyphs, full contrast while hidden or locked (and on hover). */
+  .sheet-layer > .sheet-layer-state { opacity: 1; color: var(--text-3); }
+  .sheet-layer > .sheet-layer-state:where(:hover, :focus-visible, [data-on="true"]) { color: var(--text-1); }
+  /* The playhead: a 1.5px line under the keys and a white-on-blue tab inside the ruler. */
+  .layer-timeline .sheet-playhead { inline-size: 1.5px; margin-inline-start: -0.75px; background: var(--sheet-playhead); }
+  .layer-timeline .sheet-playhead > span {
+    inset-block-start: calc((var(--sheet-ruler, var(--timeline-header)) - 20px) / 2); min-inline-size: 30px; block-size: 20px;
+    padding: 0 var(--space-1); border-radius: 6px; background: var(--sheet-playhead-tab); color: var(--sheet-playhead-ink);
+    font: var(--weight-semibold) 11px/20px var(--font-ui); font-variant-numeric: tabular-nums;
+  }
+  /* Onion ranges on the ruler while onion is on: a 2px band in each colour and a small end mark, whose 24px target
+   * stays inside the ruler (a click on it goes to that frame; only a drag moves the end). */
+  .layer-timeline .onion-range-overlay { block-size: var(--sheet-ruler, var(--timeline-header)); }
+  .layer-timeline .onion-range-band { inset-block-start: calc(var(--sheet-ruler, var(--timeline-header)) - 4px); block-size: 2px; border-radius: 1px; opacity: 0.55; }
+  /* Each end's target lies on its own side of the frame it marks, so both stay reachable when they meet at the playhead. */
+  .layer-timeline .onion-range-end {
+    inset-block-start: calc(var(--sheet-ruler, var(--timeline-header)) - 24px); inline-size: 24px; block-size: 24px;
+    transform: none; border-radius: var(--radius-sm);
+  }
+  .layer-timeline .onion-range-end.before { translate: -100% 0; }
+  .layer-timeline .onion-range-end.after { translate: 0 0; }
+  .layer-timeline .onion-range-end::after {
+    inline-size: 3px; block-size: 9px; border: 0; border-radius: 1.5px; background: currentColor;
+  }
+  .layer-timeline .onion-range-end.before::after { inset: auto 0 1px auto; }
+  .layer-timeline .onion-range-end.after::after { inset: auto auto 1px 0; }
+  .layer-timeline .onion-range-end:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+  /* The grid scrolls with thin scrollbars; while rows are below it, "N more" waits at the foot of the tools' column
+   * (a click scrolls to them) and a soft fade shows the rows go on. */
+  /* The grid's scrollbars keep a 14px target (scrubbing a long animation by its bar) but draw a slim, quiet thumb:
+   * a transparent track and a thumb inset by a border in the sheet's colour. */
+  .layer-timeline .sheet-scroll::-webkit-scrollbar { inline-size: 14px; block-size: 14px; }
+  .layer-timeline .sheet-scroll::-webkit-scrollbar-track { background: transparent; }
+  .layer-timeline .sheet-scroll::-webkit-scrollbar-corner { background: var(--sheet-surface); }
+  .layer-timeline .sheet-scroll::-webkit-scrollbar-thumb {
+    min-inline-size: 32px; min-block-size: 32px; border: 4px solid var(--sheet-surface); border-radius: 7px; background: var(--scrollbar-thumb);
+  }
+  .layer-timeline .sheet-scroll::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+  .layer-timeline .sheet-more-rows {
+    --_px: var(--space-2); position: absolute; inset: auto var(--space-1) calc(var(--sheet-scrollbar-x, 0px) + var(--space-1)) auto;
+    z-index: 2; color: var(--text-2); font: var(--type-small-strong);
+  }
+  .layer-timeline:where([data-more-below]) > .sheet-main::after {
+    content: ""; position: absolute; z-index: 1; pointer-events: none;
+    inset: auto calc(var(--ruler-tools-w, 0px) + var(--sheet-scrollbar-y, 0px)) var(--sheet-scrollbar-x, 0px) 0;
+    block-size: 14px; background: linear-gradient(to bottom, transparent, var(--sheet-surface));
+  }
 }

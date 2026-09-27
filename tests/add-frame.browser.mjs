@@ -5,7 +5,7 @@ const browser=await chromium.launch({channel:'chrome',headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:960}}), errors=[];
 page.on('pageerror',e=>errors.push(e.message));
 const snap=()=>page.evaluate(()=>({tick:styk.editor.tick,duration:styk.editor.totalTicks,keys:styk.editor.layerFrameKeys('layer-1').map(k=>k.tick)}));
-const cell=async(tick,layer='layer-1')=>{const box=await page.evaluate(([tick,layer])=>{const t=styk.timeline,r=t.scroll.getBoundingClientRect();return{x:r.x+(tick+.5)*t.pxPerTick,y:r.y+32+(t.tracks.findIndex(l=>l.id===layer)+.5)*32};},[tick,layer]);await page.mouse.click(box.x,box.y);};
+const cell=async(tick,layer='layer-1')=>{const box=await page.evaluate(([tick,layer])=>{const t=styk.timeline,r=t.scroll.getBoundingClientRect();const i=t.tracks.findIndex(l=>l.id===layer);return{x:r.x+(tick+.5)*t.pxPerTick,y:r.y+t.rowY(i)+t.rowSize(i)/2};},[tick,layer]);await page.mouse.click(box.x,box.y);};
 const ruler=async tick=>{const box=await page.evaluate(tick=>{const t=styk.timeline,r=t.scroll.getBoundingClientRect();return{x:r.x+(tick+.5)*t.pxPerTick,y:r.y+16};},tick);await page.mouse.click(box.x,box.y);};
 try {
  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>styk?.ready);
@@ -26,7 +26,7 @@ try {
  await page.keyboard.press('a');assert.deepEqual(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-2').map(k=>[k.tick,k.empty])),[[4,true]]);
  await cell(20,'layer-2');
  await page.evaluate(()=>new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done))));
- const painted=await page.evaluate(()=>{const t=styk.timeline,c=t.canvas.getContext('2d'),row=t.tracks.findIndex(l=>l.id==='layer-2'),y=Math.round(32+row*32+16-t._offsetY());
+ const painted=await page.evaluate(()=>{const t=styk.timeline,c=t.canvas.getContext('2d'),row=t.tracks.findIndex(l=>l.id==='layer-2'),y=Math.round(t.rowY(row)+t.rowSize(row)/2);
    const px=x=>[...c.getImageData(Math.round(x-t._offsetX()),y,1,1).data].slice(0,3),bg=px(15.5*t.pxPerTick);let count=0;
    for(let dx=-5;dx<=5;dx++)if(px(4.5*t.pxPerTick+dx).some((v,i)=>Math.abs(v-bg[i])>24))count++;return count;});
  assert.ok(painted>2);

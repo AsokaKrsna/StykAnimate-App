@@ -56,7 +56,7 @@ async function selectRange(mode) {
   if(mode==='simple') {
     await page.evaluate(()=>{styk.timeline.selectFrame(0);styk.timeline.selectFrame(2,{extend:true});});
   } else {
-    const cell=async tick=>page.evaluate(tick=>{const t=styk.timeline,r=t.scroll.getBoundingClientRect(),row=t.tracks.findIndex(x=>x.id==='layer-1');return{x:r.left+(tick+.5)*t.pxPerTick-t._offsetX(),y:r.top+32+row*32+16};},tick);
+    const cell=async tick=>page.evaluate(tick=>{const t=styk.timeline,r=t.scroll.getBoundingClientRect(),row=t.tracks.findIndex(x=>x.id==='layer-1');return{x:r.left+(tick+.5)*t.pxPerTick-t._offsetX(),y:r.top+t.rowY(row)+t.rowSize(row)/2};},tick);
     const a=await cell(0),b=await cell(20);
     await page.mouse.click(a.x,a.y);await page.keyboard.down('Shift');await page.mouse.click(b.x,b.y);await page.keyboard.up('Shift');
   }

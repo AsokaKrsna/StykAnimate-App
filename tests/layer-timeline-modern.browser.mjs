@@ -14,14 +14,14 @@ try{
   assert.equal(await field.inputValue(),'layer-1');
   await field.selectOption('layer-2');await settle();assert.equal(await page.evaluate(()=>styk.editor.layerForUid(1)),'layer-2');
   await page.keyboard.press('Control+z');await settle();assert.equal(await field.inputValue(),'layer-1');
-  const cell=(tick,row=1)=>page.evaluate(async({tick,row})=>{const {ROW,HEADER}=await import('/src/layer-timeline.mjs'),t=styk.timeline,b=t.scroll.getBoundingClientRect();return {x:b.x+(tick+.5)*t.pxPerTick-t._offsetX(),y:b.y+HEADER+(row+2)*ROW+ROW/2};},{tick,row});
+  const cell=(tick,row=1)=>page.evaluate(async({tick,row})=>{const t=styk.timeline,b=t.scroll.getBoundingClientRect();return {x:b.x+(tick+.5)*t.pxPerTick-t._offsetX(),y:b.y+t.rowY(row+2)+t.rowSize(row+2)/2};},{tick,row});
   const click=async(tick,row=1)=>page.mouse.click(...Object.values(await cell(tick,row)));
   await click(4);await settle();await page.keyboard.press('a');
   assert.ok(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').some(k=>k.tick===4)));
   const p=await cell(7);await page.mouse.dblclick(p.x,p.y);await settle();assert.ok(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').some(k=>k.tick===7)));
   await page.mouse.dblclick(p.x,p.y);await settle();assert.ok(await page.getByRole('dialog',{name:'Keyframe easing'}).isVisible());await page.getByRole('button',{name:'Close easing'}).click();const spanEnd=await cell(11);await page.keyboard.down('Shift');await page.mouse.click(spanEnd.x,spanEnd.y);await page.keyboard.up('Shift');await settle();assert.deepEqual(await page.evaluate(()=>[styk.timeline.start,styk.timeline.end]),[7,11]);
   // Resize the right edge of an exposure; following keys move in one undo.
-  const edge=await page.evaluate(async()=>{const {ROW,HEADER}=await import('/src/layer-timeline.mjs'),t=styk.timeline,b=t.scroll.getBoundingClientRect();return {x:b.x+12*t.pxPerTick-1,y:b.y+HEADER+3*ROW+ROW/2,step:t.pxPerTick};});
+  const edge=await page.evaluate(async()=>{const t=styk.timeline,b=t.scroll.getBoundingClientRect();return {x:b.x+12*t.pxPerTick-1,y:b.y+t.rowY(3)+t.rowSize(3)/2,step:t.pxPerTick};});
   const before=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));await page.mouse.move(edge.x,edge.y);await page.mouse.down();await page.mouse.move(edge.x+3*edge.step,edge.y,{steps:5});await page.mouse.up();
   assert.deepEqual(await page.evaluate(()=>styk.editor.layerFrameKeys('layer-1').map(k=>k.tick)),[0,4,7,15]);await grid.press('Control+z');assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),before);
   // An unselected occupied key selects a range without editing the document.

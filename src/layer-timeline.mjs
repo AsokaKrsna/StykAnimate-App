@@ -18,8 +18,11 @@ import {AudioTimeline} from './audio-timeline.mjs';
 import {onFontsReady} from './ui/font-loading.mjs';
 import {openMenu,menuFor} from './ui/ui-menu.mjs';
 import {sayTimeline} from './locales/en-timeline.mjs';
+import {ROW,HEADER,sheetRowLayout,shortSheet} from './timeline-rows.mjs';
 
-export const ROW=32,HEADER=32;
+/** The tall tier's content row and ruler (timeline-rows.mjs holds the whole row geometry: 24px Camera and Scene,
+ * 28px rows and a 24px ruler at the short tier). */
+export {ROW,HEADER};
 const MAX_SCROLL=8000000;
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
 const element=(tag,parent,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;parent?.append(node);return node;};
@@ -115,11 +118,29 @@ export class Timeline{
     this.width=Math.max(1,clientWidth);this.height=Math.max(1,clientHeight);
     for(const [name,value] of [['--sheet-scrollbar-x',`${offsetHeight-clientHeight}px`],['--sheet-scrollbar-y',`${offsetWidth-clientWidth}px`]])
       if(this.root.style.getPropertyValue(name)!==value)this.root.style.setProperty(name,value);
-    this.audioTop=HEADER+this.tracks.length*ROW;
+    const layout=this._layoutRows();
+    this.audioTop=layout.header+layout.height;
     this.logicalWidth=Math.max(this.width,(Math.max(this.editor.totalTicks,this.end+1)+60)*this.pxPerTick);this.logicalHeight=Math.max(this.height,this.audioTop+(this.audio?.contentHeight??0));
     const width=`${Math.min(MAX_SCROLL,this.logicalWidth)}px`,height=`${Math.min(MAX_SCROLL,this.logicalHeight)}px`;
     if(this.spacer.style.width!==width)this.spacer.style.width=width;if(this.spacer.style.height!==height)this.spacer.style.height=height;
   }
+  /** The rows' geometry for the tracks, the height tier and the grid's height (timeline-rows.mjs), recomputed only when
+   * one of them changes. It writes the ruler's height and where the scrolling rows start as custom properties, which
+   * the label column, the playhead's tab and the overlays read (features/timeline.css). */
+  _layoutRows(){
+    const short=shortSheet(),tracks=this.tracks??[],viewport=this.height||Infinity,key=this._layoutKey;
+    if(this.layout&&key?.tracks===tracks&&key.short===short&&key.viewport===viewport)return this.layout;
+    this._layoutKey={tracks,short,viewport};const layout=this.layout=sheetRowLayout(tracks,{short,viewport});this.labelSignature=null;
+    for(const [name,value] of [['--sheet-ruler',`${layout.header}px`],['--sheet-body-top',`${layout.contentTop}px`]])
+      if(this.root.style.getPropertyValue(name)!==value)this.root.style.setProperty(name,value);
+    return layout;
+  }
+  /** Row `index`'s top in the grid (0 is the ruler's top): pinned rows stay put, the others scroll. */
+  rowY(index){const layout=this.layout;return layout.header+layout.top(index)-(layout.pinned&&index<layout.system?0:this._offsetY());}
+  /** Row `index`'s height: 24 for Camera and Scene, the row height for the others. */
+  rowSize(index){return this.layout.size(index);}
+  /** Where the scrolling rows start in the grid (below the ruler and the pinned rows). */
+  get bodyTop(){return this.layout?.contentTop??HEADER;}
   _offsetX(){const actual=Math.max(0,this.scroll.scrollWidth-this.scroll.clientWidth);return actual?this.scroll.scrollLeft/actual*Math.max(0,this.logicalWidth-this.scroll.clientWidth):0;}
   _offsetY(){return this.scroll.scrollTop;}
   _scrollToX(x){const max=this.logicalWidth-this.scroll.clientWidth;this.scroll.scrollLeft=max>0?clamp(x,0,max)/max*(this.scroll.scrollWidth-this.scroll.clientWidth):0;this.update();}
@@ -128,8 +149,12 @@ export class Timeline{
     this.audio?.update();
     this._extent();const ratio=window.devicePixelRatio||1,width=Math.round(this.width*ratio),height=Math.round(this.height*ratio);
     if(this.canvas.width!==width||this.canvas.height!==height){this.canvas.width=width;this.canvas.height=height;this.canvas.style.width=`${this.width}px`;this.canvas.style.height=`${this.height}px`;}
-    const css=getComputedStyle(this.root),color=name=>css.getPropertyValue(`--sheet-${name}`).trim();
-    this.colors=Object.fromEntries(['surface','hover','line','ink','muted','accent','selected','span','tween','camera-accent','camera-tint','scene-accent','scene-tint'].map(name=>[name,color(name)]));this.font=css.fontFamily;
+    const css=getComputedStyle(this.root),token=name=>css.getPropertyValue(name).trim(),color=name=>token(`--sheet-${name}`);
+    this.colors=Object.fromEntries(['surface','hover','line','ink','muted','accent','selected','span','tween','camera-accent','camera-tint','scene-accent','scene-tint',
+      'key-outline','cel','cel-line','draw-line','fx'].map(name=>[name,color(name)]));
+    Object.assign(this.colors,{'accent-soft':token('--accent-soft')||this.colors.selected,'accent-line':token('--accent-line')||this.colors.accent,'accent-text':token('--accent-text')||this.colors.accent});
+    this.colors.cel||=this.colors.span;this.colors['cel-line']||=this.colors.line;this.colors['draw-line']||=this.colors.accent;this.colors.fx||=this.colors.accent;this.colors['key-outline']||=this.colors.muted;
+    this.font=token('--font-ui')||css.fontFamily;
     this.update();
   }
   setZoom(value,anchor=this.width/2){const old=this.pxPerTick,center=(this._offsetX()+anchor)/old;this.pxPerTick=clamp(Number(value)||14,1,36);this.header?.setZoom(this.pxPerTick);this._extent();this._scrollToX(center*this.pxPerTick-anchor);this.audio?.update();}
@@ -160,54 +185,52 @@ export class Timeline{
     if(this.playheadLabel.textContent!==String(tick+1))this.playheadLabel.textContent=String(tick+1);
 
   }
+  /**
+   * Paints the grid (experience.md §5.7): the quiet area past the end, a line every 5 frames (single frames too once a
+   * cell is 24px), and each row's exposures drawn calmly: round keys in the row's colour with a 1px outline, a soft
+   * 12px capsule from key to key (a thin arrow while it tweens, none while it holds), the final hold neutral; Camera
+   * and Scene keep their key colours over neutral spans; drawing cels and effect clips are neutral blocks with hollow
+   * keys. The scrolling rows are painted clipped under the pinned Camera and Scene, then the ruler: numbers every 5
+   * frames across the visible span, past the end too, and while keys are dragged their timing ("12 → 14").
+   */
   _paint(){
     this._syncOrganization();
     this.audio?.update();
-    this._extent();const ctx=this.canvas.getContext('2d'),dpr=window.devicePixelRatio||1,step=this.pxPerTick,sx=this._offsetX(),sy=this._offsetY(),w=this.width,h=this.height,c=this.colors;
+    this._extent();const ctx=this.canvas.getContext('2d'),dpr=window.devicePixelRatio||1,step=this.pxPerTick,sx=this._offsetX(),sy=this._offsetY(),w=this.width,h=this.height,c=this.colors,layout=this.layout;
     this._cachedOffsetX=sx;
     if(!c)return;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);ctx.fillStyle=c.surface;ctx.fillRect(0,0,w,h);
-    const durationX=this.editor.totalTicks*step-sx;if(durationX<w){ctx.fillStyle=c.hover;ctx.fillRect(Math.max(0,durationX),HEADER,w-Math.max(0,durationX),h-HEADER);}
-    const first=Math.floor(sx/step),last=Math.ceil((sx+w)/step),firstRow=clamp(Math.floor(sy/ROW),0,this.tracks.length),lastRow=clamp(Math.ceil((sy+h-HEADER)/ROW),firstRow,this.tracks.length),state=this.editor.report._styk.layerSheet;
-    ctx.save();ctx.beginPath();ctx.rect(0,HEADER,w,h-HEADER);ctx.clip();
-    for(let index=firstRow;index<lastRow;index++){
-      const layer=this.tracks[index],track=state.tracks[layer.id],y=HEADER+index*ROW-sy,selected=this.selectedLayers.has(layer.id);
-      if(layer.kind.startsWith('vfx')){paintVfxRow(this,ctx,layer,y);continue;}
-      if(layer.kind==='motion'){paintMotionRow(this,ctx,layer,y);continue;}
-      const rowAccent=layer.kind==='camera'?c['camera-accent']:layer.kind==='scene'?c['scene-accent']:LAYER_COLORS[layer.color]??(layer.drawing?c.accent:null);
-      const rowTint=layer.kind==='camera'?c['camera-tint']:layer.kind==='scene'?c['scene-tint']:layer.drawing?c.selected:null;
-      if(track)for(let i=Math.max(0,sheetKeyAt(track,first).index);i<track.keys.length;i++){
-        const key=track.keys[i],next=track.keys[i+1],end=next?.tick??track.end;if(key.tick>last)break;if(end<=first)continue;
-        const left=Math.max(-6,key.tick*step-sx+1),right=Math.min(w+6,end*step-sx-1),blank=key.empty??(key.value?.frameId===null),tween=next&&!blank&&!(next.empty??(next.value?.frameId===null))&&!['hold','constant'].includes(key.interpolation);
-        ctx.beginPath();ctx.roundRect(left,y+5,Math.max(0,right-left),ROW-10,4);
-        if(blank){ctx.strokeStyle=c.muted;ctx.globalAlpha=.5;ctx.stroke();ctx.globalAlpha=1;}
-        else{ctx.fillStyle=rowTint??(tween?c.tween:c.span);ctx.fill();}
-        if(tween&&right-left>32){ctx.strokeStyle=c.accent;ctx.globalAlpha=.55;ctx.beginPath();ctx.moveTo(left+13,y+ROW/2);ctx.lineTo(right-7,y+ROW/2);ctx.lineTo(right-11,y+ROW/2-3);ctx.moveTo(right-7,y+ROW/2);ctx.lineTo(right-11,y+ROW/2+3);ctx.stroke();ctx.globalAlpha=1;}
-        if(layer.drawing&&!blank&&right-left>34){const source=key.value?.frameId&&this.editor.getFrameById(key.value.frameId),object=source?.objects.find(o=>this.editor.layerForUid(o.unique_id)===layer.id),figure=object&&this.editor.report.figure_types.find(f=>f.figure_type_id===object.figure_type_id);if(figure&&drawingMetadata(figure)){const thumb=this.editor.drawingResources.thumbnail(figure,()=>{if(!this.disposed)this.update();});if(thumb){const width=Math.min(40,right-left-12);ctx.drawImage(thumb,left+8,y+7,width,ROW-14);}}}
-        if(!blank&&end-key.tick>1){ctx.fillStyle=c.muted;ctx.globalAlpha=.55;ctx.fillRect(end*step-sx-4,y+12,2,8);ctx.globalAlpha=1;}
-      }
-      if(selected){ctx.fillStyle=rowTint??c.selected;ctx.globalAlpha=.65;ctx.fillRect(this.start*step-sx,y+1,(this.end-this.start+1)*step,ROW-2);ctx.globalAlpha=1;}
-      if(this.hover?.row===index&&!this.gesture){ctx.fillStyle=c.accent;ctx.globalAlpha=.07;ctx.fillRect(this.hover.tick*step-sx,y+1,step,ROW-2);ctx.globalAlpha=1;}
-      ctx.lineWidth=1;ctx.strokeStyle=c.line;ctx.beginPath();
-      for(let tick=first;tick<=last;tick++){if(step<8&&tick%5!==0)continue;const x=Math.round(tick*step-sx)+.5;ctx.moveTo(x,y+3);ctx.lineTo(x,y+ROW-3);}ctx.moveTo(0,y+ROW-.5);ctx.lineTo(w,y+ROW-.5);ctx.stroke();
-      if(track)for(let i=Math.max(0,sheetKeyAt(track,first).index);i<track.keys.length;i++){
-        const key=track.keys[i];if(key.tick>last)break;if(key.tick<first)continue;const x=(key.tick+.5)*step-sx;
-        ctx.beginPath();ctx.arc(x,y+ROW/2,Math.min(3.5,step/3),0,Math.PI*2);
-        if(key.empty??(key.value?.frameId===null)){ctx.fillStyle=c.surface;ctx.fill();ctx.strokeStyle=rowAccent??c.ink;ctx.stroke();}
-        else{ctx.fillStyle=rowAccent??c.ink;ctx.fill();}
-      }
-      if(selected){ctx.strokeStyle=rowAccent??c.accent;ctx.strokeRect(this.start*step-sx+.5,y+.5,(this.end-this.start+1)*step-1,ROW-1);}
-      if(layer.locked){ctx.fillStyle=c.surface;ctx.globalAlpha=.45;ctx.fillRect(0,y,w,ROW);ctx.globalAlpha=1;}
-    }
+    const ruler=layout.header,bodyTop=layout.contentTop,count=this.tracks.length,pinned=layout.pinned?layout.system:0;
+    const first=Math.floor(sx/step),last=Math.ceil((sx+w)/step),interval=step<2?50:step<5?20:step<9?10:5;
+    const firstRow=clamp(Math.max(layout.at(bodyTop-ruler+sy),pinned),0,count),lastRow=clamp(layout.at(h-ruler+sy)+1,firstRow,count);
+    // The quiet area past the end, the ruler included, and a line where the animation ends.
+    const endX=this.editor.totalTicks*step-sx;
+    if(endX<w){const x=Math.max(0,endX);ctx.fillStyle=c.hover;ctx.fillRect(x,0,w-x,h);if(endX>0){ctx.fillStyle=c.line;ctx.fillRect(Math.round(endX),0,1,h);}}
+    const region=(top,bottom,from,to,offset)=>{
+      if(bottom<=top||to<=from)return;
+      ctx.save();ctx.beginPath();ctx.rect(0,top,w,bottom-top);ctx.clip();
+      for(let index=from;index<to;index++)this._paintRowBase(ctx,index,ruler+layout.top(index)-offset,layout.size(index),first,last,sx);
+      // A line every 5 frames through the rows (every frame's edge too once a cell is 24px wide).
+      ctx.fillStyle=c.line;
+      for(let tick=Math.max(0,first);tick<=last;tick++)if((tick+1)%interval===0)ctx.fillRect(Math.round((tick+.5)*step-sx),top,1,bottom-top);
+      if(step>=24){ctx.globalAlpha=.45;for(let tick=Math.max(1,first);tick<=last;tick++)if((tick+1)%5!==0)ctx.fillRect(Math.round(tick*step-sx),top,1,bottom-top);ctx.globalAlpha=1;}
+      for(let index=from;index<to;index++)this._paintRow(ctx,index,ruler+layout.top(index)-offset,layout.size(index),first,last,sx);
+      ctx.restore();
+    };
+    this._grip=this._exposureGrip();
+    region(bodyTop,h,firstRow,lastRow,sy);
+    // The pinned rows over the scrolling ones; a hairline under them once rows have scrolled beneath.
+    if(pinned){ctx.fillStyle=c.surface;ctx.fillRect(0,ruler,Math.max(0,Math.min(w,endX)),bodyTop-ruler);region(ruler,bodyTop,0,pinned,0);if(sy>0){ctx.fillStyle=c.line;ctx.fillRect(0,bodyTop-1,w,1);}}
     const g=this.gesture;
     if(g?.kind==='move'&&(g.delta||g.rowDelta)||g?.kind==='resize'){
-      ctx.strokeStyle=c.accent;ctx.lineWidth=2;ctx.setLineDash([4,3]);
-      for(const id of this.ids){const row=this.tracks.findIndex(t=>t.id===id)+(g.rowDelta??0),start=g.kind==='resize'?g.span.start:this.start+(g.delta??0),end=g.kind==='resize'?g.span.end+g.delta:this.end+1+(g.delta??0);
-        ctx.strokeRect(start*step-sx+1,HEADER+row*ROW-sy+1,(end-start)*step-2,ROW-2);}
-      ctx.setLineDash([]);
+      ctx.save();ctx.beginPath();ctx.rect(0,ruler,w,h-ruler);ctx.clip();
+      ctx.strokeStyle=c['accent-line'];ctx.lineWidth=1.5;ctx.setLineDash([4,3]);
+      for(const id of this.ids){const row=this.tracks.findIndex(t=>t.id===id)+(g.rowDelta??0);if(row<0||row>=count)continue;
+        const start=g.kind==='resize'?g.span.start:this.start+(g.delta??0),end=g.kind==='resize'?g.span.end+g.delta:this.end+1+(g.delta??0),y=this.rowY(row),size=layout.size(row);
+        ctx.beginPath();ctx.roundRect(start*step-sx+1.5,y+3,(end-start)*step-3,size-6,6);ctx.stroke();}
+      ctx.restore();
     }
-    ctx.restore();ctx.fillStyle=c.surface;ctx.fillRect(0,0,w,HEADER);ctx.strokeStyle=c.line;ctx.beginPath();ctx.moveTo(0,HEADER-.5);ctx.lineTo(w,HEADER-.5);ctx.stroke();
-    ctx.font=`10px ${this.font}`;ctx.textAlign='center';ctx.textBaseline='middle';
-    const interval=step<2?50:step<5?20:step<9?10:5;for(let tick=first;tick<=last;tick++){const x=(tick+.5)*step-sx;if(tick===0||(tick+1)%interval===0){ctx.fillStyle=c.muted;ctx.fillText(String(tick+1),x,14);ctx.fillStyle=c.line;ctx.fillRect(Math.round(x),25,1,4);}}
+    this._paintRuler(ctx,{first,last,interval,sx,w,ruler,endX});
+    this._syncMoreRows(layout.at(h-ruler+sy),count);
     this._paintLabels(firstRow,lastRow,sy);
     // Rename on create: the new row opens its name once it is painted.
     if(this.pendingRename){const node=this.labels.find(label=>!label.hidden&&label._id===this.pendingRename);if(node){this.pendingRename=null;this._renameLayer(node);}}
@@ -216,9 +239,120 @@ export class Timeline{
     this.header?.setAddFrame({blank:drawing,disabled:locked||!this.ids.length});
     this.header?.setNextCopy({shown:drawing,disabled:locked});
   }
+  /** A row's background: the selected layer's tint across the grid, the selected frames and the hovered cell. */
+  _paintRowBase(ctx,index,y,size,first,last,sx){
+    const layer=this.tracks[index],c=this.colors,step=this.pxPerTick,w=this.width;
+    if(layer.kind.startsWith('vfx')||layer.kind==='motion')return;
+    const selected=this.selectedLayers.has(layer.id);
+    if(selected){ctx.fillStyle=layer.kind==='camera'?c['camera-tint']:layer.kind==='scene'?c['scene-tint']:c.selected;ctx.fillRect(0,y,w,size);}
+    if(selected){
+      // The selected frames: a soft block with the accent line around a range, the cell alone when it is one frame.
+      const x=this.start*step-sx,width=(this.end-this.start+1)*step;
+      if(x+width>=0&&x<=w){ctx.fillStyle=c['accent-soft'];ctx.beginPath();ctx.roundRect(x+1,y+3,Math.max(2,width-2),size-6,Math.min(7,width/2));ctx.fill();
+        if(this.end>this.start){ctx.strokeStyle=c['accent-line'];ctx.lineWidth=1.5;ctx.stroke();}}
+    }
+    if(this.hover?.row===index&&!this.gesture){ctx.fillStyle=c.accent;ctx.globalAlpha=.07;ctx.fillRect(this.hover.tick*step-sx,y+1,step,size-2);ctx.globalAlpha=1;}
+  }
+  /** A row's exposures and keys (the VFX and camera-motion lanes paint themselves). */
+  _paintRow(ctx,index,y,size,first,last,sx){
+    const layer=this.tracks[index],c=this.colors,step=this.pxPerTick,w=this.width;
+    if(layer.kind.startsWith('vfx')){paintVfxRow(this,ctx,layer,y,size);return;}
+    if(layer.kind==='motion'){paintMotionRow(this,ctx,layer,y,size);return;}
+    const track=this.editor.report._styk.layerSheet.tracks[layer.id],cy=y+size/2,system=layer.kind==='camera'||layer.kind==='scene';
+    const color=layer.kind==='camera'?c['camera-accent']:layer.kind==='scene'?c['scene-accent']:LAYER_COLORS[layer.color]??c.ink;
+    if(track){
+      const from=Math.max(0,sheetKeyAt(track,first).index),blankOf=key=>key.empty??(key.value?.frameId===null);
+      for(let i=from;i<track.keys.length;i++){
+        const key=track.keys[i],next=track.keys[i+1],end=next?.tick??track.end;if(key.tick>last)break;if(end<=first)continue;
+        const blank=blankOf(key);
+        if(layer.drawing){
+          // A cel: a neutral block over its exposure (the one under the playhead outlined), its drawing inside when wide enough.
+          const left=key.tick*step-sx+1.5,right=end*step-sx-1.5;if(right-left<1)continue;
+          const current=!blank&&this.editor.tick>=key.tick&&this.editor.tick<end&&layer.id===this.editor.activeLayerId;
+          ctx.beginPath();ctx.roundRect(Math.max(-6,left),y+7,Math.max(1,Math.min(w+6,right)-Math.max(-6,left)),size-14,5);
+          if(!blank){ctx.fillStyle=c.cel;ctx.fill();}
+          ctx.lineWidth=current?1.5:1;ctx.strokeStyle=current?c['accent-line']:c['cel-line'];ctx.stroke();
+          if(!blank&&right-left>34){const source=key.value?.frameId&&this.editor.getFrameById(key.value.frameId),object=source?.objects.find(o=>this.editor.layerForUid(o.unique_id)===layer.id),figure=object&&this.editor.report.figure_types.find(f=>f.figure_type_id===object.figure_type_id);if(figure&&drawingMetadata(figure)){const thumb=this.editor.drawingResources.thumbnail(figure,()=>{if(!this.disposed)this.update();});if(thumb){const width=Math.min(40,right-left-24);if(width>8)ctx.drawImage(thumb,left+16,y+9,width,size-18);}}}
+          continue;
+        }
+        const left=(key.tick+.5)*step-sx,right=next?(next.tick+.5)*step-sx:end*step-sx-2;if(right<=left)continue;
+        const x0=Math.max(-8,left),x1=Math.min(w+8,right);
+        ctx.beginPath();ctx.roundRect(x0,cy-6,Math.max(0,x1-x0),12,6);
+        if(blank){ctx.strokeStyle=c.line;ctx.lineWidth=1;ctx.stroke();continue;}
+        const tween=next&&!blankOf(next)&&!['hold','constant'].includes(key.interpolation);
+        // The final hold and the system rows' spans are neutral; a layer's spans take its colour, softly.
+        if(!next||system){ctx.fillStyle=c.span;ctx.fill();}
+        else{ctx.fillStyle=color;ctx.globalAlpha=.12;ctx.fill();ctx.globalAlpha=1;}
+        if(tween&&right-left>40){const a=left+8,b=right-9;ctx.strokeStyle=system?c.muted:color;ctx.globalAlpha=.7;ctx.lineWidth=1.25;ctx.lineCap='round';ctx.lineJoin='round';
+          ctx.beginPath();ctx.moveTo(Math.max(-8,a),cy);ctx.lineTo(b,cy);ctx.moveTo(b-3.5,cy-3);ctx.lineTo(b,cy);ctx.lineTo(b-3.5,cy+3);ctx.stroke();ctx.globalAlpha=1;}
+      }
+      // Keys: filled in the row's colour with a thin outline; blank keys and cel starts hollow.
+      const radius=Math.max(1.5,Math.min(4.5,step*.4)),filled=new Path2D(),hollow=new Path2D();let any=false,anyHollow=false;
+      for(let i=from;i<track.keys.length;i++){
+        const key=track.keys[i];if(key.tick>last)break;if(key.tick<first)continue;const x=(key.tick+.5)*step-sx;
+        if(layer.drawing||blankOf(key)){hollow.moveTo(x+radius*.85,cy);hollow.arc(x,cy,radius*.85,0,Math.PI*2);anyHollow=true;}
+        else{filled.moveTo(x+radius,cy);filled.arc(x,cy,radius,0,Math.PI*2);any=true;}
+      }
+      if(any){ctx.fillStyle=color;ctx.fill(filled);ctx.lineWidth=1;ctx.strokeStyle=c['key-outline'];ctx.stroke(filled);}
+      if(anyHollow){ctx.fillStyle=c.surface;ctx.fill(hollow);ctx.lineWidth=1.5;ctx.strokeStyle=layer.drawing?c['draw-line']:color;ctx.stroke(hollow);}
+      // The selected exposure's end: a grip to drag, holding the pose longer or shorter (today's edge drag).
+      const grip=this._grip;
+      if(grip?.id===layer.id){const x=grip.end*step-sx;if(x>-4&&x<w+4){ctx.fillStyle=c['accent-line'];ctx.beginPath();ctx.roundRect(x-1.5,cy-7,3,14,1.5);ctx.fill();}}
+    }
+    if(layer.locked){ctx.fillStyle=c.surface;ctx.globalAlpha=.45;ctx.fillRect(0,y,w,size);ctx.globalAlpha=1;}
+  }
+  /**
+   * The ruler: frame numbers every 5 frames across the visible span (past the end too, in a lighter weight), none
+   * where the playhead's tab sits, and while keys are dragged their timing beside the tab ("12 → 14").
+   */
+  _paintRuler(ctx,{first,last,interval,sx,w,ruler,endX}){
+    const c=this.colors,step=this.pxPerTick,playX=(Math.floor(this.pendingScrub??this.editor.tick)+.5)*step-sx;
+    ctx.fillStyle=c.surface;ctx.fillRect(0,0,Math.max(0,Math.min(w,endX)),ruler);
+    ctx.fillStyle=c.line;ctx.fillRect(0,ruler-1,w,1);
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    const total=this.editor.totalTicks,cy=ruler/2+.5;
+    for(let tick=Math.max(0,first);tick<=last;tick++){
+      if(tick!==0&&(tick+1)%interval!==0)continue;
+      const x=(tick+.5)*step-sx,label=String(tick+1),half=label.length*3.3;
+      if(Math.abs(x-playX)<15+half+2)continue;
+      ctx.font=`${tick<total?500:400} 11px ${this.font}`;ctx.fillStyle=c.muted;ctx.fillText(label,x,cy);
+    }
+    const g=this.gesture;let timing=null;
+    if(g?.kind==='move'&&g.delta)timing=`${this.start+1} → ${this.start+g.delta+1}`;
+    else if(g?.kind==='resize'&&g.delta)timing=`${g.span.end} → ${g.span.end+g.delta}`;
+    if(timing){
+      ctx.font=`600 11px ${this.font}`;ctx.textAlign='left';
+      const width=ctx.measureText(timing).width+12,x=Math.min(w-width-2,playX+19);
+      ctx.fillStyle=c['accent-soft'];ctx.beginPath();ctx.roundRect(x,cy-10,width,20,6);ctx.fill();
+      ctx.fillStyle=c['accent-text'];ctx.fillText(timing,x+6,cy);
+    }
+  }
+  /** The selected exposure (one layer, unlocked): its layer, first frame and end, for the end grip and its drag. */
+  _exposureGrip(){
+    if(this.ids.length!==1||this.gesture&&this.gesture.kind!=='resize')return null;
+    const id=this.ids[0],layer=this.editor.getLayer(id);if(!layer||layer.locked)return null;
+    if(this.gesture?.kind==='resize')return {id,start:this.gesture.span.start,end:this.gesture.span.end+this.gesture.delta};
+    const track=this.editor.report._styk.layerSheet.tracks[id],{key,next}=sheetKeyAt(track,this.start);
+    return key?{id,start:key.tick,end:next?.tick??track.end}:null;
+  }
+  /** "N more" at the foot of the ruler tools' column while content rows are below the grid, and a fade over the rows. */
+  _syncMoreRows(cut,count){
+    const below=Math.max(0,count-Math.max(cut,this.layout.system));
+    if(below===this.moreBelow)return;this.moreBelow=below;
+    if(!this.moreRows){
+      this.moreRows=element('button',this.main,'ui-button sheet-more-rows');this.moreRows.type='button';this.moreRows.dataset.size='sm';this.moreRows.dataset.variant='ghost';
+      this.moreRows.innerHTML=`${icon('arrow-down')}<span class="ui-label"></span>`;
+      this._on(this.moreRows,'click',()=>{this._scrollToY(this._offsetY()+Math.max(this.layout.row,this.height-this.bodyTop-this.layout.row));this.scroll.focus({preventScroll:true});});
+    }
+    this.moreRows.hidden=!below;this.root.toggleAttribute('data-more-below',below>0);
+    if(below){this.moreRows.lastChild.textContent=sayTimeline(null,'timeline.moreRows',{count:below});this.moreRows.setAttribute('aria-label',sayTimeline(null,below===1?'timeline.moreRowsNameOne':'timeline.moreRowsName',{count:below}));}
+  }
+  /** The label column's rows for the pinned rows and the visible ones (row nodes are reused slots, as the canvas). */
   _paintLabels(first,last,sy){
-    const signature=[first,last,sy,this.editor.layerRevision,this.editor.activeLayerId,this.editor._selectedCameraMotion,this.editor._selectedVfxClip,vfxChannelRevision(this.editor),...this.ids].join(':');if(signature===this.labelSignature)return;this.labelSignature=signature;
-    for(let slot=0;slot<last-first;slot++){
+    const layout=this.layout,pinned=layout.pinned?layout.system:0;
+    const signature=[first,last,sy,pinned,layout.header,layout.row,this.editor.layerRevision,this.editor.activeLayerId,this.editor._selectedCameraMotion,this.editor._selectedVfxClip,vfxChannelRevision(this.editor),...this.ids].join(':');if(signature===this.labelSignature)return;this.labelSignature=signature;
+    const rows=[];for(let index=0;index<pinned;index++)rows.push(index);for(let index=Math.max(first,pinned);index<last;index++)rows.push(index);
+    for(let slot=0;slot<rows.length;slot++){
       let node=this.labels[slot];if(!node){
         node=element('div',this.labelViewport,'sheet-layer');node.setAttribute('role','row');
         const disclosure=element('button',node,'icon-button sheet-camera-disclosure');disclosure.type='button';disclosure.innerHTML=icon('chevron-right');
@@ -231,23 +365,31 @@ export class Timeline{
         const eye=this._button(node,'eye','Toggle layer visibility',()=>{const row=this.tracks.find(t=>t.id===node._id);if(row?.kind.startsWith('vfx'))return;return row?.kind==='motion'?this.editor.setCameraMotion(row.id,{enabled:!row.visible}):this.editor.setLayerVisible(node._id,!row.visible);});eye.classList.add('sheet-layer-state');
         const lock=this._button(node,'lock','Toggle layer lock',()=>this.editor.setLayerLocked(node._id,!this.editor.getLayer(node._id).locked));lock.classList.add('sheet-layer-state');
         name.draggable=true;this._on(name,'dragstart',event=>{this.dragLayer=node._id;event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',node._id);});
-        this._on(node,'dragover',event=>{if(this.dragLayer&&this.dragLayer!==node._id&&this.editor.getLayer(node._id)?.kind==='layer'){event.preventDefault();node.dataset.drop=event.clientY<node.getBoundingClientRect().top+ROW/2?'before':'after';}});this._on(node,'dragleave',()=>delete node.dataset.drop);
+        this._on(node,'dragover',event=>{if(this.dragLayer&&this.dragLayer!==node._id&&this.editor.getLayer(node._id)?.kind==='layer'){event.preventDefault();const box=node.getBoundingClientRect();node.dataset.drop=event.clientY<box.top+box.height/2?'before':'after';}});this._on(node,'dragleave',()=>delete node.dataset.drop);
         this._on(node,'drop',event=>{event.preventDefault();const before=node.dataset.drop==='before';delete node.dataset.drop;const from=this.dragLayer;this.dragLayer=null;if(from&&from!==node._id&&this.editor.getLayer(node._id)?.kind==='layer')this._run(()=>{const order=this.editor.report._styk.layers.order.filter(id=>id!==from);this.editor.moveLayerTo(from,order.indexOf(node._id)+(before?1:0));});});
         this._on(name,'dragend',()=>{this.dragLayer=null;for(const label of this.labels)delete label.dataset.drop;});
         node._name=name;node._eye=eye;node._lock=lock;this._on(node,'contextmenu',event=>{event.preventDefault();this._selectLayer(node._id,event);if(this.tracks.find(t=>t.id===node._id)?.kind.startsWith('vfx'))return;this._menu(event,{layer:true});});this.labels.push(node);
       }
-      const layer=this.tracks[first+slot];node.hidden=false;node._id=layer.id;node.dataset.layerId=layer.id;node.dataset.selected=String(layer.kind==='motion'?this.editor._selectedCameraMotion===layer.id:this.selectedLayers.has(layer.id));node.dataset.active=String(layer.id===this.editor.activeLayerId);node.style.transform=`translateY(${(first+slot)*ROW-sy}px)`;
+      const index=rows[slot],layer=this.tracks[index],size=layout.size(index),still=index<pinned;node.hidden=false;node._id=layer.id;node.dataset.layerId=layer.id;node.dataset.selected=String(layer.kind==='motion'?this.editor._selectedCameraMotion===layer.id:this.selectedLayers.has(layer.id));node.dataset.active=String(layer.id===this.editor.activeLayerId);node.style.transform=`translateY(${layout.top(index)-(still?0:sy)}px)`;
+      // Pinned rows stay over the rows that scroll beneath them; each row is as tall as the canvas draws it.
+      if(node._size!==size){node._size=size;node.style.height=`${size}px`;}
+      if(node._still!==still){node._still=still;node.toggleAttribute('data-pinned',still);}
       node.style.setProperty('--layer-color',LAYER_COLORS[layer.color]??'transparent');node.dataset.color=layer.color??'';node.dataset.kind=layer.kind;node.dataset.drawing=String(Boolean(layer.drawing));node.dataset.hidden=String(layer.visible===false);node.dataset.locked=String(Boolean(layer.locked));node.setAttribute('aria-selected',node.dataset.selected);
-      const visualKind=layer.drawing?'drawing':layer.kind;if(node._kind!==visualKind){node._name.innerHTML=(layer.kind==='vfx'?vfxIcon('effects'):icon(layer.kind==='camera'?'camera':layer.kind==='scene'?'scene':layer.kind==='motion'?'activity':layer.drawing?'brush':'layers'))+'<span></span>';node._kind=visualKind;}
+      // One marker per row: Camera's and Scene's type glyph, a motion or effect lane's glyph, a layer's colour dot (a
+      // drawing layer adds a muted brush after its name).
+      const visualKind=layer.drawing?'drawing':layer.kind;if(node._kind!==visualKind){const lead=layer.kind==='vfx'?vfxIcon('effects'):['camera','scene','motion'].includes(layer.kind)?icon(layer.kind==='motion'?'activity':layer.kind):'<span class="ui-dot sheet-layer-dot" aria-hidden="true"></span>';
+        node._name.innerHTML=`${lead}<span class="sheet-layer-text"></span>${layer.drawing?icon('brush','sheet-layer-kind'):''}`;node._text=node._name.querySelector('.sheet-layer-text');node._dot=node._name.querySelector('.sheet-layer-dot');node._kind=visualKind;node._dotColor=null;}
+      const dotColor=LAYER_COLORS[layer.color]??'var(--sheet-ink)';if(node._dot&&node._dotColor!==dotColor){node._dotColor=dotColor;node._dot.style.setProperty('--dot',dotColor);}
       node._name.draggable=layer.kind==='layer';node._lock.hidden=layer.kind==='motion'||layer.kind.startsWith('vfx');node._eye.hidden=layer.kind.startsWith('vfx');
       const clip=layer.kind==='vfx'&&layer.clips.find(c=>c.id===this.editor._selectedVfxClip);node._channels.hidden=!clip||!Object.values(clip.keys).some(keys=>keys.length);if(clip){const label=vfxChannelLabel(this.editor,clip);node._channels.lastChild.textContent=label;node._channels.title=`Visible effect keys · ${label}`;}
       node._disclosure.hidden=layer.kind!=='camera'||!this.editor.getCameraMotions().length;
       node._disclosure.setAttribute('aria-expanded',String(!this.cameraMotionsCollapsed));node._disclosure.title=`${this.cameraMotionsCollapsed?'Expand':'Collapse'} camera motions`;node._disclosure.setAttribute('aria-label',node._disclosure.title);
-      node._name.lastChild.textContent=layer.name+(layer.kind==='camera'&&this.cameraMotionsCollapsed?` · ${this.editor.getCameraMotions().length}`:'')+(layer.parallax?.enabled?` · ${Math.round(layer.parallax.x*100)}%`:'');node._name.title=layer.name+(layer.drawing?' · Drawing layer':'');node._name.setAttribute('aria-label',`Select layer ${layer.name}`);
-      node._eye.dataset.on=String(!layer.visible);node._eye.innerHTML=icon(layer.visible?'eye':'eye-off');node._eye.setAttribute('aria-label',`${layer.visible?'Hide':'Show'} ${layer.name}`);node._eye.title=`${layer.visible?'Hide':'Show'} ${layer.name}`;
-      node._lock.dataset.on=String(layer.locked);node._lock.setAttribute('aria-label',`${layer.locked?'Unlock':'Lock'} ${layer.name}`);node._lock.title=`${layer.locked?'Unlock':'Lock'} ${layer.name}`;
+      node._text.textContent=layer.name+(layer.kind==='camera'&&this.cameraMotionsCollapsed?` · ${this.editor.getCameraMotions().length}`:'')+(layer.parallax?.enabled?` · ${Math.round(layer.parallax.x*100)}%`:'');node._name.title=layer.name+(layer.drawing?' · Drawing layer':'');node._name.setAttribute('aria-label',`Select layer ${layer.name}`);
+      // Eye and lock at rest on every row: quiet, and at full contrast while hidden or locked.
+      if(node._eye.dataset.on!==String(!layer.visible)){node._eye.dataset.on=String(!layer.visible);node._eye.innerHTML=icon(layer.visible?'eye':'eye-off');}node._eye.setAttribute('aria-label',`${layer.visible?'Hide':'Show'} ${layer.name}`);node._eye.title=`${layer.visible?'Hide':'Show'} ${layer.name}`;
+      if(node._lock.dataset.on!==String(Boolean(layer.locked))){node._lock.dataset.on=String(Boolean(layer.locked));node._lock.innerHTML=icon(layer.locked?'lock':'unlock');}node._lock.setAttribute('aria-label',`${layer.locked?'Unlock':'Lock'} ${layer.name}`);node._lock.title=`${layer.locked?'Unlock':'Lock'} ${layer.name}`;
     }
-    for(let slot=last-first;slot<this.labels.length;slot++)this.labels[slot].hidden=true;
+    for(let slot=rows.length;slot<this.labels.length;slot++)this.labels[slot].hidden=true;
   }
   _selectLayer(id,event={}){
     if(typeof id==='object')id=id._id;
@@ -266,7 +408,10 @@ export class Timeline{
   selectTrack(id){if(id?.startsWith('figure:'))id=this.editor.layerForUid(Number(id.slice(7)));if(this.editor.getLayer(id)){if(this.selectedTrackId===id&&this.selectedLayers.size===1&&this.selectedLayers.has(id))return;this.selectedTrackId=id;this.selectedLayers=new Set([id]);this.revealSelectedLayer();this.update();}}
   _renameLayer(node){const layer=this.editor.getLayer(node._id);if(layer?.kind!=='layer')return;const input=element('input',null,'sheet-layer-rename');node._name.after(input);input.setAttribute('aria-label',`Rename ${layer.name}`);input.value=layer.name;node._name.hidden=true;input.focus();input.select();let done=false;
     const finish=save=>{if(done)return;done=true;if(save&&input.value!==layer.name)this._run(()=>this.editor.renameLayer(layer.id,input.value));input.remove();node._name.hidden=false;this.update();};input.addEventListener('blur',()=>finish(true),{once:true});input.addEventListener('keydown',event=>{event.stopPropagation();if(event.key==='Enter')finish(true);if(event.key==='Escape')finish(false);});}
-  _hit(event){const rect=this.scroll.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top;return {tick:clamp(Math.floor((x+this._offsetX())/this.pxPerTick),0,9999999),row:y<HEADER?-1:Math.floor((y-HEADER+this._offsetY())/ROW),x,y};}
+  /** The cell under a pointer: its frame and row (-1 on the ruler; pinned rows do not scroll). */
+  _hit(event){const rect=this.scroll.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top,layout=this.layout;
+    const row=y<layout.header?-1:layout.pinned&&y<layout.contentTop?layout.at(y-layout.header):layout.at(y-layout.header+this._offsetY());
+    return {tick:clamp(Math.floor((x+this._offsetX())/this.pxPerTick),0,9999999),row,x,y};}
   _contains(hit){return hit.row>=0&&this.selectedLayers.has(this.tracks[hit.row]?.id)&&hit.tick>=this.start&&hit.tick<=this.end;}
   _selectCell(hit,{extend=false,notify=true}={}){
     const wait=this.beforeCommand?.();if(wait)return wait.then(()=>this._selectCell(hit,{extend,notify})).catch(error=>this.onError?.(error));
@@ -288,11 +433,16 @@ export class Timeline{
   easingSettings(selection){return selection.flatMap(({id,start,end})=>{const track=this.editor.report._styk.layerSheet.tracks[id],first=sheetKeyAt(track,start).key;return (track?.keys??[]).filter(key=>key===first||key.tick>=start&&key.tick<=end).map(keyEasing);});}
   applyEasing(selection,easing){return this.editor.movieclipBatch('Change easing',()=>{for(const {id,start,end} of selection)this.editor.sheetSetEasing([id],start,end,easing);});}
   showEasingPopover(event){if(!this.ids.length||this.ids.some(id=>this.editor.getLayer(id)?.locked))return;const rect=this.scroll.getBoundingClientRect();this.easingAnchor={x:event?.clientX??rect.left+Math.min(this.width-16,Math.max(16,(this.start+.5)*this.pxPerTick-this._offsetX())),y:event?.clientY??rect.top+32};return showKeyframeEasingPopover.call(this);}
+  /** The selected exposure's end grip under the pointer: up to a 24px target, reaching further into the exposure than
+   * past it, so the next key's cell stays easy to click (a press there that does not move still selects that cell).
+   * It never reaches the exposure's middle: at a close zoom or on a one-frame exposure the key itself stays the target
+   * for moving the selection, and the grip shrinks toward today's 4px edge. */
   _resizeHit(hit){
-    if(!hit||this.ids.length!==1||!this.selectedLayers.has(this.tracks[hit.row]?.id)||this.tracks[hit.row]?.locked)return null;
-    const id=this.tracks[hit.row].id,track=this.editor.report._styk.layerSheet.tracks[id],{key,next}=sheetKeyAt(track,this.start);
-    if(!key)return null;const end=next?.tick??track.end;
-    return Math.abs(hit.x+this._offsetX()-end*this.pxPerTick)<4?{id,start:key.tick,end}:null;
+    const grip=this.gesture?null:this._exposureGrip();
+    if(!hit||hit.row<0||!grip||this.tracks[hit.row]?.id!==grip.id)return null;
+    const dx=hit.x+this._offsetX()-grip.end*this.pxPerTick;
+    const inward=Math.max(4,Math.min(12,(grip.end-grip.start)*this.pxPerTick/2-1));
+    return dx>=-inward&&dx<=Math.min(6,Math.max(4,this.pxPerTick/2-1))?grip:null;
   }
   _flushScrub({force=false}={}){
     if(this.pendingScrub==null&&!this.pendingCell)return;
@@ -313,7 +463,7 @@ export class Timeline{
     if(hit.row<0){this.gesture={kind:'scrub',pointer:event.pointerId};this.onScrubStart?.();this.pendingScrub=hit.tick;this.update(false);event.preventDefault();return;}
     this.audio?.clearSelection();
     if(this._motionDown(event,hit))return;
-    const selected=this._contains(hit),span=selected?this._resizeHit(hit):null,layer=this.tracks[hit.row];
+    const selected=this._contains(hit),span=this._resizeHit(hit),layer=this.tracks[hit.row];
     if(span&&!event.shiftKey&&!event.altKey){this.gesture={kind:'resize',span,hit,pointer:event.pointerId,x:event.clientX,y:event.clientY,delta:0};event.preventDefault();return;}
     const track=this.editor.report._styk.layerSheet.tracks[layer.id];
     // A preceding key does not expose cells beyond the track's exclusive end.
@@ -331,7 +481,7 @@ export class Timeline{
     }
     const hit=this._hit(event),g=this.gesture;
     if(!g){
-      const resize=this._contains(hit)?this._resizeHit(hit):null;this.scroll.style.cursor=hit.row<0?'ew-resize':resize?'ew-resize':'default';
+      const resize=this._resizeHit(hit);this.scroll.style.cursor=hit.row<0?'ew-resize':resize?'ew-resize':'default';
       if(this.hover?.tick!==hit.tick||this.hover?.row!==hit.row||Boolean(resize)!==this.hoverResize){this.hover=hit;this.hoverResize=Boolean(resize);this.update();}return;
     }
     if(g.kind==='scrub'){this.pendingScrub=hit.tick;this.update(false);}
@@ -346,6 +496,7 @@ export class Timeline{
     if(g.kind==='select'&&Math.abs(event.clientX-g.x)+Math.abs(event.clientY-g.y)>4){const hit=this._hit(event);this.pendingCell={...hit,row:clamp(hit.row,0,this.tracks.length-1)};}
     this._flushScrub({force:true});this.gesture=null;
     if(g.kind==='resize'&&g.delta)this._run(()=>this.editor.sheetSetDuration(g.span.end+g.delta-g.span.start,g.span.id,g.span.start));
+    else if(g.kind==='resize'&&Math.abs(event.clientX-g.x)<=4&&!this._contains(g.hit))this._selectCell(g.hit);
     else if(g.kind==='move'&&(g.delta||g.rowDelta)){
       const destinations=this.ids.map(id=>this.tracks[this.tracks.findIndex(t=>t.id===id)+g.rowDelta]?.id);
       const done=this._run(()=>{

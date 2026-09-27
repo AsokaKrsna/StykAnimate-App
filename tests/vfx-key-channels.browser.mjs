@@ -26,7 +26,7 @@ try{
  await dialog.waitFor({state:'hidden'});assert.match(await trigger.innerText(),/Glow 1 · Radius/);
  assert.equal(await page.evaluate(()=>styk.timeline.tracks===beforeTracks),true);
  const hidden=await page.evaluate(()=>JSON.stringify(styk.editor.getVfxClips()[0].keys[intensity]));
- const point=await page.evaluate(()=>{const t=styk.timeline,row=t.tracks.findIndex(r=>r.kind==='vfx'),r=t.scroll.getBoundingClientRect();return {x:r.left+20.5*t.pxPerTick-t._offsetX(),y:r.top+32+row*32-t._offsetY()+23,dx:2*t.pxPerTick};});
+ const point=await page.evaluate(()=>{const t=styk.timeline,row=t.tracks.findIndex(r=>r.kind==='vfx'),r=t.scroll.getBoundingClientRect();return {x:r.left+20.5*t.pxPerTick-t._offsetX(),y:r.top+t.rowY(row)+t.rowSize(row)-9,dx:2*t.pxPerTick};});
  await page.mouse.move(point.x,point.y);await page.mouse.down();await page.mouse.move(point.x+point.dx,point.y,{steps:8});await page.mouse.up();
  assert.deepEqual(await page.evaluate(()=>styk.editor.getVfxClips()[0].keys[radius].map(k=>k.tick)),[0,17,40]);assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.getVfxClips()[0].keys[intensity])),hidden);
  await page.keyboard.press('Delete');assert.deepEqual(await page.evaluate(()=>styk.editor.getVfxClips()[0].keys[radius].map(k=>k.tick)),[0,40]);assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.getVfxClips()[0].keys[intensity])),hidden);

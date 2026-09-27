@@ -87,7 +87,10 @@ try{
         const endpoint=600+(direction==='before'?-20:20);styk.timeline._scrollToX((endpoint+.5)*zoom-300);
       },{zoom,direction});await settle();
       const handle=page.getByRole('slider',{name:`Onion frames ${direction}`,exact:true}),sign=direction==='before'?-1:1;
+      // A press that stays under the drag threshold is a click on the ruler: it seeks and leaves the range alone.
       await drag(handle,sign*3);assert.equal((await value())[direction],20);
+      assert.notEqual((await value()).tick,600,'a click on an onion end seeks like the ruler');
+      await page.evaluate(()=>styk.editor.seek(600));await settle();
       await drag(handle,sign*8,{release:false});assert.equal((await value())[direction],21);assert.equal(await page.evaluate(direction=>styk.state.settings[direction==='before'?'onionRangeBefore':'onionRangeAfter'],direction),20);
       await page.mouse.up();await settle();assert.equal((await value())[direction],21);assert.equal((await value()).tick,600,'handle editing never seeks');
       await drag(handle,sign*40,{release:false});await page.keyboard.press('Escape');await page.mouse.up();await settle();assert.equal((await value())[direction],21);

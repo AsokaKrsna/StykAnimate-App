@@ -513,7 +513,8 @@ try {
     // Today (1.1) the timeline shows 4.38 content rows at every size; the default keeps 4½ above 800px tall and four whole rows below.
     for (const [width, height, least] of [[1440, 900, 4.38], [1280, 720, 4], [1024, 700, 4], [900, 700, 4], [960, 600, 4]]) {
       await resize(width, height);
-      const rows = await page.evaluate(() => (styk.timeline.height - 32 - 2 * 32) / 32);
+      // Content rows under the ruler and the pinned Camera and Scene rows (timeline-rows.mjs).
+      const rows = await page.evaluate(() => (styk.timeline.height - styk.timeline.bodyTop) / styk.timeline.layout.row);
       assert.ok(rows >= least, `${width}x${height}: ${rows} content rows`);
     }
     await resize(1440, 900);

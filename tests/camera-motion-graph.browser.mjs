@@ -44,7 +44,7 @@ try{
   check('Duration immediately changes the curve range and timeline clip',(await state()).rows[1].clip.duration===80&&await graph.locator('.motion-graph-axis text').last().textContent()==='80');
   await field('duration').press('Escape');await settle();
   before=await state();
-  const edge=await page.evaluate(()=>{const t=styk.timeline,r=t.scroll.getBoundingClientRect();return {x:r.x+48*t.pxPerTick-3,y:r.y+32+32+16,delta:5*t.pxPerTick};});
+  const edge=await page.evaluate(()=>{const t=styk.timeline,r=t.scroll.getBoundingClientRect();return {x:r.x+48*t.pxPerTick-3,y:r.y+t.rowY(1)+t.rowSize(1)/2,delta:5*t.pxPerTick};});
   await page.mouse.move(edge.x,edge.y);await page.mouse.down();await page.mouse.move(edge.x+edge.delta,edge.y,{steps:5});await settle();
   check('Timeline resizing updates the graph and timing field before release',await field('duration').inputValue()==='53'&&await graph.locator('.motion-graph-axis text').last().textContent()==='53'&&(await state()).clip.duration===48&&(await state()).undo===before.undo);
   await page.keyboard.press('Escape');await page.mouse.up();await settle();
@@ -81,7 +81,7 @@ try{
   await page.evaluate(()=>{const e=styk.editor;e.setCameraMotion(e.getCameraMotions()[0].id,{params:{strength:.5}});e.undo();e.redo();});await settle();
   check('Collapse state survives edits and history',(await state()).rows.every(r=>r.kind!=='motion'));
   const grid=page.getByRole('grid',{name:'Layer frames'}),b=await grid.boundingBox();
-  await page.mouse.click(b.x+7,b.y+32+32+16);await settle();
+  const lane=await page.evaluate(()=>styk.timeline.rowY(1)+styk.timeline.rowSize(1)/2);await page.mouse.click(b.x+7,b.y+lane);await settle();
   check('Collapsed grid hit testing selects the visible Scene row',await page.evaluate(()=>styk.timeline.selectedTrackId==='scene'));
   const expand=page.getByRole('button',{name:'Expand camera motions',exact:true});await expand.focus();await expand.press('Enter');await settle();
   check('Disclosure is keyboard operable',(await state()).rows.filter(r=>r.kind==='motion').length===2);

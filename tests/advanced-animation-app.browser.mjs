@@ -37,7 +37,7 @@ try {
     const timeline = styk.timeline, rect = timeline.scroll.getBoundingClientRect(), index = timeline.tracks.findIndex(track => track.id === trackId);
     if (!ruler && index < 0) throw new Error(`Track ${trackId} is missing.`);
     return {x: rect.left + (tick + .5) * timeline.pxPerTick - timeline._offsetX(),
-      y: rect.top + (ruler ? 12 : 32 + index * 32 + 16 - timeline._offsetY())};
+      y: rect.top + (ruler ? 12 : timeline.rowY(index) + timeline.rowSize(index) / 2)};
   }, {trackId, tick, ruler});
   async function seek(tick) { const p = await point(null, tick, true); await page.mouse.click(p.x, p.y); await settle(); assert.equal(await page.evaluate(() => styk.editor.tick), tick); }
   async function exportFile(kind, name) {

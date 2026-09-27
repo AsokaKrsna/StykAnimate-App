@@ -12,8 +12,8 @@ const snapshot=()=>page.evaluate(()=>{
   return JSON.stringify(report);
 });
 const cell=(tick,id)=>page.evaluate(async({tick,id})=>{
-  const {ROW,HEADER}=await import('/src/layer-timeline.mjs'),t=styk.timeline,b=t.scroll.getBoundingClientRect();
-  return {x:b.x+(tick+.5)*t.pxPerTick-t._offsetX(),y:b.y+HEADER+(t.tracks.findIndex(row=>row.id===id)+.5)*ROW-t._offsetY()};
+  const t=styk.timeline,b=t.scroll.getBoundingClientRect(),index=t.tracks.findIndex(row=>row.id===id);
+  return {x:b.x+(tick+.5)*t.pxPerTick-t._offsetX(),y:b.y+t.rowY(index)+t.rowSize(index)/2};
 },{tick,id});
 const drag=async(from,to,copy=false)=>{
   if(copy)await page.keyboard.down('Alt');

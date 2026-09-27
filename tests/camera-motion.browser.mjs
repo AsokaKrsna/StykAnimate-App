@@ -19,7 +19,7 @@ try{
   await field.fill('25');await field.press('Enter');await page.waitForTimeout(50);check('Enter commits one motion edit',await page.evaluate(n=>styk.editor.getCameraMotions()[0].params.moveX===25&&styk.editor._undo.length===n+1,before));
   await card.locator('[data-motion-action="duplicate"]').click();await page.waitForTimeout(60);
   check('Duplicate creates a separate timed clip',await page.evaluate(()=>styk.editor.getCameraMotions()[1].start===12));
-  const positions=await page.evaluate(()=>{const t=styk.timeline,r=t.scroll.getBoundingClientRect();return {x:r.x+6*t.pxPerTick,y:r.y+26+32+16,dx:4*t.pxPerTick};});
+  const positions=await page.evaluate(()=>{const t=styk.timeline,r=t.scroll.getBoundingClientRect();return {x:r.x+6*t.pxPerTick,y:r.y+t.rowY(1)+t.rowSize(1)/2,dx:4*t.pxPerTick};});
   await page.mouse.move(positions.x,positions.y);await page.mouse.down();await page.mouse.move(positions.x+positions.dx,positions.y,{steps:5});await page.mouse.up();await page.waitForTimeout(60);
   check('Timeline dragging commits a snapped motion move',await page.evaluate(()=>styk.editor.getCameraMotions()[0].start===4));
   check('Selecting a motion keeps the Camera inspector active',await page.evaluate(()=>styk.state.inspectorContext==='camera'));
@@ -28,7 +28,7 @@ try{
   await page.waitForFunction(()=>styk.editor.getCameraMotions().length===3);
   check('Timeline copy/paste copies motion without changing camera keys',await page.evaluate(before=>JSON.stringify(styk.editor.report._styk.layerSheet.tracks.camera)===before,cameraBeforeCopy));
   await page.evaluate(()=>{styk.editor.undo();styk.timeline._selectMotion(styk.editor.getCameraMotions()[0].id);});
-  const trim=await page.evaluate(()=>{const t=styk.timeline,r=t.scroll.getBoundingClientRect(),c=styk.editor.getCameraMotions()[0];return{x:r.x+(c.start+c.duration)*t.pxPerTick-3,y:r.y+26+32+16,dx:3*t.pxPerTick};});
+  const trim=await page.evaluate(()=>{const t=styk.timeline,r=t.scroll.getBoundingClientRect(),c=styk.editor.getCameraMotions()[0];return{x:r.x+(c.start+c.duration)*t.pxPerTick-3,y:r.y+t.rowY(1)+t.rowSize(1)/2,dx:3*t.pxPerTick};});
   await page.mouse.move(trim.x,trim.y);await page.mouse.down();await page.mouse.move(trim.x+trim.dx,trim.y,{steps:4});await page.mouse.up();
   check('Timeline edge dragging trims a motion duration',await page.evaluate(()=>styk.editor.getCameraMotions()[0].duration===15));await page.evaluate(()=>styk.editor.undo());
   await page.locator(`[data-motion-toggle="${id}"]`).click();check('Mute toggles the saved clip',await page.evaluate(()=>!styk.editor.getCameraMotions()[0].enabled));await page.locator(`[data-motion-toggle="${id}"]`).click();

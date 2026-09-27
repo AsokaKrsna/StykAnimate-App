@@ -118,6 +118,8 @@ export class AudioTimeline {
   error(error) { this.live.textContent = error.message; this.onError?.(error); }
   button(parent, title, action, symbol) { const node = el('button', parent, 'audio-button'); node.type = 'button'; node.title = title; node.setAttribute('aria-label', title); node.innerHTML = icon(symbol); this.on(node, 'click', () => node.viewAction ? action() : this._run(action)); return node; }
   get rulerHeight() { return this.integrated ? 0 : RULER; }
+  /** Where the integrated lanes may show in the Advanced grid: below its ruler and pinned rows (timeline-rows.mjs). */
+  get bodyTop() { return this.host?.bodyTop ?? 32; }
   get bodyHeight() { const count = audioState(this.editor.report).tracks.length; return count ? this.rulerHeight + count * ROW + DROP : 112; }
   get contentHeight() { return this.open ? TOOLBAR + this.bodyHeight : 0; }
   get verticalScroll() { return this.integrated ? this.host.scroll : this.body; }
@@ -199,14 +201,14 @@ export class AudioTimeline {
     this.dropRow.style.top = `${height - DROP}px`; this.dropRow.dataset.active = String(this.gesture?.target === 'new' || this.fileDropTrack === 'new');
     this.dropRow.textContent = this.gesture?.target === 'new' ? `Release to create a track · ${asset?.name ?? 'Audio'}` : '+ Drop a clip here to create a track';
     if (this.revealId) {
-      const top = this.rulerHeight + state.tracks.findIndex(row => row.id === this.revealId) * ROW + (this.integrated ? this.host.audioTop + TOOLBAR : 0), scroll = this.verticalScroll, viewport = this.integrated ? this.host.height : this.body.clientHeight, margin = this.integrated ? 32 + TOOLBAR : RULER;
+      const top = this.rulerHeight + state.tracks.findIndex(row => row.id === this.revealId) * ROW + (this.integrated ? this.host.audioTop + TOOLBAR : 0), scroll = this.verticalScroll, viewport = this.integrated ? this.host.height : this.body.clientHeight, margin = this.integrated ? this.bodyTop + TOOLBAR : RULER;
       if (top < scroll.scrollTop + margin) scroll.scrollTop = Math.max(0, top - margin);
       else if (top + ROW > scroll.scrollTop + viewport) scroll.scrollTop = top + ROW - viewport;
       this.revealId = null;
       if (this.integrated) this.positionIntegrated();
     }
-    const sy = this.integrated ? Math.max(0, this.host.scroll.scrollTop + 32 - this.host.audioTop) : this.body.scrollTop;
-    const visibleHeight = this.integrated ? Math.max(0, Math.min(height - sy, this.host.height - Math.max(32 + TOOLBAR, this.host.audioTop + TOOLBAR - this.host.scroll.scrollTop))) : Math.max(1, this.body.clientHeight);
+    const sy = this.integrated ? Math.max(0, this.host.scroll.scrollTop + this.bodyTop - this.host.audioTop) : this.body.scrollTop;
+    const visibleHeight = this.integrated ? Math.max(0, Math.min(height - sy, this.host.height - Math.max(this.bodyTop + TOOLBAR, this.host.audioTop + TOOLBAR - this.host.scroll.scrollTop))) : Math.max(1, this.body.clientHeight);
     const dpr = window.devicePixelRatio || 1; this.canvas.width = Math.round(w * dpr); this.canvas.height = Math.round(visibleHeight * dpr); this.canvas.style.width = `${w}px`; this.canvas.style.height = `${visibleHeight}px`; this.canvas.style.top = `${sy}px`;
     const ctx = this.canvas.getContext('2d'), css = getComputedStyle(this.root), ink = css.getPropertyValue('--audio-ink').trim(), fill = css.getPropertyValue('--audio-fill').trim();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, visibleHeight); ctx.font = `10px ${css.fontFamily}`; ctx.fillStyle = css.color;
@@ -273,10 +275,10 @@ export class AudioTimeline {
   positionIntegrated() {
     const top = this.host.audioTop - this.host.scroll.scrollTop;
     this.root.style.top = `${top}px`; this.root.style.right = `${this.host.scroll.offsetWidth - this.host.scroll.clientWidth}px`;
-    this.toolbar.style.transform = `translateY(${Math.max(0, 32 - top)}px)`;
-    this.host.root.style.setProperty('--audio-toolbar-top', `${Math.max(32, top)}px`);
-    this.host.root.style.setProperty('--audio-toolbar-bottom', `${Math.max(32, top) + TOOLBAR}px`);
-    this.root.style.clipPath = `inset(${Math.max(0, 32 - top)}px 0 ${Math.max(0, top + this.contentHeight - this.host.height)}px 0)`;
+    this.toolbar.style.transform = `translateY(${Math.max(0, this.bodyTop - top)}px)`;
+    this.host.root.style.setProperty('--audio-toolbar-top', `${Math.max(this.bodyTop, top)}px`);
+    this.host.root.style.setProperty('--audio-toolbar-bottom', `${Math.max(this.bodyTop, top) + TOOLBAR}px`);
+    this.root.style.clipPath = `inset(${Math.max(0, this.bodyTop - top)}px 0 ${Math.max(0, top + this.contentHeight - this.host.height)}px 0)`;
   }
   down(event) {
     if (event.button !== 0) return; this.onSeek?.(); const node = event.target.closest('[data-clip]'), rect = this.lanes.getBoundingClientRect();
@@ -335,7 +337,7 @@ export class AudioTimeline {
     const speed = (value, low, high) => value < low + 24 ? -Math.min(18, (low + 24 - value) / 3) : value > high - 24 ? Math.min(18, (value - high + 24) / 3) : 0;
     const beforeX = scroll.scrollLeft, beforeY = vertical.scrollTop;
     scroll.scrollLeft += speed(point.clientX, lanes.left, lanes.right);
-    if (gesture.kind === 'move') vertical.scrollTop += speed(point.clientY, rect.top + (this.integrated ? 32 + TOOLBAR : 0), rect.top + (this.integrated ? this.host.height : rect.height));
+    if (gesture.kind === 'move') vertical.scrollTop += speed(point.clientY, rect.top + (this.integrated ? this.bodyTop + TOOLBAR : 0), rect.top + (this.integrated ? this.host.height : rect.height));
     if (scroll.scrollLeft !== beforeX || vertical.scrollTop !== beforeY) { if (this.integrated) this.positionIntegrated(); this.move(point); }
   }
   up(event) {

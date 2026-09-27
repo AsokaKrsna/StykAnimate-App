@@ -4,7 +4,8 @@ import {vfxVisibleKeys,vfxChannelLabel} from './vfx-key-channels.mjs';
 import {openVfxChannelMenu} from './vfx-key-channel-menu.mjs';
 import {generatorClipTail} from './vfx-generators.mjs';
 
-const ROW=32,HEADER=32,KEY_Y=23;
+/** Where an effect lane's keys sit: under the clip's name, near the lane's foot (the lane is `size` px tall, timeline-rows.mjs). */
+const keyY=size=>size-9;
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const name=c=>c.name||VFX_REGISTRY[c.effects[0]?.type]?.name||'Effects';
 const lowerBound=(keys,tick)=>{let a=0,b=keys.length;while(a<b){const m=(a+b)>>>1;if(keys[m].tick<tick)a=m+1;else b=m;}return a;};
@@ -43,33 +44,33 @@ function previewClip(host,clip){const g=host.gesture;return g?.kind==='vfx-clip'
 function keyTicks(host,clip){const sx=host._offsetX(),step=host.pxPerTick;return visibleVfxKeys(vfxVisibleKeys(host.editor,clip),Math.max(clip.offset,sx/step-clip.start+clip.offset-1),Math.min(clip.duration===null?Infinity:clip.offset+clip.duration-1,(sx+host.width)/step-clip.start+clip.offset+1),step);}
 function keyX(host,clip,tick){return (tick+clip.start-clip.offset+.5)*host.pxPerTick-host._offsetX();}
 function fadeX(host,clip,edge){const length=Math.min(clip.duration,clip[edge]);return (clip.start+(edge==='fadeIn'?length:clip.duration-length))*host.pxPerTick-host._offsetX();}
-function diamond(ctx,x,y,r){ctx.beginPath();ctx.moveTo(x,y-r);ctx.lineTo(x+r,y);ctx.lineTo(x,y+r);ctx.lineTo(x-r,y);ctx.closePath();}
-export function paintVfxRow(host,ctx,row,y){
- const sx=host._offsetX(),step=host.pxPerTick,c=host.colors,g=host.gesture;
- ctx.fillStyle=c.line;ctx.fillRect(0,y+ROW-1,host.width,1);
+/** An effect lane: each clip a neutral block (the selected one in the accent) with its name, fades and round keys. */
+export function paintVfxRow(host,ctx,row,y,size=32){
+ const sx=host._offsetX(),step=host.pxPerTick,c=host.colors,g=host.gesture,top=y+3,height=size-6,foot=y+size-4,keyAt=y+keyY(size);
  for(const source of row.clips){
   const clip=previewClip(host,source),duration=clip.duration??host.editor.totalTicks,left=clip.start*step-sx,right=left+duration*step,selected=host.editor._selectedVfxClip===clip.id;
   // Hatched tail: particles emitted inside the clip stay visible after it.
   const tail=clip.duration===null?0:generatorClipTail(clip);
   if(left>host.width||right+tail*step<0)continue;
-  if(tail>0){const ta=Math.max(-5,right),tb=Math.min(host.width+5,right+tail*step);if(tb>ta+1){ctx.save();ctx.globalAlpha=clip.enabled?.6:.25;ctx.beginPath();ctx.rect(ta,y+9,tb-ta,14);ctx.clip();ctx.strokeStyle=selected?c.accent:c.muted??c.line;ctx.lineWidth=1;ctx.beginPath();for(let x=ta-14;x<tb;x+=5){ctx.moveTo(x,y+23);ctx.lineTo(x+14,y+9);}ctx.stroke();ctx.restore();}}
+  if(tail>0){const ta=Math.max(-5,right),tb=Math.min(host.width+5,right+tail*step);if(tb>ta+1){ctx.save();ctx.globalAlpha=clip.enabled?.6:.25;ctx.beginPath();ctx.rect(ta,top+6,tb-ta,height-12);ctx.clip();ctx.strokeStyle=selected?c.accent:c.muted??c.line;ctx.lineWidth=1;ctx.beginPath();for(let x=ta-14;x<tb;x+=5){ctx.moveTo(x,top+height-6);ctx.lineTo(x+14,top+6);}ctx.stroke();ctx.restore();}}
   if(right<0)continue;
   const a=Math.max(-5,left+1),b=Math.min(host.width+5,right-1),width=Math.max(2,b-a);
-  ctx.save();ctx.globalAlpha=clip.enabled?1:.4;ctx.beginPath();ctx.roundRect(a,y+3,width,26,5);ctx.fillStyle=selected?c.selected:c.span;ctx.fill();ctx.strokeStyle=selected?c.accent:c.line;ctx.stroke();ctx.clip();
+  ctx.save();ctx.globalAlpha=clip.enabled?1:.4;ctx.beginPath();ctx.roundRect(a,top,width,height,6);ctx.fillStyle=selected?c['accent-soft']??c.selected:c.cel??c.span;ctx.fill();ctx.lineWidth=selected?1.5:1;ctx.strokeStyle=selected?c['accent-line']??c.accent:c['cel-line']??c.line;ctx.stroke();ctx.clip();
   // A beam's charge-up is shaded before it fires.
   const charge=clip.effects.find(e=>e.type==='beam'&&e.enabled)?.params.charge??0;
-  if(charge>0&&clip.duration!==null){ctx.save();ctx.globalAlpha*=.14;ctx.fillStyle=c.accent;ctx.fillRect(left,y+3,Math.min(charge,duration)*step,26);ctx.restore();}
+  if(charge>0&&clip.duration!==null){ctx.save();ctx.globalAlpha*=.14;ctx.fillStyle=c.accent;ctx.fillRect(left,top,Math.min(charge,duration)*step,height);ctx.restore();}
   if(clip.duration!==null&&(clip.fadeIn||clip.fadeOut)){
    const points=[0,duration,Math.min(duration,clip.fadeIn),Math.max(0,duration-clip.fadeOut)];if(clip.fadeIn+clip.fadeOut>duration)points.push(duration*clip.fadeIn/(clip.fadeIn+clip.fadeOut));points.sort((a,b)=>a-b);
-   ctx.strokeStyle=c.accent;ctx.globalAlpha*=.45;ctx.beginPath();for(const [i,time] of points.entries())ctx[i?'lineTo':'moveTo'](left+time*step,y+28-vfxFadeAt(clip,time)*23);ctx.stroke();ctx.globalAlpha=clip.enabled?1:.4;
+   ctx.strokeStyle=c.accent;ctx.globalAlpha*=.45;ctx.beginPath();for(const [i,time] of points.entries())ctx[i?'lineTo':'moveTo'](left+time*step,foot-vfxFadeAt(clip,time)*(height-4));ctx.stroke();ctx.globalAlpha=clip.enabled?1:.4;
   }
   ctx.font=`11px ${host.font}`;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle=c.ink;
-  if(width>34){ctx.save();ctx.beginPath();ctx.rect(Math.max(left+10,6),y+5,Math.max(1,width-20),15);ctx.clip();ctx.fillText(name(clip),Math.max(left+10,6),y+13);if(selected){const filter=vfxChannelLabel(host.editor,clip),x=Math.max(left+10,6)+ctx.measureText(name(clip)).width+10;if(filter!=='All keys'&&b-x>65){ctx.fillStyle=c.muted;ctx.font=`10px ${host.font}`;ctx.fillText(filter,x,y+13);}}ctx.restore();}
+  const textY=top+Math.min(10,height/2-2);
+  if(width>34){ctx.save();ctx.beginPath();ctx.rect(Math.max(left+10,6),top+2,Math.max(1,width-20),15);ctx.clip();ctx.fillText(name(clip),Math.max(left+10,6),textY);if(selected){const filter=vfxChannelLabel(host.editor,clip),x=Math.max(left+10,6)+ctx.measureText(name(clip)).width+10;if(filter!=='All keys'&&b-x>65){ctx.fillStyle=c.muted;ctx.font=`10px ${host.font}`;ctx.fillText(filter,x,textY);}}ctx.restore();}
   for(const tick of keyTicks(host,clip)){
    if(tick<clip.offset||clip.duration!==null&&tick>=clip.offset+clip.duration)continue;
    const moving=g?.kind==='vfx-key'&&g.id===clip.id&&g.from===tick,time=moving?g.to:tick,x=keyX(host,clip,time);
    const picked=host.editor._selectedVfxKey?.id===clip.id&&host.editor._selectedVfxKey.tick===tick;
-   diamond(ctx,x,y+KEY_Y,picked||moving?5:4);ctx.fillStyle=picked||moving?c.ink:c.accent;ctx.fill();ctx.strokeStyle=selected?c.selected:c.span;ctx.lineWidth=1.5;ctx.stroke();
+   ctx.beginPath();ctx.arc(x,keyAt,picked||moving?4.5:3.5,0,Math.PI*2);ctx.fillStyle=picked||moving?c.ink:c.fx??c.accent;ctx.fill();ctx.strokeStyle=c['key-outline']??c.line;ctx.lineWidth=1;ctx.stroke();
   }
   ctx.restore();
  }
@@ -81,7 +82,7 @@ function trimEdge(host,clip,hit){
 }
 function pickClip(host,hit){const clips=host.tracks[hit.row]?.clips;return clips?.find(c=>c.id===host.editor._selectedVfxClip&&trimEdge(host,c,hit))??clips?.find(c=>clipContains(c,hit.tick)&&hit.tick<(c.duration===null?host.editor.totalTicks:c.start+c.duration))??clips?.find(c=>trimEdge(host,c,hit));}
 function pickKey(host,clip,hit){
- const y=HEADER+hit.row*ROW-host._offsetY();if(Math.abs(hit.y-y-KEY_Y)>8)return;
+ const y=host.rowY(hit.row);if(Math.abs(hit.y-y-keyY(host.rowSize(hit.row)))>8)return;
  let nearest,distance=9;for(const tick of keyTicks(host,clip)){if(tick<clip.offset||clip.duration!==null&&tick>=clip.offset+clip.duration)continue;const dx=Math.abs(keyX(host,clip,tick)-hit.x);if(dx<distance){nearest=tick;distance=dx;}}return nearest;
 }
 
@@ -102,11 +103,12 @@ function syncFadeHandles(host){
    });
   }
  }
- const index=host.tracks.findIndex(r=>r.kind==='vfx'&&r.clips.some(c=>c.id===host.editor._selectedVfxClip)),row=host.tracks[index],source=row?.clips.find(c=>c.id===host.editor._selectedVfxClip),clip=source&&previewClip(host,source),y=HEADER+index*ROW-host._offsetY();
- host.vfxHandles.hidden=!clip||clip.duration===null||y<HEADER||y+ROW>host.height;
+ const index=host.tracks.findIndex(r=>r.kind==='vfx'&&r.clips.some(c=>c.id===host.editor._selectedVfxClip)),row=host.tracks[index],source=row?.clips.find(c=>c.id===host.editor._selectedVfxClip),clip=source&&previewClip(host,source);
+ const layout=host.layout,y=index<0?0:host.rowY(index),size=index<0?0:host.rowSize(index),ceiling=layout.pinned&&index<layout.system?layout.header:layout.contentTop;
+ host.vfxHandles.hidden=!clip||clip.duration===null||y<ceiling||y+size>host.height;
  if(host.vfxHandles.hidden)return;
  const left=clip.start*host.pxPerTick-host._offsetX(),right=left+clip.duration*host.pxPerTick;
- for(const node of host.vfxHandles.children){const edge=node.dataset.vfxFade,x=clamp(fadeX(host,clip,edge),left+7,right-7);node.hidden=x<5||x>host.width-5||right-left<18;node.disabled=Boolean(row.locked);node.style.left=`${x}px`;node.style.top=`${y-HEADER+6}px`;node.dataset.dragging=String(host.gesture?.edge===edge);node.setAttribute('aria-valuemin','0');node.setAttribute('aria-valuemax',String(clip.duration));node.setAttribute('aria-valuenow',String(Math.min(clip[edge],clip.duration)));node.setAttribute('aria-valuetext',`${clip[edge]} frames`);node.title=`${edge==='fadeIn'?'Fade in':'Fade out'} · ${clip[edge]} frames`;}
+ for(const node of host.vfxHandles.children){const edge=node.dataset.vfxFade,x=clamp(fadeX(host,clip,edge),left+7,right-7);node.hidden=x<5||x>host.width-5||right-left<18;node.disabled=Boolean(row.locked);node.style.left=`${x}px`;node.style.top=`${y-layout.header+6}px`;node.dataset.dragging=String(host.gesture?.edge===edge);node.setAttribute('aria-valuemin','0');node.setAttribute('aria-valuemax',String(clip.duration));node.setAttribute('aria-valuenow',String(Math.min(clip[edge],clip.duration)));node.setAttribute('aria-valuetext',`${clip[edge]} frames`);node.title=`${edge==='fadeIn'?'Fade in':'Fade out'} · ${clip[edge]} frames`;}
 }
 export function installVfxTimeline(Timeline){
  const p=Timeline.prototype;

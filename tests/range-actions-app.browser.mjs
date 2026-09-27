@@ -58,7 +58,7 @@ try {
   }
   const cellPoint = (uid, tick) => page.evaluate(({uid, tick}) => {
     const t = styk.timeline, row = t.tracks.findIndex(track => track.id === styk.editor.layerForUid(uid)), r = t.scroll.getBoundingClientRect();
-    return {x: r.left + (tick + .5) * t.pxPerTick - t._offsetX(), y: r.top + 32 + row * 32 + 16};
+    return {x: r.left + (tick + .5) * t.pxPerTick - t._offsetX(), y: r.top + t.rowY(row) + t.rowSize(row) / 2};
   }, {uid, tick});
   async function resetRange(file = sourcePath) {
     await page.evaluate(() => {globalThis.previousRangeReport = styk.editor.report;});

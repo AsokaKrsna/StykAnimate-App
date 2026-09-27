@@ -39,7 +39,7 @@ try{
  await page.evaluate(()=>styk.editor.seek(40));await page.waitForFunction(()=>document.querySelectorAll('.vfx-clip').length===1);
  assert.equal(await page.locator('.vfx-clip [data-clip-action=select]').innerText(),'Tint');
  await page.evaluate(()=>styk.editor.seek(19));await page.waitForFunction(()=>document.querySelector('.vfx-clip [data-clip-action=select]')?.textContent==='Glow');
- const drag=async(tick,delta,y=13)=>{const point=await page.evaluate(({tick,y})=>{const t=styk.timeline,row=t.tracks.findIndex(r=>r.kind==='vfx'),rect=t.scroll.getBoundingClientRect();return {x:rect.left+tick*t.pxPerTick-t._offsetX(),y:rect.top+32+row*32-t._offsetY()+y,step:t.pxPerTick};},{tick,y});await page.mouse.move(point.x,point.y);await page.mouse.down();await page.mouse.move(point.x+delta*point.step,point.y,{steps:8});await page.mouse.up();};
+ const drag=async(tick,delta,y=13)=>{const point=await page.evaluate(({tick,y})=>{const t=styk.timeline,row=t.tracks.findIndex(r=>r.kind==='vfx'),rect=t.scroll.getBoundingClientRect();return {x:rect.left+tick*t.pxPerTick-t._offsetX(),y:rect.top+t.rowY(row)+y,step:t.pxPerTick};},{tick,y});await page.mouse.move(point.x,point.y);await page.mouse.down();await page.mouse.move(point.x+delta*point.step,point.y,{steps:8});await page.mouse.up();};
  const before=await page.evaluate(()=>JSON.stringify(styk.editor.report._styk.vfxClips));
  await drag(9-.15,-4,19);assert.deepEqual(await page.evaluate(()=>{const c=styk.editor.getVfxClips()[0];return [c.start,c.duration,c.offset,Object.values(c.keys)[0].map(k=>k.tick)];}),[5,29,0,[4,24]]);
  assert.equal(await page.evaluate(()=>styk.timeline.scroll.style.cursor),'ew-resize');

@@ -52,12 +52,6 @@
 :root[data-theme="dark"] .sheet-scroll::-webkit-scrollbar-thumb:hover,
 :root[data-theme="dark"] .sheet-filmstrip-scroll::-webkit-scrollbar-thumb:hover { background: var(--theme-muted); }
 
-.layer-timeline {
-  --sheet-camera-accent: var(--theme-accent, #1689ee);
-  --sheet-camera-tint: var(--theme-selected, #e8f3ff);
-  --sheet-scene-accent: var(--theme-violet, #8753c7);
-  --sheet-scene-tint: var(--theme-violet-bg, #f1eafb);
-}
 .sheet-layer[data-kind="camera"] { --track-accent: var(--sheet-camera-accent); --track-tint: var(--sheet-camera-tint); }
 .sheet-layer[data-kind="scene"] { --track-accent: var(--sheet-scene-accent); --track-tint: var(--sheet-scene-tint); }
 

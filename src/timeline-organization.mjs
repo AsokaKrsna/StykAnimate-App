@@ -29,11 +29,13 @@ export const timelineOrganizationMethods = {
     if (!this.tracks.some(row => row.id === this.selectedTrackId)) {
       const id = this.selectedTrackId;this.setLayerFilter('', null);this.selectedTrackId = id;this.selectedLayers = new Set([id]);
     }
-    const index = this.tracks.findIndex(row => row.id === this.selectedTrackId);
-    if (index < 0) return;
-    const top = index * 32, bottom = top + 32, offset = this._offsetY();
-    if (top < offset) this._scrollToY(top);
-    else if (bottom > offset + this.height - 32) this._scrollToY(bottom - this.height + 32);
+    const index = this.tracks.findIndex(row => row.id === this.selectedTrackId), layout = this.layout;
+    if (index < 0 || !layout || layout.pinned && index < layout.system) return;
+    // The scrolling rows show between the pinned block (or the ruler) and the grid's foot (timeline-rows.mjs).
+    const top = layout.top(index), bottom = top + layout.size(index), offset = this._offsetY();
+    const above = layout.contentTop - layout.header, view = this.height - layout.header;
+    if (top < offset + above) this._scrollToY(top - above);
+    else if (bottom > offset + view) this._scrollToY(bottom - view);
   },
   fitFrameRange(selection = false) {
     const start = selection ? this.start : 0;

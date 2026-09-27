@@ -1,6 +1,13 @@
 import {OnionRangeDrag} from './onion-range-drag.mjs';
 
-/** Ruler projection of fixed playhead-relative spans; never anchors to a key. */
+/** How far a press on a range end moves before it drags the end (experience.md §5.9, revision 4.3). */
+const SLOP=3;
+
+/**
+ * Ruler projection of fixed playhead-relative spans; never anchors to a key. Each end is a 24px target inside the
+ * ruler. A press that does not move past SLOP passes through as a click on the ruler (it goes to that frame); only a
+ * drag moves the end, through the shared OnionRangeDrag gesture.
+ */
 export class OnionTimelineRange {
   constructor(host){
     this.host=host;this.controller=host.onionController;this.events=new AbortController();
@@ -22,10 +29,31 @@ export class OnionTimelineRange {
       },{signal:this.events.signal});
       return {direction,band,end,gesture};
     });
+    // Hold a press on an end until it moves: then hand it to the end's drag, else treat it as a click on the ruler.
+    this.overlay.addEventListener('pointerdown',event=>this._press(event),{capture:true,signal:this.events.signal});
     host.main.append(this.overlay);
     this.unsubscribe=this.controller?.subscribe(()=>this.update());this.update();
   }
   x(tick){return this.host.labelWidth+(tick+.5)*this.host.pxPerTick-this.host._offsetX();}
+  _press(event){
+    const end=event.target.closest?.('.onion-range-end');
+    if(!end||this.passing||event.button!==0||!this.controller)return;
+    event.stopPropagation();event.preventDefault();end.focus({preventScroll:true});
+    const start={x:event.clientX,y:event.clientY,id:event.pointerId,type:event.pointerType,shift:event.shiftKey},events=new AbortController(),signal=events.signal;
+    end.setPointerCapture?.(start.id);
+    const finish=()=>{events.abort();if(end.hasPointerCapture?.(start.id))end.releasePointerCapture(start.id);};
+    end.addEventListener('pointermove',move=>{
+      if(Math.abs(move.clientX-start.x)<=SLOP)return;
+      finish();
+      // Past the slop: the end's own gesture takes the press from where it began, then follows the pointer.
+      const init={bubbles:true,cancelable:true,composed:true,pointerId:start.id,pointerType:start.type,isPrimary:true,button:0,buttons:1,clientX:start.x,clientY:start.y,shiftKey:start.shift};
+      this.passing=true;try{end.dispatchEvent(new PointerEvent('pointerdown',init));}finally{this.passing=false;}
+      end.dispatchEvent(new PointerEvent('pointermove',{...init,button:-1,clientX:move.clientX,clientY:move.clientY,shiftKey:move.shiftKey}));
+    },{signal});
+    end.addEventListener('pointerup',up=>{finish();const tick=this.host._hit?.(up)?.tick;if(Number.isInteger(tick))this.host._run?.(()=>{this.host.seek(tick);});},{signal});
+    end.addEventListener('pointercancel',finish,{signal});
+    end.addEventListener('lostpointercapture',finish,{signal});
+  }
   update(){
     const enabled=Boolean(this.controller?.getEnabled());if(this.overlay.hidden!==!enabled)this.overlay.hidden=!enabled;
     if(!enabled){for(const part of this.parts)part.gesture?.finish(false);return;}
@@ -39,7 +67,7 @@ export class OnionTimelineRange {
       end.setAttribute('aria-valuemin','0');end.setAttribute('aria-valuemax',String(value.max));end.setAttribute('aria-valuenow',String(value.span));
       const spanLabel=`${value.span} ${value.span===1?'frame':'frames'} ${direction}`;
       end.setAttribute('aria-valuetext',spanLabel);
-      end.title=`${spanLabel} · Drag to adjust · Shift for precision`;
+      end.title=`${spanLabel} · Drag to adjust (a click goes to the frame) · Shift for precision`;
       this.overlay.style.setProperty(`--onion-${direction}`,range.settings[direction==='before'?'onionBeforeColor':'onionAfterColor']);
     }
   }

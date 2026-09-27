@@ -1,4 +1,4 @@
-.layer-timeline{--sheet-label:220px;--sheet-surface:var(--panel,#fff);--sheet-hover:var(--theme-field, #f5f5f5);--sheet-line:var(--border,#e5e5e5);--sheet-ink:var(--text,#2c2c2c);--sheet-muted:var(--muted,#767676);--sheet-accent:var(--purple,#0d99ff);--sheet-selected:var(--purple-soft,#e5f4ff);--sheet-span:var(--theme-field, #f0f0f0);--sheet-tween:var(--theme-selected, #e5f4ff);display:flex;flex-direction:column;height:100%;min-height:110px;overflow:hidden;position:relative;background:var(--sheet-surface);color:var(--sheet-ink);font-size:11px;font-family:inherit;user-select:none;container-type:inline-size}
+.layer-timeline{--sheet-label:220px;display:flex;flex-direction:column;height:100%;min-height:110px;overflow:hidden;position:relative;background:var(--sheet-surface);color:var(--sheet-ink);font-size:11px;font-family:inherit;user-select:none;container-type:inline-size}
 .layer-timeline .icon-button{width:28px;height:28px;border-radius:5px;flex-shrink:0;padding:0}
 .layer-timeline .icon{width:16px;height:16px}
 .layer-timeline button:focus-visible,.sheet-menu button:focus-visible{outline-offset:-2px}

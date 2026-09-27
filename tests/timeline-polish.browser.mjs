@@ -80,7 +80,7 @@ try {
   await page.evaluate(()=>{styk.settingsUI.commit({timelineMode:'advanced'});styk.editor.seek(0);});await settle();
   const grid=page.getByRole('grid',{name:'Layer frames'});
   assert.equal(await page.getByRole('button',{name:/blank/i}).count(),0);
-  const cell=await page.evaluate(async()=>{const {HEADER,ROW}=await import('/src/layer-timeline.mjs'),t=styk.timeline,b=t.scroll.getBoundingClientRect();return {x:b.x+6.5*t.pxPerTick,y:b.y+HEADER+ROW/2};});
+  const cell=await page.evaluate(async()=>{const t=styk.timeline,b=t.scroll.getBoundingClientRect();return {x:b.x+6.5*t.pxPerTick,y:b.y+t.rowY(0)+t.rowSize(0)/2};});
   await page.mouse.click(cell.x,cell.y,{button:'right'});
   assert.equal(await page.getByRole('menuitem',{name:/blank|Create tween|layer|Hold|Select span/i}).count(),0);
   assert.ok(await page.getByRole('menuitem',{name:/Add Frame/}).count());
