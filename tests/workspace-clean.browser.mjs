@@ -9,8 +9,8 @@ const check=(name,result)=>{assert.ok(result,name);checks.push(name);console.log
 try {
  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
  await page.screenshot({path:`${out}/light.png`});
- check('History quick actions live in the band, not the stage header',await page.locator('.titlebar [aria-label="Edit history"] button').count()===2&&await page.locator('.canvas-toolbar [data-action="undo"], .canvas-toolbar [data-action="redo"]').count()===0);
- check('Canvas view controls remain accessible',await page.locator('.canvas-view-controls #zoom-label').isVisible());
+ check('History quick actions live in the band, not the stage header',await page.locator('.titlebar [aria-label="Edit history"] button').count()===2&&await page.locator('.stage-head [data-action="undo"], .stage-head [data-action="redo"]').count()===0);
+ check('Canvas view controls remain accessible in the stage header',await page.locator('.stage-head [data-slot="stage-end"] #zoom-label').isVisible());
  await page.locator('#zoom-label').click();check('Zoom menu opens',await page.locator('#menu [data-action="zoom-reset"]').isVisible());
  await page.keyboard.press('Escape');check('Escape restores trigger focus',await page.locator('#zoom-label').evaluate(e=>document.activeElement===e));
  const viewport=await page.locator('#viewport').boundingBox();
@@ -36,8 +36,8 @@ try {
  for(const width of [1100,900]) {
   await page.setViewportSize({width,height:740});
   check(`No horizontal overflow at ${width}px`,await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-  const controls=await page.locator('.canvas-view-controls').boundingBox(),canvas=await page.locator('#viewport').boundingBox();
-  check(`View controls fit canvas at ${width}px`,controls.x>=canvas.x&&controls.x+controls.width<=canvas.x+canvas.width);
+  const controls=await page.locator('.stage-head [data-slot="stage-end"]').boundingBox(),stage=await page.locator('.stage-head').boundingBox();
+  check(`View controls fit the stage header at ${width}px`,controls.x>=stage.x&&controls.x+controls.width<=stage.x+stage.width);
   await page.screenshot({path:`${out}/compact-${width}.png`});
  }
  await page.setViewportSize({width:1440,height:900});await page.evaluate(()=>document.documentElement.dataset.theme='dark');await page.screenshot({path:`${out}/dark.png`});

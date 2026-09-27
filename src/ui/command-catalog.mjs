@@ -116,6 +116,7 @@ group('view', [
   ['toggle-handles', 'Joints', 'nodes', {toggle: true, keywords: ['handles', 'show', 'hide']}],
   ['toggle-unselected-handles', 'Other figures’ joints', 'nodes', {toggle: true, keywords: ['handles', 'unselected']}],
   ['toggle-motion-paths', 'Motion paths', 'route', {toggle: true, keywords: ['trajectory', 'path']}],
+  ['toggle-grid', 'Grid', 'grid', {toggle: true, keywords: ['guides', 'show', 'hide']}],
   ['toggle-camera', 'Camera frame', 'camera', {toggle: true, keywords: ['virtual camera', 'show', 'hide']}],
   ['toggle-selection-origins', 'Box selects figure origins', 'cursor', {toggle: true, keywords: ['marquee', 'rectangle']}],
   ['scene-settings', 'Scene properties…', 'scene', {keywords: ['canvas size', 'background', 'frame rate']}],

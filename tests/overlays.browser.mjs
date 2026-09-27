@@ -335,9 +335,10 @@ try {
 
   await step('app: a message stays above a dialog that opens after it, and failures show as alerts that stay', async () => {
     await page.evaluate(() => styk.ui.toasts.show({message: 'Motion paths on', timeout: 30000}));
+    // The pill's middle band: in the stage header it is 28px tall and over a dialog 32px, with the same words and colours.
     const pill = async () => {
       const box = await page.locator('#toast .ui-toast').boundingBox();
-      return page.screenshot({clip: {x: box.x + 6, y: box.y + 6, width: box.width - 12, height: box.height - 12}});
+      return page.screenshot({clip: {x: box.x + 6, y: Math.round(box.y + box.height / 2) - 8, width: box.width - 12, height: 16}});
     };
     const before = await pill();
     await page.evaluate(() => styk.actions.performance());
@@ -434,8 +435,9 @@ try {
   });
 
   await step('app: an error never covers the view controls or a dialog\'s buttons (1024 × 700 and 500 × 340)', async () => {
+    // Controls that step aside for the message are visibility: hidden, so they count as not shown.
     const centreHits = selector => page.evaluate(selector => [...document.querySelectorAll(selector)]
-      .filter(element => element.checkVisibility())
+      .filter(element => element.checkVisibility({visibilityProperty: true}))
       .map(element => {
         const box = element.getBoundingClientRect(), hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
         return element === hit || element.contains(hit) ? true : `${element.getAttribute('aria-label') || element.id || element.textContent.trim()}: ${hit?.closest('#toast') ? 'under the message' : hit?.outerHTML.slice(0, 60)}`;
@@ -445,8 +447,10 @@ try {
       await settle(200);
       await page.evaluate(() => styk.ui.toasts.fail(new Error('The encoder stopped while writing frame 12')));
       await settle(150);
-      const cluster = await centreHits('.canvas-view-controls button');
-      assert.ok(cluster.length >= 4 && cluster.every(item => item === true), `${width}x${height}: ${cluster}`);
+      // The stage header's end: at compact width the view toggles may step aside for the message; zoom and Fit never do.
+      const cluster = await centreHits('.stage-head [data-slot="stage-end"] button');
+      assert.ok(cluster.length >= 2 && cluster.every(item => item === true), `${width}x${height}: ${cluster}`);
+      assert.equal((await centreHits('.stage-head [data-zoom] button')).length, 2, `${width}x${height}: zoom and Fit stay`);
       await page.evaluate(() => { styk.editor.dirty = true; });
       await page.evaluate(() => { void styk.actions.new(); });
       await page.locator('#save-changes').waitFor();
@@ -672,17 +676,17 @@ try {
 
     // Markup that still carries a native title keeps it, and gets no second tooltip.
     assert.equal(await page.evaluate(() => {
-      const legacy = document.querySelector('[data-action=scene-settings][title]');
+      const legacy = document.querySelector('#zoom-label[title]');
       styk.ui.tooltips.show(legacy);
       return [legacy.title, document.getElementById('ui-tooltip').matches(':popover-open')].join('|');
-    }), 'Scene properties|false');
+    }), 'Zoom options|false');
     // In the chrome that native title becomes the ink tooltip the first time it is pointed at: one style for neighbours.
-    await page.hover('[data-action=scene-settings]');
+    await page.hover('#zoom-label');
     await page.waitForFunction(() => document.getElementById('ui-tooltip').matches(':popover-open'));
     assert.deepEqual(await page.evaluate(() => {
-      const button = document.querySelector('[data-action=scene-settings]');
+      const button = document.getElementById('zoom-label');
       return [button.hasAttribute('title'), button.dataset.tooltip, document.querySelector('#ui-tooltip .ui-tooltip-label').textContent];
-    }), [false, 'Scene properties', 'Scene properties']);
+    }), [false, 'Zoom options', 'Zoom options']);
     // Beside the rail the tooltip opens on the stage's side, never over the neighbouring tools.
     await page.mouse.move(700, 500);
     await page.evaluate(() => styk.ui.tooltips.hide());

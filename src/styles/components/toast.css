@@ -79,6 +79,21 @@
     .ui-toast-progress[data-indeterminate]::before { animation: none; inline-size: 100%; opacity: 0.45; }
   }
 
+  /* In the stage header (src/shell/stage-head.mjs places it: data-place): centred on the header's middle
+   * line as a 28px pill ("head"), or on a line of its own just under it, 32px ("drop"). */
+  .ui-toast-host:where([data-place]) { inset-block: var(--toast-top, var(--space-2)) auto; }
+  .ui-toast-host:where([data-place="head"]) { translate: 0 -50%; }
+  .ui-toast-host:where([data-place="head"]) > .ui-toast { min-block-size: var(--control-md); }
+  /* A pick mode's instruction: tinted, no lift, while it sits in the header. */
+  .ui-toast:where([data-variant="mode"]) { background: var(--accent-soft); box-shadow: none; }
+  /* The quiet readout ("Slow · 14 of 24 fps"): words on the header, no pill. */
+  .ui-toast:where([data-variant="quiet"]) { background: transparent; box-shadow: none; color: var(--text-2); }
+  .ui-toast:where([data-variant="quiet"]) .ui-toast-icon { color: var(--warning-text); }
+  /* On a line of its own over the stage's top margin, every kind is the pill with the one lift. */
+  .ui-toast-host:where([data-place="drop"]) > .ui-toast:where([data-variant="mode"], [data-variant="quiet"]) {
+    background: var(--surface-raised); box-shadow: var(--elevation-1);
+  }
+
   @media (forced-colors: active) {
     .ui-toast { border-color: CanvasText; }
     .ui-toast-progress::before { background: Highlight; }

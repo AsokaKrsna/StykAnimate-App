@@ -269,6 +269,9 @@ const shapes = Object.freeze({
   "rotate-step": '<path d="M19.5 13A7.5 7.5 0 1 1 17 6.4"/><path d="M19.5 3.5v4h-4"/><circle cx="12" cy="12.5" r="1.3" fill="currentColor"/><path d="M12 12.5V8M12 12.5l3.6 2"/>',
   // Level the camera: a horizon with a bubble.
   level: '<path d="M3 14h18"/><rect x="6" y="9" width="12" height="5" rx="2.5"/><circle cx="12" cy="11.5" r="1.3" fill="currentColor"/>',
+  // The stage header's view toggles and the join mode's message (design/app-ui/reference, revision 4).
+  joints: '<circle cx="12" cy="5" r="2.6"/><path d="M12 8v6M12 14l-4 7M12 14l4 7M7 10.5l5-1.5 5 1.5"/>',
+  highlight: '<path d="M6 18 18 6"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M3 9.5 5 10.5M9.5 3l1 2M14 20.5l-1-2M20.5 14l-2-1"/>',
 });
 const aliases = Object.freeze({
   x: "close",

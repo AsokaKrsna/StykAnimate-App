@@ -37,10 +37,11 @@ export const SHELL_CONTRACT = Object.freeze({
     transport: ['play-button', 'loop-button', 'time-display', 'fps', 'timeline-zoom', 'range-edit',
       'onion-button', 'onion-settings-button', 'timeline-audio', 'expand-timeline',
       'timeline-workflow', 'timeline-summary', 'selection-summary'],
-    // Controllers constructed with these elements in app.mjs; studio-shell (#open-insert);
-    // localization-bindings (#zoom-label).
-    canvasView: ['zoom-label', 'handles-button', 'paths-button', 'canvas-guides-button',
-      'vfx-preview', 'tweener-button', 'open-insert'],
+    // Controllers constructed with these elements in app.mjs (the stage header's view cluster and the Grid
+    // split's settings chevron, CanvasGuides' trigger); studio-shell (#open-insert); localization-bindings
+    // (#zoom-label); the crumb's background chip (the colour picker's resolver in app.mjs).
+    canvasView: ['zoom-label', 'handles-button', 'paths-button', 'canvas-guides-button', 'guides-options-button',
+      'vfx-preview', 'tweener-button', 'open-insert', 'crumb-background'],
     // builder-mode and hotkey-hints (#builder-bar); popovertarget ids of the builder menus.
     builder: ['builder-bar', 'builder-title', 'builder-done', 'builder-menu-edit',
       'builder-menu-arrange', 'builder-menu-view'],
@@ -67,7 +68,8 @@ export const SHELL_CONTRACT = Object.freeze({
     // The rail's stacking buttons (Animate, until the figure's quick actions) and its hidden help and settings;
     // toggle-isolate is the builder View menu's (it left the rail in M3b).
     rail: ['toggle-isolate', 'selection-front', 'selection-back', 'help', 'settings'],
-    canvas: ['scene-settings', 'toggle-handles', 'toggle-motion-paths', 'zoom-menu',
+    // The stage header: the crumb, the view cluster, zoom and Fit, and the polygon's own controls.
+    canvas: ['scene-settings', 'toggle-handles', 'toggle-motion-paths', 'toggle-grid', 'zoom-menu', 'zoom-reset',
       'finish-polygon', 'cancel-polygon'],
     builder: ['split-segment', 'duplicate-segment', 'mirror-segment', 'mirror-segment-vertical',
       'copy-builder-appearance', 'paste-builder-appearance', 'rig-connect', 'rig-examples',
@@ -199,15 +201,27 @@ test('Structural hooks that modules dereference without null checks are intact',
   for (const selector of ['.studio-rail', '.shell-left', '.center', '.right-panel', '.timeline-panel'])
     assert.equal(one(selector, workspace).parent, workspace, `${selector} is a direct child of .workspace`);
   one('#viewport', one('.center'));
-  // The stage header (§3.12; stage-head.mjs fills it in M3b): a sibling of #viewport directly above it,
-  // never inside it, with the start (crumb or tool options), message and end (view cluster, zoom) slots.
+  // The stage header (§3.12, stage-head.mjs): the stage island's first row, above #viewport and never inside
+  // it (only Build's bar and the hidden context strip sit between them until M7a), with the start (crumb, or
+  // the tool's options), message and end (view cluster, zoom) slots. Nothing interactive is left in #viewport.
   const stageHead = one('.stage-head', one('.center'));
   const stageChildren = one('.center').children;
-  assert.equal(stageChildren[stageChildren.indexOf(byId.get('viewport')[0]) - 1], stageHead, '.stage-head sits directly above #viewport');
+  assert.equal(stageChildren[0], stageHead, ".stage-head is the stage island's first row");
+  assert.deepEqual(stageChildren.slice(stageChildren.indexOf(stageHead) + 1, stageChildren.indexOf(byId.get('viewport')[0])).map(child => child.attrs.id ?? classes(child)[0]),
+    ['context-strip', 'builder-bar'], "only the context strip and Build's bar sit between the stage header and #viewport");
   assert.equal(stageHead.attrs.role, 'toolbar');
+  assert.ok(!('hidden' in stageHead.attrs), 'the stage header shows');
   for (const [name, className] of [['stage-start', 'stage-head-start'], ['stage-message', 'stage-head-msg'], ['stage-end', 'stage-head-end']])
     assert.equal(one(`[data-slot="${name}"]`, stageHead).parent, stageHead, `.stage-head has its ${className} slot`);
-  assert.ok('hidden' in stageHead.attrs, 'the stage header stays hidden until M3b fills it');
+  const stageStart = one('[data-slot="stage-start"]', stageHead), stageEnd = one('[data-slot="stage-end"]', stageHead);
+  one('[data-action="scene-settings"]', one('.ui-crumb', stageStart));
+  for (const id of ['#stage-size', '#crumb-background', '#chain-controls', '#polygon-controls']) one(id, stageStart);
+  for (const id of ['#handles-button', '#paths-button', '#canvas-guides-button', '#guides-options-button', '#vfx-preview']) one(id, one('[data-view=""]', stageEnd));
+  for (const selector of ['#zoom-label', '[data-action="zoom-reset"]']) one(selector, one('[data-zoom=""]', stageEnd));
+  const buttons = node => node.children.reduce((count, child) => count + (child.tag === 'button') + buttons(child), 0);
+  assert.equal(buttons(byId.get('viewport')[0]), 0, 'no button inside #viewport');
+  for (const selector of ['.stage-head', '.canvas-view-controls', '.canvas-toolbar', '.drawing-quickbar', '.polygon-controls'])
+    assert.equal(find(selector, byId.get('viewport')[0]).length, 0, `no ${selector} inside #viewport`);
   assert.equal(find('#viewport', one('.timeline-panel')).length, 0, 'the timeline is its own island, outside the stage');
   one('#builder-outliner', one('.shell-left'));
   const panel = one('.timeline-panel', workspace);
@@ -263,9 +277,8 @@ test('Structural hooks that modules dereference without null checks are intact',
   assert.equal(find('[data-action="toggle-isolate"]', dock).length, 0);
   assert.equal(find('[data-action="selection-front"]')[0].attrs['data-selection-order'], '');
   assert.equal(find('[data-action="selection-back"]')[0].attrs['data-selection-order'], '');
-  // Tests still select these toolbar containers; they change together with those tests.
-  for (const selector of ['.canvas-toolbar', '.canvas-view-controls']) one(selector);
-  one('#zoom-label', one('.canvas-view-controls'));
+  // The canvas toolbar and the floating view pill are gone: the stage header holds their controls.
+  for (const selector of ['.canvas-toolbar', '.canvas-view-controls']) assert.equal(find(selector).length, 0, `no ${selector}`);
   // builder-mode disables [popovertarget="builder-menu-arrange"]; the menus use the popover API.
   for (const id of ['builder-menu-edit', 'builder-menu-arrange', 'builder-menu-view']) {
     one(`[popovertarget="${id}"]`, one('#builder-bar'));

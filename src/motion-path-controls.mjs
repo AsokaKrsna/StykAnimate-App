@@ -6,7 +6,7 @@ export class MotionPathControls {
     Object.assign(this, {button, getSettings, getEnabled, onChange, onToggle});
     const trigger = this.trigger = document.createElement('button');
     trigger.type = 'button';
-    trigger.className = 'path-options-button';
+    trigger.className = 'path-options-button ui-split-more';
     trigger.innerHTML = icon('chevron-down');
     trigger.title = 'Motion path settings';
     trigger.setAttribute('aria-label', 'Motion path settings');
@@ -14,7 +14,7 @@ export class MotionPathControls {
     trigger.setAttribute('aria-controls', 'path-popover');
     trigger.setAttribute('aria-expanded', 'false');
     const tool = document.createElement('div');
-    tool.className = 'motion-path-tool';
+    tool.className = 'motion-path-tool ui-split';
     tool.setAttribute('role', 'group');
     tool.setAttribute('aria-label', 'Motion paths');
     button.before(tool);
@@ -79,6 +79,6 @@ export class MotionPathControls {
     toggle.textContent = enabled ? 'On' : 'Off';
     toggle.setAttribute('aria-pressed', String(enabled));
     this.button.setAttribute('aria-pressed', String(enabled));
-    this.button.setAttribute('aria-label', 'Show motion paths');
+    this.button.setAttribute('aria-label', 'Motion paths');
   }
 }

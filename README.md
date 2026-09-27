@@ -42,7 +42,7 @@ These features describe current source. Package coverage applies only to the exa
 - Save STYK projects with recoverable working poses and native Recent Files. Export editable PIV/STK; PNG/JPEG/GIF/SVG frames or numbered sequences; GIF/APNG animation; WebM with VP9 transparency; MP4, WMV and AVI. Windows additionally exposes installed 32/64-bit VFW codecs and real Configure dialogs. Sampling modes include no smoothing, smoothing and 2× sprite filtering. See [format/platform coverage](docs/EXPORT-FORMATS.md).
 - Settings includes native canvas handle/onion preferences, timeline mode and 27 supplied interface language choices. Translation is partial: modern controls can remain English. Language changes preserve animation data, history and canvas/time direction; [coverage and boundaries](docs/LOCALIZATION.md) are explicit.
 - Choose **Light** or **Dark** in **Settings → Interface → Theme** (`Ctrl+,`). The theme updates immediately and is saved with editor preferences. Artwork, color swatches and exported frames keep their original colors.
-- Motion paths start hidden each session. Press **M** or use the canvas toolbar to enable them; their range, labels, and target options stay saved.
+- Motion paths start hidden each session. Press **M** or use the Motion paths button in the stage header to enable them; their range, labels, and target options stay saved.
 
 The compact neutral UI uses blue selection accents. Canvas handles follow Pivot colors: red movable joints, orange origins, blue unselected handles, and white joined origins. Static construction joints appear in rig tools. Figures can extend beyond the artboard while editing; playback/export retain document clipping.
 

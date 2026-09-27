@@ -14,12 +14,12 @@
  * STYK_DENSE_SOURCE (a dense .piv or .styk) adds the M1 performance gate:
  * a splitter drag and a tab drag on that scene keep every frame under 200 ms.
  *
- * Transitional (until M3b replaces the canvas toolbar with the 40px stage
- * header and hides the 24px status bar into the activity log): at 500×340
- * the timeline is its header and #viewport is 360 wide but only about 180
- * tall; every larger size keeps 360×200. The stage floors are checked with
- * the status bar's height given back to #viewport, and in Animate only
- * (Draw's quick bar sits inside #viewport until M3b). Until M5's painter
+ * Transitional (until M3b hides the 24px status bar into the activity log):
+ * at 500×340 the timeline is its header and #viewport is 360 wide but only
+ * about 180 tall; every larger size keeps 360×200. The stage floors are
+ * checked with the status bar's height given back to #viewport. The stage
+ * header holds the view controls and Draw's quick bar, so the fit is the
+ * solver's insets alone. Until M5's painter
  * draws 24px Camera and Scene rows and 28px short-tier rows, the default
  * timeline holds its promised rows at the painter's 32px (so today's layer
  * capacity holds), and the floors are checked with that extra height given
@@ -182,31 +182,29 @@ try {
         const footer = document.querySelector('.statusbar').offsetHeight;
         // The painter's 32px Camera, Scene and short-tier rows (until M5) cost this much over the spec's default.
         const rows = Math.max(0, styk.workspace.solution.regions.bottom.size - specTimeline);
-        // Until M3b moves them out of #viewport, the artboard keeps 8px clear of the view controls where it would reach them:
-        // left of them, or above them.
-        const cluster = document.querySelector('#viewport > .canvas-view-controls').getBoundingClientRect();
-        const reserve = Math.max(0, viewport.bottom - cluster.top + 8 - inset.bottom);
-        const room = cluster.left - 8 - viewport.left - inset.left;
-        const zoom = (extra, bottom = inset.bottom, across = viewport.width - inset.left - inset.right) => Math.min(across / report.canvas_width,
-          (viewport.height + extra - inset.top - bottom) / report.canvas_height, 2);
-        return {scale: styk.state.view.scale, expected: [zoom(0), zoom(0, inset.bottom + reserve), zoom(0, inset.bottom, room)], floor: zoom(footer + rows)};
+        // Nothing floats inside #viewport (the stage header holds the view controls): the solver's insets alone.
+        const zoom = extra => Math.min((viewport.width - inset.left - inset.right) / report.canvas_width,
+          (viewport.height + extra - inset.top - inset.bottom) / report.canvas_height, 2);
+        return {scale: styk.state.view.scale, expected: zoom(0), floor: zoom(footer + rows)};
       }, specTimeline);
       const label = `${width}x${height}: ${JSON.stringify(fit)}`;
-      assert.ok(fit.expected.some(expected => Math.abs(fit.scale - expected) < 0.005), `${label}: fitted with the solver's insets (above the view controls where it would reach them)`);
+      assert.ok(Math.abs(fit.scale - fit.expected) < 0.005, `${label}: fitted with the solver's insets`);
       assert.ok(fit.floor * 100 >= stageFloor(width, height) - 0.5, `${label}: at least ${stageFloor(width, height)}%`);
     }
     await resize(1440, 900);
   });
 
-  await step('at fit nothing floats over the artboard: the view controls and Draw’s quick bar keep 8px clear', async () => {
+  await step('at fit nothing floats over the artboard: the view controls and Draw’s quick bar are in the stage header, clear of it', async () => {
     for (const mode of ['animate', 'draw']) {
       await workspace(mode);
       for (const [width, height] of [[1440, 900], [1280, 720], [1024, 700], [800, 600], [640, 480], [500, 340]]) {
         await resize(width, height);
-        await settle();   // a fitted view follows the window, and entering Draw refits it under the quick bar
+        await settle();   // a fitted view follows the window
         const overlaps = await page.evaluate(() => {
           const artboard = document.getElementById('artboard').getBoundingClientRect();
-          return [...document.querySelectorAll('#viewport > .canvas-view-controls, #viewport > .drawing-quickbar')]
+          const inside = document.querySelectorAll('#viewport .canvas-view-controls, #viewport .drawing-quickbar, #viewport .stage-head, #viewport .polygon-controls, #viewport #zoom-label');
+          if (inside.length) return [...inside].map(element => `inside #viewport: ${element.id || element.className}`);
+          return [...document.querySelectorAll('.stage-head, .drawing-quickbar')]
             .filter(element => element.checkVisibility())
             .map(element => ({name: element.className, box: element.getBoundingClientRect()}))
             .filter(({box}) => artboard.left < box.right + 8 && artboard.right > box.left - 8 && artboard.top < box.bottom + 8 && artboard.bottom > box.top - 8)
@@ -351,7 +349,7 @@ try {
   await step('the stage header row and the inspector tabs share one line', async () => {
     for (const [width, height] of [[1440, 900], [1024, 700], [900, 700]]) {
       await resize(width, height);
-      const head = await rect('.shell-stage > .canvas-toolbar'), tabs = await rect('.shell-right .shell-tabs'), timeline = await rect('.timeline-toolbar');
+      const head = await rect('.shell-stage > .stage-head'), tabs = await rect('.shell-right .shell-tabs'), timeline = await rect('.timeline-toolbar');
       assert.ok(Math.abs(head.y - tabs.y) <= 1 && Math.abs(head.y + head.height - tabs.y - tabs.height) <= 1, `${width}x${height}: ${JSON.stringify({head, tabs})}`);
       assert.equal(timeline.height, 40, 'the timeline header is 40px too');
     }
@@ -615,7 +613,7 @@ try {
     await page.keyboard.press('ArrowRight');
     assert.equal(await page.evaluate(() => styk.workspace.sizes.left), 244);
     await page.keyboard.press('Home');
-    const head = await rect('.shell-stage > .canvas-toolbar'), structure = await rect('.builder-outliner-head');
+    const head = await rect('.shell-stage > .stage-head'), structure = await rect('.builder-outliner-head');
     assert.ok(Math.abs(head.y - structure.y) <= 1 && Math.abs(head.y + head.height - structure.y - structure.height) <= 1,
       `Structure's head shares the stage's 40px header line: ${JSON.stringify({head, structure})}`);
     await resize(800, 600);

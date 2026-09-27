@@ -4,9 +4,12 @@ import {PropertyControls} from './property-controls.mjs';
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 
 /** Workspace-only aids. Fixed DOM size; no document edits or renderer resources. */
+/** Guides and grid over the canvas, and their settings popover. `button` shows the grid's state (the stage
+ * header's Grid toggle runs toggle-grid); `trigger`, the split button's chevron, opens the popover (without a
+ * trigger the button opens it, as the view pill's did). */
 export class CanvasGuides {
-  constructor({button, viewport, getState, onChange}) {
-    Object.assign(this, {button, viewport, getState, onChange});
+  constructor({button, trigger = button, viewport, getState, onChange}) {
+    Object.assign(this, {button, trigger, viewport, getState, onChange});
     this.overlay = document.createElement('div');
     this.overlay.className = 'canvas-aids';
     this.overlay.innerHTML = `<div class="canvas-aids-grid"></div>
@@ -57,21 +60,21 @@ export class CanvasGuides {
       commit: ({key, value, token}) => { this.valuePreview = null; onChange({[key]: value / token.size}); },
       cancel: () => { this.valuePreview = null; this.sync(); },
     });
-    button.addEventListener('click', e => {
+    trigger.addEventListener('click', e => {
       e.stopPropagation();
       if (this.panel.matches(':popover-open')) this.panel.hidePopover();
       else { this.sync(); this.panel.showPopover(); this.position(); this.panel.querySelector("input").focus({preventScroll: true}); }
     });
     this.panel.addEventListener('toggle', e => {
-      button.setAttribute('aria-expanded', String(e.newState === 'open'));
+      trigger.setAttribute('aria-expanded', String(e.newState === 'open'));
       if (e.newState === 'closed') this.values.commit();
     });
     this.panel.addEventListener('keydown', e => {
       e.stopPropagation();
-      if (e.key === 'Escape') { e.preventDefault(); this.panel.hidePopover(); button.focus(); }
+      if (e.key === 'Escape') { e.preventDefault(); this.panel.hidePopover(); trigger.focus(); }
     });
     this.panel.addEventListener('click', e => e.stopPropagation());
-    this.panel.querySelector('.guide-close').onclick = () => { this.panel.hidePopover(); button.focus(); };
+    this.panel.querySelector('.guide-close').onclick = () => { this.panel.hidePopover(); trigger.focus(); };
     this.panel.addEventListener('input', e => {
       if (e.target.dataset.setting === 'canvasGridOpacity') this.onChange({canvasGridOpacity: Number(e.target.value)});
     });
@@ -124,10 +127,12 @@ export class CanvasGuides {
     if (commit) this.onChange({['canvasGuide' + drag.axis]: value});
     this.render();
   }
+  /** Under its trigger (the stage header), else above it where the window is too short below. */
   position() {
-    const r = this.button.getBoundingClientRect(), p = this.panel;
+    const r = this.trigger.getBoundingClientRect(), p = this.panel;
     p.style.left = `${clamp(r.right - p.offsetWidth, 8, Math.max(8, innerWidth - p.offsetWidth - 8))}px`;
-    p.style.top = `${clamp(r.top - p.offsetHeight - 8, 8, Math.max(8, innerHeight - p.offsetHeight - 8))}px`;
+    const below = r.bottom + 8, above = r.top - p.offsetHeight - 8;
+    p.style.top = `${clamp(below + p.offsetHeight <= innerHeight - 8 || above < 8 ? below : above, 8, Math.max(8, innerHeight - p.offsetHeight - 8))}px`;
   }
   sync() {
     const {settings, report} = this.getState();
@@ -143,7 +148,7 @@ export class CanvasGuides {
     }
     this.panel.querySelector('.guide-center').disabled = settings.canvasGuidesLocked;
     this.panel.querySelector('.guide-opacity-value').value = `${Math.round(settings.canvasGridOpacity * 100)}%`;
-    this.button.classList.toggle('active', settings.canvasGrid || settings.canvasGuideVertical || settings.canvasGuideHorizontal);
+    if (this.trigger === this.button) this.button.classList.toggle('active', settings.canvasGrid || settings.canvasGuideVertical || settings.canvasGuideHorizontal);
     this.render();
   }
   render() {

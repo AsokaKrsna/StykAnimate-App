@@ -32,14 +32,14 @@ layer; otherwise select an existing visible, unlocked drawing layer.
   composites each dab immediately, since every dab reads the previous result.
   The colour under the tip is averaged on a grid of at most 64×64 samples, so
   large smudge tips cost the same pickup as a 64-pixel one.
-- **Quick bar and sliders:** a toolbar floats above the canvas with the active
+- **Quick bar and sliders:** the stage header shows the active
   tool's everyday settings (brush: preset, colours, size, opacity, flow,
   smoothing, mirror). Drawing settings use Krita-style slider fields shared by
   the quick bar and Properties: press or drag to set, arrow keys and the wheel
   (quick bar) step, double-click types a value. A readout on the canvas
   confirms size, opacity and hardness changes. Number keys set opacity
   (1 = 10% … 0 = 100%) and Shift+[ / ] change hardness. Presets show a stroke
-  drawn by the real brush engine. In Draw, Fit leaves room for the quick bar.
+  drawn by the real brush engine. The bar sits in the stage header, above the canvas, so it never covers the artboard.
   The bar names the active tool and, for painting tools, shows the six most
   recent colours next to the colour pair. Clicking either colour opens the
   shared colour picker under it: it changes the brush colour live while you

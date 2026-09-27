@@ -15,7 +15,7 @@ import {installColorPickers} from './color-picker.mjs';
 import {sampleCanvasRegion} from './canvas-color-sample.mjs';
 import {installMovieclipUI} from './movieclip-ui.mjs';
 import {isMovieclip} from './movieclips.mjs';
-import {segmentPaint, parseColor, hexColor, backgroundPaint, paintBackground} from './paint.mjs';
+import {segmentPaint, parseColor, hexColor, backgroundPaint, paintBackground, paintCSS} from './paint.mjs';
 import {resolveInstanceFigure, polygonIdentity} from './animation-style.mjs';
 import { applicationMenuItems } from "./application-menu.mjs";
 import { Editor } from "./editor.mjs";
@@ -133,6 +133,7 @@ import { createInvalidator } from "./ui/ui-invalidation.mjs";
 import { setAttr, setHidden, setMarkup, setText } from "./ui/dom-write.mjs";
 import { installMenuBar, menuFor, openMenu } from "./ui/ui-menu.mjs";
 import { createToasts } from "./ui/ui-toast.mjs";
+import { createStageHead } from "./shell/stage-head.mjs";
 import { UserActionError } from "./user-action-error.mjs";
 import { prompt as promptText, showLegacyDialog } from "./ui/ui-dialog.mjs";
 import { createCommandRegistry, fuzzyMatch } from "./ui/command-registry.mjs";
@@ -311,13 +312,20 @@ hydrateIcons();
 // blocking overlay opens.
 const overlays = createOverlayManager({ fallbackFocus: () => viewport });
 overlays.install();
+// The stage header (src/shell/stage-head.mjs): the crumb or the tool's options, the message's place,
+// the view cluster and zoom. Its tool options bar is created on first use, after the command registry.
+const stageHead = createStageHead({
+  root: document.querySelector(".stage-head"),
+  toasts: () => toasts,
+  toolOptions: () => ({ registry: commands, context: commandContext, icon: (name, className) => icon(name, className), t: kitT, overlays }),
+});
 const toasts = createToasts({
   host: $("toast"),
   overlays,
   icon: (name) => icon(name),
+  // The stage header's centre, or a line of its own under it; the stage's bottom centre while the header is not shown.
+  slot: { place: (size) => stageHead.placeMessage(size), release: () => stageHead.releaseMessage() },
   area: () => viewport.getBoundingClientRect(),
-  // Until the stage header's message slot (M3b), the message keeps clear of the canvas's view controls.
-  avoid: () => [...viewport.querySelectorAll(".canvas-view-controls")].filter((element) => element.checkVisibility()).map((element) => element.getBoundingClientRect()),
   topInset: () => document.querySelector(".titlebar")?.getBoundingClientRect().bottom ?? 0,
   t: (key, params) => appLocalization?.t(key, params),
   feedback: desktop?.sendTelemetryFeedback
@@ -408,7 +416,7 @@ const editablePreparation = new EditableScenePreparation(editor, {
   onReady(){state.editingPacket=null;status('Ready');warmPlayback();},
   onError:fail,
 });
-let lastFpsUI = 0;
+let lastFpsUI = 0, lastSlowUI = 0;
 function editingGestureActive(){return Boolean(state.drag||keyboardHandleGesture||editor._drag||editor._authoredPoseEdit||propertyControls?.active||vfxInspector?.active||vfxGizmos?.active||drawingController?.interacting);}
 // The editor chrome as surfaces (src/ui/ui-invalidation.mjs), in today's update order. queueUI()
 // marks them all; one pass a frame updates what is marked. While playing, only the transport updates
@@ -428,6 +436,7 @@ ui.surface("selection", { on: ["selection", "range", "drag"], quiet: true, updat
 ui.surface("status", { on: ["objects", "document", "selection"], quiet: true, update: () => updateStatus() });
 ui.surface("assets", { on: ["document", "revision"], quiet: true, update: () => { if (state.activeTab === "assets") renderAssets(); } });
 ui.surface("shell", { on: ["mode", "settings", "selection", "context"], quiet: true, update: () => syncShell() });
+ui.surface("stagehead", { on: ["mode", "settings", "selection", "context", "document", "revision", "tick"], quiet: true, update: () => syncStageHead() });
 function queueUI() {
   if(state.editablePreparing)return;
   ui.invalidate("all");
@@ -439,10 +448,58 @@ function bandSession() {
   if (!drawingController?.active && cameraSelected()) return "camera";
   return "";
 }
+/** The scene's background as the crumb's chip shows it: the frame's colour override, else its background. */
+function sceneBackground() {
+  const frame = editor.frame, background = editor.report.backgrounds?.find((item) => item.background_id === frame?.background_id);
+  const override = frame?._stykBackgroundColor;
+  const paint = backgroundPaint(override === undefined ? background : { kind: 2, color: override });
+  return { css: paintCSS(paint), label: paint.type === "solid" ? hexColor(paint.stops[0].color).toUpperCase() : `${paint.type[0].toUpperCase()}${paint.type.slice(1)} gradient` };
+}
+/** The stage header (experience.md §4.2-4.4): the crumb or scope path, the workspace's view toggles and their states, a mode's message. */
+function syncStageHead() {
+  const session = bandSession(), scopes = editor._movieclipScopes ?? [];
+  stageHead.update({
+    mode: drawingController?.active ? "draw" : builderMode?.active ? "rig" : "animate",
+    size: `${editor.report.canvas_width} × ${editor.report.canvas_height}`,
+    background: sceneBackground(),
+    session: session === "movieclip" ? { done: "movieclip-done", name: scopes.map((scope) => scope.name).join(" › ") }
+      : session === "camera" ? { done: "camera-done", name: "Camera" } : null,
+    handles: state.handles, motionPaths: state.motionPaths, grid: Boolean(state.settings.canvasGrid), vfx: state.vfxEnabled,
+    staticHandles: state.settings.builderShowStaticHandles !== false, highlight: Boolean(state.settings.builderHighlightSegment),
+  });
+  syncModeMessage();
+}
+/**
+ * The pick mode that is active, as the stage header's mode message (experience.md §4.3): its instruction
+ * for as long as it lasts, with Cancel where the mode has one (Esc cancels too). Today these hints were
+ * written to the hidden #viewport-hint (R16).
+ */
+function modeMessage() {
+  if (state.spritePlacement) return { key: "sprite", icon: "image", title: "Choose an attachment joint", message: "for the image", cancel: cancelSpritePlacement };
+  if (state.duplicatePlacement) return { key: "duplicate", icon: "duplicate", title: "Choose a parent joint", message: "for the copy", cancel: cancelSpritePlacement };
+  const pick = state.rigAnchorPick;
+  if (pick) return { key: `connect-${pick.key ?? ""}`, icon: "link", cancel: () => { state.rigAnchorPick = null; syncModeMessage(); requestRender(); },
+    ...(pick.key === "driver" ? { title: "Click a Smart Stretch joint", message: "on this figure" }
+      : pick.key ? { title: "Click the new anchor", message: "on this figure" } : { title: "Click the second joint", message: "to connect it" }) };
+  if (drawingController?.active) return null;
+  if (state.tool === "attach" && state.figureJoin) return { key: "join", icon: "join-figure", title: "Click the joint", message: "to join to", cancel: () => setTool("select") };
+  if (state.tool === "chain") return { key: "chain", icon: "builder-chain", title: "Click to add points", message: "· Enter finishes · Backspace removes the last" };
+  if (state.tool === "polygon") return { key: "polygon", icon: "polygon", title: "Click joints to trace", message: "· Shift-click an area to fill · Enter finishes" };
+  if (state.tool === "tweener" && !builderMode?.active) {
+    const type = tweenerControls?.button?.getAttribute("aria-label")?.replace(/ tweener$/, "") ?? "Breakdown";
+    return { key: "tweener", icon: "tween", title: "Drag across the canvas", message: `to tween · ${type} · Shift for precision · Esc cancels` };
+  }
+  return null;
+}
+function syncModeMessage() {
+  stageHead.showMode(modeMessage());
+}
 /** The workspace chrome: the rail, the stage's context, and the band's session buttons. */
 function syncShell() {
   studioShell?.sync();
   syncBandSession(document.querySelector(".titlebar"), bandSession());
+  // A workspace change runs this directly (builder onModeChange), outside the invalidator: the stage header follows.
+  syncStageHead();
 }
 const playback = new PlaybackCache({
   gpuIsolation: true,
@@ -1106,7 +1163,7 @@ function placeArtboard() {
     width: `${r.canvas_width * v.scale}px`,
     height: `${r.canvas_height * v.scale}px`,
   });
-  setText($("zoom-label"), `${Number((v.scale * 100).toFixed(v.scale < 0.01 ? 2 : v.scale < 0.1 ? 1 : 0))}% ⌄`);
+  stageHead.setZoom(`${Number((v.scale * 100).toFixed(v.scale < 0.01 ? 2 : v.scale < 0.1 ? 1 : 0))}%`);
 }
 /** Timeline frames shown by the Simple (Pivot-style) timeline, or null in Advanced. */
 function simpleFrameCount() {
@@ -1115,45 +1172,19 @@ function simpleFrameCount() {
     ? timelineUI?.frameCount ?? 0
     : editor.frameDraft?.storedCount ?? editor.report.keyframes.length;
 }
-/** The chrome that still floats inside #viewport until M3b moves it into the stage header (fittedView keeps clear of it). */
-const viewportChrome = () => ({
-  bar: drawingController?.active && drawingController.quickBar && !drawingController.quickBar.hidden ? drawingController.quickBar : null,
-  cluster: [...viewport.querySelectorAll(":scope > .canvas-view-controls")].find((element) => element.checkVisibility()) ?? null,
-});
+/**
+ * The view that fits the artboard inside #viewport (architecture §3.11.8): the
+ * layout solver's stage insets are pure clearance, and nothing floats inside
+ * #viewport (the stage header holds the view controls, zoom and Draw's quick
+ * bar), so the artboard is never under chrome. Offsets land on whole pixels
+ * (crisp artboard edges; whole-pixel pans keep exact offsets).
+ */
 function fittedView(r = editor.report) {
-  // The layout solver's stage insets are pure clearance around the artboard
-  // (architecture §3.11.8). Until Draw's quick bar and the view controls leave
-  // #viewport (M3b), fitting also keeps the artboard 8px clear of them: under
-  // the quick bar, and where it would reach the view controls in the corner,
-  // left of them (moved off centre as little as it needs) or above them,
-  // whichever keeps it larger.
-  // Offsets land on whole pixels (crisp artboard edges; whole-pixel pans keep
-  // exact offsets), so the clearance from that chrome counts the half pixel.
-  const clear = 8.5,
-    rect = viewport.getBoundingClientRect(),
+  const rect = viewport.getBoundingClientRect(),
     inset = shell?.stageInsets() ?? { top: 24, right: 28, bottom: 24, left: 28 },
-    { bar, cluster } = viewportChrome(),
-    top = Math.max(inset.top, bar ? bar.getBoundingClientRect().bottom - rect.top + clear : 0),
-    width = rect.width - inset.left - inset.right;
-  const fitIn = (across, bottom) => {
-    const height = rect.height - top - bottom,
-      s = Math.max(0.01, Math.min(across / r.canvas_width, height / r.canvas_height, 2));
-    return { scale: s, x: Math.round(inset.left + (width - r.canvas_width * s) / 2), y: Math.round(top + (height - r.canvas_height * s) / 2) };
-  };
-  const view = fitIn(width, inset.bottom);
-  const controls = cluster?.getBoundingClientRect();
-  if (!controls) return view;
-  const left = rect.left + view.x, right = left + r.canvas_width * view.scale,
-    lower = rect.top + view.y + r.canvas_height * view.scale;
-  if (!(left < controls.right + 8 && right > controls.left - 8 && lower > controls.top - 8)) return view;
-  const above = fitIn(width, Math.max(inset.bottom, rect.bottom - controls.top + clear));
-  const room = controls.left - clear - rect.left - inset.left;
-  if (!(room > 0)) return above;
-  const beside = fitIn(Math.min(width, room), inset.bottom);
-  if (beside.scale <= above.scale) return above;
-  // As centred as it can be while it ends 8px left of the view controls.
-  beside.x = Math.min(beside.x, Math.floor(controls.left - 8 - rect.left - r.canvas_width * beside.scale));
-  return beside;
+    width = rect.width - inset.left - inset.right, height = rect.height - inset.top - inset.bottom,
+    s = Math.max(0.01, Math.min(width / r.canvas_width, height / r.canvas_height, 2));
+  return { scale: s, x: Math.round(inset.left + (width - r.canvas_width * s) / 2), y: Math.round(inset.top + (height - r.canvas_height * s) / 2) };
 }
 // A fitted view follows viewport size changes (panel toggles, Build figure's
 // outliner, window resizes) until the user zooms or pans it.
@@ -1828,6 +1859,11 @@ function loop(now) {
       setHidden($('preview-quality'), !(state.playbackPacket?.previewQuality?.reduced || state.previewGovernor?.index));
       adaptPreviewQuality(sample, measuredAt);
       lastFpsUI = measuredAt;
+      // "Slow · 14 of 24 fps · Details" only while playback misses its target (never while it waits for sound or frames).
+      if (measuredAt - lastSlowUI >= 1000) {
+        lastSlowUI = measuredAt;
+        stageHead.showSlow(sample.coherent === false && !state.buffering && sample.elapsedMs >= 1000 ? { fps: sample.fps, target: sample.targetFps } : null);
+      }
     }
   }
   // A seek/edit event can request the next frame while this callback runs.
@@ -1863,6 +1899,7 @@ async function play() {
     ? 1000 / editor.report.frame_delay_ms : editor.report.fps);
   telemetry.playbackStart(telemetry.consent.diagnostics ? workload({ report: editor.report, fps: playbackMetrics.targetFps }) : {});
   lastFpsUI = playStart;
+  lastSlowUI = playStart;
   setText($("playback-fps"), "— fps");
   setAttr($("playback-fps"), "data-health", "pending");
   setHidden($("playback-fps"), false);
@@ -1910,6 +1947,7 @@ function pause() {
   }
   setHidden($("playback-fps"), true);
   setHidden($('preview-quality'), true);
+  stageHead.showSlow(null);
   if (wasPlaying && state.playbackPacket)
     state.editingPacket = {
       packet: state.playbackPacket,
@@ -1993,7 +2031,6 @@ function updateUI() {
 }
 /** The scene's size and the figure count. (#selection-summary is the shell's: studio-shell writes the scope there.) */
 function updateStatus() {
-  setText($("stage-size"), `${editor.report.canvas_width} × ${editor.report.canvas_height}`);
   setText($("object-count"),
     `${editor.frame.objects.length.toLocaleString()} ${editor.frame.objects.length === 1 ? "figure" : "figures"}`);
 }
@@ -2149,6 +2186,7 @@ function setTool(tool) {
     );
   renderInspector();
   tweenerControls?.sync();
+  syncModeMessage();
   requestRender();
 }
 function closestHandle(p, excludedUid = null, { uid } = {}) {
@@ -2457,12 +2495,12 @@ overlay.addEventListener(
     if (state.rigAnchorPick) {
       const pending=state.rigAnchorPick,target=closestHandle(p);
       releaseCanvasPointer();
-      if(pending.token!==editor._documentToken||pending.uid!==editor.selectedUid){state.rigAnchorPick=null;return;}
+      if(pending.token!==editor._documentToken||pending.uid!==editor.selectedUid){state.rigAnchorPick=null;syncModeMessage();return;}
       if(!target||target.g.obj.unique_id!==pending.uid){toast('Choose a joint on this figure. Escape cancels.');return;}
       if(pending.key==='driver')editor.bindStretchParts(target.id);
       else if(pending.key)editor.setRigBehavior({connector:{[pending.key]:target.id}});
       else editor.addConnector(pending.start,target.id);
-      state.rigAnchorPick=null;toast(pending.key==='driver'?'Stretch driver connected.':pending.key?'Connector anchor updated.':'Connector added. Drag its middle joint to slide.');requestRender();return;
+      state.rigAnchorPick=null;syncModeMessage();toast(pending.key==='driver'?'Stretch driver connected.':pending.key?'Connector anchor updated.':'Connector added. Drag its middle joint to slide.');requestRender();return;
     }
     if (state.tool === "attach") {
       releaseCanvasPointer();
@@ -3130,6 +3168,7 @@ function cancelSpritePlacement() {
   state.duplicatePlacement = null;
   overlay.style.cursor = "";
   viewport.classList.remove("sprite-placement");
+  syncModeMessage();
   requestRender();
 }
 function beginDuplicatePlacement({ branch = false, flip = false } = {}) {
@@ -3158,6 +3197,7 @@ function beginDuplicatePlacement({ branch = false, flip = false } = {}) {
   overlay.style.cursor = "copy";
   $("viewport-hint").textContent =
     "Choose a parent joint for the copy · Esc to cancel";
+  syncModeMessage();
   viewport.focus({ preventScroll: true });
   requestRender();
 }
@@ -3206,6 +3246,7 @@ async function beginSpritePlacement(file) {
     viewport.classList.add("sprite-placement");
     $("viewport-hint").textContent =
       "Choose an attachment joint · Esc to cancel";
+    syncModeMessage();
     viewport.focus({ preventScroll: true });
     requestRender();
     return true;
@@ -3829,7 +3870,7 @@ const beginRigAnchorPick=key=>{
   const ids=[...editor.selectedSegmentIds];
   if(!key&&ids.length===2){editor.addConnector(ids[0],ids[1]);toast('Connector added. Drag its middle joint to slide.');return;}
   setTool('rig');state.rigAnchorPick={key,start:s?.segment_id??0,uid:editor.selectedUid,token:editor._documentToken};
-  toast(key==='driver'?'Click a Smart Stretch joint on this figure. Escape cancels.':key?'Click the new anchor on this figure. Escape cancels.':'Click the second joint to create a connector. Escape cancels.');
+  syncModeMessage();
 };
 function pasteFigures(pasteMode = 'default', offset) {
   if (builderMode?.active) return toast("Finish the figure or return to Animate to paste.");
@@ -4282,12 +4323,12 @@ const actions = {
   },
   "toggle-handles": () => {
     editorSettings.commit({ showHandles: !state.handles });
-    $("handles-button").classList.toggle("active", state.handles);
     requestRender();
   },
+  // The stage header's Grid (the split button's toggle; its chevron opens Grid and guides).
+  "toggle-grid": () => editorSettings.commit({ canvasGrid: !state.settings.canvasGrid }),
   "toggle-motion-paths": () => {
     editorSettings.commit({ motionPaths: !state.motionPaths });
-    $("paths-button")?.classList.toggle("active", state.motionPaths);
     if (!state.motionPaths) state.hoverPathPoint = null;
     status(state.motionPaths ? "Motion paths on" : "Motion paths off");
     requestRender();
@@ -4697,6 +4738,7 @@ function hotkeyScopes(event) {
 function cancelKeyboardCommand() {
   if(drawingController?.active||drawingController?.operation){drawingController.cancel();drawingController.cancelSelection();}
   state.rigAnchorPick = null;
+  syncModeMessage();
   if (keyboardHandleGesture) {
     if (keyboardHandleGesture.ownsDrag) editor.cancelDrag();
     keyboardHandleGesture = null; heldArrows.clear();
@@ -4902,7 +4944,7 @@ const palette = createCommandPalette({
 const tooltips = installTooltips(document, {
   topInset: menuTopInset,
   // The chrome's remaining native titles show as the one ink tooltip.
-  adopt: ".titlebar, .shell-rail, .canvas-toolbar, .canvas-view-controls, .timeline-toolbar, .shell-strip, .shell-tabs",
+  adopt: ".titlebar, .shell-rail, .stage-head, .timeline-toolbar, .shell-strip, .shell-tabs",
   shortcut: (element) => {
     const id = hotkeyCommandId(element, hotkeys);
     return withShiftHint(element, id ? commands.shortcut(id) : undefined);
@@ -5222,13 +5264,20 @@ function offerRecovery() {
     tx.oncomplete = () => db.close();
   };
 }
+/** The recovery offer: the stage header's recovery message (experience.md §4.3), with the snapshot's file name and time. */
 function showRecovery(record) {
   if (!record) return;
-  const banner = document.createElement("div");
-  banner.className = "recovery-banner";
-  banner.innerHTML = `<span>Recovered project: ${esc(record.name)}</span><button class="button small" id="restore-recovery">Restore</button><button class="icon-button" id="dismiss-recovery" aria-label="Dismiss recovery">${icon("close")}</button>`;
-  viewport.append(banner);
-  $("restore-recovery").onclick = guarded(async () => {
+  const time = Number.isFinite(record.savedAt) ? new Date(record.savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  const offer = toasts.show({
+    slot: "recovery", icon: "clock", title: "Restore unsaved work", key: "recovery",
+    message: `${[record.name && `in ${record.name}`, time && `from ${time}`].filter(Boolean).join(" ")}?`,
+    timeout: 0, dismissible: false,
+    actions: [
+      { label: "Not now", id: "dismiss-recovery" },
+      { label: "Restore", id: "restore-recovery", variant: "outline", dismiss: false, run: guarded(() => restore()) },
+    ],
+  });
+  const restore = async () => {
     if (await dialogs.confirmReplace()) {
       const replaceApproved = {
         report: editor.report,
@@ -5269,10 +5318,9 @@ function showRecovery(record) {
       fit();
       updateUI();
       telemetry.count('recovery_restored');
-      banner.remove();
+      offer.dismiss();
     }
-  });
-  $("dismiss-recovery").onclick = () => banner.remove();
+  };
 }
 if (desktop) {
   if (desktop.platform !== "darwin") $("window-controls").hidden = false;
@@ -5321,7 +5369,7 @@ window.styk = {
   drawingResourcesFor,
   // The overlay kit: the open overlays and the hotkey gate, the message slot,
   // the command registry and the tooltip.
-  ui: { overlays, toasts, commands, palette, tooltips, context: commandContext },
+  ui: { overlays, toasts, commands, palette, tooltips, context: commandContext, stageHead },
   performance: () => ({
     editingPresentation:state.lastEditingPresentation,
     editablePreparation:{pending:editablePreparation.pending,...editablePreparation.stats},
@@ -5527,13 +5575,14 @@ async function init() {
       state.motionPaths = next.motionPaths;
       pathControls?.sync();
       canvasGuides?.sync();
-      $("paths-button")?.classList.toggle("active", state.motionPaths);
       if (!state.motionPaths) { state.hoverPathPoint = null; pathCache.clear(); }
       appLocalization.setLocale(next.locale);
       blueHandles = null;
       scheduleRecovery();
       requestRender();
       queueUI();
+      // The view toggles show their state at once, during playback too (the stage header's surface waits).
+      syncStageHead();
     },
     onPersist: desktop?.setEditorSettings
       ? (value) => desktop.setEditorSettings(value)
@@ -5564,7 +5613,7 @@ async function init() {
   window.styk.tweener = tweenerControls = new TweenerControls({button: $('tweener-button'), editor, viewport,
     getTool: () => state.tool, onSelect: () => setTool('tweener'),
     beforeEdit: () => propertyControls?.commit(), onError: fail});
-  canvasGuides = new CanvasGuides({button: $('canvas-guides-button'), viewport,
+  canvasGuides = new CanvasGuides({button: $('canvas-guides-button'), trigger: $('guides-options-button'), viewport,
     getState: () => ({settings: state.settings, view: state.view, report: editor.report,
       hidden: state.playing || state.previewing}),
     onChange: patch => editorSettings.commit(patch)});
@@ -5688,7 +5737,7 @@ async function init() {
   shell.define({id:'vfx',root:()=>$('vfx-panel'),onVisibility:visible=>{editor._vfxTimelineVisible=visible;editor._emit('vfx-selection');vfxInspector.panelVisible(visible);}});
   vfxGizmos=new VfxGizmos({canvas:overlay,inspector:vfxInspector,editor,pickNativeHandle:event=>pick(worldPoint(event)),getOptions:()=>({report:editor.report,frame:currentFrame(),geometry:state.playing?null:editor.geometry,view:state.view,cameraEnabled:state.playing||state.previewing,playing:state.playing,vfxEnabled:state.vfxEnabled,resources:state.renderer?.resources}),onChange:()=>{queueUI();requestRender();},onError:fail});
   window.styk.vfxGizmos=vfxGizmos;
-  $('vfx-preview').addEventListener('click',()=>{finishCurrentEdit();pause();state.vfxEnabled=!state.vfxEnabled;playback.setVfxEnabled(state.vfxEnabled);state.playbackPacket=null;state.editingPacket=null;state.renderer?.clearPreparedFrames?.();state.renderer.lastGeometry=null;$('vfx-preview').setAttribute('aria-pressed',String(state.vfxEnabled));requestRender();queueUI();});
+  $('vfx-preview').addEventListener('click',()=>{finishCurrentEdit();pause();state.vfxEnabled=!state.vfxEnabled;playback.setVfxEnabled(state.vfxEnabled);state.playbackPacket=null;state.editingPacket=null;state.renderer?.clearPreparedFrames?.();state.renderer.lastGeometry=null;syncStageHead();requestRender();queueUI();});
   assetLibrary = new AssetLibrary($("asset-list"), {
     onAdd: (id) => {
       pause();
@@ -5745,6 +5794,9 @@ async function init() {
   window.styk.builder = builderMode;
   drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onOverlayRender:requestDrawingOverlay,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard});
   window.styk.drawing=drawingController;
+  // Draw's quick bar is the stage header's tool options until Draw declares option descriptors (M7b): the same
+  // element, re-parented once out of #viewport with its handlers and sliders.
+  stageHead.adopt(drawingController.quickBar);
   studioShell = initStudioShell({editor, state, setTool, renderAssets, renderInspector, showCommandMenu,
     actions, getTimeline: () => timelineUI,
     builder: builderMode, drawing:drawingController, toast});
@@ -5775,15 +5827,6 @@ async function init() {
     state.renderer = await createRenderer(canvas, {...rendererOptions(), forceCanvas2D: true, fallbackReason: error.message});
   }
   new ResizeObserver(resize).observe(viewport);
-  // Draw's quick bar appearing or changing size, or the view controls changing, refit a fitted view (fittedView keeps clear of them).
-  const chromeObserver = new ResizeObserver(() => {
-    if (!isFittedView()) return;
-    state.view = fittedView();
-    fittedSnapshot = { ...state.view };
-    placeArtboard();
-    requestRender();
-  });
-  for (const element of [drawingController?.quickBar, ...viewport.querySelectorAll(":scope > .canvas-view-controls")]) if (element) chromeObserver.observe(element);
   resize();
   fit();
   updateUI();
@@ -5973,7 +6016,7 @@ installColorPickers((input, event) => {
       pause(); updateBuilderStyle({paint},event);
     }};
   }
-  if(input.id==='background-color'){
+  if(input.id==='background-color'||input.id==='crumb-background'){
     const bg=editor.report.backgrounds?.find(b=>b.background_id===editor.frame.background_id),override=editor.frame._stykBackgroundColor;
     return {anchor:input,paint:backgroundPaint(override===undefined?bg:{kind:2,color:override}),onChange:paint=>{
       if(paint.type==='solid')editor.setSceneColor(paintBackground(paint).color,{indices:rangeFrames()});

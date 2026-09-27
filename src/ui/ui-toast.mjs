@@ -4,15 +4,16 @@
  * persists; a task toast shows progress and can be cancelled.
  *
  * One message is visible at a time. Priority decides which: error, recovery,
- * update, toast, then the first-run hint; a higher one takes the slot at once
- * and a persistent one it displaces waits. At most `max` wait; identical
- * messages are merged. Timeouts pause while the pointer or focus is on the
- * message. The host is a manual [popover] in the top layer. While a modal
- * dialog is open the host lives inside the topmost one (the rest of the page
- * is inert, so a message outside it could be seen but not clicked) and sits
- * outside the dialog's box; it goes back when that dialog closes. Otherwise it
- * sits at the bottom centre of the stage, moved clear of the controls
- * `avoid()` names. createMessageQueue() is the pure part.
+ * a pick mode's instruction, update, toast, then the first-run hint; a higher
+ * one takes the slot at once and a persistent one it displaces waits. At most
+ * `max` wait; identical messages are merged. Timeouts pause while the pointer
+ * or focus is on the message. The host is a manual [popover] in the top layer.
+ * While a modal dialog is open the host lives inside the topmost one (the rest
+ * of the page is inert, so a message outside it could be seen but not clicked)
+ * and sits outside the dialog's box; it goes back when that dialog closes.
+ * Otherwise `slot` places it (the stage header's centre, src/shell/
+ * stage-head.mjs), or it sits at the bottom centre of the stage, moved clear
+ * of the controls `avoid()` names. createMessageQueue() is the pure part.
  *
  * Screen readers hear each message once, from a visually hidden live region
  * that is always rendered (the pill itself is not a live region: it appears
@@ -22,7 +23,7 @@
 import {UserActionError} from '../user-action-error.mjs';
 import {kitText} from './ui-strings.mjs';
 
-export const MESSAGE_PRIORITY = Object.freeze({hint: 0, toast: 1, update: 2, recovery: 3, error: 4});
+export const MESSAGE_PRIORITY = Object.freeze({hint: 0, toast: 1, update: 2, mode: 3, recovery: 4, error: 5});
 
 /**
  * The slot's queue. push(message) returns {show, displaced, duplicate,
@@ -85,15 +86,23 @@ const intersects = (a, b) => a.left < b.right && b.left < a.right && a.top < b.b
  *   overlays  the OverlayManager: the host moves into every modal it opens
  *   icon      (name) => SVG string or Node, for the dismiss and tone glyphs
  *   area      () => DOMRect of the stage: the message sits bottom-centre in it
- *   avoid     () => DOMRects the message must not cover there (the canvas's
- *             view controls): it moves left of them, else above them
+ *   avoid     () => DOMRects the message must not cover there: it moves
+ *             left of them, else above them
+ *   slot      {place({width, height}) => {x, top, place} | null, release()}:
+ *             the message's own place (the stage header's centre, or a line of
+ *             its own under it: place 'head' or 'drop'); null falls back to
+ *             `area`. release() runs when the message leaves the slot
  *   topInset  () => px: the band's bottom, which a message never goes above
  *   feedback  {label, run(error)}: the extra action on unexpected errors (desktop)
  *   t         (key, params) => text for the kit's own words (localization.t)
  * Returns {host, live, show(options), task(options), fail(error), dismiss(id),
- * clear({tones}), raise(), announce(text, {assertive})}.
+ * clear({tones}), raise(), reposition(), announce(text, {assertive})}.
+ * show({variant}) draws the revision 4 kinds: 'mode' (a pick mode's
+ * instruction) and 'quiet' ("Slow · 14 of 24 fps"); a handle's
+ * update({title, message}) rewrites a shown message's words in place, without
+ * announcing it again.
  */
-export function createToasts({host = null, overlays = null, icon = null, area = null, avoid = null, topInset = null, feedback = null, max = 3, t = null,
+export function createToasts({host = null, overlays = null, icon = null, area = null, avoid = null, slot = null, topInset = null, feedback = null, max = 3, t = null,
   document: doc = host?.ownerDocument ?? globalThis.document, setTimer = setTimeout, clearTimer = clearTimeout,
   now = () => globalThis.performance?.now() ?? Date.now()} = {}) {
   const element = host ?? doc.createElement('div');
@@ -158,8 +167,23 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
   const place = () => {
     const view = doc.defaultView ?? globalThis;
     const pill = element.querySelector(':scope > .ui-toast');
-    const width = pill?.offsetWidth ?? 0, height = pill?.offsetHeight ?? 0;
     const modal = element.parentNode !== home ? element.parentNode : null;
+    if (slot && !modal && pill) {
+      // Measured at its whole width (the band centred on the window), then placed where the slot says.
+      for (const name of ['--toast-x', '--toast-top', '--toast-bottom']) element.style.removeProperty(name);
+      element.removeAttribute('data-place');
+      const spot = slot.place({width: pill.offsetWidth, height: pill.offsetHeight});
+      if (spot) {
+        element.dataset.place = spot.place;
+        element.style.setProperty('--toast-x', `${Math.round(spot.x)}px`);
+        element.style.setProperty('--toast-top', `${Math.round(spot.top)}px`);
+        return;
+      }
+    }
+    slot?.release?.();
+    element.removeAttribute('data-place');
+    element.style.removeProperty('--toast-top');
+    const width = pill?.offsetWidth ?? 0, height = pill?.offsetHeight ?? 0;
     let x, bottom;
     if (modal?.getBoundingClientRect) {
       const box = modal.getBoundingClientRect(), top = Math.max(0, Number(topInset?.()) || 0);
@@ -194,6 +218,8 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
     try { if (element.matches(':popover-open')) element.hidePopover(); } catch { /* already hidden */ }
     element.setAttribute('hidden', '');
     element.replaceChildren();
+    element.removeAttribute('data-place');
+    slot?.release?.();
     relocate();
   };
   /** After a modal opened or closed: the host moves into (or out of) it and goes to the top of the top layer. */
@@ -225,6 +251,7 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
     if (record.tone === 'error') node.dataset.tone = 'danger';
     if (record.tone === 'warning') node.dataset.tone = 'warning';
     if (record.task) node.dataset.variant = 'task';
+    else if (record.variant) node.dataset.variant = record.variant;
     if (record.slot === 'hint') { const dot = doc.createElement('span'); dot.className = 'ui-toast-dot'; node.append(dot); }
     else if (record.icon) glyph(node, record.icon, 'ui-icon ui-toast-icon');
     const text = doc.createElement('span');
@@ -250,6 +277,8 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
       button.dataset.size = 'sm';
       if (action.command) button.dataset.action = action.command;
       button.textContent = action.label;
+      if (action.tip) button.dataset.tooltip = action.tip;
+      if (action.id) button.id = action.id;
       button.addEventListener('click', event => {
         if (!action.command) event.stopPropagation();
         try { action.run?.(event); } finally { if (action.dismiss !== false) dismiss(record.id); }
@@ -309,13 +338,13 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
     }
   };
 
-  function show({message = '', title = '', tone = 'info', slot = null, action = null, actions = null, timeout = null, dismissible = null,
+  function show({message = '', title = '', tone = 'info', slot: rank = null, variant = null, action = null, actions = null, timeout = null, dismissible = null,
     icon: iconName = null, key = null, dismissLabel = null, onDismiss = null, task = false} = {}) {
     const list = actions ?? (action ? [action] : []);
     const record = {
-      id: `toast-${++toastCount}`, message: String(message), title: String(title), tone, task, actions: list, onDismiss,
+      id: `toast-${++toastCount}`, message: String(message), title: String(title), tone, task, variant, actions: list, onDismiss,
       dismissLabel: dismissLabel ?? kitText(t, 'overlays.dismiss'),
-      slot: slot ?? (tone === 'error' ? 'error' : 'toast'),
+      slot: rank ?? (tone === 'error' ? 'error' : 'toast'),
       // Errors and tasks stay until dismissed or done; an action earns a message more time to be read.
       timeout: timeout ?? (task || tone === 'error' ? 0 : Math.max(list.length ? 8000 : 0, TIMEOUTS[tone] ?? 4000)),
       icon: iconName ?? TONE_ICONS[tone] ?? null,
@@ -340,6 +369,15 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
     return {
       id: record.id,
       dismiss: () => dismiss(record.id),
+      /** Rewrites the message's words (a live readout, a mode's step); it was announced once and is not announced again. */
+      update({title = record.title, message = record.message} = {}) {
+        if (!records.has(record.id) || (String(title) === record.title && String(message) === record.message)) return;
+        record.title = String(title);
+        record.message = String(message);
+        const text = record.node?.querySelector('.ui-toast-text');
+        if (text) writeText(text, record.title, record.message);
+        if (visible === record) place();
+      },
       get visible() { return visible === record; },
     };
   }
@@ -422,6 +460,8 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
 
   return {
     host: element, live, show, task, fail, raise, dismiss, announce,
+    /** Places the shown message again (the stage header changed size or content). */
+    reposition() { if (visible && element.parentNode === home) place(); },
     /** Dismisses every message, or only those of the given tones (a press on the canvas clears info messages: clear({tones: ['info']})). */
     clear({tones = null} = {}) {
       for (const [id, record] of [...records]) if (!tones || tones.includes(record.tone)) dismiss(id);

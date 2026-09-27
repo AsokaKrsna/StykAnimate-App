@@ -83,9 +83,7 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
     setText(document.getElementById('edit-scope'), drawingActive ? drawing.exposureLabel : scopeText);
     setHidden(document.getElementById('leave-rig'), current !== 'rig');
     setText(document.getElementById('selection-summary'), scopeText);
-    const hint = document.getElementById('viewport-hint');
-    if (!hint.textContent) hint.textContent = 'Drag to select · Shift-click to add · Drag a joint to pose';
-    setHidden(hint, drawingActive || Boolean(state.playing || state.previewing || ['select', 'pose', 'hand'].includes(state.tool)));
+    // #viewport-hint stays hidden: a tool's instruction is the stage header's mode message (app.mjs modeMessage).
     builder?.sync();
     if(drawingActive)drawing.sync();
   }

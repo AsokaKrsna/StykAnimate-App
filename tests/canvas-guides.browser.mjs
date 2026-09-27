@@ -10,14 +10,14 @@ const settings=()=>page.evaluate(()=>styk.state.settings);
 try {
  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>styk?.ready);
  const before=await page.evaluate(()=>({revision:styk.editor.revision,dirty:styk.editor.dirty}));
- await page.locator('#canvas-guides-button').click();
+ await page.locator('#guides-options-button').click();
  for(const name of ['canvasGuideVertical','canvasGuideHorizontal','canvasGrid'])await page.locator(`[data-setting="${name}"]`).check();
  await page.locator('[data-position="X"]').fill('320');await page.locator('[data-position="X"]').press('Tab');
  await page.locator('[data-position="Y"]').fill('400');await page.locator('[data-position="Y"]').press('Tab');
  await page.locator('[data-setting="canvasGridSpacing"]').fill('32');await page.locator('[data-setting="canvasGridSpacing"]').press('Tab');
  check('Exact positions and grid size apply',Math.abs((await settings()).canvasGuideX-1/3)<1e-8&&(await settings()).canvasGridSpacing===32);
  await page.screenshot({path:`${out}/settings.png`});
- await page.keyboard.press('Escape');check('Escape closes and restores focus',await page.locator('#canvas-guides-button').evaluate(e=>document.activeElement===e));
+ await page.keyboard.press('Escape');check('Escape closes and restores focus',await page.locator('#guides-options-button').evaluate(e=>document.activeElement===e));
  await page.screenshot({path:`${out}/canvas.png`});
  const handle=page.getByRole('button',{name:'Move vertical guide'}),r=await handle.boundingBox(),scale=await page.evaluate(()=>styk.state.view.scale);
  await page.mouse.move(r.x+10,r.y+10);await page.mouse.down();await page.mouse.move(r.x+10+80*scale,r.y+10,{steps:8});await page.mouse.up();
@@ -26,7 +26,7 @@ try {
  await page.mouse.move(r2.x+10,r2.y+10);await page.mouse.down();await page.mouse.move(r2.x+50,r2.y+10);await page.keyboard.press('Escape');await page.mouse.up();
  check('Escape cancels guide drag',(await settings()).canvasGuideX===saved);
  await handle.focus();await page.keyboard.press('ArrowRight');check('Keyboard nudges one pixel',Math.abs((await settings()).canvasGuideX*960-401)<1e-5);
- await page.locator('#canvas-guides-button').click();await page.locator('[data-setting="canvasGuidesLocked"]').check();
+ await page.locator('#guides-options-button').click();await page.locator('[data-setting="canvasGuidesLocked"]').check();
  check('Lock disables dragging and position edits',await handle.isDisabled()&&await page.locator('[data-position="X"]').isDisabled());
  await page.keyboard.press('Escape');
  const after=await page.evaluate(()=>({revision:styk.editor.revision,dirty:styk.editor.dirty}));check('Aids do not modify animation document',JSON.stringify(before)===JSON.stringify(after));
@@ -40,9 +40,13 @@ try {
  check('Aids hide during playback',await page.locator('.canvas-aids').isHidden());
  await page.locator('#play-button').click();await page.waitForFunction(()=>!document.querySelector('.canvas-aids').hidden);
  check('Aids return after pausing',await page.locator('.canvas-aids').isVisible());
- await page.locator('#canvas-guides-button').click();await page.setViewportSize({width:900,height:740});
+ await page.locator('#guides-options-button').click();await page.setViewportSize({width:900,height:740});
  const box=await page.locator('#canvas-guides-panel').boundingBox();check('Compact popover stays on screen',box.x>=0&&box.y>=0&&box.x+box.width<=900&&box.y+box.height<=740);
  await page.screenshot({path:`${out}/compact.png`});
  await page.keyboard.press('Escape');check('Escape closes freshly opened popover',await page.locator('#canvas-guides-panel').evaluate(e=>!e.matches(':popover-open')));await page.evaluate(()=>styk.settingsUI.commit({theme:'dark'}));await page.screenshot({path:`${out}/dark.png`});
+ // The stage header's Grid split: the button shows or hides the grid in one click, its state visible.
+ const grid=await settings().then(v=>v.canvasGrid);await page.locator('#canvas-guides-button').click();
+ check('The Grid toggle flips the grid and shows its state',(await settings()).canvasGrid===!grid&&await page.locator('#canvas-guides-button').getAttribute('aria-pressed')===String(!grid));
+ await page.locator('#canvas-guides-button').click();check('The Grid toggle turns it back',(await settings()).canvasGrid===grid);
  check('No browser errors',errors.length===0);await writeFile(`${out}/report.json`,JSON.stringify({checks,errors},null,2));
 }finally{await browser.close();}

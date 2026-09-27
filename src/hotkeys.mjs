@@ -63,6 +63,7 @@ group('View & camera', [
   ['zoom-reset', 'Fit canvas', ['Shift+Digit1']], ['zoom-selection', 'Fit selection', ['Shift+Digit2']],
   ['toggle-handles', 'Show / hide joints', ['Shift+KeyJ']],
   ['toggle-motion-paths', 'Show / hide motion paths', ['KeyM']],
+  ['toggle-grid', 'Show / hide grid', ['Mod+Quote']],
   ['toggle-unselected-handles', 'Show / hide unselected handles', ['Mod+KeyH']],
   ['toggle-camera', 'Show / hide camera', ['Mod+KeyK']], ['camera-reset', 'Reset camera', ['Mod+Alt+KeyK']],
   ['camera-center', 'Center camera', ['F8']], ['camera-align-view', 'Align camera to view', ['F10']],

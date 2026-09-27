@@ -26,7 +26,7 @@ const shown = element => Boolean(element?.isConnected && element.getClientRects(
 export function createDockKeyboard({document: doc = globalThis.document, window: win = globalThis.window, host, announce = () => {}} = {}) {
   const regionList = () => {
     const {hosts, bottom, stage, viewport, band, rail, floats} = host.regions();
-    const head = stage?.querySelector(':scope > .canvas-toolbar');
+    const head = stage?.querySelector(':scope > .stage-head');
     return [band, rail, hosts.left, head, viewport, hosts.right, bottom, ...floats].filter(element => shown(element));
   };
 

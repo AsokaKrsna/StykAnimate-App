@@ -147,10 +147,47 @@
           </div>
         </aside>
         <main class="center shell-stage" aria-label="Stage">
-          <div class="canvas-toolbar">
-            <div class="crumb">
-              <button class="scene-control" data-action="scene-settings" title="Scene properties" data-icon="frame">Scene</button><span>/</span
-              ><span id="stage-size">960 × 540</span>
+          <div class="stage-head" role="toolbar" aria-label="Stage">
+            <div class="stage-head-start" data-slot="stage-start">
+              <nav class="ui-crumb" aria-label="Location">
+                <button type="button" class="ui-crumb-item" data-action="scene-settings" data-crumb="scene" data-tooltip="Scene properties" data-icon="scene"><span class="ui-crumb-name">Scene</span><span class="ui-crumb-meta" id="stage-size">960 × 540</span></button>
+                <button type="button" class="ui-crumb-swatch" id="crumb-background" data-paint-picker aria-label="Background colour" data-tooltip="Background colour"><span class="ui-crumb-chip"></span></button>
+              </nav>
+              <div id="chain-controls" class="polygon-controls stage-mode-controls" role="group" aria-label="Chain" hidden><span id="chain-count"></span><button type="button" id="chain-finish" class="ui-button" data-variant="outline" data-size="sm" title="Finish chain · Enter">Finish</button><button type="button" id="chain-cancel" class="ui-icon-button" data-size="sm" aria-label="Cancel chain" title="Cancel · Escape" data-icon="x"></button></div>
+              <div id="polygon-controls" class="polygon-controls stage-mode-controls" role="group" aria-label="Polygon" hidden>
+                <span id="polygon-count">0 joints</span
+                ><button
+                  id="finish-polygon"
+                  class="ui-button"
+                  data-variant="outline"
+                  data-size="sm"
+                  data-action="finish-polygon"
+                  disabled
+                >
+                  Finish</button
+                ><button
+                  class="ui-icon-button"
+                  data-size="sm"
+                  data-action="cancel-polygon"
+                  aria-label="Cancel polygon"
+                  data-icon="x"
+                ></button>
+              </div>
+            </div>
+            <div class="stage-head-msg" data-slot="stage-message"></div>
+            <div class="stage-head-end" data-slot="stage-end">
+              <div class="stage-head-cluster" data-view role="group" aria-label="View">
+                <button type="button" class="ui-icon-button" id="handles-button" data-action="toggle-handles" data-quiet data-workspaces="animate" aria-pressed="true" aria-label="Joints" data-tooltip="Joints" data-icon="joints"></button>
+                <button type="button" class="ui-icon-button" id="paths-button" data-action="toggle-motion-paths" data-quiet data-workspaces="animate" aria-pressed="false" aria-label="Motion paths" data-tooltip="Motion paths" data-icon="motion-path"></button>
+                <div class="ui-split" role="group" aria-label="Grid and guides"><button type="button" class="ui-icon-button" id="canvas-guides-button" data-action="toggle-grid" data-quiet aria-pressed="false" aria-label="Grid" data-tooltip="Grid" data-icon="grid"></button><button type="button" class="ui-split-more" id="guides-options-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="canvas-guides-panel" aria-label="Grid and guides settings" data-tooltip="Grid and guides settings" data-icon="chevron-down"></button></div>
+                <button type="button" class="ui-icon-button" id="vfx-preview" data-quiet data-workspaces="animate draw" aria-pressed="true" aria-label="Effects preview" data-tooltip="Effects preview" data-icon="fx"></button>
+                <button type="button" class="ui-icon-button" data-action="builder-static-handles" data-quiet data-workspaces="rig" aria-pressed="true" aria-label="Static handles" data-tooltip="Static handles" data-icon="pin" hidden></button>
+                <button type="button" class="ui-icon-button" data-action="builder-highlight" data-quiet data-workspaces="rig" aria-pressed="false" aria-label="Highlight part" data-tooltip="Highlight part" data-icon="highlight" hidden></button>
+              </div>
+              <div class="stage-head-cluster" data-zoom role="group" aria-label="Zoom">
+                <button type="button" class="ui-button stage-zoom" id="zoom-label" data-variant="ghost" data-size="sm" data-action="zoom-menu" aria-haspopup="menu" aria-label="Canvas zoom" title="Zoom options"><span class="stage-zoom-value">100%</span><span class="stage-zoom-chevron" data-icon="chevron-down"></span></button>
+                <button type="button" class="ui-icon-button" data-action="zoom-reset" aria-label="Fit canvas" data-tooltip="Fit canvas" data-icon="fit"></button>
+              </div>
             </div>
           </div>
           <div class="context-strip"><strong id="tool-context">Select</strong><span id="edit-scope">Current frame</span><button id="leave-rig" hidden>Return to animation →</button></div>
@@ -198,79 +235,21 @@
             </div>
             <button class="builder-btn builder-toggle" data-action="toggle-builder-branch" data-icon="builder-branch" title="Apply edits to the whole branch · or hold Shift" aria-label="Apply to branch" aria-pressed="false"><span class="builder-action-label">Branch</span></button>
           </div>
-          <div class="stage-head" role="toolbar" aria-label="Stage" hidden>
-            <div class="stage-head-start" data-slot="stage-start"></div>
-            <div class="stage-head-msg" data-slot="stage-message"></div>
-            <div class="stage-head-end" data-slot="stage-end"></div>
-          </div>
           <div
             id="viewport"
             tabindex="0"
             role="application"
             aria-label="Animation canvas. V to select, H to pan. Drag a figure or joint to pose it."
           >
-            <div class="canvas-view-controls" role="toolbar" aria-label="Canvas view">
-              <button type="button" id="canvas-guides-button" class="icon-button" data-icon="grid" title="Guides and grid" aria-label="Guides and grid" aria-haspopup="dialog" aria-expanded="false" aria-controls="canvas-guides-panel"></button>
-              <button type="button" id="vfx-preview" class="button subtle small" title="Toggle VFX preview" aria-label="VFX preview" aria-pressed="true">VFX</button>
-              <button
-                class="icon-button active"
-                id="handles-button"
-                data-action="toggle-handles"
-                title="Show joints · J"
-                aria-label="Show joints"
-                data-icon="eye"
-              ></button
-              ><button
-                class="icon-button"
-                id="paths-button"
-                data-action="toggle-motion-paths"
-                title="Motion paths · M"
-                data-icon="motion-path"
-              ></button
-              ><span class="divider"></span
-              ><button
-                class="zoom-label"
-                data-action="zoom-menu"
-                id="zoom-label"
-                title="Zoom options"
-                aria-label="Canvas zoom"
-                aria-haspopup="menu"
-              >
-                100%
-              </button>
-            </div>
             <div id="artboard"><span class="artboard-name">Scene 01</span></div>
             <canvas id="scene" aria-label="WebGPU animation scene"></canvas>
             <canvas
               id="overlay"
               aria-label="Figure selection and joint handles"
             ></canvas>
-            <div class="viewport-top" aria-hidden="true">
-              <span id="frame-badge">FRAME 01</span
-              ><span id="preview-badge" hidden>PLAYING</span>
-            </div>
             <div id="canvas-empty" hidden>Drop a StykAnimate, Pivot or Stick Nodes file here</div>
-            <output id="playback-fps" aria-label="Playback frames per second" hidden>— fps</output>
-            <output id="preview-quality" title="Preview detail follows your playback quality setting or available memory. Original artwork and export quality are preserved." hidden>Reduced preview quality</output>
             <div id="renderer-error" hidden></div>
-            <div id="chain-controls" class="polygon-controls" hidden><span id="chain-count"></span><button id="chain-finish" title="Finish chain · Enter">Finish</button><button id="chain-cancel" aria-label="Cancel chain" title="Cancel · Escape">×</button></div>
-            <div id="polygon-controls" class="polygon-controls" hidden>
-              <span id="polygon-count">0 joints</span
-              ><button
-                id="finish-polygon"
-                class="button primary small"
-                data-action="finish-polygon"
-                disabled
-              >
-                Finish</button
-              ><button
-                class="icon-button"
-                data-action="cancel-polygon"
-                aria-label="Cancel polygon"
-                data-icon="x"
-              ></button>
-            </div>
-            <div class="viewport-help" id="viewport-hint"></div>
+            <div class="viewport-help" id="viewport-hint" hidden></div>
           </div>
         </main>
         <aside class="right-panel shell-right shell-dock" id="right-dock" data-region="right" aria-label="Inspector">
@@ -378,7 +357,11 @@
           ><span id="status">Ready</span>
         </div>
         <div>
-          <span id="renderer-label">Initializing WebGPU</span
+          <span class="viewport-top" aria-hidden="true"><span id="frame-badge">FRAME 01</span
+            ><span id="preview-badge" hidden>PLAYING</span></span
+          ><output id="playback-fps" aria-label="Playback frames per second" hidden>— fps</output
+          ><output id="preview-quality" title="Preview detail follows your playback quality setting or available memory. Original artwork and export quality are preserved." hidden>Reduced preview quality</output
+          ><span id="renderer-label">Initializing WebGPU</span
           ><span class="status-separator">·</span><span id="render-time">—</span
           ><span class="status-separator">·</span
           ><span id="object-count">0 figures</span
