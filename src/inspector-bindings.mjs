@@ -20,6 +20,7 @@
  * moveSelected(dx, dy), updateSelection(patch), showDialog, closeDialog}.
  */
 import {rigControlChange} from './rig-controls.mjs';
+import {installInspectorChrome} from './inspector-header.mjs';
 import {changeSurfaceSide} from './builder-surface-ui.mjs';
 import {layerIdForUid} from './layers.mjs';
 import {shortest} from './pivot/geometry.mjs';
@@ -275,10 +276,22 @@ export function applyInspectorChange(bindings, event, {pause} = {}) {
   return undefined;
 }
 
-/** Listens for changes in the inspector's root (#inspector). Returns a function that removes the listener. */
+/**
+ * Listens for changes in the inspector's root (#inspector) and its header's
+ * target line (where the name is renamed in place), and installs the
+ * Properties panel's header and kit (inspector-header.mjs). Returns a
+ * function that removes them.
+ */
 export function installInspectorBindings(root, ctx) {
   const bindings = inspectorBindings(ctx);
   const listener = ctx.guarded(async (event) => applyInspectorChange(bindings, event, {pause: ctx.pause}));
+  const chrome = installInspectorChrome(root, ctx);
+  const target = chrome.header?.element;
   root.addEventListener('change', listener);
-  return () => root.removeEventListener('change', listener);
+  target?.addEventListener('change', listener);
+  return () => {
+    root.removeEventListener('change', listener);
+    target?.removeEventListener('change', listener);
+    chrome.destroy();
+  };
 }

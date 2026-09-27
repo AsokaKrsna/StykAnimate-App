@@ -40,12 +40,10 @@ test("explicit inspector contexts isolate camera, scene, frame and layer control
   for (const key of ["camera_x", "canvas_width", "root_x", 'data-field="fps"'])
     assert.ok(!frame.includes(key));
   const layer = inspectorView({ editor, context: "layer" });
-  for (const key of [
-    "inspector-layer-name",
-    "inspector-layer-visible",
-    "inspector-layer-locked",
-  ])
-    assert.ok(layer.includes(key));
+  assert.ok(layer.includes("inspector-layer-name"));
+  // A layer is shown, hidden, locked and unlocked from its row's eye and lock (revision 4).
+  for (const key of ["inspector-layer-visible", "inspector-layer-locked"])
+    assert.ok(!layer.includes(key));
   assert.ok(!layer.includes("camera_x"));
   assert.ok(!layer.includes("canvas_width"));
   assert.ok(!layer.includes("root_x"));

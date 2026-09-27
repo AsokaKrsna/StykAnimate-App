@@ -156,6 +156,7 @@
     --weight-medium: 500;                       /* UI default */
     --weight-semibold: 600;                     /* labels, buttons, section titles */
     --weight-heading: 650;                      /* Inter Tight headings */
+    --weight-value: 450;                        /* field values: regular, never bold (calm) */
     --weight-bold: 700;                         /* titles, numerals, badges */
     --weight-display: 760;
 
@@ -170,6 +171,7 @@
     --type-small-strong: var(--weight-semibold) var(--text-12)/var(--leading-12) var(--font-ui);
     --type-ui: var(--weight-medium) var(--text-13)/var(--leading-13) var(--font-ui);
     --type-ui-strong: var(--weight-semibold) var(--text-13)/var(--leading-13) var(--font-ui);
+    --type-value: var(--weight-value) var(--text-13)/var(--leading-13) var(--font-ui);   /* inspector values */
     --type-body: var(--weight-regular) var(--text-13)/var(--leading-13) var(--font-ui);
     --type-emphasis: var(--weight-semibold) var(--text-14)/var(--leading-14) var(--font-ui);
     --type-numeral: var(--weight-bold) var(--text-14)/var(--leading-14) var(--font-display);
@@ -186,6 +188,7 @@
     --space-2: 8px;
     --space-2-5: 10px;          /* text-button padding, tooltip and chip insets */
     --space-3: 12px;
+    --space-3-5: 14px;          /* section rhythm, filmstrip padding */
     --space-4: 16px;
     --space-5: 20px;
     --space-6: 24px;

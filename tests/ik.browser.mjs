@@ -48,8 +48,8 @@ try {
   assert.ok(await page.getByRole('radio', {name: 'Bend both', exact: true}).isChecked());
   assert.equal(await page.locator('.ik-help').count(), 0);
   assert.equal(await page.getByText('Inverse kinematics', {exact: true}).count(), 0);
-  assert.ok(await page.locator('#node-is-ik').evaluate(el => el.closest('.inspector-section')?.textContent.includes('Transform')));
-  check('Compact IK controls live inside Transform without explanatory copy');
+  assert.equal(await page.locator('#node-is-ik').evaluate(el => el.closest('.ui-section')?.dataset.section), 'ik');
+  check('Compact IK controls have their own section beside the joint\'s, without explanatory copy');
   await drag((await snapshot()).joints[22], {x: 420, y: 150});
   let previousKnee = (await snapshot()).joints[11], largestKneeStep = 0;
   const startCircle = await screen({x: 420, y: 150});

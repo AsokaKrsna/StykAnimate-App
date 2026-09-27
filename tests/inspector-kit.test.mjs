@@ -1,15 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync, readFileSync} from 'node:fs';
-import {parse} from '../vendor/text/opentype.mjs';
 import {Editor} from '../src/editor.mjs';
-import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
-import {rigExampleDocument} from '../src/rig-examples.mjs';
-import {rigIKAllowed} from '../src/rig-constraints.mjs';
-import {inspectorView} from '../src/inspector-view.mjs';
-import {ikControlsView} from '../src/ik-view.mjs';
-import {compileTextFigure} from '../src/text-authoring.mjs';
-import {createImageFigure} from '../src/media-authoring.mjs';
 import english from '../src/locales/en.mjs';
 import inspectorStrings from '../src/locales/en-inspector.mjs';
 import {lintCss} from '../scripts/check-css.mjs';
@@ -18,356 +10,27 @@ import {
   hasMoreBelow, inspectorBudgetProblems, normalizeSectionMemory, renderButton, renderFooter, renderInspector, renderInspectorHead, renderQuickSlot,
   renderRow, renderScope, renderSection, resolveSectionOpen, restDisplayPrecision, rowControls, sectionBodyId, sliderFill, syncQuickHost,
 } from '../src/inspector-kit.mjs';
+import {brushInspector, figureInspector, ikSection, layerInspector} from './helpers/inspector-kit-contexts.mjs';
+import {legacyInspectorView} from './fixtures/inspector-legacy.mjs';
 import {
-  brushInspector, cameraInspector, figureInspector, frameInspector, ikSection, jointInspector, layerInspector, sceneInspector, selectionInspector,
-} from './helpers/inspector-kit-contexts.mjs';
+  assertNoKeyState, assertNoTitles, assertNumberParity, assertOptions, assertParity, assertSwitchParity, find, nameOf, options, tag, tags,
+} from './helpers/inspector-markup.mjs';
 
-// ---------------------------------------------------------------------------
-// A start-tag reader for inspector markup (no comments, scripts or unquoted values).
-
-const ENTITIES = {'&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'"};
-const decode = value => value.replace(/&(?:amp|lt|gt|quot|#39);/g, entity => ENTITIES[entity]);
-function tags(html) {
-  return [...html.matchAll(/<([a-z][a-z0-9-]*)((?:\s+[^\s=>]+(?:="[^"]*")?)*)\s*\/?>/gi)].map(match => ({
-    tag: match[1].toLowerCase(), index: match.index, end: match.index + match[0].length,
-    attrs: Object.fromEntries([...match[2].matchAll(/([^\s=]+)(?:="([^"]*)")?/g)].map(([, name, value]) => [name, decode(value ?? '')])),
-  }));
-}
-const matches = (entry, where) => Object.entries(where).every(([name, value]) => (value === true ? name in entry.attrs : entry.attrs[name] === String(value)));
-const find = (html, where) => tags(html).find(entry => matches(entry, where));
-function tag(html, where, label = JSON.stringify(where)) {
-  const found = find(html, where);
-  assert.ok(found, `no element with ${label}`);
-  return found;
-}
-const pick = (entry, names) => Object.fromEntries(names.map(name => [name, entry.attrs[name] ?? null]));
-/** Today's accessible names with the unit written out, as components.md §3 asks ("Angle (degrees)"): a deliberate change. */
-const human = values => Object.fromEntries(Object.entries(values).map(([name, value]) => [name, name === 'aria-label' && value ? value.replace(/\(°\)/g, '(degrees)') : value]));
-/** The text of an element's options (a select's contract: value, selected, disabled, label). */
-function options(html, where) {
-  const select = tag(html, where), close = html.indexOf('</select>', select.end);
-  return [...html.slice(select.end, close).matchAll(/<option((?:\s+[^\s=>]+(?:="[^"]*")?)*)\s*>([^<]*)<\/option>/g)].map(([, attrs, text]) => {
-    const entry = {attrs: Object.fromEntries([...attrs.matchAll(/([^\s=]+)(?:="([^"]*)")?/g)].map(([, name, value]) => [name, decode(value ?? '')]))};
-    return {value: entry.attrs.value ?? null, selected: 'selected' in entry.attrs, disabled: 'disabled' in entry.attrs, text: decode(text)};
-  });
-}
-/** A control's accessible name: aria-label, else the text of the <label> that wraps it up to the control. */
-function nameOf(html, where) {
-  const entry = tag(html, where);
-  if (entry.attrs['aria-label']) return entry.attrs['aria-label'];
-  const before = html.slice(0, entry.index);
-  return [...before.slice(before.lastIndexOf('<label')).matchAll(/>([^<]+)</g)].map(match => decode(match[1])).join('').trim();
-}
-
-const NUMBER = ['type', 'id', 'data-field', 'data-property', 'data-property-value', 'data-property-precision', 'data-property-display-precision',
-  'data-property-step', 'value', 'step', 'aria-label', 'min', 'max', 'disabled'];
-const SCRUB = ['data-property-scrub', 'tabindex', 'role', 'aria-label'];
-/**
- * A PropertyControls number: its row, its input and the scrub label inside the
- * row are the same today and in the kit, except that the scrub tip is the one
- * tooltip (data-tooltip) instead of a native title.
- */
-function assertNumberParity(today, kit, key, names = NUMBER) {
-  for (const [html, source] of [[today, 'today'], [kit, 'kit']]) tag(html, {'data-property-row': key}, `${source} data-property-row=${key}`);
-  const expected = tag(today, {'data-property': key}), actual = tag(kit, {'data-property': key});
-  assert.deepEqual(pick(actual, names), human(pick(expected, names)), `${key} input`);
-  const scrub = (html, row) => tags(html).find(entry => entry.index > row.index && 'data-property-scrub' in entry.attrs);
-  const todayScrub = scrub(today, tag(today, {'data-property-row': key})), kitScrub = scrub(kit, tag(kit, {'data-property-row': key}));
-  assert.deepEqual(pick(kitScrub, SCRUB), human(pick(todayScrub, SCRUB)), `${key} scrub label`);
-  assert.equal(kitScrub.attrs['data-tooltip'], todayScrub.attrs.title, `${key}: the scrub tip is the tooltip`);
-  assert.ok(!('title' in kitScrub.attrs), `${key}: no native title beside the tooltip`);
-  assert.ok(kitScrub.index < actual.index, `${key}: the scrub label precedes its input inside the row`);
-}
-function assertParity(today, kit, where, names) {
-  assert.deepEqual(pick(tag(kit, where, `kit ${JSON.stringify(where)}`), names), human(pick(tag(today, where, `today ${JSON.stringify(where)}`), names)), JSON.stringify(where));
-}
-/** A switch: the same state and hooks, and a visible name that contains today's (label in name, WCAG 2.5.3). */
-function assertSwitchParity(today, kit, where, names = ['type', 'role', 'checked']) {
-  assertParity(today, kit, where, names);
-  const before = nameOf(today, where), after = nameOf(kit, where);
-  assert.ok(after.includes(before), `${JSON.stringify(where)}: "${after}" names "${before}"`);
-}
-const assertOptions = (today, kit, where) => assert.deepEqual(options(kit, where), options(today, where), `${JSON.stringify(where)} options`);
+// The kit renders descriptors with this stand-in glyph, so tests can read which glyph a control asks for.
 const icon = (name, className) => `<svg class="${className}" data-icon="${name}"></svg>`;
 const kitHTML = (descriptor, env = {}, parts) => renderInspector(descriptor, {icon, ...env}, parts);
-function assertNoKeyState(html) {
-  for (const hook of ['data-property-key', 'data-property-nav', 'property-key-controls', 'ui-key', 'data-icon="diamond"'])
-    assert.ok(!html.includes(hook), `the inspector shows no key state (${hook})`);
-}
-/** Only controls whose browser tests still read `title` keep one (legacyTitle); everything else uses the one tooltip. */
-function assertNoTitles(html, allowed = []) {
-  const titled = tags(html).filter(entry => 'title' in entry.attrs).map(entry => entry.attrs['data-action'] ?? entry.attrs.id ?? entry.tag);
-  assert.deepEqual(titled, allowed, 'no native titles beside the tooltip');
-}
 const HEADER = 7;   // the header's menu button and a full quick actions row (five defaults and a pin)
 const assertBudget = (descriptor, options = {}) => assert.deepEqual(inspectorBudgetProblems(descriptor, {headerControls: HEADER, ...options}), [], `${descriptor.kind} fits the budget`);
 
-const fonts = await Promise.all(['Regular'].map(async style => {
-  const bytes = readFileSync(new URL(`../vendor/text/NotoSans-${style}.ttf`, import.meta.url));
-  return parse(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-}));
-const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHk8AAAAASUVORK5CYII=';
-
 // ---------------------------------------------------------------------------
-// Parity: today's inspectors' key controls, reproduced by descriptors.
-
-test('figure inspector: transform, appearance, arrange and palette keep their ids and property hooks', () => {
-  const editor = new Editor();
-  editor.select(1);
-  const descriptor = figureInspector(editor), today = inspectorView({editor}), kit = kitHTML(descriptor);
-  for (const key of ['root_x', 'root_y', 'scale', 'rotation', 'figure_opacity', 'figure_z_order']) assertNumberParity(today, kit, key);
-  assert.equal(tag(kit, {'data-property': 'scale'}).attrs['data-field'], 'scale', 'legacy data-field stays');
-  assert.equal(tag(kit, {'data-property': 'figure_opacity'}).attrs['data-field'], undefined, 'no data-field where today has none');
-  assert.equal(tag(kit, {'data-property': 'rotation'}).attrs['aria-label'], 'Angle (degrees)', 'units are words in accessible names');
-  assertParity(today, kit, {id: 'figure-color'}, ['type', 'value', 'aria-label']);
-  assertParity(today, kit, {id: 'figure-name'}, ['value', 'aria-label']);
-  assert.equal(tag(kit, {id: 'figure-name'}).attrs['data-tooltip'], tag(today, {id: 'figure-name'}).attrs.title, 'the rename tip is the tooltip');
-  assertParity(today, kit, {id: 'figure-layer'}, ['aria-label']);
-  assertOptions(today, kit, {id: 'figure-layer'});
-  for (const action of ['reset-color', 'layer-down', 'layer-up']) assertParity(today, kit, {'data-action': action}, ['aria-label', 'data-action']);
-  // join-selection.browser reads the Join button's title until the M2 test migration.
-  assertParity(today, kit, {'data-action': 'join-figure'}, ['aria-label', 'data-action', 'title']);
-  assertNoTitles(kit, ['join-figure']);
-  tag(kit, {'data-action': 'combine-figures'});
-  const color = tag(today, {'data-palette-color': true}).attrs['data-palette-color'];
-  assertParity(today, kit, {'data-palette-color': color}, ['data-paint-picker', 'aria-label']);
-  // The spec's glyphs: plain one-step arrows, never the chevrons.
-  assert.match(kit, /data-action="layer-down"[^>]*><svg class="ui-icon" data-icon="step-down">/);
-  assert.match(kit, /data-action="layer-up"[^>]*><svg class="ui-icon" data-icon="step-up">/);
-  // Today's exact attribute run, which string tests read.
-  assert.ok(kit.includes('data-property-precision="3" data-property-display-precision="1"'));
-  // Connection names the figure it is joined to, read-only, as today's row does.
-  assert.match(kit, /<div class="ui-row"><span class="ui-row-label">Joined to<\/span><span class="ui-row-value">None<\/span><\/div>/);
-  assertNoKeyState(kit);
-  assertBudget(descriptor);
-});
-
-test('text and image figures keep their transform fields and their own commands', () => {
-  const text = compileTextFigure({text: 'Hello', fontSize: 42, color: [70, 40, 170]}, fonts[0]);
-  const editor = new Editor({demo: false});
-  editor.importFigure(text);
-  let today = inspectorView({editor}), descriptor = figureInspector(editor), kit = kitHTML(descriptor);
-  assert.equal(descriptor.kind, 'text');
-  for (const key of ['root_x', 'root_y', 'scale', 'rotation']) assertNumberParity(today, kit, key);
-  assertParity(today, kit, {'data-action': 'edit-text'}, ['data-action']);
-  assertParity(today, kit, {id: 'figure-name'}, ['value', 'aria-label']);
-  assertNoKeyState(kit);
-  assertBudget(descriptor);
-
-  const image = new Editor({demo: false});
-  image.importFigure(createImageFigure({dataUrl: PNG, width: 1, height: 1, name: 'Placed sprite'}));
-  today = inspectorView({editor: image}); descriptor = figureInspector(image); kit = kitHTML(descriptor);
-  assert.equal(descriptor.kind, 'image');
-  for (const key of ['root_x', 'root_y', 'scale', 'rotation', 'figure_opacity']) assertNumberParity(today, kit, key);
-  assertParity(today, kit, {id: 'figure-color'}, ['type', 'value', 'aria-label']);
-  assertParity(today, kit, {id: 'figure-name'}, ['value']);
-  // A figure without text leaves the Text section's placeholder, so the sections after it keep their places.
-  assert.ok(kit.includes('<section class="ui-section" data-section="text" hidden></section>'));
-  assertBudget(descriptor);
-});
-
-test('several figures: Selection, Align and Appearance keep their hooks; values that differ read Mixed', () => {
-  const editor = new Editor();
-  editor.selectMany([1, 2]);
-  const bounds = {minX: 10, minY: 20, maxX: 110.5, maxY: 220};
-  const today = inspectorView({editor, selectionCount: 2, bounds}), descriptor = selectionInspector(editor, bounds), kit = kitHTML(descriptor);
-  for (const key of ['group_x', 'group_y', 'group_width', 'group_height', 'figure_opacity']) assertNumberParity(today, kit, key);
-  const align = ['align-left', 'align-center-x', 'align-right', 'align-top', 'align-center-y', 'align-bottom'];
-  for (const action of ['rotate', 'center', 'reset-color', ...align]) assertParity(today, kit, {'data-action': action}, ['aria-label', 'data-action']);
-  assertParity(today, kit, {id: 'figure-color'}, ['type', 'aria-label']);
-  assertParity(today, kit, {id: 'figure-layer'}, ['aria-label']);
-  assertOptions(today, kit, {id: 'figure-layer'});
-  assertNoTitles(kit);
-  assertBudget(descriptor);
-
-  // Figures on two layers: the Layer select reads Mixed, as today's.
-  const layer = editor.createLayer('Layer 2', {activate: false});
-  editor.assignFiguresToLayer([2], layer.id);
-  editor.selectMany([1, 2]);
-  assertOptions(inspectorView({editor, selectionCount: 2, bounds}), kitHTML(selectionInspector(editor, bounds)), {id: 'figure-layer'});
-  assert.equal(options(kitHTML(selectionInspector(editor, bounds)), {id: 'figure-layer'})[0].text, 'Mixed');
-
-  // Opacities that differ: the field is empty with a Mixed placeholder and keeps the model value it edits from.
-  editor.selectedObjects[0].field28 = 128;
-  const mixed = kitHTML(selectionInspector(editor, bounds)), input = tag(mixed, {'data-property': 'figure_opacity'});
-  assert.equal(input.attrs.value, '');
-  assert.equal(input.attrs.placeholder, 'Mixed');
-  assert.equal(input.attrs['data-mixed'], input.attrs['data-property-value']);
-  assert.ok('data-mixed' in tag(mixed, {'data-property-row': 'figure_opacity'}).attrs);
-});
-
-test('joint inspector: pose fields, Static, IK and the segment style keep their contract', () => {
-  const editor = new Editor();
-  editor.select(1, 2);
-  const descriptor = jointInspector(editor), today = inspectorView({editor}), kit = kitHTML(descriptor);
-  for (const key of ['joint_angle', 'joint_length', 'joint_bend', 'thickness', 'segment_z_order', 'segment_opacity']) assertNumberParity(today, kit, key);
-  for (const key of ['thickness', 'joint_angle', 'joint_length']) assert.equal(tag(kit, {'data-property': key}).attrs['data-field'], key);
-  assertSwitchParity(today, kit, {id: 'static-joint'});
-  assertParity(today, kit, {id: 'segment-shape'}, ['aria-label', 'disabled']);
-  assertOptions(today, kit, {id: 'segment-shape'});
-  assertParity(today, kit, {id: 'segment-color'}, ['type', 'data-paint-picker', 'aria-label']);
-  assertSwitchParity(today, kit, {id: 'node-is-ik'}, ['type', 'role', 'aria-controls', 'checked']);
-  // Use IK controls a rendered region even while IK is off (today's #node-ik-options, hidden).
-  const region = tag(kit, {id: 'node-ik-options'});
-  assert.ok('hidden' in region.attrs && 'hidden' in tag(today, {id: 'node-ik-options'}).attrs);
-  // The field switch is named by its label: no aria-label that could drift from the visible text.
-  assert.match(kit, /<label class="ui-field" data-switch-field><span class="ui-field-label">Static<\/span><input class="ui-switch" type="checkbox" role="switch" id="static-joint"/);
-  assert.equal(nameOf(kit, {id: 'node-is-ik'}), 'Use IK');
-  assertNoTitles(kit);
-  assertNoKeyState(kit);
-  assertBudget(descriptor);
-});
-
-test('IK options keep their ids, the chain stepper and the native bend radios', () => {
-  const ik = {enabled: true, pinned: true, allowStretch: false, bendDirection: 1, chainLength: 2, maxLength: 3, target: {rotation: 0.5}};
-  const today = ikControlsView(ik), kit = renderSection(ikSection(ik), {icon, kind: 'joint'});
-  for (const id of ['node-ik-pinned', 'node-ik-stretch']) assertSwitchParity(today, kit, {id});
-  assertParity(today, kit, {id: 'node-ik-chain'}, ['type', 'min', 'max', 'step', 'value', 'aria-label']);
-  assertParity(today, kit, {id: 'node-ik-rotation'}, ['type', 'step', 'value', 'aria-label']);
-  for (const value of ['-1', '0', '1']) assertParity(today, kit, {name: 'node-ik-bend', value}, ['type', 'checked', 'aria-label']);
-  assert.ok(!('hidden' in tag(kit, {id: 'node-ik-options'}).attrs));
-  assert.match(kit, /<div class="ui-segmented" role="radiogroup" aria-label="IK bend direction"/);
-  // Plain step buttons: the kit applies them within the input's limits, out of the tab order.
-  const steps = tags(kit).filter(entry => 'data-kit-step' in entry.attrs);
-  assert.equal(steps.length, 2);
-  assert.ok(steps.every(entry => entry.attrs.tabindex === '-1'));
-  assert.equal(tag(kit, {id: 'node-ik-chain'}).attrs['data-precision'], '0');
-});
-
-test('connector joints: Segment │ Slider and the slide position keep their hooks', () => {
-  const editor = new Editor({demo: false});
-  editor.load(rigExampleDocument('sliding-carriage'));
-  editor.select(1, 2);
-  const allowed = () => rigIKAllowed(editor.figure, editor.selectedJoint);
-  let today = inspectorView({editor}), descriptor = jointInspector(editor, {ikAllowed: allowed()}), kit = kitHTML(descriptor);
-  assertParity(today, kit, {id: 'rig-position'}, ['type', 'min', 'max', 'step', 'aria-label']);
-  assert.equal(Number(tag(kit, {id: 'rig-position'}).attrs.value), Number(tag(today, {id: 'rig-position'}).attrs.value));
-  for (const part of ['segment', 'slider']) assertParity(today, kit, {'data-connector-part': part}, ['aria-pressed']);
-  assertSwitchParity(today, kit, {id: 'static-joint'});
-  for (const html of [today, kit]) assert.doesNotMatch(html, /id="segment-color"|data-property="thickness"/);
-  assert.ok('data-open' in tag(kit, {'data-section': 'connector'}).attrs, 'the Connector section opens on a connector joint');
-  assertBudget(descriptor);
-
-  editor._connectorInspector = {uid: 1, id: 3, part: 'segment'};
-  today = inspectorView({editor}); kit = kitHTML(jointInspector(editor, {ikAllowed: allowed()}));
-  for (const part of ['segment', 'slider']) assertParity(today, kit, {'data-connector-part': part}, ['aria-pressed']);
-  assertParity(today, kit, {id: 'segment-color'}, ['type', 'aria-label']);
-  assertNumberParity(today, kit, 'thickness');
-  for (const html of [today, kit]) assert.doesNotMatch(html, /id="rig-position"|id="static-joint"|data-property="joint_angle"/);
-});
-
-test('second colour: its switch, its region and its fields keep their hooks on circles only', () => {
-  const editor = new Editor({demo: false});
-  editor.addFigure();
-  editor.select(editor.selectedUid, 0);
-  editor.updateSegmentStyle({color: '#f8356a', opacity: 0.7, gradient: {color: '#2cd876', opacity: 0.6}});
-  editor.convertSegment('circle');
-  let today = inspectorView({editor}), kit = kitHTML(jointInspector(editor));
-  assertSwitchParity(today, kit, {id: 'segment-gradient-enabled'}, ['type', 'role', 'checked', 'aria-controls']);
-  assert.ok(!('hidden' in tag(kit, {id: 'segment-secondary-controls'}).attrs));
-  assertParity(today, kit, {id: 'segment-gradient-color'}, ['type', 'value', 'aria-label']);
-  assertNumberParity(today, kit, 'segment_gradient_opacity');
-  assertNumberParity(today, kit, 'segment_opacity');
-  assert.ok('data-open' in tag(kit, {'data-section': 'second-colour'}).attrs, 'it opens while the second colour is on');
-
-  editor.figure.segments[0].secondary = null;
-  today = inspectorView({editor}); kit = kitHTML(jointInspector(editor));
-  assertSwitchParity(today, kit, {id: 'segment-gradient-enabled'}, ['type', 'role', 'checked', 'aria-controls']);
-  for (const html of [today, kit]) {
-    assert.ok('hidden' in tag(html, {id: 'segment-secondary-controls'}).attrs, 'the region stays, hidden');
-    assert.doesNotMatch(html, /id="segment-gradient-color"/);
-  }
-  editor.convertSegment('line');
-  kit = kitHTML(jointInspector(editor));
-  assert.doesNotMatch(kit, /segment-gradient-enabled/);
-  assert.ok(kit.includes('<section class="ui-section" data-section="second-colour" hidden></section>'));
-});
-
-test('camera inspector: transform fields, the monitor and the pose commands keep their hooks', () => {
-  const editor = new Editor();
-  const descriptor = cameraInspector(editor), today = inspectorView({editor, context: 'camera'}), kit = kitHTML(descriptor);
-  for (const key of ['camera_x', 'camera_y', 'camera_scale', 'camera_angle']) assertNumberParity(today, kit, key);
-  assertParity(today, kit, {'data-camera-monitor': true}, ['aria-label']);
-  tag(kit, {'data-camera-magnification': true});
-  for (const tab of ['transform', 'motion']) assertParity(today, kit, {'data-camera-tab': tab}, ['role', 'aria-selected']);
-  for (const action of ['camera-copy', 'camera-paste']) assertParity(today, kit, {'data-action': action}, ['aria-label', 'disabled']);
-  assertParity(today, kit, {'data-action': 'camera-guides'}, ['aria-pressed']);
-  // The monitor is drawn imperatively: its canvas is an owned host in the Preview section, a plain element (no card).
-  const monitor = tag(kit, {'data-camera-monitor': true});
-  assert.equal(monitor.attrs['data-inspector-owned'], 'camera-monitor');
-  assert.equal(monitor.attrs.class, 'inspector-preview-media');
-  assert.doesNotMatch(kit, /ui-card/);
-  assert.match(kit, /data-action="camera-copy"[^>]*><svg class="ui-icon" data-icon="copy">/);
-  assertNoTitles(kit);
-  assertNoKeyState(kit);
-  assertBudget(descriptor);
-});
-
-test('scene inspector: its meta line, canvas size, background colour and rate keep their hooks', () => {
-  const editor = new Editor();
-  const descriptor = sceneInspector(editor), today = inspectorView({editor, context: 'scene'}), kit = kitHTML(descriptor);
-  for (const key of ['canvas_width', 'canvas_height', 'fps']) assertNumberParity(today, kit, key);
-  assertParity(today, kit, {id: 'background-color'}, ['type', 'value', 'aria-label']);
-  for (const action of ['background-style', 'import-background']) assertParity(today, kit, {'data-action': action}, ['aria-label']);
-  assert.ok(kit.includes('data-property-precision="0" data-property-display-precision="0"'), 'integer properties edit without decimals');
-  // The meta line is a quiet line of facts, never a paragraph (the audit counts <p> at rest as noise).
-  assert.match(kit, /<div class="inspector-meta">3 figures · \d+ frames · [\d.]+ s<\/div>/);
-  assert.doesNotMatch(kit, /<p[\s>]/);
-  assertBudget(descriptor, {headerControls: 1});
-});
-
-test('keyframe and exposure inspectors keep the duration field and Add frame', () => {
-  const editor = new Editor();
-  let today = inspectorView({editor, context: 'frame'}), descriptor = frameInspector(editor), kit = kitHTML(descriptor);
-  assert.equal(descriptor.kind, 'keyframe');
-  assertNumberParity(today, kit, 'duration');
-  assertBudget(descriptor, {headerControls: 1});
-  const sheet = new Editor({layerTimeline: true, propertyChannels: true});
-  today = inspectorView({editor: sheet, context: 'frame'}); descriptor = frameInspector(sheet); kit = kitHTML(descriptor);
-  assert.equal(descriptor.kind, 'frame');
-  assertNumberParity(today, kit, 'duration');
-  assertParity(today, kit, {'data-action': 'add-frame'}, ['aria-label']);
-  assertNoKeyState(kit);
-});
-
-test('fills: each keeps its identity, colour, delete, opacity, order and order steps; long lists page as today', () => {
-  const report = emptyDocument(), figure = report.figure_types[0];
-  figure.polyfills = Array.from({length: 40}, (_, i) => ({polyfill_id: i + 1, segment_ids: [0, 1, 2], color_rgb: [i * 6, 90, 250 - i * 5], color_alpha: 1 - i / 100, z_order: 1.5}));
-  report.keyframes = [createFrame([createObject(figure, 1, 200, 200)], 10)];
-  const editor = new Editor({demo: false}).load(report);
-  editor.select(1);
-  const view = {tool: 'rig', rigMode: 'rotate', polygonPage: 1, palettePage: 1};
-  const today = inspectorView({editor, ...view}), descriptor = figureInspector(editor, view), kit = kitHTML(descriptor);
-  // Edit rig, while the rig tool is active.
-  assertParity(today, kit, {id: 'rig-mode'}, ['aria-label']);
-  assertOptions(today, kit, {id: 'rig-mode'});
-  tag(kit, {'data-action': 'add-sprite-segment'});
-  for (const index of [12, 23]) {
-    for (const html of [today, kit]) tag(html, {'data-polygon-index': index});
-    assertParity(today, kit, {'data-polygon-color': index}, ['type', 'value', 'aria-label']);
-    assertParity(today, kit, {'data-delete-polygon': index}, ['aria-label']);
-    for (const key of [`polygon_${index}_opacity`, `polygon_${index}_z_order`]) assertNumberParity(today, kit, key);
-    for (const direction of ['back', 'down', 'up', 'front'])
-      assertParity(today, kit, {'data-action': 'builder-order', 'data-index': index, 'data-direction': direction}, ['aria-label', 'data-kind']);
-  }
-  assert.equal(find(kit, {'data-polygon-index': 11}), undefined, 'only the current page');
-  for (const action of ['polygons-previous', 'polygons-next', 'palette-previous', 'palette-next']) assertParity(today, kit, {'data-action': action}, ['aria-label', 'disabled']);
-  const colour = tags(today).filter(entry => 'data-palette-color' in entry.attrs)[0].attrs['data-palette-color'];
-  assertParity(today, kit, {'data-palette-color': colour}, ['aria-label']);
-  // The palette is one collection: one tab stop, the arrow keys inside.
-  const grid = tag(kit, {class: 'ui-swatch-grid'});
-  assert.ok('data-count-one' in grid.attrs);
-  assert.deepEqual(tags(kit).filter(entry => 'data-palette-color' in entry.attrs).map(entry => entry.attrs.tabindex).filter(value => value === '0'), ['0']);
-  // At rest the fills and colours are one closed line each; the rig tool's section opens while it is active.
-  assertBudget(figureInspector(editor));
-  assert.ok('data-open' in tag(kit, {'data-section': 'rig'}).attrs);
-  assert.ok(!('data-open' in tag(kit, {'data-section': 'fills'}).attrs));
-});
+// Contexts still to come: the kit reproduces today's key controls (tests/fixtures/inspector-legacy.mjs)
+// from descriptors for the contexts later milestones port (tests/helpers/inspector-kit-contexts.mjs).
+// The inspector's own contexts are tested against today's markup in tests/inspector-descriptors.test.mjs.
 
 test('drawing layer inspector: name, visibility, lock and parallax keep their hooks', () => {
   const editor = new Editor({layerTimeline: true, propertyChannels: true});
   const layer = editor.createDrawingLayer();
-  const descriptor = layerInspector(editor), today = inspectorView({editor, context: 'layer'}), kit = kitHTML(descriptor);
+  const descriptor = layerInspector(editor), today = legacyInspectorView({editor, context: 'layer'}), kit = kitHTML(descriptor);
   assertParity(today, kit, {id: 'inspector-layer-name'}, ['value', 'aria-label', 'maxlength', 'data-layer-id']);
   for (const id of ['inspector-layer-visible', 'inspector-layer-locked']) assertParity(today, kit, {id}, ['type', 'checked', 'data-layer-id']);
   tag(kit, {'data-parallax-layer': layer.id});
@@ -393,7 +56,7 @@ test('drawing brush inspector: preview, recent colours, Blend and Lock alpha kee
     pressureOpacity: false, pressureFlow: false, sizeCurve: 1, opacityCurve: 1, sizeJitter: 0, opacityJitter: 0, angleJitter: 0, scatter: 0, mirrorY: false,
     resolution: 1, filter: 'smooth'};
   const drawing = {active: true, editor, tool: 'brush', settings, library: {recent: ['#ff0000', '#223344'], presets: []}, state: {view: {}}};
-  const descriptor = brushInspector(drawing), today = inspectorView({editor, drawing}), kit = kitHTML(descriptor);
+  const descriptor = brushInspector(drawing), today = legacyInspectorView({editor, drawing}), kit = kitHTML(descriptor);
   assertParity(today, kit, {'data-brush-preview': true}, ['data-section', 'aria-label']);
   assert.ok('data-inspector-owned' in tag(kit, {'data-brush-preview': true}).attrs, 'the preview stays an owned host');
   assertParity(today, kit, {'data-draw-setting': 'blend'}, ['aria-label', 'data-draw-text']);
@@ -673,15 +336,16 @@ test('optional content never shifts what follows it: the scope slot, hidden sect
   }
 });
 
-test('a skin renders the kinds, placeholder and section list it names; the kit renders the rest, sub-module markup as it is', () => {
-  const skin = {placeholder: '', rows: {number: row => `<i>${row.key}</i>`}, sections: (list, env) => list.map(section => renderRow(section.rows[0], env)).join('|')};
-  assert.equal(renderRow({kind: 'number', key: 'root_x'}, {skin}), '<i>root_x</i>');
-  assert.equal(renderRow({kind: 'number', key: 'root_x', hidden: true}, {skin}), '', 'the skin\'s placeholder');
-  assert.equal(renderRow(null, {skin}), '');
+test('sub-module markup: a markup row as it is, a bare section edge to edge; a meta line composes hooked parts', () => {
   assert.equal(renderRow({kind: 'markup', html: '<section class="rig">Rig</section>'}), '<section class="rig">Rig</section>');
-  assert.equal(renderRow({kind: 'meta', text: 'Facts'}, {skin}), '<div class="inspector-meta">Facts</div>', 'kinds the skin leaves fall back to the kit');
-  assert.equal(renderInspector({kind: 'figure', sections: [{id: 'a', rows: [{kind: 'number', key: 'x'}]}, {id: 'b', rows: [{kind: 'markup', html: '<b>m</b>'}]}]}, {skin}), '<i>x</i>|<b>m</b>');
-  assert.throws(() => renderInspector({kind: 'figure', sections: [{id: 'a', rows: []}, {id: 'a', rows: []}]}, {skin}), /Duplicate section id/);
+  assert.equal(renderSection({id: 'drawing', bare: true, rows: [{kind: 'markup', html: '<b>m</b>'}]}), '<div class="inspector-bare" data-section="drawing"><b>m</b></div>');
+  assert.equal(renderSection({id: 'motion', bare: true, hidden: true, rows: [{kind: 'markup', html: '<b>m</b>'}]}), '<div class="inspector-bare" data-section="motion" hidden><b>m</b></div>',
+    'a hidden bare section keeps the markup its module updates');
+  assert.throws(() => renderSection({id: 'drawing', bare: true, title: 'Drawing', rows: []}), /Bare section drawing has no title/);
+  assert.equal(renderRow({kind: 'meta', parts: ['Frame ', {tag: 'output', text: '3 / 12', data: {current: true}}, ' · ', {text: 'Scene 7', className: 'scene'}]}),
+    '<div class="inspector-meta">Frame <output data-current>3 / 12</output> · <span class="scene">Scene 7</span></div>');
+  assert.equal(renderRow({kind: 'meta', parts: [{text: '<b>'}]}), '<div class="inspector-meta"><span>&lt;b&gt;</span></div>', 'parts are escaped');
+  assert.throws(() => renderInspector({kind: 'figure', sections: [{id: 'a', rows: []}, {id: 'a', rows: []}]}), /Duplicate section id/);
   assert.equal(rowControls({kind: 'markup', html: '<button></button>'}), 0, 'a markup row counts only the controls it declares');
   assert.equal(rowControls({kind: 'markup', html: '', controls: 3}), 3);
 });
@@ -698,7 +362,7 @@ test('buttons, fields and swatches use the one tooltip, never a native title (un
 });
 
 test('every context fits the inspector budget at rest, and the budget counts what the audit counts', () => {
-  assert.deepEqual(INSPECTOR_BUDGET, {controls: 30, openSections: 5, titledSections: 8, coreSections: 3});
+  assert.deepEqual(INSPECTOR_BUDGET, {controls: 30, openSections: 5, titledSections: 8, coreSections: 4});
   assert.equal(rowControls({kind: 'number', key: 'x'}), 2, 'a keyed field and its scrub label');
   assert.equal(rowControls({kind: 'number', id: 'x'}), 1);
   assert.equal(rowControls({kind: 'stepper-field', key: 'x'}), 4);
@@ -708,7 +372,7 @@ test('every context fits the inspector budget at rest, and the budget counts wha
   assert.equal(rowControls({kind: 'group', hidden: true, rows: [{kind: 'select'}]}), 0);
   for (const kind of ['meta', 'value', 'preview']) assert.equal(rowControls({kind}), 0);
   const many = {kind: 'crowded', sections: Array.from({length: 6}, (_, i) => ({id: `s${i}`, title: `S${i}`, rows: [{kind: 'grid', rows: [{kind: 'number', key: `k${i}`}, {kind: 'number', key: `j${i}`}, {kind: 'number', key: `h${i}`}]}]}))};
-  assert.deepEqual(inspectorBudgetProblems(many), ['crowded: 36 controls > 30', 'crowded: 6 open sections > 5', 'crowded: 6 titled core sections > 3']);
+  assert.deepEqual(inspectorBudgetProblems(many), ['crowded: 36 controls > 30', 'crowded: 6 open sections > 5', 'crowded: 6 titled core sections > 4']);
   const titled = {kind: 'folded', sections: Array.from({length: 9}, (_, i) => ({id: `t${i}`, title: `T${i}`, place: 'titled', rows: []}))};
   assert.deepEqual(inspectorBudgetProblems(titled), ['folded: 9 titled sections > 8']);
   // A remembered section is not at rest: the memory decides what is open.

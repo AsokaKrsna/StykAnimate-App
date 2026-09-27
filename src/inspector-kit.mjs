@@ -69,11 +69,9 @@
  * is the thin DOM half: section toggles, step buttons, slider readouts,
  * Mixed values, collections, the "more below" fade and the one-time scrub hint.
  *
- * Skins. env.skin ({placeholder, rows: {kind: render}, sections(list, env)})
- * renders the kinds it names, the placeholder and the section list its own
- * way; every other kind falls back to the kit. inspector-view.mjs renders its
- * descriptors with the legacy skin (src/inspector-legacy.mjs, today's markup)
- * until its contexts move to these renderers.
+ * Sub-modules that still build HTML enter as `markup` rows, or as a `bare`
+ * section that keeps their own edge-to-edge markup, until they move to
+ * descriptors.
  *
  * Pure and DOM-free at import; strings come from locales/en-inspector.mjs
  * with an optional env.t(key, params) translator.
@@ -86,8 +84,12 @@ import TEXT from './locales/en-inspector.mjs';
 
 export const MAX_TITLE_ACTIONS = 2;
 export const SECTION_PLACES = Object.freeze(['core', 'titled']);
-/** The audit's inspector budget at rest (architecture.md §3.13, revision 4.1 with headroom). */
-export const INSPECTOR_BUDGET = Object.freeze({controls: 30, openSections: 5, titledSections: 8, coreSections: 3});
+/**
+ * The audit's inspector budget at rest (architecture.md §3.13, revision 4.1 with headroom). Core sections are two to
+ * three per context, four where revision 4.1 adds a line of its own: the joint's Figure (its Layer) and several
+ * figures' Arrange (their Layer and one-step order).
+ */
+export const INSPECTOR_BUDGET = Object.freeze({controls: 30, openSections: 5, titledSections: 8, coreSections: 4});
 
 /** The one-time hint the message slot shows when a person first focuses a scrub-able field (English; installInspectorKit translates it). */
 export const SCRUB_HINT = TEXT['inspector.scrubHint'];
@@ -111,7 +113,7 @@ export const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, chara
 // Attributes a descriptor may add to a control through `attrs` and `data`.
 // Event handler attributes and style never pass: inline style is limited to
 // the custom properties the kit writes itself (--swatch, --_p, --level).
-const ATTRIBUTE_NAME = /^(?:data-[a-z][a-z0-9-]*|aria-[a-z]+|role|title|tabindex|name|maxlength|minlength|placeholder|autocomplete|spellcheck|inputmode|pattern|for|form|accept|multiple|size)$/;
+const ATTRIBUTE_NAME = /^(?:data-[a-z][a-z0-9-]*|aria-[a-z]+|role|title|tabindex|name|maxlength|minlength|placeholder|autocomplete|spellcheck|inputmode|pattern|for|form|accept|multiple|size|required)$/;
 const DATA_NAME = /^[a-z][a-z0-9-]*$/;
 const ID = /^[A-Za-z][\w:.-]*$/;
 const SECTION_ID = /^[a-z][a-z0-9-]{0,39}$/;
@@ -544,8 +546,21 @@ function preview(row) {
  */
 const markup = row => String(row.html ?? '');
 
-/** A quiet line of facts ("2 figures · 48 frames · 2.0 s"). Never a <p>: the audit counts paragraphs at rest as helper prose. */
-const meta = row => `<div${attributes({class: 'inspector-meta', id: id(row.id), 'data-tooltip': row.tip, ...extras(row)})}>${escapeHTML(row.text)}</div>`;
+/**
+ * A quiet line of facts ("2 figures · 48 frames · 2.0 s"). Never a <p>: the
+ * audit counts paragraphs at rest as helper prose. `parts` compose the line
+ * from text and hooked spans ({text, data, attrs, tag: 'span' | 'output'}),
+ * for a value a module updates or a test reads by itself.
+ */
+function meta(row) {
+  const part = item => {
+    if (typeof item === 'string') return escapeHTML(item);
+    const tag = item?.tag === 'output' ? 'output' : 'span';
+    return `<${tag}${attributes({class: item.className, ...extras(item)})}>${escapeHTML(item?.text)}</${tag}>`;
+  };
+  const body = row.parts ? row.parts.map(part).join('') : escapeHTML(row.text);
+  return `<div${attributes({class: 'inspector-meta', id: id(row.id), 'data-tooltip': row.tip, ...extras(row)})}>${body}</div>`;
+}
 
 /** A read-only value with its row label ("Joined to  Rival · Left hand", "Fills  No fills"). */
 const value = row => `<div${attributes({class: 'ui-row', id: id(row.id), ...extras(row)})}><span class="ui-row-label">${escapeHTML(row.label)}</span>` +
@@ -574,17 +589,10 @@ const REGIONS = new Set(['grid', 'group']);
 /** The empty node a hidden or absent row leaves in its place, so the rows after it keep their positions. */
 export const ROW_PLACEHOLDER = '<div hidden></div>';
 
-/**
- * One row of a section body. Unknown kinds throw: a silently dropped control
- * would be a lost function. `env.skin` ({placeholder, rows, sections}) may
- * render some kinds, the placeholder and the section list its own way (the
- * legacy skin, src/inspector-legacy.mjs, draws today's markup until the
- * contexts move to these renderers).
- */
+/** One row of a section body. Unknown kinds throw: a silently dropped control would be a lost function. */
 export function renderRow(row, env = {}) {
-  const skin = env.skin;
-  if (!row || (row.hidden && !REGIONS.has(row.kind))) return skin?.placeholder ?? ROW_PLACEHOLDER;
-  const render = skin?.rows?.[row.kind] ?? RENDERERS[row.kind];
+  if (!row || (row.hidden && !REGIONS.has(row.kind))) return ROW_PLACEHOLDER;
+  const render = RENDERERS[row.kind];
   if (!render) throw new TypeError(`Unknown inspector row kind: ${row?.kind}`);
   return render(row, env);
 }
@@ -676,10 +684,20 @@ function titleActions(section, env) {
   return list.length > 1 ? `<div class="ui-section-actions">${buttons}</div>` : buttons;
 }
 
-/** One section: a quiet title with at most two title actions and its rows. A hidden section leaves an empty placeholder. */
+/**
+ * One section: a quiet title with at most two title actions and its rows. A
+ * hidden section leaves an empty placeholder. A `bare` section is a
+ * sub-module's own markup placed edge to edge, without a title or a body grid
+ * (.inspector-bare), until that module moves to descriptors; hidden, it keeps
+ * that markup (the module may read or update it while it is not shown).
+ */
 export function renderSection(section, env = {}) {
   if (!section) return '<section class="ui-section" hidden></section>';
   if (!SECTION_ID.test(String(section.id))) throw new TypeError(`Invalid section id: ${section.id}`);
+  if (section.bare) {
+    if (section.title || section.actions?.length || section.switch || (section.place ?? 'core') !== 'core') throw new TypeError(`Bare section ${section.id} has no title, actions or place.`);
+    return `<div class="inspector-bare" data-section="${section.id}"${section.hidden ? ' hidden' : ''}>${renderRows(section.rows, env)}</div>`;
+  }
   if (section.hidden) return `<section class="ui-section" data-section="${section.id}" hidden></section>`;
   const place = section.place ?? 'core';
   if (!SECTION_PLACES.includes(place)) throw new TypeError(`Section ${section.id} has an unknown place: ${place}`);
@@ -764,7 +782,7 @@ export function renderInspector(inspector, env = {}, {head = false, foot = false
   if (!SECTION_ID.test(kind)) throw new TypeError(`Invalid inspector kind: ${kind}`);
   checkSections(inspector);
   const scoped = {...env, kind}, sections = inspector?.sections ?? [];
-  const body = scoped.skin?.sections ? scoped.skin.sections(sections, scoped) : sections.map(section => renderSection(section, scoped)).join('');
+  const body = sections.map(section => renderSection(section, scoped)).join('');
   return (head ? renderInspectorHead(inspector, scoped) : '') + body + (foot ? renderFooter(inspector?.footer, scoped) : '');
 }
 

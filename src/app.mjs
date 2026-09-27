@@ -74,7 +74,7 @@ import { createExportFlow } from "./export-flow.mjs";
 import { createAppDialogs } from "./app-dialogs.mjs";
 import { dragSlop, beyondSlop, installPenMenuGuard } from "./pen-input.mjs";
 import { initBuilderMode } from "./builder-mode.mjs";
-import { inspectorView } from "./inspector-view.mjs";
+import { configureInspectorSections, inspectorView } from "./inspector-view.mjs";
 import { updateInspectorDOM } from "./inspector-dom.mjs";
 import { installInspectorBindings } from "./inspector-bindings.mjs";
 import {syncCameraControls, drawCameraMonitor} from './camera-monitor.mjs';
@@ -4492,6 +4492,8 @@ installInspectorBindings($("inspector"), {
   editor, state, telemetry, guarded, pause, finishCurrentEdit, queueUI, requestRender, fit, changeFigureLayer,
   timeline: () => timelineUI, builderActive: () => Boolean(builderMode?.active), usesBuilderBranch, updateBuilderStyle,
   rangeFrames, selectionBounds, moveSelected, updateSelection, showDialog, closeDialog,
+  // The header's quick actions read the command registry (built below) when the inspector renders.
+  commands: () => commands, commandContext: () => commandContext(), t: (key, params) => kitT(key, params),
 });
 $("file-input").addEventListener(
   "change",
@@ -5542,6 +5544,8 @@ async function init() {
     onDonate: desktop?.openDonate ? () => desktop.openDonate() : undefined,
   });
   state.settings = editorSettings.value;
+  // The inspector's titled sections remember being open across sessions.
+  configureInspectorSections(state.settings.inspectorSections, {onChange: (sections) => editorSettings.commit({ inspectorSections: sections })});
   hotkeys.setBindings(state.settings.hotkeys);
   window.styk.hotkeys = hotkeys;
   appLocalization.bindChrome();

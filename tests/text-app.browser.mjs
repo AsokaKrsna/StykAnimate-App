@@ -87,14 +87,14 @@ try {
     };
   });
   await page.evaluate((uid) => styk.editor.select(uid), target.uid);
-  await page.locator('[data-action="edit-text"].button').waitFor({state:'visible'});
+  await page.locator('#inspector [data-action="edit-text"]').waitFor({state:'visible'});
   check(
     "Imported native text exposes the contextual Edit text action without app metadata",
     !target.figure._styk?.textAuthoring &&
-      (await page.locator('[data-action="edit-text"].button').isVisible()),
+      (await page.locator('#inspector [data-action="edit-text"]').isVisible()),
   );
   const undo = await page.evaluate(() => styk.editor._undo.length);
-  await page.locator('[data-action="edit-text"].button').click();
+  await page.locator('#inspector [data-action="edit-text"]').click();
   await ready();
   check(
     "Root dialog recovers native Arial content and original glyph mode",
@@ -160,7 +160,7 @@ try {
   );
   await imported(page, nativeFile);
   await page.evaluate((uid) => styk.editor.select(uid), target.uid);
-  await page.locator('[data-action="edit-text"].button').click();
+  await page.locator('#inspector [data-action="edit-text"]').click();
   await ready();
   check(
     "Native Save/reopen retains original-font text editing and scale semantics",
@@ -177,7 +177,7 @@ try {
     catch (error) { return error.message.includes('cannot represent these gradient fills'); }
     finally { exporter.dispose(); }
   }));
-  await page.locator('[data-action="edit-text"].button').click();
+  await page.locator('#inspector [data-action="edit-text"]').click();
   await ready();
   await page.locator('#text-color').click();
   await page.locator('.paint-picker [data-mode="solid"]').click();
@@ -226,7 +226,7 @@ try {
       .unique_id;
   });
   await portable.evaluate((uid) => styk.editor.select(uid), uid);
-  await portable.locator('[data-action="edit-text"].button').click();
+  await portable.locator('#inspector [data-action="edit-text"]').click();
   await portable.waitForFunction(
     () =>
       document.querySelector("#text-preview-state")?.textContent === "Ready",
@@ -256,7 +256,7 @@ try {
         styk.editor.figure.text_assets[0].font_style === 3,
     ),
   );
-  await page.locator('[data-action="edit-text"].button').click();
+  await page.locator('#inspector [data-action="edit-text"]').click();
   await ready();
   await page.locator("#text-content").fill("😀");
   await page.waitForFunction(

@@ -38,10 +38,11 @@ try{
   await page.locator('#builder-branch').uncheck();
   await page.locator('[data-action="builder-order"][data-kind="segment"][data-direction="front"]').click();
   await page.waitForFunction(()=>window.__builderOrder().at(-1)==='s1');check(true,'Visible segment front button changes internal order');
-  const detail=page.locator('.polygon-style-details[data-polygon-index="0"]');
-  await detail.locator('summary').click();await set('polygon_0_opacity',40);
+  // A fill's opacity, order and order steps are in the figure's Colours section (titled, remembered open).
+  const detail=page.locator('#inspector [data-polygon-index="0"]'),colours=page.locator('#inspector section[data-section="colours"]');
+  await page.locator('[data-section-toggle="colours"]').click();await set('polygon_0_opacity',40);
   await page.waitForFunction(()=>window.styk.editor.figure.polyfills[0].alpha_raw===153);
-  check(await detail.evaluate(el=>el.open),'Polygon section remains open after committing opacity');
+  check(await colours.evaluate(el=>el.hasAttribute('data-open')),'Colours section remains open after committing opacity');
   const alphaHistory=await page.evaluate(()=>window.styk.editor._undo.length);
   const scrub=detail.locator('[data-property-row="polygon_0_opacity"] [data-property-scrub]');
   const box=await scrub.boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+18,box.y+box.height/2);await page.keyboard.press('Escape');await page.mouse.up();

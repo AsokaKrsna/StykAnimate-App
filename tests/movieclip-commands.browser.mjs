@@ -8,6 +8,8 @@ const browser=await chromium.launch({channel:'chrome',headless:true});
 const page=await browser.newPage({viewport:{width:1560,height:1000}}),errors=[],checks=[];
 page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
 const check=(name,value)=>{assert.ok(value,name);checks.push(name);console.log('PASS',name);};
+/** Opens a titled section of the inspector unless it is open already (its state is remembered). */
+async function openSection(id){const toggle=page.locator(`[data-section-toggle="${id}"]`);if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();}
 async function select(tick){await page.evaluate(t=>{styk.editor.seek(t);styk.editor.select(window.clipUid);},tick);await page.getByLabel('Movieclip playback',{exact:true}).waitFor();}
 try{
   await page.goto(process.env.STYK_URL??'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
@@ -30,10 +32,10 @@ try{
   await page.getByLabel('Scale (%)',{exact:true}).fill('100');await page.getByLabel('Scale (%)',{exact:true}).press('Tab');
   await page.getByLabel('Opacity (%)',{exact:true}).fill('100');await page.getByLabel('Opacity (%)',{exact:true}).press('Tab');
   await page.getByLabel('Z-index',{exact:true}).fill('0');await page.getByLabel('Z-index',{exact:true}).press('Tab');
-  await select(0);await page.locator('.movieclip-more > summary').click();await page.locator('[data-action=movieclip-break]').click();
+  await select(0);await openSection('bake');await page.locator('[data-action=movieclip-break]').click();
   await page.waitForFunction(()=>!styk.editor.figure?._styk?.movieclip);
   const first=await page.evaluate(()=>styk.editor.selectedUid);
-  await select(1);await page.locator('.movieclip-more > summary').click();await page.locator('[data-action=movieclip-break]').click();
+  await select(1);await openSection('bake');await page.locator('[data-action=movieclip-break]').click();
   check('Adjacent breaks reuse one ordinary figure track',await page.evaluate(id=>styk.editor.selectedUid===id,first));
   check('Frame breaks use layer poses without figure channels',await page.evaluate(()=>styk.editor.animationChannels.length===0));
   check('Every frame retains the original scene geometry',await page.evaluate(()=>before.every((frame,t)=>JSON.stringify(frame)===JSON.stringify(snapshot(t)))));
@@ -58,7 +60,7 @@ try{
   check('Playback edits leave scene length unchanged',await page.evaluate(()=>styk.editor.totalTicks)===duration);
   await page.getByLabel('Movieclip speed',{exact:true}).fill('1');await page.getByLabel('Movieclip speed',{exact:true}).press('Tab');
   await page.evaluate(()=>window.restarted=Array.from({length:30},(_,t)=>snapshot(t)));
-  await select(2);await page.locator('.movieclip-more > summary').click();await page.locator('[data-action=movieclip-bake]').click();
+  await select(2);await openSection('bake');await page.locator('[data-action=movieclip-bake]').click();
   await page.waitForFunction(()=>styk.editor._undo.at(-1)?.label==='Bake animation');
   check('Bake button preserves previous breaks and every scene frame',await page.evaluate(()=>restarted.every((frame,t)=>JSON.stringify(frame)===JSON.stringify(snapshot(t)))));
   await page.evaluate(()=>styk.settingsUI.commit({timelineMode:'simple'}));
@@ -130,7 +132,7 @@ try{
     report.keyframes=Array.from({length:3},()=>createFrame());
     styk.editor.load(report);styk.settingsUI.commit({timelineMode:'advanced'});styk.editor.seek(0);styk.editor.addFigure(2);window.clipUid=styk.editor.selectedUid;
   });
-  await select(0);await page.locator('.movieclip-more > summary').click();await page.locator('[data-action=movieclip-break]').click();
+  await select(0);await openSection('bake');await page.locator('[data-action=movieclip-break]').click();
   await page.waitForFunction(()=>!styk.editor.figure?._styk?.movieclip);
   check('Break apart preserves joins between expanded figures',await page.evaluate(()=>{
     const objects=styk.editor.evaluatedFrame.objects,joined=objects.filter(o=>o.join),uids=new Set(objects.map(o=>o.unique_id));

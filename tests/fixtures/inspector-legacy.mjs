@@ -7,11 +7,10 @@
  * Only the import paths and the three export names changed. The sub-modules
  * other tracks own (spatial controls, rig controls, camera, drawing, drawing
  * sets, builder surfaces) are imported from src: they render the same HTML
- * into both. Delete this file when the inspector's markup changes on purpose
+ * into both. The 3D rig's view and the camera's commands, ported in M4, are frozen below. Delete this file when the inspector's markup changes on purpose
  * (M4 "Keep less used settings in titled sections that remember being open").
  */
 import {joinedDrawingSetsView} from '../../src/movieclip-drawings.mjs';
-import {spatialControlsView} from '../../src/spatial-controls.mjs';
 import {drawingInspector} from '../../src/drawing-view.mjs';
 import {rigControlsView, connectorPositionView} from '../../src/rig-controls.mjs';
 import {figureJoinAction} from '../../src/figure-join-action.mjs';
@@ -23,7 +22,6 @@ import {figurePalette, displayedSegmentPaint, displayedColor} from '../../src/fi
 import { icon } from "../../src/icons.mjs";
 import { isStatic } from "../../src/pivot/geometry.mjs";
 import { formatPropertyValue } from "../../src/property-controls.mjs";
-import { cameraActionsView } from "../../src/camera-view.mjs";
 import { cameraValues } from "../../src/editor-camera.mjs";
 import { builderDrawables } from '../../src/editor-builder-style.mjs';
 import { isBuilderContext } from '../../src/builder-aids.mjs';
@@ -35,6 +33,68 @@ import {isMovieclip} from '../../src/movieclips.mjs';
 import {sheetKeyAt} from '../../src/layer-sheet.mjs';
 import {drawingSetsView} from '../../src/movieclip-drawings.mjs';
 import {playbackSettings,movieclipAsset,movieclipTime} from '../../src/movieclips.mjs';
+// src/spatial-controls.mjs's spatialControlsView and limbControl, verbatim at 52f13960 (the 3D rig's inspector, ported in M4).
+import {spatialPerspectiveAvailable} from '../../src/spatial-projection.mjs';
+import {geometryPlans} from '../../src/pivot/geometry-pose.mjs';
+import {spatialBone,spatialPoint} from '../../src/rig-spatial.mjs';
+import {ikChain} from '../../src/ik.mjs';
+import {poseChoiceGroups} from '../../src/rig-pose-choices.mjs';
+import {spatialControlMode} from '../../src/spatial-controls.mjs';
+// src/camera-view.mjs, verbatim at 52f13960 (the camera's commands, which inspector-view.mjs renders since M4).
+function cameraActionsView({editor, button, group, tools}) {
+  const selected = Boolean(editor.selectedObjects?.length ?? editor.object);
+  return group('Camera pose', tools(
+    button('camera-copy', 'duplicate', 'Copy camera pose') +
+    button('camera-paste', 'clipboard', 'Paste camera pose', !editor._cameraClipboard),
+  )) + group('Center on selection', tools(
+    button('camera-center', 'center', 'Center camera on selection', !selected) +
+    button('camera-center-x', 'align-horizontal-center', 'Center camera horizontally', !selected) +
+    button('camera-center-y', 'align-vertical-center', 'Center camera vertically', !selected),
+  )) + group('Canvas alignment', tools(
+    button('camera-align-view', 'fit', 'Fit camera to current canvas view') +
+    button('camera-apply-figures', 'check', 'Apply camera transform to figures'),
+  )) + group('Neighboring pose', tools(
+    button('camera-locate-previous', 'chevron-left', 'Match previous camera pose', editor.frameIndex <= 0) +
+    button('camera-locate-next', 'chevron-right', 'Match next camera pose', editor.frameIndex >= editor.report.keyframes.length - 1),
+  ));
+}
+const DEG=180/Math.PI,spEsc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const wrap=a=>Math.atan2(Math.sin(a),Math.cos(a));
+function limbControl(editor){
+ const f=editor.figure,index=editor.selectedJoint,s=f?.segments[index];if(!s)return null;
+ const ancestors=new Set();let parent=s;while(parent?._stykRig?.spatial?.parent){ancestors.add(parent._stykRig.spatial.parent);parent=f.segments.find(n=>n.segment_id===parent._stykRig.spatial.parent);}
+ for(const[id,c]of Object.entries(editor.object?._stykIK??{}))if(c.spatialTarget&&(ancestors.has(Number(id))||ikChain(f,Number(id),c.chainLength,geometryPlans(editor.geometry.objects.get(editor.selectedSlot))?.definition).includes(index)))
+  return{index:f.segments.findIndex(s=>s.segment_id===Number(id)),controller:c};
+ return null;
+}
+function spatialControlsView(editor){
+ const bones=editor.figure?.segments.flatMap((s,i)=>spatialBone(s)&&!s._stykPoseChoice?[{s,i}]:[])??[];if(!bones.length)return'';
+ const mode=spatialControlMode(editor),pose=editor.getSpatialPose(),selected=editor.selectedJoint,limb=limbControl(editor),ik=limb?.controller;
+ // Limbs keep their shortcuts and IK switch while IK is off.
+ const targets=bones.filter(({s})=>editor.object?._stykIK?.[s.segment_id]?.spatialTarget),childOf=id=>bones.find(b=>b.s._stykRig.spatial.parent===id);
+ const feet=targets.filter(({s})=>/foot|ankle/i.test(childOf(s.segment_id)?.s.name??'')),planted=feet.length&&feet.every(({s})=>editor.object._stykIK[s.segment_id].enabled&&editor.object._stykIK[s.segment_id].pinned);
+ const choose=(index,name,focus=false)=>`<button type="button" data-spatial-${focus?'focus':'select'}="${index}" aria-pressed="${selected===index}">${spEsc(name)}</button>`;
+ const choices=poseChoiceGroups(editor.figure,editor.object).map(g=>`<label class="spatial-choice"><span>${spEsc(g.name)}</span><select class="inline-select" data-spatial-choice="${spEsc(g.name)}" aria-label="${spEsc(g.name)}"><option value="0" ${g.value===0?'selected':''}>Hidden</option>${g.value===-1?'<option value="-1" selected disabled>Custom pose</option>':''}${g.choices.map(c=>`<option value="${c.id}" ${g.value===c.id?'selected':''}>${spEsc(c.label)}</option>`).join('')}</select></label>`).join('');
+ const shortcuts=`<div class="spatial-targets" role="group" aria-label="Body controls">${choose(-1,'Move figure')}<button type="button" data-spatial-whole aria-pressed="${mode==='figure'}">Rotate figure</button>${targets.map(({s,i})=>{const child=childOf(s.segment_id);return choose(mode!=='pose'&&child?child.i:i,(child?.s.name??s.name).replace(/ ankle$/,''));}).join('')}</div>`;
+ const trunk=[['Pelvis','Hips'],['Lower torso','Torso'],['Waist','Waist'],['Chest','Chest'],[bones.some(b=>b.s.name==='Head')?'Head':'Neck','Head']].flatMap(([name,label])=>{const b=bones.find(b=>b.s.name===name);return b?[choose(b.i,label)]:[];}).join('');
+ const rows=pose?['pitch','turn','bend'].map((key,i)=>{const value=pose[key]*DEG,label=['Tilt','Turn','Bend'][i];return`<div class="spatial-axis spatial-${key}"><label for="spatial-${key}-number">${label}</label><input id="spatial-${key}-range" type="range" min="-180" max="180" step="0.1" value="${wrap(pose[key])*DEG}" data-spatial-axis="${key}" aria-label="${label}"><label class="field"><input id="spatial-${key}-number" type="number" step="1" value="${Math.round(value*10)/10}" data-spatial-axis="${key}" aria-label="${label} degrees"><small>°</small></label></div>`;}).join(''):'';
+ const endpoint=limb?childOf(editor.figure.segments[limb.index].segment_id):null,toe=endpoint?childOf(endpoint.s.segment_id):null;
+ const isFoot=/foot|ankle/i.test(endpoint?.s.name??''),chain=limb?ikChain(editor.figure,editor.figure.segments[limb.index].segment_id,ik.chainLength,geometryPlans(editor.geometry.objects.get(editor.selectedSlot))?.definition):[];
+ const rotations=chain.map((index,i)=>choose(index,isFoot?(i===0?'Thigh rotation':'Shin rotation'):(i===0?'Upper arm rotation':'Forearm rotation'),true)).join('')+(endpoint?choose(endpoint.i,isFoot?'Ankle rotation':'Hand rotation',true):'')+(toe?choose(toe.i,'Toe bend',true):'');
+ const camera=editor.getSpatialCamera(),proportions=editor.getSpatialProportions();
+ const parameter=(kind,key,label,value,min,max,step=1,unit='')=>`<div class="spatial-axis spatial-proportion"><label for="spatial-${kind}-${key}">${label}</label><input type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-spatial-${kind}="${key}" aria-label="${label}"><label class="field"><input id="spatial-${kind}-${key}" type="number" min="${min}" max="${max}" step="${step}" value="${Math.round(value*100)/100}" data-spatial-${kind}="${key}" aria-label="${label} value"><small>${unit}</small></label></div>`;
+ const perspective=spatialPerspectiveAvailable(editor.selectionFrame.objects,editor.object,editor.report.figure_types)?`<details class="spatial-exact" data-section="spatial-perspective"><summary>Perspective</summary>${parameter('camera','strength','Perspective',camera.strength*100,0,100,1,'%')}${parameter('camera','distance','Distance',camera.distance,100,2000,10)}<p class="property-context-caption">Move a hand or foot toward the camera to enlarge it. Lower distance gives stronger foreshortening. Use figure Scale to frame the shot.</p><div class="spatial-part-actions"><button type="button" class="spatial-reset" data-spatial-center-camera>Center on figure</button><button type="button" class="spatial-reset" data-spatial-reset-camera>Reset perspective</button></div></details>`:'<p class="property-context-caption">Perspective requires a single spatial figure. Joined drawings retain their original projection.</p>';
+ const proportionsView=proportions?`<details class="spatial-exact" data-section="spatial-proportions"><summary>Shape · ${spEsc(editor.figure.segments[selected].name??'Joint')}</summary>${proportions.canResizeLength?parameter('shape','size','Part size',proportions.length*100,10,300,1,'%')+parameter('shape','length','Length',proportions.length*100,10,300,1,'%'):''}${parameter('shape','width','Width',proportions.width*100,10,300,1,'%')}${parameter('shape','taper','Taper',proportions.taper*100,-90,200,1,'%')}<p class="property-context-caption">Part size includes child joints. Length, width and taper adjust this bone; positive taper widens its tip.</p><button type="button" class="spatial-reset" data-spatial-reset-shape>Reset this bone’s shape</button></details>`:'';
+ const motion=editor.getSpatialMotion(),motionView=motion?`<div class="spatial-depth" data-section="spatial-motion">${parameter('motion','position',motion.type==='slide'?'Slide':'Hinge',motion.fraction*100,0,100,1,'%')}<p class="property-context-caption">Drag the handle along its track, or set how far it has moved.</p></div>`:'';
+ const targetShape=limb?editor.geometry.objects.get(editor.selectedSlot)?.segments[limb.index]:null;
+ const depth=targetShape?.spatialFrame?spatialPoint(targetShape.spatialFrame,targetShape.seg._stykRig.spatial.tip)[2]*editor.object.scale:ik?.spatialTarget?.depth??0;
+ const limbGeometry=limb?editor.geometry.objects.get(editor.selectedSlot):null,base=limbGeometry?.segments[chain[0]],baseDepth=base?.spatialFrame?spatialPoint(base.spatialFrame,base.seg._stykRig.spatial.origin)[2]*editor.object.scale:0;
+ const reach=limb?Math.max(1,chain.reduce((sum,i)=>sum+(limbGeometry.solvedLengths?.[i]??(editor.object.len_flag?editor.object.lengths[i]:editor.figure.segments[i].length)),0)*editor.object.scale):1;
+ const depthControl=ik?.enabled?`<div class="spatial-depth">${parameter('reach','depth','Toward camera',depth,baseDepth-reach,baseDepth+reach,1)}<p class="property-context-caption">Left: away · Right: toward you. The leg or arm follows in 3D.</p></div>`:'';
+ const limbTools=ik&&!ik.enabled?`<div class="spatial-limb" data-section="spatial-limb"><div class="property-toggle-grid">${propertyToggle('spatial-ik','IK',false,'link',{title:'Drag the hand or foot to move the whole limb'})}</div><p class="property-context-caption">IK off: dragging the ${isFoot?'foot':'hand'} swings only the ${isFoot?'shin':'forearm'}.</p></div>`:ik?`<div class="spatial-limb" data-section="spatial-limb"><div class="property-toggle-grid">${propertyToggle('spatial-ik','IK',true,'link',{title:'Drag the hand or foot to move the whole limb'})}${propertyToggle('spatial-pin',isFoot?'Plant foot':'Pin hand',ik.pinned,'pin',{title:'Keep target position and orientation when the body moves'})}</div><details class="spatial-exact" data-section="spatial-limb-options"><summary>More limb options</summary><div class="property-toggle-grid">${propertyToggle('spatial-stretch','Stretch',ik.allowStretch,'stretch-horizontal',{title:'Allow the limb to reach beyond its rest length'})}</div><label class="spatial-parameter"><span>Bend direction</span><input type="range" min="-180" max="180" step="1" value="${wrap(ik.spatialTarget.swivel)*DEG}" data-spatial-swivel aria-label="Bend direction"></label><label class="field"><span>Depth</span><input type="number" step="1" value="${Math.round(ik.spatialTarget.depth*10)/10}" data-spatial-depth aria-label="Target depth"><small>px</small></label></details><p class="property-context-caption">${ik.pinned?'Planted: position and orientation stay fixed.':isFoot?'Free: the foot follows the shin.':'Free: the hand follows the forearm.'}</p></div>`:'';
+ const pad=pose&&!motion&&mode!=='pose'?`<div class="spatial-orientation" data-section="spatial-orientation"><button type="button" class="spatial-pad" data-spatial-pad aria-label="Turn and tilt" title="Drag to turn and tilt · Arrow keys adjust · Shift for precision"><svg viewBox="0 0 90 72" aria-hidden="true"><path d="M8 36H82M45 7V65"/><circle cx="${45+Math.sin(pose.turn)*31}" cy="${36+Math.sin(pose.pitch)*23}" r="5"/></svg></button><div><strong>Turn / tilt</strong><p class="property-context-caption">Drag in two directions.<br>Shift for precision.</p><button type="button" class="spatial-reset" data-spatial-reset="joint">${mode==='figure'?'Reset orientation':'Reset joint'}</button></div></div><details class="spatial-exact" data-section="spatial-exact"><summary>Exact angles</summary>${rows}</details>`:'';
+ return`<section class="inspector-section spatial-rig" data-section="spatial-rig"><div class="inspector-title"><span>Character rig</span><button type="button" class="icon-button" data-spatial-reset="all" title="Reset pose" aria-label="Reset pose">${icon('rotate')}</button></div><div class="spatial-modes" role="group" aria-label="Rig tools">${[['pose','Pose','move'],['rotate','Rotate','rotate']].map(([value,label,symbol])=>`<button type="button" data-spatial-mode="${value}" aria-label="${label}" aria-pressed="${value===(mode==='figure'?'rotate':mode)}">${icon(symbol)}${label}</button>`).join('')}</div>${shortcuts}${trunk?`<div class="spatial-trunk" role="group" aria-label="Torso controls">${trunk}</div>`:''}${bones.some(b=>/sash upper$/.test(b.s.name))?`<div class="spatial-part-actions" role="group" aria-label="Belt ties">${bones.filter(b=>/sash upper$/.test(b.s.name)).map(b=>choose(b.i,b.s.name.replace('sash upper','tie'))).join('')}</div>`:''}${feet.length?`<button type="button" class="spatial-plant" data-spatial-feet="${planted?'release':'plant'}">${icon('pin')}${planted?'Release feet':'Plant both feet'}</button>`:''}<select class="inline-select" id="spatial-joint" aria-label="Articulation"><option value="-1" ${pose?'':'selected'}>Move whole character</option>${bones.map(({s,i})=>`<option value="${i}" ${selected===i?'selected':''}>${spEsc(s.name||'Joint '+s.segment_id)}</option>`).join('')}</select>${ik?`<div class="spatial-targets" role="group" aria-label="Limb rotations">${rotations}</div>`:''}${pad}${motionView}${depthControl}${limbTools}${motion?'':proportionsView}${perspective}${choices}<p class="property-context-caption">${mode==='pose'?'Drag joints to swing them in 3D; hold Shift to swing behind. Right-drag twists a part, such as turning the head. Drag a planted knee or elbow to aim its bend.':'Rotate a limb to release its pin; its hand or foot follows. Torso turns retain planted targets. Rotate figure carries the entire pose.'}</p></section>`;
+}
 const esc = (value) =>
   String(value ?? "").replace(
     /[&<>"']/g,

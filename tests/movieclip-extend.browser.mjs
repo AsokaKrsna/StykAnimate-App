@@ -16,6 +16,8 @@ try{
  });
  await page.waitForFunction(()=>document.querySelector('[data-movieclip-current-frame]')?.textContent==='1 / 20');
  assert.match(await page.locator('[data-movieclip-duration]').textContent(),/20 frames · 0\.833 s · 24 fps/);
+ // Extend is a titled section: one click opens it, and it stays open for the next movieclip.
+ await page.locator('[data-section-toggle="extend"]').click();
  const input=page.getByRole('spinbutton',{name:'Next keyframes',exact:true});await input.fill('2');
  await page.getByRole('button',{name:'Add to next keyframes',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('[data-movieclip-feedback]')?.textContent==='Added to 2 keyframes.');
@@ -46,12 +48,12 @@ try{
  for(const theme of ['light','dark']){
   await page.evaluate(theme=>styk.settingsUI.commit({theme}),theme);
   await page.setViewportSize({width:1100,height:900});
-  await page.locator('.movieclip-more > summary').click();
+  await page.locator('[data-section-toggle="bake"]').click();
   await page.getByRole('button',{name:'Export movieclip',exact:true}).scrollIntoViewIfNeeded();
   assert.ok(await page.getByRole('button',{name:'Bake animation',exact:true}).isVisible());
-  assert.ok(await page.locator('.movieclip-inspector').evaluate(el=>el.scrollWidth<=el.clientWidth));
-  await page.locator('.movieclip-more > summary').click();
-  await page.locator('[data-movieclip-name]').scrollIntoViewIfNeeded();
+  assert.ok(await page.locator('#inspector').evaluate(el=>el.scrollWidth<=el.clientWidth));
+  await page.locator('[data-section-toggle="bake"]').click();
+  await page.locator('#inspector').evaluate(el=>el.scrollTo(0,0));
   await page.screenshot({path:`artifacts/movieclip-extend/${theme}-compact.png`});
  }
  assert.deepEqual(errors,[]);await page.evaluate(()=>styk.editor.markSaved());

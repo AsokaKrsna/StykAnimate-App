@@ -32,7 +32,7 @@ try {
     ['layer-front', [1], [2, 3, 4, 1]], ['layer-back', [4], [4, 1, 2, 3]],
   ]) {
     await reset(selection);
-    await page.locator(`#inspector [data-action="${action}"]`).click();
+    await page.locator(`#properties-panel [data-action="${action}"]`).click();
     check(`Inspector ${action} reorders independent figure poses`, JSON.stringify(await order()) === JSON.stringify(expected));
   }
   for (const [action, selection, shifted, expected] of [

@@ -179,7 +179,7 @@ try {
       (await page.locator('[data-delete-polygon="0"]').count()) === 1,
   );
   await page
-    .locator('details[data-section="Polygons"] > summary')
+    .locator('[data-section-toggle="colours"]')
     .click();
   await page.locator('[data-polygon-color="0"]').fill("#0d99ff");
   await page.locator('[data-polygon-color="0"]').dispatchEvent("change");

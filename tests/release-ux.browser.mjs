@@ -14,10 +14,11 @@ try {
     return {figure,layer};
   });
   assert.doesNotMatch(inspector.figure,/data-parallax-layer/);assert.match(inspector.layer,/data-parallax-layer/);
-  const palette=page.locator('details[data-section="Color palette"]');await palette.waitFor();
-  assert.equal(await palette.getAttribute('open'),null);
+  // The used colours are the figure's last section, titled and closed at rest.
+  const palette=page.locator('#inspector section[data-section="colours"]');await palette.waitFor();
+  assert.equal(await palette.getAttribute('data-open'),null);
   assert.equal(await palette.evaluate(el=>el===el.parentElement.lastElementChild),true);
-  await palette.locator('summary').click();await page.screenshot({path:output+'/figure.png'});
+  await palette.locator('.ui-section-toggle').click();await page.screenshot({path:output+'/figure.png'});
   await page.evaluate(async()=>{
     const {ReleaseSplash}=await import('/src/support-ui.mjs');
     window.donations=0;window.historyAttempts=0;

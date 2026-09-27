@@ -119,7 +119,7 @@ try {
   check('T shortcut creates styled multilingual text through the actual dialog', textBefore.text_assets[0].text === 'Styk in motion\nΚαλημέρα • Привет' && textBefore.text_assets[0].font_style === 3 && !!textBefore.text_assets[0].normalized_svg_path);
   check('Text dialog applies multiline layout, gradient and outline', textBefore._styk.textAuthoring.alignment === 'center' && textBefore._styk.textAuthoring.lineHeight === 1.4 && !!textBefore.segments[0].secondary && textBefore.segment_decode.global_style.outline_thickness === 1);
   await value(() => {styk.editor.updateObject({root_x: 170, root_y: 375}); styk.editor.sheetAppendFrame();});
-  await page.locator('[data-action="edit-text"].button').click();
+  await page.locator('#inspector [data-action="edit-text"]').click();
   check('Editing text reopens the authored content and styles', await page.locator('#text-content').inputValue() === textBefore.text_assets[0].text && await page.locator('#text-bold').isChecked() && await page.locator('#text-italic').isChecked());
   await page.locator('#text-content').fill('Move together\nCafé • Привет');
   await page.locator('#text-size').fill('44'); await page.locator('#create-text').click();
@@ -129,7 +129,7 @@ try {
   await blur(); await page.keyboard.press('Control+z');
   check('Text editing undo restores the previous embedded glyphs', await value(() => styk.editor.figure.text_assets[0].text) === textBefore.text_assets[0].text);
   await page.keyboard.press('Control+Shift+z');
-  await page.locator('[data-action="edit-text"].button').click(); await page.locator('#text-content').fill('😀');
+  await page.locator('#inspector [data-action="edit-text"]').click(); await page.locator('#text-content').fill('😀');
   await page.locator('#text-error').waitFor({state: 'visible'});
   check('Unsupported text reports an inline error without losing the existing definition', await value(() => styk.editor.figure.text_assets[0].text) === 'Move together\nCafé • Привет');
   check('Invalid text cannot be applied', await page.locator('#create-text').isDisabled());

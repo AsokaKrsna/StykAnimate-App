@@ -31,11 +31,12 @@ values only. Authored gestures use temporary sparse channel keys, restore the
 original table before committing, and create one history entry. Invalid updates
 restore the original state.
 
-`cameraActionsView({editor,button,group,tools})` in `src/camera-view.mjs` composes
-the existing inspector primitives. Its actions are `camera-copy`, `camera-paste`,
-`camera-reset`, `camera-center`, `camera-center-x`, `camera-center-y`,
-`camera-align-view`, `camera-apply-figures`, `camera-locate-previous`, and
-`camera-locate-next`. Neighbor panel buttons match the whole pose; handle-based
+The camera's inspector (`src/inspector-view.mjs`) places its commands: Level,
+Center and Reset (`camera-level`, `camera-center`, `camera-reset`) are its quick
+actions; `camera-copy` and `camera-paste` are Transform's title actions;
+`camera-align-view`, `camera-center-x`, `camera-center-y`, `camera-locate-previous`,
+`camera-locate-next` and `camera-apply-figures` are in the titled Framing section.
+Neighbor panel buttons match the whole pose; handle-based
 Locate can choose a single camera channel.
 
 `locateHandle(direction, {editMode:true})` now delegates to the separate
@@ -45,8 +46,9 @@ and rejects before mutation. Applying a native camera to figures preserves the
 played figure appearance, but cannot preserve a moved image/gradient background:
 native Pivot has the same limitation.
 
-Verification: `tests/editor-camera.test.mjs`, `tests/background-angle.test.mjs`
-and `tests/camera-view.test.mjs` passed 21 checks, including joined curved poses,
+Verification: `tests/editor-camera.test.mjs` and `tests/background-angle.test.mjs`
+(with the camera inspector's command availability in
+`tests/inspector-descriptors.test.mjs`) passed 21 checks, including joined curved poses,
 sparse/reordered handle IDs, hidden neighboring keys, authored inbetween editing,
 range semantics, undo/cancel, and the actual native PIV writer/reimport. These
 model and view-helper checks do not replace the final integrated UI walkthrough.

@@ -43,7 +43,7 @@ try {
   await page
     .locator('.sheet-layer[data-kind="camera"] .sheet-layer-name')
     .click();
-  await page.locator('#inspector [data-section="Canvas alignment"] summary').click();
+  await page.locator('#inspector [data-section-toggle="framing"]').click();
   await page.locator('#inspector [data-action="camera-apply-figures"]').click();
   check(
     "Actual Camera inspector converts the displayed inbetween with one undo",

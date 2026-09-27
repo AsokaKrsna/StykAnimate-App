@@ -60,7 +60,7 @@ test('the joint row: Isolate, Exact values · the Match tile · Flip limb', () =
   assert.deepEqual(shape(resolved), [['word:Isolate', 'glyph:Exact values…'], ['tile:Match', 'tile:Match'], ['glyph:Flip limb']]);
   const isolate = resolved.items[0];
   assert.deepEqual([isolate.toggle, isolate.checked], [true, true], 'a latched toggle shows its state');
-  assert.deepEqual(resolved.groups[1].map(item => [item.id, item.icon]), [['locate-previous', 'chevron-left'], ['locate-next', 'chevron-right']]);
+  assert.deepEqual(resolved.groups[1].map(item => [item.id, item.icon]), [['locate-previous', 'match-prev'], ['locate-next', 'match-next']]);
 });
 
 test('Build\'s part row carries words for Split and Duplicate, and Shift deletes the branch', () => {

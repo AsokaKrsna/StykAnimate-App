@@ -12,10 +12,11 @@ const check = (name, condition) => {
   console.log("PASS", name);
 };
 const camera = () => page.evaluate(() => ({ ...styk.editor.selectionFrame.camera }));
+// The camera's commands: its quick actions under its name, Transform's title actions and the Framing section, which opens first.
 const click = async (action) => {
-  const button=page.locator(`#inspector [data-action="${action}"]`);
-  const section=button.locator('xpath=ancestor::details');
-  if(await section.count()&&!await section.evaluate(e=>e.open))await section.locator('summary').click();
+  const button=page.locator(`#properties-panel [data-action="${action}"]`);
+  const section=button.locator('xpath=ancestor::section[@data-collapsible]');
+  if(await section.count()&&!await section.evaluate(e=>e.hasAttribute('data-open')))await section.locator('.ui-section-toggle').click();
   await button.click();
   await page.waitForTimeout(50);
 };
@@ -39,13 +40,13 @@ try {
     "Camera selection retains figure targets and enables centering",
     (await page.evaluate(() => styk.editor.selectedUids.size === 1)) &&
       (await page
-        .locator('#inspector [data-action="camera-center"]')
+        .locator('#properties-panel [data-action="camera-center"]')
         .isEnabled()),
   );
   await click("camera-copy");
   check(
     "Copy enables the paste action",
-    await page.locator('#inspector [data-action="camera-paste"]').isEnabled(),
+    await page.locator('#properties-panel [data-action="camera-paste"]').isEnabled(),
   );
   await page.locator('#inspector [data-property="camera_x"]').fill("25");
   await page.locator('#inspector [data-property="camera_x"]').press("Enter");

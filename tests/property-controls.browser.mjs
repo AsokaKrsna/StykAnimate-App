@@ -53,7 +53,9 @@ try {
     const host = document.createElement("aside");
     host.id = "property-test";
     host.style.cssText =
-      "position:fixed;z-index:2000;right:24px;top:60px;bottom:24px;width:264px;background:#fff;border:1px solid #ddd;overflow:auto;box-shadow:0 8px 32px #0002";
+      "position:fixed;z-index:2000;right:24px;top:60px;bottom:24px;width:264px;background:#fff;border:1px solid #ddd;overflow:auto;box-shadow:0 8px 32px #0002;" +
+      // #inspector's own inline padding (features/inspector.css): sections span its content box, titles and sub-module markup reach its edges.
+      "box-sizing:border-box;padding:0 var(--island-pad)";
     document.body.append(host);
     const editor = new Editor(),
       values = {
@@ -218,8 +220,9 @@ try {
       `${context} numeric fields remain usable`,
       await page
         .locator("#property-test input[type=number]")
+        // The field is the target (its label focuses the value, which sizes to its text and its unit).
         .evaluateAll((inputs) =>
-          inputs.every((e) => e.getBoundingClientRect().width >= 23),
+          inputs.every((e) => (e.closest(".ui-field, .ui-stepper") ?? e).getBoundingClientRect().width >= 23),
         ),
     );
     await page

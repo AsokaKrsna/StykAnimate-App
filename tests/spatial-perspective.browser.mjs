@@ -15,7 +15,7 @@ try{
   }
   styk.editor.load(doc);styk.editor.select(1,-1);styk.state.onion=false;styk.state.settings.autosaveSeconds=0;styk.fit();
  },source);
- await page.locator('[data-section=spatial-perspective] > summary').click();
+ await page.locator('[data-section-toggle=spatial-perspective]').click();
  const camera=page.getByRole('slider',{name:'Perspective',exact:true});await camera.scrollIntoViewIfNeeded();const r=await camera.boundingBox(),before=await page.evaluate(()=>({doc:styk.editor.serialize(),undo:styk.editor._undo.length}));
  await page.mouse.move(r.x+3,r.y+r.height/2);await page.mouse.down();await page.mouse.move(r.x+r.width*.8,r.y+r.height/2,{steps:8});await page.mouse.up();
  assert.equal(await page.evaluate(()=>styk.editor._undo.length),before.undo+1);assert.ok(await page.evaluate(()=>styk.editor.getSpatialCamera().strength)>.5);
@@ -25,7 +25,7 @@ try{
  const depth=page.getByRole('spinbutton',{name:'Toward camera value',exact:true});const oldDepth=Number(await depth.inputValue());await depth.fill(String(oldDepth+12));await depth.press('Tab');
  const reach=await page.evaluate(()=>{const e=styk.editor,s=e.geometry.objects.get(e.selectedSlot).segments[e.selectedJoint];return s.end.rawPoint[2];});assert.ok(Math.abs(reach-oldDepth-12)<.1);
  await page.getByRole('button',{name:source?'Ankle rotation':'Hand rotation',exact:true}).click();
- const shape=page.locator('[data-section="spatial-proportions"] > summary');await shape.click();
+ const shape=page.locator('[data-section-toggle="spatial-proportions"]');await shape.click();
  const width=page.getByRole('slider',{name:'Width',exact:true});await width.scrollIntoViewIfNeeded();const w=await width.boundingBox(),shapeBefore=await page.evaluate(()=>({doc:styk.editor.serialize(),undo:styk.editor._undo.length}));
  await page.mouse.move(w.x+w.width*.3,w.y+w.height/2);await page.mouse.down();await page.mouse.move(w.x+w.width*.55,w.y+w.height/2,{steps:7});await page.keyboard.press('Escape');await page.mouse.up();assert.deepEqual(await page.evaluate(()=>styk.editor.serialize()),shapeBefore.doc);
  const size=page.getByRole('spinbutton',{name:'Part size value',exact:true});await size.fill('140');await size.press('Tab');assert.ok(Math.abs(await page.evaluate(()=>styk.editor.getSpatialProportions().length)-1.4)<1e-5);
@@ -39,6 +39,6 @@ try{
   await page.mouse.up();assert.deepEqual(await page.evaluate(()=>[...styk.editor.geometry.objects.get(0).joints].map(([id,p])=>[id,p.x,p.y])),live.points,'Committing root movement must not jump');
  }
 
- await page.evaluate(()=>{const r=document.querySelector('[data-section="spatial-rig"]');if(r.scrollWidth>r.clientWidth+1)throw new Error('Rig panel overflows');});
+ await page.evaluate(()=>{const r=document.getElementById('inspector');if(r.scrollWidth>r.clientWidth+1)throw new Error('Rig panel overflows');});
  assert.deepEqual(errors,[]);await writeFile(out+'/browser.json',JSON.stringify({passed:true,errors,document:source?'full-character':'fixture'},null,2));console.log('Perspective UI: pointer gesture/undo, keyboard slider, numeric depth, shape cancellation, size/taper, layout and console checks passed.');
 }finally{await browser.close();}

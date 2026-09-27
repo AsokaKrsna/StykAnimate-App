@@ -252,6 +252,23 @@ const shapes = Object.freeze({
     '<path d="m15 15 6 6" /> <path d="m15 9 6-6" /> <path d="M21 16v5h-5" /> <path d="M21 8V3h-5" /> <path d="M3 16v5h5" /> <path d="m3 21 6-6" /> <path d="M3 8V3h5" /> <path d="M9 9 3 3" />',
   collapse:
     '<path d="m15 15 6 6m-6-6v4.8m0-4.8h4.8" /> <path d="M9 19.8V15m0 0H4.2M9 15l-6 6" /> <path d="M15 4.2V9m0 0h4.8M15 9l6-6" /> <path d="M9 4.2V9m0 0H4.2M9 9 3 3" />',
+  // Revision 4 glyphs from design/app-ui/reference/tools/build.mjs (visual-system.md §10): one drawing per command family.
+  // One step (Bring forward, Send backward): a plain arrow over a short stack line, never the barred to-front/to-back.
+  "step-up": '<path d="M12 17V5.5M7.5 10l4.5-4.5 4.5 4.5"/><path d="M8.5 20h7" opacity=".5"/>',
+  "step-down": '<path d="M12 7v11.5M7.5 14l4.5 4.5 4.5-4.5"/><path d="M8.5 4h7" opacity=".5"/>',
+  // Exact values: a ruler with a typed angle ("sliders" draws as "settings").
+  exact: '<path d="M4 19.5h16"/><path d="M4 19.5 15.5 6"/><path d="M11 19.5a7 7 0 0 0-2.1-5.1"/><path d="M17.2 4.2h3.3M18.9 4.2v4" opacity=".75"/>',
+  // Match previous / next pose: a figure with the arrow it copies from (never the transport's frame steps).
+  "match-prev": '<circle cx="15.5" cy="4.8" r="2.1"/><path d="M15.5 7.2v6.3M15.5 13.5 13 19.5M15.5 13.5l2.5 6M12.5 9.8l3-1 3 1"/><path d="M10 12.5H2.8M5.8 9.5l-3 3 3 3"/>',
+  "match-next": '<circle cx="8.5" cy="4.8" r="2.1"/><path d="M8.5 7.2v6.3M8.5 13.5 6 19.5M8.5 13.5l2.5 6M5.5 9.8l3-1 3 1"/><path d="M14 12.5h7.2M18.2 9.5l3 3-3 3"/>',
+  // Join to figure: a small figure hooked onto a joint (Connect joints keeps the chain link).
+  "join-figure": '<circle cx="7" cy="4.8" r="2.1"/><path d="M7 7.2v5.3M7 12.5 4.8 18M7 12.5l2.2 5.5M4.2 9.4h5.6"/><circle cx="18" cy="16" r="2.4"/><path d="M9.8 9.4c3.6 0 6.2 2.2 7 4.6"/>',
+  // Duplicate: the copy with a plus (Copy keeps the two squares).
+  dup: '<rect x="8" y="8" width="13" height="13" rx="2.5"/><path d="M4.5 16C3.7 16 3 15.3 3 14.5v-10C3 3.7 3.7 3 4.5 3h10c.8 0 1.5.7 1.5 1.5"/><path d="M14.5 11.6v5.8M11.6 14.5h5.8"/>',
+  // Rotate 15°: a clockwise turn about a pivot with its angle ("rotate" draws as "reset").
+  "rotate-step": '<path d="M19.5 13A7.5 7.5 0 1 1 17 6.4"/><path d="M19.5 3.5v4h-4"/><circle cx="12" cy="12.5" r="1.3" fill="currentColor"/><path d="M12 12.5V8M12 12.5l3.6 2"/>',
+  // Level the camera: a horizon with a bubble.
+  level: '<path d="M3 14h18"/><rect x="6" y="9" width="12" height="5" rx="2.5"/><circle cx="12" cy="11.5" r="1.3" fill="currentColor"/>',
 });
 const aliases = Object.freeze({
   x: "close",

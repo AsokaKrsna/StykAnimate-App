@@ -8,6 +8,8 @@ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
 page.on('pageerror',error=>errors.push(error.message));
 const settle=async()=>{await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));await page.waitForFunction(()=>!styk.state.editablePreparing&&styk.state.renderer.last?.report===styk.editor.report);};
 const choose=async(selector,hex)=>{await page.locator(selector).click();const input=page.locator('.paint-picker [data-hex]');await input.fill(hex);await input.press('Tab');await page.locator('.paint-picker [data-close]').click();await settle();};
+/** Opens the figure's Colours section (titled, remembered) unless it is open. */
+const openColours=async()=>{const toggle=page.locator('[data-section-toggle="colours"]');if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();};
 const palette=()=>page.evaluate(()=>styk.editor.figurePalette().map(entry=>[entry.color,entry.segments.length]));
 try{
   await page.goto(process.env.STYK_URL??'http://127.0.0.1:47839');await page.waitForFunction(()=>window.styk?.ready);
@@ -29,7 +31,7 @@ try{
   await choose('#segment-color','eecc11');
   assert.deepEqual(await palette(),[['#44aacc',info.segments-1],['#eecc11',1]]);
   await page.evaluate(uid=>styk.editor.select(uid),info.uid);await settle();
-  await page.locator('details[data-section="Color palette"] > summary').click();
+  await openColours();
   await choose('[data-palette-color="#44aacc"]','eecc11');assert.deepEqual(await palette(),[['#eecc11',info.segments]]);
   await page.evaluate(()=>styk.editor.undo());await settle();
   // The same open picker keeps editing its original members after a merge.
@@ -39,7 +41,7 @@ try{
   assert.deepEqual(await palette(),[['#778899',info.segments-1],['#eecc11',1]]);
   const geometry=await page.evaluate(()=>styk.state.renderer.lastGeometry.objects.get(styk.editor.selectedSlot).segments.map(s=>s.rgb));
   assert.deepEqual(geometry[0],[238,204,17]);assert.ok(geometry.slice(1).every(rgb=>JSON.stringify(rgb)==='[119,136,153]'));
-  await page.locator('.figure-palette-row').last().scrollIntoViewIfNeeded();
+  await page.locator('[data-palette-color]').last().scrollIntoViewIfNeeded();
   await page.screenshot({path:'artifacts/figure-palette/hands-palette.png'});
   await choose('#figure-color','9933ee');assert.deepEqual(await palette(),[['#9933ee',info.segments]]);
   await page.evaluate(()=>styk.editor.undo());await settle();
@@ -59,13 +61,12 @@ try{
     styk.editor.load(report);styk.editor.select(1);styk.actions['zoom-selection']();
   });
   await settle();
-  const disclosure=page.locator('details[data-section="Color palette"]');
-  if(await disclosure.getAttribute('open')===null)await disclosure.locator('summary').click();
+  await openColours();
   assert.equal(await page.locator('[data-palette-color="#0a141e"]').count(),1);
   await choose('[data-palette-color="#0a141e"]','44aacc');
   const attached=await page.evaluate(()=>[0,1,2,3].map(slot=>styk.state.renderer.lastGeometry.objects.get(slot).segments[0].rgb));
   assert.deepEqual(attached,[[200,40,50],[68,170,204],[68,170,204],[10,20,30]]);
-  await page.locator('.figure-palette').scrollIntoViewIfNeeded();
+  await page.locator('[data-section="colours"] .ui-swatch-grid').scrollIntoViewIfNeeded();
   await page.screenshot({path:'artifacts/figure-palette/attached-palette.png'});
   await page.evaluate(()=>styk.editor.undo());await settle();
   assert.equal(await page.locator('[data-palette-color="#0a141e"]').count(),1);

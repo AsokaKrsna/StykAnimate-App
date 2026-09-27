@@ -430,13 +430,15 @@ export function createQuickActions({host = null, context = null, label = null, e
       limits: {...QUICK_LIMITS, slots}});
     setAttribute(element, 'aria-label', current.label ?? quickLabel(current.context, {t, contexts}));
     setAttribute(element, 'data-quick-context', current.context);
-    const next = rowKey(resolved);
-    if (next !== key) { key = next; render(); } else {
+    const next = rowKey(resolved), rebuilt = next !== key;
+    if (rebuilt) { key = next; render(); } else {
       const controls = [...element.querySelectorAll('button[data-action]')];
       resolved.items.forEach((item, index) => { if (controls[index]) sync(controls[index], item); });
       roving.refresh();
     }
-    if (fit) while (slots > 1 && overflowing()) { slots--; resolve({fit: false}); }
+    // Only a new set of buttons can change the row's width (a resize refits through refit()), so a refresh of
+    // states reads no layout.
+    if (fit && rebuilt) while (slots > 1 && overflowing()) { slots--; resolve({fit: false}); }
   }
   function refit() {
     frame = 0;

@@ -6,6 +6,7 @@ import { HotkeySettings } from './hotkey-settings.mjs';
 import { applyUIScale, normalizeUIScale, UI_SCALE } from './ui-scale.mjs';
 import { applyEditorTheme, normalizeTheme } from './theme.mjs';
 import {normalizePlaybackQuality, playbackQualityOptions} from './preview-quality.mjs';
+import { normalizeSectionMemory } from './inspector-kit.mjs';
 
 export const EDITOR_SETTINGS_KEY = "stykanimate.editor.settings.v1";
 export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
@@ -64,6 +65,8 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   playbackQuality: 'normal',
   rendererMode: "auto",
   autosaveSeconds: 2.5,
+  // The inspector's titled sections a person left open, per kind of selection: {figure: {colours: true}}.
+  inspectorSections: Object.freeze({}),
 });
 export function normalizeEditorSettings(value = {}) {
   const result = { ...DEFAULT_EDITOR_SETTINGS };
@@ -131,6 +134,7 @@ export function normalizeEditorSettings(value = {}) {
   if (['all','selected'].includes(value?.onionScope)) result.onionScope = value.onionScope;
   if (['keyframes','frames'].includes(value?.onionMode)) result.onionMode = value.onionMode;
   if (['auto','canvas','gpu'].includes(value?.rendererMode)) result.rendererMode = value.rendererMode;
+  result.inspectorSections = normalizeSectionMemory(value?.inspectorSections);
   return result;
 }
 const escape = (value) =>

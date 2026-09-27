@@ -1,6 +1,9 @@
 # Figure stacking and property keys
 
-The figure inspector exposes **Z-index** under Stacking. Higher values draw in
+The figure inspector's **Arrange** section holds the figure's Layer and its
+**Order** stepper: the Z-index, with **Send backward** and **Bring forward** on
+either side (one step each). **To front** and **To back** are the figure's quick
+actions under its name; Shift steps them by one. Higher values draw in
 front within the same user layer. Equal values preserve the pose's native draw
 order. Z-index is an integer from −1,000,000 to 1,000,000, defaults to zero, and
 uses Constant interpolation: the order changes exactly at the next key.
@@ -20,11 +23,11 @@ segment or branch selection confined to one figure changes only its internal
 order. Repeating a move at a boundary does not change scope or create history.
 The inspector's explicit segment and polygon Order controls remain internal.
 
-Blue diamonds indicate independent property animation. Filled diamonds mark a
-key at the current frame; outlines indicate animation between keys. Values that
-are only stored in pose keys have no inspector diamond or key-navigation controls.
-Joint transforms have no separate keyframe controls. The inspector omits explanatory paragraphs,
-key legends and subtitles.
+In the timeline, blue diamonds indicate independent property animation. Filled
+diamonds mark a key at the current frame; outlines indicate animation between
+keys. The inspector shows no key state: no diamonds or key-navigation controls
+for any property, and no separate keyframe controls for joint transforms. It
+omits explanatory paragraphs, key legends and subtitles.
 
 In the app, editing an independently animatable property adds or updates its
 own key at the current frame, including the first edit. Property-only edits do
