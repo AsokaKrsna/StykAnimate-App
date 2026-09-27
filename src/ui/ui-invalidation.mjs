@@ -18,21 +18,26 @@
  *                     stops (the caller invalidates when it stops).
  *   playbackInterval  while playing, at most one update per this many ms
  *                     (the transport's readout: 200 ms, 5 Hz); a marked
- *                     surface waits for its time.
+ *                     surface waits for its time, and one timer (not a pass
+ *                     every frame) wakes the pass that updates it.
  *   visible           an optional () => boolean; a hidden surface stays
  *                     marked, and show(name) updates it when it shows.
  * isBlocked() (the canvas being prepared after playback) skips whole passes
  * and keeps every mark; the caller invalidates again when it unblocks.
  *
+ * afterPass runs after a pass that updated at least one surface (the app
+ * repaints then); a pass that only finds surfaces waiting does not call it.
+ *
  * Surfaces write through dom-write.mjs, so an update that finds nothing
- * changed writes nothing. DOM-free at import: schedule and now are injected
- * (requestAnimationFrame and performance.now by default).
+ * changed writes nothing. DOM-free at import: schedule, delay and now are
+ * injected (requestAnimationFrame, setTimeout and performance.now by default).
  */
 export const UI_REASONS = Object.freeze(['tick', 'selection', 'revision', 'context', 'mode', 'range', 'view', 'settings',
   'document', 'save', 'objects', 'drag', 'playback']);
 
 export function createInvalidator({
   schedule = callback => requestAnimationFrame(callback),
+  delay = (callback, ms) => setTimeout(callback, ms),
   now = () => performance.now(),
   isPlaying = () => false,
   isBlocked = () => false,
@@ -40,12 +45,18 @@ export function createInvalidator({
   onError = error => { throw error; },
 } = {}) {
   const surfaces = [], byName = new Map();
-  let scheduled = false;
+  let scheduled = false, wakeAt = Infinity;
 
   const request = () => {
     if (scheduled) return;
     scheduled = true;
     schedule(pass);
+  };
+  /** Schedules a pass once `at` (a now() time) has come, unless an earlier wake-up is already set. */
+  const wake = at => {
+    if (at >= wakeAt) return;
+    wakeAt = at;
+    delay(() => { if (wakeAt === at) wakeAt = Infinity; request(); }, Math.max(0, at - now()));
   };
   /** Whether a surface may update now; `force` ignores quiet, visibility and the interval (a full update). */
   const ready = (surface, playing, time, force) => {
@@ -65,15 +76,15 @@ export function createInvalidator({
     scheduled = false;
     if (isBlocked()) return false;
     const playing = isPlaying(), time = now();
-    let later = false;
+    let due = Infinity, updated = false;
     for (const surface of surfaces) {
       if (!surface.dirty && !force) continue;
       const state = ready(surface, playing, time, force);
-      if (state === 'later') later = true;
-      if (state === true) run(surface, time);
+      if (state === 'later') due = Math.min(due, surface.last + surface.playbackInterval);
+      if (state === true) { run(surface, time); updated = true; }
     }
-    if (later) request();
-    afterPass?.();
+    if (due < Infinity) wake(due);
+    if (updated) afterPass?.();
     return true;
   }
 
@@ -108,7 +119,8 @@ export function createInvalidator({
       surface.dirty = true;
       const state = ready(surface, isPlaying(), now(), false);
       if (state === true) { run(surface, now()); return true; }
-      request();
+      if (state === 'later') wake(surface.last + surface.playbackInterval);
+      else request();
       return false;
     },
     /** Updates every surface now, marked or not, as one full refresh (startup, a restored document). */

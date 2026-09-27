@@ -4,15 +4,24 @@ import {createInvalidator, UI_REASONS} from '../src/ui/ui-invalidation.mjs';
 import {setAttr, setFlag, setHidden, setMarkup, setProp, setText, setVar} from '../src/ui/dom-write.mjs';
 
 function harness({playing = false, blocked = false} = {}) {
-  const frames = [], log = [];
-  const clock = {time: 0, playing, blocked};
+  const frames = [], timers = [], log = [];
+  const clock = {time: 0, playing, blocked, passes: 0};
   const ui = createInvalidator({
-    schedule: callback => frames.push(callback), now: () => clock.time,
-    isPlaying: () => clock.playing, isBlocked: () => clock.blocked, afterPass: () => log.push('render'),
+    schedule: callback => frames.push(callback), delay: (callback, ms) => timers.push({at: clock.time + ms, callback}),
+    now: () => clock.time, isPlaying: () => clock.playing, isBlocked: () => clock.blocked, afterPass: () => log.push('render'),
   });
-  const frame = () => { const pending = frames.splice(0); for (const callback of pending) callback(); };
+  const frame = () => { const pending = frames.splice(0); clock.passes += pending.length; for (const callback of pending) callback(); };
+  /** Moves the clock to `time`, firing the timers that come due on the way. */
+  const advance = time => {
+    for (const timer of timers.filter(timer => timer.at <= time).sort((a, b) => a.at - b.at)) {
+      timers.splice(timers.indexOf(timer), 1);
+      clock.time = timer.at;
+      timer.callback();
+    }
+    clock.time = time;
+  };
   const surface = (name, options = {}) => ui.surface(name, {on: ['all-of-them'].includes(name) ? [] : ['selection'], ...options, update: () => log.push(name)});
-  return {ui, frames, log, clock, frame, surface};
+  return {ui, frames, timers, log, clock, frame, advance, surface};
 }
 
 test('an invalidation schedules one pass that updates the marked surfaces in declaration order', () => {
@@ -33,10 +42,10 @@ test('an invalidation schedules one pass that updates the marked surfaces in dec
 });
 
 test('quiet surfaces wait for playback to stop, and the transport updates at most every 200 ms while playing', () => {
-  const {ui, log, clock, frame, surface} = harness({playing: true});
+  const {ui, log, clock, frame, advance, surface} = harness({playing: true});
   surface('transport', {on: ['tick'], playbackInterval: 200});
   surface('inspector', {on: ['selection'], quiet: true});
-  for (let t = 0; t <= 1000; t += 1000 / 24) { clock.time = t; ui.invalidate('all'); frame(); }
+  for (let t = 0; t <= 1000; t += 1000 / 24) { advance(t); ui.invalidate('all'); frame(); }
   const updates = log.filter(entry => entry === 'transport').length;
   assert.ok(updates >= 5 && updates <= 6, `transport updated ${updates} times in one second`);
   assert.equal(log.includes('inspector'), false, 'quiet while playing');
@@ -49,20 +58,49 @@ test('quiet surfaces wait for playback to stop, and the transport updates at mos
 });
 
 test('a throttled surface keeps its mark and runs when its time comes', () => {
-  const {ui, frames, log, clock, frame, surface} = harness({playing: true});
+  const {ui, frames, timers, log, clock, frame, advance, surface} = harness({playing: true});
   surface('transport', {on: ['tick'], playbackInterval: 200});
   ui.update('transport');
   clock.time = 50;
   assert.equal(ui.update('transport'), false, 'too soon while playing');
-  assert.equal(frames.length, 1);
+  assert.equal(frames.length, 0, 'no pass while it waits');
+  assert.deepEqual(timers.map(timer => timer.at), [200], 'one wake-up for when it is due');
+  ui.invalidate('tick');
   frame();
   assert.equal(log.filter(entry => entry === 'transport').length, 1);
-  clock.time = 210;
+  assert.equal(timers.length, 1, 'waiting again sets no second wake-up');
+  advance(150);
+  assert.equal(frames.length, 0);
+  advance(210);
+  assert.equal(frames.length, 1, 'the wake-up schedules one pass');
   frame();
   assert.equal(log.filter(entry => entry === 'transport').length, 2, 'the waiting update ran once due');
+  assert.equal(ui.isDirty('transport'), false);
   clock.playing = false;
   clock.time = 215;
   assert.equal(ui.update('transport'), true, 'no interval outside playback');
+});
+
+test('playback at display rate repaints only after a pass that updated something', () => {
+  // The render loop at 144 Hz playing 24 fps for 2 s: each new animation frame seeks (queueUI marks
+  // everything) and every 200 ms the loop updates the readout itself. The transport waits between its
+  // updates and every other surface is quiet, so a pass that finds only waiting surfaces must not repaint.
+  const {ui, log, clock, frame, advance, surface} = harness({playing: true});
+  surface('title', {on: ['document'], quiet: true});
+  surface('transport', {on: ['tick'], playbackInterval: 200});
+  surface('inspector', {on: ['selection', 'tick'], quiet: true});
+  let nextTick = 0, lastReadout = -Infinity;
+  for (let t = 0; t < 2000; t += 1000 / 144) {
+    advance(t);
+    if (t >= nextTick) { ui.invalidate('all'); nextTick += 1000 / 24; }
+    if (t - lastReadout > 200) { ui.update('transport'); lastReadout = t; }
+    frame();
+  }
+  const updates = log.filter(entry => entry === 'transport').length, renders = log.filter(entry => entry === 'render').length;
+  assert.ok(updates >= 9 && updates <= 11, `transport updated ${updates} times in 2 s`);
+  assert.ok(renders <= updates, `afterPass ran ${renders} times for ${updates} transport updates`);
+  assert.ok(clock.passes <= 48 + updates + 2, `${clock.passes} passes in 2 s for 48 animation frames`);
+  assert.equal(log.includes('inspector') || log.includes('title'), false, 'quiet while playing');
 });
 
 test('hidden surfaces stay marked and update when shown', () => {
@@ -71,12 +109,13 @@ test('hidden surfaces stay marked and update when shown', () => {
   surface('vfx', {on: ['selection'], visible: () => visible});
   ui.invalidate('selection');
   frame();
-  assert.deepEqual(log, ['render']);
+  assert.deepEqual(log, [], 'a pass that updated nothing does not repaint');
+  assert.equal(ui.isDirty('vfx'), true);
   visible = true;
   ui.show('vfx');
-  assert.deepEqual(log, ['render', 'vfx']);
+  assert.deepEqual(log, ['vfx']);
   ui.show('vfx');
-  assert.deepEqual(log, ['render', 'vfx'], 'nothing to do once clean');
+  assert.deepEqual(log, ['vfx'], 'nothing to do once clean');
 });
 
 test('a blocked pass keeps every mark, and a full refresh updates every surface', () => {

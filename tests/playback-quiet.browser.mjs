@@ -9,7 +9,10 @@
  *     number);
  *   - #play-button changes only when playback starts and stops;
  *   - chrome code reads no layout (getBoundingClientRect, offset*, client*,
- *     scroll*, getComputedStyle) while playing.
+ *     scroll*, getComputedStyle) while playing;
+ *   - the canvas draws about twice per animation frame, whatever the
+ *     display's refresh rate: once for the new frame and once after the chrome
+ *     pass its seek schedules (DRAWS_PER_FRAME).
  *
  * Everything else that still writes or reads during playback is listed in
  * RATCHET with the milestone that removes it. The list only shrinks: a
@@ -29,6 +32,10 @@ import {chromium} from 'playwright';
 const URL = process.env.STYK_URL || 'http://127.0.0.1:47831';
 const PLAY_MS = 2000;
 const TIME_DISPLAY_HZ = 5;
+// Draws per animation frame: the new frame, the repaint after its chrome pass, and a quarter for the readout's passes
+// and timing. A chrome pass that repaints while nothing updated would draw on every display frame instead (~5.5 per
+// animation frame at 144 Hz before this budget).
+const DRAWS_PER_FRAME = 2.5;
 
 // Mutations the contract allows while playing (selector: the element or its ancestor the record's target is in).
 const ALLOWED = [
@@ -144,9 +151,9 @@ try {
     await page.evaluate(name => { const probe = window.__quiet; probe.flush(); probe.scenario = name; probe.counts = {}; probe.offenders = {}; probe.reads = {}; probe.readOffenders = {}; probe.longFrames = 0; }, name);
     await page.evaluate(async () => { const probe = window.__quiet; probe.phase = 'start'; await window.styk.actions.play(); probe.flush(); probe.phase = 'playing'; probe.recording = true; });
     assert.equal(await page.evaluate(() => window.styk.state.playing), true, `${name}: playback started`);
-    const before = await metrics();
+    const before = await metrics(), drawsBefore = await page.evaluate(() => window.styk.state.drawCalls);
     await page.waitForTimeout(PLAY_MS);
-    const after = await metrics();
+    const after = await metrics(), drawsAfter = await page.evaluate(() => window.styk.state.drawCalls);
     await page.evaluate(async () => { const probe = window.__quiet; probe.flush(); probe.recording = false; probe.phase = 'stop'; await window.styk.actions.play(); probe.flush(); });
     await page.waitForTimeout(400);
     const result = await page.evaluate(() => { const probe = window.__quiet; probe.flush(); probe.phase = 'idle';
@@ -155,6 +162,8 @@ try {
     assert.equal(result.playing, false, `${name}: playback stopped`);
     result.style = {recalcs: after.RecalcStyleCount - before.RecalcStyleCount, recalcMs: Math.round((after.RecalcStyleDuration - before.RecalcStyleDuration) * 10000) / 10,
       layouts: after.LayoutCount - before.LayoutCount, layoutMs: Math.round((after.LayoutDuration - before.LayoutDuration) * 10000) / 10};
+    const fps = await page.evaluate(() => { const report = window.styk.editor.report; return report.frame_delay_ms ? 1000 / report.frame_delay_ms : report.fps; });
+    result.draws = {count: drawsAfter - drawsBefore, budget: Math.ceil(PLAY_MS / 1000 * fps * DRAWS_PER_FRAME), fps};
     report.scenarios[name] = result;
     const playing = Object.fromEntries(Object.entries(result.offenders).filter(([key]) => key.startsWith('playing ') || key.startsWith('start ')));
     assert.deepEqual(playing, {}, `${name}: only the time readout, the playhead and the play button change while playing (new writers: ${JSON.stringify(playing)})`);
@@ -162,11 +171,13 @@ try {
     const ticks = result.counts['playing time-display'] ?? 0;
     assert.ok(ticks <= Math.ceil(PLAY_MS / 1000 * TIME_DISPLAY_HZ) + 1, `${name}: #time-display changed ${ticks} times in ${PLAY_MS} ms`);
     assert.ok(ticks > 0, `${name}: #time-display follows playback`);
+    assert.ok(result.draws.count <= result.draws.budget,
+      `${name}: the canvas drew ${result.draws.count} times in ${PLAY_MS} ms at ${result.draws.fps} fps (budget ${result.draws.budget})`);
     for (const entry of [...RATCHET, ...READ_RATCHET].filter(entry => entry.always && (!entry.scenarios || entry.scenarios.includes(name)))) {
       const seen = entry.module ? result.reads[entry.id] : Object.keys(result.counts).some(key => key.endsWith(` ${entry.id}`));
       assert.ok(seen, `${name}: ${entry.id} no longer happens during playback; remove it from the ratchet (until ${entry.until})`);
     }
-    report.checks.push(`${name}: quiet (time readout ${ticks}×, style ${result.style.recalcs} recalcs / ${result.style.recalcMs} ms, ${result.longFrames} long frames)`);
+    report.checks.push(`${name}: quiet (time readout ${ticks}×, ${result.draws.count} draws of ${result.draws.budget}, style ${result.style.recalcs} recalcs / ${result.style.recalcMs} ms, ${result.longFrames} long frames)`);
     console.log('PASS', report.checks.at(-1));
     return result;
   }
