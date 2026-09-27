@@ -15,7 +15,7 @@
   .ui-stepper > output,
   .ui-stepper-input {
     min-inline-size: 40px; text-align: center; color: var(--text-1);
-    font: var(--type-value, 450 var(--text-13)/var(--leading-13) var(--font-ui)); font-variant-numeric: tabular-nums;
+    font: var(--type-value); font-variant-numeric: tabular-nums;
   }
   .ui-stepper-input {
     inline-size: 40px; block-size: 100%; margin: 0; padding: 0;

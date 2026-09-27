@@ -1,15 +1,22 @@
 /* Inspector (feature, track D): what the inspector composes from the .ui-*
- * components and no component owns. Scoped to #inspector through :where(),
- * so rules stay at feature specificity. A skeleton: it grows as contexts
- * move to descriptors (src/inspector-kit.mjs) and their legacy rules
- * (legacy/07, 22, 25b, 36, 42) are deleted. No key state, no dividers. */
+ * components and no component owns. Scoped to #inspector through :where()
+ * where a rule would otherwise reach other surfaces, so rules stay at feature
+ * specificity. A skeleton: it grows as contexts move to descriptors
+ * (src/inspector-kit.mjs) and their legacy rules (legacy/07, 22, 25b, 36, 42)
+ * are deleted. No key state, no dividers, no cards. */
 @layer features {
-  /* Sections follow each other on whitespace; the first sits under the header. */
-  :where(#inspector) > .ui-section:first-child { padding-block-start: var(--space-2); }
+  /* Sections follow each other on whitespace; the first shown sits under the
+     header (hidden sections leave empty placeholders that keep positions). */
+  :where(#inspector) > :nth-child(1 of .ui-section:not([hidden])) { padding-block-start: var(--space-2); }
+
+  /* The body fades its last line while more is below (data-more-below, kept by
+     installInspectorKit), so a half-visible title always reads as "scrolls". */
+  :where(#inspector)[data-more-below] { mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent); }
 
   /* A segmented control that keeps native radios (IK's bend direction keeps
      its change handler): the label is the item and draws the thumb while its
-     radio is checked; the radio stays focusable but invisible. */
+     radio is checked; the radio stays focusable but invisible. Track C's
+     segmented.css should own these rules (a request, not yet moved). */
   :where(#inspector) .ui-segmented-item:has(> .ui-segmented-input) { position: relative; }
   :where(#inspector) .ui-segmented-input {
     position: absolute; inset: 0; inline-size: 100%; block-size: 100%;
@@ -17,19 +24,45 @@
   }
   :where(#inspector) .ui-segmented-item:has(> .ui-segmented-input:checked) {
     background: var(--control-thumb); color: var(--text-1);
-    box-shadow: inset 0 0 0 1px var(--thumb-line, var(--line-control)), var(--elevation-1);
+    box-shadow: inset 0 0 0 1px var(--line-control), var(--elevation-1);
   }
   :where(#inspector) .ui-segmented-item:has(> .ui-segmented-input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 0; }
   :where(#inspector) .ui-segmented-item:has(> .ui-segmented-input:disabled) { opacity: 0.42; }
 
-  /* A quiet line of facts (the Scene's size and rate). */
+  /* A quiet line of facts (the Scene's "2 figures · 48 frames · 2.0 s"). */
   .inspector-meta { margin: 0; font: var(--type-small); color: var(--text-3); font-variant-numeric: tabular-nums; }
 
-  /* The foot: one quiet row of commands for the whole context ("Add to library"), over a hairline. */
+  /* Rows stacked as one region (IK's options, a fill's own fields). */
+  .inspector-group { display: grid; gap: var(--space-2); min-inline-size: 0; }
+  .inspector-group[hidden] { display: none; }
+
+  /* A preview drawn in its section (the camera monitor, the brush stroke): a
+     flat sunken area with a one-line caption; never raised, never a card. */
+  .inspector-preview { display: grid; gap: var(--space-1-5); min-inline-size: 0; }
+  .inspector-preview-media {
+    display: block; inline-size: 100%; min-block-size: 48px;
+    border-radius: var(--radius-md); background: var(--surface-sunken); overflow: hidden;
+  }
+  .inspector-preview-caption {
+    display: flex; justify-content: space-between; gap: var(--space-2); min-inline-size: 0;
+    font: var(--type-small); color: var(--text-3); font-variant-numeric: tabular-nums;
+  }
+  .inspector-preview-caption > span { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Pages of a long list (fills, palette colours): previous, "1–12 / 14", next. */
+  .inspector-pager { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-inline-size: 0; }
+  .inspector-pager-text { font: var(--type-small); color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+  /* The foot, pinned under the scrolling body: one quiet row of commands for
+     the whole context ("Add to library"), over a hairline. */
   .inspector-foot {
     display: flex; align-items: center; gap: var(--space-1); flex: none;
     padding: var(--space-1-5) var(--space-2) var(--space-2);
     box-shadow: inset 0 1px 0 var(--line-1);
   }
   .inspector-foot > .ui-button { justify-content: flex-start; color: var(--text-2); }
+
+  @media (forced-colors: active) {
+    .inspector-preview-media { outline: 1px solid CanvasText; }
+  }
 }

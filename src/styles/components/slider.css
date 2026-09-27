@@ -12,7 +12,7 @@
   .ui-slider-label { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-small); color: var(--text-2); }
   .ui-slider-value {
     white-space: nowrap; text-align: end; color: var(--text-1);
-    font: var(--type-value, 450 var(--text-13)/var(--leading-13) var(--font-ui)); font-variant-numeric: tabular-nums;
+    font: var(--type-value); font-variant-numeric: tabular-nums;
   }
   .ui-slider {
     --_p: 50%;

@@ -10,7 +10,7 @@
  * section and only the switch switches. Never a generic "More", a summary, a
  * key state or a divider. data-section is inspector-dom.mjs's identity key. */
 @layer components {
-  .ui-section { min-inline-size: 0; padding-block: var(--space-3-5, 14px) var(--space-0-5); }
+  .ui-section { min-inline-size: 0; padding-block: var(--space-3-5) var(--space-0-5); }
   .ui-section-head { display: flex; align-items: center; gap: var(--space-1); min-block-size: var(--control-sm); margin-block-end: var(--space-2); }
   .ui-section-title {
     flex: 1; min-inline-size: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

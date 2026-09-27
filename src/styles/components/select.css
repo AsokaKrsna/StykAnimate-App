@@ -25,7 +25,7 @@
     padding: 0 calc(var(--space-2) + var(--icon-sm) + var(--space-1-5)) 0 var(--space-2-5);
     border: 1px solid transparent; border-radius: var(--radius-md);
     background: var(--surface-sunken); box-shadow: none; color: var(--text-1);
-    font: var(--type-value, 450 var(--text-13)/var(--leading-13) var(--font-ui));
+    font: var(--type-value);
   }
   .ui-select > select:hover { box-shadow: inset 0 0 0 1px var(--line-3); }
   .ui-select > select:focus-visible {
