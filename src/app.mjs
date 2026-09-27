@@ -1021,13 +1021,41 @@ function imageFor(url) {
   return images.image(url);
 }
 const resources = { url: assetUrl, image: imageFor, drawing:figure=>drawingController?.resource(figure), drawingLoad:figure=>{if(!drawingMetadata(figure))return null;drawingController?.resource(figure);return editor?.drawingResources.surface(figure);} };
-function status(text, error = false, busy = false) {
+/**
+ * The editor's activity: the last messages, newest first (Help › Performance shows them).
+ * There is no status bar: what someone must see goes through toast() or fail(); slow work
+ * (busy) shows a quiet task message if it is still running after a moment, until the next
+ * status ends it. #status keeps the latest line for tests and the Performance report.
+ */
+const activityLog = [];
+let activityTask = null, compatibilityNoticed = false;
+/** Records a line of activity: #status, the log, and the slow-work message while `busy`. */
+function logActivity(text, error = false, busy = false) {
   setText($("status"), text);
   setAttr($("status-dot"), "class", `status-dot${error ? " error" : busy ? " busy" : ""}`);
+  activityLog.unshift({ time: Date.now(), text: String(text), error: Boolean(error) });
+  if (activityLog.length > 40) activityLog.length = 40;
+  if (busy) {
+    if (activityTask) activityTask.update({ title: text });
+    else activityTask = toasts.task({ title: text, cancellable: false, delay: 400 });
+  } else if (activityTask) {
+    activityTask.done();
+    activityTask = null;
+  }
+}
+/** Activity; a problem (error) is also a warning in the message slot that goes after 8 seconds. */
+function status(text, error = false, busy = false) {
+  logActivity(text, error, busy);
+  if (error) toasts.show({ message: text, tone: "warning", timeout: 8000, dismissible: true });
 }
 /** A short message in the stage's message slot, above any open dialog. */
 function toast(text) {
   toasts.show({ message: text });
+}
+/** A result worth seeing (an import, a copy): the activity line and a short message. */
+function notify(text) {
+  logActivity(text);
+  toast(text);
 }
 /** Failed saves, exports and imports (see persistentFailure): their message stays until dismissed. */
 const persistentFailures = new WeakSet();
@@ -1044,7 +1072,7 @@ const FAILURE_MESSAGE_MS = 8000;
 function fail(error) {
   telemetry.error(error);
   const message = error?.message || String(error);
-  status(message, true);
+  logActivity(message, true);
   toasts.fail(error, error instanceof UserActionError || persistentFailures.has(error) ? {} : { timeout: FAILURE_MESSAGE_MS, dismissible: true });
   console.error(error);
 }
@@ -1879,7 +1907,7 @@ async function play() {
   if(!state.playing){try{await drawingController?.barrier();}catch(error){fail(error);return;}}
   if (!$("renderer-error").hidden) return;
   if (state.playing) return pause();
-  if ([...exportJobs].some(job => job.raster)) return status('Finish or cancel the export before playing.');
+  if ([...exportJobs].some(job => job.raster)) return notify('Finish or cancel the export before playing.');
   editablePreparation.cancel();
   state.previewing = false;
   if (editor.totalTicks < 1) return;
@@ -2997,7 +3025,7 @@ overlay.addEventListener("dblclick", guarded((event) => {
     status(`${editor.selectedUids.size} connected figures selected`);
   } else {
     editor.selectBranch(hit.uid, hit.joint);
-    status("Branch selected — copy or edit the complete branch");
+    notify("Branch selected — copy or edit the complete branch");
   }
   queueUI();
 }));
@@ -3072,7 +3100,7 @@ async function acceptImport(
   if (kind === "stk" || kind === "stkz" || kind === "stykmov") {
     finishCurrentEdit();
     editor.importFigure(report);
-    status(`Imported ${result.filename || name || "figure"}`);
+    notify(`Imported ${result.filename || name || "figure"}`);
   } else {
     const approvalCurrent =
       replaceApproved &&
@@ -3284,7 +3312,7 @@ async function importMediaFile(
     if (editor.report !== destination) return false;
     if (background) editor.importBackground(media);
     else editor.importFigure(media);
-    status(`Imported ${file.name}`);
+    notify(`Imported ${file.name}`);
     return true;
   } catch (error) {
     if (error.name === "AbortError") return false;
@@ -3455,9 +3483,8 @@ async function saveNative({ saveAs = false } = {}) {
       }
     }
     updateTitle();
-    status(
-      editor.dirty ? "Saved copy · Newer changes are unsaved" : "Project saved",
-    );
+    if (editor.dirty) notify("Saved a copy · newer changes are still unsaved");
+    else status("Project saved");
   } else status("Save cancelled");
   return Boolean(
     saved &&
@@ -4119,11 +4146,11 @@ const actions = {
     if (!builderMode?.active) return;
     state.builderAppearance = copyBuilderAppearance(editor);
     builderMode.sync();
-    if (state.builderAppearance) status("Appearance copied");
+    if (state.builderAppearance) notify("Appearance copied");
   },
   "paste-builder-appearance": (button, event) => {
     if (!builderMode?.active) return;
-    if (pasteBuilderAppearance(editor, state.builderAppearance, {branch:usesBuilderBranch(event)})) status("Appearance pasted");
+    if (pasteBuilderAppearance(editor, state.builderAppearance, {branch:usesBuilderBranch(event)})) notify("Appearance pasted");
   },
   "unsplit-segment": () => editor.unsplitSegment(),
   "delete-single-segment": () => editor.selectedSegmentIds.size > 1
@@ -4433,6 +4460,7 @@ const exportFlow = createExportFlow({
 const dialogs = createAppDialogs({
   editor, state, $, esc, actions, desktop, overlays, playbackMetrics, guarded, pause, finishCurrentEdit,
   showDialog, closeDialog, promptText, saveNative, acceptNativeFile, updateTitle, localization: () => appLocalization,
+  activity: () => activityLog,
 });
 const polygonSafeActions = new Set([
   "menu",
@@ -5523,7 +5551,7 @@ async function performClipboardOperation(kind, execute) {
       },
     });
     if (count && kind === "copy")
-      status(`${count} frame${count === 1 ? "" : "s"} copied`);
+      notify(`${count} frame${count === 1 ? "" : "s"} copied`);
     return count;
   } catch (error) {
     if (error.name !== "AbortError") throw error;
@@ -5964,6 +5992,11 @@ function rendererOptions() {
       status(
         typeof message === "string" ? message : message.message || "Ready",
       );
+      // Compatibility rendering is slower: say so once, unless Canvas was chosen in Settings.
+      if (compatibility && !compatibilityNoticed && state.settings.rendererMode !== "canvas") {
+        compatibilityNoticed = true;
+        toasts.show({ message: `${message.reason || "WebGPU is unavailable."} The canvas uses compatibility rendering, which can be slower.`, tone: "warning", timeout: 12000, dismissible: true });
+      }
       if (message.backend === "WebGPU device lost") {
         telemetry.performance.recovery('gpu','started');telemetry.performance.incident('gpu');
         telemetry.count('gpu_errors');

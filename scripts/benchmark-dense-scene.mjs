@@ -295,7 +295,8 @@ async function benchmark(page,app,result,output,mode) {
         const badge=document.querySelector('#playback-fps'),r=badge.getBoundingClientRect(),v=document.querySelector('#viewport').getBoundingClientRect();
         return {text:badge.textContent,health:badge.dataset.health,hidden:badge.hidden,color:getComputedStyle(badge).color,rightGap:v.right-r.right,topGap:r.top-v.top,width:r.width,height:r.height,metrics:styk.performance().presentation};
       });
-      if(check.health!==health||check.hidden||Math.abs(check.rightGap-14)>1||Math.abs(check.topGap-12)>1)throw new Error(`FPS indicator check failed: ${JSON.stringify(check)}`);
+      // The live rate is the activity log's (Help › Performance, the slow-playback message): its state, not a badge over the canvas.
+      if(check.health!==health||check.hidden)throw new Error(`FPS indicator check failed: ${JSON.stringify(check)}`);
       const phaseResult=result.phases.at(-1),refreshFps=1000/phaseResult.rafMs.p50;
       if(phaseResult.achievedFps>refreshFps*1.1)throw new Error(`Playback submitted multiple ticks per display callback: ${phaseResult.achievedFps} versus ${refreshFps} Hz.`);
       checks.push(check);await page.screenshot({path:path.join(output,`fps-${health}.png`)});

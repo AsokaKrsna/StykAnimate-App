@@ -200,12 +200,39 @@ export function createAppDialogs(ctx) {
       row.insertCell().textContent = String(value);
     }
     body.append(table, paragraph("CPU submission timings include geometry evaluation and selection overlays. They do not measure GPU completion or input-to-display latency. Performance varies with hardware, scene complexity, effects, and media.", "ui-dialog-desc performance-note"));
+    // The editor's recent activity (there is no status bar): newest first, a problem marked.
+    const activity = ctx.activity?.() ?? [];
+    const clock = (time) => new Date(time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    if (activity.length) {
+      const heading = document.createElement("h3"), list = document.createElement("ol");
+      heading.className = "ui-dialog-section-title";
+      heading.textContent = "Activity";
+      list.className = "performance-activity";
+      for (const entry of activity.slice(0, 12)) {
+        const item = document.createElement("li"), time = document.createElement("time");
+        time.textContent = clock(entry.time);
+        item.append(time, ` ${entry.text}`);
+        if (entry.error) item.dataset.tone = "error";
+        list.append(item);
+      }
+      body.append(heading, list);
+    }
+    const report = () => [...rows.map(([name, value]) => `${name}: ${value}`), "", ...activity.map((entry) => `${clock(entry.time)} ${entry.error ? "! " : ""}${entry.text}`)].join("\n");
     const dialog = dialogOf({
       size: "md",
       id: "performance-dialog",
       title: "Performance",
       body,
-      actions: [{ label: kitText(t, "common.close"), cancel: true, variant: "secondary" }],
+      actions: [
+        { label: "Copy report", id: "copy-performance-report", value: "copy", variant: "ghost" },
+        { label: kitText(t, "common.close"), cancel: true, variant: "secondary" },
+      ],
+      // Copy report keeps the dialog open: the numbers and the activity, for a bug report.
+      onSubmit: (value) => {
+        if (value !== "copy") return undefined;
+        navigator.clipboard?.writeText(report()).then(() => dialog.setMeta("Copied"), () => dialog.setMeta("Could not copy"));
+        return false;
+      },
     });
     void dialog.showModal();
   }

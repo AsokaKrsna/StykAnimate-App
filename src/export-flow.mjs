@@ -72,6 +72,13 @@ export function createExportFlow(ctx) {
     if(enabled)onTiming('dialog',performance.now()-started);
     return sink;
   }
+  /** Says an export finished and where: the file's name as saved (the save dialog may rename it). */
+  function exported(saved, filename) {
+    const path = typeof saved === "string" ? saved : typeof saved?.path === "string" ? saved.path : "";
+    const name = path ? path.split(/[\/]/).at(-1) : filename;
+    status(`Exported ${name}`);
+    toast(`Exported ${name}`);
+  }
   async function saveBlob(blob, filename, signal) {
     const measurement = signal && exportTelemetry.get(signal), writeStarted = performance.now();
     measurement?.onProgress?.({phase: 'saving'});
@@ -286,7 +293,7 @@ export function createExportFlow(ctx) {
         if (signal.aborted)
           throw new DOMException("Export cancelled.", "AbortError");
         const saved = await saveBlob(blob, filename, signal);
-        if (saved) status("PNG exported");
+        if (saved) exported(saved, filename);
         return saved;
       },
       { title: "Exporting frame", format: 'png', start: editor.tick },
@@ -305,7 +312,7 @@ export function createExportFlow(ctx) {
       async (renderer, signal) => {
         const blob = await renderer.renderSVGFrame(frame);
         const saved = await saveBlob(blob, filename, signal);
-        if (saved) status("SVG exported");
+        if (saved) exported(saved, filename);
         return saved;
       },
       { title: "Exporting vector frame", format: 'svg', start: editor.tick },
@@ -345,7 +352,7 @@ export function createExportFlow(ctx) {
               renderer.renderSVGTick(index + options.start),
           });
           const saved = await finishExport(output, filename, signal);
-          if (saved) status("Animation exported");
+          if (saved) exported(saved, filename);
           return saved;
         },
         { frames: ticks, format: format === 'apng' ? 'png' : format.split('-')[0], fps, passes: format === 'gif' ? 2 : 1 },
@@ -413,7 +420,7 @@ export function createExportFlow(ctx) {
             ...(encode === encodeNativeVideo ? {renderNativeFrame: index => renderer.renderNativeTick(index + options.start, {preserveAlpha: format === 'webm'})} : {}),
           });
           const saved = await finishExport(output, filename, signal);
-          if (saved) status(`${extension.toUpperCase()} exported`);
+          if (saved) exported(saved, filename);
           return saved;
         },
         { frames: ticks, format: 'video', fps },

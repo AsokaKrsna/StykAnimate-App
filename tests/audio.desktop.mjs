@@ -48,7 +48,7 @@ try {
   await page.locator('#export-width').fill('128');await page.locator('#export-width').press('Tab');
   await page.locator('#export-start').fill('1');await page.locator('#export-end').fill('16');await page.locator('#export-end').press('Tab');
   assert.equal(await page.locator('#export-audio').isChecked(),true);
-  await page.locator('#export-submit').click();await page.waitForFunction(()=>document.querySelector('#status-text')?.textContent.includes('exported')||document.querySelector('#status')?.textContent.includes('exported'),null,{timeout:45000});
+  await page.locator('#export-submit').click();await page.waitForFunction(()=>/exported/i.test(document.querySelector('#status-text')?.textContent??'')||/exported/i.test(document.querySelector('#status')?.textContent??''),null,{timeout:45000});
   results.files.push({format:'ui.mp4',bytes:[...await readFile(uiTarget)]});
   assert.equal(results.isolated,true);assert.equal(results.cancelled,'AbortError');assert.ok(results.retryBytes>100);assert.ok(Math.max(...results.chunks)<=262144);
   const measured=[];

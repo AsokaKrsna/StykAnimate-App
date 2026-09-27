@@ -57,6 +57,9 @@
   /* A cluster inside the end: the view toggles, then zoom and Fit. */
   .stage-head-cluster { display: flex; align-items: center; gap: var(--space-0-5); flex: none; }
   .stage-head-cluster[hidden], .stage-head-cluster > [hidden] { display: none; }
+  /* A quiet state beside zoom while it applies ("Reduced preview"): words, no chip or accent. */
+  .stage-head-note { color: var(--text-3); font: var(--type-small); white-space: nowrap; }
+  .stage-head-note[hidden] { display: none; }
   .stage-head-msg {
     --msg-start: 0px; --msg-end: 0px;
     position: absolute; inset-block: 0; inset-inline: var(--msg-start) var(--msg-end);

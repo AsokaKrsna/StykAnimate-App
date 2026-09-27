@@ -184,6 +184,7 @@
                 <button type="button" class="ui-icon-button" data-action="builder-static-handles" data-quiet data-workspaces="rig" aria-pressed="true" aria-label="Static handles" data-tooltip="Static handles" data-icon="pin" hidden></button>
                 <button type="button" class="ui-icon-button" data-action="builder-highlight" data-quiet data-workspaces="rig" aria-pressed="false" aria-label="Highlight part" data-tooltip="Highlight part" data-icon="highlight" hidden></button>
               </div>
+              <output id="preview-quality" class="stage-head-note" data-tooltip="Preview detail follows your playback quality setting or available memory. Original artwork and export quality are preserved." hidden>Reduced preview</output>
               <div class="stage-head-cluster" data-zoom role="group" aria-label="Zoom">
                 <button type="button" class="ui-button stage-zoom" id="zoom-label" data-variant="ghost" data-size="sm" data-action="zoom-menu" aria-haspopup="menu" aria-label="Canvas zoom" title="Zoom options"><span class="stage-zoom-value">100%</span><span class="stage-zoom-chevron" data-icon="chevron-down"></span></button>
                 <button type="button" class="ui-icon-button" data-action="zoom-reset" aria-label="Fit canvas" data-tooltip="Fit canvas" data-icon="fit"></button>
@@ -351,7 +352,8 @@
           </div>
         </section>
       </section>
-      <footer class="statusbar">
+      <!-- The editor's activity log (no status bar): #status keeps the latest line, Help › Performance shows the log. -->
+      <footer class="statusbar" hidden>
         <div>
           <span class="status-dot" id="status-dot"></span
           ><span id="status">Ready</span>
@@ -360,7 +362,7 @@
           <span class="viewport-top" aria-hidden="true"><span id="frame-badge">FRAME 01</span
             ><span id="preview-badge" hidden>PLAYING</span></span
           ><output id="playback-fps" aria-label="Playback frames per second" hidden>— fps</output
-          ><output id="preview-quality" title="Preview detail follows your playback quality setting or available memory. Original artwork and export quality are preserved." hidden>Reduced preview quality</output
+
           ><span id="renderer-label">Initializing WebGPU</span
           ><span class="status-separator">·</span><span id="render-time">—</span
           ><span class="status-separator">·</span
