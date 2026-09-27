@@ -17,12 +17,16 @@
  * the timeline is its header and #viewport is 360 wide but only about 180
  * tall; every larger size keeps 360×200. The stage floors are checked with
  * the status bar's height given back to #viewport, and in Animate only
- * (Draw's quick bar sits inside #viewport until M3b).
+ * (Draw's quick bar sits inside #viewport until M3b). Until M5's painter
+ * draws 24px Camera and Scene rows and 28px short-tier rows, the default
+ * timeline holds its promised rows at the painter's 32px (so today's layer
+ * capacity holds), and the floors are checked with that extra height given
+ * back too.
  */
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
-import {BAND_FOLDS, stageFloor} from '../src/shell/layout-solver.mjs';
+import {BAND_FOLDS, stageFloor, timelineDefaultHeight} from '../src/shell/layout-solver.mjs';
 
 const base = process.env.STYK_URL || 'http://127.0.0.1:47911';
 const out = 'artifacts/shell-layout';
@@ -163,17 +167,20 @@ try {
     }
   });
 
-  await step('the artboard fits #viewport with the solver’s insets and reaches its floor once the status bar is given back', async () => {
+  await step('the artboard fits #viewport with the solver’s insets and reaches its floor once the transitional heights are given back', async () => {
     for (const [width, height] of SIZES) {
       await resize(width, height);
-      const fit = await page.evaluate(() => {
+      const specTimeline = timelineDefaultHeight(height);
+      const fit = await page.evaluate(specTimeline => {
         const viewport = document.getElementById('viewport').getBoundingClientRect();
         const inset = styk.workspace.stageInsets, report = styk.editor.report;
         const footer = document.querySelector('.statusbar').offsetHeight;
+        // The painter's 32px Camera, Scene and short-tier rows (until M5) cost this much over the spec's default.
+        const rows = Math.max(0, styk.workspace.solution.regions.bottom.size - specTimeline);
         const zoom = extra => Math.min((viewport.width - inset.left - inset.right) / report.canvas_width,
           (viewport.height + extra - inset.top - inset.bottom) / report.canvas_height, 2);
-        return {scale: styk.state.view.scale, expected: zoom(0), floor: zoom(footer)};
-      });
+        return {scale: styk.state.view.scale, expected: zoom(0), floor: zoom(footer + rows)};
+      }, specTimeline);
       const label = `${width}x${height}: ${JSON.stringify(fit)}`;
       assert.ok(Math.abs(fit.scale - fit.expected) < 0.005, `${label}: fitted with the solver's insets`);
       assert.ok(fit.floor * 100 >= stageFloor(width, height) - 0.5, `${label}: at least ${stageFloor(width, height)}%`);
@@ -305,7 +312,7 @@ try {
     const timeline = page.getByRole('separator', {name: 'Resize timeline'});
     const sizes = () => page.evaluate(() => styk.workspace.sizes);
     const before = await sizes();
-    assert.deepEqual([before.right, before.timeline], [288, 264]);
+    assert.deepEqual([before.right, before.timeline], [288, 280]);
     await right.focus();
     await page.keyboard.press('ArrowLeft');
     assert.equal((await sizes()).right, 300);
@@ -316,10 +323,10 @@ try {
     assert.equal((await sizes()).right, before.right);
     await timeline.focus();
     await page.keyboard.press('ArrowUp');
-    assert.equal((await sizes()).timeline, 276);
+    assert.equal((await sizes()).timeline, 292);
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('ArrowDown');
-    assert.equal((await sizes()).timeline, 252);
+    assert.equal((await sizes()).timeline, 268);
     await page.keyboard.press('Enter');
     assert.equal((await sizes()).timeline, before.timeline);
     // A drag grows the panel, one layout per frame and no long frame; Escape cancels a drag in progress.
@@ -358,7 +365,7 @@ try {
     await page.evaluate(() => styk.workspace.reset());
     await settle();
     const before = await rect('#viewport');
-    assert.equal((await rect('.timeline-panel')).height, 264);
+    assert.equal((await rect('.timeline-panel')).height, 280);
     await page.click('#vfx-tab');
     await settle();
     assert.deepEqual(await rect('#viewport'), before, 'the VFX tab');
@@ -379,16 +386,40 @@ try {
     await workspace('animate');
   });
 
-  await step('Tall timeline stores 60% of the window and a second press restores the default', async () => {
-    await page.click('#expand-timeline');
-    await settle();
-    assert.equal(await page.locator('#expand-timeline').getAttribute('aria-pressed'), 'true');
+  await step('Tall timeline stores 60% of the window and a second press restores the height it had', async () => {
+    const expand = async pressed => {
+      await page.click('#expand-timeline');
+      await settle();
+      assert.equal(await page.locator('#expand-timeline').getAttribute('aria-pressed'), String(pressed));
+    };
+    await expand(true);
     assert.equal((await rect('.timeline-panel')).height, 540);
     assert.equal(await page.evaluate(() => styk.workspace.layout.shared.sizes.bottom), 540);
-    await page.click('#expand-timeline');
+    await expand(false);
+    assert.equal((await rect('.timeline-panel')).height, 280, 'the default comes back');
+    assert.equal(await page.evaluate(() => styk.workspace.layout.shared.sizes.bottom), undefined, 'still the default, not a stored size');
+    // A height of the user's own survives Expand and back.
+    await page.getByRole('separator', {name: 'Resize timeline'}).focus();
+    for (let i = 0; i < 9; i++) await page.keyboard.press('ArrowUp');
     await settle();
-    assert.equal(await page.locator('#expand-timeline').getAttribute('aria-pressed'), 'false');
-    assert.equal((await rect('.timeline-panel')).height, 264);
+    assert.equal((await rect('.timeline-panel')).height, 388);
+    await expand(true);
+    assert.equal((await rect('.timeline-panel')).height, 540);
+    await expand(false);
+    assert.equal((await rect('.timeline-panel')).height, 388, 'the custom height comes back');
+    assert.equal(await page.evaluate(() => styk.workspace.layout.shared.sizes.bottom), 388);
+    await page.evaluate(() => styk.workspace.reset());
+    await settle();
+  });
+
+  await step('the default Advanced timeline shows at least today’s layer rows under Camera and Scene', async () => {
+    // Today (1.1) the timeline shows 4.38 content rows at every size; the default keeps 4½ above 800px tall and four whole rows below.
+    for (const [width, height, least] of [[1440, 900, 4.38], [1280, 720, 4], [1024, 700, 4], [900, 700, 4], [960, 600, 4]]) {
+      await resize(width, height);
+      const rows = await page.evaluate(() => (styk.timeline.height - 32 - 2 * 32) / 32);
+      assert.ok(rows >= least, `${width}x${height}: ${rows} content rows`);
+    }
+    await resize(1440, 900);
   });
 
   await step('VFX floating and Library docked left keep Properties visible', async () => {
@@ -516,7 +547,7 @@ try {
     await settle();
     assert.equal(await page.locator('#timeline').evaluate(body => body.matches(':popover-open')), false);
     await resize(1440, 900);
-    assert.equal((await rect('.timeline-panel')).height, 264);
+    assert.equal((await rect('.timeline-panel')).height, 280);
   });
 
   await step('F6 moves focus from region to region', async () => {

@@ -21,7 +21,7 @@ import { applicationMenuItems } from "./application-menu.mjs";
 import { Editor } from "./editor.mjs";
 import { createRenderer,worldToScreen,screenToWorld } from "./renderer.mjs";
 import {DrawingController} from './drawing-controller.mjs';
-import { Timeline } from "./layer-timeline.mjs";
+import { Timeline, ROW as TIMELINE_ROW, HEADER as TIMELINE_RULER } from "./layer-timeline.mjs";
 import { SheetFilmstrip as SimpleTimeline } from "./sheet-filmstrip.mjs";
 import { OnionSkinCache } from "./onion-skin.mjs";
 import {hasPinnedIK} from './ik.mjs';
@@ -6566,6 +6566,8 @@ async function init() {
     platform: desktop ? "desktop" : "web",
     onError: (error) => status(error.message, true),
     onBeforeChange: () => finishCurrentEdit(),
+    // The painter's rows until M5 draws 24px Camera and Scene rows (dock-host.mjs).
+    timelineRows: { ruler: TIMELINE_RULER, pinnedRow: TIMELINE_ROW, row: TIMELINE_ROW },
   });
   workspaceLayout = shell.workspace;
   window.styk.workspace = workspaceLayout;

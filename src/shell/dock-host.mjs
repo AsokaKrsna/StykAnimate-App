@@ -29,7 +29,10 @@
  * Transitional (until the stage header and the hidden log of M3b): the
  * status bar under the workspace is passed to the solver as `footer`, and
  * the stage island's header row is measured (the canvas toolbar, plus
- * Build's bar) instead of the stage header's 40px.
+ * Build's bar) instead of the stage header's 40px. Until M5's painter draws
+ * 24px Camera and Scene rows and 28px short-tier rows, `timelineRows` (the
+ * painter's ruler and row heights) sizes the default timeline, so it shows
+ * the content rows it promises.
  */
 import {icon} from '../icons.mjs';
 import {PANEL_CATALOG, createPanelRegistry} from './panel-registry.mjs';
@@ -64,7 +67,7 @@ function browserStorage(win) {
  * host (see createDockHost), whose `workspace` is `window.styk.workspace`.
  */
 export async function installShell({document: doc = globalThis.document, window: win = globalThis.window, desktop,
-  legacy, platform, onError, onBeforeChange, catalog = PANEL_CATALOG} = {}) {
+  legacy, platform, onError, onBeforeChange, timelineRows, catalog = PANEL_CATALOG} = {}) {
   const registry = createPanelRegistry({catalog});
   const backend = desktop?.getWorkspacePreferences && desktop?.setWorkspacePreferences
     ? desktopLayoutBackend(desktop) : storageLayoutBackend(browserStorage(win));
@@ -74,15 +77,30 @@ export async function installShell({document: doc = globalThis.document, window:
     onError?.(error);
   }});
   await store.load();
-  return createDockHost({document: doc, window: win, registry, store, platform, onBeforeChange});
+  return createDockHost({document: doc, window: win, registry, store, platform, onBeforeChange, timelineRows});
+}
+
+/**
+ * SHELL_METRICS with the timeline painter's own heights ({ruler, pinnedRow,
+ * row} in px) in place of the solver's, so a default height holds the rows
+ * the painter really draws.
+ */
+export function paintedMetrics(timelineRows, metrics = SHELL_METRICS) {
+  if (!timelineRows) return metrics;
+  const {ruler, pinnedRow, row} = timelineRows;
+  const height = Object.fromEntries(Object.entries(metrics.height).map(([tier, value]) =>
+    [tier, {...value, timeline: {...value.timeline, ruler: ruler ?? value.timeline.ruler, row: row ?? value.timeline.row}}]));
+  return {...metrics, height, timeline: {...metrics.timeline, pinnedRow: pinnedRow ?? metrics.timeline.pinnedRow}};
 }
 
 /**
  * Applies solutions to the shell's DOM. `registry` is the panel registry
- * (panel-registry.mjs), `store` the layout store (loaded).
+ * (panel-registry.mjs), `store` the layout store (loaded), `timelineRows`
+ * the timeline painter's heights (see paintedMetrics).
  */
 export function createDockHost({document: doc = globalThis.document, window: win = globalThis.window, registry, store,
-  platform, onBeforeChange} = {}) {
+  platform, onBeforeChange, timelineRows} = {}) {
+  const metrics = paintedMetrics(timelineRows);
   const root = doc.documentElement;
   const app = doc.getElementById('app');
   const workspace = doc.querySelector('.workspace');
@@ -130,7 +148,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
     const below = footer && !footer.hidden ? footer.offsetHeight : 0;
     const head = viewport?.offsetParent === stage ? viewport.offsetTop : SHELL_METRICS.stageHead;
     return {width: app.clientWidth, height: app.clientHeight, mode: mode(), platform, footer: below,
-      bandMin: bandWatch?.current ?? 0, metrics: {...SHELL_METRICS, band: chrome, stageHead: head}};
+      bandMin: bandWatch?.current ?? 0, metrics: {...metrics, band: chrome, stageHead: head}};
   }
 
   /** Solves the stored layout (or a splitter's transient size) and applies it now. */
@@ -758,14 +776,19 @@ export function createDockHost({document: doc = globalThis.document, window: win
   }
 
   const tallSize = () => Math.floor(TALL_TIMELINE * (app.clientHeight || win.innerHeight));
+  // The stored timeline height before Expand (null: the default), which a second press restores.
+  let beforeTall = null;
   function isTall() {
     const stored = store.layout.shared.sizes.bottom;
     return stored != null && stored >= Math.min(tallSize(), solution?.aria.bottom?.max ?? Infinity) - 1;
   }
-  /** Tall timeline ↔ the default height: a size only, so playback and edits carry on. */
+  /** Tall timeline ↔ the height it had before (the user's or the default): a size only, so playback and edits carry on. */
   function toggleTall() {
     const tall = isTall();
-    store.update(layout => setSharedSize(layout, 'bottom', tall ? null : tallSize()));
+    if (!tall) beforeTall = store.layout.shared.sizes.bottom ?? null;
+    const next = tall ? beforeTall : tallSize();
+    if (tall) beforeTall = null;
+    store.update(layout => setSharedSize(layout, 'bottom', next));
     commit();
     return !tall;
   }
