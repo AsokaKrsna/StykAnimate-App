@@ -22,8 +22,29 @@
     grid-area: rail; position: relative; inset: auto; transform: none; align-self: start; justify-self: stretch;
     inline-size: auto; max-block-size: 100%; padding: 0 0 var(--space-1);
     border-color: transparent; background: transparent; box-shadow: none;
-    overflow-x: hidden; overflow-y: auto; scrollbar-width: none;
+    overflow-x: hidden; overflow-y: auto; scrollbar-width: auto;
   }
+  /* At the low height tier the tools tighten (a 32px pitch); a rail that still
+   * does not fit says so: the "more below" set, a 12px fade (the dock host
+   * writes data-more-below) and a drawn 6px scrollbar. */
+  :where(:root[data-height="low"]) .shell-rail { padding-block-end: 0; }
+  :where(:root[data-height="low"]) .shell-rail :where(.tool-dock, .rail-order) { gap: 2px; }
+  :where(:root[data-height="low"]) .shell-rail :where(.tool, .rail-add) { block-size: 30px; min-block-size: 30px; }
+  .shell-rail[data-more-below] { mask-image: linear-gradient(to bottom, black calc(100% - 12px), transparent); }
+  :where(.shell-rail, .drawing-quickbar .draw-quick-row)::-webkit-scrollbar { width: 6px; height: 6px; }
+  :where(.shell-rail, .drawing-quickbar .draw-quick-row)::-webkit-scrollbar-track { background: var(--surface-sunken); border-radius: 3px; }
+  :where(.shell-rail, .drawing-quickbar .draw-quick-row)::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb-hover); border-radius: 3px; }
+
+  /* Until M3b and M7b move it into the stage header, Draw's quick bar floats in
+   * #viewport (fittedView keeps the artboard under it). In a narrow stage it
+   * drops the tool's and the preset's names, then narrows its sliders
+   * (drawing-controller.mjs writes data-fit), before its row scrolls with the
+   * drawn scrollbar above, so no control is cut off. */
+  .drawing-quickbar :where(.draw-quick-row) { scrollbar-width: auto; }
+  .drawing-quickbar[data-fit] :where(.draw-quick-tool > span, .draw-quick-preset > span) { display: none; }
+  .drawing-quickbar[data-fit="tighter"] :where(.draw-slider.is-compact) { flex: none; min-inline-size: 0; padding-inline: var(--space-1-5); gap: var(--space-1); }
+  /* The view controls sit 8px from #viewport's corner (the artboard keeps 8px above them where it would reach them). */
+  :where(.shell-stage) .canvas-view-controls { inset: auto var(--space-2) var(--space-2) auto; }
 
   .shell-left { grid-area: left; }
   .shell-right { grid-area: right; }

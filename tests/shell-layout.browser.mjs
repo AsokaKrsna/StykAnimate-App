@@ -90,7 +90,9 @@ const reachable = selector => page.evaluate(selector => {
 /**
  * Controls that are drawn but cut off: outside the window, or clipped by an
  * ancestor that does not scroll to them. A control inside a scroller that
- * overflows (a list, the rail) is reachable by scrolling and not counted.
+ * overflows (a list, the rail) is reachable by scrolling and not counted, as
+ * long as the scroller draws its scrollbar: a hidden one buries what it clips
+ * (Draw's quick bar inside #viewport, the rail).
  */
 const cutOff = () => page.evaluate(() => {
   const found = [];
@@ -99,7 +101,8 @@ const cutOff = () => page.evaluate(() => {
     let left = box.left, top = box.top, right = box.right, bottom = box.bottom;
     for (let parent = element.parentElement; parent; parent = parent.parentElement) {
       const style = getComputedStyle(parent);
-      if (/(auto|scroll)/.test(style.overflowX + style.overflowY) && (parent.scrollHeight > parent.clientHeight + 1 || parent.scrollWidth > parent.clientWidth + 1)) return null;
+      if (/(auto|scroll)/.test(style.overflowX + style.overflowY) && style.scrollbarWidth !== 'none'
+        && (parent.scrollHeight > parent.clientHeight + 1 || parent.scrollWidth > parent.clientWidth + 1)) return null;
       const edge = parent.getBoundingClientRect();
       if (style.overflowX !== 'visible') { left = Math.max(left, edge.left); right = Math.min(right, edge.right); }
       if (style.overflowY !== 'visible') { top = Math.max(top, edge.top); bottom = Math.min(bottom, edge.bottom); }
@@ -177,15 +180,41 @@ try {
         const footer = document.querySelector('.statusbar').offsetHeight;
         // The painter's 32px Camera, Scene and short-tier rows (until M5) cost this much over the spec's default.
         const rows = Math.max(0, styk.workspace.solution.regions.bottom.size - specTimeline);
-        const zoom = extra => Math.min((viewport.width - inset.left - inset.right) / report.canvas_width,
-          (viewport.height + extra - inset.top - inset.bottom) / report.canvas_height, 2);
-        return {scale: styk.state.view.scale, expected: zoom(0), floor: zoom(footer + rows)};
+        // Until M3b moves them out of #viewport, the artboard keeps 8px clear of the view controls where it would reach them:
+        // left of them, or above them.
+        const cluster = document.querySelector('#viewport > .canvas-view-controls').getBoundingClientRect();
+        const reserve = Math.max(0, viewport.bottom - cluster.top + 8 - inset.bottom);
+        const room = cluster.left - 8 - viewport.left - inset.left;
+        const zoom = (extra, bottom = inset.bottom, across = viewport.width - inset.left - inset.right) => Math.min(across / report.canvas_width,
+          (viewport.height + extra - inset.top - bottom) / report.canvas_height, 2);
+        return {scale: styk.state.view.scale, expected: [zoom(0), zoom(0, inset.bottom + reserve), zoom(0, inset.bottom, room)], floor: zoom(footer + rows)};
       }, specTimeline);
       const label = `${width}x${height}: ${JSON.stringify(fit)}`;
-      assert.ok(Math.abs(fit.scale - fit.expected) < 0.005, `${label}: fitted with the solver's insets`);
+      assert.ok(fit.expected.some(expected => Math.abs(fit.scale - expected) < 0.005), `${label}: fitted with the solver's insets (above the view controls where it would reach them)`);
       assert.ok(fit.floor * 100 >= stageFloor(width, height) - 0.5, `${label}: at least ${stageFloor(width, height)}%`);
     }
     await resize(1440, 900);
+  });
+
+  await step('at fit nothing floats over the artboard: the view controls and Draw’s quick bar keep 8px clear', async () => {
+    for (const mode of ['animate', 'draw']) {
+      await workspace(mode);
+      for (const [width, height] of [[1440, 900], [1280, 720], [1024, 700], [800, 600], [640, 480], [500, 340]]) {
+        await resize(width, height);
+        await settle();   // a fitted view follows the window, and entering Draw refits it under the quick bar
+        const overlaps = await page.evaluate(() => {
+          const artboard = document.getElementById('artboard').getBoundingClientRect();
+          return [...document.querySelectorAll('#viewport > .canvas-view-controls, #viewport > .drawing-quickbar')]
+            .filter(element => element.checkVisibility())
+            .map(element => ({name: element.className, box: element.getBoundingClientRect()}))
+            .filter(({box}) => artboard.left < box.right + 8 && artboard.right > box.left - 8 && artboard.top < box.bottom + 8 && artboard.bottom > box.top - 8)
+            .map(({name, box}) => `${name} ${Math.round(box.left)}-${Math.round(box.right)} x ${Math.round(box.top)}-${Math.round(box.bottom)}`);
+        });
+        assert.deepEqual(overlaps, [], `${mode} ${width}x${height}`);
+      }
+    }
+    await resize(1440, 900);
+    await workspace('animate');
   });
 
   await step('no ancestor of #viewport transforms, zooms, filters or clips it, and #viewport is a plain rectangle', async () => {
@@ -302,6 +331,26 @@ try {
       assert.deepEqual(places[1], places[0], `${width}x${height}: Draw`);
       assert.deepEqual(places[2], places[0], `${width}x${height}: Build`);
     }
+    await resize(1440, 900);
+  });
+
+  await step('a rail that does not fit says more tools are below: a fade and a drawn scrollbar', async () => {
+    await resize(500, 340);
+    for (const [mode, more] of [['animate', false], ['rig', true]]) {
+      await workspace(mode);
+      const rail = await page.evaluate(() => {
+        const rail = document.querySelector('.shell-rail');
+        return {more: rail.hasAttribute('data-more-below'), overflows: rail.scrollHeight > rail.clientHeight + 1,
+          scrollbar: getComputedStyle(rail).scrollbarWidth, mask: getComputedStyle(rail).maskImage !== 'none'};
+      });
+      assert.deepEqual(rail, {more, overflows: more, scrollbar: 'auto', mask: more}, mode);
+      if (more) {
+        await page.evaluate(() => { const rail = document.querySelector('.shell-rail'); rail.scrollTop = rail.scrollHeight; });
+        await page.waitForFunction(() => !document.querySelector('.shell-rail').hasAttribute('data-more-below'));
+      }
+    }
+    await leaveBuild();
+    await workspace('animate');
     await resize(1440, 900);
   });
 

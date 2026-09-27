@@ -242,7 +242,15 @@ export class DrawingController {
     installDrawingSliders(palette,{get:key=>this.settings[key],set:(key,value)=>this.setSetting(key,value),end:()=>this.sliderEnded(),signal,wheel:true});
     return palette;
   }
-  createQuickBar(){const bar=document.createElement('div');bar.className='drawing-quickbar';bar.setAttribute('role','toolbar');bar.setAttribute('aria-label','Drawing tool options');bar.hidden=true;this.viewport.append(bar);return bar;}
+  createQuickBar(){const bar=document.createElement('div');bar.className='drawing-quickbar';bar.setAttribute('role','toolbar');bar.setAttribute('aria-label','Drawing tool options');bar.hidden=true;this.viewport.append(bar);
+    if(typeof ResizeObserver!=='undefined'){this._quickFit=new ResizeObserver(()=>this.fitQuickBar());this._quickFit.observe(this.viewport);}
+    return bar;}
+  /** Until the quick bar moves into the stage header (M3b, M7b): in a narrow stage it drops the tool's and preset's names,
+   * then narrows its sliders, before its row scrolls (with a drawn scrollbar), so no control is cut off. */
+  fitQuickBar(){
+    const bar=this.quickBar,row=bar?.querySelector('.draw-quick-row');if(!row||bar.hidden)return;
+    for(const fit of ['','tight','tighter']){if(fit)bar.dataset.fit=fit;else delete bar.dataset.fit;if(row.scrollWidth<=row.clientWidth+1)return;}
+  }
   queueQuickBar(){if(this.quickQueued)return;this.quickQueued=true;requestAnimationFrame(()=>{this.quickQueued=false;this.renderQuickBar();});}
   renderQuickBar(){
     const bar=this.quickBar;if(!bar)return;
@@ -251,7 +259,7 @@ export class DrawingController {
     if(bar.querySelector('.draw-slider.is-dragging,.draw-slider.is-editing'))return;
     // Compare with the last markup, not innerHTML (browsers normalize it), so
     // an unchanged bar is never rebuilt under the pointer.
-    const html=quickBarMarkup(this);if(this.quickHTML!==html){bar.innerHTML=html;this.quickHTML=html;}bar.hidden=false;
+    const html=quickBarMarkup(this);if(this.quickHTML!==html){bar.innerHTML=html;this.quickHTML=html;}bar.hidden=false;this.fitQuickBar();
   }
   /** Painting tools need a drawing layer. Rather than ignoring the first stroke,
    * switch to an editable drawing layer, or create one (its own undo step). */
@@ -1041,5 +1049,5 @@ export class DrawingController {
     }
     ctx.restore();
   }
-  destroy(){this.cancel();this.cancelSelection();this.events.abort();this.wet?.dispose();this.quickBar?.remove();this.hudElement?.remove();this.palette?.remove();this._viewObserver?.disconnect();this.owner?.dispose();}
+  destroy(){this.cancel();this.cancelSelection();this.events.abort();this.wet?.dispose();this.quickBar?.remove();this.hudElement?.remove();this.palette?.remove();this._viewObserver?.disconnect();this._quickFit?.disconnect();this.owner?.dispose();}
 }

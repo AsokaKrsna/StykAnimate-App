@@ -1109,22 +1109,45 @@ function simpleFrameCount() {
     ? timelineUI?.frameCount ?? 0
     : editor.frameDraft?.storedCount ?? editor.report.keyframes.length;
 }
+/** The chrome that still floats inside #viewport until M3b moves it into the stage header (fittedView keeps clear of it). */
+const viewportChrome = () => ({
+  bar: drawingController?.active && drawingController.quickBar && !drawingController.quickBar.hidden ? drawingController.quickBar : null,
+  cluster: [...viewport.querySelectorAll(":scope > .canvas-view-controls")].find((element) => element.checkVisibility()) ?? null,
+});
 function fittedView(r = editor.report) {
   // The layout solver's stage insets are pure clearance around the artboard
-  // (architecture §3.11.8). Until Draw's quick bar leaves #viewport (M3b),
-  // fitting also keeps the stage clear of it.
-  const rect = viewport.getBoundingClientRect(),
+  // (architecture §3.11.8). Until Draw's quick bar and the view controls leave
+  // #viewport (M3b), fitting also keeps the artboard 8px clear of them: under
+  // the quick bar, and where it would reach the view controls in the corner,
+  // left of them (moved off centre as little as it needs) or above them,
+  // whichever keeps it larger.
+  // Offsets land on whole pixels (crisp artboard edges; whole-pixel pans keep
+  // exact offsets), so the clearance from that chrome counts the half pixel.
+  const clear = 8.5,
+    rect = viewport.getBoundingClientRect(),
     inset = shell?.stageInsets() ?? { top: 24, right: 28, bottom: 24, left: 28 },
-    bar = drawingController?.active && drawingController.quickBar && !drawingController.quickBar.hidden ? drawingController.quickBar.offsetHeight + 8 : 0,
-    top = inset.top + bar,
-    width = rect.width - inset.left - inset.right,
-    height = rect.height - top - inset.bottom,
-    s = Math.max(0.01, Math.min(width / r.canvas_width, height / r.canvas_height, 2));
-  return {
-    scale: s,
-    x: inset.left + (width - r.canvas_width * s) / 2,
-    y: top + (height - r.canvas_height * s) / 2,
+    { bar, cluster } = viewportChrome(),
+    top = Math.max(inset.top, bar ? bar.getBoundingClientRect().bottom - rect.top + clear : 0),
+    width = rect.width - inset.left - inset.right;
+  const fitIn = (across, bottom) => {
+    const height = rect.height - top - bottom,
+      s = Math.max(0.01, Math.min(across / r.canvas_width, height / r.canvas_height, 2));
+    return { scale: s, x: Math.round(inset.left + (width - r.canvas_width * s) / 2), y: Math.round(top + (height - r.canvas_height * s) / 2) };
   };
+  const view = fitIn(width, inset.bottom);
+  const controls = cluster?.getBoundingClientRect();
+  if (!controls) return view;
+  const left = rect.left + view.x, right = left + r.canvas_width * view.scale,
+    lower = rect.top + view.y + r.canvas_height * view.scale;
+  if (!(left < controls.right + 8 && right > controls.left - 8 && lower > controls.top - 8)) return view;
+  const above = fitIn(width, Math.max(inset.bottom, rect.bottom - controls.top + clear));
+  const room = controls.left - clear - rect.left - inset.left;
+  if (!(room > 0)) return above;
+  const beside = fitIn(Math.min(width, room), inset.bottom);
+  if (beside.scale <= above.scale) return above;
+  // As centred as it can be while it ends 8px left of the view controls.
+  beside.x = Math.min(beside.x, Math.floor(controls.left - 8 - rect.left - r.canvas_width * beside.scale));
+  return beside;
 }
 // A fitted view follows viewport size changes (panel toggles, Build figure's
 // outliner, window resizes) until the user zooms or pans it.
@@ -6756,6 +6779,15 @@ async function init() {
     state.renderer = await createRenderer(canvas, {...rendererOptions(), forceCanvas2D: true, fallbackReason: error.message});
   }
   new ResizeObserver(resize).observe(viewport);
+  // Draw's quick bar appearing or changing size, or the view controls changing, refit a fitted view (fittedView keeps clear of them).
+  const chromeObserver = new ResizeObserver(() => {
+    if (!isFittedView()) return;
+    state.view = fittedView();
+    fittedSnapshot = { ...state.view };
+    placeArtboard();
+    requestRender();
+  });
+  for (const element of [drawingController?.quickBar, ...viewport.querySelectorAll(":scope > .canvas-view-controls")]) if (element) chromeObserver.observe(element);
   resize();
   fit();
   updateUI();

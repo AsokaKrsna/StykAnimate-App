@@ -934,6 +934,17 @@ export function createDockHost({document: doc = globalThis.document, window: win
 
   const resizeObserver = new win.ResizeObserver(() => commit());
   resizeObserver.observe(app);
+  // The rail's "more below" fade: on while tools wait below its fold (the low height tier, Build).
+  const rail = workspace.querySelector('.shell-rail');
+  const railMore = () => {
+    const more = rail.scrollHeight - rail.scrollTop - rail.clientHeight > 1;
+    if (rail.hasAttribute('data-more-below') !== more) rail.toggleAttribute('data-more-below', more);
+  };
+  const railObserver = rail ? new win.ResizeObserver(railMore) : null;
+  if (rail) {
+    for (const element of [rail, ...rail.children]) railObserver.observe(element);
+    rail.addEventListener('scroll', railMore, {passive: true, signal});
+  }
   // The band's widths change with its content (a name, a language, a session), never with the window.
   const bandWatch = band ? watchBand(band, {window: win, document: doc, onChange: () => schedule()}) : null;
   const modeObserver = new win.MutationObserver(modeChanged);
@@ -948,6 +959,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
     destroyed = true;
     abort.abort();
     resizeObserver.disconnect();
+    railObserver?.disconnect();
     modeObserver.disconnect();
     bandWatch?.stop();
     if (frame) win.cancelAnimationFrame(frame);
