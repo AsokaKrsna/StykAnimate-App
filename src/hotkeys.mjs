@@ -30,7 +30,7 @@ group('Tools', [
   ['isolate-hold', 'Hold to isolate joint', ['CapsLock'], {hold: true, extraShift: true}],
   ['toggle-isolate', 'Toggle joint isolation'],
   ['toggle-selection-origins', 'Rectangle selects figure origins'],
-  ['toggle-range-edit', 'Edit selected frames'],
+  ['toggle-range-edit', 'Edit together'],
   ['join-figure', 'Join / unjoin figure', ['KeyJ']],
 ]);
 group('Animation', [

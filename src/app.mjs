@@ -3575,7 +3575,7 @@ const menuOptions = {
 };
 /**
  * An application menu's rows. At the minimal tier the timeline header folds
- * Audio and Edit selected frames (as it folds First frame and Loop), so the
+ * Audio and Edit together (as it folds First frame and Loop), so the
  * Animation menu lists them there.
  */
 function appMenuItems(name) {
@@ -3585,7 +3585,7 @@ function appMenuItems(name) {
   const audio = $("timeline-audio"), range = $("range-edit");
   const folded = [
     { command: "toggle-audio", icon: "music", label: "Audio", checked: audio?.getAttribute("aria-expanded") === "true", hidden: !audio },
-    { command: "toggle-range-edit", icon: "frame", label: "Edit selected frames", checked: range?.getAttribute("aria-pressed") === "true",
+    { command: "toggle-range-edit", icon: "frame", label: "Edit together", checked: range?.getAttribute("aria-pressed") === "true",
       disabled: Boolean(range?.disabled), hidden: !range || builderMode?.active || drawingController?.active },
   ];
   items.splice(items.findIndex((item) => item?.command === "toggle-loop") + 1, 0, ...folded);
@@ -4783,7 +4783,7 @@ const hotkeys = new HotkeyManager({run: guarded(runKeyboardCommand), release: gu
 overlays.hotkeys = hotkeys;
 // The timeline island: its mount, its header's controls and what the header shows (src/timeline-host.mjs).
 timelineHost = createTimelineHost({
-  editor, state, $, actions, guarded, audioEngine, onionController, hotkeys, play, pause, finishKeyboardHandle, cancelDrag,
+  editor, state, $, actions, guarded, audioEngine, onionController, hotkeys, overlays, play, pause, finishKeyboardHandle, cancelDrag,
   cancelPolygonDraft, interruptRecovery, cancelWarmPlayback: () => clearTimeout(warmTimer), warmPlayback, scheduleRecovery,
   requestRender, queueUI, renderInspector, syncSelectionControls, rangeFrames, selectTrack, previewScrub, scrubAudio, stopAudioScrub,
   changeFigureLayer, runClipboardOperation, confirmDiscardFrame: dialogs.confirmDiscardFrame, simpleFrameCount, fail,
@@ -4838,9 +4838,7 @@ const commands = createCommandRegistry({
 function goToFrame(number) {
   if (drawingBusy()) return drawingController.afterGesture(() => goToFrame(number));
   pause();
-  if (state.settings.timelineMode === "simple")
-    return timelineUI.selectFrame(Math.min(Math.max(1, number), timelineUI.frameCount) - 1);
-  editor.seek(Math.min(Math.max(1, number), editor.totalTicks) - 1);
+  return timelineHost.goToFrame(number);
 }
 const byScore = (a, b) => b.match.score - a.match.score;
 /** The palette's "In this project" rows: the layers, and the figures on this frame (not in Draw). */

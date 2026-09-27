@@ -160,7 +160,7 @@ group('animation', [
   ['clear-keys', 'Remove keyframes', 'trash', {palette: false, danger: true}],
   ['toggle-loop', 'Loop playback', 'loop', {toggle: true, keywords: ['repeat']}],
   ['toggle-onion', 'Onion skin', 'onion', {toggle: true, keywords: ['ghost', 'previous frames']}],
-  ['toggle-range-edit', 'Edit selected frames', 'frame', {toggle: true, keywords: ['range', 'apply to frames']}],
+  ['toggle-range-edit', 'Edit together', 'frame', {toggle: true, keywords: ['range', 'apply to frames', 'edit selected frames']}],
   ['toggle-audio', 'Audio', 'music', {toggle: true, keywords: ['sound', 'music', 'track']}],
   ['timeline-layer-up', 'Select layer above', 'up', internal],
   ['timeline-layer-down', 'Select layer below', 'down', internal],

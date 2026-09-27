@@ -1,0 +1,133 @@
+/* The timeline island (experience.md §5.6, §5.7; architecture.md §3.14): the
+ * shared header in three clusters (timeline-header.mjs), the ruler's tools in
+ * their own column, the layer list's header (layer-timeline.mjs) and the band
+ * the tools take above Simple's cards (sheet-filmstrip.mjs).
+ *
+ * The header's controls carry the kit's classes (.ui-button, .ui-icon-button,
+ * .ui-split, .ui-segmented, .ui-slider); this sheet lays them out. The header
+ * hides what folds at the minimal tier and in Draw and Build itself (hidden);
+ * the frame rate's compact fold of layout/workspace.css is restated here. */
+@layer features {
+  /* The ruler tools' column (148 wide, 132 narrow, 116 compact and minimal): the Advanced grid ends before it. */
+  .timeline-panel { --ruler-tools-w: 148px; }
+  :where(:root[data-tier="narrow"]) .timeline-panel { --ruler-tools-w: 132px; }
+  :where(:root[data-tier="compact"], :root[data-tier="minimal"]) .timeline-panel { --ruler-tools-w: 116px; }
+
+  /* ---- The header: three clusters that never touch ---- */
+  .timeline-toolbar.tl-head {
+    display: grid; grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+    align-items: center; column-gap: var(--space-3);
+    padding-inline: var(--space-2); overflow: clip; white-space: nowrap;
+    border-block-end: 1px solid var(--line-1); background: var(--surface);
+  }
+  /* Each cluster keeps its whole width, so a header too narrow for them overflows (and folds its words) instead of overlapping. */
+  .tl-head > .tl-start, .tl-head > .tl-transport, .tl-head > .tl-end { display: flex; align-items: center; }
+  .tl-head > .tl-start { grid-column: 1; gap: var(--space-2); }
+  .tl-head > .tl-transport { grid-column: 2; }
+  .tl-head > .tl-end { grid-column: 3; justify-self: end; gap: var(--space-1); }
+  /* The ruler tools wait in the header only until the first mount moves them into the body. */
+  .tl-head > .tl-ruler-tools { display: none; }
+
+  .tl-mode { border: 0; }
+  .tl-mode > .ui-segmented-item { block-size: auto; }
+  .tl-frame-wrap, .tl-frame-tools { display: flex; align-items: center; gap: var(--space-1); }
+  .tl-add { inline-size: auto; }
+  .tl-add > .ui-label { display: inline; }
+  /* An audio clip's selection hides the frame commands (they act on frames, not clips), as before. */
+  .sheet-header-tools.audio-selection > .tl-frame-tools { display: none; }
+  .tl-add, .tl-together { --_px: var(--space-2-5); }
+  .tl-cel > .ui-button { --_px: var(--space-2); border-start-end-radius: 0; border-end-end-radius: 0; }
+  .tl-together > .ui-label { display: inline; }
+  .tl-together > .range-edit-count { font: var(--type-small-strong); font-variant-numeric: tabular-nums; color: var(--text-3); }
+  .tl-together[aria-pressed="true"] > .range-edit-count { color: inherit; }
+  /* Edit together is a quiet glyph while it cannot apply (select two or more frames first). */
+  .tl-together:disabled { --_px: 0; inline-size: var(--control-md); opacity: 1; color: var(--text-disabled); }
+  .tl-together:disabled > :is(.ui-label, .range-edit-count) { display: none; }
+
+  /* The transport: First frame, the steps, a soft Play disc, Loop, the readout and the frame rate. */
+  .tl-controls { display: flex; align-items: center; gap: var(--space-0-5); margin: 0; }
+  .tl-controls > .divider { display: none; }
+  .tl-controls > .tl-play { --_s: var(--control-lg); margin-inline: var(--space-0-5); }
+  .tl-controls > .tl-loop { margin-inline-start: var(--space-1); }
+  .tl-readout {
+    display: inline-flex; align-items: center; block-size: var(--control-md);
+    margin-inline-start: var(--space-1); padding: 0 var(--space-1-5);
+    border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-1);
+    font: var(--type-ui-strong); font-variant-numeric: tabular-nums; cursor: pointer;
+  }
+  .tl-readout:where(:hover, [aria-expanded="true"]) { background: var(--surface-hover); }
+  .tl-readout:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset); }
+  .tl-readout > span { min-inline-size: 0; margin: 0; font: inherit; color: inherit; }
+  .tl-controls > .tl-fps { display: inline-flex; align-items: center; gap: var(--space-0-5); padding-inline-end: var(--space-1-5); font: var(--type-small); color: var(--text-3); }
+  .tl-fps > input {
+    inline-size: 3.2ch; block-size: var(--control-sm); padding: 0 var(--space-0-5);
+    border: 0; border-radius: var(--radius-sm); background: transparent;
+    font: var(--type-small); color: var(--text-3); text-align: end; font-variant-numeric: tabular-nums;
+  }
+  .tl-fps > input:where(:hover, :focus) { background: var(--surface-sunken); color: var(--text-1); }
+  .tl-fps > input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 0; }
+
+  .tl-onion { margin: 0; padding: 0; border: 0; gap: 0; }
+  /* Audio's dot: only while the animation has sound. */
+  .tl-audio:where([data-has-audio="true"])::after {
+    inset: 5px 5px auto auto; inline-size: 6px; block-size: 6px;
+    border: 0; background: var(--success-dot); box-shadow: 0 0 0 1.5px var(--surface);
+  }
+
+  /* The words fold in order when the clusters would otherwise meet (timeline-header.mjs). */
+  .tl-head:where([data-fold~="together"]) .tl-together > :is(.ui-label, .range-edit-count),
+  .tl-head:where([data-fold~="cel"]) .tl-cel-main > .ui-label,
+  .tl-head:where([data-fold~="add"]) .tl-add > .ui-label {
+    position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .tl-head:where([data-fold~="together"]) .tl-together,
+  .tl-head:where([data-fold~="add"]) .tl-add { --_px: 0; inline-size: var(--control-md); }
+  /* Last, where even the glyphs do not fit, Next copy's commands lead Timeline ⋯. */
+  .tl-head:where([data-fold~="celmenu"]) .tl-cel { display: none; }
+
+  /* The frame rate folds at compact width (into the Scene's Rate), restated over this sheet's display. */
+  :where(:root[data-tier="compact"], :root[data-tier="minimal"]) .tl-head .tl-fps { display: none; }
+  /* Minimal: tighter gaps, the transport in the middle's free space, and Timeline… a row of Timeline ⋯. */
+  :where(:root[data-tier="minimal"]) .timeline-toolbar.tl-head { grid-template-columns: auto minmax(max-content, 1fr) auto; column-gap: var(--space-1); padding-inline: var(--space-1); }
+  :where(:root[data-tier="minimal"]) .tl-head .tl-readout { margin-inline-start: 0; padding-inline: var(--space-1); font: var(--type-small-strong); font-variant-numeric: tabular-nums; }
+  :where(:root[data-tier="minimal"]) .tl-mode > .ui-segmented-item { padding-inline: var(--space-2); }
+  :where(:root[data-tier="minimal"]) .tl-head > :is(.tl-start, .tl-end) { gap: var(--space-0-5); }
+
+  /* ---- The ruler's tools: zoom, Fit timeline, Tall timeline ---- */
+  .shell-timeline-body:where(:not(:popover-open)) { position: relative; }
+  .tl-ruler-tools {
+    position: absolute; inset: 0 0 auto auto; z-index: var(--z-sticky);
+    display: flex; align-items: center; justify-content: flex-end; gap: var(--space-0-5);
+    inline-size: var(--ruler-tools-w); block-size: var(--timeline-header); padding: 0 var(--space-1-5);
+    border: 0; border-radius: 0; background: var(--surface); box-shadow: none; opacity: 1;
+  }
+  .tl-ruler-tools > .tl-zoom { display: flex; align-items: center; gap: var(--space-1); min-inline-size: 0; }
+  .tl-zoom > .tl-zoom-glyph { display: inline-grid; color: var(--text-3); }
+  .tl-zoom-glyph > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); }
+  .tl-zoom > .ui-slider { inline-size: 64px; min-inline-size: 0; }
+  :where(:root[data-tier="narrow"]) .tl-zoom > .ui-slider { inline-size: 52px; }
+  :where(:root[data-tier="compact"], :root[data-tier="minimal"]) .tl-zoom > .ui-slider { inline-size: 40px; }
+  :where(:root[data-tier="compact"], :root[data-tier="minimal"]) .tl-zoom > .tl-zoom-glyph { display: none; }
+  /* Tall timeline means nothing while the timeline is folded to its header. */
+  :where(.shell-bottom[data-state="strip"]) .tl-ruler-tools > .tl-tall { display: none; }
+
+  /* Advanced: the grid, its playhead and overlays end before the tools' column. */
+  .layer-timeline .sheet-scroll { right: var(--ruler-tools-w); }
+  .layer-timeline :is(.sheet-playhead-clip, .vfx-timeline-overlay) { right: calc(var(--ruler-tools-w) + var(--sheet-scrollbar-y)); }
+  /* Simple: a band above the cards holds the tools (sheet-filmstrip.mjs TOOLS_BAND). */
+  .sheet-filmstrip .sheet-filmstrip-scroll { padding-block-start: var(--timeline-header); }
+  /* Simple while playing: the cards stay still and a thin line moves to where playback is (only its transform changes). */
+  .sheet-filmstrip .sheet-filmstrip-playhead {
+    inset-block: 0; inline-size: 2px; margin-inline-start: -1px; border-radius: 1px;
+    background: var(--accent); z-index: 2; pointer-events: none;
+  }
+
+  /* ---- The layer list's header: Layers, Focus, New layer and Find layers ---- */
+  .layer-timeline .sheet-label-head { gap: var(--space-0-5); padding-inline: var(--island-pad) var(--space-1); }
+  .sheet-label-head > .sheet-label-title { flex: 1; min-inline-size: 0; font: var(--type-small-strong); color: var(--text-3); }
+  .sheet-label-head > .sheet-new-layer > .ui-split-more { block-size: var(--control-sm); }
+
+  /* ---- Go to frame ---- */
+  .tl-goto { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); inline-size: 220px; }
+  .tl-goto > .tl-goto-meta { grid-column: 1 / -1; font: var(--type-small); color: var(--text-3); font-variant-numeric: tabular-nums; }
+}
