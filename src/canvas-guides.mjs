@@ -19,12 +19,12 @@ export class CanvasGuides {
     this.grid = this.overlay.firstElementChild;
     this.panel = document.createElement('div');
     this.panel.id = 'canvas-guides-panel';
-    this.panel.className = 'canvas-guides-panel';
+    this.panel.className = 'canvas-guides-panel ui-popover';
     this.panel.setAttribute('popover', 'auto');
     this.panel.setAttribute('role', 'dialog');
     this.panel.setAttribute('aria-label', 'Guides and grid');
     const visibility = (key, name) => `<label class="guide-icon-toggle" title="${name}"><input type="checkbox" data-setting="${key}" aria-label="${name}">${icon('eye')}</label>`;
-    this.panel.innerHTML = `<header><strong>Guides & grid</strong><button type="button" class="guide-close" aria-label="Close guides and grid" title="Close">${icon('close')}</button></header>
+    this.panel.innerHTML = `<header class="ui-popover-head"><strong class="ui-popover-title">${icon('grid')}Guides & grid</strong><button type="button" class="ui-popover-close guide-close" aria-label="Close guides and grid" title="Close">${icon('close')}</button></header>
       <section aria-label="Guides">
         <div class="guide-section-head"><span>Guides</span><div class="guide-actions">
           <label class="guide-icon-toggle" title="Lock guides"><input type="checkbox" data-setting="canvasGuidesLocked" aria-label="Lock guides">${icon('lock')}</label>
@@ -34,7 +34,7 @@ export class CanvasGuides {
         <div class="guide-control-row"><span class="guide-axis horizontal-axis">${icon('line')}<span>Horizontal</span></span><label class="guide-value"><input type="number" data-position="Y" min="0" step="1" aria-label="Horizontal guide position"><small>px</small></label>${visibility('canvasGuideHorizontal', 'Show horizontal guide')}</div>
       </section>
       <section aria-label="Grid">
-        <div class="guide-section-head"><span class="guide-grid-title">${icon('grid')}Grid</span>${visibility('canvasGrid', 'Show grid')}</div>
+        <div class="guide-section-head"><span class="guide-grid-title">Grid</span>${visibility('canvasGrid', 'Show grid')}</div>
         <label class="guide-control-row"><span>Cell size</span><span class="guide-value"><input type="number" min="4" max="1000" step="1" data-setting="canvasGridSpacing" aria-label="Grid cell size"><small>px</small></span></label>
         <label class="guide-control-row guide-opacity"><span>Opacity</span><input type="range" min="0.05" max="0.6" step="0.01" data-setting="canvasGridOpacity" aria-label="Grid opacity"><output class="guide-opacity-value"></output></label>
       </section>`;
