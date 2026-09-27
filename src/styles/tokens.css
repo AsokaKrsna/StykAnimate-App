@@ -606,7 +606,7 @@
      CANVAS-READ TOKENS - concrete colours per theme.
      Read with getComputedStyle(root).getPropertyValue() by:
        layer-timeline.mjs  --sheet-{surface,hover,line,ink,muted,accent,selected,span,tween,
-                           camera-accent,camera-tint,scene-accent,scene-tint}
+                           camera-accent,camera-tint,scene-accent,scene-tint,cell,cell-tween,cell-empty,cell-selected}
        audio-timeline.mjs  --audio-ink, --audio-fill
      and by the planned UI-layer `canvasChromeTheme` (--canvas-*) and the
      timeline painter update (--sheet-* marked NEW, --layer-*).
@@ -637,6 +637,10 @@
     --sheet-scene-tint: var(--violet-50);
     /* NEW - read after the painter update */
     --sheet-row-alt: var(--mist-100);         /* every 5th frame's column */
+    --sheet-cell: var(--mist-250);            /* a frame cell holding a pose */
+    --sheet-cell-tween: var(--violet-50);     /* a frame cell inside a tween: time's violet, softly */
+    --sheet-cell-empty: var(--mist-100);      /* a blank frame cell, or one before the layer's first key */
+    --sheet-cell-selected: rgba(13, 153, 255, 0.2);  /* a selected cell, clear of the current row's tint */
     --sheet-hatch: rgba(12, 13, 18, 0.05);
     --sheet-end: var(--slate-500);            /* the end line: 3.59 [paper] */
     --sheet-playhead: var(--blue-550);        /* 1.5px line needs 3:1: 3.63 on white */
@@ -698,6 +702,10 @@
     --sheet-scene-accent: var(--violet-500);
     --sheet-scene-tint: var(--violet-900);
     --sheet-row-alt: var(--ink-750);
+    --sheet-cell: var(--ink-650);
+    --sheet-cell-tween: var(--violet-900);
+    --sheet-cell-empty: var(--ink-750);
+    --sheet-cell-selected: rgba(13, 153, 255, 0.34);
     --sheet-hatch: rgba(255, 255, 255, 0.04);
     --sheet-end: var(--slate-450);
     --sheet-playhead: var(--blue-500);
@@ -814,6 +822,7 @@
       --sheet-ink: CanvasText; --sheet-muted: CanvasText; --sheet-accent: Highlight; --sheet-selected: Canvas;
       --sheet-span: GrayText; --sheet-tween: GrayText; --sheet-playhead: Highlight; --sheet-playhead-ink: HighlightText; --sheet-playhead-tab: Highlight; --sheet-cel: Canvas; --sheet-cel-line: CanvasText;
       --sheet-end: CanvasText; --sheet-hatch: GrayText; --sheet-key-outline: CanvasText;
+      --sheet-cell: Canvas; --sheet-cell-tween: Canvas; --sheet-cell-empty: Canvas; --sheet-cell-selected: Highlight;
       --canvas-selection: Highlight;
       --canvas-label-bg: CanvasText; --canvas-label-text: Canvas; --canvas-muted: GrayText;
       --sheet-camera-accent: CanvasText; --sheet-camera-tint: Canvas; --sheet-scene-accent: CanvasText; --sheet-scene-tint: Canvas;
