@@ -35,7 +35,9 @@ Click a cell to select it; Shift extends the selection. Double-click a held or e
 
 A Hold span displays one pose. Editing a held cell edits its preceding key; press A first to make a new pose. Choose “Insert blank keyframe” in the frame menu to intentionally clear the layer. Add Frame inserts a key at the selected cell; when every selected layer already holds a key there, it instead duplicates the current pose into the following cell and shifts later keys. A key placed beyond a layer's end carries its last exposure forward to reach it. Blank cells draw as outlined spans with open-circle keys. Simple mode duplicates all scene layers, including Camera and Scene. Each duplication is one undo step. Choose Linear or an easing curve to interpolate between keys. An edit within a tween creates a key at the playhead. Camera and Scene tracks are always visible above the figure layers, each with its own color and icon. Frame menus contain frame operations; layer menus contain naming, visibility, locking and layer operations. Delete and Cut remove time rather than authoring blank cells.
 
-Simple Add frame copies the current complete scene to the end. While an animation plays, Simple's cards stay still: a thin line moves to where playback is (only its transform changes; no card renders and no layout is read), and when playback stops the card it stopped in is selected and scrolled into view. The green slider below each preview changes its inbetweens. The Inbetweens field applies to all selected scene frames, and Tweening (or a double-click on a preview) opens the easing controls, including editable Bezier curves. These edits change all layers together. Edits made in either view are visible immediately in the other.
+Simple Add frame copies the current complete scene to the end. Simple shows each scene frame as a card (`sheet-filmstrip.mjs`, experience.md §5.6): the whole-scene thumbnail on a white rounded card (the current and selected cards outlined in blue), the number, and one duration bar whose length is the hold on the strip's shared scale (the longest hold fills its card). The current card, a hovered one and a bar being dragged say their count in words ("6 · 5 inbetweens"); the other cards show their number only, and the current card's number carries a dot while its working copy is edited. Drag a bar's end to hold that frame longer or shorter, by whole inbetweens, one undo step at release (a click on the bar changes nothing; Escape cancels); the bar's range input ("Frame N inbetweens") carries the value for the keyboard. While an animation plays, the cards stay still: a short line moves along the bars to where playback is (only its transform changes; no card renders and no layout is read), and when playback stops the card it stopped in is selected and scrolled into view.
+
+The Simple frame bar sits in the label column's place: "Frame 6 of 8 · holds 0.25 s" and the whole length in time ("2.0 s in all", its tooltip counting the timeline frames with the inbetweens); **Inbetweens** (a stepper: − and + step every selected card, typing sets them all); **Easing** (today's six modes; Mixed when the selected cards differ; choosing one applies it, and a double-click on a card opens the easing popover with its Bezier handles); **Copy**, **Paste** and Delete frames; **Edit together** (the header's command and state, which Simple shows here instead of in the header); and the layer Simple edits ("Layer ● Bubble ▾", `#layers-button`), which opens the **Layers** popover: the layers top first with their colour, eye and lock, a click choosing the layer new figures go into, and New layer and Drawing layer at its foot. At compact width the bar is one column; at the short height tier its first line drops. These edits change all layers together. Edits made in either view are visible immediately in the other.
 
 Apply camera to figures preserves the projected pose at the selected sheet keys.
 Those new poses participate in the layer's interpolation, so neighboring tweens
@@ -85,7 +87,7 @@ The browser test performs real cell/keyboard interactions, mode switches, and bi
 
 The browser also checks key and cross-layer dragging, layer reordering, rename, locks and compact layouts. Regression cases cover exact-cell inspector ranges, imported segment-style repair after rig edits, blank Camera/Scene cells, camera baking, and Stick Nodes projects containing nested movieclips.
 
-The polish checks exercise the green sliders, multi-frame inbetweens, preset and custom easing, menu contents and keyboard dismissal, opening-frame insertion, cut, exact undo, and keeping the current scene frame selected when earlier timing changes.
+The polish checks exercise the duration bars, multi-frame inbetweens, preset and custom easing, menu contents and keyboard dismissal, opening-frame insertion, cut, exact undo, and keeping the current scene frame selected when earlier timing changes.
 
 Behavior references: [Adobe frames](https://helpx.adobe.com/animate/desktop/animation/frames-keyframes.html), [Pivot frames](https://www.pivotanimator.net/help5-2/animation_frame_controls.htm), [Stick Nodes movieclips](https://sticknodes.com/new-version-3-0-0-the-movieclip-update/).
 
@@ -159,8 +161,9 @@ curve to the selected layers' outgoing keys (including the exposure containing
 the range start). Simple retains its whole-scene boundary isolation. Each apply
 is one undo step. Both use the same preset/custom Bezier editor; locked selections
 cannot apply changes. Advanced has no persistent easing selector; Simple also exposes easing in its
-left sidebar.
-Inbetween sliders remain duration controls, independent of easing.
+frame bar. The card menu keeps to the selected frames (Change easing…, Copy, Cut and Paste frames,
+Delete frames; Unlock layers while they are locked); Add frame's home is the header.
+Duration bars remain duration controls, independent of easing.
 
 Middle-button drag pans without changing selection or document data. The ruler's
 zoom control changes Advanced time scale or Simple thumbnail width; Simple audio

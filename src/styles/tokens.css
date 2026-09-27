@@ -414,7 +414,7 @@
     --kind-figure: var(--tint-select);
     --kind-movieclip: var(--tint-library);
     --kind-project: var(--tint-time);
-    --hold: var(--mint-500);                  /* filmstrip hold bar fill: the site's timing signature */
+    --hold: var(--slate-500);                 /* filmstrip duration bar: neutral, 3.59 [surface]; the current frame uses --accent-line */
     --hold-line: var(--mint-700);             /* 1px hold-bar edge: 5.08 [surface] */
     --easing-ink: var(--tint-time-ink);
     --easing-soft: var(--tint-time-soft);
@@ -560,7 +560,7 @@
     --tint-export-ink: var(--lime-900);
     --on-export: var(--ink-900);
 
-    --hold: var(--mint-500);
+    --hold: var(--slate-550);                 /* 4.20 [surface] */
     --hold-line: var(--mint-500);
     --badge-accent: var(--blue-600);
     --badge-time: var(--violet-600);

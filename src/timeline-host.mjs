@@ -94,6 +94,9 @@ export function createTimelineHost(ctx) {
       onCancel: () => ctx.drawing()?.cancel(),
       onionController: ctx.onionController,
       onAddFrame: () => actions["add-frame"](),
+      // The Simple frame bar's Edit together switch runs the header's command; syncRangeEdit writes its state.
+      onToggleRangeEdit: () => actions["toggle-range-edit"](),
+      localizationText: (key, params) => ctx.localization?.()?.t?.(key, params) ?? key,
       onDeleteLayer: id => ctx.changeFigureLayer('Delete layer',options=>editor.deleteLayerAsync(id,options)),
       hotkeys: ctx.hotkeys,
       runClipboardOperation: ctx.runClipboardOperation,
@@ -229,6 +232,7 @@ export function createTimelineHost(ctx) {
     setText(range.querySelector('.range-edit-count'), count > 1 ? String(count) : '');
     setAttr(range, 'data-hotkey-title', sayTimeline(null, count > 1 ? 'timeline.editTogetherReady' : 'timeline.editTogetherIdle', {count}));
     header.setEditTogether({oneFrame: editor.totalTicks < 2, ready: !range.disabled});
+    timeline?.setEditTogether?.({ready: !range.disabled, on: !range.disabled && state.applyRange});
     refreshHotkeyHints(ctx.hotkeys, range.closest('.timeline-toolbar') ?? range.parentElement);
   }
 

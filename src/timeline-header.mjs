@@ -6,7 +6,8 @@
  *   start      Simple │ Advanced, Add frame (one button for both modes), in
  *              Advanced on a drawing layer the Next copy split, and Edit
  *              together (#range-edit: a quiet glyph while it cannot apply,
- *              its word while it can; not shown on a one-frame file)
+ *              its word while it can; not shown on a one-frame file, and in
+ *              Simple it is the frame bar's switch instead)
  *   transport  First frame, previous, Play, next, Loop, the readout (a click
  *              opens Go to frame) and the frame rate (#fps, an inline field)
  *   end        Onion (a split button), Audio (a dot while the animation has
@@ -332,14 +333,15 @@ export function createTimelineHeader(ctx, host) {
   // ---- Tier and workspace folds (the header's buttons carry the kit's display, so it hides them itself) ----
   const first = controls.querySelector('[data-action="first-frame"]');
   const workspace = document.querySelector('.workspace');
-  let oneFrame = false;
+  let oneFrame = false, simple = false;
   function syncFolds() {
     const minimal = document.documentElement.dataset.tier === 'minimal', mode = workspace?.dataset.mode;
     for (const button of [first, loop, audio]) setHidden(button, minimal);
     // Without the timeline stylesheet the header keeps today's sizes, which leave no room for Timeline ⋯ at the
     // minimal width; its rows are the Animation menu's there (Last frame, the key jumps, and the folded buttons).
     setHidden(menuButton, minimal && !styled);
-    if (setHidden(range, minimal || oneFrame || mode === 'rig' || mode === 'draw')) requestFold();
+    // In Simple, Edit together is the frame bar's switch (sheet-filmstrip.mjs), the same command and state.
+    if (setHidden(range, simple || minimal || oneFrame || mode === 'rig' || mode === 'draw')) requestFold();
   }
 
   // ---- Folding ----
@@ -366,6 +368,8 @@ export function createTimelineHeader(ctx, host) {
   if (workspace) tiers.observe(workspace, {attributes: true, attributeFilter: ['data-mode']});
   syncFolds();
 
+  function setSimple(value) { if (value !== simple) { simple = value; syncFolds(); } }
+
   // ---- What the components and the host tell the header ----
   let shownCel = false, shownReady = null;
   return {
@@ -383,6 +387,7 @@ export function createTimelineHeader(ctx, host) {
       setAttr(fit, 'data-tooltip', simple ? say('timeline.fitFilmstrip') : say('timeline.fitTip'));
       timeline.container.append(rulerTools);
       if (simple) this.setNextCopy({shown: false});
+      setSimple(simple);
       requestFold();
     },
     /** Add frame's state from the component: Blank frame on a drawing layer (Advanced), disabled on locked layers. */

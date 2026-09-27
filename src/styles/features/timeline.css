@@ -1,7 +1,10 @@
 /* The timeline island (experience.md §5.6, §5.7; architecture.md §3.14): the
  * shared header in three clusters (timeline-header.mjs), the ruler's tools in
- * their own column, the layer list's header (layer-timeline.mjs) and the band
- * the tools take above Simple's cards (sheet-filmstrip.mjs).
+ * their own column, the layer list's header (layer-timeline.mjs), and the
+ * Simple timeline (sheet-filmstrip.mjs): the band the tools take above the
+ * cards, the frame bar, the frame cards and the Layers popover. The frame card
+ * (.ui-frame-card, components.md "Filmstrip") lives here because only the
+ * Simple timeline draws it.
  *
  * The header's controls carry the kit's classes (.ui-button, .ui-icon-button,
  * .ui-split, .ui-segmented, .ui-slider); this sheet lays them out. The header
@@ -116,11 +119,6 @@
   .layer-timeline :is(.sheet-playhead-clip, .vfx-timeline-overlay) { right: calc(var(--ruler-tools-w) + var(--sheet-scrollbar-y)); }
   /* Simple: a band above the cards holds the tools (sheet-filmstrip.mjs TOOLS_BAND). */
   .sheet-filmstrip .sheet-filmstrip-scroll { padding-block-start: var(--timeline-header); }
-  /* Simple while playing: the cards stay still and a thin line moves to where playback is (only its transform changes). */
-  .sheet-filmstrip .sheet-filmstrip-playhead {
-    inset-block: 0; inline-size: 2px; margin-inline-start: -1px; border-radius: 1px;
-    background: var(--accent); z-index: 2; pointer-events: none;
-  }
 
   /* ---- The layer list's header: Layers, Focus, New layer and Find layers ---- */
   .layer-timeline .sheet-label-head { gap: var(--space-0-5); padding-inline: var(--island-pad) var(--space-1); }
@@ -130,4 +128,150 @@
   /* ---- Go to frame ---- */
   .tl-goto { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); inline-size: 220px; }
   .tl-goto > .tl-goto-meta { grid-column: 1 / -1; font: var(--type-small); color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+  /* ==== The Simple timeline ==== */
+  /* The frame card: the thumbnail, framed as today on a white rounded card (the current and the selected cards
+   * outlined in the accent), the number with the current or hovered card's count in words ("6 · 5 inbetweens"),
+   * and one duration bar whose length is the hold. No easing pins, partial marks or ghost card (visual-system.md). */
+  .ui-frame-card {
+    display: grid; grid-template-rows: auto auto auto; justify-items: center; align-content: start; row-gap: var(--space-1);
+    box-sizing: border-box; padding: var(--space-2) var(--space-1-5) 0;
+    border: 0; background: none; box-shadow: none; color: var(--text-3);
+  }
+  .ui-frame-thumb {
+    position: relative; display: block; inline-size: 100%; block-size: auto; aspect-ratio: 5 / 3;
+    margin: 0; padding: 0; overflow: hidden; border: 0; border-radius: var(--radius-md);
+    background: var(--artboard-placeholder); cursor: default; outline: none;
+  }
+  .ui-frame-thumb > canvas { display: block; inline-size: 100%; block-size: 100%; object-fit: contain; }
+  /* The card's line sits over the thumbnail (a canvas would cover an inset shadow). */
+  .ui-frame-thumb::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    box-shadow: inset 0 0 0 1px var(--line-2); transition: box-shadow var(--dur-fast) var(--ease-out);
+  }
+  .ui-frame-card:where(:hover) .ui-frame-thumb::after { box-shadow: inset 0 0 0 1px var(--line-3); }
+  .ui-frame-card:where([data-selected="true"], [data-current="true"]) .ui-frame-thumb::after { box-shadow: inset 0 0 0 2px var(--accent-line); }
+  .ui-frame-thumb:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: 2px; }
+
+  .ui-frame-num {
+    position: relative; max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: var(--type-micro); font-variant-numeric: tabular-nums; color: var(--text-3);
+  }
+  .ui-frame-card:where([data-current="true"]) .ui-frame-num { color: var(--accent-text); }
+  /* The count in words: on the current card, a hovered one and a bar being dragged. */
+  .ui-frame-count { display: none; color: var(--text-3); font-weight: var(--weight-medium); }
+  .ui-frame-card:where([data-current="true"], :hover, [data-dragging]) .ui-frame-count { display: inline; }
+  /* The working copy's edited dot, before the number. */
+  .ui-frame-num[data-edited]::before {
+    content: ""; display: inline-block; inline-size: 6px; block-size: 6px; margin-inline-end: var(--space-1);
+    border-radius: 50%; background: var(--accent-line); vertical-align: 1px;
+  }
+
+  /* The duration bar: its length is the hold on the strip's shared scale (the longest hold full), neutral; the
+   * current frame's in the accent. Its 25px row is the drag target; the range input inside only carries the value
+   * for the keyboard (the card's slider name), so it takes no pointer. */
+  .ui-frame-hold {
+    position: relative; display: block; justify-self: stretch; block-size: 25px;
+    margin: calc(-1 * var(--space-1)) var(--space-1) 0; cursor: ew-resize; touch-action: none;
+  }
+  .ui-frame-hold::before {
+    content: ""; position: absolute; inset-block-start: 11px; inset-inline-start: 0; block-size: 3px;
+    inline-size: clamp(6px, var(--hold-w, 0%), 100%); border-radius: 1.5px; background: var(--hold);
+  }
+  .ui-frame-card:where([data-current="true"]) .ui-frame-hold::before { background: var(--accent-line); }
+  /* The grip at the bar's end: drag it to hold the frame longer. */
+  .ui-frame-hold::after {
+    content: ""; position: absolute; inset-block-start: 8px; block-size: 9px;
+    inset-inline-start: calc(clamp(6px, var(--hold-w, 0%), 100%) - 1.5px);
+    inline-size: 3px; border-radius: 1.5px; background: var(--accent-line); opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease-out);
+  }
+  .ui-frame-card:where(:hover, [data-current="true"], [data-dragging]) .ui-frame-hold::after,
+  .ui-frame-hold:focus-within::after { opacity: 1; }
+  .ui-frame-hold-input {
+    position: absolute; inset: 0; inline-size: 100%; block-size: 100%; margin: 0; padding: 0;
+    appearance: none; background: transparent; opacity: 0; pointer-events: none;
+  }
+  .ui-frame-hold:has(:focus-visible) { outline: var(--focus-width) solid var(--focus-ring); outline-offset: -6px; border-radius: var(--radius-xs); }
+  .ui-frame-hold:has(:disabled) { cursor: default; }
+  .ui-frame-hold:has(:disabled)::before { opacity: 0.5; }
+
+  @media (forced-colors: active) {
+    .ui-frame-card:where([data-selected="true"], [data-current="true"]) .ui-frame-thumb::after { box-shadow: inset 0 0 0 2px Highlight; }
+    .ui-frame-hold::before, .ui-frame-hold::after, .ui-frame-num[data-edited]::before { background: CanvasText; }
+  }
+
+  /* The island: the frame bar in the label column's place, then the strip of cards, which scrolls sideways under the
+   * tools' band with a thin scrollbar. The frame bar is 372px in two columns ("Frame 6 of 8 · holds 0.25 s" and the
+   * whole length on its first line), one 212px column at compact width, and drops its first line at the short tier. */
+  .sheet-filmstrip { background: var(--surface); color: var(--text-1); font: var(--type-ui); }
+
+  /* ---- The frame bar ---- */
+  .sheet-filmstrip > .sheet-framebar {
+    flex: none; box-sizing: border-box; inline-size: 372px;
+    display: grid; grid-auto-rows: max-content; align-content: start; justify-content: stretch; row-gap: var(--space-2);
+    padding: var(--space-2-5) var(--space-3) var(--space-2) var(--island-pad);
+    overflow: hidden auto; border: 0; border-inline-end: 1px solid var(--line-1); background: var(--surface);
+  }
+  .sheet-framebar > .sheet-framebar-title {
+    display: flex; align-items: baseline; gap: var(--space-2); min-inline-size: 0; margin: 0;
+    white-space: nowrap; font: var(--type-ui); color: var(--text-1);
+  }
+  .sheet-framebar-title > strong { font: var(--type-ui-strong); }
+  .sheet-framebar-title > .sheet-framebar-meta { font: var(--type-small); color: var(--text-3); cursor: default; }
+  .sheet-framebar-title > .sheet-framebar-total { margin-inline-start: auto; }
+  .sheet-framebar > .sheet-framebar-grid {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: var(--space-2) var(--space-3);
+  }
+  .sheet-framebar-grid > .sheet-framebar-row { min-block-size: var(--control-md); gap: var(--space-2); min-inline-size: 0; }
+  .sheet-framebar-row > .ui-row-label { color: var(--text-3); }
+  .sheet-framebar-row > .ui-stepper { block-size: var(--control-md); }
+  .sheet-framebar-stepper > .ui-stepper-input { inline-size: 36px; min-inline-size: 36px; }
+  .sheet-framebar-grid > .ui-field { inline-size: 100%; }
+  .sheet-framebar-grid > .sheet-framebar-actions {
+    display: flex; align-items: center; justify-content: flex-start; gap: var(--space-1); margin: 0 0 0 calc(-1 * var(--space-1));
+  }
+  .sheet-framebar-actions > .ui-button { --_px: var(--space-2); color: var(--text-2); }
+  .sheet-framebar-actions > .ui-icon-button { --_s: var(--control-md); }
+  .sheet-framebar > .sheet-framebar-layer {
+    --_px: var(--space-2); justify-self: start; justify-content: flex-start; gap: var(--space-1-5);
+    max-inline-size: calc(100% + var(--space-2)); margin-inline-start: calc(-1 * var(--space-2));
+  }
+  .sheet-framebar-layer > .ui-dot { margin-inline-start: var(--space-0-5); }
+  .sheet-framebar-layer > .sheet-framebar-layer-name { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
+  .sheet-framebar-layer > .sheet-framebar-chev { inline-size: 12px; block-size: 12px; color: var(--text-3); }
+  /* Compact and minimal width: one 212px column; the whole length leaves the first line. */
+  :where(:root[data-tier="compact"], :root[data-tier="minimal"]) .sheet-filmstrip > .sheet-framebar { inline-size: 212px; row-gap: var(--space-1-5); }
+  :where(:root[data-tier="compact"], :root[data-tier="minimal"]) .sheet-framebar > .sheet-framebar-grid { grid-template-columns: minmax(0, 1fr); gap: var(--space-1-5); }
+  :where(:root[data-tier="compact"], :root[data-tier="minimal"]) .sheet-framebar-title > .sheet-framebar-total { display: none; }
+  /* The short height tier: the first line drops, the rows keep their room. */
+  :where(:root[data-height="short"], :root[data-height="low"]) .sheet-framebar > .sheet-framebar-title { display: none; }
+  :where(:root[data-height="short"], :root[data-height="low"]) .sheet-filmstrip > .sheet-framebar { padding-block: var(--space-2) var(--space-1-5); row-gap: var(--space-1-5); }
+
+  /* ---- The strip ---- */
+  .sheet-filmstrip > .sheet-filmstrip-scroll {
+    scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; background: var(--surface);
+  }
+  .sheet-filmstrip-spacer > .sheet-filmstrip-card { inset-block: 0 auto; inline-size: var(--filmstrip-card); gap: 0; row-gap: var(--space-1); }
+  .sheet-filmstrip-card > .sheet-frame-number { font-size: inherit; }
+  /* While playing the cards stay still: a short line moves along their duration bars to where playback is (only its
+   * transform changes; sheet-filmstrip.mjs BAR_INSET matches the card's and the bar's insets). */
+  .sheet-filmstrip-spacer > .sheet-filmstrip-playhead {
+    inset-block: calc(var(--space-2) + (var(--filmstrip-card) - 2 * var(--space-1-5)) * 0.6 + 25px) auto;
+    inline-size: 2px; block-size: 13px; margin-inline-start: -1px; border-radius: 1px;
+    background: var(--accent-line); z-index: 2; pointer-events: none;
+  }
+
+  /* ---- The Layers popover ---- */
+  .tl-layers-popover .ui-popover-body { padding-block: var(--space-1); }
+  .tl-layers-list { display: grid; gap: var(--space-0-5); min-inline-size: 240px; }
+  .tl-layers-row { padding-inline-start: var(--space-1); }
+  .tl-layers-row > .tl-layers-pick {
+    display: flex; align-items: center; gap: var(--space-2); flex: 1 1 auto; min-inline-size: 0; block-size: 100%;
+    padding: 0 var(--space-1-5); border: 0; border-radius: var(--radius-sm); background: none; color: inherit; font: inherit; text-align: start;
+  }
+  .tl-layers-pick:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+  .tl-layers-pick[aria-pressed="true"] > .ui-list-row-label { font-weight: var(--weight-semibold); }
+  .tl-layers-pick > .tl-layers-kind { inline-size: var(--icon-sm); block-size: var(--icon-sm); flex: none; color: var(--text-3); }
+  .tl-layers-popover .ui-popover-foot { justify-content: flex-start; gap: var(--space-1); }
 }

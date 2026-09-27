@@ -1,6 +1,7 @@
 /**
- * The timeline's own words (timeline-header.mjs and the layer list's header in
- * layer-timeline.mjs), in English. Components ask the app's localization first
+ * The timeline's own words (timeline-header.mjs, the layer list's header in
+ * layer-timeline.mjs, the Simple frame bar and cards in sheet-filmstrip.mjs and
+ * the Layers popover), in English. Components ask the app's localization first
  * (sayTimeline) and fall back to these, so the timeline reads the same with or
  * without a catalog that knows the keys.
  */
@@ -51,6 +52,45 @@ const TEXT = Object.freeze({
   'timeline.fitTip': 'Fit timeline: the whole animation in view',
   'timeline.fitFilmstrip': 'Fit every frame',
   'timeline.tall': 'Tall timeline: more rows, a smaller stage (double-click the splitter for the default height)',
+  'filmstrip.frameBar': 'Frame',
+  'filmstrip.frameOf': 'Frame {frame} of {total}',
+  'filmstrip.holds': 'holds {seconds} s',
+  'filmstrip.total': '{seconds} s in all',
+  'filmstrip.totalTip': '{seconds} s in all: {ticks} timeline frames at {fps} fps, with the inbetweens',
+  'filmstrip.inbetweens': 'Inbetweens',
+  'filmstrip.inbetweensName': 'Frame inbetweens',
+  'filmstrip.fewer': 'Fewer inbetweens',
+  'filmstrip.more': 'More inbetweens',
+  'filmstrip.mixed': 'Mixed',
+  'filmstrip.easing': 'Easing',
+  'filmstrip.easingName': 'Frame easing',
+  'filmstrip.copy': 'Copy',
+  'filmstrip.copyName': 'Copy frames',
+  'filmstrip.paste': 'Paste',
+  'filmstrip.pasteName': 'Paste frames',
+  'filmstrip.deleteName': 'Delete frames',
+  'filmstrip.together': 'Edit together',
+  'filmstrip.togetherTip': 'Edit together: edits on the canvas change every selected frame',
+  'filmstrip.togetherReason': 'Edit together: select two or more frames first (Shift-click a card)',
+  'filmstrip.layer': 'Layer',
+  'filmstrip.layerTip': 'Layers: show, hide and lock them, and choose the one new figures go into',
+  'filmstrip.card': 'Frame {frame}',
+  'filmstrip.count': '{count} inbetweens',
+  'filmstrip.countOne': '1 inbetween',
+  'filmstrip.cardTip': 'Frame {frame} · {count} · double-click for easing',
+  'filmstrip.holdName': 'Frame {frame} inbetweens',
+  'filmstrip.holdTip': 'Frame {frame}: {count} · drag to hold it longer or shorter',
+  'filmstrip.edited': 'Edited: click the frame again to keep or discard the changes',
+  'layers.title': 'Layers',
+  'layers.close': 'Close layers',
+  'layers.list': 'Layers in this animation',
+  'layers.choose': 'Use {name} for new figures',
+  'layers.hide': 'Hide {name}',
+  'layers.show': 'Show {name}',
+  'layers.lock': 'Lock {name}',
+  'layers.unlock': 'Unlock {name}',
+  'layers.newLayer': 'New layer',
+  'layers.drawingLayer': 'Drawing layer',
 });
 export default TEXT;
 

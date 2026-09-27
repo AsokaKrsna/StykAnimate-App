@@ -56,8 +56,8 @@ try {
   await preview(1).click();await preview(2).click({modifiers:['Shift']});await preview(1).click({button:'right'});
   assert.deepEqual(await page.evaluate(()=>styk.timeline.selectedFrameIndices),[0,1]);
   const menu=page.getByRole('menu');
-  assert.deepEqual((await menu.getByRole('menuitem').allTextContents()).map(text=>text.trim()),['Change easing…','Add FrameA','Copy framesCtrl+C','Cut framesCtrl+X','Paste framesCtrl+V','Delete framesDelete / Backspace']);
-  assert.equal(await menu.locator('button .icon').count(),6);
+  assert.deepEqual((await menu.getByRole('menuitem').allTextContents()).map(text=>text.trim()),['Change easing…','Copy framesCtrl+C','Cut framesCtrl+X','Paste framesCtrl+V','Delete framesDelete / Backspace']);
+  assert.equal(await menu.locator('button .icon').count(),5);
   const box=await menu.boundingBox();assert.ok(box.height<220&&box.y>=0&&box.y+box.height<=960);
   await page.screenshot({path:'artifacts/timeline-simple-menu.png'});
   await menu.press('Escape');assert.equal(await menu.count(),0);

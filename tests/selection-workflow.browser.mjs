@@ -142,7 +142,8 @@ try {
     await page.keyboard.press('Control+z');await settle();check(mode+' range movement undoes atomically',JSON.stringify(await frames())===JSON.stringify(before));
     await page.locator('#apply-range-movement').uncheck();await settle();check(mode+' inspector updates the toolbar',await page.locator('#range-edit').getAttribute('aria-pressed')==='false');
     await page.screenshot({path:out+'/'+mode+'-range.png'});
-    await page.locator('#range-edit').click();
+    // Simple's Edit together is the frame bar's switch; Advanced's is the header's button (one state).
+    if(mode==='simple')await page.getByRole('switch',{name:'Edit together',exact:true}).click();else await page.locator('#range-edit').click();
     if(mode==='simple')await page.evaluate(()=>styk.timeline.selectFrame(1));
     else await page.evaluate(()=>styk.editor.seek(10));
     await settle();
