@@ -33,7 +33,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Show error messages above open dialogs instead of behind them, where you can close them, and keep them clear of the canvas's view buttons. A failed save, export or import stays until you close it; other messages go on their own.
 - Stop menus from switching tools while you type in them: letters now jump to the matching command. The Properties ⋯ menu opens again.
 - Show What's new and the first-run privacy choice one after the other at startup, never on top of an open menu or dialog.
-- Press Enter to confirm a new project name. Dialogs such as "Save your changes?" now start on their main field or button instead of Close.
+- Press Enter to confirm a new project name. Prompts such as "Save changes?" start on their main field or button instead of Close, open over another dialog without replacing it, and let you pick a recent file or a Stick Nodes asset with the arrow keys and Enter.
 
 ## [1.1.0]
 
