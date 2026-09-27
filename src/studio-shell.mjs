@@ -103,5 +103,3 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
   sync();
   return {sync, destroy: () => controller.abort()};
 }
-
-export {mountExportFlow} from './export-panel.mjs';

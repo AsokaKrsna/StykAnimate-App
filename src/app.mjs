@@ -2,9 +2,9 @@ import {installSpatialControls,drawSpatialGizmo,spatialGizmoDrag,updateSpatialGi
 import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
 import {drawingMetadata} from './drawing-model.mjs';
 import {builderStrokeAppearance, setBuilderStroke, copyBuilderAppearance, pasteBuilderAppearance} from './builder-appearance.mjs';
-import {rigControlChange, drawRigGuides, drawConnectorGuides} from './rig-controls.mjs';
+import {drawRigGuides, drawConnectorGuides} from './rig-controls.mjs';
 import {displayedSegmentPaint,displayedColor} from './figure-colors.mjs';
-import {openSurfaceReference,changeSurfaceSide} from './builder-surface-ui.mjs';
+import {openSurfaceReference} from './builder-surface-ui.mjs';
 import {openRigTest, openRigExamples} from './rig-test-ui.mjs';
 import {bucketRegion, pickFigureFill, drawFillHighlight} from './builder-fill.mjs';
 import {figureJoinAction, joinTargetUids} from './figure-join-action.mjs';
@@ -30,12 +30,6 @@ import { OnionController } from "./onion-controller.mjs";
 import { ThumbnailRenderer } from "./thumbnail-renderer.mjs";
 import { BackgroundDialog } from "./background-dialog.mjs";
 import { ImportClient } from "./import-client.mjs";
-import { encodeWebM } from "./video-export.mjs";
-import { encodeNativeVideo } from "./native-video-export.mjs";
-import { encodeVfwVideo } from "./vfw-video-export.mjs";
-import { VfwExportControls } from "./vfw-export-controls.mjs";
-import { getExportCapabilities, exportFormat } from "./export-capabilities.mjs";
-import { videoQualityOptions } from "./export-video-quality.mjs";
 import { PlaybackCache } from "./playback.mjs";
 import {playbackWindow,playbackLookaheadSize,playbackStartupWindow} from './playback-window.mjs';
 import {PlaybackUploadWarmup,PlaybackUploadAhead} from './playback-upload.mjs';
@@ -50,7 +44,6 @@ import { DesktopTelemetryClient } from './telemetry-core.mjs';
 import { workload, documentComplexity } from './telemetry-workload.mjs';
 import { sizeBucket,complexityBucket,fpsBucket } from './telemetry-schema.mjs';
 import { writeBrowserRecovery } from './browser-recovery.mjs';
-import { openExportSink as openExportSinkRaw } from './export-sink.mjs';
 import { PrivacyUI } from './privacy-ui.mjs';
 import { FeedbackUI } from './feedback-ui.mjs';
 import { UpdateUI } from './update-ui.mjs';
@@ -67,25 +60,16 @@ import {
   builderShowsStaticHandles,
   drawBuilderHighlight,
 } from "./builder-aids.mjs";
-import { materializeSimpleFrameDraftForPivot } from "./pivot-frame-draft.mjs";
 import { installNativeFrameClipboard } from "./frame-clipboard-storage.mjs";
 import { ClipboardWorkerClient } from "./clipboard-worker-client.mjs";
-import { exportAnimation } from "./image-export.mjs";
-import { defaultGIFDither } from "./gif-options.mjs";
-import { ExportFrameRenderer } from "./export-frame-renderer.mjs";
-import { exportProgressMarkup, mountExportProgress } from "./export-progress.mjs";
-import { checkExportContext } from "./export-canvas.mjs";
-import {
-  EXPORT_MAX_PIXELS,
-  EXPORT_SMOOTHING,
-  normalizeExportSmoothing,
-} from "./export-sampling.mjs";
 import { installShell } from "./shell/dock-host.mjs";
 import { createDockKeyboard } from "./shell/dock-keyboard.mjs";
 import { installDockTabs } from "./shell/dock-tabs.mjs";
 import { createLayoutPopover } from "./shell/layout-popover.mjs";
 import { installShellCommands } from "./shell/shell-commands.mjs";
-import { initStudioShell, mountExportFlow } from "./studio-shell.mjs";
+import { initStudioShell } from "./studio-shell.mjs";
+import { createExportFlow } from "./export-flow.mjs";
+import { createAppDialogs } from "./app-dialogs.mjs";
 import { dragSlop, beyondSlop, installPenMenuGuard } from "./pen-input.mjs";
 import { initBuilderMode } from "./builder-mode.mjs";
 import { inspectorView } from "./inspector-view.mjs";
@@ -152,7 +136,7 @@ import { createCommandPalette } from "./ui/command-palette.mjs";
 import { kitText } from "./ui/ui-strings.mjs";
 import { installTooltips } from "./ui/ui-tooltip.mjs";
 import { withShiftHint } from "./ui/quick-actions.mjs";
-import { buildGeometry, evaluatedFrame, shortest } from "./pivot/geometry.mjs";
+import { buildGeometry, evaluatedFrame } from "./pivot/geometry.mjs";
 import {
   cameraIsIdentity,
   gradientAngleFromBackground,
@@ -344,7 +328,6 @@ let drawingController, timelineUI, timelineHost,
   vfxGizmos,
   editorSettings,
   appLocalization,
-  vfwExportControls,
   shell,
   workspaceLayout,
   assetLibrary,
@@ -368,18 +351,10 @@ let warmTimer = null,
 const playbackMetrics = new PlaybackMetrics();
 const playbackCadence = new PlaybackCadence();
 let presentationDeadline = null;
-async function openExportSink(options){
-  const enabled=telemetry.consent.diagnostics,context=enabled?telemetry.performance.context():null,epoch=telemetry.epoch,started=enabled?performance.now():0;
-  const onTiming=(metric,ms)=>{if(epoch===telemetry.epoch)telemetry.performance.record(metric,ms,context);};
-  const sink=await openExportSinkRaw({...options,...(enabled?{onTiming}:{})});
-  if(enabled)onTiming('dialog',performance.now()-started);
-  return sink;
-}
 function writeNativeBlob(bridge,blob,options={}){
   const context=telemetry.consent.diagnostics?telemetry.performance.context():null,epoch=telemetry.epoch;
   return writeNativeBlobRaw(bridge,blob,{...options,...(context?{onTiming:(metric,ms)=>{if(epoch===telemetry.epoch)telemetry.performance.record(metric,ms,context);}}:{})});
 }
-const exportTelemetry = new WeakMap();
 const telemetry = new DesktopTelemetryClient(desktop, { getContext: () => ({
   mode: state.settings.timelineMode, locale: state.settings.locale,
   playing: state.playing,
@@ -3010,37 +2985,6 @@ async function api(path, options = {}) {
   }
   return response;
 }
-async function confirmReplace() {
-  finishCurrentEdit();
-  if (!editor.dirty) return true;
-  return new Promise((resolve) => {
-    showDialog(
-      "Save your changes?",
-      `<p>Your current project has unsaved changes. Save a StykAnimate project to keep editing it later.</p><div class="dialog-actions"><button class="button" id="keep-editing">Cancel</button><button class="button" id="discard-changes">Discard</button><button class="button primary" id="save-changes">Save project</button></div>`,
-    );
-    // Escape, the close button and Cancel all close the shared dialog; each
-    // settles as "keep editing". The listener is removed once a choice lands.
-    const dialog = $("dialog"),
-      settle = (replace) => {
-        dialog.removeEventListener("close", keep);
-        resolve(replace);
-      },
-      keep = () => settle(false);
-    dialog.addEventListener("close", keep);
-    $("keep-editing").onclick = closeDialog;
-    $("discard-changes").onclick = () => {
-      settle(true);
-      closeDialog();
-    };
-    $("save-changes").onclick = guarded(async () => {
-      const saved = await saveNative();
-      if (saved) {
-        settle(true);
-        closeDialog();
-      }
-    });
-  });
-}
 async function acceptImport(
   result,
   name,
@@ -3066,7 +3010,7 @@ async function acceptImport(
       replaceApproved.draftRevision === editor.frameDraftRevision &&
       !editor._drag &&
       !editor._animationEdit;
-    if (!approvalCurrent && !(await confirmReplace())) return false;
+    if (!approvalCurrent && !(await dialogs.confirmReplace())) return false;
     let initialScene;
     try {
       await editor.loadAsync(
@@ -3133,7 +3077,7 @@ async function acceptImport(
     }
   }
   state.lastImportWarnings = [...(result.warnings || report._styk?.sticknodes?.warnings || []), ...(report.import_warnings || [])];
-  if(state.lastImportWarnings.length)showDialog(report.import_warnings?.length ? 'Pivot import notes' : 'Stick Nodes import notes',`<p>The asset is ready to edit. These source features may look or behave differently:</p><ul>${state.lastImportWarnings.map(w=>`<li>${esc(w.message)}</li>`).join('')}</ul>`);
+  if(state.lastImportWarnings.length)dialogs.showImportNotes(state.lastImportWarnings, {pivot: Boolean(report.import_warnings?.length)});
   state.lastImport = result.timings || null;
   const ms = result.timings?.total_ms ?? result.timings?.decode_ms;
   status(
@@ -3280,13 +3224,7 @@ async function chooseSticknodesFile(file,isCurrent=()=>true) {
   let result=await importer.importFile(file,{onProgress});
   if(!isCurrent())return null;
   if(result.kind==='sticknodes-archive'){
-    const index=await new Promise(resolve=>{
-      showDialog('Choose a Stick Nodes asset',`<p>This pack contains ${result.entries.length} assets.</p><select id="sticknodes-archive-entry" style="width:100%" size="12">${result.entries.map(e=>`<option value="${e.index}">${esc(e.name)}</option>`).join('')}</select><div class="dialog-actions"><button id="sticknodes-archive-open" class="primary">Import selected asset</button></div>`);
-      const dialog=$('dialog'),select=$('sticknodes-archive-entry');select.selectedIndex=0;
-      const cancel=()=>{dialog.removeEventListener('close',cancel);resolve(null);};
-      dialog.addEventListener('close',cancel,{once:true});
-      $('sticknodes-archive-open').onclick=()=>{const index=Number(select.value);dialog.removeEventListener('close',cancel);dialog.close();resolve(index);};
-    });
+    const index=await dialogs.chooseSticknodesEntry(result.entries);
     if(index===null||!isCurrent())return null;
     result=await importer.importFile(file,{entryIndex:index,onProgress});
   }
@@ -3395,57 +3333,6 @@ async function openSample(path) {
   status("Decoding Pivot file…", false, true);
   try { await acceptImport(await importer.openSample(path)); } catch (error) { throw persistentFailure(error); }
 }
-async function saveBlob(blob, filename, signal) {
-  const measurement = signal && exportTelemetry.get(signal), writeStarted = performance.now();
-  measurement?.onProgress?.({phase: 'saving'});
-  measurement?.releaseRenderer?.();
-  if (measurement) {
-    measurement.context.size = sizeBucket(blob.size);
-    telemetry.timing('export_ms', writeStarted - measurement.started);
-    telemetry.operation({ ...measurement.context, operation: 'export', stage: 'encode', outcome: 'succeeded' }, writeStarted - measurement.started);
-    measurement.stage = 'write';
-  }
-  let saved;
-  if (desktop) {
-    saved = await writeNativeBlob(desktop, blob, {
-      signal,
-      defaultPath: filename,
-      filters: [
-        {
-          name: filename.split(".").at(-1).toUpperCase(),
-          extensions: [filename.split(".").at(-1)],
-        },
-      ],
-    });
-  } else {
-  const url = URL.createObjectURL(blob),
-    a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
-    saved = true;
-  }
-  if (measurement) telemetry.operation({ ...measurement.context, operation: 'export', stage: 'write', outcome: saved ? 'succeeded' : 'cancelled' }, performance.now() - writeStarted);
-  return saved;
-}
-/** Route an encoder result to its saved state: a Blob goes through the
- * classic save path; a sink finish() result is already on disk. */
-async function finishExport(output, filename, signal) {
-  const blob = output instanceof Blob ? output : output?.blob;
-  if (blob) return saveBlob(blob, filename, signal);
-  const measurement = signal && exportTelemetry.get(signal), finished = performance.now();
-  if (measurement) {
-    measurement.context.size = sizeBucket(output?.size ?? 0);
-    telemetry.timing('export_ms', finished - measurement.started);
-    telemetry.performance.record('encode',finished-measurement.started);
-    telemetry.operation({ ...measurement.context, operation: 'export', stage: 'encode', outcome: 'succeeded' }, finished - measurement.started);
-    measurement.stage = 'write';
-    measurement.releaseRenderer?.();
-    telemetry.operation({ ...measurement.context, operation: 'export', stage: 'write', outcome: output?.saved ? 'succeeded' : 'cancelled' }, 0);
-  }
-  return Boolean(output?.saved);
-}
 async function saveNative({ saveAs = false } = {}) {
   finishCurrentEdit();await drawingController?.barrier();
   while(editor._movieclipScopes?.length){await drawingBarrier(editor.report);editor.leaveMovieclip();}
@@ -3467,7 +3354,7 @@ async function saveNative({ saveAs = false } = {}) {
             defaultPath: `${name || "Untitled"}.styk`,
             filters: [{ name: "StykAnimate project", extensions: ["styk"] }],
           })
-        : saveBlob(blob, `${name || "Untitled"}.styk`, signal),
+        : exportFlow.saveBlob(blob, `${name || "Untitled"}.styk`, signal),
     );
   } catch (error) {
     if (error.name === "AbortError") {
@@ -3499,363 +3386,6 @@ async function saveNative({ saveAs = false } = {}) {
       editor.frameDraftRevision === draftRevision &&
       !editor.dirty,
   );
-}
-async function exportPivot(format = "piv") {
-  finishCurrentEdit();
-  interruptRecovery();
-  status(`Writing .${format}…`, false, true);
-  const filename = `${["stk", "stkz", "stykmov"].includes(format) ? nameOf(editor.object) : editor.name || "Untitled"}.${format}`;
-  let saved;
-  try {
-    saved = await runDocumentExport(format, (blob, signal) =>
-      saveBlob(blob, filename, signal),
-    );
-  } catch (error) {
-    if (error.name === "AbortError") {
-      status("Export cancelled");
-      return;
-    }
-    throw error;
-  }
-  if (saved) {
-    status(`Exported .${format}`);
-    toast(
-      `Your ${["stk", "stkz", "stykmov"].includes(format) ? "figure" : "animation"} was exported as .${format}.`,
-    );
-  }
-  closeDialog();
-}
-function exportOptions({ animation = true } = {}) {
-  const number = (id, fallback) => ($(id) ? Number($(id).value) : fallback);
-  const options = {
-    width: number("export-width", editor.report.canvas_width),
-    height: number("export-height", editor.report.canvas_height),
-    start: number("export-start", 1) - 1,
-    end: number("export-end", editor.totalTicks),
-    quality: $("export-quality")?.closest('label').hidden ? 0.94 : number("export-quality", 94) / 100,
-    dither: $("export-gif-dither")?.checked ?? defaultGIFDither(editor.report),
-    smoothing: normalizeExportSmoothing(
-      $("export-smoothing")?.value || "edges",
-    ),
-  };
-  if (
-    !Number.isInteger(options.width) ||
-    !Number.isInteger(options.height) ||
-    options.width < 1 ||
-    options.height < 1 ||
-    options.width > 16384 ||
-    options.height > 16384 ||
-    options.width * options.height > EXPORT_MAX_PIXELS
-  )
-    throw new Error(
-      `Export size must be whole pixels, up to ${Math.round(EXPORT_MAX_PIXELS / 1e6)} million pixels per frame.`,
-    );
-  if (
-    animation &&
-    (!Number.isInteger(options.start) ||
-      !Number.isInteger(options.end) ||
-      options.start < 0 ||
-      options.start >= options.end ||
-      options.end > editor.totalTicks)
-  )
-    throw new Error("Choose a valid export frame range.");
-  if (
-    !Number.isFinite(options.quality) ||
-    options.quality < 0.01 ||
-    options.quality > 1
-  )
-    throw new Error("Quality must be between 1 and 100 percent.");
-  return options;
-}
-/** Keep rendering off the UI thread and cancel the whole job if its document changes. */
-async function withExportRenderer(
-  options,
-  report,
-  render,
-  { frames = 1, title = "Exporting animation", format = 'unknown', fps, passes = 1, start = options.start ?? editor.tick } = {},
-) {
-  if ([...exportJobs].some(job => job.raster)) throw new Error('An export is already running. Wait for it to finish or cancel it.');
-  pause();
-  interruptRecovery();
-  // Drop speculative playback pixels while keeping the editable document and
-  // active scene. Workers reload their disposable cache when playback resumes.
-  editablePreparation.cancel();
-  state.editingPacket = null;
-  playback.invalidate();
-  state.renderer?.clearPreparedFrames?.();
-  const controller = new AbortController(),
-    job = { controller, recovery: false, raster: true },
-    source = editor.report;
-  exportJobs.add(job);
-  const measurement = { started: performance.now(), stage: 'prepare', context: telemetry.consent.diagnostics ? workload({ format, report, fps }) : {} };
-  telemetry.count('export_started'); exportTelemetry.set(controller.signal, measurement);
-  let frameRenderer;
-  showDialog(
-    title,
-    exportProgressMarkup,
-  );
-  const progress = $("export-progress"),
-    dialog = $("dialog"),
-    cancel = () => controller.abort();
-  const onClose = () => {
-    if (!dialog.open || !progress.isConnected) cancel();
-  };
-  const progressUI = mountExportProgress($("dialog-content"), {frames, passes, start}, cancel);
-  measurement.onProgress = value => progressUI.update(value);
-  measurement.releaseRenderer = () => frameRenderer?.dispose();
-  dialog.addEventListener("close", onClose);
-  try {
-    frameRenderer = new ExportFrameRenderer({
-      width: options.width,
-      height: options.height,
-      smoothing: options.smoothing,
-      baseURL: importer.baseURL,
-      token: importer.token,
-      signal: controller.signal,
-      onFrame: ({stage, tick}) => stage === 'rendering' ? progressUI.frameStarted(tick) : progressUI.frameRendered(),
-      getRevision: () =>
-        editor.report === source
-          ? `${editor.revision}:${editor.frameDraftRevision}`
-          : "replaced",
-    });
-    await frameRenderer.load(report);
-    measurement.stage = 'encode';
-    const saved = await render(
-      frameRenderer,
-      controller.signal,
-      value => {
-        progressUI.update(value);
-        // Every consumer has acknowledged the last frame. Release raster pixels
-        // and the worker's document before container assembly and file writing.
-        if (value.completed === frames * passes) frameRenderer.dispose();
-      },
-    );
-    telemetry.count(saved ? 'export_succeeded' : 'export_cancelled');
-    telemetry.operation({ ...measurement.context, operation: 'export', stage: 'complete', outcome: saved ? 'succeeded' : 'cancelled' }, performance.now() - measurement.started);
-    if (saved) telemetry.milestone('first_export');
-    return saved;
-  } catch (error) {
-    telemetry.count(error.name === 'AbortError' ? 'export_cancelled' : 'export_failed');
-    telemetry.operation({ ...measurement.context, operation: 'export', stage: 'complete', outcome: error.name === 'AbortError' ? 'cancelled' : 'failed' }, performance.now() - measurement.started);
-    if (error.name !== 'AbortError') telemetry.error(error, 'export', { ...measurement.context, stage: measurement.stage });
-    if (error.name === "AbortError") {
-      status("Export cancelled");
-      return false;
-    }
-    throw persistentFailure(error);
-  } finally {
-    frameRenderer?.dispose();
-    progressUI.dispose();
-    exportTelemetry.delete(controller.signal);
-    exportJobs.delete(job);
-    dialog.removeEventListener("close", onClose);
-    if (progress.isConnected) closeDialog();
-  }
-}
-async function exportPNG() {
-  telemetry.count('export_png');
-  finishCurrentEdit();
-  const options = exportOptions({ animation: false }),
-    frame = currentFrame(),
-    filename = `${editor.name}-frame-${editor.tick + 1}.png`;
-  await withExportRenderer(
-    options,
-    editor.report,
-    async (renderer, signal) => {
-      const canvas = await renderer.renderFrame(frame);
-      const blob = await new Promise((resolve) =>
-        canvas.toBlob(resolve, "image/png"),
-      );
-      checkExportContext(renderer.context);
-      if (!blob) throw new Error("PNG export failed.");
-      if (signal.aborted)
-        throw new DOMException("Export cancelled.", "AbortError");
-      const saved = await saveBlob(blob, filename, signal);
-      if (saved) status("PNG exported");
-      return saved;
-    },
-    { title: "Exporting frame", format: 'png', start: editor.tick },
-  );
-}
-async function exportSVGFrame() {
-  telemetry.count('export_svg');
-  finishCurrentEdit();
-  const options = {
-      ...exportOptions({ animation: false }),
-      smoothing: "edges",
-    },
-    frame = currentFrame(),
-    filename = `${editor.name}-frame-${editor.tick + 1}.svg`;
-  await withExportRenderer(
-    options,
-    editor.report,
-    async (renderer, signal) => {
-      const blob = await renderer.renderSVGFrame(frame);
-      const saved = await saveBlob(blob, filename, signal);
-      if (saved) status("SVG exported");
-      return saved;
-    },
-    { title: "Exporting vector frame", format: 'svg', start: editor.tick },
-  );
-}
-async function exportImages(format) {
-  telemetry.count(format.startsWith('svg') ? 'export_svg' : format.startsWith('gif') ? 'export_gif' : format.startsWith('jpeg') ? 'export_jpeg' : 'export_png');
-  finishCurrentEdit();
-  const options = exportOptions(),
-    report =
-      state.settings.timelineMode === "simple"
-        ? materializeSimpleFrameDraftForPivot(editor.report)
-        : editor.report,
-    ticks = options.end - options.start,
-    fps = report.frame_delay_ms ? 1000 / report.frame_delay_ms : report.fps,
-    extension = format.endsWith("sequence")
-      ? "zip"
-      : format === "apng"
-        ? "png"
-        : "gif",
-    filename = `${editor.name}${format.endsWith("sequence") ? "-" + format : ""}.${extension}`,
-    loop = state.loop;
-  if (format === "svg-sequence") options.smoothing = "edges";
-  if ([...exportJobs].some(job => job.raster)) throw new Error('An export is already running. Wait for it to finish or cancel it.');
-  // Streamed exports pick their destination up front, then write while encoding.
-  const sink = await openExportSink({
-    filename,
-    mimeType: exportFormat(format)?.mimeType,
-    desktop,
-  });
-  if (!sink) {
-    telemetry.count('export_cancelled');
-    return false;
-  }
-  try {
-    return await withExportRenderer(
-      options,
-      report,
-      async (renderer, signal, onProgress) => {
-        sink.signal = signal;
-        const output = await exportAnimation({
-          format,
-          width: options.width,
-          height: options.height,
-          quality: options.quality,
-          dither: options.dither,
-          fps,
-          totalFrames: ticks,
-          loop,
-          signal,
-          onProgress,
-          sink,
-          renderFrame: (index) => renderer.renderTick(index + options.start),
-          renderSVGFrame: (index) =>
-            renderer.renderSVGTick(index + options.start),
-        });
-        const saved = await finishExport(output, filename, signal);
-        if (saved) status("Animation exported");
-        return saved;
-      },
-      { frames: ticks, format: format === 'apng' ? 'png' : format.split('-')[0], fps, passes: format === 'gif' ? 2 : 1 },
-    );
-  } catch (error) {
-    await sink.abort().catch(() => {});
-    throw error;
-  }
-}
-async function exportVideo(format = "webm") {
-  telemetry.count('export_video');
-  finishCurrentEdit();
-  const vfw = format === "vfw" ? vfwExportControls.getOptions() : null;
-  const codec = $(`export-${format}-codec`)?.value || undefined;
-  const nativeWebm =
-    format === "webm" &&
-    document.querySelector('[data-action="export-video"]')?.dataset.provider ===
-      "FFmpeg";
-  const options = exportOptions(),
-    report =
-      state.settings.timelineMode === "simple"
-        ? materializeSimpleFrameDraftForPivot(editor.report)
-        : editor.report,
-    ticks = options.end - options.start,
-    fps = report.frame_delay_ms ? 1000 / report.frame_delay_ms : report.fps,
-    extension = format === "vfw" ? "avi" : format,
-    filename = `${editor.name}.${extension}`;
-  const videoQuality = format === 'vfw' ? {} : videoQualityOptions({
-    width: options.width, height: options.height, fps,
-    preset: $('export-video-quality')?.value || 'recommended',
-    provider: format === 'webm' && !nativeWebm ? 'WebCodecs' : 'FFmpeg',
-    mode: $('export-bitrate-mode')?.value || 'auto',
-    manualMbps: $('export-video-bitrate')?.value,
-    lossless: format === 'avi' && ['ffv1', 'rawvideo'].includes(codec),
-  });
-  const encode =
-    format === "vfw"
-      ? encodeVfwVideo
-      : format === "webm" && !nativeWebm
-        ? encodeWebM
-        : encodeNativeVideo;
-  const includeAudio = ($('export-audio')?.checked ?? true) && audibleClips(audioState(report)).some(clip => clip.start < options.end / fps && clip.start + clip.duration > options.start / fps);
-  if (includeAudio && encode !== encodeNativeVideo) throw new Error('Audio export requires a desktop FFmpeg video format. Choose MP4, WebM, AVI or WMV with FFmpeg, or turn off Include audio for a silent export.');
-  // Native exports keep the encoded file on disk in the desktop process; a
-  // direct save moves it without piping bytes through the renderer. Every
-  // other path streams encoder output into the chosen file as it is produced.
-  const saveMethod =
-    encode === encodeNativeVideo
-      ? "saveVideoExport"
-      : encode === encodeVfwVideo
-        ? "saveVfwExport"
-        : null;
-  const directSave =
-    saveMethod && typeof desktop?.[saveMethod] === "function";
-  if ([...exportJobs].some(job => job.raster)) throw new Error('An export is already running. Wait for it to finish or cancel it.');
-  const sink = directSave
-    ? null
-    : await openExportSink({
-        filename,
-        mimeType: exportFormat(format === "vfw" ? "avi" : format)?.mimeType,
-        desktop,
-      });
-  if (!directSave && !sink) {
-    telemetry.count('export_cancelled');
-    return false;
-  }
-  try {
-    return await withExportRenderer(
-      options,
-      report,
-      async (renderer, signal, onProgress) => {
-        if (sink) sink.signal = signal;
-        const output = await encode({
-          audioChunks: includeAudio ? audioEngine.exportChunks(report, {start:options.start / fps,duration:ticks / fps,signal}) : undefined,
-          format,
-          codec,
-          desktop,
-          ...videoQuality,
-          ...vfw,
-          width: options.width,
-          height: options.height,
-          fps,
-          totalFrames: ticks,
-          signal,
-          onProgress,
-          sink,
-          save: directSave
-            ? {
-                defaultPath: filename,
-                filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
-              }
-            : undefined,
-          renderFrame: (index) => renderer.renderTick(index + options.start),
-          ...(encode === encodeNativeVideo ? {renderNativeFrame: index => renderer.renderNativeTick(index + options.start, {preserveAlpha: format === 'webm'})} : {}),
-        });
-        const saved = await finishExport(output, filename, signal);
-        if (saved) status(`${extension.toUpperCase()} exported`);
-        return saved;
-      },
-      { frames: ticks, format: 'video', fps },
-    );
-  } catch (error) {
-    await sink?.abort().catch(() => {});
-    throw error;
-  }
 }
 /**
  * Shows `body` (trusted markup built here) in the shared #dialog under a
@@ -3970,229 +3500,8 @@ function showBackgroundDialog() {
 function closeDialog() {
   $("dialog").close();
 }
-function showExport() {
-  finishCurrentEdit();
-  vfwExportControls?.dispose();
-  showDialog(
-    "Export your animation",
-    `<details class="export-settings"><summary>Render settings <span>${editor.report.canvas_width} × ${editor.report.canvas_height} · ${editor.totalTicks} frames</span></summary><div class="text-options"><label>Width<input id="export-width" type="number" min="1" value="${editor.report.canvas_width}"></label><label>Height<input id="export-height" type="number" min="1" value="${editor.report.canvas_height}"></label><label class="check-row"><input type="checkbox" id="export-aspect" checked>Lock ratio</label></div><div class="text-options"><label>First frame<input id="export-start" type="number" min="1" max="${editor.totalTicks}" value="1"></label><label>Last frame<input id="export-end" type="number" min="1" max="${editor.totalTicks}" value="${editor.totalTicks}"></label><label>Lossy quality %<input id="export-quality" type="number" min="1" max="100" value="94"></label></div></details><div class="export-grid"><button class="export-option" data-action="export-stkz" ${editor.object ? "" : "disabled"}>${icon("person")}<span><strong>${isMovieclip(editor.figure)?"StykAnimate movieclip":"StykAnimate figure"}</strong><small>${isMovieclip(editor.figure)?".stykmov":".stkz"}</small></span></button><button class="export-option" data-action="export-piv">${icon("file")}<span><strong>Pivot animation</strong><small>.piv · Editable animation and media</small></span></button><button class="export-option" data-action="export-stk" ${editor.object ? "" : "disabled"}>${icon("person")}<span><strong>Pivot figure</strong><small>.stk · Reusable Pivot figure</small></span></button><button class="export-option" data-action="export-png">${icon("frame")}<span><strong>PNG frame</strong><small>.png · Full canvas resolution</small></span></button><button class="export-option" data-action="export-svg">${icon("nodes")}<span><strong>SVG frame</strong><small>.svg · Editable paths and embedded media</small></span></button><button class="export-option" data-action="export-video">${icon("play")}<span><strong>WebM video</strong><small>.webm · Exact frame timing</small></span></button><button class="export-option" data-action="export-gif">${icon("loop")}<span><strong>Animated GIF</strong><small>.gif · Looping animation</small></span></button><button class="export-option" data-action="export-apng">${icon("frame")}<span><strong>Animated PNG</strong><small>.png · Lossless color and transparency</small></span></button><button class="export-option" data-action="export-png-sequence">${icon("duplicate")}<span><strong>PNG sequence</strong><small>.zip · Numbered lossless frames</small></span></button><button class="export-option" data-action="export-jpeg-sequence">${icon("duplicate")}<span><strong>JPEG sequence</strong><small>.zip · Numbered compact frames</small></span></button></div>`,
-  );
-  $("dialog-content")
-    .querySelector(".export-settings")
-    .insertAdjacentHTML(
-      "beforeend",
-      `<div class="text-options"><label>Smoothing<select id="export-smoothing" title="Pixel exports only. SVG keeps editable vector paths.">${EXPORT_SMOOTHING.map((option) => `<option value="${option.value}" title="${esc(option.description)}">${esc(option.label)}</option>`).join("")}</select></label><label class="check-row" title="Improve gradients and photographs in GIF exports."><input type="checkbox" id="export-gif-dither" ${defaultGIFDither(editor.report) ? "checked" : ""}>Dither (GIF)</label></div>`,
-    );
-  const grid = $("dialog-content").querySelector(".export-grid");
-  grid.insertAdjacentHTML(
-    "beforeend",
-    `<button type="button" class="export-option" data-action="export-vfw" disabled>${icon("play")}<span><strong>Windows AVI</strong><small>Installed video codecs</small></span></button>`,
-  );
-  vfwExportControls = new VfwExportControls({
-    container: $("dialog-content").querySelector(".export-settings"),
-    button: grid.querySelector('[data-action="export-vfw"]'),
-    dialog: $("dialog"),
-    canExport: () => editor.totalTicks > 0,
-    getDimensions: () => ({
-      width: Number($("export-width").value),
-      height: Number($("export-height").value),
-    }),
-    onError: fail,
-  });
-  if (
-    editor.frameDraft?.mode === "add" &&
-    editor.frameDraft.dirty &&
-    editor.totalTicks > 0
-  )
-    grid.insertAdjacentHTML(
-      "beforebegin",
-      '<p class="property-note">Add the working pose as a frame to include it in animation exports. Your .styk project keeps the working pose.</p>',
-    );
-  $("dialog-content")
-    .querySelector(".export-settings")
-    .insertAdjacentHTML(
-      "beforeend",
-      `<div class="text-options export-codecs"><label>MP4 codec<select id="export-mp4-codec" aria-label="MP4 codec" disabled></select></label><label>AVI codec<select id="export-avi-codec" aria-label="AVI codec" disabled></select></label></div>`,
-    );
-  for (const [id, label, note] of [
-    ["mp4", "MP4 video", "H.264 video"],
-    ["avi", "AVI video", "MPEG-4 video"],
-    ["wmv", "Windows Media video", "WMV video"],
-    ["gif-sequence", "GIF sequence", "Numbered GIF frames"],
-    ["svg-sequence", "SVG sequence", "Numbered vector frames"],
-  ])
-    grid.insertAdjacentHTML(
-      "beforeend",
-      `<button type="button" class="export-option" data-action="export-${id}" ${id.endsWith("sequence") ? "" : "disabled"}>${icon(id.endsWith("sequence") ? "duplicate" : "play")}<span><strong>${label}</strong><small>${note}</small></span></button>`,
-    );
-  const singleFrameActions = new Set([
-    "export-piv",
-    "export-stk",
-    "export-stkz",
-    "export-png",
-    "export-svg",
-  ]);
-  if (editor.totalTicks === 0) {
-    for (const id of ["export-start", "export-end"]) {
-      $(id).value = "0";
-      $(id).disabled = true;
-    }
-    for (const button of grid.querySelectorAll("[data-action]")) {
-      if (!singleFrameActions.has(button.dataset.action)) {
-        button.disabled = true;
-        button.title = "Add a frame to export an animation.";
-      }
-    }
-    grid.insertAdjacentHTML(
-      "beforebegin",
-      '<p class="property-note">Add a frame to export an animation.</p>',
-    );
-  }
-  let capabilitySequence = 0;
-  async function refreshCapabilities() {
-    const sequence = ++capabilitySequence;
-    try {
-      const width = Number($("export-width")?.value),
-        height = Number($("export-height")?.value);
-      const capabilities = await getExportCapabilities({
-        width,
-        height,
-        fps: editor.report.frame_delay_ms
-          ? 1000 / editor.report.frame_delay_ms
-          : editor.report.fps,
-        desktop,
-      });
-      if (sequence !== capabilitySequence || !grid.isConnected) return;
-      for (const format of capabilities.formats) {
-        const button = grid.querySelector(
-          `[data-action="export-${format.id === "webm" ? "video" : format.id}"]`,
-        );
-        if (!button) continue;
-        const select = $(`export-${format.id}-codec`);
-        if (select) {
-          const selected = select.value || format.defaultCodec;
-          select.innerHTML = (format.codecs || [])
-            .map(
-              (codec) =>
-                `<option value="${esc(codec.id)}" ${codec.supported ? "" : "disabled"}>${esc(codec.label)}${codec.lossless && !/lossless|uncompressed/i.test(codec.label) ? " · Lossless" : ""}</option>`,
-            )
-            .join("");
-          select.disabled = !(format.codecs || []).some(
-            (codec) => codec.supported,
-          );
-          if (
-            [...select.options].some(
-              (option) => option.value === selected && !option.disabled,
-            )
-          )
-            select.value = selected;
-          else
-            select.value =
-              [...select.options].find((option) => !option.disabled)?.value ||
-              "";
-        }
-        const selectedCodec = format.codecs?.find(
-          (codec) => codec.id === select?.value,
-        );
-        const encodedWidth = selectedCodec?.encodedWidth || format.encodedWidth,
-          encodedHeight = selectedCodec?.encodedHeight || format.encodedHeight;
-        button.dataset.provider = format.provider || "";
-        button.disabled =
-          !format.supported ||
-          selectedCodec?.supported === false ||
-          (editor.totalTicks === 0 &&
-            !singleFrameActions.has(button.dataset.action));
-        button.title =
-          (editor.totalTicks === 0 &&
-          !singleFrameActions.has(button.dataset.action)
-            ? "Add a frame to export an animation."
-            : "") ||
-          format.reason ||
-          (selectedCodec ? selectedCodec.notice : format.notice) ||
-          "";
-        if (format.kind === "video")
-          button.querySelector("small").textContent = format.supported
-            ? `.${format.extension} · ${selectedCodec?.label || format.codec || format.label}${encodedWidth && (encodedWidth !== width || encodedHeight !== height) ? ` · ${encodedWidth} × ${encodedHeight} (padded)` : ""}`
-            : format.reason;
-      }
-    } catch (error) {
-      for (const button of grid.querySelectorAll(
-        '[data-action="export-video"],[data-action="export-mp4"],[data-action="export-avi"],[data-action="export-wmv"]',
-      )) {
-        button.disabled = true;
-        button.title = error.message;
-      }
-    }
-  }
-  for (const id of ["export-width", "export-height"])
-    $(id).oninput = () => {
-      if ($("export-aspect").checked) {
-        const value = Number($(id).value),
-          ratio = editor.report.canvas_width / editor.report.canvas_height;
-        if (value > 0)
-          $(id === "export-width" ? "export-height" : "export-width").value =
-            Math.max(
-              1,
-              Math.round(id === "export-width" ? value / ratio : value * ratio),
-            );
-      }
-      void refreshCapabilities();
-    };
-  for (const id of ["export-mp4-codec", "export-avi-codec"])
-    $(id).onchange = () => void refreshCapabilities();
-  void refreshCapabilities();
-  mountExportFlow($("dialog-content"), {audioClips:audibleClips(audioState(editor.report)),audioSupported:typeof desktop?.writeVideoAudioChunk==='function',width: editor.report.canvas_width, height: editor.report.canvas_height,
-    totalFrames: editor.totalTicks, storedFrames: simpleFrameCount(), currentFrame: editor.tick + 1,
-    fps: editor.report.frame_delay_ms ? 1000 / editor.report.frame_delay_ms : editor.report.fps});
-}
 
 function showHelp() { editorSettings?.open("shortcuts"); }
-function showPerformance() {
-  const presentation = playbackMetrics.snapshot(performance.now());
-  const sorted = [...state.renderSamples].sort((a, b) => a - b),
-    p = (n) =>
-      sorted[
-        Math.min(sorted.length - 1, Math.floor(sorted.length * n))
-      ]?.toFixed(2) || "—";
-  showDialog(
-    "Performance",
-    `<table class="metric-table">${[
-      ["Renderer", state.renderer?.stats?.backend || "Initializing"],
-      ["Playback FPS / target", presentation.fps === null ? "—"
-        : `${presentation.fps.toFixed(1)} / ${presentation.targetFps.toFixed(1)}`],
-      ["Playback startup", presentation.startupMs === null ? "—" : `${presentation.startupMs.toFixed(1)} ms`],
-      ["Playback buffering", `${presentation.bufferingMs.toFixed(1)} ms · ${presentation.bufferingEvents} waits`],
-      ["Recent CPU frame p50", `${p(0.5)} ms`],
-      ["Recent CPU frame p95", `${p(0.95)} ms`],
-      ["Recent CPU frame p99", `${p(0.99)} ms`],
-      ["Measured frames", sorted.length],
-      ["Current scene figures", editor.frame.objects.length.toLocaleString()],
-      [
-        "Current scene segments",
-        editor.frame.objects
-          .reduce(
-            (n, o) =>
-              n +
-              (editor.report.figure_types.find(
-                (f) => f.figure_type_id === o.figure_type_id,
-              )?.segments.length || 0),
-            0,
-          )
-          .toLocaleString(),
-      ],
-      [
-        "Import decode",
-        state.lastImport?.decode_ms !== undefined
-          ? `${state.lastImport.decode_ms.toFixed(1)} ms`
-          : "—",
-      ],
-    ]
-      .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`)
-      .join(
-        "",
-      )}</table><p>CPU submission timings include geometry evaluation and selection overlays. They do not measure GPU completion or input-to-display latency. Performance varies with hardware, scene complexity, effects, and media.</p>`,
-  );
-}
 // Every menu renders into the #menu host through the overlay kit
 // (src/ui/ui-menu.mjs): `hidden` mirrors the open state, rows keep their
 // data-action for the click delegation below, and while a menu is open it takes
@@ -4480,31 +3789,6 @@ const actions = {
     ["locate-next", "chevron-right", "Match next pose", "Shift L"],
     ["zoom-selection", "center", "Fit selection", "Shift 2"],
   ], lastMenuAnchor || viewport),
-  "open-recent": async () => {
-    pause();
-    const entries = await desktop.listRecentFiles();
-    showDialog(
-      "Recent files",
-      `<div class="recent-files">${entries.length ? entries.map((entry) => `<button type="button" class="recent-file" data-recent-id="${esc(entry.id)}" ${entry.missing ? "disabled" : ""}><strong>${esc(entry.name)}</strong><small>${esc(entry.directory)}${entry.missing ? " · Unavailable" : ""}</small></button>`).join("") : "<p>No recent files.</p>"}</div>${entries.length ? '<div class="dialog-actions"><button class="button" id="clear-recent">Clear history</button></div>' : ""}`,
-    );
-    $("dialog-content")
-      .querySelectorAll("[data-recent-id]")
-      .forEach(
-        (button) =>
-          (button.onclick = guarded(async () => {
-            const result = await desktop.openRecentFile(
-              button.dataset.recentId,
-            );
-            closeDialog();
-            await acceptNativeFile(result);
-          })),
-      );
-    if ($("clear-recent"))
-      $("clear-recent").onclick = guarded(async () => {
-        await desktop.clearRecentFiles();
-        await actions["open-recent"]();
-      });
-  },
   "segment-values": () => showSegmentValues(),
   menu: (e) =>
     showMenu(e?.closest?.("button") || document.querySelector(".brand")),
@@ -4538,26 +3822,8 @@ const actions = {
       await desktop?.close();
     }
   },
-  export: showExport,
-  "export-piv": () => exportPivot(),
-  "export-stk": () => exportPivot("stk"),
-  "export-stkz": () => exportPivot(isMovieclip(editor.figure)?"stykmov":"stkz"),
-  "export-stykmov": () => exportPivot("stykmov"),
-  "export-png": exportPNG,
-  "export-video": () => exportVideo(),
-  "export-mp4": () => exportVideo("mp4"),
-  "export-avi": () => exportVideo("avi"),
-  "export-wmv": () => exportVideo("wmv"),
-  "export-vfw": () => exportVideo("vfw"),
-  "export-gif-sequence": () => exportImages("gif-sequence"),
-  "export-svg-sequence": () => exportImages("svg-sequence"),
-  "export-svg": exportSVGFrame,
-  "export-gif": () => exportImages("gif"),
-  "export-apng": () => exportImages("apng"),
-  "export-png-sequence": () => exportImages("png-sequence"),
-  "export-jpeg-sequence": () => exportImages("jpeg-sequence"),
   new: async () => {
-    if (await confirmReplace()) {
+    if (await dialogs.confirmReplace()) {
       pause();
       editor.newDocument();
       telemetry.performance.resources('closed');telemetry.performance.closedAt=performance.now();
@@ -4568,22 +3834,6 @@ const actions = {
       state.sourceId = null;
       fit();
     }
-  },
-  rename: async () => {
-    const name = await promptText({
-      title: "Name your project",
-      value: editor.name,
-      confirmLabel: "Save name",
-      maxLength: 120,
-      inputId: "rename-input",
-      overlays,
-      icon: (glyph) => icon(glyph),
-      t: (key, params) => appLocalization?.t(key, params),
-    });
-    if (name === null) return;
-    editor.name = name.trim() || "Untitled";
-    editor.dirty = true;
-    updateTitle();
   },
   undo: () => {
     pause();
@@ -5005,7 +4255,6 @@ const actions = {
   "command-palette": () => palette.open(),
   help: showHelp,
   about: showHelp,
-  performance: showPerformance,
   minimize: () => desktop?.minimize(),
   maximize: () => desktop?.maximize(),
   close: async () => {
@@ -5015,6 +4264,16 @@ const actions = {
     await desktop?.close();
   },
 };
+// The export flow and the app's prompts add their commands (src/export-flow.mjs, src/app-dialogs.mjs).
+const exportFlow = createExportFlow({
+  editor, state, $, esc, actions, desktop, importer, telemetry, audioEngine, exportJobs, playback, editablePreparation,
+  fail, status, toast, persistentFailure, showDialog, closeDialog, finishCurrentEdit, pause, interruptRecovery,
+  runDocumentExport, writeNativeBlob, currentFrame, nameOf, simpleFrameCount,
+});
+const dialogs = createAppDialogs({
+  editor, state, $, esc, actions, desktop, overlays, playbackMetrics, guarded, pause, finishCurrentEdit,
+  showDialog, closeDialog, promptText, saveNative, acceptNativeFile, updateTitle, localization: () => appLocalization,
+});
 const polygonSafeActions = new Set([
   "menu",
   "command-palette",
@@ -5410,7 +4669,7 @@ timelineHost = createTimelineHost({
   editor, state, $, actions, guarded, audioEngine, onionController, hotkeys, play, pause, finishKeyboardHandle, cancelDrag,
   cancelPolygonDraft, interruptRecovery, cancelWarmPlayback: () => clearTimeout(warmTimer), warmPlayback, scheduleRecovery,
   requestRender, queueUI, renderInspector, syncSelectionControls, rangeFrames, selectTrack, previewScrub, scrubAudio, stopAudioScrub,
-  changeFigureLayer, runClipboardOperation, confirmDiscardFrame, simpleFrameCount, fail,
+  changeFigureLayer, runClipboardOperation, confirmDiscardFrame: dialogs.confirmDiscardFrame, simpleFrameCount, fail,
   setTimelineMode: (mode) => editorSettings?.commit({ timelineMode: mode }),
   onMount: (timeline) => { timelineUI = timeline; window.styk.timeline = timeline; },
   propertyControls: () => propertyControls, cameraMotionControls: () => cameraMotionControls, drawing: () => drawingController,
@@ -5852,7 +5111,7 @@ function showRecovery(record) {
   banner.innerHTML = `<span>Recovered project: ${esc(record.name)}</span><button class="button small" id="restore-recovery">Restore</button><button class="icon-button" id="dismiss-recovery" aria-label="Dismiss recovery">${icon("close")}</button>`;
   viewport.append(banner);
   $("restore-recovery").onclick = guarded(async () => {
-    if (await confirmReplace()) {
+    if (await dialogs.confirmReplace()) {
       const replaceApproved = {
         report: editor.report,
         revision: editor.revision,
@@ -5878,7 +5137,7 @@ function showRecovery(record) {
             replaceApproved.draftRevision !== editor.frameDraftRevision ||
             editor._drag ||
             editor._animationEdit) &&
-          !(await confirmReplace())
+          !(await dialogs.confirmReplace())
         )
           return;
         await editor.loadAsync(record.document, record.name);
@@ -6105,22 +5364,6 @@ async function performClipboardOperation(kind, execute) {
     if (progressElement?.isConnected) closeDialog();
     queueUI();
   }
-}
-/** Asks before Simple mode restores a frame's saved pose. */
-function confirmDiscardFrame() {
-  return new Promise((resolve) => {
-    showDialog(
-      "Discard frame changes?",
-      '<p>Restore the frame to its saved pose? You can undo this change.</p><div class="dialog-actions"><button class="button" id="keep-frame-draft">Keep changes</button><button class="button primary" id="discard-frame-draft">Discard</button></div>',
-    );
-    const cancel = () => resolve(false);
-    $("dialog").addEventListener("close", cancel, { once: true });
-    $("keep-frame-draft").onclick = () => closeDialog();
-    $("discard-frame-draft").onclick = () => {
-      resolve(true);
-      closeDialog();
-    };
-  });
 }
 /** The timeline's audio Scrub option: a short slice of the sound under the scrubbed frame. */
 function scrubAudio(tick) {
@@ -6355,7 +5598,7 @@ async function init() {
   $('library-tab')?.addEventListener('click', () => telemetry.count('library'));
   actions['add-to-library'] = () => { telemetry.count('library'); return window.styk.library.run(() => window.styk.library.save()); };
   window.styk.movieclips = installMovieclipUI({editor,actions,pause,finishEdit:finishCurrentEdit,
-    getTimeline:()=>timelineUI,setTool,onError:fail,queueUI,exportClip:()=>exportPivot('stykmov'),
+    getTimeline:()=>timelineUI,setTool,onError:fail,queueUI,exportClip:()=>exportFlow.exportPivot('stykmov'),
     // The session breadcrumb sits above the stage until the inspector names the scope (M4).
     mountBreadcrumb:element=>document.querySelector('.context-strip').before(element)});
   for (const [name, action] of Object.entries(actions)) if (name.startsWith('movieclip-')) actions[name] = (...args) => { telemetry.count('movieclip'); return action(...args); };

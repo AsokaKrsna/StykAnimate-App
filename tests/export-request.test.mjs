@@ -16,6 +16,7 @@ import {defaultGIFDither} from '../src/gif-options.mjs';
 import {exportFormat} from '../src/export-capabilities.mjs';
 import {VfwExportControls} from '../src/vfw-export-controls.mjs';
 import {COMMAND_BY_ID} from '../src/ui/command-catalog.mjs';
+import {actionKeys, readActionSources} from './helpers/source-scan.mjs';
 
 const root = new URL('../', import.meta.url);
 const source = file => (existsSync(new URL(file, root)) ? readFileSync(new URL(file, root), 'utf8') : '');
@@ -85,7 +86,7 @@ test('the legacy fixture is still verbatim app.mjs export code', t => {
 
 test('the dialog ids the browser tests query stay in one map', t => {
   if (!source('src/export-panel.mjs')) return t.skip('the legacy dialog is gone; the sheet takes its ids from EXPORT_FIELD_IDS and EXPORT_ELEMENT_IDS');
-  const homes = ['src/app.mjs', 'src/export-panel.mjs', 'src/vfw-export-controls.mjs', 'src/export-progress.mjs'].map(source).join('\n');
+  const homes = ['src/app.mjs', 'src/export-flow.mjs', 'src/export-panel.mjs', 'src/vfw-export-controls.mjs', 'src/export-progress.mjs'].map(source).join('\n');
   for (const id of [...Object.values(EXPORT_FIELD_IDS), ...Object.values(EXPORT_ELEMENT_IDS)]) assert.ok(homes.includes(`id="${id}"`), `${id} is a dialog id`);
 });
 
@@ -107,8 +108,9 @@ test('the catalogue matches today\'s categories, commands and encoder descriptio
     const description = exportFormat(format.id);
     if (description) assert.deepEqual([description.label, description.extension], [format.label, format.extension], format.id);
   }
-  const app = source('src/app.mjs');
-  if (app.includes('const actions = {')) for (const format of EXPORT_FORMATS) assert.ok(app.includes(`"${format.action}": `), `${format.action} is in app.mjs's actions`);
+  // Every export command is registered in the actions map (app.mjs and the modules it passes the map to, export-flow.mjs).
+  const registered = actionKeys(readActionSources());
+  for (const format of EXPORT_FORMATS) assert.ok(registered.has(format.action), `${format.action} is a registered action`);
 });
 
 // ---------------------------------------------------------------------------
