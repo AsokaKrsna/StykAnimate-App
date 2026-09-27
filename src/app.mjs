@@ -4424,9 +4424,11 @@ const actions = {
 };
 // The export flow and the app's prompts add their commands (src/export-flow.mjs, src/app-dialogs.mjs).
 const exportFlow = createExportFlow({
-  editor, state, $, esc, actions, desktop, importer, telemetry, audioEngine, exportJobs, playback, editablePreparation,
-  fail, status, toast, persistentFailure, showDialog, closeDialog, finishCurrentEdit, pause, interruptRecovery,
+  editor, state, actions, desktop, importer, telemetry, audioEngine, exportJobs, playback, editablePreparation,
+  fail, status, toast, persistentFailure, finishCurrentEdit, pause, interruptRecovery,
   runDocumentExport, writeNativeBlob, currentFrame, nameOf, simpleFrameCount,
+  // The export dialog joins the overlay stack, uses the app's words and remembers its choices in the editor settings.
+  overlays, localization: () => appLocalization, commitSettings: patch => editorSettings?.commit(patch),
 });
 const dialogs = createAppDialogs({
   editor, state, $, esc, actions, desktop, overlays, playbackMetrics, guarded, pause, finishCurrentEdit,
@@ -5390,8 +5392,11 @@ async function changeFigureLayer(label, operation) {
   const controller = new AbortController();
   let dialogShown = false,
     latest;
+  // A dialog opened meanwhile (the export dialog is its own <dialog>) takes over: the layer change stops.
   const originalDialogContent = $("dialog-content").firstChild,
-    originalDialogOpen = $("dialog").open;
+    originalDialogOpen = $("dialog").open,
+    openDialogs = () => document.querySelectorAll("dialog[open]").length,
+    originalOpenDialogs = openDialogs();
   const cancel = () => controller.abort();
   let progressElement;
   const refresh = () => {
@@ -5415,7 +5420,8 @@ async function changeFigureLayer(label, operation) {
   const timer = setTimeout(() => {
     if (
       $("dialog-content").firstChild !== originalDialogContent ||
-      $("dialog").open !== originalDialogOpen
+      $("dialog").open !== originalDialogOpen ||
+      openDialogs() !== originalOpenDialogs
     ) {
       controller.abort();
       return;

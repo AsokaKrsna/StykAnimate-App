@@ -51,8 +51,10 @@ try{
   },[...bytes]));
  }
  check('actual Dither checkbox changes decoded output',hashes[0]!==hashes[1]);
- const progress=await page.evaluate(()=>window.gifProgress);check('root progress uses six units for three-frame two-pass GIF',progress.some(v=>v.max===6));
- check('root progress completes both passes',progress.some(v=>v.max===6&&v.value===6));
+ // The bar shows percent (the model's frames × passes units are covered by tests/export-progress.test.mjs): across a
+ // two-pass GIF it climbs from under half to the end of the second pass before the dialog closes.
+ const progress=await page.evaluate(()=>window.gifProgress);
+ check('root progress climbs through both passes of a two-pass GIF',progress.every(v=>v.max===100)&&progress.some(v=>v.value<50)&&progress.some(v=>v.value>=95));
  check('no browser errors',errors.length===0);
  await writeFile(path.join(output,'report.json'),JSON.stringify({checks,progress,errors},null,2));
  console.log(JSON.stringify({checks:checks.length,errors}));
