@@ -608,30 +608,23 @@ try {
       [0, 'Kick combo', false]);
   });
 
-  await step('app: Enter in an export field runs the chosen format once, even with Windows AVI available', async () => {
+  await step('app: Enter in an export field runs the chosen format once, and only that format', async () => {
     await page.click('.titlebar [data-action="export"]');
-    await page.locator('#dialog[open] #export-width').waitFor();
+    await page.locator('#export-dialog[open] #export-start').waitFor();
     await settle(300);   // the capability refresh settles the formats
     const chosen = await page.evaluate(() => {
-      // A Video for Windows codec is installed (desktop Windows): its format button is enabled.
-      document.querySelector('#dialog .export-grid [data-action="export-vfw"]').disabled = false;
+      // Record the export commands the dialog runs instead of exporting.
       window.exportRuns = [];
-      window.exportTrap = event => {
-        const option = event.target.closest?.('#dialog .export-grid [data-action]');
-        if (!option) return;
-        window.exportRuns.push(option.dataset.action);
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      };
-      document.addEventListener('click', window.exportTrap, true);
+      window.exportActions = Object.entries(styk.actions).filter(([name]) => name.startsWith('export-'));
+      for (const [name] of window.exportActions) styk.actions[name] = () => { window.exportRuns.push(name); };
       return document.getElementById('output-format').value;
     });
-    assert.ok(chosen && chosen !== 'export-vfw', `a format is chosen (${chosen})`);
-    await page.locator('#export-width').focus();
+    assert.ok(chosen, `a format is chosen (${chosen})`);
+    await page.locator('#export-start').focus();
     await page.keyboard.press('Enter');
     await settle(150);
     assert.deepEqual(await page.evaluate(() => window.exportRuns), [chosen], 'one export, of the chosen format');
-    await page.evaluate(() => document.removeEventListener('click', window.exportTrap, true));
+    await page.evaluate(() => { for (const [name, action] of window.exportActions) styk.actions[name] = action; });
     await page.keyboard.press('Escape');
     await settle();
     assert.equal(await page.evaluate(() => document.querySelectorAll('dialog[open]').length), 0);

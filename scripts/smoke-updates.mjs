@@ -32,7 +32,7 @@ try {
   assert.equal(await page.locator('.release-splash[open]').count(), 0);
   evidence.oncePerProcess = true;
   await page.locator('.titlebar [data-action="export"]').click();
-  await page.locator('.studio-export-dialog #export-submit').waitFor();
+  await page.locator('#export-dialog #export-submit').waitFor();
   await page.getByRole('combobox', { name: 'Export format', exact: true }).waitFor();
   await page.screenshot({ path: path.join(output, 'export.png') });
   evidence.exportPanel = true;

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import backend from '../desktop/backend.cjs';
+import {openEncoding} from './helpers/export-dialog.mjs';
 const output = path.resolve('artifacts/export-auto-quality'); await mkdir(output, {recursive: true});
 const service = await backend.startBackend({appRoot: process.cwd()}); let browser;
 const checks = [], errors = [], exports = [];
@@ -30,7 +31,7 @@ try {
     const config = await page.evaluate(() => videoConfigs.at(-1)); exports.push({name, ...config}); return config;
   }
   await open();
-  check('recommended quality is the default and technical controls are collapsed', await page.locator('#export-video-quality').inputValue() === 'recommended'
+  check('recommended quality is the default and technical controls are collapsed', await page.locator('#export-video-quality').getAttribute('data-value') === 'recommended'
     && !await page.locator('#export-bitrate-mode').isVisible() && !await page.locator('#export-video-bitrate').isVisible());
   await page.locator('#export-resolution').selectOption('1080');
   await page.screenshot({path: path.join(output, 'recommended.png')});
@@ -38,18 +39,18 @@ try {
   await open(); await page.locator('#export-resolution').selectOption('2160');
   const uhd = await save('4k-recommended');
   check('actual 4K encoder receives a larger automatic bitrate than 1080p', uhd.width === 3840 && uhd.height === 2160 && uhd.bitrate > fullHD.bitrate);
-  await open(); await page.locator('#export-resolution').selectOption('1080'); await page.locator('#export-video-quality').selectOption('small');
+  await open(); await page.locator('#export-resolution').selectOption('1080'); await page.locator('#export-video-quality [data-value="small"]').click();
   const small = await save('1080-small');
-  await open(); await page.locator('#export-resolution').selectOption('1080'); await page.locator('#export-video-quality').selectOption('high');
+  await open(); await page.locator('#export-resolution').selectOption('1080'); await page.locator('#export-video-quality [data-value="high"]').click();
   const high = await save('1080-high');
   check('actual smaller and higher-quality exports receive ordered bitrate targets', small.bitrate < fullHD.bitrate && fullHD.bitrate < high.bitrate);
-  await open(); await page.locator('.export-advanced > summary').click();
+  await open(); await openEncoding(page);
   await page.locator('#export-bitrate-mode').selectOption('manual'); await page.locator('#export-video-bitrate').fill('0.25');
   await page.locator('#export-resolution').selectOption('1080');
   check('resizing preserves an explicit manual bitrate', await page.locator('#export-video-bitrate').inputValue() === '0.25');
   check('manual mode hides quality presets it overrides', !await page.locator('#export-video-quality').isVisible());
   const manual = await save('manual'); check('manual target reaches the encoder exactly', manual.bitrate === 250000);
-  await open(); await page.locator('.export-advanced > summary').click();
+  await open(); await openEncoding(page);
   await page.locator('#export-bitrate-mode').selectOption('manual'); await page.locator('#export-video-bitrate').fill('');
   check('invalid manual bitrate blocks export', await page.locator('#export-submit').isDisabled());
   await page.locator('#export-bitrate-mode').selectOption('auto');

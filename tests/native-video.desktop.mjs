@@ -5,6 +5,7 @@ import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import assert from 'node:assert/strict';
+import {chooseExport, exportDialogClosed, openEncoding} from './helpers/export-dialog.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), output = path.join(root, 'artifacts', 'native-video-renderer');
 await mkdir(output, {recursive: true});
@@ -90,17 +91,13 @@ try {
     const destination = path.join(output, `ui-${format}.${format.endsWith('sequence') ? 'zip' : format}`);
     await app.evaluate(({dialog}, filename) => { dialog.showSaveDialog = async () => ({canceled: false, filePath: filename}); }, destination);
     await page.locator('[data-action="export"]').first().click();
-    const button = page.locator(`[data-action="export-${format}"]`);
-    await button.waitFor({state:'attached'});
-    await page.waitForFunction(id => !document.querySelector(`[data-action="export-${id}"]`)?.disabled, format);
+    await chooseExport(page, `export-${format}`);
     if (format === 'mp4') {
-      assert.ok(await page.locator('#dialog').evaluate(dialog=>dialog.scrollWidth<=dialog.clientWidth+1),'Export dialog must not scroll horizontally');
+      assert.ok(await page.locator('#export-dialog').evaluate(dialog=>dialog.scrollWidth<=dialog.clientWidth+1),'Export dialog must not scroll horizontally');
       await page.screenshot({path:path.join(output,'export-dialog.png')});
     }
-    await page.locator(`[data-category="${format.endsWith('sequence') ? 'frames' : 'video'}"]`).click();
-    await page.locator('#output-format').selectOption(`export-${format}`);
     await page.locator('#export-submit').click();
-    await page.waitForFunction(() => !document.querySelector('#dialog').open, undefined, {timeout:30000});
+    await exportDialogClosed(page);
     const bytes = await readFile(destination); assert.ok(bytes.length > 100, `Actual${format}button saves a nonempty native file`);
     result.uiFiles.push({format, bytes:bytes.length, filename:path.basename(destination)});
     result.checks.push(`Actual export dialog ${format}button completes rendering and native save`);
@@ -126,14 +123,14 @@ try {
     const destination=path.join(output,`ui-${format}-${codec}.${format}`);
     await app.evaluate(({dialog},filename)=>{dialog.showSaveDialog=async()=>({canceled:false,filePath:filename});},destination);
     await page.locator('[data-action="export"]').first().click();
-    await page.locator('#output-format').selectOption(`export-${format}`);
-    await page.locator('.export-advanced summary').click();
+    await chooseExport(page, `export-${format}`);
+    await openEncoding(page);
     await page.locator(`#export-${format}-codec option[value="${codec}"]`).waitFor({state:'attached'});
     await page.locator(`#export-${format}-codec`).selectOption(codec);
-    assert.ok(await page.locator('#dialog').evaluate(dialog=>dialog.scrollWidth<=dialog.clientWidth+1),'Expanded export settings must not scroll horizontally');
+    assert.ok(await page.locator('#export-dialog').evaluate(dialog=>dialog.scrollWidth<=dialog.clientWidth+1),'Expanded export settings must not scroll horizontally');
     if(codec==='ffv1')await page.screenshot({path:path.join(output,'export-codecs.png')});
     await page.locator('#export-submit').click();
-    await page.waitForFunction(()=>!document.querySelector('#dialog').open,undefined,{timeout:30000});
+    await exportDialogClosed(page);
     const bytes=await readFile(destination);assert.ok(bytes.length>100);
     result.uiFiles.push({format,codec,bytes:bytes.length,filename:path.basename(destination)});
     result.checks.push(`Actual ${format} codec selector exports ${codec} through native Save`);

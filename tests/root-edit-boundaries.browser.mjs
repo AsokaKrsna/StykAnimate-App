@@ -108,8 +108,8 @@ try {
     await page.evaluate(
       async () =>
         (await migration) === false &&
-        document.querySelector("#dialog").open &&
-        !!document.querySelector(".export-grid") &&
+        !document.querySelector("#dialog").open &&
+        !!document.querySelector("#export-dialog[open] #export-submit") &&
         !document.querySelector("#layer-progress"),
     ),
   );

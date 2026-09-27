@@ -1,25 +1,30 @@
 /**
- * Exporting (architecture.md §3.15): the export dialog (showExport, with
- * export-panel.mjs's mountExportFlow arranging its controls), every export
- * command, the export renderer's job and its progress dialog, and writing the
- * result (saveBlob, finishExport).
+ * Exporting (architecture.md §3.15): the export dialog (showExport opens
+ * export-sheet.mjs), every export command, the export renderer's job with its
+ * progress, and writing the result (saveBlob, finishExport).
  *
  * The export commands register themselves in the app's `actions` map, before
  * app.mjs wraps every action (drawing barrier, polygon guard, telemetry).
  * Every export runs from an explicit ExportRequest (export-request.mjs): the
  * request holds the choices, and exportJob() derives the options, file name
- * and encoder arguments from it and the editor's state. Until the export sheet
- * holds the request, the request is read from the open dialog's fields
- * (legacyExportFields); a command run without the dialog exports today's
- * defaults. tests/export-request.test.mjs proves the derivation equals the
- * dialog-field code it replaced (tests/fixtures/export-legacy.mjs).
+ * and encoder arguments from it and the editor's state. The export dialog
+ * holds the request and runs the chosen type's command, which exports the
+ * dialog's request; a command run without the dialog (the command palette)
+ * exports today's defaults: the artboard size, the whole animation, 94%.
+ * tests/export-request.test.mjs proves the derivation equals the dialog-field
+ * code it replaced (tests/fixtures/export-legacy.mjs).
  *
- * DOM-free at import. ctx (from app.mjs): {editor, state, $, esc, actions,
- * desktop, importer, telemetry, audioEngine, exportJobs, playback,
- * editablePreparation, fail, status, toast, persistentFailure, showDialog,
- * closeDialog, finishCurrentEdit, pause, interruptRecovery,
- * runDocumentExport, writeNativeBlob, currentFrame, nameOf,
- * simpleFrameCount}.
+ * While an export renders, its progress shows in the export dialog, or in a
+ * dialog of its own when the export was not started from it.
+ *
+ * DOM-free at import. ctx (from app.mjs): {editor, state, actions, desktop,
+ * importer, telemetry, audioEngine, exportJobs, playback,
+ * editablePreparation, fail, status, toast, persistentFailure,
+ * finishCurrentEdit, pause, interruptRecovery, runDocumentExport,
+ * writeNativeBlob, currentFrame, nameOf, simpleFrameCount}; optionally
+ * overlays (the overlay stack), localization() and commitSettings(patch),
+ * which keeps the dialog's choices in the editor setting exportPreferences
+ * (without it they last for the session).
  */
 import { encodeWebM } from "./video-export.mjs";
 import { encodeNativeVideo } from "./native-video-export.mjs";
@@ -36,20 +41,30 @@ import { defaultGIFDither } from "./gif-options.mjs";
 import { ExportFrameRenderer } from "./export-frame-renderer.mjs";
 import { exportProgressMarkup, mountExportProgress } from "./export-progress.mjs";
 import { checkExportContext } from "./export-canvas.mjs";
-import { EXPORT_SMOOTHING } from "./export-sampling.mjs";
-import { buildExportRequest, exportJob, legacyExportFields } from "./export-request.mjs";
-import { mountExportFlow } from "./export-panel.mjs";
+import { buildExportRequest, exportFormatInfo, exportJob } from "./export-request.mjs";
+import { openExportSheet, openExportProgress } from "./export-sheet.mjs";
+import { ThumbnailRenderer } from "./thumbnail-renderer.mjs";
 import { isMovieclip } from "./movieclips.mjs";
 import { icon } from "./icons.mjs";
 
 export function createExportFlow(ctx) {
   const {
-    editor, state, $, esc, actions, desktop, importer, telemetry, audioEngine, exportJobs, playback, editablePreparation,
-    fail, status, toast, persistentFailure, showDialog, closeDialog, finishCurrentEdit, pause, interruptRecovery,
+    editor, state, actions, desktop, importer, telemetry, audioEngine, exportJobs, playback, editablePreparation,
+    fail, status, toast, persistentFailure, finishCurrentEdit, pause, interruptRecovery,
     runDocumentExport, writeNativeBlob, currentFrame, nameOf, simpleFrameCount,
   } = ctx;
   const exportTelemetry = new WeakMap();
-  let vfwExportControls;
+  const t = (key, params) => ctx.localization?.()?.t(key, params);
+  const glyph = name => icon(name);
+  /** The open export dialog (export-sheet.mjs), or null. */
+  let sheet = null;
+  /** The dialog's remembered choices when the editor settings cannot hold them. */
+  let sessionPreferences = null;
+  const exportPreferences = () => state.settings?.exportPreferences ?? sessionPreferences;
+  function rememberPreferences(preferences) {
+    sessionPreferences = preferences;
+    ctx.commitSettings?.({ exportPreferences: preferences });
+  }
   async function openExportSink(options){
     const enabled=telemetry.consent.diagnostics,context=enabled?telemetry.performance.context():null,epoch=telemetry.epoch,started=enabled?performance.now():0;
     const onTiming=(metric,ms)=>{if(epoch===telemetry.epoch)telemetry.performance.record(metric,ms,context);};
@@ -110,15 +125,13 @@ export function createExportFlow(ctx) {
   }
   /**
    * The choices of an export of `format` (an EXPORT_FORMATS id) as an
-   * ExportRequest: the open export dialog's fields, until the export sheet
-   * holds the request; with no dialog open, today's defaults (the artboard
-   * size, the whole animation, 94% quality), as a palette command exports.
+   * ExportRequest: the open export dialog's, when it is exporting this type;
+   * otherwise today's defaults (the artboard size, the whole animation, 94%
+   * quality), as a palette command exports.
    */
   function currentRequest(format) {
-    const fields = legacyExportFields($, format);
-    // The codec settings chosen with Configure codec… belong to this choice.
-    if (fields.vfw) fields.vfw.configurationId = vfwExportControls?.requestContext().configurationId;
-    return buildExportRequest(fields, {
+    if (sheet?.open && sheet.request.format === format) return sheet.request;
+    return buildExportRequest({ format }, {
       canvasWidth: editor.report.canvas_width,
       canvasHeight: editor.report.canvas_height,
       totalFrames: editor.totalTicks,
@@ -130,15 +143,15 @@ export function createExportFlow(ctx) {
       totalFrames: editor.totalTicks,
       fps: report.frame_delay_ms ? 1000 / report.frame_delay_ms : report.fps,
       defaultDither: defaultGIFDither(editor.report),
-      // Browser WebM uses WebCodecs unless the capability probe chose FFmpeg for it.
-      provider: document.querySelector('[data-action="export-video"]')?.dataset.provider,
+      // Browser WebM uses WebCodecs unless the export dialog's capability probe chose FFmpeg for it.
+      provider: sheet?.open ? sheet.states.get("webm")?.provider : undefined,
       audioClips: audibleClips(audioState(report)),
       loop: state.loop,
       name: editor.name,
       objectName: nameOf(editor.object),
       tick: editor.tick,
       movieclip: isMovieclip(editor.figure),
-      vfw: request.format === "vfw" ? (vfwExportControls?.requestContext() ?? { available: false }) : undefined,
+      vfw: request.format === "vfw" ? (sheet?.open ? sheet.vfwContext() : { available: false }) : undefined,
     };
   }
   const playedReport = () =>
@@ -170,8 +183,11 @@ export function createExportFlow(ctx) {
         `Your ${["stk", "stkz", "stykmov"].includes(format) ? "figure" : "animation"} was exported as .${format}.`,
       );
     }
-    closeDialog();
+    sheet?.close();
   }
+  /** Where an export's progress shows: the export dialog it was started from, else a dialog of its own. */
+  const progressHost = (title) =>
+    sheet?.open ? sheet.showProgress(title) : openExportProgress({ title, overlays: ctx.overlays, icon: glyph, t });
   /** Keep rendering off the UI thread and cancel the whole job if its document changes. */
   async function withExportRenderer(
     options,
@@ -195,20 +211,14 @@ export function createExportFlow(ctx) {
     const measurement = { started: performance.now(), stage: 'prepare', context: telemetry.consent.diagnostics ? workload({ format, report, fps }) : {} };
     telemetry.count('export_started'); exportTelemetry.set(controller.signal, measurement);
     let frameRenderer;
-    showDialog(
-      title,
-      exportProgressMarkup,
-    );
-    const progress = $("export-progress"),
-      dialog = $("dialog"),
+    const host = progressHost(title),
       cancel = () => controller.abort();
-    const onClose = () => {
-      if (!dialog.open || !progress.isConnected) cancel();
-    };
-    const progressUI = mountExportProgress($("dialog-content"), {frames, passes, start}, cancel);
+    host.content.innerHTML = exportProgressMarkup;
+    // Closing the dialog while the export runs cancels it.
+    host.onClose(cancel);
+    const progressUI = mountExportProgress(host.content, {frames, passes, start}, cancel);
     measurement.onProgress = value => progressUI.update(value);
     measurement.releaseRenderer = () => frameRenderer?.dispose();
-    dialog.addEventListener("close", onClose);
     try {
       frameRenderer = new ExportFrameRenderer({
         width: options.width,
@@ -253,8 +263,8 @@ export function createExportFlow(ctx) {
       progressUI.dispose();
       exportTelemetry.delete(controller.signal);
       exportJobs.delete(job);
-      dialog.removeEventListener("close", onClose);
-      if (progress.isConnected) closeDialog();
+      host.onClose(null);
+      host.close();
     }
   }
   async function exportPNG() {
@@ -413,180 +423,54 @@ export function createExportFlow(ctx) {
       throw error;
     }
   }
+  /** The export dialog's frame previews: the thumbnail worker, only while the dialog shows them. */
+  function previewFrames() {
+    let renderer = null;
+    return {
+      render(tick, canvas, { signal } = {}) {
+        if (!editor.totalTicks || signal?.aborted) return Promise.resolve(false);
+        renderer ??= new ThumbnailRenderer(editor, { baseURL: importer.baseURL, token: importer.token, onError: () => {} });
+        const rows = editor.timeline, index = Math.max(0, rows.findLastIndex((row) => row.start <= tick));
+        return renderer.renderThumbnail(index, canvas, { tick, storedFrames: false, signal });
+      },
+      dispose() {
+        renderer?.destroy();
+        renderer = null;
+      },
+    };
+  }
   function showExport() {
     finishCurrentEdit();
-    vfwExportControls?.dispose();
-    showDialog(
-      "Export your animation",
-      `<details class="export-settings"><summary>Render settings <span>${editor.report.canvas_width} × ${editor.report.canvas_height} · ${editor.totalTicks} frames</span></summary><div class="text-options"><label>Width<input id="export-width" type="number" min="1" value="${editor.report.canvas_width}"></label><label>Height<input id="export-height" type="number" min="1" value="${editor.report.canvas_height}"></label><label class="check-row"><input type="checkbox" id="export-aspect" checked>Lock ratio</label></div><div class="text-options"><label>First frame<input id="export-start" type="number" min="1" max="${editor.totalTicks}" value="1"></label><label>Last frame<input id="export-end" type="number" min="1" max="${editor.totalTicks}" value="${editor.totalTicks}"></label><label>Lossy quality %<input id="export-quality" type="number" min="1" max="100" value="94"></label></div></details><div class="export-grid"><button class="export-option" data-action="export-stkz" ${editor.object ? "" : "disabled"}>${icon("person")}<span><strong>${isMovieclip(editor.figure)?"StykAnimate movieclip":"StykAnimate figure"}</strong><small>${isMovieclip(editor.figure)?".stykmov":".stkz"}</small></span></button><button class="export-option" data-action="export-piv">${icon("file")}<span><strong>Pivot animation</strong><small>.piv · Editable animation and media</small></span></button><button class="export-option" data-action="export-stk" ${editor.object ? "" : "disabled"}>${icon("person")}<span><strong>Pivot figure</strong><small>.stk · Reusable Pivot figure</small></span></button><button class="export-option" data-action="export-png">${icon("frame")}<span><strong>PNG frame</strong><small>.png · Full canvas resolution</small></span></button><button class="export-option" data-action="export-svg">${icon("nodes")}<span><strong>SVG frame</strong><small>.svg · Editable paths and embedded media</small></span></button><button class="export-option" data-action="export-video">${icon("play")}<span><strong>WebM video</strong><small>.webm · Exact frame timing</small></span></button><button class="export-option" data-action="export-gif">${icon("loop")}<span><strong>Animated GIF</strong><small>.gif · Looping animation</small></span></button><button class="export-option" data-action="export-apng">${icon("frame")}<span><strong>Animated PNG</strong><small>.png · Lossless color and transparency</small></span></button><button class="export-option" data-action="export-png-sequence">${icon("duplicate")}<span><strong>PNG sequence</strong><small>.zip · Numbered lossless frames</small></span></button><button class="export-option" data-action="export-jpeg-sequence">${icon("duplicate")}<span><strong>JPEG sequence</strong><small>.zip · Numbered compact frames</small></span></button></div>`,
-    );
-    $("dialog-content")
-      .querySelector(".export-settings")
-      .insertAdjacentHTML(
-        "beforeend",
-        `<div class="text-options"><label>Smoothing<select id="export-smoothing" title="Pixel exports only. SVG keeps editable vector paths.">${EXPORT_SMOOTHING.map((option) => `<option value="${option.value}" title="${esc(option.description)}">${esc(option.label)}</option>`).join("")}</select></label><label class="check-row" title="Improve gradients and photographs in GIF exports."><input type="checkbox" id="export-gif-dither" ${defaultGIFDither(editor.report) ? "checked" : ""}>Dither (GIF)</label></div>`,
-      );
-    const grid = $("dialog-content").querySelector(".export-grid");
-    grid.insertAdjacentHTML(
-      "beforeend",
-      `<button type="button" class="export-option" data-action="export-vfw" disabled>${icon("play")}<span><strong>Windows AVI</strong><small>Installed video codecs</small></span></button>`,
-    );
-    vfwExportControls = new VfwExportControls({
-      container: $("dialog-content").querySelector(".export-settings"),
-      button: grid.querySelector('[data-action="export-vfw"]'),
-      dialog: $("dialog"),
-      canExport: () => editor.totalTicks > 0,
-      getDimensions: () => ({
-        width: Number($("export-width").value),
-        height: Number($("export-height").value),
-      }),
-      onError: fail,
+    sheet?.close();
+    const report = editor.report, audio = audioState(report), clips = audibleClips(audio);
+    const fps = report.frame_delay_ms ? 1000 / report.frame_delay_ms : report.fps;
+    const opened = sheet = openExportSheet({
+      context: {
+        canvasWidth: report.canvas_width, canvasHeight: report.canvas_height, totalFrames: editor.totalTicks, fps,
+        currentFrame: editor.tick + 1, storedFrames: simpleFrameCount(), frameDraft: editor.frameDraft,
+        audioClips: clips, audioSupported: typeof desktop?.writeVideoAudioChunk === "function",
+        soundNames: [...new Set(clips.map((clip) => audio.assets[clip.assetId]?.name).filter(Boolean))],
+        hasObject: Boolean(editor.object), movieclip: isMovieclip(editor.figure),
+        name: editor.name, objectName: nameOf(editor.object), tick: editor.tick,
+      },
+      preferences: exportPreferences(),
+      defaultDither: defaultGIFDither(report),
+      probe: ({ width, height }) => getExportCapabilities({ width, height, fps, desktop }),
+      createVfw: ({ container, dialog, getDimensions, onChange }) =>
+        new VfwExportControls({ container, dialog, getDimensions, onChange, canExport: () => editor.totalTicks > 0, onError: fail }),
+      preview: previewFrames(),
+      // The chosen type's command exports the dialog's request (currentRequest).
+      onExport: async (request) => {
+        try {
+          await actions[exportFormatInfo(request.format).action]();
+        } catch (error) {
+          fail(error);
+        }
+      },
+      onPreferences: rememberPreferences,
+      overlays: ctx.overlays, icon: glyph, t,
     });
-    if (
-      editor.frameDraft?.mode === "add" &&
-      editor.frameDraft.dirty &&
-      editor.totalTicks > 0
-    )
-      grid.insertAdjacentHTML(
-        "beforebegin",
-        '<p class="property-note">Add the working pose as a frame to include it in animation exports. Your .styk project keeps the working pose.</p>',
-      );
-    $("dialog-content")
-      .querySelector(".export-settings")
-      .insertAdjacentHTML(
-        "beforeend",
-        `<div class="text-options export-codecs"><label>MP4 codec<select id="export-mp4-codec" aria-label="MP4 codec" disabled></select></label><label>AVI codec<select id="export-avi-codec" aria-label="AVI codec" disabled></select></label></div>`,
-      );
-    for (const [id, label, note] of [
-      ["mp4", "MP4 video", "H.264 video"],
-      ["avi", "AVI video", "MPEG-4 video"],
-      ["wmv", "Windows Media video", "WMV video"],
-      ["gif-sequence", "GIF sequence", "Numbered GIF frames"],
-      ["svg-sequence", "SVG sequence", "Numbered vector frames"],
-    ])
-      grid.insertAdjacentHTML(
-        "beforeend",
-        `<button type="button" class="export-option" data-action="export-${id}" ${id.endsWith("sequence") ? "" : "disabled"}>${icon(id.endsWith("sequence") ? "duplicate" : "play")}<span><strong>${label}</strong><small>${note}</small></span></button>`,
-      );
-    const singleFrameActions = new Set([
-      "export-piv",
-      "export-stk",
-      "export-stkz",
-      "export-png",
-      "export-svg",
-    ]);
-    if (editor.totalTicks === 0) {
-      for (const id of ["export-start", "export-end"]) {
-        $(id).value = "0";
-        $(id).disabled = true;
-      }
-      for (const button of grid.querySelectorAll("[data-action]")) {
-        if (!singleFrameActions.has(button.dataset.action)) {
-          button.disabled = true;
-          button.title = "Add a frame to export an animation.";
-        }
-      }
-      grid.insertAdjacentHTML(
-        "beforebegin",
-        '<p class="property-note">Add a frame to export an animation.</p>',
-      );
-    }
-    let capabilitySequence = 0;
-    async function refreshCapabilities() {
-      const sequence = ++capabilitySequence;
-      try {
-        const width = Number($("export-width")?.value),
-          height = Number($("export-height")?.value);
-        const capabilities = await getExportCapabilities({
-          width,
-          height,
-          fps: editor.report.frame_delay_ms
-            ? 1000 / editor.report.frame_delay_ms
-            : editor.report.fps,
-          desktop,
-        });
-        if (sequence !== capabilitySequence || !grid.isConnected) return;
-        for (const format of capabilities.formats) {
-          const button = grid.querySelector(
-            `[data-action="export-${format.id === "webm" ? "video" : format.id}"]`,
-          );
-          if (!button) continue;
-          const select = $(`export-${format.id}-codec`);
-          if (select) {
-            const selected = select.value || format.defaultCodec;
-            select.innerHTML = (format.codecs || [])
-              .map(
-                (codec) =>
-                  `<option value="${esc(codec.id)}" ${codec.supported ? "" : "disabled"}>${esc(codec.label)}${codec.lossless && !/lossless|uncompressed/i.test(codec.label) ? " · Lossless" : ""}</option>`,
-              )
-              .join("");
-            select.disabled = !(format.codecs || []).some(
-              (codec) => codec.supported,
-            );
-            if (
-              [...select.options].some(
-                (option) => option.value === selected && !option.disabled,
-              )
-            )
-              select.value = selected;
-            else
-              select.value =
-                [...select.options].find((option) => !option.disabled)?.value ||
-                "";
-          }
-          const selectedCodec = format.codecs?.find(
-            (codec) => codec.id === select?.value,
-          );
-          const encodedWidth = selectedCodec?.encodedWidth || format.encodedWidth,
-            encodedHeight = selectedCodec?.encodedHeight || format.encodedHeight;
-          button.dataset.provider = format.provider || "";
-          button.disabled =
-            !format.supported ||
-            selectedCodec?.supported === false ||
-            (editor.totalTicks === 0 &&
-              !singleFrameActions.has(button.dataset.action));
-          button.title =
-            (editor.totalTicks === 0 &&
-            !singleFrameActions.has(button.dataset.action)
-              ? "Add a frame to export an animation."
-              : "") ||
-            format.reason ||
-            (selectedCodec ? selectedCodec.notice : format.notice) ||
-            "";
-          if (format.kind === "video")
-            button.querySelector("small").textContent = format.supported
-              ? `.${format.extension} · ${selectedCodec?.label || format.codec || format.label}${encodedWidth && (encodedWidth !== width || encodedHeight !== height) ? ` · ${encodedWidth} × ${encodedHeight} (padded)` : ""}`
-              : format.reason;
-        }
-      } catch (error) {
-        for (const button of grid.querySelectorAll(
-          '[data-action="export-video"],[data-action="export-mp4"],[data-action="export-avi"],[data-action="export-wmv"]',
-        )) {
-          button.disabled = true;
-          button.title = error.message;
-        }
-      }
-    }
-    for (const id of ["export-width", "export-height"])
-      $(id).oninput = () => {
-        if ($("export-aspect").checked) {
-          const value = Number($(id).value),
-            ratio = editor.report.canvas_width / editor.report.canvas_height;
-          if (value > 0)
-            $(id === "export-width" ? "export-height" : "export-width").value =
-              Math.max(
-                1,
-                Math.round(id === "export-width" ? value / ratio : value * ratio),
-              );
-        }
-        void refreshCapabilities();
-      };
-    for (const id of ["export-mp4-codec", "export-avi-codec"])
-      $(id).onchange = () => void refreshCapabilities();
-    void refreshCapabilities();
-    mountExportFlow($("dialog-content"), {audioClips:audibleClips(audioState(editor.report)),audioSupported:typeof desktop?.writeVideoAudioChunk==='function',width: editor.report.canvas_width, height: editor.report.canvas_height,
-      totalFrames: editor.totalTicks, storedFrames: simpleFrameCount(), currentFrame: editor.tick + 1,
-      fps: editor.report.frame_delay_ms ? 1000 / editor.report.frame_delay_ms : editor.report.fps});
+    opened.closed.then(() => { if (sheet === opened) sheet = null; });
   }
   Object.assign(actions, {
     export: showExport,

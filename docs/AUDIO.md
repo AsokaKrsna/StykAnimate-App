@@ -146,7 +146,7 @@ export. The final output retains the existing size limit and atomic save path.
 Audio and video jobs share cancellation and clean up partial files together.
 
 Browser WebCodecs video and installed Windows VFW exports currently require
-turning off Include audio explicitly. The Export panel explains this before
+turning off Sound explicitly. The export dialog explains this before
 export; it never silently discards an audible soundtrack. Lossy audio formats
 may contain encoder priming/padding within one codec block; tests check decoded
 sample content and container duration with codec-appropriate tolerances.
@@ -168,7 +168,7 @@ sample content and container duration with codec-appropriate tolerances.
 Evidence is written under `artifacts/audio/`, `artifacts/audio-navigation/`,
 `artifacts/audio-ux/` and `artifacts/audio-desktop/`.
 The desktop test imports an actual MP3, exports all four formats plus a selected
-range and an MP4 through the Export panel, then independently decodes their
+range and an MP4 through the export dialog, then independently decodes their
 soundtracks. It checks leading/trailing silence, audible samples, durations,
 bounded IPC, cancellation/retry and preview clock alignment. Browser checks
 cover editing in both views, keyboard isolation, native save/reopen and a cold

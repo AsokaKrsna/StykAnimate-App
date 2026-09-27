@@ -7,6 +7,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
+import {chooseExport, exportDialogClosed} from './helpers/export-dialog.mjs';
 const require = createRequire(import.meta.url), {startBackend} = require('../desktop/backend.cjs');
 const appRoot = fileURLToPath(new URL('..', import.meta.url)), out = path.join(appRoot, 'artifacts');
 await mkdir(out, {recursive: true});
@@ -39,16 +40,12 @@ try {
       y: rect.top + (ruler ? 12 : 32 + index * 32 + 16 - timeline._offsetY())};
   }, {trackId, tick, ruler});
   async function seek(tick) { const p = await point(null, tick, true); await page.mouse.click(p.x, p.y); await settle(); assert.equal(await page.evaluate(() => styk.editor.tick), tick); }
-  const exportCategory = {png: 'frames', svg: 'frames', 'png-sequence': 'frames', 'jpeg-sequence': 'frames', 'gif-sequence': 'frames',
-    'svg-sequence': 'frames', gif: 'animated', apng: 'animated', mp4: 'video', video: 'video', avi: 'video', wmv: 'video', vfw: 'video',
-    stkz: 'editable', piv: 'editable', stk: 'editable'};
   async function exportFile(kind, name) {
     await page.locator('[data-action="export"]').first().click();
-    await page.locator(`[data-category="${exportCategory[kind]}"]`).click();
-    await page.selectOption('#output-format', `export-${kind}`);
+    await chooseExport(page, `export-${kind}`);
     const pending = page.waitForEvent('download'); pending.catch(() => {});
     await page.locator('#export-submit').click(); const download = await pending, target = path.join(out, name); await download.saveAs(target);
-    await page.waitForFunction(() => !document.querySelector('#dialog').open); return target;
+    await exportDialogClosed(page); return target;
   }
   async function saveProject(name) {
     const pending = page.waitForEvent('download'); pending.catch(() => {}); await page.locator('[data-action="save"]').first().click();

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import path from 'node:path';
 import backend from '../desktop/backend.cjs';
+import {chooseExport} from './helpers/export-dialog.mjs';
 const output=path.resolve('artifacts/gif-dithering-app');
 await mkdir(output,{recursive:true});
 const service=await backend.startBackend({appRoot:process.cwd()});
@@ -13,8 +14,10 @@ try{
  browser=await chromium.launch({channel:'chrome',headless:true});
  const page=await browser.newPage({viewport:{width:1360,height:900},acceptDownloads:true});
  page.on('pageerror',e=>errors.push(e.message));
+ // Headless Chrome aborts showSaveFilePicker; without it the export saves through a download.
+ await page.addInitScript(()=>{delete window.showSaveFilePicker;});
  await page.goto(service.origin);await page.waitForFunction(()=>window.styk?.ready);
- const open=async()=>{await page.locator('[data-action="export"]').first().click();await page.locator('.export-settings summary').click();};
+ const open=async()=>{await page.locator('.titlebar [data-action="export"]').click();await chooseExport(page,'export-gif');};
  await open();check('simple drawings default Dither off',!await page.locator('#export-gif-dither').isChecked());
  await page.keyboard.press('Escape');
  await page.evaluate(async()=>{
@@ -37,7 +40,7 @@ try{
   await open();check(`sprite default Dither on before ${dither?'on':'off'} export`,await page.locator('#export-gif-dither').isChecked());
   await page.locator('#export-gif-dither').setChecked(dither);
   if(dither)await page.screenshot({path:path.join(output,'dialog.png')});
-  const waiting=page.waitForEvent('download');await page.locator('[data-action="export-gif"]').click();
+  const waiting=page.waitForEvent('download');await page.locator('#export-submit').click();
   const file=await waiting,target=path.join(output,`sprite-${dither?'on':'off'}.gif`);await file.saveAs(target);
   const bytes=await readFile(target);check(`actual ${dither?'on':'off'} GIF download`,bytes.subarray(0,6).toString()==='GIF89a');
   hashes.push(await page.evaluate(async data=>{

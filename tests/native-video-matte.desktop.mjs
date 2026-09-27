@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import { chooseExport, exportDialogClosed, openEncoding } from './helpers/export-dialog.mjs';
 
 const root = path.resolve(import.meta.dirname, '..'), output = path.join(root, 'artifacts', 'native-video-matte');
 await mkdir(output, { recursive: true });
@@ -33,18 +34,17 @@ try {
   for (const format of ['mp4', 'avi', 'wmv', 'webm']) {
     await page.locator('[data-action="export"]').first().click();
     const action = format === 'webm' ? 'export-video' : `export-${format}`;
-    await page.waitForFunction(action => !document.querySelector(`[data-action="${action}"]`)?.disabled, action);
-    await page.locator('#output-format').selectOption(action);
-    await page.locator('#export-video-quality').selectOption('high');
+    await chooseExport(page, action);
+    await page.locator('#export-video-quality [data-value="high"]').click();
     if (format === 'avi') {
-      await page.locator('.export-advanced > summary').click();
+      await openEncoding(page);
       await page.waitForFunction(() => document.querySelector('#export-avi-codec')?.options.length >= 3);
       await page.locator('#export-avi-codec').selectOption('ffv1');
     }
     const filename = path.join(output, `transparent-source.${format}`);
     await app.evaluate(({ dialog }, filename) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: filename }); }, filename);
     await page.locator('#export-submit').click();
-    await page.waitForFunction(() => !document.querySelector('#dialog').open, undefined, { timeout: 30000 });
+    await exportDialogClosed(page);
     const bytes = await readFile(filename); assert.ok(bytes.length > 256);
     const codec = format === 'avi' ? 'ffv1' : capabilities.formats.find(item => item.id === format).defaultCodec;
     const details = capabilities.formats.find(item => item.id === format).codecs.find(item => item.id === codec), alpha = format === 'webm';

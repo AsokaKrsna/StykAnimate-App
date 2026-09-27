@@ -2,6 +2,7 @@ import { _electron as electron } from "playwright";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import assert from "node:assert/strict";
+import { chooseExport, openEncoding } from "./helpers/export-dialog.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const out = path.join(root, "artifacts", "export-panel-layout");
@@ -55,15 +56,16 @@ try {
       { timeout: 30000 },
     );
     check(
-      `${width}×${height}: collapsed export fits with three columns`,
-      await page.locator("#dialog").evaluate((d) => {
+      `${width}×${height}: export fits with the preview beside the settings`,
+      await page.locator("#export-dialog").evaluate((d) => {
         const r = d.getBoundingClientRect(),
-          grid = d.querySelector(".export-grid");
+          preview = d.querySelector(".ui-export-preview").getBoundingClientRect(),
+          body = d.querySelector(".ui-dialog-body").getBoundingClientRect();
         return (
           d.scrollWidth <= d.clientWidth &&
           r.top >= 0 &&
           r.bottom <= innerHeight &&
-          getComputedStyle(grid).gridTemplateColumns.split(" ").length === 3
+          preview.right <= body.left + 1
         );
       }),
     );
@@ -71,44 +73,35 @@ try {
       await page.screenshot({
         path: path.join(out, `export-collapsed-${width}.png`),
       });
-    await page.locator(".export-settings > summary").click();
+    await chooseExport(page, "export-mp4");
+    await openEncoding(page);
     await page.locator("#export-smoothing").selectOption("sprites");
     await page.locator("#export-mp4-codec").selectOption("mpeg4");
+    await chooseExport(page, "export-avi");
     await page.locator("#export-avi-codec").selectOption("ffv1");
-    const metrics = await page.locator("#dialog").evaluate((d) => {
+    const metrics = await page.locator("#export-dialog").evaluate((d) => {
       const rect = d.getBoundingClientRect(),
-        body = d.querySelector(".dialog-body"),
-        settings = d.querySelector(".export-settings"),
-        grid = d.querySelector(".export-grid"),
-        head = d.querySelector(".dialog-head");
-      const controls = [
-        ...settings.querySelectorAll("input,select,button"),
-      ].filter((e) => e.getClientRects().length);
+        body = d.querySelector(".ui-dialog-body"),
+        head = d.querySelector(".ui-dialog-head");
+      const controls = [...body.querySelectorAll("input,select,button")].filter(
+        (e) => e.getClientRects().length,
+      );
       return {
         viewport: [innerWidth, innerHeight],
-        dialog: {
-          x: rect.x,
-          y: rect.y,
-          width: rect.width,
-          height: rect.height,
-        },
+        dialog: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
         horizontalOverflow:
           d.scrollWidth > d.clientWidth || body.scrollWidth > body.clientWidth,
-        sideBySide:
-          grid.getBoundingClientRect().left >
-          settings.getBoundingClientRect().right,
         headY: head.getBoundingClientRect().y,
         scrollHeight: body.scrollHeight,
         bodyHeight: body.clientHeight,
         clippedControls: controls
           .filter((e) => {
             const a = e.getBoundingClientRect(),
-              b = settings.getBoundingClientRect();
+              b = body.getBoundingClientRect();
             return a.left < b.left || a.right > b.right;
           })
           .map((e) => e.id),
         controls: controls.length,
-        tiles: grid.children.length,
         smoothing: [...d.querySelector("#export-smoothing").options].map(
           (o) => o.value,
         ),
@@ -116,15 +109,10 @@ try {
     });
     layouts.push(metrics);
     check(
-      `${width}×${height}: render settings and formats have distinct columns`,
-      metrics.sideBySide,
-      metrics,
-    );
-    check(
-      `${width}×${height}: all final export controls fit without horizontal clipping`,
+      `${width}×${height}: all export controls fit without horizontal clipping`,
       !metrics.horizontalOverflow &&
         !metrics.clippedControls.length &&
-        metrics.controls >= 15 &&
+        metrics.controls >= 12 &&
         metrics.smoothing.join(",") === "edges,none,sprites",
       metrics,
     );
@@ -132,28 +120,26 @@ try {
       path: path.join(out, `export-expanded-${width}-${height}.png`),
     });
     await page
-      .locator("#dialog .dialog-body")
+      .locator("#export-dialog .ui-dialog-body")
       .evaluate((e) => (e.scrollTop = e.scrollHeight));
     check(
       `${width}×${height}: scrolling keeps title and close action in place`,
       await page
-        .locator("#dialog .dialog-head")
+        .locator("#export-dialog .ui-dialog-head")
         .evaluate(
           (e, y) => Math.abs(e.getBoundingClientRect().y - y) < 0.5,
           metrics.headY,
         ),
     );
-    await page
-      .locator('[data-action="export-svg-sequence"]')
-      .scrollIntoViewIfNeeded();
+    await chooseExport(page, "export-svg-sequence");
     check(
       `${width}×${height}: last format remains reachable`,
-      await page.locator('[data-action="export-svg-sequence"]').isVisible(),
+      (await page.locator("#output-format").inputValue()) === "export-svg-sequence",
     );
-    await page.locator('[data-action="close-dialog"]').click();
+    await page.locator("#export-dialog .ui-dialog-close").click();
     check(
       `${width}×${height}: fixed close action closes export`,
-      await page.locator("#dialog").evaluate((d) => !d.open),
+      await page.evaluate(() => !document.querySelector("#export-dialog")),
     );
   }
   await app.evaluate(({ BrowserWindow }) =>

@@ -5,6 +5,7 @@ import {execFileSync} from 'node:child_process';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import backend from '../desktop/backend.cjs';
+import {chooseExport, exportDialogClosed, openEncoding} from './helpers/export-dialog.mjs';
 
 const root = path.resolve(import.meta.dirname, '..'), output = path.join(root, 'artifacts', 'webm-alpha-renderer'); await mkdir(output, {recursive: true});
 const app = await electron.launch({args: [root], cwd: root, timeout: 45000, env: {...process.env, STYK_USER_DATA_DIR: path.join(output, `profile-${Date.now()}`)}});
@@ -23,7 +24,7 @@ try {
     for (const frame of report.keyframes) frame._stykBackgroundColor = 0;
     window.styk.editor.load(report); window.styk.editor.markSaved();
   });
-  await page.locator('[data-action="export"]').first().click(); await page.locator('.export-settings > summary').click();
+  await page.locator('[data-action="export"]').first().click(); await chooseExport(page, 'export-vfw'); await openEncoding(page);
   await page.waitForFunction(() => !document.querySelector('#export-vfw-codec')?.disabled, undefined, {timeout: 30000});
   const caps = await page.evaluate(async () => (await import('/src/export-capabilities.mjs')).getExportCapabilities({width: 64, height: 36, fps: 16}));
   const webm = caps.formats.find(format => format.id === 'webm'); assert.equal(webm.supported, true); assert.equal(webm.provider, 'FFmpeg'); checks.push('Desktop capability selects the actual FFmpeg WebM provider');
@@ -34,12 +35,12 @@ try {
   await page.waitForFunction(() => document.querySelector('.vfw-config-state')?.textContent === 'Custom codec settings');
   const codecOptions = await page.evaluate(() => Object.fromEntries(['mp4', 'avi'].map(format => { const select = document.querySelector(`#export-${format}-codec`); return [format, {value: select.value, disabled: select.disabled, labels: [...select.options].map(option => option.label)}]; })));
   assert.ok(codecOptions.mp4.value && codecOptions.avi.value && !codecOptions.mp4.disabled && !codecOptions.avi.disabled); checks.push('MP4 and AVI codec choices remain populated and usable after the native Configure dialog');
-  await page.locator('#export-webm-bitrate').fill('0.25'); await page.locator('#export-quality').fill('90');
-  assert.equal(await page.locator('[data-action="export-video"]').getAttribute('data-provider'), 'FFmpeg'); checks.push('Actual WebM export tile routes to the native alpha-capable provider');
-  assert.ok(await page.locator('#dialog').evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth + 1));
+  await chooseExport(page, 'export-video'); await page.locator('#export-bitrate-mode').selectOption('manual'); await page.locator('#export-video-bitrate').fill('0.25');
+  assert.equal(await page.locator('#output-format option[value="export-video"]').getAttribute('data-provider'), 'FFmpeg'); checks.push('Actual WebM export type routes to the native alpha-capable provider');
+  assert.ok(await page.locator('#export-dialog').evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth + 1));
   await page.screenshot({path: path.join(output, 'controls.png')});
   const destination = path.join(output, 'transparent.webm'); await app.evaluate(({dialog}, filename) => { dialog.showSaveDialog = async () => ({canceled: false, filePath: filename}); }, destination);
-  await page.locator('[data-action="export-video"]').click(); await page.waitForFunction(() => !document.querySelector('#dialog').open, undefined, {timeout: 30000});
+  await page.locator('#export-submit').click(); await exportDialogClosed(page);
   const bytes = await readFile(destination), requests = await app.evaluate(() => globalThis.__videoOptions), request = requests.at(-1);
   assert.ok(bytes.length > 256); assert.equal(request.format, 'webm'); assert.equal(request.bitrate, 250000); checks.push('Actual Save produces WebM and forwards the entered 250 kbit/s bitrate');
   const ffmpeg = path.join(root, 'build', 'video-encoder', 'ffmpeg.exe');

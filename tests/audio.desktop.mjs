@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {chooseExport} from './helpers/export-dialog.mjs';
 const root=process.cwd(),out=path.join(root,'artifacts','audio-desktop'); await mkdir(out,{recursive:true});
 const ffmpeg=path.join(root,'build','video-encoder','ffmpeg.exe');
 const encoded=spawnSync(ffmpeg,['-hide_banner','-loglevel','error','-y','-f','lavfi','-i','sine=frequency=440:duration=3:sample_rate=48000','-c:a','libmp3lame',path.join(out,'Voice.mp3')],{windowsHide:true});
@@ -42,8 +43,8 @@ try {
   const uiTarget=path.join(out,'ui.mp4');
   await app.evaluate(({dialog},file)=>{dialog.showSaveDialog=async()=>({canceled:false,filePath:file});},uiTarget);
   await page.locator('[data-action="export"]').first().click();
-  await page.waitForFunction(()=>!document.querySelector('[data-action="export-mp4"]')?.disabled);
-  await page.getByLabel('Export format',{exact:true}).selectOption('export-mp4');
+  await chooseExport(page,'export-mp4');
+  await page.locator('#export-resolution').selectOption('custom');
   await page.locator('#export-width').fill('128');await page.locator('#export-width').press('Tab');
   await page.locator('#export-start').fill('1');await page.locator('#export-end').fill('16');await page.locator('#export-end').press('Tab');
   assert.equal(await page.locator('#export-audio').isChecked(),true);

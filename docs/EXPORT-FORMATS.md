@@ -6,9 +6,10 @@ and codec/quality fields where applicable. Query again when dimensions or frame
 rate change. Browser video uses the available WebCodecs VP8/VP9 encoder; native
 formats depend on the desktop's probed, bundled FFmpeg executable.
 
-The video panel defaults to **Recommended**, with **Smaller file** and **Higher
-quality** alternatives. Bitrate and MP4/AVI codec controls are in a collapsed
-**Advanced video settings** section. Automatic mode uses native quality targets:
+Video Quality defaults to **Great** (Recommended), with **Draft** (Smaller file)
+and **Max** (Higher quality) alternatives. Bitrate and MP4/AVI codec controls are
+in the export dialog's **Encoding** section, closed until opened (it remembers
+being open). Automatic mode uses native quality targets:
 H.264 CRF, VP9 constant quality with `-b:v 0`, or MPEG-4/WMV quantizer quality.
 Bitrate therefore follows scene complexity instead of a fixed source-size guess.
 Browser WebCodecs uses a target calculated from final output dimensions, frame

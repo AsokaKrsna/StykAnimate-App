@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import backend from "../desktop/backend.cjs";
+import { chooseExport, exportDialogClosed } from "./helpers/export-dialog.mjs";
 const output = path.resolve("artifacts/export-sampling-app");
 await mkdir(output, { recursive: true });
 const service = await backend.startBackend({ appRoot: process.cwd() });
@@ -37,11 +38,7 @@ try {
     await page.locator("#export-smoothing").selectOption(mode);
   }
   async function selectFormat(action) {
-    const category = ["export-gif", "export-apng"].includes(action)
-      ? "animated"
-      : "frames";
-    await page.locator(`[data-category="${category}"]`).click();
-    await page.locator("#output-format").selectOption(action);
+    await chooseExport(page, action);
   }
   async function download(action, name) {
     await selectFormat(action);
@@ -267,7 +264,7 @@ try {
   await open('sprites');
   await selectFormat('export-png');
   await page.locator('#export-submit').click();
-  await page.waitForFunction(() => !document.querySelector('#dialog').open &&
+  await page.waitForFunction(() => !document.querySelector('#export-dialog') &&
     document.querySelector('#toast').textContent.includes('before saving an incomplete frame'));
   check('canvas loss during PNG encoding produces a clear error and no download', failedDownloads === 0);
   page.off('download', onFailedDownload);
@@ -293,7 +290,7 @@ try {
       await page.locator("#export-progress").isVisible(),
     );
     await page.locator("#cancel-export").click();
-    await page.waitForFunction(() => !document.querySelector("#dialog").open);
+    await exportDialogClosed(page);
     check(
       "actual Cancel aborts worker loading without a download",
       downloads === 0,

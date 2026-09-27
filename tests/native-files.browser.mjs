@@ -4,6 +4,7 @@ import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import backend from '../desktop/backend.cjs';
 import {readNativeDocument} from '../scripts/read-native-document.mjs';
+import {chooseExport} from './helpers/export-dialog.mjs';
 
 const appRoot = path.resolve('.'), out = path.join(appRoot, 'artifacts', 'native-files');
 await mkdir(out, {recursive: true});
@@ -25,10 +26,10 @@ try {
     styk.editor.load(report, 'Native saving'); styk.editor.select(1); styk.fit();
   });
   await page.evaluate(() => styk.actions.export());
-  assert.equal(await page.locator('[data-action="export-stkz"]').isEnabled(), true);
-  assert.equal(await page.locator('[data-action="export-stk"]').isEnabled(), true);
   await page.locator('[data-category="editable"]').click();
-  await page.locator('#output-format').selectOption('export-stkz');
+  assert.equal(await page.locator('#export-project-type [data-format="stkz"]').getAttribute('aria-disabled'), null);
+  assert.equal(await page.locator('#export-project-type [data-format="stk"]').getAttribute('aria-disabled'), null);
+  await chooseExport(page, 'export-stkz');
   await page.screenshot({path: path.join(out, 'export-dialog.png')});
   const figureDownload = page.waitForEvent('download');
   await page.locator('#export-submit').click();

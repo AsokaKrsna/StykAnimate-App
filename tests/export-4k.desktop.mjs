@@ -4,6 +4,7 @@ import {spawnSync} from 'node:child_process';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import {chooseExport, exportDialogClosed} from './helpers/export-dialog.mjs';
 const root = process.cwd(), output = path.resolve('artifacts/export-4k');
 await mkdir(output, {recursive: true});
 const app = await electron.launch({args: [root], cwd: root, timeout: 45000,
@@ -41,15 +42,14 @@ try {
     await app.evaluate(({dialog}, file) => {dialog.showSaveDialog = async () => ({canceled: false, filePath: file});}, file);
     await page.locator('[data-action="export"]').first().click();
     const action = format === 'webm' ? 'export-video' : `export-${format}`;
-    await page.waitForFunction(action => !document.querySelector(`[data-action="${action}"]`).disabled, action);
-    await page.locator('#output-format').selectOption(action);
+    await chooseExport(page, action);
     await page.locator('#export-resolution').selectOption('2160');
     await page.locator('#export-smoothing').selectOption(smoothing);
     assert.ok(await page.locator('#export-submit').isEnabled());
-    assert.ok(await page.locator('#dialog').evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth));
+    assert.ok(await page.locator('#export-dialog').evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth));
     if (format === 'mp4' && smoothing === 'sprites') await page.screenshot({path: path.join(output, 'desktop-panel.png')});
     const start = performance.now(); await page.locator('#export-submit').click();
-    await page.waitForFunction(() => !document.querySelector('#dialog').open, null, {timeout: 120000});
+    await exportDialogClosed(page, 120000);
     const bytes = (await readFile(file)).length;
     assert.ok(bytes > 1000);
     const request = await app.evaluate(() => exportQualityRequests.at(-1));

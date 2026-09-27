@@ -5,6 +5,7 @@ import {execFileSync} from 'node:child_process';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import backend from '../desktop/backend.cjs';
+import {chooseExport, exportDialogClosed, openEncoding} from './helpers/export-dialog.mjs';
 
 const root = path.resolve(import.meta.dirname, '..'), output = path.join(root, 'artifacts', 'vfw-renderer');
 await mkdir(output, {recursive: true});
@@ -68,7 +69,10 @@ try {
   const filename = path.join(output, 'ui-windows-codec.avi');
   await app.evaluate(({dialog}, filename) => { dialog.showSaveDialog = async () => ({canceled: false, filePath: filename}); }, filename);
   await page.locator('[data-action="export"]').first().click();
+  await page.locator('[data-category="video"]').click();
+  await page.locator('#output-format option[value="export-vfw"]').waitFor({state: 'attached'});
   await page.locator('#output-format').selectOption('export-vfw');
+  await openEncoding(page);
   await page.locator('#export-vfw-codec').waitFor({state: 'visible'});
   await page.waitForFunction(() => !document.querySelector('#export-vfw-codec').disabled);
   const installed = result.capabilities.codecs.find(codec => codec.arch === 'x86' && codec.supported && codec.configure && codec.dataRate);
@@ -77,15 +81,15 @@ try {
   await page.locator('#export-vfw-configure').click();
   const python = backend.pythonCandidates()[0];
   try { result.configurationDialog = JSON.parse(execFileSync(python.command, [...python.args, path.join(root, 'tests/vfw-owned-dialog-cancel.py'), '--parent', String(await app.evaluate(() => process.pid))], {windowsHide: true, encoding: 'utf8', timeout: 15000})); }
-  catch (error) { console.log('Configuration diagnostic', await app.evaluate(() => globalThis.__vfwConfiguration), await page.locator('#dialog').innerText()); throw error; }
+  catch (error) { console.log('Configuration diagnostic', await app.evaluate(() => globalThis.__vfwConfiguration), await page.locator('#export-dialog').innerText()); throw error; }
   await page.waitForFunction(() => document.querySelector('.vfw-config-state')?.textContent === 'Custom codec settings');
   assert.equal(await app.evaluate(({BrowserWindow}) => BrowserWindow.getAllWindows()[0].isEnabled()), true);
   result.checks.push('Actual Configure opens only the owned native codec dialog, retains opaque settings and restores the Electron owner');
   await page.locator('#export-vfw-quality').fill('75'); await page.locator('#export-vfw-keyframes').fill('4'); await page.locator('#export-vfw-bitrate').fill('0.4');
-  assert.ok(await page.locator('#dialog').evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth + 1)); result.checks.push('Installed codec controls fit the actual export dialog without horizontal scrolling');
+  assert.ok(await page.locator('#export-dialog').evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth + 1)); result.checks.push('Installed codec controls fit the actual export dialog without horizontal scrolling');
   await page.screenshot({path: path.join(output, 'export-controls.png')});
   await page.locator('#export-submit').click();
-  await page.waitForFunction(() => !document.querySelector('#dialog').open, undefined, {timeout: 30000});
+  await exportDialogClosed(page);
   const uiBytes = await readFile(filename); assert.ok(uiBytes.length > 256); result.checks.push('Actual Windows AVI export tile renders and saves through the native file dialog bridge');
   const requests = await app.evaluate(() => globalThis.__vfwTestRequests), request = requests.at(-1);
   assert.equal(request.codecId, installed.id); assert.equal(request.quality, .75); assert.equal(request.keyframeEvery, 4); assert.equal(request.bitrate, 400000);

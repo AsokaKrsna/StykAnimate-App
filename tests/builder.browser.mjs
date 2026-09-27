@@ -3,6 +3,7 @@ import { chromium } from "playwright";
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { chooseExport, exportDialogClosed } from "./helpers/export-dialog.mjs";
 
 const out = path.resolve("artifacts"),
   url = process.env.STYK_URL || "http://127.0.0.1:47831";
@@ -53,27 +54,16 @@ async function undo() {
   await page.locator('[data-tool="select"]').click();
   await page.keyboard.press("Control+z");
 }
-const exportCategories = {
-  video: ["export-mp4", "export-video", "export-avi", "export-wmv", "export-vfw"],
-  animated: ["export-gif", "export-apng"],
-  frames: ["export-png", "export-svg", "export-png-sequence", "export-jpeg-sequence", "export-gif-sequence", "export-svg-sequence"],
-  editable: ["export-stkz", "export-piv", "export-stk"],
-};
 async function exportDownload(action, filename) {
   await page.locator('.titlebar [data-action="export"]').click();
-  const category = Object.keys(exportCategories).find((key) =>
-    exportCategories[key].includes(action),
-  );
-  if (category)
-    await page.locator(`#dialog [data-category="${category}"]`).click();
-  await page.locator("#dialog #output-format").selectOption(action);
+  await chooseExport(page, action);
   const promise = page.waitForEvent("download");
   promise.catch(() => {});
-  await page.locator("#dialog #export-submit").click();
+  await page.locator("#export-dialog #export-submit").click();
   const download = await promise,
     target = path.join(out, filename);
   await download.saveAs(target);
-  await page.waitForFunction(() => !document.querySelector("#dialog").open);
+  await exportDialogClosed(page);
   return {
     target,
     suggested: download.suggestedFilename(),

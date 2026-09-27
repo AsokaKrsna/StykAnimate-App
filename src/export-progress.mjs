@@ -39,18 +39,18 @@ export function exportTime(seconds) {
   return `${Math.floor(value / 3600)}h ${Math.floor(value % 3600 / 60)}m`;
 }
 
-export const exportProgressMarkup = `<div class="export-progress-view">
-  <div class="export-progress-heading"><strong id="export-stage" role="status" aria-live="polite">Preparing animation…</strong><output id="export-percent">0%</output></div>
+/** The progress view (features/export.css): it replaces the export dialog's settings while an export runs. */
+export const exportProgressMarkup = `<div class="export-progress">
+  <div class="export-progress-head"><strong id="export-stage" role="status" aria-live="polite">Preparing animation…</strong><output id="export-percent">0%</output></div>
   <progress id="export-progress" max="100" aria-label="Export progress" aria-describedby="export-frame-detail"></progress>
   <p id="export-frame-detail"></p>
   <dl class="export-progress-stats"><div><dt>Rendered</dt><dd id="export-rendered">0</dd></div><div><dt>Left to render</dt><dd id="export-remaining">—</dd></div><div><dt>Elapsed</dt><dd id="export-elapsed">0s</dd></div><div><dt>Est. remaining</dt><dd id="export-eta">—</dd></div></dl>
   <p id="export-pass-note" hidden></p>
-  <div class="export-flow-footer"><button class="button" id="cancel-export">Cancel export</button></div>
+  <div class="export-progress-actions"><button type="button" class="ui-button" data-variant="outline" id="cancel-export">Cancel export</button></div>
 </div>`;
 
 export function mountExportProgress(content, options, cancel) {
-  const model = new ExportProgress(options), dialog = content.closest('dialog');
-  dialog.classList.remove('studio-export-dialog'); dialog.classList.add('export-progress-dialog');
+  const model = new ExportProgress(options);
   const field = id => content.querySelector(`#export-${id}`);
   const paint = () => {
     if (!field('progress')?.isConnected) return;
@@ -79,6 +79,6 @@ export function mountExportProgress(content, options, cancel) {
     frameStarted(tick) {model.frameStarted(tick); paint();},
     frameRendered() {model.frameRendered(); paint();},
     update(value) {model.update(value); paint();},
-    dispose() {clearInterval(timer); dialog.classList.remove('export-progress-dialog');},
+    dispose() {clearInterval(timer);},
   };
 }

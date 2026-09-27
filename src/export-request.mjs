@@ -73,6 +73,10 @@
  *   (with its reason). The export-stkz command still writes .stykmov for one.
  * - A remembered Custom size of another shape opens as Original, never as
  *   distorted pixels (today's dialog always opened at the artboard size).
+ * - A command run after the dialog was closed exports today's defaults. Today's
+ *   closed dialog left its fields in the page, so a palette export after it
+ *   used the closed dialog's size, range and settings until another dialog
+ *   replaced them; the sheet leaves nothing behind.
  */
 import {EXPORT_MAX_PIXELS, EXPORT_SMOOTHING, normalizeExportSmoothing} from './export-sampling.mjs';
 import {VIDEO_QUALITY_PRESETS, videoQualityOptions} from './export-video-quality.mjs';

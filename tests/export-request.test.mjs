@@ -84,8 +84,15 @@ test('the legacy fixture is still verbatim app.mjs export code', t => {
   if (!found.length) t.skip('the export actions read an ExportRequest now; the fixture keeps the last legacy code');
 });
 
-test('the dialog ids the browser tests query stay in one map', t => {
-  if (!source('src/export-panel.mjs')) return t.skip('the legacy dialog is gone; the sheet takes its ids from EXPORT_FIELD_IDS and EXPORT_ELEMENT_IDS');
+test('the dialog ids the browser tests query stay in one map', () => {
+  if (!source('src/export-panel.mjs')) {
+    // The export dialog takes each id from the maps; the Windows codec fields and the progress keep their literal ids.
+    const sheet = source('src/export-sheet.mjs'), literal = ['src/vfw-export-controls.mjs', 'src/export-progress.mjs'].map(source).join('\n');
+    assert.match(sheet, /EXPORT_FIELD_IDS as FIELD, EXPORT_ELEMENT_IDS as ELEMENT/);
+    for (const [key, id] of Object.entries(EXPORT_FIELD_IDS)) assert.ok(sheet.includes(`FIELD.${key}`) || literal.includes(`id="${id}"`), `${id} is a dialog id`);
+    for (const [key, id] of Object.entries(EXPORT_ELEMENT_IDS)) assert.ok(sheet.includes(`ELEMENT.${key}`) || literal.includes(`id="${id}"`), `${id} is a dialog id`);
+    return;
+  }
   const homes = ['src/app.mjs', 'src/export-flow.mjs', 'src/export-panel.mjs', 'src/vfw-export-controls.mjs', 'src/export-progress.mjs'].map(source).join('\n');
   for (const id of [...Object.values(EXPORT_FIELD_IDS), ...Object.values(EXPORT_ELEMENT_IDS)]) assert.ok(homes.includes(`id="${id}"`), `${id} is a dialog id`);
 });

@@ -9,8 +9,7 @@
     "src/property-controls.mjs": 1,
     "src/segment-values-dialog.mjs": 1,
     "src/sprite-placement-dialog.mjs": 1,
-    "src/text-dialog.mjs": 1,
-    "src/vfw-export-controls.mjs": 1
+    "src/text-dialog.mjs": 1
   },
   "legacyImportant": [
     {"file":"src/background-dialog.mjs","line":32,"selector":".background-dialog [hidden]","property":"display"},
@@ -33,14 +32,8 @@
     {"file":"src/styles/legacy/01-style.css","line":2018,"selector":".paint-eyedropper","property":"cursor"},
     {"file":"src/styles/legacy/01-style.css","line":2020,"selector":".paint-picker [hidden]","property":"display"},
     {"file":"src/styles/legacy/01-style.css","line":2023,"selector":".paint-magnifier","property":"pointer-events"},
-    {"file":"src/styles/legacy/20-studio.css","line":147,"selector":".studio-export-dialog","property":"width"},
-    {"file":"src/styles/legacy/20-studio.css","line":147,"selector":".studio-export-dialog","property":"max-width"},
-    {"file":"src/styles/legacy/20-studio.css","line":148,"selector":".studio-export-dialog .dialog-body","property":"display"},
-    {"file":"src/styles/legacy/20-studio.css","line":148,"selector":".studio-export-dialog .dialog-body","property":"align-items"},
-    {"file":"src/styles/legacy/20-studio.css","line":148,"selector":".studio-export-dialog .dialog-body","property":"padding"},
-    {"file":"src/styles/legacy/20-studio.css","line":206,"selector":"#dialog.studio-export-dialog [hidden], #dialog.export-progress-dialog [hidden]","property":"display"},
-    {"file":"src/styles/legacy/20-studio.css","line":227,"selector":"*, *::before, *::after","property":"scroll-behavior"},
-    {"file":"src/styles/legacy/20-studio.css","line":227,"selector":"*, *::before, *::after","property":"transition-duration"},
+    {"file":"src/styles/legacy/20-studio.css","line":159,"selector":"*, *::before, *::after","property":"scroll-behavior"},
+    {"file":"src/styles/legacy/20-studio.css","line":159,"selector":"*, *::before, *::after","property":"transition-duration"},
     {"file":"src/styles/legacy/33-tweener.css","line":16,"selector":".tweener-active #overlay","property":"cursor"},
     {"file":"src/styles/legacy/37-vfx.css","line":2,"selector":"#vfx-panel[hidden],#inspector[hidden]","property":"display"},
     {"file":"src/styles/legacy/37-vfx.css","line":18,"selector":".vfx-menu button[data-vfx-action=remove]","property":"color"},

@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { chooseExport, exportDialogClosed, openEncoding } from './helpers/export-dialog.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const output = path.join(root, 'artifacts', 'worker-video-renderer');
@@ -87,30 +88,31 @@ try {
   }, totalFrames);
   const open = async (format, smoothing, end) => {
     await page.locator('[data-action="export"]').first().click();
-    await page.locator('.export-settings > summary').click();
+    await chooseExport(page, format === 'webm' ? 'export-video' : 'export-vfw');
     await page.locator('#export-smoothing').selectOption(smoothing);
     if (end) await page.locator('#export-end').fill(String(end));
+    await openEncoding(page);
     if (format === 'webm') {
-      await page.waitForFunction(() => document.querySelector('[data-action="export-video"]')?.dataset.provider === 'FFmpeg');
-      await page.locator('#export-webm-bitrate').fill('0.25');
-      await page.locator('#export-quality').fill('100');
+      await page.waitForFunction(() => document.querySelector('#output-format option[value="export-video"]')?.dataset.provider === 'FFmpeg');
+      await page.locator('#export-bitrate-mode').selectOption('manual');
+      await page.locator('#export-video-bitrate').fill('0.25');
     } else {
       await page.waitForFunction(() => !document.querySelector('#export-vfw-codec')?.disabled);
       const id = await page.evaluate(async () => (await window.stykDesktop.getVfwCapabilities({ width: 64, height: 40 })).codecs.find(codec => codec.arch === 'x64' && codec.kind === 'uncompressed').id);
       await page.locator('#export-vfw-codec').selectOption(id);
     }
   };
-  const tile = format => page.locator(`[data-action="${format === 'webm' ? 'export-video' : 'export-vfw'}"]`);
+  const submit = () => page.locator('#export-submit');
   const destinations = {};
   for (const [format, smoothing] of [['webm', 'none'], ['vfw', 'sprites']]) {
     // Cancel the actual progress dialog after source frames have reached the encoder.
     await load(1000);
     const before = await app.evaluate(() => globalThis.__workerVideoSaves.length);
     await open(format, smoothing);
-    await tile(format).click();
+    await submit().click();
     await page.waitForFunction(() => document.querySelector('#export-progress')?.value >= 2, undefined, { timeout: 30000 });
     await page.locator('#cancel-export').click();
-    await page.waitForFunction(() => !document.querySelector('#dialog').open, undefined, { timeout: 30000 });
+    await exportDialogClosed(page);
     assert.equal(await app.evaluate(() => globalThis.__workerVideoSaves.length), before);
     const canceled = await page.evaluate(() => globalThis.__sceneExportWorkers.at(-1));
     assert.equal(canceled.terminated, true); assert.ok(canceled.ticks.length >= 2 && canceled.ticks.length < 1000);
@@ -122,8 +124,8 @@ try {
     await app.evaluate((_, filename) => { globalThis.__workerVideoDestination = filename; }, filename);
     await open(format, smoothing);
     if (format === 'vfw') await page.screenshot({ path: path.join(output, 'smoothing-controls.png') });
-    await tile(format).click();
-    await page.waitForFunction(() => !document.querySelector('#dialog').open, undefined, { timeout: 30000 });
+    await submit().click();
+    await exportDialogClosed(page);
     assert.ok((await readFile(filename)).length > 256);
     const successful = await page.evaluate(() => globalThis.__sceneExportWorkers.at(-1));
     assert.equal(successful.options.smoothing, smoothing);

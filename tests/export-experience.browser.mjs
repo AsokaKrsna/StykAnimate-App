@@ -22,12 +22,17 @@ try {
     styk.editor.load(report, 'Export experience'); styk.fit();
   });
   const open = () => page.locator('[data-action="export"]').first().click();
-  const choose = async (category, action) => {await page.locator(`[data-category="${category}"]`).click(); await page.locator('#output-format').selectOption(action);};
+  // A Project lists its types; the other formats choose theirs in the Type select.
+  const choose = async (category, action) => {
+    await page.locator(`[data-category="${category}"]`).click();
+    if (category === 'editable') await page.locator(`#export-project-type [data-format="${action.slice('export-'.length)}"]`).click();
+    else await page.locator('#output-format').selectOption(action);
+  };
   await open(); await choose('animated', 'export-apng');
   await page.locator('#export-resolution').selectOption('2160');
-  check('settings use the available width with two balanced columns', await page.locator('.export-settings').evaluate(settings => {
-    const sections = [...settings.querySelectorAll('.export-section')].map(section => section.getBoundingClientRect());
-    return sections[1].left > sections[0].right && Math.abs(sections[0].top - sections[1].top) < 1;
+  check('the preview and the settings sit side by side', await page.locator('#export-dialog').evaluate(dialog => {
+    const form = dialog.querySelector('.ui-dialog-body'), preview = dialog.querySelector('.ui-export-preview').getBoundingClientRect(), body = form.getBoundingClientRect();
+    return preview.right <= body.left + 1 && preview.top <= body.top && body.width >= 400 && form.scrollWidth <= form.clientWidth;
   }));
   check('4K preset preserves aspect ratio', await page.locator('#export-width').inputValue() === '3840' && await page.locator('#export-height').inputValue() === '2160');
   const summarySize = await page.locator('#export-summary-size').innerText(), summaryTime = await page.locator('#export-summary-time').innerText();
@@ -36,6 +41,7 @@ try {
   check('invalid range is explained inline and blocks submission', await page.locator('#export-submit').isDisabled() && await page.locator('#export-validation').isVisible());
   await page.locator('#export-all-frames').click();
   check('entire animation restores a valid range', await page.locator('#export-start').inputValue() === '1' && await page.locator('#export-end').inputValue() === '3' && await page.locator('#export-submit').isEnabled());
+  await page.locator('#export-resolution').selectOption('custom');
   await page.locator('#export-width').fill('16384');
   check('unsafe allocation is blocked before starting a job', await page.locator('#export-submit').isDisabled());
   await page.locator('#export-resolution').selectOption('2160');
@@ -47,8 +53,8 @@ try {
   await choose('animated', 'export-apng');
   for (const viewport of [{width: 1100, height: 680}, {width: 540, height: 700}]) {
     await page.setViewportSize(viewport);
-    check(`panel and submit fit ${viewport.width}×${viewport.height}`, await page.locator('#dialog').evaluate(dialog => {
-      const r = dialog.getBoundingClientRect(), body = dialog.querySelector('.dialog-body'), button = dialog.querySelector('#export-submit').getBoundingClientRect();
+    check(`panel and submit fit ${viewport.width}×${viewport.height}`, await page.locator('#export-dialog').evaluate(dialog => {
+      const r = dialog.getBoundingClientRect(), body = dialog.querySelector('.ui-dialog-body'), button = dialog.querySelector('#export-submit').getBoundingClientRect();
       return r.top >= 0 && r.bottom <= innerHeight && body.scrollWidth <= body.clientWidth && button.bottom <= innerHeight;
     }));
     await page.screenshot({path: path.join(output, `panel-${viewport.width}.png`)});
@@ -79,7 +85,7 @@ try {
   check('GIF exposes its second pass without doubling output frame count', /of 3/.test(await page.locator('#export-frame-detail').innerText()));
   await (await gif).saveAs(path.join(output, 'animation.gif'));
   await open(); await choose('animated', 'export-apng'); await page.locator('#export-submit').click();
-  await page.locator('#cancel-export').click(); await page.waitForFunction(() => !document.querySelector('#dialog').open);
+  await page.locator('#cancel-export').click(); await page.waitForFunction(() => !document.querySelector('#export-dialog'));
   check('cancellation returns control to the editor', /cancelled/i.test(await page.locator('#status').innerText()));
   check('no uncaught browser errors', errors.length === 0);
   await writeFile(path.join(output, 'report.json'), JSON.stringify({checks, errors}, null, 2));

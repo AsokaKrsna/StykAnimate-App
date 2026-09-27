@@ -115,7 +115,7 @@ try {
     await page.locator('[data-action="export"]').first().click();
     const [download] = await Promise.all([page.waitForEvent('download'), exportEditable(page, format)]);
     const filename = path.join(output, `native-sprites.${format}`); await download.saveAs(filename);
-    await page.waitForFunction(() => !document.querySelector('#dialog').open);
+    await page.waitForFunction(() => !document.querySelector('#export-dialog'));
     const bytes = await readFile(filename);
     const restored = await page.evaluate(async ({ bytes, format }) => {
       const response = await fetch(`/api/import?filename=native-sprites.${format}`, { method: 'POST', body: Uint8Array.from(bytes), headers: { 'Content-Type': 'application/octet-stream' } });

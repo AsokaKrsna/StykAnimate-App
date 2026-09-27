@@ -4,30 +4,50 @@ For the September 13 direct-worker export optimization, Akane benchmark,
 compression comparisons and current validation, see
 [Export performance verification](performance/EXPORT-PERFORMANCE.md).
 
-The export panel groups existing commands into Video, Animated image, Frames &
-sequences, and Editable file. `src/export-panel.mjs` owns presentation; capability
-probing and the existing application commands remain responsible for providers,
-codecs, rendering and saving. Resolution presets preserve the document's shape
-and orientation; custom dimensions still support unlocking the aspect ratio.
-The summary reports output pixels, selected frame count, duration and frame rate.
-Current-frame output shows the source frame number. Labels and status replace
-introductory copy and repeated descriptions; irrelevant options are hidden.
-Invalid dimensions, memory plans, ranges, GIF rates and active
-quality/bitrate inputs disable submission with an inline explanation.
-Video quality defaults to Recommended, with Smaller file and Higher quality
-choices. Native encoders select bitrate from scene complexity; the browser
-calculates a target from the final dimensions and frame rate. Manual bitrate and
-codec selectors are available under Advanced video settings. See the
-[quality-control contract](EXPORT-FORMATS.md) for mappings and verification.
+The export dialog (`src/export-sheet.mjs`, a kit dialog with the id
+`export-dialog`) shows a preview beside the settings. The preview draws the
+first exported frame through the thumbnail worker (only while the dialog is
+open), plays the chosen range with ▶, and carries the trim strip: its two ends
+and the typed From and To fields are one range, and All restores the whole
+animation. The settings, top to bottom: Name (the file name, today's name until
+one is typed, with the extension after it), Format (Video, GIF, Frames and
+Project: today's Video, Animated image, Frames & sequences and Editable file),
+Type (a visible select whose options are today's export commands; a Project
+lists its four types, .piv, .stkz, .stk and .stykmov, and one that cannot be
+exported says why), Size (Original, the default, then 1080p, 720p, 4K and
+Custom…, which shows Width, Lock ratio and Height; presets keep the artboard's
+shape and orientation), then the chosen type's own settings: Quality (Draft,
+Great and Max: today's Smaller file, Recommended and Higher quality), Colours ›
+Dither for GIF, the JPEG sequence's quality, Sound when the animation has
+audible clips, Picture (edges, and whether the type keeps transparency, with
+the reason when it does not), and for video Encoding, a titled section that
+starts closed as today's Advanced video settings did, shows the codec and rate
+in its title and remembers being open (MP4 and AVI codecs, bitrate, and the
+installed Windows codecs with Configure…). The foot sums up the output pixels,
+frame count, duration and frame rate (or the current frame) and names the type
+on the one primary button ("Export MP4"). Irrelevant settings are hidden.
+Invalid names, dimensions, memory plans, ranges, GIF rates and active
+quality or bitrate inputs mark their field and disable Export with an inline
+explanation. The dialog remembers the last export's type, size, quality,
+smoothing, bitrate, codecs and Lock ratio (the editor setting
+`exportPreferences`; for the session until the settings schema holds it); the
+range, the name, Dither and Sound start over each time, and a remembered
+custom size of another shape opens as Original. Capability probing, the
+installed codec controls (`src/vfw-export-controls.mjs`) and the export
+commands remain responsible for providers, codecs, rendering and saving. Video
+quality defaults to Great (Recommended). Native encoders select bitrate from
+scene complexity; the browser calculates a target from the final dimensions
+and frame rate. See the [quality-control contract](EXPORT-FORMATS.md) for
+mappings and verification.
 
 Every export runs from one explicit export request (`src/export-request.mjs`):
 the format and the choices that apply to it. `exportJob()` derives from it and
 the editor's state everything the encoders receive: size, frame range,
 quality, smoothing, dither, codec, bitrate or quality preset, sound, the
-Windows codec options and the file name. `src/export-flow.mjs` reads the
-request from the open dialog's fields (`legacyExportFields()`) until the export
-sheet holds it; a command run without the dialog exports today's defaults
-(the artboard size, the whole animation, 94% quality). The derivation keeps
+Windows codec options and the file name. The export dialog holds the request
+and runs the chosen type's command, which exports it; a command run without the
+dialog (the command palette) exports today's defaults (the artboard size, the
+whole animation, 94% quality), never the remembered choices. The derivation keeps
 the dialog's quirks, for example a hidden quality field never reaches a format
 other than the JPEG sequence. `tests/export-request.test.mjs` compares it with
 the dialog-field code it replaced (kept verbatim in
@@ -41,14 +61,33 @@ count in each. Elapsed time never manufactures progress. The estimate uses
 completed work and elapsed time, appears after three acknowledged frames, and
 does not estimate final encoding or file-system latency. The last 5% is reserved
 for finalization and saving; the UI never reports 100% before saving succeeds.
-Cancellation, dialog replacement and failure dispose progress timers and panel
-observers. The existing save layer still stages and atomically replaces files.
+The progress replaces the export dialog's settings in place (or opens a dialog
+of its own for an export run without it); closing the dialog cancels the
+export. Cancellation, closing and failure dispose progress timers, the preview
+worker and the codec controls. The existing save layer still stages and
+atomically replaces files.
 
 Software export surfaces, tiled supersampling, hard image allowances and editor
 GPU-loss recovery are described in [export sampling](export-sampling.md). RAM
 tiers are conservative allowances, not measurements of free memory. Driver/OS
 termination, arbitrary document complexity and process-wide exhaustion cannot
 be guaranteed away. These changes do not silently reduce output resolution.
+
+## September 27, 2026: the export dialog
+
+The same 33 exports ran through the redesigned dialog, one fresh page per case
+so no remembered choice carried over (`artifacts/ui-redesign/tools/export-equivalence-sheet.mjs`,
+recorded in `artifacts/ui-redesign/export-equivalence.json` under `sheet`).
+32 of the 33 saved the same file (name, size and SHA-256) with the same options
+reaching the workers and the encoder. The one difference is deliberate: a
+palette export run after the dialog was closed without exporting now saves
+today's defaults. The old dialog left its fields in the page when it closed, so
+such a command used the closed dialog's size, range and settings.
+`node tests/export-sheet.browser.mjs` checks what the dialog shows at rest,
+Format and Type from the pointer and the keyboard, the Project list, Size and
+Custom…, the trim strip and its fields, Quality, the preview, Encoding
+remembered open, remembered choices and a palette export with today's
+defaults.
 
 ## September 27, 2026: exports from an explicit request
 

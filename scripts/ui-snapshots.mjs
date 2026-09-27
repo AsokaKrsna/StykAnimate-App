@@ -100,7 +100,7 @@ const STATES = [
   {name: 'onion-popover', enter: steps(click('#onion-settings-button'), waitFor('#onion-popover'))},
   ...SETTINGS_TABS.map(tab => ({name: `settings-${tab}`, enter: steps(
     page => page.evaluate(tab => window.styk.settingsUI.open(tab), tab), waitFor('.styk-settings[open]'))})),
-  {name: 'export-dialog', enter: steps(click('.titlebar [data-action="export"]'), waitFor('#dialog[open]'))},
+  {name: 'export-dialog', enter: steps(click('.titlebar [data-action="export"]'), waitFor('#export-dialog[open]'))},
   {name: 'text-dialog', enter: steps(page => page.evaluate(() => { void window.styk.actions['add-text'](); }), waitFor('dialog[open]'))},
   // The desktop feedback shell and its lazily loaded support styles, through a
   // mock bridge whose empty private inbox shows the new report form.
