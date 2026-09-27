@@ -11,17 +11,17 @@
  *   a range slider       the kit's slider colours */
 @layer features {
   /* ---- Native selects outside the kit's own .ui-select ---- */
-  :where(#vfx-panel, #library-panel, .camera-motion-panel, .audio-properties, .audio-clip-popover) select:not(:where(.ui-select *, .ui-field *)) {
+  :where(#vfx-panel, #user-library, .camera-motion-panel, .audio-properties, .audio-clip-popover) select:not(:where(.ui-select *, .ui-field *)) {
     appearance: none; min-inline-size: 0; block-size: var(--control-md); padding: 0 var(--space-6) 0 var(--space-2-5);
     border: 0; border-radius: var(--radius-md); background-color: var(--surface-sunken); color: var(--text-1); font: var(--type-ui);
     background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%), linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
     background-position: calc(100% - 15px) 55%, calc(100% - 11px) 55%; background-size: 4px 4px; background-repeat: no-repeat;
     box-shadow: none; cursor: default;
   }
-  :where(#vfx-panel, #library-panel, .camera-motion-panel, .audio-properties, .audio-clip-popover) select:not(:where(.ui-select *, .ui-field *)):where(:hover) {
+  :where(#vfx-panel, #user-library, .camera-motion-panel, .audio-properties, .audio-clip-popover) select:not(:where(.ui-select *, .ui-field *)):where(:hover) {
     box-shadow: inset 0 0 0 1px var(--line-3);
   }
-  :where(#vfx-panel, #library-panel, .camera-motion-panel, .audio-properties, .audio-clip-popover) select:not(:where(.ui-select *, .ui-field *)):focus-visible {
+  :where(#vfx-panel, #user-library, .camera-motion-panel, .audio-properties, .audio-clip-popover) select:not(:where(.ui-select *, .ui-field *)):focus-visible {
     outline: none; box-shadow: inset 0 0 0 1.5px var(--accent-line), 0 0 0 3px var(--focus-halo);
   }
 

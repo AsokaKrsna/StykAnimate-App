@@ -26,11 +26,15 @@ export class UserLibrary {
     this.hoverPreview = new LibraryHoverPreview(desktop);
     this.container = document.getElementById('user-library');
     if (!this.container) { this.container = document.createElement('section'); this.container.id = 'user-library'; this.container.hidden = true; }
-    this.container.innerHTML = `<div class="library-tools"><label class="library-search">${icon('search')}<input type="search" aria-label="Search library" placeholder="Search" spellcheck="false"></label><button type="button" class="icon-button" data-library-action="refresh" aria-label="Refresh library" title="Refresh">${icon('rotate')}</button><button type="button" class="icon-button" data-library-action="folder" aria-label="New library folder" title="New folder">${icon('plus')}</button><button type="button" class="icon-button" data-library-action="reveal" aria-label="Open library folder" title="Open folder in Explorer">${folderIcon}</button></div>
-      <div class="library-location"><nav class="library-breadcrumbs" aria-label="Library folders"></nav><span class="library-count"></span></div><div class="library-filter ds-segmented" role="group" aria-label="Filter library assets"><button type="button" data-library-filter="all" aria-pressed="true">All</button><button type="button" data-library-filter="figure" aria-pressed="false">Figures</button><button type="button" data-library-filter="movieclip" aria-pressed="false">Movieclips</button></div>
-      <div class="library-content"><div class="library-grid" role="list" aria-label="Saved assets"></div><div class="library-empty ds-empty"></div></div>
-      <div class="library-item-actions" hidden><button type="button" data-library-action="insert">Insert</button><button type="button" data-library-action="rename">Rename</button><button type="button" data-library-action="move">Move to…</button><button type="button" class="library-trash" data-library-action="trash" aria-label="Remove library item" title="Move to Recycle Bin">${icon('trash')}</button></div>
-      <div class="library-message" role="status" aria-live="polite"></div><div class="library-save"><button type="button" class="button primary" data-library-action="save">${icon('plus')}<span>Add to library</span></button><div class="library-footer-row"><button type="button" class="library-link rig-library-examples" data-action="rig-examples">${icon('person')}Rig examples</button><label class="library-preview-controls" title="Background behind asset previews">Preview<select aria-label="Preview background"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></label></div></div>`;
+    // The kit's parts (features/library.css): a search field with the folder tools, where you are as a crumb with
+    // the count, the filter as a segmented control, the cards, the selected item's buttons (Insert first), then
+    // Add to library with Rig examples and the preview background at the foot.
+    const tool = (action, label, title, glyph) => `<button type="button" class="ui-icon-button" data-size="sm" data-library-action="${action}" aria-label="${label}" title="${title}">${glyph}</button>`;
+    this.container.innerHTML = `<div class="library-tools"><label class="library-search">${icon('search')}<input type="search" aria-label="Search library" placeholder="Search" spellcheck="false"></label>${tool('refresh', 'Refresh library', 'Refresh', icon('rotate'))}${tool('folder', 'New library folder', 'New folder', icon('plus'))}${tool('reveal', 'Open library folder', 'Open folder in Explorer', folderIcon)}</div>
+      <div class="library-location"><nav class="library-breadcrumbs ui-crumb" aria-label="Library folders"></nav><span class="library-count"></span></div><div class="library-filter ui-segmented" data-size="sm" data-fill role="group" aria-label="Filter library assets"><button type="button" class="ui-segmented-item" data-library-filter="all" aria-pressed="true">All</button><button type="button" class="ui-segmented-item" data-library-filter="figure" aria-pressed="false">Figures</button><button type="button" class="ui-segmented-item" data-library-filter="movieclip" aria-pressed="false">Movieclips</button></div>
+      <div class="library-content"><div class="library-grid" role="list" aria-label="Saved assets"></div><div class="library-empty ui-empty"></div></div>
+      <div class="library-item-actions" hidden><button type="button" class="ui-button" data-variant="primary" data-size="sm" data-library-action="insert">Insert</button><button type="button" class="ui-button" data-size="sm" data-library-action="rename">Rename</button><button type="button" class="ui-button" data-size="sm" data-library-action="move">Move to…</button><button type="button" class="ui-icon-button library-trash" data-size="sm" data-tone="danger" data-library-action="trash" aria-label="Remove library item" title="Move to Recycle Bin">${icon('trash')}</button></div>
+      <div class="library-message" role="status" aria-live="polite"></div><div class="library-save"><button type="button" class="ui-button" data-library-action="save">${icon('plus')}<span class="ui-label">Add to library</span></button><div class="library-footer-row"><button type="button" class="ui-button library-link rig-library-examples" data-variant="ghost" data-size="sm" data-action="rig-examples">${icon('person')}<span class="ui-label">Rig examples</span></button><label class="library-preview-controls" title="Background behind asset previews"><span>Preview</span><span class="ui-select" data-size="sm"><select aria-label="Preview background"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select>${icon('chevron-down')}</span></label></div></div>`;
     // Properties' footer: Add to library, shown with the Properties panel.
     this.propertySave = document.createElement('div'); this.propertySave.className = 'properties-library-save';
     this.propertySave.innerHTML = `<button type="button" class="button" data-library-action="save">${icon('plus')} Add to library</button>`;
@@ -41,7 +45,7 @@ export class UserLibrary {
     this.input = this.container.querySelector('input'); this.filterValue = 'all';
     this.container.querySelector('.library-filter').onclick = event => { const button = event.target.closest('[data-library-filter]'); if (button) this.setFilter(button.dataset.libraryFilter); };
     this.container.querySelector('[aria-label="Preview background"]').onchange = event => { this.container.dataset.background = event.target.value; };
-    this.menu = document.createElement('div'); this.menu.className = 'library-context-menu'; this.menu.hidden = true;
+    this.menu = document.createElement('div'); this.menu.className = 'library-context-menu ui-menu'; this.menu.hidden = true;
     this.menu.setAttribute('role', 'menu'); this.menu.setAttribute('aria-label', 'Library actions'); document.body.append(this.menu);
     this.menu.onclick = event => {
       const button = event.target.closest('[data-library-action]'); if (!button || button.disabled) return;
@@ -116,11 +120,12 @@ export class UserLibrary {
   /** Empty grid: explain the library and offer the next action for this situation. */
   renderEmpty(filtered) {
     const empty = this.container.querySelector('.library-empty'), selection = this.editor.selectedObjects.length, desktop = Boolean(this.desktop?.listLibrary);
-    const card = (title, actions = '') => `<strong>${title}</strong>${actions ? `<div class="ds-empty-actions">${actions}</div>` : ''}`;
-    const examples = '<button type="button" class="button small" data-action="rig-examples">Rig examples</button>';
-    if (!desktop) empty.innerHTML = card('Library is available in the desktop app', examples);
-    else if (filtered) empty.innerHTML = card('No matches', '<button type="button" class="button small" data-library-clear>Clear search</button>');
-    else empty.innerHTML = card(this.folder ? 'Empty folder' : 'No saved assets', `${selection ? `<button type="button" class="button primary small" data-library-action="save">${selection > 1 ? `Add ${selection} figures` : 'Add selection'}</button>` : ''}${examples}`);
+    // The kit's empty state: a title, one quiet line where it helps, then the next step.
+    const card = (title, text, actions = '') => `<h3 class="ui-empty-title">${title}</h3>${text ? `<p class="ui-empty-text">${text}</p>` : ''}${actions ? `<div class="ui-empty-actions">${actions}</div>` : ''}`;
+    const examples = '<button type="button" class="ui-button" data-variant="outline" data-size="sm" data-action="rig-examples">Rig examples</button>';
+    if (!desktop) empty.innerHTML = card('Library is available in the desktop app', 'Save figures and movieclips there to reuse them in any project.', examples);
+    else if (filtered) empty.innerHTML = card('No matches', '', '<button type="button" class="ui-button" data-size="sm" data-library-clear>Clear search</button>');
+    else empty.innerHTML = card(this.folder ? 'Empty folder' : 'No saved assets', this.folder ? '' : 'Save figures and movieclips here to reuse them in any project.', `${selection ? `<button type="button" class="ui-button" data-variant="primary" data-size="sm" data-library-action="save">${selection > 1 ? `Add ${selection} figures` : 'Add selection'}</button>` : ''}${examples}`);
   }
   async run(operation) { try { await operation(); } catch (error) { this.message.textContent = error.message; this.message.dataset.error = 'true'; } }
   show(visible = true) {
@@ -142,7 +147,7 @@ export class UserLibrary {
     const saves = this.roots.flatMap(root => [...root.querySelectorAll('[data-library-action="save"]')]);
     // Runs on every editor change (each frame while playing): write only what changed.
     for (const button of saves) setProp(button, 'disabled', this.busy || !count || !available);
-    setText(this.container.querySelector('[data-library-action="save"] span'), count > 1 ? `Add ${count} figures to library` : 'Add to library');
+    setText(this.container.querySelector('.library-save > [data-library-action="save"] span'), count > 1 ? `Add ${count} figures to library` : 'Add to library');
     for (const button of saves) setAttr(button, 'title', count ? `Save selection in ${this.folder || 'Library'}` : 'Select figures or a movieclip');
   }
   async refresh(folder = this.folder) {
@@ -158,9 +163,11 @@ export class UserLibrary {
     const nav = this.container.querySelector('nav'); nav.replaceChildren();
     let current = ''; for (const [i, part] of ['Library', ...this.folder.split('/').filter(Boolean)].entries()) {
       if (i) current += `${current ? '/' : ''}${part}`;
-      const path = current, button = document.createElement('button'); button.type = 'button'; button.textContent = part; button.title = i ? part : this.root;
+      const path = current, button = document.createElement('button'); button.type = 'button'; button.className = 'ui-crumb-item'; button.textContent = part; button.title = i ? part : this.root;
       button.dataset.libraryFolder = path;
-      button.onclick = () => this.run(() => this.refresh(path)); nav.append(button);
+      button.onclick = () => this.run(() => this.refresh(path));
+      if (i) { const sep = document.createElement('span'); sep.className = 'ui-crumb-sep'; sep.setAttribute('aria-hidden', 'true'); sep.textContent = '›'; nav.append(sep); }
+      nav.append(button);
     }
     this.render();
   }
@@ -176,7 +183,7 @@ export class UserLibrary {
       card.draggable = false;
       card.title = item.kind === 'folder' ? `Double-click to open ${item.name}. Drag onto a folder to move.` : `${item.name}. Drag to canvas to insert, or onto a folder to move. Right-click for actions.${item.kind === 'movieclip' ? ' Hover to play.' : ''}`;
       if (item.kind === 'folder') card.dataset.libraryFolder = item.path;
-      card.innerHTML = `<div class="library-thumbnail">${item.kind === 'folder' ? folderIcon : '<span class="library-preview-loading"></span>'}${['movieclip','set'].includes(item.kind) ? `<span class="library-clip-badge" title="${label(item)}">${icon(item.kind === 'movieclip' ? 'play' : 'duplicate')}</span>` : ''}<button type="button" class="library-more" aria-label="Actions for ${esc(item.name)}" aria-haspopup="menu">···</button>${item.kind === 'movieclip' ? '<span class="library-preview-hint">Hover to play</span><span class="library-preview-progress"></span>' : ''}</div><div class="library-card-info"><span class="library-name">${esc(item.name)}</span><span class="library-kind">${label(item)}</span></div>`;
+      card.innerHTML = `<div class="library-thumbnail">${item.kind === 'folder' ? folderIcon : '<span class="library-preview-loading"></span>'}${['movieclip','set'].includes(item.kind) ? `<span class="library-clip-badge" title="${label(item)}">${icon(item.kind === 'movieclip' ? 'play' : 'duplicate')}</span>` : ''}<button type="button" class="library-more" aria-label="Actions for ${esc(item.name)}" aria-haspopup="menu">${icon('more')}</button>${item.kind === 'movieclip' ? '<span class="library-preview-hint">Hover to play</span><span class="library-preview-progress"></span>' : ''}</div><div class="library-card-info"><span class="library-name">${esc(item.name)}</span><span class="library-kind">${label(item)}</span></div>`;
       this.grid.append(card); if (item.kind !== 'folder') this.observer.observe(card);
     }
     this.select(items.some(item => item.path === this.selected) ? this.selected : null);
@@ -217,7 +224,8 @@ export class UserLibrary {
   select(path) {
     this.selected = path; for (const card of this.grid.children) card.classList.toggle('selected', card.dataset.libraryPath === path);
     const item = this.entries.find(item => item.path === path); this.container.querySelector('.library-item-actions').hidden = !item;
-    this.container.querySelector('[data-library-action="insert"]').textContent = item?.kind === 'folder' ? 'Open folder' : 'Insert into scene';
+    // The foot's button is short (Insert); its title and the menu say where it goes.
+    const insert = this.container.querySelector('[data-library-action="insert"]'); insert.textContent = item?.kind === 'folder' ? 'Open' : 'Insert'; insert.title = item?.kind === 'folder' ? 'Open folder' : 'Insert into scene';
   }
   async action(action) {
     if (this.busy) return;
@@ -236,12 +244,13 @@ export class UserLibrary {
   showMenu(card, x, y) {
     this.hoverPreview.stop(); this.select(card?.dataset.libraryPath ?? null); this.menuAnchor = card ?? this.input;
     const item = this.entries.find(item => item.path === this.selected);
+    // The kit's menu rows: a glyph, the words, the shortcut in grey; Move to Recycle Bin last, in red.
     const actions = item ? [
-      ['insert', item.kind === 'folder' ? 'Open folder' : 'Insert into scene', 'Enter'],
-      ['rename', 'Rename', 'F2'], ['move', 'Move to…', ''], null,
-      ['trash', 'Move to Recycle Bin', 'Del'],
-    ] : [['folder', 'New folder', ''], ['save', 'Add selection to library', ''], null, ['refresh', 'Refresh', ''], ['reveal', 'Open folder in Explorer', '']];
-    this.menu.innerHTML = actions.map(action => action ? `<button type="button" role="menuitem" data-library-action="${action[0]}" ${this.busy || !this.desktop?.listLibrary || action[0] === 'save' && !this.editor.selectedObjects.length ? 'disabled' : ''}><span>${action[1]}</span><kbd>${action[2]}</kbd></button>` : '<div role="separator"></div>').join('');
+      ['insert', item.kind === 'folder' ? 'Open folder' : 'Insert into scene', 'Enter', item.kind === 'folder' ? 'folder' : 'plus'],
+      ['rename', 'Rename', 'F2', 'text'], ['move', 'Move to…', '', 'arrow-right'], null,
+      ['trash', 'Move to Recycle Bin', 'Del', 'trash'],
+    ] : [['folder', 'New folder', '', 'plus'], ['save', 'Add selection to library', '', 'library'], null, ['refresh', 'Refresh', '', 'rotate'], ['reveal', 'Open folder in Explorer', '', 'folder']];
+    this.menu.innerHTML = actions.map(action => action ? `<button type="button" class="ui-menu-item" role="menuitem" data-library-action="${action[0]}"${action[0] === 'trash' ? ' data-tone="danger"' : ''} ${this.busy || !this.desktop?.listLibrary || action[0] === 'save' && !this.editor.selectedObjects.length ? 'disabled' : ''}>${icon(action[3])}<span>${action[1]}</span><kbd class="ui-menu-shortcut">${action[2]}</kbd></button>` : '<div role="separator" class="ui-menu-sep"></div>').join('');
     this.menu.hidden = false; const rect = this.menu.getBoundingClientRect();
     this.menu.style.left = `${Math.max(8, Math.min(x, innerWidth - rect.width - 8))}px`;
     this.menu.style.top = `${Math.max(8, Math.min(y, innerHeight - rect.height - 8))}px`;
@@ -312,7 +321,7 @@ export class UserLibrary {
   }
   newFolder() {
     this.dialog.setAttribute('aria-label','New library folder');
-    this.dialog.innerHTML = '<form><h2>New folder</h2><label>Folder name<input name="name" aria-label="Folder name" value="New folder" maxlength="120" required></label><div class="library-dialog-error" role="alert"></div><footer><button class="button" type="button" data-cancel>Cancel</button><button class="button primary" type="submit">Create folder</button></footer></form>';
+    this.dialog.innerHTML = '<form><h2>New folder</h2><label>Folder name<input name="name" aria-label="Folder name" value="New folder" maxlength="120" required></label><div class="library-dialog-error" role="alert"></div><footer><button class="ui-button" data-variant="ghost" type="button" data-cancel>Cancel</button><button class="ui-button" data-variant="primary" type="submit">Create folder</button></footer></form>';
     this.dialog.querySelector('[data-cancel]').onclick = () => this.dialog.close();
     this.dialog.querySelector('form').onsubmit = async event => {
       event.preventDefault(); const submit = event.submitter; submit.disabled = true;
@@ -324,14 +333,15 @@ export class UserLibrary {
   async move() {
     const item = this.entries.find(item => item.path === this.selected); if (!item) return;
     this.dialog.setAttribute('aria-label','Move library item'); let destination = ''; let sequence = 0;
-    this.dialog.innerHTML = `<h2>Move ${esc(item.name)}</h2><div class="library-move-location"></div><div class="library-move-folders"></div><div role="alert" class="library-dialog-error"></div><footer><button type="button" class="button" data-cancel>Cancel</button><button type="button" class="button primary" data-move>Move here</button></footer>`;
+    this.dialog.innerHTML = `<h2>Move ${esc(item.name)}</h2><div class="library-move-location"></div><div class="library-move-folders"></div><div role="alert" class="library-dialog-error"></div><footer><button type="button" class="ui-button" data-variant="ghost" data-cancel>Cancel</button><button type="button" class="ui-button" data-variant="primary" data-move>Move here</button></footer>`;
     const browse = async folder => {
       const id = ++sequence, result = await this.desktop.listLibrary(folder); if (id !== sequence) return; destination = folder;
       this.dialog.querySelector('.library-move-location').textContent = `Library${folder ? ` / ${folder.replaceAll('/',' / ')}` : ''}`;
       const list = this.dialog.querySelector('.library-move-folders'); list.replaceChildren();
-      const add = (text, path) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = text; button.onclick = () => this.run(() => browse(path)); list.append(button); };
-      if (folder) add('← Parent folder', folder.split('/').slice(0,-1).join('/'));
-      for (const child of result.entries.filter(child => child.kind === 'folder' && child.path !== item.path)) add(`▱ ${child.name}`, child.path);
+      // A row per place: the parent first (a back chevron), then each folder with its glyph.
+      const add = (text, path, glyph) => { const button = document.createElement('button'); button.type = 'button'; button.innerHTML = icon(glyph); const words = document.createElement('span'); words.textContent = text; button.append(words); button.onclick = () => this.run(() => browse(path)); list.append(button); return button; };
+      if (folder) add('Parent folder', folder.split('/').slice(0,-1).join('/'), 'chevron-left').dataset.parent = '';
+      for (const child of result.entries.filter(child => child.kind === 'folder' && child.path !== item.path)) add(child.name, child.path, 'folder');
     };
     this.dialog.querySelector('[data-cancel]').onclick = () => this.dialog.close();
     this.dialog.querySelector('[data-move]').onclick = async event => {
@@ -344,7 +354,7 @@ export class UserLibrary {
   trash() {
     const item = this.entries.find(item => item.path === this.selected); if (!item) return;
     this.dialog.setAttribute('aria-label','Remove library item');
-    this.dialog.innerHTML = `<h2>Remove ${esc(item.name)}?</h2><p>${item.kind === 'folder' ? 'This folder and its contents' : 'This asset and its preview'} will move to the Recycle Bin. Copies already in your scenes stay available.</p><div class="library-dialog-error" role="alert"></div><footer><button type="button" class="button" data-cancel>Cancel</button><button type="button" class="button primary" data-remove>Move to Recycle Bin</button></footer>`;
+    this.dialog.innerHTML = `<h2>Remove ${esc(item.name)}?</h2><p>${item.kind === 'folder' ? 'This folder and its contents' : 'This asset and its preview'} will move to the Recycle Bin. Copies already in your scenes stay available.</p><div class="library-dialog-error" role="alert"></div><footer><button type="button" class="ui-button" data-variant="ghost" data-cancel>Cancel</button><button type="button" class="ui-button" data-variant="danger" data-remove>Move to Recycle Bin</button></footer>`;
     this.dialog.querySelector('[data-cancel]').onclick = () => this.dialog.close();
     this.dialog.querySelector('[data-remove]').onclick = async event => {
       event.target.disabled = true;

@@ -18,8 +18,8 @@
     padding: var(--space-6) var(--space-4); text-align: center;
   }
   .ui-empty-glyph { inline-size: var(--icon-lg); block-size: var(--icon-lg); color: var(--text-3); }
-  .ui-empty-title { margin: 0; font: var(--type-heading); letter-spacing: var(--tracking-heading); color: var(--text-1); }
-  .ui-empty-text { max-inline-size: 34ch; margin: 0; font: var(--type-small); color: var(--text-2); }
+  .ui-empty-title { margin: 0; font: var(--type-heading); letter-spacing: var(--tracking-heading); color: var(--text-1); text-wrap: balance; }
+  .ui-empty-text { max-inline-size: 34ch; margin: 0; font: var(--type-small); color: var(--text-2); text-wrap: pretty; }
   .ui-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); margin-block-start: var(--space-1); }
   .ui-empty[data-align="start"] { justify-items: start; padding-inline: 0; text-align: start; }
   .ui-empty:where([data-align="start"]) > .ui-empty-actions { justify-content: start; }

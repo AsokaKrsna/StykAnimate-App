@@ -1,0 +1,124 @@
+/* Library (user-library.mjs) on the kit (experience.md revision 5). Its
+ * markup carries the kit's classes (.ui-icon-button, .ui-crumb, .ui-segmented,
+ * .ui-empty, .ui-button, .ui-select, .ui-menu); this sheet lays them out in
+ * the panel and draws what is the Library's own:
+ *
+ *   the search       a quiet well with its glyph, the folder tools after it
+ *   where you are    the folder path as a crumb, the count at the end
+ *   a card           the preview on a rounded matte (a folder on the library's
+ *                    mint), then its name in ink and its kind in grey; hover
+ *                    lifts the preview, the selected card has a Styk blue
+ *                    outline and a blue name; ⋯ shows on hover or focus
+ *   the foot         the selected item's buttons (Insert first), then Add to
+ *                    library, Rig examples and the preview background
+ *
+ * legacy/39-user-library.css keeps drag feedback, the preview badges and the
+ * dialogs until they move here. */
+@layer features {
+  :where(#user-library) { font: var(--type-ui); color: var(--text-1); background: var(--surface); }
+
+  /* ---- Search and the folder tools ---- */
+  .library-tools { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-3) var(--island-pad) 0; }
+  .library-search {
+    display: flex; align-items: center; gap: var(--space-2); flex: 1; min-inline-size: 0; block-size: var(--control-md);
+    padding: 0 var(--space-2-5); border: 0; border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--text-3);
+  }
+  .library-search > svg { flex: none; inline-size: var(--icon-sm); block-size: var(--icon-sm); }
+  .library-search:where(:hover) { box-shadow: inset 0 0 0 1px var(--line-3); }
+  .library-search:focus-within { background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--accent-line), 0 0 0 3px var(--focus-halo); }
+  .library-search > input { flex: 1; min-inline-size: 0; border: 0; outline: none; background: transparent; color: var(--text-1); font: var(--type-ui); }
+  .library-search > input::placeholder { color: var(--text-3); }
+  .library-tools > .ui-icon-button > svg { inline-size: var(--icon-md); block-size: var(--icon-md); }
+
+  /* ---- Where you are ---- */
+  .library-location { display: flex; align-items: center; gap: var(--space-2); min-block-size: var(--control-md); padding: var(--space-2) var(--island-pad) 0; }
+  .library-location > .library-breadcrumbs { flex: 1; min-inline-size: 0; margin-inline-start: calc(-1 * var(--space-2)); padding: 0; overflow-x: auto; scrollbar-width: none; }
+  .library-breadcrumbs > .ui-crumb-item:last-child { color: var(--text-1); font: var(--type-ui-strong); }
+  .library-location > .library-count { flex: none; font: var(--type-small); color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .library-filter { margin: var(--space-2) var(--island-pad) var(--space-3); }
+
+  /* ---- Cards ---- */
+  .library-content { padding: var(--space-0-5) var(--island-pad) var(--space-3); }
+  .library-grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: var(--space-3) var(--space-2); }
+  .library-card { overflow: visible; border: 0; border-radius: var(--radius-lg); background: transparent; box-shadow: none; }
+  .library-card:where(:hover) { box-shadow: none; }
+  /* The card contains its paint (content-visibility), so its states draw inside the preview: a hairline at
+   * rest, a darker one on hover, 2px of Styk blue when selected, the focus ring's colour when focused. */
+  .library-card .library-thumbnail { border-radius: var(--radius-lg); overflow: hidden; }
+  .library-card .library-thumbnail::after {
+    content: ""; position: absolute; inset: 0; z-index: 3; border-radius: inherit; pointer-events: none;
+    box-shadow: inset 0 0 0 1px var(--line-1); transition: box-shadow var(--dur-fast) var(--ease-out);
+  }
+  .library-card:where(:hover) .library-thumbnail::after { box-shadow: inset 0 0 0 1px var(--line-3); }
+  .library-card:where(.selected) .library-thumbnail::after { box-shadow: inset 0 0 0 2px var(--accent); }
+  .library-card:focus-visible { outline: none; }
+  .library-card:focus-visible .library-thumbnail::after { box-shadow: inset 0 0 0 2px var(--focus-ring); }
+  .library-card:where(.folder) .library-thumbnail { background: var(--tint-library-soft); }
+  .library-card:where(.folder) .library-thumbnail > svg { inline-size: 40px; block-size: 40px; color: var(--tint-library-ink); fill: none; stroke-width: 1.5; }
+  .library-card .library-card-info { gap: var(--space-0-5); padding: var(--space-2) var(--space-0-5) 0; }
+  .library-card .library-name { font: var(--type-small-strong); color: var(--text-1); }
+  .library-card:where(.selected) .library-name { color: var(--accent-text-strong); }
+  .library-card .library-kind { margin: 0; font: var(--type-micro); font-weight: var(--weight-medium); color: var(--text-3); }
+  .library-card .library-more {
+    display: grid; place-items: center; inset-block-start: var(--space-1-5); inset-inline-end: var(--space-1-5);
+    inline-size: 24px; block-size: 24px; padding: 0; border: 0; border-radius: var(--radius-sm);
+    background: var(--surface-raised); color: var(--text-1); box-shadow: var(--elevation-1); line-height: 0;
+  }
+  .library-card .library-more > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); }
+  .library-card .library-more:where(:hover) { background: var(--surface-hover); }
+  .library-card .library-more:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+  .library-rename {
+    block-size: var(--control-sm); padding: 0 var(--space-1-5); border: 0; border-radius: var(--radius-sm);
+    background: var(--surface); color: var(--text-1); font: var(--type-small-strong);
+    box-shadow: inset 0 0 0 1.5px var(--accent-line), 0 0 0 3px var(--focus-halo); outline: none;
+  }
+  .library-empty.ui-empty { padding-block: var(--space-8) var(--space-4); }
+  /* The web build: the explanation fills the panel and the foot keeps only Rig examples and the preview. */
+  :where(#user-library[data-unavailable="true"]) .library-content { flex-direction: column; justify-content: center; }
+  :where(#user-library[data-unavailable="true"]) .library-save > .ui-button { display: none; }
+
+  /* ---- The foot ---- */
+  .library-item-actions { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-2) var(--island-pad); border: 0; box-shadow: inset 0 1px 0 var(--line-1); }
+  .library-item-actions > .ui-button { flex: 1 1 auto; min-inline-size: 0; }
+  .library-item-actions > .ui-button:first-child { flex-grow: 1.4; }
+  .library-item-actions > .library-trash { flex: none; }
+  .library-message { padding: var(--space-2) var(--island-pad) 0; font: var(--type-small); color: var(--success-text); }
+  .library-message:where([data-error="true"]) { color: var(--danger-text); }
+  .library-save { display: grid; gap: var(--space-1-5); padding: var(--space-2-5) var(--island-pad) var(--space-3); border: 0; box-shadow: inset 0 1px 0 var(--line-1); }
+  .library-save > .ui-button { inline-size: 100%; }
+  .library-footer-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+  .library-footer-row > .library-link { margin-inline-start: calc(-1 * var(--space-2)); }
+  .library-footer-row > .library-preview-controls { display: flex; align-items: center; gap: var(--space-2); padding: 0; font: var(--type-small); color: var(--text-2); }
+  .library-preview-controls > .ui-select { inline-size: 92px; }
+
+  /* ---- New folder, Move and Remove: the older dialogs' surface (features/dialogs.css) with the kit's type,
+   * a sunken field, place rows with glyphs and the kit's buttons at the end. ---- */
+  .library-dialog { inline-size: min(400px, calc(100vw - var(--space-10))); padding: var(--space-6); font: var(--type-ui); }
+  .library-dialog h2 { margin: 0 0 var(--space-2); font: var(--type-title); letter-spacing: var(--tracking-title); color: var(--text-1); }
+  .library-dialog p { margin: 0 0 var(--space-5); font: var(--type-ui); color: var(--text-2); }
+  .library-dialog label { display: grid; gap: var(--space-1-5); font: var(--type-small-strong); color: var(--text-2); }
+  .library-dialog input {
+    block-size: var(--control-lg); padding: 0 var(--space-3); border: 0; border-radius: var(--radius-md);
+    background: var(--surface-sunken); color: var(--text-1); font: var(--type-ui);
+  }
+  .library-dialog input:focus-visible { outline: none; background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--accent-line), 0 0 0 3px var(--focus-halo); }
+  .library-dialog footer { display: flex; justify-content: flex-end; gap: var(--space-2); margin-block-start: var(--space-6); }
+  .library-dialog .library-dialog-error { margin-block-start: var(--space-2); font: var(--type-small); color: var(--danger-text); }
+  .library-dialog .library-dialog-error:empty { display: none; }
+  .library-move-location { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunken); font: var(--type-small-strong); color: var(--text-2); }
+  .library-move-folders { gap: var(--space-0-5); margin-block-start: var(--space-2); }
+  .library-move-folders > button {
+    display: flex; align-items: center; justify-content: flex-start; gap: var(--space-2-5); inline-size: 100%; min-block-size: var(--control-md);
+    padding: 0 var(--space-2-5); border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-1); font: var(--type-ui); text-align: start;
+  }
+  .library-move-folders > button > svg { flex: none; inline-size: var(--icon-md); block-size: var(--icon-md); color: var(--tint-library-ink); }
+  .library-move-folders > button:where([data-parent]) > svg { color: var(--text-2); }
+  .library-move-folders > button:where(:hover) { background: var(--surface-hover); }
+  .library-move-folders > button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+
+  /* ---- The menu (right-click or ⋯): the kit's menu; this module shows and hides it with [hidden]. ---- */
+  .library-context-menu[hidden] { display: none; }
+  .library-context-menu > .ui-menu-item:disabled { color: var(--text-disabled); }
+  .library-context-menu > .ui-menu-item:disabled > svg { color: var(--text-disabled); }
+  .library-context-menu > .ui-menu-item:disabled:where(:hover) { background: transparent; }
+}
