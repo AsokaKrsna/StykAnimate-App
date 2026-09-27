@@ -335,21 +335,32 @@ try {
 
   await step('app: a message stays above a dialog that opens after it, and failures show as alerts that stay', async () => {
     await page.evaluate(() => styk.ui.toasts.show({message: 'Motion paths on', timeout: 30000}));
-    const box = await page.locator('#toast .ui-toast').boundingBox();
-    const clip = {x: box.x + 6, y: box.y + 6, width: box.width - 12, height: box.height - 12};
-    const before = await page.screenshot({clip});
+    const pill = async () => {
+      const box = await page.locator('#toast .ui-toast').boundingBox();
+      return page.screenshot({clip: {x: box.x + 6, y: box.y + 6, width: box.width - 12, height: box.height - 12}});
+    };
+    const before = await pill();
     await page.evaluate(() => styk.actions.performance());
     await page.waitForFunction(() => document.getElementById('dialog').open);
     await settle(150);
-    assert.ok(before.equals(await page.screenshot({clip})), 'the dialog backdrop does not cover or dim the message');
+    assert.ok(before.equals(await pill()), 'the dialog backdrop does not cover or dim the message');
+    const placed = await page.evaluate(() => {
+      const toast = document.querySelector('#toast .ui-toast').getBoundingClientRect(), dialog = document.getElementById('dialog').getBoundingClientRect();
+      return {inside: Boolean(document.getElementById('toast').closest('#dialog')),
+        clear: toast.bottom <= dialog.top || toast.top >= dialog.bottom || toast.right <= dialog.left || toast.left >= dialog.right};
+    });
+    assert.deepEqual(placed, {inside: true, clear: true}, 'the host lives in the modal (so it can be clicked) and sits outside its box');
     await page.evaluate(() => styk.ui.toasts.fail(new Error('The encoder stopped')));
     await settle(150);
     assert.deepEqual(await page.evaluate(() => ({
       text: document.querySelector('#toast .ui-toast-text')?.textContent, tone: document.querySelector('#toast .ui-toast')?.dataset.tone,
+      icon: Boolean(document.querySelector('#toast .ui-toast-icon')),
       said: document.querySelector('#dialog > .ui-toast-live[aria-live=assertive]')?.textContent,
-    })), {text: 'The encoder stopped', tone: 'danger', said: 'The encoder stopped'}, 'an error takes the slot and is announced from inside the dialog');
+    })), {text: 'The encoder stopped', tone: 'danger', icon: true, said: 'The encoder stopped'}, 'an error takes the slot, shows its glyph and is announced from inside the dialog');
     await page.keyboard.press('Escape');
     await settle();
+    assert.equal(await page.evaluate(() => document.getElementById('toast').parentElement === document.body), true, 'the host goes back when the dialog closes');
+    assert.equal(await page.locator('#toast .ui-toast-text').textContent(), 'The encoder stopped', 'the failure stays until dismissed');
     await page.evaluate(() => styk.ui.toasts.clear());
     // The app's own messages go through the same slot.
     await page.click('[data-workspace-mode=rig]');
@@ -358,6 +369,97 @@ try {
     await page.click('[data-workspace-mode=animate]');
     await page.waitForFunction(() => document.querySelector('.workspace').dataset.mode === 'animate');
     await page.evaluate(() => styk.ui.toasts.clear());
+  });
+
+  await step('app: a routine failure is a dismissible alert that goes after 8 seconds; a failed import stays', async () => {
+    const clickAction = action => page.evaluate(action => {
+      const button = document.createElement('button');
+      button.dataset.action = action;
+      document.body.append(button);
+      button.click();
+      button.remove();
+    }, action);
+    await page.evaluate(() => { styk.actions['test-routine-failure'] = () => { throw new Error('Choose a line or circle segment.'); }; });
+    await clickAction('test-routine-failure');
+    await settle(100);
+    assert.deepEqual(await page.evaluate(() => ({
+      text: document.querySelector('#toast .ui-toast-text')?.textContent, tone: document.querySelector('#toast .ui-toast')?.dataset.tone,
+      icon: Boolean(document.querySelector('#toast .ui-toast-icon')), dismiss: Boolean(document.querySelector('#toast .ui-toast-close')),
+    })), {text: 'Choose a line or circle segment.', tone: 'danger', icon: true, dismiss: true});
+    await page.waitForTimeout(8300);
+    assert.equal(await page.evaluate(() => document.querySelector('#toast .ui-toast') === null), true, 'gone after 8 seconds');
+    await page.evaluate(() => { delete styk.actions['test-routine-failure']; });
+    // A failed import is an I/O failure: it stays until dismissed.
+    await page.evaluate(() => {
+      const files = new DataTransfer();
+      files.items.add(new File(['not a pivot file'], 'broken.piv'));
+      const input = document.getElementById('file-input');
+      input.files = files.files;
+      input.dispatchEvent(new Event('change', {bubbles: true}));
+    });
+    await page.waitForFunction(() => document.querySelector('#toast .ui-toast[data-tone="danger"]'), null, {timeout: 20000});
+    await page.waitForTimeout(8300);
+    assert.equal(await page.evaluate(() => Boolean(document.querySelector('#toast .ui-toast[data-tone="danger"] .ui-toast-close'))), true, 'the failed import stays');
+    await page.click('#toast .ui-toast-close');
+    assert.equal(await page.evaluate(() => document.querySelector('#toast .ui-toast') === null), true);
+    // fail() logs both to the console; they are this step's own errors.
+    const expected = /Choose a line or circle segment|Invalid zlib project/;
+    errors.splice(0, errors.length, ...errors.filter(message => !expected.test(message)));
+  });
+
+  await step('app: a message over Settings can be dismissed and leaves Settings as it was', async () => {
+    await page.evaluate(() => styk.actions.settings());
+    await page.locator('.styk-settings[open]').waitFor();
+    await settle(150);
+    const values = () => page.evaluate(() => [...document.querySelectorAll('.styk-settings input, .styk-settings select')]
+      .map(field => `${field.name || field.id || field.getAttribute('aria-label')}=${field.type === 'checkbox' || field.type === 'radio' ? field.checked : field.value}`).join('|'));
+    const before = await values();
+    await page.evaluate(() => styk.ui.toasts.fail(new Error('The encoder stopped')));
+    await settle(150);
+    const close = await page.evaluate(() => {
+      const button = document.querySelector('#toast .ui-toast-close'), box = button.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return {hit: button === hit || button.contains(hit), inside: Boolean(button.closest('.styk-settings'))};
+    });
+    assert.deepEqual(close, {hit: true, inside: true}, 'Dismiss is the element at its own centre, inside the open dialog');
+    await page.click('#toast .ui-toast-close');
+    await settle();
+    assert.equal(await page.evaluate(() => document.querySelector('#toast .ui-toast') === null), true, 'the message is gone');
+    assert.equal(await values(), before, 'nothing in Settings changed');
+    assert.equal(await page.evaluate(() => document.querySelector('.styk-settings').open), true);
+    await page.keyboard.press('Escape');
+    await page.locator('.styk-settings[open]').waitFor({state: 'detached'}).catch(() => {});
+    await settle();
+    assert.equal(await page.evaluate(() => document.querySelectorAll('dialog[open]').length), 0);
+  });
+
+  await step('app: an error never covers the view controls or a dialog\'s buttons (1024 × 700 and 500 × 340)', async () => {
+    const centreHits = selector => page.evaluate(selector => [...document.querySelectorAll(selector)]
+      .filter(element => element.checkVisibility())
+      .map(element => {
+        const box = element.getBoundingClientRect(), hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        return element === hit || element.contains(hit) ? true : `${element.getAttribute('aria-label') || element.id || element.textContent.trim()}: ${hit?.closest('#toast') ? 'under the message' : hit?.outerHTML.slice(0, 60)}`;
+      }), selector);
+    for (const [width, height] of [[1024, 700], [500, 340]]) {
+      await page.setViewportSize({width, height});
+      await settle(200);
+      await page.evaluate(() => styk.ui.toasts.fail(new Error('The encoder stopped while writing frame 12')));
+      await settle(150);
+      const cluster = await centreHits('.canvas-view-controls button');
+      assert.ok(cluster.length >= 4 && cluster.every(item => item === true), `${width}x${height}: ${cluster}`);
+      await page.evaluate(() => { styk.editor.dirty = true; });
+      await page.evaluate(() => { void styk.actions.new(); });
+      await page.locator('#save-changes').waitFor();
+      await settle(150);
+      const buttons = await centreHits('#dialog[open] .dialog-body button');
+      assert.ok(buttons.length >= 3 && buttons.every(item => item === true), `${width}x${height}: ${buttons}`);
+      assert.equal((await centreHits('#toast .ui-toast-close')).every(item => item === true), true, `${width}x${height}: the message can be dismissed`);
+      await page.keyboard.press('Escape');
+      await settle();
+      await page.evaluate(() => styk.ui.toasts.clear());
+    }
+    await page.setViewportSize({width: 1440, height: 900});
+    await settle(200);
   });
 
   await step('app: a context menu opens above the pointer when there is more room there, and never under the band', async () => {

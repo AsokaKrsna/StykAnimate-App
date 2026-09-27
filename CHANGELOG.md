@@ -26,7 +26,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Fixed
 
-- Show error messages above open dialogs instead of behind them, and keep them until you close them.
+- Show error messages above open dialogs instead of behind them, where you can close them, and keep them clear of the canvas's view buttons. A failed save, export or import stays until you close it; other messages go on their own.
 - Stop menus from switching tools while you type in them: letters now jump to the matching command. The Properties ⋯ menu opens again.
 - Show What's new and the first-run privacy choice one after the other at startup, never on top of an open menu or dialog.
 - Press Enter to confirm a new project name. Dialogs such as "Save your changes?" now start on their main field or button instead of Close.

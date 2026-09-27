@@ -7,9 +7,12 @@
  * update, toast, then the first-run hint; a higher one takes the slot at once
  * and a persistent one it displaces waits. At most `max` wait; identical
  * messages are merged. Timeouts pause while the pointer or focus is on the
- * message. The host is a manual [popover] in the top layer, re-raised whenever
- * a modal opens, so a message is never hidden under a dialog (it is inert
- * while the modal is open). createMessageQueue() is the pure part.
+ * message. The host is a manual [popover] in the top layer. While a modal
+ * dialog is open the host lives inside the topmost one (the rest of the page
+ * is inert, so a message outside it could be seen but not clicked) and sits
+ * outside the dialog's box; it goes back when that dialog closes. Otherwise it
+ * sits at the bottom centre of the stage, moved clear of the controls
+ * `avoid()` names. createMessageQueue() is the pure part.
  *
  * Screen readers hear each message once, from a visually hidden live region
  * that is always rendered (the pill itself is not a live region: it appears
@@ -68,23 +71,35 @@ const TIMEOUTS = Object.freeze({info: 4000, success: 4000, warning: 6000, error:
 const ANNOUNCE_DELAY = 60;
 let toastCount = 0;
 
+/** The tone glyphs a message shows when it names none (components.md "Message"). */
+const TONE_ICONS = Object.freeze({success: 'check', error: 'alert', warning: 'warning'});
+/** The gap between the message and what it stays clear of. */
+const GAP = 8;
+
+const intersects = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+
 /**
- * createToasts({host, overlays, icon, area, document})
+ * createToasts({host, overlays, icon, area, avoid, topInset, document})
  *   host      the element that holds the message (the #toast compatibility
  *             host); created when absent
- *   overlays  the OverlayManager: the host re-raises above every modal it opens
+ *   overlays  the OverlayManager: the host moves into every modal it opens
  *   icon      (name) => SVG string or Node, for the dismiss and tone glyphs
  *   area      () => DOMRect of the stage: the message sits bottom-centre in it
+ *   avoid     () => DOMRects the message must not cover there (the canvas's
+ *             view controls): it moves left of them, else above them
+ *   topInset  () => px: the band's bottom, which a message never goes above
  *   feedback  {label, run(error)}: the extra action on unexpected errors (desktop)
  *   t         (key, params) => text for the kit's own words (localization.t)
  * Returns {host, live, show(options), task(options), fail(error), dismiss(id),
  * clear({tones}), raise(), announce(text, {assertive})}.
  */
-export function createToasts({host = null, overlays = null, icon = null, area = null, feedback = null, max = 3, t = null,
+export function createToasts({host = null, overlays = null, icon = null, area = null, avoid = null, topInset = null, feedback = null, max = 3, t = null,
   document: doc = host?.ownerDocument ?? globalThis.document, setTimer = setTimeout, clearTimer = clearTimeout,
   now = () => globalThis.performance?.now() ?? Date.now()} = {}) {
   const element = host ?? doc.createElement('div');
   if (!host) doc.body.append(element);
+  // Where the host lives while no modal dialog is open.
+  const home = element.parentNode ?? doc.body;
   element.classList.add('ui-toast-host');
   if (!element.hasAttribute('popover')) element.popover = 'manual';
   // The host is not a live region (role=status would make it one): every message is read once, from `live`.
@@ -107,7 +122,7 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
   const live = {polite: liveRegion(doc.body, false), assertive: liveRegion(doc.body, true)};
   const topModal = () => {
     const known = overlays?.top?.(['dialog'])?.element;
-    if (known?.open) return known;
+    if (known?.open && known.matches?.(':modal') !== false) return known;
     const open = [...(doc.querySelectorAll?.('dialog[open]') ?? [])];
     return open.findLast(dialog => { try { return dialog.matches(':modal'); } catch { return true; } }) ?? null;
   };
@@ -129,31 +144,73 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
     if (typeof value === 'string') { parent.insertAdjacentHTML('beforeend', value); parent.lastElementChild?.classList.add(...className.split(' ')); }
     else { value.classList?.add(...className.split(' ')); parent.append(value); }
   };
+  /** Keeps the host inside the topmost modal dialog while one is open (outside it the message would be inert), else at home. */
+  const relocate = () => {
+    const parent = topModal() ?? home;
+    if (element.parentNode === parent || !parent) return;
+    parent.append(element);   // a shown popover that moves is hidden; the caller shows it again
+  };
+  /**
+   * Places the shown message: outside an open modal's box (above it, else
+   * below it, else under the band), otherwise bottom-centre of the stage,
+   * moved left of whatever `avoid()` names there, else above it.
+   */
   const place = () => {
-    const rect = area?.(), view = doc.defaultView ?? globalThis;
-    if (!rect) { element.style.removeProperty('--toast-x'); element.style.removeProperty('--toast-bottom'); return; }
-    element.style.setProperty('--toast-x', `${Math.round(rect.left + rect.width / 2)}px`);
-    element.style.setProperty('--toast-bottom', `${Math.round(view.innerHeight - rect.bottom + 8)}px`);
+    const view = doc.defaultView ?? globalThis;
+    const pill = element.querySelector(':scope > .ui-toast');
+    const width = pill?.offsetWidth ?? 0, height = pill?.offsetHeight ?? 0;
+    const modal = element.parentNode !== home ? element.parentNode : null;
+    let x, bottom;
+    if (modal?.getBoundingClientRect) {
+      const box = modal.getBoundingClientRect(), top = Math.max(0, Number(topInset?.()) || 0);
+      x = box.left + box.width / 2;
+      if (box.top - GAP - height >= top + GAP) bottom = view.innerHeight - box.top + GAP;
+      else if (box.bottom + GAP + height <= view.innerHeight - GAP) bottom = view.innerHeight - box.bottom - GAP - height;
+      else bottom = view.innerHeight - top - GAP - height;
+    } else {
+      const rect = area?.();
+      if (!rect) { element.style.removeProperty('--toast-x'); element.style.removeProperty('--toast-bottom'); return; }
+      x = rect.left + rect.width / 2;
+      bottom = view.innerHeight - rect.bottom + GAP;
+      for (const obstacle of avoid?.() ?? []) {
+        if (!(obstacle?.width > 0 && obstacle.height > 0)) continue;
+        const own = {left: x - width / 2, right: x + width / 2, top: view.innerHeight - bottom - height, bottom: view.innerHeight - bottom};
+        if (!intersects(own, obstacle)) continue;
+        const shifted = obstacle.left - GAP - width / 2;
+        if (shifted - width / 2 >= rect.left + GAP) x = shifted;
+        else bottom = view.innerHeight - obstacle.top + GAP;
+      }
+    }
+    element.style.setProperty('--toast-x', `${Math.round(x)}px`);
+    element.style.setProperty('--toast-bottom', `${Math.round(bottom)}px`);
   };
   const openHost = () => {
     element.removeAttribute('hidden');
-    place();
+    relocate();
     try { if (!element.matches(':popover-open')) element.showPopover(); } catch { /* not connected */ }
+    place();
   };
   const closeHost = () => {
     try { if (element.matches(':popover-open')) element.hidePopover(); } catch { /* already hidden */ }
     element.setAttribute('hidden', '');
     element.replaceChildren();
+    relocate();
   };
-  /** Moves the host to the top of the top layer (after a modal opened). */
+  /** After a modal opened or closed: the host moves into (or out of) it and goes to the top of the top layer. */
   const raise = () => {
-    if (!element.matches?.(':popover-open')) return;
-    element.hidePopover();
-    element.showPopover();
+    if (!visible) { relocate(); return; }
+    relocate();
+    try {
+      if (element.matches(':popover-open')) element.hidePopover();
+      element.showPopover();
+    } catch { /* not connected */ }
+    place();
   };
   overlays?.addEventListener('open', event => { if (event.detail.modal || event.detail.kind === 'dialog') raise(); });
-  // Dialogs that feature modules open themselves, without the manager, raise it too.
-  doc.addEventListener?.('toggle', event => { if (event.target?.localName === 'dialog' && event.newState === 'open') raise(); }, {capture: true});
+  overlays?.addEventListener('close', event => { if (event.detail.kind === 'dialog') raise(); });
+  // Dialogs that feature modules open and close themselves, without the manager, move it too.
+  doc.addEventListener?.('toggle', event => { if (event.target?.localName === 'dialog') raise(); }, {capture: true});
+  doc.addEventListener?.('close', event => { if (event.target?.localName === 'dialog') raise(); }, {capture: true});
 
   // The verb or subject in bold, then the rest: "<b>Restore unsaved work</b> from 12:04?"
   const writeText = (node, title, message) => {
@@ -261,7 +318,7 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
       slot: slot ?? (tone === 'error' ? 'error' : 'toast'),
       // Errors and tasks stay until dismissed or done; an action earns a message more time to be read.
       timeout: timeout ?? (task || tone === 'error' ? 0 : Math.max(list.length ? 8000 : 0, TIMEOUTS[tone] ?? 4000)),
-      icon: iconName ?? (tone === 'success' ? 'check' : null),
+      icon: iconName ?? TONE_ICONS[tone] ?? null,
       progress: null, timer: 0, remaining: null,
     };
     record.key = key ?? `${tone}|${record.title}|${record.message}`;

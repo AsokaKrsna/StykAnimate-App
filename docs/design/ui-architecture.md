@@ -703,12 +703,12 @@ const task = toasts.task({ title, meta, format?, cancellable, signal, confirmCan
 task.progress(0..1 | null); task.done({ message }); task.fail(error);
 ```
 
-- **Host.** The host is `#toast`, the id kept (5 test files), as a `popover="manual"` placed in the stage's bottom inset (bottom centre, 8px from the edge), never over the artboard.
+- **Host.** The host is `#toast`, the id kept (5 test files), as a `popover="manual"` placed in the stage's bottom inset (bottom centre, 8px from the edge), never over the artboard. While a modal dialog is open the host lives inside the topmost one (outside it the message would be inert: seen but not clickable) and sits outside the dialog's box (above it, else below it, else under the band); it moves back when the dialog closes. Until M3b's message slot, the stage placement moves the message left of the canvas's view controls, else above them (`avoid()`), so it never covers them.
 - **Behaviour.**
   - One toast is visible at a time, with at most 3 queued.
   - Identical messages are de-duplicated.
   - Hover or focus pauses the timeout.
-  - `role=status`, or `role=alert` for errors, which persist until dismissed.
+  - `role=status`, or `role=alert` for errors. An error shows its glyph (`alert`; a warning `warning`) and a dismiss button. Failed saves, exports and imports persist until dismissed; until command preconditions throw `UserActionError`, the app's other failures go after 8 s (`FAILURE_MESSAGE_MS`), as 1.1's notices did.
   - Only info toasts clear on canvas pointerdown (today `app.mjs:2246`).
 - **`fail()` mapping:**
   - `AbortError` is silent.

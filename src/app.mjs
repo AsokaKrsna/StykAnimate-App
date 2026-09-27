@@ -145,6 +145,7 @@ import { onFontsReady } from "./ui/font-loading.mjs";
 import { createOverlayManager } from "./ui/overlay-manager.mjs";
 import { installMenuBar, menuFor, openMenu } from "./ui/ui-menu.mjs";
 import { createToasts } from "./ui/ui-toast.mjs";
+import { UserActionError } from "./user-action-error.mjs";
 import { prompt as promptText, showLegacyDialog } from "./ui/ui-dialog.mjs";
 import { createCommandRegistry, fuzzyMatch } from "./ui/command-registry.mjs";
 import { createCommandPalette } from "./ui/command-palette.mjs";
@@ -233,7 +234,7 @@ async function runDocumentExport(format, consume, { recovery = false } = {}) {
     telemetry.count(metric + (error.name === 'AbortError' ? '_cancelled' : '_failed'));
     telemetry.operation({ ...context, operation: metric, stage: 'complete', outcome: error.name === 'AbortError' ? 'cancelled' : 'failed' }, performance.now() - started);
     if (error.name !== 'AbortError') telemetry.error(error, metric, { ...context, stage });
-    throw error;
+    throw persistentFailure(error);
   } finally {
     exportJobs.delete(job);
     state.lastExport = documentExporter.lastTimings;
@@ -327,6 +328,9 @@ const toasts = createToasts({
   overlays,
   icon: (name) => icon(name),
   area: () => viewport.getBoundingClientRect(),
+  // Until the stage header's message slot (M3b), the message keeps clear of the canvas's view controls.
+  avoid: () => [...viewport.querySelectorAll(".canvas-view-controls")].filter((element) => element.checkVisibility()).map((element) => element.getBoundingClientRect()),
+  topInset: () => document.querySelector(".titlebar")?.getBoundingClientRect().bottom ?? 0,
   t: (key, params) => appLocalization?.t(key, params),
   feedback: desktop?.sendTelemetryFeedback
     ? { label: "Send feedback", run: () => feedbackUI.open({ category: "bug" }) }
@@ -962,13 +966,23 @@ function status(text, error = false, busy = false) {
 function toast(text) {
   toasts.show({ message: text });
 }
-/** Reports a failure: the status line, and a message that stays until dismissed
- * (a UserActionError is a timed warning, an AbortError says nothing). */
+/** Failed saves, exports and imports (see persistentFailure): their message stays until dismissed. */
+const persistentFailures = new WeakSet();
+/** Marks `error` as a failed save, export or import and returns it (for a rethrow). */
+function persistentFailure(error) {
+  if (error && typeof error === "object" && error.name !== "AbortError") persistentFailures.add(error);
+  return error;
+}
+/** How long a routine failure (a command's precondition) stays: long enough to read, then it goes. */
+const FAILURE_MESSAGE_MS = 8000;
+/** Reports a failure: the status line, and a message (a UserActionError is a
+ * timed warning, an AbortError says nothing). A failed save, export or import
+ * stays until dismissed; any other error goes after 8 seconds. */
 function fail(error) {
   telemetry.error(error);
   const message = error?.message || String(error);
   status(message, true);
-  toasts.fail(error);
+  toasts.fail(error, error instanceof UserActionError || persistentFailures.has(error) ? {} : { timeout: FAILURE_MESSAGE_MS, dismissible: true });
   console.error(error);
 }
 function guarded(fn) {
@@ -3288,7 +3302,7 @@ async function importFiles(files) {
     telemetry.count(result === false ? 'import_cancelled' : 'import_succeeded');
     if (result !== false) telemetry.timing('import_ms', performance.now() - started);
     return result;
-  } catch (error) { telemetry.count(error.name === 'AbortError' ? 'import_cancelled' : 'import_failed'); telemetry.error(error, 'import'); throw error; }
+  } catch (error) { telemetry.count(error.name === 'AbortError' ? 'import_cancelled' : 'import_failed'); telemetry.error(error, 'import'); throw persistentFailure(error); }
 }
 function recordImportKind(filename = '') {
   const extension = filename.split('.').at(-1)?.toLowerCase();
@@ -3363,7 +3377,7 @@ async function acceptNativeFile(result) {
   } catch (error) {
     telemetry.count(error.name === 'AbortError' ? 'import_cancelled' : 'import_failed');
     telemetry.operation({ ...context, operation: 'import', stage: 'complete', outcome: error.name === 'AbortError' ? 'cancelled' : 'failed' }, performance.now() - started);
-    if (error.name !== 'AbortError') telemetry.error(error, 'import', { ...context, stage: 'decode' }); throw error;
+    if (error.name !== 'AbortError') telemetry.error(error, 'import', { ...context, stage: 'decode' }); throw persistentFailure(error);
   }
 }
 async function acceptNativeFileTracked(result) {
@@ -3380,7 +3394,7 @@ async function acceptNativeFileTracked(result) {
 async function openSample(path) {
   pause();
   status("Decoding Pivot file…", false, true);
-  await acceptImport(await importer.openSample(path));
+  try { await acceptImport(await importer.openSample(path)); } catch (error) { throw persistentFailure(error); }
 }
 async function saveBlob(blob, filename, signal) {
   const measurement = signal && exportTelemetry.get(signal), writeStarted = performance.now();
@@ -3629,7 +3643,7 @@ async function withExportRenderer(
       status("Export cancelled");
       return false;
     }
-    throw error;
+    throw persistentFailure(error);
   } finally {
     frameRenderer?.dispose();
     progressUI.dispose();
