@@ -82,6 +82,10 @@
   /* The island is named "Timeline"; its header carries no title of its own, so Simple and Advanced keep
    * the mode switch and Play in the same place, and the frame rate folds at compact width in both. */
   .shell-bottom > .timeline-toolbar > :where(.timeline-title) { display: none; }
+  /* The header's static slots: start, transport and end (the three clusters) and the ruler's tools.
+   * They take no box of their own until timeline-header.mjs (M5) lays its clusters out, so the
+   * controls keep today's single row. */
+  .timeline-toolbar > :where([data-slot]) { display: contents; }
   .shell-bottom > .timeline-toolbar { padding-inline: var(--space-2-5); }
   :where(:root[data-tier="compact"], :root[data-tier="minimal"]) .shell-bottom :where(.fps-control) { display: none; }
   :where(.shell-bottom[data-state="strip"]) > :not(.timeline-toolbar, .shell-timeline-body) { display: none; }

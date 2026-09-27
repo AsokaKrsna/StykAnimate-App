@@ -182,8 +182,20 @@ test('Structural hooks that modules dereference without null checks are intact',
   const panel = one('.timeline-panel', workspace);
   assert.equal(panel.attrs.id, 'animation-timeline');
   for (const selector of ['.timeline-toolbar', '.timeline-title', '#timeline']) one(selector, panel);
-  // app.mjs hides $("timeline-zoom").closest(".timeline-actions").
+  // timeline-host.mjs hides $("timeline-zoom").closest(".timeline-actions").
   one('#timeline-zoom', one('.timeline-actions', panel));
+  // The timeline header's static slots (§3.14; timeline-header.mjs renders into them in M5): the three
+  // clusters, start, transport and end, and the ruler's tools, each holding today's controls.
+  const toolbar = one('.timeline-toolbar', panel);
+  const slot = name => {
+    const element = one(`[data-slot="${name}"]`, toolbar);
+    assert.equal(element.parent, toolbar, `[data-slot="${name}"] is a direct child of .timeline-toolbar`);
+    return element;
+  };
+  one('#timeline-workflow', slot('start'));
+  for (const id of ['#play-button', '#loop-button', '#time-display', '#fps']) one(id, slot('transport'));
+  for (const id of ['#range-edit', '#onion-button', '#onion-settings-button', '#timeline-audio']) one(id, slot('end'));
+  for (const id of ['#expand-timeline', '#timeline-zoom']) one(id, slot('ruler-tools'));
   const inspectorPanel = one('.right-panel');
   for (const selector of ['.inspector-header', '#inspector', '#vfx-panel', '#user-library']) one(selector, inspectorPanel);
   // Static tabs (dock host), each naming the panel it shows; the Library host is empty.

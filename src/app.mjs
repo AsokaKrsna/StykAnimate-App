@@ -21,8 +21,8 @@ import { applicationMenuItems } from "./application-menu.mjs";
 import { Editor } from "./editor.mjs";
 import { createRenderer,worldToScreen,screenToWorld } from "./renderer.mjs";
 import {DrawingController} from './drawing-controller.mjs';
-import { Timeline, ROW as TIMELINE_ROW, HEADER as TIMELINE_RULER } from "./layer-timeline.mjs";
-import { SheetFilmstrip as SimpleTimeline } from "./sheet-filmstrip.mjs";
+import { ROW as TIMELINE_ROW, HEADER as TIMELINE_RULER } from "./layer-timeline.mjs";
+import { createTimelineHost } from "./timeline-host.mjs";
 import { OnionSkinCache } from "./onion-skin.mjs";
 import {hasPinnedIK} from './ik.mjs';
 import { OnionControls } from "./onion-controls.mjs";
@@ -67,7 +67,6 @@ import {
   builderShowsStaticHandles,
   drawBuilderHighlight,
 } from "./builder-aids.mjs";
-import { InsertInbetweenDialog } from "./insert-inbetween-dialog.mjs";
 import { materializeSimpleFrameDraftForPivot } from "./pivot-frame-draft.mjs";
 import { installNativeFrameClipboard } from "./frame-clipboard-storage.mjs";
 import { ClipboardWorkerClient } from "./clipboard-worker-client.mjs";
@@ -337,7 +336,7 @@ const toasts = createToasts({
     ? { label: "Send feedback", run: () => feedbackUI.open({ category: "bug" }) }
     : null,
 });
-let drawingController, timelineUI,
+let drawingController, timelineUI, timelineHost,
   studioShell,
   builderMode,
   propertyControls, cameraMotionControls,
@@ -1788,7 +1787,7 @@ function loop(now) {
     state.lastPresent = elapsed;
     state.drawCalls++;
     if (now - lastUI > 200) {
-      updateTransport();
+      timelineHost.updateTransport();
       $("render-time").textContent = `${elapsed.toFixed(1)} ms`;
       $("renderer-label").textContent =
         state.renderer.stats?.backend === "Canvas 2D fallback"
@@ -1886,9 +1885,7 @@ async function play() {
   thumbnailRenderer?.setPaused(true);
   timelineUI?.setPaused?.(true);
   $("preview-badge").hidden = false;
-  $("play-button").innerHTML = icon("pause");
-  $("play-button").setAttribute("aria-label", "Pause");
-  appLocalization?.updatePlayback($("play-button"), state);
+  timelineHost?.syncPlayButton();
   requestRender();
 }
 function pause() {
@@ -1927,9 +1924,7 @@ function pause() {
   state.buffering = false;
   state.playbackPacket = null;
   $("preview-badge").hidden = true;
-  $("play-button").innerHTML = icon("play");
-  $("play-button").setAttribute("aria-label", "Play");
-  appLocalization?.updatePlayback($("play-button"), state);
+  timelineHost?.syncPlayButton();
   if(prepareEditable){
     editablePreparation.start(state.renderer,geometry=>({
       frame:currentFrame(),view:{...state.view},getView:()=>({...state.view}),
@@ -1951,26 +1946,8 @@ function previewFrame() {
   state.previewing = true;
   $("preview-badge").textContent = "PREVIEW";
   $("preview-badge").hidden = false;
-  $("play-button").innerHTML = icon("stop");
-  $("play-button").setAttribute("aria-label", "Stop preview");
-  appLocalization?.updatePlayback($("play-button"), state);
+  timelineHost?.syncPlayButton();
   requestRender();
-}
-function updateTransport() {
-  const fps = editor.report.fps,
-    tick = editor.tick;
-  $("time-display").textContent =
-    `${String(Math.floor(tick / fps / 60)).padStart(2, "0")}:${String(Math.floor(tick / fps) % 60).padStart(2, "0")}:${String(tick % fps).padStart(2, "0")}`;
-  $("frame-badge").textContent = `FRAME ${String(tick + 1).padStart(2, "0")}`;
-  // Simple mode counts Pivot-style timeline frames; playback, the ruler and
-  // export count every frame including inbetweens. Name both explicitly.
-  const stored = simpleFrameCount(), total = editor.totalTicks,
-    seconds = `${(total / fps).toFixed(2)}s`;
-  $("timeline-summary").textContent = stored !== null && stored !== total
-    ? `${stored} ${stored === 1 ? "frame" : "frames"} · plays as ${total} with inbetweens · ${seconds}`
-    : `${total} ${total === 1 ? "frame" : "frames"} · ${seconds}`;
-  $("fps").value = fps;
-  timelineUI?.update(state.settings.timelineMode !== 'advanced');
 }
 // What updateTitle last wrote: it runs on every updateUI (playback too), so it writes only what changed.
 let shownTitle = { name: null, dirty: null, revision: null };
@@ -1989,16 +1966,7 @@ function updateTitle() {
   desktop?.setDocumentState?.({ name, dirty, revision });
 }
 function syncSelectionControls() {
-  const indices = rangeFrames(true), count = indices?.sheetTicks?.length ?? indices?.length ?? 0;
-  const range = $('range-edit');
-  if (count < 2) state.applyRange = false;
-  range.disabled = count < 2 || Boolean(builderMode?.active || drawingController?.active);
-  range.setAttribute('aria-pressed', String(!range.disabled && state.applyRange));
-  range.querySelector('.range-edit-count').textContent = count > 1 ? String(count) : '';
-  range.dataset.hotkeyTitle = count > 1
-    ? 'Move figures and edit their properties across ' + count + ' frames, including the current frame'
-    : 'Select multiple frames to edit them together';
-  refreshHotkeyHints(hotkeys, range.parentElement);
+  timelineHost.syncRangeEdit();
   if (state.tool === 'select' && !builderMode?.active && !drawingController?.active)
     $('viewport-hint').textContent = editor.object?.join
       ? 'Alt-drag a joint around the attachment · Ctrl: rotate only · Shift: scale only'
@@ -2007,7 +1975,7 @@ function syncSelectionControls() {
 function updateUI() {
   if(state.editablePreparing)return;
   updateTitle();
-  updateTransport();
+  timelineHost.updateTransport();
   renderLayers();
   renderInspector();
   if (!state.drag) syncSelectionControls();
@@ -5100,10 +5068,6 @@ for (const [name, action] of Object.entries(actions)) {
     return action(...args);
   };
 }
-for (const id of ["timeline", "fps"]) {
-  $(id).addEventListener("focusin", cancelPolygonDraft);
-  $(id).addEventListener("pointerdown", cancelPolygonDraft, true);
-}
 document.addEventListener(
   "click",
   guarded((e) => {
@@ -5153,13 +5117,6 @@ installInspectorBindings($("inspector"), {
   timeline: () => timelineUI, builderActive: () => Boolean(builderMode?.active), usesBuilderBranch, updateBuilderStyle,
   rangeFrames, selectionBounds, moveSelected, updateSelection, showDialog, closeDialog,
 });
-$("fps").addEventListener(
-  "change",
-  guarded((e) => editor.setFPS(Number(e.target.value))),
-);
-$("timeline-zoom").addEventListener("input", (e) =>
-  timelineUI?.setZoom?.(Number(e.target.value), undefined, true),
-);
 $("file-input").addEventListener(
   "change",
   guarded((e) => importFiles([...e.target.files])),
@@ -5448,6 +5405,17 @@ function releaseKeyboardCommand(id, event) {
 }
 const hotkeys = new HotkeyManager({run: guarded(runKeyboardCommand), release: guarded(releaseKeyboardCommand)});
 overlays.hotkeys = hotkeys;
+// The timeline island: its mount, its header's controls and what the header shows (src/timeline-host.mjs).
+timelineHost = createTimelineHost({
+  editor, state, $, actions, guarded, audioEngine, onionController, hotkeys, play, pause, finishKeyboardHandle, cancelDrag,
+  cancelPolygonDraft, interruptRecovery, cancelWarmPlayback: () => clearTimeout(warmTimer), warmPlayback, scheduleRecovery,
+  requestRender, queueUI, renderInspector, syncSelectionControls, rangeFrames, selectTrack, previewScrub, scrubAudio, stopAudioScrub,
+  changeFigureLayer, runClipboardOperation, confirmDiscardFrame, simpleFrameCount, fail,
+  setTimelineMode: (mode) => editorSettings?.commit({ timelineMode: mode }),
+  onMount: (timeline) => { timelineUI = timeline; window.styk.timeline = timeline; },
+  propertyControls: () => propertyControls, cameraMotionControls: () => cameraMotionControls, drawing: () => drawingController,
+  builder: () => builderMode, sharedClipboard: () => sharedClipboard, thumbnails: () => thumbnailRenderer, localization: () => appLocalization,
+});
 /** What the command registry reads about the editor: the workspace, which decides the scoped shortcuts. */
 function commandContext() {
   return { mode: drawingController?.active ? "draw" : builderMode?.active ? "rig" : "animate" };
@@ -5989,7 +5957,6 @@ window.styk = {
   ready: false,
 };
 let thumbnailRenderer, nativeFrameClipboard, sharedClipboard;
-let inbetweenDialog;
 async function changeFigureLayer(label, operation) {
   pause();
   finishKeyboardHandle();
@@ -6139,136 +6106,34 @@ async function performClipboardOperation(kind, execute) {
     queueUI();
   }
 }
-function mountTimeline() {
-  pause();
-  finishKeyboardHandle();
-  propertyControls?.commit();
-  if (editor._animationEdit) editor.commitAnimationEdit();
-  if (editor.dragging) editor.commitDrag();
-  if (state.settings.timelineMode === "advanced") editor.disableFrameDrafts();
-  state.rangeIndices = [];
-  state.applyRange = false;
-  state.loopRange = null;
-  timelineUI?.destroy();
-  $("timeline").replaceChildren();
-  const TimelineClass =
-    state.settings.timelineMode === "simple" ? SimpleTimeline : Timeline;
-  timelineUI = new TimelineClass($("timeline"), editor, {
-    getSettings: () => state.settings,
-    audioEngine,
-    onCameraMotionPreview: clip => cameraMotionControls?.previewTimeline(clip),
-    onTogglePlay: play,
-    onHistory: direction => actions[direction](),
-    onCancel: () => drawingController?.cancel(),
-    onionController,
-    onAddFrame: () => actions["add-frame"](),
-    onDeleteLayer: id => changeFigureLayer('Delete layer',options=>editor.deleteLayerAsync(id,options)),
-    hotkeys,
-    runClipboardOperation,
-    sharedClipboard,
-    confirmDiscardFrame: () =>
-      new Promise((resolve) => {
-        showDialog(
-          "Discard frame changes?",
-          '<p>Restore the frame to its saved pose? You can undo this change.</p><div class="dialog-actions"><button class="button" id="keep-frame-draft">Keep changes</button><button class="button primary" id="discard-frame-draft">Discard</button></div>',
-        );
-        const cancel = () => resolve(false);
-        $("dialog").addEventListener("close", cancel, { once: true });
-        $("keep-frame-draft").onclick = () => closeDialog();
-        $("discard-frame-draft").onclick = () => {
-          resolve(true);
-          closeDialog();
-        };
-      }),
-    onTrackSelect: selectTrack,
-    onKeysChange: () => {
-      state.inspectorTab = "animation";
-      if (!["camera", "scene"].includes(state.inspectorContext))
-        state.inspectorContext = "frame";
-      queueUI();
-    },
-    renderThumbnail: (index, canvas, options) =>
-      thumbnailRenderer.renderThumbnail(index, canvas, {
-        ...options,
-        storedFrames: !editor.report._styk?.layerSheet && state.settings.timelineMode === "simple",
-      }),
-    onInsertInbetween: (indices) => {
-      finishKeyboardHandle();
-      pause();
-      cancelDrag();
-      propertyControls?.cancel();
-      inbetweenDialog ??= new InsertInbetweenDialog({
-        editor,
-        getSettings: () => state.settings,
-        renderThumbnail: (index, canvas, options) =>
-          thumbnailRenderer.renderThumbnail(index, canvas, {
-            ...options,
-            storedFrames: !editor.report._styk?.layerSheet && state.settings.timelineMode === "simple",
-          }),
-        onApply: queueUI,
-        onClose: queueUI,
-        onError: fail,
-      });
-      inbetweenDialog.open(indices);
-    },
-    onUpdateFrame: () => {
-      if (editor.dragging) editor.commitDrag();
-      queueUI();
-    },
-    onSeek: () => pause(),
-    beforeCommand: () => drawingController?.settle({selection:true}),
-    // Wait for both preparation and its canvas submission before another seek.
-    // The timeline retains only the latest pointer target during this interval.
-    canScrub: () => !state.editablePreparing && !state.dirtyRender,
-    onScrubStart: () => {
-      pause();
-      interruptRecovery();
-      clearTimeout(warmTimer);
-      state.scrubbing = true;
-      const drawing=drawingResourcesFor(editor.report);if(drawing)drawing.busy=true;
-      requestRender();
-    },
-    onScrub: tick => {
-      previewScrub(tick);
-      if (timelineUI?.audio?.scrub.checked && performance.now() - audioScrubAt > 100) {
-        audioScrubAt = performance.now(); audioScrubController?.abort(); const controller = audioScrubController = new AbortController();
-        const time = tick / audioFps(editor.report);
-        void audioEngine.unlock().then(() => audioEngine.prepare(editor.report, {start:time, end:time+.08, signal:controller.signal}))
-          .then(() => { if (!controller.signal.aborted) return audioEngine.start(time,time+.08); })
-          .catch(error => { if (!controller.signal.aborted) fail(error); });
-      }
-    },
-    onScrubEnd: () => {
-      audioScrubController?.abort(); audioEngine.stop();
-      state.scrubbing = false;
-      const drawing=drawingResourcesFor(editor.report);if(drawing)drawing.busy=false;
-      queueUI();
-      requestRender();
-      warmPlayback();
-      if (editor.dirty) scheduleRecovery();
-    },
-    onError: fail,
-    onRangeChange: (indices) => {
-      state.rangeIndices = indices;
-      if (!rangeFrames(true)) state.applyRange = false;
-      syncSelectionControls();
-      if (!state.scrubbing) renderInspector();
-      $("selection-summary").textContent =
-        `${indices.length} keyframe${indices.length === 1 ? "" : "s"} selected`;
-    },
-    onLoopRangeChange: (range) => {
-      pause();
-      state.loopRange = range;
-      warmPlayback();
-    },
+/** Asks before Simple mode restores a frame's saved pose. */
+function confirmDiscardFrame() {
+  return new Promise((resolve) => {
+    showDialog(
+      "Discard frame changes?",
+      '<p>Restore the frame to its saved pose? You can undo this change.</p><div class="dialog-actions"><button class="button" id="keep-frame-draft">Keep changes</button><button class="button primary" id="discard-frame-draft">Discard</button></div>',
+    );
+    const cancel = () => resolve(false);
+    $("dialog").addEventListener("close", cancel, { once: true });
+    $("keep-frame-draft").onclick = () => closeDialog();
+    $("discard-frame-draft").onclick = () => {
+      resolve(true);
+      closeDialog();
+    };
   });
-  // Zoom lives beside frame navigation in the advanced timeline itself.
-  $("timeline-zoom").closest(".timeline-actions").hidden = true;
-  $("timeline")
-    .closest(".timeline-panel")
-    .classList.toggle("simple-mode", state.settings.timelineMode === "simple");
-  window.styk.timeline = timelineUI;
-  refreshHotkeyHints(hotkeys);
+}
+/** The timeline's audio Scrub option: a short slice of the sound under the scrubbed frame. */
+function scrubAudio(tick) {
+  if (timelineUI?.audio?.scrub.checked && performance.now() - audioScrubAt > 100) {
+    audioScrubAt = performance.now(); audioScrubController?.abort(); const controller = audioScrubController = new AbortController();
+    const time = tick / audioFps(editor.report);
+    void audioEngine.unlock().then(() => audioEngine.prepare(editor.report, {start:time, end:time+.08, signal:controller.signal}))
+      .then(() => { if (!controller.signal.aborted) return audioEngine.start(time,time+.08); })
+      .catch(error => { if (!controller.signal.aborted) fail(error); });
+  }
+}
+function stopAudioScrub() {
+  audioScrubController?.abort(); audioEngine.stop();
 }
 async function init() {
   if (desktop?.activateDocument) {
@@ -6289,7 +6154,7 @@ async function init() {
       const previousMode = state.settings.timelineMode;
       const previousSettings = state.settings;
       state.settings = next;
-      try { if (previousMode !== next.timelineMode) mountTimeline(); }
+      try { if (previousMode !== next.timelineMode) timelineHost.mount(); }
       catch (error) { state.settings = previousSettings; throw error; }
       if (patch.rendererMode !== undefined && state.renderer) void recoverCanvas(true);
       if (patch.playbackQuality !== undefined && state.playing) selectPlaybackQuality();
@@ -6374,11 +6239,7 @@ async function init() {
     isToggleKey: (event) => hotkeys.resolve(event, [])?.id === 'layout-menu',
   });
   installShellCommands(actions, { shell, keyboard: shellKeyboard, layout: layoutPopover });
-  shell.define({
-    id: "timeline",
-    root: () => $("animation-timeline"),
-    onVisibility: (visible) => { if (visible) timelineUI?.resize(); },
-  });
+  timelineHost.attach(shell);
   editor.setLayerMigrationPlanner((params, options) => {
     syncPlayback();
     return playback.planLayerMigration(params, options);
@@ -6500,7 +6361,7 @@ async function init() {
   for (const [name, action] of Object.entries(actions)) if (name.startsWith('movieclip-')) actions[name] = (...args) => { telemetry.count('movieclip'); return action(...args); };
   editor.addEventListener('change',event=>{
     if(event.detail?.kind==='movieclip-scope' || event.detail?.movieclipScope) {
-      mountTimeline(); state.inspectorContext=editor.object?'figure':'scene';state.inspectorTab='design';queueUI();
+      timelineHost.mount(); state.inspectorContext=editor.object?'figure':'scene';state.inspectorTab='design';queueUI();
     }
   });
   builderMode = initBuilderMode({
@@ -6522,7 +6383,7 @@ async function init() {
   drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onOverlayRender:requestDrawingOverlay,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard});
   window.styk.drawing=drawingController;
   studioShell = initStudioShell({editor, state, setTool, renderAssets, renderInspector, showCommandMenu,
-    actions, setTimelineMode: mode => editorSettings.commit({timelineMode:mode}), getTimeline: () => timelineUI,
+    actions, getTimeline: () => timelineUI,
     builder: builderMode, drawing:drawingController, toast});
   window.styk.studio = studioShell;
   if (desktop?.beginClipboardRead)
@@ -6534,7 +6395,7 @@ async function init() {
   sharedClipboard = new SharedClipboard(editor, desktop);
   window.styk.clipboard = sharedClipboard;
   window.styk.thumbnails = thumbnailRenderer;
-  mountTimeline();
+  timelineHost.mount();
   try {
     state.renderer = await createRenderer(canvas, rendererOptions());
   } catch (error) {

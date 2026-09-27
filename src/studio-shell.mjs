@@ -5,7 +5,7 @@ const builderTools = new Set(['select', 'rig', 'line', 'chain', 'circle', 'polyg
 /** Presentation only: all editing still uses the existing document commands.
  * `builder` is the bounded builder-session controller from builder-mode.mjs;
  * it owns rig-mode entry, exit confirmation and the figure scope. */
-export function initStudioShell({editor, state, setTool, renderAssets, showCommandMenu, setTimelineMode, builder, drawing, toast}) {
+export function initStudioShell({editor, state, setTool, renderAssets, showCommandMenu, builder, drawing, toast}) {
   const dialog = document.getElementById('insert-dialog');
   const workspace = document.querySelector('.workspace');
   const controller = new AbortController();
@@ -35,7 +35,6 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
   dialog.addEventListener('click', event => {
     if (event.target.closest('[data-action],[data-sample]')) dialog.close();
   }, options);
-  document.getElementById('timeline-workflow').addEventListener('click',event=>{const button=event.target.closest('[data-timeline-mode]');if(button)setTimelineMode(button.dataset.timelineMode);},options);
   document.getElementById('object-actions').addEventListener('click', event => {
     showCommandMenu([
       ['duplicate', 'duplicate', 'Duplicate selection', 'Ctrl D', !editor.object],
@@ -95,7 +94,6 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
     document.getElementById('edit-scope').textContent = scopeText;
     document.getElementById('leave-rig').hidden = current !== 'rig';
     document.getElementById('selection-summary').textContent = scopeText;
-    document.querySelectorAll('[data-timeline-mode]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.timelineMode===state.settings.timelineMode)));
     const hint = document.getElementById('viewport-hint');
     if (!hint.textContent) hint.textContent = 'Drag to select · Shift-click to add · Drag a joint to pose';
     hint.hidden = Boolean(state.playing || state.previewing || ['select', 'pose', 'hand'].includes(state.tool));
