@@ -206,8 +206,10 @@ export function createTimelineHost(ctx) {
     timeline?.update(state.settings.timelineMode !== 'advanced');
   }
 
-  /** Play, Pause while playing, Stop while previewing one frame; written only when that changes (playback starts or stops). */
+  /** Play, Pause while playing, Stop while previewing one frame; written only when that changes (playback starts or stops).
+   * The Simple timeline hears it too: it stays still while playing and catches up at the stop. */
   function syncPlayButton() {
+    timeline?.setPlaying?.(state.playing);
     const [glyph, label] = state.previewing ? ["stop", "Stop preview"] : state.playing ? ["pause", "Pause"] : ["play", "Play"];
     if (glyph === shownPlayback) return;
     shownPlayback = glyph;

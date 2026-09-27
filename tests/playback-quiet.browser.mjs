@@ -6,7 +6,8 @@
  *
  *   - #time-display is the only text that changes, at most 5 times a second;
  *   - the playhead moves by its transform (the Advanced playhead and its frame
- *     number);
+ *     number; in Simple the filmstrip's playhead line, while its cards stay
+ *     still until playback stops);
  *   - #play-button changes only when playback starts and stops;
  *   - chrome code reads no layout (getBoundingClientRect, offset*, client*,
  *     scroll*, getComputedStyle) while playing;
@@ -54,9 +55,6 @@ const RATCHET = [
   {id: 'status', until: 'M3b', selector: '#status, #status-dot', kinds: ['nodes', 'text', 'attributes']},
   // The hidden frame badge is read only by studio-shell's era; it goes with the reader-bound ids (M3b).
   {id: 'frame-badge', until: 'M3b', selector: '#frame-badge', kinds: ['nodes', 'text'], always: true},
-  // G1: the filmstrip re-renders its cards on every seek; a transform-only playhead replaces it (M5).
-  {id: 'filmstrip', until: 'M5', selector: '.sheet-filmstrip', kinds: ['nodes', 'text', 'attributes'], scenarios: ['simple'], always: true},
-  {id: 'filmstrip-audio-toggle', until: 'M5', selector: '#timeline-audio', kinds: ['attributes'], scenarios: ['simple']},
   // The audio lane under the filmstrip rewrites its state on every seek (G2's module, M7f).
   {id: 'audio-timeline', until: 'M7f', selector: '#timeline-audio-panel', kinds: ['attributes'], scenarios: ['simple']},
   // The camera's controls and monitor follow every frame from the render loop until the camera surface (M4).
@@ -65,7 +63,6 @@ const RATCHET = [
 const READ_RATCHET = [
   // The timeline's one cached batch (_extent) is allowed for good.
   {id: 'timeline-extent', module: 'layer-timeline.mjs', fn: '_extent', final: true},
-  {id: 'filmstrip-geometry', until: 'M5', module: 'sheet-filmstrip.mjs', scenarios: ['simple'], always: true},
   {id: 'audio-paint', until: 'M7f', module: 'audio-timeline.mjs'},
   {id: 'camera-monitor', until: 'M4', module: 'camera-monitor.mjs', scenarios: ['camera'], always: true},
 ];
@@ -189,6 +186,15 @@ try {
   report.checks.push(`advanced: ${added} nodes and ${attributes} attribute writes (baseline ${BASELINE.advanced.nodes} and ${BASELINE.advanced.attributes})`);
   console.log('PASS', report.checks.at(-1));
   await scenario('simple', () => page.evaluate(() => window.styk.settingsUI.commit({timelineMode: 'simple'})));
+  // The Simple cards stayed still while playing; at the stop they catch up: the card playback stopped in is current,
+  // selected and in view, and the playhead line is gone.
+  await page.waitForFunction(() => { const t = window.styk.timeline, card = t.cards.get(t.selectedIndex); return card?.dataset.current === 'true'; }, null, {timeout: 5000});
+  assert.ok(await page.evaluate(() => {
+    const t = window.styk.timeline, card = t.cards.get(t.selectedIndex).getBoundingClientRect(), strip = t.strip.getBoundingClientRect();
+    return t.selected.has(t.selectedIndex) && card.left >= strip.left - 1 && card.right <= strip.right + 1 && t.playhead.style.visibility === 'hidden';
+  }), 'simple: the cards catch up when playback stops');
+  report.checks.push('simple: the cards catch up when playback stops');
+  console.log('PASS', report.checks.at(-1));
   await scenario('camera', async () => {
     await page.evaluate(() => window.styk.settingsUI.commit({timelineMode: 'advanced'}));
     await page.waitForTimeout(300);

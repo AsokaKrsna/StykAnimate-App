@@ -64,7 +64,11 @@ export class SheetFilmstrip {
     this.strip.setAttribute('aria-label', 'Animation frames');
     this.strip.setAttribute('aria-multiselectable', 'true');
     this.spacer = el('div', this.strip, 'sheet-filmstrip-spacer');
-    this._on(this.strip, 'scroll', () => this.update());
+    // During playback the strip stays still: no card renders and no layout reads, only this line moves (by its
+    // transform) to where playback is; the cards catch up when playback stops (setPlaying).
+    this.playhead = el('div', this.spacer, 'sheet-playhead sheet-filmstrip-playhead');
+    this.playhead.style.visibility = 'hidden';
+    this._on(this.strip, 'scroll', () => this._schedule());
     this._on(this.strip, 'wheel', event => {
       if (event.ctrlKey || event.metaKey) {event.preventDefault();this.setZoom(this.cardWidth*(event.deltaY<0?1.12:.89),event.clientX-this.strip.getBoundingClientRect().left,true);return;}
       event.preventDefault();
@@ -75,6 +79,7 @@ export class SheetFilmstrip {
     this._on(this.duration, 'change', () => this._run(() => this.setDuration(this.selectedFrameIndices, Number(this.duration.value))));
     this._on(editor, 'change', event => {
       const detail = event.detail ?? {};
+      if (detail.kind === 'seek' && this.playing) { this._syncPlayhead(); return; }
       const appearance=detail.layers||detail.kind==='document'?layerAppearance(editor.report._styk?.layers):this.layerAppearance;
       let visual=thumbnailVisualChange(detail,this.layerAppearance,appearance);this.layerAppearance=appearance;
       if(detail.kind==='frame-draft'){const draft=editor.report._styk?.simpleFrameDraft,previous=this.draftSnapshot;this.draftSnapshot=draft;if(!(previous?.mode==='add'&&previous.baseline||draft?.mode==='add'&&draft.baseline)&&Boolean(previous?.empty)===Boolean(draft?.empty))visual=false;}
@@ -341,7 +346,38 @@ export class SheetFilmstrip {
     ]);
   }
   setPaused(value) { this.paused = value; if (!value) this._drain(); }
-  update() { if (this.disposed || this.raf) return; this.raf = requestAnimationFrame(() => { this.raf = null; this.render(); }); }
+  /** Renders the visible cards on the next frame, except while playing (setPlaying renders at the stop). */
+  update() { if (!this.playing) this._schedule(); }
+  /** The next frame's render, even while playing: a deliberate scroll or zoom shows the cards it brings in. */
+  _schedule() { if (this.disposed || this.raf) return; this.raf = requestAnimationFrame(() => { this.raf = null; this.render(); }); }
+  /** Playback starts or stops (timeline-host.mjs): while it plays the playhead line moves and nothing else; at the stop the
+   * current card is selected and revealed, as a seek does. */
+  setPlaying(playing) {
+    playing = Boolean(playing);
+    if (playing === Boolean(this.playing)) return;
+    this.playing = playing;
+    if (playing) {
+      if (this.raf) { cancelAnimationFrame(this.raf); this.raf = null; }
+      this._syncPlayhead();
+      this.playhead.style.visibility = '';
+      return;
+    }
+    this.playhead.style.visibility = 'hidden';
+    this.selected = new Set([this.selectedIndex]);
+    this.anchor = this.selectedIndex;
+    this.revealPending = true;
+    this.update();
+  }
+  /** The playhead line at the current tick: the card it falls in and how far through its hold (cached times and card width only). */
+  _syncPlayhead() {
+    const times = this.times, tick = this.editor.tick;
+    let low = 0, high = times.length - 1;
+    while (low < high) { const middle = (low + high + 1) >> 1; if (times[middle] <= tick) low = middle; else high = middle - 1; }
+    const start = times[low] ?? 0, end = times[low + 1] ?? this.editor.totalTicks;
+    const x = (low + (tick - start + 0.5) / Math.max(1, end - start)) * this.cardWidth;
+    const transform = `translateX(${Math.round(x * 10) / 10}px)`;
+    if (this.playhead.style.transform !== transform) this.playhead.style.transform = transform;
+  }
   resize() { this.update(); }
   /** The header's Add frame (the sidebar's button before the header was shared). */
   addFrameFromHeader() { return this._run(() => this.action('add')); }
@@ -358,7 +394,7 @@ export class SheetFilmstrip {
     this.setZoom(width,0);
     this.revealPending=true;
   }
-  setZoom(value,anchor=this.strip.clientWidth/2,user=false){if(user)this.autoCardWidth=false;const position=(this.strip.scrollLeft+anchor)/this.cardWidth;this.cardWidth=Math.max(MIN_CARD,Math.min(MAX_CARD,Number(value)||112));this.header?.setZoom(this.cardWidth);this.root.style.setProperty('--filmstrip-card',`${this.cardWidth}px`);this.spacer.style.width=`${this.times.length*this.cardWidth}px`;for(const [index,card] of this.cards)card.style.left=`${index*this.cardWidth}px`;this.strip.scrollLeft=position*this.cardWidth-anchor;this.update();this.audio?.update();}
+  setZoom(value,anchor=this.strip.clientWidth/2,user=false){if(user)this.autoCardWidth=false;const position=(this.strip.scrollLeft+anchor)/this.cardWidth;this.cardWidth=Math.max(MIN_CARD,Math.min(MAX_CARD,Number(value)||112));this.header?.setZoom(this.cardWidth);this.root.style.setProperty('--filmstrip-card',`${this.cardWidth}px`);this.spacer.style.width=`${this.times.length*this.cardWidth}px`;for(const [index,card] of this.cards)card.style.left=`${index*this.cardWidth}px`;this.strip.scrollLeft=position*this.cardWidth-anchor;this._schedule();this.audio?.update();}
   revealPlayhead() { this.ensureVisible(this.selectedIndex); this.update(); }
   destroy() {
     this.audio?.destroy();this.inflight?.abort();clearTimeout(this.retryTimer);this.clearThumbnailCache();
