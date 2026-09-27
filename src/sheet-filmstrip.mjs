@@ -11,6 +11,8 @@ import {AudioTimeline} from './audio-timeline.mjs';
 
 
 const MIN_CARD = 72, MAX_CARD = 240;
+/** The band above the cards that holds the ruler tools (zoom, Fit, Tall timeline): --timeline-header in timeline.css. */
+export const TOOLS_BAND = 32;
 const el = (tag, parent, className, text) => {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -50,15 +52,11 @@ export class SheetFilmstrip {
     Object.assign(this.duration, {type: 'number', min: '0', max: '65534', step: '1'});
     this.duration.setAttribute('aria-label', 'Frame inbetweens');
     const easingRow=el('div',this.controls,'sheet-filmstrip-field');el('span',easingRow,'','Easing');this.easingButton=this.button(easingRow,'Frame easing',()=>this.showEasingPopover());this.easingButton.className='sheet-easing-button';this.easingButton.setAttribute('aria-haspopup','dialog');
-    this.mainButton = this.button(this.controls, 'Add Frame', () => this.action('add'));
-    this.mainButton.className = 'sheet-add-frame';
-    this.mainButton.innerHTML = `${icon('plus')}<span>Add Frame</span>`;
     const actions = el('div', this.controls, 'sheet-filmstrip-actions');
     this.copyButton = this.button(actions, 'Copy frames', () => this.copySelection(), 'duplicate');
     this.pasteButton = this.button(actions, 'Paste frames', () => this.pasteSelection(), 'clipboard');
     this.copyButton.dataset.hotkeyCommand = 'copy';
     this.pasteButton.dataset.hotkeyCommand = 'paste';
-    this.mainButton.dataset.hotkeyCommand = 'add-frame';
     this.deleteButton = this.button(actions, 'Delete frames', () => this.action('delete'), 'trash');
     this.strip = el('div', this.root, 'sheet-filmstrip-scroll');
     this.strip.tabIndex = 0;
@@ -97,8 +95,8 @@ export class SheetFilmstrip {
     this.observer = new ResizeObserver(() => {this.fitCardsToHeight();const x=this.selectedIndex*this.cardWidth,left=this.strip.scrollLeft;if(this.lastViewportWidth&&x+this.cardWidth>left&&x<left+this.lastViewportWidth)this.revealPending=true;this.lastViewportWidth=this.strip.clientWidth;this.update();});
     this.observer.observe(this.root);
     this.render();
-    const zoom=document.createElement('input');Object.assign(zoom,{type:'range',min:String(MIN_CARD),max:String(MAX_CARD),value:'112',className:'sheet-zoom'});zoom.setAttribute('aria-label','Timeline zoom');this.zoomInput=zoom;this._on(zoom,'input',()=>this.setZoom(Number(zoom.value),undefined,true));
-    mountTimelineNavigation(this,{input:zoom,fit:()=>{this.setZoom(this.strip.clientWidth/Math.max(1,this.times.length),undefined,true);this.strip.scrollLeft=0;}});
+    // Add frame, the zoom slider and Fit are the shared header's (timeline-header.mjs).
+    mountTimelineNavigation(this);this.header?.setZoom(this.cardWidth);
     this.audio = new AudioTimeline(container, editor, {...options, host:this, engine:options.audioEngine, mode:'simple'});
   }
   _on(target, name, fn, options = {}) { target.addEventListener(name, fn, {signal: this.events.signal, ...options}); }
@@ -215,7 +213,8 @@ export class SheetFilmstrip {
     const amounts = this.ranges().map(({start, end}) => end - start - 1);
     if (document.activeElement !== this.duration) this.duration.value = amounts.every(n => n === amounts[0]) ? String(amounts[0] ?? 0) : '';
     this.duration.placeholder = 'Mixed';
-    this.duration.disabled = this.mainButton.disabled = this.deleteButton.disabled = this.copyButton.disabled = locked;
+    this.duration.disabled = this.deleteButton.disabled = this.copyButton.disabled = locked;
+    this.header?.setAddFrame({disabled: locked});
     this.pasteButton.disabled = locked || (!this.sharedClipboard && !this.editor._sheetClipboard);
     for (const [index, card] of this.cards) if (index < first || index >= last) {
       card._events.abort(); card.remove(); this.cards.delete(index); this.previews.delete(index);
@@ -344,16 +343,22 @@ export class SheetFilmstrip {
   setPaused(value) { this.paused = value; if (!value) this._drain(); }
   update() { if (this.disposed || this.raf) return; this.raf = requestAnimationFrame(() => { this.raf = null; this.render(); }); }
   resize() { this.update(); }
+  /** The header's Add frame (the sidebar's button before the header was shared). */
+  addFrameFromHeader() { return this._run(() => this.action('add')); }
+  /** Fit every frame: the cards shrink to show the whole animation. */
+  fitAll() { this.setZoom(this.strip.clientWidth / Math.max(1, this.times.length), undefined, true); this.strip.scrollLeft = 0; }
+  get zoomRange() { return {min: MIN_CARD, max: MAX_CARD}; }
   fitCardsToHeight(){
     if(!this.autoCardWidth||!this.strip.clientHeight)return;
-    // Number row, inbetween slider, padding and gaps take ~62px; thumbnails are 5:3.
+    // Number row, inbetween slider, padding and gaps take ~62px; thumbnails are 5:3. With the shared
+    // header the ruler tools take a band of TOOLS_BAND above the cards (timeline.css).
     // Cap automatic growth so a tall panel still shows a useful run of frames.
-    const width=Math.round(Math.max(MIN_CARD,Math.min(176,(this.strip.clientHeight-62)*5/3+12)));
+    const width=Math.round(Math.max(MIN_CARD,Math.min(176,(this.strip.clientHeight-(this.header?TOOLS_BAND:0)-62)*5/3+12)));
     if(Math.abs(width-this.cardWidth)<2)return;
     this.setZoom(width,0);
     this.revealPending=true;
   }
-  setZoom(value,anchor=this.strip.clientWidth/2,user=false){if(user)this.autoCardWidth=false;const position=(this.strip.scrollLeft+anchor)/this.cardWidth;this.cardWidth=Math.max(MIN_CARD,Math.min(MAX_CARD,Number(value)||112));this.zoomInput.value=String(this.cardWidth);this.root.style.setProperty('--filmstrip-card',`${this.cardWidth}px`);this.spacer.style.width=`${this.times.length*this.cardWidth}px`;for(const [index,card] of this.cards)card.style.left=`${index*this.cardWidth}px`;this.strip.scrollLeft=position*this.cardWidth-anchor;this.update();this.audio?.update();}
+  setZoom(value,anchor=this.strip.clientWidth/2,user=false){if(user)this.autoCardWidth=false;const position=(this.strip.scrollLeft+anchor)/this.cardWidth;this.cardWidth=Math.max(MIN_CARD,Math.min(MAX_CARD,Number(value)||112));this.header?.setZoom(this.cardWidth);this.root.style.setProperty('--filmstrip-card',`${this.cardWidth}px`);this.spacer.style.width=`${this.times.length*this.cardWidth}px`;for(const [index,card] of this.cards)card.style.left=`${index*this.cardWidth}px`;this.strip.scrollLeft=position*this.cardWidth-anchor;this.update();this.audio?.update();}
   revealPlayhead() { this.ensureVisible(this.selectedIndex); this.update(); }
   destroy() {
     this.audio?.destroy();this.inflight?.abort();clearTimeout(this.retryTimer);this.clearThumbnailCache();
@@ -362,6 +367,6 @@ export class SheetFilmstrip {
     this.events.abort(); this.menuEvents?.abort(); this.observer.disconnect();
     for (const card of this.cards.values()) card._events.abort();
     this.cards.clear(); this.previews.clear(); this.queue = [];
-    this.menu?.remove(); this.easingPopover?.hidePopover(); this.onionRange?.destroy();this.navigationOverlay.remove();this.root.remove();
+    this.menu?.remove(); this.easingPopover?.hidePopover(); this.onionRange?.destroy();this.root.remove();
   }
 }

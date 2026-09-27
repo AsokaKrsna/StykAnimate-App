@@ -23,7 +23,9 @@ try {
   check('Camera row opens camera inspector', await p.evaluate(() => styk.state.inspectorContext === 'camera'));
   await p.getByRole('button', {name:'New layer',exact:true}).click();
   const layerId=await p.evaluate(() => styk.editor.activeLayerId);
-  await p.locator(`.sheet-layer[data-layer-id="${layerId}"] .sheet-layer-name`).dblclick();
+  // A new layer opens its name for typing (rename on create).
+  await p.locator(`.sheet-layer[data-layer-id="${layerId}"] .sheet-layer-rename`).waitFor();
+  check('A new layer opens its name for typing', await p.evaluate(() => document.activeElement?.classList.contains('sheet-layer-rename')));
   await p.locator('.sheet-layer-rename').fill('Characters');
   await p.locator('.sheet-layer-rename').press('Enter');
   await p.evaluate(()=>styk.editor.select(1));
@@ -62,7 +64,7 @@ try {
   const before = await p.evaluate(
     () => window.styk.timeline.frameCount,
   );
-  await p.locator('#timeline .sheet-add-frame').click();
+  await p.locator('.timeline-toolbar .sheet-add-frame').click();
   check(
     "Actual Simple Add inserts one scene key",
     (await p.evaluate(() => window.styk.timeline.frameCount)) ===

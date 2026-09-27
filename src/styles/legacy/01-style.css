@@ -672,9 +672,7 @@ input[type="checkbox"] {
   background: var(--primary);
   color: var(--on-primary);
 }
-.play-button:hover {
-  background: var(--primary-hover) !important;
-}
+/* .play-button:hover: retired in M5 (the kit's soft icon button, timeline-header.mjs) */
 .play-button .icon {
   width: 15px;
   height: 15px;

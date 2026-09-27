@@ -1,20 +1,15 @@
 import {OnionTimelineRange} from './onion-timeline-range.mjs';
-import {icon} from './icons.mjs';
 
-/** Shared view gestures; panning and zooming never enter document history. */
-export function mountTimelineNavigation(host, {input, fit}) {
+/** Shared view gestures; panning and zooming never enter document history. The zoom slider and
+ * Fit timeline are the header's ruler tools (timeline-header.mjs), which the gesture leaves alone. */
+export function mountTimelineNavigation(host) {
   if(!host.strip)host.onionRange=new OnionTimelineRange(host);
-  const surface=host.scroll??host.strip, panel=document.createElement('div');
-  panel.className='timeline-zoom-float';panel.setAttribute('aria-label','Timeline zoom controls');
-  const symbol=document.createElement('span');symbol.innerHTML=icon('zoom');panel.append(symbol,input);
-  const button=document.createElement('button');button.type='button';button.className='icon-button';button.innerHTML=icon('maximize');button.title='Fit timeline';button.setAttribute('aria-label','Fit timeline');panel.append(button);
-  host.container.append(panel);host.navigationOverlay=panel;
+  const surface=host.scroll??host.strip;
   const on=(target,type,fn,options={})=>target.addEventListener(type,fn,{...options,signal:host.events.signal});
-  on(button,'click',fit);
   surface.title='Middle-drag to pan · Ctrl/Cmd-wheel to zoom';
   let pan=null;
   on(host.container,'pointerdown',event=>{
-    if(event.button!==1||panel.contains(event.target))return;
+    if(event.button!==1||event.target.closest?.('.tl-ruler-tools'))return;
     event.preventDefault();event.stopImmediatePropagation();
     pan={id:event.pointerId,x:event.clientX,y:event.clientY,left:host._offsetX?.()??surface.scrollLeft,top:surface.scrollTop};
     host.container.setPointerCapture(event.pointerId);host.container.classList.add('timeline-panning');

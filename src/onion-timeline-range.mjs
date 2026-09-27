@@ -30,7 +30,8 @@ export class OnionTimelineRange {
     const enabled=Boolean(this.controller?.getEnabled());if(this.overlay.hidden!==!enabled)this.overlay.hidden=!enabled;
     if(!enabled){for(const part of this.parts)part.gesture?.finish(false);return;}
     const range=this.controller.snapshot(this.host.pendingScrub??undefined),center=this.x(range.tick);
-    this.overlay.style.clipPath=`inset(0 16px 0 ${this.host.labelWidth}px)`;
+    // The bands show over the grid only: from the label column to the grid's end (the ruler tools' column follows it).
+    const clip=`xywh(${this.host.labelWidth}px 0 ${Math.max(0,this.host.width??0)}px 100%)`;if(clip!==this.clip){this.clip=clip;this.overlay.style.clipPath=clip;}
     for(const {direction,band,end} of this.parts){
       const value=range[direction],x=this.x(value.endpoint);
       band.style.left=`${Math.min(x,center)}px`;band.style.width=`${Math.abs(x-center)}px`;

@@ -8,11 +8,15 @@ try{
 await page.goto('http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
 await page.evaluate(()=>{styk.settingsUI.commit({timelineMode:'advanced'});for(const name of ['Character body','Character hands','Background','Lighting','Foreground'])styk.editor.createLayer(name);styk.timeline.selectTrack('layer-2');});await settle();
 const snapshot=()=>page.evaluate(()=>JSON.stringify(styk.editor.serialize()));const before=await snapshot();
+// Find layers is a button in the layer list's header; its field takes the title's place while it is used.
+assert.equal(await page.getByRole('searchbox',{name:'Find layers'}).isVisible(),false);assert.ok(await page.locator('.sheet-label-title').isVisible());
+await page.getByRole('button',{name:'Find layers',exact:true}).click();assert.ok(await page.getByRole('searchbox',{name:'Find layers'}).evaluate(e=>document.activeElement===e));assert.equal(await page.locator('.sheet-label-title').isVisible(),false);
 await page.getByRole('searchbox',{name:'Find layers'}).fill('character');await settle();
 assert.deepEqual(await page.evaluate(()=>styk.timeline.tracks.filter(r=>r.kind==='layer').map(r=>r.name)),['Character hands','Character body']);
 assert.equal(await snapshot(),before);
 await page.getByRole('searchbox',{name:'Find layers'}).fill('nothing');await settle();assert.equal(await page.evaluate(()=>styk.timeline.ids.some(id=>id.startsWith('layer-'))),false);assert.ok(await page.getByText('No matching layers',{exact:true}).isVisible());
 await page.getByRole('searchbox',{name:'Find layers'}).press('Escape');await settle();
+assert.equal(await page.getByRole('searchbox',{name:'Find layers'}).isVisible(),false,'An empty find field gives the title back');
 await page.evaluate(()=>styk.timeline.selectTrack('layer-2'));await page.getByRole('button',{name:'Focus selected layers',exact:true}).click();await settle();
 assert.deepEqual(await page.evaluate(()=>styk.timeline.tracks.filter(r=>r.kind==='layer').map(r=>r.id)),['layer-2']);assert.equal(await snapshot(),before);
 await page.evaluate(()=>styk.timeline.selectTrack('layer-4'));await settle();assert.equal(await page.evaluate(()=>styk.timeline.selectedTrackId),'layer-4');assert.equal(await page.evaluate(()=>styk.timeline.focusedLayerIds),null);

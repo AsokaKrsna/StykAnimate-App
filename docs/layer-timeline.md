@@ -4,8 +4,8 @@ The **Audio** icon opens shared [audio editing](AUDIO.md), hidden by default.
 Advanced places sound tracks under animation layers with one ruler, playhead,
 zoom and scroll area. Its footer follows the selected animation cell or audio
 clip. Simple opens an Audio tab in the filmstrip area. Closing audio editing
-restores animation space while sound keeps playing. The existing timeline resize
-handle and Expand control provide more room in either mode.
+restores animation space while sound keeps playing. The timeline's splitter and
+Tall timeline (the ruler's tools) provide more room in either mode.
 
 Waveform clips support source trimming, split/copy/paste, volume, fades and
 mute/solo. Audio uses seconds and snaps to the current frame rate. Explicit
@@ -91,10 +91,37 @@ Behavior references: [Adobe frames](https://helpx.adobe.com/animate/desktop/anim
 
 ## Timeline organization and compact layout
 
-Advanced uses the existing transport header for Add Frame and a direct
-Simple/Advanced segmented switch. Extra view commands live in the ruler context menu. There is no persistent bottom command/status bar.
-A floating bottom-right zoom control serves both modes. Layer ordering remains
-available by dragging rows and through the layer commands.
+Simple and Advanced share one header (`timeline-header.mjs`, experience.md §5.6)
+in three clusters: Simple │ Advanced, **Add frame** (one button for both modes;
+Blank frame on a drawing layer, and there the **Next copy** split: Next blank
+drawing, Blank drawing here, Copy drawing here, Extend) and **Edit together**
+(`#range-edit`: a quiet glyph until two or more frames are selected, its word
+while it applies, not shown on a one-frame file); the transport (First frame,
+previous, Play, next, Loop, the MM:SS:FF readout and the frame rate); and Onion
+(a split button), Audio (a dot while the animation has sound) and **Timeline ⋯**
+for the rare rows (Last frame, Previous key, Next key, Default height; Timeline…
+first while the timeline is folded; at the minimal width First frame, Loop
+playback, Audio and Edit together, whose buttons fold there). A click on the
+readout opens **Go to frame** (a frame of the ruler in Advanced, a card in
+Simple). The clusters never touch: the transport slides into free space, then
+the words fold in order (Edit together's, Next copy's, Add frame's last); the
+header measures itself only on a resize or when its words change, never while
+playing. There is no persistent bottom command/status bar; extra view commands
+live in the ruler's context menu.
+
+The ruler's tools (the timeline zoom, **Fit timeline** and **Tall timeline**)
+sit in their own column at the ruler's right end: the Advanced grid, its
+playhead and its overlays end before the column, so no frame, number, playhead
+tab or onion end is ever under a tool. In Simple they sit in a band above the
+cards' top-right end. The tools belong to the timeline body, so they go with it
+when the low height tier opens the body as a sheet.
+
+The layer list's header holds the title "Layers", **Focus selected layers**
+(from two layers, or while a focus is on), **New layer** (a split button: + makes
+a layer, in Draw a drawing layer, and the chevron the other kind; the new row
+opens its name for typing) and **Find layers** (Ctrl/Cmd+F from the grid; its
+field takes the title's place while it has focus or text). Layer ordering
+remains available by dragging rows and through the layer commands.
 Audio clip controls open from the audio toolbar. Audio selection hides
 frame-authoring controls; switching back to frame cells restores them.
 
@@ -116,10 +143,13 @@ Ctrl/Cmd-wheel zooms around the pointer; slider zoom retains viewport center.
 Timeline indexing creates lazy key descriptors. Filtering traverses lightweight
 layer descriptors only; painting and row DOM remain viewport-bounded.
 
-Checks: `node --test tests/timeline-organization.test.mjs` and
-`node tests/timeline-organization.browser.mjs`, plus the existing layer timeline
+Checks: `node --test tests/timeline-organization.test.mjs`,
+`node tests/timeline-organization.browser.mjs` and `node tests/timeline-header.browser.mjs`
+(the header's clusters, Timeline ⋯, Go to frame, Edit together, the minimal
+folds, the layer list's header and, where the timeline stylesheet is loaded, no
+overlapping header controls at the tier sizes), plus the existing layer timeline
 and audio navigation browser regressions. Browser artifacts are written to
-`artifacts/timeline-organization/`.
+`artifacts/timeline-organization/` and `artifacts/timeline-header/`.
 
 ### Contextual easing and view navigation
 
@@ -132,7 +162,7 @@ cannot apply changes. Advanced has no persistent easing selector; Simple also ex
 left sidebar.
 Inbetween sliders remain duration controls, independent of easing.
 
-Middle-button drag pans without changing selection or document data. The floating
+Middle-button drag pans without changing selection or document data. The ruler's
 zoom control changes Advanced time scale or Simple thumbnail width; Simple audio
 uses that same variable frame-to-pixel mapping. Ctrl/Cmd-wheel zooms at the pointer.
 Simple cards retain viewport eviction and fixed, bounded thumbnail resolution.

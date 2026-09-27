@@ -110,7 +110,7 @@ try {
   check('The layer sheet keeps a stable set of tracks',await page.evaluate(()=>{const t=styk.timeline;return t.tracks.length===2+styk.editor.report._styk.layers.order.length;}));
   await page.evaluate(() => { const t = styk.timeline; const row = t.tracks.findIndex(track => track.id === t.selectedTrackId); t._selectCell({row, tick:0}); });
   const beforeAdd = await page.evaluate(() => JSON.stringify(styk.editor.report._styk.layerSheet));
-  await page.locator('#timeline .sheet-add-button').click(); await settle();
+  await page.locator('.timeline-toolbar .sheet-add-button').click(); await settle();
   check('The Add Frame toolbar button inserts a layer key', await page.evaluate(before => JSON.stringify(styk.editor.report._styk.layerSheet) !== before, beforeAdd));
   await grid.focus(); await page.keyboard.press('a'); await settle();
   check('The add-frame hotkey inserts another key', await page.evaluate(before => JSON.stringify(styk.editor.report._styk.layerSheet) !== before, beforeAdd));

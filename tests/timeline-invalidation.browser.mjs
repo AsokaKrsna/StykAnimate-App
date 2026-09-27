@@ -60,14 +60,16 @@ try{
         check(t._changeNeedsPaint({kind:'edit',live:true,[flag]:true}),`${flag} change lost its redraw`);
       checks.push('legacy keys and all timeline-bearing live changes retain redraw');
 
+      // Add frame and Next copy are the shared header's (timeline-header.mjs); the grid tells it what they show.
+      const add=document.querySelector('.timeline-toolbar .sheet-add-button'),cel=document.querySelector('.timeline-toolbar .tl-cel'),celMain=cel.querySelector('.tl-cel-main');
       const drawing=e.createDrawingLayer('Ink');await settle();
-      check(t.keyButton.lastChild.textContent==='Blank frame'&&!t.copyDrawingButton.hidden,'Drawing toolbar did not update');
+      check(add.querySelector('.ui-label').textContent==='Blank frame'&&!cel.hidden,'Drawing toolbar did not update');
       e.setLayerLocked(drawing.id,true);await settle();
-      check(t.keyButton.disabled&&t.copyDrawingButton.disabled,'Locked drawing toolbar remained enabled');
+      check(add.disabled&&celMain.disabled,'Locked drawing toolbar remained enabled');
       e.setLayerLocked(drawing.id,false);e.seek(2);await settle();paints=0;e.addDrawingFrame();await settle();
       check(paints>0&&e.layerFrameKeys(drawing.id).some(key=>key.tick===2),'Drawing exposure did not repaint');
       e.selectSheetLayer('layer-1');e.select(1);await settle();
-      check(t.keyButton.lastChild.textContent==='Add Frame'&&t.copyDrawingButton.hidden,'Figure toolbar did not return');
+      check(add.querySelector('.ui-label').textContent==='Add frame'&&add.getAttribute('aria-label')==='Add Frame'&&cel.hidden,'Figure toolbar did not return');
       checks.push('drawing selection, lock and frame insertion update grid and toolbar');
 
       const clip=e.addVfxClip({kind:'figure',uid:1},'glow',{start:0,duration:12});
@@ -80,7 +82,7 @@ try{
       checks.push('VFX preview and cancellation redraw the visible range');
 
       const unchanged=new MutationObserver(()=>{});
-      for(const node of [t.keyButton,t.copyDrawingButton,t.layerSearch,t.clearSearch,t.focusLayersButton,t.emptyLayers])
+      for(const node of [add,cel,t.layerSearch,t.clearSearch,t.focusLayersButton,t.newLayerButton,t.labelHead,t.emptyLayers])
         unchanged.observe(node,{attributes:true,childList:true,characterData:true,subtree:true});
       for(let i=0;i<5;i++)t._paint();
       const mutations=unchanged.takeRecords();unchanged.disconnect();

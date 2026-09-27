@@ -1,13 +1,14 @@
 /**
  * The timeline island's host (architecture.md §3.14): mounts the Simple or
- * Advanced timeline into #timeline with the app's callbacks, wires the
- * header's own controls (the mode switch #timeline-workflow, the frame rate
- * #fps and the zoom #timeline-zoom), and writes what the header shows: the
- * transport's readouts (#time-display, the hidden #timeline-summary and
- * #frame-badge, #fps), the play button's state, Edit selected frames
- * (#range-edit) and which mode is pressed. Those writes go through
- * ui/dom-write.mjs: during playback the readout changes (5 Hz, through the
- * app's transport surface) and nothing else in the header does.
+ * Advanced timeline into #timeline with the app's callbacks and the shared
+ * header (timeline-header.mjs: its three clusters, Timeline ⋯, Go to frame
+ * and the ruler's tools), wires the header's own controls (the mode switch
+ * #timeline-workflow, the frame rate #fps and the zoom #timeline-zoom), and
+ * writes what the header shows: the transport's readouts (#time-display, the
+ * hidden #timeline-summary and #frame-badge, #fps), the play button's state,
+ * Loop, Edit together (#range-edit) and which mode is pressed. Those writes
+ * go through ui/dom-write.mjs: during playback the readout changes (5 Hz,
+ * through the app's transport surface) and nothing else in the header does.
  *
  * The timeline components (layer-timeline.mjs, sheet-filmstrip.mjs) stay the
  * engines; this module is the one place that constructs them. DOM-free at
@@ -22,7 +23,8 @@
  * runClipboardOperation, confirmDiscardFrame, simpleFrameCount, fail,
  * setTimelineMode(mode), onMount(timeline), and getters for what app.mjs
  * creates later: propertyControls(), cameraMotionControls(), drawing(),
- * builder(), sharedClipboard(), thumbnails(), localization()}.
+ * builder(), sharedClipboard(), thumbnails(), localization()}; optionally
+ * `overlays` (menus and Go to frame then block the editor's hotkeys).
  */
 import {Timeline} from './layer-timeline.mjs';
 import {SheetFilmstrip as SimpleTimeline} from './sheet-filmstrip.mjs';
@@ -31,10 +33,16 @@ import {drawingResourcesFor} from './drawing-resources.mjs';
 import {refreshHotkeyHints} from './hotkey-hints.mjs';
 import {icon} from './icons.mjs';
 import {setAttr, setMarkup, setProp, setText} from './ui/dom-write.mjs';
+import {createTimelineHeader} from './timeline-header.mjs';
+import {sayTimeline} from './locales/en-timeline.mjs';
 
 export function createTimelineHost(ctx) {
   const {editor, state, $, actions} = ctx;
   let timeline = null, inbetweenDialog, shownPlayback = null;
+  const header = createTimelineHeader(ctx, {
+    get timeline() { return timeline; },
+    goToFrame: (number) => goToFrame(number),
+  });
 
   // The header's own controls.
   $("fps").addEventListener(
@@ -76,6 +84,8 @@ export function createTimelineHost(ctx) {
     const TimelineClass =
       state.settings.timelineMode === "simple" ? SimpleTimeline : Timeline;
     timeline = new TimelineClass($("timeline"), editor, {
+      header,
+      overlays: ctx.overlays ?? null,
       getSettings: () => state.settings,
       audioEngine: ctx.audioEngine,
       onCameraMotionPreview: clip => ctx.cameraMotionControls()?.previewTimeline(clip),
@@ -157,9 +167,8 @@ export function createTimelineHost(ctx) {
         ctx.warmPlayback();
       },
     });
+    header.mount(timeline);
     ctx.onMount?.(timeline);
-    // Zoom lives beside frame navigation in the advanced timeline itself.
-    $("timeline-zoom").closest(".timeline-actions").hidden = true;
     $("timeline")
       .closest(".timeline-panel")
       .classList.toggle("simple-mode", state.settings.timelineMode === "simple");
@@ -170,6 +179,7 @@ export function createTimelineHost(ctx) {
 
   /** The timeline island in the shell: a shown timeline refits its body. */
   function attach(shell) {
+    header.attach(shell);
     shell.define({
       id: "timeline",
       root: () => $("animation-timeline"),
@@ -192,6 +202,7 @@ export function createTimelineHost(ctx) {
       ? `${stored} ${stored === 1 ? "frame" : "frames"} · plays as ${total} with inbetweens · ${seconds}`
       : `${total} ${total === 1 ? "frame" : "frames"} · ${seconds}`);
     setProp($("fps"), "value", String(fps));
+    header.sync();
     timeline?.update(state.settings.timelineMode !== 'advanced');
   }
 
@@ -205,7 +216,8 @@ export function createTimelineHost(ctx) {
     ctx.localization()?.updatePlayback($("play-button"), state);
   }
 
-  /** Edit selected frames: on only while two or more frames are selected, outside Build and Draw. */
+  /** Edit together (today's Edit selected frames): available while two or more frames are selected, outside
+   * Build and Draw; its word shows only then (a quiet glyph otherwise), and a one-frame file never shows it. */
   function syncRangeEdit() {
     const indices = ctx.rangeFrames(true), count = indices?.sheetTicks?.length ?? indices?.length ?? 0;
     const range = $('range-edit');
@@ -213,10 +225,18 @@ export function createTimelineHost(ctx) {
     setProp(range, 'disabled', count < 2 || Boolean(ctx.builder()?.active || ctx.drawing()?.active));
     setAttr(range, 'aria-pressed', String(!range.disabled && state.applyRange));
     setText(range.querySelector('.range-edit-count'), count > 1 ? String(count) : '');
-    setAttr(range, 'data-hotkey-title', count > 1
-      ? 'Move figures and edit their properties across ' + count + ' frames, including the current frame'
-      : 'Select multiple frames to edit them together');
+    setAttr(range, 'data-hotkey-title', sayTimeline(null, count > 1 ? 'timeline.editTogetherReady' : 'timeline.editTogetherIdle', {count}));
+    header.setEditTogether({oneFrame: editor.totalTicks < 2, ready: !range.disabled});
     refreshHotkeyHints(ctx.hotkeys, range.closest('.timeline-toolbar') ?? range.parentElement);
+  }
+
+  /** Go to frame (the readout's popover; the palette's frame jump): a card in Simple, a frame of the ruler in Advanced. */
+  function goToFrame(number) {
+    if (!timeline) return;
+    const clamp = (value, max) => Math.min(Math.max(1, Math.round(value) || 1), Math.max(1, max));
+    if (timeline.strip) return timeline.selectFrame(clamp(number, timeline.frameCount) - 1);
+    const tick = clamp(number, editor.totalTicks) - 1;
+    return timeline._run(() => { timeline.seek(tick); timeline.revealPlayhead(); });
   }
 
   /** Which of Simple and Advanced is pressed. */
@@ -226,6 +246,7 @@ export function createTimelineHost(ctx) {
 
   return {
     get timeline() { return timeline; },
-    mount, attach, updateTransport, syncPlayButton, syncRangeEdit, syncMode,
+    header,
+    mount, attach, updateTransport, syncPlayButton, syncRangeEdit, syncMode, goToFrame,
   };
 }
