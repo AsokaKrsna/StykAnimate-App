@@ -321,7 +321,7 @@ test('island shares belong to the islands, not to the tabs that move between the
 
 test('shared sizes are clamped integers; non-finite values fall back to the default', () => {
   const layout = normalizeLayout({shared: {sizes: {right: 99999.7, left: 10, bottom: 'x', structure: 250.4, timelineLabels: -5, audioRows: 3.6, top: Infinity, __proto__: 1}}}, at);
-  assert.deepEqual(layout.shared.sizes, {right: 420, left: 256, structure: 250, timelineLabels: 140, audioRows: 4});
+  assert.deepEqual(layout.shared.sizes, {right: 460, left: 256, structure: 250, timelineLabels: 140, audioRows: 4});
   assert.equal(Object.getPrototypeOf(layout.shared.sizes), Object.prototype);
   assert.deepEqual(setSharedSize(layout, 'bottom', 333.3, at).shared.sizes.bottom, 333);
   assert.equal(setSharedSize(layout, 'right', null, at).shared.sizes.right, undefined);

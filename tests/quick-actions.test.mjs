@@ -44,9 +44,9 @@ test('today\'s quick actions use existing commands and stay within the budget in
   }
 });
 
-test('the figure row: Flip · To front, To back (words; Shift: one step) · Duplicate, Delete, and a free slot', () => {
+test('the figure row: Flip · Front, Back (words; Shift: one step) · Duplicate, Delete, and a free slot', () => {
   const resolved = row('figure');
-  assert.deepEqual(shape(resolved), [['glyph:Flip horizontally'], ['word:To front', 'word:To back'], ['glyph:Duplicate', 'glyph:Delete']]);
+  assert.deepEqual(shape(resolved), [['glyph:Flip horizontally'], ['word:Front', 'word:Back'], ['glyph:Duplicate', 'glyph:Delete']]);
   const [flip, front] = resolved.items;
   assert.equal(flip.shortcut, 'Shift+H', 'the tooltip carries the key from the user\'s bindings');
   assert.equal(flip.icon, 'flip');
@@ -163,11 +163,11 @@ test('pins are stored per context, newest last, without repeats, and a context w
 
 test('words, tile labels and row names translate through t, with English fallbacks', () => {
   // Like the app's localization.t: it fills {params} itself and returns the key when it has no text.
-  const italian = {'quick.toFront': 'In primo piano', 'quick.figure': 'Azioni figura', 'quick.shift': 'Maiusc: {action}'};
+  const italian = {'quick.front': 'In primo piano', 'quick.figure': 'Azioni figura', 'quick.shift': 'Maiusc: {action}'};
   const t = (key, params = {}) => (italian[key] ?? key).replace(/\{(\w+)\}/g, (token, name) => params[name] ?? token);
   const resolved = resolveQuickActions({context: 'figure', t, describe: describeWith(registryFor())});
   assert.equal(resolved.items[1].word, 'In primo piano');
-  assert.equal(resolved.items[2].word, 'To back');
+  assert.equal(resolved.items[2].word, 'Back');
   assert.equal(quickLabel('figure', {t}), 'Azioni figura');
   assert.equal(quickLabel('joint'), 'Joint actions');
   assert.equal(quickLabel('nowhere'), 'Actions');

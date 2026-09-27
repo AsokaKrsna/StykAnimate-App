@@ -350,27 +350,29 @@ try {
     for (const [width, height] of [[1440, 900], [1024, 700], [900, 700]]) {
       await resize(width, height);
       const head = await rect('.shell-stage > .stage-head'), tabs = await rect('.shell-right .shell-tabs'), timeline = await rect('.timeline-toolbar');
-      assert.ok(Math.abs(head.y - tabs.y) <= 1 && Math.abs(head.y + head.height - tabs.y - tabs.height) <= 1, `${width}x${height}: ${JSON.stringify({head, tabs})}`);
+      // The tabs' pill track sits centred on the stage header's row.
+      assert.ok(Math.abs(head.y + head.height / 2 - tabs.y - tabs.height / 2) <= 1 && tabs.y >= head.y && tabs.y + tabs.height <= head.y + head.height,
+        `${width}x${height}: ${JSON.stringify({head, tabs})}`);
       assert.equal(timeline.height, 40, 'the timeline header is 40px too');
     }
     await resize(1440, 900);
   });
 
-  await step('the rail keeps its place in Animate, Draw and Build', async () => {
+  await step('the rail floats in #viewport\'s corner beside the canvas in Animate, Draw and Build', async () => {
     for (const [width, height] of [[1440, 900], [900, 700], [800, 600], [500, 340]]) {
       await resize(width, height);
       const places = [];
       for (const mode of ['animate', 'draw', 'rig']) {
         await workspace(mode);
-        const rail = await rect('.studio-rail'), work = await rect('.workspace');
-        assert.ok(rail.x >= work.x && rail.y >= work.y && rail.x + rail.width <= work.x + work.width && rail.y + rail.height <= work.y + work.height,
-          `${mode} ${width}x${height}: the rail is inside .workspace`);
-        places.push([rail.x, rail.y, rail.width]);
+        const rail = await rect('.studio-rail'), viewport = await rect('#viewport');
+        assert.ok(rail.x >= viewport.x && rail.y >= viewport.y && rail.x + rail.width <= viewport.x + viewport.width && rail.y + rail.height <= viewport.y + viewport.height,
+          `${mode} ${width}x${height}: the rail floats inside #viewport`);
+        assert.ok(Math.abs(rail.x - viewport.x - 12) <= 1 && Math.abs(rail.y - viewport.y - 12) <= 1, `${mode} ${width}x${height}: 12px inside its corner`);
+        places.push([rail.x, rail.y]);
       }
       await leaveBuild();
       await workspace('animate');
       assert.deepEqual(places[1], places[0], `${width}x${height}: Draw`);
-      assert.deepEqual(places[2], places[0], `${width}x${height}: Build`);
     }
     await resize(1440, 900);
   });
@@ -382,18 +384,18 @@ try {
       return {more: rail.hasAttribute('data-more-below'), overflows: rail.scrollHeight > rail.clientHeight + 1,
         scrollbar: getComputedStyle(rail).scrollbarWidth, mask: getComputedStyle(rail).maskImage !== 'none'};
     });
-    // Only the workspace's own tools (M3b): Animate's and Build's fit the 40px rail's 32px tools; Draw's eight say
-    // whether one waits below (its Pan, a few pixels, at this size).
+    // Only the workspace's own tools (M3b): Animate's and Build's fit the 44px bar's 32px tools; Draw's eight fold into
+    // two columns where one would not fit. The floating bar draws no scrollbar: a fade says tools wait below.
     for (const mode of ['animate', 'draw', 'rig']) {
       await workspace(mode);
       const rail = await read();
-      assert.deepEqual(rail, {more: rail.overflows, overflows: rail.overflows, scrollbar: 'auto', mask: rail.overflows}, mode);
-      if (mode !== 'draw') assert.equal(rail.overflows, false, `${mode}: every tool fits`);
+      assert.deepEqual(rail, {more: rail.overflows, overflows: rail.overflows, scrollbar: 'none', mask: rail.overflows}, mode);
+      assert.equal(rail.overflows, false, `${mode}: every tool fits`);
     }
-    // A rail shorter than its tools (a shorter column, forced here) fades its foot and shows its scrollbar until scrolled.
+    // A rail shorter than its tools (a shorter column, forced here) fades its foot until scrolled.
     await page.evaluate(() => { document.querySelector('.shell-rail').style.maxBlockSize = '120px'; });
     await page.waitForFunction(() => document.querySelector('.shell-rail').hasAttribute('data-more-below'));
-    assert.deepEqual(await read(), {more: true, overflows: true, scrollbar: 'auto', mask: true}, 'a rail that does not fit');
+    assert.deepEqual(await read(), {more: true, overflows: true, scrollbar: 'none', mask: true}, 'a rail that does not fit');
     await page.evaluate(() => { const rail = document.querySelector('.shell-rail'); rail.scrollTop = rail.scrollHeight; });
     await page.waitForFunction(() => !document.querySelector('.shell-rail').hasAttribute('data-more-below'));
     await page.evaluate(() => { const rail = document.querySelector('.shell-rail'); rail.style.maxBlockSize = ''; rail.scrollTop = 0; });
@@ -409,13 +411,13 @@ try {
     const timeline = page.getByRole('separator', {name: 'Resize timeline'});
     const sizes = () => page.evaluate(() => styk.workspace.sizes);
     const before = await sizes();
-    assert.deepEqual([before.right, before.timeline], [288, 280]);
+    assert.deepEqual([before.right, before.timeline], [320, 280]);
     await right.focus();
     await page.keyboard.press('ArrowLeft');
-    assert.equal((await sizes()).right, 300);
+    assert.equal((await sizes()).right, 332);
     await page.keyboard.press('Shift+ArrowLeft');
-    assert.equal((await sizes()).right, 340);
-    assert.equal(await right.getAttribute('aria-valuenow'), '340');
+    assert.equal((await sizes()).right, 372);
+    assert.equal(await right.getAttribute('aria-valuenow'), '372');
     await page.keyboard.press('Home');
     assert.equal((await sizes()).right, before.right);
     await timeline.focus();
@@ -604,7 +606,7 @@ try {
   await step('Build keeps Structure docked while #viewport keeps 360px, then folds it to a strip whose sheet shows the tree', async () => {
     await workspace('rig');
     await resize(900, 700);
-    assert.equal(await page.evaluate(() => styk.workspace.sizes.left), 210);
+    assert.equal(await page.evaluate(() => styk.workspace.sizes.left), 232);
     assert.ok((await rect('#viewport')).width >= 360);
     assert.equal(await page.locator('.builder-tree').isVisible(), true);
     const splitter = page.getByRole('separator', {name: 'Resize figure structure'});
@@ -816,7 +818,7 @@ try {
     await page.keyboard.press('End');
     assert.equal(await right.getAttribute('aria-valuenow'), await right.getAttribute('aria-valuemax'));
     await page.keyboard.press('Home');
-    assert.equal(await right.getAttribute('aria-valuenow'), '288');
+    assert.equal(await right.getAttribute('aria-valuenow'), '320');
   });
 
   await step('Ctrl+Alt+M moves the focused panel with the arrow keys; Enter moves it and Escape cancels', async () => {
@@ -896,7 +898,7 @@ try {
     const placed = await page.evaluate(() => {
       const box = selector => document.querySelector(selector).getBoundingClientRect();
       return {span: document.querySelector('.workspace').dataset.bottomSpan, rail: document.querySelector('.workspace').dataset.rail,
-        railRight: box('.shell-rail').right > box('.shell-stage').right, timeline: box('.timeline-panel').right <= box('.shell-stage').right + 1};
+        railRight: box('.shell-rail').left > box('.shell-stage').left + box('.shell-stage').width / 2, timeline: box('.timeline-panel').right <= box('.shell-stage').right + 1};
     });
     assert.deepEqual(placed, {span: 'stage', rail: 'right', railRight: true, timeline: true});
     assert.deepEqual(await page.locator('#layout-popover select').evaluateAll(list => list.map(select => select.value)), ['right', 'float', 'left', 'stage', 'right'],
@@ -1052,17 +1054,17 @@ try {
     await page.keyboard.press('ArrowLeft');
     await page.evaluate(() => styk.workspace.flushPreferences());
     const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('stykanimate.workspace-layout.v2')));
-    assert.equal(stored.shared.sizes.right, 300);
-    assert.equal(stored.right, 300, 'the v1 mirror a 1.1 app reads');
+    assert.equal(stored.shared.sizes.right, 332);
+    assert.equal(stored.right, 332, 'the v1 mirror a 1.1 app reads');
     assert.equal(stored.studioVersion, 1);
     await page.reload();
     await page.waitForFunction(() => window.styk?.ready);
     await settle();
-    assert.equal(await page.evaluate(() => styk.workspace.sizes.right), 300);
+    assert.equal(await page.evaluate(() => styk.workspace.sizes.right), 332);
     await resize(800, 600);
     await resize(1440, 900);
-    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('stykanimate.workspace-layout.v2')).shared.sizes.right), 300);
-    assert.equal(await page.evaluate(() => styk.workspace.sizes.right), 300);
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('stykanimate.workspace-layout.v2')).shared.sizes.right), 332);
+    assert.equal(await page.evaluate(() => styk.workspace.sizes.right), 332);
     await page.evaluate(async () => { styk.workspace.reset(); await styk.workspace.flushPreferences(); });
   });
 

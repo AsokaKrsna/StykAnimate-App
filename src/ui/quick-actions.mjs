@@ -42,8 +42,8 @@ const TEXT = Object.freeze({
   'quick.shift': 'Shift: {action}',
   'quick.oneStep': 'one step',
   'quick.theBranch': 'the branch',
-  'quick.toFront': 'To front',
-  'quick.toBack': 'To back',
+  'quick.front': 'Front',
+  'quick.back': 'Back',
   'quick.isolate': 'Isolate',
   'quick.match': 'Match',
   'quick.flipLimb': 'Flip limb',
@@ -113,10 +113,20 @@ const entry = (id, quick) => Object.freeze({id, quick: Object.freeze(Array.isArr
  * (Duplicate is to be the copy with a plus). Each row here still has distinct
  * drawings, which the budget test checks.
  */
+/** The one short word under a glyph command's tile (its tooltip and accessible name keep the whole name). */
+const SHORT_WORDS = Object.freeze({
+  mirror: 'Flip', duplicate: 'Duplicate', delete: 'Delete', 'segment-values': 'Values', 'mirror-segment': 'Flip H',
+  'mirror-segment-vertical': 'Flip V', 'delete-single-segment': 'Delete', 'camera-reset': 'Reset', copy: 'Copy', paste: 'Paste',
+  'delete-frame': 'Delete',
+});
+/** Commands that remove something: their tile turns red on hover. */
+const DANGER = new Set(['delete', 'delete-single-segment', 'delete-frame', 'clear-keys']);
+const shortWord = item => SHORT_WORDS[item.id] ?? (item.label.length <= 10 ? item.label : item.label.split(' ')[0]);
+
 export const QUICK_ACTIONS = Object.freeze([
   entry('mirror', [...place(FIGURES, {group: 'flip'}), Object.freeze({context: 'joint', group: 'flip', label: 'Flip limb', labelKey: 'quick.flipLimb'})]),
-  entry('layer-front', place(FIGURES, {group: 'order', word: 'To front', wordKey: 'quick.toFront', shift: 'layer-up', shiftHint: 'one step', shiftHintKey: 'quick.oneStep'})),
-  entry('layer-back', place(FIGURES, {group: 'order', word: 'To back', wordKey: 'quick.toBack', shift: 'layer-down', shiftHint: 'one step', shiftHintKey: 'quick.oneStep'})),
+  entry('layer-front', place(FIGURES, {group: 'order', word: 'Front', wordKey: 'quick.front', shift: 'layer-up', shiftHint: 'one step', shiftHintKey: 'quick.oneStep'})),
+  entry('layer-back', place(FIGURES, {group: 'order', word: 'Back', wordKey: 'quick.back', shift: 'layer-down', shiftHint: 'one step', shiftHintKey: 'quick.oneStep'})),
   entry('movieclip-edit', {context: 'movieclip', group: 'clip', word: 'Edit clip', wordKey: 'quick.editClip'}),
   entry('movieclip-unique', {context: 'movieclip', group: 'clip', word: 'Make unique', wordKey: 'quick.makeUnique'}),
   entry('duplicate', place([...FIGURES, 'movieclip'], {group: 'edit'})),
@@ -352,22 +362,27 @@ export function createQuickActions({host = null, context = null, label = null, e
     const word = item.kind === 'word';
     const control = doc.createElement('button');
     control.type = 'button';
-    control.className = word ? 'ui-button ui-quick-word' : 'ui-icon-button';
-    if (word) { control.dataset.size = 'sm'; control.dataset.variant = 'ghost'; }
-    else if (small) control.dataset.size = 'sm';
+    // A tile in the row: its glyph over one short word, so what it does is visible (a tile's halves stay glyphs).
+    control.className = small ? 'ui-icon-button' : 'ui-button ui-quick-word';
+    if (small) control.dataset.size = 'sm';
+    else { control.dataset.size = 'sm'; control.dataset.variant = 'ghost'; }
+    if (DANGER.has(item.id)) control.dataset.tone = 'danger';
     control.dataset.action = item.id;
     if (item.shift) control.dataset.shiftAction = item.shift;
     control.dataset.concept = item.id;
     if (item.pinned) control.dataset.pinned = '';
-    if (word) {
-      const text = doc.createElement('span');
-      text.className = 'ui-label';
-      text.textContent = item.word;
-      control.append(text);
-      if (item.menu) { control.setAttribute('aria-haspopup', 'menu'); appendGlyph(control, 'chevron-down', 'ui-icon ui-button-chev'); }
-    } else {
+    if (small) {
       if (!appendGlyph(control, item.icon)) control.textContent = item.label;
       control.setAttribute('aria-label', item.label);
+    } else {
+      appendGlyph(control, item.icon);
+      const text = doc.createElement('span');
+      text.className = 'ui-label';
+      text.textContent = word ? item.word : shortWord(item);
+      control.append(text);
+      // A glyph command keeps its whole name as its accessible name; a word command is named by its word.
+      if (!word) control.setAttribute('aria-label', item.label);
+      if (item.menu) { control.setAttribute('aria-haspopup', 'menu'); appendGlyph(control, 'chevron-down', 'ui-icon ui-button-chev'); }
     }
     sync(control, item);
     return control;
@@ -381,7 +396,7 @@ export function createQuickActions({host = null, context = null, label = null, e
     if (control.disabled !== disabled) control.disabled = disabled;
     // The tooltip names the whole command (a word may be shorter) and, while it is unavailable, why.
     const tip = disabled && item.reason ? quickText(t, 'quick.unavailable', null, {label: item.label, reason: item.reason})
-      : item.kind === 'word' ? item.label : null;
+      : item.label;
     setAttribute(control, 'data-tooltip', tip);
   }
 

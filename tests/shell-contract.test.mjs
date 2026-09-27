@@ -65,9 +65,9 @@ export const SHELL_CONTRACT = Object.freeze({
     // The band: its history, Save and Export, and a session's Cancel, Test rig and Done (camera-done, movieclip-*).
     titlebar: ['menu', 'rename', 'undo', 'redo', 'save', 'export', 'movieclip-cancel', 'rig-test', 'movieclip-done',
       'camera-done', 'minimize', 'maximize', 'close'],
-    // The rail's stacking buttons (Animate, until the figure's quick actions) and its hidden help and settings;
-    // toggle-isolate is the builder View menu's (it left the rail in M3b).
-    rail: ['toggle-isolate', 'selection-front', 'selection-back', 'help', 'settings'],
+    // toggle-isolate is the builder View menu's (it left the rail in M3b). The rail holds tools only: stacking is the
+    // figure's quick actions (To front, To back) and the selection menus; help and settings are the menus'.
+    rail: ['toggle-isolate'],
     // The stage header: the crumb, the view cluster, zoom and Fit, and the polygon's own controls.
     canvas: ['scene-settings', 'toggle-handles', 'toggle-motion-paths', 'toggle-grid', 'zoom-menu', 'zoom-reset',
       'finish-polygon', 'cancel-polygon'],
@@ -86,8 +86,7 @@ export const SHELL_CONTRACT = Object.freeze({
     shell: ['panel-toggle-properties', 'timeline-sheet'],
   },
   // Shift-click routes to data-shift-action (app.mjs click delegation).
-  shiftActions: ['duplicate-branch', 'mirror-branch', 'mirror-branch-vertical', 'selection-down',
-    'selection-up'],
+  shiftActions: ['duplicate-branch', 'mirror-branch', 'mirror-branch-vertical'],
   // app.mjs setTool, studio-shell (.tool-dock [data-tool]), builder-mode, drawing-view, hotkey-hints.
   tools: ['select', 'rig', 'tweener', 'line', 'chain', 'circle', 'polygon', 'hand', 'drawing-brush',
     'drawing-eraser', 'drawing-fill', 'drawing-lasso', 'drawing-shape', 'drawing-transform'],
@@ -275,8 +274,8 @@ test('Structural hooks that modules dereference without null checks are intact',
   for (const [selector, menu] of [['#open-insert', 'add'], ['[data-tool="drawing-lasso"]', 'lasso'], ['[data-tool="drawing-shape"]', 'shape']])
     assert.equal(one(selector, dock).attrs['data-rail-menu'], menu, `${selector} lists ${menu}`);
   assert.equal(find('[data-action="toggle-isolate"]', dock).length, 0);
-  assert.equal(find('[data-action="selection-front"]')[0].attrs['data-selection-order'], '');
-  assert.equal(find('[data-action="selection-back"]')[0].attrs['data-selection-order'], '');
+  // The floating tool bar holds tools only.
+  assert.equal(find('.rail-order').length, 0, 'no stacking buttons in the tool bar');
   // The canvas toolbar and the floating view pill are gone: the stage header holds their controls.
   for (const selector of ['.canvas-toolbar', '.canvas-view-controls']) assert.equal(find(selector).length, 0, `no ${selector}`);
   // builder-mode disables [popovertarget="builder-menu-arrange"]; the menus use the popover API.

@@ -1,5 +1,9 @@
 /* Menu (src/ui/ui-menu.mjs; components.md "Menu"): app, context, zoom and
- * overflow menus and their submenus, in the top layer.
+ * overflow menus and their submenus, in the top layer. A menu is short and
+ * grouped: each group names what it holds (.ui-menu-label, a small grey
+ * heading), rows are 32px with a glyph, the label in ink and the shortcut in
+ * grey at the end; rarely used commands sit in a submenu row with a chevron.
+ * Danger rows (Delete) come last, in red.
  *
  * Rows are button.menu-item.ui-menu-item: a lead column (a glyph, the check or
  * a pad, so labels line up), the label <span>, the shortcut as plain text in a
@@ -11,8 +15,8 @@
     --icon-size: var(--icon-md);
     display: flex; flex-direction: column;
     max-block-size: calc(100dvh - var(--space-4)); overflow-y: auto; overscroll-behavior: contain;
-    min-inline-size: 232px; max-inline-size: 320px; padding: var(--space-1);
-    border: 1px solid transparent; border-radius: var(--radius-lg);
+    min-inline-size: 240px; max-inline-size: 340px; padding: var(--space-1-5);
+    border: 1px solid transparent; border-radius: var(--radius-xl);
     background: var(--surface-raised); color: var(--text-1);
     box-shadow: var(--elevation-3);
     font: var(--type-ui);
@@ -32,7 +36,7 @@
     position: relative;
     display: grid; grid-template-columns: var(--icon-size) minmax(0, 1fr) auto auto; align-items: center; column-gap: var(--space-2-5);
     justify-content: stretch;
-    inline-size: 100%; min-block-size: var(--control-md); block-size: auto; padding: 0 var(--space-2);
+    inline-size: 100%; min-block-size: var(--control-md); block-size: auto; padding: 0 var(--space-2-5);
     border: 0; border-radius: var(--radius-sm);
     background: transparent; color: var(--text-1);
     font: var(--type-ui); text-align: start; white-space: nowrap; user-select: none;
@@ -42,19 +46,20 @@
   .ui-menu-item > span { grid-column: 2; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
   .ui-menu-pad { inline-size: var(--icon-size); }
   .ui-menu-item:where(:hover, [aria-expanded="true"]):not([aria-disabled="true"]) { background: var(--surface-hover); }
+  .ui-menu-item:where(:hover, [aria-expanded="true"]):not([aria-disabled="true"]) > svg { color: var(--text-1); }
   .ui-menu-item:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset-inset); background: var(--surface-hover); }
 
-  /* The check column: a check for checkbox rows, a dot for radio rows, shown when checked. */
-  .ui-menu-check { display: inline-grid; place-items: center; inline-size: var(--icon-size); color: var(--text-1); --icon-size: var(--icon-sm); }
-  .ui-menu-check > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); stroke-width: 2.25; }
+  /* The check column: a check for checkbox rows, a dot for radio rows, shown when checked, in Styk blue. */
+  .ui-menu-check { display: inline-grid; place-items: center; inline-size: var(--icon-size); color: var(--accent); --icon-size: var(--icon-sm); }
+  .ui-menu-check > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); stroke-width: 2.5; }
   .ui-menu-item:not([aria-checked="true"]) > :where(.ui-menu-check) > * { visibility: hidden; }
   .ui-menu-item:where([role="menuitemradio"][aria-checked="true"]) .ui-menu-check::before {
-    content: ""; inline-size: 6px; block-size: 6px; border-radius: 50%; background: currentColor;
+    content: ""; inline-size: 7px; block-size: 7px; border-radius: 50%; background: currentColor;
   }
 
   /* Shortcuts are plain text (never keycaps), in a kbd so assistive tech and tests read them. */
   .ui-menu-shortcut {
-    grid-column: 3; margin: 0 0 0 var(--space-5); padding: 0;
+    grid-column: 3; margin: 0 0 0 var(--space-6); padding: 0;
     border: 0; background: none; box-shadow: none;
     font: var(--type-small); color: var(--text-3); font-variant-numeric: tabular-nums;
   }
@@ -71,14 +76,18 @@
   .ui-menu-item:where([data-tone="danger"]) > svg { color: var(--danger-text); }
   .ui-menu-item[data-tone="danger"]:where(:hover, :focus-visible) { background: var(--danger-soft); }
 
-  /* The items under a group label (role=group, named by the label) */
+  /* A group: its small heading names what the rows below it do. */
   .ui-menu-group { display: flex; flex-direction: column; }
-  .ui-menu-label { padding: var(--space-2) var(--space-2) var(--space-1); font: var(--type-micro); color: var(--text-3); }
-  .ui-menu-sep { flex: none; block-size: 1px; margin: var(--space-1) calc(-1 * var(--space-1)); border: 0; background: var(--line-1); }
+  .ui-menu-label {
+    padding: var(--space-2-5) var(--space-2-5) var(--space-1);
+    font: var(--type-eyebrow); letter-spacing: 0.01em; color: var(--text-3);
+  }
+  :where(.ui-menu-group:first-child) > .ui-menu-label, .ui-menu > .ui-menu-label:where(:first-child) { padding-block-start: var(--space-1); }
+  .ui-menu-sep { flex: none; block-size: 1px; margin: var(--space-1-5) var(--space-1); border: 0; background: var(--line-1); }
   /* An inline control in a menu (the timeline zoom slider) */
   .ui-menu-row {
     display: grid; grid-template-columns: var(--icon-size) minmax(0, 1fr) var(--icon-size); align-items: center; gap: var(--space-2);
-    min-block-size: var(--control-md); padding: 0 var(--space-2); color: var(--text-2);
+    min-block-size: var(--control-md); padding: 0 var(--space-2-5); color: var(--text-2);
   }
 
   @media (forced-colors: active) {

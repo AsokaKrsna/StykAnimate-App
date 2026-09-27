@@ -46,7 +46,9 @@ export class Timeline{
     this._on(this.layerSearch,'keydown',event=>{event.stopPropagation();if(event.key==='Escape'){event.preventDefault();this.setLayerFilter('',null);this.scroll.focus();}if(event.key==='Enter'){event.preventDefault();this.revealSelectedLayer();this.scroll.focus();}});
     this._on(this.layerSearch,'blur',()=>this._syncOrganization());
     this.clearSearch=this._button(search,'close',sayTimeline(null,'timeline.clearFind'),()=>this.setLayerFilter(''));this.clearSearch.hidden=true;
-    this.focusLayersButton=this._headButton(head,'layers',sayTimeline(null,'timeline.focusLayers'),()=>this.focusSelectedLayers());this.focusLayersButton.setAttribute('aria-pressed','false');this.focusLayersButton.dataset.quiet='';this.focusLayersButton.hidden=true;
+    // Show all: a labelled chip while a focus is on (a layer's menu, the grid's menu and the palette focus layers).
+    const focus=this.focusLayersButton=element('button',head,'ui-button sheet-focus');focus.type='button';focus.dataset.size='sm';focus.innerHTML=`${icon('layers')}<span class="ui-label"></span>`;focus.setAttribute('aria-pressed','false');focus.hidden=true;
+    this._on(focus,'click',()=>{try{this.focusSelectedLayers();}catch(error){this.live.textContent=error.message;this.onError?.(error);}});
     const add=element('div',head,'ui-split sheet-new-layer');add.setAttribute('role','group');add.dataset.size='sm';add.setAttribute('aria-label',sayTimeline(null,'timeline.newLayer'));
     this.newLayerButton=this._headButton(add,'plus',sayTimeline(null,'timeline.newLayer'),()=>this.newLayer(this._drawWorkspace()?'drawing':'layer'));
     this.newLayerMore=element('button',add,'ui-split-more');this.newLayerMore.type='button';this.newLayerMore.innerHTML=icon('chevron-down');this.newLayerMore.setAttribute('aria-label',sayTimeline(null,'timeline.moreLayerTypes'));this.newLayerMore.setAttribute('aria-haspopup','menu');this.newLayerMore.setAttribute('aria-expanded','false');
@@ -151,9 +153,10 @@ export class Timeline{
     if(this.canvas.width!==width||this.canvas.height!==height){this.canvas.width=width;this.canvas.height=height;this.canvas.style.width=`${this.width}px`;this.canvas.style.height=`${this.height}px`;}
     const css=getComputedStyle(this.root),token=name=>css.getPropertyValue(name).trim(),color=name=>token(`--sheet-${name}`);
     this.colors=Object.fromEntries(['surface','hover','line','ink','muted','accent','selected','span','tween','camera-accent','camera-tint','scene-accent','scene-tint',
-      'key-outline','cel','cel-line','draw-line','fx'].map(name=>[name,color(name)]));
+      'key-outline','cel','cel-line','draw-line','fx','layer','row-alt','lane','end','tick'].map(name=>[name,color(name)]));
     Object.assign(this.colors,{'accent-soft':token('--accent-soft')||this.colors.selected,'accent-line':token('--accent-line')||this.colors.accent,'accent-text':token('--accent-text')||this.colors.accent});
     this.colors.cel||=this.colors.span;this.colors['cel-line']||=this.colors.line;this.colors['draw-line']||=this.colors.accent;this.colors.fx||=this.colors.accent;this.colors['key-outline']||=this.colors.muted;
+    this.colors.layer||=this.colors.ink;this.colors['row-alt']||=this.colors.hover;this.colors.lane||=this.colors.line;this.colors.end||=this.colors.muted;this.colors.tick||=this.colors.line;
     this.font=token('--font-ui')||css.fontFamily;
     this.update();
   }
@@ -186,12 +189,13 @@ export class Timeline{
 
   }
   /**
-   * Paints the grid (experience.md §5.7): the quiet area past the end, a line every 5 frames (single frames too once a
-   * cell is 24px), and each row's exposures drawn calmly: round keys in the row's colour with a 1px outline, a soft
-   * 12px capsule from key to key (a thin arrow while it tweens, none while it holds), the final hold neutral; Camera
-   * and Scene keep their key colours over neutral spans; drawing cels and effect clips are neutral blocks with hollow
-   * keys. The scrolling rows are painted clipped under the pinned Camera and Scene, then the ruler: numbers every 5
-   * frames across the visible span, past the end too, and while keys are dragged their timing ("12 → 14").
+   * Paints the grid (experience.md §5.7) so it reads like a score: every row is a lane with a hairline under it, every
+   * 5th frame's column (every 10th, 20th or 50th zoomed out) is softly shaded under the ruler's number, and the area
+   * past the end is grey behind a clear end line. A row's keys are round dots in its colour (Camera gold, Scene violet,
+   * a layer its own colour or Styk blue); a tween is a tinted bar from key to key, a hold a thin grey line, a blank
+   * span a dashed outline; drawing cels and effect clips are neutral blocks with hollow keys. The scrolling rows are
+   * painted clipped under the pinned Camera and Scene, then the ruler: a tick per frame, numbers on the shaded
+   * columns (past the end in a lighter weight), and while keys are dragged their timing ("12 → 14").
    */
   _paint(){
     this._syncOrganization();
@@ -202,24 +206,31 @@ export class Timeline{
     const ruler=layout.header,bodyTop=layout.contentTop,count=this.tracks.length,pinned=layout.pinned?layout.system:0;
     const first=Math.floor(sx/step),last=Math.ceil((sx+w)/step),interval=step<2?50:step<5?20:step<9?10:5;
     const firstRow=clamp(Math.max(layout.at(bodyTop-ruler+sy),pinned),0,count),lastRow=clamp(layout.at(h-ruler+sy)+1,firstRow,count);
-    // The quiet area past the end, the ruler included, and a line where the animation ends.
     const endX=this.editor.totalTicks*step-sx;
-    if(endX<w){const x=Math.max(0,endX);ctx.fillStyle=c.hover;ctx.fillRect(x,0,w-x,h);if(endX>0){ctx.fillStyle=c.line;ctx.fillRect(Math.round(endX),0,1,h);}}
+    // The backdrop of a band of the grid: the shaded columns under the ruler's numbers (every 5th frame; wider apart
+    // zoomed out), each frame's edge once a cell is 20px wide, and the quiet area past the end behind a clear end line.
+    const backdrop=(top,bottom)=>{
+      ctx.fillStyle=c.surface;ctx.fillRect(0,top,w,bottom-top);
+      ctx.fillStyle=c['row-alt'];
+      for(let tick=Math.max(0,first);tick<=last;tick++)if((tick+1)%interval===0)ctx.fillRect(Math.round(tick*step-sx),top,Math.max(1,Math.round(step)),bottom-top);
+      if(step>=20){ctx.fillStyle=c.lane;ctx.globalAlpha=.6;for(let tick=Math.max(1,first);tick<=last;tick++)ctx.fillRect(Math.round(tick*step-sx),top,1,bottom-top);ctx.globalAlpha=1;}
+      if(endX<w){const x=Math.max(0,endX);ctx.fillStyle=c.hover;ctx.fillRect(x,top,w-x,bottom-top);if(endX>0){ctx.fillStyle=c.end;ctx.fillRect(Math.round(endX)-1,top,1.5,bottom-top);}}
+    };
+    backdrop(0,h);
     const region=(top,bottom,from,to,offset)=>{
       if(bottom<=top||to<=from)return;
       ctx.save();ctx.beginPath();ctx.rect(0,top,w,bottom-top);ctx.clip();
       for(let index=from;index<to;index++)this._paintRowBase(ctx,index,ruler+layout.top(index)-offset,layout.size(index),first,last,sx);
-      // A line every 5 frames through the rows (every frame's edge too once a cell is 24px wide).
-      ctx.fillStyle=c.line;
-      for(let tick=Math.max(0,first);tick<=last;tick++)if((tick+1)%interval===0)ctx.fillRect(Math.round((tick+.5)*step-sx),top,1,bottom-top);
-      if(step>=24){ctx.globalAlpha=.45;for(let tick=Math.max(1,first);tick<=last;tick++)if((tick+1)%5!==0)ctx.fillRect(Math.round(tick*step-sx),top,1,bottom-top);ctx.globalAlpha=1;}
+      // A hairline under every lane.
+      ctx.fillStyle=c.lane;
+      for(let index=from;index<to;index++)ctx.fillRect(0,ruler+layout.top(index)-offset+layout.size(index)-1,w,1);
       for(let index=from;index<to;index++)this._paintRow(ctx,index,ruler+layout.top(index)-offset,layout.size(index),first,last,sx);
       ctx.restore();
     };
     this._grip=this._exposureGrip();
     region(bodyTop,h,firstRow,lastRow,sy);
     // The pinned rows over the scrolling ones; a hairline under them once rows have scrolled beneath.
-    if(pinned){ctx.fillStyle=c.surface;ctx.fillRect(0,ruler,Math.max(0,Math.min(w,endX)),bodyTop-ruler);region(ruler,bodyTop,0,pinned,0);if(sy>0){ctx.fillStyle=c.line;ctx.fillRect(0,bodyTop-1,w,1);}}
+    if(pinned){backdrop(ruler,bodyTop);region(ruler,bodyTop,0,pinned,0);if(sy>0){ctx.fillStyle=c.line;ctx.fillRect(0,bodyTop-1,w,1);}}
     const g=this.gesture;
     if(g?.kind==='move'&&(g.delta||g.rowDelta)||g?.kind==='resize'){
       ctx.save();ctx.beginPath();ctx.rect(0,ruler,w,h-ruler);ctx.clip();
@@ -259,7 +270,7 @@ export class Timeline{
     if(layer.kind.startsWith('vfx')){paintVfxRow(this,ctx,layer,y,size);return;}
     if(layer.kind==='motion'){paintMotionRow(this,ctx,layer,y,size);return;}
     const track=this.editor.report._styk.layerSheet.tracks[layer.id],cy=y+size/2,system=layer.kind==='camera'||layer.kind==='scene';
-    const color=layer.kind==='camera'?c['camera-accent']:layer.kind==='scene'?c['scene-accent']:LAYER_COLORS[layer.color]??c.ink;
+    const color=layer.kind==='camera'?c['camera-accent']:layer.kind==='scene'?c['scene-accent']:LAYER_COLORS[layer.color]??c.layer;
     if(track){
       const from=Math.max(0,sheetKeyAt(track,first).index),blankOf=key=>key.empty??(key.value?.frameId===null);
       for(let i=from;i<track.keys.length;i++){
@@ -277,27 +288,26 @@ export class Timeline{
         }
         const left=(key.tick+.5)*step-sx,right=next?(next.tick+.5)*step-sx:end*step-sx-2;if(right<=left)continue;
         const x0=Math.max(-8,left),x1=Math.min(w+8,right);
-        ctx.beginPath();ctx.roundRect(x0,cy-6,Math.max(0,x1-x0),12,6);
-        if(blank){ctx.strokeStyle=c.line;ctx.lineWidth=1;ctx.stroke();continue;}
+        // A blank span: a dashed outline. A tween: a bar in the row's colour, key to key. A hold (the last one runs to
+        // the row's end): a thin grey line.
+        if(blank){ctx.beginPath();ctx.roundRect(x0,cy-5,Math.max(0,x1-x0),10,5);ctx.setLineDash([3,3]);ctx.strokeStyle=c['cel-line'];ctx.lineWidth=1;ctx.stroke();ctx.setLineDash([]);continue;}
         const tween=next&&!blankOf(next)&&!['hold','constant'].includes(key.interpolation);
-        // The final hold and the system rows' spans are neutral; a layer's spans take its colour, softly.
-        if(!next||system){ctx.fillStyle=c.span;ctx.fill();}
-        else{ctx.fillStyle=color;ctx.globalAlpha=.12;ctx.fill();ctx.globalAlpha=1;}
-        if(tween&&right-left>40){const a=left+8,b=right-9;ctx.strokeStyle=system?c.muted:color;ctx.globalAlpha=.7;ctx.lineWidth=1.25;ctx.lineCap='round';ctx.lineJoin='round';
-          ctx.beginPath();ctx.moveTo(Math.max(-8,a),cy);ctx.lineTo(b,cy);ctx.moveTo(b-3.5,cy-3);ctx.lineTo(b,cy);ctx.lineTo(b-3.5,cy+3);ctx.stroke();ctx.globalAlpha=1;}
+        if(tween){ctx.beginPath();ctx.roundRect(x0,cy-3,Math.max(0,x1-x0),6,3);ctx.fillStyle=color;ctx.globalAlpha=.32;ctx.fill();ctx.globalAlpha=1;}
+        else{ctx.fillStyle=c.span;ctx.fillRect(x0,cy-1,Math.max(0,x1-x0),2);}
       }
-      // Keys: filled in the row's colour with a thin outline; blank keys and cel starts hollow.
-      const radius=Math.max(1.5,Math.min(4.5,step*.4)),filled=new Path2D(),hollow=new Path2D();let any=false,anyHollow=false;
+      // Keys: dots in the row's colour on a ring of the grid's colour (so a bar never runs into them); blank keys and cel starts hollow.
+      const radius=Math.max(2,Math.min(5,step*.38)),filled=new Path2D(),hollow=new Path2D();let any=false,anyHollow=false;
       for(let i=from;i<track.keys.length;i++){
         const key=track.keys[i];if(key.tick>last)break;if(key.tick<first)continue;const x=(key.tick+.5)*step-sx;
         if(layer.drawing||blankOf(key)){hollow.moveTo(x+radius*.85,cy);hollow.arc(x,cy,radius*.85,0,Math.PI*2);anyHollow=true;}
         else{filled.moveTo(x+radius,cy);filled.arc(x,cy,radius,0,Math.PI*2);any=true;}
       }
-      if(any){ctx.fillStyle=color;ctx.fill(filled);ctx.lineWidth=1;ctx.strokeStyle=c['key-outline'];ctx.stroke(filled);}
+      if(any){if(step>=8){ctx.lineWidth=3;ctx.strokeStyle=!this.selectedLayers.has(layer.id)?c.surface:layer.kind==='camera'?c['camera-tint']:layer.kind==='scene'?c['scene-tint']:c.selected;ctx.stroke(filled);}ctx.fillStyle=color;ctx.fill(filled);ctx.lineWidth=1;ctx.strokeStyle=c['key-outline'];ctx.stroke(filled);}
       if(anyHollow){ctx.fillStyle=c.surface;ctx.fill(hollow);ctx.lineWidth=1.5;ctx.strokeStyle=layer.drawing?c['draw-line']:color;ctx.stroke(hollow);}
-      // The selected exposure's end: a grip to drag, holding the pose longer or shorter (today's edge drag).
+      // The selected exposure's end: a grip to drag, holding the pose longer or shorter (today's edge drag). It shows
+      // while the pointer is on the row (or dragging it), so a still grid carries no stray marks.
       const grip=this._grip;
-      if(grip?.id===layer.id){const x=grip.end*step-sx;if(x>-4&&x<w+4){ctx.fillStyle=c['accent-line'];ctx.beginPath();ctx.roundRect(x-1.5,cy-7,3,14,1.5);ctx.fill();}}
+      if(grip?.id===layer.id&&(this.hover?.row===index||this.gesture?.kind==='resize')){const x=grip.end*step-sx;if(x>-4&&x<w+4){ctx.fillStyle=c['accent-line'];ctx.beginPath();ctx.roundRect(x-1.5,cy-7,3,14,1.5);ctx.fill();}}
     }
     if(layer.locked){ctx.fillStyle=c.surface;ctx.globalAlpha=.45;ctx.fillRect(0,y,w,size);ctx.globalAlpha=1;}
   }
@@ -307,8 +317,9 @@ export class Timeline{
    */
   _paintRuler(ctx,{first,last,interval,sx,w,ruler,endX}){
     const c=this.colors,step=this.pxPerTick,playX=(Math.floor(this.pendingScrub??this.editor.tick)+.5)*step-sx;
-    ctx.fillStyle=c.surface;ctx.fillRect(0,0,Math.max(0,Math.min(w,endX)),ruler);
+    // The ruler shares the grid's backdrop (its numbers sit on the shaded columns); a tick at each frame's edge.
     ctx.fillStyle=c.line;ctx.fillRect(0,ruler-1,w,1);
+    if(step>=6){ctx.fillStyle=c.tick;for(let tick=Math.max(1,first);tick<=last;tick++)ctx.fillRect(Math.round(tick*step-sx),ruler-5,1,4);}
     ctx.textAlign='center';ctx.textBaseline='middle';
     const total=this.editor.totalTicks,cy=ruler/2+.5;
     for(let tick=Math.max(0,first);tick<=last;tick++){
@@ -379,7 +390,7 @@ export class Timeline{
       // drawing layer adds a muted brush after its name).
       const visualKind=layer.drawing?'drawing':layer.kind;if(node._kind!==visualKind){const lead=layer.kind==='vfx'?vfxIcon('effects'):['camera','scene','motion'].includes(layer.kind)?icon(layer.kind==='motion'?'activity':layer.kind):'<span class="ui-dot sheet-layer-dot" aria-hidden="true"></span>';
         node._name.innerHTML=`${lead}<span class="sheet-layer-text"></span>${layer.drawing?icon('brush','sheet-layer-kind'):''}`;node._text=node._name.querySelector('.sheet-layer-text');node._dot=node._name.querySelector('.sheet-layer-dot');node._kind=visualKind;node._dotColor=null;}
-      const dotColor=LAYER_COLORS[layer.color]??'var(--sheet-ink)';if(node._dot&&node._dotColor!==dotColor){node._dotColor=dotColor;node._dot.style.setProperty('--dot',dotColor);}
+      const dotColor=LAYER_COLORS[layer.color]??'var(--sheet-layer)';if(node._dot&&node._dotColor!==dotColor){node._dotColor=dotColor;node._dot.style.setProperty('--dot',dotColor);}
       node._name.draggable=layer.kind==='layer';node._lock.hidden=layer.kind==='motion'||layer.kind.startsWith('vfx');node._eye.hidden=layer.kind.startsWith('vfx');
       const clip=layer.kind==='vfx'&&layer.clips.find(c=>c.id===this.editor._selectedVfxClip);node._channels.hidden=!clip||!Object.values(clip.keys).some(keys=>keys.length);if(clip){const label=vfxChannelLabel(this.editor,clip);node._channels.lastChild.textContent=label;node._channels.title=`Visible effect keys · ${label}`;}
       node._disclosure.hidden=layer.kind!=='camera'||!this.editor.getCameraMotions().length;

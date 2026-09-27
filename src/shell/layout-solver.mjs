@@ -79,7 +79,10 @@ export const BAND_FOLDS = Object.freeze(['state', 'tight', 'name', 'name8', 'sav
  * `width` rows are keyed by width tier, `height` rows by height tier.
  */
 export const SHELL_METRICS = deepFreeze({
-  band: 44,
+  // The roomy chrome of windows at least 801px tall: a 52px band, 8px of the field above the islands and a 44px
+  // stage header. Shorter windows get the compact chrome (`chrome.compact`), which gives the room to the stage.
+  band: 52,
+  chrome: {roomy: 801, padTop: 8, compact: {band: 44, stageHead: 40, padTop: 6}},
   bandMargin: 24,
   gutter: 6,
   strip: 40,
@@ -87,12 +90,15 @@ export const SHELL_METRICS = deepFreeze({
   islandMin: 120,
   // #viewport: the stage island below its header row.
   stageMin: {width: 360, height: 200},
-  stageHead: 40,
-  rail: {width: 48, compact: 40},
+  stageHead: 44,
+  // The tools float beside the canvas: a 52px bar (40px tools and 6px of padding) 12px inside the stage's
+  // #viewport, on its left by default; the artboard keeps clear of it at fit. 44px (32px tools) at the minimal
+  // width, the low height tier and in the compact chrome.
+  rail: {width: 52, compact: 44, margin: 12},
   width: {
-    wide: {padEnd: 8, columnGap: 6, inset: 28, dock: {left: 232, right: 288}},
-    regular: {padEnd: 8, columnGap: 6, inset: 28, dock: {left: 232, right: 272}},
-    narrow: {padEnd: 8, columnGap: 6, inset: 20, dock: {left: 232, right: 256}},
+    wide: {padEnd: 8, columnGap: 8, inset: 28, dock: {left: 232, right: 320}},
+    regular: {padEnd: 8, columnGap: 8, inset: 28, dock: {left: 232, right: 296}},
+    narrow: {padEnd: 8, columnGap: 8, inset: 20, dock: {left: 232, right: 256}},
     compact: {padEnd: 8, columnGap: 0, inset: 20, dock: {left: 232, right: 256}, message: 'inset',
       fold: {left: 'strip', right: 'sheet', float: 'sheet'}},
     minimal: {padEnd: 4, columnGap: 0, inset: 10, dock: {left: 232, right: 256}, message: 'inset', compactRail: true,
@@ -107,7 +113,7 @@ export const SHELL_METRICS = deepFreeze({
   },
   // #viewport's vertical insets by window height, [at least H, inset]: they give
   // way before the timeline's rows do. The horizontal inset is the width tier's.
-  insets: [[801, 24], [641, 10], [0, 8]],
+  insets: [[801, 16], [0, 8]],
   // Timeline rows: its header, the ruler, Camera and Scene pinned, then content
   // rows. The default content slots by window height, [at least H, slots]; a
   // half slot shows that more rows scroll below. Never fewer than two.
@@ -202,6 +208,15 @@ export function resolveTiers(width, height, {bandMin = 0, thresholds = TIER_THRE
   return {tier, height: heightTierFor(height, thresholds), band, bandStep: tier !== sized};
 }
 
+/** The chrome for a window `height`: roomy from `chrome.roomy` px tall, compact below ({name, band, stageHead, padTop}). */
+export function chromeFor(height, metrics = SHELL_METRICS) {
+  const c = metrics.chrome;
+  if (!c) return {name: 'roomy', band: metrics.band, stageHead: metrics.stageHead ?? 0, padTop: 0};
+  return height >= c.roomy
+    ? {name: 'roomy', band: metrics.band, stageHead: metrics.stageHead ?? 0, padTop: c.padTop}
+    : {name: 'compact', band: c.compact.band, stageHead: c.compact.stageHead, padTop: c.compact.padTop};
+}
+
 /** A docked timeline's height with `content` rows visible under the pinned ones. */
 export function timelineHeightFor(content, heightTier = 'tall', metrics = SHELL_METRICS) {
   const t = metrics.timeline, rows = metrics.height[heightTier]?.timeline ?? metrics.height.tall.timeline;
@@ -256,8 +271,9 @@ function clampFloating(stored, descriptor, stage, head, metrics, index) {
 /**
  * Solves the layout for a window. Returns:
  *   tier, height            width and height tiers (data-tier, data-height)
+ *   chrome, padTop          roomy (from 801px tall) or compact: the band, the stage header and the field above the islands (data-chrome)
  *   band                    the band's fold steps (data-band), BAND_FOLDS order
- *   rail                    {side, orientation: 'vertical', compact, width, rect}
+ *   rail                    {side, orientation: 'vertical', compact, columns, width, rect}
  *   regions.left|right      {state: docked|strip|sheet|hidden, size, strip, sizeKey, reason, rect, stripRect, groups, panels}
  *   regions.bottom          {state: docked|strip|hidden, size, span, body: docked|sheet|null, reason, rect, groups, panels}
  *                           groups: the docked islands, [{tabs, active, rect}], stacked on a side and
@@ -290,10 +306,15 @@ export function solveLayout(layout, env = {}) {
 
   const {tier, height: heightTier, band: bandFolds} = resolveTiers(width, height, {bandMin: env.bandMin, thresholds: env.tiers ?? TIER_THRESHOLDS, bandMargin: metrics.bandMargin});
   const across = metrics.width[tier], down = metrics.height[heightTier];
-  const gap = across.columnGap, padEnd = across.padEnd, padBottom = down.padBottom, rowGap = down.rowGap;
-  const railCompact = Boolean(across.compactRail || down.compactRail);
-  const railWidth = Math.min(railCompact ? metrics.rail.compact : metrics.rail.width, width);
-  const head = metrics.stageHead ?? 0;
+  // The islands keep the field's padding on every side: under the white band as along the window's edges.
+  const chrome = chromeFor(height, metrics);
+  const gap = across.columnGap, padEnd = Math.min(across.padEnd, Math.floor(width / 2)), padBottom = down.padBottom, padTop = Math.min(chrome.padTop, padBottom), rowGap = down.rowGap;
+  const railCompact = Boolean(across.compactRail || down.compactRail || chrome.name === 'compact');
+  // Two columns (env.railColumns, measured by the dock host) where one column of tools does not fit the viewport.
+  const railColumns = env.railColumns === 2 ? 2 : 1, railBase = railCompact ? metrics.rail.compact : metrics.rail.width;
+  const railWidth = Math.min(railColumns === 2 ? 2 * railBase - 8 : railBase, width);
+  // The band's and the stage header's heights: measured in the app (env.measured), else the tier's or the default.
+  const head = env.measured?.stageHead ?? chrome.stageHead;
 
   // Side docks.
   const sides = {};
@@ -338,8 +359,8 @@ export function solveLayout(layout, env = {}) {
     return s.state === 'strip' ? metrics.strip : 0;
   };
   function stageWidth() {
-    const parts = [railWidth, extent('left'), extent('right')].filter(part => part > 0);
-    return Math.max(0, width - padEnd - parts.reduce((sum, part) => sum + part, 0) - parts.length * gap);
+    const parts = [extent('left'), extent('right')].filter(part => part > 0);
+    return Math.max(0, width - 2 * padEnd - parts.reduce((sum, part) => sum + part, 0) - parts.length * gap);
   }
   for (const [side, to] of metrics.collapse?.width ?? []) {
     if (stageWidth() >= requirement()) break;
@@ -347,7 +368,7 @@ export function solveLayout(layout, env = {}) {
   }
 
   // Bottom dock: compress the rows, then fold to the header.
-  const band = Math.min(metrics.band, height);
+  const band = Math.min(env.measured?.band ?? chrome.band, height);
   const workspaceHeight = Math.max(0, height - band - dimension(env.footer));
   const t = metrics.timeline;
   const bottomDocked = records.filter(record => record.dock === 'bottom');
@@ -361,7 +382,7 @@ export function solveLayout(layout, env = {}) {
     const fraction = Math.min(...bottomDocked.map(record => describe(record).maxFraction ?? 1));
     const fallback = timelineDefaultHeight(height, heightTier, metrics);
     const cap = down.timeline?.capAtDefault ? fallback : Infinity;
-    const room = workspaceHeight - padBottom - rowGap - head - metrics.stageMin.height;
+    const room = workspaceHeight - padTop - padBottom - rowGap - head - metrics.stageMin.height;
     const max = Math.min(Math.floor(fraction * height), cap, room);
     let size = sizes.bottom ?? fallback;
     if (size > cap) { size = cap; bottom.reason = 'tier'; }
@@ -373,34 +394,37 @@ export function solveLayout(layout, env = {}) {
     }
   }
   if (bottom.state === 'strip') bottom.size = t.header;
-  bottom.size = Math.min(bottom.size, Math.max(0, workspaceHeight - padBottom - rowGap));
+  bottom.size = Math.min(bottom.size, Math.max(0, workspaceHeight - padTop - padBottom - rowGap));
   bottom.body = bottom.state === 'docked' ? 'docked' : bottom.state === 'strip' ? 'sheet' : null;
-  const mainHeight = Math.max(0, workspaceHeight - padBottom - (bottom.state === 'hidden' ? 0 : bottom.size + rowGap));
-  const fullHeight = Math.max(0, workspaceHeight - padBottom);
+  const mainHeight = Math.max(0, workspaceHeight - padTop - padBottom - (bottom.state === 'hidden' ? 0 : bottom.size + rowGap));
+  const fullHeight = Math.max(0, workspaceHeight - padTop - padBottom);
 
-  // Columns in visual order; the rail sits against the window edge on its side.
+  // Columns in visual order, inside the field's padding on both sides; the rail floats inside the stage.
   const railLeft = entry.rail !== 'right';
   const columns = [];
-  if (railLeft) columns.push({key: 'rail', width: railWidth});
   if (sides.left.state === 'strip' || sides.left.strip.length) columns.push({key: 'left-strip', width: metrics.strip});
   if (sides.left.state === 'docked') columns.push({key: 'left', width: sides.left.size});
   columns.push({key: 'stage', width: stageWidth()});
   if (sides.right.state === 'docked') columns.push({key: 'right', width: sides.right.size});
   if (sides.right.state === 'strip' || sides.right.strip.length) columns.push({key: 'right-strip', width: metrics.strip});
-  if (!railLeft) columns.push({key: 'rail', width: railWidth});
   const rects = {band: rect(0, 0, width, band), workspace: rect(0, band, width, workspaceHeight)};
-  let x = railLeft ? 0 : padEnd;
+  let x = padEnd;
   for (const column of columns) {
-    const tall = column.key === 'rail' || (bottom.span === 'stage' && column.key !== 'stage');
-    rects[column.key] = rect(x, band, column.width, tall ? fullHeight : mainHeight);
+    const tall = bottom.span === 'stage' && column.key !== 'stage';
+    rects[column.key] = rect(x, band + padTop, column.width, tall ? fullHeight : mainHeight);
     x += column.width + gap;
   }
   const stage = rects.stage;
   const viewport = rect(stage.x, stage.y + Math.min(head, stage.height), stage.width, stage.height - head);
+  // The floating tool bar: inside #viewport, `margin` from its edge on the rail's side, as tall as its tools need
+  // (at most the viewport less its margins; the bar scrolls past that).
+  const railMargin = metrics.rail.margin ?? 0;
+  rects.rail = rect(railLeft ? viewport.x + railMargin : viewport.x + viewport.width - railMargin - railWidth,
+    viewport.y + railMargin, railWidth, Math.max(0, viewport.height - 2 * railMargin));
   if (bottom.state !== 'hidden') {
     const spanned = bottom.span === 'stage' ? [stage] : columns.filter(column => column.key !== 'rail').map(column => rects[column.key]);
     const left = Math.min(...spanned.map(item => item.x)), right = Math.max(...spanned.map(item => item.x + item.width));
-    bottom.rect = rect(left, band + mainHeight + rowGap, right - left, bottom.size);
+    bottom.rect = rect(left, band + padTop + mainHeight + rowGap, right - left, bottom.size);
   } else bottom.rect = null;
 
   // A docked region's islands by group: stacked on a side, side by side at the
@@ -477,6 +501,9 @@ export function solveLayout(layout, env = {}) {
   }
 
   const stageInsets = stageInsetsFor(width, height, {tier, metrics});
+  // At fit the artboard keeps 8px clear of the floating tool bar.
+  const railSide = railLeft ? 'left' : 'right';
+  stageInsets[railSide] = Math.max(stageInsets[railSide], railWidth + railMargin + 8);
   const message = metrics.message, endWidth = env.endWidth ?? message.end;
   const messageSlot = {width: Math.max(0, across.message === 'inset'
     ? stage.width - 2 * message.inset
@@ -488,8 +515,8 @@ export function solveLayout(layout, env = {}) {
     return {pinned, content: Math.max(0, Math.floor((body - pinned * t.pinnedRow) / rows.row * 2) / 2)};
   };
   const solution = {
-    mode, tier, height: heightTier, band: bandFolds,
-    rail: {side: railLeft ? 'left' : 'right', orientation: 'vertical', compact: railCompact, width: railWidth, rect: rects.rail},
+    mode, tier, height: heightTier, chrome: chrome.name, padTop, band: bandFolds,
+    rail: {side: railLeft ? 'left' : 'right', orientation: 'vertical', compact: railCompact, columns: railColumns, width: railWidth, rect: rects.rail},
     regions, floating, stage, stageHead: Math.min(head, stage.height), viewport, stageInsets,
     timelineRows: bottom.state === 'docked' ? bodyRows(bottom.size) : {pinned: 0, content: 0},
     messageSlot, aria, panels,

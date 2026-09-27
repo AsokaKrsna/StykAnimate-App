@@ -11,9 +11,9 @@ import {solveLayout} from '../src/shell/layout-solver.mjs';
 
 test('the catalogue describes today\'s panels with their limits and places', () => {
   assert.deepEqual(PANEL_CATALOG.map(panel => [panel.id, panel.docks, panel.floatable, panel.min, panel.pref, panel.max]), [
-    ['properties', ['right', 'left'], false, 256, 288, 360],
-    ['vfx', ['right', 'left'], true, 256, 288, 360],
-    ['library', ['right', 'left'], true, 256, 288, 420],
+    ['properties', ['right', 'left'], false, 256, 320, 420],
+    ['vfx', ['right', 'left'], true, 256, 320, 420],
+    ['library', ['right', 'left'], true, 256, 320, 460],
     ['structure', ['left', 'right'], false, 200, 232, 360],
     ['timeline', ['bottom'], false, 168, null, null],
   ]);
@@ -59,7 +59,7 @@ test('late roots complete a catalogue panel and re-announce it', () => {
   const root = {id: 'user-library'};
   const descriptor = registry.define({id: 'library', root: () => root});
   assert.equal(registry.root('library'), root);
-  assert.equal(descriptor.max, 420, 'the catalogue limits are kept');
+  assert.equal(descriptor.max, 460, 'the catalogue limits are kept');
   assert.deepEqual(defined, ['library']);
   assert.notEqual(registry.constraints(), before, 'the constraint snapshot is rebuilt');
   assert.equal(registry.constraints(), registry.constraints());

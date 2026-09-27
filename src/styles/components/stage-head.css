@@ -41,6 +41,8 @@
     -webkit-app-region: no-drag;
   }
   .stage-head[hidden] { display: none; }
+  /* 40px in the compact chrome of windows under 801px tall (layout-solver.mjs chromeFor). */
+  :where(:root[data-chrome="compact"]) .stage-head { --_h: var(--control-xl); }
   /* Clipped with room for the focus rings and field halos drawn outside the bar's controls. A size container:
    * the crumb folds to the room it gets (Build's narrow stage), never by the window's width alone. */
   .stage-head-start {

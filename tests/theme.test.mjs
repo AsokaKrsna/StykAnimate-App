@@ -92,7 +92,7 @@ const resolve = (theme, name) => {
 test('Colours painted before the stylesheets load match the brand window colour', () => {
   const light = block(':root[data-theme="light"]'), dark = block(':root[data-theme="dark"]');
   const [lightField, darkField] = [resolve(light, '--surface-field'), resolve(dark, '--surface-field')];
-  assert.deepEqual([lightField, darkField], ['#f5f6f9', '#0a0b0f']);
+  assert.deepEqual([lightField, darkField], ['#eceff4', '#0a0b0f']);
   assert.equal(resolve(new Map(), '--surface-prepaint'), darkField, 'the desktop editor is hidden on the dark window colour');
   for (const file of ['src/theme-bootstrap.js', 'src/theme.mjs'])
     assert.ok(source(file).includes(`'${darkField}' : '${lightField}'`), `${file} uses the brand theme colours`);

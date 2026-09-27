@@ -50,11 +50,12 @@ export const timelineOrganizationMethods = {
     if(this.layerSearch.title!==title)this.layerSearch.title=title;
     if(this.clearSearch.hidden!==hidden)this.clearSearch.hidden=hidden;
     if(this.focusLayersButton.getAttribute('aria-pressed')!==focused)this.focusLayersButton.setAttribute('aria-pressed',focused);
-    const focusTitle=this.focusedLayerIds?'Show all layers':'Focus selected layers';
-    if(this.focusLayersButton.dataset.tooltip!==focusTitle)this.focusLayersButton.dataset.tooltip=focusTitle;
-    // The layer list's header: Focus once there are two layers (or while a focus is on), New layer's kind
+    const focusName=this.focusedLayerIds?'Show all layers':'Focus selected layers',focusWord=this.focusedLayerIds?'Show all':'Focus';
+    if(this.focusLayersButton.getAttribute('aria-label')!==focusName)this.focusLayersButton.setAttribute('aria-label',focusName);
+    const word=this.focusLayersButton.querySelector('.ui-label');if(word&&word.textContent!==focusWord)word.textContent=focusWord;
+    // The layer list's header: Show all while a focus is on (a layer's menu focuses it), New layer's kind
     // for the workspace (Draw makes drawing layers), and the find field in the title's place while it is used.
-    const focusHidden=!this.focusedLayerIds&&total<2;
+    const focusHidden=!this.focusedLayerIds;
     if(this.focusLayersButton.hidden!==focusHidden)this.focusLayersButton.hidden=focusHidden;
     if(this.newLayerButton){const label=this._drawWorkspace?.()?'New drawing layer':'New layer';if(this.newLayerButton.getAttribute('aria-label')!==label)this.newLayerButton.setAttribute('aria-label',label);}
     if(this.searchField){const open=Boolean(this.layerQuery)||document.activeElement===this.layerSearch;if(this.searchField.hidden!==!open)this.searchField.hidden=!open;if(this.labelTitle.hidden!==open)this.labelTitle.hidden=open;}

@@ -3,9 +3,9 @@
  * dimension, the band's measured width, docks, strips and sheets, the
  * timeline height, stage insets, floors and the #viewport guarantee.
  * Expected geometry is the reference build's (experience §1.2 and §1.9,
- * revision 4.3: the stage header above #viewport, the vertical insets 24, 10
- * and 8, and a default timeline of Camera and Scene pinned at 24px plus 4½,
- * 4 or 3 content slots).
+ * revision 4.3, and the 2026-09 redesign: the roomy chrome from 801px tall, the
+ * stage header above #viewport, the vertical insets 16 and 8, and a default
+ * timeline of Camera and Scene pinned at 24px plus 4½, 4 or 3 content slots).
  * Ports the constraint cases of tests/studio-layout.test.mjs and
  * tests/workspace-layout.test.mjs.
  */
@@ -46,31 +46,31 @@ const SWEEP_HEIGHTS = [340, 370, 400, 440, 441, 450, 453, 480, 485, 500, 520, 54
 test('the reference geometry: tiers, timeline, #viewport and artboard zoom', () => {
   // [window, workspace, tiers, timeline, #viewport, zoom] from experience §1.2 (revision 4.3).
   const table = [
-    ['1440x900', 'animate', 'wide/tall', 264, '1084x538', 91],
-    ['1280x720', 'animate', 'regular/tall', 248, '940x374', 66],
-    ['1152x720', 'animate', 'narrow/tall', 248, '828x374', 66],
-    ['1100x700', 'animate', 'narrow/tall', 248, '776x354', 62],
-    ['1024x700', 'animate', 'narrow/tall', 248, '700x354', 62],
-    ['960x600', 'animate', 'narrow/short', 224, '636x278', 49],
-    ['900x700', 'animate', 'narrow/tall', 248, '576x354', 56],
-    ['800x600', 'animate', 'compact/short', 224, '744x278', 49],
-    ['700x600', 'animate', 'compact/short', 224, '644x278', 49],
-    ['1920x520', 'animate', 'wide/low', 40, '1572x388', 69],
-    ['960x520', 'animate', 'narrow/low', 40, '644x388', 63],
-    ['911x485', 'animate', 'narrow/low', 40, '595x353', 58],
-    ['1000x450', 'animate', 'narrow/low', 40, '684x318', 56],
-    ['853x453', 'animate', 'narrow/low', 40, '537x321', 52],
-    ['823x514', 'animate', 'narrow/low', 40, '507x382', 49],
-    ['640x480', 'animate', 'minimal/low', 40, '596x348', 60],
-    ['601x441', 'animate', 'minimal/low', 40, '557x309', 54],
-    ['500x340', 'animate', 'minimal/low', 40, '456x208', 36],
-    ['1440x900', 'draw', 'wide/tall', 264, '1084x538', 91],
-    ['1440x900', 'rig', 'wide/tall', 0, '846x808', 82],
-    ['1024x700', 'rig', 'narrow/tall', 0, '462x608', 44],
-    ['962x700', 'rig', 'narrow/tall', 0, '400x608', 38],
-    ['900x700', 'rig', 'narrow/tall', 0, '360x608', 33],
-    ['800x600', 'rig', 'compact/short', 0, '704x508', 69],
-    ['500x340', 'rig', 'minimal/low', 0, '416x252', 41],
+    ['1440x900', 'animate', 'wide/tall', 264, '1096x518', 90],
+    ['1280x720', 'animate', 'regular/tall', 248, '960x368', 65],
+    ['1152x720', 'animate', 'narrow/tall', 248, '872x368', 65],
+    ['1100x700', 'animate', 'narrow/tall', 248, '820x348', 61],
+    ['1024x700', 'animate', 'narrow/tall', 248, '744x348', 61],
+    ['960x600', 'animate', 'narrow/short', 224, '680x272', 47],
+    ['900x700', 'animate', 'narrow/tall', 248, '620x348', 56],
+    ['800x600', 'animate', 'compact/short', 224, '784x272', 47],
+    ['700x600', 'animate', 'compact/short', 224, '684x272', 47],
+    ['1920x520', 'animate', 'wide/low', 40, '1576x384', 68],
+    ['960x520', 'animate', 'narrow/low', 40, '680x384', 62],
+    ['911x485', 'animate', 'narrow/low', 40, '631x349', 57],
+    ['1000x450', 'animate', 'narrow/low', 40, '720x314', 55],
+    ['853x453', 'animate', 'narrow/low', 40, '573x317', 51],
+    ['823x514', 'animate', 'narrow/low', 40, '543x378', 48],
+    ['640x480', 'animate', 'minimal/low', 40, '632x344', 58],
+    ['601x441', 'animate', 'minimal/low', 40, '593x305', 54],
+    ['500x340', 'animate', 'minimal/low', 40, '492x204', 35],
+    ['1440x900', 'draw', 'wide/tall', 264, '1096x518', 90],
+    ['1440x900', 'rig', 'wide/tall', 0, '856x788', 79],
+    ['1024x700', 'rig', 'narrow/tall', 0, '504x602', 44],
+    ['962x700', 'rig', 'narrow/tall', 0, '442x602', 37],
+    ['900x700', 'rig', 'narrow/tall', 0, '380x602', 31],
+    ['800x600', 'rig', 'compact/short', 0, '744x502', 69],
+    ['500x340', 'rig', 'minimal/low', 0, '452x248', 39],
   ];
   for (const [window, mode, tiers, timeline, viewport, expected] of table) {
     const [width, height] = window.split('x').map(Number);
@@ -81,9 +81,12 @@ test('the reference geometry: tiers, timeline, #viewport and artboard zoom', () 
     assert.equal(size(solution), viewport, label);
     assert.equal(zoom(solution), expected, label);
     assert.ok(zoom(solution) >= stageFloor(width, height) || mode === 'rig', label);
-    assert.equal(solution.stageHead, 40, `${label}: the stage header sits above #viewport`);
-    assert.equal(solution.viewport.y, solution.stage.y + 40, label);
-    assert.equal(solution.stage.height, solution.viewport.height + 40, label);
+    // The roomy chrome from 801px tall: a 44px stage header (40 in the compact chrome).
+    const head = height >= 801 ? 44 : 40;
+    assert.equal(solution.chrome, height >= 801 ? 'roomy' : 'compact', label);
+    assert.equal(solution.stageHead, head, `${label}: the stage header sits above #viewport`);
+    assert.equal(solution.viewport.y, solution.stage.y + head, label);
+    assert.equal(solution.stage.height, solution.viewport.height + head, label);
   }
 });
 
@@ -130,7 +133,7 @@ test('the band folds its labels and spacing before the menubar folds into the ma
   assert.equal(BAND_FOLDS.at(-1), 'primary', 'the primary keeps its word longest');
   // The band never changes the height tier, and its steps reach the solution.
   const stepped = solve(700, 900, {bandMin: 700});
-  assert.deepEqual([stepped.tier, stepped.height, stepped.rail.width], ['minimal', 'tall', 40]);
+  assert.deepEqual([stepped.tier, stepped.height, stepped.rail.width], ['minimal', 'tall', 44]);
   assert.deepEqual(solve(900, 800, {bandMin: english}).band, ['state', 'tight', 'name', 'name8', 'savelabel']);
 });
 
@@ -262,18 +265,18 @@ test('500x340: every region inside the window, a vertical rail and a usable stag
     }
     if (solution.regions.bottom.rect) assert.ok(inside(solution.regions.bottom.rect, window), `${mode} bottom`);
     assert.equal(solution.rail.orientation, 'vertical');
-    assert.equal(solution.rail.width, 40);
+    assert.equal(solution.rail.width, 44);
     assert.ok(usable(solution));
-    assert.deepEqual(solution.stageInsets, {top: 8, right: 10, bottom: 8, left: 10});
+    assert.deepEqual(solution.stageInsets, {top: 8, right: 10, bottom: 8, left: 64});
   }
 });
 
 test('Build keeps Structure docked, narrowing it to 200px, until #viewport would drop under 360px', () => {
-  // [window, state, Structure width, #viewport width]: 232 down to 922px, then narrower down to 200 at 890.
-  const cases = [[1440, 900, 'docked', 232, 846], [962, 700, 'docked', 232, 400], [961, 700, 'docked', 232, 399],
-    [922, 700, 'docked', 232, 360], [921, 700, 'docked', 231, 360], [901, 700, 'docked', 211, 360], [900, 640, 'docked', 210, 360],
-    [890, 700, 'docked', 200, 360], [889, 700, 'strip', 0, 519], [800, 600, 'strip', 0, 704], [640, 480, 'strip', 0, 556],
-    [500, 340, 'strip', 0, 416]];
+  // [window, state, Structure width, #viewport width]: 232 down to 880px, then narrower down to 200 at 848.
+  const cases = [[1440, 900, 'docked', 232, 856], [962, 700, 'docked', 232, 442], [961, 700, 'docked', 232, 441],
+    [880, 700, 'docked', 232, 360], [879, 700, 'docked', 231, 360], [864, 700, 'docked', 216, 360], [900, 640, 'docked', 232, 380],
+    [848, 700, 'docked', 200, 360], [847, 700, 'strip', 0, 519], [800, 600, 'strip', 0, 744], [640, 480, 'strip', 0, 592],
+    [500, 340, 'strip', 0, 452]];
   for (const [width, height, state, left, viewport] of cases) {
     const solution = solve(width, height, {mode: 'rig'});
     const label = `${width}x${height}`;
@@ -291,14 +294,14 @@ test('Build keeps Structure docked, narrowing it to 200px, until #viewport would
     assert.equal(solution.regions.bottom.state, 'hidden', 'Build hides the timeline by default');
     assert.equal(solution.panels.timeline.presentation, 'hidden');
   }
-  assert.equal(solve(889, 700, {mode: 'rig'}).regions.left.reason, 'stage');
+  assert.equal(solve(847, 700, {mode: 'rig'}).regions.left.reason, 'stage');
   assert.equal(solve(800, 600, {mode: 'rig'}).regions.left.reason, 'tier');
   // The stored Structure width sizes the left dock in Build, and its splitter reports it.
   const wide = setSharedSize(DEFAULT, 'structure', 300, {now: NOW});
   const build = solve(1440, 900, {mode: 'rig', layout: wide});
   assert.equal(build.regions.left.size, 300);
   assert.deepEqual(build.aria.left, {min: 200, max: 360, now: 300});
-  assert.equal(solve(960, 700, {mode: 'rig', layout: wide}).regions.left.size, 270, 'a stored width narrows too');
+  assert.equal(solve(940, 700, {mode: 'rig', layout: wide}).regions.left.size, 292, 'a stored width narrows too');
   // Build + timeline spans Structure, the stage and the inspector.
   const withTimeline = solve(1440, 900, {mode: 'rig', layout: applyPreset(DEFAULT, 'rig', 'build-timeline', {now: NOW})});
   assert.equal(withTimeline.regions.bottom.size, 264);
@@ -407,18 +410,21 @@ test('a stored timeline height is the user\'s, from its row minimum to 60% of th
 });
 
 test('stage insets follow the width tier across and the height tier down', () => {
-  // Nothing sits inside #viewport, so the insets are pure clearance: 28 wide and regular,
-  // 20 narrow and compact, 10 minimal; 24 above 800px tall, 10 from 641, 8 below.
+  // Clearance across: 28 wide and regular, 20 narrow and compact, 10 minimal; down: 16 above 800px tall, 8 below.
+  // On the rail's side the artboard also keeps 8px clear of the floating tool bar (12 + 52, or 12 + 44 with the
+  // 32px tools of the compact chrome under 801px tall).
   const insets = (width, height) => solve(width, height).stageInsets;
-  assert.deepEqual(insets(1440, 900), {top: 24, right: 28, bottom: 24, left: 28});
-  assert.deepEqual(insets(1440, 801), {top: 24, right: 28, bottom: 24, left: 28});
-  assert.deepEqual(insets(1280, 720), {top: 10, right: 28, bottom: 10, left: 28});
-  assert.deepEqual(insets(1024, 700), {top: 10, right: 20, bottom: 10, left: 20});
-  assert.deepEqual(insets(800, 700), {top: 10, right: 20, bottom: 10, left: 20});
-  assert.deepEqual(insets(800, 600), {top: 8, right: 20, bottom: 8, left: 20});
-  assert.deepEqual(insets(1440, 520), {top: 8, right: 28, bottom: 8, left: 28});
-  assert.deepEqual(insets(640, 480), {top: 8, right: 10, bottom: 8, left: 10});
-  assert.deepEqual(stageInsetsFor(1440, 900), insets(1440, 900), 'the app reads the same data');
+  assert.deepEqual(insets(1440, 900), {top: 16, right: 28, bottom: 16, left: 72});
+  assert.deepEqual(insets(1440, 801), {top: 16, right: 28, bottom: 16, left: 72});
+  assert.deepEqual(insets(1280, 720), {top: 8, right: 28, bottom: 8, left: 64});
+  assert.deepEqual(insets(1024, 700), {top: 8, right: 20, bottom: 8, left: 64});
+  assert.deepEqual(insets(800, 700), {top: 8, right: 20, bottom: 8, left: 64});
+  assert.deepEqual(insets(800, 600), {top: 8, right: 20, bottom: 8, left: 64});
+  assert.deepEqual(insets(1440, 520), {top: 8, right: 28, bottom: 8, left: 64});
+  assert.deepEqual(insets(640, 480), {top: 8, right: 10, bottom: 8, left: 64});
+  assert.deepEqual(stageInsetsFor(1440, 900), {top: 16, right: 28, bottom: 16, left: 28}, 'the clearance alone, before the tool bar');
+  const right = solve(1440, 900, {layout: arranged('animate', entry => ({...entry, rail: 'right'}))});
+  assert.deepEqual(right.stageInsets, {top: 16, right: 72, bottom: 16, left: 28}, "the tool bar's side follows the rail");
   // The artboard zoom follows the §3.11.8 formula on #viewport.
   const solution = solve(1280, 720);
   assert.equal(solution.zoom, fitZoom(solution.viewport, solution.stageInsets, ARTBOARD));
@@ -434,25 +440,30 @@ test('the message slot never reaches the stage header\'s end cluster from 801px'
     // Centred, the slot keeps the end cluster's width plus 12px free on both sides.
     assert.ok((solution.stage.width - solution.messageSlot.width) / 2 >= message.end + message.gap);
   }
-  assert.equal(solve(1440, 800, {endWidth: 120}).messageSlot.width, 1084 - 2 * (120 + 12), 'the measured end cluster');
+  assert.equal(solve(1440, 800, {endWidth: 120}).messageSlot.width, 1096 - 2 * (120 + 12), 'the measured end cluster');
   for (const width of [800, 640, 500]) {
     const solution = solve(width, 800);
     assert.equal(solution.messageSlot.width, solution.stage.width - 16, 'compact and minimal: the slot spans the inset');
   }
 });
 
-test('the rail keeps its place in every workspace and can move to the right', () => {
+test('the rail floats inside #viewport in every workspace and can move to the right', () => {
+  // The tool bar floats 12px inside #viewport's top corner on its side, beside the canvas in every workspace
+  // (right of Structure in Build), and scrolls past the viewport's height less its margins.
   for (const [width, height] of [[1440, 900], [800, 600], [500, 340], [1920, 520]]) {
-    const rails = ['animate', 'draw', 'rig'].map(mode => solve(width, height, {mode}).rail.rect);
-    assert.deepEqual(rails[1], rails[0]);
-    assert.deepEqual({x: rails[2].x, y: rails[2].y, width: rails[2].width}, {x: rails[0].x, y: rails[0].y, width: rails[0].width});
-    assert.deepEqual([rails[0].x, rails[0].y], [0, 44]);
+    for (const mode of ['animate', 'draw', 'rig']) {
+      const solution = solve(width, height, {mode}), rail = solution.rail.rect, viewport = solution.viewport, label = `${width}x${height} ${mode}`;
+      assert.deepEqual([rail.x, rail.y], [viewport.x + 12, viewport.y + 12], label);
+      assert.equal(rail.width, solution.rail.compact ? 44 : 52, label);
+      assert.equal(rail.height, viewport.height - 24, label);
+      assert.ok(inside(rail, viewport), label);
+    }
   }
   const right = solve(1440, 900, {layout: arranged('animate', entry => ({...entry, rail: 'right'}))});
   assert.equal(right.rail.side, 'right');
-  assert.equal(right.rail.rect.x + right.rail.rect.width, 1440);
-  assert.equal(right.stage.x, 8, 'the padding moves to the side without the rail');
-  assert.deepEqual([right.viewport.width, right.viewport.height], [1084, 538]);
+  assert.equal(right.rail.rect.x + right.rail.rect.width, right.viewport.x + right.viewport.width - 12);
+  assert.equal(right.stage.x, 8, "the islands keep the field's padding on both sides");
+  assert.deepEqual([right.viewport.width, right.viewport.height], [1096, 518]);
 });
 
 test('a footer under the workspace takes its room from the workspace, never from the tiers', () => {
@@ -461,7 +472,7 @@ test('a footer under the workspace takes its room from the workspace, never from
   assert.deepEqual([footed.tier, footed.height], [plain.tier, plain.height]);
   assert.equal(footed.regions.bottom.size, plain.regions.bottom.size, 'the default timeline follows the window height');
   assert.equal(footed.viewport.height, plain.viewport.height - 24);
-  assert.equal(footed.rects.workspace.height, 900 - 44 - 24);
+  assert.equal(footed.rects.workspace.height, 900 - 52 - 24);
   assert.equal(footed.regions.bottom.rect.y + footed.regions.bottom.rect.height, 900 - 24 - 8);
   // Where the timeline would starve #viewport, the footer folds it sooner, never #viewport.
   const tight = solve(1440, 600, {footer: 24});
@@ -475,24 +486,24 @@ test('Under stage lets the right dock run full height', () => {
   assert.equal(solution.regions.bottom.span, 'stage');
   assert.equal(solution.regions.bottom.rect.x, solution.stage.x);
   assert.equal(solution.regions.bottom.rect.width, solution.stage.width);
-  assert.equal(solution.regions.right.rect.height, 900 - 44 - 8);
-  assert.equal(solution.viewport.height, 538);
+  assert.equal(solution.regions.right.rect.height, 900 - 52 - 8 - 8, 'the band, then the field above and below the islands');
+  assert.equal(solution.viewport.height, 518);
   const full = solve(1440, 900);
-  assert.equal(full.regions.bottom.rect.width, full.stage.width + 6 + full.regions.right.size);
+  assert.equal(full.regions.bottom.rect.width, full.stage.width + 8 + full.regions.right.size);
 });
 
 test('Timing, Review and Focus fold panels to strips and hide them', () => {
-  const timing = solve(1440, 900, {layout: applyPreset(DEFAULT, 'animate', 'timing', {now: NOW, workspaceHeight: 856})});
-  assert.equal(timing.regions.bottom.size, 342);
+  const timing = solve(1440, 900, {layout: applyPreset(DEFAULT, 'animate', 'timing', {now: NOW, workspaceHeight: 848})});
+  assert.equal(timing.regions.bottom.size, 339);
   assert.equal(timing.regions.right.state, 'docked');
   assert.equal(timing.regions.right.strip, 40, 'VFX and Library wait in a strip beside Properties');
   assert.deepEqual(timing.regions.right.panels.strip, ['vfx', 'library']);
-  assert.equal(timing.stage.width, 1440 - 48 - 6 - 288 - 6 - 40 - 6 - 8);
+  assert.equal(timing.stage.width, 1440 - 8 - 320 - 8 - 40 - 8 - 8);
   const review = solve(1440, 900, {layout: applyPreset(DEFAULT, 'animate', 'review', {now: NOW})});
   assert.equal(review.regions.right.state, 'hidden');
   assert.equal(review.regions.bottom.state, 'strip');
   assert.equal(review.panels.properties.presentation, 'hidden');
-  assert.equal(review.stage.width, 1440 - 48 - 6 - 8);
+  assert.equal(review.stage.width, 1440 - 8 - 8);
   const focus = solve(1440, 900, {layout: toggleFocus(DEFAULT, 'animate', {now: NOW})});
   assert.deepEqual([focus.regions.right.state, focus.regions.bottom.state], ['strip', 'strip']);
   assert.deepEqual(Object.values(focus.panels).filter(panel => panel.visible), []);
@@ -512,7 +523,7 @@ test('splitter bounds stay ordered and keep the stage minimum', () => {
       }
     }
   }
-  assert.deepEqual(solve(1440, 900).aria.right, {min: 256, max: 360, now: 288});
+  assert.deepEqual(solve(1440, 900).aria.right, {min: 256, max: 420, now: 320});
   assert.equal(solve(1440, 900).aria.left, null);
 });
 
@@ -533,15 +544,15 @@ test('two islands on a side share its height by their weights, each at least isl
   const solution = solve(1440, 900, {layout: stack([0.75, 0.25])});
   const islands = solution.regions.right.groups;
   assert.deepEqual(islands.map(island => island.tabs), [['properties', 'vfx'], ['library']]);
-  assert.equal(islands[0].rect.height + 6 + islands[1].rect.height, 578);
-  assert.equal(islands[0].rect.height, Math.round(572 * 0.75));
-  assert.deepEqual(solution.aria['right-islands'], {min: 120, max: 452, now: 429});
+  assert.equal(islands[0].rect.height + 6 + islands[1].rect.height, 562);
+  assert.equal(islands[0].rect.height, Math.round(556 * 0.75));
+  assert.deepEqual(solution.aria['right-islands'], {min: 120, max: 436, now: 417});
   assert.equal(solution.aria['left-islands'], null);
   // Swapping VFX and Library between the islands keeps the islands' heights.
   const swapped = arranged('animate', entry => movePanel(movePanel(entry, 'vfx', 'right', {mode: 'animate', group: 1}), 'library', 'right', {mode: 'animate', group: 0}), stack([0.75, 0.25]));
-  assert.deepEqual(solve(1440, 900, {layout: swapped}).regions.right.groups.map(island => [island.tabs, island.rect.height]), [[['properties', 'library'], 429], [['vfx'], 143]]);
+  assert.deepEqual(solve(1440, 900, {layout: swapped}).regions.right.groups.map(island => [island.tabs, island.rect.height]), [[['properties', 'library'], 417], [['vfx'], 139]]);
   // No island is squeezed under islandMin; in a tiny region they share it equally.
-  assert.deepEqual(solve(1440, 900, {layout: stack([0.95, 0.05])}).regions.right.groups.map(island => island.rect.height), [452, 120]);
+  assert.deepEqual(solve(1440, 900, {layout: stack([0.95, 0.05])}).regions.right.groups.map(island => island.rect.height), [436, 120]);
   const short = solve(1440, 380, {layout: stack([0.95, 0.05])});
   const heights = short.regions.right.groups.map(island => island.rect.height);
   assert.equal(heights[0] + 6 + heights[1], short.regions.right.rect.height);
@@ -595,7 +606,7 @@ test('old sidebar and floating preferences cannot consume the stage', () => {
   const {layout} = migrateLayout({left: 420, floating: {left: {width: 600}}}, {now: NOW});
   const solution = solveLayout(layout, {width: 1280, height: 652, mode: 'animate'});
   assert.equal(solution.regions.left.state, 'hidden');
-  assert.equal(solution.regions.right.size, 272);
+  assert.equal(solution.regions.right.size, 296);
   assert.ok(solution.stage.width >= 900);
 });
 
@@ -607,7 +618,7 @@ test('oversized saved panels still leave an editable stage at laptop sizes', () 
     assert.ok(solution.viewport.width >= 580 && solution.viewport.height >= 200, `${width}x${height}`);
     assert.ok(solution.regions.bottom.size >= 200);
     assert.ok(solution.regions.bottom.size <= 0.6 * height);
-    assert.ok(solution.regions.right.size <= 360);
+    assert.ok(solution.regions.right.size <= 420);
   }
   const workspace = migrateLayout({left: 420, right: 420, timeline: 800}, {now: NOW}).layout;
   const libraryLeft = arranged('animate', entry => movePanel(entry, 'library', 'left', {mode: 'animate'}), workspace);

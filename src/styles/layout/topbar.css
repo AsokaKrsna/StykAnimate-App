@@ -20,8 +20,8 @@
     --band-pad: var(--space-2);
     display: grid; grid-template-columns: minmax(max-content, 1fr) max-content minmax(max-content, 1fr);
     align-items: center; column-gap: var(--space-3);
-    block-size: var(--topbar-h); min-inline-size: 0; padding: 0 var(--band-pad) 0 var(--space-1-5);
-    overflow: hidden; border: 0; background: var(--surface-field);
+    block-size: var(--topbar-h); min-inline-size: 0; padding: 0 var(--band-pad) 0 var(--space-2);
+    overflow: hidden; border: 0; background: var(--surface); box-shadow: inset 0 -1px 0 var(--line-1);
     -webkit-app-region: drag;
   }
   .shell-top :where(button, input, nav, [role="toolbar"], [role="group"]) { -webkit-app-region: no-drag; }

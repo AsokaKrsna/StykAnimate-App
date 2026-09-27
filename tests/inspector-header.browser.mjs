@@ -26,8 +26,8 @@ try {
   check('The header names the figure and keeps its kind for the shell', await name() === 'Walker' &&
     await page.locator('#inspector-context').textContent() === 'Figure' && await page.locator('#inspector').getAttribute('data-selection-kind') === 'figure');
   check('One menu button, in the kit\'s look', await page.locator('#object-actions.ui-icon-button').count() === 1);
-  assert.deepEqual(await quick(), [['mirror', ''], ['layer-front', 'To front'], ['layer-back', 'To back'], ['duplicate', ''], ['delete', '']]);
-  check('Quick actions: Flip · To front, To back (words) · Duplicate, Delete', true);
+  assert.deepEqual(await quick(), [['mirror', 'Flip'], ['layer-front', 'Front'], ['layer-back', 'Back'], ['duplicate', 'Duplicate'], ['delete', 'Delete']]);
+  check('Quick actions: labelled tiles Flip · Front, Back · Duplicate, Delete', true);
   const figures = await page.evaluate(() => styk.editor.selectionFrame.objects.length);
   await page.locator('[data-slot=inspector-head] [data-action="duplicate"]').click();
   await page.waitForFunction(n => styk.editor.selectionFrame.objects.length === n + 1, figures);

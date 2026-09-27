@@ -148,6 +148,34 @@ const id = value => {
 const finite = value => (value === undefined || value === null || value === '' || !Number.isFinite(Number(value)) ? undefined : Number(value));
 const span = row => (row.span === 2 ? ' ui-span-2' : '');
 const glyph = (env, name, cls) => (env?.icon ?? appIcon)(name, cls);
+
+/**
+ * Each section's kind badge: its glyph and the tint that names its kind, so a
+ * panel reads at a glance (visual-system.md, sections): blue geometry, orange
+ * looks, violet time, mint structure, gold camera, rose effects. A section may
+ * override it with `icon` and `tint`, or opt out with `icon: null`.
+ */
+const SECTION_GLYPHS = Object.freeze({
+  transform: ['arrows-move', 'select'], placement: ['origin', 'select'], joint: ['joints', 'select'], align: ['align-horizontal-center', 'select'],
+  selection: ['cursor', 'select'], framing: ['fit', 'camera'], canvas: ['frame', 'select'], figure: ['person', 'select'],
+  'spatial-proportions': ['scale', 'select'], 'spatial-perspective': ['rotate', 'select'], 'spatial-exact': ['exact', 'select'],
+  'spatial-choices': ['sliders', 'select'], 'figure-name': ['person', 'select'], 'joint-name': ['joints', 'select'],
+  appearance: ['palette', 'draw'], colours: ['droplet', 'draw'], 'second-colour': ['droplet', 'draw'], style: ['brush', 'draw'],
+  fill: ['paint-bucket', 'draw'], text: ['text', 'draw'], background: ['image', 'draw'], drawing: ['brush', 'draw'],
+  'segment-gradient-enabled': ['palette', 'draw'],
+  timing: ['clock', 'time'], playback: ['play', 'time'], motion: ['route', 'time'], extend: ['loop', 'time'], range: ['clock', 'time'],
+  exposure: ['layers', 'time'],
+  arrange: ['layers', 'library'], layer: ['layers', 'library'], connection: ['link', 'library'], connector: ['link', 'library'],
+  ik: ['pin', 'library'], rig: ['nodes', 'library'], 'rig-controls': ['nodes', 'library'], 'rig-pose': ['nodes', 'library'],
+  'rig-mechanism': ['nodes', 'library'], 'rig-limb': ['nodes', 'library'], 'rig-body': ['nodes', 'library'], slider: ['sliders', 'library'],
+  'drawing-sets': ['layers', 'library'], parallax: ['layers', 'library'], bake: ['camera', 'camera'], preview: ['camera', 'camera'],
+});
+/** The badge before a section's title, or nothing. */
+function sectionBadge(section, env) {
+  const [icon, tint] = section.icon === null ? [] : [section.icon ?? SECTION_GLYPHS[section.id]?.[0], section.tint ?? SECTION_GLYPHS[section.id]?.[1] ?? 'select'];
+  if (!icon) return '';
+  return `<span class="ui-section-badge" data-tint="${escapeHTML(tint)}" aria-hidden="true">${glyph(env, icon, 'ui-icon')}</span>`;
+}
 /** The tooltip attributes: `tip` (else `fallback`) as data-tooltip, and today's title only when asked for. */
 const tooltip = (item, fallback) => ({'data-tooltip': item.tip ?? fallback, title: item.legacyTitle ? item.tip ?? item.label : undefined});
 
@@ -706,7 +734,7 @@ export function renderSection(section, env = {}) {
   const hooks = attributes(extras(section));
   if (place === 'core') {
     if (section.switch) throw new TypeError(`Core section ${section.id} cannot carry a title switch; make it titled.`);
-    const head = section.title || actions ? `<div class="ui-section-head">${section.title ? `<h3 class="ui-section-title">${escapeHTML(section.title)}</h3>` : ''}${actions}</div>` : '';
+    const head = section.title || actions ? `<div class="ui-section-head">${section.title ? `${sectionBadge(section, env)}<h3 class="ui-section-title">${escapeHTML(section.title)}</h3>` : ''}${actions}</div>` : '';
     return `<section class="ui-section" data-section="${section.id}"${hooks}>${head}<div class="ui-section-body">${rows}</div></section>`;
   }
   if (!section.title) throw new TypeError(`Titled section ${section.id} needs a title that says what is inside.`);
@@ -714,7 +742,7 @@ export function renderSection(section, env = {}) {
   const toggle = `<button${attributes({
     type: 'button', class: 'ui-section-toggle', 'aria-expanded': String(open), 'aria-controls': body,
     'data-section-toggle': section.id, 'data-section-kind': kind, 'data-auto': auto,
-  })}><span class="ui-section-title">${escapeHTML(section.title)}</span>${glyph(env, 'chevron-right', 'ui-icon ui-section-chev')}</button>`;
+  })}>${sectionBadge(section, env)}<span class="ui-section-title">${escapeHTML(section.title)}</span>${glyph(env, 'chevron-right', 'ui-icon ui-section-chev')}</button>`;
   const titleSwitch = section.switch ? `<span class="ui-section-sizer" aria-hidden="true">${escapeHTML(section.title)}</span>` +
     `<label${attributes({class: 'ui-section-switch', 'data-tooltip': section.switch.tip ?? section.switch.label})}>${switchInput(section.switch, {named: false})}</label>` : '';
   const head = `<div${attributes({class: 'ui-section-head', 'data-switch': Boolean(section.switch)})}>${toggle}${titleSwitch}${actions}</div>`;

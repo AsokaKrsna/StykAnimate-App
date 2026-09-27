@@ -17,7 +17,9 @@ assert.equal(await snapshot(),before);
 await page.getByRole('searchbox',{name:'Find layers'}).fill('nothing');await settle();assert.equal(await page.evaluate(()=>styk.timeline.ids.some(id=>id.startsWith('layer-'))),false);assert.ok(await page.getByText('No matching layers',{exact:true}).isVisible());
 await page.getByRole('searchbox',{name:'Find layers'}).press('Escape');await settle();
 assert.equal(await page.getByRole('searchbox',{name:'Find layers'}).isVisible(),false,'An empty find field gives the title back');
-await page.evaluate(()=>styk.timeline.selectTrack('layer-2'));await page.getByRole('button',{name:'Focus selected layers',exact:true}).click();await settle();
+// Focus selected layers (a layer's menu, the grid's menu); Show all waits in the layer list's header while a focus is on.
+await page.evaluate(()=>{styk.timeline.selectTrack('layer-2');styk.timeline.focusSelectedLayers();});await settle();
+assert.ok(await page.getByRole('button',{name:'Show all layers',exact:true}).isVisible());
 assert.deepEqual(await page.evaluate(()=>styk.timeline.tracks.filter(r=>r.kind==='layer').map(r=>r.id)),['layer-2']);assert.equal(await snapshot(),before);
 await page.evaluate(()=>styk.timeline.selectTrack('layer-4'));await settle();assert.equal(await page.evaluate(()=>styk.timeline.selectedTrackId),'layer-4');assert.equal(await page.evaluate(()=>styk.timeline.focusedLayerIds),null);
 const divider=page.getByRole('separator',{name:'Resize layer names'});await divider.focus();await divider.press('ArrowRight');assert.equal(await page.evaluate(()=>styk.timeline.labelWidth),230);await divider.press('Home');assert.equal(await page.evaluate(()=>styk.timeline.labelWidth),220);

@@ -5,24 +5,23 @@
  *
  *   start      Simple │ Advanced, Add frame (one button for both modes), in
  *              Advanced on a drawing layer the Next copy split, and Edit
- *              together (#range-edit: a quiet glyph while it cannot apply,
- *              its word while it can; not shown on a one-frame file, and in
- *              Simple it is the frame bar's switch instead)
+ *              together (#range-edit: shown with its word and count only while
+ *              it can apply, the command palette reaches it any time; not on
+ *              a one-frame file, and in Simple it is the frame bar's switch)
  *   transport  First frame, previous, Play, next, Loop, the readout (a click
  *              opens Go to frame) and the frame rate (#fps, an inline field)
- *   end        Onion (a split button), Audio (a dot while the animation has
- *              sound) and Timeline ⋯ (#timeline-menu-button) with the rare rows
+ *   end        the view tools (the ruler-tools slot: #timeline-zoom, Fit
+ *              timeline, #expand-timeline), then after a hairline Onion (a
+ *              split button), Audio (a dot while the animation has sound) and
+ *              Timeline ⋯ (#timeline-menu-button) with the rare rows
  *
- * and the ruler's tools (#timeline-zoom, Fit timeline, #expand-timeline) in
- * their own column at the ruler's right end. That slot moves into the
- * timeline body (#timeline), so it goes with the body when the low height
- * tier opens it as a sheet; the Advanced sheet ends its grid before the
- * column and Simple's filmstrip keeps a band above its cards for it.
+ * so the Advanced grid and Simple's cards take the island's whole width.
  *
  * The clusters never touch: the grid keeps a gap between them and slides the
  * transport right into free space; when the header is still too narrow the
- * words fold, in this order: Edit together's, Next copy's, and last Add
- * frame's (never at the minimal tier, where the buttons are glyphs anyway).
+ * zoom slider folds, then the words, in this order: Edit together's, Next
+ * copy's, and last Add frame's (never at the minimal tier, where the buttons
+ * are glyphs anyway).
  * The fold measures the header only when its width or its words change,
  * never while playing. At the minimal tier First frame, Loop, Audio and Edit
  * together fold into Timeline ⋯, and Edit together never shows in Draw or
@@ -48,12 +47,13 @@ import {setSharedSize} from './shell/layout-schema.mjs';
 import {sayTimeline} from './locales/en-timeline.mjs';
 
 /**
- * What folds, in order (experience.md §1.8, revision 4.3): Edit together's word, Next copy's word, Add frame's
- * word, and last, where even the glyphs do not fit (a drawing layer in a window about 500px wide), the Next copy
- * split itself, whose commands then lead Timeline ⋯ (they are the drawing rows' frame menu too).
+ * What folds, in order (experience.md §1.8, revision 4.3): the zoom slider (Ctrl + wheel and Fit still zoom), Edit
+ * together's word, Next copy's word, Add frame's word, and last, where even the glyphs do not fit (a drawing layer
+ * in a window about 500px wide), the Next copy split itself, whose commands then lead Timeline ⋯ (they are the
+ * drawing rows' frame menu too).
  */
-export const HEADER_FOLDS = Object.freeze(['together', 'cel', 'add', 'celmenu']);
-const WORDS = 3;
+export const HEADER_FOLDS = Object.freeze(['zoom', 'together', 'cel', 'add', 'celmenu']);
+const WORDS = 4;
 
 /** Which folds a header applies: the first `count` of HEADER_FOLDS; at the minimal tier every word from the start. */
 export function headerFolds(count, {tier = 'wide'} = {}) {
@@ -88,8 +88,8 @@ export function createTimelineHeader(ctx, host) {
     button.setAttribute('aria-label', label);
     return button;
   };
-  // The kit's look for index.html's controls needs the timeline stylesheet's layout (it defines --ruler-tools-w).
-  const styled = getComputedStyle(toolbar).getPropertyValue('--ruler-tools-w').trim() !== '';
+  // The kit's look for index.html's controls needs the timeline stylesheet's layout (it defines --timeline-kit).
+  const styled = getComputedStyle(toolbar).getPropertyValue('--timeline-kit').trim() !== '';
   const kit = (node, classes = [], data = {}) => {
     if (!styled || !node) return;
     node.classList.add(...classes);
@@ -99,8 +99,9 @@ export function createTimelineHeader(ctx, host) {
   start.classList.add('tl-start');
   transport.classList.add('tl-transport');
   end.classList.add('tl-end');
-  // Until features/timeline.css places them in the ruler's column, the tools float over the body's corner as today's zoom did.
-  rulerTools.classList.add('tl-ruler-tools', 'timeline-zoom-float');
+  // The view tools (zoom, Fit, Tall) lead the end cluster, so the grid and the cards take the island's whole width.
+  rulerTools.classList.add('tl-ruler-tools');
+  end.prepend(rulerTools);
   rulerTools.setAttribute('role', 'group');
   rulerTools.setAttribute('aria-label', say('timeline.zoomTools'));
 
@@ -258,6 +259,7 @@ export function createTimelineHeader(ctx, host) {
     if (tier === 'minimal') {
       const mode = document.querySelector('.workspace')?.dataset.mode;
       items.push(
+        {label: fit.getAttribute('aria-label'), icon: 'fit', run: () => run(() => host.timeline?.fitAll?.())},
         {label: say('timeline.firstFrame'), icon: 'first', shortcut: shortcut('first-frame'), run: action('first-frame')},
         {label: say('timeline.loop'), icon: 'loop', checked: Boolean(ctx.state.loop), run: action('toggle-loop')},
         {label: say('timeline.audio'), icon: 'music', checked: audio.getAttribute('aria-pressed') === 'true', run: action('toggle-audio')},
@@ -375,7 +377,7 @@ export function createTimelineHeader(ctx, host) {
   return {
     /** Add frame's and Next copy's wrapper: an audio clip's selection hides them (audio-timeline.mjs). */
     frameTools: frameWrap,
-    /** The ruler's tools and zoom range for the mounted component, whose body they sit in. */
+    /** The zoom range and Fit's name for the mounted component (Advanced's frames or Simple's cards). */
     mount(timeline) {
       const simple = Boolean(timeline.strip);
       const range = timeline.zoomRange ?? {min: 1, max: 36};
@@ -385,7 +387,6 @@ export function createTimelineHeader(ctx, host) {
       setAttr(rulerTools, 'data-mode', simple ? 'simple' : 'advanced');
       setAttr(fit, 'aria-label', say(simple ? 'timeline.fitFilmstrip' : 'timeline.fit'));
       setAttr(fit, 'data-tooltip', simple ? say('timeline.fitFilmstrip') : say('timeline.fitTip'));
-      timeline.container.append(rulerTools);
       if (simple) this.setNextCopy({shown: false});
       setSimple(simple);
       requestFold();

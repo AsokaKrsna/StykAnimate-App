@@ -171,11 +171,6 @@
 @media(max-width:1100px){.sheet-header-tools .sheet-add-button>span{display:none}.sheet-header-tools .sheet-add-button{width:26px;padding:0}.timeline-toolbar:has(.sheet-header-tools){gap:4px}.timeline-toolbar:has(.sheet-header-tools) #time-display{min-width:55px;margin-left:3px}}
 @media(max-width:800px){.timeline-toolbar:has(.sheet-header-tools) .fps-control,.timeline-toolbar:has(.sheet-header-tools) .playback-controls>.divider{display:none}.sheet-header-tools .inline-select{width:80px}}
 
-.timeline-zoom-float{position:absolute;right:20px;bottom:18px;z-index:6;display:flex;align-items:center;gap:6px;padding:3px 5px 3px 8px;background:var(--panel,#fff);border:1px solid var(--border,#ddd);border-radius:7px;box-shadow:0 2px 8px #0001;opacity:.85}
-.timeline-zoom-float:hover,.timeline-zoom-float:focus-within{opacity:1}
-.timeline-zoom-float>span{display:flex;color:var(--muted,#777)}.timeline-zoom-float .icon{width:13px;height:13px}
-.timeline-zoom-float .sheet-zoom{display:block;width:66px;min-width:66px;margin:0;height:20px}
-.timeline-zoom-float .icon-button{width:23px;height:23px;padding:0;border-radius:4px}
 .timeline-panning,.timeline-panning *{cursor:grabbing!important}
 .sheet-filmstrip{--filmstrip-card:112px}
 .sheet-filmstrip-controls{padding:10px;gap:10px;background:var(--theme-subtle,#fafafa)}
@@ -188,7 +183,7 @@
 .sheet-filmstrip-card[data-selected=true]{box-shadow:inset 0 2px var(--purple,#0d99ff)}
 .sheet-frame-number{font-size:11px}.sheet-filmstrip-actions .icon-button{width:28px;height:28px}
 .sheet-inbetweens{gap:5px}.sheet-inbetweens>span{min-width:22px;color:var(--theme-success,#0f8a4a);font-weight:500}.sheet-inbetweens>input::-webkit-slider-runnable-track{height:2px}
-@media(max-width:800px){.sheet-filmstrip-controls{padding:8px}.timeline-zoom-float{right:18px;bottom:17px}}
+@media(max-width:800px){.sheet-filmstrip-controls{padding:8px}}
 
 .timeline-mode-switch{display:flex;align-items:center;gap:2px;padding:2px;border:1px solid var(--border,#ddd);border-radius:6px;flex:none}
 .timeline-mode-switch button{height:25px;padding:0 9px;border:0;border-radius:4px;background:transparent;color:var(--muted,#777);font:11px inherit}

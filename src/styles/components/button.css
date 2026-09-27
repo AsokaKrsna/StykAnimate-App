@@ -1,14 +1,17 @@
 /* Button (components.md "Button"): a pill with an optional leading glyph and
- * chevron. Sizes sm 24, regular 28, lg 32. Variants: (secondary, the default)
- * soft, primary (the one ink button per surface: a dialog's confirm, Export, a
- * session's Done), ghost, outline and danger; ghost with data-tone="danger"
- * for "Don't save". Toggled [aria-pressed="true"], disabled at .42 opacity.
- * Used by the overlay kit's dialog, toast and popover actions; inert until
- * markup carries .ui-button. */
+ * chevron, its words in Inter Tight 650 like the site's buttons. Sizes sm 28,
+ * regular 32, lg 36. Variants:
+ *   (default)  soft: mist fill, ink words — the everyday secondary button
+ *   primary    the ink pill: the one main action of a surface (Export, Done, a dialog's confirm)
+ *   accent     vivid Styk blue with white words: a chosen option in a row of pills (the site's "Circle")
+ *   outline    white with a hairline: a secondary action on a tinted or busy surface
+ *   ghost      no fill until hover: row actions, "Not now", "Cancel"
+ *   danger     red fill; ghost + data-tone="danger" for "Don't save" and "Delete"
+ * Toggled [aria-pressed="true"] reads as accent-soft; disabled at .42 opacity. */
 @layer components {
   .ui-button {
     --_h: var(--control-md);
-    --_px: 12px;
+    --_px: 14px;
     --_bg: var(--control-soft);
     --_bg-hover: var(--control-soft-hover);
     --_bg-active: var(--control-soft-pressed);
@@ -21,10 +24,10 @@
     padding: 0 var(--_px);
     border: 1px solid transparent; border-radius: var(--radius-pill);
     background: var(--_bg); color: var(--_fg); box-shadow: var(--_shadow);
-    font: var(--type-ui-strong); line-height: 1; white-space: nowrap;
+    font: var(--type-button); letter-spacing: -0.005em; white-space: nowrap;
     user-select: none; text-decoration: none;
     transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
-      transform var(--dur-fast) var(--ease-out);
+      box-shadow var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
     -webkit-app-region: no-drag;
   }
   .ui-button > svg { flex: none; inline-size: var(--icon-size); block-size: var(--icon-size); }
@@ -33,11 +36,15 @@
   .ui-button:where(:active):not(:disabled, [aria-disabled="true"]) { background: var(--_bg-active); transform: scale(var(--press-scale)); }
   .ui-button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset); }
 
-  /* The ink primary: at most one per surface. Flat: no shadow. */
+  /* The ink primary: at most one per surface, with the site's soft lift. */
   .ui-button[data-variant="primary"] {
     --_bg: var(--primary); --_bg-hover: var(--primary-hover); --_bg-active: var(--primary-pressed);
     --_fg: var(--on-primary); --_shadow: var(--primary-shadow);
-    font: var(--type-button-prominent);
+  }
+  /* Vivid blue: the chosen pill in a row of choices (Build's shape, a chosen format). */
+  .ui-button[data-variant="accent"] {
+    --_bg: var(--accent-strong); --_bg-hover: color-mix(in srgb, var(--accent-strong) 88%, var(--text-1));
+    --_bg-active: color-mix(in srgb, var(--accent-strong) 80%, var(--text-1)); --_fg: var(--text-on-strong);
   }
   .ui-button[data-variant="ghost"] { --_bg: transparent; --_bg-hover: var(--surface-hover); --_bg-active: var(--surface-pressed); }
   .ui-button[data-variant="outline"] {
@@ -49,19 +56,18 @@
     --_bg-hover: color-mix(in srgb, var(--danger-strong) 88%, var(--text-1));
     --_bg-active: color-mix(in srgb, var(--danger-strong) 80%, var(--text-1));
   }
-  .ui-button[data-tone="danger"]:where([data-variant="ghost"]) { --_fg: var(--danger-text); --_bg-hover: var(--danger-soft); --_bg-active: var(--danger-soft); }
-  .ui-button[aria-pressed="true"] {
+  .ui-button[data-tone="danger"]:where([data-variant="ghost"], [data-variant="outline"]) { --_fg: var(--danger-text); --_bg-hover: var(--danger-soft); --_bg-active: var(--danger-soft); }
+  .ui-button[aria-pressed="true"]:where(:not([data-variant="accent"])) {
     --_bg: var(--accent-soft); --_bg-hover: var(--accent-soft-hover); --_bg-active: var(--accent-soft-hover);
     --_fg: var(--accent-text);
   }
-  .ui-button[aria-pressed="true"]:where(:hover, :active) { --_fg: var(--accent-text-strong); }
+  .ui-button[aria-pressed="true"]:where(:not([data-variant="accent"]):is(:hover, :active)) { --_fg: var(--accent-text-strong); }
 
-  .ui-button[data-size="sm"] { --_h: var(--control-sm); --_px: 10px; --icon-size: var(--icon-sm); gap: var(--space-1); font: var(--type-small-strong); line-height: 1; }
-  .ui-button[data-size="lg"] { --_h: var(--control-lg); --_px: 16px; gap: var(--space-2); }
-  .ui-button[data-size="lg"]:where(:not([data-variant]), [data-variant="ghost"]) { font: var(--type-ui-strong); line-height: 1; }
+  .ui-button[data-size="sm"] { --_h: var(--control-sm); --_px: 11px; --icon-size: var(--icon-sm); gap: var(--space-1); }
+  .ui-button[data-size="lg"] { --_h: var(--control-lg); --_px: 18px; gap: var(--space-2); }
   .ui-button:is(:disabled, [aria-disabled="true"]) { opacity: 0.42; }
   .ui-button[aria-busy="true"] { pointer-events: none; }
-  .ui-button-chev { --icon-size: 12px; color: var(--text-3); margin-inline-start: calc(-1 * var(--space-0-5)); }
+  .ui-button-chev { --icon-size: 12px; opacity: 0.6; margin-inline-start: calc(-1 * var(--space-0-5)); }
 
   @media (forced-colors: active) {
     .ui-button { border-color: ButtonText; }

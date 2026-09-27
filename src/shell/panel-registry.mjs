@@ -83,11 +83,11 @@ export function normalizePanelDescriptor(input) {
 /** Today's panels (architecture §3.11.1); the default catalogue of the schema and the solver. */
 export const PANEL_CATALOG = Object.freeze([
   {id: 'properties', title: 'Properties', titleKey: 'shell.panel.properties', icon: 'inspector',
-    docks: ['right', 'left'], floatable: false, min: 256, pref: 288, max: 360},
+    docks: ['right', 'left'], floatable: false, min: 256, pref: 320, max: 420},
   {id: 'vfx', title: 'VFX', titleKey: 'shell.panel.vfx', icon: 'fx',
-    docks: ['right', 'left'], floatable: true, min: 256, pref: 288, max: 360},
+    docks: ['right', 'left'], floatable: true, min: 256, pref: 320, max: 420},
   {id: 'library', title: 'Library', titleKey: 'shell.panel.library', icon: 'library',
-    docks: ['right', 'left'], floatable: true, min: 256, pref: 288, max: 420},
+    docks: ['right', 'left'], floatable: true, min: 256, pref: 320, max: 460},
   // Structure docks at 232 and narrows to 200 before its side folds to a strip
   // (wherever docking it would leave #viewport under its 360px floor).
   {id: 'structure', title: 'Structure', titleKey: 'shell.panel.structure', icon: 'structure',

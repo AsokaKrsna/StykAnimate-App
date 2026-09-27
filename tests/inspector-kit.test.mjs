@@ -201,7 +201,8 @@ test('lists, pagers, previews, owned hosts, text fields, action rows, values, gr
 
 test('core sections are open with at most two title actions; titled sections fold with their own ids', () => {
   const core = renderSection({id: 'appearance', title: 'Appearance', actions: [{action: 'reset-color', icon: 'undo', label: 'Reset colours'}], rows: []}, {icon});
-  assert.equal(core, '<section class="ui-section" data-section="appearance"><div class="ui-section-head"><h3 class="ui-section-title">Appearance</h3>' +
+  // A core section's kind reads from its tinted badge before the title (Appearance: the draw tint's palette).
+  assert.equal(core, '<section class="ui-section" data-section="appearance"><div class="ui-section-head"><span class="ui-section-badge" data-tint="draw" aria-hidden="true"><svg class="ui-icon" data-icon="palette"></svg></span><h3 class="ui-section-title">Appearance</h3>' +
     '<button type="button" class="ui-icon-button ui-section-action" data-size="sm" data-action="reset-color" aria-label="Reset colours"><svg class="ui-icon" data-icon="undo"></svg></button></div>' +
     '<div class="ui-section-body"></div></section>');
   const two = renderSection({id: 'selection', title: 'Selection', actions: [{action: 'rotate', icon: 'rotate', label: 'Rotate 15°'}, {action: 'center', icon: 'center', label: 'Centre'}], rows: []}, {icon});
@@ -221,7 +222,7 @@ test('core sections are open with at most two title actions; titled sections fol
   assert.equal(body, 'inspector-section-figure-colours');
   assert.equal(titled, '<section class="ui-section" data-section="colours" data-collapsible><div class="ui-section-head">' +
     `<button type="button" class="ui-section-toggle" aria-expanded="false" aria-controls="${body}" data-section-toggle="colours" data-section-kind="figure">` +
-    '<span class="ui-section-title">Colours</span><svg class="ui-icon ui-section-chev" data-icon="chevron-right"></svg></button></div>' +
+    '<span class="ui-section-badge" data-tint="draw" aria-hidden="true"><svg class="ui-icon" data-icon="droplet"></svg></span><span class="ui-section-title">Colours</span><svg class="ui-icon ui-section-chev" data-icon="chevron-right"></svg></button></div>' +
     `<div class="ui-section-body" id="${body}" hidden><div class="ui-row"><span class="ui-row-label">Fills</span><span class="ui-row-value">No fills</span></div></div></section>`);
   // The title switch has no visible label of its own: it is named, and its tooltip says what it does.
   const parallax = renderSection({id: 'parallax', title: 'Parallax', place: 'titled', switch: {label: 'Enable parallax', checked: true}, rows: []}, {icon, kind: 'layer'});

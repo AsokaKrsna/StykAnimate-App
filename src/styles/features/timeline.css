@@ -1,6 +1,6 @@
 /* The timeline island (experience.md §5.6, §5.7; architecture.md §3.14): the
- * shared header in three clusters (timeline-header.mjs), the ruler's tools in
- * their own column, the layer list's header (layer-timeline.mjs), and the
+ * shared header in three clusters (timeline-header.mjs) with the view tools
+ * leading the end one, the layer list's header (layer-timeline.mjs), and the
  * Simple timeline (sheet-filmstrip.mjs): the band the tools take above the
  * cards, the frame bar, the frame cards and the Layers popover. The frame card
  * (.ui-frame-card, components.md "Filmstrip") lives here because only the
@@ -11,10 +11,8 @@
  * hides what folds at the minimal tier and in Draw and Build itself (hidden);
  * the frame rate's compact fold of layout/workspace.css is restated here. */
 @layer features {
-  /* The ruler tools' column (148 wide, 132 narrow, 116 compact and minimal): the Advanced grid ends before it. */
-  .timeline-panel { --ruler-tools-w: 148px; }
-  :where(:root[data-tier="narrow"]) .timeline-panel { --ruler-tools-w: 132px; }
-  :where(:root[data-tier="compact"], :root[data-tier="minimal"]) .timeline-panel { --ruler-tools-w: 116px; }
+  /* The header reads this marker to give index.html's controls the kit's look (timeline-header.mjs). */
+  .timeline-panel { --timeline-kit: 1; }
 
   /* ---- The header: three clusters that never touch ---- */
   .timeline-toolbar.tl-head {
@@ -28,8 +26,6 @@
   .tl-head > .tl-start { grid-column: 1; gap: var(--space-2); }
   .tl-head > .tl-transport { grid-column: 2; }
   .tl-head > .tl-end { grid-column: 3; justify-self: end; gap: var(--space-1); }
-  /* The ruler tools wait in the header only until the first mount moves them into the body. */
-  .tl-head > .tl-ruler-tools { display: none; }
 
   .tl-mode { border: 0; }
   .tl-mode > .ui-segmented-item { block-size: auto; }
@@ -43,9 +39,9 @@
   .tl-together > .ui-label { display: inline; }
   .tl-together > .range-edit-count { font: var(--type-small-strong); font-variant-numeric: tabular-nums; color: var(--text-3); }
   .tl-together[aria-pressed="true"] > .range-edit-count { color: inherit; }
-  /* Edit together is a quiet glyph while it cannot apply (select two or more frames first). */
-  .tl-together:disabled { --_px: 0; inline-size: var(--control-md); opacity: 1; color: var(--text-disabled); }
-  .tl-together:disabled > :is(.ui-label, .range-edit-count) { display: none; }
+  /* Edit together shows only while it can apply (two or more frames selected), with its word and count; its
+   * hotkey and the Animation menu reach it any time. */
+  .tl-together:disabled { display: none; }
 
   /* The transport: First frame, the steps, a soft Play disc, Loop, the readout and the frame rate. */
   .tl-controls { display: flex; align-items: center; gap: var(--space-0-5); margin: 0; }
@@ -77,7 +73,8 @@
     border: 0; background: var(--success-dot); box-shadow: 0 0 0 1.5px var(--surface);
   }
 
-  /* The words fold in order when the clusters would otherwise meet (timeline-header.mjs). */
+  /* The zoom slider, then the words fold in order when the clusters would otherwise meet (timeline-header.mjs). */
+  .tl-head:where([data-fold~="zoom"]) .tl-ruler-tools > .tl-zoom { display: none; }
   .tl-head:where([data-fold~="together"]) .tl-together > :is(.ui-label, .range-edit-count),
   .tl-head:where([data-fold~="cel"]) .tl-cel-main > .ui-label,
   .tl-head:where([data-fold~="add"]) .tl-add > .ui-label {
@@ -96,34 +93,35 @@
   :where(:root[data-tier="minimal"]) .tl-mode > .ui-segmented-item { padding-inline: var(--space-2); }
   :where(:root[data-tier="minimal"]) .tl-head > :is(.tl-start, .tl-end) { gap: var(--space-0-5); }
 
-  /* ---- The ruler's tools: zoom, Fit timeline, Tall timeline ---- */
+  /* ---- The view tools: zoom, Fit timeline, Tall timeline, then a hairline before Onion ---- */
   .shell-timeline-body:where(:not(:popover-open)) { position: relative; }
-  .tl-ruler-tools {
-    position: absolute; inset: 0 0 auto auto; z-index: var(--z-sticky);
-    display: flex; align-items: center; justify-content: flex-end; gap: var(--space-0-5);
-    inline-size: var(--ruler-tools-w); block-size: var(--timeline-header); padding: 0 var(--space-1-5);
-    border: 0; border-radius: 0; background: var(--surface); box-shadow: none; opacity: 1;
+  .tl-end > .tl-ruler-tools {
+    display: flex; align-items: center; gap: var(--space-0-5);
+    margin-inline-end: var(--space-1); padding-inline-end: var(--space-2); box-shadow: inset -1px 0 0 var(--line-1);
   }
   .tl-ruler-tools > .tl-zoom { display: flex; align-items: center; gap: var(--space-1); min-inline-size: 0; }
   .tl-zoom > .tl-zoom-glyph { display: inline-grid; color: var(--text-3); }
   .tl-zoom-glyph > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); }
-  .tl-zoom > .ui-slider { inline-size: 64px; min-inline-size: 0; }
-  :where(:root[data-tier="narrow"]) .tl-zoom > .ui-slider { inline-size: 52px; }
-  :where(:root[data-tier="compact"], :root[data-tier="minimal"]) .tl-zoom > .ui-slider { inline-size: 40px; }
+  .tl-zoom > .ui-slider { inline-size: 88px; min-inline-size: 0; }
+  :where(:root[data-tier="narrow"]) .tl-zoom > .ui-slider { inline-size: 56px; }
+  :where(:root[data-tier="narrow"], :root[data-tier="compact"]) .timeline-toolbar.tl-head { column-gap: var(--space-2); }
+  :where(:root[data-tier="compact"]) .tl-zoom > .ui-slider { inline-size: 48px; }
   :where(:root[data-tier="compact"], :root[data-tier="minimal"]) .tl-zoom > .tl-zoom-glyph { display: none; }
+  /* Minimal: the view tools leave the header (zoom stays on Ctrl + wheel, Fit leads Timeline ⋯). */
+  :where(:root[data-tier="minimal"]) .tl-end > .tl-ruler-tools { display: none; }
   /* Tall timeline means nothing while the timeline is folded to its header. */
   :where(.shell-bottom[data-state="strip"]) .tl-ruler-tools > .tl-tall { display: none; }
 
-  /* Advanced: the grid, its playhead and overlays end before the tools' column. */
-  .layer-timeline .sheet-scroll { right: var(--ruler-tools-w); }
-  .layer-timeline :is(.sheet-playhead-clip, .vfx-timeline-overlay) { right: calc(var(--ruler-tools-w) + var(--sheet-scrollbar-y)); }
-  /* Simple: a band above the cards holds the tools (sheet-filmstrip.mjs TOOLS_BAND). */
-  .sheet-filmstrip .sheet-filmstrip-scroll { padding-block-start: var(--timeline-header); }
 
   /* ---- The layer list's header: Layers, Focus, New layer and Find layers ---- */
-  .layer-timeline .sheet-label-head { gap: var(--space-0-5); padding-inline: var(--island-pad) var(--space-1); }
-  .sheet-label-head > .sheet-label-title { flex: 1; min-inline-size: 0; font: var(--type-small-strong); color: var(--text-3); }
+  .layer-timeline .sheet-label-head { gap: var(--space-1); padding-inline: var(--island-pad) var(--space-1); }
+  .sheet-label-head > .sheet-label-title { flex: 1; min-inline-size: 0; font: var(--type-eyebrow); color: var(--text-3); }
+  .sheet-label-head > .sheet-focus { --_px: var(--space-2); flex: none; }
+  .sheet-label-head > .sheet-focus[aria-pressed="true"] { --_bg: var(--accent-soft); --_bg-hover: var(--accent-soft-hover); color: var(--accent-text-strong); }
   .sheet-label-head > .sheet-new-layer > .ui-split-more { block-size: var(--control-sm); }
+  /* Under the short tier's 24px ruler the header's buttons are 24px too. */
+  :where(:root[data-height="short"], :root[data-height="low"]) .sheet-label-head :is(.ui-icon-button, .sheet-new-layer > .ui-split-more) { --_s: var(--control-xs); block-size: var(--control-xs); }
+  :where(:root[data-height="short"], :root[data-height="low"]) .sheet-label-head > .sheet-focus { block-size: var(--control-xs); }
 
   /* ---- Go to frame ---- */
   .tl-goto { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); inline-size: 220px; }
@@ -281,8 +279,8 @@
   .layer-timeline .sheet-label-head { block-size: var(--sheet-ruler, var(--timeline-header)); }
   .layer-timeline .sheet-labels { inset-block-start: var(--sheet-ruler, var(--timeline-header)); }
   .layer-timeline .vfx-timeline-overlay { inset-block-start: var(--sheet-ruler, var(--timeline-header)); }
-  /* Rows: no separators; one marker each (a type glyph, a colour dot, a drawing's brush after its name). */
-  .sheet-labels > .sheet-layer { border-block-end: 0; box-shadow: none; font: var(--type-ui); }
+  /* Rows: lanes with the grid's hairline under each; one marker each (a type glyph, a colour dot, a drawing's brush after its name). */
+  .sheet-labels > .sheet-layer { border-block-end: 0; box-shadow: inset 0 -1px 0 var(--sheet-lane); font: var(--type-ui); }
   .sheet-labels > .sheet-layer[data-pinned] { z-index: 1; }
   .sheet-labels > .sheet-layer:where([data-kind="camera"], [data-kind="scene"]) { background: var(--sheet-surface); }
   .sheet-labels > .sheet-layer:where([data-kind="camera"]) { --track-accent: var(--sheet-camera-accent); --track-tint: var(--sheet-camera-tint); }
@@ -343,7 +341,7 @@
   }
   .layer-timeline:where([data-more-below]) > .sheet-main::after {
     content: ""; position: absolute; z-index: 1; pointer-events: none;
-    inset: auto calc(var(--ruler-tools-w, 0px) + var(--sheet-scrollbar-y, 0px)) var(--sheet-scrollbar-x, 0px) 0;
+    inset: auto var(--sheet-scrollbar-y, 0px) var(--sheet-scrollbar-x, 0px) 0;
     block-size: 14px; background: linear-gradient(to bottom, transparent, var(--sheet-surface));
   }
 }

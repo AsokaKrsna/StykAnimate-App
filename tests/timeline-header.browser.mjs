@@ -3,12 +3,13 @@
  * one header in three clusters for Simple and Advanced, the Timeline ⋯ menu's
  * rare rows, Go to frame from the readout, Edit together's states, the
  * minimal tier's folds, the layer list's header (Focus, New layer with rename
- * on create, Find layers) and the ruler's tools in their own column.
+ * on create, Find layers) and the view tools (zoom, Fit, Tall) leading the end
+ * cluster.
  *
  * Where features/timeline.css is loaded, the layout is checked too: at every
  * tier size the three clusters keep apart, no header control overlaps
  * another or leaves the header, Add frame keeps its word from 900px, and the
- * grid ends before the ruler tools' column.
+ * grid takes the island's whole width.
  *
  *   STYK_URL=http://127.0.0.1:47915 node tests/timeline-header.browser.mjs
  */
@@ -45,7 +46,7 @@ try {
     styk.editor.load(createDemo(), 'Header fixture');
   });
   await mode('advanced');
-  const styled = await page.evaluate(() => getComputedStyle(document.getElementById('animation-timeline')).getPropertyValue('--ruler-tools-w').trim() !== '');
+  const styled = await page.evaluate(() => getComputedStyle(document.getElementById('animation-timeline')).getPropertyValue('--timeline-kit').trim() !== '');
 
   // One header, three clusters, the same controls in both modes; the ruler's tools go with the body.
   for (const name of ['advanced', 'simple']) {
@@ -68,12 +69,12 @@ try {
     await page.evaluate(n => styk.editor.layerFrameKeys(styk.editor.activeLayerId).length === n + 1 && document.activeElement === styk.timeline.scroll, advancedBefore));
   await page.keyboard.press('Control+z');
 
-  // Loop says its state; Edit together is a quiet glyph until two frames are selected, then its word.
+  // Loop says its state; Edit together shows only once two frames are selected, with its word.
   check('Loop is a pressed toggle, on by default', await page.evaluate(() => document.getElementById('loop-button').getAttribute('aria-pressed') === String(styk.state.loop)));
-  check('Edit together waits for a range', await page.evaluate(() => { const b = document.getElementById('range-edit'); return b.disabled && !b.hidden && b.getAttribute('aria-label') === 'Edit together'; }));
+  check('Edit together waits for a range', await page.evaluate(() => { const b = document.getElementById('range-edit'); return b.disabled && !b.hidden && b.getAttribute('aria-label') === 'Edit together' && b.getBoundingClientRect().width === 0; }));
   await page.evaluate(() => { const t = styk.timeline, row = t.tracks.findIndex(r => r.kind === 'layer'); t._selectCell({row, tick: 1}); t._selectCell({row, tick: 6}, {extend: true}); });
   await settle(); await settle();
-  check('Edit together applies to a selected range', await page.evaluate(() => !document.getElementById('range-edit').disabled));
+  check('Edit together applies to a selected range, with its word', await page.evaluate(() => { const b = document.getElementById('range-edit'); return !b.disabled && b.getBoundingClientRect().width > 40; }));
   await page.locator('#range-edit').click(); await settle();
   check('Edit together toggles on', await page.evaluate(() => document.getElementById('range-edit').getAttribute('aria-pressed') === 'true' && styk.state.applyRange));
   await page.locator('#range-edit').click(); await settle();
@@ -98,14 +99,17 @@ try {
   check('Go to frame goes to the third card in Simple', await page.evaluate(() => styk.timeline.selectedIndex === 2));
   await mode('advanced');
 
-  // The layer list's header: Focus from two layers, New layer opens its name, Find layers takes the title's place.
-  check('Focus waits for a second layer', await page.evaluate(() => styk.timeline.focusLayersButton.hidden));
+  // The layer list's header: Show all while a focus is on, New layer opens its name, Find layers takes the title's place.
+  check('Show all waits for a focus', await page.evaluate(() => styk.timeline.focusLayersButton.hidden));
   await page.getByRole('button', {name: 'New layer', exact: true}).click();
   await page.locator('.sheet-layer-rename').waitFor();
   check('New layer opens its name for typing', await page.evaluate(() => document.activeElement?.classList.contains('sheet-layer-rename')));
   await page.keyboard.type('Rival'); await page.keyboard.press('Enter'); await settle();
   check('The new layer takes the typed name', await page.evaluate(() => styk.editor.getLayer(styk.editor.activeLayerId).name === 'Rival'));
-  check('Focus shows with two layers', await page.evaluate(() => !styk.timeline.focusLayersButton.hidden));
+  await page.evaluate(() => styk.timeline.focusSelectedLayers()); await settle(); await settle();
+  check('A focus shows Show all, with its word', await page.evaluate(() => { const b = styk.timeline.focusLayersButton; return !b.hidden && b.textContent.trim() === 'Show all' && b.getAttribute('aria-label') === 'Show all layers'; }));
+  await page.getByRole('button', {name: 'Show all layers', exact: true}).click(); await settle(); await settle();
+  check('Show all ends the focus and leaves', await page.evaluate(() => !styk.timeline.focusedLayerIds && styk.timeline.focusLayersButton.hidden));
   await page.getByRole('button', {name: 'More layer types', exact: true}).click();
   await page.getByRole('menuitem', {name: 'New drawing layer'}).click();
   await page.locator('.sheet-layer-rename').waitFor();
@@ -142,10 +146,10 @@ try {
     const edge = (list, side) => side === 'right' ? Math.max(...list.map(r => r.right)) : Math.min(...list.map(r => r.left));
     const start = slot('start'), transport = slot('transport'), end = slot('end');
     const add = head.querySelector('.sheet-add-frame .ui-label');
-    const scroll = box(styk.timeline.scroll), tools = box(document.querySelector('.tl-ruler-tools'));
+    const scroll = box(styk.timeline.scroll), island = box(document.getElementById('animation-timeline'));
     return {overlaps, outside, overflow: head.scrollWidth > head.clientWidth + 0.5,
       gaps: [edge(transport, 'left') - edge(start, 'right'), edge(end, 'left') - edge(transport, 'right')],
-      addWord: add && box(add).width > 1, gridEnds: scroll.right <= tools.left + 0.5, fold: head.dataset.fold ?? ''};
+      addWord: add && box(add).width > 1, gridEnds: !scroll.width || scroll.right >= island.right - 1.5, fold: head.dataset.fold ?? ''};
   });
   // At rest, and with every word the start cluster can hold (Blank frame, Next copy and Edit together's on a drawing layer's range).
   const busy = () => page.evaluate(() => {
@@ -165,7 +169,7 @@ try {
       // The minimal tier's clusters sit 4px apart (tighter gaps there), never touching.
       assert.ok(result.gaps.every(gap => gap >= (width <= 660 ? 4 : 8)), `${width}×${height}: clusters keep apart (${result.gaps})`);
       if (width >= 900) assert.ok(result.addWord, `${width}×${height}: Add frame keeps its word (folds: ${result.fold})`);
-      assert.ok(result.gridEnds, `${width}×${height}: the grid ends before the ruler tools`);
+      assert.ok(result.gridEnds, `${width}×${height}: the grid takes the island's whole width`);
       checks.push(`${state} ${width}×${height}: three clusters apart, nothing overlaps${result.fold ? ` (folded: ${result.fold})` : ''}`);
       console.log('PASS', checks.at(-1));
     }

@@ -22,10 +22,16 @@
   .shell-top :where(.band-export, .band-done, .band-testrig) > svg { --icon-size: 15px; }
   .shell-top .band-save { margin-inline-end: var(--space-0-5); }
 
-  /* The workspace switch: each workspace's dot (full while it is the current one) and its name. */
-  .workspace-switch .ui-segmented-item { gap: var(--space-2); padding: 0 14px 0 var(--space-3); }
-  .workspace-switch .ui-dot { --_s: 6px; opacity: 0.55; }
-  .workspace-switch :where([aria-pressed="true"]) > .ui-dot { opacity: 1; }
+  /* The workspace switch: the app's main choice, a pill on the band. Each workspace has its colour (Animate blue,
+   * Draw orange, Build mint): its dot, and while it is the current one the soft tint of its pill. */
+  .shell-top .workspace-switch { --_h: var(--control-lg); padding: 3px; background: var(--surface-well); }
+  .workspace-switch .ui-segmented-item { gap: var(--space-2); padding: 0 16px 0 var(--space-3); color: var(--text-2); }
+  .workspace-switch .ui-segmented-item[data-workspace-mode="animate"] { --_mode: var(--mode-animate); --_mode-soft: var(--tint-select-soft); }
+  .workspace-switch .ui-segmented-item[data-workspace-mode="draw"] { --_mode: var(--mode-draw); --_mode-soft: var(--tint-draw-soft); }
+  .workspace-switch .ui-segmented-item[data-workspace-mode="rig"] { --_mode: var(--mode-build); --_mode-soft: var(--tint-library-soft); }
+  .workspace-switch .ui-dot { --_s: 7px; background: var(--_mode); opacity: 0.5; }
+  .workspace-switch .ui-segmented-item[aria-pressed="true"] { background: var(--surface); color: var(--text-1); box-shadow: var(--shadow-thumb); }
+  .workspace-switch :where([aria-pressed="true"]) > .ui-dot { opacity: 1; box-shadow: 0 0 0 3px var(--_mode-soft); }
 
   /* Words that fold keep their node as the accessible name. */
   .shell-top[data-band~="state"] :where(#save-state),

@@ -134,6 +134,8 @@ export function createDockHost({document: doc = globalThis.document, window: win
     element.style.setProperty(name, value);
   };
   let floatHost = null, solution = null, override = null, frame = 0, destroyed = false, bodyOpen = false, bodyInvoker = null;
+  // The floating tool bar's columns: two where one column of tools would not fit #viewport's height.
+  let railColumns = 1;
   let currentMode = normalizeMode(workspace.dataset.mode);
 
   const descriptor = id => registry.get(id);
@@ -147,11 +149,13 @@ export function createDockHost({document: doc = globalThis.document, window: win
 
   function env() {
     // The window, the band above the workspace and (until M3b) the status bar below it.
-    const chrome = band?.offsetHeight || SHELL_METRICS.band;
+    // The band's and the stage header's measured heights (the height tier's values unless the UI scale changed them).
+    const chrome = band?.offsetHeight || undefined;
     const below = footer && !footer.hidden ? footer.offsetHeight : 0;
-    const head = viewport?.offsetParent === stage ? viewport.offsetTop : SHELL_METRICS.stageHead;
+    // #viewport's top in the stage island: the stage header, and in Build the builder's row under it.
+    const head = viewport && stage && !stage.hidden ? Math.round(viewport.getBoundingClientRect().top - stage.getBoundingClientRect().top) || undefined : undefined;
     return {width: app.clientWidth, height: app.clientHeight, mode: mode(), platform, footer: below,
-      bandMin: bandWatch?.forWidth(app.clientWidth) ?? 0, metrics: {...metrics, band: chrome, stageHead: head}};
+      bandMin: bandWatch?.forWidth(app.clientWidth) ?? 0, metrics, measured: {band: chrome, stageHead: head}, railColumns};
   }
 
   /** Solves the stored layout (or a splitter's transient size) and applies it now. */
@@ -204,6 +208,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
   function apply(s) {
     root.dataset.tier = s.tier;
     root.dataset.height = s.height;
+    root.dataset.chrome = s.chrome;
     applyBand(s);
     root.dataset.left = s.regions.left.state;
     workspace.dataset.rail = s.rail.side;
@@ -235,23 +240,25 @@ export function createDockHost({document: doc = globalThis.document, window: win
     };
     const names = [], columns = [];
     const add = (name, size) => { names.push(name); columns.push(size); };
-    if (s.rail.side === 'left') add('rail', px(s.rail.width));
+    // The rail floats inside the stage (layout/rail.css places it); it takes no column.
     if (extent('left')) add('left', px(extent('left')));
     add('stage', 'minmax(0, 1fr)');
     if (extent('right')) add('right', px(extent('right')));
-    if (s.rail.side === 'right') add('rail', px(s.rail.width));
     const b = s.regions.bottom, shown = b.state !== 'hidden';
-    const lower = names.map(name => (name === 'rail' || (b.span === 'stage' && name !== 'stage') ? name : 'bottom'));
+    const lower = names.map(name => (b.span === 'stage' && name !== 'stage' ? name : 'bottom'));
     const set = (name, value) => setVar(workspace, name, value);
     set('--shell-columns', columns.join(' '));
     set('--shell-rows', shown ? `minmax(0, 1fr) ${px(b.size)}` : 'minmax(0, 1fr)');
     set('--shell-areas', shown ? `"${names.join(' ')}" "${lower.join(' ')}"` : `"${names.join(' ')}"`);
     set('--shell-gap', px(across.columnGap));
     set('--shell-row-gap', px(down.rowGap));
-    set('--shell-pad-start', px(s.rail.side === 'right' ? across.padEnd : 0));
-    set('--shell-pad-end', px(s.rail.side === 'right' ? 0 : across.padEnd));
+    set('--shell-pad-start', px(across.padEnd));
+    set('--shell-pad-end', px(across.padEnd));
     set('--shell-pad-bottom', px(down.padBottom));
+    set('--shell-pad-top', px(s.padTop ?? down.padBottom));
     set('--shell-rail', px(s.rail.width));
+    // The floating tool bar's top in the stage island (the solver's rect: #viewport's top and the bar's margin).
+    set('--shell-rail-top', px(s.rail.rect.y - s.stage.y));
     set('--shell-left', px(s.regions.left.size));
     set('--shell-right', px(s.regions.right.size));
     set('--shell-bottom', px(shown ? b.size : 0));
@@ -505,6 +512,8 @@ export function createDockHost({document: doc = globalThis.document, window: win
     }
     for (const side of SIDES) {
       for (const button of strips[side]?.children ?? []) {
+        // A panel's strip button says whether its sheet is open; a mirrored action (no data-panel) keeps its source's state.
+        if (!button.dataset.panel) continue;
         const open = sheets[side].open && sheets[side].active === button.dataset.panel;
         button.setAttribute('aria-expanded', String(open));
         button.setAttribute('aria-pressed', String(open));
@@ -534,12 +543,11 @@ export function createDockHost({document: doc = globalThis.document, window: win
     const sheet = sheetIslands[side];
     if (!sheet) return;
     const area = workspace.getBoundingClientRect();
-    const rail = solution?.rail.width ?? SHELL_METRICS.rail.width;
     const strip = side === 'left' && solution?.regions.left.strip ? solution.regions.left.strip : 0;
     // Down to the stage island's bottom (the timeline's header stays in view), or the workspace's when the stage spans it.
     const floor = Math.min(area.bottom - 8, stage.getBoundingClientRect().bottom);
     sheet.style.setProperty('--sheet-top', px(area.top));
-    sheet.style.setProperty('--sheet-start', px((solution?.rail.side === 'left' ? rail : 0) + strip + SHELL_METRICS.width.wide.columnGap));
+    sheet.style.setProperty('--sheet-start', px(SHELL_METRICS.width.wide.padEnd + strip + SHELL_METRICS.width.wide.columnGap));
     // Inline: the sheet component's own cap (the window) would beat the layout layer's. The right sheet
     // (Properties at compact width) is as tall as its content; a strip's sheet keeps that whole height for
     // its lists (Structure's tree is virtual, so it has no content height of its own).
@@ -1025,16 +1033,36 @@ export function createDockHost({document: doc = globalThis.document, window: win
 
   const resizeObserver = new win.ResizeObserver(() => commit());
   resizeObserver.observe(app);
-  // The rail's "more below" fade: on while tools wait below its fold (the low height tier, Build).
+  // The band is shorter at the low height tier: its new height solves again.
+  if (band) resizeObserver.observe(band);
+  // The floating tool bar folds into two columns where its tools in one column would be taller than the room the
+  // solver gives it (Draw's tools in a short window); the solver then widens it and the artboard keeps clear. Its
+  // "more below" fade stays for a bar that still does not fit.
   const rail = workspace.querySelector('.shell-rail');
-  const railMore = () => {
+  const railFit = () => {
+    const dock = rail.querySelector(':scope > .tool-dock');
+    if (dock && solution?.rail?.rect) {
+      const items = [...dock.children].filter(node => node.offsetParent !== null);
+      const box = win.getComputedStyle(rail), gap = parseFloat(win.getComputedStyle(dock).rowGap) || 0;
+      const add = dock.querySelector(':scope > .rail-add');
+      const apart = add && add.offsetParent !== null ? parseFloat(win.getComputedStyle(add).marginBlockEnd) || 0 : 0;
+      const natural = items.reduce((sum, node) => sum + node.offsetHeight, 0) + gap * Math.max(0, items.length - 1)
+        + (parseFloat(box.paddingTop) || 0) + (parseFloat(box.paddingBottom) || 0) + apart;
+      const columns = items.length > 1 && natural > solution.rail.rect.height + 0.5 ? 2 : 1;
+      if (columns !== railColumns) {
+        railColumns = columns;
+        rail.toggleAttribute('data-columns', columns === 2);
+        schedule();
+      }
+    }
     const more = rail.scrollHeight - rail.scrollTop - rail.clientHeight > 1;
     if (rail.hasAttribute('data-more-below') !== more) rail.toggleAttribute('data-more-below', more);
   };
-  const railObserver = rail ? new win.ResizeObserver(railMore) : null;
+  const railObserver = rail ? new win.ResizeObserver(railFit) : null;
   if (rail) {
     for (const element of [rail, ...rail.children]) railObserver.observe(element);
-    rail.addEventListener('scroll', railMore, {passive: true, signal});
+    rail.addEventListener('scroll', railFit, {passive: true, signal});
+    listeners.solve.add(() => railFit());
   }
   // The band's widths change with its content (a name, a language, a session), never with the window.
   const bandWatch = band ? watchBand(band, {window: win, document: doc, storage: browserStorage(win), start: ready, onChange: () => schedule()}) : null;

@@ -88,7 +88,7 @@ export function createLayersPopover({anchor, editor, run, overlays = null, t = n
       pick.setAttribute('aria-description', say('layers.choose', {name: layer.name}));
       const dot = element('span', pick, 'ui-dot');
       dot.setAttribute('aria-hidden', 'true');
-      dot.style.setProperty('--dot', LAYER_COLORS[layer.color] ?? 'var(--sheet-ink)');
+      dot.style.setProperty('--dot', LAYER_COLORS[layer.color] ?? 'var(--sheet-layer)');
       element('span', pick, 'ui-list-row-label', layer.name);
       if (layer.drawing) pick.insertAdjacentHTML('beforeend', icon('brush', 'tl-layers-kind'));
       pick.addEventListener('click', () => run(() => editor.selectSheetLayer(layer.id)));

@@ -16,13 +16,13 @@
   }
 
   .shell-island:where(:not(.shell-sheet, [data-floating])) { flex: 1 1 0; overflow: hidden; }
-  .shell-island > .shell-tabs {
-    padding-inline: calc(var(--island-pad) - var(--tab-pad, var(--space-2)));
-    box-shadow: inset 0 -1px 0 var(--line-1);
-  }
+  /* The tab track sits centred on the stage header's row: 6px above and below it (4 under the compact chrome's 40px header). */
+  .shell-island > .shell-tabs { align-self: flex-start; flex: none; margin: 6px var(--space-2); max-inline-size: calc(100% - 2 * var(--space-2)); }
+  :where(:root[data-chrome="compact"]) .shell-island > .shell-tabs { margin-block: var(--space-1); }
   .shell-island > .shell-panel {
     flex: 1 1 auto; min-block-size: 0; min-inline-size: 0; display: flex; flex-direction: column;
     container: properties island / inline-size;
+    box-shadow: inset 0 1px 0 var(--line-1);
   }
   .shell-island > .shell-panel > :where(#inspector) { flex: 1 1 auto; }
   /* The tab names the panel; the inspector header keeps its context and its menu. */

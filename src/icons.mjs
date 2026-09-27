@@ -269,6 +269,10 @@ const shapes = Object.freeze({
   "rotate-step": '<path d="M19.5 13A7.5 7.5 0 1 1 17 6.4"/><path d="M19.5 3.5v4h-4"/><circle cx="12" cy="12.5" r="1.3" fill="currentColor"/><path d="M12 12.5V8M12 12.5l3.6 2"/>',
   // Level the camera: a horizon with a bubble.
   level: '<path d="M3 14h18"/><rect x="6" y="9" width="12" height="5" rx="2.5"/><circle cx="12" cy="11.5" r="1.3" fill="currentColor"/>',
+  // Section kinds (Lucide move, palette, droplet): Transform, Appearance, Colours.
+  'arrows-move': '<path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/>',
+  palette: '<circle cx="13.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="17.5" cy="10.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="8.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="6.5" cy="12.5" r="1.2" fill="currentColor" stroke="none"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.55-2.5 5.55-5.55C21.97 6.01 17.46 2 12 2z"/>',
+  droplet: '<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>',
   // The stage header's view toggles and the join mode's message (design/app-ui/reference, revision 4).
   joints: '<circle cx="12" cy="5" r="2.6"/><path d="M12 8v6M12 14l-4 7M12 14l4 7M7 10.5l5-1.5 5 1.5"/>',
   highlight: '<path d="M6 18 18 6"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M3 9.5 5 10.5M9.5 3l1 2M14 20.5l-1-2M20.5 14l-2-1"/>',

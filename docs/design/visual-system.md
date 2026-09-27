@@ -39,7 +39,7 @@ These rules are the system. Every token and component exists to make them easy t
 |---|---|---|
 | **Compact system rows**: Camera and Scene are 24px pinned rows; content rows keep 32px (28px at the short tier) | The default timeline showed fewer layer rows than today's at every size | experience §1.9 |
 | **The "more below" set**: a 12px fade (never over a whole row's controls), a drawn 6px scrollbar (`--surface-sunken` track, `--scrollbar-thumb-hover` thumb) and a quiet "N more" ghost button with a down arrow | Clipped rows were invisible (no scrollbar, no fade drawn) | experience §1.9 |
-| **The ruler tools' own column** (`--ruler-tools-w`: 148, 132 narrow, 116 compact) | The tools covered the last frames, the playhead tab and the onion ends | experience §5.7 |
+| **The ruler tools' own column** (`--ruler-tools-w`: 148, 132 narrow, 116 compact; revision 5 moved the tools into the header's end cluster) | The tools covered the last frames, the playhead tab and the onion ends | experience §5.7 |
 | **One grammar in quick actions**: a label and its glyphs in one sunken tile (`.ui-quick-tile`); word buttons with the glyph buttons' gap and hover tile | "Level ⊕ ↺" read like "Match ◀ ▶"; a label looked like a button | components.md; §10 |
 | **A switch attached to its section title** (`.ui-section-head[data-switch]`) | "Parallax › ◯" put two targets on one line with the switch far from its title | components.md |
 | **The background chip is a swatch** (the scene's colour, a 1px `--line-control` border, 3:1 on both themes, 18×13) | The small artboard read as an empty screen | experience §4.2 |

@@ -1,32 +1,34 @@
-/* Tabs (components.md "Tabs"): line tabs in island heads and dialogs, the
- * shown tab underlined in ink. Each tab keeps 8px inline padding so its focus
- * ring sits inside it, clear of the glyphs and of the underline; containers
- * pull their padding in by --tab-pad so labels align with the content.
- * Used by the shell's islands (the Properties, VFX and Library tabs, which
- * keep their ids and role=tab names). */
+/* Tabs (components.md "Tabs"): one view switch, drawn like every other switch
+ * in the app (the workspace switch, Simple │ Advanced, a dialog's format): a
+ * pill track on the well with a white thumb under the shown tab. Used by the
+ * shell's islands (the Properties, VFX and Library tabs, which keep their ids
+ * and role=tab names) and dialogs with pages. */
 @layer components {
   .ui-tabs {
-    --tab-pad: var(--space-2);
-    display: flex; align-items: stretch; gap: 0; flex: none; min-inline-size: 0;
-    block-size: var(--control-2xl); padding: 0;
+    --tab-pad: var(--space-3);
+    display: inline-flex; align-items: stretch; gap: var(--space-0-5); flex: none; min-inline-size: 0;
+    block-size: var(--control-md); padding: var(--space-0-5);
+    border-radius: var(--radius-pill); background: var(--surface-well);
   }
   .ui-tab {
     --icon-size: var(--icon-md);
     position: relative;
     display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1-5); min-inline-size: 0;
-    padding: 0 var(--tab-pad, var(--space-2)); border: 0; border-radius: var(--radius-md);
-    background: transparent; color: var(--text-3);
-    font: var(--type-ui-strong); line-height: 1; white-space: nowrap;
-    transition: color var(--dur-fast), box-shadow var(--dur-fast);
+    padding: 0 var(--tab-pad, var(--space-3)); border: 0; border-radius: var(--radius-pill);
+    background: transparent; color: var(--text-2);
+    font: var(--type-button); white-space: nowrap;
+    transition: color var(--dur-fast), background-color var(--dur-thumb) var(--ease-out), box-shadow var(--dur-thumb);
   }
   .ui-tab:is(:hover, [data-force~="hover"]) { color: var(--text-1); }
-  .ui-tab[aria-selected="true"] { color: var(--text-1); }
-  .ui-tab[aria-selected="true"]::after { content: ""; position: absolute; inset: auto var(--tab-pad, var(--space-2)) 0; block-size: 2px; border-radius: 1px; background: var(--text-1); }
-  /* The ring sits 6px inside the tab: it never touches the label or covers the underline */
-  .ui-tab:focus-visible, .ui-tab[data-force~="focus"] { outline: var(--focus-width) solid var(--focus-ring); outline-offset: -6px; }
-  .ui-tabs[data-variant="rule"] { box-shadow: inset 0 -1px 0 var(--line-1); }
+  .ui-tab[aria-selected="true"] {
+    background: var(--control-thumb); color: var(--text-1);
+    box-shadow: var(--shadow-thumb);
+  }
+  .ui-tab:focus-visible, .ui-tab[data-force~="focus"] { outline: var(--focus-width) solid var(--focus-ring); outline-offset: -2px; }
+  /* Line tabs for dense page lists (Settings' pages stay a sidebar; this remains for compatibility). */
+  .ui-tabs[data-variant="rule"] { background: transparent; }
 
   @media (forced-colors: active) {
-    .ui-tab[aria-selected="true"]::after { background: Highlight; }
+    .ui-tab[aria-selected="true"] { outline: 2px solid Highlight; }
   }
 }

@@ -12,17 +12,32 @@
     grid-template-rows: var(--shell-rows, minmax(0, 1fr) 264px);
     grid-template-areas: var(--shell-areas, "rail stage right" "rail bottom bottom");
     column-gap: var(--shell-gap, var(--gutter)); row-gap: var(--shell-row-gap, var(--gutter));
-    padding: 0 var(--shell-pad-end, var(--space-2)) var(--shell-pad-bottom, var(--space-2)) var(--shell-pad-start, 0px);
+    padding: var(--shell-pad-top, var(--space-2)) var(--shell-pad-end, var(--space-2)) var(--shell-pad-bottom, var(--space-2)) var(--shell-pad-start, var(--space-2));
     background: var(--surface-field);
   }
 
-  /* The rail: a column on the field, in the same place in every workspace
-   * (its tools keep their look until M3b). */
+  /* The tools: a white bar floating beside the canvas, like the site's tool bar, in the same place in every
+   * workspace: 12px inside #viewport under the stage header, on the stage's left (or right: Layout › Tools).
+   * It shares the stage's grid cell and sits above the stage's corner caps; the solver keeps the artboard
+   * 8px clear of it at fit. When its tools do not fit the stage's height it scrolls, with a fade. */
   .shell-rail {
-    grid-area: rail; position: relative; inset: auto; transform: none; align-self: start; justify-self: stretch;
-    inline-size: auto; max-block-size: 100%; padding: 0 0 var(--space-1);
-    border-color: transparent; background: transparent; box-shadow: none;
-    overflow-x: hidden; overflow-y: auto; scrollbar-width: auto;
+    --_head: var(--control-2xl);
+    grid-area: stage; position: relative; z-index: var(--z-canvas-hud); inset: auto; transform: none;
+    align-self: start; justify-self: start;
+    display: flex; flex-direction: column; align-items: center; gap: var(--space-1);
+    inline-size: auto; max-block-size: calc(100% - var(--shell-rail-top, calc(var(--_head) + var(--space-3))) - var(--space-3));
+    margin: var(--shell-rail-top, calc(var(--_head) + var(--space-3))) 0 0 var(--space-3); padding: 6px;
+    border: 0; border-radius: var(--radius-2xl); background: var(--surface-raised); box-shadow: var(--elevation-2);
+    overflow-x: hidden; overflow-y: auto; scrollbar-width: none;
+  }
+  :where(.workspace[data-rail="right"]) > .shell-rail { justify-self: end; margin-inline: 0 var(--space-3); }
+  /* Under the compact chrome's 40px stage header (layout-solver.mjs chromeFor). */
+  :where(:root[data-chrome="compact"]) .shell-rail { --_head: var(--control-xl); }
+  .shell-rail :where(.tool-dock) { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); padding: 0; border: 0; background: none; box-shadow: none; }
+  /* The + (Add) leads the bar, set apart from the tools by a short hairline. */
+  .shell-rail :where(.rail-add) { margin-block-end: var(--space-1-5); }
+  .shell-rail :where(.rail-add)::after {
+    content: ""; position: absolute; inset: auto 8px calc(-1 * var(--space-1-5) - 2px); block-size: 1px; background: var(--line-1); pointer-events: none;
   }
   /* At the low height tier the tools tighten (a 32px pitch); a rail that still
    * does not fit says so: the "more below" set, a 12px fade (the dock host
@@ -75,7 +90,7 @@
     grid-area: bottom; min-inline-size: 0; min-block-size: 0; max-block-size: none; block-size: auto;
     overflow: hidden; border: 0; box-shadow: none;
   }
-  .shell-bottom > .timeline-toolbar { block-size: var(--control-2xl); min-block-size: var(--control-2xl); flex: none; }
+  .shell-bottom > .timeline-toolbar { block-size: var(--control-xl); min-block-size: var(--control-xl); flex: none; }
   /* The island is named "Timeline"; its header carries no title of its own, so Simple and Advanced keep
    * the mode switch and Play in the same place, and the frame rate folds at compact width in both. */
   .shell-bottom > .timeline-toolbar > :where(.timeline-title) { display: none; }

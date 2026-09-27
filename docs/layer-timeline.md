@@ -5,7 +5,7 @@ Advanced places sound tracks under animation layers with one ruler, playhead,
 zoom and scroll area. Its footer follows the selected animation cell or audio
 clip. Simple opens an Audio tab in the filmstrip area. Closing audio editing
 restores animation space while sound keeps playing. The timeline's splitter and
-Tall timeline (the ruler's tools) provide more room in either mode.
+Tall timeline (in the header's view tools) provide more room in either mode.
 
 Waveform clips support source trimming, split/copy/paste, volume, fades and
 mute/solo. Audio uses seconds and snaps to the current frame rate. Explicit
@@ -35,7 +35,7 @@ Click a cell to select it; Shift extends the selection. Double-click a held or e
 
 A Hold span displays one pose. Editing a held cell edits its preceding key; press A first to make a new pose. Choose “Insert blank keyframe” in the frame menu to intentionally clear the layer. Add Frame inserts a key at the selected cell; when every selected layer already holds a key there, it instead duplicates the current pose into the following cell and shifts later keys. A key placed beyond a layer's end carries its last exposure forward to reach it. Blank cells draw as outlined spans with open-circle keys. Simple mode duplicates all scene layers, including Camera and Scene. Each duplication is one undo step. Choose Linear or an easing curve to interpolate between keys. An edit within a tween creates a key at the playhead. Camera and Scene tracks are always visible above the figure layers, each with its own color and icon. Frame menus contain frame operations; layer menus contain naming, visibility, locking and layer operations. Delete and Cut remove time rather than authoring blank cells.
 
-The Advanced sheet's rows share one geometry (`src/timeline-rows.mjs`, used by the layer, camera-motion, effect and audio painters and their hit tests): a 32px ruler (24px at the short height tier), Camera and Scene as 24px rows pinned under it while they take at most half the grid's height, and 32px content rows (28px at the short tier). Rows have no separators and one marker each (a type glyph or the layer's colour dot); eye and lock stay visible at rest, quiet until a layer is hidden or locked. Keys keep today's shapes and colours, with thin tween lines and soft hold bars; drawing cels and effect clips are neutral blocks whose keys carry the colour. The selected exposure shows a small grip at its end: dragging it holds the pose longer or shorter (the grip reaches up to 12px into the exposure but never its middle, so a key's centre still moves the selection), and while keys or a hold are dragged a small label shows the timing ("5 → 9"). The playhead is a 1.5px line with a white-on-blue frame tab inside the ruler. The grid keeps 14px scrollbar targets with a slim thumb; when content rows are below the visible grid, a fade and "N more" at the foot of the ruler tools' column scroll to them. Onion ranges show on the ruler while onion skin is on; each end is a 24px target on its own side of the frame it marks, and a press that does not move past 3px is a click on the ruler (it goes to that frame) while a drag moves the end.
+The Advanced sheet's rows share one geometry (`src/timeline-rows.mjs`, used by the layer, camera-motion, effect and audio painters and their hit tests): a 32px ruler (24px at the short height tier), Camera and Scene as 24px rows pinned under it while they take at most half the grid's height, and 32px content rows (28px at the short tier). Every row is a lane with a hairline under it and one marker (a type glyph or the layer's colour dot); eye and lock stay visible at rest, quiet until a layer is hidden or locked. Every 5th frame's column (every 10th, 20th or 50th zoomed out) is softly shaded under its ruler number, the ruler draws a tick at each frame's edge, and past the animation's end the grid is grey behind a clear end line. Keys are round dots in the row's colour (Camera gold, Scene violet, a layer its own colour or Styk blue) on a ring of the row's background; a tween is a tinted bar from key to key, a hold a thin grey line (the last hold runs to the row's end) and a blank span a dashed outline; drawing cels and effect clips are neutral blocks whose keys carry the colour. While the pointer is on its row, the selected exposure shows a small grip at its end: dragging it holds the pose longer or shorter (the grip reaches up to 12px into the exposure but never its middle, so a key's centre still moves the selection), and while keys or a hold are dragged a small label shows the timing ("5 → 9"). The playhead is a 1.5px line with a white-on-blue frame tab inside the ruler. The grid keeps 14px scrollbar targets with a slim thumb; when content rows are below the visible grid, a fade and "N more" at the grid's lower right scroll to them. Onion ranges show on the ruler while onion skin is on; each end is a 24px target on its own side of the frame it marks, and a press that does not move past 3px is a click on the ruler (it goes to that frame) while a drag moves the end.
 
 Simple Add frame copies the current complete scene to the end. Simple shows each scene frame as a card (`sheet-filmstrip.mjs`, experience.md §5.6): the whole-scene thumbnail on a white rounded card (the current and selected cards outlined in blue), the number, and one duration bar whose length is the hold on the strip's shared scale (the longest hold fills its card). The current card, a hovered one and a bar being dragged say their count in words ("6 · 5 inbetweens"); the other cards show their number only, and the current card's number carries a dot while its working copy is edited. Drag a bar's end to hold that frame longer or shorter, by whole inbetweens, one undo step at release (a click on the bar changes nothing; Escape cancels); the bar's range input ("Frame N inbetweens") carries the value for the keyboard. While an animation plays, the cards stay still: a short line moves along the bars to where playback is (only its transform changes; no card renders and no layout is read), and when playback stops the card it stopped in is selected and scrolled into view.
 
@@ -99,29 +99,30 @@ Simple and Advanced share one header (`timeline-header.mjs`, experience.md §5.6
 in three clusters: Simple │ Advanced, **Add frame** (one button for both modes;
 Blank frame on a drawing layer, and there the **Next copy** split: Next blank
 drawing, Blank drawing here, Copy drawing here, Extend) and **Edit together**
-(`#range-edit`: a quiet glyph until two or more frames are selected, its word
-while it applies, not shown on a one-frame file); the transport (First frame,
-previous, Play, next, Loop, the MM:SS:FF readout and the frame rate); and Onion
-(a split button), Audio (a dot while the animation has sound) and **Timeline ⋯**
+(`#range-edit`: shown with its word and count only while two or more frames
+are selected, never on a one-frame file); the transport (First frame,
+previous, Play, next, Loop, the MM:SS:FF readout and the frame rate); and the
+view tools (the timeline zoom, **Fit timeline** and **Tall timeline**), then after
+a hairline Onion (a split button), Audio (a dot while the animation has sound) and **Timeline ⋯**
 for the rare rows (Last frame, Previous key, Next key, Default height; Timeline…
 first while the timeline is folded; at the minimal width First frame, Loop
 playback, Audio and Edit together, whose buttons fold there). A click on the
 readout opens **Go to frame** (a frame of the ruler in Advanced, a card in
 Simple). The clusters never touch: the transport slides into free space, then
-the words fold in order (Edit together's, Next copy's, Add frame's last); the
+the zoom slider folds and the words fold in order (Edit together's, Next copy's,
+Add frame's last; at the minimal width the view tools leave the header and Fit
+timeline leads Timeline ⋯); the
 header measures itself only on a resize or when its words change, never while
 playing. There is no persistent bottom command/status bar; extra view commands
 live in the ruler's context menu.
 
-The ruler's tools (the timeline zoom, **Fit timeline** and **Tall timeline**)
-sit in their own column at the ruler's right end: the Advanced grid, its
-playhead and its overlays end before the column, so no frame, number, playhead
-tab or onion end is ever under a tool. In Simple they sit in a band above the
-cards' top-right end. The tools belong to the timeline body, so they go with it
-when the low height tier opens the body as a sheet.
+The view tools (the timeline zoom, **Fit timeline** and **Tall timeline**) lead
+the header's end cluster, so the Advanced grid and Simple's cards take the
+island's whole width and no frame, number, playhead tab or onion end is ever
+under a tool.
 
-The layer list's header holds the title "Layers", **Focus selected layers**
-(from two layers, or while a focus is on), **New layer** (a split button: + makes
+The layer list's header holds the title "Layers", **Show all** (only while a
+layer focus is on; a layer's menu and the grid's menu focus layers), **New layer** (a split button: + makes
 a layer, in Draw a drawing layer, and the chevron the other kind; the new row
 opens its name for typing) and **Find layers** (Ctrl/Cmd+F from the grid; its
 field takes the title's place while it has focus or text). Layer ordering

@@ -18,8 +18,6 @@ const MIN_CARD = 72, MAX_CARD = 240, AUTO_MAX = 168;
 const CARD_GUTTER = 12, CARD_CHROME = 58;
 /** How far a card's duration bar starts from its edge (components/filmstrip.css: the card's and the bar's insets). */
 const BAR_INSET = 10;
-/** The band above the cards that holds the ruler tools (zoom, Fit, Tall timeline): --timeline-header in timeline.css. */
-export const TOOLS_BAND = 32;
 const el = (tag, parent, className, text) => {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -353,7 +351,7 @@ export class SheetFilmstrip {
     // The layer Simple edits.
     const layer = this.editor.getLayer(this.editor.activeLayerId);
     if (layer && this.layerName.textContent !== layer.name) this.layerName.textContent = layer.name;
-    const color = LAYER_COLORS[layer?.color] ?? 'var(--sheet-ink)';
+    const color = LAYER_COLORS[layer?.color] ?? 'var(--sheet-layer)';
     if (this.layerDot.style.getPropertyValue('--dot') !== color) this.layerDot.style.setProperty('--dot', color);
   }
   easingSettings(indices = this.selectedFrameIndices) {
@@ -574,10 +572,9 @@ export class SheetFilmstrip {
   get zoomRange() { return {min: MIN_CARD, max: MAX_CARD}; }
   fitCardsToHeight(){
     if(!this.autoCardWidth||!this.strip.clientHeight)return;
-    // The number line, the duration bar and padding take CARD_CHROME; thumbnails are 5:3 inside CARD_GUTTER. With the
-    // shared header the ruler tools take a band of TOOLS_BAND above the cards (timeline.css). Automatic growth stops at
-    // AUTO_MAX so a tall panel still shows a useful run of frames.
-    const fit=(this.strip.clientHeight-(this.header?TOOLS_BAND:0)-CARD_CHROME)*5/3+CARD_GUTTER;
+    // The number line, the duration bar and padding take CARD_CHROME; thumbnails are 5:3 inside CARD_GUTTER. Automatic
+    // growth stops at AUTO_MAX so a tall panel still shows a useful run of frames.
+    const fit=(this.strip.clientHeight-CARD_CHROME)*5/3+CARD_GUTTER;
     const width=Math.round(Math.max(MIN_CARD,Math.min(AUTO_MAX,fit)));
     if(Math.abs(width-this.cardWidth)<2)return;
     this.setZoom(width,0);
