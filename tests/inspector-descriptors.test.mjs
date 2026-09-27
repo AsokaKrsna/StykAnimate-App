@@ -304,7 +304,7 @@ test('a figure: its name and quick actions head Transform, Appearance and Arrang
   const editor = new Editor();
   editor.select(1);
   const options = {editor}, today = legacyInspectorView(options), now = inspectorView(options), descriptor = inspectorDescriptor(options);
-  assert.deepEqual(descriptor.target, {label: 'Figure', selection: 'figure', name: 'Walker', glyph: null,
+  assert.deepEqual(descriptor.target, {label: 'Figure', selection: 'figure', name: 'Walker', glyph: 'person',
     rename: {id: 'figure-name', description: 'Figure name', tip: 'Double-click to rename the figure definition'}});
   assert.deepEqual(descriptor.quick, {context: 'figure'});
   assert.deepEqual([...quickIds(descriptor)], ['mirror', 'layer-front', 'layer-back', 'duplicate', 'delete']);

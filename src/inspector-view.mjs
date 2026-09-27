@@ -381,7 +381,8 @@ function figureDescriptor(editor, figure, number, {range, scope, drawingSets, sp
   const joinLabel = parent ? 'Unjoin figure' : 'Join to figure';
   // In Build the figure's tiles add parts and fit it (its placement in the scene stays Animate's); the rig tool's
   // Drag mode is its option in the stage header.
-  return {kind, target: {name: figure.name || 'Figure', glyph: kind === 'text' ? 'text' : kind === 'image' ? 'image' : null, rename: figureRename},
+  // Every selection's title carries its kind's glyph (a figure's person, a text's T, an image's frame).
+  return {kind, target: {name: figure.name || 'Figure', glyph: kind === 'text' ? 'text' : kind === 'image' ? 'image' : 'person', rename: figureRename},
     quick: {context: builder ? 'build' : kind}, scope, sections: [
       range, drawingSets, ...spatial,
       {id: 'text', title: 'Text', hidden: kind !== 'text' && !figure.text_assets?.some(asset => asset.glyphs?.length), rows: [{kind: 'actions', items: [
@@ -449,7 +450,7 @@ function jointDescriptor(editor, figure, segment, number, {range, scope, drawing
   const own = builder ? partName(segment) : segment.name || `Joint ${segment.segment_id}`;
   const title = selected.size > 1 ? `${selected.size} ${builder ? 'parts' : 'segments'}` : editor.branchSelected ? `Branch from ${own}` : own;
   const staticSwitch = {kind: 'field-switch', id: 'static-joint', label: 'Static', checked: isStatic(segment), tip: 'Does not turn with its parent'};
-  return {kind: 'joint', target: {name: title, glyph: part ? 'link' : builder ? partGlyph(segment) : null}, quick: {context: builder ? 'part' : 'joint'}, scope, sections: [
+  return {kind: 'joint', target: {name: title, glyph: part ? 'link' : builder ? partGlyph(segment) : 'nodes'}, quick: {context: builder ? 'part' : 'joint'}, scope, sections: [
     range, drawingSets, ...spatial,
     {id: 'connector', title: `Connector ${segment.segment_id}`, place: 'titled', open: true, hidden: !part, rows: [
       {kind: 'segmented', mode: 'pressed', description: 'Connector properties', value: part, fill: true, options: [
