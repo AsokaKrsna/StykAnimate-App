@@ -1768,12 +1768,6 @@ dialog.styk-settings .styk-settings-row select[data-setting="locale"] {
   transform: rotate(180deg);
 }
 @media (max-width: 1200px) {
-  .titlebar {
-    padding: 0 10px;
-  }
-  #window-controls {
-    margin-right: -10px;
-  }
   .timeline-toolbar {
     gap: 5px;
     padding: 0 8px;
@@ -1794,12 +1788,6 @@ dialog.styk-settings .styk-settings-row select[data-setting="locale"] {
   }
 }
 @media (max-width: 960px) {
-  .brand > span {
-    display: none;
-  }
-  .title-divider {
-    margin: 0 4px;
-  }
   .canvas-toolbar {
     padding: 0 8px;
   }
@@ -1825,9 +1813,6 @@ dialog.styk-settings .styk-settings-row select[data-setting="locale"] {
   .tool-dock .tool {
     width: 29px;
     height: 32px;
-  }
-  #project-name {
-    max-width: 190px;
   }
 }
 @media (max-height: 720px) {

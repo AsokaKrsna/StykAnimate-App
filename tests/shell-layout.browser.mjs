@@ -14,11 +14,14 @@
  * Transitional (until M3b replaces the canvas toolbar with the 40px stage
  * header and hides the 24px status bar into the activity log): at 500×340
  * the timeline is its header and #viewport is 360 wide but only about 180
- * tall; every larger size keeps 360×200.
+ * tall; every larger size keeps 360×200. The stage floors are checked with
+ * the status bar's height given back to #viewport, and in Animate only
+ * (Draw's quick bar sits inside #viewport until M3b).
  */
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
+import {BAND_FOLDS, stageFloor} from '../src/shell/layout-solver.mjs';
 
 const base = process.env.STYK_URL || 'http://127.0.0.1:47911';
 const out = 'artifacts/shell-layout';
@@ -79,12 +82,45 @@ const reachable = selector => page.evaluate(selector => {
   const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
   return element === hit || element.contains(hit) ? true : `${selector}: covered by ${hit?.outerHTML.slice(0, 80)}`;
 }, selector);
+/**
+ * Controls that are drawn but cut off: outside the window, or clipped by an
+ * ancestor that does not scroll to them. A control inside a scroller that
+ * overflows (a list, the rail) is reachable by scrolling and not counted.
+ */
+const cutOff = () => page.evaluate(() => {
+  const found = [];
+  const clip = element => {
+    const box = element.getBoundingClientRect();
+    let left = box.left, top = box.top, right = box.right, bottom = box.bottom;
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent);
+      if (/(auto|scroll)/.test(style.overflowX + style.overflowY) && (parent.scrollHeight > parent.clientHeight + 1 || parent.scrollWidth > parent.clientWidth + 1)) return null;
+      const edge = parent.getBoundingClientRect();
+      if (style.overflowX !== 'visible') { left = Math.max(left, edge.left); right = Math.min(right, edge.right); }
+      if (style.overflowY !== 'visible') { top = Math.max(top, edge.top); bottom = Math.min(bottom, edge.bottom); }
+      if (style.position === 'fixed') break;
+    }
+    return {left: Math.max(left, 0), top: Math.max(top, 0), right: Math.min(right, innerWidth), bottom: Math.min(bottom, innerHeight)};
+  };
+  for (const element of document.querySelectorAll('button, input, select, [role="tab"], [role="menuitem"]')) {
+    if (!element.checkVisibility({visibilityProperty: true, opacityProperty: true})) continue;
+    const box = element.getBoundingClientRect();
+    if (box.width < 2 || box.height < 2) continue;
+    const shown = clip(element);
+    if (!shown) continue;
+    if (shown.right - shown.left < box.width - 1 || shown.bottom - shown.top < box.height - 1)
+      found.push(`${element.id ? '#' + element.id : element.getAttribute('aria-label') || element.dataset.action || element.textContent.trim().slice(0, 20)} ${Math.round(shown.right - shown.left)}x${Math.round(shown.bottom - shown.top)} of ${Math.round(box.width)}x${Math.round(box.height)}`);
+  }
+  return found;
+});
+const showWindowControls = () => page.evaluate(() => { document.getElementById('window-controls').hidden = false; });
 
 const SIZES = [
   // [width, height, tier, height tier]
-  [1440, 900, 'wide', 'tall'], [1280, 720, 'regular', 'tall'], [1100, 620, 'narrow', 'short'], [1024, 700, 'narrow', 'tall'],
-  [900, 700, 'narrow', 'tall'], [801, 600, 'narrow', 'short'], [800, 600, 'compact', 'short'], [640, 480, 'minimal', 'low'],
-  [1920, 520, 'wide', 'low'], [1000, 450, 'narrow', 'low'], [601, 441, 'minimal', 'low'], [500, 340, 'minimal', 'low'],
+  [1440, 900, 'wide', 'tall'], [1280, 720, 'regular', 'tall'], [1152, 720, 'narrow', 'tall'], [1100, 620, 'narrow', 'short'],
+  [1024, 700, 'narrow', 'tall'], [900, 700, 'narrow', 'tall'], [900, 640, 'narrow', 'short'], [801, 600, 'narrow', 'short'],
+  [800, 600, 'compact', 'short'], [661, 700, 'compact', 'tall'], [640, 480, 'minimal', 'low'], [1920, 520, 'wide', 'low'],
+  [1000, 450, 'narrow', 'low'], [601, 441, 'minimal', 'low'], [500, 340, 'minimal', 'low'],
 ];
 const TRANSITIONAL_SHORT = 360;   // below this height the status bar and the 44px canvas toolbar cost #viewport its 200px
 
@@ -109,6 +145,9 @@ try {
         const viewport = await rect('#viewport');
         const label = `${mode} ${width}x${height}: #viewport ${viewport.width}x${viewport.height}`;
         assert.ok(viewport.width >= 360, label);
+        // Build's Structure stays docked (232, then 200) wherever #viewport keeps 360px, else it is a strip.
+        if (mode === 'rig' && (width >= 900 || width <= 801))
+          assert.equal(await page.evaluate(() => document.documentElement.dataset.left), width >= 900 ? 'docked' : 'strip', `${label}: Structure`);
         assert.ok(viewport.height >= (height < TRANSITIONAL_SHORT ? 180 : 200), label);
         const page_ = await page.evaluate(() => {
           window.scrollTo(0, 1);
@@ -121,6 +160,24 @@ try {
       await resize(1440, 900);
       if (mode === 'rig') await leaveBuild();
     }
+  });
+
+  await step('the artboard fits #viewport with the solver’s insets and reaches its floor once the status bar is given back', async () => {
+    for (const [width, height] of SIZES) {
+      await resize(width, height);
+      const fit = await page.evaluate(() => {
+        const viewport = document.getElementById('viewport').getBoundingClientRect();
+        const inset = styk.workspace.stageInsets, report = styk.editor.report;
+        const footer = document.querySelector('.statusbar').offsetHeight;
+        const zoom = extra => Math.min((viewport.width - inset.left - inset.right) / report.canvas_width,
+          (viewport.height + extra - inset.top - inset.bottom) / report.canvas_height, 2);
+        return {scale: styk.state.view.scale, expected: zoom(0), floor: zoom(footer)};
+      });
+      const label = `${width}x${height}: ${JSON.stringify(fit)}`;
+      assert.ok(Math.abs(fit.scale - fit.expected) < 0.005, `${label}: fitted with the solver's insets`);
+      assert.ok(fit.floor * 100 >= stageFloor(width, height) - 0.5, `${label}: at least ${stageFloor(width, height)}%`);
+    }
+    await resize(1440, 900);
   });
 
   await step('no ancestor of #viewport transforms, zooms, filters or clips it, and #viewport is a plain rectangle', async () => {
@@ -155,6 +212,60 @@ try {
       const band = await page.evaluate(() => { const band = document.querySelector('.titlebar'); return band.scrollWidth <= band.clientWidth; });
       assert.ok(band, `${width}x${height}: the band fits`);
     }
+  });
+
+  await step('with the desktop window controls the band fits and nothing is cut off in Animate, Draw and Build', async () => {
+    await showWindowControls();
+    for (const mode of ['animate', 'draw', 'rig']) {
+      for (const [width, height] of SIZES) {
+        await resize(width, height);
+        if (await page.evaluate(() => document.querySelector('.workspace').dataset.mode) !== mode) await workspace(mode);
+        const label = `${mode} ${width}x${height}`;
+        const band = await page.evaluate(() => { const band = document.querySelector('.titlebar'); return {fits: band.scrollWidth <= band.clientWidth, steps: band.dataset.band ?? ''}; });
+        assert.ok(band.fits, `${label}: the band fits (${band.steps})`);
+        for (const action of ['minimize', 'maximize', 'close']) assert.equal(await reachable(`#window-controls [data-action="${action}"]`), true, label);
+        assert.deepEqual(await cutOff(), [], `${label}: no control is cut off`);
+      }
+      await resize(1440, 900);
+      if (mode === 'rig') await leaveBuild();
+    }
+    await workspace('animate');
+  });
+
+  await step('the band folds its words in order, and the menubar folds into the mark only at the minimal tier', async () => {
+    const read = () => page.evaluate(() => ({
+      steps: (document.querySelector('.titlebar').dataset.band ?? '').split(' ').filter(Boolean),
+      menubar: document.querySelector('.app-menubar').checkVisibility(),
+      save: document.querySelector('.titlebar [data-action="save"]').checkVisibility(),
+      tier: document.documentElement.dataset.tier,
+    }));
+    await resize(1440, 900);
+    assert.deepEqual(await read(), {steps: [], menubar: true, save: true, tier: 'wide'}, 'a wide band folds nothing: Save stays beside Export');
+    let previous = [];
+    for (const width of [1280, 1100, 1024, 900, 801, 720, 661]) {
+      await resize(width, 700);
+      const band = await read();
+      assert.equal(band.menubar, true, `${width}: the menubar stays docked while the band fits`);
+      assert.ok(!band.steps.includes('menus'), `${width}: ${band.steps}`);
+      const order = band.steps.map(item => BAND_FOLDS.indexOf(item));
+      assert.deepEqual(order, [...order].sort((a, b) => a - b), `${width}: the fold order (${band.steps})`);
+      assert.ok(previous.every(item => band.steps.includes(item)), `${width}: folds only accumulate (${previous} then ${band.steps})`);
+      previous = band.steps;
+    }
+    await resize(640, 480);
+    const minimal = await read();
+    assert.equal(minimal.tier, 'minimal');
+    assert.equal(minimal.menubar, false, 'the menubar folds into the mark');
+    assert.equal(minimal.steps[0], 'menus');
+    await page.click('.brand');
+    for (const name of ['File', 'Edit', 'View', 'Animation', 'Help'])
+      assert.equal(await page.getByRole('menuitem', {name, exact: true}).getAttribute('aria-haspopup'), 'menu', `the mark's menu lists ${name}`);
+    await page.getByRole('menuitem', {name: 'Animation', exact: true}).click();
+    await page.getByRole('menuitemcheckbox', {name: 'Audio'}).click();
+    assert.equal(await page.locator('#timeline-audio').getAttribute('aria-expanded'), 'true', 'a folded menu runs its command (the header folds Audio here)');
+    await page.evaluate(() => document.getElementById('timeline-audio').click());
+    await resize(1440, 900);
+    assert.deepEqual((await read()).steps, []);
   });
 
   await step('the stage header row and the inspector tabs share one line', async () => {
@@ -388,6 +499,10 @@ try {
     }
     await resize(1000, 450);
     assert.equal((await rect('.timeline-panel')).height, 40);
+    assert.deepEqual(await page.evaluate(() => {
+      const body = document.getElementById('timeline');
+      return {display: getComputedStyle(body).display, shown: [...body.querySelectorAll('button, input, [tabindex="0"]')].some(item => item.checkVisibility())};
+    }), {display: 'none', shown: false}, 'the folded body takes no room and no focus');
     const before = await rect('#viewport');
     const opener = page.getByRole('button', {name: 'Timeline…'});
     await opener.click();

@@ -1,0 +1,45 @@
+/* The top band's folds (architecture §3.11.4, experience §1.8). The dock
+ * host writes the solver's fold steps to the band's own `data-band`, in the
+ * band's fold order; src/shell/topbar.mjs measures the band's width after
+ * each step, so the rules here must not depend on the window's size. Words
+ * fold before controls and the menubar folds into the mark last (`menus`,
+ * the minimal tier). A folded word stays the control's accessible name.
+ * M3b rebuilds the band's content on these steps. */
+@layer layout {
+  .titlebar {
+    --band-pad: 14px;
+    min-inline-size: 0; column-gap: var(--space-2); padding-inline: var(--band-pad); overflow: hidden;
+  }
+  /* The window controls sit flush with the window's edge and fill the band's height above its hairline. */
+  .titlebar > :where(#window-controls) { align-self: stretch; margin-inline-end: calc(-1 * var(--band-pad)); }
+  .titlebar > :where(#window-controls) > button { block-size: auto; }
+  .titlebar :where(.band-label) { white-space: nowrap; }
+  .titlebar :where(#project-name) { max-inline-size: 220px; }
+
+  /* The document state's words fold to the document's dot. */
+  .titlebar[data-band~="state"] > :where(#save-state),
+  .titlebar[data-band~="savelabel"] > :where([data-action="save"]) > :where(.band-label),
+  .titlebar[data-band~="dot"] :where(#project-name),
+  .titlebar[data-band~="primary"] > :where([data-action="export"]) > :where(.band-label) {
+    position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  /* Tighter spacing: the band's gaps and the menubar's items. */
+  .titlebar[data-band~="tight"] { --band-pad: var(--space-2); column-gap: var(--space-1); }
+  .titlebar[data-band~="tight"] > :where(.app-menubar) > button { padding-inline: 5px; }
+  .titlebar[data-band~="tight"] > :where(.title-divider) { margin-inline: var(--space-1); }
+  /* The document name truncates to 12, then 8 characters (with its ellipsis; Rename… shows the whole name). */
+  .titlebar[data-band~="name"] :where(#project-name) { max-inline-size: 12ch; }
+  .titlebar[data-band~="name8"] :where(#project-name) { max-inline-size: 8ch; }
+  /* Save shows its glyph, then folds into File (Ctrl+S). */
+  .titlebar[data-band~="savelabel"] > :where([data-action="save"]) { padding-inline: 0; inline-size: var(--control-lg); justify-content: center; }
+  .titlebar[data-band~="save"] > :where([data-action="save"]) { display: none; }
+  .titlebar[data-band~="winctl"] > :where(#window-controls) > button { inline-size: 36px; }
+  .titlebar[data-band~="dot"] > :where(.title-divider) { display: none; }
+  .titlebar[data-band~="dot"] > :where(.document-tab) { min-inline-size: 0; }
+  /* Only where nothing else is left: Export's word. */
+  .titlebar[data-band~="primary"] > :where([data-action="export"]) { padding-inline: var(--space-2); }
+  .titlebar[data-band~="primary"] > :where([data-action="export"]) > :where(.chevron) { display: none; }
+  /* Minimal: the menubar folds into the mark, whose menu lists File, Edit, View, Editor, Animation and Help. */
+  .titlebar[data-band~="menus"] > :where(.app-menubar, .title-divider) { display: none; }
+  .titlebar[data-band~="menus"] > :where(.brand) > :where(.chevron) { display: inline-flex; }
+}

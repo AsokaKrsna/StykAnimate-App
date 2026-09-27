@@ -21,7 +21,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Seek, scrub and zoom large Pivot animations more smoothly. Frames are prepared faster, and detailed figures with overlapping fill shapes now draw as sharp vectors instead of textures, so zooming no longer pauses and uses far less graphics memory.
 - Refresh the editor with the StykAnimate typeface and colours. The typeface now ships with the app, so text looks the same on every computer, including Greek, Cyrillic and Vietnamese, and main buttons, highlighted tools, small blue labels and brush preset previews are easier to see in both light and dark mode.
 - Hover or focus a button to see its name and keyboard shortcut in one quick tooltip. It shows the shortcuts you set in Settings.
-- Get a larger stage in a calmer layout: the tools sit in their own column, and the stage, the Properties panel and the timeline are separate panels that keep their place in every workspace. In small or short windows the Properties panel, Build's figure structure and the timeline open over the stage when you need them instead of squeezing the canvas, and each workspace remembers its own panel layout.
+- Get a larger stage in a calmer layout: the tools sit in their own column, and the stage, the Properties panel and the timeline are separate panels that keep their place in every workspace. In small or short windows the Properties panel, Build's figure structure and the timeline open over the stage when you need them instead of squeezing the canvas, the top bar shortens its labels before anything is hidden (in the narrowest windows the menus move into the StykAnimate menu), so nothing is cut off at the window's edge, and each workspace remembers its own panel layout.
 
 ### Fixed
 

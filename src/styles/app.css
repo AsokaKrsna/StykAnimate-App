@@ -46,6 +46,7 @@
 @import url("./layout/shell.css");
 @import url("./layout/workspace.css");
 @import url("./layout/dock.css");
+@import url("./layout/topbar.css");
 @import url("./components/island.css");
 @import url("./components/tabs.css");
 @import url("./components/strip.css");

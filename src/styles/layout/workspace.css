@@ -54,12 +54,15 @@
   }
   .shell-bottom > .timeline-toolbar { block-size: var(--control-2xl); min-block-size: var(--control-2xl); flex: none; }
   :where(.shell-bottom[data-state="strip"]) > :not(.timeline-toolbar, .shell-timeline-body) { display: none; }
+  /* The folded body takes no room and no focus until Timeline… opens it. */
+  .shell-timeline-body:where([popover]:not(:popover-open)) { display: none; }
   .shell-bottom[data-state="strip"] > :where(.timeline-toolbar) { border-block-end: 0; }
   /* Tall timeline means nothing while the timeline is folded; at the minimal
-   * width First frame and Loop fold into the Animation menu, so Timeline…,
-   * Play and Onion stay on screen (experience §1.8). */
+   * width First frame, Loop, Audio and Edit selected frames fold into the
+   * Animation menu, so Timeline…, Play and Onion stay on screen (experience
+   * §1.8; Timeline ⋯ takes them in M5). */
   :where(.shell-bottom[data-state="strip"]) :where(#expand-timeline) { display: none; }
-  :where(:root[data-tier="minimal"]) .timeline-toolbar :where([data-action="first-frame"], #loop-button) { display: none; }
+  :where(:root[data-tier="minimal"]) .timeline-toolbar :where([data-action="first-frame"], #loop-button, #timeline-audio, #range-edit) { display: none; }
   .shell-timeline-body:popover-open {
     position: fixed; inset: auto var(--space-2) var(--sheet-bottom, var(--space-2)) var(--space-2);
     inline-size: auto; block-size: var(--sheet-block, 320px); margin: 0; padding: 0; border: 0;

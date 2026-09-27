@@ -6,10 +6,12 @@
  *   IPC on desktop, localStorage in the browser), loaded before the first
  *   commit. The solver fits it into the `#app` box; the host applies the
  *   solution in one synchronous commit: `:root[data-tier|data-height|
- *   data-band|data-left]`, the workspace grid (CSS custom properties on
- *   `.workspace`), the islands, tabs, strips and sheets of each side, the
- *   floating islands, the timeline's state and the splitters. Nothing
- *   animates its size; resizes and splitter drags commit once per frame.
+ *   data-left]`, the band's fold steps (`.titlebar[data-band]`, from the
+ *   band's widths that topbar.mjs measures and the solver reads as
+ *   `bandMin`), the workspace grid (CSS custom properties on `.workspace`),
+ *   the islands, tabs, strips and sheets of each side, the floating
+ *   islands, the timeline's state and the splitters. Nothing animates its
+ *   size; resizes and splitter drags commit once per frame.
  * - Panel roots (`#properties-panel`, `#vfx-panel`, `#user-library`,
  *   `#builder-outliner`, `.timeline-panel`) are moved with append() and never
  *   re-created; they move only when their place changes, so scroll positions
@@ -37,6 +39,7 @@ import {
   savePreset, setSharedSize, toggleFocus,
 } from './layout-schema.mjs';
 import {SHELL_METRICS, solveLayout} from './layout-solver.mjs';
+import {MENUBAR_FOLD, watchBand} from './topbar.mjs';
 
 const SIDES = Object.freeze(['left', 'right']);
 /** Panels with their own head (Structure's name and count): no tab row while alone in an island. */
@@ -127,7 +130,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
     const below = footer && !footer.hidden ? footer.offsetHeight : 0;
     const head = viewport?.offsetParent === stage ? viewport.offsetTop : SHELL_METRICS.stageHead;
     return {width: app.clientWidth, height: app.clientHeight, mode: mode(), platform, footer: below,
-      metrics: {...SHELL_METRICS, band: chrome, stageHead: head}};
+      bandMin: bandWatch?.current ?? 0, metrics: {...SHELL_METRICS, band: chrome, stageHead: head}};
   }
 
   /** Solves the stored layout (or a splitter's transient size) and applies it now. */
@@ -155,7 +158,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
   function apply(s) {
     root.dataset.tier = s.tier;
     root.dataset.height = s.height;
-    if (s.band.length) root.dataset.band = s.band.join(' '); else delete root.dataset.band;
+    applyBand(s);
     root.dataset.left = s.regions.left.state;
     workspace.dataset.rail = s.rail.side;
     workspace.dataset.bottomSpan = s.regions.bottom.span;
@@ -167,6 +170,14 @@ export function createDockHost({document: doc = globalThis.document, window: win
     applyBottom(s);
     applyControls(s);
     applyVisibility(s);
+  }
+
+  /** The band's fold steps, and at the minimal tier the menubar folded into the mark. */
+  function applyBand(s) {
+    if (!band) return;
+    const steps = (s.tier === 'minimal' ? [MENUBAR_FOLD, ...s.band] : s.band).join(' ');
+    if ((band.getAttribute('data-band') ?? '') === steps) return;
+    if (steps) band.setAttribute('data-band', steps); else band.removeAttribute('data-band');
   }
 
   function applyGrid(s) {
@@ -388,7 +399,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
     if (folded && !body.hasAttribute('popover')) body.setAttribute('popover', 'manual');
     if (!folded && body.hasAttribute('popover')) body.removeAttribute('popover');
     if (bodyButton) {
-      bodyButton.hidden = !folded;
+      if (bodyButton.hidden !== !folded) bodyButton.hidden = !folded;
       bodyButton.setAttribute('aria-expanded', String(bodyOpen));
     }
     if (bodyOpen) placeBody();
@@ -397,7 +408,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
   function applyControls(s) {
     if (sheetButton) {
       const right = s.regions.right;
-      sheetButton.hidden = right.state !== 'sheet';
+      if (sheetButton.hidden !== (right.state !== 'sheet')) sheetButton.hidden = right.state !== 'sheet';
       sheetButton.setAttribute('aria-expanded', String(sheets.right.open));
       sheetButton.setAttribute('aria-controls', sheetFor('right').id);
     }
@@ -870,6 +881,8 @@ export function createDockHost({document: doc = globalThis.document, window: win
 
   const resizeObserver = new win.ResizeObserver(() => commit());
   resizeObserver.observe(app);
+  // The band's widths change with its content (a name, a language, a session), never with the window.
+  const bandWatch = band ? watchBand(band, {window: win, document: doc, onChange: () => schedule()}) : null;
   const modeObserver = new win.MutationObserver(modeChanged);
   modeObserver.observe(workspace, {attributes: true, attributeFilter: ['data-mode']});
   registry.on('define', () => schedule(), {signal});
@@ -883,6 +896,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
     abort.abort();
     resizeObserver.disconnect();
     modeObserver.disconnect();
+    bandWatch?.stop();
     if (frame) win.cancelAnimationFrame(frame);
     for (const splitter of Object.values(splitters)) splitter.el.remove();
     floatHost?.remove();

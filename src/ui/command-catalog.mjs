@@ -160,6 +160,7 @@ group('animation', [
   ['toggle-loop', 'Loop playback', 'loop', {toggle: true, keywords: ['repeat']}],
   ['toggle-onion', 'Onion skin', 'onion', {toggle: true, keywords: ['ghost', 'previous frames']}],
   ['toggle-range-edit', 'Edit selected frames', 'frame', {toggle: true, keywords: ['range', 'apply to frames']}],
+  ['toggle-audio', 'Audio', 'music', {toggle: true, keywords: ['sound', 'music', 'track']}],
   ['timeline-layer-up', 'Select layer above', 'up', internal],
   ['timeline-layer-down', 'Select layer below', 'down', internal],
   ['previous-exposure', 'Previous exposure', 'previous', internal],

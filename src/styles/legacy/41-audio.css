@@ -1,4 +1,4 @@
-.has-audio-timeline{display:flex!important;flex-direction:column;min-height:0;overflow:hidden}
+.has-audio-timeline{display:flex;flex-direction:column;min-height:0;overflow:hidden}
 .has-audio-timeline>.layer-timeline{flex:1;min-height:110px;height:auto}
 .has-audio-timeline>.sheet-filmstrip{flex:1;min-height:180px;height:auto}
 .has-audio-timeline.audio-tab-open>.sheet-filmstrip{position:absolute;left:0;right:0;top:0;height:180px;visibility:hidden;pointer-events:none}

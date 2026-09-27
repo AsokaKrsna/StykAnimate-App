@@ -214,15 +214,12 @@ dialog::backdrop { background: var(--theme-backdrop, #18273c55); backdrop-filter
   .canvas-toolbar { padding: 0 10px; gap: 8px; }
   .canvas-toolbar .crumb { display: none; }
   .workspace-switch button { padding: 0 8px; }
-  .save-state { display: none; }
   .context-strip { gap: 8px; padding: 0 10px; }
   .context-strip #leave-rig { font-size: 10px; }
 }
 @media (max-width: 760px) {
   .timeline-toolbar { gap: 5px; padding: 0 8px; }
   .timeline-title, .timeline-toolbar .fps-control { display: none; }
-  .titlebar { padding: 0 8px; gap: 4px; }
-  #project-name { max-width: 110px; }
   .insert-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .export-category { flex-wrap: wrap; }
   .export-category button { flex-basis: 40%; }
@@ -300,14 +297,6 @@ dialog::backdrop { background: var(--theme-backdrop, #18273c55); backdrop-filter
 .app-menubar > button { color: var(--theme-text, #333); }
 .app-menubar > button:hover, .app-menubar > button[aria-expanded=true] { color: var(--theme-text, #222); background: var(--theme-hover, #ededed); }
 #menu { max-height: calc(100dvh - 65px); overflow-y: auto; border: 1px solid var(--theme-border, #cbd5e1); }
-@media (max-width: 1150px) {
-  .titlebar > .button.subtle, .titlebar .save-state { display: none; }
-  .app-menubar > button { padding-inline: 7px; }
-}
-@media (max-width: 850px) {
-  .titlebar .document-tab, .titlebar .title-divider { display: none; }
-  .app-menubar > button { padding-inline: 6px; }
-}
 #inspector .field-grid > .property-row[data-property-row="segment_gradient_opacity"] { grid-column: 1 / -1; }
 
 /* Camera workspace: live output, readable controls, and shared blue gizmo accents. */
@@ -370,13 +359,10 @@ dialog::backdrop { background: var(--theme-backdrop, #18273c55); backdrop-filter
 #menu .menu-item[data-action="delete"] { color: var(--theme-danger-action, #ba4545); }
 #menu .menu-separator { margin: 5px 7px; }
 @media (max-width: 1050px) {
-  .titlebar { gap: 4px; padding-inline: 8px; }
-  .app-menubar > button { padding-inline: 6px; }
   .canvas-toolbar .crumb { display: none; }
   .viewport-help { display: none; }
 }
 @media (max-width: 760px) {
-  .titlebar .title-divider, .titlebar .button[data-action="save"] { display: none; }
   .canvas-view-controls { right: 8px; bottom: 8px; }
   .workspace-switch { gap: 10px; }
 }

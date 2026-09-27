@@ -4209,20 +4209,45 @@ const menuOptions = {
   t: (key) => appLocalization?.t(key),
   topInset: menuTopInset,
 };
+/**
+ * An application menu's rows. At the minimal tier the timeline header folds
+ * Audio and Edit selected frames (as it folds First frame and Loop), so the
+ * Animation menu lists them there.
+ */
+function appMenuItems(name) {
+  const items = menuItems(applicationMenuItems(name, editor, desktop));
+  if (name !== "animation" || workspaceLayout?.tier !== "minimal") return items;
+  const audio = $("timeline-audio"), range = $("range-edit");
+  const folded = [
+    { command: "toggle-audio", icon: "music", label: "Audio", checked: audio?.getAttribute("aria-expanded") === "true", hidden: !audio },
+    { command: "toggle-range-edit", icon: "frame", label: "Edit selected frames", checked: range?.getAttribute("aria-pressed") === "true",
+      disabled: Boolean(range?.disabled), hidden: !range || builderMode?.active || drawingController?.active },
+  ];
+  items.splice(items.findIndex((item) => item?.command === "toggle-loop") + 1, 0, ...folded);
+  return items;
+}
 installMenuBar(document.querySelector(".app-menubar"), {
   ...menuOptions,
   menus: Object.fromEntries(
-    [...document.querySelectorAll("[data-app-menu]")].map((button) => [
-      button.dataset.appMenu,
-      () => menuItems(applicationMenuItems(button.dataset.appMenu, editor, desktop)),
-    ]),
+    [...document.querySelectorAll("[data-app-menu]")].map((button) => [button.dataset.appMenu, () => appMenuItems(button.dataset.appMenu)]),
   ),
 });
 function closeMenu(reason = "close") {
   menuFor(menuHost)?.close(reason, { restore: false });
 }
+/** At the minimal tier the menubar folds into the mark: its menus lead the StykAnimate menu as submenus. */
+function foldedMenubarItems() {
+  const band = document.querySelector(".titlebar");
+  if (!band?.dataset.band?.split(" ").includes("menus")) return [];
+  const menus = [...band.querySelectorAll(".app-menubar [data-app-menu]")].map((button) => ({
+    label: button.textContent.trim(),
+    submenu: appMenuItems(button.dataset.appMenu),
+  }));
+  return [...menus, null];
+}
 function showMenu(anchor) {
   const items = [
+    ...foldedMenubarItems(),
     // The palette's row shows its first key only (Ctrl+P), from the registry.
     { command: "command-palette", icon: "search", label: commands.label("command-palette"), labelKey: "overlays.palette.open",
       shortcut: commands.shortcut("command-palette"), keyshortcuts: commands.keyShortcuts("command-palette") },
@@ -4879,6 +4904,8 @@ const actions = {
     status(state.motionPaths ? "Motion paths on" : "Motion paths off");
     requestRender();
   },
+  // The timeline header's Audio button (the Animation menu's row where the header folds it).
+  "toggle-audio": () => $("timeline-audio")?.click(),
   "toggle-loop": () => {
     editorSettings.commit({ loopPlayback: !state.loop });
     $("loop-button").classList.toggle("active", state.loop);
