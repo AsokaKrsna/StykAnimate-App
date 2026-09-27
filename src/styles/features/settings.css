@@ -1,0 +1,110 @@
+/* Settings (settings.mjs, hotkey-settings.mjs) on the kit (experience.md
+ * revision 5). legacy/99-settings.css keeps the layout and its narrow-window
+ * rules; this sheet changes only the look, so every tab reads the same:
+ *
+ *   a section     a glyph and a title in the section type over its rows; a
+ *                 hairline between sections (Canvas's cards drop their frames)
+ *   a row         its words in the UI type, the control at the end; a hint
+ *                 below in the small grey type
+ *   controls      the kit's switch, selects and number fields as sunken wells
+ *                 with a chevron, soft pill buttons
+ *   the tabs      rows with a glyph; the open one on the accent tint
+ *   shortcuts     each binding a quiet chip, its × and the + and reset glyphs
+ *                 as small ghost buttons */
+@layer features {
+  .styk-settings { font: var(--type-ui); color: var(--text-1); }
+  .styk-settings-head { border-block-end-color: var(--line-1); }
+  .styk-settings-head > h2 { font: var(--type-title); letter-spacing: var(--tracking-title); color: var(--text-1); }
+  .styk-settings-head > button { display: inline-grid; place-items: center; border: 0; background: transparent; color: var(--text-2); }
+  .styk-settings-head > button:where(:hover) { background: var(--surface-hover); color: var(--text-1); }
+
+  /* ---- The tabs ---- */
+  .styk-settings-sidebar { border-color: var(--line-1); background: var(--surface-sunken); }
+  .styk-settings-sidebar button { border: 0; color: var(--text-2); font: var(--type-ui); }
+  .styk-settings-sidebar button > svg { inline-size: var(--icon-md); block-size: var(--icon-md); color: var(--text-3); }
+  .styk-settings-sidebar button:where(:hover) { background: var(--surface-hover); color: var(--text-1); }
+  .styk-settings-tabs button:where([aria-selected="true"]) { background: var(--accent-soft); color: var(--accent-text-strong); font-weight: var(--weight-semibold); }
+  .styk-settings-tabs button:where([aria-selected="true"]) > svg { color: currentColor; }
+  .styk-settings-sidebar button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+  .styk-settings-actions { border-color: var(--line-1); }
+
+  /* ---- Sections: one pattern in every tab ---- */
+  .styk-settings-content h3 { gap: var(--space-2); margin-block-end: var(--space-2); font: var(--type-section); color: var(--text-1); }
+  .styk-settings-content h3 > svg { inline-size: var(--icon-md); block-size: var(--icon-md); color: var(--text-3); }
+  .settings-canvas { gap: 0; }
+  .settings-card { padding: 0; border: 0; border-radius: 0; background: none; }
+  :is(.styk-settings-group, .settings-card) + :is(.styk-settings-group, .settings-card) {
+    margin-block-start: var(--space-5); padding-block-start: var(--space-5); border: 0; box-shadow: inset 0 1px 0 var(--line-1);
+  }
+  .settings-control-grid { grid-template-columns: minmax(0, 1fr); }
+  .styk-settings-row, .settings-card .styk-settings-row { gap: var(--space-4); min-block-size: var(--control-lg); margin: 0; font: var(--type-ui); color: var(--text-1); }
+  .styk-settings-note { margin: 0 0 var(--space-2); font: var(--type-small); color: var(--text-3); }
+  .settings-renderer > label { font: var(--type-section); color: var(--text-1); }
+  .settings-renderer > label > svg { color: var(--text-3); }
+  .settings-handle-size { margin-block-start: var(--space-2); padding-block-start: var(--space-2); border-color: var(--line-1); }
+  .styk-settings-preview { border-radius: var(--radius-md); background: var(--surface-sunken); }
+  .styk-settings-error { border-radius: var(--radius-md); background: var(--danger-soft); color: var(--danger-text); font: var(--type-small); }
+
+  /* ---- Controls ---- */
+  /* The switch: the kit's 32×18 (components/switch.css). */
+  .styk-settings-row input[type="checkbox"] {
+    inline-size: 32px; block-size: 18px; border: 0; border-radius: var(--radius-pill);
+    background: var(--surface-sunken); box-shadow: inset 0 0 0 1.5px var(--line-control); cursor: default;
+    transition: background-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast);
+  }
+  .styk-settings-row input[type="checkbox"]::before {
+    inset-block-start: 4px; inset-inline-start: 4px; inline-size: 10px; block-size: 10px; background: var(--switch-knob-off);
+    transition: translate var(--dur-base) var(--ease-out), inline-size var(--dur-base) var(--ease-out), block-size var(--dur-base) var(--ease-out), inset var(--dur-base) var(--ease-out);
+  }
+  .styk-settings-row input[type="checkbox"]:checked { background: var(--accent-strong); box-shadow: none; }
+  .styk-settings-row input[type="checkbox"]:checked::before { inset-block-start: 2px; inset-inline-start: 2px; inline-size: 14px; block-size: 14px; translate: 14px 0; background: var(--switch-knob-on); }
+  .styk-settings-row input[type="checkbox"]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  /* Selects and numbers: sunken wells, a chevron for a select. */
+  :where(.styk-settings) :is(.styk-settings-row, .settings-renderer) select,
+  :where(.styk-settings) .styk-settings-row input[type="number"] {
+    block-size: var(--control-md); border: 0; border-radius: var(--radius-md); background-color: var(--surface-sunken);
+    color: var(--text-1); font: var(--type-ui); box-shadow: none;
+  }
+  :where(.styk-settings) :is(.styk-settings-row, .settings-renderer) select {
+    appearance: none; padding: 0 var(--space-6) 0 var(--space-2-5);
+    background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%), linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+    background-position: calc(100% - 15px) 55%, calc(100% - 11px) 55%; background-size: 4px 4px; background-repeat: no-repeat;
+  }
+  :where(.styk-settings) :is(.styk-settings-row, .settings-renderer) select:where(:hover) { box-shadow: inset 0 0 0 1px var(--line-3); }
+  :where(.styk-settings) :is(select, input[type="number"]):focus-visible { outline: none; background-color: var(--surface); box-shadow: inset 0 0 0 1.5px var(--accent-line), 0 0 0 3px var(--focus-halo); }
+  :where(.styk-settings) input[type="range"] { accent-color: var(--slider-fill); }
+  :where(.styk-settings) input[type="color"] { border: 0; border-radius: var(--radius-sm); background: var(--surface-sunken); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .styk-settings-number > small { font: var(--type-small); color: var(--text-3); }
+  /* UI scale: rows in the section, not a card. */
+  .styk-settings-scale { margin-block-start: var(--space-1); padding: 0; border: 0; background: none; }
+  .styk-settings-scale output { font: var(--type-value); color: var(--text-1); }
+  /* Buttons: the kit's soft pill. */
+  :where(.styk-settings) .styk-settings-reset {
+    display: inline-flex; align-items: center; gap: var(--space-1-5); block-size: var(--control-md); padding: 0 var(--space-3);
+    border: 0; border-radius: var(--radius-pill); background: var(--surface-well); color: var(--text-1); font: var(--type-button);
+  }
+  :where(.styk-settings) .styk-settings-reset:where(:hover:not(:disabled)) { background: var(--surface-pressed); }
+  :where(.styk-settings) .styk-settings-reset:disabled { opacity: 0.42; }
+  :where(.styk-settings-scale) .styk-settings-reset { inline-size: var(--control-md); padding: 0; justify-content: center; background: transparent; }
+  /* The timeline choice: the kit's choice cards. */
+  .styk-settings-mode { border-color: var(--line-2); border-radius: var(--radius-lg); }
+  .styk-settings-mode:has(input:checked) { border-color: var(--accent-line); background: var(--accent-soft); }
+  .styk-settings-mode > strong { font: var(--type-ui-strong); }
+
+  /* ---- Shortcuts ---- */
+  .hotkey-toolbar { border-color: var(--line-1); background: var(--surface-raised); }
+  .hotkey-search { block-size: var(--control-md); border: 0; border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--text-3); }
+  .hotkey-search:focus-within { background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--accent-line), 0 0 0 3px var(--focus-halo); }
+  .hotkey-search > input { font: var(--type-ui); color: var(--text-1); outline: none; }
+  .hotkey-row { border-color: var(--line-1); font: var(--type-ui); }
+  .hotkey-row small { font: var(--type-small); color: var(--text-3); }
+  .hotkey-binding { border: 0; border-radius: var(--radius-sm); background: var(--surface-sunken); }
+  .hotkey-binding > button { min-block-size: var(--control-sm); border: 0; background: transparent; color: var(--text-1); font: var(--type-small-strong); font-variant-numeric: tabular-nums; }
+  .hotkey-binding > button + button { border: 0; color: var(--text-3); }
+  .hotkey-binding > button:where(:hover) { background: var(--surface-hover); }
+  .hotkey-bindings > button { min-block-size: var(--control-sm); min-inline-size: var(--control-sm); border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-2); }
+  .hotkey-bindings > button:where(:hover) { background: var(--surface-hover); color: var(--text-1); }
+  .hotkey-status { font: var(--type-small); color: var(--text-2); }
+  .settings-pen-gestures dl > div { border-color: var(--line-1); font: var(--type-ui); }
+  .settings-pen-gestures dd { color: var(--text-3); }
+}
