@@ -45,4 +45,30 @@
   .performance-activity > li { min-inline-size: 0; overflow-wrap: anywhere; }
   .performance-activity time { margin-inline-end: var(--space-1); color: var(--text-3); font-variant-numeric: tabular-nums; }
   .performance-activity > [data-tone="error"] { color: var(--danger-text); }
+  /* ---- Privacy (privacy-ui.mjs) and What's new (support-ui.mjs), the desktop app's first-run dialogs ---- */
+  /* The title takes the focus for screen readers only: it is not a control, so it shows no ring. */
+  .styk-privacy h2:focus { outline: none; }
+  /* Accept and Reject stay equal: two soft pills of one size. */
+  .styk-privacy .privacy-choice {
+    block-size: var(--control-lg); border: 0; border-radius: var(--radius-pill); background: var(--surface-well);
+    color: var(--text-1); font: var(--type-button); box-shadow: none;
+  }
+  .styk-privacy .privacy-choice:where(:hover) { background: var(--surface-pressed); }
+  .styk-privacy .privacy-choice:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .styk-privacy .privacy-choice-note { font: var(--type-small); color: var(--text-3); }
+  .release-splash .splash-release-controls select {
+    appearance: none; block-size: var(--control-md); padding: 0 var(--space-6) 0 var(--space-2-5); border: 0; border-radius: var(--radius-md);
+    background-color: var(--surface-sunken); color: var(--text-1); font: var(--type-ui);
+    background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%), linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+    background-position: calc(100% - 15px) 55%, calc(100% - 11px) 55%; background-size: 4px 4px; background-repeat: no-repeat;
+  }
+  .release-splash .splash-release-controls select:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--accent-line), 0 0 0 3px var(--focus-halo); }
+  /* Start animating is the dialog's one main action: the primary pill. */
+  .release-splash .splash-footer .button {
+    display: inline-flex; align-items: center; block-size: var(--control-lg); min-block-size: 0; padding: 0 var(--space-4); border: 0;
+    border-radius: var(--radius-pill); background: var(--primary); color: var(--on-primary); font: var(--type-button); box-shadow: var(--primary-shadow);
+  }
+  .release-splash .splash-footer .button:where(:hover) { background: var(--primary-hover); }
+  .release-splash .support-donate { border-radius: var(--radius-pill); font: var(--type-button); }
+  .release-splash .splash-version { font: var(--type-small); color: var(--text-3); }
 }
