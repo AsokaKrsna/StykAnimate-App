@@ -15,6 +15,17 @@
   .titlebar > :where(#window-controls) > button { block-size: auto; }
   .titlebar :where(.band-label) { white-space: nowrap; }
   .titlebar :where(#project-name) { max-inline-size: 220px; }
+  /* The save state keeps the width of its widest words (data-band-reserve, after the 5px dot and its 6px gap),
+   * so editing and saving never move the band or measure it again. Unsaved work is neutral, never red. */
+  .titlebar :where(#save-state)[data-band-reserve] { display: inline-block; }
+  .titlebar :where(#save-state)[data-band-reserve]::after {
+    content: attr(data-band-reserve); display: block; block-size: 0; overflow: hidden; visibility: hidden; padding-inline-start: 11px;
+  }
+  /* The document's dot keeps its place too, shown only while there are unsaved changes. */
+  .titlebar :where(#dirty-dot)[data-band-reserve] { display: block; visibility: hidden; }
+  .titlebar :where(#dirty-dot)[data-band-reserve]:where(.dirty) { visibility: visible; }
+  .titlebar :where(#save-state)[data-dirty="true"] { color: var(--text-3); }
+  .titlebar :where(#save-state)[data-dirty="true"]::before { background: var(--neutral-dot); }
 
   /* The document state's words fold to the document's dot. */
   .titlebar[data-band~="state"] > :where(#save-state),

@@ -25,6 +25,16 @@ test('the band is measured after each step that frees room, in the fold order, d
   assert.equal(widths.minimal.primary, widths.primary - 300);
 });
 
+test('the docked and folded passes can run on their own', () => {
+  const calls = [];
+  const docked = collectBandWidths(tokens => { calls.push(tokens.join(' ')); return bandWidth(tokens); }, undefined, {folded: false});
+  assert.equal(docked.minimal, undefined);
+  assert.ok(!calls.some(call => call.includes(MENUBAR_FOLD)), 'no folded pass');
+  const folded = collectBandWidths(tokens => bandWidth(tokens), undefined, {docked: false});
+  assert.deepEqual(Object.keys(folded), ['minimal']);
+  assert.deepEqual(folded.minimal, collectBandWidths(tokens => bandWidth(tokens)).minimal);
+});
+
 test('a step that frees nothing is neither measured nor applied', () => {
   const calls = [];
   const widths = collectBandWidths(tokens => { calls.push(tokens.join(' ')); return bandWidth(tokens.filter(token => token !== 'winctl')); });

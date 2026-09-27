@@ -357,6 +357,9 @@ let drawingController, timelineUI,
   inspectorDisclosureOwner = null,
   spritePlacementDialog,
   spriteImportController;
+// Settles once the editor is ready (styk.ready): work that can wait, such as the band's first measurement, waits for it.
+let markEditorReady;
+const editorReady = new Promise((resolve) => { markEditorReady = resolve; });
 let warmTimer = null,
   playDeadline = 0,
   playStarted = false,
@@ -1968,17 +1971,21 @@ function updateTransport() {
   $("fps").value = fps;
   timelineUI?.update(state.settings.timelineMode !== 'advanced');
 }
+// What updateTitle last wrote: it runs on every updateUI (playback too), so it writes only what changed.
+let shownTitle = { name: null, dirty: null, revision: null };
 function updateTitle() {
-  document.title = `${editor.dirty ? "• " : ""}${editor.name || "Untitled"} — StykAnimate`;
-  $("project-name").textContent = editor.name || "Untitled";
-  $("dirty-dot").classList.toggle("dirty", editor.dirty);
-  $("save-state").textContent = editor.dirty ? "Unsaved changes" : "Saved";
-  $("save-state").dataset.dirty = String(editor.dirty);
-  desktop?.setDocumentState?.({
-    name: editor.name || "Untitled",
-    dirty: editor.dirty,
-    revision: `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}`,
-  });
+  const name = editor.name || "Untitled", dirty = editor.dirty,
+    revision = `${state.documentToken}:${editor.revision}:${editor.frameDraftRevision}`;
+  if (name === shownTitle.name && dirty === shownTitle.dirty && revision === shownTitle.revision) return;
+  if (name !== shownTitle.name || dirty !== shownTitle.dirty) {
+    document.title = `${dirty ? "• " : ""}${name} — StykAnimate`;
+    if ($("project-name").textContent !== name) $("project-name").textContent = name;
+    $("dirty-dot").classList.toggle("dirty", dirty);
+    $("save-state").textContent = dirty ? "Unsaved changes" : "Saved";
+    $("save-state").dataset.dirty = String(dirty);
+  }
+  shownTitle = { name, dirty, revision };
+  desktop?.setDocumentState?.({ name, dirty, revision });
 }
 function syncSelectionControls() {
   const indices = rangeFrames(true), count = indices?.sheetTicks?.length ?? indices?.length ?? 0;
@@ -6604,6 +6611,8 @@ async function init() {
     onBeforeChange: () => finishCurrentEdit(),
     // The painter's rows until M5 draws 24px Camera and Scene rows (dock-host.mjs).
     timelineRows: { ruler: TIMELINE_RULER, pinnedRow: TIMELINE_ROW, row: TIMELINE_ROW },
+    // The band's first measurement waits for the editor to be ready where it can (topbar.mjs).
+    ready: editorReady,
   });
   workspaceLayout = shell.workspace;
   window.styk.workspace = workspaceLayout;
@@ -6807,6 +6816,7 @@ async function init() {
   updateUI();
   status("Ready");
   window.styk.ready = true;
+  markEditorReady();
   window.styk.telemetry = telemetry;
   window.styk.privacyUI = privacyUI;
   updateNotice = new UpdateUI(desktop, { onRestart: () => actions['restart-update']() });

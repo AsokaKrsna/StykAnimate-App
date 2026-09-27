@@ -68,7 +68,7 @@ function browserStorage(win) {
  * host (see createDockHost), whose `workspace` is `window.styk.workspace`.
  */
 export async function installShell({document: doc = globalThis.document, window: win = globalThis.window, desktop,
-  legacy, platform, onError, onBeforeChange, timelineRows, catalog = PANEL_CATALOG} = {}) {
+  legacy, platform, onError, onBeforeChange, timelineRows, ready = null, catalog = PANEL_CATALOG} = {}) {
   const registry = createPanelRegistry({catalog});
   const backend = desktop?.getWorkspacePreferences && desktop?.setWorkspacePreferences
     ? desktopLayoutBackend(desktop) : storageLayoutBackend(browserStorage(win));
@@ -78,7 +78,7 @@ export async function installShell({document: doc = globalThis.document, window:
     onError?.(error);
   }});
   await store.load();
-  return createDockHost({document: doc, window: win, registry, store, platform, onBeforeChange, timelineRows});
+  return createDockHost({document: doc, window: win, registry, store, platform, onBeforeChange, timelineRows, ready});
 }
 
 /**
@@ -97,10 +97,12 @@ export function paintedMetrics(timelineRows, metrics = SHELL_METRICS) {
 /**
  * Applies solutions to the shell's DOM. `registry` is the panel registry
  * (panel-registry.mjs), `store` the layout store (loaded), `timelineRows`
- * the timeline painter's heights (see paintedMetrics).
+ * the timeline painter's heights (see paintedMetrics), `ready` a promise of
+ * the editor being ready (the band's first measurement waits for it where it
+ * can; topbar.mjs).
  */
 export function createDockHost({document: doc = globalThis.document, window: win = globalThis.window, registry, store,
-  platform, onBeforeChange, timelineRows} = {}) {
+  platform, onBeforeChange, timelineRows, ready = null} = {}) {
   const metrics = paintedMetrics(timelineRows);
   const root = doc.documentElement;
   const app = doc.getElementById('app');
@@ -149,7 +151,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
     const below = footer && !footer.hidden ? footer.offsetHeight : 0;
     const head = viewport?.offsetParent === stage ? viewport.offsetTop : SHELL_METRICS.stageHead;
     return {width: app.clientWidth, height: app.clientHeight, mode: mode(), platform, footer: below,
-      bandMin: bandWatch?.current ?? 0, metrics: {...metrics, band: chrome, stageHead: head}};
+      bandMin: bandWatch?.forWidth(app.clientWidth) ?? 0, metrics: {...metrics, band: chrome, stageHead: head}};
   }
 
   /** Solves the stored layout (or a splitter's transient size) and applies it now. */
@@ -1035,7 +1037,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
     rail.addEventListener('scroll', railMore, {passive: true, signal});
   }
   // The band's widths change with its content (a name, a language, a session), never with the window.
-  const bandWatch = band ? watchBand(band, {window: win, document: doc, onChange: () => schedule()}) : null;
+  const bandWatch = band ? watchBand(band, {window: win, document: doc, storage: browserStorage(win), start: ready, onChange: () => schedule()}) : null;
   const modeObserver = new win.MutationObserver(modeChanged);
   modeObserver.observe(workspace, {attributes: true, attributeFilter: ['data-mode']});
   registry.on('define', () => schedule(), {signal});

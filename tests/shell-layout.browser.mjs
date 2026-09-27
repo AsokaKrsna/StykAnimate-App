@@ -305,6 +305,40 @@ try {
     assert.deepEqual((await read()).steps, []);
   });
 
+  await step('editing and saving never measure the band again, and unsaved work is not red', async () => {
+    await page.evaluate(() => {
+      window.bandMeasures = 0;
+      new MutationObserver(records => { window.bandMeasures += records.length; })
+        .observe(document.querySelector('.titlebar'), {attributes: true, attributeFilter: ['data-band', 'style']});
+    });
+    const width = await page.evaluate(() => document.getElementById('save-state').getBoundingClientRect().width);
+    await page.evaluate(() => { styk.editor.dirty = true; styk.actions['zoom-in']?.(); });
+    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 100)));
+    await settle();
+    const dirty = await page.evaluate(() => {
+      const state = document.getElementById('save-state');
+      return {text: state.textContent, width: state.getBoundingClientRect().width, color: getComputedStyle(state).color,
+        red: getComputedStyle(document.documentElement).getPropertyValue('--danger-text').trim()};
+    });
+    assert.equal(dirty.text, 'Unsaved changes');
+    assert.equal(dirty.width, width, 'the state keeps the width of its widest words');
+    assert.equal(await page.evaluate(() => window.bandMeasures), 0, 'no measuring pass ran');
+    assert.notEqual(dirty.color, 'rgb(179, 38, 30)', 'unsaved changes are neutral');
+    await page.evaluate(() => { styk.editor.dirty = false; styk.actions['zoom-out']?.(); });
+    await settle();
+    // Playback writes nothing into the band (the title is written only when it changes).
+    await page.evaluate(() => {
+      window.bandWrites = 0;
+      new MutationObserver(records => { window.bandWrites += records.length; })
+        .observe(document.querySelector('.titlebar'), {subtree: true, childList: true, characterData: true, attributes: true});
+    });
+    await page.click('#play-button');
+    await page.waitForTimeout(1000);
+    assert.equal(await page.evaluate(() => styk.state.playing), true);
+    await page.click('#play-button');
+    assert.equal(await page.evaluate(() => window.bandWrites), 0, 'no band writes while playing');
+  });
+
   await step('the stage header row and the inspector tabs share one line', async () => {
     for (const [width, height] of [[1440, 900], [1024, 700], [900, 700]]) {
       await resize(width, height);
