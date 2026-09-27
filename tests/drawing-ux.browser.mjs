@@ -2,7 +2,9 @@ import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
-const output=path.resolve('artifacts/drawing-ux'),checks=[],errors=[];
+// A run writes to an ignored folder, so it never rewrites the recorded evidence in artifacts/drawing-ux
+// (set STYK_DRAWING_UX_OUT=artifacts/drawing-ux to refresh that on purpose).
+const output=path.resolve(process.env.STYK_DRAWING_UX_OUT||'artifacts/drawing-ux-latest'),checks=[],errors=[];
 await mkdir(output,{recursive:true});
 const browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage({viewport:{width:1440,height:1000}});
 page.on('pageerror',e=>errors.push(e.stack));

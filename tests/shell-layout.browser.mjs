@@ -11,6 +11,8 @@
  * Serve the repository (STYK_PYTHON=py node scripts/serve.mjs --port 47911)
  * and run `node tests/shell-layout.browser.mjs`; STYK_URL overrides the
  * address. Every size starts from a fresh page with no stored layout.
+ * STYK_DENSE_SOURCE (a dense .piv or .styk) adds the M1 performance gate:
+ * a splitter drag and a tab drag on that scene keep every frame under 200 ms.
  *
  * Transitional (until M3b replaces the canvas toolbar with the 40px stage
  * header and hides the 24px status bar into the activity log): at 500×340
@@ -1055,6 +1057,42 @@ try {
     await resize(width, height);
     await page.screenshot({path: `${out}/animate-${width}x${height}.png`});
   }
+  // The M1 performance gate on a dense scene (optional: STYK_DENSE_SOURCE names a .piv or .styk file, such as
+  // the Akane round or benchmark:dense's testreallydense.piv): splitter and tab drags keep every frame under 200 ms.
+  const dense = process.env.STYK_DENSE_SOURCE;
+  if (dense) await step(`on a dense scene (${dense.split(/[\/]/).at(-1)}) a splitter drag and a tab drag keep every frame under 200 ms`, async () => {
+    await open(1440, 900);
+    await page.evaluate(() => { window.startupReport = styk.editor.report; });
+    await page.setInputFiles('#file-input', dense);
+    await page.waitForFunction(() => styk.editor.report !== window.startupReport && !styk.state.importing, null, {timeout: 180000});
+    const scene = await page.evaluate(() => ({name: styk.editor.name, figures: styk.editor.frame.objects.length, frames: styk.editor.report.keyframes.length}));
+    console.log(`  dense scene: ${JSON.stringify(scene)}`);
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => {
+      window.denseFrames = [];
+      new PerformanceObserver(list => { for (const entry of list.getEntries()) window.denseFrames.push(Math.round(entry.duration)); })
+        .observe({type: 'long-animation-frame'});
+    });
+    const splitter = await page.getByRole('separator', {name: 'Resize properties panel'}).boundingBox();
+    await page.mouse.move(splitter.x + splitter.width / 2, splitter.y + splitter.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(splitter.x - 80, splitter.y + splitter.height / 2, {steps: 20});
+    await page.mouse.move(splitter.x + splitter.width / 2, splitter.y + splitter.height / 2, {steps: 20});
+    await page.mouse.up();
+    const tab = await rect('#vfx-tab'), stage = await rect('.shell-stage');
+    await page.mouse.move(tab.x + tab.width / 2, tab.y + tab.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(stage.x + 40, stage.y + stage.height / 2, {steps: 20});
+    await page.mouse.up();
+    await settle();
+    assert.equal(await page.evaluate(() => styk.shell.solution.panels.vfx.side), 'left', 'the drop docked VFX left');
+    await page.waitForTimeout(500);
+    const frames = await page.evaluate(() => window.denseFrames);
+    console.log(`  dense scene: ${frames.length} long animation frames, longest ${Math.max(0, ...frames)} ms`);
+    assert.deepEqual(frames.filter(duration => duration >= 200), [], 'no frame of 200 ms or more');
+    await page.evaluate(() => styk.workspace.reset());
+  });
+
   assert.deepEqual(errors, [], 'no page errors');
   console.log('PASS shell layout: tiers, the band, #viewport minimum and ancestry, floors, never-hidden controls, the header line, the rail, splitters, the default timeline, Tall timeline, floating and docked panels, compact sheet, Build Structure and timeline, the low-tier timeline sheet, F6, the keyboard move, the Layout popover, saved presets, tab menus, drag to dock and persistence.');
 } finally {

@@ -560,7 +560,9 @@ levels, GPU alpha bounds, cancellation, failure replay, undo/redo, held
 erasing, zoomed-out strokes and eviction; `tests/drawing-latency.browser.mjs`
 measures input-to-frame latency (see [DRAWING-GPU.md](DRAWING-GPU.md)).
 The pan, expansion and shortcut refinements have a separate regression suite:
-`node tests/drawing-ux.browser.mjs`; see its [report](../artifacts/drawing-ux/VERIFICATION.md).
+`node tests/drawing-ux.browser.mjs`; see its [report](../artifacts/drawing-ux/VERIFICATION.md). A run writes its
+screenshots and ux.json to the ignored `artifacts/drawing-ux-latest`; set
+`STYK_DRAWING_UX_OUT=artifacts/drawing-ux` to refresh the recorded report.
 `npm run test:drawing:desktop` paints through real input in the Electron app,
 saves natively, restarts the process and verifies every cel reopens
 pixel-identical. `npm run benchmark:drawing-load` measures a heavy workload (24
