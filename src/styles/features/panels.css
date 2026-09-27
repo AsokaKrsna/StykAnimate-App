@@ -48,6 +48,12 @@
   :where(#vfx-panel) .vfx-advanced > summary:where(:hover) { color: var(--text-1); }
   /* The effects catalogue's groups: sentence case in the eyebrow type, like every menu's group names. */
   .vfx-catalog-results h3 { font: var(--type-eyebrow); letter-spacing: 0; text-transform: none; color: var(--text-3); }
+  /* A parameter row: its label column fits "Effect strength" whole, the same width in every row so the sliders line up. */
+  :where(#vfx-panel) .vfx-parameter { grid-template-columns: 96px minmax(40px, 1fr) 56px; }
+  /* A select or colour row: the same label column, the control filling the rest, so every control starts at one edge. */
+  :where(#vfx-panel) .vfx-field:not(:where(.vfx-parameter > *)) { gap: var(--space-2); }
+  :where(#vfx-panel) .vfx-field:not(:where(.vfx-parameter > *)) > label { flex: 0 0 96px; }
+  :where(#vfx-panel) .vfx-field:not(:where(.vfx-parameter > *)) > :where(select, .vfx-color, .ui-select) { flex: 1 1 auto; max-inline-size: none; }
   /* Range sliders: the kit's colours. */
   :where(#vfx-panel) input:where([type="range"]) { accent-color: var(--slider-fill); }
 }
