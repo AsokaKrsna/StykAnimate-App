@@ -14,8 +14,12 @@ try{
  await page.evaluate(()=>{document.querySelectorAll('dialog[open]').forEach(d=>d.close());styk.settingsUI.open();});
  await screenshot('light.png');
  const original=await page.evaluate(()=>({revision:styk.editor.revision,dirty:styk.editor.dirty,zoom:styk.state.view.scale,dpr:devicePixelRatio}));
- const slider=page.locator('[data-setting="uiScale"]');await slider.focus();await slider.press('ArrowRight');
- check('Keyboard slider applies five percent step',await page.evaluate(()=>styk.state.settings.uiScale===105));
+ // A new profile follows the screen (Automatic); the slider shows the scale in use and moving it makes it Custom.
+ const slider=page.locator('[data-setting="uiScale"]'),start=Number(await slider.inputValue());
+ check('A new profile scales automatically',await page.evaluate(()=>styk.state.settings.uiScaleMode==='auto'));
+ original.dpr/=start/100;
+ await slider.focus();await slider.press('ArrowRight');
+ check('Keyboard slider applies five percent step and a Custom scale',await page.evaluate(s=>styk.state.settings.uiScale===s+5&&styk.state.settings.uiScaleMode==='manual',start));
  for(const percent of [75,125,150,200]){
   await slider.fill(String(percent));
   await page.waitForFunction(p=>Math.abs(devicePixelRatio/p.percent-p.original)<.001,{percent:percent/100,original:original.dpr});
@@ -24,7 +28,8 @@ try{
  }
  await screenshot('large.png');
  await page.locator('[data-scale-reset]').click();
- check('Reset restores 100%',await page.evaluate(()=>styk.state.settings.uiScale===100));
+ check('Reset returns to the automatic scale',await page.evaluate(()=>styk.state.settings.uiScaleMode==='auto'));
+ await page.waitForFunction(p=>Math.abs(devicePixelRatio/p.percent-p.original)<.001,{percent:start/100,original:original.dpr});
  await page.getByRole('tab',{name:'Canvas',exact:true}).click();await page.locator('[data-setting="outlineHandles"]').uncheck();check('Canvas switches still work',await page.evaluate(()=>!styk.state.settings.outlineHandles));
  await screenshot('canvas.png');
  await page.getByRole('tab',{name:'Interface',exact:true}).click();await page.locator('[data-setting="theme"][value="dark"]').check();await slider.fill('150');
@@ -41,7 +46,7 @@ try{
  await page.evaluate(()=>styk.settingsUI.open());await screenshot('compact.png');
  check('Compact settings remain in viewport',await page.locator('.styk-settings').evaluate(e=>{const r=e.getBoundingClientRect();return r.x>=0&&r.y>=0&&r.right<=innerWidth+1&&r.bottom<=innerHeight+1}));
  await page.evaluate(()=>styk.settingsUI.flush());
- check('Scale written to desktop preferences',await page.evaluate(async()=>(await stykDesktop.getEditorSettings()).uiScale===150));
+ check('Scale written to desktop preferences',await page.evaluate(async()=>{const s=await stykDesktop.getEditorSettings();return s.uiScale===150&&s.uiScaleMode==='manual';}));
  await app.evaluate(({app})=>app.exit(0));app=await launch();page=await app.firstWindow();await page.waitForFunction(()=>window.styk?.ready,undefined,{timeout:60000});
  check('Scale restored after process restart',await page.evaluate(()=>styk.state.settings.uiScale===150));
  check('Native zoom restored',Math.abs(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].webContents.getZoomFactor())-1.5)<.001);

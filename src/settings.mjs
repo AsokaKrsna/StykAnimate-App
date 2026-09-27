@@ -3,7 +3,7 @@ import { PIVOT_HANDLE_COLORS } from "./canvas-interactions.mjs";
 import { Localization, normalizeLocale, SUPPORTED_LOCALES } from "./localization.mjs";
 import { DEFAULT_HOTKEYS, normalizeHotkeys } from './hotkeys.mjs';
 import { HotkeySettings } from './hotkey-settings.mjs';
-import { applyUIScale, normalizeUIScale, UI_SCALE } from './ui-scale.mjs';
+import { applyUIScale, autoUIScale, effectiveUIScale, normalizeUIScale, normalizeUIScaleMode, UI_SCALE } from './ui-scale.mjs';
 import { applyEditorTheme, normalizeTheme } from './theme.mjs';
 import {normalizePlaybackQuality, playbackQualityOptions} from './preview-quality.mjs';
 import { normalizeSectionMemory } from './inspector-kit.mjs';
@@ -14,6 +14,8 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   locale: "en",
   theme: "system",
   uiScale: 100,
+  // Automatic follows the screen (ui-scale.mjs autoUIScale); moving the slider makes it Custom.
+  uiScaleMode: "auto",
   hotkeys: DEFAULT_HOTKEYS,
   timelineMode: "advanced",
   replaceKeyframesOnDrop: true,
@@ -76,6 +78,7 @@ export function normalizeEditorSettings(value = {}) {
   result.locale = normalizeLocale(value?.locale);
   result.theme = normalizeTheme(value?.theme);
   result.uiScale = normalizeUIScale(value?.uiScale);
+  result.uiScaleMode = normalizeUIScaleMode(value?.uiScaleMode, value?.uiScale);
   result.hotkeys = normalizeHotkeys(value?.hotkeys);
   result.playbackQuality = normalizePlaybackQuality(value?.playbackQuality);
   if (['scroll', 'ctrl-scroll'].includes(value?.canvasZoomGesture))
@@ -173,7 +176,9 @@ export class EditorSettings {
     // Motion-path visibility is session-only; keep saved display options.
     this.value.motionPaths = false;
     applyEditorTheme(this.value.theme);
-    applyUIScale(this.value.uiScale);
+    this.appliedScale = applyUIScale(effectiveUIScale(this.value));
+    // Automatic follows the screen: a window moved to another display takes that display's scale.
+    window.addEventListener('resize', () => this.followScreen());
     this.localization = localization || new Localization({locale: this.value.locale});
     this.localization.setLocale(this.value.locale);
     this.getValue = getValue;
@@ -268,7 +273,13 @@ export class EditorSettings {
       const feedback = event.target.closest('[data-settings-feedback]');
       if (feedback) { this.close(); this.onFeedback?.({category: feedback.dataset.settingsFeedback}); }
       if (event.target.closest("[data-scale-reset]")) {
-        this.commit({uiScale: 100});
+        this.commit({uiScaleMode: 'auto', uiScale: 100});
+        this.syncScaleControl();
+      }
+      const mode = event.target.closest("[data-scale-mode]");
+      if (mode) {
+        // Custom starts from the scale shown now, so choosing it changes nothing until the slider moves.
+        this.commit(mode.dataset.scaleMode === 'auto' ? {uiScaleMode: 'auto'} : {uiScaleMode: 'manual', uiScale: effectiveUIScale(this.value)});
         this.syncScaleControl();
       }
       if (event.target.closest("[data-settings-reset]"))
@@ -330,10 +341,16 @@ export class EditorSettings {
       }
     }
   }
+  /** Automatic's scale for the window's current screen, applied only when it changes. */
+  followScreen() {
+    if (this.value.uiScaleMode !== 'auto') return;
+    const next = effectiveUIScale(this.value);
+    if (next !== this.appliedScale) { this.appliedScale = applyUIScale(next); this.syncScaleControl(); }
+  }
   setValue(value) {
     this.value = normalizeEditorSettings(value);
     applyEditorTheme(this.value.theme);
-    applyUIScale(this.value.uiScale);
+    this.appliedScale = applyUIScale(effectiveUIScale(this.value));
     const changed = this.localization.setLocale(this.value.locale);
     if (!changed && this.dialog.open) this.render();
   }
@@ -341,7 +358,7 @@ export class EditorSettings {
   open(tab = this.tab, {setting} = {}) {
     if (this.getValue) this.value = normalizeEditorSettings(this.getValue());
     applyEditorTheme(this.value.theme);
-    applyUIScale(this.value.uiScale);
+    this.appliedScale = applyUIScale(effectiveUIScale(this.value));
     this.localization.setLocale(this.value.locale);
     this.dialog.lang = this.localization.locale;
     this.selectTab(tab);
@@ -379,14 +396,25 @@ export class EditorSettings {
   syncScaleControl() {
     const input = this.content.querySelector('[data-setting="uiScale"]');
     if (!input) return;
-    input.value = this.value.uiScale;
-    input.setAttribute('aria-valuetext', `${this.value.uiScale}%`);
-    this.content.querySelector('[data-scale-value]').value = `${this.value.uiScale}%`;
-    this.content.querySelector('[data-scale-reset]').disabled = this.value.uiScale === 100 || !window.stykDesktop?.setUIScale;
+    const shown = effectiveUIScale(this.value), auto = this.value.uiScaleMode === 'auto';
+    input.value = shown;
+    input.setAttribute('aria-valuetext', `${shown}%`);
+    this.content.querySelector('[data-scale-value]').value = `${shown}%`;
+    this.content.querySelector('[data-scale-reset]').disabled = auto || !window.stykDesktop?.setUIScale;
+    for (const button of this.content.querySelectorAll('[data-scale-mode]'))
+      button.setAttribute('aria-pressed', String((button.dataset.scaleMode === 'auto') === auto));
+    const note = this.content.querySelector('[data-scale-auto-note]');
+    if (note) { note.hidden = !auto; note.textContent = this.t('settings.autoScaleNote').replace('{scale}', `${autoUIScale()}%`); }
   }
+  /**
+   * UI scale: Automatic (the screen's size picks 100–150%) or Custom (the slider, 75–200%). The slider shows the
+   * scale in use and moving it makes the scale Custom; Reset returns to Automatic.
+   */
   scaleControl() {
     const available = typeof window.stykDesktop?.setUIScale === 'function';
-    return `<div class="styk-settings-scale"><div class="styk-settings-row"><label for="styk-ui-scale">${escape(this.t('settings.uiScale'))}</label><div class="styk-settings-scale-value"><output for="styk-ui-scale" data-scale-value>${this.value.uiScale}%</output><button type="button" class="styk-settings-reset" data-scale-reset title="${escape(this.t('settings.resetScale'))}" aria-label="${escape(this.t('settings.resetScale'))}" ${this.value.uiScale === 100 || !available ? 'disabled' : ''}>${icon('undo')}</button></div></div><input id="styk-ui-scale" type="range" data-setting="uiScale" min="${UI_SCALE.min}" max="${UI_SCALE.max}" step="${UI_SCALE.step}" value="${this.value.uiScale}" aria-valuetext="${this.value.uiScale}%" ${available ? '' : 'disabled'}><div class="styk-settings-scale-limits"><span>${UI_SCALE.min}%</span><span>${UI_SCALE.max}%</span></div>${available ? '' : `<p class="styk-settings-note">${escape(this.t('settings.browserScale'))}</p>`}</div>`;
+    const shown = effectiveUIScale(this.value), auto = this.value.uiScaleMode === 'auto';
+    const mode = (value, label) => `<button type="button" class="ui-segmented-item" data-scale-mode="${value}" aria-pressed="${(value === 'auto') === auto}" ${available ? '' : 'disabled'}>${escape(label)}</button>`;
+    return `<div class="styk-settings-scale"><div class="styk-settings-row"><label for="styk-ui-scale">${escape(this.t('settings.uiScale'))}</label><div class="ui-segmented" data-size="sm" role="group" aria-label="${escape(this.t('settings.uiScale'))}">${mode('auto', this.t('settings.autoScale'))}${mode('manual', this.t('settings.customScale'))}</div></div><div class="styk-settings-row"><input id="styk-ui-scale" type="range" data-setting="uiScale" min="${UI_SCALE.min}" max="${UI_SCALE.max}" step="${UI_SCALE.step}" value="${shown}" aria-valuetext="${shown}%" ${available ? '' : 'disabled'}><div class="styk-settings-scale-value"><output for="styk-ui-scale" data-scale-value>${shown}%</output><button type="button" class="styk-settings-reset" data-scale-reset title="${escape(this.t('settings.resetScale'))}" aria-label="${escape(this.t('settings.resetScale'))}" ${auto || !available ? 'disabled' : ''}>${icon('undo')}</button></div></div><p class="styk-settings-note" data-scale-auto-note ${auto && available ? '' : 'hidden'}>${escape(this.t('settings.autoScaleNote').replace('{scale}', `${autoUIScale()}%`))}</p>${available ? '' : `<p class="styk-settings-note">${escape(this.t('settings.browserScale'))}</p>`}</div>`;
   }
   render() {
     const html = this.tabHTML(this.tab);
@@ -456,12 +484,14 @@ export class EditorSettings {
   }
   commit(patch) {
     if (patch.builderCanvasColor !== undefined) patch = {...patch,useBuilderCanvasColor:true};
+    // Moving the slider chooses a Custom scale.
+    if (patch.uiScale !== undefined && patch.uiScaleMode === undefined) patch = {...patch, uiScaleMode: 'manual'};
     if (patch.autosaveSeconds !== undefined)
       patch.autosaveSeconds = Number(patch.autosaveSeconds);
     const previous = this.value;
     const next = normalizeEditorSettings({ ...previous, ...patch });
     this.value = next;
-    if (patch.uiScale !== undefined) applyUIScale(next.uiScale);
+    if (patch.uiScale !== undefined || patch.uiScaleMode !== undefined) this.appliedScale = applyUIScale(effectiveUIScale(next));
     if (patch.theme !== undefined) applyEditorTheme(next.theme);
     if (patch.locale !== undefined) this.localization.setLocale(next.locale);
     const normalizedPatch = Object.fromEntries(
@@ -475,7 +505,7 @@ export class EditorSettings {
       );
     } catch (error) {
       this.value = previous;
-      if (patch.uiScale !== undefined) { applyUIScale(previous.uiScale); this.syncScaleControl(); }
+      if (patch.uiScale !== undefined || patch.uiScaleMode !== undefined) { this.appliedScale = applyUIScale(effectiveUIScale(previous)); this.syncScaleControl(); }
       if (patch.theme !== undefined) applyEditorTheme(previous.theme);
       if (patch.locale !== undefined) this.localization.setLocale(previous.locale);
       this.showError(error);
