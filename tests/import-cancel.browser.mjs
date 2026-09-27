@@ -17,7 +17,7 @@ try{
   console.log('Cancelled native import preserves unsaved document and records exactly one cancellation.');
   // Dismissing the unsaved-changes prompt without a button also keeps the project;
   // the dialog close button previously left the import waiting forever.
-  for(const dismiss of [()=>page.locator('#dialog [data-action="close-dialog"]').click(),()=>page.keyboard.press('Escape')]){
+  for(const dismiss of [()=>page.locator('dialog[open] .ui-dialog-close').click(),()=>page.keyboard.press('Escape')]){
     await page.evaluate(async()=>{const {emptyDocument}=await import('/src/demo.mjs'),{buildContainerV2}=await import('/src/native-container.mjs');
       window.dismissedImport=styk.importFiles([new File([await buildContainerV2(emptyDocument(),'styk')],'dismissed.styk')]);});
     await page.locator('#keep-editing').waitFor();await dismiss();

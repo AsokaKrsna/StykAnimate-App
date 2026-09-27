@@ -341,12 +341,12 @@ try {
     };
     const before = await pill();
     await page.evaluate(() => styk.actions.performance());
-    await page.waitForFunction(() => document.getElementById('dialog').open);
+    await page.waitForFunction(() => document.getElementById('performance-dialog')?.open);
     await settle(150);
     assert.ok(before.equals(await pill()), 'the dialog backdrop does not cover or dim the message');
     const placed = await page.evaluate(() => {
-      const toast = document.querySelector('#toast .ui-toast').getBoundingClientRect(), dialog = document.getElementById('dialog').getBoundingClientRect();
-      return {inside: Boolean(document.getElementById('toast').closest('#dialog')),
+      const toast = document.querySelector('#toast .ui-toast').getBoundingClientRect(), dialog = document.getElementById('performance-dialog').getBoundingClientRect();
+      return {inside: Boolean(document.getElementById('toast').closest('#performance-dialog')),
         clear: toast.bottom <= dialog.top || toast.top >= dialog.bottom || toast.right <= dialog.left || toast.left >= dialog.right};
     });
     assert.deepEqual(placed, {inside: true, clear: true}, 'the host lives in the modal (so it can be clicked) and sits outside its box');
@@ -355,7 +355,7 @@ try {
     assert.deepEqual(await page.evaluate(() => ({
       text: document.querySelector('#toast .ui-toast-text')?.textContent, tone: document.querySelector('#toast .ui-toast')?.dataset.tone,
       icon: Boolean(document.querySelector('#toast .ui-toast-icon')),
-      said: document.querySelector('#dialog > .ui-toast-live[aria-live=assertive]')?.textContent,
+      said: document.querySelector('#performance-dialog > .ui-toast-live[aria-live=assertive]')?.textContent,
     })), {text: 'The encoder stopped', tone: 'danger', icon: true, said: 'The encoder stopped'}, 'an error takes the slot, shows its glyph and is announced from inside the dialog');
     await page.keyboard.press('Escape');
     await settle();
@@ -451,7 +451,7 @@ try {
       await page.evaluate(() => { void styk.actions.new(); });
       await page.locator('#save-changes').waitFor();
       await settle(150);
-      const buttons = await centreHits('#dialog[open] .dialog-body button');
+      const buttons = await centreHits('.ui-dialog[open] .ui-dialog-foot button');
       assert.ok(buttons.length >= 3 && buttons.every(item => item === true), `${width}x${height}: ${buttons}`);
       assert.equal((await centreHits('#toast .ui-toast-close')).every(item => item === true), true, `${width}x${height}: the message can be dismissed`);
       await page.keyboard.press('Escape');
@@ -532,14 +532,14 @@ try {
       button.type = 'button';
       button.id = 'probe-menu-button';
       button.textContent = 'Options';
-      document.querySelector('#dialog .dialog-body').append(button);
+      document.querySelector('#performance-dialog .ui-dialog-body').append(button);
       button.addEventListener('click', () => openMenu({anchor: button, overlays: styk.ui.overlays, label: 'Options',
         items: [{label: 'Copy report', run: () => { window.probeMenuRan = true; }}]}));
     });
     await page.click('#probe-menu-button');
-    assert.equal(await page.evaluate(() => document.querySelector('[role=menu][aria-label=Options]')?.closest('dialog')?.id), 'dialog');
+    assert.equal(await page.evaluate(() => document.querySelector('[role=menu][aria-label=Options]')?.closest('dialog')?.id), 'performance-dialog');
     await page.getByRole('menuitem', {name: 'Copy report', exact: true}).click();
-    assert.deepEqual(await page.evaluate(() => [window.probeMenuRan === true, document.getElementById('dialog').open, document.activeElement.id]),
+    assert.deepEqual(await page.evaluate(() => [window.probeMenuRan === true, document.getElementById('performance-dialog').open, document.activeElement.id]),
       [true, true, 'probe-menu-button']);
     await page.keyboard.press('Escape');
     await settle();
@@ -588,7 +588,7 @@ try {
     assert.deepEqual(await page.evaluate(() => [styk.editor.name, document.querySelectorAll('dialog[open]').length]), ['Kick combo', 0]);
   });
 
-  await step('app: "Save your changes?" starts on Save project, without a ring after a pointer and with one after a key; Escape keeps editing', async () => {
+  await step('app: "Save changes?" starts on Save, without a ring after a pointer and with one after a key; Escape keeps editing', async () => {
     await page.evaluate(() => { styk.editor.dirty = true; });
     const focus = () => page.evaluate(() => [document.activeElement.id, document.activeElement.matches(':focus-visible')]);
     await page.click('[data-app-menu=file]');

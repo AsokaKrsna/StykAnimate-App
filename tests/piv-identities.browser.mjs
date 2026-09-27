@@ -43,8 +43,8 @@ try {
   await page.waitForFunction(() => styk.state.lastImportWarnings?.some(w => w.code === 'piv_duplicate_object_ids'),
     null, {timeout: 240000});
   await page.screenshot({path: path.join(out, 'import-notes.png')});
-  assert.match(await page.locator('#dialog-content').innerText(), /Pivot import notes/);
-  await page.locator('[data-action="close-dialog"]').click();
+  assert.match(await page.locator('.import-notes-dialog[open]').innerText(), /Pivot import notes/);
+  await page.locator('.import-notes-dialog[open] .ui-dialog-close').click();
   const checks = await page.evaluate(() => {
     const check = (value, message) => { if (!value) throw new Error(message); };
     const {editor} = styk, frames = editor.report.keyframes;
