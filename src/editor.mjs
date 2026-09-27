@@ -1097,9 +1097,10 @@ export class Editor extends EventTarget {
     if (this.object._stykIK?.[this.figure?.segments[this.selectedJoint]?.segment_id]?.enabled) {
       // Shift or the depth key pushes a spatial hand/foot target in depth;
       // releasing it resumes ordinary target dragging from the current pointer.
-      if ((alternate || depth) && this.poseSpatialIKDepth(x, y, {pixel: pixel || 1})) return true;
+      if ((alternate || depth) && this.poseSpatialIKDepth(x, y, {pixel: pixel || 1})) { this._clearFlatSpatialIK(); return true; }
       this._clearSpatialIKDepth();
-      return this.poseIKTarget(x, y);
+      const pointer = this._spatialIKPointer(x, y);
+      return this.poseIKTarget(pointer.x, pointer.y, {flat: true});
     }
     const seg = this.figure?.segments[this.selectedJoint]; if (!seg || isStatic(seg)) return false;
     if(spatialBone(seg))return this.poseSpatialJoint(x,y,{stretch,depth,flip:alternate,pixel,anchor});

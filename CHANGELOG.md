@@ -19,6 +19,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 ### Changed
 
 - Pose 3D figures as easily as ordinary ones: dragging a joint now turns the part flat on screen, keeping how far it leans toward or away from you. Hold D while dragging to move a part toward or away from you instead (add Shift to go behind), or to push a hand or foot in depth. You can change the key in Keyboard shortcuts.
+- Pose legs and arms with IK like on a 2D figure: dragging a hand or foot now bends the knee or elbow across the screen instead of toward the camera. Right-dragging a hand or foot turns it without unplanting it, a planted foot you turn stays turned, right-dragging a planted knee or elbow swings its bend, and a hand or foot you move in depth no longer jumps when you release the key.
 - Pose, scrub and play 3D figures far more smoothly, even on slower computers, with much less memory in long animations and smaller saved files.
 - Open older Pivot animations much faster, especially ones with many sprite images: a large Pivot 4 race animation now opens in about 8 seconds instead of 30.
 - Seek, scrub and zoom large Pivot animations more smoothly. Frames are prepared faster, and detailed figures with overlapping fill shapes now draw as sharp vectors instead of textures, so zooming no longer pauses and uses far less graphics memory.

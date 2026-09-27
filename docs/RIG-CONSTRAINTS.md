@@ -122,10 +122,27 @@ bone never jumps; the drag remains one undo step.
 Both gestures are relative to where the marker was grabbed, so grabbing beside
 it never jumps. **Right-drag** twists the part about its own axis (turn the head,
 twist the torso or forearm): 120 pixels of horizontal travel give a quarter
-turn. On a spatial hand or foot target, **Shift** or the depth key pushes the
-target toward the camera (drag down) or away (drag up) while it stays under the
+turn. With IK on, the hand or foot marker is that part's control: right-dragging
+it turns the hand or foot about the forearm or shin instead. On a planted limb,
+right-dragging the knee or elbow swings its bend direction (the IK swivel) at the
+same rate while the hand or foot stays planted. Neither releases a pin. On a
+spatial hand or foot target, **Shift** or the depth key pushes the target toward
+the camera (drag down) or away (drag up) while it stays under the pointer; a
+plain drag afterwards continues from the target rather than jumping to the
 pointer. Every sample is solved from the gesture's start orientation, so closed
 drags return exactly without twist drift.
+
+A plain drag of a spatial hand or foot target with IK solves a two-bone limb
+flat, like a 2D figure. The knee or elbow moves across the screen rather than
+toward the camera: the upper bone keeps its depth lean (knee minus hip depth),
+and the target keeps its depth, so the lower bone keeps its lean too, and both
+keep their projected lengths. The knee stays on its side of the hip–target line
+on screen. A straight limb bends to the side its stored bend direction shows on
+screen, or else to the side the pointer first leaves the line by.
+`flatSpatialBend` in `src/ik-spatial.mjs` computes that knee, which is stored
+only as the controller's pole for the existing analytic solver, so playback,
+planting, undo and saving are unchanged. A limb pointing straight into the
+screen keeps its stored pole.
 
 Use **Rotate** for exact turn/tilt values. Rotate shows local X/Y/Z rings, a free
 trackball and an outer view ring; Shift gives finer movement. Whole body, limb,
@@ -133,8 +150,8 @@ torso and belt-tie shortcuts select native joints. Each drag is one undo step;
 Escape cancels it.
 
 Each hand and foot has an **IK** switch in the rig panel. With IK off the limb
-is posed joint by joint: dragging the hand or foot swings only the forearm or
-shin in 3D. Switching IK back on captures the current pose without pinning it.
+is posed joint by joint: dragging the hand or foot turns only the forearm or
+shin, flat on screen. Switching IK back on captures the current pose without pinning it.
 A disabled spatial limb keeps its controller record (with `enabled: false`) so
 the switch stays available; solvers ignore disabled controllers.
 
@@ -149,7 +166,8 @@ The **Turn / tilt** pad adjusts two rotation channels in one gesture; arrow keys
 step five degrees (one with Shift). **Exact angles** exposes the same native
 channels numerically. Rotating a constrained thigh/shin or upper/forearm bakes
 the displayed pose and releases only that limb, so its foot/hand follows.
-Rotating a planted foot updates its stored orientation. Body/pelvis turns keep
+Rotating a planted foot, from Rotate or by dragging, right-dragging or depth-dragging it
+in Pose, updates its stored orientation. Body/pelvis turns keep
 other targets planted. The lower torso remains independent of the pelvis.
 
 Live object-pose edits reuse evaluated spatial branches and fills whose numeric

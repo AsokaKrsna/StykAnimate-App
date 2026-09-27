@@ -38,6 +38,28 @@ export function spatialKnee(base,end,pole,swivel,a,b){
  const bend=direction.map((v,i)=>v*cs+side[i]*sn);
  return {knee:base.map((v,i)=>v+axis[i]*along+bend[i]*height),end:base.map((v,i)=>v+axis[i]*d),normal:normalize(cross(axis,bend))};
 }
+/** Flat, 2D-like bend of a two-bone limb: of the knee positions spatialKnee
+ * can reach, the one where the upper bone keeps its depth `lean` (knee depth
+ * minus base depth) and the knee lies on screen `side` of the base→end line
+ * (the sign of their screen cross product). Returns the unit bend direction
+ * across the axis, or null when the axis points into the screen, where every
+ * knee position projects alike. */
+export function flatSpatialBend(base,end,lean,side,a,b){
+ const vector=end.map((v,i)=>v-base[i]),distance=Math.hypot(...vector),q=Math.hypot(vector[0],vector[1]);
+ if(distance<1e-9||q<1e-6*distance)return null;
+ const axis=vector.map(v=>v/distance),d=Math.max(Math.abs(a-b)+1e-8,Math.min(a+b,distance));
+ const along=(a*a-b*b+d*d)/(2*d),height=Math.sqrt(Math.max(0,a*a-along*along));
+ // u lies in the screen plane, so only v changes the knee's depth; the
+ // knee's screen side is the opposite sign of its u component.
+ const u=[vector[1]/q,-vector[0]/q,0],v=cross(axis,u);
+ const sin=height*Math.abs(v[2])>1e-9?Math.max(-1,Math.min(1,(lean-axis[2]*along)/(height*v[2]))):0,cos=-side*Math.sqrt(1-sin*sin);
+ return u.map((n,i)=>n*cos+v[i]*sin);
+}
+/** The pole for which spatialKnee bends toward `bend` at this swivel. */
+export function spatialPoleFor(base,end,bend,swivel){
+ const axis=normalize(end.map((v,i)=>v-base[i])),side=cross(axis,bend);
+ return normalize(bend.map((v,i)=>v*Math.cos(swivel)-side[i]*Math.sin(swivel)));
+}
 /** Align both the bone axis and its captured bend-plane normal. A shortest
  * swing from the previous pose alone accumulates axial twist on closed drags. */
 export function spatialIKOrientation(axis,normal,direction,plane){

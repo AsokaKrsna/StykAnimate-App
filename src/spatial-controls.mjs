@@ -69,7 +69,7 @@ export function spatialSections(editor,{hotkeyLabel}={}){
  return[
   {id:'rig-pose',title:'Pose',actions:[{icon:'reset',label:'Reset pose',data:{'spatial-reset':'all'}}],rows:[
    rig(`<div class="spatial-modes" role="group" aria-label="Rig tools">${modes}</div>${pad}`),
-   {kind:'meta',text:mode==='pose'?`Drag joints to pose them flat on screen. ${depthHint(hotkeyLabel?.('depth-hold'))} Right-drag twists a part. Drag a planted knee or elbow to aim its bend.`:'Rotate a limb to release its pin; its hand or foot follows. Torso turns keep planted targets; Rotate figure carries the whole pose.'},
+   {kind:'meta',text:mode==='pose'?`Drag joints to pose them flat on screen. ${depthHint(hotkeyLabel?.('depth-hold'))} Right-drag twists a part; at a hand or foot it turns the hand or foot, and on a planted knee or elbow it swings the bend. Drag a planted knee or elbow to aim its bend.`:'Rotate a limb to release its pin; its hand or foot follows. Torso turns keep planted targets; Rotate figure carries the whole pose.'},
   ]},
   {id:'rig-body',title:'Body',rows:[
    rig(`${shortcuts}${trunk?`<div class="spatial-trunk" role="group" aria-label="Torso controls">${trunk}</div>`:''}${ties.length?`<div class="spatial-part-actions" role="group" aria-label="Belt ties">${ties.map(b=>choose(b.i,b.s.name.replace('sash upper','tie'))).join('')}</div>`:''}${feet.length?`<button type="button" class="spatial-plant" data-spatial-feet="${planted?'release':'plant'}">${icon('pin')}${planted?'Release feet':'Plant both feet'}</button>`:''}`),

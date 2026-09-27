@@ -4,7 +4,7 @@ import {geometryPlans} from './pivot/geometry-pose.mjs';
 import {animationRotation} from './animation-origin.mjs';
 import {rigConstraintPlan} from './rig-constraints.mjs';
 import {spatialBone,spatialSkin,spatialMotionValue,quatMultiply,quatRotate,spatialPoint,spatialQuaternion,quaternionPose,betweenVectors} from './rig-spatial.mjs';
-import {inverseQuaternion,spatialWorldQuaternion,spatialWorldVector,spatialPoleHandle,captureSpatialIK} from './ik-spatial.mjs';
+import {inverseQuaternion,spatialWorldQuaternion,spatialWorldVector,spatialPoleHandle,captureSpatialIK,flatSpatialBend,spatialPoleFor,spatialKnee} from './ik-spatial.mjs';
 import {ikChain,ikLayout,ikFollowerIndices,solveObjectIK} from './ik.mjs';
 import {poseChoiceGroups} from './rig-pose-choices.mjs';
 
@@ -103,7 +103,7 @@ export const editorSpatialMethods={
    this._releaseSpatialChain(o);
    if(patch.bend!==undefined)this._rotateJoint((patch.bend-before.bend)*(o.image_text_flags?-1:1));
    for(const key of ['turn','pitch'])if(patch[key]!==undefined)o.angles[ids.get(r[key])]+=(patch[key]-before[key])*(o.image_text_flags?-1:1);
-   for(const [id,c]of Object.entries(o._stykIK??{}))if(c.enabled&&c.pinned&&c.spatialFollowers?.[handle])o._stykIK={...o._stykIK,[id]:{...c,spatialFollowers:{...c.spatialFollowers,[handle]:quatMultiply(spatialQuaternion(-c.target.rotation,0,0),world)}}};
+   this._plantSpatialFollower(o,handle,world);
    // Figure orientation moves the existing targets and their bend planes as
    // one rigid transform. Local torso posing still leaves planted feet alone.
    if(controllers)o._stykIK=Object.fromEntries(Object.entries(controllers).map(([id,c])=>{
@@ -150,6 +150,12 @@ export const editorSpatialMethods={
   this._drag?.spatialGesture.set(key,gesture);
   return gesture;
  },
+ /** A planted hand or foot keeps the world orientation it is given; the
+  * solver otherwise restores its stored one. */
+ _plantSpatialFollower(object,handle,world){
+  for(const [id,c]of Object.entries(object._stykIK??{}))if(c.enabled&&c.pinned&&c.spatialFollowers?.[handle])
+   object._stykIK={...object._stykIK,[id]:{...c,spatialFollowers:{...c.spatialFollowers,[handle]:quatMultiply(spatialQuaternion(-c.target.rotation,0,0),world)}}};
+ },
  /** Write a world orientation for the selected bone into its native channels. */
  _setSpatialWorldOrientation(world,gesture,label,edit){
   const f=this.figure,o=this.object,i=this.selectedJoint,r=f.segments[i]._stykRig.spatial,before=this.getSpatialPose(),ids=rigPlan(this).ids;
@@ -158,19 +164,38 @@ export const editorSpatialMethods={
    this._releaseSpatialChain(target);
    const sign=target.image_text_flags?-1:1;this._rotateJoint((pose.bend-before.bend)*sign);
    for(const key of ['turn','pitch'])target.angles[ids.get(r[key])]+=(pose[key]-before[key])*sign;
+   this._plantSpatialFollower(target,f.segments[i].segment_id,world);
    edit?.(target);
   },{posed:true});
  },
  /** Right-drag: twist the selected part around its own axis (turn a head,
-  * twist a torso or forearm). Horizontal pointer travel sets the angle. */
+  * twist a torso or forearm). Horizontal pointer travel sets the angle. With
+  * IK on, a limb's end marker turns its hand or foot instead, and a planted
+  * limb's knee or elbow swings its bend direction, so no pin is released. */
  twistSpatialJoint(x,y,{pixel=1}={}){
-  const f=this.figure,o=this.object,s=f?.segments[this.selectedJoint];if(!o||!spatialBone(s)||!this._drag||s._stykRig.spatial.motion)return false;
+  const f=this.figure,o=this.object,i=this.selectedJoint,s=f?.segments[i];if(!o||!spatialBone(s)||!this._drag||s._stykRig.spatial.motion)return false;
   if(![x,y,pixel].every(Number.isFinite)||pixel<=0)return false;
   const gesture=this._spatialGesture('twist');gesture.start??={x,y};
   if(gesture.length<1e-6)return false;
-  // 120 screen pixels turn a quarter; the axis is the bone in world space.
+  // 120 screen pixels turn a quarter.
   const angle=(x-gesture.start.x)/pixel/120*Math.PI/2*(o.image_text_flags?-1:1),d=gesture.direction,h=Math.sin(angle/2);
-  return this._setSpatialWorldOrientation(quatMultiply([d[0]*h,d[1]*h,d[2]*h,Math.cos(angle/2)],gesture.world),gesture,'Twist articulated joint');
+  const about=[d[0]*h,d[1]*h,d[2]*h,Math.cos(angle/2)],c=o._stykIK?.[s.segment_id];
+  // The ankle or wrist marker is the foot or hand control: it turns that
+  // part about the shin or forearm.
+  const end=c?.enabled&&c.spatialTarget?f.segments.findIndex(n=>spatialBone(n)&&n._stykRig.spatial.parent===s.segment_id&&!n._stykPoseChoice&&!n._stykRig.spatial.motion):-1;
+  if(end>=0){
+   this.selectedJoint=end;
+   try{const part=this._spatialGesture('twist');return this._setSpatialWorldOrientation(quatMultiply(about,part.world),part,'Turn '+(f.segments[end].name||'part'));}
+   finally{this.selectedJoint=i;}
+  }
+  for(const[id,limb]of Object.entries(o._stykIK??{})){
+   if(!limb.enabled||!limb.pinned||!limb.spatialTarget||limb.bendDirection!==0||!ikChain(f,Number(id),limb.chainLength,layout(this)).includes(i))continue;
+   gesture.swivel??=limb.spatialTarget.swivel;
+   this.selectedJoint=rigPlan(this).ids.get(Number(id));
+   try{return this.setSpatialIKTarget({swivel:gesture.swivel+angle});}finally{this.selectedJoint=i;}
+  }
+  // The axis is the bone in world space.
+  return this._setSpatialWorldOrientation(quatMultiply(about,gesture.world),gesture,'Twist articulated joint');
  },
  /** Pose drag on a spatial bone. It turns flat on screen like an ordinary
   * figure; `depth` (the held depth key) swings it toward or away from the
@@ -285,6 +310,51 @@ export const editorSpatialMethods={
  },
  _clearSpatialIKDepth(){
   const o=this.object,s=this.figure?.segments[this.selectedJoint];if(o&&s)this._drag?.spatialGesture?.delete(`depth:${o.unique_id}:${s.segment_id}`);
+ },
+ /** A depth push changes the limb, so the next plain target drag captures it
+  * afresh, continuing from where the target is instead of jumping to the pointer. */
+ _clearFlatSpatialIK(){
+  const o=this.object,s=this.figure?.segments[this.selectedJoint];if(!o||!s||!this._drag)return;
+  const key=`${o.unique_id}:${s.segment_id}`;
+  this._drag.spatialGesture?.delete(`flat-ik:${key}`);this._drag.ikCapture?.delete(key);
+  (this._drag.ikResume??=new Map()).set(key,null);
+ },
+ /** The pointer for a plain target drag, offset by where a depth push left the target. */
+ _spatialIKPointer(x,y){
+  const o=this.object,s=this.figure?.segments[this.selectedJoint],resume=this._drag?.ikResume,key=`${o?.unique_id}:${s?.segment_id}`;
+  if(!resume?.has(key))return{x,y};
+  let offset=resume.get(key);
+  if(!offset){const p=this.geometry.objects.get(this.selectedSlot).joints.get(s.segment_id);offset={x:p.x-x,y:p.y-y};resume.set(key,offset);}
+  return{x:x+offset.x,y:y+offset.y};
+ },
+ /** Plain drags of a spatial hand or foot solve the limb as on a flat figure:
+  * each bone keeps its lean toward or away from the camera and the knee or
+  * elbow stays on its side of the limb on screen, so it moves across the
+  * screen instead of toward the camera. The result is only a pole for the
+  * existing analytic solver; `spatialTarget` supplies the target's depth and
+  * swivel. Null for other limbs and while the limb points into the screen. */
+ _flatSpatialIKPole(handle,c,target,spatialTarget){
+  if(!spatialTarget||c.bendDirection!==0)return null;
+  const f=this.figure,o=this.object,g=this.geometry.objects.get(this.selectedSlot),chain=ikChain(f,handle,c.chainLength,layout(this));
+  if(chain.length!==2||Math.abs(o.scale)<1e-9)return null;
+  const key=`flat-ik:${o.unique_id}:${handle}`;let gesture=this._drag?.spatialGesture?.get(key);
+  if(!gesture){
+   const shapes=chain.map(i=>g.segments[i]);if(shapes.some(s=>!s.spatialFrame))return null;
+   // The solver's unscaled world space, in which the base stays fixed during the drag.
+   const point=(s,p)=>spatialWorldVector(spatialPoint(s.spatialFrame,p),f,o);
+   const base=point(shapes[0],shapes[0].seg._stykRig.spatial.origin),knee=point(shapes[0],shapes[0].seg._stykRig.spatial.tip),end=point(shapes[1],shapes[1].seg._stykRig.spatial.tip);
+   const a=Math.hypot(...knee.map((v,i)=>v-base[i])),reach=Math.hypot(end[0]-base[0],end[1]-base[1]);
+   const b=Math.hypot(...end.map((v,i)=>v-knee[i])),offset=p=>(end[0]-base[0])*(p[1]-base[1])-(end[1]-base[1])*(p[0]-base[0]);
+   // A straight limb bends to the side its stored bend direction shows on screen.
+   const bent=offset(knee),natural=offset(spatialKnee(base,end,spatialTarget.pole,spatialTarget.swivel??0,a,b).knee);
+   gesture={base,end,a,b,lean:knee[2]-base[2],side:Math.abs(bent)>1e-3*a*reach?Math.sign(bent):Math.abs(natural)>.05*a*reach?Math.sign(natural):0};
+   if(this._drag){this._drag.spatialGesture??=new Map();this._drag.spatialGesture.set(key,gesture);}
+  }
+  const aim=[(target.x-g.root.x)/o.scale,(target.y-g.root.y)/o.scale,spatialTarget.depth/o.scale],b=gesture.base;
+  // Failing that, toward the side the pointer first leaves it by.
+  if(!gesture.side)gesture.side=Math.sign((gesture.end[0]-b[0])*(aim[1]-b[1])-(gesture.end[1]-b[1])*(aim[0]-b[0]))||1;
+  const bend=flatSpatialBend(b,aim,gesture.lean,gesture.side,gesture.a,gesture.b);
+  return bend&&spatialPoleFor(b,aim,bend,spatialTarget.swivel??0);
  },
  /** Shift-drag on a hand or foot target: vertical travel moves it toward the
   * camera (down) or away (up) while its screen position stays fixed. */

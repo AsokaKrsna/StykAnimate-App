@@ -233,7 +233,9 @@ export const editorIKMethods = {
       delete object.runtime_segments;
     });
   },
-  poseIKTarget(x, y) {
+  /** `flat` solves a spatial two-bone limb as on a flat figure (see
+   * _flatSpatialIKPole); otherwise its stored bend direction is kept. */
+  poseIKTarget(x, y, {flat = false} = {}) {
     if (![x, y].every(Number.isFinite)) throw new Error('IK target coordinates must be finite.');
     const {handle, controller} = controllerAt(this);
     if (!controller?.enabled) return false;
@@ -243,6 +245,11 @@ export const editorIKMethods = {
     return this._objectEdit('Move IK target', object => {
       const current = object._stykIK[handle], target = {...current.target, x, y};
       const next = {...current, target};
+      const flatPole = spatialTarget => flat && !graph ? this._flatSpatialIKPole(handle, current, target, spatialTarget) : null;
+      if (current.pinned) {
+        const pole = flatPole(current.spatialTarget);
+        if (pole) next.spatialTarget = {...current.spatialTarget, pole};
+      }
       // Unpinned IK is a posing tool: bake its solution, then let normal FK/root
       // transforms carry the limb. Pinning makes the target persist in world space.
       if (!current.pinned && graph) Object.assign(next, poseGraph(this, graph, handle, current, geometry, target));
@@ -252,6 +259,8 @@ export const editorIKMethods = {
         if(!this._drag.ikCapture.has(key))this._drag.ikCapture.set(key,capture(this.figure,object,geometry,handle,current));
         const captured=this._drag.ikCapture.get(key);
         const temporary = {...next, ...(captured.spatialTarget?captured:capture(this.figure,object,geometry,handle,current)), target, pinned: true};
+        const pole = flatPole(temporary.spatialTarget);
+        if (pole) temporary.spatialTarget = {...temporary.spatialTarget, pole};
         const baseline = this._drag.before.find(o => o.unique_id === object.unique_id);
         const source = {...object, len_flag: baseline.len_flag, lengths: baseline.lengths};
         const solution = solveObjectIK(this.figure, source, geometry.root, geometryPlans(geometry)?.definition??ikLayout(this.figure), {[handle]: temporary}, {includePoints:false,rigPlan:geometryPlans(geometry)?.plan,followTargetOrientation:!temporary.spatialTarget});

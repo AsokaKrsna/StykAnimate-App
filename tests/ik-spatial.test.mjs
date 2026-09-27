@@ -258,3 +258,52 @@ test('limb IK can be switched off and on from the rig panel; off, the end drag s
  sameOrientation(state(e,upper).q,thigh.q);assert.ok(Math.hypot(state(e,lower).end.x-shin.end.x,state(e,lower).end.y-shin.end.y)>5);
  e.setNodeIK({enabled:true,pinned:false});assert.equal(e.object._stykIK[lower].pinned,false);assert.match(spatialControlsView(e),/id="spatial-ik"[^>]*checked/);
 });
+
+function turnedLeg(pinned){
+ const{e,body,upper,lower,foot}=fixture();e.select(1,body-1);e.setSpatialPose({turn:1.2},{wholeFigure:true});
+ e.select(1,lower-1);e.setNodeIK({enabled:true,pinned,bendDirection:0});return{e,upper,lower,foot};
+}
+const leg=(e,upper,lower)=>{const g=e.geometry.objects.get(0),t=g.segments[upper-1],s=g.segments[lower-1];return{hip:t.start,knee:t.end,ankle:s.end,lean:state(e,upper).p[2]-spatialPoint(t.spatialFrame,t.seg._stykRig.spatial.origin)[2]};};
+
+test('hand and foot drags bend the limb flat on screen, each bone keeping its lean, free or planted',()=>{
+ for(const pinned of [false,true]){
+  const{e,upper,lower}=turnedLeg(pinned),before=leg(e,upper,lower),saved=e.serialize();
+  const thigh=l=>Math.hypot(l.knee.x-l.hip.x,l.knee.y-l.hip.y),reach=thigh(before);
+  e.beginDrag('Move foot');
+  for(const[dx,dy]of[[0,-40],[25,-70],[-30,-20]]){
+   const p={x:before.ankle.x+dx,y:before.ankle.y+dy};e.poseJoint(p.x,p.y,{pixel:1});const now=leg(e,upper,lower);
+   near(now.ankle.x,p.x,1e-3);near(now.ankle.y,p.y,1e-3);
+   // The knee moves across the screen: the thigh keeps its screen length and its lean.
+   near(thigh(now),reach,1e-3);near(now.lean,before.lean,1e-6);assert.equal(e.object._stykIK[lower].pinned,pinned);
+  }
+  e.poseJoint(before.ankle.x,before.ankle.y,{pixel:1});const back=leg(e,upper,lower);near(back.knee.x,before.knee.x,1e-3);near(back.knee.y,before.knee.y,1e-3);
+  e.cancelDrag();assert.deepEqual(e.serialize(),saved);
+ }
+});
+
+test('right-drag turns a planted foot at its ankle and swings a planted knee without releasing the plant',()=>{
+ const{e,upper,lower,foot}=turnedLeg(true),rest=leg(e,upper,lower).ankle;
+ // Bend the knee first so swinging it moves it visibly.
+ e.beginDrag('Lift foot');e.poseJoint(rest.x+10,rest.y-30,{pixel:1});e.commitDrag();
+ const before=leg(e,upper,lower),boot=state(e,foot),saved=e.serialize(),swivel=e.object._stykIK[lower].spatialTarget.swivel;
+ e.beginDrag('Turn foot');e.bendJoint(100,100,{pixel:1});e.bendJoint(220,100,{pixel:1});
+ let now=leg(e,upper,lower);near(now.ankle.x,before.ankle.x,1e-3);near(now.ankle.y,before.ankle.y,1e-3);near(now.knee.x,before.knee.x,1e-3);
+ assert.ok(1-Math.abs(state(e,foot).q.reduce((n,v,i)=>n+v*boot.q[i],0))>.05,'the foot turns');assert.equal(e.object._stykIK[lower].pinned,true);
+ e.commitDrag();const turned=state(e,foot);
+ // The turn is stored with the plant, so it survives moving the hips.
+ e.select(1,-1);e.moveSelection(12,6);sameOrientation(state(e,foot).q,turned.q);assert.equal(e.object._stykIK[lower].pinned,true);
+ e.undo();e.undo();assert.deepEqual(e.serialize(),saved);
+ e.select(1,upper-1);e.beginDrag('Swing knee');e.bendJoint(100,100,{pixel:1});e.bendJoint(160,100,{pixel:1});
+ now=leg(e,upper,lower);near(now.ankle.x,before.ankle.x,1e-3);near(now.ankle.y,before.ankle.y,1e-3);sameOrientation(state(e,foot).q,boot.q);
+ near(Math.abs(e.object._stykIK[lower].spatialTarget.swivel-swivel),Math.PI/4,1e-9);assert.ok(Math.hypot(now.knee.x-before.knee.x,now.knee.y-before.knee.y)>1,'the knee swings');
+ assert.equal(e.object._stykIK[lower].pinned,true);e.cancelDrag();assert.deepEqual(e.serialize(),saved);
+});
+
+test('after a depth push, a plain foot drag continues from the foot instead of jumping to the pointer',()=>{
+ const{e,upper,lower}=turnedLeg(false),start=leg(e,upper,lower).ankle;
+ e.beginDrag('Move foot');e.poseJoint(start.x,start.y,{pixel:1,depth:true});e.poseJoint(start.x,start.y+40,{pixel:1,depth:true});
+ const pushed=leg(e,upper,lower);e.poseJoint(start.x,start.y+40,{pixel:1});const resumed=leg(e,upper,lower);
+ near(resumed.ankle.x,pushed.ankle.x,1e-3);near(resumed.ankle.y,pushed.ankle.y,1e-3);near(resumed.knee.x,pushed.knee.x,1e-3);
+ e.poseJoint(start.x+15,start.y+30,{pixel:1});near(leg(e,upper,lower).ankle.x,pushed.ankle.x+15,1e-3);near(leg(e,upper,lower).ankle.y,pushed.ankle.y-10,1e-3);
+ e.cancelDrag();
+});
