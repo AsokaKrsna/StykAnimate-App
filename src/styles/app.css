@@ -22,7 +22,6 @@
 @import url("./legacy/32-motion-path.css") layer(legacy);
 @import url("./legacy/33-tweener.css") layer(legacy);
 @import url("./legacy/34-canvas-guides.css") layer(legacy);
-@import url("./legacy/35-onion-controls.css") layer(legacy);
 @import url("./legacy/36-movieclip-ui.css") layer(legacy);
 @import url("./legacy/37-vfx.css") layer(legacy);
 @import url("./legacy/38-camera-motion.css") layer(legacy);
@@ -105,3 +104,4 @@
 @import url("./features/build.css");
 @import url("./features/draw.css");
 @import url("./features/panels.css");
+@import url("./features/onion.css");

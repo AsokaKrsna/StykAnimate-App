@@ -20,7 +20,8 @@ const openSettings=()=>page.keyboard.press('Control+,');
 const closeSettings=()=>page.locator('.styk-settings-head button').click();
 const theme=()=>page.locator('html').getAttribute('data-theme');
 // The artboard with only the canvases: the chrome floating over it (view controls, badges) follows the theme.
-const artwork=clip=>page.screenshot({clip,style:'#viewport>:not(#artboard,canvas),.artboard-name{visibility:hidden!important}'});
+// The floating tool bar's shadow reaches over the artboard's edge; only the artwork is compared.
+const artwork=clip=>page.screenshot({clip,style:'#viewport>:not(#artboard,canvas),.artboard-name,.shell-rail{visibility:hidden!important}'});
 const background=selector=>page.locator(selector).evaluate(el=>getComputedStyle(el).backgroundColor);
 
 async function readable(selector) {
@@ -74,11 +75,11 @@ try {
   check('Animation data and dirty state are unchanged',await page.evaluate(({model,dirty})=>JSON.stringify(styk.editor.report)===model && styk.editor.dirty===dirty,{model,dirty}));
   check('Rendered artwork is pixel-identical in both themes',lightArtwork.equals(await artwork(stage)));
   // The panels are islands on the window's field: the stage, the inspector and the timeline are
-  // surfaces, and the tool rail sits on the field between them.
+  // surfaces, and the tool bar floats beside the canvas on the raised surface.
   for(const selector of ['.titlebar','.right-panel > [data-island="right-0"]','.shell-stage','.layer-timeline'])
     check(selector+' uses the dark palette',await background(selector)==='rgb(21, 22, 28)');
   const field=(await background('.workspace')).match(/\d+/g).slice(0,3).map(Number);
-  check('.studio-rail sits on the dark field',await background('.studio-rail')==='rgba(0, 0, 0, 0)'&&field.every(channel=>channel<32));
+  check('The tool bar floats on the dark raised surface',await background('.studio-rail')==='rgb(27, 28, 35)'&&field.every(channel=>channel<32));
   await shot('editor-dark');
   await page.evaluate(()=>styk.settingsUI.flush());
   check('Dark mode is stored with editor preferences',await page.evaluate(()=>JSON.parse(localStorage.getItem('stykanimate.editor.settings.v1')).theme==='dark'));
@@ -99,10 +100,10 @@ try {
   await shot('library-dark');
   await page.getByRole('tab',{name:'Properties',exact:true}).click();
   await page.locator('#onion-settings-button').click();
-  check('Onion popover follows dark mode',await background('.onion-popover')==='rgb(21, 22, 28)');
+  check('Onion popover follows dark mode (the kit popover surface)',await background('.onion-popover')==='rgb(27, 28, 35)');
   await shot('onion-dark');await page.keyboard.press('Escape');
   await page.locator('[data-action=export]').first().click();
-  check('Export dialog follows dark mode',await background('#dialog')==='rgb(21, 22, 28)');
+  check('Export dialog follows dark mode (the kit dialog surface)',await background('#export-dialog')==='rgb(27, 28, 35)');
   await shot('export-dark');await page.keyboard.press('Escape');
 
   await page.evaluate(async()=>{
