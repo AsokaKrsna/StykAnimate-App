@@ -25,6 +25,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 - Show error messages above open dialogs instead of behind them, and keep them until you close them.
 - Stop menus from switching tools while you type in them: letters now jump to the matching command. The Properties ⋯ menu opens again.
+- Show What's new and the first-run privacy choice one after the other at startup, never on top of an open menu or dialog.
 - Press Enter to confirm a new project name. Dialogs such as "Save your changes?" now start on their main field or button instead of Close.
 
 ## [1.1.0]

@@ -6677,14 +6677,10 @@ async function init() {
   window.styk.telemetry = telemetry;
   window.styk.privacyUI = privacyUI;
   updateNotice = new UpdateUI(desktop, { onRestart: () => actions['restart-update']() });
-  void releaseSplash.open({ startup: true }).catch(console.warn);
-  void telemetryInit.then(info => {
-    telemetry.timing('startup_ms', performance.now());
-    if (info && !info.decided) {
-      const offer = () => { if (document.querySelector('dialog[open]')) return; document.removeEventListener('close', offer, true); void privacyUI.open({ firstRun: true }).catch(() => {}); };
-      document.addEventListener('close', offer, true); setTimeout(offer, 300);
-    }
-  });
+  queueStartupPrompts();
+  void telemetryInit.then(() => telemetry.timing('startup_ms', performance.now()));
+  // Prompts wait for the first rendered frame.
+  requestAnimationFrame(() => overlays.markReady());
   warmPlayback();
   offerRecovery();
   try {
@@ -6695,6 +6691,41 @@ async function init() {
     status("Editor ready · File service unavailable", true);
     console.warn(error);
   }
+}
+/**
+ * Startup prompts open one at a time through the overlay manager's queue,
+ * after the first rendered frame and never over a dialog or a menu: the notes
+ * of a new version, then the privacy choice on first run (today's order; the
+ * choice waits until the notes are known). The recovery offer and the update
+ * notice are not prompts: they show at once without taking focus.
+ */
+function queueStartupPrompts() {
+  let release;   // undefined while the notes load, then the notes or null
+  const whenClosed = (dialog) => new Promise((resolve) => {
+    if (!dialog?.open) { resolve(); return; }
+    dialog.addEventListener("close", () => resolve(), { once: true });
+  });
+  overlays.enqueuePrompt({
+    id: "release-notes", priority: 2, ready: () => release !== undefined,
+    open: async () => {
+      if (!release) return;
+      try { await releaseSplash.open({ info: release }); } catch (error) { console.warn(error); return; }
+      await whenClosed(releaseSplash.dialog);
+    },
+  });
+  releaseSplash.startupInfo()
+    .then((info) => { release = info ?? null; }, (error) => { console.warn(error); release = null; })
+    .finally(() => { if (!release) overlays.cancelPrompt("release-notes"); overlays.pumpPrompts(); });
+  void telemetryInit.then((info) => {
+    if (!info || info.decided) return;
+    overlays.enqueuePrompt({
+      id: "privacy-first-run", priority: 1, ready: () => release !== undefined,
+      open: async () => {
+        try { await privacyUI.open({ firstRun: true }); } catch { return; }
+        await whenClosed(privacyUI.dialog);
+      },
+    });
+  });
 }
 function scheduleGpuRecovery() {
   if (gpuRecoveryTimer !== undefined) return;

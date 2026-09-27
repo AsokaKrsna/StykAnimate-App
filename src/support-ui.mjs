@@ -3,20 +3,16 @@ export const DONATE_URL = 'https://ko-fi.com/Q5Q41WY7QC';
 
 export class ReleaseSplash {
   constructor(desktop) { this.desktop = desktop; }
-  async open({ startup = false } = {}) {
+  /** The notes to offer once at startup (a version not seen yet), or null. The app's startup prompt queue shows them. */
+  async startupInfo() { return this.desktop?.getReleaseInfo ? this.desktop.getReleaseInfo(true) : null; }
+  /** Shows the notes: `info` from startupInfo(), else the installed version's. Resolves once shown. */
+  async open({ startup = false, info: given = null } = {}) {
     if (!this.desktop?.getReleaseInfo || this.opening) return;
     if (this.dialog?.open) { this.dialog.focus(); return; }
     this.opening = true;
     try {
-      const info = await this.desktop.getReleaseInfo(startup);
+      const info = given ?? await this.desktop.getReleaseInfo(startup);
       if (!info) return;
-      // Startup dialogs are queued so they never hide file/recovery/privacy prompts.
-      if (startup && document.querySelector('dialog[open]')) {
-        await new Promise(resolve => {
-          const closed = () => { if (!document.querySelector('dialog[open]')) { document.removeEventListener('close', closed, true); resolve(); } };
-          document.addEventListener('close', closed, true);
-        });
-      }
       this.dialog?.remove();
       const modal = this.dialog = document.createElement('dialog');
       modal.className = 'release-splash';

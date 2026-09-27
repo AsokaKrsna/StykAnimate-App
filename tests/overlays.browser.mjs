@@ -647,6 +647,47 @@ try {
     assert.ok(coverage.listed > 150, `${coverage.listed} palette rows`);
   });
 
+  await step('app: startup prompts open one at a time, release notes first, never over a menu', async () => {
+    // A desktop bridge with just the release notes and a first-run privacy state.
+    const desktopPage = await browser.newPage({viewport: {width: 1280, height: 720}});
+    desktopPage.on('pageerror', error => errors.push(`desktop: ${error.message}`));
+    await desktopPage.addInitScript(() => {
+      let resolveNotes;
+      const notes = new Promise(resolve => { resolveNotes = resolve; });
+      const state = decided => ({epoch: decided ? 2 : 1, decided, consent: {analytics: false, diagnostics: false}, status: decided ? 'Saved' : 'Not decided'});
+      window.fakeDesktop = {decided: false, notes: () => resolveNotes({version: '9.9.9', title: 'A test release', groups: [{name: 'Added', notes: ['A new thing.']}]})};
+      window.stykDesktop = {
+        platform: 'linux',
+        getReleaseInfo: startup => (startup ? notes : Promise.resolve({version: '9.9.9', groups: []})),
+        getTelemetryState: async () => state(fakeDesktop.decided),
+        onTelemetryState: () => () => {},
+        setTelemetryConsent: async () => { fakeDesktop.decided = true; return state(true); },
+      };
+    });
+    await desktopPage.goto(`${base}/`);
+    await desktopPage.waitForFunction(() => window.styk?.ready, null, {timeout: 60000});
+    const open = () => desktopPage.evaluate(() => [...document.querySelectorAll('dialog[open]')].map(dialog => dialog.className));
+    await desktopPage.waitForTimeout(300);
+    assert.deepEqual(await open(), [], 'the privacy choice waits for the release notes to be known');
+    assert.deepEqual(await desktopPage.evaluate(() => styk.ui.overlays.pendingPrompts()), ['release-notes', 'privacy-first-run']);
+
+    await desktopPage.click('[data-app-menu=file]');
+    await desktopPage.evaluate(() => fakeDesktop.notes());
+    await desktopPage.waitForTimeout(300);
+    assert.deepEqual(await open(), [], 'nothing opens over an open menu');
+    await desktopPage.keyboard.press('Escape');
+    await desktopPage.locator('.release-splash[open]').waitFor();
+    await desktopPage.waitForTimeout(200);
+    assert.deepEqual(await open(), ['release-splash'], 'one prompt at a time: the release notes first');
+    await desktopPage.getByRole('button', {name: 'Close welcome screen'}).click();
+    await desktopPage.locator('.styk-privacy[open]').waitFor();
+    assert.deepEqual(await open(), ['styk-privacy'], 'then the privacy choice');
+    await desktopPage.locator('[data-decline]').click();
+    await desktopPage.locator('.styk-privacy').waitFor({state: 'hidden'});
+    assert.deepEqual(await desktopPage.evaluate(() => [styk.ui.overlays.pendingPrompts(), styk.ui.overlays.activePrompt, fakeDesktop.decided]), [[], null, true]);
+    await desktopPage.close();
+  });
+
   assert.deepEqual(errors, [], 'no page errors');
   console.log('overlays browser test passed');
 } finally {
