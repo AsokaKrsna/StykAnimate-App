@@ -260,12 +260,47 @@
     background: var(--accent-line); z-index: 2; pointer-events: none;
   }
 
+  /* ---- Keyframe easing (keyframe-easing-popover.mjs injects its layout into the legacy layer): the kit's menu —
+   * the raised surface, Easing as a group name, 32px rows with the chosen mode's check in Styk blue — then, for
+   * Bezier, the curve in a sunken well, its four points as small wells and Apply as the primary pill. ---- */
+  .styk-easing-popover {
+    inline-size: 256px; padding: var(--space-1-5); border: 0; border-radius: var(--radius-xl);
+    background: var(--surface-raised); color: var(--text-1); box-shadow: var(--elevation-3); font: var(--type-ui);
+  }
+  .styk-easing-header { padding: var(--space-0-5) 0 var(--space-1) var(--space-2-5); font: var(--type-eyebrow); color: var(--text-3); }
+  .styk-easing-header > button {
+    display: inline-grid; place-items: center; inline-size: var(--control-sm); block-size: var(--control-sm); padding: 0;
+    border-radius: var(--radius-sm); color: var(--text-2);
+  }
+  .styk-easing-header > button > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); }
+  .styk-easing-header > button:where(:hover) { background: var(--surface-hover); color: var(--text-1); }
+  .styk-easing-options { gap: 0; }
+  .styk-easing-options > button {
+    block-size: var(--control-md); padding: 0 var(--space-2-5); border-radius: var(--radius-sm);
+    background: transparent; color: var(--text-1); font: var(--type-ui);
+  }
+  .styk-easing-options > button:where(:hover, :focus-visible) { background: var(--surface-hover); }
+  .styk-easing-options > button:where([aria-checked="true"]) { background: transparent; color: var(--text-1); font-weight: var(--weight-semibold); }
+  .styk-easing-options > button:where([aria-checked="true"])::after { color: var(--accent); }
+  .styk-easing-options > button:where([aria-checked="true"]):where(:hover, :focus-visible) { background: var(--surface-hover); }
+  .styk-easing-curve { margin-block-start: var(--space-2); border: 0; border-radius: var(--radius-md); background: var(--surface-sunken); }
+  .styk-easing-points { gap: var(--space-1); margin-block: var(--space-2); }
+  .styk-easing-points label { font: var(--type-micro); color: var(--text-3); }
+  .styk-easing-points input {
+    block-size: var(--control-sm); margin-block-start: var(--space-1); padding: 0 var(--space-1-5); border: 0; border-radius: var(--radius-sm);
+    background: var(--surface-sunken); color: var(--text-1); font: var(--type-small); font-variant-numeric: tabular-nums;
+  }
+  .styk-easing-points input:focus { outline: none; background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--accent-line), 0 0 0 3px var(--focus-halo); }
+  .styk-easing-apply { block-size: var(--control-md); border-radius: var(--radius-pill); background: var(--primary); color: var(--on-primary); font: var(--type-button); box-shadow: var(--primary-shadow); }
+  .styk-easing-apply:where(:hover:not(:disabled)) { background: var(--primary-hover); }
+  .styk-easing-error { font: var(--type-small); color: var(--danger-text); }
+
   /* ---- The Layers popover ---- */
   .tl-layers-popover .ui-popover-body { padding-block: var(--space-1); }
   .tl-layers-list { display: grid; gap: var(--space-0-5); min-inline-size: 240px; }
   .tl-layers-row { padding-inline-start: var(--space-1); }
   .tl-layers-row > .tl-layers-pick {
-    display: flex; align-items: center; gap: var(--space-2); flex: 1 1 auto; min-inline-size: 0; block-size: 100%;
+    display: flex; align-items: center; justify-content: flex-start; gap: var(--space-2); flex: 1 1 auto; min-inline-size: 0; block-size: 100%;
     padding: 0 var(--space-1-5); border: 0; border-radius: var(--radius-sm); background: none; color: inherit; font: inherit; text-align: start;
   }
   .tl-layers-pick:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset-inset); }

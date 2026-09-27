@@ -44,7 +44,7 @@ export function createLayersPopover({anchor, editor, run, overlays = null, t = n
     return button;
   };
   footButton('plus', say('layers.newLayer'), () => editor.selectSheetLayer(editor.createLayer().id));
-  footButton(null, say('layers.drawingLayer'), () => editor.selectSheetLayer(editor.createDrawingLayer().id));
+  footButton('brush', say('layers.drawingLayer'), () => editor.selectSheetLayer(editor.createDrawingLayer().id));
 
   let changes = null;
   const popover = createPopover({

@@ -1,3 +1,4 @@
+import {icon} from './icons.mjs';
 import {createEasingControls} from './keyframe-easing-view.mjs';
 
 const STYLES = `
@@ -47,7 +48,7 @@ export function showKeyframeEasingPopover() {
   const anchor = keyAnchor(this, indices), popover = document.createElement('div');
   popover.className = 'styk-easing-popover'; popover.popover = 'auto';
   popover.setAttribute('role', 'dialog'); popover.setAttribute('aria-label', 'Keyframe easing'); popover.setAttribute('aria-modal', 'false');
-  popover.innerHTML = `<div class="styk-easing-header"><span>Easing</span><button type="button" aria-label="Close easing">×</button></div><form><div data-controls></div><p class="styk-easing-error" role="alert"></p><button class="styk-easing-apply" type="submit">Apply</button></form>`;
+  popover.innerHTML = `<div class="styk-easing-header"><span>Easing</span><button type="button" aria-label="Close easing">${icon('close')}</button></div><form><div data-controls></div><p class="styk-easing-error" role="alert"></p><button class="styk-easing-apply" type="submit">Apply</button></form>`;
   document.body.append(popover); this.easingPopover = popover;
   const events = new AbortController(), options = {signal: events.signal};
   const apply = popover.querySelector('[type=submit]'), error = popover.querySelector('[role=alert]');
