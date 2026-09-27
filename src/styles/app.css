@@ -42,6 +42,16 @@
 @import url("./legacy-bridge.css");  /* legacy token names -> tokens.css */
 @import url("./base/fonts.css");
 @import url("./base/document.css");
+/* Shell: the workspace grid, docks, islands, strips, sheets and splitters (src/shell/dock-host.mjs) */
+@import url("./layout/shell.css");
+@import url("./layout/workspace.css");
+@import url("./layout/dock.css");
+@import url("./components/island.css");
+@import url("./components/tabs.css");
+@import url("./components/strip.css");
+@import url("./components/sheet.css");
+@import url("./components/splitter.css");
+@import url("./components/drop-zone.css");
 /* Overlay kit (src/ui/ui-menu, ui-popover, ui-tooltip, ui-toast, ui-dialog, command-palette) */
 @import url("./components/button.css");
 @import url("./components/icon-button.css");

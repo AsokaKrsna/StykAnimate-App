@@ -81,7 +81,9 @@ import {
   EXPORT_SMOOTHING,
   normalizeExportSmoothing,
 } from "./export-sampling.mjs";
-import { initWorkspaceLayout } from "./studio-layout.mjs";
+import { installShell } from "./shell/dock-host.mjs";
+import { createDockKeyboard } from "./shell/dock-keyboard.mjs";
+import { installShellCommands } from "./shell/shell-commands.mjs";
 import { initStudioShell, mountExportFlow } from "./studio-shell.mjs";
 import { dragSlop, beyondSlop, installPenMenuGuard } from "./pen-input.mjs";
 import { initBuilderMode } from "./builder-mode.mjs";
@@ -337,6 +339,7 @@ let drawingController, timelineUI,
   editorSettings,
   appLocalization,
   vfwExportControls,
+  shell,
   workspaceLayout,
   assetLibrary,
   raf = 0,
@@ -1091,25 +1094,20 @@ function simpleFrameCount() {
     : editor.frameDraft?.storedCount ?? editor.report.keyframes.length;
 }
 function fittedView(r = editor.report) {
-  // In Draw, fitting keeps the stage clear of the canvas quick bar.
+  // The layout solver's stage insets are pure clearance around the artboard
+  // (architecture §3.11.8). Until Draw's quick bar leaves #viewport (M3b),
+  // fitting also keeps the stage clear of it.
   const rect = viewport.getBoundingClientRect(),
+    inset = shell?.stageInsets() ?? { top: 24, right: 28, bottom: 24, left: 28 },
     bar = drawingController?.active && drawingController.quickBar && !drawingController.quickBar.hidden ? drawingController.quickBar.offsetHeight + 8 : 0,
-    // The floating tool rail overlays the viewport's left edge; keep the stage clear of it.
-    railRect = document.querySelector(".studio-rail")?.getBoundingClientRect(),
-    rail = railRect?.width && railRect.right > rect.left && railRect.left < rect.left + rect.width / 3
-      ? Math.max(0, railRect.right - rect.left - 20) : 0,
-    s = Math.max(
-      0.01,
-      Math.min(
-        (rect.width - 64 - rail) / r.canvas_width,
-        (rect.height - 72 - bar) / r.canvas_height,
-        2,
-      ),
-    );
+    top = inset.top + bar,
+    width = rect.width - inset.left - inset.right,
+    height = rect.height - top - inset.bottom,
+    s = Math.max(0.01, Math.min(width / r.canvas_width, height / r.canvas_height, 2));
   return {
     scale: s,
-    x: rail + (rect.width - rail - r.canvas_width * s) / 2,
-    y: bar + (rect.height - bar - r.canvas_height * s) / 2 - 3,
+    x: inset.left + (width - r.canvas_width * s) / 2,
+    y: top + (height - r.canvas_height * s) / 2,
   };
 }
 // A fitted view follows viewport size changes (panel toggles, Build figure's
@@ -6501,17 +6499,29 @@ async function init() {
       hidden: state.playing || state.previewing}),
     onChange: patch => editorSettings.commit(patch)});
   window.styk.onionCache = onionCache;
-  const preferences = desktop?.getWorkspacePreferences
-    ? await desktop.getWorkspacePreferences()
-    : undefined;
-  workspaceLayout = initWorkspaceLayout({
-    preferences,
-    onPersist: desktop?.setWorkspacePreferences
-      ? (snapshot) => desktop.setWorkspacePreferences(snapshot)
-      : undefined,
-    onPersistError: (error) => status(error.message, true),
+  // The shell: the stored layout loads before its first commit, then the dock
+  // host lays the panels out and owns which one shows where.
+  shell = await installShell({
+    desktop,
+    legacy: { builderOutlinerWidth: state.settings.builderOutlinerWidth },
+    platform: desktop ? "desktop" : "web",
+    onError: (error) => status(error.message, true),
+    onBeforeChange: () => finishCurrentEdit(),
   });
+  workspaceLayout = shell.workspace;
   window.styk.workspace = workspaceLayout;
+  window.styk.shell = shell;
+  const shellAnnouncer = document.createElement("div");
+  shellAnnouncer.className = "ui-visually-hidden";
+  shellAnnouncer.setAttribute("role", "status");
+  document.body.append(shellAnnouncer);
+  const shellKeyboard = createDockKeyboard({ host: shell, announce: (text) => { shellAnnouncer.textContent = text; } });
+  installShellCommands(actions, { shell, keyboard: shellKeyboard });
+  shell.define({
+    id: "timeline",
+    root: () => $("animation-timeline"),
+    onVisibility: (visible) => { if (visible) timelineUI?.resize(); },
+  });
   editor.setLayerMigrationPlanner((params, options) => {
     syncPlayback();
     return playback.planLayerMigration(params, options);
@@ -6590,8 +6600,11 @@ async function init() {
     onError: fail,
   });
   window.styk.properties = propertyControls;
-  vfxInspector=new VfxInspector({editor,root:$('vfx-panel'),properties:$('inspector'),context:()=>state.inspectorContext,beforeEdit:()=>{pause();interruptRecovery();propertyControls?.commit();},onChange:()=>{queueUI();requestRender();},onError:fail});
+  vfxInspector=new VfxInspector({editor,root:$('vfx-panel'),context:()=>state.inspectorContext,beforeEdit:()=>{pause();interruptRecovery();propertyControls?.commit();},onChange:()=>{queueUI();requestRender();},onError:fail,
+    requestVisible:visible=>shell.showPanel(visible?'vfx':'properties',{focus:false})});
   window.styk.vfx=vfxInspector;
+  // The timeline's VFX rows follow the VFX panel's visibility, which the shell owns.
+  shell.define({id:'vfx',root:()=>$('vfx-panel'),onVisibility:visible=>{editor._vfxTimelineVisible=visible;editor._emit('vfx-selection');vfxInspector.panelVisible(visible);}});
   vfxGizmos=new VfxGizmos({canvas:overlay,inspector:vfxInspector,editor,pickNativeHandle:event=>pick(worldPoint(event)),getOptions:()=>({report:editor.report,frame:currentFrame(),geometry:state.playing?null:editor.geometry,view:state.view,cameraEnabled:state.playing||state.previewing,playing:state.playing,vfxEnabled:state.vfxEnabled,resources:state.renderer?.resources}),onChange:()=>{queueUI();requestRender();},onError:fail});
   window.styk.vfxGizmos=vfxGizmos;
   $('vfx-preview').addEventListener('click',()=>{finishCurrentEdit();pause();state.vfxEnabled=!state.vfxEnabled;playback.setVfxEnabled(state.vfxEnabled);state.playbackPacket=null;state.editingPacket=null;state.renderer?.clearPreparedFrames?.();state.renderer.lastGeometry=null;$('vfx-preview').setAttribute('aria-pressed',String(state.vfxEnabled));requestRender();queueUI();});
@@ -6608,7 +6621,9 @@ async function init() {
     resources,
   });
   window.styk.assets = assetLibrary;
-  window.styk.library = new UserLibrary({editor, desktop, exporter:documentExporter, importer, pause, finishEdit:finishCurrentEdit, setTool, vfxInspector, hotkeys});
+  window.styk.library = new UserLibrary({editor, desktop, exporter:documentExporter, importer, pause, finishEdit:finishCurrentEdit, setTool, vfxInspector, hotkeys,
+    activate: id => shell.showPanel(id, {focus: false})});
+  shell.define({id: 'library', root: () => $('user-library'), onVisibility: visible => window.styk.library.panelVisible(visible)});
   const libraryInsert = (asset, point) =>
     builderMode?.active ? toast("Finish the figure or return to Animate to insert figures.") : window.styk.library.insert(asset, point);
   installLibraryDrop(viewport, {position: worldPoint, insert: libraryInsert, onError: fail});
@@ -6638,6 +6653,7 @@ async function init() {
       showCommandMenu,
       commitSettings: patch => editorSettings.commit(patch),
       onModeChange: () => studioShell?.sync(),
+      toggleTimeline: () => shell.togglePanel('timeline'),
     },
   });
   construction = createConstruction({editor,state,active:()=>Boolean(builderMode?.active),render:requestRender,project:screenPoint,onError:fail,commitSettings:patch=>editorSettings.commit(patch)});

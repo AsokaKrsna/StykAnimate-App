@@ -78,10 +78,10 @@ try {
   );
   await step("panels", async () => {
     const before = await layout();
-    await drag(page.locator('.studio-splitter-right'), -35, 0);
+    await drag(page.getByRole('separator', {name: 'Resize properties panel'}), -35, 0);
     const after = await layout();
     check('Properties splitter resizes without losing the stage', after.sizes.right > before.sizes.right && await page.locator('#viewport').evaluate(e=>e.clientWidth>=420));
-    await page.locator('.studio-splitter-right').focus();
+    await page.getByRole('separator', {name: 'Resize properties panel'}).focus();
     await page.keyboard.press('ArrowLeft');
     check('Properties splitter supports keyboard resizing', (await layout()).sizes.right===after.sizes.right+12);
     await page.keyboard.press('Home');

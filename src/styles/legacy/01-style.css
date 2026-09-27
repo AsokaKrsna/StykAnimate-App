@@ -207,11 +207,7 @@ input[type="checkbox"] {
   background: var(--theme-selected, #e5f4ff);
   color: var(--theme-accent, #007be5);
 }
-.workspace {
-  display: flex;
-  height: calc(100dvh - 68px);
-  overflow: hidden;
-}
+/* .workspace: retired in M1 (layout/workspace.css) */
 .panel {
   display: flex;
   flex-direction: column;
@@ -223,11 +219,7 @@ input[type="checkbox"] {
   width: var(--workspace-left-width);
   border-right: 1px solid var(--border);
 }
-.right-panel {
-  width: var(--workspace-right-width);
-  border-left: 1px solid var(--border);
-  container: properties / inline-size;
-}
+/* .right-panel: retired in M1 (layout/dock.css; islands are the size containers) */
 .panel-tabs {
   display: flex;
   align-items: center;
@@ -466,13 +458,7 @@ input[type="checkbox"] {
   color: var(--theme-muted, #858585);
   font-size: 10px;
 }
-.center {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
+/* .center: retired in M1 (layout/workspace.css, the stage island) */
 .canvas-toolbar {
   display: flex;
   align-items: center;
@@ -1765,29 +1751,7 @@ dialog.styk-settings .styk-settings-row select[data-setting="locale"] {
   max-width: 65%;
   flex-shrink: 0;
 }
-.styk-panel-controls {
-  margin-left: auto;
-  gap: 1px;
-}
-.styk-panel-drag-handle,
-.styk-panel-toggle {
-  border-radius: 3px;
-  color: var(--theme-muted, #858585);
-}
-.styk-panel-drag-handle:hover,
-.styk-panel-toggle:hover {
-  background: var(--theme-hover, #ededed);
-  color: var(--theme-text, #2c2c2c);
-}
-.styk-floating-panel {
-  border-color: var(--theme-border, #d0d0d0) !important;
-  border-radius: 7px;
-  box-shadow: 0 8px 30px var(--theme-shadow, #00000025) !important;
-}
-.styk-floating-panel > .panel-tabs,
-.styk-floating-panel > .timeline-toolbar {
-  background: var(--theme-subtle, #fafafa);
-}
+/* The floating-panel chrome (.styk-panel-*, .styk-floating-panel): retired in M1 */
 @keyframes pulse {
   50% {
     opacity: 0.4;

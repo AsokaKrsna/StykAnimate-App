@@ -1,0 +1,74 @@
+/* The workspace grid: rail │ left dock │ stage │ right dock, and the timeline
+ * row under them (full width by default, or under the stage). The dock host
+ * writes the columns, rows and areas from the layout solver's solution; the
+ * fallbacks are the wide tier's default arrangement for the first paint.
+ * Nothing next to #viewport animates its size, and no ancestor of #viewport
+ * transforms, filters or clips it: the stage island's rounded corners are
+ * painted as caps above it. */
+@layer layout {
+  .shell-work {
+    position: relative; display: grid; min-block-size: 0; min-inline-size: 0;
+    grid-template-columns: var(--shell-columns, var(--rail-w) minmax(0, 1fr) var(--inspector-w));
+    grid-template-rows: var(--shell-rows, minmax(0, 1fr) 264px);
+    grid-template-areas: var(--shell-areas, "rail stage right" "rail bottom bottom");
+    column-gap: var(--shell-gap, var(--gutter)); row-gap: var(--shell-row-gap, var(--gutter));
+    padding: 0 var(--shell-pad-end, var(--space-2)) var(--shell-pad-bottom, var(--space-2)) var(--shell-pad-start, 0px);
+    background: var(--surface-field);
+  }
+
+  /* The rail: a column on the field, in the same place in every workspace
+   * (its tools keep their look until M3b). */
+  .shell-rail {
+    grid-area: rail; position: relative; inset: auto; transform: none; align-self: start; justify-self: stretch;
+    inline-size: auto; max-block-size: 100%; padding: 0 0 var(--space-1);
+    border-color: transparent; background: transparent; box-shadow: none;
+    overflow-x: hidden; overflow-y: auto; scrollbar-width: none;
+  }
+
+  .shell-left { grid-area: left; }
+  .shell-right { grid-area: right; }
+
+  /* The stage island: the header row (the canvas toolbar until the stage
+   * header of M3b), Build's bar, then #viewport, a plain rectangle. */
+  .shell-stage {
+    grid-area: stage; position: relative; display: flex; flex-direction: column;
+    min-inline-size: 0; min-block-size: 0; overflow: visible;
+    border-radius: var(--radius-xl); background: var(--surface);
+  }
+  .shell-stage > .canvas-toolbar { block-size: var(--control-2xl); min-block-size: var(--control-2xl); flex: none; }
+  .shell-stage::after {
+    --_r: var(--radius-xl); --_c: var(--surface-field);
+    content: ""; position: absolute; inset: 0; pointer-events: none; z-index: var(--z-canvas-overlay);
+    background:
+      radial-gradient(circle at 100% 100%, transparent calc(var(--_r) - 0.5px), var(--_c) var(--_r)) top left / var(--_r) var(--_r) no-repeat,
+      radial-gradient(circle at 0 100%, transparent calc(var(--_r) - 0.5px), var(--_c) var(--_r)) top right / var(--_r) var(--_r) no-repeat,
+      radial-gradient(circle at 0 0, transparent calc(var(--_r) - 0.5px), var(--_c) var(--_r)) bottom right / var(--_r) var(--_r) no-repeat,
+      radial-gradient(circle at 100% 0, transparent calc(var(--_r) - 0.5px), var(--_c) var(--_r)) bottom left / var(--_r) var(--_r) no-repeat;
+  }
+
+  /* The timeline island: its 40px header, then the body. Folded to a strip it
+   * is the header alone, and its body opens as a sheet above it. */
+  .shell-bottom {
+    grid-area: bottom; min-inline-size: 0; min-block-size: 0; max-block-size: none; block-size: auto;
+    overflow: hidden; border: 0; box-shadow: none;
+  }
+  .shell-bottom > .timeline-toolbar { block-size: var(--control-2xl); min-block-size: var(--control-2xl); flex: none; }
+  :where(.shell-bottom[data-state="strip"]) > :not(.timeline-toolbar, .shell-timeline-body) { display: none; }
+  .shell-bottom[data-state="strip"] > :where(.timeline-toolbar) { border-block-end: 0; }
+  /* Tall timeline means nothing while the timeline is folded; at the minimal
+   * width First frame and Loop fold into the Animation menu, so Timeline…,
+   * Play and Onion stay on screen (experience §1.8). */
+  :where(.shell-bottom[data-state="strip"]) :where(#expand-timeline) { display: none; }
+  :where(:root[data-tier="minimal"]) .timeline-toolbar :where([data-action="first-frame"], #loop-button) { display: none; }
+  .shell-timeline-body:popover-open {
+    position: fixed; inset: auto var(--space-2) var(--sheet-bottom, var(--space-2)) var(--space-2);
+    inline-size: auto; block-size: var(--sheet-block, 320px); margin: 0; padding: 0; border: 0;
+    border-radius: var(--radius-xl); background: var(--surface); color: inherit;
+    box-shadow: var(--elevation-3); overflow: hidden;
+  }
+
+  @media (forced-colors: active) {
+    .shell-stage::after { display: none; }
+    .shell-timeline-body:popover-open { border: 1px solid CanvasText; }
+  }
+}

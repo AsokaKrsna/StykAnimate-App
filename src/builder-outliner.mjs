@@ -10,10 +10,7 @@ import {icon} from './icons.mjs';
 
 const ROW_HEIGHT = 30;
 const STYLE = `
-.builder-outliner{position:relative;grid-column:1;grid-row:1;display:none;flex-direction:column;min-width:0;min-height:0;border-right:1px solid var(--theme-border,#e5e5e5);background:var(--theme-panel,#fff);font-size:11px;color:var(--theme-text,#2c2c2c)}
-.workspace[data-mode=rig] .builder-outliner{display:flex}
-.builder-outliner-resize{position:absolute;top:0;right:-4px;bottom:0;width:8px;z-index:6;cursor:col-resize;touch-action:none}
-.builder-outliner-resize:hover,.builder-outliner-resize[data-dragging]{background:var(--theme-action-hover,#369af860)}
+.builder-outliner{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--theme-panel,#fff);font-size:11px;color:var(--theme-text,#2c2c2c)}
 .builder-tree.dragging,.builder-tree.dragging *{cursor:grabbing!important;user-select:none}
 .builder-drop{position:absolute;left:4px;right:4px;height:2px;background:var(--theme-accent,#0d99ff);border-radius:1px;pointer-events:none;z-index:2}
 .builder-drop.child{box-shadow:inset 0 0 0 1.5px var(--theme-accent,#0d99ff);background:var(--theme-selected,#e5f4ff);border-radius:4px;height:auto}
@@ -48,14 +45,14 @@ const segmentKind = segment => {
 };
 
 export class FigureOutliner {
-  constructor(container, {editor, settings, onSelect, onBranch, onMenu, onRename, onMove, onResize} = {}) {
+  /** `container` is the Structure panel's root; the shell docks and sizes it (its width is the dock's). */
+  constructor(container, {editor, onSelect, onBranch, onMenu, onRename, onMove} = {}) {
     this.editor = editor;
     this.onSelect = onSelect ?? (() => {});
     this.onBranch = onBranch ?? (() => {});
     this.onMenu = onMenu ?? (() => {});
     this.onRename = onRename ?? (() => {});
     this.onMove = onMove ?? (() => {});
-    this.onResize = onResize ?? (() => {});
     this.container = container;
     this.rows = [];
     this.collapsed = new Set();
@@ -78,49 +75,11 @@ export class FigureOutliner {
         <button id="builder-timeline-toggle" aria-expanded="false" aria-controls="animation-timeline" title="Show animation timeline">${icon('frame')}<span>Timeline</span></button>
         <button data-action="zoom-selection" title="Fit figure · Shift 2" aria-label="Fit figure">${icon('center')}</button>
       </div>
-      <div class="builder-outliner-resize" role="separator" tabindex="0" aria-orientation="vertical" aria-label="Resize figure structure" aria-valuemin="160" aria-valuemax="520" title="Drag or use arrow keys to resize · Home to reset"></div>
       `;
     this.tree = container.querySelector('.builder-tree');
     this.spacer = container.querySelector('.builder-tree-spacer');
     this.nameInput = container.querySelector('.builder-name');
     this.drop = container.querySelector('.builder-drop');
-    const workspace = container.closest('.workspace');
-    if (workspace && Number.isFinite(settings?.builderOutlinerWidth))
-      workspace.style.setProperty('--builder-outliner-w', `${Math.max(160, Math.min(520, settings.builderOutlinerWidth))}px`);
-    const resize = container.querySelector('.builder-outliner-resize');
-    resize.setAttribute('aria-valuenow', String(Math.max(160, Math.min(520, settings?.builderOutlinerWidth ?? 236))));
-    resize.addEventListener('keydown', event => {
-      if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return;
-      event.preventDefault(); event.stopPropagation();
-      const width = event.key === 'Home' ? 236 : Math.max(160, Math.min(520,
-        container.getBoundingClientRect().width + (event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? 40 : 10)));
-      workspace?.style.setProperty('--builder-outliner-w', `${width}px`);
-      resize.setAttribute('aria-valuenow', String(width));
-      this.onResize(width);
-    });
-    resize.addEventListener('pointerdown', event => {
-      if (event.button !== 0) return;
-      event.preventDefault();
-      resize.setPointerCapture(event.pointerId);
-      resize.dataset.dragging = '';
-      const startX = event.clientX, startWidth = container.getBoundingClientRect().width;
-      const move = moveEvent => {
-        const width = Math.max(160, Math.min(520, startWidth + moveEvent.clientX - startX));
-        workspace?.style.setProperty('--builder-outliner-w', `${width}px`);
-        resize.setAttribute('aria-valuenow', String(Math.round(width)));
-        this._width = width;
-      };
-      const up = upEvent => {
-        resize.removeEventListener('pointermove', move);
-        resize.removeEventListener('pointerup', up);
-        resize.removeEventListener('pointercancel', up);
-        delete resize.dataset.dragging;
-        if (upEvent.type !== 'pointercancel' && this._width) this.onResize(Math.round(this._width));
-      };
-      resize.addEventListener('pointermove', move);
-      resize.addEventListener('pointerup', up);
-      resize.addEventListener('pointercancel', up);
-    });
     this.tree.addEventListener('scroll', () => this.render(), {passive: true});
     this.resizeObserver = new ResizeObserver(() => { if (this.session) this.render(); });
     this.resizeObserver.observe(this.tree);

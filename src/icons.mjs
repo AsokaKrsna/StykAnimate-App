@@ -208,6 +208,15 @@ const shapes = Object.freeze({
     '<rect width="18" height="18" x="3" y="3" rx="2" /> <path d="M15 3v18" />',
   "panel-bottom":
     '<rect width="18" height="18" x="3" y="3" rx="2" /> <path d="M3 15h18" />',
+  // The shell's panels (visual-system §10): Properties, VFX, Library, Structure, Timeline… and Layout.
+  inspector:
+    '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M14 4v16"/><path d="M14 4h4.5A2.5 2.5 0 0 1 21 6.5v11a2.5 2.5 0 0 1-2.5 2.5H14z" fill="currentColor" opacity=".2" stroke="none"/><path d="M16.6 9h1.8M16.6 12.5h1.8"/>',
+  fx: '<path d="M11.8 4.6c-2.4-.5-3.8.5-4.2 2.7L5.3 19.4"/><path d="M4.6 10.4h5.8"/><path d="m13.4 10.2 6.2 8.6M19.6 10.2l-6.2 8.6"/>',
+  library: '<rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M9 3v8l3-2 3 2V3"/>',
+  structure: '<path d="M21 12h-8M21 6H8M21 18h-8"/><path d="M3 6v4c0 1.1.9 2 2 2h3M3 10v6c0 1.1.9 2 2 2h3"/>',
+  timeline:
+    '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 14h18"/><path d="M3 14h18v3.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z" fill="currentColor" opacity=".2" stroke="none"/><path d="M9.5 14v6"/>',
+  layout: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15h12M15 3v18"/>',
   "arrow-left": '<path d="m12 19-7-7 7-7" /> <path d="M19 12H5" />',
   "arrow-right": '<path d="M5 12h14" /> <path d="m12 5 7 7-7 7" />',
   "arrow-up": '<path d="m5 12 7-7 7 7" /> <path d="M12 19V5" />',

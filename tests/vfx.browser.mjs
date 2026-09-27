@@ -82,6 +82,9 @@ try{
  await page.getByRole('spinbutton',{name:'Noise Amount'}).press('Enter');
  assert.equal(await page.evaluate(()=>window.styk.editor.sampleVfxClip(styk.vfx.selectedClip)[0]?.params.amount),.25);
  const beforeDrag=await page.evaluate(()=>({history:styk.editor._undo.length,keys:styk.editor.report._styk.layerSheet.tracks.scene.keys.length}));
+ // The drag's value rounds with the slider's width (its 8px thumb): one splitter step widens the
+ // inspector past the wide tier's 288px so the slider maps the middle half of its track steadily.
+ await page.getByRole('separator',{name:'Resize properties panel'}).focus();await page.keyboard.press('ArrowLeft');
  const slider=page.getByRole('slider',{name:'Noise Amount slider'}),box=await slider.boundingBox();
  await page.mouse.move(box.x+box.width*.25,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width*.75,box.y+box.height/2,{steps:12});await page.mouse.up();
  const dragged=await page.evaluate(()=>({amount:styk.editor.sampleVfxClip(styk.vfx.selectedClip)[0].params.amount,history:styk.editor._undo.length,keys:styk.editor.report._styk.layerSheet.tracks.scene.keys.length}));

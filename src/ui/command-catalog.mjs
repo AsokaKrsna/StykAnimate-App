@@ -123,6 +123,24 @@ group('view', [
   ['builder-static-handles', 'Static handles', 'nodes', {...build, toggle: true}],
   ['builder-canvas-color', 'Construction background color…', 'settings', {...build, keywords: ['colour']}],
 ]);
+// The shell's panels and layout (src/shell/shell-commands.mjs).
+group('view', [
+  ['panel-toggle-properties', 'Properties panel', 'inspector', {keywords: ['inspector', 'panel', 'show', 'fold']}],
+  ['panel-toggle-vfx', 'VFX panel', 'fx', {keywords: ['effects', 'panel', 'show', 'fold']}],
+  ['panel-toggle-library', 'Library panel', 'library', {keywords: ['assets', 'panel', 'show', 'fold']}],
+  ['panel-toggle-structure', 'Structure panel', 'structure', {...build, keywords: ['outliner', 'hierarchy', 'parts', 'panel']}],
+  ['panel-toggle-timeline', 'Timeline panel', 'timeline', {keywords: ['show', 'fold', 'strip', 'panel']}],
+  ['timeline-sheet', 'Timeline…', 'timeline', {keywords: ['open', 'rows', 'keys', 'sheet']}],
+  ['timeline-tall', 'Tall timeline', null, {keywords: ['expand', 'height', 'bigger']}],
+  ['panel-hide-properties', 'Hide Properties', null, {keywords: ['inspector', 'panel']}],
+  ['panel-hide-vfx', 'Hide VFX', null, {keywords: ['effects', 'panel']}],
+  ['panel-hide-library', 'Hide Library', null, {keywords: ['assets', 'panel']}],
+  ['layout-focus', 'Focus mode', null, {keywords: ['hide panels', 'distraction', 'stage only']}],
+  ['layout-reset', 'Reset layout', 'reset', {keywords: ['panels', 'default', 'workspace']}],
+  ['layout-arrange', 'Move panel…', 'layout', {keywords: ['dock', 'arrange', 'float', 'keyboard']}],
+  ['focus-next-region', 'Next region', null, {keywords: ['focus', 'keyboard', 'panel']}],
+  ['focus-previous-region', 'Previous region', null, {keywords: ['focus', 'keyboard', 'panel']}],
+]);
 group('animation', [
   ['play', 'Play / pause', 'play', {hotkey: 'play-pan', keywords: ['preview', 'stop']}],
   ['play-pan', 'Play / pause; hold to pan', 'play', {aliasOf: 'play', palette: false}],

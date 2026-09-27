@@ -11,25 +11,30 @@ const folderIcon = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="cu
 const label = item => item.kind === 'folder' ? 'Folder' : item.kind === 'movieclip' ? 'Movieclip' : item.kind === 'set' ? 'Figure set' : 'Figure';
 
 export class UserLibrary {
-  constructor({editor, desktop, exporter, importer, pause, finishEdit, setTool, vfxInspector, hotkeys = new HotkeyManager()}) {
+  /**
+   * The Library panel's content. Its root, #user-library, is a static host in
+   * index.html; the shell's dock host places it and shows it (a tab, a sheet
+   * or a floating island) and calls panelVisible(). `activate(id)` asks the
+   * shell to show a panel ('library' or 'properties'); this module never hides
+   * another panel.
+   */
+  constructor({editor, desktop, exporter, importer, pause, finishEdit, setTool, vfxInspector, activate, hotkeys = new HotkeyManager()}) {
     this.hotkeys = hotkeys;
-    Object.assign(this, {editor, desktop, exporter, importer, pause, finishEdit, setTool, vfxInspector});
+    Object.assign(this, {editor, desktop, exporter, importer, pause, finishEdit, setTool, vfxInspector, activate});
     this.folder = ''; this.entries = []; this.selected = null; this.generation = 0; this.busy = false; this.thumbnails = new Map();
     this.hoverPreview = new LibraryHoverPreview(desktop);
-    this.panel = document.querySelector('.right-panel');
-    const tabs = document.createElement('div'); tabs.className = 'inspector-switch'; tabs.setAttribute('role','tablist'); tabs.setAttribute('aria-label','Properties and asset library');
-    tabs.setAttribute('aria-label','Inspector');
-    tabs.innerHTML = '<button type="button" role="tab" id="properties-tab" data-vfx-tab="properties" aria-controls="inspector" aria-selected="true">Properties</button><button type="button" role="tab" id="vfx-tab" data-vfx-tab="vfx" aria-controls="vfx-panel" aria-selected="false" tabindex="-1">VFX</button><button type="button" role="tab" id="library-tab" aria-controls="user-library" aria-selected="false" tabindex="-1">Library</button>';
-    this.panel.prepend(tabs);
-    this.container = document.createElement('section'); this.container.id = 'user-library'; this.container.hidden = true; this.container.setAttribute('role','tabpanel'); this.container.setAttribute('aria-labelledby','library-tab');
+    this.container = document.getElementById('user-library');
+    if (!this.container) { this.container = document.createElement('section'); this.container.id = 'user-library'; this.container.hidden = true; }
     this.container.innerHTML = `<div class="library-tools"><label class="library-search">${icon('search')}<input type="search" aria-label="Search library" placeholder="Search" spellcheck="false"></label><button type="button" class="icon-button" data-library-action="refresh" aria-label="Refresh library" title="Refresh">${icon('rotate')}</button><button type="button" class="icon-button" data-library-action="folder" aria-label="New library folder" title="New folder">${icon('plus')}</button><button type="button" class="icon-button" data-library-action="reveal" aria-label="Open library folder" title="Open folder in Explorer">${folderIcon}</button></div>
       <div class="library-location"><nav class="library-breadcrumbs" aria-label="Library folders"></nav><span class="library-count"></span></div><div class="library-filter ds-segmented" role="group" aria-label="Filter library assets"><button type="button" data-library-filter="all" aria-pressed="true">All</button><button type="button" data-library-filter="figure" aria-pressed="false">Figures</button><button type="button" data-library-filter="movieclip" aria-pressed="false">Movieclips</button></div>
       <div class="library-content"><div class="library-grid" role="list" aria-label="Saved assets"></div><div class="library-empty ds-empty"></div></div>
       <div class="library-item-actions" hidden><button type="button" data-library-action="insert">Insert</button><button type="button" data-library-action="rename">Rename</button><button type="button" data-library-action="move">Move to…</button><button type="button" class="library-trash" data-library-action="trash" aria-label="Remove library item" title="Move to Recycle Bin">${icon('trash')}</button></div>
       <div class="library-message" role="status" aria-live="polite"></div><div class="library-save"><button type="button" class="button primary" data-library-action="save">${icon('plus')}<span>Add to library</span></button><div class="library-footer-row"><button type="button" class="library-link rig-library-examples" data-action="rig-examples">${icon('person')}Rig examples</button><label class="library-preview-controls" title="Background behind asset previews">Preview<select aria-label="Preview background"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></label></div></div>`;
-    this.panel.append(this.container);
+    // Properties' footer: Add to library, shown with the Properties panel.
     this.propertySave = document.createElement('div'); this.propertySave.className = 'properties-library-save';
-    this.propertySave.innerHTML = `<button type="button" class="button" data-library-action="save">${icon('plus')} Add to library</button>`; this.panel.append(this.propertySave);
+    this.propertySave.innerHTML = `<button type="button" class="button" data-library-action="save">${icon('plus')} Add to library</button>`;
+    (document.getElementById('properties-panel') ?? this.container.parentElement)?.append(this.propertySave);
+    this.roots = [this.container, this.propertySave];
     this.dialog = document.createElement('dialog'); this.dialog.className = 'library-dialog'; document.body.append(this.dialog);
     this.grid = this.container.querySelector('.library-grid'); this.message = this.container.querySelector('.library-message');
     this.input = this.container.querySelector('input'); this.filterValue = 'all';
@@ -67,9 +72,7 @@ export class UserLibrary {
       const card = event.target.closest('.library-card'); if (card && !card.contains(event.relatedTarget)) this.hoverPreview.stop();
     });
     this.grid.addEventListener('focusin', event => { const card = event.target.closest('[data-library-path]'); if (card) this.select(card.dataset.libraryPath); });
-    tabs.onclick = event => {const tab=event.target.closest('[role="tab"]');if(tab)this.showView(tab.id.replace('-tab',''));};
-    tabs.onkeydown = event => { if (['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) { event.preventDefault();const items=[...tabs.querySelectorAll('[role="tab"]')],index=items.indexOf(event.target),next=event.key==='Home'?0:event.key==='End'?2:(index+(event.key==='ArrowRight'?1:2))%3;items[next].click();items[next].focus();} };
-    this.panel.addEventListener('click', event => {
+    for (const root of this.roots) root.addEventListener('click', event => {
       const action = event.target.closest('[data-library-action]')?.dataset.libraryAction; if (!action) return;
       event.stopPropagation(); this.run(() => this.action(action));
     });
@@ -122,19 +125,23 @@ export class UserLibrary {
   show(visible = true) {
     this.showView(visible?'library':'properties');
   }
+  /** Asks the shell to show a panel: 'library', 'properties' or 'vfx'. */
   showView(view) {
+    this.finishEdit?.();
+    this.activate?.(view);
+  }
+  /** The shell showed or hid the Library panel (panel registry onVisibility). */
+  panelVisible(visible) {
     this.closeMenu(); this.hoverPreview.stop();
-    this.finishEdit?.();const visible=view==='library';this.vfxInspector?.setVisible(view==='vfx');
-    this.visible = visible; this.container.hidden = !visible; this.propertySave.hidden = view!=='properties';
-    this.panel.querySelector('.inspector-header').hidden = view!=='properties'; document.getElementById('inspector').hidden = view!=='properties';
-    for(const name of ['properties','vfx','library']){const tab=document.getElementById(`${name}-tab`);tab.setAttribute('aria-selected',String(view===name));tab.tabIndex=view===name?0:-1;}
+    this.visible = visible;
     if (visible) this.run(() => this.refresh());
   }
   syncSelection() {
     const count = this.editor.selectedObjects.length, available = Boolean(this.desktop?.listLibrary);
-    for (const button of this.panel.querySelectorAll('[data-library-action="save"]')) button.disabled = this.busy || !count || !available;
+    const saves = this.roots.flatMap(root => [...root.querySelectorAll('[data-library-action="save"]')]);
+    for (const button of saves) button.disabled = this.busy || !count || !available;
     this.container.querySelector('[data-library-action="save"] span').textContent = count > 1 ? `Add ${count} figures to library` : 'Add to library';
-    for (const button of this.panel.querySelectorAll('[data-library-action="save"]')) button.title = count ? `Save selection in ${this.folder || 'Library'}` : 'Select figures or a movieclip';
+    for (const button of saves) button.title = count ? `Save selection in ${this.folder || 'Library'}` : 'Select figures or a movieclip';
   }
   async refresh(folder = this.folder) {
     if (!this.desktop?.listLibrary) { this.container.dataset.unavailable = 'true'; this.container.querySelector('.library-empty').hidden = false; this.renderEmpty(false); return; }

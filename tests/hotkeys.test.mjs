@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {HotkeyManager, HOTKEY_COMMANDS, DEFAULT_HOTKEYS, normalizeBinding, normalizeHotkeys, eventBinding, findHotkeyConflicts, isHotkeyInput, shortcutLabel} from '../src/hotkeys.mjs';
+import {HotkeyManager, HOTKEY_COMMANDS, DEFAULT_HOTKEYS, DESKTOP_PANEL_KEYS, normalizeBinding, normalizeHotkeys, eventBinding, findHotkeyConflicts, isHotkeyInput, shortcutLabel} from '../src/hotkeys.mjs';
 import {normalizeEditorSettings} from '../src/settings.mjs';
 
 function key(code, props = {}) {
@@ -206,4 +206,23 @@ test('Ctrl+P, Ctrl+Shift+P and F1 open the command palette without taking a key 
   // A person's own binding wins: the palette keeps its other keys.
   const custom = normalizeHotkeys({save: ['Mod+KeyP']}, false);
   assert.deepEqual([custom.save, custom['command-palette']], [['Mod+KeyP'], ['Mod+Shift+KeyP', 'F1']]);
+});
+
+test('the shell keys reach their commands in every scope without taking another key', () => {
+  const manager = new HotkeyManager({mac: false});
+  for (const scopes of [[], ['canvas', 'hover'], ['timeline'], ['simple'], ['builder'], ['drawing'], ['polygon'], ['library']]) {
+    assert.equal(manager.resolve(key('F6'), scopes)?.id, 'focus-next-region', `F6 in ${scopes}`);
+    assert.equal(manager.resolve(key('F6', {ctrlKey: true}), scopes)?.id, 'focus-previous-region', `Ctrl+F6 in ${scopes}`);
+    assert.equal(manager.resolve(key('Backslash', {ctrlKey: true}), scopes)?.id, 'layout-focus', `Ctrl+\ in ${scopes}`);
+    assert.equal(manager.resolve(key('KeyM', {ctrlKey: true, altKey: true}), scopes)?.id, 'layout-arrange', `Ctrl+Alt+M in ${scopes}`);
+  }
+  // Shift+F6 still removes keyframes in the timeline.
+  assert.equal(manager.resolve(key('F6', {shiftKey: true}), ['timeline'])?.id, 'clear-keys');
+  // Ctrl+1–4 are the desktop app's (a browser keeps them for its tabs): free there, and unbound here.
+  const desktop = {...DEFAULT_HOTKEYS, ...DESKTOP_PANEL_KEYS};
+  for (const [id, keys] of Object.entries(DESKTOP_PANEL_KEYS)) {
+    assert.deepEqual(DEFAULT_HOTKEYS[id], [], `${id} has no browser default`);
+    for (const binding of keys) assert.deepEqual(findHotkeyConflicts(desktop, id, binding, false).map(command => command.id), [], `${binding} is free`);
+  }
+  assert.deepEqual(Object.values(DESKTOP_PANEL_KEYS).flat(), ['Mod+Digit1', 'Mod+Digit2', 'Mod+Digit3', 'Mod+Digit4']);
 });

@@ -5,7 +5,9 @@
  *
  * Input: the layout, the `#app` content box in CSS px after the UI scale
  * (the window, which nothing the solution changes can resize, so tiers never
- * oscillate), the workspace, and `bandMin`: the top band's measured
+ * oscillate), the workspace, `footer`: the px the window keeps under the
+ * workspace (the status bar until its log is hidden; 0 by default), and
+ * `bandMin`: the top band's measured
  * min-content width after each step of its fold order (BAND_FOLDS), so a
  * longer language or a session's extra buttons fold the band's labels and
  * spacing first and fold the menubar into the mark (the minimal tier) only
@@ -346,7 +348,7 @@ export function solveLayout(layout, env = {}) {
 
   // Bottom dock: compress the rows, then fold to the header.
   const band = Math.min(metrics.band, height);
-  const workspaceHeight = Math.max(0, height - band);
+  const workspaceHeight = Math.max(0, height - band - dimension(env.footer));
   const t = metrics.timeline;
   const bottomDocked = records.filter(record => record.dock === 'bottom');
   const bottomStrip = records.filter(record => record.dock === 'strip' && record.side === 'bottom');

@@ -73,8 +73,12 @@ try {
   check('Canvas timeline repaints its cached palette',await page.evaluate(()=>styk.timeline.colors.surface==='#15161c' && styk.timeline.colors['scene-tint']==='#231f3d'));
   check('Animation data and dirty state are unchanged',await page.evaluate(({model,dirty})=>JSON.stringify(styk.editor.report)===model && styk.editor.dirty===dirty,{model,dirty}));
   check('Rendered artwork is pixel-identical in both themes',lightArtwork.equals(await artwork(stage)));
-  for(const selector of ['.titlebar','.right-panel','.studio-rail','.layer-timeline'])
+  // The panels are islands on the window's field: the stage, the inspector and the timeline are
+  // surfaces, and the tool rail sits on the field between them.
+  for(const selector of ['.titlebar','.right-panel > [data-island="right-0"]','.shell-stage','.layer-timeline'])
     check(selector+' uses the dark palette',await background(selector)==='rgb(21, 22, 28)');
+  const field=(await background('.workspace')).match(/\d+/g).slice(0,3).map(Number);
+  check('.studio-rail sits on the dark field',await background('.studio-rail')==='rgba(0, 0, 0, 0)'&&field.every(channel=>channel<32));
   await shot('editor-dark');
   await page.evaluate(()=>styk.settingsUI.flush());
   check('Dark mode is stored with editor preferences',await page.evaluate(()=>JSON.parse(localStorage.getItem('stykanimate.editor.settings.v1')).theme==='dark'));

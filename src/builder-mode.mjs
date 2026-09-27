@@ -48,13 +48,11 @@ export function initBuilderMode({editor, state, host}) {
   }
   const outliner = new FigureOutliner(outlinerHost, {
     editor,
-    settings: state.settings,
     onMove: (draggedId, target, zone) => {
       const plan = dropPlan(draggedId, target, zone);
       if (!plan) return;
       try { editor.moveBuilderSegment(draggedId, plan); } catch (error) { host.fail?.(error); }
     },
-    onResize: width => host.commitSettings?.({builderOutlinerWidth: width}),
     onSelect: (entry, options = {}) => {
       const uid = session?.preferredUid;
       if (uid == null) return;
@@ -67,6 +65,14 @@ export function initBuilderMode({editor, state, host}) {
     onRename: name => { try { editor.updateFigureStyle({name}); } catch (error) { host.fail?.(error); } },
   });
   const timelineToggle = outlinerHost.querySelector('#builder-timeline-toggle');
+  // Build hides the timeline by default; the shell's layout for Build shows it
+  // (host.toggleTimeline) and writes .workspace[data-builder-timeline].
+  const timelineVisible = () => workspace.dataset.builderTimeline === 'visible';
+  function syncTimelineToggle() {
+    if (!timelineToggle) return;
+    timelineToggle.setAttribute('aria-expanded', String(timelineVisible()));
+    timelineToggle.title = timelineVisible() ? 'Hide animation timeline' : 'Show animation timeline';
+  }
   function showContextMenu({hit, entry, x, y, tree = false}) {
     if (!session) return;
     host.pause?.(); host.finishCurrentEdit?.();
@@ -86,7 +92,7 @@ export function initBuilderMode({editor, state, host}) {
   function showContextPage(page) {
     if (!session || !context) return;
     host.showCommandMenu?.(builderContextItems({kind: context.kind, page,
-      hasFigure: Boolean(session.figure), state: {...state, builderBranchSelected: editor.branchSelected, builderTimelineVisible: workspace.dataset.builderTimeline === 'visible'}}), context.anchor);
+      hasFigure: Boolean(session.figure), state: {...state, builderBranchSelected: editor.branchSelected, builderTimelineVisible: timelineVisible()}}), context.anchor);
   }
   function runContextCommand(name) {
     if (!session || !context) return;
@@ -144,6 +150,7 @@ export function initBuilderMode({editor, state, host}) {
   /** Toolbar and outliner refresh: joint-gated commands, toggles, title. */
   function sync() {
     if (!session) return;
+    syncTimelineToggle();
     const figure = session.figure;
     const boundSelected = editor.selectedUid !== null && session.boundUids.has(editor.selectedUid);
     const hasJoint = Boolean(figure) && boundSelected && editor.selectedJoint >= 0;
@@ -176,19 +183,13 @@ export function initBuilderMode({editor, state, host}) {
     session.entryTool = state.tool;
     events = new AbortController();
     bindBuilderToolbar(bar, {signal: events.signal});
-    workspace.dataset.builderTimeline = 'hidden';
-    timelineToggle?.setAttribute('aria-expanded', 'false');
-    if (timelineToggle) timelineToggle.title = 'Show animation timeline';
     timelineToggle?.addEventListener('click', () => {
-      const show = workspace.dataset.builderTimeline !== 'visible';
-      workspace.dataset.builderTimeline = show ? 'visible' : 'hidden';
-      timelineToggle.setAttribute('aria-expanded', String(show));
-      timelineToggle.title = show ? 'Hide animation timeline' : 'Show animation timeline';
+      host.toggleTimeline?.();
+      syncTimelineToggle();
     }, {signal: events.signal});
     editor.addEventListener('change', onEditorChange, {signal: events.signal});
     workspace.dataset.mode = 'rig';
     bar.hidden = false;
-    outlinerHost.hidden = false;
     state.builderActive = true;
     state.inspectorContext = session.mode === 'edit' ? 'figure' : 'scene';
     state.inspectorTab = 'design';
@@ -212,9 +213,7 @@ export function initBuilderMode({editor, state, host}) {
     state.duplicatePlacement = null;
     outliner.update(null);
     bar.hidden = true;
-    outlinerHost.hidden = true;
     workspace.dataset.mode = 'animate';
-    delete workspace.dataset.builderTimeline;
     host.setTool(entryTool && !ENTRY_TOOLS.has(entryTool) ? entryTool : 'select');
     host.onModeChange?.();
     host.queueUI?.();

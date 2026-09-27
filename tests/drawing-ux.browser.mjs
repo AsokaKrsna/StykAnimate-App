@@ -13,7 +13,8 @@ try{
   // pix: snapshot a tile store's occupied bounds + RGBA; pixEq: exact compare.
   await page.evaluate(()=>{window.pix=store=>{const b=store.bounds;return {bounds:b?{...b}:null,pixels:b?store.readRect(b.x,b.y,b.width,b.height):new Uint8ClampedArray(0)};};window.pixEq=(a,b)=>Boolean(a.bounds&&b.bounds&&a.bounds.x===b.bounds.x&&a.bounds.y===b.bounds.y&&a.bounds.width===b.bounds.width&&a.bounds.height===b.bounds.height&&a.pixels.length===b.pixels.length&&a.pixels.every((n,i)=>n===b.pixels[i]));window.visEq=(a,b)=>a.pixels.length===b.pixels.length&&a.pixels.every((n,i)=>i%4===3?n===b.pixels[i]:(a.pixels[i-i%4+3]===0&&b.pixels[i-i%4+3]===0)||n===b.pixels[i]);});
   await page.evaluate(()=>styk.state.settings.autosaveSeconds=0);await page.locator('[data-workspace-mode="draw"]').click();await page.locator('[data-draw-action="new"]').click();
-  const rect=await page.locator('#viewport').boundingBox(),x=rect.x+rect.width*.4,y=rect.y+rect.height*.4;
+  // Whole-pixel pointer positions: pointer coordinates are single precision, so a fractional start would round the pan delta.
+  const rect=await page.locator('#viewport').boundingBox(),x=Math.round(rect.x+rect.width*.4),y=Math.round(rect.y+rect.height*.4);
   await page.evaluate(()=>window.beforePan={revision:styk.editor.revision,view:{...styk.state.view}});
   await page.mouse.move(x,y);await page.mouse.down({button:'middle'});await page.mouse.move(x+96,y+48,{steps:6});await page.mouse.up({button:'middle'});
   check('middle-button pans with Brush and creates no ink or history',await page.evaluate(()=>styk.state.view.x-beforePan.view.x===96&&styk.state.view.y-beforePan.view.y===48&&styk.editor.revision===beforePan.revision&&!styk.drawing.gesture));

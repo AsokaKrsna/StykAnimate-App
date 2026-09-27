@@ -19,6 +19,9 @@ try {
   await page.evaluate(() => window.stykDesktop.setWorkspacePreferences({ left: 268, right: 310, timeline: 240 }));
   await page.reload();
   await page.waitForFunction(() => window.styk?.ready && window.styk.workspace, undefined, { timeout: 20000 });
+  // A 1.1 blob migrates to the v2 layout; `float('right')` floats the right dock's floatable panel (VFX).
+  const migrated = await page.evaluate(() => ({sizes: window.styk.workspace.layout.shared.sizes, right: window.styk.workspace.sizes.right}));
+  assert.deepEqual([migrated.sizes.right, migrated.sizes.bottom, migrated.right], [310, 240, 310]);
   const saved = await page.evaluate(async () => {
     window.styk.workspace.float('right');
     await window.styk.workspace.flushPreferences();
@@ -33,7 +36,10 @@ try {
   });
   assert.deepEqual(saved.snapshot, saved.disk);
   assert.deepEqual(saved.afterRejected, saved.disk);
-  assert.ok(saved.snapshot.floating.right);
+  assert.equal(saved.snapshot.layoutVersion, 2);
+  assert.equal(saved.snapshot.studioVersion, 1, 'the v1 mirror a 1.1 app reads');
+  assert.equal(saved.snapshot.right, 310);
+  assert.ok(saved.snapshot.modes.animate.panels.some(record => record.id === 'vfx' && record.dock === 'float'));
   assert.equal(saved.invalidRejected, true);
   assert.equal(saved.oversizedRejected, true);
   assert.equal(saved.editorSettings.locale,'it');
@@ -48,7 +54,7 @@ try {
   assert.notEqual(restored.origin, saved.origin);
   assert.deepEqual(restored.snapshot, saved.snapshot);
   assert.deepEqual(restored.disk, saved.snapshot);
-  assert.ok(restored.floating.right);
+  assert.deepEqual(restored.floating.map(item => item.panel), ['vfx']);
   assert.equal(await restoredPage.locator('html').getAttribute('data-theme'),'dark');
   assert.equal(restored.editorSettings.theme,'dark');
   assert.equal(restored.locale,'it');assert.equal(restored.documentLocale,'it');assert.deepEqual(restored.editorSettings,saved.editorSettings);

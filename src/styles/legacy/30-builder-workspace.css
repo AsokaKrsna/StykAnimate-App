@@ -1,9 +1,5 @@
 /* Minimal builder chrome; shared tools and command layout stay intact. */
-.workspace[data-mode=rig][data-builder-timeline=hidden] { grid-template-rows: minmax(0, 1fr); }
-.workspace[data-mode=rig][data-builder-timeline=hidden] .timeline-panel,
-.workspace[data-mode=rig][data-builder-timeline=hidden] .studio-splitter-timeline { display: none; }
-.workspace[data-mode=rig][data-builder-timeline=hidden] .studio-splitter-right { bottom: 0; }
-.workspace[data-mode=rig][data-builder-timeline=hidden] .studio-rail { top: calc((100% + 38px) / 2); max-height: calc(100% - 90px); }
+/* Build's grid, hidden timeline and rail placement: retired in M1 (the dock host lays Build out) */
 .workspace[data-mode=rig] .viewport-help { display: none; }
 .workspace[data-mode=rig] .builder-outliner-head { height: 48px; min-height: 48px; padding: 0 12px; gap: 5px; }
 .workspace[data-mode=rig] .builder-name { height: 30px; font-family: inherit; font-size: 12px; font-weight: 600; }
@@ -19,7 +15,7 @@
 .builder-footer .icon { width: 15px; height: 15px; }
 .builder-footer button:hover { background: var(--theme-hover, #f5f5f5); color: var(--text); }
 .builder-footer button[aria-expanded=true] { background: var(--theme-selected, #e5f4ff); color: var(--theme-accent, #0d99ff); }
-.builder-footer button:focus-visible, .builder-outliner-resize:focus-visible { outline: 2px solid var(--theme-accent, #0d99ff); outline-offset: -2px; }
+.builder-footer button:focus-visible { outline: 2px solid var(--theme-accent, #0d99ff); outline-offset: -2px; }
 /* The strip stays one row. Popovers use the browser top layer, so they cannot
    be clipped by the canvas, a narrow inspector or the old overflow toolbar. */
 .workspace[data-mode=rig] .center { container-type: inline-size; }

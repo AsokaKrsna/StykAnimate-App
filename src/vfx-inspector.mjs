@@ -22,8 +22,10 @@ const identity=(target,id)=>JSON.stringify(target)+'/'+id;
 const actionIcons={up:'chevron-up',down:'chevron-down',duplicate:'duplicate',reset:'undo',remove:'trash',copy:'duplicate'};
 /** UI-only selection, popup and disclosure state; every edit uses the existing exposure transaction. */
 export class VfxInspector {
- constructor({editor,root,properties,beforeEdit,onChange,onError,context=()=>''}){
-  Object.assign(this,{editor,root,properties,beforeEdit,onChange,onError,context});
+ /** `requestVisible(visible)` asks the shell to show or leave the VFX panel; the shell's dock host shows
+  #vfx-panel and calls panelVisible(), and derives the timeline's VFX rows from the panel's visibility. */
+ constructor({editor,root,beforeEdit,onChange,onError,requestVisible,context=()=>''}){
+  Object.assign(this,{editor,root,beforeEdit,onChange,onError,requestVisible,context});
   this.scope='selection';this.visible=false;this.bindings=new Map();this.collapsed=new Set();this.abort=new AbortController();this.selected=null;
   this.controls=new PropertyControls(root,{
    canHandle:key=>this.bindings.has(key),
@@ -44,7 +46,9 @@ export class VfxInspector {
  }
  bindingEffects(b){return b.clip?this.editor.sampleVfxClip(b.clip):this.editor.vfxEffects(b.target);}
  readBinding(b){if(b.clipField)return (this.editor.getVfxClips().find(c=>c.id===b.clip)[b.clipField]+b.offset)*b.factor;const p=resolvedVfx(this.bindingEffects(b).find(e=>e.id===b.id)).params;return b.derived?(b.param==='angle'?Math.atan2(p.offsetY,p.offsetX)*180/Math.PI:Math.hypot(p.offsetX,p.offsetY)):p[b.param]*b.factor;}
- setVisible(visible){this.commit();this.visible=visible;if(visible)prewarmAtlas();this.editor._vfxTimelineVisible=visible;this.editor._emit('vfx-selection');this.root.hidden=!visible;this.properties.hidden=visible;if(!visible)this.closePopup();this.sync();this.onChange();}
+ setVisible(visible){if(this.requestVisible)this.requestVisible(visible);else this.panelVisible(visible);}
+ /** The shell showed or hid the VFX panel (panel registry onVisibility). */
+ panelVisible(visible){this.commit();this.visible=visible;if(visible)prewarmAtlas();if(!visible)this.closePopup();this.sync();this.onChange();}
  get active(){return this.controls.active;}
  commit(){this.controls.commit();}
  cancel(){this.controls.cancel();}

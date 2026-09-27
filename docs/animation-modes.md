@@ -48,5 +48,5 @@ Large-project workloads, measured latency, memory retention, and the performance
 Draw is presentation state over the same document and timeline modes. Entering
 it selects an eligible drawing layer but creates no content. Leaving restores
 the previous tool, joint visibility and view rotation. Onion preferences and
-panel sizes remain shared. Drawing content holds between keys; copies receive
+panel sizes remain shared; each workspace keeps its own panel arrangement. Drawing content holds between keys; copies receive
 independent pixel identities. [Drawing workflow](DRAWING.md) describes controls.

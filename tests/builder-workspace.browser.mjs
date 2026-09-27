@@ -28,8 +28,9 @@ try {
   await page.locator('#builder-bar [data-action="toggle-builder-branch"]').click();
   await page.locator('.builder-footer [data-action="zoom-selection"]').click();await settle();
   await page.screenshot({path:`${output}/desktop.png`});
-  const resize=page.locator('.builder-outliner-resize');await resize.focus();await page.keyboard.press('ArrowRight');
-  assert.equal(await resize.getAttribute('aria-valuenow'),'246');await page.keyboard.press('Home');
+  // Structure's width is the left dock's: its splitter steps 12px from the 232px default.
+  const resize=page.getByRole('separator',{name:'Resize figure structure'});await resize.focus();await page.keyboard.press('ArrowRight');
+  assert.equal(await resize.getAttribute('aria-valuenow'),'244');await page.keyboard.press('Home');
   // Canvas selection expands collapsed ancestors and keyboard follows selection.
   await page.locator('.builder-tree-row').first().locator('.builder-twisty').click();
   await page.evaluate(()=>styk.editor.select(styk.editor.selectedUid,2));await settle();

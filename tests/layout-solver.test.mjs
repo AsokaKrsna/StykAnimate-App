@@ -455,6 +455,20 @@ test('the rail keeps its place in every workspace and can move to the right', ()
   assert.deepEqual([right.viewport.width, right.viewport.height], [1084, 538]);
 });
 
+test('a footer under the workspace takes its room from the workspace, never from the tiers', () => {
+  // The status bar (24px until it becomes the hidden activity log) sits under the workspace.
+  const plain = solve(1440, 900), footed = solve(1440, 900, {footer: 24});
+  assert.deepEqual([footed.tier, footed.height], [plain.tier, plain.height]);
+  assert.equal(footed.regions.bottom.size, plain.regions.bottom.size, 'the default timeline follows the window height');
+  assert.equal(footed.viewport.height, plain.viewport.height - 24);
+  assert.equal(footed.rects.workspace.height, 900 - 44 - 24);
+  assert.equal(footed.regions.bottom.rect.y + footed.regions.bottom.rect.height, 900 - 24 - 8);
+  // Where the timeline would starve #viewport, the footer folds it sooner, never #viewport.
+  const tight = solve(1440, 600, {footer: 24});
+  assert.ok(tight.viewport.height >= 200);
+  assert.equal(solve(1440, 340, {footer: 24}).regions.bottom.state, 'strip');
+});
+
 test('Under stage lets the right dock run full height', () => {
   const layout = arranged('animate', entry => ({...entry, bottomSpan: 'stage'}));
   const solution = solve(1440, 900, {layout});

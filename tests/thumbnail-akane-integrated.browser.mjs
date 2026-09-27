@@ -107,7 +107,7 @@ try {
     { width: 1100, height: 740 },
   ]) {
     await page.setViewportSize(viewport);
-    const splitter = page.locator('.studio-splitter-timeline');
+    const splitter = page.getByRole('separator', {name: 'Resize timeline'});
     await splitter.focus();
     await splitter.press("ArrowDown");
     await page.waitForFunction(

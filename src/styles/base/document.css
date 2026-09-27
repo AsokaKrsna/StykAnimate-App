@@ -12,4 +12,11 @@
    * (src/theme-bootstrap.js), on the colour of the window behind it. */
   :where(:root[data-theme-pending]) { background: var(--surface-prepaint); }
   :where(:root[data-theme-pending] #app) { visibility: hidden; }
+
+  /* Announcements and compatibility hosts: fixed at the window's origin, so a
+   * visually hidden host never extends the page below the shell. */
+  .ui-visually-hidden {
+    position: fixed; inset-block-start: 0; inset-inline-start: 0; inline-size: 1px; block-size: 1px; overflow: hidden;
+    clip-path: inset(50%); white-space: nowrap;
+  }
 }

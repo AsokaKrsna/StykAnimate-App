@@ -110,6 +110,22 @@ group('Drawing', [
   ['drawing-mirror','Toggle mirror painting',['Shift+KeyM']],['drawing-swap-colors','Swap drawing colors',['KeyX']],['drawing-flip-view','Flip view horizontally',['KeyM']],
 ], 'drawing');
 group('Library', [['library-open', 'Open / insert library item', ['Enter']], ['library-rename', 'Rename library item', ['F2']]], 'library');
+/** Ctrl+1–4 show and fold the panels in the desktop app only: a browser keeps them for its tabs. */
+export const DESKTOP_PANEL_KEYS = Object.freeze({
+  'panel-toggle-properties': Object.freeze(['Mod+Digit1']), 'panel-toggle-vfx': Object.freeze(['Mod+Digit2']),
+  'panel-toggle-library': Object.freeze(['Mod+Digit3']), 'panel-toggle-timeline': Object.freeze(['Mod+Digit4']),
+});
+const panelKeys = id => (globalThis.stykDesktop ? DESKTOP_PANEL_KEYS[id] : []);
+group('Panels & layout', [
+  ['panel-toggle-properties', 'Show or fold Properties', panelKeys('panel-toggle-properties')],
+  ['panel-toggle-vfx', 'Show or fold VFX', panelKeys('panel-toggle-vfx')],
+  ['panel-toggle-library', 'Show or fold Library', panelKeys('panel-toggle-library')],
+  ['panel-toggle-timeline', 'Show or fold the timeline', panelKeys('panel-toggle-timeline')],
+  ['layout-focus', 'Focus mode', ['Mod+Backslash']],
+  ['layout-arrange', 'Move the focused panel', ['Mod+Alt+KeyM']],
+  ['focus-next-region', 'Next region', ['F6']],
+  ['focus-previous-region', 'Previous region', ['Mod+F6']],
+]);
 
 export const HOTKEY_COMMANDS = Object.freeze(commands);
 export const HOTKEY_BY_ID = new Map(commands.map(command => [command.id, command]));

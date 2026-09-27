@@ -28,7 +28,11 @@ export const SHELL_CONTRACT = Object.freeze({
     // vfx-inspector, layer-timeline, builder-mode (#builder-outliner).
     panels: ['inspector', 'inspector-context', 'object-actions', 'vfx-panel', 'timeline',
       'animation-timeline', 'builder-outliner'],
-    // app.mjs, layer-timeline, audio-timeline, studio-layout, studio-shell and
+    // The dock host (src/shell/dock-host.mjs): the Properties panel's root, the
+    // Library's empty host (user-library fills it), the tabs tests click
+    // (#library-tab, #properties-tab, [data-vfx-tab]) and the two docks.
+    shell: ['properties-panel', 'user-library', 'properties-tab', 'vfx-tab', 'library-tab', 'left-dock', 'right-dock'],
+    // app.mjs, layer-timeline, audio-timeline, studio-shell and
     // localization-bindings (#fps, #timeline-zoom, #play-button, #loop-button).
     transport: ['play-button', 'loop-button', 'time-display', 'fps', 'timeline-zoom', 'range-edit',
       'onion-button', 'onion-settings-button', 'timeline-audio', 'expand-timeline',
@@ -72,6 +76,8 @@ export const SHELL_CONTRACT = Object.freeze({
     insert: ['add-figure', 'add-text', 'import-sprite', 'import', 'movieclip-new', 'movieclip-create',
       'movieclip-range'],
     status: ['performance'],
+    // src/shell/shell-commands.mjs: the band's Properties button (compact width) and Timeline… (a folded timeline).
+    shell: ['panel-toggle-properties', 'timeline-sheet'],
   },
   // Shift-click routes to data-shift-action (app.mjs click delegation).
   shiftActions: ['duplicate-branch', 'mirror-branch', 'mirror-branch-vertical', 'selection-down',
@@ -162,19 +168,38 @@ test('Structural hooks that modules dereference without null checks are intact',
   const controls = one('#window-controls', titlebar);
   for (const action of ['minimize', 'maximize', 'close']) one(`[data-action="${action}"]`, controls);
   assert.ok(classes(one('[data-action="menu"]')).includes('brand'), '.brand[data-action="menu"] anchors the main menu');
-  // studio-shell, builder-mode, builder-outliner, settings and studio-layout read .workspace;
-  // studio-layout moves .timeline-panel; fittedView measures .studio-rail; user-library
-  // injects its tabs into .right-panel and toggles .inspector-header; movieclip-ui
-  // anchors its breadcrumb before .context-strip.
+  // studio-shell, builder-mode and the dock host read .workspace; movieclip-ui anchors
+  // its breadcrumb before .context-strip. The dock host places the workspace's
+  // direct children in its grid: the rail, the two docks, the stage island (.center,
+  // around #viewport) and the timeline island.
   const workspace = one('.workspace');
   for (const selector of ['.center', '.studio-rail', '.right-panel', '.context-strip']) one(selector, workspace);
+  for (const selector of ['.studio-rail', '.shell-left', '.center', '.right-panel', '.timeline-panel'])
+    assert.equal(one(selector, workspace).parent, workspace, `${selector} is a direct child of .workspace`);
+  one('#viewport', one('.center'));
+  assert.equal(find('#viewport', one('.timeline-panel')).length, 0, 'the timeline is its own island, outside the stage');
+  one('#builder-outliner', one('.shell-left'));
   const panel = one('.timeline-panel', workspace);
   assert.equal(panel.attrs.id, 'animation-timeline');
   for (const selector of ['.timeline-toolbar', '.timeline-title', '#timeline']) one(selector, panel);
   // app.mjs hides $("timeline-zoom").closest(".timeline-actions").
   one('#timeline-zoom', one('.timeline-actions', panel));
   const inspectorPanel = one('.right-panel');
-  for (const selector of ['.inspector-header', '#inspector', '#vfx-panel']) one(selector, inspectorPanel);
+  for (const selector of ['.inspector-header', '#inspector', '#vfx-panel', '#user-library']) one(selector, inspectorPanel);
+  // Static tabs (dock host), each naming the panel it shows; the Library host is empty.
+  const tablist = one('#properties-tab').parent;
+  assert.equal(tablist.attrs.role, 'tablist');
+  for (const [tab, target] of [['properties-tab', 'properties-panel'], ['vfx-tab', 'vfx-panel'], ['library-tab', 'user-library']]) {
+    const element = one(`#${tab}`, tablist);
+    assert.equal(element.attrs.role, 'tab');
+    assert.equal(element.attrs['aria-controls'], target, `#${tab} controls #${target}`);
+    assert.equal(one(`#${target}`).attrs.role, 'tabpanel');
+  }
+  assert.equal(one('#vfx-tab').attrs['data-vfx-tab'], 'vfx');
+  assert.equal(one('#user-library').children.length, 0, '#user-library is an empty host the Library fills');
+  for (const selector of ['.inspector-header', '#inspector']) one(selector, one('#properties-panel'));
+  one('[data-action="panel-toggle-properties"]', one('.titlebar'));
+  one('[data-action="timeline-sheet"]', one('.timeline-toolbar'));
   one('[data-action="toggle-isolate"]', one('.tool-dock'));
   assert.equal(find('[data-action="selection-front"]')[0].attrs['data-selection-order'], '');
   assert.equal(find('[data-action="selection-back"]')[0].attrs['data-selection-order'], '');

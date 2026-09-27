@@ -84,6 +84,23 @@ test('updates are debounced into one ordered write that keeps the v1 mirror', as
   assert.deepEqual(written.modes.animate, {stamp: 0, preset: 'animate'});
 });
 
+test('stored is what this window last read or wrote, never a fitted or pending layout', async () => {
+  const disk = createDisk({studioVersion: 1, right: 330, timeline: 300});
+  const {store, clock} = openWindow(disk);
+  assert.equal(store.stored, null, 'nothing before load');
+  await store.load();
+  assert.deepEqual(store.stored, {studioVersion: 1, right: 330, timeline: 300});
+  store.update(layout => setSharedSize(layout, 'right', 310));
+  assert.deepEqual(store.stored, {studioVersion: 1, right: 330, timeline: 300}, 'a pending change is not stored yet');
+  clock.advance(200);
+  await store.flush();
+  assert.deepEqual(store.stored, disk.value);
+  assert.equal(store.stored.right, 310);
+  const copy = store.stored;
+  copy.right = 1;
+  assert.equal(store.stored.right, 310, 'callers get a copy');
+});
+
 test('flush writes pending changes at once and writes land in order', async () => {
   const pending = [];
   const disk = createDisk();

@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="./src/styles/app.css" />
   </head>
   <body>
-    <div id="app">
+    <div id="app" class="shell">
       <header class="titlebar">
         <button class="brand" data-action="menu" aria-label="Main menu">
           <img src="./symbol.svg" alt="" /><span>StykAnimate</span
@@ -36,6 +36,16 @@
         </button>
         <span id="save-state" class="save-state">Saved</span>
         <div class="title-spacer"></div>
+        <button
+          type="button"
+          class="icon-button shell-sheet-button"
+          data-action="panel-toggle-properties"
+          aria-label="Properties"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          data-icon="inspector"
+          hidden
+        ></button>
         <button
           class="button subtle"
           data-action="save"
@@ -65,9 +75,8 @@
           ></button>
         </div>
       </header>
-      <section class="workspace">
-        <aside id="builder-outliner" class="builder-outliner" hidden aria-label="Figure hierarchy"></aside>
-        <nav class="studio-rail" aria-label="Editor tools">
+      <section class="workspace shell-work" data-mode="animate">
+        <nav class="studio-rail shell-rail" aria-label="Editor tools">
           <button class="rail-add" id="open-insert" title="Add to scene" aria-label="Add to scene" data-icon="plus"></button>
           <span class="rail-divider"></span>
 <div class="tool-dock" role="toolbar" aria-label="Contextual tools" aria-orientation="vertical">
@@ -96,7 +105,13 @@
             <button class="tool" data-action="settings" title="Editor settings" aria-label="Editor settings" data-icon="settings"></button>
           </div>
         </nav>
-        <main class="center">
+        <aside class="shell-left shell-dock" id="left-dock" data-region="left" aria-label="Structure" hidden>
+          <div class="ui-island shell-island" data-island="left-0">
+            <div class="ui-tabs shell-tabs" role="tablist" aria-label="Structure" data-ui hidden></div>
+            <div id="builder-outliner" class="builder-outliner shell-panel" data-panel="structure" hidden></div>
+          </div>
+        </aside>
+        <main class="center shell-stage" aria-label="Stage">
           <div class="canvas-toolbar">
             <div class="workspace-switch" role="group" aria-label="Editing workspace">
               <button type="button" data-workspace-mode="animate" aria-pressed="true">Animate</button>
@@ -228,85 +243,96 @@
             </div>
             <div class="viewport-help" id="viewport-hint"></div>
           </div>
-          <section class="timeline-panel" id="animation-timeline">
-            <div class="timeline-toolbar">
-              <div class="timeline-title">Timeline</div>
-              <div id="timeline-workflow" class="segmented timeline-mode-switch" role="group" aria-label="Timeline mode"><button type="button" data-timeline-mode="simple" aria-pressed="false">Simple</button><button type="button" data-timeline-mode="advanced" aria-pressed="true">Advanced</button></div>
-              <div class="playback-controls">
-                <button
-                  class="icon-button"
-                  data-action="first-frame"
-                  title="First frame · Home"
-                  data-icon="first"
-                ></button
-                ><button
-                  class="icon-button"
-                  data-action="previous-frame"
-                  title="Previous frame · ←"
-                  data-icon="previous"
-                ></button
-                ><button
-                  class="play-button"
-                  id="play-button"
-                  data-action="play"
-                  title="Play / pause · Space"
-                  aria-label="Play"
-                  data-icon="play"
-                ></button
-                ><button
-                  class="icon-button"
-                  data-action="next-frame"
-                  title="Next frame · →"
-                  data-icon="next"
-                ></button
-                ><button
-                  class="icon-button active"
-                  id="loop-button"
-                  data-action="toggle-loop"
-                  title="Loop playback"
-                  data-icon="loop"
-                ></button
-                ><span id="time-display">00:00:00</span
-                ><span class="divider"></span
-                ><label class="fps-control"
-                  ><input
-                    id="fps"
-                    type="number"
-                    min="1"
-                    max="120"
-                    value="24"
-                    aria-label="Frames per second"
-                  />fps</label
-                >
-              </div>
-              <button type="button" id="range-edit" class="button subtle small" data-action="toggle-range-edit" aria-label="Edit selected frames" aria-pressed="false" title="Select multiple frames to edit them together" disabled><span data-icon="frame"></span><span class="range-edit-label">Edit selected frames</span><span class="range-edit-count"></span></button>
-              <div class="timeline-onion-controls"><button class="icon-button" id="onion-button" data-action="toggle-onion" data-icon="onion" title="Onion skin · O" aria-label="Onion skin" aria-pressed="false"></button><button class="icon-button onion-options-button" id="onion-settings-button" title="Onion skin settings" aria-label="Onion skin settings" data-icon="chevron-down"></button></div>
-              <button id="timeline-audio" class="icon-button timeline-audio-toggle" title="Show audio" aria-label="Audio" aria-description="Show or hide audio editing. Audio keeps playing when hidden." aria-controls="timeline-audio-panel" aria-expanded="false" aria-pressed="false" data-icon="music"></button>
-              <button id="expand-timeline" class="icon-button" title="Expand timeline" aria-label="Expand timeline" aria-pressed="false" data-icon="maximize"></button>
-              <div class="timeline-actions">
-                <span data-icon="zoom"></span
-                ><input
-                  type="range"
-                  id="timeline-zoom"
-                  min="5"
-                  max="40"
-                  value="18"
-                  aria-label="Timeline zoom"
-                />
-              </div>
-            </div>
-            <div id="timeline"></div>
-            <div class="timeline-footer">
-              <span id="timeline-summary">24 frames</span
-              ><span id="selection-summary">No figure selected</span>
-            </div>
-          </section>
         </main>
-        <aside class="right-panel panel">
-          <div class="inspector-header"><div><span class="panel-tab-title">Properties</span><span id="inspector-context">Figure</span></div><button id="object-actions" class="icon-button" aria-label="Selection actions" aria-haspopup="menu" aria-expanded="false" title="Selection actions">•••</button></div>
-          <div id="inspector"></div>
-          <div id="vfx-panel" role="tabpanel" hidden></div>
+        <aside class="right-panel shell-right shell-dock" id="right-dock" data-region="right" aria-label="Inspector">
+          <div class="ui-island shell-island" data-island="right-0">
+            <div class="ui-tabs shell-tabs" role="tablist" aria-label="Inspector" data-ui>
+              <button type="button" role="tab" class="ui-tab" id="properties-tab" data-vfx-tab="properties" data-panel="properties" aria-controls="properties-panel" aria-selected="true">Properties</button>
+              <button type="button" role="tab" class="ui-tab" id="vfx-tab" data-vfx-tab="vfx" data-panel="vfx" aria-controls="vfx-panel" aria-selected="false" tabindex="-1">VFX</button>
+              <button type="button" role="tab" class="ui-tab" id="library-tab" data-panel="library" aria-controls="user-library" aria-selected="false" tabindex="-1">Library</button>
+            </div>
+            <section id="properties-panel" class="shell-panel" data-panel="properties" role="tabpanel" aria-labelledby="properties-tab">
+              <div class="inspector-header"><div><span class="panel-tab-title">Properties</span><span id="inspector-context">Figure</span></div><button id="object-actions" class="icon-button" aria-label="Selection actions" aria-haspopup="menu" aria-expanded="false" title="Selection actions">•••</button></div>
+              <div id="inspector"></div>
+            </section>
+            <div id="vfx-panel" class="shell-panel" data-panel="vfx" role="tabpanel" aria-labelledby="vfx-tab" hidden></div>
+            <section id="user-library" class="shell-panel" data-panel="library" role="tabpanel" aria-labelledby="library-tab" hidden></section>
+          </div>
         </aside>
+        <section class="timeline-panel shell-bottom ui-island" id="animation-timeline" aria-label="Timeline">
+          <div class="timeline-toolbar">
+            <div class="timeline-title">Timeline</div>
+            <button type="button" class="icon-button shell-timeline-sheet" data-action="timeline-sheet" aria-label="Timeline…" aria-haspopup="dialog" aria-expanded="false" aria-controls="timeline" data-icon="timeline" hidden></button>
+            <div id="timeline-workflow" class="segmented timeline-mode-switch" role="group" aria-label="Timeline mode"><button type="button" data-timeline-mode="simple" aria-pressed="false">Simple</button><button type="button" data-timeline-mode="advanced" aria-pressed="true">Advanced</button></div>
+            <div class="playback-controls">
+              <button
+                class="icon-button"
+                data-action="first-frame"
+                title="First frame · Home"
+                data-icon="first"
+              ></button
+              ><button
+                class="icon-button"
+                data-action="previous-frame"
+                title="Previous frame · ←"
+                data-icon="previous"
+              ></button
+              ><button
+                class="play-button"
+                id="play-button"
+                data-action="play"
+                title="Play / pause · Space"
+                aria-label="Play"
+                data-icon="play"
+              ></button
+              ><button
+                class="icon-button"
+                data-action="next-frame"
+                title="Next frame · →"
+                data-icon="next"
+              ></button
+              ><button
+                class="icon-button active"
+                id="loop-button"
+                data-action="toggle-loop"
+                title="Loop playback"
+                data-icon="loop"
+              ></button
+              ><span id="time-display">00:00:00</span
+              ><span class="divider"></span
+              ><label class="fps-control"
+                ><input
+                  id="fps"
+                  type="number"
+                  min="1"
+                  max="120"
+                  value="24"
+                  aria-label="Frames per second"
+                />fps</label
+              >
+            </div>
+            <button type="button" id="range-edit" class="button subtle small" data-action="toggle-range-edit" aria-label="Edit selected frames" aria-pressed="false" title="Select multiple frames to edit them together" disabled><span data-icon="frame"></span><span class="range-edit-label">Edit selected frames</span><span class="range-edit-count"></span></button>
+            <div class="timeline-onion-controls"><button class="icon-button" id="onion-button" data-action="toggle-onion" data-icon="onion" title="Onion skin · O" aria-label="Onion skin" aria-pressed="false"></button><button class="icon-button onion-options-button" id="onion-settings-button" title="Onion skin settings" aria-label="Onion skin settings" data-icon="chevron-down"></button></div>
+            <button id="timeline-audio" class="icon-button timeline-audio-toggle" title="Show audio" aria-label="Audio" aria-description="Show or hide audio editing. Audio keeps playing when hidden." aria-controls="timeline-audio-panel" aria-expanded="false" aria-pressed="false" data-icon="music"></button>
+            <button id="expand-timeline" class="icon-button" title="Expand timeline" aria-label="Expand timeline" aria-pressed="false" data-icon="maximize"></button>
+            <div class="timeline-actions">
+              <span data-icon="zoom"></span
+              ><input
+                type="range"
+                id="timeline-zoom"
+                min="5"
+                max="40"
+                value="18"
+                aria-label="Timeline zoom"
+              />
+            </div>
+          </div>
+          <div id="timeline" class="shell-timeline-body"></div>
+          <div class="timeline-footer">
+            <span id="timeline-summary">24 frames</span
+            ><span id="selection-summary">No figure selected</span>
+          </div>
+        </section>
       </section>
       <footer class="statusbar">
         <div>

@@ -23,9 +23,8 @@
 .save-state[data-dirty=true]::before { background: var(--theme-danger-action, #cd9951); }
 .titlebar .button { height: 32px; border-radius: 7px; font-size: 12px; }
 .titlebar .button.primary { padding: 0 16px; }
-.workspace { --studio-inspector: 292px; --studio-timeline: 280px; display: grid; grid-template-columns: minmax(0, 1fr) var(--studio-inspector); grid-template-rows: minmax(0, 1fr) var(--studio-timeline); height: calc(100dvh - 68px); position: relative; background: var(--theme-field, #f5f5f5); }
-/* Compact, floating tools: the stage keeps the full width. */
-.studio-rail { position: absolute; z-index: 25; left: 12px; top: calc((100% - var(--studio-timeline) + 38px) / 2); transform: translateY(-50%); display: flex; align-items: center; flex-direction: column; gap: 4px; width: 44px; max-height: calc(100% - var(--studio-timeline) - 60px); padding: 5px; border: 1px solid var(--theme-border, #d9d9d9); border-radius: 8px; background: var(--theme-panel, #fff); box-shadow: 0 3px 12px var(--theme-shadow, #00000012); color: var(--theme-text, #444); overflow-y: auto; scrollbar-width: none; }
+/* The workspace grid and the rail's placement: retired in M1 (layout/workspace.css) */
+.studio-rail { display: flex; align-items: center; flex-direction: column; gap: 4px; width: 44px; padding: 5px; border: 1px solid var(--theme-border, #d9d9d9); border-radius: 8px; background: var(--theme-panel, #fff); box-shadow: 0 3px 12px var(--theme-shadow, #00000012); color: var(--theme-text, #444); overflow-y: auto; scrollbar-width: none; }
 .rail-add { width: 32px; height: 32px; min-height: 32px; padding: 0; color: var(--theme-text, #444); background: transparent; border-radius: 4px; flex-shrink: 0; }
 .rail-add:hover { background: var(--theme-hover, #f0f0f0); }
 .rail-add .icon { width: 20px; height: 20px; }
@@ -38,7 +37,7 @@
 .studio-rail .tool.active, .studio-rail .tool[aria-pressed=true] { color: var(--theme-accent, #007be5); background: var(--theme-selected, #e5f4ff); }
 .studio-rail .tool:hover:not(.active):not([aria-pressed=true]) { color: var(--theme-text, #333); background: var(--theme-hover, #f0f0f0); }
 .studio-rail .tool:focus-visible { outline: 2px solid var(--theme-accent, #0d99ff); outline-offset: -2px; }
-.center { grid-column: 1; grid-row: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
+/* .center's grid place: retired in M1 (layout/workspace.css) */
 .canvas-toolbar { height: 38px; min-height: 38px; padding: 0 16px; gap: 16px; background: var(--theme-subtle, #fafafa); border-bottom: 1px solid var(--theme-border, #e0e5ec); }
 .workspace-switch { display: flex; padding: 2px; gap: 2px; background: var(--theme-field, #eeeeee); border-radius: 7px; flex-shrink: 0; }
 .workspace-switch button { height: 25px; padding: 0 12px; font-size: 11px; border-radius: 5px; color: var(--theme-secondary, #565656); }
@@ -55,13 +54,8 @@
 .context-strip button { margin-left: auto; color: var(--theme-danger, #855921); font-size: 11px; height: 27px; }
 .workspace[data-mode=rig] .context-strip { display: flex; height: 27px; min-height: 27px; background: var(--theme-subtle, #fafafa); color: var(--theme-muted, #767676); border-color: var(--theme-border, #e5e5e5); }
 .workspace[data-mode=rig] .context-strip strong, .context-strip button { color: var(--theme-secondary, #555); }
-/* Builder mode: figure outliner left, canvas center, inspector right. */
-.workspace[data-mode=rig] { grid-template-columns: var(--builder-outliner-w, 236px) minmax(0, 1fr) var(--studio-inspector); }
+/* Builder mode: its grid (Structure docked left) is retired in M1 (layout/workspace.css, dock.css). */
 .workspace[data-mode=rig] .context-strip { display: none; }
-.workspace[data-mode=rig] .center { grid-column: 2; }
-.workspace[data-mode=rig] .right-panel { grid-column: 3; }
-.workspace[data-mode=rig] .timeline-panel { grid-column: 1 / 4; }
-.workspace[data-mode=rig] .studio-rail { left: calc(var(--builder-outliner-w, 236px) + 8px); }
 .workspace[data-mode=rig] .studio-rail .rail-add, .workspace[data-mode=rig] .studio-rail .rail-divider { display: none; }
 .builder-bar { display: flex; align-items: center; gap: 4px; min-height: 42px; padding: 5px 12px; background: var(--theme-subtle, #fafafa); border-bottom: 1px solid var(--theme-border, #e0e5ec); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; flex-shrink: 0; }
 .builder-bar[hidden] { display: none; }
@@ -90,7 +84,7 @@
 #artboard { box-shadow: 0 0 0 1px var(--theme-shadow, #60708912), 0 8px 28px var(--theme-shadow, #3a4e6517); }
 .artboard-name { color: var(--theme-muted, #7b899a); font-size: 10px; letter-spacing: .2px; }
 .viewport-help { display: block; position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 28px); border: 1px solid var(--theme-border, #ffffff90); background: var(--theme-overlay, #f8fafbdc); color: var(--theme-muted, #748195); padding: 5px 10px; border-radius: 6px; font-size: 10px; text-align: center; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.right-panel { grid-column: 2; grid-row: 1; width: auto; min-width: 0; min-height: 0; border-left: 1px solid var(--border); background: var(--theme-panel, #fff); }
+/* .right-panel's grid place and border: retired in M1 (layout/dock.css) */
 .inspector-header { min-height: 64px; display: flex; align-items: center; padding: 0 20px; gap: 12px; border-bottom: 1px solid var(--border); }
 .inspector-header > div { display: grid; gap: 5px; min-width: 0; flex: 1; }
 .eyebrow { font-size: 9px; font-weight: 650; letter-spacing: 1.25px; color: var(--theme-muted, #8c97a7); }
@@ -114,7 +108,7 @@
 #inspector .inspector-disclosure > summary::after { content: "›"; font-size: 17px; color: var(--theme-muted, #909bad); font-weight: 400; }
 #inspector .inspector-disclosure[open] > summary::after { transform: rotate(90deg); }
 .inspector-disclosure-body { padding-top: 14px; }
-.timeline-panel { grid-column: 1 / 3; grid-row: 2; height: auto; min-height: 0; max-height: none; border-top: 1px solid var(--theme-border, #ccd5e0); box-shadow: 0 -3px 10px var(--theme-shadow, #36465d05); }
+/* .timeline-panel's grid place: retired in M1 (layout/workspace.css) */
 .timeline-toolbar { height: 43px; padding: 0 16px; gap: 12px; background: var(--theme-subtle, #fafafa); }
 .timeline-title { font-size: 12px; color: var(--theme-text, #444); letter-spacing: -.1px; }
 .workflow-button { font-size: 11px; padding: 4px 8px; border-radius: 5px; color: var(--theme-muted, #728094); border: 1px solid var(--theme-border, #e1e7ef); }
@@ -124,11 +118,7 @@
 .timeline-footer { height: 23px; padding: 0 15px; font-size: 10px; color: var(--theme-muted, #798596); background: var(--theme-subtle, #fbfcfd); }
 #selection-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .statusbar { height: 24px; padding: 0 14px; color: var(--theme-muted, #7d899a); background: var(--theme-panel, #fff); font-size: 10px; }
-.studio-splitter { position: absolute; z-index: 5; touch-action: none; }
-.studio-splitter-right { width: 7px; right: calc(var(--studio-inspector) - 3px); top: 0; bottom: var(--studio-timeline); cursor: col-resize; }
-.studio-splitter-timeline { height: 7px; left: 0; right: 0; bottom: calc(var(--studio-timeline) - 3px); cursor: row-resize; }
-.studio-splitter:hover, .studio-splitter:focus-visible, .studio-splitter[data-dragging] { background: var(--theme-action-hover, #369af840); outline: none; }
-.studio-splitter:focus-visible { box-shadow: inset 0 0 0 1px var(--theme-shadow, #369af8); }
+/* .studio-splitter: retired in M1 (components/splitter.css, layout/dock.css) */
 dialog { border-radius: 12px; box-shadow: 0 20px 80px var(--theme-shadow, #172a4433); border: 1px solid var(--theme-border, #dfe5ed); }
 dialog::backdrop { background: var(--theme-backdrop, #18273c55); backdrop-filter: blur(2px); }
 #insert-dialog { width: 660px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 48px); padding: 0; }
@@ -229,8 +219,6 @@ dialog::backdrop { background: var(--theme-backdrop, #18273c55); backdrop-filter
   .context-strip #leave-rig { font-size: 10px; }
 }
 @media (max-width: 760px) {
-  .workspace { grid-template-columns: minmax(0, 1fr) var(--studio-inspector); }
-  .studio-rail { left: 8px; }
   .timeline-toolbar { gap: 5px; padding: 0 8px; }
   .timeline-title, .timeline-toolbar .fps-control { display: none; }
   .titlebar { padding: 0 8px; gap: 4px; }
@@ -361,7 +349,7 @@ dialog::backdrop { background: var(--theme-backdrop, #18273c55); backdrop-filter
 .canvas-options { gap: 6px; }
 .canvas-options .button { width: 30px; height: 30px; }
 #viewport { background: var(--theme-workspace, #ededf0); }
-.studio-rail { left: 16px; padding: 6px; width: 46px; border-radius: 12px; box-shadow: 0 4px 16px var(--theme-shadow, #0000000a); }
+.studio-rail { padding: 6px; width: 46px; border-radius: 12px; box-shadow: 0 4px 16px var(--theme-shadow, #0000000a); }
 .studio-rail .tool, .rail-add { border-radius: 7px; }
 .canvas-view-controls { position: absolute; z-index: 26; right: 16px; bottom: 16px; display: flex; align-items: center; gap: 4px; height: 38px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); box-shadow: 0 3px 12px var(--theme-shadow, #0000000a); }
 .canvas-view-controls button { flex-shrink: 0; height: 28px; min-width: 28px; padding: 0 6px; border-radius: 5px; }

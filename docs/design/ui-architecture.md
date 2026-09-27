@@ -1456,6 +1456,19 @@ The file list and verification below are the original plan; items marked landed 
 
 #### M1 Shell and layout engine (track A ∥ M2; I integrates)
 
+**Status on `main` (2026-09-27).** Commits 1 and 2 have landed: commit 1 as `7b0112b1` and `ffb3a331`, its data brought to revision 4.3 in `741b8a50`, and commit 2 (*Dock the editor panels as islands*: `index.html`'s islands, `dock-host.mjs`, `dock-keyboard.mjs`, `shell-commands.mjs`, `layout/{shell,workspace,dock}.css` and `components/{island,tabs,strip,sheet,splitter,drop-zone}.css`). Where they differ from this plan:
+
+- The solver's data is revision 4.3's (§3.11.4): compact ≤ 800, `STAGE_FLOORS` without the 800×600 row, a 40px stage header above `#viewport` (the solution reports `stage`, `stageHead` and `viewport`), the vertical insets 24, 10 and 8, the default timeline from its data (Camera and Scene at 24px, then 4½, 4 or 3 content slots) and `bandMin` as the band's width after each fold step (`BAND_FOLDS`, written to `data-band`). The timeline's row minimum stays two content rows (184px tall, 168px short), not 120px.
+- Until M3b the status bar stays under the workspace (the solver's `footer` input) and the canvas toolbar is the stage island's 40px header row; `dock-host` measures that row (plus Build's bar) as `stageHead`. The floors hold in the solver, but the app's artboard sits a few points lower (86% at 1440×900), and at 500×340 `#viewport` is about 180px tall; `shell-layout.browser` records that exception.
+- Until M5's row-layout painter draws Camera and Scene at 24px, the default timeline shows about one content row fewer than today.
+- Sheets are the panels' own islands shown as `popover="manual"` in place (a side's sheet island, `#timeline` at the low tier), so every root keeps its DOM ancestry; they close on Escape and on a press outside any other overlay. At compact width the right sheet keeps the Properties, VFX and Library tabs.
+- The band's Properties button is `.shell-sheet-button` (`data-action="panel-toggle-properties"`) in today's band, and the timeline header starts with Timeline… (`data-action="timeline-sheet"`) while the timeline is folded, until M5's Timeline ⋯ menu. At the minimal width the header folds First frame and Loop (both stay in the Animation menu) and hides Tall timeline while folded, so Timeline…, Play and Onion stay on screen at 500×340. In Simple, Add frame lives in the filmstrip, so at the low tier it is inside the Timeline… sheet (or the A key) until M5 puts it in the header.
+- Splitters keep today's keys: the arrows step 12px (Shift: 40), Home, Enter and a double-click restore the default, and Escape cancels a drag; End is not bound.
+- Ctrl+1–4 are bound in the desktop app only (`DESKTOP_PANEL_KEYS` in `hotkeys.mjs`); F6, Ctrl+F6, Ctrl+\ and Ctrl+Alt+M everywhere.
+- Build's timeline toggle writes Build's arrangement, so Build remembers a shown timeline; entering Draw or Build shows Properties.
+- The Layout popover, tab drag-to-dock, tab menus and moving a floating island by its head are commit 4; floating works through `styk.workspace.float()` and Ctrl+Alt+M.
+- `studio-layout.mjs` and its test are removed; `workspace-layout.mjs`, `workspace-panels.mjs` and `layer-panel.mjs` wait for commit 5.
+
 **Goal.** The calm islands shell (three islands on the mist field, the timeline full width by default) with docking, strips, sheets, tiers, presets and saved presets, organised through the Layout popover, tab menus and one calm drag target. It replaces `studio-layout.mjs` and fixes the 500×340 stage (28 px tall today).
 
 **Track A owns:**

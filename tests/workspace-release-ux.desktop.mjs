@@ -235,7 +235,7 @@ try {
     ["right", -40, 0],
     ["timeline", 0, -45],
   ])
-    await drag(page.locator(`.studio-splitter-${name}`), dx, dy);
+    await drag(page.getByRole("separator", { name: name === "right" ? "Resize properties panel" : "Resize timeline" }), dx, dy);
   const resized = await layout();
   check(
     "Wide desktop splitters resize the properties panel and the timeline",
@@ -248,7 +248,7 @@ try {
     (await gpuSized()) && (await documentUnchanged()),
   );
   await page.screenshot({ path: path.join(out, "wide-docked.png") });
-  const rightSplitter = page.locator(".studio-splitter-right");
+  const rightSplitter = page.getByRole("separator", { name: "Resize properties panel" });
   await rightSplitter.focus();
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("Shift+ArrowLeft");
@@ -256,7 +256,8 @@ try {
   const keyboard = await layout();
   check(
     "Focused splitter keyboard resizing stays out of the canvas document",
-    Math.abs(keyboard.sizes.right - resized.sizes.right - 52) < 1 &&
+    // One step (12px) and one Shift step (40px), up to the inspector's 360px maximum.
+    Math.abs(keyboard.sizes.right - Math.min(360, resized.sizes.right + 52)) < 1 &&
       (await documentUnchanged()),
   );
   await drag(rightSplitter, -30, 0, { cancel: true });
@@ -267,7 +268,7 @@ try {
         () =>
           ![
             ...document.querySelectorAll(
-              ".studio-splitter-right,.studio-splitter-timeline",
+              ".shell-splitter",
             ),
           ].some((el) => el.hasPointerCapture(1)),
       )),

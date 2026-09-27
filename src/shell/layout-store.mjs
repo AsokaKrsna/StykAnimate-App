@@ -27,7 +27,7 @@
  *   so it is not merged back and trimmed again on every save.
  */
 import {PANEL_CATALOG} from './panel-registry.mjs';
-import {MAX_SAVED_LAYOUTS, MODES, fitBudget, migrateLayout, normalizeLayout, serializeLayout, trimLayout} from './layout-schema.mjs';
+import {MAX_SAVED_LAYOUTS, MODES, cloneJSON, fitBudget, migrateLayout, normalizeLayout, serializeLayout, trimLayout} from './layout-schema.mjs';
 
 export const BROWSER_LAYOUT_KEY = 'stykanimate.workspace-layout.v2';
 /** Older browser keys, read once when the v2 key is absent: 1.1's studio layout and the earlier splitter layout. */
@@ -163,6 +163,8 @@ export function createLayoutStore({
   const at = () => ({catalog: panels(), now: now()});
   let layout = deepFreeze(normalizeLayout(null, at()));
   let readOnly = false, source = 'empty', error = null, timer = null, dirty = false, last = 0, destroyed = false, loaded = false;
+  // The stored value as this window last read or wrote it (JSON), for callers that show what is on disk.
+  let stored = null;
   let chain = Promise.resolve(true);
   const queued = [];
   const listeners = new Map();
@@ -228,6 +230,7 @@ export function createLayoutStore({
         raw = check;
       }
       await write(fitted.value);
+      stored = cloneJSON(fitted.value);
       error = null;
       // Take in the saved layouts and deletions other windows wrote, and drop what
       // the file could not hold; this window's arrangements and sizes stay as they
@@ -259,6 +262,7 @@ export function createLayoutStore({
     async load() {
       let raw;
       try { raw = await read(); } catch (failure) { fail(failure); raw = null; }
+      stored = cloneJSON(raw) ?? null;
       const result = migrateLayout(raw, {...at(), legacy});
       source = error && raw === null ? 'error' : result.source;
       layout = deepFreeze(result.layout);
@@ -273,6 +277,8 @@ export function createLayoutStore({
     get readOnly() { return readOnly; },
     /** Where the loaded layout came from: v2, v1, legacy, empty, invalid, future or error. */
     get source() { return source; },
+    /** A copy of the stored value this window last read (load) or wrote (a save); null before load or when nothing is stored. */
+    get stored() { return cloneJSON(stored) ?? null; },
     get error() { return error; },
     /**
      * Replaces the layout with `change(layout)` (or `change`), normalized and
