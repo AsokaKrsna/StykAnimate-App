@@ -3,14 +3,22 @@
  * of the stage (--toast-x and --toast-bottom come from the stage's box). It
  * keeps the #toast id; the properties below override the legacy #toast box. */
 @layer components {
+  /* The host is the widest band centred on --toast-x that the window holds, so a
+   * message is never cut: it keeps one line while it fits and wraps only past
+   * the window. The band lets presses through; only the pill takes them. */
   .ui-toast-host {
-    position: fixed; inset: auto auto var(--toast-bottom, var(--space-6)) var(--toast-x, 50%); translate: -50% 0;
-    max-inline-size: min(560px, calc(100vw - var(--space-4)));
+    --_x: var(--toast-x, 50vw);
+    position: fixed;
+    inset: auto max(var(--space-2), calc(100vw - 2 * var(--_x))) var(--toast-bottom, var(--space-6)) max(var(--space-2), calc(2 * var(--_x) - 100vw));
+    inline-size: auto; block-size: auto; max-inline-size: none;
+    justify-content: center;
     margin: 0; padding: 0; border: 0; border-radius: 0;
     background: transparent; color: var(--text-2); box-shadow: none; transform: none;
     font: var(--type-ui); white-space: nowrap; overflow: visible;
+    pointer-events: none;
     -webkit-app-region: no-drag;
   }
+  .ui-toast-host:popover-open { display: flex; }
 
   /* The announcement regions: always rendered, never seen (inside a modal too). */
   .ui-toast-live {
@@ -27,9 +35,10 @@
     background: var(--surface-raised); color: var(--text-2);
     box-shadow: var(--elevation-1);
     font: var(--type-ui); white-space: nowrap;
+    pointer-events: auto;
   }
   .ui-toast:where(:not(:has(> button))) { padding-inline-end: var(--space-3); }
-  .ui-toast-text { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
+  .ui-toast-text { min-inline-size: 0; white-space: normal; overflow-wrap: break-word; padding-block: var(--space-1); }
   .ui-toast-text > b { font-weight: var(--weight-semibold); color: var(--text-1); }
   .ui-toast-icon { flex: none; inline-size: var(--icon-size); block-size: var(--icon-size); color: var(--accent-text); }
   .ui-toast:where([data-tone="success"]) .ui-toast-icon { color: var(--success-text); }

@@ -373,9 +373,11 @@ class Menu {
         closeOnEscape: false, onClose: (value, reason) => this.close(reason, {restore: false})}) ?? null;
     }
     const focus = options.focus ?? 'first';
-    if (focus === 'first') this.focusIndex(0);
-    else if (focus === 'last') this.focusIndex(this.buttons.length - 1);
-    else if (typeof focus === 'number') this.focusIndex(focus);
+    // A menu a pointer opened focuses its row without the ring (as a dialog does); the first key brings it back.
+    const quiet = !this.parent && options.overlays?.openedByPointer?.() === true ? {focusVisible: false} : {};
+    if (focus === 'first') this.focusIndex(0, quiet);
+    else if (focus === 'last') this.focusIndex(this.buttons.length - 1, quiet);
+    else if (typeof focus === 'number') this.focusIndex(focus, quiet);
     return this;
   }
 
@@ -406,10 +408,10 @@ class Menu {
     return deepest;
   }
 
-  focusIndex(index) {
+  focusIndex(index, {focusVisible} = {}) {
     const button = this.buttons[index];
     if (!button) return;
-    button.focus({preventScroll: true});
+    button.focus(focusVisible === undefined ? {preventScroll: true} : {preventScroll: true, focusVisible});
     button.scrollIntoView?.({block: 'nearest'});
   }
 

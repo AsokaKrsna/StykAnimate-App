@@ -85,6 +85,11 @@ const MENU_KEYS = Object.freeze({
   paste: 'common.paste', duplicate: 'common.duplicate', delete: 'common.delete',
 });
 
+/** The catalog key that translates a menu row for `action`, or undefined (the row keeps its English label). */
+export function menuLabelKey(action) {
+  return Object.hasOwn(MENU_KEYS, action) ? MENU_KEYS[action] : undefined;
+}
+
 /**
  * Root lifecycle bridge. Bind stable chrome once; call applyMenu only after that
  * menu's HTML is replaced. Other owners can mark semantic data-i18n attributes

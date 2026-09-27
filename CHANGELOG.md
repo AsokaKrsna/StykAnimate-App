@@ -19,6 +19,11 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Seek, scrub and zoom large Pivot animations more smoothly. Frames are prepared faster, and detailed figures with overlapping fill shapes now draw as sharp vectors instead of textures, so zooming no longer pauses and uses far less graphics memory.
 - Refresh the editor with the StykAnimate typeface and colours. The typeface now ships with the app, so text looks the same on every computer, including Greek, Cyrillic and Vietnamese, and main buttons, highlighted tools, small blue labels and brush preset previews are easier to see in both light and dark mode.
 
+### Fixed
+
+- Show error messages above open dialogs instead of behind them, and keep them until you close them.
+- Stop menus from switching tools while you type in them: letters now jump to the matching command.
+
 ## [1.1.0]
 
 Drawing layers and animation editing improvements

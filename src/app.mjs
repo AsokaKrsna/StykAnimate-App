@@ -120,10 +120,10 @@ import {
   drawCameraOutline,
 } from "./camera-overlay.mjs";
 import { EditorSettings, normalizeEditorSettings } from "./settings.mjs";
-import { HotkeyManager, isHotkeyInput } from "./hotkeys.mjs";
+import { HotkeyManager, HOTKEY_BY_ID, isHotkeyInput } from "./hotkeys.mjs";
 import { refreshHotkeyHints } from "./hotkey-hints.mjs";
 import { runTimelineHotkey } from "./timeline-hotkeys.mjs";
-import { AppLocalization } from "./localization-bindings.mjs";
+import { AppLocalization, menuLabelKey } from "./localization-bindings.mjs";
 import { layerIdForUid, layerVisible, layerLocked } from "./layers.mjs";
 import { DocumentExporter } from "./document-export.mjs";
 import { writeNativeBlob as writeNativeBlobRaw, readNativeRecovery } from "./native-files.mjs";
@@ -138,6 +138,9 @@ import { CanvasGuides } from "./canvas-guides.mjs";
 import { MotionPathControls } from "./motion-path-controls.mjs";
 import { TweenerControls } from "./tweener-controls.mjs";
 import { onFontsReady } from "./ui/font-loading.mjs";
+import { createOverlayManager } from "./ui/overlay-manager.mjs";
+import { installMenuBar, menuFor, openMenu } from "./ui/ui-menu.mjs";
+import { createToasts } from "./ui/ui-toast.mjs";
 import { buildGeometry, evaluatedFrame, shortest } from "./pivot/geometry.mjs";
 import {
   cameraIsIdentity,
@@ -303,6 +306,22 @@ const viewport = $("viewport"),
     requestRender();
   }, onError: error => status(error.message, true)});
 hydrateIcons();
+// One owner for dialogs, menus and messages (src/ui/overlay-manager.mjs): the
+// hotkey gate, focus return, and the message slot that stays above every modal.
+// The HotkeyManager joins once it exists, so held keys are released whenever a
+// blocking overlay opens.
+const overlays = createOverlayManager({ fallbackFocus: () => viewport });
+overlays.install();
+const toasts = createToasts({
+  host: $("toast"),
+  overlays,
+  icon: (name) => icon(name),
+  area: () => viewport.getBoundingClientRect(),
+  t: (key, params) => appLocalization?.t(key, params),
+  feedback: desktop?.sendTelemetryFeedback
+    ? { label: "Send feedback", run: () => feedbackUI.open({ category: "bug" }) }
+    : null,
+});
 let drawingController, timelineUI,
   studioShell,
   builderMode,
@@ -314,7 +333,6 @@ let drawingController, timelineUI,
   vfwExportControls,
   workspaceLayout,
   assetLibrary,
-  toastTimer,
   raf = 0,
   playStart = 0,
   playTick = 0,
@@ -929,17 +947,17 @@ function status(text, error = false, busy = false) {
   $("status-dot").className =
     `status-dot${error ? " error" : busy ? " busy" : ""}`;
 }
+/** A short message in the stage's message slot, above any open dialog. */
 function toast(text) {
-  $("toast").textContent = text;
-  $("toast").hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => ($("toast").hidden = true), 4400);
+  toasts.show({ message: text });
 }
+/** Reports a failure: the status line, and a message that stays until dismissed
+ * (a UserActionError is a timed warning, an AbortError says nothing). */
 function fail(error) {
   telemetry.error(error);
   const message = error?.message || String(error);
   status(message, true);
-  toast(message);
+  toasts.fail(error);
   console.error(error);
 }
 function guarded(fn) {
@@ -2246,8 +2264,7 @@ overlay.addEventListener(
     finishKeyboardHandle();
     playback.setInteractionActive(true);
     interruptRecovery();
-    $("toast").hidden = true;
-    clearTimeout(toastTimer);
+    toasts.clear({ tones: ["info"] });
     pause();
     viewport.focus({ preventScroll: true });
     editablePreparation.cancel();
@@ -4147,26 +4164,49 @@ function showPerformance() {
       )}</table><p>CPU submission timings include geometry evaluation and selection overlays. They do not measure GPU completion or input-to-display latency. Performance varies with hardware, scene complexity, effects, and media.</p>`,
   );
 }
-function openAppMenu(anchor) {
-  showCommandMenu(applicationMenuItems(anchor.dataset.appMenu, editor, desktop), anchor);
+// Every menu renders into the #menu host through the overlay kit
+// (src/ui/ui-menu.mjs): `hidden` mirrors the open state, rows keep their
+// data-action for the click delegation below, and while a menu is open it takes
+// every key, so letters typed into it never reach the tool hotkeys.
+const menuHost = $("menu");
+const menuTopInset = () => document.querySelector(".titlebar").getBoundingClientRect().bottom + 6;
+let lastMenuAnchor = null;
+/** The shortcut a menu row shows: the user's binding for commands with a hotkey, else the row's own text. */
+function menuShortcut(command, text = "") {
+  let id = command === "delete-single-segment" ? "delete" : command;
+  if (id === "play" && !hotkeys.label("play")) id = "play-pan";
+  return HOTKEY_BY_ID.has(id) ? hotkeys.label(id) : text;
 }
-const menuButtons = [...document.querySelectorAll('[data-app-menu]')];
-menuButtons.forEach((button, index) => {
-  button.tabIndex = index === 0 ? 0 : -1;
-  button.addEventListener('focus', () => menuButtons.forEach(item => { item.tabIndex = item === button ? 0 : -1; }));
-  button.addEventListener('pointerenter', () => {
-    if (!$('menu').hidden && menuButtons.some(item => item.getAttribute('aria-expanded') === 'true')) openAppMenu(button);
+/** Today's menu rows ([action, icon, label, shortcut, disabled] or null) as menu items. */
+function menuItems(rows) {
+  return rows.map((row) => {
+    if (!Array.isArray(row)) return row ?? null;
+    const [command, glyph, label, shortcut = "", disabled = false] = row;
+    return {
+      command, icon: glyph, label, labelKey: menuLabelKey(command),
+      shortcut: menuShortcut(command, shortcut), disabled: Boolean(disabled), danger: command === "delete",
+    };
   });
-  button.addEventListener('keydown', event => {
-    if (['ArrowLeft', 'ArrowRight'].includes(event.key)) {
-      event.preventDefault(); event.stopPropagation();
-      menuButtons[(index + (event.key === 'ArrowRight' ? 1 : -1) + menuButtons.length) % menuButtons.length].focus();
-    } else if (event.key === 'ArrowDown') { event.preventDefault(); event.stopPropagation(); openAppMenu(button); }
-  });
+}
+const menuOptions = {
+  host: menuHost,
+  overlays,
+  icon: (name) => icon(name),
+  t: (key) => appLocalization?.t(key),
+  topInset: menuTopInset,
+};
+installMenuBar(document.querySelector(".app-menubar"), {
+  ...menuOptions,
+  menus: Object.fromEntries(
+    [...document.querySelectorAll("[data-app-menu]")].map((button) => [
+      button.dataset.appMenu,
+      () => menuItems(applicationMenuItems(button.dataset.appMenu, editor, desktop)),
+    ]),
+  ),
 });
-new MutationObserver(() => {
-  if ($('menu').hidden) menuButtons.forEach(button => button.setAttribute('aria-expanded', 'false'));
-}).observe($('menu'), {attributes: true, attributeFilter: ['hidden']});
+function closeMenu(reason = "close") {
+  menuFor(menuHost)?.close(reason, { restore: false });
+}
 function showMenu(anchor) {
   const items = [
     ["new", "plus", "New animation", "Ctrl N"],
@@ -4190,52 +4230,26 @@ function showMenu(anchor) {
   ];
   showCommandMenu(items, anchor);
 }
+/**
+ * Opens a command menu below `anchor` (an element, whose second press closes
+ * it again) or at a point ({left, bottom}, a context menu; `invoker` is where
+ * focus returns). Returns the menu, or null when the press closed it.
+ */
 function showCommandMenu(items, anchor) {
-  menuButtons.forEach(button => button.setAttribute('aria-expanded', String(button === anchor)));
-  $('menu')._anchor = anchor;
-  $("menu").innerHTML = items
-    .map((i) =>
-      i
-        ? `<button class="menu-item" role="menuitem" data-action="${i[0]}" ${i[4] ? "disabled" : ""}>${icon(i[1])}<span>${i[2]}</span><kbd>${i[3] || ""}</kbd></button>`
-        : '<div class="menu-separator"></div>',
-    )
-    .join("");
-  appLocalization?.applyMenu($("menu"));
-  refreshHotkeyHints(hotkeys, $("menu"));
-  const r = anchor.getBoundingClientRect?.() || anchor;
-  $("menu").hidden = false;
-  const bounds = $("menu").getBoundingClientRect();
-  $("menu").style.left =
-    `${Math.max(8, Math.min(r.left, innerWidth - bounds.width - 8))}px`;
-  $("menu").style.top =
-    `${Math.max(8, Math.min(r.bottom + 5, innerHeight - bounds.height - 8))}px`;
-  $("menu")
-    .querySelector("button:not(:disabled)")
-    ?.focus({ preventScroll: true });
+  const element = anchor?.nodeType === 1 ? anchor : null;
+  const open = element && menuFor(element);
+  if (open) {
+    open.close("toggle", { restore: true });
+    return null;
+  }
+  lastMenuAnchor = anchor;
+  return openMenu({
+    ...menuOptions,
+    items: menuItems(items),
+    ...(element ? { anchor: element } : { point: { x: anchor.left ?? anchor.x ?? 0, y: anchor.bottom ?? anchor.y ?? 0 } }),
+    invoker: element ?? anchor?.invoker ?? document.activeElement,
+  });
 }
-$("menu").addEventListener("keydown", (e) => {
-  const buttons = [...$("menu").querySelectorAll("button:not(:disabled)")],
-    index = buttons.indexOf(document.activeElement);
-  let next;
-  if (e.key === "ArrowDown") next = (index + 1) % buttons.length;
-  else if (e.key === "ArrowUp")
-    next = (index + buttons.length - 1) % buttons.length;
-  else if (e.key === "Home") next = 0;
-  else if (e.key === "End") next = buttons.length - 1;
-  else if (e.key === "Escape") {
-    $("menu").hidden = true;
-    ($("menu")._anchor?.focus ? $("menu")._anchor : viewport).focus({ preventScroll: true });
-  } else if (["ArrowLeft", "ArrowRight"].includes(e.key) && menuButtons.includes($("menu")._anchor)) {
-    const index = menuButtons.indexOf($("menu")._anchor);
-    openAppMenu(menuButtons[(index + (e.key === "ArrowRight" ? 1 : -1) + menuButtons.length) % menuButtons.length]);
-  } else if (e.key === " " || e.key === "Enter") {
-    e.stopPropagation();
-    return;
-  } else return;
-  e.preventDefault();
-  e.stopPropagation();
-  buttons[next]?.focus({ preventScroll: true });
-});
 function showZoomMenu(anchor) {
   showCommandMenu(
     [
@@ -4390,7 +4404,7 @@ const actions = {
     ["locate-previous", "chevron-left", "Match previous pose", "L"],
     ["locate-next", "chevron-right", "Match next pose", "Shift L"],
     ["zoom-selection", "center", "Fit selection", "Shift 2"],
-  ], $('menu')._anchor || viewport),
+  ], lastMenuAnchor || viewport),
   "open-recent": async () => {
     pause();
     const entries = await desktop.listRecentFiles();
@@ -4973,27 +4987,23 @@ for (const id of ["timeline", "fps"]) {
   $(id).addEventListener("focusin", cancelPolygonDraft);
   $(id).addEventListener("pointerdown", cancelPolygonDraft, true);
 }
-document.addEventListener("pointerdown", (event) => {
-  if (!$("menu").contains(event.target) && !event.target.closest('[data-app-menu]'))
-    $("menu").hidden = true;
-}, true);
 document.addEventListener(
   "click",
   guarded((e) => {
-    const menuButton = e.target.closest('[data-app-menu]');
-    if (menuButton) { openAppMenu(menuButton); return; }
+    // The menubar opens its own menus (installMenuBar).
+    if (e.target.closest('[data-app-menu]')) return;
     const action = e.target.closest("[data-action]");
     if (action) {
       if (action.dataset.action === "play" && !state.polygon) {
         if (state.previewing) return pause();
         if (e.ctrlKey || e.metaKey) return previewFrame();
       }
-      if (action.dataset.action !== "menu") $("menu").hidden = true;
+      if (action.dataset.action !== "menu") closeMenu();
       const name = e.shiftKey ? action.dataset.shiftAction ?? action.dataset.action : action.dataset.action;
       if (name.startsWith('builder-context-')) return builderMode?.runContextCommand(name);
       return actions[name]?.(action, e);
     }
-    if (!$("menu").contains(e.target)) $("menu").hidden = true;
+    if (!menuHost.contains(e.target)) closeMenu();
     const tool = e.target.closest("[data-tool]");
     if (tool) setTool(tool.dataset.tool);
     const asset = e.target.closest("[data-figure]");
@@ -5508,7 +5518,7 @@ function cancelKeyboardCommand() {
   // Pointer-up may already have cleared the UI gesture before its commit failed.
   if (editor._drag) editor.cancelDrag();
   if (state.tool === 'attach') setTool('select');
-  $('menu').hidden = true;
+  closeMenu("cancel");
 }
 function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
   if(id!=='cancel'&&id!=='play-pan'&&(drawingController?.gesture?.kind==='stroke'||drawingController?.loading||drawingController?.selection?.committing||drawingController?.operation))
@@ -5576,17 +5586,19 @@ function releaseKeyboardCommand(id, event) {
   } else if (id === 'play-pan') {
     const active = state.space;
     state.space = false; viewport.classList.toggle('panning', state.tool === 'hand');
-    if (active && !event.cancelled && !state.spacePanned && !state.polygon && !document.querySelector('dialog[open]') && !isHotkeyInput(event.target)) {
+    if (active && !event.cancelled && !state.spacePanned && !state.polygon && !overlays.blocksHotkeys() && !isHotkeyInput(event.target)) {
       play();
     }
     state.spacePanned = false;
   }
 }
 const hotkeys = new HotkeyManager({run: guarded(runKeyboardCommand), release: guarded(releaseKeyboardCommand)});
+overlays.hotkeys = hotkeys;
 // Tablet navigation chords (Ctrl+Space zoom, Shift+Space rotate) are not
 // hotkeys: track the Space key itself so a pen press can read it.
+// It runs before any open menu or dialog sees the key, so it asks the overlay gate itself.
 window.addEventListener('keydown', (event) => {
-  if (event.code !== 'Space' || isHotkeyInput(event.target)) return;
+  if (event.code !== 'Space' || isHotkeyInput(event.target) || overlays.blocksHotkeys()) return;
   state.spaceHeld = true;
   if (event.ctrlKey || event.metaKey || event.shiftKey) {
     event.preventDefault();
@@ -5609,7 +5621,7 @@ document.addEventListener('keydown', guarded(event => {
   const scopes = hotkeyScopes(event), command = hotkeys.resolve(event, scopes);
   const builderCheckbox = command?.scope === 'builder' && command.id.startsWith('builder-') && event.target.matches?.('input[type=checkbox],input[type=radio]');
   const effectHistory = ['undo','redo'].includes(command?.id) && vfxInspector?.ownsHistoryTarget(event.target);
-  if (document.querySelector('dialog[open]') || (isHotkeyInput(event.target) && !builderCheckbox && !effectHistory)) return;
+  if (overlays.blocksHotkeys() || (isHotkeyInput(event.target) && !builderCheckbox && !effectHistory)) return;
   // Drag modifiers should not swallow the configured unmodified Cancel key.
   if (state.drag && !command && hotkeys.resolve({code: event.code, key: event.key}, scopes)?.id === 'cancel') {
     event.preventDefault(); cancelDrag(); return;
@@ -5648,8 +5660,6 @@ document.addEventListener('visibilitychange', () => {
   // A warm-up skipped while hidden still owes the playhead its neighbors.
   warmPlayback();
 });
-new MutationObserver(() => { if (document.querySelector('dialog[open]')) hotkeys.releaseAll(); })
-  .observe(document.body, {subtree:true, attributes:true, attributeFilter:['open']});
 editor.addEventListener("change", (e) => {
   const kind = e.detail?.kind;
   if (state.drag?.kind === 'toggle-selection' && ['document', 'seek', 'history', 'selection', 'edit'].includes(kind)) cancelDrag();
@@ -5979,6 +5989,8 @@ window.styk = {
   acceptImport,
   fit,
   drawingResourcesFor,
+  // The overlay kit: the open overlays and the hotkey gate, and the message slot.
+  ui: { overlays, toasts },
   performance: () => ({
     editingPresentation:state.lastEditingPresentation,
     editablePreparation:{pending:editablePreparation.pending,...editablePreparation.stats},

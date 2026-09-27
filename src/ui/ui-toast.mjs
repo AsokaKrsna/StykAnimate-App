@@ -87,7 +87,9 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
   if (!host) doc.body.append(element);
   element.classList.add('ui-toast-host');
   if (!element.hasAttribute('popover')) element.popover = 'manual';
+  // The host is not a live region (role=status would make it one): every message is read once, from `live`.
   element.removeAttribute('aria-live');
+  if (['status', 'alert', 'log'].includes(element.getAttribute('role'))) element.removeAttribute('role');
   const queue = createMessageQueue({max});
   const records = new Map();
   let visible = null, announceTimer = 0;
@@ -150,6 +152,8 @@ export function createToasts({host = null, overlays = null, icon = null, area = 
     element.showPopover();
   };
   overlays?.addEventListener('open', event => { if (event.detail.modal || event.detail.kind === 'dialog') raise(); });
+  // Dialogs that feature modules open themselves, without the manager, raise it too.
+  doc.addEventListener?.('toggle', event => { if (event.target?.localName === 'dialog' && event.newState === 'open') raise(); }, {capture: true});
 
   // The verb or subject in bold, then the rest: "<b>Restore unsaved work</b> from 12:04?"
   const writeText = (node, title, message) => {

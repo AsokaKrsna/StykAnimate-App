@@ -1,12 +1,15 @@
 /**
- * Browser test of the overlay kit (src/ui/) on tests/fixtures/ui-overlays.html.
+ * Browser test of the overlay kit (src/ui/): first on
+ * tests/fixtures/ui-overlays.html, then wired into the app (app.mjs: the
+ * menubar and every #menu menu, messages, the hotkey gate).
  * Serve the repository (node scripts/serve.mjs --port 47832) and run
  * `node tests/overlays.browser.mjs`; STYK_URL overrides the address.
  */
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 
-const url = `${process.env.STYK_URL || 'http://127.0.0.1:47832'}/tests/fixtures/ui-overlays.html`;
+const base = process.env.STYK_URL || 'http://127.0.0.1:47832';
+const url = `${base}/tests/fixtures/ui-overlays.html`;
 const browser = await chromium.launch({channel: 'chrome', headless: true});
 const page = await browser.newPage({viewport: {width: 1280, height: 720}});
 const errors = [];
@@ -54,6 +57,32 @@ try {
     const canvas = page.getByRole('group', {name: 'Canvas'});
     assert.equal(await canvas.getByRole('menuitemcheckbox', {name: 'Joints', exact: true}).getAttribute('aria-checked'), 'true');
     await page.keyboard.press('Escape');
+  });
+
+  await step('typeahead finds a row; Right opens a submenu on its first row; Left and Escape close only the submenu', async () => {
+    const focused = () => page.evaluate(() => {
+      const row = document.activeElement;
+      return {label: row.querySelector(':scope > span')?.textContent ?? null, menu: row.closest('.ui-menu')?.getAttribute('aria-label') ?? null,
+        expanded: row.getAttribute('aria-expanded')};
+    });
+    await page.click('[data-app-menu=edit]');
+    await page.keyboard.press('p');
+    assert.equal((await focused()).label, 'Paste');
+    await page.keyboard.press('p');   // the same letter again cycles to the next row it starts
+    assert.deepEqual(await focused(), {label: 'Paste special', menu: 'Edit', expanded: 'false'});
+    await page.keyboard.press('ArrowRight');
+    const inside = await focused();
+    assert.equal(inside.menu, 'Paste special', 'focus moves to the submenu');
+    assert.ok(inside.label, 'on its first row');
+    await page.keyboard.press('ArrowLeft');
+    assert.deepEqual(await focused(), {label: 'Paste special', menu: 'Edit', expanded: 'false'});
+    await page.keyboard.press('Enter');
+    assert.equal((await focused()).menu, 'Paste special', 'Enter on a submenu row opens it');
+    await page.keyboard.press('Escape');
+    assert.deepEqual(await focused(), {label: 'Paste special', menu: 'Edit', expanded: 'false'}, 'Escape closes only the submenu');
+    assert.equal(await page.locator('[data-app-menu=edit]').getAttribute('aria-expanded'), 'true');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.appMenu), 'edit');
   });
 
   await step('the #menu host gets back its own class and name after each menu', async () => {
@@ -258,6 +287,136 @@ try {
     });
     assert.deepEqual(added, {fits: true, more: true}, 'controls added at the same width go to More instead of being clipped');
     await page.evaluate(() => { for (const button of document.querySelectorAll('#toolbar .added')) button.remove(); });
+  });
+
+  // ---------------------------------------------------------------------------
+  // The app: the same kit wired into app.mjs.
+  await page.setViewportSize({width: 1440, height: 900});
+  await page.goto(`${base}/`);
+  await page.waitForFunction(() => window.styk?.ready, null, {timeout: 60000});
+  const menuOpen = () => page.evaluate(() => !document.getElementById('menu').hidden && document.getElementById('menu').matches(':popover-open'));
+  const focusedLabel = () => page.evaluate(() => document.activeElement?.querySelector?.(':scope > span')?.textContent ?? null);
+  const tool = () => page.evaluate(() => styk.state.tool);
+
+  await step('app: letters typed into the open File menu never reach the tool hotkeys; typeahead, Left and Right, Escape', async () => {
+    const before = await tool();
+    await page.click('[data-app-menu=file]');
+    assert.equal(await menuOpen(), true, 'the File menu renders into #menu');
+    assert.equal(await page.evaluate(() => styk.ui.overlays.blocksHotkeys()), true);
+    await page.keyboard.press('h');
+    assert.equal(await tool(), before, 'H does not pick the Pan tool behind the File menu');
+    await page.waitForTimeout(750);   // a new typeahead query
+    await page.keyboard.press('s');
+    assert.equal(await focusedLabel(), 'Save');
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await page.evaluate(() => document.querySelector('[data-app-menu][aria-expanded="true"]')?.dataset.appMenu), 'edit');
+    assert.equal(await focusedLabel(), 'Undo');
+    await page.keyboard.press('Escape');
+    assert.deepEqual(await page.evaluate(() => [document.getElementById('menu').hidden, document.activeElement.dataset.appMenu ?? null,
+      styk.ui.overlays.blocksHotkeys()]), [true, 'edit', false], 'Escape closes the menu and returns focus to its button');
+    await page.locator('#viewport').focus();
+    await page.keyboard.press('h');
+    assert.equal(await tool(), 'hand', 'with the menu closed, H picks the Pan tool again');
+    await page.keyboard.press('v');
+    assert.equal(await tool(), before);
+  });
+
+  await step('app: Space in an open menu runs the focused row and never arms the pan chord', async () => {
+    await page.click('[data-app-menu=help]');
+    assert.equal(await focusedLabel(), 'Keyboard shortcuts');
+    await page.keyboard.down('Space');
+    const held = await page.evaluate(() => [Boolean(styk.state.spaceHeld), Boolean(styk.state.space), document.querySelectorAll('dialog[open]').length]);
+    await page.keyboard.up('Space');
+    assert.deepEqual(held, [false, false, 1]);
+    await page.keyboard.press('Escape');
+    await settle();
+    assert.equal(await page.evaluate(() => document.querySelectorAll('dialog[open]').length), 0);
+  });
+
+  await step('app: a message stays above a dialog that opens after it, and failures show as alerts that stay', async () => {
+    await page.evaluate(() => styk.ui.toasts.show({message: 'Motion paths on', timeout: 30000}));
+    const box = await page.locator('#toast .ui-toast').boundingBox();
+    const clip = {x: box.x + 6, y: box.y + 6, width: box.width - 12, height: box.height - 12};
+    const before = await page.screenshot({clip});
+    await page.evaluate(() => styk.actions.performance());
+    await page.waitForFunction(() => document.getElementById('dialog').open);
+    await settle(150);
+    assert.ok(before.equals(await page.screenshot({clip})), 'the dialog backdrop does not cover or dim the message');
+    await page.evaluate(() => styk.ui.toasts.fail(new Error('The encoder stopped')));
+    await settle(150);
+    assert.deepEqual(await page.evaluate(() => ({
+      text: document.querySelector('#toast .ui-toast-text')?.textContent, tone: document.querySelector('#toast .ui-toast')?.dataset.tone,
+      said: document.querySelector('#dialog > .ui-toast-live[aria-live=assertive]')?.textContent,
+    })), {text: 'The encoder stopped', tone: 'danger', said: 'The encoder stopped'}, 'an error takes the slot and is announced from inside the dialog');
+    await page.keyboard.press('Escape');
+    await settle();
+    await page.evaluate(() => styk.ui.toasts.clear());
+    // The app's own messages go through the same slot.
+    await page.click('[data-workspace-mode=rig]');
+    await page.evaluate(() => styk.actions.import());
+    assert.equal(await page.locator('#toast .ui-toast-text').textContent(), 'Finish the figure or return to Animate to import figures.');
+    await page.click('[data-workspace-mode=animate]');
+    await page.waitForFunction(() => document.querySelector('.workspace').dataset.mode === 'animate');
+    await page.evaluate(() => styk.ui.toasts.clear());
+  });
+
+  await step('app: a context menu opens above the pointer when there is more room there, and never under the band', async () => {
+    await page.evaluate(() => { styk.state.view.y += 130; });   // bring the figure's feet near the bottom of the stage
+    const joint = await page.evaluate(() => {
+      const g = [...styk.editor.geometry.objects.values()][0], r = document.getElementById('viewport').getBoundingClientRect(), v = styk.state.view;
+      return [...g.joints.values()].map(p => ({x: r.x + v.x + p.x * v.scale, y: r.y + v.y + p.y * v.scale})).sort((a, b) => b.y - a.y)[0];
+    });
+    const before = await tool();
+    await page.mouse.click(joint.x, joint.y, {button: 'right'});
+    const placed = await page.evaluate(() => ({menu: document.getElementById('menu').getBoundingClientRect().toJSON(), natural: document.getElementById('menu').scrollHeight,
+      band: document.querySelector('.titlebar').getBoundingClientRect().bottom, height: innerHeight}));
+    assert.ok(placed.height - 8 - joint.y < placed.natural, 'the menu does not fit below the pointer');
+    assert.ok(placed.menu.bottom <= joint.y + 3 && placed.menu.top >= placed.band + 6 - 0.5, JSON.stringify({joint, ...placed}));
+    await page.keyboard.press('h');
+    assert.equal(await tool(), before, 'letters typed into a context menu never reach the tool hotkeys');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'viewport', 'Escape returns focus to the stage');
+    await page.evaluate(() => styk.fit());
+
+    await page.setViewportSize({width: 500, height: 340});
+    await settle(200);
+    // A point of the (tiny) stage that no floating control covers.
+    const free = await page.evaluate(() => {
+      const r = document.getElementById('viewport').getBoundingClientRect();
+      for (let y = r.bottom - 4; y > r.top; y -= 4) for (let x = r.right - 4; x > r.left; x -= 8)
+        if (document.elementFromPoint(x, y)?.id === 'overlay') return {x, y};
+      return null;
+    });
+    assert.ok(free, 'part of the stage is free');
+    await page.mouse.click(free.x, free.y, {button: 'right'});
+    const small = await page.evaluate(() => ({...document.getElementById('menu').getBoundingClientRect().toJSON(),
+      band: document.querySelector('.titlebar').getBoundingClientRect().bottom}));
+    assert.ok(small.top >= small.band + 6 - 0.5 && small.bottom <= 340 && small.left >= 0 && small.right <= 500, JSON.stringify(small));
+    await page.keyboard.press('Escape');
+    await page.setViewportSize({width: 1440, height: 900});
+    await settle(200);
+  });
+
+  await step('app: a menu opened from inside a dialog lives in it, and its rows can be clicked', async () => {
+    await page.evaluate(() => styk.actions.performance());
+    await page.evaluate(async () => {
+      const {openMenu} = await import('/src/ui/ui-menu.mjs');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.id = 'probe-menu-button';
+      button.textContent = 'Options';
+      document.querySelector('#dialog .dialog-body').append(button);
+      button.addEventListener('click', () => openMenu({anchor: button, overlays: styk.ui.overlays, label: 'Options',
+        items: [{label: 'Copy report', run: () => { window.probeMenuRan = true; }}]}));
+    });
+    await page.click('#probe-menu-button');
+    assert.equal(await page.evaluate(() => document.querySelector('[role=menu][aria-label=Options]')?.closest('dialog')?.id), 'dialog');
+    await page.getByRole('menuitem', {name: 'Copy report', exact: true}).click();
+    assert.deepEqual(await page.evaluate(() => [window.probeMenuRan === true, document.getElementById('dialog').open, document.activeElement.id]),
+      [true, true, 'probe-menu-button']);
+    await page.keyboard.press('Escape');
+    await settle();
+    assert.equal(await page.evaluate(() => styk.ui.overlays.blocksHotkeys()), false);
   });
 
   assert.deepEqual(errors, [], 'no page errors');

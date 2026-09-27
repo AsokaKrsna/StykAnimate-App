@@ -78,7 +78,8 @@ export function initBuilderMode({editor, state, host}) {
     const kind = entry?.kind === 'polygon' ? 'polygon' : joint >= 0 ? 'joint' : boundHit ? 'figure' : 'canvas';
     context = {kind, uid, jointId: session.figure?.segments[joint]?.segment_id,
       polygon: kind === 'polygon' ? session.figure?.polyfills?.[entry.index] : null,
-      anchor: {left: x, bottom: y, focus: () => (tree ? outliner.tree : document.getElementById('viewport'))?.focus({preventScroll: true})}};
+      // Focus returns to the invoker when the menu closes.
+      anchor: {left: x, bottom: y, invoker: tree ? outliner.tree : document.getElementById('viewport')}};
     for (const panel of bar.querySelectorAll(':popover-open')) panel.hidePopover();
     showContextPage('main');
   }
