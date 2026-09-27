@@ -251,7 +251,8 @@
               <button type="button" role="tab" class="ui-tab" id="library-tab" data-panel="library" aria-controls="user-library" aria-selected="false" tabindex="-1">Library</button>
             </div>
             <section id="properties-panel" class="shell-panel" data-panel="properties" role="tabpanel" aria-labelledby="properties-tab">
-              <div class="inspector-header"><div><span class="panel-tab-title">Properties</span><span id="inspector-context">Figure</span></div><button id="object-actions" class="icon-button" aria-label="Selection actions" aria-haspopup="menu" aria-expanded="false" title="Selection actions">•••</button></div>
+              <div class="inspector-header" data-slot="inspector-target"><div><span class="panel-tab-title">Properties</span><span id="inspector-context">Figure</span></div><button id="object-actions" class="icon-button" aria-label="Selection actions" aria-haspopup="menu" aria-expanded="false" title="Selection actions">•••</button></div>
+              <div class="inspector-head" data-slot="inspector-head" hidden></div>
               <div id="inspector"></div>
             </section>
             <div id="vfx-panel" class="shell-panel" data-panel="vfx" role="tabpanel" aria-labelledby="vfx-tab" hidden></div>

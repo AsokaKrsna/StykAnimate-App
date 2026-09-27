@@ -168,8 +168,8 @@ test('Structural hooks that modules dereference without null checks are intact',
   const controls = one('#window-controls', titlebar);
   for (const action of ['minimize', 'maximize', 'close']) one(`[data-action="${action}"]`, controls);
   assert.ok(classes(one('[data-action="menu"]')).includes('brand'), '.brand[data-action="menu"] anchors the main menu');
-  // studio-shell, builder-mode and the dock host read .workspace; movieclip-ui anchors
-  // its breadcrumb before .context-strip. The dock host places the workspace's
+  // studio-shell, builder-mode and the dock host read .workspace; app.mjs mounts the
+  // movieclip breadcrumb before .context-strip (movieclip-ui's mountBreadcrumb seam). The dock host places the workspace's
   // direct children in its grid: the rail, the two docks, the stage island (.center,
   // around #viewport) and the timeline island.
   const workspace = one('.workspace');
@@ -198,6 +198,17 @@ test('Structural hooks that modules dereference without null checks are intact',
   assert.equal(one('#vfx-tab').attrs['data-vfx-tab'], 'vfx');
   assert.equal(one('#user-library').children.length, 0, '#user-library is an empty host the Library fills');
   for (const selector of ['.inspector-header', '#inspector']) one(selector, one('#properties-panel'));
+  // The inspector's header block (M4, inspector-header.mjs): the target (name and its one menu) and,
+  // between it and the sections, the host of the scope line and the quick actions row, empty until
+  // the kit renders into it (inspector-kit.mjs renderInspectorHead, syncQuickHost).
+  const target = one('[data-slot="inspector-target"]', one('#properties-panel'));
+  assert.ok(classes(target).includes('inspector-header'));
+  for (const id of ['#inspector-context', '#object-actions']) one(id, target);
+  const head = one('[data-slot="inspector-head"]', one('#properties-panel'));
+  assert.equal(head.children.length, 0, 'the inspector head host is empty in the markup');
+  const panelChildren = one('#properties-panel').children;
+  assert.ok(panelChildren.indexOf(target) < panelChildren.indexOf(head) && panelChildren.indexOf(head) < panelChildren.indexOf(byId.get('inspector')[0]),
+    'the head host sits between the target and #inspector');
   one('[data-action="panel-toggle-properties"]', one('.titlebar'));
   one('[data-action="timeline-sheet"]', one('.timeline-toolbar'));
   one('[data-action="toggle-isolate"]', one('.tool-dock'));

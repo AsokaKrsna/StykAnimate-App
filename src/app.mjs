@@ -91,6 +91,7 @@ import { dragSlop, beyondSlop, installPenMenuGuard } from "./pen-input.mjs";
 import { initBuilderMode } from "./builder-mode.mjs";
 import { inspectorView } from "./inspector-view.mjs";
 import { updateInspectorDOM } from "./inspector-dom.mjs";
+import { installInspectorBindings } from "./inspector-bindings.mjs";
 import {syncCameraControls, drawCameraMonitor} from './camera-monitor.mjs';
 import { AssetLibrary } from "./asset-library.mjs";
 import { UserLibrary } from './user-library.mjs';
@@ -5147,274 +5148,11 @@ document.addEventListener(
   }),
 );
 
-$("inspector").addEventListener(
-  "change",
-  guarded(async (e) => {
-    const target = e.target,
-      key = target.dataset.field;
-    pause();
-    if(target.id==='figure-layer'){
-      finishCurrentEdit();const id=target.value,uids=[...editor.selectedUids];
-      const changed=await changeFigureLayer('Move figures to layer',options=>editor.assignFiguresToLayerAsync(uids,id,options));
-      if(changed){editor.setActiveLayer(id);state.selectedTrackId=id;timelineUI?.selectTrack?.(id);}queueUI();requestRender();return;
-    }
-    if (target.id === "builder-branch") {
-      state.builderBranch = target.checked;
-      if (!target.checked && editor.branchSelected) {
-        const uid = editor.selectedUid, joint = editor.selectedJoint;
-        editor._branchSelection = null; editor.select(uid, joint);
-      }
-      if (target.checked && editor.selectedUid != null) {
-        state.selectedTrackId = layerIdForUid(
-          editor.report,
-          editor.selectedUid,
-        );
-        state.inspectorContext = "figure";
-        state.inspectorTab = "design";
-      }
-      queueUI();
-      requestRender();
-      return;
-    }
-    if (target.id === "inspector-layer-name") {
-      editor.renameLayer(
-        target.dataset.layerId || editor.activeLayerId,
-        target.value,
-      );
-      return;
-    }
-    if (target.id === "inspector-layer-visible") {
-      editor.setLayerVisible(
-        target.dataset.layerId || editor.activeLayerId,
-        target.checked,
-      );
-      return;
-    }
-    if (target.id === "inspector-layer-locked") {
-      editor.setLayerLocked(
-        target.dataset.layerId || editor.activeLayerId,
-        target.checked,
-      );
-      return;
-    }
-    if (target.id === "rig-mode") {
-      state.rigMode = target.value;
-      return;
-    }
-    if (rigControlChange(editor,target)) return;
-    if(target.dataset.polygonSide!==undefined&&builderMode?.active){const index=Number(target.dataset.polygonSide),side=target.value;target.value=editor.figure.polyfills[index]._stykSurface?.side??(editor.figure.polyfills[index]._stykSurface?'front':'both');changeSurfaceSide(editor,index,side,{showDialog,closeDialog});return;}
-    if (target.id === 'node-is-ik') { editor.setNodeIK({enabled: target.checked}); return; }
-    if (target.id === 'node-ik-pinned') { telemetry.count('ik'); editor.setNodeIK({pinned: target.checked}); return; }
-    if (target.id === 'node-ik-chain') { editor.setNodeIK({chainLength: target.valueAsNumber}); return; }
-    if (target.id === 'node-ik-rotation') { editor.rotateIKTarget(target.valueAsNumber * Math.PI / 180); return; }
-    if (target.id === 'node-ik-stretch') { editor.setNodeIK({allowStretch: target.checked}); return; }
-    if (target.name === 'node-ik-bend') { editor.setNodeIK({bendDirection: Number(target.value)}); return; }
-    if (target.id === "apply-range-movement") {
-      state.applyRange = target.checked;
-      queueUI();
-      return;
-    }
-    if (target.id === "figure-name") {
-      editor.updateFigureStyle({ name: target.value });
-      return;
-    }
-    if(target.id==='builder-joint-name'&&builderMode?.active){editor.updateSegment({name:target.value.trim().slice(0,120)});return;}
-    if (target.id === "segment-gradient-enabled") {
-      updateBuilderStyle(
-        {
-          gradient: target.checked ? { color: "#ffffff" } : null,
-        },
-        e,
-      );
-      return;
-    }
-    if (target.id === "segment-gradient-color") {
-      updateBuilderStyle({ gradient: { color: target.value } }, e);
-      return;
-    }
-    if (target.id === "segment-shape") {
-      if (usesBuilderBranch(e) && ["line", "squareLine"].includes(target.value))
-        editor.setBranchCaps(target.value === "squareLine");
-      else if (
-        usesBuilderBranch(e) &&
-        [1, 3, 4].includes(
-          editor.figure?.segments[editor.selectedJoint]?.primitive_code,
-        )
-      )
-        editor.setBranchFill(target.value);
-      else editor.convertSegment(target.value);
-      return;
-    }
-    if (target.id === "segment-color") {
-      updateBuilderStyle({ color: target.value }, e);
-      return;
-    }
-    if (target.id === "segment-opacity") {
-      updateBuilderStyle({ opacity: Number(target.value) / 100 }, e);
-      return;
-    }
-    if (target.dataset.polygonColor !== undefined) {
-      editor.updatePolygon(Number(target.dataset.polygonColor), {
-        color: target.value,
-      });
-      return;
-    }
-    if (key) {
-      const value = Number(target.value);
-      if (!Number.isFinite(value)) throw new Error("Enter a finite number.");
-      if (key === "fps") editor.setFPS(value);
-      else if (key === "duration") editor.setFrameDuration(value);
-      else if (key.startsWith("group_")) {
-        const b = selectionBounds();
-        if (key === "group_x") moveSelected(value - b.minX, 0);
-        else if (key === "group_y") moveSelected(0, value - b.minY);
-        else {
-          const old = key === "group_width" ? b.maxX - b.minX : b.maxY - b.minY;
-          if (value <= 0 || old <= 0)
-            throw new Error("Selection size must be greater than zero.");
-          editor.scaleSelection(value / old);
-        }
-      } else if (key === "rotation")
-        editor.rotateFigure(
-          shortest(
-            (value * Math.PI) / 180 -
-              ((editor.object.angles[0] ?? 0) -
-                (editor.figure.segments[0]?.angle_rad ?? 0)),
-          ),
-        );
-      else if (key === "scale") editor.updateObject({ scale: value / 100 });
-      else if (["root_x", "root_y"].includes(key)) {
-        if (rangeFrames())
-          moveSelected(
-            key === "root_x" ? value - editor.object.root_x : 0,
-            key === "root_y" ? value - editor.object.root_y : 0,
-          );
-        else editor.updateObject({ [key]: value });
-      } else if (key === "thickness")
-        updateBuilderStyle({ thickness: value }, e);
-      else if (key === "joint_angle") {
-        const angle = (value * Math.PI) / 180,
-          obj = editor.object,
-          delta = shortest(angle - obj.angles[editor.selectedJoint]);
-        editor.rotateJoint?.(delta);
-        if (!editor.rotateJoint)
-          editor.transaction("Joint angle", () => {
-            obj.angles[editor.selectedJoint] = angle;
-          });
-      } else if (key === "joint_length" || key === "joint_bend") {
-        editor.updateSegment(
-          key === "joint_length"
-            ? { length: value }
-            : { bend_rad: (value * Math.PI) / 180 },
-        );
-      } else if (key.startsWith("camera_")) {
-        editor.transaction("Camera", (frame) => {
-          frame.camera = {
-            x: 0,
-            y: 0,
-            scale: 1,
-            angle_rad: 0,
-            ...frame.camera,
-            is_default: false,
-          };
-          frame.camera[key === "camera_angle" ? "angle_rad" : key.slice(7)] =
-            key === "camera_scale"
-              ? value / 100
-              : key === "camera_angle"
-                ? (value * Math.PI) / 180
-                : value;
-        });
-      } else if (key === "canvas_width" || key === "canvas_height") {
-        if (value < 1 || value > 16384 || !Number.isInteger(value))
-          throw new Error(
-            "Canvas dimensions must be whole pixels between 1 and 16,384.",
-          );
-        if (editor.updateProject) editor.updateProject({ [key]: value });
-        else
-          editor.transaction(
-            "Canvas size",
-            (_, report) => (report[key] = value),
-          );
-        fit();
-      } else if (key === "join_handle")
-        editor.transaction("Join handle", () => {
-          const parent =
-              editor.frame.objects[editor.object.join.target_object_slot],
-            fig = editor.report.figure_types.find(
-              (f) => f.figure_type_id === parent.figure_type_id,
-            );
-          if (value !== 0 && !fig.segments.some((s) => s.segment_id === value))
-            throw new Error("That parent joint does not exist.");
-          editor.object.join.target_handle_id = value;
-        });
-      return;
-    }
-    if (target.id === "figure-color") {
-      editor.setFigureColor(target.value,{indices:rangeFrames()});
-    } else if (target.id === "figure-opacity")
-      updateSelection({
-        field28: Math.round(
-          (1 - Math.max(0, Math.min(100, Number(target.value))) / 100) * 255,
-        ),
-      });
-    else if (target.id === "static-joint") {
-      updateBuilderStyle({ static: target.checked }, e);
-
-    } else if (target.id === "background-color") {
-      const raw = (0xff000000 | parseInt(target.value.slice(1), 16)) >>> 0;
-      if (editor.setSceneColor)
-        editor.setSceneColor(raw, {
-          indices: rangeFrames(),
-        });
-      else
-        editor.transaction("Background color", (f, r) => {
-          const id =
-            Math.max(0, ...(r.backgrounds || []).map((b) => b.background_id)) +
-            1;
-          r.backgrounds = [
-            ...(r.backgrounds || []),
-            { background_id: id, kind: 2, color: raw },
-          ];
-          f.background_id = id;
-        });
-    } else if (target.id === "join-target") {
-      if (rangeFrames()) {
-        if (target.value)
-          editor.joinFiguresInFrames(Number(target.value), 0, rangeFrames());
-        else editor.detachFiguresInFrames(rangeFrames());
-      } else if (editor.joinFigure) {
-        editor.joinFigure(target.value ? Number(target.value) : null, 0);
-      } else {
-        editor.transaction("Attach figure", () => {
-          const o = editor.object,
-            parent = editor.frame.objects.find(
-              (p) => p.unique_id === Number(target.value),
-            );
-          if (!parent) {
-            const g = editor.geometry.objects.get(o.object_slot);
-            o.root_x = g.root.x;
-            o.root_y = g.root.y;
-            o.join = null;
-            return;
-          }
-          let p = parent,
-            seen = new Set([o.unique_id]);
-          while (p) {
-            if (seen.has(p.unique_id))
-              throw new Error("This attachment would create a cycle.");
-            seen.add(p.unique_id);
-            p = p.join ? editor.frame.objects[p.join.target_object_slot] : null;
-          }
-          o.join = {
-            target_object_slot: parent.object_slot,
-            target_unique_id: parent.unique_id,
-            target_handle_id: 0,
-          };
-        });
-      }
-    }
-  }),
-);
+installInspectorBindings($("inspector"), {
+  editor, state, telemetry, guarded, pause, finishCurrentEdit, queueUI, requestRender, fit, changeFigureLayer,
+  timeline: () => timelineUI, builderActive: () => Boolean(builderMode?.active), usesBuilderBranch, updateBuilderStyle,
+  rangeFrames, selectionBounds, moveSelected, updateSelection, showDialog, closeDialog,
+});
 $("fps").addEventListener(
   "change",
   guarded((e) => editor.setFPS(Number(e.target.value))),
@@ -6756,7 +6494,9 @@ async function init() {
   $('library-tab')?.addEventListener('click', () => telemetry.count('library'));
   actions['add-to-library'] = () => { telemetry.count('library'); return window.styk.library.run(() => window.styk.library.save()); };
   window.styk.movieclips = installMovieclipUI({editor,actions,pause,finishEdit:finishCurrentEdit,
-    getTimeline:()=>timelineUI,setTool,onError:fail,queueUI,exportClip:()=>exportPivot('stykmov')});
+    getTimeline:()=>timelineUI,setTool,onError:fail,queueUI,exportClip:()=>exportPivot('stykmov'),
+    // The session breadcrumb sits above the stage until the inspector names the scope (M4).
+    mountBreadcrumb:element=>document.querySelector('.context-strip').before(element)});
   for (const [name, action] of Object.entries(actions)) if (name.startsWith('movieclip-')) actions[name] = (...args) => { telemetry.count('movieclip'); return action(...args); };
   editor.addEventListener('change',event=>{
     if(event.detail?.kind==='movieclip-scope' || event.detail?.movieclipScope) {
