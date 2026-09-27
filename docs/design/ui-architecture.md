@@ -1599,7 +1599,7 @@ The file list and verification below are the original plan; items marked landed 
 **Verify.**
 
 - `npm test`
-- Browser tests on 47913: `properties-app`, `property-controls`, `inspector-dom`, `add-frame`, `layer-timeline`, `sheet-filmstrip`, `export-experience`, three `#export-submit` tests, `recovery-interaction`, `playback-quiet`
+- Browser tests on 47913: `properties-app`, `property-controls`, `inspector-dom`, `add-frame`, `layer-timeline`, `sheet-filmstrip`, `export-experience`, three `#export-submit` tests, `recovery-interaction`, `playback-quiet`. `export-experience`, `export-auto-quality` and `export-bitrate` remove `showSaveFilePicker` (as `builder.browser` does), because headless Chrome's picker left them waiting for a download in the baseline; they now run the export flow end to end
 - `node scripts/benchmark-scrub-backpressure.mjs` (no regression)
 
 **Exit.** `app.mjs` shrinks. Playback mutations are ≥ 90% lower than the baseline (inspector and title quiet).

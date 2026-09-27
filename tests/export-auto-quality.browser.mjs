@@ -11,6 +11,9 @@ try {
   browser = await chromium.launch({channel: 'chrome', headless: true});
   const page = await browser.newPage({viewport: {width: 1280, height: 900}, acceptDownloads: true});
   page.on('pageerror', error => errors.push(error.message));
+  // Headless Chrome aborts showSaveFilePicker, so an export would wait on a picker; without it the export takes the
+  // in-memory sink and saves through an anchor download, which runs the whole export flow.
+  await page.addInitScript(() => { delete window.showSaveFilePicker; });
   await page.goto(service.origin); await page.waitForFunction(() => window.styk?.ready);
   await page.evaluate(async () => {
     const {samplingFixture} = await import('/tests/export-sampling-fixture.mjs');

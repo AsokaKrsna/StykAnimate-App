@@ -9,7 +9,10 @@ await mkdir(output,{recursive:true});
 const service=await backend.startBackend({appRoot:root});
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
-  const page=await browser.newPage({viewport:{width:1360,height:900}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
+  const page=await browser.newPage({viewport:{width:1360,height:900},acceptDownloads:true}),errors=[];page.on('pageerror',error=>errors.push(error.message));
+  // Headless Chrome aborts showSaveFilePicker, so an export would wait on a picker; without it the export takes the
+  // in-memory sink and saves through an anchor download, which runs the whole export flow.
+  await page.addInitScript(()=>{delete window.showSaveFilePicker;});
   await page.goto(service.origin);await page.waitForFunction(()=>window.styk?.ready);
   await page.evaluate(async()=>{
     const{emptyDocument,createFrame}=await import('/src/demo.mjs');const report=emptyDocument();report.canvas_width=160;report.canvas_height=90;report.fps=16;report.keyframes=[createFrame([],4),createFrame([],1)];
