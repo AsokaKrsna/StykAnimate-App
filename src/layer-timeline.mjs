@@ -153,10 +153,10 @@ export class Timeline{
     if(this.canvas.width!==width||this.canvas.height!==height){this.canvas.width=width;this.canvas.height=height;this.canvas.style.width=`${this.width}px`;this.canvas.style.height=`${this.height}px`;}
     const css=getComputedStyle(this.root),token=name=>css.getPropertyValue(name).trim(),color=name=>token(`--sheet-${name}`);
     this.colors=Object.fromEntries(['surface','hover','line','ink','muted','accent','selected','span','tween','camera-accent','camera-tint','scene-accent','scene-tint',
-      'key-outline','cel','cel-line','draw-line','fx','layer','row-alt','lane','end','tick','cell','cell-tween','cell-empty','cell-selected'].map(name=>[name,color(name)]));
+      'key-outline','cel','cel-line','draw-line','fx','layer','row-alt','lane','end','tick','cell','cell-tween','cell-blank','cell-divider','cell-selected'].map(name=>[name,color(name)]));
     Object.assign(this.colors,{'accent-soft':token('--accent-soft')||this.colors.selected,'accent-line':token('--accent-line')||this.colors.accent,'accent-text':token('--accent-text')||this.colors.accent});
     this.colors.cel||=this.colors.span;this.colors['cel-line']||=this.colors.line;this.colors['draw-line']||=this.colors.accent;this.colors.fx||=this.colors.accent;this.colors['key-outline']||=this.colors.muted;
-    this.colors.cell||=this.colors.hover;this.colors['cell-tween']||=this.colors.tween;this.colors['cell-empty']||=this.colors.surface;this.colors['cell-selected']||=this.colors['accent-soft'];
+    this.colors.cell||=this.colors.hover;this.colors['cell-tween']||=this.colors.tween;this.colors['cell-blank']||=this.colors['cel-line'];this.colors['cell-divider']||=this.colors.surface;this.colors['cell-selected']||=this.colors['accent-soft'];
     this.colors.layer||=this.colors.ink;this.colors['row-alt']||=this.colors.hover;this.colors.lane||=this.colors.line;this.colors.end||=this.colors.muted;this.colors.tick||=this.colors.line;
     this.font=token('--font-ui')||css.fontFamily;
     this.update();
@@ -192,8 +192,8 @@ export class Timeline{
   /**
    * Paints the grid (experience.md §5.7) as a sheet of frame cells: every row is a lane with a hairline under it, every
    * frame a rounded cell (_paintRow), every 5th frame's column (every 10th, 20th or 50th zoomed out) softly shaded under
-   * the ruler's number, and the area past the end grey behind a clear end line. The current layer's row is tinted, the
-   * selected frames are filled and outlined in blue, and the hovered cell is outlined. Drawing cels and effect clips are
+   * the ruler's number, and the area past the end grey behind a clear end line. The selected frames are filled
+   * and outlined in blue, and the hovered cell is outlined. Drawing cels and effect clips are
    * neutral blocks with hollow keys. The scrolling rows are
    * painted clipped under the pinned Camera and Scene, then the ruler: a tick per frame, numbers on the shaded
    * columns (past the end in a lighter weight), and while keys are dragged their timing ("12 → 14").
@@ -208,19 +208,19 @@ export class Timeline{
     const first=Math.floor(sx/step),last=Math.ceil((sx+w)/step),interval=step<2?50:step<5?20:step<9?10:5;
     const firstRow=clamp(Math.max(layout.at(bodyTop-ruler+sy),pinned),0,count),lastRow=clamp(layout.at(h-ruler+sy)+1,firstRow,count);
     const endX=this.editor.totalTicks*step-sx;
-    // The backdrop of a band of the grid: the shaded columns under the ruler's numbers (every 5th frame; wider apart
-    // zoomed out) between the cells, and the quiet area past the end behind a clear end line.
+    // The backdrop of a band of the grid: the shaded column under each of the ruler's numbers (every 5th frame; wider
+    // apart zoomed out; in the ruler only, the bars' seams count frames below), and the quiet area past the end behind
+    // a clear end line.
     const backdrop=(top,bottom)=>{
       ctx.fillStyle=c.surface;ctx.fillRect(0,top,w,bottom-top);
-      ctx.fillStyle=c['row-alt'];
-      for(let tick=Math.max(0,first);tick<=last;tick++)if((tick+1)%interval===0)ctx.fillRect(Math.round(tick*step-sx),top,Math.max(1,Math.round(step)),bottom-top);
+      ctx.fillStyle=c['row-alt'];const shade=Math.min(bottom,ruler)-top;
+      if(shade>0)for(let tick=Math.max(0,first);tick<=last;tick++)if((tick+1)%interval===0)ctx.fillRect(Math.round(tick*step-sx),top,Math.max(1,Math.round(step)),shade);
       if(endX<w){const x=Math.max(0,endX);ctx.fillStyle=c.hover;ctx.fillRect(x,top,w-x,bottom-top);if(endX>0){ctx.fillStyle=c.end;ctx.fillRect(Math.round(endX)-1,top,1.5,bottom-top);}}
     };
     backdrop(0,h);
     const region=(top,bottom,from,to,offset)=>{
       if(bottom<=top||to<=from)return;
       ctx.save();ctx.beginPath();ctx.rect(0,top,w,bottom-top);ctx.clip();
-      for(let index=from;index<to;index++)this._paintRowBase(ctx,index,ruler+layout.top(index)-offset,layout.size(index),first,last,sx);
       // A hairline under every lane.
       ctx.fillStyle=c.lane;
       for(let index=from;index<to;index++)ctx.fillRect(0,ruler+layout.top(index)-offset+layout.size(index)-1,w,1);
@@ -250,64 +250,52 @@ export class Timeline{
     this.header?.setAddFrame({blank:drawing,disabled:locked||!this.ids.length});
     this.header?.setNextCopy({shown:drawing,disabled:locked});
   }
-  /** A row's background: the current layer's row, softly tinted across the grid (Camera and Scene in their own tint). */
-  _paintRowBase(ctx,index,y,size){
-    const layer=this.tracks[index],c=this.colors;
-    if(layer.kind.startsWith('vfx')||layer.kind==='motion'||!this.selectedLayers.has(layer.id))return;
-    ctx.fillStyle=layer.kind==='camera'?c['camera-tint']:layer.kind==='scene'?c['scene-tint']:c.selected;ctx.fillRect(0,y,this.width,size);
-  }
-  /** Where a row's cells sit: inset from the lane so neighbouring rows never touch, 16px tall in Camera and Scene. */
+  /** Where a row's bars sit: inset from the lane so neighbouring rows never touch, 16px tall in Camera and Scene. */
   _cellBox(y,size){const inset=size<=24?4:5;return {top:y+inset,height:size-inset*2};}
   /**
-   * The selected frames on a selected row: each selected cell filled with the selected-cell blue (one block when cells are
-   * too narrow to draw apart) and one accent outline around the whole range, a single cell included, so what is
-   * selected reads at a glance. Drawn over the cells and under the keys.
+   * The selected frames on a selected row: one continuous blue wash over the range and one accent outline around it
+   * (a single frame included), so what is selected reads at a glance. Drawn over the bars and under the keys; only the
+   * frames themselves are marked, never the rest of the row.
    */
-  _paintSelection(ctx,layer,y,size,sx,cells){
+  _paintSelection(ctx,layer,y,size,sx){
     if(!this.selectedLayers.has(layer.id))return;
     const c=this.colors,step=this.pxPerTick,x=this.start*step-sx,width=(this.end-this.start+1)*step;
     if(x+width<-4||x>this.width+4)return;
-    const {top,height}=this._cellBox(y,size),radius=Math.min(4,step/3);
-    ctx.fillStyle=c['cell-selected'];ctx.beginPath();
-    if(cells)for(let tick=Math.max(this.start,Math.floor(sx/step)-1);tick<=this.end&&tick*step-sx<this.width+step;tick++)ctx.roundRect(tick*step-sx+1,top,step-2,height,radius);
-    else ctx.roundRect(x+1,top,Math.max(2,width-2),height,Math.min(5,width/2));
-    if(layer.drawing)ctx.globalAlpha=.55;ctx.fill();ctx.globalAlpha=1;
-    ctx.strokeStyle=c['accent-line'];ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(x+.25,top-2.25,Math.max(2,width-.5),height+4.5,Math.min(6,width/2));ctx.stroke();
+    const {top,height}=this._cellBox(y,size),radius=Math.min(6,width/2,height/2);
+    ctx.fillStyle=c['cell-selected'];ctx.beginPath();ctx.roundRect(x+1,top,Math.max(2,width-2),height,radius);
+    if(layer.drawing)ctx.globalAlpha=.6;ctx.fill();ctx.globalAlpha=1;
+    ctx.strokeStyle=c['accent-line'];ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(x,top-2,Math.max(2,width),height+4,Math.min(7,width/2));ctx.stroke();
   }
   /**
-   * A row's cells, exposures and keys (the VFX and camera-motion lanes paint themselves). Every frame is a rounded cell
-   * once a frame is 10px wide (narrower, an exposure is one rounded bar): a held pose in the neutral cell colour, a tween
-   * in the soft time violet, a blank span or the frames before the first key as quiet empty cells. A hold of two or more
-   * frames ends in a small tick. Keys are ink dots (Camera gold, Scene violet; blanks hollow), blue while selected.
+   * A row's exposures and keys (the VFX and camera-motion lanes paint themselves). An exposure is one rounded bar from
+   * its key to the next key, so a held pose reads as one piece: neutral for a hold, the time violet for a tween, a
+   * dashed outline for a blank span; once a frame is 10px wide, thin seams inside the bar count its frames. Nothing is
+   * drawn before a layer's first key. Keys are ink dots at the bar's start (Camera gold, Scene violet; blanks hollow).
    */
   _paintRow(ctx,index,y,size,first,last,sx){
     const layer=this.tracks[index],c=this.colors,step=this.pxPerTick,w=this.width;
     if(layer.kind.startsWith('vfx')){paintVfxRow(this,ctx,layer,y,size);return;}
     if(layer.kind==='motion'){paintMotionRow(this,ctx,layer,y,size);return;}
-    const track=this.editor.report._styk.layerSheet.tracks[layer.id],cy=y+size/2,cells=step>=10;
+    const track=this.editor.report._styk.layerSheet.tracks[layer.id],cy=y+size/2;
     const color=layer.kind==='camera'?c['camera-accent']:layer.kind==='scene'?c['scene-accent']:c.ink;
     if(track){
       const from=Math.max(0,sheetKeyAt(track,first).index),blankOf=key=>key.empty??(key.value?.frameId===null);
-      const {top,height}=this._cellBox(y,size),radius=Math.min(4,step/3);
+      const {top,height}=this._cellBox(y,size);
       if(!layer.drawing){
-        // One path per fill: held cells, tween cells, empty cells (blank spans and the frames before the first key).
-        const held=new Path2D(),tweened=new Path2D(),empty=new Path2D(),ends=new Path2D();
-        const span=(path,start,end)=>{
-          const a=Math.max(start,first-1),b=Math.min(end,last+2);if(b<=a)return;
-          if(cells)for(let tick=a;tick<b;tick++)path.roundRect(tick*step-sx+1,top,step-2,height,radius);
-          else path.roundRect(start*step-sx+1,top,Math.max(1,(end-start)*step-2),height,Math.min(5,(end-start)*step/2));
-        };
-        if(track.keys.length&&track.keys[0].tick>0)span(empty,0,track.keys[0].tick);
+        // One path per fill; bars are clipped a little past the view, so a long hold stays one cheap shape.
+        const held=new Path2D(),tweened=new Path2D(),blank=new Path2D(),seams=new Path2D(),lo=-8,hi=w+8;
         for(let i=from;i<track.keys.length;i++){
           const key=track.keys[i],next=track.keys[i+1],end=next?.tick??track.end;if(key.tick>last+1)break;if(end<=first-1)continue;
-          if(blankOf(key)){span(empty,key.tick,end);continue;}
+          const x0=key.tick*step-sx+1,x1=end*step-sx-1;if(x1-x0<1)continue;
+          const a=Math.max(lo,x0),b=Math.min(hi,x1),radius=Math.min(6,height/2,(x1-x0)/2);
+          if(blankOf(key)){blank.roundRect(a+.5,top+.5,Math.max(0,b-a-1),height-1,radius);continue;}
           const tween=next&&!blankOf(next)&&!['hold','constant'].includes(key.interpolation);
-          span(tween?tweened:held,key.tick,end);
-          if(!tween&&end-key.tick>1&&step>=8){const x=(end-.5)*step-sx;ends.roundRect(x-1,cy-height*.22,2,height*.44,1);}
+          (tween?tweened:held).roundRect(a,top,Math.max(0,b-a),height,radius);
+          if(step>=10)for(let tick=Math.max(key.tick+1,first);tick<end&&tick<=last+1;tick++)seams.rect(Math.round(tick*step-sx)-.5,top+4,1,height-8);
         }
-        ctx.fillStyle=c['cell-empty'];ctx.fill(empty);ctx.fillStyle=c.cell;ctx.fill(held);ctx.fillStyle=c['cell-tween'];ctx.fill(tweened);
-        ctx.fillStyle=c.muted;ctx.globalAlpha=.7;ctx.fill(ends);ctx.globalAlpha=1;
-        this._paintSelection(ctx,layer,y,size,sx,cells);
+        ctx.fillStyle=c.cell;ctx.fill(held);ctx.fillStyle=c['cell-tween'];ctx.fill(tweened);ctx.fillStyle=c['cell-divider'];ctx.fill(seams);
+        ctx.setLineDash([3,3]);ctx.lineWidth=1;ctx.strokeStyle=c['cell-blank'];ctx.stroke(blank);ctx.setLineDash([]);
+        this._paintSelection(ctx,layer,y,size,sx);
       }
       else{
         for(let i=from;i<track.keys.length;i++){
@@ -321,22 +309,21 @@ export class Timeline{
           ctx.lineWidth=current?1.5:1;ctx.strokeStyle=current?c['accent-line']:c['cel-line'];ctx.stroke();
           if(!blank&&right-left>34){const source=key.value?.frameId&&this.editor.getFrameById(key.value.frameId),object=source?.objects.find(o=>this.editor.layerForUid(o.unique_id)===layer.id),figure=object&&this.editor.report.figure_types.find(f=>f.figure_type_id===object.figure_type_id);if(figure&&drawingMetadata(figure)){const thumb=this.editor.drawingResources.thumbnail(figure,()=>{if(!this.disposed)this.update();});if(thumb){const width=Math.min(40,right-left-24);if(width>8)ctx.drawImage(thumb,left+16,top+2,width,height-4);}}}
         }
-        this._paintSelection(ctx,layer,y,size,sx,false);
+        this._paintSelection(ctx,layer,y,size,sx);
       }
-      // Keys: ink dots (Camera gold, Scene violet), blue on the selected frames; blank keys and cel starts hollow.
+      // Keys: ink dots at the start of their bar (Camera gold, Scene violet); blank keys and cel starts hollow.
       const dot=Math.max(2.5,Math.min(size<=24?3.5:4.5,step*.34)),rowSelected=this.selectedLayers.has(layer.id),picked=tick=>rowSelected&&tick>=this.start&&tick<=this.end;
-      const filled=new Path2D(),filledOn=new Path2D(),hollow=new Path2D(),hollowOn=new Path2D();
+      const filled=new Path2D(),hollow=new Path2D();
       for(let i=from;i<track.keys.length;i++){
-        const key=track.keys[i];if(key.tick>last)break;if(key.tick<first)continue;const x=(key.tick+.5)*step-sx,on=picked(key.tick);
-        if(layer.drawing||blankOf(key)){const p=on?hollowOn:hollow;p.moveTo(x+dot*.85,cy);p.arc(x,cy,dot*.85,0,Math.PI*2);}
-        else{const p=on?filledOn:filled;p.moveTo(x+dot,cy);p.arc(x,cy,dot,0,Math.PI*2);}
+        const key=track.keys[i];if(key.tick>last)break;if(key.tick<first)continue;const x=(key.tick+.5)*step-sx;
+        if(layer.drawing||blankOf(key)){hollow.moveTo(x+dot*.85,cy);hollow.arc(x,cy,dot*.85,0,Math.PI*2);}
+        else{filled.moveTo(x+dot,cy);filled.arc(x,cy,dot,0,Math.PI*2);}
       }
-      ctx.fillStyle=color;ctx.fill(filled);ctx.fillStyle=c['accent-line'];ctx.fill(filledOn);
-      ctx.lineWidth=1.5;ctx.fillStyle=c.surface;ctx.fill(hollow);ctx.fill(hollowOn);
-      ctx.strokeStyle=layer.drawing?c['draw-line']:color;ctx.stroke(hollow);ctx.strokeStyle=c['accent-line'];ctx.stroke(hollowOn);
-      // The hovered cell: an outline, so the frame a click lands on is plain (not over the selection, which has its own).
+      ctx.fillStyle=color;ctx.fill(filled);
+      ctx.lineWidth=1.5;ctx.fillStyle=c.surface;ctx.fill(hollow);ctx.strokeStyle=layer.drawing?c['draw-line']:color;ctx.stroke(hollow);
+      // The hovered frame: an outline, so the frame a click lands on is plain (not over the selection, which has its own).
       const hover=this.hover;
-      if(hover?.row===index&&!this.gesture&&hover.tick>=0&&hover.tick<this.editor.totalTicks&&!picked(hover.tick)){ctx.strokeStyle=c.tick;ctx.lineWidth=1;ctx.beginPath();ctx.roundRect(hover.tick*step-sx+1.5,top-1.5,step-3,height+3,Math.min(5,step/3));ctx.stroke();}
+      if(hover?.row===index&&!this.gesture&&hover.tick>=0&&hover.tick<this.editor.totalTicks&&!picked(hover.tick)){ctx.strokeStyle=c.muted;ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(hover.tick*step-sx+.75,top-1.25,step-1.5,height+2.5,Math.min(6,step/2));ctx.stroke();}
       // The selected exposure's end: a grip to drag, holding the pose longer or shorter (today's edge drag). It shows
       // while the pointer is on the row (or dragging it), so a still grid carries no stray marks.
       const grip=this._grip;
