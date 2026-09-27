@@ -1,3 +1,18 @@
+/**
+ * The inspector's contexts as section descriptors (architecture.md §3.13).
+ * inspectorDescriptor(options) describes what the Properties panel shows for
+ * the current selection and mode as {kind, sections}: the scene, the camera,
+ * a frame or keyframe, a layer, the drawing tools, several figures, one
+ * figure (a figure, text or image; a movieclip instance; a 3D rig; a
+ * builder fill) or a joint. inspectorView(options) renders it with
+ * src/inspector-kit.mjs.
+ *
+ * The contexts still render with the legacy skin (src/inspector-legacy.mjs),
+ * so the inspector keeps today's markup, look and behaviour while every
+ * context is data. Sub-modules that still build HTML (rig controls, the
+ * camera's actions and motion, drawing, parallax, drawing sets, the 3D rig's
+ * controls, builder surfaces) enter as markup rows until their milestones.
+ */
 import {joinedDrawingSetsView} from './movieclip-drawings.mjs';
 import {spatialControlsView} from './spatial-controls.mjs';
 import {drawingInspector} from './drawing-view.mjs';
@@ -5,519 +20,387 @@ import {rigControlsView, connectorPositionView} from './rig-controls.mjs';
 import {figureJoinAction} from './figure-join-action.mjs';
 import {polygonSurfaceView} from './builder-surface-ui.mjs';
 import {rigIKAllowed} from './rig-constraints.mjs';
-import {cameraMotionView,parallaxView} from './camera-motion-ui.mjs';
+import {cameraMotionView, parallaxView} from './camera-motion-ui.mjs';
 import {paintCSS} from './paint.mjs';
 import {figurePalette, displayedSegmentPaint, displayedColor} from './figure-colors.mjs';
-import { icon } from "./icons.mjs";
-import { isStatic } from "./pivot/geometry.mjs";
-import { formatPropertyValue } from "./property-controls.mjs";
-import { cameraActionsView } from "./camera-view.mjs";
-import { cameraValues } from "./editor-camera.mjs";
-import { builderDrawables } from './editor-builder-style.mjs';
-import { isBuilderContext } from './builder-aids.mjs';
+import {isStatic} from './pivot/geometry.mjs';
+import {cameraActionsView} from './camera-view.mjs';
+import {cameraValues} from './editor-camera.mjs';
+import {builderDrawables} from './editor-builder-style.mjs';
+import {isBuilderContext} from './builder-aids.mjs';
 import {resolveInstanceFigure} from './animation-style.mjs';
-import {ikControlsView} from './ik-view.mjs';
+import {ikSection} from './ik-view.mjs';
 import {propertyToggle} from './property-toggle.mjs';
 import {isMovieclip} from './movieclips.mjs';
-import {movieclipInspector} from './movieclip-ui.mjs';
+import {movieclipSections} from './movieclip-ui.mjs';
 import {sheetKeyAt} from './layer-sheet.mjs';
-const esc = (value) =>
-  String(value ?? "").replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ],
-  );
-const hex = (rgb) =>
-  "#" +
-  (rgb || [43, 43, 43])
-    .map((n) => Math.round(n).toString(16).padStart(2, "0"))
-    .join("");
-const num = (n) => Number(Number(n ?? 0).toFixed(2));
-const animatedProperties = new Set([
-  "scale",
-  "figure_opacity",
-  "figure_z_order",
-  "thickness",
-  "segment_opacity",
-  "segment_gradient_opacity",
-  "camera_x",
-  "camera_y",
-  "camera_scale",
-  "camera_angle",
-]);
-const integerProperties = new Set([
-  "fps",
-  "canvas_width",
-  "canvas_height",
-  "duration",
-]);
-function numericField(
-  label,
-  key,
-  value,
-  unit = "",
-  limits = "",
-  state = {},
-  options = {},
-) {
-  const animated = options.animated ?? animatedProperties.has(key),
-    precision = integerProperties.has(key) || key.endsWith('_z_order') ? 0 : 3,
-    // At rest, show readable values (456.4 px, 3.2°); focus reveals full precision.
-    restPrecision = precision && (unit ? 1 : 2);
-  value = state?.value ?? value;
-  const description =
-    options.description || `${label}${unit ? ` (${unit})` : ""}`;
-  return `<div class="property-row${animated ? " is-animatable" : options.wide ? " is-wide" : ""}" data-property-row="${key}"><label class="field"><span class="property-scrub" data-property-scrub tabindex="0" role="button" aria-label="Scrub ${esc(description)}" title="Drag to adjust · Shift: fine · Alt: extra fine">${label}</span><input type="number" ${options.id ? `id="${options.id}"` : ""} ${options.legacyField === false ? "" : `data-field="${key}"`} data-property="${key}" data-property-value="${esc(value)}" data-property-precision="${precision}" data-property-display-precision="${restPrecision}" data-property-step="1" value="${formatPropertyValue(value, restPrecision)}" step="any" aria-label="${esc(description)}" ${limits}><small>${unit}</small></label></div>`;
-}
-const heading = (title, symbol) =>
-  `<div class="property-context-heading"><span>${icon(symbol)}</span><div><strong>${esc(title)}</strong></div></div>`;
-const button = (action, symbol, title, disabled = false) =>
-  `<button class="icon-button" data-action="${action}" title="${title}" aria-label="${title}" ${disabled ? "disabled" : ""}>${icon(symbol)}</button>`;
-const secondarySections = new Set(["Connections", "Polygons", "Canvas alignment", "Neighboring pose", "Color palette"]);
-const group = (title, body, extra = "") => secondarySections.has(title)
-  ? `<details class="inspector-section inspector-disclosure" data-section="${esc(title)}"><summary class="inspector-title"><span>${title}</span>${extra}</summary><div class="inspector-disclosure-body">${body}</div></details>`
-  : `<section class="inspector-section"><div class="inspector-title"><span>${title}</span>${extra}</div>${body}</section>`;
-const grid = (body) => `<div class="field-grid">${body}</div>`;
-const scrubHint = `<p class="property-context-caption">Drag a label to scrub its value · Shift or Alt for finer steps</p>`;
-const tools = (body) => `<div class="transform-actions">${body}</div>`;
-const builderOrderButtons = (kind, index) => tools(
-  [['back','send-to-back','Send to back'],['down','chevron-left','Send backward'],['up','chevron-right','Bring forward'],['front','bring-to-front','Bring to front']]
-    .map(([direction,symbol,label]) => `<button type="button" class="icon-button" data-action="builder-order" data-kind="${kind}" data-index="${index}" data-direction="${direction}" title="${label} · ${kind}" aria-label="${label} · ${kind}">${icon(symbol)}</button>`).join(''),
-);
-const colorRow = (id, label, value, opacityId, opacity, caption = value.slice(1).toUpperCase()) =>
-  `<div class="color-row"><input id="${id}" type="color" value="${value}" aria-label="${label}"><span class="hex-label">${esc(caption)}</span>${opacityId ? `<input id="${opacityId}" type="number" value="${num(opacity)}" min="0" max="100" aria-label="${label} opacity"><small>%</small>` : ""}</div>`;
+import {renderInspector} from './inspector-kit.mjs';
+import {button, esc, grid, group, heading, legacyEnv, numericField, propertyPrecision, tools} from './inspector-legacy.mjs';
 
-function figureLayerField(editor){
-  if(!editor.selectedUids.size)return '';
-  const ids=new Set([...editor.selectedUids].map(uid=>editor.layerForUid(uid))),current=ids.size===1?[...ids][0]:'';
-  return `<div class="figure-layer-field"><label for="figure-layer">${icon('layers')}Layer</label><select id="figure-layer" class="inline-select" aria-label="Figure layer">${!current?'<option value="" disabled selected>Mixed</option>':''}${editor.layers.filter(layer=>layer.kind==='layer').reverse().map(layer=>`<option value="${esc(layer.id)}" ${layer.id===current?'selected':''} ${layer.locked?'disabled':''}>${esc(layer.name)}</option>`).join('')}</select></div>`;
+const hex = rgb => `#${(rgb || [43, 43, 43]).map(n => Math.round(n).toString(16).padStart(2, '0')).join('')}`;
+const num = n => Number(Number(n ?? 0).toFixed(2));
+const polygonOpacity = polygon => (polygon.alpha_raw !== undefined ? 1 - polygon.alpha_raw / 255 : polygon.color_alpha ?? 1) * 100;
+const pageText = (start, size, total) => `${start + 1}–${Math.min(start + size, total)} / ${total}`;
+/** Today's caption under the Transform fields. */
+const SCRUB_CAPTION = {kind: 'meta', text: 'Drag a label to scrub its value · Shift or Alt for finer steps'};
+/** Today's context heading (a glyph and the context's name) as a section of its own. */
+const headingSection = (title, icon) => ({id: 'heading', legacy: {bare: true}, rows: [{kind: 'heading', title, icon}]});
+
+/** A figure's Layer select (Mixed across layers, locked layers disabled); nothing while no figure is selected. */
+function layerSection(editor) {
+  const ids = new Set([...editor.selectedUids].map(uid => editor.layerForUid(uid))), current = ids.size === 1 ? [...ids][0] : '';
+  return {id: 'layer', legacy: {bare: true}, rows: [{
+    kind: 'select', id: 'figure-layer', label: 'Layer', description: 'Figure layer', placeholder: 'Mixed', value: current, hidden: !editor.selectedUids.size,
+    options: editor.layers.filter(layer => layer.kind === 'layer').reverse().map(layer => ({value: layer.id, label: layer.name, disabled: layer.locked})),
+    legacy: {variant: 'field', icon: 'layers'},
+  }]};
 }
 
-export function inspectorView({
-  editor,
-  tab = "design",
-  tool = "select",
-  rigMode = "move",
-  selectionCount = 1,
-  bounds,
-  rangeIndices = [],
-  applyRange = false,
-  polygonPage = 0,
-  palettePage = 0,
-  context = "auto",
-  propertyState,
-  builderBranch = false,
-  builder = false,
-  drawing,
-  hotkeyLabel,
+/** A builder order's four steps for one drawable. */
+const orderActions = (kind, index) => ({kind: 'actions', items: [
+  ['back', 'send-to-back', 'Send to back'], ['down', 'chevron-left', 'Send backward'], ['up', 'chevron-right', 'Bring forward'], ['front', 'bring-to-front', 'Bring to front'],
+].map(([direction, icon, label]) => ({action: 'builder-order', icon, label: `${label} · ${kind}`, data: {kind, index, direction}, legacy: {type: 'button'}}))});
+
+/**
+ * The current context's sections. Options are inspectorView()'s; propertyState(key)
+ * may supply a live value ({value}) for a property while it is being edited.
+ */
+export function inspectorDescriptor({
+  editor, tab = 'design', tool = 'select', rigMode = 'move', selectionCount = 1, bounds, rangeIndices = [], applyRange = false,
+  polygonPage = 0, palettePage = 0, context = 'auto', propertyState, builderBranch = false, builder = false, drawing, hotkeyLabel,
 }) {
-  if(drawing?.active){
-    const o=editor.object,f=editor.figure,p=(label,key,value,unit='',limits='')=>numericField(label,key,value,unit,limits,propertyState?.(key));
-    const poseView=drawing.tool==='transform'&&o?group('Transform drawing',grid(p('X','root_x',o.root_x,'px')+p('Y','root_y',o.root_y,'px')+p('Scale','scale',o.scale*100,'%','min="0.01"')+p('Angle','rotation',((o.angles[0]??0)-(f.segments[0]?.angle_rad??0))*180/Math.PI,'°')+p('Opacity','figure_opacity',(1-(o.field28??0)/255)*100,'%','min="0" max="100"'))):'';
-    return drawingInspector(drawing,{numericField,group,grid,heading,hotkeyLabel,esc,propertyToggle},poseView);
+  const number = (label, key, value, unit = '', extra = {}) =>
+    ({kind: 'number', key, label, unit, value: propertyState?.(key)?.value ?? value, precision: propertyPrecision(key), ...extra});
+  if (drawing?.active) return drawingDescriptor(editor, drawing, number, hotkeyLabel);
+  const object = editor.object;
+  const resolved = context === 'auto' ? (tab === 'animation' ? 'frame' : object ? 'figure' : 'scene') : context;
+  if (resolved === 'camera') return cameraDescriptor(editor, number);
+  if (resolved === 'layer') return layerDescriptor(editor);
+  if (resolved === 'frame') return frameDescriptor(editor, number);
+  if (resolved === 'scene' || !object) return sceneDescriptor(editor, number, propertyState);
+  if (selectionCount === 1 && isMovieclip(editor.figure)) return {kind: 'movieclip', sections: [layerSection(editor), ...movieclipSections(editor, {number})]};
+  const range = {id: 'range', title: 'Frame range', hidden: rangeIndices.length <= 1, rows: [
+    {kind: 'checkbox', id: 'apply-range-movement', label: `Apply to ${rangeIndices.length} selected frames`, checked: applyRange},
+  ]};
+  if (selectionCount > 1) return selectionDescriptor(editor, number, {bounds, selectionCount, range});
+  const figure = resolveInstanceFigure(editor.figure, object), joint = editor.selectedJoint;
+  if (!builder && figure.segments.some(segment => segment._stykRig?.spatial?.origin)) {
+    return {kind: 'spatial-rig', sections: [
+      {id: 'drawing-sets', legacy: {bare: true}, rows: [{kind: 'markup', html: joinedDrawingSetsView(editor)}]},
+      {id: 'spatial', legacy: {bare: true}, rows: [{kind: 'markup', html: spatialControlsView(editor)}]},
+      {id: 'placement', title: 'Placement', hidden: joint >= 0, rows: [{kind: 'grid', rows: [
+        number('X', 'root_x', object.root_x, 'px'), number('Y', 'root_y', object.root_y, 'px'), number('Scale', 'scale', object.scale * 100, '%', {min: 0.01}),
+      ]}]},
+    ]};
   }
-  const report = editor.report,
-    frame = editor.frame,
-    object = editor.object;
-  const field = (label, key, value, unit = "", limits = "", options = {}) =>
-    numericField(
-      label,
-      key,
-      value,
-      unit,
-      limits,
-      propertyState?.(key),
-      options,
-    );
-  const resolvedContext =
-    context === "auto"
-      ? tab === "animation"
-        ? "frame"
-        : object
-          ? "figure"
-          : "scene"
-      : context;
-  if (resolvedContext === "camera") return cameraView(editor, field);
-  if (resolvedContext === "layer") return layerView(editor);
-  if (resolvedContext === "frame") return frameView(editor, field);
-  if (resolvedContext === "scene" || !object)
-    return sceneView(editor, field, propertyState);
-  if (selectionCount===1 && isMovieclip(editor.figure)) return figureLayerField(editor)+movieclipInspector(editor,field);
-  const range =
-    rangeIndices.length > 1
-      ? group(
-          "Frame range",
-          `<label class="check-row"><input id="apply-range-movement" type="checkbox" ${applyRange ? "checked" : ""}>Apply to ${rangeIndices.length} selected frames</label>`,
-        )
-      : "";
-  if (selectionCount > 1) {
-    const b = bounds;
-    return (
-      heading(`${selectionCount} figures`, "layers") + figureLayerField(editor) +
-      group(
-        "Selection",
-        tools(
-          button("duplicate", "duplicate", "Duplicate selection") +
-            button("delete", "trash", "Delete selection"),
-        ),
-      ) +
-      range +
-      group(
-        "Transform",
-        grid(
-          field("X", "group_x", b.minX, "px") +
-            field("Y", "group_y", b.minY, "px") +
-            field("W", "group_width", b.maxX - b.minX, "px", 'min="0.01"') +
-            field("H", "group_height", b.maxY - b.minY, "px", 'min="0.01"'),
-        ) + scrubHint +
-          tools(
-            button("mirror", "flip", "Flip horizontally") +
-              button("rotate", "rotate", "Rotate 15°") +
-              button("center", "center", "Center selection"),
-          ),
-      ) +
-      group(
-        "Align",
-        tools(
-          [
-            ["left", "align-left"],
-            ["center-x", "align-horizontal-center"],
-            ["right", "align-right"],
-            ["top", "align-top"],
-            ["center-y", "align-vertical-center"],
-            ["bottom", "align-bottom"],
-          ]
-            .map(([a, i]) =>
-              button(`align-${a}`, i, `Align ${a.replace("-", " ")}`),
-            )
-            .join(""),
-        ),
-      ) +
-      group(
-        "Appearance",
-        colorRow("figure-color", "Figure color", "#2b2b2b") +
-          `<div class="field-grid property-opacity-grid">${field("Opacity", "figure_opacity", (1 - (object.field28 || 0) / 255) * 100, "%", 'min="0" max="100"', { id: "figure-opacity", legacyField: false, animated: false, wide: true })}</div>` +
-          tools(
-            button("reset-color", "undo", "Reset colors") +
-              button("layer-down", "send-to-back", "Send backward") +
-              button("layer-up", "bring-to-front", "Bring forward"),
-          ),
-      ) +
-      group(
-        "Connections",
-        `<button class="button" data-action="combine-figures">${icon("combine")}Combine connected</button>`,
-      )
-    );
-  }
-  const figure = resolveInstanceFigure(editor.figure, object),
-    joint = editor.selectedJoint,
-    segment = figure.segments[joint];
-  if(!builder&&figure.segments.some(s=>s._stykRig?.spatial?.origin)){
-    return joinedDrawingSetsView(editor)+spatialControlsView(editor)+(joint<0?group('Placement',grid(field('X','root_x',object.root_x,'px')+field('Y','root_y',object.root_y,'px')+field('Scale','scale',object.scale*100,'%','min="0.01"'))):'');
-  }
-  if (builder && editor.selectedPolygonIndex >= 0) {
-    const index=editor.selectedPolygonIndex, polygon=figure.polyfills[index];
-    return group('Fill', `<div class="polygon-row"><input type="color" data-polygon-color="${index}" aria-label="Fill color" value="${hex(displayedColor(report,figure,object,polygon.color_rgb))}"><button class="icon-button" data-delete-polygon="${index}" aria-label="Delete fill">${icon('trash')}</button></div>` +
-      field('Opacity',`polygon_${index}_opacity`,(polygon.alpha_raw!==undefined?1-polygon.alpha_raw/255:polygon.color_alpha??1)*100,'%', 'min="0" max="100"',{animated:Boolean(editor.propertyChannels)}) + polygonSurfaceView(editor,index) + builderOrderButtons('polygon',index));
-  }
-  const drawOrder = new Map(builderDrawables(figure).map((item,index)=>[`${item.kind}:${item.index}`,index+1]));
-  const orderLimits = `min="1" max="${drawOrder.size}"`;
-  const palette = joint < 0 ? editor.figurePalette() : [];
-  const ownPalette = joint < 0 ? figurePalette(report,figure,object) : [];
-  const fill = ownPalette[0]?.color ?? '#000000';
-  const kind = figure.segments.every((s) => s.primitive_code === 5)
-    ? "text"
-    : figure.segments.every((s) => s.primitive_code === 2)
-      ? "image"
-      : "figure";
-  const title = group(
-    "",
-    `<div class="object-heading"><span>${icon(kind === "text" ? "text" : kind === "image" ? "image" : "person")}</span><input id="figure-name" class="figure-name" value="${esc(figure.name || "Figure")}" aria-label="Figure name" title="Rename figure definition"></div>`,
-  );
+  if (builder && editor.selectedPolygonIndex >= 0) return fillDescriptor(editor, figure, number);
+  const segment = figure.segments[joint];
   // Pivot origins use -1; segment endpoint indices start at zero.
-  const jointScope = joint >= 0 && Boolean(segment);
-  let html = (jointScope ? "" : title) + figureLayerField(editor) + range + (!builder ? joinedDrawingSetsView(editor)+spatialControlsView(editor) : "");
-  if (!jointScope) {
-    if (object.join || frame.objects.some(part => part.join?.target_object_slot === object.object_slot)) {
-      html += group('Connected figure',
-        `<button type="button" class="button" data-action="combine-figures">${icon('combine')}Merge into one figure</button>`);
-    }
-    if (tool === "rig")
-      html += group(
-        "Edit rig",
-        `<select id="rig-mode" class="inline-select" aria-label="Rig edit mode"><option value="move" ${rigMode === "move" ? "selected" : ""}>Move joint</option><option value="rotate" ${rigMode === "rotate" ? "selected" : ""}>Rotate branch</option></select><button type="button" class="button" data-action="add-sprite-segment">${icon('image')}Add sprite part…</button>`,
-      );
-    if (figure.text_assets?.some((asset) => asset.glyphs?.length))
-      html += group(
-        "Text",
-        `<button class="button" data-action="edit-text">${icon("text")}Edit text</button>`,
-      );
-    html += group(
-      "Transform",
-      grid(
-        field("X", "root_x", object.root_x, "px") +
-          field("Y", "root_y", object.root_y, "px") +
-          field("Scale", "scale", object.scale * 100, "%", 'min="0.01"') +
-          field(
-            "Angle",
-            "rotation",
-            (((object.angles[0] ?? 0) - (figure.segments[0]?.angle_rad ?? 0)) *
-              180) /
-              Math.PI,
-            "°",
-          ),
-      ) + scrubHint,
-    );
-    html += group(
-      "Appearance",
-      `<div class="property-paint-row">${colorRow("figure-color", "Recolor all segments", fill,undefined,undefined,ownPalette.length>1?'Mixed':undefined)}${field("Opacity", "figure_opacity", (1 - (object.field28 || 0) / 255) * 100, "%", 'min="0" max="100"', { id: "figure-opacity", legacyField: false })}</div>`,
-      button("reset-color", "undo", "Reset colors"),
-    );
-    html += group(
-      "Stacking",
-      grid(field('Z-index', 'figure_z_order', object._stykZIndex ?? 0, '', 'min="-1000000" max="1000000"')) +
-      tools(button('layer-back', 'send-to-back', 'Send to back') + button('layer-down', 'chevron-left', 'Send backward') + button('layer-up', 'chevron-right', 'Bring forward') + button('layer-front', 'bring-to-front', 'Bring to front')),
-    );
+  const scope = {layer: layerSection(editor), range, sheets: [
+    {id: 'drawing-sets', hidden: builder, legacy: {bare: true}, rows: [{kind: 'markup', html: builder ? '' : joinedDrawingSetsView(editor)}]},
+    {id: 'spatial', hidden: builder, legacy: {bare: true}, rows: [{kind: 'markup', html: builder ? '' : spatialControlsView(editor)}]},
+  ]};
+  const order = new Map(builderDrawables(figure).map((item, index) => [`${item.kind}:${item.index}`, index + 1]));
+  return joint >= 0 && segment
+    ? jointDescriptor(editor, figure, segment, number, {scope, order, tool, builder, builderBranch})
+    : figureDescriptor(editor, figure, number, {scope, order, tool, rigMode, polygonPage, palettePage});
+}
+
+/** The Properties panel's HTML for the current context (the only content of #inspector, through updateInspectorDOM()). */
+export function inspectorView(options) {
+  return renderInspector(inspectorDescriptor(options), legacyEnv);
+}
+
+function drawingDescriptor(editor, drawing, number, hotkeyLabel) {
+  const o = editor.object, f = editor.figure;
+  const pose = drawing.tool === 'transform' && o ? renderInspector({kind: 'drawing', sections: [{id: 'transform-drawing', title: 'Transform drawing', rows: [{kind: 'grid', rows: [
+    number('X', 'root_x', o.root_x, 'px'), number('Y', 'root_y', o.root_y, 'px'), number('Scale', 'scale', o.scale * 100, '%', {min: 0.01}),
+    number('Angle', 'rotation', ((o.angles[0] ?? 0) - (f.segments[0]?.angle_rad ?? 0)) * 180 / Math.PI, '°'),
+    number('Opacity', 'figure_opacity', (1 - (o.field28 ?? 0) / 255) * 100, '%', {min: 0, max: 100}),
+  ]}]}]}, legacyEnv) : '';
+  const html = drawingInspector(drawing, {numericField, group, grid, heading, hotkeyLabel, esc, propertyToggle}, pose);
+  return {kind: 'drawing', sections: [{id: 'drawing', legacy: {bare: true}, rows: [{kind: 'markup', html}]}]};
+}
+
+function sceneDescriptor(editor, number, propertyState) {
+  const report = editor.report, frame = editor.frame, colorState = propertyState?.('scene_color'), backgroundState = propertyState?.('scene_background');
+  const background = report.backgrounds?.find(item => item.background_id === (backgroundState?.value ?? frame.background_id));
+  const raw = colorState?.value ?? background?.color ?? 0xffffffff;
+  const color = typeof raw === 'string' && /^#[0-9a-f]{6}$/i.test(raw) ? raw : `#${(raw & 0xffffff).toString(16).padStart(6, '0')}`;
+  const name = background?.name || 'White';
+  return {kind: 'scene', sections: [
+    headingSection('Scene', 'scene'),
+    {id: 'canvas', title: 'Canvas', rows: [{kind: 'grid', rows: [
+      number('W', 'canvas_width', report.canvas_width, 'px', {min: 1, max: 16384}), number('H', 'canvas_height', report.canvas_height, 'px', {min: 1, max: 16384}),
+    ]}]},
+    {id: 'background', title: 'Background', rows: [
+      {kind: 'group', legacy: {className: 'property-row property-color-line'}, rows: [{kind: 'color', id: 'background-color', label: 'Background color', value: color}]},
+      {kind: 'group', legacy: {className: 'property-row property-background-line'}, rows: [{kind: 'value', label: 'Background', text: name, tip: name, legacy: {className: 'property-background-name'}}]},
+      {kind: 'actions', items: [{action: 'background-style', icon: 'sliders', label: 'Background settings'}, {action: 'import-background', icon: 'image', label: 'Import background'}]},
+    ]},
+    {id: 'playback', title: 'Playback', rows: [{kind: 'grid', rows: [number('Rate', 'fps', report.fps, 'fps', {min: 1, max: 120})]}]},
+  ]};
+}
+
+function cameraDescriptor(editor, number) {
+  const c = cameraValues((editor.evaluatedFrame || editor.frame).camera), motion = editor._cameraInspectorTab === 'motion';
+  const panel = {key: 'camera', className: 'camera-inspector'}, transformPane = {key: 'transform', hidden: motion}, motionPane = {key: 'motion', hidden: !motion};
+  const inPanel = {bare: true, wrap: [panel]}, inTransform = {bare: true, wrap: [panel, transformPane]};
+  const plain = (action, icon, label, tip, extra = {}) => ({action, icon, label, tip, legacy: {style: 'plain'}, ...extra});
+  return {kind: 'camera', sections: [
+    {id: 'heading', legacy: inPanel, rows: [{kind: 'heading', title: 'Camera', icon: 'camera', badge: 'Live', legacy: {className: 'camera-heading'}}]},
+    // The size's times sign is mis-encoded here as it has been ("Ã—"); the Preview section's port (M7e) writes "×".
+    {id: 'preview', legacy: inPanel, rows: [{kind: 'preview', key: 'camera-monitor', label: 'Live camera output', media: {tag: 'canvas', data: {'camera-monitor': true}},
+      caption: [`${editor.report.canvas_width} Ã— ${editor.report.canvas_height}`, {text: `${num(100 / c.scale)}% zoom`, data: {'camera-magnification': true}}],
+      legacy: {className: 'camera-monitor', captionClass: 'camera-monitor-caption'}}]},
+    {id: 'tabs', legacy: inPanel, rows: [{kind: 'segmented', mode: 'tab', description: 'Camera controls', value: motion ? 'motion' : 'transform', options: [
+      {value: 'transform', label: 'Transform', data: {'camera-tab': 'transform'}}, {value: 'motion', label: 'Motion', data: {'camera-tab': 'motion'}},
+    ], legacy: {className: 'camera-inspector-tabs'}}]},
+    {id: 'pose', legacy: inTransform, rows: [{kind: 'actions', legacy: {className: 'camera-quick-actions'}, items: [
+      plain('camera-guides', 'grid', 'Guides', 'Show composition guides', {pressed: true}),
+      plain('camera-level', 'rotate', 'Level', 'Set camera rotation to zero'),
+      plain('camera-reset', 'undo', 'Reset', 'Reset camera pose'),
+    ]}]},
+    {id: 'transform', title: 'Transform', legacy: {wrap: [panel, transformPane]}, rows: [{kind: 'grid', rows: [
+      number('X', 'camera_x', c.x || 0, 'px'), number('Y', 'camera_y', c.y || 0, 'px'),
+      number('Scale', 'camera_scale', (c.scale || 1) * 100, '%', {min: 0.01}), number('Rotation', 'camera_angle', ((c.angle_rad || 0) * 180) / Math.PI, '°'),
+    ]}]},
+    {id: 'camera-actions', legacy: inTransform, rows: [{kind: 'markup', html: cameraActionsView({editor, button, group, tools})}]},
+    {id: 'motion', legacy: {bare: true, wrap: [panel, motionPane]}, rows: [{kind: 'markup', html: cameraMotionView(editor)}]},
+  ]};
+}
+
+function frameDescriptor(editor, number) {
+  if (editor.report._styk?.layerSheet) {
+    const track = editor.report._styk.layerSheet.tracks[editor.activeLayerId], {key, next} = sheetKeyAt(track, editor.tick);
+    return {kind: 'frame', sections: [
+      headingSection(`Frame ${editor.tick + 1}`, 'diamond'),
+      {id: 'exposure', title: editor.getLayer(editor.activeLayerId)?.name ?? 'Layer', rows: [{kind: 'grid', rows: [
+        number('Exposure', 'duration', (next?.tick ?? track?.end ?? editor.tick + 1) - (key?.tick ?? editor.tick), 'frames', {min: 1, max: 65535}),
+      ]}]},
+      {id: 'frames', title: 'Frames', rows: [{kind: 'actions', items: [{action: 'add-frame', icon: 'diamond', label: 'Insert keyframe (F6)'}]}]},
+    ]};
   }
-  if (jointScope && segment) {
-    const displayPaint=displayedSegmentPaint(report,figure,object,segment);
-    const connector=segment._stykRig?.connector;
-    const staticControl = propertyToggle('static-joint', 'Static', isStatic(segment), 'diamond');
-    if(connector&&editor.selectedSegmentIds.size<=1){
-      const scope=editor._connectorInspector,part=scope?.uid===editor.selectedUid&&scope?.id===segment.segment_id?scope.part:'slider';
-      html+=heading(`Connector ${segment.segment_id}`,'link')+`<div class="connector-property-tabs" role="group" aria-label="Connector properties">${[['segment','Segment'],['slider','Slider']].map(([value,label])=>`<button type="button" data-connector-part="${value}" aria-pressed="${part===value}">${label}</button>`).join('')}</div>`;
-      if(part==='slider')return html+group('Slider',connectorPositionView(editor)+`<div class="joint-settings">${staticControl}</div>`);
-    }
-    if(!connector||editor.selectedSegmentIds.size>1)html += heading(editor.selectedSegmentIds.size > 1 ? `${editor.selectedSegmentIds.size} segments` : `${editor.branchSelected ? 'Branch from joint' : 'Joint'} ${segment.segment_id}`, "nodes");
-    if(builder)html+=group('',`<label class="rig-select"><span>Joint name</span><input id="builder-joint-name" class="inline-select" aria-label="Joint name" maxlength="120" value="${esc(segment.name??'')}"></label>`);
-    const ik = editor.getIKSettings();
-    const selectedSegmentIds = editor.selectedSegmentIds;
-    const supportsSecondaryColor = [1, 3, 4].includes(segment.primitive_code) &&
-      (selectedSegmentIds.size <= 1 || figure.segments.every(part =>
-        !selectedSegmentIds.has(part.segment_id) || [1, 3, 4].includes(part.primitive_code)));
-    const hasSecondaryColor = supportsSecondaryColor && Boolean(segment.secondary);
-    const shape = [
-      "line",
-      "circle",
-      "image",
-      "circleFill",
-      "circleClear",
-      "text",
-      "squareLine",
-    ][segment.primitive_code ?? 0];
-    html += group(
-      "Transform",
-      grid(
-        (connector?'':field(
-          "Angle",
-          "joint_angle",
-          ((segment._stykRig?.angleLock ? editor.geometry.objects.get(editor.selectedSlot)?.segments[joint]?.angle : object.angles[joint] ?? segment.angle_rad) * 180) / Math.PI,
-          "°",
-          segment._stykRig?.angleLock ? 'disabled' : '',
-        )) +
-          (connector ? '' : field(
-            "Length",
-            "joint_length",
-            object.len_flag ? object.lengths[joint] : segment.length,
-            "px",
-            'min="0"',
-          )) +
-          field(
-            "Bend",
-            "joint_bend",
-            ((object.bend_flag ? object.bends[joint] : segment.bend_rad || 0) *
-              180) /
-              Math.PI,
-            "°",
-        ),
-      ) + (connector ? '' : `<div class="joint-settings">${staticControl}</div>`),
-    );
-    if (rigIKAllowed(figure,joint)) html += ikControlsView(ik);
-    html += rigControlsView(editor,{builder});
-    html += group("Appearance",
-        grid(field("Width", "thickness", segment.thickness, "px", 'min="0"') +
-        field('Order', 'segment_z_order', drawOrder.get(`segment:${joint}`), '', orderLimits, {animated:false})) +
-        ((isBuilderContext(tool) || builder) && editor.selectedSegmentIds.size <= 1 ? `<label class="check-row"><input type="checkbox" id="builder-branch" ${builderBranch ? 'checked' : ''}>Apply to branch</label>` : '') +
-        `<select id="segment-shape" class="inline-select" aria-label="Segment shape" ${["image", "text"].includes(shape) ? "disabled" : ""}>${[["line", "Round line"], ["squareLine", "Square line"], ["circle", "White circle"], ["circleFill", "Filled circle"], ["circleClear", "Clear circle"], ...(["image", "text"].includes(shape) ? [[shape, shape]] : [])].map(([v, n]) => `<option value="${v}" ${shape === v ? "selected" : ""}>${n}</option>`).join("")}</select>` +
-        `<div class="property-paint-row"><button type="button" id="segment-color" data-paint-picker class="paint-trigger" aria-label="Segment color"><i style="background:${paintCSS(displayPaint)}"></i><span>${displayPaint.type === 'solid' ? hex(displayPaint.stops[0].color).toUpperCase() : displayPaint.type[0].toUpperCase()+displayPaint.type.slice(1)+' gradient'}</span></button>` +
-        `${field(hasSecondaryColor ? "Primary opacity" : "Opacity", "segment_opacity", (1 - (segment.transparency || 0) / 255) * 100, "%", 'min="0" max="100"', { id: "segment-opacity", legacyField: false, description: "Primary color opacity" })}</div>` +
-        (supportsSecondaryColor ? `<div class="secondary-color-settings">${propertyToggle('segment-gradient-enabled', 'Secondary color', hasSecondaryColor, 'circle', {controls:'segment-secondary-controls'})}<div id="segment-secondary-controls" ${hasSecondaryColor ? '' : 'hidden'}>${hasSecondaryColor ?
-          `<div class="property-paint-row">${colorRow('segment-gradient-color', 'Secondary color', hex(displayedColor(report,figure,object,segment.secondary.rgb)))}${field("Secondary opacity", "segment_gradient_opacity", (1-(segment.secondary.a??0)/255)*100, "%", 'min="0" max="100"', {description:"Secondary color opacity"})}</div>` : ''}</div></div>` : ''),
-    );
-  }
-  if (jointScope) return html;
-  const parent = object.join
-      ? frame.objects[object.join.target_object_slot]
-      : null,
-    parentName =
-      parent &&
-      (parent.name ||
-        report.figure_types.find(
-          (f) => f.figure_type_id === parent.figure_type_id,
-        )?.name ||
-        "Figure");
-  html += group(
-    "Connection",
-    `<div class="connection-row"><span>${parent ? esc(parentName) + " · " + object.join.target_handle_id : "None"}</span>${button("join-figure", parent ? "detach" : "link", parent ? "Unjoin figure" : "Join figure", !figureJoinAction(editor))}${button("combine-figures", "combine", "Combine connected figures", !parent && !frame.objects.some((o) => o.join?.target_object_slot === object.object_slot))}</div>`,
-  );
-  const polygons = figure.polyfills || [],
-    start = Math.min(
-      Math.max(0, polygonPage) * 12,
-      Math.max(0, Math.floor((polygons.length - 1) / 12) * 12),
-    );
-  if (polygons.length)
-    html += group(
-      "Polygons",
-      polygons
-        .slice(start, start + 12)
-        .map(
-          (p, i) =>
-            `<div class="polygon-item"><div class="polygon-row"><span>Polygon ${start + i + 1}</span><input type="color" data-polygon-color="${start + i}" aria-label="Polygon ${start + i + 1} color" value="${hex(displayedColor(report,figure,object,p.color_rgb))}"><button class="icon-button" data-delete-polygon="${start + i}" aria-label="Delete polygon ${start + i + 1}">${icon("trash")}</button></div><details class="polygon-style-details" data-polygon-index="${start+i}"><summary>Opacity &amp; draw order</summary>${field('Opacity', `polygon_${start+i}_opacity`, (p.alpha_raw !== undefined ? 1-p.alpha_raw/255 : p.color_alpha ?? 1)*100, '%', 'min="0" max="100"', {animated:Boolean(editor.propertyChannels)})}${field('Order', `polygon_${start+i}_z_order`, drawOrder.get(`polygon:${start+i}`), '', orderLimits, {animated:false})}${builderOrderButtons('polygon',start+i)}</details></div>`,
-        )
-        .join("") +
-        (polygons.length > 12
-          ? `<div class="polygon-pagination">${button("polygons-previous", "chevron-left", "Previous polygons", start === 0)}<span>${start + 1}–${Math.min(start + 12, polygons.length)} / ${polygons.length}</span>${button("polygons-next", "chevron-right", "Next polygons", start + 12 >= polygons.length)}</div>`
-          : ""),
-      `<span>${polygons.length}</span>`,
-    );
-  const paletteStart=Math.min(Math.max(0,palettePage)*32,Math.max(0,Math.ceil(palette.length/32)-1)*32);
-  html += group('Color palette',
-      `<div class="figure-palette" aria-label="Figure color palette">`+
-      palette.slice(paletteStart,paletteStart+32).map(entry=>`<button type="button" data-paint-picker data-palette-color="${entry.color}" class="figure-palette-row" aria-label="Replace ${entry.color.toUpperCase()}, ${entry.segments.length} segments${entry.polygons.length?`, ${entry.polygons.length} fills`:''}"><i style="background:${entry.color}"></i><span>${entry.color.toUpperCase()}</span></button>`).join('')+'</div>'+
-      (palette.length>32?`<div class="polygon-pagination">${button('palette-previous','chevron-left','Previous colors',paletteStart===0)}<span>${paletteStart+1}–${Math.min(paletteStart+32,palette.length)} / ${palette.length}</span>${button('palette-next','chevron-right','Next colors',paletteStart+32>=palette.length)}</div>`:''),`<span>${palette.length} ${palette.length===1?'color':'colors'}</span>`);
-  return html;
+  return {kind: 'keyframe', sections: [
+    headingSection(`Keyframe ${(editor.frameIndex ?? 0) + 1}`, 'diamond'),
+    {id: 'timing', title: 'Timing', rows: [{kind: 'grid', rows: [number('Duration', 'duration', editor.frame.duration_raw ?? 1, 'ticks', {min: 0, max: 65535})]}]},
+  ]};
 }
 
-function sceneView(editor, field, propertyState) {
-  const r = editor.report,
-    f = editor.frame,
-    colorState = propertyState?.("scene_color"),
-    backgroundState = propertyState?.("scene_background"),
-    bg = r.backgrounds?.find(
-      (b) => b.background_id === (backgroundState?.value ?? f.background_id),
-    );
-  const rawColor = colorState?.value ?? bg?.color ?? 0xffffffff;
-  const color =
-    typeof rawColor === "string" && /^#[0-9a-f]{6}$/i.test(rawColor)
-      ? rawColor
-      : "#" + (rawColor & 0xffffff).toString(16).padStart(6, "0");
-  return (
-    heading(
-      "Scene",
-      "scene",
-    ) +
-    group(
-      "Canvas",
-      grid(
-        field(
-          "W",
-          "canvas_width",
-          r.canvas_width,
-          "px",
-          'min="1" max="16384"',
-        ) +
-          field(
-            "H",
-            "canvas_height",
-            r.canvas_height,
-            "px",
-            'min="1" max="16384"',
-          ),
-      ),
-    ) +
-    group(
-      "Background",
-      `<div class="property-row property-color-line">${colorRow("background-color", "Background color", color)}</div>` +
-        `<div class="property-row property-background-line"><span class="property-background-name" title="${esc(bg?.name || "White")}">${esc(bg?.name || "White")}</span></div>` +
-        tools(
-          button("background-style", "sliders", "Background settings") +
-            button("import-background", "image", "Import background"),
-        ),
-    ) +
-    group(
-      "Playback",
-      grid(field("Rate", "fps", r.fps, "fps", 'min="1" max="120"')),
-    )
-  );
+function layerDescriptor(editor) {
+  const layer = editor.getLayer?.(editor.activeLayerId) ?? {id: 'layer-1', name: 'Layer', visible: true, locked: false, figureUids: []};
+  const data = {'layer-id': layer.id};
+  return {kind: 'layer', sections: [
+    headingSection(layer.name, 'layers'),
+    {id: 'layer', title: 'Layer', rows: [
+      {kind: 'text', id: 'inspector-layer-name', label: 'Name', description: 'Layer name', value: layer.name, maxlength: 160, data, legacy: {variant: 'stacked', inputClass: 'property-layer-name'}},
+      {kind: 'checkbox', id: 'inspector-layer-visible', label: 'Visible', checked: layer.visible, data},
+      {kind: 'checkbox', id: 'inspector-layer-locked', label: 'Locked', checked: layer.locked, data},
+    ]},
+    {id: 'parallax', legacy: {bare: true}, rows: [{kind: 'markup', html: parallaxView(editor, layer.id)}]},
+  ]};
 }
 
-function cameraView(editor, field) {
-  const c = cameraValues((editor.evaluatedFrame || editor.frame).camera);
-  const motion=editor._cameraInspectorTab==='motion';
-  return (
-    '<div class="camera-inspector">' +
-    `<div class="camera-heading"><span>${icon('camera')}</span><div><strong>Camera</strong></div><span class="camera-live">Live</span></div>` +
-    `<div class="camera-monitor"><canvas data-camera-monitor aria-label="Live camera output"></canvas><div class="camera-monitor-caption"><span>${editor.report.canvas_width} Ã— ${editor.report.canvas_height}</span><span data-camera-magnification>${num(100/c.scale)}% zoom</span></div></div>` +
-    `<div class="camera-inspector-tabs" role="tablist" aria-label="Camera controls"><button role="tab" data-camera-tab="transform" aria-selected="${!motion}">Transform</button><button role="tab" data-camera-tab="motion" aria-selected="${motion}">Motion</button></div><div ${motion?'hidden':''}>` +
-    `<div class="camera-quick-actions"><button data-action="camera-guides" aria-pressed="true" title="Show composition guides">${icon('grid')}<span>Guides</span></button><button data-action="camera-level" title="Set camera rotation to zero">${icon('rotate')}<span>Level</span></button><button data-action="camera-reset" title="Reset camera pose">${icon('undo')}<span>Reset</span></button></div>` +
-    group(
-      "Transform",
-      grid(
-        field("X", "camera_x", c.x || 0, "px") +
-          field("Y", "camera_y", c.y || 0, "px") +
-          field(
-            "Scale",
-            "camera_scale",
-            (c.scale || 1) * 100,
-            "%",
-            'min="0.01"',
-          ) +
-          field(
-            "Rotation",
-            "camera_angle",
-            ((c.angle_rad || 0) * 180) / Math.PI,
-            "°",
-          ),
-      ),
-    ) +
-    cameraActionsView({ editor, button, group, tools }) + `</div><div ${motion?'':'hidden'}>` + cameraMotionView(editor) + '</div></div>'
-  );
+function selectionDescriptor(editor, number, {bounds: b, selectionCount, range}) {
+  const object = editor.object;
+  const align = [['left', 'align-left'], ['center-x', 'align-horizontal-center'], ['right', 'align-right'], ['top', 'align-top'], ['center-y', 'align-vertical-center'], ['bottom', 'align-bottom']];
+  return {kind: 'figures', sections: [
+    headingSection(`${selectionCount} figures`, 'layers'),
+    layerSection(editor),
+    {id: 'selection', title: 'Selection', rows: [{kind: 'actions', items: [
+      {action: 'duplicate', icon: 'duplicate', label: 'Duplicate selection'}, {action: 'delete', icon: 'trash', label: 'Delete selection'},
+    ]}]},
+    range,
+    {id: 'transform', title: 'Transform', rows: [
+      {kind: 'grid', rows: [
+        number('X', 'group_x', b.minX, 'px'), number('Y', 'group_y', b.minY, 'px'),
+        number('W', 'group_width', b.maxX - b.minX, 'px', {min: 0.01}), number('H', 'group_height', b.maxY - b.minY, 'px', {min: 0.01}),
+      ]},
+      SCRUB_CAPTION,
+      {kind: 'actions', items: [
+        {action: 'mirror', icon: 'flip', label: 'Flip horizontally'}, {action: 'rotate', icon: 'rotate', label: 'Rotate 15°'}, {action: 'center', icon: 'center', label: 'Center selection'},
+      ]},
+    ]},
+    {id: 'align', title: 'Align', rows: [{kind: 'actions', items: align.map(([name, icon]) => ({action: `align-${name}`, icon, label: `Align ${name.replace('-', ' ')}`}))}]},
+    {id: 'appearance', title: 'Appearance', rows: [
+      {kind: 'color', id: 'figure-color', label: 'Figure color', value: '#2b2b2b'},
+      {kind: 'grid', legacy: {className: 'property-opacity-grid'}, rows: [number('Opacity', 'figure_opacity', (1 - (object.field28 || 0) / 255) * 100, '%',
+        {min: 0, max: 100, id: 'figure-opacity', field: false, animated: false, wide: true})]},
+      {kind: 'actions', items: [
+        {action: 'reset-color', icon: 'undo', label: 'Reset colors'}, {action: 'layer-down', icon: 'send-to-back', label: 'Send backward'}, {action: 'layer-up', icon: 'bring-to-front', label: 'Bring forward'},
+      ]},
+    ]},
+    {id: 'connections', title: 'Connections', rows: [{kind: 'actions', legacy: {bare: true}, items: [{action: 'combine-figures', icon: 'combine', label: 'Combine connected', text: true}]}]},
+  ]};
 }
 
-function frameView(editor, field) {
-  if(editor.report._styk?.layerSheet){const track=editor.report._styk.layerSheet.tracks[editor.activeLayerId],{key,next}=sheetKeyAt(track,editor.tick);
-    return heading(`Frame ${editor.tick+1}`,'diamond')+group(editor.getLayer(editor.activeLayerId)?.name??'Layer',
-      grid(field('Exposure','duration',(next?.tick??track?.end??editor.tick+1)-(key?.tick??editor.tick),'frames','min="1" max="65535"')))+group('Frames',tools(button('add-frame','diamond','Insert keyframe (F6)')));}
-  const frame = editor.frame,
-    index = editor.frameIndex ?? 0;
-  return (
-    heading(
-      `Keyframe ${index + 1}`,
-      "diamond",
-    ) +
-    group(
-      "Timing",
-      grid(
-        field(
-          "Duration",
-          "duration",
-          frame.duration_raw ?? 1,
-          "ticks",
-          'min="0" max="65535"',
-        ),
-      ),
-    )
-  );
+/** A fill picked in the builder: its colour, delete, opacity, surface and order. */
+function fillDescriptor(editor, figure, number) {
+  const index = editor.selectedPolygonIndex, polygon = figure.polyfills[index];
+  return {kind: 'fill', sections: [{id: 'fill', title: 'Fill', rows: [
+    {kind: 'group', legacy: {className: 'polygon-row'}, rows: [
+      {kind: 'swatch', picker: 'native', label: 'Fill color', value: hex(displayedColor(editor.report, figure, editor.object, polygon.color_rgb)), data: {'polygon-color': index}},
+      {kind: 'actions', legacy: {bare: true}, items: [{icon: 'trash', label: 'Delete fill', data: {'delete-polygon': index}, legacy: {title: false}}]},
+    ]},
+    number('Opacity', `polygon_${index}_opacity`, polygonOpacity(polygon), '%', {min: 0, max: 100, animated: Boolean(editor.propertyChannels)}),
+    {kind: 'markup', html: polygonSurfaceView(editor, index)},
+    orderActions('polygon', index),
+  ]}]};
 }
 
-function layerView(editor) {
-  const layer = editor.getLayer?.(editor.activeLayerId) ?? {
-    id: "layer-1",
-    name: "Layer",
-    visible: true,
-    locked: false,
-    figureUids: [],
-  };
-  return (
-    heading(
-      layer.name,
-      "layers",
-    ) +
-    group(
-      "Layer",
-      `<label class="field-label" for="inspector-layer-name">Name</label><input id="inspector-layer-name" class="property-layer-name" data-layer-id="${esc(layer.id)}" value="${esc(layer.name)}" aria-label="Layer name" maxlength="160"><label class="check-row"><input id="inspector-layer-visible" data-layer-id="${esc(layer.id)}" type="checkbox" ${layer.visible ? "checked" : ""}>Visible</label><label class="check-row"><input id="inspector-layer-locked" data-layer-id="${esc(layer.id)}" type="checkbox" ${layer.locked ? "checked" : ""}>Locked</label>`,
-    ) + parallaxView(editor,layer.id)
+/** One figure, text or image: its name, placement, look, stacking, connection, fills and colours. */
+function figureDescriptor(editor, figure, number, {scope, order, tool, rigMode, polygonPage, palettePage}) {
+  const report = editor.report, frame = editor.frame, object = editor.object;
+  // A joint index past the figure's segments shows the figure, without its colours.
+  const whole = editor.selectedJoint < 0, palette = whole ? editor.figurePalette() : [], own = whole ? figurePalette(report, figure, object) : [];
+  const kind = figure.segments.every(segment => segment.primitive_code === 5) ? 'text' : figure.segments.every(segment => segment.primitive_code === 2) ? 'image' : 'figure';
+  const children = frame.objects.some(part => part.join?.target_object_slot === object.object_slot);
+  const parent = object.join ? frame.objects[object.join.target_object_slot] : null;
+  const parentName = parent && (parent.name || report.figure_types.find(type => type.figure_type_id === parent.figure_type_id)?.name || 'Figure');
+  const polygons = figure.polyfills || [], start = Math.min(Math.max(0, polygonPage) * 12, Math.max(0, Math.floor((polygons.length - 1) / 12) * 12));
+  const paletteStart = Math.min(Math.max(0, palettePage) * 32, Math.max(0, Math.ceil(palette.length / 32) - 1) * 32);
+  const fill = index => ({kind: 'group', legacy: {className: 'polygon-item'}, rows: [
+    {kind: 'group', legacy: {className: 'polygon-row'}, rows: [
+      {kind: 'value', label: 'Fill', text: `Polygon ${index + 1}`},
+      {kind: 'swatch', picker: 'native', label: `Polygon ${index + 1} color`, value: hex(displayedColor(report, figure, object, polygons[index].color_rgb)), data: {'polygon-color': index}},
+      {kind: 'actions', legacy: {bare: true}, items: [{icon: 'trash', label: `Delete polygon ${index + 1}`, data: {'delete-polygon': index}, legacy: {title: false}}]},
+    ]},
+    {kind: 'group', data: {'polygon-index': index}, legacy: {tag: 'details', className: 'polygon-style-details', summary: 'Opacity & draw order'}, rows: [
+      number('Opacity', `polygon_${index}_opacity`, polygonOpacity(polygons[index]), '%', {min: 0, max: 100, animated: Boolean(editor.propertyChannels)}),
+      number('Order', `polygon_${index}_z_order`, order.get(`polygon:${index}`), '', {min: 1, max: order.size, animated: false}),
+      orderActions('polygon', index),
+    ]},
+  ]});
+  return {kind, sections: [
+    {id: 'name', title: '', rows: [{kind: 'text', id: 'figure-name', label: 'Name', description: 'Figure name', tip: 'Rename figure definition', value: figure.name || 'Figure',
+      legacy: {variant: 'heading', icon: kind === 'text' ? 'text' : kind === 'image' ? 'image' : 'person', inputClass: 'figure-name'}}]},
+    scope.layer, scope.range, ...scope.sheets,
+    {id: 'connected', title: 'Connected figure', hidden: !(object.join || children), rows: [{kind: 'actions', legacy: {bare: true}, items: [
+      {action: 'combine-figures', icon: 'combine', label: 'Merge into one figure', text: true, legacy: {type: 'button'}},
+    ]}]},
+    {id: 'rig', title: 'Edit rig', hidden: tool !== 'rig', rows: [
+      {kind: 'select', id: 'rig-mode', label: 'Mode', description: 'Rig edit mode', value: rigMode, options: [{value: 'move', label: 'Move joint'}, {value: 'rotate', label: 'Rotate branch'}]},
+      {kind: 'actions', legacy: {bare: true}, items: [{action: 'add-sprite-segment', icon: 'image', label: 'Add sprite part…', text: true, legacy: {type: 'button'}}]},
+    ]},
+    {id: 'text', title: 'Text', hidden: !figure.text_assets?.some(asset => asset.glyphs?.length), rows: [{kind: 'actions', legacy: {bare: true}, items: [
+      {action: 'edit-text', icon: 'text', label: 'Edit text', text: true},
+    ]}]},
+    {id: 'transform', title: 'Transform', rows: [
+      {kind: 'grid', rows: [
+        number('X', 'root_x', object.root_x, 'px'), number('Y', 'root_y', object.root_y, 'px'), number('Scale', 'scale', object.scale * 100, '%', {min: 0.01}),
+        number('Angle', 'rotation', (((object.angles[0] ?? 0) - (figure.segments[0]?.angle_rad ?? 0)) * 180) / Math.PI, '°'),
+      ]},
+      SCRUB_CAPTION,
+    ]},
+    {id: 'appearance', title: 'Appearance', actions: [{action: 'reset-color', icon: 'undo', label: 'Reset colors'}], rows: [{kind: 'group', legacy: {className: 'property-paint-row'}, rows: [
+      {kind: 'color', id: 'figure-color', label: 'Colour', description: 'Recolor all segments', value: own[0]?.color ?? '#000000', caption: own.length > 1 ? 'Mixed' : undefined},
+      number('Opacity', 'figure_opacity', (1 - (object.field28 || 0) / 255) * 100, '%', {min: 0, max: 100, id: 'figure-opacity', field: false}),
+    ]}]},
+    {id: 'stacking', title: 'Stacking', rows: [
+      {kind: 'grid', rows: [number('Z-index', 'figure_z_order', object._stykZIndex ?? 0, '', {min: -1000000, max: 1000000})]},
+      {kind: 'actions', items: [
+        {action: 'layer-back', icon: 'send-to-back', label: 'Send to back'}, {action: 'layer-down', icon: 'chevron-left', label: 'Send backward'},
+        {action: 'layer-up', icon: 'chevron-right', label: 'Bring forward'}, {action: 'layer-front', icon: 'bring-to-front', label: 'Bring to front'},
+      ]},
+    ]},
+    {id: 'connection', title: 'Connection', rows: [{kind: 'group', legacy: {className: 'connection-row'}, rows: [
+      {kind: 'value', label: 'Joined to', text: parent ? `${parentName} · ${object.join.target_handle_id}` : 'None'},
+      {kind: 'actions', legacy: {bare: true}, items: [
+        {action: 'join-figure', icon: parent ? 'detach' : 'link', label: parent ? 'Unjoin figure' : 'Join figure', disabled: !figureJoinAction(editor)},
+        {action: 'combine-figures', icon: 'combine', label: 'Combine connected figures', disabled: !parent && !children},
+      ]},
+    ]}]},
+    {id: 'polygons', title: 'Polygons', hidden: !polygons.length, legacy: {count: polygons.length}, rows: [
+      ...polygons.slice(start, start + 12).map((_, i) => fill(start + i)),
+      polygons.length > 12 && {kind: 'pager', label: 'Polygon pages', text: pageText(start, 12, polygons.length),
+        previous: {action: 'polygons-previous', icon: 'chevron-left', label: 'Previous polygons', disabled: start === 0},
+        next: {action: 'polygons-next', icon: 'chevron-right', label: 'Next polygons', disabled: start + 12 >= polygons.length}},
+    ]},
+    {id: 'palette', title: 'Color palette', legacy: {count: `${palette.length} ${palette.length === 1 ? 'color' : 'colors'}`}, rows: [
+      {kind: 'swatches', label: 'Figure color palette', items: palette.slice(paletteStart, paletteStart + 32).map(entry => ({
+        picker: 'paint', value: entry.color, text: entry.color.toUpperCase(), data: {'palette-color': entry.color},
+        label: `Replace ${entry.color.toUpperCase()}, ${entry.segments.length} segments${entry.polygons.length ? `, ${entry.polygons.length} fills` : ''}`,
+      }))},
+      palette.length > 32 && {kind: 'pager', label: 'Colour pages', text: pageText(paletteStart, 32, palette.length),
+        previous: {action: 'palette-previous', icon: 'chevron-left', label: 'Previous colors', disabled: paletteStart === 0},
+        next: {action: 'palette-next', icon: 'chevron-right', label: 'Next colors', disabled: paletteStart + 32 >= palette.length}},
+    ]},
+  ]};
+}
+
+/**
+ * A joint (or a branch, or several segments): its connector parts, its name
+ * in the builder, angle, length, bend and Static, IK, the rig controls and its
+ * look. A connector's Slider part shows only the slide and Static.
+ */
+function jointDescriptor(editor, figure, segment, number, {scope, order, tool, builder, builderBranch}) {
+  const report = editor.report, object = editor.object, joint = editor.selectedJoint, selected = editor.selectedSegmentIds;
+  const connector = segment._stykRig?.connector, single = selected.size <= 1;
+  const connectorScope = editor._connectorInspector;
+  const part = connector && single ? (connectorScope?.uid === editor.selectedUid && connectorScope?.id === segment.segment_id ? connectorScope.part : 'slider') : null;
+  const slider = part === 'slider';
+  const staticSwitch = {kind: 'switch', id: 'static-joint', label: 'Static', checked: isStatic(segment), icon: 'diamond'};
+  const sections = [
+    scope.layer, scope.range, ...scope.sheets,
+    {id: 'connector', hidden: !part, legacy: {bare: true}, rows: [
+      {kind: 'heading', title: `Connector ${segment.segment_id}`, icon: 'link'},
+      {kind: 'segmented', mode: 'pressed', description: 'Connector properties', value: part, options: [
+        {value: 'segment', label: 'Segment', data: {'connector-part': 'segment'}}, {value: 'slider', label: 'Slider', data: {'connector-part': 'slider'}},
+      ], legacy: {className: 'connector-property-tabs'}},
+    ]},
+    {id: 'slider', title: 'Slider', hidden: !slider, rows: [
+      {kind: 'markup', html: slider ? connectorPositionView(editor) : ''},
+      {kind: 'group', legacy: {className: 'joint-settings'}, rows: [staticSwitch]},
+    ]},
+  ];
+  if (slider) return {kind: 'joint', sections};
+  const paint = displayedSegmentPaint(report, figure, object, segment);
+  const twoTone = [1, 3, 4].includes(segment.primitive_code) &&
+    (single || figure.segments.every(item => !selected.has(item.segment_id) || [1, 3, 4].includes(item.primitive_code)));
+  const secondary = twoTone && Boolean(segment.secondary);
+  const shape = ['line', 'circle', 'image', 'circleFill', 'circleClear', 'text', 'squareLine'][segment.primitive_code ?? 0];
+  const fixed = ['image', 'text'].includes(shape), lock = segment._stykRig?.angleLock;
+  const solid = paint.type === 'solid';
+  sections.push(
+    {id: 'joint-heading', hidden: Boolean(part), legacy: {bare: true}, rows: [{kind: 'heading', icon: 'nodes',
+      title: selected.size > 1 ? `${selected.size} segments` : `${editor.branchSelected ? 'Branch from joint' : 'Joint'} ${segment.segment_id}`}]},
+    {id: 'joint-name', title: '', hidden: !builder, rows: [{kind: 'text', id: 'builder-joint-name', label: 'Joint name', description: 'Joint name', value: segment.name ?? '',
+      maxlength: 120, legacy: {labelClass: 'rig-select', inputClass: 'inline-select'}}]},
+    {id: 'joint', title: 'Transform', rows: [
+      {kind: 'grid', rows: [
+        !connector && number('Angle', 'joint_angle',
+          ((lock ? editor.geometry.objects.get(editor.selectedSlot)?.segments[joint]?.angle : object.angles[joint] ?? segment.angle_rad) * 180) / Math.PI, '°', {disabled: Boolean(lock)}),
+        !connector && number('Length', 'joint_length', object.len_flag ? object.lengths[joint] : segment.length, 'px', {min: 0}),
+        number('Bend', 'joint_bend', ((object.bend_flag ? object.bends[joint] : segment.bend_rad || 0) * 180) / Math.PI, '°'),
+      ]},
+      !connector && {kind: 'group', legacy: {className: 'joint-settings'}, rows: [staticSwitch]},
+    ]},
+    rigIKAllowed(figure, joint) ? ikSection(editor.getIKSettings()) : {id: 'ik', hidden: true},
+    {id: 'rig-controls', legacy: {bare: true}, rows: [{kind: 'markup', html: rigControlsView(editor, {builder})}]},
+    {id: 'appearance', title: 'Appearance', rows: [
+      {kind: 'grid', rows: [
+        number('Width', 'thickness', segment.thickness, 'px', {min: 0}),
+        number('Order', 'segment_z_order', order.get(`segment:${joint}`), '', {min: 1, max: order.size, animated: false}),
+      ]},
+      {kind: 'checkbox', id: 'builder-branch', label: 'Apply to branch', checked: builderBranch, hidden: !((isBuilderContext(tool) || builder) && single)},
+      {kind: 'select', id: 'segment-shape', label: 'Shape', description: 'Segment shape', value: shape, disabled: fixed, options: [
+        ['line', 'Round line'], ['squareLine', 'Square line'], ['circle', 'White circle'], ['circleFill', 'Filled circle'], ['circleClear', 'Clear circle'],
+        ...(fixed ? [[shape, shape]] : []),
+      ].map(([value, label]) => ({value, label}))},
+      {kind: 'group', legacy: {className: 'property-paint-row'}, rows: [
+        {kind: 'color', picker: 'paint', id: 'segment-color', label: 'Colour', description: 'Segment color', value: solid ? hex(paint.stops[0].color) : undefined, paint: paintCSS(paint),
+          caption: solid ? hex(paint.stops[0].color).toUpperCase() : `${paint.type[0].toUpperCase()}${paint.type.slice(1)} gradient`},
+        number(secondary ? 'Primary opacity' : 'Opacity', 'segment_opacity', (1 - (segment.transparency || 0) / 255) * 100, '%',
+          {min: 0, max: 100, id: 'segment-opacity', field: false, description: 'Primary color opacity'}),
+      ]},
+      twoTone && {kind: 'group', legacy: {className: 'secondary-color-settings'}, rows: [
+        {kind: 'switch', id: 'segment-gradient-enabled', label: 'Secondary color', checked: secondary, icon: 'circle', controls: 'segment-secondary-controls'},
+        {kind: 'group', id: 'segment-secondary-controls', hidden: !secondary, rows: secondary ? [{kind: 'group', legacy: {className: 'property-paint-row'}, rows: [
+          {kind: 'color', id: 'segment-gradient-color', label: 'Colour', description: 'Secondary color', value: hex(displayedColor(report, figure, object, segment.secondary.rgb))},
+          number('Secondary opacity', 'segment_gradient_opacity', (1 - (segment.secondary.a ?? 0) / 255) * 100, '%', {min: 0, max: 100, description: 'Secondary color opacity'}),
+        ]}] : []},
+      ]},
+    ]},
   );
+  return {kind: 'joint', sections};
 }

@@ -1,11 +1,30 @@
-import {propertyToggle} from './property-toggle.mjs';
+import {renderInspector} from './inspector-kit.mjs';
+import {legacyEnv} from './inspector-legacy.mjs';
 
-/** IK owns its section; dependent settings are nested beneath its master toggle. */
-export function ikControlsView(ik) {
-  return `<section class="inspector-section ik-settings" aria-label="Inverse kinematics">${propertyToggle('node-is-ik', 'IK', ik.enabled, 'nodes', {title:'Inverse kinematics', controls:'node-ik-options'})}<div id="node-ik-options" class="ik-options" ${ik.enabled ? '' : 'hidden'}>${ik.enabled ?
-    `<div class="property-toggle-grid">${propertyToggle('node-ik-pinned', 'Pinned', ik.pinned, 'pin')}${propertyToggle('node-ik-stretch', 'Stretch', ik.allowStretch, 'stretch-horizontal', {title:'Allow stretch'})}</div>` +
-    `<div class="ik-grid"><label class="field"><span>Chain</span><input id="node-ik-chain" type="number" min="1" max="${ik.maxLength}" step="1" value="${ik.chainLength}" aria-label="IK chain length"></label>` +
-    `<label class="field"><span>Rotation</span><input id="node-ik-rotation" type="number" step="1" value="${Math.round(ik.target.rotation * 180 / Math.PI * 100) / 100}" aria-label="IK target rotation"><small>°</small></label></div>` +
-    `<div class="ik-bend-row"><span>Direction</span><div class="ik-segments" role="group" aria-label="IK bend direction">${[[-1, 'Left'], [0, 'Both'], [1, 'Right']].map(([value, label]) =>
-      `<label><input type="radio" name="node-ik-bend" value="${value}" ${ik.bendDirection === value ? 'checked' : ''} aria-label="Bend ${label.toLowerCase()}"><span>${label}</span></label>`).join('')}</div></div>` : ''}</div></section>`;
+/**
+ * IK owns its section; dependent settings are nested beneath its master
+ * switch, in #node-ik-options (rendered and hidden while IK is off, so the
+ * switch's aria-controls keeps its target).
+ */
+export function ikSection(ik) {
+  return {id: 'ik', legacy: {className: 'ik-settings', title: false, attrs: {'aria-label': 'Inverse kinematics'}}, rows: [
+    {kind: 'switch', id: 'node-is-ik', label: 'IK', checked: ik.enabled, icon: 'nodes', tip: 'Inverse kinematics', controls: 'node-ik-options'},
+    {kind: 'group', id: 'node-ik-options', hidden: !ik.enabled, legacy: {className: 'ik-options'}, rows: ik.enabled ? [
+      {kind: 'group', legacy: {className: 'property-toggle-grid'}, rows: [
+        {kind: 'switch', id: 'node-ik-pinned', label: 'Pinned', checked: ik.pinned, icon: 'pin'},
+        {kind: 'switch', id: 'node-ik-stretch', label: 'Stretch', checked: ik.allowStretch, icon: 'stretch-horizontal', tip: 'Allow stretch'},
+      ]},
+      {kind: 'group', legacy: {className: 'ik-grid'}, rows: [
+        {kind: 'number', id: 'node-ik-chain', label: 'Chain', description: 'IK chain length', value: ik.chainLength, min: 1, max: ik.maxLength, step: 1},
+        {kind: 'number', id: 'node-ik-rotation', label: 'Rotation', description: 'IK target rotation', unit: '°', step: 1,
+          value: Math.round(ik.target.rotation * 180 / Math.PI * 100) / 100},
+      ]},
+      {kind: 'segmented', mode: 'radio', name: 'node-ik-bend', label: 'Direction', description: 'IK bend direction', value: ik.bendDirection,
+        options: [[-1, 'Left'], [0, 'Both'], [1, 'Right']].map(([value, label]) => ({value, label, description: `Bend ${label.toLowerCase()}`})),
+        legacy: {className: 'ik-segments', rowClass: 'ik-bend-row'}},
+    ] : []},
+  ]};
 }
+
+/** The IK section's HTML (today's markup). */
+export const ikControlsView = ik => renderInspector({kind: 'joint', sections: [ikSection(ik)]}, legacyEnv);

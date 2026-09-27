@@ -1684,9 +1684,11 @@ The file list and verification below are the original plan; items marked landed 
 4. *"Put Use IK and Pin joint beside the joint's properties"*
 5. *"Stop redrawing the inspector while playing or hidden"*
 
+**Status on `main` (2026-09-27).** Commit 1 has landed. `inspectorDescriptor(options)` (`inspector-view.mjs`) returns every context as `{kind, sections}`, with `ikSection()` (`ik-view.mjs`) and `movieclipSections()` (`movieclip-ui.mjs`); `inspectorView()`, `ikControlsView()` and `movieclipInspector()` keep their exports and render them through `renderInspector()` with **the legacy skin** (`src/inspector-legacy.mjs`, `env.skin`): renderers for the kit's row kinds that emit today's markup, plus a `heading` row, `legacy` hints (a class, a title style, a wrapper) on rows and sections, and hidden rows that leave nothing. `tests/inspector-descriptors.test.mjs` proves the markup equal to today's (`tests/fixtures/inspector-legacy.mjs`, verbatim at `64646330`) in 64 states; commit 3 deletes the skin, the `legacy` hints and that fixture. The kit gained `env.skin` and a `markup` row for the sub-modules that still build HTML (rig controls, the camera's actions and motion, parallax, drawing, drawing sets, the 3D rig's controls, builder surfaces). `inspector-legacy.mjs` also keeps `numericField`, `group`, `grid`, `heading`, `button` and `tools` for `drawing-view.mjs` and `camera-view.mjs` until M7b and M7e. The camera preview's size still reads "Ã—" (today's mis-encoded ×) until that section is ported.
+
 **Verify.**
 
-- Unit: `node --test tests/property-controls.test.mjs tests/style-opacity.test.mjs tests/connector-properties.test.mjs tests/rig-asset-boundaries.test.mjs tests/movieclip-presence.test.mjs tests/inspector-kit.test.mjs`.
+- Unit: `node --test tests/property-controls.test.mjs tests/style-opacity.test.mjs tests/connector-properties.test.mjs tests/rig-asset-boundaries.test.mjs tests/movieclip-presence.test.mjs tests/inspector-kit.test.mjs tests/inspector-descriptors.test.mjs`.
 - Browser tests on 47914: `properties-app`, `property-controls`, `inspector-dom`, `figure-z-index`, `hotkeys-timeline` and `polygon-construction` (updated, §4.6), `pistol-3d`, `scythe-asset`, `skateboard-asset`, `spatial-controls` (Pose buttons), `movieclip-*` (the instance inspector), `figure-order-controls`, `branch-opacity`, `style-opacity`, `builder-*` (sample the 10 with `#builder-branch`), `rig-*`, `camera-actions` (inspector shell only), `drawing-ux` (owned widgets survive), `playback-quiet` (inspector 0 mutations).
 
 ---

@@ -1,10 +1,11 @@
 import {drawingSetsView} from './movieclip-drawings.mjs';
 import {drawingBarrier} from './drawing-resources.mjs';
 import {playbackSettings,movieclipAsset,movieclipTime} from './movieclips.mjs';
-import {icon} from './icons.mjs';
+import {renderInspector} from './inspector-kit.mjs';
+import {legacyEnv} from './inspector-legacy.mjs';
 
 const inspectorStates=new WeakMap();
-const number=value=>Number(Number(value).toFixed(3));
+const seconds=value=>Number(Number(value).toFixed(3));
 function inspectorState(editor){
   let state=inspectorStates.get(editor);
   if(!state||state.token!==editor._documentToken){state={token:editor._documentToken,nextKeys:1};inspectorStates.set(editor,state);}
@@ -16,19 +17,78 @@ function nextKeys(editor){
 }
 
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export function movieclipInspector(editor,field){
+/**
+ * A movieclip instance's sections: its drawing sets, name, Edit movieclip and
+ * Make unique; where playback is (viewing frame, progress, length), how it
+ * plays (mode, start or hold frame, speed); Transform; adding it to the next
+ * keyframes; and the rarer actions. `number(label, key, value, unit, extra)`
+ * builds a property row (inspector-view.mjs passes one that reads live values).
+ */
+export function movieclipSections(editor,{number=(label,key,value,unit='',extra={})=>({kind:'number',key,label,unit,value,...extra})}={}){
   const object=editor.object,figure=editor.figure,p=playbackSettings(object),asset=movieclipAsset(figure),state=inspectorState(editor),remaining=nextKeys(editor);
   const sample=editor.evaluatedFrame.objects.find(value=>value.unique_id===object.unique_id)?._movieclipSample??movieclipTime(asset,p,editor.tick,editor.report.fps);
   const current=sample===null?null:Math.min(asset.duration,Math.floor(sample)+1);
   const feedback=state.feedback, message=feedback?.uid===object.unique_id&&feedback.tick===editor.tick&&feedback.revision===editor.revision?feedback.message:'';
-  const input=(name,label,value,min,max,unit='',disabled=false)=>`<label class="movieclip-control"><span>${label}</span><div class="field"><input type="number" data-movieclip-field="${name}" aria-label="Movieclip ${label.toLowerCase()}" value="${esc(value)}" min="${min}" max="${max}" step="any" required ${disabled?'disabled':''}>${unit?`<small>${unit}</small>`:''}</div></label>`;
-  return `<div class="movieclip-inspector">${drawingSetsView(figure,object)}<section class="inspector-section movieclip-header"><div class="object-heading"><span>${icon('frame')}</span><input class="figure-name" data-movieclip-name aria-label="Movieclip name" value="${esc(figure.name)}" maxlength="120"></div><div class="movieclip-actions"><button class="button primary" data-action="movieclip-edit">${icon('nodes')}Edit movieclip</button><button class="button" data-action="movieclip-unique">Make unique</button></div></section>
-    <section class="inspector-section movieclip-playback"><div class="movieclip-position"><div><span>Viewing frame</span><output data-movieclip-current-frame aria-label="Current movieclip frame">${current??'—'} <small>/ ${asset.duration}</small></output></div><span class="movieclip-scene-frame" title="Current scene frame">Scene ${Math.floor(editor.tick)+1}</span></div><progress class="movieclip-progress" aria-label="Movieclip progress" max="${asset.duration}" value="${current??0}"></progress><div class="movieclip-duration" data-movieclip-duration>${asset.duration} frames <span>·</span> ${number(asset.duration/asset.document.fps)} s <span>·</span> ${asset.document.fps} fps</div>
-    <label class="movieclip-mode"><span>Playback</span><select class="inline-select" data-movieclip-field="mode" aria-label="Movieclip playback">${[['loop','Loop'],['hold','Play once · hold'],['once','Play once · hide'],['single','Single frame']].map(([value,label])=>`<option value="${value}" ${p.mode===value?'selected':''}>${label}</option>`).join('')}</select></label><div class="field-grid movieclip-playback-fields">${input('offset',p.mode==='single'?'Hold frame':'Start frame',p.offset+1,1,10000001)}${input('speed','Speed',p.speed,.001,100,'×',p.mode==='single')}</div></section>
-    <section class="inspector-section movieclip-transform"><div class="inspector-title">Transform</div><div class="field-grid">${field('X','root_x',object.root_x,'px')}${field('Y','root_y',object.root_y,'px')}${field('Scale','scale',object.scale*100,'%','min="0.01"')}${field('Angle','rotation',((object.angles[0]??0)-(figure.segments[0]?.angle_rad??0))*180/Math.PI,'°')}${field('Opacity','figure_opacity',(1-(object.field28??0)/255)*100,'%','min="0" max="100"')}${field('Z-index','figure_z_order',object._stykZIndex??0,'','min="-1000000" max="1000000"')}</div><p class="property-context-caption">Drag a label to scrub its value · Shift or Alt for finer steps</p></section>
-    <section class="inspector-section movieclip-extend"><div class="movieclip-extend-heading"><label for="movieclip-next-keys">Next keyframes</label><span>${remaining} available</span></div><div class="movieclip-extend-controls"><label class="field"><input id="movieclip-next-keys" type="number" data-movieclip-next-keys aria-label="Next keyframes" value="${state.nextKeys}" min="1" max="1000000" step="1" required></label><button class="button" data-action="movieclip-extend" ${remaining?'':'disabled'}>${icon('plus')}Add to next keyframes</button></div><div class="movieclip-feedback" data-movieclip-feedback role="status" aria-live="polite" aria-atomic="true" ${message||!remaining?'':'hidden'}>${esc(message||(!remaining?'No later keyframes.':''))}</div></section>
-    <details class="inspector-section inspector-disclosure movieclip-more" data-section="Movieclip actions"><summary class="inspector-title">More actions</summary><div class="movieclip-secondary-actions"><button class="button" data-action="movieclip-break" title="Replace only scene frame ${Math.floor(editor.tick)+1}">Break apart frame</button><button class="button" data-action="movieclip-bake">Bake animation</button><button class="button" data-action="movieclip-export">Export movieclip</button></div></details></div>`;
+  const scene=Math.floor(editor.tick)+1,wrap=[{key:'movieclip',className:'movieclip-inspector'}],own=(extra={})=>({title:false,wrap,...extra});
+  const playback=(name,label,value,min,max,extra={})=>({kind:'number',label,description:`Movieclip ${label.toLowerCase()}`,value,min,max,step:'any',required:true,
+    data:{'movieclip-field':name},legacy:{variant:'control',className:'movieclip-control'},...extra});
+  return [
+    {id:'drawing-sets',legacy:{bare:true,wrap},rows:[{kind:'markup',html:drawingSetsView(figure,object)}]},
+    {id:'movieclip',legacy:own({className:'movieclip-header'}),rows:[
+      {kind:'text',label:'Name',description:'Movieclip name',value:figure.name,maxlength:120,data:{'movieclip-name':true},legacy:{variant:'heading',icon:'frame',inputClass:'figure-name'}},
+      {kind:'actions',legacy:{className:'movieclip-actions'},items:[
+        {action:'movieclip-edit',icon:'nodes',label:'Edit movieclip',text:true,variant:'primary'},{action:'movieclip-unique',label:'Make unique',text:true}]},
+    ]},
+    {id:'playback',legacy:own({className:'movieclip-playback'}),rows:[
+      {kind:'group',legacy:{className:'movieclip-position'},rows:[
+        {kind:'group',rows:[
+          {kind:'value',label:'Viewing frame',text:'Viewing frame'},
+          {kind:'value',label:'Viewing frame',text:`${current??'—'} `,small:`/ ${asset.duration}`,data:{'movieclip-current-frame':true},attrs:{'aria-label':'Current movieclip frame'},legacy:{tag:'output'}},
+        ]},
+        {kind:'value',label:'Scene frame',text:`Scene ${scene}`,tip:'Current scene frame',legacy:{className:'movieclip-scene-frame'}},
+      ]},
+      {kind:'value',label:'Progress',text:'',attrs:{'aria-label':'Movieclip progress',max:asset.duration,value:current??0},legacy:{tag:'progress',className:'movieclip-progress'}},
+      {kind:'value',label:'Length',parts:[`${asset.duration} frames`,`${seconds(asset.duration/asset.document.fps)} s`,`${asset.document.fps} fps`],data:{'movieclip-duration':true},legacy:{tag:'div',className:'movieclip-duration'}},
+      {kind:'select',label:'Playback',description:'Movieclip playback',value:p.mode,data:{'movieclip-field':'mode'},legacy:{labelClass:'movieclip-mode'},
+        options:[['loop','Loop'],['hold','Play once · hold'],['once','Play once · hide'],['single','Single frame']].map(([value,label])=>({value,label}))},
+      {kind:'grid',legacy:{className:'movieclip-playback-fields'},rows:[
+        playback('offset',p.mode==='single'?'Hold frame':'Start frame',p.offset+1,1,10000001),
+        playback('speed','Speed',p.speed,.001,100,{unit:'×',disabled:p.mode==='single'}),
+      ]},
+    ]},
+    {id:'transform',title:'Transform',legacy:own({className:'movieclip-transform',title:'plain'}),rows:[
+      {kind:'grid',rows:[
+        number('X','root_x',object.root_x,'px'),number('Y','root_y',object.root_y,'px'),number('Scale','scale',object.scale*100,'%',{min:.01}),
+        number('Angle','rotation',((object.angles[0]??0)-(figure.segments[0]?.angle_rad??0))*180/Math.PI,'°'),
+        number('Opacity','figure_opacity',(1-(object.field28??0)/255)*100,'%',{min:0,max:100}),
+        number('Z-index','figure_z_order',object._stykZIndex??0,'',{min:-1000000,max:1000000}),
+      ]},
+      {kind:'meta',text:'Drag a label to scrub its value · Shift or Alt for finer steps'},
+    ]},
+    {id:'extend',legacy:own({className:'movieclip-extend'}),rows:[
+      {kind:'group',legacy:{className:'movieclip-extend-heading'},rows:[
+        {kind:'value',label:'Next keyframes',text:'Next keyframes',attrs:{for:'movieclip-next-keys'},legacy:{tag:'label'}},
+        {kind:'value',label:'Available',text:`${remaining} available`},
+      ]},
+      {kind:'group',legacy:{className:'movieclip-extend-controls'},rows:[
+        {kind:'number',id:'movieclip-next-keys',label:'Next keyframes',description:'Next keyframes',value:state.nextKeys,min:1,max:1000000,step:1,required:true,
+          data:{'movieclip-next-keys':true},legacy:{variant:'bare'}},
+        {kind:'actions',legacy:{bare:true},items:[{action:'movieclip-extend',icon:'plus',label:'Add to next keyframes',text:true,disabled:!remaining}]},
+      ]},
+      {kind:'value',label:'Result',text:message||(!remaining?'No later keyframes.':''),data:{'movieclip-feedback':true},
+        attrs:{role:'status','aria-live':'polite','aria-atomic':'true',hidden:!(message||!remaining)},legacy:{tag:'div',className:'movieclip-feedback'}},
+    ]},
+    {id:'more',title:'More actions',legacy:{className:'movieclip-more',disclosure:'Movieclip actions',wrap},rows:[
+      {kind:'actions',legacy:{className:'movieclip-secondary-actions'},items:[
+        {action:'movieclip-break',label:'Break apart frame',text:true,tip:`Replace only scene frame ${scene}`},
+        {action:'movieclip-bake',label:'Bake animation',text:true},
+        {action:'movieclip-export',label:'Export movieclip',text:true},
+      ]},
+    ]},
+  ];
 }
+/** A movieclip instance's inspector HTML (today's markup), without the figure's Layer field that inspector-view.mjs puts before it. */
+export const movieclipInspector=editor=>renderInspector({kind:'movieclip',sections:movieclipSections(editor)},legacyEnv);
 /** mountBreadcrumb(element) places the session breadcrumb ("← Scene", the scope path, Cancel, Done); the app owns where the stage
  * shows it, and without it the breadcrumb is not shown. */
 export function installMovieclipUI({editor,actions,pause,finishEdit,getTimeline,setTool,onError,queueUI,exportClip,mountBreadcrumb}){

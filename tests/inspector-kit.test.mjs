@@ -673,6 +673,19 @@ test('optional content never shifts what follows it: the scope slot, hidden sect
   }
 });
 
+test('a skin renders the kinds, placeholder and section list it names; the kit renders the rest, sub-module markup as it is', () => {
+  const skin = {placeholder: '', rows: {number: row => `<i>${row.key}</i>`}, sections: (list, env) => list.map(section => renderRow(section.rows[0], env)).join('|')};
+  assert.equal(renderRow({kind: 'number', key: 'root_x'}, {skin}), '<i>root_x</i>');
+  assert.equal(renderRow({kind: 'number', key: 'root_x', hidden: true}, {skin}), '', 'the skin\'s placeholder');
+  assert.equal(renderRow(null, {skin}), '');
+  assert.equal(renderRow({kind: 'markup', html: '<section class="rig">Rig</section>'}), '<section class="rig">Rig</section>');
+  assert.equal(renderRow({kind: 'meta', text: 'Facts'}, {skin}), '<div class="inspector-meta">Facts</div>', 'kinds the skin leaves fall back to the kit');
+  assert.equal(renderInspector({kind: 'figure', sections: [{id: 'a', rows: [{kind: 'number', key: 'x'}]}, {id: 'b', rows: [{kind: 'markup', html: '<b>m</b>'}]}]}, {skin}), '<i>x</i>|<b>m</b>');
+  assert.throws(() => renderInspector({kind: 'figure', sections: [{id: 'a', rows: []}, {id: 'a', rows: []}]}, {skin}), /Duplicate section id/);
+  assert.equal(rowControls({kind: 'markup', html: '<button></button>'}), 0, 'a markup row counts only the controls it declares');
+  assert.equal(rowControls({kind: 'markup', html: '', controls: 3}), 3);
+});
+
 test('buttons, fields and swatches use the one tooltip, never a native title (unless a test still reads it)', () => {
   assert.equal(renderButton({action: 'add', icon: 'plus', label: 'Add'}, {icon}), '<button type="button" class="ui-icon-button" data-action="add" aria-label="Add"><svg class="ui-icon" data-icon="plus"></svg></button>',
     'an icon button needs nothing more: its aria-label feeds the tooltip');

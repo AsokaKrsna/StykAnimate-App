@@ -49,7 +49,8 @@
  *   row        {kind, hidden, ...}: number, stepper-field, stepper, slider, select,
  *               switch, field-switch, checkbox, color, swatch, swatches,
  *               segmented, text, actions, list-row, pager, preview, owned,
- *               meta, value, grid, group
+ *               markup (a sub-module's HTML until its milestone), meta,
+ *               value, grid, group
  *   button     {action, command, shiftAction, icon, label, text, variant, size,
  *               id, tip, legacyTitle, disabled, pressed, expanded, tabindex, data, attrs}
  *
@@ -67,6 +68,12 @@
  * quick-actions controller bound to the rendered row. installInspectorKit()
  * is the thin DOM half: section toggles, step buttons, slider readouts,
  * Mixed values, collections, the "more below" fade and the one-time scrub hint.
+ *
+ * Skins. env.skin ({placeholder, rows: {kind: render}, sections(list, env)})
+ * renders the kinds it names, the placeholder and the section list its own
+ * way; every other kind falls back to the kit. inspector-view.mjs renders its
+ * descriptors with the legacy skin (src/inspector-legacy.mjs, today's markup)
+ * until its contexts move to these renderers.
  *
  * Pure and DOM-free at import; strings come from locales/en-inspector.mjs
  * with an optional env.t(key, params) translator.
@@ -98,7 +105,7 @@ function say(env, key, params = {}) {
 }
 
 const ESCAPES = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
-/** Text and attribute values are always escaped; the kit never interpolates raw markup except `html` on owned hosts. */
+/** Text and attribute values are always escaped; the kit never interpolates raw markup except `html` on owned hosts and markup rows. */
 export const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, character => ESCAPES[character]);
 
 // Attributes a descriptor may add to a control through `attrs` and `data`.
@@ -529,6 +536,14 @@ function preview(row) {
   return `<div${attributes({class: `inspector-preview${span(row)}`, 'data-section': row.section, ...extras(row)})}>${media}${caption ? `<div class="inspector-preview-caption">${caption}</div>` : ''}</div>`;
 }
 
+/**
+ * Markup a sub-module still builds as HTML (rig controls until M7a, the
+ * camera's until M7e, drawing until M7b…), placed as it is and reconciled
+ * like the rest of the inspector (it is not an owned host). Never document
+ * text: those modules escape what they interpolate.
+ */
+const markup = row => String(row.html ?? '');
+
 /** A quiet line of facts ("2 figures · 48 frames · 2.0 s"). Never a <p>: the audit counts paragraphs at rest as helper prose. */
 const meta = row => `<div${attributes({class: 'inspector-meta', id: id(row.id), 'data-tooltip': row.tip, ...extras(row)})}>${escapeHTML(row.text)}</div>`;
 
@@ -550,7 +565,7 @@ function group(row, env) {
 
 const RENDERERS = {
   number: numberField, 'stepper-field': stepperField, stepper, slider, select, switch: switchRow, 'field-switch': fieldSwitch,
-  checkbox, color, swatch, swatches, segmented, text, actions, 'list-row': listRow, pager, preview, owned, meta, value, grid, group,
+  checkbox, color, swatch, swatches, segmented, text, actions, 'list-row': listRow, pager, preview, owned, markup, meta, value, grid, group,
 };
 /** The row kinds a descriptor may use. */
 export const ROW_KINDS = Object.freeze(Object.keys(RENDERERS));
@@ -559,10 +574,17 @@ const REGIONS = new Set(['grid', 'group']);
 /** The empty node a hidden or absent row leaves in its place, so the rows after it keep their positions. */
 export const ROW_PLACEHOLDER = '<div hidden></div>';
 
-/** One row of a section body. Unknown kinds throw: a silently dropped control would be a lost function. */
+/**
+ * One row of a section body. Unknown kinds throw: a silently dropped control
+ * would be a lost function. `env.skin` ({placeholder, rows, sections}) may
+ * render some kinds, the placeholder and the section list its own way (the
+ * legacy skin, src/inspector-legacy.mjs, draws today's markup until the
+ * contexts move to these renderers).
+ */
 export function renderRow(row, env = {}) {
-  if (!row || (row.hidden && !REGIONS.has(row.kind))) return ROW_PLACEHOLDER;
-  const render = RENDERERS[row.kind];
+  const skin = env.skin;
+  if (!row || (row.hidden && !REGIONS.has(row.kind))) return skin?.placeholder ?? ROW_PLACEHOLDER;
+  const render = skin?.rows?.[row.kind] ?? RENDERERS[row.kind];
   if (!render) throw new TypeError(`Unknown inspector row kind: ${row?.kind}`);
   return render(row, env);
 }
@@ -741,9 +763,9 @@ export function renderInspector(inspector, env = {}, {head = false, foot = false
   const kind = inspector?.kind ?? env.kind ?? 'default';
   if (!SECTION_ID.test(kind)) throw new TypeError(`Invalid inspector kind: ${kind}`);
   checkSections(inspector);
-  const scoped = {...env, kind};
-  return (head ? renderInspectorHead(inspector, scoped) : '') +
-    (inspector?.sections ?? []).map(section => renderSection(section, scoped)).join('') + (foot ? renderFooter(inspector?.footer, scoped) : '');
+  const scoped = {...env, kind}, sections = inspector?.sections ?? [];
+  const body = scoped.skin?.sections ? scoped.skin.sections(sections, scoped) : sections.map(section => renderSection(section, scoped)).join('');
+  return (head ? renderInspectorHead(inspector, scoped) : '') + body + (foot ? renderFooter(inspector?.footer, scoped) : '');
 }
 
 // ---------------------------------------------------------------------------
@@ -766,7 +788,7 @@ export function rowControls(row) {
     case 'actions': return (row.items ?? []).length;
     case 'list-row': return row.tabindex !== undefined && Number(row.tabindex) >= 0 ? 1 : (row.actions ?? []).length;
     case 'pager': return 2;
-    case 'owned': case 'preview': return Number(row.controls) || 0;
+    case 'owned': case 'preview': case 'markup': return Number(row.controls) || 0;
     case 'meta': case 'value': return 0;
     case 'grid': case 'group': return (row.rows ?? []).reduce((sum, child) => sum + rowControls(child), 0);
     default: return 1;
