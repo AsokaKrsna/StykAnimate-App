@@ -150,6 +150,7 @@ export function initBuilderMode({editor, state, host}) {
     const insertDialog = document.getElementById('insert-dialog');
     if (insertDialog?.open) insertDialog.close();
     session = new BuilderSession(editor).begin();
+    state.selectedTrackId = editor.activeLayerId;
     session.entryTool = state.tool;
     events = new AbortController();
     timelineToggle?.addEventListener('click', () => {

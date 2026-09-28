@@ -3989,7 +3989,7 @@ const actions = {
   'rig-examples':()=>openRigExamples(rigHost()),
   "edit-in-build-mode": () => {
     if (editor.object && selection().size === 1 && !editor.figure?._styk?.movieclip)
-      builderMode?.enter();
+      studioShell?.changeMode('rig');
   },
   "selection-more": () => showCommandMenu([
     { label: "Select" },

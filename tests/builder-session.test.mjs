@@ -5,6 +5,7 @@ import {BuilderSession} from '../src/builder-session.mjs';
 import {emptyDocument, createObject, createFrame, defaultFigure} from '../src/demo.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {nativeFigureDocument} from '../src/native-figure.mjs';
+import {isDrawingLayer} from '../src/drawing-model.mjs';
 
 /** One scene with two figures: the bound figure has two instances, the other
  * figure is an unjoined neighbor used to prove builder edits stay scoped. */
@@ -20,6 +21,46 @@ function fixture() {
 }
 const figure = (editor, typeId) => editor.report.figure_types.find(f => f.figure_type_id === typeId);
 const objectsOf = (editor, typeId, frame = editor.frame) => frame.objects.filter(o => o.figure_type_id === typeId);
+
+test('entering Build from a drawing or fixed track chooses an editable figure layer', () => {
+  for (const source of ['drawing', 'scene', 'camera']) {
+    const editor = new Editor({demo: false, layerTimeline: true});
+    const figureLayer = editor.activeLayerId;
+    if (source === 'drawing') editor.createDrawingLayer();
+    else editor.selectSheetLayer(source);
+    editor.select(null);
+    const revision = editor.revision;
+    const session = new BuilderSession(editor).begin();
+    assert.equal(editor.activeLayerId, figureLayer);
+    assert.equal(editor.revision, revision, 'selecting an existing layer does not author a command');
+    editor.addSegment({length: 60, angle: 0}); session.sync();
+    editor.addSegment({length: 30, angle: 1});
+    assert.equal(editor.figure.segments.length, 2);
+    assert.equal(editor.layerForUid(editor.selectedUid), figureLayer);
+    editor.undo(); assert.equal(editor.figure.segments.length, 1);
+    editor.redo(); assert.equal(editor.figure.segments.length, 2);
+    session.resolve('discard');
+    assert.equal(editor.report.figure_types.some(f => f.figure_type_id === session.typeId), false);
+  }
+});
+
+test('Build creates a figure layer when all existing figure layers are locked or hidden', () => {
+  const editor = new Editor({demo: false, layerTimeline: true});
+  const locked = editor.activeLayerId;
+  editor.setLayerLocked(locked, true);
+  const hidden = editor.createLayer('Hidden'); editor.setLayerVisible(hidden.id, false);
+  editor.createDrawingLayer(); editor.select(null);
+  const session = new BuilderSession(editor).begin();
+  const target = editor.getLayer(editor.activeLayerId);
+  assert.equal(isDrawingLayer(target), false);
+  assert.equal(target.locked, false); assert.equal(target.visible, true);
+  editor.addSegment({length: 60}); session.sync();
+  assert.equal(editor.layerForUid(editor.selectedUid), target.id);
+  session.resolve('discard');
+  assert.equal(editor.getLayer(target.id), null, 'discard also removes the automatically created layer');
+  assert.equal(editor.getLayer(locked).locked, true);
+  assert.equal(editor.getLayer(hidden.id).visible, false);
+});
 
 test('edit session binds to the selected figure and tracks bound instances', () => {
   const editor = fixture();

@@ -26,6 +26,7 @@ import {isMovieclip} from './movieclips.mjs';
 import {frameOrder, setOrder, normalizeFrame} from './pivot/structure.mjs';
 import {validateScene} from './pivot/model.mjs';
 import {nativeFigureDocument} from './native-figure.mjs';
+import {drawingMetadata, isDrawingLayer} from './drawing-model.mjs';
 
 const clone = value => structuredClone(value);
 
@@ -48,11 +49,21 @@ export class BuilderSession {
     this.preexistingUids = new Set(editor.selectionFrame.objects.map(object => object.unique_id));
     this.preexistingTypeIds = new Set(editor.report.figure_types.map(figure => figure.figure_type_id));
     const object = editor.object, figure = editor.figure;
-    if (object && figure && !isMovieclip(figure)) {
+    const editableLayer = layer => layer?.kind === 'layer' && layer.visible && !layer.locked && !isDrawingLayer(layer);
+    const selectedLayer = object && editor.getLayer(editor.layerForUid(object.unique_id));
+    if (object && figure && !isMovieclip(figure) && !drawingMetadata(figure) && editableLayer(selectedLayer)) {
+      editor.setActiveLayer(selectedLayer.id);
       this.mode = 'edit';
       this.typeId = figure.figure_type_id;
       this.uid = object.unique_id;
       this.baselineFigure = clone(figure);
+    } else {
+      // Draw and the fixed tracks are not figure insertion targets. Clear their
+      // selection before binding, so a drawing cel can never become the rig.
+      editor.select(null);
+      const active = editor.getLayer(editor.activeLayerId);
+      const target = (editableLayer(active) ? active : editor.layers.find(editableLayer)) ?? editor.createLayer();
+      editor.setActiveLayer(target.id);
     }
     return this;
   }

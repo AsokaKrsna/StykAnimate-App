@@ -5,6 +5,12 @@ Properties inspector, theme, exposure sheet, clipboard, history and exporters.
 Entering Draw does not change the animation. The rail's + creates a drawing
 layer; otherwise select an existing visible, unlocked drawing layer.
 
+Switching to Build finishes pending drawing operations before starting the
+figure session. Build keeps a selected editable figure, otherwise clears the
+drawing selection and selects a visible, unlocked figure layer. If none exists,
+it creates one; discarding the new Build session also removes that layer.
+Drawing cels never become Build figures.
+
 ## Workflow
 
 - **B / E:** Brush / Eraser. Ink, Brush pen, Pencil, Liner, Nib, Marker,

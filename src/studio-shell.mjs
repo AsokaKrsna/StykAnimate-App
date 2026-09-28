@@ -12,10 +12,23 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
   const options = {signal: controller.signal};
   const mode = () => drawing?.active ? 'draw' : builder?.active ? 'rig' : 'animate';
   let pendingDraw=false;
-  function changeMode(next) {
+  let modeRequest = 0, drawingExit = null;
+  async function changeMode(next) {
+    const request = ++modeRequest;
     pendingDraw=next==='draw';
+    // Pixel operations may still own the drawing selection. Finish Draw before
+    // Build binds a figure or sets its tool; only the latest workspace wins.
+    if (next !== 'draw' || drawingExit) {
+      const wait = drawingExit ?? drawing?.exit();
+      if (wait?.then) {
+        drawingExit = wait;
+        try { await wait; }
+        catch { return; } // DrawingController reports the error and keeps Draw active.
+        finally { if (drawingExit === wait) drawingExit = null; }
+        if (request !== modeRequest) return;
+      }
+    }
     if(next==='draw'){if(builder?.active){builder.requestExit();if(builder.active)return;}pendingDraw=false;drawing?.enter();sync();return;}
-    drawing?.exit();
     if (next === 'rig') builder?.enter();
     else builder?.requestExit();
     sync();
@@ -142,5 +155,5 @@ export function initStudioShell({editor, state, setTool, renderAssets, showComma
     if(drawingActive)drawing.sync();
   }
   sync();
-  return {sync, showInsertDialog, destroy: () => controller.abort()};
+  return {sync, changeMode, showInsertDialog, destroy: () => controller.abort()};
 }

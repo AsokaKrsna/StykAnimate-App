@@ -43,6 +43,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Fixed
 
+- Switch from Draw to Build reliably: Build selects an editable figure layer, lets you add and extend segments, and waits for pending drawing edits before changing tools.
 - Show error messages above open dialogs instead of behind them, where you can close them, and keep them clear of the canvas's view buttons. A failed save, export or import stays until you close it; other messages go on their own. Pressing Escape or closing the export dialog while an export runs now asks before stopping it.
 - Stop menus from switching tools while you type in them: letters now jump to the matching command. The Properties ⋯ menu opens again.
 - Show What's new and the first-run privacy choice one after the other at startup, never on top of an open menu or dialog.
