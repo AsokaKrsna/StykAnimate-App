@@ -39,6 +39,9 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   motionPathLabels: true,
   motionPathDots: true,
   motionPathAllTargets: false,
+  motionPathJoints: "selected",
+  motionPathSpeed: false,
+  motionPathRelative: false,
   autoSizeHandles: true,
   outlineHandles: true,
   builderShowStaticHandles: true,
@@ -100,6 +103,8 @@ export function normalizeEditorSettings(value = {}) {
     "motionPathLabels",
     "motionPathDots",
     "motionPathAllTargets",
+    "motionPathSpeed",
+    "motionPathRelative",
     "autoSizeHandles",
     "outlineHandles",
     "builderShowStaticHandles",
@@ -140,6 +145,7 @@ export function normalizeEditorSettings(value = {}) {
   for (const key of ['onionBefore','onionAfter','onionStep']) result[key] = Math.round(result[key]);
   for (const key of ['onionBeforeColor','onionAfterColor'])
     if (typeof value?.[key] === 'string' && /^#[0-9a-f]{6}$/i.test(value[key])) result[key] = value[key].toLowerCase();
+  if (['selected','tips'].includes(value?.motionPathJoints)) result.motionPathJoints = value.motionPathJoints;
   if (['all','selected'].includes(value?.onionScope)) result.onionScope = value.onionScope;
   if (['keyframes','frames'].includes(value?.onionMode)) result.onionMode = value.onionMode;
   if (['auto','canvas','gpu'].includes(value?.rendererMode)) result.rendererMode = value.rendererMode;

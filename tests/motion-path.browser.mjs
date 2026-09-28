@@ -22,8 +22,18 @@ try {
  check('Range preset persists and stays open',await page.evaluate(()=>styk.state.settings.motionPathRange===12&&document.querySelector('#path-popover').matches(':popover-open')));
  await page.locator('[data-path="motionPathRange"]').fill('18');await page.keyboard.press('Tab');
  check('Custom range persists',await page.evaluate(()=>styk.state.settings.motionPathRange===18));
- await page.locator('[data-path="motionPathAllTargets"]').selectOption('true');
- check('Scope persists',await page.evaluate(()=>styk.state.settings.motionPathAllTargets));
+ await page.locator('[data-choice="motionPathAllTargets"][data-value="true"]').click();
+ check('Scope persists',await page.evaluate(()=>styk.state.settings.motionPathAllTargets&&document.querySelector('[data-choice="motionPathAllTargets"][data-value="true"]').getAttribute('aria-pressed')==='true'));
+ await page.locator('[data-choice="motionPathJoints"][data-value="tips"]').click();
+ check('Limb-tip trails follow every tip joint',await page.evaluate(async()=>{const {motionPathTargets,figureTipJoints}=await import('/src/motion-path.mjs');const f=styk.editor.report.figure_types[0],targets=motionPathTargets(styk.editor,{joints:styk.state.settings.motionPathJoints});return styk.state.settings.motionPathJoints==='tips'&&figureTipJoints(f).length>=4&&targets.length===figureTipJoints(f).length+1;}));
+ await page.locator('[data-path="motionPathSpeed"]').check();
+ await page.locator('[data-path="motionPathRelative"]').check();
+ check('Speed and relative preferences persist',await page.evaluate(()=>styk.state.settings.motionPathSpeed&&styk.state.settings.motionPathRelative));
+ await page.waitForTimeout(300);
+ await page.screenshot({path:out+'/tips-speed-relative.png'});
+ await page.locator('[data-path="motionPathSpeed"]').uncheck();
+ await page.locator('[data-path="motionPathRelative"]').uncheck();
+ await page.locator('[data-choice="motionPathJoints"][data-value="selected"]').click();
  await page.locator('[data-path="motionPathDots"]').uncheck();
  check('Dot preference persists',await page.evaluate(()=>styk.state.settings.motionPathDots===false));
  await page.locator('[data-path="motionPathDots"]').check();
@@ -54,6 +64,15 @@ try {
  check('Shift locks axis without grab jump',await page.evaluate(async({root,scale})=>{const {samplePathPoint}=await import('/src/motion-path.mjs');return Math.abs(samplePathPoint(styk.editor.report,{kind:'node',uid:1,handleId:0},8).x-(root+35/scale))<.001;},grab));
  await page.evaluate(()=>styk.editor.undo());
  check('Undo restores remote pose',await page.evaluate(root=>styk.editor.report.keyframes[1].objects[0].root_x===root,grab.root));
+ await page.waitForTimeout(300);await page.mouse.move(grab.x+1,grab.y);await page.mouse.move(grab.x,grab.y);await page.waitForTimeout(100);
+ check('Hovering a remote point explains the gesture',await page.evaluate(()=>styk.state.hoverPathPoint?.tick===8&&/double-click/.test(document.querySelector('#overlay').title)));
+ await page.mouse.down();await page.mouse.move(grab.x+30,grab.y-20,{steps:3});
+ check('Dragging draws the remote pose as a ghost',await page.evaluate(()=>styk.state.drag?.kind==='motion-path'&&styk.state.drag.tick!==styk.editor.tick));
+ await page.screenshot({path:out+'/ghost-drag.png'});
+ await page.keyboard.press('Escape');await page.mouse.up();
+ check('Escape cancels a trail drag without an undo entry',await page.evaluate(n=>styk.editor._undo.length===n&&!styk.state.drag,grab.undo));
+ await page.mouse.dblclick(grab.x,grab.y);
+ check('Double-clicking a trail point goes to its frame without editing',await page.evaluate(n=>styk.editor.tick===8&&styk.editor._undo.length===n,grab.undo));
  check('No browser errors',errors.length===0);
  await writeFile(out+'/checks.json',JSON.stringify({checks,errors},null,2));
 } finally {await browser.close();}

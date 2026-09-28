@@ -3,10 +3,12 @@
  * with a glyph in its title.
  *
  * Motion paths (motion-path-controls.mjs): the title's on/off switch, then
- *   Show           whose paths, a select
+ *   Figures        Selected / All, a segmented control
+ *   Joints         Selected / Hands & feet (every limb tip), segmented
  *   Frame range    ±12 / ±24 / ±48 / Full as a filled segmented control, the
  *                  exact count beneath while it is not Full
- *   the marks      Frame numbers and In-between dots as switch rows
+ *   the look       Frame numbers, In-between dots, Speed colours (with its
+ *                  slow → fast legend) and Relative to body as switch rows
  * Its switch is a pressed button (data-path-toggle keeps aria-pressed), drawn
  * as the kit's .ui-switch. Replaces legacy/32-motion-path.css.
  *
@@ -20,7 +22,9 @@
   .path-popover .ui-popover-title > svg { flex: none; inline-size: var(--icon-md); block-size: var(--icon-md); color: var(--text-2); }
   .path-body { gap: var(--space-1); }
   .path-body .path-row:where([hidden]) { display: none; }
-  .path-body .path-row > .ui-select { flex: 0 1 160px; }
+  .path-body .path-row > .path-choice { flex: 0 1 184px; }
+  .path-speed-legend { display: inline-flex; align-items: center; gap: var(--space-1-5); margin-inline-start: var(--space-2); font: var(--type-small); color: var(--text-3); }
+  .path-speed-legend > span { inline-size: 36px; block-size: 6px; border-radius: var(--radius-pill); }
 
   /* The title's switch: 32×18 like .ui-switch, off a ring with a small knob, on Styk blue with the knob at the end. */
   .path-switch {

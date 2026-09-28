@@ -1,4 +1,5 @@
 import {icon} from './icons.mjs';
+import {MOTION_PATH_SPEED_COLORS} from './motion-path.mjs';
 
 /** Explicit display settings; values belong to editor preferences. */
 export class MotionPathControls {
@@ -25,13 +26,18 @@ export class MotionPathControls {
     panel.setAttribute('popover', 'auto');
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', 'Motion path settings');
-    // The kit's popover (features/paths.css): the title with its on/off switch (a pressed button drawn as the
-    // kit's switch), whose paths, the frame range as a segmented control with its exact count, then the marks.
+    // The kit's popover (features/view-options.css): the title with its on/off switch (a pressed button drawn as
+    // the kit's switch); what the trails follow; the frame range with its exact count; then how trails look.
+    const choice = (key, label, options) => `<div class="ui-row path-row"><span class="ui-row-label">${label}</span><div class="ui-segmented path-choice" data-size="sm" data-fill role="group" aria-label="${label}">${
+      options.map(([value, text, tip]) => `<button type="button" class="ui-segmented-item" data-choice="${key}" data-value="${value}" title="${tip}">${text}</button>`).join('')}</div></div>`;
+    const toggle = (key, label, tip, extra = '') => `<label class="ui-switch-row path-row" title="${tip}"><span>${label}${extra}</span><input type="checkbox" class="ui-switch" role="switch" data-path="${key}"></label>`;
+    const legend = `<span class="path-speed-legend" aria-hidden="true"><span style="background:linear-gradient(90deg,${MOTION_PATH_SPEED_COLORS.join(',')})"></span>slow → fast</span>`;
     panel.innerHTML = `<header class="ui-popover-head"><strong class="ui-popover-title">${icon('motion-path')}Motion paths</strong><button type="button" class="path-switch" data-path-toggle aria-label="Show motion paths"></button></header>
-<div class="ui-popover-body path-body"><label class="ui-row path-row"><span class="ui-row-label">Show</span><span class="ui-select" data-size="sm"><select data-path="motionPathAllTargets" aria-label="Path targets"><option value="false">Selected figures</option><option value="true">All figures</option></select>${icon('chevron-down')}</span></label>
+<div class="ui-popover-body path-body">${choice('motionPathAllTargets', 'Figures', [['false', 'Selected', 'Trails for the selected figures'], ['true', 'All', 'Trails for every figure on the stage']])}
+${choice('motionPathJoints', 'Joints', [['selected', 'Selected', 'The selected joint, or each figure’s origin'], ['tips', 'Hands & feet', 'Every limb tip (hands, feet, head) and the origin of each figure']])}
 <fieldset class="path-range"><legend>Frame range</legend><div class="path-presets ui-segmented" data-size="sm" data-fill role="group" aria-label="Frame range presets"><button type="button" class="ui-segmented-item" data-range="12">±12</button><button type="button" class="ui-segmented-item" data-range="24">±24</button><button type="button" class="ui-segmented-item" data-range="48">±48</button><button type="button" class="ui-segmented-item" data-range="0">Full</button></div>
 <label class="ui-row path-row"><span class="ui-row-label">Around playhead</span><span class="path-number"><input type="number" data-path="motionPathRange" min="0" max="4000" step="1" aria-label="Frames either side of playhead" title="0 shows the full animation"><span>frames</span></span></label></fieldset>
-<div class="path-display"><label class="ui-switch-row path-row"><span>Frame numbers</span><input type="checkbox" class="ui-switch" role="switch" data-path="motionPathLabels"></label><label class="ui-switch-row path-row"><span>In-between dots</span><input type="checkbox" class="ui-switch" role="switch" data-path="motionPathDots"></label></div></div>`;
+<div class="path-display">${toggle('motionPathLabels', 'Frame numbers', 'Number the keys, the ends and the current frame')}${toggle('motionPathDots', 'In-between dots', 'A dot for every in-between; their spacing shows easing')}${toggle('motionPathSpeed', 'Speed colours', 'Colour trails by speed: cool where motion is slow, warm where it is fast', legend)}${toggle('motionPathRelative', 'Relative to body', 'Keep a travelling figure in place so its limb arcs are easy to compare')}</div></div>`;
     document.body.append(panel);
     const open = () => { this.sync(); panel.showPopover(); this.position(); };
     trigger.addEventListener('click', event => {
@@ -49,15 +55,16 @@ export class MotionPathControls {
     panel.addEventListener('click', event => {
       event.stopPropagation();
       if (event.target.closest('[data-path-toggle]')) onToggle();
-      const preset = event.target.closest('[data-range]');
+      const preset = event.target.closest('[data-range]'), picked = event.target.closest('[data-choice]');
       if (preset) onChange({motionPathRange: Number(preset.dataset.range)});
-      if (preset || event.target.closest('[data-path-toggle]')) this.sync();
+      if (picked) onChange({[picked.dataset.choice]: picked.dataset.choice === 'motionPathAllTargets' ? picked.dataset.value === 'true' : picked.dataset.value});
+      if (preset || picked || event.target.closest('[data-path-toggle]')) this.sync();
     });
     panel.addEventListener('change', event => {
       const input = event.target.closest('[data-path]');
       if (!input) return;
       if (input.type === 'number' && (!input.value || !input.validity.valid)) { this.sync(); return; }
-      const value = input.type === 'checkbox' ? input.checked : input.tagName === 'SELECT' ? input.value === 'true' : Number(input.value);
+      const value = input.type === 'checkbox' ? input.checked : Number(input.value);
       onChange({[input.dataset.path]: value});
       this.sync();
     });
@@ -74,8 +81,10 @@ export class MotionPathControls {
     this.panel.querySelector('.path-number').closest('label').hidden = settings.motionPathRange === 0;
     for (const input of this.panel.querySelectorAll('[data-path]')) {
       const value = settings[input.dataset.path];
-      if (input.type === 'checkbox') input.checked = value !== false; else input.value = String(value);
+      if (input.type === 'checkbox') input.checked = Boolean(value); else input.value = String(value);
     }
+    for (const option of this.panel.querySelectorAll('[data-choice]'))
+      option.setAttribute('aria-pressed', String(String(settings[option.dataset.choice]) === option.dataset.value));
     for (const preset of this.panel.querySelectorAll('[data-range]')) preset.setAttribute('aria-pressed', String(Number(preset.dataset.range) === settings.motionPathRange));
     const toggle = this.panel.querySelector('[data-path-toggle]');
     toggle.setAttribute('aria-pressed', String(enabled));

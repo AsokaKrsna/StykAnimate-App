@@ -507,3 +507,127 @@ test('short plans retain every tick and a beyond-end playhead does not restart s
   assert.equal(entry.ticks.at(-1),20);
   assert.equal(cache.get(editor,rootTarget,{range:4}),entry);
 });
+
+/** Two figures whose limbs swing while the bodies travel. */
+function swingFixture() {
+  const report = emptyDocument(), figure = report.figure_types[0];
+  report.keyframes = Array.from({length: 4}, (_, k) => createFrame([1, 2].map(uid => {
+    const object = createObject(figure, uid, 100 + k * 80 + uid * 300, 200);
+    object.angles = object.angles.map((a, j) => j ? a + Math.sin(k + j) * .6 : a);
+    return object;
+  }), 6));
+  return new Editor({demo: false}).load(report);
+}
+
+test('limb-tip targets follow every branch end and the origin of each figure', async () => {
+  const {figureTipJoints} = await import('../src/motion-path.mjs');
+  const editor = swingFixture(), figure = editor.report.figure_types[0];
+  const tips = figureTipJoints(figure), parents = new Set(figure.segments.map(s => Number(s.parent_id)));
+  assert.ok(tips.length >= 4, 'a stick figure has hands, feet and a head');
+  for (const index of tips) assert.equal(parents.has(Number(figure.segments[index].segment_id)), false);
+  editor.select(1, tips[1]);
+  const targets = motionPathTargets(editor, {joints: 'tips'});
+  assert.deepEqual(targets[0], {kind: 'node', uid: 1, handleId: Number(figure.segments[tips[1]].segment_id), joint: tips[1]}, 'the selected joint leads');
+  assert.equal(targets.length, tips.length + 1);
+  assert.equal(new Set(targets.map(t => `${t.uid}:${t.handleId}`)).size, targets.length);
+  assert.equal(motionPathTargets(editor, {joints: 'tips', all: true}).length, 2 * (tips.length + 1));
+  assert.equal(motionPathTargets(editor, {joints: 'tips', all: true, maxTargets: 5}).length, 5);
+});
+
+test('batched sampling matches per-target sampling and evaluates each tick once', async () => {
+  const geometry = await import('../src/pivot/geometry.mjs');
+  const editor = swingFixture();
+  const targets = motionPathTargets(editor, {joints: 'tips', all: true});
+  const batched = new MotionPathCache({budgetMs: Infinity}).sample(editor, targets);
+  for (const [i, target] of targets.entries()) {
+    const single = new MotionPathCache({budgetMs: Infinity}).get(editor, target);
+    assert.equal(batched[i].complete, true);
+    for (const tick of single.ticks) point(batched[i].points.get(tick), single.points.get(tick));
+  }
+  // Every trail agrees with a full-scene geometry build at an in-between tick.
+  const rows = editor.timeline, frame = geometry.evaluatedFrame(editor.report, 1, 0.5, 9);
+  const full = buildGeometry(editor.report, frame);
+  for (const [i, target] of targets.entries()) {
+    const slot = frame.objects.findIndex(o => o.unique_id === target.uid);
+    point(batched[i].points.get(9), full.objects.get(slot).joints.get(target.handleId));
+  }
+  assert.ok(rows.length > 1);
+});
+
+test('trail samples carry their body reference except the origin itself', () => {
+  const editor = swingFixture(), figure = editor.report.figure_types[0];
+  const hand = {kind: 'node', uid: 1, handleId: Number(figure.segments.at(-1).segment_id), joint: figure.segments.length - 1};
+  const [origin, tip] = new MotionPathCache({budgetMs: Infinity}).sample(editor, [rootTarget, hand]);
+  for (const tick of origin.ticks) {
+    assert.equal(origin.points.get(tick).rx, undefined);
+    near(tip.points.get(tick).rx, origin.points.get(tick).x);
+    near(tip.points.get(tick).ry, origin.points.get(tick).y);
+  }
+});
+
+test('relative projection keeps the body in place and hit tests use the same positions', async () => {
+  const {projectMotionPath} = await import('../src/motion-path.mjs');
+  const editor = swingFixture(), figure = editor.report.figure_types[0];
+  editor.seek(6);
+  const hand = {kind: 'node', uid: 1, handleId: Number(figure.segments.at(-1).segment_id), joint: figure.segments.length - 1};
+  const entry = new MotionPathCache({budgetMs: Infinity}).get(editor, hand);
+  const world = projectMotionPath(entry, p => p, {tick: 6});
+  const relative = projectMotionPath(entry, p => p, {tick: 6, relative: true});
+  assert.notEqual(world, relative, 'switching the anchor re-projects');
+  assert.equal(projectMotionPath(entry, p => p, {tick: 6, relative: true}), relative, 'an unchanged projection is reused');
+  const anchor = entry.points.get(6);
+  relative.samples.forEach((sample, i) => {
+    near(relative.xs[i] - (sample.x - sample.rx), anchor.rx);
+    near(relative.ys[i] - (sample.y - sample.ry), anchor.ry);
+  });
+  const at = relative.samples.findIndex(s => s.tick === 18);
+  const hit = pickMotionPathPoint(entry, {x: relative.xs[at], y: relative.ys[at]}, {project: p => p, tick: 6, relative: true});
+  assert.equal(hit.tick, 18);
+  near(hit.x, entry.points.get(18).x, 1e-9);
+  // A scaled, translated view is recovered exactly from the projection function.
+  const scaled = projectMotionPath(entry, p => ({x: p.x * 2 + 5, y: p.y * 2 - 3}), {tick: 6});
+  near(scaled.xs[at], entry.points.get(18).x * 2 + 5);
+});
+
+test('ghost poses cover the target component at the requested time', () => {
+  const editor = joinedFixture(), cache = new MotionPathCache();
+  const ghost = cache.ghost(editor.report, {kind: 'node', uid: 2, handleId: 0, joint: -1}, 15);
+  assert.equal(ghost.objects.length, 2, 'the joined parent and child');
+  const frame = evaluatedFrame(editor.report, 1, 0.5, 15), full = buildGeometry(editor.report, frame);
+  point(ghost.objects.find(g => g.obj.unique_id === 1).root, full.objects.get(0).root);
+  assert.equal(cache.ghost(editor.report, {kind: 'node', uid: 2, handleId: 0, joint: -1}, 15), ghost, 'repeated requests reuse one evaluation');
+  // Unrelated figures are never built for a trail sample or a ghost.
+  const scene = swingFixture();
+  assert.deepEqual(cache.ghost(scene.report, rootTarget, 3).objects.map(g => g.obj.unique_id), [1]);
+});
+
+test('speed colours rank faster segments warmer and draw without errors', async () => {
+  const {drawMotionPath, MOTION_PATH_SPEED_COLORS} = await import('../src/motion-path.mjs');
+  const points = [0, 1, 2, 3, 4, 5].map(tick => ({tick, x: tick < 3 ? tick : 2 + (tick - 2) * 20, y: 0, key: false}));
+  const entry = {ticks: points.map(p => p.tick), points: new Map(points.map(p => [p.tick, p])), version: 0};
+  const strokes = [];
+  const context = new Proxy({}, {get: (target, name) => name in target ? target[name] : (name === 'stroke' ? () => strokes.push(target.strokeStyle) : () => {}),
+    set: (target, name, value) => { target[name] = value; return true; }});
+  drawMotionPath(context, entry, p => p, {tick: 0, speed: true});
+  assert.ok(strokes.includes(MOTION_PATH_SPEED_COLORS[0]) && strokes.includes(MOTION_PATH_SPEED_COLORS.at(-1)));
+  assert.equal(entry.screen.speed[0] < entry.screen.speed.at(-1), true);
+});
+
+test('a shared cache follows in-place retiming and pose edits', () => {
+  const editor = fixture(), cache = new MotionPathCache({budgetMs: Infinity});
+  editor.select(1);
+  cache.get(editor, rootTarget);
+  const version = () => `${editor.revision}:${editor.layerRevision}`;
+  const ghostBefore = cache.ghost(editor.report, rootTarget, 15, version());
+  // A split at tick 15 splices the stored keyframes of the same report object.
+  assert.ok(editor.beginMotionPathEdit(rootTarget, 15));
+  editor.updateMotionPathEdit({x: 250, y: 330});
+  assert.equal(editor.commitMotionPathEdit(), true);
+  assert.equal(editor.report.keyframes.length, 4);
+  const entry = cache.get(editor, rootTarget);
+  point(entry.points.get(15), {x: 250, y: 330});
+  point(entry.points.get(12), {x: 300 + (250 - 300) * 2 / 5, y: 200 + 130 * 2 / 5});
+  const ghostAfter = cache.ghost(editor.report, rootTarget, 15, version());
+  assert.notEqual(ghostAfter, ghostBefore);
+  point(ghostAfter.objects[0].root, {x: 250, y: 330});
+});

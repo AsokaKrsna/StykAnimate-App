@@ -124,7 +124,7 @@ import {
   imageFileToBackground,
 } from "./media-authoring.mjs";
 import { icon, hydrateIcons } from "./icons.mjs";
-import { MotionPathCache, motionPathTargets, motionPathTargetKey, pickMotionPathPoint, drawMotionPath } from "./motion-path.mjs";
+import { MotionPathCache, motionPathTargets, motionPathTargetKey, pickMotionPathPoint, drawMotionPath, drawMotionPathGhost, affineProjection } from "./motion-path.mjs";
 import { CanvasGuides } from "./canvas-guides.mjs";
 import { MotionPathControls } from "./motion-path-controls.mjs";
 import { TweenerControls } from "./tweener-controls.mjs";
@@ -1167,36 +1167,58 @@ function cameraSelected() {
 const pathCache = new MotionPathCache();
 const PATH_COLORS = ['#0d99ff', '#e8590c', '#12b886', '#7048e8', '#e64980', '#f08c00', '#0ca678', '#1098ad'];
 /** Every active trail: the camera, each selected figure, or every figure when
- * "all targets" is on. The primary selection keeps the first (accent) colour. */
+ * "all targets" is on — with limb tips per figure when that is chosen. Each
+ * figure keeps one colour; the primary selection keeps the first (accent). All
+ * trails sample together, one animation evaluation per display frame. */
 function activeMotionPaths({sample = true} = {}) {
   if (!state.motionPaths || state.playing || state.previewing || state.editablePreparing || builderMode?.active) return [];
   if (!["select", "pose"].includes(state.tool)) return [];
   const camera = cameraSelected() && state.settings.showCamera;
   const range = Math.round(state.settings.motionPathRange) || 0;
   const session = editor._drag?.motionPath ? editor._drag : null;
-  const deadline = performance.now() + pathCache.budgetMs;
-  const out = [];
-  const targets = camera ? [] : motionPathTargets(editor, {all: Boolean(state.settings.motionPathAllTargets)})
-    .filter(target => !isHidden(target.uid) && !isLocked(target.uid));
-  const maxPoints = Math.min(1600, Math.floor(6400 / Math.max(1, targets.length)));
-  let pending = false;
-  const collect = (target, color) => {
-    const entry = sample ? pathCache.get(editor, target, {session, range, deadline, maxPoints}) : pathCache.peek(editor, target);
-    if (!entry) return;
-    pending ||= !entry.complete;
-    out.push({target, entry, color});
-  };
+  let targets;
   if (camera) {
     const track = editor.report._styk?.layers?.fixed?.camera;
-    if (track?.visible !== false && !track?.locked) collect({kind: 'camera'}, '#e8a13c');
-  } else {
-    for (const target of targets) {
-      collect(target, PATH_COLORS[out.length % PATH_COLORS.length]);
-    }
-  }
+    targets = track?.visible !== false && !track?.locked ? [{kind: 'camera'}] : [];
+  } else targets = motionPathTargets(editor, {all: Boolean(state.settings.motionPathAllTargets), joints: state.settings.motionPathJoints})
+    .filter(target => !isHidden(target.uid) && !isLocked(target.uid));
+  if (!targets.length) return [];
+  const maxPoints = Math.min(1600, Math.floor(6400 / targets.length));
+  const entries = sample
+    ? pathCache.sample(editor, targets, {session, range, deadline: performance.now() + pathCache.budgetMs, maxPoints})
+    : targets.map(target => pathCache.peek(editor, target));
+  const colors = new Map(), out = [];
+  let pending = false;
+  targets.forEach((target, i) => {
+    const entry = entries[i];
+    if (!entry) return;
+    pending ||= !entry.complete;
+    const group = target.kind === 'camera' ? 'camera' : target.uid, lead = !colors.has(group);
+    if (lead) colors.set(group, target.kind === 'camera' ? '#e8a13c' : PATH_COLORS[colors.size % PATH_COLORS.length]);
+    const strong = target.kind === 'node' && target.uid === editor.selectedUid && target.joint === editor.selectedJoint;
+    // A figure's first trail carries its frame numbers; its limb tips do not repeat them.
+    out.push({target, entry, color: colors.get(group), strong, lead});
+  });
   // Trail sampling continues across frames until every entry is complete.
   if (sample && pending) requestRender();
   return out;
+}
+/** Trail hit test in screen space against the trails' cached projections. */
+function pickMotionPath(screen) {
+  const project = affineProjection(screenPoint), relative = Boolean(state.settings.motionPathRelative);
+  let best = null;
+  for (const motionPath of activeMotionPaths({sample: false})) {
+    const hit = pickMotionPathPoint(motionPath.entry, screen, {project, radius: 10, tick: editor.tick, relative});
+    if (hit && (!best || hit.distance < best.hit.distance)) best = {hit, motionPath};
+  }
+  return best;
+}
+/** Double-clicking a trail point goes to its frame. */
+function seekMotionPathTick(tick) {
+  pause();
+  const rows = editor.timeline, index = rows.findIndex(row => row.start === tick);
+  if (state.settings.timelineMode === "simple" && index >= 0) timelineUI.selectFrame(index);
+  else editor.seek(tick);
 }
 function activeCameraHandle(point) {
   const track = editor.report._styk?.layers?.fixed?.camera;
@@ -1502,6 +1524,33 @@ function onionSkins() {
   if (!state.onion || state.playing || state.previewing) return [];
   return onionCache.get(editor, onionController.settings, {selected: selection(), hidden: effectiveHidden(), visibilityKey:[...state.hidden]});
 }
+/** Trails, plus the pose at the hovered or dragged point when it is another
+ * frame: the ghost shows what a drag will change without seeking. */
+function drawMotionPaths() {
+  const motionPaths = activeMotionPaths();
+  if (!motionPaths.length) return;
+  const project = affineProjection(screenPoint), relative = Boolean(state.settings.motionPathRelative);
+  const dragPath = state.drag?.kind === "motion-path" ? state.drag : null;
+  const focus = dragPath ?? state.hoverPathPoint;
+  const bounds = {width: viewport.clientWidth, height: viewport.clientHeight};
+  let ghost = null;
+  for (const motionPath of motionPaths) {
+    const key = motionPathTargetKey(motionPath.target);
+    if (focus?.key === key && focus.tick !== editor.tick) ghost = motionPath;
+    drawMotionPath(ctx, motionPath.entry, project, {
+      tick: editor.tick, relative, bounds, strong: motionPath.strong, currentBadge: motionPath.lead,
+      hover: state.hoverPathPoint?.key === key ? state.hoverPathPoint : null,
+      dragging: dragPath?.key === key ? {tick: dragPath.tick} : null,
+      color: motionPath.color,
+      labels: Boolean(state.settings.motionPathLabels) && motionPath.lead,
+      dots: state.settings.motionPathDots !== false,
+      speed: Boolean(state.settings.motionPathSpeed),
+      faint: motionPaths.length > 1 && focus && focus.key !== key,
+    });
+  }
+  if (ghost) drawMotionPathGhost(ctx, pathCache.ghost(editor.motionPathReport(), ghost.target, focus.tick, `${editor.revision}:${editor.layerRevision}`), project,
+    {color: ghost.color, entry: ghost.entry, relative, tick: editor.tick});
+}
 function overlayRender(geometry) {
   const d = window.devicePixelRatio || 1;
   ctx.setTransform(d, 0, 0, d, 0, 0);
@@ -1521,20 +1570,7 @@ function overlayRender(geometry) {
       dragTranslations: state.drag?.translations,
       cameraEnabled: false,
     });
-  const motionPaths = activeMotionPaths();
-  const dragPath = state.drag?.kind === "motion-path" ? state.drag : null;
-  for (const motionPath of motionPaths) {
-    const key = motionPathTargetKey(motionPath.target);
-    drawMotionPath(ctx, motionPath.entry, screenPoint, {
-      tick: editor.tick,
-      hover: state.hoverPathPoint?.key === key ? state.hoverPathPoint : null,
-      dragging: dragPath?.key === key ? {tick: dragPath.tick} : null,
-      color: motionPath.color,
-      labels: Boolean(state.settings.motionPathLabels),
-      dots: state.settings.motionPathDots !== false,
-      faint: motionPaths.length > 1 && state.hoverPathPoint && state.hoverPathPoint.key !== key,
-    });
-  }
+  drawMotionPaths();
   if ((state.handles || state.tool === 'attach') && !gpuHandlesEnabled()) drawCanvasHandles(geometry);
   if (
     cameraSelected() &&
@@ -2528,16 +2564,14 @@ overlay.addEventListener(
       ["select", "pose"].includes(state.tool) &&
       !builderMode?.active
     ) {
-      const motionPaths = activeMotionPaths({sample: false});
-      const screen = screenPoint(p);
-      let pathHit = null, hitTarget = null;
-      for (const motionPath of motionPaths) {
-        const hit = pickMotionPathPoint(
-          motionPath.entry,
-          screen,
-          { project: screenPoint, radius: 9, tick: editor.tick },
-        );
-        if (hit && (!pathHit || hit.distance < pathHit.distance)) { pathHit = hit; hitTarget = motionPath.target; }
+      const picked = pickMotionPath(screenPoint(p));
+      const pathHit = picked?.hit, hitTarget = picked?.motionPath.target;
+      const last = state.lastPathClick;
+      if (pathHit && last && last.key === motionPathTargetKey(hitTarget) && last.tick === pathHit.tick && e.timeStamp - last.time < 450) {
+        state.lastPathClick = null;
+        releaseCanvasPointer();
+        seekMotionPathTick(pathHit.tick);
+        return;
       }
       if (pathHit && editor.beginMotionPathEdit(hitTarget, pathHit.tick)) {
         state.drag = {
@@ -2774,20 +2808,18 @@ const moveCanvasPointer = guarded((e) => {
       const previousPathPoint = state.hoverPathPoint;
       state.hoverPathPoint = null;
       if (state.motionPaths && !state.hoverCameraHandle && ["select", "pose"].includes(state.tool) && !builderMode?.active) {
-        const motionPaths = activeMotionPaths({sample: false});
-        const screen = screenPoint(worldPoint(e));
-        let pathHit = null, hitTarget = null;
-        for (const motionPath of motionPaths) {
-          const hit = pickMotionPathPoint(motionPath.entry, screen, { project: screenPoint, radius: 9, tick: editor.tick });
-          if (hit && (!pathHit || hit.distance < pathHit.distance)) { pathHit = hit; hitTarget = motionPath.target; }
-        }
-        if (pathHit) {
-          state.hoverPathPoint = { key: motionPathTargetKey(hitTarget), tick: pathHit.tick };
+        const picked = pickMotionPath(screenPoint(worldPoint(e)));
+        if (picked) {
+          const tick = picked.hit.tick;
+          state.hoverPathPoint = { key: motionPathTargetKey(picked.motionPath.target), tick };
           overlay.style.cursor = "grab";
-          if (previousPathPoint?.tick !== pathHit.tick || previousPathPoint?.key !== state.hoverPathPoint.key) requestRender();
+          overlay.title = tick === editor.tick
+            ? `Frame ${tick + 1} (current) — drag to repose`
+            : `Frame ${tick + 1} — drag to repose without leaving this frame, double-click to go there`;
         }
-        if (!state.hoverPathPoint && previousPathPoint !== undefined) requestRender();
       }
+      if (!state.hoverPathPoint && previousPathPoint) overlay.title = "";
+      if (previousPathPoint?.tick !== state.hoverPathPoint?.tick || previousPathPoint?.key !== state.hoverPathPoint?.key) requestRender();
       const geometry = editor.geometry;
       const handle =
         state.handles && !state.hoverCameraHandle
@@ -3022,6 +3054,8 @@ function endDrag(event, {keepPointer = false} = {}) {
   } else if (drag.kind === "motion-path") {
     if (drag.moved) editor.commitMotionPathEdit();
     else editor.cancelMotionPathEdit();
+    // A press that did not move arms the double-click that goes to this frame.
+    state.lastPathClick = drag.moved ? null : {key: drag.key, tick: drag.tick, time: event?.timeStamp ?? performance.now()};
   } else if (drag.kind === "camera") editor.commitCameraDrag();
   else if (!["pan", "maybe-bend", "zoom", "rotate"].includes(drag.kind)) {
     if (drag.kind === "move" && drag.moved) {
@@ -3118,6 +3152,8 @@ overlay.addEventListener("pointerleave", () => {
   }
   state.hoverHandle = null;
   state.hoverCameraHandle = null;
+  state.hoverPathPoint = null;
+  overlay.title = "";
   if (!state.drag) overlay.style.cursor = '';
   requestRender();
 });
@@ -5711,7 +5747,7 @@ async function init() {
       state.motionPaths = next.motionPaths;
       pathControls?.sync();
       canvasGuides?.sync();
-      if (!state.motionPaths) { state.hoverPathPoint = null; pathCache.clear(); }
+      if (!state.motionPaths) { state.hoverPathPoint = null; overlay.title = ""; pathCache.clear(); }
       appLocalization.setLocale(next.locale);
       blueHandles = null;
       scheduleRecovery();
