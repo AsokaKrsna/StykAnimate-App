@@ -1,7 +1,7 @@
 /**
  * The tool rail (experience.md §3.2, components.md "Tool button and Rail"):
  * only the current workspace's tools, in the same column and anchored to its
- * top in every workspace. The markup (index.html) lists every tool once, in
+ * vertical center in every workspace. The markup (index.html) lists every tool once, in
  * an order that reads right in each workspace; syncRail() shows the current
  * workspace's, names the tools that differ by workspace (Select and pose in
  * Animate, Select figure in Build) and marks the active tool.

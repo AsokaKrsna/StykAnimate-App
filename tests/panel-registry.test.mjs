@@ -11,10 +11,10 @@ import {solveLayout} from '../src/shell/layout-solver.mjs';
 
 test('the catalogue describes today\'s panels with their limits and places', () => {
   assert.deepEqual(PANEL_CATALOG.map(panel => [panel.id, panel.docks, panel.floatable, panel.min, panel.pref, panel.max]), [
-    ['properties', ['right', 'left'], false, 256, 320, 420],
+    ['properties', ['right', 'left'], true, 256, 320, 420],
     ['vfx', ['right', 'left'], true, 256, 320, 420],
     ['library', ['right', 'left'], true, 256, 320, 460],
-    ['structure', ['left', 'right'], false, 200, 232, 360],
+    ['structure', ['left', 'right'], true, 200, 232, 360],
     ['timeline', ['bottom'], false, 168, null, null],
   ]);
   const byId = Object.fromEntries(PANEL_CATALOG.map(panel => [panel.id, panel]));

@@ -823,19 +823,29 @@ export function canPlacePanel(id, target, {mode, catalog = PANEL_CATALOG} = {}) 
  * Moves a panel within an arrangement and returns the normalized arrangement
  * (unchanged when the move is not allowed). Docking adds the panel as the
  * active tab at `index` of `group` on that side; floating a third panel
- * docks the one that floated first.
+ * docks the one that floated first. `split: before|after` places a panel
+ * above or below the other docked panels, up to two resizable islands.
  */
-export function movePanel(arrangement, id, target, {mode, catalog = PANEL_CATALOG, index, group, rect} = {}) {
+export function movePanel(arrangement, id, target, {mode, catalog = PANEL_CATALOG, index, group, rect, split} = {}) {
   mode = requireMode(mode);
   if (!canPlacePanel(id, target, {mode, catalog})) return arrangement;
   const placed = placedIn(catalog, mode);
   const panels = arrangement.panels.map(record => ({...record}));
   const record = panels.find(item => item.id === id);
   if (!record) return arrangement;
+  let weights = arrangement.weights;
   if (target === 'docked' || DOCK_SIDES.includes(target)) {
     const {docks} = catalogInfo(catalog).byId.get(id);
     const side = target !== 'docked' ? target : docks.includes(record.side) ? record.side : docks[0];
-    const island = Number.isInteger(group) ? group : target === 'docked' ? record.group ?? 0 : 0;
+    let island = Number.isInteger(group) ? group : target === 'docked' ? record.group ?? 0 : 0;
+    if (split === 'before' || split === 'after') {
+      const others = panels.filter(item => item !== record && placed(item) && item.dock === side);
+      // The shell supports two independently resizable islands on each side.
+      if (!others.length || new Set(others.map(item => item.group ?? 0)).size > 1) return arrangement;
+      island = split === 'before' ? 0 : 1;
+      for (const item of others) item.group = 1 - island;
+      weights = {...weights, [side]: [.5, .5]};
+    }
     const siblings = panels.filter(item => item !== record && placed(item) && item.side === side).sort((a, b) => a.order - b.order);
     siblings.splice(Math.max(0, Math.min(siblings.length, Number.isInteger(index) ? index : siblings.length)), 0, record);
     siblings.forEach((item, order) => { item.order = order; });
@@ -850,7 +860,7 @@ export function movePanel(arrangement, id, target, {mode, catalog = PANEL_CATALO
     }
     record.dock = target;
   }
-  return normalizeArrangement({...arrangement, panels}, mode, {catalog});
+  return normalizeArrangement({...arrangement, panels, weights}, mode, {catalog});
 }
 
 /**

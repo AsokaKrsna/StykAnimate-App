@@ -169,9 +169,9 @@ test('normalization keeps every panel in a place it allows', () => {
     {id: 'vfx', dock: 'right'},
   ]}, 'animate');
   assert.equal(place(arrangement, 'timeline'), 'bottom');
-  assert.equal(place(arrangement, 'properties'), 'right', 'Properties never floats');
+  assert.equal(place(arrangement, 'properties'), 'float@right', 'Properties can float');
   assert.equal(place(arrangement, 'vfx'), 'float@left', 'the first record of an id wins');
-  assert.equal(place(arrangement, 'library'), 'float@right');
+  assert.equal(place(arrangement, 'library'), 'right', 'at most two panels float');
   assert.deepEqual(records(arrangement).structure, {id: 'structure', dock: 'left'}, 'Structure is placed only in Build; its record is kept as it is');
   // A third floating panel docks back on its side.
   const catalog = [...PANEL_CATALOG, normalizePanelDescriptor({id: 'notes', docks: ['right'], floatable: true, min: 200, pref: 240, max: 300})];
@@ -537,12 +537,32 @@ test('moving panels follows each panel\'s allowed places', () => {
   // Refused moves return the arrangement unchanged.
   assert.equal(movePanel(animate, 'timeline', 'left', {mode: 'animate'}), animate);
   assert.equal(movePanel(animate, 'timeline', 'hidden', {mode: 'animate'}), animate);
-  assert.equal(movePanel(animate, 'properties', 'float', {mode: 'animate'}), animate);
+  assert.equal(place(movePanel(animate, 'properties', 'float', {mode: 'animate'}), 'properties'), 'float@right');
   assert.equal(movePanel(animate, 'structure', 'left', {mode: 'animate'}), animate);
   assert.throws(() => movePanel(animate, 'vfx', 'left', {}), TypeError, 'the workspace is required');
   assert.deepEqual(['left', 'right', 'bottom', 'float', 'strip', 'hidden'].filter(target => canPlacePanel('library', target, {mode: 'animate'})), ['left', 'right', 'float', 'strip', 'hidden']);
   assert.deepEqual(['left', 'right', 'bottom', 'float', 'strip', 'hidden'].filter(target => canPlacePanel('timeline', target, {mode: 'rig'})), ['bottom', 'strip', 'hidden']);
   assert.equal(canPlacePanel('library', 'left', {mode: 'nowhere'}), false);
+});
+
+test('splitting a dock creates two active islands and preserves them through storage', () => {
+  for (const split of ['before', 'after']) {
+    const start = defaultArrangement('animate');
+    const arranged = movePanel(start, 'vfx', 'right', {mode: 'animate', split});
+    const grouped = id => records(arranged)[id].group ?? 0;
+    assert.equal(grouped('vfx'), split === 'before' ? 0 : 1);
+    assert.equal(grouped('properties'), split === 'before' ? 1 : 0);
+    assert.equal(grouped('library'), grouped('properties'));
+    assert.equal(records(arranged).vfx.active, true);
+    assert.equal(records(arranged).properties.active, true);
+    assert.deepEqual(arranged.weights.right, [.5, .5]);
+    const stored = normalizeLayout({modes: {animate: {...arranged, preset: 'animate'}}});
+    const restored = migrateLayout(serializeLayout(stored)).layout;
+    assert.ok(sameArrangement(restored.modes.animate, arranged));
+    assert.equal(movePanel(arranged, 'library', 'right', {mode: 'animate', split}), arranged, 'no third island');
+    const merged = movePanel(arranged, 'vfx', 'right', {mode: 'animate', group: grouped('properties')});
+    assert.ok(merged.panels.filter(record => record.dock === 'right').every(record => !record.group));
+  }
 });
 
 test('reset returns workspaces and sizes to their defaults and keeps saved layouts', () => {

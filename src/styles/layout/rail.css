@@ -1,5 +1,5 @@
 /* The rail's column (experience.md §3.2): the current workspace's tools on the
- * window's field, anchored to the top, in the same place in every workspace
+ * window's field, vertically centered beside the canvas in every workspace
  * (layout/workspace.css places the column; src/shell/rail.mjs shows the
  * tools). A tool with variants sits in a `.rail-slot` with its corner tick
  * (components/tool.css .ui-tool-tick-button), which lists the variants; the
@@ -8,6 +8,17 @@
  * follow the tools under a short hairline. */
 @layer layout {
   .shell-rail { align-items: stretch; gap: 0; }
+  .shell-rail-handle {
+    flex: none; align-self: center; inline-size: 28px; block-size: 24px; min-block-size: 24px;
+    padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-3);
+    cursor: grab; touch-action: none;
+  }
+  .shell-rail-handle::after {
+    content: ''; display: block; inline-size: 18px; block-size: 6px; margin: auto;
+    background: radial-gradient(circle, currentColor 1px, transparent 1px) 0 0 / 6px 3px;
+  }
+  .shell-rail-handle:where(:hover, :focus-visible) { background: var(--surface-hover); color: var(--text-1); }
+  .shell-rail-handle[data-dragging] { cursor: grabbing; }
   :where(.rail-slot, .shell-rail .tweener-tool) { position: relative; display: flex; flex: none; inline-size: auto; block-size: auto; border-radius: 0; }
 
   .shell-rail :where(.tweener-arrow) {

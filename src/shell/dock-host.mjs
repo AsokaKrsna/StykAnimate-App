@@ -46,8 +46,6 @@ import {MENUBAR_FOLD, watchBand} from './topbar.mjs';
 import {COLLECTIONS} from './dock-keyboard.mjs';
 
 const SIDES = Object.freeze(['left', 'right']);
-/** Panels with their own head (Structure's name and count): no tab row while alone in an island. */
-const OWN_HEAD = new Set(['structure']);
 const DEFAULT_ROOTS = Object.freeze({properties: '#properties-panel', vfx: '#vfx-panel', library: '#user-library',
   structure: '#builder-outliner', timeline: '#animation-timeline'});
 const SIDE_NAMES = Object.freeze({left: 'Left panels', right: 'Inspector'});
@@ -431,6 +429,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
       tab.setAttribute('role', 'tab');
       tab.dataset.panel = id;
       tab.textContent = title(id);
+      tab.title = 'Drag to move panel; right-click for layout options';
       tabElements.set(id, tab);
     }
     const target = rootOf(id);
@@ -447,7 +446,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
     const roots = ids.map(rootOf).filter(Boolean);
     order(island, roots, 1);
     const shown = ids.filter(id => !hide.includes(id));
-    tablist.hidden = !shown.length || (shown.length === 1 && OWN_HEAD.has(shown[0]));
+    tablist.hidden = !shown.length;
     tablist.setAttribute('aria-label', shown.map(title).join(', ') || SIDE_NAMES.right);
     for (const id of ids) {
       const tab = tabOf(id), selected = id === active;
@@ -690,13 +689,15 @@ export function createDockHost({document: doc = globalThis.document, window: win
     el.dataset.ui = '';
     el.tabIndex = 0;
     el.setAttribute('role', 'separator');
-    const vertical = name !== 'bottom';
+    const stacked = name.endsWith('-islands'), side = name.split('-')[0];
+    const vertical = !stacked && name !== 'bottom';
     el.setAttribute('aria-orientation', vertical ? 'vertical' : 'horizontal');
     // In the tab order beside the region it resizes (the grid places it; dock.css).
-    if (name === 'right') hosts.right.before(el);
+    if (stacked) { el.classList.add('shell-island-splitter'); hosts[side].append(el); }
+    else if (name === 'right') hosts.right.before(el);
     else if (name === 'left') hosts.left.after(el);
     else bottom.before(el);
-    const sign = name === 'left' ? 1 : -1;
+    const sign = stacked || name === 'left' ? 1 : -1;
     const coordinate = event => (vertical ? event.clientX : event.clientY);
     let drag = null;
     const finish = cancel => {
@@ -706,7 +707,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
       delete el.dataset.dragging;
       override = null;
       if (el.hasPointerCapture?.(pointerId)) el.releasePointerCapture(pointerId);
-      if (!cancel && size !== undefined) store.update(layout => setSharedSize(layout, key, size));
+      if (!cancel && size !== undefined) store.update(layout => resizedLayout(layout, name, size, key));
       commit();
     };
     el.addEventListener('pointerdown', event => {
@@ -724,22 +725,23 @@ export function createDockHost({document: doc = globalThis.document, window: win
       if (!bounds) return;
       drag.size = Math.round(clamp(drag.start + sign * (coordinate(event) - drag.origin), bounds.min, bounds.max));
       const {key, size} = drag;
-      override = layout => setSharedSize(layout, key, size);
+      override = layout => resizedLayout(layout, name, size, key);
       schedule();
     }, {signal});
     el.addEventListener('pointerup', event => { if (drag?.pointerId === event.pointerId) finish(false); }, {signal});
     el.addEventListener('pointercancel', () => finish(true), {signal});
     el.addEventListener('lostpointercapture', () => finish(true), {signal});
+    win.addEventListener('blur', () => finish(true), {signal});
     el.addEventListener('dblclick', event => { event.preventDefault(); resetSize(name); }, {signal});
     el.addEventListener('keydown', event => {
       if (event.key === 'Escape' && drag) { event.preventDefault(); event.stopPropagation(); finish(true); return; }
-      const grow = name === 'right' ? {ArrowLeft: 1, ArrowRight: -1} : name === 'left' ? {ArrowRight: 1, ArrowLeft: -1} : {ArrowUp: 1, ArrowDown: -1};
+      const grow = stacked ? {ArrowDown: 1, ArrowUp: -1} : name === 'right' ? {ArrowLeft: 1, ArrowRight: -1} : name === 'left' ? {ArrowRight: 1, ArrowLeft: -1} : {ArrowUp: 1, ArrowDown: -1};
       if (event.key === 'Home' || event.key === 'Enter') resetSize(name);
       else if ((grow[event.key] || event.key === 'End') && solution?.aria[name]) {
         const bounds = solution.aria[name];
         const size = event.key === 'End' ? bounds.max
           : Math.round(clamp(sizeOf(name) + grow[event.key] * (event.shiftKey ? BIG_STEP : STEP), bounds.min, bounds.max));
-        store.update(layout => setSharedSize(layout, keyOf(name), size));
+        store.update(layout => resizedLayout(layout, name, size));
         commit();
       } else return;
       event.preventDefault();
@@ -749,15 +751,24 @@ export function createDockHost({document: doc = globalThis.document, window: win
     return splitters[name];
   }
 
-  const keyOf = name => (name === 'bottom' ? 'bottom' : solution?.regions[name].sizeKey ?? name);
-  const sizeOf = name => solution?.regions[name].size ?? 0;
+  const keyOf = name => (name === 'bottom' ? 'bottom' : solution?.regions[name]?.sizeKey ?? name);
+  const sizeOf = name => solution?.aria[name]?.now ?? 0;
+  function resizedLayout(layout, name, size, key = keyOf(name)) {
+    if (!name.endsWith('-islands')) return setSharedSize(layout, key, size);
+    const side = name.split('-')[0], groups = solution?.regions[side]?.groups;
+    if (groups?.length !== 2) return layout;
+    const total = groups.reduce((sum, group) => sum + group.rect.height, 0);
+    const share = size === null ? .5 : clamp(size / Math.max(1, total), 0, 1);
+    const m = mode(), entry = layout.modes[m];
+    return {...layout, modes: {...layout.modes, [m]: {...entry, weights: {...entry.weights, [side]: [share, 1 - share]}}}};
+  }
   function resetSize(name) {
-    store.update(layout => setSharedSize(layout, keyOf(name), null));
+    store.update(layout => resizedLayout(layout, name, null));
     commit();
   }
 
   function applySplitters(s) {
-    for (const name of ['left', 'right', 'bottom']) {
+    for (const name of ['left', 'right', 'bottom', 'left-islands', 'right-islands']) {
       const bounds = s.aria[name];
       const {el} = splitterFor(name);
       el.hidden = !bounds;
@@ -766,6 +777,13 @@ export function createDockHost({document: doc = globalThis.document, window: win
       el.setAttribute('aria-valuemax', String(bounds.max));
       el.setAttribute('aria-valuenow', String(bounds.now));
       el.setAttribute('aria-valuetext', `${bounds.now} pixels`);
+      if (name.endsWith('-islands')) {
+        const side = name.split('-')[0], groups = s.regions[side].groups;
+        el.style.insetBlockStart = px(groups[0].rect.height + metrics.gutter / 2);
+        el.setAttribute('aria-label', `Resize stacked ${side} panels`);
+        el.setAttribute('aria-controls', groups.flatMap(group => group.tabs.map(id => rootOf(id)?.id)).filter(Boolean).join(' '));
+        continue;
+      }
       const region = s.regions[name];
       const panels = name === 'bottom' ? ['timeline'] : region.panels.docked;
       const label = name === 'bottom' ? 'Resize timeline' : panels.includes('structure') ? 'Resize figure structure'
@@ -938,11 +956,11 @@ export function createDockHost({document: doc = globalThis.document, window: win
     activate: id => showPanel(id, {focus: false}),
     fold: id => togglePanel(id, 'strip'),
     hide: id => togglePanel(id, 'hidden'),
-    /** Docks a panel on a side, as a tab of `tabInto`'s island or at `index` among the side's tabs. */
-    dock(id, region, {tabInto, index} = {}) {
+    /** Docks as a tab of `tabInto`, at `index`, or in a separate island with `split: before|after`. */
+    dock(id, region, {tabInto, index, split} = {}) {
       onBeforeChange?.();
       const group = tabInto ? store.layout.modes[mode()].panels.find(record => record.id === tabInto)?.group ?? 0 : undefined;
-      place(id, region, {group, index});
+      place(id, region, {group, index, split});
     },
     float(id, rect) {
       const panel = floatTarget(id);
@@ -1047,7 +1065,11 @@ export function createDockHost({document: doc = globalThis.document, window: win
       const add = dock.querySelector(':scope > .rail-add');
       const apart = add && add.offsetParent !== null ? parseFloat(win.getComputedStyle(add).marginBlockEnd) || 0 : 0;
       const natural = items.reduce((sum, node) => sum + node.offsetHeight, 0) + gap * Math.max(0, items.length - 1)
-        + (parseFloat(box.paddingTop) || 0) + (parseFloat(box.paddingBottom) || 0) + apart;
+        + (parseFloat(box.paddingTop) || 0) + (parseFloat(box.paddingBottom) || 0) + apart
+        + [...rail.children].filter(node => node !== dock && node.offsetParent !== null).reduce((sum, node) => {
+          const style = win.getComputedStyle(node);
+          return sum + node.offsetHeight + (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0);
+        }, 0);
       const columns = items.length > 1 && natural > solution.rail.rect.height + 0.5 ? 2 : 1;
       if (columns !== railColumns) {
         railColumns = columns;

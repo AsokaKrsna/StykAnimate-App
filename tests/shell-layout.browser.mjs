@@ -358,7 +358,7 @@ try {
     await resize(1440, 900);
   });
 
-  await step('the rail floats in #viewport\'s corner beside the canvas in Animate, Draw and Build', async () => {
+  await step('the rail floats vertically centered beside the canvas in Animate, Draw and Build', async () => {
     for (const [width, height] of [[1440, 900], [900, 700], [800, 600], [500, 340]]) {
       await resize(width, height);
       const places = [];
@@ -367,8 +367,9 @@ try {
         const rail = await rect('.studio-rail'), viewport = await rect('#viewport');
         assert.ok(rail.x >= viewport.x && rail.y >= viewport.y && rail.x + rail.width <= viewport.x + viewport.width && rail.y + rail.height <= viewport.y + viewport.height,
           `${mode} ${width}x${height}: the rail floats inside #viewport`);
-        assert.ok(Math.abs(rail.x - viewport.x - 12) <= 1 && Math.abs(rail.y - viewport.y - 12) <= 1, `${mode} ${width}x${height}: 12px inside its corner`);
-        places.push([rail.x, rail.y]);
+        assert.ok(Math.abs(rail.x - viewport.x - 12) <= 1, `${mode} ${width}x${height}: 12px inside its side`);
+        assert.ok(Math.abs(rail.y + rail.height / 2 - viewport.y - viewport.height / 2) <= 1, `${mode} ${width}x${height}: centered vertically`);
+        places.push(rail.x);
       }
       await leaveBuild();
       await workspace('animate');
@@ -616,9 +617,10 @@ try {
     await page.keyboard.press('ArrowRight');
     assert.equal(await page.evaluate(() => styk.workspace.sizes.left), 244);
     await page.keyboard.press('Home');
-    const head = await rect('.shell-stage > .stage-head'), structure = await rect('.builder-outliner-head');
-    assert.ok(Math.abs(head.y - structure.y) <= 1 && Math.abs(head.y + head.height - structure.y - structure.height) <= 1,
-      `Structure's head shares the stage's 40px header line: ${JSON.stringify({head, structure})}`);
+    const head = await rect('.shell-stage > .stage-head'), tab = await rect('#structure-tab'), structure = await rect('.builder-outliner-head');
+    assert.ok(Math.abs(head.y + head.height / 2 - tab.y - tab.height / 2) <= 1,
+      `Structure's draggable tab shares the stage header line: ${JSON.stringify({head, tab})}`);
+    assert.ok(structure.y >= head.y + head.height - 1, 'the figure name remains below the drag handle');
     await resize(800, 600);
     assert.equal(await page.evaluate(() => document.documentElement.dataset.left), 'strip');
     // Structure's own actions stay one click away on the strip, under its icon.
@@ -760,7 +762,7 @@ try {
     await page.keyboard.press('Control+Alt+KeyM');
     await settle();
     assert.equal(await page.locator('.shell-drop').isVisible(), true, 'Ctrl+Alt+M works from a Properties field');
-    assert.match(said.at(-1) ?? '', /^Move Properties: Dock left. Arrow keys choose a place, Enter moves it, Escape cancels$/);
+    assert.match(said.at(-1) ?? '', /^Move Properties: Float here. Arrow keys choose a place, Enter moves it, Escape cancels$/);
     await page.keyboard.press('h');
     assert.equal(await page.evaluate(() => styk.state.tool), tool, 'H does not pick the Hand tool while moving');
     await page.keyboard.press('Escape');

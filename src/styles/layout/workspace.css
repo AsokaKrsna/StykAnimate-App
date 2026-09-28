@@ -16,17 +16,17 @@
     background: var(--surface-field);
   }
 
-  /* The tools: a white bar floating beside the canvas, like the site's tool bar, in the same place in every
-   * workspace: 12px inside #viewport under the stage header, on the stage's left (or right: Layout › Tools).
+  /* The tools: a white bar centered vertically beside the canvas in every
+   * workspace, 12px inside #viewport on the stage's left or right.
    * It shares the stage's grid cell and sits above the stage's corner caps; the solver keeps the artboard
    * 8px clear of it at fit. When its tools do not fit the stage's height it scrolls, with a fade. */
   .shell-rail {
     --_head: var(--control-2xl);
     grid-area: stage; position: relative; z-index: var(--z-canvas-hud); inset: auto; transform: none;
-    align-self: start; justify-self: start;
+    align-self: center; justify-self: start;
     display: flex; flex-direction: column; align-items: center; gap: var(--space-1);
     inline-size: auto; max-block-size: calc(100% - var(--shell-rail-top, calc(var(--_head) + var(--space-3))) - var(--space-3));
-    margin: var(--shell-rail-top, calc(var(--_head) + var(--space-3))) 0 0 var(--space-3); padding: 6px;
+    margin: var(--shell-rail-top, calc(var(--_head) + var(--space-3))) 0 var(--space-3) var(--space-3); padding: 6px;
     border: 0; border-radius: var(--radius-2xl); background: var(--surface-raised); box-shadow: var(--elevation-2);
     overflow-x: hidden; overflow-y: auto; scrollbar-width: none;
   }

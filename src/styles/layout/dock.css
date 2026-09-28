@@ -58,6 +58,7 @@
 
   /* Splitters over the gaps between the stage and its neighbours. */
   .shell-splitter { z-index: 3; }
+  .shell-island-splitter { position: absolute; inset-inline: 0; }
   .shell-splitter[data-splitter="right"] { grid-area: right; justify-self: start; margin-inline: calc(-4px - var(--shell-gap, var(--gutter)) / 2) 0; }
   .shell-splitter[data-splitter="left"] { grid-area: left; justify-self: end; margin-inline: 0 calc(-4px - var(--shell-gap, var(--gutter)) / 2); }
   .shell-splitter[data-splitter="bottom"] { grid-area: bottom; align-self: start; margin-block: calc(-4px - var(--shell-row-gap, var(--gutter)) / 2) 0; }

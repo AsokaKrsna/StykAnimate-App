@@ -4,19 +4,22 @@
  * - Drag a tab, a strip's icon or a floating panel's tab out of its place:
  *   past a 4px slop one calm drop target appears where the pointer is (a
  *   soft fill and a small label: Dock left, Dock right, Add as a tab, or
- *   Float here while Shift is held or the panel already floats). The tab
+ *   Float here over the canvas). Shift forces floating near a dock. The tab
  *   follows the pointer and its origin dims; release docks it, Escape or a
  *   window blur cancels. There are no veils, tags or instructions.
  * - Right-click a tab or a strip icon (or Shift+F10 or the Menu key on it)
- *   for its menu: Dock left, Dock right, Float (VFX and Library), Fold to
+ *   for its menu: Dock left, Dock right, Float, Fold to
  *   strip and Hide, as far as the panel may go there.
+ * - Drop above/below a dock's content to stack two panels; drop on its tabs
+ *   to group them. The tool palette's grip moves it between the stage's sides.
  *
  * Every change runs the dock host's workspace API, so a drag, the menu, the
  * Layout popover and Ctrl+Alt+M agree.
  */
 const SLOP = 4;
-const HANDLE = '.shell-tabs [role="tab"][data-panel], .shell-strip-button[data-panel]';
-const LABELS = Object.freeze({left: 'Dock left', right: 'Dock right', tab: 'Add as a tab', float: 'Float here'});
+const HANDLE = '.shell-tabs [role="tab"][data-panel], .shell-strip-button[data-panel], .shell-rail-handle';
+const LABELS = Object.freeze({left: 'Dock left', right: 'Dock right', tab: 'Add as a tab', float: 'Float here',
+  before: 'Stack above', after: 'Stack below', 'rail-left': 'Move tools left', 'rail-right': 'Move tools right'});
 
 const inside = (rect, x, y) => rect && rect.width > 0 && rect.height > 0 && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 const box = (left, top, width, height) => ({left, top, width, height, right: left + width, bottom: top + height});
@@ -30,7 +33,12 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
   const workspaceElement = doc.querySelector('.workspace');
   const abort = new AbortController(), signal = abort.signal;
   const workspace = host.workspace;
-  const title = id => host.registry.get(id)?.title ?? id;
+  const title = id => id === 'tools' ? 'Tools' : host.registry.get(id)?.title ?? id;
+  const railHandle = doc.createElement('button');
+  railHandle.type = 'button'; railHandle.className = 'shell-rail-handle'; railHandle.dataset.panel = 'tools';
+  railHandle.setAttribute('aria-label', 'Move tools');
+  railHandle.title = 'Drag to either side; Left and Right arrows move tools';
+  host.regions().rail?.prepend(railHandle);
   let press = null, drag = null, suppressClick = false;
 
   // -------------------------------------------------------------------
@@ -38,6 +46,8 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
 
   /** The places a panel may go from where it is, as menu items. */
   function menuItems(id) {
+    if (id === 'tools') return ['left', 'right'].map(side => ({label: LABELS[`rail-${side}`],
+      icon: `panel-${side}`, run: () => move(id, side)}));
     const presentation = host.presentation(id), side = host.solution?.panels[id]?.side;
     const docked = presentation === 'docked' || presentation === 'sheet';
     const items = [];
@@ -53,6 +63,7 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
   }
 
   function move(id, target, options = {}) {
+    if (id === 'tools') { workspace.setRail(target); announce(LABELS[`rail-${target}`]); return; }
     if (target === 'float') workspace.float(id, options.rect);
     else if (target === 'strip') workspace.fold(id);
     else if (target === 'hidden') workspace.hide(id);
@@ -69,7 +80,7 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
    */
   function showMenu(handle, at) {
     const id = handle.dataset.panel;
-    if (!host.registry.has(id)) return;
+    if (id !== 'tools' && !host.registry.has(id)) return;
     const box = handle.getBoundingClientRect();
     const point = at && at.nodeType !== 1 ? at : {left: box.left, bottom: box.bottom, invoker: handle};
     openMenu(menuItems(id), point, {label: `${title(id)} panel`});
@@ -85,6 +96,9 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
   }, {signal});
   workspaceElement.addEventListener('keydown', event => {
     const handle = event.target.closest?.(HANDLE);
+    if (handle === railHandle && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      event.preventDefault(); event.stopPropagation(); move('tools', event.key === 'ArrowLeft' ? 'left' : 'right'); return;
+    }
     if (!handle || !((event.key === 'F10' && event.shiftKey) || event.key === 'ContextMenu')) return;
     event.preventDefault();
     event.stopPropagation();
@@ -123,24 +137,31 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
     const id = drag.id;
     const {hosts, stage} = host.regions();
     const stageRect = stage.getBoundingClientRect();
-    const floating = host.presentation(id) === 'float';
+    if (id === 'tools') {
+      if (!inside(stageRect, x, y)) return null;
+      const side = x < stageRect.left + stageRect.width / 2 ? 'left' : 'right';
+      return {kind: `rail-${side}`, rect: box(side === 'left' ? stageRect.left + 12 : stageRect.right - host.solution.rail.width - 12,
+        stageRect.top + host.solution.stageHead + 12, host.solution.rail.width, Math.max(0, stageRect.height - host.solution.stageHead - 24))};
+    }
     const floatable = host.canPlace(id, 'float');
     const island = islandAt(x, y);
     if (island && !shift) {
       const panels = (island.island.dataset.panels ?? '').split(' ').filter(Boolean);
       if (island.inHead && !panels.includes(id) && host.canPlace(id, island.side))
         return {kind: 'tab', side: island.side, tabInto: panels[0], rect: island.rect};
-      if (host.canPlace(id, island.side) && !(panels.includes(id) && panels.length === 1))
-        return {kind: island.side, rect: hosts[island.side].getBoundingClientRect()};
+      const remaining = host.solution.regions[island.side]?.groups.filter(group => group.tabs.some(panel => panel !== id));
+      if (host.canPlace(id, island.side) && remaining?.length === 1 &&
+          (y < island.rect.top + island.rect.height * .25 || y > island.rect.bottom - island.rect.height * .25)) {
+        const above = y < island.rect.top + island.rect.height / 2;
+        const area = hosts[island.side].getBoundingClientRect();
+        return {kind: above ? 'before' : 'after', side: island.side,
+          rect: box(area.left, above ? area.top : area.top + area.height / 2, area.width, area.height / 2)};
+      }
+      if (host.canPlace(id, island.side) && !panels.includes(id))
+        return {kind: 'tab', side: island.side, tabInto: panels[0], rect: island.rect};
       return null;
     }
-    if ((shift || floating) && floatable && inside(stageRect, x, y)) {
-      const descriptor = host.registry.get(id);
-      const width = Math.min(descriptor?.pref ?? 288, stageRect.width - 16), height = Math.min(520, stageRect.height - 56);
-      const left = Math.min(Math.max(x - width / 2, stageRect.left + 8), stageRect.right - width - 8);
-      const top = Math.min(Math.max(y - 20, stageRect.top + 48), stageRect.bottom - height - 8);
-      return {kind: 'float', rect: box(left, top, width, height), stage: stageRect};
-    }
+    if (shift && floatable && inside(stageRect, x, y)) return floatAt(x, y, stageRect);
     const edge = Math.min(160, stageRect.width * 0.25);
     for (const side of ['left', 'right']) {
       const dock = hosts[side];
@@ -152,7 +173,18 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
         : box(side === 'left' ? stageRect.left : stageRect.right - width, stageRect.top, width, stageRect.height);
       return {kind: side, rect};
     }
+    if (floatable && inside(stageRect, x, y)) return floatAt(x, y, stageRect);
     return null;
+  }
+
+  function floatAt(x, y, stage) {
+    const descriptor = host.registry.get(drag.id), current = host.solution.floating.find(item => item.panel === drag.id);
+    const head = host.solution.stageHead;
+    const width = Math.max(0, Math.min(current?.w ?? descriptor?.pref ?? 288, stage.width - 16));
+    const height = Math.max(0, Math.min(current?.h ?? 520, stage.height - head - 16));
+    const left = Math.min(Math.max(x - Math.min(drag.grabX, width - 24), stage.left + 8), stage.right - width - 8);
+    const top = Math.min(Math.max(y - drag.grabY, stage.top + head + 8), stage.bottom - height - 8);
+    return {kind: 'float', rect: box(left, top, width, height), stage};
   }
 
   function showTarget(target) {
@@ -169,7 +201,9 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
 
   function begin(event) {
     const {handle, id, pointerId} = press;
-    drag = {handle, id, pointerId, target: null, shift: event.shiftKey};
+    const source = (handle.closest('.shell-island') ?? handle).getBoundingClientRect();
+    drag = {handle, id, pointerId, target: null, shift: event.shiftKey,
+      grabX: Math.max(16, press.x - source.left), grabY: Math.max(12, press.y - source.top)};
     press = null;
     try { handle.setPointerCapture(pointerId); } catch { /* the pointer is gone */ }
     handle.dataset.dragging = 'true';
@@ -199,10 +233,12 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
     suppressClick = true;
     win.setTimeout(() => { suppressClick = false; }, 0);
     if (!commit || !target) { if (!commit) announce('Move cancelled'); return; }
-    if (target.kind === 'float') {
+    if (id === 'tools') move(id, target.kind.slice(5));
+    else if (target.kind === 'float') {
       const {rect, stage} = target;
       move(id, 'float', {rect: {x: Math.round(rect.left - stage.left), y: Math.round(rect.top - stage.top), w: Math.round(rect.width), h: Math.round(rect.height)}});
     } else if (target.kind === 'tab') move(id, target.side, {tabInto: target.tabInto});
+    else if (target.kind === 'before' || target.kind === 'after') move(id, target.side, {split: target.kind});
     else move(id, target.kind);
   }
 
@@ -214,7 +250,7 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
 
   workspaceElement.addEventListener('pointerdown', event => {
     const handle = event.target.closest?.(HANDLE);
-    if (!handle || event.button !== 0 || drag || !host.registry.has(handle.dataset.panel)) return;
+    if (!handle || event.button !== 0 || drag || (handle !== railHandle && !host.registry.has(handle.dataset.panel))) return;
     press = {handle, id: handle.dataset.panel, pointerId: event.pointerId, x: event.clientX, y: event.clientY};
   }, {signal});
   win.addEventListener('pointermove', event => {
@@ -227,6 +263,7 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
     if (press?.pointerId === event.pointerId) press = null;
   }, {signal});
   win.addEventListener('pointercancel', () => { press = null; end(false); }, {signal});
+  win.addEventListener('lostpointercapture', event => { if (drag?.pointerId === event.pointerId) end(false); }, {signal});
   win.addEventListener('blur', () => { press = null; end(false); }, {signal});
   win.addEventListener('keyup', event => {
     if (drag && event.key === 'Shift') { drag.shift = false; showTarget(targetAt(drag.x, drag.y, false)); }
@@ -240,6 +277,6 @@ export function installDockTabs({host, document: doc = globalThis.document, wind
     menuItems,
     showMenu,
     get dragging() { return drag ? {id: drag.id, target: drag.target?.kind ?? null} : null; },
-    destroy() { end(false); abort.abort(); zone.remove(); ghost.remove(); },
+    destroy() { end(false); abort.abort(); zone.remove(); ghost.remove(); railHandle.remove(); },
   };
 }
