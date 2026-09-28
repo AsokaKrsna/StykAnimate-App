@@ -64,6 +64,34 @@
   .paint-palette-grid > .ui-swatch { inline-size: auto; min-inline-size: 0; block-size: auto; aspect-ratio: 1; cursor: pointer; }
   .paint-palette-grid > .ui-swatch:where([draggable="true"]) { cursor: grab; }
   .paint-palette-empty { margin: 0; padding: var(--space-2) var(--space-2-5); border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--text-3); font: var(--type-small); }
+  /* Mine ▾: the personal palette's name, cut short, then a caret. */
+  .paint-palette-views > .paint-palette-mine { display: inline-flex; align-items: center; gap: var(--space-1); max-inline-size: 110px; }
+  .paint-palette-mine > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .paint-palette-mine > svg { flex: none; color: var(--text-3); }
+  /* The personal palettes, in place of the grid: rows with five chips, a name and a count, then actions. */
+  .paint-palette-menu { display: grid; gap: var(--space-0-5); }
+  .paint-palette-menu > hr { margin: var(--space-1) 0; border: 0; border-block-start: 1px solid var(--line-1); }
+  .paint-palette-menu > .paint-palette-item {
+    display: flex; align-items: center; gap: var(--space-2); inline-size: 100%; min-inline-size: 0; block-size: 30px; padding: 0 var(--space-2);
+    border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-1); font: var(--type-small); text-align: start;
+  }
+  .paint-palette-menu > .paint-palette-item:where(:hover, :focus-visible) { background: var(--surface-hover); }
+  .paint-palette-item[aria-checked="true"] { background: var(--accent-soft); color: var(--accent-text-strong); }
+  .paint-palette-item > .paint-palette-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .paint-palette-item > small { color: var(--text-3); font: var(--type-small); }
+  .paint-palette-chips { display: inline-flex; flex: none; inline-size: 50px; }
+  .paint-palette-chips > i { inline-size: 10px; block-size: 16px; background: var(--swatch); box-shadow: inset 0 0 0 1px var(--swatch-ring); }
+  .paint-palette-chips > i:first-child { border-start-start-radius: var(--radius-2xs); border-end-start-radius: var(--radius-2xs); }
+  .paint-palette-chips > i:last-child { border-start-end-radius: var(--radius-2xs); border-end-end-radius: var(--radius-2xs); }
+  /* Naming, renaming and deleting happen in place, in a small form. */
+  .paint-palette-form { display: grid; gap: var(--space-2); padding: var(--space-2-5); border-radius: var(--radius-md); background: var(--surface-sunken); font: var(--type-small); }
+  .paint-palette-form > p { margin: 0; color: var(--text-1); }
+  .paint-palette-form > label { display: grid; gap: var(--space-1-5); color: var(--text-2); }
+  .paint-palette-form input { inline-size: 100%; block-size: 28px; background: var(--surface-field); color: var(--text-1); }
+  .paint-palette-form-actions { display: flex; justify-content: flex-end; gap: var(--space-1-5); }
+  .paint-palette-form-actions > button { block-size: 26px; padding: 0 var(--space-2-5); border-radius: var(--radius-md); background: var(--surface-raised); color: var(--text-1); font: var(--type-small); box-shadow: 0 0 0 1px var(--line-2); }
+  .paint-palette-form-actions > .is-primary { background: var(--accent-strong); color: var(--text-on-strong); box-shadow: none; }
+  .paint-palette-form-actions > .is-danger { background: var(--danger-strong); color: var(--text-on-strong); box-shadow: none; }
 
   @media (forced-colors: active) {
     /* Swatches are artwork: they keep their colour and gain a real border. */

@@ -6177,7 +6177,7 @@ init().catch((error) => {
 });
 
 // Every colour picker offers the project's colours, edited as undoable commands.
-bindProjectPalette({colors:()=>projectColors(editor.report),add:color=>editor.addPaletteColor(color),
+bindProjectPalette({colors:()=>projectColors(editor.report),add:color=>editor.addPaletteColor(color),addMany:colors=>editor.addPaletteColors(colors),
   remove:color=>editor.removePaletteColor(color),move:(color,index)=>editor.movePaletteColor(color,index),
   subscribe:listener=>{const changed=event=>{if(event.detail?.palette||event.detail?.kind==='document')listener();};editor.addEventListener('change',changed);return()=>editor.removeEventListener('change',changed);}});
 installColorPickers((input, event) => {

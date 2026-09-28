@@ -55,6 +55,14 @@ export const editorColorMethods={
     if(colors.length>=PROJECT_PALETTE_LIMIT)throw new Error(`The project palette is full. Remove a color to add ${hex.toUpperCase()}.`);
     return publishPalette(this,[...colors,hex],'Add palette color');
   },
+  /** Adds the colours the project lacks, in order, as one undo step; returns how many. */
+  addPaletteColors(list){
+    const colors=projectColors(this.report),added=[...new Set(list.map(paletteColor))].filter(hex=>!colors.includes(hex));
+    if(!added.length)return 0;
+    if(colors.length+added.length>PROJECT_PALETTE_LIMIT)throw new Error(`The project palette holds up to ${PROJECT_PALETTE_LIMIT} colors. Remove ${colors.length+added.length-PROJECT_PALETTE_LIMIT} to add these.`);
+    publishPalette(this,[...colors,...added],'Add palette colors');
+    return added.length;
+  },
   removePaletteColor(color){
     const hex=paletteColor(color),colors=projectColors(this.report);
     return colors.includes(hex)&&publishPalette(this,colors.filter(entry=>entry!==hex),'Remove palette color');

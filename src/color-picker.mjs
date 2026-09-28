@@ -1,6 +1,7 @@
 import {clamp, hexColor, parseColor, normalizePaint, paintCSS, samplePaint, canvasPaint} from './paint.mjs';
 import {createColorMagnifier} from './color-picker-magnifier.mjs';
-import {PROJECT_PALETTE_LIMIT, canSaveToProject, paletteView, projectPalette, recentColors, rememberColor, setPaletteView, subscribePalette} from './color-palette.mjs';
+import {createPersonalPalette, currentPersonalPalette, deletePersonalPalette, moveShownColor, paletteFor, personalPalettes, projectPalette,
+  rememberColor, removeShownColor, renamePersonalPalette, saveColor, selectPersonalPalette, setPaletteView, subscribePalette, suggestPaletteName} from './color-palette.mjs';
 
 function hsv(rgb) {
   const [r,g,b] = rgb.map(v => v / 255), max = Math.max(r,g,b), min = Math.min(r,g,b), d = max-min;
@@ -17,7 +18,8 @@ const escapeHTML = value => String(value).replace(/[&<>"']/g, c => `&#${c.charCo
 /** `live` applies every drag step instead of only the release, and
  * `placement` 'below' opens under the anchor instead of beside it. Every
  * picker ends with the shared palette (color-palette.mjs): the project's
- * colours or the recent ones, one click from the colour being edited. */
+ * colours, the recent ones or a personal palette, one click from the colour
+ * being edited. */
 export function openColorPicker({anchor, paint, gradients = true, alpha = true, onChange, title = 'Fill', live = false, placement = 'side'}) {
   active?.();
   let dragCleanup;
@@ -26,7 +28,8 @@ export function openColorPicker({anchor, paint, gradients = true, alpha = true, 
   let sampling = false, samplePointer = null, eyedropper = false;
   let draft = normalizePaint(paint), selected = 0, savedGradient, hue = hsv(draft.stops[0].color)[0];
   // The palette remembers the colour a picker ends on when it changed.
-  let paletteKey = '', paletteCleanup = null, changed = false;
+  // paletteMenu is null, 'list', 'delete' or {form: 'new' | 'copy' | 'rename'}.
+  let paletteKey = '', paletteCleanup = null, paletteMenu = null, changed = false;
   const initialHex = hexColor(draft.stops[0].color);
   const panel = document.createElement('div'); panel.className='paint-picker'; panel.setAttribute('role','dialog'); panel.setAttribute('aria-label','Color picker'); panel.setAttribute('popover','manual');
   const label = escapeHTML(title);
@@ -68,7 +71,7 @@ export function openColorPicker({anchor, paint, gradients = true, alpha = true, 
     }
     if(!panel.contains(e.target)&&e.target!==anchor)close();
   };
-  const key=e=>{if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();close();}else if(panel.contains(e.target)){if(e.key==='Tab'){const items=[...panel.querySelectorAll('button,input,select,[tabindex]')].filter(n=>!n.disabled&&n.getClientRects().length);const i=items.indexOf(document.activeElement);if(e.shiftKey&&i===0){e.preventDefault();items.at(-1).focus();}else if(!e.shiftKey&&i===items.length-1){e.preventDefault();items[0].focus();}} }};
+  const key=e=>{if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();if(paletteMenu)closeMenu();else close();}else if(panel.contains(e.target)){if(e.key==='Tab'){const items=[...panel.querySelectorAll('button,input,select,[tabindex]')].filter(n=>!n.disabled&&n.getClientRects().length);const i=items.indexOf(document.activeElement);if(e.shiftKey&&i===0){e.preventDefault();items.at(-1).focus();}else if(!e.shiftKey&&i===items.length-1){e.preventDefault();items[0].focus();}} }};
   panel.addEventListener('keydown',e=>e.stopPropagation());
   document.addEventListener('pointerdown',outside,true);document.addEventListener('keydown',key,true);
   for(const type of ['pointermove','pointerup','click','dblclick','contextmenu','pointercancel']){
@@ -125,65 +128,118 @@ export function openColorPicker({anchor, paint, gradients = true, alpha = true, 
   $('[data-alpha]').oninput=e=>{stop().opacity=Number(e.target.value)/100;update();};$('[data-alpha]').onchange=commit;
   $('[data-opacity]').onchange=e=>{stop().opacity=clamp(Number(e.target.value)/100);draw();commit();};
   $('[data-hex]').onchange=e=>{try{const value=parseColor(e.target.value);stop().color=value.color;if(alpha&&[4,8].includes(e.target.value.replace('#','').length))stop().opacity=value.opacity;hue=hsv(stop().color)[0];draw();commit();}catch(error){$('.paint-error').textContent=error.message;}};
-  // The palette: Project | Recent, the add button and one grid of swatches.
-  // Project colours are the editor's (undoable, saved with the project);
-  // without an editor the picker offers the recent colours alone.
-  const paletteRoot=$('.paint-palette'),source=projectPalette();
-  const paletteState=()=>{const saved=source?source.colors():[],view=source?paletteView(saved):'recent';return {view,saved,colors:view==='project'?saved:recentColors()};};
-  const paletteAction=action=>{try{action();$('.paint-error').textContent='';}catch(error){$('.paint-error').textContent=error.message;}renderPalette();};
-  function renderPalette(){
-    const {view,saved,colors}=paletteState(),project=view==='project',current=hexColor(stop().color),key=`${view}|${colors.join()}`;
-    if(key!==paletteKey){
+  // The palette: Project | Recent | Mine ▾, + and one grid of swatches.
+  // Mine ▾ opens the personal palettes in place of the grid: choose one, make
+  // one, save the project's colours as one, or copy, rename or delete the one
+  // shown. Project colours are the editor's (undoable, saved with the project).
+  const paletteRoot=$('.paint-palette'),source=projectPalette(),esc=escapeHTML;
+  const PLUS='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+  const CARET='<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+  const paletteState=()=>paletteFor(source?source.colors():[]);
+  const paletteAction=(action,focus)=>{
+    try{action();$('.paint-error').textContent='';}catch(error){$('.paint-error').textContent=error.message;}
+    renderPalette(true);if(focus)paletteRoot.querySelector(focus)?.focus();
+  };
+  const menuMarkup=({view,project})=>{
+    const mine=currentPersonalPalette(),palettes=personalPalettes();
+    if(paletteMenu?.form){
+      const form=paletteMenu.form,value=form==='rename'?mine?.name:suggestPaletteName(form==='copy'?'Project colors':'My palette');
+      const title=form==='rename'?'Rename palette':form==='copy'?'Save project colors as a palette':'New palette';
+      return `<form class="paint-palette-form" data-palette-form><label>${title}<input data-palette-name type="text" maxlength="60" spellcheck="false" value="${esc(value??'')}"></label><div class="paint-palette-form-actions"><button type="button" data-palette-cancel>Cancel</button><button type="submit" class="is-primary">${form==='rename'?'Rename':'Create'}</button></div></form>`;
+    }
+    if(paletteMenu==='delete')return `<div class="paint-palette-form" role="group" aria-label="Delete palette"><p>Delete “${esc(mine.name)}” and its ${mine.colors.length} colors? This can’t be undone.</p><div class="paint-palette-form-actions"><button type="button" data-palette-cancel>Cancel</button><button type="button" class="is-danger" data-palette-delete-confirm>Delete</button></div></div>`;
+    const item=(attrs,label,disabled=false)=>`<button type="button" role="menuitem" class="paint-palette-item" ${attrs}${disabled?' disabled':''}><span class="paint-palette-name">${label}</span></button>`;
+    const rows=palettes.map(p=>`<button type="button" role="menuitemradio" class="paint-palette-item" data-palette-pick="${esc(p.id)}" aria-checked="${view==='mine'&&p.id===mine?.id}"><span class="paint-palette-chips" aria-hidden="true">${p.colors.slice(0,5).map(c=>`<i style="--swatch:${c}"></i>`).join('')}</span><span class="paint-palette-name">${esc(p.name)}</span><small>${p.colors.length}</small></button>`).join('');
+    const shown=view==='mine'&&mine;
+    return `<div class="paint-palette-menu" role="menu" aria-label="Your palettes">${rows||'<p class="paint-palette-empty">Keep the palettes you reuse, like skin tones or a character’s colors. They stay on this computer for every project.</p>'}`
+      +`<hr>${item('data-palette-new','New palette…')}${source&&project.length?item('data-palette-copy','Save project colors as a palette…'):''}`
+      +(shown?`<hr>${source?item('data-palette-to-project',`Add “${esc(mine.name)}” to this project`,!mine.colors.length):''}${item('data-palette-rename','Rename…')}${item('data-palette-delete','Delete…')}`:'')+'</div>';
+  };
+  const gridMarkup=({view,name,colors})=>{
+    const editable=view!=='recent',label=view==='mine'?name:`${name} colors`;
+    if(!colors.length)return `<p class="paint-palette-empty">${view==='project'?'Save the colors this project reuses with +. They are kept in the project file.':view==='mine'?`Add colors to ${esc(name)} with +. Your palettes stay on this computer for every project.`:'Colors you paint and pick appear here.'}</p>`;
+    return `<div class="paint-palette-grid" role="group" aria-label="${esc(label)}">${colors.map(color=>`<button type="button" class="ui-swatch" data-palette-swatch="${color}" style="--swatch:${color}"${editable?' draggable="true"':''} aria-label="Use ${color.toUpperCase()}" title="${color.toUpperCase()}${editable?' · Drag to reorder · Right-click to remove':''}"></button>`).join('')}</div>`;
+  };
+  function renderPalette(force){
+    const state=paletteState(),{view,name,target,saved,limit}=state,current=hexColor(stop().color);
+    const key=JSON.stringify([view,name,state.colors,target,paletteMenu,personalPalettes().map(p=>[p.id,p.name,p.colors.length]),state.project.length]);
+    if(force||key!==paletteKey){
       paletteKey=key;
-      const views=source?`<div class="paint-palette-views" role="group" aria-label="Palette">${['project','recent'].map(name=>`<button type="button" data-palette-view="${name}" aria-pressed="${name===view}">${name==='project'?'Project':'Recent'}</button>`).join('')}</div>`:'<span class="paint-palette-title">Recent</span>';
-      const add=source&&canSaveToProject(saved)?'<button type="button" class="paint-palette-add" data-palette-add><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>':'';
-      const grid=colors.length?`<div class="paint-palette-grid" role="group" aria-label="${project?'Project colors':'Recent colors'}">${colors.map(color=>`<button type="button" class="ui-swatch" data-palette-swatch="${color}" style="--swatch:${color}"${project?' draggable="true"':''} aria-label="Use ${color.toUpperCase()}" title="${color.toUpperCase()}${project?' · Drag to reorder · Right-click to remove':''}"></button>`).join('')}</div>`
-        :`<p class="paint-palette-empty">${project?'Save the colors this project reuses with +. They are kept in the project file.':'Colors you paint and pick appear here.'}</p>`;
-      paletteRoot.innerHTML=`<div class="paint-palette-head">${views}${add}</div>${grid}`;
+      const tab=(value,label)=>`<button type="button" data-palette-view="${value}" aria-pressed="${value===view}">${label}</button>`;
+      const views=`<div class="paint-palette-views" role="group" aria-label="Palette">${source?tab('project','Project'):''}${tab('recent','Recent')}<button type="button" class="paint-palette-mine" data-palette-menu aria-pressed="${view==='mine'}" aria-expanded="${Boolean(paletteMenu)}" aria-haspopup="menu" title="Your palettes, kept on this computer for every project"><span>${view==='mine'?esc(name):'Mine'}</span>${CARET}</button></div>`;
+      const add=target&&!paletteMenu?`<button type="button" class="paint-palette-add" data-palette-add>${PLUS}</button>`:'';
+      paletteRoot.innerHTML=`<div class="paint-palette-head">${views}${add}</div>${paletteMenu?menuMarkup(state):gridMarkup(state)}`;
+      const input=paletteRoot.querySelector('[data-palette-name]');if(input){input.focus();input.select();}
     }
     // One tab stop: the current colour's swatch, or the first.
     const swatches=[...paletteRoot.querySelectorAll('[data-palette-swatch]')],match=swatches.find(button=>button.dataset.paletteSwatch===current);
     for(const button of swatches){button.setAttribute('aria-pressed',String(button===match));button.tabIndex=button===(match??swatches[0])?0:-1;}
     const add=paletteRoot.querySelector('[data-palette-add]');
     if(add){
-      const kept=saved.includes(current),full=saved.length>=PROJECT_PALETTE_LIMIT,label=kept?`${current.toUpperCase()} is in the project colors`:full?'The project palette is full':`Add ${current.toUpperCase()} to the project colors`;
+      const where=target==='mine'?name:'the project colors',kept=saved.includes(current),full=saved.length>=limit;
+      const label=kept?`${current.toUpperCase()} is in ${where}`:full?`${target==='mine'?name:'The project palette'} is full`:`Add ${current.toUpperCase()} to ${where}`;
       add.disabled=kept||full;add.title=label;add.setAttribute('aria-label',label);
     }
   }
+  const closeMenu=()=>{paletteMenu=null;renderPalette(true);paletteRoot.querySelector('[data-palette-menu]')?.focus();};
   const removeSwatch=button=>{
     const next=button.nextElementSibling??button.previousElementSibling,color=button.dataset.paletteSwatch;
-    paletteAction(()=>source.remove(color));
+    paletteAction(()=>removeShownColor(color));
     paletteRoot.querySelector(`[data-palette-swatch="${next?.dataset.paletteSwatch}"]`)?.focus();
   };
   paletteRoot.addEventListener('click',e=>{
-    const view=e.target.closest('[data-palette-view]'),swatch=e.target.closest('[data-palette-swatch]');
-    if(view)paletteAction(()=>setPaletteView(view.dataset.paletteView));
-    else if(e.target.closest('[data-palette-add]'))paletteAction(()=>source.add(hexColor(stop().color)));
+    const t=e.target,view=t.closest('[data-palette-view]'),swatch=t.closest('[data-palette-swatch]'),pick=t.closest('[data-palette-pick]'),mine=currentPersonalPalette();
+    const menu=next=>paletteAction(()=>{paletteMenu=next;},next==='list'?'.paint-palette-item:not(:disabled)':null);
+    if(view)paletteAction(()=>{setPaletteView(view.dataset.paletteView);paletteMenu=null;});
+    else if(t.closest('[data-palette-menu]'))paletteMenu?closeMenu():menu('list');
+    else if(pick)paletteAction(()=>{selectPersonalPalette(pick.dataset.palettePick);paletteMenu=null;},'[data-palette-menu]');
+    else if(t.closest('[data-palette-new]'))menu({form:'new'});
+    else if(t.closest('[data-palette-copy]'))menu({form:'copy'});
+    else if(t.closest('[data-palette-rename]'))menu({form:'rename'});
+    else if(t.closest('[data-palette-delete]'))menu('delete');
+    else if(t.closest('[data-palette-cancel]'))menu('list');
+    else if(t.closest('[data-palette-delete-confirm]'))paletteAction(()=>{deletePersonalPalette(mine.id);paletteMenu=null;},'[data-palette-menu]');
+    else if(t.closest('[data-palette-to-project]'))paletteAction(()=>{source.addMany(mine.colors);setPaletteView('project');paletteMenu=null;},'[data-palette-view="project"]');
+    else if(t.closest('[data-palette-add]'))paletteAction(()=>saveColor(hexColor(stop().color)));
     else if(swatch){stop().color=parseColor(swatch.dataset.paletteSwatch).color;hue=hsv(stop().color)[0];draw();commit();}
+  });
+  paletteRoot.addEventListener('submit',e=>{
+    e.preventDefault();
+    const name=paletteRoot.querySelector('[data-palette-name]').value,form=paletteMenu?.form;
+    paletteAction(()=>{
+      if(form==='rename')renamePersonalPalette(currentPersonalPalette().id,name);
+      else createPersonalPalette(name,form==='copy'?source.colors():[]);
+      paletteMenu=null;
+    },'[data-palette-menu]');
   });
   paletteRoot.addEventListener('contextmenu',e=>{
     const swatch=e.target.closest('[draggable][data-palette-swatch]');if(!swatch)return;
     e.preventDefault();removeSwatch(swatch);
   });
   paletteRoot.addEventListener('keydown',e=>{
+    const item=e.target.closest('.paint-palette-item');
+    if(item&&['ArrowDown','ArrowUp'].includes(e.key)){
+      e.preventDefault();const items=[...paletteRoot.querySelectorAll('.paint-palette-item:not(:disabled)')],i=items.indexOf(item);
+      items[(i+(e.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus();return;
+    }
     const swatch=e.target.closest('[data-palette-swatch]');if(!swatch)return;
     const swatches=[...paletteRoot.querySelectorAll('[data-palette-swatch]')],i=swatches.indexOf(swatch);
     const step={ArrowLeft:-1,ArrowRight:1,ArrowUp:-PALETTE_COLUMNS,ArrowDown:PALETTE_COLUMNS,Home:-i,End:swatches.length-1-i}[e.key];
     if(step!==undefined){e.preventDefault();const next=swatches[Math.max(0,Math.min(swatches.length-1,i+step))];for(const b of swatches)b.tabIndex=b===next?0:-1;next.focus();}
     else if((e.key==='Delete'||e.key==='Backspace')&&swatch.hasAttribute('draggable')){e.preventDefault();removeSwatch(swatch);}
   });
-  // Dropping a project colour on another moves it to that place.
+  // Dropping a project or personal colour on another moves it to that place.
   let dragging=null;
   paletteRoot.addEventListener('dragstart',e=>{const swatch=e.target.closest('[draggable][data-palette-swatch]');if(!swatch)return;dragging=swatch.dataset.paletteSwatch;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragging);});
   paletteRoot.addEventListener('dragover',e=>{if(dragging&&e.target.closest('[data-palette-swatch]')){e.preventDefault();e.dataTransfer.dropEffect='move';}});
   paletteRoot.addEventListener('drop',e=>{
     const target=e.target.closest('[data-palette-swatch]');if(!dragging||!target)return;e.preventDefault();
     const color=dragging,index=[...paletteRoot.querySelectorAll('[data-palette-swatch]')].indexOf(target);
-    paletteAction(()=>source.move(color,index));
+    paletteAction(()=>moveShownColor(color,index));
   });
   paletteRoot.addEventListener('dragend',()=>{dragging=null;});
-  // Recent colours, the view and the project's colours (undo, another document) can change while it is open.
-  const stopRecent=subscribePalette(()=>{paletteKey='';renderPalette();}),stopProject=source?.subscribe?.(renderPalette);
+  // Recent colours, personal palettes, the view and the project's colours (undo, another document) can change while it is open.
+  const stopRecent=subscribePalette(()=>renderPalette()),stopProject=source?.subscribe?.(()=>renderPalette());
   paletteCleanup=()=>{stopRecent();stopProject?.();};
   draw();$('[data-hex]').focus();return close;
 }

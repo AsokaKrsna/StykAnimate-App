@@ -3,7 +3,7 @@ import {drawingMetadata,isDrawingLayer} from './drawing-model.mjs';
 import {DrawingStroke} from './drawing-pixels.mjs';
 import {TileStore} from './drawing-tiles.mjs';
 import {sliderMarkup} from './drawing-sliders.mjs';
-import {canSaveToProject,paletteColors,PROJECT_PALETTE_LIMIT} from './color-palette.mjs';
+import {paletteFor,projectColors} from './color-palette.mjs';
 import {BRUSH_DEFAULTS,BRUSH_KEYS,BRUSH_LENGTHS,LINEAR_PRESSURE} from './drawing-brush.mjs';
 import {pressureCurveMarkup} from './drawing-pressure-curve.mjs';
 
@@ -60,16 +60,14 @@ export function presetThumbnail(p){
 }
 const presetButton=(p,s)=>`<button class="drawing-preset" data-draw-preset="${escape(p.id)}" aria-pressed="${s.preset===p.id}" title="${escape(p.description)}"><img class="drawing-preset-thumb" src="${presetThumbnail(p)}" alt=""><span>${escape(p.name)}</span></button>`;
 export const presetGrid=(drawing)=>{const s=drawing.settings,custom=drawing.library?.presets??[];return `<div class="drawing-presets" role="group" aria-label="Brush presets">${[...BRUSH_PRESETS,...custom].map(p=>presetButton(p,s)).join('')}</div>`;};
-/** The colours Draw offers: the project's or the recent ones, whichever the
- * colour picker shows, so the rail and every picker agree. */
-export function drawingPalette(drawing){
-  const {view,project}=paletteColors(drawing.editor?.report);
-  return {view,project,colors:view==='project'?project:drawing.library?.recent??[]};
-}
+/** The colours Draw offers: the project's, the recent ones or a personal
+ * palette, whichever the colour picker shows, so the rail and every picker agree. */
+export const drawingPalette=drawing=>paletteFor(projectColors(drawing.editor?.report),drawing.library?.recent??[]);
+const paletteLabel=({view,name})=>escape(view==='mine'?name:`${name} colors`);
 // The swatch group for Properties and the pop-up palette.
 const paletteSwatches=drawing=>{
-  const {view,colors}=drawingPalette(drawing),current=drawing.settings.color.toLowerCase();
-  return colors.length?`<div class="drawing-swatches" role="group" aria-label="${view==='project'?'Project colors':'Recent colors'}">${colors.map(c=>`<button class="drawing-swatch" data-draw-color="${c}" style="background:${c}" title="${c.toUpperCase()}" aria-label="Use ${c.toUpperCase()}" aria-pressed="${c===current}"></button>`).join('')}</div>`:'';
+  const palette=drawingPalette(drawing),{colors}=palette,current=drawing.settings.color.toLowerCase();
+  return colors.length?`<div class="drawing-swatches" role="group" aria-label="${paletteLabel(palette)}">${colors.map(c=>`<button class="drawing-swatch" data-draw-color="${c}" style="background:${c}" title="${c.toUpperCase()}" aria-label="Use ${c.toUpperCase()}" aria-pressed="${c===current}"></button>`).join('')}</div>`:'';
 };
 // The rail shows this many colours; +N opens the picker with the rest.
 const RAIL_COLORS=8;
@@ -144,14 +142,14 @@ export function quickBarMarkup(drawing){
   const divider='<span class="draw-quick-divider" aria-hidden="true"></span>';
   // The bar names its tool, and painting tools keep the palette one click away
   // next to the colour pair: its first colours, +N for the rest (the picker)
-  // and + to save the brush colour to the project (color-palette.mjs's canSaveToProject).
+  // and + to save the brush colour where the picker's + saves it (saveTarget).
   const [,toolName,toolIcon]=DRAWING_TOOLS.find(t=>t[0]===tool)??['pan','Hand','hand'];
   const palette=drawingPalette(drawing),current=s.color.toLowerCase(),shown=palette.colors.slice(0,RAIL_COLORS),more=palette.colors.length-shown.length;
-  const canAdd=canSaveToProject(palette.project)&&!palette.project.includes(current)&&palette.project.length<PROJECT_PALETTE_LIMIT;
+  const canAdd=Boolean(palette.target)&&!palette.saved.includes(current)&&palette.saved.length<palette.limit,where=palette.target==='mine'?escape(palette.name):'the project colors';
   const rail=shown.map(c=>`<button type="button" class="draw-quick-swatch" data-draw-color="${c}" style="background:${c}" title="${c.toUpperCase()}" aria-label="Use ${c.toUpperCase()}" aria-pressed="${c===current}"></button>`).join('')
     +(more?`<button type="button" class="draw-quick-more" data-draw-action="open-colors" title="All ${palette.colors.length} colors" aria-label="Show all ${palette.colors.length} colors">+${more}</button>`:'')
-    +(canAdd?`<button type="button" class="draw-quick-add" data-draw-action="add-palette-color" title="Add ${current.toUpperCase()} to the project colors" aria-label="Add ${current.toUpperCase()} to the project colors">${icon('plus')}</button>`:'');
-  const colors=()=>colorPair(s,{hex:false})+(rail?`<div class="draw-quick-swatches" role="group" aria-label="${palette.view==='project'?'Project colors':'Recent colors'}">${rail}</div>`:'');
+    +(canAdd?`<button type="button" class="draw-quick-add" data-draw-action="add-palette-color" title="Add ${current.toUpperCase()} to ${where}" aria-label="Add ${current.toUpperCase()} to ${where}">${icon('plus')}</button>`:'');
+  const colors=()=>colorPair(s,{hex:false})+(rail?`<div class="draw-quick-swatches" role="group" aria-label="${paletteLabel(palette)}">${rail}</div>`:'');
   let body=`<span class="draw-quick-tool" title="${escape(toolName)}">${icon(toolIcon)}<span>${escape(toolName)}</span></span>`+divider;
   if(tool==='brush'||tool==='eraser'){
     const preset=[...BRUSH_PRESETS,...(drawing.library?.presets??[])].find(p=>p.id===s.preset);

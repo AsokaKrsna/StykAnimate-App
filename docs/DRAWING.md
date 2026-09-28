@@ -48,9 +48,10 @@ Drawing cels never become Build figures.
   drawn by the real brush engine. The bar sits in the stage header, above the canvas, so it never covers the artboard.
   The bar names the active tool and, for painting tools, shows the colour
   rail next to the colour pair: the first eight colours of the palette the
-  colour picker shows (the project's or the recent ones), +N when there are
-  more (it opens the picker with all of them) and, while the brush colour is
-  not yet a project colour, + to save it. The rail exists only in Draw.
+  colour picker shows (the project's, the recent ones or a personal
+  palette), +N when there are more (it opens the picker with all of them)
+  and, while the brush colour is not yet in that palette, + to save it. The
+  rail exists only in Draw.
   Clicking either colour opens the shared colour picker under it: it changes
   the brush colour live while you drag, ends with the palette and keeps the
   eyedropper. It writes the setting directly, so it keeps working while the
@@ -73,7 +74,8 @@ Drawing cels never become Build figures.
   Painted colours join the app's twelve recent colours, shared with every
   colour picker. Save brush stores the current tip as a custom preset. Recent
   colours and brushes persist in local storage (optional; the app works
-  without it); project colours save with the project.
+  without it); project colours save with the project, and personal
+  palettes stay on this computer for every project.
 - **Filters** (Select and Transform tools): blur, hue/saturation/lightness,
   brightness/contrast and invert apply to the selection, or to the whole
   drawing when nothing is selected, as one undoable step. Blur works on

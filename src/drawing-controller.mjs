@@ -2,7 +2,7 @@ import {FILL_SOURCE_MAX_PIXELS} from './drawing-fill.mjs';
 import {sendDrawingComposite} from './drawing-composite-transport.mjs';
 import {lassoBounds,lassoContains,selectionStores} from './drawing-lasso.mjs';
 import {BRUSH_PRESETS,quickBarMarkup,paletteMarkup} from './drawing-view.mjs';
-import {recentColors,setRecentColors,rememberColor as rememberRecentColor,subscribePalette} from './color-palette.mjs';
+import {recentColors,setRecentColors,rememberColor as rememberRecentColor,saveColor,subscribePalette} from './color-palette.mjs';
 import {SLIDERS,installDrawingSliders,refreshSliders,formatSlider,displayValue} from './drawing-sliders.mjs';
 import {WetInk} from './drawing-wet-ink.mjs';
 import {installPressureCurve} from './drawing-pressure-curve.mjs';
@@ -193,8 +193,8 @@ export class DrawingController {
     if(swatch){this.settings.color=swatch.dataset.drawColor;this.onUI();this.paintPreview(this.panel);}
     if(choice){const key=choice.dataset.drawChoice,value=choice.dataset.value;this.settings[key]=value==='toggle'?!this.settings[key]:value;this.onUI();this.onRender();}
     if(action?.dataset.drawAction==='toggle-quick-presets'){this.quickPresets=!this.quickPresets;this.queueQuickBar();return;}
-    // The rail's + saves the brush colour to the project; +N opens the picker with the whole palette.
-    if(action?.dataset.drawAction==='add-palette-color'){try{this.editor.addPaletteColor(this.settings.color);}catch(error){this.onError(error);}this.onUI();return;}
+    // The rail's + saves the brush colour to the palette shown; +N opens the picker with the whole palette.
+    if(action?.dataset.drawAction==='add-palette-color'){try{saveColor(this.settings.color);}catch(error){this.onError(error);}this.onUI();return;}
     if(action?.dataset.drawAction==='open-colors'){action.parentElement?.parentElement?.querySelector('.draw-color-primary')?.click();return;}
     if(action)this.run(()=>this.action(action.dataset.drawAction));
   }

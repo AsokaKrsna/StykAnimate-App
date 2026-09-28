@@ -86,8 +86,63 @@ try{
     return document._styk.palette.colors.length;
   });
   check('the project colours are saved in the project file',reopened===10);
+  // Personal palettes: named, kept on this computer, offered in every project.
+  const primary=page.locator('.drawing-quickbar .draw-color-primary');
+  await primary.click();await picker.waitFor();
+  await picker.locator('[data-palette-menu]').click();
+  check('Mine opens the personal palettes in place of the grid',await picker.locator('.paint-palette-menu').count()===1&&await picker.locator('.paint-palette-grid').count()===0
+    &&await picker.locator('[data-palette-menu]').getAttribute('aria-expanded')==='true');
+  await page.keyboard.press('Escape');
+  check('Escape closes the palette list, not the picker',await picker.count()===1&&await picker.locator('.paint-palette-grid').count()===1);
+  await picker.locator('[data-palette-menu]').click();await picker.locator('[data-palette-new]').click();
+  check('New palette asks for a name, suggested and selected',await picker.locator('[data-palette-name]').inputValue()==='My palette'
+    &&await page.evaluate(()=>document.activeElement?.matches('[data-palette-name]')));
+  await page.keyboard.type('Skin tones');await page.keyboard.press('Enter');
+  check('the new palette is shown, empty, with its name on the switch',(await picker.locator('[data-palette-menu]').textContent()).trim()==='Skin tones'
+    &&await picker.locator('.paint-palette-empty').count()===1&&!await picker.locator('[data-palette-add]').isDisabled());
+  await picker.locator('[data-hex]').fill('F1C27D');await picker.locator('[data-hex]').press('Enter');
+  await picker.locator('[data-palette-add]').click();
+  await picker.locator('[data-hex]').fill('C68642');await picker.locator('[data-hex]').press('Enter');
+  await picker.locator('[data-palette-add]').click();
+  check('+ saves colours to the personal palette, not the project',await picker.locator('[data-palette-swatch]').count()===2
+    &&(await project()).length===10&&await picker.locator('[data-palette-add]').getAttribute('title')==='#C68642 is in Skin tones');
+  await page.screenshot({path:`${output}/picker-personal.png`,clip:await picker.boundingBox()});
+  await picker.locator('[data-palette-menu]').click();
+  await page.screenshot({path:`${output}/picker-personal-menu.png`,clip:await picker.boundingBox()});
+  await picker.locator('[data-palette-to-project]').click();
+  check('Add to this project copies the palette in one step and shows the project',(await project()).length===12
+    &&await picker.locator('[data-palette-view="project"]').getAttribute('aria-pressed')==='true');
+  await page.evaluate(()=>styk.editor.undo());await frame();
+  check('copying a palette into the project undoes in one step',(await project()).length===10);
+  await picker.locator('[data-palette-menu]').click();await picker.locator('[data-palette-copy]').click();
+  await picker.locator('[data-palette-name]').fill('Night scene');await picker.locator('[data-palette-name]').press('Enter');
+  check('Save project colors as a palette keeps them for other projects',await picker.locator('[data-palette-swatch]').count()===10
+    &&(await picker.locator('[data-palette-menu]').textContent()).trim()==='Night scene');
+  await picker.locator('[data-palette-menu]').click();
+  await picker.locator('.paint-palette-item[data-palette-pick]').filter({hasText:'Skin tones'}).click();
+  check('choosing a palette from the list shows it',await picker.locator('[data-palette-swatch]').count()===2);
+  await picker.locator('[data-palette-menu]').click();await picker.locator('[data-palette-rename]').click();
+  await picker.locator('[data-palette-name]').fill('Skin');await picker.locator('[data-palette-name]').press('Enter');
+  check('Rename renames the shown palette',(await picker.locator('[data-palette-menu]').textContent()).trim()==='Skin');
+  await page.keyboard.press('Escape');await picker.waitFor({state:'detached'});
+  const personalRail=page.locator('.drawing-quickbar .draw-quick-swatches');
+  await page.evaluate(()=>{styk.drawing.settings.color='#8d5524';styk.drawing.onUI();});await frame();
+  check('Draw’s rail shows the personal palette and saves to it',await personalRail.getAttribute('aria-label')==='Skin'
+    &&await personalRail.locator('[data-draw-action="add-palette-color"]').getAttribute('title')==='Add #8D5524 to Skin');
+  await personalRail.locator('[data-draw-action="add-palette-color"]').click();await frame();
+  check('the rail’s + adds to the personal palette',await personalRail.locator('[data-draw-color]').count()===3);
+  await page.reload();await page.waitForFunction(()=>window.styk?.ready);
+  const survived=await page.evaluate(async()=>{const m=await import('/src/color-palette.mjs');return m.personalPalettes().map(p=>`${p.name}:${p.colors.length}`).join();});
+  check('personal palettes survive a restart, in the order made',survived==='Skin:3,Night scene:10');
+  await page.locator('[data-workspace-mode="draw"]').click();await page.locator('[data-tool="drawing-brush"]').click();
+  await primary.click();await picker.waitFor();
+  await picker.locator('[data-palette-menu]').click();await picker.locator('[data-palette-delete]').click();
+  check('Delete asks before removing a palette',(await picker.locator('.paint-palette-form p').textContent()).includes('Delete “Skin” and its 3 colors?'));
+  await picker.locator('[data-palette-delete-confirm]').click();
+  check('deleting shows the next palette',(await picker.locator('[data-palette-menu]').textContent()).trim()==='Night scene');
+  await page.keyboard.press('Escape');
   await page.evaluate(()=>{document.documentElement.dataset.theme='dark';});
-  await page.locator('.drawing-quickbar .draw-color-primary').click();await picker.waitFor();await frame();
+  await primary.click();await picker.waitFor();await frame();
   await page.screenshot({path:`${output}/picker-draw-dark.png`,clip:await picker.boundingBox()});
   await page.keyboard.press('Escape');
   check('no uncaught browser errors',errors.length===0);
