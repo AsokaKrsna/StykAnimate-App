@@ -6,6 +6,7 @@ const os = require('node:os');
 const fs = require('node:fs/promises');
 const { mkdirSync, existsSync } = require('node:fs');
 const { startDesktopHost } = require('./web-host.cjs');
+const { applyGpuSwitches } = require('./gpu-switches.cjs');
 const { RecoveryStore, atomicWrite } = require('./recovery.cjs');
 const { FileStreams } = require('./file-streams.cjs');
 const { SharedClipboard } = require('./shared-clipboard.cjs');
@@ -79,9 +80,9 @@ let documentState = { name: 'Untitled', dirty: false };
 let quitting = false;
 let pendingFiles = process.argv.slice(app.isPackaged ? 1 : 2).filter((arg) => /\.(piv|stk|styk|stkz|stykmov|json|nodes|nodemc|stknds|zip)$/i.test(arg));
 
-// WebGPU uses Chromium's normal driver allowlist. The opt-in switch is useful
-// for Linux development on drivers Chromium has not yet qualified.
-if (process.env.STYK_GPU_UNSAFE === '1') app.commandLine.appendSwitch('enable-unsafe-webgpu');
+// Windows and macOS use Chromium's normal driver allowlist. Linux needs the
+// Vulkan WebGPU opt-in to reach the GPU; see gpu-switches.cjs.
+applyGpuSwitches(app.commandLine);
 
 app.setName('StykAnimate');
 const profileDirectory = process.env.STYK_USER_DATA_DIR || (!app.isPackaged ? path.join(APP_ROOT, '.desktop-data') : null);
