@@ -8,14 +8,14 @@ function fakeType(behaviour) {
   return {calls, launch: async options => { calls.push(options); return behaviour(options, calls.length); }};
 }
 
-test('Linux gets the WebGPU switches; Windows and macOS get the caller arguments untouched', () => {
-  assert.deepEqual(chromiumArguments([], {platform: 'linux', env: {}}), LINUX_WEBGPU_ARGS);
-  for (const platform of ['win32', 'darwin']) assert.deepEqual(chromiumArguments(['--x'], {platform, env: {}}), ['--x']);
-  assert.deepEqual(chromiumArguments(['--x'], {platform: 'linux', env: {STYK_BROWSER_GPU: '0'}}), ['--x']);
+test('Linux Chromium keeps its own defaults unless the GPU switches are requested', () => {
+  assert.deepEqual(chromiumArguments(['--x'], {platform: 'linux', env: {}}), ['--x'], 'a bare WebGPU clear does not present on every Linux driver, so it is opt-in');
+  assert.deepEqual(chromiumArguments([], {platform: 'linux', env: {STYK_BROWSER_GPU: '1'}}), LINUX_WEBGPU_ARGS);
+  for (const platform of ['win32', 'darwin']) assert.deepEqual(chromiumArguments(['--x'], {platform, env: {STYK_BROWSER_GPU: '1'}}), ['--x']);
 });
 
 test('caller features are merged and caller switches are never duplicated', () => {
-  const merged = chromiumArguments(['--enable-features=PointerLockOptions', '--enable-unsafe-webgpu'], {platform: 'linux', env: {}});
+  const merged = chromiumArguments(['--enable-features=PointerLockOptions', '--enable-unsafe-webgpu'], {platform: 'linux', env: {STYK_BROWSER_GPU: '1'}});
   assert.equal(merged.filter(a => a.startsWith('--enable-features=')).length, 1);
   assert.ok(merged.includes('--enable-features=PointerLockOptions,Vulkan'));
   assert.equal(merged.filter(a => a === '--enable-unsafe-webgpu').length, 1);
@@ -29,10 +29,10 @@ test('installed Chrome is used unchanged', async () => {
 
 test('a missing Chrome falls back to the browser Playwright installs', async () => {
   const type = fakeType(options => { if (options.channel === 'chrome') throw missing('chrome'); return 'bundled'; });
-  assert.equal(await launchChromium({channel: 'chrome', headless: true}, {browserType: type, platform: 'linux', env: {}}), 'bundled');
+  assert.equal(await launchChromium({channel: 'chrome', headless: true}, {browserType: type, platform: 'linux', env: {STYK_BROWSER_GPU: '1'}}), 'bundled');
   assert.equal(type.calls.length, 2);
   assert.equal(type.calls[1].channel, 'chromium');
-  assert.ok(type.calls[1].args.includes('--enable-unsafe-webgpu'));
+  assert.ok(type.calls[1].args.includes('--enable-unsafe-webgpu'), 'the fallback browser keeps the requested GPU switches');
 });
 
 test('other launch failures are not masked by the fallback', async () => {

@@ -76,11 +76,19 @@ npm run test:web                                   # the web build, end to end
 
 Browser and Electron tests import `chromium` and `_electron` from
 `tests/support/playwright.mjs`, which is where launch policy lives: installed
-Chrome is used when present and Playwright's Chromium otherwise, Linux gets the
-Vulkan/WebGPU switches, and Electron launches drop `ELECTRON_RUN_AS_NODE`
+Chrome is used when present and Playwright's Chromium otherwise, and Electron
+launches drop `ELECTRON_RUN_AS_NODE`
 (terminals started by another Electron app, such as VS Code, export it, and
 Electron then runs the app as plain Node where `app` is undefined). Overrides:
-`STYK_BROWSER_PATH`, `STYK_BROWSER_CHANNEL`, `STYK_BROWSER_GPU=0`.
+`STYK_BROWSER_PATH`, `STYK_BROWSER_CHANNEL`, `STYK_BROWSER_GPU=1`.
+
+Browsers Playwright launches run the editor's Canvas 2D renderer on Linux by default
+(their output can be read back reliably). `STYK_BROWSER_GPU=1` adds the Vulkan/WebGPU
+switches, but whether the canvas then paints depends on the browser build and
+driver: on NVIDIA with Chromium 153 even a bare WebGPU clear presents nothing (a
+five-line page shows it), while Electron 39's Chromium 142 paints correctly. The
+desktop app is unaffected: `desktop/gpu-switches.cjs` runs in Electron. Tests that
+require WebGPU need a machine whose browser presents it.
 
 Many profiling scripts need private sample projects. `corpusPath()` finds them under
 your home directory (`Downloads/…`) or in the folder `STYK_CORPUS_DIR` names, and a

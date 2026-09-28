@@ -8,14 +8,18 @@
 //  - Google Chrome is used when it is installed (the Windows developer and CI
 //    setup, unchanged). When it is not (a typical Linux machine, a clean CI
 //    image) the browser Playwright downloads is used instead.
-//  - On Linux, headless Chromium needs Vulkan and the WebGPU opt-in to reach a
-//    GPU; the same switches the desktop app applies (desktop/gpu-switches.cjs).
+//  - On Linux, Chromium has no hardware WebGPU by default, so the editor uses its
+//    Canvas 2D renderer, whose output tests can read back reliably. Set
+//    STYK_BROWSER_GPU=1 to add Vulkan and the WebGPU opt-in (the switches the
+//    desktop app applies, desktop/gpu-switches.cjs). Whether that paints depends
+//    on the browser build and driver: on NVIDIA with Chromium 153 a bare WebGPU
+//    clear presents nothing, so it is opt-in, never the default.
 //  - Electron launches never inherit ELECTRON_RUN_AS_NODE. Terminals started by
 //    another Electron app (VS Code, several agent hosts) export it, and Electron
 //    then runs main.cjs as plain Node where `app` is undefined.
 //
 // Overrides: STYK_BROWSER_PATH (executable), STYK_BROWSER_CHANNEL (for example
-// "chromium" or "chrome-beta"), STYK_BROWSER_GPU=0 (add no GPU switches).
+// "chromium" or "chrome-beta"), STYK_BROWSER_GPU=1 (add the Linux GPU switches).
 import { existsSync } from 'node:fs';
 import * as playwright from 'playwright';
 
@@ -25,7 +29,7 @@ export const LINUX_WEBGPU_ARGS = ['--enable-unsafe-webgpu', '--enable-features=V
 
 /** Adds the Linux GPU switches, merging any --enable-features the caller passed. */
 export function chromiumArguments(args = [], { platform = process.platform, env = process.env } = {}) {
-  if (platform !== 'linux' || env.STYK_BROWSER_GPU === '0') return [...args];
+  if (platform !== 'linux' || env.STYK_BROWSER_GPU !== '1') return [...args];
   const merged = [...args];
   for (const arg of LINUX_WEBGPU_ARGS) {
     const [name, value] = arg.split('=');
