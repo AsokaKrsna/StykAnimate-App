@@ -57,6 +57,7 @@ What's new in each version of StykAnimate.
 - Fixed typing in a menu switching tools, and the Properties ⋯ menu not opening.
 - Fixed What's new and the privacy prompt appearing on top of each other at startup.
 - Fixed Enter not confirming a new project name.
+- Fixed a helper process staying open in the background after StykAnimate closed unexpectedly.
 
 ### Performance
 
