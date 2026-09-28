@@ -9,9 +9,9 @@ page.on('pageerror',e=>errors.push(e.message));
 try {
   await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');
   await page.waitForFunction(()=>window.styk?.ready);
-  const snapshot=()=>page.evaluate(()=>({name:styk.editor.figure.name,frames:styk.editor.report.keyframes.length,objects:styk.editor.frame.objects.length,ticks:styk.editor.totalTicks,dirty:styk.editor.dirty,
+  const snapshot=()=>page.evaluate(()=>({name:styk.editor.figure.name,spatial:Boolean(styk.editor.figure._styk?.spatialMesh||styk.editor.figure.segments.some(s=>s._stykRig?.spatial)),frames:styk.editor.report.keyframes.length,objects:styk.editor.frame.objects.length,ticks:styk.editor.totalTicks,dirty:styk.editor.dirty,
     tracks:Object.fromEntries(Object.entries(styk.editor.report._styk.layerSheet.tracks).map(([id,t])=>[id,{end:t.end,keys:t.keys.map(k=>k.tick)}]))}));
-  const expected={name:'Blue',frames:1,objects:1,ticks:10,dirty:false,tracks:{scene:{end:10,keys:[0]},camera:{end:10,keys:[0]},'layer-1':{end:10,keys:[0]}}};
+  const expected={name:'Blue',spatial:false,frames:1,objects:1,ticks:10,dirty:false,tracks:{scene:{end:10,keys:[0]},camera:{end:10,keys:[0]},'layer-1':{end:10,keys:[0]}}};
   assert.deepEqual(await snapshot(),expected);
   const render=async name=>{
     const png=await page.evaluate(async()=>{

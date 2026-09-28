@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
 import {Editor} from '../src/editor.mjs';
 import {createStartupDocument} from '../src/startup-document.mjs';
 import {buildContainerV2,decodeDocument} from '../src/native-container.mjs';
+import {ikChain} from '../src/ik.mjs';
+import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-3,`${a} != ${b}`);
 const named=(editor,name)=>editor.figure.segments.find(s=>s.name===name);
@@ -27,51 +28,76 @@ test('New creates a clean Blue scene with one ten-frame key on every layer',()=>
     assert.equal(e.figure.name,'Blue');assert.equal(e.dirty,false);assert.equal(e.canUndo,false);
     assert.equal(Object.keys(e.object._stykIK).length,4);
     assert.ok(Object.values(e.object._stykIK).every(c=>c.enabled&&!c.pinned));
-    const baseline=Array.from(e.geometry.objects.get(0).spatialMesh.positions);
+    assert.ok(!e.figure._styk?.spatialMesh,'startup uses ordinary 2D artwork');
+    assert.ok(e.figure.segments.every(s=>!s._stykRig?.spatial));
+    const baseline=e.geometry.objects.get(0).joints;
     for(let tick=0;tick<10;tick++){
       e.seek(tick);assert.equal(e.evaluatedFrame.objects.length,1);
-      assert.deepEqual(Array.from(e.geometry.objects.get(0).spatialMesh.positions),baseline);
+      assert.deepEqual(e.geometry.objects.get(0).joints,baseline);
     }
     assertHold(e);assert.equal(e.dirty,false);
   }
 });
 
-test('The default preserves the approved Blue geometry and owns independent data',async()=>{
-  const bytes=new Uint8Array(await readFile(new URL('../design/mascot/pivot-style-2026-09-28/figures/02-blue.stkz',import.meta.url)));
-  const approved=(await decodeDocument(bytes,'stkz')).document.figure_types[0];
+test('The default is an ordinary editable stick figure and owns independent data',()=>{
   const a=createStartupDocument(),b=createStartupDocument();
-  assert.deepEqual(a.figure_types[0]._styk.spatialMesh,approved._styk.spatialMesh);
-  assert.deepEqual(a.figure_types[0].segments,approved.segments);
+  const figure=a.figure_types[0],original=structuredClone(b);
+  assert.equal(figure.segments.length,10);
+  assert.ok(figure.segments.every(s=>s.visible&&!s.is_static&&s.length>0));
+  assert.equal(figure.segments.filter(s=>s.segment_type==='line').length,9);
+  assert.equal(figure.segments.filter(s=>s.segment_kind==='circleFill').length,1);
+  assert.equal(figure.polyfills.length,0);assert.equal(figure.image_assets.length,0);
+  const chains=Object.keys(a.keyframes[0].objects[0]._stykIK).map(id=>ikChain(figure,id,2));
+  assert.ok(chains.every(chain=>chain.length===2));
+  assert.equal(new Set(chains.flat()).size,8,'limbs have independent two-bone IK chains');
   assert.equal(a.keyframes[0].objects[0].root_x,480);assert.equal(a.keyframes[0].objects[0].root_y,280);
   a.figure_types[0].segments[0].name='Changed';
-  a.figure_types[0]._styk.spatialMesh.positions[0]+=100;
-  a.keyframes[0].objects[0]._stykIK[516].pinned=true;
+  a.figure_types[0].segments[0].color_rgb[0]=255;
+  a.keyframes[0].objects[0]._stykIK[4].pinned=true;
+  a.keyframes[0].objects[0]._stykIK[4].target.x+=100;
   a._styk.layerSheet.tracks.scene.end=2;
-  assert.equal(b.figure_types[0].segments[0].name,approved.segments[0].name);
-  assert.deepEqual(b.figure_types[0]._styk.spatialMesh,approved._styk.spatialMesh);
-  assert.equal(b.keyframes[0].objects[0]._stykIK[516].pinned,false);
-  assert.equal(b._styk.layerSheet.tracks.scene.end,10);
+  assert.deepEqual(b,original);
 });
 
-test('Blue poses in depth, undoes head turns, and keeps feet planted during pelvis turns',()=>{
+test('Blue has balanced limbs and a slightly bent, accessible resting pose',()=>{
   const e=new Editor({demo:false,layerTimeline:true}).newDocument();
   for(const part of ['upper arm','forearm','thigh','lower leg']){
     const a=e.geometry.objects.get(0).joints.get(named(e,'Left '+part).segment_id);
     const b=e.geometry.objects.get(0).joints.get(named(e,'Right '+part).segment_id);
     near(a.y,b.y);near(a.x+b.x,960);
   }
-  const before=Array.from(e.geometry.objects.get(0).spatialMesh.positions);
-  select(e,'Head');assert.equal(e.setSpatialPose({turn:.4,pitch:.3}),true);
-  assert.notDeepEqual(Array.from(e.geometry.objects.get(0).spatialMesh.positions),before);
-  assert.equal(e.undo(),true);assert.deepEqual(Array.from(e.geometry.objects.get(0).spatialMesh.positions),before);
-  e.select(1);assert.equal(e.setSpatialFeetPinned(true),true);
-  const feet=['Left lower leg','Right lower leg'].map(name=>named(e,name).segment_id);
-  const positions=feet.map(id=>({...e.geometry.objects.get(0).joints.get(id)}));
-  select(e,'Pelvis');assert.equal(e.setSpatialPose({turn:.3,bend:.12}),true);
-  for(const [i,id]of feet.entries()){
-    const p=e.geometry.objects.get(0).joints.get(id);near(p.x,positions[i].x);near(p.y,positions[i].y);
-    assert.equal(e.object._stykIK[id].pinned,true);
+  const joints=[...e.geometry.objects.get(0).joints.values()];
+  for(let i=0;i<joints.length;i++)for(let j=i+1;j<joints.length;j++)
+    assert.ok(Math.hypot(joints[i].x-joints[j].x,joints[i].y-joints[j].y)>20,'handles stay separated');
+  for(const chain of Object.keys(e.object._stykIK).map(id=>ikChain(e.figure,id,2))){
+    const [a,b]=chain.map(i=>e.object.angles[i]);
+    assert.ok(Math.abs(a-b)>.1&&Math.abs(a-b)<.6,'a slight bend establishes the elbow/knee direction');
   }
+});
+
+test('All four 2D limbs pose without stretching or disturbing other branches, with undo and redo',()=>{
+  for(const layerTimeline of [false,true])for(const name of ['Left forearm','Right forearm','Left lower leg','Right lower leg']){
+    const e=new Editor({demo:false,layerTimeline}).newDocument();select(e,name);
+    const id=named(e,name).segment_id,chain=ikChain(e.figure,id,2),before=e.serialize();
+    const initial=e.geometry.objects.get(0),target={x:initial.joints.get(id).x,y:initial.joints.get(id).y-25};
+    e.beginDrag();e.poseJoint(target.x,target.y);e.commitDrag();
+    const posed=e.geometry.objects.get(0),after=e.serialize();
+    near(posed.joints.get(id).x,target.x);near(posed.joints.get(id).y,target.y);
+    for(const [i,s]of posed.segments.entries()){
+      near(s.length,initial.segments[i].length);
+      if(!chain.includes(i))assert.deepEqual(posed.joints.get(s.seg.segment_id),initial.joints.get(s.seg.segment_id));
+    }
+    assert.notDeepEqual(after,before);assert.equal(e.undo(),true);assert.deepEqual(e.serialize(),before);
+    assert.equal(e.redo(),true);assert.deepEqual(e.serialize(),after);
+  }
+});
+
+test('Pinned 2D feet stay planted when the body moves',()=>{
+  const e=new Editor({demo:false,layerTimeline:true}).newDocument();
+  for(const name of ['Left lower leg','Right lower leg']){select(e,name);e.setNodeIK({pinned:true});}
+  const positions=['Left lower leg','Right lower leg'].map(name=>[named(e,name).segment_id,e.geometry.objects.get(0).joints.get(named(e,name).segment_id)]);
+  e.select(1);e.moveSelection(0,15);
+  for(const [id,p]of positions){near(e.geometry.objects.get(0).joints.get(id).x,p.x);near(e.geometry.objects.get(0).joints.get(id).y,p.y);}
 });
 
 test('Native saving and reopening preserve Blue and all three ten-frame holds',async()=>{
@@ -81,8 +107,21 @@ test('Native saving and reopening preserve Blue and all three ten-frame holds',a
   const reopened=new Editor({demo:false,layerTimeline:true});reopened.load(saved);
   assertHold(reopened);assert.equal(reopened.figure.name,'Blue');
   assert.deepEqual(reopened.object._stykIK,e.object._stykIK);
-  assert.deepEqual(reopened.figure._styk.spatialMesh,e.figure._styk.spatialMesh);
+  // Decode fills derived flag aliases; authored topology, style and pose stay intact.
+  assert.partialDeepStrictEqual(reopened.figure.segments,e.figure.segments);
+  assert.deepEqual(reopened.geometry.objects.get(0).joints,e.geometry.objects.get(0).joints);
+  assert.equal(reopened.figure._styk?.spatialMesh,undefined);
   assert.equal(reopened.canUndo,false);assert.equal(reopened.dirty,false);
+});
+
+test('Pivot export keeps the 2D startup artwork and ten-frame timing',()=>{
+  const e=new Editor({demo:false,layerTimeline:true}).newDocument();
+  select(e,'Left forearm');e.poseJoint(515,265);
+  const before=e.serialize(),joints=e.geometry.objects.get(0).joints;
+  const reopened=new Editor({demo:false}).load(materializePivotDocument(e.report));
+  assert.equal(reopened.totalTicks,10);assert.equal(reopened.figure.segments.length,10);
+  for(const [id,p]of joints){near(reopened.geometry.objects.get(0).joints.get(id).x,p.x);near(reopened.geometry.objects.get(0).joints.get(id).y,p.y);}
+  assert.deepEqual(e.serialize(),before);
 });
 
 test('New preserves camera and layer clipboards and pastes into the ten-frame scene with undo',()=>{
