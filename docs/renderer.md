@@ -1,5 +1,19 @@
 # Rendering architecture
 
+Onion opacity applies once to each completed ghost frame, after its figures have
+composited at their own intrinsic opacity. Each frame remains separate; tint,
+before/after ordering, hidden figures, parallax and Show on top still apply.
+WebGPU uses retained vector/texture batches and one reusable viewport texture with
+an MSAA surface. The main pass retains its samples across composites; GPU timing
+spans the first and last pass. No pixels are read back. Disabling onions releases
+these targets, resizing replaces them, and changes to MSAA rebuild their pipeline.
+Canvas stores completed viewport ghosts in its existing 64 MiB onion raster LRU,
+alongside object rasters. View transforms, visibility, parallax, geometry identity
+and drawing resource stamps invalidate them. No separate unbounded frame cache is
+introduced. The pixel regression is `tests/onion-scene-opacity.browser.mjs`;
+`scripts/benchmark-onion-composite.mjs` measures repeated 400-figure edits with
+three ghosts and optionally compares `STYK_ONION_BASELINE` on the same workload.
+
 Live spatial poses merge unchanged primitives in their retained painter order with newly sorted changed primitives. Equal-depth ties use native polygon/segment insertion order, so turning back through a tie does not inherit the previous pose's ordering. Imported compound shapes and non-finite orders use the general builder. This derived order belongs to the new geometry and retains no previous scene. Geometry, cancellation and collection tests compare the incremental result with full evaluation.
 
 The shared depth compositor packs triangle fans into a reusable upload buffer. CPU scratch is capped at 8 MiB per live Canvas context; larger batches use temporary storage, and smaller batches shrink oversized CPU/GPU capacity. GPU storage is reused between uploads, deleted on disposal, and replaced with software painting after context loss. No per-face pose cache is introduced. The same compositor serves editing, worker playback preparation and export; pixel tests cover depth intersections, clipped quads, tile boundaries, buffer growth/shrink, disposal and context loss.

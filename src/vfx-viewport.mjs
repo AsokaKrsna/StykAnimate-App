@@ -36,13 +36,18 @@ export class ViewportVfx{
   // Snapshot the rendered frame so the composite can keep the workspace around
   // the artboard, then rebuild the canvas from the two textures.
   encoder.copyTextureToTexture({texture:r.context.getCurrentTexture()},{texture:this.texture},[w,h]);
-  const pass=encoder.beginRenderPass({colorAttachments:[r.colorAttachment(r.context.getCurrentTexture().createView())]});
+  const destination=r.context.getCurrentTexture().createView();
+  let pass=encoder.beginRenderPass({colorAttachments:[{...r.colorAttachment(destination),storeOp:'store'}]});
   pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.bindGroup);pass.draw(3);
   if(camera){const cw=camera.report.canvas_width,ch=camera.report.canvas_height,[a,b,c,d2,e,f]=camera.affine,tw=camera.texture.width??camera.surface.width,th=camera.texture.height??camera.surface.height;
    this.quadFloats.set([a*cw,b*cw,c*ch,d2*ch,e,f,w,h,camera.pad/tw,camera.pad/th,camera.surface.width/tw,camera.surface.height/th]);
    d.queue.writeBuffer(this.quadUniform,0,this.quadFloats);
    pass.setPipeline(this.quadPipeline);pass.setBindGroup(0,d.createBindGroup({layout:this.quadPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.quadUniform}},{binding:1,resource:camera.texture.createView()},{binding:2,resource:r.sampler}]}));pass.draw(6);}
-  if(!options.preparedFrame){pass.setPipeline(r.pipeline);pass.setBindGroup(0,r.globalBindGroup);for(const entry of r.layout){if(!entry.isOnion)continue;pass.setBindGroup(1,entry.texture?.bindGroup||r.blankBindGroup);pass.draw(6,entry.count,0,entry.offset);}}
+  if(!options.preparedFrame)for(let i=0;i<r.layout.length;i++){
+   const entry=r.layout[i];if(!entry.isOnion)continue;
+   let end=i+1;while(end<r.layout.length&&r.layout[end].isOnion&&r.layout[end].onionIndex===entry.onionIndex)end++;
+   pass=r.onionComposite.draw(encoder,destination,pass,r.layout,i,end).pass;i=end-1;
+  }
   if(options.canvasHandles)r.handleRenderer.draw(pass);pass.end();d.queue.submit([encoder.finish()]);
   r.stats.vfx={...vfxGPUStats(),viewportBytes:w*h*8,cameraBytes:this.camera?this.camera.canvas.width*this.camera.canvas.height*24:0};
  }

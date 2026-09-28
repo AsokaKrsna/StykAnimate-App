@@ -23,7 +23,7 @@ try {
       styk.settingsUI.commit({timelineMode: 'advanced', onionMode, onionBefore: 2, onionAfter: 1});
       styk.state.onion = true; styk.fit();
     }, onionMode);
-    await page.locator('.tool-dock [data-tool="pose"]').click();
+    await page.locator('.tool-dock [data-tool="select"]').click();
     const target = await page.evaluate(async () => {
       const {getPivotHandles, pickCanvasHandle} = await import('/src/canvas-interactions.mjs');
       const {worldToScreen} = await import('/src/renderer-geometry.mjs');

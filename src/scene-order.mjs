@@ -17,6 +17,7 @@ export function composeSceneGroups(geometry, onions = [], frame) {
   const groups = [], anchored = new Map(), onTop = [];
   for (const [index, onion] of onions.entries()) {
     const skin = objectGroups(onion.geometry, onion.opacity ?? .14, `onion-${index}`, true);
+    for (const group of skin) group.onionIndex = index;
     if (onion.showOnTop) { for (const group of skin) onTop.push(group); }
     else if (onion.beforeUid === undefined || onion.beforeUid === null) { for (const group of skin) groups.push(group); }
     else {

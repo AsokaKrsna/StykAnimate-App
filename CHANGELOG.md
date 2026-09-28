@@ -43,6 +43,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Fixed
 
+- Fade onion skins as complete frames, so overlapping parts of a figure keep their solid appearance.
 - Switch from Draw to Build reliably: Build selects an editable figure layer, lets you add and extend segments, and waits for pending drawing edits before changing tools.
 - Show error messages above open dialogs instead of behind them, where you can close them, and keep them clear of the canvas's view buttons. A failed save, export or import stays until you close it; other messages go on their own. Pressing Escape or closing the export dialog while an export runs now asks before stopping it.
 - Stop menus from switching tools while you type in them: letters now jump to the matching command. The Properties ⋯ menu opens again.
