@@ -90,6 +90,24 @@ the Windows gesture itself needs a physical tablet to verify.
 
 ## Figure selection and frame corrections
 
+Hold **Alt** and drag a figure's root handle in Animate to duplicate and move
+it. Settings → Canvas → **Alt-drag a figure root** chooses **Linked instance**
+(the default, sharing figure edits made in Build) or **Independent copy**
+(a separate figure definition). Both copies have their own pose and position.
+The gesture duplicates the selected figures and their connected attachments,
+preserving joins within the copies and leaving the originals in place. It edits
+the current pose only, even with Edit selected frames enabled. Alt-dragging a
+non-root joint retains the existing figure rotation/scale gesture; Build keeps
+its existing handle editing behavior.
+
+An Alt-click only selects; duplication starts after 3 px of mouse movement or
+the existing pen/touch slop. Releasing Alt during the drag keeps the same copy.
+Insertion and movement share one undo step. Escape, pointer cancellation, lost
+capture and window blur remove unfinished copies without clearing redo. The
+editor reuses sparse paste commands and translation previews; no document-wide
+gesture snapshot is added. Coverage: `tests/editor-duplicate-drag.test.mjs` and
+`tests/alt-drag-duplicate.browser.mjs`.
+
 Settings → Canvas → **Rectangle selects** switches between **Origins** (the
 default) and **Bounds** (overlapping artwork). Origins tests each figure’s
 evaluated root, including attachments, in the displayed canvas projection.

@@ -238,9 +238,9 @@ export const editorMovieclipMethods={
     this._record({kind:'movieclip-poses',label,before,after,beforeSelection:selection,afterSelection:selection,structural:true,timing:true});
     this._invalidate({timing:true});this._emit('edit',{structural:true,timing:true,label});
   },
-  movieclipBatch(label,operation){
+  movieclipBatch(label,operation,{beforeSelection=this._selectionState()}={}){
     if(this._movieclipBatch)return operation();
-    const commands=[],revision=this.revision,beforeSelection=this._selectionState();this._movieclipBatch=commands;
+    const commands=[],revision=this.revision;this._movieclipBatch=commands;
     try{
       const result=operation();this._movieclipBatch=null;
       if(commands.length){

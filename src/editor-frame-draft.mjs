@@ -337,6 +337,9 @@ export const editorFrameDraftMethods = {
     return this.beginFrameDraft({mode: 'add', index: this.report.keyframes.length - 1});
   },
   _recordFrameDraft(command) {
+    // Children already carry their draft journals. Recording the wrapper's
+    // current state would overwrite the first child's clean baseline on undo.
+    if (command.kind === 'movieclip-batch') return;
     if (this._frameDraftStoredEdit) {
       const pending = this._frameDraftStoredEdit;
       if (pending.recorded) throw new Error('A stored-frame operation must create one history command.');

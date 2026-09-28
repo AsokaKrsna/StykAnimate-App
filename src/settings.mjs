@@ -25,6 +25,7 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   canvasGrid: false,
   canvasZoomGesture: "ctrl-scroll",
   marqueeSelection: "origins",
+  altDragDuplicate: "instance",
   canvasGuideVertical: false,
   canvasGuideHorizontal: false,
   canvasGuidesLocked: false,
@@ -85,6 +86,8 @@ export function normalizeEditorSettings(value = {}) {
     result.canvasZoomGesture = value.canvasZoomGesture;
   if (['bounds', 'origins'].includes(value?.marqueeSelection))
     result.marqueeSelection = value.marqueeSelection;
+  if (['instance', 'unique'].includes(value?.altDragDuplicate))
+    result.altDragDuplicate = value.altDragDuplicate;
   if (value?.timelineMode === "simple" || value?.timelineMode === "advanced")
     result.timelineMode = value.timelineMode;
   for (const key of [
@@ -440,6 +443,7 @@ export class EditorSettings {
     if (tab === "canvas")
       html = `<div class="settings-canvas">
         <section class="settings-card"><h3>${icon('hand')}Navigation</h3><label class="styk-settings-row"><span>Zoom gesture</span><select data-setting="canvasZoomGesture" aria-label="Zoom gesture"><option value="ctrl-scroll" ${value.canvasZoomGesture === 'ctrl-scroll' ? 'selected' : ''}>Ctrl + scroll to zoom</option><option value="scroll" ${value.canvasZoomGesture === 'scroll' ? 'selected' : ''}>Scroll to zoom</option></select></label><label class="styk-settings-row"><span>Rectangle selects</span><select data-setting="marqueeSelection" aria-label="Rectangle selects"><option value="bounds" ${value.marqueeSelection === 'bounds' ? 'selected' : ''}>Figure bounds</option><option value="origins" ${value.marqueeSelection === 'origins' ? 'selected' : ''}>Figure origins</option></select></label></section>
+        <section class="settings-card"><h3>${icon('duplicate')}Duplication</h3><label class="styk-settings-row"><span>Alt-drag a figure root</span><select data-setting="altDragDuplicate" aria-label="Alt-drag a figure root" aria-describedby="alt-drag-duplicate-help"><option value="instance" ${value.altDragDuplicate === 'instance' ? 'selected' : ''}>Linked instance</option><option value="unique" ${value.altDragDuplicate === 'unique' ? 'selected' : ''}>Independent copy</option></select></label><p id="alt-drag-duplicate-help">Linked instances share figure edits made in Build. Independent copies have their own figure. Both can be posed and moved separately.</p></section>
         <section class="settings-card"><h3>${icon('nodes')}Joint handles</h3><div class="settings-control-grid">${this.checkbox('Show handles','showHandles')}${this.checkbox('Show unselected figures','showUnselectedHandles')}${this.checkbox('Automatic size','autoSizeHandles')}${this.checkbox('Outline handles','outlineHandles')}</div>
         <div class="settings-handle-size"><label class="styk-settings-row"><span>Handle radius</span><span class="styk-settings-number"><input type="range" data-setting="handleSize" min="3" max="10" step="1" value="${value.handleSize}" aria-label="Handle radius"><small data-handle-value>${value.handleSize}px</small></span></label><div class="styk-settings-preview" aria-label="Joint handle preview" style="--size:${value.handleSize};--node-outline:${value.outlineHandles ? '1px solid #000' : '0px solid transparent'}">${['segment','origin','unselected','joined','static'].map(kind => `<span class="styk-settings-node" title="${{segment:'Selected joint',origin:'Figure origin',unselected:'Unselected joint',joined:'Joined joint',static:'Static joint'}[kind]}" style="--node-color:${PIVOT_HANDLE_COLORS[kind]}"></span>`).join('')}</div></div></section>
         <section class="settings-card"><h3>${icon('eye')}Canvas overlays</h3><div class="settings-control-grid">${this.checkbox('Virtual camera','showCamera')}${this.checkbox('Motion paths','motionPaths')}</div></section>
