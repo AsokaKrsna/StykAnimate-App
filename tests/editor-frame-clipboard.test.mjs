@@ -94,7 +94,8 @@ test('copy snapshots stay immutable after source edits and paste merges identica
 test('cut, undo, document replacement and append keep the clipboard independent from history', () => {
   const editor = editorFor(sourceDocument()); assert.equal(editor.cutFrames([0, 2]), 2); assert.equal(editor._undo.length, 1);
   assert.equal(editor.report.keyframes.length, 1); editor.undo(); assert.equal(editor.report.keyframes.length, 3);
-  assert.equal(editor.clipboardFrameCount, 2); editor.newDocument(); assert.equal(editor.clipboardFrameCount, 2);
+  // Keep this native-frame append test independent of the layer-sheet startup scene.
+  assert.equal(editor.clipboardFrameCount, 2); editor.load(destinationDocument()); assert.equal(editor.clipboardFrameCount, 2);
   const before = editor.report.keyframes.length; editor.appendClipboardFrames(); assert.equal(editor.report.keyframes.length, before + 2); validate(editor);
 });
 

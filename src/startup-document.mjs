@@ -1,7 +1,9 @@
-import {emptyDocument, createFrame, createObject} from './demo.mjs';
+import {emptyDocument, createFrame} from './demo.mjs';
+import {createBlueStartupPose} from './startup-blue-data.mjs';
+import {ensureLayerState} from './layers.mjs';
+import {initializeLayerSheet} from './editor-layer-sheet.mjs';
 
-/** Native articulated rig. Static decorations follow their owning joint without
- * adding distracting posing handles in Animate mode. */
+/** Legacy Bubble fixture retained for existing tutorial/capture authoring. */
 export function bubbleFigure(figure_type_id = 1) {
   const blue=[13,153,255], segments=[];
   const add=(parent,length,angle,thickness,extra={})=>{
@@ -36,8 +38,14 @@ export function bubbleFigure(figure_type_id = 1) {
 
 /** Shared by application startup and File → New; demo fixtures stay independent. */
 export function createStartupDocument() {
-  const report=emptyDocument(),figure=bubbleFigure();
+  const report=emptyDocument(),{figure,object}=createBlueStartupPose();
   report.figure_types=[figure];
-  report.keyframes=[{...createFrame([createObject(figure,1,480,280)],1),_styk:report.keyframes[0]._styk}];
+  report.keyframes=[{...createFrame([object],10),_styk:{easing:{interpolation:'constant'}}}];
+  ensureLayerState(report);
+  initializeLayerSheet(report);
+  // Native Pivot timing clamps the final key to one tick. The shared sheet
+  // owns the ten-frame hold for Camera, Scene and the figure's layer.
+  report._styk.layerSheet.duration=10;
+  for(const track of Object.values(report._styk.layerSheet.tracks))track.end=10;
   return report;
 }

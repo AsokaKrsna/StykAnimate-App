@@ -29,8 +29,9 @@ test('new documents hold; inserted and blank layer keys inherit the previous cur
 
 test('property key insertion inherits the earlier key rather than the later key', () => {
   const e = new Editor({demo: false});
-  e.newDocument();
-  const target = {kind:'figure', uid:1};
+  // Exercise legacy property channels without the new document's layer sheet.
+  e.addFigure();
+  const target = {kind:'figure', uid:e.selectedUid};
   e.addAnimationKey(target, 'x', 0, 10);
   let channel = e.animationChannels.find(channel => channel.property === 'x');
   assert.equal(easingMode(channel.keys[0]), 'constant');

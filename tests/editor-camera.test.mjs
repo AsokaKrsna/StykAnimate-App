@@ -8,6 +8,7 @@ import {cameraValues} from '../src/editor-camera.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {cameraMatrix} from '../src/renderer-geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
+import {emptyDocument} from '../src/demo.mjs';
 
 const clone = value => structuredClone(value);
 const near = (a, b, epsilon = 0.001) => assert.ok(Math.abs(a - b) <= epsilon, `${a} != ${b}`);
@@ -53,7 +54,8 @@ test('relative camera range motion preserves differences and multiplies scale', 
 
 test('camera clipboard crosses documents, paste/reset ranges retain figure identity', () => {
   const {editor} = fixture(), copied = editor.copyCamera(); copied.x = 999;
-  editor.newDocument(); const uid = editor.selectedUid; editor.duplicateFrame();
+  // Native-frame commands use a native fixture; File > New now owns a layer sheet.
+  editor.load(emptyDocument()); editor.addFigure(); const uid = editor.selectedUid; editor.duplicateFrame();
   assert.equal(editor.pasteCamera([0, 1]), 2);
   for (const frame of editor.report.keyframes) { assert.equal(frame.camera.x, 40); assert.equal(frame.objects[0].unique_id, uid); }
   editor.resetCamera([0, 1]); assert.ok(editor.report.keyframes.every(frame => frame.camera.is_default));

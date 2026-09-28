@@ -6,6 +6,10 @@ in [timeline-verification.json](../artifacts/timeline-verification.json).
 
 ## Layer exposure grid
 
+New projects start with Blue and one constant key at frame 1 on Camera, Scene
+and Layer 1. Each key holds through frame 10, in both Simple and Advanced mode.
+These are explicit layer exposures, not ten duplicated poses.
+
 The [pose Tweener](TWEENER.md) authors selected figures at the exact playhead,
 using each layer's neighboring keys, with live preview and one undo step.
 

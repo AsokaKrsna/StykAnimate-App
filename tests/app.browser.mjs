@@ -15,7 +15,7 @@ const wait=()=>page.waitForTimeout(100);
 try {
  await page.goto(url);await page.waitForFunction(()=>window.styk?.ready);
  check('WebGPU initialized',await value(()=>window.styk.state.renderer.stats.backend==='WebGPU'));
- check('One-frame Bubble startup loaded',await value(()=>window.styk.editor.figure.name==='Bubble'&&window.styk.editor.frame.objects.length===1&&window.styk.editor.totalTicks===1));
+ check('Ten-frame Blue startup loaded',await value(()=>window.styk.editor.figure.name==='Blue'&&window.styk.editor.frame.objects.length===1&&window.styk.editor.totalTicks===10));
  await page.screenshot({path:path.join(out,'editor-default.png')});
  await value(async()=>{const {createDemo}=await import('/src/demo.mjs');styk.editor.load(createDemo());});
  const origin=await value(()=>{const {editor,state}=window.styk,r=document.getElementById('viewport').getBoundingClientRect();return {x:r.x+state.view.x+editor.object.root_x*state.view.scale,y:r.y+state.view.y+editor.object.root_y*state.view.scale,rootX:editor.object.root_x,rootY:editor.object.root_y,scale:state.view.scale};});

@@ -4,7 +4,7 @@ StykAnimate separates the editable Pivot document, background work, and presenta
 
 ## Document and commands
 
-`startup-document.mjs` supplies the one-frame Bubble project used by application startup and File → New. Its native rig has a hip root, symmetric limbs, a poseable head, and static attached facial and extremity details. `demo.mjs` retains the separate legacy animation fixture.
+`startup-document.mjs` supplies Blue for application startup and File → New. Camera, Scene and Layer 1 each contain one constant key at frame 1, held through frame 10. The approved stick figure has a native 3D mesh, symmetric limbs and four enabled, unpinned hand/foot IK controllers. `scripts/build-startup-blue.mjs` generates its synchronous data factory from the approved native study; every new document owns independent editable data without building the mesh at startup. Save Blue in STYK/STKZ to retain its mesh and controls; Pivot STK/PIV cannot represent this 3D geometry. The Bubble helper and `demo.mjs` remain separate legacy tutorial/test fixtures.
 
 `editor.mjs` and its builder/range extensions operate on native figure IDs, object UIDs, segment record order, joins, media tables, and keyframes. History records affected state. Selection, editor visibility/locks, viewport transforms, and renderer caches are distinct from animation data. Shared definition edits propagate through instances and remain undoable. Rig topology traversals avoid recursive stack growth and repeated full-tree scans.
 
