@@ -60,3 +60,43 @@ Passing a document path on the command line opens it.
 
 Automatic updates stay disabled on Linux until Linux builds are published with
 their update metadata (see `desktop/updates.cjs`).
+
+## Testing on Linux
+
+```bash
+npm run check && npm test                          # unit tests (also on Windows in CI)
+python3 -m unittest discover -s backend -p "test_*.py"
+npx playwright install chromium                    # once, for the browser tests
+npm run serve &                                    # the codec and dev host on :47831
+STYK_URL=http://127.0.0.1:47831 node tests/timeline.browser.mjs
+xvfb-run -a npm run test:boot                      # boots the app from source
+xvfb-run -a npm run test:boot:packaged             # boots release/linux-unpacked
+npm run test:web                                   # the web build, end to end
+```
+
+Browser and Electron tests import `chromium` and `_electron` from
+`tests/support/playwright.mjs`, which is where launch policy lives: installed
+Chrome is used when present and Playwright's Chromium otherwise, Linux gets the
+Vulkan/WebGPU switches, and Electron launches drop `ELECTRON_RUN_AS_NODE`
+(terminals started by another Electron app, such as VS Code, export it, and
+Electron then runs the app as plain Node where `app` is undefined). Overrides:
+`STYK_BROWSER_PATH`, `STYK_BROWSER_CHANNEL`, `STYK_BROWSER_GPU=0`.
+
+Many profiling scripts need private sample projects. `corpusPath()` finds them under
+your home directory (`Downloads/…`) or in the folder `STYK_CORPUS_DIR` names, and a
+missing file fails at once with that instruction. Tests that need the Pivot sample
+corpus beside the repository skip with the reason unless it is there or
+`STYK_REQUIRE_FIXTURES=1`.
+
+Known gaps on Linux, all outside the shipping editor's runtime: the experimental
+autopose lab has one scenario that stalls only here
+([details](AUTOPOSE-LAB.md#known-limitation-restore-phase-can-stall)), and a share of
+the `tests/*.browser.mjs` scripts are not run by CI and no longer match the current
+interface on any platform.
+
+## Shutdown and processes
+
+The desktop app keeps a pipe on the codec's stdin and the codec exits at EOF
+(`--exit-on-stdin-close`), so a crash, `kill -9` or out-of-memory kill of the
+editor never leaves the codec running with its caches. Normal quit and SIGTERM
+stop it through Electron's quit handlers as before.

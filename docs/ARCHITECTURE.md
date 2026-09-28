@@ -135,9 +135,10 @@ active/queued requests; health and cancellation bypass that queue. Cooperative
 checks in decode, validation, fingerprint and writer loops release cancelled
 work, and source-cache publication is ordered against cancellation. Individual
 native/standard-library operations finish before the next check. Browser development
-continues to use the Python server's static host.
+continues to use the Python server's static host. The deployable web build has no server: the same codec runs in WebAssembly behind the same request contract
+(`codec-request.mjs`, `backend/browser_service.py`); see [Web build](WEB.md).
 
-Windows source execution and packaged snapshots are verified. A distributable includes the frozen codec sidecar, current web assets, source grammar, and licenses. Rebuild and verify the package after source changes; earlier smoke reports do not certify newer bytes. macOS/Linux targets require their own builds and actual platform verification.
+Windows and Linux source execution and packaged builds are verified; CI builds, packages and boots the Linux AppImage, and runs the unit suite on both ([Linux support](LINUX.md)). A distributable includes the frozen codec sidecar, current web assets, source grammar, and licenses. Rebuild and verify the package after source changes; earlier smoke reports do not certify newer bytes. macOS has a build target that has not been executed. Platform-specific behaviour lives in the owning layer: Chromium's GPU switches in `desktop/gpu-switches.cjs`, native library locations in `native_scan.build_directory()`, interpreter discovery in `scripts/run-python.mjs`.
 
 ## Canvas guides and grid
 

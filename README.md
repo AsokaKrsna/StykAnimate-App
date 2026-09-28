@@ -16,9 +16,9 @@ python -m pip install -r backend/requirements-fast.txt
 npm start
 ```
 
-Development requires Node.js 22+ and Python 3.10+. The optional compiled JSON encoder and C++ native frame scanner accelerate large imports; validated Python fallbacks remain available. Build the scanner with `npm run build:frame-scan` on supported hosts. Set `STYK_PYTHON` to choose an interpreter. With dependencies already installed, Windows can run the current source directly using `node_modules\electron\dist\electron.exe .` from this directory. `npm run serve` starts browser development at `http://127.0.0.1:47831`.
+Development requires Node.js 22+ and Python 3.11+ (CI runs Node 24.11 and Python 3.12). The optional compiled JSON encoder and C++ native frame scanner accelerate large imports; validated Python fallbacks remain available. Build the scanner with `npm run build:frame-scan` on supported hosts. Set `STYK_PYTHON` to choose an interpreter. With dependencies already installed, Windows can run the current source directly using `node_modules\electron\dist\electron.exe .` from this directory. `npm run serve` starts browser development at `http://127.0.0.1:47831`.
 
-Windows desktop execution is verified. macOS and Linux have build targets, but have not been executed here. Build the sidecar and distribution on each target OS:
+Windows and Linux are supported platforms and both are exercised on every change (`.github/workflows/ci.yml`); see [Linux support](docs/LINUX.md). macOS has a build target in `package.json` that has not been executed. Build the sidecar and distribution on each target OS (the build scripts find Python themselves; see `scripts/run-python.mjs`):
 
 ```sh
 npm run build:sidecar
@@ -29,6 +29,8 @@ npm run dist:win
 npm run dist:mac
 npm run dist:linux
 ```
+
+The editor also runs as a website, with the Pivot codec in WebAssembly and nothing sent to a server: `npm run web:build`, then `npm run web:deploy` for Cloudflare. See [Web build](docs/WEB.md).
 
 ## Editing
 
