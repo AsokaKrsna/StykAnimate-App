@@ -17,15 +17,18 @@ export class ReleaseSplash {
       const modal = this.dialog = document.createElement('dialog');
       modal.className = 'release-splash';
       modal.setAttribute('aria-labelledby', 'release-splash-title');
-      modal.innerHTML = `<header class="splash-header"><div class="splash-brand"><img src="./symbol.svg" width="28" height="28" alt=""><span class="splash-wordmark">StykAnimate</span></div><a class="support-donate" href="${DONATE_URL}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">♥</span> Donate <span aria-hidden="true">↗</span></a><button class="splash-close" aria-label="Close welcome screen" type="button">×</button></header><div class="splash-toolbar"><h1 id="release-splash-title">What’s new</h1><div class="splash-release-controls"><select aria-label="Release version"></select><button class="splash-history" type="button">Recent releases</button></div><p class="splash-status" role="status" hidden></p></div><section class="splash-notes" aria-label="Release notes" tabindex="0"></section><footer class="splash-footer"><span class="splash-version"></span><button class="button" type="button" autofocus>Start animating <span aria-hidden="true">→</span></button></footer>`;
-      modal.querySelector('.splash-version').textContent = `Version ${info.version}`;
+      modal.innerHTML = `<header class="splash-header"><div class="splash-brand"><img src="./symbol.svg" width="26" height="26" alt=""><span class="splash-wordmark">StykAnimate</span></div><button class="splash-close" aria-label="Close welcome screen" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></header><div class="splash-toolbar"><p class="splash-version"></p><h1 id="release-splash-title">What’s new in <span>StykAnimate.</span></h1><div class="splash-release-controls"><select aria-label="Release version"></select><button class="splash-history" type="button">Recent releases</button></div><p class="splash-status" role="status" hidden></p></div><section class="splash-notes" aria-label="Release notes" tabindex="0"></section><footer class="splash-footer"><a class="support-donate" href="${DONATE_URL}" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.2 0 3.6 1.2 5.2 3 1.6-1.8 3-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z"/></svg>Support on Ko-fi</a><button class="button" type="button" autofocus>Start animating <span aria-hidden="true">→</span></button></footer>`;
+      modal.querySelector('.splash-version').textContent = `Version ${info.version} installed`;
       const selector = modal.querySelector('select'), body = modal.querySelector('.splash-notes'), status = modal.querySelector('.splash-status');
       const releases = new Map([[info.version,info]]);
       const showStatus = text => {status.textContent=text;status.hidden=!text;};
       const render = () => {
         const release = releases.get(selector.value);
         body.replaceChildren();
-        const title=document.createElement('h2');title.className='splash-release-title';title.textContent=release.title||`StykAnimate ${release.version}`;body.append(title);
+        const head=document.createElement('div'),version=document.createElement('span'),title=document.createElement('h2');
+        head.className='splash-release-head';version.className='splash-release-version';version.textContent=release.version;head.append(version);
+        if (release.version===info.version) {const installed=document.createElement('span');installed.className='splash-release-installed';installed.textContent='Installed';head.append(installed);}
+        title.className='splash-release-title';title.textContent=release.title||`StykAnimate ${release.version}`;body.append(head,title);
         const groups=release.groups?.length?release.groups:[{name:'Changes',notes:release.notes||[]}];
         for (const group of groups) {
           if (!group.notes.length) continue;
