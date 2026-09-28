@@ -1,0 +1,17 @@
+{
+  // The StykAnimate editor as a static site: `npm run web:build`, then
+  // `npm run web:deploy`. It is a separate Worker from ../cloud (the public site
+  // and its API), so the two deploy and roll back independently. There is no
+  // Worker script: Cloudflare serves the built files and applies _headers.
+  "$schema": "../cloud/node_modules/wrangler/config-schema.json",
+  "name": "stykanimate-app",
+  "compatibility_date": "2026-09-10",
+  "workers_dev": true,
+  // To serve it from your own domain, add a route on a zone you control, e.g.
+  // "routes": [{ "pattern": "app.example.com", "custom_domain": true }],
+  "assets": {
+    "directory": "../build/web",
+    "not_found_handling": "404-page"
+  },
+  "observability": { "enabled": false }
+}
