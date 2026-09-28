@@ -9,7 +9,7 @@ import {keyEasing, inheritedKeyEasing} from './keyframe-easing.mjs';
 import {animationChannelId,composeAnimationChannels,normalizeAnimationTarget,validateAnimationValue} from './animation-channels.mjs';
 import {buildGeometry} from './pivot/geometry.mjs';
 import {remapVfxOwner} from './vfx.mjs';
-import {remapIKFollowers} from './ik.mjs';
+import {remapIKFollowers,translateIKTargets} from './ik.mjs';
 import {frameOrder,setOrder,normalizeFrame} from './pivot/structure.mjs';
 import {movieclipTypes,validatePlayback,snapshotFigureDefinition} from './movieclips.mjs';
 import {usesPresence,continuations,setContinuations,presenceElapsed} from './movieclip-presence.mjs';
@@ -489,10 +489,13 @@ export const editorLayerSheetMethods={
     // cache still compares each UID/pose/join before reusing its geometry.
     return publish(this,plan,label,{selection,assets,selectUids:payload?.order,nextUid:payload?.nextUid,retainGeometry:Boolean(payload?.objects)});
   },
-  sheetMoveSelection(dx,dy,ticks){
+  sheetMoveSelection(dx,dy,ticks,{movePins=false}={}){
     const plans=[];
-    for(const tick of ticks){const before=at(this.report,tick),frame=clone(before),roots=new Set(this.resolveTranslationSelection(this.selectedUids,{frame:before}).rootUids),changed=[];
-      for(const object of frame.objects)if(roots.has(object.unique_id)){object.root_x+=dx;object.root_y+=dy;changed.push(object.unique_id);}
+    for(const tick of ticks){const before=at(this.report,tick),frame=clone(before),resolved=this.resolveTranslationSelection(this.selectedUids,{frame:before}),roots=new Set(resolved.rootUids),affected=new Set(resolved.affectedUids),changed=[];
+      for(const object of frame.objects){let moved=false;
+        if(roots.has(object.unique_id)){object.root_x+=dx;object.root_y+=dy;moved=true;}
+        if(movePins&&affected.has(object.unique_id))moved=translateIKTargets(object,dx,dy,{pinnedOnly:true})||moved;
+        if(moved){delete object.runtime_segments;changed.push(object.unique_id);}}
       this._synchronizeAnimationOrigins(frame,before.objects);if(changed.length)plans.push({tick,frame,changedUids:changed});}
     if(!plans.length)return 0;this._commitSheetRange(plans,null,'Move figures across frames',this._selectionState());return plans.length;
   },

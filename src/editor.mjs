@@ -750,7 +750,7 @@ export class Editor extends EventTarget {
     }, {structural: true});
   }
   /** Translate connected roots once, including when a selected figure is a joined child. */
-  moveSelection(dx, dy, {fromStart = false, detachExternal = false} = {}) {
+  moveSelection(dx, dy, {fromStart = false, detachExternal = false, movePins = false} = {}) {
     finite(dx, 'Translation X'); finite(dy, 'Translation Y');
     return this._objectEdit('Move figures', () => {
       if (!detachExternal) this._expandTranslationDrag();
@@ -768,17 +768,22 @@ export class Editor extends EventTarget {
           object.join = null;
         }
       }
-      for (const object of affected) if (!object.join) {
+      for (const object of affected) {
         const baseline = fromStart ? snapshots.get(object.unique_id) : object;
-        const detached = fromStart ? this._drag.detachedOrigins?.get(object.unique_id) : null;
-        object.root_x = (detached?.x ?? baseline.root_x) + dx; object.root_y = (detached?.y ?? baseline.root_y) + dy;
-        delete object.runtime_segments;
+        if (!object.join) {
+          const detached = fromStart ? this._drag.detachedOrigins?.get(object.unique_id) : null;
+          object.root_x = (detached?.x ?? baseline.root_x) + dx; object.root_y = (detached?.y ?? baseline.root_y) + dy;
+          delete object.runtime_segments;
+        }
+        if (movePins || fromStart) {
+          if (translateIKTargets(object, movePins ? dx : 0, movePins ? dy : 0, {source: baseline, pinnedOnly: true})) delete object.runtime_segments;
+        }
       }
     }, {translation:true});
   }
-  moveSelectionInFrames(dx, dy, indices = [this.frameIndex]) {
+  moveSelectionInFrames(dx, dy, indices = [this.frameIndex], {movePins = false} = {}) {
     finite(dx, 'Translation X'); finite(dy, 'Translation Y');
-    if(this.report._styk?.layerSheet)return this.sheetMoveSelection(dx,dy,indices.sheetTicks??indices.map(index=>indices.length===1?this.tick:this.timeline[index].start));
+    if(this.report._styk?.layerSheet)return this.sheetMoveSelection(dx,dy,indices.sheetTicks??indices.map(index=>indices.length===1?this.tick:this.timeline[index].start),{movePins});
     if (!dx && !dy) return 0;
     const selectedFrames = this._frameIndices(indices), selectedIds = new Set(this.selectedUids);
     if (!selectedIds.size) return 0;
@@ -787,10 +792,12 @@ export class Editor extends EventTarget {
     for (const index of selectedFrames) {
       const source = this.report.keyframes[index], selected = source.objects.filter(o => selectedIds.has(o.unique_id));
       if (!selected.length) continue;
-      const rootIds = new Set(this.resolveTranslationSelection(selectedIds, {frame: source}).rootUids);
+      const resolved = this.resolveTranslationSelection(selectedIds, {frame: source});
+      const rootIds = new Set(resolved.rootUids), affected = new Set(resolved.affectedUids);
       const before = clone(source), after = clone(source);
-      for (const object of after.objects) if (rootIds.has(object.unique_id)) {
-        object.root_x += dx; object.root_y += dy; delete object.runtime_segments;
+      for (const object of after.objects) {
+        if (rootIds.has(object.unique_id)) {object.root_x += dx; object.root_y += dy; delete object.runtime_segments;}
+        if (movePins && affected.has(object.unique_id) && translateIKTargets(object, dx, dy, {pinnedOnly: true})) delete object.runtime_segments;
       }
       this._synchronizeAnimationOrigins(after,before.objects);
       validateScene({...this.report, keyframes: [after]});

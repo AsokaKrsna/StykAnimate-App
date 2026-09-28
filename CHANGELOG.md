@@ -8,6 +8,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Added
 
+- Hold Shift while dragging a figure's origin to move the whole figure with its pinned IK nodes. This also works on origin motion paths and when editing selected frames, while keeping the nodes pinned at their new positions.
 - Keep dragging a joint or figure while pressing A to add frames, in both Simple and Advanced timelines. Each new frame keeps its pose and the drag continues without releasing the mouse.
 - Bend line joints by right-dragging in Build, just as in Animate, including static joints. Build applies the bend to the reusable figure, with undo and cancellation.
 - Choose whether pasted figures keep their copied Z-index or appear in front, in Canvas settings. Keeping the copied Z-index remains the default.

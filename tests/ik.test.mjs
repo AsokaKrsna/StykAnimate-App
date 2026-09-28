@@ -27,6 +27,31 @@ export function fixture(options = {}) {
 const g = e => e.geometry.objects.get(0);
 const angleNear = (a,b) => near(Math.atan2(Math.sin(a-b),Math.cos(a-b)),0);
 
+test('origin translation can carry pins, switch live, and return exactly without history', () => {
+  for (const options of [{}, {propertyChannels: true}, {layerTimeline: true}]) {
+    const e = fixture(options); e.setNodeIK({enabled: true}); e.poseJoint(420, 190);
+    e.select(1); const before = e.serialize(), joints = new Map(g(e).joints), history = e._undo.length;
+    e.beginTranslationDrag();
+    for (const movePins of [true, false, true]) {
+      e.moveSelection(20, -12, {fromStart: true, movePins});
+      point(g(e).joints.get(22), {x: joints.get(22).x + (movePins ? 20 : 0), y: joints.get(22).y - (movePins ? 12 : 0)});
+      assert.equal(e.object._stykIK[22].pinned, true);
+      if (movePins) for (const [id, p] of joints) point(g(e).joints.get(id), {x: p.x + 20, y: p.y - 12});
+    }
+    e.moveSelection(180, 0, {fromStart: true});
+    e.moveSelection(20, -12, {fromStart: true, movePins: true});
+    for (const [id, p] of joints) point(g(e).joints.get(id), {x:p.x+20,y:p.y-12});
+    e.moveSelection(0, 0, {fromStart: true, movePins: true}); e.commitDrag();
+    assert.equal(e._undo.length, history); assert.deepEqual(e.serialize(), before);
+    e.beginTranslationDrag(); e.moveSelection(20, -12, {fromStart: true, movePins: true}); e.commitDrag();
+    const after = e.serialize(); assert.equal(e._undo.length, history + 1);
+    e.undo(); for (const [id, p] of joints) point(g(e).joints.get(id), p);
+    e.redo(); assert.deepEqual(e.serialize(), after);
+    e.beginTranslationDrag(); e.moveSelection(30, 20, {fromStart: true, movePins: true}); e.cancelDrag();
+    assert.deepEqual(e.serialize(), after);
+  }
+});
+
 test('Both follows a full circular drag without mirroring across the original knee axis', () => {
   for (const pinned of [true, false]) for (const side of [-1, 1]) {
     const e = fixture(); e.setNodeIK({enabled: true, pinned, bendDirection: side});

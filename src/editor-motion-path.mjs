@@ -10,7 +10,7 @@ import {rotationEdits, resolveJoinSelection} from './pivot/structure.mjs';
 import {validateObjectChanges} from './pivot/model.mjs';
 import {cameraValues} from './editor-camera.mjs';
 import {inverseCameraScale} from './pivot/background.mjs';
-import {ikLayout, ikChain, ikFollowers, ikFollowerIndices, ikBendReference, solveObjectIK, hasPinnedIK} from './ik.mjs';
+import {ikLayout, ikChain, ikFollowers, ikFollowerIndices, ikBendReference, solveObjectIK, hasPinnedIK, translateIKTargets} from './ik.mjs';
 import {ikComponents, joinedIKGraph} from './ik-joined.mjs';
 import {snapshotPoseFrame, snapshotPoseObject, poseObjectSignature} from './pose-snapshot.mjs';
 import {animationChannels, animationChannelId, animationPropertyValue} from './animation-channels.mjs';
@@ -223,8 +223,9 @@ function applyPathPoint(session, editor, point, options = {}) {
     const geometry = sessionGeometry(session, report);
     const origin = geometry.objects.get(slot)?.joints.get(0);
     if (!origin) return false;
+    session.translationOrigin ??= {x: origin.x, y: origin.y};
     const dx = point.x - origin.x, dy = point.y - origin.y;
-    if (!dx && !dy) return false;
+    let changed = Boolean(dx || dy);
     for (const member of working.objects) if (ids.has(member.unique_id) && member.join && !ids.has(working.objects[member.join.target_object_slot]?.unique_id)) {
       const root = geometry.objects.get(member.object_slot)?.root;
       if (root) { member.root_x = root.x; member.root_y = root.y; }
@@ -233,8 +234,15 @@ function applyPathPoint(session, editor, point, options = {}) {
     for (const member of working.objects) if (ids.has(member.unique_id) && !member.join) {
       member.root_x += dx; member.root_y += dy; delete member.runtime_segments;
     }
+    for (const member of working.objects) if (ids.has(member.unique_id)) {
+      const moved = translateIKTargets(member,
+        options.movePins ? point.x - session.translationOrigin.x : 0,
+        options.movePins ? point.y - session.translationOrigin.y : 0,
+        {source: session.source.objects[member.object_slot], pinnedOnly: true});
+      if (moved) {delete member.runtime_segments; changed = true;}
+    }
     session.dirtySlots = new Set(resolved.affectedSlots);
-    return true;
+    return changed;
   }
   const controller = object._stykIK?.[target.handleId];
   if (controller?.enabled) return poseIKRemote(session, report, slot, point);

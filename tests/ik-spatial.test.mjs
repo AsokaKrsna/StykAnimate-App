@@ -17,6 +17,17 @@ function fixture(){
 const near=(a,b,t=.003)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
 function state(e,id){const g=e.geometry.objects.get(0),s=g.segments[id-1];return {q:spatialWorldQuaternion(s.spatialFrame.q,e.figure,e.object),p:spatialPoint(s.spatialFrame,s.seg._stykRig.spatial.tip),end:s.end};}
 function sameOrientation(a,b){near(Math.abs(a.reduce((n,v,i)=>n+v*b[i],0)),1,1e-6);}
+test('carrying a spatial pin preserves depth, orientation and the displayed limb',()=>{
+ for(const mirror of [false,true]){
+  const{e,lower,foot,toe}=fixture();e.select(1);if(mirror)e.mirrorFigure();
+  e.select(1,lower-1);e.setNodeIK({enabled:true,pinned:true,bendDirection:0});
+  e.poseIKTarget(215,245);e.select(1);const before=[lower,foot,toe].map(id=>state(e,id));
+  const spatial=structuredClone(e.object._stykIK[lower].spatialTarget);
+  e.beginTranslationDrag();e.moveSelection(35,-22,{fromStart:true,movePins:true});e.commitDrag();
+  [lower,foot,toe].forEach((id,i)=>{const next=state(e,id);near(next.end.x,before[i].end.x+35);near(next.end.y,before[i].end.y-22);near(next.p[2],before[i].p[2]);sameOrientation(next.q,before[i].q);});
+  assert.deepEqual(e.object._stykIK[lower].spatialTarget,spatial);assert.equal(e.object._stykIK[lower].pinned,true);
+ }
+});
 test('planted feet retain depth and all three orientation axes through hip movement and body turns',()=>{
  for(const mirror of [false,true]){
   const{e,body,lower,foot,toe}=fixture();e.select(1,-1);if(mirror)e.mirrorFigure();

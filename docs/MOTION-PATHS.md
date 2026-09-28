@@ -21,6 +21,14 @@ Pointing at a trail point at another frame draws that frame's pose as a dashed o
 
 Double-clicking a trail point (two presses without movement within 450 ms) goes to its frame. In the Simple timeline, a point at a frame's start selects that frame.
 
+For a figure origin with pinned IK, **Shift-drag** carries the pins with the
+figure, preserving its pose and leaving pinning enabled. **Ctrl/Command** locks
+that origin's movement to an axis and combines with Shift. Pressing or releasing
+Shift during the drag updates the preview immediately from the original pose.
+The same rule applies when reshaping nearby keys with motion-path falloff.
+Other trail points retain Shift's axis constraint and Ctrl/Command's stretch
+behavior. An attached figure's origin trail still edits its parent joint.
+
 ## Ownership and limits
 
 - `motion-path-controls.mjs` writes normalized editor preferences (`motionPathAllTargets`, `motionPathJoints`, `motionPathRange`, `motionPathLabels`, `motionPathDots`, `motionPathSpeed`, `motionPathRelative`); `styles/features/view-options.css` owns its presentation.

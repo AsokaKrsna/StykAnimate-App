@@ -35,6 +35,20 @@ function sameRig(a,b) {
   for (const [id,s] of left) {const t=right.get(id); point(s.start,t.start); point(s.end,t.end); near(s.angle,t.angle); near(s.length,t.length);}
 }
 
+test('moving pins carries a joined component once, including range edits', () => {
+  for (const layerTimeline of [false, true]) {
+    const e = rig(true, {layerTimeline}); e.setNodeIK({enabled: true}); e.poseJoint(365, 265);
+    e.selectMany([1, 2]);
+    const before = new Map([...shapes(e)].map(([id, s]) => [id, {...s.end}]));
+    e.beginTranslationDrag(); e.moveSelection(25, -15, {fromStart: true, movePins: true}); e.commitDrag();
+    for (const [id, p] of before) point(shapes(e).get(id).end, {x: p.x + 25, y: p.y - 15});
+    e.undo();
+    e.moveSelectionInFrames(25, -15, [0], {movePins: true});
+    for (const [id, p] of before) point(shapes(e).get(id).end, {x: p.x + 25, y: p.y - 15});
+    e.undo(); for (const [id, p] of before) point(shapes(e).get(id).end, p);
+  }
+});
+
 test('joined IK crosses figure boundaries and matches an equivalent single-figure rig', () => {
   for (const propertyChannels of [false,true]) {
     const joined=rig(true,{propertyChannels}), single=rig(false,{propertyChannels});

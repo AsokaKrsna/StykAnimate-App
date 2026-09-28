@@ -11,11 +11,22 @@ const EPS = 1e-10, TAU = 2 * Math.PI;
 const wrap = a => ((a + Math.PI) % TAU + TAU) % TAU - Math.PI;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export const hasPinnedIK = object => Boolean(object?._stykIK && Object.values(object._stykIK).some(c => c.enabled && c.pinned));
-/** Placement of a new copy moves its controllers too; ordinary root posing does not. */
-export function translateIKTargets(object, dx, dy) {
-  if (!object._stykIK) return;
-  object._stykIK = Object.fromEntries(Object.entries(object._stykIK).map(([id, c]) => [id,
-    {...c, target: {...c.target, x: c.target.x + dx, y: c.target.y + dy}}]));
+/** Copies carry all controllers. Origin gestures may carry only active pins,
+ * using the press-time source so modifier changes never accumulate offsets. */
+export function translateIKTargets(object, dx, dy, {source = object, pinnedOnly = false} = {}) {
+  if (!object._stykIK) return false;
+  let next;
+  for (const [id, c] of Object.entries(object._stykIK ?? {})) {
+    if (pinnedOnly && (!c.enabled || !c.pinned)) continue;
+    const target = source._stykIK?.[id]?.target;
+    if (!target) continue;
+    const x = target.x + dx, y = target.y + dy;
+    if (x === c.target.x && y === c.target.y) continue;
+    next ??= {...object._stykIK};
+    next[id] = {...c, target: {...c.target, x, y}};
+  }
+  if (next) object._stykIK = next;
+  return Boolean(next);
 }
 export function remapIKFollowers(object, uidMap) {
   if (!object._stykIK) return;

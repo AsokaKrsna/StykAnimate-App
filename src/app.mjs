@@ -1030,10 +1030,10 @@ function updateSelection(patch) {
     ticks: [editor.tick],
   });
 }
-function moveSelected(dx, dy) {
+function moveSelected(dx, dy, options) {
   if (rangeFrames())
-    return editor.moveSelectionInFrames(dx, dy, rangeFrames());
-  return editor.moveSelection(dx, dy);
+    return editor.moveSelectionInFrames(dx, dy, rangeFrames(), options);
+  return editor.moveSelection(dx, dy, options);
 }
 const assetUrl = (a) =>
   a?.asset_url ||
@@ -2675,13 +2675,15 @@ overlay.addEventListener(
       requestRender();
       return;
     }
-    if (e.button === 0 && e.shiftKey && !e.altKey) {
+    // Origins defer Shift-click toggling so crossing the slop can carry IK pins.
+    if (e.button === 0 && e.shiftKey && !e.altKey &&
+        !(hit.joint < 0 && !state.handleEditHeld && !builderMode?.active && ['select', 'pose'].includes(state.tool))) {
       if (builderMode?.active && hit.joint >= 0) editor.toggleSegment(hit.g.obj.unique_id, hit.joint);
       else editor.select(hit.g.obj.unique_id, -1, { toggle: true });
       releaseCanvasPointer();
       return;
     }
-    if (e.button === 0 && (e.ctrlKey || e.metaKey) && !e.altKey && !state.handleEditHeld &&
+    if (e.button === 0 && (e.ctrlKey || e.metaKey || e.shiftKey && hit.joint < 0) && !e.altKey && !state.handleEditHeld &&
         !builderMode?.active && ['select', 'pose'].includes(state.tool)) {
       // Keep selection and history intact until click versus drag is known.
       state.drag = {kind: 'toggle-selection', hit, start: p, press: e, moved: false};
@@ -2763,6 +2765,17 @@ let pendingPoseMove = null;
 function flushPoseMove() {
   const pending=pendingPoseMove;pendingPoseMove=null;
   if(pending&&pending.drag===state.drag&&pending.gesture===editor._drag)moveCanvasPointer(pending.event);
+}
+function refreshOriginDragModifiers(event) {
+  if (event.key !== 'Shift' || !['move', 'motion-path'].includes(state.drag?.kind)) return;
+  flushPoseMove();
+  const drag = state.drag, pointer = drag?.pointerEvent;
+  if (!drag?.moved || !pointer) return;
+  moveCanvasPointer(new PointerEvent('pointermove', {
+    clientX: pointer.clientX, clientY: pointer.clientY, buttons: pointer.buttons,
+    pointerId: pointer.pointerId, pointerType: pointer.pointerType,
+    shiftKey: event.shiftKey, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey,
+  }));
 }
 const moveCanvasPointer = guarded((e) => {
     let drag = state.drag;
@@ -2932,16 +2945,24 @@ const moveCanvasPointer = guarded((e) => {
       return;
     }
     if (drag.kind === "motion-path") {
-      if (p.x !== drag.point?.x || p.y !== drag.point?.y) {
+      const session = editor._drag;
+      // On pinned origins Shift carries targets; Ctrl keeps axis locking
+      // available. Joint/camera paths retain their existing Shift constraint.
+      const pinnedOrigin = session?.target.kind === 'node' && session.target.handleId === 0 &&
+        (session.grab?.baseline ?? session.baseline).some(hasPinnedIK);
+      const movePins = pinnedOrigin && e.shiftKey;
+      if (p.x !== drag.point?.x || p.y !== drag.point?.y || movePins !== Boolean(drag.movePins)) {
         drag.point = p;
+        drag.movePins = movePins;
         drag.moved = true;
         const dx = p.x - drag.start.x, dy = p.y - drag.start.y;
-        const constrained = e.shiftKey
+        const constrained = (pinnedOrigin ? e.ctrlKey || e.metaKey : e.shiftKey)
           ? (Math.abs(dx) >= Math.abs(dy) ? {x: dx, y: 0} : {x: 0, y: dy})
           : {x: dx, y: dy};
         editor.updateMotionPathEdit({x: drag.origin.x + constrained.x, y: drag.origin.y + constrained.y}, {
           stretch: e.ctrlKey || e.metaKey,
           isolate: Boolean(state.isolateHeld || state.isolateMode),
+          movePins,
         });
       }
       requestRender();
@@ -2957,7 +2978,8 @@ const moveCanvasPointer = guarded((e) => {
         x: drag.axis === "y" ? 0 : dx,
         y: drag.axis === "x" ? 0 : dy,
       };
-      if (drag.ikLive) { drag.delta = delta; editor.moveSelection(delta.x, delta.y, {fromStart: true}); }
+      drag.movePins = e.shiftKey;
+      if (drag.ikLive) { drag.delta = delta; editor.moveSelection(delta.x, delta.y, {fromStart: true, movePins: drag.movePins}); }
       else for (const uid of drag.translations.keys()) drag.translations.set(uid, delta);
     } else if (drag.kind === "handle-edit")
       editor.editHandlePosition(p.x, p.y, { bend: drag.bend });
@@ -3063,8 +3085,8 @@ function endDrag(event, {keepPointer = false} = {}) {
       const delta = drag.ikLive ? drag.delta : drag.translations.get(editor.selectedUid);
       if (rangeFrames()) {
         editor.cancelDrag();
-        moveSelected(delta.x, delta.y);
-      } else if (!drag.ikLive) editor.moveSelection(delta.x, delta.y, { fromStart: true });
+        moveSelected(delta.x, delta.y, {movePins: drag.movePins});
+      } else if (!drag.ikLive) editor.moveSelection(delta.x, delta.y, { fromStart: true, movePins: drag.movePins });
     }
     editor.commitDrag();
   }
@@ -5154,6 +5176,7 @@ const polygonCommands = new Set(['undo','redo','open','new','save','save-as','se
   'tool-select','tool-pose','tool-hand','tool-line','tool-circle','tool-polygon','zoom-in','zoom-out','zoom-reset','zoom-selection','toggle-onion','toggle-handles','isolate-hold']);
 document.addEventListener('keydown', guarded(event => {
   state.builderShiftHeld = event.shiftKey;
+  refreshOriginDragModifiers(event);
   const scopes = hotkeyScopes(event), command = hotkeys.resolve(event, scopes);
   const builderCheckbox = command?.scope === 'builder' && command.id.startsWith('builder-') && event.target.matches?.('input[type=checkbox],input[type=radio]');
   const effectHistory = ['undo','redo'].includes(command?.id) && vfxInspector?.ownsHistoryTarget(event.target);
@@ -5176,6 +5199,7 @@ document.addEventListener('keydown', guarded(event => {
 // key starts. Matching uses the pressed physical key, even if modifiers change.
 document.addEventListener('keyup', guarded(event => {
   state.builderShiftHeld = event.shiftKey;
+  refreshOriginDragModifiers(event);
   if(!event.shiftKey && state.tool==='polygon'){state.bucketPreview=null;overlay.style.cursor='';requestRender();}
   hotkeys.keyup(event);
 }), true);

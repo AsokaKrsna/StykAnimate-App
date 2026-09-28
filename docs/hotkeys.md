@@ -10,6 +10,12 @@ Open **Settings → Shortcuts** (or **Help → Keyboard shortcuts**). Click a bi
 
 ## Architecture
 
+In Animate, Shift-dragging a figure origin carries its pinned IK nodes with it;
+Shift-click still toggles selection. Ctrl/Command constrains the origin move to
+one axis and can combine with Shift. Motion-path origins with pinned IK use the
+same modifiers; other trail points retain Shift for axis locking. These pointer
+modifiers do not register global commands or change custom shortcut bindings.
+
 In Build mode, **Ctrl+D** starts placement of a copy of the selected segment,
 and **Shift+H / Shift+V** flip the selected segment horizontally / vertically.
 These shortcuts use the selected branch or the persistent **Branch** toggle

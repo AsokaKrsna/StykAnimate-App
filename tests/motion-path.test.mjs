@@ -38,6 +38,47 @@ function ikFixture() {
 }
 
 const rootTarget = {kind: 'node', uid: 1, handleId: 0, joint: -1};
+test('origin path edits carry pins at remote keys and inbetweens in every timeline store', () => {
+  for (const mode of ['native', 'channels', 'sheet']) for (const tick of [0, 4]) for (const falloff of [undefined, {radius: 6, shape: 'smooth'}]) {
+    let editor = ikFixture(); editor.select(1, 1); editor.setNodeIK({enabled: true}); editor.poseJoint(420, 190);
+    const report = editor.serialize();
+    // Keep the same posed limb across all keys, changing only its placement.
+    for (let i = 1; i < report.keyframes.length; i++) {
+      const object = clone(report.keyframes[0].objects[0]); object.root_x += i * 40;
+      object._stykIK[22].target.x += i * 40; report.keyframes[i].objects[0] = object;
+    }
+    editor = new Editor({demo: false, layerTimeline: mode === 'sheet', propertyChannels: mode === 'channels'}).load(report);
+    if (mode === 'channels') editor.addAnimationKeys([{target: {kind:'figure', uid:1}, property:'x', tick:0, value:300}, {target:{kind:'figure',uid:1},property:'x',tick:8,value:340}]);
+    editor.seek(8); editor.select(1);
+    const history = editor._undo.length, saved = clone(editor.report);
+    assert.ok(editor.beginMotionPathEdit(rootTarget, tick, {falloff}));
+    const session = editor._drag, sub = session.grab ?? session;
+    const before = buildGeometry(editor.report, sub.working).objects.get(0);
+    const goal = {x: before.root.x + 20, y: before.root.y - 12};
+    for (const movePins of [true, false, true]) {
+      editor.updateMotionPathEdit(goal, {movePins});
+      const after = buildGeometry(editor.report, sub.working).objects.get(0);
+      const foot = before.joints.get(22);
+      point(after.joints.get(22), {x: foot.x + (movePins ? 20 : 0), y: foot.y - (movePins ? 12 : 0)});
+      if (movePins) for (const [id, p] of before.joints) point(after.joints.get(id), {x:p.x+20,y:p.y-12});
+      assert.equal(sub.working.objects[0]._stykIK[22].pinned, true);
+    }
+    assert.equal(editor.tick, 8); assert.deepEqual(editor.report, saved);
+    assert.ok(editor.commitMotionPathEdit()); assert.equal(editor._undo.length, history + 1);
+    editor.seek(tick); point(editor.geometry.objects.get(0).joints.get(22), {x:before.joints.get(22).x+20,y:before.joints.get(22).y-12});
+    editor.undo(); editor.seek(tick); point(editor.geometry.objects.get(0).joints.get(22), before.joints.get(22));
+    editor.redo(); editor.seek(tick); point(editor.geometry.objects.get(0).joints.get(22), {x:before.joints.get(22).x+20,y:before.joints.get(22).y-12});
+    const committed = clone(editor.report);
+    assert.ok(editor.beginMotionPathEdit(rootTarget, tick, {falloff}));
+    editor.updateMotionPathEdit({x:goal.x+50,y:goal.y+30}, {movePins:true}); editor.cancelMotionPathEdit();
+    assert.deepEqual(editor.report, committed);
+    assert.equal(editor._undo.length, history + 1);
+    assert.ok(editor.beginMotionPathEdit(rootTarget, tick, {falloff}));
+    editor.updateMotionPathEdit({x:goal.x+50,y:goal.y+30}, {movePins:true});
+    editor.updateMotionPathEdit(goal, {movePins:true});
+    assert.equal(editor.commitMotionPathEdit(), false); assert.deepEqual(editor.report, committed);
+  }
+});
 const rootAt = (editor, tick) => {
   const rows = editor.timeline;
   let low = 0, high = rows.length - 1;

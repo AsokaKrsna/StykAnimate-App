@@ -236,4 +236,19 @@ layer inspector, never in figure, joint or movieclip Properties.
 
 ## Motion paths
 
+Hold **Shift** while dragging a figure origin to move the whole connected figure,
+including its pinned IK nodes. Pins remain enabled at their new positions. The
+modifier can change during a drag; the preview always uses the gesture's original
+pin targets. Ctrl/Command still constrains the move to one axis, and Shift-click
+still toggles selection without editing. Modified origin presses wait for the
+existing mouse/pen/touch drag threshold before starting an edit. Joint gestures,
+Build tools, Alt transforms and Space navigation keep their existing modifiers.
+Edit selected frames carries each affected pose's pins by the same displacement.
+
+`translateIKTargets` owns pin displacement for canvas, range and motion-path
+edits. Only affected objects/controllers change, with existing history and cache
+invalidation; no temporary unpinning or additional document snapshots are needed.
+Coverage includes `tests/ik-shift-origin.browser.mjs` and the IK, joined IK,
+spatial IK and motion-path unit suites.
+
 See [Motion paths](MOTION-PATHS.md) for display settings, remote pose gestures, cache ownership, sampling limits, and verification.
