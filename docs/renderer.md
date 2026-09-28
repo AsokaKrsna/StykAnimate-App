@@ -1,18 +1,40 @@
 # Rendering architecture
 
 Onion opacity applies once to each completed ghost frame, after its figures have
-composited at their own intrinsic opacity. Each frame remains separate; tint,
+composited at their own intrinsic opacity. Each frame is faded separately; tint,
 before/after ordering, hidden figures, parallax and Show on top still apply.
-WebGPU uses retained vector/texture batches and one reusable viewport texture with
-an MSAA surface. The main pass retains its samples across composites; GPU timing
-spans the first and last pass. No pixels are read back. Disabling onions releases
-these targets, resizing replaces them, and changes to MSAA rebuild their pipeline.
-Canvas stores completed viewport ghosts in its existing 64 MiB onion raster LRU,
-alongside object rasters. View transforms, visibility, parallax, geometry identity
-and drawing resource stamps invalidate them. No separate unbounded frame cache is
-introduced. The pixel regression is `tests/onion-scene-opacity.browser.mjs`;
-`scripts/benchmark-onion-composite.mjs` measures repeated 400-figure edits with
-three ghosts and optionally compares `STYK_ONION_BASELINE` on the same workload.
+Both backends retain the completed pixels of each consecutive run of ghosts as
+one viewport layer. Runs never cross live artwork, preserving anchored painter
+order. An ordinary drag composites this layer once without repainting any ghost.
+Changing the view, opacity, visibility, parallax, geometry, or drawing resources
+invalidates its pixels; changing only the live pose does not.
+
+`OnionSurfaceCache` owns admission and surface lifetimes for both backends. Its
+byte and entry limits are applied before drawing. Excess layers use one reusable
+scratch surface instead of evicting layers used earlier in the same presentation.
+Scrubbing recycles obsolete surfaces, dropping their old validity metadata. The
+cache retains only the active range, not a history of full viewport images.
+`previewMemoryPlan().editorOnions` caps retained onion pixels at 64 MiB and scales
+down on smaller memory tiers. Canvas splits that allowance between completed
+layers and object rasters, preventing large viewport images from flushing small
+figure rasters. WebGPU's existing object artwork owners keep their own budgets.
+
+WebGPU paints each ghost into one reusable frame texture and MSAA surface, then
+blends that frame at its opacity into the completed layer. The main pass retains
+its samples across composites; GPU timing spans the first and last pass. There
+is no pixel readback. Canvas uses the same frame-then-layer sequence. Temporary
+frame, MSAA, and overflow surfaces are additional viewport-sized working memory,
+independent of ghost count. Resize replaces them; MSAA changes rebuild the GPU
+pipelines. Disabling onions, replacing the document, and destroying or recovering
+the renderer release the previous surfaces.
+
+`onionRenderedFrames` and `onionFrameHits` distinguish rebuilding from reuse;
+`onionCacheBytes` counts retained onion pixels and `onionCompositeBytes` counts
+completed layers plus compositor scratch (excluding Canvas object rasters).
+Pixel and lifetime regressions are in `tests/onion-composite-cache.browser.mjs`
+and `tests/onion-scene-opacity.browser.mjs`. The paired renderer benchmark is
+`scripts/benchmark-onion-interaction.mjs`; see
+[measurements and tradeoffs](performance/onion-compositing-performance.md).
 
 Live spatial poses merge unchanged primitives in their retained painter order with newly sorted changed primitives. Equal-depth ties use native polygon/segment insertion order, so turning back through a tie does not inherit the previous pose's ordering. Imported compound shapes and non-finite orders use the general builder. This derived order belongs to the new geometry and retains no previous scene. Geometry, cancellation and collection tests compare the incremental result with full evaluation.
 

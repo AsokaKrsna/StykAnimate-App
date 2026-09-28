@@ -52,7 +52,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Open Feedback on the report type you chose last, even when you choose another type while Feedback is still loading.
 - Keep effect rows and timeline scrolling steady while selecting multiple frames.
 - Select a figure by clicking its artwork, including joined parts, so you can unjoin it without finding a node.
-- Fade onion skins as complete frames, so overlapping parts of a figure keep their solid appearance.
+- Fade onion skins as complete frames, so overlapping parts of a figure keep their solid appearance, and keep posing responsive with many ghosts, including on high-resolution screens and in compatibility mode.
 - Return from Draw reliably: Animate restores your previous figure layer and joint, Build selects an editable figure layer, and both wait for pending drawing edits before changing tools.
 - Show error messages above open dialogs instead of behind them, where you can close them, and keep them clear of the canvas's view buttons. A failed save, export or import stays until you close it; other messages go on their own. Pressing Escape or closing the export dialog while an export runs now asks before stopping it.
 - Stop menus from switching tools while you type in them: letters now jump to the matching command. The Properties ⋯ menu opens again.

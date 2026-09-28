@@ -19,6 +19,7 @@ import { EditorRasterCache } from './renderer-raster-cache.mjs';
 import {previewMemoryPlan} from './playback-budget.mjs';
 import { composeSceneGroups } from './scene-order.mjs';
 import {OnionComposite} from './renderer-onion-composite.mjs';
+import {OnionSurfaceCache, onionLayerEnd, onionLayerKeys} from './onion-surface-cache.mjs';
 import { HandleRenderer } from './renderer-handles.mjs';
 import {opacityArtwork} from './renderer-opacity.mjs';
 import {rasterizeVectorGroup, supportsVectorIsolation} from './renderer-vector-raster.mjs';
@@ -213,6 +214,10 @@ class CanvasFallback {
     if (!this.context) throw new Error('The compatibility canvas is unavailable.');
     this.stats = { backend: 'Canvas 2D fallback', reason, drawCalls: 0, primitives: 0, frameMs: 0, objects: 0, textureObjects: 0 };
     this.onionArtwork = new Map(); this.onionArtworkBytes = 0;
+    this.onionBudget = options.onionCache?.maxBytes ?? previewMemoryPlan().editorOnions;
+    this.onionLayers = new OnionSurfaceCache({maxBytes: this.onionBudget / 2,
+      maxEntries: options.onionCache?.maxEntries ?? 24,
+      create: (w,h) => new OffscreenCanvas(w,h), dispose: canvas => {canvas.width=canvas.height=1;}});
     // Unchanged live objects rasterize once into a bounded bitmap cache instead
     // of re-stroking every primitive on each repaint, like the onion path.
     this.artwork = new Map(); this.artworkBytes = 0;
@@ -240,6 +245,12 @@ class CanvasFallback {
   clearOnionArtwork() {
     for (const item of this.onionArtwork.values()) { item.canvas.width = 1; item.canvas.height = 1; }
     this.onionArtwork.clear(); this.onionArtworkBytes = 0;
+    this.onionLayers.clear();
+    for (const key of ['onionSurface','onionLayerScratch']) {
+      if(this[key])this[key].width=this[key].height=1;
+      this[key]=null;
+    }
+    this.stats.onionCacheBytes = this.stats.onionCompositeBytes = 0;
   }
   clearArtwork() {
     for (const item of this.artwork.values()) { item.canvas.width = 1; item.canvas.height = 1; }
@@ -335,41 +346,54 @@ class CanvasFallback {
   }
   trimOnionArtwork() {
     // Bound raster memory independently of animation length and viewport size.
-    while (this.onionArtwork.size > 4096 || this.onionArtworkBytes > 64 * 1024 * 1024) {
+    while (this.onionArtwork.size > 4096 || this.onionArtworkBytes > this.onionBudget / 2) {
       const key = this.onionArtwork.keys().next().value, item = this.onionArtwork.get(key);
       this.onionArtwork.delete(key); this.onionArtworkBytes -= item.bytes;
       item.canvas.width = 1; item.canvas.height = 1;
     }
   }
-  drawOnionScene(ctx, groups, start, scale, hiddenUids, parallax, geometry) {
-    const first = groups[start], matrix = ctx.getTransform();
-    let end = start+1;
-    while(end<groups.length&&groups[end].isOnion&&groups[end].onionIndex===first.onionIndex)end++;
-    let cached = this.onionArtwork.get(geometry);
-    // Completed ghosts share the existing 64 MiB onion LRU with object rasters.
-    // A live pose drag reuses them; view, visibility, parallax and drawing pixels
-    // invalidate them without walking or serializing the source document.
-    const valid=cached?.members?.length===end-start&&cached.canvas.width===this.canvas.width&&cached.canvas.height===this.canvas.height&&
-      ['a','b','c','d','e','f'].every(k=>cached.matrix[k]===matrix[k])&&!changedDrawingRaster(cached.drawingInputs)&&
-      cached.members.every((member,index)=>{const uid=groups[start+index].g.obj.unique_id,depth=parallax(uid);return member.hidden===Boolean(hiddenUids?.has(uid))&&member.x===depth.x&&member.y===depth.y;});
-    if(!valid){
-      if(cached){this.onionArtwork.delete(geometry);this.onionArtworkBytes-=cached.bytes;cached.canvas.width=cached.canvas.height=1;}
-      const canvas=new OffscreenCanvas(this.canvas.width,this.canvas.height),temp=this.softwareRasterContext(canvas);
-      if(!temp)return end;
-      temp.setTransform(matrix);
-      const members=[],drawingInputs=[];
-      for(let i=start;i<end;i++){
-        const group=groups[i],uid=group.g.obj.unique_id,depth=parallax(uid),hidden=Boolean(hiddenUids?.has(uid));
-        members.push({hidden,x:depth.x,y:depth.y});if(hidden)continue;
-        const inputs=drawingRasterInputs(group.items,this.resources);if(inputs)drawingInputs.push(...inputs);
-        temp.save();temp.translate(depth.x,depth.y);this.drawOnion(temp,group,scale);temp.restore();
-      }
-      cached={canvas,matrix,members,drawingInputs,bytes:canvas.width*canvas.height*4};
-      this.onionArtworkBytes+=cached.bytes;
+  onionScratch(key) {
+    const {width,height}=this.canvas;
+    if(this[key]?.width!==width||this[key]?.height!==height){
+      if(this[key])this[key].width=this[key].height=1;
+      this[key]=new OffscreenCanvas(width,height);
     }
-    this.onionArtwork.delete(geometry);this.onionArtwork.set(geometry,cached);
-    ctx.save();ctx.resetTransform();ctx.globalAlpha=first.opacity;ctx.drawImage(cached.canvas,0,0);ctx.restore();
-    this.trimOnionArtwork();
+    return this[key];
+  }
+  drawOnionScene(ctx, groups, start, scale, hiddenUids, parallax) {
+    const first = groups[start], matrix = ctx.getTransform();
+    const end = onionLayerEnd(groups,start), cached = this.onionLayers.acquire(first.onionIndex);
+    const valid=cached?.members?.length===end-start&&
+      ['a','b','c','d','e','f'].every(k=>cached.matrix[k]===matrix[k])&&!changedDrawingRaster(cached.drawingInputs)&&
+      cached.members.every((member,index)=>{const group=groups[start+index],uid=group.g.obj.unique_id,depth=parallax(uid);
+        return member.g===group.g&&member.opacity===group.opacity&&member.onionIndex===group.onionIndex&&
+          member.hidden===Boolean(hiddenUids?.has(uid))&&member.x===depth.x&&member.y===depth.y;});
+    const canvas=cached?.surface??this.onionScratch('onionLayerScratch');
+    if(!valid){
+      const layer=this.softwareRasterContext(canvas), scratch=this.onionScratch('onionSurface'),temp=this.softwareRasterContext(scratch);
+      if(!layer||!temp)return end;
+      layer.resetTransform();layer.clearRect(0,0,canvas.width,canvas.height);
+      const members=[],drawingInputs=[];
+      for(let from=start;from<end;){
+        let to=from+1;while(to<end&&groups[to].onionIndex===groups[from].onionIndex)to++;
+        temp.resetTransform();temp.clearRect(0,0,scratch.width,scratch.height);temp.setTransform(matrix);
+        for(let i=from;i<to;i++){
+          const group=groups[i],uid=group.g.obj.unique_id,depth=parallax(uid),hidden=Boolean(hiddenUids?.has(uid));
+          members.push({g:group.g,opacity:group.opacity,onionIndex:group.onionIndex,hidden,x:depth.x,y:depth.y});if(hidden)continue;
+          const inputs=drawingRasterInputs(group.items,this.resources);if(inputs)drawingInputs.push(...inputs);
+          temp.save();temp.translate(depth.x,depth.y);this.drawOnion(temp,group,scale);temp.restore();
+        }
+        layer.globalAlpha=groups[from].opacity;layer.drawImage(scratch,0,0);this.stats.onionRenderedFrames++;from=to;
+      }
+      layer.globalAlpha=1;
+      if(cached)Object.assign(cached,{matrix,members,drawingInputs});
+    } else {
+      for(let i=start;i<end;i++)if(i===start||groups[i].onionIndex!==groups[i-1].onionIndex)this.stats.onionFrameHits++;
+    }
+    ctx.save();ctx.resetTransform();ctx.globalAlpha=1;ctx.drawImage(canvas,0,0);ctx.restore();
+    this.stats.onionCacheBytes=this.onionArtworkBytes+this.onionLayers.bytes;
+    this.stats.onionCompositeBytes=this.onionLayers.bytes+this.canvas.width*this.canvas.height*4*
+      (Number(Boolean(this.onionSurface))+Number(Boolean(this.onionLayerScratch)));
     return end;
   }
   // Live objects reuse the same bounded raster strategy as onion skins. The
@@ -422,6 +446,7 @@ class CanvasFallback {
     const { report, frame, view = {}, geometry = frame && (options.vfxEnabled===false?vfxPreviewGeometry(buildGeometry(report,frame)):buildGeometry(report,frame)), hiddenUids, dragTranslations } = options;
     if (this.onionReport !== report) { this.clearOnionArtwork(); this.clearArtwork(); this.clearPreparedFrames(); this.onionReport = report; }
     this.stats.onionRasterizedObjects = 0;
+    this.stats.onionRenderedFrames = this.stats.onionFrameHits = 0;
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     if (!frame || !report) return;
     ctx.save(); ctx.scale(this.dpr, this.dpr);
@@ -442,12 +467,13 @@ class CanvasFallback {
     const walker=generatorPlan&&!generatorPlan.empty?scheduleWalker(generatorPlan,draws=>{drawGeneratorDraws(ctx,generatorBatch,draws);}):null;
     walker?.begin();
     const groups = composeSceneGroups(geometry, onions, frame);
-    if (!onions.length && this.onionArtwork.size) this.clearOnionArtwork();
+    if (!onions.length) this.clearOnionArtwork();
+    else this.onionLayers.begin(onionLayerKeys(groups),this.canvas.width,this.canvas.height);
     for (let i=0;i<groups.length;i++) {
       const group=groups[i];
       if(group.isOnion){
         if(!hasSceneVfx(frame)){
-          const end=this.drawOnionScene(ctx,groups,i,scale,hiddenUids,parallax,onions[group.onionIndex].geometry);
+          const end=this.drawOnionScene(ctx,groups,i,scale,hiddenUids,parallax);
           for(let j=i;j<end;j++)if(!hiddenUids?.has(groups[j].g.obj.unique_id))primitives+=groups[j].items.length;
           i=end-1;
         }
@@ -467,7 +493,7 @@ class CanvasFallback {
     if(hasSceneVfx(frame)){
       renderPreviewVfx(this,'vfxCamera',()=>new CameraVfx(),camera=>camera.render(ctx,{...options,geometry},this.dpr,this.resources));
       ctx.save();ctx.scale(this.dpr,this.dpr);if(options.clipToCanvas!==false)clipArtboard();ctx.transform(...matrix);
-      for(let i=0;i<groups.length;i++)if(groups[i].isOnion)i=this.drawOnionScene(ctx,groups,i,scale,hiddenUids,parallax,onions[groups[i].onionIndex].geometry)-1;
+      for(let i=0;i<groups.length;i++)if(groups[i].isOnion)i=this.drawOnionScene(ctx,groups,i,scale,hiddenUids,parallax)-1;
       ctx.restore();
     }
     Object.assign(this.stats, { objects: geometry.objects.size, primitives, drawCalls: primitives, frameMs: performance.now() - start });
@@ -607,6 +633,8 @@ class WebGPURenderer {
   useReport(report) {
     if (this.activeReport === report) return;
     if (this.activeReport) {
+      this.onionComposite?.destroy(); this.onionComposite=null;
+      this.stats.onionCompositeBytes=this.stats.onionCacheBytes=0;
       for (const entry of this.backgroundImages?.values() || []) entry.texture.destroy();
       for (const texture of this.drawingTextures?.values() ?? []) texture.texture.destroy();
       this.drawingTextures?.clear();
@@ -1232,10 +1260,11 @@ class WebGPURenderer {
     const encoder = this.device.createCommandEncoder({ label: 'StykAnimate viewport frame' });
     if(drawingGpu&&!drawingGpu.destroyed)drawingGpu.encode(encoder);
     const timestampWrites=this.gpuTiming?.begin(this.measureFrame);
+    this.stats.onionRenderedFrames=this.stats.onionFrameHits=0;
     const hasOnions=this.layout.some(entry=>entry.isOnion);
     const lastOnion=hasOnions&&!hasSceneVfx(frame)?this.layout.findLastIndex(entry=>entry.isOnion):-1;
-    if(hasOnions){this.onionComposite??=new OnionComposite(this);this.onionComposite.prepare();}
-    else if(this.onionComposite){this.onionComposite.destroy();this.onionComposite=null;this.stats.onionCompositeBytes=0;}
+    if(hasOnions){this.onionComposite??=new OnionComposite(this);this.onionComposite.prepare(uniform);}
+    else if(this.onionComposite){this.onionComposite.destroy();this.onionComposite=null;this.stats.onionCompositeBytes=this.stats.onionCacheBytes=0;}
     const destination=this.context.getCurrentTexture().createView();
     const firstTimestamps=timestampWrites&&lastOnion>=0?{querySet:timestampWrites.querySet,beginningOfPassWriteIndex:timestampWrites.beginningOfPassWriteIndex}:timestampWrites;
     let pass = encoder.beginRenderPass({ colorAttachments: [{...this.colorAttachment(destination), ...(hasOnions?{storeOp:'store'}:{})}], ...(firstTimestamps?{timestampWrites:firstTimestamps}:{}) });
@@ -1248,7 +1277,7 @@ class WebGPURenderer {
       const entry=this.layout[i];
       if(entry.isOnion&&hasSceneVfx(frame)){flush();continue;}
       if(entry.isOnion){
-        flush();let end=i+1;while(end<this.layout.length&&this.layout[end].isOnion&&this.layout[end].onionIndex===entry.onionIndex)end++;
+        flush();const end=onionLayerEnd(this.layout,i);
         const finalTimestamps=timestampWrites&&end-1===lastOnion?{querySet:timestampWrites.querySet,endOfPassWriteIndex:timestampWrites.endOfPassWriteIndex}:undefined;
         const composite=this.onionComposite.draw(encoder,destination,pass,this.layout,i,end,finalTimestamps);pass=composite.pass;calls+=composite.calls;i=end-1;continue;
       }

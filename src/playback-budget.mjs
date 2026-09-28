@@ -31,7 +31,8 @@ export function previewMemoryPlan(deviceMemory = deviceMemoryHint(), workerCount
   const base = playbackMemoryBudget(deviceMemory), mib = 1024 * 1024;
   const workers = playbackWorkerMemoryPlan(base), count = Math.max(1, Math.min(4, Math.floor(workerCount) || 1));
   const plan = {cpuFrames: base, gpuFrames: base, editorImages: Math.min(64 * mib, base / 4),
-    editorRasters: Math.min(128 * mib, base / 2), thumbnails: Math.min(24 * mib, base / 8), library: 8 * mib,...playbackReuseMemoryPlan(base)};
+    editorRasters: Math.min(128 * mib, base / 2), editorOnions: Math.min(64 * mib, base / 8),
+    thumbnails: Math.min(24 * mib, base / 8), library: 8 * mib,...playbackReuseMemoryPlan(base)};
   return {...plan, workerImages: workers.images, workerSources: workers.sources, workerRasters: workers.rasters,
     workerVectors: workers.vectors, workerDrawings: workers.drawings, workerTints: workers.tints,
     workerCount: count, workerRetainedBytes: workers.retainedBytes, workerPoolBytes: workers.retainedBytes * count,

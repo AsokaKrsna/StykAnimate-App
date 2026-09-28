@@ -28,6 +28,8 @@ test('raster retention scales with available memory without exceeding its partit
     assert.ok(plan.workerRasters<=plan.cpuFrames/4);
     assert.ok(plan.workerVectors<=32*1024*1024);
     assert.ok(plan.workerVectors<=plan.cpuFrames/8);
+    assert.ok(plan.editorOnions<=64*1024*1024);
+    assert.equal(plan.editorOnions,Math.min(64*1024*1024,plan.cpuFrames/8));
   }
   assert.equal(previewMemoryPlan(8).workerRasters,128*1024*1024);
 });

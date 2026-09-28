@@ -20,10 +20,12 @@ try {
         return o;
       }), 3));
       styk.editor.load(r); styk.editor.seek(30); styk.editor.select(1, 0);
-      styk.settingsUI.commit({timelineMode: 'advanced', onionMode, onionBefore: 2, onionAfter: 1});
+      styk.settingsUI.commit({timelineMode: 'advanced', onionMode, onionBefore: 2, onionAfter: 1,
+        onionRangeBefore: onionMode === 'keyframes' ? 6 : 2, onionRangeAfter: onionMode === 'keyframes' ? 3 : 1});
       styk.state.onion = true; styk.fit();
     }, onionMode);
     await page.locator('.tool-dock [data-tool="select"]').click();
+    await page.waitForFunction(() => styk.state.renderer.onionScenes?.length === 3);
     const target = await page.evaluate(async () => {
       const {getPivotHandles, pickCanvasHandle} = await import('/src/canvas-interactions.mjs');
       const {worldToScreen} = await import('/src/renderer-geometry.mjs');
@@ -43,7 +45,9 @@ try {
       renderer.render = function(...args) {
         const result = render.apply(this, args);
         if (styk.editor.dragging) onionPointer.frames.push({cpuMs: this.stats.frameMs, compiled: this.stats.compiledObjects ?? 0,
-          rasterized: this.stats.rasterizedObjects ?? 0, ghostBuilds: styk.onionCache.stats.builds});
+          rasterized: this.stats.rasterizedObjects ?? 0, ghostBuilds: styk.onionCache.stats.builds,
+          ghostRenders: this.stats.onionRenderedFrames ?? 0, ghostHits: this.stats.onionFrameHits ?? 0,
+          onionScenes: this.onionScenes?.length, generation: this.generation, compositeRevision: this.onionComposite?.revision});
         return result;
       };
       onionPointer.restore = () => {renderer.render = render;};
@@ -69,6 +73,7 @@ try {
     const steady = gesture.frames.slice(2);
     assert.equal(new Set(steady.map(f => f.ghostBuilds)).size, 1, 'Actual node dragging must not rebuild onion samples.');
     assert.ok(steady.every(f => f.compiled + f.rasterized <= 2), 'Actual dragging must retain untouched artwork.');
+    assert.ok(steady.every(f => f.ghostRenders === 0 && f.ghostHits > 0), `Actual dragging must reuse completed ghost pixels: ${JSON.stringify(steady.slice(-5))}`);
     gestures.push({onionMode, ...gesture});
   }
   // Compare retained versus fresh samples on both rendering backends after a

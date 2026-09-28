@@ -23,6 +23,14 @@ during the gesture and refresh when the sheet is published. Seeking, opacity,
 tint, and selection changes reuse sampled geometry. Shared-definition changes
 invalidate geometry even when the layer-sheet state is unchanged.
 
+Completed ghost pixels belong to the renderer, separately from sampled geometry.
+Both backends cache contiguous ghost layers within a hardware-derived memory
+budget, retaining committed pixels during live poses. View, visibility, resource,
+and sampled-geometry changes invalidate the affected layer. The
+[renderer contract](renderer.md) describes compositing, admission, and disposal;
+[paired measurements](performance/onion-compositing-performance.md) document the
+high-DPI cache-thrashing regression and its verification.
+
 Regression checks cover both the legacy reader and the app's layer timeline:
 
 - `node --test tests/onion-skin.test.mjs tests/onion-layer-sheet.test.mjs`
@@ -30,6 +38,7 @@ Regression checks cover both the legacy reader and the app's layer timeline:
 - `node scripts/benchmark-onion-skin.mjs` compares onion on/off and asserts work budgets
 - `node tests/onion-selection.browser.mjs` with the local server running
 - `node tests/onion-performance.browser.mjs` verifies pointer drags and pixel parity on WebGPU and Canvas
+- `node tests/onion-composite-cache.browser.mjs` starts its own server and checks pixel invalidation, memory pressure, and disposal on both backends
 
 The browser check enables onion skin before adding frames, checks the renderer's
 ghosts through Simple and Advanced edits and history, and captures screenshots.

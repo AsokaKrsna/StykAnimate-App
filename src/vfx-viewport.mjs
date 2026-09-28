@@ -3,6 +3,7 @@ import {vfxGPUStats} from './vfx-gpu.mjs';
 import {CameraVfx} from './vfx-camera.mjs';
 import {CameraGpuSource} from './vfx-camera-gpu.mjs';
 import {vfxWebGPUFor} from './vfx-webgpu.mjs';
+import {onionLayerEnd} from './onion-surface-cache.mjs';
 const shader=`@group(0) @binding(0) var source:texture_2d<f32>;
 @group(0) @binding(1) var sourceSampler:sampler;
 struct VOut{ @builtin(position) position:vec4f, @location(0) uv:vec2f };
@@ -45,7 +46,7 @@ export class ViewportVfx{
    pass.setPipeline(this.quadPipeline);pass.setBindGroup(0,d.createBindGroup({layout:this.quadPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.quadUniform}},{binding:1,resource:camera.texture.createView()},{binding:2,resource:r.sampler}]}));pass.draw(6);}
   if(!options.preparedFrame)for(let i=0;i<r.layout.length;i++){
    const entry=r.layout[i];if(!entry.isOnion)continue;
-   let end=i+1;while(end<r.layout.length&&r.layout[end].isOnion&&r.layout[end].onionIndex===entry.onionIndex)end++;
+   const end=onionLayerEnd(r.layout,i);
    pass=r.onionComposite.draw(encoder,destination,pass,r.layout,i,end).pass;i=end-1;
   }
   if(options.canvasHandles)r.handleRenderer.draw(pass);pass.end();d.queue.submit([encoder.finish()]);

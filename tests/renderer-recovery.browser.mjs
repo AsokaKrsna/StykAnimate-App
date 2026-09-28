@@ -23,6 +23,7 @@ try {
       });
       styk.editor.markSaved();await styk.acceptImport({document:report,kind:'piv'},'GPU recovery.piv');
       styk.editor.seek(0);styk.editor.select(1);styk.editor.updateObject({root_x:100});
+      styk.state.onion=true;
       window.probe={report:styk.editor.report,revision:styk.editor.revision,history:styk.editor.historySize,old:styk.state.renderer};
     });
     await page.waitForFunction(()=>!styk.state.dirtyRender&&!styk.state.editablePreparing);
