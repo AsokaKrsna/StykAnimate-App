@@ -9,7 +9,7 @@ import {parallaxResolver} from './layer-parallax.mjs';
 import { PlaybackResources } from './playback-resources.mjs';
 export { PlaybackResources } from './playback-resources.mjs';
 import { evaluatedFrame, timeline, buildGeometry, drawGeometry, releaseGeometryResources, invalidateEvaluationCaches } from './pivot/geometry.mjs';
-import { compileVectorObject, requiresCompatibilityTexture, objectBounds, cameraMatrix, shapeRecord, SHAPE, SHAPE_FLOATS } from './renderer-geometry.mjs';
+import { compileVectorObject, requiresCompatibilityTexture, objectBounds, cameraMatrix, shapeRecord, SHAPE, SHAPE_FLOATS, rasterResolution } from './renderer-geometry.mjs';
 import { applyDocumentChunk } from './document-transport.mjs';
 import {MAX_NATIVE_PLAYBACK_BYTES, NATIVE_PLAYBACK_CHUNK_BYTES, materializePlaybackSnapshot} from './playback-native.mjs';
 import { applyPlaybackPatch } from './playback-patch.mjs';
@@ -156,7 +156,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     ...(native._stykBackgroundColor !== undefined ? {_stykBackgroundColor: native._stykBackgroundColor} : {}) };
   const groups = [], compatibility = [], chunks = [], rasterJobs = [], keyJobs = [], transforms = [0, 0, 1, 1], uids = [0];
   const matrix = cameraMatrix({ report, frame, cameraEnabled, view: { scale } });
-  const resolution = Math.max(.5, Math.min(8, 2 ** Math.ceil(Math.log2(Math.hypot(matrix[0], matrix[1]) || 1)))) * quality;
+  const resolution = rasterResolution(Math.hypot(matrix[0], matrix[1]) || 1) * quality;
   const sceneVisibleBounds = playbackVisibleBounds(report, frame, cameraEnabled,scale*quality),parallax=parallaxResolver(report,native,cameraEnabled);
   const clipping = { culledObjects: 0, culledPrimitives: 0, originalPixels: 0, retainedPixels: 0 };
   // Each unique bitmap has one packet owner and one transferable, even when
@@ -388,7 +388,7 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
   const uidSet = new Set(); for (const item of drawables) uidSet.add(item.obj.unique_id ?? item.slot);
   const matrix = cameraMatrix({ report, frame, cameraEnabled, view: { scale } });
   const hypot = Math.hypot(matrix[0], matrix[1]) || 1;
-  const resolution = Math.max(.5, Math.min(8, 2 ** Math.ceil(Math.log2(hypot)))) * quality;
+  const resolution = rasterResolution(hypot) * quality;
   // The bitmap covers the on-screen artboard: document pixels at view density
   // times the same resolution ratio compatibility textures would use.
   const pixelScale = Math.min(scale * resolution / hypot, maxTextureDimension / report.canvas_width, maxTextureDimension / report.canvas_height);
@@ -410,7 +410,11 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
   if (cancelled()) throw new DOMException('Playback preparation was superseded.', 'AbortError');
   let bitmap = null;
   if (typeof OffscreenCanvas !== 'undefined') {
-    const canvas = new OffscreenCanvas(pixelWidth, pixelHeight), ctx = canvas.getContext('2d');
+    // Compatibility frames rasterize on this worker's CPU, like the live
+    // compatibility canvas. An accelerated worker canvas flushed the whole
+    // scene through the GPU-service thread that presents frames, stalling
+    // editing and playback for hundreds of milliseconds on integrated GPUs.
+    const canvas = new OffscreenCanvas(pixelWidth, pixelHeight), ctx = canvas.getContext('2d', {willReadFrequently: true});
     const scene = { ...geometry, drawables };
     try {
       // The artboard is the whole bitmap: document edges crop world content,

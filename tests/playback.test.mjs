@@ -41,8 +41,9 @@ test('prepared raster cropping retains sample grid, filtering guards and origina
 test('texture resolution quantizes the native camera and physical view scale together', async () => {
   const report = createDemo(); report.keyframes[0].camera = { x: 0, y: 0, angle_rad: 0, scale: .9 };
   const packet = await compilePlaybackPacket(report, 0, { scale: 1.49 });
-  assert.equal(packet.scale, 1.49); assert.equal(packet.resolution, 2);
-  assert.equal((await compilePlaybackPacket(report, 0, { scale: 2 })).resolution, 4,
+  // 1.49 / 0.9 = 1.656 rounds up to the next quarter octave, never below display density.
+  assert.equal(packet.scale, 1.49); assert.equal(packet.resolution, 2 ** .75);
+  assert.equal((await compilePlaybackPacket(report, 0, { scale: 2 })).resolution, 2 ** 1.25,
     'Rounding physical scale before applying the native camera would oversample this view.');
 });
 
@@ -187,7 +188,7 @@ test('view changes retain the worker document and cancel outdated frame preparat
     cache.updateView({ scale: 3, cameraEnabled: false });
     await cache.prepareRange([0]); await cancelled;
     const latest = cache.get(0);
-    assert.notEqual(latest.key, before.key); assert.equal(latest.scale, 3); assert.equal(latest.resolution, 4);
+    assert.notEqual(latest.key, before.key); assert.equal(latest.scale, 3); assert.equal(latest.resolution, 2 ** 1.75);
     assert.equal(cache.documentRevision, 7); assert.equal(cache.stats.loadChunks, chunks); assert.equal(cache.stats.loadSerializationMs, bytes);
     assert.deepEqual(latest.frame.camera, before.frame.camera, 'View options must not alter native camera data.');
     const key = latest.key; cache.updateView({ scale: 3, cameraEnabled: false }); assert.equal(cache.get(0).key, key);
