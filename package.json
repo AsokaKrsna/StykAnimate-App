@@ -6,6 +6,7 @@
   "private": true,
   "type": "module",
   "main": "desktop/main.cjs",
+  "desktopName": "stykanimate.desktop",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
@@ -89,6 +90,9 @@
     ],
     "productName": "StykAnimate",
     "artifactName": "StykAnimate-${version}-${os}-${arch}.${ext}",
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
     "directories": {
       "output": "release"
     },
@@ -146,41 +150,49 @@
     "fileAssociations": [
       {
         "ext": "nodes",
+        "mimeType": "application/x-sticknodes-figure",
         "name": "Stick Nodes figure",
         "role": "Viewer"
       },
       {
         "ext": "nodemc",
+        "mimeType": "application/x-sticknodes-movieclip",
         "name": "Stick Nodes movie clip",
         "role": "Viewer"
       },
       {
         "ext": "stknds",
+        "mimeType": "application/x-sticknodes-project",
         "name": "Stick Nodes project",
         "role": "Viewer"
       },
       {
         "ext": "piv",
+        "mimeType": "application/x-pivot-animation",
         "name": "Pivot animation",
         "role": "Editor"
       },
       {
         "ext": "stk",
+        "mimeType": "application/x-pivot-figure",
         "name": "Pivot stick figure",
         "role": "Editor"
       },
       {
         "ext": "stykmov",
+        "mimeType": "application/vnd.stykanimate.movieclip",
         "name": "StykAnimate movieclip",
         "role": "Editor"
       },
       {
         "ext": "stkz",
+        "mimeType": "application/vnd.stykanimate.figure",
         "name": "StykAnimate figure",
         "role": "Editor"
       },
       {
         "ext": "styk",
+        "mimeType": "application/vnd.stykanimate.project",
         "name": "StykAnimate project",
         "role": "Editor"
       }
@@ -231,7 +243,10 @@
       "target": [
         "AppImage"
       ],
-      "category": "Graphics"
+      "category": "Graphics",
+      "executableName": "stykanimate",
+      "syncDesktopName": true,
+      "synopsis": "Stick figure animation"
     },
     "publish": [
       {

@@ -11,7 +11,7 @@ await mkdir(output, { recursive: true });
 const packaged = process.argv.includes('--packaged');
 const defaultPackagedPath = process.platform === 'win32' ? ['win-unpacked', 'StykAnimate.exe']
   : process.platform === 'darwin' ? [process.arch === 'arm64' ? 'mac-arm64' : 'mac', 'StykAnimate.app', 'Contents', 'MacOS', 'StykAnimate']
-  : [process.arch === 'arm64' ? 'linux-arm64-unpacked' : 'linux-unpacked', 'stykanimate-webapp'];
+  : [process.arch === 'arm64' ? 'linux-arm64-unpacked' : 'linux-unpacked', 'stykanimate'];
 const executablePath = packaged ? process.env.STYK_PACKAGED_EXECUTABLE || path.join(appRoot, 'release', ...defaultPackagedPath) : undefined;
 const profilePath = path.join(output, `${packaged ? 'packaged' : 'desktop'}-profile-${Date.now()}`);
 await mkdir(profilePath, {recursive:true});
