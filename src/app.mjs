@@ -126,6 +126,7 @@ import {
 } from "./media-authoring.mjs";
 import { icon, hydrateIcons } from "./icons.mjs";
 import { MotionPathCache, motionPathTargets, motionPathTargetKey, pickMotionPathPoint, drawMotionPath, drawMotionPathGhost, affineProjection } from "./motion-path.mjs";
+import { planFalloff, MOTION_PATH_FALLOFF_MAX } from "./motion-path-falloff.mjs";
 import { CanvasGuides } from "./canvas-guides.mjs";
 import { MotionPathControls } from "./motion-path-controls.mjs";
 import { TweenerControls } from "./tweener-controls.mjs";
@@ -244,6 +245,7 @@ const state = {
   builderBranch: false,
   builderShiftHeld: false,
   depthHeld: false,
+  falloffHeld: false,
   locked: new Set(),
   hidden: new Set(),
   sourceId: null,
@@ -519,8 +521,18 @@ function modeMessage() {
   }
   return null;
 }
+/** The stage message while arc reshaping is armed or under way. */
+function falloffModeMessage() {
+  if (!state.motionPaths || !["select", "pose"].includes(state.tool) || builderMode?.active) return null;
+  const falloff = editor.motionPathFalloff(), radius = falloff?.radius ?? state.settings.motionPathFalloffRadius;
+  if (!falloff && !state.falloffHeld) return null;
+  const resize = `scroll or ${hotkeys.label('falloff-smaller')} ${hotkeys.label('falloff-larger')} to resize`;
+  return falloff
+    ? { key: "falloff", icon: "motion-path", title: `Reshaping ±${radius} frames`, message: `· ${resize} · release ${hotkeys.label('falloff-hold')} for one frame · Esc cancels` }
+    : { key: "falloff", icon: "motion-path", title: "Drag a trail point", message: `to reshape ±${radius} frames of its arc · ${resize}` };
+}
 function syncModeMessage() {
-  stageHead.showMode(modeMessage());
+  stageHead.showMode(modeMessage() ?? falloffModeMessage());
 }
 /** The workspace chrome: the rail, the stage's context, and the band's session buttons. */
 function syncShell() {
@@ -1214,6 +1226,37 @@ function pickMotionPath(screen) {
   }
   return best;
 }
+/** The falloff a trail drag uses while its hold key is down. */
+function pathFalloff() {
+  return state.falloffHeld ? {radius: state.settings.motionPathFalloffRadius, shape: state.settings.motionPathFalloffShape} : null;
+}
+/** Holding or releasing the key, or resizing, retargets the open gesture. */
+function syncPathFalloff() {
+  if (state.drag?.kind === "motion-path") editor.setMotionPathFalloff(pathFalloff());
+  syncPathTooltip();
+  syncModeMessage();
+  requestRender();
+}
+function setFalloffHeld(held) {
+  if (state.falloffHeld === held) return;
+  state.falloffHeld = held;
+  syncPathFalloff();
+}
+function nudgePathFalloff(step) {
+  const current = state.settings.motionPathFalloffRadius;
+  const radius = Math.max(1, Math.min(MOTION_PATH_FALLOFF_MAX, current + step));
+  if (radius !== current) editorSettings.commit({ motionPathFalloffRadius: radius });
+  if (!editor.motionPathFalloff() && !state.falloffHeld) toast(`Motion path falloff ±${radius} frames`);
+}
+/** The canvas tooltip for the hovered trail point names both gestures. */
+function syncPathTooltip() {
+  const hover = state.hoverPathPoint;
+  if (!hover) { overlay.title = ""; return; }
+  const frame = `Frame ${hover.tick + 1}${hover.tick === editor.tick ? " (current)" : ""}`, key = hotkeys.label('falloff-hold');
+  overlay.title = state.falloffHeld
+    ? `${frame} — drag to reshape ±${state.settings.motionPathFalloffRadius} frames of the arc`
+    : `${frame} — drag to repose${hover.tick === editor.tick ? "" : " without leaving this frame, double-click to go there"}; hold ${key} to reshape the arc`;
+}
 /** Double-clicking a trail point goes to its frame. */
 function seekMotionPathTick(tick) {
   pause();
@@ -1525,6 +1568,16 @@ function onionSkins() {
   if (!state.onion || state.playing || state.previewing) return [];
   return onionCache.get(editor, onionController.settings, {selected: selection(), hidden: effectiveHidden(), visibilityKey:[...state.hidden]});
 }
+/** What a falloff drag at `tick` changes: the open gesture's plan, or, while
+ * the hold key is down over a trail, the plan a drag would make. */
+function pathInfluence(entry, tick, falloff) {
+  const edges = writes => new Set(writes.filter(write => write.kind === 'edge').map(write => write.tick));
+  if (falloff) return {tick, radius: falloff.radius, shape: falloff.shape, changed: falloff.changed, edges: edges(falloff.writes)};
+  if (!state.falloffHeld || state.drag) return null;
+  const radius = state.settings.motionPathFalloffRadius, shape = state.settings.motionPathFalloffShape;
+  const writes = planFalloff({tick, radius, shape, keys: [...(entry.keyTicks ?? [])], totalTicks: editor.totalTicks});
+  return {tick, radius, shape, changed: new Set(writes.map(write => write.tick)), edges: edges(writes)};
+}
 /** Trails, plus the pose at the hovered or dragged point when it is another
  * frame: the ghost shows what a drag will change without seeking. */
 function drawMotionPaths() {
@@ -1534,12 +1587,15 @@ function drawMotionPaths() {
   const dragPath = state.drag?.kind === "motion-path" ? state.drag : null;
   const focus = dragPath ?? state.hoverPathPoint;
   const bounds = {width: viewport.clientWidth, height: viewport.clientHeight};
+  const falloff = editor.motionPathFalloff();
   let ghost = null;
   for (const motionPath of motionPaths) {
     const key = motionPathTargetKey(motionPath.target);
     if (focus?.key === key && focus.tick !== editor.tick) ghost = motionPath;
+    const influence = focus?.key === key ? pathInfluence(motionPath.entry, focus.tick, dragPath ? falloff : null) : null;
     drawMotionPath(ctx, motionPath.entry, project, {
       tick: editor.tick, relative, bounds, strong: motionPath.strong, currentBadge: motionPath.lead,
+      influence, badgeSuffix: influence ? `· ±${influence.radius}` : '',
       hover: state.hoverPathPoint?.key === key ? state.hoverPathPoint : null,
       dragging: dragPath?.key === key ? {tick: dragPath.tick} : null,
       color: motionPath.color,
@@ -2574,7 +2630,7 @@ overlay.addEventListener(
         seekMotionPathTick(pathHit.tick);
         return;
       }
-      if (pathHit && editor.beginMotionPathEdit(hitTarget, pathHit.tick)) {
+      if (pathHit && editor.beginMotionPathEdit(hitTarget, pathHit.tick, {falloff: pathFalloff()})) {
         state.drag = {
           kind: "motion-path",
           key: motionPathTargetKey(hitTarget),
@@ -2585,6 +2641,7 @@ overlay.addEventListener(
           moved: false,
         };
         viewport.classList.add("dragging");
+        syncModeMessage();
         requestRender();
         return;
       }
@@ -2827,12 +2884,9 @@ const moveCanvasPointer = guarded((e) => {
           const tick = picked.hit.tick;
           state.hoverPathPoint = { key: motionPathTargetKey(picked.motionPath.target), tick };
           overlay.style.cursor = "grab";
-          overlay.title = tick === editor.tick
-            ? `Frame ${tick + 1} (current) — drag to repose`
-            : `Frame ${tick + 1} — drag to repose without leaving this frame, double-click to go there`;
         }
       }
-      if (!state.hoverPathPoint && previousPathPoint) overlay.title = "";
+      if (state.hoverPathPoint || previousPathPoint) syncPathTooltip();
       if (previousPathPoint?.tick !== state.hoverPathPoint?.tick || previousPathPoint?.key !== state.hoverPathPoint?.key) requestRender();
       const geometry = editor.geometry;
       const handle =
@@ -3079,6 +3133,7 @@ function endDrag(event, {keepPointer = false} = {}) {
     else editor.cancelMotionPathEdit();
     // A press that did not move arms the double-click that goes to this frame.
     state.lastPathClick = drag.moved ? null : {key: drag.key, tick: drag.tick, time: event?.timeStamp ?? performance.now()};
+    syncModeMessage();
   } else if (drag.kind === "camera") editor.commitCameraDrag();
   else if (!["pan", "maybe-bend", "zoom", "rotate"].includes(drag.kind)) {
     if (drag.kind === "move" && drag.moved) {
@@ -3125,7 +3180,7 @@ function cancelDrag() {
   if (!state.drag) return;
   if (state.drag.kind === 'tweener') tweenerControls.finish(false);
   if (state.drag.kind === "camera") editor.cancelCameraDrag();
-  if (state.drag.kind === "motion-path") editor.cancelMotionPathEdit();
+  if (state.drag.kind === "motion-path") { editor.cancelMotionPathEdit(); queueMicrotask(syncModeMessage); }
   if (
     ["move", "pose", "spatial", "rig", "bend", "handle-edit", "figure-transform"].includes(
       state.drag.kind,
@@ -3183,6 +3238,14 @@ overlay.addEventListener("pointerleave", () => {
 viewport.addEventListener(
   "wheel",
   (e) => {
+    // While reshaping an arc (or arming it over a trail), the wheel sizes the influence.
+    if (editor.motionPathFalloff() || (state.falloffHeld && state.hoverPathPoint)) {
+      e.preventDefault();
+      state.falloffWheel = (state.falloffWheel ?? 0) + (e.deltaMode ? e.deltaY * 40 : e.deltaY);
+      const steps = Math.trunc(state.falloffWheel / 40);
+      if (steps) { state.falloffWheel -= steps * 40; nudgePathFalloff(-steps); }
+      return;
+    }
     const shouldZoom = state.settings.canvasZoomGesture === 'scroll' || e.ctrlKey || e.metaKey;
     if(telemetry.isForeground)telemetry.performance.action(shouldZoom ? 'zoom' : 'pan');
     e.preventDefault();
@@ -4962,6 +5025,8 @@ function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
   if (id === 'handle-edit-hold') { state.handleEditHeld = true; requestRender(); return; }
   if (id === 'isolate-hold') { state.isolateHeld = true; return; }
   if (id === 'depth-hold') { state.depthHeld = true; return; }
+  if (id === 'falloff-hold') { setFalloffHeld(true); return; }
+  if (id === 'falloff-smaller' || id === 'falloff-larger') return nudgePathFalloff(id === 'falloff-larger' ? 1 : -1);
   if (id === 'play-pan') {
     state.space = true; state.spacePanned = false; viewport.classList.add('panning'); return;
   }
@@ -4987,6 +5052,7 @@ function releaseKeyboardCommand(id, event) {
   if (id === 'handle-edit-hold') { state.handleEditHeld = false; requestRender(); }
   else if (id === 'isolate-hold') state.isolateHeld = false;
   else if (id === 'depth-hold') state.depthHeld = false;
+  else if (id === 'falloff-hold') setFalloffHeld(false);
   else if (id.startsWith('handle-')) {
     heldArrows.delete('arrow' + id.slice(7));
     if (!heldArrows.size) finishKeyboardHandle();
@@ -5779,6 +5845,7 @@ async function init() {
       pathControls?.sync();
       canvasGuides?.sync();
       if (!state.motionPaths) { state.hoverPathPoint = null; overlay.title = ""; pathCache.clear(); }
+      if (patch.motionPathFalloffRadius !== undefined || patch.motionPathFalloffShape !== undefined || patch.motionPaths !== undefined) syncPathFalloff();
       appLocalization.setLocale(next.locale);
       blueHandles = null;
       scheduleRecovery();
@@ -5812,7 +5879,8 @@ async function init() {
   window.styk.onionController = onionController;
   pathControls = new MotionPathControls({button: $("paths-button"),
     getSettings: () => state.settings, getEnabled: () => state.motionPaths,
-    onChange: patch => editorSettings.commit(patch), onToggle: () => actions["toggle-motion-paths"]()});
+    onChange: patch => editorSettings.commit(patch), onToggle: () => actions["toggle-motion-paths"](),
+    getFalloffKey: () => hotkeys.label('falloff-hold')});
   window.styk.tweener = tweenerControls = new TweenerControls({button: $('tweener-button'), editor, viewport,
     getTool: () => state.tool, onSelect: () => setTool('tweener'),
     beforeEdit: () => propertyControls?.commit(), onError: fail});
@@ -6182,6 +6250,7 @@ function rendererOptions() {
         state.spacePanned = false;
         state.isolateHeld = false;
         state.depthHeld = false;
+        state.falloffHeld = false;
         state.hoverHandle = null;
         state.hoverCameraHandle = null;
         viewport.classList.toggle("panning", state.tool === "hand");

@@ -16,6 +16,9 @@ import {snapshotPoseFrame, snapshotPoseObject, poseObjectSignature} from './pose
 import {animationChannels, animationChannelId, animationPropertyValue} from './animation-channels.mjs';
 import {draftAnimation, putKey, recordAnimation} from './editor-animation.mjs';
 import {rotateOriginSupport} from './animation-origin-support.mjs';
+import {planFalloff, normalizeFalloff} from './motion-path-falloff.mjs';
+import {keyTicksForTarget} from './motion-path.mjs';
+import {sheetKeyAt} from './layer-sheet.mjs';
 
 const clone = value => structuredClone(value);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -332,6 +335,11 @@ function refreshSession(editor, session) {
     animation: session.draft.after, frameSources: {...report._styk.frameSources, ...session.draft.sources}}};
   else session.report = {...report, _styk: {...report._styk, layerSheet: session.sheet.plan.state, layers: session.sheet.plan.layers,
     frameSources: {...report._styk.frameSources, ...Object.fromEntries(session.sheet.plan.sources.map(s => [s.id, s.after.value]))}}};
+  refreshDisplay(editor, session);
+}
+
+/** The playhead's pose while the virtual report changes it. */
+function refreshDisplay(editor, session) {
   session.display = null;
   const tick = editor.tick;
   if (tick < session.range[0] || tick >= session.range[1]) return;
@@ -345,8 +353,8 @@ function refreshSession(editor, session) {
 /** Write the working pose into animation channels at the session tick. Keys and
  * retained sources are rewritten in place across pointer moves, so one gesture
  * produces one key per owner. */
-function writeChannels(editor, session) {
-  const {draft, working, tick} = session, changed = changedUids(session);
+function writeChannels(editor, session, {changed = changedUids(session), forceCamera = false} = {}) {
+  const {draft, working, tick} = session;
   const byOwner = new Map();
   for (const uid of changed) {
     const independent = editor.animationChannel({kind: 'figure', uid}, 'pose');
@@ -358,7 +366,7 @@ function writeChannels(editor, session) {
   for (const [key, {target}] of byOwner) {
     const capture = target.kind === 'figure' ? [target.uid]
       : working.objects.filter(o => editor.layerForUid(o.unique_id) === target.id).map(o => o.unique_id);
-    const source = snapshotPoseFrame(working, capture);
+    const source = (session.snapshot ?? snapshotPoseFrame)(working, capture);
     let id = session.sourceIds.get(key);
     if (!id) {
       id = `frame-${editor._nextFrameIdentity++}`; session.sourceIds.set(key, id);
@@ -367,10 +375,10 @@ function writeChannels(editor, session) {
       session.touched.add(animationChannelId(target, 'pose'));
     } else { source._styk = {...source._styk, frameId: id}; draft.sources[id] = source; }
   }
-  if (session.target.kind === 'camera' && session.cameraChanged) {
+  if (session.target.kind === 'camera' && (session.cameraChanged || forceCamera)) {
     const base = cameraValues(session.source.camera), next = cameraValues(working.camera);
     for (const [property, field] of [['x', 'x'], ['y', 'y'], ['scale', 'scale'], ['rotation', 'angle_rad']])
-      if (base[field] !== next[field]) {
+      if (base[field] !== next[field] || (forceCamera && (field === 'x' || field === 'y'))) {
         putKey(editor, draft, {target: {kind: 'camera'}, property, tick, value: next[field], exactTarget: true});
         session.touched.add(animationChannelId({kind: 'camera'}, property));
       }
@@ -401,10 +409,289 @@ function writeChannels(editor, session) {
   }
 }
 
+/** Key ticks a falloff edit may move: the target's own keys, or every stored
+ * pose row in a native document. */
+function falloffKeys(editor, target) {
+  const owned = keyTicksForTarget(editor, target);
+  if (owned) return [...owned];
+  return editor.timeline.filter(row => row.count > 0).map(row => row.start);
+}
+
+/** Whether a native write lands on a stored pose (edited in place) or inside a
+ * tween (split there). */
+const atRowStart = write => write.ratio <= 0;
+
+/** One write of a falloff edit: its own working pose at its own tick, reusing
+ * the single-frame session shape so the same pose semantics apply. */
+function falloffWrite(editor, session, write, component) {
+  const report = editor.report, rows = editor.timeline, {index, row, t} = rowForTick(rows, write.tick);
+  if (!row) return null;
+  const source = write.tick === editor.tick ? editor.evaluatedFrame : evaluatedFrame(report, index, t, write.tick);
+  if (!source) return null;
+  const native = session.mode === 'native';
+  const stored = native && t <= 0 ? report.keyframes[index] : null;
+  const baseline = session.target.kind !== 'node' ? []
+    : (stored ?? source).objects.filter(o => component.has(o.unique_id)).map(o => snapshotPoseObject(o));
+  const sub = {motionPath: true, target: session.target, tick: write.tick, weight: write.weight, kind: write.kind,
+    index, row, ratio: t, mode: session.mode, source, working: snapshotPoseFrame(source), baseline,
+    dirtySlots: new Set(), geometry: null, rotationTargets: null, cameraChanged: false, moved: false,
+    sourceIds: new Map(), touched: session.touched, draft: session.draft, range: [write.tick, write.tick + 1]};
+  if (stored) sub.working._styk = {...sub.working._styk, frameId: stored._styk?.frameId};
+  if (session.target.kind === 'camera') {
+    const camera = cameraValues(sub.working.camera);
+    sub.origin = {x: report.canvas_width / 2 + camera.x, y: report.canvas_height / 2 + camera.y};
+  } else {
+    const slot = sub.working.objects.findIndex(o => o.unique_id === session.target.uid);
+    sub.origin = sessionGeometry(sub, report).objects.get(slot)?.joints.get(session.target.handleId) ?? null;
+    if (!sub.origin) return null;
+  }
+  // Only the component and pinned figures the pose rules may bake can change.
+  const refresh = new Set(sub.working.objects.filter(o => component.has(o.unique_id) || hasPinnedIK(o)).map(o => o.unique_id));
+  sub.snapshot = incrementalPoseSnapshot(refresh);
+  if (session.mode === 'sheet') sub.sheet = {tick: write.tick, plan: session.sheet.plan, writes: new Map(), snapshot: sub.snapshot};
+  return sub;
+}
+
+/** Sheet writes resolve holds to their key: two writes resolving to the same
+ * key of the same track keep the stronger one, and edges never rewrite a hold. */
+function sheetClaim(editor, session, sub, id) {
+  const known = sub.claims?.get(id);
+  if (known !== undefined) return known;
+  const {key} = sheetKeyAt(session.sheet.plan.get(id), sub.tick);
+  const held = key && (['constant', 'hold'].includes(key.interpolation) || key.movieclipPatches);
+  const at = held ? key.tick : sub.tick, claim = `${id}:${at}`;
+  const allowed = !(sub.kind === 'edge' && held) && !session.claims.has(claim);
+  if (allowed) session.claims.add(claim);
+  (sub.claims ??= new Map()).set(id, allowed);
+  return allowed;
+}
+
+/** A pose capture for repeated writes of one falloff frame. Only `refresh`
+ * uids can change between pointer moves, so later captures reuse the first
+ * capture's other records and snapshot just those; the result equals a fresh
+ * `snapshotPoseFrame`. Superseded captures are dropped by their owners. */
+export function incrementalPoseSnapshot(refresh) {
+  const bases = new Map();
+  return (frame, uids) => {
+    const key = uids ? [...uids].join(',') : '*', base = bases.get(key);
+    if (!base) { const first = snapshotPoseFrame(frame, uids); bases.set(key, {...first}); return first; }
+    const slotOf = new Map(frame.objects.map((object, slot) => [object.unique_id, slot]));
+    const indexOf = new Map(base.objects.map((object, index) => [object.unique_id, index]));
+    const objects = base.objects.map((record, index) => {
+      if (!refresh.has(record.unique_id)) return record;
+      const fresh = snapshotPoseObject(frame.objects[slotOf.get(record.unique_id)]);
+      fresh.object_slot = index;
+      if (fresh.join) fresh.join = {...fresh.join, target_object_slot: indexOf.get(frame.objects[fresh.join.target_object_slot]?.unique_id) ?? fresh.join.target_object_slot};
+      return fresh;
+    });
+    return {...base, objects};
+  };
+}
+
+/** Uids a falloff write changed. Only the dragged component can move, plus
+ * pinned-IK figures whose displayed solution the pose rules bake, so dense
+ * scenes compare a handful of objects instead of the whole frame. */
+function falloffChanged(sub, component) {
+  const before = new Map(sub.source.objects.map(o => [o.unique_id, o])), changed = new Set();
+  for (const object of sub.working.objects) {
+    if (!component.has(object.unique_id) && !hasPinnedIK(object)) continue;
+    const previous = before.get(object.unique_id);
+    if (!previous || poseObjectSignature(previous, sub.source) !== poseObjectSignature(object, sub.working)) changed.add(object.unique_id);
+  }
+  return changed;
+}
+
+/** Record the edited poses into the mode's store (channels or sheet); native
+ * documents are rebuilt as a whole in `falloffNativeFrames`. Edges write the
+ * unchanged component so the original pose holds there. */
+function writeFalloff(editor, session, sub, component) {
+  const edge = sub.kind === 'edge';
+  if (!edge && !sub.moved) return;
+  const changed = edge ? new Set(session.target.kind === 'node' ? component : []) : sub.changed;
+  if (session.mode === 'channels') { writeChannels(editor, sub, {changed, forceCamera: edge}); return; }
+  if (session.mode !== 'sheet') return;
+  const owners = new Set();
+  for (const uid of changed) owners.add(editor.layerForUid(uid));
+  if (session.target.kind === 'camera') owners.add('camera');
+  for (const id of owners) if (sheetClaim(editor, session, sub, id)) editor._sheetPoseDraftWrite(sub.sheet, id, sub.working, changed);
+}
+
+/** A stored native pose with the edited component written over it. */
+function storedCandidate(stored, working, ids, camera) {
+  const edited = new Map(working.objects.map(o => [o.unique_id, o]));
+  return {...stored, camera: camera ? working.camera : stored.camera, objects: stored.objects.map(o =>
+    ids.has(o.unique_id) && edited.has(o.unique_id) ? {...edited.get(o.unique_id), object_slot: o.object_slot} : o)};
+}
+
+/** The native keyframe list after the edit: edited stored poses in place and
+ * rows split at the grabbed frame and edges. `first..last` bound the rows. */
+function falloffNativeFrames(editor, session, {commit = false} = {}) {
+  const frames = editor.report.keyframes, byRow = new Map();
+  for (const sub of session.subs) if (sub.moved || sub.kind === 'edge') {
+    if (!byRow.has(sub.index)) byRow.set(sub.index, []);
+    byRow.get(sub.index).push(sub);
+  }
+  const indices = [...byRow.keys()].sort((a, b) => a - b);
+  if (!indices.length) return null;
+  const first = indices[0], last = indices.at(-1), after = [];
+  for (let index = first; index <= last; index++) {
+    const stored = frames[index], subs = byRow.get(index)?.sort((a, b) => a.tick - b.tick) ?? [];
+    if (!subs.length) { after.push(stored); continue; }
+    const row = subs[0].row, head = subs.find(atRowStart), splits = subs.filter(sub => !atRowStart(sub));
+    let pose = stored;
+    if (head?.moved) {
+      pose = storedCandidate(stored, head.working, session.component, session.target.kind === 'camera');
+      if (commit) pose = settleStoredPose(editor, stored, pose, session.component);
+    }
+    const bounds = [...splits.map(sub => sub.tick), row.start + row.count];
+    after.push(splits.length ? {...pose, duration_raw: bounds[0] - row.start} : pose);
+    splits.forEach((sub, i) => {
+      const piece = commit ? clone(sub.working) : {...sub.working};
+      piece.duration_raw = bounds[i + 1] - sub.tick;
+      after.push(piece);
+    });
+  }
+  return {first, last, after, timing: indices.some(index => byRow.get(index).some(sub => !atRowStart(sub)))};
+}
+
+/** Commit-time checks for an edited stored pose, as a single-frame key edit
+ * performs them: validation, clean runtime fields and joined roots. */
+function settleStoredPose(editor, stored, candidate, component) {
+  const storedByUid = new Map(stored.objects.map(o => [o.unique_id, o])), ids = new Set();
+  const objects = candidate.objects.map(object => {
+    if (!component.has(object.unique_id)) return object;
+    if (poseObjectSignature(storedByUid.get(object.unique_id), stored) === poseObjectSignature(object, candidate)) return storedByUid.get(object.unique_id);
+    ids.add(object.unique_id);
+    const clean = clone(object); delete clean.runtime_segments; delete clean._movieclipSample;
+    return clean;
+  });
+  const settled = {...candidate, objects};
+  if (!ids.size) return settled;
+  validateObjectChanges(editor.report, settled, ids);
+  if (objects.some(object => object.join && ids.has(object.unique_id))) {
+    const geometry = buildGeometry(editor.report, settled);
+    for (const object of objects) if (object.join && ids.has(object.unique_id)) {
+      const root = geometry.objects.get(object.object_slot)?.root;
+      if (root) { object.root_x = root.x; object.root_y = root.y; }
+    }
+  }
+  return settled;
+}
+
+/** Rebuild the virtual report and the frames a live trail must resample. */
+function refreshFalloff(editor, session) {
+  const report = editor.report;
+  if (session.mode === 'native') {
+    const plan = falloffNativeFrames(editor, session);
+    session.report = plan ? {...report, keyframes: [...report.keyframes.slice(0, plan.first), ...plan.after, ...report.keyframes.slice(plan.last + 1)]} : report;
+  } else if (session.mode === 'channels') session.report = {...report, _styk: {...report._styk,
+    animation: session.draft.after, frameSources: {...report._styk?.frameSources, ...session.draft.sources}}};
+  else {
+    const plan = session.sheet.plan;
+    session.report = {...report, _styk: {...report._styk, layerSheet: plan.state, layers: plan.layers,
+      frameSources: {...report._styk.frameSources, ...Object.fromEntries(plan.sources.map(s => [s.id, s.after.value]))}}};
+  }
+  // Frames between the keys around the written ticks follow the new keys.
+  const ticks = session.subs.map(sub => sub.tick), keys = session.keys;
+  const low = Math.min(...ticks), high = Math.max(...ticks);
+  session.range = [Math.max(0, ...keys.filter(k => k < low)), Math.min(editor.totalTicks, ...keys.filter(k => k > high).map(k => k + 1), editor.totalTicks)];
+  refreshDisplay(editor, session);
+}
+
+/** Start a falloff session: plan the writes and capture each one's pose. */
+function beginFalloff(editor, session, component) {
+  const keys = falloffKeys(editor, session.target);
+  session.keys = keys.sort((a, b) => a - b);
+  session.component = component;
+  session.touched = new Set();
+  session.claims = new Set();
+  if (session.mode === 'channels') session.draft = draftAnimation(editor);
+  if (session.mode === 'sheet') {
+    const owners = new Set(session.target.kind === 'camera' ? ['camera'] : []);
+    for (const uid of component) owners.add(editor.layerForUid(uid));
+    session.sheet = editor._sheetPoseDraftBegin(session.tick, [...owners]);
+  }
+  const writes = planFalloff({tick: session.tick, radius: session.falloff.radius, shape: session.falloff.shape,
+    keys: session.keys, totalTicks: editor.totalTicks});
+  // Stronger writes claim shared hold keys first.
+  const priority = write => write.kind === 'grab' ? 3 : write.kind === 'key' ? 1 + write.weight : 0;
+  session.subs = [];
+  for (const write of [...writes].sort((a, b) => priority(b) - priority(a))) {
+    const sub = falloffWrite(editor, session, write, component);
+    if (sub) session.subs.push(sub);
+    else if (write.kind === 'grab') return false;
+  }
+  session.grab = session.subs[0];
+  session.writes = writes.filter(write => session.subs.some(sub => sub.tick === write.tick));
+  session.report = editor.report;
+  return true;
+}
+
+function updateFalloff(editor, session, point, options) {
+  const delta = {x: point.x - session.grab.origin.x, y: point.y - session.grab.origin.y};
+  for (const sub of session.subs) {
+    if (!sub.weight) continue;
+    const target = sub === session.grab ? point : {x: sub.origin.x + delta.x * sub.weight, y: sub.origin.y + delta.y * sub.weight};
+    if (!applyPathPoint(sub, editor, target, options)) continue;
+    sub.moved = true;
+    editor._synchronizeAnimationOrigins(sub.working, sub.baseline.length ? sub.baseline : sub.source.objects);
+    if (sub.target.kind === 'camera') sub.cameraChanged = true;
+    sub.changed = falloffChanged(sub, session.component);
+  }
+  session.moved = session.subs.some(sub => sub.moved);
+  if (!session.moved) return;
+  // Edges are written once they have something to hold against.
+  for (const sub of session.subs) if (sub.kind !== 'edge' || !sub.written) { writeFalloff(editor, session, sub, session.component); sub.written = true; }
+  refreshFalloff(editor, session);
+}
+
+function commitFalloff(editor, session) {
+  const changed = session.subs.filter(sub => sub.moved && (sub.cameraChanged ? sessionHasChanges(sub) : sub.changed.size));
+  if (!session.moved || !changed.length) {
+    editor._drag = null;
+    editor._emit('edit', {motionPath: true});
+    return false;
+  }
+  for (const sub of session.subs) if (sub.moved) { rememberBends(sub, editor.report); sub.changed = falloffChanged(sub, session.component); }
+  if (session.mode === 'native') {
+    let plan;
+    try { plan = falloffNativeFrames(editor, session, {commit: true}); }
+    catch (error) { editor.cancelMotionPathEdit(); throw error; }
+    const before = editor.report.keyframes.slice(plan.first, plan.last + 1).map(frame => clone(frame));
+    const previous = new Map(editor.report.keyframes.map(frame => [frame._styk?.frameId, frame]));
+    const inserted = plan.after.map(frame => clone(frame));
+    editor.report.keyframes.splice(plan.first, before.length, ...inserted);
+    editor._reconcileFrameIds(previous);
+    const command = {kind: 'ranges', label: session.label,
+      changes: [{index: plan.first, before, after: clone(editor.report.keyframes.slice(plan.first, plan.first + inserted.length))}],
+      beforeSelection: session.beforeSelection, structural: false, timing: plan.timing};
+    editor._captureRemovedFrameSources(command);
+    editor._invalidate({timing: plan.timing});
+    editor.frameIndex = rowForTick(editor.timeline, editor.tick).index;
+    command.afterSelection = editor._selectionState();
+    editor._drag = null;
+    editor._record(command);
+    editor._emit('edit', {label: session.label, structural: false, timing: plan.timing,
+      frameIndices: Array.from({length: inserted.length}, (_, i) => plan.first + i)});
+    return true;
+  }
+  // Recapture after bend references settle so the stored sources include them.
+  for (const sub of session.subs) if (sub.moved) writeFalloff(editor, session, sub, session.component);
+  editor._drag = null;
+  if (session.mode === 'channels') { recordAnimation(editor, session.label, session.draft, session.beforeSelection); return true; }
+  if (!session.subs.some(sub => sub.sheet.writes.size)) { editor._emit('edit', {motionPath: true}); return false; }
+  editor._sheetPoseDraftPublish(session.sheet, session.label, session.beforeSelection);
+  return true;
+}
+
 export const editorMotionPathMethods = {
-  /** Begin a remote-time pose edit for a motion-path point. Never seeks. */
-  beginMotionPathEdit(target, tick, {label = 'Edit motion path'} = {}) {
+  /** Begin a remote-time pose edit for a motion-path point. Never seeks.
+   * `falloff: {radius, shape}` reshapes the arc: nearby keys follow by weight. */
+  beginMotionPathEdit(target, tick, {label, falloff} = {}) {
     if (!Number.isInteger(tick) || tick < 0 || tick >= this.totalTicks) return false;
+    const request = {target: {...target}, tick, label};
+    falloff = normalizeFalloff(falloff);
+    label ??= falloff ? 'Reshape motion path' : 'Edit motion path';
     if (this._drag) this.commitDrag();
     if (this._animationEdit) this.commitAnimationEdit();
     if (this.report._styk?.movieclipSource || this.report._styk?.simpleFrameDraft) return false;
@@ -450,6 +737,13 @@ export const editorMotionPathMethods = {
     const component = target.kind === 'node'
       ? new Set(componentSlots(source, source.objects.findIndex(o => o.unique_id === target.uid)).map(s => source.objects[s]?.unique_id))
       : new Set();
+    session.request = request;
+    if (falloff) {
+      Object.assign(session, {falloff, mode: sheet ? 'sheet' : authored ? 'channels' : 'native'});
+      if (!beginFalloff(this, session, component)) return false;
+      this._drag = session;
+      return true;
+    }
     if (mode === 'key' || mode === 'split') {
       const stored = this.report.keyframes[index];
       if (target.kind === 'node')
@@ -492,6 +786,14 @@ export const editorMotionPathMethods = {
     if (!session?.motionPath) return false;
     if (session.documentToken !== this._documentToken) { this.cancelMotionPathEdit(); throw new Error('The document changed during the motion-path gesture.'); }
     finite(point.x, 'Motion-path X'); finite(point.y, 'Motion-path Y');
+    session.lastPoint = point; session.lastOptions = options;
+    if (session.falloff) {
+      updateFalloff(this, session, point, options);
+      const changed = new Set();
+      for (const sub of session.subs) if (sub.moved) for (const uid of sub.changed) changed.add(uid);
+      this._emit('edit', {live: true, motionPath: true, changedUids: [...changed]});
+      return true;
+    }
     if (!applyPathPoint(session, this, point, options)) return true;
     session.moved = true;
     this._synchronizeAnimationOrigins(session.working, session.baseline.length ? session.baseline : session.source.objects);
@@ -512,6 +814,7 @@ export const editorMotionPathMethods = {
   commitMotionPathEdit() {
     const session = this._drag;
     if (!session?.motionPath) return false;
+    if (session.falloff) return commitFalloff(this, session);
     if (!session.moved || !sessionHasChanges(session)) {
       this._drag = null;
       this._emit('edit', {motionPath: true});
@@ -604,6 +907,29 @@ export const editorMotionPathMethods = {
     this._drag = null;
     this._emit('edit', {label: 'Cancel pose', motionPath: true});
     return true;
+  },
+
+  /** Switch the open gesture between one-frame and falloff editing, or change
+   * its influence, replaying the current pointer position. Null ends falloff. */
+  setMotionPathFalloff(falloff) {
+    const session = this._drag;
+    if (!session?.motionPath) return false;
+    const next = normalizeFalloff(falloff);
+    if (same(next, session.falloff ?? null)) return true;
+    const {request, lastPoint, lastOptions} = session;
+    this._drag = null;
+    if (!this.beginMotionPathEdit(request.target, request.tick, {label: request.label, falloff: next})) { this._drag = session; return false; }
+    if (lastPoint) this.updateMotionPathEdit(lastPoint, lastOptions);
+    else this._emit('edit', {live: true, motionPath: true, changedUids: []});
+    return true;
+  },
+
+  /** The open motion-path gesture's falloff plan for the overlay, or null. */
+  motionPathFalloff() {
+    const session = this._drag;
+    if (!session?.motionPath || !session.falloff) return null;
+    return {tick: session.tick, ...session.falloff, writes: session.writes,
+      changed: new Set(session.subs.filter(sub => sub.moved || (sub.kind === 'edge' && session.moved)).map(sub => sub.tick))};
   },
 
   /** The live document for trail sampling while a session is open. */

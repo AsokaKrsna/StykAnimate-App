@@ -8,6 +8,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 
 ### Added
 
+- Reshape a whole arc of motion in one drag: hold F and drag a point on a motion path, and nearby keys follow it, fading out with distance. Set how far the change reaches and how it fades under Reshape arc in the motion path settings, or scroll (or press [ and ]) while dragging. Before you drag, the path shows which keys will change. Only the keys needed are added, the frames outside the reach stay as they were, and the whole change is one undo step.
 - Hold Shift while dragging a figure's origin to move the whole figure with its pinned IK nodes. This also works on origin motion paths and when editing selected frames, while keeping the nodes pinned at their new positions.
 - Keep dragging a joint or figure while pressing A to add frames, in both Simple and Advanced timelines. Each new frame keeps its pose and the drag continues without releasing the mouse.
 - Bend line joints by right-dragging in Build, just as in Animate, including static joints. Build applies the bend to the reusable figure, with undo and cancellation.

@@ -42,6 +42,8 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   motionPathJoints: "selected",
   motionPathSpeed: false,
   motionPathRelative: false,
+  motionPathFalloffRadius: 8,
+  motionPathFalloffShape: "smooth",
   autoSizeHandles: true,
   outlineHandles: true,
   builderShowStaticHandles: true,
@@ -135,6 +137,7 @@ export function normalizeEditorSettings(value = {}) {
     ["autosaveSeconds", 0, 300],
     ["builderOutlinerWidth", 160, 520],
     ["motionPathRange", 0, 4000],
+    ["motionPathFalloffRadius", 1, 240],
   ])
     if (Number.isFinite(value?.[key]))
       result[key] = Math.max(min, Math.min(max, value[key]));
@@ -142,10 +145,12 @@ export function normalizeEditorSettings(value = {}) {
     if(Number.isFinite(value?.[key]))result[key]=Math.max(0,Math.min(10000000,Math.round(value[key])));
   result.onionCount = Math.round(result.onionCount);
   result.motionPathRange = Math.round(result.motionPathRange);
+  result.motionPathFalloffRadius = Math.round(result.motionPathFalloffRadius);
   for (const key of ['onionBefore','onionAfter','onionStep']) result[key] = Math.round(result[key]);
   for (const key of ['onionBeforeColor','onionAfterColor'])
     if (typeof value?.[key] === 'string' && /^#[0-9a-f]{6}$/i.test(value[key])) result[key] = value[key].toLowerCase();
   if (['selected','tips'].includes(value?.motionPathJoints)) result.motionPathJoints = value.motionPathJoints;
+  if (['smooth','linear','sharp','flat'].includes(value?.motionPathFalloffShape)) result.motionPathFalloffShape = value.motionPathFalloffShape;
   if (['all','selected'].includes(value?.onionScope)) result.onionScope = value.onionScope;
   if (['keyframes','frames'].includes(value?.onionMode)) result.onionMode = value.onionMode;
   if (['auto','canvas','gpu'].includes(value?.rendererMode)) result.rendererMode = value.rendererMode;

@@ -9,6 +9,7 @@ import {sheetKeyAt, sheetTrack} from './layer-sheet.mjs';
 import {layerIdForUid} from './layers.mjs';
 import {animationChannels, animationChannelId, findAnimationChannel} from './animation-channels.mjs';
 import {PlaybackTweenCache} from './playback-tween-cache.mjs';
+import {falloffWeight} from './motion-path-falloff.mjs';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const EMPTY_SCENE = {objects: new Map()};
@@ -468,7 +469,7 @@ const CELL = 12, cellOf = value => clamp(Math.floor(value / CELL), -32000, 32000
  * Screen-space layout keeps dense/held paths legible without changing their
  * editable samples. Markers outside `bounds` (plus a margin) are skipped.
  */
-export function layoutMotionPath(entry, project, {tick, hover, dragging, dots = true, labels = false, relative = false, bounds, currentBadge = true} = {}) {
+export function layoutMotionPath(entry, project, {tick, hover, dragging, dots = true, labels = false, relative = false, bounds, currentBadge = true, badgeSuffix = ''} = {}) {
   const screen = projectMotionPath(entry, project, {relative, tick});
   const {samples, xs, ys} = screen, n = samples.length;
   const priority = p => p.tick === dragging?.tick ? 4 : p.tick === hover?.tick ? 3 : p.tick === tick ? 2 : p.key ? 1 : 0;
@@ -499,7 +500,7 @@ export function layoutMotionPath(entry, project, {tick, hover, dragging, dots = 
     cells.get(key).push(marker);
     markers.push(marker);
     if (badges.length >= 48 || !(rank >= 3 || (labels && (rank === 2 ? currentBadge : p.key || i === 0 || i === n - 1)))) continue;
-    const text = String(p.tick + 1), width = text.length * 6.5 + 12;
+    const text = rank >= 3 && badgeSuffix ? `${p.tick + 1} ${badgeSuffix}` : String(p.tick + 1), width = text.length * 6.2 + 12;
     const box = {x: x + 9, y: y - 23, width, height: 18, text, rank};
     if (badges.some(b => box.x < b.x + b.width + 5 && box.x + width + 5 > b.x && box.y < b.y + b.height + 4 && box.y + box.height + 4 > b.y)) continue;
     badges.push(box);
@@ -507,10 +508,42 @@ export function layoutMotionPath(entry, project, {tick, hover, dragging, dots = 
   return {screen, markers, badges};
 }
 
-/** Neutral contrast halo, quieter past, crisp keys, optional speed colours and
- * collision-free labels. */
+const FALLOFF_COLOR = '#f97316';
+
+/** Falloff preview: rings sized and weighted by each frame's influence, keys a
+ * release will change filled with the trail colour, and added hold keys drawn
+ * as squares. `influence` is {tick, radius, shape, changed: Set, edges: Set}. */
+function drawInfluence(context, screen, markers, influence, color, alpha) {
+  const {samples, xs, ys} = screen, {tick, radius, shape} = influence, buckets = [[], [], [], [], []];
+  for (let i = 0; i < samples.length; i++) {
+    const distance = Math.abs(samples[i].tick - tick);
+    if (!distance || distance > radius) continue;
+    const weight = falloffWeight(distance, radius, shape);
+    buckets[Math.min(4, Math.floor(weight * 5))].push(i);
+  }
+  buckets.forEach((list, b) => {
+    if (!list.length) return;
+    const weight = (b + 0.5) / 5, r = 3 + weight * 8;
+    context.beginPath();
+    for (const i of list) { context.moveTo(xs[i] + r, ys[i]); context.arc(xs[i], ys[i], r, 0, Math.PI * 2); }
+    context.globalAlpha = (0.1 + weight * 0.28) * alpha; context.fillStyle = FALLOFF_COLOR; context.fill();
+  });
+  for (const p of markers) {
+    if (influence.changed?.has(p.tick) && !influence.edges?.has(p.tick) && p.tick !== tick) {
+      const r = 5;
+      context.beginPath(); context.moveTo(p.x, p.y - r); context.lineTo(p.x + r, p.y); context.lineTo(p.x, p.y + r); context.lineTo(p.x - r, p.y); context.closePath();
+      context.globalAlpha = alpha; context.fillStyle = color; context.fill(); context.strokeStyle = '#ffffff'; context.lineWidth = 1.5; context.stroke();
+    } else if (influence.edges?.has(p.tick)) {
+      context.beginPath(); context.rect(p.x - 3.5, p.y - 3.5, 7, 7);
+      context.globalAlpha = alpha; context.fillStyle = '#ffffff'; context.fill(); context.strokeStyle = '#64748b'; context.lineWidth = 1.5; context.stroke();
+    }
+  }
+}
+
+/** Neutral contrast halo, quieter past, crisp keys, optional speed colours,
+ * an optional falloff preview and collision-free labels. */
 export function drawMotionPath(context, entry, project, options = {}) {
-  const {tick, color = '#0d99ff', faint = false, speed = false, strong = false} = options;
+  const {tick, color = '#0d99ff', faint = false, speed = false, strong = false, influence = null} = options;
   const {screen, markers, badges} = layoutMotionPath(entry, project, options);
   const {samples, breaks, xs, ys} = screen, n = samples.length;
   if (!n) return;
@@ -553,6 +586,7 @@ export function drawMotionPath(context, entry, project, options = {}) {
   }
   context.globalAlpha = alpha; context.fillStyle = '#ffffff'; context.fill();
   context.strokeStyle = color; context.lineWidth = 1.5; context.stroke();
+  if (influence) drawInfluence(context, screen, markers, influence, color, alpha);
   // The current frame is a ring; a hovered or dragged point fills with colour.
   for (let i = markers.length - 1; i >= 0; i--) {
     const p = markers[i], active = p.rank >= 3;

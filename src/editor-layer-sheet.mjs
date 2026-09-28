@@ -351,7 +351,7 @@ export const editorLayerSheetMethods={
     }
     if (entry.sourceRecord) {
       const uids = fixed(id) ? [] : frame.objects.filter(o => owns(o.unique_id)).map(o => o.unique_id);
-      const source = snapshotPoseFrame(frame, uids);
+      const source = (draft.snapshot ?? snapshotPoseFrame)(frame, uids);
       source._styk = {...source._styk, frameId: entry.sourceRecord.id};
       setContinuations(source, fixed(id) ? [] : continuations(frame).filter(step => owns(step.uid)));
       entry.sourceRecord.after.value = source;

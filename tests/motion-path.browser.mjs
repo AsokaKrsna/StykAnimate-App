@@ -71,8 +71,41 @@ try {
  await page.screenshot({path:out+'/ghost-drag.png'});
  await page.keyboard.press('Escape');await page.mouse.up();
  check('Escape cancels a trail drag without an undo entry',await page.evaluate(n=>styk.editor._undo.length===n&&!styk.state.drag,grab.undo));
+ await page.waitForTimeout(300);
  await page.mouse.dblclick(grab.x,grab.y);
  check('Double-clicking a trail point goes to its frame without editing',await page.evaluate(n=>styk.editor.tick===8&&styk.editor._undo.length===n,grab.undo));
+ // Reshape arc: settings, then a held-key falloff drag.
+ await page.evaluate(()=>{styk.editor.seek(24);styk.settingsUI.commit({motionPathFalloffRadius:12,motionPathFalloffShape:'smooth'});});
+ await page.locator('.path-options-button').click();
+ await page.locator('[data-path="motionPathFalloffRadius"]').fill('10');await page.keyboard.press('Tab');
+ await page.locator('[data-choice="motionPathFalloffShape"][data-value="linear"]').click();
+ check('Falloff settings persist and name the hold key',await page.evaluate(()=>styk.state.settings.motionPathFalloffRadius===10&&styk.state.settings.motionPathFalloffShape==='linear'&&document.querySelector('[data-falloff-key]').textContent==='F'));
+ await page.screenshot({path:out+'/falloff-settings.png'});
+ await page.keyboard.press('Escape');
+ await page.waitForTimeout(300);
+ const rootY=async()=>page.evaluate(async()=>{const {samplePathPoint}=await import('/src/motion-path.mjs');return [0,8,16,24].map(t=>samplePathPoint(styk.editor.report,{kind:'node',uid:1,handleId:0},t).y);});
+ const arc=await page.evaluate(()=>{const r=document.querySelector('#viewport').getBoundingClientRect(),v=styk.state.view,o=styk.editor.report.keyframes[1].objects[0];return {x:r.left+v.x+o.root_x*v.scale,y:r.top+v.y+o.root_y*v.scale,undo:styk.editor._undo.length};});
+ const beforeY=await rootY();
+ await page.mouse.move(arc.x+1,arc.y);await page.mouse.move(arc.x,arc.y);
+ await page.keyboard.down('KeyF');await page.waitForTimeout(100);
+ check('Holding the key over a trail arms the reshape and says how',await page.evaluate(()=>styk.state.falloffHeld&&/reshape ±10 frames/.test(document.body.innerText)&&/reshape ±10/.test(document.querySelector('#overlay').title)));
+ await page.mouse.down();await page.mouse.move(arc.x+6,arc.y-40,{steps:5});
+ check('A held-key drag reshapes with falloff',await page.evaluate(()=>styk.editor.motionPathFalloff()?.radius===10&&styk.editor.motionPathFalloff().changed.size>=3&&/Reshaping ±10 frames/.test(document.body.innerText)));
+ await page.screenshot({path:out+'/falloff-drag.png'});
+ await page.mouse.wheel(0,-120);await page.waitForTimeout(50);
+ check('Scrolling mid-drag resizes the influence without zooming',await page.evaluate(()=>styk.editor.motionPathFalloff()?.radius===13&&styk.state.settings.motionPathFalloffRadius===13));
+ await page.keyboard.up('KeyF');
+ check('Releasing the key mid-drag edits one frame',await page.evaluate(()=>styk.state.drag?.kind==='motion-path'&&!styk.editor.motionPathFalloff()));
+ await page.keyboard.down('KeyF');
+ check('Pressing it again restores the reshape',await page.evaluate(()=>styk.editor.motionPathFalloff()?.radius===13));
+ await page.mouse.move(arc.x+6,arc.y-45);await page.mouse.up();
+ const afterY=await rootY(),scale=await page.evaluate(()=>styk.state.view.scale),moved=beforeY.map((y,i)=>beforeY[i]-afterY[i]);
+ check('The reshape is one undo step that moves neighbouring keys partially',await page.evaluate(n=>styk.editor._undo.length===n+1&&styk.editor.tick===24,arc.undo)
+   &&Math.abs(moved[1]-45/scale)<.5&&moved[0]>1&&moved[0]<moved[1]&&moved[2]>1&&moved[2]<moved[1]&&Math.abs(moved[3])<1e-6);
+ await page.keyboard.up('KeyF');await page.waitForTimeout(50);
+ check('Releasing the key clears the message',await page.evaluate(()=>!/Drag a trail point/.test(document.body.innerText)&&!styk.state.falloffHeld));
+ await page.evaluate(()=>styk.editor.undo());
+ check('Undo restores every reshaped key',(await rootY()).every((y,i)=>Math.abs(y-beforeY[i])<1e-6));
  check('No browser errors',errors.length===0);
  await writeFile(out+'/checks.json',JSON.stringify({checks,errors},null,2));
 } finally {await browser.close();}
