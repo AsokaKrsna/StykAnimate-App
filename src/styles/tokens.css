@@ -605,6 +605,12 @@
     --surface-prepaint: var(--ink-950);
   }
 
+  /* The bars a video platform adds around a picture of another shape, black in
+     either theme: the export dialog's vertical preview shows them. */
+  :root {
+    --surface-letterbox: var(--ink-950);
+  }
+
   /* Artwork that shows a theme whatever the current one is: the Theme tiles in
      Settings draw a small light and a small dark editor window. */
   :root {

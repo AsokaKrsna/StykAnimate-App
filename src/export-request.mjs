@@ -122,6 +122,29 @@ export const EXPORT_CATEGORIES = Object.freeze([
   Object.freeze({id: 'editable', label: 'Editable file', short: 'Project', formats: Object.freeze(['piv', 'stkz', 'stk', 'stykmov'])}),
 ]);
 
+/** What each type is for, in a sentence the dialog shows under Type: a person who does not know the formats chooses by it. */
+const TYPE_HINTS = Object.freeze({
+  mp4: 'Plays everywhere: phones, YouTube, social apps and video editors.',
+  webm: 'An open video format for browsers and web pages.',
+  avi: 'For older editing software. A lossless codec in Encoding keeps a perfect master copy.',
+  wmv: 'For older Windows programs.',
+  vfw: 'Encodes with a video codec installed in Windows.',
+  gif: 'Loops in chats, forums and web pages. Up to 256 colours a frame.',
+  apng: 'A looping image with full colour and smooth transparency. Plays in browsers.',
+  png: 'The current frame as a picture that keeps transparency.',
+  svg: 'The current frame as a vector drawing that stays sharp at any size.',
+  'png-sequence': 'Every frame as a numbered PNG in a .zip, with transparency: for video editors and game engines.',
+  'jpeg-sequence': 'Every frame as a numbered JPEG in a .zip: small files without transparency.',
+  'gif-sequence': 'Every frame as a numbered GIF picture in a .zip.',
+  'svg-sequence': 'Every frame as a numbered vector drawing in a .zip.',
+  piv: 'The whole animation, to open in Pivot Animator.',
+  stkz: 'The selected figure, to reuse in other StykAnimate projects.',
+  stk: 'The selected figure, to use in Pivot Animator.',
+  stykmov: 'The selected movieclip, to reuse in other StykAnimate projects.',
+});
+/** The Type row's sentence for a format ('' for none). A movieclip's figure entry writes .stykmov, so it is described as one. */
+export const exportTypeHint = (format, {movieclip = false} = {}) => TYPE_HINTS[format === 'stkz' && movieclip ? 'stykmov' : format] ?? '';
+
 /** Size presets scale the short side and keep the artboard's shape and orientation. */
 export const EXPORT_SIZE_PRESETS = Object.freeze([
   Object.freeze({id: 'original', label: 'Original'}),

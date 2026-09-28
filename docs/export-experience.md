@@ -9,7 +9,8 @@ The export dialog (`src/export-sheet.mjs`, a kit dialog with the id
 first exported frame through the thumbnail worker (only while the dialog is
 open), plays the chosen range with ▶, and carries the trim strip: its two ends
 and the typed From and To fields are one range, and All restores the whole
-animation. The settings, top to bottom: Name (the file name, today's name until
+animation. Above the settings, Quick presets (below) fill them in for a
+destination. The settings, top to bottom: Name (the file name, today's name until
 one is typed, with the extension after it), Format (Video, GIF, Frames and
 Project: today's Video, Animated image, Frames & sequences and Editable file),
 Type (a visible select whose options are today's export commands; a Project
@@ -39,6 +40,40 @@ quality defaults to Great (Recommended). Native encoders select bitrate from
 scene complexity; the browser calculates a target from the final dimensions
 and frame rate. See the [quality-control contract](EXPORT-FORMATS.md) for
 mappings and verification.
+
+## Quick presets
+
+Quick presets (`src/export-presets.mjs`, `#export-presets`) are tiles for where
+the animation is going: YouTube (1080p, Max), Shorts, TikTok and Instagram
+(1080p, vertical), X (720p), Chat GIF (a GIF at most 480 px on its short side),
+Transparent (a PNG sequence at the canvas size) and Best quality (4K, Max; 1080p
+where 4K exceeds the export limits). A preset is an ordinary edit of the export
+request, so every setting it chose shows in the rows below and stays editable;
+the tile shows chosen until one of those settings (type, size, quality or
+bitrate mode, or an MP4 codec other than H.264) changes. Video presets use MP4
+with H.264 and automatic bitrate. YouTube, Shorts, TikTok and Best quality fall
+back to WebM where MP4 is unavailable (the browser); Instagram and X take only
+MP4, so there they keep MP4 and Export is disabled with its reason. A preset
+chosen while the encoders are being checked is re-applied if its first type
+proves unavailable. Presets are not remembered; the choices they made are,
+like any other.
+
+Presets never change the picture's shape. Export scales the canvas to the
+output size, so a 9:16 size on a 16:9 canvas would stretch the animation; like
+the size presets, platform presets scale the canvas's short side. The note
+under the tiles (`#export-preset-note`) says what the export will be ("Ready
+for TikTok: 1080 × 1920.") or, when the platform shows another shape full
+screen, that the video will play with bars and that Canvas size in the scene's
+properties changes it. A vertical preset also shows the preview in a 9:16
+frame with black bars (`--surface-letterbox`), except at the compact and
+minimal tiers, whose preview is a strip. Letterboxing the output itself (a
+9:16 file with bars) would need the frame renderer, the tiled and supersampled
+paths, SVG and the native encoders to place the picture and is not done.
+
+Under Type and Quality a quiet line (`#export-type-hint`,
+`#export-quality-hint`, their controls' `aria-describedby`) says what the
+chosen type is for (`exportTypeHint()` in `src/export-request.mjs`) and what
+the quality level trades.
 
 Every export runs from one explicit export request (`src/export-request.mjs`):
 the format and the choices that apply to it. `exportJob()` derives from it and
@@ -74,6 +109,23 @@ GPU-loss recovery are described in [export sampling](export-sampling.md). RAM
 tiers are conservative allowances, not measurements of free memory. Driver/OS
 termination, arbitrary document complexity and process-wide exhaustion cannot
 be guaranteed away. These changes do not silently reduce output resolution.
+
+## September 28, 2026: quick presets and type descriptions
+
+The dialog grew to 960 × min(700, window − 32) so the presets fit above the
+settings with Encoding still in view at rest. `node --test
+tests/export-presets.test.mjs` (9 tests) checks that every preset keeps the
+canvas shape and validates on landscape, portrait and square canvases, the
+MP4/WebM fallback, the chat GIF and Best quality sizes, when a preset stays
+chosen, the fit notes and every type's description.
+`node tests/export-sheet.browser.mjs` adds a step for the presets from the
+pointer and the arrow keys, the notes, the 9:16 preview, an MP4-only preset in
+the browser, leaving a preset, and a real Chat GIF export whose header is
+853 × 480; the other 14 steps and `node tests/export-experience.browser.mjs`
+(18 checks, including the 1100×680 and 540×700 fits) pass unchanged. Light,
+dark, 1100×680, compact (760×640) and minimal (420×700) screenshots were
+inspected (`artifacts/export-redesign`). The desktop layout test
+(`tests/export-panel-layout.desktop.mjs`) was not run.
 
 ## September 27, 2026: the export dialog
 

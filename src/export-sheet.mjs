@@ -3,9 +3,11 @@
  * dialog (src/ui/ui-dialog.mjs, `lg`, variant `export`) with a preview pane
  * and the form. The preview shows the animation (the first exported frame, or
  * the range playing with ▶), the trim strip with its two ink ends and the
- * typed From and To fields beside "Frames". The form: Name, Format (Video,
- * GIF, Frames, Project), the chosen format's Type (a visible select; a
- * Project lists its four types), Size (Original, 1080p, 720p, 4K, Custom…),
+ * typed From and To fields beside "Frames". The form: Quick presets (tiles
+ * for YouTube, TikTok, a chat GIF…, export-presets.mjs, that fill in the rows
+ * below), Name, Format (Video, GIF, Frames, Project), the chosen format's Type
+ * (a visible select; a Project lists its four types) with a line saying what
+ * it is for, Size (Original, 1080p, 720p, 4K, Custom…),
  * then the type's own settings: Quality, Colours, Sound, Picture and, for
  * video, Encoding (a titled section that remembers being open). The foot
  * sums up the output and names the format on the one primary ("Export MP4").
@@ -35,15 +37,16 @@ import {
   initialExportRequest, updateExportRequest, reconcileExportCodecs, exportFormatStates, formatChoices, resolveFormatChoice,
   exportFieldVisibility, validateExportRequest, exportPrimaryLabel, exportEncodingSummary, exportSummary, exportPlayedFramesNote,
   exportWorkingPoseNote, entireAnimationPatch, exportCodecChoices, sizePresetChoices, exportTransparency, defaultExportName,
-  exportFileName, exportPreferencesFromRequest, normalizeExportPreferences,
+  exportFileName, exportPreferencesFromRequest, normalizeExportPreferences, exportTypeHint,
 } from './export-request.mjs';
+import {EXPORT_PRESETS, applyExportPreset, exportPresetHeld, exportPresetFit, exportPresetInfo} from './export-presets.mjs';
 
 export const EXPORT_DIALOG_ID = 'export-dialog';
-/** Quality: today's three presets (export-video-quality.mjs), smallest first. */
+/** Quality: today's three presets (export-video-quality.mjs), smallest first; `hint` is the line under the row. */
 const QUALITY = Object.freeze([
-  {value: 'small', label: 'Draft', tip: 'Smaller file'},
-  {value: 'recommended', label: 'Great', tip: 'Recommended'},
-  {value: 'high', label: 'Max', tip: 'Higher quality'},
+  {value: 'small', label: 'Draft', tip: 'Smaller file', hint: 'The smallest file, for quick previews and drafts.'},
+  {value: 'recommended', label: 'Great', tip: 'Recommended', hint: 'Sharp, with a sensible file size. Right for most uses.'},
+  {value: 'high', label: 'Max', tip: 'Higher quality', hint: 'The most detail, with a larger file. For uploads and final copies.'},
 ]);
 const STRIP_CELLS = 8;
 const PROGRESS_TITLE = 'Exporting animation';
@@ -135,6 +138,8 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   let remembered = normalizeExportPreferences(preferences);
   let vfw = null, capabilities = null, capabilityError = null, probeSequence = 0, probeTimer = null, closed = false;
   let request = null, states = null, exporting = null, onClosed = null, nameEdited = false;
+  /** The chosen quick preset: {id, applied: the request choosing it gave}, until a setting it chose changes. */
+  let preset = null;
   const lastType = new Map();
 
   // ---- The preview pane: the stage, the trim strip and its caption.
@@ -168,6 +173,16 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   const note = element('p', {className: 'export-note export-preview-note'});
   const previewPane = element('div', {className: 'ui-export-preview'}, stage, strip, caption, note);
 
+  // ---- Quick presets: where the animation is going. A preset is an edit of the request (export-presets.mjs); it shows
+  // chosen until a setting it chose is changed. The note under it says what the export will be, or why it will show with bars.
+  const presetList = element('div', {className: 'export-presets', role: 'radiogroup', 'aria-labelledby': 'export-presets-label', id: 'export-presets'},
+    ...EXPORT_PRESETS.map(entry => element('button', {type: 'button', className: 'export-preset', role: 'radio', 'aria-checked': 'false',
+      dataset: {preset: entry.id}, 'aria-label': `${entry.label}: ${entry.detail}`},
+    glyph(icon, entry.icon), element('span', {className: 'export-preset-label', text: entry.label}), element('span', {className: 'export-preset-detail', text: entry.detail}))));
+  const presetNote = element('p', {className: 'export-preset-note', id: 'export-preset-note', role: 'status', 'aria-live': 'polite', hidden: true});
+  const presets = element('section', {className: 'export-preset-section', 'aria-labelledby': 'export-presets-label'},
+    element('h3', {className: 'export-section-label', id: 'export-presets-label', text: 'Quick presets'}), presetList, presetNote);
+
   // ---- The form rows.
   const name = element('input', {className: 'ui-field-input', id: 'export-name', type: 'text', autocomplete: 'off', spellcheck: false, maxLength: 200, 'aria-label': 'File name'});
   const extension = element('span', {className: 'ui-field-unit export-extension'});
@@ -197,6 +212,12 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
     ...QUALITY.map(option => element('button', {type: 'button', className: 'ui-segmented-item', role: 'radio', 'aria-checked': 'false',
       dataset: {value: option.value, tooltip: option.tip}, text: option.label})));
   const qualityRow = row('Quality', quality);
+  // What the chosen type and quality are for, under their rows (a person who does not know the formats chooses by these).
+  const typeHint = element('p', {className: 'export-hint', id: 'export-type-hint'});
+  const qualityHint = element('p', {className: 'export-hint', id: 'export-quality-hint'});
+  type.node.setAttribute('aria-describedby', typeHint.id);
+  projectList.setAttribute('aria-describedby', typeHint.id);
+  quality.setAttribute('aria-describedby', qualityHint.id);
   const jpeg = element('input', {className: 'ui-field-input', id: FIELD.jpegQuality, type: 'text', inputmode: 'numeric', autocomplete: 'off', 'aria-label': 'JPEG quality (%)'});
   const jpegRow = row('Quality', element('span', {className: 'ui-field'}, jpeg, element('span', {className: 'ui-field-unit', text: '%'})), {htmlFor: FIELD.jpegQuality});
   const dither = switchRow(FIELD.dither, 'Dither (GIF)', 'Dither');
@@ -242,7 +263,7 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   form.classList.add('ui-export-form');
   form.prepend(previewPane);
   body.classList.add('export-body');
-  body.prepend(nameRow, formatRow, typeRow, projectRow, sizeRow, customRow, qualityRow, jpegRow, colourRow, soundRow, pictureRow, encoding);
+  body.prepend(presets, nameRow, formatRow, typeRow, projectRow, typeHint, sizeRow, customRow, qualityRow, qualityHint, jpegRow, colourRow, soundRow, pictureRow, encoding);
   meta.append(summarySize, element('span', {className: 'export-summary-sep', text: ' · ', 'aria-hidden': 'true'}), summaryTime);
   foot.prepend(validation);
   name.autofocus = true;
@@ -260,7 +281,9 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
   function refreshStates() {
     states = baseStates(request.codecs);
     request = reconcileExportCodecs(request, states);
-    render();
+    // A preset chosen while the video encoders were being checked moves to its next type if its first proved unavailable (MP4 in the browser).
+    if (preset && exportPresetHeld(preset.id, preset.applied, request) && applyExportPreset(preset.id, {board, states}).format !== request.format) choosePreset(preset.id);
+    else render();
   }
   function edit(patch, source = null) {
     const previous = request;
@@ -324,6 +347,11 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
     setChecked(quality.children, item => item.dataset.value === request.videoQuality);
     for (const item of quality.children) item.tabIndex = item.dataset.value === request.videoQuality ? 0 : -1;
     quality.dataset.value = request.videoQuality;
+    const typeText = exportTypeHint(request.format, {movieclip});
+    typeHint.textContent = typeText; show(typeHint, Boolean(typeText));
+    qualityHint.textContent = QUALITY.find(option => option.value === request.videoQuality)?.hint ?? '';
+    show(qualityHint, visible.videoQuality);
+    renderPresets();
     show(jpegRow, visible.jpegQuality); setValue(jpeg, request.jpegQuality, source);
     show(colourRow, visible.dither); dither.input.checked = request.dither ?? defaultDither;
     show(soundRow, visible.audio); sound.input.checked = request.audio;
@@ -364,6 +392,25 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
     submit.disabled = !validity.canExport;
     scheduleStage();
     updateFade();
+  }
+  function renderPresets() {
+    if (preset && !exportPresetHeld(preset.id, preset.applied, request)) preset = null;
+    const items = [...presetList.children];
+    for (const item of items) item.setAttribute('aria-checked', String(item.dataset.preset === preset?.id));
+    for (const [index, item] of items.entries()) item.tabIndex = (preset ? item.dataset.preset === preset.id : index === 0) ? 0 : -1;
+    const fit = preset ? exportPresetFit(preset.id, board, request) : null;
+    // A vertical platform's preview takes its screen's shape, so the bars the note warns of show before exporting.
+    const frame = preset && exportPresetInfo(preset.id).shapes[0] === 'portrait' ? 'portrait' : '';
+    if ((stage.dataset.frame ?? '') !== frame) { if (frame) stage.dataset.frame = frame; else delete stage.dataset.frame; }
+    presetNote.textContent = fit?.message ?? '';
+    presetNote.dataset.fits = String(fit?.fits ?? true);
+    show(presetNote, Boolean(fit?.message));
+  }
+  function choosePreset(id) {
+    preset = null;
+    edit(applyExportPreset(id, {board, states}));
+    preset = {id, applied: request};
+    render();
   }
   function renderTypes() {
     const choices = formatChoices(request.category, states), action = exportFormatInfo(request.format).action;
@@ -518,6 +565,11 @@ export function openExportSheet({context, preferences = null, defaultDither = fa
 
   // ---- Edits. Every control edits on `input`, which comes before `change`: a render the same input causes further up
   // (the Windows codec controls follow the dialog's input events) must not reset a select or a switch before it is read.
+  presetList.addEventListener('click', event => {
+    const item = event.target.closest('[data-preset]');
+    if (item && item.dataset.preset !== preset?.id) choosePreset(item.dataset.preset);
+  });
+  installRovingFocus(presetList, {items: '[data-preset]', orientation: 'both', onMove: item => choosePreset(item.dataset.preset)});
   categories.addEventListener('click', event => {
     const item = event.target.closest('[data-category]');
     if (!item || item.dataset.category === request.category) return;

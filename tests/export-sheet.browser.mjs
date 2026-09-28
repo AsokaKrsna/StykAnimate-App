@@ -1,6 +1,6 @@
 /**
  * Browser test of the export dialog (src/export-sheet.mjs): what it shows at
- * rest, Format and Type from the pointer and the keyboard, Size presets and
+ * rest, Format and Type from the pointer and the keyboard, the quick presets, Size presets and
  * Custom…, the trim strip and its From and To fields, Quality, Encoding
  * (remembered open), the preview, remembered choices, the Project list,
  * "Stop exporting?" while an export runs, and a
@@ -10,6 +10,7 @@
  */
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {EXPORT_FIELD_IDS, EXPORT_ELEMENT_IDS} from '../src/export-request.mjs';
 import {chooseExport, exportDialogClosed, openEncoding} from './helpers/export-dialog.mjs';
 
@@ -179,6 +180,50 @@ try {
     assert.equal(await attribute('#export-encoding-toggle', 'aria-expanded'), 'true');
     await page.locator('#export-encoding-toggle').click();
     await page.locator('#export-dialog .ui-dialog-foot button:not([data-primary])').click();
+    await exportDialogClosed(page);
+  });
+
+  await step('quick presets fill in the settings, say what the export will be, and leave when a setting they chose changes', async () => {
+    await open();
+    const preset = () => page.locator('#export-presets [aria-checked="true"]').evaluate(item => item.dataset.preset).catch(() => null);
+    assert.equal(await preset(), null, 'no preset is chosen at rest');
+    assert.equal(await page.locator('#export-type-hint').textContent(), 'An open video format for browsers and web pages.');
+    await page.locator('[data-preset="youtube"]').click();
+    // The browser has no MP4 encoder, so YouTube uses WebM; the settings it chose are the dialog's own controls.
+    assert.deepEqual([await preset(), await value('#output-format'), await value('#export-resolution'), await attribute('#export-video-quality', 'data-value')],
+      ['youtube', 'export-video', '1080', 'high']);
+    assert.equal(await page.locator('#export-preset-note').textContent(), 'Ready for YouTube: 1920 × 1080.');
+    assert.match(await page.locator('#export-quality-hint').textContent(), /^The most detail/);
+    // A vertical platform on this landscape canvas: the note warns of bars and the preview takes the phone's shape.
+    await page.locator('[data-preset="youtube"]').focus();
+    await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight');
+    assert.equal(await preset(), 'tiktok');
+    assert.equal(await page.locator('#export-preset-note').getAttribute('data-fits'), 'false');
+    assert.match(await page.locator('#export-preset-note').textContent(), /vertical \(9:16\).*bars.*Canvas size/);
+    assert.equal(await attribute('#export-dialog .ui-export-stage', 'data-frame'), 'portrait');
+    // An MP4-only platform keeps MP4 and says why it cannot export here.
+    await page.locator('[data-preset="instagram"]').click();
+    assert.equal(await value('#output-format'), 'export-mp4');
+    assert.ok(await page.locator('#export-submit').isDisabled());
+    // Changing a setting the preset chose leaves it; the name does not.
+    await page.locator('[data-preset="gif"]').click();
+    await page.locator('#export-name').fill('chat loop');
+    assert.equal(await preset(), 'gif');
+    assert.equal(await attribute('#export-dialog .ui-export-stage', 'data-frame'), null);
+    assert.equal(await page.locator('#export-type-hint').textContent(), 'Loops in chats, forums and web pages. Up to 256 colours a frame.');
+    await page.locator('[data-preset="youtube"]').click();
+    await page.locator('#export-video-quality [data-value="small"]').click();
+    assert.equal(await preset(), null);
+    assert.equal(await page.locator('#export-preset-note').isVisible(), false);
+    // The chat GIF saves at 480 pixels on its short side.
+    await page.locator('[data-preset="gif"]').click();
+    assert.deepEqual([await value('#export-width'), await value('#export-height')], ['853', '480']);
+    const download = page.waitForEvent('download');
+    await page.locator('#export-submit').click();
+    const file = await download;
+    assert.equal(file.suggestedFilename(), 'chat loop.gif');
+    const bytes = await readFile(await file.path());
+    assert.deepEqual([bytes.subarray(0, 6).toString('latin1'), bytes.readUInt16LE(6), bytes.readUInt16LE(8)], ['GIF89a', 853, 480]);
     await exportDialogClosed(page);
   });
 

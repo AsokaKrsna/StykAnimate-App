@@ -663,11 +663,16 @@ One `.ui-menu` component (top layer, 232–320 wide, 28px items, an icon, check 
 
 Native `<dialog>` + `showModal()` (hotkeys suspended), `<form method="dialog">`, initial focus `[autofocus]` → first field → primary (never × and never a tab); a pointer-opened dialog keeps a text field's ring off until the first key press (`data-pointer-open`); a fixed size per dialog; a dimmed veil declared on `::backdrop`; no blur. Sizes: sm 420, md 640, lg 880×min(540, window − 32); radius 16. At compact and minimal md and lg dialogs are full-window sheets.
 
-**Export** (`reference/06`, `17`, `49`, `56`, `172`–`174`, `174b`), 880 × 520 (revision 4.2; min(520, window − 32)), one height for every type, so the preview never jumps:
+**Export** (`reference/06`, `17`, `49`, `56`, `172`–`174`, `174b`), 960 × 700 (min(700, window − 32); 880 × 520 until the quick presets), one height for every type, so the preview never jumps:
 
 ```
 ┌ preview (sunken mist) ─────────────┬ Export                                                × ┐
-│ ┌ live preview 16:9 ────────────┐  │ Name     [ kick-combo                             .mp4 ] │
+│                                     │ Quick presets                                            │
+│                                     │ [YouTube] [Shorts] [TikTok] [Instagram]                  │
+│                                     │ [X] [Chat GIF] [Transparent] [Best quality]              │
+│                                     │ Ready for YouTube: 1920 × 1080.                          │
+│ ┌ live preview 16:9 ────────────┐  │ ──────────────────────────────────────────────────────── │
+│ │                                │  │ Name     [ kick-combo                             .mp4 ] │
 │ │                                │  │ Format   [ Video | GIF | Frames | Project ]              │
 │ └────────────────────────────────┘  │ Type     [ MP4 (.mp4)                              ▾ ]   │
 │ ▌▭ ▭ ▭ ▭ ▭ ▭ ▭ ▭▐  (ink trim ends)  │ Size     [ Original · 960 × 540                    ▾ ]   │
@@ -679,7 +684,8 @@ Native `<dialog>` + `showModal()` (hotkeys suspended), `<form method="dialog">`,
 └─────────────────────────────────────┴──────────────────────────────────────────────────────────┘
 ```
 
-- **Format** is one segmented control matching today's categories (`[data-category=video|animated|frames|editable]`); **Type** (`#output-format`) is a visible select beside it listing the category's formats (Video: MP4, WebM, AVI, WMV, VFW; GIF: GIF, APNG; Frames: PNG, SVG, PNG/JPEG/GIF/SVG sequences; Project: .piv, .stkz, .stk, .stykmov). The browser build starts on the first video type it supports (WebM).
+- **Quick presets** (`src/export-presets.mjs`) come first: eight tiles (a glyph, the place and what it makes, "1080p · 9:16") that fill in Type, Size and Quality. The chosen tile is the selected surface with the accent line until a setting it chose changes; the note under the tiles says what the export will be, or in the warning ink that a canvas of another shape will play with bars and where Canvas size is. A vertical preset shows the preview in a 9:16 frame with black bars. Presets keep the canvas's shape (see [export experience](../export-experience.md)).
+- **Format** is one segmented control matching today's categories (`[data-category=video|animated|frames|editable]`); **Type** (`#output-format`) is a visible select beside it, with a line under it saying what the chosen type is for, listing the category's formats (Video: MP4, WebM, AVI, WMV, VFW; GIF: GIF, APNG; Frames: PNG, SVG, PNG/JPEG/GIF/SVG sequences; Project: .piv, .stkz, .stk, .stykmov). The browser build starts on the first video type it supports (WebM).
 - **Size** starts on **Original** (the artboard's size, today's default; revision 4.1) and remembers the person's choice; presets: Original, 1080p, 720p, 4K, Custom…; a preset whose aspect differs from the artboard is disabled with a reason ("needs a 9:16 canvas").
 - **Frames**: drag the ink ends of the frame strip (`#export-start`, `#export-end`) or type **From** and **To** beside the caption (in the active numbering; Simple: "Frames 1–8 · plays as 48").
 - **Picture**: Edges (Smooth │ Crisp), Transparent (GIF, PNG, WebM).

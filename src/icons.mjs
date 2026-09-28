@@ -117,6 +117,16 @@ const shapes = Object.freeze({
   "motion-path": '<circle cx="4" cy="18" r="2" /><path d="M4 16V9a5 5 0 0 1 10 0v6a3 3 0 0 0 3 3h1" /><circle cx="20" cy="18" r="2" /><circle cx="14" cy="10" r="1.5" fill="currentColor" stroke="none" />',
   route:
     '<circle cx="6" cy="19" r="3" /><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15" /><circle cx="18" cy="5" r="3" />',
+  // The export presets (src/export-presets.mjs): where the animation is going, drawn in the set's stroke (not brand
+  // logos): a player, a vertical player, a note, a camera square, an X, the letters GIF, a transparency check, a star.
+  "export-youtube": '<rect x="2" y="5" width="20" height="14" rx="4"/><path d="m10 9 5 3-5 3z"/>',
+  "export-shorts": '<rect x="6" y="2" width="12" height="20" rx="3.5"/><path d="m10.5 9.5 4 2.5-4 2.5z"/>',
+  "export-tiktok": '<path d="M13 3v11.5a3.5 3.5 0 1 1-3.5-3.5"/><path d="M13 3c.4 2.8 2.4 4.6 5.5 4.8"/>',
+  "export-instagram": '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><path d="M17.5 6.5h.01"/>',
+  "export-x": '<path d="M4 4h4.2L20 20h-4.2z"/><path d="m19.5 4-6.3 7M4.5 20l6.3-7"/>',
+  "export-gif": '<rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M9.5 10h-2A1.5 1.5 0 0 0 6 11.5v1A1.5 1.5 0 0 0 7.5 14h2v-2H8M12 10v4M15 14v-4h3M15 12h2.5"/>',
+  "export-transparent": '<path d="M5 3h7v9H3V5a2 2 0 0 1 2-2Zm7 9h9v7a2 2 0 0 1-2 2h-7Z" fill="currentColor" stroke="none" opacity=".35"/><rect x="3" y="3" width="18" height="18" rx="2"/>',
+  "export-best": '<path d="m12 3 2.6 5.5 6 .8-4.4 4.2 1.1 6L12 16.6 6.7 19.5l1.1-6-4.4-4.2 6-.8z"/>',
   circle: '<circle cx="12" cy="12" r="10" />',
   hand: '<path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2" /> <path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2" /> <path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8" /> <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />',
   person:

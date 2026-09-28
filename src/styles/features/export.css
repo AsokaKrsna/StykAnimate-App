@@ -15,6 +15,40 @@
   .export-body :where(.ui-dialog-row)[hidden] { display: none; }
   .export-body .ui-row-label { color: var(--text-2); }
 
+  /* Quick presets (src/export-presets.mjs): a radiogroup of tiles above the settings, an icon beside the place's name and
+   * what it makes. The chosen one is the selected surface with the accent line, as the Project list's; the note under
+   * them says what the export will be, in the warning ink when the canvas's shape will show with bars. A hairline then
+   * separates the presets from the settings they filled in. */
+  .export-preset-section {
+    display: grid; gap: var(--space-2); padding-block-end: var(--space-3); margin-block-end: var(--space-0-5);
+    border-block-end: 1px solid var(--line-1);
+  }
+  .export-section-label { margin: 0; font: var(--type-small-strong); color: var(--text-2); }
+  .export-presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-1-5); }
+  :root[data-tier="minimal"] .export-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .export-preset {
+    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: var(--space-2);
+    min-inline-size: 0; padding: var(--space-2) var(--space-2-5);
+    border: 0; border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--text-1); text-align: start;
+    transition: background-color var(--dur-fast), box-shadow var(--dur-fast);
+  }
+  .export-preset > svg { grid-row: 1 / 3; inline-size: var(--icon-md); block-size: var(--icon-md); color: var(--text-2); }
+  .export-preset > span { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .export-preset-label { font: var(--type-small-strong); }
+  .export-preset-detail { font: var(--type-small); color: var(--text-3); }
+  .export-preset:where(:hover) { background: var(--surface-hover); }
+  .export-preset:where(:hover) > svg { color: var(--text-1); }
+  .export-preset[aria-checked="true"] { background: var(--surface-selected); box-shadow: inset 0 0 0 1.5px var(--accent-line); }
+  .export-preset[aria-checked="true"] > svg { color: var(--accent-text); }
+  .export-preset:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset); }
+  .export-preset-note { margin: 0; font: var(--type-small); color: var(--text-2); }
+  .export-preset-note[data-fits="false"] { color: var(--warning-text); }
+  .export-preset-note[hidden] { display: none; }
+
+  /* What the chosen type and quality are for: a quiet line under their row, in the control column. */
+  .export-hint { margin: calc(-1 * var(--space-1)) 0 0; padding-inline-start: calc(var(--_label) + var(--space-3)); font: var(--type-small); color: var(--text-3); }
+  .export-hint[hidden] { display: none; }
+
   /* Name: the extension after the typed name, in the field. */
   .export-extension { flex: none; color: var(--text-3); font-variant-numeric: tabular-nums; }
 
@@ -77,6 +111,14 @@
   .export-caption-label { white-space: nowrap; }
   .export-preview-note { text-align: center; }
   .ui-export-stage > canvas { background: var(--artboard-placeholder); }
+  /* A vertical preset (data-frame="portrait", set by the sheet): the stage is the phone's 9:16 screen and the canvas sits
+   * in it at its own shape, so a landscape animation shows the bars the platform will add. Compact and minimal keep
+   * their preview strip. */
+  :where(:root:not([data-tier="compact"], [data-tier="minimal"])) .ui-export-stage[data-frame="portrait"] {
+    display: grid; place-items: center; align-self: center; aspect-ratio: 9 / 16; block-size: min(360px, 100%); inline-size: auto;
+    background: var(--surface-letterbox);
+  }
+  :where(:root:not([data-tier="compact"], [data-tier="minimal"])) .ui-export-stage[data-frame="portrait"] > canvas { inline-size: 100%; block-size: auto; max-block-size: 100%; }
   /* The trim strip keeps eight cells' size; a short animation spreads its frames along it. */
   .ui-export-preview > .ui-range-strip { grid-auto-columns: calc((100% - 7 * var(--space-0-5)) / 8); justify-content: space-between; }
   .ui-range-strip > i > canvas { object-fit: contain; }
@@ -130,7 +172,8 @@
 
   /* Forced colours drop the box-shadow and flatten the selected surface: outline the chosen type instead. */
   @media (forced-colors: active) {
-    .export-type[aria-checked="true"] { outline: 2px solid Highlight; outline-offset: var(--focus-offset-inset); }
+    .export-type[aria-checked="true"], .export-preset[aria-checked="true"] { outline: 2px solid Highlight; outline-offset: var(--focus-offset-inset); }
+    .export-preset { border: 1px solid CanvasText; }
     .export-progress > progress { border: 1px solid CanvasText; }
   }
 }

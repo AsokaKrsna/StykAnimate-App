@@ -1,7 +1,7 @@
 /* Dialog variants (components.md "Dialog" and "Range strip"). Import after
  * components/dialog.css: these rules share its specificity and win on order.
  *
- * Export (`data-variant="export"`): 880 × min(520, window − 32), one height
+ * Export (`data-variant="export"`): 960 × min(700, window − 32), one height
  * for every type so the preview never jumps. A sunken preview pane (the
  * stage, the trim strip and its caption) beside the form column; neutral, no
  * lime and no badge. The export sheet builds it with createDialog({size: 'lg',
@@ -21,7 +21,7 @@
  * Home and End: the ends) and names the typed field it drives with
  * aria-controls (#export-start, #export-end: the browser tests fill those). */
 @layer components {
-  .ui-dialog[data-variant="export"] { --_w: 880px; block-size: min(520px, calc(100dvh - 32px)); }
+  .ui-dialog[data-variant="export"] { --_w: 960px; block-size: min(700px, calc(100dvh - 32px)); }
   .ui-dialog-form.ui-export-form {
     display: grid; grid-template-columns: 380px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
   }
