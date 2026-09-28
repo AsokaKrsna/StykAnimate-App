@@ -12,9 +12,19 @@ test('Linux without a bare python resolves python3', () => {
   assert.equal(found.command, 'python3');
 });
 
-test('Windows resolves the py launcher before falling back', () => {
+test('Windows prefers the python on PATH, which is where a build machine installs its tools', () => {
+  const both = () => true;
+  assert.equal(resolvePython({root: '/nowhere', env: {}, platform: 'win32', probe: both}).command, 'python');
+});
+
+test('Windows falls back to the py launcher when python is the Store stub or absent', () => {
   const found = resolvePython({root: '/nowhere', env: {}, platform: 'win32', probe: (command, args) => command === 'py' && args[0] === '-3'});
   assert.deepEqual(found, {command: 'py', args: ['-3']});
+});
+
+test('explicit environments still come before PATH on Windows', () => {
+  const found = resolvePython({root: '/nowhere', env: {STYK_PYTHON: 'C:\\tools\\python.exe'}, platform: 'win32', probe: () => true});
+  assert.equal(found.command, 'C:\\tools\\python.exe');
 });
 
 test('an explicit STYK_PYTHON wins, and an unusable one is skipped', () => {

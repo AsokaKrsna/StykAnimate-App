@@ -31,6 +31,14 @@ function defaultProbe(command, args) {
 /** First candidate that runs and is Python 3.11 or newer, or null. */
 export function resolvePython({ root = appRoot, env = process.env, platform = process.platform, probe = defaultProbe } = {}) {
   const candidates = pythonCandidates(env, platform);
+  if (platform === 'win32') {
+    // A build machine puts the interpreter it chose first on PATH (setup-python,
+    // an activated environment) and installs the build requirements into that
+    // one; `py -3` may select a different Python. The desktop app tries `py`
+    // first to find any Python at runtime, which is the wrong order here.
+    const py = candidates.findIndex((item) => item.command === 'py'), bare = candidates.findIndex((item) => item.command === 'python' && !item.args.length);
+    if (py >= 0 && bare > py) candidates.splice(py, 0, ...candidates.splice(bare, 1));
+  }
   const venv = venvInterpreter(root, platform);
   if (venv && !candidates.some((item) => item.command === venv)) {
     // An explicit STYK_PYTHON stays first; the repository environment beats PATH.
