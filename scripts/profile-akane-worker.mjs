@@ -3,9 +3,10 @@ import { createRequire } from 'node:module';
 import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {corpusPath} from '../tests/support/corpus.mjs';
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), require = createRequire(import.meta.url);
 const { startBackend } = require('../desktop/backend.cjs'); const backend = await startBackend({ appRoot }); let browser;
-const source = process.argv[2] || 'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv';
+const source = process.argv[2] || corpusPath('Downloads/16 Akane vs Akato Segundo round (3).piv');
 try {
   try { browser = await chromium.launch({ headless: true }); } catch { browser = await chromium.launch({ channel: 'chrome', headless: true }); }
   const page = await browser.newPage(); await page.goto(`${backend.origin}/api/health`);

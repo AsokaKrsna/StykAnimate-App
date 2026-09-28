@@ -2,7 +2,8 @@ import { chromium } from "./support/playwright.mjs";
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 
-const akaneSource = process.env.STYK_AKANE_SOURCE || "C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv";
+import {corpusPath} from './support/corpus.mjs';
+const akaneSource = process.env.STYK_AKANE_SOURCE || corpusPath("Downloads/16 Akane vs Akato Segundo round (3).piv");
 const out = "artifacts/integrated-ux-walkthrough";
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch({ channel: "chrome", headless: true });

@@ -4,7 +4,8 @@ import {chromium} from '../tests/support/playwright.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 
-const source=process.argv[2]??'C:/Users/aleri/Downloads/tdd2 uriel nemesis 2.piv';
+import {corpusPath} from '../tests/support/corpus.mjs';
+const source=process.argv[2]??corpusPath('Downloads/tdd2 uriel nemesis 2.piv');
 const output=`artifacts/figure-paste/${process.argv[3]??'local'}`;
 await mkdir(output,{recursive:true});
 const browser=await chromium.launch({channel:'chrome',headless:true});

@@ -5,6 +5,7 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import backend from '../desktop/backend.cjs';
+import {corpusPath} from './support/corpus.mjs';
 const app=path.dirname(path.dirname(fileURLToPath(import.meta.url))), output=path.join(app,'artifacts/import-client-only');
 await mkdir(output,{recursive:true});
 const server=await backend.startBackend({appRoot:app});let browser;
@@ -25,7 +26,7 @@ try {
     };
   });
   for(let i=0;i<2;i++) {
-    await page.locator('#source').setInputFiles('C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv');
+    await page.locator('#source').setInputFiles(corpusPath('Downloads/16 Akane vs Akato Segundo round (3).piv'));
     await page.waitForFunction(count=>runs.length===count,i+1,{timeout:60000});
     await page.evaluate(()=>document.querySelector('#source').value='');
   }

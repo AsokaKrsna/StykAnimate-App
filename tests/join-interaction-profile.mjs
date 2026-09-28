@@ -6,10 +6,11 @@ import {createHash} from 'node:crypto';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
+import {corpusPath} from './support/corpus.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const output = path.join(root, 'artifacts');
 const origin = process.env.STYK_URL || 'http://127.0.0.1:47831';
-const source = process.env.STYK_JOIN_FILE || 'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv';
+const source = process.env.STYK_JOIN_FILE || corpusPath('Downloads/16 Akane vs Akato Segundo round (3).piv');
 const frameIndex = Number(process.env.STYK_JOIN_FRAME || 1478);
 const label = (process.env.STYK_JOIN_LABEL || '').replace(/[^a-z0-9_-]/gi, '-');
 const stem = `joininteraction${label ? `-${label}` : ''}`;

@@ -3,6 +3,7 @@ import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
+import {corpusPath} from './support/corpus.mjs';
 const out=path.resolve('artifacts/native-handle-pointer'); await mkdir(out,{recursive:true});
 const browser=await chromium.launch({channel:'chrome',headless:true});
 const page=await browser.newPage({viewport:{width:1600,height:1000}}), errors=[],checks=[],routes=[];
@@ -87,7 +88,7 @@ try {
   await page.screenshot({path:path.join(out,'small-handle-edit.png')});
   if(process.env.STYK_SKIP_AKANE!=='1') {
     await page.evaluate(()=>styk.editor.markSaved());
-    await page.locator('#file-input').setInputFiles('C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv');
+    await page.locator('#file-input').setInputFiles(corpusPath('Downloads/16 Akane vs Akato Segundo round (3).piv'));
     await page.waitForFunction(()=>styk.editor.report.keyframes.length===1479&&!styk.state.importing,null,{timeout:180000});
     await page.evaluate(()=>{styk.editor.selectFrame(1478);styk.editor.select(460611,0);styk.fit();window.__before=__points();});await settle();
     const point=await worldPoint(460616,1),raw=await page.evaluate(()=>({angles:styk.editor.frame.objects.map(o=>({uid:o.unique_id,angles:o.angles.slice(),x:o.root_x,y:o.root_y,joined:!!o.join}))}));

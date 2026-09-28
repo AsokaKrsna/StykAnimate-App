@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 
-const filename = process.argv[2] ?? 'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv';
+import {corpusPath} from './support/corpus.mjs';
+const filename = process.argv[2] ?? corpusPath('Downloads/16 Akane vs Akato Segundo round (3).piv');
 const response = await fetch('http://127.0.0.1:47831/api/import?filename=' + encodeURIComponent(filename.split('/').at(-1)), {
   method: 'POST', headers: {'content-type': 'application/octet-stream'}, body: await fs.readFile(filename)});
 assert.equal(response.status, 200); const report = (await response.json()).document;

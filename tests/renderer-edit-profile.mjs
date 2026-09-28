@@ -2,7 +2,8 @@
 import { chromium } from './support/playwright.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-const root = process.cwd(), source = process.argv[2] || 'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv';
+import {corpusPath} from './support/corpus.mjs';
+const root = process.cwd(), source = process.argv[2] || corpusPath('Downloads/16 Akane vs Akato Segundo round (3).piv');
 const onionZoom = process.argv.includes('--onion-zoom');
 const output = path.join(root, 'artifacts', `renderer-edit-profile${onionZoom ? '-onion-zoom' : ''}`); await mkdir(output, {recursive: true});
 const browser = await chromium.launch({channel: 'chrome', headless: true});

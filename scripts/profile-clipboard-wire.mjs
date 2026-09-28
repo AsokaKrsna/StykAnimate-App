@@ -9,7 +9,8 @@ import {emptyDocument} from '../src/demo.mjs';
 import backend from '../desktop/backend.cjs';
 import {nodeClipboardClient} from '../tests/helpers/clipboard-node-client.mjs';
 
-const source = process.argv[2] ?? 'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv';
+import {corpusPath} from '../tests/support/corpus.mjs';
+const source = process.argv[2] ?? corpusPath('Downloads/16 Akane vs Akato Segundo round (3).piv');
 const output = path.resolve(process.argv[3] ?? 'artifacts/clipboard-akane-wire-cpu.json');
 const hashes = () => Object.fromEntries(fs.readdirSync('src', {recursive: true}).filter(name => name.endsWith('.mjs')).sort()
   .map(name => [name, createHash('sha256').update(fs.readFileSync(path.join('src', name))).digest('hex')]));

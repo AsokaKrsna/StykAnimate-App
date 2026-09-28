@@ -4,9 +4,10 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import {corpusPath} from './support/corpus.mjs';
 const source =
   process.argv[2] ||
-  "C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv";
+  corpusPath("Downloads/16 Akane vs Akato Segundo round (3).piv");
 const origin = process.env.STYK_URL || "http://127.0.0.1:47831";
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const page = await browser.newPage({ viewport: { width: 1560, height: 1000 } });

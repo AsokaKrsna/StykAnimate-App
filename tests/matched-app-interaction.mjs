@@ -15,6 +15,7 @@ import {mkdir, readdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
+import {corpusPath} from './support/corpus.mjs';
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const envNumber = (key, fallback) => {
   const value = process.env[key] === undefined ? fallback : Number(process.env[key]);
@@ -22,7 +23,7 @@ const envNumber = (key, fallback) => {
   return value;
 };
 const config = {
-  source: path.resolve(process.env.STYK_MATCH_SOURCE || 'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv'),
+  source: path.resolve(process.env.STYK_MATCH_SOURCE || corpusPath('Downloads/16 Akane vs Akato Segundo round (3).piv')),
   frameIndex: 1478, uid: 460616, joint: 0, width: 1120, height: 652,
   scale: 1.491176486, dpr: 1, cameraEnabled: false, onionCount: 0,
   viewX: process.env.STYK_MATCH_VIEW_X === undefined ? null : envNumber('STYK_MATCH_VIEW_X'),

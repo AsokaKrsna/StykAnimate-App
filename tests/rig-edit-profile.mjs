@@ -5,7 +5,8 @@ import {performance} from 'node:perf_hooks';
 import {Editor} from '../src/editor.mjs';
 import {isStatic} from '../src/pivot/geometry.mjs';
 
-const filename = process.argv[2] ?? 'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv';
+import {corpusPath} from './support/corpus.mjs';
+const filename = process.argv[2] ?? corpusPath('Downloads/16 Akane vs Akato Segundo round (3).piv');
 const response = await fetch('http://127.0.0.1:47831/api/import?filename=' + encodeURIComponent(filename.split('/').at(-1)),
   {method: 'POST', headers: {'content-type': 'application/octet-stream'}, body: await fs.readFile(filename)});
 assert.equal(response.status, 200); const imported = await response.json(), report = imported.document;

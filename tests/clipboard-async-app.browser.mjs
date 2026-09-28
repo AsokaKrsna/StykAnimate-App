@@ -5,9 +5,10 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import backend from '../desktop/backend.cjs';
 import {runtimeFingerprint} from './helpers/runtime-fingerprint.mjs';
+import {corpusPath} from './support/corpus.mjs';
 const runtimeBefore=runtimeFingerprint();
 const output=path.resolve('artifacts/clipboard-async-app');await mkdir(output,{recursive:true});
-const source=process.argv[2]??'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv';
+const source=process.argv[2]??corpusPath('Downloads/16 Akane vs Akato Segundo round (3).piv');
 const service=await backend.startBackend({appRoot:process.cwd()}),checks=[],errors=[],metrics=[];let browser,page;
 const check=(name,value)=>{assert.ok(value,name);checks.push(name);console.log('PASS',name);};
 async function setup(indices){await page.evaluate(indices=>{

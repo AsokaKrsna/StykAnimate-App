@@ -2,10 +2,11 @@
 import {_electron as electron, chromium} from './support/playwright.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
+import {corpusPath} from './support/corpus.mjs';
 const profileEnabled = process.env.STYK_PATCH_PROFILE === '1';
 const suffix = (process.env.STYK_PATCH_SUFFIX || (profileEnabled ? '-profile' : '')).replace(/[^a-z0-9-]/gi, '');
 const root = process.cwd(), output = path.resolve(`artifacts/playback-patch-app${suffix}`); await mkdir(output, {recursive: true});
-const source = process.argv[2] || 'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv';
+const source = process.argv[2] || corpusPath('Downloads/16 Akane vs Akato Segundo round (3).piv');
 const headless = process.env.STYK_PATCH_HEADLESS === '1';
 const app = headless ? null : await electron.launch({args: [root], cwd: root, timeout: 45000, env: {...process.env, STYK_USER_DATA_DIR: path.join(output, 'profile')}});
 const browser = headless ? await chromium.launch({channel: 'chrome', headless: true}) : null;

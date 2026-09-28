@@ -6,7 +6,8 @@ import {emptyDocument} from '../src/demo.mjs';
 import backend from '../desktop/backend.cjs';
 import {nodeClipboardClient} from '../tests/helpers/clipboard-node-client.mjs';
 
-const source=process.argv[2]??'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv';
+import {corpusPath} from '../tests/support/corpus.mjs';
+const source=process.argv[2]??corpusPath('Downloads/16 Akane vs Akato Segundo round (3).piv');
 const output=path.resolve(process.argv[3]??'artifacts/clipboard-akane-async-cpu.json');
 const python=backend.pythonCandidates()[0];
 const imported=spawnSync(python.command,[...python.args,'-c',String.raw`

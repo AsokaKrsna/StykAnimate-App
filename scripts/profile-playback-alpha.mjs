@@ -3,7 +3,8 @@ import { chromium } from '../tests/support/playwright.mjs';
 import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 
-const source = process.argv[2] || 'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv';
+import {corpusPath} from '../tests/support/corpus.mjs';
+const source = process.argv[2] || corpusPath('Downloads/16 Akane vs Akato Segundo round (3).piv');
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
   const page = await browser.newPage();

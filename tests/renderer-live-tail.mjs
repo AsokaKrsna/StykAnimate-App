@@ -2,7 +2,8 @@
 import {chromium, _electron as electron} from './support/playwright.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
-const root = process.cwd(), source = process.argv[2] || 'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv';
+import {corpusPath} from './support/corpus.mjs';
+const root = process.cwd(), source = process.argv[2] || corpusPath('Downloads/16 Akane vs Akato Segundo round (3).piv');
 const suffix = (process.env.STYK_GPU_SUFFIX || '').replace(/[^a-z0-9-]/gi, '');
 const startTick = Number(process.env.STYK_START_TICK || 1824), endTick = Number(process.env.STYK_END_TICK || 1872);
 const fps = Number(process.env.STYK_PROBE_FPS || 16);

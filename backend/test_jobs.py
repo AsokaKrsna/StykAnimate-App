@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import copy
 import http.client
 import json
+import os
 from pathlib import Path
 import socket
 import tempfile
@@ -24,6 +25,14 @@ def until(predicate):
         if time.monotonic() > deadline:
             raise AssertionError("Condition did not complete")
         time.sleep(.005)
+
+
+def needs_sample(relative):
+    """The Pivot sample corpus lives beside the repository and is not redistributed.
+    A clean checkout skips these cases; STYK_REQUIRE_FIXTURES=1 runs them anyway."""
+    return unittest.skipUnless(
+        os.environ.get("STYK_REQUIRE_FIXTURES") == "1" or (server.WORKSPACE / relative).is_file(),
+        f"requires {relative} beside the repository")
 
 
 class RegistryTests(unittest.TestCase):
@@ -120,6 +129,7 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(document, before)
         self.assertEqual(server.source_document_digest(document), server.source_document_digest(before))
 
+    @needs_sample("Pivot Animator v5/Animations/tween_pendulum.piv")
     def test_frame_and_full_writers_cancel_at_array_boundaries_without_mutation(self):
         import piv_document
         source = (server.WORKSPACE / "Pivot Animator v5/Animations/tween_pendulum.piv").read_bytes()
@@ -138,6 +148,7 @@ class RegistryTests(unittest.TestCase):
                 self.assertEqual(document, before)
                 self.assertEqual(registry.snapshot()["active"], 0)
 
+    @needs_sample("Pivot Animator v5/Figures/sheep.stk")
     def test_unknown_numeric_fields_remain_validated_and_cancel_in_bounded_batches(self):
         raw = (server.WORKSPACE / "Pivot Animator v5/Figures/sheep.stk").read_bytes()
         document = server.ProjectStore(server.WORKSPACE).import_bytes(raw, "sheep.stk")["document"]
@@ -219,6 +230,7 @@ class HttpJobTests(unittest.TestCase):
             finally:
                 first.close(); second.close(); self.host.jobs.cancel(A); self.host.jobs.cancel(B)
 
+    @needs_sample("Pivot Animator v5/Figures/sheep.stk")
     def test_cancel_interrupts_a_stalled_active_upload_and_next_import_is_valid(self):
         client = self.client()
         try:
