@@ -37,15 +37,17 @@ try {
   const white = page.locator('[data-library-path="White walk.stykmov"]'), black = page.locator('[data-library-path="Black figure.stkz"]');
   check('White artwork automatically uses a dark matte', await white.getAttribute('data-matte') === '#343b47');
   check('Black artwork automatically uses a light matte', await black.getAttribute('data-matte') === '#edf0f4');
-  await page.getByRole('combobox',{name:'Preview background',exact:true}).selectOption('dark');
+  const background = async name => { await page.getByRole('button',{name:'Library options',exact:true}).click(); await page.getByRole('menuitem',{name:'Preview background'}).click(); await page.getByRole('menuitemradio',{name,exact:true}).click(); };
+  await background('Dark');
   check('Manual background override applies to every artwork preview', await black.locator('.library-thumbnail').evaluate(node=>getComputedStyle(node).backgroundColor) === 'rgb(52, 59, 71)');
-  await page.getByRole('combobox',{name:'Preview background',exact:true}).selectOption('auto');
+  await background('Automatic');
   await page.screenshot({path:path.join(run,'library-light.png')});
   await page.evaluate(async () => (await import('/src/theme.mjs')).applyEditorTheme('dark'));
   await page.screenshot({path:path.join(run,'library-dark.png')});
   await page.evaluate(async () => (await import('/src/theme.mjs')).applyEditorTheme('light'));
   const sceneBefore = await page.evaluate(()=>({tick:window.styk.editor.tick, undo:window.styk.editor._undo.length, count:window.styk.editor.selectionFrame.objects.length}));
-  await white.hover(); await white.locator('canvas').waitFor();
+  // Scrolling stops a preview, so the card is brought into view before hovering.
+  await white.scrollIntoViewIfNeeded(); await page.waitForTimeout(250); await white.hover(); await white.locator('canvas').waitFor();
   await page.evaluate(() => {
     window.hoverFrames = [];
     const session = window.styk.library.hoverPreview.current;
@@ -71,9 +73,11 @@ try {
   await page.locator('[data-library-path="White run.stykmov"] img').waitFor();
   check('Keyboard context menu renames the asset and retains its native extension', (await readFile(path.join(run,'library','White run.stykmov.png'))).length > 100);
   const drag = async (source, target, cancel = false) => {
+    // The foot is pinned: scroll just enough that the press lands on the dragged card's preview.
+    await source.evaluate(card => { const list = card.closest('.library-content'), overflow = card.getBoundingClientRect().top + 60 - list.getBoundingClientRect().bottom; if (overflow > 0) list.scrollTop += overflow; });
     const a = await source.boundingBox(), b = await target.boundingBox();
     await page.mouse.move(a.x+a.width/2,a.y+35); await page.mouse.down();
-    await page.mouse.move(b.x+b.width/2,b.y+Math.min(30,b.height/2),{steps:15});
+    await page.mouse.move(b.x+b.width/2,b.y+Math.min(60,b.height/2),{steps:15});
     if (cancel) await page.keyboard.press('Escape');
     else await page.waitForSelector('.library-folder-drop-target');
     await page.mouse.up();

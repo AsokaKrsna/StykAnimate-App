@@ -1,4 +1,6 @@
 export const LIBRARY_DRAG_TYPE = 'application/x-stykanimate-library-asset';
+// A card of My library (a path) or of the public library (an id).
+const CARD = '[data-library-path], [data-public-id]';
 
 export function canMoveLibraryItem(item, folder) {
   if (typeof folder !== 'string' || !item?.path) return false;
@@ -72,7 +74,7 @@ export function installLibraryDrag(source, target, {getAsset, onStart, position,
   const down = event => {
     if (drag || !event.isPrimary || event.button !== 0) return;
     if (event.target.closest('input, textarea, button, [contenteditable="true"]')) return;
-    const card = event.target.closest('[data-library-path]');
+    const card = event.target.closest(CARD);
     if (!card || !source.contains(card)) return;
     const asset = getAsset(card);
     if (!asset || asset.kind === 'folder' && !moveItem) return;
@@ -109,7 +111,7 @@ export function installLibraryDrag(source, target, {getAsset, onStart, position,
     if (!suppressClick || event.detail === 0) return;
     event.preventDefault(); event.stopImmediatePropagation();
   };
-  const nativeDrag = event => { if (event.target.closest('[data-library-path]')) event.preventDefault(); };
+  const nativeDrag = event => { if (event.target.closest(CARD)) event.preventDefault(); };
   const nextPress = () => { suppressClick = false; };
   const blur = () => finish();
   source.addEventListener('pointerdown', down);

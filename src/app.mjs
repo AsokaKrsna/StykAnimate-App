@@ -5894,8 +5894,8 @@ async function init() {
     builderMode?.active ? toast("Finish the figure or return to Animate to insert figures.") : window.styk.library.insert(asset, point);
   installLibraryDrop(viewport, {position: worldPoint, insert: libraryInsert, onError: fail});
   installLibraryDrag(window.styk.library.grid, viewport, {
-    getAsset: card => !window.styk.library.busy && window.styk.library.entries.find(item => item.path === card.dataset.libraryPath),
-    onStart: asset => { window.styk.library.hoverPreview.stop(); window.styk.library.closeMenu(); window.styk.library.select(asset.path); },
+    getAsset: card => window.styk.library.assetFor(card),
+    onStart: asset => window.styk.library.dragStarted(asset),
     getDestination: (hit, asset) => window.styk.library.dragDestination(hit, asset),
     moveItem: (asset, folder) => window.styk.library.moveItem(asset, folder),
     position: worldPoint, insert: libraryInsert, onError: fail,

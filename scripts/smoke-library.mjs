@@ -19,6 +19,9 @@ async function close() { if (!current) return; await current.app.evaluate(({app}
 async function settled(page) { await page.waitForFunction(()=>!window.styk.library.busy); const error=await page.locator('.library-message').getAttribute('data-error'); if(error==='true')throw new Error(await page.locator('.library-message').innerText()); }
 try {
   current=await launch(); let {page}=current;
+  // New documents start with one figure; the checks below need the three-figure demo scene.
+  const demoScene=async page=>page.evaluate(async()=>{const {createDemo}=await import('/src/demo.mjs');window.styk.editor.load(createDemo());});
+  await demoScene(page);
   await page.getByRole('tab',{name:'Library',exact:true}).click(); await page.waitForFunction(()=>window.styk.library.root);
   await page.getByRole('button',{name:'New library folder',exact:true}).click(); await page.getByRole('textbox',{name:'Folder name',exact:true}).fill('Characters'); await page.getByRole('button',{name:'Create folder',exact:true}).click();
   await page.locator('[data-library-path="Characters"]').dblclick(); await page.waitForFunction(()=>window.styk.library.folder==='Characters');
@@ -27,7 +30,7 @@ try {
   let items=await page.evaluate(()=>window.styk.library.entries); assert.equal(items.length,1); const original=items[0].path;
   assert.ok((await readFile(path.join(library,original))).length>50); assert.ok((await readFile(path.join(library,original+'.png'))).length>100);
   checks.push('native figure and PNG saved to current Documents subfolder');
-  await page.locator('.library-card').click(); await page.getByRole('button',{name:'Rename',exact:true}).click(); await page.getByRole('textbox',{name:'Asset name',exact:true}).fill('Blue hero'); await page.getByRole('textbox',{name:'Asset name',exact:true}).press('Enter');
+  await page.locator('.library-card').click(); await page.keyboard.press('F2'); await page.getByRole('textbox',{name:'Asset name',exact:true}).fill('Blue hero'); await page.getByRole('textbox',{name:'Asset name',exact:true}).press('Enter');
   await page.waitForSelector('[data-library-path="Characters/Blue hero.stkz"]');
   await page.locator('[data-library-path="Characters/Blue hero.stkz"]').dblclick(); await settled(page);
   let count=await page.evaluate(()=>window.styk.editor.selectionFrame.objects.length); assert.equal(count,4); await page.evaluate(()=>window.styk.editor.undo()); assert.equal(await page.evaluate(()=>window.styk.editor.selectionFrame.objects.length),3);
@@ -39,7 +42,7 @@ try {
   await page.locator('[data-library-path="Characters/Walk cycle.stykmov"]').dblclick(); await settled(page); assert.equal(await page.evaluate(()=>window.styk.editor.figure._styk.movieclip.duration),12);
   checks.push('movieclip file round trip retains animation');
   await page.getByRole('searchbox',{name:'Search library',exact:true}).fill('blue'); assert.equal(await page.locator('.library-card').count(),1); await page.getByRole('searchbox',{name:'Search library',exact:true}).fill('');
-  await page.locator('[data-library-path="Characters/Blue hero.stkz"]').click(); await page.getByRole('button',{name:'Move to…',exact:true}).click(); await page.getByRole('button',{name:'Move here',exact:true}).click();
+  await page.locator('[data-library-path="Characters/Blue hero.stkz"]').click({button:'right'}); await page.getByRole('menuitem',{name:'Move to…',exact:true}).click(); await page.getByRole('button',{name:'Move here',exact:true}).click();
   await page.waitForFunction(()=>!window.styk.library.entries.some(i=>i.name==='Blue hero'));
   await page.locator('.library-breadcrumbs button').first().click(); await page.waitForSelector('[data-library-path="Blue hero.stkz"]');
   await page.getByRole('tab',{name:'Properties',exact:true}).click(); assert.equal(await page.locator('#inspector').isVisible(),true); await page.getByRole('tab',{name:'Library',exact:true}).click();
@@ -47,12 +50,12 @@ try {
   await page.screenshot({path:path.join(run,'library-root.png')});
   await page.locator('[data-library-path="Characters"]').dblclick(); await page.waitForSelector('[data-library-path="Characters/Walk cycle.stykmov"]'); await page.waitForFunction(()=>[...document.querySelectorAll('.library-thumbnail img')].every(i=>i.complete));
   await page.screenshot({path:path.join(run,'library-assets.png')});
-  await close(); current=await launch(); page=current.page;
+  await close(); current=await launch(); page=current.page; await demoScene(page);
   await page.getByRole('tab',{name:'Library',exact:true}).click(); await page.waitForSelector('[data-library-path="Blue hero.stkz"]'); await page.waitForSelector('.library-thumbnail img');
   await page.locator('[data-library-path="Blue hero.stkz"]').dblclick(); await settled(page); assert.equal(await page.evaluate(()=>window.styk.editor.selectionFrame.objects.length),4);
   checks.push('library and thumbnails persist through a full desktop restart'); assert.deepEqual(errors,[]);
   await copyFile(path.join(library,'Blue hero.stkz'),path.join(library,'External asset.stkz'));
-  await page.getByRole('button',{name:'Refresh library',exact:true}).click(); await page.waitForSelector('[data-library-path="External asset.stkz"] img');
+  await page.getByRole('button',{name:'Library options',exact:true}).click(); await page.getByRole('menuitem',{name:'Refresh',exact:true}).click(); await page.waitForSelector('[data-library-path="External asset.stkz"] img');
   assert.ok((await readFile(path.join(library,'External asset.stkz.png'))).length>100);
   checks.push('files copied into the library get persistent previews automatically');
   await page.evaluate(async()=>{
@@ -67,7 +70,7 @@ try {
   const rootListing=await page.evaluate(()=>window.stykDesktop.listLibrary()); assert.ok(rootListing.entries.some(i=>i.name==='Blue hero'));
   // Exercise the real UI and constrained trash IPC with a reversible test substitute.
   await current.app.evaluate(({shell})=>{global.libraryTrashed=[];shell.trashItem=async p=>{global.libraryTrashed.push(p);};});
-  await page.locator('[data-library-path="External asset.stkz"]').click(); await page.getByRole('button',{name:'Remove library item',exact:true}).click(); await page.getByRole('button',{name:'Move to Recycle Bin',exact:true}).click();
+  await page.locator('[data-library-path="External asset.stkz"]').click(); await page.keyboard.press('Delete'); await page.getByRole('button',{name:'Move to Recycle Bin',exact:true}).click();
   await page.waitForFunction(()=>!document.querySelector('.library-dialog').open); const trashed=await current.app.evaluate(()=>global.libraryTrashed);assert.equal(trashed.length,2);assert.ok(trashed.every(p=>p.startsWith(library)));
   checks.push('Recycle Bin action targets only the chosen library asset and preview');
   const evidence={packaged,run,library,checks,errors}; await writeFile(path.join(run,'evidence.json'),JSON.stringify(evidence,null,2)); console.log(JSON.stringify(evidence,null,2));

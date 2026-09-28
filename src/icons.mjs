@@ -231,6 +231,9 @@ const shapes = Object.freeze({
     '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M14 4v16"/><path d="M14 4h4.5A2.5 2.5 0 0 1 21 6.5v11a2.5 2.5 0 0 1-2.5 2.5H14z" fill="currentColor" opacity=".2" stroke="none"/><path d="M16.6 9h1.8M16.6 12.5h1.8"/>',
   fx: '<path d="M11.8 4.6c-2.4-.5-3.8.5-4.2 2.7L5.3 19.4"/><path d="M4.6 10.4h5.8"/><path d="m13.4 10.2 6.2 8.6M19.6 10.2l-6.2 8.6"/>',
   library: '<rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M9 3v8l3-2 3 2V3"/>',
+  // The Library's folder path and its public source (Lucide folder-plus, globe).
+  "folder-plus": '<path d="M12 10v6M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/>',
   structure: '<path d="M21 12h-8M21 6H8M21 18h-8"/><path d="M3 6v4c0 1.1.9 2 2 2h3M3 10v6c0 1.1.9 2 2 2h3"/>',
   timeline:
     '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 14h18"/><path d="M3 14h18v3.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z" fill="currentColor" opacity=".2" stroke="none"/><path d="M9.5 14v6"/>',
