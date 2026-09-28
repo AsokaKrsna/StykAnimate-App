@@ -9,10 +9,20 @@ permissions:
 concurrency:
   group: tests-${{ github.ref }}
   cancel-in-progress: true
+defaults:
+  run:
+    # One shell everywhere: Git Bash on Windows runners, bash on Linux.
+    shell: bash
 jobs:
   unit:
-    # Windows matches the release runner and exercises Windows-only services.
-    runs-on: windows-latest
+    # Windows matches the release runner and exercises the Windows-only services;
+    # Linux is a supported platform and must stay green on every change.
+    name: Unit tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     env:
       # Unit tests need neither the Electron binary nor Playwright browsers.
@@ -34,7 +44,6 @@ jobs:
       - name: Syntax and changelog
         run: |
           npm run check
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run changelog:check
       - name: Application unit tests
         run: npm test
@@ -42,3 +51,84 @@ jobs:
         run: python -m unittest discover -s backend -p "test_*.py"
       - name: Website and cloud tests
         run: node --test website/tests/*.test.mjs cloud/tests/*.test.mjs
+
+  web:
+    # The editor as a static site: build it, verify it, run it in a real browser,
+    # and let wrangler validate the Cloudflare configuration without deploying.
+    name: Web build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.0'
+          cache: npm
+      - name: Install locked dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npm ci --prefix cloud --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Build and verify the site
+        run: |
+          npm run web:build
+          npm run web:verify
+      - name: Browser test of the built site
+        # GitHub runners have no GPU: the editor uses its Canvas 2D renderer, which
+        # the test accepts alongside WebGPU.
+        run: node tests/web-build.browser.mjs
+        env:
+          STYK_WEB_DIR: build/web
+      - name: Cloudflare configuration
+        run: npm run web:deploy -- --dry-run
+
+  linux-app:
+    # Builds the Linux app from source exactly as a release would, then boots it.
+    name: Linux app
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.0'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.9'
+          cache: pip
+          cache-dependency-path: scripts/requirements-build.txt
+      - name: Install locked dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          python -m pip install -r scripts/requirements-build.txt
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          # Ubuntu 24.04 runners restrict unprivileged user namespaces, which
+          # Chromium's sandbox needs; the app itself never disables the sandbox.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Build the native scanner, codec and video encoder
+        run: |
+          npm run build:frame-scan
+          npm run build:sidecar
+          npm run verify:sidecar
+          npm run build:video-encoder
+      - name: Package the AppImage
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npm run dist:linux -- --x64 --publish never
+          npm run verify:package
+      - name: Boot the packaged app
+        run: xvfb-run -a npm run test:boot:packaged
+      - name: Upload the build evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: |
+            release/*.AppImage
+            release/latest-linux.yml
+            artifacts/sidecar-smoke.json
+          retention-days: 7
