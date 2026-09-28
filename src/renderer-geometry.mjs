@@ -80,6 +80,18 @@ function paintFor(s, root, opacity) {
 }
 // Only these produce primitives; other drawables need no paint.
 const drawsVector = s => s.type === 'poly' ? s.points.length >= 3 : s.type === 'circle' || (s.type === 'line' && s.thickness > 0);
+/** Animated artwork changes size every tick, so exact-size texture recycling
+ * almost never hits. Recycled artwork occupies the top-left of an allocation
+ * at most a quarter larger per axis. */
+export const textureBucket = size => { const step = Math.max(16, 2 ** (Math.floor(Math.log2(Math.max(1, size))) - 2)); return Math.ceil(size / step) * step; };
+/** Texture records address [0,1]; this maps that onto the used top-left region
+ * and clamps to its last texel centre, so unused texels never filter in and
+ * sampling matches an exact texture. It fills the record's gradient field,
+ * which texture records otherwise leave unused. Exact textures stay zero. */
+export function textureRegion(width, height, allocatedWidth = width, allocatedHeight = height) {
+  if (allocatedWidth === width && allocatedHeight === height) return [0, 0, 0, 0];
+  return [(width - .5) / allocatedWidth, (height - .5) / allocatedHeight, width / allocatedWidth, height / allocatedHeight];
+}
 export function shapeRecord({ a = [0, 0, 0, 0], b = [0, 0, 0, 0], color = [0, 0, 0, 1], color2 = color, gradient = [0, 0, 0, 0], mode = SHAPE.LINE, transform = 0, extra = 0, clipToCanvas = false }) {
   return [...a, ...b, ...color, ...color2, ...gradient, mode, transform, extra, clipToCanvas ? 1 : 0];
 }

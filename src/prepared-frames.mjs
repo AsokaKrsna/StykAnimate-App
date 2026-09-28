@@ -1,4 +1,4 @@
-import { cameraMatrix, SHAPE_BYTES, SHAPE_FLOATS, SHAPE, shapeRecord } from './renderer-geometry.mjs';
+import { cameraMatrix, SHAPE_BYTES, SHAPE_FLOATS, SHAPE, shapeRecord, textureBucket, textureRegion } from './renderer-geometry.mjs';
 import {bitmapKey,bitmapBytes,entryImage} from './playback-bitmap-pool.mjs';
 import {playbackMemoryBudget,playbackReuseMemoryPlan} from './playback-budget.mjs';
 import {EditorRasterCache} from './renderer-raster-cache.mjs';
@@ -63,16 +63,11 @@ export function encodePreparedCommands(renderer, pass, frame, {hiddenUids, dragT
  * Glyph masks and filtered VFX keep exact allocations; meshes recycle exact sizes. */
 const poolableEntry = entry => { const image = entryImage(entry);
   return Boolean(image?.width) && !entry.glyphMask && !entry.vfx && Math.max(image.width, image.height) >= 64; };
-export const textureBucket = size => { const step = Math.max(16, 2 ** (Math.floor(Math.log2(Math.max(1, size))) - 2)); return Math.ceil(size / step) * step; };
 const allocationSize = entry => { const image = entryImage(entry);
   return poolableEntry(entry) && !entry.meshRaster ? [textureBucket(image.width), textureBucket(image.height)] : [image.width, image.height]; };
 const preparedEntryBytes = entry => { if (!entryImage(entry)) return 0; const [width, height] = allocationSize(entry); return width * height * 4; };
-/** A texture record addresses [0,1]; a bucketed allocation maps that onto its
- * used region. The gradient field is otherwise unused by texture records. */
 function scaleTextureRecord(data, offset, resource) {
-  const at = offset + 16;
-  data[at] = (resource.width - .5) / resource.poolW; data[at + 1] = (resource.height - .5) / resource.poolH;
-  data[at + 2] = resource.width / resource.poolW; data[at + 3] = resource.height / resource.poolH;
+  data.set(textureRegion(resource.width, resource.height, resource.poolW, resource.poolH), offset + 16);
 }
 
 /** Owns only uploaded GPU resources. The playback controller owns packet/bitmap lifetime. */
@@ -387,7 +382,7 @@ export class PreparedFrameCache {
           resource.refs++; textures.push(resource); ownedTextures.push(resource); textureBytes += resource.bytes;
           if (shapeData === packet.shapes) shapeData = packet.shapes.slice();
           const group = packet.groups.find(group => group.compatibilityIndex === i), b = resource.bounds, root = compatibility.root || compatibility.g.root;
-          shapeData.set(shapeRecord({ mode: SHAPE.TEXTURE, color: [1, 1, 1, 1], transform: group.transformIndex, a: [b.x - root.x, b.y - root.y, b.x + b.width - root.x, b.y + b.height - root.y] }), group.firstInstance * SHAPE_FLOATS);
+          shapeData.set(shapeRecord({ mode: SHAPE.TEXTURE, gradient: resource.region, color: [1, 1, 1, 1], transform: group.transformIndex, a: [b.x - root.x, b.y - root.y, b.x + b.width - root.x, b.y + b.height - root.y] }), group.firstInstance * SHAPE_FLOATS);
         }
       }
       flushRasterBatch();

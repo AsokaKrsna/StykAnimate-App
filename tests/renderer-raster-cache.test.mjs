@@ -98,3 +98,20 @@ test('drawing content variants preserve leased rasters until the new scene is pu
   cache.retain(new Set([decoded]),0);assert.equal(cold.destroyed,undefined);lease.release();
   cache.retain(new Set([decoded]),0);assert.equal(cold.destroyed,true);assert.equal(decoded.destroyed,undefined);cache.clear();
 });
+
+test('evicted recyclable textures are reused best-fit, stay bounded and are released on clear', () => {
+  const cache = new EditorRasterCache({maxBytes: 0, maxRecycledBytes: 250});
+  const recyclable = (width, height, generation = 0) => ({...resource(1, generation, width * height), poolClass: 'vector:bgra8unorm', allocatedWidth: width, allocatedHeight: height});
+  const small = recyclable(10, 10), large = recyclable(12, 12), exact = resource();
+  for (const item of [small, large, exact]) cache.set({}, item);
+  cache.retain(new Set(), 1);
+  assert.equal(exact.texture.destroyed, 1, 'textures without a recycling class are destroyed');
+  assert.equal(small.texture.destroyed + large.texture.destroyed, 0); assert.equal(cache.recycledBytes, 244);
+  assert.equal(cache.take('bitmap:rgba8unorm', 9, 9), undefined, 'classes never mix');
+  assert.equal(cache.take('vector:bgra8unorm', 20, 20), undefined, 'too small');
+  assert.equal(cache.take('vector:bgra8unorm', 9, 9).texture, small.texture, 'smallest allocation that fits');
+  assert.equal(cache.take('vector:bgra8unorm', 5, 5), undefined, 'at most twice the requested area');
+  const extra = recyclable(11, 11); cache.set({}, extra); cache.retain(new Set(), 2);
+  assert.equal(large.texture.destroyed, 1, 'the oldest recycled texture makes room'); assert.ok(cache.recycledBytes <= 250);
+  cache.clear(); assert.equal(extra.texture.destroyed, 1); assert.equal(cache.recycledBytes, 0);
+});

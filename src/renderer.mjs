@@ -12,7 +12,7 @@ import {hasDrawableVfx,vfxRasterScale} from './vfx-canvas.mjs';
 import {vfxPreviewOptions,vfxPreviewGeometry} from './vfx-preview.mjs';
 import { buildGeometry, buildGeometrySteps, drawGeometry, releaseGeometryResources } from './pivot/geometry.mjs';
 import { drawBackground, backgroundBounds, sceneBackgroundColor, effectiveCamera } from './pivot/background.mjs';
-import { SHAPE, SHAPE_BYTES, SHAPE_FLOATS, shapeRecord, compileVectorObject, compileVectorObjectSteps, requiresCompatibilityTexture, adoptPreparedVectors, objectBounds, cameraMatrix, argbFloats } from './renderer-geometry.mjs';
+import { SHAPE, SHAPE_BYTES, SHAPE_FLOATS, shapeRecord, compileVectorObject, compileVectorObjectSteps, requiresCompatibilityTexture, adoptPreparedVectors, objectBounds, cameraMatrix, argbFloats, textureBucket, textureRegion } from './renderer-geometry.mjs';
 import { PreparedFrameCache } from './prepared-frames.mjs';
 import { RasterSurfacePool } from './raster-surfaces.mjs';
 import { EditorRasterCache } from './renderer-raster-cache.mjs';
@@ -740,8 +740,16 @@ class WebGPURenderer {
       this.stats.vectorVfxObjects=(this.stats.vectorVfxObjects??0)+1;cache.set(artwork,result);return result;
     }
     if (vector && supportsVectorIsolation(items, pixelScale)) {
-      const data = compileVectorObject(items, g.root, 0);
-      const result = {...rasterizeVectorGroup(this, {data, width, height, pixelScale, bounds, root: g.root}),
+      const data = compileVectorObject(items, g.root, 0), poolClass = `vector:${this.format}`;
+      // Draw into the top-left of a recycled or bucketed allocation; the pass
+      // clears the whole target, so no earlier artwork remains.
+      const allocation = cache.take?.(poolClass, textureBucket(width), textureBucket(height));
+      const allocatedWidth = allocation?.width ?? textureBucket(width), allocatedHeight = allocation?.height ?? textureBucket(height);
+      let raster;
+      try { raster = rasterizeVectorGroup(this, {data, width, height, pixelScale, bounds, root: g.root, viewport: [allocatedWidth, allocatedHeight],
+        target: {texture: allocation?.texture, bindGroup: allocation?.bindGroup, width: allocatedWidth, height: allocatedHeight}}); }
+      catch (error) { allocation?.texture.destroy(); throw error; }
+      const result = {...raster, poolClass, allocatedWidth, allocatedHeight, region: textureRegion(width, height, allocatedWidth, allocatedHeight),
         bounds: {...bounds, width: width / pixelScale, height: height / pixelScale}, origin: {...g.root}, generation: this.generation, resolution,imageURLs};
       cache.set(artwork, result); return result;
     }
@@ -754,11 +762,16 @@ class WebGPURenderer {
     try {
       ctx.setTransform(pixelScale, 0, 0, pixelScale, -bounds.x * pixelScale, -bounds.y * pixelScale);
       drawGeometry(ctx, { drawables: items }, this.resources);
-      texture = this.device.createTexture({ label: `Compatibility object ${uidOf(g)}`, size: [width, height], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+      // Unused texels of a recycled allocation keep old pixels; the record's
+      // region clamps sampling inside the copied rectangle.
+      const poolClass = 'bitmap:rgba8unorm', allocation = cache.take?.(poolClass, textureBucket(width), textureBucket(height));
+      const allocatedWidth = allocation?.width ?? textureBucket(width), allocatedHeight = allocation?.height ?? textureBucket(height);
+      texture = allocation?.texture ?? this.device.createTexture({ label: `Compatibility object ${uidOf(g)}`, size: [allocatedWidth, allocatedHeight], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
       this.device.queue.copyExternalImageToTexture({ source: surface }, { texture, premultipliedAlpha: true }, [width, height]);
       // Include the final partially used pixel rather than squeezing its raster.
       const rasterBounds = { ...bounds, width: width / pixelScale, height: height / pixelScale };
-      const result = { bounds: rasterBounds, origin: {...g.root}, texture, bindGroup: this.textureBindGroup(texture), generation: this.generation, resolution, contentKey, drawingInputs,imageURLs, bytes: width * height * 4 };
+      const result = { bounds: rasterBounds, origin: {...g.root}, texture, bindGroup: allocation?.bindGroup ?? this.textureBindGroup(texture), generation: this.generation, resolution, contentKey, drawingInputs,imageURLs,
+        poolClass, allocatedWidth, allocatedHeight, region: textureRegion(width, height, allocatedWidth, allocatedHeight), bytes: allocatedWidth * allocatedHeight * 4 };
       cache.set(artwork, result); return result;
     } catch (error) { texture?.destroy(); throw error; }
     finally { this.rasterSurfaces.release(); }
@@ -964,7 +977,7 @@ class WebGPURenderer {
       catch (error) { texture = this.rasterFallback(error, artwork, prior); }
       if (texture) this.rasterLease?.add(texture);
       if (prior?.transform === index && prior.texture === texture) data = prior.data;
-      else if (texture) { const b = texture.bounds, origin=texture.origin; data = new Float32Array(shapeRecord({ a: [b.x - origin.x, b.y - origin.y, b.x + b.width - origin.x, b.y + b.height - origin.y], color: [1, 1, 1, 1], mode: SHAPE.TEXTURE, transform: index })); }
+      else if (texture) { const b = texture.bounds, origin=texture.origin; data = new Float32Array(shapeRecord({ a: [b.x - origin.x, b.y - origin.y, b.x + b.width - origin.x, b.y + b.height - origin.y], gradient: texture.region, color: [1, 1, 1, 1], mode: SHAPE.TEXTURE, transform: index })); }
     }
     if (!data) {
       let compiled = this.vectorCache.get(source);

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PreparedFrameCache, combinePreparedCommands, textureBucket } from '../src/prepared-frames.mjs';
-import { SHAPE, shapeRecord } from '../src/renderer-geometry.mjs';
+import { PreparedFrameCache, combinePreparedCommands } from '../src/prepared-frames.mjs';
+import { SHAPE, shapeRecord, textureBucket } from '../src/renderer-geometry.mjs';
 
 globalThis.GPUBufferUsage = { STORAGE: 128, COPY_DST: 8 };
 globalThis.GPUTextureUsage={TEXTURE_BINDING:4,COPY_DST:2,RENDER_ATTACHMENT:16};
