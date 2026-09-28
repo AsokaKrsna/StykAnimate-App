@@ -70,6 +70,7 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 ### Performance
 
 - Faster property adjustments in long animations and smoother refreshes in scenes with many images.
+- Smoother playback and editing in busy scenes, especially on laptops without a dedicated graphics card and in Compatibility mode.
 
 ## [1.1.0]
 
