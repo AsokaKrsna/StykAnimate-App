@@ -40,6 +40,31 @@
   .ui-swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, 24px); gap: var(--space-1-5); }
   .ui-swatch-grid > .ui-swatch { --_s: 24px; }
 
+  /* The colour picker's palette (color-picker.mjs): a hairline under the
+   * values, Project | Recent as a small segmented switch with + at its end,
+   * then ten swatches a row filling the picker's width. The picker itself is
+   * still a legacy sheet, so these rules reset its generic button look. */
+  .paint-palette { margin-block-start: var(--space-3); padding-block-start: var(--space-3); border-block-start: 1px solid var(--line-1); }
+  .paint-palette-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-block-end: var(--space-2); }
+  .paint-palette-title { font: var(--type-small-strong); color: var(--text-2); }
+  .paint-palette-views { display: inline-flex; gap: var(--space-0-5); padding: 2px; border-radius: var(--radius-md); background: var(--surface-sunken); }
+  .paint-palette-views > button {
+    min-inline-size: 0; block-size: 22px; padding: 0 var(--space-2-5);
+    border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-2); font: var(--type-small);
+  }
+  .paint-palette-views > button:hover { background: var(--surface-hover); color: var(--text-1); }
+  .paint-palette-views > button[aria-pressed="true"] { background: var(--surface-raised); color: var(--text-1); box-shadow: 0 0 0 1px var(--line-2); }
+  .paint-palette-add {
+    display: inline-grid; place-items: center; min-inline-size: 0; inline-size: 26px; block-size: 26px; padding: 0;
+    border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-2);
+  }
+  .paint-palette-add:where(:hover):not(:disabled) { background: var(--accent-soft); color: var(--accent-text-strong); }
+  .paint-palette-add:disabled { opacity: 0.35; }
+  .paint-palette-grid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: var(--space-1); }
+  .paint-palette-grid > .ui-swatch { inline-size: auto; min-inline-size: 0; block-size: auto; aspect-ratio: 1; cursor: pointer; }
+  .paint-palette-grid > .ui-swatch:where([draggable="true"]) { cursor: grab; }
+  .paint-palette-empty { margin: 0; padding: var(--space-2) var(--space-2-5); border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--text-3); font: var(--type-small); }
+
   @media (forced-colors: active) {
     /* Swatches are artwork: they keep their colour and gain a real border. */
     .ui-swatch { forced-color-adjust: none; outline: 1px solid CanvasText; }

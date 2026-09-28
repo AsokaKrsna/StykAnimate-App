@@ -131,6 +131,13 @@ project bytes.
 The package build tracks `native_format.py` alongside the codec's other runtime
 sources, so an old sidecar must be rebuilt before packaging the new formats.
 
+## Project colors
+
+Project colors are `_styk.palette`, `{version: 1, colors: ['#rrggbb', …]}`
+with up to 64 unique colors in the order shown; readers skip malformed
+entries, and a project without colors omits the field. Recent colors are
+app settings and are never saved in a project.
+
 ## Raster drawing metadata
 
 Native projects retain version-1 drawing layer markers and `_styk.drawing`

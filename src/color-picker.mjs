@@ -1,5 +1,6 @@
 import {clamp, hexColor, parseColor, normalizePaint, paintCSS, samplePaint, canvasPaint} from './paint.mjs';
 import {createColorMagnifier} from './color-picker-magnifier.mjs';
+import {PROJECT_PALETTE_LIMIT, canSaveToProject, paletteView, projectPalette, recentColors, rememberColor, setPaletteView, subscribePalette} from './color-palette.mjs';
 
 function hsv(rgb) {
   const [r,g,b] = rgb.map(v => v / 255), max = Math.max(r,g,b), min = Math.min(r,g,b), d = max-min;
@@ -11,24 +12,30 @@ function rgb(h,s,v) {
 }
 let active;
 let canvasSampler;
-/** `live` applies every drag step instead of only the release, `placement`
- * 'below' opens under the anchor instead of beside it, and `swatches` offers
- * recent colours (#rrggbb) one click away. */
-export function openColorPicker({anchor, paint, gradients = true, alpha = true, onChange, title = 'Fill', live = false, placement = 'side', swatches = []}) {
+const PALETTE_COLUMNS = 10;
+const escapeHTML = value => String(value).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+/** `live` applies every drag step instead of only the release, and
+ * `placement` 'below' opens under the anchor instead of beside it. Every
+ * picker ends with the shared palette (color-palette.mjs): the project's
+ * colours or the recent ones, one click from the colour being edited. */
+export function openColorPicker({anchor, paint, gradients = true, alpha = true, onChange, title = 'Fill', live = false, placement = 'side'}) {
   active?.();
   let dragCleanup;
   const lifetime = new AbortController(), surface = canvasSampler?.surface();
   const magnifier=surface && createColorMagnifier({anchor,signal:lifetime.signal,sample:canvasSampler.sample});
   let sampling = false, samplePointer = null, eyedropper = false;
   let draft = normalizePaint(paint), selected = 0, savedGradient, hue = hsv(draft.stops[0].color)[0];
+  // The palette remembers the colour a picker ends on when it changed.
+  let paletteKey = '', paletteCleanup = null, changed = false;
+  const initialHex = hexColor(draft.stops[0].color);
   const panel = document.createElement('div'); panel.className='paint-picker'; panel.setAttribute('role','dialog'); panel.setAttribute('aria-label','Color picker'); panel.setAttribute('popover','manual');
-  const label = String(title).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`), recent = swatches.filter(c => /^#[0-9a-f]{6}$/i.test(c)).slice(0, 12);
+  const label = escapeHTML(title);
   panel.innerHTML = `<header><strong>${label}</strong><button type="button" data-eyedropper aria-pressed="false" title="Pick a color from the canvas"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5 5 5M16 7l3-3a2.1 2.1 0 0 1 3 3l-3 3M15 8 4 19l-1 3 3-1L17 10"/></svg>Eyedropper</button><button type="button" data-close aria-label="Close color picker">×</button></header>
     <div class="paint-tabs"${gradients ? '' : ' hidden'}><button type="button" data-mode="solid">◼ &nbsp; Solid</button>${gradients ? '<button type="button" data-mode="gradient">◩ &nbsp; Gradient</button>' : ''}</div>
     <section data-gradient><div class="paint-toolbar"><select aria-label="Gradient type"><option value="linear">Linear</option><option value="radial">Radial</option><option value="angular">Angular</option><option value="diamond">Diamond</option></select><label><input data-angle type="number" step="1" aria-label="Gradient angle">°</label><button type="button" data-reverse title="Reverse gradient" aria-label="Reverse gradient">⇄</button><button type="button" data-rotate title="Rotate 90°" aria-label="Rotate gradient">↻</button></div><canvas class="paint-preview" width="520" height="140" aria-label="Gradient preview"></canvas><div class="paint-ramp" aria-label="Gradient stops"></div><div class="paint-toolbar"><strong>Stops</strong><button type="button" data-add aria-label="Add gradient stop">+</button><button type="button" data-remove aria-label="Remove gradient stop">−</button><label class="paint-position"><input data-position type="number" min="0" max="100" step="1" aria-label="Stop position">%</label></div></section>
     <div class="paint-sv" tabindex="0" role="slider" aria-label="Saturation and brightness" aria-valuemin="0" aria-valuemax="100"><i></i></div>
     <div class="paint-sliders"><input data-hue type="range" min="0" max="360" step="1" aria-label="Hue"><input data-alpha type="range" min="0" max="100" step="1" aria-label="Opacity"></div>
-    <div class="paint-values"><label>HEX<input data-hex type="text" spellcheck="false" maxlength="9" aria-label="Hex color"></label><label data-opacity-label>Alpha %<input data-opacity type="number" min="0" max="100" step="1" aria-label="Alpha percent"></label></div>${recent.length ? `<div class="paint-swatches" role="group" aria-label="Recent colors">${recent.map(c => `<button type="button" data-swatch="${c}" style="background:${c}" title="${c.toUpperCase()}" aria-label="Use ${c.toUpperCase()}"></button>`).join('')}</div>` : ''}<p class="paint-error" role="status"></p>`;
+    <div class="paint-values"><label>HEX<input data-hex type="text" spellcheck="false" maxlength="9" aria-label="Hex color"></label><label data-opacity-label>Alpha %<input data-opacity type="number" min="0" max="100" step="1" aria-label="Alpha percent"></label></div><section class="paint-palette" aria-label="Palette"></section><p class="paint-error" role="status"></p>`;
   (anchor.closest('dialog') || document.body).append(panel); panel.showPopover();
   const $ = s => panel.querySelector(s), stop = () => draft.stops[selected];
   $('[data-eyedropper]').hidden=!surface;
@@ -41,7 +48,7 @@ export function openColorPicker({anchor, paint, gradients = true, alpha = true, 
   const rect=anchor.getBoundingClientRect(), below=placement==='below';
   const place=()=>{panel.style.top=Math.max(8,Math.min(below?rect.bottom+8:rect.top,innerHeight-panel.offsetHeight-8))+'px';};
   panel.style.left=Math.max(8,Math.min(below?rect.left-8:rect.left-292,innerWidth-300))+'px'; place();
-  const close = () => {lifetime.abort();surface?.classList.remove('paint-eyedropper');dragCleanup?.();panel.remove(); document.removeEventListener('pointerdown',outside,true); document.removeEventListener('keydown',key,true); if(anchor.isConnected)anchor.focus(); if(active===close)active=null;}; active=close;
+  const close = () => {lifetime.abort();paletteCleanup?.();if(changed&&hexColor(stop().color)!==initialHex)rememberColor(hexColor(stop().color));surface?.classList.remove('paint-eyedropper');dragCleanup?.();panel.remove(); document.removeEventListener('pointerdown',outside,true); document.removeEventListener('keydown',key,true); if(anchor.isConnected)anchor.focus(); if(active===close)active=null;}; active=close;
   const onCanvas=e=>surface && (e.target===surface || surface.contains(e.target));
   const consume=e=>{e.preventDefault();e.stopImmediatePropagation();};
   const outside=e=>{
@@ -76,7 +83,7 @@ export function openColorPicker({anchor, paint, gradients = true, alpha = true, 
   }
   surface?.addEventListener('pointerleave',()=>magnifier?.hide(),{signal:lifetime.signal});
   window.addEventListener('blur',()=>magnifier?.hide(),{signal:lifetime.signal});
-  const commit=()=>{try{onChange(normalizePaint(draft));$('.paint-error').textContent='';}catch(e){$('.paint-error').textContent=e.message;}};
+  const commit=()=>{try{onChange(normalizePaint(draft));changed=true;$('.paint-error').textContent='';}catch(e){$('.paint-error').textContent=e.message;}};
   function draw() {
     const s=stop(), [,,v]=hsv(s.color), saturation=hsv(s.color)[1], gradient=draft.type!=='solid';
     $('[data-gradient]').hidden=!gradient;
@@ -91,6 +98,7 @@ export function openColorPicker({anchor, paint, gradients = true, alpha = true, 
       $('.paint-ramp').replaceChildren(...draft.stops.map((s,i)=>{const b=document.createElement('button');b.type='button';b.className='paint-stop';b.style.left=s.offset*100+'%';b.style.background=hexColor(s.color);b.setAttribute('aria-label',`Stop ${i+1}, ${Math.round(s.offset*100)}%`);b.setAttribute('aria-pressed',String(i===selected));b.onclick=()=>{selected=i;hue=hsv(stop().color)[0];draw();};b.onpointerdown=e=>{e.stopPropagation();selected=i;hue=hsv(stop().color)[0];drag(e,$('.paint-ramp'),fraction=>{stop().offset=fraction;draw();},true);};b.onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();selected=i;stop().offset=clamp(stop().offset+(e.key==='ArrowLeft'?-.01:.01));draw();commit();}if(e.key==='Delete'){selected=i;remove();}};return b;}));
       $('[data-position]').value=Math.round(s.offset*100);$('[data-remove]').disabled=draft.stops.length<=2;$('[data-add]').disabled=draft.stops.length>=32;
     }
+    renderPalette();
     place();
   }
   // Live pickers apply each drag step, so the brush and swatches follow the pointer.
@@ -117,7 +125,66 @@ export function openColorPicker({anchor, paint, gradients = true, alpha = true, 
   $('[data-alpha]').oninput=e=>{stop().opacity=Number(e.target.value)/100;update();};$('[data-alpha]').onchange=commit;
   $('[data-opacity]').onchange=e=>{stop().opacity=clamp(Number(e.target.value)/100);draw();commit();};
   $('[data-hex]').onchange=e=>{try{const value=parseColor(e.target.value);stop().color=value.color;if(alpha&&[4,8].includes(e.target.value.replace('#','').length))stop().opacity=value.opacity;hue=hsv(stop().color)[0];draw();commit();}catch(error){$('.paint-error').textContent=error.message;}};
-  for(const b of panel.querySelectorAll('[data-swatch]'))b.onclick=()=>{stop().color=parseColor(b.dataset.swatch).color;hue=hsv(stop().color)[0];draw();commit();};
+  // The palette: Project | Recent, the add button and one grid of swatches.
+  // Project colours are the editor's (undoable, saved with the project);
+  // without an editor the picker offers the recent colours alone.
+  const paletteRoot=$('.paint-palette'),source=projectPalette();
+  const paletteState=()=>{const saved=source?source.colors():[],view=source?paletteView(saved):'recent';return {view,saved,colors:view==='project'?saved:recentColors()};};
+  const paletteAction=action=>{try{action();$('.paint-error').textContent='';}catch(error){$('.paint-error').textContent=error.message;}renderPalette();};
+  function renderPalette(){
+    const {view,saved,colors}=paletteState(),project=view==='project',current=hexColor(stop().color),key=`${view}|${colors.join()}`;
+    if(key!==paletteKey){
+      paletteKey=key;
+      const views=source?`<div class="paint-palette-views" role="group" aria-label="Palette">${['project','recent'].map(name=>`<button type="button" data-palette-view="${name}" aria-pressed="${name===view}">${name==='project'?'Project':'Recent'}</button>`).join('')}</div>`:'<span class="paint-palette-title">Recent</span>';
+      const add=source&&canSaveToProject(saved)?'<button type="button" class="paint-palette-add" data-palette-add><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>':'';
+      const grid=colors.length?`<div class="paint-palette-grid" role="group" aria-label="${project?'Project colors':'Recent colors'}">${colors.map(color=>`<button type="button" class="ui-swatch" data-palette-swatch="${color}" style="--swatch:${color}"${project?' draggable="true"':''} aria-label="Use ${color.toUpperCase()}" title="${color.toUpperCase()}${project?' · Drag to reorder · Right-click to remove':''}"></button>`).join('')}</div>`
+        :`<p class="paint-palette-empty">${project?'Save the colors this project reuses with +. They are kept in the project file.':'Colors you paint and pick appear here.'}</p>`;
+      paletteRoot.innerHTML=`<div class="paint-palette-head">${views}${add}</div>${grid}`;
+    }
+    // One tab stop: the current colour's swatch, or the first.
+    const swatches=[...paletteRoot.querySelectorAll('[data-palette-swatch]')],match=swatches.find(button=>button.dataset.paletteSwatch===current);
+    for(const button of swatches){button.setAttribute('aria-pressed',String(button===match));button.tabIndex=button===(match??swatches[0])?0:-1;}
+    const add=paletteRoot.querySelector('[data-palette-add]');
+    if(add){
+      const kept=saved.includes(current),full=saved.length>=PROJECT_PALETTE_LIMIT,label=kept?`${current.toUpperCase()} is in the project colors`:full?'The project palette is full':`Add ${current.toUpperCase()} to the project colors`;
+      add.disabled=kept||full;add.title=label;add.setAttribute('aria-label',label);
+    }
+  }
+  const removeSwatch=button=>{
+    const next=button.nextElementSibling??button.previousElementSibling,color=button.dataset.paletteSwatch;
+    paletteAction(()=>source.remove(color));
+    paletteRoot.querySelector(`[data-palette-swatch="${next?.dataset.paletteSwatch}"]`)?.focus();
+  };
+  paletteRoot.addEventListener('click',e=>{
+    const view=e.target.closest('[data-palette-view]'),swatch=e.target.closest('[data-palette-swatch]');
+    if(view)paletteAction(()=>setPaletteView(view.dataset.paletteView));
+    else if(e.target.closest('[data-palette-add]'))paletteAction(()=>source.add(hexColor(stop().color)));
+    else if(swatch){stop().color=parseColor(swatch.dataset.paletteSwatch).color;hue=hsv(stop().color)[0];draw();commit();}
+  });
+  paletteRoot.addEventListener('contextmenu',e=>{
+    const swatch=e.target.closest('[draggable][data-palette-swatch]');if(!swatch)return;
+    e.preventDefault();removeSwatch(swatch);
+  });
+  paletteRoot.addEventListener('keydown',e=>{
+    const swatch=e.target.closest('[data-palette-swatch]');if(!swatch)return;
+    const swatches=[...paletteRoot.querySelectorAll('[data-palette-swatch]')],i=swatches.indexOf(swatch);
+    const step={ArrowLeft:-1,ArrowRight:1,ArrowUp:-PALETTE_COLUMNS,ArrowDown:PALETTE_COLUMNS,Home:-i,End:swatches.length-1-i}[e.key];
+    if(step!==undefined){e.preventDefault();const next=swatches[Math.max(0,Math.min(swatches.length-1,i+step))];for(const b of swatches)b.tabIndex=b===next?0:-1;next.focus();}
+    else if((e.key==='Delete'||e.key==='Backspace')&&swatch.hasAttribute('draggable')){e.preventDefault();removeSwatch(swatch);}
+  });
+  // Dropping a project colour on another moves it to that place.
+  let dragging=null;
+  paletteRoot.addEventListener('dragstart',e=>{const swatch=e.target.closest('[draggable][data-palette-swatch]');if(!swatch)return;dragging=swatch.dataset.paletteSwatch;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragging);});
+  paletteRoot.addEventListener('dragover',e=>{if(dragging&&e.target.closest('[data-palette-swatch]')){e.preventDefault();e.dataTransfer.dropEffect='move';}});
+  paletteRoot.addEventListener('drop',e=>{
+    const target=e.target.closest('[data-palette-swatch]');if(!dragging||!target)return;e.preventDefault();
+    const color=dragging,index=[...paletteRoot.querySelectorAll('[data-palette-swatch]')].indexOf(target);
+    paletteAction(()=>source.move(color,index));
+  });
+  paletteRoot.addEventListener('dragend',()=>{dragging=null;});
+  // Recent colours, the view and the project's colours (undo, another document) can change while it is open.
+  const stopRecent=subscribePalette(()=>{paletteKey='';renderPalette();}),stopProject=source?.subscribe?.(renderPalette);
+  paletteCleanup=()=>{stopRecent();stopProject?.();};
   draw();$('[data-hex]').focus();return close;
 }
 

@@ -46,14 +46,18 @@ Drawing cels never become Build figures.
   confirms size, opacity and hardness changes. Number keys set opacity
   (1 = 10% … 0 = 100%) and Shift+[ / ] change hardness. Presets show a stroke
   drawn by the real brush engine. The bar sits in the stage header, above the canvas, so it never covers the artboard.
-  The bar names the active tool and, for painting tools, shows the six most
-  recent colours next to the colour pair. Clicking either colour opens the
-  shared colour picker under it: it changes the brush colour live while you
-  drag, lists recent colours and keeps the eyedropper. It writes the setting
-  directly, so it keeps working while the bar or Properties re-render.
+  The bar names the active tool and, for painting tools, shows the colour
+  rail next to the colour pair: the first eight colours of the palette the
+  colour picker shows (the project's or the recent ones), +N when there are
+  more (it opens the picker with all of them) and, while the brush colour is
+  not yet a project colour, + to save it. The rail exists only in Draw.
+  Clicking either colour opens the shared colour picker under it: it changes
+  the brush colour live while you drag, ends with the palette and keeps the
+  eyedropper. It writes the setting directly, so it keeps working while the
+  bar or Properties re-render.
 - **Pop-up palette:** right-clicking the canvas with a painting tool (Brush,
   Eraser, Fill, Shape) opens Krita's pop-up palette at the pointer:
-  the colour pair, recent colours, brush presets and size and opacity sliders.
+  the colour pair, the palette's colours, brush presets and size and opacity sliders.
   Choosing a preset or colour, clicking elsewhere or Escape closes it; a
   closed palette holds no controls, so there is one live copy of each.
 - **Assist:** mirror painting across the stage's vertical and/or horizontal
@@ -65,9 +69,11 @@ Drawing cels never become Build figures.
   strokes (selection clipping, symmetry and undo included) and Fill shape
   fills the interior. Shift constrains to 45° lines, squares and circles.
 - **Colours and brushes:** a second colour sits beside the main one (X
-  swaps them); the twelve most recently painted colours appear as swatches.
-  Save brush stores the current tip as a custom preset. Both persist in local
-  storage (optional; the app works without it).
+  swaps them); the palette's colours appear as swatches in Properties too.
+  Painted colours join the app's twelve recent colours, shared with every
+  colour picker. Save brush stores the current tip as a custom preset. Recent
+  colours and brushes persist in local storage (optional; the app works
+  without it); project colours save with the project.
 - **Filters** (Select and Transform tools): blur, hue/saturation/lightness,
   brightness/contrast and invert apply to the selection, or to the whole
   drawing when nothing is selected, as one undoable step. Blur works on

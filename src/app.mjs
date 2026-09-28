@@ -13,6 +13,7 @@ import {duplicatePreview, drawDuplicatePreview} from './builder-duplicate-previe
 import {createConstruction, strokeSegments} from './builder-construction.mjs';
 import {CameraMotionControls} from './camera-motion-ui.mjs';
 import {installColorPickers} from './color-picker.mjs';
+import {bindProjectPalette, projectColors} from './color-palette.mjs';
 import {sampleCanvasRegion} from './canvas-color-sample.mjs';
 import {installMovieclipUI} from './movieclip-ui.mjs';
 import {isMovieclip} from './movieclips.mjs';
@@ -5216,6 +5217,12 @@ editor.addEventListener("change", (e) => {
     if (playback.report === editor.report) { playback.documentRevision = editor.revision; state.playbackRevision = editor.revision; }
     queueUI(); if (editor.dirty) scheduleRecovery(); return;
   }
+  // Project colours are metadata too: they change no frame, pixel or sound,
+  // so playback keeps its prepared frames and nothing pauses.
+  if (e.detail?.palette) {
+    if (playback.report === editor.report) { playback.documentRevision = editor.revision; state.playbackRevision = editor.revision; }
+    queueUI(); if (editor.dirty) scheduleRecovery(); return;
+  }
   if (['edit','history','document'].includes(kind) && !e.detail?.live) { audioPreparation?.abort(); audioScrubController?.abort(); audioEngine.stop(); }
   if (kind === 'document') void audioEngine.clear().catch(fail);
   if(kind==='seek'&&!state.playing&&telemetry.isForeground)telemetry.performance.action('seek');
@@ -6169,6 +6176,10 @@ init().catch((error) => {
   fail(error);
 });
 
+// Every colour picker offers the project's colours, edited as undoable commands.
+bindProjectPalette({colors:()=>projectColors(editor.report),add:color=>editor.addPaletteColor(color),
+  remove:color=>editor.removePaletteColor(color),move:(color,index)=>editor.movePaletteColor(color,index),
+  subscribe:listener=>{const changed=event=>{if(event.detail?.palette||event.detail?.kind==='document')listener();};editor.addEventListener('change',changed);return()=>editor.removeEventListener('change',changed);}});
 installColorPickers((input, event) => {
   if(input.dataset.drawSetting==='color'||input.dataset.drawSetting==='color2')return drawingController?.colorPicker(input);
   if(input.dataset.paletteColor!==undefined){

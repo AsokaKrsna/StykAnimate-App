@@ -3,7 +3,7 @@ import {resolveInstanceFigure} from './animation-style.mjs';
 import {remapSurface,surfaceHandles,protectSurfaceReferences} from './pivot/surfaces.mjs';
 import {UserActionError} from './user-action-error.mjs';
 import {editorRigConstraintMethods} from './editor-rig-constraints.mjs';
-import {editorColorMethods} from './editor-colors.mjs';
+import {editorColorMethods, applyPaletteCommand} from './editor-colors.mjs';
 import {editorVfxClipMethods} from './editor-vfx-clips.mjs';
 import {invalidateVfxRenderFrame} from './vfx-clips.mjs';
 import {editorCameraMotionMethods} from './editor-camera-motion.mjs';
@@ -321,6 +321,7 @@ export class Editor extends EventTarget {
   _applyCommand(command, direction, drawingPrepared) {
     if(applyDrawingCommand(this,command,direction,drawingPrepared))return;
     if(applyAudioCommand(this,command,direction))return;
+    if(applyPaletteCommand(this,command,direction))return;
     if(applyLayerSheetCommand(this,command,direction))return;
     if (command.kind === 'movieclip-batch') {
       for (const child of direction === 'before' ? [...command.commands].reverse() : command.commands) this._applyCommand(child,direction,drawingPrepared);

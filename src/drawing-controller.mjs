@@ -2,6 +2,7 @@ import {FILL_SOURCE_MAX_PIXELS} from './drawing-fill.mjs';
 import {sendDrawingComposite} from './drawing-composite-transport.mjs';
 import {lassoBounds,lassoContains,selectionStores} from './drawing-lasso.mjs';
 import {BRUSH_PRESETS,quickBarMarkup,paletteMarkup} from './drawing-view.mjs';
+import {recentColors,setRecentColors,rememberColor as rememberRecentColor,subscribePalette} from './color-palette.mjs';
 import {SLIDERS,installDrawingSliders,refreshSliders,formatSlider,displayValue} from './drawing-sliders.mjs';
 import {WetInk} from './drawing-wet-ink.mjs';
 import {installPressureCurve} from './drawing-pressure-curve.mjs';
@@ -29,7 +30,7 @@ const hexColor=rgb=>'#'+rgb.slice(0,3).map(n=>Math.round(n).toString(16).padStar
 /** A floating selection that moved, scaled, rotated or flipped. */
 export const moved=s=>Boolean(s&&(s.dx||s.dy||s.scale!==1||s.angle||(s.fx??1)!==1||(s.fy??1)!==1));
 const BRUSH_LIBRARY_KEY='stykanimate.drawing-brushes.v1';
-const loadLibrary=()=>{try{const v=JSON.parse(globalThis.localStorage?.getItem(BRUSH_LIBRARY_KEY)||'{}');return {recent:Array.isArray(v.recent)?v.recent.filter(c=>/^#[0-9a-f]{6}$/i.test(c)).slice(0,12):[],presets:Array.isArray(v.presets)?v.presets.filter(p=>p&&typeof p.id==='string'&&typeof p.name==='string').slice(0,48):[],pressureCurve:Array.isArray(v.pressureCurve)&&v.pressureCurve.length===4&&v.pressureCurve.every(n=>Number.isFinite(n)&&n>=0&&n<=1)?v.pressureCurve:[...LINEAR_PRESSURE]};}catch{return {recent:[],presets:[],pressureCurve:[...LINEAR_PRESSURE]};}};
+const loadLibrary=()=>{try{const v=JSON.parse(globalThis.localStorage?.getItem(BRUSH_LIBRARY_KEY)||'{}');return {presets:Array.isArray(v.presets)?v.presets.filter(p=>p&&typeof p.id==='string'&&typeof p.name==='string').slice(0,48):[],pressureCurve:Array.isArray(v.pressureCurve)&&v.pressureCurve.length===4&&v.pressureCurve.every(n=>Number.isFinite(n)&&n>=0&&n<=1)?v.pressureCurve:[...LINEAR_PRESSURE]};}catch{return {presets:[],pressureCurve:[...LINEAR_PRESSURE]};}};
 const FILTER_LABELS={blur:'Blur drawing',hsl:'Adjust hue and saturation',brightness:'Adjust brightness and contrast',invert:'Invert colours'};
 // Actions that keep (or act on) the pixel selection instead of applying it first.
 const SELECTION_ACTIONS=['filter-blur','filter-hsl','filter-brightness','filter-invert','swap-colors','save-preset','delete-preset','flip-selection-x','flip-selection-y','copy-pixels','cut-pixels','delete-pixels','apply-selection','cancel-selection','select-all','invert-selection','deselect','fill-selection'];
@@ -40,7 +41,10 @@ const unionRects=(a,b)=>{if(!a)return b?{...b}:null;if(!b)return{...a};const x=M
 export class DrawingController {
   constructor({editor,state,overlay,viewport,onRender,onOverlayRender=onRender,onView=()=>{},onUI,onError,onStatus,beforeEdit,getImageSource=()=>({}),getTimeline,getClipboard,sampleColor}) {
     Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getImageSource,getTimeline,getClipboard,sampleColor,settings:{preset:'ink',...BRUSH_DEFAULTS,spacingRatio:.08,color:'#252525',filterRadius:4,hue:0,saturation:0,lightness:0,brightness:0,contrast:0,mirrorX:false,mirrorY:false,selectShape:'lasso',shapeKind:'rect',shapeFill:false,color2:'#ffffff',resolution:2,filter:'smooth',length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
-    this.library=loadLibrary();
+    // Recent colours are the shared palette's (color-palette.mjs), so every
+    // picker offers what was painted; the property keeps Draw's old name and
+    // stays out of the brush library's saved JSON.
+    this.library=Object.defineProperty(loadLibrary(),'recent',{get:recentColors,set:setRecentColors,enumerable:false});
     this.onOverlayRender=onOverlayRender;this.onView=onView;
     this.panel=document.getElementById('inspector');
     const events=this.events=new AbortController(),opts={signal:events.signal};
@@ -54,6 +58,9 @@ export class DrawingController {
     installPressureCurve(this.panel,{get:()=>this.library.pressureCurve,set:curve=>{this.library.pressureCurve=curve;this.paintPreview(this.panel);},end:()=>this.saveLibrary(),signal:events.signal});
     // Every UI refresh also refreshes the quick bar, coalesced per frame.
     const ui=this.onUI;this.onUI=()=>{ui();this.queueQuickBar();};
+    // The colour rail follows the palette: its view, recent colours and the project's colours.
+    const unsubscribe=subscribePalette(()=>{if(this.active)this.onUI();});events.signal.addEventListener('abort',unsubscribe,{once:true});
+    editor.addEventListener('change',event=>{if(event.detail?.palette&&this.active)this.queueQuickBar();},opts);
     // pointerrawupdate delivers pen samples as they arrive instead of aligned
     // to the next frame; pointermove still drives everything else and remains
     // the fallback where raw updates are unavailable.
@@ -186,6 +193,9 @@ export class DrawingController {
     if(swatch){this.settings.color=swatch.dataset.drawColor;this.onUI();this.paintPreview(this.panel);}
     if(choice){const key=choice.dataset.drawChoice,value=choice.dataset.value;this.settings[key]=value==='toggle'?!this.settings[key]:value;this.onUI();this.onRender();}
     if(action?.dataset.drawAction==='toggle-quick-presets'){this.quickPresets=!this.quickPresets;this.queueQuickBar();return;}
+    // The rail's + saves the brush colour to the project; +N opens the picker with the whole palette.
+    if(action?.dataset.drawAction==='add-palette-color'){try{this.editor.addPaletteColor(this.settings.color);}catch(error){this.onError(error);}this.onUI();return;}
+    if(action?.dataset.drawAction==='open-colors'){action.parentElement?.parentElement?.querySelector('.draw-color-primary')?.click();return;}
     if(action)this.run(()=>this.action(action.dataset.drawAction));
   }
   /** Set one drawing setting live (sliders, keys, Ctrl-drag). */
@@ -202,7 +212,7 @@ export class DrawingController {
    * the quick bar, Properties or palette can re-render under it. */
   colorPicker(input){
     const key=input.dataset.drawSetting==='color2'?'color2':'color',value=this.settings[key]??'#ffffff';
-    return {anchor:input,title:key==='color2'?'Second color':'Color',live:true,placement:'below',gradients:false,alpha:false,swatches:this.library.recent,
+    return {anchor:input,title:key==='color2'?'Second color':'Color',live:true,placement:'below',gradients:false,alpha:false,
       paint:{type:'solid',stops:[{offset:0,color:value.slice(1).match(/../g).map(n=>parseInt(n,16)),opacity:1}]},
       onChange:paint=>{const hex=hexColor(paint.stops[0].color);if(hex===this.settings[key])return;this.settings[key]=hex;this.paintPreview(this.panel);this.onUI();this.onRender();}};
   }
@@ -403,7 +413,7 @@ export class DrawingController {
     for(const sample of pending.samples)this.move({...sample,pointerId:event.pointerId});if(pending.released)this.finish();this.onRender();
   }
   /** Remember the colour that just painted, most recent first. */
-  rememberColor(){const c=this.settings.color?.toLowerCase();if(!/^#[0-9a-f]{6}$/.test(c??''))return;const recent=[c,...this.library.recent.filter(x=>x!==c)].slice(0,12);if(recent.join()===this.library.recent.join())return;this.library.recent=recent;this.saveLibrary();}
+  rememberColor(){rememberRecentColor(this.settings.color);}
   saveLibrary(){try{globalThis.localStorage?.setItem(BRUSH_LIBRARY_KEY,JSON.stringify(this.library));}catch{/* Brush library storage is optional. */}}
   /** Open a stroke session on a loaded surface and make it the gesture. */
   beginStroke(target,surface,{id,erase=false}){
