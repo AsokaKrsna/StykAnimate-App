@@ -35,13 +35,15 @@ def main() -> int:
         print(f"Backend entry point missing: {server}", file=sys.stderr)
         return 1
     architecture = {"amd64": "x64", "x86_64": "x64", "aarch64": "arm64"}.get(platform.machine().lower(), platform.machine().lower())
-    scanner_manifest = app_root / "native" / "bin" / architecture / "frame-scan-build-info.json"
+    sys.path[:0] = [str(app_root / "codecs"), str(app_root / "backend")]
+    import native_scan
+    scanner_directory = native_scan.build_directory(app_root, sys.platform, architecture)
+    scanner_manifest = scanner_directory / "frame-scan-build-info.json"
     if not scanner_manifest.is_file():
         print("Build the native PIV scanner for this host first: npm run build:frame-scan", file=sys.stderr)
         return 1
     scanner = json.loads(scanner_manifest.read_text(encoding="utf-8"))
-    scanner_name = "styk-piv-frame-scan.dll" if sys.platform == "win32" else "libstyk-piv-frame-scan.dylib" if sys.platform == "darwin" else "libstyk-piv-frame-scan.so"
-    scanner_library = app_root / "native" / "bin" / architecture / scanner_name
+    scanner_library = scanner_directory / native_scan.library_name()
     digest = lambda file: hashlib.sha256(file.read_bytes()).hexdigest()
     if scanner.get("platform") != sys.platform or scanner.get("architecture") != architecture or scanner.get("abiVersion") != 1 or not scanner_library.is_file() or scanner.get("library", {}).get("sha256") != digest(scanner_library) or scanner.get("source", {}).get("sha256") != digest(app_root / "native" / "piv-frame-scan.cpp"):
         print("The native PIV scanner is stale or built for another host; run npm run build:frame-scan", file=sys.stderr)

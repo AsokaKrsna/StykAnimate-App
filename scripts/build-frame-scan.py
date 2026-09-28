@@ -17,6 +17,9 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+# The runtime module owns where native libraries live for each platform.
+sys.path[:0] = [str(ROOT / "codecs"), str(ROOT / "backend")]
+import native_scan  # noqa: E402
 
 
 def main():
@@ -29,7 +32,7 @@ def main():
     parser.add_argument("--cxx", default=os.environ.get("CXX", "c++"))
     args = parser.parse_args()
     source = ROOT / "native/piv-frame-scan.cpp"
-    output = ROOT / "native/bin" / args.arch
+    output = native_scan.build_directory(ROOT, sys.platform, args.arch)
     output.mkdir(parents=True, exist_ok=True)
     environment = dict(os.environ)
     if os.name == "nt":

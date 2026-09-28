@@ -23,5 +23,9 @@ tmp/
 .wrangler/
 samples/
 
+# Native libraries built on Linux/macOS. Windows keeps native/bin/<arch>, which is tracked.
+native/bin/linux-*/
+native/bin/darwin-*/
+
 # Local Python environments.
 .venv/

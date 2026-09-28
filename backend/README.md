@@ -247,7 +247,11 @@ row is diagnostic only; native transport avoids those allocations in production.
 current platform. Windows uses MSVC with its [static `/MT` runtime](https://learn.microsoft.com/en-us/cpp/build/reference/md-mt-ld-use-run-time-library),
 while Linux and macOS produce a shared library with the host C++17 compiler.
 The build records the source/library SHA-256, ABI, architecture and toolchain in
-`native/bin/<architecture>/frame-scan-build-info.json`.
+`frame-scan-build-info.json` beside the library. `native_scan.build_directory()`
+owns the location: Windows keeps the historical, tracked `native/bin/<arch>`;
+Linux and macOS build into `native/bin/<platform>-<arch>` (for example
+`linux-x64`), which is untracked, so a build on one OS never rewrites another
+OS's manifest. Both build scripts import that function.
 
 `backend/native_scan.py` loads the optional library through a fixed
 [`ctypes` C ABI](https://docs.python.org/3/library/ctypes.html). Immutable source

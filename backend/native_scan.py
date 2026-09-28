@@ -36,10 +36,26 @@ def architecture():
     return {"amd64": "x64", "x86_64": "x64", "aarch64": "arm64", "arm64": "arm64"}.get(machine, machine)
 
 
-def library_name():
-    if sys.platform == "win32":
+def library_name(platform_name=None):
+    platform_name = platform_name or sys.platform
+    if platform_name == "win32":
         return "styk-piv-frame-scan.dll"
-    return "libstyk-piv-frame-scan.dylib" if sys.platform == "darwin" else "libstyk-piv-frame-scan.so"
+    return "libstyk-piv-frame-scan.dylib" if platform_name == "darwin" else "libstyk-piv-frame-scan.so"
+
+
+def build_directory(root=ROOT, platform_name=None, arch=None):
+    """Where a source checkout builds and finds the library for one platform.
+
+    Windows keeps the historical native/bin/<arch>: its prebuilt binaries and the
+    Video for Windows helpers are committed there. Every other platform builds
+    into native/bin/<platform>-<arch>, which is untracked, so building on Linux
+    or macOS can never rewrite the Windows build manifest (and the reverse).
+    Build scripts import this function; there is no second copy of the rule.
+    """
+    base = Path(root) / "native" / "bin"
+    arch = arch or architecture()
+    platform_name = platform_name or sys.platform
+    return base / arch if platform_name == "win32" else base / f"{platform_name}-{arch}"
 
 
 def _load():
@@ -52,7 +68,7 @@ def _load():
         _attempted = True
         explicit = os.environ.get("STYK_NATIVE_SCAN_LIBRARY")
         candidates = [Path(explicit)] if explicit else [
-            ROOT / "native" / "bin" / architecture() / library_name(),
+            build_directory() / library_name(),
             Path(getattr(sys, "_MEIPASS", ROOT)) / "native" / library_name(),
             Path(sys.executable).resolve().parent / "native" / library_name()]
         for candidate in candidates:
