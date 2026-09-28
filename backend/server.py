@@ -124,6 +124,63 @@ class ApiError(ValueError):
         self.status, self.code = status, code
 
 
+NATIVE_SUFFIXES = (".styk", ".stkz", ".stykmov", ".json")
+
+
+def is_native_document(filename: str) -> bool:
+    return filename.lower().endswith(NATIVE_SUFFIXES)
+
+
+def import_size_limit(filename: str) -> int:
+    """Largest upload accepted for a file name: native documents may exceed Pivot sources."""
+    return MAX_DOCUMENT if is_native_document(filename) else MAX_SOURCE
+
+
+def error_response(exc: Exception) -> tuple[int, dict]:
+    """The (status, JSON body) a codec failure becomes on every transport."""
+    if isinstance(exc, (ApiError, jobs.JobError)):
+        return exc.status, {"ok": False, "error": str(exc), "code": exc.code}
+    if isinstance(exc, (piv_codec.PivError, ValueError, TypeError, KeyError, IndexError, struct.error)):
+        return 422, {"ok": False, "error": str(exc), "code": "invalid_project"}
+    if isinstance(exc, OSError):
+        return 500, {"ok": False, "error": "The local file operation could not be completed.", "code": "file_error"}
+    print(f"Codec failure: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+    return 500, {"ok": False, "error": "The project operation failed.", "code": "codec_error"}
+
+
+def response_metadata(*, filename: str | None = None, timings: dict | None = None,
+                      request_bytes: int | None = None) -> dict[str, str]:
+    """Diagnostic and download headers the editor reads from a codec response."""
+    headers: dict[str, str] = {}
+    if request_bytes is not None:
+        headers["X-Styk-Request-Bytes"] = str(request_bytes)
+    if timings:
+        headers["Server-Timing"] = ", ".join(f"{stage};dur={duration:.3f}" for stage, duration in timings.items())
+    if filename:
+        headers["Content-Disposition"] = "attachment; filename*=UTF-8''" + quote(filename)
+    return headers
+
+
+def source_record_payload(store: "ProjectStore", source_id: str) -> bytes:
+    """The retained original source of an imported document, with its metadata."""
+    source, meta = store.source_record(source_id)
+    return b"STYKSRC1" + struct.pack("<I", len(meta)) + meta + source
+
+
+def health_payload(jobs_snapshot: dict, session: str | None, *, max_import: int | None = None) -> dict:
+    """The /api/health body: what this codec can read and how it is running."""
+    from process_metrics import memory_mib
+    scanner = fast_decode.native_scan.status()
+    return {"ok": True, "name": "StykAnimate-webapp", "schemaVersion": 1,
+        "jobs": jobs_snapshot,
+        "codec": "Pivot verified grammar / bulk reader", "versions": [2, 3, 4, 5],
+        "formats": ["piv", "stk", "styk", "stkz", "stykmov"], "maxImportBytes": MAX_SOURCE if max_import is None else max_import,
+        "jsonEncoder": JSON_ENCODER, "processMemoryMiB": memory_mib(),
+        "nativeFrameScanner": "cpp" if scanner["available"] else "python",
+        "nativeFrameScannerInfo": {"abi": scanner["abi"], "sha256": scanner["sha256"]} if scanner["available"] else None,
+        "session": session}
+
+
 def validate_native_figure(document, kind="stkz"):
     figures, frames = document.get("figure_types"), document.get("keyframes")
     if (not isinstance(figures, list) or not figures or any(not isinstance(f, dict) for f in figures) or
@@ -730,12 +787,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Expose-Headers", "Content-Disposition, Server-Timing, X-Styk-Request-Bytes")
-        if request_bytes is not None:
-            self.send_header("X-Styk-Request-Bytes", str(request_bytes))
-        if timings:
-            self.send_header("Server-Timing", ", ".join(f"{stage};dur={duration:.3f}" for stage, duration in timings.items()))
-        if filename:
-            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + quote(filename))
+        for name, value in response_metadata(filename=filename, timings=timings, request_bytes=request_bytes).items():
+            self.send_header(name, value)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(data)
@@ -785,15 +838,8 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_error(self, exc: Exception):
         # Unconsumed bodies must never become a subsequent HTTP request.
         self.close_connection = True
-        if isinstance(exc, (ApiError, jobs.JobError)):
-            self._json(exc.status, {"ok": False, "error": str(exc), "code": exc.code})
-        elif isinstance(exc, (piv_codec.PivError, ValueError, TypeError, KeyError, IndexError, struct.error)):
-            self._json(422, {"ok": False, "error": str(exc), "code": "invalid_project"})
-        elif isinstance(exc, OSError):
-            self._json(500, {"ok": False, "error": "The local file operation could not be completed.", "code": "file_error"})
-        else:
-            print(f"Codec failure: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
-            self._json(500, {"ok": False, "error": "The project operation failed.", "code": "codec_error"})
+        status, payload = error_response(exc)
+        self._json(status, payload)
 
     def do_OPTIONS(self):
         try:
@@ -816,24 +862,13 @@ class Handler(BaseHTTPRequestHandler):
             parsed = urlsplit(self.path)
             self._check_request(auth=parsed.path.startswith("/api/") and parsed.path != "/api/health")
             if parsed.path == "/api/health":
-                from process_metrics import memory_mib
-                scanner = fast_decode.native_scan.status()
-                self._json(200, {"ok": True, "name": "StykAnimate-webapp", "schemaVersion": 1,
-                    "jobs": self.server.jobs.snapshot(),
-                    "codec": "Pivot verified grammar / bulk reader", "versions": [2, 3, 4, 5],
-                    "formats": ["piv", "stk", "styk", "stkz", "stykmov"], "maxImportBytes": MAX_SOURCE,
-                    "jsonEncoder": JSON_ENCODER, "processMemoryMiB": memory_mib(),
-                    "nativeFrameScanner": "cpp" if scanner["available"] else "python",
-                    "nativeFrameScannerInfo": {"abi": scanner["abi"], "sha256": scanner["sha256"]} if scanner["available"] else None,
-                    "session": session_proof(self.server.token)})
+                self._json(200, health_payload(self.server.jobs.snapshot(), session_proof(self.server.token)))
             elif parsed.path == "/api/samples":
                 self._json(200, {"ok": True, "samples": self.server.store.samples()})
             elif parsed.path == "/api/source":
                 with self._job():
                     source_id = parse_qs(parsed.query).get("id", [""])[0]
-                    source, meta = self.server.store.source_record(source_id)
-                    self._send(200, b"STYKSRC1" + struct.pack("<I", len(meta)) + meta + source,
-                        "application/octet-stream")
+                    self._send(200, source_record_payload(self.server.store, source_id), "application/octet-stream")
             elif parsed.path.startswith("/api/"):
                 raise ApiError(404, "route_not_found", "Unknown codec endpoint.")
             else:
@@ -891,7 +926,7 @@ class Handler(BaseHTTPRequestHandler):
         # and health remain independent of the single memory-heavy work slot.
         if parsed.path == "/api/import":
             name = parse_qs(parsed.query).get("filename", ["imported.piv"])[0]
-            result = self.server.store.import_bytes(self._body(MAX_DOCUMENT if name.lower().endswith((".styk", ".stkz", ".stykmov", ".json")) else MAX_SOURCE), name, as_json=True,
+            result = self.server.store.import_bytes(self._body(import_size_limit(name)), name, as_json=True,
                 prefer_native=import_wire.CONTENT_TYPE in self.headers.get("Accept", ""))
             self._send(200, result, import_wire.CONTENT_TYPE if result.startswith(import_wire.MAGIC) else "application/json; charset=utf-8")
         elif parsed.path in ("/api/open", "/api/export"):
