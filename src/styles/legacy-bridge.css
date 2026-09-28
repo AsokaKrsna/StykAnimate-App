@@ -1,7 +1,7 @@
 /* Legacy token names, pointed at the brand tokens in tokens.css.
  *
- * The legacy stylesheets (legacy/, the <style> blocks some modules inject and
- * src/support-desktop.css) read --theme-*, --ds-* and a few short aliases,
+ * The legacy stylesheets (legacy/ and the <style> blocks some modules inject)
+ * read --theme-*, --ds-* and a few short aliases,
  * which legacy/45-design-system.css and legacy/46-theme.css define on :root.
  * Declared here, in the tokens layer, these beat those definitions in both
  * themes, so every surface uses the brand palette before it is rebuilt. Each

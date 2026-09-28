@@ -105,22 +105,10 @@ try {
   );
   await p.locator("#test-settings [data-setting=outlineHandles]").check();
   await p.locator("#test-settings [data-tab=animation]").click();
-  await p.locator("#test-settings [data-setting=onionCount]").fill("9");
-  await p.locator("#test-settings [data-setting=onionCount]").press("Tab");
-  await p.locator("#test-settings [data-setting=onionOpacity]").fill("27");
-  await p.locator("#test-settings [data-setting=onionOpacity]").press("Tab");
   await p
     .locator("#test-settings [data-setting=autosaveSeconds]")
     .selectOption("30");
   await p.screenshot({ path: "artifacts/settings-animation.png" });
-  check(
-    "Onion opacity converts percent to fraction",
-    await p.evaluate(
-      () =>
-        window.preferences.value.onionCount === 9 &&
-        window.preferences.value.onionOpacity === 0.27,
-    ),
-  );
   check(
     "Autosave interval is numeric",
     await p.evaluate(() => window.preferences.value.autosaveSeconds === 30),
@@ -129,7 +117,41 @@ try {
   await p.screenshot({ path: "artifacts/settings-shortcuts.png" });
   check(
     "Shortcuts show actual existing bindings",
-    (await p.locator("#test-settings .styk-settings-shortcuts").count()) === 3,
+    (await p.locator("#test-settings .hotkey-group").count()) > 1 &&
+      (await p.locator("#test-settings [data-hotkey-id=undo] [data-hotkey-record]").first().textContent()) === "Ctrl+Z",
+  );
+  const search = p.locator("#test-settings [data-settings-search]");
+  await search.fill("autosave");
+  check(
+    "Search shows only the matching settings, from any tab",
+    await p.evaluate(() => {
+      const content = document.querySelector("#test-settings .styk-settings-content");
+      return (
+        content.querySelectorAll("[data-setting]").length === 1 &&
+        Boolean(content.querySelector("[data-results-tab=animation] [data-setting=autosaveSeconds]"))
+      );
+    }),
+  );
+  await p.locator("#test-settings [data-setting=autosaveSeconds]").selectOption("60");
+  check(
+    "A search result changes its setting",
+    await p.evaluate(() => window.preferences.value.autosaveSeconds === 60),
+  );
+  await p.locator("#test-settings [data-setting=autosaveSeconds]").selectOption("30");
+  await search.fill("no such setting");
+  check(
+    "A search without matches says so",
+    (await p.locator("#test-settings .styk-settings-empty").textContent()).includes("No settings match"),
+  );
+  await search.press("Escape");
+  check(
+    "Escape clears the search first and keeps Settings open on its tab",
+    await p.evaluate(
+      () =>
+        document.querySelector("#test-settings").open &&
+        document.querySelector("#test-settings [data-settings-search]").value === "" &&
+        Boolean(document.querySelector("#test-settings .hotkey-group")),
+    ),
   );
   await p.getByRole("button", { name: "Close settings", exact: true }).click();
   await p.evaluate(() => window.preferences.flush());

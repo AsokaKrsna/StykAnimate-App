@@ -47,14 +47,13 @@ layers once, lowest priority first, and then imports every sheet:
   into `src/styles/legacy/`. Their number prefixes follow their previous
   cascade order, which is also their import order: `00-drawing.css` (formerly
   imported by the first line of `style.css`), `01-style.css`, `20-studio.css`,
-  the other sheets `index.html` linked, and `99-settings.css`, which
-  `settings.mjs` used to link at startup after all of them. Modules that inject
-  a `<style>` block wrap its text in `@layer legacy { … }`, and the desktop
-  feedback shell links `src/styles/support-bridge.css`, which imports
-  `src/support-center.css` and `src/support-desktop.css` into `legacy`. Both are
-  appended after `app.css`, so they still win on order as before.
-  `src/support-center.css` is copied byte for byte to the website; never move or
-  edit it for the editor.
+  and the other sheets `index.html` linked. Modules that inject a `<style>`
+  block wrap its text in `@layer legacy { … }`, and the desktop feedback shell
+  links `src/styles/support-bridge.css`, which imports `src/support-center.css`
+  into `legacy` after `app.css`. `src/support-center.css` is copied byte for
+  byte to the website; never move or edit it for the editor.
+  `features/support-desktop.css` gives it the editor's look from the
+  `features` layer, which beats it whatever the specificity.
 - **Every later layer beats `legacy`** for normal declarations, whatever the
   specificity, so a rebuilt surface does not need heavier selectors. For
   `!important` the order inverts: a legacy `!important` rule beats every later

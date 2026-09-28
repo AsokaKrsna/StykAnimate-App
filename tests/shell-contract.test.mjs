@@ -318,7 +318,7 @@ test('index.html links one layered stylesheet whose imports all resolve', () => 
     const base = new URL(`../${sheet}`, import.meta.url);
     const css = readFileSync(base, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
     const imports = [...css.matchAll(/@import\s+url\("([^"]+)"\)\s*([^;]*);/g)];
-    assert.ok(imports.length > 1 && imports.length === (css.match(/@import/g) ?? []).length, `${sheet}: every @import uses url("…")`);
+    assert.ok(imports.length > 0 && imports.length === (css.match(/@import/g) ?? []).length, `${sheet}: every @import uses url("…")`);
     for (const [, href, layer] of imports) {
       assert.ok(existsSync(new URL(href, base)), `${sheet} imports ${href}, which exists`);
       if (sheet.endsWith('support-bridge.css') || href.startsWith('./legacy/')) assert.equal(layer.trim(), 'layer(legacy)', `${href} loads into the legacy layer`);

@@ -1,26 +1,31 @@
 import { SupportCenter } from './support-center.mjs';
+import { icon } from './icons.mjs';
 export class SupportDesktopUI {
   constructor(bridge) { this.bridge = bridge; }
-  async open({ category } = {}) {
+  /** Opens the private support center: a new report of `category`, or with `view: 'inbox'` the list of reports. */
+  async open({ category, view } = {}) {
     if (!this.bridge?.supportRequest) return;
     if (!this.dialog) this.create();
     if (!this.dialog.open) this.dialog.showModal();
-    if (!this.center) {
-      if (!this.starting) this.starting = this.initialize().catch(() => { this.mount.textContent = 'Support could not be opened. Close this window and try again.'; }).finally(() => { this.starting = null; });
-      await this.starting;
-    }
+    // Every open waits for the center to start, and only the newest one applies its options, so reopening
+    // with another type while the first open is still starting never ends on the older type.
+    const request = this.request = {};
+    if (!this.center && !this.starting) this.starting = this.initialize().catch(() => { this.mount.textContent = 'Support could not be opened. Close this window and try again.'; }).finally(() => { this.starting = null; });
+    if (this.starting) await this.starting;
+    if (request !== this.request) return;
     this.center?.setActive(true);
     if (category && !this.center?.thread && !this.center?.files?.length) this.center?.showCreate(category);
+    else if (view === 'inbox' && this.center && this.center.root.dataset.view !== 'inbox') this.center.showInbox();
   }
   create() {
     if (!document.querySelector('[data-support-styles]')) {
-      // The shared support-center.css and its desktop remap, in the legacy cascade layer.
+      // The shared support-center.css, in the legacy cascade layer; features/feedback.css restyles it.
       const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = new URL('./styles/support-bridge.css', import.meta.url).href; link.dataset.supportStyles = ''; document.head.append(link);
     }
     this.dialog = document.createElement('dialog'); this.dialog.className = 'styk-feedback'; this.dialog.setAttribute('aria-label', 'Bug reports and feedback');
-    this.dialog.innerHTML = '<header><h2>Feedback</h2><button type="button" aria-label="Close feedback">×</button></header><div><p>Opening your private inbox…</p></div>';
-    this.mount = this.dialog.querySelector('div'); document.body.append(this.dialog);
-    this.dialog.querySelector('header button').onclick = () => this.dialog.close();
+    this.dialog.innerHTML = `<header class="styk-feedback-head"><span class="styk-feedback-badge">${icon('message')}</span><div><h2>Feedback</h2><p>Private to you and the developer</p></div><button type="button" class="styk-feedback-close" aria-label="Close feedback">${icon('x')}</button></header><div class="styk-feedback-body"><p class="styk-feedback-loading">Opening your private inbox…</p></div>`;
+    this.mount = this.dialog.querySelector('.styk-feedback-body'); document.body.append(this.dialog);
+    this.dialog.querySelector('.styk-feedback-close').onclick = () => this.dialog.close();
     this.dialog.addEventListener('close', () => this.center?.setActive(false));
     for (const type of ['keydown','keyup','click','pointerdown']) this.dialog.addEventListener(type, event => event.stopPropagation());
   }

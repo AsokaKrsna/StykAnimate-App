@@ -32,8 +32,6 @@
 @import url("./legacy/44-support-ui.css") layer(legacy);
 @import url("./legacy/45-design-system.css") layer(legacy);
 @import url("./legacy/46-theme.css") layer(legacy);
-/* settings.mjs used to link this at startup, after every other sheet */
-@import url("./legacy/99-settings.css") layer(legacy);
 
 /* Layered files wrap themselves in their @layer block: import them without layer(). */
 @import url("./tokens.css");
@@ -109,3 +107,4 @@
 @import url("./features/audio.css");
 @import url("./features/view-options.css");
 @import url("./features/settings.css");
+@import url("./features/support-desktop.css");  /* the Feedback shell over the lazy support-bridge.css */

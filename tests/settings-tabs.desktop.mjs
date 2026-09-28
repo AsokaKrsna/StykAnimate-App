@@ -26,17 +26,20 @@ try{
  await page.locator('[data-hotkey-reset-all]').click();check('Reset all restores bindings',await page.evaluate(()=>styk.settingsUI.value.hotkeys['add-frame'][0]==='KeyA'));
  await search.fill('');
  await page.getByRole('tab',{name:'Canvas',exact:true}).click();
- check('Canvas groups separate handles, overlays, builder and renderer',await page.locator('.settings-card').count()===4);
+ check('Canvas groups separate handles, overlays, builder and renderer',await page.locator('.styk-settings-group > h4').evaluateAll(titles=>['Navigation','Joint handles','Canvas overlays','Figure builder','Graphics'].every(title=>titles.some(node=>node.textContent===title))));
  await page.locator('[data-setting="outlineHandles"]').uncheck();await page.locator('[data-setting="showCamera"]').check();await page.locator('[data-setting="handleSize"]').fill('8');
  check('Canvas controls update settings and preview',await page.evaluate(()=>!styk.state.settings.outlineHandles&&styk.state.settings.showCamera&&styk.state.settings.handleSize===8)&&await page.locator('[data-handle-value]').textContent()==='8px');
  await screenshot('canvas');
- await page.getByRole('tab',{name:'Feedback',exact:true}).click();check('Feedback contains actions without description paragraphs',await page.locator('[data-settings-feedback]').count()===3&&await page.locator('.styk-settings-content p').count()===0);
+ await page.getByRole('tab',{name:'Feedback',exact:true}).click();check('Feedback offers a tile per report type and the private inbox',await page.locator('.settings-feedback-tile[data-settings-feedback]').count()===3&&await page.locator('[data-settings-feedback="inbox"]').isVisible());
  await screenshot('feedback');
  for(const category of ['bug','idea','other']){
   await page.locator(`[data-settings-feedback="${category}"]`).click();
   check(`Feedback opens ${category} category`,await page.locator('.styk-feedback select[name="category"]').inputValue()===category);
   await page.getByRole('button',{name:'Close feedback',exact:true}).click();await page.evaluate(()=>styk.settingsUI.open('feedback'));
  }
+ await page.locator('[data-settings-feedback="inbox"]').click();
+ check('My reports opens the private inbox list',await page.locator('.styk-feedback[open] .support-center[data-view="inbox"]').isVisible());
+ await page.getByRole('button',{name:'Close feedback',exact:true}).click();await page.evaluate(()=>styk.settingsUI.open('feedback'));
  check('Donate action is available outside the tablist',await page.locator('.styk-settings-actions [data-settings-donate]').isVisible()&&await page.locator('[role="tablist"] [data-settings-donate]').count()===0);
  await page.evaluate(()=>{window.donationCalls=0;styk.settingsUI.onDonate=()=>{donationCalls++};});await page.locator('[data-settings-donate]').click();check('Donate invokes its callback once',await page.evaluate(()=>donationCalls===1));
  await page.evaluate(()=>{styk.settingsUI.commit({theme:'dark',uiScale:150});});

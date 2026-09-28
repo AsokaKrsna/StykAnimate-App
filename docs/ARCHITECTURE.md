@@ -115,7 +115,7 @@ The shell (`src/shell/`) lays the editor out as islands on the window's field: t
 
 `src/app.mjs` wires the editor, the renderer and the panels together. The panels' own handling lives beside it in modules that app.mjs calls with a context object (`{editor, state, …}`, getters for what it creates later): `inspector-bindings.mjs` maps each inspector control to the editor command its change applies, in order, so the first binding whose selector matches takes the change (a Build-only control passes it on outside Build). `timeline-host.mjs` is the one place that constructs the Simple or Advanced timeline (`mount()`, with the app's scrub, range and history callbacks), wires the timeline header's own controls (the Simple │ Advanced switch, the frame rate, the zoom) and writes what the header shows: the transport readouts, the play button's state, Edit selected frames and the pressed mode. `export-flow.mjs` owns exporting: every export command (registered in `actions` before app.mjs wraps them), the export renderer's job and writing the result. Each export runs from one explicit request (`export-request.mjs`): `exportJob()` derives the size, range, quality, codec, sound and file name the encoders receive. The export dialog (`export-sheet.mjs`, its own kit dialog) holds the request, previews the animation through the thumbnail worker while it is open, runs the chosen type's command and shows its progress in place; a command run without it (the command palette) exports today's defaults, with its progress in a dialog of its own. Its choices persist in the `exportPreferences` editor setting. `app-dialogs.mjs` holds the app's own prompts, each its own dialog from the kit (`src/ui/ui-dialog.mjs`): Save changes?, the project's name, Recent files, Performance, the import notes, the Stick Nodes pack picker and Discard frame changes?. `index.html` gives the header static slots, `[data-slot=start]`, `[data-slot=transport]` and `[data-slot=end]` (the three clusters) and `[data-slot=ruler-tools]`, which hold today's controls and take no box of their own until the shared header lays them out. The chrome updates by surface (`src/ui/ui-invalidation.mjs`): app.mjs declares the title, the transport, the layers, VFX, the inspector, Edit selected frames and the stage hint, the status readouts, the Add dialog's lists and the shell, each with the reasons that make it stale. `queueUI()` marks them all and one pass a frame updates what is marked, in that order; `updateUI()` updates every surface at once (startup, a restored document). Playback stays quiet: while playing only the transport updates, at most every 200 ms (the readout at 5 Hz), and the title, which writes only when the name or saved state changes; the playheads move on their own, and every other surface waits for the first pass after playback stops. The canvas repaints after a pass only when the pass updated a surface, so a surface waiting for its time costs no redraws. Surfaces and the modules that follow every editor change (the onion controls, the canvas guides, the Library's save button, the session breadcrumb, the timeline host) write through `src/ui/dom-write.mjs`, which compares with the element's current value first, so an unchanged value writes nothing. `tests/playback-quiet.browser.mjs` holds playback to this, with a ratchet of the known remaining writers and their milestones. The stage header (`.stage-head`, the stage island's first row above `#viewport`) is `src/shell/stage-head.mjs`: its start (`[data-slot=stage-start]`) shows the location crumb, or the active tool's options (a bar rendered by `src/ui/tool-options.mjs` from the tool's option descriptors, or a host it adopts until its tool has them: Draw's quick bar, the chain and polygon controls); its end (`[data-slot=stage-end]`) holds the view toggles, re-parented with their ids, then zoom and Fit; and it places the one message (`src/ui/ui-toast.mjs`'s `#toast` host, in the top layer) over its centre, covering the start while it shows but never the view cluster, or on a line of its own under the header when its whole text does not fit there. It shows a pick mode's instruction while the mode lasts (Join, Connect joints, image and copy placement, Chain, Polygon, the Tweener) and a quiet "Slow · N of M fps" while playback misses its target, read at most once a second. app.mjs updates it as the `stagehead` surface, and at once when a workspace or a view toggle changes. `index.html` keeps static hosts for the inspector's header too: the target (`[data-slot=inspector-target]`, with `#inspector-context` and `#object-actions`) and, under it, the host of the scope line and the quick actions row (`[data-slot=inspector-head]`).
 
-Editor styles load through `src/styles/app.css`, the only stylesheet `index.html` links. It declares the cascade layers and imports every sheet in cascade order; see [Design system](DESIGN-SYSTEM.md). Modules do not link stylesheets at runtime, except that the desktop feedback shell links `src/styles/support-bridge.css` when Feedback first opens, so the website's shared `src/support-center.css` loads only when needed. `npm run check` enforces this and the layer rules with `scripts/check-css.mjs`. Colours, type and spacing come from `src/styles/tokens.css`, the StykAnimate brand tokens for the light and dark themes; `src/styles/legacy-bridge.css` points the older `--theme-*` names at them. The UI fonts ship in `assets/fonts/` and load through `src/styles/base/fonts.css`.
+Editor styles load through `src/styles/app.css`, the only stylesheet `index.html` links. It declares the cascade layers and imports every sheet in cascade order; see [Design system](DESIGN-SYSTEM.md). Modules do not link stylesheets at runtime, except that the desktop feedback shell links `src/styles/support-bridge.css` when Feedback first opens, so the website's shared `src/support-center.css` loads only when needed; `src/styles/features/support-desktop.css` restyles it for the editor from the `features` layer. `npm run check` enforces this and the layer rules with `scripts/check-css.mjs`. Colours, type and spacing come from `src/styles/tokens.css`, the StykAnimate brand tokens for the light and dark themes; `src/styles/legacy-bridge.css` points the older `--theme-*` names at them. The UI fonts ship in `assets/fonts/` and load through `src/styles/base/fonts.css`.
 
 Electron uses context isolation, sandboxed renderer code, and no renderer Node globals. Native IPC exposes specific file/stream/window/preference operations, not arbitrary filesystem commands. Workspace preferences live in a fixed, atomically written user-data JSON file capped at 16 KiB. They and recovery survive a restarted process even though its loopback origin changes.
 
@@ -190,22 +190,35 @@ canvas view scale, undo history, or export dimensions are changed.
 
 The browser preview keeps browser-native zoom controls; it does not substitute
 CSS transforms that would desynchronize interactive editor coordinates.
-`src/styles/legacy/99-settings.css` owns the panel presentation, including scrollable content and
-compact navigation at narrow logical viewport widths. Native slider keyboard
-behavior, labeled outputs, tab navigation, and Escape dismissal are preserved.
-Verify with `node --test tests/ui-scale.test.mjs` and
-`node tests/settings-scale.desktop.mjs` (isolated profile, process restart,
-canvas pointer alignment, light/dark and compact screenshots).
+`src/styles/features/settings.css` owns the Settings presentation: the head
+with its search, the sidebar of sections, each page's titled cards, the
+shortcut editor and the Feedback page. It sizes everything from container
+queries on the dialog and its content pane, so the sidebar becomes a strip of
+tabs in a narrow dialog. Native slider keyboard behavior, labeled outputs, tab
+navigation, and Escape dismissal are preserved. Verify with
+`node --test tests/ui-scale.test.mjs` and `node tests/settings-scale.desktop.mjs`
+(isolated profile, process restart, canvas pointer alignment, light/dark and
+compact screenshots).
 
-That sheet also owns shortcut-editor styles; `app.css` imports it after the
-other legacy sheets, and neither `EditorSettings` nor `HotkeySettings` injects
-CSS. Shortcut state and binding validation stay
-in `hotkey-settings.mjs` / `hotkeys.mjs`, with persistence owned by `EditorSettings`.
-Settings feedback actions forward their category to the shared `FeedbackUI` draft;
-the sidebar Donate action uses the existing `openDonate` desktop bridge. Neither
-is part of tab navigation. `node tests/settings-tabs.desktop.mjs` verifies shortcut
-editing, canvas controls, feedback categories, the donation callback, and responsive
-light/dark layouts without submitting feedback or visiting payment pages.
+Neither `EditorSettings` nor `HotkeySettings` injects CSS. `EditorSettings`
+builds every row from the same few builders (a switch, a select, a block row)
+inside titled cards, and takes its words from the localization, falling back to
+English in `src/locales/en-dialogs.mjs`. The search in its head renders the
+Interface, Canvas and Animation sections together and keeps the rows whose
+words match; the rows are the tabs' own markup, so a result changes its setting
+as in its tab, and Escape clears the search before it closes Settings.
+Shortcut state and binding validation stay in `hotkey-settings.mjs` /
+`hotkeys.mjs`, with persistence owned by `EditorSettings`. The Feedback page's
+tiles forward their category to the shared `FeedbackUI` draft and *My reports*
+opens its inbox; the sidebar Donate action uses the existing `openDonate`
+desktop bridge. Neither is part of tab navigation. `FeedbackUI` applies only the
+newest open's options once the support center has started, so reopening with
+another type while the first open is still loading never ends on the older one.
+`node tests/settings.component.browser.mjs` covers the rows and the search;
+`node tests/settings-tabs.desktop.mjs` verifies shortcut editing, canvas
+controls, feedback categories and the inbox, the donation callback, and
+responsive light/dark layouts without submitting feedback or visiting payment
+pages.
 
 ### Construction gestures
 

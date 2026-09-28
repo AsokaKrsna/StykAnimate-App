@@ -8,6 +8,7 @@ import { applyEditorTheme, normalizeTheme } from './theme.mjs';
 import {normalizePlaybackQuality, playbackQualityOptions} from './preview-quality.mjs';
 import { normalizeSectionMemory } from './inspector-kit.mjs';
 import {normalizeExportPreferences} from './export-request.mjs';
+import { sayDialog } from './locales/en-dialogs.mjs';
 
 export const EDITOR_SETTINGS_KEY = "stykanimate.editor.settings.v1";
 export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
@@ -155,6 +156,55 @@ const escape = (value) =>
       ],
   );
 
+/** The sections of the sidebar: id, glyph and the concept tint of its tile (tokens.css --tint-*). */
+const TABS = [
+  ["interface", "sliders", "select"],
+  ["canvas", "frame", "library"],
+  ["animation", "play", "time"],
+  ["shortcuts", "keyboard", "camera"],
+];
+const FEEDBACK_TAB = ["feedback", "message", "draw"];
+/** The tabs the sidebar search looks through (Shortcuts has its own search). */
+const SEARCH_TABS = ["interface", "canvas", "animation"];
+const SYMBOL_URL = new URL("../symbol.svg", import.meta.url).href;
+const sliderPercent = (value, min, max) => Math.round(((value - min) / (max - min || 1)) * 1000) / 10;
+/** Paints a .ui-slider's fill up to its value (components/slider.css reads --_p). */
+const fillSlider = (input) => input.style.setProperty("--_p", `${sliderPercent(Number(input.value), Number(input.min), Number(input.max))}%`);
+
+/** A small editor window, drawn in the light or dark theme's colours (the Theme tiles). */
+const MINI_WINDOW = `<svg viewBox="0 0 120 76" aria-hidden="true" focusable="false"><rect class="m-field" width="120" height="76"/><rect class="m-panel" width="120" height="11"/><rect class="m-accent" x="5" y="4" width="4" height="4" rx="1"/><rect class="m-panel" x="5" y="16" width="10" height="55" rx="3"/><rect class="m-stage" x="20" y="16" width="68" height="55" rx="3"/><rect class="m-panel" x="93" y="16" width="22" height="55" rx="3"/><rect class="m-line" x="97" y="21" width="14" height="3" rx="1.5"/><rect class="m-line" x="97" y="28" width="10" height="3" rx="1.5"/><circle class="m-figure" cx="54" cy="29" r="4"/><path class="m-limb" d="M54 33v13m0 0-7 12m7-12 7 12M54 37l-8 5m8-5 8-5"/></svg>`;
+const themeArt = (theme) =>
+  theme === "system"
+    ? `<span class="styk-settings-mini" data-mini="light">${MINI_WINDOW}</span><span class="styk-settings-mini" data-mini="dark" data-half>${MINI_WINDOW}</span>`
+    : `<span class="styk-settings-mini" data-mini="${theme}">${MINI_WINDOW}</span>`;
+
+/** Three layer rows with keys and a playhead (Advanced), or a strip of poses (Simple). */
+const TIMELINE_ART = {
+  advanced: `<svg viewBox="0 0 160 64" aria-hidden="true" focusable="false">${[6, 25, 44]
+    .map(
+      (y, row) =>
+        `<rect class="t-track" x="0" y="${y}" width="160" height="14" rx="4"/>${[
+          [18, 62, 118],
+          [30, 92, 140],
+          [18, 78],
+        ][row]
+          .map((x) => `<path class="t-key" d="M${x} ${y + 2}l5 5-5 5-5-5z"/>`)
+          .join("")}`,
+    )
+    .join("")}<path class="t-head" d="M70 2v60"/><rect class="t-head-cap" x="66" y="0" width="8" height="5" rx="1.5"/></svg>`,
+  simple: `<svg viewBox="0 0 160 64" aria-hidden="true" focusable="false">${[
+    "M17 27l-6 10m6-10 6 10M17 19l-7 3m7-3 7-3",
+    "M17 27l-8 8m8-8 3 11M17 19l-8-2m8 2 7 4",
+    "M17 27l-2 11m2-11 8 7M17 19l-6 6m6-6 5-7",
+    "M17 27l-6 10m6-10 6 10M17 19l-7-5m7 5 7-5",
+  ]
+    .map(
+      (limbs, index) =>
+        `<g transform="translate(${4 + index * 39} 8)"><rect class="t-frame${index === 1 ? " is-current" : ""}" width="34" height="48" rx="5"/><circle class="t-figure" cx="17" cy="12" r="3.2"/><path class="t-limb" d="M17 15v12${limbs}"/></g>`,
+    )
+    .join("")}</svg>`,
+};
+
 export class EditorSettings {
   constructor({
     value,
@@ -194,52 +244,58 @@ export class EditorSettings {
     this.onFeedback = onFeedback;
     this.onDonate = onDonate;
     this.tab = "interface";
+    this.query = "";
     this.chain = Promise.resolve();
     this.pending = null;
     this.timer = null;
     this.error = null;
+    this.tabs = onFeedback ? [...TABS, FEEDBACK_TAB] : TABS;
     this.dialog = document.createElement("dialog");
     this.dialog.className = "styk-settings";
     this.dialog.setAttribute("aria-label", this.t("settings.editorLabel"));
-    this.dialog.innerHTML = `<header class="styk-settings-head"><h2>${escape(this.t("settings.title"))}</h2><button type="button" aria-label="${escape(this.t("settings.close"))}">${icon("x")}</button></header><div class="styk-settings-layout"><aside class="styk-settings-sidebar"><nav class="styk-settings-tabs" role="tablist" aria-orientation="vertical" aria-label="${escape(this.t("settings.sections"))}">${[
-      ["interface", "Interface", "sliders"],
-      ["canvas", "Canvas", "frame"],
-      ["animation", "Animation", "play"],
-      ["shortcuts", "Shortcuts", "keyboard"],
-      ...(onFeedback ? [["feedback", "Feedback", "message"]] : []),
-    ]
+    this.dialog.innerHTML = `<header class="styk-settings-head"><img class="styk-settings-mark" src="${SYMBOL_URL}" alt=""><h2>${escape(this.t("settings.title"))}</h2><label class="styk-settings-search">${icon("search")}<input type="search" data-settings-search autocomplete="off" spellcheck="false"></label><button type="button" class="styk-settings-close" aria-label="${escape(this.t("settings.close"))}">${icon("x")}</button></header><div class="styk-settings-layout"><aside class="styk-settings-sidebar"><nav class="styk-settings-tabs" role="tablist" aria-orientation="vertical" aria-label="${escape(this.t("settings.sections"))}">${this.tabs
       .map(
-        ([id, name, symbol]) =>
-          `<button type="button" role="tab" id="styk-settings-tab-${id}" data-tab="${id}" aria-controls="styk-settings-content">${icon(symbol)}<span data-settings-tab-label>${escape(this.t('settings.' + id))}</span></button>`,
+        ([id, symbol, tint]) =>
+          `<button type="button" role="tab" id="styk-settings-tab-${id}" data-tab="${id}" aria-controls="styk-settings-content"><span class="styk-settings-tab-icon" data-tint="${tint}">${icon(symbol)}</span><span data-settings-tab-label>${escape(this.t('settings.' + id))}</span></button>`,
       )
-      .join(
-        "",
-      )}</nav><div class="styk-settings-actions"></div></aside><section id="styk-settings-content" class="styk-settings-content" role="tabpanel"></section></div>`;
+      .join("")}</nav><div class="styk-settings-actions"></div></aside><section id="styk-settings-content" class="styk-settings-content" role="tabpanel"></section></div>`;
     document.body.append(this.dialog);
     this.content = this.dialog.querySelector(".styk-settings-content");
+    this.search = this.dialog.querySelector("[data-settings-search]");
+    this.labelSearch();
     this.compactLayout = window.matchMedia('(max-width:620px)');
     this.syncTabOrientation = () => this.dialog.querySelector('[role=tablist]').setAttribute('aria-orientation', this.compactLayout.matches ? 'horizontal' : 'vertical');
     this.compactLayout.addEventListener('change', this.syncTabOrientation);
     this.syncTabOrientation();
     this.hotkeySettings = new HotkeySettings(this);
+    const actions = this.dialog.querySelector('.styk-settings-actions');
     if (onPrivacy) {
-      const button = document.createElement('button'); button.type = 'button'; button.innerHTML = `${icon('settings')}<span>Privacy & diagnostics</span>`; button.dataset.settingsPrivacy = ''; button.setAttribute('aria-label', 'Privacy & diagnostics'); button.title = 'Privacy & diagnostics';
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'styk-settings-privacy'; button.dataset.settingsPrivacy = '';
+      button.innerHTML = `${icon('lock')}<span>${escape(this.say('settings.privacy'))}</span>`;
+      button.title = this.say('settings.privacy'); button.setAttribute('aria-label', button.title);
       button.onclick = () => { this.close(); void this.onPrivacy(); };
-      this.dialog.querySelector('.styk-settings-actions').append(button);
+      actions.append(button);
     }
     if (onDonate) {
       const button = document.createElement('button');
-      button.type = 'button'; button.dataset.settingsDonate = '';
-      button.innerHTML = `${icon('heart')}<span>${escape(this.t('settings.donate'))}</span>${icon('externalLink')}`;
+      button.type = 'button'; button.className = 'styk-settings-donate'; button.dataset.settingsDonate = '';
+      button.innerHTML = `<span class="styk-settings-donate-badge">${icon('heart')}</span><span class="styk-settings-donate-text"><strong>${escape(this.t('settings.donate'))}</strong><small>${escape(this.say('settings.donateNote'))}</small></span>${icon('externalLink')}`;
+      button.setAttribute('aria-label', this.t('settings.donate'));
       button.onclick = () => Promise.resolve().then(() => this.onDonate()).catch(error => this.showError(error));
-      this.dialog.querySelector('.styk-settings-actions').append(button);
+      actions.append(button);
     }
     this.unsubscribeLocale = this.localization.subscribe(() => this.refreshLanguage());
-    this.dialog.querySelector(".styk-settings-head button").onclick = () =>
+    this.dialog.querySelector(".styk-settings-close").onclick = () =>
       this.close();
     this.dialog.addEventListener("close", () => void this.flush());
     this.dialog.addEventListener("keydown", (event) => {
       event.stopPropagation();
+      // Escape in the search clears it first; the next one closes Settings.
+      if (event.key === "Escape" && event.target === this.search && this.search.value) {
+        event.preventDefault();
+        this.setQuery("");
+        return;
+      }
       const tab = event.target.closest("[role=tab]");
       if (
         tab &&
@@ -273,7 +329,7 @@ export class EditorSettings {
       const tab = event.target.closest("[role=tab]");
       if (tab) this.selectTab(tab.dataset.tab);
       const feedback = event.target.closest('[data-settings-feedback]');
-      if (feedback) { this.close(); this.onFeedback?.({category: feedback.dataset.settingsFeedback}); }
+      if (feedback) { this.close(); this.onFeedback?.(feedback.dataset.settingsFeedback === 'inbox' ? {view: 'inbox'} : {category: feedback.dataset.settingsFeedback}); }
       if (event.target.closest("[data-scale-reset]")) {
         this.commit({uiScaleMode: 'auto', uiScale: 100});
         this.syncScaleControl();
@@ -302,6 +358,10 @@ export class EditorSettings {
       this.commit({ [input.dataset.setting]: value });
     });
     this.dialog.addEventListener("input", (event) => {
+      if (event.target === this.search) {
+        this.setQuery(this.search.value);
+        return;
+      }
       if (event.target.dataset.setting === "uiScale") {
         this.commit({uiScale: Number(event.target.value)});
         this.syncScaleControl();
@@ -313,21 +373,39 @@ export class EditorSettings {
           ?.style.setProperty("--size", size);
         this.content.querySelector("[data-handle-value]").textContent =
           `${size}px`;
+        fillSlider(event.target);
       }
     });
   }
   t(key, params) { return this.localization.t(key, params); }
+  /** Dialog words that not every catalog has yet: the localization's text, else English (en-dialogs.mjs). */
+  say(key, params) { return sayDialog((name, values) => this.t(name, values), key, params); }
+  labelSearch() {
+    const label = this.say('settings.search');
+    this.search.placeholder = `${label}…`;
+    this.search.setAttribute('aria-label', label);
+  }
   refreshLanguage() {
     this.value.locale = this.localization.locale;
     this.dialog.lang = this.localization.locale;
     this.dialog.setAttribute('aria-label', this.t('settings.editorLabel'));
     this.dialog.querySelector('.styk-settings-head h2').textContent = this.t('settings.title');
-    this.dialog.querySelector('.styk-settings-head button').setAttribute('aria-label', this.t('settings.close'));
+    this.dialog.querySelector('.styk-settings-close').setAttribute('aria-label', this.t('settings.close'));
     this.dialog.querySelector('[role=tablist]').setAttribute('aria-label', this.t('settings.sections'));
+    this.labelSearch();
     for (const button of this.dialog.querySelectorAll('[data-tab]'))
       button.querySelector('[data-settings-tab-label]').textContent = this.t('settings.' + button.dataset.tab);
-    const donate = this.dialog.querySelector('[data-settings-donate] span');
-    if (donate) donate.textContent = this.t('settings.donate');
+    const privacy = this.dialog.querySelector('[data-settings-privacy]');
+    if (privacy) {
+      privacy.querySelector('span').textContent = privacy.title = this.say('settings.privacy');
+      privacy.setAttribute('aria-label', privacy.title);
+    }
+    const donate = this.dialog.querySelector('[data-settings-donate]');
+    if (donate) {
+      donate.querySelector('strong').textContent = this.t('settings.donate');
+      donate.setAttribute('aria-label', this.t('settings.donate'));
+      donate.querySelector('small').textContent = this.say('settings.donateNote');
+    }
     if (!this.dialog.open) return;
     const active = document.activeElement, setting = active?.dataset.setting;
     const draft = active?.value;
@@ -374,9 +452,10 @@ export class EditorSettings {
     void this.flush();
   }
   selectTab(tab) {
-    this.tab = ["interface", "canvas", "animation", "shortcuts", ...(this.onFeedback ? ['feedback'] : [])].includes(tab)
-      ? tab
-      : "interface";
+    this.tab = this.tabs.some(([id]) => id === tab) ? tab : "interface";
+    this.query = "";
+    this.search.value = "";
+    this.dialog.removeAttribute("data-searching");
     for (const button of this.dialog.querySelectorAll("[role=tab]")) {
       const selected = button.dataset.tab === this.tab;
       button.setAttribute("aria-selected", String(selected));
@@ -389,11 +468,35 @@ export class EditorSettings {
     this.render();
     this.content.scrollTop = 0;
   }
-  checkbox(label, key) {
-    return `<label class="styk-settings-row"><span>${label}</span><input type="checkbox" data-setting="${key}" ${this.value[key] ? "checked" : ""}></label>`;
+  /** Searches Interface, Canvas and Animation together; an empty query shows the selected tab again. */
+  setQuery(query) {
+    this.query = query;
+    if (this.search.value !== query) this.search.value = query;
+    this.hotkeySettings.cancel();
+    this.dialog.toggleAttribute("data-searching", Boolean(query.trim()));
+    this.render();
+    this.content.scrollTop = 0;
   }
-  number(label, key, min, max, unit = "", value = this.value[key]) {
-    return `<label class="styk-settings-row"><span>${label}</span><span class="styk-settings-number"><input type="number" data-setting="${key}" min="${min}" max="${max}" value="${value}" aria-label="${label}"><small>${unit}</small></span></label>`;
+
+  /* ---- Row builders: one pattern in every tab ---- */
+
+  /** A setting's words: its label and, below it, an optional hint. */
+  text(label, hint, hintId) {
+    return `<span class="styk-settings-text"><span class="styk-settings-label">${escape(label)}</span>${hint ? `<small class="styk-settings-hint"${hintId ? ` id="${hintId}"` : ""}>${escape(hint)}</small>` : ""}</span>`;
+  }
+  checkbox(label, key, hint) {
+    return `<label class="styk-settings-row">${this.text(label, hint)}<input type="checkbox" role="switch" class="ui-switch" data-setting="${key}" aria-label="${escape(label)}" ${this.value[key] ? "checked" : ""}></label>`;
+  }
+  select(label, key, options, hint) {
+    const hintId = hint ? `styk-settings-hint-${key}` : "";
+    return `<label class="styk-settings-row">${this.text(label, hint, hintId)}<span class="ui-select" data-size="sm"><select data-setting="${key}" aria-label="${escape(label)}"${hintId ? ` aria-describedby="${hintId}"` : ""}>${options.map(([id, name]) => `<option value="${escape(id)}" ${String(this.value[key]) === String(id) ? "selected" : ""}>${escape(name)}</option>`).join("")}</select>${icon("chevronDown")}</span></label>`;
+  }
+  /** A titled card of rows. */
+  group(title, rows, className = "") {
+    return `<section class="styk-settings-group${className ? " " + className : ""}"><h4>${escape(title)}</h4><div class="styk-settings-card">${rows}</div></section>`;
+  }
+  page(tab) {
+    return `<header class="styk-settings-page"><h3>${escape(this.t("settings." + tab))}</h3><p>${escape(this.say(`settings.${tab}Lede`))}</p></header>`;
   }
   syncScaleControl() {
     const input = this.content.querySelector('[data-setting="uiScale"]');
@@ -401,6 +504,7 @@ export class EditorSettings {
     const shown = effectiveUIScale(this.value), auto = this.value.uiScaleMode === 'auto';
     input.value = shown;
     input.setAttribute('aria-valuetext', `${shown}%`);
+    fillSlider(input);
     this.content.querySelector('[data-scale-value]').value = `${shown}%`;
     this.content.querySelector('[data-scale-reset]').disabled = auto || !window.stykDesktop?.setUIScale;
     for (const button of this.content.querySelectorAll('[data-scale-mode]'))
@@ -416,52 +520,107 @@ export class EditorSettings {
     const available = typeof window.stykDesktop?.setUIScale === 'function';
     const shown = effectiveUIScale(this.value), auto = this.value.uiScaleMode === 'auto';
     const mode = (value, label) => `<button type="button" class="ui-segmented-item" data-scale-mode="${value}" aria-pressed="${(value === 'auto') === auto}" ${available ? '' : 'disabled'}>${escape(label)}</button>`;
-    return `<div class="styk-settings-scale"><div class="styk-settings-row"><label for="styk-ui-scale">${escape(this.t('settings.uiScale'))}</label><div class="ui-segmented" data-size="sm" role="group" aria-label="${escape(this.t('settings.uiScale'))}">${mode('auto', this.t('settings.autoScale'))}${mode('manual', this.t('settings.customScale'))}</div></div><div class="styk-settings-row"><input id="styk-ui-scale" type="range" data-setting="uiScale" min="${UI_SCALE.min}" max="${UI_SCALE.max}" step="${UI_SCALE.step}" value="${shown}" aria-valuetext="${shown}%" ${available ? '' : 'disabled'}><div class="styk-settings-scale-value"><output for="styk-ui-scale" data-scale-value>${shown}%</output><button type="button" class="styk-settings-reset" data-scale-reset title="${escape(this.t('settings.resetScale'))}" aria-label="${escape(this.t('settings.resetScale'))}" ${auto || !available ? 'disabled' : ''}>${icon('undo')}</button></div></div><p class="styk-settings-note" data-scale-auto-note ${auto && available ? '' : 'hidden'}>${escape(this.t('settings.autoScaleNote').replace('{scale}', `${autoUIScale()}%`))}</p>${available ? '' : `<p class="styk-settings-note">${escape(this.t('settings.browserScale'))}</p>`}</div>`;
+    const note = available
+      ? `<small class="styk-settings-hint" data-scale-auto-note ${auto ? '' : 'hidden'}>${escape(this.t('settings.autoScaleNote').replace('{scale}', `${autoUIScale()}%`))}</small>`
+      : `<small class="styk-settings-hint">${escape(this.t('settings.browserScale'))}</small>`;
+    return `<div class="styk-settings-row styk-settings-scale"><span class="styk-settings-text"><label class="styk-settings-label" for="styk-ui-scale">${escape(this.t('settings.uiScale'))}</label>${note}</span><div class="ui-segmented" data-size="sm" role="group" aria-label="${escape(this.t('settings.uiScale'))}">${mode('auto', this.t('settings.autoScale'))}${mode('manual', this.t('settings.customScale'))}</div><div class="styk-settings-slider"><input id="styk-ui-scale" class="ui-slider" type="range" data-setting="uiScale" min="${UI_SCALE.min}" max="${UI_SCALE.max}" step="${UI_SCALE.step}" value="${shown}" aria-valuetext="${shown}%" style="--_p:${sliderPercent(shown, UI_SCALE.min, UI_SCALE.max)}%" ${available ? '' : 'disabled'}><output for="styk-ui-scale" data-scale-value>${shown}%</output><button type="button" class="styk-settings-icon-button" data-scale-reset title="${escape(this.t('settings.resetScale'))}" aria-label="${escape(this.t('settings.resetScale'))}" ${auto || !available ? 'disabled' : ''}>${icon('undo')}</button></div></div>`;
   }
   render() {
-    const html = this.tabHTML(this.tab);
-    this.content.innerHTML = `${this.error ? `<div class="styk-settings-error" role="alert">${escape(this.error)}</div>` : ""}${html}`;
-    if (this.tab === 'shortcuts') this.hotkeySettings.filter();
+    const html = this.query.trim() ? this.resultsHTML(this.query) : this.page(this.tab) + this.tabHTML(this.tab);
+    this.content.innerHTML = `${this.error ? `<div class="styk-settings-error" role="alert">${icon('alert')}<span>${escape(this.error)}</span></div>` : ""}${html}`;
+    if (!this.query.trim() && this.tab === 'shortcuts') this.hotkeySettings.filter();
   }
-  /** The markup of one tab's fields (render() shows the current tab's). */
+  /**
+   * Every searchable tab at once, keeping only the rows whose words match `query` (a section's title matches all
+   * of its rows). The rows are the tabs' own markup, so they change settings exactly as in their tab.
+   */
+  resultsHTML(query) {
+    const needle = query.trim().toLocaleLowerCase(), template = document.createElement('template');
+    const words = node => node.textContent.replace(/\s+/g, ' ').toLocaleLowerCase();
+    template.innerHTML = SEARCH_TABS.map(tab => `<div class="styk-settings-results" data-results-tab="${tab}"><p class="styk-settings-eyebrow">${escape(this.t('settings.' + tab))}</p>${this.tabHTML(tab)}</div>`).join('');
+    for (const group of template.content.querySelectorAll('.styk-settings-group')) {
+      if (words(group.querySelector('h4')).includes(needle)) continue;
+      for (const row of group.querySelectorAll('.styk-settings-card > *'))
+        if (!words(row).includes(needle)) row.remove();
+      if (!group.querySelector('.styk-settings-card > *')) group.remove();
+    }
+    for (const tab of template.content.querySelectorAll('[data-results-tab]'))
+      if (!tab.querySelector('.styk-settings-group')) tab.remove();
+    const found = template.content.querySelector('.styk-settings-group');
+    const heading = `<header class="styk-settings-page"><h3>${escape(this.say('settings.searchResults', {query: query.trim()}))}</h3></header>`;
+    if (!found) return `${heading}<div class="styk-settings-empty">${icon('search')}<p>${escape(this.say('settings.noResults', {query: query.trim()}))}</p></div>`;
+    const holder = document.createElement('div'); holder.append(template.content);
+    return heading + holder.innerHTML;
+  }
+  /** The markup of one tab's sections (render() adds its title). */
   tabHTML(tab) {
-    const value = this.value;
-    let html = "";
-    if (tab === "interface")
-      html = `<section class="styk-settings-group"><h3>${icon("sliders")}${escape(this.t("settings.appearance"))}</h3><div class="styk-settings-row"><span>${escape(this.t('settings.theme'))}</span><div class="styk-settings-theme" role="radiogroup" aria-label="${escape(this.t('settings.theme'))}">${['system', 'light', 'dark'].map(theme => `<label><input type="radio" name="editor-theme" data-setting="theme" value="${theme}" ${value.theme === theme ? 'checked' : ''}><span>${escape(this.t('settings.' + theme))}</span></label>`).join('')}</div></div><label class="styk-settings-row"><span>${escape(this.t('settings.language'))}</span><select data-setting="locale" aria-label="${escape(this.t('settings.language'))}">${SUPPORTED_LOCALES.map(locale => `<option value="${locale.id}" ${value.locale === locale.id ? 'selected' : ''}>${escape(locale.nativeName)}</option>`).join('')}</select></label>${value.locale !== 'en' ? `<p class="styk-settings-note" data-locale-coverage>${escape(this.t('settings.partialLanguage'))}</p>` : ''}${this.scaleControl()}</section><section class="styk-settings-group"><h3>${icon('layers')}${escape(this.t('timeline.title'))}</h3>${[
-        ["advanced", this.t("timeline.advanced")],
-        ["simple", this.t("timeline.simple")],
-      ]
-        .map(
-          ([id, label]) =>
-            `<label class="styk-settings-mode"><input type="radio" name="timeline-mode" data-setting="timelineMode" value="${id}" ${value.timelineMode === id ? "checked" : ""}><strong>${icon(id === "advanced" ? "layers" : "frame")}${escape(label)}</strong></label>`,
-        )
-        .join(
-          "",
-        )}</section>${this.onResetWorkspace ? `<section class="styk-settings-group"><h3>${icon("layout")}${escape(this.t('settings.workspace'))}</h3><button type="button" class="styk-settings-reset" data-settings-reset>${icon("undo")}${escape(this.t('settings.resetPanels'))}</button></section>` : ""}`;
-    if (tab === "canvas")
-      html = `<div class="settings-canvas">
-        <section class="settings-card"><h3>${icon('hand')}Navigation</h3><label class="styk-settings-row"><span>Zoom gesture</span><select data-setting="canvasZoomGesture" aria-label="Zoom gesture"><option value="ctrl-scroll" ${value.canvasZoomGesture === 'ctrl-scroll' ? 'selected' : ''}>Ctrl + scroll to zoom</option><option value="scroll" ${value.canvasZoomGesture === 'scroll' ? 'selected' : ''}>Scroll to zoom</option></select></label><label class="styk-settings-row"><span>Rectangle selects</span><select data-setting="marqueeSelection" aria-label="Rectangle selects"><option value="bounds" ${value.marqueeSelection === 'bounds' ? 'selected' : ''}>Figure bounds</option><option value="origins" ${value.marqueeSelection === 'origins' ? 'selected' : ''}>Figure origins</option></select></label></section>
-        <section class="settings-card"><h3>${icon('clipboard')}Pasting</h3><label class="styk-settings-row"><span>Pasted figure depth</span><select data-setting="pasteDepth" aria-label="Pasted figure depth"><option value="same" ${value.pasteDepth === 'same' ? 'selected' : ''}>Same Z-index (default)</option><option value="front" ${value.pasteDepth === 'front' ? 'selected' : ''}>In front</option></select></label><p>Choose whether pasted figures keep their copied depth or appear in front of other figures on the destination layer.</p></section>
-        <section class="settings-card"><h3>${icon('nodes')}Joint handles</h3><div class="settings-control-grid">${this.checkbox('Show handles','showHandles')}${this.checkbox('Show unselected figures','showUnselectedHandles')}${this.checkbox('Automatic size','autoSizeHandles')}${this.checkbox('Outline handles','outlineHandles')}</div>
-        <div class="settings-handle-size"><label class="styk-settings-row"><span>Handle radius</span><span class="styk-settings-number"><input type="range" data-setting="handleSize" min="3" max="10" step="1" value="${value.handleSize}" aria-label="Handle radius"><small data-handle-value>${value.handleSize}px</small></span></label><div class="styk-settings-preview" aria-label="Joint handle preview" style="--size:${value.handleSize};--node-outline:${value.outlineHandles ? '1px solid #000' : '0px solid transparent'}">${['segment','origin','unselected','joined','static'].map(kind => `<span class="styk-settings-node" title="${{segment:'Selected joint',origin:'Figure origin',unselected:'Unselected joint',joined:'Joined joint',static:'Static joint'}[kind]}" style="--node-color:${PIVOT_HANDLE_COLORS[kind]}"></span>`).join('')}</div></div></section>
-        <section class="settings-card"><h3>${icon('eye')}Canvas overlays</h3><div class="settings-control-grid">${this.checkbox('Virtual camera','showCamera')}${this.checkbox('Motion paths','motionPaths')}</div></section>
-        <section class="settings-card"><h3>${icon('build')}Build</h3><div class="settings-control-grid">${this.checkbox('Static handles','builderShowStaticHandles')}${this.checkbox('Highlight part','builderHighlightSegment')}${this.checkbox('Construction background','useBuilderCanvasColor')}<label class="styk-settings-row"><span>Background color</span><input type="color" data-setting="builderCanvasColor" value="${value.builderCanvasColor}" aria-label="Construction background color"></label></div></section>
-        <section class="settings-card settings-renderer"><label for="settings-renderer">${icon('activity')}Graphics mode</label><select id="settings-renderer" data-setting="rendererMode" aria-label="Graphics mode">${[['auto','Automatic'],['canvas','Canvas 2D'],['gpu','WebGPU']].map(([id,label])=>`<option value="${id}" ${value.rendererMode===id?'selected':''}>${label}</option>`).join('')}</select></section>
-      </div>`;
-    if (tab === "animation")
-      html = `<section class="styk-settings-group"><h3>${icon("frame")}Timeline</h3>${this.checkbox("Replace keyframes on drop", "replaceKeyframesOnDrop")}<p class="styk-settings-note">Dragging or Alt-dragging selected keys onto existing keys on the same layer replaces them. Turn off to block occupied destinations.</p></section><section class="styk-settings-group"><h3>${icon("play")}Playback</h3><label class="styk-settings-row"><span>Playback quality</span><select data-setting="playbackQuality" aria-label="Playback quality" aria-describedby="playback-quality-note">${playbackQualityOptions.map(option=>`<option value="${option.id}" ${value.playbackQuality===option.id?'selected':''}>${option.label}</option>`).join('')}</select></label><p id="playback-quality-note" class="styk-settings-note">Lower quality reduces preview resolution for smoother playback. Automatic adjusts it while playing. Editing and exports are unaffected.</p>${this.checkbox("Loop animation", "loopPlayback")}${this.checkbox("Fit view when playback starts", "fitViewOnPlayback")}<p class="styk-settings-note">Turn off to keep your current zoom and pan when starting playback.</p></section><section class="styk-settings-group"><h3>${icon("save")}Recovery</h3><label class="styk-settings-row"><span>Autosave interval</span><select data-setting="autosaveSeconds" aria-label="Autosave interval">${[[0, "Off"], [2.5, "2.5 seconds"], [5, "5 seconds"], [10, "10 seconds"], [30, "30 seconds"], [60, "1 minute"], ...([0, 2.5, 5, 10, 30, 60].includes(value.autosaveSeconds) ? [] : [[value.autosaveSeconds, `${value.autosaveSeconds} seconds`]])].map(([seconds, label]) => `<option value="${seconds}" ${value.autosaveSeconds === seconds ? "selected" : ""}>${label}</option>`).join("")}</select></label></section>`;
+    const value = this.value, say = (key, params) => this.say(key, params);
+    if (tab === "interface") {
+      const themes = `<div class="styk-settings-row styk-settings-block"><span class="styk-settings-label">${escape(this.t('settings.theme'))}</span><div class="styk-settings-tiles" data-columns="3" role="radiogroup" aria-label="${escape(this.t('settings.theme'))}">${['system', 'light', 'dark'].map(theme => `<label class="styk-settings-tile"><input type="radio" name="editor-theme" data-setting="theme" value="${theme}" ${value.theme === theme ? 'checked' : ''}><span class="styk-settings-art styk-settings-theme-art">${themeArt(theme)}</span><span class="styk-settings-tile-name">${escape(this.t('settings.' + theme))}</span></label>`).join('')}</div></div>`;
+      const language = this.select(this.t('settings.language'), 'locale', SUPPORTED_LOCALES.map(locale => [locale.id, locale.nativeName]));
+      const coverage = value.locale !== 'en' ? `<p class="styk-settings-note">${icon('alert')}<span data-locale-coverage>${escape(this.t('settings.partialLanguage'))}</span></p>` : '';
+      const timeline = `<div class="styk-settings-row styk-settings-block"><div class="styk-settings-tiles" data-columns="2" role="radiogroup" aria-label="${escape(this.t('settings.timelineMode'))}">${[
+        ["advanced", this.t("timeline.advanced"), this.t("settings.advancedDescription")],
+        ["simple", this.t("timeline.simple"), this.t("settings.simpleDescription")],
+      ].map(([id, label, description]) => `<label class="styk-settings-tile styk-settings-mode"><input type="radio" name="timeline-mode" data-setting="timelineMode" value="${id}" ${value.timelineMode === id ? "checked" : ""}><span class="styk-settings-art styk-settings-timeline-art" data-art="${id}">${TIMELINE_ART[id]}</span><strong class="styk-settings-tile-name">${escape(label)}</strong><small class="styk-settings-hint">${escape(description)}</small></label>`).join("")}</div></div>`;
+      const workspace = this.onResetWorkspace
+        ? this.group(this.t('settings.workspace'), `<div class="styk-settings-row">${this.text(say('settings.panelLayouts'), say('settings.panelLayoutsNote'))}<button type="button" class="ui-button" data-size="sm" data-settings-reset>${icon("undo")}${escape(this.t('settings.resetPanels'))}</button></div>`)
+        : "";
+      return this.group(this.t("settings.appearance"), themes + language + coverage + this.scaleControl())
+        + this.group(this.t('timeline.title'), timeline)
+        + workspace;
+    }
+    if (tab === "canvas") {
+      const nodes = ['segment', 'origin', 'unselected', 'joined', 'static'];
+      const handleSize = `<div class="styk-settings-row styk-settings-block"><span class="styk-settings-handle-head">${this.text(say('settings.handleRadius'))}<span class="styk-settings-slider"><input type="range" class="ui-slider" data-setting="handleSize" min="3" max="10" step="1" value="${value.handleSize}" aria-label="${escape(say('settings.handleRadius'))}" style="--_p:${sliderPercent(value.handleSize, 3, 10)}%"><output data-handle-value>${value.handleSize}px</output></span></span><div class="styk-settings-preview" role="img" aria-label="${escape(say('settings.handlePreview'))}" style="--size:${value.handleSize};--node-outline:${value.outlineHandles ? '1px solid #000' : '0px solid transparent'}">${nodes.map(kind => `<span class="styk-settings-node-cell"><span class="styk-settings-node" style="--node-color:${PIVOT_HANDLE_COLORS[kind]}"></span><small>${escape(say('settings.handle.' + kind))}</small></span>`).join('')}</div></div>`;
+      return this.group(say('settings.navigation'),
+          this.select(say('settings.zoomGesture'), 'canvasZoomGesture', [['ctrl-scroll', say('settings.zoomCtrlScroll')], ['scroll', say('settings.zoomScroll')]])
+          + this.select(say('settings.boxSelection'), 'marqueeSelection', [['bounds', say('settings.boxBounds')], ['origins', say('settings.boxOrigins')]]))
+        + this.group('Pasting', this.select('Pasted figure depth', 'pasteDepth', [['same', 'Same Z-index (default)'], ['front', 'In front']], 'Choose whether pasted figures keep their copied depth or appear in front of other figures on the destination layer.'))
+        + this.group(say('settings.jointHandles'),
+          this.checkbox(say('settings.showHandles'), 'showHandles')
+          + this.checkbox(say('settings.showUnselected'), 'showUnselectedHandles')
+          + this.checkbox(say('settings.autoSize'), 'autoSizeHandles')
+          + this.checkbox(say('settings.outline'), 'outlineHandles')
+          + handleSize)
+        + this.group(say('settings.overlays'),
+          this.checkbox(say('settings.virtualCamera'), 'showCamera')
+          + this.checkbox(say('settings.motionPaths'), 'motionPaths'))
+        + this.group(say('settings.builder'),
+          this.checkbox(say('settings.staticHandles'), 'builderShowStaticHandles')
+          + this.checkbox(say('settings.highlightSegment'), 'builderHighlightSegment')
+          + this.checkbox(say('settings.construction'), 'useBuilderCanvasColor')
+          + `<label class="styk-settings-row">${this.text(say('settings.constructionColorShort'))}<span class="styk-settings-color"><input type="color" data-setting="builderCanvasColor" value="${value.builderCanvasColor}" aria-label="${escape(say('settings.constructionColor'))}"></span></label>`)
+        + this.group(say('settings.graphics'),
+          this.select(say('settings.graphicsMode'), 'rendererMode', [['auto', say('settings.graphicsAuto')], ['canvas', 'Canvas 2D'], ['gpu', 'WebGPU']]));
+    }
+    if (tab === "animation") {
+      const presets = [0, 2.5, 5, 10, 30, 60];
+      const autosave = [[0, say('settings.autosaveOff')], ...presets.slice(1, -1).map(seconds => [seconds, say('settings.seconds', {count: seconds})]), [60, say('settings.minute')],
+        ...(presets.includes(value.autosaveSeconds) ? [] : [[value.autosaveSeconds, say('settings.seconds', {count: value.autosaveSeconds})]])];
+      return this.group(say('settings.keyframes'), this.checkbox(say('settings.replaceOnDrop'), 'replaceKeyframesOnDrop', say('settings.replaceOnDropNote')))
+        + this.group(say('settings.playback'),
+          this.select(say('settings.playbackQuality'), 'playbackQuality', playbackQualityOptions.map(option => [option.id, option.label]), say('settings.playbackQualityNote'))
+          + this.checkbox(say('settings.loop'), 'loopPlayback')
+          + this.checkbox(say('settings.fitView'), 'fitViewOnPlayback', say('settings.fitViewNote')))
+        + this.group(say('settings.recovery'), this.select(say('settings.autosaveInterval'), 'autosaveSeconds', autosave, say('settings.autosaveNote')));
+    }
     if (tab === "shortcuts")
-      html = `<section class="styk-settings-group settings-pen-gestures"><h3>${icon("brush")}Pen and tablet</h3><dl>${[
-        ["Barrel button", "Context menu · drag a joint to bend"],
-        ["Eraser end", "Erase in Draw"],
-        ["Space + drag", "Pan"],
-        ["Ctrl + Space + drag", "Zoom"],
-        ["Shift + Space + drag", "Rotate the Draw view"],
-      ].map(([gesture, result]) => `<div><dt>${gesture}</dt><dd>${result}</dd></div>`).join("")}</dl></section>` + this.hotkeySettings.html();
+      return this.hotkeySettings.html() + this.group(say('settings.gestures'), `<dl class="styk-settings-gestures">${[
+        ['barrel', 'barrelResult'],
+        ['eraserEnd', 'eraserEndResult'],
+        ['spaceDrag', 'spaceDragResult'],
+        ['ctrlSpaceDrag', 'ctrlSpaceDragResult'],
+        ['shiftSpaceDrag', 'shiftSpaceDragResult'],
+      ].map(([gesture, result]) => `<div class="styk-settings-row"><dt>${escape(say('settings.gesture.' + gesture))}</dt><dd>${escape(say('settings.gesture.' + result))}</dd></div>`).join("")}</dl>`, 'settings-pen-gestures');
     if (tab === 'feedback')
-      html = `<div class="settings-feedback-actions">${[['bug','bug','Report a bug'],['idea','lightbulb','Share an idea'],['other','message','Other feedback']].map(([category,symbol,label])=>`<button type="button" data-settings-feedback="${category}"><span class="settings-feedback-icon">${icon(symbol)}</span><span>${label}</span>${icon('chevronRight')}</button>`).join('')}</div>`;
-    return html;
+      return `<div class="settings-feedback-actions">${[
+        ['bug', 'bug', 'draw'],
+        ['idea', 'lightbulb', 'time'],
+        ['other', 'message', 'select'],
+      ].map(([category, symbol, tint]) => `<button type="button" class="settings-feedback-tile" data-settings-feedback="${category}" data-tint="${tint}"><span class="settings-feedback-art"><span class="settings-feedback-icon">${icon(symbol)}</span></span><span class="settings-feedback-body"><strong>${escape(say('settings.feedback.' + category))}</strong><small>${escape(say(`settings.feedback.${category}Note`))}</small><span class="settings-feedback-go">${escape(say('settings.feedback.start'))}${icon('chevronRight')}</span></span></button>`).join('')}</div>`
+        + `<div class="styk-settings-card settings-feedback-private"><span class="settings-feedback-lock">${icon('lock')}</span>${this.text(say('settings.feedback.private'), say('settings.feedback.privateNote'))}<button type="button" class="ui-button" data-size="sm" data-settings-feedback="inbox">${escape(say('settings.feedback.myReports'))}</button></div>`;
+    return "";
   }
   /**
    * Every setting's name and tab, for the command palette:
@@ -470,7 +629,7 @@ export class EditorSettings {
   searchIndex() {
     const entries = [], seen = new Set(), template = document.createElement('template');
     const text = node => node?.textContent?.replace(/\s+/g, ' ').trim() || '';
-    for (const tab of ['interface', 'canvas', 'animation']) {
+    for (const tab of SEARCH_TABS) {
       template.innerHTML = this.tabHTML(tab);
       for (const field of template.content.querySelectorAll('[data-setting]')) {
         const setting = field.dataset.setting;
@@ -478,8 +637,7 @@ export class EditorSettings {
         seen.add(setting);
         const label = field.getAttribute('aria-label') || field.closest('[role=radiogroup]')?.getAttribute('aria-label')
           || (field.id && text(template.content.querySelector(`label[for="${field.id}"]`)))
-          || (field.type === 'radio' && text(field.closest('section')?.querySelector('h3')))
-          || text(field.closest('label, .styk-settings-row')?.querySelector('span, strong'));
+          || text(field.closest('.styk-settings-row')?.querySelector('.styk-settings-label'));
         if (label) entries.push({tab, tabLabel: this.t('settings.' + tab), setting, label});
       }
     }

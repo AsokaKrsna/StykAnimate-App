@@ -436,6 +436,7 @@
     --badge-time: var(--violet-600);          /* white text 5.48 */
     --badge-library: var(--mint-700);         /* white text 5.08 */
     --badge-new: var(--orange-700);           /* white text 5.55 */
+    --badge-camera: var(--gold-800);          /* white text 6.80 */
     --on-badge: var(--paper);                 /* white on every --badge-* fill, both themes */
     --artboard-placeholder: var(--paper);     /* thumbnails before the worker paints; artwork ignores the theme */
 
@@ -581,6 +582,7 @@
     --badge-time: var(--violet-600);
     --badge-library: var(--mint-700);
     --badge-new: var(--orange-700);
+    --badge-camera: var(--gold-800);
     --on-badge: var(--paper);
     --artboard-placeholder: var(--paper);
 
@@ -601,6 +603,20 @@
      src/theme-bootstrap.js. */
   :root {
     --surface-prepaint: var(--ink-950);
+  }
+
+  /* Artwork that shows a theme whatever the current one is: the Theme tiles in
+     Settings draw a small light and a small dark editor window. */
+  :root {
+    --preview-light-field: var(--mist-175);
+    --preview-light-surface: var(--paper);
+    --preview-light-stage: var(--mist-100);
+    --preview-light-line: var(--mist-400);
+    --preview-dark-field: var(--ink-950);
+    --preview-dark-surface: var(--ink-750);
+    --preview-dark-stage: var(--ink-850);
+    --preview-dark-line: var(--ink-500);
+    --preview-accent: var(--blue-500);
   }
 
   /* ------------------------------------------------------------------------
@@ -848,7 +864,7 @@
       --success-text: CanvasText; --success-soft: Canvas; --success-dot: CanvasText; --neutral-dot: GrayText;
       --tint-select: CanvasText; --tint-time: CanvasText; --tint-library: CanvasText;
       --tint-draw: CanvasText; --tint-fx: CanvasText; --tint-camera: CanvasText; --tint-export-hover: Canvas;
-      --badge-accent: ButtonText; --badge-time: ButtonText; --badge-library: ButtonText; --badge-new: ButtonText; --on-badge: ButtonFace;
+      --badge-accent: ButtonText; --badge-time: ButtonText; --badge-library: ButtonText; --badge-new: ButtonText; --badge-camera: ButtonText; --on-badge: ButtonFace;
       --primary-shadow: none; --shadow-thumb: none; --shadow-artboard: none; --shadow-knob: none; --drop-color: transparent;
       /* Deliberately unchanged: --surface-backdrop, --stage-dot, --construction-dot, --checker-a/-b,
          --artboard-placeholder (artwork ignores the theme), --scrollbar-thumb* and --text-selection

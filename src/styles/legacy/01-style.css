@@ -1744,11 +1744,6 @@ dialog::backdrop {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-dialog.styk-settings .styk-settings-row select[data-setting="locale"] {
-  width: 184px;
-  max-width: 65%;
-  flex-shrink: 0;
-}
 /* The floating-panel chrome (.styk-panel-*, .styk-floating-panel): retired in M1 */
 @keyframes pulse {
   50% {
