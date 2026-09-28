@@ -78,6 +78,12 @@ requires `Authorization: Bearer <token>` for codec APIs. Health and static
 resources remain available to the launcher. Host and Origin must be local even
 without a token; remote origins and filesystem traversal are rejected.
 
+`--exit-on-stdin-close` makes the server stop when its standard input reaches
+EOF. The desktop app starts the codec with a pipe on stdin and keeps it open, so
+the OS closes it however the app dies (quit, crash, SIGKILL, out-of-memory kill)
+and the codec, whose caches can hold hundreds of MiB, never outlives the app.
+The flag is opt-in: a server started from a terminal ignores stdin.
+
 The desktop app always sets a random per-launch token, so other local processes
 and localhost pages cannot use the codec. The trusted window receives it through
 the preload bridge (`stykDesktop.apiToken`); import and export clients send it by

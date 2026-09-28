@@ -82,12 +82,16 @@ async function startBackend({ appRoot, resourcesPath, packaged = false, onError 
     let terminated = false;
     let intentionalStop = false;
     let startupError;
-    const child = spawn(candidate.command, [...candidate.args, '--host', '127.0.0.1', '--port', String(port)], {
+    // stdin stays an open pipe for the codec's whole life: the OS closes it when
+    // this process dies by any route, and --exit-on-stdin-close then stops the
+    // codec, so a crashed or killed app never leaves it running.
+    const child = spawn(candidate.command, [...candidate.args, '--host', '127.0.0.1', '--port', String(port), '--exit-on-stdin-close'], {
       cwd: resourceRoot,
       windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONDONTWRITEBYTECODE: '1', STYK_WEB_ROOT: webRoot, STYK_TOOLS_ROOT: toolsRoot, STYK_BRIDGE_PATH: bridgePath, ...(token ? { STYK_API_TOKEN: token } : {}) },
     });
+    child.stdin.on('error', () => { /* The codec closed its end; exit handling below reports it. */ });
     const stop = () => { intentionalStop = true; if (!terminated) child.kill(); };
     signal?.addEventListener('abort',stop,{once:true});
     child.once('close',()=>signal?.removeEventListener('abort',stop));

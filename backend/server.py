@@ -917,6 +917,29 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(404, "route_not_found", "Unknown codec endpoint.")
 
 
+def stop_when_stdin_closes(server: LocalServer) -> None:
+    """Shut down once whoever spawned us closes our standard input.
+
+    The desktop app holds a pipe to this process for its whole life. The OS
+    closes that pipe when the app exits by any route (quit, crash, SIGKILL,
+    out-of-memory kill, compositor crash), so the codec, whose caches can hold
+    hundreds of MiB, never outlives it. Data on the pipe is ignored; only EOF
+    matters. Opt-in: a server started from a terminal keeps its stdin.
+    """
+    def watch() -> None:
+        try:
+            while sys.stdin.buffer.read(4096):
+                pass
+        except (OSError, ValueError):
+            pass
+        # A stuck request must not keep an orphan alive.
+        backstop = threading.Timer(5.0, os._exit, args=(0,))
+        backstop.daemon = True
+        backstop.start()
+        server.shutdown()
+    threading.Thread(target=watch, name="parent-watch", daemon=True).start()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1", choices=["127.0.0.1", "localhost"])
@@ -924,8 +947,12 @@ def main() -> int:
     parser.add_argument("--workspace", type=Path, default=WORKSPACE)
     parser.add_argument("--static-root", type=Path, default=Path(os.environ.get("STYK_WEB_ROOT", APP)))
     parser.add_argument("--token", default=os.environ.get("STYK_API_TOKEN", ""))
+    parser.add_argument("--exit-on-stdin-close", action="store_true",
+                        help="stop when the parent closes standard input (set by the desktop app)")
     args = parser.parse_args()
     server = LocalServer((args.host, args.port), ProjectStore(args.workspace), args.static_root, args.token)
+    if args.exit_on_stdin_close:
+        stop_when_stdin_closes(server)
     print(json.dumps({"event": "ready", "host": "127.0.0.1", "port": server.server_port,
         "url": f"http://127.0.0.1:{server.server_port}"}), flush=True)
     try:
