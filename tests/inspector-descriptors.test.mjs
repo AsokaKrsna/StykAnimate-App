@@ -418,7 +418,7 @@ test('a joint: Joint, IK, Style and its figure\'s Layer are open; the second col
   const options = {editor}, today = legacyInspectorView(options), now = inspectorView(options), descriptor = inspectorDescriptor(options);
   assert.equal(descriptor.target.name, 'Joint 3');
   assert.deepEqual(descriptor.quick, {context: 'joint'});
-  assert.deepEqual([...quickIds(descriptor)], ['selection-up', 'selection-down', 'mirror']);
+  assert.deepEqual([...quickIds(descriptor)], ['selection-front', 'selection-back', 'mirror']);
   assert.deepEqual(sections(descriptor, 'core'), ['joint', 'ik', 'style', 'figure']);
   for (const key of ['joint_angle', 'joint_length', 'joint_bend', 'thickness', 'segment_opacity']) assertNumberParity(today, now, key);
   assertNumberParity(today, now, 'segment_z_order', ['type', 'data-field', 'data-property', 'data-property-value', 'data-property-precision', 'data-property-step', 'value', 'min', 'max']);

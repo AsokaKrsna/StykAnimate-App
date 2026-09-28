@@ -22,8 +22,9 @@ containing an entire figure, also moves the instance in scene order. A partial
 segment or branch selection confined to one figure changes only its internal
 order. Repeating a move at a boundary does not change scope or create history.
 The inspector's explicit segment and polygon Order controls remain internal.
-The joint inspector's quick actions use this same selection-aware scope:
-**Forward** and **Backward** move one step, including complete attached branches.
+The joint inspector's **Front** and **Back** quick actions use this same
+selection-aware scope, including complete attached branches. As with figures,
+a normal click moves all the way to front/back; Shift-click moves one step.
 They replace Isolate, Values and Match in the top row; those commands remain in
 the selection menus.
 

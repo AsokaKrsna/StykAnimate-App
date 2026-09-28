@@ -356,10 +356,12 @@ try {
     assert.ok(displaced.includes('delete') && displaced.length === 7 - buttons.length, `displaced ${displaced}`);
     const joint = page.getByRole('toolbar', {name: 'Joint actions'});
     assert.deepEqual(await joint.locator('button').evaluateAll(buttons => buttons.map(button => button.dataset.action)),
-      ['selection-up', 'selection-down', 'mirror']);
-    await joint.getByRole('button', {name: 'Bring forward', exact: true}).click();
-    await joint.getByRole('button', {name: 'Send backward', exact: true}).click();
-    assert.deepEqual(await page.evaluate(() => fixture.log.slice(-2)), ['selection-up', 'selection-down']);
+      ['selection-front', 'selection-back', 'mirror']);
+    await joint.getByRole('button', {name: 'Bring to front', exact: true}).click();
+    await joint.getByRole('button', {name: 'Send to back', exact: true}).click();
+    await joint.getByRole('button', {name: 'Bring to front', exact: true}).click({modifiers: ['Shift']});
+    await joint.getByRole('button', {name: 'Send to back', exact: true}).click({modifiers: ['Shift']});
+    assert.deepEqual(await page.evaluate(() => fixture.log.slice(-4)), ['selection-front', 'selection-back', 'selection-up', 'selection-down']);
   });
 
   await step('the rows never wrap, scroll or cut a button, and refit when the inspector widens', async () => {
@@ -382,7 +384,7 @@ try {
       row.update({context: 'figure', pins: ['reset-pose', 'rotate']});
       return ids;
     });
-    assert.deepEqual(moved, ['selection-up', 'selection-down', 'mirror'], 'the figure\'s pins stay with the figure');
+    assert.deepEqual(moved, ['selection-front', 'selection-back', 'mirror'], 'the figure\'s pins stay with the figure');
     const disabled = await page.evaluate(async () => {
       const {createQuickActions} = await import('/src/ui/quick-actions.mjs');
       const registry = {has: () => true, get: id => ({label: id === 'delete' ? 'Delete' : id, enabled: id !== 'delete', reason: id === 'delete' ? 'Nothing is selected' : ''})};
