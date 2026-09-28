@@ -62,7 +62,11 @@ export function spatialSections(editor,{hotkeyLabel}={}){
  const padShown=Boolean(pose&&!motion&&mode!=='pose');
  const pad=padShown?`<div class="spatial-orientation" data-section="spatial-orientation"><button type="button" class="spatial-pad" data-spatial-pad aria-label="Turn and tilt" data-tooltip="Drag to turn and tilt · Arrow keys adjust · Shift for precision"><svg viewBox="0 0 90 72" aria-hidden="true"><path d="M8 36H82M45 7V65"/><circle cx="${45+Math.sin(pose.turn)*31}" cy="${36+Math.sin(pose.pitch)*23}" r="5"/></svg></button><div><strong>Turn / tilt</strong>${note('Drag in two directions; Shift for precision.')}<button type="button" class="spatial-reset" data-spatial-reset="joint">${mode==='figure'?'Reset orientation':'Reset joint'}</button></div></div>`:'';
  const modes=[['pose','Pose','move'],['rotate','Rotate','rotate']].map(([value,label,symbol])=>`<button type="button" data-spatial-mode="${value}" aria-label="${label}" aria-pressed="${value===(mode==='figure'?'rotate':mode)}">${icon(symbol)}${label}</button>`).join('');
- const ties=bones.filter(b=>/sash upper$/.test(b.s.name));
+ // Secondary parts hang off the trunk outside the IK limbs: belt ties, hair
+ // locks, coat panels. Each gets a shortcut; a tie is named by its upper bone.
+ const trunkNames=new Set(['Pelvis','Lower torso','Waist','Chest','Neck','Head']),definition=geometryPlans(editor.geometry.objects.get(editor.selectedSlot))?.definition;
+ const limbBones=new Set(targets.flatMap(({s})=>ikChain(editor.figure,s.segment_id,editor.object._stykIK[s.segment_id].chainLength,definition)));
+ const parts=bones.filter(({s,i})=>{const parent=bones.find(b=>b.s.segment_id===s._stykRig.spatial.parent);return parent&&trunkNames.has(parent.s.name)&&!trunkNames.has(s.name)&&!limbBones.has(i);});
  const rig=html=>({kind:'markup',html:`<div class="spatial-rig">${html}</div>`});
  const articulation={kind:'select',id:'spatial-joint',label:'Articulation',span:2,value:pose?selected:-1,
   options:[{value:-1,label:'Move whole character'},...bones.map(({s,i})=>({value:i,label:s.name||'Joint '+s.segment_id}))]};
@@ -72,7 +76,7 @@ export function spatialSections(editor,{hotkeyLabel}={}){
    {kind:'meta',text:mode==='pose'?`Drag joints to pose them flat on screen. ${depthHint(hotkeyLabel?.('depth-hold'))} Right-drag twists a part; at a hand or foot it turns the hand or foot, and on a planted knee or elbow it swings the bend. Drag a planted knee or elbow to aim its bend.`:'Rotate a limb to release its pin; its hand or foot follows. Torso turns keep planted targets; Rotate figure carries the whole pose.'},
   ]},
   {id:'rig-body',title:'Body',rows:[
-   rig(`${shortcuts}${trunk?`<div class="spatial-trunk" role="group" aria-label="Torso controls">${trunk}</div>`:''}${ties.length?`<div class="spatial-part-actions" role="group" aria-label="Belt ties">${ties.map(b=>choose(b.i,b.s.name.replace('sash upper','tie'))).join('')}</div>`:''}${feet.length?`<button type="button" class="spatial-plant" data-spatial-feet="${planted?'release':'plant'}">${icon('pin')}${planted?'Release feet':'Plant both feet'}</button>`:''}`),
+   rig(`${shortcuts}${trunk?`<div class="spatial-trunk" role="group" aria-label="Torso controls">${trunk}</div>`:''}${parts.length?`<div class="spatial-parts" role="group" aria-label="Parts">${parts.map(b=>choose(b.i,b.s.name.replace(/ sash upper$/,' tie'))).join('')}</div>`:''}${feet.length?`<button type="button" class="spatial-plant" data-spatial-feet="${planted?'release':'plant'}">${icon('pin')}${planted?'Release feet':'Plant both feet'}</button>`:''}`),
    {kind:'grid',rows:[articulation]},
    ik&&rig(`<div class="spatial-targets" role="group" aria-label="Limb rotations">${rotations}</div>`),
   ]},
