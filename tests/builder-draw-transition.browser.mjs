@@ -18,6 +18,9 @@ async function drawSegment(x, y, dx = 65, dy = 30) {
 try {
   await page.goto(process.env.STYK_URL || 'http://127.0.0.1:47911');
   await page.waitForFunction(() => window.styk?.ready);
+  // This flow authors a new figure. Draw restores the selection it was entered
+  // with, so explicitly deselect the starter instead of binding it on return.
+  await page.evaluate(() => styk.editor.select(null));
   await mode('draw');
   await page.locator('#open-insert').click();
   const viewport = await page.locator('#viewport').boundingBox();
@@ -50,6 +53,7 @@ try {
   console.log('PASS Draw cel stays unchanged; Build selects a figure layer, draws and extends segments, undoes and redoes');
 
   for (const latest of ['rig', 'draw', 'animate']) {
+    await page.evaluate(() => styk.editor.select(null));
     await mode('draw');
     await page.evaluate(() => {
       const original = styk.drawing.settle.bind(styk.drawing);

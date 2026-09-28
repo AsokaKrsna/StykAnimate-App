@@ -1141,7 +1141,8 @@ export class Editor extends EventTarget {
     const segment = this.figure?.segments[this.selectedJoint];
     // Spatial bones have no curved bend; the secondary drag twists them instead.
     if (spatialBone(segment)) return this.twistSpatialJoint(x, y, {pixel});
-    if (!segment || isStatic(segment) || ![0, 6].includes(segment.primitive_code ?? (segment.flags ?? 0) & 255)) return false;
+    const rigBend = this._drag?.rig?.bend;
+    if (!segment || (isStatic(segment) && !rigBend) || ![0, 6].includes(segment.primitive_code ?? (segment.flags ?? 0) & 255)) return false;
     const shape = this.geometry.objects.get(this.selectedSlot)?.segments[this.selectedJoint]; if (!shape) return false;
     const distance = Math.hypot(x - shape.start.x, y - shape.start.y);
     let bend = distance < 1e-8 ? shape.bend : 2 * shortest(Math.atan2(y - shape.start.y, x - shape.start.x) - shape.angle);
@@ -1160,7 +1161,12 @@ export class Editor extends EventTarget {
         if (!object.len_flag) object.lengths = this.figure.segments.map(s => s.length);
         object.len_flag = 1; object.lengths[this.selectedJoint] = length;
       }
-      this._rotateJoint(bend - shape.bend, false, {isolate});
+      if (rigBend) {
+        // A reusable rig edit rotates this definition's descendants. Joined
+        // figures retain their own poses, as with ordinary rig rotation.
+        if (!isolate) for (const i of this._drag.rig.branch)
+          if (i !== this.selectedJoint) object.angles[i] += bend - shape.bend;
+      } else this._rotateJoint(bend - shape.bend, false, {isolate});
       if (!object.bend_flag) object.bends = this.figure.segments.map(s => s.bend_rad ?? 0);
       object.bend_flag = 1; object.bends[this.selectedJoint] = bend;
     }, {posed: true});

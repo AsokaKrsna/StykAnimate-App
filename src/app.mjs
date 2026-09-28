@@ -2423,9 +2423,9 @@ overlay.addEventListener(
       const spatial=spatialGizmoDrag(editor,screenPoint(p),screenPoint);
       if(spatial){if(!editor.beginDrag('Rotate articulated joint'))return;state.drag={kind:'spatial',spatial};viewport.classList.add('dragging');return;}
     }
-    // Posing tools turn a right drag into a bend; everywhere else a right
+    // Joint editing tools turn a right drag into a bend; everywhere else a right
     // press stays a plain click that opens the context menu on release.
-    if (e.button === 2 && !e.shiftKey && (builderMode?.active || !["select", "pose", "rig"].includes(state.tool))) {
+    if (e.button === 2 && !e.shiftKey && !["select", "pose", "rig"].includes(state.tool)) {
       releaseCanvasPointer();
       return;
     }
@@ -2684,8 +2684,11 @@ function beginFigurePointerDrag(hit, p, e) {
   if (handleEdit) editor.beginHandleEditDrag({ bend: e.button === 2 });
   else if (figureTransform)
     editor.beginFigureHandleDrag(p.x, p.y, { rotate: true, scale: true, joint: hit.joint });
-  else if (hit.joint >= 0 && state.tool === "rig")
-    editor.beginRigDrag({ reposition: state.rigMode !== "rotate" });
+  else if (hit.joint >= 0 && state.tool === "rig") {
+    if (!editor.beginRigDrag({ reposition: state.rigMode !== "rotate", bend: e.button === 2 })) {
+      releaseCanvasPointer(); return;
+    }
+  }
   else if (hit.joint >= 0) editor.beginDrag("Pose joint");
   else editor.beginTranslationDrag("Move connected figures");
   state.drag = {
@@ -2694,11 +2697,9 @@ function beginFigurePointerDrag(hit, p, e) {
       : figureTransform
         ? "figure-transform"
         : hit.joint >= 0
-          ? state.tool === "rig"
-            ? "rig"
-            : e.button === 2
-              ? "bend"
-              : "pose"
+          ? e.button === 2
+            ? "bend"
+            : state.tool === "rig" ? "rig" : "pose"
           : "move",
     bend: e.button === 2,
     constrain: e.ctrlKey || e.metaKey,
@@ -2838,7 +2839,7 @@ const moveCanvasPointer = guarded((e) => {
         return;
       const hit = drag.hit;
       editor.select(hit.g.obj.unique_id, hit.joint);
-      if (!editor.beginDrag("Pose joint")) {
+      if (!(state.tool === "rig" ? editor.beginRigDrag({bend: true}) : editor.beginDrag("Pose joint"))) {
         state.drag = null;
         releaseCanvasPointer();
         return;
@@ -2860,9 +2861,11 @@ const moveCanvasPointer = guarded((e) => {
         snapTolerance: 6 / state.view.scale,
         pixel: 1 / state.view.scale,
       });
+      state.drag.current = p; state.drag.pointerEvent = e;
       requestRender();
       return;
     }
+    drag.current = p; drag.pointerEvent = e;
     if(drag.kind==='spatial'){updateSpatialGizmo(editor,drag.spatial,screenPoint(p),e.shiftKey);requestRender();return;}
     if (drag.kind === "camera") {
       if (
@@ -2959,12 +2962,12 @@ function releaseCanvasPointer() {
   if (id !== null && overlay.hasPointerCapture(id))
     overlay.releasePointerCapture(id);
 }
-function endDrag(event) {
+function endDrag(event, {keepPointer = false} = {}) {
   flushPoseMove();
   const drag = state.drag;
   if (drag?.kind === "draw" || drag?.kind === "rig") construction?.cancel();
   state.drag = null;
-  releaseCanvasPointer();
+  if (!keepPointer) releaseCanvasPointer();
   if (!drag) return;
   viewport.classList.remove("dragging");
   if (drag.kind === 'toggle-selection') {
@@ -3017,6 +3020,30 @@ function endDrag(event) {
     editor.commitDrag();
   }
   queueUI();
+}
+function addFrameKeepingDrag(insert) {
+  pause(); flushPoseMove();
+  const drag = state.drag, pointerId = canvasPointerId;
+  const keep = !builderMode?.active && !drawingController?.active && !drag?.duplicate &&
+    ['pose', 'bend', 'move'].includes(drag?.kind) && pointerId !== null && overlay.hasPointerCapture(pointerId);
+  if (!keep) { finishCurrentEdit(); return insert(); }
+  const held = {uid: editor.selectedUid, joint: editor.selectedJoint, point: drag.current ?? drag.start,
+    event: drag.pointerEvent ?? {button: drag.bend ? 2 : 0, ctrlKey: drag.constrain}};
+  // Commit this pose before inserting its successor, but retain native pointer
+  // capture. Subsequent moves belong to a fresh, independently undoable pose.
+  endDrag(undefined, {keepPointer: true});
+  try { return insert(); }
+  finally {
+    if (canvasPointerId === pointerId && overlay.hasPointerCapture(pointerId)) {
+      const g = [...editor.geometry.objects.values()].find(g => g.obj.unique_id === held.uid);
+      if (g && !isHidden(held.uid) && !isLocked(held.uid) &&
+          (held.joint < 0 || g.segments[held.joint])) {
+        beginFigurePointerDrag({g, uid: held.uid, joint: held.joint, action: held.joint < 0 ? 'move' : 'pose'},
+          held.point, {button: drag.bend ? 2 : 0, ctrlKey: held.event.ctrlKey, metaKey: held.event.metaKey});
+        if (state.drag) { state.drag.pastSlop = true; state.drag.current = held.point; state.drag.pointerEvent = held.event; }
+      } else releaseCanvasPointer();
+    }
+  }
 }
 function cancelDrag() {
   pendingPoseMove=null;
@@ -4109,8 +4136,7 @@ const actions = {
   },
   "previous-keyframe": () => { pause(); runTimelineHotkey(timelineUI, 'previous-keyframe'); },
   "next-keyframe": () => { pause(); runTimelineHotkey(timelineUI, 'next-keyframe'); },
-  "add-frame": () => {
-    pause();finishCurrentEdit();
+  "add-frame": () => addFrameKeepingDrag(() => {
     if(editor.getLayer(editor.activeLayerId)?.drawing)return editor.addDrawingFrame();
     if(editor.report._styk?.layerSheet) {
       if(state.settings.timelineMode !== 'simple')
@@ -4120,7 +4146,7 @@ const actions = {
       return result;
     }
     return editor.addFrame();
-  },
+  }),
   "extend-keyframe": () => {
     pause();finishCurrentEdit();
     if(drawingController?.active)return editor.extendDrawing(timelineUI?.ids?.length?timelineUI.ids:[editor.activeLayerId],drawingController.settings.length);

@@ -1,5 +1,17 @@
 # Scene background editing
 
+## Bending in Build
+
+Right-drag a line joint with Build's joint tool to bend it, including static
+joints. The tangent, Ctrl/Command stretching, snapping and Isolate behavior
+match Animate. A stationary right-click still opens the context menu.
+
+The preview changes only the current pose; release publishes one reusable rig
+edit across the definition's instances and stored poses, applying the bend delta
+and stretch ratio to their existing poses. Undo and Escape use the existing rig transaction. Attached
+figures retain their own poses, as with Build's branch rotation. Animate bending
+continues to edit only the current pose and respects static-joint protection.
+
 ## Importing builder edits as a new figure
 
 Build figure → Done → Import as new figure captures the bound instance's displayed

@@ -293,6 +293,7 @@ export class DrawingController {
       const target=eligible(prior)?prior:e.layers.find(eligible);
       if(target){
         e.selectSheetLayer(target.id);
+        if(sameDocument&&target.id===this.prior.layerId&&this.prior.uid===null)e.select(null);
         if(sameDocument&&target.id===this.prior.layerId&&e.evaluatedFrame.objects.some(o=>o.unique_id===this.prior.uid&&e.layerForUid(o.unique_id)===target.id))
           e.select(this.prior.uid,this.prior.joint);
         this.state.selectedTrackId=target.id;this.getTimeline()?.selectTrack?.(target.id);

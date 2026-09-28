@@ -34,6 +34,12 @@ test('Draw exit preserves a figure layer deliberately selected while drawing', (
   drawing.exit(); assert.equal(editor.activeLayerId, alternate.id);
 });
 
+test('Draw exit preserves an empty figure selection so Build can create a new figure', () => {
+  const {editor, drawing, figureLayer} = fixture(); editor.select(null);
+  drawing.enter(); drawing.exit();
+  assert.equal(editor.activeLayerId, figureLayer); assert.equal(editor.selectedUid, null);
+});
+
 test('Draw exit waits for pending pixels before changing selection', async () => {
   const {editor, drawing, figureLayer, drawingLayer} = fixture(); drawing.enter();
   let done; const gate = new Promise(resolve => {done = resolve;});

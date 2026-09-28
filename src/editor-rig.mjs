@@ -34,7 +34,10 @@ function restorePreview(editor, drag) {
 
 export const editorRigMethods = {
   /** In reposition mode only the dragged joint moves; connected endpoints stay fixed. */
-  beginRigDrag({reposition = true, label = 'Edit rig'} = {}) {
+  beginRigDrag({reposition = true, bend = false, label = bend ? 'Bend rig joint' : 'Edit rig'} = {}) {
+    const segment = this.figure?.segments[this.selectedJoint];
+    if (bend && (!segment || segment._stykRig?.spatial || segment._stykRig?.connector ||
+        ![0, 6].includes(segment.primitive_code ?? (segment.flags ?? 0) & 255))) return false;
     if(this.figure?.segments[this.selectedJoint]?._stykRig?.spatial)throw new Error('Use Pose or Rotate to articulate this joint. Its rest position belongs to the spatial skin binding.');
     if(this.figure?.segments[this.selectedJoint]?._stykRig?.anglePath||this.figure?.segments[this.selectedJoint]?._stykRig?.weighted)return false;
     if (this.figure?.segments[this.selectedJoint]?._stykRig?.connector) return this.beginDrag('Slide connector');
@@ -46,7 +49,7 @@ export const editorRigMethods = {
     const children = [];
     for (let i = 0; i < figure.segments.length; i++) if (figure.segments[i].parent_id === handle) children.push(i);
     this._drag.rig = {uid: this.selectedUid, typeId: figure.figure_type_id, figure, object, index, geometry,
-      reposition, branch: segmentBranchIndices(figure.segments, handle), children, changedIndices: new Set(), changes: new Map(), lengths: null};
+      reposition, bend, branch: segmentBranchIndices(figure.segments, handle), children, changedIndices: new Set(), changes: new Map(), lengths: null};
     return true;
   },
   /** Safe for pointermove: never clones a definition or walks another animation frame. */
@@ -109,14 +112,24 @@ export const editorRigMethods = {
   commitRigDrag() {
     const drag = this._drag, rig = drag?.rig; if (!rig) return false;
     const preview = this.frame.objects.find(o => o.unique_id === rig.uid), operations = [];
+    if (rig.bend) {
+      // Bending uses the same local solver as Animate. Collect its final branch
+      // once on release, then publish a single reusable definition edit.
+      for (const i of rig.branch) rig.changes.set(i, {
+        length: preview.len_flag ? preview.lengths[i] : undefined,
+        bend: i === rig.index && preview.bend_flag ? preview.bends[i] : undefined,
+      });
+    }
     for (const [i, change] of rig.changes) {
       const angleDelta = shortest(preview.angles[i] - rig.object.angles[i]);
       const oldLength = rig.object.len_flag ? rig.object.lengths[i] : rig.figure.segments[i].length;
       const length = change.length, lengthDelta = length === undefined ? 0 : length - oldLength;
-      if (Math.abs(angleDelta) < EPS && Math.abs(lengthDelta) < EPS) continue;
+      const oldBend = rig.object.bend_flag ? rig.object.bends[i] : rig.figure.segments[i].bend_rad ?? 0;
+      const bendDelta = change.bend === undefined ? 0 : change.bend - oldBend;
+      if (Math.abs(angleDelta) < EPS && Math.abs(lengthDelta) < EPS && Math.abs(bendDelta) < EPS) continue;
       const ratio = length === undefined || Math.abs(oldLength) < EPS ? null : length / oldLength;
       const oldDefault = rig.figure.segments[i].length;
-      operations.push({index: i, angleDelta, length, lengthDelta, ratio,
+      operations.push({index: i, angleDelta, length, lengthDelta, ratio, bendDelta,
         defaultLength: length === undefined ? oldDefault : Math.abs(oldDefault) > EPS && ratio !== null ? oldDefault * ratio : length});
     }
     const retainedGeometry = {previous:this._geometry ?? this._incremental?.previous, dirtySlots:this._geometry ? [] : this._incremental?.dirtySlots ?? []};
@@ -129,6 +142,7 @@ export const editorRigMethods = {
     return this._topologyEdit(drag.label, figure => {
       for (const operation of operations) {
         const segment = figure.segments[operation.index]; segment.angle_rad += operation.angleDelta;
+        if (operation.bendDelta) segment.bend_rad = (segment.bend_rad ?? 0) + operation.bendDelta;
         if (operation.length !== undefined) {
           segment.length = operation.defaultLength;
         }
@@ -140,6 +154,7 @@ export const editorRigMethods = {
           affected.add(slot);
           for (const operation of operations) {
             object.angles[operation.index] += operation.angleDelta;
+            if (object.bend_flag) object.bends[operation.index] += operation.bendDelta;
             if (object.len_flag && operation.length !== undefined) object.lengths[operation.index] = operation.ratio === null
               ? object.lengths[operation.index] + operation.lengthDelta : object.lengths[operation.index] * operation.ratio;
           }

@@ -14,6 +14,13 @@ Simple playback, thumbnails, and native animation output read `storedFrameReport
 
 ## Adding and changing stored frames
 
+In Animate, Add frame (A) keeps pointer capture during a joint pose, bend, or
+figure-root drag. It commits the current pose, inserts the next frame using the
+active timeline's normal rules, and continues dragging from the same pointer
+position. This works in Simple and Advanced. Each completed pose and frame
+insertion stays undoable; Escape cancels only the unfinished pose on the new
+frame. Draw strokes, Build edits and duplicate-placement gestures finish normally.
+
 `frame-draft-animation.mjs` plans authored Add operations using the sparse insertion planner in `frame-clipboard-authored.mjs`. The plan is prepared against the stored projection before publication. The native frame changes, channel changes, and retained pose sources are published as one range-history command.
 
 An append after the last authored key holds its final pose rather than introducing a synthetic resume frame. Ordinary held tails use sparse boundary keys, independent of exposure length. Automatic easing may require bounded local sampling to preserve preceding output; the existing insertion budgets still apply. When authored animation continues beyond the native insertion point, the ordinary insertion planner preserves that continuing tail.
