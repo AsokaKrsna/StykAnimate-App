@@ -12,6 +12,12 @@ function validName(value, max = 120) {
     throw new Error('Use a name of 1–120 characters without reserved filename characters.');
   return value.trim();
 }
+/** A display name made safe for a file name (the renderer does the same for Add to library). */
+function safeName(value) {
+  let name = String(value ?? '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').replace(/^\.+|[. ]+$/g, '').slice(0, 110).trim() || 'Untitled asset';
+  if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(name)) name = `Asset ${name}`;
+  return name;
+}
 
 /** Every renderer path is relative to one fixed Documents library. Never follow links. */
 class LibraryStore {
@@ -80,6 +86,14 @@ class LibraryStore {
     this.pending.set(transfer.token, {destination, png, kind: kind === 'set' ? 'set' : extension === '.stykmov' ? 'movieclip' : 'figure'});
     return {...transfer, path: this.relative(destination)};
   }); }
+  /** Saves bytes already in the main process (a public library asset) through the same exclusive, staged commit. */
+  async saveBytes({folder = '', name, extension, kind, thumbnail, bytes}) {
+    const transfer = await this.beginSave({folder, name: safeName(name), extension, kind, thumbnail, size: bytes.length});
+    try {
+      for (let offset = 0; offset < bytes.length; offset += transfer.maxChunkBytes) await this.write(transfer.token, bytes.subarray(offset, offset + transfer.maxChunkBytes));
+      return await this.finish(transfer.token);
+    } catch (error) { await this.cancel(transfer.token).catch(() => {}); throw error; }
+  }
   write(token, bytes) { return this.streams.write(token, bytes); }
   finish(token) { return this.serial(async () => {
     const item = this.pending.get(token); if (!item) throw new Error('Library save is no longer active.');
@@ -142,4 +156,4 @@ class LibraryStore {
   }); }
   async dispose() { await this.streams.dispose(); this.pending.clear(); }
 }
-module.exports = {LibraryStore, validName};
+module.exports = {LibraryStore, validName, safeName};

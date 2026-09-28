@@ -44,7 +44,7 @@
     "test:animation-performance:browser": "node tests/animation-mode-performance.browser.mjs",
     "test:desktop": "node scripts/smoke-desktop.mjs",
     "test:desktop:packaged": "node scripts/smoke-desktop.mjs --packaged",
-    "test:library": "node --test scripts/library-store.test.mjs tests/user-library.test.mjs",
+    "test:library": "node --test scripts/library-store.test.mjs scripts/public-library.test.mjs tests/user-library.test.mjs",
     "test:library:desktop": "node scripts/smoke-library.mjs",
     "build:sidecar": "python scripts/build-sidecar.py",
     "build:video-encoder": "python scripts/stage-video-encoder.py",

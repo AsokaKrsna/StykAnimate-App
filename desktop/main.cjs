@@ -21,6 +21,7 @@ const { AudioService } = require('./audio-service.cjs');
 const { VfwExportService } = require('./vfw-export-service.cjs');
 const { RecentFiles } = require('./recent-files.cjs');
 const { LibraryStore } = require('./library-store.cjs');
+const { PublicLibrary, isPublicId } = require('./public-library.cjs');
 const { TelemetryService } = require('./telemetry.cjs');
 const { UpdateService, updateAvailability } = require('./updates.cjs');
 const releaseInfo = require('./release-info.json');
@@ -57,13 +58,19 @@ let startupShown = false;
 let traceRunning = false;
 let pageLoaded = false;
 let pendingProtocol = process.argv.find(value => /^stykanimate:\/\//i.test(value));
+// A public library link (stykanimate://library/<id>) waits here until the
+// workspace takes it, so a link that starts the app is not lost during startup.
+let publicLibraryLink = null;
 function handleProtocol(value) {
   try {
     const url = new URL(value);
-    if (url.protocol !== 'stykanimate:' || url.username || url.password || url.search || url.hash || url.port || !['', '/'].includes(url.pathname) || !['open', 'privacy'].includes(url.hostname)) return false;
+    if (url.protocol !== 'stykanimate:' || url.username || url.password || url.search || url.hash || url.port) return false;
+    const root = ['', '/'].includes(url.pathname), asset = /^\/([^/]+)\/?$/.exec(url.pathname)?.[1];
+    if (!(root && ['open', 'privacy', 'library'].includes(url.hostname)) && !(url.hostname === 'library' && isPublicId(asset))) return false;
     if (!window || !pageLoaded) { pendingProtocol = value; return true; }
     if (window.isMinimized()) window.restore(); window.show(); window.focus();
     if (url.hostname === 'privacy') sendAction('privacy');
+    if (url.hostname === 'library') { publicLibraryLink = asset ?? ''; window.webContents.send('styk:public-library-link'); }
     return true;
   } catch { return false; }
 }
@@ -299,6 +306,21 @@ function registerIpc() {
   ipcMain.handle('styk:library-reveal', async (event, folder = '') => { trusted(event); const error = await shell.openPath(await library.folder(folder)); if (error) throw new Error(error); });
   ipcMain.handle('styk:library-trash', (event, relative) => { trusted(event); return library.trash(relative, target => shell.trashItem(target)); });
   ipcMain.handle('styk:library-thumbnail-cache', (event, options) => { trusted(event); return library.cacheThumbnail(options); });
+  // The public library (desktop/public-library.cjs): a read-only catalogue on the website.
+  const publicLibrary = new PublicLibrary({site: process.env.STYK_PUBLIC_LIBRARY_URL});
+  ipcMain.handle('styk:public-library-list', (event, refresh = false) => { trusted(event); return publicLibrary.catalog({refresh: refresh === true}); });
+  ipcMain.handle('styk:public-library-preview', (event, id) => { trusted(event); return publicLibrary.preview(id); });
+  ipcMain.handle('styk:public-library-read', async (event, id) => {
+    trusted(event); const {name, bytes} = await publicLibrary.asset(id);
+    return {name, bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)};
+  });
+  ipcMain.handle('styk:public-library-save', async (event, options) => {
+    trusted(event);
+    const [{item, extension, bytes}, thumbnail] = await Promise.all([publicLibrary.asset(options?.id), publicLibrary.preview(options?.id)]);
+    return library.saveBytes({folder: typeof options?.folder === 'string' ? options.folder : '', name: item.name, extension, kind: item.kind, thumbnail, bytes});
+  });
+  ipcMain.handle('styk:public-library-page', (event, id) => { trusted(event); return shell.openExternal(publicLibrary.pageFor(id)); });
+  ipcMain.handle('styk:public-library-link', event => { trusted(event); const id = publicLibraryLink; publicLibraryLink = null; return id; });
   recentFiles = new RecentFiles({directory: app.getPath('userData'), limit: 20});
   ipcMain.handle('styk:recent-list', event => { trusted(event); return recentFiles.list(); });
   ipcMain.handle('styk:recent-open', async (event, id) => { trusted(event); return readImportFile(await recentFiles.resolve(id)); });
