@@ -22,6 +22,10 @@ containing an entire figure, also moves the instance in scene order. A partial
 segment or branch selection confined to one figure changes only its internal
 order. Repeating a move at a boundary does not change scope or create history.
 The inspector's explicit segment and polygon Order controls remain internal.
+The joint inspector's quick actions use this same selection-aware scope:
+**Forward** and **Backward** move one step, including complete attached branches.
+They replace Isolate, Values and Match in the top row; those commands remain in
+the selection menus.
 
 In the timeline, blue diamonds indicate independent property animation. Filled
 diamonds mark a key at the current frame; outlines indicate animation between
@@ -60,7 +64,10 @@ Regression coverage lives in `tests/figure-z-index.test.mjs` and
 timeline, range-operation and clipboard checks.
 
 `tests/selection-order.test.mjs` covers selection scope, joined groups, stable
-ordering, history and reopening. `node tests/selection-order.browser.mjs` checks
+ordering, history and reopening. `node tests/inspector-order.browser.mjs` checks
+the current Properties buttons for nodes, partial branches and attached figures
+in Simple and Advanced, including boundary clicks, undo/redo and rendered order.
+`node tests/selection-order.browser.mjs` checks
 actual joint double-clicks and toolbar clicks in Simple and Advanced, including
 Shift moves, rendered order, unchanged poses/attachments and STYK/PIV round trips.
 It also accepts the reported `Firing Range Bren MKII.piv` path as its argument;

@@ -355,8 +355,11 @@ try {
     const displaced = await page.evaluate(() => fixture.rows.pinned.resolved.displaced);
     assert.ok(displaced.includes('delete') && displaced.length === 7 - buttons.length, `displaced ${displaced}`);
     const joint = page.getByRole('toolbar', {name: 'Joint actions'});
-    assert.equal(await joint.getByRole('group', {name: 'Match'}).locator('button').count(), 2);
-    assert.equal(await joint.locator('[data-action="toggle-isolate"]').getAttribute('aria-pressed'), 'true');
+    assert.deepEqual(await joint.locator('button').evaluateAll(buttons => buttons.map(button => button.dataset.action)),
+      ['selection-up', 'selection-down', 'mirror']);
+    await joint.getByRole('button', {name: 'Bring forward', exact: true}).click();
+    await joint.getByRole('button', {name: 'Send backward', exact: true}).click();
+    assert.deepEqual(await page.evaluate(() => fixture.log.slice(-2)), ['selection-up', 'selection-down']);
   });
 
   await step('the rows never wrap, scroll or cut a button, and refit when the inspector widens', async () => {
@@ -379,7 +382,7 @@ try {
       row.update({context: 'figure', pins: ['reset-pose', 'rotate']});
       return ids;
     });
-    assert.deepEqual(moved, ['toggle-isolate', 'segment-values', 'locate-previous', 'locate-next', 'mirror'], 'the figure\'s pins stay with the figure');
+    assert.deepEqual(moved, ['selection-up', 'selection-down', 'mirror'], 'the figure\'s pins stay with the figure');
     const disabled = await page.evaluate(async () => {
       const {createQuickActions} = await import('/src/ui/quick-actions.mjs');
       const registry = {has: () => true, get: id => ({label: id === 'delete' ? 'Delete' : id, enabled: id !== 'delete', reason: id === 'delete' ? 'Nothing is selected' : ''})};

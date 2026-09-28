@@ -55,12 +55,14 @@ test('the figure row: Flip · Front, Back (words; Shift: one step) · Duplicate,
   for (const context of ['figures', 'text', 'image']) assert.deepEqual(shape(row(context)), shape(resolved), `${context} uses the figure's row`);
 });
 
-test('the joint row: Isolate, Exact values · the Match tile · Flip limb', () => {
-  const resolved = row('joint', {state: {mode: 'animate', isolate: true}});
-  assert.deepEqual(shape(resolved), [['word:Isolate', 'glyph:Exact values…'], ['tile:Match', 'tile:Match'], ['glyph:Flip limb']]);
-  const isolate = resolved.items[0];
-  assert.deepEqual([isolate.toggle, isolate.checked], [true, true], 'a latched toggle shows its state');
-  assert.deepEqual(resolved.groups[1].map(item => [item.id, item.icon]), [['locate-previous', 'match-prev'], ['locate-next', 'match-next']]);
+test('the joint row: Forward, Backward · Flip limb, using selection-aware ordering', () => {
+  const resolved = row('joint');
+  assert.deepEqual(shape(resolved), [['word:Forward', 'word:Backward'], ['glyph:Flip limb']]);
+  assert.deepEqual(resolved.groups[0].map(item => [item.id, item.icon, item.label]),
+    [['selection-up', 'step-up', 'Bring forward'], ['selection-down', 'step-down', 'Send backward']]);
+  const wholeFigure = registryFor({mode: 'animate', figure: true, joint: false});
+  assert.equal(wholeFigure.get('selection-up').enabled, true, 'the shared command also accepts whole figures');
+  assert.equal(wholeFigure.get('selection-down').enabled, true);
 });
 
 test('Build\'s part row carries words for Split and Duplicate, and Shift deletes the branch', () => {

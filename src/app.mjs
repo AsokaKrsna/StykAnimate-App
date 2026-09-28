@@ -2352,7 +2352,7 @@ function finishPolygon() {
 }
 function pick(p, {preferSelected = false, artwork = false} = {}) {
   const geometry = editor.geometry;
-  const body = () => artwork && !builderMode?.active && ['select','pose'].includes(state.tool)
+  const body = () => artwork && !builderMode?.active && ['select','pose','tweener'].includes(state.tool)
     ? pickCanvasArtwork(geometry, p, {resources, hiddenUids: effectiveHidden(), lockedUids: {has: isLocked}, scale: state.view.scale}) : null;
   if (!state.handles) return body();
   const options = {
@@ -2365,7 +2365,7 @@ function pick(p, {preferSelected = false, artwork = false} = {}) {
   const hit = pickCanvasHandle(geometry, p, {...options, handles: canvasHandles(geometry)});
   // Visible handles keep priority. Hidden static endpoints are selection-only
   // fallback targets, prepared lazily on clicks, never on pointer hover.
-  if (hit || builderMode?.active || !['select', 'pose'].includes(state.tool)) return hit;
+  if (hit || builderMode?.active || !['select', 'pose', 'tweener'].includes(state.tool)) return hit;
   return pickCanvasHandle(geometry, p, {...options, handles: canvasHandles(geometry, {selectStatic: true})})
     ?? body();
 }
@@ -2430,8 +2430,12 @@ overlay.addEventListener(
       return;
     }
     if (state.tool === 'tweener') {
-      if (e.button === 0 && tweenerControls.begin(e)) state.drag = {kind:'tweener'};
-      else releaseCanvasPointer();
+      if (e.button !== 0) {releaseCanvasPointer();return;}
+      const hit = pick(p, {artwork: true});
+      if (hit && !e.shiftKey && !isSelected(hit.uid)) editor.select(hit.uid, hit.joint);
+      // A click only selects. Keep the existing selection when dragging empty
+      // canvas or a selected figure, and prepare the tween once it is a drag.
+      state.drag = {kind:'tweener', press: e, toggleUid: hit && e.shiftKey ? hit.uid : null};
       return;
     }
     if (state.spritePlacement || state.duplicatePlacement) {
@@ -2729,7 +2733,16 @@ const moveCanvasPointer = guarded((e) => {
     let drag = state.drag;
     if (drag?.kind === 'tweener') {
       if (e.buttons & 2) {e.preventDefault();state.suppressContext=true;cancelDrag();}
-      else tweenerControls.move(e);
+      else {
+        if (drag.press) {
+          const press = drag.press;
+          if (Math.abs(e.clientX - press.clientX) < Math.max(3, dragSlop(press))) return;
+          delete drag.press;
+          if (drag.toggleUid !== null && !isSelected(drag.toggleUid)) editor.select(drag.toggleUid);
+          if (!tweenerControls.begin(press)) {cancelDrag();return;}
+        }
+        tweenerControls.move(e);
+      }
       return;
     }
     if (!drag && state.tool === 'tweener' && !state.space) return;
@@ -2973,6 +2986,7 @@ function endDrag(event, {keepPointer = false} = {}) {
   if (drag.kind === 'toggle-selection') {
     if (!drag.moved) editor.select(drag.hit.uid, -1, {toggle: true});
   } else if (drag.kind === 'tweener') {
+    if (drag.press && drag.toggleUid !== null) editor.select(drag.toggleUid, -1, {toggle: true});
     tweenerControls.finish(true,event);
   } else if (drag.kind === "draw") {
     const p = drag.start,
@@ -5151,7 +5165,8 @@ document.addEventListener('visibilitychange', () => {
 });
 editor.addEventListener("change", (e) => {
   const kind = e.detail?.kind;
-  if (state.drag?.kind === 'toggle-selection' && ['document', 'seek', 'history', 'selection', 'edit'].includes(kind)) cancelDrag();
+  if ((state.drag?.kind === 'toggle-selection' || state.drag?.kind === 'tweener' && state.drag.press) &&
+      ['document', 'seek', 'history', 'selection', 'edit'].includes(kind)) cancelDrag();
   if(['edit','history','document','preview','frame-draft'].includes(kind))playback.discardNativeSnapshot();
   const joining = state.figureJoin;
   if (joining && (joining.token !== editor._documentToken || joining.uid !== editor.selectedUid ||

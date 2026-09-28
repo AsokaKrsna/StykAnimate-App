@@ -1,8 +1,13 @@
 # Pose Tweener
 
 Select figures in Animate, place the playhead between keys, and choose a tween
-type from the arrow on the **Tweener** toolbar button. Drag horizontally anywhere
-on the canvas to preview; release to apply. **Escape or right-click cancels** and
+type from the arrow on the **Tweener** toolbar button. Click a figure's handle or
+artwork to select it without leaving the tool; Shift-click adds or removes figures.
+Dragging a different figure selects it first. Dragging a selected figure or empty
+canvas keeps the current selection. Drag horizontally to preview; release to apply.
+Selection clicks work even where the selected figures have no neighboring keys;
+tween preparation and validation start only after horizontal dragging begins.
+**Escape or right-click cancels** and
 restores the original pose without opening a context menu. The tool operates on whole
 selected figures, including their joint poses, rather than individual selected
 handles. It does not insert time or bake a sequence of frames.

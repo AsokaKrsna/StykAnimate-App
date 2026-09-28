@@ -9,12 +9,20 @@ const check=(name,value)=>{assert.ok(value,name);checks.push(name);console.log('
 const choose=async type=>{await page.getByLabel('Choose tween type',{exact:true}).click();await page.locator(`[data-tween-type="${type}"]`).click();};
 const down=async()=>{await page.mouse.move(500,300);await page.mouse.down();};
 const pose=async x=>page.waitForFunction(x=>Math.abs(styk.editor.object.root_x-x)<.001,x);
+const point=async(uid,artwork=false)=>page.evaluate(async({uid,artwork})=>{
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  const g=[...styk.editor.geometry.objects.values()].find(g=>g.obj.unique_id===uid);
+  const p=artwork?{x:(g.segments[0].start.x+g.segments[0].end.x)/2,y:(g.segments[0].start.y+g.segments[0].end.y)/2}:g.root;
+  const box=document.querySelector('#overlay').getBoundingClientRect(),v=styk.state.view;
+  return {x:box.x+v.x+p.x*v.scale,y:box.y+v.y+p.y*v.scale};
+},{uid,artwork});
+const clickFigure=async(uid,artwork=false)=>{const p=await point(uid,artwork);await page.mouse.click(p.x,p.y);};
 try {
   await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>window.styk?.ready);
   await page.evaluate(async()=>{
     const {emptyDocument,createObject,createFrame}=await import('/src/demo.mjs');
     const report=emptyDocument(),figure=report.figure_types[0];
-    report.keyframes=[180,400,650].map((x,i)=>createFrame([createObject(figure,1,x,330,{angles:figure.segments.map((s,j)=>s.angle_rad+(j>1?Math.sin(i*1.5+j)*.7:0))}),createObject(figure,2,780,330)],10));
+    report.keyframes=[180,400,650].map((x,i)=>createFrame([createObject(figure,1,x,330,{angles:figure.segments.map((s,j)=>s.angle_rad+(j>1?Math.sin(i*1.5+j)*.7:0))}),createObject(figure,2,680+i*100,330)],10));
     styk.editor.load(report);styk.editor.seek(10);styk.editor.select(1);styk.fit();styk.settingsUI.commit({theme:'light'});
   });
   const before=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));
@@ -23,6 +31,18 @@ try {
   await page.screenshot({path:out+'/light.png'});
   await page.locator('[data-tween-type="breakdown"]').click();
   check('Choosing a type activates canvas tweening without any dialog',await page.evaluate(()=>styk.state.tool==='tweener'&&!document.querySelector('dialog[open]')&&!document.querySelector('#tweener-types').matches(':popover-open')));
+  await page.evaluate(()=>styk.editor.select(null));await clickFigure(2);
+  check('Clicking a figure selects it while Breakdown stays active',await page.evaluate(()=>styk.editor.selectedUid===2&&styk.state.tool==='tweener'&&!styk.editor._drag));
+  await page.evaluate(()=>{styk.state.handles=false;});await clickFigure(1,true);
+  check('Artwork selects figures with handles hidden',await page.evaluate(()=>styk.editor.selectedUid===1));
+  await page.evaluate(()=>{styk.state.handles=true;});
+  await page.keyboard.down('Shift');await clickFigure(2);await page.keyboard.up('Shift');
+  check('Shift-click adds figures to the tween selection',await page.evaluate(()=>styk.editor.selectedUids.size===2));
+  await page.keyboard.down('Shift');await clickFigure(2);await page.keyboard.up('Shift');
+  check('Shift-click removes figures without editing the pose',await page.evaluate(saved=>styk.editor.selectedUids.size===1&&styk.editor.selectedUid===1&&JSON.stringify(styk.editor.serialize())===saved&&styk.editor._undo.length===0,before));
+  const second=await point(2);await page.mouse.move(second.x,second.y);await page.mouse.down();await page.mouse.move(second.x+75,second.y);await page.mouse.up();await pose(830);
+  check('Dragging a newly selected figure tweens it alone',await page.evaluate(()=>styk.editor.selectedUid===2&&styk.editor.frame.objects[0].root_x===400&&styk.editor._undo.length===1));
+  await page.evaluate(()=>styk.editor.undo());await clickFigure(1);
   await down();await page.mouse.up();
   check('Click without dragging does not modify the document',await page.evaluate(saved=>JSON.stringify(styk.editor.serialize())===saved,before));
   await down();await page.mouse.move(575,300,{steps:4});await pose(532.5);
@@ -46,6 +66,8 @@ try {
   await page.keyboard.press('Escape');await page.mouse.up();
   await choose('breakdown');await down();await page.keyboard.down('Shift');await page.mouse.move(530,300);await pose(419.7);await page.keyboard.up('Shift');await page.mouse.up();
   check('Shift offers ten-times finer control',await page.evaluate(()=>Math.abs(styk.editor.object.root_x-419.7)<.001));await page.evaluate(()=>styk.editor.undo());
+  const first=await point(1);await page.keyboard.down('Shift');await page.mouse.move(first.x,first.y);await page.mouse.down();await page.mouse.move(first.x+30,first.y);await page.mouse.up();await page.keyboard.up('Shift');await pose(419.7);
+  check('Holding Shift before dragging a figure keeps precision tweening',await page.evaluate(()=>styk.editor.selectedUid===1&&styk.editor.selectedUids.size===1));await page.evaluate(()=>styk.editor.undo());
   await down();await page.mouse.move(575,300);await pose(532.5);await page.keyboard.press('v');await page.mouse.up();
   check('Changing tools mid-drag cancels pending work',await page.evaluate(saved=>JSON.stringify(styk.editor.serialize())===saved&&!styk.editor._drag&&styk.state.tool==='select',before));
   await page.locator('#tweener-button').click();await down();await page.mouse.move(575,300);await pose(532.5);
@@ -62,6 +84,12 @@ try {
   await page.setViewportSize({width:1440,height:1000});await page.evaluate(()=>styk.editor.seek(0));
   await page.locator('#tweener-button').click();await down();await page.mouse.up();
   check('Missing neighbors leave no gesture or captured pointer',await page.evaluate(()=>!styk.editor._drag&&!styk.state.drag));
+  await clickFigure(2);
+  check('Figures can be selected even without neighboring keys',await page.evaluate(()=>styk.editor.selectedUid===2&&!styk.editor._drag&&!styk.state.drag));
   check('No browser errors',errors.length===0);
   await writeFile(out+'/checks.json',JSON.stringify({checks,errors},null,2));
+} catch(error) {
+  await page.screenshot({path:out+'/failure.png'});
+  console.error(await page.evaluate(()=>({tool:styk.state.tool,selected:[...styk.editor.selectedUids],joint:styk.editor.selectedJoint,drag:styk.state.drag?.kind,errors:document.querySelector('#toast')?.textContent})));
+  throw error;
 } finally {await browser.close();}
