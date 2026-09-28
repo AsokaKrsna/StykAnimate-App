@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 const output='artifacts/release-1.0.1-ui';await mkdir(output,{recursive:true});
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try {

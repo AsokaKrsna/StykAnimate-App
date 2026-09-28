@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 // The shared palette: every colour picker offers the project's colours or the
 // recent ones, saving a colour is one undoable edit that reopens with the
 // project, and Draw's colour rail shows the same palette.

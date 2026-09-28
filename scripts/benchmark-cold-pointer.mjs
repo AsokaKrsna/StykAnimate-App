@@ -1,6 +1,6 @@
 /** A fresh import followed by the first physical gesture on its heaviest frame.
  * No editor selection, pose, or translation command is run before pointerdown. */
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 const source=process.argv[2],label=process.argv[3]??'cold-pointer',output=`artifacts/connected-editing/${label}`;

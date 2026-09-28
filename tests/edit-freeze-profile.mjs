@@ -1,5 +1,5 @@
 /** Diagnostic only: actual loaded-scene editing, CPU stacks, long tasks, and autosave. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';

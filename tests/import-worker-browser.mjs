@@ -1,7 +1,7 @@
 /** Real browser acceptance for transferable uploads and worker JSON parsing.
  * Run: node tests/import-worker-browser.mjs
  */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {createRequire} from 'node:module';
 import {readFile, mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';

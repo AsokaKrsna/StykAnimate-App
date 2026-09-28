@@ -1,5 +1,5 @@
 // Read-only source-file probe of real app playback after a library movieclip insertion.
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {readFile, mkdir, writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';

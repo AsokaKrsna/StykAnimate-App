@@ -5,7 +5,7 @@
 // STYK_TEST_URL overrides http://127.0.0.1:47832. Writes
 // artifacts/vfx-generators/benchmark.json. Timings are one machine's CPU
 // submission plus GPU completion; they are not display latency.
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import fs from 'node:fs/promises';
 
 const browser=await chromium.launch({channel:'chrome',headless:true});

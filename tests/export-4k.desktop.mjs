@@ -1,5 +1,5 @@
 /** Real source Electron UI -> worker -> native IPC/FFmpeg -> staged file save. */
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from './support/playwright.mjs';
 import {spawnSync} from 'node:child_process';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';

@@ -1,5 +1,5 @@
 /** Real worker-count changes must preserve GPU inputs and rendered pixels. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {createHash} from 'node:crypto';

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import backendTools from '../desktop/backend.cjs';
 
 const out=path.resolve('artifacts/renderer-construction-bounds');

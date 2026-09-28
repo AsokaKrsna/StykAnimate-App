@@ -1,4 +1,4 @@
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from './support/playwright.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 const root=process.cwd(),output=path.join(root,'artifacts',`gpu-handle-verification-${Date.now()}`);

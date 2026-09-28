@@ -1,4 +1,4 @@
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';

@@ -6,7 +6,7 @@
  * (node scripts/serve.mjs --port 47832) and run
  * `node tests/ui-chrome.browser.mjs`; STYK_URL overrides the address.
  */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 
 const base = `${process.env.STYK_URL || 'http://127.0.0.1:47832'}/tests/fixtures/ui-chrome.html`;

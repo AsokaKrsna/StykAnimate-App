@@ -1,5 +1,5 @@
 /** Actual canvas Rig tool gestures and native exports. Requires local STYK_URL. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';

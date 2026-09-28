@@ -1,7 +1,7 @@
 /** Image decoding must not need the geometry/rendering engine to start.
  * The legacy-owner control intentionally fails against the blocked dependency. */
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {createRequire} from 'node:module';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';

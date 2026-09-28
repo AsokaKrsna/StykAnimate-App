@@ -1,5 +1,5 @@
 /** Isolated audit of alpha trimming; this does not change production packets. */
-import { chromium } from 'playwright';
+import { chromium } from '../tests/support/playwright.mjs';
 import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 

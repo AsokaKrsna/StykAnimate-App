@@ -1,5 +1,5 @@
 /** Actual Akane UI joins trace. No source file is modified. Requires the local app. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir, writeFile, readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';

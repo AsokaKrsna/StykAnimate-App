@@ -1,5 +1,5 @@
 /** Compare selected real-project GPU frames against a saved pre-change worker. */
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import {createRequire} from 'node:module';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';

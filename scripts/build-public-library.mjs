@@ -12,7 +12,7 @@ import {mkdir, readdir, rm, writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 import path from 'node:path';
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import {RIG_EXAMPLES, rigExampleDocument} from '../src/rig-examples.mjs';
 import {buildContainerV2} from '../src/native-container.mjs';
 import {validateScene} from '../src/pivot/model.mjs';

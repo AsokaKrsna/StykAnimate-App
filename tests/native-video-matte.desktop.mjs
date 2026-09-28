@@ -1,5 +1,5 @@
 /** Pivot's opaque-video black matte through actual UI, native Save and decoding. */
-import { _electron as electron } from 'playwright';
+import { _electron as electron } from './support/playwright.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';

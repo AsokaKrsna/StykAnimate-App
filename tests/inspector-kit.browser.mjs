@@ -11,7 +11,7 @@
  *
  *   node tests/inspector-kit.browser.mjs            (STYK_URL, default http://127.0.0.1:47914)
  */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 
 // segmented.css is track C's, linked for the radio thumb the inspector sheet draws on it.

@@ -1,5 +1,5 @@
 /** Actual UI playback: CPU calls, asynchronous queue completion and frame pacing. */
-import {chromium, _electron as electron} from 'playwright';
+import {chromium, _electron as electron} from './support/playwright.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 const root = process.cwd(), source = process.argv[2] || 'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv';

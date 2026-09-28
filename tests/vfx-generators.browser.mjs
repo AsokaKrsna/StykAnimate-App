@@ -2,7 +2,7 @@
 // GPU and software playback packets, export, determinism and the editing UI
 // (catalogue previews, style suggestions, Shuffle and beam picking).
 // Requires `npm run serve` (STYK_TEST_URL overrides http://127.0.0.1:47832).
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import fs from 'node:fs/promises';
 import assert from 'node:assert/strict';
 

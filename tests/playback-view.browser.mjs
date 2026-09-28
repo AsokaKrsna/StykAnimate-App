@@ -1,4 +1,4 @@
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {normalizeEditorSettings} from '../src/settings.mjs';

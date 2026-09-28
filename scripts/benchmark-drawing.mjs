@@ -1,4 +1,4 @@
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import os from 'node:os';
 const url=process.env.STYK_URL||'http://127.0.0.1:47839';

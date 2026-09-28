@@ -1,5 +1,5 @@
 /** Full-project desktop playback diagnostic. Reads but never saves the input. */
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from '../tests/support/playwright.mjs';
 import {mkdir, readFile, readdir, writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';

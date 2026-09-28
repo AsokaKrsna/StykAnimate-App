@@ -1,5 +1,5 @@
 /** Reproducible, isolated desktop diagnostics. Never writes the source scene. */
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from '../tests/support/playwright.mjs';
 import {mkdir, readFile, readdir, writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import os from 'node:os';

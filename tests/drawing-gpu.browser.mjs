@@ -2,7 +2,7 @@
 // authority; these checks establish that the GPU brush, reduced display
 // levels and tile display reproduce it, and that cancellation, fallback,
 // undo/redo and saving keep their existing contracts.
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 

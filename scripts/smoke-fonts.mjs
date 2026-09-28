@@ -1,4 +1,4 @@
-import { _electron as electron } from "playwright";
+import { _electron as electron } from "../tests/support/playwright.mjs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";

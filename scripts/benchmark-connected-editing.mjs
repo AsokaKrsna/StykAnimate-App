@@ -1,5 +1,5 @@
 /** Exact-file cold selection/pose/seek profile. Input files are only read. */
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 

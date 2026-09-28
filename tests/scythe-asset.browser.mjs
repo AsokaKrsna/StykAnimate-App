@@ -1,5 +1,5 @@
 /** Exercise actual canvas gestures on both delivered native formats. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {readFile,writeFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import {decodeDocument} from '../src/native-container.mjs';

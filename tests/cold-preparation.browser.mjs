@@ -1,5 +1,5 @@
 /** Cold editable layouts and actual layer-sheet worker updates, with pixel checks. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {createRequire} from 'node:module';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';

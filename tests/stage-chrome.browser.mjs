@@ -25,7 +25,7 @@
  * Serve the repository (STYK_PYTHON=py node scripts/serve.mjs --port 47913)
  * and run `node tests/stage-chrome.browser.mjs`; STYK_URL overrides the address.
  */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 

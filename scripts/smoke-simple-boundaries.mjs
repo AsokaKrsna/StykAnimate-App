@@ -1,5 +1,5 @@
 import {readNativeDocument} from './read-native-document.mjs';
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from '../tests/support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';

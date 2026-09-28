@@ -2,7 +2,7 @@ import {readNativeDocument} from '../scripts/read-native-document.mjs';
 import {sheetKeyTimes,sampleSheet} from './helpers/sheet-samples.mjs';
 import {exportEditable} from './helpers/editable-export.mjs';
 /** Real editor UI regression for multi-selection, portable text, and persistence. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';

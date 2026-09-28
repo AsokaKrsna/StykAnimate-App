@@ -1,4 +1,4 @@
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 // Saving an effect as a preset, finding it in My presets, adding it to another

@@ -2,7 +2,7 @@
  * Fresh isolated profiles, alternating scanner order, read-only source fixture.
  * Reports readiness/submission, not physical display latency or cold-disk launch.
  */
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from '../tests/support/playwright.mjs';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import os from 'node:os';

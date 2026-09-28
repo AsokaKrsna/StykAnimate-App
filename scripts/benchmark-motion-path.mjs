@@ -1,6 +1,6 @@
 import {execFileSync} from 'node:child_process';
 import {writeFile,mkdir} from 'node:fs/promises';
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 await mkdir('artifacts/motion-path-ux',{recursive:true});
 await mkdir('tmp',{recursive:true});
 const before=execFileSync('git',['show','HEAD:src/motion-path.mjs'],{encoding:'utf8'}).replaceAll("from './","from '../src/");

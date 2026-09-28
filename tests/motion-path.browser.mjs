@@ -1,4 +1,4 @@
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 const out='artifacts/motion-path-ux'; await mkdir(out,{recursive:true});

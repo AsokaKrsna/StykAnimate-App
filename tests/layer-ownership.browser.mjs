@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {writeFile} from 'node:fs/promises';
 
 const browser=await chromium.launch({channel:'chrome',headless:true});

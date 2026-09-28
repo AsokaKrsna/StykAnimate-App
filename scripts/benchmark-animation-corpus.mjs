@@ -1,6 +1,6 @@
 /** Full local PIV collection audit. Every source is read-only; edits live in a
  * dedicated Electron profile. Resume by label; byte-identical files share a run. */
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from '../tests/support/playwright.mjs';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 

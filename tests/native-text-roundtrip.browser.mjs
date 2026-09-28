@@ -1,5 +1,5 @@
 /** Imported native text editing through the real STK/PIV writer and decoder. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {readFile, writeFile, mkdir} from 'node:fs/promises';
 import path from 'node:path';

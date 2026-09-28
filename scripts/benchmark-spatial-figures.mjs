@@ -8,7 +8,7 @@
  * STYK_RENDERER=canvas measures the Canvas 2D renderer used without WebGPU.
  * Results: artifacts/spatial-figures/<label>-t<throttle>-n<copies>-<file>.json
  */
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import {execFileSync} from 'node:child_process';

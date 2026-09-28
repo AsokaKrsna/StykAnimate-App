@@ -1,5 +1,5 @@
 /** Actual root export dialog and downloads: native defaults, option wiring, progress. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import path from 'node:path';

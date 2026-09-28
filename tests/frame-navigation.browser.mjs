@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 const browser = await chromium.launch({channel:'chrome',headless:true,ignoreDefaultArgs:['--hide-scrollbars']});
 const page = await browser.newPage({viewport:{width:1440,height:960}}), errors=[], checks=[];
 page.on('pageerror',e=>errors.push(e.message));

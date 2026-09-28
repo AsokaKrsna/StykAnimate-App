@@ -1,4 +1,4 @@
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 // Draw mode paints on the first stroke: it chooses an editable drawing layer,
 // or creates one, instead of silently ignoring the gesture.

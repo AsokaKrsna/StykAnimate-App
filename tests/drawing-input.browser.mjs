@@ -2,7 +2,7 @@
 // domain): pen pressure drives the brush, the pen's eraser end erases, a
 // palm touch right after pen use never paints or pans, and two fingers
 // pinch-zoom around their midpoint. Physical drivers are outside this check.
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 
 const url=process.env.STYK_URL||'http://127.0.0.1:47839',checks=[],errors=[];

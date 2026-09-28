@@ -1,5 +1,5 @@
 /** Mid-gesture native modifier locks, exercised through actual pointer events. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';

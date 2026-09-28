@@ -1,4 +1,4 @@
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 // The empty VFX panel offers one-click starting points, and the catalogue
 // switches between effects and presets without closing.

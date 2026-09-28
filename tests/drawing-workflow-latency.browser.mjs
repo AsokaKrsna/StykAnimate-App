@@ -4,7 +4,7 @@
 // unique marker colour so the benchmark detects when that cel is actually on
 // screen: after each app render it reads back one marker pixel. Timings run
 // from the command to that render; display scanout is excluded.
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 

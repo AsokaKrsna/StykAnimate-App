@@ -1,5 +1,5 @@
 /** Actual source app playback/interaction probe. Never writes the input file. */
-import {chromium,_electron as electron} from 'playwright';
+import {chromium,_electron as electron} from '../tests/support/playwright.mjs';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';

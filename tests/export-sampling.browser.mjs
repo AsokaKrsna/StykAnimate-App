@@ -1,5 +1,5 @@
 /** Actual browser workers and decoded output pixels; no WebGPU app is started. */
-import { chromium } from "playwright";
+import { chromium } from "./support/playwright.mjs";
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";

@@ -1,7 +1,7 @@
 /** Generated 1,500-instance scrub under 4x CPU throttling. CDP mouse events
  * arrive independently of rendering; gated=false restores eager seeking only.
  * Measures completed previews, not display scanout or physical input latency. */
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 const output='artifacts/scrub-backpressure';await mkdir(output,{recursive:true});

@@ -1,5 +1,5 @@
 /** Final finite desktop UX acceptance. --packaged requires a freshly verified matching package. */
-import { _electron as electron } from "playwright";
+import { _electron as electron } from "./support/playwright.mjs";
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";

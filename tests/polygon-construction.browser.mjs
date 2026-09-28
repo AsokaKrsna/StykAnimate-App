@@ -1,5 +1,5 @@
 /** Actual polygon draft construction, curved overlay and native file round trips. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';

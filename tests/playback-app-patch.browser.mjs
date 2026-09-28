@@ -1,5 +1,5 @@
 /** Verify actual editor event routing against the application's worker mirror. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {createRequire} from 'node:module';
 import {mkdir, writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';

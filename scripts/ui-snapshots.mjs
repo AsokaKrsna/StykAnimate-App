@@ -32,7 +32,7 @@
  * differently between runs, so with --compare an image that differs is
  * recaptured up to twice and counts as changed only if every capture differs.
  */
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import {mkdir, readFile, readdir, rm, writeFile} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';

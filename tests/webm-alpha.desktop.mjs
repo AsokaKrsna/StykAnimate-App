@@ -1,5 +1,5 @@
 /** Actual native WebM UI, codec dialog coexistence, and independently decoded alpha. */
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from './support/playwright.mjs';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';

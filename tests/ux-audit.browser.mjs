@@ -1,5 +1,5 @@
 /** Exploratory current-UI evidence. Findings are observations, not parity sign-off. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import path from 'node:path';

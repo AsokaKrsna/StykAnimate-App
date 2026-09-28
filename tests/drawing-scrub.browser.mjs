@@ -1,5 +1,5 @@
 /** Paused drawing pixels across holds, nested scopes and cooperative scene preparation. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';

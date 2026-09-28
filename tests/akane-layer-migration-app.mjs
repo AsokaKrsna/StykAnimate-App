@@ -1,5 +1,5 @@
 /** Real app worker-backed joined layer assignment on the imported Akane scene. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';

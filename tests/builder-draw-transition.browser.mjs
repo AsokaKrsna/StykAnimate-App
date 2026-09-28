@@ -1,5 +1,5 @@
 /** Draw exit must settle before Build binds a figure or chooses its tool. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 
 const browser = await chromium.launch({channel: 'chrome', headless: true});

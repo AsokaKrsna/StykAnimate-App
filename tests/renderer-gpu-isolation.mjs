@@ -1,5 +1,5 @@
 /** Isolate prepared draw execution from worker rasterization and GPU uploads. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 const source = process.argv[2] || 'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv';

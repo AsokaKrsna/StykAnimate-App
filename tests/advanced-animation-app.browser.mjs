@@ -1,5 +1,5 @@
 /** Actual application timeline gestures, inspector keys, native save/export and pixels. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {createRequire} from 'node:module';
 import {mkdir, writeFile, readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';

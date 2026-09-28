@@ -1,4 +1,4 @@
-import {_electron as electron,chromium} from 'playwright';
+import {_electron as electron,chromium} from './support/playwright.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 const root=process.cwd(),output=path.join(root,'artifacts',`artwork-gpu-${Date.now()}`);await mkdir(output,{recursive:true});

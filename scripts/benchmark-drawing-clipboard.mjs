@@ -1,4 +1,4 @@
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import {execFileSync} from 'node:child_process';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import os from 'node:os';

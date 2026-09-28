@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 await mkdir('artifacts/clipboard-colors',{recursive:true});
 const browser=await chromium.launch({channel:'chrome',headless:true});
 const a=await browser.newPage({viewport:{width:1440,height:1000}}),b=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];

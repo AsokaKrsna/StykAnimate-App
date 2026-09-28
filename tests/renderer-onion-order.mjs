@@ -1,4 +1,4 @@
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 const output = path.resolve('artifacts/renderer-onion-order'); await mkdir(output, {recursive: true});

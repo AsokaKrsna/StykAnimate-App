@@ -15,7 +15,7 @@
  */
 import assert from 'node:assert/strict';
 import {mkdir, writeFile} from 'node:fs/promises';
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 
 const URL = process.env.STYK_URL || 'http://127.0.0.1:47831';
 const out = 'artifacts/timeline-header';

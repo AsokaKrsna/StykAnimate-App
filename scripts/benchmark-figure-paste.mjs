@@ -1,6 +1,6 @@
 /** Profile the actual figure clipboard path across frames, including UI listeners. */
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 

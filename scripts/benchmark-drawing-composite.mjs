@@ -1,4 +1,4 @@
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const output=process.env.STYK_COMPOSITE_BENCHMARK||'artifacts/drawing-worker-composite';await mkdir(output,{recursive:true});

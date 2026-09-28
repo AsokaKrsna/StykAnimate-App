@@ -8,7 +8,7 @@
  * dialog. Serve the repository (node scripts/serve.mjs --port 47832) and run
  * `node tests/export-sheet.browser.mjs`; STYK_URL overrides the address.
  */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {EXPORT_FIELD_IDS, EXPORT_ELEMENT_IDS} from '../src/export-request.mjs';

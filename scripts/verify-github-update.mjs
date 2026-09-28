@@ -1,6 +1,6 @@
 // Checks the real public feed and downloads its installer through electron-updater.
 // Only this test process reports an older version; nothing is installed.
-import { _electron as electron } from 'playwright';
+import { _electron as electron } from '../tests/support/playwright.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';

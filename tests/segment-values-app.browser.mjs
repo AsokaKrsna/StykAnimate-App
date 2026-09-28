@@ -1,5 +1,5 @@
 /** Root wiring for I over a Pivot handle and the actual canvas context menu. */
-import { chromium } from "playwright";
+import { chromium } from "./support/playwright.mjs";
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";

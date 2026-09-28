@@ -1,7 +1,7 @@
 /** Regression: a failing compatibility raster must degrade its object instead of
  * aborting the scene build, and a failed build must draw the stale layout rather
  * than retry the same doomed work on every frame. Runs the real WebGPU path. */
-import { _electron as electron, chromium } from 'playwright';
+import { _electron as electron, chromium } from './support/playwright.mjs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

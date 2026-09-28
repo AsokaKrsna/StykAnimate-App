@@ -1,5 +1,5 @@
 /** Large native range through the actual app's retained worker planner. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';

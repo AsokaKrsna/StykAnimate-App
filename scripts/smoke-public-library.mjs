@@ -2,7 +2,7 @@
 // catalogue (build it first: node scripts/build-public-library.mjs). Browses
 // the Public library, inserts with one undo step, saves into My library, opens
 // a stykanimate://library link and drags a card onto the canvas.
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from '../tests/support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';

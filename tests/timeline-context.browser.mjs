@@ -1,4 +1,4 @@
-import {chromium} from 'playwright';import assert from 'node:assert/strict';import {mkdir} from 'node:fs/promises';
+import {chromium} from './support/playwright.mjs';import assert from 'node:assert/strict';import {mkdir} from 'node:fs/promises';
 const out='artifacts/timeline-context';await mkdir(out,{recursive:true});const b=await chromium.launch({channel:'chrome',headless:true}),p=await b.newPage({viewport:{width:1440,height:900}}),errors=[];p.on('pageerror',e=>errors.push(e.message));const settle=()=>p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
 try{
 await p.goto('http://127.0.0.1:47831');await p.waitForFunction(()=>window.styk?.ready);

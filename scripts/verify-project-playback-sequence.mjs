@@ -1,6 +1,6 @@
 /** Compare retained, evicted and staged GPU frames from real parallel workers
  * with independently evaluated frames and the pre-pooling renderer. Read only. */
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import {createRequire} from 'node:module';
 import {mkdir,readFile,readdir,writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';

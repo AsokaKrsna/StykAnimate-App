@@ -1,5 +1,5 @@
 /** Real Electron input, cold/warm seeks and GPU completion. Input files are read-only. */
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from '../tests/support/playwright.mjs';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
 import path from 'node:path';

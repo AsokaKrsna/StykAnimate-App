@@ -1,5 +1,5 @@
 /** Actual imported Akane edit commits, app routing, and ACK-to-ready worker timing. */
-import {_electron as electron, chromium} from 'playwright';
+import {_electron as electron, chromium} from './support/playwright.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 const profileEnabled = process.env.STYK_PATCH_PROFILE === '1';

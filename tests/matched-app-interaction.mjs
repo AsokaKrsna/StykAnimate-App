@@ -8,7 +8,7 @@
  * second import retains that same process, importer worker and backend source cache.
  * OS file/shader caches are uncontrolled. Original source bytes are never written.
  */
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {mkdir, readdir, readFile, writeFile} from 'node:fs/promises';

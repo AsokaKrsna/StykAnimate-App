@@ -1,5 +1,5 @@
 /** Bounded A/B telemetry overhead evidence. Synthetic scene, isolated profile, loopback uploads only. */
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from '../tests/support/playwright.mjs';
 import {createServer} from 'node:http';
 import {mkdir,mkdtemp,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';

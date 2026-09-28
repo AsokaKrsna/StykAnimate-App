@@ -1,4 +1,4 @@
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import {mkdir, writeFile} from 'node:fs/promises';

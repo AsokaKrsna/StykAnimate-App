@@ -1,5 +1,5 @@
 /** Real pointer, preference and timeline acceptance for figure selection controls. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 const out='artifacts/selection-workflow'; await mkdir(out,{recursive:true});

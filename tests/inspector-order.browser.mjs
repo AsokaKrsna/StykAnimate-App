@@ -1,7 +1,7 @@
 /** Properties quick actions on nodes and branches, including attached figures. */
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import backendTools from '../desktop/backend.cjs';
 
 const backend = await backendTools.startBackend({appRoot: process.cwd()});

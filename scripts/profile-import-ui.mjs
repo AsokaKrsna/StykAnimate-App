@@ -1,4 +1,4 @@
-import { chromium } from 'playwright';
+import { chromium } from '../tests/support/playwright.mjs';
 import { createRequire } from 'node:module';
 import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';

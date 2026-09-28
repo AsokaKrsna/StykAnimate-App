@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import backend from '../desktop/backend.cjs';
 const service = process.env.STYK_URL ? null : await backend.startBackend({appRoot:process.cwd()});
 const out=path.resolve('artifacts');await mkdir(out,{recursive:true});

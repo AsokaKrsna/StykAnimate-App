@@ -1,5 +1,5 @@
 /** Real-scene command CPU/paint profile. Never writes the input project. */
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {mkdir, writeFile} from 'node:fs/promises';

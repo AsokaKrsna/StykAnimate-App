@@ -1,5 +1,5 @@
 /** Real Camera action, worker/native PIV export, source assets and GPU pixels. */
-import { chromium } from "playwright";
+import { chromium } from "./support/playwright.mjs";
 import {exportEditable} from './helpers/editable-export.mjs';
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";

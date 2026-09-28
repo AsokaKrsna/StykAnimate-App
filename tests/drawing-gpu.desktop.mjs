@@ -1,7 +1,7 @@
 // Desktop (Electron) check of GPU drawing: the packaged runtime's Chromium
 // must provide GPU residency and the GPU brush, commit strokes without the
 // worker fallback, and present live ink within a frame or two of input.
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';

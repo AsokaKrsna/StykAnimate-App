@@ -1,7 +1,7 @@
 /** Compatibility rendering during gestures: layered frames match full repaints,
  * layers are reused while posing, moving and panning, and a scene larger than
  * the raster budget no longer re-rasterizes every figure on each repaint. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 
 const browser = await chromium.launch({channel: 'chrome', headless: true});

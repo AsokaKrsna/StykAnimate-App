@@ -1,6 +1,6 @@
 // Real app regression probe: node scripts/verify-imported-playback.mjs animation.piv layered.styk
 // Uses a running local server. Source documents are read without modification.
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';

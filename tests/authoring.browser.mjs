@@ -1,6 +1,6 @@
 import {readNativeDocument} from '../scripts/read-native-document.mjs';
 /** Bounded application authoring flows. Requires the local app at STYK_URL. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';

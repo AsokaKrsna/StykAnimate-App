@@ -1,5 +1,5 @@
 /** Real worker snapshots, binary fidelity, cancellation, and UI responsiveness. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {createRequire} from 'node:module';
 import {readFile, writeFile, mkdir} from 'node:fs/promises';
 import {createHash} from 'node:crypto';

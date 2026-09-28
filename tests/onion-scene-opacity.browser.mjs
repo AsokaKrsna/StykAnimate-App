@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 await mkdir('artifacts/onion-scene-opacity',{recursive:true});
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{

@@ -1,5 +1,5 @@
 /** Real browser workers and HTTP cancellation, both direct and desktop-proxied. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {writeFile,mkdir} from 'node:fs/promises';
 import backend from '../desktop/backend.cjs';

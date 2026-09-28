@@ -1,5 +1,5 @@
 /** Actual imported scene, live editor commands, incremental GPU timing and fresh-render equality. */
-import { chromium } from 'playwright';
+import { chromium } from './support/playwright.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 const root = process.cwd(), source = process.argv[2] || 'C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv';

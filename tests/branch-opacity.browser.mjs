@@ -1,5 +1,5 @@
 import {readNativeDocument} from '../scripts/read-native-document.mjs';
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';

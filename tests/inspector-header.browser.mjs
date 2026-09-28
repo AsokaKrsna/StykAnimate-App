@@ -2,7 +2,7 @@
 // scope line while Edit together reaches beyond the frame, the selection's quick actions from the command registry,
 // renaming in place, and titled sections that remember being open.
 //   STYK_URL=http://127.0.0.1:47831 node tests/inspector-header.browser.mjs
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 
 const browser = await chromium.launch({channel: 'chrome', headless: true});

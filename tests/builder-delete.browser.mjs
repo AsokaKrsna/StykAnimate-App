@@ -1,4 +1,4 @@
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {builderFixture} from '../scripts/builder-benchmark-fixture.mjs';
 const browser=await chromium.launch({channel:'chrome',headless:true});

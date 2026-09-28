@@ -2,7 +2,7 @@
 // (Split, Duplicate, Flip H, Flip V, Delete; Shift reaches the branch), its ⋯ menu (Exact values, Set as origin,
 // Appearance, Arrange ▸, Branch ▸, Rig ▸, Attach image, Remove joint, Delete part), the Edit joints tool's options
 // in the stage header (Drag, Whole branch) and Build's labelled view toggles (Handles, Highlight, Isolate).
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 const browser=await chromium.launch({channel:'chrome',headless:true});

@@ -1,5 +1,5 @@
 /** Read-only source-file probe; measures the real app before/after a GPU reset. */
-import {chromium, _electron as electron} from 'playwright';
+import {chromium, _electron as electron} from '../tests/support/playwright.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 const source = process.argv[2];

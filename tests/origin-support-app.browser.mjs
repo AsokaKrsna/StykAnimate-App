@@ -1,5 +1,5 @@
 /** Actual Rig Delete/Unsplit + editable STYK/native PIV save/reopen pixels. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';

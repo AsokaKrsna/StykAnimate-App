@@ -1,5 +1,5 @@
 /** Paired renderer measurements on identical inputs; no user project is opened. */
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';

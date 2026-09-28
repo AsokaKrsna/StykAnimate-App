@@ -1,6 +1,6 @@
 // Usage: node scripts/benchmark-spatial-posing.browser.mjs <served-document.json> <IK-joint-name>
 // The document is loaded locally through STYK_URL; no project data leaves the app.
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 const [fixture, joint] = process.argv.slice(2);
 if (!fixture || !joint) throw new Error('Provide a served JSON document path and the name of its IK joint.');
 const browser = await chromium.launch({channel:'chrome', headless:true});

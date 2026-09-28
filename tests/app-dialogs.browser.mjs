@@ -6,7 +6,7 @@
  * Serve the repository (node scripts/serve.mjs --port 47832) and run
  * `node tests/app-dialogs.browser.mjs`; STYK_URL overrides the address.
  */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 
 const base = process.env.STYK_URL || 'http://127.0.0.1:47832';

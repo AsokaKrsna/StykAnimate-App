@@ -1,4 +1,4 @@
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 const output=process.env.STYK_PREPARATION_ARTIFACTS||'artifacts/drawing-preparation';await mkdir(output,{recursive:true});

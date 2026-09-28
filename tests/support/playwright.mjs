@@ -1,0 +1,91 @@
+// The one place browser and Electron launch policy lives.
+//
+// Test and profiling scripts import `chromium` and `_electron` from here instead
+// of from 'playwright', and keep calling `chromium.launch({channel: 'chrome',
+// headless: true})` exactly as before. This module makes that call work on every
+// machine the project is developed on:
+//
+//  - Google Chrome is used when it is installed (the Windows developer and CI
+//    setup, unchanged). When it is not (a typical Linux machine, a clean CI
+//    image) the browser Playwright downloads is used instead.
+//  - On Linux, headless Chromium needs Vulkan and the WebGPU opt-in to reach a
+//    GPU; the same switches the desktop app applies (desktop/gpu-switches.cjs).
+//  - Electron launches never inherit ELECTRON_RUN_AS_NODE. Terminals started by
+//    another Electron app (VS Code, several agent hosts) export it, and Electron
+//    then runs main.cjs as plain Node where `app` is undefined.
+//
+// Overrides: STYK_BROWSER_PATH (executable), STYK_BROWSER_CHANNEL (for example
+// "chromium" or "chrome-beta"), STYK_BROWSER_GPU=0 (add no GPU switches).
+import { existsSync } from 'node:fs';
+import * as playwright from 'playwright';
+
+export * from 'playwright';
+
+export const LINUX_WEBGPU_ARGS = ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan'];
+
+/** Adds the Linux GPU switches, merging any --enable-features the caller passed. */
+export function chromiumArguments(args = [], { platform = process.platform, env = process.env } = {}) {
+  if (platform !== 'linux' || env.STYK_BROWSER_GPU === '0') return [...args];
+  const merged = [...args];
+  for (const arg of LINUX_WEBGPU_ARGS) {
+    const [name, value] = arg.split('=');
+    if (name !== '--enable-features') { if (!merged.includes(arg)) merged.push(arg); continue; }
+    const index = merged.findIndex((item) => item.startsWith('--enable-features='));
+    if (index < 0) { merged.push(arg); continue; }
+    const features = new Set(merged[index].slice('--enable-features='.length).split(',').filter(Boolean));
+    for (const feature of value.split(',')) features.add(feature);
+    merged[index] = `--enable-features=${[...features].join(',')}`;
+  }
+  return merged;
+}
+
+export function isMissingBrowser(error) {
+  return /distribution '.+' is not found|Executable doesn't exist|browserType\.launch: .*(not found|ENOENT)/i.test(String(error?.message ?? error));
+}
+
+export function electronEnvironment(env = process.env) {
+  const { ELECTRON_RUN_AS_NODE: _ignored, ...clean } = env;
+  return clean;
+}
+
+/**
+ * Launch with the requested browser; if that browser is not installed, retry
+ * with the one Playwright downloads. `browserType` is injectable for tests.
+ */
+export async function launchChromium(options = {}, { browserType = playwright.chromium, platform = process.platform, env = process.env, exists = existsSync } = {}) {
+  const requested = { ...options, args: chromiumArguments(options.args, { platform, env }) };
+  if (env.STYK_BROWSER_PATH) { requested.executablePath = env.STYK_BROWSER_PATH; delete requested.channel; }
+  else if (env.STYK_BROWSER_CHANNEL) { requested.channel = env.STYK_BROWSER_CHANNEL; delete requested.executablePath; }
+  if (requested.executablePath && !exists(requested.executablePath)) delete requested.executablePath;
+  try {
+    return await browserType.launch(requested);
+  } catch (error) {
+    const channelled = requested.channel || options.executablePath || options.channel;
+    if (!isMissingBrowser(error) || !channelled || requested.channel === 'chromium') throw error;
+    const { channel: _channel, executablePath: _path, ...rest } = requested;
+    try {
+      // "chromium" is the full browser Playwright installs, which supports
+      // WebGPU headlessly; the default headless shell does not.
+      return await browserType.launch({ ...rest, channel: 'chromium' });
+    } catch (fallbackError) {
+      if (isMissingBrowser(fallbackError)) fallbackError.message += '\nInstall a browser for the tests: npx playwright install chromium';
+      throw fallbackError;
+    }
+  }
+}
+
+export const chromium = new Proxy(playwright.chromium, {
+  get(target, property) {
+    if (property === 'launch') return (options) => launchChromium(options);
+    const value = Reflect.get(target, property, target);
+    return typeof value === 'function' ? value.bind(target) : value;
+  },
+});
+
+export const _electron = new Proxy(playwright._electron, {
+  get(target, property) {
+    if (property === 'launch') return (options = {}) => target.launch({ ...options, env: electronEnvironment(options.env ?? process.env) });
+    const value = Reflect.get(target, property, target);
+    return typeof value === 'function' ? value.bind(target) : value;
+  },
+});

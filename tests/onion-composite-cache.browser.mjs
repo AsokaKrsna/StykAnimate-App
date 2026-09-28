@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import backend from '../desktop/backend.cjs';
 
 const server=await backend.startBackend({appRoot:process.cwd()});

@@ -1,6 +1,6 @@
 /** Actual Electron export, source hashes, decoded frame counts and process memory.
  * Run before/after with unchanged source and identical STYK_BENCH_CASES/TICKS. */
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from '../tests/support/playwright.mjs';
 import {mkdir, readFile, writeFile, stat} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';

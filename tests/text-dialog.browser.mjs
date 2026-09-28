@@ -1,5 +1,5 @@
 /** Isolated actual UI tests: the same dialog module, browser worker, font parser and canvas paths. */
-import { chromium } from "playwright";
+import { chromium } from "./support/playwright.mjs";
 import assert from "node:assert/strict";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";

@@ -1,5 +1,5 @@
 /** Repeated export alongside a live WebGPU editor, including real device loss. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';

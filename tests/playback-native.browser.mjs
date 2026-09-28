@@ -1,5 +1,5 @@
 /** Real browser workers: compare GPU input arrays and raster pixels, not timings. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import path from 'node:path';

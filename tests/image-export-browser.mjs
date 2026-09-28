@@ -1,5 +1,5 @@
 /** Verify animated image pixels/timing, ZIP entries/CRCs, and cancellation. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {createRequire} from 'node:module';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';

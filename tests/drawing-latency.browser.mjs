@@ -5,7 +5,7 @@
 // samples; a sample is visible once its dab centre shows the brush colour.
 // Latency is measured from the event timestamp to the render that first shows
 // it. Display scanout and physical pen latency are outside this measurement.
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 

@@ -1,4 +1,4 @@
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{

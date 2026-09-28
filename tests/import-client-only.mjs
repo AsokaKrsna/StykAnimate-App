@@ -1,5 +1,5 @@
 /** Isolated file transport timings; deliberately excludes editor/renderer work. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';

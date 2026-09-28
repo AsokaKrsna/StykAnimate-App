@@ -1,5 +1,5 @@
 /** Real export worker, native PIV encode/decode, and Canvas pixel comparisons. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {createRequire} from 'node:module';
 import {mkdir, writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';

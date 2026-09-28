@@ -1,4 +1,4 @@
-import { _electron as electron } from 'playwright';
+import { _electron as electron } from '../tests/support/playwright.mjs';
 import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';

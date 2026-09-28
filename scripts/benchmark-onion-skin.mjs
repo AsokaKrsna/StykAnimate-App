@@ -1,5 +1,5 @@
 /** Repeatable onion-on/off CPU and GPU-work counters on a layered, joined scene. */
-import {chromium} from 'playwright';
+import {chromium} from '../tests/support/playwright.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 

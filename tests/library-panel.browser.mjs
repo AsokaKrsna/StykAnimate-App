@@ -1,4 +1,4 @@
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 // Library panel states with stand-ins for the desktop library and public
 // library APIs: the web explanation, both sources, filtering, recovering from

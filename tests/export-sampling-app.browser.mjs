@@ -1,5 +1,5 @@
 /** Root UI wiring: modes, working-pose versus stored frames, vectors and cancel. */
-import { chromium } from "playwright";
+import { chromium } from "./support/playwright.mjs";
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";

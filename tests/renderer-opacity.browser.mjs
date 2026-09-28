@@ -1,6 +1,6 @@
 /** Compare the optimized renderer with the pre-change renderer and native
  * Canvas painter. Accepts any PIV and optional ticks; never saves the input. */
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from './support/playwright.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';

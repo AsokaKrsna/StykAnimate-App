@@ -1,7 +1,7 @@
 /** Isolated diagnostic of the same packet compiler used by the playback worker.
  * The compiler runs on the page for CPU profiling; use the playback benchmark
  * for actual presentation rates. Input projects are never saved or modified. */
-import {_electron as electron} from 'playwright';
+import {_electron as electron} from '../tests/support/playwright.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 

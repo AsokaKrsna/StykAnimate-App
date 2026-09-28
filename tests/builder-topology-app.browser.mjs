@@ -1,5 +1,5 @@
 /** Native builder buttons/keyboard plus selected styled native export in the real app. */
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import {createRequire} from 'node:module';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';

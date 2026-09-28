@@ -1,4 +1,4 @@
-import {chromium} from 'playwright';
+import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 // Drawing-tablet behaviour with real pen pointer events (CDP pointerType "pen"):
 // tap slop, pen drags, wheel-free zoom and rotate, and press-and-hold menus.
