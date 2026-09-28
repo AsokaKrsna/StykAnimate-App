@@ -165,6 +165,9 @@ struct VertexOut { @builtin(position) position: vec4f, @location(0) local: vec2f
   if (kind == 4 || kind == 8 || kind == 9) {
     var uv = input.uv;
     if (kind == 8) { uv = (input.local - shape.gradient.xy) * shape.gradient.zw; }
+    // Pooled artwork uses the top-left of a larger texture: scale, then clamp
+    // to the last used texel centre so unused texels never filter in.
+    if (kind == 4 && shape.gradient.z > 0.0) { uv = min(uv * shape.gradient.zw, shape.gradient.xy); }
     let texel = textureSampleLevel(imageTexture, imageSampler, clamp(uv, vec2f(0), vec2f(1)), 0.0);
     // copyExternalImageToTexture uses premultiplied textures; preserve that convention.
     return texel * (color.a * transform.z);
@@ -547,6 +550,8 @@ class WebGPURenderer {
     // Raster artwork keeps its original antialiasing when the viewport changes
     // MSAA level; the pipeline and sample count are an immutable pair.
     this.isolationPipeline = this.pipeline; this.isolationSamples = this.msaaCount;
+    // Analytic-coverage groups need no multisampled scratch; see analyticCoverage().
+    this.isolationSinglePipeline = this.msaaCount > 1 ? await startup.wait(this.createVectorPipeline(1)) : this.pipeline;
     this.uniform = d.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.handleRenderer = new HandleRenderer(d,this.uniform);
     await startup.wait(this.handleRenderer.initialize(this.format, this.msaaCount));
@@ -1395,7 +1400,7 @@ async function prepareSceneUpdate(renderer, request) {
   try {
     check();
     stage=new WebGPURenderer(renderer.canvas,renderer.device,renderer.context,renderer.format,{...renderer.options,onInvalidate:undefined,onStatus:undefined});
-    for(const key of ['pipeline','isolationPipeline','isolationSamples','globalLayout','textureLayout','uniform','sampler','nearestSampler','blankBindGroup','resources','rasterCache','vectorCache','compatibilityCache','artworks','artworkAliases','boundsCache'])stage[key]=renderer[key];
+    for(const key of ['pipeline','isolationPipeline','isolationSamples','isolationSinglePipeline','globalLayout','textureLayout','uniform','sampler','nearestSampler','blankBindGroup','resources','rasterCache','vectorCache','compatibilityCache','artworks','artworkAliases','boundsCache'])stage[key]=renderer[key];
     // Planning records drawing transforms but does not upload or own GPU tiles.
     // Keep the live tile backend and viewport so held cels never prepare an
     // empty scratch against an undefined viewport.
@@ -1478,7 +1483,7 @@ async function prepareInitialScene(renderer, request) {
       stage = new WebGPURenderer(renderer.canvas, renderer.device, renderer.context, renderer.format, {
         ...renderer.options, resources: media.resources, onInvalidate: undefined, onStatus: undefined,
       });
-      for (const key of ['pipeline', 'isolationPipeline', 'isolationSamples', 'globalLayout', 'textureLayout', 'uniform', 'sampler', 'nearestSampler', 'blankBindGroup']) stage[key] = renderer[key];
+      for (const key of ['pipeline', 'isolationPipeline', 'isolationSamples', 'isolationSinglePipeline', 'globalLayout', 'textureLayout', 'uniform', 'sampler', 'nearestSampler', 'blankBindGroup']) stage[key] = renderer[key];
       stage.activeReport = report;
       for (;;) {
         stage.dpr = renderer.dpr;stage.width = renderer.width;stage.height = renderer.height;

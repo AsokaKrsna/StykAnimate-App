@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PreparedFrameCache, combinePreparedCommands } from '../src/prepared-frames.mjs';
+import { PreparedFrameCache, combinePreparedCommands, textureBucket } from '../src/prepared-frames.mjs';
 import { SHAPE, shapeRecord } from '../src/renderer-geometry.mjs';
 
 globalThis.GPUBufferUsage = { STORAGE: 128, COPY_DST: 8 };
@@ -197,6 +197,40 @@ test('isolated vector textures share GPU ownership and warmup cannot evict the f
   assert.equal(renderer.textures[1].destroyed,true);assert.equal(cache.canWarm(vector(2),{report}),false);
   assert.equal(cache.has('1:0'),true);cache.clear();assert.equal(cache.bytes,0);
   assert.ok(renderer.textures.every(t=>t.destroyed));assert.ok(renderer.buffers.every(b=>b.destroyed));
+});
+
+test('animated artwork reuses bucketed textures and samples only their used region',()=>{
+  assert.deepEqual([64,65,100,317,428,910,1201,4096].map(textureBucket),[64,80,112,320,448,1024,1280,4096]);
+  const renderer=textureRenderer(),cache=new PreparedFrameCache(renderer,{maxBytes:64*1024*1024,maxFrames:1});
+  cache.maxTexturePoolBytes=64*1024*1024;
+  // Growing artwork, as in an afterimage trail: every tick has a new exact size.
+  for(let tick=0;tick<12;tick++){
+    const next=imagePacket(tick,`trail:${tick}`);next.compatibility[0].bitmap={width:300+tick,height:400+2*tick};
+    next.shapes=new Float32Array(shapeRecord({a:[0,0,300,400],mode:SHAPE.TEXTURE,transform:1}));
+    cache.prepare(next,{report});
+    const frame=cache.frames.get(next.key),resource=frame.ownedTextures.find(r=>r.key.endsWith(`trail:${tick}`));
+    assert.equal(resource.width,300+tick);assert.ok(resource.poolW>=resource.width&&resource.poolH>=resource.height);
+    const record=renderer.writes.findLast(([buffer])=>buffer===frame.shapeBuffer)[2].subarray(0,24);
+    assert.equal(record[20],SHAPE.TEXTURE);
+    assert.deepEqual([...record.subarray(16,20)].map(v=>+v.toFixed(5)),[(resource.width-.5)/resource.poolW,(resource.height-.5)/resource.poolH,
+      resource.width/resource.poolW,resource.height/resource.poolH].map(v=>+Math.fround(v).toFixed(5)));
+  }
+  assert.equal(renderer.textures.length,1,'a trail of new sizes recycles instead of allocating a texture per tick');
+  assert.equal(cache.stats.pooledTextures,11);cache.clear();assert.ok(renderer.textures.every(t=>t.destroyed));
+});
+
+test('analytic-coverage isolation rasters skip multisampled scratch',()=>{
+  const renderer=textureRenderer(),createTexture=renderer.device.createTexture;
+  renderer.device.createTexture=spec=>Object.assign(createTexture(spec),{createView(){return {};}});
+  Object.assign(renderer,{isolationSamples:4,isolationPipeline:{},isolationSinglePipeline:{},format:'bgra8unorm'});renderer.device.limits.maxTextureDimension2D=4096;
+  const vector=(tick,mode)=>{const p=imagePacket(tick,`vector:${tick}`);p.compatibility=[{artworkKey:`vector:${tick}`,vectorRaster:{data:new Float32Array(shapeRecord({mode})),width:100,height:100},
+    root:{x:0,y:0},bounds:{x:0,y:0,width:100,height:100},pixelScale:1}];return p;};
+  const cache=new PreparedFrameCache(renderer,{maxBytes:8*1024*1024,maxFrames:4});
+  cache.prepare(vector(0,SHAPE.LINE),{report});cache.prepare(vector(1,SHAPE.CIRCLE),{report});
+  assert.equal(renderer.textures.filter(t=>t.sampleCount>1).length,0);
+  cache.prepare(vector(2,SHAPE.TRIANGLE),{report});
+  assert.equal(renderer.textures.filter(t=>t.sampleCount===4).length,1,'filled triangles keep multisampled edges');
+  cache.clear();assert.ok(renderer.textures.every(t=>t.destroyed));
 });
 
 function backgroundDescriptor(renderer, cacheKey = 'background-paint:one', bytes = 400) {

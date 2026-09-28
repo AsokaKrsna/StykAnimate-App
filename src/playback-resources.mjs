@@ -50,11 +50,13 @@ export class PlaybackResources extends ImageResources {
       drawingBytes: this.drawingProvider.bytes, tintBytes};
   }
   rasterSurface(width,height,{hasImages=false}={}) {
-    // Small path surfaces avoid GPU-service stalls. Large fills need GPU
-    // throughput; image surfaces also avoid reading accelerated sources back.
-    // CPU and accelerated Skia differ in antialiased coverage, so routing must
-    // stay fixed for pixel parity.
-    return !hasImages && width*height<=512*512 ? this.pathRasterSurfaces : this.rasterSurfaces;
+    // Accelerated worker canvases all flush through the single GPU-service
+    // thread that also presents frames; on integrated GPUs large path flushes
+    // stalled playback for 100+ ms. CPU surfaces rasterize in parallel on the
+    // worker threads instead. Image surfaces stay accelerated to avoid reading
+    // accelerated sources back. Routing depends only on content, never size,
+    // so an object keeps the same antialiasing as it grows or shrinks.
+    return hasImages ? this.rasterSurfaces : this.pathRasterSurfaces;
   }
   async preload(items, options = {}) {
     this.check();

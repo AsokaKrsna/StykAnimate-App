@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { PlaybackResources } from '../src/playback-resources.mjs';
 import { previewPNG } from './preview-png-fixture.mjs';
 
-test('preview raster routing bounds CPU fills and keeps image and export acceleration',()=>{
+test('preview path fills rasterize on worker CPUs at every size; images and exports stay accelerated',()=>{
   const preview=new PlaybackResources({preview:true}),original=new PlaybackResources();
   try {
     assert.notEqual(preview.pathRasterSurfaces,preview.rasterSurfaces);
     assert.equal(preview.rasterSurface(512,512),preview.pathRasterSurfaces);
-    assert.equal(preview.rasterSurface(513,512),preview.rasterSurfaces);
+    assert.equal(preview.rasterSurface(4096,2048),preview.pathRasterSurfaces,'size never changes the antialiasing route');
     assert.equal(preview.rasterSurface(20,20,{hasImages:true}),preview.rasterSurfaces);
     assert.equal(original.rasterSurface(20,20),original.rasterSurfaces);
   }finally{preview.dispose();original.dispose();}

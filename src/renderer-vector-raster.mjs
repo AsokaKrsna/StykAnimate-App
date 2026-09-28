@@ -10,6 +10,18 @@ export function supportsVectorIsolation(items, resolution) {
   });
 }
 
+/** Lines, square-ended lines and circles compute their own antialiased
+ * coverage in the fragment shader, and their quads extend past that coverage.
+ * Multisampling such a group only allocates and resolves identical samples;
+ * triangles, rectangles and textures still need their multisampled edges. */
+export function analyticCoverage(data) {
+  for (let i = SHAPE_FLOATS - 4; i < data.length; i += SHAPE_FLOATS) {
+    const kind = data[i];
+    if (kind !== 0 && kind !== 1 && kind !== 2 && kind !== -1) return false;
+  }
+  return true;
+}
+
 /** Composite an opaque vector group before applying its figure opacity. The
  * result has the same lifetime as any other cached compatibility texture. */
 export function rasterizeVectorGroup(renderer, spec) {
@@ -51,10 +63,11 @@ export function encodeVectorRaster(renderer, encoder, {data, width, height, pixe
   try {
     texture = target?.texture ?? device.createTexture({label: 'Isolated vector artwork', size: [targetWidth, targetHeight], format: renderer.format,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC});
-    const samples = renderer.isolationSamples;
+    const single = Boolean(renderer.isolationSinglePipeline) && analyticCoverage(data);
+    const samples = single ? 1 : renderer.isolationSamples;
     if (!msaa && samples > 1) ownedMsaa = device.createTexture({label: 'Isolated vector antialiasing', size: [targetWidth, targetHeight], sampleCount: samples,
       format: renderer.format, usage: GPUTextureUsage.RENDER_ATTACHMENT});
-    const antialias = msaa || ownedMsaa;
+    const antialias = single ? null : msaa || ownedMsaa;
     uniform = scratch?.uniform.pop() ?? device.createBuffer({size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
     shapes = scratch?.shapes.get(scratchKey)?.pop() ?? device.createBuffer({size: scratchKey, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST});
     transforms = scratch?.transforms.pop() ?? device.createBuffer({size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST});
@@ -67,7 +80,7 @@ export function encodeVectorRaster(renderer, encoder, {data, width, height, pixe
       {binding: 0, resource: {buffer: uniform}}, {binding: 1, resource: {buffer: shapes}}, {binding: 2, resource: {buffer: transforms}}]});
     const pass = encoder.beginRenderPass({colorAttachments: [{view: (antialias || texture).createView(),
       ...(antialias ? {resolveTarget: texture.createView()} : {}), clearValue: {r: 0, g: 0, b: 0, a: 0}, loadOp: 'clear', storeOp: antialias ? 'discard' : 'store'}]});
-    pass.setPipeline(renderer.isolationPipeline); pass.setBindGroup(0, bindings); pass.setBindGroup(1, renderer.blankBindGroup);
+    pass.setPipeline(single ? renderer.isolationSinglePipeline : renderer.isolationPipeline); pass.setBindGroup(0, bindings); pass.setBindGroup(1, renderer.blankBindGroup);
     pass.draw(6, data.length / SHAPE_FLOATS); pass.end();
     const recycle = buffer => { if (buffer) buffer.destroy(); };
     const cleanup = scratch ? () => {

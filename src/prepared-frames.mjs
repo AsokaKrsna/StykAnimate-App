@@ -4,7 +4,7 @@ import {playbackMemoryBudget,playbackReuseMemoryPlan} from './playback-budget.mj
 import {EditorRasterCache} from './renderer-raster-cache.mjs';
 import {hasSceneVfx} from './vfx-viewport.mjs';
 import {rasterizeVectorVfx} from './renderer-vfx-vector.mjs';
-import {encodeVectorRaster} from './renderer-vector-raster.mjs';
+import {encodeVectorRaster,analyticCoverage} from './renderer-vector-raster.mjs';
 import {encodeMeshRaster,meshRasterBytes} from './renderer-mesh-raster.mjs';
 import {offsetGeneratorBatch,generatorSchedule,scheduleWalker} from './vfx-generator-frame.mjs';
 
@@ -55,11 +55,25 @@ export function encodePreparedCommands(renderer, pass, frame, {hiddenUids, dragT
   if (walker) { if (!begun) walker.begin(); walker.end(); }
 }
 
-/** Recycle exact-sized allocations only. Changing the physical texture size
- * changes filtering/coverage rounding even when the UV rectangle is corrected. */
+/** Animated artwork changes size every tick, so exact-size recycling almost
+ * never hits and each frame allocated fresh textures on the shared GPU process.
+ * Poolable artwork occupies the top-left of a bucketed allocation (at most a
+ * quarter larger per axis); its record samples only that region, clamped to
+ * the last texel centre, so filtering and coverage match an exact texture.
+ * Glyph masks and filtered VFX keep exact allocations; meshes recycle exact sizes. */
 const poolableEntry = entry => { const image = entryImage(entry);
   return Boolean(image?.width) && !entry.glyphMask && !entry.vfx && Math.max(image.width, image.height) >= 64; };
-const preparedEntryBytes = bitmapBytes;
+export const textureBucket = size => { const step = Math.max(16, 2 ** (Math.floor(Math.log2(Math.max(1, size))) - 2)); return Math.ceil(size / step) * step; };
+const allocationSize = entry => { const image = entryImage(entry);
+  return poolableEntry(entry) && !entry.meshRaster ? [textureBucket(image.width), textureBucket(image.height)] : [image.width, image.height]; };
+const preparedEntryBytes = entry => { if (!entryImage(entry)) return 0; const [width, height] = allocationSize(entry); return width * height * 4; };
+/** A texture record addresses [0,1]; a bucketed allocation maps that onto its
+ * used region. The gradient field is otherwise unused by texture records. */
+function scaleTextureRecord(data, offset, resource) {
+  const at = offset + 16;
+  data[at] = (resource.width - .5) / resource.poolW; data[at + 1] = (resource.height - .5) / resource.poolH;
+  data[at + 2] = resource.width / resource.poolW; data[at + 3] = resource.height / resource.poolH;
+}
 
 /** Owns only uploaded GPU resources. The playback controller owns packet/bitmap lifetime. */
 export class PreparedFrameCache {
@@ -124,10 +138,20 @@ export class PreparedFrameCache {
     for (const buffer of this.scratch.transforms) buffer.destroy(); this.scratch.transforms.length = 0;
     for (const list of this.scratch.shapes.values()) for (const buffer of list) buffer.destroy(); this.scratch.shapes.clear();
     Object.assign(this.stats,{msaaPoolBytes:0,scratchBytes:0,texturePoolBytes:0}); }
-  _pooledTexture(poolKey) {
-    const bucket = this.texturePool.get(poolKey);
+  /** Exact-size classes (meshes) match their key. Bucketed artwork takes the
+   * smallest free allocation of its class that fits within twice the area. */
+  _pooledTexture(poolKey, poolClass, width, height, bucketed) {
+    let key = poolKey;
+    if (bucketed && !this.texturePool.get(key)?.length) {
+      let best = Infinity; key = null;
+      for (const [candidate, bucket] of this.texturePool) {
+        const resource = bucket.at(-1), area = resource ? resource.poolW * resource.poolH : Infinity;
+        if (resource?.poolClass === poolClass && resource.poolW >= width && resource.poolH >= height && area <= width * height * 2 && area < best) {best = area; key = candidate;}
+      }
+    }
+    const bucket = key === null ? null : this.texturePool.get(key);
     const resource = bucket?.pop();
-    if (resource) this._unpool(poolKey, bucket, resource);
+    if (resource) this._unpool(key, bucket, resource);
     return resource;
   }
   _unpool(poolKey, bucket, resource) {
@@ -298,9 +322,9 @@ export class PreparedFrameCache {
             // targets use the renderer format; external uploads require COPY_DST
             // and RGBA. Keep both allocation contracts distinct during reuse.
             const poolClass=compatibility.vectorRaster||compatibility.meshRaster?`vector:${renderer.format}`:'bitmap:rgba8unorm';
-            const poolW=source.width,poolH=source.height,poolKey=`${poolClass}:${poolW}x${poolH}`;
-            const pooled=poolable?this._pooledTexture(poolKey):null;
-            if(pooled)this.stats.pooledTextures++;
+            let [poolW,poolH]=allocationSize(compatibility),poolKey=`${poolClass}:${poolW}x${poolH}`;
+            const pooled=poolable?this._pooledTexture(poolKey,poolClass,poolW,poolH,!compatibility.meshRaster):null;
+            if(pooled){this.stats.pooledTextures++;({poolW,poolH,poolKey}=pooled);}
             if (compatibility.meshRaster) {this.stats.meshRasters=(this.stats.meshRasters||0)+1;
               rasterBatch.encoder??=device.createCommandEncoder({label:`Prepared ${key} vector rasters`});
               let raster;
@@ -314,10 +338,10 @@ export class PreparedFrameCache {
                 let raster;
                 try{raster=encodeVectorRaster(renderer,rasterBatch.encoder,{...compatibility,...source,
                   target:{texture:pooled?.texture,bindGroup:pooled?.bindGroup,width:poolW,height:poolH},
-                  msaa:poolable?this._isolationMsaa(poolKey,poolW,poolH):undefined,viewport:[poolW,poolH],scratch:poolable?this.scratch:undefined});}
+                  msaa:poolable&&!(renderer.isolationSinglePipeline&&analyticCoverage(source.data))?this._isolationMsaa(poolKey,poolW,poolH):undefined,viewport:[poolW,poolH],scratch:poolable?this.scratch:undefined});}
                 catch(error){pooled?.texture.destroy();throw error;}
                 rasterBatch.cleanups.push(raster.cleanup);
-                rasterBatch.bytes+=poolW*poolH*4*Math.max(1,renderer.isolationSamples)+source.data.byteLength;
+                rasterBatch.bytes+=poolW*poolH*4*(renderer.isolationSinglePipeline&&analyticCoverage(source.data)?1:Math.max(1,renderer.isolationSamples))+source.data.byteLength;
                 resource={key:resourceKey,refs:0,texture:raster.texture,bindGroup:raster.bindGroup,width:raster.width,height:raster.height,bytes:raster.bytes,poolable,poolClass,poolKey,poolW,poolH};}}
             else {this.stats.bitmapUploads=(this.stats.bitmapUploads||0)+1;
             const texture = pooled?.texture ?? device.createTexture({ label: `Prepared ${key} object ${compatibility.uid}`, size: [poolW, poolH], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
@@ -367,6 +391,12 @@ export class PreparedFrameCache {
         }
       }
       flushRasterBatch();
+      for (const group of packet.groups) {
+        const resource = group.compatibilityIndex === undefined ? null : textures[group.compatibilityIndex];
+        if (!resource?.poolW || (resource.poolW === resource.width && resource.poolH === resource.height)) continue;
+        if (shapeData === packet.shapes) shapeData = packet.shapes.slice();
+        scaleTextureRecord(shapeData, group.firstInstance * SHAPE_FLOATS, resource);
+      }
       const generatorTargets = packet.generators ? new Set(packet.generators.draws.filter(draw => draw.uid !== null).map(draw => draw.uid)) : null;
       const { commands, backgroundCount } = combinePreparedCommands(backgrounds, packet.groups, textures, packet.uids, generatorTargets);
       const shapeBytes = Math.max(SHAPE_BYTES, shapeData.byteLength + backgroundCount * SHAPE_BYTES), transformBytes = packet.transforms.byteLength, bytes = shapeBytes + transformBytes + textureBytes;
