@@ -2763,10 +2763,16 @@ overlay.addEventListener(
       };
       return;
     }
+    if (e.button === 0 && e.altKey && hit.kind === 'origin' && !state.handleEditHeld &&
+        !builderMode?.active && ['select', 'pose'].includes(state.tool)) {
+      editor.select(hit.uid, -1, {add: isSelected(hit.uid)});
+      state.drag = {kind: 'duplicate-pending', hit, start: p, press: e, moved: false};
+      return;
+    }
     beginFigurePointerDrag(hit, p, e);
   }),
 );
-function beginFigurePointerDrag(hit, p, e) {
+function beginFigurePointerDrag(hit, p, e, {duplicate = false} = {}) {
   if(hit.g.segments[hit.joint]?.connector)editor._connectorInspector=null;
   const handleEdit = state.handleEditHeld;
   const figureTransform = e.altKey && hit.joint >= 0 && !handleEdit;
@@ -2780,7 +2786,12 @@ function beginFigurePointerDrag(hit, p, e) {
     return;
   }
   if (e.button === 2) state.suppressContext = true;
-  if (handleEdit) editor.beginHandleEditDrag({ bend: e.button === 2 });
+  if (duplicate) {
+    if (!editor.beginDuplicateDrag({pasteMode: state.settings.altDragDuplicate})) {
+      releaseCanvasPointer(); return;
+    }
+  }
+  else if (handleEdit) editor.beginHandleEditDrag({ bend: e.button === 2 });
   else if (figureTransform)
     editor.beginFigureHandleDrag(p.x, p.y, { rotate: true, scale: true, joint: hit.joint });
   else if (hit.joint >= 0 && state.tool === "rig") {
@@ -2807,6 +2818,7 @@ function beginFigurePointerDrag(hit, p, e) {
     root: { x: hit.g.obj.root_x, y: hit.g.obj.root_y },
     joint: hit.joint,
     moved: false,
+    duplicate,
   };
   if (state.drag.kind === "rig" && builderMode?.active) construction.beginRig();
   if (hit.joint < 0 && !handleEdit) {
@@ -2938,6 +2950,13 @@ const moveCanvasPointer = guarded((e) => {
       drag.pastSlop = true;
     }
     const p = worldPoint(e);
+    if (drag.kind === 'duplicate-pending') {
+      if (!beyondSlop(e, drag.press.clientX, drag.press.clientY, dragSlop(drag.press, 3))) return;
+      state.drag = null;
+      beginFigurePointerDrag(drag.hit, drag.start, drag.press, {duplicate: true});
+      drag = state.drag;
+      if (!drag) return;
+    }
     if (drag.kind === 'toggle-selection') {
       if (!beyondSlop(e, drag.press.clientX, drag.press.clientY, Math.max(3, dragSlop(drag.press)))) return;
       drag.moved = true;
@@ -3093,7 +3112,9 @@ function endDrag(event, {keepPointer = false} = {}) {
   if (!keepPointer) releaseCanvasPointer();
   if (!drag) return;
   viewport.classList.remove("dragging");
-  if (drag.kind === 'toggle-selection') {
+  if (drag.kind === 'duplicate-pending') {
+    // Alt-click selects the root without inserting a figure.
+  } else if (drag.kind === 'toggle-selection') {
     if (!drag.moved) editor.select(drag.hit.uid, -1, {toggle: true});
   } else if (drag.kind === 'tweener') {
     if (drag.press && drag.toggleUid !== null) editor.select(drag.toggleUid, -1, {toggle: true});
@@ -3139,7 +3160,7 @@ function endDrag(event, {keepPointer = false} = {}) {
   else if (!["pan", "maybe-bend", "zoom", "rotate"].includes(drag.kind)) {
     if (drag.kind === "move" && drag.moved) {
       const delta = drag.ikLive ? drag.delta : drag.translations.get(editor.selectedUid);
-      if (rangeFrames()) {
+      if (!drag.duplicate && rangeFrames()) {
         editor.cancelDrag();
         moveSelected(delta.x, delta.y, {movePins: drag.movePins});
       } else if (!drag.ikLive) editor.moveSelection(delta.x, delta.y, { fromStart: true, movePins: drag.movePins });
@@ -5293,7 +5314,7 @@ document.addEventListener('visibilitychange', () => {
 });
 editor.addEventListener("change", (e) => {
   const kind = e.detail?.kind;
-  if ((state.drag?.kind === 'toggle-selection' || state.drag?.kind === 'tweener' && state.drag.press) &&
+  if ((['toggle-selection', 'duplicate-pending'].includes(state.drag?.kind) || state.drag?.kind === 'tweener' && state.drag.press) &&
       ['document', 'seek', 'history', 'selection', 'edit'].includes(kind)) cancelDrag();
   if(['edit','history','document','preview','frame-draft'].includes(kind))playback.discardNativeSnapshot();
   const joining = state.figureJoin;

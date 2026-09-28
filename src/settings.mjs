@@ -27,6 +27,7 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   canvasZoomGesture: "ctrl-scroll",
   marqueeSelection: "origins",
   pasteDepth: "same",
+  altDragDuplicate: "instance",
   canvasGuideVertical: false,
   canvasGuideHorizontal: false,
   canvasGuidesLocked: false,
@@ -93,6 +94,8 @@ export function normalizeEditorSettings(value = {}) {
   if (['bounds', 'origins'].includes(value?.marqueeSelection))
     result.marqueeSelection = value.marqueeSelection;
   if (['same', 'front'].includes(value?.pasteDepth)) result.pasteDepth = value.pasteDepth;
+  if (['instance', 'unique'].includes(value?.altDragDuplicate))
+    result.altDragDuplicate = value.altDragDuplicate;
   if (value?.timelineMode === "simple" || value?.timelineMode === "advanced")
     result.timelineMode = value.timelineMode;
   for (const key of [
@@ -588,6 +591,8 @@ export class EditorSettings {
           this.select(say('settings.zoomGesture'), 'canvasZoomGesture', [['ctrl-scroll', say('settings.zoomCtrlScroll')], ['scroll', say('settings.zoomScroll')]])
           + this.select(say('settings.boxSelection'), 'marqueeSelection', [['bounds', say('settings.boxBounds')], ['origins', say('settings.boxOrigins')]]))
         + this.group('Pasting', this.select('Pasted figure depth', 'pasteDepth', [['same', 'Same Z-index (default)'], ['front', 'In front']], 'Choose whether pasted figures keep their copied depth or appear in front of other figures on the destination layer.'))
+        + this.group('Duplication',
+          this.select('Alt-drag a figure root', 'altDragDuplicate', [['instance', 'Linked instance'], ['unique', 'Independent copy']], 'Linked instances share figure edits made in Build. Independent copies have their own figure. Both can be posed and moved separately.'))
         + this.group(say('settings.jointHandles'),
           this.checkbox(say('settings.showHandles'), 'showHandles')
           + this.checkbox(say('settings.showUnselected'), 'showUnselectedHandles')

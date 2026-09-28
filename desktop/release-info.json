@@ -1,60 +1,55 @@
 {
   "version": "1.1.0",
-  "title": "Drawing layers and animation editing improvements",
+  "title": "Drawing layers and smoother editing",
   "notes": [
-    "Draw and animate on dedicated drawing layers backed by a sparse tiled raster engine timeline",
-    "Work more naturally with a drawing tablet: tapping a joint or figure with the pen no longer nudges it, holding the pen still no longer pops up the context menu (the barrel button still does), and Ctrl+Space or Shift+Space with a pen drag zooms, or rotates the Draw view, without a scroll wheel. Settings → Shortcuts lists the pen gestures.",
-    "Avoid rebuilding unchanged image textures when revisiting animation frames.",
-    "Reduce the delay before first playback of large, freshly imported Pivot animations.",
-    "Reduce playback memory for large animations by adjusting background preparation to available memory and releasing cancelled work during editing.",
-    "Avoid repeatedly repainting unchanged Advanced timeline frames while posing figures.",
-    "Reduce delays before the next file operation after cancelling an import or export.",
-    "Reduce the time needed to prepare images when opening a project.",
-    "Scale and rotate a multi-figure selection around the dragged figure's pivot like Pivot: Alt-drag now moves every selected figure's position toward or around the shared origin instead of resizing each figure in place, and Ctrl+Alt keeps rotating the group without scaling.",
-    "Make frame counts agree between the Simple timeline, the Advanced timeline and Export",
-    "Make onion skin settings compact",
-    "Make the audio timeline clearer",
-    "Add and edit effects more easily in the VFX panel",
-    "Show a ⇔ marker on scrubbable property labels and a hint in Transform sections that dragging a label adjusts its value, with Shift or Alt for finer steps.",
-    "Reduce lag and memory pressure when posing dense figures",
-    "Offer recovery and reopening when the desktop editor stops unexpectedly, instead of leaving a black window that cannot save or close normally.",
-    "Restore right-click bending on the canvas",
-    "Keep connected figures joined when using Break apart frame or Bake animation on a movieclip, so expanded figures stay attached to their parents instead of separating.",
-    "Apply movieclip Transform edits from the inspector: Scale, Angle, Opacity and Z-index fields now update the placed instance instead of leaving it unchanged."
+    "Drawing layers: draw and animate by hand on their own layers, right alongside your figures.",
+    "Better drawing tablet support: pen taps no longer nudge joints, holding the pen still no longer opens the right-click menu, and you can zoom or rotate the view with the pen.",
+    "Scaling and rotating several figures at once now works like in Pivot, around the figure you drag.",
+    "Frame counts now match between the Simple timeline, the Advanced timeline and Export.",
+    "More compact onion skin settings and a clearer audio timeline.",
+    "Adding and editing effects in the VFX panel is easier.",
+    "Property labels you can drag to change a value are now marked. Hold Shift or Alt for finer steps.",
+    "If the app stops unexpectedly, it now offers to recover your work instead of leaving a black window.",
+    "Fixed right-click bending on the canvas.",
+    "Fixed joined figures coming apart when breaking apart or baking a movieclip.",
+    "Fixed movieclip Scale, Angle, Opacity and Z-index fields in Properties having no effect.",
+    "Large animations open, play and edit faster and use less memory, especially freshly imported Pivot files.",
+    "Posing detailed figures is smoother.",
+    "Cancelling an import or export no longer delays the next one."
   ],
   "groups": [
     {
       "name": "Added",
       "notes": [
-        "Draw and animate on dedicated drawing layers backed by a sparse tiled raster engine timeline"
+        "Drawing layers: draw and animate by hand on their own layers, right alongside your figures."
       ]
     },
     {
       "name": "Changed",
       "notes": [
-        "Work more naturally with a drawing tablet: tapping a joint or figure with the pen no longer nudges it, holding the pen still no longer pops up the context menu (the barrel button still does), and Ctrl+Space or Shift+Space with a pen drag zooms, or rotates the Draw view, without a scroll wheel. Settings → Shortcuts lists the pen gestures.",
-        "Avoid rebuilding unchanged image textures when revisiting animation frames.",
-        "Reduce the delay before first playback of large, freshly imported Pivot animations.",
-        "Reduce playback memory for large animations by adjusting background preparation to available memory and releasing cancelled work during editing.",
-        "Avoid repeatedly repainting unchanged Advanced timeline frames while posing figures.",
-        "Reduce delays before the next file operation after cancelling an import or export.",
-        "Reduce the time needed to prepare images when opening a project.",
-        "Scale and rotate a multi-figure selection around the dragged figure's pivot like Pivot: Alt-drag now moves every selected figure's position toward or around the shared origin instead of resizing each figure in place, and Ctrl+Alt keeps rotating the group without scaling.",
-        "Make frame counts agree between the Simple timeline, the Advanced timeline and Export",
-        "Make onion skin settings compact",
-        "Make the audio timeline clearer",
-        "Add and edit effects more easily in the VFX panel",
-        "Show a ⇔ marker on scrubbable property labels and a hint in Transform sections that dragging a label adjusts its value, with Shift or Alt for finer steps."
+        "Better drawing tablet support: pen taps no longer nudge joints, holding the pen still no longer opens the right-click menu, and you can zoom or rotate the view with the pen.",
+        "Scaling and rotating several figures at once now works like in Pivot, around the figure you drag.",
+        "Frame counts now match between the Simple timeline, the Advanced timeline and Export.",
+        "More compact onion skin settings and a clearer audio timeline.",
+        "Adding and editing effects in the VFX panel is easier.",
+        "Property labels you can drag to change a value are now marked. Hold Shift or Alt for finer steps."
       ]
     },
     {
       "name": "Fixed",
       "notes": [
-        "Reduce lag and memory pressure when posing dense figures",
-        "Offer recovery and reopening when the desktop editor stops unexpectedly, instead of leaving a black window that cannot save or close normally.",
-        "Restore right-click bending on the canvas",
-        "Keep connected figures joined when using Break apart frame or Bake animation on a movieclip, so expanded figures stay attached to their parents instead of separating.",
-        "Apply movieclip Transform edits from the inspector: Scale, Angle, Opacity and Z-index fields now update the placed instance instead of leaving it unchanged."
+        "If the app stops unexpectedly, it now offers to recover your work instead of leaving a black window.",
+        "Fixed right-click bending on the canvas.",
+        "Fixed joined figures coming apart when breaking apart or baking a movieclip.",
+        "Fixed movieclip Scale, Angle, Opacity and Z-index fields in Properties having no effect."
+      ]
+    },
+    {
+      "name": "Performance",
+      "notes": [
+        "Large animations open, play and edit faster and use less memory, especially freshly imported Pivot files.",
+        "Posing detailed figures is smoother.",
+        "Cancelling an import or export no longer delays the next one."
       ]
     }
   ]

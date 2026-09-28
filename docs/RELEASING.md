@@ -6,7 +6,18 @@
 
 During development, put completed, user-relevant features and fixes in the single top `## [Unreleased]` section. These notes are public and written for people using the app. Omit private or internal-only changes, agent instructions, tests, refactors without observable effects, and build housekeeping. Keep necessary engineering context in internal documentation or commits; never expose private identifiers, paths, or diagnostic data in release notes.
 
-Before adding a bullet, read existing pending notes and the relevant history. Update an existing bullet when completing the same feature, grouping related work by user-visible outcome. Write a concise, natural sentence about what users can do or what problem is resolved. For example, write "Reduce pauses when editing complex animations" rather than listing cache and worker changes. Include technical detail only when it helps users understand compatibility, limitations, or required action. Omit plans, unsupported performance claims, and repetitive implementation detail; not every code change needs an entry.
+Before adding a bullet, read existing pending notes and the relevant history. Update an existing bullet when completing the same feature, grouping related work by user-visible outcome. Write a concise, natural sentence about what users can do or what problem is resolved. For example, write "Fewer pauses when editing complex animations" rather than listing cache and worker changes. Include technical detail only when it helps users understand compatibility, limitations, or required action. Omit plans, unsupported performance claims, and repetitive implementation detail; not every code change needs an entry.
+
+### Writing style
+
+Release notes should read like a polished consumer app's changelog, not a commit log.
+
+- One short sentence per bullet, two at most. Lead with the feature or the result: "Command palette: press Ctrl+P or F1 to find any command, setting, layer, figure or frame."
+- Added: name the new thing and what it lets people do. Changed: say what is different now. Fixed: "Fixed …" followed by the problem people saw, such as "Fixed error messages appearing behind open dialogs." Performance: the effect people notice, such as "Older Pivot animations open several times faster."
+- Mention a shortcut or where to find a feature at most. Do not walk through every button, option, color, edge case, or undo behavior; the app and the documentation cover that. When extending an existing entry, rewrite it to stay short instead of appending clauses.
+- Never mention internals: rendering, GPU, workers, caches, textures, memory budgets, engines, file-format internals, code names, tests, fixtures, or regressions in our own tooling. Say "Smoother playback", not how it was achieved.
+- Use correct grammar, sentence case, consistent spelling (color, not colour), and end every bullet with a period. Titles are short, plain phrases with no trailing period, and never all capitals.
+- Before a release, read the whole section from top to bottom as someone using the app would, then trim, merge, and reorder until it is easy to scan.
 
 Use `### Added`, `### Changed`, `### Fixed`, `### Performance`, `### Removed`, `### Security` in that order, omitting empty categories. Keep each bullet on one line, group related items, and put the most significant change first within a category. A release section has a unique `## [x.y.z]` heading, one plain-text title line, then its categories. Versions use numeric newest-first order, not lexical order. Only the top Unreleased section may be empty. Release headings identify the version being built; they do not themselves prove publication.
 

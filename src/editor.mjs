@@ -34,6 +34,7 @@ import {applyNativePropertyCommand} from './native-property-edit.mjs';
 import {editorCameraMethods} from './editor-camera.mjs';
 import {editorHandleEditMethods} from './editor-handle-edit.mjs';
 import {editorFigureTransformMethods} from './editor-figure-transform.mjs';
+import {editorDuplicateDragMethods} from './editor-duplicate-drag.mjs';
 import {editorRangeCommandMethods} from './editor-range-commands.mjs';
 import {editorSceneMethods} from './editor-scene.mjs';
 import {editorVfxMethods} from './editor-vfx.mjs';
@@ -625,6 +626,7 @@ export class Editor extends EventTarget {
       changedUids: this._drag?.before.map(o => o.unique_id) ?? [this.selectedUid]});
   }
   commitDrag() {
+    if (this._drag?.duplicate) return this.finishDuplicateDrag(true);
     if (this._drag?.motionPath) return this.commitMotionPathEdit();
     if (this._drag?.rig) return this.commitRigDrag();
     if (this._drag?.authored) return this.commitAuthoredPoseDrag();
@@ -656,6 +658,7 @@ export class Editor extends EventTarget {
     this._emit('edit', {label: drag.label, changedUids: [...ids]}); return true;
   }
   cancelDrag() {
+    if (this._drag?.duplicate) return this.finishDuplicateDrag(false);
     if (this._drag?.motionPath) return this.cancelMotionPathEdit();
     if (this._drag?.rig) return this.cancelRigDrag();
     if (this._drag?.authored) return this.cancelAuthoredPoseDrag();
@@ -925,9 +928,9 @@ export class Editor extends EventTarget {
     if (result.insertedUids.length && offset !== 0) clipboard.pastes++;
     return this.selectedObjects;
   }
-  duplicateSelection() {
+  duplicateSelection({pasteMode = 'instance', offset, wholeFigures = false} = {}) {
     const groupClipboard = this._selectionClipboard, singleClipboard = this._figureClipboard;
-    try { if (!this.copySelection()) return []; return this.pasteSelection({newIdentities: true, pasteMode: 'instance'}); }
+    try { if (!this.copySelection({wholeFigures})) return []; return this.pasteSelection({newIdentities: true, pasteMode, offset}); }
     finally { this._selectionClipboard = groupClipboard; this._figureClipboard = singleClipboard; }
   }
   _frameSplice(label, index, remove, insert) {
@@ -1715,6 +1718,7 @@ Object.assign(Editor.prototype, editorMovieclipMethods);
 Object.assign(Editor.prototype, editorLayerSheetMethods);
 Object.assign(Editor.prototype, editorDrawingMethods);
 Object.assign(Editor.prototype, editorFigureTransformMethods);
+Object.assign(Editor.prototype, editorDuplicateDragMethods);
 Object.assign(Editor.prototype, editorRangeCommandMethods);
 Object.assign(Editor.prototype, editorSceneMethods);
 Object.assign(Editor.prototype, editorVfxMethods, editorVfxClipMethods);

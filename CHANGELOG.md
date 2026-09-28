@@ -1,156 +1,149 @@
 # StykAnimate changelog
 
-The source of truth for release notes. Add completed work to Unreleased; move it into a new highest version when preparing a release. See docs/RELEASING.md for the format and checks.
+What's new in each version of StykAnimate.
 
-History starts with existing 0.5.5 metadata, with overlapping feedback instructions consolidated. Earlier evidence remains in docs/releases/RELEASE-0.2.0.md and docs/releases/RELEASE-0.3.0.md; this file does not infer missing release history or publication dates.
+<!-- Maintainers: follow the writing guide in docs/RELEASING.md before adding entries. -->
 
 ## [Unreleased]
 
 ### Added
 
-- Reshape a whole arc of motion in one drag: hold F and drag a point on a motion path, and nearby keys follow it, fading out with distance. Set how far the change reaches and how it fades under Reshape arc in the motion path settings, or scroll (or press [ and ]) while dragging. Before you drag, the path shows which keys will change. Only the keys needed are added, the frames outside the reach stay as they were, and the whole change is one undo step.
-- Hold Shift while dragging a figure's origin to move the whole figure with its pinned IK nodes. This also works on origin motion paths and when editing selected frames, while keeping the nodes pinned at their new positions.
-- Keep dragging a joint or figure while pressing A to add frames, in both Simple and Advanced timelines. Each new frame keeps its pose and the drag continues without releasing the mouse.
-- Bend line joints by right-dragging in Build, just as in Animate, including static joints. Build applies the bend to the reusable figure, with undo and cancellation.
-- Choose whether pasted figures keep their copied Z-index or appear in front, in Canvas settings. Keeping the copied Z-index remains the default.
-- Keep color palettes: every color picker now ends with your project's colors, your recent ones and your own palettes. Press + to save the color you are editing, drag swatches to reorder them and right-click to remove one. Project colors are saved in the project file and undo like any edit. Choose Mine to make named palettes, like skin tones or a character's colors, that you can use in every project, save a project's colors as one, or add one to a project in a click. In Draw, the brush bar shows the same palette beside the color pair, with + to save the brush color.
-- Save your own effect presets: choose Save as preset under an effect's settings to keep it, with its settings, timing and animation, for any figure or project. Your presets come first in the Presets tab and in the suggestions for a figure without effects, where you can also rename or delete them.
-- See the editor at a comfortable size on big screens: the desktop app now picks its interface scale from your screen (larger on 1440p and 4K displays) and follows the window to another display. Choose Custom under UI scale in Settings to set your own size; a scale you chose before stays yours.
-- Add particle effects from the VFX panel: explosions (fireball, cartoon, plasma, smoke bomb, mushroom cloud, fireworks, electric, magic, dust and pixel), auras (fire, electric, shadow, holy, ice, wind, cartoon and spirit), beams (energy, laser, cartoon, spiral, lightning and fire breath), and rising smoke and steam, each shown with a preview. Combine effects in one clip and give each a start delay to build your own sequences. Choose a Style to change an effect's look, press Shuffle for a new variation, or build your own with Particles using flames, smoke puffs, stars, leaves, snowflakes and other textured looks, with outlines, glow, motion trails, swirl and wind. Effects start at the playhead, follow the figure or node they are attached to, leave trails behind moving figures, suit both light and dark scenes, work inside movieclips, and look the same in preview, playback and export. Aim a beam by picking any node on the stage.
-- Give 3D props parts that slide or hinge along a fixed track, like a pistol's slide, trigger and magazine: drag them in Pose, or set how far they have moved in the rig panel. Opening files with these parts requires this version.
-- Find any command with the command palette: press Ctrl+P, Ctrl+Shift+P or F1, or choose Search commands… in the StykAnimate menu. Type to run a command, select a layer or figure, open a setting, or go to a frame by its number.
-- Arrange the panels your way: choose Layout… in the View menu (Ctrl+Alt+L) to switch between layouts such as Timing, Focus and Review, place Properties, VFX, Library, the timeline and the tools, and save your own layouts for each workspace. Drag panel tabs to dock on either side, stack panels above or below one another, or float them over the canvas, including Properties and Build's Structure. Drag the divider to resize stacked panels, or drop a panel on another's tab row to group them. Right-click a tab to dock, float, fold or hide it.
-- Move around the editor from the keyboard: F6 and Ctrl+F6 jump between areas, Ctrl+\ hides the side panels and the timeline for Focus mode, Ctrl+Alt+M moves the focused panel, and in the desktop app Ctrl+1 to Ctrl+4 show or fold Properties, VFX, Library and the timeline.
-- Paint with richer brushes: strokes can taper to a point at the start and end (even with a mouse), brushes can use Chalk, Bristle and Sponge tips, paper or canvas grain, and size, opacity and angle jitter, a Pulled string smoothing mode keeps lines steady, a pen pressure curve tunes how your tablet responds, and new Brush pen, Chalk, Dry brush and Sponge presets show them off.
-- Browse free rigs and 3D shapes in the new public library: choose Public library at the top of the Library panel, then double-click an asset or drag it onto the canvas, or save it to My library to keep a copy. The same assets are on stykanimate.com/library, where Open in StykAnimate shows the asset in the app's Library, ready to use.
+- Command palette: press Ctrl+P or F1 to find any command, setting, layer, figure or frame.
+- Custom layouts: dock, stack, group or float panels wherever you like, and switch between layouts such as Timing, Focus and Review from View → Layout (Ctrl+Alt+L).
+- Keyboard navigation: F6 moves between areas of the editor, Ctrl+\ switches to Focus mode, and Ctrl+1 to Ctrl+4 show or hide the main panels.
+- Particle effects: add explosions, auras, beams, smoke and steam from the VFX panel, mix them together, change their style, or design your own particles.
+- Save your own effect presets and reuse them in any project.
+- Color palettes in every color picker: keep your project's colors, reuse recent ones, and create named palettes you can use across projects.
+- Public library: browse free rigs and 3D shapes from the Library panel or on stykanimate.com/library, and open them straight in the app.
+- Richer brushes in Draw, with tapered strokes, chalk, bristle and sponge tips, paper grain, steadier lines, a pressure curve for your tablet and new presets.
+- Moving parts for 3D props, like a pistol's slide or trigger. Projects that use them need this version or newer.
+- Reshape a whole arc of motion at once: hold F and drag a point on a motion path, and the nearby frames follow smoothly.
+- Hold Alt and drag a figure to duplicate it as you move it.
+- Hold Shift and drag a figure's origin to move the whole figure along with its pinned IK joints.
+- Press A while dragging a joint or figure to add frames without letting go.
+- Right-drag to bend lines in Build, just like in Animate.
+- A Canvas setting to choose whether pasted figures keep their original layering or appear in front.
 
 ### Changed
 
+- A fresh new look, with the StykAnimate typeface, brighter colors, floating panels, and matching menus, buttons and dialogs throughout the app.
+- More room for your animation: tools sit in a floating bar beside the canvas, view controls share one line above it, and small windows open panels only when you need them.
+- The top bar keeps workspaces, Undo, Redo, Save and Export together and shows whether your project is saved.
+- Redesigned timelines: the Simple timeline shows frames as cards you can stretch to hold longer, the Advanced timeline shows each pose as one clear bar, and both keep their controls in the same place.
+- Redesigned motion paths: show the arcs of hands, feet and head together, color them by speed, and preview any frame's pose by pointing at its trail.
+- Easier 3D posing: dragging a joint turns the part on screen, holding D moves it toward or away from you, and arms and legs bend with IK just like on a 2D figure.
+- A clearer Export window with a live preview, easy trimming, size options and one-click presets for YouTube, Shorts, TikTok, Instagram, X and more.
+- A simpler Properties panel, with the most used actions right under the selection's name.
+- A simpler VFX panel that lists effects one per row, each with its own on/off switch.
+- A clearer Build workspace that makes each part's actions and the figure's structure easier to find.
+- A cleaner Library panel with search, filters and larger previews.
+- Redesigned Settings, with a page for each section and a search box.
+- Tidier menus, with named groups and submenus.
+- Tooltips show each button's name and keyboard shortcut.
+- The app picks a comfortable interface size for your screen, including 1440p and 4K displays. You can still set your own in Settings.
+- Short hints tell you what to do next while joining figures, placing images, drawing shapes or using the Tweener.
+- A clearer What's new screen that matches the website.
 - New projects start with Blue, a simple 2D stick figure with balanced proportions and hand/foot IK for easy posing.
-- Refine motion with redesigned motion paths: show the arcs of a figure's hands, feet and head at once, turn on Relative to body to keep a travelling figure in place while you compare its arcs, and turn on Speed colours to see where movement slows down and speeds up. Point at or drag a trail point to see that frame's pose as an outline without leaving the current frame, and double-click a point to go to its frame. Trails now appear several times faster in busy scenes, and pointing at them stays smooth with many figures on the stage.
-- Pose 3D figures as easily as ordinary ones: dragging a joint now turns the part flat on screen, keeping how far it leans toward or away from you. Hold D while dragging to move a part toward or away from you instead (add Shift to go behind), or to push a hand or foot in depth. You can change the key in Keyboard shortcuts.
-- Use a cleaner Library panel: a search with a kind filter and one options menu replace the rows of buttons, the cards show larger previews, and each card's ⋯ menu (or a right-click) holds Insert, Rename, Move to…, Show in folder and Move to Recycle Bin. Add selection stays at the bottom whatever you scroll, and New folder sits next to the folder path.
-- Pose legs and arms with IK like on a 2D figure: dragging a hand or foot now bends the knee or elbow across the screen instead of toward the camera. Right-dragging a hand or foot turns it without unplanting it, a planted foot you turn stays turned, right-dragging a planted knee or elbow swings its bend, and a hand or foot you move in depth no longer jumps when you release the key.
-- Pose, scrub and play 3D figures far more smoothly, even on slower computers, with much less memory in long animations and smaller saved files.
-- Open older Pivot animations much faster, especially ones with many sprite images: a large Pivot 4 race animation now opens in about 8 seconds instead of 30.
-- Seek, scrub and zoom large Pivot animations more smoothly. Frames are prepared faster, and detailed figures with overlapping fill shapes now draw as sharp vectors instead of textures, so zooming no longer pauses and uses far less graphics memory.
-- Refresh the editor with the StykAnimate typeface and brighter colours: white panels float on a soft grey field, the active tool, the selection and the workspace switch use Styk blue, and each section of Properties has a small colour badge that says what it holds. The typeface now ships with the app, so text looks the same on every computer, including Greek, Cyrillic and Vietnamese, and main buttons, highlighted tools, small blue labels and brush preset previews are easier to see in both light and dark mode.
-- Hover or focus a button to see its name and keyboard shortcut in one quick tooltip. It shows the shortcuts you set in Settings.
-- Get a larger stage in a calmer layout: the stage, the Properties panel and the timeline are separate panels that keep their place in every workspace, with roomier bars in tall windows and compact ones below 800 pixels. In small or short windows the Properties panel, Build's figure structure and the timeline open over the stage when you need them instead of squeezing the canvas, the top bar shortens its labels before anything is hidden (in the narrowest windows the menus move into the StykAnimate menu), so nothing is cut off at the window's edge, and each workspace remembers its own panel layout.
-- Play animations more smoothly: the panels no longer redraw during playback, and Properties catches up with the current frame when playback stops. The Simple timeline stays still while playing, with a thin line showing where playback is.
-- Find the timeline's controls in the same place in Simple and Advanced: Add frame, Edit together, the playback controls, Onion and Audio sit in one header, the time readout opens Go to frame, the zoom, Fit timeline and Tall timeline sit beside Onion, and a Timeline ⋯ menu holds Last frame, the key jumps and Default height. Edit together appears once you select two or more frames. The layer list's header adds and finds layers (a new layer opens its name for typing), and Show all ends a layer focus.
-- See each frame of the Simple timeline as a card with a bar that shows how long it holds: drag the bar's end to hold a frame longer or shorter. The frame bar beside the cards sets the inbetweens and easing of the selected frames, copies, pastes and deletes them, turns on Edit together, and shows the layer you are working in; click it to show, hide or lock layers or to add one.
-- Find the workspaces, Undo, Redo, Save and Export together in the top bar, next to your project's name and whether it is saved ("Edited", "Saved 12:04"). While you build a figure, edit a movieclip or adjust the camera, Done sits beside a quiet Export, with Test rig in Build and Cancel in a movieclip.
-- See only the tools of the workspace you are in, in a floating bar centered vertically beside the canvas; drag its grip to move it to either side. In short windows it folds into two columns instead of hiding tools. The + opens one Add menu with a stick figure, text, images, figures from files, movieclips, more copies of figures already in your project and the examples; in Draw the + still starts a new drawing layer, and its small corner mark opens the same menu. Select pixels and Shapes show a corner mark too: click it, right-click or press and hold the tool to choose a lasso, rectangle, ellipse or wand selection, or a line, rectangle or ellipse.
-- Export from a clearer dialog with a preview of your animation: choose Video, GIF, Frames or Project and then the exact type, name the file, trim by dragging the ends of the frame strip or typing From and To, and pick Original, 1080p, 720p, 4K or a custom size. Only the settings for the chosen type show, the codec and bitrate options sit together under Encoding, the Export button names the format, and the dialog remembers your choices for next time. Start from a quick preset for YouTube, Shorts, TikTok, Instagram, X, a chat GIF, transparent PNG frames or the best quality: it fills in the type, size and quality for you, and tells you when your canvas's shape will play with bars on that platform, with vertical videos previewed in a phone-shaped frame. Each type and quality now says in a line what it is for.
-- Read the Advanced timeline at a glance: each pose and its hold is one clear rounded bar with thin marks counting its frames, grey for a hold, violet for a tween and a dashed outline where the layer is blank. Keys are dots (Camera gold, Scene violet), the selected frames turn blue inside one clear outline so you always see exactly what you have selected, and the frame under the pointer is outlined before you click. The layer you work on is highlighted in the layer list without colouring the whole timeline. Every fifth frame is shaded under its number, and a clear line and grey area show where the animation ends. Camera and Scene are slim rows pinned under the ruler so more of your layers fit, every layer shows its eye and lock, the selected hold shows an end you can drag to make it longer or shorter when you point at its row, and a small label shows the new timing while you drag keys. When layers continue below the timeline, "N more" takes you to them.
-- See every panel, popover and dialog drawn the same way as the rest of the editor, with the same fields, switches, buttons and menus: Draw's brush bar and brush settings (sections named after the tool, presets as tiles), the VFX panel, the Library (its cards, right-click menu and folder dialogs), the camera's motion, the audio controls, the onion skin, motion path, grid and guides settings, the easing picker, Settings (every tab reads the same, and Build's options carry the names they have in Build) and the older dialogs such as Segment values, Background, Text, Privacy and What's new. Onion skin's Tint and Fade are now switches, and Properties no longer shows a greyed-out Add to library when nothing can be saved.
-- Work with effects in a simpler VFX panel: the effects on a figure are listed one per row with a coloured icon, their frame range and an on/off switch, under one Effects header that chooses which effects show and adds effects or presets. Click an effect to open its settings right under its row, with its timing last, and click it again to close them. Combine with another effect sits right under an effect's settings, and a group's effects are indented beneath it, with Add to group at the end. Right-click an effect or use its ⋯ to rename, reorder, copy, duplicate or delete it, and an effect you switch off stays in the list so you can switch it back on. With nothing selected, Scene effects adds effects to the whole picture.
-- Find your way around a redesigned Settings: each section has its own page with a clear title, settings sit in titled cards with a short explanation where one helps, Theme and Timeline show a picture of each choice, and the search at the top finds any setting across Interface, Canvas and Animation. The Feedback page offers a bug report, an idea or other feedback as their own tiles with a way back to your reports, and the Feedback window matches the rest of the editor in light and dark mode.
-- Find commands faster in menus: menus and right-click menus name their groups and what they act on, keep families in submenus (Import, Paste as, Duplicate, Flip, Arrange, and layer colours with their swatches), and list what deletes last, in red. The timeline's menus now look and work like the rest of the app, View shows a check beside Joints, Motion paths, Onion skin and Grid while they are on, and the Editor menu is now called Joint.
-- Build figures in a clearer workspace without a second toolbar row. Select a part to see its name as Structure shows it ("Line 4") with Split, Duplicate, Flip and Delete tiles (hold Shift to act on its whole branch); Exact values, Set as origin, copying appearance, arranging, branch and rig commands sit in its ⋯ and right-click menus, grouped with submenus. The stage header holds the Edit joints tool's Drag mode and Whole branch switch, says what a drag does with Line and Circle, and names Build's view buttons (Handles, Highlight, Isolate). Structure shows each part's kind and how the parts hang together, with Fit, Timeline and Snap buttons that say what they do, and the figure's own tiles attach an image, connect joints, open the rig examples and fit the figure.
-- See what matters in Properties at a glance: the selection's name, which you double-click to rename, with its most used commands right under it as labelled tiles (such as Flip, Front, Back, Duplicate and Delete for a figure, or Front, Back and Flip for a joint). Front and Back arrange figures, nodes and branches: click to move all the way to front or back, or Shift-click to move one step. The main settings stay open, and less used ones fold into titled sections that remember being open.
-- Find the Scene's size and background colour, the view buttons (Joints, Paths, Grid and Effects, with their words while there is room), zoom and Fit in one line above the canvas, so nothing floats over your drawing and the canvas fits larger in small windows. Draw's brush settings sit in that line too, the Grid button now shows or hides the grid in one click (Ctrl+'), with Grid and guides on the arrow beside it, and messages such as the offer to restore unsaved work appear there, taking a line of their own when they do not fit.
-- See what to click while you join a figure, connect joints, place an image or a copy, draw a chain or a polygon, or use the Tweener, with Cancel where you can leave that mode; when playback cannot keep up, a quiet "Slow · 14 of 24 fps" offers Details.
-- Read what's new in a clearer welcome screen that matches stykanimate.com: each release shows its version and title, its changes are grouped under coloured labels, and Support on Ko-fi sits beside Start animating.
 
 ### Fixed
 
-- Select figures directly on the canvas while using Breakdown or any other Tweener mode. Shift-click adds or removes figures, and selection clicks no longer try to start a tween.
-- Open Feedback on the report type you chose last, even when you choose another type while Feedback is still loading.
-- Keep effect rows and timeline scrolling steady while selecting multiple frames.
-- Select a figure by clicking its artwork, including joined parts, so you can unjoin it without finding a node.
-- Fade onion skins as complete frames, so overlapping parts of a figure keep their solid appearance, and keep posing responsive with many ghosts, including on high-resolution screens and in compatibility mode.
-- Return from Draw reliably: Animate restores your previous figure layer and joint, Build selects an editable figure layer, and both wait for pending drawing edits before changing tools.
-- Show error messages above open dialogs instead of behind them, where you can close them, and keep them clear of the canvas's view buttons. A failed save, export or import stays until you close it; other messages go on their own. Pressing Escape or closing the export dialog while an export runs now asks before stopping it.
-- Stop menus from switching tools while you type in them: letters now jump to the matching command. The Properties ⋯ menu opens again.
-- Show What's new and the first-run privacy choice one after the other at startup, never on top of an open menu or dialog.
-- Press Enter to confirm a new project name. Prompts such as "Save changes?" start on their main field or button instead of Close, open over another dialog without replacing it, and let you pick a recent file or a Stick Nodes asset with the arrow keys and Enter.
+- Fixed selecting figures on the canvas while using the Tweener.
+- Fixed onion skins looking patchy where parts of a figure overlap.
+- Fixed Feedback sometimes opening on the wrong report type.
+- Fixed the timeline and effect list jumping while selecting several frames.
+- Fixed clicking a figure's artwork not selecting the figure.
+- Fixed leaving Draw sometimes losing your previous layer and selection.
+- Fixed error messages appearing behind open dialogs. Closing the Export window during an export now asks before stopping it.
+- Fixed typing in a menu switching tools, and the Properties ⋯ menu not opening.
+- Fixed What's new and the privacy prompt appearing on top of each other at startup.
+- Fixed Enter not confirming a new project name.
 
 ### Performance
 
 - Faster property adjustments in long animations and smoother refreshes in scenes with many images.
+- 3D figures pose, scrub and play much more smoothly, use less memory and save to smaller files.
+- Older Pivot animations open several times faster, and large ones scrub and zoom more smoothly.
 - Smoother playback and editing in busy scenes, especially on laptops without a dedicated graphics card and in Compatibility mode.
 
 ## [1.1.0]
 
-Drawing layers and animation editing improvements
+Drawing layers and smoother editing
 
 ### Added
 
-- Draw and animate on dedicated drawing layers backed by a sparse tiled raster engine timeline
+- Drawing layers: draw and animate by hand on their own layers, right alongside your figures.
 
 ### Changed
 
-- Work more naturally with a drawing tablet: tapping a joint or figure with the pen no longer nudges it, holding the pen still no longer pops up the context menu (the barrel button still does), and Ctrl+Space or Shift+Space with a pen drag zooms, or rotates the Draw view, without a scroll wheel. Settings → Shortcuts lists the pen gestures.
-- Avoid rebuilding unchanged image textures when revisiting animation frames.
-- Reduce the delay before first playback of large, freshly imported Pivot animations.
-- Reduce playback memory for large animations by adjusting background preparation to available memory and releasing cancelled work during editing.
-- Avoid repeatedly repainting unchanged Advanced timeline frames while posing figures.
-- Reduce delays before the next file operation after cancelling an import or export.
-- Reduce the time needed to prepare images when opening a project.
-- Scale and rotate a multi-figure selection around the dragged figure's pivot like Pivot: Alt-drag now moves every selected figure's position toward or around the shared origin instead of resizing each figure in place, and Ctrl+Alt keeps rotating the group without scaling.
-- Make frame counts agree between the Simple timeline, the Advanced timeline and Export
-- Make onion skin settings compact
-- Make the audio timeline clearer
-- Add and edit effects more easily in the VFX panel
-- Show a ⇔ marker on scrubbable property labels and a hint in Transform sections that dragging a label adjusts its value, with Shift or Alt for finer steps.
+- Better drawing tablet support: pen taps no longer nudge joints, holding the pen still no longer opens the right-click menu, and you can zoom or rotate the view with the pen.
+- Scaling and rotating several figures at once now works like in Pivot, around the figure you drag.
+- Frame counts now match between the Simple timeline, the Advanced timeline and Export.
+- More compact onion skin settings and a clearer audio timeline.
+- Adding and editing effects in the VFX panel is easier.
+- Property labels you can drag to change a value are now marked. Hold Shift or Alt for finer steps.
 
 ### Fixed
 
-- Reduce lag and memory pressure when posing dense figures
-- Offer recovery and reopening when the desktop editor stops unexpectedly, instead of leaving a black window that cannot save or close normally.
-- Restore right-click bending on the canvas
-- Keep connected figures joined when using Break apart frame or Bake animation on a movieclip, so expanded figures stay attached to their parents instead of separating.
-- Apply movieclip Transform edits from the inspector: Scale, Angle, Opacity and Z-index fields now update the placed instance instead of leaving it unchanged.
+- If the app stops unexpectedly, it now offers to recover your work instead of leaving a black window.
+- Fixed right-click bending on the canvas.
+- Fixed joined figures coming apart when breaking apart or baking a movieclip.
+- Fixed movieclip Scale, Angle, Opacity and Z-index fields in Properties having no effect.
+
+### Performance
+
+- Large animations open, play and edit faster and use less memory, especially freshly imported Pivot files.
+- Posing detailed figures is smoother.
+- Cancelling an import or export no longer delays the next one.
 
 ## [1.0.6]
 
-Private feedback conversations and playback refinements
+Private feedback and playback quality options
 
 ### Added
 
-- Add saved Normal, Medium, Low, Draft and Automatic playback quality options in Animation settings, with Normal as the default and full-resolution editing restored on pause.
-- Add private bug-report and feedback conversations in the app and on the website, with attachments and developer replies.
-- Add a saved Animation setting to fit the view when playback starts, enabled by default; turn it off to preserve zoom and pan.
-- Add Ctrl+Shift+V to paste figures in their original position, alongside Ctrl+V with its existing offset.
+- Send bug reports and feedback privately from the app or the website, with attachments and replies from the developer.
+- Playback quality options in Animation settings, from Normal down to Draft, plus an Automatic mode.
+- A setting to fit the view when playback starts, turned on by default.
+- Press Ctrl+Shift+V to paste figures in their original position.
 
 ### Fixed
 
-- Preserve the edited pose and appearance when importing builder changes as a new figure, keeping original instances unchanged after deleting parts.
-- Reduce dense-animation stalls and image allocations.
-- Retain the selected VFX clip when using frame-navigation shortcuts in the timeline.
-- Reduce long-project editing overhead by transferring only changed thumbnail poses, retaining unchanged inspector icons, and avoiding redundant timeline layout work.
-- Render the artwork surrounding the camera before applying scene VFX, preventing black shockwave bands and clipped filter edges in exports, playback, and thumbnails; preserve bounded sampling surfaces and tiny-blur guards.
-- Preserve original sprite image colors and transparency on import instead of automatically erasing pixels matching the bottom-left corner.
-- Show a checkerboard behind transparent scene areas during editing and playback.
+- Fixed importing Build changes as a new figure losing edits or changing the original figures.
+- Fixed the selected effect being deselected when moving between frames with the keyboard.
+- Fixed black bands and cut-off edges on scene effects in playback and exports.
+- Imported sprites now keep their original colors and transparency.
+- Transparent areas of the scene now show a checkerboard while editing.
+
+### Performance
+
+- Fewer pauses and less memory use in large and detailed animations.
 
 ## [1.0.5]
 
-Independent VFX animation and refined editing
+Effects with their own timing, and editing refinements
 
 ### Added
 
-- Add builder appearance copy and paste for selected segments and branches.
+- Effects now have their own clips on the timeline, with timing, keyframes and fades separate from your poses.
+- Copy and paste the look of parts in Build.
 
 ### Changed
 
-- Make Build-mode Duplicate and Flip shortcuts respect segment/branch scope, and add configurable S to split and B to toggle Branch.
-- Add a saved Canvas setting for Scroll to zoom or Ctrl + scroll to zoom, keeping Ctrl + scroll as the default.
-- Default previous/next frame shortcuts to comma/period and add configurable Shift+comma/period keyframe jumps, preserving custom assignments.
-- Add a configurable Extend keyframe shortcut, defaulting to Shift+A.
-- Add persistent VFX clips with independent timing, parameter keys and fades, so effects can be animated without changing pose frames.
-- Apply effects across connected figures while preserving their drawing order and editable parts.
-- Make color picker canvas sampling opt-in through an Eyedropper button, allowing ordinary outside clicks to dismiss the panel.
+- Duplicate and Flip in Build now respect whether you selected a single part or a whole branch. New S and B shortcuts split a part and switch branch mode.
+- A Canvas setting to zoom with the scroll wheel alone, or with Ctrl + scroll as before.
+- Comma and period now go to the previous and next frame, and Shift+comma and Shift+period jump between keyframes. Your custom shortcuts are kept.
+- A new Extend keyframe shortcut, Shift+A by default.
+- Effects now apply across connected figures.
+- Pick colors from the canvas with the color picker's Eyedropper button. Clicking outside the picker now closes it.
 
 ### Fixed
 
-- Prevent dragging selected empty timeline cells from creating blank frames.
-- Allow dragged layer keyframes to replace destination keys, including Alt-drag copies and overlapping selections, with one-step undo and a saved Animation setting enabled by default.
-- Make new builder lines and chain links inherit their parent segment’s colour and thickness, including per-instance style edits.
-- Import Pivot projects with padded JPEG resources or recoverable missing image records, preserving animation and original-source exports while reporting absent artwork.
-- Keep figures sharp when invisible construction segments extend far beyond their visible artwork, without enlarging raster memory budgets.
-- Extend image background edges during camera motion to prevent exposed white or black margins in previews, playback, and exports.
+- Fixed dragging empty timeline cells creating blank frames.
+- Dragging keyframes onto other keyframes now replaces them.
+- New lines in Build now take the color and thickness of the part they grow from.
+- Fixed Pivot projects with damaged or missing images failing to import.
+- Fixed figures with very long hidden parts looking blurry.
+- Fixed empty edges showing around background images when the camera moves.
 
 ## [1.0.1]
 
@@ -158,123 +151,93 @@ A cleaner workspace
 
 ### Changed
 
-- Move the figure color palette to a compact, collapsed section at the bottom of Properties and show parallax only for selected layers.
-- Simplify the welcome screen with Donate at the top, grouped changes in a scrollable reading area, and recent release changelogs in the same window.
+- The figure color palette moved to a compact section at the bottom of Properties.
+- Parallax settings only show for selected layers.
+- A simpler welcome screen, with recent release notes in the same window.
 
 ## [1.0.0]
 
-Expanded animation tools, refined editing, and smoother playback
+New animation tools, refined editing and smoother playback
 
 ### Added
 
-- Add a selected-figure color palette with segment counts and bulk color replacement; fix conflicts between figure and node colors in legacy Pivot files, preserving gradients, undo, saving and native export.
-
-- Add automatic canvas eyedropper sampling while the color picker is open, with a magnified pixel preview
-
-- Add Pivot-style J join/unjoin from figure, node and branch selections, shared canvas-menu and inspector actions, static-node click/Shift-click/double-click selection, valid parent-handle highlighting, cancellation and sparse range undo; move handle visibility to Shift+J while preserving custom shortcuts.
-
-- Preserve figure colors when copying between projects and app instances using different Pivot versions, including legacy black and modern multicolor figures.
-
-- Extend Alt-drag rotation and scaling to all selected figures, preserving each origin and joined descendants, modifier locks, cancellation, and one-step undo.
-
-- Add native two-anchor connectors with sliding attachment joints and Smart Stretch with automatic branch setup
-
-- Refine both timelines with a direct mode switch, layer search/focus and saved colors, contextual easing and Simple sidebar easing, rebuilt onion controls with fixed Before/After distances and ruler handles that follow the playhead
-
-- Add a remembered desktop UI scale slider (75%–200%) with live native scaling and one-click reset
-
-- Add a colored toolbar Tweener with Breakdown, Blend to Neighbor, Push and Relax, direct canvas dragging, Shift precision, Escape/right-click cancellation, independent layer neighbors and one-step undo.
-
-- Add a configurable canvas grid and vertical/horizontal guides with a compact icon-based panel, slidable numeric fields with fine adjustment and click-to-type editing
-
-- Add editable camera shake, handheld motion, wobble, impact punches and zoom pulses with draggable inspector values and live motion graphs.
-
-- Add layer parallax values
-
-- Add editable audio through an optional timeline Audio tab, with integrated Advanced lanes sharing its ruler, scrolling and zoom, direct dragging between tracks, waveforms, trimming, splitting, volume and fade controls.
-
-- Add animatable per-effect strength and turbulent displacement, with bounded GPU filters, canvas controls, and matching playback/export paths.
-
-- Rework Figure builder. Now contextual, what you select is what you edit, if you don't select anything you create a new feature. Contextual controls and new tools added with better interface
-
-- Add editable motion paths with compact range and scope settings, uncluttered trails and frame labels
+- Audio: add sound to the timeline, with waveforms, trimming, splitting, volume and fades.
+- Tweener tool with Breakdown, Blend to Neighbor, Push and Relax.
+- Camera shake, handheld motion, wobble, impacts and zoom pulses.
+- Editable motion paths.
+- Connectors that link two points, with sliding joints and Smart Stretch.
+- Join and unjoin figures with J, just like in Pivot. Showing handles moved to Shift+J.
+- A redesigned Figure builder: what you select is what you edit, with new tools to go with it.
+- A color palette for the selected figure that lets you replace colors in bulk.
+- An eyedropper with a magnified preview to pick colors from the canvas.
+- Canvas grid and guides.
+- Layer parallax.
+- Animated strength and wavy distortion for effects.
+- Alt-drag to rotate and scale every selected figure together.
+- An interface size slider in the desktop app, from 75% to 200%.
+- Refined timelines, with a quick mode switch, layer search and colors, easing controls and new onion skin controls.
 
 ### Changed
 
-- Refine Properties UI
-
-- Improve dense-scene playback, scrubbing and node editing performance
-
-- Simplify and improve canvas controls
-
-- Speed up high-resolution exports
-
-- Widen canvas zoom to 0.1%–10,000% and display fractional percentages at low zoom.
-
-- Redesign movieclip Properties with live frame and duration values, compact controls, and keyframe-add feedback; retain stacking across added frames and create independent instances when pasting onto an existing clip.
-
-- Improve the asset library with adaptive thumbnail contrast, animated movieclip hover previews, right-click actions, and drag-to-folder organization.
-
-- Speed up native project save and open: `.styk`/`.stkz`/`.stykmov` 
-- Remove the duplicated figure Outline section from the Design inspector; outline authoring lives in the VFX panel.
-- Smooth rounded VFX outlines
-- Scale memory allowances and export limits 
-- Stream large exports straight to disk
-- Reduce idle resource use
+- A refined Properties panel and simpler canvas controls.
+- Zoom now goes from 0.1% to 10,000%.
+- Redesigned movieclip properties. Pasting onto an existing movieclip now creates an independent copy.
+- A better asset library, with animated previews, right-click actions and drag-and-drop into folders.
+- Figure outlines are now set up in the VFX panel, and rounded outlines look smoother.
 
 ### Fixed
 
-- Make horizontal and vertical flips respect selected figure segments and branches, including timeline ranges; selecting the root still flips the whole figure.
+- Fixed freezes lasting several seconds when editing, copying, pasting or dragging in busy scenes.
+- Fixed Flip ignoring the selected parts and branches.
+- Fixed Simple timeline thumbnails.
+- Fixed Add Frame in the Advanced timeline adding the key on the wrong frame.
+- Figures keep their colors when copied between projects or Pivot versions.
+- Double-clicking a StykAnimate, Pivot or Stick Nodes file now opens it in the app.
+- The app now recovers when the graphics driver resets, and exports keep going.
 
-- Reduce movieclip creation time and undo memory
+### Performance
 
-- Fix simple timeline thumbnail previews
-
-- Fix recurring multi-second freezes while editing dense scenes, including figure/movieclip copy, paste and drag/drop
-
-- Fix Add Frame in the Advanced timeline: pressing A off a keyframe inserts a key at the playhead instead of the following frame
-
-- Open associated files on launch: double-clicking a .styk, .stkz, .stykmov, .piv, .stk, .stknds, .nodes, or .nodemc file now loads it in the desktop app
-
-- Speed up camera playback and preview
-- Speed up playback and editing on low-end hardware
-- Make oversized embedded images lightweight
-- Recover from repeated GPU device disconnections and keep disconnected rendering inert before reading scene data, so independent software exports can continue through recovery.
+- Faster playback, scrubbing and editing, especially in busy scenes and on older computers.
+- Faster camera playback, high-resolution exports, and saving and opening projects.
+- Large exports and big images use much less memory.
+- Creating movieclips is faster.
+- Lower resource use when the app is idle.
 
 ## [0.5.6]
 
-VFX, dark mode, and smoother animation workflows
+Effects, dark mode and smoother animation
 
 ### Added
 
-- Add editable VFX stacks for nodes, figures, movieclips and the camera view, with 16 effects, gradient colors, centered searchable effect and preset popups, draggable cards, canvas controls, preview bypass, GPU rendering, and native save/export support.
-- Implement dark mode, defaulting to System to follow the operating system’s appearance.
-- Add a movieclip to the next X existing keyframes at the same position, preserving other content and frame timing.
+- Visual effects for joints, figures, movieclips and the camera, with 16 effects, gradients and presets.
+- Dark mode, which follows your system setting by default.
+- Add a movieclip to several upcoming keyframes at once.
 
 ### Changed
 
-- Improve playback and editing with shared glyph masks, bounded vector-command reuse, workload-based worker rasterization, and foreground interaction priority.
-- Tint selected nodes and branches a lighter red so they stand out within a figure.
-- Fit the scene to the viewport when playback starts, while allowing zoom and pan during playback.
-- Keep the camera boundary visible above the scene with a subtle dotted red outline, including when unselected and during playback.
-- Start the app and new projects with one frame containing jonh styk.
+- Selected joints and branches are highlighted in a lighter red.
+- The view fits the scene when playback starts, and you can still zoom and pan while playing.
+- The camera frame stays visible as a subtle dotted outline.
+- The app and new projects start with one frame starring Jonh Styk.
+- Simpler export options, with automatic video quality and a progress counter.
 
 ### Fixed
 
-- Fix severe playback slowdowns after preview memory pressure by retaining vector rendering and using the available texture budget; reuse prepared frames for overlays and reconnect acceleration after a transient GPU reset.
-- Correct regression fixtures to request linear interpolation explicitly and distinguish native exposures from authored Hold easing during export.
-- Fix toolbar stacking for single-segment figures and selected branches with attached figures, preserving the selection's relative order and undo/redo.
-- Keep compatibility rendering on a software-oriented canvas and repaint the scene after Canvas context restoration, preventing an idle viewport from staying blank after a graphics reset.
-- Prevent a blank canvas when replaying after edits, including movieclip insertion, by keeping cached playback backgrounds alive across pauses and camera changes within the GPU cache budget.
-- Make Advanced timeline drags select unselected keys, preserve selected ranges on click, and delete keys without shifting later animation.
-- Improve PIV importer stability.
-- Simplify export controls with automatic video quality and frame progress, speed up dense high-resolution rendering, and bound encoder memory use.
-- Fix miscellaneous bugs.
+- Fixed playback slowing down badly after running low on memory.
+- Fixed the canvas going blank after a graphics reset or when replaying after edits.
+- Fixed arranging figures from the toolbar for single-part figures and selected branches.
+- Advanced timeline: dragging now selects keys, clicking keeps your selection, and deleting keys no longer shifts later frames.
+- More reliable Pivot imports.
+- Various other bug fixes.
+
+### Performance
+
+- Smoother playback and editing, and faster high-resolution exports.
 
 ## [0.5.5]
 
-WELCOME TO THE FIRST BETA VERSION OF STYKANIMATE!
+Welcome to the first beta of StykAnimate!
 
 ### Added
 
-- Have fun! Send bug reports and ideas on Discord, through Help → Send feedback / Report a bug, or through Settings → Feedback.
+- Have fun! Share bug reports and ideas on Discord, or from Help → Send feedback in the app.
