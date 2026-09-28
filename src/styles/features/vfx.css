@@ -244,12 +244,14 @@
     display: grid; margin-inline-start: var(--space-2-5); padding-inline-start: var(--space-2);
     box-shadow: inset 1px 0 0 var(--line-2);
   }
+  /* Combine with another effect / Add to group: the standard next step, so a full-width row in the accent, never a quiet ghost. */
   :where(#vfx-panel) .vfx-group-add {
-    display: flex; align-items: center; justify-content: flex-start; gap: var(--space-2-5); block-size: var(--control-md); padding-inline: var(--space-1-5);
-    border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-2); font: var(--type-small-strong); text-align: start;
+    display: flex; align-items: center; justify-content: flex-start; gap: var(--space-2); inline-size: 100%; block-size: var(--control-lg);
+    margin-block: var(--space-2) var(--space-1); padding-inline: var(--space-2-5);
+    border: 1px dashed var(--accent-line); border-radius: var(--radius-md); background: transparent; color: var(--accent-text); font: var(--type-button); text-align: start;
   }
-  :where(#vfx-panel) .vfx-group-add > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); margin-inline: 4px; color: var(--text-3); }
-  :where(#vfx-panel) .vfx-group-add:where(:hover):not(:disabled) { background: var(--surface-hover); color: var(--text-1); }
+  :where(#vfx-panel) .vfx-group-add > svg { inline-size: var(--icon-md); block-size: var(--icon-md); color: currentColor; }
+  :where(#vfx-panel) .vfx-group-add:where(:hover):not(:disabled) { border-style: solid; background: var(--accent-soft); color: var(--accent-text-strong); }
   :where(#vfx-panel) .vfx-group-add:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset-inset); }
   :where(#vfx-panel) .vfx-group-add:disabled { opacity: 0.42; }
   .vfx-clip-effect { position: relative; }
