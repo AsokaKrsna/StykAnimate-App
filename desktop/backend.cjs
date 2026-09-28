@@ -12,15 +12,15 @@ function sessionProof(token) {
   return crypto.createHash('sha256').update(`styk-session:${token}`).digest('hex');
 }
 
-function pythonCandidates(env = process.env) {
+function pythonCandidates(env = process.env, platform = process.platform) {
   const candidates = [];
   const add = (command, args = []) => {
     if (command && !candidates.some((item) => item.command === command)) candidates.push({ command, args });
   };
   add(env.STYK_PYTHON);
-  if (env.VIRTUAL_ENV) add(path.join(env.VIRTUAL_ENV, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'));
-  if (env.CONDA_PREFIX) add(path.join(env.CONDA_PREFIX, process.platform === 'win32' ? 'python.exe' : 'bin/python'));
-  if (process.platform === 'win32') {
+  if (env.VIRTUAL_ENV) add(path.join(env.VIRTUAL_ENV, platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'));
+  if (env.CONDA_PREFIX) add(path.join(env.CONDA_PREFIX, platform === 'win32' ? 'python.exe' : 'bin/python'));
+  if (platform === 'win32') {
     for (const directory of ['miniconda3', 'anaconda3', 'miniforge3']) {
       const candidate = path.join(os.homedir(), directory, 'python.exe');
       if (fs.existsSync(candidate)) add(candidate);
