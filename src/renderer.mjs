@@ -679,6 +679,18 @@ class WebGPURenderer {
     return this.preparedFrames.renderInto(key, options);
   }
   clearPreparedFrames() { this.preparedFrames.clear(); }
+  invalidateImages(changedURLs) {
+    const previous = this.generation, urls = new Set(changedURLs);
+    this.generation++; this.lastGeometry = null;
+    this.rasterCache.invalidateImages(urls, previous, this.generation);
+    // Prepared packets own worker pixels but may use decoded editor backgrounds.
+    // Keep their established conservative reset until those dependencies are tracked.
+    this.clearPreparedFrames();
+    for (const [key, entry] of this.backgroundImages ?? []) if (entry.imageURL && urls.has(entry.imageURL)) {
+      entry.texture.destroy(); this.backgroundImages.delete(key);
+    }
+    this.backgroundKey = '';
+  }
   retainPreparedFrames(report, packets) { this.preparedFrames.retainPackets(report, packets); }
   ensureBuffers(shapeCount, transformCount) {
     const shapeSize = pow2(shapeCount) * SHAPE_BYTES, transformSize = pow2(transformCount) * 16;
@@ -709,6 +721,7 @@ class WebGPURenderer {
     const cached = cache.get(artwork, resolution, this.generation,contentKey);
     if (cached) return cached;
     const previous = cache.previous(artwork);
+    const imageURLs = [...new Set(items.filter(item => item.type === 'image' && item.asset).map(item => this.resources.url(item.asset)))];
     const reason=!previous?'uncached':previous.destroyed?'released':previous.generation!==this.generation?'generation':'resolution';
     const misses=this.stats.rasterCacheMisses??={};misses[reason]=(misses[reason]||0)+1;
     const samples=this.stats.rasterCacheMissSamples??=[];
@@ -718,18 +731,18 @@ class WebGPURenderer {
     const width = Math.max(1, Math.ceil(bounds.width * pixelScale)), height = Math.max(1, Math.ceil(bounds.height * pixelScale));
     const gpuVfx=this.disableVectorVfx?null:vectorVfxSource(items,pixelScale);
     if(gpuVfx&&width*height<=16777216){
-      const result={...rasterizeVectorVfx(this,gpuVfx,{width,height,pixelScale,bounds,root:g.root}),bounds:{...bounds,width:width/pixelScale,height:height/pixelScale},origin:{...g.root},generation:this.generation,resolution};
+      const result={...rasterizeVectorVfx(this,gpuVfx,{width,height,pixelScale,bounds,root:g.root}),bounds:{...bounds,width:width/pixelScale,height:height/pixelScale},origin:{...g.root},generation:this.generation,resolution,imageURLs};
       this.stats.vectorVfxObjects=(this.stats.vectorVfxObjects??0)+1;cache.set(artwork,result);return result;
     }
     if (vector && supportsVectorIsolation(items, pixelScale)) {
       const data = compileVectorObject(items, g.root, 0);
       const result = {...rasterizeVectorGroup(this, {data, width, height, pixelScale, bounds, root: g.root}),
-        bounds: {...bounds, width: width / pixelScale, height: height / pixelScale}, origin: {...g.root}, generation: this.generation, resolution};
+        bounds: {...bounds, width: width / pixelScale, height: height / pixelScale}, origin: {...g.root}, generation: this.generation, resolution,imageURLs};
       cache.set(artwork, result); return result;
     }
     if (meshOnlyItems(items) && !items.some(hasDrawableVfx)) {
       const {cleanup, ...raster} = rasterizeMeshGroup(this, {source: meshRasterSource(items), width, height, pixelScale, bounds, label: `Mesh object ${uidOf(g)}`});
-      const result = {...raster, bounds: {...bounds, width: width / pixelScale, height: height / pixelScale}, origin: {...g.root}, generation: this.generation, resolution, contentKey, drawingInputs};
+      const result = {...raster, bounds: {...bounds, width: width / pixelScale, height: height / pixelScale}, origin: {...g.root}, generation: this.generation, resolution, contentKey, drawingInputs,imageURLs};
       this.stats.meshObjects = (this.stats.meshObjects ?? 0) + 1; cache.set(artwork, result); return result;
     }
     const {surface, context: ctx} = this.rasterSurfaces.acquire(width, height); let texture;
@@ -740,7 +753,7 @@ class WebGPURenderer {
       this.device.queue.copyExternalImageToTexture({ source: surface }, { texture, premultipliedAlpha: true }, [width, height]);
       // Include the final partially used pixel rather than squeezing its raster.
       const rasterBounds = { ...bounds, width: width / pixelScale, height: height / pixelScale };
-      const result = { bounds: rasterBounds, origin: {...g.root}, texture, bindGroup: this.textureBindGroup(texture), generation: this.generation, resolution, contentKey, drawingInputs, bytes: width * height * 4 };
+      const result = { bounds: rasterBounds, origin: {...g.root}, texture, bindGroup: this.textureBindGroup(texture), generation: this.generation, resolution, contentKey, drawingInputs,imageURLs, bytes: width * height * 4 };
       cache.set(artwork, result); return result;
     } catch (error) { texture?.destroy(); throw error; }
     finally { this.rasterSurfaces.release(); }
@@ -774,7 +787,7 @@ class WebGPURenderer {
       texture=this.device.createTexture({label:'Shared glyph mask',size:[glyph.width,glyph.height],format:'rgba8unorm',
         usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.RENDER_ATTACHMENT});
       this.device.queue.copyExternalImageToTexture({source:surface},{texture,premultipliedAlpha:true},[glyph.width,glyph.height]);
-      const result={texture,bindGroup:this.textureBindGroup(texture),generation:this.generation,resolution:glyph.variant,bytes:glyph.bytes};
+      const result={texture,bindGroup:this.textureBindGroup(texture),generation:this.generation,resolution:glyph.variant,bytes:glyph.bytes,imageURLs:[]};
       this.rasterCache.set(glyph.mask,result);this.stats.rasterizedObjects=(this.stats.rasterizedObjects||0)+1;return result;
     } catch(error){texture?.destroy();throw error;} finally {this.rasterSurfaces.release();}
   }
@@ -784,7 +797,7 @@ class WebGPURenderer {
     this.backgroundImages ??= new Map();
     const prior = this.backgroundImages.get(descriptor.key);
     if (prior && prior.signature === descriptor.signature) return prior;
-    const resource = {...descriptor.create(), signature: descriptor.signature};
+    const resource = {...descriptor.create(), signature: descriptor.signature, imageURL:descriptor.imageURL};
     this.backgroundImages.set(descriptor.key, resource);
     prior?.texture.destroy();
     return resource;
@@ -835,7 +848,7 @@ class WebGPURenderer {
         const image = this.resources.image(this.resources.url(bg));
         if (!image?.complete || !image.naturalWidth) return;
         const width = image.width || image.naturalWidth, height = image.height || image.naturalHeight;
-        const cached = resolveTexture({key: image, cacheKey: image, bytes: width * height * 4,
+        const cached = resolveTexture({key: image, cacheKey: image, imageURL:this.resources.url(bg), bytes: width * height * 4,
           create: () => this.uploadBackground(image, width, height, 'Imported background asset')});
         const ratio = Math.max(w / image.naturalWidth, h / image.naturalHeight);
         output.push({ data: new Float32Array(shapeRecord({ a, mode: SHAPE.BACKGROUND_IMAGE,

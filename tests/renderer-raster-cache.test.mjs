@@ -6,6 +6,30 @@ function resource(resolution = 1, generation = 0, bytes = 10) {
   return {resolution, generation, bytes, texture: {destroyed: 0, destroy() {this.destroyed++;}}};
 }
 
+test('image changes retain independent raster variants and invalidate shared image dependencies', () => {
+  const cache = new EditorRasterCache({maxBytes:30}), artwork = {}, unrelated = {};
+  const a = {...resource(),imageURLs:['a','shared']}, b = {...resource(2),imageURLs:['a','shared']};
+  const c = {...resource(),imageURLs:['b']}, vector = {...resource(),imageURLs:[]}, unknown = resource();
+  cache.set(artwork,a); cache.set(artwork,b); cache.set(unrelated,c); cache.set({},vector); cache.set({},unknown);
+  const lease = cache.lease([a,c]);
+  cache.invalidateImages(new Set(['a']),0,1);
+  assert.equal(a.texture.destroyed,1); assert.equal(b.texture.destroyed,1); assert.equal(unknown.texture.destroyed,1);
+  assert.equal(cache.get(unrelated,1,1),c); assert.equal(cache.get(unrelated,1,0),undefined);
+  assert.equal(vector.texture.destroyed,0); assert.equal(cache.bytes,20);
+  lease.release(); cache.retain(new Set([c]),1);
+  cache.invalidateImages(new Set(['b']),1,2); assert.equal(c.texture.destroyed,1);
+  cache.clear(); assert.equal(vector.texture.destroyed,1); assert.equal(cache.bytes,0);
+});
+
+test('selective image invalidation cannot revive a texture from an older generation', () => {
+  const cache = new EditorRasterCache(), artwork = {};
+  const old = {...resource(),imageURLs:[]}, current = {...resource(1,1),imageURLs:[]};
+  cache.set(artwork,old); cache.set(artwork,current);
+  cache.invalidateImages(new Set(['other']),1,2);
+  assert.equal(old.texture.destroyed,1); assert.equal(cache.get(artwork,1,2),current);
+  cache.clear(); assert.equal(current.texture.destroyed,1);
+});
+
 test('resolution variants survive layout departures and return without replacing siblings', () => {
   const cache = new EditorRasterCache({maxBytes: 100}), artwork = {};
   const low = resource(), high = resource(2);

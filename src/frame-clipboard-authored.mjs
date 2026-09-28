@@ -40,20 +40,22 @@ export function planAuthoredClipboard(editor, {frames, assets, index, nextFrameI
     if (objects > MAX_OBJECTS || values > MAX_VALUES) throw new Error('This paste exceeds the local pose preservation budget. Paste into a shorter tween run.');
   }
   const keyIndexes = new WeakMap(), changedKeys = new Set();
+  function sortChannel(channel) { sorted(channel.keys); keyIndexes.delete(channel); }
   function key(channel, tick, value, interpolation = 'hold', extra = {}) {
     let lookup = keyIndexes.get(channel);
     if (!lookup) {
-      lookup = {ticks: new Map(channel.keys.filter(value => !value.hidden).map(value => [value.tick, value])), ids: new Set(channel.keys.map(value => value.id))};
+      lookup = {ticks: new Map(), ids: new Set()};
+      for(let index=0;index<channel.keys.length;index++){const key=channel.keys[index];if(!key.hidden)lookup.ticks.set(key.tick,index);lookup.ids.add(key.id);}
       keyIndexes.set(channel, lookup);
     }
-    const existing = lookup.ticks.get(tick);
-    if (existing && !extra.hidden) { Object.assign(existing, {value, ...extra}); assignKeyEasing(existing, {interpolation, ...(interpolation === "bezier" ? {bezier: extra.bezier ?? existing.bezier} : {})}); if (!extra.passthrough) delete existing.passthrough; changedKeys.add(existing); return existing; }
+    const position = lookup.ticks.get(tick);
+    if (position !== undefined && !extra.hidden) { const existing = {...channel.keys[position], value, ...extra}; channel.keys[position] = existing; assignKeyEasing(existing, {interpolation, ...(interpolation === "bezier" ? {bezier: extra.bezier ?? existing.bezier} : {})}); if (!extra.passthrough) delete existing.passthrough; changedKeys.add(existing); return existing; }
     let id;
     do {
       if (!Number.isSafeInteger(after.nextKeyId) || after.nextKeyId < 1) throw new Error('Animation key identity capacity exceeded.');
       id = `key-${after.nextKeyId++}`;
     } while (lookup.ids.has(id));
-    const result = {id, tick, value, interpolation, ...extra}; channel.keys.push(result); lookup.ids.add(id); if (!extra.hidden) lookup.ticks.set(tick, result); changedKeys.add(result); return result;
+    const result = {id, tick, value, interpolation, ...extra}; if (!extra.hidden) lookup.ticks.set(tick, channel.keys.length); channel.keys.push(result); lookup.ids.add(id); changedKeys.add(result); return result;
   }
   function capturePose(channel, tick) {
     const cacheKey = `${channel.id}@${tick}`;
@@ -73,7 +75,8 @@ export function planAuthoredClipboard(editor, {frames, assets, index, nextFrameI
   }
   // Key values/easing are immutable. Only the key record's time or interval
   // metadata changes; cloning every nested value costs hundreds of ms on large curves.
-  const shift = original => ({...original, source: 'authored', keys: original.keys.map(value => ({...value, tick: value.tick >= at ? value.tick + insertedTicks : value.tick}))});
+  const shift = original => ({...original, source: 'authored', keys: original.keys.map(value => value.tick >= at && insertedTicks ? {...value, tick:value.tick + insertedTicks} : value)});
+  const holdTail = channel => { const index = channel.keys.length - 1, key = {...channel.keys[index]}; channel.keys[index] = key; assignKeyEasing(key, {interpolation:'hold'}); changedKeys.add(key); };
   function scalar(original) {
     const channel = shift(original), oldKeys = original.keys;
     if (!oldKeys.length || !insertedTicks) return channel;
@@ -85,9 +88,9 @@ export function planAuthoredClipboard(editor, {frames, assets, index, nextFrameI
         if(tail.tick<last.start)key(channel,last.start,clone(tail.value),tail.interpolation??'linear',tail.bezier?{bezier:tail.bezier}:{});
         return channel;
       }
-      assignKeyEasing(channel.keys.at(-1), {interpolation: 'hold'});
+      holdTail(channel);
       key(channel, at, clone(oldKeys.at(-1).value), 'hold', {passthrough: true});
-      sorted(channel.keys); return channel;
+      return channel;
     }
     const current = [...oldKeys].reverse().find(value => value.tick <= at);
     if (isColorAnimationProperty(original.property) || oldKeys.some(key => key.nativeCurve || ['auto','bezier','ease-in','ease-out'].includes(easingMode(key)))) {
@@ -109,7 +112,7 @@ export function planAuthoredClipboard(editor, {frames, assets, index, nextFrameI
     key(channel, at, clone(placeholder), 'hold', {passthrough: true});
     const existingResume = channel.keys.find(value => value.tick === at + insertedTicks && !value.hidden);
     if (!existingResume || insertedTicks === 0) key(channel, at + insertedTicks, clone(resume === undefined ? placeholder : resume), current?.interpolation ?? 'hold', {...(current?.bezier ? {bezier: clone(current.bezier)} : {}), ...(resume === undefined ? {passthrough: true} : {})});
-    sorted(channel.keys); return channel;
+    return channel;
   }
   function pose(original) {
     const channel = shift(original), oldKeys = sorted(original.keys.slice());
@@ -119,7 +122,7 @@ export function planAuthoredClipboard(editor, {frames, assets, index, nextFrameI
     }
     const heldTail = append && oldKeys.length && oldKeys.at(-1).tick < at &&
       !report.auto_easing && !oldKeys.some(value => easingMode(value) === 'auto');
-    if (heldTail) assignKeyEasing(channel.keys.at(-1), {interpolation: 'hold'});
+    if (heldTail) holdTail(channel);
     if (oldKeys.length && insertedTicks && !heldTail) {
       let left = -1;
       for (let i = 0; i < oldKeys.length; i++) if (oldKeys[i].tick < at) left = i;
@@ -154,7 +157,7 @@ export function planAuthoredClipboard(editor, {frames, assets, index, nextFrameI
       const tail = entries.findLast(entry => entry.count > 0);
       if (tail && tail.count > 1) key(channel, resumeTick - 1, {frameId: tail.frame._styk.frameId});
     }
-    sorted(channel.keys); return channel;
+    sortChannel(channel); return channel;
   }
   const originalPoses = new Map(before.channels.filter(channel => channel.property === 'pose').map(channel => [channel.id, channel]));
   for (const original of before.channels) if (original.property !== 'pose') {
@@ -167,7 +170,7 @@ export function planAuthoredClipboard(editor, {frames, assets, index, nextFrameI
         key(channel,entry.tick,value,isDiscreteAnimationProperty(channel.property)?'hold':easing.interpolation??'linear',easing.bezier?{bezier:easing.bezier}:{});
       }
     }
-    sorted(channel.keys);after.channels.push(channel);
+    sortChannel(channel);after.channels.push(channel);
   }
   // Native destination layers need a pose track too: otherwise previously
   // authored figures can remain visible over the inserted foreign scene.

@@ -85,10 +85,10 @@ test('managed invalidation distinguishes new background pixels from resized artw
   const a=images.image('a'),worker=workers[0];let loads=0;a.addEventListener('load',()=>loads++);
   assert.equal(a.previewInvalidationManaged,true);
   worker.onmessage({data:{id:worker.messages[0].id,images:[{url:'a',bitmap:bitmap(),width:4,height:2}]}});
-  await a.decode();assert.equal(loads,1);assert.deepEqual(notifications,[{retained:true,resized:false}]);
+  await a.decode();assert.equal(loads,1);assert.deepEqual(notifications,[{retained:true,resized:false,changedURLs:['a']}]);
   const viewport=images.prepare([item('a')],{scale:2}),larger={...bitmap(),width:8,height:4};
   worker.onmessage({data:{id:worker.messages[1].id,images:[{url:'a',bitmap:larger,width:4,height:2}]}});
-  await viewport;assert.deepEqual(notifications.at(-1),{retained:false,resized:true});
+  await viewport;assert.deepEqual(notifications.at(-1),{retained:false,resized:true,changedURLs:['a']});
 });
 
 test('upcoming image priority prevents past-frame LRU hits from evicting the next background', async t => {
@@ -140,7 +140,7 @@ test('the same decoded variant preserves its consumer identity and closes the re
   worker.onmessage({data:{id:worker.messages.at(-1).id,images:[{url:'a',bitmap:copy,width:4,height:2,variant:1}]}});
   await next;
   assert.equal(images.get('a'),original);assert.equal(original.closed,0);assert.equal(copy.closed,1);
-  assert.deepEqual(notifications.at(-1),{retained:false,resized:false,unchanged:true});
+  assert.deepEqual(notifications.at(-1),{retained:false,resized:false,changedURLs:[],unchanged:true});
   assert.equal(images.bytes,32);images.clear();assert.equal(original.closed,1);assert.equal(copy.closed,1);
 });
 
@@ -182,4 +182,15 @@ test('variant numbers from a released worker cannot match the next worker', asyn
   assert.equal(images.get('a'),b);assert.equal(a.closed,1);assert.notEqual(notifications.at(-1).unchanged,true);
   const stale=bitmap();old.onmessage({data:{id:old.messages.at(-1).id,images:[{url:'a',bitmap:stale,width:4,height:2,variant:1}]}});
   assert.equal(stale.closed,1);assert.equal(images.get('a'),b);
+});
+
+test('a mixed image batch identifies changed and removed URLs without invalidating identical pixels', async t => {
+  const {images,workers}=setup(t),notifications=[];images.onReady=info=>notifications.push(info);
+  let pending=images.prepare(['a','b','removed'].map(item));const worker=workers[0];
+  worker.onmessage({data:{id:worker.messages.at(-1).id,images:['a','b','removed'].map((url,index)=>({url,bitmap:bitmap(),width:4,height:2,variant:index+1}))}});
+  await pending;const originalA=images.get('a');
+  pending=images.prepare(['a','b'].map(item));
+  worker.onmessage({data:{id:worker.messages.at(-1).id,images:[{url:'a',bitmap:bitmap(),width:4,height:2,variant:1},{url:'b',bitmap:bitmap(),width:4,height:2,variant:4}]}});
+  await pending;assert.equal(images.get('a'),originalA);
+  assert.deepEqual(new Set(notifications.at(-1).changedURLs),new Set(['removed','b']));
 });

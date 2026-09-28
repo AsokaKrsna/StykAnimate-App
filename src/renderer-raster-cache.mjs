@@ -44,6 +44,20 @@ export class EditorRasterCache {
     if (!entry) return false;
     this.release(resource, entry); return true;
   }
+  /** A new image batch cancels staged scenes through the renderer generation,
+   * but only textures that read its changed URLs need new pixels. Unknown
+   * dependencies and older generations retain conservative invalidation. */
+  invalidateImages(urls, previousGeneration, generation) {
+    for (const [resource, entry] of this.lru) {
+      if (resource.generation !== previousGeneration || !resource.imageURLs || resource.imageURLs.some(url => urls.has(url))) {
+        this.release(resource, entry); continue;
+      }
+      entry.variants.delete(entry.key);
+      resource.generation = generation;
+      entry.key = `${generation}:${resource.resolution}:${resource.contentKey??''}`;
+      entry.variants.set(entry.key, resource);
+    }
+  }
   lease(resources=[]) {
     const retained=new Set(resources);this.leases.add(retained);
     return {add:resource=>{if(resource)retained.add(resource);},release:()=>this.leases.delete(retained)};

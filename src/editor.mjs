@@ -25,7 +25,7 @@ import {editorLayerMethods} from './editor-layers.mjs';
 import {editorLayerAsyncMethods} from './editor-layer-async.mjs';
 import {ensureLayerState, validateLayerState, layerLocked} from './layers.mjs';
 import {editorAnimationMethods} from './editor-animation.mjs';
-import {validateAnimationDocument} from './animation-channels.mjs';
+import {validateAnimationDocument, animationEndTick} from './animation-channels.mjs';
 import {editorFrameMethods, validateFrameIdentities} from './editor-frames.mjs';
 import {editorFrameClipboardMethods} from './editor-frame-clipboard.mjs';
 import {invalidateFrameIndex} from './frame-ids.mjs';
@@ -133,9 +133,13 @@ export class Editor extends EventTarget {
     const index = draft?.mode === 'add' && draft.baseline ? draft.index : -1;
     const duration = index >= 0 ? draft.baseline.duration_raw : undefined;
     const animation = index >= 0 && Object.hasOwn(draft, 'animationBaseline') ? draft.animationBaseline : this.report._styk?.animation;
-    if (this._timeline && this._timelineDraftIndex === index && this._timelineDraftDuration === duration && this._timelineDraftAnimation === animation) return this._timeline;
+    const animationEnd = animation === this._timelineDraftAnimation && this._timelineDraftEndTick !== undefined ? this._timelineDraftEndTick : animationEndTick({_styk:{animation}});
+    if (this._timeline && this._timelineDraftIndex === index && this._timelineDraftDuration === duration && this._timelineDraftEndTick === animationEnd) {
+      this._timelineDraftAnimation = animation; return this._timeline;
+    }
     this._timelineDraftIndex = index; this._timelineDraftDuration = duration;
     this._timelineDraftAnimation = animation;
+    this._timelineDraftEndTick = animationEnd;
     let report = index >= 0 && duration !== this.report.keyframes[index]?.duration_raw
       ? {...this.report, keyframes:this.report.keyframes.map((frame, i) => i === index ? {...frame, duration_raw:duration} : frame)} : this.report;
     if (animation !== report._styk?.animation) report = {...report, _styk: {...report._styk, animation}};
@@ -413,7 +417,7 @@ export class Editor extends EventTarget {
     if(command.layerSheetPatch)this.report._styk.layerSheet=command.layerSheetPatch[direction];
     this._restoreFrameDraftOverlay?.(command, direction);
     invalidateMovieclipTypes(this.report);
-    this._invalidate({timing: true, retainGeometry: command.kind === 'animation' || command.retainGeometry});
+    this._invalidate({timing: command.kind !== 'animation', retainGeometry: command.kind === 'animation' || command.retainGeometry});
     this._restoreSelection(command[`${direction}Selection`]);
     this._revision = command[`${direction}Revision`];
     this._applyFrameDraftHistory?.(command, direction);
@@ -517,6 +521,7 @@ export class Editor extends EventTarget {
     this._loadedFigureNames = prepared.figureNames; this._loadedTimelineTracks = prepared.tracks;
     this._invalidate({timing: true}); invalidateFrameIndex(report);
     this.tick=initial.tick;this._timeline=initial.timeline;this._timelineDraftIndex=initial.draftIndex;this._timelineDraftDuration=initial.draftDuration;this._timelineDraftAnimation=initial.draftAnimation;
+    this._timelineDraftEndTick=animationEndTick({_styk:{animation:initial.draftAnimation}});
     if(prepared.scene){this._evaluated=prepared.scene.frame;this._geometry=prepared.scene.geometry;this.selectedUid=prepared.scene.frame.objects[0]?.unique_id??null;}
     const published = performance.now();
     this._emit('document', {structural: true, timing: true, prepared: true,scenePrepared:Boolean(prepared.scene)});

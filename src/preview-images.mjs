@@ -72,8 +72,8 @@ export class PreviewImages extends Map {
           this.rejectPendingImages(error); this.onError(error);
         }
         else {
-          const keep = new Set(data.images.map(image => image.url)); let resized = false, unchanged = true;
-          if (!pending?.retain) for (const [url, bitmap] of this) if (!keep.has(url) && !this.pendingImages.has(url)) {bitmap.close?.(); super.delete(url); unchanged = false;}
+          const keep = new Set(data.images.map(image => image.url)), changedURLs = new Set(); let resized = false, unchanged = true;
+          if (!pending?.retain) for (const [url, bitmap] of this) if (!keep.has(url) && !this.pendingImages.has(url)) {bitmap.close?.(); super.delete(url); unchanged = false; changedURLs.add(url);}
           for (const {url, bitmap, variant, width, height, srcX, srcY, srcW, srcH} of data.images) {
             const previous = super.get(url);
             const sameShape = previous?.complete && previous.width === bitmap.width && previous.height === bitmap.height &&
@@ -83,7 +83,7 @@ export class PreviewImages extends Map {
             if (knownVariant && variants.get(previous) === variant && sameShape && previous.naturalWidth === width && previous.naturalHeight === height) {
               if (bitmap !== previous) bitmap.close();
             } else {
-              unchanged = false;
+              unchanged = false; changedURLs.add(url);
               bitmap.complete = true; bitmap.naturalWidth = width; bitmap.naturalHeight = height;
               if (srcW !== undefined) {bitmap.srcX = srcX; bitmap.srcY = srcY; bitmap.srcW = srcW; bitmap.srcH = srcH;}
               if (knownVariant) variants.set(bitmap, variant);
@@ -101,9 +101,9 @@ export class PreviewImages extends Map {
           if (pending?.retain) for (const [url, bitmap] of this) {
             if (this.bytes <= this.maxBytes / 2) break;
             if (keep.has(url) || this.pendingImages.has(url)) continue;
-            this.bytes -= bitmap.width * bitmap.height * 4; bitmap.close?.(); super.delete(url); unchanged = false;
+            this.bytes -= bitmap.width * bitmap.height * 4; bitmap.close?.(); super.delete(url); unchanged = false; changedURLs.add(url);
           }
-          this.reduced = data.reduced; pending?.resolve(); this.onReady({retained:Boolean(pending?.retain),resized,...(unchanged ? {unchanged:true} : {})});
+          this.reduced = data.reduced; pending?.resolve(); this.onReady({retained:Boolean(pending?.retain),resized,changedURLs:[...changedURLs],...(unchanged ? {unchanged:true} : {})});
         }
         this.drain(); this._scheduleIdle();
       };

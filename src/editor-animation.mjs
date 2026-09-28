@@ -20,13 +20,15 @@ function assignAnimation(editor, animation) {
   const retainPropertyMarkers=previousPoses.length===nextPoses.length && previousPoses.every((channel,index)=>channel===nextPoses[index]);
   editor.report._styk ??= {};
   if (animation) editor.report._styk.animation = animation; else delete editor.report._styk.animation;
-  editor._invalidate({timing: true, retainPropertyMarkers, retainGeometry: true});
+  // The timeline getter checks the animation endpoint; value-only changes
+  // leave native frame starts and durations intact.
+  editor._invalidate({retainPropertyMarkers, retainGeometry: true});
 }
-export function draftAnimation(editor) {
+export function draftAnimation(editor, {keyOnly = false} = {}) {
   const before = currentAnimation(editor), after = {...before, version: 1, nextKeyId: before?.nextKeyId ?? 1, channels: [...animationChannels(editor.report)]};
   const cloned = new Map(), indices = new Map(after.channels.map((channel, index) => [channel.id, index]));
-  const draft = {before, after, sources: {}, poseSources: new Map(), changed: false,
-    finalize() { const sorted=new Set();for (const channel of cloned.values()) if(!sorted.has(channel.keys)){sortKeys(channel.keys);sorted.add(channel.keys);} },
+  const draft = {before, after, sources: {}, poseSources: new Map(), changed: false, keyOnly,
+    finalize() { if(keyOnly&&!this.keyOrderChanged)return;const sorted=new Set();for (const channel of cloned.values()) if(!sorted.has(channel.keys)){sortKeys(channel.keys);sorted.add(channel.keys);} },
     addChannel(channel) { indices.set(channel.id, after.channels.length); after.channels.push(channel); cloned.set(channel.id, channel); return channel; },
     sourceChannel(id) {
       const index = indices.get(id);
@@ -66,7 +68,7 @@ export function draftAnimation(editor) {
       if (native) { index = after.channels.length; indices.set(id, index); after.channels.push({...native, source: 'authored'}); }
     }
     if (index === undefined) return null;
-    const channel = {...after.channels[index], target: {...after.channels[index].target}, keys: after.channels[index].keys.map(key => ({...key}))};
+    const channel = {...after.channels[index], target: {...after.channels[index].target}, keys: keyOnly ? after.channels[index].keys.slice() : after.channels[index].keys.map(key => ({...key}))};
     delete channel.useBasePose;
     after.channels[index] = channel; cloned.set(id, channel); draft.detachPoseProperties(channel); return channel;
   }};
@@ -135,20 +137,32 @@ export function putKey(editor, draft, entry) {
     }else raw=editor.animationValue(target,property,tick);
   }
   if (raw === undefined) throw new Error('The selected figure is not present at this time.');
-  draft.keyTicks ??= new Map();
-  let ticks = draft.keyTicks.get(channel);
-  if (!ticks) { ticks = new Map(channel.keys.filter(key => !key.hidden).map(key => [key.tick, key])); draft.keyTicks.set(channel, ticks); }
-  let key = ticks.get(tick);
-  const inherited = inheritedKeyEasing(channel.keys, tick, {property, autoEasing: property === 'pose' && editor.report.auto_easing});
+  let ticks, key, keyIndex = -1, previous;
+  if (draft.keyOnly) {
+    let low=0,high=channel.keys.length;
+    while(low<high){const mid=(low+high)>>>1;if(channel.keys[mid].tick<=tick)low=mid+1;else high=mid;}
+    for(let index=low-1;index>=0;index--){const candidate=channel.keys[index];
+      if(candidate.hidden)continue;
+      if(candidate.tick===tick){if(!key){key=candidate;keyIndex=index;}}
+      else {previous=candidate;break;}
+    }
+    draft.editedChannel = channel;
+  } else {
+    draft.keyTicks ??= new Map(); ticks = draft.keyTicks.get(channel);
+    if (!ticks) { ticks = new Map(channel.keys.filter(key => !key.hidden).map(key => [key.tick, key])); draft.keyTicks.set(channel, ticks); }
+    key = ticks.get(tick);
+  }
+  const inherited = inheritedKeyEasing(draft.keyOnly ? (previous ? [previous] : []) : channel.keys, tick, {property, autoEasing: property === 'pose' && editor.report.auto_easing});
   const value = validateAnimationValue(target, property, raw), interpolation = entry.interpolation ?? key?.interpolation ?? inherited.interpolation;
   const easing = {interpolation, ...(interpolation === 'bezier' ? {bezier: entry.bezier ?? key?.bezier ?? inherited.bezier} : {})};
   validateKeyEasing(easing, property);
   if (key) {
     if (!same(key.value, value) || key.interpolation !== interpolation || !same(key.bezier, easing.bezier) || key.passthrough) {
+      if (draft.keyOnly) { key = {...key}; channel.keys[keyIndex] = key; }
       key.value = value; assignKeyEasing(key, easing); delete key.passthrough; delete key.nativeCurve; delete key.nativeValueMode; delete key.nativeRotation; draft.changed = true;
     }
   } else {
-    key = {id: nextKeyIdentity(draft, channel), tick, value, ...keyEasing(easing)}; channel.keys.push(key); ticks.set(tick, key); draft.changed = true;
+    key = {id: nextKeyIdentity(draft, channel), tick, value, ...keyEasing(easing)}; channel.keys.push(key); ticks?.set(tick, key); draft.changed = true; draft.keyOrderChanged = true;
   }
   return key;
 }
@@ -449,9 +463,25 @@ export const editorAnimationMethods = {
     if(this._animationEdit?.branchStyle)return previewBranchStyleAnimation(this,value);
     const edit = this._animationEdit; if (!edit) throw new Error('Begin a property edit before previewing it.');
     value = validateAnimationValue(edit.target, edit.property, value);
-    const draft = draftAnimation(this); putKey(this, draft, {target: edit.target, property: edit.property, tick: edit.tick, value,exactTarget:edit.exactTarget});
+    // Each published preview stays immutable for evaluation, snapshots and
+    // history. After the first write only its value changes: retain the other
+    // keys instead of cloning, indexing and sorting the curve on every move.
+    if (edit.preview && currentAnimation(this) === edit.preview.animation) {
+      const {animation, channelIndex, keyIndex} = edit.preview, channel = animation.channels[channelIndex], key = channel.keys[keyIndex];
+      if (same(key.value, value)) return value;
+      const keys = channel.keys.slice(), next = {...key, value};
+      assignKeyEasing(next, key.interpolation ? key : inheritedKeyEasing(channel.keys, edit.tick, {property:edit.property}));
+      delete next.passthrough; delete next.nativeCurve; delete next.nativeValueMode; delete next.nativeRotation;
+      keys[keyIndex] = next;
+      const after = {...animation, channels: animation.channels.slice()}; after.channels[channelIndex] = {...channel, keys};
+      assignAnimation(this, after); edit.preview.animation = after;
+      this._emit('edit', {live: true, animation: true, changedChannels: [channel.id]}); return value;
+    }
+    const draft = draftAnimation(this, {keyOnly:true}); const key = putKey(this, draft, {target: edit.target, property: edit.property, tick: edit.tick, value,exactTarget:edit.exactTarget});
     if (!draft.changed) return value;
     draft.finalize();
+    const channelIndex = draft.after.channels.indexOf(draft.editedChannel);
+    edit.preview = {animation:draft.after, channelIndex, keyIndex:draft.after.channels[channelIndex].keys.indexOf(key)};
     assignAnimation(this, draft.after); edit.changed = true;
     this._emit('edit', {live: true, animation: true, changedChannels: [animationChannelId(edit.target, edit.property)]}); return value;
   },

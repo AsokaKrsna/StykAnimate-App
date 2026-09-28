@@ -67,6 +67,10 @@ History starts with existing 0.5.5 metadata, with overlapping feedback instructi
 - Show What's new and the first-run privacy choice one after the other at startup, never on top of an open menu or dialog.
 - Press Enter to confirm a new project name. Prompts such as "Save changes?" start on their main field or button instead of Close, open over another dialog without replacing it, and let you pick a recent file or a Stick Nodes asset with the arrow keys and Enter.
 
+### Performance
+
+- Faster property adjustments in long animations and smoother refreshes in scenes with many images.
+
 ## [1.1.0]
 
 Drawing layers and animation editing improvements
