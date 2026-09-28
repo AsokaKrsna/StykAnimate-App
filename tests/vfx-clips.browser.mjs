@@ -67,7 +67,7 @@ try{
  const saver=new DocumentExporter(),importer=new ImportClient();try{const original=styk.editor.report._styk.vfxClips,blob=await saver.export(styk.editor.report,{format:'styk',name:'Effect clips'}),imported=await importer.importFile(new File([blob],'clips.styk')),reopened=new Editor({demo:false}).load(imported.document);return JSON.stringify(original)===JSON.stringify(reopened.report._styk.vfxClips);}finally{saver.dispose();importer.dispose();}
  });assert.equal(roundtrip,true);
  await page.mouse.move(500,100);await page.waitForTimeout(500);await fs.mkdir('artifacts/vfx',{recursive:true});await page.screenshot({path:'artifacts/vfx/clips-inspector.png'});
- await page.getByRole('button',{name:'Effect presets',exact:true}).click();await page.locator('.vfx-catalog [data-choice="Power up"]').click();
+ await page.getByRole('button',{name:'Add effect',exact:true}).click();await page.locator('.vfx-catalog [data-catalog-mode="presets"]').click();await page.locator('.vfx-catalog [data-choice="Power up"]').click();
  await page.getByLabel('Strength',{exact:true}).fill('65');await page.getByLabel('Strength',{exact:true}).press('Tab');
  const group=await page.evaluate(()=>styk.editor.getVfxClips().at(-1));assert.equal(group.effects.length,2);assert.equal(group.strength,.65);
  await page.getByRole('button',{name:'Add to group',exact:true}).click();await page.locator('.vfx-catalog [data-choice="blur"]').click();assert.equal(await page.evaluate(()=>styk.editor.getVfxClips().at(-1).effects.length),3);
@@ -79,7 +79,7 @@ try{
  const shown=()=>page.evaluate(()=>styk.timeline.tracks.filter(r=>r.kind==='vfx').flatMap(r=>r.clips.map(c=>c.target.kind==='scene'?'scene':c.target.uid)));
  assert.deepEqual(await shown(),[1]);await page.evaluate(()=>styk.editor.select(2));await page.waitForFunction(()=>styk.timeline.tracks.some(r=>r.kind==='vfx'&&r.clips[0].target.uid===2));assert.deepEqual(await shown(),[2]);
  await page.evaluate(()=>styk.editor.select(null));assert.deepEqual(await shown(),[]);
- await page.getByLabel('Effect target',{exact:true}).selectOption('scene');assert.deepEqual(await shown(),['scene']);
+ await page.getByRole('button',{name:'Scene effects',exact:true}).click();assert.deepEqual(await shown(),['scene']);
  await page.evaluate(()=>styk.editor.select(1));assert.deepEqual(await shown(),[1]);
  await page.getByRole('button',{name:'Glow',exact:true}).click();await page.getByLabel('Effect target',{exact:true}).selectOption('connected');
  await page.evaluate(()=>{const e=styk.editor,c=e.getVfxClips()[0];e.setVfxClip(c.id,{fadeIn:4,fadeOut:6});e.setVfxClipParameter(c.id,c.effects[0].id,'radius',4,{key:true,tick:5});e.setVfxClipParameter(c.id,c.effects[0].id,'radius',28,{key:true,tick:20});});

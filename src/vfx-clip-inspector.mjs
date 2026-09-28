@@ -1,5 +1,5 @@
 import {vfxClipActiveAt,clipTime} from './vfx-clips.mjs';
-import {VFX_REGISTRY,vfxDescriptor} from './vfx.mjs';
+import {VFX_REGISTRY,VFX_LIMIT,vfxDescriptor} from './vfx.mjs';
 import {icon} from './icons.mjs';
 import {vfxIcon,vfxTile} from './vfx-icons.mjs';
 import {vfxVisibleKeys,vfxSelectedChannels,vfxChannelLabel,setVfxVisibleChannels,vfxGroupEffectName} from './vfx-key-channels.mjs';
@@ -65,31 +65,32 @@ function clipBody(host,c,locked){
  host.shownGroups??=new Set();if(!host.shownGroups.has(c.id)){host.shownGroups.add(c.id);expanded.add(host.selectedClipEffect??effects[0]?.id);}
  let body=c.effects.length>1||c.strength!==1?`<div class="vfx-fields">${clipStrength(host,c,locked)}</div>`:'';
  try{
-  body+=effects.length===1?`<div class="vfx-clip-effect vfx-fields" data-section="clip-effect-${effects[0].id}">${effectFields(host,c,effects[0],locked,picked)}</div>`:`<div class="vfx-members" role="list" aria-label="Effects in ${esc(clipName(c))}">${effects.map(effect=>{
+  body+=effects.length===1?`<div class="vfx-clip-effect vfx-fields" data-section="clip-effect-${effects[0].id}">${effectFields(host,c,effects[0],locked,picked)}</div>`:`<h4 class="vfx-subhead">Effects in this group</h4><div class="vfx-members" role="list" aria-label="Effects in ${esc(clipName(c))}">${effects.map(effect=>{
    const name=vfxGroupEffectName(c,effect),d=VFX_REGISTRY[effect.type];
    return `<details class="vfx-clip-effect${host.selectedClipEffect===effect.id?' is-effect-selected':''}${effect.enabled?'':' is-disabled'}" role="listitem" data-section="clip-effect-${effect.id}" data-group-effect="${effect.id}" name="vfx-effects-${c.id}" ${expanded.has(effect.id)?'open':''}><summary><button type="button" class="vfx-grip" data-vfx-group-drag draggable="${!locked}" aria-label="Reorder ${esc(name)}" data-tooltip="Drag to reorder · Alt+↑/↓" ${locked?'disabled':''}>${vfxIcon('grip')}</button>${vfxTile(d.icon,d.category)}<span class="vfx-row-name">${esc(name)}</span><span class="vfx-group-actions">${iconButton('effect-enable',`${effect.enabled?'Disable':'Enable'} ${name}`,effect.enabled?'eye':'eye-off',{disabled:locked,on:!effect.enabled,className:'vfx-row-eye'})}${iconButton('effect-menu','Effect actions','more',{disabled:locked,menu:true,className:'vfx-row-more'})}</span>${icon('chevron-right','vfx-chevron')}</summary><div class="vfx-fields">${effectFields(host,c,effect,locked,picked)}</div></details>`;
-  }).join('')}</div>`;
+  }).join('')}<button type="button" class="vfx-group-add" data-clip-action="group-add" data-tooltip="Layer another effect into this group" ${locked||c.effects.length>=VFX_LIMIT?'disabled':''}>${icon('plus')}<span>Add to group</span></button></div>`;
  }finally{host.renderingClip=null;}
  // Timing: the whole animation, or a frame range with its start and length.
  body+=`<div class="vfx-timing" data-section="clip-timing-${c.id}"><h4 class="vfx-subhead">Timing</h4><div class="vfx-row"><span class="vfx-label">Plays</span><select class="vfx-select" data-clip-field="mode" aria-label="Effect duration" ${locked?'disabled':''}><option value="always" ${c.duration===null?'selected':''}>Whole animation</option><option value="timed" ${c.duration!==null?'selected':''}>Frame range</option></select></div>${c.duration===null?'':`<div class="vfx-clip-timing">${number('start','Start',c.start+1,1,10000001-c.duration)+number('duration','Duration',c.duration,1,10000000-c.start)}</div>`}</div>`;
  return body;
 }
-/** The rows of the effect clips on the current targets, filtered by the Show choice. */
+/** The effect clips on the current targets, filtered by the Show choice: one entry each, and the selected one
+ opens its settings directly under its row, so the settings always read as that effect's. */
 export function clipRowsHTML(host,targets){
  const e=host.editor,clips=targets.flatMap(t=>e.getVfxClips(t)),view=host.clipView??'playhead',query=(host.clipQuery??'').toLowerCase();
  const visible=filterVfxClips(clips,{view,tick:e.tick,selected:host.selectedClip,query});
  host.renderedVfxClip=visible.find(c=>c.id===host.selectedClip)??null;
  const html=visible.map(c=>{
   const locked=lockedClip(e,c),selected=c.id===host.selectedClip,range=c.duration===null?'':`<span class="vfx-row-meta" data-tooltip="Plays on frames ${c.start+1}–${c.start+c.duration}">${c.start+1}–${c.start+c.duration}</span>`;
-  return `<div class="vfx-clip vfx-item${selected?' is-selected':''}${c.enabled?'':' is-disabled'}" role="listitem" data-section="clip-${c.id}" data-clip-id="${c.id}"><button type="button" class="vfx-item-select" data-clip-action="select" aria-pressed="${selected}">${clipTile(c)}<span class="vfx-row-name">${esc(clipName(c))}</span></button>${range}${iconButton('enabled',c.enabled?'Disable clip':'Enable clip',c.enabled?'eye':'eye-off',{disabled:locked,on:!c.enabled,className:'vfx-row-eye'})}${iconButton('menu','Effect clip actions','more',{menu:true,className:'vfx-row-more'})}</div>`;
+  const row=`<div class="vfx-clip vfx-item${selected?' is-selected':''}${c.enabled?'':' is-disabled'}" data-section="clip-${c.id}" data-clip-id="${c.id}"><button type="button" class="vfx-item-select" data-clip-action="select" aria-expanded="${selected}">${clipTile(c)}<span class="vfx-row-name">${esc(clipName(c))}</span></button>${range}${iconButton('enabled',c.enabled?'Disable clip':'Enable clip',c.enabled?'eye':'eye-off',{disabled:locked,on:!c.enabled,className:'vfx-row-eye'})}${iconButton('menu','Effect clip actions','more',{menu:true,className:'vfx-row-more'})}${icon('chevron-right','vfx-chevron')}</div>`;
+  return `<div class="vfx-entry${selected?' is-open':''}" role="listitem" data-section="entry-${c.id}">${row}${selected?clipDetailHTML(host):''}</div>`;
  }).join('');
  return {html,total:clips.length,shown:visible.length};
 }
-/** The selected clip's settings, directly under the list. */
-export function clipDetailHTML(host){
+/** The selected clip's settings, under its row: a group's strength and its effects, then Timing. */
+function clipDetailHTML(host){
  const c=host.renderedVfxClip;if(!c)return '';
- const locked=lockedClip(host.editor,c),add=c.effects.length>1?'Add to group':'Combine with…';
- return `<section class="vfx-detail" data-section="vfx-detail-${c.id}" data-clip-id="${c.id}" aria-label="${esc(clipName(c))} settings"><div class="vfx-detail-head">${clipTile(c)}<h3 class="vfx-detail-title">${esc(clipName(c))}</h3><button type="button" class="ui-button vfx-group-add" data-size="sm" data-variant="ghost" data-clip-action="group-add" data-tooltip="Layer another effect into this one" ${locked?'disabled':''}>${icon('combine')}<span class="ui-label">${add}</span></button></div>${clipBody(host,c,locked)}</section>`;
+ return `<section class="vfx-detail" data-section="vfx-detail-${c.id}" data-clip-id="${c.id}" aria-label="${esc(clipName(c))} settings">${clipBody(host,c,lockedClip(host.editor,c))}</section>`;
 }
 export function selectClip(host,id){
  host.commit();host.selectedClip=id;host.selected=null;host.selectedClipEffect=host.editor.getVfxClips().find(c=>c.id===id)?.effects[0]?.id??null;host.editor._selectedVfxClip=id;host.editor._selectedVfxKey=null;
@@ -109,7 +110,7 @@ export function openClipMenu(host,id,event){
  let menu=host.clipMenu;
  if(!menu){menu=host.clipMenu={editor:e,_run:fn=>host.run(fn)};host.abort.signal.addEventListener('abort',()=>{menu.menuEvents?.abort();menu.menu?.remove();},{once:true});}
  showTimelineMenu(menu,event,[
-  [{label:'Rename…',symbol:'text',disabled:locked,action:()=>renameClip(host,id)}],
+  [{label:'Rename…',symbol:'text',disabled:locked,action:()=>renameClip(host,id)},{label:c.effects.length>1?'Add effect to group…':'Combine with another effect…',symbol:'combine',disabled:locked||c.effects.length>=VFX_LIMIT,action:()=>{host.commit();host.addToGroup=id;host.openPopup(host.root.querySelector(`.vfx-clip[data-clip-id="${CSS.escape(id)}"]`)??host.root,'add');}}],
   [{label:'Move up',symbol:'chevron-up',disabled:locked||index<=0,action:run('up')},{label:'Move down',symbol:'chevron-down',disabled:locked||index>=siblings.length-1,action:run('down')}],
   [{label:'Copy animation',symbol:'duplicate',action:run('copy')},{label:'Duplicate',symbol:'duplicate',disabled:locked,action:run('duplicate')}],
   [{label:'Delete',symbol:'trash',danger:true,disabled:locked,action:run('delete')}],

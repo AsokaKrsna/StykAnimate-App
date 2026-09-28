@@ -1,4 +1,4 @@
-import {clipRowsHTML,clipDetailHTML,clipKeyControls,clipClick,clipChange,selectClip,openClipMenu} from './vfx-clip-inspector.mjs';
+import {clipRowsHTML,clipKeyControls,clipClick,clipChange,selectClip,openClipMenu} from './vfx-clip-inspector.mjs';
 import {focusClipBinding,groupDragStart,groupDragOver,groupDrop,groupDragEnd,groupKeydown} from './vfx-clip-controls.mjs';
 import {vfxClipActiveAt} from './vfx-clips.mjs';
 import {connectedVfxConflict} from './vfx-connected.mjs';
@@ -88,40 +88,39 @@ export class VfxInspector {
   const view=this.clipView??'playhead',query=(this.clipQuery??'').toLowerCase();
   const legacy=stacks.map(s=>({...s,shown:s.effects.filter(effect=>view==='selected'?this.isSelected(s.target,effect.id):view==='all'?!query||VFX_REGISTRY[effect.type].name.toLowerCase().includes(query):(effect.params.effectStrength??1)>0)}));
   const clips=targets.length?clipRowsHTML(this,targets):{html:'',total:0,shown:0};
-  const poses=legacy.map(({target,shown,locked},ownerIndex)=>shown.length?`${targets.length>1?`<div class="ui-group-label vfx-owner-name">${esc(this.ownerName(target))}</div>`:''}${shown.map(effect=>this.poseRow(target,effect,locked,ownerIndex)).join('')}`:'').join('');
+  const poses=legacy.map(({target,shown,locked},ownerIndex)=>shown.length?`${targets.length>1?`<div class="ui-group-label vfx-owner-name">${esc(this.ownerName(target))}</div>`:''}${shown.map(effect=>this.poseEntry(target,effect,locked,ownerIndex)).join('')}`:'').join('');
   const total=clips.total+stacks.reduce((n,s)=>n+s.effects.length,0),shown=clips.shown+legacy.reduce((n,s)=>n+s.shown.length,0);
   const locked=stacks.some(s=>s.locked),disabled=!targets.length||locked?' disabled':'';
   const list=clips.html+(poses&&clips.html?'<div class="ui-group-label">Pose effects</div>':'')+poses;
   // Whenever the Show choice hides effects, one row says so, so they never seem to vanish.
   const more=view==='playhead'&&total>shown?`<button type="button" class="vfx-show-all" data-vfx-action="show-all"><span>${total-shown} more on other frames</span><span class="vfx-show-all-link">Show all</span></button>`:'';
   const body=!targets.length?this.noTargetHTML():list?`<div class="vfx-list" role="list" aria-label="Effects">${list}</div>${more}`:this.emptyHTML(total,view,locked);
-  const detail=clipDetailHTML(this)||this.poseDetail(legacy);
   const scope=this.scope==='selection'?(scene?'scene':targets[0]?.kind==='segment'?'selection':stacks.some(s=>s.effects.length)&&!stacks.some(s=>e.animationValue(s.target,'vfxScope'))?'figure':'connected'):this.scope;
   const name=!targets.length?'Effects':targets.length>1?`${targets.length} figures`:this.ownerName(targets[0]);
-  const head=`<div class="vfx-head"><div class="ui-target-line"><span class="ui-target-kind">${targets.length?this.targetIcon(targets[0]):vfxIcon('effects')}</span><h2 class="ui-target-name">${esc(name)}</h2></div><select class="vfx-view" data-clip-view aria-label="Show effects" ${targets.length?'':'hidden'}>${[['playhead','At this frame'],['selected','Selected'],['all',`All (${total})`]].map(([value,text])=>`<option value="${value}" ${view===value?'selected':''}>${text}</option>`).join('')}</select></div>`;
+  // The head says what receives effects: the target and Apply to. The list's own header says what it shows and adds.
+  const head=`<div class="vfx-head"><div class="ui-target-line"><span class="ui-target-kind">${targets.length?this.targetIcon(targets[0]):vfxIcon('effects')}</span><h2 class="ui-target-name">${esc(name)}</h2></div></div>`;
   const options=[...(e.selectedJoint>=0?[['selection','Selected node']]:[]),['figure','This part'],['connected','Whole figure'],['scene','Scene']];
-  const paste=(this.clipboard?`<button type="button" class="ui-icon-button" data-size="sm" data-vfx-action="paste" aria-label="Paste effect"${disabled}>${icon('clipboard')}</button>`:'')+(e._vfxClipClipboard?`<button type="button" class="ui-icon-button" data-size="sm" data-clip-action="paste" aria-label="Paste animation"${disabled}>${icon('clipboard')}</button>`:'');
-  const controls=`<div class="vfx-controls"><label class="ui-field vfx-scope" data-select data-size="sm"><span class="ui-field-label">Apply to</span><select class="ui-field-input" id="vfx-scope" aria-label="Effect target">${options.map(([value,text])=>`<option value="${value}" ${scope===value?'selected':''}>${text}</option>`).join('')}</select>${icon('chevron-down','ui-icon ui-field-chev')}</label><div class="vfx-actions"><button type="button" class="ui-button" data-size="sm" data-variant="outline" data-vfx-action="add"${disabled}>${icon('plus')}<span class="ui-label">Add effect</span></button><button type="button" class="ui-button" data-size="sm" data-variant="outline" data-vfx-action="presets" aria-label="Effect presets" data-tooltip="Ready-made looks such as Neon, Ice or Power up"${disabled}>${vfxIcon('effects')}<span class="ui-label">Presets</span></button>${paste}</div></div>`;
+  const paste=(this.clipboard?`<button type="button" class="ui-icon-button" data-size="sm" data-vfx-action="paste" aria-label="Paste effect" data-tooltip="Paste effect"${disabled}>${icon('clipboard')}</button>`:'')+(e._vfxClipClipboard?`<button type="button" class="ui-icon-button" data-size="sm" data-clip-action="paste" aria-label="Paste animation" data-tooltip="Paste effect animation"${disabled}>${icon('clipboard')}</button>`:'');
+  const views=[['playhead','At this frame'],['selected','Only selected'],['all',`All (${total})`]];
+  // With nothing to apply effects to, the empty state's own action is the only control.
+  const controls=!targets.length?'':`<div class="vfx-controls"><label class="ui-field vfx-scope" data-select data-size="sm"><span class="ui-field-label">Apply to</span><select class="ui-field-input" id="vfx-scope" aria-label="Effect target">${options.map(([value,text])=>`<option value="${value}" ${scope===value?'selected':''}>${text}</option>`).join('')}</select>${icon('chevron-down','ui-icon ui-field-chev')}</label></div>`
+   +`<div class="vfx-list-head"><h3 class="vfx-list-title">Effects</h3><select class="vfx-view" data-clip-view aria-label="Show effects">${views.map(([value,text])=>`<option value="${value}" ${view===value?'selected':''}>${text}</option>`).join('')}</select><span class="vfx-list-actions">${paste}<button type="button" class="ui-button" data-size="sm" data-variant="outline" data-vfx-action="add" aria-label="Add effect" data-tooltip="Effects and ready-made presets"${disabled}>${icon('plus')}<span class="ui-label">Add</span></button></span></div>`;
   const search=view==='all'&&targets.length?`<label class="ui-field vfx-search" data-size="sm">${icon('search','ui-icon')}<input class="ui-field-input" type="search" data-clip-search placeholder="Search effects" aria-label="Search effect clips" value="${esc(this.clipQuery??'')}"></label>`:'';
-  updateInspectorDOM(this.root,`${head}${controls}<div class="vfx-stack">${search}${warnings}${body}${detail}</div><div class="vfx-key-dock">${clipKeyControls(this)}</div>`,{preserveDisclosure:true});
+  updateInspectorDOM(this.root,`${head}${controls}<div class="vfx-stack">${search}${warnings}${body}</div><div class="vfx-key-dock">${clipKeyControls(this)}</div>`,{preserveDisclosure:true});
  }
- /** A pose effect from an older project: the same row as an effect clip, with a grip to reorder. */
- poseRow(target,effect,locked,ownerIndex){
+ /** A pose effect from an older project: the same entry as an effect clip, with a grip to reorder. */
+ poseEntry(target,effect,locked,ownerIndex){
   const d=VFX_REGISTRY[effect.type],selected=this.isSelected(target,effect.id),dis=locked?' disabled':'';
-  return `<div class="vfx-effect vfx-item${effect.enabled?'':' is-disabled'}${selected?' is-selected':''}" role="listitem" data-section="vfx-${ownerIndex}-${effect.id}" data-vfx-id="${effect.id}" data-vfx-target="${esc(JSON.stringify(target))}"><button type="button" class="vfx-grip" draggable="${!locked}" data-vfx-drag aria-label="Reorder ${esc(d.name)}" data-tooltip="Drag to reorder · Alt+↑/↓"${dis}>${vfxIcon('grip')}</button><button type="button" class="vfx-item-select vfx-effect-title" data-vfx-action="select" aria-pressed="${selected}">${vfxTile(d.icon,d.category)}<span class="vfx-row-name">${esc(d.name)}</span></button><button type="button" class="ui-icon-button vfx-row-eye" data-size="xs" data-vfx-action="enable" aria-label="${effect.enabled?'Disable':'Enable'} ${esc(d.name)}"${effect.enabled?'':' data-on="true"'}${dis}>${icon(effect.enabled?'eye':'eye-off')}</button><button type="button" class="ui-icon-button vfx-row-more" data-size="xs" data-vfx-action="menu" aria-label="${esc(d.name)} actions" aria-haspopup="menu">${icon('more')}</button></div>`;
+  const row=`<div class="vfx-effect vfx-item${effect.enabled?'':' is-disabled'}${selected?' is-selected':''}" data-section="vfx-${ownerIndex}-${effect.id}" data-vfx-id="${effect.id}" data-vfx-target="${esc(JSON.stringify(target))}"><button type="button" class="vfx-grip" draggable="${!locked}" data-vfx-drag aria-label="Reorder ${esc(d.name)}" data-tooltip="Drag to reorder · Alt+↑/↓"${dis}>${vfxIcon('grip')}</button><button type="button" class="vfx-item-select vfx-effect-title" data-vfx-action="select" aria-expanded="${selected}">${vfxTile(d.icon,d.category)}<span class="vfx-row-name">${esc(d.name)}</span></button><button type="button" class="ui-icon-button vfx-row-eye" data-size="xs" data-vfx-action="enable" aria-label="${effect.enabled?'Disable':'Enable'} ${esc(d.name)}"${effect.enabled?'':' data-on="true"'}${dis}>${icon(effect.enabled?'eye':'eye-off')}</button><button type="button" class="ui-icon-button vfx-row-more" data-size="xs" data-vfx-action="menu" aria-label="${esc(d.name)} actions" aria-haspopup="menu">${icon('more')}</button>${icon('chevron-right','vfx-chevron')}</div>`;
+  return `<div class="vfx-entry${selected?' is-open':''}" role="listitem" data-section="vfx-entry-${ownerIndex}-${effect.id}">${row}${selected?this.poseDetail(target,effect,locked,ownerIndex):''}</div>`;
  }
- /** The selected pose effect's settings, directly under the list. */
- poseDetail(legacy){
-  if(!this.selected)return '';
-  for(const [ownerIndex,{target,shown,locked}] of legacy.entries()){
-   const effect=shown.find(x=>this.isSelected(target,x.id));if(!effect)continue;
-   const d=VFX_REGISTRY[effect.type],fields=Object.entries(d.params).filter(([,p])=>!p.when||Object.entries(p.when).every(([key,values])=>values.includes(effect.params[key])));
-   const render=entries=>entries.map(([param,p])=>this.field(target,effect,param,p,ownerIndex,locked)).join('');
-   const normal=render(fields.filter(([,p])=>!p.advanced)),advanced=render(fields.filter(([,p])=>p.advanced));
-   const shadow=effect.type==='shadow'?['angle','distance'].map(param=>this.field(target,effect,param,{label:param==='angle'?'Angle':'Distance',type:'number',min:param==='angle'?-180:0,max:param==='angle'?180:256,step:1,unit:param==='angle'?'°':'px'},ownerIndex,locked,true)).join(''):'';
-   return `<section class="vfx-detail${effect.enabled?'':' is-disabled'}" data-section="vfx-detail-${ownerIndex}-${effect.id}" data-vfx-id="${effect.id}" data-vfx-target="${esc(JSON.stringify(target))}" aria-label="${esc(d.name)} settings"><div class="vfx-detail-head">${vfxTile(d.icon,d.category)}<h3 class="vfx-detail-title">${esc(d.name)}</h3></div><div class="vfx-fields">${normal}${shadow}</div>${advanced?`<details class="vfx-advanced"><summary>${icon('chevron-right')}More</summary><div class="vfx-fields">${advanced}</div></details>`:''}</section>`;
-  }
-  return '';
+ /** The selected pose effect's settings, under its row. */
+ poseDetail(target,effect,locked,ownerIndex){
+  const d=VFX_REGISTRY[effect.type],fields=Object.entries(d.params).filter(([,p])=>!p.when||Object.entries(p.when).every(([key,values])=>values.includes(effect.params[key])));
+  const render=entries=>entries.map(([param,p])=>this.field(target,effect,param,p,ownerIndex,locked)).join('');
+  const normal=render(fields.filter(([,p])=>!p.advanced)),advanced=render(fields.filter(([,p])=>p.advanced));
+  const shadow=effect.type==='shadow'?['angle','distance'].map(param=>this.field(target,effect,param,{label:param==='angle'?'Angle':'Distance',type:'number',min:param==='angle'?-180:0,max:param==='angle'?180:256,step:1,unit:param==='angle'?'°':'px'},ownerIndex,locked,true)).join(''):'';
+  return `<section class="vfx-detail${effect.enabled?'':' is-disabled'}" data-section="vfx-detail-${ownerIndex}-${effect.id}" data-vfx-id="${effect.id}" data-vfx-target="${esc(JSON.stringify(target))}" aria-label="${esc(d.name)} settings"><div class="vfx-fields">${normal}${shadow}</div>${advanced?`<details class="vfx-advanced"><summary>${icon('chevron-right')}More</summary><div class="vfx-fields">${advanced}</div></details>`:''}</section>`;
  }
  click(event){
   // Numeric focus selects through PropertyControls.begin. Other controls select
@@ -132,9 +131,9 @@ export class VfxInspector {
   if(button.dataset.vfxPaint){const b=this.bindings.get(button.dataset.vfxPaint),effect=resolvedVfx(this.bindingEffects(b).find(e=>e.id===b.id));this.commit();this.beforeEdit();if(b.clip)focusClipBinding(this,b);else this.select(b.target,b.id);this.closeColor?.();this.closeColor=openColorPicker({anchor:button,paint:vfxPaint(effect.params[b.param]),gradients:true,alpha:true,onChange:paint=>{this.setBinding(b,paint);this.sync();this.onChange();}});return;}
   const action=button.dataset.vfxAction,row=button.closest('[data-vfx-id]');if(!action)return;
   const target=row?JSON.parse(row.dataset.vfxTarget):null,id=row?.dataset.vfxId;
-  if(action==='select'){this.select(target,id);return;}
+  if(action==='select'){if(!this.isSelected(target,id)){this.select(target,id);return;}this.selected=null;this.editor._emit('vfx-selection');this.sync();this.onChange();return;}
   if(action==='menu'){this.commit();this.openEffectMenu(target,id,{currentTarget:button});return;}
-  if(action==='add'||action==='presets'){this.addToGroup=null;this.commit();this.openPopup(button,action);return;}
+  if(action==='add'){this.addToGroup=null;this.commit();this.openPopup(button,action);return;}
   if(action==='quick'){this.commit();const [mode,key]=button.dataset.vfxQuick.split(':');this.addChoice(mode,key);return;}
   if(action==='show-all'){this.clipView='all';this.sync();return;}
   if(action==='scene'){this.commit();this.scope='scene';this.selected=null;this.sync();this.onChange();return;}
@@ -205,7 +204,7 @@ export class VfxInspector {
   const effect=type=>{const d=VFX_REGISTRY[type];return tile('add',type,d.name,d.icon,d.category,d.category==='Generate'?'Generated':d.category);};
   const elsewhere=view==='playhead'&&total;
   const title=elsewhere?'No effects at this frame':scene?'No effects on the scene':targets.length===1?`No effects on ${this.ownerName(targets[0])}`:'No effects yet';
-  return `<div class="ui-empty vfx-empty"><h3 class="ui-empty-title">${esc(title)}</h3>${elsewhere?`<div class="ui-empty-actions"><button type="button" class="ui-button" data-size="sm" data-variant="ghost" data-vfx-action="show-all">Show all ${total}</button></div>`:''}<div class="vfx-suggestions" role="group" aria-label="Suggested effects">${[...effects.map(effect),...generated.map(effect),...presets.map(name=>tile('presets',name,name,VFX_PRESETS[name].icon,'Looks',`Look · ${VFX_PRESETS[name].effects.length}`))].join('')}</div></div>`;
+  return `<div class="ui-empty vfx-empty"><h3 class="ui-empty-title">${esc(title)}</h3>${elsewhere?'':'<p class="ui-empty-text">Start with one of these, or choose Add for every effect and preset.</p>'}${elsewhere?`<div class="ui-empty-actions"><button type="button" class="ui-button" data-size="sm" data-variant="ghost" data-vfx-action="show-all">Show all ${total}</button></div>`:''}<div class="vfx-suggestions" role="group" aria-label="Suggested effects">${[...effects.map(effect),...generated.map(effect),...presets.map(name=>tile('presets',name,name,VFX_PRESETS[name].icon,'Looks',`Look · ${VFX_PRESETS[name].effects.length}`))].join('')}</div></div>`;
  }
  openPopup(anchor,mode){
   this.closePopup();const scene=this.targets()[0]?.kind==='scene',popup=this.popup=document.createElement('div');popup.className='vfx-catalog';popup.setAttribute('popover','auto');popup.setAttribute('role','dialog');popup.setAttribute('aria-label',mode==='presets'?'VFX presets':'Add effect');

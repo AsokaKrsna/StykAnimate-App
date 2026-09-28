@@ -1,14 +1,18 @@
 /* VFX panel (docs/design/experience.md §5.4; src/vfx-inspector.mjs and
- * vfx-clip-inspector.mjs render it). It reads like Properties: the target's
- * name with the Show choice, Apply to and the two ways to add, then the effects
- * on the target as one list of rows and the selected effect's settings as one
- * titled section under it. Pinned: the head and the key strip; the list and
- * settings scroll between them.
+ * vfx-clip-inspector.mjs render it). It reads top down, from what receives
+ * effects to one effect's values:
  *
- *   a row          the effect's glyph on a tile in its category's tint, its name,
- *                  its frame range, a quiet eye and its ⋯ (on hover or selected)
+ *   the head       the target's name, then Apply to
+ *   the list head  "Effects", the Show choice and Add (effects and presets)
+ *   an entry       a row: the effect's glyph on a tile in its category's tint,
+ *                  its name, its frame range, a quiet eye, its ⋯ and a chevron;
+ *                  the selected entry opens its settings under its own row,
+ *                  between two full-width hairlines
  *   a parameter    a scrub label, a slider and the typed value, one grid for all
- *   a group        its effects as rows that open one at a time
+ *   a group        its strength, then its effects indented on a guide line as
+ *                  rows that open one at a time, and Add to group
+ *
+ * Pinned: the head, the list head and the key strip; the entries scroll.
  *
  * Also the effects catalogue and the Visible keys menu, which open from it. */
 @layer features {
@@ -19,34 +23,48 @@
     color: var(--text-1); font: var(--type-ui);
   }
 
-  /* ---- The head: the target and the Show choice; Apply to; Add effect and Presets ---- */
+  /* ---- The head: the target and Apply to ---- */
   .vfx-head {
     display: flex; flex: none; align-items: center; gap: var(--space-2);
     min-block-size: calc(var(--control-lg) + var(--space-3));
     padding: var(--space-3) calc(var(--island-pad) - var(--space-1-5)) 0 var(--island-pad);
   }
+  .vfx-controls { display: grid; flex: none; gap: var(--space-2); padding: var(--space-2) var(--island-pad) var(--space-3); }
+
+  /* ---- The list head: what the list shows, and the one way to add ---- */
+  .vfx-list-head {
+    display: flex; flex: none; align-items: center; gap: var(--space-1);
+    min-block-size: var(--control-lg); padding: var(--space-1) var(--island-pad);
+    box-shadow: inset 0 1px 0 var(--line-1);
+  }
+  .vfx-list-title { flex: none; margin: 0; font: var(--type-section); letter-spacing: -0.005em; color: var(--text-1); }
   :where(#vfx-panel) .vfx-view {
-    flex: none; max-inline-size: 50%; block-size: var(--control-sm); field-sizing: content;
-    background-color: transparent; color: var(--text-2); font: var(--type-small-strong);
+    flex: 0 1 auto; min-inline-size: 0; block-size: var(--control-sm); field-sizing: content;
+    background-color: transparent; color: var(--text-3); font: var(--type-small-strong);
   }
   :where(#vfx-panel) .vfx-view:where(:hover) { background-color: var(--surface-hover); box-shadow: none; color: var(--text-1); }
-  .vfx-controls { display: grid; flex: none; gap: var(--space-2); padding: var(--space-2) var(--island-pad) var(--space-3); }
-  .vfx-actions { display: flex; gap: var(--space-2); }
-  .vfx-actions > .ui-button { flex: 1 1 0; min-inline-size: 0; }
+  .vfx-list-actions { display: flex; flex: none; align-items: center; gap: var(--space-0-5); margin-inline-start: auto; }
 
   /* ---- The scrolling body ---- */
   .vfx-stack {
     flex: 1; min-block-size: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable;
-    padding: var(--space-2) var(--island-pad) var(--island-pad);
-    box-shadow: inset 0 1px 0 var(--line-1);
+    padding: 0 var(--island-pad) var(--island-pad);
   }
   .vfx-search { margin-block-end: var(--space-2); }
   .vfx-search > .ui-icon { flex: none; inline-size: var(--icon-sm); block-size: var(--icon-sm); color: var(--text-3); }
   .vfx-note { margin: 0 0 var(--space-2); font: var(--type-small); color: var(--text-2); text-wrap: pretty; }
   .vfx-note[data-tone="warning"] { padding: var(--space-1-5) var(--space-2-5); border-radius: var(--radius-sm); background: var(--warning-soft); color: var(--warning-text); }
 
-  /* ---- The effect list ---- */
+  /* ---- The effect list: one entry per effect; the selected one open under its row ---- */
   .vfx-list { display: grid; gap: var(--space-0-5); }
+  .vfx-entry { min-inline-size: 0; }
+  .vfx-entry.is-open {
+    margin-inline: calc(-1 * var(--island-pad)); padding: var(--space-1) var(--island-pad) var(--space-3);
+    box-shadow: inset 0 1px 0 var(--line-1), inset 0 -1px 0 var(--line-1);
+  }
+  .vfx-entry.is-open:first-child { box-shadow: inset 0 -1px 0 var(--line-1); }
+  .vfx-entry.is-open:not(:first-child) { margin-block-start: var(--space-1); }
+  .vfx-entry.is-open:not(:last-child) { margin-block-end: var(--space-1); }
   .vfx-list > .ui-group-label { padding-inline: var(--space-1-5); }
   .vfx-item {
     position: relative; display: flex; align-items: center; gap: var(--space-0-5);
@@ -73,6 +91,12 @@
   :where(.vfx-item:is(:hover, :focus-within, .is-selected), .vfx-clip-effect > summary:is(:hover, :focus-within)) .vfx-row-more,
   :where(#vfx-panel) .vfx-row-more[aria-expanded="true"] { opacity: 1; }
   @media (hover: none) { :where(#vfx-panel) .vfx-row-more { opacity: 1; } }
+  /* The chevron says a row opens; it turns while its settings show. */
+  .vfx-item > .vfx-chevron {
+    flex: none; inline-size: var(--icon-xs); block-size: var(--icon-xs); margin-inline: var(--space-0-5) var(--space-1);
+    stroke-width: 2.25; color: var(--text-3); pointer-events: none; transition: rotate var(--dur-base) var(--ease-out);
+  }
+  .vfx-item.is-selected > .vfx-chevron { rotate: 90deg; color: var(--text-2); }
 
   /* The effect's glyph on a small tile in its category's tint. */
   .vfx-tile {
@@ -121,8 +145,8 @@
   .vfx-show-all:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset-inset); }
   .vfx-show-all-link { flex: none; font: var(--type-small-strong); color: var(--accent-text); }
 
-  /* ---- Empty: a title and one-click starting points, each drawn as what it is ---- */
-  .vfx-empty { gap: var(--space-2); padding: var(--space-5) 0 var(--space-2); }
+  /* ---- Empty: a title, one line and one-click starting points, each drawn as what it is ---- */
+  .vfx-empty { gap: var(--space-1); padding: var(--space-4) 0 var(--space-2); }
   .vfx-suggestions {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1-5);
     justify-self: stretch; margin-block-start: var(--space-2); text-align: start;
@@ -142,17 +166,8 @@
   .vfx-suggestion:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset); }
   .vfx-suggestion:disabled { opacity: 0.42; }
 
-  /* ---- The selected effect's settings ---- */
-  .vfx-detail { margin-block-start: var(--space-2); padding-block: var(--space-4) var(--space-1); box-shadow: inset 0 1px 0 var(--line-1); }
-  .vfx-detail-head { display: flex; align-items: center; gap: var(--space-2); min-block-size: var(--control-sm); margin-block-end: var(--space-2); }
-  .vfx-detail-head > .vfx-tile { inline-size: 22px; block-size: 22px; }
-  .vfx-detail-head > .vfx-tile > svg { inline-size: 14px; block-size: 14px; }
-  .vfx-detail-title {
-    flex: 1; min-inline-size: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    font: var(--type-section); letter-spacing: -0.005em; color: var(--text-1);
-  }
-  :where(#vfx-panel) .vfx-group-add { --_px: var(--space-2); flex: none; margin-block: calc(-1 * var(--space-1)); color: var(--text-2); font: var(--type-small-strong); }
-  :where(#vfx-panel) .vfx-group-add:where(:hover):not(:disabled) { color: var(--text-1); }
+  /* ---- The selected effect's settings, under its row ---- */
+  .vfx-detail { padding-block-start: var(--space-2); }
   .vfx-detail.is-disabled > .vfx-fields { opacity: 0.55; }
   .vfx-fields { display: grid; gap: var(--space-0-5); min-inline-size: 0; }
 
@@ -223,8 +238,20 @@
   .vfx-advanced > summary:where(:hover) { background: var(--surface-hover); color: var(--text-1); }
   .vfx-advanced > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset-inset); }
 
-  /* A group: its effects as rows that open one at a time. */
-  .vfx-members { display: grid; margin-block: var(--space-1) 0; }
+  /* A group: its effects indented on a guide line, as rows that open one at a time, then Add to group. */
+  .vfx-detail > .vfx-subhead { margin-block-start: var(--space-3); }
+  .vfx-members {
+    display: grid; margin-inline-start: var(--space-2-5); padding-inline-start: var(--space-2);
+    box-shadow: inset 1px 0 0 var(--line-2);
+  }
+  :where(#vfx-panel) .vfx-group-add {
+    display: flex; align-items: center; justify-content: flex-start; gap: var(--space-2-5); block-size: var(--control-md); padding-inline: var(--space-1-5);
+    border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-2); font: var(--type-small-strong); text-align: start;
+  }
+  :where(#vfx-panel) .vfx-group-add > svg { inline-size: var(--icon-sm); block-size: var(--icon-sm); margin-inline: 4px; color: var(--text-3); }
+  :where(#vfx-panel) .vfx-group-add:where(:hover):not(:disabled) { background: var(--surface-hover); color: var(--text-1); }
+  :where(#vfx-panel) .vfx-group-add:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+  :where(#vfx-panel) .vfx-group-add:disabled { opacity: 0.42; }
   .vfx-clip-effect { position: relative; }
   .vfx-clip-effect + .vfx-clip-effect { box-shadow: inset 0 1px 0 var(--line-1); }
   .vfx-clip-effect > summary {
@@ -264,7 +291,7 @@
   :where(#vfx-panel) .vfx-key-navigation > .vfx-key { position: static; inline-size: var(--control-xs); block-size: var(--control-xs); margin: 0; opacity: 1; color: var(--accent-text); }
   :where(#vfx-panel) .vfx-easing { flex: none; inline-size: 88px; block-size: var(--control-sm); font: var(--type-small); }
 
-  /* ---- The effects catalogue (Add effect, Presets, Combine with…) ---- */
+  /* ---- The effects catalogue (Add, Add to group, Combine with another effect…) ---- */
   .vfx-catalog {
     position: fixed; inset: auto; box-sizing: border-box; margin: 0; padding: 0;
     max-inline-size: calc(100vw - var(--space-4)); max-block-size: min(460px, calc(100vh - var(--space-4))); overflow: auto; overscroll-behavior: contain;

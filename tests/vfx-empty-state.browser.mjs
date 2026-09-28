@@ -14,6 +14,15 @@ try{
   await page.getByRole('button',{name:'Add Glow',exact:true}).click();
   check('a suggestion adds one effect clip as one undo step',await page.evaluate(u=>styk.editor.getVfxClips().length===1&&styk.editor._undo.length===u+1,undo));
   check('the new effect is shown and selected',await page.locator('.vfx-clip.is-selected').count()===1);
+  check('its settings open under its own row, without repeating its name',await page.locator('.vfx-entry.is-open > .vfx-clip.is-selected + .vfx-detail').count()===1&&await page.locator('.vfx-detail h3').count()===0);
+  await page.locator('.vfx-clip [data-clip-action="select"]').click();
+  check('clicking the open row closes its settings',await page.locator('.vfx-detail').count()===0&&await page.locator('.vfx-clip [data-clip-action="select"]').getAttribute('aria-expanded')==='false');
+  await page.locator('.vfx-clip [data-clip-action="select"]').click();
+  await page.getByRole('button',{name:'Effect clip actions',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Combine with another effect…',exact:true}).click();
+  await page.locator('.vfx-catalog [data-choice="blur"]').click();
+  check('the row menu combines another effect into a group',await page.evaluate(()=>styk.editor.getVfxClips().length===1&&styk.editor.getVfxClips()[0].effects.length===2)&&await page.getByRole('button',{name:'Add to group',exact:true}).isVisible());
+  await page.keyboard.press('Control+z');
   await page.keyboard.press('Control+z');
   check('undo removes the suggested effect',await page.evaluate(()=>styk.editor.getVfxClips().length===0));
   await page.getByRole('button',{name:'Add effect',exact:true}).click();
