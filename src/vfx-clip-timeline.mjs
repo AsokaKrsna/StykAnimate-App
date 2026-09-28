@@ -23,11 +23,11 @@ export function visibleVfxKeys(keys,first,last,step){
  }
  const ticks=[...buckets.values()].sort((a,b)=>a-b);projections.set(keys,{begin,end,stride,ticks});return ticks;
 }
-export function appendVfxRows(rows,editor){
+export function appendVfxRows(rows,editor,target={scene:editor._vfxTimelineScene,uid:editor.selectedUid}){
  if(!editor._vfxTimelineVisible)return rows;
  const byLayer=new Map();
  for(const clip of editor.getVfxClips()){
-  if(editor._vfxTimelineScene?clip.target.kind!=='scene':clip.target.kind==='scene'||clip.target.uid!==editor.selectedUid)continue;
+  if(target.scene?clip.target.kind!=='scene':clip.target.kind==='scene'||clip.target.uid!==target.uid)continue;
   const id=clip.target.kind==='scene'?'scene':editor.layerForUid(clip.target.uid),list=byLayer.get(id)??[];list.push(clip);byLayer.set(id,list);
  }
  return rows.flatMap(row=>{
@@ -113,7 +113,16 @@ function syncFadeHandles(host){
 export function installVfxTimeline(Timeline){
  const p=Timeline.prototype;
  p._openVfxChannels=function(anchor){const clip=this.editor.getVfxClips().find(c=>c.id===this.editor._selectedVfxClip);if(clip)openVfxChannelMenu(this.editor,clip,anchor,{signal:this.events.signal});};
- const reindex=p._reindex;p._reindex=function(){if(this.gesture?.kind.startsWith('vfx'))this._cancelGesture();reindex.call(this);this.tracks=appendVfxRows(this.tracks,this.editor);for(const row of this.tracks)if(row.kind==='vfx')this.trackById.set(row.id,{...row,keys:[]});this.scroll.setAttribute('aria-rowcount',String(this.tracks.length));this._extent();};
+ p._effectRows=function(rows){
+  if(this.gesture?.kind.startsWith('vfx'))this._cancelGesture();
+  const e=this.editor;
+  // Selecting frame cells also selects their figures. Keep the effect context
+  // until a canvas/inspector selection explicitly changes it, including seeks.
+  if(!e._sheetSelection||this._effectDocument!==e._documentToken){
+   this._effectDocument=e._documentToken;this._effectTarget={scene:e._vfxTimelineScene,uid:e.selectedUid};
+  }
+  return appendVfxRows(rows,e,this._effectTarget);
+ };
  const paint=p._paint;p._paint=function(){paint.call(this);syncFadeHandles(this);};
  p._selectVfxRow=function(row,id){
   const clip=row.clips.find(c=>c.id===id)??row.clips[0];if(!clip)return;

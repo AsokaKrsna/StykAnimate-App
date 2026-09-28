@@ -81,6 +81,7 @@ function insertionPlan(editor, operation, targetFrames) {
   const sourceObjects = clipboard.objects ?? [clipboard.object], sourceFigures = clipboard.figures ?? [clipboard.figure];
   const pasteMode = operation.pasteMode ?? 'instance';
   if (!['default', 'unique', 'instance'].includes(pasteMode)) throw new Error('Choose a valid figure paste mode.');
+  if (!['same', 'front'].includes(operation.pasteDepth ?? 'same')) throw new Error('Choose a valid figure paste depth.');
   // Decide once per copied definition. A range shares the prepared definitions;
   // immutable movie documents remain shared until their editor publishes edits.
   const independent = new Set(sourceFigures.filter(figure => drawingMetadata(figure) || pasteMode === 'unique' ||
@@ -221,7 +222,20 @@ export const editorRangeCommandMethods = {
     if (payload?.definitions.length) validateScene({...report, figure_types: payload.definitions, backgrounds: [], keyframes: [{objects: [], duration_raw: 1}]});
     const plans = [];
     for (const entry of target.frames) {
-      const planned = payload && operation.kind !== 'duplicate' ? insert(entry.frame, payload) : planFigureFrameOperation(report, entry.frame, uids, {...operation, referenceUid: operation.referenceUid ?? this.selectedUid});
+      let insertion = payload;
+      if (operation.kind === 'paste' && operation.pasteDepth === 'front') {
+        const depths = new Map();
+        for (const object of entry.frame.objects) {
+          const layer = this.layerForUid(object.unique_id);
+          depths.set(layer, Math.max(depths.get(layer) ?? -1000000, object._stykZIndex ?? 0));
+        }
+        // Equal-depth ties use the clipboard's painter order, appended in front.
+        // Keep native depth limits even when the destination is already at its cap.
+        const destination = this.getLayer(this.activeLayerId)?.kind === 'layer' ? this.activeLayerId : this.report._styk.layers.defaultLayerId;
+        insertion = {...payload, objects: payload.objects.map(object => ({...object,
+          _stykZIndex: Math.min(1000000, (depths.get(payload.hints.get(object.unique_id) ?? destination) ?? 0) + 1)}))};
+      }
+      const planned = payload && operation.kind !== 'duplicate' ? insert(entry.frame, insertion) : planFigureFrameOperation(report, entry.frame, uids, {...operation, referenceUid: operation.referenceUid ?? this.selectedUid});
       if (!planned) continue;
       if(operation.kind==='duplicate')for(const object of planned.frame.objects)if(payload.order.includes(object.unique_id)){
         delete object._stykMovieclipPart;
@@ -326,7 +340,7 @@ export const editorRangeCommandMethods = {
     this._emit('edit', {label, animation: true, structural: true, timing: true, changedUids: [...new Set(plans.flatMap(plan => plan.changedUids))]});
   },
   addFigureInFrames(typeId, indices, options = {}) { return this.applyFigureRange({kind: 'add', typeId, x: options.x, y: options.y}, {...options, indices}); },
-  pasteFiguresInFrames(indices, options = {}) { return this.applyFigureRange({kind: 'paste', offset: options.offset, pasteMode: options.pasteMode ?? 'default'}, {...options, indices}); },
+  pasteFiguresInFrames(indices, options = {}) { return this.applyFigureRange({kind: 'paste', offset: options.offset, pasteMode: options.pasteMode ?? 'default', pasteDepth: options.pasteDepth}, {...options, indices}); },
   duplicateFiguresInFrames(indices, options = {}) { return this.applyFigureRange({kind: 'duplicate', offset: options.offset}, {...options, indices}); },
   duplicateInFrames(indices, options = {}) { return this.duplicateFiguresInFrames(indices, options); },
   deleteFiguresInFrames(indices, options = {}) { return this.applyFigureRange({kind: 'delete'}, {...options, indices}); },

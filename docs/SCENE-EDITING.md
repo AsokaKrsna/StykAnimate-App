@@ -12,6 +12,19 @@ scale or paint to definition defaults. Regression coverage is in
 
 ## Canvas navigation
 
+In Animate, clicking visible artwork selects that figure's origin after visible
+and hidden static handle picking have missed. This includes joined figures whose
+origins are not exposed as handles, so Unjoin is available immediately. Artwork
+picking skips hidden/locked figures and transparent pixels; it runs only on a
+click, using a three-pixel scratch surface and the existing geometry painter.
+Build tools and explicit handle-target modes retain their handle-only behavior.
+
+Settings → Canvas → Pasted figure depth defaults to **Same Z-index**. **In front**
+places pasted figures in front of the destination layer's existing figures,
+retaining their relative painter order and internal joins. The preference applies
+to ordinary, in-place, instance and unique pastes, including Edit together ranges.
+It does not change the definition-sharing choice or add another undo step.
+
 Ctrl+V pastes copied figures with the existing offset. Ctrl+Shift+V (**Paste in
 place**) preserves their copied canvas positions without advancing the offset
 for subsequent normal pastes. On macOS, use Command instead of Ctrl. Both commands

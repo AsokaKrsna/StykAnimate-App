@@ -34,6 +34,13 @@ contract, correctness checks, and remaining performance limits.
 With a VFX clip selected, previous/next frame shortcuts move the playhead without
 selecting a layer cell or clearing the clip selection, including outside its duration.
 
+Effect rows retain their target while selecting layer cells or seeking with that
+selection, including blank frames and ranges. An explicit figure/scene selection
+refreshes the target. Reindexing computes the complete row layout before changing
+the scroll extent, so temporary removal of effect rows cannot clamp scroll position.
+`tests/feedback-workflow.browser.mjs` checks real pointer range selection at the
+bottom of a scrolled sheet and a later explicit selection change.
+
 ## Independent layer and property tracks
 
 The default Advanced timeline uses the actual user layers, with permanent Scene

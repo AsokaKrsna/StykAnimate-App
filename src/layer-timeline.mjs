@@ -103,6 +103,7 @@ export class Timeline{
     if(!this.editor.report._styk.layerSheet){initializeLayerSheet(this.editor.report);this.editor._invalidate({timing:true});}
     this.motionState=this.editor.report._styk.cameraMotion;
     this.tracks=organizeTimelineRows([this.editor.getLayer('camera'),...(this.cameraMotionsCollapsed?[]:motionRows(this.editor)),this.editor.getLayer('scene'),...this.editor.layers.filter(l=>l.kind==='layer').reverse()],this.layerQuery,this.focusedLayerIds);
+    this.tracks=this._effectRows(this.tracks);
     this.visibleLayerCount=this.tracks.reduce((count,row)=>count+(row.kind==='layer'?1:0),0);
     const editor=this.editor;
     this.trackById=new Map(this.tracks.map(layer=>[layer.id,{...layer,target:layer.kind==='layer'?{kind:'layer',id:layer.id}:{kind:layer.kind},get keys(){return layer.kind==='motion'?[]:editor.layerFrameKeys(layer.id);}}]));

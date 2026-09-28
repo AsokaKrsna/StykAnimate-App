@@ -899,7 +899,7 @@ export class Editor extends EventTarget {
     const count = this.copySelection(); if (!count) return 0;
     this._selectionClipboard.offset = 0; this.deleteSelection(); return count;
   }
-  pasteSelection({newIdentities = false, pasteMode = 'default', offset} = {}) {
+  pasteSelection({newIdentities = false, pasteMode = 'default', pasteDepth = 'same', offset} = {}) {
     const clipboard = this._selectionClipboard ?? this._figureClipboard;
     if (!clipboard) return [];
     if (!Number.isInteger(this.tick) && (this.report._styk?.layerSheet || this.animationChannels.length || this.report._styk?.movieclipSource)) {
@@ -907,7 +907,7 @@ export class Editor extends EventTarget {
     }
     // One prepared insertion owns validation, IDs, assets and history. The
     // destination's unchanged figures and library never become paste snapshots.
-    const result = this.applyFigureRange({kind: 'paste', offset, defaultOffset: clipboard.offset * (clipboard.pastes + 1), newIdentities, pasteMode},
+    const result = this.applyFigureRange({kind: 'paste', offset, defaultOffset: clipboard.offset * (clipboard.pastes + 1), newIdentities, pasteMode, pasteDepth},
       {atPlayhead: true, label: this._selectionClipboard ? 'Paste figures' : 'Paste figure'});
     if (result.insertedUids.length && offset !== 0) clipboard.pastes++;
     return this.selectedObjects;

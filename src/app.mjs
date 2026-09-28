@@ -7,6 +7,7 @@ import {displayedSegmentPaint,displayedColor} from './figure-colors.mjs';
 import {openSurfaceReference} from './builder-surface-ui.mjs';
 import {openRigTest, openRigExamples} from './rig-test-ui.mjs';
 import {bucketRegion, pickFigureFill, drawFillHighlight} from './builder-fill.mjs';
+import {pickCanvasArtwork} from './canvas-artwork-pick.mjs';
 import {figureJoinAction, joinTargetUids} from './figure-join-action.mjs';
 import {duplicatePreview, drawDuplicatePreview} from './builder-duplicate-preview.mjs';
 import {createConstruction, strokeSegments} from './builder-construction.mjs';
@@ -2349,9 +2350,11 @@ function finishPolygon() {
   setTool("select");
   status("Polygon added");
 }
-function pick(p, {preferSelected = false} = {}) {
-  if (!state.handles) return null;
+function pick(p, {preferSelected = false, artwork = false} = {}) {
   const geometry = editor.geometry;
+  const body = () => artwork && !builderMode?.active && ['select','pose'].includes(state.tool)
+    ? pickCanvasArtwork(geometry, p, {resources, hiddenUids: effectiveHidden(), lockedUids: {has: isLocked}, scale: state.view.scale}) : null;
+  if (!state.handles) return body();
   const options = {
     project: screenPoint,
     projectionScale: !state.playing&&!state.previewing?state.view.scale:undefined,
@@ -2363,7 +2366,8 @@ function pick(p, {preferSelected = false} = {}) {
   // Visible handles keep priority. Hidden static endpoints are selection-only
   // fallback targets, prepared lazily on clicks, never on pointer hover.
   if (hit || builderMode?.active || !['select', 'pose'].includes(state.tool)) return hit;
-  return pickCanvasHandle(geometry, p, {...options, handles: canvasHandles(geometry, {selectStatic: true})});
+  return pickCanvasHandle(geometry, p, {...options, handles: canvasHandles(geometry, {selectStatic: true})})
+    ?? body();
 }
 overlay.addEventListener(
   "pointerdown",
@@ -2611,7 +2615,7 @@ overlay.addEventListener(
       requestRender();
       return;
     }
-    const hit = pick(p, {preferSelected: e.altKey && !state.handleEditHeld && !builderMode?.active});
+    const hit = pick(p, {preferSelected: e.altKey && !state.handleEditHeld && !builderMode?.active, artwork: true});
     if (!hit && e.button === 0 && builderMode?.active && ['select','rig'].includes(state.tool)) {
       const polygon=pickFigureFill(editor.geometry.objects.get(editor.selectedSlot),p);
       if(polygon){releaseCanvasPointer();editor.selectPolygon(editor.selectedUid,polygon.index);return;}
@@ -3866,7 +3870,7 @@ overlay.addEventListener(
     }
     if(construction?.active) {showCommandMenu([["chain-finish","check","Finish chain","Enter"],["chain-cancel","close","Cancel chain","Esc"]],{left:e.clientX,bottom:e.clientY});return;}
     pause();
-    const hit = pick(worldPoint(e));
+    const hit = pick(worldPoint(e), {artwork: true});
     if (builderMode?.active) {
       const fill = !hit && pickFigureFill(editor.geometry.objects.get(editor.selectedSlot),worldPoint(e));
       if(fill)editor.selectPolygon(editor.selectedUid,fill.index);
@@ -3942,7 +3946,7 @@ function pasteFigures(pasteMode = 'default', offset) {
   if (builderMode?.active) return toast("Finish the figure or return to Animate to paste.");
   return sharedClipboard.paste('figures', () => {
     finishCurrentEdit();
-    const options = {pasteMode, offset};
+    const options = {pasteMode, offset, pasteDepth: state.settings.pasteDepth};
     if (editor._selectionClipboard?.freshTypes?.size) return editor.pasteSelection(options);
     if (rangeFrames()) return editor.pasteFiguresInFrames(rangeFrames(), options);
     return editor.pasteSelection(options);
