@@ -6,6 +6,8 @@ import {VFX_REGISTRY,VFX_LIMIT,vfxProperty,resolvedVfx} from './vfx.mjs';
 import {effectAvailable} from './vfx-registry.mjs';
 import {VFX_PRESETS,PRESET_CATEGORIES,presetAvailable} from './vfx-presets.mjs';
 import {prewarmAtlas} from './vfx-generator-atlas.mjs';
+import {vfxPresetStore} from './vfx-user-presets.mjs';
+import {MINE,myPresetsSection,openPresetMenu,presetSummary,usablePresets} from './vfx-preset-ui.mjs';
 import {hasEffectPreview,cachedEffectPreview,requestEffectPreview} from './vfx-preset-preview.mjs';
 // Generated effects lead the catalogue; other categories keep registry order.
 const FIRST_CATEGORIES=['Generate',...PRESET_CATEGORIES],categoryRank=name=>{const i=FIRST_CATEGORIES.indexOf(name);return i<0?FIRST_CATEGORIES.length:i;};
@@ -44,6 +46,9 @@ export class VfxInspector {
    if(detail?.kind==='history'){this.finishForHistory();this.sync();}
    if(['document','selection'].includes(detail?.kind)){this.scope='selection';this.selected=null;this.selectedClip=null;editor._selectedVfxClip=null;editor._selectedVfxKey=null;if(detail.kind==='document')this.clipQuery='';this.closePopup();this.sync();this.onChange();}
   },{signal:this.abort.signal});
+  // The person's own presets load once and redraw the panel and an open catalogue when they change.
+  const unsubscribe=vfxPresetStore.subscribe(()=>{if(this.visible)this.sync();this.redrawCatalog?.();});this.abort.signal.addEventListener('abort',unsubscribe,{once:true});
+  void vfxPresetStore.load();
  }
  bindingEffects(b){return b.clip?this.editor.sampleVfxClip(b.clip):this.editor.vfxEffects(b.target);}
  readBinding(b){if(b.clipField)return (this.editor.getVfxClips().find(c=>c.id===b.clip)[b.clipField]+b.offset)*b.factor;const p=resolvedVfx(this.bindingEffects(b).find(e=>e.id===b.id)).params;return b.derived?(b.param==='angle'?Math.atan2(p.offsetY,p.offsetX)*180/Math.PI:Math.hypot(p.offsetX,p.offsetY)):p[b.param]*b.factor;}
@@ -189,7 +194,8 @@ export class VfxInspector {
  /** Add one effect or preset to every current target (or the open group) as one undo step. */
  addChoice(mode,key){
   this.beforeEdit();const targets=this.targets(),options={includeAttached:this.root.querySelector('#vfx-scope')?.value==='connected'};
-  this.editor.movieclipBatch('Add effects',()=>{if(this.addToGroup){this.editor.addVfxGroupEffect(this.addToGroup,key);}else for(const target of targets){const id=mode==='presets'?this.editor.addVfxGroup(target,key,options):this.editor.addVfxClip(target,key,options);selectClip(this,id);}});
+  const mine=key.startsWith(MINE)&&vfxPresetStore.find(key.slice(MINE.length));if(key.startsWith(MINE)&&!mine)throw new Error('That preset was deleted.');
+  this.editor.movieclipBatch('Add effects',()=>{if(this.addToGroup){this.editor.addVfxGroupEffect(this.addToGroup,key);}else for(const target of targets){const id=mine?this.editor.addVfxUserPreset(target,mine,options):mode==='presets'?this.editor.addVfxGroup(target,key,options):this.editor.addVfxClip(target,key,options);selectClip(this,id);}});
   this.addToGroup=null;this.closePopup();this.sync();this.onChange();
  }
  /** Nothing selected: effects need a figure, or the whole scene. */
@@ -202,9 +208,10 @@ export class VfxInspector {
   const generated=['particles','aura','beam','explosion','smoke'].filter(type=>effectAvailable(type,scene));
   const tile=(mode,key,label,art,category,meta)=>`<button type="button" class="vfx-suggestion" data-vfx-action="quick" data-vfx-quick="${mode}:${esc(key)}" aria-label="Add ${esc(label)}" ${locked?'disabled':''}>${vfxTile(art,category)}<span class="vfx-suggestion-name">${esc(label)}</span><span class="vfx-suggestion-meta">${esc(meta)}</span></button>`;
   const effect=type=>{const d=VFX_REGISTRY[type];return tile('add',type,d.name,d.icon,d.category,d.category==='Generate'?'Generated':d.category);};
+  const mine=usablePresets(scene).slice(0,3).map(p=>tile('presets',MINE+p.id,p.name,p.effects.length===1?VFX_REGISTRY[p.effects[0].type]?.icon??'effects':'effects',p.effects.length===1?VFX_REGISTRY[p.effects[0].type]?.category??'Looks':'Looks',`My preset · ${presetSummary(p)}`));
   const elsewhere=view==='playhead'&&total;
   const title=elsewhere?'No effects at this frame':scene?'No effects on the scene':targets.length===1?`No effects on ${this.ownerName(targets[0])}`:'No effects yet';
-  return `<div class="ui-empty vfx-empty"><h3 class="ui-empty-title">${esc(title)}</h3>${elsewhere?'':'<p class="ui-empty-text">Start with one of these, or choose Add for every effect and preset.</p>'}${elsewhere?`<div class="ui-empty-actions"><button type="button" class="ui-button" data-size="sm" data-variant="ghost" data-vfx-action="show-all">Show all ${total}</button></div>`:''}<div class="vfx-suggestions" role="group" aria-label="Suggested effects">${[...effects.map(effect),...generated.map(effect),...presets.map(name=>tile('presets',name,name,VFX_PRESETS[name].icon,'Looks',`Look · ${VFX_PRESETS[name].effects.length}`))].join('')}</div></div>`;
+  return `<div class="ui-empty vfx-empty"><h3 class="ui-empty-title">${esc(title)}</h3>${elsewhere?'':'<p class="ui-empty-text">Start with one of these, or choose Add for every effect and preset.</p>'}${elsewhere?`<div class="ui-empty-actions"><button type="button" class="ui-button" data-size="sm" data-variant="ghost" data-vfx-action="show-all">Show all ${total}</button></div>`:''}<div class="vfx-suggestions" role="group" aria-label="Suggested effects">${[...mine,...effects.map(effect),...generated.map(effect),...presets.map(name=>tile('presets',name,name,VFX_PRESETS[name].icon,'Looks',`Look · ${VFX_PRESETS[name].effects.length}`))].join('')}</div></div>`;
  }
  openPopup(anchor,mode){
   this.closePopup();const scene=this.targets()[0]?.kind==='scene',popup=this.popup=document.createElement('div');popup.className='vfx-catalog';popup.setAttribute('popover','auto');popup.setAttribute('role','dialog');popup.setAttribute('aria-label',mode==='presets'?'VFX presets':'Add effect');
@@ -213,9 +220,12 @@ export class VfxInspector {
   const available=mode==='presets'?Object.entries(VFX_PRESETS).filter(([,p])=>presetAvailable(p,scene,effectAvailable)).map(([name,p])=>({key:name,name,icon:p.icon,category:p.category??'Presets',count:p.effects.length,preview:hasEffectPreview(mode,name)})):Object.entries(VFX_REGISTRY).filter(([type])=>effectAvailable(type,scene)).map(([key,d])=>({key,...d,count:1,preview:hasEffectPreview(mode,key)}));
   // Generated effects show a rendered still, filled in as previews finish; the others their glyph in their category's tint.
   const art=item=>{if(!item.preview)return vfxTile(item.icon,item.category,'vfx-catalog-art');const url=cachedEffectPreview(mode,item.key);return `<span class="vfx-catalog-art vfx-catalog-still${url?' has-preview':''}" data-preview="${esc(item.key)}">${url?`<img alt="" src="${url}">`:vfxIcon(item.icon)}</span>`;};
-  const draw=()=>{const query=popup.querySelector('input').value.toLowerCase(),items=available.filter(item=>(item.name+' '+item.category).toLowerCase().includes(query));popup.querySelector('.vfx-catalog-results').innerHTML=[...new Set(items.map(i=>i.category))].sort((a,b)=>categoryRank(a)-categoryRank(b)).map(category=>{const list=items.filter(i=>i.category===category);return `<section><h3>${esc(category)}</h3><div class="vfx-catalog-grid${list.every(i=>i.preview)?' is-previews':''}">${list.map(item=>`<button type="button" class="vfx-catalog-card" data-choice="${esc(item.key)}" ${this.addToGroup&&this.editor.getVfxClips().find(c=>c.id===this.addToGroup)?.effects.length+item.count>VFX_LIMIT?'disabled':''}>${art(item)}<span>${esc(item.name)}</span>${item.count>1?`<small>${item.count}</small>`:''}</button>`).join('')}</div></section>`;}).join('')||'<div class="vfx-catalog-empty">No results</div>';
+  const draw=()=>{const query=popup.querySelector('input').value.toLowerCase(),items=available.filter(item=>(item.name+' '+item.category).toLowerCase().includes(query));popup.querySelector('.vfx-catalog-results').innerHTML=(mode==='presets'?myPresetsSection(scene,query):'')+[...new Set(items.map(i=>i.category))].sort((a,b)=>categoryRank(a)-categoryRank(b)).map(category=>{const list=items.filter(i=>i.category===category);return `<section><h3>${esc(category)}</h3><div class="vfx-catalog-grid${list.every(i=>i.preview)?' is-previews':''}">${list.map(item=>`<button type="button" class="vfx-catalog-card" data-choice="${esc(item.key)}" ${this.addToGroup&&this.editor.getVfxClips().find(c=>c.id===this.addToGroup)?.effects.length+item.count>VFX_LIMIT?'disabled':''}>${art(item)}<span>${esc(item.name)}</span>${item.count>1?`<small>${item.count}</small>`:''}</button>`).join('')}</div></section>`;}).join('')||(mode==='presets'&&popup.querySelector('.vfx-my-presets-section')?'':'<div class="vfx-catalog-empty">No results</div>');
    for(const node of popup.querySelectorAll('[data-preview]:not(.has-preview)'))requestEffectPreview(mode,node.dataset.preview,url=>{if(!node.isConnected)return;node.classList.add('has-preview');node.innerHTML=`<img alt="" src="${url}">`;});};
-  popup.querySelector('input').addEventListener('input',draw);popup.addEventListener('click',event=>{const tab=event.target.closest('[data-catalog-mode]');if(tab){if(tab.dataset.catalogMode!==mode)this.openPopup(anchor,tab.dataset.catalogMode);return;}const button=event.target.closest('[data-choice]');if(!button||button.disabled)return;this.run(()=>this.addChoice(mode,button.dataset.choice));});
+  popup.querySelector('input').addEventListener('input',draw);this.redrawCatalog=()=>{if(this.popup===popup)draw();};
+  const presetMenu=(event,node)=>{event.preventDefault();event.stopPropagation();openPresetMenu(this,node.dataset.presetMenu??node.querySelector('[data-preset-menu]').dataset.presetMenu,event.clientX||event.clientY?event:{currentTarget:node});};
+  popup.addEventListener('contextmenu',event=>{const card=event.target.closest('.vfx-my-preset');if(card)presetMenu(event,card);});
+  popup.addEventListener('click',event=>{const more=event.target.closest('[data-preset-menu]');if(more){presetMenu(event,more);return;}const tab=event.target.closest('[data-catalog-mode]');if(tab){if(tab.dataset.catalogMode!==mode)this.openPopup(anchor,tab.dataset.catalogMode);return;}const button=event.target.closest('[data-choice]');if(!button||button.disabled)return;this.run(()=>this.addChoice(mode,button.dataset.choice));});
   popup.addEventListener('keydown',event=>{event.stopPropagation();if(event.key==='Escape'){this.closePopup();anchor.focus();}if(event.key==='ArrowDown'&&event.target.tagName==='INPUT'){event.preventDefault();popup.querySelector('.vfx-catalog-card:not(:disabled)')?.focus();}});draw();
   // Measure the populated catalogue once so searching keeps the input stationary.
   const panel=this.root.getBoundingClientRect(),from=anchor.getBoundingClientRect();popup.style.width=Math.max(260,panel.width-16)+'px';const size=popup.getBoundingClientRect();

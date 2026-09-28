@@ -31,7 +31,7 @@ class WorkspacePreferences {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Workspace preferences must be a JSON object.');
     validateJSON(value);
     const text = JSON.stringify(value);
-    if (Buffer.byteLength(text, 'utf8') > this.maxBytes) throw new Error('Workspace preferences exceed the 16 KB limit.');
+    if (Buffer.byteLength(text, 'utf8') > this.maxBytes) throw new Error(`Workspace preferences exceed the ${Math.round(this.maxBytes / 1024)} KB limit.`);
     return text;
   }
 

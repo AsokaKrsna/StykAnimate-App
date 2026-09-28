@@ -330,6 +330,24 @@
   .vfx-catalog-still > img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
   .vfx-catalog-grid.is-previews .vfx-catalog-card:where(:hover, :focus-visible) { background: transparent; box-shadow: none; }
   :where(.vfx-catalog-grid.is-previews) .vfx-catalog-card:where(:hover, :focus-visible) .vfx-catalog-still { box-shadow: 0 0 0 2px var(--focus-ring); }
+  /* My presets: the person's own, first in Presets; each card's ⋯ shows on hover and focus. */
+  .vfx-my-presets-section { margin-block-end: var(--space-1); padding-block-end: var(--space-2); box-shadow: inset 0 -1px 0 var(--line-1); }
+  .vfx-my-preset { position: relative; min-inline-size: 0; }
+  .vfx-catalog-grid.vfx-my-presets { grid-template-columns: minmax(0, 1fr); }
+  .vfx-my-preset > .vfx-catalog-card { inline-size: 100%; min-block-size: 44px; padding-inline-end: calc(var(--control-sm) + var(--space-1)); }
+  .vfx-my-preset-text { display: grid; gap: 1px; }
+  .vfx-my-preset-text > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-ui-strong); }
+  .vfx-my-preset-text > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-small); color: var(--text-3); }
+  :where(.vfx-catalog) .vfx-my-preset-more { position: absolute; inset-block-start: 50%; inset-inline-end: var(--space-1); translate: 0 -50%; color: var(--text-3); }
+  .vfx-my-presets-empty {
+    display: flex; align-items: flex-start; gap: var(--space-2); margin: var(--space-1) var(--space-1) 0; padding: var(--space-2-5) var(--space-3);
+    border: 1px dashed var(--line-3); border-radius: var(--radius-md); font: var(--type-small); color: var(--text-2);
+  }
+  .vfx-my-presets-empty > svg { flex: none; inline-size: var(--icon-md); block-size: var(--icon-md); margin-block-start: 1px; color: var(--accent-text); }
+  .vfx-my-presets-empty b { font-weight: var(--weight-semibold); color: var(--text-1); }
+  /* Save as preset: the detail's quiet last line; it says "Saved to My presets" for a moment after saving. */
+  .vfx-detail-foot { display: flex; justify-content: flex-end; margin-block-start: var(--space-2); padding-block: var(--space-2) var(--space-1); box-shadow: inset 0 1px 0 var(--line-1); }
+  :where(#vfx-panel) .vfx-save-preset:where([data-saved]) { color: var(--success-text); }
   .vfx-catalog-empty { padding: var(--space-6) var(--space-3); text-align: center; font: var(--type-small); color: var(--text-3); }
 
   /* ---- Visible keys (vfx-key-channel-menu.mjs), shared with the timeline ---- */

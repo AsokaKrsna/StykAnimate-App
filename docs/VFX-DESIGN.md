@@ -55,6 +55,12 @@ Saved poses use `_stykVfx.figure` for a figure/movieclip/scene stack. Node stack
 
 Matching effect IDs/types interpolate numeric/color parameters through the existing pose easing. Enabled state, stack membership, seed, and order are discrete. New effects are not introduced before their source exposure. Remove/reset/reorder edit the current exposure like other pose edits. Copying frames, physical rig remapping, foreign definition remapping, undo/redo, native save, and recovery preserve ownership.
 
+## Your own presets
+
+*Save as preset* (the last line of an effect's settings, and its ⋯ menu) names the selected effect clip and keeps it outside any project: its effects with their settings, strength, fades, frame length and keys, but not its target. A name already in use asks before replacing that preset. The catalogue's Presets tab starts with **My presets**, one row each with what it holds ("2 effects · animated") and a ⋯ to rename or delete it; an empty figure's suggestions start with up to three of them. Adding one makes an ordinary effect clip with new ids and its keys moved onto them, as one undo step; a timed preset starts at the playhead. Presets are outside undo, and deleting one never changes effects already added from it.
+
+`src/vfx-user-presets.mjs` owns the data (at most 60 presets, 60-character names, 4,000 keys each; stored data is validated by building the clip it makes, and an unreadable preset is left out rather than hiding the others) and `vfxPresetStore`, which shows a change at once, queues writes and restores the previous list if a write fails. The desktop app keeps them in `vfx-presets.json` in the profile (up to 1 MB, written atomically through `desktop/preferences.cjs`) behind `getVfxPresets` and `setVfxPresets`, apart from the 16 KB editor settings; the browser build uses localStorage. `src/vfx-preset-ui.mjs` draws the save dialog, the My presets rows and their menu. `node --test tests/vfx-user-presets.test.mjs` covers the data and the store; `node tests/vfx-user-presets.browser.mjs` saves, adds, renames, reloads and deletes through the panel.
+
 ## Composition
 
 Node artwork effects feed figure effects. Each movieclip composites its children, applies its local scene stack and container stack, and applies the container opacity once. Figure opacity likewise applies to the completed effect result. Native figure outlines remain part of the base artwork. A VFX outline expands the composited alpha silhouette.

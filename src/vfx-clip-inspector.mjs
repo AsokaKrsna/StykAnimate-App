@@ -8,6 +8,7 @@ import {clipNumber,clipStrength,editGroupEffect,openGroupMenu} from './vfx-clip-
 import {showTimelineMenu} from './timeline-menu.mjs';
 import {generatorClipActiveAt} from './vfx-generators.mjs';
 import {isGeneratorType} from './vfx-registry.mjs';
+import {savePresetFromClip} from './vfx-preset-ui.mjs';
 
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const clipName=c=>c.name||VFX_REGISTRY[c.effects[0]?.type]?.name||'Effects';
@@ -73,6 +74,8 @@ function clipBody(host,c,locked){
  }finally{host.renderingClip=null;}
  // Timing: the whole animation, or a frame range with its start and length.
  body+=`<div class="vfx-timing" data-section="clip-timing-${c.id}"><h4 class="vfx-subhead">Timing</h4><div class="vfx-row"><span class="vfx-label">Plays</span><select class="vfx-select" data-clip-field="mode" aria-label="Effect duration" ${locked?'disabled':''}><option value="always" ${c.duration===null?'selected':''}>Whole animation</option><option value="timed" ${c.duration!==null?'selected':''}>Frame range</option></select></div>${c.duration===null?'':`<div class="vfx-clip-timing">${number('start','Start',c.start+1,1,10000001-c.duration)+number('duration','Duration',c.duration,1,10000000-c.start)}</div>`}</div>`;
+ // Keep this effect for any figure or project: My presets in the catalogue.
+ body+=`<div class="vfx-detail-foot"><button type="button" class="ui-button vfx-save-preset" data-size="sm" data-variant="ghost" data-clip-action="save-preset" data-label="Save as preset">${icon('library')}<span class="ui-label">Save as preset</span></button></div>`;
  return body;
 }
 /** The effect clips on the current targets, filtered by the Show choice: one entry each, and the selected one
@@ -113,6 +116,7 @@ export function openClipMenu(host,id,event){
  showTimelineMenu(menu,event,[
   [{label:'Rename…',symbol:'text',disabled:locked,action:()=>renameClip(host,id)},{label:c.effects.length>1?'Add effect to group…':'Combine with another effect…',symbol:'combine',disabled:locked||c.effects.length>=VFX_LIMIT,action:()=>{host.commit();host.addToGroup=id;host.openPopup(host.root.querySelector(`.vfx-clip[data-clip-id="${CSS.escape(id)}"]`)??host.root,'add');}}],
   [{label:'Move up',symbol:'chevron-up',disabled:locked||index<=0,action:run('up')},{label:'Move down',symbol:'chevron-down',disabled:locked||index>=siblings.length-1,action:run('down')}],
+  [{label:'Save as preset…',symbol:'library',action:()=>{host.commit();void savePresetFromClip(host,id);}}],
   [{label:'Copy animation',symbol:'duplicate',action:run('copy')},{label:'Duplicate',symbol:'duplicate',disabled:locked,action:run('duplicate')}],
   [{label:'Delete',symbol:'trash',danger:true,disabled:locked,action:run('delete')}],
  ]);
@@ -147,6 +151,7 @@ export function clipClick(host,event){
  }
  if(operation==='group-add'){host.commit();host.addToGroup=id;host.openPopup(button,'add');return true;}
  if(['enabled','paste'].includes(operation)){clipOperation(host,operation,id);return true;}
+ if(operation==='save-preset'){host.commit();void savePresetFromClip(host,id,button);return true;}
  host.commit();host.beforeEdit();
  if(operation==='shuffle'){const effect=c.effects.find(x=>x.id===button.dataset.effectId),seed=effect?.params.seed??1;e.setVfxClipParameters(id,button.dataset.effectId,{seed:1+(seed+Math.floor(Math.random()*65533))%65535});host.sync();host.onChange();return true;}
  if(operation==='aim-pick'){const effect=button.dataset.effectId,active=e._vfxAimPick?.clip===id&&e._vfxAimPick.effect===effect;e._vfxAimPick=active?null:{clip:id,effect};host.sync();host.onChange();return true;}

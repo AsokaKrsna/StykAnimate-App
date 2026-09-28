@@ -87,6 +87,8 @@ contextBridge.exposeInMainWorld('stykDesktop', Object.freeze({
   setWorkspacePreferences: (preferences) => ipcRenderer.invoke('styk:workspace-preferences-set', preferences),
   getEditorSettings: () => ipcRenderer.invoke('styk:editor-settings-get'),
   setEditorSettings: (settings) => ipcRenderer.invoke('styk:editor-settings-set', settings),
+  getVfxPresets: () => ipcRenderer.invoke('styk:vfx-presets-get'),
+  setVfxPresets: (presets) => ipcRenderer.invoke('styk:vfx-presets-set', presets),
   listFonts: () => ipcRenderer.invoke('styk:fonts-list'),
   readFont: (id) => ipcRenderer.invoke('styk:fonts-read', id),
   readClipboardText: () => ipcRenderer.invoke('styk:clipboard-text-read'),

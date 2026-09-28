@@ -370,6 +370,8 @@ function registerIpc() {
   });
   const preferences = new WorkspacePreferences(app.getPath('userData'));
   const editorSettings = new WorkspacePreferences(app.getPath('userData'), { filename: 'editor-settings.json' });
+  // The person's effect presets (src/vfx-user-presets.mjs): their own file, so they never crowd the 16 KB settings.
+  const vfxPresets = new WorkspacePreferences(app.getPath('userData'), { filename: 'vfx-presets.json', maxBytes: 1024 * 1024 });
   const fonts = new FontService();
   ipcMain.handle('styk:fonts-list', event => { trusted(event); return fonts.listFonts(); });
   ipcMain.handle('styk:fonts-read', async (event, id) => {
@@ -380,6 +382,8 @@ function registerIpc() {
   ipcMain.handle('styk:workspace-preferences-set', (event, value) => { trusted(event); return preferences.set(value); });
   ipcMain.handle('styk:editor-settings-get', (event) => { trusted(event); return editorSettings.get(); });
   ipcMain.handle('styk:editor-settings-set', (event, value) => { trusted(event); return editorSettings.set(value); });
+  ipcMain.handle('styk:vfx-presets-get', (event) => { trusted(event); return vfxPresets.get(); });
+  ipcMain.handle('styk:vfx-presets-set', (event, value) => { trusted(event); return vfxPresets.set(value); });
   fileStreams = new FileStreams({onCommitError:error=>telemetry?.error(error?.name||'Error','app',null,{code:error?.code||'write_failed',stage:'write'})});
   const clipboardFile = path.join(app.getPath('userData'), 'frame-clipboard.styk');
   let clipboardWriteToken = null, clipboardControl = Promise.resolve();

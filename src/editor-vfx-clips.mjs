@@ -4,6 +4,7 @@ import {VFX_PRESETS,GENERATOR_DURATIONS} from './vfx-presets.mjs';
 import {isGeneratorType} from './vfx-registry.mjs';
 import {normalizeAnimationTarget} from './animation-channels.mjs';
 import {connectedVfxConflict} from './vfx-connected.mjs';
+import {clipFromPreset} from './vfx-user-presets.mjs';
 const id=()=>crypto.randomUUID(),bytes=new WeakMap();
 function size(c){let n=bytes.get(c);if(n===undefined){n=JSON.stringify(c).length*2;bytes.set(c,n);}return n;}
 function unlocked(editor,target){const layer=editor.getLayer(target.kind==='scene'?'scene':editor.layerForUid(target.uid));if(layer?.locked)throw new Error(`Unlock ${layer.name} before editing effects.`);}
@@ -37,6 +38,8 @@ export const editorVfxClipMethods={
  sampleVfxClip(id,tick=this.tick){return sampleVfxClip(find(this,id),tick);},
  addVfxClip(target,type,options={}){target=normalizeAnimationTarget(target);const clip=createVfxClip(target,type,id(),id(),generatorTiming(this,[{type}],GENERATOR_DURATIONS[type]??48,options));clip.effects=clip.effects.map(seeded);checkScope(this,clip);publish(this,[...vfxClips(this.report),clip],'Add effect clip');return clip.id;},
  addVfxGroup(target,preset,options={}){const p=VFX_PRESETS[preset];if(!p)throw new Error('Choose an effect preset.');const effects=p.effects.map(([type,params])=>{const effect=createVfx(type,id());return seeded({...effect,params:{...effect.params,...params}});});const clip=createVfxClip(normalizeAnimationTarget(target),p.effects[0][0],id(),id(),generatorTiming(this,effects,'duration' in p?p.duration:48,options));checkScope(this,clip);clip.name=preset;clip.effects=effects;publish(this,[...vfxClips(this.report),clip],'Add effect group');return clip.id;},
+ /** One of the person's own presets (vfx-user-presets.mjs) on `target`; a timed preset starts at the playhead. */
+ addVfxUserPreset(target,preset,options={}){const clip=clipFromPreset(preset,normalizeAnimationTarget(target),{start:options.start??this.tick,includeAttached:Boolean(options.includeAttached),makeId:id});clip.effects=clip.effects.map(seeded);checkScope(this,clip);publish(this,[...vfxClips(this.report),clip],'Add effect preset');return clip.id;},
  setVfxClip(id,patch){const c=find(this,id);if(Object.keys(patch).some(k=>!['name','start','duration','offset','enabled','strength','fadeIn','fadeOut','includeAttached','effects','keys'].includes(k)))throw new Error('Unsupported effect clip property.');
   if(patch.includeAttached){const conflict=connectedVfxConflict(this.evaluatedFrame,c.target.uid);if(conflict)throw new Error(conflict);}
   const next={...c,...patch};if(Object.keys(patch).every(key=>Object.is(c[key],next[key])))return false;
