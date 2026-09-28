@@ -60,13 +60,13 @@ export class DocumentExporter {
       if (failure) throw failure;
       if (getRevision && getRevision() !== originalRevision) throw abortError('The document changed during export.');
     };
-    const request = (operation, data = {}) => {
+    const request = (operation, data = {}, transfer = []) => {
       check();
       return new Promise((resolve, reject) => {
         const id = ++sequence;
         pending = {id, resolve, reject};
         const before = performance.now();
-        try { worker.postMessage({id, operation, ...data}); }
+        try { worker.postMessage({id, operation, ...data}, transfer); }
         catch (error) { pending = null; reject(error); }
         const elapsed = performance.now() - before;
         postMax = Math.max(postMax, elapsed); mainWork += elapsed;
@@ -76,7 +76,8 @@ export class DocumentExporter {
     signal?.addEventListener('abort', abort, {once: true});
     const timer = this.timeoutMs > 0 ? setTimeout(() => fail(Object.assign(new Error('Document export timed out.'), { telemetryCode: 'timeout', telemetryStage: 'serialize' })), this.timeoutMs) : null;
     try {
-      await request('start', {options: {sourceId, format, name, figureTypeId, figureUid, figureUids, tick, baseURL: this.baseURL, token: this.token, jobId: backendJob.id}});
+      const link = backendJob.link();
+      await request('start', {options: {sourceId, format, name, figureTypeId, figureUid, figureUids, tick, baseURL: this.baseURL, token: this.token, jobId: backendJob.id, ...link.fields}}, link.transfer);
       const snapshotStarted = performance.now();
       const chunks = documentChunks(report, {maxRecords: this.targetRecords, maxBytes: this.targetBytes,
         timeBudgetMs: 3, omitRuntimeSegments: true});

@@ -13,6 +13,7 @@ import {packPoseSequences} from './pose-sequence-storage.mjs';
 import {documentHasVfx} from './vfx.mjs';
 import {liftDocument, encodeContainerV2, validateNativeFigure} from './native-container.mjs';
 import {flattenDrawingFigures} from './drawing-flatten.mjs';
+import {codecRequest} from './codec-request.mjs';
 
 let document, config, running = false;
 const timings = {};
@@ -23,7 +24,7 @@ function reply(id, payload) { self.postMessage({id, ok: true, ...payload}); }
 async function fetchOriginalSource() {
   const headers = config.jobId ? {'X-Styk-Job-Id': config.jobId} : {};
   if (config.token) headers.Authorization = `Bearer ${config.token}`;
-  const response = await fetch(new URL(`/api/source?id=${encodeURIComponent(config.sourceId)}`, config.baseURL), {headers});
+  const response = await codecRequest(config, `/api/source?id=${encodeURIComponent(config.sourceId)}`, {headers});
   if (response.status === 422 || response.status === 404) return null;
   if (!response.ok) throw Object.assign(new Error(`The original source is unavailable (${response.status}).`), {status: response.status});
   const buffer = new Uint8Array(await response.arrayBuffer());
@@ -165,7 +166,7 @@ self.addEventListener('message', async event => {
         if (config.jobId) headers['X-Styk-Job-Id'] = config.jobId;
         if (config.token) headers.Authorization = `Bearer ${config.token}`;
         stage = 'request';
-        const response = await fetch(new URL('/api/export', config.baseURL), {method: 'POST', headers, body});
+        const response = await codecRequest(config, '/api/export', {method: 'POST', headers, body});
         if (!response.ok) {
           const text = await response.text();
           let details;

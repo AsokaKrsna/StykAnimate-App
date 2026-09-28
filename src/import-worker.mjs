@@ -3,6 +3,7 @@ import { documentChunks } from './document-transport.mjs';
 import {diagnosticDetails} from './telemetry-schema.mjs';
 import {NATIVE_FRAME_CONTENT_TYPE, unpackNativeFrameResponse} from './import-wire.mjs';
 import {decodeDocument, normalizeDecodedDocument, verifyEmbeddedSource} from './native-container.mjs';
+import {codecRequest} from './codec-request.mjs';
 const pending = new Map();
 const receipts = new Map();
 
@@ -82,7 +83,7 @@ async function importRequest(message, signal) {
     headers['Content-Type'] = 'application/json';
     body = JSON.stringify({path: message.path});
   } else throw new Error('Unknown import operation.');
-  const response = await fetch(new URL(path, message.baseURL), {method: 'POST', headers, body, signal}).catch(error => {
+  const response = await codecRequest(message, path, {method: 'POST', headers, body, signal}).catch(error => {
     error.telemetryCode = 'backend_unavailable'; error.telemetryStage = 'request'; throw error;
   });
   if(response.ok && response.headers.get('Content-Type')?.split(';')[0]===NATIVE_FRAME_CONTENT_TYPE) {

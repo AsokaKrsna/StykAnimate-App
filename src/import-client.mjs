@@ -101,7 +101,8 @@ export class ImportClient {
       const succeeded=value=>{this.diagnostics?.recovery('import_worker','recovered');resolve(value);};
       this.pending.set(id, {resolve:succeeded, reject, timer, onProgress, backendJob});
       try {
-        this.worker.postMessage({id, operation, baseURL: this.baseURL, token: this.token, jobId: backendJob.id, ...payload}, transfer);
+        const link = backendJob.link();
+        this.worker.postMessage({id, operation, baseURL: this.baseURL, token: this.token, jobId: backendJob.id, ...link.fields, ...payload}, [...transfer, ...link.transfer]);
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(id);

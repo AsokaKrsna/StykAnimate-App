@@ -32,6 +32,7 @@ import { OnionController } from "./onion-controller.mjs";
 import { ThumbnailRenderer } from "./thumbnail-renderer.mjs";
 import { BackgroundDialog } from "./background-dialog.mjs";
 import { ImportClient } from "./import-client.mjs";
+import { codecMode } from "./codec-job.mjs";
 import { PlaybackCache } from "./playback.mjs";
 import {playbackWindow,playbackLookaheadSize,playbackStartupWindow} from './playback-window.mjs';
 import {PlaybackUploadWarmup,PlaybackUploadAhead} from './playback-upload.mjs';
@@ -6136,7 +6137,8 @@ async function init() {
   warmPlayback();
   offerRecovery();
   try {
-    const data = await (await api("/api/samples")).json();
+    // The in-browser codec has no workspace: people open the files they pick.
+    const data = codecMode() === "browser" ? {samples: []} : await (await api("/api/samples")).json();
     state.samples = data.samples || [];
     renderAssets();
   } catch (error) {
