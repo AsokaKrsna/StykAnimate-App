@@ -46,8 +46,11 @@ Large-project workloads, measured latency, memory retention, and the performance
 ## Draw workspace
 
 Draw is presentation state over the same document and timeline modes. Entering
-it selects an eligible drawing layer but creates no content. Leaving restores
-the previous tool, joint visibility and view rotation. Onion preferences and
+it selects an eligible drawing layer but creates no content. Leaving waits for
+pending drawing edits and restores the previous figure layer and joint, tool,
+joint visibility and view rotation. If that layer is no longer editable, it
+selects another visible, unlocked figure layer. A figure layer deliberately
+selected while in Draw is preserved. Onion preferences and
 panel sizes remain shared; each workspace keeps its own panel arrangement and
 its own saved layouts (View › Layout…). Drawing content holds between keys; copies receive
 independent pixel identities. [Drawing workflow](DRAWING.md) describes controls.

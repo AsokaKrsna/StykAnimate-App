@@ -274,9 +274,32 @@ export class DrawingController {
     else{layer=this.editor.createDrawingLayer();this.onStatus(`Created ${layer.name} for your painting.`);}
     this.editor.selectSheetLayer(layer.id);this.state.selectedTrackId=layer.id;this.getTimeline()?.selectTrack?.(layer.id);this.sync();this.onUI();
   }
-  enter(){if(this.active)return;this.beforeEdit();this.prior={handles:this.state.handles,tool:this.state.tool,rotation:this.state.view.rotation??0,flip:Boolean(this.state.view.flip)};this.active=true;this.state.handles=false;this.state.tool='drawing-brush';this.state.drawing=true;this.cursor=null;this.bind();
+  enter(){if(this.active)return;this.beforeEdit();this.prior={handles:this.state.handles,tool:this.state.tool,rotation:this.state.view.rotation??0,flip:Boolean(this.state.view.flip),documentToken:this.editor._documentToken,layerId:this.editor.activeLayerId,uid:this.editor.selectedUid,joint:this.editor.selectedJoint};this.active=true;this.state.handles=false;this.state.tool='drawing-brush';this.state.drawing=true;this.cursor=null;this.bind();
     const layers=this.editor.layers.filter(layer=>isDrawingLayer(layer)&&!layer.locked&&layer.visible),target=layers.find(l=>l.id===this.editor.activeLayerId)||layers.find(l=>l.id===this.lastLayer)||layers.at(-1);if(target){this.editor.selectSheetLayer(target.id);this.state.selectedTrackId=target.id;}this.sync();this.prepareVisible();this.onUI();this.onRender();}
-  exit(){if(!this.active)return;const wait=this.settle({selection:true});if(wait)return this.run(()=>wait.then(()=>this.exit()));this.closePalette();this.active=false;this.state.drawing=false;this.cursor=null;Object.assign(this.state,{handles:this.prior.handles,tool:this.prior.tool});this.state.view.rotation=this.prior.rotation;this.state.view.flip=this.prior.flip;this.onUI();this.onRender();}
+  exit(){
+    if(!this.active)return;
+    const wait=this.settle({selection:true});if(wait)return this.run(()=>wait.then(()=>this.exit()));
+    this.closePalette();this.active=false;this.state.drawing=false;this.cursor=null;
+    Object.assign(this.state,{handles:this.prior.handles,tool:this.prior.tool});
+    this.state.view.rotation=this.prior.rotation;this.state.view.flip=this.prior.flip;
+    // Draw may have selected a cel automatically. Return to a usable figure
+    // layer so Animate's frame command and canvas no longer target that cel.
+    // Respect a figure layer explicitly selected while Draw was open.
+    const e=this.editor,active=e.getLayer(e.activeLayerId);
+    if(!active||isDrawingLayer(active)){
+      const eligible=layer=>layer?.kind==='layer'&&!isDrawingLayer(layer)&&layer.visible&&!layer.locked;
+      const sameDocument=this.prior.documentToken===e._documentToken;
+      const prior=sameDocument?e.getLayer(this.prior.layerId):null;
+      const target=eligible(prior)?prior:e.layers.find(eligible);
+      if(target){
+        e.selectSheetLayer(target.id);
+        if(sameDocument&&target.id===this.prior.layerId&&e.evaluatedFrame.objects.some(o=>o.unique_id===this.prior.uid&&e.layerForUid(o.unique_id)===target.id))
+          e.select(this.prior.uid,this.prior.joint);
+        this.state.selectedTrackId=target.id;this.getTimeline()?.selectTrack?.(target.id);
+      }
+    }
+    this.onUI();this.onRender();
+  }
   get tool(){return this.state.tool==='hand'?'pan':this.state.tool.replace('drawing-','');}
   set tool(value){this.setTool(value);}
   setTool(value){const wait=this.settle({selection:false})??(value!=='lasso'?this.settleFloating():null);if(wait)return this.run(()=>wait.then(()=>this.setTool(value)));
