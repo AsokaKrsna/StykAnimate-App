@@ -6,6 +6,17 @@ What's new in each version of StykAnimate.
 
 ## [Unreleased]
 
+### Added
+
+- Phones and tablets: a touch interface made for fingers, with layouts for holding the device upright or on its side and panels you swipe away.
+- Touch gestures: tap with two fingers to undo and three to redo, and press and hold anything to see its menu.
+- Bend, stretch and the other right-click and modifier-key actions on touch screens, from buttons beside the canvas.
+- Draw with your finger on a phone or tablet until you pick up a pen.
+
+### Fixed
+
+- Fixed Settings running off the edge of very narrow windows.
+
 ## [1.2.0]
 
 A new workspace, particle effects, Linux and the browser

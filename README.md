@@ -30,7 +30,7 @@ npm run dist:mac
 npm run dist:linux
 ```
 
-The editor also runs as a website, with the Pivot codec in WebAssembly and nothing sent to a server: `npm run web:build`, then `npm run web:deploy` for Cloudflare. See [Web build](docs/WEB.md).
+The editor also runs as a website, with the Pivot codec in WebAssembly and nothing sent to a server: `npm run web:build`, then `npm run web:deploy` for Cloudflare. See [Web build](docs/WEB.md). On phones and tablets it opens its touch interface; see [Touch interface](docs/TOUCH.md).
 
 ## Editing
 

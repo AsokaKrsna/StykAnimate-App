@@ -136,7 +136,9 @@ checks in decode, validation, fingerprint and writer loops release cancelled
 work, and source-cache publication is ordered against cancellation. Individual
 native/standard-library operations finish before the next check. Browser development
 continues to use the Python server's static host. The deployable web build has no server: the same codec runs in WebAssembly behind the same request contract
-(`codec-request.mjs`, `backend/browser_service.py`); see [Web build](WEB.md).
+(`codec-request.mjs`, `backend/browser_service.py`); see [Web build](WEB.md). On phones and
+tablets the same editor runs its touch interface (`src/touch/`), which re-arranges the shell and
+turns fingers into the desktop's pointer events; see [Touch interface](TOUCH.md).
 
 Windows and Linux source execution and packaged builds are verified; CI builds, packages and boots the Linux AppImage, and runs the unit suite on both ([Linux support](LINUX.md)). A distributable includes the frozen codec sidecar, current web assets, source grammar, and licenses. Rebuild and verify the package after source changes; earlier smoke reports do not certify newer bytes. macOS has a build target that has not been executed. Platform-specific behaviour lives in the owning layer: Chromium's GPU switches in `desktop/gpu-switches.cjs`, native library locations in `native_scan.build_directory()`, interpreter discovery in `scripts/run-python.mjs`.
 

@@ -21,77 +21,92 @@ scoped to `:root[data-input="touch"]`, and every script path checks the same sta
 `?ui=touch` or `?ui=desktop` in the address overrides the setting for that page load, for
 trying the other interface on any device. `src/theme-bootstrap.js` writes the attributes
 before the stylesheet loads, from the stored setting, so a phone never paints the desktop
-layout first.
+layout first; the module keeps them current as the window turns or the setting changes.
 
 ## Layouts
 
 The editor keeps one set of elements. The dock host (`src/shell/dock-host.mjs`) still owns
-which panel shows where; in touch mode the solver gets a `touch` input (`layout-solver.mjs`,
-`TOUCH_METRICS`) that folds the side panels into sheets where a docked panel would leave the
-stage too little room. The touch stylesheet (`src/styles/layout/touch.css`) arranges the
-regions; `src/touch/touch-shell.mjs` adds the few controls only touch needs.
+which panel shows where; in touch mode it solves for the workspace's own box and passes the
+solver (`src/shell/layout-solver.mjs`) a `touch` input, whose profile (`SHELL_METRICS.touch`)
+folds the side panels into sheets by form factor, sizes the tool bar and the timeline header
+for a finger and, on an upright phone, lays the tools along the stage's bottom edge. The touch
+stylesheets arrange the regions; `src/touch/touch-shell.mjs` adds the few controls only touch
+needs.
 
-### Phone, landscape (the recommended way to animate on a phone)
+### Phone, on its side
 
 ```
-┌──────────────────────────────────────────────┬────┐
-│ stage header: tool options · view · zoom      │ ≡  │
-│ ┌──┐                                          │ ●  │ Animate
-│ │  │ tools        STAGE                       │ ●  │ Draw
-│ │  │                                          │ ●  │ Build
-│ └──┘                               (modifiers)│ ↶↷ │
-│                                               │ ☰  │ Properties
-│                                               │ ⤓  │ Export
-├───────────────────────────────────────────────┴────┤
-│ + Add  ◀ ▶ ▶  00:03  onion  ⋯           ⌃ Timeline │
-└────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┬────────┐
+│ stage header: tool options · View ▾ · zoom     │ ≡   ⤓  │ the mark, Export
+│ ┌──┐                                           │ ●   ↶  │ Animate, Undo
+│ │  │ tools          STAGE                      │ ●   ↷  │ Draw, Redo
+│ └──┘                                (modifiers)│ ●   ☰  │ Build, Properties
+├────────────────────────────────────────────────┴────────┤
+│ + ◀ ▶ ▶  00:03  loop  onion  audio  ⋯       ⌃ Timeline  │
+└──────────────────────────────────────────────────────────┘
 ```
 
-- The top band becomes a vertical wing on the right: the StykAnimate menu, the three
-  workspaces, Undo and Redo, Properties and Export. The stage gets the whole height.
-- The tools float on the stage's left, as on the desktop, at touch size.
+- The top band becomes a two-column wing on the right: the StykAnimate menu over the three
+  workspaces, Export over Undo, Redo and Properties; a session's Done, Test rig or Cancel take
+  whole rows under them. The document's name and Save are in the menu (File).
+- The tools float on the stage's left, in two columns where one does not fit.
 - The timeline is its header. Its body (the frames, or the layers and keys) opens as a sheet
-  from the header, over the stage, and closes with a swipe down.
-- Properties, VFX and Library open as a sheet from the right edge.
+  above the header, over the stage, and closes with a swipe down.
+- Properties, VFX and Library open as a sheet beside the wing, the stage's whole height.
+- Menus opened from the wing open beside it, toward the stage.
 
-### Phone, portrait
+### Phone, upright
 
 ```
 ┌─────────────────────────────┐
-│ ≡  Kick combo •    ↶ ↷  ⤓  │ top bar
+│ ≡  Kick combo •    ↶ ↷  ⤓  │ band
 ├─────────────────────────────┤
-│ tool options · view · zoom  │ stage header (scrolls sideways)
-│ ┌──┐                        │
-│ │  │      STAGE             │
-│ └──┘             (modifiers)│
+│        View ▾  38%  ⤢      │ stage header (in Draw, the brush bar takes a row under it)
+│                             │
+│     STAGE (full width)      │
+│                  (modifiers)│
+│ [ + ▸ ⋀ ✋  tools ...     ] │ the tool bar, along the stage's bottom edge
 ├─────────────────────────────┤
-│ + ◀ ▶ ▶  00:03  onion  ⋯ ⌃ │ timeline header
-│ [ frames ................ ] │ timeline body (drag the header's grip)
+│ + ◀ ▶ ▶  00:03  onion  ⋯   │ timeline header
+│ [ frames or layers ....... ] │ timeline body, 40% of the height, its grip resizes it
 ├─────────────────────────────┤
-│ Animate  Draw  Build │ ☰    │ tab bar
+│ Animate  Draw  Build  Props │ tab bar
 └─────────────────────────────┘
 ```
 
-- The workspaces and Properties move to a tab bar under the thumb.
-- Properties, VFX and Library open as a bottom sheet with two heights (half and full).
-  Drag its grip to change the height, or down to close it.
+- Width is what an upright phone lacks, so the tools lie along the stage's bottom edge (one
+  row that scrolls sideways) and the artboard gets the phone's whole width.
+- The workspaces and Properties move to a tab bar under the thumb (the elements are moved,
+  never copied, and move back in every other layout).
+- The timeline's body stays docked whatever the height tier, at 40% of the workspace. In
+  Advanced the names column is narrower; Simple shows its frame bar as one row over cards
+  that take the whole width.
+- Properties, VFX, Library and Structure rise as a bottom sheet above the tab bar, which
+  keeps Properties at hand to close it again.
+- Menus and popovers (the colour picker, keyframe easing, onion skin) open as sheets from
+  the bottom edge, over a veil; a submenu leads back with a Back row.
 
 ### Tablet
 
-Portrait and landscape keep the desktop's arrangement at touch size: the band on top (its
-menubar folded into the StykAnimate menu), the tools floating on the stage, the timeline
-docked at the bottom. In landscape the inspector stays docked on the right while the stage
-keeps at least 560px; otherwise it opens as a sheet from the right edge.
+Both orientations keep the desktop's arrangement at touch size: the band on top, the tools
+floating on the stage, the timeline docked at the bottom, its header 52px. The band folds its
+words in the desktop's fold order (measured at touch size, with the menubar always in the
+mark), so Export and Properties stay on screen. The inspector stays docked while the stage
+keeps 560px, and otherwise opens as a tall sheet from the band's Properties button, never a
+40px strip. Upright, the timeline takes a third of the height and its header moves the frame
+rate (the Scene's Rate) and First frame (Timeline ⋯) out of the way.
 
 ## Sizes
 
-Touch targets are at least 44×44 px on phones and 40×40 px on tablets (the visible control
-may be smaller; its hit area is not). The touch stylesheet raises the size tokens
-(`--control-*`, `--icon-*`) under `:root[data-input="touch"]`, so every component of the kit
-follows. Text fields use 16px text, so iOS never zooms the page when one takes focus.
+Touch targets are at least 44×44 px on phones and 40×40 px on tablets. The touch tokens
+(`src/styles/tokens.css`) raise the control and icon sizes and the type a step under
+`:root[data-input="touch"]`, so every component of the kit follows. Text fields use 16px text,
+so iOS never zooms the page when one takes focus. Keyboard shortcuts are not shown in menus
+or on a held button's name.
 
 The page respects the safe areas (`env(safe-area-inset-*)`): nothing interactive sits under a
-notch, a camera cut-out or the home indicator.
+notch, a camera cut-out or the home indicator. The installed app (`black-translucent` status
+bar) draws under the status bar and keeps its controls below it.
 
 ## Gestures
 
@@ -102,59 +117,82 @@ notch, a camera cut-out or the home indicator.
 | Stage | Two-finger tap | Undo |
 | Stage | Three-finger tap | Redo |
 | Stage | Press and hold | The context menu of what is under the finger (the right-click menu) |
-| Stage | Hold a modifier, then drag | See [Modifiers](#modifiers) |
-| Any button | Press and hold | Its name (the tooltip); lifting the finger does not press it |
-| Lists, menus, rows | Press and hold | The row's menu (the right-click menu) |
-| Advanced timeline | Swipe | Scrolls the grid |
+| Stage | Double tap | A double-click (select connected figures, or a branch) |
+| Stage | A modifier held or latched, then drag | See [Modifiers](#modifiers) |
+| Draw | One finger | Draws, until a pen is used (then a finger pans) |
+| Draw | A second finger during a stroke | Takes the stroke back and pinches |
+| Any button | Press and hold | Its name; lifting the finger does not press it |
+| A tool with variants | Press and hold | Its variants (the corner tick's list) |
+| Onion | Press and hold | Its settings |
+| Rows, cards, tabs | Press and hold | Their menu (the right-click menu) |
+| Advanced timeline | Swipe | Scrolls the grid, with momentum |
 | Advanced timeline | Tap | Selects the cell and goes to its frame |
-| Advanced timeline | Double-tap | As a double-click: adds a key, or edits a key's easing |
-| Advanced timeline | Press, hold, then drag | Selects frames, or moves the selected keys (as a mouse drag) |
+| Advanced timeline | Double tap | A double-click: adds a key, or edits a key's easing |
+| Advanced timeline | Press, hold, then drag | The mouse's drag: selects frames, or moves the selected keys |
 | Advanced timeline | Press and hold, then lift | The cell's menu |
 | Advanced timeline | Drag the ruler | Scrubs |
-| Advanced timeline | Pinch | Zooms the timeline |
+| Advanced timeline | Two fingers | Pinch to zoom, move to scroll |
+| Advanced timeline | Swipe the names | Scrolls the rows |
 | Simple frames | Swipe, tap, hold | Scroll, select, the frame's menu |
-| Sheets | Drag the grip or swipe toward the edge | Resize or close |
+| A bottom sheet | Drag its grip or tab row | Resizes it to a resting height (42%, 62% or 92%), or closes it |
+| A side sheet | Swipe toward its edge | Closes it |
+| The timeline's edge | Drag its grip | Resizes the timeline |
 
 `src/touch/long-press.mjs` turns a press and hold into the platform's `contextmenu` event,
 so every existing right-click menu works without a second implementation. It stands aside
-where the browser already sends one (Android) so a menu never opens twice.
+where the browser already sends one (Chrome on Android) so a menu never opens twice, and
+swallows only the click of the press it handled.
+
+`src/touch/canvas-touch.mjs` watches the stage's fingers for the multi-finger taps, the hold
+and the double tap; `src/touch/timeline-touch.mjs` gives the Advanced grid's own handlers the
+press a mouse would have given them (a copy at the same point for the same pointer), so
+selection, key moves, resizing and menus keep one implementation. Surfaces that follow the
+finger themselves (the stage, the grid, a sheet under drag) cancel the browser's `touchmove`
+default: Chrome would otherwise start a fling on release, although nothing scrolls, and
+swallow the next tap to stop it.
 
 ### Modifiers
 
 The desktop editor uses the right mouse button and the Shift, Ctrl and Alt keys during a drag
 (bending a joint, stretching it, adding to the selection, transforming or duplicating a
-figure). `src/touch/modifier-dock.mjs` puts them on the stage as a small column of labelled
-buttons in the corner under the thumb, named for what they do in the current workspace and
-tool:
+figure). `src/touch/modifier-dock.mjs` puts them on the stage as a round button in the corner
+under the thumb that opens a column of labelled buttons, named for what they do with the
+current tool:
 
-| Workspace | Buttons |
+| Workspace and tool | Buttons |
 | --- | --- |
-| Animate | Bend (the right button) · Stretch (Ctrl) · Add (Shift) · Transform (Alt) · Handles (hold R) |
-| Build | Bend · Stretch · Add |
-| Draw | Straight (Shift) · Alt |
+| Animate, Select and pose | Bend (the right button) · Stretch (Ctrl) · Add (Shift) · Transform (Alt) · Handles (hold R) |
+| Animate, Tweener | Add |
+| Animate, Edit joints | Bend · Stretch |
+| Build | Bend · Stretch · Add (by tool) |
+| Draw, Brush | Line (Shift) · Pick (Alt) · Size (Ctrl) |
+| Draw, Eraser · Fill · Select pixels · Shapes · Transform | Line and Size · Pick · Add and Subtract · Snap · Add |
 
 Tap a button to latch it (it stays on, highlighted, until tapped again or the tool changes);
-hold it with one thumb while the other finger drags for a one-off. While any is on, the next
-touches on the stage reach the editor as if the button or key were held, so bending, stretching
-and the rest run through the same code as on the desktop.
+hold it with one thumb while another finger drags for a one-off. The round button shows what
+is on. While a modifier is on, the stage's touch and pen events reach the editor as if the
+button or key were held: the trusted event is stopped at `#viewport` and a copy with the
+modifiers goes to the same target, so bending, stretching, selecting and drawing keep one
+implementation. A mouse keeps its own buttons and keys.
 
 ### Drawing with a finger
 
 In Draw, a finger draws until the device's pen is used; after that the pen draws and a finger
-pans, as in drawing apps. Settings › Interface › *Draw with a finger* chooses *Automatic*,
-*Always* or *Never*.
+pans, as in drawing apps. A second finger landing during a finger's stroke takes the stroke
+back and pinches, so a two-finger tap undoes the previous stroke. Settings › Interface ›
+*Draw with a finger* chooses *Until a pen is used*, *Always* or *Never*.
 
 ## Menus, sheets and dialogs
 
-- On a phone, menus open as action sheets from the bottom edge: full width, 48px rows, a
-  backdrop, and a Back row for a submenu. On a tablet they stay anchored to their button
-  with 44px rows.
-- Sheets (Properties, VFX, Library, Structure, the timeline body) have a grip, move with the
-  finger and close with a swipe toward their edge or a tap on the stage.
-- On a phone every dialog fills the window, with its actions at the bottom within reach.
-- The StykAnimate menu lists File, Edit, View, the workspace's menu and Help as submenus, and
-  starts with *Search commands…*: every command the keyboard reaches has a place a finger can
-  reach.
+- `placeFloating()` (`src/ui/anchor-position.mjs`) is where every menu, popover and picker is
+  placed; on an upright phone it presents them as sheets (`data-present="sheet"`), and a box
+  meant to drop below the band opens beside it where the band is a wing (`besideWing`).
+- On a phone every dialog fills the window, Settings included, with its actions at the bottom.
+- On touch a dialog that is not about typing opens with focus on itself, so the keyboard does
+  not cover half of it until a field is tapped; prompts (Rename, Save as) still take the caret.
+- The StykAnimate menu lists File, Edit, View, the workspace's menu and Help as submenus and
+  starts with *Search commands…*, which reaches every command a key reaches.
+- The stage header folds its view toggles into one View menu on a phone.
 
 ## The page
 
@@ -169,23 +207,27 @@ is off; text fields keep both.
 | File | Owns |
 | --- | --- |
 | `src/touch/touch-mode.mjs` | The decision, the form factor, the root attributes, change events |
-| `src/touch/touch-shell.mjs` | The touch-only chrome (tab bar, wing), sheet grips and gestures, the page hygiene |
-| `src/touch/long-press.mjs` | Press and hold: context menus and button names |
-| `src/touch/touch-gestures.mjs` | Pure gesture classification (tap, double-tap, hold, swipe, multi-finger tap) |
+| `src/touch/touch-shell.mjs` | The tab bar, the stage header's View menu, sheet grips and swipes, the page's gestures |
+| `src/touch/touch-gestures.mjs` | Pure gesture classification: tap, hold, drag, double tap, multi-finger tap |
+| `src/touch/long-press.mjs` | Press and hold on the chrome: context menus and control names |
+| `src/touch/canvas-touch.mjs` | The stage's multi-finger taps, hold and double tap |
 | `src/touch/modifier-dock.mjs` | The stage's modifier buttons and the events they shape |
-| `src/touch/timeline-touch.mjs` | The Advanced grid's touch adapter |
-| `src/styles/layout/touch.css` | The layouts, sizes and safe areas |
-| `src/styles/features/touch.css` | Touch presentation of menus, sheets, dialogs and panels |
+| `src/touch/timeline-touch.mjs` | The Advanced grid's touch adapter (installed by `timeline-navigation.mjs`) |
+| `src/styles/layout/touch.css` | The layouts, the page, the safe areas, the tool bar and the modifiers' places |
+| `src/styles/features/touch.css` | The tab bar, the wing, sheets, menus as sheets, dialogs, the timeline and Draw at touch size |
 
 ## Verification
 
-- `node --test tests/touch-*.test.mjs`: the decision, the form factors, the gesture classifier
-  and the solver's touch profile.
-- `node tests/touch.browser.mjs`: the built site in Chromium with touch emulation at phone and
-  tablet sizes in both orientations: every layout's regions are on screen and not overlapping,
-  targets are at least 44px on phones, the long press opens menus, the modifiers bend a joint,
-  two-finger tap undoes, the sheets open and close, and the desktop layout is unchanged at
-  1440×900.
+- `node --test tests/touch-mode.test.mjs tests/touch-gestures.test.mjs`: the decision, the
+  form factors, the solver's touch profile, the gesture classifier, the modifiers' events and
+  the sheet heights.
+- `npm run test:touch` (`tests/touch.browser.mjs`): the built site in Chromium with touch
+  emulation at phone and tablet sizes in both orientations: no chrome cut off by the window,
+  finger-sized targets, the sheets, menus as sheets and beside the wing, press and hold, the
+  multi-finger taps, the Bend modifier, the timeline's swipe, tap and hold-drag, finger
+  drawing, and the desktop interface unchanged at 1440×900. `npm run test:pinch` and
+  `tests/drawing-input.browser.mjs` cover the pinch, the pen and palm rejection.
 
-Real devices are not part of the automated checks: performance, Safari's own behaviour and a
-real pen need a phone and a tablet in hand.
+Real devices are not part of the automated checks: performance on a phone's GPU and memory,
+Safari's own behaviour (it is the engine of every iOS browser) and a real pen need a phone
+and a tablet in hand.

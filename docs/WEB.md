@@ -180,6 +180,10 @@ the dialog element, `Object.hasOwn`/`Array.at` and workers. A browser without on
 what is missing instead of a blank one. WebGPU is optional (the compatibility renderer is used
 without it).
 
+On a phone or a tablet the editor opens its touch interface ([docs/TOUCH.md](TOUCH.md)); `npm run
+test:touch` checks it in Chromium with touch emulation. Real phones and tablets, and Safari (the
+engine of every iOS browser), are not part of the automated checks.
+
 ## Security
 
 `_headers` sends the policy `index.html` already declares in its own tag, plus the
@@ -246,6 +250,7 @@ Differences from the desktop codec, all deliberate:
 | Community library | Yes, through the editor's own origin |
 | System fonts | Where the browser offers local fonts (Chromium); otherwise open a font file |
 | Feedback, telemetry, updates | Not present |
+| Phones and tablets | The touch interface: layouts, gestures and sheets made for fingers and pens ([docs/TOUCH.md](TOUCH.md)) |
 
 `tests/web-build.browser.mjs` runs the built site in a real browser, including
 under Cloudflare's own runtime (`wrangler dev`), and covers boot and rendering,
