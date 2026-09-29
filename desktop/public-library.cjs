@@ -18,6 +18,7 @@ const KINDS = Object.freeze({figure: {extension: 'stkz', maxBytes: 8 * MB}, movi
 // The order the website lists its categories in; a category it adds later follows these.
 const CATEGORY_ORDER = ['characters', 'effects', 'moves', 'props', 'backgrounds', 'animations', 'other'];
 const MAX_ITEMS = 5000;
+const MAX_COUNTED = 5000;
 const REFRESH_AFTER = 10 * 60 * 1000;
 const MAX_FILE_CACHE_BYTES = 32 * MB;
 const MAX_POSTER_CACHE_BYTES = 16 * MB;
@@ -114,6 +115,33 @@ async function readBounded(response, limit, missing) {
   return Buffer.concat(parts, size);
 }
 
+/**
+ * The items this person has already downloaded once. The site counts a download when a
+ * file is requested through its counting route, so the app asks that route only the first
+ * time; every later download of the same item reads the public file directly. Only public
+ * ids are kept, on this device (`preferences` is a WorkspacePreferences, or nothing to keep
+ * them for the session only). The oldest ids go first past MAX_COUNTED.
+ */
+class DownloadLedger {
+  constructor(preferences = null) { this.preferences = preferences; this.loading = null; }
+  load() {
+    this.loading ??= (async () => {
+      const stored = await this.preferences?.get().catch(() => null);
+      return new Set(Array.isArray(stored?.ids) ? stored.ids.filter(isPublicId).slice(-MAX_COUNTED) : []);
+    })();
+    return this.loading;
+  }
+  async has(id) { return (await this.load()).has(id); }
+  async add(id) {
+    const ids = await this.load();
+    if (ids.has(id)) return;
+    ids.add(id);
+    while (ids.size > MAX_COUNTED) ids.delete(ids.values().next().value);
+    // Best effort: if this cannot be written the next session counts the item once more, and nothing else is lost.
+    await this.preferences?.set({version: 1, ids: [...ids]}).catch(() => {});
+  }
+}
+
 /** Least recently used values under a byte budget; one oversized value is still kept alone. */
 class ByteCache {
   constructor(limit) { this.limit = limit; this.bytes = 0; this.entries = new Map(); }
@@ -136,9 +164,9 @@ class ByteCache {
 }
 
 class PublicLibrary {
-  constructor({site, fetcher = globalThis.fetch, now = Date.now} = {}) {
+  constructor({site, fetcher = globalThis.fetch, now = Date.now, downloads = new DownloadLedger()} = {}) {
     this.site = siteFrom(site);
-    this.fetcher = fetcher; this.now = now;
+    this.fetcher = fetcher; this.now = now; this.downloads = downloads;
     this.snapshot = null; this.checkedAt = 0; this.pending = null; this.inflight = new Map();
     this.posters = new ByteCache(MAX_POSTER_CACHE_BYTES); this.files = new ByteCache(MAX_FILE_CACHE_BYTES);
   }
@@ -173,8 +201,8 @@ class PublicLibrary {
     this.snapshot = {version, base, catalog, records: new Map(catalog.items.map(item => [item.id, {item, ...objects.get(item.id)}]))};
     this.checkedAt = this.now();
     // Posters and files of items that changed or left the library are released.
-    const current = new Set(catalog.items.map(item => item.sha256));
-    this.posters.retain(key => current.has(key.split(':')[1]));
+    const current = new Set(catalog.items.map(item => `${item.id}:${item.sha256}`));
+    this.posters.retain(key => current.has(key));
     this.files.retain(key => current.has(key));
     return catalog;
   }
@@ -191,11 +219,13 @@ class PublicLibrary {
     this.inflight.set(key, result);
     return result;
   }
+  /** Where a public object (a poster or a file) is served: the site's file host, or the site itself when it has none. */
+  objectUrl(base, key) { return `${base ?? `${this.site}/api/v1/library/f`}/${key}`; }
   /** The asset's poster as a data URL (the renderer's CSP allows no remote images). */
   async preview(id) {
     const {item, poster, base} = await this.record(id), key = `${id}:${item.sha256}`;
     return this.posters.get(key) ?? this.once(`poster:${key}`, async () => {
-      const bytes = await this.request(`${base ?? `${this.site}/api/v1/library/f`}/${poster}`, LIMITS.poster, {missing: GONE}), type = imageType(bytes);
+      const bytes = await this.request(this.objectUrl(base, poster), LIMITS.poster, {missing: GONE}), type = imageType(bytes);
       if (!type) throw new LibraryError('The asset preview is not an image.');
       const url = `data:${type};base64,${bytes.toString('base64')}`;
       this.posters.set(key, url, url.length);
@@ -203,10 +233,14 @@ class PublicLibrary {
     });
   }
   /**
-   * The file's bytes. The download goes through the site's counting route, which
-   * answers with a redirect to the public file; the redirect may only lead to the site.
+   * The file's bytes. An item's first download goes through the site's counting route,
+   * which answers with a redirect to the public file (the redirect may only lead to the
+   * site). Once counted, the item is remembered and later downloads, in this session or
+   * another, read the public file directly, so one person adds one download however often
+   * the asset is inserted.
    */
-  async download({item, file}) {
+  async download({item, file, base}) {
+    if (await this.downloads.has(item.id)) return this.request(this.objectUrl(base, file), item.size, {timeout: 60000, missing: GONE});
     const route = new URL(`${this.site}/api/v1/library/get/${item.id}?k=${encodeURIComponent(file)}`);
     let redirect;
     try { redirect = await this.fetcher(route, {signal: AbortSignal.timeout(15000), redirect: 'manual'}); }
@@ -216,15 +250,18 @@ class PublicLibrary {
     let target = null;
     try { if (redirect.status >= 300 && redirect.status < 400) target = new URL(redirect.headers.get('location') ?? '', route); } catch { /* refused below */ }
     if (!target || !belongsToSite(this.site, target)) throw new LibraryError(UNAVAILABLE);
+    await this.downloads.add(item.id);
     return this.request(target, item.size, {timeout: 60000, missing: GONE});
   }
   /** The verified native file: {item, name, extension, bytes}. */
   async asset(id) {
     const record = await this.record(id), {item} = record, {extension} = KINDS[item.kind];
-    const bytes = this.files.get(item.sha256) ?? await this.once(`file:${item.sha256}`, async () => {
+    // Per item, not per checksum: two uploads with identical bytes are still two downloads.
+    const key = `${item.id}:${item.sha256}`;
+    const bytes = this.files.get(key) ?? await this.once(`file:${key}`, async () => {
       const downloaded = await this.download(record);
       if (downloaded.length !== item.size || sha256(downloaded) !== item.sha256) throw new LibraryError('The downloaded asset did not match the community library. Try again later.');
-      this.files.set(item.sha256, downloaded, downloaded.length);
+      this.files.set(key, downloaded, downloaded.length);
       return downloaded;
     });
     return {item, name: `${item.name}.${extension}`, extension: `.${extension}`, bytes};
@@ -233,4 +270,4 @@ class PublicLibrary {
   pageFor(id) { return isPublicId(id) ? `${this.site}/library/?item=${id}` : `${this.site}/library/`; }
 }
 
-module.exports = {PublicLibrary, parseIndex, isPublicId, siteFrom, LIMITS};
+module.exports = {PublicLibrary, DownloadLedger, parseIndex, isPublicId, siteFrom, LIMITS};

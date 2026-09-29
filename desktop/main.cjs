@@ -22,7 +22,7 @@ const { AudioService } = require('./audio-service.cjs');
 const { VfwExportService } = require('./vfw-export-service.cjs');
 const { RecentFiles } = require('./recent-files.cjs');
 const { LibraryStore } = require('./library-store.cjs');
-const { PublicLibrary, isPublicId } = require('./public-library.cjs');
+const { PublicLibrary, DownloadLedger, isPublicId } = require('./public-library.cjs');
 const { TelemetryService } = require('./telemetry.cjs');
 const { UpdateService, updateAvailability } = require('./updates.cjs');
 const releaseInfo = require('./release-info.json');
@@ -308,7 +308,9 @@ function registerIpc() {
   ipcMain.handle('styk:library-trash', (event, relative) => { trusted(event); return library.trash(relative, target => shell.trashItem(target)); });
   ipcMain.handle('styk:library-thumbnail-cache', (event, options) => { trusted(event); return library.cacheThumbnail(options); });
   // The community library (desktop/public-library.cjs): what people share on the website, read through its API.
-  const publicLibrary = new PublicLibrary({site: process.env.STYK_PUBLIC_LIBRARY_URL});
+  // Which assets were already downloaded once (public ids only): the site counts each person's first download of an asset, no more.
+  const communityDownloads = new DownloadLedger(new WorkspacePreferences(app.getPath('userData'), { filename: 'community-downloads.json', maxBytes: 128 * 1024 }));
+  const publicLibrary = new PublicLibrary({site: process.env.STYK_PUBLIC_LIBRARY_URL, downloads: communityDownloads});
   ipcMain.handle('styk:public-library-list', (event, refresh = false) => { trusted(event); return publicLibrary.catalog({refresh: refresh === true}); });
   ipcMain.handle('styk:public-library-preview', (event, id) => { trusted(event); return publicLibrary.preview(id); });
   ipcMain.handle('styk:public-library-read', async (event, id) => {

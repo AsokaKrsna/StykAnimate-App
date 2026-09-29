@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {createServer} from 'node:http';
-import {mkdtemp, readFile} from 'node:fs/promises';
+import {mkdtemp, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {createRequire} from 'node:module';
 const require = createRequire(import.meta.url);
-const {PublicLibrary, parseIndex, siteFrom, isPublicId} = require('../desktop/public-library.cjs');
+const {PublicLibrary, DownloadLedger, parseIndex, siteFrom, isPublicId} = require('../desktop/public-library.cjs');
+const {WorkspacePreferences} = require('../desktop/preferences.cjs');
 const {LibraryStore} = require('../desktop/library-store.cjs');
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aEl0AAAAASUVORK5CYII=', 'base64');
@@ -127,6 +128,78 @@ test('downloads through the counting route and verifies the file against the ind
   await assert.rejects(library.asset('notlisted1'), /no longer/);
 });
 
+const counting = requests => requests.filter(request => request.url.includes('/api/v1/library/get/')).length;
+
+test('a person\'s first download of an item is counted once, in this session and in later ones', async () => {
+  const downloads = new DownloadLedger();
+  const first = site(healthy());
+  await new PublicLibrary({fetcher: first.fetcher, downloads}).asset(ID);
+  assert.equal(counting(first.requests), 1);
+  // Another launch, or a cache that let the file go: nothing is cached, and the item is not counted again.
+  const later = site(healthy());
+  assert.deepEqual((await new PublicLibrary({fetcher: later.fetcher, downloads}).asset(ID)).bytes, FILE);
+  assert.equal(counting(later.requests), 0, 'the counting route is not asked again');
+  assert.ok(later.requests.some(request => request.url === `${FILES}/i/${ID}/folding-fan.stkz` && request.options.redirect === 'error'), 'the public file is read directly');
+  // A direct download is verified exactly like a counted one.
+  const tampered = site(healthy({[`${FILES}/i/${ID}/folding-fan.stkz`]: Buffer.from('native figure bytez')}));
+  await assert.rejects(new PublicLibrary({fetcher: tampered.fetcher, downloads}).asset(ID), /did not match/);
+  const gone = site(healthy({[`${FILES}/i/${ID}/folding-fan.stkz`]: new Response('', {status: 404})}));
+  await assert.rejects(new PublicLibrary({fetcher: gone.fetcher, downloads}).asset(ID), /no longer/);
+  // Without a file host the site serves the file itself, still without counting.
+  const inline = site({[`${SITE}/api/v1/content`]: announce({v: VERSION, base: null}), [`${SITE}/api/v1/library/index/${VERSION}`]: index(), [`${SITE}/api/v1/library/f/i/${ID}/folding-fan.stkz`]: FILE});
+  assert.deepEqual((await new PublicLibrary({fetcher: inline.fetcher, downloads}).asset(ID)).bytes, FILE);
+  assert.equal(counting(inline.requests), 0);
+  // Another item is a first download of its own.
+  const other = 'otheritem1', twin = 'twintwin12', OTHER = Buffer.from('another figure');
+  const mixed = site(healthy({
+    [`${FILES}/index/${VERSION}.json`]: index([entry(ID), entry(other, {f: `i/${other}/other.stkz`, s: OTHER.length, sha256: sha(OTHER)}), entry(twin, {f: `i/${twin}/twin.stkz`})]),
+    [`${SITE}/api/v1/library/get/${other}`]: redirectTo(`${FILES}/i/${other}/other.stkz`), [`${FILES}/i/${other}/other.stkz`]: OTHER,
+    [`${SITE}/api/v1/library/get/${twin}`]: redirectTo(`${FILES}/i/${twin}/twin.stkz`), [`${FILES}/i/${twin}/twin.stkz`]: FILE}));
+  const library = new PublicLibrary({fetcher: mixed.fetcher, downloads});
+  await library.asset(ID); await library.asset(other); await library.asset(other);
+  assert.equal(counting(mixed.requests), 1, 'only the new item counted');
+  await library.asset(twin);
+  assert.equal(counting(mixed.requests), 2, 'an upload with the same bytes as another is still its own first download');
+});
+
+test('an item is remembered as counted only once the site answered its counting route', async () => {
+  const downloads = new DownloadLedger();
+  for (const broken of [new Response('{}', {status: 500}), new Response(FILE), redirectTo('https://evil.example.com/x.stkz')]) {
+    await assert.rejects(new PublicLibrary({fetcher: site(healthy({[`${SITE}/api/v1/library/get/${ID}`]: broken})).fetcher, downloads}).asset(ID));
+    assert.equal(await downloads.has(ID), false);
+  }
+  await assert.rejects(new PublicLibrary({fetcher: async url => { if (String(url).includes('/get/')) throw new TypeError('fetch failed'); return site(healthy()).fetcher(url); }, downloads}).asset(ID), /Could not reach/);
+  assert.equal(await downloads.has(ID), false, 'a failed attempt can still be counted next time');
+  const retry = site(healthy());
+  await new PublicLibrary({fetcher: retry.fetcher, downloads}).asset(ID);
+  assert.equal(counting(retry.requests), 1); assert.equal(await downloads.has(ID), true);
+});
+
+test('the download ledger keeps public ids on this device and stays bounded', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'styk-ledger-')), open = () => new DownloadLedger(new WorkspacePreferences(dir, {filename: 'community-downloads.json', maxBytes: 128 * 1024}));
+  const ledger = open();
+  await ledger.add(ID); await ledger.add(ID);
+  assert.deepEqual(JSON.parse(await readFile(path.join(dir, 'community-downloads.json'), 'utf8')), {version: 1, ids: [ID]}, 'only the public id is stored');
+  const reopened = open();
+  assert.equal(await reopened.has(ID), true); assert.equal(await reopened.has('otheritem1'), false);
+  await writeFile(path.join(dir, 'community-downloads.json'), JSON.stringify({ids: ['../x', 'Fanfan1234', ID, 5, null]}));
+  const hostile = open();
+  assert.equal(await hostile.has(ID), true); assert.equal(await hostile.has('../x'), false); assert.equal(await hostile.has('Fanfan1234'), false);
+  await writeFile(path.join(dir, 'community-downloads.json'), 'not json');
+  assert.equal(await open().has(ID), false, 'a damaged file starts a fresh list');
+  const ids = Array.from({length: 5001}, (_, index) => String(index).padStart(10, '0'));
+  const bounded = new DownloadLedger({get: async () => ({ids}), set: async () => {}});
+  assert.equal(await bounded.has(ids[0]), false, 'the oldest go first when a file holds too many'); assert.equal(await bounded.has(ids[5000]), true);
+  await bounded.add('zzzzzzzzzz');
+  assert.equal(await bounded.has(ids[1]), false); assert.equal(await bounded.has('zzzzzzzzzz'), true); assert.equal((await bounded.load()).size, 5000);
+  const failing = new DownloadLedger({get: async () => { throw new Error('unreadable'); }, set: async () => { throw new Error('disk full'); }});
+  await failing.add(ID);
+  assert.equal(await failing.has(ID), true, 'not being able to save never stops a download, it is still remembered for this session');
+  const session = new DownloadLedger();
+  await session.add(ID);
+  assert.equal(await session.has(ID), true); assert.equal(await new DownloadLedger().has(ID), false, 'without a file it lasts one session');
+});
+
 test('refuses redirects off the site, tampered, oversized and missing files', async () => {
   const route = extra => new PublicLibrary({fetcher: site(healthy(extra)).fetcher});
   await assert.rejects(route({[`${SITE}/api/v1/library/get/${ID}`]: redirectTo('https://evil.example.com/i/x.stkz')}).asset(ID), /unavailable/);
@@ -176,11 +249,15 @@ test('works against a real HTTP server: the counted download follows the redirec
     response.writeHead(404).end();
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); t.after(() => server.close());
-  const library = new PublicLibrary({site: `http://127.0.0.1:${server.address().port}`});
+  const origin = `http://127.0.0.1:${server.address().port}`, downloads = new DownloadLedger();
+  const library = new PublicLibrary({site: origin, downloads});
   assert.equal((await library.catalog()).items[0].name, 'Folding fan');
   assert.deepEqual((await library.asset(ID)).bytes, FILE);
   assert.match(await library.preview(ID), /^data:image\/webp/);
   assert.deepEqual(seen, ['GET /api/v1/content', `GET /api/v1/library/index/${VERSION}`, `GET /api/v1/library/get/${ID}`, `GET /api/v1/library/f/i/${ID}/folding-fan.stkz`, `GET /api/v1/library/f/i/${ID}/poster.webp`]);
+  seen.length = 0;
+  assert.deepEqual((await new PublicLibrary({site: origin, downloads}).asset(ID)).bytes, FILE);
+  assert.deepEqual(seen, ['GET /api/v1/content', `GET /api/v1/library/index/${VERSION}`, `GET /api/v1/library/f/i/${ID}/folding-fan.stkz`], 'a later session reads the file without the counting route');
 });
 
 test('a community asset saves into the library with its preview, never over an existing file', async t => {
