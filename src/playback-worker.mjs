@@ -449,6 +449,10 @@ export function createPlaybackWorkerEndpoint(postMessage) {
   let current = null, incoming = null, incomingFrames = null, incomingPatch = null, serial = 0, latestRevision = 0, running = false, suspended = false;
   const queue = [];
   let delivery = null, deliverySerial = 0;
+  // The previous packet's admission, and the tick being prepared. The worker
+  // prepares its next packet while the controller admits the previous one, but
+  // posts only after that admission, so one transferred packet awaits at most.
+  let outstanding = null, preparing = null;
   const releaseDelivery = () => { const prior = delivery; delivery = null; prior?.resolve(); };
   const artworkRegistry=new ArtworkRegistry();
   const geometryCache=new PlaybackGeometryCache();
@@ -462,28 +466,32 @@ export function createPlaybackWorkerEndpoint(postMessage) {
         const request = queue.shift(), snapshot = current, generation = serial;
         if (!snapshot || request.revision !== snapshot.revision) continue;
         const started=request.queuedAt!==undefined?performance.now():null;
+        const job = preparing = {tick: request.tick, revision: request.revision, dropped: false};
         try {
-          const cancelled=()=>serial!==generation||suspended;
+          // A retention message that no longer lists this tick abandons it, as
+          // it would have removed the tick from the queue had it not started.
+          const cancelled=()=>serial!==generation||suspended||job.dropped;
           const packet = await compilePlaybackPacket(snapshot.report, request.tick, { ...snapshot, artworkRegistry, geometryCache, tweenCache, cancelled });
-          if (serial === generation && !suspended) {
-            // Bound current-revision unadmitted packets to one. The controller
-            // sends retention changes before ACK, avoiding speculative bursts
-            // while its thread is delayed by presentation or memory pressure.
+          // Bound current-revision unadmitted packets to one. The controller
+          // sends retention changes before ACK, avoiding speculative bursts
+          // while its thread is delayed by presentation or memory pressure.
+          if (outstanding) await outstanding;
+          if (serial === generation && !suspended && !job.dropped) {
             const deliveryId = snapshot.acknowledgePackets ? ++deliverySerial : undefined;
             const accepted = deliveryId && new Promise(resolve => { delivery = {revision:snapshot.revision, deliveryId, resolve}; });
             try {
               postMessage({type:'packet', revision:snapshot.revision, tick:request.tick, packet, ...(deliveryId ? {deliveryId} : {}),
                 ...(started!==null?{measurement:{queueMs:started-request.queuedAt,computeMs:performance.now()-started}}:{})}, packetTransferables(packet));
-              if (accepted) await accepted;
+              outstanding = accepted || null;
             } catch (error) { releaseDelivery(); for (const entry of packet.compatibility) entry.bitmap?.close(); throw error; }
           }
-          else {for (const entry of packet.compatibility) entry.bitmap?.close();if(serial===generation)queue.unshift(request);}
+          else {for (const entry of packet.compatibility) entry.bitmap?.close();if(serial===generation&&!job.dropped)queue.unshift(request);}
         } catch (error) {
-          if (serial === generation) {
+          if (serial === generation && !job.dropped) {
             if(suspended)queue.unshift(request);
             else postMessage({ type: 'error', revision: snapshot.revision, tick: request.tick, message: error.message, code: error.code });
           }
-        }
+        } finally { if (preparing === job) preparing = null; }
         // Let load/invalidate/cancel messages interrupt between ticks, never halfway through a native pose.
         await yieldPlaybackTask();
       }
@@ -619,6 +627,7 @@ export function createPlaybackWorkerEndpoint(postMessage) {
     } else if (message.type === 'retain' && message.revision === current?.revision) {
       const keep = new Set(message.ticks);
       for (let i = queue.length - 1; i >= 0; i--) if (!keep.has(queue[i].tick)) queue.splice(i, 1);
+      if (preparing?.revision === message.revision && !keep.has(preparing.tick)) preparing.dropped = true;
     } else if (message.type === 'prepare' && message.revision === current?.revision) {
       const measured=new Set((message.measuredTicks||[]).slice(0,120));
       for (const tick of message.ticks) if (!queue.some(entry => entry.tick === tick)) queue.push({ revision: message.revision, tick,...(measured.has(tick)?{queuedAt:performance.now()}:{}) });

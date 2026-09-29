@@ -30,7 +30,7 @@ function endpoint(t, options = {}) {
   return {receive, wait, load, ack, packets, report};
 }
 
-test('worker waits for admission and applies retention before allocating the next packet', async t => {
+test('worker holds its next packet for admission and applies retention before posting it', async t => {
   const worker = endpoint(t);
   worker.receive({type: 'prepare', revision: 1, ticks: [0, 1, 2]});
   const first = await worker.wait(message => message.type === 'packet');
@@ -44,6 +44,36 @@ test('worker waits for admission and applies retention before allocating the nex
   const next = await worker.wait(message => message.type === 'packet' && message.tick === 2);
   assert.deepEqual(worker.packets().map(message => message.tick), [0, 2]);
   worker.ack(next);
+});
+
+test('worker prepares its next tick during admission but posts it only after the acknowledgement', async t => {
+  const worker = endpoint(t);
+  let reads = 0;
+  worker.report.keyframes[1] = new Proxy(worker.report.keyframes[1], {get(target, key, receiver) {
+    if (key === 'objects') reads++;
+    return Reflect.get(target, key, receiver);
+  }});
+  worker.receive({type: 'prepare', revision: 1, ticks: [0, 1]});
+  const first = await worker.wait(message => message.type === 'packet');
+  await delay(50);
+  assert.ok(reads > 0, 'The next tick is prepared while the first packet awaits admission.');
+  assert.equal(worker.packets().length, 1, 'It is not posted before the acknowledgement.');
+  worker.ack(first);
+  worker.ack(await worker.wait(message => message.type === 'packet' && message.tick === 1));
+  assert.deepEqual(worker.packets().map(message => message.tick), [0, 1]);
+});
+
+test('retention that drops the tick being prepared abandons it without an error', async t => {
+  const worker = endpoint(t);
+  worker.receive({type: 'prepare', revision: 1, ticks: [0, 1, 2]});
+  const first = await worker.wait(message => message.type === 'packet');
+  // Tick 1 is prepared and held for admission; retention no longer lists it.
+  worker.receive({type: 'retain', revision: 1, ticks: [2]});
+  worker.ack(first);
+  worker.ack(await worker.wait(message => message.type === 'packet' && message.tick === 2));
+  await delay(25);
+  assert.deepEqual(worker.packets().map(message => message.tick), [0, 2]);
+  assert.equal(worker.packets().length, 2);
 });
 
 for (const replacement of ['load', 'load-chunk', 'invalidate']) test(`${replacement} releases an obsolete delivery without accepting its late acknowledgement`, async t => {
