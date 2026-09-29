@@ -11,7 +11,7 @@ try{
   await page.evaluate(async()=>{
     const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs');
     const r=emptyDocument(),f=r.figure_types[0];
-    f.segments=[{...f.segments[0],segment_id:1,parent_id:0,segment_kind:'squareLine',segment_type:'line',length:200,thickness:90,angle_rad:0,is_static:true,color_rgb:[240,60,60]}];f.segment_count=1;
+    f.segments=[{...f.segments[0],segment_id:1,parent_id:0,segment_kind:'squareLine',segment_type:'line',length:200,thickness:90,angle_rad:0,aux_code:1,is_static:true,color_rgb:[240,60,60]}];f.segment_count=1;
     r.keyframes=[createFrame([createObject(f,1,100,160),createObject(f,2,300,160,{join:{target_object_slot:0,target_unique_id:1,target_handle_id:1}})],20)];
     styk.editor.load(r);styk.editor.select(null);styk.state.handles=true;styk.fit();
     window.feedbackPoint=async point=>{const {worldToScreen}=await import('/src/renderer-geometry.mjs'),b=document.querySelector('#viewport').getBoundingClientRect(),p=worldToScreen(point,{report:styk.editor.report,frame:styk.editor.evaluatedFrame,view:styk.state.view,cameraEnabled:false});return{x:b.x+p.x,y:b.y+p.y};};

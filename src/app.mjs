@@ -102,6 +102,7 @@ import {
   getPivotHandles,
   PIVOT_HANDLE_COLORS,
   pickCanvasHandle,
+  pickCanvasSegment,
   figureIntersectsMarquee,
   invalidatePivotHandleTopology,
 } from "./canvas-interactions.mjs";
@@ -129,7 +130,7 @@ import {
 } from "./media-authoring.mjs";
 import { icon, hydrateIcons } from "./icons.mjs";
 import { MotionPathCache, motionPathTargets, motionPathTargetKey, pickMotionPathPoint, drawMotionPath, drawMotionPathGhost, affineProjection } from "./motion-path.mjs";
-import { planFalloff, MOTION_PATH_FALLOFF_MAX } from "./motion-path-falloff.mjs";
+import { MOTION_PATH_FALLOFF_MAX } from "./motion-path-falloff.mjs";
 import { CanvasGuides } from "./canvas-guides.mjs";
 import { MotionPathControls } from "./motion-path-controls.mjs";
 import { TweenerControls } from "./tweener-controls.mjs";
@@ -248,7 +249,6 @@ const state = {
   builderBranch: false,
   builderShiftHeld: false,
   depthHeld: false,
-  falloffHeld: false,
   locked: new Set(),
   hidden: new Set(),
   sourceId: null,
@@ -525,15 +525,12 @@ function modeMessage() {
   }
   return null;
 }
-/** The stage message while arc reshaping is armed or under way. */
+/** The stage message while right-dragging a motion arc. */
 function falloffModeMessage() {
   if (!state.motionPaths || !["select", "pose"].includes(state.tool) || builderMode?.active) return null;
-  const falloff = editor.motionPathFalloff(), radius = falloff?.radius ?? state.settings.motionPathFalloffRadius;
-  if (!falloff && !state.falloffHeld) return null;
-  const resize = `scroll or ${hotkeys.label('falloff-smaller')} ${hotkeys.label('falloff-larger')} to resize`;
-  return falloff
-    ? { key: "falloff", icon: "motion-path", title: `Reshaping ±${radius} frames`, message: `· ${resize} · release ${hotkeys.label('falloff-hold')} for one frame · Esc cancels` }
-    : { key: "falloff", icon: "motion-path", title: "Drag a trail point", message: `to reshape ±${radius} frames of its arc · ${resize}` };
+  const falloff = editor.motionPathFalloff();
+  if (!falloff) return null;
+  return { key: "falloff", icon: "motion-path", title: `Reshaping ±${falloff.radius} frames`, message: "· scroll to resize · Esc cancels" };
 }
 function syncModeMessage() {
   stageHead.showMode(modeMessage() ?? falloffModeMessage());
@@ -1230,36 +1227,30 @@ function pickMotionPath(screen) {
   }
   return best;
 }
-/** The falloff a trail drag uses while its hold key is down. */
+/** The saved influence used by secondary-button trail drags. */
 function pathFalloff() {
-  return state.falloffHeld ? {radius: state.settings.motionPathFalloffRadius, shape: state.settings.motionPathFalloffShape} : null;
+  return {radius: state.settings.motionPathFalloffRadius, shape: state.settings.motionPathFalloffShape};
 }
-/** Holding or releasing the key, or resizing, retargets the open gesture. */
+/** Resizing retargets the open reshape gesture. */
 function syncPathFalloff() {
-  if (state.drag?.kind === "motion-path") editor.setMotionPathFalloff(pathFalloff());
+  if (state.drag?.kind === "motion-path" && state.drag.falloff) editor.setMotionPathFalloff(pathFalloff());
   syncPathTooltip();
   syncModeMessage();
   requestRender();
-}
-function setFalloffHeld(held) {
-  if (state.falloffHeld === held) return;
-  state.falloffHeld = held;
-  syncPathFalloff();
 }
 function nudgePathFalloff(step) {
   const current = state.settings.motionPathFalloffRadius;
   const radius = Math.max(1, Math.min(MOTION_PATH_FALLOFF_MAX, current + step));
   if (radius !== current) editorSettings.commit({ motionPathFalloffRadius: radius });
-  if (!editor.motionPathFalloff() && !state.falloffHeld) toast(`Motion path falloff ±${radius} frames`);
 }
 /** The canvas tooltip for the hovered trail point names both gestures. */
 function syncPathTooltip() {
   const hover = state.hoverPathPoint;
   if (!hover) { overlay.title = ""; return; }
-  const frame = `Frame ${hover.tick + 1}${hover.tick === editor.tick ? " (current)" : ""}`, key = hotkeys.label('falloff-hold');
-  overlay.title = state.falloffHeld
+  const frame = `Frame ${hover.tick + 1}${hover.tick === editor.tick ? " (current)" : ""}`;
+  overlay.title = editor.motionPathFalloff()
     ? `${frame} — drag to reshape ±${state.settings.motionPathFalloffRadius} frames of the arc`
-    : `${frame} — drag to repose${hover.tick === editor.tick ? "" : " without leaving this frame, double-click to go there"}; hold ${key} to reshape the arc`;
+    : `${frame} — drag to repose${hover.tick === editor.tick ? "" : " without leaving this frame, double-click to go there"}; right-drag to reshape the arc`;
 }
 /** Double-clicking a trail point goes to its frame. */
 function seekMotionPathTick(tick) {
@@ -1572,15 +1563,10 @@ function onionSkins() {
   if (!state.onion || state.playing || state.previewing) return [];
   return onionCache.get(editor, onionController.settings, {selected: selection(), hidden: effectiveHidden(), visibilityKey:[...state.hidden]});
 }
-/** What a falloff drag at `tick` changes: the open gesture's plan, or, while
- * the hold key is down over a trail, the plan a drag would make. */
-function pathInfluence(entry, tick, falloff) {
-  const edges = writes => new Set(writes.filter(write => write.kind === 'edge').map(write => write.tick));
-  if (falloff) return {tick, radius: falloff.radius, shape: falloff.shape, changed: falloff.changed, edges: edges(falloff.writes)};
-  if (!state.falloffHeld || state.drag) return null;
-  const radius = state.settings.motionPathFalloffRadius, shape = state.settings.motionPathFalloffShape;
-  const writes = planFalloff({tick, radius, shape, keys: [...(entry.keyTicks ?? [])], totalTicks: editor.totalTicks});
-  return {tick, radius, shape, changed: new Set(writes.map(write => write.tick)), edges: edges(writes)};
+/** What the open falloff gesture changes. */
+function pathInfluence(tick, falloff) {
+  return falloff ? {tick, radius: falloff.radius, shape: falloff.shape, changed: falloff.changed,
+    edges: new Set(falloff.writes.filter(write => write.kind === 'edge').map(write => write.tick))} : null;
 }
 /** Trails, plus the pose at the hovered or dragged point when it is another
  * frame: the ghost shows what a drag will change without seeking. */
@@ -1596,7 +1582,7 @@ function drawMotionPaths() {
   for (const motionPath of motionPaths) {
     const key = motionPathTargetKey(motionPath.target);
     if (focus?.key === key && focus.tick !== editor.tick) ghost = motionPath;
-    const influence = focus?.key === key ? pathInfluence(motionPath.entry, focus.tick, dragPath ? falloff : null) : null;
+    const influence = focus?.key === key ? pathInfluence(focus.tick, dragPath ? falloff : null) : null;
     drawMotionPath(ctx, motionPath.entry, project, {
       tick: editor.tick, relative, bounds, strong: motionPath.strong, currentBadge: motionPath.lead,
       influence, badgeSuffix: influence ? `· ±${influence.radius}` : '',
@@ -2449,8 +2435,12 @@ function finishPolygon() {
 }
 function pick(p, {preferSelected = false, artwork = false} = {}) {
   const geometry = editor.geometry;
-  const body = () => artwork && !builderMode?.active && ['select','pose','tweener'].includes(state.tool)
-    ? pickCanvasArtwork(geometry, p, {resources, hiddenUids: effectiveHidden(), lockedUids: {has: isLocked}, scale: state.view.scale}) : null;
+  const body = () => {
+    if (!artwork || builderMode?.active || !['select','pose','tweener'].includes(state.tool) || state.handleEditHeld) return null;
+    const hit = pickCanvasArtwork(geometry, p, {resources, hiddenUids: effectiveHidden(), lockedUids: {has: isLocked}, scale: state.view.scale});
+    return (state.handles && state.tool !== 'tweener' && pickCanvasSegment(geometry, p,
+      {handles: canvasHandles(geometry), uid: hit?.uid, scale: state.view.scale})) || hit;
+  };
   if (!state.handles) return body();
   const options = {
     project: screenPoint,
@@ -2620,7 +2610,7 @@ overlay.addEventListener(
       return;
     }
     if (
-      e.button === 0 &&
+      (e.button === 0 || e.button === 2) &&
       state.motionPaths &&
       ["select", "pose"].includes(state.tool) &&
       !builderMode?.active
@@ -2628,15 +2618,19 @@ overlay.addEventListener(
       const picked = pickMotionPath(screenPoint(p));
       const pathHit = picked?.hit, hitTarget = picked?.motionPath.target;
       const last = state.lastPathClick;
-      if (pathHit && last && last.key === motionPathTargetKey(hitTarget) && last.tick === pathHit.tick && e.timeStamp - last.time < 450) {
+      if (e.button === 0 && pathHit && last && last.key === motionPathTargetKey(hitTarget) && last.tick === pathHit.tick && e.timeStamp - last.time < 450) {
         state.lastPathClick = null;
         releaseCanvasPointer();
         seekMotionPathTick(pathHit.tick);
         return;
       }
-      if (pathHit && editor.beginMotionPathEdit(hitTarget, pathHit.tick, {falloff: pathFalloff()})) {
+      if (pathHit && editor.beginMotionPathEdit(hitTarget, pathHit.tick, {falloff: e.button === 2 ? pathFalloff() : null})) {
+        if (e.button === 2) { e.preventDefault(); state.suppressContext = true; }
+        state.lastPathClick = null;
+        state.falloffWheel = 0;
         state.drag = {
           kind: "motion-path",
+          falloff: e.button === 2,
           key: motionPathTargetKey(hitTarget),
           tick: pathHit.tick,
           start: p,
@@ -2645,6 +2639,7 @@ overlay.addEventListener(
           moved: false,
         };
         viewport.classList.add("dragging");
+        syncPathTooltip();
         syncModeMessage();
         requestRender();
         return;
@@ -2820,6 +2815,7 @@ function beginFigurePointerDrag(hit, p, e, {duplicate = false} = {}) {
     start: p,
     root: { x: hit.g.obj.root_x, y: hit.g.obj.root_y },
     joint: hit.joint,
+    offset: hit.kind === 'segment-body' && !figureTransform ? {x: hit.point.x - p.x, y: hit.point.y - p.y} : null,
     moved: false,
     duplicate,
   };
@@ -2989,9 +2985,10 @@ const moveCanvasPointer = guarded((e) => {
         start: drag.start,
         root: { x: hit.g.obj.root_x, y: hit.g.obj.root_y },
         joint: hit.joint,
+        offset: hit.kind === 'segment-body' ? {x: hit.point.x - drag.start.x, y: hit.point.y - drag.start.y} : null,
         moved: true,
       };
-      editor.bendJoint(p.x, p.y, {
+      editor.bendJoint(p.x + (state.drag.offset?.x ?? 0), p.y + (state.drag.offset?.y ?? 0), {
         stretch: e.ctrlKey || e.metaKey,
         isolate: Boolean(state.isolateHeld || state.isolateMode),
         snapTolerance: 6 / state.view.scale,
@@ -3075,21 +3072,21 @@ const moveCanvasPointer = guarded((e) => {
         isolate: Boolean(state.isolateHeld || state.isolateMode),
       });
     } else if (drag.kind === "bend")
-      editor.bendJoint(p.x, p.y, {
+      editor.bendJoint(p.x + (drag.offset?.x ?? 0), p.y + (drag.offset?.y ?? 0), {
         stretch: e.ctrlKey || e.metaKey,
         isolate: Boolean(state.isolateHeld || state.isolateMode),
         snapTolerance: 6 / state.view.scale,
         pixel: 1 / state.view.scale,
       });
     else
-      editor.poseJoint(p.x, p.y, {
+      editor.poseJoint(p.x + (drag.offset?.x ?? 0), p.y + (drag.offset?.y ?? 0), {
         stretch: e.ctrlKey || e.metaKey,
         isolate: Boolean(state.isolateHeld || state.isolateMode),
         snapTolerance: 6 / state.view.scale,
         alternate: e.shiftKey,
         depth: state.depthHeld,
         pixel: 1 / state.view.scale,
-        anchor: drag.start,
+        anchor: drag.offset ? {x: drag.start.x + drag.offset.x, y: drag.start.y + drag.offset.y} : drag.start,
       });
     requestRender();
   });
@@ -3157,7 +3154,8 @@ function endDrag(event, {keepPointer = false} = {}) {
     if (drag.moved) editor.commitMotionPathEdit();
     else editor.cancelMotionPathEdit();
     // A press that did not move arms the double-click that goes to this frame.
-    state.lastPathClick = drag.moved ? null : {key: drag.key, tick: drag.tick, time: event?.timeStamp ?? performance.now()};
+    state.lastPathClick = drag.moved || drag.falloff ? null : {key: drag.key, tick: drag.tick, time: event?.timeStamp ?? performance.now()};
+    syncPathTooltip();
     syncModeMessage();
   } else if (drag.kind === "camera") editor.commitCameraDrag();
   else if (!["pan", "maybe-bend", "zoom", "rotate"].includes(drag.kind)) {
@@ -3189,7 +3187,8 @@ function addFrameKeepingDrag(insert) {
       const g = [...editor.geometry.objects.values()].find(g => g.obj.unique_id === held.uid);
       if (g && !isHidden(held.uid) && !isLocked(held.uid) &&
           (held.joint < 0 || g.segments[held.joint])) {
-        beginFigurePointerDrag({g, uid: held.uid, joint: held.joint, action: held.joint < 0 ? 'move' : 'pose'},
+        beginFigurePointerDrag({g, uid: held.uid, joint: held.joint, action: held.joint < 0 ? 'move' : 'pose',
+          kind: drag.offset ? 'segment-body' : undefined, point: g.segments[held.joint]?.handle ?? g.segments[held.joint]?.end},
           held.point, {button: drag.bend ? 2 : 0, ctrlKey: held.event.ctrlKey, metaKey: held.event.metaKey});
         if (state.drag) { state.drag.pastSlop = true; state.drag.current = held.point; state.drag.pointerEvent = held.event; }
       } else releaseCanvasPointer();
@@ -3214,6 +3213,7 @@ function cancelDrag() {
     editor.cancelDrag();
   state.drag = null;
   viewport.classList.remove("dragging");
+  syncPathTooltip();
   queueUI();
 }
 overlay.addEventListener("pointerup", guarded(endDrag));
@@ -3263,8 +3263,8 @@ overlay.addEventListener("pointerleave", () => {
 viewport.addEventListener(
   "wheel",
   (e) => {
-    // While reshaping an arc (or arming it over a trail), the wheel sizes the influence.
-    if (editor.motionPathFalloff() || (state.falloffHeld && state.hoverPathPoint)) {
+    // While right-dragging an arc, the wheel sizes the influence.
+    if (editor.motionPathFalloff()) {
       e.preventDefault();
       state.falloffWheel = (state.falloffWheel ?? 0) + (e.deltaMode ? e.deltaY * 40 : e.deltaY);
       const steps = Math.trunc(state.falloffWheel / 40);
@@ -5063,8 +5063,6 @@ function runKeyboardCommand(id, event, modifiers = {shift: event.shiftKey}) {
   if (id === 'handle-edit-hold') { state.handleEditHeld = true; requestRender(); return; }
   if (id === 'isolate-hold') { state.isolateHeld = true; return; }
   if (id === 'depth-hold') { state.depthHeld = true; return; }
-  if (id === 'falloff-hold') { setFalloffHeld(true); return; }
-  if (id === 'falloff-smaller' || id === 'falloff-larger') return nudgePathFalloff(id === 'falloff-larger' ? 1 : -1);
   if (id === 'play-pan') {
     state.space = true; state.spacePanned = false; viewport.classList.add('panning'); return;
   }
@@ -5090,7 +5088,6 @@ function releaseKeyboardCommand(id, event) {
   if (id === 'handle-edit-hold') { state.handleEditHeld = false; requestRender(); }
   else if (id === 'isolate-hold') state.isolateHeld = false;
   else if (id === 'depth-hold') state.depthHeld = false;
-  else if (id === 'falloff-hold') setFalloffHeld(false);
   else if (id.startsWith('handle-')) {
     heldArrows.delete('arrow' + id.slice(7));
     if (!heldArrows.size) finishKeyboardHandle();
@@ -5917,8 +5914,7 @@ async function init() {
   window.styk.onionController = onionController;
   pathControls = new MotionPathControls({button: $("paths-button"),
     getSettings: () => state.settings, getEnabled: () => state.motionPaths,
-    onChange: patch => editorSettings.commit(patch), onToggle: () => actions["toggle-motion-paths"](),
-    getFalloffKey: () => hotkeys.label('falloff-hold')});
+    onChange: patch => editorSettings.commit(patch), onToggle: () => actions["toggle-motion-paths"]()});
   window.styk.tweener = tweenerControls = new TweenerControls({button: $('tweener-button'), editor, viewport,
     getTool: () => state.tool, onSelect: () => setTool('tweener'),
     beforeEdit: () => propertyControls?.commit(), onError: fail});
@@ -6297,7 +6293,6 @@ function rendererOptions() {
         state.spacePanned = false;
         state.isolateHeld = false;
         state.depthHeld = false;
-        state.falloffHeld = false;
         state.hoverHandle = null;
         state.hoverCameraHandle = null;
         viewport.classList.toggle("panning", state.tool === "hand");

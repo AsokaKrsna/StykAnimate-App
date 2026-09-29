@@ -24,7 +24,7 @@ export function pickCanvasArtwork(geometry, point, {resources = {}, hiddenUids, 
       ctx.setTransform(scale, 0, 0, scale, 1.5 - point.x * scale, 1.5 - point.y * scale);
       drawGeometry(ctx, {drawables: g.drawables}, resources);
       if (ctx.getImageData(1, 1, 1, 1).data[3])
-        return {g, uid, joint: -1, id: 0, kind: 'body', point: g.root, action: g.obj.join ? 'select' : 'move'};
+        return {g, uid, joint: -1, id: 0, kind: 'body', point: g.root, action: 'select'};
     }
     return null;
   } finally {

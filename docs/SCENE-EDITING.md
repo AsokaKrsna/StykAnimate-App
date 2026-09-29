@@ -26,8 +26,16 @@ scale or paint to definition defaults. Regression coverage is in
 
 In Animate, clicking visible artwork selects that figure's origin after visible
 and hidden static handle picking have missed. This includes joined figures whose
-origins are not exposed as handles, so Unjoin is available immediately. Artwork
-picking skips hidden/locked figures and transparent pixels; it runs only on a
+origins are not exposed as handles, so Unjoin is available immediately. Dragging
+artwork keeps that selection without moving the figure or adding history; use
+the free origin handle to translate a figure.
+
+With joints shown, movable line segments also accept a press along their visible
+stroke, including curves, with eight screen pixels of extra tolerance. The hit
+selects and poses that segment's endpoint, preserving the grab offset. Visible
+handles retain priority, static parts stay fixed, and artwork in front prevents
+picking a segment on a figure behind it. Segment right-drags bend as usual.
+Artwork picking skips hidden/locked figures and transparent pixels; it runs only on a
 click, using a three-pixel scratch surface and the existing geometry painter.
 Build tools and explicit handle-target modes retain their handle-only behavior.
 

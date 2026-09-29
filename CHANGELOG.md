@@ -17,7 +17,7 @@ What's new in each version of StykAnimate.
 - Community library: browse free figures and movieclips shared by other animators from the Library panel or on stykanimate.com/library, and insert them straight into your scene.
 - Richer brushes in Draw, with tapered strokes, chalk, bristle and sponge tips, paper grain, steadier lines, a pressure curve for your tablet and new presets.
 - Moving parts for 3D props, like a pistol's slide or trigger. Projects that use them need this version or newer.
-- Reshape a whole arc of motion at once: hold F and drag a point on a motion path, and the nearby frames follow smoothly.
+- Reshape a whole arc of motion at once: right-drag a point on a motion path, and the nearby frames follow smoothly.
 - Hold Alt and drag a figure to duplicate it as you move it.
 - Hold Shift and drag a figure's origin to move the whole figure along with its pinned IK joints.
 - Press A while dragging a joint or figure to add frames without letting go.
@@ -33,6 +33,7 @@ What's new in each version of StykAnimate.
 - Redesigned timelines: the Simple timeline shows frames as cards you can stretch to hold longer, the Advanced timeline shows each pose as one clear bar, and both keep their controls in the same place.
 - Redesigned motion paths: show the arcs of hands, feet and head together, color them by speed, and preview any frame's pose by pointing at its trail.
 - Easier 3D posing: dragging a joint turns the part on screen, holding D moves it toward or away from you, and arms and legs bend with IK just like on a 2D figure.
+- Easier joint selection: drag along a line segment to pose it without having to grab its node precisely.
 - A clearer Export window with a live preview, easy trimming, size options and one-click presets for YouTube, Shorts, TikTok, Instagram, X and more.
 - A simpler Properties panel, with the most used actions right under the selection's name.
 - A simpler VFX panel that lists effects one per row, each with its own on/off switch.
@@ -52,7 +53,7 @@ What's new in each version of StykAnimate.
 - Fixed onion skins looking patchy where parts of a figure overlap.
 - Fixed Feedback sometimes opening on the wrong report type.
 - Fixed the timeline and effect list jumping while selecting several frames.
-- Fixed clicking a figure's artwork not selecting the figure.
+- Clicking artwork selects its figure for editing without accidentally moving it.
 - Fixed leaving Draw sometimes losing your previous layer and selection.
 - Fixed error messages appearing behind open dialogs. Closing the Export window during an export now asks before stopping it.
 - Fixed typing in a menu switching tools, and the Properties ⋯ menu not opening.

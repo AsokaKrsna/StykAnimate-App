@@ -7,7 +7,7 @@
  *   Joints         Selected / Hands & feet (every limb tip), segmented
  *   Frame range    ±12 / ±24 / ±48 / Full as a filled segmented control, the
  *                  exact count beneath while it is not Full
- *   Reshape arc    the held key, the falloff Influence (± frames) and its
+ *   Reshape arc    right-drag, the falloff Influence (± frames) and its
  *                  Smooth / Linear / Sharp / Flat shape
  *   the look       Frame numbers, In-between dots, Speed colours (with its
  *                  slow → fast legend) and Relative to body as switch rows

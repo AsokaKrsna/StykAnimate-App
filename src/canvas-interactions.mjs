@@ -233,6 +233,30 @@ export function pickCanvasHandle(geometry, point, options = {}) {
   return best;
 }
 
+/** Click-only expansion of movable line targets. Reuse evaluated curves and
+ * handle permissions; the endpoint remains the pose target even at mid-segment.
+ * A painted body can restrict the search to its owner to avoid picking through it.
+ */
+export function pickCanvasSegment(geometry, point, {handles = getPivotHandles(geometry), uid, scale = 1, padding = 8} = {}) {
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  const pad = padding / Math.max(.01, Math.abs(scale));
+  for (let i = handles.length - 1; i >= 0; i--) {
+    const handle = handles[i], shape = handle.g.segments[handle.joint];
+    if (uid !== undefined && handle.uid !== uid || handle.action !== 'pose' ||
+        !shape || shape.type !== 'line' || shape.seg.visible === false ||
+        !(shape.thickness > 0) || !(shape.alpha > 0) || !(shape.opacity > 0)) continue;
+    const points = shape.points, radius = shape.thickness / 2 + pad;
+    for (let j = 1; j < points.length; j++) {
+      const a = points[j - 1], b = points[j], dx = b.x - a.x, dy = b.y - a.y;
+      const lengthSquared = dx * dx + dy * dy;
+      const t = lengthSquared ? clamp(((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared, 0, 1) : 0;
+      const distanceSquared = (point.x - a.x - t * dx) ** 2 + (point.y - a.y - t * dy) ** 2;
+      if (distanceSquared <= radius * radius) return {...handle, kind: 'segment-body', distanceSquared};
+    }
+  }
+  return null;
+}
+
 /** Canvas-space selection; origin mode never traverses artwork or its bounds.
  * Use evaluated roots so attachments and projected figures select where shown.
  */

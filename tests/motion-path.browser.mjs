@@ -74,12 +74,12 @@ try {
  await page.waitForTimeout(300);
  await page.mouse.dblclick(grab.x,grab.y);
  check('Double-clicking a trail point goes to its frame without editing',await page.evaluate(n=>styk.editor.tick===8&&styk.editor._undo.length===n,grab.undo));
- // Reshape arc: settings, then a held-key falloff drag.
+ // Reshape arc uses the secondary button; no keyboard shortcut is involved.
  await page.evaluate(()=>{styk.editor.seek(24);styk.settingsUI.commit({motionPathFalloffRadius:12,motionPathFalloffShape:'smooth'});});
  await page.locator('.path-options-button').click();
  await page.locator('[data-path="motionPathFalloffRadius"]').fill('10');await page.keyboard.press('Tab');
  await page.locator('[data-choice="motionPathFalloffShape"][data-value="linear"]').click();
- check('Falloff settings persist and name the hold key',await page.evaluate(()=>styk.state.settings.motionPathFalloffRadius===10&&styk.state.settings.motionPathFalloffShape==='linear'&&document.querySelector('[data-falloff-key]').textContent==='F'));
+ check('Falloff settings persist and explain right-drag',await page.evaluate(()=>styk.state.settings.motionPathFalloffRadius===10&&styk.state.settings.motionPathFalloffShape==='linear'&&document.querySelector('.path-falloff').textContent.includes('Right-drag')&&!document.querySelector('[data-falloff-key]')));
  await page.screenshot({path:out+'/falloff-settings.png'});
  await page.keyboard.press('Escape');
  await page.waitForTimeout(300);
@@ -87,25 +87,33 @@ try {
  const arc=await page.evaluate(()=>{const r=document.querySelector('#viewport').getBoundingClientRect(),v=styk.state.view,o=styk.editor.report.keyframes[1].objects[0];return {x:r.left+v.x+o.root_x*v.scale,y:r.top+v.y+o.root_y*v.scale,undo:styk.editor._undo.length};});
  const beforeY=await rootY();
  await page.mouse.move(arc.x+1,arc.y);await page.mouse.move(arc.x,arc.y);
- await page.keyboard.down('KeyF');await page.waitForTimeout(100);
- check('Holding the key over a trail arms the reshape and says how',await page.evaluate(()=>styk.state.falloffHeld&&/reshape ±10 frames/.test(document.body.innerText)&&/reshape ±10/.test(document.querySelector('#overlay').title)));
- await page.mouse.down();await page.mouse.move(arc.x+6,arc.y-40,{steps:5});
- check('A held-key drag reshapes with falloff',await page.evaluate(()=>styk.editor.motionPathFalloff()?.radius===10&&styk.editor.motionPathFalloff().changed.size>=3&&/Reshaping ±10 frames/.test(document.body.innerText)));
+ check('Hover explains right-drag',await page.evaluate(()=>/right-drag to reshape/.test(document.querySelector('#overlay').title)));
+ await page.keyboard.down('KeyF');await page.mouse.down();await page.mouse.move(arc.x+6,arc.y-20,{steps:3});
+ check('The former F shortcut leaves left-drag as a single-frame edit',await page.evaluate(()=>styk.state.drag?.kind==='motion-path'&&!styk.editor.motionPathFalloff()));
+ await page.keyboard.press('Escape');await page.mouse.up();await page.keyboard.up('KeyF');
+ await page.waitForTimeout(300);await page.mouse.move(arc.x,arc.y);
+ await page.mouse.down({button:'right'});await page.mouse.move(arc.x+6,arc.y-40,{steps:5});
+ check('Right-drag reshapes with falloff',await page.evaluate(()=>styk.editor.motionPathFalloff()?.radius===10&&styk.editor.motionPathFalloff().changed.size>=3&&/Reshaping ±10 frames/.test(document.body.innerText)));
  await page.screenshot({path:out+'/falloff-drag.png'});
+ const viewBeforeWheel=await page.evaluate(()=>({...styk.state.view}));
  await page.mouse.wheel(0,-120);await page.waitForTimeout(50);
- check('Scrolling mid-drag resizes the influence without zooming',await page.evaluate(()=>styk.editor.motionPathFalloff()?.radius===13&&styk.state.settings.motionPathFalloffRadius===13));
- await page.keyboard.up('KeyF');
- check('Releasing the key mid-drag edits one frame',await page.evaluate(()=>styk.state.drag?.kind==='motion-path'&&!styk.editor.motionPathFalloff()));
- await page.keyboard.down('KeyF');
- check('Pressing it again restores the reshape',await page.evaluate(()=>styk.editor.motionPathFalloff()?.radius===13));
- await page.mouse.move(arc.x+6,arc.y-45);await page.mouse.up();
+ check('Scrolling mid-drag resizes the influence without changing the view',await page.evaluate(view=>styk.editor.motionPathFalloff()?.radius===13&&styk.state.settings.motionPathFalloffRadius===13&&JSON.stringify(styk.state.view)===JSON.stringify(view),viewBeforeWheel));
+ await page.keyboard.press('KeyF');await page.keyboard.press('BracketRight');
+ check('Former falloff shortcuts do not alter a right-drag',await page.evaluate(()=>styk.editor.motionPathFalloff()?.radius===13));
+ await page.mouse.move(arc.x+6,arc.y-45);await page.mouse.up({button:'right'});
  const afterY=await rootY(),scale=await page.evaluate(()=>styk.state.view.scale),moved=beforeY.map((y,i)=>beforeY[i]-afterY[i]);
  check('The reshape is one undo step that moves neighbouring keys partially',await page.evaluate(n=>styk.editor._undo.length===n+1&&styk.editor.tick===24,arc.undo)
    &&Math.abs(moved[1]-45/scale)<.5&&moved[0]>1&&moved[0]<moved[1]&&moved[2]>1&&moved[2]<moved[1]&&Math.abs(moved[3])<1e-6);
- await page.keyboard.up('KeyF');await page.waitForTimeout(50);
- check('Releasing the key clears the message',await page.evaluate(()=>!/Drag a trail point/.test(document.body.innerText)&&!styk.state.falloffHeld));
+ await page.locator('.ui-toast').filter({hasText:'Reshaping'}).waitFor({state:'hidden'});
+ check('Releasing the right button clears the message without a context menu',await page.evaluate(()=>!styk.state.drag&&!styk.editor.motionPathFalloff())&&!await page.locator('#menu').isVisible());
  await page.evaluate(()=>styk.editor.undo());
  check('Undo restores every reshaped key',(await rootY()).every((y,i)=>Math.abs(y-beforeY[i])<1e-6));
+ await page.waitForTimeout(300);await page.mouse.move(arc.x,arc.y);
+ await page.mouse.down({button:'right'});await page.mouse.move(arc.x,arc.y-30,{steps:3});
+ await page.keyboard.press('Escape');await page.mouse.up({button:'right'});
+ check('Escape cancels a right-drag and its context menu',await page.evaluate(n=>styk.editor._undo.length===n&&!styk.state.drag,arc.undo)&&!await page.locator('#menu').isVisible()&&(await rootY()).every((y,i)=>Math.abs(y-beforeY[i])<1e-6));
+ await page.waitForTimeout(300);await page.mouse.click(arc.x,arc.y,{button:'right'});await page.mouse.click(arc.x,arc.y,{button:'right'});
+ check('Stationary right-clicks do not edit, seek, or open figure actions on a trail',await page.evaluate(n=>styk.editor.tick===24&&styk.editor._undo.length===n&&!styk.state.drag,arc.undo)&&!await page.locator('#menu').isVisible());
  check('No browser errors',errors.length===0);
  await writeFile(out+'/checks.json',JSON.stringify({checks,errors},null,2));
 } finally {await browser.close();}

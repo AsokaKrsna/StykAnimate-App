@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { figureIntersectsMarquee, getPivotHandles, getPivotHandleRadius, invalidatePivotHandleTopology, pickCanvasHandle, pivotHandleColor } from '../src/canvas-interactions.mjs';
+import { figureIntersectsMarquee, getPivotHandles, getPivotHandleRadius, invalidatePivotHandleTopology, pickCanvasHandle, pickCanvasSegment, pivotHandleColor } from '../src/canvas-interactions.mjs';
 import { Editor } from '../src/editor.mjs';
 import { createDemo } from '../src/demo.mjs';
 
@@ -10,6 +10,35 @@ const object = (uid, slot, root, end, options = {}) => ({
 });
 const geometry = objects => ({ objects: new Map(objects.map(g => [g.slot, g])), orderedObjects: objects,
   get drawables() { throw new Error('Handle preparation must not flatten rendering geometry.'); } });
+
+test('segment bodies select their endpoint with screen-space padding and native painter order', () => {
+  const a = object(1, 0, {x: 0, y: 0}, {x: 100, y: 0});
+  const b = object(2, 1, {x: 0, y: 0}, {x: 100, y: 0});
+  for (const g of [a, b]) Object.assign(g.segments[0], {type: 'line', points: [g.root, g.segments[0].end], thickness: 4, alpha: 1, opacity: 1});
+  const scene = geometry([a, b]), p = {x: 50, y: 5};
+  assert.equal(pickCanvasHandle(scene, p, {minRadius: 8, nearest: true}), null);
+  const hit = pickCanvasSegment(scene, p);
+  assert.equal(hit.uid, 2); assert.equal(hit.joint, 0); assert.equal(hit.action, 'pose');
+  assert.equal(hit.kind, 'segment-body'); assert.deepEqual(hit.point, b.segments[0].end);
+  assert.equal(pickCanvasSegment(scene, p, {uid: 1}).uid, 1);
+  assert.equal(pickCanvasSegment(scene, p, {scale: 4}), null);
+  for (const key of ['hiddenUids', 'lockedUids']) {
+    const handles = getPivotHandles(scene, {[key]: new Set([2])});
+    assert.equal(pickCanvasSegment(scene, p, {handles}).uid, 1);
+    assert.equal(pickCanvasSegment(scene, p, {handles, uid: 2}), null);
+  }
+  b.segments[0].points = [b.root, {x: 50, y: 50}, b.segments[0].end];
+  assert.equal(pickCanvasSegment(scene, {x: 50, y: 50}).uid, 2);
+  assert.equal(pickCanvasSegment(scene, {x: 50, y: 0}).uid, 1);
+});
+
+test('expanded segment targets respect static, invisible, transparent and non-line artwork', () => {
+  for (const patch of [{static: true}, {alpha: 0}, {opacity: 0}, {thickness: 0}, {type: 'image'}, {seg: {visible: false}}]) {
+    const g = object(1, 0, {x: 0, y: 0}, {x: 100, y: 0});
+    Object.assign(g.segments[0], {type: 'line', points: [g.root, g.segments[0].end], thickness: 4, alpha: 1, opacity: 1}, patch);
+    assert.equal(pickCanvasSegment(geometry([g]), {x: 50, y: 0}), null);
+  }
+});
 
 test('Rotate selects spatial pivots while Pose retains native endpoints and IK dragging',()=>{
   const g=object(1,0,{x:0,y:0},{x:20,y:40});g.segments[0].start={x:10,y:20};g.segments[0].spatialFrame={q:[0,0,0,1]};

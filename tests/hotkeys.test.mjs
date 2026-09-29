@@ -7,6 +7,15 @@ function key(code, props = {}) {
   return {code, key:code, preventDefault() {this.defaultPrevented = true;}, ...props};
 }
 
+test('motion path falloff has no shortcuts, including persisted former bindings', () => {
+  const bindings = normalizeHotkeys({'falloff-hold': ['KeyQ'], 'falloff-smaller': ['BracketLeft'], 'falloff-larger': ['BracketRight']});
+  assert.ok(HOTKEY_COMMANDS.every(command => !command.id.startsWith('falloff-')));
+  assert.ok(Object.keys(bindings).every(id => !id.startsWith('falloff-')));
+  const manager = new HotkeyManager();
+  manager.setBindings(bindings);
+  for (const code of ['KeyF', 'KeyQ', 'BracketLeft', 'BracketRight']) assert.equal(manager.resolve(key(code)), null);
+});
+
 test('Ctrl V pastes normally and Ctrl Shift V pastes in place', () => {
   const manager = new HotkeyManager();
   assert.equal(manager.resolve(key('KeyV', {ctrlKey: true}))?.id, 'paste');

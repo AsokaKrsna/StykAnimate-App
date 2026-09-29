@@ -3,8 +3,8 @@ import {MOTION_PATH_SPEED_COLORS} from './motion-path.mjs';
 
 /** Explicit display settings; values belong to editor preferences. */
 export class MotionPathControls {
-  constructor({button, getSettings, getEnabled, onChange, onToggle, getFalloffKey = () => 'F'}) {
-    Object.assign(this, {button, getSettings, getEnabled, onChange, onToggle, getFalloffKey});
+  constructor({button, getSettings, getEnabled, onChange, onToggle}) {
+    Object.assign(this, {button, getSettings, getEnabled, onChange, onToggle});
     const trigger = this.trigger = document.createElement('button');
     trigger.type = 'button';
     trigger.className = 'path-options-button ui-split-more';
@@ -28,7 +28,7 @@ export class MotionPathControls {
     panel.setAttribute('aria-label', 'Motion path settings');
     // The kit's popover (features/view-options.css): the title with its on/off switch (a pressed button drawn as
     // the kit's switch); what the trails follow; the frame range with its exact count; how trails look; then
-    // how far a held-key arc drag reaches and how it fades.
+    // how far a right-button arc drag reaches and how it fades.
     const choice = (key, label, options) => `<div class="ui-row path-row"><span class="ui-row-label">${label}</span><div class="ui-segmented path-choice" data-size="sm" data-fill role="group" aria-label="${label}">${
       options.map(([value, text, tip]) => `<button type="button" class="ui-segmented-item" data-choice="${key}" data-value="${value}" title="${tip}">${text}</button>`).join('')}</div></div>`;
     const toggle = (key, label, tip, extra = '') => `<label class="ui-switch-row path-row" title="${tip}"><span>${label}${extra}</span><input type="checkbox" class="ui-switch" role="switch" data-path="${key}"></label>`;
@@ -38,7 +38,7 @@ export class MotionPathControls {
 ${choice('motionPathJoints', 'Joints', [['selected', 'Selected', 'The selected joint, or each figure’s origin'], ['tips', 'Hands & feet', 'Every limb tip (hands, feet, head) and the origin of each figure']])}
 <fieldset class="path-range"><legend>Frame range</legend><div class="path-presets ui-segmented" data-size="sm" data-fill role="group" aria-label="Frame range presets"><button type="button" class="ui-segmented-item" data-range="12">±12</button><button type="button" class="ui-segmented-item" data-range="24">±24</button><button type="button" class="ui-segmented-item" data-range="48">±48</button><button type="button" class="ui-segmented-item" data-range="0">Full</button></div>
 <label class="ui-row path-row"><span class="ui-row-label">Around playhead</span><span class="path-number"><input type="number" data-path="motionPathRange" min="0" max="4000" step="1" aria-label="Frames either side of playhead" title="0 shows the full animation"><span>frames</span></span></label></fieldset>
-<fieldset class="path-range path-falloff" title="Hold the key and drag a trail point: nearby keys follow, fading out with distance"><legend>Reshape arc <kbd class="path-key" data-falloff-key></kbd></legend><div class="ui-segmented" data-size="sm" data-fill role="group" aria-label="Falloff shape">${
+<fieldset class="path-range path-falloff" title="Right-drag a trail point: nearby keys follow, fading out with distance; scroll to resize"><legend>Reshape arc <span class="path-key">Right-drag</span></legend><div class="ui-segmented" data-size="sm" data-fill role="group" aria-label="Falloff shape">${
   [['smooth', 'Smooth', 'Neighbours follow closely; far frames barely move'], ['linear', 'Linear', 'Fades evenly with distance'], ['sharp', 'Sharp', 'Mostly the dragged frame; neighbours follow a little'], ['flat', 'Flat', 'Moves everything in reach together']]
     .map(([value, text, tip]) => `<button type="button" class="ui-segmented-item" data-choice="motionPathFalloffShape" data-value="${value}" title="${tip}">${text}</button>`).join('')}</div>
 <label class="ui-row path-row"><span class="ui-row-label">Around dragged point</span><span class="path-number"><input type="number" data-path="motionPathFalloffRadius" min="1" max="240" step="1" aria-label="Frames either side of the dragged point"><span>frames</span></span></label></fieldset>
@@ -84,7 +84,6 @@ ${choice('motionPathJoints', 'Joints', [['selected', 'Selected', 'The selected j
   sync() {
     const settings = this.getSettings(), enabled = this.getEnabled();
     this.panel.querySelector('[data-path="motionPathRange"]').closest('label').hidden = settings.motionPathRange === 0;
-    this.panel.querySelector('[data-falloff-key]').textContent = this.getFalloffKey() || 'unassigned';
     for (const input of this.panel.querySelectorAll('[data-path]')) {
       const value = settings[input.dataset.path];
       if (input.type === 'checkbox') input.checked = Boolean(value); else input.value = String(value);
