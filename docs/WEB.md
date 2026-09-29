@@ -153,8 +153,8 @@ Differences from the desktop codec, all deliberate:
 | Pivot `.piv` / `.stk` import and export | Yes, in-browser codec; an unchanged import re-exports byte for byte |
 | Stick Nodes import | Yes |
 | PNG, SVG, GIF, APNG, PNG/JPEG/GIF/SVG sequences | Yes |
-| WebM video | Yes, WebCodecs (opaque background) |
-| MP4 video | Yes, WebCodecs H.264 where the browser can encode it (opaque background, no sound) |
+| WebM video | Yes, WebCodecs VP8/VP9 with Opus sound (opaque background) |
+| MP4 video | Yes, WebCodecs H.264 with AAC sound, where the browser can encode them (opaque background) |
 | AVI, WMV, installed Windows codecs | Desktop only, offered with a reason |
 | Install as an app, start with no network | Yes, a service worker stores the editor and the Pivot runtime |
 | Crash recovery | IndexedDB |

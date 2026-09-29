@@ -6,10 +6,11 @@
 //   STYK_WEB_URL=https://... node tests/...     test a running site, such as `wrangler dev`
 //                                               or a deployment (see docs/WEB.md)
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from './support/playwright.mjs';
+import { pcmWave } from '../src/audio-pcm.mjs';
 import { buildWeb } from '../scripts/build-web.mjs';
 import { startWebServer } from '../scripts/serve-web.mjs';
 
@@ -114,6 +115,37 @@ try {
   }, mp4.toString('base64'));
   check('The MP4 decodes at the scene size and length', decoded.width >= decoded.expectedWidth && decoded.width - decoded.expectedWidth <= 1
     && decoded.height >= decoded.expectedHeight && decoded.height - decoded.expectedHeight <= 1 && Math.abs(decoded.duration - decoded.expectedDuration) < 0.05);
+
+  // Sound: a 440 Hz recording in the project comes out of both video formats as 440 Hz, at its own level.
+  const tone = Float32Array.from({ length: 48000 }, (_, i) => 0.5 * Math.sin(2 * Math.PI * 440 * i / 48000));
+  const recording = path.join(temp, 'tone.wav');
+  await writeFile(recording, new Uint8Array(await pcmWave([tone]).arrayBuffer()));
+  await page.getByRole('button', { name: 'Audio', exact: true }).click();
+  await page.getByLabel('Choose audio recording').setInputFiles(recording);
+  await page.waitForFunction(() => window.styk.editor.report._styk.audio?.tracks[0]?.clips.length === 1, undefined, { timeout: 30000 });
+  // The recording starts at the playhead and the scene grows to fit it.
+  const place = await page.evaluate(() => { const { editor } = window.styk, report = editor.report; return { start: report._styk.audio.tracks[0].clips[0].start, seconds: editor.totalTicks / (report.frame_delay_ms ? 1000 / report.frame_delay_ms : report.fps) }; });
+  const heard = async (action, name) => {
+    const pending = page.waitForEvent('download', { timeout: 120000 });
+    await page.evaluate((id) => window.styk.actions[id](), action);
+    const file = path.join(temp, name);
+    await (await pending).saveAs(file);
+    const bytes = await readFile(file);
+    // Chrome decodes the soundtrack of the file itself, so this is what a player would hear.
+    return page.evaluate(async ([base64, start]) => {
+      const data = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const decoded = await new OfflineAudioContext(2, 48000, 48000).decodeAudioData(data.buffer);
+      const samples = decoded.getChannelData(0), from = Math.round((start + 0.2) * 48000), to = Math.round((start + 0.8) * 48000);
+      let crossings = 0, energy = 0;
+      for (let i = from + 1; i < to; i++) { if (samples[i - 1] < 0 && samples[i] >= 0) crossings++; energy += samples[i] * samples[i]; }
+      return { hertz: crossings / ((to - from) / 48000), rms: Math.sqrt(energy / (to - from)), seconds: decoded.duration, channels: decoded.numberOfChannels };
+    }, [bytes.toString('base64'), place.start]);
+  };
+  const withMp4 = await heard('export-mp4', 'sound.mp4');
+  check('An MP4 carries the project\'s sound (AAC): the same pitch, level and stereo layout', Math.abs(withMp4.hertz - 440) < 6 && Math.abs(withMp4.rms - 0.354) < 0.05 && withMp4.channels === 2);
+  const withWebm = await heard('export-video', 'sound.webm');
+  check('A WebM carries the project\'s sound (Opus): the same pitch and level', Math.abs(withWebm.hertz - 440) < 6 && Math.abs(withWebm.rms - 0.354) < 0.05);
+  check('The soundtrack is as long as the animation, with the recording where it was placed', Math.abs(withMp4.seconds - place.seconds) < 0.1 && Math.abs(withWebm.seconds - place.seconds) < 0.1 && place.start > 0);
 
   const capabilities = await page.evaluate(async () => (await import('/src/export-capabilities.mjs')).getExportCapabilities());
   const offered = capabilities.formats.find((item) => item.id === 'mp4');

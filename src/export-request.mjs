@@ -428,7 +428,8 @@ export function videoExportArguments(request, context = {}) {
     mode: request.bitrateMode || 'auto', manualMbps: request.bitrateMbps, lossless: isLossless(request)});
   const encoder = format === 'vfw' ? 'vfw' : webcodecs ? 'webcodecs' : 'native';
   const includeAudio = request.audio && (context.audioClips ?? []).some(clip => clip.start < options.end / fps && clip.start + clip.duration > options.start / fps);
-  if (includeAudio && encoder !== 'native') throw new Error('Audio export requires a desktop FFmpeg video format. Choose MP4, WebM, AVI or WMV with FFmpeg, or turn off Include audio for a silent export.');
+  // Browser video takes sound when its encoder reported it (context.browserAudio); the desktop's FFmpeg always can.
+  if (includeAudio && encoder !== 'native' && !(encoder === 'webcodecs' && context.browserAudio)) throw new Error('Audio export requires a desktop FFmpeg video format. Choose MP4, WebM, AVI or WMV with FFmpeg, or turn off Include audio for a silent export.');
   return {encoder, options, fps, ticks, codec, vfw, nativeWebm, videoQuality, includeAudio, extension, filename: exportFileName(request, context),
     encode: {format, codec, ...videoQuality, ...vfw, width: options.width, height: options.height, fps, totalFrames: ticks}};
 }
@@ -544,7 +545,7 @@ export function exportFormatStates({capabilities = null, capabilityError = null,
     const codec = FORMATS.get(format.id).codecKey ? resolveExportCodec(format, codecs[format.id]) : undefined;
     const selected = format.codecs?.find(option => option.id === codec);
     const encodedWidth = selected?.encodedWidth || format.encodedWidth, encodedHeight = selected?.encodedHeight || format.encodedHeight;
-    Object.assign(state, {provider: format.provider || '', codec, codecLabel: selected?.label || format.codec || '',
+    Object.assign(state, {provider: format.provider || '', codec, codecLabel: selected?.label || format.codec || '', ...(format.audio === true ? {audio: true} : {}),
       // Today's "960 × 544 (padded)": the encoder pads odd sizes.
       padded: format.supported && encodedWidth && (encodedWidth !== capabilities.width || encodedHeight !== capabilities.height) ? {width: encodedWidth, height: encodedHeight} : null,
       disabled: !format.supported || selected?.supported === false || empty,
@@ -602,8 +603,10 @@ export function validateExportRequest(request, context = {}) {
   const {width: w, height: h, from: first, to: last} = request, count = single ? 1 : last - first + 1;
   let error = '';
   const invalid = new Set(), mark = (fields, message) => {for (const field of fields) invalid.add(field); error ||= message;};
+  // Sound goes in through the desktop's FFmpeg, or through a browser encoder that reported it can encode it.
+  const soundEncoder = format !== 'vfw' && (state?.provider === 'FFmpeg' ? audioSupported : state?.provider === 'WebCodecs' && state.audio === true);
   if (info.category === 'video' && request.audio && audioClips.some(clip => clip.start < last / fps && clip.start + clip.duration > (first - 1) / fps) &&
-    (!audioSupported || state?.provider !== 'FFmpeg' || format === 'vfw')) error = AUDIO_NEEDS_FFMPEG;
+    !soundEncoder) error = AUDIO_NEEDS_FFMPEG;
   const nameError = exportNameError(request.name);
   if (nameError) mark(['name'], nameError);
   if (!editable) {

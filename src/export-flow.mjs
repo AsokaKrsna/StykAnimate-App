@@ -153,6 +153,8 @@ export function createExportFlow(ctx) {
       // Browser video uses WebCodecs: WebM unless the export dialog's capability probe chose FFmpeg for it,
       // and MP4 wherever there is no desktop encoder.
       provider: sheet?.open ? sheet.states.get(request.format)?.provider : desktop?.getVideoCapabilities ? undefined : "WebCodecs",
+      // Whether the browser's encoder can take the soundtrack. Without the dialog's probe, the encoder itself refuses if it cannot.
+      browserAudio: sheet?.open ? sheet.states.get(request.format)?.audio === true : typeof globalThis.AudioEncoder === "function",
       audioClips: audibleClips(audioState(report)),
       loop: state.loop,
       name: editor.name,

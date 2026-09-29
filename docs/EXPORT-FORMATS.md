@@ -37,8 +37,8 @@ saved 4K MP4/WebM files. Screenshots and requests are under
 
 | ID | Output | Encoder and controls |
 | --- | --- | --- |
-| `webm` | Video-only WebM | Desktop VP9 with transparency, quality and bitrate controls; portable WebCodecs VP8/VP9 fallback is opaque. |
-| `mp4` | Video-only MP4 | Native H.264 or Pivot-compatible MPEG-4 Part 2; quality or bitrate control. Without a desktop encoder, the browser's WebCodecs H.264 (High, else Main, else Baseline profile at the lowest level that fits) in a local muxer; opaque, black matte, an odd width or height padded by one pixel, bitrate from the same target as browser WebM. |
+| `webm` | Video-only WebM | Desktop VP9 with transparency, quality and bitrate controls; portable WebCodecs VP8/VP9 fallback is opaque, with Opus sound where the browser encodes it. |
+| `mp4` | Video-only MP4 | Native H.264 or Pivot-compatible MPEG-4 Part 2; quality or bitrate control. Without a desktop encoder, the browser's WebCodecs H.264 (High, else Main, else Baseline profile at the lowest level that fits) in a local muxer; opaque, black matte, an odd width or height padded by one pixel, bitrate from the same target as browser WebM. Sound is AAC where the browser encodes it. |
 | `avi` | Video-only AVI | Native MPEG-4 Part 2/Xvid tag, FFV1 lossless RGB, or uncompressed RGB. Quality/bitrate applies to MPEG-4. |
 | `vfw` | Windows AVI | Genuine installed 32-bit/64-bit Windows compressors and codec-specific configuration, plus native uncompressed AVI. See [Windows codec integration](WINDOWS-CODECS.md). |
 | `wmv` | Video-only ASF with `.wmv` extension | Native Windows Media Video 8; quality or bitrate control. |

@@ -145,11 +145,19 @@ AVI PCM16 and WMV WMA v2. Available encoders are checked before beginning an aud
 export. The final output retains the existing size limit and atomic save path.
 Audio and video jobs share cancellation and clean up partial files together.
 
-Browser WebCodecs video (WebM and MP4) and installed Windows VFW exports currently require
-turning off Sound explicitly. The export dialog explains this before
-export; it never silently discards an audible soundtrack. Lossy audio formats
-may contain encoder priming/padding within one codec block; tests check decoded
-sample content and container duration with codec-appropriate tolerances.
+Browser video takes the same mix through WebCodecs (`src/audio-encode.mjs`): AAC in
+MP4 and Opus in WebM, each offered only where the browser reports it can encode it.
+The whole soundtrack is encoded before the first frame (about 1 MiB a minute) and
+handed to the muxer: MP4 stores it as a second track after the video samples, WebM
+interleaves it with the video in time order. Sound up to one hour is accepted. The
+AAC encoder's priming samples are not trimmed, so sound can start a few
+milliseconds late in a player that does not skip them; WebM's Opus header carries
+its pre-skip and seek pre-roll. Installed Windows VFW exports still require turning
+off Sound explicitly. The export dialog explains this before export, and so does a
+browser without the encoder; nothing ever silently discards an audible soundtrack.
+Lossy audio formats may contain encoder priming/padding within one codec block;
+tests check decoded sample content and container duration with codec-appropriate
+tolerances.
 
 ## Verification
 

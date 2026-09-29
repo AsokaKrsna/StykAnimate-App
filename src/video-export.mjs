@@ -6,6 +6,7 @@
  */
 import {videoQualityOptions} from './export-video-quality.mjs';
 import {Mp4Muxer, avcCodecStrings} from './mp4-muxer.mjs';
+import {encodeAudio} from './audio-encode.mjs';
 const text = new TextEncoder();
 const LIMIT = 512 * 1024 * 1024;
 // A streamed file is bounded by the destination disk, not renderer memory.
@@ -53,8 +54,12 @@ function float(id, value) {
   return element(id, result);
 }
 
+// A soundtrack (`audio`, from audio-encode.mjs) is written as clusters of its own,
+// merged with the video clusters in time order, as WebM requires.
 class WebMMuxer {
-  constructor({width, height, fps, totalFrames, codec, maxBytes, streamed = false}) {
+  constructor({width, height, fps, totalFrames, codec, maxBytes, streamed = false, audio = null}) {
+    this.audio = audio?.packets?.length ? audio : null;
+    this.audioIndex = 0;
     this.maxBytes = maxBytes;
     this.streamed = streamed;
     this.frames = 0;
@@ -68,12 +73,20 @@ class WebMMuxer {
     this.info = element(0x1549a966, [uint(0x2ad7b1, 1000),
       float(0x4489, Math.round(totalFrames * 1e6 / fps)),
       string(0x4d80, 'StykAnimate'), string(0x5741, 'StykAnimate')]);
-    this.tracks = element(0x1654ae6b, [element(0xae, [
+    const video = element(0xae, [
       uint(0xd7, 1), uint(0x73c5, 1), uint(0x83, 1), uint(0x9c, 0),
       string(0x86, codec === 'vp8' ? 'V_VP8' : 'V_VP9'),
       uint(0x23e383, Math.round(1e9 / fps)),
       element(0xe0, [uint(0xb0, width), uint(0xba, height), uint(0x54b0, width), uint(0x54ba, height)]),
-    ])]);
+    ]);
+    // Opus needs its identification header, the pre-skip as CodecDelay and an 80 ms seek pre-roll (RFC 7845, Matroska codec mapping).
+    const sound = this.audio && element(0xae, [
+      uint(0xd7, 2), uint(0x73c5, 2), uint(0x83, 2), uint(0x9c, 0), string(0x86, 'A_OPUS'),
+      uint(0x56aa, Math.round(this.audio.preSkip * 1e9 / this.audio.sampleRate)), uint(0x56bb, 80000000),
+      element(0x63a2, this.audio.description),
+      element(0xe1, [float(0xb5, this.audio.sampleRate), uint(0x9f, this.audio.channels)]),
+    ]);
+    this.tracks = element(0x1654ae6b, sound ? [video, sound] : [video]);
     this.position = this.info.size + this.tracks.size;
     this.encodedBytes = this.header.size + this.position;
     if (streamed) {
@@ -94,11 +107,26 @@ class WebMMuxer {
     return parts;
   }
 
+  /** Writes the sound packets up to `limit` (microseconds), each in a cluster of its own. */
+  flushAudio(limit) {
+    const packets = this.audio?.packets;
+    while (packets && this.audioIndex < packets.length && packets[this.audioIndex].timestamp <= limit) {
+      const packet = packets[this.audioIndex++];
+      // Track 2, a zero timecode inside the cluster, and the keyframe flag Opus packets always carry.
+      const cluster = element(0x1f43b675, [uint(0xe7, packet.timestamp), element(0xa3, [new Uint8Array([0x82, 0, 0, 0x80]), packet.data])]);
+      if (this.encodedBytes + cluster.size + 64 > this.maxBytes) throw new Error('The encoded video exceeds the configured export size limit.');
+      if (this.streamed) this.pending.push(cluster); else this.clusters.push(cluster);
+      this.position += cluster.size;
+      this.encodedBytes += cluster.size;
+    }
+  }
+
   add(chunk) {
     if (!Number.isSafeInteger(chunk.timestamp) || chunk.timestamp < 0 || chunk.timestamp < this.lastTimestamp) {
       throw new Error('The encoder returned out-of-order video timestamps.');
     }
     if (this.frames === 0 && chunk.type !== 'key') throw new Error('The video encoder did not produce an initial keyframe.');
+    this.flushAudio(chunk.timestamp);
     if (this.encodedBytes + chunk.byteLength + 64 > this.maxBytes) throw new Error('The encoded video exceeds the configured export size limit.');
     const data = new Uint8Array(chunk.byteLength);
     chunk.copyTo(data);
@@ -116,6 +144,7 @@ class WebMMuxer {
 
   finish(expectedFrames) {
     if (this.frames !== expectedFrames) throw new Error(`Video export produced ${this.frames} of ${expectedFrames} frames.`);
+    this.flushAudio(Infinity);
     const cues = element(0x1c53bb6b, this.cues);
     if (this.streamed) {
       const bodySize = this.position + cues.size;
@@ -140,6 +169,7 @@ const CONTAINERS = {
     unsupported: 'No VP8 or VP9 video encoder supports this canvas size. Try a smaller export resolution.',
     candidates: ({width, height, fps, bitrate}) => ['vp8', 'vp09.00.51.08'].map(codec => ({codec, width, height, framerate: fps, bitrate: Math.round(bitrate),
       latencyMode: 'quality', hardwareAcceleration: 'prefer-software', alpha: 'discard'})),
+    audio: 'opus',
     muxer: options => new WebMMuxer(options),
   },
   mp4: {
@@ -149,6 +179,7 @@ const CONTAINERS = {
       return avcCodecStrings(coded.width, coded.height, fps).map(codec => ({codec, ...coded, framerate: fps, bitrate: Math.round(bitrate),
         latencyMode: 'quality', avc: {format: 'avc'}}));
     },
+    audio: 'aac',
     muxer: options => new Mp4Muxer(options),
   },
 };
@@ -163,12 +194,13 @@ function scratchCanvas(width, height) {
  * renderFrame:(index:number)=>Promise<HTMLCanvasElement|OffscreenCanvas>|HTMLCanvasElement|OffscreenCanvas,
  * onProgress?:(value:{completed:number,total:number,progress:number})=>void,
  * signal?:AbortSignal,bitrate?:number,maxBytes?:number,
+ * audioChunks?:AsyncIterable<Float32Array>,  the soundtrack: interleaved stereo at 48 kHz (AAC in MP4, Opus in WebM)
  * sink?:{write(part)=>Promise<void>,patch(offset:number,bytes:Uint8Array)=>Promise<void>,finish()=>Promise<object>,abort()=>Promise<void>}}} options
  * @returns {Promise<Blob|object>} A seekable, video-only file — a Blob, or
  * the sink's finish() result when a sink is provided.
  */
 async function encodeVideo(container, {width, height, fps, totalFrames, renderFrame, onProgress,
-  signal, bitrate = videoQualityOptions({width, height, fps, provider: 'WebCodecs'}).bitrate, maxBytes, sink}) {
+  signal, bitrate = videoQualityOptions({width, height, fps, provider: 'WebCodecs'}).bitrate, maxBytes, sink, audioChunks}) {
   const format = CONTAINERS[container];
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16384 || height > 16384) {
     throw new Error('Video dimensions must be whole pixels between 1 and 16,384.');
@@ -196,7 +228,14 @@ async function encodeVideo(container, {width, height, fps, totalFrames, renderFr
   if (!config) throw new Error(format.unsupported);
   // The encoder's own picture size: H.264 pads an odd edge, so its frames are copied onto a black canvas that size.
   const coded = {width: config.width, height: config.height}, padded = coded.width !== width || coded.height !== height;
-  const muxer = format.muxer({width: coded.width, height: coded.height, fps, totalFrames, codec: config.codec, maxBytes, streamed});
+  // The soundtrack is encoded first, then placed by the muxer: after the video in MP4, interleaved with it in WebM.
+  let soundtrack = null;
+  if (audioChunks) {
+    onProgress?.({completed: 0, total: totalFrames, progress: 0, phase: 'mixing audio'});
+    soundtrack = await encodeAudio({codec: format.audio, chunks: audioChunks, signal, maxBytes, seconds: totalFrames / fps});
+    if (signal?.aborted) throw cancelled();
+  }
+  const muxer = format.muxer({width: coded.width, height: coded.height, fps, totalFrames, codec: config.codec, maxBytes, streamed, audio: soundtrack});
   let padCanvas, padContext;
   let failure, wake, completed = false;
   const frameWindow = videoFrameWindow(width, height);

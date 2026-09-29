@@ -3,6 +3,7 @@ import {videoQualityOptions} from './export-video-quality.mjs';
 import {EXPORT_MAX_PIXELS} from './export-sampling.mjs';
 import {avcCodedSize} from './video-export.mjs';
 import {avcCodecStrings} from './mp4-muxer.mjs';
+import {audioEncoderSupported} from './audio-encode.mjs';
 const descriptions = [
   {id: 'webm', label: 'WebM video', extension: 'webm', mimeType: 'video/webm', kind: 'video', quality: 'bitrate'},
   {id: 'mp4', label: 'MP4 video', extension: 'mp4', mimeType: 'video/mp4', kind: 'video', quality: 'video'},
@@ -50,18 +51,20 @@ export async function getExportCapabilities({width = 640, height = 480, fps = 24
   const valid = Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0 && width <= 16384 && height <= 16384 && Number.isFinite(fps) && fps >= 1 && fps <= 1000;
   if (!valid) throw new Error('Choose valid export dimensions and a frame rate between 1 and 1,000 fps.');
   const desktopEncoder = typeof desktop?.getVideoCapabilities === 'function';
-  const [webm, mp4, native] = await Promise.all([
+  const [webm, mp4, native, [opus, aac]] = await Promise.all([
     portableVideo(environment, {width, height, fps}),
     desktopEncoder ? null : portableMp4(environment, {width, height, fps}),
     desktopEncoder
       ? desktop.getVideoCapabilities({width, height, fps}).catch(error => ({formats: [], reason: error?.message || 'The native encoder could not be queried.'}))
       : Promise.resolve({formats: [], reason: 'Available in the desktop app with its native video encoder.'}),
+    // Sound in browser video: Opus for WebM and AAC for MP4, each only where the browser can encode it.
+    Promise.all([audioEncoderSupported('opus', environment), audioEncoderSupported('aac', environment)]),
   ]);
   const worker = Boolean(environment.Worker), raster = worker && Boolean(environment.OffscreenCanvas && environment.createImageBitmap);
   const formats = descriptions.map(description => {
     let availability;
-    if (description.id === 'webm' && !native.formats?.some(format=>format.id==='webm'&&format.supported)) availability = {...webm,alpha:false,notice:webm.supported?'Browser WebM exports do not preserve transparency.':undefined};
-    else if (description.id === 'mp4' && mp4) availability = {...mp4, alpha: false, matte: 'black'};
+    if (description.id === 'webm' && !native.formats?.some(format=>format.id==='webm'&&format.supported)) availability = {...webm,alpha:false,audio:opus,notice:webm.supported?'Browser WebM exports do not preserve transparency.':undefined};
+    else if (description.id === 'mp4' && mp4) availability = {...mp4, alpha: false, matte: 'black', audio: aac};
     else if (description.kind === 'video') {
       const capability = native.formats?.find(format => format.id === description.id);
       availability = capability ? {supported: Boolean(capability.supported), reason: capability.reason, codec: capability.codec, provider: 'FFmpeg',
