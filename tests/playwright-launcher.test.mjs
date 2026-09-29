@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {chromiumArguments, electronEnvironment, isMissingBrowser, launchChromium, LINUX_WEBGPU_ARGS} from './support/playwright.mjs';
+import {chromiumArguments, electronArguments, electronEnvironment, isMissingBrowser, launchChromium, LINUX_WEBGPU_ARGS} from './support/playwright.mjs';
 
 const missing = channel => Object.assign(new Error(`browserType.launch: Chromium distribution '${channel}' is not found at /opt/google/chrome/chrome`));
 function fakeType(behaviour) {
@@ -71,4 +71,13 @@ test('missing-browser detection matches Playwright messages only', () => {
 test('Electron never inherits ELECTRON_RUN_AS_NODE', () => {
   const clean = electronEnvironment({ELECTRON_RUN_AS_NODE: '1', PATH: '/bin', STYK_USER_DATA_DIR: '/p'});
   assert.deepEqual(clean, {PATH: '/bin', STYK_USER_DATA_DIR: '/p'});
+});
+
+test('Electron attaches directly to the X11 window on a Wayland desktop', () => {
+  const env = {XDG_SESSION_TYPE: 'wayland', DISPLAY: ':0'};
+  assert.deepEqual(electronArguments(['.'], {platform: 'linux', env}), ['--ozone-platform=x11', '.']);
+  assert.deepEqual(electronArguments(['--ozone-platform=wayland', '.'], {platform: 'linux', env}), ['--ozone-platform=wayland', '.']);
+  for (const options of [{platform: 'win32', env}, {platform: 'linux', env: {}}, {platform: 'linux', env: {...env, STYK_WAYLAND: '1'}}, {platform: 'linux', env: {...env, STYK_GPU_UNSAFE: '0'}}]) {
+    assert.deepEqual(electronArguments(['.'], options), ['.']);
+  }
 });

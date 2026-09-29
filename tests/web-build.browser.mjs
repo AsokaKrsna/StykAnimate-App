@@ -126,10 +126,12 @@ try {
   // The recording starts at the playhead and the scene grows to fit it.
   const place = await page.evaluate(() => { const { editor } = window.styk, report = editor.report; return { start: report._styk.audio.tracks[0].clips[0].start, seconds: editor.totalTicks / (report.frame_delay_ms ? 1000 / report.frame_delay_ms : report.fps) }; });
   const heard = async (action, name) => {
-    const pending = page.waitForEvent('download', { timeout: 120000 });
-    await page.evaluate((id) => window.styk.actions[id](), action);
+    const [download] = await Promise.all([
+      page.waitForEvent('download', { timeout: 120000 }),
+      page.evaluate((id) => window.styk.actions[id](), action),
+    ]);
     const file = path.join(temp, name);
-    await (await pending).saveAs(file);
+    await download.saveAs(file);
     const bytes = await readFile(file);
     // Chrome decodes the soundtrack of the file itself, so this is what a player would hear.
     return page.evaluate(async ([base64, start]) => {
@@ -141,11 +143,25 @@ try {
       return { hertz: crossings / ((to - from) / 48000), rms: Math.sqrt(energy / (to - from)), seconds: decoded.duration, channels: decoded.numberOfChannels };
     }, [bytes.toString('base64'), place.start]);
   };
-  const withMp4 = await heard('export-mp4', 'sound.mp4');
-  check('An MP4 carries the project\'s sound (AAC): the same pitch, level and stereo layout', Math.abs(withMp4.hertz - 440) < 6 && Math.abs(withMp4.rms - 0.354) < 0.05 && withMp4.channels === 2);
+  const aacSupported = await page.evaluate(async () => (await import('/src/audio-encode.mjs')).audioEncoderSupported('aac'));
+  if (process.env.STYK_REQUIRE_AAC === '1') check('This release runner can verify real AAC encoding', aacSupported);
+  if (aacSupported) {
+    const withMp4 = await heard('export-mp4', 'sound.mp4');
+    check('An MP4 carries the project\'s sound (AAC): the same pitch, level and stereo layout', Math.abs(withMp4.hertz - 440) < 6 && Math.abs(withMp4.rms - 0.354) < 0.05 && withMp4.channels === 2);
+    check('The MP4 soundtrack lasts as long as the animation', Math.abs(withMp4.seconds - place.seconds) < 0.1);
+  } else {
+    // AAC encoding is unavailable in Linux Chromium. Verify the supported error
+    // path rather than leaving a pending download or silently losing sound.
+    const downloads = [];
+    const record = download => downloads.push(download);
+    page.on('download', record);
+    await assert.rejects(page.evaluate(() => window.styk.actions['export-mp4']()), /cannot encode AAC sound.*Turn off Include sound/);
+    page.off('download', record);
+    check('Unsupported AAC explains the alternatives and writes no partial video', downloads.length === 0);
+  }
   const withWebm = await heard('export-video', 'sound.webm');
   check('A WebM carries the project\'s sound (Opus): the same pitch and level', Math.abs(withWebm.hertz - 440) < 6 && Math.abs(withWebm.rms - 0.354) < 0.05);
-  check('The soundtrack is as long as the animation, with the recording where it was placed', Math.abs(withMp4.seconds - place.seconds) < 0.1 && Math.abs(withWebm.seconds - place.seconds) < 0.1 && place.start > 0);
+  check('The soundtrack is as long as the animation, with the recording where it was placed', Math.abs(withWebm.seconds - place.seconds) < 0.1 && place.start > 0);
 
   const capabilities = await page.evaluate(async () => (await import('/src/export-capabilities.mjs')).getExportCapabilities());
   const offered = capabilities.formats.find((item) => item.id === 'mp4');

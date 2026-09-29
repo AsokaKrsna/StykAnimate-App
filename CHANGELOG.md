@@ -53,6 +53,7 @@ What's new in each version of StykAnimate.
 
 ### Fixed
 
+- Browser update notices now appear promptly after an export.
 - Fixed an empty window on Linux Wayland desktops without needing extra launch options.
 
 - Fixed selecting figures on the canvas while using the Tweener.

@@ -22,6 +22,7 @@
 // "chromium" or "chrome-beta"), STYK_BROWSER_GPU=1 (add the Linux GPU switches).
 import { existsSync } from 'node:fs';
 import * as playwright from 'playwright';
+import { gpuSwitches } from '../../desktop/gpu-switches.cjs';
 
 export * from 'playwright';
 
@@ -50,6 +51,16 @@ export function isMissingBrowser(error) {
 export function electronEnvironment(env = process.env) {
   const { ELECTRON_RUN_AS_NODE: _ignored, ...clean } = env;
   return clean;
+}
+
+// Attach Playwright to the process that owns the window. The app normally
+// relaunches from Wayland into X11; attaching to that supervisor cannot find it.
+export function electronArguments(args = [], {platform = process.platform, env = process.env} = {}) {
+  const ozone = gpuSwitches({platform, env}).ozone;
+  const end = args.indexOf('--');
+  const flags = end < 0 ? args : args.slice(0, end);
+  if (!ozone || flags.some(arg => arg === '--ozone-platform' || arg.startsWith('--ozone-platform='))) return [...args];
+  return [`--ozone-platform=${ozone}`, ...args];
 }
 
 /**
@@ -88,7 +99,8 @@ export const chromium = new Proxy(playwright.chromium, {
 
 export const _electron = new Proxy(playwright._electron, {
   get(target, property) {
-    if (property === 'launch') return (options = {}) => target.launch({ ...options, env: electronEnvironment(options.env ?? process.env) });
+    if (property === 'launch') return (options = {}) => target.launch({ ...options,
+      args: electronArguments(options.args, {env: options.env ?? process.env}), env: electronEnvironment(options.env ?? process.env) });
     const value = Reflect.get(target, property, target);
     return typeof value === 'function' ? value.bind(target) : value;
   },
