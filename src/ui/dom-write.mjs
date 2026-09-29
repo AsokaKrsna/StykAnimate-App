@@ -9,12 +9,18 @@
  * DOM-free at import; every helper takes the element and ignores null.
  */
 
-/** Sets the element's text when it differs. */
+/** Sets the element's text when it differs. An element that shows one text node
+ * keeps it and rewrites its data: assigning textContent removes and inserts a
+ * node, which makes the browser re-evaluate every :has() rule and restyle much
+ * of the chrome. Readouts updated on each playback tick made that cost a
+ * millisecond-scale style recalculation per frame. */
 export function setText(element, text) {
   if (!element) return false;
   const value = String(text ?? '');
   if (element.textContent === value) return false;
-  element.textContent = value;
+  const node = element.firstChild;
+  if (value !== '' && node && node.nodeType === 3 && node === element.lastChild) node.data = value;
+  else element.textContent = value;
   return true;
 }
 

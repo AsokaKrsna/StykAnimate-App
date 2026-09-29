@@ -1,4 +1,5 @@
 import {installVfxTimeline,paintVfxRow} from './vfx-clip-timeline.mjs';
+import {setText} from './ui/dom-write.mjs';
 import {vfxIcon} from './vfx-icons.mjs';
 import {vfxChannelLabel,vfxChannelRevision} from './vfx-key-channels.mjs';
 import {mountTimelineNavigation} from './timeline-navigation.mjs';
@@ -187,7 +188,7 @@ export class Timeline{
     // would force a layout on every seek.
     this._cachedOffsetX??=this._offsetX();
     const tick=Math.floor(this.pendingScrub??this.editor.tick),x=(tick+.5)*this.pxPerTick-this._cachedOffsetX;this.playhead.style.transform=`translateX(${x}px)`;
-    if(this.playheadLabel.textContent!==String(tick+1))this.playheadLabel.textContent=String(tick+1);
+    setText(this.playheadLabel,String(tick+1));
 
   }
   /**

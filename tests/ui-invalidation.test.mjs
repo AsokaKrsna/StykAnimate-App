@@ -164,6 +164,38 @@ function element() {
   };
 }
 
+// A DOM-like host whose child list can be observed: removing and inserting a node
+// is what makes the browser re-evaluate :has() rules, so a lone text node must
+// keep its identity when a readout changes.
+function textHost(...children) {
+  const host = {replaced: 0, children,
+    get firstChild() { return this.children[0] ?? null; }, get lastChild() { return this.children.at(-1) ?? null; },
+    get textContent() { return this.children.map(child => child.nodeType === 3 ? child.data : '').join(''); },
+    set textContent(value) { this.replaced++; this.children = value === '' ? [] : [{nodeType: 3, data: value}]; }};
+  return host;
+}
+
+test('setText rewrites a lone text node in place and replaces every other shape', () => {
+  const host = textHost();
+  assert.equal(setText(host, 'FRAME 01'), true);
+  const node = host.firstChild;
+  assert.equal(host.replaced, 1, 'the first text creates the node');
+  assert.equal(setText(host, 'FRAME 02'), true);
+  assert.equal(setText(host, 'FRAME 03'), true);
+  assert.equal(host.replaced, 1, 'later readouts do not remove or insert nodes');
+  assert.equal(host.firstChild, node); assert.equal(node.data, 'FRAME 03'); assert.equal(host.textContent, 'FRAME 03');
+  assert.equal(setText(host, 'FRAME 03'), false);
+  assert.equal(setText(host, ''), true);
+  assert.deepEqual(host.children, [], 'clearing removes the node');
+  const mixed = textHost({nodeType: 1}, {nodeType: 3, data: 'x'});
+  assert.equal(setText(mixed, 'y'), true);
+  assert.equal(mixed.replaced, 1, 'an element with other children is replaced as before');
+  assert.equal(mixed.textContent, 'y');
+  const element = textHost({nodeType: 1});
+  assert.equal(setText(element, 'z'), true);
+  assert.equal(element.replaced, 1, 'a lone element child is replaced, not treated as text');
+});
+
 test('dom-write writes only what differs', () => {
   const node = element();
   assert.equal(setText(node, '00:01'), true);
