@@ -86,8 +86,10 @@ try{
     result.targetFps=Number(process.env.STYK_PROBE_FPS);
     await page.evaluate(fps=>{styk.editor.setFPS(fps);styk.editor.markSaved();},result.targetFps);
   }
+  // STYK_PROBE_HIDE=<css selector> skips the subtree's style, layout and paint (content-visibility) to measure UI cost during playback.
+  if(process.env.STYK_PROBE_HIDE){await page.addStyleTag({content:`${process.env.STYK_PROBE_HIDE}{content-visibility:hidden!important}`});result.environment.hide=process.env.STYK_PROBE_HIDE;}
   if(process.env.STYK_PROBE_TRACE==='1')await client.send('Tracing.start',{transferMode:'ReturnAsStream',traceConfig:{recordMode:'recordContinuously',traceBufferSizeInKb:131072,
-    includedCategories:['gpu','cc','viz','blink.user_timing','renderer.scheduler','devtools.timeline','v8','toplevel','disabled-by-default-gpu.service','disabled-by-default-gpu.device','disabled-by-default-skia','disabled-by-default-v8.gc']}});
+    includedCategories:['gpu','cc','viz','blink.user_timing','renderer.scheduler','devtools.timeline','v8','toplevel','disabled-by-default-gpu.service','disabled-by-default-gpu.device','disabled-by-default-skia','disabled-by-default-v8.gc',...(process.env.STYK_PROBE_TRACE_EXTRA?process.env.STYK_PROBE_TRACE_EXTRA.split(','):[])]}});
   // STYK_PROBE_WORKER_PROFILE=1 records every playback worker's CPU profile during playback.
   let workerProfiles=null;if(process.env.STYK_PROBE_WORKER_PROFILE==='1'){workerProfiles=await startWorkerProfiles(9339);result.workerProfileCount=workerProfiles.count;}
   await page.evaluate(async({start,end,quality})=>{
