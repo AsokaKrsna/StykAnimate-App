@@ -6,6 +6,8 @@ A manual run with both inputs off keeps candidates and evidence in private workf
 
 To rerun the installed upgrade against retained bytes, dispatch the same workflow with `verify_windows_run=<candidate-run-id>` on the release branch. This mode downloads that run's Windows assets, validates their update checksums, extracts the expected archive directly from Setup, and runs only the isolated installer check. It never publishes or substitutes for the source, browser and packaging gates. Record both run IDs and matching candidate hashes in the release report.
 
+After publication, add `verify_public_feed=true` to that retained-artifact run. It launches the exact candidate payload, downloads the now-public installer through electron-updater without installing it, checks progress and checksum verification, then confirms the candidate reports itself current. This avoids attempting a same-version installed upgrade after the public baseline has advanced.
+
 The lockfile pins Electron, electron-builder, and Playwright. `scripts/requirements-build.txt` pins the Python compiler dependencies, orjson and the offline video encoder wheel. Build with Python 3.12.9 and Node 24.11.0 using the commands below on the target OS and architecture. Windows additionally requires MSVC C++ build tools and a Windows SDK; the build scripts discover them through vswhere. macOS and Linux use their host C++ compiler.
 
 ```text
