@@ -108,3 +108,24 @@ The desktop app keeps a pipe on the codec's stdin and the codec exits at EOF
 (`--exit-on-stdin-close`), so a crash, `kill -9` or out-of-memory kill of the
 editor never leaves the codec running with its caches. Normal quit and SIGTERM
 stop it through Electron's quit handlers as before.
+
+## Why WebGPU is on by default
+
+Before `desktop/gpu-switches.cjs`, Electron on Linux found no WebGPU adapter and the
+editor used the Canvas 2D compatibility renderer. `scripts/benchmark-synthetic-scene.mjs`
+measures the difference with no private files: it clones the startup figure into a
+dense scene and zooms it through the app's own Ctrl+wheel handler, so every frame
+redraws the whole scene. Median of three runs, 4 s each, real desktop app on
+Wayland (AMD Ryzen 5 5500, NVIDIA RTX 4070 SUPER, 144 Hz display):
+
+| Scene | Renderer | Frames/s | 95th percentile frame | Worst frame |
+| --- | --- | --- | --- | --- |
+| 300 figures | WebGPU | 141.8 | 7.0 ms | 14.0 ms |
+| 300 figures | Canvas 2D | 19.7 | 61.5 ms | 69.5 ms |
+| 1500 figures | WebGPU | 89.3 | 16.0 ms | 27.8 ms |
+| 1500 figures | Canvas 2D | 4.7 | 299 ms | 299 ms |
+
+The 300-figure WebGPU row is the display's refresh rate, not the renderer's limit.
+One machine and one driver: treat the ratio as indicative. If a driver initialises
+WebGPU but cannot present it, Settings → Graphics mode → Canvas 2D (or
+`STYK_GPU_UNSAFE=0`) restores the compatibility renderer.
