@@ -53,36 +53,7 @@ jobs:
         run: node --test website/tests/*.test.mjs cloud/tests/*.test.mjs
 
   web:
-    # The editor as a static site: build it, verify it, run it in a real browser,
-    # and let wrangler validate the Cloudflare configuration without deploying.
-    name: Web build
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24.11.0'
-          cache: npm
-      - name: Install locked dependencies
-        run: |
-          npm ci --no-audit --no-fund
-          npm ci --prefix cloud --no-audit --no-fund
-          npx playwright install --with-deps chromium
-      - name: Build and verify the site
-        run: |
-          npm run web:build
-          npm run web:verify
-      - name: Browser test of the built site
-        # GitHub runners have no GPU: the editor uses its Canvas 2D renderer, which
-        # the test accepts alongside WebGPU.
-        run: node tests/web-build.browser.mjs
-        env:
-          STYK_WEB_DIR: build/web
-      - name: Cloudflare configuration
-        run: npm run web:deploy -- --dry-run
+    uses: ./.github/workflows/web-verify.yml
 
   linux-app:
     # Builds the Linux app from source exactly as a release would, then boots it.

@@ -5,7 +5,7 @@ plus an in-browser Pivot codec; nothing about a project is sent to a server.
 
 ```bash
 npm ci
-npm run web:build       # build/web  (624 files, 25.5 MiB before compression)
+npm run web:build       # build/web; prints the current file count and size
 npm run web:verify      # checks the build before it is deployed
 npm run web:preview     # build, then serve build/web on http://127.0.0.1:47850
 npm run test:web        # end to end in a real browser, under the production headers
@@ -33,10 +33,18 @@ npx --prefix cloud wrangler rollback --config web/wrangler.jsonc   # go back to 
 the working tree: build from a clean checkout of the commit you mean to publish. Cloudflare
 applies `web/_headers` to every static response.
 
-**Until it launches** nothing on the public site links to it, and it asks not to be indexed:
-`_headers` sends `X-Robots-Tag: noindex, nofollow` (the Worker's answers do too) and
-`robots.txt` disallows everything. At launch remove that header line, the Worker's
-`x-robots-tag` and the `Disallow`, then add the link on the site.
+The active marketing site lives in the separate `StykAnimate-Site` repository
+(see `docs/website.md`). Its launch links point to the browser editor. Static app
+pages allow indexing; `/community/*` API responses remain `noindex` and excluded
+in `robots.txt`. Deploy the verified editor before deploying the site's launch links.
+
+The reusable `web-verify.yml` workflow builds and tests the production files on
+Windows and Linux. Windows must export real MP4/AAC sound; Linux verifies a clear
+AAC-unavailable result where necessary and real WebM/Opus sound. Firefox and WebKit
+run the storage, library and browser-support checks on Linux. The release workflow
+retains the exact deployable `browser-release` artifact for 30 days; it does not
+deploy it automatically. Record the deployed build hash from `build-info.json`
+and run the live checks after an authorized deployment.
 
 ## How it is built
 

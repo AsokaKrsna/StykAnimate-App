@@ -39,7 +39,9 @@ npm run build:frame-scan               # needs a C++17 compiler (g++ or clang)
 npm run build:sidecar                  # freezes the Pivot codec with PyInstaller
 npm run verify:sidecar
 npm run build:video-encoder            # stages the bundled ffmpeg
-npm run dist:linux                     # release/<version>/StykAnimate-<version>-linux-x86_64.AppImage
+version=$(node -p 'require("./package.json").version')
+npm run dist:linux -- --x64 --publish never "--config.directories.output=release/$version"
+npm run release:verify -- "release/$version" --platform=linux
 ```
 
 The `build:*` scripts run through `scripts/run-python.mjs`, which uses
@@ -65,8 +67,10 @@ The desktop entry registers the document types (`.styk`, `.stkz`, `.stykmov`,
 and `StartupWMClass=stykanimate` groups the window under its launcher.
 Passing a document path on the command line opens it.
 
-Automatic updates stay disabled on Linux until Linux builds are published with
-their update metadata (see `desktop/updates.cjs`).
+The coordinated release workflow publishes the AppImage and `latest-linux.yml`
+alongside the Windows files. Automatic installation remains Windows-only
+(see `desktop/updates.cjs`); Linux users download the new AppImage from the site
+and replace the old one. Projects and preferences live outside the AppImage.
 
 ## Testing on Linux
 

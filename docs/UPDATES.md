@@ -16,10 +16,10 @@ The welcome splash appears once each process launch (not every renderer reload).
 
 1. Follow [the release history procedure](RELEASING.md): move completed `CHANGELOG.md` Unreleased entries into one new highest `x.y.z` section and align `package.json` and both root version fields in `package-lock.json`.
 2. Run `npm run release:prepare`, `npm run changelog:check`, `npm run test:updates`, and `npm run test:updates:desktop`. Commit both generated note files with the history and version files; do not author `desktop/release-info.json` directly.
-3. Commit the source to the private repository. Push a tag matching the version, for example `v0.5.1`. The **Build and release Windows app** workflow builds and publishes that version. Alternatively run the workflow manually: the default produces a draft; enable Publish to release it.
-4. Confirm the workflow passed and the public release has the Setup installer, Portable executable, Setup `.blockmap`, `latest.yml`, and `SHA256SUMS.txt`.
+3. Push the prepared source to the private repository and dispatch **Build and verify release** with both inputs off. This verifies Windows, Linux and browser candidates without publication. Review its artifacts and installation evidence. When shipping is authorized, enable `upload_draft` for a draft, or `publish` for publication; a matching `v<version>` tag also publishes automatically.
+4. Confirm the workflow passed and the public release has the Setup installer, Portable executable, Setup `.blockmap`, `latest.yml`, Linux AppImage, `latest-linux.yml`, and `SHA256SUMS.txt`. Deploy and verify the browser build, then refresh the website catalogue when shipping all three platforms.
 
-Pushing the initial `codex/auto-updates` integration branch builds a draft only. Do not overwrite published releases; increment the version for corrections. Published GitHub assets must remain accessible and retain their generated filenames.
+Do not overwrite published releases; increment the version for corrections. Published GitHub assets must remain accessible and retain their generated filenames.
 
 Builds use exact JavaScript/Python dependencies and the private repository's `codecs/` sources. No sibling checkout is required. The uploader validates installer version, filename, size and hash before uploading, then checks GitHub's asset names and available digests before publishing. It uploads a fixed allowlist, never the source tree or build logs. Public tags are created in the releases repository, which contains no app source.
 
@@ -36,6 +36,9 @@ npm run verify:sidecar
 npm run build:video-encoder
 # Replace the version below with package.json's version.
 npm run dist:win -- --x64 --publish never --config.directories.output=release/0.5.0
+npm run release:verify -- release/0.5.0 --platform=win32
+# Build Linux on its own host, verify with --platform=linux, and copy its
+# AppImage and latest-linux.yml into the same release/<version> directory.
 npm run release:verify
 gh auth login
 npm run release:publish
@@ -44,6 +47,15 @@ npm run release:publish -- --publish
 ```
 
 ## Test a real update
+
+Before publication, the release workflow runs `scripts/verify-release-install.mjs`
+on a disposable Windows GitHub runner. It verifies the previous public Setup's
+GitHub digest, installs it, downloads the exact candidate from a loopback feed,
+checks Cancel and Save before restart, and exercises the real NSIS replacement and
+automatic relaunch. It then opens the saved project in the installed candidate and
+checks profile preservation. Evidence records both installer hashes and the source
+commit in `artifacts/release-install/evidence.json`. The guard refuses ordinary
+local execution because this test uses the real application identity.
 
 1. Install an updater-enabled **Setup** build, such as 0.5.0. Earlier builds without this feature need this one manual install.
 2. Publish a higher version (for example 0.5.1) with the workflow above. Publishing a source commit alone does not produce an update.

@@ -6,76 +6,73 @@ What's new in each version of StykAnimate.
 
 ## [Unreleased]
 
+## [1.2.0]
+
+A new workspace, particle effects, Linux and the browser
+
 ### Added
 
+- StykAnimate for Linux, with an AppImage you can download and run.
+- Animate in your browser, with project saving, recovery, your own library and offline use after the first visit.
+- Community library: browse free figures and movieclips shared by other animators and insert them straight into your scene.
+- Particle effects: add explosions, auras, beams, smoke and steam, design your own particles, and save reusable presets.
+- Custom layouts: dock, group or float panels wherever you like, and switch between layouts from View → Layout.
 - Command palette: press Ctrl+P or F1 to find any command, setting, layer, figure or frame.
-- Custom layouts: dock, stack, group or float panels wherever you like, and switch between layouts such as Timing, Focus and Review from View → Layout (Ctrl+Alt+L).
-- Keyboard navigation: F6 moves between areas of the editor, Ctrl+\ switches to Focus mode, and Ctrl+1 to Ctrl+4 show or hide the main panels.
-- Particle effects: add explosions, auras, beams, smoke and steam from the VFX panel, mix them together, change their style, or design your own particles.
-- Save your own effect presets and reuse them in any project.
-- Color palettes in every color picker: keep your project's colors, reuse recent ones, and create named palettes you can use across projects.
-- Community library: browse free figures and movieclips shared by other animators from the Library panel or on stykanimate.com/library, and insert them straight into your scene.
-- Richer brushes in Draw, with tapered strokes, chalk, bristle and sponge tips, paper grain, steadier lines, a pressure curve for your tablet and new presets.
-- Moving parts for 3D props, like a pistol's slide or trigger. Projects that use them need this version or newer.
-- Reshape a whole arc of motion at once: right-drag a point on a motion path, and the nearby frames follow smoothly.
-- Hold Alt and drag a figure to duplicate it as you move it.
-- Hold Shift and drag a figure's origin to move the whole figure along with its pinned IK joints.
+- Keyboard navigation: F6 moves between editor areas, Ctrl+\ switches to Focus mode, and Ctrl+1 to Ctrl+4 toggle the main panels.
+- Color palettes in every color picker: keep your project's colors, reuse recent ones, and create named palettes for any project.
+- Richer drawing brushes, with tapered strokes, textured tips, steadier lines and adjustable tablet pressure.
+- Moving parts for 3D props, like a pistol's slide or trigger; projects using them need this version or newer.
+- Reshape a whole arc of motion by right-dragging a point on its motion path.
+- Hold Alt and drag a figure to duplicate it, or hold Shift while dragging its origin to move its pinned joints too.
 - Press A while dragging a joint or figure to add frames without letting go.
-- Right-drag to bend lines in Build and Animate without opening the context menu.
-- A Canvas setting to choose whether pasted figures keep their original layering or appear in front.
+- Right-drag to bend lines in Build and Animate.
+- Choose whether pasted figures keep their original layering or appear in front in Canvas settings.
 - Pinch with two fingers to zoom and pan the canvas on a touch screen.
 
 ### Changed
 
-- Build tools now use two columns, with quick actions to split, duplicate, flip and delete parts.
-
-- Restored the small FPS counter in the top-right corner of the canvas during playback and removed the low-FPS warning.
-
-- A fresh new look, with the StykAnimate typeface, brighter colors, floating panels, and matching menus, buttons and dialogs throughout the app.
-- More room for your animation: tools sit in a floating bar beside the canvas, view controls share one line above it, and small windows open panels only when you need them.
+- A fresh look, with the StykAnimate typeface, brighter colors and matching panels, menus and dialogs.
+- More room for your animation, with floating canvas tools and panels that adapt to smaller windows.
 - The top bar keeps workspaces, Undo, Redo, Save and Export together and shows whether your project is saved.
-- Redesigned timelines: the Simple timeline shows frames as cards you can stretch to hold longer, the Advanced timeline shows each pose as one clear bar, and both keep their controls in the same place.
-- Redesigned motion paths: show the arcs of hands, feet and head together, color them by speed, and preview any frame's pose by pointing at its trail.
-- Easier 3D posing: dragging a joint turns the part on screen, holding D moves it toward or away from you, and arms and legs bend with IK just like on a 2D figure.
-- Easier joint selection: drag along a line segment to pose it without having to grab its node precisely.
-- A clearer Export window with a live preview, easy trimming, size options and one-click presets for YouTube, Shorts, TikTok, Instagram, X and more.
-- A simpler Properties panel, with the most used actions right under the selection's name.
-- A simpler VFX panel that lists effects one per row, each with its own on/off switch.
-- A clearer Build workspace, with each part's color, width and shape first in Properties and rig options that show only what you turn on. The toolbar now has quick toggles for editing whole branches, snapping and isolating a part.
+- Redesigned timelines, with stretchable frame cards in Simple mode and clearer pose bars in Advanced mode.
+- Redesigned motion paths, with multiple trails, speed colors and pose previews as you point along them.
+- Easier 3D posing, with on-screen joint dragging, depth adjustment and IK for arms and legs.
+- Drag along a line segment to pose it without having to grab its node precisely.
+- A clearer Export window with live preview, trimming, size options and presets for popular video platforms.
+- Simpler Properties and VFX panels, with common actions close to the selection and individual effect switches.
+- A clearer Build workspace, with simpler part properties and a compact toolbar for splitting, duplicating, flipping and deleting parts.
 - A cleaner Library panel with search, filters and larger previews.
-- Redesigned Settings, with a page for each section and a search box.
-- Tidier menus, with named groups and submenus.
-- Tooltips show each button's name and keyboard shortcut.
-- The app picks a comfortable interface size for your screen, including 1440p and 4K displays. You can still set your own in Settings.
-- Short hints tell you what to do next while joining figures, placing images, drawing shapes or using the Tweener.
+- Easier-to-find settings and commands, with searchable Settings, grouped menus and shortcut hints.
+- The app chooses a comfortable interface size for your screen, with manual adjustment in Settings.
+- Short hints guide joining figures, placing images, drawing shapes and using the Tweener.
 - A clearer What's new screen that matches the website.
-- New projects start with Blue, a simple 2D stick figure with balanced proportions and hand/foot IK for easy posing.
+- New projects start with Blue, a simple stick figure with hand and foot IK for easy posing.
+- The small playback FPS counter is back, and the low-FPS warning has been removed.
 
 ### Fixed
 
-- Browser update notices now appear promptly after an export.
-- Fixed an empty window on Linux Wayland desktops without needing extra launch options.
-
+- Fixed empty windows on Linux Wayland desktops.
+- Fixed browser update notices being delayed after an export.
 - Fixed selecting figures on the canvas while using the Tweener.
-- Fixed onion skins looking patchy where parts of a figure overlap.
+- Fixed patchy onion skins where parts of a figure overlap.
 - Fixed Feedback sometimes opening on the wrong report type.
 - Fixed the timeline and effect list jumping while selecting several frames.
-- Clicking artwork selects its figure for editing without accidentally moving it.
+- Selecting artwork no longer accidentally moves its figure.
 - Fixed leaving Draw sometimes losing your previous layer and selection.
-- Fixed error messages appearing behind open dialogs. Closing the Export window during an export now asks before stopping it.
+- Fixed errors appearing behind dialogs, and added confirmation before closing an active export.
 - Fixed typing in a menu switching tools, and the Properties ⋯ menu not opening.
-- Fixed What's new and the privacy prompt appearing on top of each other at startup.
+- Fixed What's new and the privacy prompt overlapping at startup.
 - Fixed Enter not confirming a new project name.
-- Fixed a helper process staying open in the background after StykAnimate closed unexpectedly.
-- Fixed adding figures being refused in some Pivot animations with very large figure numbers.
+- Fixed StykAnimate staying open in the background after an unexpected close.
+- Fixed adding figures being refused in some Pivot animations.
 
 ### Performance
 
 - Fewer pauses when first adding particle effects or opening their previews.
-- Faster property adjustments in long animations and smoother refreshes in scenes with many images.
-- 3D figures pose, scrub and play much more smoothly, use less memory and save to smaller files.
-- Older Pivot animations open several times faster, and large ones scrub and zoom more smoothly.
-- Smoother playback and editing in busy scenes, especially on laptops without a dedicated graphics card and in Compatibility mode.
+- Faster property adjustments in long animations and smoother editing in scenes with many images.
+- 3D figures pose, scrub and play more smoothly, use less memory and save to smaller files.
+- Older Pivot animations open faster, and large ones scrub and zoom more smoothly.
+- Smoother playback and editing in busy scenes, especially on laptops and in Compatibility mode.
 
 ## [1.1.0]
 

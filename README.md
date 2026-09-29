@@ -6,9 +6,9 @@ A local desktop animation editor with a custom WebGPU canvas, Figma-style contro
 
 ## Run
 
-On Windows, double-click **`../Start-StykAnimate-webapp.cmd`**. The launcher prefers `release/win-unpacked/StykAnimate.exe`; keep that entire directory together. A packaged build includes its codec runtime and does not require a separate Python or Node installation. `release/baseline-0.1.0/` preserves the earlier verified package.
+Download Windows Setup or Portable and the Linux AppImage from the [public releases](https://github.com/filippocalippo/styk-animate-releases). Desktop packages include their codec runtime and need no separate Python or Node installation. The browser editor runs at [app.stykanimate.com](https://app.stykanimate.com).
 
-The verified Windows **0.2.0** release includes separate Setup and Portable executables in `release/`. Native WebGPU, PIV/STK import, saving, recovery, and workspace persistence were exercised in the packaged application. See [release notes](docs/releases/RELEASE-0.2.0.md) and [package verification](artifacts/windows-release-0.2.0.json). For source development:
+See [release preparation](docs/RELEASING.md) and [package verification](docs/DESKTOP-RELEASE.md) for current candidate checks; historical reports certify only their original builds. For source development:
 
 ```sh
 npm ci
