@@ -33,6 +33,7 @@ import { ThumbnailRenderer } from "./thumbnail-renderer.mjs";
 import { BackgroundDialog } from "./background-dialog.mjs";
 import { ImportClient } from "./import-client.mjs";
 import { codecMode } from "./codec-job.mjs";
+import { browserCodecHost } from "./codec-web-host.mjs";
 import { PlaybackCache } from "./playback.mjs";
 import {playbackWindow,playbackLookaheadSize,playbackStartupWindow} from './playback-window.mjs';
 import {PlaybackUploadWarmup,PlaybackUploadAhead} from './playback-upload.mjs';
@@ -6136,6 +6137,14 @@ async function init() {
   requestAnimationFrame(() => overlays.markReady());
   warmPlayback();
   offerRecovery();
+  // The first Pivot import or export in the browser downloads the converter
+  // (about 13 MB); say so instead of leaving the operation looking stuck. A
+  // failure is reported by the import or export that hit it.
+  if (codecMode() === "browser") {
+    browserCodecHost().subscribe(({ state, stage }) => {
+      if (state === "loading") status(stage === "runtime" ? "Loading the Pivot converter (first use only)…" : "Starting the Pivot converter…", false, true);
+    });
+  }
   try {
     // The in-browser codec has no workspace: people open the files they pick.
     const data = codecMode() === "browser" ? {samples: []} : await (await api("/api/samples")).json();
