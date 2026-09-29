@@ -65,7 +65,7 @@ test('The settings keep the touch interface and finger drawing, repairing unknow
 function fakeWindow({width, height, coarse, search = ''}) {
   const listeners = new Map(), media = new Set();
   const root = {dataset: {}};
-  const doc = {documentElement: root, getElementById: () => null};
+  const doc = {documentElement: root, getElementById: () => null, activeElement: null};
   const query = {matches: coarse, addEventListener: (type, fn) => media.add(fn)};
   const win = {
     document: doc, innerWidth: width, innerHeight: height, location: {search},
@@ -93,6 +93,20 @@ test('The touch mode writes the root and tells its listeners about each change, 
   assert.equal(root.dataset.input, 'pointer');
   assert.equal(root.dataset.touchLayout, undefined);
   assert.deepEqual(heard, [['phone-portrait', 'phone-landscape'], ['phone-landscape', 'off']]);
+  mode.destroy();
+});
+
+test('The keyboard rising under a text field keeps the layout; turning the phone still changes it', () => {
+  const {win, root} = fakeWindow({width: 390, height: 660, coarse: true});
+  const mode = installTouchMode({window: win, getSetting: () => 'auto'});
+  win.document.activeElement = {closest: selector => (selector.includes('input') ? {} : null)};
+  win.resize(390, 360);
+  assert.equal(root.dataset.touchLayout, 'phone-portrait', 'the keyboard took the height, not the orientation');
+  win.resize(660, 360);
+  assert.equal(root.dataset.touchLayout, 'phone-landscape', 'a new width is a real turn');
+  win.document.activeElement = null;
+  win.resize(390, 660);
+  assert.equal(root.dataset.touchLayout, 'phone-portrait');
   mode.destroy();
 });
 

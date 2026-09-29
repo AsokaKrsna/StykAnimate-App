@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, readFile, chmod, rm, readdir, symlink, stat, rename
 import path from 'node:path';
 import os from 'node:os';
 import { createRequire } from 'node:module';
+import { EventEmitter } from 'node:events';
 const require = createRequire(import.meta.url);
 const { LinuxAppImageUpdater } = require('../desktop/appimage-updater.cjs');
 const { UpdateService, updateAvailability } = require('../desktop/updates.cjs');
@@ -17,8 +18,15 @@ async function fixture(t) {
   await writeFile(original, 'old app', { mode: 0o755 });
   await writeFile(download, 'verified new app', { mode: 0o600 });
   const relaunches = [];
+  const electronApp = new EventEmitter();
+  let lockReleased = false;
+  electronApp.releaseSingleInstanceLock = () => { lockReleased = true; };
   const updater = new LinuxAppImageUpdater({ appImage: original, adapter: { version: '1.2.0' },
-    electronApp: { relaunch: options => relaunches.push(options) } });
+    electronApp, spawn: (execPath, args, options) => {
+      assert.equal(lockReleased, true);
+      relaunches.push({ execPath, args, ...options });
+      return { on() {}, unref() {} };
+    } });
   updater.logger = null;
   updater.downloadedUpdateHelper = { file: download, downloadedFileInfo: {} };
   const service = new UpdateService({ updater, currentVersion: '1.2.0' });
@@ -26,7 +34,7 @@ async function fixture(t) {
   // Use the real BaseUpdater validation and our real filesystem installer, but
   // never quit the test runner. The packaged probe covers actual quit/relaunch.
   updater.quitAndInstall = (silent, relaunch) => updater.install(silent, relaunch);
-  return { directory, original, download, updater, service, relaunches };
+  return { directory, original, download, updater, service, relaunches, electronApp };
 }
 
 test('Linux updates require a packaged, writable AppImage and writable parent', linux, async t => {
@@ -57,8 +65,12 @@ test('a versioned AppImage and symlink launcher keep their path after installati
   }), true);
   assert.equal(await readFile(launcher, 'utf8'), 'verified new app');
   assert.equal((await stat(f.original)).mode & 0o777, 0o755);
+  assert.deepEqual(f.relaunches, [], 'Relaunch must wait until the old app quits.');
+  f.electronApp.emit('quit');
   assert.equal(f.relaunches[0].execPath, f.original);
   assert.deepEqual(f.relaunches[0].args, process.argv.slice(1));
+  assert.equal(f.relaunches[0].cwd, f.directory);
+  assert.equal(f.relaunches[0].detached, true);
   assert.equal((await readdir(f.directory)).some(name => name.startsWith('.stykanimate-update-')), false);
   assert.equal(await readFile(f.download, 'utf8'), 'verified new app', 'The download cache remains available for retry.');
 });

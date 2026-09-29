@@ -79,11 +79,18 @@ export function installTouchMode({window: win = globalThis.window, document: doc
     const width = app?.clientWidth || win.innerWidth, height = app?.clientHeight || win.innerHeight;
     return {width, height};
   });
-  let state = null;
+  let state = null, measuredWidth = 0;
 
+  /** A text field has the focus: an on-screen keyboard may be taking the window's height. */
+  const typing = () => Boolean(doc.activeElement?.closest?.('input:not([type="range"], [type="checkbox"], [type="radio"], [type="color"], [type="button"]), textarea, [contenteditable="true"], [contenteditable=""]'));
   const compute = () => {
     const active = resolveTouch({setting: getSetting(), override, coarse: coarseQuery?.matches ?? false});
     const {width, height} = measure();
+    const widthChanged = width !== measuredWidth;
+    measuredWidth = width;
+    // The keyboard rising under a field shrinks only the height: the layout stays as it was (an upright phone would
+    // otherwise turn "landscape" mid-word and rearrange everything around the field).
+    if (state?.active && active && !widthChanged && typing()) return {...state};
     return {active, ...formFactor(width, height)};
   };
   const write = next => {
