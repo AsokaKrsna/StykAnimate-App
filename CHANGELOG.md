@@ -14,7 +14,7 @@ What's new in each version of StykAnimate.
 - Particle effects: add explosions, auras, beams, smoke and steam from the VFX panel, mix them together, change their style, or design your own particles.
 - Save your own effect presets and reuse them in any project.
 - Color palettes in every color picker: keep your project's colors, reuse recent ones, and create named palettes you can use across projects.
-- Public library: browse free rigs and 3D shapes from the Library panel or on stykanimate.com/library, and open them straight in the app.
+- Community library: browse free figures and movieclips shared by other animators from the Library panel or on stykanimate.com/library, and insert them straight into your scene.
 - Richer brushes in Draw, with tapered strokes, chalk, bristle and sponge tips, paper grain, steadier lines, a pressure curve for your tablet and new presets.
 - Moving parts for 3D props, like a pistol's slide or trigger. Projects that use them need this version or newer.
 - Reshape a whole arc of motion at once: hold F and drag a point on a motion path, and the nearby frames follow smoothly.

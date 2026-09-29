@@ -307,7 +307,7 @@ function registerIpc() {
   ipcMain.handle('styk:library-reveal', async (event, folder = '') => { trusted(event); const error = await shell.openPath(await library.folder(folder)); if (error) throw new Error(error); });
   ipcMain.handle('styk:library-trash', (event, relative) => { trusted(event); return library.trash(relative, target => shell.trashItem(target)); });
   ipcMain.handle('styk:library-thumbnail-cache', (event, options) => { trusted(event); return library.cacheThumbnail(options); });
-  // The public library (desktop/public-library.cjs): a read-only catalogue on the website.
+  // The community library (desktop/public-library.cjs): what people share on the website, read through its API.
   const publicLibrary = new PublicLibrary({site: process.env.STYK_PUBLIC_LIBRARY_URL});
   ipcMain.handle('styk:public-library-list', (event, refresh = false) => { trusted(event); return publicLibrary.catalog({refresh: refresh === true}); });
   ipcMain.handle('styk:public-library-preview', (event, id) => { trusted(event); return publicLibrary.preview(id); });
@@ -317,8 +317,9 @@ function registerIpc() {
   });
   ipcMain.handle('styk:public-library-save', async (event, options) => {
     trusted(event);
-    const [{item, extension, bytes}, thumbnail] = await Promise.all([publicLibrary.asset(options?.id), publicLibrary.preview(options?.id)]);
-    return library.saveBytes({folder: typeof options?.folder === 'string' ? options.folder : '', name: item.name, extension, kind: item.kind, thumbnail, bytes});
+    // The panel converts the website's poster to the PNG preview the library keeps; the store validates it.
+    const {item, extension, bytes} = await publicLibrary.asset(options?.id);
+    return library.saveBytes({folder: typeof options?.folder === 'string' ? options.folder : '', name: item.name, extension, kind: item.kind, thumbnail: options?.thumbnail, bytes});
   });
   ipcMain.handle('styk:public-library-page', (event, id) => { trusted(event); return shell.openExternal(publicLibrary.pageFor(id)); });
   ipcMain.handle('styk:public-library-link', event => { trusted(event); const id = publicLibraryLink; publicLibraryLink = null; return id; });

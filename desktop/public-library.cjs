@@ -2,64 +2,104 @@
 
 const {createHash} = require('node:crypto');
 
-// The public library is a static catalogue on the website: /library/catalog.json
-// lists curated assets, and each asset's file and preview sit beside it at a
-// fixed path derived from its id. Only that one site is contacted, every
-// response is size-bounded, and a file reaches the app only after its size and
-// SHA-256 match the catalogue. Nothing about the user or their projects is sent.
+// The community library is a service of the website (worker/library.js in the
+// site's repository). /api/v1/content says which index is current and where the
+// public files live, the index lists every approved item, and the index, the
+// posters and the files are immutable objects. Only stykanimate.com (and the
+// file host the site names, when that is a subdomain of it) is contacted,
+// every response is size-bounded, and a file reaches the app only after its
+// size and SHA-256 match the index. Nothing about the user or their projects
+// is sent.
 const SITE = 'https://stykanimate.com';
-const LIMITS = Object.freeze({catalog: 512 * 1024, preview: 1024 * 1024, asset: 8 * 1024 * 1024});
-const CATALOG_TTL = 10 * 60 * 1000;
-const MAX_PREVIEWS = 160;
-const MAX_FILE_CACHE_BYTES = 32 * 1024 * 1024;
-const ID = /^[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?$/;
-const KINDS = new Set(['figure', 'set', 'movieclip']);
-const MATTES = new Set(['light', 'neutral', 'dark']);
-const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
+const MB = 1024 * 1024;
+const LIMITS = Object.freeze({content: 256 * 1024, index: 4 * MB, poster: 512 * 1024});
+// Figures and movieclips are what the app can insert. Full projects stay on the website.
+const KINDS = Object.freeze({figure: {extension: 'stkz', maxBytes: 8 * MB}, movieclip: {extension: 'stykmov', maxBytes: 12 * MB}});
+// The order the website lists its categories in; a category it adds later follows these.
+const CATEGORY_ORDER = ['characters', 'effects', 'moves', 'props', 'backgrounds', 'animations', 'other'];
+const MAX_ITEMS = 5000;
+const REFRESH_AFTER = 10 * 60 * 1000;
+const MAX_FILE_CACHE_BYTES = 32 * MB;
+const MAX_POSTER_CACHE_BYTES = 16 * MB;
+const ID = /^[a-z0-9]{10}$/;
+const OBJECT_KEY = /^i\/[a-z0-9]{10}\/[\w.-]{1,120}$/;
+const SHA256 = /^[a-f0-9]{64}$/;
+const CATEGORY = /^[a-z]{2,24}$/;
+
+/** A failure with a message the Library panel can show as it is. */
+class LibraryError extends Error {}
 
 const text = (value, max) => typeof value === 'string' && value.trim() && value.length <= max ? value.trim() : null;
-const extensionOf = kind => kind === 'movieclip' ? 'stykmov' : 'stkz';
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const isPublicId = value => typeof value === 'string' && ID.test(value);
+const categoryName = id => id.charAt(0).toUpperCase() + id.slice(1);
+const objectKey = (id, value) => typeof value === 'string' && OBJECT_KEY.test(value) && value.startsWith(`i/${id}/`) ? value : null;
 
 /** Tests and local previews may point at a loopback server; the product only talks to the website. */
 function siteFrom(value) {
   if (!value) return SITE;
   const url = new URL(value);
   if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.username || url.password)
-    throw new Error('The public library address can only be overridden with a loopback server.');
+    throw new Error('The community library address can only be overridden with a loopback server.');
   return url.origin;
 }
 
-/** Validates the catalogue strictly and keeps only what the app can use. */
-function parseCatalog(source) {
-  const value = JSON.parse(source);
-  if (value?.format !== 'stykanimate-public-library' || !Array.isArray(value.packs) || !Array.isArray(value.items))
-    throw new Error('The public library could not be read.');
-  if (value.version !== 1) throw new Error('Update StykAnimate to browse the current public library.');
-  const packs = [], packIds = new Set();
-  for (const pack of value.packs.slice(0, 64)) {
-    const name = text(pack?.name, 80);
-    if (!isPublicId(pack?.id) || !name || packIds.has(pack.id)) continue;
-    packIds.add(pack.id);
-    packs.push({id: pack.id, name, description: text(pack.description, 400) ?? ''});
-  }
-  const items = [], ids = new Set();
-  for (const item of value.items.slice(0, 2000)) {
-    const name = text(item?.name, 120);
-    if (!isPublicId(item?.id) || ids.has(item.id) || !name || !KINDS.has(item.kind) || !packIds.has(item.pack)) continue;
-    if (!Number.isSafeInteger(item.size) || item.size <= 0 || item.size > LIMITS.asset || !/^[a-f0-9]{64}$/.test(item.sha256 ?? '')) continue;
-    if (item.file !== `files/${item.id}.${extensionOf(item.kind)}` || item.preview !== `previews/${item.id}.png`) continue;
-    ids.add(item.id);
-    items.push({id: item.id, name, kind: item.kind, pack: item.pack, description: text(item.description, 400) ?? '',
-      size: item.size, sha256: item.sha256, matte: MATTES.has(item.matte) ? item.matte : null});
-  }
-  return {packs: packs.filter(pack => items.some(item => item.pack === pack.id)), items};
+/** Whether a URL belongs to the site: its own host or a subdomain of it, over the same protocol. */
+function belongsToSite(site, target) {
+  const home = new URL(site);
+  return target.protocol === home.protocol && !target.username && !target.password
+    && (target.hostname === home.hostname || target.hostname.endsWith(`.${home.hostname}`));
 }
 
-async function readBounded(response, limit) {
-  if (!response.ok || !response.body) throw new Error(response.status === 404 ? 'This asset is no longer in the public library.' : 'The public library is unavailable right now.');
-  if (Number(response.headers.get('content-length')) > limit) throw new Error('The public library sent an unexpectedly large file.');
+/** The public file host the site announces, or null when it serves files itself. */
+function fileHost(site, value) {
+  if (typeof value !== 'string' || !value) return null;
+  try {
+    const url = new URL(value);
+    return belongsToSite(site, url) && !url.search && !url.hash ? `${url.origin}${url.pathname.replace(/\/+$/, '')}` : null;
+  } catch { return null; }
+}
+
+/** Validates the index strictly and keeps only what the app can insert. */
+function parseIndex(source) {
+  let value;
+  try { value = JSON.parse(source); } catch { throw new LibraryError('The community library could not be read.'); }
+  if (!Array.isArray(value?.items)) throw new LibraryError('The community library could not be read.');
+  const items = [], objects = new Map();
+  for (const entry of value.items.slice(0, MAX_ITEMS)) {
+    const id = entry?.id, name = text(entry?.t, 120);
+    if (!isPublicId(id) || objects.has(id) || !name || typeof entry.k !== 'string' || !Object.hasOwn(KINDS, entry.k)) continue;
+    const kind = KINDS[entry.k];
+    if (!Number.isSafeInteger(entry.s) || entry.s <= 0 || entry.s > kind.maxBytes || !SHA256.test(entry.sha256 ?? '')) continue;
+    const file = objectKey(id, entry.f), poster = objectKey(id, entry.i);
+    if (!file?.endsWith(`.${kind.extension}`) || !poster) continue;
+    objects.set(id, {file, poster});
+    items.push({
+      id, name, kind: entry.k, category: typeof entry.c === 'string' && CATEGORY.test(entry.c) ? entry.c : 'other', description: text(entry.d, 600) ?? '',
+      author: text(entry.a, 64) ?? '', tags: Array.isArray(entry.g) ? entry.g.filter(tag => typeof tag === 'string' && tag.length <= 32).slice(0, 12) : [],
+      size: entry.s, sha256: entry.sha256,
+    });
+  }
+  const present = [...new Set(items.map(item => item.category))];
+  const rank = id => CATEGORY_ORDER.indexOf(id) < 0 ? CATEGORY_ORDER.length : CATEGORY_ORDER.indexOf(id);
+  present.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+  return {categories: present.map(id => ({id, name: categoryName(id)})), items, objects};
+}
+
+/** The image type a poster really is, from its first bytes. */
+function imageType(bytes) {
+  if (bytes.length > 12 && bytes.subarray(0, 4).toString('latin1') === 'RIFF' && bytes.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  if (bytes.length > 8 && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
+  if (bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  return null;
+}
+
+const UNAVAILABLE = 'The community library is unavailable right now.';
+const GONE = 'This asset is no longer in the community library.';
+
+async function readBounded(response, limit, missing) {
+  if (!response.ok || !response.body) throw new LibraryError(response.status === 404 ? missing : UNAVAILABLE);
+  if (Number(response.headers.get('content-length')) > limit) throw new LibraryError('The community library sent an unexpectedly large file.');
   const reader = response.body.getReader(), parts = [];
   let size = 0;
   try {
@@ -67,48 +107,83 @@ async function readBounded(response, limit) {
       const part = await reader.read();
       if (part.done) break;
       size += part.value.byteLength;
-      if (size > limit) throw new Error('The public library sent an unexpectedly large file.');
+      if (size > limit) throw new LibraryError('The community library sent an unexpectedly large file.');
       parts.push(Buffer.from(part.value.buffer, part.value.byteOffset, part.value.byteLength));
     }
   } finally { await reader.cancel().catch(() => {}); }
   return Buffer.concat(parts, size);
 }
 
+/** Least recently used values under a byte budget; one oversized value is still kept alone. */
+class ByteCache {
+  constructor(limit) { this.limit = limit; this.bytes = 0; this.entries = new Map(); }
+  get(key) {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    this.entries.delete(key); this.entries.set(key, entry);
+    return entry.value;
+  }
+  set(key, value, size) {
+    this.delete(key);
+    this.entries.set(key, {value, size}); this.bytes += size;
+    while (this.bytes > this.limit && this.entries.size > 1) this.delete(this.entries.keys().next().value);
+  }
+  delete(key) {
+    const entry = this.entries.get(key);
+    if (entry) { this.entries.delete(key); this.bytes -= entry.size; }
+  }
+  retain(keep) { for (const key of [...this.entries.keys()]) if (!keep(key)) this.delete(key); }
+}
+
 class PublicLibrary {
   constructor({site, fetcher = globalThis.fetch, now = Date.now} = {}) {
     this.site = siteFrom(site);
-    this.page = `${this.site}/library/`;
     this.fetcher = fetcher; this.now = now;
-    this.cached = null; this.expires = 0; this.pending = null; this.byId = new Map();
-    this.previews = new Map(); this.files = new Map(); this.fileBytes = 0; this.inflight = new Map();
+    this.snapshot = null; this.checkedAt = 0; this.pending = null; this.inflight = new Map();
+    this.posters = new ByteCache(MAX_POSTER_CACHE_BYTES); this.files = new ByteCache(MAX_FILE_CACHE_BYTES);
   }
-  async request(path, limit) {
-    let response;
-    try { response = await this.fetcher(`${this.page}${path}`, {signal: AbortSignal.timeout(15000), redirect: 'error'}); }
-    catch { throw new Error('Could not reach the public library. Check your connection and try again.'); }
-    return readBounded(response, limit);
+  /** One bounded GET of a URL on the site, redirects refused. `missing` is what a 404 means to the person. */
+  async request(url, limit, {timeout = 15000, missing = UNAVAILABLE} = {}) {
+    try { return await readBounded(await this.fetcher(url, {signal: AbortSignal.timeout(timeout), redirect: 'error'}), limit, missing); }
+    catch (error) {
+      if (error instanceof LibraryError) throw error;
+      throw new LibraryError('Could not reach the community library. Check your connection and try again.');
+    }
   }
-  /** One shared request; the catalogue is reused for ten minutes unless refreshed. */
+  /** The catalogue is checked against the website at most every ten minutes unless refreshed. */
   async catalog({refresh = false} = {}) {
-    if (!refresh && this.cached && this.now() < this.expires) return this.cached;
+    if (!refresh && this.snapshot && this.now() < this.checkedAt + REFRESH_AFTER) return this.snapshot.catalog;
     if (this.pending) return this.pending;
-    this.pending = (async () => {
-      const parsed = parseCatalog((await this.request('catalog.json', LIMITS.catalog)).toString('utf8'));
-      this.byId = new Map(parsed.items.map(item => [item.id, item]));
-      // Previews and files of items that changed or left the catalogue are released.
-      for (const key of this.previews.keys()) if (this.byId.get(key.split(':')[0])?.sha256 !== key.split(':')[1]) this.previews.delete(key);
-      for (const [hash, bytes] of this.files) if (!parsed.items.some(item => item.sha256 === hash)) { this.files.delete(hash); this.fileBytes -= bytes.length; }
-      this.cached = {page: this.page, ...parsed}; this.expires = this.now() + CATALOG_TTL;
-      return this.cached;
-    })();
+    this.pending = this.load();
     try { return await this.pending; } finally { this.pending = null; }
   }
-  async item(id) {
-    if (!isPublicId(id)) throw new Error('Unknown public library asset.');
+  async load() {
+    let content;
+    try { content = JSON.parse((await this.request(`${this.site}/api/v1/content`, LIMITS.content)).toString('utf8')); }
+    catch (error) { throw error instanceof SyntaxError ? new LibraryError('The community library could not be read.') : error; }
+    const library = content?.library, version = library?.v;
+    if (!library) throw new LibraryError('The community library is not available right now.');
+    if (!Number.isSafeInteger(version) || version < 0) throw new LibraryError('The community library could not be read.');
+    const base = fileHost(this.site, library.base);
+    // An index never changes once published, so an unchanged version needs no second download.
+    if (this.snapshot?.version === version && this.snapshot.base === base) { this.checkedAt = this.now(); return this.snapshot.catalog; }
+    const parsed = version === 0 ? {categories: [], items: [], objects: new Map()}
+      : parseIndex((await this.request(base ? `${base}/index/${version}.json` : `${this.site}/api/v1/library/index/${version}`, LIMITS.index)).toString('utf8'));
+    const {objects, ...catalog} = parsed;
+    this.snapshot = {version, base, catalog, records: new Map(catalog.items.map(item => [item.id, {item, ...objects.get(item.id)}]))};
+    this.checkedAt = this.now();
+    // Posters and files of items that changed or left the library are released.
+    const current = new Set(catalog.items.map(item => item.sha256));
+    this.posters.retain(key => current.has(key.split(':')[1]));
+    this.files.retain(key => current.has(key));
+    return catalog;
+  }
+  async record(id) {
+    if (!isPublicId(id)) throw new LibraryError('Unknown community library asset.');
     await this.catalog();
-    const item = this.byId.get(id);
-    if (!item) throw new Error('This asset is no longer in the public library.');
-    return item;
+    const record = this.snapshot.records.get(id);
+    if (!record) throw new LibraryError(GONE);
+    return {...record, base: this.snapshot.base};
   }
   once(key, operation) {
     if (this.inflight.has(key)) return this.inflight.get(key);
@@ -116,38 +191,46 @@ class PublicLibrary {
     this.inflight.set(key, result);
     return result;
   }
-  /** The asset's 320 × 320 transparent PNG as a data URL (the renderer's CSP allows no remote images). */
+  /** The asset's poster as a data URL (the renderer's CSP allows no remote images). */
   async preview(id) {
-    const item = await this.item(id), key = `${id}:${item.sha256}`;
-    const cached = this.previews.get(key);
-    if (cached) { this.previews.delete(key); this.previews.set(key, cached); return cached; }
-    return this.once(`preview:${key}`, async () => {
-      const png = await this.request(`previews/${id}.png`, LIMITS.preview);
-      if (!png.subarray(0, 8).equals(PNG)) throw new Error('The asset preview is not a PNG image.');
-      const url = `data:image/png;base64,${png.toString('base64')}`;
-      this.previews.set(key, url);
-      while (this.previews.size > MAX_PREVIEWS) this.previews.delete(this.previews.keys().next().value);
+    const {item, poster, base} = await this.record(id), key = `${id}:${item.sha256}`;
+    return this.posters.get(key) ?? this.once(`poster:${key}`, async () => {
+      const bytes = await this.request(`${base ?? `${this.site}/api/v1/library/f`}/${poster}`, LIMITS.poster, {missing: GONE}), type = imageType(bytes);
+      if (!type) throw new LibraryError('The asset preview is not an image.');
+      const url = `data:${type};base64,${bytes.toString('base64')}`;
+      this.posters.set(key, url, url.length);
       return url;
     });
   }
+  /**
+   * The file's bytes. The download goes through the site's counting route, which
+   * answers with a redirect to the public file; the redirect may only lead to the site.
+   */
+  async download({item, file}) {
+    const route = new URL(`${this.site}/api/v1/library/get/${item.id}?k=${encodeURIComponent(file)}`);
+    let redirect;
+    try { redirect = await this.fetcher(route, {signal: AbortSignal.timeout(15000), redirect: 'manual'}); }
+    catch { throw new LibraryError('Could not reach the community library. Check your connection and try again.'); }
+    await redirect.body?.cancel().catch(() => {});
+    if (redirect.status === 404) throw new LibraryError(GONE);
+    let target = null;
+    try { if (redirect.status >= 300 && redirect.status < 400) target = new URL(redirect.headers.get('location') ?? '', route); } catch { /* refused below */ }
+    if (!target || !belongsToSite(this.site, target)) throw new LibraryError(UNAVAILABLE);
+    return this.request(target, item.size, {timeout: 60000, missing: GONE});
+  }
   /** The verified native file: {item, name, extension, bytes}. */
   async asset(id) {
-    const item = await this.item(id), extension = extensionOf(item.kind);
-    let bytes = this.files.get(item.sha256);
-    if (bytes) { this.files.delete(item.sha256); this.files.set(item.sha256, bytes); }
-    else bytes = await this.once(`file:${item.sha256}`, async () => {
-      const downloaded = await this.request(`files/${id}.${extension}`, item.size);
-      if (downloaded.length !== item.size || sha256(downloaded) !== item.sha256) throw new Error('The downloaded asset did not match the public library. Try again later.');
-      this.files.set(item.sha256, downloaded); this.fileBytes += downloaded.length;
-      while (this.fileBytes > MAX_FILE_CACHE_BYTES && this.files.size > 1) {
-        const [oldest, value] = this.files.entries().next().value; this.files.delete(oldest); this.fileBytes -= value.length;
-      }
+    const record = await this.record(id), {item} = record, {extension} = KINDS[item.kind];
+    const bytes = this.files.get(item.sha256) ?? await this.once(`file:${item.sha256}`, async () => {
+      const downloaded = await this.download(record);
+      if (downloaded.length !== item.size || sha256(downloaded) !== item.sha256) throw new LibraryError('The downloaded asset did not match the community library. Try again later.');
+      this.files.set(item.sha256, downloaded, downloaded.length);
       return downloaded;
     });
     return {item, name: `${item.name}.${extension}`, extension: `.${extension}`, bytes};
   }
   /** The website's page for the library, or for one asset. */
-  pageFor(id) { return isPublicId(id) ? `${this.page}#${id}` : this.page; }
+  pageFor(id) { return isPublicId(id) ? `${this.site}/library/?item=${id}` : `${this.site}/library/`; }
 }
 
-module.exports = {PublicLibrary, parseCatalog, isPublicId, siteFrom, LIMITS};
+module.exports = {PublicLibrary, parseIndex, isPublicId, siteFrom, LIMITS};

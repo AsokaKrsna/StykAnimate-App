@@ -17,6 +17,15 @@ export function libraryPreview(report) {
     worker.postMessage({report, baseURL: location.href});
   });
 }
+/** The PNG a saved asset keeps as its preview (at most 320 px), made from any image the browser can show. */
+export async function pngThumbnail(url, size = 320) {
+  const image = new Image(); image.src = url; await image.decode();
+  const scale = Math.min(1, size / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/png');
+}
 export async function saveLibraryFile(desktop, blob, options) {
   const transfer = await desktop.beginLibrarySave({...options, size:blob.size});
   try {

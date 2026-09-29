@@ -1,7 +1,7 @@
 import {drawingBarrier} from './drawing-resources.mjs';
 import {icon} from './icons.mjs';
 import {HotkeyManager} from './hotkeys.mjs';
-import {librarySnapshot, libraryPreview, saveLibraryFile, readLibraryFile} from './library-files.mjs';
+import {librarySnapshot, libraryPreview, pngThumbnail, saveLibraryFile, readLibraryFile} from './library-files.mjs';
 import {LibraryHoverPreview} from './library-hover-preview.mjs';
 import {libraryPreviewMatte, LIBRARY_MATTES} from './library-preview-core.mjs';
 import {canMoveLibraryItem} from './library-drag.mjs';
@@ -14,6 +14,8 @@ const KINDS = {folder: 'Folder', movieclip: 'Movieclip', set: 'Figure set', figu
 const label = item => KINDS[item.kind] ?? 'Figure';
 const plural = (count, one, many = `${one}s`) => `${count.toLocaleString()} ${count === 1 ? one : many}`;
 const parentOf = path => path.split('/').slice(0, -1).join('/');
+// Electron prefixes what the main process throws; the person only needs the sentence.
+const plain = error => String(error?.message ?? error).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, '');
 const PUBLIC_PAGE = 'https://stykanimate.com/library/';
 const SKELETONS = 6;
 
@@ -26,8 +28,8 @@ export class UserLibrary {
    * another panel.
    *
    * Two sources share one grid: My library (the desktop library's folders,
-   * desktop/library-store.cjs) and Public library (the website's curated
-   * catalogue, desktop/public-library.cjs). Cards insert on double-click,
+   * desktop/library-store.cjs) and Community library (what people share on
+   * stykanimate.com, desktop/public-library.cjs). Cards insert on double-click,
    * Enter or a drag to the stage; everything else is in a card's ⋯ menu.
    */
   constructor({editor, desktop, exporter, importer, pause, finishEdit, setTool, vfxInspector, activate, hotkeys = new HotkeyManager()}) {
@@ -43,7 +45,7 @@ export class UserLibrary {
     // you are, the cards as one listbox, then a pinned foot with the status line and Add selection.
     this.container.dataset.source = 'mine'; this.container.dataset.background = 'auto';
     this.container.innerHTML = `<div class="library-head">
-      <div class="library-source ui-segmented" data-size="sm" data-fill role="group" aria-label="Library source"><button type="button" class="ui-segmented-item" data-library-source="mine" aria-pressed="true">My library</button><button type="button" class="ui-segmented-item" data-library-source="public" aria-pressed="false">${icon('globe')}Public library</button></div>
+      <div class="library-source ui-segmented" data-size="sm" data-fill role="group" aria-label="Library source"><button type="button" class="ui-segmented-item" data-library-source="mine" aria-pressed="true">My library</button><button type="button" class="ui-segmented-item" data-library-source="public" aria-pressed="false">${icon('globe')}Community library</button></div>
       <div class="library-tools"><label class="library-search ui-field" data-size="sm">${icon('search')}<input class="ui-field-input" type="search" aria-label="Search library" placeholder="Search" spellcheck="false" autocomplete="off"></label><span class="ui-select library-kind-filter" data-size="sm"><select aria-label="Show"><option value="all">All</option><option value="figure">Figures</option><option value="movieclip">Movieclips</option></select>${icon('chevron-down')}</span><button type="button" class="ui-icon-button" data-size="sm" data-library-menu aria-haspopup="menu" aria-label="Library options" title="Library options">${icon('more')}</button></div>
       <div class="library-location"><nav class="library-breadcrumbs ui-crumb" aria-label="Library folders"></nav><span class="library-origin">${icon('globe')}<span>stykanimate.com</span></span><span class="library-count"></span><button type="button" class="ui-icon-button library-new-folder" data-size="sm" data-library-action="folder" aria-label="New library folder" title="New folder">${icon('folder-plus')}</button></div>
     </div>
@@ -114,8 +116,8 @@ export class UserLibrary {
 
   // ---- The model ----
   get publicItems() {
-    const packs = new Map((this.publicCatalog?.packs ?? []).map(pack => [pack.id, pack.name]));
-    return (this.publicCatalog?.items ?? []).map(item => ({...item, source: 'public', packName: packs.get(item.pack) ?? ''}));
+    const names = new Map((this.publicCatalog?.categories ?? []).map(category => [category.id, category.name]));
+    return (this.publicCatalog?.items ?? []).map(item => ({...item, source: 'public', categoryName: names.get(item.category) ?? ''}));
   }
   cardFrom(target) { const card = target?.closest?.('.library-card'); return card && this.grid.contains(card) && !card.classList.contains('is-skeleton') ? card : null; }
   keyOf(card) { return card?.dataset.libraryPath ?? card?.dataset.publicId ?? null; }
@@ -128,12 +130,12 @@ export class UserLibrary {
   visibleItems() {
     const query = this.input.value.trim().toLocaleLowerCase(), filter = this.filterValue;
     const kind = item => filter === 'all' || item.kind === filter || filter === 'figure' && item.kind === 'set';
-    if (this.source === 'public') return this.publicItems.filter(item => kind(item) && `${item.name} ${item.packName} ${item.description}`.toLocaleLowerCase().includes(query));
+    if (this.source === 'public') return this.publicItems.filter(item => kind(item) && `${item.name} ${item.categoryName} ${item.author} ${item.tags.join(' ')} ${item.description}`.toLocaleLowerCase().includes(query));
     return this.entries.filter(item => item.name.toLocaleLowerCase().includes(query) && (item.kind === 'folder' || kind(item)));
   }
 
   // ---- Showing ----
-  async run(operation) { try { await operation(); } catch (error) { this.say(error.message, true); } }
+  async run(operation) { try { await operation(); } catch (error) { this.say(plain(error), true); } }
   say(text, error = false) {
     clearTimeout(this.messageTimer);
     this.message.textContent = text; this.message.dataset.error = String(error);
@@ -176,14 +178,14 @@ export class UserLibrary {
     // The kit's empty state: a title, one quiet line where it helps, then the next step.
     const card = (title, text, actions = '') => `<h3 class="ui-empty-title">${title}</h3>${text ? `<p class="ui-empty-text">${text}</p>` : ''}${actions ? `<div class="ui-empty-actions">${actions}</div>` : ''}`;
     const examples = '<button type="button" class="ui-button" data-variant="outline" data-size="sm" data-action="rig-examples">Rig examples</button>';
-    const browse = '<button type="button" class="ui-button" data-variant="outline" data-size="sm" data-library-source-link="public">Browse the public library</button>';
+    const browse = '<button type="button" class="ui-button" data-variant="outline" data-size="sm" data-library-source-link="public">Browse the community library</button>';
     if (filtered) this.empty.innerHTML = card('No matches', '', '<button type="button" class="ui-button" data-size="sm" data-library-clear>Clear search</button>');
-    else if (pub && !this.desktop?.listPublicLibrary) this.empty.innerHTML = card('Public library', 'Free figures and rigs, ready to drop into your scenes. Browse them on the website, or open them from the desktop app.', `<a class="ui-button" data-variant="outline" data-size="sm" href="${PUBLIC_PAGE}" target="_blank" rel="noopener noreferrer">Open stykanimate.com/library</a>`);
-    else if (pub && this.publicState === 'error') this.empty.innerHTML = card('Public library is unavailable', esc(this.publicError), '<button type="button" class="ui-button" data-size="sm" data-library-retry>Try again</button>');
-    else if (pub) this.empty.innerHTML = card('Nothing here yet', 'New assets are added to the public library from time to time.');
+    else if (pub && !this.desktop?.listPublicLibrary) this.empty.innerHTML = card('Community library', 'Free figures and movieclips shared by the community, ready to drop into your scenes. Browse them on the website, or open them from the desktop app.', `<a class="ui-button" data-variant="outline" data-size="sm" href="${PUBLIC_PAGE}" target="_blank" rel="noopener noreferrer">Open stykanimate.com/library</a>`);
+    else if (pub && this.publicState === 'error') this.empty.innerHTML = card('Community library is unavailable', esc(this.publicError), '<button type="button" class="ui-button" data-size="sm" data-library-retry>Try again</button>');
+    else if (pub) this.empty.innerHTML = card('Nothing here yet', 'Figures and movieclips shared by the community appear here.');
     else if (!this.desktop?.listLibrary) this.empty.innerHTML = card('Library is available in the desktop app', 'Save figures and movieclips there to reuse them in any project.', examples);
     else if (this.folder) this.empty.innerHTML = card('Empty folder', 'Drag assets onto this folder’s name above, or add the selection here.', selection ? '' : examples);
-    else this.empty.innerHTML = card('No saved assets yet', selection ? 'Add the selection below to reuse it in any project.' : 'Select figures or a movieclip and choose Add selection, or start from the public library.', `${selection ? '' : browse}${examples}`);
+    else this.empty.innerHTML = card('No saved assets yet', selection ? 'Add the selection below to reuse it in any project.' : 'Select figures or a movieclip and choose Add selection, or start from the community library.', `${selection ? '' : browse}${examples}`);
   }
   renderLocation(count) {
     const pub = this.source === 'public';
@@ -230,7 +232,7 @@ export class UserLibrary {
       this.publicCatalog = catalog; this.publicState = 'ready'; this.publicError = '';
     } catch (error) {
       if (generation !== this.publicGeneration) return;
-      this.publicError = error.message;
+      this.publicError = plain(error);
       // A catalogue already shown stays usable; the failure is only reported.
       if (this.publicCatalog) { this.publicState = 'ready'; this.say(error.message, true); } else this.publicState = 'error';
     }
@@ -243,7 +245,7 @@ export class UserLibrary {
     if (!id) return;
     let item = this.publicItems.find(item => item.id === id);
     if (!item && this.publicState === 'ready') { await this.loadPublic({refresh: true}); item = this.publicItems.find(item => item.id === id); }
-    if (!item) { if (this.publicState === 'ready') this.say('That asset is no longer in the public library.', true); return; }
+    if (!item) { if (this.publicState === 'ready') this.say('That asset is no longer in the community library.', true); return; }
     if (!this.visibleItems().includes(item)) { this.input.value = ''; this.setFilter('all'); }
     this.publicSelected = id; this.render();
     const card = this.cardFor(id);
@@ -257,7 +259,7 @@ export class UserLibrary {
     this.closeMenu(); this.hoverPreview.stop();
     this.observer.disconnect(); this.grid.replaceChildren();
     const pub = this.source === 'public', items = this.visibleItems();
-    this.grid.setAttribute('aria-label', pub ? 'Public library' : 'My library');
+    this.grid.setAttribute('aria-label', pub ? 'Community library' : 'My library');
     this.grid.removeAttribute('aria-busy');
     if (pub && this.publicState === 'loading') {
       this.grid.setAttribute('aria-busy', 'true'); this.empty.hidden = true; this.renderLocation(0);
@@ -269,11 +271,11 @@ export class UserLibrary {
     const filtered = Boolean(this.input.value.trim() || this.filterValue !== 'all') && (pub ? this.publicItems.length : this.entries.length) > 0;
     if (!this.empty.hidden) this.renderEmpty(filtered);
     if (pub) {
-      // Grouped by pack, in the catalogue's order.
-      for (const pack of this.publicCatalog?.packs ?? []) {
-        const members = items.filter(item => item.pack === pack.id); if (!members.length) continue;
-        const group = document.createElement('div'); group.className = 'library-group'; group.setAttribute('role', 'group'); group.setAttribute('aria-label', pack.name);
-        group.innerHTML = `<div class="library-group-label" title="${esc(pack.description)}"><span>${esc(pack.name)}</span><span class="library-group-count">${members.length}</span></div>`;
+      // Grouped by the website's categories, in its order.
+      for (const category of this.publicCatalog?.categories ?? []) {
+        const members = items.filter(item => item.category === category.id); if (!members.length) continue;
+        const group = document.createElement('div'); group.className = 'library-group'; group.setAttribute('role', 'group'); group.setAttribute('aria-label', category.name);
+        group.innerHTML = `<div class="library-group-label"><span>${esc(category.name)}</span><span class="library-group-count">${members.length}</span></div>`;
         for (const item of members) group.append(this.card(item));
         this.grid.append(group);
       }
@@ -289,7 +291,7 @@ export class UserLibrary {
     if (item.kind === 'folder') card.dataset.libraryFolder = item.path;
     card.setAttribute('role', 'option'); card.setAttribute('aria-selected', 'false'); card.setAttribute('aria-label', `${item.name}, ${label(item)}`);
     card.title = item.kind === 'folder' ? `${item.name}. Double-click to open, or drop assets here to move them.`
-      : pub ? `${item.name}${item.description ? `: ${item.description}` : ''}\nDouble-click to insert, or drag onto the canvas.`
+      : pub ? `${item.name}${item.author ? ` by ${item.author}` : ''}${item.description ? `: ${item.description}` : ''}\nDouble-click to insert, or drag onto the canvas.`
         : `${item.name}. Double-click to insert, or drag onto the canvas or a folder.${item.kind === 'movieclip' ? ' Hover to play.' : ''}`;
     const badge = ['movieclip', 'set'].includes(item.kind) ? `<span class="library-clip-badge" title="${label(item)}">${icon(item.kind === 'movieclip' ? 'play' : 'duplicate')}</span>` : '';
     const clip = item.kind === 'movieclip' && !pub ? '<span class="library-preview-hint">Hover to play</span><span class="library-preview-progress"></span>' : '';
@@ -478,7 +480,9 @@ export class UserLibrary {
     if (this.busy) return;
     this.busy = true; this.syncSelection(); this.say(`Saving ${item.name} to My library…`);
     try {
-      const result = await this.desktop.savePublicLibraryAsset({id: item.id, folder: this.folder});
+      // The library keeps PNG previews; the website's posters are WebP, so the poster is converted here.
+      const thumbnail = await pngThumbnail(this.thumbnails.get(`public:${item.id}:${item.sha256}`) ?? await this.desktop.getPublicLibraryPreview(item.id));
+      const result = await this.desktop.savePublicLibraryAsset({id: item.id, folder: this.folder, thumbnail});
       this.say(`${item.name} saved to ${this.folder ? `My library › ${this.folder.split('/').join(' › ')}` : 'My library'}`);
       return result;
     } finally { this.busy = false; this.syncSelection(); }
