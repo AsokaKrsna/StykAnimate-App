@@ -17,13 +17,13 @@ try {
  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47841');await page.waitForFunction(()=>window.styk?.ready);
  for(const mode of ['single-select','toggle-select','selection-select','shift-select','toggle-rig']) {
   await page.evaluate(f=>{styk.builder?.leave();styk.editor.load(f);styk.editor.select(1,-1);styk.builder.enter();styk.state.builderBranch=false;},fixture);
-  await page.locator('.builder-footer [data-action=zoom-selection]').click();await page.locator('[data-tool=select]').click();await settle();
+  await page.locator('.rail-quick [data-action=zoom-selection]').click();await page.locator('[data-tool=select]').click();await settle();
   // A real Select-tool pose gesture must survive deleting another limb.
   const beforePose=await point(5);await page.mouse.move(beforePose.x,beforePose.y);await page.mouse.down();await page.mouse.move(beforePose.x+24,beforePose.y-20,{steps:5});await page.mouse.up();await settle();
   const posed=await page.evaluate(()=>{const {editor:e}=styk;const s=e.geometry.objects.get(e.selectedSlot).segments[5];return {uid:e.selectedUid,end:s.end};});
   const branch=mode!=='single-select';
   await page.evaluate(branch=>styk.editor.select(1,branch?2:3),branch);
-  if(mode.startsWith('toggle')){await settle();await page.locator('#builder-branch').click();}
+  if(mode.startsWith('toggle')){await settle();await page.locator('.rail-quick [data-action="toggle-builder-branch"]').click();}
   if(mode==='selection-select')await page.evaluate(()=>styk.editor.selectBranch(1,2));
   if(mode.endsWith('rig'))await page.locator('[data-tool=rig]').click();
   await page.locator('#viewport').focus();await settle();

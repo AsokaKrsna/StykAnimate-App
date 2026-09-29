@@ -10,6 +10,9 @@ try {
   await page.goto(process.env.STYK_URL || 'http://127.0.0.1:47841');await page.waitForFunction(()=>window.styk?.ready);
   const enter=()=>page.locator('[data-workspace-mode="rig"]').click();
   await enter();await settle();
+  // Structure starts folded to its strip; docked, it keeps its tree, its foot and its splitter.
+  assert.equal(await page.locator('.builder-tree').isVisible(),false);
+  await page.evaluate(()=>styk.workspace.dock('structure','left'));await settle();
   assert.equal(await page.locator('.workspace > .studio-rail [data-tool]:visible').count(),7);
   assert.equal(await page.locator('.timeline-panel').isVisible(),false);
   await page.locator('#builder-timeline-toggle').click();await settle();
@@ -24,8 +27,8 @@ try {
   assert.equal(await page.evaluate(()=>styk.editor.figure.segments.length),before+1);
   await page.keyboard.press('Control+z');await settle();
   assert.equal(await page.evaluate(()=>styk.editor.figure.segments.length),before);
-  // Whole branch is the Edit joints tool's option in the stage header.
-  const whole=page.locator('.stage-head [data-action="toggle-builder-branch"]');
+  // Whole branch is one of the rail's Build options.
+  const whole=page.locator('.rail-quick [data-action="toggle-builder-branch"]');
   await whole.click();await settle();
   assert.equal(await whole.getAttribute('aria-pressed'),'true');
   await whole.click();

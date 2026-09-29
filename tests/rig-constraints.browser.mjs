@@ -6,14 +6,16 @@ const browser=await chromium.launch({channel:'chrome',headless:true}),page=await
 const output='artifacts/rig-constraints';await mkdir(output,{recursive:true});
 page.on('pageerror',e=>errors.push(e.message));
 const settle=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+// Rig is a titled section: it opens by itself while the part has a rig, else from its title.
+const openRig=async()=>{const toggle=page.locator('[data-section-toggle="rig-controls"]');if(await toggle.getAttribute('aria-expanded')==='false')await toggle.click();};
 try{
   await page.goto(process.env.STYK_URL??'http://127.0.0.1:47851');await page.waitForFunction(()=>window.styk?.ready);
   const rigs=await page.evaluate(async()=>{const m=await import('/src/rig-examples.mjs');return m.RIG_EXAMPLES.map(r=>({id:r.id,control:r.control}));});
   for(const r of rigs){
     await page.evaluate(async r=>{const {rigExampleDocument}=await import('/src/rig-examples.mjs');styk.editor.load(rigExampleDocument(r.id));styk.editor.select(1,r.control-1);styk.builder.enter();styk.editor.select(1,r.control-1);},r);await settle();
-    await page.locator('.builder-footer [data-action="zoom-selection"]').click();await settle();
+    await page.locator('.rail-quick [data-action="zoom-selection"]').click();await settle();
     if(await page.locator('[data-connector-part="segment"]').count())await page.locator('[data-connector-part="segment"]').click();
-    assert.ok(await page.locator('.rig-properties').count());
+    assert.ok(await page.locator('[data-section="rig-controls"] > .ui-section-body').count());
     await page.screenshot({path:`${output}/${r.id}.png`});
     const before=await page.evaluate(()=>JSON.stringify(styk.editor.serialize()));
     await page.locator('.titlebar [data-action="rig-test"]').click();await page.locator('#rig-test-canvas').waitFor();
@@ -29,11 +31,11 @@ try{
   }
   // Exercise ordinary and Ctrl drags through the actual canvas event handlers.
   await page.evaluate(async()=>{const {rigExampleDocument}=await import('/src/rig-examples.mjs');const e=styk.editor;e.load(rigExampleDocument('telescoping-panels'));e.select(1,0);e.setRigBehavior({stretch:null});styk.builder.enter();e.select(1,0);});await settle();
-  await page.locator('#rig-stretch-enabled').check();await settle();
+  await openRig();await page.locator('#rig-stretch-enabled').check();await settle();
   assert.equal(await page.evaluate(()=>styk.editor.figure.segments.filter(s=>s._stykRig?.follow?.driver===1).length),6);
   await page.screenshot({path:`${output}/smart-stretch-setup.png`});
   await page.locator('#builder-done').click();await page.locator('#builder-exit-update').click();await settle();await page.locator('[data-tool="select"]').click();await page.evaluate(()=>{styk.fit();styk.editor.select(1,0);});await settle();
-  assert.equal(await page.locator('.rig-properties').count(),0);
+  assert.equal(await page.locator('[data-section="rig-controls"]').count(),0);
   const screen=async(point)=>page.evaluate(async point=>{const {worldToScreen}=await import('/src/renderer.mjs'),{editor,state}=styk,q=worldToScreen(point,{report:editor.report,frame:editor.frame,view:state.view}),r=document.querySelector('#viewport').getBoundingClientRect();return {x:r.x+q.x,y:r.y+q.y};},point);
   const joint=()=>page.evaluate(()=>{const s=styk.editor.geometry.objects.get(0).segments[0];return {start:s.start,end:s.end,length:s.length};});
   const dragTo=async(target,ctrl=false)=>{const a=await screen((await joint()).end),b=await screen(target);await page.mouse.move(a.x,a.y);if(ctrl)await page.keyboard.down('Control');await page.mouse.down();await page.mouse.move(b.x,b.y,{steps:8});await page.mouse.up();if(ctrl)await page.keyboard.up('Control');await settle();};
@@ -57,15 +59,15 @@ try{
   await page.keyboard.press('Control+z');await settle();assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),beforeInsert);
   // Create via multi-selection and the real inspector action, then configure.
   await page.evaluate(async()=>{const {rigExampleDocument}=await import('/src/rig-examples.mjs');styk.editor.load(rigExampleDocument('nested-curve-controls'));styk.editor.select(1,0);styk.builder.enter();styk.editor.select(1,0);});await settle();
-  await page.locator('.rig-properties [data-action="rig-connect"]').click();
+  await openRig();await page.locator('[data-section="rig-controls"] [data-action="rig-connect"]').click();
   await page.keyboard.press('Escape');
   await page.evaluate(()=>{styk.editor.select(1,0);styk.editor.toggleSegment(1,2);});await settle();
-  await page.locator('.rig-properties [data-action="rig-connect"]').click();await settle();
+  await openRig();await page.locator('[data-section="rig-controls"] [data-action="rig-connect"]').click();await settle();
   assert.equal(await page.locator('#rig-position').count(),1);
   await page.locator('#rig-position').fill('25');await page.locator('#rig-position').press('Tab');await settle();
   assert.equal(await page.locator('#rig-position').inputValue(),'25');
   await page.locator('[data-connector-part="segment"]').click();await page.locator('#rig-stretch-enabled').check();await settle();assert.equal(await page.locator('#rig-width').count(),1);
-  await page.locator('.rig-advanced summary').filter({hasText:'Stretch settings'}).click();
+  // Smart Stretch's settings show under its switch while it is on.
   await page.locator('#rig-width').selectOption('inverse');await settle();
   await page.setViewportSize({width:1100,height:760});await settle();
   await page.screenshot({path:`${output}/compact.png`});

@@ -5,7 +5,9 @@ import {Editor} from '../src/editor.mjs';
 import {createObject,createFrame,emptyDocument,defaultFigure} from '../src/demo.mjs';
 import {rigConstraintPlan,remapRigReferences} from '../src/rig-constraints.mjs';
 import {buildContainerV2,decodeDocument} from '../src/native-container.mjs';
-import {rigControlsView,rigControlChange} from '../src/rig-controls.mjs';
+import {rigSections,rigControlChange} from '../src/rig-controls.mjs';
+import {renderInspector} from '../src/inspector-kit.mjs';
+const rigView=e=>renderInspector({kind:'joint',sections:rigSections(e)});
 const nearAngle=(a,b)=>assert.ok(Math.abs(Math.atan2(Math.sin(a-b),Math.cos(a-b)))<1e-5,`${a} != ${b}`);
 function fixture(){
  const q=construction();q.add(0,0,0,'Figure orientation');
@@ -39,7 +41,7 @@ test('second references are validated, cached by value, remapped and saved nativ
 });
 test('normal inspector edits add, tune and remove the second rotation with undo',()=>{
  const {e,a,b,c,select}=fixture();select(c);e.setRigBehavior({angleLock:{secondary:null}});const before=e.serialize();
- rigControlChange(e,{id:'rig-lock-secondary',valueAsNumber:b});assert.match(rigControlsView(e,{builder:true}),/Second rotation/);
+ rigControlChange(e,{id:'rig-lock-secondary',valueAsNumber:b});assert.match(rigView(e),/Second rotation/);
  rigControlChange(e,{id:'rig-lock-secondary-multiplier',valueAsNumber:2});select(b);e.rotateJoint(.3);nearAngle(e.geometry.objects.get(0).segments[c-1].angle,.8);
  e.undo();e.undo();e.undo();assert.deepEqual(e.serialize(),before);
  select(c);e.setSecondaryAngleReference(a);e.setAngleLock('figure');assert.equal(e.figure.segments[c-1]._stykRig.angleLock.secondary,null);

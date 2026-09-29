@@ -114,12 +114,14 @@ export function createConstruction({editor, state, active, render, project,
     });
     draft.pathScale = state.view.scale;
   }
-  snapButton?.addEventListener('click', () => {
+  /** Smart snapping on or off: Structure's Snap and the rail's toggle (toggle-builder-snap) show it. */
+  function toggleSnap() {
     enabled = !enabled;
     commitSettings({builderSmartSnapping: enabled});
-    snapButton.setAttribute('aria-pressed', String(enabled));
+    for (const button of document.querySelectorAll('#builder-snap, [data-action="toggle-builder-snap"]')) button.setAttribute('aria-pressed', String(enabled));
     feedback = null; render();
-  });
+  }
+  snapButton?.addEventListener('click', toggleSnap);
   finish.addEventListener('click', commit);
   document.getElementById('chain-cancel').addEventListener('click', cancel);
   document.addEventListener('keydown', event => {
@@ -138,7 +140,8 @@ export function createConstruction({editor, state, active, render, project,
     if (draft && ['edit', 'history', 'document', 'frame', 'frame-draft', 'seek'].includes(event.detail?.kind)) cancel();
   });
   return {
-    cancel, commit, snap, start,
+    cancel, commit, snap, start, toggleSnap,
+    get snapping() { return enabled; },
     get active() { return Boolean(draft); },
     beginRig() {
       const geom = currentGeometry(), segment = editor.figure?.segments[editor.selectedJoint];

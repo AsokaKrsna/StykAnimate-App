@@ -14,7 +14,7 @@ try{
   // A line must attach to the selected slider when its point overlaps Origin.
   await page.locator('[data-tool="line"]').click();const start=await point(0);await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(start.x+90,start.y+45,{steps:4});await page.mouse.up();await settle();
   assert.equal(await page.evaluate(()=>styk.editor.figure.segments.at(-1).parent_id),2);
-  await page.locator('#builder-joint-name').fill('Attached radius');await page.locator('#builder-joint-name').press('Tab');await settle();assert.equal(await page.evaluate(()=>styk.editor.figure.segments.at(-1).name),'Attached radius');
+  await page.locator('#inspector-name .ui-target-text').dblclick();await page.locator('#builder-joint-name').fill('Attached radius');await page.locator('#builder-joint-name').press('Enter');await settle();assert.equal(await page.evaluate(()=>styk.editor.figure.segments.at(-1).name),'Attached radius');
   await page.evaluate(async()=>{styk.builder.leave();const {Editor}=await import('/src/editor.mjs'),{buildRotatingCube}=await import('/tests/helpers/rotating-cube.mjs');const e=new Editor({demo:false});window.cubeRecipe=buildRotatingCube(e,{faces:false});styk.editor.load(e.serialize());styk.editor.select(styk.editor.frame.objects[0].unique_id,0);styk.builder.enter();styk.fit();});await settle();
   const cycles=await page.evaluate(()=>cubeRecipe.cycles);
   for(const [i,ids] of cycles.entries()){

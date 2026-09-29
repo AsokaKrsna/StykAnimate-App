@@ -9,7 +9,9 @@ import {getPivotHandles} from '../src/canvas-interactions.mjs';
 import {nativeFigureDocument} from '../src/native-figure.mjs';
 import {buildContainerV2,decodeDocument} from '../src/native-container.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
-import {rigControlsView,rigControlChange} from '../src/rig-controls.mjs';
+import {rigSections,rigControlChange} from '../src/rig-controls.mjs';
+import {renderInspector} from '../src/inspector-kit.mjs';
+const rigView=e=>renderInspector({kind:'joint',sections:rigSections(e)});
 
 const near=(a,b,t=1e-4)=>assert.ok(Math.abs(a-b)<t,`${a} != ${b}`);
 const point=(a,b)=>{near(a.x,b.x);near(a.y,b.y);};
@@ -164,7 +166,7 @@ test('Smart Stretch activates attached parts in one undo and normal drag only ro
   e.beginDrag();for(const length of [200,220,260,300])e.poseJoint(root.x,root.y+length,{stretch:true,snap:false});e.commitDrag();
   near(g(e).segments[0].length,300);near(g(e).segments[1].length,100);near(g(e).segments[2].length,45);
   assert.equal(e._undo.length,count+1);e.undo();assert.deepEqual(e.serialize(),before);e.redo();near(g(e).segments[1].length,100);
-  assert.equal(rigControlsView(e), '');assert.match(rigControlsView(e,{builder:true}),/Hold Ctrl/);
+  assert.match(rigView(e),/Hold Ctrl/);
 });
 test('automatic activation respects nested Smart Stretch controllers',()=>{
   const e=editorFor('telescoping-panels');select(e,1);e.setRigBehavior({stretch:null});select(e,4);e.enableSmartStretch(true);

@@ -82,6 +82,9 @@
 
   /* Colour field: a 16px swatch and the hex (the paint picker or a native colour input opens the picker). */
   .ui-field:where([data-color]) > .ui-swatch { --_s: 16px; margin-inline-start: calc(-1 * var(--space-0-5)); border-radius: var(--radius-2xs); }
+  /* A colour that leads its section spans the row: its swatch grows and reads from the start. */
+  .ui-field:where([data-color].ui-span-2) { justify-content: flex-start; }
+  .ui-field:where([data-color].ui-span-2) > .ui-swatch { --_s: 20px; }
   .ui-field-hex {
     min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     font: var(--type-value);

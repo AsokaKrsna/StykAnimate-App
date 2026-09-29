@@ -36,6 +36,19 @@
   .shell-rail :where(.tweener-arrow):where(:hover, [aria-expanded="true"]) { background: transparent; color: var(--text-1); }
   .shell-rail :where(.tweener-tool.active) > :where(.tweener-arrow) { color: var(--accent-text); }
 
+  /* Build's quick options: a second group under the tools, past a 20px hairline; an option that is on looks pressed. */
+  .shell-rail :where(.rail-quick) {
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: var(--space-1);
+    margin-block-start: var(--space-3); padding-block-start: var(--space-2);
+  }
+  .shell-rail :where(.rail-quick)[hidden] { display: none; }
+  .shell-rail :where(.rail-quick)::before {
+    content: ""; position: absolute; inset: 0 auto auto calc(50% - 10px); inline-size: 20px; block-size: 1px; background: var(--line-2);
+  }
+  :where(.shell-rail[data-columns]) > .rail-quick { display: grid; grid-template-columns: repeat(2, auto); justify-content: center; }
+  :where(:root[data-height="low"]) .shell-rail :where(.rail-quick) { gap: 2px; margin-block-start: var(--space-1-5); }
+  :where(:root[data-height="low"]) .shell-rail :where(.rail-quick > button) { block-size: 30px; min-block-size: 30px; }
+
   /* Animate's stacking buttons: a separate group under a 20px hairline. */
   .shell-rail :where(.rail-order) { position: relative; margin-block-start: var(--space-2); }
   .shell-rail :where(.rail-order)::before {

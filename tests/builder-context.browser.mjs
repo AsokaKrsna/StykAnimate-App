@@ -12,7 +12,7 @@ page.on('pageerror',e=>errors.push(e.message));
 try {
  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47841');await page.waitForFunction(()=>window.styk?.ready);
  await page.locator('[data-workspace-mode="rig"]').click();
- await page.locator('.builder-footer [data-action="zoom-selection"]').click();await settle();
+ await page.locator('.rail-quick [data-action="zoom-selection"]').click();await settle();
  const jointPoint=async index=>page.evaluate(async index=>{
   const {worldToScreen}=await import('/src/renderer.mjs'),{editor,state}=styk;
   const p=worldToScreen(editor.geometry.objects.get(editor.selectedSlot).segments[index].end,{report:editor.report,frame:editor.frame,view:state.view});
@@ -32,7 +32,7 @@ try {
  await action('builder-context-split-branch').click();await settle();
  assert.ok(await page.evaluate(()=>styk.editor.figure.segments.length)>before);
  await page.keyboard.press('Control+z');await settle();assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),baseline);
- await page.locator('.builder-tree-row').first().click({button:'right'});await settle();
+ await page.evaluate(()=>styk.workspace.dock('structure','left'));await settle();await page.locator('.builder-tree-row').first().click({button:'right'});await settle();
  await submenu('Arrange').click();await settle();assert.equal(await action('segment-order-front').isVisible(),true);
  await page.keyboard.press('ArrowLeft');await settle();assert.equal(await action('unsplit-segment').isVisible(),true);
  await page.keyboard.press('Escape');

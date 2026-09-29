@@ -5,7 +5,9 @@ import {construction} from '../src/rig-examples-3d.mjs';
 import {createFrame,createObject} from '../src/demo.mjs';
 import {buildContainerV2,decodeDocument} from '../src/native-container.mjs';
 import {buildGeometryAsync} from '../src/pivot/geometry.mjs';
-import {rigControlsView,rigControlChange} from '../src/rig-controls.mjs';
+import {rigSections,rigControlChange} from '../src/rig-controls.mjs';
+import {renderInspector} from '../src/inspector-kit.mjs';
+const rigView=e=>renderInspector({kind:'joint',sections:rigSections(e)});
 
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-4,`${a} != ${b}`);
 function fixture(angle=.3){
@@ -52,7 +54,7 @@ test('fixed-length projected handles remain draggable edge-on and preserve the c
 
 test('projection lock order is editable, undoable and invalid values reject atomically',()=>{
   const {e,driver,vertex}=fixture();at(e,driver).updateSegment({length:25});at(e,vertex);
-  assert.match(rigControlsView(e,{builder:true}),/rig-lock-space/);
+  assert.match(rigView(e),/rig-lock-space/);
   const before=e.serialize(),angle=shape(e,vertex).angle;
   rigControlChange(e,{id:'rig-lock-space',value:'rendered'});assert.notEqual(shape(e,vertex).angle,angle);
   e.undo();assert.deepEqual(e.serialize(),before);e.redo();

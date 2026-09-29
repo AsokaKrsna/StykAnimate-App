@@ -1,63 +1,141 @@
-/** Rig UI uses the existing inspector fields, buttons and delegated commands. */
-import {icon} from './icons.mjs';
+/**
+ * A part's rig in Build's Properties, as inspector sections (src/inspector-kit.mjs
+ * descriptors), and the change handler for its controls. Every control keeps its
+ * id or data-action; rigControlChange() applies a change by id.
+ *
+ * Rig reads top to bottom, one block per behaviour, and a behaviour's settings
+ * show only while it is on:
+ *   Link           Connect joints and Weighted joint (a connector: its anchors A and B, each picked on the canvas)
+ *   Smart Stretch  its switch; while on: what drives it (a connector), rest length, limits, width, new parts
+ *   Response       how this part answers a stretch that reaches it
+ *   Angle lock     its choice; while on: the locked angle, when it applies and, for a movable parent, its
+ *                  rotation and a second rotation
+ * Attachment (the stretch driver and orientation) folds behind its own title. A
+ * weighted joint and an angle-driven path show their own controls instead.
+ */
 import {rigConstraintPlan} from './rig-constraints.mjs';
 import {canvasFont} from './ui/font-loading.mjs';
-const esc = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const field=(id,label,value,min,max,unit='')=>`<label class="field"><span>${label}</span><input id="${id}" type="number" value="${value}" min="${min}" max="${max}" step="any" aria-label="${label}"><small>${unit}</small></label>`;
-export function rigControlsView(editor,{builder=false}={}) {
-  if(!builder)return '';
-  const seg=editor.figure?.segments[editor.selectedJoint];if(!seg)return '';
-  const r=seg._stykRig??{},c=r.connector,d=r.stretch,f=r.follow,response=r.response??{},lock=r.angleLock;
-  if(r.weighted){
-    const fields=(w,prefix)=>field(prefix+'origin','Origin joint',w.origin,0,65535)+w.anchors.map((a,i)=>
-      `<div class="rig-field-pair">${field(`${prefix}joint-${i}`,`Anchor ${i+1}`,a.joint,0,65535)}${field(`${prefix}weight-${i}`,'Weight',a.weight,-100,100,'\u00d7')}</div>`).join('')+field(prefix+'count','Number of anchors',w.anchors.length,1,16);
-    const w=r.weighted,body=fields(w,'rig-weighted-')+`<label class="check-row rig-toggle"><span>Include surface depth</span><input id="rig-weighted-depth-enabled" type="checkbox" ${w.depth?'checked':''}></label>`+
-      (w.depth?`<details class="rig-advanced"><summary>Depth anchors</summary>${fields(w.depth,'rig-weighted-depth-')}</details>`:'');
-    return `<section class="inspector-section rig-properties"><div class="inspector-title">Weighted joint</div>${body}<p class="field-hint">Offsets from the origin are multiplied by their weights and added. Pose the anchors to move this joint.</p></section>`;
+
+const degrees = radians => Math.round(radians * 180 / Math.PI * 100) / 100;
+const num = (id, label, value, {unit = '', min, max, span, tip, description} = {}) => ({kind: 'number', id, label, value, unit, min, max, span, tip, description});
+const choice = (id, label, value, options, extra = {}) => ({kind: 'select', id, label, value, span: 2, options: options.map(([key, text]) => ({value: key, label: text})), ...extra});
+/** One behaviour's block; the section's CSS separates blocks with a hairline. */
+const block = (name, rows, extra = {}) => ({kind: 'group', label: name, role: 'group', data: {'rig-block': name.toLowerCase().replace(/\s+/g, '-')}, rows, ...extra});
+/** A block's head: the switch or choice that turns its behaviour on, as one full-width field. */
+const head = row => ({kind: 'grid', rows: [{span: 2, ...row}]});
+/** What a behaviour's head turns on: its settings, under a guide that ties them to the head. */
+const settings = (rows, extra = {}) => ({kind: 'grid', rows, ...extra, data: {'rig-settings': true, ...extra.data}});
+
+/** The Rig section's title: what the part's rig is (a weighted joint and an angle-driven path have their own controls). */
+export function rigSectionTitle(segment) {
+  const r = segment?._stykRig ?? {};
+  return r.weighted ? 'Weighted joint' : r.anglePath ? 'Angle-driven path' : 'Rig';
+}
+
+/** A weighted joint's origin, anchor count and anchors (each a joint and its weight), under `prefix`. */
+const anchorRows = (w, prefix) => [{kind: 'grid', rows: [
+  num(`${prefix}origin`, 'Origin joint', w.origin, {min: 0, max: 65535}),
+  num(`${prefix}count`, 'Anchors', w.anchors.length, {min: 1, max: 16, description: 'Number of anchors'}),
+  ...w.anchors.flatMap((anchor, i) => [
+    num(`${prefix}joint-${i}`, `Anchor ${i + 1}`, anchor.joint, {min: 0, max: 65535}),
+    num(`${prefix}weight-${i}`, 'Weight', anchor.weight, {unit: '×', min: -100, max: 100, description: `Anchor ${i + 1} weight`}),
+  ]),
+]}];
+
+/**
+ * The part's rig sections, always three in this order (so the inspector's
+ * positions stay put): Rig (titled, open while the part has a rig), Attachment
+ * and an angle-driven path's Reference positions; each is hidden where it does
+ * not apply, and all three while `hidden` (a connector's Slider part).
+ */
+export function rigSections(editor, {hidden = false} = {}) {
+  const segment = editor.figure?.segments[editor.selectedJoint];
+  const r = segment?._stykRig ?? {};
+  const none = id => ({id, hidden: true});
+  if (hidden || !segment) return [none('rig-controls'), none('rig-attachment'), none('rig-path-keys')];
+  const rigged = Boolean(r.connector || r.stretch || r.follow || r.response || r.angleLock || r.weighted || r.anglePath || r.orientation);
+  const rig = {id: 'rig-controls', title: rigSectionTitle(segment), place: 'titled', open: rigged};
+  if (r.weighted) {
+    const w = r.weighted;
+    return [{...rig, rows: [
+      ...anchorRows(w, 'rig-weighted-'),
+      {kind: 'switch', id: 'rig-weighted-depth-enabled', label: 'Include surface depth', checked: Boolean(w.depth)},
+      w.depth && block('Depth anchors', anchorRows(w.depth, 'rig-weighted-depth-'), {title: 'Depth anchors'}),
+      {kind: 'meta', text: 'Offsets from the origin are multiplied by their weights and added. Pose the anchors to move this joint.'},
+    ]}, none('rig-attachment'), none('rig-path-keys')];
   }
-  if(r.anglePath){
-    const path=r.anglePath;
-    const body=path.source!==undefined?field('rig-path-source','Depth source joint',path.source,1,65535):
-      field('rig-path-driver','Turn joint',path.driver,1,65535)+field('rig-path-pitch','Nod joint (0 = off)',path.pitch??0,0,65535)+
-      `<details class="rig-advanced"><summary>Reference positions</summary>${path.keys.map((key,i)=>`<div class="rig-path-sample"><strong>${Math.round(key[0]*180/Math.PI*100)/100}°</strong>${['X','Y','Depth'].map((name,j)=>field(`rig-path-key-${i}-${j+1}`,name,key[j+1],-1e6,1e6,'px')).join('')}</div>`).join('')}</details>`;
-    return `<section class="inspector-section rig-properties"><div class="inspector-title">Angle-driven path</div>${body}</section>`;
+  if (r.anglePath) {
+    const path = r.anglePath, depth = path.source !== undefined;
+    return [{...rig, rows: [{kind: 'grid', rows: depth ? [num('rig-path-source', 'Depth source joint', path.source, {min: 1, max: 65535, span: 2})] : [
+      num('rig-path-driver', 'Turn joint', path.driver, {min: 1, max: 65535}),
+      num('rig-path-pitch', 'Nod joint', path.pitch ?? 0, {min: 0, max: 65535, tip: '0 turns nodding off', description: 'Nod joint (0 = off)'}),
+    ]}]}, none('rig-attachment'), {id: 'rig-path-keys', title: 'Reference positions', place: 'titled', hidden: depth, rows: depth ? [] : path.keys.map((key, i) => {
+      const at = `${degrees(key[0])}°`;
+      return block(`At ${at}`, [{kind: 'grid', rows: ['X', 'Y', 'Depth'].map((axis, j) =>
+        num(`rig-path-key-${i}-${j + 1}`, axis, key[j + 1], {unit: 'px', min: -1e6, max: 1e6, description: `${axis} at ${at}`}))}], {title: `At ${at}`});
+    })}];
   }
-  const plan=rigConstraintPlan(editor.figure),source=plan.inputs[editor.selectedJoint];
-  const option=(v,label,current)=>`<option value="${v}" ${v===current?'selected':''}>${label}</option>`;
-  const select=(id,label,items,current)=>`<label class="rig-select"><span>${label}</span><select id="${id}" class="inline-select" aria-label="${label}">${items.map(([v,l])=>option(v,l,current)).join('')}</select></label>`;
-  const check=(id,label,checked,glyph,title='')=>`<label class="check-row rig-toggle" title="${esc(title)}"><span>${icon(glyph)}${label}</span><input id="${id}" type="checkbox" ${checked?'checked':''}></label>`;
-  const pick=(action,label)=>`<button class="icon-button" data-action="${action}" title="${label}" aria-label="${label}">${icon('origin')}</button>`;
-  const name=id=>esc(id===0?'Origin':editor.figure.segments[plan.ids.get(id)]?.name||`Joint ${id}`);
-  let body=c?`<div class="rig-anchors">${['start','end'].map((key,i)=>`<div class="rig-anchor"><span class="rig-anchor-letter">${i?'B':'A'}</span><span class="rig-anchor-name" title="${name(c[key])}">${name(c[key])}</span>${pick(`rig-pick-${key}`,`Pick anchor ${i?'B':'A'} on canvas`)}</div>`).join('')}</div>`:
-    `<button class="button rig-connect" data-action="rig-connect">${icon('link')}Connect joints</button><button class="button rig-connect" data-action="rig-weighted">${icon('nodes')}Add weighted joint</button>`;
-  body+=check('rig-stretch-enabled','Smart Stretch',d,'expand','Hold Ctrl while dragging to stretch. New attached parts follow automatically.');
-  if(d) {
-    if(c)body+=select('rig-source','Driven by',[['span','Anchor distance'],['slide','Slide position'],['combined','Distance × slide']],d.source??'span');
-    body+=`<details class="rig-advanced"><summary>${icon('sliders')}Stretch settings</summary><div class="rig-settings">
-      ${field('rig-rest','Rest length',d.restLength,.0001,1e6,'px')}
-      ${c&&d.source&&d.source!=='span'?field('rig-rest-position','Rest slide',d.restPosition*100,.01,100,'%'):''}
-      <div class="rig-field-pair">${field('rig-min','Minimum',d.min*100,0,10000,'%')}${field('rig-max','Maximum',d.max*100,1,10000,'%')}</div>
-      ${select('rig-width','Width response',[['keep','Keep width'],['inverse','Thicken on compression'],['scale','Scale with length']],d.width)}
-      ${!d.branch?check('rig-auto-branch','Include new parts',false,'builder-branch'):''}</div></details>`;
-  }
-  if(source||f||r.response){
-    body+=`<div class="rig-response">${select('rig-response','Stretch response',[['stretch','Stretch'],['rigid','Keep rigid · pass through'],['stop','Stop at this joint']],response.mode??f?.mode??'stretch')}`;
-    if((response.mode??f?.mode??'stretch')==='stretch')body+=field('rig-multiplier','Multiplier',response.multiplier??1,-10,10,'×');
-    if(response.mode!=='stop')body+=check('rig-reset-impulse','Reset impulse here',response.reset,'reset','Restart the stretch axis at this joint and its children.');
-    body+='</div>';
-  }
-  if(!c){
-    body+=select('rig-angle-lock','Angle lock',[['off','Off'],['figure','Figure'],['parent','Movable parent'],['world','World']],lock?.mode??'off');
-    if(lock)body+=`<div class="rig-field-pair">${field('rig-lock-angle','Locked angle',Math.round(lock.angle*180/Math.PI*100)/100,-36000,36000,'°')}${lock.mode==='parent'?field('rig-lock-multiplier','Rotation',lock.multiplier,-10,10,'×'):''}</div>`;
-    if(lock)body+=select('rig-lock-space','Apply angle lock',[['rendered','After stretch'],['authored','Before stretch']],lock.space??'rendered');
-    if(lock?.mode==='parent')body+=`<details class="rig-advanced"><summary>Add a second rotation</summary>${field('rig-lock-secondary','Second joint (0 = off)',lock.secondary?.reference??0,0,65535)}${lock.secondary?field('rig-lock-secondary-multiplier','Second rotation',lock.secondary.multiplier,-10,10,'×')+field('rig-lock-secondary-rest','Second rest angle',lock.secondary.restAngle*180/Math.PI,-36000,36000,'°'):''}</details>`;
-    body+=`<details class="rig-advanced"><summary>${icon('link')}Attachment settings</summary><div class="rig-settings"><div class="rig-anchor"><span class="rig-anchor-name">${source?name(editor.figure.segments[source.driver].segment_id):'Automatic'}</span>${pick('rig-pick-driver','Pick stretch driver on canvas')}</div>
-      ${select('rig-orientation','Attachment orientation',[['inherit','Follow connector'],['world','Keep authored angle']],r.orientation??'inherit')}
-      ${f&&!f.automatic&&response.multiplier===undefined?field('rig-influence','Legacy influence',f.influence,-4,4,'×'):''}
-      </div></details>`;
-  }
-  // Test rig is the band's (beside Done) and the figure's ⋯ menu's, so the section's title carries no second play button.
-  return `<section class="inspector-section rig-properties"><div class="inspector-title"><span>${icon('nodes')}Rig</span></div>${body}</section>`;
+  const plan = rigConstraintPlan(editor.figure), source = plan.inputs[editor.selectedJoint];
+  const c = r.connector, d = r.stretch, f = r.follow, response = r.response ?? {}, lock = r.angleLock;
+  const name = id => (id === 0 ? 'Origin' : editor.figure.segments[plan.ids.get(id)]?.name || `Joint ${id}`);
+  const pick = (action, label) => ({icon: 'origin', label, action});
+  const link = c
+    ? block('Anchors', ['start', 'end'].map((key, i) => ({kind: 'list-row', label: `Anchor ${i ? 'B' : 'A'}`, meta: name(c[key]),
+      actions: [pick(`rig-pick-${key}`, `Pick anchor ${i ? 'B' : 'A'} on canvas`)]})))
+    : {kind: 'actions', label: 'Link', fill: true, items: [
+      {action: 'rig-connect', icon: 'link', label: 'Connect', text: true, variant: 'outline', tip: 'Connect joints: link this joint to another with a sliding connector'},
+      {action: 'rig-weighted', icon: 'nodes', label: 'Weighted', text: true, variant: 'outline', tip: 'Weighted joint: add a joint that follows a weighted blend of other joints'},
+    ]};
+  const slide = c && d?.source && d.source !== 'span';
+  const stretch = block('Smart Stretch', [
+    head({kind: 'field-switch', id: 'rig-stretch-enabled', label: 'Smart Stretch', checked: Boolean(d), tip: 'Hold Ctrl while dragging to stretch. New attached parts follow automatically.'}),
+    d && settings([
+      c && choice('rig-source', 'Driven by', d.source ?? 'span', [['span', 'Anchor distance'], ['slide', 'Slide position'], ['combined', 'Distance × slide']]),
+      num('rig-rest', 'Rest length', d.restLength, {unit: 'px', min: 0.0001, max: 1e6, span: slide ? undefined : 2}),
+      slide && num('rig-rest-position', 'Rest slide', d.restPosition * 100, {unit: '%', min: 0.01, max: 100}),
+      num('rig-min', 'Minimum', d.min * 100, {unit: '%', min: 0, max: 10000}),
+      num('rig-max', 'Maximum', d.max * 100, {unit: '%', min: 1, max: 10000}),
+      choice('rig-width', 'Width', d.width, [['keep', 'Keep width'], ['inverse', 'Thicken on compression'], ['scale', 'Scale with length']], {description: 'Width response'}),
+      !d.branch && {kind: 'field-switch', id: 'rig-auto-branch', label: 'Include new parts', checked: false, span: 2, tip: 'New parts attached below stretch with this one'},
+    ]),
+  ]);
+  const mode = response.mode ?? f?.mode ?? 'stretch';
+  const respond = (source || f || r.response) && block('Stretch response', [
+    head(choice('rig-response', 'Stretch response', mode, [['stretch', 'Stretch'], ['rigid', 'Keep rigid · pass through'], ['stop', 'Stop at this joint']],
+      {tip: 'How this part answers a stretch that reaches it'})),
+    mode !== 'stop' && settings([
+      mode === 'stretch' && num('rig-multiplier', 'Multiplier', response.multiplier ?? 1, {unit: '×', min: -10, max: 10, span: 2}),
+      {kind: 'field-switch', id: 'rig-reset-impulse', label: 'Reset impulse here', checked: Boolean(response.reset), span: 2,
+        tip: 'Restart the stretch axis at this joint and its children.'},
+    ]),
+  ]);
+  const parent = lock?.mode === 'parent', second = parent ? lock.secondary : null;
+  const angle = !c && block('Angle lock', [
+    head(choice('rig-angle-lock', 'Angle lock', lock?.mode ?? 'off', [['off', 'Off'], ['figure', 'Figure'], ['parent', 'Movable parent'], ['world', 'World']],
+      {tip: 'Keep this part at one angle while what it hangs from turns'})),
+    lock && settings([
+      num('rig-lock-angle', 'Angle', degrees(lock.angle), {unit: '°', min: -36000, max: 36000, span: parent ? undefined : 2, description: 'Locked angle'}),
+      parent && num('rig-lock-multiplier', 'Rotation', lock.multiplier, {unit: '×', min: -10, max: 10, description: 'Parent rotation'}),
+      choice('rig-lock-space', 'Applies', lock.space ?? 'rendered', [['rendered', 'After stretch'], ['authored', 'Before stretch']], {description: 'Apply angle lock'}),
+    ]),
+    // A movable parent's lock can add a second joint's rotation: its own settings, named.
+    parent && block('Second rotation', [settings([
+      num('rig-lock-secondary', 'Joint', second?.reference ?? 0, {min: 0, max: 65535, span: 2, tip: 'Add the rotation of a second joint · 0 turns it off', description: 'Second joint (0 = off)'}),
+      second && num('rig-lock-secondary-multiplier', 'Rotation', second.multiplier, {unit: '×', min: -10, max: 10, description: 'Second rotation'}),
+      second && num('rig-lock-secondary-rest', 'Rest angle', second.restAngle * 180 / Math.PI, {unit: '°', min: -36000, max: 36000, description: 'Second rest angle'}),
+    ])], {title: 'Second rotation'}),
+  ]);
+  const custom = r.orientation === 'world' || Boolean(f && !f.automatic);
+  const attachment = {id: 'rig-attachment', title: 'Attachment', place: 'titled', open: custom, hidden: Boolean(c), rows: c ? [] : [
+    {kind: 'list-row', label: 'Stretch driver', meta: source ? name(editor.figure.segments[source.driver].segment_id) : 'Automatic',
+      actions: [pick('rig-pick-driver', 'Pick stretch driver on canvas')]},
+    {kind: 'grid', rows: [
+      choice('rig-orientation', 'Orientation', r.orientation ?? 'inherit', [['inherit', 'Follow connector'], ['world', 'Keep authored angle']], {description: 'Attachment orientation'}),
+      f && !f.automatic && response.multiplier === undefined && num('rig-influence', 'Legacy influence', f.influence, {unit: '×', min: -4, max: 4, span: 2}),
+    ]},
+  ]};
+  // Test rig is the band's (beside Done) and the figure's ⋯ menu's, so the section carries no second play button.
+  return [{...rig, rows: [link, stretch, respond, angle]}, attachment, none('rig-path-keys')];
 }
 export function rigControlChange(editor,target) {
   const id=target.id;if(!id.startsWith('rig-')||id==='rig-mode')return false;
@@ -119,10 +197,6 @@ export function rigControlChange(editor,target) {
   else if(id.startsWith('rig-anchor-'))editor.setRigBehavior({connector:{[id.slice(11)]:value}});
   else return false;
   return true;
-}
-export function connectorPositionView(editor) {
-  const seg=editor.figure.segments[editor.selectedJoint],t=editor.object.len_flag?editor.object.lengths[editor.selectedJoint]:seg.length;
-  return field('rig-position','Slide position',Math.round(t*10000)/100,0,100,'%');
 }
 /** Only the selected slider gets endpoint guides; never document artwork. */
 export function drawConnectorGuides(ctx,geometry,editor,project) {

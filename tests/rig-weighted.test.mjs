@@ -5,7 +5,9 @@ import {rigExampleDocument} from '../src/rig-examples.mjs';
 import {rigConstraintPlan,rigIKAllowed,remapRigReferences} from '../src/rig-constraints.mjs';
 import {buildGeometryAsync} from '../src/pivot/geometry.mjs';
 import {buildContainerV2,decodeDocument} from '../src/native-container.mjs';
-import {rigControlChange,rigControlsView} from '../src/rig-controls.mjs';
+import {rigSections,rigControlChange} from '../src/rig-controls.mjs';
+import {renderInspector} from '../src/inspector-kit.mjs';
+const rigView=e=>renderInspector({kind:'joint',sections:rigSections(e)});
 import {surfaceDepthValues} from '../src/pivot/surfaces.mjs';
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-4,`${a} != ${b}`);
 function fixture(){const e=new Editor({demo:false});e.load(rigExampleDocument('sliding-carriage'));e.select(1,0);return e;}
@@ -20,7 +22,7 @@ test('weighted attachments follow projected anchors, signed weights, movement an
 test('weighted creation and inspector edits are undoable; invalid dependencies cannot change the document',()=>{
  const e=fixture(),before=e.serialize(),s=e.addWeightedJoint(0,[{joint:1,weight:.5}]);
  e.undo();assert.deepEqual(e.serialize(),before);e.redo();e.select(1,e.figure.segments.findIndex(v=>v.segment_id===s.segment_id));
- assert.match(rigControlsView(e,{builder:true}),/Weighted joint/);
+ assert.match(rigView(e),/Weighted joint/);
  rigControlChange(e,{id:'rig-weighted-weight-0',valueAsNumber:.75});check(e,s.segment_id,0,[{joint:1,weight:.75}]);
  e.undo();check(e,s.segment_id,0,[{joint:1,weight:.5}]);
  const stable=e.serialize();

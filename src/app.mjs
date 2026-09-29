@@ -72,7 +72,7 @@ import { installDockTabs } from "./shell/dock-tabs.mjs";
 import { createLayoutPopover } from "./shell/layout-popover.mjs";
 import { installShellCommands } from "./shell/shell-commands.mjs";
 import { syncBandSession } from "./shell/topbar.mjs";
-import { installRail } from "./shell/rail.mjs";
+import { installRail, syncRailQuick } from "./shell/rail.mjs";
 import { initStudioShell } from "./studio-shell.mjs";
 import { createExportFlow } from "./export-flow.mjs";
 import { createAppDialogs } from "./app-dialogs.mjs";
@@ -480,6 +480,11 @@ function syncStageHead() {
     staticHandles: state.settings.builderShowStaticHandles !== false, highlight: Boolean(state.settings.builderHighlightSegment),
     isolate: Boolean(state.isolateMode),
   });
+  if (builderMode?.active) syncRailQuick(document.querySelector(".studio-rail"), {
+    "toggle-builder-branch": Boolean(state.builderBranch || state.builderShiftHeld),
+    "toggle-builder-snap": construction?.snapping ?? state.settings.builderSmartSnapping !== false,
+    "toggle-isolate": Boolean(state.isolateMode),
+  });
   // The tool's options are written when the tool or its values change (the bar syncs its own pressed states).
   const optionsKey = `${drawingController?.active ? "draw" : state.tool}|${state.rigMode}`;
   if (optionsKey !== shownToolOptions) { shownToolOptions = optionsKey; stageHead.setToolOptions(toolOptionDescriptors(), { tool: state.tool, label: "Tool options" }); }
@@ -488,15 +493,14 @@ function syncStageHead() {
 let shownToolOptions = "";
 /**
  * The active tool's options in the stage header (ui/tool-options.mjs): Build's Edit joints tool drags joints or
- * turns branches, and edits one part or its whole branch. Other tools show where you are (the crumb).
+ * turns branches (Whole branch is Build's rail option, as it reaches every tool's edits). Other tools show where
+ * you are (the crumb).
  */
 function toolOptionDescriptors() {
   if (state.tool !== "rig" || drawingController?.active) return [];
   return [
     { id: "rig-mode", kind: "select", label: "Drag", showLabel: true, description: "Rig edit mode", elementId: "rig-mode", value: state.rigMode,
       options: [{ value: "move", label: "Move joint" }, { value: "rotate", label: "Rotate branch" }] },
-    { id: "builder-branch-option", kind: "toggle", command: "toggle-builder-branch", label: "Whole branch", showLabel: true, accent: true,
-      icon: "builder-branch", tip: "Edits reach the part and every part attached below it · or hold Shift" },
   ];
 }
 /**
@@ -5153,6 +5157,7 @@ const TOGGLE_STATES = {
   "toggle-loop": () => Boolean(state.loop),
   "toggle-builder-branch": () => Boolean(state.builderBranch || state.builderShiftHeld),
   "toggle-isolate": () => Boolean(state.isolateMode),
+  "toggle-builder-snap": () => state.settings.builderSmartSnapping !== false,
   "builder-static-handles": () => state.settings.builderShowStaticHandles !== false,
   "builder-highlight": () => Boolean(state.settings.builderHighlightSegment),
 };
@@ -6097,6 +6102,7 @@ async function init() {
   construction = createConstruction({editor,state,active:()=>Boolean(builderMode?.active),render:requestRender,project:screenPoint,onError:fail,commitSettings:patch=>editorSettings.commit(patch)});
   actions['chain-finish'] = () => construction.commit();
   actions['chain-cancel'] = () => construction.cancel();
+  actions['toggle-builder-snap'] = () => construction.toggleSnap();
   window.styk.builder = builderMode;
   drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onOverlayRender:requestDrawingOverlay,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard});
   window.styk.drawing=drawingController;

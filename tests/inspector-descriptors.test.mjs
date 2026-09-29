@@ -70,6 +70,10 @@ const MOVED = [
   [where => where['data-action'] === 'add-sprite-segment', () => true, "Build's Image tile and its menus"],
   // While it is being built, the figure's place among the scene's figures is Animate's (its Front and Back tiles).
   [where => ['layer-front', 'layer-back'].includes(where['data-action']), descriptor => descriptor.quick?.context === 'build', 'Animate’s figure tiles'],
+  // Build's part renames in the header, and its Whole branch is the rail's and the stage header's toggle (B, or hold
+  // Shift); while it is on, the scope line says so and stops it.
+  [where => where.id === 'builder-joint-name', descriptor => descriptor.target.rename?.id === 'builder-joint-name', 'the header renames the part in place'],
+  [where => where.id === 'builder-branch', descriptor => descriptor.quick?.context === 'part', 'the rail’s and stage header’s Whole branch'],
 ];
 function quickIds(descriptor) {
   const context = descriptor.quick?.context;
@@ -206,6 +210,34 @@ test('several figures, joined figures and movieclips keep every control', () => 
     assert.ok(find(own, where), `movieclipInspector() keeps ${JSON.stringify(where)}`);
   movie.setMovieclipPlayback({mode: 'single', offset: 3}, {allFrames: true});
   assertNothingLost({editor: movie}, 'a movieclip on a single frame');
+});
+
+test('Build’s rig keeps every control while its behaviours are on, each block showing its settings only while on', () => {
+  // Every part of the example rigs: connectors, Smart Stretch, stretch responses, 3D solids.
+  for (const id of ['folding-fan', 'accordion-screen-3d', 'perspective-conveyor-3d', 'counter-rotating-gears']) {
+    const editor = new Editor({demo: false}).load(rigExampleDocument(id));
+    const uid = editor.frame.objects.find(Boolean).unique_id;
+    for (let joint = 0; joint < editor.figure.segments.length; joint++) {
+      editor.select(uid, joint);
+      assertNothingLost({editor, builder: true}, `${id} part ${joint}`);
+    }
+  }
+  // A plain part with Smart Stretch, a parent angle lock and its second rotation, then a weighted joint.
+  const editor = new Editor();
+  editor.select(1, 2);
+  const off = inspectorView({editor, builder: true});
+  assert.doesNotMatch(off, /id="rig-rest"|id="rig-lock-angle"|id="rig-lock-secondary"/, 'settings of behaviours that are off stay out of the way');
+  editor.enableSmartStretch(true);
+  editor.setAngleLock('parent');
+  editor.setSecondaryAngleReference(editor.figure.segments[0].segment_id);
+  const on = assertNothingLost({editor, builder: true}, 'a part with Smart Stretch and a parent angle lock').now;
+  for (const id of ['rig-rest', 'rig-min', 'rig-max', 'rig-width', 'rig-lock-angle', 'rig-lock-multiplier', 'rig-lock-space', 'rig-lock-secondary-multiplier'])
+    assert.ok(tag(on, {id}), `${id} shows while its behaviour is on`);
+  assert.equal(inspectorDescriptor({editor, builder: true}).sections.find(section => section?.id === 'rig-controls').open, true, 'Rig opens while the part has a rig');
+  const weighted = editor.addWeightedJoint(0, [{joint: editor.figure.segments[0].segment_id, weight: 0.5}]);
+  editor.select(1, editor.figure.segments.findIndex(segment => segment.segment_id === weighted.segment_id));
+  assertNothingLost({editor, builder: true}, 'a weighted joint');
+  assert.equal(inspectorDescriptor({editor, builder: true}).sections.find(section => section?.id === 'rig-controls').title, 'Weighted joint');
 });
 
 test('text, image, connector, two-tone and IK joints keep every control', () => {

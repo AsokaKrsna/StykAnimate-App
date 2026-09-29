@@ -21,7 +21,7 @@
 import {joinedDrawingSetsView} from './movieclip-drawings.mjs';
 import {spatialSections} from './spatial-controls.mjs';
 import {drawingInspector, DRAWING_TOOLS} from './drawing-view.mjs';
-import {rigControlsView} from './rig-controls.mjs';
+import {rigSections} from './rig-controls.mjs';
 import {figureJoinAction} from './figure-join-action.mjs';
 import {polygonSurfaceView} from './builder-surface-ui.mjs';
 import {rigIKAllowed} from './rig-constraints.mjs';
@@ -31,6 +31,7 @@ import {figurePalette, displayedSegmentPaint, displayedColor} from './figure-col
 import {isStatic} from './pivot/geometry.mjs';
 import {cameraValues} from './editor-camera.mjs';
 import {builderDrawables} from './editor-builder-style.mjs';
+import {branchSegmentIndices} from './editor-builder-branch.mjs';
 import {isBuilderContext} from './builder-aids.mjs';
 import {partName, partGlyph} from './builder-outliner.mjs';
 import {resolveInstanceFigure} from './animation-style.mjs';
@@ -379,20 +380,21 @@ function figureDescriptor(editor, figure, number, {range, scope, drawingSets, sp
   const polygons = figure.polyfills || [], start = Math.min(Math.max(0, polygonPage) * 12, Math.max(0, Math.floor((polygons.length - 1) / 12) * 12));
   const paletteStart = Math.min(Math.max(0, palettePage) * 32, Math.max(0, Math.ceil(palette.length / 32) - 1) * 32);
   const joinLabel = parent ? 'Unjoin figure' : 'Join to figure';
-  // In Build the figure's tiles add parts and fit it (its placement in the scene stays Animate's); the rig tool's
-  // Drag mode is its option in the stage header.
+  // In Build the figure's tiles add parts and fit it; its looks lead, and its placement in the scene (Animate's)
+  // folds last behind Transform's title. The rig tool's Drag mode is its option in the stage header.
   // Every selection's title carries its kind's glyph (a figure's person, a text's T, an image's frame).
+  const transform = {id: 'transform', title: 'Transform', place: builder ? 'titled' : 'core', rows: [{kind: 'grid', rows: [
+    number('X', 'root_x', object.root_x, 'px'), number('Y', 'root_y', object.root_y, 'px'),
+    number('Angle', 'rotation', degrees((object.angles[0] ?? 0) - (figure.segments[0]?.angle_rad ?? 0)), '°'),
+    number('Scale', 'scale', object.scale * 100, '%', {min: 0.01}),
+  ]}]};
   return {kind, target: {name: figure.name || 'Figure', glyph: kind === 'text' ? 'text' : kind === 'image' ? 'image' : 'person', rename: figureRename},
     quick: {context: builder ? 'build' : kind}, scope, sections: [
       range, drawingSets, ...spatial,
       {id: 'text', title: 'Text', hidden: kind !== 'text' && !figure.text_assets?.some(asset => asset.glyphs?.length), rows: [{kind: 'actions', items: [
         {action: 'edit-text', icon: 'text', label: 'Edit text…', text: true, variant: 'outline', tip: 'Edit text'},
       ]}]},
-      {id: 'transform', title: 'Transform', rows: [{kind: 'grid', rows: [
-        number('X', 'root_x', object.root_x, 'px'), number('Y', 'root_y', object.root_y, 'px'),
-        number('Angle', 'rotation', degrees((object.angles[0] ?? 0) - (figure.segments[0]?.angle_rad ?? 0)), '°'),
-        number('Scale', 'scale', object.scale * 100, '%', {min: 0.01}),
-      ]}]},
+      !builder && transform,
       {id: 'appearance', title: 'Appearance', actions: [{action: 'reset-color', icon: 'reset', label: 'Reset colors'}], rows: [{kind: 'grid', rows: [
         {kind: 'color', id: 'figure-color', label: 'Colour', description: 'Recolor all segments', value: own[0]?.color ?? '#000000', caption: own.length > 1 ? 'Mixed' : undefined},
         number('Opacity', 'figure_opacity', opacity(object.field28), '%', {min: 0, max: 100, id: 'figure-opacity', field: false}),
@@ -423,14 +425,24 @@ function figureDescriptor(editor, figure, number, {range, scope, drawingSets, sp
           previous: {action: 'polygons-previous', icon: 'chevron-left', label: 'Previous polygons', disabled: start === 0},
           next: {action: 'polygons-next', icon: 'chevron-right', label: 'Next polygons', disabled: start + 12 >= polygons.length}},
       ]},
+      builder && transform,
     ]};
 }
+
+/** A part renames in the header (double-click, F2), as a figure does. */
+const partRename = {id: 'builder-joint-name', description: 'Part name', maxlength: 120, tip: 'Double-click to rename the part'};
 
 /**
  * A joint (or a branch, or several segments): Joint (angle, length, bend,
  * Static), IK, Style and its figure's Layer are open; the second colour and a
  * connector's parts are titled. A connector's Slider part shows only the
- * slide and Static. In Build, the joint's name and the rig controls too.
+ * slide and Static.
+ *
+ * In Build a joint is a part, and what people change most leads: Style
+ * (colour, width, opacity, shape), then Geometry and Arrange (draw order and
+ * layer); IK and Rig fold behind their titles and open while they are in use.
+ * The part renames in the header, and the scope line says when edits reach
+ * the whole branch (the rail's and stage header's Whole branch, or Shift).
  */
 function jointDescriptor(editor, figure, segment, number, {range, scope, drawingSets, spatial, order, tool, builder, builderBranch}) {
   const report = editor.report, object = editor.object, joint = editor.selectedJoint, selected = editor.selectedSegmentIds;
@@ -450,56 +462,72 @@ function jointDescriptor(editor, figure, segment, number, {range, scope, drawing
   const own = builder ? partName(segment) : segment.name || `Joint ${segment.segment_id}`;
   const title = selected.size > 1 ? `${selected.size} ${builder ? 'parts' : 'segments'}` : editor.branchSelected ? `Branch from ${own}` : own;
   const staticSwitch = {kind: 'field-switch', id: 'static-joint', label: 'Static', checked: isStatic(segment), tip: 'Does not turn with its parent'};
-  return {kind: 'joint', target: {name: title, glyph: part ? 'link' : builder ? partGlyph(segment) : 'nodes'}, quick: {context: builder ? 'part' : 'joint'}, scope, sections: [
-    range, drawingSets, ...spatial,
-    {id: 'connector', title: `Connector ${segment.segment_id}`, place: 'titled', open: true, hidden: !part, rows: [
+  const colour = {kind: 'color', picker: 'paint', id: 'segment-color', label: 'Colour', description: 'Segment color', value: solid ? hex(paint.stops[0].color) : undefined,
+    paint: paintCSS(paint), caption: solid ? undefined : `${paint.type[0].toUpperCase()}${paint.type.slice(1)} gradient`};
+  const width = number('Width', 'thickness', segment.thickness, 'px', {min: 0});
+  const alpha = number(secondary ? 'Primary opacity' : 'Opacity', 'segment_opacity', opacity(segment.transparency), '%',
+    {min: 0, max: 100, id: 'segment-opacity', field: false, description: 'Primary color opacity'});
+  const shapeSelect = {kind: 'select', id: 'segment-shape', label: 'Shape', description: 'Segment shape', value: shape, disabled: fixed, span: 2, options: [
+    ['line', 'Round line'], ['squareLine', 'Square line'], ['circle', 'White circle'], ['circleFill', 'Filled circle'], ['circleClear', 'Clear circle'],
+    ...(fixed ? [[shape, shape]] : []),
+  ].map(([value, label]) => ({value, label}))};
+  const sections = {
+    connector: {id: 'connector', title: `Connector ${segment.segment_id}`, place: 'titled', open: true, hidden: !part, rows: [
       {kind: 'segmented', mode: 'pressed', description: 'Connector properties', value: part, fill: true, options: [
         {value: 'segment', label: 'Segment', data: {'connector-part': 'segment'}}, {value: 'slider', label: 'Slider', data: {'connector-part': 'slider'}},
       ]},
     ]},
-    {id: 'slider', title: 'Slider', hidden: !slider, rows: [{kind: 'grid', rows: [
+    slider: {id: 'slider', title: 'Slider', hidden: !slider, rows: [{kind: 'grid', rows: [
       {kind: 'number', id: 'rig-position', label: 'Position', description: 'Slide position', unit: '%', value: Math.round(position * 10000) / 100, min: 0, max: 100, precision: 2},
       staticSwitch,
     ]}]},
-    // Build: the part's name and whether edits reach the whole branch under it (or hold Shift).
-    {id: 'joint-name', hidden: slider || !builder, rows: [{kind: 'grid', rows: [
-      {kind: 'text', id: 'builder-joint-name', label: 'Name', description: 'Part name', value: segment.name ?? '', placeholder: partName(segment), maxlength: 120, span: 2},
-      {kind: 'field-switch', id: 'builder-branch', label: 'Edit the whole branch', checked: builderBranch, span: 2, hidden: !single,
-        tip: 'Edits reach this part and every part attached below it · or hold Shift'},
-    ]}]},
-    {id: 'joint', title: 'Joint', hidden: slider, rows: [{kind: 'grid', rows: [
+    joint: {id: 'joint', title: builder ? 'Geometry' : 'Joint', hidden: slider, rows: [{kind: 'grid', rows: [
       !connector && number('Angle', 'joint_angle', degrees(lock ? editor.geometry.objects.get(editor.selectedSlot)?.segments[joint]?.angle : object.angles[joint] ?? segment.angle_rad), '°',
         {disabled: Boolean(lock)}),
       !connector && number('Length', 'joint_length', position, 'px', {min: 0}),
       number('Bend', 'joint_bend', degrees(object.bend_flag ? object.bends[joint] : segment.bend_rad || 0), '°'),
       !connector && staticSwitch,
     ]}]},
-    rigIKAllowed(figure, joint) && !slider ? ikSection(editor.getIKSettings()) : {id: 'ik', hidden: true},
-    {id: 'rig-controls', bare: true, hidden: slider || !builder, rows: [{kind: 'markup', html: slider || !builder ? '' : rigControlsView(editor, {builder})}]},
-    {id: 'style', title: 'Style', hidden: slider, rows: [
-      {kind: 'grid', rows: [
-        number('Width', 'thickness', segment.thickness, 'px', {min: 0}),
-        {kind: 'color', picker: 'paint', id: 'segment-color', label: 'Colour', description: 'Segment color', value: solid ? hex(paint.stops[0].color) : undefined, paint: paintCSS(paint),
-          caption: solid ? undefined : `${paint.type[0].toUpperCase()}${paint.type.slice(1)} gradient`},
-        number(secondary ? 'Primary opacity' : 'Opacity', 'segment_opacity', opacity(segment.transparency), '%',
-          {min: 0, max: 100, id: 'segment-opacity', field: false, description: 'Primary color opacity'}),
-        builder ? {kind: 'stepper-field', key: 'segment_z_order', label: 'Order', description: 'Draw order', groupLabel: 'Draw order and one-step order',
-          value: order.get(`segment:${joint}`), precision: 0, min: 1, max: order.size,
-          down: {action: 'segment-order-down', label: 'Send part backward', icon: STEP_DOWN}, up: {action: 'segment-order-up', label: 'Bring part forward', icon: STEP_UP}}
-          : number('Order', 'segment_z_order', order.get(`segment:${joint}`), '', {min: 1, max: order.size, description: 'Draw order'}),
-        {kind: 'select', id: 'segment-shape', label: 'Shape', description: 'Segment shape', value: shape, disabled: fixed, span: 2, options: [
-          ['line', 'Round line'], ['squareLine', 'Square line'], ['circle', 'White circle'], ['circleFill', 'Filled circle'], ['circleClear', 'Clear circle'],
-          ...(fixed ? [[shape, shape]] : []),
-        ].map(([value, label]) => ({value, label}))},
-        {kind: 'field-switch', id: 'builder-branch', label: 'Apply to branch', checked: builderBranch, span: 2, hidden: builder || !(isBuilderContext(tool) && single)},
-      ]},
-    ]},
-    {id: 'second-colour', title: 'Second colour', place: 'titled', open: secondary, hidden: !twoTone || slider,
+    ik: rigIKAllowed(figure, joint) && !slider ? ikSection(editor.getIKSettings()) : {id: 'ik', hidden: true},
+    secondColour: {id: 'second-colour', title: 'Second colour', place: 'titled', open: secondary, hidden: !twoTone || slider,
       switch: {id: 'segment-gradient-enabled', label: 'Secondary color', checked: secondary, controls: 'segment-secondary-controls'},
       rows: [{kind: 'grid', id: 'segment-secondary-controls', hidden: !secondary, rows: secondary ? [
         {kind: 'color', id: 'segment-gradient-color', label: 'Colour', description: 'Secondary color', value: hex(displayedColor(report, figure, object, segment.secondary.rgb))},
         number('Secondary opacity', 'segment_gradient_opacity', (1 - (segment.secondary.a ?? 0) / 255) * 100, '%', {min: 0, max: 100, description: 'Secondary color opacity'}),
       ] : []}]},
+  };
+  if (builder) {
+    // One part (not a picked branch) with Whole branch on: the scope line names what an edit reaches and stops it.
+    const branchParts = builderBranch && single && !editor.branchSelected ? branchSegmentIndices(figure, joint).length : 0;
+    const branchScope = branchParts > 1 && !scope
+      ? {label: `Editing the whole branch · ${plural(branchParts, 'part')}`, stop: {action: 'toggle-builder-branch', label: 'Stop', tip: 'Edit only this part · B'}} : null;
+    return {kind: 'joint', target: {name: title, glyph: part ? 'link' : partGlyph(segment), rename: single && !editor.branchSelected && !part ? partRename : undefined},
+      quick: {context: 'part'}, scope: scope ?? branchScope, sections: [
+        range, drawingSets, sections.connector, sections.slider,
+        {id: 'style', title: 'Style', hidden: slider, rows: [{kind: 'grid', rows: [{...colour, span: 2}, width, alpha, shapeSelect]}]},
+        sections.secondColour,
+        sections.joint,
+        {id: 'arrange', title: 'Arrange', rows: [{kind: 'grid', ratio: '3:2', rows: [
+          layerSelect(editor),
+          {kind: 'stepper-field', key: 'segment_z_order', label: 'Order', description: 'Draw order', groupLabel: 'Draw order and one-step order', hidden: slider,
+            value: order.get(`segment:${joint}`), precision: 0, min: 1, max: order.size,
+            down: {action: 'segment-order-down', label: 'Send part backward', icon: STEP_DOWN}, up: {action: 'segment-order-up', label: 'Bring part forward', icon: STEP_UP}},
+        ]}]},
+        sections.ik.hidden ? sections.ik : {...sections.ik, place: 'titled', open: Boolean(editor.getIKSettings().enabled)},
+        ...rigSections(editor, {hidden: slider}),
+      ]};
+  }
+  return {kind: 'joint', target: {name: title, glyph: part ? 'link' : 'nodes'}, quick: {context: 'joint'}, scope, sections: [
+    range, drawingSets, ...spatial, sections.connector, sections.slider, sections.joint, sections.ik,
+    {id: 'style', title: 'Style', hidden: slider, rows: [
+      {kind: 'grid', rows: [
+        width, colour, alpha,
+        number('Order', 'segment_z_order', order.get(`segment:${joint}`), '', {min: 1, max: order.size, description: 'Draw order'}),
+        shapeSelect,
+        {kind: 'field-switch', id: 'builder-branch', label: 'Apply to branch', checked: builderBranch, span: 2, hidden: !(isBuilderContext(tool) && single)},
+      ]},
+    ]},
+    sections.secondColour,
     {id: 'figure', title: 'Figure', rows: [{kind: 'grid', rows: [layerSelect(editor, {span: 2})]}]},
   ]};
 }

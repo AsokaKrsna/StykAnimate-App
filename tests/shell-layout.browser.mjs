@@ -155,9 +155,8 @@ try {
         const viewport = await rect('#viewport');
         const label = `${mode} ${width}x${height}: #viewport ${viewport.width}x${viewport.height}`;
         assert.ok(viewport.width >= 360, label);
-        // Build's Structure stays docked (232, then 200) wherever #viewport keeps 360px, else it is a strip.
-        if (mode === 'rig' && (width >= 900 || width <= 801))
-          assert.equal(await page.evaluate(() => document.documentElement.dataset.left), width >= 900 ? 'docked' : 'strip', `${label}: Structure`);
+        // Build's Structure starts folded to its strip at every size (docked, it is the step below).
+        if (mode === 'rig') assert.equal(await page.evaluate(() => document.documentElement.dataset.left), 'strip', `${label}: Structure`);
         assert.ok(viewport.height >= (height < TRANSITIONAL_SHORT ? 180 : 200), label);
         const page_ = await page.evaluate(() => {
           window.scrollTo(0, 1);
@@ -604,9 +603,12 @@ try {
     assert.equal(await page.locator('.shell-sheet-button').isVisible(), false);
   });
 
-  await step('Build keeps Structure docked while #viewport keeps 360px, then folds it to a strip whose sheet shows the tree', async () => {
+  await step('Build starts with Structure folded; docked, it stays docked while #viewport keeps 360px, then folds it to a strip whose sheet shows the tree', async () => {
     await workspace('rig');
     await resize(900, 700);
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.left), 'strip', 'Structure starts folded');
+    await page.evaluate(() => styk.workspace.dock('structure', 'left'));
+    await settle();
     assert.equal(await page.evaluate(() => styk.workspace.sizes.left), 232);
     assert.ok((await rect('#viewport')).width >= 360);
     assert.equal(await page.locator('.builder-tree').isVisible(), true);

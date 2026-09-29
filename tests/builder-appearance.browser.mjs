@@ -43,7 +43,7 @@ try {
  assert.deepEqual(await page.evaluate(async()=>{const {copyBuilderAppearance}=await import('/src/builder-appearance.mjs');return copyBuilderAppearance(styk.editor);}),await page.evaluate(()=>styk.state.builderAppearance));
  await page.keyboard.press('Control+z');await settle();assert.equal(await page.evaluate(()=>JSON.stringify(styk.editor.serialize())),before);
  await page.keyboard.press('Control+Shift+z');await settle();
- await page.locator('.builder-tree-row[aria-selected="true"]').first().click({button:'right'});
+ await page.evaluate(()=>styk.workspace.dock('structure','left'));await settle();await page.locator('.builder-tree-row[aria-selected="true"]').first().click({button:'right'});
  await page.locator('#menu [data-action="copy-builder-appearance"]').waitFor({state:'visible'});
  await page.screenshot({path:'artifacts/builder-appearance/menu.png'});
  await page.locator('#menu [data-action="copy-builder-appearance"]').click();

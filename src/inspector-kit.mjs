@@ -167,6 +167,7 @@ const SECTION_GLYPHS = Object.freeze({
   exposure: ['layers', 'time'],
   arrange: ['layers', 'library'], layer: ['layers', 'library'], connection: ['link', 'library'], connector: ['link', 'library'],
   ik: ['pin', 'library'], rig: ['nodes', 'library'], 'rig-controls': ['nodes', 'library'], 'rig-pose': ['nodes', 'library'],
+  'rig-attachment': ['link', 'library'], 'rig-path-keys': ['route', 'library'],
   'rig-mechanism': ['nodes', 'library'], 'rig-limb': ['nodes', 'library'], 'rig-body': ['nodes', 'library'], slider: ['sliders', 'library'],
   'drawing-sets': ['layers', 'library'], parallax: ['layers', 'library'], bake: ['camera', 'camera'], preview: ['camera', 'camera'],
 });
@@ -600,10 +601,14 @@ function grid(row, env) {
     hidden: Boolean(row.hidden), ...extras(row)})}>${renderRows(row.rows, env)}</div>`;
 }
 
-/** Rows stacked as one region: IK's options (#node-ik-options), a fill's own fields. `hidden` hides it in place, keeping its id. */
+/**
+ * Rows stacked as one region: IK's options (#node-ik-options), a fill's own fields. `hidden` hides it in place, keeping its id.
+ * `title` shows a quiet heading over the rows (a block of a section: the rig's Second rotation), which names the group.
+ */
 function group(row, env) {
-  return `<div${attributes({class: 'inspector-group', id: id(row.id), role: row.role, 'aria-label': row.label, hidden: Boolean(row.hidden), ...extras(row)})}>` +
-    `${renderRows(row.rows, env)}</div>`;
+  const title = row.title ? `<div class="inspector-group-title" aria-hidden="true">${escapeHTML(row.title)}</div>` : '';
+  return `<div${attributes({class: 'inspector-group', id: id(row.id), role: row.role ?? (row.title ? 'group' : undefined), 'aria-label': row.label ?? row.title,
+    hidden: Boolean(row.hidden), ...extras(row)})}>${title}${renderRows(row.rows, env)}</div>`;
 }
 
 const RENDERERS = {

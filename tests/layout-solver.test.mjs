@@ -65,10 +65,11 @@ test('the reference geometry: tiers, timeline, #viewport and artboard zoom', () 
     ['601x441', 'animate', 'minimal/low', 40, '593x305', 54],
     ['500x340', 'animate', 'minimal/low', 40, '492x204', 35],
     ['1440x900', 'draw', 'wide/tall', 264, '1096x518', 90],
-    ['1440x900', 'rig', 'wide/tall', 0, '856x788', 79],
-    ['1024x700', 'rig', 'narrow/tall', 0, '504x602', 44],
-    ['962x700', 'rig', 'narrow/tall', 0, '442x602', 37],
-    ['900x700', 'rig', 'narrow/tall', 0, '380x602', 31],
+    // Build starts with Structure folded to its 40px strip.
+    ['1440x900', 'rig', 'wide/tall', 0, '1048x788', 99],
+    ['1024x700', 'rig', 'narrow/tall', 0, '696x602', 64],
+    ['962x700', 'rig', 'narrow/tall', 0, '634x602', 57],
+    ['900x700', 'rig', 'narrow/tall', 0, '572x602', 51],
     ['800x600', 'rig', 'compact/short', 0, '744x502', 69],
     ['500x340', 'rig', 'minimal/low', 0, '452x248', 39],
   ];
@@ -271,14 +272,16 @@ test('500x340: every region inside the window, a vertical rail and a usable stag
   }
 });
 
-test('Build keeps Structure docked, narrowing it to 200px, until #viewport would drop under 360px', () => {
+test('Build folds Structure by default; opened, it stays docked, narrowing to 200px, until #viewport would drop under 360px', () => {
+  assert.equal(solve(1440, 900, {mode: 'rig'}).panels.structure.presentation, 'strip', 'Structure starts folded');
+  const opened = arranged('rig', arrangement => ({panels: movePanel(arrangement, 'structure', 'left', {mode: 'rig'}).panels}));
   // [window, state, Structure width, #viewport width]: 232 down to 880px, then narrower down to 200 at 848.
   const cases = [[1440, 900, 'docked', 232, 856], [962, 700, 'docked', 232, 442], [961, 700, 'docked', 232, 441],
     [880, 700, 'docked', 232, 360], [879, 700, 'docked', 231, 360], [864, 700, 'docked', 216, 360], [900, 640, 'docked', 232, 380],
     [848, 700, 'docked', 200, 360], [847, 700, 'strip', 0, 519], [800, 600, 'strip', 0, 744], [640, 480, 'strip', 0, 592],
     [500, 340, 'strip', 0, 452]];
   for (const [width, height, state, left, viewport] of cases) {
-    const solution = solve(width, height, {mode: 'rig'});
+    const solution = solve(width, height, {mode: 'rig', layout: opened});
     const label = `${width}x${height}`;
     assert.equal(solution.regions.left.state, state, label);
     assert.equal(solution.panels.structure.presentation, state, label);
@@ -294,16 +297,17 @@ test('Build keeps Structure docked, narrowing it to 200px, until #viewport would
     assert.equal(solution.regions.bottom.state, 'hidden', 'Build hides the timeline by default');
     assert.equal(solution.panels.timeline.presentation, 'hidden');
   }
-  assert.equal(solve(847, 700, {mode: 'rig'}).regions.left.reason, 'stage');
-  assert.equal(solve(800, 600, {mode: 'rig'}).regions.left.reason, 'tier');
+  assert.equal(solve(847, 700, {mode: 'rig', layout: opened}).regions.left.reason, 'stage');
+  assert.equal(solve(800, 600, {mode: 'rig', layout: opened}).regions.left.reason, 'tier');
   // The stored Structure width sizes the left dock in Build, and its splitter reports it.
-  const wide = setSharedSize(DEFAULT, 'structure', 300, {now: NOW});
+  const wide = setSharedSize(opened, 'structure', 300, {now: NOW});
   const build = solve(1440, 900, {mode: 'rig', layout: wide});
   assert.equal(build.regions.left.size, 300);
   assert.deepEqual(build.aria.left, {min: 200, max: 360, now: 300});
   assert.equal(solve(940, 700, {mode: 'rig', layout: wide}).regions.left.size, 292, 'a stored width narrows too');
-  // Build + timeline spans Structure, the stage and the inspector.
-  const withTimeline = solve(1440, 900, {mode: 'rig', layout: applyPreset(DEFAULT, 'rig', 'build-timeline', {now: NOW})});
+  // Build + timeline spans Structure (once opened), the stage and the inspector.
+  const withTimeline = solve(1440, 900, {mode: 'rig', layout: arranged('rig', arrangement => ({panels: movePanel(arrangement, 'structure', 'left', {mode: 'rig'}).panels}),
+    applyPreset(DEFAULT, 'rig', 'build-timeline', {now: NOW}))});
   assert.equal(withTimeline.regions.bottom.size, 264);
   assert.equal(withTimeline.regions.bottom.rect.x, withTimeline.regions.left.rect.x);
   assert.equal(withTimeline.regions.bottom.rect.x + withTimeline.regions.bottom.rect.width, withTimeline.regions.right.rect.x + withTimeline.regions.right.rect.width);

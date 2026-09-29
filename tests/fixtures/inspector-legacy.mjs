@@ -12,7 +12,7 @@
  */
 import {joinedDrawingSetsView} from '../../src/movieclip-drawings.mjs';
 import {drawingInspector} from '../../src/drawing-view.mjs';
-import {rigControlsView, connectorPositionView} from '../../src/rig-controls.mjs';
+import {rigControlsView, connectorPositionView} from './rig-controls-legacy.mjs';
 import {figureJoinAction} from '../../src/figure-join-action.mjs';
 import {polygonSurfaceView} from '../../src/builder-surface-ui.mjs';
 import {rigIKAllowed} from '../../src/rig-constraints.mjs';

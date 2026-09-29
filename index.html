@@ -130,6 +130,14 @@
             <button type="button" class="tool ui-tool-button" data-tool="drawing-transform" data-icon="transform" aria-label="Transform" hidden></button>
             <button type="button" class="tool ui-tool-button" data-tool="hand" data-icon="hand" aria-label="Pan canvas"></button>
           </div>
+          <!-- Build's quick options under its tools (src/shell/rail.mjs shows them in Build only): what an edit reaches,
+               how drawing snaps, what the canvas shows, and fitting the figure. -->
+          <div class="rail-quick" role="toolbar" aria-label="Build options" aria-orientation="vertical" hidden>
+            <button type="button" class="ui-tool-button" data-action="toggle-builder-branch" aria-pressed="false" aria-label="Whole branch" data-tooltip="Whole branch · edits reach every part attached below" data-icon="builder-branch"></button>
+            <button type="button" class="ui-tool-button" data-action="toggle-builder-snap" aria-pressed="true" aria-label="Smart snapping" data-tooltip="Smart snapping · Alt to bypass" data-icon="builder-snap"></button>
+            <button type="button" class="ui-tool-button" data-action="toggle-isolate" aria-pressed="false" aria-label="Isolate joint" data-tooltip="Isolate joint" data-icon="detach"></button>
+            <button type="button" class="ui-tool-button" data-action="zoom-selection" aria-label="Fit figure" data-tooltip="Fit figure" data-icon="center"></button>
+          </div>
         </nav>
         <aside class="shell-left shell-dock" id="left-dock" data-region="left" aria-label="Structure" hidden>
           <div class="ui-island shell-island" data-island="left-0">
@@ -174,7 +182,6 @@
                 <button type="button" class="ui-button stage-toggle" data-variant="ghost" data-size="sm" id="vfx-preview" data-workspaces="animate draw" aria-pressed="true" aria-label="Effects preview" data-tooltip="Effects preview" data-icon="fx"><span class="ui-label">Effects</span></button>
                 <button type="button" class="ui-button stage-toggle" data-variant="ghost" data-size="sm" data-action="builder-static-handles" data-workspaces="rig" aria-pressed="true" aria-label="Static handles" data-tooltip="Static handles" data-icon="pin" hidden><span class="ui-label">Handles</span></button>
                 <button type="button" class="ui-button stage-toggle" data-variant="ghost" data-size="sm" data-action="builder-highlight" data-workspaces="rig" aria-pressed="false" aria-label="Highlight part" data-tooltip="Highlight part" data-icon="highlight" hidden><span class="ui-label">Highlight</span></button>
-                <button type="button" class="ui-button stage-toggle" data-variant="ghost" data-size="sm" data-action="toggle-isolate" data-workspaces="rig" aria-pressed="false" aria-label="Isolate joint" data-tooltip="Isolate joint" data-icon="detach" hidden><span class="ui-label">Isolate</span></button>
                 <button type="button" class="ui-icon-button" data-action="builder-canvas-color" data-quiet data-workspaces="rig" aria-label="Construction background" data-tooltip="Construction background" data-icon="palette" hidden></button>
               </div>
               <output id="preview-quality" class="stage-head-note" data-tooltip="Preview detail follows your playback quality setting or available memory. Original artwork and export quality are preserved." hidden>Reduced preview</output>

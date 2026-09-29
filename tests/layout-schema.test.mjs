@@ -188,7 +188,7 @@ test('normalization keeps every panel in a place it allows', () => {
     [['properties', 0, false], ['vfx', 1, true], ['library', 2, false]]);
   assert.equal(place(partial, 'timeline'), 'bottom');
   const build = normalizeArrangement({panels: []}, 'build');
-  assert.equal(place(build, 'structure'), 'left');
+  assert.equal(place(build, 'structure'), 'strip@left');
 });
 
 test('records of panels this version does not know are kept but bounded', () => {
@@ -341,7 +341,7 @@ test('normalization is idempotent and never mutates its input', () => {
   assert.equal(normalizeLayout({fn: () => 1, date: new Date(0), nan: NaN, list: [1, undefined, Infinity, 'x']}, at).list.length, 2);
 });
 
-test('each workspace offers its presets; Build keeps Structure left and the timeline hidden', () => {
+test('each workspace offers its presets; Build folds Structure to its strip on the left and hides the timeline', () => {
   assert.deepEqual(presetsFor('animate').map(preset => preset.id), ['animate', 'timing', 'focus', 'review']);
   assert.deepEqual(presetsFor('draw').map(preset => preset.id), ['focus', 'draw']);
   assert.deepEqual(presetsFor('build').map(preset => preset.id), ['focus', 'build', 'build-timeline']);
@@ -352,7 +352,7 @@ test('each workspace offers its presets; Build keeps Structure left and the time
   assert.equal(animate.bottomSpan, 'full');
   assert.ok(sameArrangement(defaultArrangement('draw'), animate));
   const build = defaultArrangement('rig');
-  assert.equal(place(build, 'structure'), 'left');
+  assert.equal(place(build, 'structure'), 'strip@left');
   assert.equal(place(build, 'timeline'), 'hidden@bottom');
   assert.equal(place(presetArrangement('build-timeline', 'rig'), 'timeline'), 'bottom');
   const review = presetArrangement('review', 'animate');

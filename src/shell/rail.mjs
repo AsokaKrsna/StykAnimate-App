@@ -21,6 +21,11 @@
  * Until the figure's quick actions (To front, To back, M4) exist, Animate
  * keeps today's two stacking buttons (.rail-order) under its tools; Draw and
  * Build do not show them (Build's parts have Arrange in their own menus).
+ *
+ * Build keeps its quick options under its tools (.rail-quick), the way a
+ * modelling tool keeps snapping and mirroring beside its tool shelf: Whole
+ * branch, Smart snapping, Isolate and Fit figure. They are commands
+ * ([data-action]); syncRailQuick() shows their on/off state.
  */
 
 /** Each workspace's rail, top to bottom: `data-tool` values and `add` (the +, #open-insert). */
@@ -138,4 +143,15 @@ export function syncRail(rail, {mode = 'animate', tool = null} = {}) {
   }
   const order = rail.querySelector('.rail-order');
   if (order && order.hidden !== (mode !== 'animate')) order.hidden = mode !== 'animate';
+  const quick = rail.querySelector('.rail-quick');
+  if (quick && quick.hidden !== (mode !== 'rig')) quick.hidden = mode !== 'rig';
+}
+
+/** The quick options' on/off states, by command ({'toggle-builder-branch': true}); a command not listed keeps its state. */
+export function syncRailQuick(rail, pressed = {}) {
+  for (const button of rail?.querySelectorAll('.rail-quick [aria-pressed][data-action]') ?? []) {
+    if (!Object.hasOwn(pressed, button.dataset.action)) continue;
+    const value = String(Boolean(pressed[button.dataset.action]));
+    if (button.getAttribute('aria-pressed') !== value) button.setAttribute('aria-pressed', value);
+  }
 }

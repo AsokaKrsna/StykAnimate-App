@@ -180,7 +180,8 @@ const limitOf = (catalog, key) => sizeLimits(catalog)[key] ?? {min: 0, max: MAX_
 
 const inspectorTabs = (docks = {}) => ['properties', 'vfx', 'library'].map((id, order) => ({id, dock: docks[id] ?? 'right', side: 'right', order}));
 const timelineRecord = dock => ({id: 'timeline', dock, side: 'bottom', order: 0});
-const structureRecord = {id: 'structure', dock: 'left', side: 'left', order: 0};
+// Structure starts folded to its strip in Build, so the canvas has the room; its tab or strip opens it.
+const structureRecord = {id: 'structure', dock: 'strip', side: 'left', order: 0};
 const animateArrangement = {rail: 'left', bottomSpan: 'full', panels: [...inspectorTabs(), timelineRecord('bottom')]};
 
 /**

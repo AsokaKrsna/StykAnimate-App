@@ -37,7 +37,7 @@ What's new in each version of StykAnimate.
 - A clearer Export window with a live preview, easy trimming, size options and one-click presets for YouTube, Shorts, TikTok, Instagram, X and more.
 - A simpler Properties panel, with the most used actions right under the selection's name.
 - A simpler VFX panel that lists effects one per row, each with its own on/off switch.
-- A clearer Build workspace that makes each part's actions and the figure's structure easier to find.
+- A clearer Build workspace, with each part's color, width and shape first in Properties and rig options that show only what you turn on. The toolbar now has quick toggles for editing whole branches, snapping and isolating a part.
 - A cleaner Library panel with search, filters and larger previews.
 - Redesigned Settings, with a page for each section and a search box.
 - Tidier menus, with named groups and submenus.
