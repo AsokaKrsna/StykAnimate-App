@@ -112,7 +112,8 @@ test('The keyboard rising under a text field keeps the layout; turning the phone
 
 const LAYOUT = defaultLayout({now: 1_700_000_100_000});
 const solve = (width, height, touch, mode = 'animate') => solveLayout(LAYOUT, {width, height, mode, bandMin: 626, artboard: {width: 960, height: 540},
-  ...(touch ? {touch: {active: true, ...formFactor(width, height)}} : {})});
+  // As the dock host does in touch mode: the workspace's own box, with no band above it.
+  ...(touch ? {touch: {active: true, ...formFactor(width, height)}, measured: {band: 0}} : {})});
 
 test('On a phone the inspector is a sheet and the tool bar takes its touch size', () => {
   for (const [width, height] of [[390, 640], [784, 360]]) {
@@ -135,8 +136,10 @@ test('Upright, a phone lays the tools along the stage\u2019s bottom and keeps th
   assert.equal(upright.rail.rect.y + upright.rail.rect.height + 8, upright.viewport.y + upright.viewport.height, 'along the bottom edge');
   assert.ok(upright.stageInsets.bottom >= 56 + 8 && upright.stageInsets.left < 56, 'the artboard gives the tools height, not width');
   assert.equal(upright.regions.bottom.state, 'docked', 'the frames stay in view even at the low height tier');
-  assert.equal(upright.regions.bottom.size, Math.round(0.4 * 640));
-  assert.equal(solve(844, 360, true).regions.bottom.state, 'strip', 'on its side the timeline folds to its header');
+  assert.equal(upright.regions.bottom.size, Math.round(0.47 * 640));
+  const side = solve(844, 360, true);
+  assert.equal(side.regions.bottom.state, 'docked', 'on its side the timeline stays docked');
+  assert.equal(side.regions.bottom.size, 52 + 26 + 48, 'its header, the ruler and one finger-tall row');
 });
 
 test('On a tablet the inspector docks while the stage keeps 560px, and opens as a sheet otherwise, never a strip', () => {

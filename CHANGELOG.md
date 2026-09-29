@@ -13,6 +13,7 @@ What's new in each version of StykAnimate.
 - Touch gestures: tap with two fingers to undo and three to redo, and press and hold anything to see its menu.
 - Bend, stretch and the other right-click and modifier-key actions on touch screens, from buttons beside the canvas.
 - Draw with your finger on a phone or tablet until you pick up a pen.
+- On touch screens, swipe the timeline to scrub under a fixed playhead, and add keys, change timing or select frames from buttons above it.
 - Move a layer up or down from its menu in the timeline.
 
 ### Fixed

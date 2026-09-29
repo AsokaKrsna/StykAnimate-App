@@ -50,10 +50,11 @@ async function editor(size, { touch = true } = {}) {
     await fingers('touchEnd', []); await page.waitForTimeout(200);
   };
   /** Every shown button of the chrome that lies partly outside the window (never allowed). */
-  const offscreen = () => page.evaluate(() => [...document.querySelectorAll('.titlebar button, .touch-tabbar button, .stage-head button, .timeline-toolbar button, .shell-rail button')]
+  const offscreen = () => page.evaluate(() => [...document.querySelectorAll('.titlebar button, .touch-tabbar button, .stage-head button, .timeline-toolbar button, .shell-rail button, .tl-touch-actions')]
     .filter((b) => b.getClientRects().length && getComputedStyle(b).visibility !== 'hidden')
-    // An upright phone's tool bar scrolls sideways: its tools past the edge are a swipe away, not cut off.
-    .filter((b) => !b.closest('.workspace[data-rail-orientation="horizontal"] > .shell-rail'))
+    // An upright phone's tool bar and the timeline's action bar scroll sideways: buttons past their edge are a swipe
+    // away, not cut off (the action bar itself must fit).
+    .filter((b) => !b.closest('.workspace[data-rail-orientation="horizontal"] > .shell-rail, .tl-touch-actions > button'))
     .map((b) => ({ name: b.getAttribute('aria-label') || b.textContent.trim(), r: b.getBoundingClientRect() }))
     .filter(({ r, name }) => r.width && (r.left < -1 || r.right > innerWidth + 1 || r.top < -1 || r.bottom > innerHeight + 1) && name)
     .map(({ name }) => name));
@@ -88,6 +89,9 @@ try {
     check('Upright, the tools lie along the stage’s bottom edge', await t.eval(() => document.querySelector('.workspace').dataset.railOrientation === 'horizontal'));
     const stage = await t.box('#viewport'), timeline = await t.box('#animation-timeline');
     check('Upright, the timeline’s frames stay docked under the stage', timeline && timeline.y >= stage.y + stage.height - 1 && timeline.height > 150);
+    check('Upright, the timeline’s actions sit in a finger-sized row of its header',
+      await t.eval(() => [...document.querySelectorAll('.tl-touch-action')].some((b) => !b.hidden && b.getClientRects().length)) && (await t.small(44, '.tl-touch-action')).length === 0,
+      await t.small(44, '.tl-touch-action'));
     check('Upright, the stage header folds its view toggles into one View menu', Boolean(await t.box('.stage-view-menu')) && !(await t.box('#handles-button')));
 
     await t.tap('.shell-sheet-button');
@@ -157,21 +161,62 @@ try {
     check('Holding still on a figure opens its menu', await t.eval(() => [...document.querySelectorAll('.ui-menu:popover-open .ui-menu-item')].some((item) => /Copy/.test(item.textContent))));
     await t.page.keyboard.press('Escape');
 
-    // The timeline's body opens as a sheet over the stage on a phone on its side.
-    await t.eval(() => window.styk.shell.toggleTimelineSheet());
-    await t.page.waitForTimeout(300);
-    for (let i = 0; i < 6; i++) await t.eval(() => window.styk.actions?.['add-frame']?.() ?? document.querySelector('.tl-add').click());
-    await t.eval(() => window.styk.timeline.setZoom(36));
-    const grid = await t.eval(() => { const x = window.styk.timeline, b = x.scroll.getBoundingClientRect(); return { x: b.left, y: b.top + x.layout.contentTop + 14, width: b.width }; });
-    const before = await t.eval(() => ({ left: window.styk.timeline._offsetX(), start: window.styk.timeline.start }));
-    await t.drag({ x: grid.x + grid.width - 20, y: grid.y }, { x: grid.x + 20, y: grid.y });
-    const after = await t.eval(() => ({ left: window.styk.timeline._offsetX(), start: window.styk.timeline.start }));
-    check('A swipe scrolls the timeline and selects nothing', after.left > before.left + 100 && after.start === before.start, { before, after });
-    await t.eval(() => window.styk.timeline._scrollToX(0));
-    await t.tap(grid.x + 36 * 2 + 10, grid.y);
-    check('A tap on a cell goes to its frame', await t.eval(() => window.styk.timeline.start === 2 && Math.floor(window.styk.editor.tick) === 2));
-    await t.drag({ x: grid.x + 36 * 1 + 10, y: grid.y }, { x: grid.x + 36 * 4 + 10, y: grid.y }, { steps: 8, before: 650 });
-    check('Press, hold and drag selects frames', await t.eval(() => window.styk.timeline.start === 1 && window.styk.timeline.end === 4));
+    // The timeline on its side: docked under the stage, a finger-tall row under a playhead fixed at its middle.
+    const docked = await t.eval(() => window.styk.shell.presentation('timeline'));
+    const strip = await t.box('#animation-timeline'), view = await t.box('#viewport');
+    check('On its side, the timeline stays docked under the stage', docked === 'docked' && strip.y >= view.y + view.height - 1 && strip.height >= 120, { docked, strip });
+    await t.eval(async () => { for (let i = 0; i < 6; i++) await window.styk.timeline.addFrameFromHeader(); });
+    await t.page.waitForTimeout(500);
+    const state = () => t.eval(() => {
+      const x = window.styk.timeline, e = window.styk.editor;
+      return { tick: Math.round(e.tick), center: x.tickAtCenter(), start: x.start, end: x.end, range: Boolean(x.touchRange), px: x.pxPerTick,
+        keys: e.layerFrameKeys(x.selectedTrackId).map((k) => k.tick).join() };
+    });
+    const row = await t.eval(() => { const x = window.styk.timeline, b = x.scroll.getBoundingClientRect(), i = x.tracks.findIndex((r) => r.id === x.selectedTrackId);
+      return { x: b.left + b.width / 2, y: b.top + x.rowY(i) + x.rowSize(i) / 2, size: x.rowSize(i) }; });
+    const action = (id) => t.eval((id) => { const b = document.querySelector(`.tl-touch-action[data-touch-action="${id}"]`); const r = b?.getBoundingClientRect();
+      return r && !b.hidden && r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2, width: r.width, height: r.height } : null; }, id);
+    const press = async (id) => { const b = await action(id); assert.ok(b, `${id} is shown`); await t.tap(b.x, b.y); await t.page.waitForTimeout(250); };
+    let now = await state();
+    check('Its rows are finger-tall and the current frame sits under the playhead', row.size >= 44 && now.center === now.tick, { row, now });
+    const shown = await t.eval(() => [...document.querySelectorAll('.tl-touch-action')].filter((b) => !b.hidden && b.getClientRects().length).map((b) => b.dataset.touchAction));
+    check('The action bar offers Key, Shorter, Longer and Select', ['key', 'shorter', 'longer', 'select'].every((id) => shown.includes(id)), shown);
+    check('The action bar’s buttons are finger-sized', (await t.small(44, '.tl-touch-action')).length === 0, await t.small(44, '.tl-touch-action'));
+    // A slow swipe right slides time back under the playhead: 3 frames' width, 3 frames earlier.
+    const from = now.tick;
+    await t.drag({ x: row.x, y: row.y }, { x: row.x + now.px * 3, y: row.y }, { steps: 15 });
+    await t.page.waitForTimeout(400);
+    now = await state();
+    check('A sideways swipe scrubs: the frame under the playhead becomes the current one', now.tick === from - 3 && now.center === now.tick && now.start === now.tick && now.end === now.tick, { from, now });
+    const keys = now.keys, keyed = (list) => list.split(',').includes(String(now.tick));
+    await press('longer');
+    const longer = await state();
+    check('Longer holds the frame one frame more', longer.keys !== keys && keyed(longer.keys) === keyed(keys), { keys, longer });
+    await press('shorter');
+    check('Shorter takes it back', (await state()).keys === keys);
+    await press('key');
+    const toggled = await state();
+    check('Key adds or removes the key at the playhead', keyed(toggled.keys) !== keyed(keys) && toggled.tick === now.tick, { keys, toggled });
+    await press('key');
+    check('Key again puts it back', (await state()).keys === keys);
+    // Select: the playhead's frame is one end of a range, and scrubbing moves the other.
+    await press('select');
+    await t.drag({ x: row.x, y: row.y }, { x: row.x + now.px * 2, y: row.y }, { steps: 12 });
+    await t.page.waitForTimeout(400);
+    const range = await state();
+    check('Select, then a swipe, stretches a range of frames', range.range && range.end - range.start === 2, range);
+    check('A range shows Earlier, Later and Done', Boolean(await action('left') && await action('right') && await action('done')));
+    await press('done');
+    check('Done leaves the range', !(await state()).range);
+    // Two fingers zoom around the playhead.
+    const zoom = (await state()).px;
+    await t.fingers('touchStart', [[row.x - 30, row.y], [row.x + 30, row.y]]);
+    for (let i = 1; i <= 8; i++) { await t.fingers('touchMove', [[row.x - 30 - i * 6, row.y], [row.x + 30 + i * 6, row.y]]); await t.page.waitForTimeout(16); }
+    await t.fingers('touchEnd', []); await t.page.waitForTimeout(400);
+    check('A pinch zooms the timeline', (await state()).px > zoom * 1.3, { zoom, after: await state() });
+    await t.hold(row.x, row.y, 800);
+    check('Holding a frame opens its menu', await t.eval(() => Boolean(document.querySelector('.ui-menu:popover-open'))));
+    await t.page.keyboard.press('Escape');
     check('No console or page errors on its side', t.problems.length === 0, t.problems);
     await t.context.close();
   }

@@ -259,10 +259,9 @@ export function createTimelineHeader(ctx, host) {
       for (const item of modes.querySelectorAll('[data-timeline-mode]'))
         items.push({label: item.textContent.trim(), icon: item.dataset.timelineMode === 'simple' ? 'frame' : 'timeline', radio: true, group: 'timeline-mode',
           checked: item.dataset.timelineMode === current, run: () => item.click()});
-      items.push(null, {label: say('timeline.onionSettings'), icon: 'onion', run: () => $('onion-settings-button').click()});
-      if (tier !== 'minimal') items.push({label: fit.getAttribute('aria-label'), icon: 'fit', run: () => run(() => host.timeline?.fitAll?.())});
-      items.push(null);
+      items.push(null, {label: say('timeline.onionSettings'), icon: 'onion', run: () => $('onion-settings-button').click()}, null);
     }
+    const phone = root.input === 'touch' && root.form === 'phone';
     if (sheetButton && !sheetButton.hidden)
       items.push({label: say('timeline.sheet'), icon: 'timeline', run: action('timeline-sheet')}, null);
     if (!cel.hidden && (toolbar.dataset.fold ?? '').split(' ').includes('celmenu'))
@@ -270,7 +269,8 @@ export function createTimelineHeader(ctx, host) {
         ...celItems().map(item => item && {...item, disabled: celMain.disabled}), null);
     if (tier !== 'minimal' && root.touchLayout === 'tablet-portrait')
       items.push({label: say('timeline.firstFrame'), icon: 'first', shortcut: shortcut('first-frame'), run: action('first-frame')}, null);
-    if (tier === 'minimal') {
+    // At the minimal width, and on a phone's touch timeline, the header's rarer buttons are rows here.
+    if (tier === 'minimal' || phone) {
       const mode = document.querySelector('.workspace')?.dataset.mode;
       items.push(
         {label: fit.getAttribute('aria-label'), icon: 'fit', run: () => run(() => host.timeline?.fitAll?.())},
@@ -386,9 +386,25 @@ export function createTimelineHeader(ctx, host) {
 
   function setSimple(value) { if (value !== simple) { simple = value; syncFolds(); } }
 
+  // ---- The touch timeline's action bar (touch/timeline-scrubber.mjs): a slot of its own in the header ----
+  const actionsSlot = element('div', null, 'tl-actions');
+  actionsSlot.dataset.slot = 'actions';
+  actionsSlot.hidden = true;
+  end.before(actionsSlot);
+  let actions = null;
+
   // ---- What the components and the host tell the header ----
   let shownCel = false, shownReady = null;
   return {
+    /** The mounted timeline's action bar (the touch interface's), or null to take it away. */
+    setActions(node) {
+      actions = node ?? null;
+      actionsSlot.replaceChildren(...(actions ? [actions] : []));
+      actionsSlot.hidden = !actions;
+      toolbar.toggleAttribute('data-actions', Boolean(actions));
+      requestFold();
+    },
+    get actions() { return actions; },
     /** Add frame's and Next copy's wrapper: an audio clip's selection hides them (audio-timeline.mjs). */
     frameTools: frameWrap,
     /** The zoom range and Fit's name for the mounted component (Advanced's frames or Simple's cards). */

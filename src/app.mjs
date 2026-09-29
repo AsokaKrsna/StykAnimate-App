@@ -5929,6 +5929,8 @@ async function init() {
   // The touch interface (docs/TOUCH.md): decided before the shell lays out, kept current as the window turns.
   touchMode = installTouchMode({ getSetting: () => state.settings.touchInterface });
   window.styk.touch = touchMode;
+  // The timeline has a presentation for each interface (touch/timeline-scrubber.mjs): switching mounts it again.
+  touchMode.on((next, previous) => { if (Boolean(next.active) !== Boolean(previous?.active)) timelineHost.mount(); });
   // The inspector's titled sections remember being open across sessions.
   configureInspectorSections(state.settings.inspectorSections, {onChange: (sections) => editorSettings.commit({ inspectorSections: sections })});
   hotkeys.setBindings(state.settings.hotkeys);

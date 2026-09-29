@@ -19,6 +19,8 @@ const MIN_CARD = 72, MAX_CARD = 240, AUTO_MAX = 168;
 const AUTO_RUN = 3.4;
 /** Around a card's thumbnail (5:3, today's framing): the side gutters, then the number line, the duration bar and padding. */
 const CARD_GUTTER = 12, CARD_CHROME = 58;
+/** The touch interface's compact card (docs/TOUCH.md): the number sits on the thumbnail, a slim bar under it. */
+const TOUCH_CARD_CHROME = 26;
 /** How far a card's duration bar starts from its edge (components/filmstrip.css: the card's and the bar's insets). */
 const BAR_INSET = 10;
 const el = (tag, parent, className, text) => {
@@ -51,6 +53,10 @@ export class SheetFilmstrip {
     this.revealPending = true;
     this.root = el('div', container, 'sheet-filmstrip');
     this.buildFrameBar();
+    // The touch interface: compact cards, and the frame bar in the timeline header's action row (as the Advanced
+    // timeline's actions), so the cards take the body's whole height on a phone on its side.
+    this.touchMode = Boolean(this.touch?.active);
+    this.root.toggleAttribute('data-touch', this.touchMode);
     this.strip = el('div', this.root, 'sheet-filmstrip-scroll');
     this.strip.tabIndex = 0;
     this.strip.setAttribute('role', 'listbox');
@@ -90,8 +96,9 @@ export class SheetFilmstrip {
       }
       this.update();
     });
-    this.observer = new ResizeObserver(() => {this.fitCardsToHeight();const x=this.selectedIndex*this.cardWidth,left=this.strip.scrollLeft;if(this.lastViewportWidth&&x+this.cardWidth>left&&x<left+this.lastViewportWidth)this.revealPending=true;this.lastViewportWidth=this.strip.clientWidth;this.update();});
+    this.observer = new ResizeObserver(() => {this.placeFrameBar();this.fitCardsToHeight();const x=this.selectedIndex*this.cardWidth,left=this.strip.scrollLeft;if(this.lastViewportWidth&&x+this.cardWidth>left&&x<left+this.lastViewportWidth)this.revealPending=true;this.lastViewportWidth=this.strip.clientWidth;this.update();});
     this.observer.observe(this.root);
+    this.placeFrameBar();
     this.render();
     // Add frame, the zoom slider and Fit are the shared header's (timeline-header.mjs).
     mountTimelineNavigation(this);this.header?.setZoom(this.cardWidth);
@@ -573,11 +580,23 @@ export class SheetFilmstrip {
   /** Fit every frame: the cards shrink to show the whole animation. */
   fitAll() { this.setZoom(this.strip.clientWidth / Math.max(1, this.times.length), undefined, true); this.strip.scrollLeft = 0; }
   get zoomRange() { return {min: MIN_CARD, max: MAX_CARD}; }
+  /**
+   * Where the frame bar goes (docs/TOUCH.md): beside the cards with a mouse and on a tablet; on a phone on its side
+   * in the timeline header's action row, so the cards take the body's height; on an upright phone under the cards,
+   * where the body has room for it.
+   */
+  placeFrameBar(){
+    const layout=this.touchMode?document.documentElement.dataset.touchLayout:null,bar=this.controls;
+    if(layout==='phone-landscape'&&this.header?.setActions){if(this.header.actions!==bar)this.header.setActions(bar);return;}
+    if(this.header?.actions===bar)this.header.setActions(null);
+    if(layout==='phone-portrait'){if(this.strip.nextElementSibling!==bar)this.strip.after(bar);}
+    else if(this.root.firstElementChild!==bar)this.root.prepend(bar);
+  }
   fitCardsToHeight(){
     if(!this.autoCardWidth||!this.strip.clientHeight)return;
     // The number line, the duration bar and padding take CARD_CHROME; thumbnails are 5:3 inside CARD_GUTTER. Automatic
     // growth stops at AUTO_MAX, and at AUTO_RUN cards across a narrow strip, so a tall panel still shows a useful run of frames.
-    const fit=(this.strip.clientHeight-CARD_CHROME)*5/3+CARD_GUTTER;
+    const fit=(this.strip.clientHeight-(this.touchMode?TOUCH_CARD_CHROME:CARD_CHROME))*5/3+CARD_GUTTER;
     const width=Math.round(Math.max(MIN_CARD,Math.min(AUTO_MAX,fit,this.strip.clientWidth/AUTO_RUN||AUTO_MAX)));
     if(Math.abs(width-this.cardWidth)<2)return;
     this.setZoom(width,0);
@@ -586,6 +605,7 @@ export class SheetFilmstrip {
   setZoom(value,anchor=this.strip.clientWidth/2,user=false){if(user)this.autoCardWidth=false;const position=(this.strip.scrollLeft+anchor)/this.cardWidth;this.cardWidth=Math.max(MIN_CARD,Math.min(MAX_CARD,Number(value)||112));this.header?.setZoom(this.cardWidth);this.root.style.setProperty('--filmstrip-card',`${this.cardWidth}px`);this.spacer.style.width=`${this.times.length*this.cardWidth}px`;for(const [index,card] of this.cards)card.style.left=`${index*this.cardWidth}px`;this.strip.scrollLeft=position*this.cardWidth-anchor;this._schedule();this.audio?.update();}
   revealPlayhead() { this.ensureVisible(this.selectedIndex); this.update(); }
   destroy() {
+    if (this.header?.actions === this.controls) this.header.setActions(null);
     this.audio?.destroy();this.inflight?.abort();clearTimeout(this.retryTimer);this.clearThumbnailCache();
     this.disposed = true; this.generation++;
     if (this.raf) cancelAnimationFrame(this.raf);

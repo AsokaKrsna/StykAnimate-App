@@ -42,7 +42,8 @@ needs.
 │ │  │ tools          STAGE                      │ ●   ↷  │ Draw, Redo
 │ └──┘                                (modifiers)│ ●   ☰  │ Build, Properties
 ├────────────────────────────────────────────────┴────────┤
-│ + ◀ ▶ ▶  00:03  loop  onion  audio  ⋯       ⌃ Timeline  │
+│ + ◀ ▶ ▶  00:03  [Key − + Copy Paste … ]    onion  ⋯     │ timeline header and actions
+│ Layer 1 │ ● ● ● ●[●]○ ○ ○ ○                              │ the selected row, finger-tall
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -50,8 +51,10 @@ needs.
   workspaces, Export over Undo, Redo and Properties; a session's Done, Test rig or Cancel take
   whole rows under them. The document's name and Save are in the menu (File).
 - The tools float on the stage's left, in two columns where one does not fit.
-- The timeline is its header. Its body (the frames, or the layers and keys) opens as a sheet
-  above the header, over the stage, and closes with a swipe down.
+- The timeline stays docked under the stage: one row of its header (the transport, then the
+  frame actions or, in Simple, the frame bar) over the ruler and the selected layer's row,
+  kept in view; a vertical swipe over the rows reaches the others. See
+  [The timeline](#the-timeline).
 - Properties, VFX and Library open as a sheet beside the wing, the stage's whole height.
 - Menus opened from the wing open beside it, toward the stage.
 
@@ -68,7 +71,8 @@ needs.
 │ [ + ▸ ⋀ ✋  tools ...     ] │ the tool bar, along the stage's bottom edge
 ├─────────────────────────────┤
 │ + ◀ ▶ ▶  00:03  onion  ⋯   │ timeline header
-│ [ frames or layers ....... ] │ timeline body, 40% of the height, its grip resizes it
+│ Key − + Copy Paste … Select │ frame actions (Simple: the frame bar, under the cards)
+│ [ layers and keys ........ ] │ timeline body, 47% of the height, its grip resizes it
 ├─────────────────────────────┤
 │ Animate  Draw  Build  Props │ tab bar
 └─────────────────────────────┘
@@ -78,9 +82,9 @@ needs.
   row that scrolls sideways) and the artboard gets the phone's whole width.
 - The workspaces and Properties move to a tab bar under the thumb (the elements are moved,
   never copied, and move back in every other layout).
-- The timeline's body stays docked whatever the height tier, at 40% of the workspace. In
-  Advanced the names column is narrower; Simple shows its frame bar as one row over cards
-  that take the whole width.
+- The timeline stays docked whatever the height tier, at 47% of the workspace. In Advanced
+  the frame actions take the header's second row; Simple puts its cards first and the frame
+  bar under them (on a short phone its controls are one row that swipes sideways).
 - Properties, VFX, Library and Structure rise as a bottom sheet above the tab bar, which
   keeps Properties at hand to close it again.
 - Menus and popovers (the colour picker, keyframe easing, onion skin) open as sheets from
@@ -94,7 +98,37 @@ words in the desktop's fold order (measured at touch size, with the menubar alwa
 mark), so Export and Properties stay on screen. The inspector stays docked while the stage
 keeps 560px, and otherwise opens as a tall sheet from the band's Properties button, never a
 40px strip. Upright, the timeline takes a third of the height and its header moves the frame
-rate (the Scene's Rate) and First frame (Timeline ⋯) out of the way.
+rate (the Scene's Rate) and First frame (Timeline ⋯) out of the way. The frame actions take
+the header's second row.
+
+## The timeline
+
+A fingertip covers several frames, so the timeline on touch never asks a finger to hit one
+frame's cell. The playhead is fixed at the middle of the grid and time slides under it: a
+sideways swipe scrubs (with momentum), and the frame that settles under the playhead is the
+current frame. The grid pads both ends by half its width, so frame 1 and the last frame reach
+the middle too. Rows are 48px tall (the Camera and Scene rows 30px), frames start 30px wide,
+and a pinch zooms between 10 and 72px around the playhead.
+
+The header's actions row works on the selected layer at the playhead (`timeline-scrubber.mjs`):
+
+| Button | Does |
+| --- | --- |
+| Key / Remove | Adds a key at the playhead, or removes the one there (never frame 1's) |
+| Shorter, Longer | Holds the frame one frame less or more (the later keys move with it) |
+| Copy, Paste, Easing | As the frame's menu |
+| Select | Makes the playhead's frame one end of a range: scrubbing moves the other end |
+| More | The frame's menu |
+
+With a range the row becomes Done (first, so it never needs a swipe), Earlier, Later, Copy,
+Cut, Paste, Delete, Easing and More, and a handle stands at each end of the range: dragging one
+moves that end, past the other end too, and time slides when it nears the grid's edge. Where
+the row is longer than the window it swipes sideways and fades at the edge that has more.
+
+Every command is the desktop's (the same history entries and undo). The Simple timeline keeps
+its cards, compact on touch: the frame's number on its thumbnail and a slim hold bar under it.
+On a phone on its side its frame bar is the header's actions row; upright it sits under the
+cards.
 
 ## Sizes
 
@@ -125,13 +159,14 @@ bar) draws under the status bar and keeps its controls below it.
 | A tool with variants | Press and hold | Its variants (the corner tick's list) |
 | Onion | Press and hold | Its settings |
 | Rows, cards, tabs | Press and hold | Their menu (the right-click menu) |
-| Advanced timeline | Swipe | Scrolls the grid, with momentum |
-| Advanced timeline | Tap | Selects the cell and goes to its frame |
+| Advanced timeline | Swipe sideways | Scrubs: time slides under the fixed playhead, with momentum |
+| Advanced timeline | Swipe up or down | Scrolls the rows |
+| Advanced timeline | Tap | Selects that layer's frame and glides it under the playhead |
 | Advanced timeline | Double tap | A double-click: adds a key, or edits a key's easing |
 | Advanced timeline | Press, hold, then drag | The mouse's drag: selects frames, or moves the selected keys |
 | Advanced timeline | Press and hold, then lift | The cell's menu |
-| Advanced timeline | Drag the ruler | Scrubs |
-| Advanced timeline | Two fingers | Pinch to zoom, move to scroll |
+| Advanced timeline | A range's handle | Drags that end of the range |
+| Advanced timeline | Two fingers | Pinch to zoom around the playhead, move to scroll the rows |
 | Advanced timeline | Swipe the names | Scrolls the rows |
 | Simple frames | Swipe, tap, hold | Scroll, select, the frame's menu |
 | A bottom sheet | Drag its grip or tab row | Resizes it to a resting height (42%, 62% or 92%), or closes it |
@@ -213,6 +248,7 @@ is off; text fields keep both.
 | `src/touch/canvas-touch.mjs` | The stage's multi-finger taps, hold and double tap |
 | `src/touch/modifier-dock.mjs` | The stage's modifier buttons and the events they shape |
 | `src/touch/timeline-touch.mjs` | The Advanced grid's touch adapter (installed by `timeline-navigation.mjs`) |
+| `src/touch/timeline-scrubber.mjs` | The touch timeline's centred playhead, scrubbing, range handles and actions row (mixed into `layer-timeline.mjs`) |
 | `src/styles/layout/touch.css` | The layouts, the page, the safe areas, the tool bar and the modifiers' places |
 | `src/styles/features/touch.css` | The tab bar, the wing, sheets, menus as sheets, dialogs, the timeline and Draw at touch size |
 
@@ -224,7 +260,7 @@ is off; text fields keep both.
 - `npm run test:touch` (`tests/touch.browser.mjs`): the built site in Chromium with touch
   emulation at phone and tablet sizes in both orientations: no chrome cut off by the window,
   finger-sized targets, the sheets, menus as sheets and beside the wing, press and hold, the
-  multi-finger taps, the Bend modifier, the timeline's swipe, tap and hold-drag, finger
+  multi-finger taps, the Bend modifier, the docked timeline's scrub, actions, range and pinch, finger
   drawing, and the desktop interface unchanged at 1440×900. `npm run test:pinch` and
   `tests/drawing-input.browser.mjs` cover the pinch, the pen and palm rejection.
 

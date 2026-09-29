@@ -131,9 +131,11 @@ export const SHELL_METRICS = deepFreeze({
     // An upright phone keeps the timeline's body docked (the artboard is as wide as the phone, so the stage has height
     // to spare): its default is this share of the workspace, whatever the height tier.
     phone: {fold: {left: 'strip', right: 'sheet', float: 'sheet'}, stageMin: {width: 240, height: 140}, rail: 56, railMargin: 8,
-      portraitTimeline: 0.4,
+      portraitTimeline: 0.47,
       // Upright, width is what a phone lacks: the tools lie along the stage's bottom edge instead of down its side.
-      portraitRail: 'horizontal', ownBand: true, timelineHeader: 52},
+      portraitRail: 'horizontal', ownBand: true, timelineHeader: 52,
+      // On its side the timeline stays docked too (docs/TOUCH.md): its header, the ruler and one row by default.
+      landscapeTimeline: 52 + 26 + 48},
     tablet: {fold: {float: 'sheet'}, stageMin: {width: 560, height: 240}, rail: 60, railMargin: 12, portraitTimeline: 0.34, timelineHeader: 52,
       // A folded inspector opens from the band's Properties button (a sheet), never as a 40px strip beside a finger.
       collapse: [['left', 'narrow'], ['left', 'strip'], ['right', 'sheet'], ['left', 'sheet']]},
@@ -400,13 +402,14 @@ export function solveLayout(layout, env = {}) {
   const bottom = {state: bottomDocked.length ? 'docked' : bottomStrip.length ? 'strip' : 'hidden', size: 0, span: entry.bottomSpan, reason: null};
   let bottomLimits = null;
   const portraitTimeline = touch && env.touch.orient === 'portrait' ? touch.portraitTimeline ?? null : null;
-  if (bottom.state === 'docked' && down.fold?.bottom === 'strip' && !portraitTimeline) Object.assign(bottom, {state: 'strip', reason: 'tier'});
+  const landscapeTimeline = touch && env.touch.orient === 'landscape' ? touch.landscapeTimeline ?? null : null;
+  if (bottom.state === 'docked' && down.fold?.bottom === 'strip' && !portraitTimeline && !landscapeTimeline) Object.assign(bottom, {state: 'strip', reason: 'tier'});
   if (bottom.state === 'docked') {
     // Never shorter than the pinned rows plus the minimum content rows at this tier.
-    const min = Math.max(timelineHeightFor(t.minSlots, heightTier, rowMetrics), ...bottomDocked.map(record => describe(record).min ?? 0));
+    const min = landscapeTimeline ?? Math.max(timelineHeightFor(t.minSlots, heightTier, rowMetrics), ...bottomDocked.map(record => describe(record).min ?? 0));
     const fraction = Math.min(...bottomDocked.map(record => describe(record).maxFraction ?? 1));
-    const fallback = portraitTimeline ? Math.round(portraitTimeline * height) : timelineDefaultHeight(height, heightTier, rowMetrics);
-    const cap = down.timeline?.capAtDefault && !portraitTimeline ? fallback : Infinity;
+    const fallback = portraitTimeline ? Math.round(portraitTimeline * height) : landscapeTimeline ?? timelineDefaultHeight(height, heightTier, rowMetrics);
+    const cap = down.timeline?.capAtDefault && !portraitTimeline && !landscapeTimeline ? fallback : Infinity;
     const room = workspaceHeight - padTop - padBottom - rowGap - head - stageMin.height;
     const max = Math.min(Math.floor(fraction * height), cap, room);
     let size = sizes.bottom ?? fallback;

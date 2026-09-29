@@ -195,8 +195,13 @@
     flex: 0 1 auto; min-block-size: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
     border-radius: var(--radius-2xl); background: var(--surface-raised); box-shadow: var(--elevation-2);
   }
-  /* On its side a phone has width to spare and little height: two columns. */
-  :where(:root[data-touch-layout="phone-landscape"]) .touch-modifiers-list { display: grid; grid-template-columns: repeat(2, auto); }
+  /* On its side a phone has width to spare and little height: one row beside the round button, swiping sideways
+   * when it is longer than the stage is wide. */
+  :where(:root[data-touch-layout="phone-landscape"]) .touch-modifiers { flex-direction: row; align-items: flex-end; max-inline-size: calc(100% - var(--space-6)); }
+  :where(:root[data-touch-layout="phone-landscape"]) .touch-modifiers-list {
+    flex-direction: row; flex: 0 1 auto; min-inline-size: 0; overflow: auto hidden; touch-action: pan-x;
+  }
+  :where(:root[data-touch-layout="phone-landscape"]) .touch-modifier { flex: none; min-inline-size: 0; }
   .touch-modifier {
     display: flex; align-items: center; gap: var(--space-2); min-block-size: 44px; min-inline-size: 112px; padding: 0 var(--space-3) 0 var(--space-2-5);
     border: 0; border-radius: var(--radius-lg); background: transparent; color: var(--text-2);
@@ -215,6 +220,69 @@
   .touch-modifiers-toggle[aria-expanded="true"]:not([data-active]) { color: var(--accent-text-strong); }
   .touch-modifiers-state:empty { display: none; }
 
+  /* ---- The touch timeline (touch/timeline-scrubber.mjs): the header's action bar, finger-tall rows, a bold
+   * centred playhead ---- */
+  .tl-head > .tl-actions { display: flex; min-inline-size: 0; }
+  .tl-head > .tl-actions[hidden] { display: none; }
+  .tl-touch-actions {
+    display: flex; align-items: stretch; gap: var(--space-0-5); flex: 1 1 auto; min-inline-size: 0;
+    overflow: auto hidden; scrollbar-width: none; overscroll-behavior: contain; touch-action: pan-x;
+  }
+  .tl-touch-actions:where([data-more-after]) { mask-image: linear-gradient(to right, black calc(100% - 24px), transparent); }
+  .tl-touch-actions:where([data-more-before]) { mask-image: linear-gradient(to left, black calc(100% - 24px), transparent); }
+  .tl-touch-actions:where([data-more-before][data-more-after]) {
+    mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+  }
+  .tl-touch-action {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; flex: 1 0 auto;
+    min-inline-size: 52px; block-size: 48px; padding: 0 var(--space-1);
+    border: 0; border-radius: var(--radius-lg); background: transparent; color: var(--text-2);
+    font: var(--weight-semibold) 11px/1 var(--font-ui); white-space: nowrap;
+  }
+  .tl-touch-action > svg { inline-size: 20px; block-size: 20px; }
+  .tl-touch-action[hidden] { display: none; }
+  .tl-touch-action:disabled { opacity: 0.35; }
+  .tl-touch-action:where(:active:not(:disabled)) { background: var(--surface-hover); }
+  .tl-touch-action:where([data-on="true"]) { color: var(--accent-text-strong); }
+  .tl-touch-action:where([data-touch-action="done"]) { color: var(--accent-text-strong); }
+  :where(.tl-touch-actions[data-range="true"]) .tl-touch-action:where([data-touch-action="done"]) { background: var(--accent-soft); }
+
+  /* A phone held upright: the header in two rows, the transport over the action bar. */
+  :where(:root[data-touch-layout="phone-portrait"]) .timeline-toolbar.tl-head:where([data-actions]) {
+    grid-template-rows: var(--control-2xl) auto; block-size: auto; row-gap: 0; padding-block-end: var(--space-1);
+  }
+  :where(:root[data-touch-layout="phone-portrait"]) .tl-head:where([data-actions]) > .tl-actions {
+    grid-row: 2; grid-column: 1 / -1; border-block-start: 1px solid var(--line-1); padding-block-start: var(--space-1);
+  }
+  /* A phone on its side: one row, the actions between the transport and Onion. */
+  :where(:root[data-touch-layout="phone-landscape"]) .timeline-toolbar.tl-head:where([data-actions]) {
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+  }
+  :where(:root[data-touch-layout="phone-landscape"]) .tl-head:where([data-actions]) > .tl-transport { grid-column: 2; }
+  :where(:root[data-touch-layout="phone-landscape"]) .tl-head:where([data-actions]) > .tl-actions { grid-column: 3; grid-row: 1; }
+  :where(:root[data-touch-layout="phone-landscape"]) .tl-head:where([data-actions]) > .tl-end { grid-column: 4; }
+  :where(:root[data-touch-layout="phone-landscape"]) .tl-touch-action { min-inline-size: 48px; flex-grow: 0; }
+  :where(:root[data-touch-layout="phone-portrait"]) .tl-touch-action { min-inline-size: 44px; padding-inline: 0; }
+  /* A tablet: the bar under the header's clusters, as upright on a phone. */
+  :where(:root[data-form="tablet"]) .timeline-toolbar.tl-head:where([data-actions]) {
+    grid-template-rows: var(--control-2xl) auto; block-size: auto; row-gap: 0; padding-block-end: var(--space-1);
+  }
+  :where(:root[data-form="tablet"]) .tl-head:where([data-actions]) > .tl-actions { grid-row: 2; grid-column: 1 / -1; border-block-start: 1px solid var(--line-1); padding-block-start: var(--space-1); }
+  :where(:root[data-form="tablet"]) .tl-touch-action { flex-grow: 0; min-inline-size: 64px; }
+  /* On a phone First frame, Loop and Audio are rows of Timeline ⋯ (timeline-header.mjs), as at the minimal width. */
+  :where(:root[data-form="phone"]) .tl-head .tl-controls > :where(.tl-first, .tl-loop, .tl-fps) { display: none; }
+  :where(:root[data-form="phone"]) .tl-head .tl-end > :where(.tl-audio, .shell-timeline-sheet) { display: none; }
+
+  /* The rows: names a finger reads and hits; the playhead a bold line with its frame on a tab. */
+  .layer-timeline:where([data-touch]) { min-block-size: 0; }
+  .layer-timeline:where([data-touch]) .sheet-layer { padding-inline: var(--space-2) var(--space-1); }
+  .layer-timeline:where([data-touch]) .sheet-layer .sheet-layer-name { gap: var(--space-2); font: var(--type-ui-strong); }
+  .layer-timeline:where([data-touch]) .sheet-layer .sheet-layer-state { inline-size: 40px; block-size: 40px; opacity: 1; }
+  .layer-timeline:where([data-touch]) .sheet-playhead { inline-size: 3px; margin-inline-start: -1.5px; border-radius: 2px; }
+  .layer-timeline:where([data-touch]) .sheet-playhead > span { min-inline-size: 30px; block-size: 22px; font: var(--weight-bold) 12px/22px var(--font-ui); }
+  /* A phone keeps the eye on the row; the lock is in the layer's menu (a press and hold). */
+  :where(:root[data-form="phone"]) .layer-timeline .sheet-layer .sheet-layer-state:where([aria-label^="Lock"], [aria-label^="Unlock"]):where(:not([data-on="true"])) { display: none; }
+
   /* ---- The Advanced timeline on a phone: a narrower names column (its splitter still widens it) ---- */
   :where(:root[data-form="phone"]) .layer-timeline { --sheet-label: 148px; }
   :where(:root[data-form="phone"]) .sheet-label-head > .sheet-label-title { display: none; }
@@ -222,28 +290,60 @@
   /* The names column scrolls the rows under a vertical swipe (touch/timeline-touch.mjs), never the page. */
   :where(:root[data-input="touch"]) .layer-timeline .sheet-labels { touch-action: none; }
 
-  /* ---- The Simple timeline on a phone: the frame bar is one row over the cards, which take the whole width ---- */
-  :where(:root[data-form="phone"]) .sheet-filmstrip { flex-direction: column; }
-  :where(:root[data-form="phone"]) .sheet-filmstrip > .sheet-framebar {
-    display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: var(--space-2); inline-size: auto; flex: none;
-    padding: var(--space-1-5) var(--space-3); overflow: auto hidden; scrollbar-width: none; overscroll-behavior: contain;
-    border-inline-end: 0; border-block-end: 1px solid var(--line-1);
+  /* ---- The Simple timeline on touch (sheet-filmstrip.mjs): its frame bar is the header's action row, and the
+   * cards are compact, the frame's number on its thumbnail and a slim hold bar under it ---- */
+  .tl-actions > .sheet-framebar {
+    display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: var(--space-2);
+    flex: 1 1 auto; inline-size: auto; min-inline-size: 0; padding: 0 var(--space-1);
+    overflow: auto hidden; scrollbar-width: none; overscroll-behavior: contain; touch-action: pan-x;
+    border: 0; background: transparent;
   }
-  :where(:root[data-form="phone"]) .sheet-framebar > .sheet-framebar-title { display: flex; flex: none; }
-  :where(:root[data-form="phone"]) .sheet-framebar-title > .sheet-framebar-total { display: none; }
-  :where(:root[data-form="phone"]) .sheet-framebar > .sheet-framebar-grid { display: flex; flex: none; align-items: center; gap: var(--space-2); }
-  :where(:root[data-form="phone"]) .sheet-framebar-grid > .ui-field { inline-size: auto; min-inline-size: 150px; }
-  :where(:root[data-form="phone"]) .sheet-framebar-grid > * { flex: none; }
-  :where(:root[data-form="phone"]) .sheet-framebar > .sheet-framebar-layer { flex: none; margin-inline-start: 0; }
-  :where(:root[data-form="phone"]) .sheet-filmstrip > .sheet-filmstrip-scroll { flex: 1 1 auto; min-block-size: 0; }
+  .tl-actions > .sheet-framebar > * { flex: none; }
+  .tl-actions > .sheet-framebar > .sheet-framebar-title { display: flex; align-items: baseline; gap: var(--space-1-5); }
+  .tl-actions :where(.sheet-framebar-title) > .sheet-framebar-total { display: none; }
+  .tl-actions > .sheet-framebar > .sheet-framebar-grid { display: flex; align-items: center; gap: var(--space-2); }
+  .tl-actions > .sheet-framebar .sheet-framebar-grid > * { flex: none; }
+  .tl-actions :where(.sheet-framebar-grid) > .ui-field { inline-size: auto; min-inline-size: 150px; }
+  .tl-actions > .sheet-framebar > .sheet-framebar-layer { margin-inline-start: 0; }
+  :where(:root[data-touch-layout="phone-landscape"]) .tl-actions > .sheet-framebar > .sheet-framebar-title { display: none; }
+  :where(:root[data-touch-layout="phone-landscape"]) .tl-actions :where(.sheet-framebar-row) > .ui-row-label { display: none; }
 
-  /* ---- Splitters a finger can find and grab: a 28px hit area, and the timeline's edge shows its grip ---- */
-  :where(:root[data-input="touch"]) .ui-splitter::after { inset-inline: -14px; }
-  :where(:root[data-input="touch"]) .ui-splitter[aria-orientation="horizontal"]::after { inset: -14px 0; }
-  :where(:root[data-input="touch"]) .ui-splitter[aria-orientation="horizontal"]::before {
-    inset: 1px calc(50% - 22px) auto; inline-size: 44px; block-size: 5px; border-radius: var(--radius-pill); background: var(--line-2);
+  .sheet-filmstrip:where([data-touch]) { min-block-size: 0; }
+  /* Upright on a phone: a strip as tall as its cards (TOUCH_CARD_CHROME over a 5:3 thumbnail inside the 12px gutter),
+   * then the frame bar, its title row over the controls, with the rest of the panel's height. */
+  :where(:root[data-touch-layout="phone-portrait"]) .sheet-filmstrip { flex-direction: column; }
+  :where(:root[data-touch-layout="phone-portrait"]) .sheet-filmstrip > .sheet-filmstrip-scroll {
+    flex: none; block-size: calc((var(--filmstrip-card, 112px) - 12px) * 3 / 5 + 26px + var(--space-2));
   }
-  :where(:root[data-input="touch"]) .ui-splitter:where([data-dragging="true"])::before { background: var(--accent-line); }
+  :where(:root[data-touch-layout="phone-portrait"]) .sheet-filmstrip > .sheet-framebar {
+    display: flex; flex-flow: row wrap; align-content: flex-start; align-items: center; gap: var(--space-2) var(--space-3);
+    inline-size: auto; flex: 1 1 auto; min-block-size: 0; overflow: hidden auto; overscroll-behavior: contain;
+    padding: var(--space-2) var(--space-3) var(--space-3); border: 0; border-block-start: 1px solid var(--line-1);
+  }
+  :where(:root[data-touch-layout="phone-portrait"]) .sheet-framebar > .sheet-framebar-title { display: flex; flex: 1 1 auto; min-inline-size: 0; }
+  :where(:root[data-touch-layout="phone-portrait"]) .sheet-framebar > .sheet-framebar-layer { margin-inline-start: 0; }
+  :where(:root[data-touch-layout="phone-portrait"]) .sheet-framebar-layer > .ui-label { display: none; }
+  :where(:root[data-touch-layout="phone-portrait"]) .sheet-framebar > .sheet-framebar-grid {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); flex: 1 0 100%; order: 2;
+  }
+  :where(:root[data-touch-layout="phone-portrait"]) .sheet-framebar-grid > .ui-field { inline-size: auto; min-inline-size: 150px; }
+  /* A short phone: the controls are one row that swipes sideways, so none sits out of sight below. */
+  :where(:root[data-touch-layout="phone-portrait"]:is([data-height="short"], [data-height="low"])) .sheet-framebar > .sheet-framebar-grid {
+    flex-wrap: nowrap; margin-inline: calc(-1 * var(--space-3)); padding-inline: var(--space-3);
+    overflow: auto hidden; scrollbar-width: none; overscroll-behavior: contain; touch-action: pan-x;
+  }
+  :where(:root[data-touch-layout="phone-portrait"]:is([data-height="short"], [data-height="low"])) .sheet-framebar-grid > * { flex: none; }
+  .sheet-filmstrip:where([data-touch]) .ui-frame-card { position: absolute; grid-template-rows: auto auto; row-gap: 0; padding: var(--space-1-5) var(--space-1) 0; }
+  .sheet-filmstrip:where([data-touch]) .ui-frame-num {
+    position: absolute; inset-block-start: calc(var(--space-1-5) + 4px); inset-inline-start: calc(var(--space-1) + 4px); z-index: 1;
+    padding: 1px var(--space-1-5); border-radius: var(--radius-pill); background: var(--surface-raised); box-shadow: var(--elevation-1);
+    font: var(--weight-bold) 12px/16px var(--font-ui); pointer-events: none;
+  }
+  .sheet-filmstrip:where([data-touch]) .ui-frame-card:where([data-current="true"]) .ui-frame-num { background: var(--accent-strong); color: var(--text-on-strong); }
+  .sheet-filmstrip:where([data-touch]) .ui-frame-count { display: none; }
+  .sheet-filmstrip:where([data-touch]) .ui-frame-hold { block-size: 18px; margin-block-start: 0; }
+  .sheet-filmstrip:where([data-touch]) .ui-frame-hold::before { inset-block-start: 7px; block-size: 4px; border-radius: 2px; }
+  .sheet-filmstrip:where([data-touch]) .ui-frame-hold::after { inset-block-start: 4px; block-size: 10px; }
 
   /* ---- Draw's brush bar on a phone: the preset, the colours, Size and Mirror; Opacity, Flow and Smooth are the
    * Brush section's in Properties (their twins), where a finger has the room ---- */

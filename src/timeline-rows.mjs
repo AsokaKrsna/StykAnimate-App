@@ -17,6 +17,8 @@
  * reachable.
  */
 export const ROW = 32, HEADER = 32, SYSTEM_ROW = 24, SHORT_ROW = 28, SHORT_HEADER = 24;
+/** The touch interface's rows (docs/TOUCH.md): a fingertip's height for every lane, a ruler a thumb can scrub. */
+export const TOUCH_ROW = 48, TOUCH_HEADER = 26, TOUCH_SYSTEM_ROW = 30;
 
 /** The short height tier (shell/dock-host.mjs writes data-height on the root). */
 export function shortSheet(doc = globalThis.document) {
@@ -30,12 +32,14 @@ export function shortSheet(doc = globalThis.document) {
  * `top(i)` is row i's top below the ruler in the sheet's scrolled space and `size(i)` its height;
  * `contentTop` is where the scrolling rows start on screen (below the pinned block, if any);
  * `at(y)` is the row at y below the ruler in that space (-1 above it, `count` or more below the rows).
+ * `touch`: the touch interface's rows (TOUCH_ROW, TOUCH_HEADER, TOUCH_SYSTEM_ROW), whatever the height tier.
  */
-export function sheetRowLayout(tracks = [], {short = false, viewport = Infinity} = {}) {
-  const header = short ? SHORT_HEADER : HEADER, row = short ? SHORT_ROW : ROW, tops = [], sizes = [];
+export function sheetRowLayout(tracks = [], {short = false, viewport = Infinity, touch = false} = {}) {
+  const header = touch ? TOUCH_HEADER : short ? SHORT_HEADER : HEADER, row = touch ? TOUCH_ROW : short ? SHORT_ROW : ROW, tops = [], sizes = [];
+  const systemRow = touch ? TOUCH_SYSTEM_ROW : SYSTEM_ROW;
   let system = 0, systemHeight = 0;
   while (system < tracks.length && tracks[system].kind !== 'layer') {
-    const size = tracks[system].kind === 'camera' || tracks[system].kind === 'scene' ? SYSTEM_ROW : row;
+    const size = tracks[system].kind === 'camera' || tracks[system].kind === 'scene' ? systemRow : row;
     tops.push(systemHeight); sizes.push(size); systemHeight += size; system++;
   }
   const count = tracks.length, pinned = system > 0 && systemHeight <= Math.max(0, viewport - header) / 2;
