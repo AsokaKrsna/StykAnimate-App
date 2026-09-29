@@ -32,10 +32,8 @@
  *           each shown in the workspaces its [data-workspaces] names, then
  *           #zoom-label and Fit. One tab stop: the arrow keys move inside it.
  *
- * showMode() and showSlow() keep the message slot's two revision 4 variants:
- * the instruction of a pick mode while it lasts ("Click the joint to join to ·
- * Cancel") and the quiet "Slow · 14 of 24 fps · Details" while playback misses
- * its target.
+ * showMode() keeps the instruction of a pick mode while it lasts
+ * ("Click the joint to join to · Cancel").
  */
 import {setAttr, setHidden, setText, setVar} from '../ui/dom-write.mjs';
 import {createToolOptions} from '../ui/tool-options.mjs';
@@ -73,7 +71,7 @@ export function solveMessage({head, keep, view = null, startRight = head.left, w
 /**
  * createStageHead({root, toasts, toolOptions}) → {root, start, end, update,
  * setZoom, setToolOptions, adopt, placeMessage, releaseMessage, showMode,
- * showSlow, destroy}. `toasts()` returns the message kit (created after this
+ * destroy}. `toasts()` returns the message kit (created after this
  * module: its host placement asks placeMessage). `toolOptions` is the
  * createToolOptions configuration the header's bar shares (registry, context,
  * icon, t, overlays, onChange, onFold), or a function returning it when the
@@ -104,7 +102,7 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, Ob
   const hereName = doc.createElement('span');
   here.append(hereName);
   chip.before(separator, here);
-  let bar = null, shownMode = '', modeHandle = null, slowHandle = null, placed = false;
+  let bar = null, shownMode = '', modeHandle = null, placed = false;
 
   // The end is one tab stop; the arrow keys move inside it and never reach the canvas's keys.
   const focus = installRovingFocus(end, {items: () => end.querySelectorAll('button'), signal});
@@ -254,27 +252,9 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, Ob
     modeHandle = handle;
   }
 
-  /**
-   * The quiet playback message: {fps, target} while playback misses its
-   * target, null when it keeps up or stops. The caller reads the rate at most
-   * once a second; an unchanged message writes nothing.
-   */
-  function showSlow(sample) {
-    const kit = toasts();
-    if (!kit) return;
-    if (!sample) { const handle = slowHandle; slowHandle = null; handle?.dismiss(); return; }
-    const message = `Slow · ${Math.round(sample.fps)} of ${Math.round(sample.target)} fps`;
-    if (slowHandle) { slowHandle.update?.({message}); return; }
-    let handle = null;
-    handle = kit.show({variant: 'quiet', tone: 'quiet', key: 'playback-slow', message, icon: 'activity', timeout: 0, dismissible: false,
-      actions: [{label: 'Details', command: 'performance', tip: 'Help › Performance'}],
-      onDismiss: () => { if (handle && slowHandle === handle) slowHandle = null; }});
-    slowHandle = handle;
-  }
-
   return {
-    root, start, end, update, setZoom, setToolOptions, adopt, placeMessage, releaseMessage, showMode, showSlow,
+    root, start, end, update, setZoom, setToolOptions, adopt, placeMessage, releaseMessage, showMode,
     get toolOptions() { return bar; },
-    destroy() { controller.abort(); observer?.disconnect(); bar?.destroy?.(); modeHandle?.dismiss(); slowHandle?.dismiss(); },
+    destroy() { controller.abort(); observer?.disconnect(); bar?.destroy?.(); modeHandle?.dismiss(); },
   };
 }

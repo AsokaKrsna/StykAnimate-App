@@ -27,6 +27,8 @@ What's new in each version of StykAnimate.
 
 ### Changed
 
+- Restored the small FPS counter in the top-right corner of the canvas during playback and removed the low-FPS warning.
+
 - A fresh new look, with the StykAnimate typeface, brighter colors, floating panels, and matching menus, buttons and dialogs throughout the app.
 - More room for your animation: tools sit in a floating bar beside the canvas, view controls share one line above it, and small windows open panels only when you need them.
 - The top bar keeps workspaces, Undo, Redo, Save and Export together and shows whether your project is saved.
@@ -48,6 +50,8 @@ What's new in each version of StykAnimate.
 - New projects start with Blue, a simple 2D stick figure with balanced proportions and hand/foot IK for easy posing.
 
 ### Fixed
+
+- Fixed an empty window on Linux Wayland desktops without needing extra launch options.
 
 - Fixed selecting figures on the canvas while using the Tweener.
 - Fixed onion skins looking patchy where parts of a figure overlap.

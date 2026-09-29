@@ -12,6 +12,13 @@ compatibility renderer on a capable GPU. `desktop/gpu-switches.cjs` adds the
 Vulkan feature and the WebGPU opt-in on Linux before Electron starts, merging any
 `--enable-features` given on the command line. Windows and macOS are unchanged.
 
+On a Wayland desktop with XWayland available, ordinary startup automatically
+relaunches through X11 so the window can display Vulkan-backed content. No extra
+flags are needed for `npm start` or the packaged app. An explicit
+`--ozone-platform` launch argument takes precedence; Electron's internally
+selected platform does not. `STYK_WAYLAND=1` keeps native Wayland; combine it
+with `STYK_GPU_UNSAFE=0` to use the compatibility renderer.
+
 - `STYK_GPU_UNSAFE=0` leaves Chromium's own driver allowlist untouched (use it to
   diagnose a driver problem; the app then uses the compatibility renderer).
 - `STYK_GPU_UNSAFE=1` forces the WebGPU opt-in on any platform.

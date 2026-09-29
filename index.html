@@ -204,6 +204,7 @@
               id="overlay"
               aria-label="Figure selection and joint handles"
             ></canvas>
+            <output id="playback-fps" aria-label="Playback frames per second" hidden>— fps</output>
             <div id="canvas-empty" hidden>Drop a StykAnimate, Pivot or Stick Nodes file here</div>
             <div id="renderer-error" hidden></div>
             <div class="viewport-help" id="viewport-hint" hidden></div>
@@ -317,8 +318,6 @@
         <div>
           <span class="viewport-top" aria-hidden="true"><span id="frame-badge">FRAME 01</span
             ><span id="preview-badge" hidden>PLAYING</span></span
-          ><output id="playback-fps" aria-label="Playback frames per second" hidden>— fps</output
-
           ><span id="renderer-label">Initializing WebGPU</span
           ><span class="status-separator">·</span><span id="render-time">—</span
           ><span class="status-separator">·</span

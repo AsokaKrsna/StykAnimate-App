@@ -6,7 +6,7 @@ const os = require('node:os');
 const fs = require('node:fs/promises');
 const { mkdirSync, existsSync } = require('node:fs');
 const { startDesktopHost } = require('./web-host.cjs');
-const { applyGpuSwitches } = require('./gpu-switches.cjs');
+const { applyGpuSwitches, relaunchOnX11 } = require('./gpu-switches.cjs');
 const { RecoveryStore, atomicWrite } = require('./recovery.cjs');
 const { FileStreams } = require('./file-streams.cjs');
 const { SharedClipboard } = require('./shared-clipboard.cjs');
@@ -30,6 +30,10 @@ const getReleaseHistory = require('./release-history.cjs').createReleaseHistory(
 let telemetryBuild = {};
 try { telemetryBuild = require('./telemetry-build.json'); } catch { /* Unpackaged/older source has unknown build metadata. */ }
 const { RELEASES_URL, DONATE_URL } = require('./release-links.cjs');
+
+// On Wayland the window cannot show WebGPU content, and Chromium picks its display
+// backend before this file runs, so start again under XWayland (gpu-switches.cjs).
+if (relaunchOnX11(app)) return;
 
 const APP_ROOT = path.resolve(__dirname, '..');
 const MAX_FILE_BYTES = 256 * 1024 * 1024;

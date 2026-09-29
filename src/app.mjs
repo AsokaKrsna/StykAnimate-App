@@ -428,7 +428,7 @@ const editablePreparation = new EditableScenePreparation(editor, {
   onReady(){state.editingPacket=null;status('Ready');warmPlayback();},
   onError:fail,
 });
-let lastFpsUI = 0, lastSlowUI = 0;
+let lastFpsUI = 0;
 function editingGestureActive(){return Boolean(state.drag||keyboardHandleGesture||editor._drag||editor._authoredPoseEdit||propertyControls?.active||vfxInspector?.active||vfxGizmos?.active||drawingController?.interacting);}
 // The editor chrome as surfaces (src/ui/ui-invalidation.mjs), in today's update order. queueUI()
 // marks them all; one pass a frame updates what is marked. While playing, only the transport updates
@@ -2003,11 +2003,6 @@ function loop(now) {
       setHidden($('preview-quality'), !(state.playbackPacket?.previewQuality?.reduced || state.previewGovernor?.index));
       adaptPreviewQuality(sample, measuredAt);
       lastFpsUI = measuredAt;
-      // "Slow · 14 of 24 fps · Details" only while playback misses its target (never while it waits for sound or frames).
-      if (measuredAt - lastSlowUI >= 1000) {
-        lastSlowUI = measuredAt;
-        stageHead.showSlow(sample.coherent === false && !state.buffering && sample.elapsedMs >= 1000 ? { fps: sample.fps, target: sample.targetFps } : null);
-      }
     }
   }
   // A seek/edit event can request the next frame while this callback runs.
@@ -2043,7 +2038,6 @@ async function play() {
     ? 1000 / editor.report.frame_delay_ms : editor.report.fps);
   telemetry.playbackStart(telemetry.consent.diagnostics ? workload({ report: editor.report, fps: playbackMetrics.targetFps }) : {});
   lastFpsUI = playStart;
-  lastSlowUI = playStart;
   setText($("playback-fps"), "— fps");
   setAttr($("playback-fps"), "data-health", "pending");
   setHidden($("playback-fps"), false);
@@ -2091,7 +2085,6 @@ function pause() {
   }
   setHidden($("playback-fps"), true);
   setHidden($('preview-quality'), true);
-  stageHead.showSlow(null);
   if (wasPlaying && state.playbackPacket)
     state.editingPacket = {
       packet: state.playbackPacket,
