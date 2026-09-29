@@ -49,7 +49,7 @@
   /* ---- The wing (phone, on its side): the workspaces as three glyphs, stacked; the document lives in the menu ---- */
   :where(:root[data-touch-layout="phone-landscape"]) .shell-top :where(.ui-doc, .band-save, #window-controls) { display: none; }
   :where(:root[data-touch-layout="phone-landscape"]) .shell-top .workspace-switch {
-    --_h: auto; flex-direction: column; justify-content: space-between; gap: 0; block-size: 100%; padding: 2px; border-radius: var(--radius-lg);
+    --_h: auto; flex-direction: column; justify-content: space-between; gap: 0; inline-size: 100%; block-size: 100%; padding: 2px 0; border-radius: var(--radius-lg);
   }
   :where(:root[data-touch-layout="phone-landscape"]) .workspace-switch .ui-segmented-item {
     flex: 1 1 0; inline-size: 100%; block-size: auto; padding: 0; justify-content: center; border-radius: var(--radius-md);
@@ -276,8 +276,8 @@
   /* The rows: names a finger reads and hits; the playhead a bold line with its frame on a tab. */
   .layer-timeline:where([data-touch]) { min-block-size: 0; }
   .layer-timeline:where([data-touch]) .sheet-layer { padding-inline: var(--space-2) var(--space-1); }
-  .layer-timeline:where([data-touch]) .sheet-layer .sheet-layer-name { gap: var(--space-2); font: var(--type-ui-strong); }
-  .layer-timeline:where([data-touch]) .sheet-layer .sheet-layer-state { inline-size: 40px; block-size: 40px; opacity: 1; }
+  .layer-timeline:where([data-touch]) .sheet-layer .sheet-layer-name { align-self: stretch; block-size: auto; gap: var(--space-2); font: var(--type-ui-strong); }
+  .layer-timeline:where([data-touch]) .sheet-layer .sheet-layer-state { inline-size: 44px; block-size: 44px; max-block-size: 100%; opacity: 1; }
   .layer-timeline:where([data-touch]) .sheet-playhead { inline-size: 3px; margin-inline-start: -1.5px; border-radius: 2px; }
   .layer-timeline:where([data-touch]) .sheet-playhead > span { min-inline-size: 30px; block-size: 22px; font: var(--weight-bold) 12px/22px var(--font-ui); }
   /* A phone keeps the eye on the row; the lock is in the layer's menu (a press and hold). */
@@ -287,6 +287,8 @@
   :where(:root[data-form="phone"]) .layer-timeline { --sheet-label: 148px; }
   :where(:root[data-form="phone"]) .sheet-label-head > .sheet-label-title { display: none; }
   :where(:root[data-form="phone"]) .layer-timeline .sheet-label-head { justify-content: flex-end; padding-inline-start: var(--space-1); }
+  /* A short window's smaller buttons stay finger-sized: on touch the ruler row that holds them is 44px (timeline-rows.mjs). */
+  :where(:root[data-input="touch"]) .sheet-label-head :is(.ui-icon-button, .sheet-new-layer > .ui-split-more) { --_s: var(--control-sm); block-size: var(--control-sm); }
   /* The names column scrolls the rows under a vertical swipe (touch/timeline-touch.mjs), never the page. */
   :where(:root[data-input="touch"]) .layer-timeline .sheet-labels { touch-action: none; }
 
@@ -349,6 +351,15 @@
    * Brush section's in Properties (their twins), where a finger has the room ---- */
   :where(:root[data-form="phone"]) .drawing-quickbar .draw-slider ~ .draw-slider { display: none; }
   :where(:root[data-form="phone"]) .drawing-quickbar .draw-quick-swatches { display: none; }
+  :where(:root[data-form="phone"]) .drawing-quickbar .draw-quick-row { gap: var(--space-1); }
+  :where(:root[data-form="phone"]) .drawing-quickbar .draw-slider.is-compact { flex: 1 1 auto; min-inline-size: 76px; }
+  /* The two colours side by side, each a fingertip's target (the mouse's overlapping pair leaves the second a sliver),
+   * and a full-sized Swap. */
+  :where(:root[data-input="touch"]) .draw-color-pair { display: flex; align-items: center; gap: var(--space-1); inline-size: auto; block-size: var(--control-md); }
+  :where(:root[data-input="touch"]) .draw-color-pair > input { position: static; flex: none; }
+  :where(:root[data-input="touch"]) .draw-color-pair > .draw-color-primary { inline-size: 40px; block-size: 40px; }
+  :where(:root[data-input="touch"]) .draw-color-pair > .draw-color-secondary { inline-size: 32px; block-size: 32px; border: 1px solid var(--line-3); }
+  :where(:root[data-input="touch"]) .draw-colors .draw-color-swap { inline-size: var(--control-sm); block-size: var(--control-sm); }
   /* Upright, the brush bar takes a full-width row of its own under the view and zoom (a phone has height to spare). */
   :where(:root[data-touch-layout="phone-portrait"]) .stage-head:where([data-workspace="draw"]) {
     grid-template-rows: var(--_h) var(--_h); block-size: auto; row-gap: 0;
@@ -361,4 +372,9 @@
 
   /* ---- Toasts clear the tab bar and the safe areas ---- */
   :where(:root[data-input="touch"]) :where(#toast):where([data-place="bottom"]) { margin-block-end: var(--safe-bottom); }
+
+  /* A phone's tabs and switches (the Properties, VFX and Library islands, a dialog's pages, Export's Format) are a
+   * fingertip tall inside their track. */
+  :where(:root[data-form="phone"]) :is(.ui-tabs, .ui-segmented) { block-size: calc(var(--control-md) + var(--space-0-5) * 2); }
+  :where(:root[data-input="touch"]) .styk-settings-tabs > button { min-block-size: var(--touch-target); }
 }

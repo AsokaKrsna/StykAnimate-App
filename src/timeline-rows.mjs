@@ -18,7 +18,7 @@
  */
 export const ROW = 32, HEADER = 32, SYSTEM_ROW = 24, SHORT_ROW = 28, SHORT_HEADER = 24;
 /** The touch interface's rows (docs/TOUCH.md): a fingertip's height for every lane, a ruler a thumb can scrub. */
-export const TOUCH_ROW = 48, TOUCH_HEADER = 26, TOUCH_SYSTEM_ROW = 30;
+export const TOUCH_ROW = 48, TOUCH_HEADER = 44, TOUCH_SYSTEM_ROW = 44;
 
 /** The short height tier (shell/dock-host.mjs writes data-height on the root). */
 export function shortSheet(doc = globalThis.document) {

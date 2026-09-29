@@ -139,7 +139,7 @@ test('Upright, a phone lays the tools along the stage\u2019s bottom and keeps th
   assert.equal(upright.regions.bottom.size, Math.round(0.47 * 640));
   const side = solve(844, 360, true);
   assert.equal(side.regions.bottom.state, 'docked', 'on its side the timeline stays docked');
-  assert.equal(side.regions.bottom.size, 52 + 26 + 48, 'its header, the ruler and one finger-tall row');
+  assert.equal(side.regions.bottom.size, 52 + 44 + 48, 'its header, the ruler and one finger-tall row');
 });
 
 test('On a tablet the inspector docks while the stage keeps 560px, and opens as a sheet otherwise, never a strip', () => {

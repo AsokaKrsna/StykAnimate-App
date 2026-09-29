@@ -107,7 +107,7 @@ A fingertip covers several frames, so the timeline on touch never asks a finger 
 frame's cell. The playhead is fixed at the middle of the grid and time slides under it: a
 sideways swipe scrubs (with momentum), and the frame that settles under the playhead is the
 current frame. The grid pads both ends by half its width, so frame 1 and the last frame reach
-the middle too. Rows are 48px tall (the Camera and Scene rows 30px), frames start 30px wide,
+the middle too. Rows are 48px tall (the Camera and Scene rows and the ruler 44px), frames start 30px wide,
 and a pinch zooms between 10 and 72px around the playhead.
 
 The header's actions row works on the selected layer at the playhead (`timeline-scrubber.mjs`):

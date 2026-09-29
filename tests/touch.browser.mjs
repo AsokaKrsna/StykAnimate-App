@@ -98,6 +98,8 @@ try {
     const sheet = await t.box('.shell-sheet:popover-open');
     const tabbar = await t.box('.touch-tabbar');
     check('Properties rises as a bottom sheet above the tab bar', sheet && Math.round(sheet.x) === 0 && Math.abs(sheet.y + sheet.height - tabbar.y) <= 1, { sheet, tabbar });
+    const pocket = '.shell-sheet:popover-open :is(.ui-tab, .ui-icon-button, .ui-button), .sheet-label-head button, .sheet-layer button';
+    check('Upright, the sheet’s tabs and buttons and the timeline’s layer buttons are finger-sized', (await t.small(44, pocket)).length === 0, await t.small(44, pocket));
     await t.drag({ x: 195, y: sheet.y + 12 }, { x: 195, y: sheet.y - 200 });
     const taller = await t.box('.shell-sheet:popover-open');
     check('Its grip drags it taller, to a resting height', taller && taller.height > sheet.height + 100, { taller, sheet });

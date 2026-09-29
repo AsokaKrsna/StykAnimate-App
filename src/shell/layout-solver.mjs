@@ -135,7 +135,7 @@ export const SHELL_METRICS = deepFreeze({
       // Upright, width is what a phone lacks: the tools lie along the stage's bottom edge instead of down its side.
       portraitRail: 'horizontal', ownBand: true, timelineHeader: 52,
       // On its side the timeline stays docked too (docs/TOUCH.md): its header, the ruler and one row by default.
-      landscapeTimeline: 52 + 26 + 48},
+      landscapeTimeline: 52 + 44 + 48},
     tablet: {fold: {float: 'sheet'}, stageMin: {width: 560, height: 240}, rail: 60, railMargin: 12, portraitTimeline: 0.34, timelineHeader: 52,
       // A folded inspector opens from the band's Properties button (a sheet), never as a 40px strip beside a finger.
       collapse: [['left', 'narrow'], ['left', 'strip'], ['right', 'sheet'], ['left', 'sheet']]},

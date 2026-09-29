@@ -287,8 +287,8 @@
   /* The touch interface (docs/TOUCH.md): every control grows to a fingertip's target, the icons with it. A phone's
      targets are at least 44px, a tablet's 40; the safe areas keep controls off notches and the home indicator. */
   :root[data-input="touch"] {
-    --control-xs: 36px;
-    --control-sm: 40px;
+    --control-xs: 40px;
+    --control-sm: 44px;
     --control-md: 44px;
     --control-lg: 44px;
     --control-xl: 48px;
@@ -316,8 +316,8 @@
     --text-14: 15px;  --leading-14: 21px;
   }
   :root[data-input="touch"][data-form="tablet"] {
-    --control-xs: 32px;
-    --control-sm: 36px;
+    --control-xs: 36px;
+    --control-sm: 40px;
     --control-md: 40px;
     --control-lg: 42px;
     --control-xl: 48px;
