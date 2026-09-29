@@ -302,7 +302,7 @@
     --topbar-h: 52px;
     --rail-w: 56px;
     --tabbar-h: 60px;
-    --wing-w: 60px;
+    --wing-w: calc(var(--control-md) * 2 + var(--space-1) + var(--space-2) * 2);   /* a phone on its side: the band's two columns */
     --sheet-grip: 24px;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-right: env(safe-area-inset-right, 0px);

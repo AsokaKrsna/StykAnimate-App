@@ -129,7 +129,7 @@
 
   /* ---- Menus anywhere on touch: rows a finger hits, words a little larger, no hover-only affordances ---- */
   :where(:root[data-input="touch"]) .ui-menu { min-inline-size: 260px; max-inline-size: min(380px, calc(100vw - var(--space-4))); }
-  :where(:root[data-input="touch"]) .ui-menu-shortcut { display: none; }
+  :where(:root[data-input="touch"]) :where(.ui-menu-shortcut, kbd.ui-palette-meta) { display: none; }
   :where(:root[data-input="touch"]) .ui-menu-item { column-gap: var(--space-3); }
 
   /* ---- Dialogs on a phone fill the window; their actions stay at the bottom, in reach ---- */

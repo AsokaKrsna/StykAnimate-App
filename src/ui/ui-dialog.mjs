@@ -213,12 +213,15 @@ export function createDialog({size = 'sm', variant = null, title = '', descripti
       const host = mount ?? doc.body;
       host.append(element);
       let target = initialFocusTarget(element);
-      if (keepsKeyboardDown(target, {typing})) target = null;
+      const shy = keepsKeyboardDown(target, {typing});
+      if (shy) target = null;
       const byPointer = Boolean(target) && (pointer ?? overlays?.openedByPointer?.() ?? false);
       // The dialog's focusing steps pick [autofocus]. A pointer open focuses the
       // dialog first, then the target without the ring (focusVisible: false).
       if (byPointer || !target) { element.tabIndex = -1; element.autofocus = true; } else target.autofocus = true;
       element.showModal();
+      // The dialog's own focusing steps may still pick a field's [autofocus]: the dialog keeps focus instead.
+      if (shy && element.contains(doc.activeElement) && doc.activeElement !== element) element.focus({preventScroll: true});
       open = true;
       handle = overlays?.register(element, {kind: 'dialog', modal: true, invoker, beforeClose: guard, closeOnEscape: false,
         onClose: (value, reason) => { if (reason !== 'close') { submitted = undefined; finish(null); } }}) ?? null;
