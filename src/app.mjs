@@ -85,6 +85,8 @@ import { installInspectorBindings } from "./inspector-bindings.mjs";
 import {syncCameraControls, drawCameraMonitor} from './camera-monitor.mjs';
 import { AssetLibrary } from "./asset-library.mjs";
 import { UserLibrary } from './user-library.mjs';
+import { LocalLibrary, createBrowserLibraryApi } from './web-library.mjs';
+import { CommunityLibrary, DownloadLedger, localStorageLedgerStorage } from './community-library.mjs';
 import { installLibraryDrag, installLibraryDrop } from './library-drag.mjs';
 import { SharedClipboard } from './shared-clipboard.mjs';
 import { PropertyControls } from "./property-controls.mjs";
@@ -6053,7 +6055,9 @@ async function init() {
     resources,
   });
   window.styk.assets = assetLibrary;
-  window.styk.library = new UserLibrary({editor, desktop, exporter:documentExporter, importer, pause, finishEdit:finishCurrentEdit, setTool, vfxInspector, hotkeys,
+  // The desktop app keeps the library in its Documents folder; in a browser it lives in that browser's own storage.
+  window.styk.library = new UserLibrary({editor, desktop: desktop ?? createBrowserLibraryApi({library: new LocalLibrary(),
+    community: new CommunityLibrary({downloads: new DownloadLedger(localStorageLedgerStorage())})}), exporter:documentExporter, importer, pause, finishEdit:finishCurrentEdit, setTool, vfxInspector, hotkeys,
     activate: id => shell.showPanel(id, {focus: false})});
   shell.define({id: 'library', root: () => $('user-library'), onVisibility: visible => window.styk.library.panelVisible(visible)});
   const libraryInsert = (asset, point) =>

@@ -115,6 +115,12 @@ export class UserLibrary {
   }
 
   // ---- The model ----
+  /** Removing words: the desktop moves to the Recycle Bin; the browser's library has none, so removing deletes. */
+  get bin() {
+    return this.desktop?.inBrowser
+      ? {menu: 'Delete', dialog: 'will be deleted from this browser’s library', button: 'Delete', done: 'Deleted'}
+      : {menu: 'Move to Recycle Bin', dialog: 'will move to the Recycle Bin', button: 'Move to Recycle Bin', done: 'Moved to Recycle Bin'};
+  }
   get publicItems() {
     const names = new Map((this.publicCatalog?.categories ?? []).map(category => [category.id, category.name]));
     return (this.publicCatalog?.items ?? []).map(item => ({...item, source: 'public', categoryName: names.get(item.category) ?? ''}));
@@ -410,9 +416,9 @@ export class UserLibrary {
       {label: item.kind === 'folder' ? 'Open' : 'Insert', icon: item.kind === 'folder' ? 'folder' : 'plus', shortcut: 'Enter', disabled: this.busy, run: run(() => this.open(item.path))},
       {label: 'Rename', icon: 'text', shortcut: 'F2', disabled: this.busy, run: run(() => this.rename())},
       {label: 'Move to…', icon: 'arrow-right', disabled: this.busy, run: run(() => this.move())},
-      {label: 'Show in folder', icon: 'folder', run: run(() => this.desktop.revealLibrary(item.kind === 'folder' ? item.path : parentOf(item.path)))},
+      ...(this.desktop.revealLibrary ? [{label: 'Show in folder', icon: 'folder', run: run(() => this.desktop.revealLibrary(item.kind === 'folder' ? item.path : parentOf(item.path)))}] : []),
       null,
-      {label: 'Move to Recycle Bin', icon: 'trash', shortcut: 'Del', danger: true, disabled: this.busy, run: run(() => this.trash())},
+      {label: this.bin.menu, icon: 'trash', shortcut: 'Del', danger: true, disabled: this.busy, run: run(() => this.trash())},
     ];
     else {
       items = pub ? [
@@ -423,7 +429,7 @@ export class UserLibrary {
         {label: 'Add selection', icon: 'plus', disabled: !mine || this.busy || !this.editor.selectedObjects.length, run: run(() => this.save())},
         null,
         {label: 'Refresh', icon: 'rotate', disabled: !mine, run: run(() => this.refresh())},
-        {label: 'Show in folder', icon: 'folder', disabled: !mine, run: run(() => this.desktop.revealLibrary(this.folder))},
+        ...(this.desktop?.revealLibrary ? [{label: 'Show in folder', icon: 'folder', disabled: !mine, run: run(() => this.desktop.revealLibrary(this.folder))}] : []),
       ];
       if (options) items.push(null,
         {label: 'Preview background', icon: 'image', submenu: [['auto', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([value, text]) =>
@@ -562,11 +568,11 @@ export class UserLibrary {
   trash() {
     const item = this.source === 'mine' ? this.entries.find(item => item.path === this.selected) : null; if (!item) return;
     this.dialog.setAttribute('aria-label','Remove library item');
-    this.dialog.innerHTML = `<h2>Remove ${esc(item.name)}?</h2><p>${item.kind === 'folder' ? 'This folder and its contents' : 'This asset and its preview'} will move to the Recycle Bin. Copies already in your scenes stay available.</p><div class="library-dialog-error" role="alert"></div><footer><button type="button" class="ui-button" data-variant="ghost" data-cancel>Cancel</button><button type="button" class="ui-button" data-variant="danger" data-remove>Move to Recycle Bin</button></footer>`;
+    this.dialog.innerHTML = `<h2>Remove ${esc(item.name)}?</h2><p>${item.kind === 'folder' ? 'This folder and its contents' : 'This asset and its preview'} ${this.bin.dialog}. Copies already in your scenes stay available.</p><div class="library-dialog-error" role="alert"></div><footer><button type="button" class="ui-button" data-variant="ghost" data-cancel>Cancel</button><button type="button" class="ui-button" data-variant="danger" data-remove>${this.bin.button}</button></footer>`;
     this.dialog.querySelector('[data-cancel]').onclick = () => this.dialog.close();
     this.dialog.querySelector('[data-remove]').onclick = async event => {
       event.target.disabled = true;
-      try { await this.desktop.trashLibraryItem(item.path); this.dialog.close(); this.selected = null; await this.refresh(); this.say('Moved to Recycle Bin'); }
+      try { await this.desktop.trashLibraryItem(item.path); this.dialog.close(); this.selected = null; await this.refresh(); this.say(this.bin.done); }
       catch (error) { this.dialog.querySelector('[role="alert"]').textContent = error.message; } finally { event.target.disabled = false; }
     };
     this.dialog.showModal(); this.dialog.querySelector('[data-cancel]').focus();

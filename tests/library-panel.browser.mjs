@@ -12,17 +12,17 @@ const webp='data:image/webp;base64,UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HA
 try{
   await page.goto(process.env.STYK_URL||'http://127.0.0.1:47831');await page.waitForFunction(()=>styk.ready);
   await page.locator('#library-tab').click();
-  check('the web build explains where the library lives',await page.getByText('Library is available in the desktop app').isVisible()&&!(await page.getByLabel('Search library').isVisible()));
-  check('the web build still offers the community library',await page.getByRole('button',{name:'Community library',exact:true}).isVisible());
-  await page.getByRole('button',{name:'Community library',exact:true}).click();
-  check('the web build links to the community library website',await page.getByRole('link',{name:'Open stykanimate.com/library'}).getAttribute('href')==='https://stykanimate.com/library/');
+  // A browser keeps its own library (src/web-library.mjs); tests/web-library.browser.mjs exercises it for real.
+  await page.getByText('No saved assets yet').waitFor();
+  check('the browser keeps a library of its own',await page.getByLabel('Search library').isVisible()&&!(await page.getByText('Library is available in the desktop app').isVisible()));
+  check('the browser also offers the community library',await page.getByRole('button',{name:'Community library',exact:true}).isVisible());
   await page.getByRole('button',{name:'My library',exact:true}).click();
   await page.evaluate(async webp=>{
     const entries=[{kind:'folder',name:'Characters',path:'Characters',modified:1},{kind:'figure',name:'Walker',path:'Walker.stkz',modified:1},{kind:'movieclip',name:'Punch combo',path:'Punch.stykmov',modified:1},{kind:'set',name:'Crowd',path:'Crowd.stkz',modified:1}];
     const catalog={categories:[{id:'effects',name:'Effects'},{id:'props',name:'Props'}],
       items:[{id:'fanfan1234',name:'Folding fan',kind:'figure',category:'props',description:'Open the fan',author:'Kim',tags:['fan','paper'],size:10,sha256:'a'.repeat(64)},{id:'turbine123',name:'Turbine assembly',kind:'figure',category:'props',description:'',author:'',tags:[],size:10,sha256:'b'.repeat(64)},{id:'boxbox1234',name:'Box',kind:'figure',category:'effects',description:'',author:'Ana',tags:['crate'],size:10,sha256:'c'.repeat(64)}]};
     window.publicCalls=[];
-    const lib=styk.library;lib.desktop={listLibrary:async folder=>({path:folder||'',root:'Library',entries:folder?[]:entries}),getLibraryThumbnail:async()=>null,
+    const lib=styk.library;lib.desktop={listLibrary:async folder=>({path:folder||'',root:'Library',entries:folder?[]:entries}),getLibraryThumbnail:async()=>null,revealLibrary:async()=>{},
       listPublicLibrary:async refresh=>{publicCalls.push(['list',refresh]);await new Promise(r=>setTimeout(r,600));return catalog;},getPublicLibraryPreview:async id=>{publicCalls.push(['preview',id]);return webp;},
       openPublicLibraryPage:async id=>publicCalls.push(['page',id]),savePublicLibraryAsset:async options=>{publicCalls.push(['save',options.id,options.folder,options.thumbnail]);return {path:'Folding fan.stkz'};}};
     await lib.refresh('');
