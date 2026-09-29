@@ -63,15 +63,25 @@ test('cancelling while another job is waiting skips instead of discarding its re
   assert.ok(types(workers[0]).includes('skip'));
 });
 
-test('cancelling a queued job only skips it', () => {
-  const {host, workers, types} = fixture();
+test('cancelling a queued job skips and releases that job and touches no other', () => {
+  const {host, workers} = fixture();
   host.register('running'); host.register('queued');
   host.link('running'); host.link('queued');
   workers[0].say({type: 'busy', jobId: 'running'});
   host.cancel('queued');
-  assert.equal(workers[0].terminated, false);
-  assert.deepEqual(workers[0].posted.filter(item => item.message.type === 'skip').map(item => item.message.jobId), ['queued']);
-  assert.equal(types(workers[0]).includes('release'), false);
+  assert.equal(workers[0].terminated, false, 'the running job is unaffected');
+  const aimedAtQueued = type => workers[0].posted.filter(item => item.message.type === type).map(item => item.message.jobId);
+  assert.deepEqual(aimedAtQueued('skip'), ['queued']);
+  assert.deepEqual(aimedAtQueued('release'), ['queued']);
+});
+
+test('cancelling also releases the job, so its port and skip entry do not accumulate', () => {
+  const {host, workers, types} = fixture();
+  host.register('running'); host.register('other');
+  host.link('running'); host.link('other');
+  workers[0].say({type: 'busy', jobId: 'running'});
+  host.cancel('other');
+  assert.deepEqual(types(workers[0]).slice(-2), ['skip', 'release'], 'skip first so queued requests are answered, then release');
 });
 
 test('a cancelled or unknown job cannot connect', () => {

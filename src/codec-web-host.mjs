@@ -42,7 +42,9 @@ export class BrowserCodecHost {
 
   cancel(jobId) {
     if (!this.#jobs.delete(jobId) || !this.#worker) return;
+    // Skip what is already queued for the job, then let the worker drop its port.
     this.#worker.postMessage({type: 'skip', jobId});
+    this.#worker.postMessage({type: 'release', jobId});
     // Stopping discards every request queued in this worker. Only jobs that sent
     // requests to it are affected; a job on a worker that already died is gone.
     const othersWaiting = [...this.#jobs.values()].some(worker => worker === this.#worker);
