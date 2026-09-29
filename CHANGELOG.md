@@ -8,10 +8,12 @@ What's new in each version of StykAnimate.
 
 ### Added
 
+- Automatic updates for the Linux AppImage, with a prompt to save your work before restarting.
 - Phones and tablets: a touch interface made for fingers, with layouts for holding the device upright or on its side and panels you swipe away.
 - Touch gestures: tap with two fingers to undo and three to redo, and press and hold anything to see its menu.
 - Bend, stretch and the other right-click and modifier-key actions on touch screens, from buttons beside the canvas.
 - Draw with your finger on a phone or tablet until you pick up a pen.
+- Move a layer up or down from its menu in the timeline.
 
 ### Fixed
 

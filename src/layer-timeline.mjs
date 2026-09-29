@@ -613,6 +613,9 @@ export class Timeline{
        {label:selected?.visible===false?'Show layer':'Hide layer',symbol:selected?.visible===false?'eye':'eye-off',action:()=>editor.setLayerVisible(selected.id,selected.visible===false)},
        {label:selected?.locked?'Unlock layer':'Lock layer',symbol:selected?.locked?'unlock':'lock',action:()=>editor.setLayerLocked(selected.id,!selected.locked)},
        own&&{label:several?'Focus selected layers':'Focus this layer',symbol:'layers',action:()=>several?this.focusSelectedLayers():this.setLayerFilter('',new Set([selected.id]))}],
+      // Moving a layer in the stack without dragging its name (a finger, a keyboard): up is toward the top row.
+      own?[{label:'Move layer up',symbol:'up',disabled:editor.report._styk.layers.order.at(-1)===selected.id,action:()=>this.reorderLayer(-1)},
+       {label:'Move layer down',symbol:'down',disabled:editor.report._styk.layers.order[0]===selected.id,action:()=>this.reorderLayer(1)}]:null,
       [{label:'New layer',symbol:'plus',action:()=>this.newLayer()},
        {label:'New drawing layer',symbol:'brush',action:()=>this.newLayer('drawing')}],
       [own&&!selected.locked&&editor.report._styk.layers.order.length>1&&{label:'Delete layer',symbol:'trash',danger:true,action:()=>this.deleteLayer()}],
