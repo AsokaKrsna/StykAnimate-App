@@ -107,6 +107,7 @@
     grid-area: stage; align-self: end; justify-self: end; z-index: var(--z-canvas-hud);
     display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2);
     margin: 0 var(--space-3) var(--space-3) 0; pointer-events: none;
+    max-block-size: calc(100% - var(--control-2xl) - var(--space-6));
   }
   .touch-modifiers > * { pointer-events: auto; }
   .touch-modifiers[hidden], .touch-modifiers-list[hidden] { display: none; }

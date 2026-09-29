@@ -27,6 +27,7 @@ const MODIFIERS = Object.freeze({
   add: {shift: true, label: 'Add', icon: 'plus', hint: 'Tap figures to add them to the selection (Shift)'},
   transform: {alt: true, label: 'Transform', icon: 'transform', hint: 'Drag a joint to rotate and scale the figure; drag its origin to copy it (Alt)'},
   handles: {held: 'handle-edit-hold', label: 'Handles', icon: 'nodes', hint: 'Drag joints to move their handles (hold R)'},
+  depth: {held: 'depth-hold', label: 'Depth', icon: 'depth', hint: 'Drag a 3D part toward or away from you (hold D)'},
   line: {shift: true, label: 'Line', icon: 'line', hint: 'A straight line from the last stroke (Shift)'},
   pick: {alt: true, label: 'Pick', icon: 'eyedropper', hint: 'Pick a colour from the canvas (Alt)'},
   size: {ctrl: true, label: 'Size', icon: 'maximize', hint: 'Drag to resize the brush (Ctrl)'},
@@ -47,8 +48,15 @@ export const MODIFIER_SETS = Object.freeze({
     'drawing-lasso': ['add', 'subtract'], 'drawing-shape': ['snap'], 'drawing-transform': ['add']},
 });
 
-/** The modifier names a workspace's tool offers ([] for none). */
-export const modifiersFor = (workspace, tool) => [...(MODIFIER_SETS[workspace]?.[tool] ?? [])];
+/**
+ * The modifier names a workspace's tool offers ([] for none). `spatial`: the selected figure has 3D parts, which
+ * Animate's posing tools can move in depth.
+ */
+export function modifiersFor(workspace, tool, {spatial = false} = {}) {
+  const names = [...(MODIFIER_SETS[workspace]?.[tool] ?? [])];
+  if (spatial && workspace === 'animate' && (tool === 'select' || tool === 'pose')) names.push('depth');
+  return names;
+}
 
 /**
  * The event properties a set of active modifier names adds: {secondary, shift,
@@ -93,9 +101,9 @@ const SHAPED = ['pointerdown', 'pointermove', 'pointerup', 'pointercancel'];
  * installModifierDock({touch, workspace, viewport, host, context, setHeld})
  *   touch     the touch mode: the dock shows only while it is on
  *   host      where the dock goes (the workspace grid; layout/touch.css places it on the stage)
- *   context() {workspace: 'animate' | 'draw' | 'rig', tool}
+ *   context() {workspace: 'animate' | 'draw' | 'rig', tool, spatial (the selection has 3D parts)}
  *   setHeld(command, down)  a held key without a mouse equivalent
- * Returns {sync(), active, destroy()}.
+ * Returns {sync(), active, destroy()}; call sync() when the selection changes (its 3D parts offer Depth).
  */
 export function installModifierDock({touch, host, viewport, context, setHeld = () => {}, document: doc = viewport.ownerDocument,
   window: win = doc.defaultView ?? globalThis} = {}) {
@@ -186,8 +194,8 @@ export function installModifierDock({touch, host, viewport, context, setHeld = (
 
   /** Follows the workspace and tool: the offered buttons change, and a latched modifier ends with its tool. */
   function sync() {
-    const {workspace, tool} = context?.() ?? {};
-    const names = touch?.active ? modifiersFor(workspace, tool) : [];
+    const {workspace, tool, spatial = false} = context?.() ?? {};
+    const names = touch?.active ? modifiersFor(workspace, tool, {spatial}) : [];
     const key = `${workspace}|${tool}|${names.join(',')}`;
     if (key !== lastKey) {
       if (lastKey) clear();

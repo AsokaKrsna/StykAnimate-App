@@ -161,7 +161,7 @@ current tool:
 
 | Workspace and tool | Buttons |
 | --- | --- |
-| Animate, Select and pose | Bend (the right button) · Stretch (Ctrl) · Add (Shift) · Transform (Alt) · Handles (hold R) |
+| Animate, Select and pose | Bend (the right button) · Stretch (Ctrl) · Add (Shift) · Transform (Alt) · Handles (hold R), and Depth (hold D) while the selected figure has 3D parts |
 | Animate, Tweener | Add |
 | Animate, Edit joints | Bend · Stretch |
 | Build | Bend · Stretch · Add (by tool) |
@@ -170,7 +170,7 @@ current tool:
 
 Tap a button to latch it (it stays on, highlighted, until tapped again or the tool changes);
 hold it with one thumb while another finger drags for a one-off. The round button shows what
-is on. While a modifier is on, the stage's touch and pen events reach the editor as if the
+is on. On a phone on its side the buttons stand in two columns. While a modifier is on, the stage's touch and pen events reach the editor as if the
 button or key were held: the trusted event is stopped at `#viewport` and a copy with the
 modifiers goes to the same target, so bending, stretching, selecting and drawing keep one
 implementation. A mouse keeps its own buttons and keys.

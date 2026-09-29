@@ -361,6 +361,7 @@ let drawingController, timelineUI, timelineHost,
   shell,
   workspaceLayout,
   touchMode,
+  touchModifiers,
   assetLibrary,
   raf = 0,
   playStart = 0,
@@ -2164,6 +2165,7 @@ function updateTitle() {
 }
 function syncSelectionControls() {
   timelineHost.syncRangeEdit();
+  touchModifiers?.sync();
   if (state.tool === 'select' && !builderMode?.active && !drawingController?.active)
     setText($('viewport-hint'), editor.object?.join
       ? 'Alt-drag a joint around the attachment · Ctrl: rotate only · Shift: scale only'
@@ -5987,10 +5989,15 @@ async function init() {
   });
   // The right button and the modifier keys for fingers: the stage's modifier buttons (docs/TOUCH.md).
   const workspaceElement = document.querySelector(".workspace");
-  window.styk.touchModifiers = installModifierDock({
+  window.styk.touchModifiers = touchModifiers = installModifierDock({
     touch: touchMode, host: workspaceElement, viewport,
-    context: () => ({ workspace: workspaceElement.dataset.mode, tool: workspaceElement.querySelector(".shell-rail .tool-dock [data-tool].active")?.dataset.tool ?? state.tool }),
-    setHeld: (command, down) => { if (command === "handle-edit-hold") { state.handleEditHeld = down; requestRender(); } },
+    context: () => ({ workspace: workspaceElement.dataset.mode, tool: workspaceElement.querySelector(".shell-rail .tool-dock [data-tool].active")?.dataset.tool ?? state.tool,
+      spatial: Boolean(editor.figure?.segments?.some((segment) => segment._stykRig?.spatial)) }),
+    // The held keys the modifiers stand in for (hotkeys.mjs: hold R, hold D).
+    setHeld: (command, down) => {
+      if (command === "handle-edit-hold") { state.handleEditHeld = down; requestRender(); }
+      else if (command === "depth-hold") state.depthHeld = down;
+    },
   });
   const shellAnnouncer = document.createElement("div");
   shellAnnouncer.className = "ui-visually-hidden";

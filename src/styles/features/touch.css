@@ -192,8 +192,11 @@
   /* ---- The modifier buttons: a column of labelled toggles over one round button that shows what is on ---- */
   .touch-modifiers-list {
     display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-1-5);
+    flex: 0 1 auto; min-block-size: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
     border-radius: var(--radius-2xl); background: var(--surface-raised); box-shadow: var(--elevation-2);
   }
+  /* On its side a phone has width to spare and little height: two columns. */
+  :where(:root[data-touch-layout="phone-landscape"]) .touch-modifiers-list { display: grid; grid-template-columns: repeat(2, auto); }
   .touch-modifier {
     display: flex; align-items: center; gap: var(--space-2); min-block-size: 44px; min-inline-size: 112px; padding: 0 var(--space-3) 0 var(--space-2-5);
     border: 0; border-radius: var(--radius-lg); background: transparent; color: var(--text-2);

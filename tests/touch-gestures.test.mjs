@@ -63,7 +63,9 @@ test('Each workspace’s tools offer their own modifiers, named for what they do
   assert.deepEqual(modifiersFor('draw', 'drawing-lasso'), ['add', 'subtract']);
   assert.deepEqual(modifiersFor('animate', 'hand'), [], 'panning needs none');
   assert.deepEqual(modifiersFor('nowhere', 'select'), []);
-  for (const tools of Object.values(MODIFIER_SETS)) for (const names of Object.values(tools)) assert.ok(names.length <= 5, 'a column a thumb can reach');
+  assert.deepEqual(modifiersFor('animate', 'select', {spatial: true}).at(-1), 'depth', 'a figure with 3D parts adds Depth (hold D)');
+  assert.ok(!modifiersFor('draw', 'drawing-brush', {spatial: true}).includes('depth'));
+  for (const tools of Object.values(MODIFIER_SETS)) for (const names of Object.values(tools)) assert.ok(names.length <= 5, 'a column a thumb can reach (Depth may make six; the column scrolls)');
 });
 
 test('Modifiers combine into the right button and the keys', () => {
