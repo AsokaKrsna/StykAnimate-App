@@ -52,6 +52,8 @@ async function editor(size, { touch = true } = {}) {
   /** Every shown button of the chrome that lies partly outside the window (never allowed). */
   const offscreen = () => page.evaluate(() => [...document.querySelectorAll('.titlebar button, .touch-tabbar button, .stage-head button, .timeline-toolbar button, .shell-rail button')]
     .filter((b) => b.getClientRects().length && getComputedStyle(b).visibility !== 'hidden')
+    // An upright phone's tool bar scrolls sideways: its tools past the edge are a swipe away, not cut off.
+    .filter((b) => !b.closest('.workspace[data-rail-orientation="horizontal"] > .shell-rail'))
     .map((b) => ({ name: b.getAttribute('aria-label') || b.textContent.trim(), r: b.getBoundingClientRect() }))
     .filter(({ r, name }) => r.width && (r.left < -1 || r.right > innerWidth + 1 || r.top < -1 || r.bottom > innerHeight + 1) && name)
     .map(({ name }) => name));
@@ -185,6 +187,18 @@ try {
     await t.page.waitForTimeout(800);
     check('In Draw a finger draws a stroke (until a pen is used)', await t.eval((view) => window.styk.editor.canUndo && window.styk.state.view.x === view.x, view));
     check('Draw offers its own modifiers', (await t.eval(() => [...document.querySelectorAll('.touch-modifier')].map((b) => b.dataset.modifier))).join() === 'line,pick,size');
+    await t.context.close();
+  }
+
+  // ---- Every workspace in every layout keeps its chrome on screen ----
+  for (const size of ['390x780', '844x390', '360x640', '820x1180']) {
+    const t = await editor(size);
+    for (const mode of ['draw', 'rig', 'animate']) {
+      await t.tap(`.workspace-switch [data-workspace-mode="${mode}"]`);
+      await t.page.waitForTimeout(900);
+      check(`${size} in ${mode}: nothing in the chrome is cut off`, (await t.offscreen()).length === 0, await t.offscreen());
+    }
+    check(`${size}: no console or page errors across the workspaces`, t.problems.length === 0, t.problems);
     await t.context.close();
   }
 

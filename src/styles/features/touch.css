@@ -37,6 +37,9 @@
   :where(:root[data-touch-layout="phone-portrait"]) .shell-top .ui-doc { flex: 0 1 auto; min-inline-size: 0; max-inline-size: 100%; overflow: hidden; }
   :where(:root[data-touch-layout="phone-portrait"]) .shell-top :where(#save-state) { display: none; }
   :where(:root[data-form="phone"]) .shell-top .band-export > .band-label { display: none; }
+  /* During a session (Build, a movieclip, the camera) an upright phone's band keeps Done; the quiet Export waits in File,
+   * as the desktop band folds it (export2out). */
+  :where(:root[data-touch-layout="phone-portrait"]) .shell-top:where([data-session]) .band-export { display: none; }
   :where(:root[data-form="phone"]) .shell-top :where(.band-export, .band-done, .band-testrig, .band-cancel) { --_px: 0px; inline-size: var(--control-md); }
   :where(:root[data-form="phone"]) .shell-top :where(.band-done, .band-testrig, .band-cancel) > .band-label { display: none; }
 

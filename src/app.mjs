@@ -4646,7 +4646,11 @@ const actions = {
       () => zoom(n / 100 / state.view.scale),
     ]),
   ),
-  "scene-settings": () => selectTrack({ id: "scene", kind: "scene" }),
+  "scene-settings": () => {
+    selectTrack({ id: "scene", kind: "scene" });
+    // Where the inspector is a sheet (a phone, an upright tablet), asking for the Scene's properties shows them.
+    if (shell?.presentation("properties") === "sheet") shell.showPanel("properties", { focus: false });
+  },
   settings: () => editorSettings?.open(),
   privacy: () => privacyUI.open(),
   feedback: () => feedbackUI.open(),
