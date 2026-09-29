@@ -123,6 +123,8 @@ jobs:
           npm run verify:package
       - name: Boot the packaged app
         run: xvfb-run -a npm run test:boot:packaged
+      - name: Export video with the bundled encoder
+        run: xvfb-run -a npm run test:export:packaged
       - name: Upload the build evidence
         uses: actions/upload-artifact@v4
         with:
