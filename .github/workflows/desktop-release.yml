@@ -96,9 +96,6 @@ jobs:
             version=$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).version')
             STYK_PACKAGED_EXECUTABLE="$GITHUB_WORKSPACE/release/$version/StykAnimate-$version-linux-x86_64.AppImage" xvfb-run -a npm run test:boot:packaged
           fi
-      - name: Install and upgrade the actual Windows release
-        if: runner.os == 'Windows'
-        run: node scripts/verify-release-install.mjs
       - name: Upload release assets
         uses: actions/upload-artifact@v4
         with:
@@ -110,6 +107,9 @@ jobs:
             release/${{ env.RELEASE_VERSION }}/*.AppImage
           retention-days: 30
           if-no-files-found: error
+      - name: Install and upgrade the actual Windows release
+        if: runner.os == 'Windows'
+        run: node scripts/verify-release-install.mjs
       - name: Upload verification evidence
         if: always()
         uses: actions/upload-artifact@v4

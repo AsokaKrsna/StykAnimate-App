@@ -28,7 +28,6 @@ const env = {...electronEnvironment(), STYK_USER_DATA_DIR: profile, STYK_LIBRARY
 const exec = promisify(execFile);
 const run = (file, args) => exec(file, args, {env, windowsHide: true, timeout: 180000, maxBuffer: 5 * 1024 * 1024});
 const powershell = command => run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command]);
-const asar = createRequire(import.meta.url)('@electron/asar');
 const requests = [], allowed = new Set((await verifyReleaseAssets(directory, version, 'win32')).map(file => path.basename(file)));
 const server = createServer(async (request, response) => {
   const name = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname.slice(1));
@@ -74,6 +73,7 @@ try {
   assert.equal((await stat(baseline)).size, asset.size);
   assert.equal(`sha256:${await fileHash(baseline, 'sha256', 'hex')}`, asset.digest);
   evidence.baselineSHA256 = asset.digest.slice(7);
+  evidence.candidateArchiveSHA256 = await fileHash(path.join(directory, 'win-unpacked', 'resources', 'app.asar'), 'sha256', 'hex');
   evidence.candidateSHA256 = await fileHash(path.join(directory, `StykAnimate-${version}-Setup-x64.exe`), 'sha256', 'hex');
   await run(baseline, ['/S', '/currentuser', `/D=${install}`]);
   installed = true;
@@ -128,9 +128,12 @@ try {
   check('The edited project is saved before the old app closes for installation');
   await until('the installed candidate and its automatic relaunch', async () => {
     try {
-      const metadata = JSON.parse(asar.extractFile(path.join(install, 'resources', 'app.asar'), 'package.json'));
-      return metadata.version === version && (await processIds()).length > 0;
-    } catch { return false; }
+      // ASAR readers cache file offsets by path. The installer replaces that
+      // archive in place, so compare fresh bytes to the exact packaged payload.
+      evidence.installedArchiveSHA256 = await fileHash(path.join(install, 'resources', 'app.asar'), 'sha256', 'hex');
+      evidence.relaunchedProcesses = await processIds();
+      return evidence.installedArchiveSHA256 === evidence.candidateArchiveSHA256 && evidence.relaunchedProcesses.length > 0;
+    } catch (error) { evidence.lastInstallObservation = error.message; return false; }
   });
   check('Real NSIS upgrade replaces the installed version and automatically relaunches it');
   // Reattach to the installed candidate after confirming the real relaunch.
