@@ -131,3 +131,16 @@ test('cross-packet content identity survives registry eviction and keeps subpixe
   const changed={...g,drawables:g.drawables.map((item,i)=>i?item:{...item,thickness:item.thickness+1e-9})};
   assert.notEqual(await cache.contentKey(cache.get(changed,changed.drawables)),key);
 });
+
+test('content keys are synchronous, content-addressed and independent of WebCrypto',()=>{
+  const {g,moved}=pair(),first=new ArtworkRegistry(),second=new ArtworkRegistry(),saved=Object.getOwnPropertyDescriptor(globalThis,'crypto');
+  Object.defineProperty(globalThis,'crypto',{value:undefined,configurable:true,writable:true});
+  try{
+    const key=first.contentKey(first.get(g,g.drawables));
+    assert.match(key,/^h128:[0-9a-f]{32}$/);
+    // A translated copy has identical object-local artwork, so a separate worker registry agrees.
+    assert.equal(second.contentKey(second.get(moved,moved.drawables)),key);
+    const changed={...g,drawables:g.drawables.map(item=>({...item,thickness:(item.thickness||1)+.25}))};
+    assert.notEqual(first.contentKey(first.get(changed,changed.drawables)),key);
+  }finally{Object.defineProperty(globalThis,'crypto',saved);}
+});

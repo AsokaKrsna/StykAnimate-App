@@ -99,10 +99,18 @@ still references it. These allocations appear in `previewMemoryPlan()` and GPU
 diagnostics; they remain separate from active-frame bytes.
 
 Artwork keys use a unique worker-realm namespace when a signature cannot be
-shared. Embedded payloads compare complete original strings locally and include
-SHA-256 payload digests in transferable identities. Small hashes only select
-candidate buckets. Placement and anchor metadata are resnapshotted after edits
-even when the embedded bytes stay unchanged.
+shared. Embedded payloads compare complete original strings locally and add a
+128-bit content hash to transferable identities. Local artwork reuse still
+compares the complete signature; the 128-bit hash of the definition, payloads,
+evaluated metadata and every signature coordinate (`content-hash.mjs`) only has
+to keep different artwork apart across workers and packets. Random collisions
+are on the order of 2^-128 per pair, but the hash is not collision-resistant
+against crafted input, which a locally authored animation does not contain. It
+replaced SHA-256 through WebCrypto, which spent about 20 ms per megabyte on the
+worker thread and was the largest single item in dense-scene playback profiles.
+Keys are computed synchronously and no longer need a secure context.
+Placement and anchor metadata are resnapshotted after edits even when the
+embedded bytes stay unchanged.
 
 The governor commits viewport density changes at the beginning of a paint task.
 Resizing after presentation would clear the newly drawn image. Density-only

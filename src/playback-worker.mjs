@@ -154,7 +154,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
   const frame = { camera: cameraAtTime(report,native), background_id: native.background_id, background_id_b: native.background_id_b, background_mix: native.background_mix, duration_raw: native.duration_raw,
     ...(vfxEnabled&&vfxStack(native).length ? {_stykVfx:{figure:vfxStack(native)}} : {}),
     ...(native._stykBackgroundColor !== undefined ? {_stykBackgroundColor: native._stykBackgroundColor} : {}) };
-  const groups = [], compatibility = [], chunks = [], rasterJobs = [], keyJobs = [], transforms = [0, 0, 1, 1], uids = [0];
+  const groups = [], compatibility = [], chunks = [], rasterJobs = [], transforms = [0, 0, 1, 1], uids = [0];
   const matrix = cameraMatrix({ report, frame, cameraEnabled, view: { scale } });
   const resolution = rasterResolution(Math.hypot(matrix[0], matrix[1]) || 1) * quality;
   const sceneVisibleBounds = playbackVisibleBounds(report, frame, cameraEnabled,scale*quality),parallax=parallaxResolver(report,native,cameraEnabled);
@@ -259,20 +259,15 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
         requireBudget(bitmapBytes + width * height * 4 + (shapeCount + 1) * SHAPE_FLOATS * 4 + (groups.length + 1) * 84);
         // A depth-tested mesh can ship its evaluated faces instead of pixels.
         const meshRaster=gpuIsolation&&!vectorVfx&&!vectorIsolation&&meshOnlyItems(items)&&!items.some(hasDrawableVfx);
-        // Content digests run on the crypto thread; start them eagerly and
-        // resolve every key together after traversal instead of serializing a
-        // worker event-loop hop for every compatibility object.
-        const keyJob=artwork?{promise:artworks.contentKey(artwork).then(key=>`${vectorVfx?'vfx-vector:':vectorIsolation?'vector:':meshRaster?'mesh:':''}${key}:${cropKey}`),key:undefined,entry:null}:null;
-        if(keyJob)keyJobs.push(keyJob);
-        const pendingKey=async()=>keyJob?(keyJob.key??await keyJob.promise):undefined;
+        const rasterKey=artwork?`${vectorVfx?'vfx-vector:':vectorIsolation?'vector:':meshRaster?'mesh:':''}${artworks.contentKey(artwork)}:${cropKey}`:undefined;
         const actualBounds = { x: bounds.x, y: bounds.y, width: width / pixelScale, height: height / pixelScale };
         if(vectorVfx){const data=compileVectorObject(vectorVfx.items,source.root,0);bitmapBytes+=width*height*4+data.byteLength;
           const entry={vectorRaster:{data,width,height},vfx:{stack:vectorVfx.stack,scale:vectorVfx.scale,domain:vectorVfx.domain??objectBounds(vectorVfx.items,{...resources,vfxBounds:false})},bounds:actualBounds,root:source.root,resolution,pixelScale,uid};
-          compatibility.push(entry);if(keyJob)keyJob.entry=entry;
+          compatibility.push(entry);entry.artworkKey=rasterKey;
         }else if (meshRaster) {
           const mesh=meshRasterSource(items);bitmapBytes+=width*height*4+meshRasterBytes(mesh);
           const entry={meshRaster:{...mesh,width,height},bounds:actualBounds,root:source.root,resolution,pixelScale,uid};
-          compatibility.push(entry);if(keyJob)keyJob.entry=entry;
+          compatibility.push(entry);entry.artworkKey=rasterKey;
         }else if (vectorIsolation) {
           // The transfer owns a copy; retained vector cache buffers stay attached.
           const compile = () => compileVectorObject(items, source.root, 0);
@@ -281,7 +276,7 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
           // overestimates shared GPU artwork in CPU admission to bound both caches.
           bitmapBytes += width * height * 4 + data.byteLength;
           const entry={vectorRaster: {data, width, height}, bounds: actualBounds, root: source.root, resolution, pixelScale, uid};
-          compatibility.push(entry);if(keyJob)keyJob.entry=entry;
+          compatibility.push(entry);entry.artworkKey=rasterKey;
         } else {
         const pool = resources?.rasterSurface?.(width,height,{hasImages:descriptor.hasImages}) || resources?.rasterSurfaces || fallbackRasterSurfaces;
         const rasterItems=items;
@@ -299,8 +294,8 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
         // Ownership supplies its epoch in bitmapKey(); this key describes pixels
         // alone so unchanged artwork can share across retained frame revisions.
         const entry={bounds:actualBounds,root:g.root,resolution,pixelScale,uid};compatibility.push(entry);
-        if(keyJob)keyJob.entry=entry;
-        const capture=async()=>{const rasterKey=await pendingKey();entry.bitmap=resources?.artworkBitmaps?await resources.artworkBitmaps.packetBitmap(rasterKey,rasterize):rasterize();};
+        entry.artworkKey=rasterKey;
+        const capture=async()=>{entry.bitmap=resources?.artworkBitmaps?await resources.artworkBitmaps.packetBitmap(rasterKey,rasterize):rasterize();};
         // Image decodes are a bounded moving working set. Consume them before
         // another object's preload can replace the variant used in this key.
         if(descriptor.hasImages)await capture();else rasterJobs.push(capture);
@@ -334,12 +329,6 @@ async function compilePacketAttempt(report, tick, { revision = 1, scale = 1, qua
     const fallbackEntries = compatibility.filter(entry => entry.items);
     const fallbackBytes = fallbackEntries.length ? JSON.stringify(fallbackEntries).length * 2 : 0;
     requireBudget(shapes.byteLength + transformData.byteLength + uidData.byteLength + bitmapBytes + fallbackBytes + groups.length * 64);
-    if(keyJobs.length){
-      if(cancelled())throw new DOMException('Playback preparation was superseded.', 'AbortError');
-      // One event-loop turn resolves every pending digest; image captures that
-      // already awaited their own key observe the settled job below.
-      await Promise.all(keyJobs.map(job=>job.promise.then(key=>{job.key=key;if(job.entry)job.entry.artworkKey=key||undefined;})));
-    }
     // Admit the complete packet before capturing path/glyph rasters. Images
     // consume their currently decoded variant during traversal above.
     for(let i=0;i<rasterJobs.length;i++){

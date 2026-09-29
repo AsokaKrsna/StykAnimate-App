@@ -1,20 +1,19 @@
 /** Content identity for reusable object-local artwork. Native world geometry is
  * untouched. Coordinates must match exactly after subtracting each root; no
- * quantization or fast-hash-only equality can merge distinct poses or styles. */
+ * quantization or fast-hash-only equality can merge distinct poses or styles
+ * within one worker. Identities that cross workers use a 128-bit content hash. */
 import {spatialMeshSignature} from './spatial-mesh.mjs';
+import {ContentHasher} from './content-hash.mjs';
 const ignoredObjectKeys=new Set(['unique_id','object_slot','root_x','root_y','join','record_offset','record_end','runtime_segments']);
 const numericFields=['index','version','angle','bend','length','z','thickness','alpha','opacity'];
 const knownFields=new Set(['obj','fig','slot','start','end','points','seg','poly','asset','type','rgb','static','depthValues','culled','spatialMesh','triangles','materials','count',...numericFields]);
 const types=['line','circle','image','text','poly','mesh'];
-const hash=values=>{let n=2166136261;for(let i=0;i<values.length;i++)n=Math.imul(n^values[i],16777619);return n>>>0;};
 const textHash=value=>{let n=2166136261;for(let i=0;i<value.length;i++)n=Math.imul(n^value.charCodeAt(i),16777619);return n>>>0;};
 const equal=(a,b)=>{if(a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(!Object.is(a[i],b[i]))return false;return true;};
 let registrySerial=0;
 // A worker has its own module counters. Local fallback keys cross that boundary
 // with packets, so a realm identifier is necessary even when no digest is used.
 const realmNamespace=globalThis.crypto?.randomUUID?.() ?? `${Date.now()}:${Math.random()}`;
-const encoder=new TextEncoder();
-const digest=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),n=>n.toString(16).padStart(2,'0')).join('');
 
 /** Embedded media payloads are megabyte strings that would dominate every
  * signature. Each unique string is hashed once, then its object reference
@@ -22,7 +21,7 @@ const digest=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('
 const PAYLOAD_LENGTH=512;
 const assetScrubs=new WeakMap();
 const samePayloads=(a,b)=>a.length===b.length&&a.every((value,index)=>value.text===b[index].text);
-const payloadDigest=payload=>payload.digest??=digest(encoder.encode(payload.text));
+const payloadHash=payload=>payload.hash??=new ContentHasher().string(payload.text).digest();
 function scrubbedAsset(asset,payloads){
   const cached=assetScrubs.get(asset),records=new Map(),value={...asset};
   for(const key in value){const text=value[key];
@@ -61,22 +60,25 @@ export class ArtworkRegistry {
   begin(revision){
     if(revision===undefined||this.definitionRevision!==revision){this.figureCache=new WeakMap();this.byGeometry=new WeakMap();this.definitionRevision=revision;}
   }
-  /** Stable cross-packet identity survives eviction of the large comparison
-   * records. Local lookup still compares full content after its fast hash.
-   * SHA-256 addresses the complete, unquantized signature, not the fast hash. */
+  /** Stable cross-packet, cross-worker identity: a 128-bit hash of the complete,
+   * unquantized signature, definition and embedded payloads. It survives
+   * eviction of the large comparison records. A worker still compares the full
+   * signature before it reuses local artwork; only artwork that no comparison
+   * record describes (oversized definitions) gets a worker-local identity. */
   contentKey(artwork){
-    if(!artwork.data||!artwork.definition.text||!globalThis.crypto?.subtle)return Promise.resolve(`local:${this.namespace}:${artwork.id}`);
-    return artwork.contentKeyPromise??=(async()=>{
-      const definition=artwork.definition;
-      const definitionKey=await (definition.contentDigest??=(async()=>digest(encoder.encode(JSON.stringify([
-        definition.text,await Promise.all(definition.payloads.map(payloadDigest))]))))());
-      const payloadKeys=await Promise.all(artwork.payloads.map(payloadDigest));
-      const header=encoder.encode(JSON.stringify(['styk-artwork-v2',definitionKey,artwork.metadata,payloadKeys,artwork.data.byteLength]));
-      const bytes=new Uint8Array(4+header.byteLength+artwork.data.byteLength);
-      new DataView(bytes.buffer).setUint32(0,header.byteLength,true);bytes.set(header,4);
-      bytes.set(new Uint8Array(artwork.data.buffer,artwork.data.byteOffset,artwork.data.byteLength),4+header.byteLength);
-      return `sha256:${await digest(bytes)}`;
-    })();
+    return artwork.contentKey??`local:${this.namespace}:${artwork.id}`;
+  }
+  /** Hash every input that determines the artwork's drawing, in a framed order. */
+  hashArtwork(definition,metadata,payloads,data){
+    const hasher=new ContentHasher(0x5a17).string(this.definitionHash(definition)).string(metadata).word(payloads.length);
+    for(const payload of payloads)hasher.string(payloadHash(payload));
+    return hasher.words(new Uint32Array(data.buffer,data.byteOffset,data.length*2)).digest();
+  }
+  definitionHash(definition){
+    if(definition.hash!==undefined)return definition.hash;
+    const hasher=new ContentHasher().string(definition.text).word(definition.payloads.length);
+    for(const payload of definition.payloads)hasher.string(payloadHash(payload));
+    return definition.hash=hasher.digest();
   }
   definition(figure){
     let value=this.figureCache.get(figure);if(value)return value;
@@ -146,14 +148,13 @@ export class ArtworkRegistry {
     }
     const object=Object.fromEntries(Object.entries(g.obj).filter(([key])=>!ignoredObjectKeys.has(key)));
     const metadata=JSON.stringify(childDefinitions.length?[object,extra,childDefinitions]:[object,extra]);
-    const words=new Uint32Array(data.buffer);
-    const key=`${definition.id}:${textHash(metadata)}:${hash(words)}:${data.length}`;
+    const key=this.hashArtwork(definition,metadata,payloads,data);
     const bucket=this.buckets.get(key)||[];
     let artwork=bucket.find(entry=>entry.definition===definition&&entry.metadata===metadata&&samePayloads(entry.payloads,payloads)&&equal(entry.data,data));
     if(artwork){this.stats.hits++;this.lru.delete(artwork);this.lru.set(artwork,true);}
     else{
       this.stats.misses++;
-      artwork={definition,metadata,data,payloads,key,id:++this.artworkSerial,bytes:data.byteLength+metadata.length*2+payloads.length*8};
+      artwork={definition,metadata,data,payloads,key,contentKey:`h128:${key}`,id:++this.artworkSerial,bytes:data.byteLength+metadata.length*2+payloads.length*8};
       if(artwork.bytes<=this.maxBytes){
         bucket.push(artwork);this.buckets.set(key,bucket);this.lru.set(artwork,true);this.bytes+=artwork.bytes;
         while(this.bytes>this.maxBytes||this.lru.size>this.maxEntries){
