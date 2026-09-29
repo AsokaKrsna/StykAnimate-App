@@ -1,8 +1,8 @@
 /**
- * Touch gesture classification, pure (docs/TOUCH.md): whether a press is a
- * tap, a hold or a drag, whether two taps make a double tap, and whether a
- * set of fingers that came down and lifted together was a two- or
- * three-finger tap. The DOM adapters (long-press.mjs, canvas-touch.mjs,
+ * Touch gesture classification, pure (docs/TOUCH.md): the hold's time and
+ * the slop a still finger may wander, whether two taps make a double tap,
+ * and whether a set of fingers that came down and lifted together was a
+ * two- or three-finger tap. The DOM adapters (long-press.mjs, canvas-touch.mjs,
  * timeline-touch.mjs) feed them pointer samples and act on the answers.
  */
 
@@ -10,8 +10,6 @@
 export const HOLD_MS = 480;
 /** How far a finger may wander and still be a tap or a hold (CSS px). */
 export const SLOP = 10;
-/** The longest press that is still a tap (ms). */
-export const TAP_MS = 320;
 /** The longest gap between the two taps of a double tap (ms), and how far apart they may land (CSS px). */
 export const DOUBLE_TAP_MS = 320;
 export const DOUBLE_TAP_SLOP = 28;
@@ -22,18 +20,6 @@ export const distance = (a, b) => Math.hypot((b?.x ?? 0) - (a?.x ?? 0), (b?.y ??
 
 /** True when `point` has left `origin` by more than `slop`. */
 export const beyondSlop = (origin, point, slop = SLOP) => distance(origin, point) > slop;
-
-/**
- * What a single finger's press was, from where it went down, the furthest it
- * wandered and how long it stayed: 'tap', 'hold' (stayed still at least
- * HOLD_MS) or 'drag' (it moved), or 'press' (a still press too long for a tap
- * and too short for a hold).
- */
-export function classifyPress({travel = 0, duration = 0, slop = SLOP, holdMs = HOLD_MS, tapMs = TAP_MS} = {}) {
-  if (travel > slop) return 'drag';
-  if (duration >= holdMs) return 'hold';
-  return duration <= tapMs ? 'tap' : 'press';
-}
 
 /** Whether `current` completes a double tap after `previous` (each {x, y, time} where the tap ended). */
 export function isDoubleTap(previous, current, {gap = DOUBLE_TAP_MS, slop = DOUBLE_TAP_SLOP} = {}) {

@@ -208,7 +208,7 @@ is off; text fields keep both.
 | --- | --- |
 | `src/touch/touch-mode.mjs` | The decision, the form factor, the root attributes, change events |
 | `src/touch/touch-shell.mjs` | The tab bar, the stage header's View menu, sheet grips and swipes, the page's gestures |
-| `src/touch/touch-gestures.mjs` | Pure gesture classification: tap, hold, drag, double tap, multi-finger tap |
+| `src/touch/touch-gestures.mjs` | Pure gesture rules: the hold, the slop, double tap, multi-finger tap |
 | `src/touch/long-press.mjs` | Press and hold on the chrome: context menus and control names |
 | `src/touch/canvas-touch.mjs` | The stage's multi-finger taps, hold and double tap |
 | `src/touch/modifier-dock.mjs` | The stage's modifier buttons and the events they shape |

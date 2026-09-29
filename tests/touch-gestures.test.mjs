@@ -6,18 +6,14 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {HOLD_MS, SLOP, beyondSlop, classifyPress, createMultiTap, isDoubleTap} from '../src/touch/touch-gestures.mjs';
+import {SLOP, beyondSlop, createMultiTap, isDoubleTap} from '../src/touch/touch-gestures.mjs';
 import {MODIFIER_SETS, combinedModifiers, modifiersFor, shapedPointerInit} from '../src/touch/modifier-dock.mjs';
 import {SHEET_DETENTS, sheetDetent} from '../src/touch/touch-shell.mjs';
 
-test('A press is a tap, a hold, a drag or neither', () => {
-  assert.equal(classifyPress({travel: 2, duration: 120}), 'tap');
-  assert.equal(classifyPress({travel: SLOP + 1, duration: 120}), 'drag');
-  assert.equal(classifyPress({travel: 3, duration: HOLD_MS}), 'hold');
-  assert.equal(classifyPress({travel: 3, duration: 400}), 'press', 'too long for a tap, too short for a hold');
-  assert.equal(classifyPress({travel: 40, duration: 2000}), 'drag', 'a moving finger is never a hold');
+test('A still finger may wander a little and stay still', () => {
   assert.equal(beyondSlop({x: 0, y: 0}, {x: 6, y: 8}), false);
   assert.equal(beyondSlop({x: 0, y: 0}, {x: 8, y: 8}), true);
+  assert.equal(beyondSlop({x: 0, y: 0}, {x: SLOP, y: 0}), false);
 });
 
 test('Two taps close in time and place make a double tap', () => {

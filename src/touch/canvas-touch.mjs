@@ -22,7 +22,7 @@ export function installCanvasTouch({viewport, overlay = viewport, touch, holdabl
   document: doc = viewport.ownerDocument, window: win = doc.defaultView ?? globalThis, holdMs = HOLD_MS} = {}) {
   const abort = new AbortController(), signal = abort.signal;
   const taps = createMultiTap();
-  let hold = null, lastTap = null, nativeDouble = -Infinity, syntheticDouble = -Infinity, fingers = 0;
+  let hold = null, lastTap = null, nativeDouble = -Infinity, syntheticDouble = -Infinity;
 
   const cancelHold = () => { if (hold) { clearTimeout(hold.timer); hold = null; } };
   // Only the finger's own events: the modifier dock's shaped copies (modifier-dock.mjs) would count twice.
@@ -30,7 +30,6 @@ export function installCanvasTouch({viewport, overlay = viewport, touch, holdabl
 
   viewport.addEventListener('pointerdown', event => {
     if (!active(event)) return;
-    fingers++;
     taps.down({id: event.pointerId, x: event.clientX, y: event.clientY, time: event.timeStamp});
     cancelHold();
     // Only a lone finger holds; a second one makes it a pinch or a multi-finger tap.
@@ -55,7 +54,6 @@ export function installCanvasTouch({viewport, overlay = viewport, touch, holdabl
 
   const lift = event => {
     if (!active(event)) return;
-    fingers = Math.max(0, fingers - 1);
     if (hold?.id === event.pointerId) cancelHold();
     if (event.type === 'pointercancel') { taps.cancel(); return; }
     const most = taps.most;
@@ -89,7 +87,5 @@ export function installCanvasTouch({viewport, overlay = viewport, touch, holdabl
 
   return {
     destroy() { abort.abort(); cancelHold(); },
-    /** Whether fingers are on the stage now (a hold, a pinch or a tap in progress). */
-    get touching() { return fingers > 0; },
   };
 }
