@@ -106,7 +106,7 @@ test('the built site is installable and its service worker lists exactly its fil
   const paths = group => new Set(group.map(([name]) => name));
   for (const name of ['', 'src/app.mjs', 'manifest.webmanifest', 'vendor/resvg/index_bg.wasm']) assert.ok(paths(precache.core).has(name), `${name || 'the page'} is stored with the editor`);
   for (const name of ['vendor/pyodide/pyodide.asm.wasm', 'python/codec-bundle.json']) assert.ok(paths(precache.codec).has(name), `${name} is stored with the Pivot runtime`);
-  for (const name of ['sw.js', '_headers', 'build-info.json']) assert.ok(!paths(precache.core).has(name) && !paths(precache.codec).has(name), `${name} is not stored`);
+  for (const name of ['sw.js', '_headers', 'build-info.json', 'robots.txt']) assert.ok(!paths(precache.core).has(name) && !paths(precache.codec).has(name), `${name} is not stored`);
   assert.ok(!paths(precache.core).has('index.html'), 'the page is stored under its own address');
   assert.equal(JSON.parse(await readFile(path.join(built, 'build-info.json'), 'utf8')).offline, precache.version);
 

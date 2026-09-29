@@ -39,6 +39,7 @@
     "web:deploy": "node scripts/deploy-web.mjs",
     "test:web": "node tests/web-build.browser.mjs && node tests/web-offline.browser.mjs",
     "test:pinch": "node tests/canvas-pinch.browser.mjs",
+    "test:web:browsers": "node tests/web-autosave.browser.mjs && node tests/web-library.browser.mjs && node tests/web-library-engine.browser.mjs && node tests/web-support.browser.mjs",
     "test:preferences:desktop": "node scripts/smoke-preferences.mjs",
     "test:project-files": "node --test scripts/project-files.test.mjs",
     "test:project-files:desktop": "node scripts/smoke-project-files.mjs",

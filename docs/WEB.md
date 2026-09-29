@@ -13,21 +13,30 @@ npm run test:web        # end to end in a real browser, under the production hea
 
 ## Deploying
 
-The editor is its own Cloudflare Worker (`web/wrangler.jsonc`, static assets only),
-separate from the public site in `cloud/`, so the two deploy and roll back
-independently.
+The editor is its own Cloudflare Worker, `stykanimate-app` (`web/wrangler.jsonc`), separate
+from the public site's Worker (`stykanimate`), so the two deploy and roll back independently.
+Cloudflare serves the built files; the Worker script (`web/worker.js`) runs only for
+`/community/*` (see [The community library window](#the-community-library-window)).
+It is served at `https://app.stykanimate.com` (a custom domain on the site's zone) and at
+`stykanimate-app.<account>.workers.dev`.
 
 ```bash
 npm ci --prefix cloud                   # once: installs the pinned wrangler
 npx --prefix cloud wrangler login       # or set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
 npm run web:deploy -- --dry-run         # build, verify, let wrangler validate the config
-npm run web:deploy                      # deploy to <name>.<account>.workers.dev
+npm run web:deploy                      # deploy
 STYK_WEB_URL=https://... npm run test:web   # run the end-to-end test against the deployment
+npx --prefix cloud wrangler rollback --config web/wrangler.jsonc   # go back to the previous version
 ```
 
-`web:deploy` refuses to deploy a site that fails `web:verify`. To serve the editor
-from your own domain, add a route on a zone you control to `web/wrangler.jsonc`
-(the file shows the line). Cloudflare applies `web/_headers` to every response.
+`web:deploy` refuses to deploy a site that fails `web:verify`, and deploys what is built from
+the working tree: build from a clean checkout of the commit you mean to publish. Cloudflare
+applies `web/_headers` to every static response.
+
+**Until it launches** nothing on the public site links to it, and it asks not to be indexed:
+`_headers` sends `X-Robots-Tag: noindex, nofollow` (the Worker's answers do too) and
+`robots.txt` disallows everything. At launch remove that header line, the Worker's
+`x-robots-tag` and the `Disallow`, then add the link on the site.
 
 ## How it is built
 
@@ -94,7 +103,74 @@ in Chrome, stops the server, and checks that the app starts, saves, exports and
 reopens a Pivot file and an MP4 with no network; then that a changed build
 downloads only its changed file, waits for the old window to close and replaces the
 old cache. Chrome's own installability check reports no errors for the served
-site. Not verified: Safari and Firefox, and installing on a phone.
+site. Not verified: install and offline use in Safari or Firefox, and installing on a phone.
+
+## Autosave and the libraries in the browser
+
+**Autosave.** A moment after each edit (2.5 s by default, Settings → Recovery), and at once when the
+tab is hidden (a phone may discard a background tab without warning), the project is written to
+IndexedDB as one record, the last unsaved work. The next visit offers "Restore unsaved work"; a
+save clears it, so a stale copy is never offered. It is a copy of the last work, not a project
+list: there is one, and saving a project still downloads a file. If storage is blocked or full,
+the editor keeps working, says so once, and retries less often
+(`src/browser-recovery.mjs`, `scheduleRecovery` in `app.mjs`). The document is stored as an
+ArrayBuffer, not a Blob, because WebKit cannot keep a Blob in IndexedDB reliably.
+
+**My library** (`src/web-library.mjs`) is the desktop library's interface (`desktop/library-store.cjs`)
+over IndexedDB, so the Library panel is one implementation for both: the same folders, names,
+unique names, moves, previews and kinds. Files are ArrayBuffers in one store and their entries
+(name, kind, size, PNG preview) in another, so listing never reads a file, and a rename or move
+re-keys an entry and its bytes in one transaction. Writes take a Web Lock shared by every tab
+(`navigator.locks`, where the browser has it) so two tabs cannot take the same name. There is no
+recycle bin, so removing deletes, and the panel says so; there is no "Show in folder". A full
+browser reports it in words the person can act on. Nothing is sent to a server.
+
+**Storage is the browser's.** It can be cleared by the person, by a private window ending, or under
+pressure: an installed app asks the browser to keep it (`navigator.storage.persist()`), a tab does
+not, and Safari removes a website's script-written data after 7 days without a visit unless the
+site is added to the Home Screen. Export what matters (Save downloads a project).
+
+**Community library** (`src/community-library.mjs`) is the browser twin of `desktop/public-library.cjs`
+with the same rules and messages; `tests/community-library.test.mjs` runs both against the same
+indexes and requires the same answers.
+
+## The community library window
+
+The site's API sends no CORS headers, so a browser on `app.stykanimate.com` cannot read it.
+Rather than loosen the production site, the editor asks its own origin and `web/worker.js` passes
+on exactly three shapes of request, GET only, and refuses everything else:
+
+| Request | Goes to |
+| --- | --- |
+| `/community/content` | `SITE_URL/api/v1/content` |
+| `/community/files/index/<version>.json` and `/community/files/i/<id>/<name>` | `FILES_URL/…` (the public file host) |
+| `/community/get/<id>?k=i/<id>/<name>.stkz` | the site's counting route; its redirect is followed here, only to the site's own hosts |
+
+`SITE_URL` and `FILES_URL` are variables in `wrangler.jsonc`. Answers are size-bounded (by header and
+by counting bytes), carry `nosniff`, a sandboxing CSP and no cookies, and immutable files are cached at
+the edge. The page's own CSP is unchanged because the requests are same-origin. The service worker
+never touches `/community/*`. The site counts one download per person per asset: the first download
+goes through the counting route and is remembered in `localStorage`, later ones read the public file.
+`scripts/serve-web.mjs` runs the same Worker code locally, against the real site or a stand-in
+(`tests/support/community-site.mjs`).
+
+## Browsers
+
+Verified with real browsers (`STYK_BROWSER=chrome|firefox|webkit`, `tests/support/cross-browser.mjs`):
+
+| | Chrome 153 | Firefox 155 | WebKit 26.6 (Playwright, Windows) |
+| --- | --- | --- | --- |
+| Editor starts | yes (WebGPU) | yes (Canvas 2D renderer: WebGPU is blocklisted there) | no: no `OffscreenCanvas` |
+| Autosave, restore, clear on save, flush on hide, blocked storage | yes | yes | storage read/write only |
+| My library and the community library, end to end | yes | yes | storage, streaming, SHA-256 and WebP decoding only |
+| Explains an unsupported browser | yes | yes | yes |
+
+That WebKit is not Safari and cannot start the editor, so **Safari itself is not verified**. What
+the editor needs, and what `src/web-support.js` checks before it loads: `OffscreenCanvas` (Safari
+16.4), WebAssembly, IndexedDB, Web Crypto (an https page), `createImageBitmap`, `structuredClone`,
+the dialog element, `Object.hasOwn`/`Array.at` and workers. A browser without one gets a page saying
+what is missing instead of a blank one. WebGPU is optional (the compatibility renderer is used
+without it).
 
 ## Security
 
@@ -157,8 +233,9 @@ Differences from the desktop codec, all deliberate:
 | MP4 video | Yes, WebCodecs H.264 with AAC sound, where the browser can encode them (opaque background) |
 | AVI, WMV, installed Windows codecs | Desktop only, offered with a reason |
 | Install as an app, start with no network | Yes, a service worker stores the editor and the Pivot runtime |
-| Crash recovery | IndexedDB |
-| Personal and public library | Desktop only |
+| Autosave and crash recovery | Yes, IndexedDB (see [below](#autosave-and-the-libraries-in-the-browser)) |
+| My library | Yes, in the browser's own storage (IndexedDB) |
+| Community library | Yes, through the editor's own origin |
 | System fonts | Where the browser offers local fonts (Chromium); otherwise open a font file |
 | Feedback, telemetry, updates | Not present |
 

@@ -72,7 +72,7 @@ export function markInstallable(html) {
 
 // Everything the service worker stores, except what is not part of the app. The Pivot runtime is a separate group
 // because the worker fetches it after the editor.
-const NOT_PRECACHED = new Set(['_headers', 'sw.js', 'build-info.json']);
+const NOT_PRECACHED = new Set(['_headers', 'sw.js', 'build-info.json', 'robots.txt']);
 const isCodecFile = (name) => name.startsWith('vendor/pyodide/') || name.startsWith('python/');
 
 /** The files of a built site as [path, hash] pairs in two groups, and a version that changes when any of them does. The page is the empty path. */
@@ -139,6 +139,7 @@ export async function buildWeb({ root = appRoot, output = path.join(root, 'build
   await writeFile(path.join(output, 'python', 'codec-bundle.json'), JSON.stringify(bundle));
 
   await copyFile(path.join(root, 'web', '_headers'), path.join(output, '_headers'));
+  await copyFile(path.join(root, 'web', 'robots.txt'), path.join(output, 'robots.txt'));
 
   // The install manifest and its icons, then the service worker, which lists every file above.
   await copyFile(path.join(root, 'web', 'manifest.webmanifest'), path.join(output, 'manifest.webmanifest'));
