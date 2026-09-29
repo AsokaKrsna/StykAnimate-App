@@ -22,7 +22,7 @@ StykAnimate is a local stick animation program built on sound architecture and g
 | Desktop and packaging | `desktop/`, `scripts/before-pack.cjs`, `docs/DESKTOP-RELEASE.md` |
 | Tests and measurements | `tests/`, `scripts/smoke-*.mjs`, `scripts/benchmark-*.mjs`, `artifacts/`, `docs/performance/` |
 | Release history and shipping | `CHANGELOG.md`, `docs/RELEASING.md`, `docs/UPDATES.md`, `.github/workflows/desktop-release.yml` |
-| Public site and catalogue | `docs/website.md`, `website/`, `cloud/github-releases.mjs` |
+| Public site and catalogue | `/home/alessio/Developing/Sites/StykAnimate-Site` (active site); `docs/website.md` identifies the retired local copy |
 
 Read the relevant contract before changing behavior. Current code and workflow configuration establish executable commands; older release reports certify only their original artifacts. Update documentation when its contract changes.
 
