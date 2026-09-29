@@ -107,6 +107,18 @@ function clamp(value, low, high) { return high < low ? low : Math.min(Math.max(v
  */
 export function placeFloating(element, anchor, options = {}) {
   const view = element.ownerDocument?.defaultView ?? globalThis;
+  // An upright phone's touch interface shows menus and popovers as sheets from its bottom edge (docs/TOUCH.md;
+  // features/touch.css places them), where a thumb reaches them and a long list has the room. Tooltips pass
+  // `sheet: false`.
+  if (options.sheet !== false && presentsAsSheet(element)) {
+    const {style} = element;
+    for (const property of ['left', 'top', 'maxWidth', 'maxHeight']) style[property] = '';
+    element.dataset.side = 'bottom';
+    element.dataset.present = 'sheet';
+    return {x: 0, y: 0, width: 0, height: 0, maxWidth: null, maxHeight: null, side: 'bottom', align: 'center', placement: 'bottom', sheet: true};
+  }
+  delete element.dataset.present;
+  options = {...options, placement: besideWing(anchor, options.placement)};
   const anchorRect = typeof anchor?.getBoundingClientRect === 'function' ? anchor.getBoundingClientRect() : anchor;
   const {style} = element;
   style.maxWidth = ''; style.maxHeight = '';
@@ -121,6 +133,25 @@ export function placeFloating(element, anchor, options = {}) {
   if (result.maxHeight !== null) style.maxHeight = `${Math.floor(result.maxHeight)}px`;
   element.dataset.side = result.side;
   return result;
+}
+
+/**
+ * A box meant to drop below the band opens beside it instead where the band is a wing down the window's side (the
+ * touch interface on a phone on its side, docs/TOUCH.md): toward the stage, from the anchor's top.
+ */
+export function besideWing(anchor, placement = 'bottom-start') {
+  if (!String(placement).startsWith('bottom') || typeof anchor?.closest !== 'function') return placement;
+  const band = anchor.closest('.shell-top');
+  const box = band?.getBoundingClientRect();
+  if (!box || !(box.height > box.width)) return placement;
+  const view = anchor.ownerDocument?.defaultView ?? globalThis;
+  return box.left + box.width / 2 > (view.innerWidth || 0) / 2 ? 'left-start' : 'right-start';
+}
+
+/** Whether floating boxes show as bottom sheets: the touch interface on an upright phone (src/touch/touch-mode.mjs). */
+export function presentsAsSheet(element) {
+  const root = element?.ownerDocument?.documentElement;
+  return root?.dataset?.touchLayout === 'phone-portrait';
 }
 
 // ---------------------------------------------------------------------------

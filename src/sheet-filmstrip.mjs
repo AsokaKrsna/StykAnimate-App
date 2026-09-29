@@ -11,6 +11,7 @@ import {AudioTimeline} from './audio-timeline.mjs';
 import {createLayersPopover} from './timeline-layers-popover.mjs';
 import {sayTimeline} from './locales/en-timeline.mjs';
 import {LAYER_COLORS} from './layers.mjs';
+import {bandBottom} from './shell/topbar.mjs';
 
 /** The zoom range (the strip's slider and Ctrl+wheel), and the widest a card grows by itself from the body's height. */
 const MIN_CARD = 72, MAX_CARD = 240, AUTO_MAX = 168;
@@ -193,7 +194,7 @@ export class SheetFilmstrip {
     this.layerName = layer.querySelector('.sheet-framebar-layer-name');
     this._on(layer, 'click', () => {
       this.layersPopover ??= createLayersPopover({anchor: layer, editor: this.editor, overlays: this.overlays ?? null, t: this.localizationText ?? null,
-        run: fn => this._run(fn), topInset: () => (document.querySelector('.titlebar')?.getBoundingClientRect().bottom ?? 0) + 6});
+        run: fn => this._run(fn), topInset: () => bandBottom(document) + 6});
       this.layersPopover.toggle();
     });
   }

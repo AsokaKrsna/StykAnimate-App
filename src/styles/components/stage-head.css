@@ -72,6 +72,10 @@
   :where(.stage-head[data-workspace="draw"]) .ui-button.stage-toggle { --_px: 0; inline-size: var(--control-md); }
   :where(.stage-head[data-workspace="draw"]) .stage-toggle > .ui-label { display: none; }
   .stage-head-cluster[hidden], .stage-head-cluster > [hidden] { display: none; }
+  /* The view menu in the toggles' place (stage-head.mjs setViewMenu: a phone's touch interface). */
+  :where(.stage-head[data-view-menu]) .stage-head-cluster:where([data-view]) { display: none; }
+  .ui-button.stage-view-menu { --_px: var(--space-2); gap: var(--space-0-5); color: var(--text-2); }
+  .stage-view-menu[hidden] { display: none; }
   /* A quiet state beside zoom while it applies ("Reduced preview"): words, no chip or accent. */
   .stage-head-note { color: var(--text-3); font: var(--type-small); white-space: nowrap; }
   .stage-head-note[hidden] { display: none; }

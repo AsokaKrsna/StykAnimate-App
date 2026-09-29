@@ -96,7 +96,7 @@ export function installTooltips(root = globalThis.document, {selector = TOOLTIP_
       element.append(dot, part('ui-tooltip-key', text.shortcut));
     }
     try { if (!element.matches(':popover-open')) element.showPopover(); } catch { hide(); return; }
-    placeFloating(element, next, {placement: placementFor(next), offset: 6, fit: false, overlap: false, topInset});
+    placeFloating(element, next, {placement: placementFor(next), offset: 6, fit: false, overlap: false, topInset, sheet: false});
   };
   /** Above the control; beside a vertical toolbar, on the side facing the middle of the window. */
   const placementFor = next => {

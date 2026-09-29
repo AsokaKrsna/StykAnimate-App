@@ -284,6 +284,48 @@
   /* The compact chrome of windows under 801px tall gives the stage the band's air (layout-solver.mjs chromeFor). */
   :root[data-chrome="compact"] { --topbar-h: max(44px, calc(44px / var(--ui-scale))); }
 
+  /* The touch interface (docs/TOUCH.md): every control grows to a fingertip's target, the icons with it. A phone's
+     targets are at least 44px, a tablet's 40; the safe areas keep controls off notches and the home indicator. */
+  :root[data-input="touch"] {
+    --control-xs: 36px;
+    --control-sm: 40px;
+    --control-md: 44px;
+    --control-lg: 44px;
+    --control-xl: 48px;
+    --control-2xl: 52px;
+    --icon-xs: 14px;
+    --icon-sm: 16px;
+    --icon-md: 20px;
+    --icon-lg: 22px;
+    --icon-xl: 24px;
+    --touch-target: 44px;
+    --topbar-h: 52px;
+    --rail-w: 56px;
+    --tabbar-h: 60px;
+    --wing-w: 60px;
+    --sheet-grip: 24px;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --text-field: 16px;       /* a field under 16px makes iOS zoom the page when it takes focus */
+    /* A step up the type scale: words read at arm's length on a small screen. */
+    --text-11: 12px;  --leading-11: 15px;
+    --text-12: 13px;  --leading-12: 17px;
+    --text-13: 14px;  --leading-13: 19px;
+    --text-14: 15px;  --leading-14: 21px;
+  }
+  :root[data-input="touch"][data-form="tablet"] {
+    --control-xs: 32px;
+    --control-sm: 36px;
+    --control-md: 40px;
+    --control-lg: 42px;
+    --control-xl: 48px;
+    --control-2xl: 52px;
+    --touch-target: 40px;
+    --rail-w: 60px;
+  }
+
   /* ------------------------------------------------------------------------
      TIER 2 - SEMANTIC, LIGHT (brand default)
      ------------------------------------------------------------------------ */

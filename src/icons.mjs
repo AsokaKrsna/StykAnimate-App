@@ -101,6 +101,12 @@ const shapes = Object.freeze({
   plus: '<path d="M5 12h14" /> <path d="M12 5v14" />',
   minus: '<path d="M5 12h14" />',
   keyboard: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 15h10"/>',
+  // The touch interface's modifier buttons (src/touch/modifier-dock.mjs): the Shift arrow (Lucide arrow-big-up) for
+  // the column, a limb bending at its joint, Lucide pipette and magnet.
+  modifiers: '<path d="M9 18v-6H5l7-7 7 7h-4v6H9z" /> <path d="M9 21h6" />',
+  bend: '<path d="M4 20 10 11l10-5" /> <circle cx="10" cy="11" r="2.2" /> <circle cx="20" cy="6" r="1.2" />',
+  eyedropper: '<path d="m2 22 1-1h3l9-9" /> <path d="M3 21v-3l9-9" /> <path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" />',
+  magnet: '<path d="m6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.39-6.36a2.14 2.14 0 0 0-3-3L6 15" /> <path d="m5 8 4 4" /> <path d="m12 15 4 4" />',
   heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>',
   message: '<path d="M21 15a3 3 0 0 1-3 3H7l-5 4V5a3 3 0 0 1 3-3h13a3 3 0 0 1 3 3Z"/><path d="M7 7h10M7 12h6"/>',
   bug: '<rect x="7" y="7" width="10" height="14" rx="5"/><path d="m9 7-2-4m8 4 2-4M3 9l4 2m10 0 4-2M3 15h4m10 0h4M3 21l4-3m10 0 4 3M12 7v14"/>',

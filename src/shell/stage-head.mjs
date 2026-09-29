@@ -33,11 +33,13 @@
  *           #zoom-label and Fit. One tab stop: the arrow keys move inside it.
  *
  * showMode() keeps the instruction of a pick mode while it lasts
- * ("Click the joint to join to · Cancel").
+ * ("Click the joint to join to · Cancel"). setViewMenu(true) folds the view
+ * toggles into one View menu (a phone's touch interface, docs/TOUCH.md).
  */
 import {setAttr, setHidden, setText, setVar} from '../ui/dom-write.mjs';
 import {createToolOptions} from '../ui/tool-options.mjs';
 import {installRovingFocus} from '../ui/roving-focus.mjs';
+import {icon} from '../icons.mjs';
 
 /** The message's clearance from the view cluster and from the start's content. */
 export const MESSAGE_GAP = 12;
@@ -77,7 +79,7 @@ export function solveMessage({head, keep, view = null, startRight = head.left, w
  * icon, t, overlays, onChange, onFold), or a function returning it when the
  * bar is first needed.
  */
-export function createStageHead({root, toasts = () => null, toolOptions = {}, Observer = globalThis.ResizeObserver} = {}) {
+export function createStageHead({root, toasts = () => null, toolOptions = {}, openMenu = null, Observer = globalThis.ResizeObserver} = {}) {
   const doc = root.ownerDocument, win = doc.defaultView ?? globalThis;
   const controller = new AbortController(), {signal} = controller;
   const start = root.querySelector('[data-slot="stage-start"]');
@@ -103,6 +105,40 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, Ob
   here.append(hereName);
   chip.before(separator, here);
   let bar = null, shownMode = '', modeHandle = null, placed = false;
+
+  // The view menu (setViewMenu): one "View" button in the view cluster's place, where the header has no room for
+  // the toggles (a phone's touch interface). Its rows are the cluster's shown controls, and each runs by clicking its
+  // control, so the toggles keep one implementation and their states.
+  const viewButton = doc.createElement('button');
+  viewButton.type = 'button';
+  viewButton.className = 'ui-button stage-view-menu';
+  viewButton.dataset.variant = 'ghost';
+  viewButton.dataset.size = 'sm';
+  viewButton.innerHTML = `${icon('eye')}<span class="stage-zoom-chevron">${icon('chevron-down')}</span>`;
+  viewButton.setAttribute('aria-haspopup', 'menu');
+  viewButton.setAttribute('aria-expanded', 'false');
+  viewButton.setAttribute('aria-label', 'View options');
+  viewButton.dataset.tooltip = 'View options';
+  viewButton.hidden = true;
+  view.before(viewButton);
+  const viewItems = () => [...view.querySelectorAll('button')].filter(button => !button.closest('[hidden]') && !button.hidden).map(button => {
+    const pressed = button.getAttribute('aria-pressed');
+    const name = button.getAttribute('aria-label') || button.dataset.tooltip || button.textContent.trim();
+    const settings = button.classList.contains('ui-split-more');
+    return {
+      label: settings ? `${name}…` : name, icon: settings ? 'settings' : button.dataset.icon ?? null,
+      ...(pressed === 'true' || pressed === 'false' ? {checked: pressed === 'true'} : {}),
+      disabled: button.disabled,
+      run: () => button.click(),
+    };
+  });
+  viewButton.addEventListener('click', () => openMenu?.(viewItems(), viewButton, {label: 'View options'}), {signal});
+  /** Shows the view toggles as one menu (true) or as the cluster (false). */
+  function setViewMenu(on) {
+    setAttr(root, 'data-view-menu', Boolean(on));
+    setHidden(viewButton, !on);
+    focus.refresh();
+  }
 
   // The end is one tab stop; the arrow keys move inside it and never reach the canvas's keys.
   const focus = installRovingFocus(end, {items: () => end.querySelectorAll('button'), signal});
@@ -253,7 +289,7 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, Ob
   }
 
   return {
-    root, start, end, update, setZoom, setToolOptions, adopt, placeMessage, releaseMessage, showMode,
+    root, start, end, update, setZoom, setToolOptions, adopt, placeMessage, releaseMessage, showMode, setViewMenu,
     get toolOptions() { return bar; },
     destroy() { controller.abort(); observer?.disconnect(); bar?.destroy?.(); modeHandle?.dismiss(); },
   };

@@ -44,6 +44,7 @@ import {openMenu, menuFor} from './ui/ui-menu.mjs';
 import {createPopover} from './ui/ui-popover.mjs';
 import {setAttr, setHidden, setProp, setText, setVar} from './ui/dom-write.mjs';
 import {setSharedSize} from './shell/layout-schema.mjs';
+import {bandBottom} from './shell/topbar.mjs';
 import {sayTimeline} from './locales/en-timeline.mjs';
 
 /**
@@ -239,7 +240,7 @@ export function createTimelineHeader(ctx, host) {
     overlays: ctx.overlays ?? null,
     icon: (name) => icon(name),
     t: ctx.localization?.()?.t ? (key) => ctx.localization().t(key) : null,
-    topInset: () => (document.querySelector('.titlebar')?.getBoundingClientRect().bottom ?? 0) + 6,
+    topInset: () => bandBottom(document) + 6,
   });
   function toggleMenu(anchor, items, label) {
     const open = menuFor(anchor);
@@ -251,6 +252,17 @@ export function createTimelineHeader(ctx, host) {
   function timelineMenuItems() {
     const tier = document.documentElement.dataset.tier;
     const items = [];
+    // A phone's touch interface folds Simple │ Advanced and Onion's settings into this menu (features/touch.css).
+    const root = document.documentElement.dataset;
+    if (root.input === 'touch' && root.form === 'phone') {
+      const current = modes.querySelector('[aria-pressed="true"]')?.dataset.timelineMode;
+      for (const item of modes.querySelectorAll('[data-timeline-mode]'))
+        items.push({label: item.textContent.trim(), icon: item.dataset.timelineMode === 'simple' ? 'frame' : 'timeline', radio: true, group: 'timeline-mode',
+          checked: item.dataset.timelineMode === current, run: () => item.click()});
+      items.push(null, {label: say('timeline.onionSettings'), icon: 'onion', run: () => $('onion-settings-button').click()});
+      if (tier !== 'minimal') items.push({label: fit.getAttribute('aria-label'), icon: 'fit', run: () => run(() => host.timeline?.fitAll?.())});
+      items.push(null);
+    }
     if (sheetButton && !sheetButton.hidden)
       items.push({label: say('timeline.sheet'), icon: 'timeline', run: action('timeline-sheet')}, null);
     if (!cel.hidden && (toolbar.dataset.fold ?? '').split(' ').includes('celmenu'))

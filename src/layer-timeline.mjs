@@ -71,7 +71,7 @@ export class Timeline{
     this._on(this.main,'pointerleave',()=>{if(!this.gesture){this.hover=null;this.update();}});
     this._on(this.scroll,'keydown',event=>this._keyDown(event));this._on(this.labelViewport,'wheel',event=>{event.preventDefault();this.scroll.scrollTop+=event.deltaY;},{passive:false});
     this._on(this.scroll,'wheel',event=>{if(event.ctrlKey||event.metaKey){event.preventDefault();this.setZoom(clamp(this.pxPerTick*(event.deltaY<0?1.15:.87),1,36),event.clientX-this.scroll.getBoundingClientRect().left);}else if(event.shiftKey){event.preventDefault();this.scroll.scrollLeft+=event.deltaY||event.deltaX;}},{passive:false});
-    this._on(this.divider,'pointerdown',event=>{this._columnDrag={x:event.clientX,width:this.labelWidth};this.divider.setPointerCapture(event.pointerId);});
+    this._on(this.divider,'pointerdown',event=>{this._columnDrag={x:event.clientX,width:this.labelViewport.getBoundingClientRect().width||this.labelWidth};this.divider.setPointerCapture(event.pointerId);});
     this._on(this.divider,'pointermove',event=>{if(this._columnDrag){this.labelWidth=clamp(this._columnDrag.width+event.clientX-this._columnDrag.x,140,420);this.root.style.setProperty('--sheet-label',`${this.labelWidth}px`);this.resize();}});this._on(this.divider,'pointerup',()=>{this._columnDrag=null;});
     this.divider.tabIndex=0;this.divider.setAttribute('aria-orientation','vertical');
     this._on(this.divider,'keydown',event=>{if(!['ArrowLeft','ArrowRight','Home'].includes(event.key))return;event.preventDefault();event.stopPropagation();this.labelWidth=event.key==='Home'?220:clamp(this.labelWidth+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?40:10),140,420);this.root.style.setProperty('--sheet-label',`${this.labelWidth}px`);this.resize();});

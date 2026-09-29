@@ -71,13 +71,18 @@ import { createDockKeyboard } from "./shell/dock-keyboard.mjs";
 import { installDockTabs } from "./shell/dock-tabs.mjs";
 import { createLayoutPopover } from "./shell/layout-popover.mjs";
 import { installShellCommands } from "./shell/shell-commands.mjs";
-import { syncBandSession } from "./shell/topbar.mjs";
+import { bandBottom, syncBandSession } from "./shell/topbar.mjs";
 import { installRail, syncRailQuick } from "./shell/rail.mjs";
 import { initStudioShell } from "./studio-shell.mjs";
 import { createExportFlow } from "./export-flow.mjs";
 import { createAppDialogs } from "./app-dialogs.mjs";
 import { dragSlop, beyondSlop, installPenMenuGuard } from "./pen-input.mjs";
 import { installCanvasPinch } from "./canvas-pinch.mjs";
+import { installTouchMode } from "./touch/touch-mode.mjs";
+import { installTouchShell } from "./touch/touch-shell.mjs";
+import { installLongPress } from "./touch/long-press.mjs";
+import { installCanvasTouch } from "./touch/canvas-touch.mjs";
+import { installModifierDock } from "./touch/modifier-dock.mjs";
 import { initBuilderMode } from "./builder-mode.mjs";
 import { configureInspectorSections, inspectorView } from "./inspector-view.mjs";
 import { updateInspectorDOM } from "./inspector-dom.mjs";
@@ -328,6 +333,7 @@ overlays.install();
 const stageHead = createStageHead({
   root: document.querySelector(".stage-head"),
   toasts: () => toasts,
+  openMenu: (items, anchor, options) => showCommandMenu(items, anchor, options),
   toolOptions: () => ({ registry: commands, context: commandContext, icon: (name, className) => icon(name, className), t: kitT, overlays,
     onChange: ({ id, value }) => { if (id === "rig-mode") { state.rigMode = value; queueUI(); } } }),
 });
@@ -338,7 +344,7 @@ const toasts = createToasts({
   // The stage header's centre, or a line of its own under it; the stage's bottom centre while the header is not shown.
   slot: { place: (size) => stageHead.placeMessage(size), release: () => stageHead.releaseMessage() },
   area: () => viewport.getBoundingClientRect(),
-  topInset: () => document.querySelector(".titlebar")?.getBoundingClientRect().bottom ?? 0,
+  topInset: () => bandBottom(document),
   t: (key, params) => appLocalization?.t(key, params),
   feedback: desktop?.sendTelemetryFeedback
     ? { label: "Send feedback", run: () => feedbackUI.open({ category: "bug" }) }
@@ -354,6 +360,7 @@ let drawingController, timelineUI, timelineHost,
   appLocalization,
   shell,
   workspaceLayout,
+  touchMode,
   assetLibrary,
   raf = 0,
   playStart = 0,
@@ -3861,7 +3868,7 @@ function showHelp() { editorSettings?.open("shortcuts"); }
 // data-action for the click delegation below, and while a menu is open it takes
 // every key, so letters typed into it never reach the tool hotkeys.
 const menuHost = $("menu");
-const menuTopInset = () => document.querySelector(".titlebar").getBoundingClientRect().bottom + 6;
+const menuTopInset = () => bandBottom(document) + 6;
 let lastMenuAnchor = null;
 /** The shortcut a menu row shows: the user's binding for commands with a hotkey, else the row's own text. */
 /** A menu row's shortcut: the command's first key (a menu shows one; Settings and the tooltips list them all). */
@@ -5882,6 +5889,7 @@ async function init() {
       state.settings = next;
       try { if (previousMode !== next.timelineMode) timelineHost.mount(); }
       catch (error) { state.settings = previousSettings; throw error; }
+      if (patch.touchInterface !== undefined) touchMode?.refresh();
       if (patch.rendererMode !== undefined && state.renderer) void recoverCanvas(true);
       if (patch.playbackQuality !== undefined && state.playing) selectPlaybackQuality();
       if (patch.hotkeys) { hotkeys.setBindings(next.hotkeys); refreshHotkeyHints(hotkeys); }
@@ -5911,6 +5919,9 @@ async function init() {
     onDonate: desktop?.openDonate ? () => desktop.openDonate() : undefined,
   });
   state.settings = editorSettings.value;
+  // The touch interface (docs/TOUCH.md): decided before the shell lays out, kept current as the window turns.
+  touchMode = installTouchMode({ getSetting: () => state.settings.touchInterface });
+  window.styk.touch = touchMode;
   // The inspector's titled sections remember being open across sessions.
   configureInspectorSections(state.settings.inspectorSections, {onChange: (sections) => editorSettings.commit({ inspectorSections: sections })});
   hotkeys.setBindings(state.settings.hotkeys);
@@ -5948,10 +5959,34 @@ async function init() {
     timelineRows: { ruler: TIMELINE_RULER, pinnedRow: TIMELINE_ROW, row: TIMELINE_ROW },
     // The band's first measurement waits for the editor to be ready where it can (topbar.mjs).
     ready: editorReady,
+    touch: touchMode,
   });
   workspaceLayout = shell.workspace;
   window.styk.workspace = workspaceLayout;
   window.styk.shell = shell;
+  window.styk.touchShell = installTouchShell({ touch: touchMode, stageHead });
+  // Press and hold: the right-click menus and the controls' names, for fingers (docs/TOUCH.md).
+  installLongPress({ touch: touchMode, tooltips });
+  // The stage's own: two fingers tap to undo, three to redo, a hold opens the menu of what is under the finger.
+  installCanvasTouch({
+    viewport, overlay, touch: touchMode,
+    holdable: () => !drawingController?.active && !state.playing && !state.previewing && !state.polygon,
+    onHold: ({ x, y }) => {
+      if (state.drag) cancelDrag();
+      releaseCanvasPointer();
+      state.suppressContext = false;
+      overlay.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 2 }));
+    },
+    onUndo: () => { if (state.drag) cancelDrag(); actions.undo(); },
+    onRedo: () => { if (state.drag) cancelDrag(); actions.redo(); },
+  });
+  // The right button and the modifier keys for fingers: the stage's modifier buttons (docs/TOUCH.md).
+  const workspaceElement = document.querySelector(".workspace");
+  window.styk.touchModifiers = installModifierDock({
+    touch: touchMode, host: workspaceElement, viewport,
+    context: () => ({ workspace: workspaceElement.dataset.mode, tool: workspaceElement.querySelector(".shell-rail .tool-dock [data-tool].active")?.dataset.tool ?? state.tool }),
+    setHeld: (command, down) => { if (command === "handle-edit-hold") { state.handleEditHeld = down; requestRender(); } },
+  });
   const shellAnnouncer = document.createElement("div");
   shellAnnouncer.className = "ui-visually-hidden";
   shellAnnouncer.setAttribute("role", "status");

@@ -9,6 +9,7 @@ import {normalizePlaybackQuality, playbackQualityOptions} from './preview-qualit
 import { normalizeSectionMemory } from './inspector-kit.mjs';
 import {normalizeExportPreferences} from './export-request.mjs';
 import { sayDialog } from './locales/en-dialogs.mjs';
+import { normalizeFingerDraw, normalizeTouchSetting } from './touch/touch-mode.mjs';
 
 export const EDITOR_SETTINGS_KEY = "stykanimate.editor.settings.v1";
 export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
@@ -17,6 +18,10 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   uiScale: 100,
   // Automatic follows the screen (ui-scale.mjs autoUIScale); moving the slider makes it Custom.
   uiScaleMode: "auto",
+  // The touch interface (docs/TOUCH.md): Automatic follows the primary pointer; On and Off force it.
+  touchInterface: "auto",
+  // Draw with a finger: until a pen is used (auto), always, or never (a finger pans).
+  fingerDraw: "auto",
   hotkeys: DEFAULT_HOTKEYS,
   timelineMode: "advanced",
   replaceKeyframesOnDrop: true,
@@ -87,6 +92,8 @@ export function normalizeEditorSettings(value = {}) {
   result.theme = normalizeTheme(value?.theme);
   result.uiScale = normalizeUIScale(value?.uiScale);
   result.uiScaleMode = normalizeUIScaleMode(value?.uiScaleMode, value?.uiScale);
+  result.touchInterface = normalizeTouchSetting(value?.touchInterface);
+  result.fingerDraw = normalizeFingerDraw(value?.fingerDraw);
   result.hotkeys = normalizeHotkeys(value?.hotkeys);
   result.playbackQuality = normalizePlaybackQuality(value?.playbackQuality);
   if (['scroll', 'ctrl-scroll'].includes(value?.canvasZoomGesture))
@@ -580,7 +587,11 @@ export class EditorSettings {
       const workspace = this.onResetWorkspace
         ? this.group(this.t('settings.workspace'), `<div class="styk-settings-row">${this.text(say('settings.panelLayouts'), say('settings.panelLayoutsNote'))}<button type="button" class="ui-button" data-size="sm" data-settings-reset>${icon("undo")}${escape(this.t('settings.resetPanels'))}</button></div>`)
         : "";
+      const touch = this.group(say('settings.touch'),
+        this.select(say('settings.touchInterface'), 'touchInterface', [['auto', say('settings.touchAuto')], ['on', say('settings.touchOn')], ['off', say('settings.touchOff')]], say('settings.touchInterfaceNote'))
+        + this.select(say('settings.fingerDraw'), 'fingerDraw', [['auto', say('settings.fingerDrawAuto')], ['always', say('settings.fingerDrawAlways')], ['never', say('settings.fingerDrawNever')]], say('settings.fingerDrawNote')));
       return this.group(this.t("settings.appearance"), themes + language + coverage + this.scaleControl())
+        + touch
         + this.group(this.t('timeline.title'), timeline)
         + workspace;
     }

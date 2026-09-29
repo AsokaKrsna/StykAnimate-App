@@ -13,6 +13,7 @@
 import {createPopover} from '../ui/ui-popover.mjs';
 import {installRovingFocus} from '../ui/roving-focus.mjs';
 import {presetArrangement, presetsFor} from './layout-schema.mjs';
+import {bandBottom} from './topbar.mjs';
 
 const POSITION = Object.freeze({left: 'Left', right: 'Right', with: 'With Properties', float: 'Floating', hidden: 'Hidden'});
 const SAVE_REASONS = Object.freeze({limit: '8 presets saved. Delete one first.', budget: 'Preset storage is full. Delete one first.'});
@@ -114,12 +115,12 @@ export function createLayoutPopover({host, document: doc = globalThis.document, 
 
   // Under the band, not under the menu button inside it: the anchor's box reaches down to the band's bottom.
   const target = {getBoundingClientRect: () => {
-    const box = (anchor() ?? doc.body).getBoundingClientRect(), edge = doc.querySelector('.titlebar')?.getBoundingClientRect().bottom ?? box.bottom;
+    const box = (anchor() ?? doc.body).getBoundingClientRect(), edge = bandBottom(doc) || box.bottom;
     return new DOMRect(box.left, box.top, box.width, Math.max(box.bottom, edge) - box.top);
   }};
   const popover = createPopover({anchor: target, title: 'Layout', closeLabel: 'Close layout', body, foot, overlays, icon, t,
     // Typing belongs to the popover (a preset card's "h" never picks the Hand tool); it opens 6px under the band, as menus do.
-    className: 'shell-layout', placement: 'bottom-start', keyboardScope: true, topInset: () => (doc.querySelector('.titlebar')?.getBoundingClientRect().bottom ?? 0) + 6,
+    className: 'shell-layout', placement: 'bottom-start', keyboardScope: true, topInset: () => bandBottom(doc) + 6,
     onOpen: () => { render(); (presets.querySelector('[aria-checked="true"]') ?? presets.firstElementChild)?.focus({preventScroll: true}); }, onClose: () => { unsubscribe?.(); unsubscribe = null; }, document: doc});
   popover.element.id = 'layout-popover';
   popover.element.addEventListener('keydown', event => {

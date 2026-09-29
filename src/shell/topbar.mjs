@@ -33,6 +33,18 @@
  */
 import {BAND_FOLDS, TIER_THRESHOLDS} from './layout-solver.mjs';
 
+/**
+ * The lowest top a floating box opened under the band may take (a menu, a
+ * popover, a message): the band's bottom edge while it is a row across the
+ * window, 0 where the touch interface turns it into a wing down the window's
+ * side (docs/TOUCH.md). A wing is taller than it is wide.
+ */
+export function bandBottom(doc = globalThis.document) {
+  const box = doc?.querySelector?.('.titlebar')?.getBoundingClientRect();
+  if (!box || !(box.width > 0)) return 0;
+  return box.width >= box.height ? box.bottom : 0;
+}
+
 /** The band token that folds the menubar into the mark (the minimal tier). */
 export const MENUBAR_FOLD = 'menus';
 const CACHE_KEY = 'stykanimate.band-widths.v1';
