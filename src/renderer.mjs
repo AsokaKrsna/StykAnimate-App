@@ -31,6 +31,7 @@ import { backgroundImageAssets, frameImageAssets, createSceneImages, consumeScen
 import {drawingMatrix,drawingPixelMatrix,drawingMetadata} from './drawing-model.mjs';
 import {DrawingGpu,gpuDrawingEligible} from './drawing-gpu.mjs';
 import {GeneratorGpu} from './vfx-generator-gpu.mjs';
+import {prewarmAtlas} from './vfx-generator-atlas.mjs';
 import {drawGeneratorDraws} from './vfx-generator-canvas.mjs';
 import {generatorBatchFor,budgetedGeneratorBatch,offsetGeneratorBatch,generatorSchedule,scheduleWalker,SOFTWARE_PARTICLE_BUDGET,INTERACTIVE_SAMPLING_MS} from './vfx-generator-frame.mjs';
 export { cameraMatrix, worldToScreen, screenToWorld } from './renderer-geometry.mjs';
@@ -645,6 +646,7 @@ class WebGPURenderer {
     // Analytic-coverage groups need no multisampled scratch; see analyticCoverage().
     this.isolationSinglePipeline = this.msaaCount > 1 ? await startup.wait(this.createVectorPipeline(1)) : this.pipeline;
     this.uniform = d.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    await startup.wait(this.generatorGpu().initialize());
     this.handleRenderer = new HandleRenderer(d,this.uniform);
     await startup.wait(this.handleRenderer.initialize(this.format, this.msaaCount));
     this.sampler = d.createSampler({ minFilter: 'linear', magFilter: 'linear' });
@@ -1655,6 +1657,7 @@ async function softwareAdapter(adapter) {
 
 /** WebGPU is preferred. Unsupported systems get a clearly labeled compatibility renderer. */
 export async function createRenderer(canvas, options = {}) {
+  const materialsReady = prewarmAtlas();
   let reason = options.fallbackReason || 'WebGPU is unavailable in this browser or graphics driver.';
   if (!options.forceCanvas2D && globalThis.navigator?.gpu) {
     let device, renderer;
@@ -1668,14 +1671,15 @@ export async function createRenderer(canvas, options = {}) {
       const info = adapter.info;
       renderer = new WebGPURenderer(canvas, device, null, navigator.gpu.getPreferredCanvasFormat(), { ...options, adapterName: [info?.vendor, info?.architecture, info?.device].filter(Boolean).join(' · ') });
       renderer.gpuTiming=new GpuTiming(device,{enabled:options.diagnosticsEnabled,onTiming:options.onGpuTiming,onSupport:options.onGpuTimingSupport,getContext:options.measurementContext});
-      await renderer.initialize(startup); options.onStatus?.(renderer.stats); return renderer;
+      await renderer.initialize(startup); await materialsReady; options.onStatus?.(renderer.stats); return renderer;
     } catch (error) {
       reason = error.message;
-      if (renderer) { renderer.destroyed = true; renderer.gpuTiming?.destroy(); }
+      if (renderer) { renderer.destroyed = true; renderer.generators?.destroy(); renderer.gpuTiming?.destroy(); }
       device?.destroy();
       // A canvas cannot change its context type after WebGPU has been acquired.
       if (renderer?.context) { renderer.context.unconfigure(); throw new Error(`WebGPU initialization failed: ${reason}`); }
     }
   }
+  await materialsReady;
   const fallback = new CanvasFallback(canvas, options, reason); options.onStatus?.(fallback.stats); return fallback;
 }

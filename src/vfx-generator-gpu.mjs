@@ -399,9 +399,20 @@ export class GeneratorGpu{
   this.sampler=device.createSampler({label:'Generated effect materials',magFilter:'linear',minFilter:'linear',mipmapFilter:'linear',addressModeU:'clamp-to-edge',addressModeV:'clamp-to-edge'});
   this.stats={draws:0,particles:0,uploadBytes:0};prewarmAtlas();
  }
+ pipelineDescriptor(blend,samples){
+  return {label:`Generated effects ${blend?'additive':'normal'} ${samples}×`,layout:this.pipelineLayout,vertex:{module:this.module,entryPoint:'vs'},fragment:{module:this.module,entryPoint:'fs',targets:[{format:this.format,blend:BLENDS[blend]}]},primitive:{topology:'triangle-list'},multisample:{count:samples}};
+ }
+ /** Finish shader compilation before the renderer becomes interactive. Both
+  * preview quality levels are ready, including camera and prepared playback. */
+ async initialize(){
+  const entries=await Promise.all([1,4].flatMap(samples=>[0,1].map(async blend=>[
+   `${blend}:${samples}`,await this.device.createRenderPipelineAsync(this.pipelineDescriptor(blend,samples)),
+  ])));
+  if(!this.destroyed)for(const [key,pipeline] of entries)this.pipelines.set(key,pipeline);
+ }
  pipeline(blend,samples){
   const key=`${blend}:${samples}`;let pipeline=this.pipelines.get(key);
-  if(!pipeline){pipeline=this.device.createRenderPipeline({label:`Generated effects ${blend?'additive':'normal'} ${samples}×`,layout:this.pipelineLayout,vertex:{module:this.module,entryPoint:'vs'},fragment:{module:this.module,entryPoint:'fs',targets:[{format:this.format,blend:BLENDS[blend]}]},primitive:{topology:'triangle-list'},multisample:{count:samples}});this.pipelines.set(key,pipeline);}
+  if(!pipeline){pipeline=this.device.createRenderPipeline(this.pipelineDescriptor(blend,samples));this.pipelines.set(key,pipeline);}
   return pipeline;
  }
  /** Upload a material row and its reduced levels once. */
@@ -437,5 +448,5 @@ export class GeneratorGpu{
   }
   if(current>=0)restore?.(pass);
  }
- destroy(){this.records?.destroy();this.table?.destroy();this.atlas?.destroy();this.records=this.table=this.atlas=null;this.atlasRows.clear();this.pipelines.clear();}
+ destroy(){this.destroyed=true;this.records?.destroy();this.table?.destroy();this.atlas?.destroy();this.records=this.table=this.atlas=null;this.atlasRows.clear();this.pipelines.clear();}
 }

@@ -246,18 +246,27 @@ function adoptRow(row,levels){
  rows.set(row,Object.freeze({row,levels}));
 }
 let prewarm=null;
-/** Generate the remaining material rows in a worker, so the first frames that
- * use them do not pause the UI. Rendering never waits for it: a row still
- * missing when drawn is generated on the spot. */
+/** Share one bounded preparation job for the session. Startup and catalogue
+ * previews await it so they do not race the worker with synchronous generation.
+ * Unsupported/failed workers retain the deterministic on-demand fallback. */
 export function prewarmAtlas(){
- if(prewarm||typeof window==='undefined'||typeof Worker==='undefined')return;
- const missing=[...Array(ATLAS_ROWS).keys()].filter(row=>!rows.has(row));if(!missing.length)return;
- try{
-  prewarm=new Worker(new URL('./vfx-generator-atlas-worker.mjs',import.meta.url),{type:'module',name:'StykAnimate particle materials'});
-  prewarm.onmessage=({data})=>{if(data.done)prewarm.terminate();else adoptRow(data.row,data.levels);};
-  prewarm.onerror=event=>{event.preventDefault();prewarm.terminate();};
-  prewarm.postMessage({rows:missing});
- }catch{prewarm=true;}
+ if(prewarm)return prewarm;
+ const missing=[...Array(ATLAS_ROWS).keys()].filter(row=>!rows.has(row));
+ if(!missing.length)return Promise.resolve(true);
+ if(typeof window==='undefined'||typeof Worker==='undefined')return Promise.resolve(false);
+ prewarm=new Promise(resolve=>{
+  let worker,timer,finished=false;
+  const finish=()=>{if(finished)return;finished=true;clearTimeout(timer);worker?.terminate();resolve(missing.every(row=>rows.has(row)));};
+  try{
+   worker=new Worker(new URL('./vfx-generator-atlas-worker.mjs',import.meta.url),{type:'module',name:'StykAnimate particle materials'});
+   worker.onmessage=({data})=>{if(finished)return;if(data.done)finish();else adoptRow(data.row,data.levels);};
+   worker.onerror=event=>{event.preventDefault();finish();};
+   worker.onmessageerror=finish;
+   timer=setTimeout(finish,8000);
+   worker.postMessage({rows:missing});
+  }catch{finish();}
+ });
+ return prewarm;
 }
 /** Shading applied to a particle colour, identical to shadeRgb() in the shader. */
 export function shadeColor(r,g,b,s,out){

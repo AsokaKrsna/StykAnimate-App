@@ -6139,6 +6139,7 @@ async function init() {
   window.styk.clipboard = sharedClipboard;
   window.styk.thumbnails = thumbnailRenderer;
   timelineHost.mount();
+  status("Preparing canvas and effects…", false, true);
   try {
     state.renderer = await createRenderer(canvas, rendererOptions());
   } catch (error) {

@@ -70,6 +70,7 @@ What's new in each version of StykAnimate.
 
 ### Performance
 
+- Fewer pauses when first adding particle effects or opening their previews.
 - Faster property adjustments in long animations and smoother refreshes in scenes with many images.
 - 3D figures pose, scrub and play much more smoothly, use less memory and save to smaller files.
 - Older Pivot animations open several times faster, and large ones scrub and zoom more smoothly.
