@@ -47,7 +47,7 @@ import {previewQualityLevels, previewMsaaLevels, updatePreviewQuality, playbackQ
 import { DesktopTelemetryClient } from './telemetry-core.mjs';
 import { workload, documentComplexity } from './telemetry-workload.mjs';
 import { sizeBucket,complexityBucket,fpsBucket } from './telemetry-schema.mjs';
-import { writeBrowserRecovery } from './browser-recovery.mjs';
+import { writeBrowserRecovery, readBrowserRecovery, clearBrowserRecovery } from './browser-recovery.mjs';
 import { PrivacyUI } from './privacy-ui.mjs';
 import { FeedbackUI } from './feedback-ui.mjs';
 import { UpdateUI } from './update-ui.mjs';
@@ -3712,6 +3712,8 @@ async function saveNative({ saveAs = false } = {}) {
         const time = new Intl.DateTimeFormat(document.documentElement.lang || undefined, { hour: "numeric", minute: "2-digit" });
         lastSave = { report, words: `Saved ${time.format(new Date())}` };
         if (desktop?.deleteRecovery) await desktop.deleteRecovery();
+        // A saved project has nothing left to recover; a stale copy would be offered on the next visit.
+        else if (!desktop) await clearBrowserRecovery();
       }
     }
     updateTitle();
@@ -5312,6 +5314,8 @@ window.addEventListener('blur', () => {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     hotkeys.releaseAll();
+    // A hidden tab may be frozen or discarded at any moment (always on a phone), so the recovery copy is not left to its timer.
+    if (!desktop && editor.dirty) scheduleRecovery(0);
     // A hidden page cannot present anything; park speculative preparation the
     // same way a long canvas drag does. Exports keep their own workers.
     playback.setInteractionActive(true);
@@ -5488,7 +5492,7 @@ editor.addEventListener("change", (e) => {
   )
     scheduleRecovery();
 });
-function scheduleRecovery() {
+function scheduleRecovery(delay = state.settings.autosaveSeconds * 1000 * (state.recoveryBackoff || 1)) {
   clearTimeout(state.recoveryTimer);
   if (!state.settings.autosaveSeconds) return;
   state.recoveryTimer = setTimeout(async () => {
@@ -5524,16 +5528,20 @@ function scheduleRecovery() {
               signal,
             });
           }
-          return writeBrowserRecovery(blob, name, signal);
+          return writeBrowserRecovery(await blob.arrayBuffer(), name, signal);
         },
         { recovery: true },
       );
-      if (saved) state.recoveryBackoff = 1;
+      if (saved) { state.recoveryBackoff = 1; state.recoveryFailed = false; }
     } catch (error) {
-      if (error.name !== "AbortError")
-        status(`Recovery copy could not be written: ${error.message}`, true);
+      if (error.name !== "AbortError") {
+        // A full or blocked store fails on every edit: say so once, then retry less often.
+        state.recoveryBackoff = Math.min(12, (state.recoveryBackoff || 1) * 2);
+        if (!state.recoveryFailed) status(`Recovery copy could not be written: ${error.message}`, true);
+        state.recoveryFailed = true;
+      }
     }
-  }, state.settings.autosaveSeconds * 1000 * (state.recoveryBackoff || 1));
+  }, delay);
 }
 function offerRecovery() {
   if (desktop?.getRecoveryInfo) {
@@ -5551,18 +5559,7 @@ function offerRecovery() {
       );
     return;
   }
-  const req = indexedDB.open("stykanimate-recovery", 1);
-  req.onupgradeneeded = () => req.result.createObjectStore("documents");
-  req.onsuccess = () => {
-    const db = req.result,
-      tx = db.transaction("documents"),
-      get = tx.objectStore("documents").get("latest");
-    get.onsuccess = () => {
-      const record = get.result;
-      showRecovery(record);
-    };
-    tx.oncomplete = () => db.close();
-  };
+  void readBrowserRecovery().then(showRecovery);
 }
 /** The recovery offer: the stage header's recovery message (experience.md §4.3), with the snapshot's file name and time. */
 function showRecovery(record) {
