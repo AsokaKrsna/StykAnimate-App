@@ -133,8 +133,8 @@ export const SHELL_METRICS = deepFreeze({
     phone: {fold: {left: 'strip', right: 'sheet', float: 'sheet'}, stageMin: {width: 240, height: 140}, rail: 56, railMargin: 8,
       portraitTimeline: 0.4,
       // Upright, width is what a phone lacks: the tools lie along the stage's bottom edge instead of down its side.
-      portraitRail: 'horizontal', ownBand: true},
-    tablet: {fold: {float: 'sheet'}, stageMin: {width: 560, height: 240}, rail: 60, railMargin: 12, portraitTimeline: 0.34,
+      portraitRail: 'horizontal', ownBand: true, timelineHeader: 52},
+    tablet: {fold: {float: 'sheet'}, stageMin: {width: 560, height: 240}, rail: 60, railMargin: 12, portraitTimeline: 0.34, timelineHeader: 52,
       // A folded inspector opens from the band's Properties button (a sheet), never as a 40px strip beside a finger.
       collapse: [['left', 'narrow'], ['left', 'strip'], ['right', 'sheet'], ['left', 'sheet']]},
   },
@@ -392,7 +392,9 @@ export function solveLayout(layout, env = {}) {
   // Bottom dock: compress the rows, then fold to the header.
   const band = Math.min(env.measured?.band ?? chrome.band, height);
   const workspaceHeight = Math.max(0, height - band - dimension(env.footer));
-  const t = metrics.timeline;
+  // The touch interface's timeline header is a finger's height (features/touch.css --control-2xl).
+  const t = touch?.timelineHeader ? {...metrics.timeline, header: touch.timelineHeader} : metrics.timeline;
+  const rowMetrics = t === metrics.timeline ? metrics : {...metrics, timeline: t};
   const bottomDocked = records.filter(record => record.dock === 'bottom');
   const bottomStrip = records.filter(record => record.dock === 'strip' && record.side === 'bottom');
   const bottom = {state: bottomDocked.length ? 'docked' : bottomStrip.length ? 'strip' : 'hidden', size: 0, span: entry.bottomSpan, reason: null};
@@ -401,9 +403,9 @@ export function solveLayout(layout, env = {}) {
   if (bottom.state === 'docked' && down.fold?.bottom === 'strip' && !portraitTimeline) Object.assign(bottom, {state: 'strip', reason: 'tier'});
   if (bottom.state === 'docked') {
     // Never shorter than the pinned rows plus the minimum content rows at this tier.
-    const min = Math.max(timelineHeightFor(t.minSlots, heightTier, metrics), ...bottomDocked.map(record => describe(record).min ?? 0));
+    const min = Math.max(timelineHeightFor(t.minSlots, heightTier, rowMetrics), ...bottomDocked.map(record => describe(record).min ?? 0));
     const fraction = Math.min(...bottomDocked.map(record => describe(record).maxFraction ?? 1));
-    const fallback = portraitTimeline ? Math.round(portraitTimeline * height) : timelineDefaultHeight(height, heightTier, metrics);
+    const fallback = portraitTimeline ? Math.round(portraitTimeline * height) : timelineDefaultHeight(height, heightTier, rowMetrics);
     const cap = down.timeline?.capAtDefault && !portraitTimeline ? fallback : Infinity;
     const room = workspaceHeight - padTop - padBottom - rowGap - head - stageMin.height;
     const max = Math.min(Math.floor(fraction * height), cap, room);

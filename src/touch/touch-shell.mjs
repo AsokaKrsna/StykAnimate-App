@@ -27,6 +27,8 @@ const TABBAR_ITEMS = Object.freeze(['.band-center > .workspace-switch', '.shell-
 /** A bottom sheet's resting heights, as shares of the room above the tab bar; under the smallest share, a release closes it. */
 export const SHEET_DETENTS = Object.freeze([0.42, 0.62, 0.92]);
 const SHEET_CLOSE = 0.3;
+/** Surfaces whose touches the editor follows itself (touch-action: none): the browser makes no gesture of them. */
+const OWN_GESTURES = '#viewport, .sheet-scroll, .sheet-labels';
 /** How far a finger must move before a press on a sheet's grip becomes a drag (px), and how far a side sheet must travel to close. */
 const SHEET_SLOP = 8, SIDE_CLOSE = 72;
 
@@ -178,6 +180,13 @@ export function installTouchShell({touch, stageHead = null, shell = null, docume
   };
   doc.addEventListener('pointerup', release, {capture: true, signal});
   doc.addEventListener('pointercancel', release, {capture: true, signal});
+  // Surfaces that follow a finger themselves (a sheet being dragged, the canvas, the Advanced timeline's grid and names)
+  // leave the browser no gesture to make of the touch: Chrome would otherwise start a fling on release, even though
+  // nothing scrolls, and swallow the next tap to stop it.
+  doc.addEventListener('touchmove', event => {
+    if (!touch?.active || !event.cancelable) return;
+    if (drag?.moved || event.target.closest?.(OWN_GESTURES)) event.preventDefault();
+  }, {passive: false, signal});
 
   const stop = touch?.on?.(state => apply(state));
   apply(touch?.state);

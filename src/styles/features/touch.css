@@ -40,6 +40,9 @@
   :where(:root[data-form="phone"]) .shell-top :where(.band-export, .band-done, .band-testrig, .band-cancel) { --_px: 0px; inline-size: var(--control-md); }
   :where(:root[data-form="phone"]) .shell-top :where(.band-done, .band-testrig, .band-cancel) > .band-label { display: none; }
 
+  /* ---- A tablet's workspace switch: segments a finger hits (40px inside the pill) ---- */
+  :where(:root[data-form="tablet"]) .shell-top .workspace-switch { --_h: 46px; }
+
   /* ---- The wing (phone, on its side): the workspaces as three glyphs, stacked; the document lives in the menu ---- */
   :where(:root[data-touch-layout="phone-landscape"]) .shell-top :where(.ui-doc, .band-save, #window-controls) { display: none; }
   :where(:root[data-touch-layout="phone-landscape"]) .shell-top .workspace-switch {
@@ -99,7 +102,7 @@
   :where(:root[data-touch-layout="phone-landscape"]) .shell-timeline-body:popover-open { inset-inline-end: calc(var(--wing-w) + var(--safe-right) + var(--space-1)); }
 
   /* ---- Menus and popovers as sheets (an upright phone): full width, from the bottom edge, over a veil ---- */
-  .ui-menu[data-present="sheet"], .ui-popover[data-present="sheet"] {
+  :is(.ui-menu, .ui-popover, .paint-picker, .styk-easing-popover)[data-present="sheet"] {
     inset: auto 0 0 0; inline-size: auto; min-inline-size: 0; max-inline-size: none;
     max-block-size: min(78dvh, calc(100dvh - var(--safe-top) - var(--space-8)));
     padding-block-end: calc(var(--space-2) + var(--safe-bottom));
@@ -107,11 +110,12 @@
   }
   .ui-menu[data-present="sheet"] { padding-block-start: var(--space-6); padding-inline: var(--space-2); }
   .ui-popover[data-present="sheet"] { padding-block-start: var(--space-3); }
-  :is(.ui-menu, .ui-popover)[data-present="sheet"]::before {
+  :is(.ui-menu, .ui-popover, .paint-picker, .styk-easing-popover)[data-present="sheet"]::before {
     content: ""; position: absolute; inset-block-start: var(--space-2); inset-inline-start: calc(50% - 20px);
     inline-size: 40px; block-size: 5px; border-radius: var(--radius-pill); background: var(--line-2);
   }
-  :is(.ui-menu, .ui-popover)[data-present="sheet"]::backdrop { background: var(--surface-backdrop); }
+  :is(.ui-menu, .ui-popover, .paint-picker, .styk-easing-popover)[data-present="sheet"]::backdrop { background: var(--surface-backdrop); }
+  .paint-picker[data-present="sheet"] { padding-block-start: var(--space-6); }
   .ui-menu[data-present="sheet"]:popover-open, .ui-popover[data-present="sheet"]:popover-open { transition: translate var(--dur-slow) var(--ease-out), opacity var(--dur-base) var(--ease-out); }
   @starting-style { :is(.ui-menu, .ui-popover)[data-present="sheet"]:popover-open { opacity: 1; translate: 0 40%; } }
   .ui-menu[data-present="sheet"] .ui-menu-item { min-block-size: 48px; }
@@ -163,6 +167,10 @@
    * header keeps Onion, Audio and ⋯ in view. */
   :where(:root[data-touch-layout="tablet-portrait"]) .tl-head .tl-controls > :where(.tl-fps, .tl-first) { display: none; }
 
+  /* ---- A tool's corner tick (its variants) is a thumb's corner, not a 16px one; a press and hold on the tool opens
+   * the same list ---- */
+  :where(:root[data-input="touch"]) .shell-rail :where(.ui-tool-tick-button, .tweener-arrow) { inline-size: 24px; block-size: 24px; }
+
   /* ---- An upright phone's tool bar: its tools and Build's quick options in one row (layout/touch.css places it) ---- */
   :where(.workspace[data-rail-orientation="horizontal"]) > .shell-rail :where(.tool-dock, .rail-quick, .rail-order) { flex-direction: row; }
   :where(.workspace[data-rail-orientation="horizontal"]) > .shell-rail :where(.rail-add) { margin-block-end: 0; margin-inline-end: var(--space-1-5); }
@@ -203,6 +211,8 @@
 
   /* ---- The Advanced timeline on a phone: a narrower names column (its splitter still widens it) ---- */
   :where(:root[data-form="phone"]) .layer-timeline { --sheet-label: 148px; }
+  :where(:root[data-form="phone"]) .sheet-label-head > .sheet-label-title { display: none; }
+  :where(:root[data-form="phone"]) .layer-timeline .sheet-label-head { justify-content: flex-end; padding-inline-start: var(--space-1); }
   /* The names column scrolls the rows under a vertical swipe (touch/timeline-touch.mjs), never the page. */
   :where(:root[data-input="touch"]) .layer-timeline .sheet-labels { touch-action: none; }
 

@@ -1,5 +1,6 @@
 import {clamp, hexColor, parseColor, normalizePaint, paintCSS, samplePaint, canvasPaint} from './paint.mjs';
 import {createColorMagnifier} from './color-picker-magnifier.mjs';
+import {placeFloating, presentsAsSheet} from './ui/anchor-position.mjs';
 import {createPersonalPalette, currentPersonalPalette, deletePersonalPalette, moveShownColor, paletteFor, personalPalettes, projectPalette,
   rememberColor, removeShownColor, renamePersonalPalette, saveColor, selectPersonalPalette, setPaletteView, subscribePalette, suggestPaletteName} from './color-palette.mjs';
 
@@ -49,8 +50,10 @@ export function openColorPicker({anchor, paint, gradients = true, alpha = true, 
     if(!eyedropper)magnifier?.hide();
   };
   const rect=anchor.getBoundingClientRect(), below=placement==='below';
-  const place=()=>{panel.style.top=Math.max(8,Math.min(below?rect.bottom+8:rect.top,innerHeight-panel.offsetHeight-8))+'px';};
-  panel.style.left=Math.max(8,Math.min(below?rect.left-8:rect.left-292,innerWidth-300))+'px'; place();
+  // An upright phone's touch interface shows the picker as a sheet from the bottom edge (anchor-position.mjs).
+  const sheet=presentsAsSheet(panel);
+  const place=()=>{if(sheet){placeFloating(panel,anchor);return;}panel.style.top=Math.max(8,Math.min(below?rect.bottom+8:rect.top,innerHeight-panel.offsetHeight-8))+'px';};
+  if(!sheet)panel.style.left=Math.max(8,Math.min(below?rect.left-8:rect.left-292,innerWidth-300))+'px'; place();
   const close = () => {lifetime.abort();paletteCleanup?.();if(changed&&hexColor(stop().color)!==initialHex)rememberColor(hexColor(stop().color));surface?.classList.remove('paint-eyedropper');dragCleanup?.();panel.remove(); document.removeEventListener('pointerdown',outside,true); document.removeEventListener('keydown',key,true); if(anchor.isConnected)anchor.focus(); if(active===close)active=null;}; active=close;
   const onCanvas=e=>surface && (e.target===surface || surface.contains(e.target));
   const consume=e=>{e.preventDefault();e.stopImmediatePropagation();};
@@ -241,7 +244,8 @@ export function openColorPicker({anchor, paint, gradients = true, alpha = true, 
   // Recent colours, personal palettes, the view and the project's colours (undo, another document) can change while it is open.
   const stopRecent=subscribePalette(()=>renderPalette()),stopProject=source?.subscribe?.(()=>renderPalette());
   paletteCleanup=()=>{stopRecent();stopProject?.();};
-  draw();$('[data-hex]').focus();return close;
+  // A touch screen's keyboard waits until the hex field is tapped (docs/TOUCH.md); the picker itself takes focus.
+  draw();if(document.documentElement.dataset.input==='touch'){panel.tabIndex=-1;panel.focus({preventScroll:true});}else $('[data-hex]').focus();return close;
 }
 
 /** Retain existing input/change bindings while replacing platform color dialogs. */
