@@ -164,21 +164,27 @@ goes through the counting route and is remembered in `localStorage`, later ones 
 
 ## Browsers
 
-Verified with real browsers (`STYK_BROWSER=chrome|firefox|webkit`, `tests/support/cross-browser.mjs`):
+The 1.2 candidate workflow runs real browsers through
+`tests/support/cross-browser.mjs`, using the locked Playwright version:
 
-| | Chrome 153 | Firefox 155 | WebKit 26.6 (Playwright, Windows) |
+| Check | Chromium on Windows/Linux | Firefox on Linux | WebKit on Linux |
 | --- | --- | --- | --- |
-| Editor starts | yes (WebGPU) | yes (Canvas 2D renderer: WebGPU is blocklisted there) | no: no `OffscreenCanvas` |
-| Autosave, restore, clear on save, flush on hide, blocked storage | yes | yes | storage read/write only |
-| My library and the community library, end to end | yes | yes | storage, streaming, SHA-256 and WebP decoding only |
-| Explains an unsupported browser | yes | yes | yes |
+| Editor starts and unsupported features are explained | yes | yes | yes |
+| Autosave, restore, clear on save, flush on hide, blocked storage | yes | yes | yes |
+| My library and community catalogue, verified downloads and previews | yes | yes | yes |
+| Native/Pivot round trips, images and video export | yes | not covered by this suite | not covered by this suite |
+| Offline startup, saving, export and safe version replacement | yes | not covered by this suite | not covered by this suite |
 
-That WebKit is not Safari and cannot start the editor, so **Safari itself is not verified**. What
-the editor needs, and what `src/web-support.js` checks before it loads: `OffscreenCanvas` (Safari
-16.4), WebAssembly, IndexedDB, Web Crypto (an https page), `createImageBitmap`, `structuredClone`,
-the dialog element, `Object.hasOwn`/`Array.at` and workers. A browser without one gets a page saying
-what is missing instead of a blank one. WebGPU is optional (the compatibility renderer is used
-without it).
+Windows must encode MP4 with real AAC sound. The Linux run checks an explicit
+AAC-unavailable result when the browser cannot encode it, and always verifies
+WebM with real Opus sound. It never counts a silent file as an audio-export pass.
+
+Playwright WebKit is not Safari, and this does not certify physical phones or
+Safari itself. The previous Windows WebKit build lacked `OffscreenCanvas`; the
+Linux build used for this release runs the full storage/editor suites. The app
+checks `OffscreenCanvas`, WebAssembly, IndexedDB, Web Crypto, `createImageBitmap`,
+`structuredClone`, dialogs and workers before loading. Missing features produce
+an explanation instead of a blank editor. WebGPU is optional.
 
 ## Security
 
