@@ -82,13 +82,28 @@ launches drop `ELECTRON_RUN_AS_NODE`
 Electron then runs the app as plain Node where `app` is undefined). Overrides:
 `STYK_BROWSER_PATH`, `STYK_BROWSER_CHANNEL`, `STYK_BROWSER_GPU=1`.
 
-Browsers Playwright launches run the editor's Canvas 2D renderer on Linux by default
-(their output can be read back reliably). `STYK_BROWSER_GPU=1` adds the Vulkan/WebGPU
-switches, but whether the canvas then paints depends on the browser build and
-driver: on NVIDIA with Chromium 153 even a bare WebGPU clear presents nothing (a
-five-line page shows it), while Electron 39's Chromium 142 paints correctly. The
-desktop app is unaffected: `desktop/gpu-switches.cjs` runs in Electron. Tests that
-require WebGPU need a machine whose browser presents it.
+Browsers Playwright launches run the editor's Canvas 2D renderer on Linux by default:
+its output can be read back reliably. `STYK_BROWSER_GPU=1` adds the Vulkan/WebGPU
+switches, which gives the editor a real WebGPU device. Many renderer tests need a
+device (`renderer.device`, `queue`) and only run that way; a few pixel tests need
+the Canvas 2D output. On the development machine (Chromium 153 from Playwright
+1.63, NVIDIA, Wayland) the full browser suite of 289 scripts passes 131 by default
+and about 150 with `STYK_BROWSER_GPU=1`. The failures are not new: run with the GPU
+switches, 140 of the 146 scripts that failed had exactly the same outcome on the original
+code (commit 8ff66d5); of the other six, four hard-code a port only the comparison
+server occupied, one was a timing flake and one now passes. They need private samples, the
+lab server or another port, need WebGPU, or no longer match the interface.
+
+Known limit of that Chromium build: with WebGPU active, the editor submits its draws
+(2 draw calls, 11 primitives, no validation errors, no lost device) but the canvas is
+never displayed, so screenshots and readbacks are empty. A five-line page that only
+clears a WebGPU canvas does display, with `--enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan
+--use-angle=vulkan`, so it is specific to this browser, driver and content, not to the
+canvas usage flags or to the editor's validation. Electron 39's Chromium 142 displays
+the same editor correctly with the app's own switches and with those extra ones
+(identical figure pixels in all three configurations), and that is what ships. If a
+future Electron shows an empty canvas on Linux, start with the extra flags above on the
+command line (they are merged with the app's) and Settings → Graphics mode → Canvas 2D.
 
 Many profiling scripts need private sample projects. `corpusPath()` finds them under
 your home directory (`Downloads/…`) or in the folder `STYK_CORPUS_DIR` names, and a
