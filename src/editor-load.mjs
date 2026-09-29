@@ -1,5 +1,6 @@
 /** Prepare all authoritative validation and document indices before publication. */
 import {validateSceneSteps} from './pivot/model.mjs';
+import {nextUidAfter} from './object-identity.mjs';
 import {ensureLayerState, validateLayerStateSteps, layerIdForUid} from './layers.mjs';
 import {validateAnimationDocumentSteps} from './animation-channels.mjs';
 import {validateFrameIdentitySteps} from './editor-frames.mjs';
@@ -82,14 +83,14 @@ export function* prepareEditorLoadSteps(document, {sliceMs=4, movieclipVisited}=
   for (let index=0; index<report.keyframes.length+sources.length;index++) {
     const native=index<report.keyframes.length;
     const frame=native ? report.keyframes[index] : sources[index-report.keyframes.length];
-    for(const step of continuations(frame))nextUid=Math.max(nextUid,step.uid+1);
+    for(const step of continuations(frame))nextUid=nextUidAfter(nextUid,step.uid);
     if (native && !frame._styk?.frameId) {
       if (!Number.isSafeInteger(nextFrameIdentity)) throw new Error('Frame identity capacity exceeded.');
       missingIds.push({frame,id:`frame-${nextFrameIdentity++}`});
     }
     for (const object of frame.objects) {
       const uid=object.unique_id;
-      nextUid=Math.max(nextUid,uid+1);
+      nextUid=nextUidAfter(nextUid,uid);
       layerUidCounts.set(uid,(layerUidCounts.get(uid)??0)+1);
       if (!layerSeenUids.has(uid)) {
         layerSeenUids.add(uid); layerGroups.get(layerIdForUid(report,uid)).add(uid);

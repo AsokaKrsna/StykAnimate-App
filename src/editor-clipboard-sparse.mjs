@@ -5,6 +5,7 @@ import {validateLayerStateSteps,layerIdForUid,FIXED_LAYER_IDS} from './layers.mj
 import {nativeTimeline} from './pivot/geometry.mjs';
 import {invalidateFrameIndex} from './frame-ids.mjs';
 import {yieldLoadTask} from './editor-load.mjs';
+import {MAX_ALLOCATED_UID} from './object-identity.mjs';
 
 const preparedStates=new WeakMap(),commandCopies=new WeakMap();
 const own=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
@@ -150,7 +151,7 @@ async function preparePlan(editor,wire,options,owned,timings){
     if(!Array.isArray(frame.objects))invalid('pose table');
     for(const object of frame.objects){
       const figure=definitions.get(object.figure_type_id);if(!figure)invalid('unknown figure definition');
-      required.set(figure.figure_type_id,figure);counts.set(object.unique_id,(counts.get(object.unique_id)??0)+1);maximumUid=Math.max(maximumUid,object.unique_id);objects++;
+      required.set(figure.figure_type_id,figure);counts.set(object.unique_id,(counts.get(object.unique_id)??0)+1);if(object.unique_id<=MAX_ALLOCATED_UID)maximumUid=Math.max(maximumUid,object.unique_id);objects++;
       if(++work%256===0){check();if(performance.now()-lastYield>=4){options.onProgress?.({phase:'staging',completed:work});indexMeter.pause();await(options.yieldControl??yieldLoadTask)();indexMeter.resume();check();lastYield=performance.now();}}
     }
   }

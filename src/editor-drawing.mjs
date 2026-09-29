@@ -3,6 +3,7 @@ import {drawingSheetPlan,drawingSheetPublish} from './editor-layer-sheet.mjs';
 import {sheetKeyAt,MAX_SHEET_TICKS} from './layer-sheet.mjs';
 import {createFrame,createObject} from './demo.mjs';
 import {pixelChangeBytes} from './drawing-pixels.mjs';
+import {nextUidAfter} from './object-identity.mjs';
 
 export function assertDrawingTargets(editor,ids) {
   if(!ids.length)throw new Error('Choose a drawing layer.');
@@ -117,7 +118,7 @@ export const editorDrawingMethods={
       if(target.created||target.migratedFrom){
         const plan=drawingSheetPlan(this,[target.id]);plan.layers.assignments[target.object.unique_id]=target.id;plan.definitions=[...this.report.figure_types,target.figure];
         plan.write(target.id,target.key.tick,createFrame([target.object]),{easing:{interpolation:'constant'}});
-        drawingSheetPublish(this,plan,target.created?'Create drawing cel':'Migrate drawing',{assets:{figure_types:{added:[target.figure]}},nextUid:Math.max(this._nextUid,(target.object.unique_id??0)+1)});
+        drawingSheetPublish(this,plan,target.created?'Create drawing cel':'Migrate drawing',{assets:{figure_types:{added:[target.figure]}},nextUid:nextUidAfter(this._nextUid,target.object.unique_id??0)});
       }
       const figure=this.report.figure_types.find(f=>drawingMetadata(f)?.celId===celId);
       this.drawingResources.apply(figure,tiles,'after',prepared,{resident});

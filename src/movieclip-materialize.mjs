@@ -7,11 +7,12 @@ import {createFrame} from './demo.mjs';
 import {setContinuations} from './movieclip-presence.mjs';
 import {remapVfxOwner} from './vfx.mjs';
 import {materializeMeshGeometry} from './movieclip-mesh-materialize.mjs';
+import {nextUidAfter} from './object-identity.mjs';
 
 export function createMovieclipMaterializer(report,{allowCompositeOpacity=false}={}){
   const figures=report.figure_types.filter(f=>!isMovieclip(f)),typeMaps=new WeakMap(),uids=new Map();
   let nextType=report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1),nextUid=1;
-  for(const frame of [...report.keyframes,...Object.values(report._styk?.frameSources??{})])for(const object of frame.objects)nextUid=Math.max(nextUid,object.unique_id+1);
+  for(const frame of [...report.keyframes,...Object.values(report._styk?.frameSources??{})])for(const object of frame.objects)nextUid=nextUidAfter(nextUid,object.unique_id);
   const identity=path=>{if(!uids.has(path))uids.set(path,nextUid++);return uids.get(path);};
   let definitionSignatures;
   const signature=figure=>{const {figure_type_id,...data}=figure;return JSON.stringify(data);};
