@@ -2505,6 +2505,14 @@ overlay.addEventListener(
       return;
     }
     const p = worldPoint(e);
+    // Bending is available while creating parts too, without changing tools.
+    if (e.button === 2 && builderMode?.active) {
+      const hit = pick(p);
+      if (hit?.joint >= 0) {
+        state.drag = {kind: "maybe-bend", hit, start: p, clientX: e.clientX, clientY: e.clientY};
+        return;
+      }
+    }
     if(e.button===0&&state.handles&&!builderMode?.active&&['select','pose'].includes(state.tool)){
       const spatial=spatialGizmoDrag(editor,screenPoint(p),screenPoint);
       if(spatial){if(!editor.beginDrag('Rotate articulated joint'))return;state.drag={kind:'spatial',spatial};viewport.classList.add('dragging');return;}
@@ -2970,7 +2978,7 @@ const moveCanvasPointer = guarded((e) => {
         return;
       const hit = drag.hit;
       editor.select(hit.g.obj.unique_id, hit.joint);
-      if (!(state.tool === "rig" ? editor.beginRigDrag({bend: true}) : editor.beginDrag("Pose joint"))) {
+      if (!(builderMode?.active || state.tool === "rig" ? editor.beginRigDrag({bend: true}) : editor.beginDrag("Pose joint"))) {
         state.drag = null;
         releaseCanvasPointer();
         return;
@@ -3111,6 +3119,11 @@ function endDrag(event, {keepPointer = false} = {}) {
   if (!keepPointer) releaseCanvasPointer();
   if (!drag) return;
   viewport.classList.remove("dragging");
+  if (drag.kind === "maybe-bend" && drag.contextMenuOnPress && event) {
+    overlay.dispatchEvent(new MouseEvent("contextmenu", {bubbles: true, cancelable: true,
+      clientX: event.clientX, clientY: event.clientY, button: 2}));
+    state.suppressContext = true;
+  }
   if (drag.kind === 'duplicate-pending') {
     // Alt-click selects the root without inserting a figure.
   } else if (drag.kind === 'toggle-selection') {
@@ -4066,8 +4079,11 @@ overlay.addEventListener(
   guarded((e) => {
     e.preventDefault();
     if (state.drag?.kind === 'tweener') {cancelDrag();state.suppressContext=false;return;}
-    if (state.suppressContext) {
-      state.suppressContext = false;
+    if (state.suppressContext) return;
+    // Some platforms emit contextmenu on mouse-down. Wait until we know
+    // whether this press is a click or a bend; never open a menu mid-gesture.
+    if (state.drag?.kind === "maybe-bend") {
+      state.drag.contextMenuOnPress = true;
       return;
     }
     if(construction?.active) {showCommandMenu([["chain-finish","check","Finish chain","Enter"],["chain-cancel","close","Cancel chain","Esc"]],{left:e.clientX,bottom:e.clientY});return;}

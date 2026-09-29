@@ -22,10 +22,9 @@
  * keeps today's two stacking buttons (.rail-order) under its tools; Draw and
  * Build do not show them (Build's parts have Arrange in their own menus).
  *
- * Build keeps its quick options under its tools (.rail-quick), the way a
- * modelling tool keeps snapping and mirroring beside its tool shelf: Whole
- * branch, Smart snapping, Isolate and Fit figure. They are commands
- * ([data-action]); syncRailQuick() shows their on/off state.
+ * Build uses two columns, with part creation tools followed by branch scope,
+ * Split, Duplicate branch, horizontal/vertical flips and Delete part.
+ * syncRailQuick() reflects the branch scope toggle.
  */
 
 /** Each workspace's rail, top to bottom: `data-tool` values and `add` (the +, #open-insert). */

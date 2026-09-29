@@ -1070,7 +1070,7 @@ export function createDockHost({document: doc = globalThis.document, window: win
           const style = win.getComputedStyle(node);
           return sum + node.offsetHeight + (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0);
         }, 0);
-      const columns = items.length > 1 && natural > solution.rail.rect.height + 0.5 ? 2 : 1;
+      const columns = mode() === 'rig' || items.length > 1 && natural > solution.rail.rect.height + 0.5 ? 2 : 1;
       if (columns !== railColumns) {
         railColumns = columns;
         rail.toggleAttribute('data-columns', columns === 2);

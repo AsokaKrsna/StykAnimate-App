@@ -130,13 +130,14 @@
             <button type="button" class="tool ui-tool-button" data-tool="drawing-transform" data-icon="transform" aria-label="Transform" hidden></button>
             <button type="button" class="tool ui-tool-button" data-tool="hand" data-icon="hand" aria-label="Pan canvas"></button>
           </div>
-          <!-- Build's quick options under its tools (src/shell/rail.mjs shows them in Build only): what an edit reaches,
-               how drawing snaps, what the canvas shows, and fitting the figure. -->
-          <div class="rail-quick" role="toolbar" aria-label="Build options" aria-orientation="vertical" hidden>
-            <button type="button" class="ui-tool-button" data-action="toggle-builder-branch" aria-pressed="false" aria-label="Whole branch" data-tooltip="Whole branch · edits reach every part attached below" data-icon="builder-branch"></button>
-            <button type="button" class="ui-tool-button" data-action="toggle-builder-snap" aria-pressed="true" aria-label="Smart snapping" data-tooltip="Smart snapping · Alt to bypass" data-icon="builder-snap"></button>
-            <button type="button" class="ui-tool-button" data-action="toggle-isolate" aria-pressed="false" aria-label="Isolate joint" data-tooltip="Isolate joint" data-icon="detach"></button>
-            <button type="button" class="ui-tool-button" data-action="zoom-selection" aria-label="Fit figure" data-tooltip="Fit figure" data-icon="center"></button>
+          <!-- Build's creation commands, paired beneath the drawing tools. -->
+          <div class="rail-quick" role="toolbar" aria-label="Build actions" aria-orientation="vertical" hidden>
+            <button type="button" class="ui-tool-button" data-action="toggle-builder-branch" aria-pressed="false" aria-label="Whole branch" data-tooltip="Whole branch" data-icon="builder-branch"></button>
+            <button type="button" class="ui-tool-button" data-action="split-segment" aria-label="Split part" data-tooltip="Split part" data-icon="builder-split"></button>
+            <button type="button" class="ui-tool-button" data-action="duplicate-branch" aria-label="Duplicate branch" data-tooltip="Duplicate branch" data-icon="duplicate"></button>
+            <button type="button" class="ui-tool-button" data-action="mirror-branch" aria-label="Flip branch horizontally" data-tooltip="Flip branch horizontally" data-icon="flip"></button>
+            <button type="button" class="ui-tool-button" data-action="mirror-branch-vertical" aria-label="Flip branch vertically" data-tooltip="Flip branch vertically" data-icon="flip-vertical"></button>
+            <button type="button" class="ui-tool-button" data-action="delete-single-segment" aria-label="Delete part" data-tooltip="Delete part" data-icon="trash"></button>
           </div>
         </nav>
         <aside class="shell-left shell-dock" id="left-dock" data-region="left" aria-label="Structure" hidden>

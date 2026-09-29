@@ -21,11 +21,13 @@ What's new in each version of StykAnimate.
 - Hold Alt and drag a figure to duplicate it as you move it.
 - Hold Shift and drag a figure's origin to move the whole figure along with its pinned IK joints.
 - Press A while dragging a joint or figure to add frames without letting go.
-- Right-drag to bend lines in Build, just like in Animate.
+- Right-drag to bend lines in Build and Animate without opening the context menu.
 - A Canvas setting to choose whether pasted figures keep their original layering or appear in front.
 - Pinch with two fingers to zoom and pan the canvas on a touch screen.
 
 ### Changed
+
+- Build tools now use two columns, with quick actions to split, duplicate, flip and delete parts.
 
 - Restored the small FPS counter in the top-right corner of the canvas during playback and removed the low-FPS warning.
 
