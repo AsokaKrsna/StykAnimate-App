@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {createReadStream, createWriteStream, existsSync} from 'node:fs';
-import {mkdir, mkdtemp, readFile, writeFile, stat} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, writeFile, realpath, stat} from 'node:fs/promises';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {createRequire} from 'node:module';
@@ -20,7 +20,9 @@ if (process.platform !== 'win32' || process.env.GITHUB_ACTIONS !== 'true') throw
 const root = process.cwd(), {version} = JSON.parse(await readFile('package.json', 'utf8'));
 const directory = path.join(root, 'release', version), evidenceDirectory = path.join(root, 'artifacts', 'release-install');
 await mkdir(evidenceDirectory, {recursive: true});
-const work = await mkdtemp(path.join(os.tmpdir(), 'styk-release-install-'));
+// Windows TEMP can contain an 8.3 alias. WMI reports the executable's long
+// path, so use the same canonical directory for installation and observation.
+const work = await realpath(await mkdtemp(path.join(os.tmpdir(), 'styk-release-install-')));
 const install = path.join(work, 'installed'), executable = path.join(install, 'StykAnimate.exe'), profile = path.join(work, 'profile');
 await mkdir(profile);
 await writeFile(path.join(profile, 'telemetry-state.json'), JSON.stringify({decided: true, consent: {analytics: false, diagnostics: false, policyVersion: '2026-09-10', updatedAt: Date.now()}}));
@@ -28,7 +30,6 @@ const env = {...electronEnvironment(), STYK_USER_DATA_DIR: profile, STYK_LIBRARY
 const exec = promisify(execFile);
 const run = (file, args) => exec(file, args, {env, windowsHide: true, timeout: 180000, maxBuffer: 5 * 1024 * 1024});
 const powershell = command => run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command]);
-const asar = createRequire(import.meta.url)('@electron/asar');
 const requests = [], allowed = new Set((await verifyReleaseAssets(directory, version, 'win32')).map(file => path.basename(file)));
 const server = createServer(async (request, response) => {
   const name = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname.slice(1));
@@ -42,7 +43,7 @@ const server = createServer(async (request, response) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const feed = `http://127.0.0.1:${server.address().port}`;
-const evidence = {passed: false, candidate: version, commit: process.env.GITHUB_SHA, loopbackFeed: true, checks: []};
+const evidence = {passed: false, candidate: version, commit: process.env.GITHUB_SHA, candidateRun: process.env.STYK_CANDIDATE_RUN || null, loopbackFeed: true, installDirectory: install, checks: []};
 const check = name => { evidence.checks.push(name); console.log(`PASS ${name}`); };
 const until = async (name, condition) => {
   const deadline = Date.now() + 120000;
@@ -53,8 +54,9 @@ const until = async (name, condition) => {
   throw new Error(`Timed out waiting for ${name}.`);
 };
 const processIds = async () => {
-  const {stdout} = await powershell('Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $env:STYK_INSTALL_TEST_EXE } | ForEach-Object { $_.ProcessId }');
-  return stdout.trim().split(/\s+/).map(Number).filter(Number.isInteger).filter(id => id > 0);
+  const {stdout} = await powershell("ConvertTo-Json -Compress -InputObject @(Get-CimInstance Win32_Process -Filter \"Name = 'StykAnimate.exe'\" | Select-Object ProcessId, ExecutablePath)");
+  evidence.observedProcesses = JSON.parse(stdout);
+  return evidence.observedProcesses.filter(item => item.ExecutablePath?.toLowerCase() === executable.toLowerCase()).map(item => item.ProcessId);
 };
 let app, installed = false;
 try {
@@ -74,6 +76,7 @@ try {
   assert.equal((await stat(baseline)).size, asset.size);
   assert.equal(`sha256:${await fileHash(baseline, 'sha256', 'hex')}`, asset.digest);
   evidence.baselineSHA256 = asset.digest.slice(7);
+  evidence.candidateArchiveSHA256 = await fileHash(path.join(directory, 'win-unpacked', 'resources', 'app.asar'), 'sha256', 'hex');
   evidence.candidateSHA256 = await fileHash(path.join(directory, `StykAnimate-${version}-Setup-x64.exe`), 'sha256', 'hex');
   await run(baseline, ['/S', '/currentuser', `/D=${install}`]);
   installed = true;
@@ -128,9 +131,12 @@ try {
   check('The edited project is saved before the old app closes for installation');
   await until('the installed candidate and its automatic relaunch', async () => {
     try {
-      const metadata = JSON.parse(asar.extractFile(path.join(install, 'resources', 'app.asar'), 'package.json'));
-      return metadata.version === version && (await processIds()).length > 0;
-    } catch { return false; }
+      // ASAR readers cache file offsets by path. The installer replaces that
+      // archive in place, so compare fresh bytes to the exact packaged payload.
+      evidence.installedArchiveSHA256 = await fileHash(path.join(install, 'resources', 'app.asar'), 'sha256', 'hex');
+      evidence.relaunchedProcesses = await processIds();
+      return evidence.installedArchiveSHA256 === evidence.candidateArchiveSHA256 && evidence.relaunchedProcesses.length > 0;
+    } catch (error) { evidence.lastInstallObservation = error.message; return false; }
   });
   check('Real NSIS upgrade replaces the installed version and automatically relaunches it');
   // Reattach to the installed candidate after confirming the real relaunch.

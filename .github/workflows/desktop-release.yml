@@ -10,6 +10,14 @@ on:
         description: Upload a verified draft to the public assets repository
         type: boolean
         default: false
+      verify_windows_run:
+        description: Only recheck the installed Windows upgrade using assets from this workflow run ID
+        type: string
+        default: ''
+      verify_public_feed:
+        description: With verify_windows_run, check the published updater feed instead of installing an upgrade
+        type: boolean
+        default: false
   push:
     tags: ['v*']
 permissions:
@@ -22,6 +30,7 @@ defaults:
     shell: bash
 jobs:
   desktop:
+    if: inputs.verify_windows_run == ''
     name: Package and verify (${{ matrix.platform }})
     strategy:
       fail-fast: false
@@ -96,9 +105,6 @@ jobs:
             version=$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).version')
             STYK_PACKAGED_EXECUTABLE="$GITHUB_WORKSPACE/release/$version/StykAnimate-$version-linux-x86_64.AppImage" xvfb-run -a npm run test:boot:packaged
           fi
-      - name: Install and upgrade the actual Windows release
-        if: runner.os == 'Windows'
-        run: node scripts/verify-release-install.mjs
       - name: Upload release assets
         uses: actions/upload-artifact@v4
         with:
@@ -110,6 +116,9 @@ jobs:
             release/${{ env.RELEASE_VERSION }}/*.AppImage
           retention-days: 30
           if-no-files-found: error
+      - name: Install and upgrade the actual Windows release
+        if: runner.os == 'Windows'
+        run: node scripts/verify-release-install.mjs
       - name: Upload verification evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -122,7 +131,61 @@ jobs:
             artifacts/release-install/evidence.json
           retention-days: 30
   web:
+    if: inputs.verify_windows_run == ''
     uses: ./.github/workflows/web-verify.yml
+  windows-upgrade:
+    name: Verify retained Windows installer
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_windows_run != ''
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    env:
+      STYK_CANDIDATE_RUN: ${{ inputs.verify_windows_run }}
+      VERIFY_PUBLIC_FEED: ${{ inputs.verify_public_feed }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.0'
+          cache: npm
+      - name: Install locked verification dependencies
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          echo "RELEASE_VERSION=$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).version')" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets-win32
+          run-id: ${{ inputs.verify_windows_run }}
+          github-token: ${{ github.token }}
+          path: release/${{ env.RELEASE_VERSION }}
+      - name: Verify the retained assets and extract their exact archive
+        run: |
+          directory="release/$RELEASE_VERSION"
+          npm run release:verify -- "$directory" --platform=win32
+          7z x "$directory/StykAnimate-$RELEASE_VERSION-Setup-x64.exe" '-oartifacts/installer-payload' '$PLUGINSDIR/app-64.7z'
+          if [ "$VERIFY_PUBLIC_FEED" = true ]; then
+            7z x 'artifacts/installer-payload/$PLUGINSDIR/app-64.7z' "-o$directory/win-unpacked"
+            echo "STYK_PACKAGED_EXECUTABLE=$GITHUB_WORKSPACE/$directory/win-unpacked/StykAnimate.exe" >> "$GITHUB_ENV"
+          else
+            7z x 'artifacts/installer-payload/$PLUGINSDIR/app-64.7z' "-o$directory/win-unpacked" 'resources/app.asar'
+          fi
+      - name: Install and upgrade the actual Windows release
+        if: inputs.verify_public_feed != true
+        run: node scripts/verify-release-install.mjs
+      - name: Verify the public update feed and installer download
+        if: inputs.verify_public_feed == true
+        run: node scripts/verify-github-update.mjs
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retained-installer-evidence
+          path: |
+            artifacts/release-install/evidence.json
+            artifacts/updates/github-smoke.json
+          retention-days: 30
   publish:
     needs: [desktop, web]
     if: startsWith(github.ref, 'refs/tags/') || inputs.publish || inputs.upload_draft
