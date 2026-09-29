@@ -39,7 +39,10 @@ const PAINT_TOOLS=['brush','eraser','fill','shape'];
 const MAX_STROKE_SAMPLES=65536;
 const unionRects=(a,b)=>{if(!a)return b?{...b}:null;if(!b)return{...a};const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);return{x,y,width:Math.max(a.x+a.width,b.x+b.width)-x,height:Math.max(a.y+a.height,b.y+b.height)-y};};
 export class DrawingController {
-  constructor({editor,state,overlay,viewport,onRender,onOverlayRender=onRender,onView=()=>{},onUI,onError,onStatus,beforeEdit,getImageSource=()=>({}),getTimeline,getClipboard,sampleColor}) {
+  constructor({editor,state,overlay,viewport,onRender,onOverlayRender=onRender,onView=()=>{},onUI,onError,onStatus,beforeEdit,getImageSource=()=>({}),getTimeline,getClipboard,sampleColor,fingerDrawing=()=>'never'}) {
+    // Whether a finger draws (the touch interface's setting, docs/TOUCH.md): 'auto' until a pen is used, 'always'
+    // or 'never' (a finger pans, as it does outside the touch interface).
+    this.fingerDrawing=fingerDrawing;this.penSeen=false;this.finger=null;
     Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getImageSource,getTimeline,getClipboard,sampleColor,settings:{preset:'ink',...BRUSH_DEFAULTS,spacingRatio:.08,color:'#252525',filterRadius:4,hue:0,saturation:0,lightness:0,brightness:0,contrast:0,mirrorX:false,mirrorY:false,selectShape:'lasso',shapeKind:'rect',shapeFill:false,color2:'#ffffff',resolution:2,filter:'smooth',length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
     // Recent colours are the shared palette's (color-palette.mjs), so every
     // picker offers what was painted; the property keeps Draw's old name and
@@ -349,17 +352,28 @@ export class DrawingController {
   geometryItem(target){let item;if(target.created||target.migratedFrom)item=buildGeometry({...this.editor.report,figure_types:[...this.editor.report.figure_types,target.figure]},createFrame([target.object])).drawables[0];else item=this.editor.geometry.drawables.find(i=>i.obj.unique_id===target.object.unique_id&&i.type==='image');if(!item)throw new Error('The drawing pose is unavailable.');return item;}
   pixelMatrix(target){return this.gesture?.session?.target===target?(this.gesture.session.matrix??this.gesture.session.pixelMatrix??drawingPixelMatrix(this.geometryItem(target))):drawingPixelMatrix(this.geometryItem(target));}
   pixel(event,target){return inversePoint(this.pixelMatrix(target),this.point(event));}
+  /** Whether a finger draws now: the setting, and in Automatic until a pen has drawn in this session. */
+  fingerDraws(){const mode=this.fingerDrawing?.()??'never';return mode==='always'||(mode==='auto'&&!this.penSeen);}
   async down(event){
     // A second finger turns a one-finger pan into a pinch that zooms and pans
     // around the fingers' midpoint.
     if(event.pointerType==='touch'&&this.gesture?.kind==='pan'&&this.gesture.touch&&this.gesture.id!==event.pointerId){this.overlay.setPointerCapture(event.pointerId);this.gesture=this.pinch(this.gesture,event);return;}
+    // A second finger while a finger draws takes the stroke back and pinches instead, as in drawing apps (so a
+    // two-finger tap undoes the previous stroke, not this one).
+    const finger=this.finger;
+    if(event.pointerType==='touch'&&finger&&finger.id!==event.pointerId&&(this.gesture?.id===finger.id||this.loading?.id===finger.id)){
+      this.cancel();
+      const pan={id:finger.id,kind:'pan',touch:true,start:finger.start,last:finger.last,view:{...this.state.view}};
+      try{this.overlay.setPointerCapture(finger.id);this.overlay.setPointerCapture(event.pointerId);}catch{/* a finger already lifted */}
+      this.gesture=this.pinch(pan,event);return;
+    }
     if(this.operation){if(!this.loading)this.loading={id:event.pointerId,sequence:++this.sequence,released:false,samples:[],event:{...pointerSample(event),pointerId:event.pointerId},queued:true};return;}
     if(this.gesture){
       // A pointer arriving while the previous stroke is closing queues behind its commit.
       if(this.gesture.kind==='stroke'&&this.gesture.session.ended&&!this.loading)this.loading={id:event.pointerId,sequence:++this.sequence,released:false,samples:[],event:{...pointerSample(event),pointerId:event.pointerId},queued:true};
       return;
     }
-    if(this.loading)return;if(event.pointerType==='touch'){if(performance.now()-(this.lastPen??-Infinity)<700)return;this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'pan',touch:true,start:pointerSample(event),view:{...this.state.view}};return;}if(event.pointerType==='pen')this.lastPen=performance.now();
+    if(this.loading)return;if(event.pointerType==='touch'){if(performance.now()-(this.lastPen??-Infinity)<700)return;if(!this.fingerDraws()){this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'pan',touch:true,start:pointerSample(event),view:{...this.state.view}};return;}this.finger={id:event.pointerId,start:pointerSample(event),last:pointerSample(event)};}if(event.pointerType==='pen'){this.lastPen=performance.now();this.penSeen=true;}
     if(event.altKey&&this.sampleColor&&['brush','fill'].includes(this.tool)){this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'pick'};this.pickColor(event);return;}
     if((event.ctrlKey||event.metaKey)&&['brush','eraser'].includes(this.tool)){this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'resize',start:pointerSample(event),size:this.settings.size};return;}
     this._viewRect=null;this.beforeEdit();this.ensurePaintLayer();this.viewport.focus({preventScroll:true});if(!event.released)this.overlay.setPointerCapture(event.pointerId);
@@ -712,7 +726,7 @@ export class DrawingController {
       else this.restoreStroke(s);
     }finally{prepared?.release();finish();}
   }
-  move(event){this.cursor=pointerSample(event);if(this.loading?.id===event.pointerId){if(this.loading.samples.length>=65536)throw new Error('Drawing input exceeded the queue limit.');this.loading.samples.push(pointerSample(event));return;}const g=this.gesture;if(!g||(g.id!==event.pointerId&&!g.touches?.has(event.pointerId))){this.onOverlayRender();return;}
+  move(event){this.cursor=pointerSample(event);if(this.finger?.id===event.pointerId)this.finger.last=pointerSample(event);if(this.loading?.id===event.pointerId){if(this.loading.samples.length>=65536)throw new Error('Drawing input exceeded the queue limit.');this.loading.samples.push(pointerSample(event));return;}const g=this.gesture;if(!g||(g.id!==event.pointerId&&!g.touches?.has(event.pointerId))){this.onOverlayRender();return;}
     if(g.kind==='pan'){const rect=this.viewRect();this.state.view.x=g.view.x+(event.clientX-g.start.clientX)*rect.clientWidth/rect.width;this.state.view.y=g.view.y+(event.clientY-g.start.clientY)*rect.clientHeight/rect.height;g.last=pointerSample(event);this.onView();}
     else if(g.kind==='pinch'){
       g.touches.set(event.pointerId,g.local(event));const [p,q]=g.touches.values(),v=g.base;
@@ -753,7 +767,7 @@ export class DrawingController {
   /** Pointer release. An interrupted pointer (pointercancel, lost capture: a
    * notification stealing focus, the pen leaving range) keeps what was drawn,
    * as in Krita; only Escape discards a gesture. */
-  up(event){if(this.loading?.id===event.pointerId){this.loading.released=true;return;}const g=this.gesture;if(g?.kind==='pinch'&&g.touches.has(event.pointerId)){this.finish();return;}if(!g||g.id!==event.pointerId)return;if(g.kind==='stroke'&&g.session.ended)return;this.finish();}
+  up(event){if(this.finger?.id===event.pointerId)this.finger=null;if(this.loading?.id===event.pointerId){this.loading.released=true;return;}const g=this.gesture;if(g?.kind==='pinch'&&g.touches.has(event.pointerId)){this.finish();return;}if(!g||g.id!==event.pointerId)return;if(g.kind==='stroke'&&g.session.ended)return;this.finish();}
   finish(){const g=this.gesture;
     if(g?.kind==='stroke'&&g.session.ended)return; // the done reply completes the commit
     if(this.loading)this.cancel();if(!g)return;

@@ -15,6 +15,8 @@ import {bandBottom} from './shell/topbar.mjs';
 
 /** The zoom range (the strip's slider and Ctrl+wheel), and the widest a card grows by itself from the body's height. */
 const MIN_CARD = 72, MAX_CARD = 240, AUTO_MAX = 168;
+/** A narrow strip (a phone) keeps at least this many cards in view as they grow with the body's height. */
+const AUTO_RUN = 3.4;
 /** Around a card's thumbnail (5:3, today's framing): the side gutters, then the number line, the duration bar and padding. */
 const CARD_GUTTER = 12, CARD_CHROME = 58;
 /** How far a card's duration bar starts from its edge (components/filmstrip.css: the card's and the bar's insets). */
@@ -574,9 +576,9 @@ export class SheetFilmstrip {
   fitCardsToHeight(){
     if(!this.autoCardWidth||!this.strip.clientHeight)return;
     // The number line, the duration bar and padding take CARD_CHROME; thumbnails are 5:3 inside CARD_GUTTER. Automatic
-    // growth stops at AUTO_MAX so a tall panel still shows a useful run of frames.
+    // growth stops at AUTO_MAX, and at AUTO_RUN cards across a narrow strip, so a tall panel still shows a useful run of frames.
     const fit=(this.strip.clientHeight-CARD_CHROME)*5/3+CARD_GUTTER;
-    const width=Math.round(Math.max(MIN_CARD,Math.min(AUTO_MAX,fit)));
+    const width=Math.round(Math.max(MIN_CARD,Math.min(AUTO_MAX,fit,this.strip.clientWidth/AUTO_RUN||AUTO_MAX)));
     if(Math.abs(width-this.cardWidth)<2)return;
     this.setZoom(width,0);
     this.revealPending=true;

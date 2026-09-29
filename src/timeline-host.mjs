@@ -23,7 +23,7 @@
  * runClipboardOperation, confirmDiscardFrame, simpleFrameCount, fail,
  * setTimelineMode(mode), onMount(timeline), and getters for what app.mjs
  * creates later: propertyControls(), cameraMotionControls(), drawing(),
- * builder(), sharedClipboard(), thumbnails(), localization()}; optionally
+ * builder(), sharedClipboard(), thumbnails(), localization(), touch()}; optionally
  * `overlays` (menus and Go to frame then block the editor's hotkeys).
  */
 import {Timeline} from './layer-timeline.mjs';
@@ -86,6 +86,8 @@ export function createTimelineHost(ctx) {
     timeline = new TimelineClass($("timeline"), editor, {
       header,
       overlays: ctx.overlays ?? null,
+      // The touch interface's state (docs/TOUCH.md): the grid takes a finger's swipes, taps and holds.
+      touch: {get active() { return Boolean(ctx.touch?.()?.active); }},
       getSettings: () => state.settings,
       audioEngine: ctx.audioEngine,
       onCameraMotionPreview: clip => ctx.cameraMotionControls()?.previewTimeline(clip),

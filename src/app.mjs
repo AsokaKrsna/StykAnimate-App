@@ -5136,6 +5136,7 @@ timelineHost = createTimelineHost({
   onMount: (timeline) => { timelineUI = timeline; window.styk.timeline = timeline; },
   propertyControls: () => propertyControls, cameraMotionControls: () => cameraMotionControls, drawing: () => drawingController,
   builder: () => builderMode, sharedClipboard: () => sharedClipboard, thumbnails: () => thumbnailRenderer, localization: () => appLocalization,
+  touch: () => touchMode,
 });
 /** What the command registry reads about the editor: the workspace, which decides the scoped shortcuts. */
 function commandContext() {
@@ -5964,7 +5965,7 @@ async function init() {
   workspaceLayout = shell.workspace;
   window.styk.workspace = workspaceLayout;
   window.styk.shell = shell;
-  window.styk.touchShell = installTouchShell({ touch: touchMode, stageHead });
+  window.styk.touchShell = installTouchShell({ touch: touchMode, stageHead, shell });
   // Press and hold: the right-click menus and the controls' names, for fingers (docs/TOUCH.md).
   installLongPress({ touch: touchMode, tooltips });
   // The stage's own: two fingers tap to undo, three to redo, a hold opens the menu of what is under the finger.
@@ -6148,7 +6149,9 @@ async function init() {
   actions['chain-cancel'] = () => construction.cancel();
   actions['toggle-builder-snap'] = () => construction.toggleSnap();
   window.styk.builder = builderMode;
-  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onOverlayRender:requestDrawingOverlay,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard});
+  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:requestRender,onOverlayRender:requestDrawingOverlay,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard,
+    // A finger draws in the touch interface (Settings › Draw with a finger); elsewhere it pans, as before.
+    fingerDrawing:()=>touchMode?.active?state.settings.fingerDraw:'never'});
   window.styk.drawing=drawingController;
   // Draw's quick bar is the stage header's tool options until Draw declares option descriptors (M7b): the same
   // element, re-parented once out of #viewport with its handlers and sliders.

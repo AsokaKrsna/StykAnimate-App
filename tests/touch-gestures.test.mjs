@@ -8,6 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {HOLD_MS, SLOP, beyondSlop, classifyPress, createMultiTap, isDoubleTap} from '../src/touch/touch-gestures.mjs';
 import {MODIFIER_SETS, combinedModifiers, modifiersFor, shapedPointerInit} from '../src/touch/modifier-dock.mjs';
+import {SHEET_DETENTS, sheetDetent} from '../src/touch/touch-shell.mjs';
 
 test('A press is a tap, a hold, a drag or neither', () => {
   assert.equal(classifyPress({travel: 2, duration: 120}), 'tap');
@@ -91,4 +92,14 @@ test('A finger’s events become the right button and held keys, as the desktop 
   assert.equal(keys.button, 0);
   assert.equal(keys.buttons, 1);
   assert.deepEqual([keys.shiftKey, keys.altKey, keys.ctrlKey], [true, true, false]);
+});
+
+test('A bottom sheet rests at the nearest height, or closes when dragged low', () => {
+  assert.deepEqual(SHEET_DETENTS, [0.42, 0.62, 0.92]);
+  assert.equal(sheetDetent(0.95), 0.92);
+  assert.equal(sheetDetent(0.7), 0.62);
+  assert.equal(sheetDetent(0.5), 0.42);
+  assert.equal(sheetDetent(0.31), 0.42);
+  assert.equal(sheetDetent(0.2), null, 'closes');
+  assert.equal(sheetDetent(Number.NaN), null);
 });

@@ -43,7 +43,7 @@ export function installCanvasTouch({viewport, overlay = viewport, touch, holdabl
       haptic(win);
       onHold?.(pending);
       pending.fired = true;
-      swallowNextClick(doc);
+      swallowNextClick(doc, {pointerId: pending.id, ms: 1500});
     }, holdMs)};
   }, {capture: true, passive: true, signal});
 

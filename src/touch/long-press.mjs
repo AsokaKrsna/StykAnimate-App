@@ -20,9 +20,16 @@ import {HOLD_MS, SLOP, beyondSlop} from './touch-gestures.mjs';
 const EDITABLE = 'input:not([type="range"], [type="checkbox"], [type="radio"], [type="button"], [type="color"]), textarea, select, [contenteditable="true"], [contenteditable=""]';
 const NAMED = 'button, [role="button"], [role="tab"], [role="menuitem"], [data-tooltip], [data-hotkey-title]';
 
-/** Swallows the next click (the one a lifted finger sends after a handled hold), within `ms`. */
-export function swallowNextClick(doc, ms = 800) {
-  const swallow = event => { event.preventDefault(); event.stopImmediatePropagation(); stop(); };
+/**
+ * Swallows the click a lifted finger sends after a handled hold or a drag: the next click within `ms`, and only
+ * that press's (a click that names another pointer is a new tap, and goes through).
+ */
+export function swallowNextClick(doc, {pointerId = null, ms = 400} = {}) {
+  const swallow = event => {
+    const other = pointerId !== null && Number.isInteger(event.pointerId) && event.pointerId > 0 && event.pointerId !== pointerId;
+    if (!other) { event.preventDefault(); event.stopImmediatePropagation(); }
+    stop();
+  };
   const stop = () => { clearTimeout(timer); doc.removeEventListener('click', swallow, true); };
   const timer = setTimeout(stop, ms);
   doc.addEventListener('click', swallow, true);
@@ -85,7 +92,7 @@ export function installLongPress({touch, tooltips = null, exclude = '#viewport, 
     if (press?.id !== event.pointerId) return;
     const handled = press.handled;
     cancel();
-    if (handled && event.type === 'pointerup') swallowNextClick(doc);
+    if (handled && event.type === 'pointerup') swallowNextClick(doc, {pointerId: event.pointerId});
   };
   doc.addEventListener('pointerup', finish, {capture: true, passive: true, signal});
   doc.addEventListener('pointercancel', finish, {capture: true, passive: true, signal});

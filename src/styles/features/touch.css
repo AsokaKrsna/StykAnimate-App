@@ -33,8 +33,8 @@
 
   /* ---- The band on a phone: the document's name gives way first; Save lives in File (autosave keeps the work) ---- */
   :where(:root[data-form="phone"]) .shell-top .band-save { display: none; }
-  :where(:root[data-touch-layout="phone-portrait"]) .shell-top :where(#project-name) { max-inline-size: 100%; }
-  :where(:root[data-touch-layout="phone-portrait"]) .shell-top .ui-doc { min-inline-size: 0; max-inline-size: 100%; }
+  :where(:root[data-touch-layout="phone-portrait"]) .shell-top :where(#project-name) { max-inline-size: 100%; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
+  :where(:root[data-touch-layout="phone-portrait"]) .shell-top .ui-doc { flex: 0 1 auto; min-inline-size: 0; max-inline-size: 100%; overflow: hidden; }
   :where(:root[data-touch-layout="phone-portrait"]) .shell-top :where(#save-state) { display: none; }
   :where(:root[data-form="phone"]) .shell-top .band-export > .band-label { display: none; }
   :where(:root[data-form="phone"]) .shell-top :where(.band-export, .band-done, .band-testrig, .band-cancel) { --_px: 0px; inline-size: var(--control-md); }
@@ -57,17 +57,22 @@
   :where(:root[data-touch-layout="phone-landscape"]) .shell-top .shell-sheet-button[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent-text-strong); }
 
   /* ---- Sheets: a grip to drag, room for a thumb, inside the safe areas ---- */
-  :where(:root[data-input="touch"]) .shell-sheet:where([popover]) { overscroll-behavior: contain; }
+  /* The sheet's own surface (its grip band, its tab row) is the finger's to drag; its panels scroll inside it. */
+  :where(:root[data-input="touch"]) :where(.shell-sheet, .shell-timeline-body):where([popover]) { overscroll-behavior: contain; touch-action: none; }
   :where(:root[data-input="touch"]) :where(.shell-sheet, .shell-timeline-body):where(:popover-open)::before {
     content: ""; position: absolute; z-index: 3; inset-block-start: var(--space-1-5); inset-inline-start: calc(50% - 20px);
     inline-size: 40px; block-size: 5px; border-radius: var(--radius-pill); background: var(--line-2); pointer-events: none;
   }
   /* Upright phone: the inspector, and Structure, rise from the bottom edge; half the height, or all of it. */
   :where(:root[data-touch-layout="phone-portrait"]) .shell-sheet:where([popover]) {
-    inset: auto 0 0 0; inline-size: auto; max-inline-size: none;
-    block-size: var(--touch-sheet-h, 58dvh); max-block-size: calc(100dvh - var(--safe-top) - var(--space-6));
-    padding-block: var(--sheet-grip) var(--safe-bottom);
+    inset: auto 0 var(--touch-tabbar-inset, 0px) 0; inline-size: auto; max-inline-size: none;
+    block-size: var(--touch-sheet-h, 58%); max-block-size: calc(100dvh - var(--touch-tabbar-inset, 0px) - var(--safe-top) - var(--space-6));
+    padding-block: var(--sheet-grip) 0;
     border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; box-shadow: var(--elevation-4);
+  }
+  /* A sheet under a finger follows it; let go and it settles. */
+  :where(:root[data-input="touch"]) :where(.shell-sheet, .shell-timeline-body):where(:popover-open):not([data-dragging]) {
+    transition: block-size var(--dur-slow) var(--ease-out), translate var(--dur-slow) var(--ease-out);
   }
   /* On its side: the inspector slides in beside the wing, the stage's whole height. */
   :where(:root[data-touch-layout="phone-landscape"]) .shell-sheet:where([popover]) {
@@ -146,8 +151,29 @@
     grid-template-columns: auto minmax(0, 1fr) auto; column-gap: var(--space-1); padding-inline: var(--space-1-5);
   }
   :where(:root[data-form="phone"]) .tl-head > .tl-transport { justify-self: center; }
+  /* Add frame, Next copy and Edit together show their glyphs (a press and hold says their names). */
+  :where(:root[data-form="phone"]) .tl-head :where(.tl-add, .tl-cel-main, .tl-together) > :where(.ui-label, .range-edit-count) {
+    position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  :where(:root[data-form="phone"]) .tl-head :where(.tl-add, .tl-together) { --_px: 0; inline-size: var(--control-md); }
+  :where(:root[data-form="phone"]) .tl-head .tl-cel-main { --_px: var(--space-2-5); }
   :where(:root[data-form="phone"]) .tl-head .tl-readout { margin-inline-start: 0; padding-inline: var(--space-1); }
   :where(:root[data-input="touch"]) .timeline-toolbar.tl-head { block-size: var(--control-2xl); min-block-size: var(--control-2xl); }
+
+  /* ---- An upright phone's tool bar: its tools and Build's quick options in one row (layout/touch.css places it) ---- */
+  :where(.workspace[data-rail-orientation="horizontal"]) > .shell-rail :where(.tool-dock, .rail-quick, .rail-order) { flex-direction: row; }
+  :where(.workspace[data-rail-orientation="horizontal"]) > .shell-rail :where(.rail-add) { margin-block-end: 0; margin-inline-end: var(--space-1-5); }
+  :where(.workspace[data-rail-orientation="horizontal"]) > .shell-rail :where(.rail-add)::after {
+    inset: 8px calc(-1 * var(--space-1-5) - 2px) 8px auto; inline-size: 1px; block-size: auto;
+  }
+  :where(.workspace[data-rail-orientation="horizontal"]) > .shell-rail :where(.rail-quick) {
+    display: flex; margin: 0 0 0 var(--space-2); padding: 0 0 0 var(--space-2);
+  }
+  :where(.workspace[data-rail-orientation="horizontal"]) > .shell-rail :where(.rail-quick[hidden]) { display: none; }
+  :where(.workspace[data-rail-orientation="horizontal"]) > .shell-rail :where(.rail-quick)::before {
+    inset: calc(50% - 10px) auto auto 0; inline-size: 1px; block-size: 20px;
+  }
+  :where(.workspace[data-rail-orientation="horizontal"]) > .shell-rail :where(.rail-order) { display: flex; margin: 0 0 0 var(--space-2); }
 
   /* ---- The modifier buttons: a column of labelled toggles over one round button that shows what is on ---- */
   .touch-modifiers-list {
@@ -174,6 +200,36 @@
 
   /* ---- The Advanced timeline on a phone: a narrower names column (its splitter still widens it) ---- */
   :where(:root[data-form="phone"]) .layer-timeline { --sheet-label: 148px; }
+  /* The names column scrolls the rows under a vertical swipe (touch/timeline-touch.mjs), never the page. */
+  :where(:root[data-input="touch"]) .layer-timeline .sheet-labels { touch-action: none; }
+
+  /* ---- The Simple timeline on a phone: the frame bar is one row over the cards, which take the whole width ---- */
+  :where(:root[data-form="phone"]) .sheet-filmstrip { flex-direction: column; }
+  :where(:root[data-form="phone"]) .sheet-filmstrip > .sheet-framebar {
+    display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: var(--space-2); inline-size: auto; flex: none;
+    padding: var(--space-1-5) var(--space-3); overflow: auto hidden; scrollbar-width: none; overscroll-behavior: contain;
+    border-inline-end: 0; border-block-end: 1px solid var(--line-1);
+  }
+  :where(:root[data-form="phone"]) .sheet-framebar > .sheet-framebar-title { display: flex; flex: none; }
+  :where(:root[data-form="phone"]) .sheet-framebar-title > .sheet-framebar-total { display: none; }
+  :where(:root[data-form="phone"]) .sheet-framebar > .sheet-framebar-grid { display: flex; flex: none; align-items: center; gap: var(--space-2); }
+  :where(:root[data-form="phone"]) .sheet-framebar-grid > .ui-field { inline-size: auto; min-inline-size: 150px; }
+  :where(:root[data-form="phone"]) .sheet-framebar-grid > * { flex: none; }
+  :where(:root[data-form="phone"]) .sheet-framebar > .sheet-framebar-layer { flex: none; margin-inline-start: 0; }
+  :where(:root[data-form="phone"]) .sheet-filmstrip > .sheet-filmstrip-scroll { flex: 1 1 auto; min-block-size: 0; }
+
+  /* ---- Splitters a finger can find and grab: a 28px hit area, and the timeline's edge shows its grip ---- */
+  :where(:root[data-input="touch"]) .ui-splitter::after { inset-inline: -14px; }
+  :where(:root[data-input="touch"]) .ui-splitter[aria-orientation="horizontal"]::after { inset: -14px 0; }
+  :where(:root[data-input="touch"]) .ui-splitter[aria-orientation="horizontal"]::before {
+    inset: 1px calc(50% - 22px) auto; inline-size: 44px; block-size: 5px; border-radius: var(--radius-pill); background: var(--line-2);
+  }
+  :where(:root[data-input="touch"]) .ui-splitter:where([data-dragging="true"])::before { background: var(--accent-line); }
+
+  /* ---- Draw's brush bar on a phone: the preset, the colours, Size and Mirror; Opacity, Flow and Smooth are the
+   * Brush section's in Properties (their twins), where a finger has the room ---- */
+  :where(:root[data-form="phone"]) .drawing-quickbar .draw-slider ~ .draw-slider { display: none; }
+  :where(:root[data-form="phone"]) .drawing-quickbar .draw-quick-swatches { display: none; }
 
   /* ---- A held control says its name; keyboard shortcuts mean nothing to a finger ---- */
   :where(:root[data-input="touch"]) .ui-tooltip :where(.ui-tooltip-sep, .ui-tooltip-key) { display: none; }

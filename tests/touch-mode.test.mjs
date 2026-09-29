@@ -100,15 +100,29 @@ const LAYOUT = defaultLayout({now: 1_700_000_100_000});
 const solve = (width, height, touch, mode = 'animate') => solveLayout(LAYOUT, {width, height, mode, bandMin: 626, artboard: {width: 960, height: 540},
   ...(touch ? {touch: {active: true, ...formFactor(width, height)}} : {})});
 
-test('On a phone the inspector is a sheet and the tool bar takes its touch width', () => {
+test('On a phone the inspector is a sheet and the tool bar takes its touch size', () => {
   for (const [width, height] of [[390, 640], [784, 360]]) {
     const solution = solve(width, height, true);
     assert.equal(solution.touch, 'phone');
     assert.equal(solution.regions.right.state, 'sheet', `${width}×${height}`);
     assert.equal(solution.panels.properties.presentation, 'sheet');
-    assert.equal(solution.rail.width, 56);
     assert.deepEqual(solution.band, [], 'the band folds nothing: the touch stylesheet lays it out');
   }
+  const side = solve(784, 360, true);
+  assert.equal(side.rail.orientation, 'vertical');
+  assert.equal(side.rail.width, 56);
+  assert.ok(side.stageInsets.left >= 56 + 8, 'the artboard keeps clear of the tools down the side');
+});
+
+test('Upright, a phone lays the tools along the stage\u2019s bottom and keeps the timeline\u2019s body docked', () => {
+  const upright = solve(390, 640, true);
+  assert.equal(upright.rail.orientation, 'horizontal');
+  assert.equal(upright.rail.rect.height, 56);
+  assert.equal(upright.rail.rect.y + upright.rail.rect.height + 8, upright.viewport.y + upright.viewport.height, 'along the bottom edge');
+  assert.ok(upright.stageInsets.bottom >= 56 + 8 && upright.stageInsets.left < 56, 'the artboard gives the tools height, not width');
+  assert.equal(upright.regions.bottom.state, 'docked', 'the frames stay in view even at the low height tier');
+  assert.equal(upright.regions.bottom.size, Math.round(0.4 * 640));
+  assert.equal(solve(844, 360, true).regions.bottom.state, 'strip', 'on its side the timeline folds to its header');
 });
 
 test('On a tablet the inspector docks while the stage keeps 560px, and opens as a sheet otherwise, never a strip', () => {

@@ -131,7 +131,9 @@ export const SHELL_METRICS = deepFreeze({
     // An upright phone keeps the timeline's body docked (the artboard is as wide as the phone, so the stage has height
     // to spare): its default is this share of the workspace, whatever the height tier.
     phone: {fold: {left: 'strip', right: 'sheet', float: 'sheet'}, stageMin: {width: 240, height: 140}, rail: 56, railMargin: 8,
-      portraitTimeline: 0.4},
+      portraitTimeline: 0.4,
+      // Upright, width is what a phone lacks: the tools lie along the stage's bottom edge instead of down its side.
+      portraitRail: 'horizontal'},
     tablet: {fold: {float: 'sheet'}, stageMin: {width: 560, height: 240}, rail: 60, railMargin: 12,
       // A folded inspector opens from the band's Properties button (a sheet), never as a 40px strip beside a finger.
       collapse: [['left', 'narrow'], ['left', 'strip'], ['right', 'sheet'], ['left', 'sheet']]},
@@ -286,7 +288,8 @@ function clampFloating(stored, descriptor, stage, head, metrics, index) {
  *   chrome, padTop          roomy (from 801px tall) or compact: the band, the stage header and the field above the islands (data-chrome)
  *   band                    the band's fold steps (data-band), BAND_FOLDS order
  *   touch                   the touch interface's form factor (phone, tablet) when env.touch is active, else null
- *   rail                    {side, orientation: 'vertical', compact, columns, width, rect}
+ *   rail                    {side, orientation: 'vertical' (or 'horizontal' along the stage's bottom on an upright
+ *                           phone), compact, columns, width, rect}
  *   regions.left|right      {state: docked|strip|sheet|hidden, size, strip, sizeKey, reason, rect, stripRect, groups, panels}
  *   regions.bottom          {state: docked|strip|hidden, size, span, body: docked|sheet|null, reason, rect, groups, panels}
  *                           groups: the docked islands, [{tabs, active, rect}], stacked on a side and
@@ -438,8 +441,11 @@ export function solveLayout(layout, env = {}) {
   // The floating tool bar: inside #viewport, `margin` from its edge on the rail's side, as tall as its tools need
   // (at most the viewport less its margins; the bar scrolls past that).
   const railMargin = touch?.railMargin ?? metrics.rail.margin ?? 0;
-  rects.rail = rect(railLeft ? viewport.x + railMargin : viewport.x + viewport.width - railMargin - railWidth,
-    viewport.y + railMargin, railWidth, Math.max(0, viewport.height - 2 * railMargin));
+  const railHorizontal = Boolean(touch && env.touch.orient === 'portrait' && touch.portraitRail === 'horizontal');
+  rects.rail = railHorizontal
+    ? rect(viewport.x + railMargin, viewport.y + viewport.height - railMargin - railBase, Math.max(0, viewport.width - 2 * railMargin), railBase)
+    : rect(railLeft ? viewport.x + railMargin : viewport.x + viewport.width - railMargin - railWidth,
+      viewport.y + railMargin, railWidth, Math.max(0, viewport.height - 2 * railMargin));
   if (bottom.state !== 'hidden') {
     const spanned = bottom.span === 'stage' ? [stage] : columns.filter(column => column.key !== 'rail').map(column => rects[column.key]);
     const left = Math.min(...spanned.map(item => item.x)), right = Math.max(...spanned.map(item => item.x + item.width));
@@ -521,8 +527,8 @@ export function solveLayout(layout, env = {}) {
 
   const stageInsets = stageInsetsFor(width, height, {tier, metrics});
   // At fit the artboard keeps 8px clear of the floating tool bar.
-  const railSide = railLeft ? 'left' : 'right';
-  stageInsets[railSide] = Math.max(stageInsets[railSide], railWidth + railMargin + 8);
+  const railSide = railHorizontal ? 'bottom' : railLeft ? 'left' : 'right';
+  stageInsets[railSide] = Math.max(stageInsets[railSide], (railHorizontal ? railBase : railWidth) + railMargin + 8);
   const message = metrics.message, endWidth = env.endWidth ?? message.end;
   const messageSlot = {width: Math.max(0, across.message === 'inset'
     ? stage.width - 2 * message.inset
@@ -535,7 +541,8 @@ export function solveLayout(layout, env = {}) {
   };
   const solution = {
     mode, tier, height: heightTier, chrome: chrome.name, padTop, band: bandFolds, touch: touch ? env.touch.form : null,
-    rail: {side: railLeft ? 'left' : 'right', orientation: 'vertical', compact: railCompact, columns: railColumns, width: railWidth, rect: rects.rail},
+    rail: {side: railLeft ? 'left' : 'right', orientation: railHorizontal ? 'horizontal' : 'vertical', compact: railCompact,
+      columns: railHorizontal ? 1 : railColumns, width: railHorizontal ? rects.rail.width : railWidth, rect: rects.rail},
     regions, floating, stage, stageHead: Math.min(head, stage.height), viewport, stageInsets,
     timelineRows: bottom.state === 'docked' ? bodyRows(bottom.size) : {pinned: 0, content: 0},
     messageSlot, aria, panels,

@@ -221,6 +221,11 @@ export function createDockHost({document: doc = globalThis.document, window: win
     applyBand(s);
     root.dataset.left = s.regions.left.state;
     workspace.dataset.rail = s.rail.side;
+    // Along the stage's bottom on an upright phone (the touch interface), down its side everywhere else.
+    if (s.rail.orientation === 'horizontal') workspace.dataset.railOrientation = 'horizontal';
+    else delete workspace.dataset.railOrientation;
+    const tools = workspace.querySelector('.shell-rail > .tool-dock');
+    if (tools && tools.getAttribute('aria-orientation') !== s.rail.orientation) tools.setAttribute('aria-orientation', s.rail.orientation);
     workspace.dataset.bottomSpan = s.regions.bottom.span;
     if (s.mode === 'rig') workspace.dataset.builderTimeline = s.regions.bottom.state === 'hidden' ? 'hidden' : 'visible';
     else delete workspace.dataset.builderTimeline;
@@ -1083,7 +1088,10 @@ export function createDockHost({document: doc = globalThis.document, window: win
   const rail = workspace.querySelector('.shell-rail');
   const railFit = () => {
     const dock = rail.querySelector(':scope > .tool-dock');
-    if (dock && solution?.rail?.rect) {
+    // A horizontal bar (an upright phone) is one row that scrolls sideways; columns are for a bar down the side.
+    if (solution?.rail?.orientation === 'horizontal') {
+      if (railColumns !== 1) { railColumns = 1; rail.toggleAttribute('data-columns', false); schedule(); }
+    } else if (dock && solution?.rail?.rect) {
       const items = [...dock.children].filter(node => node.offsetParent !== null);
       const box = win.getComputedStyle(rail), gap = parseFloat(win.getComputedStyle(dock).rowGap) || 0;
       const add = dock.querySelector(':scope > .rail-add');
@@ -1101,8 +1109,11 @@ export function createDockHost({document: doc = globalThis.document, window: win
         schedule();
       }
     }
-    const more = rail.scrollHeight - rail.scrollTop - rail.clientHeight > 1;
+    const horizontal = solution?.rail?.orientation === 'horizontal';
+    const more = !horizontal && rail.scrollHeight - rail.scrollTop - rail.clientHeight > 1;
     if (rail.hasAttribute('data-more-below') !== more) rail.toggleAttribute('data-more-below', more);
+    const after = horizontal && rail.scrollWidth - rail.scrollLeft - rail.clientWidth > 1;
+    if (rail.hasAttribute('data-more-after') !== after) rail.toggleAttribute('data-more-after', after);
   };
   const railObserver = rail ? new win.ResizeObserver(railFit) : null;
   if (rail) {
@@ -1148,6 +1159,12 @@ export function createDockHost({document: doc = globalThis.document, window: win
     togglePanel,
     toggleTimelineSheet,
     toggleTall,
+    /** Closes every open sheet (the side panels' and the timeline body's), as Escape or a press outside does. */
+    closeSheets({restoreFocus = false} = {}) {
+      for (const side of SIDES) closeSheet(side, {restoreFocus, recommit: false});
+      closeBody({restoreFocus, recommit: false});
+      commit();
+    },
     canPlace: (id, target) => canPlacePanel(id, target, {mode: mode(), catalog: registry.constraints()}),
     presentation,
     /** The current workspace (animate, draw or rig). */
