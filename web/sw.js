@@ -80,6 +80,8 @@ self.addEventListener('activate', event => {
 function keyFor(request, url) {
   if (url.origin !== location.origin || !url.pathname.startsWith(SCOPE_PATH)) return null;
   const relative = url.pathname.slice(SCOPE_PATH.length);
+  // The community library is live data from the site (web/worker.js): never stored, never answered from here.
+  if (relative.startsWith('community/')) return null;
   if (relative === '' || relative === 'index.html') return urlOf('');
   return request.mode === 'navigate' ? null : urlOf(relative);
 }
