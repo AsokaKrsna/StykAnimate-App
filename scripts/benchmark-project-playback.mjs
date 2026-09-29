@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 import path from 'node:path';
 import os from 'node:os';
+import {startWorkerProfiles,summarizeProfiles} from './worker-profile-support.mjs';
 
 if(!process.argv[2])throw new Error('Provide a project path and optional artifact label.');
 const source=path.resolve(process.argv[2]),label=process.argv[3]||String(Date.now());
@@ -19,7 +20,9 @@ for(const name of (await readdir(sourceRoot,{recursive:true})).filter(name=>name
   const target=path.join(output,'sources',name);await mkdir(path.dirname(target),{recursive:true});await writeFile(target,bytes);
 }
 console.log('OUTPUT',output);
-const app=await electron.launch({executablePath:createRequire(import.meta.url)('electron'),args:[root],cwd:root,timeout:60000,env:{...process.env,STYK_DEBUG:'1',STYK_USER_DATA_DIR:path.join(output,'profile')}});
+// STYK_RENDERER=canvas|gpu seeds the disposable profile's Graphics mode setting.
+if(process.env.STYK_RENDERER){result.environment.renderer=process.env.STYK_RENDERER;await mkdir(path.join(output,'profile'),{recursive:true});await writeFile(path.join(output,'profile','editor-settings.json'),JSON.stringify({rendererMode:process.env.STYK_RENDERER}));}
+const app=await electron.launch({executablePath:createRequire(import.meta.url)('electron'),args:[root,...(process.env.STYK_PROBE_WORKER_PROFILE==='1'?['--remote-debugging-port=9339']:[])],cwd:root,timeout:60000,env:{...process.env,STYK_DEBUG:'1',STYK_USER_DATA_DIR:path.join(output,'profile')}});
 const child=app.process();result.processId=child.pid;
 result.launchLog='';child.stderr.on('data',chunk=>{result.launchLog=(result.launchLog+chunk).slice(-12000);});
 try{
@@ -85,6 +88,8 @@ try{
   }
   if(process.env.STYK_PROBE_TRACE==='1')await client.send('Tracing.start',{transferMode:'ReturnAsStream',traceConfig:{recordMode:'recordContinuously',traceBufferSizeInKb:131072,
     includedCategories:['gpu','cc','viz','blink.user_timing','renderer.scheduler','devtools.timeline','v8','toplevel','disabled-by-default-gpu.service','disabled-by-default-gpu.device','disabled-by-default-skia','disabled-by-default-v8.gc']}});
+  // STYK_PROBE_WORKER_PROFILE=1 records every playback worker's CPU profile during playback.
+  let workerProfiles=null;if(process.env.STYK_PROBE_WORKER_PROFILE==='1'){workerProfiles=await startWorkerProfiles(9339);result.workerProfileCount=workerProfiles.count;}
   await page.evaluate(async({start,end,quality})=>{
     const {PlaybackCache}=await import('/src/playback.mjs');
     const s=styk.state,e=styk.editor,r=s.renderer;
@@ -112,6 +117,7 @@ try{
   result.playback=await page.evaluate(()=>{probe.active=false;return {...probe,playing:styk.state.playing,performance:styk.performance(),
     preparedStats:styk.state.renderer?.preparedFrames?.stats?{...styk.state.renderer.preparedFrames.stats}:null,
     playbackStats:styk.state.playback?.stats?{...styk.state.playback.stats,lastSharing:null,workerCache:null}:null};});
+  if(workerProfiles){const written=await workerProfiles.stop(output);result.workerProfileFiles=written;const {readFile:read}=await import('node:fs/promises');result.workerProfile=summarizeProfiles(await Promise.all(written.map(async w=>JSON.parse(await read(w.file,'utf8')))));console.log('WORKER_PROFILE',JSON.stringify(result.workerProfile.top.slice(0,20)));}
   if(process.env.STYK_PROBE_TRACE==='1'){
     const completed=new Promise(resolve=>client.once('Tracing.tracingComplete',resolve));await client.send('Tracing.end');
     const {stream}=await completed,parts=[];
