@@ -23,6 +23,16 @@ import {kitText} from './ui-strings.mjs';
 let dialogCount = 0;
 const FIELDS = 'input:not([type=hidden]):not([type=button]):not([type=submit]):not([type=reset]):not(:disabled), select:not(:disabled), textarea:not(:disabled)';
 
+const TEXT_ENTRY = 'input:not([type=checkbox], [type=radio], [type=range], [type=color], [type=button], [type=submit], [type=reset], [type=file], [type=hidden]), textarea, [contenteditable="true"]';
+/**
+ * Whether focusing `target` would raise a touch screen's keyboard for a dialog that is not about typing: on the touch
+ * interface (docs/TOUCH.md) such a dialog opens with focus on itself, and the keyboard comes when a field is tapped.
+ */
+export function keepsKeyboardDown(target, {typing = false} = {}) {
+  if (typing || !target?.matches?.(TEXT_ENTRY)) return false;
+  return target.ownerDocument?.documentElement?.dataset?.input === 'touch';
+}
+
 /** Where focus goes when `dialog` opens: [autofocus], the first field, the primary action; never the close button. */
 export function initialFocusTarget(dialog) {
   const close = dialog.querySelector('.ui-dialog-close');
@@ -39,7 +49,7 @@ const nodeFrom = (doc, value, argument) => {
 };
 
 /**
- * createDialog({size, variant, title, description, body, actions, beforeClose,
+ * createDialog({size, variant, title, description, body, actions, beforeClose, typing,
  * onSubmit, className, closeLabel, overlays, mount, icon, pointer, id, t})
  *   body      a Node, text, or (form) => Node
  *   actions   [{label, value, variant: 'primary' | 'danger' | 'ghost' | 'outline',
@@ -57,7 +67,7 @@ const nodeFrom = (doc, value, argument) => {
  * popovers opened inside the dialog close with it.
  */
 export function createDialog({size = 'sm', variant = null, title = '', description = '', body = null, actions = [], beforeClose = null, onSubmit = null,
-  className = '', closeLabel = null, overlays = null, mount = null, icon = null, pointer = null, id = null, t = null,
+  className = '', closeLabel = null, overlays = null, mount = null, icon = null, pointer = null, id = null, t = null, typing = false,
   document: doc = globalThis.document} = {}) {
   const dialogId = id ?? `ui-dialog-${++dialogCount}`;
   const element = doc.createElement('dialog');
@@ -202,7 +212,8 @@ export function createDialog({size = 'sm', variant = null, title = '', descripti
       const invoker = doc.activeElement;
       const host = mount ?? doc.body;
       host.append(element);
-      const target = initialFocusTarget(element);
+      let target = initialFocusTarget(element);
+      if (keepsKeyboardDown(target, {typing})) target = null;
       const byPointer = Boolean(target) && (pointer ?? overlays?.openedByPointer?.() ?? false);
       // The dialog's focusing steps pick [autofocus]. A pointer open focuses the
       // dialog first, then the target without the ring (focusVisible: false).
@@ -269,7 +280,7 @@ export async function prompt({title, label = '', value = '', placeholder = '', v
   if (label) row.append(caption); else input.setAttribute('aria-label', title);
   row.append(input);
   input.addEventListener('input', () => input.removeAttribute('aria-invalid'));
-  const dialog = createDialog({size, title, body: row, ...options, actions: [
+  const dialog = createDialog({size, title, body: row, typing: true, ...options, actions: [
     {label: cancelLabel ?? kitText(options.t, 'common.cancel'), cancel: true, variant: 'ghost'},
     {label: confirmLabel ?? kitText(options.t, 'overlays.ok'), value: true, variant: 'primary'},
   ], onSubmit: () => {
@@ -387,7 +398,7 @@ export function showLegacyDialog(title, bodyHTML, {dialog, content = null, overl
   }
   const target = [...body.querySelectorAll('[autofocus]')].find(node => !node.disabled) ?? body.querySelector(FIELDS) ?? body.querySelector(LEGACY_PRIMARY)
     ?? body.querySelector('button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])');
-  if (target) focusFirst([target], {focusVisible: byPointer ? false : undefined});
+  if (target && !keepsKeyboardDown(target)) focusFirst([target], {focusVisible: byPointer ? false : undefined});
   else { dialog.tabIndex = -1; dialog.focus({preventScroll: true}); }
   return {dialog, form, body, handle};
 }

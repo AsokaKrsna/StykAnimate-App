@@ -129,7 +129,7 @@
   :where(:root[data-input="touch"]) .ui-menu-item { column-gap: var(--space-3); }
 
   /* ---- Dialogs on a phone fill the window; their actions stay at the bottom, in reach ---- */
-  :where(:root[data-form="phone"]) :where(dialog.ui-dialog, dialog:is(#dialog, #insert-dialog)) {
+  :where(:root[data-form="phone"]) dialog:is(.ui-dialog, .styk-settings), :where(:root[data-form="phone"]) :where(dialog:is(#dialog, #insert-dialog)) {
     inline-size: 100vw; max-inline-size: 100vw; block-size: 100dvh; max-block-size: 100dvh;
     margin: 0; border-radius: 0;
     padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
@@ -159,6 +159,9 @@
   :where(:root[data-form="phone"]) .tl-head .tl-cel-main { --_px: var(--space-2-5); }
   :where(:root[data-form="phone"]) .tl-head .tl-readout { margin-inline-start: 0; padding-inline: var(--space-1); }
   :where(:root[data-input="touch"]) .timeline-toolbar.tl-head { block-size: var(--control-2xl); min-block-size: var(--control-2xl); }
+  /* A tablet held upright: the frame rate is the Scene's (Scene properties), First frame is Timeline ⋯'s, so the
+   * header keeps Onion, Audio and ⋯ in view. */
+  :where(:root[data-touch-layout="tablet-portrait"]) .tl-head .tl-controls > :where(.tl-fps, .tl-first) { display: none; }
 
   /* ---- An upright phone's tool bar: its tools and Build's quick options in one row (layout/touch.css places it) ---- */
   :where(.workspace[data-rail-orientation="horizontal"]) > .shell-rail :where(.tool-dock, .rail-quick, .rail-order) { flex-direction: row; }

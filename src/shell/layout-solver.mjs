@@ -133,8 +133,8 @@ export const SHELL_METRICS = deepFreeze({
     phone: {fold: {left: 'strip', right: 'sheet', float: 'sheet'}, stageMin: {width: 240, height: 140}, rail: 56, railMargin: 8,
       portraitTimeline: 0.4,
       // Upright, width is what a phone lacks: the tools lie along the stage's bottom edge instead of down its side.
-      portraitRail: 'horizontal'},
-    tablet: {fold: {float: 'sheet'}, stageMin: {width: 560, height: 240}, rail: 60, railMargin: 12,
+      portraitRail: 'horizontal', ownBand: true},
+    tablet: {fold: {float: 'sheet'}, stageMin: {width: 560, height: 240}, rail: 60, railMargin: 12, portraitTimeline: 0.34,
       // A folded inspector opens from the band's Properties button (a sheet), never as a 40px strip beside a finger.
       collapse: [['left', 'narrow'], ['left', 'strip'], ['right', 'sheet'], ['left', 'sheet']]},
   },
@@ -323,7 +323,8 @@ export function solveLayout(layout, env = {}) {
   // The touch interface lays its band out itself (touch.css), so the band's folds do not apply; its profile folds
   // the side panels by form factor instead (docs/TOUCH.md).
   const touch = env.touch?.active ? metrics.touch?.[env.touch.form] ?? null : null;
-  const {tier, height: heightTier, band: bandFolds} = resolveTiers(width, height, {bandMin: touch ? 0 : env.bandMin, thresholds: env.tiers ?? TIER_THRESHOLDS, bandMargin: metrics.bandMargin});
+  // A phone's band is laid out by the touch stylesheet (a wing, or a row with a tab bar); a tablet's folds as the desktop's.
+  const {tier, height: heightTier, band: bandFolds} = resolveTiers(width, height, {bandMin: touch?.ownBand ? 0 : env.bandMin, thresholds: env.tiers ?? TIER_THRESHOLDS, bandMargin: metrics.bandMargin});
   const across = metrics.width[tier], down = metrics.height[heightTier];
   const folds = {...(across.fold ?? {}), ...(touch?.fold ?? {})};
   const stageMin = touch?.stageMin ?? metrics.stageMin;

@@ -268,6 +268,8 @@ export function createTimelineHeader(ctx, host) {
     if (!cel.hidden && (toolbar.dataset.fold ?? '').split(' ').includes('celmenu'))
       items.push({label: say('timeline.nextCopyName'), icon: 'duplicate', disabled: celMain.disabled, run: () => run(() => host.timeline?.nextDrawing?.(false))},
         ...celItems().map(item => item && {...item, disabled: celMain.disabled}), null);
+    if (tier !== 'minimal' && root.touchLayout === 'tablet-portrait')
+      items.push({label: say('timeline.firstFrame'), icon: 'first', shortcut: shortcut('first-frame'), run: action('first-frame')}, null);
     if (tier === 'minimal') {
       const mode = document.querySelector('.workspace')?.dataset.mode;
       items.push(

@@ -157,8 +157,13 @@ export function createDockHost({document: doc = globalThis.document, window: win
     const touching = touchState();
     // The touch layouts place the band, the wing and the tab bar around the workspace themselves (touch.css), so the
     // solver fits the workspace's own box.
-    if (touching) return {width: workspace.offsetWidth, height: workspace.offsetHeight, mode: mode(), platform, footer: 0,
-      bandMin: 0, metrics, measured: {band: 0, stageHead: head}, railColumns, touch: touching};
+    if (touching) {
+      // The touch band always has its menubar folded into the mark: its fold steps are the folded pass's.
+      const widths = bandWatch?.forWidth(0);
+      const bandMin = widths?.minimal ? {...widths.minimal, minimal: widths.minimal} : 0;
+      return {width: workspace.offsetWidth, height: workspace.offsetHeight, mode: mode(), platform, footer: 0,
+        bandMin, metrics, measured: {band: 0, stageHead: head}, railColumns, touch: touching};
+    }
     // The window, the band above the workspace and (until M3b) the status bar below it.
     // The band's and the stage header's measured heights (the height tier's values unless the UI scale changed them).
     const chrome = band?.offsetHeight || undefined;
@@ -240,8 +245,8 @@ export function createDockHost({document: doc = globalThis.document, window: win
   /** The band's fold steps, and at the minimal tier the menubar folded into the mark. */
   function applyBand(s) {
     if (!band) return;
-    // The touch interface always reaches the menus through the mark (docs/TOUCH.md).
-    const steps = (s.touch ? [MENUBAR_FOLD] : s.tier === 'minimal' ? [MENUBAR_FOLD, ...s.band] : s.band).join(' ');
+    // The touch interface always reaches the menus through the mark (docs/TOUCH.md); a tablet's band folds its words too.
+    const steps = (s.touch ? [MENUBAR_FOLD, ...s.band] : s.tier === 'minimal' ? [MENUBAR_FOLD, ...s.band] : s.band).join(' ');
     if ((band.getAttribute('data-band') ?? '') === steps) return;
     if (steps) band.setAttribute('data-band', steps); else band.removeAttribute('data-band');
   }
@@ -1078,6 +1083,8 @@ export function createDockHost({document: doc = globalThis.document, window: win
   const stopTouch = touch?.on?.(() => {
     for (const side of SIDES) closeSheet(side, {restoreFocus: false, recommit: false});
     closeBody({restoreFocus: false, recommit: false});
+    // The band's controls changed size with the interface: measure its folds again.
+    bandWatch?.refresh();
     commit();
   });
   // The band is shorter at the low height tier: its new height solves again.

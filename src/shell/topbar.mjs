@@ -125,7 +125,8 @@ function hash(text) {
 export function watchBand(band, {window: win = globalThis.window, document: doc = band.ownerDocument, onChange = () => {},
   storage = null, start = null, margin = 24, minimalWidth = TIER_THRESHOLDS.width.minimal} = {}) {
   let current = null, key = '', printed = '', frame = 0, idle = 0, stopped = false;
-  const cacheId = print => hash(`${print}|${doc.documentElement.lang}|${win.devicePixelRatio ?? 1}`);
+  // The touch interface sizes the band's controls for a finger: its widths are its own.
+  const cacheId = print => hash(`${print}|${doc.documentElement.lang}|${win.devicePixelRatio ?? 1}|${doc.documentElement.dataset.input ?? ''}`);
   const readCache = id => {
     try { return JSON.parse(storage?.getItem(CACHE_KEY) ?? 'null')?.[id] ?? null; } catch { return null; }
   };
