@@ -14,7 +14,7 @@ const TYPES = {
   '.html': 'text/html; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png',
   '.webp': 'image/webp', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.wasm': 'application/wasm',
-  '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.zip': 'application/zip', '.txt': 'text/plain; charset=utf-8',
+  '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.zip': 'application/zip', '.txt': 'text/plain; charset=utf-8',
 };
 
 /** Rules from a Cloudflare _headers file: a path pattern, then indented `Name: value` lines. */

@@ -5,7 +5,7 @@ plus an in-browser Pivot codec; nothing about a project is sent to a server.
 
 ```bash
 npm ci
-npm run web:build       # build/web  (614 files, 25.4 MiB before compression)
+npm run web:build       # build/web  (624 files, 25.5 MiB before compression)
 npm run web:verify      # checks the build before it is deployed
 npm run web:preview     # build, then serve build/web on http://127.0.0.1:47850
 npm run test:web        # end to end in a real browser, under the production headers
@@ -39,7 +39,8 @@ content="browser">`, which is what selects the in-browser codec.
 
 Modules are not content-hashed, so `_headers` tells browsers to revalidate them;
 Cloudflare answers with `304` and an ETag, and the large runtime is not
-downloaded again.
+downloaded again. Once the app is installed, the service worker answers instead
+(see [Install and offline](#install-and-offline)).
 
 Cold-load measurements (cache disabled, headless Chromium, this repository's
 build): about 600 requests over a 21-level-deep module graph. Served over
@@ -56,7 +57,44 @@ simplicity, content-hashed bundles are a build-only change.
 `web:verify` fails the build for: a module the app imports that was not shipped, a
 file over Cloudflare's 25 MiB limit or more than 20,000 files, a `_headers` file
 Cloudflare would reject or without a script policy, a page that does not select the
-in-browser codec, and any private file (`desktop/`, `backend/`, `.env`, keys).
+in-browser codec, and any private file (`desktop/`, `backend/`, `.env`, keys). It
+also checks the install manifest and service worker described below.
+
+## Install and offline
+
+The site can be installed as an app (Chrome and Edge on desktop and Android;
+Safari's Add to Home Screen) and starts with no network. The pieces are added to
+the web page by `build-web.mjs` and never reach the desktop app's page:
+
+- `web/manifest.webmanifest` and `web/icons/` make it installable: an app window,
+  the mark as its icon, a maskable icon and an Apple touch icon. The icons are
+  rendered from `mark.svg` by `node scripts/build-web-icons.mjs` and committed.
+- `web/sw.js` is the service worker. The build writes this build's file list, each
+  file with a hash, into it; the version is a hash of that list, so it changes
+  exactly when a file does. `src/web-offline.mjs` registers it three seconds after
+  the page has loaded, so a first visit's own requests are not shared with filling
+  the cache.
+- Each version has one cache. Installing stores the editor (12 MiB) and every
+  request is then answered from it, so the app always runs one consistent version.
+  The Pivot runtime (13 MiB) is stored right after, unless the browser asks to save
+  data, and is kept the first time it is used either way.
+- A new build installs in the background and takes over when every window of the
+  old one has been closed, so an open project is never swapped under its owner;
+  the open app shows a short notice. Files whose hash did not change are copied
+  from the previous cache instead of downloaded, so an update costs what changed
+  (the Pivot runtime is never fetched again). The old cache is deleted when the new
+  version takes over.
+- `_headers` serves `/sw.js` and the manifest with `no-cache`, which is how an
+  installed app finds out about a new version. An installed app also asks the
+  browser to keep its storage (`navigator.storage.persist()`); a tab does not, so
+  a browser may still clear a tab's recovery data under storage pressure.
+
+`tests/web-offline.browser.mjs` (part of `npm run test:web`) installs the built site
+in Chrome, stops the server, and checks that the app starts, saves, exports and
+reopens a Pivot file and an MP4 with no network; then that a changed build
+downloads only its changed file, waits for the old window to close and replaces the
+old cache. Chrome's own installability check reports no errors for the served
+site. Not verified: Safari and Firefox, and installing on a phone.
 
 ## Security
 
@@ -118,6 +156,7 @@ Differences from the desktop codec, all deliberate:
 | WebM video | Yes, WebCodecs (opaque background) |
 | MP4 video | Yes, WebCodecs H.264 where the browser can encode it (opaque background, no sound) |
 | AVI, WMV, installed Windows codecs | Desktop only, offered with a reason |
+| Install as an app, start with no network | Yes, a service worker stores the editor and the Pivot runtime |
 | Crash recovery | IndexedDB |
 | Personal and public library | Desktop only |
 | System fonts | Where the browser offers local fonts (Chromium); otherwise open a font file |

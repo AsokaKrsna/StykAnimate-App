@@ -16,6 +16,11 @@
 # Modules and assets are not content-hashed, so browsers must revalidate them
 # (Cloudflare answers with 304 and an ETag). The runtime below is large; a 304
 # avoids re-downloading it.
+# The service worker and the manifest are what update the installed app; never serve them stale.
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache
 /src/*
   Cache-Control: public, max-age=0, must-revalidate
 /vendor/*

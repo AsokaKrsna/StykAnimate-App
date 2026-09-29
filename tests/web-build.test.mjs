@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, writeFile, readFile, rm, cp} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {buildWeb, markCodecMode, selectFiles, webFilter, PYODIDE_FILES} from '../scripts/build-web.mjs';
+import {buildWeb, markCodecMode, markInstallable, precacheList, selectFiles, webFilter, writeServiceWorker, PYODIDE_FILES} from '../scripts/build-web.mjs';
 import {verifyWeb, relativeReferences, LIMITS} from '../scripts/verify-web.mjs';
 import {parseHeaders, headersFor, startWebServer} from '../scripts/serve-web.mjs';
 
@@ -79,6 +79,75 @@ test('the index page is marked once, in the head', () => {
   assert.ok(marked.indexOf('styk-codec') < marked.indexOf('charset'));
   assert.equal(markCodecMode(marked), marked, 'marking twice changes nothing');
   assert.throws(() => markCodecMode('<html></html>'), /no <head>/);
+});
+
+test('the install tags and the offline registration are added to the web page only', async () => {
+  const marked = markInstallable('<!doctype html>\n<html>\n  <head>\n    <meta charset="utf-8" />\n  </head>\n  <body></body>\n</html>\n');
+  assert.match(marked, /    <link rel="manifest" href=".\/manifest.webmanifest" \/>\n    <link rel="apple-touch-icon"/, 'tags are indented like the head');
+  assert.ok(marked.indexOf('rel="manifest"') < marked.indexOf('</head>') && marked.indexOf('web-offline.mjs') < marked.indexOf('</head>'));
+  assert.equal(markInstallable(marked), marked, 'marking twice changes nothing');
+  assert.throws(() => markInstallable('<html></html>'), /no <\/head>/);
+  const desktopPage = await readFile(path.join(root, 'index.html'), 'utf8');
+  assert.ok(!/manifest|web-offline/.test(desktopPage), 'the desktop page does not carry them');
+});
+
+test('the built site is installable and its service worker lists exactly its files', async t => {
+  const built = await site(t);
+  const html = await readFile(path.join(built, 'index.html'), 'utf8');
+  assert.match(html, /<link rel="manifest" href=".\/manifest.webmanifest"/);
+  const manifest = JSON.parse(await readFile(path.join(built, 'manifest.webmanifest'), 'utf8'));
+  assert.equal(manifest.display, 'standalone');
+  for (const icon of manifest.icons) assert.ok((await readFile(path.join(built, icon.src))).length > 100, icon.src);
+
+  const source = await readFile(path.join(built, 'sw.js'), 'utf8');
+  const precache = JSON.parse(/^const PRECACHE = (.*);$/m.exec(source)[1]);
+  assert.deepEqual(precache, await precacheList(built), 'the list is the built files, hashed');
+  const paths = group => new Set(group.map(([name]) => name));
+  for (const name of ['', 'src/app.mjs', 'manifest.webmanifest', 'vendor/resvg/index_bg.wasm']) assert.ok(paths(precache.core).has(name), `${name || 'the page'} is stored with the editor`);
+  for (const name of ['vendor/pyodide/pyodide.asm.wasm', 'python/codec-bundle.json']) assert.ok(paths(precache.codec).has(name), `${name} is stored with the Pivot runtime`);
+  for (const name of ['sw.js', '_headers', 'build-info.json']) assert.ok(!paths(precache.core).has(name) && !paths(precache.codec).has(name), `${name} is not stored`);
+  assert.ok(!paths(precache.core).has('index.html'), 'the page is stored under its own address');
+  assert.equal(JSON.parse(await readFile(path.join(built, 'build-info.json'), 'utf8')).offline, precache.version);
+
+  // The version follows the content: the same files give the same version, any change gives another.
+  assert.equal((await precacheList(built)).version, precache.version);
+  const theme = path.join(built, 'src', 'theme-bootstrap.js');
+  await writeFile(theme, (await readFile(theme, 'utf8')) + '\n// changed\n');
+  const changed = await writeServiceWorker(built);
+  assert.notEqual(changed.version, precache.version);
+  assert.deepEqual(changed.core.filter(([, hash], index) => hash !== precache.core[index][1]).map(([name]) => name), ['src/theme-bootstrap.js'], 'only the changed file has a new hash');
+  assert.deepEqual((await verifyWeb(built)).problems, []);
+});
+
+test('verification catches an install manifest or service worker that would not work', async t => {
+  const problemsOf = async built => (await verifyWeb(built)).problems.join('\n');
+
+  let built = await site(t);
+  await rm(path.join(built, 'icons', 'icon-192.png'));
+  assert.match(await problemsOf(built), /icons\/icon-192\.png, which is not in the site/);
+
+  built = await site(t);
+  const manifest = JSON.parse(await readFile(path.join(built, 'manifest.webmanifest'), 'utf8'));
+  await writeFile(path.join(built, 'manifest.webmanifest'), JSON.stringify({...manifest, display: 'browser', icons: manifest.icons.filter(icon => icon.purpose !== 'maskable')}));
+  const manifestProblems = await problemsOf(built);
+  assert.match(manifestProblems, /app window/);
+  assert.match(manifestProblems, /no 512x512 maskable icon/);
+
+  built = await site(t);
+  await writeFile(path.join(built, 'src', 'added-after-build.mjs'), 'export {};');
+  assert.match(await problemsOf(built), /sw\.js lists files that differ/, 'a file the worker does not list');
+
+  built = await site(t);
+  await cp(path.join(root, 'web', 'sw.js'), path.join(built, 'sw.js'));
+  assert.match(await problemsOf(built), /development template/);
+
+  built = await site(t);
+  await writeFile(path.join(built, '_headers'), (await readFile(path.join(built, '_headers'), 'utf8')).replace(/\/sw\.js\n\s+Cache-Control: no-cache\n/, ''));
+  assert.match(await problemsOf(built), /_headers must serve \/sw\.js with Cache-Control: no-cache/);
+
+  built = await site(t);
+  await writeFile(path.join(built, 'index.html'), (await readFile(path.join(built, 'index.html'), 'utf8')).replace(/\s*<script type="module" src=".\/src\/web-offline.mjs"><\/script>/, ''));
+  assert.match(await problemsOf(built), /does not load the offline registration/);
 });
 
 test('_headers rules match like Cloudflare: splats, joined values, comments', () => {

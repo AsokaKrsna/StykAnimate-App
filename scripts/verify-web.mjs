@@ -1,20 +1,21 @@
 // Checks a built site (build/web) before it is deployed. Everything here is a
 // mistake that would otherwise only show up in production: a module the app
 // imports that was not shipped, a file over Cloudflare's size limit, a headers
-// file Cloudflare would reject, or a private file that leaked into the site.
+// file Cloudflare would reject, a private file that leaked into the site, or an
+// install manifest or service worker that would not work.
 //
 //   node scripts/verify-web.mjs [build/web]
 import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { PYODIDE_FILES } from './build-web.mjs';
-import { parseHeaders } from './serve-web.mjs';
+import { PYODIDE_FILES, precacheList } from './build-web.mjs';
+import { headersFor, parseHeaders } from './serve-web.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Cloudflare Workers static assets: https://developers.cloudflare.com/workers/static-assets/
 export const LIMITS = { files: 20000, fileBytes: 25 * 1024 * 1024, headerRules: 100, headerLine: 2000 };
 const REQUIRED = ['index.html', '_headers', 'build-info.json', 'python/codec-bundle.json', 'src/app.mjs', 'src/codec-web-worker.mjs',
-  'src/codec-web-engine.mjs', ...PYODIDE_FILES.map((name) => `vendor/pyodide/${name}`)];
+  'src/codec-web-engine.mjs', 'src/web-offline.mjs', 'sw.js', 'manifest.webmanifest', ...PYODIDE_FILES.map((name) => `vendor/pyodide/${name}`)];
 const PRIVATE = /(^|\/)(\.env[^/]*|telemetry-build\.json|[^/]+\.(pem|key|p12)|desktop|backend|codecs|cloud|node_modules)(\/|$)/;
 
 async function listFiles(root, directory = root, out = new Map()) {
@@ -42,6 +43,33 @@ export function relativeReferences(source) {
   return [...found];
 }
 
+/** The install manifest: installable (name, app-window display, start URL, 192 and 512 icons, one maskable) with icons that are the sizes they claim. */
+async function verifyManifest(root, files, fail) {
+  let manifest;
+  try { manifest = JSON.parse(await readFile(path.join(root, 'manifest.webmanifest'), 'utf8')); }
+  catch (error) { fail(`manifest.webmanifest is unreadable: ${error.message}`); return; }
+  for (const key of ['name', 'short_name', 'start_url', 'scope']) if (typeof manifest[key] !== 'string' || !manifest[key]) fail(`manifest.webmanifest has no ${key}.`);
+  if (!['standalone', 'fullscreen', 'minimal-ui'].includes(manifest.display)) fail('manifest.webmanifest must ask for an app window (display: standalone).');
+  const icons = Array.isArray(manifest.icons) ? manifest.icons : [];
+  const has = (size, purpose) => icons.some((icon) => icon.sizes === size && (icon.purpose ?? 'any').split(' ').includes(purpose));
+  for (const [size, purpose] of [['192x192', 'any'], ['512x512', 'any'], ['512x512', 'maskable']]) if (!has(size, purpose)) fail(`manifest.webmanifest has no ${size} ${purpose} icon.`);
+  for (const icon of icons) {
+    const name = path.posix.normalize(icon.src ?? '');
+    if (!files.has(name)) { fail(`manifest.webmanifest names ${icon.src}, which is not in the site.`); continue; }
+    const png = await readFile(path.join(root, name)), [width, height] = [png.readUInt32BE(16), png.readUInt32BE(20)];
+    if (png.subarray(1, 4).toString() !== 'PNG' || `${width}x${height}` !== icon.sizes) fail(`${icon.src} is ${width}x${height}, not ${icon.sizes}.`);
+  }
+}
+
+/** The service worker's file list must be exactly this site's files, or the app would start offline with a piece missing or stale. */
+async function verifyServiceWorker(root, fail) {
+  const declared = /^const PRECACHE = (.*);[ \t]*\r?$/m.exec(await readFile(path.join(root, 'sw.js'), 'utf8'));
+  let precache = null;
+  try { precache = JSON.parse(declared?.[1] ?? ''); } catch { /* The template's own line is not JSON. */ }
+  if (!precache?.core?.length) fail('sw.js is the development template, not this build\'s file list; build the site with npm run web:build.');
+  else if (JSON.stringify(precache) !== JSON.stringify(await precacheList(root))) fail('sw.js lists files that differ from the site; rebuild it with npm run web:build.');
+}
+
 export async function verifyWeb(root = path.join(appRoot, 'build', 'web')) {
   const problems = [];
   const files = await listFiles(root);
@@ -57,6 +85,9 @@ export async function verifyWeb(root = path.join(appRoot, 'build', 'web')) {
   if (files.has('index.html')) {
     const html = await readFile(path.join(root, 'index.html'), 'utf8');
     if (!/<meta name="styk-codec" content="browser"\s*\/?>/.test(html)) fail('index.html does not select the in-browser codec.');
+    if (!/<link rel="manifest" href="\.\/manifest\.webmanifest"/.test(html)) fail('index.html does not link the install manifest.');
+    if (!/<link rel="apple-touch-icon" href="\.\/icons\//.test(html)) fail('index.html has no Apple touch icon.');
+    if (!/<script type="module" src="\.\/src\/web-offline\.mjs"/.test(html)) fail('index.html does not load the offline registration.');
     for (const match of html.matchAll(/(?:src|href)="(\.\/[^"#?]+)/g)) {
       if (!files.has(match[1].slice(2))) fail(`index.html references ${match[1]}, which is not in the site.`);
     }
@@ -82,7 +113,16 @@ export async function verifyWeb(root = path.join(appRoot, 'build', 'web')) {
     } catch (error) { fail(error.message); }
     for (const line of text.split(/\r?\n/)) if (line.length > LIMITS.headerLine) fail(`A _headers line is ${line.length} characters; Cloudflare accepts ${LIMITS.headerLine}.`);
     if (!/^\s*Content-Security-Policy:.*script-src 'self'/m.test(text)) fail('_headers has no Content-Security-Policy that restricts scripts.');
+    // A cached worker or manifest would keep an installed app on an old version.
+    const rules = (() => { try { return parseHeaders(text); } catch { return []; } })();
+    for (const name of ['/sw.js', '/manifest.webmanifest']) {
+      const cache = headersFor(rules, name).find((header) => header.name.toLowerCase() === 'cache-control');
+      if (!/no-cache/.test(cache?.value ?? '')) fail(`_headers must serve ${name} with Cache-Control: no-cache.`);
+    }
   }
+
+  if (files.has('manifest.webmanifest')) await verifyManifest(root, files, fail);
+  if (files.has('sw.js')) await verifyServiceWorker(root, fail);
 
   if (files.has('python/codec-bundle.json')) {
     try {

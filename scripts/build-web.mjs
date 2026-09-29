@@ -8,6 +8,7 @@
 // There is no bundler: the browser loads the same ES modules the desktop app
 // does. The file set comes from the desktop packaging filter in package.json, so
 // the two builds cannot drift apart.
+import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -50,6 +51,55 @@ export async function selectFiles(root, patterns) {
   return [...selected].sort();
 }
 
+const INSTALL_TAGS = [
+  '<link rel="manifest" href="./manifest.webmanifest" />',
+  '<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />',
+  '<meta name="mobile-web-app-capable" content="yes" />',
+  '<meta name="apple-mobile-web-app-capable" content="yes" />',
+  '<meta name="apple-mobile-web-app-title" content="StykAnimate" />',
+  '<script type="module" src="./src/web-offline.mjs"></script>',
+];
+
+/** The tags that make the page installable and usable offline. The desktop page does not carry them. */
+export function markInstallable(html) {
+  if (html.includes('rel="manifest"')) return html;
+  const end = html.indexOf('</head>');
+  if (end < 0) throw new Error('index.html has no </head> to add the install tags to.');
+  const before = html.slice(0, end), indent = /[ \t]*$/.exec(before)[0];
+  return `${before}  ${INSTALL_TAGS.join(`\n${indent}  `)}\n${indent}${html.slice(end)}`;
+}
+
+// Everything the service worker stores, except what is not part of the app. The Pivot runtime is a separate group
+// because the worker fetches it after the editor.
+const NOT_PRECACHED = new Set(['_headers', 'sw.js', 'build-info.json']);
+const isCodecFile = (name) => name.startsWith('vendor/pyodide/') || name.startsWith('python/');
+
+/** The files of a built site as [path, hash] pairs in two groups, and a version that changes when any of them does. The page is the empty path. */
+export async function precacheList(root) {
+  const core = [], codec = [];
+  for await (const file of walk(root)) {
+    const name = path.relative(root, file).split(path.sep).join('/');
+    if (NOT_PRECACHED.has(name)) continue;
+    const hash = createHash('sha256').update(await readFile(file)).digest('hex').slice(0, 20);
+    (isCodecFile(name) ? codec : core).push([name === 'index.html' ? '' : name, hash]);
+  }
+  const byPath = (a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+  core.sort(byPath);
+  codec.sort(byPath);
+  const version = createHash('sha256').update(JSON.stringify([core, codec])).digest('hex').slice(0, 16);
+  return { version, core, codec };
+}
+
+/** Writes sw.js into a built site: web/sw.js with this site's file list. */
+export async function writeServiceWorker(root, source = appRoot) {
+  const template = await readFile(path.join(source, 'web', 'sw.js'), 'utf8');
+  const declaration = /^const PRECACHE = .*;[ \t]*\r?$/m;
+  if (template.split(declaration).length !== 2) throw new Error('web/sw.js must declare PRECACHE on one line.');
+  const precache = await precacheList(root);
+  await writeFile(path.join(root, 'sw.js'), template.replace(declaration, () => `const PRECACHE = ${JSON.stringify(precache)};`));
+  return precache;
+}
+
 export function markCodecMode(html) {
   const tag = '<meta name="styk-codec" content="browser" />';
   if (html.includes('name="styk-codec"')) return html;
@@ -67,7 +117,7 @@ export async function buildWeb({ root = appRoot, output = path.join(root, 'build
   for (const relative of files) {
     const target = path.join(output, relative);
     await mkdir(path.dirname(target), { recursive: true });
-    if (relative === 'index.html') await writeFile(target, markCodecMode(await readFile(path.join(root, relative), 'utf8')));
+    if (relative === 'index.html') await writeFile(target, markInstallable(markCodecMode(await readFile(path.join(root, relative), 'utf8'))));
     else await copyFile(path.join(root, relative), target);
   }
 
@@ -89,10 +139,16 @@ export async function buildWeb({ root = appRoot, output = path.join(root, 'build
 
   await copyFile(path.join(root, 'web', '_headers'), path.join(output, '_headers'));
 
+  // The install manifest and its icons, then the service worker, which lists every file above.
+  await copyFile(path.join(root, 'web', 'manifest.webmanifest'), path.join(output, 'manifest.webmanifest'));
+  await mkdir(path.join(output, 'icons'), { recursive: true });
+  for (const icon of await readdir(path.join(root, 'web', 'icons'))) await copyFile(path.join(root, 'web', 'icons', icon), path.join(output, 'icons', icon));
+  const precache = await writeServiceWorker(output, root);
+
   let bytes = 0, count = 0;
   for await (const file of walk(output)) { bytes += (await stat(file)).size; count++; }
   // No timestamp: the same inputs produce the same site.
-  await writeFile(path.join(output, 'build-info.json'), JSON.stringify({ app: 'StykAnimate', version, pyodide: pyodideVersion, codecFiles: Object.keys(bundle.files).length, files: count + 1 }, null, 2) + '\n');
+  await writeFile(path.join(output, 'build-info.json'), JSON.stringify({ app: 'StykAnimate', version, pyodide: pyodideVersion, codecFiles: Object.keys(bundle.files).length, offline: precache.version, files: count + 1 }, null, 2) + '\n');
   return { output, files: count + 1, bytes, version, pyodideVersion };
 }
 
