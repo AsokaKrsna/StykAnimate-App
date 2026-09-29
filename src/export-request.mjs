@@ -419,12 +419,14 @@ export function videoExportArguments(request, context = {}) {
   const vfw = format === 'vfw' ? vfwEncodeOptions(request.vfw, context.vfw) : null;
   const codec = codecOf(request);
   const nativeWebm = format === 'webm' && context.provider === 'FFmpeg';
+  // Browser video (WebM, or MP4 where there is no desktop encoder) is encoded by WebCodecs.
+  const webcodecs = (format === 'webm' && !nativeWebm) || (format === 'mp4' && context.provider === 'WebCodecs');
   const options = exportOptionsFromRequest(request, context), fps = context.fps, ticks = options.end - options.start;
   const extension = format === 'vfw' ? 'avi' : format;
   const videoQuality = format === 'vfw' ? {} : videoQualityOptions({width: options.width, height: options.height, fps,
-    preset: request.videoQuality || 'recommended', provider: format === 'webm' && !nativeWebm ? 'WebCodecs' : 'FFmpeg',
+    preset: request.videoQuality || 'recommended', provider: webcodecs ? 'WebCodecs' : 'FFmpeg',
     mode: request.bitrateMode || 'auto', manualMbps: request.bitrateMbps, lossless: isLossless(request)});
-  const encoder = format === 'vfw' ? 'vfw' : format === 'webm' && !nativeWebm ? 'webcodecs' : 'native';
+  const encoder = format === 'vfw' ? 'vfw' : webcodecs ? 'webcodecs' : 'native';
   const includeAudio = request.audio && (context.audioClips ?? []).some(clip => clip.start < options.end / fps && clip.start + clip.duration > options.start / fps);
   if (includeAudio && encoder !== 'native') throw new Error('Audio export requires a desktop FFmpeg video format. Choose MP4, WebM, AVI or WMV with FFmpeg, or turn off Include audio for a silent export.');
   return {encoder, options, fps, ticks, codec, vfw, nativeWebm, videoQuality, includeAudio, extension, filename: exportFileName(request, context),
@@ -473,7 +475,7 @@ export function exportJob(request, context = {}) {
 /**
  * Whether the output keeps transparent areas. Nothing here changes the
  * output: the sheet shows it (Picture › Transparent) with the reason.
- * `provider` is the format's encoder ('FFmpeg' or 'WebCodecs' for WebM).
+ * `provider` is the format's encoder ('FFmpeg' or 'WebCodecs' for WebM and the browser's MP4).
  */
 export function exportTransparency(format, {provider} = {}) {
   const info = FORMATS.get(format);

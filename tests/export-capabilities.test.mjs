@@ -12,6 +12,20 @@ test('portable capability choices distinguish real containers and numbered forma
   for (const id of ['gif-sequence', 'svg-sequence']) assert.equal(result.formats.find(value => value.id === id).supported, true);
   assert.equal(exportFormat('wmv').extension, 'wmv'); assert.equal(exportFormat('wmv').mimeType, 'video/x-ms-wmv');
 });
+test('MP4 is offered from WebCodecs H.264 when there is no desktop encoder', async () => {
+  const seen = [];
+  const h264 = {...environment, VideoEncoder: {isConfigSupported: async config => { seen.push(config.codec); return {supported: config.codec.startsWith('avc1.4d')}; }}};
+  const result = await getExportCapabilities({environment: h264, width: 321, height: 181, fps: 30});
+  const mp4 = result.formats.find(value => value.id === 'mp4');
+  assert.deepEqual(seen.filter(codec => codec.startsWith('avc1')).map(codec => codec.slice(0, 7)), ['avc1.64', 'avc1.4d'], 'High is tried before Main');
+  assert.equal(mp4.supported, true); assert.equal(mp4.provider, 'WebCodecs'); assert.equal(mp4.codec, 'H.264');
+  assert.deepEqual([mp4.encodedWidth, mp4.encodedHeight], [322, 182], 'an odd picture is padded to an even width and height');
+  assert.deepEqual(mp4.codecs.map(codec => codec.id), ['h264']); assert.equal(mp4.defaultCodec, 'h264'); assert.equal(mp4.alpha, false);
+  assert.equal(result.formats.find(value => value.id === 'avi').supported, false, 'AVI and WMV remain desktop-only');
+  // Where a desktop encoder exists it alone decides MP4, whatever the browser could do.
+  const desktop = await getExportCapabilities({environment: h264, desktop: {getVideoCapabilities: async () => ({formats: []})}});
+  assert.equal(desktop.formats.find(value => value.id === 'mp4').supported, false);
+});
 test('native probe support is honored independently for each format and failures remain explicit', async () => {
   const desktop = {getVideoCapabilities: async options => { assert.equal(options.width, 600); return {version: 'FFmpeg test', formats: [{id: 'mp4', codec: 'h264', supported: true}, {id: 'wmv', supported: false, reason: 'Encoder missing'}]}; }};
   const result = await getExportCapabilities({environment, desktop, width: 600});

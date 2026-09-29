@@ -94,8 +94,31 @@ try {
     const recognised = name.endsWith('.svg') ? bytes.toString('utf8').includes('<svg') : bytes.subarray(0, signature.length).equals(signature);
     check(`${label} exports`, bytes.length > signature.length && recognised);
   }
+  // MP4 is H.264 from WebCodecs; the file must decode in the browser at the scene's size and length.
+  const mp4Download = page.waitForEvent('download', { timeout: 120000 });
+  await page.evaluate(() => window.styk.actions['export-mp4']());
+  const mp4Path = path.join(temp, 'clip.mp4');
+  await (await mp4Download).saveAs(mp4Path);
+  const mp4 = await readFile(mp4Path);
+  check('An MP4 video exports (H.264 by WebCodecs)', mp4.length > 100 && mp4.subarray(4, 8).toString() === 'ftyp');
+  const decoded = await page.evaluate(async (base64) => {
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    const video = document.createElement('video');
+    video.muted = true;
+    video.src = URL.createObjectURL(new Blob([bytes], { type: 'video/mp4' }));
+    await new Promise((resolve, reject) => { video.onloadedmetadata = resolve; video.onerror = () => reject(new Error(video.error?.message ?? 'The MP4 did not load.')); });
+    const { editor } = window.styk, report = editor.report;
+    return { width: video.videoWidth, height: video.videoHeight, duration: video.duration,
+      expectedWidth: report.canvas_width, expectedHeight: report.canvas_height,
+      expectedDuration: editor.totalTicks / (report.frame_delay_ms ? 1000 / report.frame_delay_ms : report.fps) };
+  }, mp4.toString('base64'));
+  check('The MP4 decodes at the scene size and length', decoded.width >= decoded.expectedWidth && decoded.width - decoded.expectedWidth <= 1
+    && decoded.height >= decoded.expectedHeight && decoded.height - decoded.expectedHeight <= 1 && Math.abs(decoded.duration - decoded.expectedDuration) < 0.05);
+
   const capabilities = await page.evaluate(async () => (await import('/src/export-capabilities.mjs')).getExportCapabilities());
-  for (const id of ['mp4', 'avi', 'wmv']) {
+  const offered = capabilities.formats.find((item) => item.id === 'mp4');
+  check('MP4 is offered with the browser encoder', offered?.supported === true && offered.provider === 'WebCodecs');
+  for (const id of ['avi', 'wmv']) {
     const format = capabilities.formats.find((item) => item.id === id);
     check(`${id.toUpperCase()} is offered as desktop-only, with a reason`, format && format.supported === false && /desktop/i.test(format.reason ?? ''));
   }

@@ -1,12 +1,14 @@
-/** Deterministic canvas -> WebCodecs -> WebM export, without captureStream.
+/** Deterministic canvas -> WebCodecs -> WebM or MP4 export, without captureStream.
  * Sources: https://www.w3.org/TR/webcodecs/
  *          https://www.webmproject.org/docs/container/
- * Video only; VP8 preferred, VP9 fallback. No real-time/compositor dependency.
+ * Video only. WebM prefers VP8 with VP9 as the fallback; MP4 carries H.264
+ * (see mp4-muxer.mjs). No real-time/compositor dependency.
  */
 import {videoQualityOptions} from './export-video-quality.mjs';
+import {Mp4Muxer, avcCodecStrings} from './mp4-muxer.mjs';
 const text = new TextEncoder();
 const LIMIT = 512 * 1024 * 1024;
-// A streamed WebM is bounded by the destination disk, not renderer memory.
+// A streamed file is bounded by the destination disk, not renderer memory.
 const STREAM_LIMIT = 16 * 1024 * 1024 * 1024;
 // Include submitted but not yet output frames, not just encodeQueueSize: codecs
 // can dequeue a frame while retaining its pixels internally. At 4K allow one.
@@ -129,17 +131,45 @@ class WebMMuxer {
 
 function cancelled() { return new DOMException('Video export cancelled.', 'AbortError'); }
 
+/** H.264 encodes even dimensions; an odd width or height gains one black pixel row or column. */
+export const avcCodedSize = (width, height) => ({width: width + (width & 1), height: height + (height & 1)});
+
+/** What differs between the containers: the codecs to try, their configuration and the muxer. */
+const CONTAINERS = {
+  webm: {
+    unsupported: 'No VP8 or VP9 video encoder supports this canvas size. Try a smaller export resolution.',
+    candidates: ({width, height, fps, bitrate}) => ['vp8', 'vp09.00.51.08'].map(codec => ({codec, width, height, framerate: fps, bitrate: Math.round(bitrate),
+      latencyMode: 'quality', hardwareAcceleration: 'prefer-software', alpha: 'discard'})),
+    muxer: options => new WebMMuxer(options),
+  },
+  mp4: {
+    unsupported: 'No H.264 video encoder supports this canvas size. Try a smaller export resolution or WebM.',
+    candidates: ({width, height, fps, bitrate}) => {
+      const coded = avcCodedSize(width, height);
+      return avcCodecStrings(coded.width, coded.height, fps).map(codec => ({codec, ...coded, framerate: fps, bitrate: Math.round(bitrate),
+        latencyMode: 'quality', avc: {format: 'avc'}}));
+    },
+    muxer: options => new Mp4Muxer(options),
+  },
+};
+
+function scratchCanvas(width, height) {
+  return typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(width, height) : Object.assign(document.createElement('canvas'), {width, height});
+}
+
 /**
+ * WebM (VP8/VP9) or MP4 (H.264) from rendered canvases; see encodeWebM and encodeMP4.
  * @param {{width:number,height:number,fps:number,totalFrames:number,
  * renderFrame:(index:number)=>Promise<HTMLCanvasElement|OffscreenCanvas>|HTMLCanvasElement|OffscreenCanvas,
  * onProgress?:(value:{completed:number,total:number,progress:number})=>void,
  * signal?:AbortSignal,bitrate?:number,maxBytes?:number,
  * sink?:{write(part)=>Promise<void>,patch(offset:number,bytes:Uint8Array)=>Promise<void>,finish()=>Promise<object>,abort()=>Promise<void>}}} options
- * @returns {Promise<Blob|object>} A seekable, video-only WebM file — a Blob, or
+ * @returns {Promise<Blob|object>} A seekable, video-only file — a Blob, or
  * the sink's finish() result when a sink is provided.
  */
-export async function encodeWebM({width, height, fps, totalFrames, renderFrame, onProgress,
+async function encodeVideo(container, {width, height, fps, totalFrames, renderFrame, onProgress,
   signal, bitrate = videoQualityOptions({width, height, fps, provider: 'WebCodecs'}).bitrate, maxBytes, sink}) {
+  const format = CONTAINERS[container];
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16384 || height > 16384) {
     throw new Error('Video dimensions must be whole pixels between 1 and 16,384.');
   }
@@ -158,20 +188,21 @@ export async function encodeWebM({width, height, fps, totalFrames, renderFrame, 
     throw new Error('This browser does not support WebCodecs video export. Open StykAnimate in its desktop app or a current Chromium browser.');
   }
   let config;
-  for (const codec of ['vp8', 'vp09.00.51.08']) {
-    const candidate = {codec, width, height, framerate: fps, bitrate: Math.round(bitrate),
-      latencyMode: 'quality', hardwareAcceleration: 'prefer-software', alpha: 'discard'};
+  for (const candidate of format.candidates({width, height, fps, bitrate})) {
     try { if ((await VideoEncoder.isConfigSupported(candidate)).supported) { config = candidate; break; } }
-    catch { /* Try the other WebM codec before reporting unavailable support. */ }
+    catch { /* Try the next codec before reporting unavailable support. */ }
   }
   if (signal?.aborted) throw cancelled();
-  if (!config) throw new Error('No VP8 or VP9 video encoder supports this canvas size. Try a smaller export resolution.');
-  const muxer = new WebMMuxer({width, height, fps, totalFrames, codec: config.codec, maxBytes, streamed});
+  if (!config) throw new Error(format.unsupported);
+  // The encoder's own picture size: H.264 pads an odd edge, so its frames are copied onto a black canvas that size.
+  const coded = {width: config.width, height: config.height}, padded = coded.width !== width || coded.height !== height;
+  const muxer = format.muxer({width: coded.width, height: coded.height, fps, totalFrames, codec: config.codec, maxBytes, streamed});
+  let padCanvas, padContext;
   let failure, wake, completed = false;
   const frameWindow = videoFrameWindow(width, height);
   let submitted = 0;
   const encoder = new VideoEncoder({
-    output(chunk) { try { muxer.add(chunk); } catch (error) { failure ||= error; wake?.(error); } },
+    output(chunk, metadata) { try { muxer.add(chunk, metadata); } catch (error) { failure ||= error; wake?.(error); } },
     error(error) { failure ||= error; wake?.(error); },
   });
   const check = () => { if (signal?.aborted) throw cancelled(); if (failure) throw failure; };
@@ -204,7 +235,16 @@ export async function encodeWebM({width, height, fps, totalFrames, renderFrame, 
       if (!canvas || canvas.width !== width || canvas.height !== height) throw new Error(`Rendered video frame ${index + 1} has the wrong dimensions.`);
       const timestamp = Math.round(index * 1e6 / fps);
       const duration = Math.round((index + 1) * 1e6 / fps) - timestamp;
-      const frame = new VideoFrame(canvas, {timestamp, duration, alpha: 'discard'});
+      let source = canvas;
+      if (padded) {
+        padCanvas ??= scratchCanvas(coded.width, coded.height);
+        padContext ??= padCanvas.getContext('2d');
+        padContext.fillStyle = '#000';
+        padContext.fillRect(0, 0, coded.width, coded.height);
+        padContext.drawImage(canvas, 0, 0);
+        source = padCanvas;
+      }
+      const frame = new VideoFrame(source, {timestamp, duration, alpha: 'discard'});
       try { submitted++; encoder.encode(frame, {keyFrame: index % Math.max(1, Math.round(fps * 2)) === 0}); }
       finally { frame.close(); }
       if (submitted - muxer.frames >= frameWindow) await drain();
@@ -238,3 +278,8 @@ export async function encodeWebM({width, height, fps, totalFrames, renderFrame, 
     if (streamed && !completed) await sink.abort();
   }
 }
+
+/** A seekable, video-only WebM file (VP8, else VP9). */
+export const encodeWebM = options => encodeVideo('webm', options);
+/** A video-only MP4 file (H.264). An odd width or height is padded by one black pixel. */
+export const encodeMP4 = options => encodeVideo('mp4', options);

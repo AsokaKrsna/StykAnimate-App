@@ -26,7 +26,7 @@
  * which keeps the dialog's choices in the editor setting exportPreferences
  * (without it they last for the session).
  */
-import { encodeWebM } from "./video-export.mjs";
+import { encodeMP4, encodeWebM } from "./video-export.mjs";
 import { encodeNativeVideo } from "./native-video-export.mjs";
 import { encodeVfwVideo } from "./vfw-video-export.mjs";
 import { VfwExportControls } from "./vfw-export-controls.mjs";
@@ -150,8 +150,9 @@ export function createExportFlow(ctx) {
       totalFrames: editor.totalTicks,
       fps: report.frame_delay_ms ? 1000 / report.frame_delay_ms : report.fps,
       defaultDither: defaultGIFDither(editor.report),
-      // Browser WebM uses WebCodecs unless the export dialog's capability probe chose FFmpeg for it.
-      provider: sheet?.open ? sheet.states.get("webm")?.provider : undefined,
+      // Browser video uses WebCodecs: WebM unless the export dialog's capability probe chose FFmpeg for it,
+      // and MP4 wherever there is no desktop encoder.
+      provider: sheet?.open ? sheet.states.get(request.format)?.provider : desktop?.getVideoCapabilities ? undefined : "WebCodecs",
       audioClips: audibleClips(audioState(report)),
       loop: state.loop,
       name: editor.name,
@@ -373,7 +374,7 @@ export function createExportFlow(ctx) {
       report = playedReport(),
       plan = exportJob(request, jobContext(request, report)),
       { options, ticks, fps, extension, filename, includeAudio } = plan;
-    const encode = { vfw: encodeVfwVideo, webcodecs: encodeWebM, native: encodeNativeVideo }[plan.encoder];
+    const encode = { vfw: encodeVfwVideo, webcodecs: format === "mp4" ? encodeMP4 : encodeWebM, native: encodeNativeVideo }[plan.encoder];
     // Native exports keep the encoded file on disk in the desktop process; a
     // direct save moves it without piping bytes through the renderer. Every
     // other path streams encoder output into the chosen file as it is produced.

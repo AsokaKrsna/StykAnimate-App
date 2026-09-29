@@ -116,7 +116,8 @@ Differences from the desktop codec, all deliberate:
 | Stick Nodes import | Yes |
 | PNG, SVG, GIF, APNG, PNG/JPEG/GIF/SVG sequences | Yes |
 | WebM video | Yes, WebCodecs (opaque background) |
-| MP4, AVI, WMV, installed Windows codecs | Desktop only, offered with a reason |
+| MP4 video | Yes, WebCodecs H.264 where the browser can encode it (opaque background, no sound) |
+| AVI, WMV, installed Windows codecs | Desktop only, offered with a reason |
 | Crash recovery | IndexedDB |
 | Personal and public library | Desktop only |
 | System fonts | Where the browser offers local fonts (Chromium); otherwise open a font file |

@@ -227,6 +227,8 @@ test('videoExportArguments equals exportVideo\'s derivation for FFmpeg, WebCodec
   const combos = product(['mp4', 'webm', 'avi', 'wmv'], [true, false], ['FFmpeg', 'WebCodecs', '', undefined], ['recommended', 'small', 'high', ''],
     ['auto', 'manual'], ['8', '0.25', '', '0', '250'], [true, false], Object.keys(CLIPS), [false, true]);
   for (const [format, open, provider, preset, mode, bitrate, audio, clips, simple] of combos) {
+    // MP4 from WebCodecs is the browser's MP4, which the legacy derivation predates; it is planned below.
+    if (format === 'mp4' && provider === 'WebCodecs') continue;
     for (const codec of format === 'mp4' ? ['h264', 'mpeg4', ''] : format === 'avi' ? ['mpeg4', 'ffv1', 'rawvideo', ''] : ['']) {
       const report = {...REPORT, audioClips: CLIPS[clips]};
       const values = {'video-quality': preset, 'bitrate-mode': mode, 'video-bitrate': bitrate, audio, [`${format === 'avi' ? 'avi' : 'mp4'}-codec`]: codec};
@@ -246,6 +248,20 @@ test('videoExportArguments equals exportVideo\'s derivation for FFmpeg, WebCodec
     }
   }
   assert.ok(cases > 30000);
+});
+
+test('MP4 is planned for the browser encoder only when its provider is WebCodecs', () => {
+  const plan = (provider, fields = {}, ctx = context({provider})) => videoExportArguments(buildExportRequest({format: 'mp4', ...fields}, ctx), ctx);
+  const browser = plan('WebCodecs');
+  assert.equal(browser.encoder, 'webcodecs'); assert.equal(browser.extension, 'mp4'); assert.match(browser.filename, /\.mp4$/);
+  assert.equal(typeof browser.videoQuality.bitrate, 'number', 'WebCodecs needs a rate target');
+  for (const provider of ['FFmpeg', undefined]) {
+    const desktop = plan(provider);
+    assert.equal(desktop.encoder, 'native'); assert.equal(desktop.videoQuality.bitrate, undefined);
+  }
+  const withSound = context({provider: 'WebCodecs'});
+  withSound.audioClips = CLIPS.inside;
+  assert.throws(() => plan('WebCodecs', {audio: true}, withSound), /desktop FFmpeg/);
 });
 
 test('manual bitrate keeps the hidden preset\'s quality beside the rate, as today', () => {
