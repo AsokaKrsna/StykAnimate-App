@@ -88,6 +88,7 @@ export async function verifyWeb(root = path.join(appRoot, 'build', 'web')) {
     if (!/<link rel="manifest" href="\.\/manifest\.webmanifest"/.test(html)) fail('index.html does not link the install manifest.');
     if (!/<link rel="apple-touch-icon" href="\.\/icons\//.test(html)) fail('index.html has no Apple touch icon.');
     if (!/<script type="module" src="\.\/src\/web-offline\.mjs"/.test(html)) fail('index.html does not load the offline registration.');
+    if (!/<script src="\.\/src\/web-support\.js"/.test(html)) fail('index.html does not check the browser before the editor loads.');
     for (const match of html.matchAll(/(?:src|href)="(\.\/[^"#?]+)/g)) {
       if (!files.has(match[1].slice(2))) fail(`index.html references ${match[1]}, which is not in the site.`);
     }

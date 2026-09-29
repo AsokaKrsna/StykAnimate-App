@@ -52,6 +52,7 @@ export async function selectFiles(root, patterns) {
 }
 
 const INSTALL_TAGS = [
+  '<script src="./src/web-support.js"></script>',
   '<link rel="manifest" href="./manifest.webmanifest" />',
   '<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />',
   '<meta name="mobile-web-app-capable" content="yes" />',

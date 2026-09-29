@@ -85,6 +85,7 @@ test('the install tags and the offline registration are added to the web page on
   const marked = markInstallable('<!doctype html>\n<html>\n  <head>\n    <meta charset="utf-8" />\n  </head>\n  <body></body>\n</html>\n');
   assert.match(marked, /    <link rel="manifest" href=".\/manifest.webmanifest" \/>\n    <link rel="apple-touch-icon"/, 'tags are indented like the head');
   assert.ok(marked.indexOf('rel="manifest"') < marked.indexOf('</head>') && marked.indexOf('web-offline.mjs') < marked.indexOf('</head>'));
+  assert.match(marked, /<script src="\.\/src\/web-support\.js"><\/script>/, 'the browser check is a classic script, so it runs before the editor\'s modules');
   assert.equal(markInstallable(marked), marked, 'marking twice changes nothing');
   assert.throws(() => markInstallable('<html></html>'), /no <\/head>/);
   const desktopPage = await readFile(path.join(root, 'index.html'), 'utf8');
@@ -148,6 +149,10 @@ test('verification catches an install manifest or service worker that would not 
   built = await site(t);
   await writeFile(path.join(built, 'index.html'), (await readFile(path.join(built, 'index.html'), 'utf8')).replace(/\s*<script type="module" src=".\/src\/web-offline.mjs"><\/script>/, ''));
   assert.match(await problemsOf(built), /does not load the offline registration/);
+
+  built = await site(t);
+  await writeFile(path.join(built, 'index.html'), (await readFile(path.join(built, 'index.html'), 'utf8')).replace(/\s*<script src="\.\/src\/web-support\.js"><\/script>/, ''));
+  assert.match(await problemsOf(built), /does not check the browser/);
 });
 
 test('_headers rules match like Cloudflare: splats, joined values, comments', () => {
