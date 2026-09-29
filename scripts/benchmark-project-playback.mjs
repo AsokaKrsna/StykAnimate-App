@@ -90,6 +90,8 @@ try{
   if(process.env.STYK_PROBE_HIDE){await page.addStyleTag({content:`${process.env.STYK_PROBE_HIDE}{content-visibility:hidden!important}`});result.environment.hide=process.env.STYK_PROBE_HIDE;}
   if(process.env.STYK_PROBE_TRACE==='1')await client.send('Tracing.start',{transferMode:'ReturnAsStream',traceConfig:{recordMode:'recordContinuously',traceBufferSizeInKb:131072,
     includedCategories:['gpu','cc','viz','blink.user_timing','renderer.scheduler','devtools.timeline','v8','toplevel','disabled-by-default-gpu.service','disabled-by-default-gpu.device','disabled-by-default-skia','disabled-by-default-v8.gc',...(process.env.STYK_PROBE_TRACE_EXTRA?process.env.STYK_PROBE_TRACE_EXTRA.split(','):[])]}});
+  // STYK_PROBE_MAIN_PROFILE=1 records the page's main-thread CPU profile during playback (main-profile.cpuprofile).
+  if(process.env.STYK_PROBE_MAIN_PROFILE==='1'){await client.send('Profiler.enable');await client.send('Profiler.setSamplingInterval',{interval:250});await client.send('Profiler.start');}
   // STYK_PROBE_WORKER_PROFILE=1 records every playback worker's CPU profile during playback.
   let workerProfiles=null;if(process.env.STYK_PROBE_WORKER_PROFILE==='1'){workerProfiles=await startWorkerProfiles(9339);result.workerProfileCount=workerProfiles.count;}
   await page.evaluate(async({start,end,quality})=>{
@@ -119,6 +121,7 @@ try{
   result.playback=await page.evaluate(()=>{probe.active=false;return {...probe,playing:styk.state.playing,performance:styk.performance(),
     preparedStats:styk.state.renderer?.preparedFrames?.stats?{...styk.state.renderer.preparedFrames.stats}:null,
     playbackStats:styk.state.playback?.stats?{...styk.state.playback.stats,lastSharing:null,workerCache:null}:null};});
+  if(process.env.STYK_PROBE_MAIN_PROFILE==='1'){const {profile}=await client.send('Profiler.stop');await writeFile(path.join(output,'main-profile.cpuprofile'),JSON.stringify(profile));result.mainProfile=summarizeProfiles([profile]);console.log('MAIN_PROFILE',JSON.stringify(result.mainProfile.top.slice(0,25)));}
   if(workerProfiles){const written=await workerProfiles.stop(output);result.workerProfileFiles=written;const {readFile:read}=await import('node:fs/promises');result.workerProfile=summarizeProfiles(await Promise.all(written.map(async w=>JSON.parse(await read(w.file,'utf8')))));console.log('WORKER_PROFILE',JSON.stringify(result.workerProfile.top.slice(0,20)));}
   if(process.env.STYK_PROBE_TRACE==='1'){
     const completed=new Promise(resolve=>client.once('Tracing.tracingComplete',resolve));await client.send('Tracing.end');
