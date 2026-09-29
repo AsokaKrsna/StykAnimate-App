@@ -4,6 +4,8 @@ The **Build and verify release** workflow builds Windows x64 Setup and Portable 
 
 A manual run with both inputs off keeps candidates and evidence in private workflow artifacts for 30 days. `upload_draft` uploads a draft; `publish` or a matching `v<version>` tag publishes. Automatic in-app installation remains Windows-only; Linux users replace their AppImage manually. See [Linux support](LINUX.md), [updates](UPDATES.md), and [release history and shipping](RELEASING.md). macOS packaging is unverified. Windows artifacts use the existing unsigned configuration.
 
+To rerun the installed upgrade against retained bytes, dispatch the same workflow with `verify_windows_run=<candidate-run-id>` on the release branch. This mode downloads that run's Windows assets, validates their update checksums, extracts the expected archive directly from Setup, and runs only the isolated installer check. It never publishes or substitutes for the source, browser and packaging gates. Record both run IDs and matching candidate hashes in the release report.
+
 The lockfile pins Electron, electron-builder, and Playwright. `scripts/requirements-build.txt` pins the Python compiler dependencies, orjson and the offline video encoder wheel. Build with Python 3.12.9 and Node 24.11.0 using the commands below on the target OS and architecture. Windows additionally requires MSVC C++ build tools and a Windows SDK; the build scripts discover them through vswhere. macOS and Linux use their host C++ compiler.
 
 ```text

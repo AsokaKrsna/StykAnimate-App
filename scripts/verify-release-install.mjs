@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {createReadStream, createWriteStream, existsSync} from 'node:fs';
-import {mkdir, mkdtemp, readFile, writeFile, stat} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, writeFile, realpath, stat} from 'node:fs/promises';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {createRequire} from 'node:module';
@@ -20,7 +20,9 @@ if (process.platform !== 'win32' || process.env.GITHUB_ACTIONS !== 'true') throw
 const root = process.cwd(), {version} = JSON.parse(await readFile('package.json', 'utf8'));
 const directory = path.join(root, 'release', version), evidenceDirectory = path.join(root, 'artifacts', 'release-install');
 await mkdir(evidenceDirectory, {recursive: true});
-const work = await mkdtemp(path.join(os.tmpdir(), 'styk-release-install-'));
+// Windows TEMP can contain an 8.3 alias. WMI reports the executable's long
+// path, so use the same canonical directory for installation and observation.
+const work = await realpath(await mkdtemp(path.join(os.tmpdir(), 'styk-release-install-')));
 const install = path.join(work, 'installed'), executable = path.join(install, 'StykAnimate.exe'), profile = path.join(work, 'profile');
 await mkdir(profile);
 await writeFile(path.join(profile, 'telemetry-state.json'), JSON.stringify({decided: true, consent: {analytics: false, diagnostics: false, policyVersion: '2026-09-10', updatedAt: Date.now()}}));
@@ -41,7 +43,7 @@ const server = createServer(async (request, response) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const feed = `http://127.0.0.1:${server.address().port}`;
-const evidence = {passed: false, candidate: version, commit: process.env.GITHUB_SHA, loopbackFeed: true, checks: []};
+const evidence = {passed: false, candidate: version, commit: process.env.GITHUB_SHA, candidateRun: process.env.STYK_CANDIDATE_RUN || null, loopbackFeed: true, installDirectory: install, checks: []};
 const check = name => { evidence.checks.push(name); console.log(`PASS ${name}`); };
 const until = async (name, condition) => {
   const deadline = Date.now() + 120000;
@@ -52,8 +54,9 @@ const until = async (name, condition) => {
   throw new Error(`Timed out waiting for ${name}.`);
 };
 const processIds = async () => {
-  const {stdout} = await powershell('Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $env:STYK_INSTALL_TEST_EXE } | ForEach-Object { $_.ProcessId }');
-  return stdout.trim().split(/\s+/).map(Number).filter(Number.isInteger).filter(id => id > 0);
+  const {stdout} = await powershell("ConvertTo-Json -Compress -InputObject @(Get-CimInstance Win32_Process -Filter \"Name = 'StykAnimate.exe'\" | Select-Object ProcessId, ExecutablePath)");
+  evidence.observedProcesses = JSON.parse(stdout);
+  return evidence.observedProcesses.filter(item => item.ExecutablePath?.toLowerCase() === executable.toLowerCase()).map(item => item.ProcessId);
 };
 let app, installed = false;
 try {

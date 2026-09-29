@@ -10,6 +10,10 @@ on:
         description: Upload a verified draft to the public assets repository
         type: boolean
         default: false
+      verify_windows_run:
+        description: Only recheck the installed Windows upgrade using assets from this workflow run ID
+        type: string
+        default: ''
   push:
     tags: ['v*']
 permissions:
@@ -22,6 +26,7 @@ defaults:
     shell: bash
 jobs:
   desktop:
+    if: inputs.verify_windows_run == ''
     name: Package and verify (${{ matrix.platform }})
     strategy:
       fail-fast: false
@@ -122,7 +127,49 @@ jobs:
             artifacts/release-install/evidence.json
           retention-days: 30
   web:
+    if: inputs.verify_windows_run == ''
     uses: ./.github/workflows/web-verify.yml
+  windows-upgrade:
+    name: Verify retained Windows installer
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_windows_run != ''
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    env:
+      STYK_CANDIDATE_RUN: ${{ inputs.verify_windows_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.0'
+          cache: npm
+      - name: Install locked verification dependencies
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          echo "RELEASE_VERSION=$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).version')" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets-win32
+          run-id: ${{ inputs.verify_windows_run }}
+          github-token: ${{ github.token }}
+          path: release/${{ env.RELEASE_VERSION }}
+      - name: Verify the retained assets and extract their exact archive
+        run: |
+          directory="release/$RELEASE_VERSION"
+          npm run release:verify -- "$directory" --platform=win32
+          7z x "$directory/StykAnimate-$RELEASE_VERSION-Setup-x64.exe" '-oartifacts/installer-payload' '$PLUGINSDIR/app-64.7z'
+          7z x 'artifacts/installer-payload/$PLUGINSDIR/app-64.7z' "-o$directory/win-unpacked" 'resources/app.asar'
+      - name: Install and upgrade the actual Windows release
+        run: node scripts/verify-release-install.mjs
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retained-installer-evidence
+          path: artifacts/release-install/evidence.json
+          retention-days: 30
   publish:
     needs: [desktop, web]
     if: startsWith(github.ref, 'refs/tags/') || inputs.publish || inputs.upload_draft
