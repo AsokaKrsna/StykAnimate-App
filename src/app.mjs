@@ -77,6 +77,7 @@ import { initStudioShell } from "./studio-shell.mjs";
 import { createExportFlow } from "./export-flow.mjs";
 import { createAppDialogs } from "./app-dialogs.mjs";
 import { dragSlop, beyondSlop, installPenMenuGuard } from "./pen-input.mjs";
+import { installCanvasPinch } from "./canvas-pinch.mjs";
 import { initBuilderMode } from "./builder-mode.mjs";
 import { configureInspectorSections, inspectorView } from "./inspector-view.mjs";
 import { updateInspectorDOM } from "./inspector-dom.mjs";
@@ -3288,6 +3289,19 @@ viewport.addEventListener(
   },
   { passive: false },
 );
+// Two fingers zoom and pan the canvas; the first finger's drag is cancelled. Draw mode has its own pinch.
+installCanvasPinch({
+  overlay, viewport,
+  getView: () => state.view,
+  setView: (view) => { state.view = view; placeArtboard(); requestRender(); },
+  enabled: () => !drawingController?.active,
+  onStart: () => {
+    if (telemetry.isForeground) telemetry.performance.action('zoom');
+    interruptRecovery();
+    pause();
+    if (state.drag) cancelDrag();
+  },
+});
 
 async function api(path, options = {}) {
   const headers = importer.token ? { ...options.headers, Authorization: `Bearer ${importer.token}` } : options.headers;

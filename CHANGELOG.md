@@ -23,6 +23,7 @@ What's new in each version of StykAnimate.
 - Press A while dragging a joint or figure to add frames without letting go.
 - Right-drag to bend lines in Build, just like in Animate.
 - A Canvas setting to choose whether pasted figures keep their original layering or appear in front.
+- Pinch with two fingers to zoom and pan the canvas on a touch screen.
 
 ### Changed
 

@@ -110,7 +110,17 @@ separate background library dialog's UI workflow is complete.
 - Wheel-free navigation: Space+drag pans, Ctrl+Space+drag zooms around the press
   (right or up zooms in), and Shift+Space+drag rotates the Draw view, settling on
   upright within 3°. Releasing Space after these gestures never starts playback.
+- Touch: a second finger on the canvas zooms and pans it (`src/canvas-pinch.mjs`).
+  The artwork under the fingers' midpoint follows them and the zoom changes by the
+  change in their distance, with the wheel's limits. Whatever the first finger was
+  doing is cancelled as with Escape (a joint drag is undone, nothing reaches the
+  undo history), and the finger still down is ignored until it lifts, so ending a
+  pinch never selects or moves anything. Draw mode keeps its own two-finger
+  gesture, which also zooms and pans.
 
+`tests/canvas-pinch.test.mjs` covers the view maths and the finger hand-over;
+`tests/canvas-pinch.browser.mjs` (`npm run test:pinch`) drives real two-finger touch
+through Chromium, including a second finger landing in the middle of a drag.
 `tests/pen-input.browser.mjs` drives real pen pointer events through the
 DevTools protocol. Press-and-hold is simulated with a pen `contextmenu` event;
 the Windows gesture itself needs a physical tablet to verify.

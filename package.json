@@ -38,6 +38,7 @@
     "web:preview": "node scripts/build-web.mjs && node scripts/serve-web.mjs",
     "web:deploy": "node scripts/deploy-web.mjs",
     "test:web": "node tests/web-build.browser.mjs && node tests/web-offline.browser.mjs",
+    "test:pinch": "node tests/canvas-pinch.browser.mjs",
     "test:preferences:desktop": "node scripts/smoke-preferences.mjs",
     "test:project-files": "node --test scripts/project-files.test.mjs",
     "test:project-files:desktop": "node scripts/smoke-project-files.mjs",
