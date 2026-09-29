@@ -5,7 +5,7 @@ plus an in-browser Pivot codec; nothing about a project is sent to a server.
 
 ```bash
 npm ci
-npm run web:build       # build/web  (614 files, about 25 MiB)
+npm run web:build       # build/web  (614 files, 25.4 MiB before compression)
 npm run web:verify      # checks the build before it is deployed
 npm run web:preview     # build, then serve build/web on http://127.0.0.1:47850
 npm run test:web        # end to end in a real browser, under the production headers
@@ -39,10 +39,19 @@ content="browser">`, which is what selects the in-browser codec.
 
 Modules are not content-hashed, so `_headers` tells browsers to revalidate them;
 Cloudflare answers with `304` and an ETag, and the large runtime is not
-downloaded again. A cold load is about 530 requests; measured with the local
-development server it took 3.9 s on localhost and 5.9 s at 50 ms latency and
-20 Mbps, uncompressed. Cloudflare compresses text and serves over HTTP/2. If cold
-load ever matters more than simplicity, bundling is a build-only change.
+downloaded again.
+
+Cold-load measurements (cache disabled, headless Chromium, this repository's
+build): about 600 requests over a 21-level-deep module graph. Served over
+HTTP/1.1 without compression by the development server it took 3.9 s on
+localhost and 5.9 s at 50 ms latency and 20 Mbps. Over a local HTTP/2 server at
+20 ms and 20 Mbps it took 3.25 s, and declaring the whole module graph up front
+with `modulepreload` did not change that (3.21 s): loading is transfer-bound, not
+waterfall-bound, so the page carries no preload list. Brotli level 5 estimates
+what Cloudflare sends: 5.5 MiB for the editor and assets on first load, and,
+only when a Pivot file is first opened, 5.8 MiB for the runtime plus 0.1 MiB for
+the codec sources (25.4 MiB raw in total). If cold load ever matters more than
+simplicity, content-hashed bundles are a build-only change.
 
 `web:verify` fails the build for: a module the app imports that was not shipped, a
 file over Cloudflare's 25 MiB limit or more than 20,000 files, a `_headers` file
