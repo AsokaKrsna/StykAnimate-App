@@ -701,9 +701,12 @@ async function createWindow() {
 
 async function start() {
   const unavailable = updateAvailability({ packaged: app.isPackaged, platform: process.platform,
+    appImage: process.env.APPIMAGE,
     portable: Boolean(process.env.PORTABLE_EXECUTABLE_DIR), installed: existsSync(path.join(path.dirname(process.execPath), 'Uninstall StykAnimate.exe')) });
-  const updater = unavailable ? null : require('electron-updater').autoUpdater;
-  if (updater) updater.installDirectory = path.dirname(process.execPath);
+  const updater = unavailable ? null : process.platform === 'linux'
+    ? new (require('./appimage-updater.cjs').LinuxAppImageUpdater)()
+    : require('electron-updater').autoUpdater;
+  if (updater && process.platform === 'win32') updater.installDirectory = path.dirname(process.execPath);
   updates = new UpdateService({ updater,
     currentVersion: app.getVersion(), unavailable,
     onState: value => { if (value.status === 'error') quitting = false; if (window && !window.isDestroyed()) window.webContents.send('styk:update-state-changed', value); },

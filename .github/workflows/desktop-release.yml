@@ -104,6 +104,7 @@ jobs:
           if [ "$RUNNER_OS" = Linux ]; then
             version=$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).version')
             STYK_PACKAGED_EXECUTABLE="$GITHUB_WORKSPACE/release/$version/StykAnimate-$version-linux-x86_64.AppImage" xvfb-run -a npm run test:boot:packaged
+            xvfb-run -a npm run test:updates:linux
           fi
       - name: Upload release assets
         uses: actions/upload-artifact@v4
@@ -128,6 +129,7 @@ jobs:
             artifacts/sidecar-smoke.json
             artifacts/package-manifest.json
             artifacts/updates/smoke.json
+            artifacts/updates/appimage-smoke.json
             artifacts/release-install/evidence.json
           retention-days: 30
   web:

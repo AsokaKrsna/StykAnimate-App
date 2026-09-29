@@ -57,7 +57,11 @@ try {
     for (const id of ['webm', 'mp4', 'avi', 'wmv']) expect(`The bundled encoder exports ${id}`, facts.video.formats?.some((format) => format.id === id && format.supported));
   }
   expect('Installed Windows codecs are offered only on Windows', process.platform === 'win32' || facts.vfw === false);
-  expect('Updates are unavailable for source builds and non-Windows installs, never in an error state', facts.updates !== 'error', facts.updates);
+  expect('The update service starts without an error', facts.updates !== 'error', facts.updates);
+  if (!packaged) expect('Source builds do not update', facts.updates === 'unavailable', facts.updates);
+  if (packaged && process.platform === 'linux' && executablePath?.endsWith('.AppImage')) {
+    expect('The Linux AppImage enables updates', facts.updates !== 'unavailable', facts.updates);
+  }
   expect('The page raised no errors', errors.length === 0, errors[0]);
 } finally {
   await app?.close().catch(() => {});
