@@ -13,7 +13,7 @@ const root=process.cwd(),output=path.resolve('artifacts/project-playback',label)
 await mkdir(output,{recursive:true});
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const result={source:{path:source,sha256:digest(await readFile(source))},measuredAt:new Date().toISOString(),
-  environment:{cpu:os.cpus()[0].model,memory:os.totalmem(),node:process.version,dpr:Number(process.env.STYK_PROBE_DPR||1),width:Number(process.env.STYK_PROBE_WIDTH||1600),height:Number(process.env.STYK_PROBE_HEIGHT||1000),memoryHintGiB:Number(process.env.STYK_PROBE_MEMORY_GIB)||null,previewQuality:process.env.STYK_PROBE_QUALITY||'adaptive'},hashes:{},errors:[]};
+  environment:{cpu:os.cpus()[0].model,memory:os.totalmem(),node:process.version,dpr:process.env.STYK_PROBE_DPR==='native'?'native':Number(process.env.STYK_PROBE_DPR||1),width:Number(process.env.STYK_PROBE_WIDTH||1600),height:Number(process.env.STYK_PROBE_HEIGHT||1000),memoryHintGiB:Number(process.env.STYK_PROBE_MEMORY_GIB)||null,previewQuality:process.env.STYK_PROBE_QUALITY||'adaptive'},hashes:{},errors:[]};
 const captured=new Map();
 for(const name of (await readdir(sourceRoot,{recursive:true})).filter(name=>name.endsWith('.mjs'))){
   const bytes=await readFile(path.join(sourceRoot,name));result.hashes[name]=digest(bytes);captured.set(name.replaceAll('\\','/'),bytes);
@@ -53,13 +53,18 @@ try{
     if(body)await route.fulfill({status:200,contentType:'text/javascript',body});else await route.continue();
   });
   // STYK_PROBE_FOREGROUND=1 focuses the window on top, as when someone is using the app; Windows
-  // schedules an unfocused, occluded window's threads less favourably.
+  // schedules an unfocused, occluded window's threads less favourably. The display stays awake
+  // for this app instance only, since a sleeping display stops presenting frames.
   result.environment.foreground=process.env.STYK_PROBE_FOREGROUND==='1';
-  await app.evaluate(({BrowserWindow},{width,height,foreground})=>{const w=BrowserWindow.getAllWindows()[0];w.setContentSize(width,height);w.webContents.setBackgroundThrottling(false);w.setIgnoreMouseEvents(true);if(foreground){w.setAlwaysOnTop(true);w.show();w.focus();}else{w.setFocusable(false);w.showInactive();}},result.environment);
+  await app.evaluate(({BrowserWindow,powerSaveBlocker},{width,height,foreground})=>{const w=BrowserWindow.getAllWindows()[0];if(foreground)powerSaveBlocker.start('prevent-display-sleep');w.setContentSize(width,height);w.webContents.setBackgroundThrottling(false);w.setIgnoreMouseEvents(true);if(foreground){w.setAlwaysOnTop(true);w.show();w.focus();}else{w.setFocusable(false);w.showInactive();}},result.environment);
   await page.waitForFunction(()=>window.styk?.ready);
   const client=await page.context().newCDPSession(page);
-  await client.send('Emulation.setDeviceMetricsOverride',{width:result.environment.width,height:result.environment.height,deviceScaleFactor:result.environment.dpr,mobile:false});
-  await page.reload();await page.waitForFunction(()=>window.styk?.ready);
+  // STYK_PROBE_DPR=native keeps the display's own scale factor. Emulating another one
+  // adds a scaling composite that the app never pays in real use.
+  if(result.environment.dpr!=='native'){
+    await client.send('Emulation.setDeviceMetricsOverride',{width:result.environment.width,height:result.environment.height,deviceScaleFactor:result.environment.dpr,mobile:false});
+    await page.reload();await page.waitForFunction(()=>window.styk?.ready);
+  }
   await page.evaluate(()=>{for(const d of document.querySelectorAll('dialog[open]'))d.close();styk.editor.markSaved();});
   const started=Date.now();await page.locator('#file-input').setInputFiles(source);
   await page.waitForFunction(name=>!styk.state.importing&&styk.editor.name===name,path.basename(source,path.extname(source)));
