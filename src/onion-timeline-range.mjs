@@ -1,4 +1,3 @@
-import {t as interfaceText} from './localization.mjs';
 import {appendLocalized, localizedAttribute} from './localization-bindings.mjs';
 /** Room kept between a marker and the playhead's tab, so the two never share a target. */
 const GAP=2;
@@ -18,7 +17,7 @@ export class OnionTimelineRange {
       const sign=direction==='before'?-1:1,band=document.createElement('div'),end=document.createElement('button'),count=document.createElement('span');
       band.className=`onion-range-band ${direction}`;
       end.type='button';end.className=`onion-range-end ${direction}`;count.className='onion-range-count';appendLocalized(end, count);
-      end.setAttribute('role','slider');localizedAttribute(end, 'aria-label', "onionTimelineRange.onionFrames", {direction: direction});end.setAttribute('aria-orientation','horizontal');
+      end.setAttribute('role','slider');localizedAttribute(end, 'aria-label', "onionTimelineRange.onionFrames", {direction:{messageKey:direction==='before'?'onionFrameField.before':'onionFrameField.after'}});end.setAttribute('aria-orientation','horizontal');
       appendLocalized(this.overlay, band, end);
       const part={direction,sign,band,end,count,drag:null};
       end.addEventListener('pointerdown',event=>this._press(part,event),{signal});
@@ -85,8 +84,9 @@ export class OnionTimelineRange {
       if(value.span){band.style.left=`${Math.min(outer,inner)}px`;band.style.width=`${Math.abs(inner-outer)}px`;}
       end.style.left=`${marker}px`;
       end.setAttribute('aria-valuemin','0');end.setAttribute('aria-valuemax',String(value.max));end.setAttribute('aria-valuenow',String(value.span));
-      const spanLabel=`${value.span} ${value.span===1?'frame':'frames'} ${direction}`;
-      end.setAttribute('aria-valuetext',spanLabel);localizedAttribute(end, "title", "onionTimelineRange.dragToChange", {spanLabel: spanLabel});
+      // The slider name identifies its side; its value uses the locale's frame plural.
+      localizedAttribute(end, 'aria-valuetext', 'counts.frames', {count:value.span});
+      localizedAttribute(end, "title", "onionTimelineRange.dragToChange", {spanLabel:{messageKey:'counts.frames',params:{count:value.span}}});
       if(count.textContent!==String(value.span))count.textContent=String(value.span);
       this.overlay.style.setProperty(`--onion-${direction}`,range.settings[direction==='before'?'onionBeforeColor':'onionAfterColor']);
     }

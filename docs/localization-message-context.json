@@ -7347,7 +7347,9 @@
   },
   "counts.frames": {
     "locations": [
-      "src/movieclip-ui.mjs:58"
+      "src/movieclip-ui.mjs:58",
+      "src/onion-timeline-range.mjs:88",
+      "src/onion-timeline-range.mjs:89"
     ],
     "context": "{kind:'meta',parts:[{text:[interfaceText('counts.frames', {count: asset.duration}),`${seconds(asset.duration/asset.document.fps)} s`,`${asset.document.fps} fps`"
   },
@@ -26872,43 +26874,45 @@
   },
   "onionFrameField.after": {
     "locations": [
-      "src/onion-frame-field.mjs:13"
+      "src/onion-frame-field.mjs:13",
+      "src/onion-timeline-range.mjs:20"
     ],
-    "context": "const label=direction==='before'?interfaceText(\"onionFrameField.before\"):interfaceText(\"onionFrameField.after\");"
+    "context": "const labelKey=direction==='before'?'onionFrameField.before':'onionFrameField.after',label=interfaceText(labelKey);"
   },
   "onionFrameField.before": {
     "locations": [
-      "src/onion-frame-field.mjs:13"
+      "src/onion-frame-field.mjs:13",
+      "src/onion-timeline-range.mjs:20"
     ],
-    "context": "const label=direction==='before'?interfaceText(\"onionFrameField.before\"):interfaceText(\"onionFrameField.after\");"
+    "context": "const labelKey=direction==='before'?'onionFrameField.before':'onionFrameField.after',label=interfaceText(labelKey);"
   },
   "onionFrameField.decreaseFrames": {
     "locations": [
-      "src/onion-frame-field.mjs:16"
+      "src/onion-frame-field.mjs:17"
     ],
     "context": "localizedMarkup(this.root, `<button type=\"button\" class=\"onion-scrub\" aria-label=\"Drag frames ${direction}\" title=\"Drag to adjust · 8 pixels per frame · Shift f"
   },
   "onionFrameField.dragFrames": {
     "locations": [
-      "src/onion-frame-field.mjs:16"
+      "src/onion-frame-field.mjs:17"
     ],
     "context": "localizedMarkup(this.root, `<button type=\"button\" class=\"onion-scrub\" aria-label=\"Drag frames ${direction}\" title=\"Drag to adjust · 8 pixels per frame · Shift f"
   },
   "onionFrameField.dragToAdjust8PixelsPerFrameShift": {
     "locations": [
-      "src/onion-frame-field.mjs:16"
+      "src/onion-frame-field.mjs:17"
     ],
     "context": "localizedMarkup(this.root, `<button type=\"button\" class=\"onion-scrub\" aria-label=\"Drag frames ${direction}\" title=\"Drag to adjust · 8 pixels per frame · Shift f"
   },
   "onionFrameField.frames": {
     "locations": [
-      "src/onion-frame-field.mjs:16"
+      "src/onion-frame-field.mjs:17"
     ],
     "context": "localizedMarkup(this.root, `<button type=\"button\" class=\"onion-scrub\" aria-label=\"Drag frames ${direction}\" title=\"Drag to adjust · 8 pixels per frame · Shift f"
   },
   "onionFrameField.increaseFrames": {
     "locations": [
-      "src/onion-frame-field.mjs:16"
+      "src/onion-frame-field.mjs:17"
     ],
     "context": "localizedMarkup(this.root, `<button type=\"button\" class=\"onion-scrub\" aria-label=\"Drag frames ${direction}\" title=\"Drag to adjust · 8 pixels per frame · Shift f"
   },
@@ -26916,13 +26920,13 @@
     "locations": [
       "src/onion-timeline-range.mjs:89"
     ],
-    "context": "end.setAttribute('aria-valuetext',spanLabel);localizedAttribute(end, \"title\", \"onionTimelineRange.dragToChange\", {spanLabel: spanLabel});"
+    "context": "localizedAttribute(end, \"title\", \"onionTimelineRange.dragToChange\", {spanLabel:{messageKey:'counts.frames',params:{count:value.span}}});"
   },
   "onionTimelineRange.onionFrames": {
     "locations": [
-      "src/onion-timeline-range.mjs:21"
+      "src/onion-timeline-range.mjs:20"
     ],
-    "context": "end.setAttribute('role','slider');localizedAttribute(end, 'aria-label', \"onionTimelineRange.onionFrames\", {direction: direction});end.setAttribute('aria-orienta"
+    "context": "end.setAttribute('role','slider');localizedAttribute(end, 'aria-label', \"onionTimelineRange.onionFrames\", {direction:{messageKey:direction==='before'?'onionFram"
   },
   "overlays.category.animation": {
     "locations": [

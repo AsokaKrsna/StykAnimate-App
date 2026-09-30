@@ -35,6 +35,29 @@ try {
     &&document.querySelector('.tweener-hud').firstElementChild.textContent===styk.localization.t('tweenerControls.breakdown')
     &&document.querySelector('[data-tween-type=breakdown] path').getAttribute('d')==='M12 3 20 12 12 21 4 12Z'));
   check('Retained activity, delayed task captions and progress accessibility follow the language',await page.evaluate(()=>retainedStatus===document.querySelector('#status')&&retainedStatus.textContent.includes('［')&&document.querySelector('.ui-toast-text b').textContent.includes('［')&&document.querySelector('.ui-toast-progress').getAttribute('aria-label').includes('［')));
+  await page.evaluate(async()=>{
+    const {OnionFrameField}=await import('/src/onion-frame-field.mjs');
+    const {appendLocalized}=await import('/src/localization-bindings.mjs');
+    window.onionProbe=new OnionFrameField(styk.onionController,'before');appendLocalized(document.body,onionProbe.root);
+    window.onionDraft=onionProbe.input;onionDraft.focus();onionDraft.value='23';
+    window.onionRangeBefore=styk.state.settings.onionRangeBefore;
+    styk.localization.localization.setPseudo('rtl');
+  });
+  check('Onion controls translate directions and plural values while preserving drafts and canonical preferences',await page.evaluate(()=>{
+    const t=(key,params)=>styk.localization.t(key,params),direction={messageKey:'onionFrameField.before'};
+    const marker=document.querySelector('.onion-range-end.before'),count=styk.onionController.snapshot().before.span;
+    return onionProbe.root.dataset.direction==='before'&&onionProbe.key==='onionRangeBefore'
+      &&document.activeElement===onionDraft&&onionDraft.value==='23'&&styk.state.settings.onionRangeBefore===onionRangeBefore
+      &&onionProbe.scrub.textContent===t('onionFrameField.before')
+      &&onionProbe.scrub.getAttribute('aria-label')===t('onionFrameField.dragFrames',{direction})
+      &&onionDraft.getAttribute('aria-label')===t('onionFrameField.frames',{direction})
+      &&onionProbe.root.querySelector('[data-step="-1"]').getAttribute('aria-label')===t('onionFrameField.decreaseFrames',{direction})
+      &&onionProbe.root.querySelector('[data-step="1"]').getAttribute('aria-label')===t('onionFrameField.increaseFrames',{direction})
+      &&marker.getAttribute('aria-label')===t('onionTimelineRange.onionFrames',{direction})
+      &&marker.getAttribute('aria-valuetext')===t('counts.frames',{count})
+      &&marker.title===t('onionTimelineRange.dragToChange',{spanLabel:{messageKey:'counts.frames',params:{count}}});
+  }));
+  await page.evaluate(()=>onionProbe.destroy());
   await page.evaluate(()=>{localizedTask.done();taskToasts.destroy();styk.localization.localization.setPseudo(null);});
   await page.locator('.brand[data-action=menu]').click();
   await page.locator('#menu [data-action=save]').focus();

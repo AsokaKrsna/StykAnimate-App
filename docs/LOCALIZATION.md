@@ -3,7 +3,7 @@
 English is the default. Settings → Interface → Language persists through the
 existing editor preference service. The browser, touch interface and Electron
 menus use the same catalog and fallback rules. Existing translations are preserved;
-Arabic, German, French, Hebrew and Italian now contain every English message and required plural form. The remaining packs are being completed in reviewed batches; current coverage and review status are recorded in [LOCALIZATION-REVIEW.md](LOCALIZATION-REVIEW.md).
+Nine non-English packs now contain every English message and required plural form. The remaining packs are being completed in reviewed batches; current coverage and review status are recorded in [LOCALIZATION-REVIEW.md](LOCALIZATION-REVIEW.md).
 
 ## Ownership and lookup
 

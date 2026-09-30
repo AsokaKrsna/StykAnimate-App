@@ -26,8 +26,8 @@ try{
   assert.equal(await page.getByRole('button',{name:'Onion skin',exact:true}).getAttribute('aria-pressed'),'true');await settle();
   assert.equal(await page.locator('.onion-timeline-range').count(),0,'no extra onion toolbar');
   await page.getByRole('button',{name:'Onion skin settings',exact:true}).click();await settle();
-  const rail=page.getByRole('dialog',{name:'Onion skin settings',exact:true}),before=rail.getByRole('spinbutton',{name:'Frames before',exact:true}),after=rail.getByRole('spinbutton',{name:'Frames after',exact:true});
-  const scrub=rail.getByRole('button',{name:'Drag frames before',exact:true});
+  const rail=page.getByRole('dialog',{name:'Onion skin settings',exact:true}),before=rail.getByRole('spinbutton',{name:'Frames Before',exact:true}),after=rail.getByRole('spinbutton',{name:'Frames After',exact:true});
+  const scrub=rail.getByRole('button',{name:'Drag frames Before',exact:true});
   assert.ok(await before.isVisible());assert.ok(await after.isVisible());
   const initial=await value();assert.equal(initial.poses,4);
   await before.fill('300');await before.press('Escape');assert.equal((await value()).stored,20);assert.equal(await before.inputValue(),'20','Escape cancels typed text without writing preferences');
@@ -42,17 +42,17 @@ try{
   await drag(scrub,32,{shift:true});assert.equal((await value()).before,21);
   await drag(scrub,80,{release:false});await page.keyboard.press('Escape');await page.mouse.up();await settle();assert.equal((await value()).before,21);
   await drag(scrub,80,{release:false});await page.evaluate(()=>window.dispatchEvent(new Event('blur')));await page.mouse.up();await settle();assert.equal((await value()).before,21);
-  await rail.getByRole('button',{name:'Increase frames before',exact:true}).click();assert.equal((await value()).before,22);
+  await rail.getByRole('button',{name:'Increase frames Before',exact:true}).click();assert.equal((await value()).before,22);
   await before.fill('350');await before.press('Enter');assert.equal((await value()).before,350,'large ranges have no ten-frame cap');await settle();assert.equal((await value()).poses,37);
   // Panning only moves the projection, never the editing controls or range.
   const controlBox=await before.boundingBox();await page.evaluate(()=>styk.timeline._scrollToX(10000));await settle();assert.deepEqual(await before.boundingBox(),controlBox);assert.equal((await value()).before,350);
-  await page.evaluate(()=>styk.editor.seek(0));await settle();assert.ok(await before.isVisible());assert.ok(await after.isVisible());assert.equal(await before.inputValue(),'350','seeking to start preserves the preference');assert.equal(await rail.getByRole('button',{name:'Increase frames before',exact:true}).isDisabled(),false);await before.fill('0');await before.press('Enter');assert.equal((await value()).stored,0,'explicit zero clears a previously stored span at the first frame');
+  await page.evaluate(()=>styk.editor.seek(0));await settle();assert.ok(await before.isVisible());assert.ok(await after.isVisible());assert.equal(await before.inputValue(),'350','seeking to start preserves the preference');assert.equal(await rail.getByRole('button',{name:'Increase frames Before',exact:true}).isDisabled(),false);await before.fill('0');await before.press('Enter');assert.equal((await value()).stored,0,'explicit zero clears a previously stored span at the first frame');
   await page.evaluate(()=>styk.editor.seek(1190));await settle();assert.equal(await after.inputValue(),'20','seeking to end preserves the preference');assert.ok(await after.isVisible());
   await page.evaluate(()=>{styk.editor.seek(600);styk.timeline.setZoom(4);styk.timeline._scrollToX(2000);styk.settingsUI.commit({onionRangeBefore:20,onionRangeAfter:20});});await settle();
   await drag(scrub,40,{release:false});await page.evaluate(()=>styk.editor.seek(610));await page.mouse.up();await settle();assert.equal((await value()).stored,20,'seeking invalidates an active drag');
   const panel=rail;
-  await panel.getByRole('spinbutton',{name:'Frames before',exact:true}).fill('25');await panel.getByRole('spinbutton',{name:'Frames before',exact:true}).press('Enter');assert.equal(await before.inputValue(),'25');
-  const panelScrub=panel.getByRole('button',{name:'Drag frames before',exact:true});await drag(panelScrub,3);assert.equal((await value()).before,25);await drag(panelScrub,8);assert.equal((await value()).before,26);
+  await panel.getByRole('spinbutton',{name:'Frames Before',exact:true}).fill('25');await panel.getByRole('spinbutton',{name:'Frames Before',exact:true}).press('Enter');assert.equal(await before.inputValue(),'25');
+  const panelScrub=panel.getByRole('button',{name:'Drag frames Before',exact:true});await drag(panelScrub,3);assert.equal((await value()).before,25);await drag(panelScrub,8);assert.equal((await value()).before,26);
   await page.locator('#onion-popover .onion-more>summary').click();await panel.getByLabel('Onion sampling',{exact:true}).selectOption('frames');await settle();assert.equal((await value()).before,26,'sampling changes preserve temporal spans');assert.equal((await value()).poses,46);
   const opacity=panel.getByRole('slider',{name:'Onion opacity slider',exact:true});await opacity.fill('45');await settle();assert.equal(await page.evaluate(()=>styk.state.settings.onionOpacity),.45);
   const opacityBox=await opacity.boundingBox();await page.mouse.move(opacityBox.x+opacityBox.width*.45,opacityBox.y+opacityBox.height/2);await page.mouse.down();await page.mouse.move(opacityBox.x+opacityBox.width*.8,opacityBox.y+opacityBox.height/2);await settle();assert.equal(await page.evaluate(()=>styk.state.settings.onionOpacity),.45);await page.keyboard.press('Escape');await page.mouse.move(opacityBox.x+opacityBox.width*.9,opacityBox.y+opacityBox.height/2);await page.mouse.up();await settle();assert.equal(await page.evaluate(()=>styk.state.settings.onionOpacity),.45,'release after Escape cannot re-commit a native slider');
@@ -64,7 +64,7 @@ try{
   const box=await panel.boundingBox();assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=900&&box.y+box.height<=740);
   await page.screenshot({path:out+'/dark.png'});await panel.getByRole('button',{name:'Close onion settings'}).click();
   await page.getByRole('button',{name:'Simple',exact:true}).click();await settle();assert.equal(await page.locator('.onion-range-overlay').count(),0);
-  await page.getByRole('button',{name:'Onion skin settings',exact:true}).click();await settle();assert.equal(await panel.getByRole('spinbutton',{name:'Frames before',exact:true}).inputValue(),'26');
+  await page.getByRole('button',{name:'Onion skin settings',exact:true}).click();await settle();assert.equal(await panel.getByRole('spinbutton',{name:'Frames Before',exact:true}).inputValue(),'26');
   await panel.getByRole('button',{name:'Close onion settings'}).click();await page.getByRole('button',{name:'Advanced',exact:true}).click();await settle();assert.equal(await page.locator('.onion-timeline-range').count(),0);assert.equal(await page.locator('.onion-range-overlay').count(),1);
   // Fixed preferences are projected around the live playhead, including pending
   // scrubs and positions beyond the document, with no layout row added.
@@ -87,7 +87,7 @@ try{
         styk.settingsUI.commit({onionRangeBefore:20,onionRangeAfter:20});styk.timeline.setZoom(zoom);
         const endpoint=600+(direction==='before'?-20:20);styk.timeline._scrollToX((endpoint+.5)*zoom-300);
       },{zoom,direction});await settle();
-      const handle=page.getByRole('slider',{name:`Onion frames ${direction}`,exact:true}),sign=direction==='before'?-1:1;
+      const handle=page.getByRole('slider',{name:`Onion frames ${direction==='before'?'Before':'After'}`,exact:true}),sign=direction==='before'?-1:1;
       // A press on a marker never seeks, and less than half a frame of travel changes nothing.
       await drag(handle,sign*Math.min(3,zoom*.4));assert.equal((await value())[direction],20);
       assert.equal((await value()).tick,600,'pressing an onion marker never seeks');
@@ -99,7 +99,7 @@ try{
     }
   }
   await page.evaluate(()=>{styk.settingsUI.commit({onionRangeBefore:20,onionRangeAfter:20});styk.timeline.setZoom(4);styk.timeline._scrollToX(2050);});await settle();
-  const handle=page.getByRole('slider',{name:'Onion frames before',exact:true});
+  const handle=page.getByRole('slider',{name:'Onion frames Before',exact:true});
   await handle.focus();await page.keyboard.press('ArrowLeft');assert.equal((await value()).before,21);await page.keyboard.press('ArrowRight');assert.equal((await value()).before,20);
   await drag(handle,-40,{release:false});await page.evaluate(()=>styk.editor.seek(610));await page.mouse.up();await settle();assert.equal((await value()).stored,20,'seek cancels ruler preview');
   await page.evaluate(()=>styk.settingsUI.commit({theme:'light'}));await settle();await page.screenshot({path:out+'/ruler-light.png'});
@@ -108,12 +108,12 @@ try{
   // At zero frames the markers flank the playhead's tab without covering it, so the tab still scrubs.
   const tab=await page.locator('.layer-timeline .sheet-playhead > span').boundingBox();
   for(const direction of ['before','after']){
-    const box=await page.getByRole('slider',{name:`Onion frames ${direction}`,exact:true}).boundingBox();
+    const box=await page.getByRole('slider',{name:`Onion frames ${direction==='before'?'Before':'After'}`,exact:true}).boundingBox();
     assert.ok(direction==='before'?box.x+box.width<=tab.x:box.x>=tab.x+tab.width,`${direction} marker stays beside the playhead tab`);
   }
   assert.equal(await page.evaluate(({x,y})=>Boolean(document.elementFromPoint(x,y)?.closest('.onion-range-end')),{x:tab.x+tab.width/2,y:tab.y+tab.height/2}),false,'the playhead tab is not covered by a marker');
   for(const direction of ['before','after']){
-    const zeroHandle=page.getByRole('slider',{name:`Onion frames ${direction}`,exact:true});
+    const zeroHandle=page.getByRole('slider',{name:`Onion frames ${direction==='before'?'Before':'After'}`,exact:true});
     await drag(zeroHandle,direction==='before'?-2:2);assert.equal((await value())[direction],2,'zero-distance markers remain separately reachable');
   }
   // Onion settings can hide the markers while onion skin stays on.
