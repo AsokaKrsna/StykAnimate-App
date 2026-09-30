@@ -1,4 +1,5 @@
 import {messageError} from './localized-error.mjs';
+import {motionParameterMessages} from './camera-motion-localization.mjs';
 import {FOLLOW_DEFAULTS,FOLLOW_FRAME_LIMIT,sampleFollow,validateFollowTargets} from './camera-follow.mjs';
 /** Saved camera motion is small, immutable and sampled by timeline time only.
  * No renderer state, random generator state, or per-tick pose allocation lives here.
@@ -40,7 +41,7 @@ export function validateCameraMotion(state) {
     if(!clip.params||Object.keys(clip.params).some(key=>!keys.includes(key)))throw messageError(new Error(''), "errors.cameraMotion.invalidCameraMotionParameters", {});
     for(const key of keys){
       const [label,min,max]=MOTION_PARAMETERS[key],value=clip.params[key];
-      if(typeof value!=='number'||!Number.isFinite(value)||value<min||value>max||['seed','fadeIn','fadeOut','lookAhead'].includes(key)&&!Number.isInteger(value))throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label: label, min: min, max: max});
+      if(typeof value!=='number'||!Number.isFinite(value)||value<min||value>max||['seed','fadeIn','fadeOut','lookAhead'].includes(key)&&!Number.isInteger(value))throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label:{messageKey:motionParameterMessages[key],diagnosticValue:label},min,max});
     }
   }
 }

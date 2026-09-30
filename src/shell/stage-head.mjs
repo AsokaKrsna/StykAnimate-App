@@ -179,8 +179,8 @@ export function createStageHead({root, toasts = () => null, toolOptions = {}, op
     setHidden(chip, Boolean(session) || !state.background);
     if (state.background) {
       setVar(chip.firstElementChild, '--swatch', state.background.css);
-      setAttr(chip, 'aria-label', interfaceText('stageHead.backgroundColourLabelOpensTheColourPicker', {label: state.background.label}));
-      setAttr(chip, 'data-tooltip', interfaceText('stageHead.backgroundColourLabel', {label: state.background.label}));
+      localizedAttribute(chip, 'aria-label', 'stageHead.backgroundColourLabelOpensTheColourPicker', {label: state.background.label});
+      localizedAttribute(chip, 'data-tooltip', 'stageHead.backgroundColourLabel', {label: state.background.label});
     }
     // A toggle shows its state by looking pressed (and says it through aria-pressed); its tooltip is its name.
     toggle(interfaceText("stageHead.handlesButton"), state.handles);

@@ -9,10 +9,38 @@ import {spatialSections} from '../src/spatial-controls.mjs';
 import {cameraMotionView} from '../src/camera-motion-ui.mjs';
 import {motionRows} from '../src/camera-motion-timeline.mjs';
 import {motionTypeMessages,motionParameterMessages,motionDescriptionMessages} from '../src/camera-motion-localization.mjs';
-import {CAMERA_MOTION_TYPES,MOTION_PARAMETERS} from '../src/camera-motion.mjs';
+import {CAMERA_MOTION_TYPES,MOTION_PARAMETERS,createCameraMotion,motionParameterKeys,validateCameraMotion} from '../src/camera-motion.mjs';
 import {presetSummary,presetTile} from '../src/vfx-preset-ui.mjs';
+import {VFX_REGISTRY,vfxProperty,validateVfxValue} from '../src/vfx.mjs';
+import {errorMessageData,restoreMessageError,messageError} from '../src/localized-error.mjs';
+import {errorText} from '../src/error-presentation.mjs';
 
 const fixture=()=>new Editor({demo:false}).load(emptyDocument());
+
+test('camera and effect validation translate every parameter while keeping diagnostic identity through transport',()=>{
+ const failures=[];
+ for(const type of Object.keys(CAMERA_MOTION_TYPES))for(const parameter of motionParameterKeys(type)){
+  const clip=createCameraMotion(type,'test',0,24,{targets:[{uid:1,weight:1}]});clip.params[parameter]=NaN;
+  assert.throws(()=>validateCameraMotion({version:1,clips:[clip]}),error=>{failures.push(error);return error.message===`${MOTION_PARAMETERS[parameter][0]} must be between ${MOTION_PARAMETERS[parameter][1]} and ${MOTION_PARAMETERS[parameter][2]}.`;});
+ }
+ for(const [type,definition]of Object.entries(VFX_REGISTRY))for(const parameter of [...Object.keys(definition.params),'enabled'])
+  assert.throws(()=>validateVfxValue(vfxProperty(type,'test',parameter),NaN),error=>{failures.push(error);return true;});
+ assert.throws(()=>validateVfxValue('vfxScope',NaN),error=>{failures.push(error);return error.message==='Include attached parts must be between 0 and 1.';});
+ interfaceLocalization.setPseudo('long');
+ try{
+  for(const error of failures){
+   const label=error.messageParams.label;
+   assert.ok(Object.hasOwn(english,label.messageKey),label.messageKey);
+   assert.ok(error.message.startsWith(label.diagnosticValue));
+   const restored=restoreMessageError(new RangeError(error.message),structuredClone(errorMessageData(error)));
+   assert.ok(restored instanceof RangeError);assert.equal(restored.message,error.message);
+   assert.equal(errorText(restored),interfaceLocalization.t(error.messageKey,error.messageParams));
+   assert.ok(errorText(restored).includes(interfaceLocalization.t(label.messageKey)));
+  }
+ }finally{interfaceLocalization.setPseudo(null);}
+ const ordinary=messageError(new Error(),'errors.cameraMotion.mustBeBetweenAnd',{label:{messageKey:'common.save'},min:0,max:1});
+ assert.equal(ordinary.message,'[object Object] must be between 0 and 1.','ordinary non-scalar diagnostics retain their existing normalization');
+});
 
 test('computed camera copy is complete and resolves after language changes without changing saved motion',()=>{
  assert.deepEqual(Object.keys(motionTypeMessages),Object.keys(CAMERA_MOTION_TYPES));

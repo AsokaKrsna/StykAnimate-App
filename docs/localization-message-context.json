@@ -7334,7 +7334,8 @@
       "src/app.mjs:2191",
       "src/app.mjs:4165",
       "src/asset-library.mjs:225",
-      "src/studio-shell.mjs:144"
+      "src/studio-shell.mjs:144",
+      "src/vfx-inspector.mjs:112"
     ],
     "context": "localizedText($(\"object-count\"), 'counts.figures', {count: editor.frame.objects.length});"
   },
@@ -8297,14 +8298,14 @@
   "desktop.preload.errors.aCallbackIsRequired": {
     "locations": [
       "desktop/preload.cjs:4",
-      "desktop/preload.cjs:23"
+      "desktop/preload.cjs:29"
     ],
     "context": "\"desktop.preload.errors.aCallbackIsRequired\": \"A callback is required.\","
   },
   "desktop.preload.errors.uiScaleMustBe75200InStepsOf5": {
     "locations": [
       "desktop/preload.cjs:5",
-      "desktop/preload.cjs:48"
+      "desktop/preload.cjs:54"
     ],
     "context": "\"desktop.preload.errors.uiScaleMustBe75200InStepsOf5\": \"UI scale must be 75–200 in steps of 5.\""
   },
@@ -11837,43 +11838,43 @@
   },
   "errors.cameraMotion.aFollowClipCanLastUpToFrames": {
     "locations": [
-      "src/camera-motion.mjs:38"
+      "src/camera-motion.mjs:39"
     ],
     "context": "if(clip.type==='follow'){validateFollowTargets(clip.targets);if(clip.duration>FOLLOW_FRAME_LIMIT)throw messageError(new Error(''), \"errors.cameraMotion.aFollowC"
   },
   "errors.cameraMotion.chooseACameraMotionPreset": {
     "locations": [
-      "src/camera-motion.mjs:24"
+      "src/camera-motion.mjs:25"
     ],
     "context": "if(!Object.hasOwn(CAMERA_MOTION_TYPES,type))throw messageError(new Error(''), \"errors.cameraMotion.chooseACameraMotionPreset\", {});"
   },
   "errors.cameraMotion.invalidBakedCameraRange": {
     "locations": [
-      "src/camera-motion.mjs:36"
+      "src/camera-motion.mjs:37"
     ],
     "context": "if(clip.mutedRanges!==undefined&&(!Array.isArray(clip.mutedRanges)||clip.mutedRanges.length>1024||clip.mutedRanges.some(r=>!Number.isInteger(r.start)||!Number.i"
   },
   "errors.cameraMotion.invalidCameraMotionClip": {
     "locations": [
-      "src/camera-motion.mjs:34"
+      "src/camera-motion.mjs:35"
     ],
     "context": "if(!clip||typeof clip.id!=='string'||!/^[\\w-]{1,80}$/.test(clip.id)||ids.has(clip.id)||!Object.hasOwn(CAMERA_MOTION_TYPES,clip.type)||typeof clip.enabled!=='boo"
   },
   "errors.cameraMotion.invalidCameraMotionParameters": {
     "locations": [
-      "src/camera-motion.mjs:40"
+      "src/camera-motion.mjs:41"
     ],
     "context": "if(!clip.params||Object.keys(clip.params).some(key=>!keys.includes(key)))throw messageError(new Error(''), \"errors.cameraMotion.invalidCameraMotionParameters\", "
   },
   "errors.cameraMotion.invalidCameraMotionTableMaximum256Clips": {
     "locations": [
-      "src/camera-motion.mjs:31"
+      "src/camera-motion.mjs:32"
     ],
     "context": "if(!state||state.version!==1||!Array.isArray(state.clips)||state.clips.length>CAMERA_MOTION_LIMIT)throw messageError(new Error(''), \"errors.cameraMotion.invalid"
   },
   "errors.cameraMotion.mustBeBetweenAnd": {
     "locations": [
-      "src/camera-motion.mjs:43",
+      "src/camera-motion.mjs:44",
       "src/editor-rig-constraints.mjs:8",
       "src/rig-constraints.mjs:16",
       "src/text-authoring.mjs:86",
@@ -11883,7 +11884,7 @@
   },
   "errors.cameraMotion.onlyFollowClipsHaveFollowedFigures": {
     "locations": [
-      "src/camera-motion.mjs:39"
+      "src/camera-motion.mjs:40"
     ],
     "context": "else if(clip.targets!==undefined)throw messageError(new Error(''), \"errors.cameraMotion.onlyFollowClipsHaveFollowedFigures\", {});"
   },
@@ -26033,161 +26034,161 @@
   },
   "motionPathControls.aDotForEveryInBetweenTheirSpacing": {
     "locations": [
-      "src/motion-path-controls.mjs:47"
+      "src/motion-path-controls.mjs:48"
     ],
     "context": "<div class=\"path-display\">${toggle('motionPathLabels', interfaceText(\"motionPathControls.frameNumbers\"), interfaceText(\"motionPathControls.numberTheKeysTheEndsA"
   },
   "motionPathControls.all": {
     "locations": [
-      "src/motion-path-controls.mjs:40"
+      "src/motion-path-controls.mjs:41"
     ],
     "context": "<div class=\"ui-popover-body path-body\">${choice('motionPathAllTargets', interfaceText(\"motionPathControls.figures\"), [messageTuple(['false', interfaceText(\"moti"
   },
   "motionPathControls.aroundDraggedPoint": {
     "locations": [
-      "src/motion-path-controls.mjs:46"
+      "src/motion-path-controls.mjs:47"
     ],
     "context": "<label class=\"ui-row path-row\"><span class=\"ui-row-label\" data-i18n=\"motionPathControls.aroundDraggedPoint\">Around dragged point</span><span class=\"path-number\""
   },
   "motionPathControls.aroundPlayhead": {
     "locations": [
-      "src/motion-path-controls.mjs:43"
+      "src/motion-path-controls.mjs:44"
     ],
     "context": "<label class=\"ui-row path-row\"><span class=\"ui-row-label\" data-i18n=\"motionPathControls.aroundPlayhead\">Around playhead</span><span class=\"path-number\"><input t"
   },
   "motionPathControls.colourTrailsBySpeedCoolWhereMotionIs": {
     "locations": [
-      "src/motion-path-controls.mjs:47"
+      "src/motion-path-controls.mjs:48"
     ],
     "context": "<div class=\"path-display\">${toggle('motionPathLabels', interfaceText(\"motionPathControls.frameNumbers\"), interfaceText(\"motionPathControls.numberTheKeysTheEndsA"
   },
   "motionPathControls.everyLimbTipHandsFeetHeadAndThe": {
     "locations": [
-      "src/motion-path-controls.mjs:41"
+      "src/motion-path-controls.mjs:42"
     ],
     "context": "${choice('motionPathJoints', interfaceText(\"motionPathControls.joints\"), [messageTuple(['selected', interfaceText(\"motionPathControls.selected\"), interfaceText("
   },
   "motionPathControls.fadesEvenlyWithDistance": {
     "locations": [
-      "src/motion-path-controls.mjs:44"
+      "src/motion-path-controls.mjs:45"
     ],
     "context": "<fieldset class=\"path-range path-falloff\" title=\"Right-drag a trail point: nearby keys follow, fading out with distance; scroll to resize\" data-i18n-title=\"moti"
   },
   "motionPathControls.falloffShape": {
     "locations": [
-      "src/motion-path-controls.mjs:44"
+      "src/motion-path-controls.mjs:45"
     ],
     "context": "<fieldset class=\"path-range path-falloff\" title=\"Right-drag a trail point: nearby keys follow, fading out with distance; scroll to resize\" data-i18n-title=\"moti"
   },
   "motionPathControls.figures": {
     "locations": [
-      "src/motion-path-controls.mjs:40"
+      "src/motion-path-controls.mjs:41"
     ],
     "context": "<div class=\"ui-popover-body path-body\">${choice('motionPathAllTargets', interfaceText(\"motionPathControls.figures\"), [messageTuple(['false', interfaceText(\"moti"
   },
   "motionPathControls.flat": {
     "locations": [
-      "src/motion-path-controls.mjs:44"
+      "src/motion-path-controls.mjs:45"
     ],
     "context": "<fieldset class=\"path-range path-falloff\" title=\"Right-drag a trail point: nearby keys follow, fading out with distance; scroll to resize\" data-i18n-title=\"moti"
   },
   "motionPathControls.frameNumbers": {
     "locations": [
-      "src/motion-path-controls.mjs:47"
+      "src/motion-path-controls.mjs:48"
     ],
     "context": "<div class=\"path-display\">${toggle('motionPathLabels', interfaceText(\"motionPathControls.frameNumbers\"), interfaceText(\"motionPathControls.numberTheKeysTheEndsA"
   },
   "motionPathControls.frameRange": {
     "locations": [
-      "src/motion-path-controls.mjs:42"
+      "src/motion-path-controls.mjs:43"
     ],
     "context": "<fieldset class=\"path-range\"><legend data-i18n=\"motionPathControls.frameRange\">Frame range</legend><div class=\"path-presets ui-segmented\" data-size=\"sm\" data-fi"
   },
   "motionPathControls.frameRangePresets": {
     "locations": [
-      "src/motion-path-controls.mjs:42"
+      "src/motion-path-controls.mjs:43"
     ],
     "context": "<fieldset class=\"path-range\"><legend data-i18n=\"motionPathControls.frameRange\">Frame range</legend><div class=\"path-presets ui-segmented\" data-size=\"sm\" data-fi"
   },
   "motionPathControls.frames": {
     "locations": [
-      "src/motion-path-controls.mjs:43",
-      "src/motion-path-controls.mjs:46",
+      "src/motion-path-controls.mjs:44",
+      "src/motion-path-controls.mjs:47",
       "src/onion-controls.mjs:81"
     ],
     "context": "<label class=\"ui-row path-row\"><span class=\"ui-row-label\" data-i18n=\"motionPathControls.aroundPlayhead\">Around playhead</span><span class=\"path-number\"><input t"
   },
   "motionPathControls.framesEitherSideOfPlayhead": {
     "locations": [
-      "src/motion-path-controls.mjs:43"
+      "src/motion-path-controls.mjs:44"
     ],
     "context": "<label class=\"ui-row path-row\"><span class=\"ui-row-label\" data-i18n=\"motionPathControls.aroundPlayhead\">Around playhead</span><span class=\"path-number\"><input t"
   },
   "motionPathControls.framesEitherSideOfTheDraggedPoint": {
     "locations": [
-      "src/motion-path-controls.mjs:46"
+      "src/motion-path-controls.mjs:47"
     ],
     "context": "<label class=\"ui-row path-row\"><span class=\"ui-row-label\" data-i18n=\"motionPathControls.aroundDraggedPoint\">Around dragged point</span><span class=\"path-number\""
   },
   "motionPathControls.full": {
     "locations": [
-      "src/motion-path-controls.mjs:42"
+      "src/motion-path-controls.mjs:43"
     ],
     "context": "<fieldset class=\"path-range\"><legend data-i18n=\"motionPathControls.frameRange\">Frame range</legend><div class=\"path-presets ui-segmented\" data-size=\"sm\" data-fi"
   },
   "motionPathControls.handsFeet": {
     "locations": [
-      "src/motion-path-controls.mjs:41"
+      "src/motion-path-controls.mjs:42"
     ],
     "context": "${choice('motionPathJoints', interfaceText(\"motionPathControls.joints\"), [messageTuple(['selected', interfaceText(\"motionPathControls.selected\"), interfaceText("
   },
   "motionPathControls.hideMotionPaths": {
     "locations": [
-      "src/motion-path-controls.mjs:98"
+      "src/motion-path-controls.mjs:99"
     ],
     "context": "localizedAttribute(toggle, \"title\", (enabled ? \"motionPathControls.hideMotionPaths\" : \"motionPathControls.showMotionPaths\"), (enabled ? {} : {}));"
   },
   "motionPathControls.inBetweenDots": {
     "locations": [
-      "src/motion-path-controls.mjs:47"
+      "src/motion-path-controls.mjs:48"
     ],
     "context": "<div class=\"path-display\">${toggle('motionPathLabels', interfaceText(\"motionPathControls.frameNumbers\"), interfaceText(\"motionPathControls.numberTheKeysTheEndsA"
   },
   "motionPathControls.joints": {
     "locations": [
-      "src/motion-path-controls.mjs:41"
+      "src/motion-path-controls.mjs:42"
     ],
     "context": "${choice('motionPathJoints', interfaceText(\"motionPathControls.joints\"), [messageTuple(['selected', interfaceText(\"motionPathControls.selected\"), interfaceText("
   },
   "motionPathControls.keepATravellingFigureInPlaceSoIts": {
     "locations": [
-      "src/motion-path-controls.mjs:47"
+      "src/motion-path-controls.mjs:48"
     ],
     "context": "<div class=\"path-display\">${toggle('motionPathLabels', interfaceText(\"motionPathControls.frameNumbers\"), interfaceText(\"motionPathControls.numberTheKeysTheEndsA"
   },
   "motionPathControls.linear": {
     "locations": [
-      "src/motion-path-controls.mjs:44"
+      "src/motion-path-controls.mjs:45"
     ],
     "context": "<fieldset class=\"path-range path-falloff\" title=\"Right-drag a trail point: nearby keys follow, fading out with distance; scroll to resize\" data-i18n-title=\"moti"
   },
   "motionPathControls.message0ShowsTheFullAnimation": {
     "locations": [
-      "src/motion-path-controls.mjs:43"
+      "src/motion-path-controls.mjs:44"
     ],
     "context": "<label class=\"ui-row path-row\"><span class=\"ui-row-label\" data-i18n=\"motionPathControls.aroundPlayhead\">Around playhead</span><span class=\"path-number\"><input t"
   },
   "motionPathControls.mostlyTheDraggedFrameNeighboursFollowALittle": {
     "locations": [
-      "src/motion-path-controls.mjs:44"
+      "src/motion-path-controls.mjs:45"
     ],
     "context": "<fieldset class=\"path-range path-falloff\" title=\"Right-drag a trail point: nearby keys follow, fading out with distance; scroll to resize\" data-i18n-title=\"moti"
   },
   "motionPathControls.motionPaths": {
     "locations": [
       "src/motion-path-controls.mjs:24",
-      "src/motion-path-controls.mjs:39",
-      "src/motion-path-controls.mjs:100"
+      "src/motion-path-controls.mjs:40",
+      "src/motion-path-controls.mjs:101"
     ],
     "context": "localizedAttribute(tool, 'aria-label', \"motionPathControls.motionPaths\", {});"
   },
@@ -26195,105 +26196,105 @@
     "locations": [
       "src/motion-path-controls.mjs:16",
       "src/motion-path-controls.mjs:17",
-      "src/motion-path-controls.mjs:32"
+      "src/motion-path-controls.mjs:33"
     ],
     "context": "localizedAttribute(trigger, \"title\", \"motionPathControls.motionPathSettings\", {});"
   },
   "motionPathControls.movesEverythingInReachTogether": {
     "locations": [
-      "src/motion-path-controls.mjs:44"
+      "src/motion-path-controls.mjs:45"
     ],
     "context": "<fieldset class=\"path-range path-falloff\" title=\"Right-drag a trail point: nearby keys follow, fading out with distance; scroll to resize\" data-i18n-title=\"moti"
   },
   "motionPathControls.neighboursFollowCloselyFarFramesBarelyMove": {
     "locations": [
-      "src/motion-path-controls.mjs:44"
+      "src/motion-path-controls.mjs:45"
     ],
     "context": "<fieldset class=\"path-range path-falloff\" title=\"Right-drag a trail point: nearby keys follow, fading out with distance; scroll to resize\" data-i18n-title=\"moti"
   },
   "motionPathControls.numberTheKeysTheEndsAndTheCurrent": {
     "locations": [
-      "src/motion-path-controls.mjs:47"
+      "src/motion-path-controls.mjs:48"
     ],
     "context": "<div class=\"path-display\">${toggle('motionPathLabels', interfaceText(\"motionPathControls.frameNumbers\"), interfaceText(\"motionPathControls.numberTheKeysTheEndsA"
   },
   "motionPathControls.relativeToBody": {
     "locations": [
-      "src/motion-path-controls.mjs:47"
+      "src/motion-path-controls.mjs:48"
     ],
     "context": "<div class=\"path-display\">${toggle('motionPathLabels', interfaceText(\"motionPathControls.frameNumbers\"), interfaceText(\"motionPathControls.numberTheKeysTheEndsA"
   },
   "motionPathControls.reshapeArc": {
     "locations": [
-      "src/motion-path-controls.mjs:44"
+      "src/motion-path-controls.mjs:45"
     ],
     "context": "<fieldset class=\"path-range path-falloff\" title=\"Right-drag a trail point: nearby keys follow, fading out with distance; scroll to resize\" data-i18n-title=\"moti"
   },
   "motionPathControls.rightDrag": {
     "locations": [
-      "src/motion-path-controls.mjs:44"
+      "src/motion-path-controls.mjs:45"
     ],
     "context": "<fieldset class=\"path-range path-falloff\" title=\"Right-drag a trail point: nearby keys follow, fading out with distance; scroll to resize\" data-i18n-title=\"moti"
   },
   "motionPathControls.rightDragATrailPointNearbyKeysFollow": {
     "locations": [
-      "src/motion-path-controls.mjs:44"
+      "src/motion-path-controls.mjs:45"
     ],
     "context": "<fieldset class=\"path-range path-falloff\" title=\"Right-drag a trail point: nearby keys follow, fading out with distance; scroll to resize\" data-i18n-title=\"moti"
   },
   "motionPathControls.selected": {
     "locations": [
-      "src/motion-path-controls.mjs:40",
-      "src/motion-path-controls.mjs:41"
+      "src/motion-path-controls.mjs:41",
+      "src/motion-path-controls.mjs:42"
     ],
     "context": "<div class=\"ui-popover-body path-body\">${choice('motionPathAllTargets', interfaceText(\"motionPathControls.figures\"), [messageTuple(['false', interfaceText(\"moti"
   },
   "motionPathControls.sharp": {
     "locations": [
-      "src/motion-path-controls.mjs:44"
+      "src/motion-path-controls.mjs:45"
     ],
     "context": "<fieldset class=\"path-range path-falloff\" title=\"Right-drag a trail point: nearby keys follow, fading out with distance; scroll to resize\" data-i18n-title=\"moti"
   },
   "motionPathControls.showMotionPaths": {
     "locations": [
-      "src/motion-path-controls.mjs:39",
-      "src/motion-path-controls.mjs:98"
+      "src/motion-path-controls.mjs:40",
+      "src/motion-path-controls.mjs:99"
     ],
     "context": "localizedMarkup(panel, `<header class=\"ui-popover-head\"><strong class=\"ui-popover-title\">${icon('motion-path')}${messageHTML(\"motionPathControls.motionPaths\", {"
   },
   "motionPathControls.slowFast": {
     "locations": [
-      "src/motion-path-controls.mjs:38"
+      "src/motion-path-controls.mjs:39"
     ],
     "context": "const legend = `<span class=\"path-speed-legend\" aria-hidden=\"true\"><span style=\"background:linear-gradient(90deg,${MOTION_PATH_SPEED_COLORS.join(',')})\"></span>"
   },
   "motionPathControls.smooth": {
     "locations": [
-      "src/motion-path-controls.mjs:44"
+      "src/motion-path-controls.mjs:45"
     ],
     "context": "<fieldset class=\"path-range path-falloff\" title=\"Right-drag a trail point: nearby keys follow, fading out with distance; scroll to resize\" data-i18n-title=\"moti"
   },
   "motionPathControls.speedColours": {
     "locations": [
-      "src/motion-path-controls.mjs:47"
+      "src/motion-path-controls.mjs:48"
     ],
     "context": "<div class=\"path-display\">${toggle('motionPathLabels', interfaceText(\"motionPathControls.frameNumbers\"), interfaceText(\"motionPathControls.numberTheKeysTheEndsA"
   },
   "motionPathControls.theSelectedJointOrEachFigureSOrigin": {
     "locations": [
-      "src/motion-path-controls.mjs:41"
+      "src/motion-path-controls.mjs:42"
     ],
     "context": "${choice('motionPathJoints', interfaceText(\"motionPathControls.joints\"), [messageTuple(['selected', interfaceText(\"motionPathControls.selected\"), interfaceText("
   },
   "motionPathControls.trailsForEveryFigureOnTheStage": {
     "locations": [
-      "src/motion-path-controls.mjs:40"
+      "src/motion-path-controls.mjs:41"
     ],
     "context": "<div class=\"ui-popover-body path-body\">${choice('motionPathAllTargets', interfaceText(\"motionPathControls.figures\"), [messageTuple(['false', interfaceText(\"moti"
   },
   "motionPathControls.trailsForTheSelectedFigures": {
     "locations": [
-      "src/motion-path-controls.mjs:40"
+      "src/motion-path-controls.mjs:41"
     ],
     "context": "<div class=\"ui-popover-body path-body\">${choice('motionPathAllTargets', interfaceText(\"motionPathControls.figures\"), [messageTuple(['false', interfaceText(\"moti"
   },
@@ -30098,13 +30099,13 @@
     "locations": [
       "src/shell/stage-head.mjs:183"
     ],
-    "context": "setAttr(chip, 'data-tooltip', interfaceText('stageHead.backgroundColourLabel', {label: state.background.label}));"
+    "context": "localizedAttribute(chip, 'data-tooltip', 'stageHead.backgroundColourLabel', {label: state.background.label});"
   },
   "stageHead.backgroundColourLabelOpensTheColourPicker": {
     "locations": [
       "src/shell/stage-head.mjs:182"
     ],
-    "context": "setAttr(chip, 'aria-label', interfaceText('stageHead.backgroundColourLabelOpensTheColourPicker', {label: state.background.label}));"
+    "context": "localizedAttribute(chip, 'aria-label', 'stageHead.backgroundColourLabelOpensTheColourPicker', {label: state.background.label});"
   },
   "stageHead.backToTheSceneDone": {
     "locations": [
@@ -33139,13 +33140,13 @@
     "locations": [
       "src/tweener-controls.mjs:6"
     ],
-    "context": "neighbor: {label:interfaceText(\"tweenerControls.blendToNeighbor\"), labelKey: \"tweenerControls.blendToNeighbor\", color:'#168aad', path:\"M3 12h18M7 8l-4 4 4 4M17 "
+    "context": "neighbor: {labelKey: \"tweenerControls.blendToNeighbor\", color:'#168aad', path:\"M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4\"},"
   },
   "tweenerControls.breakdown": {
     "locations": [
       "src/tweener-controls.mjs:5"
     ],
-    "context": "breakdown: {label:interfaceText(\"tweenerControls.breakdown\"), labelKey: \"tweenerControls.breakdown\", color:'#8b5cf6', path:interfaceText(\"tweenerControls.m12320"
+    "context": "breakdown: {labelKey: \"tweenerControls.breakdown\", color:'#8b5cf6', path:\"M12 3 20 12 12 21 4 12Z\"},"
   },
   "tweenerControls.chooseTweenType": {
     "locations": [
@@ -33157,43 +33158,37 @@
     "locations": [
       "src/tweener-controls.mjs:54"
     ],
-    "context": "localizedAttribute(this.button, \"title\", \"tweenerControls.dragHorizontallyOnCanvasArrowForTweenTypes\", {label: type.label});"
+    "context": "localizedAttribute(this.button, \"title\", \"tweenerControls.dragHorizontallyOnCanvasArrowForTweenTypes\", {label: {messageKey:type.labelKey}});"
   },
   "tweenerControls.dragHorizontallyShiftForPrecisionEscRightClick": {
     "locations": [
-      "src/tweener-controls.mjs:62"
+      "src/tweener-controls.mjs:63"
     ],
-    "context": "if(hint)localizedText(hint, \"tweenerControls.dragHorizontallyShiftForPrecisionEscRightClick\", {label: type.label});"
-  },
-  "tweenerControls.m12320121221412z": {
-    "locations": [
-      "src/tweener-controls.mjs:5"
-    ],
-    "context": "breakdown: {label:interfaceText(\"tweenerControls.breakdown\"), labelKey: \"tweenerControls.breakdown\", color:'#8b5cf6', path:interfaceText(\"tweenerControls.m12320"
+    "context": "if(hint)localizedText(hint, \"tweenerControls.dragHorizontallyShiftForPrecisionEscRightClick\", {label: {messageKey:type.labelKey}});"
   },
   "tweenerControls.push": {
     "locations": [
       "src/tweener-controls.mjs:7"
     ],
-    "context": "push: {label:interfaceText(\"tweenerControls.push\"), labelKey: \"tweenerControls.push\", color:'#df7620', path:\"M9 12H3m0 0 4-4m-4 4 4 4m8-4h6m0 0-4-4m4 4-4 4\"},"
+    "context": "push: {labelKey: \"tweenerControls.push\", color:'#df7620', path:\"M9 12H3m0 0 4-4m-4 4 4 4m8-4h6m0 0-4-4m4 4-4 4\"},"
   },
   "tweenerControls.relax": {
     "locations": [
       "src/tweener-controls.mjs:8"
     ],
-    "context": "relax: {label:interfaceText(\"tweenerControls.relax\"), labelKey: \"tweenerControls.relax\", color:'#22966c', path:\"M3 12h6m0 0L5 8m4 4-4 4m16-4h-6m0 0 4-4m-4 4 4 4"
+    "context": "relax: {labelKey: \"tweenerControls.relax\", color:'#22966c', path:\"M3 12h6m0 0L5 8m4 4-4 4m16-4h-6m0 0 4-4m-4 4 4 4\"},"
   },
   "tweenerControls.tweenAmount": {
     "locations": [
       "src/tweener-controls.mjs:28"
     ],
-    "context": "const hud=this.hud=document.createElement('output');hud.className='tweener-hud';hud.hidden=true;localizedAttribute(hud, 'aria-label', \"tweenerControls.tweenAmou"
+    "context": "const hud=this.hud=document.createElement('output');hud.className='tweener-hud';hud.hidden=true;localizedMarkup(hud,'<span></span>  <span></span>');localizedAtt"
   },
   "tweenerControls.tweener": {
     "locations": [
       "src/tweener-controls.mjs:53"
     ],
-    "context": "localizedAttribute(this.button, 'aria-label', \"tweenerControls.tweener\", {label: type.label});"
+    "context": "localizedAttribute(this.button, 'aria-label', \"tweenerControls.tweener\", {label: {messageKey:type.labelKey}});"
   },
   "tweenerControls.tweenType": {
     "locations": [
@@ -36789,7 +36784,8 @@
   "vfxChannels.enabled": {
     "locations": [
       "src/vfx-clip-inspector.mjs:63",
-      "src/vfx-localization.mjs:9"
+      "src/vfx-localization.mjs:9",
+      "src/vfx.mjs:25"
     ],
     "context": "return `<div class=\"vfx-key-navigation\"><button type=\"button\" class=\"vfx-channel-trigger\" data-clip-action=\"channels\" aria-label=\"Visible effect keys\" aria-hasp"
   },
@@ -37567,9 +37563,10 @@
   },
   "vfxInspector.showAll2": {
     "locations": [
+      "src/vfx-inspector.mjs:117",
       "src/vfx-inspector.mjs:222"
     ],
-    "context": "return `<div class=\"ui-empty vfx-empty\"><h3 class=\"ui-empty-title\">${esc(title)}</h3>${elsewhere?'':`<p class=\"ui-empty-text\" data-i18n=\"vfxInspector.startWithO"
+    "context": "const views=[messageTuple(['playhead',interfaceText(\"vfxInspector.atThisFrame\")], {1: {key: \"vfxInspector.atThisFrame\", params: {}}}),messageTuple(['selected',i"
   },
   "vfxInspector.showEffects": {
     "locations": [
@@ -37603,7 +37600,8 @@
   },
   "vfxInspector.wholeFigure": {
     "locations": [
-      "src/vfx-inspector.mjs:115"
+      "src/vfx-inspector.mjs:115",
+      "src/vfx.mjs:25"
     ],
     "context": "const options=[...(e.selectedJoint>=0?[messageTuple(['selection',interfaceText(\"vfxInspector.selectedNode\")], {1: {key: \"vfxInspector.selectedNode\", params: {}}"
   },

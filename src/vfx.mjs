@@ -22,7 +22,7 @@ export function validateVfxValue(property,value){
   if(property==='vfxStack')return validateVfxStack(value);
   const d=vfxDescriptor(property);if(!d)throw messageError(new Error(''), "errors.vfx.unknownVfxParameter", {});
   if(d.type==='color'&&typeof value==='object')return vfxPaint(value);
-  if(typeof value!=='number'||!Number.isFinite(value)||value<d.min||value>d.max||(d.type==='color'||d.discrete)&&!Number.isInteger(value))throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label: d.label, min: d.min, max: d.max});
+  if(typeof value!=='number'||!Number.isFinite(value)||value<d.min||value>d.max||(d.type==='color'||d.discrete)&&!Number.isInteger(value))throw messageError(new Error(''), "errors.cameraMotion.mustBeBetweenAnd", {label:{messageKey:property==='vfxScope'?'vfxInspector.wholeFigure':d.param==='enabled'?'vfxChannels.enabled':`vfxCatalog.parameter.${d.effectType}.${d.param}.label`,diagnosticValue:d.label},min:d.min,max:d.max});
   return value;
 }
 export function validateVfxStack(stack){

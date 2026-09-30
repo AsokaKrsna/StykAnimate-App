@@ -27,6 +27,13 @@ try {
   });
   await page.waitForSelector('.ui-toast-progress');
   await page.evaluate(()=>{window.retainedStatus=document.querySelector('#status');styk.localization.localization.setPseudo('long');});
+  check('Retained background, motion-path group and tween-type captions resolve their current language',await page.evaluate(()=>
+    document.querySelector('#crumb-background').getAttribute('aria-label').includes('［')
+    &&document.querySelector('.motion-path-tool').getAttribute('aria-label').includes('［')
+    &&document.querySelector('#tweener-button').getAttribute('aria-label')===styk.localization.t('tweenerControls.tweener',{label:{messageKey:'tweenerControls.breakdown'}})
+    &&document.querySelector('[data-tween-type=breakdown] span').textContent===styk.localization.t('tweenerControls.breakdown')
+    &&document.querySelector('.tweener-hud').firstElementChild.textContent===styk.localization.t('tweenerControls.breakdown')
+    &&document.querySelector('[data-tween-type=breakdown] path').getAttribute('d')==='M12 3 20 12 12 21 4 12Z'));
   check('Retained activity, delayed task captions and progress accessibility follow the language',await page.evaluate(()=>retainedStatus===document.querySelector('#status')&&retainedStatus.textContent.includes('［')&&document.querySelector('.ui-toast-text b').textContent.includes('［')&&document.querySelector('.ui-toast-progress').getAttribute('aria-label').includes('［')));
   await page.evaluate(()=>{localizedTask.done();taskToasts.destroy();styk.localization.localization.setPseudo(null);});
   await page.locator('.brand[data-action=menu]').click();

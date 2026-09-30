@@ -1,4 +1,4 @@
-import {tupleMessages, messageTuple, messageAttributes, localizedMarkup, localizedAttribute, appendLocalized, messageHTML} from './localization-bindings.mjs';
+import {tupleMessages, messageTuple, messageAttributes, localizedMarkup, localizedAttribute, appendLocalized, connectTranslations, messageHTML} from './localization-bindings.mjs';
 
 import {t as interfaceText} from './localization.mjs';
 
@@ -24,6 +24,7 @@ export class MotionPathControls {
     localizedAttribute(tool, 'aria-label', "motionPathControls.motionPaths", {});
     button.before(tool);
     appendLocalized(tool, button, trigger);
+    connectTranslations(tool);
     const panel = this.panel = document.createElement('div');
     panel.className = 'path-popover ui-popover';
     panel.id = 'path-popover';

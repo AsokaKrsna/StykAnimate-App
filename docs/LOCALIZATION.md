@@ -57,8 +57,11 @@ exports, updates, support, notifications and owned validation/diagnostic message
 User names, filenames, command/history identifiers, shortcuts, extensions, HTTP
 headers, codec IDs, authored figure names and animation text remain data.
 
-`src/localized-error.mjs` adds a stable message key and scalar parameters to the
-original error without changing its class, name, code or English diagnostic.
+`src/localized-error.mjs` adds a stable message key and scalar parameters (or display
+references with an explicit `diagnosticValue`) to the original error without
+changing its class, name, code or English diagnostic.
+Human parameter labels resolve from their display message key; their original scalar
+value still appears in the diagnostic and survives worker/IPC transport.
 Import notices use their stable codes and structured recovery records; stored
 warning strings remain unchanged. Support status codes and option values also
 remain separate from their captions.

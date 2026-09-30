@@ -2,7 +2,7 @@ import english from './locales/en.mjs';
 import {diagnosticError} from './message-error-core.mjs';
 
 /** Error identity and diagnostic English stay stable across workers and IPC.
- * Presentation translates the attached message key and scalar parameters. */
+ * Presentation translates the attached message key and scalar or explicit display-reference parameters. */
 export function messageError(error, messageKey, messageParams = {}) {
   return diagnosticError(error, english[messageKey], messageKey, messageParams);
 }

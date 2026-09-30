@@ -1,11 +1,11 @@
 import {t as interfaceText} from './localization.mjs';
-import {appendLocalized, localizedAttribute, localizedMarkup, localizedText} from './localization-bindings.mjs';
+import {appendLocalized, localizedAttribute, localizedMarkup, localizedText, messageAttributes} from './localization-bindings.mjs';
 import {icon} from './icons.mjs';
 const TYPES = {
-  breakdown: {label:interfaceText("tweenerControls.breakdown"), labelKey: "tweenerControls.breakdown", color:'#8b5cf6', path:interfaceText("tweenerControls.m12320121221412z")},
-  neighbor: {label:interfaceText("tweenerControls.blendToNeighbor"), labelKey: "tweenerControls.blendToNeighbor", color:'#168aad', path:"M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"},
-  push: {label:interfaceText("tweenerControls.push"), labelKey: "tweenerControls.push", color:'#df7620', path:"M9 12H3m0 0 4-4m-4 4 4 4m8-4h6m0 0-4-4m4 4-4 4"},
-  relax: {label:interfaceText("tweenerControls.relax"), labelKey: "tweenerControls.relax", color:'#22966c', path:"M3 12h6m0 0L5 8m4 4-4 4m16-4h-6m0 0 4-4m-4 4 4 4"},
+  breakdown: {labelKey: "tweenerControls.breakdown", color:'#8b5cf6', path:"M12 3 20 12 12 21 4 12Z"},
+  neighbor: {labelKey: "tweenerControls.blendToNeighbor", color:'#168aad', path:"M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"},
+  push: {labelKey: "tweenerControls.push", color:'#df7620', path:"M9 12H3m0 0 4-4m-4 4 4 4m8-4h6m0 0-4-4m4 4-4 4"},
+  relax: {labelKey: "tweenerControls.relax", color:'#22966c', path:"M3 12h6m0 0L5 8m4 4-4 4m16-4h-6m0 0 4-4m-4 4 4 4"},
 };
 const glyph = type => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${TYPES[type].path}"/></svg>`;
 
@@ -23,9 +23,9 @@ export class TweenerControls {
     localizedMarkup(arrow, '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3 8 3 8 9Z" fill="currentColor"/></svg>');appendLocalized(tool, arrow);
     const menu=this.menu=document.createElement('div');menu.id='tweener-types';menu.className='tweener-types';
     menu.setAttribute('popover','auto');menu.setAttribute('role','menu');localizedAttribute(menu, 'aria-label', "tweenerControls.tweenType", {});
-    localizedMarkup(menu, Object.entries(TYPES).map(([type,{label,color}])=>`<button type="button" role="menuitemradio" data-tween-type="${type}" style="--tween-color:${color}">${glyph(type)}<span>${label}</span><span class="tween-chosen" aria-hidden="true">✓</span></button>`).join(''));
+    localizedMarkup(menu, Object.entries(TYPES).map(([type,{labelKey,color}])=>`<button type="button" role="menuitemradio" data-tween-type="${type}" style="--tween-color:${color}">${glyph(type)}<span ${messageAttributes(labelKey)}>${interfaceText(labelKey)}</span><span class="tween-chosen" aria-hidden="true">✓</span></button>`).join(''));
     appendLocalized(document.body, menu);
-    const hud=this.hud=document.createElement('output');hud.className='tweener-hud';hud.hidden=true;localizedAttribute(hud, 'aria-label', "tweenerControls.tweenAmount", {});appendLocalized(viewport, hud);
+    const hud=this.hud=document.createElement('output');hud.className='tweener-hud';hud.hidden=true;localizedMarkup(hud,'<span></span>  <span></span>');localizedAttribute(hud, 'aria-label', "tweenerControls.tweenAmount", {});appendLocalized(viewport, hud);
     button.addEventListener('click',event=>{event.stopPropagation();this.activate(this.mode);},options);
     arrow.addEventListener('click',event=>{event.stopPropagation();this.openMenu();},options);
     tool.addEventListener('contextmenu',event=>{event.preventDefault();this.openMenu();},options);
@@ -50,16 +50,17 @@ export class TweenerControls {
     const type=TYPES[this.mode],active=this.getTool()==='tweener';
     this.tool.style.setProperty('--tween-color',type.color);
     this.tool.classList.toggle('active',active);this.button.setAttribute('aria-pressed',String(active));
-    localizedAttribute(this.button, 'aria-label', "tweenerControls.tweener", {label: type.label});
-    localizedAttribute(this.button, "title", "tweenerControls.dragHorizontallyOnCanvasArrowForTweenTypes", {label: type.label});
+    localizedAttribute(this.button, 'aria-label', "tweenerControls.tweener", {label: {messageKey:type.labelKey}});
+    localizedAttribute(this.button, "title", "tweenerControls.dragHorizontallyOnCanvasArrowForTweenTypes", {label: {messageKey:type.labelKey}});
     // The rail shows one in-between glyph (never a key diamond); the type's own glyph and colour are in its menu and HUD.
     if(!this.button.querySelector('svg'))localizedMarkup(this.button, icon('tween'));
     this.viewport.classList.toggle('tweener-active',active);
     this.hud.style.setProperty('--tween-color',type.color);
+    localizedText(this.hud.firstElementChild,type.labelKey);
     for(const choice of this.menu.querySelectorAll('[data-tween-type]'))choice.setAttribute('aria-checked',String(choice.dataset.tweenType===this.mode));
     if(active){
       const hint=this.viewport.querySelector('#viewport-hint');
-      if(hint)localizedText(hint, "tweenerControls.dragHorizontallyShiftForPrecisionEscRightClick", {label: type.label});
+      if(hint)localizedText(hint, "tweenerControls.dragHorizontallyShiftForPrecisionEscRightClick", {label: {messageKey:type.labelKey}});
     }else this.closeMenu();
   }
   openMenu() {
@@ -85,7 +86,7 @@ export class TweenerControls {
     this.moved=true;this.lastX=event.clientX;
     this.value=Math.max(this.mode==='neighbor'?-1:0,Math.min(1,this.value+dx/(event.shiftKey?3000:300)));
     this.pending=this.value;this.hud.hidden=false;
-    this.hud.textContent=`${TYPES[this.mode].label}  ${Math.round(this.value*100)}%`;
+    this.hud.lastElementChild.textContent=`${Math.round(this.value*100)}%`;
     if(!this.raf)this.raf=requestAnimationFrame(()=>{this.raf=0;this.flush();});
   }
   flush() {

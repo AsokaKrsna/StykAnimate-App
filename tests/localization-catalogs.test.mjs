@@ -67,6 +67,7 @@ test('all independent packs validate against one authoritative English catalog',
       'stageHead.dataActionBuilderStaticHandles', 'stageHead.dataActionBuilderHighlight',
       'stageHead.dataActionToggleIsolate',
       'builderOutliner.text2',
+      'tweenerControls.m12320121221412z',
     ]) if (Object.hasOwn(pack.messages, key)) assert.equal(pack.messages[key], english[key], `${file}:${key} is a machine value`);
   }
   assert.equal(messageText(null, 'settings.touchInterface'), 'Touch interface');
