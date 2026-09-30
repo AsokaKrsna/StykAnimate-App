@@ -15,7 +15,7 @@ What's new in each version of StykAnimate.
 - Draw with your finger on a phone or tablet until you pick up a pen, or choose Always in Settings to draw with a finger on any touch screen.
 - On touch screens, swipe the timeline to scrub under a fixed playhead, and add keys, change timing or select frames from buttons above it.
 - Move a layer up or down from its menu in the timeline.
-- A separate pack of 15 Pivot-style 3D guns with movable reload parts, ammunition and editable example animations.
+- A separate pack of 15 guns with classic Pivot silhouettes, easy-to-grab reload controls, ammunition and editable example animations.
 - Auto key in the Advanced timeline: turn it on (K) and every change you make adds a keyframe at the playhead.
 - Camera follow: right-click figures and choose Follow with camera to keep them in frame, with smooth catch-up, look ahead, a dead zone and auto zoom. Projects that use it need this version or newer.
 
