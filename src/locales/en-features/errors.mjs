@@ -1,4 +1,8 @@
 export default Object.freeze({
+  "errors.playbackPlanning.layerMigrationLabel": "Layer migration",
+  "errors.playbackPlanning.inbetweenInsertionLabel": "Inbetween insertion",
+  "errors.editorCamera.cameraValueLabel": "Camera {field}",
+  "errors.editorCamera.canvasValueLabel": "Canvas {field}",
   "errors.animationChannels.chooseAFigureSegmentLayerCameraOrScene": "Choose a figure, segment, layer, camera, or scene animation target.",
   "errors.animationChannels.onlySegmentAndPolygonAnimationCanBeScoped": "Only segment and polygon animation can be scoped to a figure definition.",
   "errors.animationChannels.polygonAnimationRequiresAFigureUidPolygonIdentity": "Polygon animation requires a figure UID, polygon identity, and figure definition identity.",

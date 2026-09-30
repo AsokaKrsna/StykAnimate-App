@@ -49,6 +49,9 @@ test('sandboxed preload uses the same generated diagnostic constructor without N
   const context = vm.createContext({});
   const message = vm.runInContext(`${bundle}\nmessageError(new RangeError(), 'desktop.preload.errors.uiScaleMustBe75200InStepsOf5').message`, context);
   assert.equal(message, english['desktop.preload.errors.uiScaleMustBe75200InStepsOf5']);
+  const nested=vm.runInContext(`diagnosticError(new RangeError(), '{label} must be finite.', 'field.check', {label:{messageKey:'errors.editorCamera.cameraValueLabel',messageParams:{field:'angle_rad'},diagnosticValue:'Camera angle_rad'}})`,context);
+  assert.equal(nested.message,'Camera angle_rad must be finite.');
+  assert.equal(nested.messageParams.label.messageParams.field,'angle_rad');
   assert.doesNotMatch(preload, /require\(['"]\.\/localization/);
 });
 

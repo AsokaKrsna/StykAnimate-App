@@ -8,8 +8,8 @@ const CHUNK_BYTES = 64 * 1024;
 const aborted = message => Object.assign(new Error(message), {name: 'AbortError'});
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const jobs = Object.freeze({
-  migration: {message: 'plan-layer-migration', label: 'Layer migration'},
-  inbetween: {message: 'plan-insert-inbetween', label: 'Insert inbetween'},
+  migration: {message: 'plan-layer-migration', label: 'Layer migration', labelKey:'errors.playbackPlanning.layerMigrationLabel'},
+  inbetween: {message: 'plan-insert-inbetween', label: 'Insert inbetween', labelKey:'errors.playbackPlanning.inbetweenInsertionLabel'},
 });
 
 function channelDelta(beforeAnimation, afterAnimation) {
@@ -59,9 +59,9 @@ export class PlaybackPlanner {
   planLayerMigration(request, options) {return this._plan('migration', request, options);}
   planInsertInbetweens(request, options) {return this._plan('inbetween', request, options);}
   async _plan(kind, request, {signal, onProgress} = {}) {
-    const {message, label} = jobs[kind];
+    const {message, label, labelKey} = jobs[kind];
     const owner = this.owner;
-    if (owner.disposed || !owner.report) throw messageError(new Error(''), "errors.playbackPlanning.loadADocumentBeforePlanning", {value: label.toLowerCase()});
+    if (owner.disposed || !owner.report) throw messageError(new Error(''), "errors.playbackPlanning.loadADocumentBeforePlanning", {value:{messageKey:labelKey,diagnosticValue:label.toLowerCase()}});
     if (owner.failure && !owner._recover?.()) throw owner.failure;
     const revision = owner.revision;
     if (signal?.aborted) throw aborted(`${label} was cancelled.`);
@@ -71,7 +71,7 @@ export class PlaybackPlanner {
     const jobId = this.nextId++;
     return new Promise((resolve, reject) => {
       const cancel = () => this.cancel(aborted(`${label} was cancelled.`));
-      const timer = owner.timeoutMs > 0 ? setTimeout(() => this.cancel(messageError(new Error(''), "errors.playbackPlanning.planningTimedOut", {label: label})), owner.timeoutMs) : null;
+      const timer = owner.timeoutMs > 0 ? setTimeout(() => this.cancel(messageError(new Error(''), "errors.playbackPlanning.planningTimedOut", {label:{messageKey:labelKey,diagnosticValue:label}})), owner.timeoutMs) : null;
       this.pending = {kind, label, jobId, revision, resolve, reject, signal, cancel, timer, onProgress, staging: null, sequence: 0, bytes: 0, maxTaskMs: 0};
       signal?.addEventListener('abort', cancel, {once: true});
       try {owner.worker.postMessage({type: message, revision, jobId, request, maxBytes: PLANNING_TRANSFER_BYTES});}
@@ -98,15 +98,15 @@ export class PlaybackPlanner {
       else if (message.type === `${job.kind}-chunk`) {
         const start = performance.now(), bytes = message.chunk?.estimatedBytes ?? 0;
         if (message.sequence !== job.sequence || bytes < 0 || bytes > CHUNK_BYTES || !Number.isFinite(bytes) || job.bytes + bytes > PLANNING_TRANSFER_BYTES)
-          throw messageError(new Error(''), "errors.playbackPlanning.invalidOrOversizedTransfer", {value: job.label.toLowerCase()});
-        if ((job.sequence === 0) !== Boolean(message.chunk?.header)) throw messageError(new Error(''), "errors.playbackPlanning.chunksArrivedOutOfOrder", {label: job.label});
+          throw messageError(new Error(''), "errors.playbackPlanning.invalidOrOversizedTransfer", {value:{messageKey:jobs[job.kind].labelKey,diagnosticValue:job.label.toLowerCase()}});
+        if ((job.sequence === 0) !== Boolean(message.chunk?.header)) throw messageError(new Error(''), "errors.playbackPlanning.chunksArrivedOutOfOrder", {label:{messageKey:jobs[job.kind].labelKey,diagnosticValue:job.label}});
         job.staging = applyDocumentChunk(job.staging, message.chunk); job.bytes += bytes; job.sequence++;
         job.maxTaskMs = Math.max(job.maxTaskMs, performance.now() - start);
         this.owner.worker.postMessage({type: `${job.kind}-ack`, revision: job.revision, jobId: job.jobId, sequence: message.sequence});
       } else if (message.type === `${job.kind}-complete`) {
-        if (!job.staging || message.sequence !== job.sequence) throw messageError(new Error(''), "errors.playbackPlanning.completedBeforeAllItsChunks", {label: job.label});
+        if (!job.staging || message.sequence !== job.sequence) throw messageError(new Error(''), "errors.playbackPlanning.completedBeforeAllItsChunks", {label:{messageKey:jobs[job.kind].labelKey,diagnosticValue:job.label}});
         const plan = job.staging.plan;
-        if (!validCompletedPlan(job.kind, plan)) throw messageError(new Error(''), "errors.playbackPlanning.invalidCompletedPlan", {value: job.label.toLowerCase()});
+        if (!validCompletedPlan(job.kind, plan)) throw messageError(new Error(''), "errors.playbackPlanning.invalidCompletedPlan", {value:{messageKey:jobs[job.kind].labelKey,diagnosticValue:job.label.toLowerCase()}});
         Object.assign(this.owner.stats, {[`${job.kind}Bytes`]: job.bytes, [`${job.kind}Chunks`]: job.sequence, [`${job.kind}ReceiveMaxTaskMs`]: job.maxTaskMs});
         this._finish(null, plan);
       } else if (message.type === `${job.kind}-error`) this._finish(Object.assign(restoreMessageError(new Error(message.message), message), {name: message.name || 'Error'}));
@@ -170,7 +170,7 @@ export class LayerMigrationService {
       for (;;) {
         current(); const next = chunks.next(); if (next.done) break;
         bytes += next.value.estimatedBytes || 0;
-        if (bytes > job.maxBytes) throw messageError(new Error(''), "errors.playbackPlanning.exceedsThe128MibResultBudget", {label: job.label});
+        if (bytes > job.maxBytes) throw messageError(new Error(''), "errors.playbackPlanning.exceedsThe128MibResultBudget", {label:{messageKey:jobs[job.kind].labelKey,diagnosticValue:job.label}});
         const acknowledged = new Promise((resolve, reject) => {job.ack = {sequence, resolve, reject};});
         send('chunk', {sequence: sequence++, chunk: next.value}); await acknowledged;
       }

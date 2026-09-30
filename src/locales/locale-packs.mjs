@@ -3462,9 +3462,9 @@ const packs = [
       "errors.playbackPlanning.loadADocumentBeforePlanning": "حمّل مستندًا قبل تخطيط {value}.",
       "errors.playbackPlanning.aBackgroundOperationIsAlreadyBeingPlanned": "يجري تخطيط عملية في الخلفية بالفعل.",
       "errors.playbackPlanning.planningTimedOut": "انتهت مهلة تخطيط {label}.",
-      "errors.playbackPlanning.invalidOrOversizedTransfer": "نقل {value} غير صالح أو أكبر من المسموح.",
+      "errors.playbackPlanning.invalidOrOversizedTransfer": "نقل البيانات لعملية {value} غير صالح أو يتجاوز الحجم المسموح.",
       "errors.playbackPlanning.chunksArrivedOutOfOrder": "وصلت كتل {label} بترتيب خاطئ.",
-      "errors.playbackPlanning.completedBeforeAllItsChunks": "اكتمل {label} قبل جميع كتله.",
+      "errors.playbackPlanning.completedBeforeAllItsChunks": "اكتمل {label} قبل استلام جميع كتل بياناته.",
       "errors.playbackPlanning.invalidCompletedPlan": "خطة {value} المكتملة غير صالحة.",
       "errors.playbackPlanning.exceedsThe128MibResultBudget": "يتجاوز {label} حد النتيجة البالغ 128 MiB.",
       "errors.playbackRasterCache.playbackRastersWereInvalidated": "أُبطلت صلاحية الصور النقطية للتشغيل.",
@@ -6618,7 +6618,11 @@ const packs = [
       "cameraMotionUi.recovery": "العودة إلى الاستقرار",
       "cameraMotionUi.phase": "الطور",
       "cameraMotionUi.horizontal": "أفقي",
-      "cameraMotionUi.vertical": "رأسي"
+      "cameraMotionUi.vertical": "رأسي",
+      "errors.playbackPlanning.layerMigrationLabel": "نقل الأشكال بين الطبقات",
+      "errors.playbackPlanning.inbetweenInsertionLabel": "إدراج الإطارات البينية",
+      "errors.editorCamera.cameraValueLabel": "{field} للكاميرا",
+      "errors.editorCamera.canvasValueLabel": "{field} للوحة الرسم"
     }
   },
   {
@@ -8552,9 +8556,9 @@ const packs = [
       "vfxClipInspector.enable": "Aktivieren",
       "vfxInspector.enable": "Aktivieren",
       "cameraMotionUi.previewThisMove": "Diese Bewegung als Vorschau ansehen",
-      "cameraMotionUi.easeIn": "Sanft beschleunigen",
+      "cameraMotionUi.easeIn": "Sanft einblenden",
       "keyframeEasing.easeIn": "Sanft beschleunigen",
-      "cameraMotionUi.easeOut": "Sanft abbremsen",
+      "cameraMotionUi.easeOut": "Sanft ausblenden",
       "keyframeEasing.easeOut": "Sanft abbremsen",
       "cameraMotionUi.distant": "Entfernt",
       "cameraMotionUi.normal": "Normal",
@@ -10807,11 +10811,11 @@ const packs = [
       "errors.playbackPatch.playbackRetainedSourceUpdateTargetsAreInvalid": "Aktualisierungsziele beibehaltener Wiedergabequellen sind ungültig.",
       "errors.playbackPatch.playbackRetainedSourcesRequireDocumentMetadata": "Beibehaltene Wiedergabequellen benötigen Dokumentmetadaten.",
       "errors.playbackPlanning.invalidInsertInbetweenPlan": "Ungültiger Zwischenbildeinfügeplan.",
-      "errors.playbackPlanning.loadADocumentBeforePlanning": "Lade ein Dokument vor der Planung von {value}.",
+      "errors.playbackPlanning.loadADocumentBeforePlanning": "Lade vor der Planung des Vorgangs „{value}“ ein Dokument.",
       "errors.playbackPlanning.aBackgroundOperationIsAlreadyBeingPlanned": "Ein Hintergrundvorgang wird bereits geplant.",
-      "errors.playbackPlanning.planningTimedOut": "Zeitüberschreitung bei der Planung von {label}.",
+      "errors.playbackPlanning.planningTimedOut": "Zeitüberschreitung bei der Planung des Vorgangs „{label}“.",
       "errors.playbackPlanning.invalidOrOversizedTransfer": "Ungültige oder zu große Übertragung: {value}.",
-      "errors.playbackPlanning.chunksArrivedOutOfOrder": "Abschnitte für {label} trafen in falscher Reihenfolge ein.",
+      "errors.playbackPlanning.chunksArrivedOutOfOrder": "Die Abschnitte für den Vorgang „{label}“ trafen in falscher Reihenfolge ein.",
       "errors.playbackPlanning.completedBeforeAllItsChunks": "{label} wurde vor dem Eintreffen aller Abschnitte abgeschlossen.",
       "errors.playbackPlanning.invalidCompletedPlan": "Ungültiger abgeschlossener Plan: {value}.",
       "errors.playbackPlanning.exceedsThe128MibResultBudget": "{label} überschreitet das Ergebnisbudget von 128 MiB.",
@@ -13215,7 +13219,11 @@ const packs = [
       "cameraMotionUi.recovery": "Abklingen",
       "cameraMotionUi.phase": "Phase",
       "cameraMotionUi.horizontal": "Horizontal",
-      "cameraMotionUi.vertical": "Vertikal"
+      "cameraMotionUi.vertical": "Vertikal",
+      "errors.playbackPlanning.layerMigrationLabel": "Ebenenmigration",
+      "errors.playbackPlanning.inbetweenInsertionLabel": "Einfügen eines Zwischenbilds",
+      "errors.editorCamera.cameraValueLabel": "Kamerawert {field}",
+      "errors.editorCamera.canvasValueLabel": "Leinwandwert {field}"
     }
   },
   {
@@ -14712,8 +14720,8 @@ const packs = [
       "cameraMotionUi.enable": "Activer",
       "cameraMotionUi.previewThisMove": "Prévisualiser ce mouvement",
       "cameraMotionUi.duplicate": "Dupliquer",
-      "cameraMotionUi.easeIn": "Accélération au début",
-      "cameraMotionUi.easeOut": "Ralentissement à la fin",
+      "cameraMotionUi.easeIn": "Fondu d’entrée",
+      "cameraMotionUi.easeOut": "Fondu de sortie",
       "cameraMotionUi.distant": "Lointain",
       "cameraMotionUi.background": "Arrière-plan",
       "cameraMotionUi.normal": "Normal",
@@ -16296,7 +16304,7 @@ const packs = [
       "errors.editorCameraMotion.unsupportedParallaxProperty": "Propriété de parallaxe non prise en charge.",
       "errors.editorCameraMotion.bakeAValidRangeOfAtMost100": "Convertissez une plage valide de 100 000 images maximum.",
       "errors.editorCameraMotion.theAnimationChangedWhileBakingTryAgain": "L’animation a changé pendant la conversion. Réessayez.",
-      "errors.editorCamera.mustBeFinite": "{label} doit être fini.",
+      "errors.editorCamera.mustBeFinite": "{label} : la valeur doit être finie.",
       "errors.editorCamera.cameraExceedsTheNativeRange": "La valeur de caméra {field} dépasse la plage native.",
       "errors.editorCamera.cameraScaleMustBePositive": "L’échelle de la caméra doit être positive.",
       "errors.editorCamera.provideCameraPositionValues": "Fournissez les valeurs de position de la caméra.",
@@ -17078,13 +17086,13 @@ const packs = [
       "errors.playbackPatch.playbackRetainedSourceUpdateTargetsAreInvalid": "Les cibles de mise à jour des sources de lecture conservées sont invalides.",
       "errors.playbackPatch.playbackRetainedSourcesRequireDocumentMetadata": "Les sources de lecture conservées nécessitent des métadonnées de document.",
       "errors.playbackPlanning.invalidInsertInbetweenPlan": "Plan d’insertion d’images intermédiaires invalide.",
-      "errors.playbackPlanning.loadADocumentBeforePlanning": "Chargez un document avant la planification de {value}.",
+      "errors.playbackPlanning.loadADocumentBeforePlanning": "Chargez un document avant de planifier l’opération « {value} ».",
       "errors.playbackPlanning.aBackgroundOperationIsAlreadyBeingPlanned": "Une opération d’arrière-plan est déjà en cours de planification.",
-      "errors.playbackPlanning.planningTimedOut": "La planification de {label} a dépassé le délai autorisé.",
-      "errors.playbackPlanning.invalidOrOversizedTransfer": "Transfert de {value} invalide ou trop volumineux.",
-      "errors.playbackPlanning.chunksArrivedOutOfOrder": "Les blocs de {label} sont arrivés dans le désordre.",
-      "errors.playbackPlanning.completedBeforeAllItsChunks": "{label} s’est terminé avant la réception de tous ses blocs.",
-      "errors.playbackPlanning.invalidCompletedPlan": "Plan terminé de {value} invalide.",
+      "errors.playbackPlanning.planningTimedOut": "La planification de l’opération « {label} » a dépassé le délai autorisé.",
+      "errors.playbackPlanning.invalidOrOversizedTransfer": "Transfert invalide ou trop volumineux pour l’opération « {value} ».",
+      "errors.playbackPlanning.chunksArrivedOutOfOrder": "Les blocs de l’opération « {label} » sont arrivés dans le désordre.",
+      "errors.playbackPlanning.completedBeforeAllItsChunks": "L’opération « {label} » s’est terminée avant la réception de tous ses blocs.",
+      "errors.playbackPlanning.invalidCompletedPlan": "Plan final invalide pour l’opération « {value} ».",
       "errors.playbackPlanning.exceedsThe128MibResultBudget": "{label} dépasse le budget de résultat de 128 MiB.",
       "errors.playbackRasterCache.playbackRastersWereInvalidated": "Les images matricielles de lecture ont été invalidées.",
       "errors.playbackWorker.playbackPreparationWasSuperseded": "La préparation de lecture a été remplacée.",
@@ -20033,7 +20041,11 @@ const packs = [
       "cameraMotionUi.recovery": "Stabilisation",
       "cameraMotionUi.phase": "Phase",
       "cameraMotionUi.horizontal": "Horizontal",
-      "cameraMotionUi.vertical": "Vertical"
+      "cameraMotionUi.vertical": "Vertical",
+      "errors.playbackPlanning.layerMigrationLabel": "Migration des calques",
+      "errors.playbackPlanning.inbetweenInsertionLabel": "Insertion d’images intermédiaires",
+      "errors.editorCamera.cameraValueLabel": "Caméra {field}",
+      "errors.editorCamera.canvasValueLabel": "Zone de travail {field}"
     }
   },
   {
@@ -23588,11 +23600,11 @@ const packs = [
       "errors.playbackPlanning.loadADocumentBeforePlanning": "יש לטעון מסמך לפני תכנון {value}.",
       "errors.playbackPlanning.aBackgroundOperationIsAlreadyBeingPlanned": "פעולת רקע כבר נמצאת בתכנון.",
       "errors.playbackPlanning.planningTimedOut": "תכנון {label} חרג ממגבלת הזמן.",
-      "errors.playbackPlanning.invalidOrOversizedTransfer": "העברת {value} אינה תקינה או גדולה מדי.",
+      "errors.playbackPlanning.invalidOrOversizedTransfer": "העברת הנתונים של {value} אינה תקינה או גדולה מדי.",
       "errors.playbackPlanning.chunksArrivedOutOfOrder": "מקטעי {label} הגיעו בסדר שגוי.",
-      "errors.playbackPlanning.completedBeforeAllItsChunks": "{label} הושלם לפני כל המקטעים שלו.",
+      "errors.playbackPlanning.completedBeforeAllItsChunks": "{label} הסתיימה לפני שהתקבלו כל המקטעים שלה.",
       "errors.playbackPlanning.invalidCompletedPlan": "תוכנית {value} שהושלמה אינה תקינה.",
-      "errors.playbackPlanning.exceedsThe128MibResultBudget": "{label} חורג מתקציב תוצאה של 128 MiB.",
+      "errors.playbackPlanning.exceedsThe128MibResultBudget": "{label} חורגת ממכסת התוצאות של 128 MiB.",
       "errors.playbackRasterCache.playbackRastersWereInvalidated": "תמונות הרסטר לניגון בוטלו.",
       "errors.playbackWorker.playbackPreparationWasSuperseded": "הכנת הניגון הוחלפה בחדשה.",
       "errors.playbackWorker.playbackCameraModeMustBeABoolean": "מצב מצלמת הניגון חייב להיות בוליאני.",
@@ -26540,7 +26552,11 @@ const packs = [
       "cameraMotionUi.recovery": "התייצבות",
       "cameraMotionUi.phase": "מופע",
       "cameraMotionUi.horizontal": "אופקי",
-      "cameraMotionUi.vertical": "אנכי"
+      "cameraMotionUi.vertical": "אנכי",
+      "errors.playbackPlanning.layerMigrationLabel": "העברה בין שכבות",
+      "errors.playbackPlanning.inbetweenInsertionLabel": "הכנסת פריימי ביניים",
+      "errors.editorCamera.cameraValueLabel": "ערך {field} של המצלמה",
+      "errors.editorCamera.canvasValueLabel": "ערך {field} של משטח הציור"
     }
   },
   {
@@ -33199,7 +33215,11 @@ const packs = [
       "cameraMotionUi.recovery": "Assestamento",
       "cameraMotionUi.phase": "Fase",
       "cameraMotionUi.horizontal": "Orizzontale",
-      "cameraMotionUi.vertical": "Verticale"
+      "cameraMotionUi.vertical": "Verticale",
+      "errors.playbackPlanning.layerMigrationLabel": "Migrazione dei livelli",
+      "errors.playbackPlanning.inbetweenInsertionLabel": "Inserimento delle intercalazioni",
+      "errors.editorCamera.cameraValueLabel": "Il valore {field} della camera",
+      "errors.editorCamera.canvasValueLabel": "Il valore {field} dell’area di disegno"
     }
   },
   {

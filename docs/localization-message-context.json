@@ -8298,14 +8298,14 @@
   "desktop.preload.errors.aCallbackIsRequired": {
     "locations": [
       "desktop/preload.cjs:4",
-      "desktop/preload.cjs:29"
+      "desktop/preload.cjs:30"
     ],
     "context": "\"desktop.preload.errors.aCallbackIsRequired\": \"A callback is required.\","
   },
   "desktop.preload.errors.uiScaleMustBe75200InStepsOf5": {
     "locations": [
       "desktop/preload.cjs:5",
-      "desktop/preload.cjs:54"
+      "desktop/preload.cjs:55"
     ],
     "context": "\"desktop.preload.errors.uiScaleMustBe75200InStepsOf5\": \"UI scale must be 75–200 in steps of 5.\""
   },
@@ -14293,11 +14293,24 @@
     ],
     "context": "if (camera.scale <= 0) throw messageError(new Error(''), \"errors.editorCamera.cameraScaleMustBePositive\", {});"
   },
+  "errors.editorCamera.cameraValueLabel": {
+    "locations": [
+      "src/editor-camera.mjs:29",
+      "src/editor-camera.mjs:41"
+    ],
+    "context": "for (const field of fields) finite(camera[field], {messageKey:'errors.editorCamera.cameraValueLabel',messageParams:{field},diagnosticValue:`Camera ${field}`});"
+  },
   "errors.editorCamera.canvasDimensionsAndZoomMustBePositive": {
     "locations": [
       "src/editor-camera.mjs:307"
     ],
     "context": "if (scale <= 0 || width <= 0 || height <= 0) throw messageError(new Error(''), \"errors.editorCamera.canvasDimensionsAndZoomMustBePositive\", {});"
+  },
+  "errors.editorCamera.canvasValueLabel": {
+    "locations": [
+      "src/editor-camera.mjs:306"
+    ],
+    "context": "for (const [key, value] of Object.entries({x, y, scale, width, height})) finite(value, {messageKey:'errors.editorCamera.canvasValueLabel',messageParams:{field:k"
   },
   "errors.editorCamera.chooseCameraPositionRotationScaleOrPose": {
     "locations": [
@@ -19090,25 +19103,31 @@
     "locations": [
       "src/playback-planning.mjs:102"
     ],
-    "context": "if ((job.sequence === 0) !== Boolean(message.chunk?.header)) throw messageError(new Error(''), \"errors.playbackPlanning.chunksArrivedOutOfOrder\", {label: job.la"
+    "context": "if ((job.sequence === 0) !== Boolean(message.chunk?.header)) throw messageError(new Error(''), \"errors.playbackPlanning.chunksArrivedOutOfOrder\", {label:{messag"
   },
   "errors.playbackPlanning.completedBeforeAllItsChunks": {
     "locations": [
       "src/playback-planning.mjs:107"
     ],
-    "context": "if (!job.staging || message.sequence !== job.sequence) throw messageError(new Error(''), \"errors.playbackPlanning.completedBeforeAllItsChunks\", {label: job.labe"
+    "context": "if (!job.staging || message.sequence !== job.sequence) throw messageError(new Error(''), \"errors.playbackPlanning.completedBeforeAllItsChunks\", {label:{messageK"
   },
   "errors.playbackPlanning.exceedsThe128MibResultBudget": {
     "locations": [
       "src/playback-planning.mjs:173"
     ],
-    "context": "if (bytes > job.maxBytes) throw messageError(new Error(''), \"errors.playbackPlanning.exceedsThe128MibResultBudget\", {label: job.label});"
+    "context": "if (bytes > job.maxBytes) throw messageError(new Error(''), \"errors.playbackPlanning.exceedsThe128MibResultBudget\", {label:{messageKey:jobs[job.kind].labelKey,d"
+  },
+  "errors.playbackPlanning.inbetweenInsertionLabel": {
+    "locations": [
+      "src/playback-planning.mjs:12"
+    ],
+    "context": "inbetween: {message: 'plan-insert-inbetween', label: 'Insert inbetween', labelKey:'errors.playbackPlanning.inbetweenInsertionLabel'},"
   },
   "errors.playbackPlanning.invalidCompletedPlan": {
     "locations": [
       "src/playback-planning.mjs:109"
     ],
-    "context": "if (!validCompletedPlan(job.kind, plan)) throw messageError(new Error(''), \"errors.playbackPlanning.invalidCompletedPlan\", {value: job.label.toLowerCase()});"
+    "context": "if (!validCompletedPlan(job.kind, plan)) throw messageError(new Error(''), \"errors.playbackPlanning.invalidCompletedPlan\", {value:{messageKey:jobs[job.kind].lab"
   },
   "errors.playbackPlanning.invalidInsertInbetweenPlan": {
     "locations": [
@@ -19120,7 +19139,7 @@
     "locations": [
       "src/playback-planning.mjs:101"
     ],
-    "context": "throw messageError(new Error(''), \"errors.playbackPlanning.invalidOrOversizedTransfer\", {value: job.label.toLowerCase()});"
+    "context": "throw messageError(new Error(''), \"errors.playbackPlanning.invalidOrOversizedTransfer\", {value:{messageKey:jobs[job.kind].labelKey,diagnosticValue:job.label.toL"
   },
   "errors.playbackPlanning.invalidResultBudget": {
     "locations": [
@@ -19128,17 +19147,23 @@
     ],
     "context": "this.postMessage({type: `${kind}-error`, revision: message.revision, jobId: message.jobId, message: 'Invalid background planning result budget.', messageKey:'er"
   },
+  "errors.playbackPlanning.layerMigrationLabel": {
+    "locations": [
+      "src/playback-planning.mjs:11"
+    ],
+    "context": "migration: {message: 'plan-layer-migration', label: 'Layer migration', labelKey:'errors.playbackPlanning.layerMigrationLabel'},"
+  },
   "errors.playbackPlanning.loadADocumentBeforePlanning": {
     "locations": [
       "src/playback-planning.mjs:64"
     ],
-    "context": "if (owner.disposed || !owner.report) throw messageError(new Error(''), \"errors.playbackPlanning.loadADocumentBeforePlanning\", {value: label.toLowerCase()});"
+    "context": "if (owner.disposed || !owner.report) throw messageError(new Error(''), \"errors.playbackPlanning.loadADocumentBeforePlanning\", {value:{messageKey:labelKey,diagno"
   },
   "errors.playbackPlanning.planningTimedOut": {
     "locations": [
       "src/playback-planning.mjs:74"
     ],
-    "context": "const timer = owner.timeoutMs > 0 ? setTimeout(() => this.cancel(messageError(new Error(''), \"errors.playbackPlanning.planningTimedOut\", {label: label})), owner"
+    "context": "const timer = owner.timeoutMs > 0 ? setTimeout(() => this.cancel(messageError(new Error(''), \"errors.playbackPlanning.planningTimedOut\", {label:{messageKey:labe"
   },
   "errors.playbackRasterCache.playbackRastersWereInvalidated": {
     "locations": [

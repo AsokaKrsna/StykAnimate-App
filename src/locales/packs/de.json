@@ -1801,9 +1801,9 @@
     "vfxClipInspector.enable": "Aktivieren",
     "vfxInspector.enable": "Aktivieren",
     "cameraMotionUi.previewThisMove": "Diese Bewegung als Vorschau ansehen",
-    "cameraMotionUi.easeIn": "Sanft beschleunigen",
+    "cameraMotionUi.easeIn": "Sanft einblenden",
     "keyframeEasing.easeIn": "Sanft beschleunigen",
-    "cameraMotionUi.easeOut": "Sanft abbremsen",
+    "cameraMotionUi.easeOut": "Sanft ausblenden",
     "keyframeEasing.easeOut": "Sanft abbremsen",
     "cameraMotionUi.distant": "Entfernt",
     "cameraMotionUi.normal": "Normal",
@@ -4056,11 +4056,11 @@
     "errors.playbackPatch.playbackRetainedSourceUpdateTargetsAreInvalid": "Aktualisierungsziele beibehaltener Wiedergabequellen sind ungültig.",
     "errors.playbackPatch.playbackRetainedSourcesRequireDocumentMetadata": "Beibehaltene Wiedergabequellen benötigen Dokumentmetadaten.",
     "errors.playbackPlanning.invalidInsertInbetweenPlan": "Ungültiger Zwischenbildeinfügeplan.",
-    "errors.playbackPlanning.loadADocumentBeforePlanning": "Lade ein Dokument vor der Planung von {value}.",
+    "errors.playbackPlanning.loadADocumentBeforePlanning": "Lade vor der Planung des Vorgangs „{value}“ ein Dokument.",
     "errors.playbackPlanning.aBackgroundOperationIsAlreadyBeingPlanned": "Ein Hintergrundvorgang wird bereits geplant.",
-    "errors.playbackPlanning.planningTimedOut": "Zeitüberschreitung bei der Planung von {label}.",
+    "errors.playbackPlanning.planningTimedOut": "Zeitüberschreitung bei der Planung des Vorgangs „{label}“.",
     "errors.playbackPlanning.invalidOrOversizedTransfer": "Ungültige oder zu große Übertragung: {value}.",
-    "errors.playbackPlanning.chunksArrivedOutOfOrder": "Abschnitte für {label} trafen in falscher Reihenfolge ein.",
+    "errors.playbackPlanning.chunksArrivedOutOfOrder": "Die Abschnitte für den Vorgang „{label}“ trafen in falscher Reihenfolge ein.",
     "errors.playbackPlanning.completedBeforeAllItsChunks": "{label} wurde vor dem Eintreffen aller Abschnitte abgeschlossen.",
     "errors.playbackPlanning.invalidCompletedPlan": "Ungültiger abgeschlossener Plan: {value}.",
     "errors.playbackPlanning.exceedsThe128MibResultBudget": "{label} überschreitet das Ergebnisbudget von 128 MiB.",
@@ -6464,6 +6464,10 @@
     "cameraMotionUi.recovery": "Abklingen",
     "cameraMotionUi.phase": "Phase",
     "cameraMotionUi.horizontal": "Horizontal",
-    "cameraMotionUi.vertical": "Vertikal"
+    "cameraMotionUi.vertical": "Vertikal",
+    "errors.playbackPlanning.layerMigrationLabel": "Ebenenmigration",
+    "errors.playbackPlanning.inbetweenInsertionLabel": "Einfügen eines Zwischenbilds",
+    "errors.editorCamera.cameraValueLabel": "Kamerawert {field}",
+    "errors.editorCamera.canvasValueLabel": "Leinwandwert {field}"
   }
 }

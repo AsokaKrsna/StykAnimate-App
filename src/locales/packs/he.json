@@ -3550,11 +3550,11 @@
     "errors.playbackPlanning.loadADocumentBeforePlanning": "יש לטעון מסמך לפני תכנון {value}.",
     "errors.playbackPlanning.aBackgroundOperationIsAlreadyBeingPlanned": "פעולת רקע כבר נמצאת בתכנון.",
     "errors.playbackPlanning.planningTimedOut": "תכנון {label} חרג ממגבלת הזמן.",
-    "errors.playbackPlanning.invalidOrOversizedTransfer": "העברת {value} אינה תקינה או גדולה מדי.",
+    "errors.playbackPlanning.invalidOrOversizedTransfer": "העברת הנתונים של {value} אינה תקינה או גדולה מדי.",
     "errors.playbackPlanning.chunksArrivedOutOfOrder": "מקטעי {label} הגיעו בסדר שגוי.",
-    "errors.playbackPlanning.completedBeforeAllItsChunks": "{label} הושלם לפני כל המקטעים שלו.",
+    "errors.playbackPlanning.completedBeforeAllItsChunks": "{label} הסתיימה לפני שהתקבלו כל המקטעים שלה.",
     "errors.playbackPlanning.invalidCompletedPlan": "תוכנית {value} שהושלמה אינה תקינה.",
-    "errors.playbackPlanning.exceedsThe128MibResultBudget": "{label} חורג מתקציב תוצאה של 128 MiB.",
+    "errors.playbackPlanning.exceedsThe128MibResultBudget": "{label} חורגת ממכסת התוצאות של 128 MiB.",
     "errors.playbackRasterCache.playbackRastersWereInvalidated": "תמונות הרסטר לניגון בוטלו.",
     "errors.playbackWorker.playbackPreparationWasSuperseded": "הכנת הניגון הוחלפה בחדשה.",
     "errors.playbackWorker.playbackCameraModeMustBeABoolean": "מצב מצלמת הניגון חייב להיות בוליאני.",
@@ -6502,6 +6502,10 @@
     "cameraMotionUi.recovery": "התייצבות",
     "cameraMotionUi.phase": "מופע",
     "cameraMotionUi.horizontal": "אופקי",
-    "cameraMotionUi.vertical": "אנכי"
+    "cameraMotionUi.vertical": "אנכי",
+    "errors.playbackPlanning.layerMigrationLabel": "העברה בין שכבות",
+    "errors.playbackPlanning.inbetweenInsertionLabel": "הכנסת פריימי ביניים",
+    "errors.editorCamera.cameraValueLabel": "ערך {field} של המצלמה",
+    "errors.editorCamera.canvasValueLabel": "ערך {field} של משטח הציור"
   }
 }

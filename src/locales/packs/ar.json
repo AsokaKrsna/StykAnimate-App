@@ -3460,9 +3460,9 @@
     "errors.playbackPlanning.loadADocumentBeforePlanning": "حمّل مستندًا قبل تخطيط {value}.",
     "errors.playbackPlanning.aBackgroundOperationIsAlreadyBeingPlanned": "يجري تخطيط عملية في الخلفية بالفعل.",
     "errors.playbackPlanning.planningTimedOut": "انتهت مهلة تخطيط {label}.",
-    "errors.playbackPlanning.invalidOrOversizedTransfer": "نقل {value} غير صالح أو أكبر من المسموح.",
+    "errors.playbackPlanning.invalidOrOversizedTransfer": "نقل البيانات لعملية {value} غير صالح أو يتجاوز الحجم المسموح.",
     "errors.playbackPlanning.chunksArrivedOutOfOrder": "وصلت كتل {label} بترتيب خاطئ.",
-    "errors.playbackPlanning.completedBeforeAllItsChunks": "اكتمل {label} قبل جميع كتله.",
+    "errors.playbackPlanning.completedBeforeAllItsChunks": "اكتمل {label} قبل استلام جميع كتل بياناته.",
     "errors.playbackPlanning.invalidCompletedPlan": "خطة {value} المكتملة غير صالحة.",
     "errors.playbackPlanning.exceedsThe128MibResultBudget": "يتجاوز {label} حد النتيجة البالغ 128 MiB.",
     "errors.playbackRasterCache.playbackRastersWereInvalidated": "أُبطلت صلاحية الصور النقطية للتشغيل.",
@@ -6616,6 +6616,10 @@
     "cameraMotionUi.recovery": "العودة إلى الاستقرار",
     "cameraMotionUi.phase": "الطور",
     "cameraMotionUi.horizontal": "أفقي",
-    "cameraMotionUi.vertical": "رأسي"
+    "cameraMotionUi.vertical": "رأسي",
+    "errors.playbackPlanning.layerMigrationLabel": "نقل الأشكال بين الطبقات",
+    "errors.playbackPlanning.inbetweenInsertionLabel": "إدراج الإطارات البينية",
+    "errors.editorCamera.cameraValueLabel": "{field} للكاميرا",
+    "errors.editorCamera.canvasValueLabel": "{field} للوحة الرسم"
   }
 }

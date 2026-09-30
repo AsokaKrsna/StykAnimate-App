@@ -14,8 +14,29 @@ import {presetSummary,presetTile} from '../src/vfx-preset-ui.mjs';
 import {VFX_REGISTRY,vfxProperty,validateVfxValue} from '../src/vfx.mjs';
 import {errorMessageData,restoreMessageError,messageError} from '../src/localized-error.mjs';
 import {errorText} from '../src/error-presentation.mjs';
+import {PlaybackPlanner} from '../src/playback-planning.mjs';
 
 const fixture=()=>new Editor({demo:false}).load(emptyDocument());
+
+test('camera fields and planning operation names retain scalar diagnostics while their display references survive transport',async()=>{
+ const editor=fixture(),before=JSON.stringify(editor.serialize()),history=editor._undo.length,failures=[];
+ assert.throws(()=>editor.setCameraValues({x:NaN}),error=>{failures.push(error);return error.message==='Camera x must be finite.';});
+ assert.throws(()=>editor.alignCameraToView({x:0,y:0,scale:1,width:NaN,height:540}),error=>{failures.push(error);return error.message==='Canvas width must be finite.';});
+ const planner=new PlaybackPlanner({report:null});
+ for(const [operation,original]of [['planLayerMigration','layer migration'],['planInsertInbetweens','insert inbetween']])
+  await assert.rejects(planner[operation]({}),error=>{failures.push(error);return error.message===`Load a document before ${original} planning.`;});
+ interfaceLocalization.setPseudo('long');
+ try{
+  for(const error of failures){
+   const restored=restoreMessageError(new Error(),structuredClone(errorMessageData(error)));
+   assert.equal(restored.message,error.message);
+   const value=restored.messageParams.label??restored.messageParams.value;
+   assert.ok(errorText(restored).includes(interfaceLocalization.t(value.messageKey,value.messageParams)));
+   if(value.messageParams)assert.ok(errorText(restored).includes(value.messageParams.field));
+  }
+ }finally{interfaceLocalization.setPseudo(null);}
+ assert.equal(JSON.stringify(editor.serialize()),before);assert.equal(editor._undo.length,history);
+});
 
 test('camera and effect validation translate every parameter while keeping diagnostic identity through transport',()=>{
  const failures=[];

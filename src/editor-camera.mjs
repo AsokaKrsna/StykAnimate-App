@@ -26,7 +26,7 @@ export function cameraValues(camera) {
 }
 
 function checked(camera) {
-  for (const field of fields) finite(camera[field], `Camera ${field}`);
+  for (const field of fields) finite(camera[field], {messageKey:'errors.editorCamera.cameraValueLabel',messageParams:{field},diagnosticValue:`Camera ${field}`});
   for (const field of ['x', 'y', 'scale']) if (!Number.isFinite(Math.fround(camera[field])))
     throw messageError(new Error(''), "errors.editorCamera.cameraExceedsTheNativeRange", {field: field});
   if (camera.scale <= 0) throw messageError(new Error(''), "errors.editorCamera.cameraScaleMustBePositive", {});
@@ -38,7 +38,7 @@ function checkedPatch(patch) {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw messageError(new Error(''), "errors.editorCamera.provideCameraPositionValues", {});
   for (const key of Object.keys(patch)) {
     if (!fields.includes(key)) throw messageError(new Error(''), "errors.editorCamera.unknownCameraValue", {key: key});
-    finite(patch[key], `Camera ${key}`);
+    finite(patch[key], {messageKey:'errors.editorCamera.cameraValueLabel',messageParams:{field:key},diagnosticValue:`Camera ${key}`});
   }
   return patch;
 }
@@ -303,7 +303,7 @@ export const editorCameraMethods = {
 
   /** View x/y are local canvas pixels, scale is CSS pixels per world pixel. */
   alignCameraToView({x, y, scale, width, height}, indices = [this.frameIndex]) {
-    for (const [key, value] of Object.entries({x, y, scale, width, height})) finite(value, `Canvas ${key}`);
+    for (const [key, value] of Object.entries({x, y, scale, width, height})) finite(value, {messageKey:'errors.editorCamera.canvasValueLabel',messageParams:{field:key},diagnosticValue:`Canvas ${key}`});
     if (scale <= 0 || width <= 0 || height <= 0) throw messageError(new Error(''), "errors.editorCamera.canvasDimensionsAndZoomMustBePositive", {});
     const w = this.report.canvas_width, h = this.report.canvas_height;
     return cameraEdit(this, 'Align camera with canvas', indices, camera => ({...camera,

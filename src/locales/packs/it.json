@@ -6502,6 +6502,10 @@
     "cameraMotionUi.recovery": "Assestamento",
     "cameraMotionUi.phase": "Fase",
     "cameraMotionUi.horizontal": "Orizzontale",
-    "cameraMotionUi.vertical": "Verticale"
+    "cameraMotionUi.vertical": "Verticale",
+    "errors.playbackPlanning.layerMigrationLabel": "Migrazione dei livelli",
+    "errors.playbackPlanning.inbetweenInsertionLabel": "Inserimento delle intercalazioni",
+    "errors.editorCamera.cameraValueLabel": "Il valore {field} della camera",
+    "errors.editorCamera.canvasValueLabel": "Il valore {field} dell’area di disegno"
   }
 }
