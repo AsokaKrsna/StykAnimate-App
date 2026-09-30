@@ -1,5 +1,8 @@
 # Onion skin sampling
 
+Onion skin starts enabled each session. Press O or use the timeline's Onion skin
+button to toggle it; its range and appearance preferences stay saved.
+
 Onion skin samples the same `evaluatedFrame` scene as the editor and renderer.
 Keyframe mode chooses times from `sheetKeyTimes` when a layer sheet exists, matching
 the Simple filmstrip's combined scene keys. Native keyframes remain compatibility

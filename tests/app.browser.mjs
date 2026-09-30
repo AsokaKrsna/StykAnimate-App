@@ -16,6 +16,7 @@ try {
  await page.goto(url);await page.waitForFunction(()=>window.styk?.ready);
  check('WebGPU initialized',await value(()=>window.styk.state.renderer.stats.backend==='WebGPU'));
  check('Ten-frame Blue startup loaded',await value(()=>window.styk.editor.figure.name==='Blue'&&window.styk.editor.frame.objects.length===1&&window.styk.editor.totalTicks===10));
+ check('Onion skin starts enabled',await value(()=>window.styk.state.onion)&&await page.locator('#onion-button').getAttribute('aria-pressed')==='true');
  await page.screenshot({path:path.join(out,'editor-default.png')});
  await value(async()=>{const {createDemo}=await import('/src/demo.mjs');styk.editor.load(createDemo());});
  const origin=await value(()=>{const {editor,state}=window.styk,r=document.getElementById('viewport').getBoundingClientRect();return {x:r.x+state.view.x+editor.object.root_x*state.view.scale,y:r.y+state.view.y+editor.object.root_y*state.view.scale,rootX:editor.object.root_x,rootY:editor.object.root_y,scale:state.view.scale};});
@@ -32,7 +33,7 @@ try {
  await page.locator('[data-action="add-frame"]').click();check('F6 equivalent adds keyframe',await value(()=>window.styk.editor.report.keyframes.length)===before+1);
  await page.locator('#play-button').click();await page.waitForTimeout(450);check('Playback advances',await value(()=>window.styk.editor.tick)>2);await page.locator('#play-button').click();
  const stopped=await value(()=>window.styk.editor.tick);await page.waitForTimeout(200);check('Pause stops playback',await value(()=>window.styk.editor.tick)===stopped);
- await page.locator('[data-action="toggle-onion"]').click();check('Onion toggle',await value(()=>window.styk.state.onion));await page.locator('[data-action="toggle-onion"]').click();
+ await page.locator('[data-action="toggle-onion"]').click();check('Onion toggle hides skins',await value(()=>!window.styk.state.onion));await page.locator('[data-action="toggle-onion"]').click();check('Onion toggle restores skins',await value(()=>window.styk.state.onion));
  await page.locator('[data-action="scene-settings"]').click();
  await page.locator('[data-field="canvas_width"]').fill('1000');await page.locator('[data-field="canvas_width"]').press('Tab');check('Scene size changes',await value(()=>window.styk.editor.report.canvas_width)===1000);
  await page.locator('#overlay').click({position:{x:10,y:10}});await page.keyboard.press('Control+z');check('Canvas resize undo',await value(()=>window.styk.editor.report.canvas_width)===960);

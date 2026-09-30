@@ -22,7 +22,8 @@ try{
     styk.editor.load(report);styk.editor.seek(600);
     styk.settingsUI.commit({onionMode:'keyframes',onionStep:1,onionRangeBefore:20,onionRangeAfter:20});
   });
-  await page.getByRole('button',{name:'Onion skin',exact:true}).click();await settle();
+  assert.equal(await page.evaluate(()=>styk.state.onion),true,'onion skin starts enabled');
+  assert.equal(await page.getByRole('button',{name:'Onion skin',exact:true}).getAttribute('aria-pressed'),'true');await settle();
   assert.equal(await page.locator('.onion-timeline-range').count(),0,'no extra onion toolbar');
   await page.getByRole('button',{name:'Onion skin settings',exact:true}).click();await settle();
   const rail=page.getByRole('dialog',{name:'Onion skin settings',exact:true}),before=rail.getByRole('spinbutton',{name:'Frames before',exact:true}),after=rail.getByRole('spinbutton',{name:'Frames after',exact:true});

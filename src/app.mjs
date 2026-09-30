@@ -244,7 +244,7 @@ const state = {
   playing: false,
   previewing: false,
   loop: true,
-  onion: false,
+  onion: true,
   handles: true,
   tool: "select",
   rigMode: "move",

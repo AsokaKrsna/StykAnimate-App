@@ -115,7 +115,7 @@ try {
   await grid.focus(); await page.keyboard.press('a'); await settle();
   check('The add-frame hotkey inserts another key', await page.evaluate(before => JSON.stringify(styk.editor.report._styk.layerSheet) !== before, beforeAdd));
   await page.evaluate(()=>{styk.editor.undo();styk.editor.undo();});
-  await page.locator('#onion-button').click();
+  check('Onion skin is enabled by default',await page.locator('#onion-button').getAttribute('aria-pressed')==='true');
   await page.locator('#onion-settings-button').click();
   const onion=page.getByRole('dialog',{name:'Onion skin settings',exact:true});
   await onion.locator('[data-onion=onionBefore]').fill('3');

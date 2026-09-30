@@ -28,6 +28,7 @@ What's new in each version of StykAnimate.
 
 ### Changed
 
+- Onion skin is enabled when the app starts.
 - A fresh new look, with the StykAnimate typeface, brighter colors, floating panels, and matching menus, buttons and dialogs throughout the app.
 - More room for your animation: tools sit in a floating bar beside the canvas, view controls share one line above it, and small windows open panels only when you need them.
 - The top bar keeps workspaces, Undo, Redo, Save and Export together and shows whether your project is saved.
