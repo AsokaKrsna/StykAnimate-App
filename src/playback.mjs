@@ -10,6 +10,11 @@ import {playbackMemoryBudget, playbackWorkerMemoryPlan, playbackWorkerCount, pla
 import {playbackRetentionSnapshot,unchangedPlaybackTicks} from './playback-retention.mjs';
 
 const MAX_WORKER_RESTARTS = 2;
+// Workers take runs of consecutive ticks. Adjacent frames share retained
+// geometry, artwork identities and rasters within one worker's caches; strict
+// tick parity made every worker rebuild what its neighbor had just prepared.
+export const PLAYBACK_LANE_TICKS = 8;
+export const playbackLane = (tick, count) => Math.floor(tick / PLAYBACK_LANE_TICKS) % count;
 const abortError = message => { const error = new Error(message); error.name = 'AbortError'; return error; };
 const closePacket = closePacketBitmaps;
 const yieldToInput = () => globalThis.scheduler?.yield ? scheduler.yield() : new Promise(resolve => {
@@ -20,9 +25,9 @@ const yieldToInput = () => globalThis.scheduler?.yield ? scheduler.yield() : new
  * Bounded CPU packet LRU backed by native-evaluation workers. Rendering calls
  * get() only: a miss never silently evaluates the scene on the animation thread.
  * The owner advances one exact tick after its packet arrives, holding on underrun.
- * Additional workers take disjoint tick parities: each mirrors the document and
- * prepares its own packets, so dense scenes produce several frames at once while
- * admission, ordering and delivery acknowledgement stay centralized here.
+ * Additional workers take disjoint lanes of consecutive ticks: each mirrors the
+ * document and prepares its own packets, so dense scenes produce several frames
+ * at once while admission, ordering and delivery acknowledgement stay here.
  */
 export class PlaybackCache {
   constructor({ maxBytes = playbackMemoryBudget(), maxFrames = 120, maxPending = 120,
@@ -326,7 +331,7 @@ export class PlaybackCache {
         if (revision !== this.revision || this.disposed) throw abortError('Playback snapshot was superseded.');
         documentBytes+=chunk.estimatedBytes||0;
         // Only resize between fully acknowledged chunks, before any lane can
-        // prepare packets. Tick parity is stable once the mirror is published.
+        // prepare packets. Tick lanes are stable once the mirror is published.
         this._admitWorkers(documentBytes,nativeBytes);
         await this._broadcastLoad({ type: 'load-chunk', revision, sequence: sequence++, chunk, options });
         if (revision === this.revision) this.stats.documentTransferEstimate += (chunk.estimatedBytes || 0) * this.workers.length;
@@ -348,7 +353,7 @@ export class PlaybackCache {
     return task;
   }
   // A patch/load stream mirrors the identical document into every worker. Each
-  // chunk waits for all workers to acknowledge so no parity lane can prepare a
+  // chunk waits for all workers to acknowledge so no lane can prepare a
   // packet from a partial mirror.
   _broadcastLoad(message, responseType) {
     return Promise.all(this.workers.map(client => this._sendLoad(client, message, responseType)));
@@ -443,17 +448,17 @@ export class PlaybackCache {
     // Explicit requests outside the speculative window retain their queue slots.
     this._retainWorkerTicks([...new Set([...feasible, ...this.pending.keys()])]);
   }
-  /** Queue-retention lists partition by tick parity so each worker only keeps
+  /** Queue-retention lists partition by tick lane so each worker only keeps
    * the ticks it was asked to prepare; the worker endpoint stays unchanged. */
   _retainWorkerTicks(ticks) {
     const count = this.workers.length;
     for (const client of this.workers)
       client.worker.postMessage({ type: 'retain', revision: this.revision,
-        ticks: count > 1 ? ticks.filter(tick => tick % count === client.index) : ticks });
+        ticks: count > 1 ? ticks.filter(tick => playbackLane(tick, count) === client.index) : ticks });
   }
   _workerTicks(ticks, index) {
     const count = this.workers.length;
-    return count > 1 ? ticks.filter(tick => tick % count === index) : ticks;
+    return count > 1 ? ticks.filter(tick => playbackLane(tick, count) === index) : ticks;
   }
   async prepareRange(ticks, { replacePending = false } = {}) {
     if (this.disposed) throw new Error('The playback cache has been disposed.');

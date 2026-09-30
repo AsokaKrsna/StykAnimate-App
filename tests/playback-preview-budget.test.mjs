@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {PlaybackCache} from '../src/playback.mjs';
+import {PlaybackCache, PLAYBACK_LANE_TICKS} from '../src/playback.mjs';
 import {previewMemoryPlan, playbackWorkerMemoryPlan} from '../src/playback-budget.mjs';
 import {PlaybackResources} from '../src/playback-resources.mjs';
 import {Worker} from 'node:worker_threads';
@@ -52,7 +52,9 @@ test('controller cache limits reach actual worker resource owners and retain exa
   };
   const bytes=64*1024, cache=new PlaybackCache({maxBytes:bytes,workerCount:2,workerFactory});
   t.after(()=>cache.dispose());
-  cache.load(createDemo());await cache.prepareRange([0,1]);
+  // One tick from each worker's lane of consecutive ticks.
+  const ticks=[0,PLAYBACK_LANE_TICKS];
+  cache.load(createDemo());await cache.prepareRange(ticks);
   const plan=playbackWorkerMemoryPlan(bytes);
   assert.equal(cache.stats.workerMemoryPlan.poolRetainedBytes,plan.retainedBytes*2);
   for(const snapshot of cache.stats.workerCaches){
@@ -62,8 +64,8 @@ test('controller cache limits reach actual worker resource owners and retain exa
   assert.equal(cache.stats.workerCacheTotals.vectorBytes,cache.stats.workerCaches.reduce((n,s)=>n+s.vectorBytes,0));
   assert.ok(cache.stats.documentTransferEstimate>0);
   const generous=new PlaybackCache({maxBytes:32*1024*1024,workerFactory});t.after(()=>generous.dispose());
-  generous.load(createDemo());await generous.prepareRange([0,1]);
-  for(const tick of [0,1]){
+  generous.load(createDemo());await generous.prepareRange(ticks);
+  for(const tick of ticks){
     assert.deepEqual(cache.get(tick).shapes,generous.get(tick).shapes);
     assert.deepEqual(cache.get(tick).transforms,generous.get(tick).transforms);
   }

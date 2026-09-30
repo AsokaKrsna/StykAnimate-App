@@ -4,7 +4,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {createFrame, emptyDocument} from '../src/demo.mjs';
 import {documentChunks} from '../src/document-transport.mjs';
 import {createPlaybackWorkerEndpoint} from '../src/playback-worker.mjs';
-import {PlaybackCache} from '../src/playback.mjs';
+import {PlaybackCache, PLAYBACK_LANE_TICKS} from '../src/playback.mjs';
 
 function endpoint(t, options = {}) {
   const messages = [], waiters = new Set(), report = emptyDocument();
@@ -130,30 +130,32 @@ test('cache releases stale and unrequested packets before acknowledging and stop
   } finally {cache.dispose();}
 });
 
-test('a worker pool partitions preparation, retention and acknowledgements by tick parity', async () => {
+test('a worker pool partitions preparation, retention and acknowledgements by lanes of consecutive ticks', async () => {
   const sent = [[], []], fakes = [0, 1].map(index => ({
     postMessage: message => sent[index].push(message), addEventListener() {}, terminate() {},
   }));
   let created = 0;
   const cache = new PlaybackCache({ workerCount: 2, workerFactory: () => fakes[created++] });
   try {
-    cache.report = emptyDocument(); cache.totalTicks = 8; cache.revision = 3;
+    cache.report = emptyDocument(); cache.totalTicks = 40; cache.revision = 3;
     // Fake workers never deliver; the returned promise settles at dispose.
-    cache.prepareRange([0, 1, 2, 3, 4, 5]).catch(() => {});
+    const ticks = [0, 1, 2, 7, 8, 9, 15, 16, 23, 24];
+    cache.prepareRange(ticks).catch(() => {});
     await Promise.resolve();
-    assert.deepEqual(sent[0].find(m => m.type === 'prepare').ticks, [0, 2, 4]);
-    assert.deepEqual(sent[1].find(m => m.type === 'prepare').ticks, [1, 3, 5]);
+    assert.equal(PLAYBACK_LANE_TICKS, 8);
+    assert.deepEqual(sent[0].find(m => m.type === 'prepare').ticks, [0, 1, 2, 7, 16, 23]);
+    assert.deepEqual(sent[1].find(m => m.type === 'prepare').ticks, [8, 9, 15, 24]);
     sent[0].length = sent[1].length = 0;
     // A packet's ACK must return to the worker that produced it.
-    cache._receive({type: 'packet', revision: 3, deliveryId: 7, tick: 1,
-      packet: {tick: 1, byteLength: 64, compileMs: 0, compatibility: []}}, cache.workers[1]);
+    cache._receive({type: 'packet', revision: 3, deliveryId: 7, tick: 9,
+      packet: {tick: 9, byteLength: 64, compileMs: 0, compatibility: []}}, cache.workers[1]);
     assert.deepEqual(sent[0].map(m => m.type), []);
     assert.deepEqual(sent[1].map(m => m.type), ['packet-ack']);
-    // Queue trimming filters each worker's retain list to its own parity.
-    cache._prefetchRanks = new Map([[0, 0], [1, 1], [2, 2], [3, 3]]);
-    cache._retainWorkerTicks([0, 3]);
-    assert.deepEqual(sent[0].filter(m => m.type === 'retain').at(-1).ticks, [0]);
-    assert.deepEqual(sent[1].filter(m => m.type === 'retain').at(-1).ticks, [3]);
+    // Queue trimming filters each worker's retain list to its own lanes.
+    cache._prefetchRanks = new Map([[0, 0], [1, 1], [8, 2], [16, 3]]);
+    cache._retainWorkerTicks([0, 8, 16]);
+    assert.deepEqual(sent[0].filter(m => m.type === 'retain').at(-1).ticks, [0, 16]);
+    assert.deepEqual(sent[1].filter(m => m.type === 'retain').at(-1).ticks, [8]);
     // Invalidate and interaction reach every worker.
     sent[0].length = sent[1].length = 0;
     cache.setInteractionActive(true); cache.setInteractionActive(false);
