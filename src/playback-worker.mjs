@@ -390,9 +390,11 @@ async function compileSoftwarePacket(report, tick, { revision = 1, scale = 1, qu
   const uidSet = new Set(); for (const item of drawables) uidSet.add(item.obj.unique_id ?? item.slot);
   const matrix = cameraMatrix({ report, frame, cameraEnabled, view: { scale } });
   const hypot = Math.hypot(matrix[0], matrix[1]) || 1;
-  const resolution = rasterResolution(hypot) * quality;
-  // The bitmap covers the on-screen artboard: document pixels at view density
-  // times the same resolution ratio compatibility textures would use.
+  // The bitmap covers the on-screen artboard at the view's own density. Object
+  // textures round density up to a quarter octave so they survive zoom steps; a
+  // whole-frame bitmap is drawn at one view, where rounding only rasterized up
+  // to 41% more pixels and then resampled them down.
+  const resolution = hypot * quality;
   const pixelScale = Math.min(scale * resolution / hypot, maxTextureDimension / report.canvas_width, maxTextureDimension / report.canvas_height);
   const pixelWidth = Math.max(1, Math.ceil(report.canvas_width * pixelScale)), pixelHeight = Math.max(1, Math.ceil(report.canvas_height * pixelScale));
   const bitmapBytes = pixelWidth * pixelHeight * 4;
