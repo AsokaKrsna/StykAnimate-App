@@ -75,6 +75,23 @@ test('a third finger is ignored, and a cancelled touch ends the pinch', () => {
   assert.deepEqual(page.log.seen, ['pointerdown:1'], 'no leftover finger reaches the canvas');
 });
 
+test('pinching starts from the first finger’s current position after its pan', () => {
+  const page=canvas();
+  page.send('pointerdown',1,110,120);page.send('pointermove',1,160,120);
+  page.send('pointerdown',2,260,120);page.send('pointermove',2,360,120);
+  assert.equal(page.view.scale,2);
+  assert.equal(page.view.x,-150);
+});
+
+test('cancelling navigation ignores held fingers until they lift', () => {
+  const page=canvas();
+  page.send('pointerdown',1,110,120);page.send('pointerdown',2,210,120);
+  page.gesture.cancel();const views=page.log.views.length;
+  page.send('pointermove',1,150,150);page.send('pointerup',1,150,150);page.send('pointerup',2,210,120);
+  assert.equal(page.log.views.length,views);assert.equal(page.log.ends,1);
+  assert.deepEqual(page.log.seen,['pointerdown:1']);
+});
+
 test('mouse and pen are never pinches, and a disabled canvas ignores touch', () => {
   const page = canvas();
   page.send('pointerdown', 1, 110, 120, 'pen'); page.send('pointerdown', 2, 210, 120, 'mouse');

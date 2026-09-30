@@ -19,6 +19,7 @@ import {TRANSFORM_BYTES,transformSupportBounds,tileIntersects,inverseMatrix,mult
 import {validatePixelClipboard} from './drawing-clipboard.mjs';
 import {createGpuStroke,gpuDrawingEligible,gpuBrushSupports} from './drawing-gpu.mjs';
 import {selectionMatrix,selectionTiles,selectionPresenter} from './drawing-selection.mjs';
+import {installCanvasPinch} from './canvas-pinch.mjs';
 
 const pointerSample=e=>({clientX:e.clientX,clientY:e.clientY,pressure:e.pressure,pointerType:e.pointerType,timeStamp:e.timeStamp,button:e.button,buttons:e.buttons,shiftKey:e.shiftKey,altKey:e.altKey,ctrlKey:e.ctrlKey,metaKey:e.metaKey,tiltX:e.tiltX,tiltY:e.tiltY});
 const yieldToInput=()=>globalThis.scheduler?.yield?globalThis.scheduler.yield():new Promise(resolve=>setTimeout(resolve,0));
@@ -48,6 +49,14 @@ export class DrawingController {
     this.onOverlayRender=onOverlayRender;this.onView=onView;
     this.panel=document.getElementById('inspector');
     const events=this.events=new AbortController(),opts={signal:events.signal};
+    this.touchNavigation=installCanvasPinch({overlay,viewport,signal:events.signal,
+      enabled:()=>this.active&&!state.playing&&this.penPointerId==null&&performance.now()-(this.lastPen??-Infinity)>=700,
+      getView:()=>state.view,
+      toLocal:event=>{const r=this.viewRect();return {x:(event.clientX-r.left)*r.clientWidth/r.width,y:(event.clientY-r.top)*r.clientHeight/r.height};},
+      setView:view=>{Object.assign(state.view,view);this.onView();this.onRender();},
+      onStart:()=>{if(this.gesture?.kind==='pan')this.finish({navigation:false});else this.cancel({navigation:false});this.onRender();},
+      onEnd:()=>this.onRender(),
+    });
     // The inspector and the canvas quick bar share click, change and slider handling.
     for(const root of [this.panel,this.quickBar=this.createQuickBar()]){
       root.addEventListener('click',event=>this.handleClick(event),opts);
@@ -67,6 +76,11 @@ export class DrawingController {
     const raw=typeof window!=='undefined'&&'onpointerrawupdate' in window?[['pointerrawupdate',e=>this.rawMove(e)]]:[];
     for(const [name,handler] of [['pointerdown',e=>this.down(e)],['pointermove',e=>this.move(e)],...raw,['pointerup',e=>this.up(e)],['pointercancel',e=>this.up(e)],['lostpointercapture',e=>this.up(e)]])overlay.addEventListener(name,event=>{
       if(!this.active)return;
+      if(event.pointerType==='pen'){
+        this.lastPen=performance.now();
+        if(event.type==='pointerdown')this.penPointerId=event.pointerId;
+        else if(['pointerup','pointercancel','lostpointercapture'].includes(event.type))this.penPointerId=null;
+      }
       // The shared viewport owns the entire pan gesture, including moves whose
       // button is -1 and release after Space has already been lifted.
       if(state.drag?.kind==='pan')return;
@@ -81,11 +95,12 @@ export class DrawingController {
     document.addEventListener('pointerdown',event=>{if(this.palette&&!this.palette.hidden&&!this.palette.contains(event.target)&&event.button!==2)this.closePalette();},{...opts,capture:true});
     document.addEventListener('keydown',event=>{if(event.key==='Escape'&&this.palette&&!this.palette.hidden){event.stopImmediatePropagation();event.preventDefault();this.closePalette();}},{...opts,capture:true});
     // Leaving the window ends the gesture but keeps its ink.
-    window.addEventListener('blur',()=>{if(this.gesture)this.finish();},opts);
+    window.addEventListener('blur',()=>{this.penPointerId=null;this.touchNavigation.cancel();if(this.gesture)this.finish();},opts);
     // The brush ring tracks the last move; it must not linger once the pointer leaves.
     overlay.addEventListener('pointerleave',()=>{if(this.cursor){this.cursor=null;this.onOverlayRender();}},opts);
     editor.addEventListener('change',event=>{
       const kind=event.detail.kind;
+      if(['document','seek','history'].includes(kind))this.touchNavigation.cancel();
       if(kind==='document'){this.cancel();this.selection=null;this.marquee=null;this.bind();}
       if(kind==='seek'){this.finish();if(this.operation?.selection)this.operation.abort.abort();this.cancelSelection();}
       if(kind==='history'){if(!this.operation?.history)this.cancel();this.cancelSelection();}
@@ -96,7 +111,7 @@ export class DrawingController {
     document.addEventListener('pointerdown',event=>{if(this.gesture&&!overlay.contains(event.target))this.finish();if(this.selection&&event.target.closest?.('.layer-timeline,.sheet-filmstrip'))this.run(()=>this.applySelection());},{...opts,capture:true});
     this.bind();
   }
-  get interacting(){return Boolean(this.gesture||this.loading||this.operation);}
+  get interacting(){return Boolean(this.gesture||this.loading||this.operation||this.touchNavigation?.active);}
   bind({required=false}={}){
     // Resources exist only for reports that carry drawings (or while Draw is
     // open and is about to create one); an animation without drawings must
@@ -331,13 +346,6 @@ export class DrawingController {
   resource(figure){if(!drawingMetadata(figure))return null;if(!this.owner)this.bind({required:true});const s=this.selection;return s&&drawingMetadata(s.target.figure)?.celId===drawingMetadata(figure).celId?s.presenter:this.owner?.presenter(figure)??null;}
   /** Viewport geometry cached between layout changes: reading it per pointer
    * sample and per overlay frame would force a synchronous layout each time. */
-  /** Two-finger touch: zoom by the change in finger distance around their
-   * midpoint, starting from the view the first finger's pan left. */
-  pinch(pan,event){
-    const rect=this.viewRect(),local=p=>({x:(p.clientX-rect.left)*rect.clientWidth/rect.width,y:(p.clientY-rect.top)*rect.clientHeight/rect.height});
-    const a=local(pan.last??pan.start),b=local(event);
-    return {id:pan.id,kind:'pinch',touch:true,view:pan.view,base:{...this.state.view},local,touches:new Map([[pan.id,a],[event.pointerId,b]]),mid:{x:(a.x+b.x)/2,y:(a.y+b.y)/2},distance:Math.max(1,Math.hypot(b.x-a.x,b.y-a.y))};
-  }
   viewRect(){
     if(!this._viewRect){
       if(!this._viewObserver&&typeof ResizeObserver!=='undefined'){const reset=()=>{this._viewRect=null;};this._viewObserver=new ResizeObserver(reset);this._viewObserver.observe(this.viewport);window.addEventListener('resize',reset,{signal:this.events.signal});window.addEventListener('scroll',reset,{capture:true,passive:true,signal:this.events.signal});}
@@ -350,16 +358,18 @@ export class DrawingController {
   pixelMatrix(target){return this.gesture?.session?.target===target?(this.gesture.session.matrix??this.gesture.session.pixelMatrix??drawingPixelMatrix(this.geometryItem(target))):drawingPixelMatrix(this.geometryItem(target));}
   pixel(event,target){return inversePoint(this.pixelMatrix(target),this.point(event));}
   async down(event){
-    // A second finger turns a one-finger pan into a pinch that zooms and pans
-    // around the fingers' midpoint.
-    if(event.pointerType==='touch'&&this.gesture?.kind==='pan'&&this.gesture.touch&&this.gesture.id!==event.pointerId){this.overlay.setPointerCapture(event.pointerId);this.gesture=this.pinch(this.gesture,event);return;}
     if(this.operation){if(!this.loading)this.loading={id:event.pointerId,sequence:++this.sequence,released:false,samples:[],event:{...pointerSample(event),pointerId:event.pointerId},queued:true};return;}
     if(this.gesture){
       // A pointer arriving while the previous stroke is closing queues behind its commit.
       if(this.gesture.kind==='stroke'&&this.gesture.session.ended&&!this.loading)this.loading={id:event.pointerId,sequence:++this.sequence,released:false,samples:[],event:{...pointerSample(event),pointerId:event.pointerId},queued:true};
       return;
     }
-    if(this.loading)return;if(event.pointerType==='touch'){if(performance.now()-(this.lastPen??-Infinity)<700)return;this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'pan',touch:true,start:pointerSample(event),view:{...this.state.view}};return;}if(event.pointerType==='pen')this.lastPen=performance.now();
+    if(this.loading)return;
+    if(event.pointerType==='touch'){
+      if(this.penPointerId!=null||performance.now()-(this.lastPen??-Infinity)<700)return;
+      if(!this.state.settings.fingerDrawing){this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'pan',touch:true,start:pointerSample(event),view:{...this.state.view}};return;}
+    }
+    if(event.pointerType==='pen')this.lastPen=performance.now();
     if(event.altKey&&this.sampleColor&&['brush','fill'].includes(this.tool)){this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'pick'};this.pickColor(event);return;}
     if((event.ctrlKey||event.metaKey)&&['brush','eraser'].includes(this.tool)){this.overlay.setPointerCapture(event.pointerId);this.gesture={id:event.pointerId,kind:'resize',start:pointerSample(event),size:this.settings.size};return;}
     this._viewRect=null;this.beforeEdit();this.ensurePaintLayer();if(['brush','eraser','fill','shape'].includes(this.tool))this.editor.autoKeyDrawing();this.viewport.focus({preventScroll:true});if(!event.released)this.overlay.setPointerCapture(event.pointerId);
@@ -712,14 +722,8 @@ export class DrawingController {
       else this.restoreStroke(s);
     }finally{prepared?.release();finish();}
   }
-  move(event){this.cursor=pointerSample(event);if(this.loading?.id===event.pointerId){if(this.loading.samples.length>=65536)throw new Error('Drawing input exceeded the queue limit.');this.loading.samples.push(pointerSample(event));return;}const g=this.gesture;if(!g||(g.id!==event.pointerId&&!g.touches?.has(event.pointerId))){this.onOverlayRender();return;}
+  move(event){this.cursor=pointerSample(event);if(this.loading?.id===event.pointerId){if(this.loading.samples.length>=65536)throw new Error('Drawing input exceeded the queue limit.');this.loading.samples.push(pointerSample(event));return;}const g=this.gesture;if(!g||g.id!==event.pointerId){this.onOverlayRender();return;}
     if(g.kind==='pan'){const rect=this.viewRect();this.state.view.x=g.view.x+(event.clientX-g.start.clientX)*rect.clientWidth/rect.width;this.state.view.y=g.view.y+(event.clientY-g.start.clientY)*rect.clientHeight/rect.height;g.last=pointerSample(event);this.onView();}
-    else if(g.kind==='pinch'){
-      g.touches.set(event.pointerId,g.local(event));const [p,q]=g.touches.values(),v=g.base;
-      const scale=Math.min(100,Math.max(.001,v.scale*Math.hypot(q.x-p.x,q.y-p.y)/g.distance)),k=scale/v.scale;
-      // The artwork under the starting midpoint follows the fingers.
-      Object.assign(this.state.view,{scale,x:(p.x+q.x)/2-(g.mid.x-v.x)*k,y:(p.y+q.y)/2-(g.mid.y-v.y)*k});this.onView();
-    }
     else if(g.kind==='stroke'){if(!g.session.ended)this.strokeSamples(event);}
     else if(g.kind==='pose'){const p=this.point(event);this.editor.moveSelection(p.x-g.start.x,p.y-g.start.y,{fromStart:true});}
     else if(g.kind==='lasso'){const p=this.pixel(event,g.target);if(g.shape==='rect')g.points=rectPoints(g.start,p);else if(g.shape==='ellipse')g.points=ellipsePoints(g.start,p);else if(g.points.length<8192&&Math.hypot(p.x-g.points.at(-1).x,p.y-g.points.at(-1).y)>1)g.points.push(p);}
@@ -753,12 +757,12 @@ export class DrawingController {
   /** Pointer release. An interrupted pointer (pointercancel, lost capture: a
    * notification stealing focus, the pen leaving range) keeps what was drawn,
    * as in Krita; only Escape discards a gesture. */
-  up(event){if(this.loading?.id===event.pointerId){this.loading.released=true;return;}const g=this.gesture;if(g?.kind==='pinch'&&g.touches.has(event.pointerId)){this.finish();return;}if(!g||g.id!==event.pointerId)return;if(g.kind==='stroke'&&g.session.ended)return;this.finish();}
-  finish(){const g=this.gesture;
+  up(event){if(this.loading?.id===event.pointerId){this.loading.released=true;return;}const g=this.gesture;if(!g||g.id!==event.pointerId)return;if(g.kind==='stroke'&&g.session.ended)return;this.finish();}
+  finish({navigation=true}={}){if(navigation&&this.touchNavigation?.active)this.touchNavigation.cancel();const g=this.gesture;
     if(g?.kind==='stroke'&&g.session.ended)return; // the done reply completes the commit
     if(this.loading)this.cancel();if(!g)return;
     if(g.kind==='shape'){this.gesture=null;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.run(()=>this.commitShape(g));this.onRender();return;}
-    if(['pan','pinch','pick','resize'].includes(g.kind)){this.gesture=null;for(const id of g.touches?.keys()??[g.id])if(this.overlay.hasPointerCapture(id))this.overlay.releasePointerCapture(id);if(g.kind!=='pan'&&g.kind!=='pinch')this.onUI();return;}
+    if(['pan','pick','resize'].includes(g.kind)){this.gesture=null;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);if(g.kind!=='pan')this.onUI();return;}
     if(g.kind==='stroke'){
       const s=g.session;s.ended=true;cancelAnimationFrame(s.raf);s.raf=null;
       if(s.lastWorld)this.lastStroke={layerId:s.target.id,celId:drawingMetadata(s.target.figure).celId,world:s.lastWorld};
@@ -771,7 +775,7 @@ export class DrawingController {
     if(g.kind==='pose')this.editor.commitDrag();
     else if(g.kind==='lasso')return this.run(()=>this.selectShape(g));
   }finally{g.surface.pinned=g.kind==='lasso'&&Boolean(this.operation)||Boolean(this.selection?.surface===g.surface);if(this.selection?.surface===g.surface)this.previewSelection();else{this.owner.present(g.surface);this.owner.discard(g.target.figure);}if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.sync();this.onUI();this.onRender();}}
-  cancel(){this.operation?.abort.abort();this.previewQueued=false;this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();this.onRender();return;}this.gesture=null;if(g.kind==='pan'||g.kind==='pinch'){Object.assign(this.state.view,g.view);for(const id of g.touches?.keys()??[g.id])if(this.overlay.hasPointerCapture(id))this.overlay.releasePointerCapture(id);this.onView();this.onRender();return;}if(g.kind==='pick'){this.pickAbort?.abort();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);return;}if(g.kind==='shape'){g.surface.pinned=false;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();return;}if(g.kind==='resize'){this.settings.size=g.size;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onUI();this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;if(this.wetSession===s){this.wetSession=null;this.wet?.clear();}cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.hold?.(s,0);s.owner.busy=false;if(s.gpu){s.gpu.fail(new DOMException('Stroke cancelled.','AbortError'));s.gpu.release();s.surface.stamp++;}else this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();if(g.kind==='selection-scale'||g.kind==='selection-rotate'){const s=this.selection;if(s){s.scale=g.scale;s.angle=g.angle;this.previewSelection();}}g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
+  cancel({navigation=true}={}){if(navigation)this.touchNavigation?.cancel();this.operation?.abort.abort();this.previewQueued=false;this.sequence++;const pending=this.loading;this.loading=null;if(pending&&this.overlay.hasPointerCapture(pending.id))this.overlay.releasePointerCapture(pending.id);const g=this.gesture;if(!g){this.fillAbort?.abort();this.onRender();return;}this.gesture=null;if(g.kind==='pan'){Object.assign(this.state.view,g.view);if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onView();this.onRender();return;}if(g.kind==='pick'){this.pickAbort?.abort();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);return;}if(g.kind==='shape'){g.surface.pinned=false;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();return;}if(g.kind==='resize'){this.settings.size=g.size;if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onUI();this.onRender();return;}if(g.kind==='stroke'){const s=g.session;s.cancelled=true;if(this.wetSession===s){this.wetSession=null;this.wet?.clear();}cancelAnimationFrame(s.raf);s.raf=null;this.sessions.delete(s.id);s.resolveDone?.();s.owner.hold?.(s,0);s.owner.busy=false;if(s.gpu){s.gpu.fail(new DOMException('Stroke cancelled.','AbortError'));s.gpu.release();s.surface.stamp++;}else this.owner.strokeWorker.post({kind:'cancel',stroke:s.id});this.restoreStroke(s);}if(g.kind==='pose')this.editor.cancelDrag();if(g.kind==='selection-move')this.cancelSelection();if(g.kind==='selection-scale'||g.kind==='selection-rotate'){const s=this.selection;if(s){s.scale=g.scale;s.angle=g.angle;this.previewSelection();}}g.surface.pinned=false;this.owner.present(g.surface);this.owner.discard(g.target.figure);this.prepareVisible();if(this.overlay.hasPointerCapture(g.id))this.overlay.releasePointerCapture(g.id);this.onRender();}
   async barrier(options){await this.settle({selection:true});if(this.loading)throw new Error('Wait for the drawing to finish loading.');await drawingBarrier(this.editor.report,options);}
   /** Fill bounds follow the document, independent of display zoom. */
   fillBounds(target,store){

@@ -47,6 +47,7 @@ export const DEFAULT_EDITOR_SETTINGS = Object.freeze({
   motionPathFalloffShape: "smooth",
   autoSizeHandles: true,
   outlineHandles: true,
+  fingerDrawing: false,
   builderShowStaticHandles: true,
   builderSmartSnapping: true,
   builderHighlightSegment: false,
@@ -114,6 +115,7 @@ export function normalizeEditorSettings(value = {}) {
     "motionPathRelative",
     "autoSizeHandles",
     "outlineHandles",
+    "fingerDrawing",
     "builderShowStaticHandles",
     "builderSmartSnapping",
     "builderHighlightSegment",
@@ -594,6 +596,7 @@ export class EditorSettings {
       return this.group(say('settings.navigation'),
           this.select(say('settings.zoomGesture'), 'canvasZoomGesture', [['ctrl-scroll', say('settings.zoomCtrlScroll')], ['scroll', say('settings.zoomScroll')]])
           + this.select(say('settings.boxSelection'), 'marqueeSelection', [['bounds', say('settings.boxBounds')], ['origins', say('settings.boxOrigins')]]))
+        + this.group('Touch drawing', this.checkbox('Draw with a finger', 'fingerDrawing', 'In Draw, one finger uses the selected tool and two fingers navigate. Turn off to pan with one finger.'))
         + this.group('Pasting', this.select('Pasted figure depth', 'pasteDepth', [['same', 'Same Z-index (default)'], ['front', 'In front']], 'Choose whether pasted figures keep their copied depth or appear in front of other figures on the destination layer.'))
         + this.group('Duplication',
           this.select('Alt-drag a figure root', 'altDragDuplicate', [['instance', 'Linked instance'], ['unique', 'Independent copy']], 'Linked instances share figure edits made in Build. Independent copies have their own figure. Both can be posed and moved separately.'))

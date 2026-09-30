@@ -24,6 +24,7 @@ What's new in each version of StykAnimate.
 - Right-drag to bend lines in Build, just like in Animate.
 - A Canvas setting to choose whether pasted figures keep their original layering or appear in front.
 - Pinch with two fingers to zoom and pan the canvas on a touch screen.
+- Draw with a finger on touch screens by enabling Draw with a finger in Canvas settings.
 - Auto key in the Advanced timeline: turn it on (K) and every change you make adds a keyframe at the playhead.
 - Camera follow: right-click figures and choose Follow with camera to keep them in frame, with smooth catch-up, look ahead, a dead zone and auto zoom. Projects that use it need this version or newer.
 
